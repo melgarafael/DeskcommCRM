@@ -53,6 +53,8 @@ de menor precedência e registre.
 | [`prd/05-prd-ai-rag-handoff.md`](prd/05-prd-ai-rag-handoff.md) | IA conversacional, RAG por tenant, sentiment |
 | [`prd/06-prd-nuvemshop-lgpd.md`](prd/06-prd-nuvemshop-lgpd.md) | Integração Nuvemshop + webhooks LGPD |
 | [`business-rules/00-business-rules-catalog.md`](business-rules/00-business-rules-catalog.md) | **Catálogo de regras de negócio** — fonte da verdade fora do código |
+| [`features/atendimento-alerta-humano-nome-informado.md`](features/atendimento-alerta-humano-nome-informado.md) | Aviso interno por episódio de transferência e opt-in para preencher nome vazio com limites da prova |
+| [`features/feature-a-leadsubmitted-ctwa.md`](features/feature-a-leadsubmitted-ctwa.md) | Feature A portada: LeadSubmitted por clique CTWA recebido, evidência do fork e validações pendentes do upstream |
 | [`presentation/pitch-deck.md`](presentation/pitch-deck.md) | Pitch |
 
 ## 3. Contrato técnico (specs)
@@ -66,6 +68,7 @@ Detalham schema SQL e payloads exatos. **Consulte antes de modelar qualquer cois
 | [`specs/03`](specs/03-spec-whatsapp-waha.md) | WAHA — fila outbound, warm-up, spinning, crons |
 | [`specs/04`](specs/04-spec-pipeline-attendance.md) | Pipeline e atendimento |
 | [`specs/05`](specs/05-spec-ai-rag-handoff.md) | IA, RAG, gatilhos de handoff |
+| [`specs/catalogo-de-modelos-nativos.md`](specs/catalogo-de-modelos-nativos.md) | Descoberta diária de modelos OpenAI/Anthropic, preservação de escolhas e falhas de catálogo |
 | [`specs/06`](specs/06-spec-nuvemshop-lgpd.md) | Nuvemshop + LGPD |
 | [`specs/07`](specs/07-spec-events-workers.md) | **`event_log`, workers, claim atômico, backoff/DLQ** |
 | [`specs/08`](specs/08-spec-deploy-observability.md) | Deploy e observabilidade |
@@ -102,6 +105,7 @@ Detalham schema SQL e payloads exatos. **Consulte antes de modelar qualquer cois
 | [`adr/0003-perfil-declarativo-v2-portas-nomeadas-e-vitrine.md`](adr/0003-perfil-declarativo-v2-portas-nomeadas-e-vitrine.md) | **Aceita em 17/09/2026.** Perfil declarativo v2 das extensões: portas nomeadas e o metadado de loja no catálogo |
 | [`adr/0004-cobranca-do-revendedor.md`](adr/0004-cobranca-do-revendedor.md) | **Aceita em 29/09/2026.** Cobrança do revendedor: o terceiro eixo de dinheiro — o dono da instalação cobra as empresas que atende; capacidade do núcleo com chave, desligada por padrão; revisa a condição 2 da ADR-0002 só para este caso |
 | [`adr/0005-plataforma-de-modulos-de-terceiro.md`](adr/0005-plataforma-de-modulos-de-terceiro.md) | **Aceita em 14/10/2026** (escolhas 1–4 pela recomendação, delegadas pelo dono; a 5 segue aberta). Plataforma de módulos de terceiro: o host compila o schema declarado, código de terceiro nunca entra no processo. Onda 1a construída no #2334 (migration 0611); o que falta, na seção *Estado da construção*. Spec: [`specs/modulos-dados-declarados-v1.md`](specs/modulos-dados-declarados-v1.md); caso de prova: [`research/modulos/pagamentos-e-fiscal.md`](research/modulos/pagamentos-e-fiscal.md) |
+| [`adr/0006-app-no-celular-e-a-pwa-do-mesmo-next.md`](adr/0006-app-no-celular-e-a-pwa-do-mesmo-next.md) | **Aceita em 20/10/2026.** O app no celular é a PWA instalada a partir do mesmo Next.js e das mesmas rotas `/app`: sem nativo, sem `/m/*`, sem gerador de SW, sem dados no aparelho. Decisões do dono (a)…(e) e as fases F0–F4; muda a premissa de foco de [`design-system/screen-flow/07-responsive-strategy.md`](design-system/screen-flow/07-responsive-strategy.md) |
 | [`architecture/agent-turn.html`](architecture/agent-turn.html) | Diagrama do turno do agente (inbound → guardrails → outbound) |
 | [`architecture/agenda-no-turno.md`](architecture/agenda-no-turno.md) | Fonte de horários locais de reservas, releitura após ações e registros do próximo turno |
 | [`architecture/remetente-do-lembrete.md`](architecture/remetente-do-lembrete.md) | Canal dos lembretes por serviço, origem da reserva, ambiguidade e ciclo dos avisos |

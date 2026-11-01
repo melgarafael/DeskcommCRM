@@ -91,7 +91,8 @@ describe("o send_message formata ANTES da cadeia de envio", () => {
   it("formata o corpo do modelo antes do corpo vazio e do runBeforeSend", () => {
     const formata = execute.indexOf("formatarParaWhatsApp(");
     expect(formata).toBeGreaterThan(-1);
-    expect(formata).toBeLessThan(execute.indexOf("body.trim() === ''"));
+    expect(execute.indexOf("if (semConteudoVisivel(body)) {")).toBeGreaterThan(-1);
+    expect(formata).toBeLessThan(execute.indexOf("if (semConteudoVisivel(body)) {"));
     expect(formata).toBeLessThan(execute.indexOf("runBeforeSend("));
   });
 });

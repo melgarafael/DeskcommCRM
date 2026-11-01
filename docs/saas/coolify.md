@@ -543,7 +543,7 @@ banco continuou na rede `coolify` e o domínio continuou respondendo.
 ```
 ✖ A versão v1.76.0 é ANTERIOR à que já está instalada neste servidor.
      Instalar ela seria voltar no tempo e desligar coisas que você já tem.
-     Não mexi em nada: nem no banco, nem no app — está tudo como estava.
+     Não mexi em nada: nem no banco, nem na versão do app — está tudo como estava.
 ```
 
 (com o número da versão do dia). Está tudo certo: o comando volta a atualizar quando sair

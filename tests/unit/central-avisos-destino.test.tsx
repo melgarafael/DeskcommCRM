@@ -9,7 +9,7 @@ vi.mock("@/hooks/i18n/useLocaleDeData", () => ({ useLocaleDeData: () => undefine
 const mutate = vi.fn();
 const item: AgentInboxItem = { id: "aviso", kind: "handoff", severity: "warn", title: "Atendimento aguardando", body: null, ref_kind: "conversation", ref_id: "ref", status: "open", created_at: new Date().toISOString(), destination: { estado: "disponivel", href: "/app/inbox/ref", rotulo: "Abrir conversa" } };
 function dados(value = item) {
-  vi.mocked(useAgentInbox).mockReturnValue({ data: { items: [value], open_count: 1 }, isLoading: false } as ReturnType<typeof useAgentInbox>);
+  vi.mocked(useAgentInbox).mockReturnValue({ data: { items: [value], open_count: 1 }, isLoading: false, podeConsultar: true } as ReturnType<typeof useAgentInbox>);
 }
 beforeEach(() => { vi.clearAllMocks(); dados(); vi.mocked(useUpdateInboxItem).mockReturnValue({ mutate, isPending: false } as unknown as ReturnType<typeof useUpdateInboxItem>); vi.mocked(useResolveAllInboxItems).mockReturnValue({ mutate: vi.fn(), isPending: false } as unknown as ReturnType<typeof useResolveAllInboxItems>); });
 describe("Central: navegação separada da resolução", () => {
@@ -23,6 +23,11 @@ describe("Central: navegação separada da resolução", () => {
     // Sem resposta de sucesso, o item continua aberto: não há remoção otimista.
     expect(screen.getByText(item.title)).toBeVisible();
   });
+  it("o link do destino tem 44px de altura no celular", () => {
+    render(<AgentInboxList canResolve />);
+    // O size `sm` dá `h-11`, mas o `h-auto` do link o derruba; o piso volta só abaixo de md.
+    expect(screen.getByRole("link", { name: "Abrir conversa" }).className.split(/\s+/)).toContain("max-md:min-h-11");
+  });
   it("resolvido mantém contexto e reabertura independente", () => {
     dados({ ...item, status: "resolved" }); render(<AgentInboxList canResolve />);
     expect(screen.getByRole("link")).toBeVisible(); fireEvent.click(screen.getByRole("button", { name: "Reabrir" }));
@@ -35,7 +40,7 @@ describe("Central: navegação separada da resolução", () => {
   });
   it("falha inicial oferece nova tentativa e nunca afirma lista vazia", () => {
     const refetch = vi.fn();
-    vi.mocked(useAgentInbox).mockReturnValue({ data: undefined, isError: true, isLoading: false, refetch } as unknown as ReturnType<typeof useAgentInbox>);
+    vi.mocked(useAgentInbox).mockReturnValue({ data: undefined, isError: true, isLoading: false, refetch, podeConsultar: true } as unknown as ReturnType<typeof useAgentInbox>);
     render(<AgentInboxList canResolve />);
     expect(screen.getByRole("alert")).toHaveTextContent("Não foi possível carregar");
     expect(screen.queryByText("Nenhum aviso em aberto")).toBeNull();
@@ -43,7 +48,7 @@ describe("Central: navegação separada da resolução", () => {
     expect(refetch).toHaveBeenCalledOnce();
   });
   it("falha de refetch conserva itens carregados com aviso de desatualização", () => {
-    vi.mocked(useAgentInbox).mockReturnValue({ data: { items: [item], open_count: 1 }, isError: true, isLoading: false, refetch: vi.fn() } as unknown as ReturnType<typeof useAgentInbox>);
+    vi.mocked(useAgentInbox).mockReturnValue({ data: { items: [item], open_count: 1 }, isError: true, isLoading: false, refetch: vi.fn(), podeConsultar: true } as unknown as ReturnType<typeof useAgentInbox>);
     render(<AgentInboxList canResolve />);
     expect(screen.getByText(item.title)).toBeVisible();
     expect(screen.getByRole("alert")).toHaveTextContent("pode estar desatualizada");
@@ -57,7 +62,7 @@ describe("Central: navegação separada da resolução", () => {
     expect(screen.getByRole("button", { name: "Marcar resolvido" })).toBeEnabled();
   });
   it.each([401, 403])("refetch %i retira dados e ações autorizadas anteriormente", status => {
-    vi.mocked(useAgentInbox).mockReturnValue({ data: { items: [item], open_count: 1 }, isError: true, error: new ApiError(status, "forbidden", undefined, "req"), isLoading: false, refetch: vi.fn() } as unknown as ReturnType<typeof useAgentInbox>);
+    vi.mocked(useAgentInbox).mockReturnValue({ data: { items: [item], open_count: 1 }, isError: true, error: new ApiError(status, "forbidden", undefined, "req"), isLoading: false, refetch: vi.fn(), podeConsultar: true } as unknown as ReturnType<typeof useAgentInbox>);
     render(<AgentInboxList canResolve />);
     expect(screen.getByRole("alert")).toHaveTextContent("Seu acesso aos avisos não está disponível");
     expect(screen.queryByRole("link")).toBeNull();
@@ -65,7 +70,7 @@ describe("Central: navegação separada da resolução", () => {
     expect(screen.queryByRole("button", { name: "Marcar resolvido" })).toBeNull();
   });
   it("nova leitura bem-sucedida recupera lista e remove estado de falha", () => {
-    vi.mocked(useAgentInbox).mockReturnValue({ data: undefined, isError: true, isLoading: false, refetch: vi.fn() } as unknown as ReturnType<typeof useAgentInbox>);
+    vi.mocked(useAgentInbox).mockReturnValue({ data: undefined, isError: true, isLoading: false, refetch: vi.fn(), podeConsultar: true } as unknown as ReturnType<typeof useAgentInbox>);
     const view = render(<AgentInboxList canResolve />);
     expect(screen.getByRole("alert")).toBeVisible();
     dados(); view.rerender(<AgentInboxList canResolve />);

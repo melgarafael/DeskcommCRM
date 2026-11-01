@@ -1,4 +1,5 @@
 import type { Role } from "@/lib/auth/types";
+import { PAPEL_MINIMO_DA_CENTRAL } from "@/lib/ai/inbox-destino";
 import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 
@@ -316,26 +317,41 @@ export const NAV_CATALOG = [
     // Tarefas: quem atende confere ligações perdidas e transcrições no dia a
     // dia, não como revisão deliberada.
     //
-    // ─── SEM `sidebar`, e a razão não é gosto: a telefonia é MÓDULO OPCIONAL ───
+    // ─── MÓDULO OPCIONAL: só aparece com a telefonia ligada PARA A ORGANIZAÇÃO ─
     //
     // O dono decidiu (doc 27) que a telefonia por SIP entra desligada por
     // padrão — quem não liga não tem os contêineres, não tem tronco e não tem
-    // ligação nenhuma para ver. Pôr a porta no sidebar de TODA instalação
-    // custaria a todas elas um item que quase nenhuma usa, e o preço é medido:
-    // `tests/e2e/navegacao.spec.ts` exige que, em 900px, o menu caiba inteiro
-    // sem rolagem, e o vigésimo item o faz rolar.
+    // ligação nenhuma para ver.
     //
-    // O ideal seria mostrá-la SÓ para quem ligou o módulo, e isso hoje não é
-    // possível: "telefonia ligada" é um profile do docker compose (servidor),
-    // não um estado que o aplicativo conheça — o shell não consulta nada de
-    // telefonia, e os dois sinais de banco possíveis (linha em
-    // `voip_trunk_settings`, ou `phone_numbers` ativo) custariam uma consulta
-    // em todo render. Está desenhado na issue do `sidebarSe`.
+    // Até a #1290 este item aparecia para todo mundo e levava a uma tela vazia:
+    // o menu oferecia uma porta que não funcionava. Hoje ele declara
+    // `capacidade: "telefonia"` e o filtro de `permitidos()` o esconde de quem
+    // não tem o módulo em uso. A decisão sai de `capacidades_ligadas`, a MESMA
+    // lista que já governa Propostas — não há uma segunda régua para a
+    // telefonia: `lib/telefonia/em-uso.ts` responde "esta organização salvou o
+    // tronco?", e `capacidadesLigadas()` soma essa resposta à lista.
     //
-    // A porta NÃO sumiu: ela vive no hub do grupo CRM ("Ver tudo em CRM") e no
-    // ⌘K, que é o mesmo caminho das outras dez entradas de "organizacao".
-    // CONDIÇÃO QUE ENCERRA ESTA EXCEÇÃO: no dia em que o app souber que o
-    // módulo está ligado, o item volta ao sidebar para quem ligou.
+    // Por que o sinal é o tronco, e não o profile do compose: "telefonia
+    // ligada" na INSTALAÇÃO é `COMPOSE_PROFILES` no servidor, que o aplicativo
+    // não lê (`lib/recursos-opcionais/catalogo.ts`, `telefonia_sip`:
+    // `ler: () => "nao_verificado"`). O tronco é o primeiro estado que a
+    // organização produz e que o app enxerga; sem ele não há chamada possível.
+    // Efeito colateral aceito e declarado: instalação com o profile de pé e
+    // nenhum tronco salvo não mostra o item — a tela, vazia, não faria falta, e
+    // o tronco se cadastra em `/app/settings/voip-trunk`, não aqui.
+    //
+    // SEGUE FORA DO SIDEBAR, e isso é independente do filtro: o menu de 900px
+    // (`tests/e2e/navegacao.spec.ts:222`) cabe com 19 itens e rola com o
+    // vigésimo. A porta vive no hub do grupo CRM ("Ver tudo em CRM") e no ⌘K —
+    // os dois passam pela mesma projeção, então o item some dos dois quando a
+    // telefonia está desligada, e a navegação direta por URL continua
+    // respondendo como sempre (esconder do menu nunca foi autorização).
+    //
+    // ADMINISTRADOR DA INSTALAÇÃO não tem exceção aqui, e isso também é medição,
+    // não escolha nova: `permitidos()` aplica `modulo`/`capacidade` DEPOIS de
+    // `canSee()`, então platform admin já não vê porta de capacidade desligada
+    // hoje (ver `tests/unit/navegacao-registry.test.ts`). Bypass só existe para
+    // PAPEL (`canSee`), que é outra pergunta.
     href: "/app/calls",
     label: "Chamadas",
     description: "Histórico de ligações (voz por IA) com transcrição.",
@@ -343,6 +359,7 @@ export const NAV_CATALOG = [
     group: "crm",
     section: "O dia a dia da venda",
     minRole: "manager",
+    capacidade: "telefonia",
   },
   {
     // ⚠️ Esta tela nasceu porque a FERRAMENTA já existia sem ela. O agente de IA
@@ -414,6 +431,22 @@ export const NAV_CATALOG = [
     // tem hub, e se chega às telas dele por "Configurações". Eu tinha posto
     // `sidebar: true` e a cerca reprovou dizendo "a tela existe e não tem porta
     // na navegação" — a porta existia, era outra.
+  },
+  {
+    // O aviso de agendamento no WhatsApp do dono (migration 0753). Fica junto
+    // dos tipos de agendamento porque é configuração da agenda do NEGÓCIO, não
+    // do dia de quem atende. "Aviso de agendamento", nunca "Aviso no WhatsApp":
+    // esse já é o nome do aviso de CASO, e dois destinos com o mesmo rótulo na
+    // busca não dizem qual é qual.
+    href: "/app/agenda/avisos",
+    label: "Aviso de agendamento",
+    description: "Receber no WhatsApp cada horário marcado, remarcado ou cancelado, e o resumo das 7h.",
+    icon: "PaperPlaneTilt",
+    group: "organizacao",
+    section: "Sua empresa",
+    // `admin`: escolhe um número conectado e manda nome de cliente para um
+    // celular — o mesmo gate da rota e da RLS de `config_aviso_de_agendamento`.
+    minRole: "admin",
   },
   {
     href: "/app/settings/tenant/proposals",
@@ -650,6 +683,26 @@ export const NAV_CATALOG = [
     icon: "Flag",
     group: "ia",
     section: "Acompanhar o agente",
+    // ⚠️ ESTA ENTRADA NÃO TINHA PISO, E POR ISSO OFERECIA UMA PORTA FECHADA.
+    //
+    // Ela não decide só o item do menu: é DELA que
+    // `components/shell/AlertsBell.tsx` e `AvisoDePropostaEmDestaque.tsx` leem
+    // para se mostrar — os dois perguntam se `/app/ai/inbox` está entre os
+    // destinos da interface. Sem `minRole`, a resposta era "sim" para o
+    // `viewer`, e o sino aparecia para quem não alcança a Central. O contador,
+    // então, ficava em ZERO PARA SEMPRE: `useAgentInbox` só consulta quando o
+    // papel alcança a tela (`ai.inbox.view` = `agent`, em
+    // `hooks/auth/AuthProvider.tsx`), e as rotas de `/api/v1/ai/inbox` exigem
+    // `PAPEL_MINIMO_DA_CENTRAL` — recusam o `viewer`. Nada quebrava e nada
+    // avisava: a pessoa via um sino que nunca ia contar nada.
+    //
+    // A régua é a CONSTANTE, nunca o literal "agent": ela é o mesmo piso que
+    // `requireRole(PAPEL_MINIMO_DA_CENTRAL, …)` aplica nas três rotas da
+    // Central e o mesmo que `lib/notifications/push-dos-avisos.ts` usa para o
+    // push. Com o literal aqui, subir (ou descer) o piso da Central reabriria a
+    // porta em silêncio, para todo mundo, sem nenhum teste ficando vermelho.
+    // Quem guarda isso é `components/shell/sino-so-para-quem-alcanca-a-central.test.tsx`.
+    minRole: PAPEL_MINIMO_DA_CENTRAL,
   },
   {
     // "Aviso no WhatsApp", NUNCA "Avisos": a vizinha de cima chama-se "Alertas"
@@ -815,6 +868,32 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    // ── A porta do ALVO (#3025, fatia 1) ────────────────────────────────────
+    //
+    // Mora aqui, ao lado de Desempenho, porque é a metade que faltava da MESMA
+    // tela: lá se lê o progresso contra a meta, e sem esta porta o alvo não
+    // teria onde ser cadastrado — o painel novo diria "nenhuma meta" para
+    // sempre. O `group` é `organizacao` (é Configurações, como as vizinhas de
+    // /app/settings), e é ele — não a posição nesta lista — que a coloca no
+    // hub certo.
+    //
+    // SEM `sidebar`: definir o alvo é decisão de uma vez por mês, não uso
+    // diário. O painel de Desempenho é a porta que se usa todo dia, e é ele
+    // que linka para cá quando não há meta.
+    href: "/app/settings/metas",
+    label: "Meta de vendas",
+    description: "Quanto a empresa quer vender no mês, para o Desempenho medir o progresso.",
+    // `Gauge` (já exportado por lib/ui/icons.ts) e não um gráfico novo: aqui se
+    // AJUSTA o medidor, não se lê o resultado — os gráficos ficam para as telas
+    // de leitura, ao lado.
+    icon: "Gauge",
+    group: "organizacao",
+    section: "Sua empresa",
+    // `manager`, a MESMA régua da action: o alvo é o número pelo qual a
+    // empresa cobra o próprio time, e quem o define não é quem o persegue.
+    minRole: "manager",
+  },
+  {
     // Logo abaixo de Desempenho porque responde a metade da MESMA pergunta: lá
     // está o que aconteceu depois que a pessoa chegou; aqui, quanto custou
     // trazê-la. Ler as duas juntas é o que fecha a conta do custo por cliente.
@@ -887,6 +966,14 @@ export const NAV_CATALOG = [
     label: "Notificações",
     description: "Por onde e sobre o quê você quer ser avisado.",
     icon: "Bell",
+    group: "organizacao",
+    section: "Sua conta",
+  },
+  {
+    href: "/app/settings/aplicativo",
+    label: "App no celular",
+    description: "Instale o sistema na tela de início do celular e receba os avisos.",
+    icon: "DeviceMobile",
     group: "organizacao",
     section: "Sua conta",
   },
@@ -1113,6 +1200,29 @@ export const NAV_CATALOG = [
     // Módulo opcional da instalação, desligado por padrão (doc 37): a porta só
     // existe onde quem administra o servidor o ligou, em `/admin/sistema`.
     modulo: "banco_externo",
+  },
+  {
+    // A porta da ajuda dentro do produto (issue #3567, fatia F1). Fica por
+    // ÚLTIMO, e isso é a decisão e não a sobra: é o que se procura quando o
+    // resto não respondeu.
+    //
+    // `sidebar: true` porque o grupo `organizacao` é o RODAPÉ FIXO do menu: o
+    // `Sidebar` não desenha os itens deste grupo como lista (ele os hospeda no
+    // hub de Configurações) — o rodapé mostra o hub e o `VersionFooter`. É o
+    // `Sidebar` que lê este item pelo `href` para pôr "Ajuda" embaixo de
+    // Configurações, sem uma segunda lista para manter em sincronia.
+    //
+    // `section` própria porque as três vizinhas do grupo são "Sua conta",
+    // "Dados e acesso" e "Sua empresa" — nenhuma delas é ajuda, e chamar de
+    // configuração o que é socorro seria mentir na única tela em que a pessoa
+    // já está perdida.
+    href: "/app/ajuda",
+    label: "Ajuda",
+    description: "O caminho para cada tarefa, e onde ir quando algo não sai como esperado.",
+    icon: "BookOpen",
+    group: "organizacao",
+    section: "Ajuda",
+    sidebar: true,
   },
 ] as const satisfies readonly NavMetadata[];
 

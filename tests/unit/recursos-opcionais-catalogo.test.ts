@@ -63,6 +63,14 @@ describe("o catálogo de recursos opcionais não deixa recurso de fora", () => {
     expect(fora).toEqual([]);
   });
 
+  it("o aviso com a aba fechada diz que depende de https e manda atualizar sem --force (ADR-0006)", () => {
+    // O servidor detecta só o par VAPID; em http://IP o navegador não entrega push.
+    const push = RECURSOS_OPCIONAIS.find((r) => r.id === "web_push");
+    expect(push?.comoLigar).toMatch(/https/);
+    expect(push?.comoLigar).toContain("bash hostgator-setup-kit/update.sh");
+    expect(push?.comoLigar).not.toContain("--force");
+  });
+
   it("ids não se repetem", () => {
     const ids = RECURSOS_OPCIONAIS.map((r) => r.id);
     expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
@@ -81,7 +89,7 @@ describe("o catálogo de recursos opcionais não deixa recurso de fora", () => {
       href: "/app/ai/agents",
     });
     // `ler: varia` — o estado é por agente, não dá para ler "ligado" da empresa.
-    expect(linha!.ler?.({ modulos: [], settings: {}, servidor: {} })).toBe("varia");
+    expect(linha!.ler?.({ modulos: [], settings: {}, servidor: {}, telefonia: null })).toBe("varia");
     // O texto diferencia das duas chaves vizinhas, para ninguém ler as duas como
     // a mesma coisa (pedido do mantenedor na seção 6 do desenho).
     expect(linha!.oQueFaz).toContain("Ajustes de cada agente");
@@ -116,10 +124,10 @@ describe("o catálogo de recursos opcionais não deixa recurso de fora", () => {
 });
 
 describe("o estado nunca lança e nunca inventa 'desligado'", () => {
-  const vazio: FontesDeEstado = { modulos: [], settings: {}, servidor: {} };
+  const vazio: FontesDeEstado = { modulos: [], settings: {}, servidor: {}, telefonia: false };
 
   it("fonte que não respondeu vira 'não consegui ler', nunca 'desligado'", () => {
-    const semLeitura: FontesDeEstado = { modulos: null, settings: null, servidor: {} };
+    const semLeitura: FontesDeEstado = { modulos: null, settings: null, servidor: {}, telefonia: null };
     const conversa = RECURSOS_OPCIONAIS.find((r) => r.id === "conversa_fica_com_quem_atendeu")!;
     const email = RECURSOS_OPCIONAIS.find((r) => r.id === "email")!;
     const modulo = RECURSOS_OPCIONAIS.find((r) => r.id === "modulo:banco_externo")!;
@@ -133,6 +141,7 @@ describe("o estado nunca lança e nunca inventa 'desligado'", () => {
       modulos: [...MODULOS_OPCIONAIS],
       settings: { routing: "x", security: [1], crm: null, jev: 42, base_de_conhecimento: "google" },
       servidor: { email: true },
+      telefonia: null,
     };
     for (const r of RECURSOS_OPCIONAIS) expect(() => estadoDoRecurso(r, lixo)).not.toThrow();
   });
@@ -161,6 +170,21 @@ describe("o estado nunca lança e nunca inventa 'desligado'", () => {
     const chaveLigada = { proposals: { enabled: true } };
     expect(estadoDoRecurso(propostas, { ...vazio, settings: chaveLigada })).toBe("desligado");
     expect(estadoDoRecurso(propostas, { ...vazio, modulos: ["propostas"], settings: chaveLigada })).toBe("ligado");
+  });
+
+  it("telefonia da empresa (#1290): o sinal é o tronco, o mesmo que o menu lê", () => {
+    const telefonia = RECURSOS_OPCIONAIS.find((r) => r.id === "telefonia_da_empresa")!;
+    // Onde se liga: a tela que salva o tronco. Chamadas é a consequência, não a chave.
+    expect(telefonia).toMatchObject({
+      nivel: "organizacao",
+      quemDecide: "admin",
+      href: "/app/settings/voip-trunk",
+      capacidade: "telefonia",
+    });
+    expect(estadoDoRecurso(telefonia, { ...vazio, telefonia: true })).toBe("ligado");
+    expect(estadoDoRecurso(telefonia, { ...vazio, telefonia: false })).toBe("desligado");
+    // Não lido nunca vira "desligado" (falha aberta na informação).
+    expect(estadoDoRecurso(telefonia, { ...vazio, telefonia: null })).toBe("nao_lido");
   });
 });
 

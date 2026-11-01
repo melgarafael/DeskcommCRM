@@ -26,19 +26,29 @@ alter table public.campaigns
   add column if not exists provider_template_language text,
   add column if not exists provider_template_variables jsonb not null default '{}'::jsonb;
 
-alter table public.campaigns drop constraint if exists campaigns_message_mode_check;
-alter table public.campaigns
-  add constraint campaigns_message_mode_check check (message_mode in ('text', 'template'));
+-- A troca das duas restrições vai num bloco DO só: o `update.sh` reaplica o
+-- baseline sem ON_ERROR_STOP e em autocommit, e com `drop` e `add` soltos uma
+-- falha no `add` deixaria `campaigns` SEM a guarda. Dentro do bloco, ou as duas
+-- trocas valem, ou nada muda e a restrição de antes continua. Não há dado a
+-- corrigir antes: as colunas nascem aqui com default que cumpre as duas, e quem
+-- já tem as restrições só tem linhas que já as cumprem (CHECK validado).
+do $campanha_modelo$
+begin
+  alter table public.campaigns drop constraint if exists campaigns_message_mode_check;
+  alter table public.campaigns
+    add constraint campaigns_message_mode_check check (message_mode in ('text', 'template'));
 
--- Modelo sem nome ou sem idioma não sai: a plataforma identifica a definição
--- pelos DOIS (o mesmo nome em `es` e `es_AR` são modelos diferentes).
-alter table public.campaigns drop constraint if exists campaigns_modelo_exige_nome_e_idioma;
-alter table public.campaigns
-  add constraint campaigns_modelo_exige_nome_e_idioma check (
-    message_mode <> 'template'
-    or (coalesce(btrim(provider_template_name), '') <> ''
-        and coalesce(btrim(provider_template_language), '') <> '')
-  );
+  -- Modelo sem nome ou sem idioma não sai: a plataforma identifica a definição
+  -- pelos DOIS (o mesmo nome em `es` e `es_AR` são modelos diferentes).
+  alter table public.campaigns drop constraint if exists campaigns_modelo_exige_nome_e_idioma;
+  alter table public.campaigns
+    add constraint campaigns_modelo_exige_nome_e_idioma check (
+      message_mode <> 'template'
+      or (coalesce(btrim(provider_template_name), '') <> ''
+          and coalesce(btrim(provider_template_language), '') <> '')
+    );
+end
+$campanha_modelo$;
 
 comment on column public.campaigns.message_mode is
   'text = corpo livre em message_body (número por QR); template = modelo aprovado (número oficial). Migration 0710.';

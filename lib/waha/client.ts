@@ -9,6 +9,7 @@ import { z } from "zod";
 import { describeWahaServer, type WahaServerCapabilities } from "@/lib/channels/waha-server";
 
 import { logger } from "@/lib/logger";
+import { wahaPayloadSchema, type WahaPayload } from "@/lib/waha/envelope";
 import { classificarFalhaDeAlcance, explicarFalhaDeAlcance } from "@/lib/net/alcance";
 
 /**
@@ -239,6 +240,38 @@ const sessionSnapshotSchema = z.object({
 
 export type WahaSessionSnapshot = z.infer<typeof sessionSnapshotSchema>;
 type SessionOperation = "create" | "start" | "stop" | "logout" | "delete";
+
+/**
+ * Um contato do aparelho, como o `GET /api/contacts/all` devolve (doc do WAHA,
+ * seção "Get all contacts").
+ *
+ * `name` é o nome salvo na AGENDA do aparelho; `pushname` é o nome de perfil
+ * do WhatsApp. Os marcadores vêm como `null` quando o WAHA não os traz —
+ * mentir com `false` convidaria o chamador a tratar "não sei" como "não é".
+ */
+export interface ContatoDoAparelho {
+  id: string;
+  name: string | null;
+  pushname: string | null;
+  /** `true` = está salvo na agenda do aparelho. */
+  isMyContact: boolean | null;
+  /** `true` = o número tem WhatsApp. `false` = salvo na agenda, mas sem WhatsApp. */
+  isWAContact: boolean | null;
+  /** `true` = é o próprio número do operador. */
+  isMe: boolean | null;
+}
+
+/** Tolerante aos extras que o WAHA acrescenta; só o que usamos é tipado. */
+const contatoDoAparelhoSchema = z.object({
+  id: z.string(),
+  name: z.string().nullish(),
+  pushname: z.string().nullish(),
+  pushName: z.string().nullish(),
+  isMyContact: z.boolean().nullish(),
+  isWAContact: z.boolean().nullish(),
+  isMe: z.boolean().nullish(),
+}).passthrough();
+
 
 /** Mantém o prefixo/status que checkHealth e os callers já classificam. */
 export class WahaSessionError extends Error {
@@ -567,6 +600,166 @@ export class WahaClient {
   }
 
   /**
+   * Conversas do acervo, paginadas por offset. Medido no WAHA real (2026.7.2,
+   * NOWEB): o id vem como `id` (string) OU `id._serialized`, e a lista traz
+   * `@s.whatsapp.net`, `@lid`, `@g.us` e `status@broadcast`. Grupo e status
+   * ficam de fora: o importador só lê conversa 1:1.
+   */
+  async listarConversas(
+    session: string,
+    opts: { limit: number; offset: number },
+  ): Promise<Array<{ chatId: string; ultimaEm: number | null }>> {
+    const { conversas } = await this.paginaDeConversas(session, opts);
+    return conversas.map(({ chatId, ultimaEm }) => ({ chatId, ultimaEm }));
+  }
+
+  /**
+   * A mesma página de `listarConversas`, com o que o paginador precisa para
+   * não confundir "acabou" com "a página só tinha grupo": `lidas` é quantos
+   * itens o canal devolveu ANTES do corte de grupo/status, e `posicao` é o
+   * offset de cada conversa 1:1 na lista do canal (o cursor da importação).
+   *
+   * `sortBy=id&sortOrder=asc`: a ordem padrão é pela última mensagem, e uma
+   * mensagem nova move a conversa para o topo — o cursor por posição pularia
+   * uma conversa inteira. Por id, conversa nova só desloca as seguintes (uma
+   * repetida, que a deduplicação recusa), nunca some uma. NÃO medido no
+   * servidor real: um canal que ignore os parâmetros volta à ordem padrão.
+   *
+   * Resposta 200 que não é lista lança `waha_chats_invalido`: virar lista vazia
+   * faria o paginador concluir a importação no meio.
+   */
+  async paginaDeConversas(
+    session: string,
+    opts: { limit: number; offset: number },
+  ): Promise<{ conversas: Array<{ chatId: string; ultimaEm: number | null; posicao: number }>; lidas: number }> {
+    const qs = new URLSearchParams({
+      limit: String(opts.limit),
+      offset: String(opts.offset),
+      sortBy: "id",
+      sortOrder: "asc",
+    });
+    const res = await this.fetchComTeto(`${this.baseUrl}/api/${encodeURIComponent(session)}/chats?${qs}`, {
+      headers: { "X-Api-Key": this.apiKey },
+    });
+    if (!res.ok) throw new Error(`waha_chats_${res.status}`);
+    const bruto = (await res.json().catch(() => null)) as unknown;
+    if (!Array.isArray(bruto)) throw new Error("waha_chats_invalido");
+    const conversas: Array<{ chatId: string; ultimaEm: number | null; posicao: number }> = [];
+    bruto.forEach((item, i) => {
+      if (!item || typeof item !== "object") return;
+      const o = item as Record<string, unknown>;
+      const id = o.id;
+      const chatId =
+        typeof id === "string" ? id
+        : id && typeof id === "object" && typeof (id as Record<string, unknown>)._serialized === "string"
+          ? ((id as Record<string, unknown>)._serialized as string)
+          : null;
+      if (!chatId || chatId.endsWith("@g.us") || chatId === "status@broadcast") return;
+      const ultima = o.conversationTimestamp ?? (o.lastMessage as Record<string, unknown> | null | undefined)?.timestamp;
+      conversas.push({ chatId, ultimaEm: typeof ultima === "number" ? ultima : null, posicao: opts.offset + i });
+    });
+    return { conversas, lidas: bruto.length };
+  }
+
+  /**
+   * Mensagens de uma conversa, SEM mídia, do mais antigo para o mais novo.
+   * Medido no 2026.7.2: o servidor ordena por `sortBy`/`sortOrder` e já filtra
+   * por `filter.timestamp.gte` (epoch em segundos); o filtro local fica por
+   * defesa. Item que o schema recusa é descartado sem derrubar a lista.
+   */
+  async listarMensagens(
+    session: string,
+    chatId: string,
+    opts: { limit: number; offset: number; desde: number },
+  ): Promise<WahaPayload[]> {
+    return (await this.paginaDeMensagens(session, chatId, opts)).mensagens;
+  }
+
+  /**
+   * A mesma página de `listarMensagens`, com `lidas` = quantos itens o canal
+   * devolveu ANTES do schema e do filtro local. O paginador avança o offset por
+   * `lidas` e só dá a conversa por terminada com `lidas === 0`: avançar pelo
+   * limite pedido pularia mensagens quando o canal devolve menos que o pedido,
+   * e medir o fim pelo que sobrou do schema terminaria a conversa numa página
+   * inteira recusada.
+   */
+  async paginaDeMensagens(
+    session: string,
+    chatId: string,
+    opts: { limit: number; offset: number; desde: number },
+  ): Promise<{ mensagens: WahaPayload[]; lidas: number }> {
+    const qs = new URLSearchParams({
+      limit: String(opts.limit),
+      offset: String(opts.offset),
+      downloadMedia: "false",
+      sortBy: "timestamp",
+      sortOrder: "asc",
+      "filter.timestamp.gte": String(opts.desde),
+    });
+    const res = await this.fetchComTeto(
+      `${this.baseUrl}/api/${encodeURIComponent(session)}/chats/${encodeURIComponent(chatId)}/messages?${qs}`,
+      { headers: { "X-Api-Key": this.apiKey } },
+    );
+    if (!res.ok) throw new Error(`waha_messages_${res.status}`);
+    const bruto = (await res.json().catch(() => null)) as unknown;
+    // 200 que não é lista NÃO é conversa vazia: o paginador a daria por terminada.
+    if (!Array.isArray(bruto)) throw new Error("waha_messages_invalido");
+    const mensagens: WahaPayload[] = [];
+    for (const item of bruto) {
+      const p = wahaPayloadSchema.safeParse(item);
+      if (!p.success) continue;
+      if (typeof p.data.timestamp !== "number" || p.data.timestamp < opts.desde) continue;
+      mensagens.push(p.data);
+    }
+    return { mensagens, lidas: bruto.length };
+  }
+
+  /**
+   * Pede a mídia de UMA mensagem. `erro: true` quando o WhatsApp não guarda
+   * mais o arquivo (`media.error` na resposta); `url: null` sem `erro` quando
+   * a mensagem simplesmente não traz URL. `opts.tetoMs` troca o teto do
+   * cliente: o importador passa o que cabe no prazo da rodada.
+   *
+   * O teto do `AbortSignal` vale também para a LEITURA do corpo: estourar ali é
+   * `waha_timeout`, não "sem URL". Engolir esse estouro (o `.catch(() => null)`
+   * de antes) fazia o importador tratar a mídia como "não veio agora" e pedi-la
+   * de novo a cada página refeita, sem nunca contar tentativa.
+   */
+  async baixarMidiaDaMensagem(
+    session: string,
+    chatId: string,
+    messageId: string,
+    opts: { tetoMs?: number } = {},
+  ): Promise<{ url: string | null; erro: boolean }> {
+    const res = await this.fetchComTeto(
+      `${this.baseUrl}/api/${encodeURIComponent(session)}/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}?downloadMedia=true`,
+      { headers: { "X-Api-Key": this.apiKey } },
+      opts.tetoMs,
+    );
+    if (!res.ok) throw new Error(`waha_media_${res.status}`);
+    let texto: string;
+    try {
+      texto = await res.text();
+    } catch (e) {
+      const nome = e instanceof Error ? e.name : "";
+      if (nome === "TimeoutError" || nome === "AbortError") {
+        throw new Error(`waha_timeout: o WAHA não terminou de responder em ${opts.tetoMs ?? this.tetoMs}ms (mídia)`);
+      }
+      throw e;
+    }
+    let bruto: Record<string, unknown> | null = null;
+    try {
+      bruto = JSON.parse(texto) as Record<string, unknown> | null;
+    } catch {
+      bruto = null;
+    }
+    const media = bruto && typeof bruto.media === "object" ? (bruto.media as Record<string, unknown> | null) : null;
+    if (!media) return { url: null, erro: false };
+    if (media.error) return { url: null, erro: true };
+    return { url: typeof media.url === "string" && media.url ? media.url : null, erro: false };
+  }
+
+  /**
    * Liga ou desliga o recebimento de grupos NESTA sessão. Só devolve `true` quando o GET
    * seguinte confirma a troca: o WAHA já respondeu 200 para operação que não aconteceu
    * (medido na issue melgarafael/DeskcommCRM#1428).
@@ -722,13 +915,23 @@ export class WahaClient {
    * vazia e enche conforme as conversas acontecem. `null` aqui significa "ainda
    * não sei", não "não existe" — quem chama precisa poder tentar de novo depois
    * sem tratar isto como erro.
+   *
+   * `falhaLanca`: quem decide algo de segurança pela resposta (a trava de
+   * apagamento a pedido da importação do histórico) precisa separar "não sei"
+   * de "não consegui perguntar". Com ele, falha de transporte e 5xx lançam;
+   * 4xx e `pn` vazio seguem `null`.
    */
-  async resolvePhoneForLid(session: string, lid: string): Promise<string | null> {
+  async resolvePhoneForLid(
+    session: string,
+    lid: string,
+    opts: { falhaLanca?: boolean } = {},
+  ): Promise<string | null> {
     try {
       const res = await this.fetchComTeto(
         `${this.baseUrl}/api/${encodeURIComponent(session)}/lids/${encodeURIComponent(lid)}`,
         { headers: { "X-Api-Key": this.apiKey } },
       );
+      if (res.status >= 500 && opts.falhaLanca) throw new Error(`waha_lid_${res.status}`);
       if (!res.ok) return null;
       const body = (await res.json()) as { pn?: string | null };
       // `595981402525@c.us` → `+595981402525`. O sufixo é endereçamento do
@@ -737,7 +940,8 @@ export class WahaClient {
       if (!pn) return null;
       const digitos = String(pn).split("@")[0]?.replace(/\D/g, "") ?? "";
       return digitos.length >= 8 ? `+${digitos}` : null;
-    } catch {
+    } catch (err) {
+      if (opts.falhaLanca) throw err;
       return null;
     }
   }
@@ -899,6 +1103,70 @@ export class WahaClient {
       throw new Error(`waha_${res.status}`);
     }
     return res.json() as Promise<{ numberExists: boolean; chatId?: string | null; pn?: string | null }>;
+  }
+
+  /**
+   * Uma página da AGENDA do aparelho pareado (`GET /api/contacts/all`) — issue #2736.
+   *
+   * ─── O que este endpoint devolve, e por que ele é o caminho certo ──────────
+   *
+   * É a lista de contatos que o PRÓPRIO aparelho conhece: `id` (`<número>@c.us`),
+   * `name` (o nome salvo na AGENDA), `pushname` (o nome de perfil do WhatsApp)
+   * e os marcadores `isMyContact` (está salvo na agenda do aparelho),
+   * `isWAContact` (o número tem WhatsApp) e `isMe` (é o próprio operador).
+   * Ou seja: o filtro "quem está salvo no celular" já vem pronto de lá — o CRM
+   * não precisa adivinhar nada.
+   *
+   * ─── Paginação, e a ordenação que ela exige ────────────────────────────────
+   *
+   * `limit`/`offset` chegam na doc do WAHA como a saída para timeout em lista
+   * grande. Sem uma ordenação FIXA, porém, o offset é uma aposta: a lista pode
+   * voltar numa ordem que não é estável entre chamadas, e o salto pula ou
+   * repete contato sem erro nenhum. Por isso `sortBy=id&sortOrder=asc` vão
+   * junto em TODA chamada — é o que torna "página seguinte" uma pergunta com
+   * resposta.
+   *
+   * ─── O caso NOWEB sem store, que vem vazio e não é erro ────────────────────
+   *
+   * No NOWEB (o engine padrão do kit) este endpoint só enxerga o que o store
+   * da sessão guardou (`noweb.store.enabled` — a opção "Guardar histórico" da
+   * conexão). Sem ele a resposta é `[]`: lista vazia é um desfecho legítimo e
+   * quem chama decide o que comunicar; HTTP errado continua sendo exceção.
+   */
+  async listarAgendaDoAparelho(
+    session: string,
+    pagina: { limit: number; offset: number },
+  ): Promise<ContatoDoAparelho[]> {
+    const url = new URL(`${this.baseUrl}/api/contacts/all`);
+    url.searchParams.set("session", session);
+    url.searchParams.set("limit", String(pagina.limit));
+    url.searchParams.set("offset", String(pagina.offset));
+    url.searchParams.set("sortBy", "id");
+    url.searchParams.set("sortOrder", "asc");
+    const res = await this.fetchComTeto(url, {
+      headers: { "X-Api-Key": this.apiKey, Accept: "application/json" },
+    });
+    if (!res.ok) throw new Error(`waha_contacts_all_${res.status}`);
+    const bruto: unknown = await res.json().catch(() => null);
+    if (!Array.isArray(bruto)) return [];
+    const contatos: ContatoDoAparelho[] = [];
+    for (const item of bruto) {
+      const parsed = contatoDoAparelhoSchema.safeParse(item);
+      if (!parsed.success) continue;
+      const c = parsed.data;
+      contatos.push({
+        id: c.id,
+        name: c.name?.trim() || null,
+        // O doc do WAHA escreve `pushname` minúsculo; builds antigos devolvem
+        // `pushName`. As duas casas no schema custam um campo e evitam perder
+        // o nome inteiro por diferença de caixa.
+        pushname: (c.pushname ?? c.pushName)?.trim() || null,
+        isMyContact: c.isMyContact ?? null,
+        isWAContact: c.isWAContact ?? null,
+        isMe: c.isMe ?? null,
+      });
+    }
+    return contatos;
   }
 
   async sendContactVcard(

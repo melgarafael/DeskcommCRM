@@ -156,6 +156,76 @@ export type OpenCaseResult =
   | { ok: false; error: { code: string; message: string } };
 
 /**
+ * A FRASE AO CLIENTE quando o pedido novo cai num caso que JÁ está aberto (#3097).
+ *
+ * Ela existe porque a alternativa era a IA improvisar — e o que ela improvisava
+ * era "já registrei com a equipe"/"a equipe foi acionada", que é FALSO neste
+ * caminho. Medido no relato do defeito: `agent_noted` não gera `alert_sent` e
+ * não nasce linha em `entregas_de_aviso_de_caso` — a única superfície desta
+ * feature que avisa alguém. O cliente ficava esperando quem nunca foi chamado.
+ *
+ * A frase diz só o que é verdade em QUALQUER caso: o pedido foi anotado na
+ * conversa. Ela não afirma o registro no caso aberto, porque o agente só consegue
+ * registrar quando tem a ferramenta `crm_add_case_note`; sem ela, a frase ainda
+ * seria verdadeira. Também não promete aviso novo, prazo, nem que uma pessoa vai
+ * responder por causa dele.
+ */
+export const FRASE_AO_CLIENTE_EM_PEDIDO_SOBRE_CASO_ABERTO =
+  'anotei seu pedido aqui na nossa conversa; por enquanto não consigo te dar um prazo.';
+
+/**
+ * A RECUSA da guarda de caso aberto — com a instrução que impede a promessa.
+ *
+ * ## Por que INSTRUÇÃO, e não reenvio do aviso (issue #3097)
+ *
+ * O autor aceitava as duas saídas. O reenvio do aviso à equipe (opção a) esbarra
+ * no MESMO controle de repetição do aviso inicial — a `unique (organization_id,
+ * case_id, destino)` de `entregas_de_aviso_de_caso` (migration 0292, replicada
+ * aqui no `reivindicaEntrega` de `lib/escalacao/aviso-ao-suporte.ts`). Com a
+ * entrega do caso já `enviado`, o reenvio cai em `ja_resolvido:enviado`: nenhuma
+ * linha nasce e ninguém é avisado justamente no cenário do relato. Fazer o
+ * segundo pedido avisar exigiria OUTRA chave de entrega — coluna nova, decisão
+ * do mantenedor, e o próprio goal manda preferir a instrução nesse caso.
+ *
+ * ## O que a instrução faz
+ *
+ * Devolve ao agente a verdade do caminho (`ninguém foi avisado agora`), proíbe a
+ * promessa que o relato flagrou ("a equipe foi acionada", "já registrei para a
+ * equipe", prazo, "alguém vai responder") e entrega a frase que o cliente PODE
+ * ouvir — para a mensagem ao cliente mudar junto, sem depender de o modelo
+ * adivinhar o que é honesto dizer.
+ *
+ * O registro do pedido novo no caso aberto é o destino certo quando o agente tem
+ * a ferramenta `crm_add_case_note`: a nota entra na linha do tempo que quem
+ * continuar o caso vai ler. A recusa não traz o `case_id`, e a única ferramenta
+ * nativa que o recebe (`provide_case_update`, no caso `awaiting_lead`) trataria o
+ * pedido novo como a resposta que o caso esperava; por isso a instrução veta esse
+ * uso. O registro é condicional, e a frase ao cliente só afirma o registro se ele
+ * aconteceu. O que não pode é o cliente ouvir que alguém foi ACIONADO.
+ *
+ * Pura e exportada de propósito: é o texto exato que o modelo lê no resultado da
+ * tool `open_human_case` (o caminho `if (!res.ok) return res`), e é ele que o
+ * teste de `aviso-de-pedido-novo-no-caso.test.ts` prende.
+ */
+export function recusaDeCasoAberto(): OpenCaseResult {
+  return {
+    ok: false,
+    error: {
+      code: 'case_already_open',
+      message:
+        'já existe um caso humano aberto para esta conversa: a equipe NÃO foi avisada deste pedido novo, e ' +
+        'nada novo saiu para ninguém agora. NÃO diga ao cliente que a equipe foi acionada, avisada ou que o ' +
+        'pedido foi encaminhado, e não prometa prazo nem que alguém vai responder por causa dele. Se você ' +
+        'tiver a ferramenta crm_add_case_note, registre o pedido novo no caso aberto (a nota entra na linha do ' +
+        'tempo que quem continuar o caso vai ler). NÃO use provide_case_update para isso: ela é só para a ' +
+        'informação que o caso pediu ao cliente. Só diga ao cliente que o pedido ficou registrado no caso se ' +
+        'você registrou de fato. Responda ao cliente apenas neste espírito: ' +
+        `"${FRASE_AO_CLIENTE_EM_PEDIDO_SOBRE_CASO_ABERTO}" Aguarde a resposta do atendente antes de abrir outro caso.`,
+    },
+  };
+}
+
+/**
  * Abre o caso: INSERT agent_cases(status='awaiting_human') + INSERT
  * agent_case_events(kind='opened') em UM statement atômico. A guarda de dedup
  * (não abrir 2º caso pra mesma conversa) mora no `where not exists` do próprio
@@ -216,13 +286,10 @@ export async function openCase(
 
   const caseId = rows[0]?.case_id;
   if (caseId === undefined) {
-    return {
-      ok: false,
-      error: {
-        code: 'case_already_open',
-        message: 'já existe um caso humano aberto para esta conversa; aguarde a resposta do atendente antes de abrir outro.',
-      },
-    };
+    // A recusa é uma INSTRUÇÃO (não só um erro): é o texto que o modelo lê no
+    // resultado da tool, e é ele que impede a promessa de que a equipe foi
+    // acionada quando ninguém foi avisado (#3097).
+    return recusaDeCasoAberto();
   }
   return { ok: true, caseId };
 }
@@ -430,6 +497,69 @@ export async function encerrarChamadoPeloAgente(
   caseId: string,
   input: { desfecho: DesfechoDoChamado; nota: string },
 ): Promise<boolean> {
+  return encerrarChamadoComAutor(db, tenantId, caseId, {
+    ...input,
+    autor: { kind: 'agent' },
+  });
+}
+
+/**
+ * Quem assina o encerramento. `human` carrega o `auth.users.id`, porque a
+ * timeline do chamado tem de dizer QUAL pessoa decidiu — `agent` não tem autor
+ * humano (`actor_user_id` fica null, como sempre ficou).
+ *
+ * ⚠️ O valor do banco é `'human'`, não `'user'`: o CHECK de
+ * `agent_case_events.actor_kind` aceita `('agent','human','system','lead')`
+ * (supabase/baseline.sql:7887) e `fn_atrito_metrics` conta toque humano por
+ * `actor_kind='human'` (migration 0281). Escrever `'user'` daria `23514` num
+ * UPDATE que já teria fechado o caso — o pior desfecho possível, porque a
+ * transição viaja no mesmo statement da nota.
+ */
+type AutorDoEncerramento = { kind: 'agent' } | { kind: 'human'; userId: string };
+
+/**
+ * O encerramento com AUTOR explícito — a mecânica única dos dois caminhos
+ * (`crm_close_human_case` do agente e a porta da pessoa na rota API).
+ *
+ * Um statement por autor, e não um com o ator parametrizado: o caminho do
+ * agente grava DOIS eventos (a nota em `agent_noted`, que a tela rotula "A IA
+ * registrou o que aconteceu", e a transição), enquanto o da pessoa grava UM —
+ * o `cancelled` com a nota no corpo. `agent_noted` assinado por gente faria a
+ * timeline dizer que a IA agiu, e `human_replied` com `human_action` nulo
+ * (o CHECK de `human_action` só conhece resolved/need_lead_info/escalate)
+ * apareceria na tela como "Você respondeu" — mentira nos dois casos. A nota
+ * continua em `agent_case_events`, que é o que o próximo atendente lê.
+ */
+async function encerrarChamadoComAutor(
+  db: Queryable,
+  tenantId: string,
+  caseId: string,
+  input: { desfecho: DesfechoDoChamado; nota: string; autor: AutorDoEncerramento },
+): Promise<boolean> {
+  if (input.autor.kind === 'agent') {
+    const { rowCount } = await db.query(
+      `with updated as (
+         update agent_cases
+            set status = $3, closed_at = now(), updated_at = now()
+          where organization_id = $1 and id = $2 and status = any($6::text[])
+          returning id
+       )
+       insert into agent_case_events (organization_id, case_id, kind, actor_kind, body)
+       select $1::uuid, id, 'agent_noted', 'agent', $5::text from updated
+       union all
+       select $1::uuid, id, $4::text, 'agent', null::text from updated`,
+      [
+        tenantId,
+        caseId,
+        STATUS_DO_DESFECHO[input.desfecho],
+        EVENTO_DO_DESFECHO[input.desfecho],
+        input.nota,
+        OPEN_STATUSES,
+      ],
+    );
+    return transitioned(rowCount);
+  }
+
   const { rowCount } = await db.query(
     `with updated as (
        update agent_cases
@@ -437,10 +567,8 @@ export async function encerrarChamadoPeloAgente(
         where organization_id = $1 and id = $2 and status = any($6::text[])
         returning id
      )
-     insert into agent_case_events (organization_id, case_id, kind, actor_kind, body)
-     select $1::uuid, id, 'agent_noted', 'agent', $5::text from updated
-     union all
-     select $1::uuid, id, $4::text, 'agent', null::text from updated`,
+     insert into agent_case_events (organization_id, case_id, kind, actor_kind, actor_user_id, body)
+     select $1::uuid, id, $4::text, 'human', $7::uuid, $5::text from updated`,
     [
       tenantId,
       caseId,
@@ -448,9 +576,78 @@ export async function encerrarChamadoPeloAgente(
       EVENTO_DO_DESFECHO[input.desfecho],
       input.nota,
       OPEN_STATUSES,
+      input.autor.userId,
     ],
   );
   return transitioned(rowCount);
+}
+
+/**
+ * A PORTA DA PESSOA para o caso que a vida já resolveu (#3810).
+ *
+ * Até aqui o único caminho humano era `POST .../reply`, e as TRÊS ações dele
+ * mandam mensagem ao cliente: `resolved`/`need_lead_info` enfileiram
+ * `case_reply_turn` (a IA volta a falar) e `escalate` chama o handoff. Um caso
+ * que perdeu o objeto — o cliente comprou em outro lugar, o problema se
+ * resolveu sozinho — só podia ser fechado MENTINDO para o cliente, ou ficava
+ * imortal na fila de alguém.
+ *
+ * O desfecho certo já existia para o agente (`crm_close_human_case` com
+ * `outcome: 'sem_necessidade'` grava `cancelled` e não enfileira nada). Esta
+ * função é o MESMO caminho — a mesma `encerrarChamadoComAutor`, mudando só o
+ * ator — mais o que a pessoa espera que aconteça quando fecha um caso: os
+ * avisos do sino que apontam para ele deixam de existir.
+ *
+ * Não enfileira job, não faz handoff e não avisa o cliente de propósito: quem
+ * escolhe "encerrar sem avisar" está dizendo que o cliente NÃO precisa de
+ * mensagem. Qualquer efeito colateral aqui seria o defeito de volta.
+ *
+ * @returns false quando o caso não é da organização ou já não está aberto (a
+ * corrida com outro atendente é perdida sem efeito nenhum).
+ */
+export async function encerrarChamadoPelaPessoa(
+  db: Queryable,
+  tenantId: string,
+  caseId: string,
+  actorUserId: string,
+  nota: string,
+): Promise<boolean> {
+  const encerrado = await encerrarChamadoComAutor(db, tenantId, caseId, {
+    desfecho: 'sem_necessidade',
+    nota,
+    autor: { kind: 'human', userId: actorUserId },
+  });
+  if (!encerrado) return false;
+  await resolverAvisosDoCaso(db, tenantId, caseId);
+  return true;
+}
+
+/**
+ * Fecha os avisos do sino (`agent_inbox_items`) que apontam para o caso.
+ *
+ * O fechamento normal passa pelo barramento (`ai.case_closed` →
+ * `escalacao.caso-na-central`), que só resolve os itens `kind='other'` — e é
+ * assíncrono: entre fechar o caso e o dreno rodar, o sino segue cobrando uma
+ * decisão que já foi tomada. Os itens `case_stale` e
+ * `aviso_de_caso_nao_entregue`, que também nascem com `ref_kind='agent_case'`,
+ * nem passam por aquele consumidor. Aqui a pessoa vê o sino limpo no mesmo
+ * commit em que fechou o caso.
+ *
+ * Casa por `ref_id` (o id do caso), que é o que o issue pede, e não por
+ * `ref_kind`: o id é uuid de caso e nenhum outro aviso aponta para ele.
+ */
+export async function resolverAvisosDoCaso(
+  db: Queryable,
+  tenantId: string,
+  caseId: string,
+): Promise<number> {
+  const { rowCount } = await db.query(
+    `update agent_inbox_items
+        set status = 'resolved', resolved_at = now()
+      where organization_id = $1 and ref_id = $2 and status in ('open','ack')`,
+    [tenantId, caseId],
+  );
+  return rowCount ?? 0;
 }
 
 /** Resumo curto do caso para o inbox de escalação (mesmo espírito de buildHandoffSummary). */

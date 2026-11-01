@@ -6,6 +6,7 @@ import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { apiClient } from "@/lib/api/client";
 import { GATILHO_DE_DATA_DO_FUNIL } from "@/lib/automation/gatilho-de-data-do-funil";
 import { GATILHO_ETAPA_PARADA, GATILHO_SILENCIO } from "@/lib/automation/gatilhos-de-tempo";
+import { OPERADORES_SEM_VALOR } from "@/lib/automation/conditions";
 import type { DadosDaCaixa, ExtrasDaTela, TipoDeCaixa } from "@/lib/automation/desenho-da-regra";
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { cn } from "@/lib/utils";
@@ -15,10 +16,13 @@ import type { FollowupFlowPointerRow } from "@/hooks/followup/useFollowupFlows";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { usePipelineStages, usePipelines, useWebhookSources } from "@/hooks/webhooks/useWebhookSources";
 import type { PlanoDeTarefas } from "@/lib/tarefas/plano";
-import { CURATED_FIELDS, OP_LABELS, type Op } from "@/app/app/webhooks/_components/RuleEditor";
+import { CURATED_FIELDS, OP_LABELS, type CuratedField, type Op } from "@/app/app/webhooks/_components/RuleEditor";
+import { valorDaCondicaoNaTela } from "@/app/app/webhooks/_components/CondicaoDoContato";
+import { CONDICOES_DO_CONTATO } from "@/lib/automation/conditions";
 import { ACTION_LABELS, TRIGGER_LABELS, type ActionType, type TriggerEvent } from "@/app/app/webhooks/_components/labels";
 
 import { VISUAL_DAS_CONDICOES, VISUAL_DO_GATILHO, visualDaAcao } from "./visual";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 /**
  * O que o canvas põe em cada caixa: os dados da regra mais o que é só de tela —
@@ -42,18 +46,38 @@ function DescricaoDoMover({ config }: { config: Record<string, unknown> }) {
   return <>{`${funil.name} › ${etapa.name}`}</>;
 }
 
-function DescricaoDoAtendente({ config }: { config: Record<string, unknown> }) {
+// Exportada para o teste do modo novo (#3804): a frase da caixa é o que o
+// operador lê no editor, e é barato provar que ela não volta a "Escolha o atendente".
+export function DescricaoDoAtendente({ config }: { config: Record<string, unknown> }) {
   const t = useT();
   const { data: membros } = useAssignableMembers(true);
   const nomeDe = (userId: unknown) => {
     const membro = membros?.find((m) => m.user_id === userId);
-    return membro ? (membro.full_name ?? membro.user_id.slice(0, 8)) : null;
+    return membro ? rotuloDoMembro(membro, t) : null;
   };
   // #2041 — no rodízio, a caixa mostra a fila na ordem em vez de uma pessoa só.
   if (config.modo === "rodizio") {
     const fila = Array.isArray(config.fila) ? (config.fila as Array<{ user_id?: unknown }>) : [];
     const nomes = fila.map((p) => nomeDe(p.user_id)).filter((n): n is string => n !== null);
     return <>{nomes.length ? `${t("Rodízio")}: ${nomes.join(", ")}` : t("Escolha quem entra no rodízio")}</>;
+  }
+  // #3804 — no destino dinâmico a pessoa só é conhecida no disparo: a caixa diz
+  // QUEM decide e com quem a regra conta se ninguém do negócio puder receber.
+  if (config.modo === "destino") {
+    const destinos = Array.isArray(config.destinos) ? (config.destinos as unknown[]) : [];
+    const nomes = destinos
+      .map((d) => (d === "responsavel_do_negocio" ? t("Responsável do negócio") : d === "dono_da_carteira" ? t("Dono da carteira do contato") : null))
+      .filter((n): n is string => n !== null);
+    const fallback = config.fallback as { modo?: unknown; user_id?: unknown; fila?: unknown } | undefined;
+    const quemDoFallback =
+      fallback?.modo === "rodizio"
+        ? t("Rodízio")
+        : (nomeDe(fallback?.user_id) ?? t("Escolha o atendente"));
+    return (
+      <>
+        {`${nomes.length ? nomes.join(" · ") : t("Escolha pelo menos um destino")} — ${t("fallback")}: ${quemDoFallback}`}
+      </>
+    );
   }
   return <>{nomeDe(config.user_id) ?? t("Escolha o atendente")}</>;
 }
@@ -92,6 +116,19 @@ function DescricaoDoPlano({ config }: { config: Record<string, unknown> }) {
   return <>{plano ? plano.nome : t("Escolha o plano de tarefas")}</>;
 }
 
+/** #3727 — a data do comparecimento no campo escolhido: o RÓTULO, não a chave. */
+function DescricaoDaDataDoAtendimento({ config }: { config: Record<string, unknown> }) {
+  const t = useT();
+  const { data: funis } = usePipelines();
+  const funil = funis?.data?.find((p) => p.id === config.pipeline_id);
+  const campo = funil
+    ? camposDoFunil(funil.settings ?? null).find((c) => c.key === cfg(config, "campo"))
+    : undefined;
+  if (!funil) return <>{t("Escolha o funil e o campo de data")}</>;
+  if (!campo) return <>{t("Escolha o campo de data")}</>;
+  return <>{`${funil.name} › ${campo.label}`}</>;
+}
+
 function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string, unknown> }) {
   const t = useT();
   switch (tipo as ActionType) {
@@ -109,6 +146,14 @@ function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string
       const texto = cfg(config, "template").trim();
       return <>{texto ? `“${texto}”` : t("Escreva a mensagem")}</>;
     }
+    // O e-mail de saída não tinha caso: o cartão caía no `tipo` cru e dizia « send_email » em todo idioma.
+    case "send_email": {
+      const assunto = cfg(config, "assunto").trim();
+      return <>{assunto ? `“${assunto}”` : t("Escreva o e-mail")}</>;
+    }
+    // #2642 — mesmo defeito do e-mail: sem caso, o cartão dizia « notify_team » cru.
+    case "notify_team":
+      return <>{t("WhatsApp da equipe")}</>;
     case "add_tag": {
       const tags = Array.isArray(config.tags) ? (config.tags as unknown[]).map(String) : [];
       return <>{tags.length ? tags.join(", ") : t("Escreva pelo menos uma tag")}</>;
@@ -120,6 +165,9 @@ function DescricaoDaAcao({ tipo, config }: { tipo: string; config: Record<string
       const dias = typeof config.vence_em_dias === "number" ? config.vence_em_dias : 0;
       return <>{`${titulo} · ${dias ? `${t("vence em")} ${dias} ${dias === 1 ? t("dia") : t("dias")}` : t("vence hoje")}`}</>;
     }
+    // #3727 — sem caso, a caixa cairia no `tipo` cru (« set_lead_date_field »).
+    case "set_lead_date_field":
+      return <DescricaoDaDataDoAtendimento config={config} />;
   }
   return <>{tipo}</>;
 }
@@ -150,15 +198,34 @@ function DescricaoDasCondicoes({ dados, evento }: { dados: Extract<DadosDaCaixa,
   const { data: funis } = usePipelines();
   const padrao = funis?.data?.find((p) => p.is_default) ?? funis?.data?.[0] ?? null;
   const { data: quadro } = usePipelineStages(padrao?.id ?? null);
-  const completas = dados.linhas.filter((l) => l.field.trim() && l.value.trim());
+  // `is_empty`/`is_not_empty` não pedem valor: contá-los por `value.trim()`
+  // dizia "nenhuma condição completa" para uma caixa que TEM condição — e a
+  // caixa passava a prometer "roda em todo evento" para a regra que só dispara
+  // quando o campo está vazio (#2727).
+  const completas = dados.linhas.filter((l) => l.field.trim() && (OPERADORES_SEM_VALOR.has(l.op) || l.value.trim()));
+  // O grupo do topo não é desenhável: a caixa diz o que é, em vez de mentir.
+  if (dados.grupoPreservado) return <>{t("Grupo de condições que este desenho não edita")}</>;
   if (completas.length === 0) return <>{t("Nenhuma condição completa: roda em todo evento")}</>;
-  const campos = CURATED_FIELDS[evento as TriggerEvent] ?? [];
+  // As condições do contato (#3814) valem em qualquer gatilho: o rótulo delas
+  // não está na tabela por evento, e sem esta linha o cartão mostraria o
+  // caminho técnico (`contato.followup_vivo`) para o operador.
+  const campos: CuratedField[] = [
+    ...(CURATED_FIELDS[evento as TriggerEvent] ?? []),
+    ...CONDICOES_DO_CONTATO,
+  ];
   const primeira = completas[0]!;
   const campo = campos.find((c) => c.value === primeira.field);
   const op = t(campo?.lista && primeira.op === "contains" ? "tem a tag" : OP_LABELS[primeira.op as Op]);
   const valor =
-    campo?.kind === "stage" ? (quadro?.data?.stages.find((s) => s.id === primeira.value)?.name ?? primeira.value) : primeira.value;
-  const frase = `${campo ? t(campo.label) : primeira.field} ${op} “${valor}”`;
+    campo?.kind === "stage"
+      ? (quadro?.data?.stages.find((s) => s.id === primeira.value)?.name ?? primeira.value)
+      : campo?.kind === "sim_nao"
+        ? valorDaCondicaoNaTela(primeira.value, t)
+        : primeira.value;
+  // `esta vazio`/`esta preenchido` não pedem valor: a frase termina no operador,
+  // sem o trecho do valor — montá-lo dizia « Nome do lead está vazio “” » (#2727).
+  const alvo = `${campo ? t(campo.label) : primeira.field} ${op}`;
+  const frase = OPERADORES_SEM_VALOR.has(primeira.op) ? alvo : `${alvo} “${valor}”`;
   return <>{completas.length > 1 ? `${frase} (+${completas.length - 1})` : frase}</>;
 }
 

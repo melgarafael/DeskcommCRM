@@ -84,6 +84,7 @@ export function useInboundCallAlerts(): void {
         kind: "call_inbound",
         title: "Ligação recebida",
         body: name ? `${name} · ${fromNumber}` : fromNumber,
+        corpoSemPrevia: name ?? "",
         tag: callId,
         href: "/app/calls",
       });

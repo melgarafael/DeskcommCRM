@@ -13,7 +13,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * derrubava a página no error boundary em 100% dos casos.
  */
 
-vi.mock("@/lib/auth/requirePlatformAdmin", () => ({
+vi.mock("@/lib/auth/requirePlatformAdmin", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/requirePlatformAdmin")>()),
   requirePlatformAdmin: vi.fn(),
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));

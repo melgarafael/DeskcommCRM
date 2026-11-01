@@ -185,6 +185,41 @@
       "col": 8,
       "type": "service",
       "label": "PDF LGPD entregue: dados pessoais, controlador e DPO; sem marca ou autorização privada"
+    },
+    {
+      "id": "service-form",
+      "lane": "humano",
+      "col": 9,
+      "type": "service",
+      "label": "ConfiguracaoDoServico: programação, capacidade, profissionais, recursos e bloqueios"
+    },
+    {
+      "id": "service-conversation",
+      "lane": "humano",
+      "col": 10,
+      "type": "service",
+      "label": "ReservarServicoNaConversa e ReservasColetivas: pessoas e recibos separados"
+    },
+    {
+      "id": "service-writer",
+      "lane": "borda",
+      "col": 9,
+      "type": "service",
+      "label": "Handlers REST/MCP: ator atual, comando, grupo e transição autenticada"
+    },
+    {
+      "id": "service-inventory",
+      "lane": "banco",
+      "col": 9,
+      "type": "service",
+      "label": "fn_calendar_service_check/book: trava, ocorrências, participantes e destinos persistidos"
+    },
+    {
+      "id": "service-context",
+      "lane": "execucao",
+      "col": 9,
+      "type": "service",
+      "label": "Projeção factual local da reserva, sem integração com provedores de revisão"
     }
   ],
   "edges": [
@@ -421,6 +456,54 @@
       "from": "meet-export",
       "to": "meet-pdf",
       "label": "renderLgpdPdf → assinatura/entrega existente; arrays vazios compatíveis"
+    },
+    {
+      "id": "service-e1",
+      "from": "service-form",
+      "to": "service-writer",
+      "label": "configurar com gerente/revisão; bloquear com alcance"
+    },
+    {
+      "id": "service-e2",
+      "from": "service-conversation",
+      "to": "service-writer",
+      "label": "consultar/reservar grupo; gerir uma pessoa"
+    },
+    {
+      "id": "service-e3",
+      "from": "service-writer",
+      "to": "service-inventory",
+      "label": "revalidar escopo/execução/capacidade na transação"
+    },
+    {
+      "id": "service-e4",
+      "from": "service-inventory",
+      "to": "service-conversation",
+      "label": "reserva persistida e recusa explicativa"
+    },
+    {
+      "id": "service-e5",
+      "from": "service-inventory",
+      "to": "cron",
+      "label": "destino explícito; titular da conexão real"
+    },
+    {
+      "id": "service-e6",
+      "from": "cache",
+      "to": "service-inventory",
+      "label": "ocupação e cobertura das fontes pertinentes"
+    },
+    {
+      "id": "service-e7",
+      "from": "service-inventory",
+      "to": "service-context",
+      "label": "somente contato/conversa; consulta ≠ reserva ≠ Google"
+    },
+    {
+      "id": "service-e8",
+      "from": "service-context",
+      "to": "service-conversation",
+      "label": "fatos atuais no atendimento e na continuidade humana"
     }
   ]
 }

@@ -54,10 +54,7 @@ export type PlataformaDeAnuncio = "meta_ads" | "google_ads";
  * (0436) e `MetaEtapa:<uuid>` das da Meta (0524).
  */
 export type NomeDoEvento =
-  | "Purchase"
-  | "QualifiedLead"
-  | `Etapa:${string}`
-  | `MetaEtapa:${string}`;
+  "Purchase" | "LeadSubmitted" | "QualifiedLead" | `Etapa:${string}` | `MetaEtapa:${string}`;
 
 /**
  * Uma conversão pronta para sair — no formato da CASA, não no da plataforma.
@@ -67,10 +64,12 @@ export type NomeDoEvento =
  */
 export interface ConversaoOffline {
   organizationId: string;
-  leadId: string;
+  /** Nulo apenas no LeadSubmitted por clique quando nenhum card foi criado. */
+  leadId: string | null;
   evento: NomeDoEvento;
   /**
-   * Deduplicação, determinística: `<leadId>:<evento>`.
+   * Deduplicação determinística: por lead nos eventos antigos, por clique no
+   * LeadSubmitted causal. O transporte nunca deriva esta identidade.
    *
    * A plataforma descarta a segunda cópia com o mesmo par (id, evento). É a
    * SEGUNDA camada — a primeira é o índice único do livro-razão. Duas porque
@@ -90,6 +89,16 @@ export interface ConversaoOffline {
    * é só o telefone, e o transporte declara a origem de acordo.
    */
   cliqueDeOrigem: string;
+  /**
+   * A identidade do NAVEGADOR, quando o clique foi capturado na PÁGINA
+   * (formulário, #2317): o `fbc`/`fbp` que a landing page mandou. Só existe
+   * junto com `cliqueDeOrigem` vazio — é o outro lado da mesma troca: quem tem
+   * `ctwa_clid` não tem cookie de página, e quem tem cookie de página não veio
+   * de uma conversa. Quem lê `cliqueDeOrigem` para decidir a origem declarada
+   * não precisa olhar este campo; o transporte, sim, para montar o
+   * `user_data`.
+   */
+  identidadeDoNavegador?: { fbc: string | null; fbp: string | null };
   identificadoresGoogle?: IdentificadoresGoogle;
   /** E.164 sem `+`, ainda EM CLARO: o hash é responsabilidade do transporte. */
   telefone: string | null;

@@ -32,7 +32,7 @@ import { randomUUID } from "node:crypto";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { avisoVisivelPara } from "@/lib/ai/inbox-destino";
+import { avisoVisivelPara, PAPEL_MINIMO_DA_CENTRAL } from "@/lib/ai/inbox-destino";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -50,7 +50,7 @@ export async function POST(): Promise<Response> {
   // reabrir continua permitido, e a linha resolvida segue visível na aba
   // "Resolvidos". Subir para `manager` exigiria gatear o botão em `manager`
   // também — senão a tela oferece ao atendente o que a rota recusa.
-  const authz = await requireRole("agent", { requestId, resource: "agent_inbox_items" });
+  const authz = await requireRole(PAPEL_MINIMO_DA_CENTRAL, { requestId, resource: "agent_inbox_items" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org } = authz;

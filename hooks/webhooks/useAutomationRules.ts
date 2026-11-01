@@ -6,13 +6,14 @@ import type {
   CreateAutomationRuleInput,
   UpdateAutomationRuleInput,
 } from "@/lib/schemas/webhooks";
+import type { Conditions } from "@/lib/automation/conditions";
 
 export interface AutomationRuleRow {
   id: string;
   organization_id: string;
   name: string;
   trigger_event: string;
-  conditions: Array<{ field: string; op: "eq" | "neq" | "contains"; value: string }>;
+  conditions: Conditions;
   actions: Array<{ type: string; config: Record<string, unknown> }>;
   /**
    * O que o gatilho precisa saber além do nome (#989, migration 0268). Só o

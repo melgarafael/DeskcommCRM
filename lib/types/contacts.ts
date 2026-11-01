@@ -2,6 +2,26 @@
  * Domain types for Contacts (EPIC-05).
  * Mirror the verified `contacts` schema (see CLAUDE.md / Spec 05).
  */
+import type { ContactType } from "@/lib/schemas/contacts";
+
+/** Vocabulários da Spec 31 (migration 9043): o banco recusa outro valor. */
+export type TipoDeTelefone = "fixo" | "celular" | "outro";
+export type WhatsappDoTelefone = "sim" | "nao" | "nao_sei";
+export type OrigemDoTelefone = "manual" | "fusao" | "importacao" | "prospeccao" | "whatsapp";
+
+/**
+ * Um telefone extra da ficha, como a API o devolve (`GET /api/v1/contacts/{id}`).
+ * O `wa_lid` NÃO vai na API: é identificador interno do WhatsApp daquele número.
+ */
+export interface TelefoneExtra {
+  phone_number: string;
+  type: TipoDeTelefone;
+  whatsapp: WhatsappDoTelefone;
+  label: string | null;
+  origin: OrigemDoTelefone;
+  created_at: string;
+}
+
 export interface Contact {
   id: string;
   organization_id: string;
@@ -9,15 +29,38 @@ export interface Contact {
   display_name: string | null;
   /** Nome salvo na agenda do celular. SÓ A EQUIPE vê (`rotuloParaAEquipe`); nunca vai em mensagem. */
   address_book_name?: string | null;
+  // Endereço da pessoa física (issue 3494), espelhando `companies`.
+  zip_code?: string | null;
+  street?: string | null;
+  number?: string | null;
+  complement?: string | null;
+  district?: string | null;
+  city?: string | null;
+  state?: string | null;
   email: string | null;
   email_normalized: string | null;
   phone_number: string | null;
+  /**
+   * Spec 31 (B1): tipo e WhatsApp do número PRINCIPAL. Opcionais porque a
+   * resposta da API e o cache de telas antigas podem não trazer os campos.
+   */
+  phone_type?: TipoDeTelefone | null;
+  phone_whatsapp?: WhatsappDoTelefone | null;
+  /** Spec 31 (B1): os telefones extras da ficha, `[]` quando não há nenhum. */
+  additional_phones?: TelefoneExtra[];
   cpf_hash: string | null;
   birthdate: string | null;
   is_blocked: boolean;
   blocked_reason: string | null;
   /** Spec 21: vida pessoal — escondido da operação e inutilizado para envio. */
   is_personal: boolean;
+  /**
+   * Issue 3005: o papel do contato — `cliente` (default do banco) ou
+   * `fornecedor`. Separado de `is_personal` de propósito: fornecedor conversa
+   * normalmente e NÃO entra no predicado de stop do envio.
+   * Opcional: resposta em cache/legado pode não trazer o campo.
+   */
+  contact_type?: ContactType;
   /**
    * Issue 2379: marca PERMANENTE "sempre atendimento humano". A IA nunca
    * responde este contato e a devolução (manual ou automática) não a desfaz.

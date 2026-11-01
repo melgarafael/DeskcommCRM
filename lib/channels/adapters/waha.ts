@@ -251,6 +251,24 @@ export const wahaAdapter: ChannelAdapter = {
     }
   },
 
+  /**
+   * Uma PÁGINA da agenda do aparelho pareado (`GET /api/contacts/all`) — #2736.
+   *
+   * Só quem conversa com um aparelho de verdade tem esta lista do lado de lá,
+   * então só este adapter implementa o método: quem chama testa a presença
+   * dele em vez de perguntar QUAL provider é. A ordenação estável que faz o
+   * offset andar sem pular nem repetir, e a tolerância de formato, moram no
+   * método do cliente (`listarAgendaDoAparelho`), com o próprio contrato.
+   */
+  async listPhonebook(input: { sessionRef: string; limit: number; offset: number }) {
+    const client = getWahaClient();
+    if (!client) throw new Error("waha_not_configured");
+    return client.listarAgendaDoAparelho(input.sessionRef, {
+      limit: input.limit,
+      offset: input.offset,
+    });
+  },
+
   async listGroups(input: { sessionRef: string }) {
     const client = getWahaClient();
     if (!client) throw new Error("waha_not_configured");

@@ -77,6 +77,7 @@ mkdir -p "$WORK/bin"
 cat > "$WORK/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$DOCKER_LOG"
+case " $* " in *" up -d --no-deps app worker "*) printf 'pull_policy=%s/%s\n' "${APP_PULL_POLICY:-}" "${WORKER_PULL_POLICY:-}" >> "$DOCKER_LOG" ;; esac
 case " $* " in
   # Healthcheck do update.sh: "docker compose ... exec -T app node -e ...".
   # O dublê responde o que o app RESPONDE DE VERDADE — capturado da instalação
@@ -226,6 +227,11 @@ ENV
 chmod 600 "$PROJ/.env"
 
 cd "$PROJ" || exit 1
+# Como no repositório de verdade (`.gitignore`: `.env*`): o .env não é
+# versionado. Versionado, toda escrita do kit nele antes do checkout (o par
+# VAPID nasce antes da decisão de versão) virava "alteração local" e a
+# atualização recusava — um defeito do fixture, não do produto.
+printf '.env*\n' > .gitignore
 git init --quiet
 git add -A
 git commit --quiet -m "v0.9.0"
@@ -884,6 +890,37 @@ IMAGEM_EM_DIA=1 run_update --to v1.1.0
 check "sem aviso de pé: não mexe em contêiner nenhum" \
   bash -c "! grep -q 'rm -f deskcomm-manutencao' '$DOCKER_LOG'"
 check "  e não fala de aviso preso" bash -c "! grep -q 'aviso de manutenção preso' '$OUTFILE'"
+
+echo "── 14. O par VAPID nasce também quando não há versão nova (ADR-0006, D6)"
+# A tela de Notificações manda rodar a atualização SEM --force. Quem já está na
+# última versão sai pela saída "nada a atualizar", e quem segue a main sai pela
+# recusa de versão anterior: nos dois o par tem de nascer, e o app e o worker
+# têm de subir de novo para lê-lo do .env.
+sem_vapid() { { grep -v 'VAPID_' .env || true; } > .env.sem && mv .env.sem .env; }
+tamanho_da_publica() { sed -n 's/^VAPID_PUBLIC_KEY=//p' .env | tail -1 | tr -d "\"'" | awk '{print length}'; }
+cd "$PROJ" || exit 1
+sem_vapid; : > "$DOCKER_LOG"
+IMAGEM_EM_DIA=1 run_update --to v1.1.0
+check "\"nada a atualizar\" sai com sucesso" test "$RC" -eq 0
+check "  e cria o par no .env" test "$(tamanho_da_publica)" = 87
+check "  e sobe de novo o app e o worker para lerem o par" grep -q "up -d --no-deps app worker" "$DOCKER_LOG"
+check "  sem baixar imagem nova (pull_policy never no app e no worker)" grep -qx "pull_policy=never/never" "$DOCKER_LOG"
+check "  sem virar atualização (não rodou o backup)" test ! -f "$BACKUP_MARK"
+cp .env .env.com-par; : > "$DOCKER_LOG"
+IMAGEM_EM_DIA=1 run_update --to v1.1.0
+check "2ª passada: o par segue o mesmo" cmp -s .env .env.com-par
+check "  e não reinicia nada à toa" bash -c "! grep -q 'up -d --no-deps app worker' '$DOCKER_LOG'"
+rm -f .env.com-par
+sem_vapid; : > "$DOCKER_LOG"
+run_update --to v0.9.0
+check "recusa de versão anterior (quem segue a main) também cria o par" test "$(tamanho_da_publica)" = 87
+check "  e sobe de novo o app e o worker" grep -q "up -d --no-deps app worker" "$DOCKER_LOG"
+check "  sem baixar imagem nova, mesmo seguindo a main" grep -qx "pull_policy=never/never" "$DOCKER_LOG"
+check "  e a recusa diz que as chaves foram a única mudança" grep -q "Não mexi em nada além das chaves dos avisos" "$OUTFILE"
+: > "$DOCKER_LOG"
+run_update --to v0.9.0
+check "recusa com o par já presente: não reinicia nada" bash -c "! grep -q 'up -d --no-deps app worker' '$DOCKER_LOG'"
+check "  e diz só 'Não mexi em nada', sem citar as chaves" bash -c "grep -q 'Não mexi em nada: nem no banco' '$OUTFILE' && ! grep -q 'além das chaves' '$OUTFILE'"
 
 if [ "$FAILS" -eq 0 ]; then echo "OK — todas as provas passaram."; else echo "FALHOU — $FAILS prova(s)."; fi
 exit $((FAILS > 0))

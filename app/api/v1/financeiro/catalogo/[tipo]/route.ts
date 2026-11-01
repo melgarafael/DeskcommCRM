@@ -18,6 +18,7 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import {
   COLUNAS_POR_ENTIDADE,
   ENTIDADES_DO_CATALOGO,
@@ -25,6 +26,7 @@ import {
   SCHEMA_POR_ENTIDADE,
   ehEntidadeDoCatalogo,
   lerAlteracao,
+  temColunaDeMoeda,
 } from "@/lib/financeiro/catalogo";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -102,9 +104,24 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   }
 
   const supabase = await createClient();
+
+  // ─── A MOEDA É DA ORGANIZAÇÃO, NUNCA DO CORPO (#3379) ──────────────────
+  //
+  // `financial_accounts.currency` e `recurring_entries.currency` têm
+  // `default 'BRL'` no banco, e nenhum dos dois schemas declara o campo: sem
+  // esta linha a conta e o molde de uma organização em dólar nasciam em real —
+  // e o cron da recorrência copiava essa moeda para cada lançamento do mês, para
+  // sempre. O leitor é o mesmo do cadastro de produto (`moedaDaOrganizacao`),
+  // porque são a mesma pergunta: qual é a moeda desta organização.
+  const linha: Record<string, unknown> = {
+    ...lido.data,
+    organization_id: authz.org.orgId,
+  };
+  if (temColunaDeMoeda(e.tipo)) linha.currency = await moedaDaOrganizacao(supabase, authz.org.orgId);
+
   const { data, error } = await supabase
     .from(e.tabela)
-    .insert({ ...lido.data, organization_id: authz.org.orgId })
+    .insert(linha)
     .select(COLUNAS_POR_ENTIDADE[e.tipo])
     .single();
 

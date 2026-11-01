@@ -31,6 +31,11 @@ vi.mock("@/lib/atendimento/origem", () => ({
   beginServiceAtOrigin: m.fronteira,
   assertServiceBoundarySupabase: vi.fn(),
 }));
+// A ação `add_tag` (a que o motor executa de verdade no #3072) consulta a origem
+// do atendimento; sem o mock a chamada escapa para o banco.
+vi.mock("@/lib/atendimento/origem-automacao", () => ({
+  originFromAutomationEvent: vi.fn(async () => null),
+}));
 
 import { campaignConfigSchema } from "@/lib/prospecting/schema";
 import {
@@ -40,6 +45,12 @@ import {
   triarCandidato,
   type Candidate,
 } from "@/lib/prospecting/store";
+// O CARIMBO do pedido da prospecção — a definição única do prefixo (#3072).
+import { pedidoDaProspeccao } from "@/lib/prospecting/pedido-da-prospeccao";
+import { AUTOMATION_CONSUMER_KEY, runAutomationForEvent } from "@/lib/automation/engine";
+import type { EventRow } from "@/lib/event-log/dispatcher";
+import type { HandlerCtx } from "@/lib/api/handlers/types";
+import "@/lib/automation/actions/add-tag";
 
 const ORG = "0b110000-0000-4000-8000-000000000001";
 const CAMPANHA = "0b110000-1111-4000-8000-000000000001";
@@ -275,6 +286,59 @@ describe("criarPegadaDoCandidato", () => {
     expect(m.negocio).not.toHaveBeenCalled();
     expect(m.fronteira).toHaveBeenCalledTimes(1);
   });
+
+  // Spec 26 §3.2: o contato NOVO nasce com os links que a busca achou, nas chaves certas.
+  // O website do Instagram cai em `link_instagram` (e não em `link_site`).
+  it("contato novo nasce com os links do candidato nas chaves link_<tipo> (spec 26)", async () => {
+    const { db } = bancoFalso();
+    await criarPegadaDoCandidato(
+      db,
+      {} as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, {
+        data: {
+          name: "Clínica 1",
+          key: "place-1",
+          maps_url: "https://maps.app.goo.gl/clinica1",
+          socials: ["https://www.facebook.com/clinica1"],
+          website: "https://www.instagram.com/clinica1/",
+        },
+      }),
+      null,
+    );
+    expect(m.contato.mock.calls[0]?.[2].custom_fields).toEqual({
+      link_facebook: "https://www.facebook.com/clinica1",
+      link_instagram: "https://www.instagram.com/clinica1/",
+      link_google_meu_negocio: "https://maps.app.goo.gl/clinica1",
+    });
+  });
+
+  // Spec 26 §3.2/§7.1: contato REAPROVEITADO não é tocado na abordagem. Não recria o contato
+  // e não recebe update de links; ficha que já existe só se completa pelo botão.
+  it("contato reaproveitado: não recria o contato e não recebe update de links na abordagem (spec 26 §7.1)", async () => {
+    const { db, chamadas } = bancoFalso();
+    await criarPegadaDoCandidato(
+      db,
+      {} as never,
+      ORG,
+      campanha,
+      configOnSend,
+      candidato(1, {
+        data: {
+          name: "Clínica 1",
+          key: "place-1",
+          maps_url: null,
+          socials: [],
+          website: "https://www.clinica1.com.br/",
+        },
+      }),
+      CONTATO,
+    );
+    expect(m.contato).not.toHaveBeenCalled();
+    expect(chamadas.some((c) => c.sql.includes("update public.contacts"))).toBe(false);
+  });
 });
 
 describe("prepararCandidatoNoEnvio: a preparação na vez da empresa", () => {
@@ -376,5 +440,210 @@ describe("prepararCandidatoNoEnvio: os casos de borda que o revisor cego apontou
     const falhou = chamadas.find((c) => c.sql.includes("set status='failed'"));
     expect(falhou?.sql).toContain("and status='queued'");
     expect(String(falhou?.params[2])).toContain("nome curto demais");
+  });
+});
+
+/**
+ * ═══ O NEGÓCIO QUE A CAMPANHA ABRE: A REGRA DE `lead.created` RODA (#3072) ═══
+ *
+ * O defeito medido: a Prospecção abria o negócio carimbando `rule:<id da campanha>`
+ * no `HandlerCtx` (`lib/prospecting/store.ts`), o `createLeadHandler` propagava isso
+ * para `metadata.request_id` do `lead.created`, e o motor — que lê esse prefixo como
+ * marca de LAÇO DE REGRA (`lib/automation/engine.ts`) — pulava o evento com
+ * `detail: "caused_by_rule"`. Nenhuma regra de "negócio criado" rodava para a empresa
+ * abordada: a etiqueta de separação do lead frio, o roteamento e a exclusão de
+ * follow-up nunca aconteciam.
+ *
+ * Aqui a cadeia é a de produção, com UMA exceção (o PostgREST/banco): o
+ * `criarPegadaDoCandidato` REAL monta o ctx do negócio, o `createLeadHandler` (mock
+ * do módulo já existente neste arquivo) é quem recebe o ctx — o que se captura dele é
+ * exatamente o `requestId` que ele grava em `metadata.request_id` no `emit_event`
+ * (`app/api/v1/leads/_handler.ts`) —, e o evento montado com esse metadata entra no
+ * `runAutomationForEvent` REAL, com uma regra `lead.created` ativa e a ação `add_tag`
+ * de verdade. O que prova que a ação rodou NÃO é um mock dela: é a linha gravada em
+ * `automation_rule_runs`, o `run_count` da regra e o `emit_event` do `lead.tag_added`.
+ *
+ * Os dois CONTROLES ficam no mesmo lugar de propósito: a correção não pode abrir a
+ * porta do laço regra→regra (profundidade 1 — `.specs/features/crm-automacao-fluxos/spec.md`).
+ */
+type Chamada = { table: string; data: Record<string, unknown> };
+function adminDoMotor(opcoes: { regras: unknown[]; negocio: Record<string, unknown> | null }) {
+  const registro: { inserts: Chamada[]; updates: Chamada[]; rpcs: { fn: string; args: Record<string, unknown> }[] } = {
+    inserts: [],
+    updates: [],
+    rpcs: [],
+  };
+
+  const listar = (table: string, mode: string, data: Record<string, unknown> | null) => {
+    if (table === "automation_rules" && mode === "select") return { data: opcoes.regras, error: null };
+    if (mode === "insert") {
+      registro.inserts.push({ table, data: data ?? {} });
+      return { error: null };
+    }
+    if (mode === "update") {
+      registro.updates.push({ table, data: data ?? {} });
+      return { error: null };
+    }
+    return { data: [], error: null };
+  };
+
+  const unico = (table: string, mode: string, data: Record<string, unknown> | null) => {
+    if (table === "automation_rule_runs" && mode === "insert") {
+      registro.inserts.push({ table, data: data ?? {} });
+      return { data: { id: "run-1" }, error: null };
+    }
+    if (table === "automation_rules" && mode === "select") return { data: { run_count: 0 }, error: null };
+    if (table === "crm_leads" && mode === "select") return { data: opcoes.negocio, error: null };
+    return { data: null, error: null };
+  };
+
+  const admin = {
+    from(table: string) {
+      let mode: "select" | "insert" | "update" = "select";
+      let payload: Record<string, unknown> | null = null;
+      const builder: Record<string, unknown> = {};
+      builder.select = () => builder;
+      builder.insert = (d: Record<string, unknown>) => {
+        mode = "insert";
+        payload = d;
+        return builder;
+      };
+      builder.update = (d: Record<string, unknown>) => {
+        mode = "update";
+        payload = d;
+        return builder;
+      };
+      builder.eq = () => builder;
+      builder.order = () => builder;
+      builder.maybeSingle = async () => unico(table, mode, payload);
+      builder.then = (onF: (v: unknown) => unknown, onR: (e: unknown) => unknown) =>
+        Promise.resolve(listar(table, mode, payload)).then(onF, onR);
+      return builder;
+    },
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      registro.rpcs.push({ fn, args });
+      // A junção de etiquetas acontece na função SQL (migration 0682): o que o
+      // `RETURNING` devolveria é o que a ação usa para saber se houve escrita.
+      if (fn === "fn_lead_adicionar_etiquetas") {
+        const antes = (opcoes.negocio?.tags as string[] | undefined) ?? [];
+        const adicionadas = [...new Set(args.p_etiquetas as string[])].filter((t) => !antes.includes(t));
+        return { data: { tags: [...antes, ...adicionadas], adicionadas }, error: null };
+      }
+      return { data: null, error: null };
+    },
+  } as never;
+
+  return { admin, ...registro };
+}
+
+describe("o negócio que a campanha abre: a regra de `lead.created` RODA (#3072)", () => {
+  const REGRA = "0b110000-6666-4000-8000-000000000001";
+  const REGRA_SEPARACAO = {
+    id: REGRA,
+    name: "Separação do lead frio",
+    conditions: [],
+    actions: [{ type: "add_tag", config: { tags: ["lead-frio"] } }],
+    trigger_config: null,
+  };
+
+  /** O `EventRow` como o `event_log` grava o `lead.created` do negócio da campanha. */
+  const eventoDoNegocio = (metadata: Record<string, unknown>): EventRow => ({
+    id: "0b110000-7777-4000-8000-000000000001",
+    organization_id: ORG,
+    event_type: "lead.created",
+    entity_kind: "crm_lead",
+    entity_id: NEGOCIO,
+    payload: { pipeline_id: uuid(3), stage_id: uuid(4), title: "Clínica 1" },
+    metadata,
+    consumed_by: [],
+    attempts: 0,
+  });
+
+  it("caminho real: o carimbo da Prospecção chega ao motor e a regra roda com o efeito gravado", async () => {
+    const { db } = bancoFalso();
+    await criarPegadaDoCandidato(db, {} as never, ORG, campanha, configOnSend, candidato(1), null);
+
+    // O que o `emit_event` do cadastro de negócio grava em `metadata`: o
+    // `request_id` é o do ctx que a Prospecção montou, e o ator é a campanha.
+    const ctxDoNegocio = m.negocio.mock.calls[0]?.[1] as HandlerCtx;
+    const metadata = {
+      request_id: ctxDoNegocio.requestId,
+      actor_type: ctxDoNegocio.actor.type,
+      actor_id: ctxDoNegocio.actor.id,
+    };
+    expect(metadata.actor_type).toBe("webhook_source");
+    expect(metadata.actor_id).toBe(CAMPANHA);
+
+    const motor = adminDoMotor({
+      regras: [REGRA_SEPARACAO],
+      negocio: { id: NEGOCIO, contact_id: CONTATO, pipeline_id: uuid(3), tags: [] },
+    });
+    const resultado = await runAutomationForEvent(motor.admin, eventoDoNegocio(metadata));
+
+    // ⚠️ A asserção que morre se o defeito voltar: antes da correção este evento
+    // saía `{ status: "skipped", detail: "caused_by_rule" }` — a regra de
+    // "negócio criado" era pulada para TODO negócio aberto pela campanha.
+    expect(resultado.detail).not.toBe("caused_by_rule");
+    expect(resultado).toEqual({ consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok" });
+
+    // O carimbo é o da PROSPECÇÃO — nunca o `rule:` que o motor reserva à regra.
+    expect(metadata.request_id).toBe(pedidoDaProspeccao(CAMPANHA));
+    expect(String(metadata.request_id).startsWith("rule:")).toBe(false);
+
+    // O EFEITO: a etiqueta foi somada no negócio...
+    const juncao = motor.rpcs.find((r) => r.fn === "fn_lead_adicionar_etiquetas");
+    expect(juncao?.args).toMatchObject({ p_lead: NEGOCIO, p_etiquetas: ["lead-frio"] });
+    // ...o `lead.tag_added` foi anunciado com o anti-laço da REGRA...
+    const anuncio = motor.rpcs.find((r) => r.fn === "emit_event");
+    expect(anuncio?.args).toMatchObject({
+      p_event_type: "lead.tag_added",
+      p_metadata: { caused_by_rule: REGRA },
+    });
+    // ...a execução ficou registrada e o `run_count` da regra subiu.
+    expect(motor.inserts).toContainEqual({
+      table: "automation_rule_runs",
+      data: expect.objectContaining({ rule_id: REGRA, status: "success" }),
+    });
+    expect(motor.updates).toContainEqual({
+      table: "automation_rules",
+      data: expect.objectContaining({ run_count: 1 }),
+    });
+  });
+
+  it("CONTROLE: `metadata.caused_by_rule` continua pulando (o anti-laço segue de pé)", async () => {
+    const motor = adminDoMotor({
+      regras: [REGRA_SEPARACAO],
+      negocio: { id: NEGOCIO, contact_id: CONTATO, pipeline_id: uuid(3), tags: [] },
+    });
+    const resultado = await runAutomationForEvent(
+      motor.admin,
+      eventoDoNegocio({ request_id: pedidoDaProspeccao(CAMPANHA), caused_by_rule: REGRA }),
+    );
+
+    expect(resultado).toEqual({
+      consumer_key: AUTOMATION_CONSUMER_KEY,
+      status: "skipped",
+      detail: "caused_by_rule",
+    });
+    expect(motor.rpcs, "evento pulado não grava NADA").toHaveLength(0);
+    expect(motor.inserts).toHaveLength(0);
+  });
+
+  it("CONTROLE: `request_id` = `rule:<uuid da REGRA>` continua pulando — cadeia regra→regra segue fora (spec:70)", async () => {
+    const motor = adminDoMotor({
+      regras: [REGRA_SEPARACAO],
+      negocio: { id: NEGOCIO, contact_id: CONTATO, pipeline_id: uuid(3), tags: [] },
+    });
+    // O carimbo EXATO que a ação de regra escreve (`create-or-move-lead.ts`,
+    // `send-ai-message.ts`, `send-whatsapp.ts`): `rule:<uuid da regra>`.
+    const resultado = await runAutomationForEvent(motor.admin, eventoDoNegocio({ request_id: `rule:${REGRA}` }));
+
+    expect(resultado).toEqual({
+      consumer_key: AUTOMATION_CONSUMER_KEY,
+      status: "skipped",
+      detail: "caused_by_rule",
+    });
+    expect(motor.rpcs).toHaveLength(0);
+    expect(motor.inserts).toHaveLength(0);
   });
 });

@@ -114,6 +114,22 @@ describe("rodarEmRajada", () => {
     expect(r.detalhe).toMatch(/fora_de_andamento$/);
   });
 
+  it("devolve todos os números por onde falou, cada um uma vez (#3112)", async () => {
+    const c = cenario({
+      pendentes: 9,
+      desfecho: (id) => ({
+        enviadas: 1,
+        pulados: 0,
+        concluidas: 0,
+        detalhe: "enviado:sent:rodizio",
+        numero: id % 3 === 0 ? "vinculado" : "principal",
+      }),
+    });
+    const r = await rodarEmRajada(c.dep, CONFIG);
+    expect(r.enviadas).toBe(9);
+    expect([...r.numeros].sort()).toEqual(["principal", "vinculado"]);
+  });
+
   it("pulados (bloqueado, exclusão) não param a rajada", async () => {
     const c = cenario({
       pendentes: 30,

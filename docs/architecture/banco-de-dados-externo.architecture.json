@@ -31,7 +31,9 @@
     "drivers",
     "dialeto",
     "apiLeitura",
-    "telaExplorador"
+    "telaExplorador",
+    "apiReceitas",
+    "toolReceita"
   ],
   "nodes": [
     {
@@ -201,6 +203,78 @@
       "sublabel": "aplicam redigirParaAuditoria (tira os valores de filtro) e motivoDoVazio (erro não é sucesso)",
       "type": "lib",
       "dot": "amber"
+    },
+    {
+      "id": "receitasColuna",
+      "lane": "dados",
+      "label": "receitas (jsonb) em external_db_connections",
+      "sublabel": "migration 0693 · instâncias de receita por org · RLS herda da tabela · fora do _safe",
+      "type": "table",
+      "dot": "sky"
+    },
+    {
+      "id": "receitasCount",
+      "lane": "dados",
+      "label": "receitas_count na view _safe",
+      "sublabel": "jsonb_array_length(receitas) · última coluna da view · contagem só",
+      "type": "table",
+      "dot": "sky"
+    },
+    {
+      "id": "instanciaReceita",
+      "lane": "nucleo",
+      "label": "receitas/*.ts",
+      "sublabel": "DefinicaoDeReceita, registro, validador, instancias (Zod central) · tabelas e colunas saem dos FIXOS (a receita só pede as tabelas de categoria quando há categoria mapeada)",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "precoReceita",
+      "lane": "nucleo",
+      "label": "preco.ts",
+      "sublabel": "converte preço de texto (650.000,00 / 650,000.00 / 480000) em número no SQL da receita · sem preço vira NULL, nunca 0",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "taxonomiaReceita",
+      "lane": "nucleo",
+      "label": "taxonomia.ts",
+      "sublabel": "as 3 tabelas de categoria do WordPress (terms, term_taxonomy, term_relationships) · saída por group_concat (post com 2 termos sai 1 vez) · filtro por exists · nível filho/raiz",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "modelosReceita",
+      "lane": "nucleo",
+      "label": "modelos-wordpress.ts",
+      "sublabel": "o MODELO \"Imóveis\" e o \"Em branco\" · só configuração que pré-preenche a tela · o nicho NÃO mora na receita",
+      "type": "lib",
+      "dot": "blue"
+    },
+    {
+      "id": "errosReceita",
+      "lane": "nucleo",
+      "label": "erros.ts",
+      "sublabel": "ErroDeFiltroDesconhecido · filtro que a instância não tem é ERRO legível, nunca silêncio (devolver a lista inteira mentiria sobre o filtro)",
+      "type": "lib",
+      "dot": "red"
+    },
+    {
+      "id": "toolReceita",
+      "lane": "agente",
+      "label": "crm_consultar_receita",
+      "sublabel": "listar/executar instâncias · organização do ctx · modulo banco_externo · rastro sem valores",
+      "type": "lib",
+      "dot": "amber"
+    },
+    {
+      "id": "apiReceitas",
+      "lane": "api",
+      "label": "PUT/POST connections/[id]/recipes",
+      "sublabel": "grava instâncias e pré-visualiza (admin) · auditoria só contagens",
+      "type": "api",
+      "dot": "green"
     }
   ],
   "edges": [
@@ -419,6 +493,114 @@
       "from": "apiConnections",
       "to": "drivers",
       "label": "fecha o pool ao editar ou apagar"
+    },
+    {
+      "id": "e51",
+      "from": "migration0372",
+      "to": "receitasColuna",
+      "label": "coluna receitas (0693)"
+    },
+    {
+      "id": "e52",
+      "from": "receitasColuna",
+      "to": "receitasCount",
+      "label": "contagem exposta"
+    },
+    {
+      "id": "e53",
+      "from": "credenciais",
+      "to": "instanciaReceita",
+      "label": "linha com receitas"
+    },
+    {
+      "id": "e54",
+      "from": "instanciaReceita",
+      "to": "drivers",
+      "label": "abre o dialeto"
+    },
+    {
+      "id": "e55",
+      "from": "drivers",
+      "to": "toolReceita",
+      "label": "dialeto pronto"
+    },
+    {
+      "id": "e56",
+      "from": "toolReceita",
+      "to": "apiReceitas",
+      "label": "mesma conexão"
+    },
+    {
+      "id": "e57",
+      "from": "apiReceitas",
+      "to": "telaExplorador",
+      "label": "seção Receitas prontas"
+    },
+    {
+      "id": "e58",
+      "from": "telaFontes",
+      "to": "apiReceitas",
+      "label": "grava instâncias"
+    },
+    {
+      "id": "e59",
+      "from": "apiReceitas",
+      "to": "auditlog",
+      "label": "audita sem valores"
+    },
+    {
+      "id": "e60",
+      "from": "apiReceitas",
+      "to": "receitasCount",
+      "label": "contagem exposta pela API"
+    },
+    {
+      "id": "e61",
+      "from": "instanciaReceita",
+      "to": "precoReceita",
+      "label": "a receita do WordPress monta o CASE do preço"
+    },
+    {
+      "id": "e62",
+      "from": "precoReceita",
+      "to": "instanciaReceita",
+      "label": "o CASE entra no SQL da receita (sem novo placeholder)"
+    },
+    {
+      "id": "e63",
+      "from": "instanciaReceita",
+      "to": "taxonomiaReceita",
+      "label": "a receita do WordPress lê a categoria do site"
+    },
+    {
+      "id": "e64",
+      "from": "taxonomiaReceita",
+      "to": "instanciaReceita",
+      "label": "a subconsulta (group_concat) e o exists entram no SQL da receita"
+    },
+    {
+      "id": "e65",
+      "from": "modelosReceita",
+      "to": "instanciaReceita",
+      "label": "o modelo \"Imóveis\" preenche a configuração que a tela grava"
+    },
+    {
+      "id": "e68",
+      "from": "apiReceitas",
+      "to": "modelosReceita",
+      "label": "a tela aplica o modelo ao escolher a receita"
+    },
+    {
+      "id": "e66",
+      "from": "instanciaReceita",
+      "to": "errosReceita",
+      "label": "filtro que a instância não tem: erro legível, nunca silêncio"
+    },
+    {
+      "id": "e67",
+      "from": "errosReceita",
+      "to": "toolReceita",
+      "label": "a tool devolve o erro com a lista dos filtros que a instância aceita"
     }
   ],
   "cards": [

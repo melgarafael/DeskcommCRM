@@ -5,7 +5,7 @@ import { Toaster } from "sonner";
 import { coresDaBarraDoNavegador } from "@/lib/branding/barra-do-navegador";
 import { MarcaDaInstalacaoProvider } from "@/lib/branding/contexto";
 import { cssDaMarca } from "@/lib/branding/css";
-import { iconeDaAba } from "@/lib/branding/icone";
+import { iconeDaAba, sufixoDoIcone } from "@/lib/branding/icone";
 import { folhaPersonalizadaDaInstalacao } from "@/lib/branding/folha-personalizada";
 import { CABECALHO_SEM_CSS } from "@/lib/branding/sem-css-personalizado";
 import {
@@ -26,6 +26,7 @@ import { logger } from "@/lib/logger";
 import { ThemeProvider } from "@/lib/theme";
 import { Providers } from "./providers";
 import { PublicEnvScript } from "./public-env-script";
+import { EstiloDoTemaDaPlataforma } from "./tema-da-plataforma";
 import "./globals.css";
 
 // Fontes versionadas em app/fonts/ (origem e licença no README de lá): o
@@ -115,7 +116,16 @@ export async function generateMetadata(): Promise<Metadata> {
     // não pode ser um arquivo estático em `public/`.
     // Com um ícone subido em `/admin/marca` (migration 0443), o link aponta para
     // o arquivo no storage da instalação — ver `iconeDaAba`.
-    icons: { icon: iconeDaAba(linha?.favicon_path) },
+    //
+    // O iPhone não lê o ícone nem o nome do manifest: pede `apple-touch-icon`
+    // (o PNG de 180, com margem para o canto que ele arredonda) e
+    // `apple-mobile-web-app-title` — sem este, a tela de início ganharia o
+    // título longo acima.
+    icons: {
+      icon: iconeDaAba(linha?.favicon_path),
+      apple: `/app-icon/180${sufixoDoIcone(linha?.favicon_path)}`,
+    },
+    appleWebApp: { capable: true, title: name, statusBarStyle: "default" },
   };
 }
 
@@ -332,6 +342,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <head>
         {/* Primeiro de tudo: a cor da instalação, antes do CSS e do script de tema. */}
         <EstiloDaMarca />
+        {/* O tema da plataforma (#3790) entre a marca e o CSS personalizado: a
+            marca dá a cor de ação, o tema as superfícies, e o CSS do operador
+            fala por último. Ver `app/tema-da-plataforma.tsx`. */}
+        <EstiloDoTemaDaPlataforma />
         <EstiloCssPersonalizado />
         {/* Config pública do Supabase + marca resolvida, em runtime (imagem
             genérica self-host). */}

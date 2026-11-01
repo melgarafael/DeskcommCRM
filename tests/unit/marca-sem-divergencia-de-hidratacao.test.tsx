@@ -54,7 +54,7 @@ import { Sidebar } from "@/components/shell/Sidebar";
 import type { ActiveOrg, AuthUser } from "@/lib/auth/types";
 import { MarcaDaInstalacaoProvider } from "@/lib/branding/contexto";
 
-vi.mock("next/navigation", () => ({ usePathname: () => "/app/ai/agents" }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/app/ai/agents", useRouter: () => ({ prefetch: vi.fn() }) }));
 vi.mock("@/app/actions/shell/toggleSidebar", () => ({ toggleSidebar: vi.fn() }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (chave: string) => chave }));
 // Buscam estado do servidor e não falam de marca — fora do que se mede aqui.

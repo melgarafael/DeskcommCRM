@@ -6,13 +6,17 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *  - Caller must be admin of the active org.
  *  - Cannot revoke self.
  *  - Cannot revoke the last admin.
+ *  - The member's push subscriptions in this org are removed with the membership.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { requireRole } from "@/lib/auth/require-role";
+import { logger } from "@/lib/logger";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
@@ -78,12 +82,35 @@ export async function POST(
     .eq("assigned_to_user_id", targetUserId)
     .in("status", ["open", "pending", "claimed", "ai_handling"]);
 
+  // #3696: derrubar o snapshot ANTES da escrita fecha a janela em que uma tela
+  // que atualiza "ao vivo" (evento → `router.refresh`) pede o valor velho no
+  // meio do UPDATE e o guarda de novo. A invalidação de baixo, depois do
+  // commit, cobre o intervalo que sobra.
+  invalidarUsuario(targetUserId);
+
   const nowIso = new Date().toISOString();
   const { error: updErr } = await supabase
     .from("user_organizations")
     .update({ revoked_at: nowIso, updated_at: nowIso })
     .eq("id", target.id);
   if (updErr) return fail("internal_error", updErr.message, 500, { requestId });
+
+  // #3696: acesso REVOGADO não pode sobreviver ao cache curto. A próxima
+  // requisição da pessoa já nega — é o caso que
+  // `tests/unit/acesso-revogado-nao-espera-o-cache.test.ts` trava.
+  invalidarUsuario(targetUserId);
+
+  // A inscrição é do membro, e a RLS de `push_subscriptions` só deixa cada um
+  // tocar a própria: a remoção vai pelo service role, presa à organização.
+  // Falhar aqui não desfaz a revogação — o envio já exige vínculo ativo.
+  const { count: pushRemovidos, error: pushErr } = await createAdminClient()
+    .from("push_subscriptions")
+    .delete({ count: "exact" })
+    .eq("organization_id", activeOrg.orgId)
+    .eq("user_id", targetUserId);
+  if (pushErr) {
+    logger.warn("member_revoke_push_cleanup_failed", { detail: pushErr.message });
+  }
 
   if (openConvs && openConvs.length > 0) {
     for (const conv of openConvs) {
@@ -120,6 +147,7 @@ export async function POST(
       target_user_id: targetUserId,
       revoked_role: target.role,
       released_conversations_count: openConvs?.length ?? 0,
+      removed_push_subscriptions_count: pushErr ? null : (pushRemovidos ?? 0),
     },
   });
 

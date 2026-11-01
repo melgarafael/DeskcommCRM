@@ -30,11 +30,43 @@ const SEVERITY_VARIANT: Record<AgentInboxSeverity, "info" | "warning" | "error">
 export function AgentInboxList({ canResolve }: { canResolve: boolean }) {
   const t = useT();
   const [tab, setTab] = useState<"open" | "resolved">("open");
-  const { data: cachedData, error, isLoading, isError, refetch, isFetching } = useAgentInbox(tab);
+  const { data: cachedData, error, isLoading, isError, refetch, isFetching, podeConsultar } = useAgentInbox(tab);
   const acessoNegado = error instanceof ApiError && (error.status === 401 || error.status === 403);
   const data = acessoNegado ? undefined : cachedData;
   const update = useUpdateInboxItem();
   const resolveAll = useResolveAllInboxItems();
+
+  /*
+   * QUEM NÃO ALCANÇA A CENTRAL NÃO LÊ "NENHUM AVISO EM ABERTO" (issue #3147).
+   *
+   * A Central exige o papel `agent` (PAPEL_MINIMO_DA_CENTRAL, o mesmo que as três
+   * rotas passam a `requireRole`). Para um `viewer` a consulta fica DESABILITADA
+   * (`enabled`) e a API responderia 403 — então a tela não tinha dado nenhum e
+   * caía no estado vazio, imprimindo uma frase FALSA: existem avisos abertos, o
+   * papel é que não os alcança. A segurança estava certa; a frase é que mentia.
+   *
+   * O gate é `podeConsultar` — o MESMO booleano que desabilita a consulta, vindo
+   * do hook —, e não uma segunda leitura de papel: duas fontes poderiam discordar
+   * e a discordância recria o defeito. Ele é equivalente a PAPEL_MINIMO_DA_CENTRAL
+   * porque `ai.inbox.view` mapeia para `agent` (ACTION_MIN_ROLE, AuthProvider).
+   *
+   * Sem as abas junto: as duas mostrariam a mesma frase (não há lista a alternar,
+   * a leitura está desabilitada) e um controle que não controla nada é a mesma
+   * família do defeito — a tela oferecendo o que ela não faz.
+   */
+  if (!podeConsultar) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 py-16 text-center">
+        <Bell size={28} className="text-muted-foreground" aria-hidden />
+        <p className="text-sm font-medium">{t("A Central de avisos é para quem atende")}</p>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Os avisos são pedidos do assistente para as pessoas que atendem. Se precisar deles, peça a quem administra para revisar seu acesso.",
+          )}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -153,7 +185,7 @@ function InboxRow({
         {item.body ? <p className="mt-1 text-xs text-muted-foreground">{item.body}</p> : null}
         {item.destination.orientacao ? <p className="mt-2 text-xs text-muted-foreground">{t(item.destination.orientacao)}</p> : null}
         {item.destination.estado === "disponivel" ? (
-          <Button asChild size="sm" variant="link" className="mt-1 h-auto whitespace-normal px-0 text-left">
+          <Button asChild size="sm" variant="link" className="mt-1 h-auto whitespace-normal px-0 text-left max-md:min-h-11">
             <Link href={item.destination.href}>{t(item.destination.rotulo)}</Link>
           </Button>
         ) : null}

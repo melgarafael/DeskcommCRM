@@ -118,6 +118,8 @@ function makeAdmin(c: Cena, opcoes: Opcoes = {}) {
     let selectCols = "";
     const filtros: Record<string, unknown> = {};
     let mode: "select" | "insert" | "update" = "select";
+    /** Esta consulta é a DECISÃO de eco (a única que filtra `sent_via` por lista)? */
+    let decisaoDeEco = false;
 
     const resposta = (): { data: unknown; error: null } => {
       if (name === "messages" && mode === "select") {
@@ -160,7 +162,10 @@ function makeAdmin(c: Cena, opcoes: Opcoes = {}) {
         filtros[col] = val;
         return chain;
       },
-      in: () => chain,
+      in: (col?: string) => {
+        if (col === "sent_via") decisaoDeEco = true;
+        return chain;
+      },
       limit: () => chain,
       // `ehEcoDeEnvioNosso` consulta com `.is(...).in(...).gte(...)`, e a
       // re-checagem pós-insert filtra por `neq`. Sem estes elos a cadeia
@@ -173,10 +178,37 @@ function makeAdmin(c: Cena, opcoes: Opcoes = {}) {
       maybeSingle: () => Promise.resolve(resposta()),
       then: (r: (v: unknown) => unknown) =>
         Promise.resolve(
-          // A consulta de `ehEcoDeEnvioNosso` termina em `.limit(20)` e é
-          // aguardada direto: é ela que lê o envio em voo.
-          name === "messages" && selectCols === "id, body, type" && c.ecoEmVoo
-            ? { data: [{ id: "nossa-em-voo", body: envelopeFromMe.payload.body, type: "text" }], error: null }
+          // A consulta de `ehEcoDeEnvioNosso` é a ÚNICA leitura de `messages` que
+          // filtra `sent_via` por lista, e é aguardada direto (o `.limit(20)`): é
+          // ela que lê o envio em voo.
+          //
+          // ⚠️ O rastro é ESSE, e não a lista de colunas do `select`: desde #3165
+          // a decisão de eco lê `external_id`/`status` na MESMA consulta, e um
+          // dublê preso à string antiga (`"id, body, type"`) responderia `null` e
+          // reprovaria este caso por um motivo que nada tem a ver com o que ele
+          // mede.
+          name === "messages" && mode === "select" && decisaoDeEco && c.ecoEmVoo
+            ? {
+                data: [
+                  // A linha de um envio NOSSO em voo: sem id do canal e `queued`
+                  // — os dois predicados que a guarda aplica sobre ela.
+                  //
+                  // O `type` espelha o do payload (`"text"`) porque é assim que a
+                  // guarda decide o ramo: com payload de tipo diferente de `chat`
+                  // ela cai no ramo de MÍDIA e compara os tipos das linhas, e era
+                  // por ali que este caso sempre passou. Trocar por `"chat"` aqui
+                  // moveria o caso para o ramo de corpo — outro caminho, medindo
+                  // outra coisa.
+                  {
+                    id: "nossa-em-voo",
+                    body: envelopeFromMe.payload.body,
+                    type: envelopeFromMe.payload.type,
+                    external_id: null,
+                    status: "queued",
+                  },
+                ],
+                error: null,
+              }
             : { data: null, error: null },
         ).then(r),
     };

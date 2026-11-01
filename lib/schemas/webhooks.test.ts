@@ -6,6 +6,7 @@ import {
   updateAutomationRuleSchema,
   conditionSchema,
 } from "./webhooks";
+import { conditionsSchema } from "@/lib/automation/conditions";
 
 const UUID = "11111111-1111-4111-8111-111111111111";
 const UUID2 = "22222222-2222-4222-8222-222222222222";
@@ -121,14 +122,65 @@ describe("createAutomationRuleSchema", () => {
 });
 
 describe("conditionSchema", () => {
-  it("rejects op outside eq/neq/contains", () => {
-    const r = conditionSchema.safeParse({ field: "status", op: "gt", value: "won" });
+  it("rejects op outside the known set (#2727 ampliou o conjunto)", () => {
+    const r = conditionSchema.safeParse({ field: "status", op: "regex", value: "won" });
     expect(r.success).toBe(false);
+  });
+
+  it("aceita os operadores novos de #2727", () => {
+    for (const op of ["not_contains", "is_empty", "is_not_empty", "gt", "gte", "lt", "lte"]) {
+      expect(conditionSchema.safeParse({ field: "status", op, value: "won" }).success).toBe(true);
+    }
   });
 
   it("accepts a valid condition", () => {
     const r = conditionSchema.safeParse({ field: "status", op: "eq", value: "won" });
     expect(r.success).toBe(true);
+  });
+});
+
+/**
+ * #2727 — as condições de uma regra: a lista simples (formato antigo) e o grupo
+ * do TOPO (`{all}` / `{any}`). Aninhar grupo em grupo NÃO entra: nenhuma tela o
+ * edita e o formulário o perderia silenciosamente (o CR do #2727 escolheu
+ * fechar na porta da API em vez de deixar a regra encolher ao ser salva).
+ */
+describe("conditionsSchema (#2727)", () => {
+  const linha = { field: "status", op: "eq", value: "won" };
+
+  it("aceita a lista simples — o formato guardado antes desta mudança", () => {
+    expect(conditionsSchema.safeParse([linha]).success).toBe(true);
+    expect(conditionsSchema.safeParse([]).success).toBe(true);
+  });
+
+  it("aceita {all:…} e {any:…}", () => {
+    expect(conditionsSchema.safeParse({ all: [linha] }).success).toBe(true);
+    expect(conditionsSchema.safeParse({ any: [linha] }).success).toBe(true);
+  });
+
+  it("RECUSA grupo dentro de grupo — só o grupo do TOPO", () => {
+    expect(conditionsSchema.safeParse({ all: [linha, { any: [linha] }] }).success).toBe(false);
+    expect(conditionsSchema.safeParse({ any: [{ all: [linha] }] }).success).toBe(false);
+    // O mesmo conteúdo, sem aninhar, passa: o que se recusa é o grupo interior.
+    expect(conditionsSchema.safeParse({ any: [linha, linha] }).success).toBe(true);
+  });
+
+  it("recusa {all:…} e {any:…} no MESMO grupo (o combinador é um só)", () => {
+    expect(conditionsSchema.safeParse({ all: [linha], any: [linha] }).success).toBe(false);
+  });
+
+  it("recusa operador desconhecido DENTRO de um grupo", () => {
+    const r = conditionsSchema.safeParse({ any: [{ field: "a", op: "regex", value: "x" }] });
+    expect(r.success).toBe(false);
+  });
+
+  it("o teto é 10 no TOPO, nos dois formatos (não 50 por nível)", () => {
+    const n = (quantos: number) => Array.from({ length: quantos }, () => linha);
+    expect(conditionsSchema.safeParse(n(10)).success).toBe(true);
+    expect(conditionsSchema.safeParse(n(11)).success).toBe(false);
+    expect(conditionsSchema.safeParse({ any: n(10) }).success).toBe(true);
+    expect(conditionsSchema.safeParse({ any: n(11) }).success).toBe(false);
+    expect(conditionsSchema.safeParse({ all: n(11) }).success).toBe(false);
   });
 });
 
@@ -246,5 +298,84 @@ describe("assign_owner: atendente fixo ou rodízio", () => {
     expect(dentroDaIa.success).toBe(false);
     const patch = updateAutomationRuleSchema.safeParse({ actions: [rodizio(fila), rodizio(fila)] });
     expect(patch.success).toBe(false);
+  });
+
+  /*
+   * #3514 — as duas opções da passagem SDR → Closer. A regra que estes testes
+   * protegem é a de COMPATIBILIDADE: o payload que já está gravado em toda
+   * instalação não ganha chave nenhuma, e quem não marcou nada continua com o
+   * comportamento de antes. Por isso a asserção é de igualdade EXATA, e não de
+   * "contém": uma chave `contato: false` inventada pelo parse já seria uma
+   * mudança de contrato.
+   */
+  it("a passagem para o cliente é opt-in: sem as chaves, o config sai igual ao gravado", () => {
+    const r = regra([{ type: "assign_owner", config: { user_id: UUID } }]);
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.actions[0]?.config).toEqual({ user_id: UUID });
+  });
+
+  it("aceita as duas caixas e as devolve como vieram", () => {
+    const r = regra([{ type: "assign_owner", config: { user_id: UUID, contato: true, conversas: true } }]);
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.actions[0]?.config).toEqual({ user_id: UUID, contato: true, conversas: true });
+
+    // Uma caixa só também vale: quem quer o cliente sem mexer nas conversas.
+    const soContato = regra([{ type: "assign_owner", config: { user_id: UUID, contato: true } }]);
+    expect(soContato.success && soContato.data.actions[0]?.config).toEqual({ user_id: UUID, contato: true });
+  });
+
+  it("recusa valor que não é booleano, apontando a caixa", () => {
+    const r = regra([{ type: "assign_owner", config: { user_id: UUID, conversas: "sim" } }]);
+    expect(r.success).toBe(false);
+    expect(r.error?.issues[0]?.path).toEqual(["actions", 0, "config", "conversas"]);
+  });
+
+  it("no rodízio as caixas não existem: o parse as descarta (a vez é decidida no banco)", () => {
+    const fila = [{ user_id: UUID, pausado: false }];
+    const r = regra([{ type: "assign_owner", config: { modo: "rodizio", fila, contato: true, conversas: true } }]);
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.actions[0]?.config).toEqual({ modo: "rodizio", fila });
+  });
+});
+
+// #2974 — "no máximo uma vez por contato". O motor lê a chave com `=== true`;
+// um valor torto gravado por outra porta seria silenciosamente DESLIGADO (a tela
+// diria uma coisa e a regra faria outra), então a porta recusa.
+describe("trigger_config.uma_vez_por_contato: ligado/desligado, nunca outra coisa", () => {
+  const criar = (trigger_config: Record<string, unknown>) =>
+    createAutomationRuleSchema.safeParse({
+      name: "Boas-vindas",
+      trigger_event: "lead.created",
+      conditions: [],
+      actions: [{ type: "add_tag", config: { tags: ["novo"] } }],
+      trigger_config,
+    });
+
+  it("aceita ligado, desligado e a chave ausente (o comportamento de antes)", () => {
+    expect(criar({ uma_vez_por_contato: true }).success).toBe(true);
+    expect(criar({ uma_vez_por_contato: false }).success).toBe(true);
+    expect(criar({}).success).toBe(true);
+    // `null` é "não configurado", o mesmo que ausente.
+    expect(criar({ uma_vez_por_contato: null }).success).toBe(true);
+  });
+
+  it("recusa string e número, apontando a chave", () => {
+    const texto = criar({ uma_vez_por_contato: "sim" });
+    expect(texto.success).toBe(false);
+    expect(texto.error?.issues[0]?.path).toEqual(["trigger_config", "uma_vez_por_contato"]);
+    expect(texto.error?.issues[0]?.message).toBe(
+      "A opção “uma vez por contato” só aceita ligado ou desligado.",
+    );
+
+    const numero = criar({ uma_vez_por_contato: 1 });
+    expect(numero.success).toBe(false);
+    expect(numero.error?.issues[0]?.path).toEqual(["trigger_config", "uma_vez_por_contato"]);
+  });
+
+  it("o PATCH passa pela mesma régua", () => {
+    expect(updateAutomationRuleSchema.safeParse({ trigger_config: { uma_vez_por_contato: true } }).success).toBe(true);
+    const torto = updateAutomationRuleSchema.safeParse({ trigger_config: { uma_vez_por_contato: "1" } });
+    expect(torto.success).toBe(false);
+    expect(torto.error?.issues[0]?.path).toEqual(["trigger_config", "uma_vez_por_contato"]);
   });
 });

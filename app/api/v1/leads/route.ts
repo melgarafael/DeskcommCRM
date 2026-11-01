@@ -11,7 +11,7 @@ import { type NextRequest } from "next/server";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
-import type { VisibilityMode } from "@/lib/auth/types";
+import { somenteOProprio, type VisibilityMode } from "@/lib/auth/types";
 import {
   AVISO_NEGOCIO_ABERTO_EXISTENTE,
   negocioAbertoExistente,
@@ -89,7 +89,11 @@ export async function POST(req: NextRequest): Promise<Response> {
       });
     }
     const modo = (orgRow?.settings as { visibility_mode?: VisibilityMode } | null)?.visibility_mode;
-    if (modo === "own") {
+    // `modo === "own"` estava escrito à mão aqui, na tela do Inbox e no catálogo
+    // de recursos — três cópias da MESMA pergunta. Agora ela é um predicado só
+    // (`somenteOProprio`), e a #3479 é o que acontece quando uma das cópias fica
+    // para trás: no negócio o criador vira responsável, na conversa não.
+    if (somenteOProprio(modo)) {
       // ─── CARTEIRA DE OUTRO VENDEDOR (issue #2591, regra 4) ─────────────────
       //
       // O padrão do #2547 acima dá o negócio a quem o criou — mas isso só é

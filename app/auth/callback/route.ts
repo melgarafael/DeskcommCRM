@@ -8,6 +8,8 @@ import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 import { aplicarConvite } from "@/lib/auth/aplicar-convite";
 import { respostaDePonte } from "@/lib/auth/ponte-de-volta";
 import { safeNext } from "@/lib/auth/safe-next";
+import { reconhecerDispositivoConfiavel } from "@/lib/auth/dispositivo-confiavel";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { audit } from "@/lib/audit";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { env } from "@/lib/env";
@@ -139,6 +141,11 @@ export async function GET(request: NextRequest) {
 
   const usuario = data.user;
 
+  // Entrar de novo é o jeito que a pessoa tem de "atualizar" o que vê. O cache
+  // curto de autorização só é derrubado por quem escreve PELO APP; vínculo
+  // gravado por fora (seed, worker, SQL) esperaria o TTL. Um MISS por login.
+  invalidarUsuario(usuario.id);
+
   // O Google autentica com dois fatores (e a conta pode tê-los). O login por
   // senha NÃO deixa passar quem tem TOTP verificado sem o segundo fator
   // (`signInWithPassword.ts:88`), e a entrada com Google tem de ter a mesma
@@ -146,7 +153,9 @@ export async function GET(request: NextRequest) {
   // cadastrou deixa de valer em qualquer navegador novo.
   const { data: fatores } = await supabase.auth.mfa.listFactors();
   const totpVerificado = fatores?.totp?.find((f) => f.status === "verified");
-  if (totpVerificado) {
+  const confiavel =
+    !!totpVerificado && !!data.session && (await reconhecerDispositivoConfiavel(usuario.id, totpVerificado.id, data.session.access_token));
+  if (totpVerificado && !confiavel) {
     const params = new URLSearchParams({ factor: totpVerificado.id, next: safeNext(next, "/app") });
     return redirectTo(`/login/mfa?${params}`);
   }

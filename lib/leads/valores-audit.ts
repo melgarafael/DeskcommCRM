@@ -40,6 +40,13 @@
 /** Colunas tipadas, sem PII de titular, cujo par antes/depois pode ir para o audit. */
 export const CAMPOS_TIPADOS_SEM_PII = [
   "value_cents",
+  // O recorrente é do MESMO tipo do `value_cents` — dinheiro, sem PII (fatia 1
+  // da #3602). Sem estas três, mudar a mensalidade de um negócio não deixaria
+  // rastro no antes-e-depois que a auditoria de `lead.updated` promete — e quem
+  // investigasse "quem mexeu no contrato?" veria a edição sem o valor mudado.
+  "recurring_value_cents",
+  "recurring_period",
+  "recurring_months",
   "currency",
   "owner_user_id",
   "owner_agent_id",

@@ -66,7 +66,15 @@ const TEL_CANDIDATO_SEM_NONO = "+553187654321";
 const TEL_VIZINHO = "+5531911112222";
 
 const NOME = "Marina Boaventura";
-const ROTULO = `Cliente Anonimizado #${ALVO.slice(0, 8)}`;
+/**
+ * O rótulo NÃO deriva mais do id (#2342): a cascata gera um sufixo OPACO e o grava no
+ * contato; os passos de prospecção reusam este MESMO valor. O teste lê o que o banco
+ * guardou — a prova de que o sufixo não é mais o id está em
+ * `tests/invariants/lgpd-rotulo-opaco-e-external-id.test.ts`.
+ */
+function rotuloDoContato(): string {
+  return valor(`select name from public.contacts where id = '${ALVO}';`);
+}
 
 function valor(consulta: string): string {
   const saida = sql(consulta).trim();
@@ -152,7 +160,7 @@ describe("anonimizar alcança a prospecção de quem já era contato", () => {
 
   it("o candidato SEM vínculo, com o telefone em outra grafia, foi alcançado", () => {
     expect(campo(CAND_SEM_VINCULO, "phone")).toBe("<null>");
-    expect(campo(CAND_SEM_VINCULO, "data->>'name'")).toBe(ROTULO);
+    expect(campo(CAND_SEM_VINCULO, "data->>'name'")).toBe(rotuloDoContato());
     expect(campo(CAND_SEM_VINCULO, "data->>'phone'")).toBe("<null>");
     expect(campo(CAND_SEM_VINCULO, "data->>'address'")).toBe("<null>");
     expect(campo(CAND_SEM_VINCULO, "place_id")).toBe(`redacted:${CAND_SEM_VINCULO}`);
@@ -169,7 +177,7 @@ describe("anonimizar alcança a prospecção de quem já era contato", () => {
 
   it("o candidato COM vínculo continua alcançado — o braço antigo não regrediu", () => {
     expect(campo(CAND_COM_VINCULO, "phone")).toBe("<null>");
-    expect(campo(CAND_COM_VINCULO, "data->>'name'")).toBe(ROTULO);
+    expect(campo(CAND_COM_VINCULO, "data->>'name'")).toBe(rotuloDoContato());
     expect(campo(CAND_COM_VINCULO, "suppression_phone")).not.toBe("<null>");
   });
 

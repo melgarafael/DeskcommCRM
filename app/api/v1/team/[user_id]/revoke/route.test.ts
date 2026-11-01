@@ -3,11 +3,13 @@ import { NextRequest } from "next/server";
 
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({
   requireSupportWrite: vi.fn(async () => null),
 }));
@@ -24,6 +26,27 @@ const ADMIN = "22222222-2222-4222-8222-222222222222";
 const ALVO = "33333333-3333-4333-8333-333333333333";
 
 let ultimoUpdate: Record<string, unknown> | null = null;
+let pushApagado: { tabela: string; filtros: Array<[string, unknown]> } | null = null;
+
+function mockAdmin(inscricoesApagadas = 0) {
+  pushApagado = null;
+  vi.mocked(createAdminClient).mockReturnValue({
+    from: (tabela: string) => ({
+      delete: () => {
+        const filtros: Array<[string, unknown]> = [];
+        pushApagado = { tabela, filtros };
+        const q = {
+          eq: (c: string, v: unknown) => {
+            filtros.push([c, v]);
+            return q;
+          },
+          then: (resolve: (r: unknown) => void) => resolve({ count: inscricoesApagadas, error: null }),
+        };
+        return q;
+      },
+    }),
+  } as never);
+}
 
 interface MockBancoOpts {
   membro: unknown;
@@ -83,6 +106,7 @@ const ctx = { params: Promise.resolve({ user_id: ALVO }) };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockAdmin();
   vi.mocked(requireRole).mockResolvedValue({
     ok: true,
     user: { id: ADMIN, idioma: "pt-BR" },
@@ -168,6 +192,28 @@ describe("revogar membro", () => {
     );
   });
 
+  it("revogar apaga as inscrições de push do membro nesta organização, com audit", async () => {
+    mockBanco({ membro: { id: "m1", user_id: ALVO, role: "agent", revoked_at: null } });
+    mockAdmin(2);
+    const { POST } = await import("./route");
+
+    const res = await POST(pedido(), ctx);
+    expect(res.status).toBe(200);
+    expect(pushApagado).toEqual({
+      tabela: "push_subscriptions",
+      filtros: [
+        ["organization_id", ORG],
+        ["user_id", ALVO],
+      ],
+    });
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "member.revoked",
+        metadata: expect.objectContaining({ removed_push_subscriptions_count: 2 }),
+      }),
+    );
+  });
+
   it("idempotência: membro já revogado devolve sucesso imediato sem tocar em nada", async () => {
     mockBanco({ membro: { id: "m1", user_id: ALVO, role: "agent", revoked_at: "2026-09-10T12:00:00Z" } });
     const { POST } = await import("./route");
@@ -179,6 +225,7 @@ describe("revogar membro", () => {
     expect(body.data.already_revoked).toBe(true);
     expect(ultimoUpdate).toBeNull();
     expect(registrarTrocaDeComando).not.toHaveBeenCalled();
+    expect(pushApagado).toBeNull();
   });
 
   it("não permite revogar a si mesmo", async () => {

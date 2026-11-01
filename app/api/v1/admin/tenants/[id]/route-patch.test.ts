@@ -23,7 +23,7 @@ vi.mock("next/navigation", () => ({
   },
 }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
-vi.mock("@/lib/auth/server", () => ({ mfaEmDivida: h.mfaEmDivida }));
+vi.mock("@/lib/auth/server", () => ({ mfaEmDividaEstrita: h.mfaEmDivida }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({

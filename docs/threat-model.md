@@ -269,6 +269,20 @@ Não avaliado por falta de execução/instância:
 | T7 | Sem scan de secret no CI + 116 PNGs de evidência sem revisão de PII | 🟡 | baixo |
 | T6 | Guard de SSRF existe; o E2E que o prova não roda no CI | 🟢 | baixo |
 
+## 4.5 Banco externo — receitas prontas (Spec 25, R1)
+
+Superfície nova, toda atrás de sessão + `requireRole("admin")` + `requireSupportWrite()`:
+
+| Path | Guard | Rate limit | O que expõe |
+|------|-------|------------|-------------|
+| `PUT /api/v1/external-db/connections/:id/recipes` | admin + requireSupportWrite | `external-db:write` (30/60s) | gravar instâncias de receita (audit: só contagens) |
+| `POST /api/v1/external-db/connections/:id/recipes/preview` | admin + requireSupportWrite | `external-db:write` (30/60s) | executar uma instância, devolve linhas (audit: só contagens) |
+| `crm_consultar_receita` (tool MCP) | agente, `modulo: "banco_externo"` | teto de token do turno | listar/executar instâncias; organização **sempre do `ctx`** |
+
+Controles: a coluna `receitas` fica FORA da view `external_db_connections_safe` (só `receitas_count` exposta); o prefixo das tabelas entra no SQL quotado com crase (nunca cru); todo valor vai por placeholder `?`; o validador `validarConsultaDeReceita` é a segunda trava (SELECT-only, sem `;`/`--`/`INTO`/`SLEEP(`/etc.); o rastro da execução resume `linhas` (nunca o conteúdo — regra de escopo da D8).
+
+A receita `wordpress-conteudo` (R2) pode ler, além de `posts`/`postmeta`, as **tabelas de categoria** do WordPress (`terms`, `term_taxonomy`, `term_relationships`) — e só quando o administrador mapeou alguma categoria. Elas passam pela MESMA lista de fontes liberadas (`tabelaLiberada`/`colunasLiberadas`, em `lib/external-db/fontes.ts`), então o administrador precisa liberá-las como qualquer outra tabela: quem não libera, recebe `fonte_nao_liberada` e a consulta não roda. O conteúdo dos termos é dado de terceiro (o autor do site), e ele chega ao agente como NOME de categoria — o mesmo regime do resto da receita: o rastro guarda contagens, nunca o conteúdo.
+
 **Conclusão honesta:** os *mecanismos* de segurança deste projeto são acima da média para
 um CRM open-source — HMAC em tempo constante em toda borda, fail-closed nos crons, hash de
 bearer, RLS com helper central, guard de SSRF testado, LGPD implementada de verdade,

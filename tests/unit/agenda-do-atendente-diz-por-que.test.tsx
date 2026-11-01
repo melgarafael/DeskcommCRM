@@ -212,8 +212,10 @@ describe("(c) o Atendente lê a lista de pessoas da agenda", () => {
     expect(PAPEL_MINIMO_DA_LISTA).toBe("agent");
   });
 
-  it("a lista exposta é a mínima: sem e-mail, sem último acesso", () => {
-    expect([...CAMPOS_DA_LISTA]).toEqual(["user_id", "role", "full_name"]);
+  it("a lista exposta é mínima: rótulo da agenda, sem e-mail separado ou último acesso", () => {
+    expect([...CAMPOS_DA_LISTA]).toEqual(["user_id", "role", "full_name", "display_label"]);
+    expect(CAMPOS_DA_LISTA).not.toContain("email");
+    expect(CAMPOS_DA_LISTA).not.toContain("last_sign_in_at");
   });
 
   it("a rota da lista usa o papel mínimo e seleciona só o que a barra usa", () => {

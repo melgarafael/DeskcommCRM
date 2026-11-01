@@ -4,12 +4,25 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { capabilitiesOf } from "@/lib/channels/capabilities";
 import type { ChannelProvider } from "@/lib/channels/types";
 import { ProspectingError } from "@/lib/prospecting/provider";
-import { prospectingInputSchema } from "@/lib/prospecting/schema";
+import { campaignConfigSchema, prospectingInputSchema, type Prospect } from "@/lib/prospecting/schema";
+import { configPadraoDaOrganizacao } from "@/lib/prospecting/config-padrao";
+import { provedorExigeCredencialDaOrganizacao } from "@/lib/prospecting/provedor";
+import { auditarSite } from "@/lib/prospecting/site-fetch";
+import { gravarPrevia } from "@/lib/prospecting/previa";
+import { gerarPreviaDoCandidato } from "@/lib/prospecting/previa-gerar";
+import { enriquecerSitesPendentes } from "@/lib/prospecting/site-enrich";
+import { lerPersonalizacao } from "@/lib/prospecting/personalizar";
+import {
+  completarLinksDoContato,
+  contatoPrecisaDeLinks,
+  linksDoCandidato,
+} from "@/lib/prospecting/links-do-candidato";
 import {
   activateCampaign,
   adjustPace,
@@ -26,6 +39,23 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 const headers = { "Cache-Control": "no-store" };
 const ACOES_ABERTAS_AO_TOKEN = new Set<string>(["configure", "search", "pause"]);
+/**
+ * Espelho SQL de `pontuarCandidato` (oferta `site` + automação via
+ * `c.config->'ofertas'->>0`). Ordenação com paginação; o TS exibe badge+motivo.
+ */
+const ORDENACAO_POR_SCORE = `(least(greatest(coalesce((p.data->>'rating')::float, 0) - 4.0, 0), 1) * 40
+  + least(coalesce((p.data->>'reviews')::int, 0), case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 150 else 100 end)
+    * case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 0.4 else 0.3 end
+  + case when coalesce((p.data->'site'->>'provisorio')::boolean, false) then 18
+    else case coalesce(p.data->'site'->>'classe', '')
+      when 'nao-medido' then 18
+      when 'sem-site' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 20 else 30 end
+      when 'agregador' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 20 else 30 end
+      when 'site-ruim' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 14 else 22 end
+      when 'fora-do-ar' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 16 else 25 end
+      when 'ssl-invalido' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 16 else 25 end
+      when 'site-ok' then case when coalesce(c.config->'ofertas'->>0, 'site') like '%automacao%' then 14 else 10 end
+      else 0 end end) desc, p.created_at desc`;
 function failure(error: unknown, requestId: string) {
   return fail(
     "prospecting_unavailable",
@@ -45,17 +75,25 @@ export async function GET(req: NextRequest) {
     scope: "mcp:read",
   });
   if (!auth.ok) return auth.response;
+  const ordenar = req.nextUrl.searchParams.get("ordenar");
+  if (ordenar !== null && ordenar !== "score")
+    return fail("validation_failed", "Ordenação inválida: use 'score' ou omita.", 422, {
+      requestId,
+      headers,
+    });
   try {
     const db = getRequestPool();
     const org = auth.organizationId;
-    const [settings, campaigns, candidates, agents, channels, stages] = await Promise.all([
+    const ordemCandidatos =
+      ordenar === "score" ? ORDENACAO_POR_SCORE : "p.created_at desc";
+    const [settings, campaigns, candidates, agents, channels, stages, organizacao] = await Promise.all([
       db.query("select organization_id from prospecting_settings where organization_id=$1", [org]),
       db.query(
         "select id,name,search,config,status,search_status,run_id,cost_usd,result_count,skipped_count,error,next_send_at,created_at from prospecting_campaigns where organization_id=$1 order by created_at desc limit 50",
         [org],
       ),
       db.query(
-        "select p.id,p.campaign_id,p.data,p.status,p.selected,p.error,p.lead_id,p.conversation_id,p.attempted_at,m.status as message_status,case when l.stage_id::text=c.config->>'qualified_stage_id' then 'qualified' when v.last_inbound_at is not null then 'replied' else p.status end as progress from prospecting_candidates p join prospecting_campaigns c on c.organization_id=p.organization_id and c.id=p.campaign_id left join crm_leads l on l.organization_id=p.organization_id and l.id=p.lead_id left join conversations v on v.organization_id=p.organization_id and v.id=p.conversation_id left join messages m on m.organization_id=p.organization_id and m.id=p.message_id where p.organization_id=$1 order by p.created_at desc limit 5000",
+        `select p.id,p.campaign_id,p.data,p.status,p.selected,p.error,p.lead_id,p.conversation_id,p.attempted_at,p.automatic_sends,p.exit_offered_at,m.status as message_status,ct.is_blocked,case when l.stage_id::text=c.config->>'qualified_stage_id' then 'qualified' when v.last_inbound_at is not null then 'replied' else p.status end as progress from prospecting_candidates p join prospecting_campaigns c on c.organization_id=p.organization_id and c.id=p.campaign_id left join crm_leads l on l.organization_id=p.organization_id and l.id=p.lead_id left join conversations v on v.organization_id=p.organization_id and v.id=p.conversation_id left join messages m on m.organization_id=p.organization_id and m.id=p.message_id left join contacts ct on ct.organization_id=p.organization_id and ct.id=p.contact_id where p.organization_id=$1 order by ${ordemCandidatos} limit 5000`,
         [org],
       ),
       db.query(
@@ -70,12 +108,36 @@ export async function GET(req: NextRequest) {
         "select s.id,s.name,s.pipeline_id,p.name as pipeline_name from crm_stages s join crm_pipelines p on p.id=s.pipeline_id and p.organization_id=s.organization_id where s.organization_id=$1 and not s.is_archived and not s.is_won and not s.is_lost order by p.name,s.position",
         [org],
       ),
+      // O idioma da ORGANIZAÇÃO, a mesma fonte do rodapé que o worker envia: a dica
+      // da tela cita a frase enviada, não a do idioma da interface. `settings` traz
+      // a personalização da prospecção (voz e vocabulário).
+      db.query<{ settings: unknown; locale: string | null }>(
+        "select settings, locale from organizations where id=$1",
+        [org],
+      ),
     ]);
+    // A tela só promete "Gerando prévia…" a uma campanha sem agente se existe um
+    // agente padrão para escrevê-la (`config-padrao.ts`). Falha aqui não derruba a lista.
+    const previaPadrao = await configPadraoDaOrganizacao(db, org)
+      .then((p) => p !== null)
+      .catch(() => false);
+    // `configured` libera a busca na tela. O `local-http` (#2942) não grava chave
+    // por organização (a URL é da instalação), então a linha em
+    // prospecting_settings nunca existe para ele. Escolha desconhecida cai na
+    // régua antiga: a busca falha fechado no POST, a lista não cai aqui.
+    const configured =
+      !!settings.rows.length ||
+      !(await provedorExigeCredencialDaOrganizacao(db, org).catch(() => true));
+    const personalizacao = lerPersonalizacao(
+      (organizacao.rows[0] as { settings?: unknown } | undefined)?.settings,
+    );
     return ok(
       {
-        configured: !!settings.rows.length,
+        configured,
         campaigns: campaigns.rows,
         candidates: candidates.rows,
+        previa_padrao: previaPadrao,
+        personalizacao,
         agents: agents.rows,
         channels: channels.rows.filter((c) => {
           try {
@@ -85,6 +147,7 @@ export async function GET(req: NextRequest) {
           }
         }),
         stages: stages.rows,
+        organization_locale: organizacao.rows[0]?.locale ?? null,
       },
       { requestId, headers },
     );
@@ -187,6 +250,181 @@ export async function POST(req: NextRequest) {
       // O histórico precisa dizer QUANTAS linhas saíram: apagar é o único gesto desta rota
       // que não tem volta, e "alguém excluiu" sem número não deixa conferir nada depois.
       auditMetadata = { operation: body.action, discarded: descarte.discarded };
+    } else if (body.action === "reanalisar_site") {
+      const reanalise = await withProspectingLock(pool, org, async (db) => {
+        const alvos = (
+          await db.query<{ id: string; website: string | null }>(
+            "select id, data->>'website' as website from prospecting_candidates where organization_id=$1 and campaign_id=$2 and id=any($3::uuid[])",
+            [org, body.id, body.candidate_ids],
+          )
+        ).rows;
+        const agoraIso = new Date().toISOString();
+        const classes: Record<string, number> = {};
+        let reenriquecidos = 0;
+        for (const alvo of alvos) {
+          if (!alvo.website || alvo.website.trim() === "") continue;
+          try {
+            const veredito = await auditarSite(alvo.website, agoraIso);
+            const atualizado = await db.query(
+              "update prospecting_candidates set data = data || jsonb_build_object('site', $4::jsonb), updated_at = now() where organization_id=$1 and campaign_id=$2 and id=$3",
+              [org, body.id, alvo.id, JSON.stringify(veredito)],
+            );
+            if ((atualizado.rowCount ?? 0) > 0) {
+              reenriquecidos++;
+              classes[veredito.classe] = (classes[veredito.classe] ?? 0) + 1;
+            }
+          } catch {
+            continue;
+          }
+        }
+        return { reenriquecidos, classes };
+      });
+      result = reanalise;
+      auditMetadata = {
+        operation: body.action,
+        reenriquecidos: reanalise.reenriquecidos,
+        classes: reanalise.classes,
+      };
+    } else if (body.action === "prever_abordagem") {
+      // Gera a copy, GUARDA a prévia no candidato (B1) e audita. Deixou de ser
+      // somente leitura: a copy que a pessoa revisa vira o rascunho que o tick
+      // envia, e a gravação precisa de trilha.
+      const linhas = await pool.query(
+        "select pc.id, pc.data, pc.status, pc.contact_id, pc.campaign_id, c.config, c.search from prospecting_candidates pc join prospecting_campaigns c on c.organization_id=pc.organization_id and c.id=pc.campaign_id where pc.organization_id=$1 and pc.campaign_id=$2 and pc.id=$3",
+        [org, body.id, body.candidate_id],
+      );
+      const linha = linhas.rows[0] as
+        | {
+            id: string;
+            data: Prospect;
+            status: string;
+            contact_id: string | null;
+            config: unknown;
+            search: { niche?: string };
+          }
+        | undefined;
+      if (!linha) throw new ProspectingError("Candidato não encontrado.", 404);
+      // A geração mora em `gerarPreviaDoCandidato` (B2), a MESMA que o preparo
+      // automático do tick chama: o que o operador revisa aqui e o que o sistema
+      // guarda sozinho saem do mesmo código. Esta rota só traduz o motivo em HTTP.
+      // Campanha ainda sem agente (busca nova): a prévia usa o agente PADRÃO da
+      // organização, como o preparo automático — o botão e o tick não divergem.
+      const configDaCampanha = campaignConfigSchema.safeParse(linha.config);
+      const padrao =
+        configDaCampanha.success && configDaCampanha.data.agent_id
+          ? null
+          : await configPadraoDaOrganizacao(pool, org);
+      const gerada = await gerarPreviaDoCandidato(
+        pool,
+        org,
+        padrao ? { ...linha, config: padrao.config } : linha,
+      );
+      if (!gerada.ok) {
+        if (gerada.motivo === "auditoria_pendente")
+          // Quem tem site na web e ainda espera a auditoria. Quem não tem site
+          // próprio já tem `sem-site` derivado e nunca cai aqui.
+          throw new ProspectingError(
+            "Auditoria pendente para este candidato. Aguarde o tick ou use Reanalisar site.",
+            409,
+          );
+        // Config parcial salva pelo meio (sem `agent_id`) não é campanha
+        // configurada: 422 que a tela entende, não um ZodError (500).
+        if (gerada.motivo === "sem_agente")
+          throw new ProspectingError("Escolha o agente da campanha para pré-visualizar.", 422);
+        throw new ProspectingError(`A IA não produziu uma abordagem: ${gerada.detalhe}.`, 422);
+      }
+      const { previa, estrategia, score } = gerada;
+      // A prévia é ancorada na CHAVE da auditoria, nunca num instante solto.
+      // FAIL-OPEN: se a gravação falhar, a pessoa ainda recebe a copy
+      // (`salva:false`) — perder a prévia por erro de escrita seria pior do que
+      // não guardá-la. O log NUNCA carrega o TEXTO.
+      let salva = false;
+      try {
+        await gravarPrevia(pool, {
+          organizationId: org,
+          campaignId: body.id,
+          candidateId: body.candidate_id,
+          previa,
+        });
+        salva = true;
+        await audit({
+          action: "prospecting.preview_saved",
+          organizationId: org,
+          actorUserId: auth.actor.type === "user" ? auth.actor.id : null,
+          actorApiTokenId: auth.apiTokenId ?? null,
+          resourceType: "prospecting",
+          resourceId: body.candidate_id,
+          metadata: { operation: body.action, score: score.valor },
+          requestId,
+        });
+      } catch (error) {
+        logger.warn("prospecting.preview_not_saved", {
+          requestId,
+          campaignId: body.id,
+          candidateId: body.candidate_id,
+          message: error instanceof Error ? error.message : "erro desconhecido",
+        });
+      }
+      result = { mensagem: gerada.texto, estrategia, score, salva };
+    } else if (body.action === "verificar_sites") {
+      // "Verificar agora" (spec 24): ADIANTA o que o preparo automático do tick
+      // faria sozinho (`prepararCandidatos`) — o MESMO enriquecimento, com teto de
+      // 30 candidatos e prazo de lote por dentro, então a requisição termina e o
+      // lock não fica preso. Diferente do tick, esta rota segura o bloqueio da
+      // organização enquanto roda; o tick não. Pode ser chamado de novo enquanto
+      // houver "A verificar".
+      const enriquecido = await withProspectingLock(pool, org, async (db) =>
+        enriquecerSitesPendentes(db, org, requestId, Date.now() + 120_000, body.id),
+      );
+      result = enriquecido;
+      auditMetadata = {
+        operation: body.action,
+        enriquecidos: enriquecido.enriquecidos,
+        classes: enriquecido.classes,
+      };
+    } else if (body.action === "completar_fichas") {
+      // "Completar fichas" (spec 26 §3.3): para cada candidato da campanha que já tem
+      // contato, acrescenta à ficha os links que faltam (o que a pessoa digitou fica).
+      // Teto de 100 GRAVAÇÕES por clique: quem já está completo não escreve e não conta
+      // no teto, então clicar de novo avança. `faltam` = quem ainda precisa depois do
+      // teto, medido só por leitura (mesmo predicado da escrita). Ordem por id: a mesma
+      // em todo clique. Toda leitura e escrita filtra `organization_id` (fonte: a sessão).
+      const TETO_DE_GRAVACOES = 100;
+      const resumo = await withProspectingLock(pool, org, async (db) => {
+        const candidatos = (
+          await db.query<{ contact_id: string; data: Prospect }>(
+            "select contact_id, data from prospecting_candidates where organization_id=$1 and campaign_id=$2 and contact_id is not null order by id",
+            [org, body.id],
+          )
+        ).rows;
+        let completadas = 0;
+        let jaCompletas = 0;
+        let semLinks = 0;
+        let faltam = 0;
+        for (const candidato of candidatos) {
+          const links = linksDoCandidato(candidato.data);
+          if (Object.keys(links).length === 0) {
+            semLinks++;
+            continue;
+          }
+          if (completadas >= TETO_DE_GRAVACOES) {
+            if (await contatoPrecisaDeLinks(db, org, candidato.contact_id, links)) faltam++;
+            else jaCompletas++;
+            continue;
+          }
+          if (await completarLinksDoContato(db, org, candidato.contact_id, links)) completadas++;
+          else jaCompletas++;
+        }
+        return { completadas, ja_completas: jaCompletas, sem_links: semLinks, faltam };
+      });
+      result = resumo;
+      // Sem endereços na trilha: só contagens (o log não carrega dado de contato).
+      auditMetadata = {
+        operation: body.action,
+        completadas: resumo.completadas,
+        ja_completas: resumo.ja_completas,
+        sem_links: resumo.sem_links,
+      };
     } else {
       result = await withProspectingLock(pool, org, async (db) => {
         const c = (
@@ -207,13 +445,16 @@ export async function POST(req: NextRequest) {
         )
           throw new ProspectingError("Pause a outra campanha antes de retomar.", 409);
         await db.query(
-          "update prospecting_campaigns set status='running',error=null,next_send_at=greatest(next_send_at,now()+interval '1 minute'),updated_at=now() where organization_id=$1 and id=$2",
+          "update prospecting_campaigns set status='running',error=null,channel_down_since=null,next_send_at=greatest(next_send_at,now()+interval '1 minute'),updated_at=now() where organization_id=$1 and id=$2",
           [org, body.id],
         );
         return { resumed: true };
       });
     }
     const resourceId = "id" in body ? body.id : null;
+    // A prévia audita DENTRO do bloco (só quando a gravação venceu): aqui é só
+    // devolver, para não gravar uma trilha de "changed" que não houve.
+    if (body.action === "prever_abordagem") return ok(result, { requestId, headers });
     await audit({
       action: "prospecting.changed",
       organizationId: org,

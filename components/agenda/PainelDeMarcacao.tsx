@@ -10,6 +10,7 @@ import * as React from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DURACAO_MAXIMA_MIN, DURACAO_MINIMA_MIN, duracaoEscolhidaValida } from "@/lib/agenda/duracao-escolhida";
 import { dataDeParede, instanteDe } from "@/lib/agenda/fuso";
 import { ApiError } from "@/lib/api/types";
 import { CaretLeft, CaretRight, CheckCircle, Clock, MapPin, Warning } from "@/lib/ui/icons";
@@ -72,7 +73,10 @@ export function PainelDeMarcacao({
   agora,
   responsavel,
   tipo = "Consulta",
+  tipoId,
   duracaoMin = 30,
+  permiteEscolherDuracao = true,
+  onDuracaoMudar,
   local,
   fuso,
   horariosPorDia,
@@ -94,7 +98,32 @@ export function PainelDeMarcacao({
   agora: Date;
   responsavel: Pessoa;
   tipo?: string;
+  /** Identidade do tipo para a decisão de abertura (o nome não é único). */
+  tipoId?: string;
+  /**
+   * A DURAÇÃO PADRÃO deste atendimento — a do serviço, e ela CONTINUA sendo o
+   * padrão (issue #3709). Deixou de ser a única opção.
+   */
   duracaoMin?: number;
+  /**
+   * Oferece o campo de duração? Ligado por padrão.
+   *
+   * Desligado em dois casos, e os dois são sobre não prometer o que a rota não
+   * faz: serviço (a duração é da agenda do serviço, com capacidade — a escrita
+   * recusa, `agenda_duracao_do_servico`) e remarcação (o PATCH move o bloco e
+   * PRESERVA o comprimento que ele já tem).
+   */
+  permiteEscolherDuracao?: boolean;
+  /**
+   * A visão de fora soube de uma duração nova.
+   *
+   * ⚠️ Quem OFERECE os horários é a rota, e ela precisa da duração para calcular
+   * os slots — o painel não recalcula nada (`lib/agenda/grade-interativa.ts`
+   * diz por quê). Sem este fio, a tela mostraria 90 minutos no campo e a lista
+   * de slots de 30 ao lado: o horário de 09:00 apareceria como livre e a
+   * marcação levaria 422.
+   */
+  onDuracaoMudar?: (duracaoMin: number) => void;
   /**
    * ⚠️ SEM DEFAULT, e isto é o conserto.
    *
@@ -217,7 +246,12 @@ export function PainelDeMarcacao({
    * `agenda_fora_da_jornada`), sem erro na consulta e com `fuso` conhecido.
    */
   permiteEncaixe?: boolean;
-  onConfirmar?: (instante: string) => void | Promise<unknown>;
+  /**
+   * A confirmação — e ela leva a DURAÇÃO junto, porque é ela que vira o
+   * `ends_at` do compromisso (issue #3709). Quem chama pode ignorar o segundo
+   * argumento; o painel nunca marcou por conta própria e continua não marcando.
+   */
+  onConfirmar?: (instante: string, duracaoMin: number) => void | Promise<unknown>;
   className?: string;
 }) {
   const localeDaData = useLocaleDeData();
@@ -237,6 +271,72 @@ export function PainelDeMarcacao({
     onMesVisivel?.(mes);
   }, [mes, onMesVisivel]);
   const [encaixeAberto, setEncaixeAberto] = React.useState(false);
+  /**
+   * A DURAÇÃO DESTE ATENDIMENTO (issue #3709) — em TEXTO, porque o campo é do
+   * usuário e um `number` transformaria a digitação em luta.
+   *
+   * ─── Por que o texto e o valor aplicado são a MESMA coisa aqui ────────────
+   *
+   * `duracaoDigitada` (o número) só vale quando passa em `duracaoEscolhidaValida`
+   * — a faixa 5…1440 dos moldes, de `lib/agenda/duracao-escolhida.ts`. Com o
+   * campo vazio, "0" ou "3", ele não vale, e aí DUAS coisas mudam de uma vez:
+   *
+   *   1. a duração nova NÃO é anunciada a quem calcula os horários, então a
+   *      lista em tela continua sendo a da última duração válida;
+   *   2. a escolha de horário é LIMPA e o Confirmar fica travado.
+   *
+   * A (2) é a que importa: sem ela a pessoa escolheria 09:00 numa lista de 30
+   * minutos e confirmaria 3 minutos — ou, pior, escolheria 09:00 para 600
+   * minutos e o servidor recusaria no fim do caminho. A regra do banco não pode
+   * ser a primeira a saber.
+   */
+  const [duracaoTexto, setDuracaoTexto] = React.useState(() => String(duracaoMin));
+  const duracaoDigitada = Number(duracaoTexto.trim());
+  const duracaoOk = duracaoEscolhidaValida(duracaoDigitada);
+  /** O que foi confirmado — o resumo não pode dizer "30" de um bloco de 90. */
+  const [duracaoConfirmada, setDuracaoConfirmada] = React.useState<number | null>(null);
+
+  /**
+   * O PADRÃO É ANUNCIADO, NÃO SUPOSTO.
+   *
+   * Quem calcula os horários é a rota, e ela precisa saber a duração desde a
+   * PRIMEIRA consulta. Este efeito publica o valor do serviço assim que o painel
+   * abre (e quando o tipo muda) — sem ele, a tela abriria com 30 no campo e a
+   * lista poderia ter vindo de uma duração que ficou de uma abertura anterior.
+   * Publicar o mesmo número de novo é inofensivo: o React Query usa o objeto do
+   * filtro como chave e não refaz a consulta quando ele é igual.
+   */
+  React.useEffect(() => {
+    onDuracaoMudar?.(duracaoMin);
+  }, [duracaoMin, onDuracaoMudar]);
+
+  /**
+   * TROCAR DE TIPO TROCA O PADRÃO — e o campo tem de acompanhar.
+   *
+   * O painel continua montado quando a pessoa troca de serviço no seletor; sem
+   * esta linha, um "90" digitado no serviço A ficaria no campo ao abrir um
+   * serviço de 45, e a lista ao lado (que já é a de 45) discordaria do que está
+   * escrito. Só roda quando o PADRÃO muda — digitar não mexe neste estado.
+   */
+  React.useEffect(() => {
+    setDuracaoTexto(String(duracaoMin));
+    setDuracaoConfirmada(null);
+  }, [duracaoMin]);
+
+  /**
+   * Trocar a duração INVALIDA a escolha de horário.
+   *
+   * Não é zelo: o horário escolhido veio de uma lista calculada para a duração
+   * anterior. Manter o clique enquanto a régua muda é o jeito silencioso de
+   * marcar em cima de outro compromisso — e a pessoa veria "Confirmar 09:00"
+   * sem saber que o 09:00 já não comporta o que ela pediu.
+   */
+  const mudarDuracao = (texto: string) => {
+    setDuracaoTexto(texto);
+    setHorario(null);
+    const valor = Number(texto.trim());
+    if (duracaoEscolhidaValida(valor)) onDuracaoMudar?.(valor);
+  };
   // O que a pessoa DIGITOU sobrevive a "Voltar", à troca de dia e à recusa do
   // servidor: quem ouviu "ocupado" quer corrigir dez minutos, não redigitar.
   const [horaDoEncaixe, setHoraDoEncaixe] = React.useState("");
@@ -338,9 +438,26 @@ export function PainelDeMarcacao({
    * esta função, para os dois não voltarem a divergir (ver o bloco acima).
    */
   const dadosDoMesEmTela = mesCarregado === undefined || (mesCarregado !== null && isSameMonth(mesCarregado, mes));
-  /** Tem horário publicado — a única fonte de `data-disponivel` e da abertura. */
+  /**
+   * Um horário no PASSADO não é agendável — mesmo que ainda esteja na lista.
+   *
+   * A consulta devolveu esse horário quando ele ainda dava; a lista não é
+   * recalculada enquanto a tela está aberta (`agoraDaAbertura` é congelado na
+   * abertura, de propósito: o relógio não entra na chave do React Query por
+   * milissegundo). Passada a hora, o instante continua na resposta e mentiria
+   * duas vezes: acenderia o dia e deixaria a abertura achar que o mês tem vaga.
+   *
+   * ⚠️ O aviso mínimo (60 min) é do MOTOR e o painel não o conhece. Quem chega
+   * com consulta fresca já recebe a lista sem os horários de dentro do aviso;
+   * o que o painel acrescenta — e é o que faltava — é largar o que o relógio
+   * já passou e parar de decidir por uma sobra morta.
+   */
+  const agendavel = (h: HorarioLivre): boolean => new Date(h.instante).getTime() > agora.getTime();
+  /** Tem horário publicado E ainda agendável — a única fonte de `data-disponivel`. */
   const temHorario = (d: Date): boolean =>
-    dadosDoMesEmTela && isSameMonth(d, mes) && (horariosPorDia[format(d, "yyyy-MM-dd")]?.length ?? 0) > 0;
+    dadosDoMesEmTela &&
+    isSameMonth(d, mes) &&
+    (horariosPorDia[format(d, "yyyy-MM-dd")] ?? []).some(agendavel);
   const diaClicavel = (d: Date): boolean =>
     temHorario(d) || (isSameMonth(d, mes) && encaixeLigado && d.getTime() >= inicioDeHoje);
 
@@ -356,15 +473,157 @@ export function PainelDeMarcacao({
    * sem nenhum horário publicado nele, o painel passa ao mês seguinte. Quem
    * volta à mão (para um encaixe hoje) fica onde voltou. Sem jornada publicada
    * não há o que procurar no mês seguinte, e o aviso é o próximo passo.
+   *
+   * UMA VEZ POR TIPO, não por montagem. O painel continua montado quando a
+   * pessoa troca de tipo (ver o efeito da duração), e a tela abre no PRIMEIRO
+   * tipo — que pode não ter jornada. Com a decisão presa à montagem, a resposta
+   * desse primeiro tipo a gastava ("sem jornada, fica") e a do tipo escolhido,
+   * com outubro esgotado, chegava sem decidir nada: o mês morto de volta, em
+   * 9 specs do e2e às 16h45 de sexta 30/10/2026.
+   *
+   * E só uma resposta que DECIDE gasta a decisão (#3777, @paulolimajr77):
+   * resposta sem jornada ou com erro deixa a decisão pendente. No MESMO tipo a
+   * consulta é refeita — a duração entra na chave dela, e uma falha pode passar
+   * —, e a resposta seguinte, com jornada e o mês esgotado, ainda precisa
+   * poder levar ao mês seguinte. Quem navega pelas setas decide por si: a
+   * decisão pendente não sobrevive a elas (senão a resposta que chega depois
+   * jogaria a pessoa de volta ao mês seguinte contra a volta à mão).
    */
   // Ajuste de estado DURANTE o render, não num efeito: o mês morto nem chega a
   // ser pintado (https://react.dev/learn/you-might-not-need-an-effect).
+  // A chave é o ID do tipo: o nome não é único (só o slug é), e dois tipos de
+  // mesmo nome não podem dividir a decisão. Na troca, a decisão só reabre se o
+  // mês em tela ainda é o de abertura — quem já foi para o mês seguinte e volta
+  // à mão para hoje (um encaixe) não pode ser jogado de volta.
+  const chaveDoTipo = tipoId ?? tipo;
   const [aberturaDecidida, setAberturaDecidida] = React.useState(false);
-  const aberturaCarregada = mesCarregado != null && dadosDoMesEmTela && isSameMonth(mes, ancora);
-  if (!aberturaDecidida && aberturaCarregada && !instanteInicial) {
+  const [tipoDaDecisao, setTipoDaDecisao] = React.useState(chaveDoTipo);
+  /**
+   * O TETO DOS SALTOS AUTOMÁTICOS.
+   *
+   * O painel só conhece um mês por vez (a consulta acompanha o mês em tela),
+   * então "existe vaga adiante?" é uma pergunta que ele só responde andando —
+   * e, sem teto, um tipo cuja jornada não abre buraco nenhum faria a tela
+   * correr os meses para sempre. Esgotado o teto, a tela FICA no mês em que
+   * parou e o aviso de "nenhum horário livre" assume: é a resposta verdadeira.
+   */
+  const SALTOS_AUTOMATICOS_MAXIMOS = 3;
+  const [saltosAutomaticos, setSaltosAutomaticos] = React.useState(0);
+  /** O mês em tela foi escolhido pelo PAINEL (abertura ou salto), não à mão. */
+  const [saltoDoPainel, setSaltoDoPainel] = React.useState(false);
+  /**
+   * O MÊS QUE ESTA VISITA VIU COM VAGA — a testemunha de "ele acabou agora".
+   *
+   * Distingue os dois jeitos de estar num mês sem vaga: (a) ele tinha vaga
+   * enquanto a pessoa olhava para ele e o relógio comeu o resto do dia — este
+   * reabre a decisão; (b) ele já estava morto quando a pessoa voltou à mão para
+   * ele (o encaixe de hoje) — este fica onde ela o pôs, sem ricochete. Sem a
+   * testemunha, o caso (b) era indistinguível do (a), e o "mês anterior" do
+   * encaixe devolveria a pessoa para o mês seguinte na mesma hora.
+   *
+   * Ela é do mês EM TELA e morre na navegação à mão: sair do mês e voltar é
+   * uma escolha nova da pessoa, que não é revista.
+   */
+  const [mesVistoComVaga, setMesVistoComVaga] = React.useState<number | null>(null);
+
+  const trocouDeTipo = tipoDaDecisao !== chaveDoTipo;
+  if (trocouDeTipo) {
+    setTipoDaDecisao(chaveDoTipo);
+    setAberturaDecidida(!isSameMonth(mes, ancora) && !saltoDoPainel);
+    setSaltosAutomaticos(0);
+    setMesVistoComVaga(null);
+  }
+
+  /**
+   * O salto é o MESMO da abertura (`startOfMonth(addDays(..., 32))`), agora com
+   * contagem: devolve `false` quando o teto já foi gasto, e aí a tela fica.
+   */
+  const saltarParaOMesSeguinte = (): boolean => {
+    if (saltosAutomaticos >= SALTOS_AUTOMATICOS_MAXIMOS) return false;
+    setSaltosAutomaticos(saltosAutomaticos + 1);
+    setSaltoDoPainel(true);
+    setAberturaDecidida(false);
+    setMes(startOfMonth(addDays(startOfMonth(mes), 32)));
+    return true;
+  };
+
+  /**
+   * NAVEGAR À MÃO ENCERRA A DECISÃO AUTOMÁTICA.
+   *
+   * Quem escolhe o mês é a pessoa: a escolha dela não é revista (nem quando o
+   * mês escolhido já está morto — é justamente o encaixe de hoje que a leva de
+   * volta). O único caminho que ainda mexe no mês por conta própria é o do mês
+   * que esta visita viu com vaga e o relógio esgotou.
+   */
+  const irParaOMes = (dias: number) => {
+    setMes((m) => startOfMonth(addDays(startOfMonth(m), dias)));
     setAberturaDecidida(true);
-    if (publicouHorarios && !erroAoCarregar && !semanas.flat().some(temHorario)) {
-      setMes(startOfMonth(addDays(startOfMonth(mes), 32)));
+    setSaltoDoPainel(false);
+    setSaltosAutomaticos(0);
+    setMesVistoComVaga(null);
+  };
+
+  const mesTemHorario = semanas.flat().some(temHorario);
+  const dadosDoMesDeAgora = mesCarregado != null && dadosDoMesEmTela;
+  /**
+   * A ABERTURA PERGUNTA PELO RESTO DA JANELA, NÃO PELO INSTANTE.
+   *
+   * A pergunta antiga era "existe vaga NESTE mês?" — e ela é feita com os
+   * dados já carregados, uma vez por tipo. Enquanto o mês tem um único horário
+   * publicado, a resposta é "sim" para sempre, mesmo que ele já tenha passado:
+   * às 16:28 de sexta 30/10/2026 outubro ainda trazia 17:30, a tela ficou nele,
+   * e vinte minutos depois o mês inteiro estava morto — sem um dia clicável e
+   * sem revisão (issue #3774). `temHorario` agora só conta horário AGENDÁVEL, e
+   * a pergunta vira "existe horário agendável no que resta deste mês?".
+   *
+   * A decisão segue aberta enquanto o mês em tela for escolha do PAINEL: um mês
+   * vazio faz o painel andar para o próximo, até achar vaga ou gastar o teto.
+   */
+  const decidindoAgora =
+    tipoDaDecisao === chaveDoTipo &&
+    !trocouDeTipo &&
+    !aberturaDecidida &&
+    dadosDoMesDeAgora &&
+    !instanteInicial &&
+    (isSameMonth(mes, ancora) || saltoDoPainel);
+  if (decidindoAgora) {
+    if (mesTemHorario) {
+      setAberturaDecidida(true);
+      setSaltoDoPainel(false);
+    } else if (publicouHorarios && !erroAoCarregar) {
+      // `false` = o teto já foi gasto: a tela fica onde está.
+      if (!saltarParaOMesSeguinte()) setAberturaDecidida(true);
+    }
+    // Sem jornada publicada (ou com erro na consulta) a resposta não decide
+    // nada: a decisão fica PENDENTE (#3777) e a próxima resposta do mesmo tipo,
+    // com jornada, ainda pode levar ao mês seguinte. O aviso aparece enquanto isso.
+  }
+
+  /**
+   * O MÊS ACABA COM A TELA ABERTA.
+   *
+   * 30/10/2026, sexta: às 16:28 o painel ainda enxergava 17:00 e 17:30 e por
+   * isso ficou em outubro; vinte minutos depois os dois caíram dentro do aviso
+   * mínimo, outubro ficou sem um dia clicável — e a decisão, tomada uma vez, não
+   * era revista. A tela ficou 20 s parada em "outubro de 2026" no trace do e2e
+   * (issue #3774), e é o que qualquer pessoa vê abrindo o painel de manhã e
+   * voltando a ele depois das 16:30.
+   *
+   * Reabre SÓ o mês que esta visita viu com vaga e agora não tem nenhuma: quem
+   * voltou à mão para um mês já morto continua nele (o motivo de voltar é o
+   * encaixe de hoje), e quem foi para o mês seguinte à mão não é trazido de
+   * volta. O salto é o MESMO da abertura, com o mesmo teto.
+   */
+  const mesEmTelaFoiVistoComVaga = mesVistoComVaga === mes.getTime();
+  if (!decidindoAgora && !trocouDeTipo && dadosDoMesDeAgora) {
+    if (mesTemHorario && !mesEmTelaFoiVistoComVaga) {
+      setMesVistoComVaga(mes.getTime());
+      if (saltosAutomaticos !== 0) setSaltosAutomaticos(0);
+    } else if (!mesTemHorario && mesEmTelaFoiVistoComVaga) {
+      setMesVistoComVaga(null);
+      // Um mês adiante pode dar vaga; sem vaga em nenhum (ou com o teto gasto)
+      // a tela fica onde está e o aviso de "nenhum horário livre" diz a verdade.
+      if (publicouHorarios && !erroAoCarregar) saltarParaOMesSeguinte();
     }
   }
 
@@ -522,7 +781,7 @@ export function PainelDeMarcacao({
             {format(parede(marcado.instante), t("EEEE, d 'de' MMMM 'às' HH:mm"), { locale: localeDaData })}
           </p>
           <p className="mt-0.5 text-xs text-text-subtle">
-            {t(tipo)} · {duracaoMin} {t("min · com")} {responsavel.nome}
+            {tipo} · {duracaoConfirmada ?? duracaoMin} {t("min · com")} {responsavel.nome}
           </p>
           {quemSeraAtendido && !quemSeraAtendido.aceitaMensagem && (
             // Repetido aqui de propósito: o aviso do passo anterior sumiu da
@@ -620,12 +879,14 @@ export function PainelDeMarcacao({
           <AvatarDaPessoa pessoa={responsavel} tamanho="sm" />
           <span className="truncate text-sm font-semibold">{responsavel.nome}</span>
         </div>
-        <h3 className="mt-3 text-base font-semibold leading-tight">{tipo}</h3>
+        <h3 className="mt-3 break-words text-base font-semibold leading-tight">{t("Agendar")} {tipo}</h3>
         <dl className="mt-3 space-y-2 text-xs text-text-muted">
-          <div className="flex items-center gap-1.5">
-            <Clock size={14} aria-hidden />
-            <dd className="tabular-nums">{duracaoMin} minutos</dd>
-          </div>
+          {permiteEscolherDuracao ? null : (
+            <div className="flex items-center gap-1.5">
+              <Clock size={14} aria-hidden />
+              <dd className="tabular-nums">{duracaoMin} minutos</dd>
+            </div>
+          )}
           {local ? (
             <div className="flex items-center gap-1.5">
               <MapPin size={14} aria-hidden />
@@ -633,6 +894,54 @@ export function PainelDeMarcacao({
             </div>
           ) : null}
         </dl>
+        {/*
+          A DURAÇÃO DEIXOU DE SER SÓ DO SERVIÇO (issue #3709).
+
+          O campo nasce com o valor do serviço — o padrão continua sendo ele — e
+          existe porque um atendimento técnico externo não dura o mesmo que
+          outro. O que ele NÃO é: um número solto que viaja até o banco. Cada
+          tecla válida é anunciada a quem calcula os horários
+          (`onDuracaoMudar`), e a lista ao lado passa a exigir aquele tanto de
+          tempo livre; valor fora de 5…1440 não é anunciado, limpa a escolha de
+          horário e trava o Confirmar.
+        */}
+        {permiteEscolherDuracao ? (
+          <div className="mt-3">
+            <label
+              htmlFor="duracao-do-atendimento"
+              className="block text-xs font-medium text-text-muted"
+            >
+              {t("Duração (minutos)")}
+            </label>
+            <Input
+              id="duracao-do-atendimento"
+              data-testid="duracao-do-atendimento"
+              type="number"
+              inputMode="numeric"
+              min={DURACAO_MINIMA_MIN}
+              max={DURACAO_MAXIMA_MIN}
+              step={5}
+              value={duracaoTexto}
+              onChange={(e) => mudarDuracao(e.target.value)}
+              aria-describedby="ajuda-da-duracao"
+              aria-invalid={duracaoOk ? undefined : true}
+              className="mt-1 h-9 w-24 px-2 tabular-nums"
+            />
+            <p
+              id="ajuda-da-duracao"
+              data-testid={duracaoOk ? "ajuda-da-duracao" : "duracao-invalida"}
+              role={duracaoOk ? undefined : "alert"}
+              className={cn(
+                "mt-1 text-[11px] leading-4",
+                duracaoOk ? "text-text-subtle" : "text-warning",
+              )}
+            >
+              {duracaoOk
+                ? t("O padrão é a duração do serviço. Mude se este atendimento precisar de mais ou menos tempo.")
+                : t("Escolha uma duração entre 5 e 1440 minutos.")}
+            </p>
+          </div>
+        ) : null}
         {fuso ? (
           <p className="mt-4 border-t border-border pt-3 text-[11px] leading-4 text-text-subtle">
             {t("Horários no fuso")} <span className="font-mono">{fuso.replace("_", " ")}</span>.
@@ -668,7 +977,7 @@ export function PainelDeMarcacao({
               size="icon"
               aria-label={t("Mês anterior")}
               data-testid="mes-anterior"
-              onClick={() => setMes((m) => startOfMonth(addDays(startOfMonth(m), -1)))}
+              onClick={() => irParaOMes(-1)}
             >
               <CaretLeft size={16} weight="bold" aria-hidden />
             </Button>
@@ -677,7 +986,7 @@ export function PainelDeMarcacao({
               size="icon"
               aria-label={t("Próximo mês")}
               data-testid="mes-seguinte"
-              onClick={() => setMes((m) => startOfMonth(addDays(startOfMonth(m), 32)))}
+              onClick={() => irParaOMes(32)}
             >
               <CaretRight size={16} weight="bold" aria-hidden />
             </Button>
@@ -745,7 +1054,7 @@ export function PainelDeMarcacao({
           <div
             data-testid="motivo-do-bloqueio"
             data-motivo="sem-vaga"
-            className="mb-3 rounded-sm border border-border bg-surface-sunken p-3"
+            className="mb-3 rounded-sm border border-border bg-surface-elevated p-3"
           >
             <p className="text-sm font-semibold text-text">
               {t("Nenhum horário livre em")} {format(mes, "MMMM", { locale: localeDaData })}
@@ -887,6 +1196,9 @@ export function PainelDeMarcacao({
               <Button
                 size="sm"
                 data-testid="confirmar-marcacao"
+                // Sem duração válida não há o que confirmar: os horários em tela
+                // foram calculados para OUTRA régua (ver `mudarDuracao`).
+                disabled={!duracaoOk}
                 onClick={async () => {
                   // ⚠️ ERA `setMarcado(horario); onConfirmar?.(...)` — nesta ordem
                   // e sem esperar. A vista de sucesso aparecia por estado local do
@@ -899,8 +1211,9 @@ export function PainelDeMarcacao({
                   // `showApiError` aparece e o painel fica onde estava, com o
                   // horário ainda escolhido para tentar de novo.
                   try {
-                    await onConfirmar?.(horario.instante);
+                    await onConfirmar?.(horario.instante, duracaoDigitada);
                     setRecusa(null);
+                    setDuracaoConfirmada(duracaoDigitada);
                     setMarcado(horario);
                   } catch (err) {
                     // A mensagem da ROTA só quando ela é uma recusa com motivo

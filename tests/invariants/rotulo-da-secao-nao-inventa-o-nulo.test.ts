@@ -36,9 +36,16 @@ const ALVO = "26560000-5555-4000-8000-000000000001"; // motivo preenchido + moti
 const SEM = "26560001-5555-4000-8000-000000000002"; // idem, rótulo de número diferente
 const VIZ = "26560000-5555-4000-8000-000000000003"; // nunca anonimizado
 
-/** Rótulo por contato: `substring(id::text from 1 for 8)`, como a própria função monta. */
-const ROTULO_ALVO = "Cliente Anonimizado #26560000";
-const ROTULO_SEM = "Cliente Anonimizado #26560001";
+/**
+ * O rótulo por contato NÃO é mais `substring(id::text from 1 for 8)` (#2342): a cascata
+ * gera um sufixo OPACO e o grava no contato, e o gatilho de seções reusa este MESMO valor
+ * — é por isso que a preenchida vira o rótulo do CONTATO, e não o de outro. O teste lê o
+ * que o banco guardou; a prova de que o sufixo não é mais o id está em
+ * `tests/invariants/lgpd-rotulo-opaco-e-external-id.test.ts`.
+ */
+function rotuloDo(contato: string): string {
+  return sql(`select name from public.contacts where id = '${contato}';`).trim();
+}
 
 /** Linhas da tabela de mentira: uma com motivo preenchido e uma nula, por contato. */
 const P_CHEIA = "26560000-3333-4000-8000-000000000001";
@@ -105,8 +112,16 @@ describe("o rótulo da seção não inventa dado onde a coluna era nula", () => 
     expect(linha(S_NULA), "o mesmo vale para o segundo contato").toBe("NULL|NULL");
 
     // 2. A preenchida CONTINUA virando o rótulo: preservar o nulo não apaga o efeito.
-    expect(linha(P_CHEIA), "a coluna preenchida deixou de receber o rótulo").toBe(`${ROTULO_ALVO}|NULL`);
-    expect(linha(S_CHEIA), "o rótulo é o do CONTATO anonimizado, não o de outro").toBe(`${ROTULO_SEM}|NULL`);
+    expect(linha(P_CHEIA), "a coluna preenchida deixou de receber o rótulo").toBe(`${rotuloDo(ALVO)}|NULL`);
+    expect(linha(S_CHEIA), "o rótulo é o do CONTATO anonimizado, não o de outro").toBe(
+      `${rotuloDo(SEM)}|NULL`,
+    );
+    // Os DOIS contatos saem com rótulo no formato — e com rótulos DISTINTOS: se o sufixo
+    // fosse fixo, os dois titulares dividiriam o mesmo rótulo e a tela voltaria a não
+    // distinguir ninguém (issue #2342).
+    expect(rotuloDo(ALVO)).toMatch(/^Cliente Anonimizado #[0-9a-f]{8}$/);
+    expect(rotuloDo(SEM)).toMatch(/^Cliente Anonimizado #[0-9a-f]{8}$/);
+    expect(rotuloDo(ALVO)).not.toBe(rotuloDo(SEM));
 
     // 3. `colunas` (nota) segue virando nulo nos dois lados.
     expect(linha(P_CHEIA)).toContain("|NULL");

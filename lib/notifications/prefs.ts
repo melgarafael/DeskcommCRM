@@ -126,7 +126,17 @@ export function getPrefsSnapshotDoServidor(): NotifyPrefs {
 }
 
 export function canalLigado(category: NotifyCategory, channel: NotifyChannelPref): boolean {
-  return lerPrefs()[category][channel];
+  return pushEfetivo(lerPrefs(), category, channel);
+}
+
+/**
+ * O push de mensagem é o interruptor do aparelho: desligado, a inscrição sai
+ * (`encerrarPushDesteAparelho`) e o servidor, que não separa categorias, não
+ * alcança mais este aparelho. Nenhuma outra categoria vai à bandeja.
+ */
+export function pushEfetivo(prefs: NotifyPrefs, category: NotifyCategory, channel: NotifyChannelPref): boolean {
+  if (channel === "push" && !prefs.message.push) return false;
+  return prefs[category][channel];
 }
 
 export function gravarCanal(

@@ -68,3 +68,12 @@ export function iconeDaAba(
   if (caminho.length === 0 || base.length === 0) return ICONE_DESENHADO;
   return urlPublicaDoLogo(caminho, base);
 }
+
+/**
+ * O `?v=` dos ícones do app instalado: muda quando o operador troca o arquivo,
+ * para o navegador não ficar com o PNG antigo. Manifest e `<head>` usam o
+ * mesmo sufixo, senão o cache de um diverge do outro.
+ */
+export function sufixoDoIcone(faviconPath: string | null | undefined): string {
+  return faviconPath ? `?v=${encodeURIComponent(faviconPath)}` : "";
+}

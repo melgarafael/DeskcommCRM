@@ -63,21 +63,27 @@ function attachmentFields(env: OutboundEnvelope): Record<string, unknown> {
   const base: Record<string, unknown> = {
     attachmentUrl: env.media.url,
     ...(env.media.filename ? { attachmentName: env.media.filename } : {}),
-    ...(env.media.caption ? { message: env.media.caption } : {}),
   };
+  // A legenda só acompanha o anexo que vira MENSAGEM. Numa nota de voz ela
+  // sobra: a bolha de voz não tem legenda, e mandá-la como `message` de um
+  // anexo de voz ou é ignorada pela API ou vira texto solto na conversa —
+  // então a nota de voz sai sem `message`, como nos outros adapters (issue
+  // #3266). Imagem, vídeo e documento seguem levando a legenda.
+  const legenda: Record<string, unknown> = env.media.caption ? { message: env.media.caption } : {};
   switch (env.kind) {
     case "image":
-      return { ...base, attachmentType: "image" };
+      return { ...base, ...legenda, attachmentType: "image" };
     case "video":
-      return { ...base, attachmentType: "video" };
+      return { ...base, ...legenda, attachmentType: "video" };
     case "audio":
       // `voiceNote: true` é o que faz virar BOLHA DE VOZ. A API aceita a flag
       // mas NÃO converte: exige ogg/opus mono, igual ao canal oficial. Mandar
       // mp3 com a flag entrega anexo de música — por isso a capability declara
       // `opus-only`, e a conversão é de quem prepara a mídia, não daqui.
+      // Sem `legenda`: bolha de voz não leva legenda.
       return { ...base, attachmentType: "audio", voiceNote: true };
     default:
-      return { ...base, attachmentType: "file" };
+      return { ...base, ...legenda, attachmentType: "file" };
   }
 }
 

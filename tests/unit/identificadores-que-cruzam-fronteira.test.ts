@@ -21,7 +21,8 @@
  *   3. se o terceiro NÃO documenta nada, a lacuna entra com motivo escrito.
  *      Número não medido não vira teto: vira lacuna declarada.
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -146,10 +147,10 @@ function varrer(dir: string, achados: string[] = []): string[] {
   return achados;
 }
 
-function caminhosCom(padrao: RegExp): string[] {
-  return DIRS_DE_CODIGO.flatMap((d) => varrer(join(RAIZ, d)))
+function caminhosCom(padrao: RegExp, raiz = RAIZ): string[] {
+  return DIRS_DE_CODIGO.flatMap((d) => varrer(join(raiz, d)))
     .filter((c) => padrao.test(readFileSync(c, "utf8")))
-    .map((c) => c.slice(RAIZ.length + 1).replaceAll("\\", "/"));
+    .map((c) => c.slice(raiz.length + 1).replaceAll("\\", "/"));
 }
 
 /**
@@ -161,6 +162,11 @@ function caminhosCom(padrao: RegExp): string[] {
 const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validador" }[] = [
   // Storage — a chave do objeto sai daqui e vira objeto lá.
   { arquivo: "workers/lgpd-export-worker.ts", fronteira: "storage.chave-de-objeto" },
+  // O atestado de anonimização (#2342): a chave é `{org}/{pedido}/atestado.pdf`
+  // — o primeiro pedaço é o UUID da org que o banco gera, o segundo é o id do
+  // pedido já validado como uuid pela rota, e o sufixo é fixo. Nada de texto
+  // digitado por ninguém entra na chave.
+  { arquivo: "lib/lgpd/emitir-atestado.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "workers/media-persist-worker.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "lib/ai/skills/install.ts", fronteira: "storage.chave-de-objeto" },
   // Herança de arquivos do pacote no save textual (#2047): a chave é montada
@@ -176,23 +182,41 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   // ASSINATURA dos bytes, nunca pelo content-type que o cliente diz.
   { arquivo: "app/api/v1/message-templates/[id]/midias/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/cron/contact-avatars/route.ts", fronteira: "storage.chave-de-objeto" },
-  { arquivo: "app/api/v1/channels/partner/templates/media/route.ts", fronteira: "storage.chave-de-objeto" },
+  // #3635: o upload do cabeçalho saiu da rota do parceiro para `lib/` quando o
+  // canal oficial direto passou a gerenciar modelo pela tela — a lógica é a
+  // mesma, e as duas rotas (`partner/templates/media` e `templates/media`) são só
+  // o handler. A chave é a de antes: `{org}/templates/{uuid}.{jpg|png}`, com a
+  // extensão vinda da ASSINATURA dos bytes.
+  { arquivo: "lib/channels/templates-midia.ts", fronteira: "storage.chave-de-objeto" },
+  // A nota de voz do agente (`uploadDeVoz`): `{org}/{conversa}/voz-agente-{jobId}-{seq}.mp3`
+  // — org e conversa do turno, jobId uuid da fila, seq inteiro do turno. Nada de
+  // texto do cliente nem do modelo entra na chave.
+  { arquivo: "lib/agent-engine/agent/inbound-turn.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/settings/sons/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/marca/logo/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/conversations/[id]/media/route.ts", fronteira: "storage.chave-de-objeto" },
   // O anexo da nota interna (#1863, F3): MESMO molde de chave da rota irmã
   // (`{org}/{conversa}/note-{uuid}.{ext}`), bucket próprio `internal-media`.
   { arquivo: "app/api/v1/conversations/[id]/notes/media/route.ts", fronteira: "storage.chave-de-objeto" },
+  // O anexo de lead (#2829): anexo em campo customizado do lead, bucket `internal-media`.
+  { arquivo: "app/api/v1/leads/[id]/attachments/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/ai/knowledge/sources/upload/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/ai/knowledge/sources/route.ts", fronteira: "storage.chave-de-objeto" },
   // O PDF da proposta comercial (#1832): `<org>/<proposta>.pdf`, dois uuids.
   { arquivo: "lib/propostas/storage.ts", fronteira: "storage.chave-de-objeto" },
+  // A foto do produto por URL na planilha (#3587, fatia 1): a chave é
+  // `<org>/<produto>/<uuid>.<ext>` — os mesmos pedaços que a tela grava. O uuid
+  // nasce aqui (`randomUUID`), a extensão vem do tipo farejado nos BYTES (não
+  // do nome nem da URL) e o `org`/`produto` são uuids já resolvidos. Nenhum
+  // texto da planilha entra na chave — a URL do cliente só escolhe o conteúdo.
+  { arquivo: "lib/catalogo/fotos-por-url.ts", fronteira: "storage.chave-de-objeto" },
   // Chave de idempotência: os geradores (manda UUID) e os validadores (exige UUID).
   { arquivo: "app/onboarding/connect-whatsapp/_client.tsx", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "components/extensions/ExtensionsManager.tsx", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "components/modulos/ModulosManager.tsx", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "hooks/ai/useSkills.ts", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "hooks/contacts/useImportContacts.ts", fronteira: "api.idempotency-key", papel: "gerador" },
+  { arquivo: "hooks/contacts/useSyncPhoneContacts.ts", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "lib/api/client.ts", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "lib/api/idempotency.ts", fronteira: "api.idempotency-key", papel: "validador" },
   { arquivo: "lib/extensions/http.ts", fronteira: "api.idempotency-key", papel: "validador" },
@@ -312,6 +336,25 @@ describe("nenhum identificador sem destino declarado", () => {
 });
 
 describe("a varredura é de classe: site novo de fronteira reprova", () => {
+  it.each(["app/api/novo/route.ts", "scripts/operacao.ts", "scripts/provas/nova.ts"])(
+    "encontra upload novo em %s; bancada em tests fica fora do código de produção",
+    (arquivo) => {
+      const raiz = mkdtempSync(join(tmpdir(), "fronteiras-de-producao-"));
+      try {
+        for (const dir of [...DIRS_DE_CODIGO, "tests/provas"]) mkdirSync(join(raiz, dir), { recursive: true });
+        mkdirSync(join(raiz, arquivo, ".."), { recursive: true });
+        writeFileSync(join(raiz, arquivo), "armazenamento.upload('chave', bytes);\n");
+        writeFileSync(join(raiz, "tests/provas/bancada.ts"), "armazenamento.upload('fixture', bytes);\n");
+        // Nem retirar scripts da varredura, nem ignorar scripts/provas passa.
+        // O site novo permanece fora do catálogo e seria recusado pelo gate.
+        expect(caminhosCom(/\.upload\(/, raiz)).toEqual([arquivo]);
+        expect(SITES.some((s) => s.arquivo === arquivo)).toBe(false);
+      } finally {
+        rmSync(raiz, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("todo `.upload(` do código de produção está registrado, e na fronteira certa", () => {
     const achados = caminhosCom(/\.upload\(/);
     const registrados = SITES.filter((s) => s.fronteira === "storage.chave-de-objeto").map((s) => s.arquivo);

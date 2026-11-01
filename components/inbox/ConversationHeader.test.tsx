@@ -16,12 +16,13 @@ import type { ConversationWithContact } from "@/hooks/inbox/useConversationsReal
 const closeMutate = vi.hoisted(() => vi.fn());
 const arquivarMutate = vi.hoisted(() => vi.fn());
 const startCall = vi.hoisted(() => vi.fn());
+const claimMutate = vi.hoisted(() => vi.fn());
 
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({ user: { id: "u1", support: null } }),
 }));
 vi.mock("@/hooks/inbox/useClaimConversation", () => ({
-  useClaimConversation: () => ({ mutate: vi.fn(), isPending: false }),
+  useClaimConversation: () => ({ mutate: claimMutate, isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useReleaseConversation", () => ({
   useReleaseConversation: () => ({ mutate: vi.fn(), isPending: false }),
@@ -54,6 +55,11 @@ vi.mock("@/components/inbox/FaixaDaCarteira", () => ({ FaixaDaCarteira: () => nu
 vi.mock("@/components/inbox/ReassignDialog", () => ({ ReassignDialog: () => null }));
 vi.mock("@/components/inbox/SnoozeButton", () => ({ SnoozeButton: () => null }));
 vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
+// O atendimento conjunto (#2542) tem arquivo de teste próprio; este arquivo mede
+// a barra de ações, e o componente novo lê react-query (exigiria provider).
+vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
+  ParticipantesDaConversa: () => null,
+}));
 vi.mock("@/components/inbox/ChannelLogo", () => ({ ChannelLogo: () => null }));
 vi.mock("@/hooks/voice/useVoiceSessionStatus", () => ({
   useVoiceSessionStatus: () => ({ data: { configured: true, paired: true } }),
@@ -95,6 +101,40 @@ beforeEach(() => {
   closeMutate.mockReset();
   arquivarMutate.mockReset();
   startCall.mockReset();
+  claimMutate.mockReset();
+});
+
+/**
+ * O BOTÃO "ASSUMIR" NUNCA SOME (#3012).
+ *
+ * Ele é a SAÍDA da regra que trava a caixa de mensagem até alguém assumir: se
+ * ele desaparecesse em algum estado, a conversa ficaria sem caminho de volta. O
+ * cabeçalho não conhece a preferência da organização de propósito — quem lê a
+ * opção é o compositor —, então estes casos medem o que não pode depender dela:
+ * o botão existe e funciona com a conversa SEM dono, e continua existindo com a
+ * conversa já assumida por outra pessoa (onde ele é o gesto de reatribuir).
+ */
+describe("ConversationHeader — 'Assumir' é a saída da trava (#3012)", () => {
+  it("aparece e assume numa conversa SEM dono", async () => {
+    const user = userEvent.setup();
+    render(<ConversationHeader conversation={conversa("open")} />);
+
+    const botao = screen.getByRole("button", { name: "Assumir" });
+    await user.click(botao);
+
+    expect(claimMutate).toHaveBeenCalledWith({
+      conversation_id: "conv-1",
+      expected_assignee: null,
+    });
+  });
+
+  it("continua visível com a conversa já assumida por OUTRO atendente", () => {
+    const atual = conversa("open");
+    atual.assigned_to_user_id = "u2";
+    render(<ConversationHeader conversation={atual} />);
+
+    expect(screen.getByRole("button", { name: "Assumir" })).toBeInTheDocument();
+  });
 });
 
 describe("ConversationHeader — chamada de voz na Inbox", () => {
@@ -216,5 +256,111 @@ describe("ConversationHeader — busca dentro da conversa (#1793)", () => {
     expect(buscar).toHaveBeenCalledOnce();
     expect(closeMutate).not.toHaveBeenCalled();
     expect(arquivarMutate).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * FECHAR UMA CONVERSA DE CONTATO COM A EQUIPE — A PERGUNTA QUE FALTAVA (#3313).
+ *
+ * A trava de humano mora no CONTATO (`contacts.force_human`), não na conversa:
+ * fechar não a soltava, e a próxima mensagem daquele cliente, dias depois, era
+ * pulada pela IA sem ninguém perceber. O diálogo de fechamento passa a
+ * perguntar, com «Devolver ao automático ao fechar» MARCADO por padrão.
+ *
+ * ─── SABOTAGEM ──────────────────────────────────────────────────────────────
+ *   - pôr a pergunta em toda conversa: o caso "sem a trava" acusa (a escolha
+ *     apareceria onde não há trava nenhuma para soltar);
+ *   - inverter o padrão (nascer marcado em "manter"): o primeiro caso acusa;
+ *   - mandar a chave sempre: o caso "sem a trava" acusa, porque o corpo
+ *     ganharia um `devolver_ao_automatico: false` que ninguém pediu.
+ */
+describe("ConversationHeader — fechar conversa de contato com a equipe (#3313)", () => {
+  function comTrava(force_human: boolean, status = "open"): ConversationWithContact {
+    const atual = conversa(status);
+    atual.contacts = {
+      id: "contato-1",
+      display_name: "Raphael",
+      name: "Raphael",
+      phone_number: "+5511999999999",
+      tags: [],
+      is_blocked: false,
+      is_personal: false,
+      is_anonymized: false,
+      force_human,
+    } as unknown as ConversationWithContact["contacts"];
+    return atual;
+  }
+
+  it("contato travado: o diálogo pergunta e «Devolver ao automático» vem MARCADO", async () => {
+    const user = userEvent.setup();
+    render(<ConversationHeader conversation={comTrava(true)} />);
+
+    await user.click(screen.getByRole("button", { name: "Fechar" }));
+    const dialogo = await screen.findByRole("alertdialog");
+
+    expect(within(dialogo).getByTestId("escolha-ao-fechar")).toBeTruthy();
+    expect(within(dialogo).getByTestId("fechar-devolver-ao-automatico")).toBeChecked();
+    expect(within(dialogo).getByTestId("fechar-manter-com-a-equipe")).not.toBeChecked();
+
+    await user.click(within(dialogo).getByRole("button", { name: "Fechar" }));
+    await waitFor(() => expect(closeMutate).toHaveBeenCalledTimes(1));
+    expect(closeMutate).toHaveBeenCalledWith({
+      conversation_id: "conv-1",
+      expected_revision: 3,
+      devolver_ao_automatico: true,
+    });
+  });
+
+  it("«Manter com a equipe»: fecha e manda NÃO devolver — a trava continua", async () => {
+    const user = userEvent.setup();
+    render(<ConversationHeader conversation={comTrava(true)} />);
+
+    await user.click(screen.getByRole("button", { name: "Fechar" }));
+    const dialogo = await screen.findByRole("alertdialog");
+
+    await user.click(within(dialogo).getByTestId("fechar-manter-com-a-equipe"));
+    expect(within(dialogo).getByTestId("fechar-manter-com-a-equipe")).toBeChecked();
+    expect(within(dialogo).getByTestId("fechar-devolver-ao-automatico")).not.toBeChecked();
+
+    await user.click(within(dialogo).getByRole("button", { name: "Fechar" }));
+    await waitFor(() => expect(closeMutate).toHaveBeenCalledTimes(1));
+    expect(closeMutate).toHaveBeenCalledWith({
+      conversation_id: "conv-1",
+      expected_revision: 3,
+      devolver_ao_automatico: false,
+    });
+  });
+
+  it("cancelar e reabrir volta ao PADRÃO MARCADO — a escolha não fica grudada", async () => {
+    const user = userEvent.setup();
+    render(<ConversationHeader conversation={comTrava(true)} />);
+
+    await user.click(screen.getByRole("button", { name: "Fechar" }));
+    const dialogo = await screen.findByRole("alertdialog");
+    await user.click(within(dialogo).getByTestId("fechar-manter-com-a-equipe"));
+    await user.click(within(dialogo).getByRole("button", { name: "Cancelar" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+
+    await user.click(screen.getByRole("button", { name: "Fechar" }));
+    const dialogo2 = await screen.findByRole("alertdialog");
+    expect(within(dialogo2).getByTestId("fechar-devolver-ao-automatico")).toBeChecked();
+    expect(closeMutate).not.toHaveBeenCalled();
+  });
+
+  it("sem a trava: não pergunta nada e o fechamento é o de sempre", async () => {
+    const user = userEvent.setup();
+    render(<ConversationHeader conversation={comTrava(false)} />);
+
+    await user.click(screen.getByRole("button", { name: "Fechar" }));
+    const dialogo = await screen.findByRole("alertdialog");
+
+    expect(within(dialogo).queryByTestId("escolha-ao-fechar")).toBeNull();
+
+    await user.click(within(dialogo).getByRole("button", { name: "Fechar" }));
+    await waitFor(() => expect(closeMutate).toHaveBeenCalledTimes(1));
+    expect(closeMutate).toHaveBeenCalledWith({
+      conversation_id: "conv-1",
+      expected_revision: 3,
+    });
   });
 });

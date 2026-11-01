@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { audit } from "@/lib/audit";
 import type pg from "pg";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -12,6 +13,8 @@ import { gerarAbordagemDeFormulario } from "@/lib/agent-engine/agent/abordagem-d
 import { llmEdgeConfigFromEnv } from "@/lib/agent-engine/edge/llm/credentials";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import { comSaida } from "./rodape-de-saida";
+import { splitForSend } from "@/lib/agent-engine/agent/split-message";
+import type { Message } from "@/lib/types/messaging";
 import {
   proximoEnvioDaEsteiraFria,
   tetoDiarioDaEsteiraFria,
@@ -21,27 +24,102 @@ import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consulta-pre-go-live";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
-import { assertProspectingDelivery } from "./guard";
-import { campaignConfigSchema } from "./schema";
-import { ProspectingError } from "./provider";
+import { assertProspectingContinuation, assertProspectingDelivery } from "./guard";
+import { instrucaoDeAbordagemFria, montarDadosDeAbordagem, estrategiaDoCandidato } from "./estrategia-site";
+import {
+  INTERVALO_MINIMO_ENTRE_TENTATIVAS_MIN,
+  LIMITE_TENTATIVAS,
+  siteEfetivo,
+} from "./site-efetivo";
+import { previaDoAgente } from "./previa";
+import { blocoVozVendedor, personalizacaoDaOrganizacao } from "./personalizar";
+import { campaignConfigSchema, type OfertaDaCampanha } from "./schema";
+import { prepararCandidatos } from "./preparo";
+import { CanalReconectandoError, ProspectingError } from "./provider";
+// O carimbo do pedido da prospecção: `prospecting:` — nunca `rule:` (#3072).
+import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 import {
   withProspectingLock,
   synchronizeSearch,
   validateConfig,
   prepararCandidatoNoEnvio,
+  MSG_CANAL_DESCONECTADO,
   type Campaign,
   type Candidate,
 } from "./store";
+
+/**
+ * Teto de mensagens FÍSICAS da abordagem fria — o mesmo do turno de conversa
+ * (`MAX_SENDS_PER_TURN`, padrão 3, em `lib/agent-engine/env.ts`), que desde o
+ * #1724 vale também para as bolhas. O que passar dele segue junto na última
+ * bolha (`splitForSend`). Constante local, e não import de `inbound-turn.ts`:
+ * aquilo puxaria o motor de turno inteiro para a rota de cron da prospecção.
+ * ponytail: não lê o env; se o operador mexer em MAX_SENDS_PER_TURN, a fria segue em 3.
+ */
+const TETO_DE_BOLHAS_DA_ABORDAGEM = 3;
+
+/**
+ * TETO DO ADIAMENTO DA RECONEXÃO (issue #3073) — quanto tempo a campanha pode
+ * esperar o canal voltar ao `WORKING` antes de a espera virar PAUSA.
+ *
+ * A régua é `prospecting_campaigns.channel_down_since`: gravado a partir da
+ * PRIMEIRA vez que a campanha viu o canal fora (`coalesce(channel_down_since,
+ * now())`) e zerado quando ela o vê em `WORKING`. Conta, portanto, desde o
+ * PRIMEIRO adiamento desta espera (até um tick depois do último `WORKING` que o
+ * tick observou). O relógio do PRÓPRIO canal
+ * (`channel_sessions.last_status_change_at`) NÃO serve: a ingestão o regrava a
+ * cada evento de status, então um canal que alterna `STARTING`↔`STOPPED`
+ * reiniciaria a contagem a cada volta.
+ *
+ * 30 minutos, e o número sai da cadência MEDIDA da campanha, não do gosto:
+ * - o tick roda a cada minuto (`docs/features/prospeccao-nativa.md`) e o passo do
+ *   adiamento é de 1 minuto (`CanalReconectandoError.retomarEmMs`), então 30 é o
+ *   30º adiamento;
+ * - é 2× o intervalo padrão entre envios (`interval_minutes`, default 15): duas
+ *   vagas perdidas já é a campanha "Ativa" sem fazer o trabalho dela;
+ * - é ~180× a queda de SEGUNDOS que abriu a issue — uma reconexão normal não
+ *   chega perto, e o teto não regride ao defeito de pausar por um soluço;
+ * - o vigia religa `STOPPED` em ≤60 s (`WATCHDOG_INTERVAL_MS`, default em
+ *   `lib/agent-engine/env.ts`), então 30 min fora do ar é a sessão GENUINAMENTE
+ *   presa — e `STARTING` preso não gera aviso de saúde nenhum
+ *   (`lib/channels/health.ts`): a pausa, com o motivo no cartão da campanha, é o
+ *   único sinal que sobra;
+ * - e é 1/4 das 2h dos dois casos de teste do mantenedor, então os dois pausam
+ *   com folga.
+ *
+ * Pausar é reversível num clique ("Retomar fila") e a campanha pausada diz o
+ * motivo; seguir "Ativa" sem enviar não diz nada a ninguém.
+ */
+export const TETO_DO_ADIAMENTO_MS = 30 * 60_000;
 
 export async function sendNextCandidate(
   pool: pg.Pool,
   db: pg.PoolClient,
   admin: SupabaseClient,
   c: Campaign,
+  /**
+   * A pausa ENTRE bolhas, injetável para o teste (mesmo expediente do `sleep`
+   * do turno). Bolhas são mensagens FÍSICAS no mesmo número: saírem no mesmo
+   * milissegundo é a cadência de robô que a detecção de automação procura, e o
+   * ritmo do número (`throttle_ms` + `jitter_max_ms`, 0010) já existe para
+   * isto. Só entre bolhas — a primeira sai já.
+   */
+  dormir: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms)),
 ) {
   const cfg = campaignConfigSchema.parse(c.config);
   await validateConfig(db, c.organization_id, cfg);
+  // O CANAL ESTÁ `WORKING` — a validação passou, e a espera da reconexão acabou.
+  // Limpa a marca do adiamento para a PRÓXIMA espera começar a contar do zero
+  // (issue #3073): sem isto, uma espera antiga envelheceria junto com o canal já
+  // recuperado e pausaria a campanha no adiamento seguinte. Só escreve quando há
+  // o que limpar — o caminho feliz comum não paga uma query a mais.
+  if (c.channel_down_since != null)
+    await db.query(
+      "update prospecting_campaigns set channel_down_since=null,updated_at=now() where organization_id=$1 and id=$2",
+      [c.organization_id, c.id],
+    );
   if (new Date(c.next_send_at).getTime() > Date.now()) return;
   const { knobs, numberActivatedAt } = await loadChannelKnobs(
     db,
@@ -222,30 +300,62 @@ export async function sendNextCandidate(
     await assertProspectingDelivery(admin, guard);
     await assertServiceBoundarySupabase(admin, boundary);
     const agent = (
-      await db.query(
-        "select published_version_id,operation_revision from ai_agents where organization_id=$1 and id=$2 and operation_mode='automatic' and paused_at is null and archived_at is null",
+      await db.query<{
+        published_version_id: string;
+        operation_revision: number | string;
+        split_messages: boolean | null;
+        split_max_chars: number | null;
+      }>(
+        // O ESTILO DE RESPOSTA do agente mora na versão publicada (`ai_agent_versions`,
+        // migration 0059), não no agente: é a MESMA coluna que a tela "Estilo de
+        // resposta" grava e que o turno inbound lê. `LEFT JOIN` porque a ponta é o
+        // agente — sem versão publicada a linha continua vindo, e o teste de
+        // `published_version_id` abaixo responde com o mesmo erro de antes.
+        "select a.published_version_id,a.operation_revision,v.split_messages,v.split_max_chars from ai_agents a left join ai_agent_versions v on v.organization_id=a.organization_id and v.id=a.published_version_id where a.organization_id=$1 and a.id=$2 and a.operation_mode='automatic' and a.paused_at is null and a.archived_at is null",
         [c.organization_id, cfg.agent_id],
       )
     ).rows[0];
     if (!agent?.published_version_id)
       throw new ProspectingError("Agente pausado ou sem versão publicada.");
+    // A MESMA estratégia e a MESMA prévia da tela (B1). O veredito sai de
+    // `siteEfetivo` — a leitura única que `prever_abordagem` também usa — para o
+    // par tela×envio não divergir (quem não tem site já é `sem-site` derivado,
+    // sem rede). A prévia guardada só entra se ainda estiver ancorada na
+    // auditoria atual E escrita pelo MESMO agente (`previaDoAgente`); vencida ou
+    // de outro agente (a do padrão da organização), o envio escreve do zero.
+    const personalizacao = await personalizacaoDaOrganizacao(db, c.organization_id);
+    const site = siteEfetivo(p.data, new Date().toISOString());
+    const estrategia = site
+      ? estrategiaDoCandidato(p.data, site, {
+          ofertas: (cfg.ofertas ?? ["site"]) as OfertaDaCampanha[],
+          nicho: c.search?.niche ?? p.data.category ?? "",
+          sobrescritaVocabulario: personalizacao.vocabulario ?? null,
+          status: p.status,
+        })
+      : null;
+    // Modo "saída na 2ª": a 1ª mensagem só cumprimenta, então nada de ângulo de
+    // venda — nem estratégia (na instrução) nem Auditoria/Detalhe/Rascunho (nos
+    // dados), que o prompt frio deixa citar "como o motivo do contato".
+    const soCumprimenta = cfg.exit_offer !== "first_message";
     const generated = await gerarAbordagemDeFormulario(pool, llmEdgeConfigFromEnv(env), {
       tenantId: c.organization_id,
       agentId: cfg.agent_id,
       leadId: p.contact_id,
-      instrucao: `${cfg.instruction}\nFaça uma primeira abordagem curta e transparente. Os dados vieram de pesquisa pública, não de um formulário preenchido pela pessoa. Não invente familiaridade, resultados ou interesse. Uma pergunta por vez. Critérios a confirmar durante a conversa: ${cfg.qualification}`,
+      instrucao: instrucaoDeAbordagemFria(
+        cfg.instruction,
+        cfg.qualification,
+        blocoVozVendedor(personalizacao) || undefined,
+        estrategia,
+        soCumprimenta,
+      ),
       origem: "Pesquisa de empresas",
       // NÃO é `automacao`: a pessoa não entrou em funil nenhum. O prompt do
       // ramo frio é o único que proíbe afirmar preenchimento — ver blocoDeModo.
       origemDaAbordagem: "prospeccao_fria",
-      dados: {
-        Empresa: p.data.name,
-        Segmento: p.data.category ?? "",
-        Endereço: p.data.address ?? "",
-        Site: p.data.website ?? "",
-        Avaliação: String(p.data.rating ?? ""),
-        Redes: p.data.socials.join(", "),
-      },
+      // Fonte única em `montarDadosDeAbordagem` (prévia da tela bebe da mesma).
+      dados: soCumprimenta
+        ? montarDadosDeAbordagem(p.data, null, null)
+        : montarDadosDeAbordagem(p.data, site, previaDoAgente(p.data, cfg.agent_id)),
     });
     if (!generated.ok)
       // DO CANDIDATO: o modelo não produziu texto para ESTES dados.
@@ -262,50 +372,186 @@ export async function sendNextCandidate(
     });
     if (!authorization.ok)
       throw new ProspectingError("Não foi possível preparar o atendimento da resposta.");
-    const message = await sendMessageHandler(
-      admin,
-      {
-        organization_id: c.organization_id,
-        actor: { type: "ai_agent", id: p.id, agent_id: cfg.agent_id, role: "ai_operator" },
-        requestId: `prospecting:${p.id}`,
-        serviceBoundary: boundary,
-        internalMessageId: p.message_id,
-        proactiveContext: { organizationId: c.organization_id, contactId: p.contact_id },
-        prospectingDelivery: guard,
-        agentOperation: {
-          organizationId: c.organization_id,
-          agentId: cfg.agent_id,
-          versionId: agent.published_version_id,
-          revision: String(agent.operation_revision),
-        },
-      },
-      {
-        conversation_id: p.conversation_id,
-        type: "text",
-        // A SAÍDA vai junto da primeira mensagem, e é montada aqui — não pedida
-        // ao modelo. Sem ela, a saída que a pessoa usa é "Denunciar spam", que
-        // é invisível ao sistema e queima o número do CLIENTE que instalou.
-        // O idioma sai de `organizations.locale`: um rodapé em português numa
-        // instalação em espanhol oferece uma palavra que a pessoa não responde,
-        // e o detector de opt-out só reconhece a palavra ISOLADA.
-        body: comSaida(generated.texto, locale),
-      },
+    // A SAÍDA é montada aqui — não pedida ao modelo — e vai JUNTO DA PRIMEIRA
+    // BOLHA quando a CAMPANHA manda oferecê-la aí (`exit_offer`, migration 0705:
+    // ver o `if` depois de `splitForSend`). Sem ela, a saída que a pessoa usa é
+    // "Denunciar spam", que é
+    // invisível ao sistema e queima o número do CLIENTE que instalou. O idioma
+    // sai de `organizations.locale`: um rodapé em português numa instalação em
+    // espanhol oferece uma palavra que a pessoa não responde, e o detector de
+    // opt-out só reconhece a palavra ISOLADA.
+    //
+    // POR QUE NA PRIMEIRA, e não na última (revisão do PR #2680): quem está do
+    // outro lado não abre a conversa por partes. Se qualquer bolha depois da
+    // primeira não sair — veto do canal, status não confirmado, ou a pessoa
+    // respondendo no meio — quem recebeu a apresentação fica SEM saída numa
+    // mensagem fria, que é o desfecho que mais queima número. O rodapé é a única
+    // parte da abordagem que não pode depender do resto ter dado certo.
+    //
+    // O corte vem ANTES do rodapé por isso: o texto do modelo é que é fatiado no
+    // estilo configurado, e o rodapé (parágrafo próprio, ~60 caracteres) entra na
+    // primeira bolha já pronta. Isso a deixa alguns caracteres acima de
+    // `split_max_chars` — é o mesmo preço que o `splitForSend` já paga quando o
+    // teto de bolhas do turno é atingido: a alternativa seria picar a saída em
+    // duas mensagens, e aí ela voltaria a depender de uma bolha posterior.
+    const baloes = splitForSend(
+      generated.texto,
+      agent.split_messages ?? false,
+      agent.split_max_chars ?? 600,
+      TETO_DE_BOLHAS_DA_ABORDAGEM,
     );
-    const sent = ["sent", "delivered", "read"].includes(message.status);
-    if (!sent) {
+    // Texto vazio com o estilo ligado não devolve bolha nenhuma (`splitForSend` →
+    // `[]`), e a abordagem fria não pode sair sem bolha nenhuma: neste caso a
+    // primeira bolha é vazia (e, no modo `first_message`, é ela que leva o rodapé).
+    if (baloes.length === 0) baloes.push("");
+    // A SAÍDA ENTRA NA 1ª BOLHA SÓ QUANDO A CONFIGURAÇÃO MANDA OFERECÊ-LA JÁ NA
+    // PRIMEIRA MENSAGEM. `exit_offer` (migration 0705, `prospecting_saida_configuravel`)
+    // tem dois valores: em `"first_message"` a saída sai junto da PRIMEIRA
+    // mensagem — é o caso acima, e sem ela quem recebe a apresentação fica SEM
+    // caminho de volta; em `"second_message"` a saída é RESERVADA por
+    // `saida-configuravel.ts` (`exit_offered_at`) e servida na SEGUNDA mensagem
+    // (é o `context.ts` que manda o agente só cumprimentar na primeira). Pôr o
+    // rodapé aqui incondicionalmente ofereceria a saída DUAS vezes — e na
+    // mensagem que o operador não escolheu.
+    if (cfg.exit_offer === "first_message") baloes[0] = comSaida(baloes[0]!, locale);
+    let mensagem: Message | undefined;
+    let falhouEm: Message | undefined;
+    /** A conversa deixou de ser fria ENTRE bolhas: a pessoa respondeu ou um humano assumiu. */
+    let parouEm: string | undefined;
+    /** Uma bolha DEPOIS da primeira lançou no envio (agente pausado no meio, erro transitório). */
+    let lancouEm: string | undefined;
+    /** Bolhas FÍSICAS confirmadas — é o "o que saiu" que a trilha registra. */
+    let entregues = 0;
+    for (let i = 0; i < baloes.length; i++) {
+      if (i > 0) {
+        // Bolhas são mensagens FÍSICAS no mesmo número: saírem juntas é a cadência
+        // de robô que a detecção procura. O ritmo do número (throttle + jitter,
+        // knobs 0010) que decide a pausa — a primeira sai sem esperar.
+        await dormir(
+          (knobs.throttleMs ?? 1200) + Math.floor(Math.random() * (knobs.jitterMaxMs ?? 800)),
+        );
+        // A guarda de PRIMEIRO CONTATO já cumpriu o papel dela na 1ª bolha (é ela
+        // que recusa conversa com `last_outbound_at` — carimbo que o PRÓPRIO
+        // handler grava ao enviar a 1ª). Entre as seguintes vale a conferência
+        // leve: a pessoa respondeu, foi bloqueada ou um humano assumiu → PARA,
+        // mas só ESTE candidato: a campanha não é pausada, porque nada nela
+        // falhou (e a pessoa responder é o desfecho que ela procura).
+        try {
+          await assertProspectingContinuation(admin, {
+            organizationId: c.organization_id,
+            candidateId: p.id,
+            conversationId: p.conversation_id,
+          });
+        } catch (error) {
+          parouEm =
+            error instanceof ProspectingError
+              ? error.message
+              : "A abordagem foi interrompida entre bolhas.";
+          break;
+        }
+      }
+      try {
+        mensagem = await sendMessageHandler(
+          admin,
+          {
+            organization_id: c.organization_id,
+            actor: { type: "ai_agent", id: p.id, agent_id: cfg.agent_id, role: "ai_operator" },
+            requestId: pedidoDaProspeccao(p.id),
+            serviceBoundary: boundary,
+            // O RECIBO E A IDEMPOTÊNCIA do candidato moram na PRIMEIRA bolha: é a
+            // linha `messages` de id estável (`p.message_id`) que o `sending`
+            // grava antes, e o eco do próprio envio casa por ela. As demais são
+            // mensagens próprias — repetir o id faria o handler devolver a linha
+            // de antes sem enviar (o ramo 23505).
+            // A GUARDA CHEIA acompanha a PRIMEIRA bolha, e só ela: o handler a
+            // roda na entrada de cada envio (`_handler.ts:437`) e ela recusa
+            // conversa com `last_outbound_at` — que é o carimbo que o próprio
+            // handler grava logo depois de enviar esta bolha. Repetida nas
+            // seguintes, ela recusava a 2ª com 409 de escopo `campanha`, pausava a
+            // campanha no primeiro contato e deixava a pessoa sem a saída.
+            ...(i === 0
+              ? { internalMessageId: p.message_id, prospectingDelivery: guard }
+              : {}),
+            proactiveContext: { organizationId: c.organization_id, contactId: p.contact_id },
+            agentOperation: {
+              organizationId: c.organization_id,
+              agentId: cfg.agent_id,
+              versionId: agent.published_version_id,
+              revision: String(agent.operation_revision),
+            },
+          },
+          {
+            conversation_id: p.conversation_id,
+            type: "text",
+            body: baloes[i]!,
+          },
+        );
+      } catch (error) {
+        // Na 1ª bolha nada saiu: o erro segue para o `catch` de fora (candidato
+        // `failed`, campanha decidida pelo tick), como antes. Depois dela a
+        // pessoa JÁ recebeu a apresentação: o handler revalida a cada envio o
+        // que muda com o tempo (agente pausado ou editado, agenda, erro de
+        // banco), e deixar isso subir pausaria a campanha, marcaria `failed`
+        // quem foi abordado e perderia a trilha. Para só este candidato.
+        if (i === 0) throw error;
+        lancouEm = "Uma mensagem depois da primeira não pôde ser enviada.";
+        logger.warn("[prospecting] bolha seguinte lançou no envio; a abordagem parou aqui", {
+          organization_id: c.organization_id,
+          campaign_id: c.id,
+          candidate_id: p.id,
+          sent_bubbles: entregues,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        break;
+      }
+      // Veto/bloqueio/falha: para aqui, como o `sendInBubbles` do turno. Não se
+      // segue mandando bolha atrás de um canal que acabou de recusar. A falha
+      // numa bolha DEPOIS da primeira é do CANDIDATO: a abordagem dele parou no
+      // meio. Nunca da campanha — as outras pessoas não têm nada a ver com o
+      // canal ter recusado este texto, e pausar a fila inteira por isso é o que
+      // a casa não faz em lugar nenhum.
+      if (!["sent", "delivered", "read"].includes(mensagem.status)) {
+        falhouEm = mensagem;
+        break;
+      }
+      entregues++;
+    }
+    const sent = falhouEm === undefined && parouEm === undefined && lancouEm === undefined;
+    if (falhouEm) {
       // This lane never auto-retries an uncertain send. The Inbox keeps the evidence.
+      // O id é o da bolha que falhou (pode não ser a primeira).
       await db.query(
         "update messages set status='failed' where organization_id=$1 and id=$2 and status in ('queued','sending')",
-        [c.organization_id, p.message_id],
+        [c.organization_id, falhouEm.id ?? p.message_id],
       );
     }
+    if (parouEm)
+      logger.info("[prospecting] a conversa deixou de ser fria entre bolhas; a campanha segue", {
+        organization_id: c.organization_id,
+        campaign_id: c.id,
+        candidate_id: p.id,
+        sent_bubbles: entregues,
+        reason: parouEm,
+      });
+    // A abordagem SAIU quando a PRIMEIRA bolha foi confirmada — pare o resto
+    // porque a pessoa respondeu, porque o canal não confirmou uma bolha seguinte
+    // ou porque ela lançou. A pessoa recebeu a apresentação: `failed` aqui a
+    // tiraria de `SQL_CONTAR_ENVIO_AUTOMATICO` (`saida-configuravel.ts`) e do
+    // `context.ts`, que só enxergam `sending`/`sent` — e no modo
+    // `second_message` ela nunca receberia a saída. O que não saiu fica na
+    // conversa (a bolha marcada `failed`) e na trilha (`bubbles_sent`).
+    const abordou = entregues > 0;
+    const ehPrimeira = cfg.exit_offer === "first_message";
     await db.query(
-      "update prospecting_candidates set status=$3,error=$4,updated_at=now() where organization_id=$1 and id=$2",
+      `update prospecting_candidates set status=$3,
+        automatic_sends = case when $3 = 'sent' then 1 else automatic_sends end,
+        exit_offered_at = case when $3 = 'sent' and ${ehPrimeira} then now() else exit_offered_at end,
+        error=$4, updated_at=now() where organization_id=$1 and id=$2`,
       [
         c.organization_id,
         p.id,
-        sent ? "sent" : "failed",
-        sent ? null : "Envio não confirmado. Consulte a conversa antes de reenviar.",
+        abordou ? "sent" : "failed",
+        abordou ? null : "Envio não confirmado. Consulte a conversa antes de reenviar.",
       ],
     );
 
@@ -325,6 +571,12 @@ export async function sendNextCandidate(
      * trilha responde é "houve abordagem para este contato", e a recusa do
      * transporte é parte dessa história, não outra.
      *
+     * Com bolhas, `sent` (todas confirmadas) deixou de ser a resposta inteira: a
+     * abordagem fatiada pode sair em parte — a 1ª bolha entregue e a 2ª recusada
+     * —, e é justamente num caso desses que "por que vocês me escreveram?"
+     * precisa de resposta. Por isso `bubbles_sent`/`bubbles_total` vão junto: a
+     * trilha registra O QUE SAIU, não só que alguma coisa foi tentada.
+     *
      * Sem PII: nem telefone, nem o texto gerado. Os ponteiros bastam para
      * chegar à conversa, e o texto vive nela.
      */
@@ -341,8 +593,13 @@ export async function sendNextCandidate(
         agent_id: cfg.agent_id,
         channel_session_id: cfg.channel_session_id,
         sent,
+        // Bolhas FÍSICAS confirmadas / bolhas em que o texto foi fatiado.
+        bubbles_sent: entregues,
+        bubbles_total: baloes.length,
+        // Por que as seguintes não saíram, quando a conversa deixou de ser fria.
+        ...(parouEm || lancouEm ? { stopped_reason: parouEm ?? lancouEm } : {}),
       },
-      requestId: `prospecting:${p.id}`,
+      requestId: pedidoDaProspeccao(p.id),
     });
   } catch (error) {
     // Organização parada: a porta de saída lança ANTES de qualquer envio, então
@@ -369,16 +626,70 @@ export async function sendNextCandidate(
   }
 }
 
-export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient) {
+/**
+ * Organizações com candidato esperando o PREPARO AUTOMÁTICO (B2) e SEM campanha
+ * rodando nem busca ativa — as que a consulta do bloco com bloqueio não alcança:
+ * campanha em rascunho ou pausada. Barata de propósito: um `exists` que para no
+ * primeiro candidato pendente, e a régua `fn_org_operante` no SQL, antes do
+ * `limit 20` (mesma razão da primeira consulta: filtrar depois deixaria a org
+ * parada no topo da ordem para sempre).
+ *
+ * "Pendente" = marcada, ainda na fila, e (a) site na web sem veredito, ou
+ * (b) com veredito definitivo (ou sem site) e sem prévia (agente da campanha ou o padrão).
+ * É o espelho em SQL de `precisaDeRede`/`previaPorGerar`; quem decide de verdade
+ * é o preparo, em TS — esta consulta só escolhe quem vale a pena abrir.
+ */
+const ORGS_COM_PREPARO_PENDENTE =
+  "select pc.organization_id from prospecting_campaigns pc where pc.status in ('draft','paused') " +
+  "and public.fn_org_operante(pc.organization_id) " +
+  "and exists (select 1 from prospecting_candidates c where c.organization_id=pc.organization_id " +
+  "and c.campaign_id=pc.id and c.selected is not false and c.status in ('new','queued') and (" +
+  // (a) verificação por fazer: site na web sem veredito, ou provisório já elegível a nova tentativa
+  // (os interruptores da busca: `avaliar_site` e `gerar_previa` desligados tiram a organização da rodada;
+  // chave ausente = avaliação ligada e prévia DESLIGADA, a mesma régua de `opcoesDoPreparo`)
+  "(coalesce(pc.search->>'avaliar_site','true') <> 'false' and " +
+  "nullif(trim(c.data->>'website'), '') is not null and (c.data->'site' is null " +
+  `or (coalesce((c.data->'site'->>'provisorio')::boolean, false) ` +
+  `and coalesce(nullif(c.data->'site'->>'tentativas', '')::int, 0) < ${LIMITE_TENTATIVAS} ` +
+  `and coalesce(nullif(c.data->'site'->>'verificado_em', '')::timestamptz, 'epoch'::timestamptz) <= now() - interval '${INTERVALO_MINIMO_ENTRE_TENTATIVAS_MIN} minutes'))) ` +
+  // (b) prévia por gerar: veredito definitivo (ou sem site) e nenhuma prévia. Sem exigir agente
+  // na campanha: o agente padrão da organização a atende (`config-padrao.ts`); quem decide se
+  // existe um é o preparo, em TS.
+  "or (coalesce(pc.search->>'avaliar_site','true') <> 'false' and coalesce(pc.search->>'gerar_previa','false') = 'true' and c.data->'previa' is null " +
+  "and ((c.data->'site' is not null and not coalesce((c.data->'site'->>'provisorio')::boolean, false)) " +
+  "or (c.data->'site' is null and nullif(trim(c.data->>'website'), '') is null))))) " +
+  "group by pc.organization_id order by min(pc.updated_at) limit 20";
+
+/** Teto de tempo do preparo de UMA organização dentro do tick. */
+const PRAZO_DO_PREPARO_MS = 100_000;
+
+export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requestId?: string) {
   // Organização parada (suspensa, redigida, arquivada) não prospecta: a busca é
   // paga e a abordagem sai para fora. O corte é no SQL, antes do `limit 20`:
   // a ordem é `min(updated_at)`, e a org pulada nunca toca `updated_at` —
   // filtrar depois a deixaria no topo para sempre. A régua é a SQL
   // `fn_org_operante` (mesma de `organizations.status = 'active'`) — não se
   // trafega a lista de ids das paradas na consulta (cortaria em `max_rows`).
+  //
+  // A verificação de site e a prévia (B2) rodam por aqui, no PREPARO AUTOMÁTICO
+  // (`prepararCandidatos`) — FORA do bloqueio da organização, com teto por rodada
+  // e bloqueio próprio. Dentro do bloqueio elas seguravam a organização por
+  // minutos (409 na tela) com 100+ leads; fora, o envio e a tela não esperam.
   const { rows: organizations } = await pool.query<{ organization_id: string }>(
     "select pc.organization_id from prospecting_campaigns pc where (pc.status='running' or pc.search_status in ('starting','running')) and public.fn_org_operante(pc.organization_id) group by pc.organization_id order by min(pc.updated_at) limit 20",
   );
+  // Segunda consulta, à parte (a primeira não muda): quem só tem rascunho/pausada.
+  // Fail-open: se ela falhar, as organizações que já rodam seguem como antes.
+  let apenasPreparo: string[] = [];
+  try {
+    apenasPreparo = (
+      await pool.query<{ organization_id: string }>(ORGS_COM_PREPARO_PENDENTE)
+    ).rows.map((r) => r.organization_id);
+  } catch (error) {
+    logger.error("[prospecting] consulta das organizações a preparar falhou", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   const deadline = Date.now() + 180000;
   let processed = 0;
   for (const { organization_id: org } of organizations) {
@@ -415,6 +726,8 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient) {
             );
           }
         }
+        // (Nada de fetch de site aqui dentro: a verificação e a prévia são do
+        // `prepararCandidatos`, depois deste bloco e fora do bloqueio.)
         const c = (
           await db.query<Campaign>(
             "select * from prospecting_campaigns where organization_id=$1 and status='running'",
@@ -453,7 +766,54 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient) {
                 ? error.message
                 : "Falha inesperada no envio. Confira o histórico antes de retomar.";
 
-            if (doCandidato) {
+            // TERCEIRO CASO, e o único dos três que NÃO é falha: a conexão saiu
+            // de `WORKING` por instantes (reconexão). Antes ele caía no MESMO
+            // `else` da pausa, e a campanha ia para `paused` no instante exato
+            // da queda — a sessão voltava a `WORKING` em segundos e a lista
+            // seguia parada esperando alguém retomar à mão (issue #3073).
+            //
+            // Aqui a fila ESPERA, pelo mesmo mecanismo que ela já usa para
+            // janela fechada, teto diário e ritmo: `next_send_at`. Nenhum
+            // candidato foi tentado (a checagem do canal vem antes de
+            // `attempted_at`), então não há quota queimada, nem candidato a
+            // marcar, nem erro a gravar na campanha — a lista não perdeu nada.
+            if (error instanceof CanalReconectandoError) {
+              // O TETO (issue #3073): esperar o canal voltar TEM LIMITE. Passado
+              // `TETO_DO_ADIAMENTO_MS` desde o primeiro adiamento desta espera
+              // (`c.channel_down_since`), a "reconexão" já não é um
+              // soluço: a campanha PAUSA com a recusa de canal DESCONECTADO — a
+              // mesma frase do `FAILED` —, em vez de seguir "Ativa" sem enviar e
+              // sem aviso para sempre. Pausar deixa o motivo no cartão e volta
+              // num clique; seguir ativa não diz nada a ninguém.
+              const desde = c.channel_down_since
+                ? new Date(c.channel_down_since).getTime()
+                : null;
+              if (desde !== null && Date.now() - desde >= TETO_DO_ADIAMENTO_MS) {
+                await db.query(
+                  "update prospecting_campaigns set status='paused',error=$3,channel_down_since=null,updated_at=now() where organization_id=$1 and id=$2",
+                  [org, c.id, MSG_CANAL_DESCONECTADO],
+                );
+                logger.warn("[prospecting] reconexão além do teto; a campanha foi pausada", {
+                  organization_id: org,
+                  campaign_id: c.id,
+                  esperando_desde: c.channel_down_since,
+                  teto_ms: TETO_DO_ADIAMENTO_MS,
+                });
+              } else {
+                await db.query(
+                  // `greatest`, como a retomada: a vaga já agendada (com o jitter da
+                  // esteira fria) não é ANTECIPADA para o passo curto do adiamento.
+                  "update prospecting_campaigns set next_send_at=greatest(next_send_at,$3),channel_down_since=coalesce(channel_down_since,now()),updated_at=now() where organization_id=$1 and id=$2",
+                  [org, c.id, new Date(Date.now() + error.retomarEmMs)],
+                );
+                logger.info("[prospecting] conexão reconectando; o envio foi adiado e a campanha segue", {
+                  organization_id: org,
+                  campaign_id: c.id,
+                  error: error.message,
+                  retomar_em_ms: error.retomarEmMs,
+                });
+              }
+            } else if (doCandidato) {
               // Marca o candidato e SEGUE: a próxima rodada pega o próximo.
               // `attempted_at` já foi gravado antes do envio, então ele não
               // volta para a fila sozinho.
@@ -492,6 +852,29 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient) {
           // porque parece cobertura. Agora vai a causa.
           error: error instanceof Error ? error.message : String(error),
         });
+    }
+  }
+  // Fase do PREPARO, DEPOIS de todos os blocos com bloqueio: ela é a parte lenta
+  // (rede + modelo) e não pode comer o prazo do tick antes de uma organização
+  // posterior ter a vez de enviar. Fora do bloqueio de cada organização; o
+  // preparo tem o bloqueio próprio, o teto e o prazo dele. Uma falha daqui
+  // nunca impede as outras organizações (fail-open).
+  const paraPreparar = [...new Set([...organizations.map((o) => o.organization_id), ...apenasPreparo])];
+  for (const org of paraPreparar) {
+    if (Date.now() >= deadline) break;
+    try {
+      await prepararCandidatos(
+        pool,
+        admin,
+        org,
+        requestId ?? randomUUID(),
+        Math.min(deadline, Date.now() + PRAZO_DO_PREPARO_MS),
+      );
+    } catch (error) {
+      logger.error("[prospecting] preparo automático falhou", {
+        organization_id: org,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
   return { processed };

@@ -169,6 +169,12 @@ export default defineConfig({
     // encurta as animações para 0.01ms e a suíte volta ao comportamento
     // instantâneo para o qual as specs foram escritas.
     contextOptions: { reducedMotion: "reduce" },
+    // O app registra um service worker em todo /app (ADR-0006), e uma navegação
+    // respondida por ele não passa por `page.route`/`context.route` — specs que
+    // interceptam navegação (`suporte-temporario`) deixariam de interceptar.
+    // Bloqueado aqui, a suíte mede o caminho de rede de sempre; a spec que prova
+    // o SW (`app-no-celular`) libera com `serviceWorkers: "allow"`.
+    serviceWorkers: "block",
   },
   webServer: {
     // Produção (`next build` antes!): dev-server compila por rota (40-80s) e

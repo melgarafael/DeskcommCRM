@@ -9,7 +9,8 @@
  */
 import { z } from "zod";
 
-import { PRAZO_MAX_MINUTOS, PRAZO_MIN_MINUTOS } from "@/lib/escalacao/devolucao-automatica";
+import { VISIBILITY_MODES as MODOS_DE_VISIBILIDADE } from "@/lib/auth/types";
+import { PRAZO_MAX_MINUTOS, PRAZO_MAX_MINUTOS_DEVOLUCAO, PRAZO_MIN_MINUTOS } from "@/lib/escalacao/devolucao-automatica";
 import { fusoValido } from "@/lib/tempo/fusos";
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -38,13 +39,19 @@ export const routingConfigSchema = z.object({
    * IA-06 de sempre (o bot não reassume até alguém clicar "Devolver"), que é o
    * padrão para não mudar o comportamento de quem já instalou. Quem devolve é
    * o cron `handoff-devolucao`; a regra pura está em
-   * `lib/escalacao/devolucao-automatica.ts`, e a faixa (5 min – 24 h) também.
+   * `lib/escalacao/devolucao-automatica.ts`, e a faixa (5 min – 30 dias)
+   * também.
+   *
+   * SEM teto de 24 h (#3313): o teto antigo recusava, na borda, o prazo que a
+   * operação pediu (dias de cotação com fornecedor). O teto largo vive em
+   * `PRAZO_MAX_MINUTOS_DEVOLUCAO` e NÃO é o mesmo do silêncio do celular nem
+   * o da devolução ao rodízio.
    */
   handoff_return_after_minutes: z
     .number()
     .int()
     .min(PRAZO_MIN_MINUTOS)
-    .max(PRAZO_MAX_MINUTOS)
+    .max(PRAZO_MAX_MINUTOS_DEVOLUCAO)
     .nullable()
     .default(null),
   /**
@@ -57,6 +64,26 @@ export const routingConfigSchema = z.object({
    * renovava os 60 min a cada fala, e a IA não respondia ninguém o dia todo.
    */
   manual_reply_silence_minutes: z
+    .number()
+    .int()
+    .min(PRAZO_MIN_MINUTOS)
+    .max(PRAZO_MAX_MINUTOS)
+    .nullable()
+    .default(null),
+  /**
+   * Prazo, em minutos, para DEVOLVER AO RODÍZIO a conversa que o rodízio
+   * entregou e ninguém respondeu (issue #2985, fatia 1). `null` = desligado — o
+   * padrão, para quem já instalou não ver o comportamento mudar. Ligado, o cron
+   * `rodizio-devolucao` solta o dono da conversa entregue por `routing` sem
+   * nenhuma mensagem humana (`sent_via` `user` ou `external_device`) e devolve a
+   * conversa à distribuição; a pessoa devolvida fica fora DESTA conversa por
+   * 24 h. A regra pura está em `lib/escalacao/devolucao-ao-rodizio.ts`, e a
+   * faixa (5 min – 24 h) é a MESMA da devolução ao agente.
+   *
+   * A string nova de i18n não existe de propósito: esta fatia não tem tela (é a
+   * fatia 2) nem aviso (fatia 3) — nenhum texto novo chega ao usuário.
+   */
+  unanswered_return_minutes: z
     .number()
     .int()
     .min(PRAZO_MIN_MINUTOS)
@@ -103,10 +130,11 @@ export function conversaFicaComQuemAtendeu(settings: unknown): boolean {
  * esse caminho exato. Aninhar aqui por arrumação quebraria a RLS em silêncio.
  *
  * O tipo canônico é o de `lib/auth/types.ts` (usado pelo layout e pelo inbox);
- * aqui só se declara a validação do input externo. A `satisfies` abaixo é o que
- * impede as duas listas de divergirem sem ninguém notar.
+ * aqui só se declara a VALIDAÇÃO do input externo, a partir da MESMA lista — a
+ * lista literal morava nos dois arquivos e um teste comparava array com array
+ * para impedir que divergissem. Agora não há o que divergir.
  */
-export const VISIBILITY_MODES = ["all", "own_and_unassigned", "own"] as const;
+export const VISIBILITY_MODES = MODOS_DE_VISIBILIDADE;
 export type VisibilityModeInput = (typeof VISIBILITY_MODES)[number];
 
 /**
@@ -122,19 +150,34 @@ export const atendimentoConfigPatchSchema = routingConfigSchema.extend({
   /**
    * Opcional pela MESMA razão de `visibility_mode`: a rota preserva o prazo em
    * vigor quando a chave não vem — um cliente antigo, que só conhece o modo de
-   * roteamento, não pode desligar a devolução automática por omissão.
+   * roteamento, não pode desligar a devolução automática por omissão. O teto é
+   * o LARGO (`PRAZO_MAX_MINUTOS_DEVOLUCAO`, 30 dias), o mesmo do leitor do cron
+   * (#3313): schema e leitor divergindo fariam a tela salvar um prazo que o cron
+   * descartaria em silêncio.
    */
   handoff_return_after_minutes: z
     .number()
     .int()
     .min(PRAZO_MIN_MINUTOS)
-    .max(PRAZO_MAX_MINUTOS)
+    .max(PRAZO_MAX_MINUTOS_DEVOLUCAO)
     .nullable()
     .optional(),
   /** Opcional pela mesma razão: cliente antigo não desliga o ajuste por omissão. */
   conversation_stays_with_attendant: z.boolean().optional(),
   /** Opcional pela mesma razão: cliente antigo não volta o prazo para 60 por omissão. */
   manual_reply_silence_minutes: z
+    .number()
+    .int()
+    .min(PRAZO_MIN_MINUTOS)
+    .max(PRAZO_MAX_MINUTOS)
+    .nullable()
+    .optional(),
+  /**
+   * Opcional pela mesma razão: cliente antigo que só conhece o modo de
+   * roteamento não pode LIGAR a devolução ao rodízio por omissão. Omitido
+   * preserva o que já valia (o padrão é `null`, desligado).
+   */
+  unanswered_return_minutes: z
     .number()
     .int()
     .min(PRAZO_MIN_MINUTOS)
@@ -151,8 +194,8 @@ export type AtendimentoConfigPatch = z.infer<typeof atendimentoConfigPatchSchema
  *
  * Merge não-destrutivo em DOIS níveis: preserva as demais chaves de `settings`
  * (o provedor de IA mora nele) e, para o que veio OMITIDO do corpo —
- * `visibility_mode`, `handoff_return_after_minutes`, `conversation_stays_with_attendant`
- * e `manual_reply_silence_minutes` —, preserva o que já
+ * `visibility_mode`, `handoff_return_after_minutes`, `conversation_stays_with_attendant`,
+ * `manual_reply_silence_minutes` e `unanswered_return_minutes` —, preserva o que já
  * valia. Um cliente antigo, que só conhece o modo de roteamento, não pode
  * desligar a restrição de visibilidade nem a devolução automática por omissão.
  */
@@ -165,6 +208,7 @@ export function mesclarSettingsDeAtendimento(
     handoff_return_after_minutes,
     conversation_stays_with_attendant,
     manual_reply_silence_minutes,
+    unanswered_return_minutes,
     ...routingInput
   } = input;
   const routingAtual = routingConfigSchema
@@ -182,6 +226,10 @@ export function mesclarSettingsDeAtendimento(
       manual_reply_silence_minutes !== undefined
         ? manual_reply_silence_minutes
         : routingAtual.manual_reply_silence_minutes,
+    unanswered_return_minutes:
+      unanswered_return_minutes !== undefined
+        ? unanswered_return_minutes
+        : routingAtual.unanswered_return_minutes,
   };
   const settings: Record<string, unknown> = { ...atual, routing };
   if (visibility_mode !== undefined) settings.visibility_mode = visibility_mode;
@@ -239,6 +287,51 @@ export const availabilityPatchSchema = z
     message: "Informe ao menos um campo (is_available, capacity ou schedule).",
   });
 export type AvailabilityPatch = z.infer<typeof availabilityPatchSchema>;
+
+/**
+ * Setores de atendimento (migration 0801). Os limites são os CHECKs da tabela
+ * `attendant_sectors` — o Zod recusa antes, com mensagem para a pessoa, o que o
+ * banco recusaria com um erro de constraint.
+ */
+export const SETOR_NOME_MAX = 60;
+export const SETOR_DESCRICAO_MAX = 280;
+
+export const sectorCreateSchema = z
+  .object({
+    name: z.string().trim().min(1, "Dê um nome ao setor.").max(SETOR_NOME_MAX),
+    description: z
+      .string()
+      .trim()
+      .max(SETOR_DESCRICAO_MAX)
+      .nullable()
+      .optional()
+      .transform((v) => (v ? v : null)),
+  })
+  .strict();
+export type SectorCreate = z.infer<typeof sectorCreateSchema>;
+
+export const sectorPatchSchema = z
+  .object({
+    name: z.string().trim().min(1, "Dê um nome ao setor.").max(SETOR_NOME_MAX),
+    description: z
+      .string()
+      .trim()
+      .max(SETOR_DESCRICAO_MAX)
+      .nullable()
+      .transform((v) => (v ? v : null)),
+  })
+  .partial()
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, {
+    message: "Informe ao menos um campo (name ou description).",
+  });
+export type SectorPatch = z.infer<typeof sectorPatchSchema>;
+
+/** PUT do setor de um atendente. `null` = tirar do setor ("sem setor"). */
+export const sectorAssignmentSchema = z
+  .object({ sector_id: z.string().uuid().nullable() })
+  .strict();
+export type SectorAssignment = z.infer<typeof sectorAssignmentSchema>;
 
 /**
  * Corpo do PATCH de `/api/v1/settings/routing/channels` (regras POR NÚMERO,

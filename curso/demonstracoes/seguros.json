@@ -1,0 +1,225 @@
+{
+  "id": "seguros",
+  "titulo": "Seguros",
+  "resumo": "Cotação, renovação e sinistro com decisões de cobertura e aceitação atribuídas aos responsáveis.",
+  "jornadas": [
+    {
+      "id": "seguros-cotacao",
+      "titulo": "Cotação que chega preparada ao corretor",
+      "empresa": "Vento Corretora (fictícia)",
+      "contexto": "Mila busca seguro para o carro e quer entender as diferenças entre opções.",
+      "resultado": "Demanda registrada para cotação humana com necessidades do cliente.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado.",
+      "dependencias": "Corretor responsável, funil e tarefas configurados. Nenhuma consulta automática a seguradoras, cálculo de prêmio, aceitação de risco ou garantia de cobertura é demonstrada.",
+      "montagem": [
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "funis",
+          "licao": "novo-negocio",
+          "porque": "Criar uma oportunidade ligada ao contato."
+        },
+        {
+          "modulo": "tarefas",
+          "licao": "tarefas-criar-uma-tarefa",
+          "porque": "Criar um próximo passo explícito para a equipe."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "passar-pausar-encerrar",
+          "porque": "Transferir a conversa para quem pode continuar."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "Antes de falar em preço",
+          "cliente": "Mila pergunta quanto custa um seguro para o carro.",
+          "operacao": "O atendimento pergunta o que ela quer proteger e se já possui apólice, sem calcular um prêmio genérico.",
+          "valor": "A conversa identifica a necessidade antes da proposta.",
+          "captura": "demo-seguros-cotacao--historia--chegada"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "Contexto da cotação",
+          "cliente": "Mila explica que usa o carro para deslocamentos ao trabalho.",
+          "operacao": "A equipe abre um negócio para cotação e registra as informações declaradas, sem substituir o questionário da seguradora.",
+          "valor": "O corretor encontra o contexto do pedido.",
+          "captura": "demo-seguros-cotacao--historia--qualificacao"
+        },
+        {
+          "id": "acao",
+          "titulo": "Cotação é trabalho do responsável",
+          "cliente": "Mila pede comparação entre opções.",
+          "operacao": "Uma tarefa é atribuída ao corretor para levantar propostas pelos canais que ele utiliza e conferir os dados necessários.",
+          "valor": "Existe uma ação concreta sem fingir integração com seguradoras.",
+          "captura": "demo-seguros-cotacao--historia--acao"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "Explicar as diferenças",
+          "cliente": "Mila quer entender franquia e exclusões.",
+          "operacao": "A conversa é transferida ao corretor, que explica os termos das propostas reais antes de qualquer aceite.",
+          "valor": "Decisões contratuais ficam com quem pode esclarecê-las.",
+          "captura": "demo-seguros-cotacao--historia--continuidade"
+        }
+      ]
+    },
+    {
+      "id": "seguros-renovacao",
+      "titulo": "Renovação com conferência da apólice",
+      "empresa": "Porto do Sol Seguros (fictícia)",
+      "contexto": "Otto pergunta se sua apólice está perto do fim e se precisa mudar algo.",
+      "resultado": "Conferência externa limitada à fonte autorizada e revisão humana das condições.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado. A tela de Dados externos ilustra preparação; a conferência da origem fica com a equipe.",
+      "dependencias": "Conexão de leitura com cadastro de apólices, campos liberados e identificação validada pela corretora. Não implica integração com toda seguradora; não renova contrato, cobra prêmio ou altera cobertura.",
+      "montagem": [
+        {
+          "modulo": "agentes",
+          "licao": "instrucoes-e-capacidades",
+          "porque": "Configurar e publicar somente as capacidades necessárias ao agente do roteiro."
+        },
+        {
+          "modulo": "dados-externos",
+          "licao": "cadastrar-conexao",
+          "porque": "Cadastrar a fonte externa com credenciais de leitura e testar o acesso antes do atendimento."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "dados-externos",
+          "licao": "o-que-o-assistente-ve",
+          "porque": "Entender a leitura externa e o recorte autorizado."
+        },
+        {
+          "modulo": "tarefas",
+          "licao": "tarefas-criar-uma-tarefa",
+          "porque": "Criar um próximo passo explícito para a equipe."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "assumir-e-responder",
+          "porque": "Assumir o atendimento e responder pela equipe."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "Uma apólice existente",
+          "cliente": "Otto quer saber se já é hora de revisar seu seguro.",
+          "operacao": "A equipe identifica a apólice em questão e aplica o procedimento da corretora para validar o solicitante.",
+          "valor": "O atendimento não confunde contratos de clientes diferentes.",
+          "captura": "demo-seguros-renovacao--historia--chegada"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "Preparar a fonte autorizada",
+          "cliente": "Otto pergunta qual vigência consta no cadastro.",
+          "operacao": "A tela mostra a preparação de uma conexão de leitura. Nesta história, a equipe confere manualmente o registro no sistema de origem; não há consulta automatizada demonstrada.",
+          "valor": "Expõe a dependência da fonte e evita apresentar uma informação não conferida como resposta do agente.",
+          "captura": "demo-seguros-renovacao--historia--qualificacao"
+        },
+        {
+          "id": "acao",
+          "titulo": "Revisar mudanças de uso",
+          "cliente": "Otto conta que passou a usar o carro em outra atividade.",
+          "operacao": "A equipe cria uma tarefa para o corretor revisar essa mudança com a seguradora.",
+          "valor": "Uma alteração relevante não vira renovação silenciosa.",
+          "captura": "demo-seguros-renovacao--historia--acao"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "Condições antes do aceite",
+          "cliente": "Otto quer saber se pode manter as mesmas condições.",
+          "operacao": "O corretor assume e confere propostas e condições atualizadas; nenhuma renovação é dada como concluída pelo roteiro.",
+          "valor": "A continuidade depende da análise contratual efetiva.",
+          "captura": "demo-seguros-renovacao--historia--continuidade"
+        }
+      ]
+    },
+    {
+      "id": "seguros-sinistro",
+      "titulo": "Aviso de sinistro sem promessa de cobertura",
+      "empresa": "Estação Corretora (fictícia)",
+      "contexto": "Yara relata um dano e pergunta se o seguro cobre o ocorrido.",
+      "resultado": "Relato encaminhado para orientação humana e análise pelos responsáveis.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado.",
+      "dependencias": "Equipe habilitada e agente com abertura de caso, se usado. Não atende emergência, não decide cobertura, indenização ou prazo de regulação; procedimentos são os da seguradora responsável.",
+      "montagem": [
+        {
+          "modulo": "agentes",
+          "licao": "instrucoes-e-capacidades",
+          "porque": "Configurar e publicar somente as capacidades necessárias ao agente do roteiro."
+        },
+        {
+          "modulo": "agentes",
+          "licao": "quando-responder-e-passar",
+          "porque": "Definir os limites e as situações em que a equipe continua o atendimento."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "casos",
+          "licao": "abrindo-um-caso",
+          "porque": "Ler a demanda que precisa de decisão da equipe."
+        },
+        {
+          "modulo": "casos",
+          "licao": "respondendo-um-caso",
+          "porque": "Pedir informação, registrar a decisão ou passar ao humano."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "assumir-e-responder",
+          "porque": "Assumir o atendimento e responder pela equipe."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "Relato de um dano",
+          "cliente": "Yara pergunta se o ocorrido está coberto.",
+          "operacao": "O agente do roteiro acolhe a solicitação e evita confirmar cobertura com base em uma frase.",
+          "valor": "O atendimento não antecipa a decisão da seguradora.",
+          "captura": "demo-seguros-sinistro--historia--chegada"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "Registrar a dúvida certa",
+          "cliente": "Yara explica a que apólice se refere.",
+          "operacao": "O roteiro abre caso com a pergunta sobre o procedimento e o contexto informado, sem laudo ou conclusão sobre o evento.",
+          "valor": "A equipe recebe uma demanda delimitada.",
+          "captura": "demo-seguros-sinistro--historia--qualificacao"
+        },
+        {
+          "id": "acao",
+          "titulo": "Passar para atendimento humano",
+          "cliente": "Yara pede ajuda para saber por onde começar.",
+          "operacao": "A equipe seleciona a passagem ao humano e registra quais orientações precisam ser conferidas.",
+          "valor": "A continuidade fica com um responsável.",
+          "captura": "demo-seguros-sinistro--historia--acao"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "Procedimento conferido",
+          "cliente": "Yara volta à conversa com os dados solicitados pelo corretor.",
+          "operacao": "A pessoa responsável explica os canais e os próximos passos aplicáveis, sem prometer indenização ou prazo de análise.",
+          "valor": "O cliente recebe orientação operacional situada no contrato real.",
+          "captura": "demo-seguros-sinistro--historia--continuidade"
+        }
+      ]
+    }
+  ]
+}

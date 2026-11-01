@@ -1,0 +1,722 @@
+{
+  "id": "radar",
+  "titulo": "Radar",
+  "tela": "/app/radar",
+  "resumo": "A lista dos clientes que esfriaram e ainda estão em aberto, para você agir antes de perder a venda.",
+  "licoes": [
+    {
+      "id": "lendo-o-radar",
+      "titulo": "Lendo o Radar",
+      "objetivo": "Entender o que entra no Radar e o que querem dizer Crítico, Em risco e Em voo.",
+      "papel": "admin",
+      "busca": [
+        "radar",
+        "cliente esfriou",
+        "parado",
+        "sem resposta",
+        "crítico",
+        "em risco",
+        "em voo",
+        "venda parada"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O que aparece aqui",
+          "texto": "O Radar mostra os negócios ainda abertos no funil em que ninguém mexeu nem falou com o cliente há mais de 24 horas. Mensagem do cliente não conta: cliente escrevendo e ninguém respondendo é justamente o risco. As três etiquetas no alto contam quantos negócios estão em cada nível. O quadro amarelo acima delas é outra lista, a dos clientes esperando sem nada combinado; ele tem uma lição só para ele, \"Demandas sem próximo passo\".",
+          "dica": "A lista se atualiza sozinha a cada minuto.",
+          "rota": "/app/radar",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Radar de risco",
+                "exato": true
+              },
+              "rotulo": "Radar de risco",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "radar-counts"
+              },
+              "rotulo": "Quantos em cada nível",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Crítico: parado há 3 dias ou mais",
+          "texto": "Cada linha é um negócio: o nome dele, o cliente e há quanto tempo está parado. \"Crítico\" quer dizer 3 dias ou mais sem ninguém agir. O aviso \"Sem próximo passo agendado\" diz que não há nenhum retorno do assistente nem compromisso marcado com esse cliente. Os críticos ficam no topo e, dentro de cada nível, o mais esquecido vem primeiro.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Crítico",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Sandra Vieira\")"
+                }
+              },
+              "rotulo": "Nível",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "parado há 5d",
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Sandra Vieira\")"
+                }
+              },
+              "rotulo": "Tempo parado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Sem próximo passo agendado",
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Sandra Vieira\")"
+                }
+              },
+              "rotulo": "Nada marcado com o cliente",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Em risco: entre 1 e 3 dias",
+          "texto": "\"Em risco\" é o negócio parado há mais de 24 horas e menos de 3 dias. Ainda dá tempo de retomar com calma, mas ele vira crítico se continuar esquecido.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Em risco",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Renata Duarte\")"
+                }
+              },
+              "rotulo": "Em risco",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "parado há 30h",
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Renata Duarte\")"
+                }
+              },
+              "rotulo": "Parado há 30 horas",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Em voo: o assistente vai voltar a falar",
+          "texto": "\"Em voo\" é o negócio parado, mas com um retorno já marcado pelo assistente. A linha mostra quando ele pretende voltar a falar com o cliente, como \"Assistente retorna em 2d\". Ele não está esquecido: só fique de olho, porque o retorno só sai se o WhatsApp estiver conectado e o assistente estiver ligado.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Em voo",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Gustavo Ramos\")"
+                }
+              },
+              "rotulo": "Em voo",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "^Assistente retorna",
+                "regex": true,
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Gustavo Ramos\")"
+                }
+              },
+              "rotulo": "Quando o assistente volta",
+              "tipo": "caixa"
+            }
+          ],
+          "dica": "O prazo de 24 horas pode mudar por etapa do funil. Abra \"Ver tudo em CRM\" no menu e depois \"Etapas do funil\": cada etapa tem a \"Janela de esfriando\". Com 48 horas, por exemplo, o negócio só fica crítico depois de 6 dias."
+        }
+      ]
+    },
+    {
+      "id": "quem-esta-cuidando",
+      "titulo": "Quem está cuidando de cada cliente",
+      "objetivo": "Saber, pela linha do Radar, se o negócio tem alguém cuidando ou se está largado.",
+      "papel": "admin",
+      "busca": [
+        "quem cuida do cliente",
+        "sem dono",
+        "com atendente",
+        "responsável",
+        "agente de IA",
+        "assistente"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Quatro situações",
+          "texto": "No fim da segunda linha de cada negócio aparece quem cuida dele. \"Sem dono\": ninguém. \"Com atendente\": uma pessoa da equipe. \"Assistente na conversa\": o atendimento automático está respondendo esse cliente. \"Agente:\" seguido de um nome: o negócio é de um agente de IA.",
+          "rota": "/app/radar",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "radar-assignee",
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Sandra Vieira\")"
+                }
+              },
+              "rotulo": "Ninguém",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "radar-assignee",
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Paulo Teixeira\")"
+                }
+              },
+              "rotulo": "Uma pessoa da equipe",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "radar-assignee",
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Renata Duarte\")"
+                }
+              },
+              "rotulo": "O atendimento automático",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "radar-assignee",
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Gustavo Ramos\")"
+                }
+              },
+              "rotulo": "Um agente de IA",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Quando aparece o botão \"Assumir\"",
+          "texto": "O botão \"Assumir\" aparece quando o cliente tem conversa no WhatsApp e nem a conversa nem o negócio estão com uma pessoa da equipe. Na Sandra, ninguém cuida. Na Renata, quem responde é o atendimento automático. No Gustavo, o negócio é do agente de IA: assumir traz a conversa para você e cala o atendimento automático nela, mas o negócio continua em nome do agente. No Paulo não aparece, porque ele já está com uma atendente. No Marcos também não: ele ainda não conversou pelo WhatsApp.",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "radar-claim",
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Sandra Vieira\")"
+                }
+              },
+              "rotulo": "Sem ninguém",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "radar-claim",
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Renata Duarte\")"
+                }
+              },
+              "rotulo": "Tirar do automático",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "radar-claim",
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Gustavo Ramos\")"
+                }
+              },
+              "rotulo": "Tirar a conversa do agente",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid=radar-item]:has-text(\"Paulo Teixeira\")"
+              },
+              "rotulo": "Já está com uma atendente",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "assumir-pelo-radar",
+      "titulo": "Assumir um cliente pelo Radar",
+      "objetivo": "Trazer para você um cliente esquecido e ir direto para a conversa com ele.",
+      "papel": "admin",
+      "busca": [
+        "assumir cliente",
+        "pegar atendimento",
+        "resgatar cliente",
+        "cliente esquecido",
+        "responder cliente parado"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Clique em \"Assumir\"",
+          "texto": "A Sandra está crítica e ninguém cuida dela. Clique em \"Assumir\" na linha dela para trazer a conversa para você.",
+          "rota": "/app/radar",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "radar-claim",
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Sandra Vieira\")"
+                }
+              },
+              "rotulo": "Assumir",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "radar-claim",
+            "dentro": {
+              "css": "[data-testid=radar-item]:has-text(\"Sandra Vieira\")"
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Agora a conversa é sua",
+          "texto": "A linha passa a mostrar \"Com atendente\" e o botão some. A conversa fica com você e o atendimento automático para de responder nela. Se o negócio não tinha responsável, você passa a ser o responsável. A Sandra continua no Radar até alguém falar com ela. Para responder, clique no nome do negócio.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "radar-claim",
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Sandra Vieira\")"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Com atendente",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Sandra Vieira\")"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "radar-assignee",
+                "dentro": {
+                  "css": "[data-testid=radar-item]:has-text(\"Sandra Vieira\")"
+                }
+              },
+              "rotulo": "Agora com você",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Alinhador invisível — Sandra Vieira"
+              },
+              "rotulo": "Abrir a conversa",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Alinhador invisível — Sandra Vieira"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "A conversa da Sandra",
+          "texto": "A Inbox abre na conversa com a Sandra. No alto, \"Automático pausado — alguém assumiu\" confirma que o assistente parou de responder, e o seu nome aparece abaixo do dela. Leia o que já foi dito e responda.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Alinhador invisível — Sandra Vieira"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "chat-thread"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "chat-thread"
+              },
+              "rotulo": "A conversa com a Sandra",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Automático pausado — alguém assumiu",
+                "exato": true
+              },
+              "rotulo": "O assistente parou",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "abrindo-o-negocio",
+      "titulo": "Para onde cada linha leva",
+      "objetivo": "Saber o que abre quando você clica num negócio do Radar, com e sem conversa no WhatsApp.",
+      "papel": "admin",
+      "busca": [
+        "abrir negócio",
+        "abrir conversa",
+        "ver cliente",
+        "clicar no radar",
+        "cliente sem conversa",
+        "funil"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Cliente com conversa",
+          "texto": "Clique na linha, fora do botão \"Assumir\", para abrir o cliente. Quando ele já conversou pelo WhatsApp, como a Renata, a Inbox abre direto na conversa dela.",
+          "rota": "/app/radar",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Avaliação nutricional — Renata Duarte"
+              },
+              "rotulo": "Abre a conversa",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Avaliação nutricional — Renata Duarte"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A conversa da Renata",
+          "texto": "Aqui está a conversa com a Renata. A última mensagem foi do assistente, há 30 horas, e ela não respondeu. O botão \"Assumir\" no alto também existe aqui, para tirar a conversa do automático. Para voltar ao Radar, use o item \"Radar\" no menu da esquerda.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Avaliação nutricional — Renata Duarte"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "chat-thread"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "chat-thread"
+              },
+              "rotulo": "A conversa com a Renata",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Radar",
+                "exato": true
+              },
+              "rotulo": "Voltar ao Radar",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Cliente sem conversa",
+          "texto": "O Marcos ainda não conversou pelo WhatsApp. Por isso a linha dele não tem \"Assumir\". Clique nela para abrir o negócio no funil.",
+          "rota": "/app/radar",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Avaliação postural — Marcos Azevedo"
+              },
+              "rotulo": "Abre o funil",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Avaliação postural — Marcos Azevedo"
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "O negócio no funil",
+          "texto": "O funil abre com os detalhes do negócio do Marcos na tela: valor, etapa, responsável e os dados do contato. Daqui você edita o negócio sem procurá-lo no quadro. Como ele ainda não conversou, \"Abrir conversa no Inbox\" cria a conversa com ele e leva você até ela, sem mandar nenhuma mensagem.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Avaliação postural — Marcos Azevedo"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "dialog"
+              },
+              "rotulo": "O negócio do Marcos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Abrir conversa no Inbox",
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "rotulo": "Começar a conversa",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sem-proximo-passo",
+      "titulo": "Demandas sem próximo passo",
+      "objetivo": "Achar o cliente que espera sem nada combinado e tirá-lo do Radar anotando o próximo passo.",
+      "papel": "admin",
+      "busca": [
+        "sem próximo passo",
+        "demanda aberta",
+        "cliente esperando",
+        "nada combinado",
+        "quadro amarelo",
+        "próximo passo"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O quadro amarelo",
+          "texto": "O quadro amarelo no alto lista os clientes com um pedido em aberto em que ninguém anotou o que acontece a seguir. Na mesma linha, à direita, aparece há quantas horas o pedido está aberto. Clique no nome para abrir a conversa.",
+          "dica": "Se a sua empresa usa Propostas, podem aparecer ali mais dois quadros: propostas vencidas sem retomada e propostas esperando revisão.",
+          "rota": "/app/radar",
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "radar-sem-proximo-passo"
+              },
+              "rotulo": "Esperando sem nada combinado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Fernanda Oliveira",
+                "exato": true,
+                "dentro": {
+                  "testid": "radar-sem-proximo-passo"
+                }
+              },
+              "rotulo": "Abre a conversa",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Fernanda Oliveira",
+            "exato": true,
+            "dentro": {
+              "testid": "radar-sem-proximo-passo"
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O pedido da Fernanda",
+          "texto": "A Inbox abre na conversa da Fernanda. Na ficha do cliente, à direita, \"Demandas abertas\" mostra o pedido dela com a frase \"Sem próximo passo definido\". Clique em \"Marcar próximo passo\". A mensagem com borda vermelha na conversa é outro assunto: um envio que falhou, que se manda de novo em \"Tentar de novo\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Fernanda Oliveira",
+                "exato": true,
+                "dentro": {
+                  "testid": "radar-sem-proximo-passo"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "marcar-proximo-passo"
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "inbox-demandas"
+              },
+              "rotulo": "O pedido em aberto",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "marcar-proximo-passo"
+              },
+              "rotulo": "Anotar o próximo passo",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "testid": "marcar-proximo-passo"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Escreva o que vem a seguir",
+          "texto": "Escreva o que vai acontecer a seguir e clique em \"Salvar\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "marcar-proximo-passo"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "campo-proximo-passo"
+              },
+              "valor": "Ligar para confirmar o retorno de quinta"
+            },
+            {
+              "acao": "hover",
+              "alvo": {
+                "testid": "salvar-proximo-passo"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "campo-proximo-passo"
+              },
+              "rotulo": "O que vem a seguir",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "salvar-proximo-passo"
+              },
+              "rotulo": "Salvar",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "salvar-proximo-passo"
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Próximo passo anotado",
+          "texto": "A demanda agora mostra o próximo passo. Volte ao Radar pelo item \"Radar\" do menu da esquerda.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "salvar-proximo-passo"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "demanda-com-proximo-passo"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "demanda-com-proximo-passo"
+              },
+              "rotulo": "Próximo passo anotado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Radar",
+                "exato": true
+              },
+              "rotulo": "Voltar ao Radar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Radar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "A Fernanda saiu do quadro",
+          "texto": "De volta ao Radar, a Fernanda sai do quadro amarelo: ela já tem um próximo passo anotado. Se ela ainda aparecer, espere até um minuto ou atualize a página. Os negócios parados continuam na lista até alguém agir em cada um: anotar o próximo passo da demanda não tira o negócio da lista.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "radar-counts"
+              },
+              "rotulo": "Onde ficava o quadro amarelo",
+              "tipo": "caixa"
+            }
+          ],
+          "rota": "/app/radar"
+        }
+      ]
+    }
+  ]
+}

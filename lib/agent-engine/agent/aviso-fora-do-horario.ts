@@ -402,7 +402,8 @@ export function portasDeProducao(
 
       async registraEnvio(organizationId, channelSessionId, quando) {
         const { recordSend } = await import('../pacing/store');
-        await recordSend(db, organizationId, channelSessionId, quando);
+        // RESPOSTA, como a decisão acima: não gasta o teto de prospecção do dia.
+        await recordSend(db, organizationId, channelSessionId, quando, { resposta: true });
       },
     },
 

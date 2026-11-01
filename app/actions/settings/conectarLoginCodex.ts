@@ -6,6 +6,12 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 import { z } from "zod";
 
 import { desconectarLoginCodex, guardarLoginCodex, lerLoginCodex } from "@/lib/ai/credenciais/login-codex";
+import { fecharAvisoDaAssinatura } from "@/lib/ai/credenciais/aviso-da-assinatura";
+import {
+  FalhaAoListarModelosDaAssinatura,
+  listarModelosDaAssinatura,
+} from "@/lib/ai/catalogo/modelos-da-assinatura";
+import { logger } from "@/lib/logger";
 import { lerOuCriarHostIdSiwc } from "@/lib/ai/credenciais/host-siwc";
 import {
   CLIENTE_DINAMICO_SIWC,
@@ -16,7 +22,7 @@ import {
 import { verificarEstado } from "@/lib/agenda/google/estado";
 import { audit } from "@/lib/audit";
 import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
 import { env } from "@/lib/env";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { supportWriteError } from "@/lib/impersonate/support";
@@ -67,6 +73,7 @@ export async function conectarLoginCodex(
   if (!podeAdministrarEmpresa(authUser, activeOrg)) return { ok: false, error: "forbidden_role" };
   // Suporte em leitura (ou já encerrado) não grava nem apaga a conta da empresa.
   if (supportWriteError(authUser.support)) return { ok: false, error: "somente_leitura" };
+  if (await mfaEmDivida()) return { ok: false, error: "mfa_required" };
 
   const parsed = entradaSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "invalid_input" };
@@ -172,6 +179,25 @@ export async function conectarLoginCodex(
   });
   if (!gravado.ok) return { ok: false, error: gravado.motivo };
 
+  // ─── A CONTA VOLTOU: O AVISO FECHA E O PUBLISH NÃO QUEBRA (#3371, 2 e 6) ──
+  //
+  // Este é o caminho do botão "Reconectar" — o mesmo da Central de avisos. Duas
+  // coisas acontecem aqui, e as duas são best-effort: o login JÁ está gravado, e
+  // falhar depois dele não pode transformar um sucesso em erro na tela.
+  //
+  //   * o aviso `assinatura_desconectada` fecha sozinho, sem clique de ninguém;
+  //   * `models_available` é preenchido JÁ, com a listagem que o seletor usa —
+  //     sem isso o primeiro "Publicar" respondia `422 model_not_found`, que foi
+  //     o que o cliente Obralivre viu logo depois de religar a conta.
+  await fecharAvisoDaAssinatura(admin, activeOrg.orgId).catch(() => "falhou");
+  await listarModelosDaAssinatura(activeOrg.orgId).catch((erro) => {
+    logger.warn("[ai.credentials] a conta voltou, mas a listagem de modelos falhou", {
+      organizationId: activeOrg.orgId,
+      motivo: erro instanceof FalhaAoListarModelosDaAssinatura ? erro.motivo : "desconhecido",
+    });
+    return null;
+  });
+
   const hdrs = await headers();
   await audit({
     action: "ai.login_codex_conectado",
@@ -202,6 +228,7 @@ export async function desconectarLoginCodexAgora(): Promise<DesconectarLoginCode
   if (!podeAdministrarEmpresa(authUser, activeOrg)) return { ok: false, error: "forbidden_role" };
   // Suporte em leitura (ou já encerrado) não grava nem apaga a conta da empresa.
   if (supportWriteError(authUser.support)) return { ok: false, error: "somente_leitura" };
+  if (await mfaEmDivida()) return { ok: false, error: "mfa_required" };
 
   const admin = createAdminClient();
   const { data: linha } = await admin

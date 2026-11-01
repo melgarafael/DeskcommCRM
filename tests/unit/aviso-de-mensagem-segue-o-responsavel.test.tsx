@@ -57,6 +57,7 @@ vi.mock("@/lib/supabase/browser", () => ({
 }));
 
 import { useInboundMessageAlerts } from "@/hooks/notifications/useInboundMessageAlerts";
+import { emitNotification } from "@/lib/notifications/emit";
 
 const ROTA_DO_VEREDITO = "/api/v1/conversations/conv-1/aviso-de-mensagem";
 
@@ -115,5 +116,42 @@ describe("aviso de mensagem nova — quem recebe", () => {
     servidor(() => resposta(false, { error: { code: "internal_error" } }));
     await entrega();
     await waitFor(() => expect(toastFalso).toHaveBeenCalled());
+  });
+
+});
+
+describe("aviso de mensagem nova — o que a bandeja do sistema mostra", () => {
+  it("conteudo=oculto → a bandeja não diz quem nem o quê; o toast, dentro do app, segue com tudo", async () => {
+    servidor(() => resposta(true, { data: { avisar: true, conteudo: "oculto" } }));
+    await entrega();
+    await waitFor(() => expect(emitNotification).toHaveBeenCalled());
+    expect(vi.mocked(emitNotification).mock.calls.at(-1)![0]).toMatchObject({ title: "Novo aviso", body: "" });
+    expect(vi.mocked(emitNotification).mock.calls.at(-1)![0].icon).toBeUndefined();
+    expect(toastFalso.mock.calls.at(-1)![0]).toBe("Maria Souza");
+  });
+
+  it("conteudo=nome → a bandeja diz quem, sem o texto", async () => {
+    servidor(() => resposta(true, { data: { avisar: true, conteudo: "nome" } }));
+    await entrega();
+    await waitFor(() => expect(emitNotification).toHaveBeenCalled());
+    expect(vi.mocked(emitNotification).mock.calls.at(-1)![0]).toMatchObject({ title: "Maria Souza", body: "Nova mensagem" });
+  });
+
+  it("conteudo=nome_e_previa → a bandeja mostra o texto", async () => {
+    servidor(() => resposta(true, { data: { avisar: true, conteudo: "nome_e_previa" } }));
+    await entrega();
+    await waitFor(() => expect(emitNotification).toHaveBeenCalled());
+    expect(vi.mocked(emitNotification).mock.calls.at(-1)![0]).toMatchObject({ title: "Maria Souza", body: "oi" });
+  });
+
+  it.each([
+    ["rota falhando", () => resposta(false, { error: { code: "internal_error" } })],
+    ["sem o campo", () => resposta(true, { data: { avisar: true } })],
+    ["valor inválido", () => resposta(true, { data: { avisar: true, conteudo: "tudo" } })],
+  ])("%s → avisa, com a bandeja no modo oculto", async (_caso, veredito) => {
+    servidor(veredito);
+    await entrega();
+    await waitFor(() => expect(emitNotification).toHaveBeenCalled());
+    expect(vi.mocked(emitNotification).mock.calls.at(-1)![0]).toMatchObject({ title: "Novo aviso", body: "" });
   });
 });

@@ -37,6 +37,8 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { PASSOS_DA_CORRECAO } from "@/lib/agent-engine/agent/turno-mudo";
+
 const ler = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 const turno = ler("lib/agent-engine/agent/inbound-turn.ts");
 
@@ -58,11 +60,54 @@ const blocoTerminal = () => {
   expect(idxRoteiro).toBeGreaterThan(idxSilencio);
   return turno.slice(idxSilencio, idxRoteiro);
 };
-// O bloco da correção limitada, do `if` à decisão terminal.
+/**
+ * O bloco que abre em `idx`, com as chaves EQUILIBRADAS — o `if` até a chave que
+ * de fato o fecha, e não "até o próximo marco do arquivo".
+ *
+ * A distinção não é preciosismo: uma fatia que vai até o marco seguinte conta
+ * a chamada de qualquer passo VIZINHO como se fosse da correção. O que esta
+ * cerca prende é "a correção é UMA"; a distância até o próximo marco é outra
+ * coisa, e é medida pelo teto da região (teste do pedido humano).
+ *
+ * String (simples, dupla, template) e comentário de linha não abrem nem fecham
+ * bloco — sem pular os dois, uma chave dentro de texto desbalancearia a conta.
+ */
+const blocoDeChaves = (texto: string, idx: number): string => {
+  const abre = texto.indexOf("{", idx);
+  expect(abre).toBeGreaterThan(idx);
+  let fundo = 0;
+  for (let i = abre; i < texto.length; i += 1) {
+    const c = texto[i];
+    if (c === "'" || c === '"' || c === "`") {
+      for (i += 1; i < texto.length && texto[i] !== c; i += 1) {
+        if (texto[i] === "\\") i += 1;
+      }
+      continue;
+    }
+    if (c === "/" && texto[i + 1] === "/") {
+      const fim = texto.indexOf("\n", i);
+      if (fim < 0) break;
+      i = fim;
+      continue;
+    }
+    if (c === "{") fundo += 1;
+    else if (c === "}") {
+      fundo -= 1;
+      if (fundo === 0) return texto.slice(idx, i + 1);
+    }
+  }
+  throw new Error(`bloco aberto em ${idx} sem chave de fechamento`);
+};
+
+// O bloco da correção limitada, do `if` à chave que o fecha.
 const blocoCorrecao = () => {
   expect(idxCorrecaoIf).toBeGreaterThan(-1);
   expect(idxSilencio).toBeGreaterThan(idxCorrecaoIf);
-  return turno.slice(idxCorrecaoIf, idxSilencio);
+  const bloco = blocoDeChaves(turno, idxCorrecaoIf);
+  // A correção continua sendo um passo DENTRO da decisão terminal: o bloco não
+  // pode engolir o que vem depois dela.
+  expect(idxCorrecaoIf + bloco.length).toBeLessThanOrEqual(idxSilencio);
+  return bloco;
 };
 
 describe("recuperação limitada do turno mudo (preservada)", () => {
@@ -85,12 +130,35 @@ describe("recuperação limitada do turno mudo (preservada)", () => {
   it("a correção continua UMA só — um único runModelCall, steps limitados", () => {
     const bloco = blocoCorrecao();
     expect(bloco.split("await runModelCall(").length - 1).toBe(1);
-    expect(bloco).toContain("Math.min(maxSteps, 3)");
+    // O teto é 6, e não 3: medido no teste 10 do aceite (2026-10-26, job
+    // 5ca40cb3) a correção com 3 passos gastou OS TRÊS em ferramentas de agenda
+    // (crm_list_event_types → crm_find_free_slots → crm_find_and_book_appointment)
+    // e parou antes de chegar ao send_message — `messages_sent: 0`, cliente sem
+    // resposta. Uma remarcação correta são 4 saídas de modelo (localizar com
+    // crm_list_appointments → slot → crm_reschedule_appointment → send_message);
+    // com teto 3 ela é aritmeticamente impossível. O limite CONTINUA existindo
+    // (correção é UMA e limitada) — só é folgado o bastante para a receita caber.
+    expect(PASSOS_DA_CORRECAO).toBe(6);
+    // O MESMO teto roda a correção E mede se ela bateu nele (`tetoNaCorrecao`):
+    // com dois literais, a régua ficou em 3 enquanto a correção rodava com 6.
+    expect(bloco.split("Math.min(maxSteps, PASSOS_DA_CORRECAO)").length - 1).toBe(2);
+    expect(bloco).not.toMatch(/Math\.min\(maxSteps, \d+\)/);
     // O pedido de correção é a instrução canônica do motor.
     expect(bloco).toContain("CORRECAO_DO_TURNO_MUDO");
     // Nenhum desfecho terminal dentro da correção — decisão é separada.
     expect(bloco).not.toContain("output_truncated_recovered_failed");
     expect(bloco).not.toContain("openCase(");
+  });
+});
+
+describe("o pedido humano (#3281) ocupa a vaga da correção — não é um passo a mais", () => {
+  it("teto da região correção→decisão: UMA chamada de modelo, nunca duas", () => {
+    // Na prévia assistida o pedido humano troca a INSTRUÇÃO da correção; não
+    // ganha chamada própria. Um segundo `runModelCall` aqui é um clique pagando
+    // três chamadas (turno + correção + pedido) e tem de doer neste teste.
+    const regiao = turno.slice(idxCorrecaoIf, idxSilencio);
+    expect(regiao.split("await runModelCall(").length - 1).toBe(1);
+    expect(blocoCorrecao()).toContain("INSTRUCAO_DO_PEDIDO_HUMANO");
   });
 });
 

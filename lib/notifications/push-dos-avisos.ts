@@ -23,15 +23,20 @@
  * na tela bloqueada sem nome de ninguém, e quem precisa do dado toca e abre o
  * contexto com a permissão que tem. O destino é o mesmo que a Central daria ao
  * aviso (`REFERENCIAS_DE_AVISO`).
+ *
+ * Os corpos são frases fixas, por isso todo ramo declara `corpoSemPrevia` igual
+ * ao `body`. O que de fato aparece com a tela bloqueada segue, além disso, a
+ * opção da empresa, aplicada pelo funil `./web_push.ts`.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { REFERENCIAS_DE_AVISO } from "@/lib/ai/inbox-destino";
+import { PAPEL_MINIMO_DA_CENTRAL, REFERENCIAS_DE_AVISO } from "@/lib/ai/inbox-destino";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 
 import { truncar, type PushPayload } from "./push_payload";
 import { somDoAviso } from "./sons-da-org";
+import type { DestinoDoPush } from "./web_push";
 
 /** Sem destino próprio, o push abre a Central — onde o aviso está. */
 const CENTRAL = "/app/ai/inbox";
@@ -48,6 +53,7 @@ type Aviso = {
   ref_id: string | null;
   title: string;
   body: string | null;
+  para_user_id: string | null;
 };
 
 function destinoDaPassagem(item: Aviso): string {
@@ -61,24 +67,39 @@ function destinoDaPassagem(item: Aviso): string {
 }
 
 /**
- * O push de um aviso da Central, ou `null` quando o aviso não vai ao celular.
- * Lê o aviso do banco em vez de confiar no payload: o evento carrega só o id.
+ * O push de um aviso da Central e para quem ele vai, ou `null` quando o aviso
+ * não vai ao celular. Lê o aviso do banco em vez de confiar no payload: o
+ * evento carrega só o id.
+ *
+ * Vai a quem vê o aviso na Central: o papel mínimo da Central e, quando o aviso
+ * tem destinatário (`para_user_id`), só ele — a mesma regra de `avisoVisivelPara`.
  */
 export async function pushDoAvisoDaCentral(
   admin: SupabaseClient,
   orgId: string,
   itemId: string,
-): Promise<PushPayload | null> {
+): Promise<{ payload: PushPayload; para: DestinoDoPush } | null> {
   // ⚠️ Organização junto do id: o client é service-role e ignora RLS.
-  const { data } = await admin
+  const { data, error } = await admin
     .from("agent_inbox_items")
-    .select("id, kind, ref_kind, ref_id, title, body")
+    .select("id, kind, ref_kind, ref_id, title, body, para_user_id")
     .eq("organization_id", orgId)
     .eq("id", itemId)
     .maybeSingle();
+  // Ainda não enviamos nada: falha de leitura deve chegar ao dispatcher para
+  // a retentativa do dreno. Retornar null consumiria o aviso como skipped.
+  if (error) throw new Error(`Não foi possível ler o aviso da Central: ${error.message}`);
   const item = data as Aviso | null;
   if (!item) return null;
+  const payload = await montarPush(admin, orgId, item);
+  if (!payload) return null;
+  const para: DestinoDoPush = item.para_user_id
+    ? { papelMinimo: PAPEL_MINIMO_DA_CENTRAL, soUsuario: item.para_user_id }
+    : { papelMinimo: PAPEL_MINIMO_DA_CENTRAL };
+  return { payload, para };
+}
 
+async function montarPush(admin: SupabaseClient, orgId: string, item: Aviso): Promise<PushPayload | null> {
   const som = somDoAviso(item);
   if (som === null) return null;
   const idioma = await idiomaDaOrganizacao(admin, orgId);
@@ -87,9 +108,11 @@ export async function pushDoAvisoDaCentral(
   // Sem saldo no provedor: o título já nasceu no idioma da organização
   // (`espera-de-saldo.ts`); o corpo diz o remédio, que fica fora do CRM.
   if (item.kind === "other" && item.ref_kind === "ai_provider_credential") {
+    const body = traduzir("Recarregue o saldo na conta do provedor: as respostas saem sozinhas quando ele voltar.", idioma);
     return {
       title: truncar(item.title),
-      body: traduzir("Recarregue o saldo na conta do provedor: as respostas saem sozinhas quando ele voltar.", idioma),
+      body,
+      corpoSemPrevia: body,
       tag,
       href: REFERENCIAS_DE_AVISO.ai_provider_credential.href(),
     };
@@ -108,18 +131,22 @@ export async function pushDoAvisoDaCentral(
   // responder o cliente" — falso, e mandava quem atendia procurar uma conversa
   // que não existe.
   if (item.kind === "proposta_pronta_para_revisao") {
+    const body = traduzir("A IA preparou uma proposta. Confira antes de enviar.", idioma);
     return {
       title: truncar(item.title),
-      body: traduzir("A IA preparou uma proposta. Confira antes de enviar.", idioma),
+      body,
+      corpoSemPrevia: body,
       tag,
       href: destinoDaPassagem(item),
     };
   }
 
   if (som === "pessoa") {
+    const body = traduzir("Abra a conversa para responder o cliente.", idioma);
     return {
       title: traduzir("A IA passou uma conversa para a equipe", idioma),
-      body: traduzir("Abra a conversa para responder o cliente.", idioma),
+      body,
+      corpoSemPrevia: body,
       tag,
       href: destinoDaPassagem(item),
     };
@@ -139,5 +166,6 @@ export async function pushDoAvisoDaCentral(
     const pipelineId = (lead as { pipeline_id?: string | null } | null)?.pipeline_id;
     if (pipelineId) href = REFERENCIAS_DE_AVISO.lead.href(item.ref_id, pipelineId);
   }
-  return { title: truncar(item.title), body: truncar(item.body ?? ""), tag, href };
+  const body = truncar(item.body ?? "");
+  return { title: truncar(item.title), body, corpoSemPrevia: body, tag, href };
 }

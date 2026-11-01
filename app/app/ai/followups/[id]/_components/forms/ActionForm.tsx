@@ -18,7 +18,7 @@ import type { FonteDeVariavel, VariaveisDoModelo } from "@/lib/channels/meta/var
 import { actionConfigSchema } from "@/lib/followup/graph-schema";
 import type { VariavelDoModelo } from "@/lib/followup/modelos-aprovados";
 import { MODOS_DA_ACAO, opcoes, type ModoDaAcao } from "@/lib/followup/vocabulario";
-import { camposDoFunil } from "@/lib/leads/campos-do-funil";
+import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
 import { usePipelines } from "@/hooks/webhooks/useWebhookSources";
 import { useMessageTemplates } from "@/hooks/inbox/useMessageTemplates";
 import { useModelosAprovadosDoFluxo } from "@/hooks/followup/useModelosAprovadosDoFluxo";
@@ -160,7 +160,12 @@ function MapaDeVariaveis({
 }) {
   const t = useT();
   const pipelines = usePipelines();
-  const campos = (pipelines.data?.data ?? []).flatMap((p) => camposDoFunil(p.settings));
+  // Só campos do NEGÓCIO: o envio lê `crm_leads.custom_fields`, e o valor de um
+  // campo do contato mora em `contacts.custom_fields` — escolhê-lo pularia o
+  // passo em toda inscrição (#2791; mesmo filtro do quadro e do calendário).
+  const campos = (pipelines.data?.data ?? []).flatMap((p) =>
+    camposPorEscopo(camposDoFunil(p.settings), "negocio"),
+  );
   const camposUnicos = [...new Map(campos.map((c) => [c.key, c])).values()];
   const faltando = variaveis.filter((v) => !valor[v.chave]);
 
@@ -255,8 +260,9 @@ export function ActionForm({
   );
   const aprovados = useModelosAprovadosDoFluxo();
   const variaveisDe = (id: string) => aprovados.data?.find((m) => m.id === id)?.variaveis ?? [];
-  // #2734 — mídia OPCIONAL do passo: com uma imagem ou PDF, o texto acima vira a
-  // LEGENDA. O upload pela tela ainda não existe nesta fatia — o campo é a URL.
+  // #2734 — mídia OPCIONAL do passo: com uma imagem, um vídeo, um áudio ou um
+  // documento (#2972), o texto acima vira a LEGENDA. O upload pela tela ainda não
+  // existe nesta fatia — o campo é a URL.
   const [mediaUrl, setMediaUrl] = useState(
     config.mode === "text" ? (config.media_url ?? "") : "",
   );
@@ -349,8 +355,11 @@ export function ActionForm({
           <p className="text-xs text-text-muted">
             {t("Sai exatamente assim, sem IA. No laço,")} {t("{{volta}}")} {t("e")} {t("{{voltas}}")} {t("viram o número da volta.")}
           </p>
+          <p className="text-xs text-text-muted">
+            {t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}
+          </p>
           <div className="space-y-2">
-            <Label htmlFor="action-media-url">{t("Imagem ou PDF (opcional)")}</Label>
+            <Label htmlFor="action-media-url">{t("Imagem, vídeo, áudio ou documento (opcional)")}</Label>
             <Input
               id="action-media-url"
               type="url"
@@ -363,7 +372,7 @@ export function ActionForm({
               }}
             />
             <p className="text-xs text-text-muted">
-              {t("Com uma imagem ou PDF, o texto acima vira a legenda do arquivo. Outros tipos de arquivo são recusados. Depois de 24 horas sem resposta do cliente, a mídia não sai — só um modelo aprovado chega até ele.")}
+              {t("Com uma imagem, um vídeo, um áudio ou um documento, o texto acima vira a legenda do arquivo (o áudio sai como mensagem de voz, sem legenda — o texto não vai junto). Depois de 24 horas sem resposta do cliente, a mídia não sai — só um modelo aprovado chega até ele.")}
             </p>
           </div>
         </div>

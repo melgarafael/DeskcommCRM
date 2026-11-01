@@ -482,6 +482,10 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
           logInvocation({
             ...comum,
             ...(clima?.ok ? ({ origem_da_escolha: "jev_cobriu" } as const) : {}),
+            // O provedor EFETIVO do binding — sem ele, o palpite por barra
+            // carimbaria `openrouter` num id de modelo de provedor personalizado
+            // (issue #3098).
+            provider: resolvido.provider,
             model: resolvido.modelId,
             prompt_tokens: 0,
             completion_tokens: 0,
@@ -496,6 +500,10 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
           logInvocation({
             ...comum,
             ...origem,
+            // O provedor EFETIVO do binding (issue #3098): o id do modelo pode
+            // trazer barra sem ser da OpenRouter — o provedor personalizado da
+            // empresa serve `qwen/qwen3.8-27b`, e o palpite diria `openrouter`.
+            provider: resolvido.provider,
             model: resolvido.modelId,
             prompt_tokens: medido.promptTokens,
             completion_tokens: medido.completionTokens,

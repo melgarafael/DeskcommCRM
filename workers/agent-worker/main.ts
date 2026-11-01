@@ -15,9 +15,11 @@ import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
  * migration 0050 aplicada — aplicar é ato de deploy) → solta órfãos → healthz →
  * loops (worker, drain, cron, holds, saúde do número).
  *
- * Graceful shutdown: SIGTERM/SIGINT → para de claimar, drena jobs em curso até
- * SHUTDOWN_GRACE_MS, fecha healthz e pool, sai 0. Morte súbita é o caso do
- * reaper — lease expira e o job volta.
+ * Graceful shutdown: SIGTERM/SIGINT → para de claimar e o prazo TOTAL começa no
+ * sinal (#2823), cobrindo laços, drain e pool até SHUTDOWN_GRACE_MS: dentro do
+ * prazo, fecha healthz e pool e sai 0; vencido, sai ≠ 0 sem esperar (o reaper
+ * devolve o lease). Morte súbita — SIGKILL do Docker no `stop_grace_period` — é
+ * o caso do reaper: lease expira e o job volta.
  *
  * Rodar: `pnpm worker` (tsx) — dev com --env-file=.env.local; container via
  * Dockerfile.worker (serviço `worker` do docker-compose).
@@ -69,7 +71,6 @@ if (!sentryDsn) {
 }
 
 import { hostname } from "node:os";
-import { setTimeout as sleep } from "node:timers/promises";
 
 import type pg from "pg";
 
@@ -107,7 +108,9 @@ import {
   type CacheAlertKnobs,
 } from "@/lib/agent-engine/obs/metrics";
 import { rodarLoopDaFila } from "@/lib/agent-engine/queue/loop";
+import { criarSonecaDaFila } from "@/lib/agent-engine/queue/soneca";
 import { createHealthzServer } from "./healthz";
+import { desligarNoPrazo } from "./desligamento-no-prazo";
 import {
   adiarAteORecarregar,
   avisarFaltaDeSaldo,
@@ -285,6 +288,12 @@ export async function startWorker(
 
   const loopsAbort = new AbortController();
 
+  // A soneca do laço da fila (#3688). Nasce aqui porque DOIS laços a usam: o da
+  // fila dorme nela, e o drain a acorda ao enfileirar um turno — mesmo worker,
+  // promessa local, sem polling novo. O `signal` é o que faz o `docker stop`
+  // cortar a soneca em curso na hora.
+  const sonecaDaFila = criarSonecaDaFila({ signal: loopsAbort.signal });
+
   // Drain do event_log (mesmo banco pós-fusão) — transforma dispatch_requested em
   // jobs. Fase 0 (convergência, spec 2026-07-23): o drain liga SEMPRE — o
   // dispatcher nativo EPIC-13 foi aposentado, o engine é o único consumidor.
@@ -303,6 +312,8 @@ export async function startWorker(
       debounceMs: env.INBOUND_DEBOUNCE_MS,
       reapTimeoutMs: env.CRM_EVENT_REAP_TIMEOUT_MS,
       allowlistTtlMs: env.AI_ALLOWLIST_TTL_DAYS * 24 * 60 * 60 * 1000,
+      // Quem corta a soneca do laço da fila quando um turno nasce (#3688).
+      acordarFila: () => sonecaDaFila.acordar(),
     },
     log,
     loopsAbort.signal,
@@ -310,7 +321,7 @@ export async function startWorker(
 
   // Handlers do event_log (mídia, branding, follow-up…) no ritmo do worker.
   // Antes disto eles só rodavam pelo cron `event-log-drain`, 1×/min: a cadeia
-  // persist→derive de um áudio levava 103-188s contra os 45s que o drain do
+  // persist→derive de um áudio levava 103-188s contra os 120s que o drain do
   // turno espera, e o agente respondia "não consigo ouvir" com a transcrição
   // pronta segundos depois. O cron continua como rede de segurança — o claim
   // otimista do `drainEventLog` torna os dois seguros em paralelo.
@@ -318,6 +329,8 @@ export async function startWorker(
     {
       intervalMs: env.EVENT_LOG_DRAIN_INTERVAL_MS,
       idleIntervalMs: env.EVENT_LOG_DRAIN_IDLE_INTERVAL_MS,
+      idleMaxMs: env.EVENT_LOG_DRAIN_IDLE_MAX_INTERVAL_MS,
+      staleSweepMs: env.EVENT_LOG_DRAIN_STALE_SWEEP_MS,
       batchSize: env.EVENT_LOG_DRAIN_BATCH_SIZE,
     },
     log,
@@ -535,15 +548,16 @@ export async function startWorker(
         void running.finally(() => inFlight.delete(running));
       }
     },
-    // O `{ signal }` é o que faz o `docker stop` não esperar a espera inteira —
-    // e é por isso que `rodarLoopDaFila` trata a rejeição em vez de propagá-la:
-    // `sleep` abortado REJEITA, e essa rejeição chegaria ao `await workerLoop`
-    // logo abaixo, matando o processo antes do drain dos jobs em voo.
-    dormir: (ms) => sleep(ms, undefined, { signal: loopsAbort.signal }),
+    // O `{ signal }` (dentro da soneca) é o que faz o `docker stop` não esperar a
+    // espera inteira — e é por isso que `rodarLoopDaFila` trata a rejeição em vez
+    // de propagá-la: `sleep` abortado REJEITA, e essa rejeição chegaria ao `await
+    // workerLoop` logo abaixo, matando o processo antes do drain dos jobs em voo.
+    soneca: sonecaDaFila,
     deveParar: () => shuttingDown,
     intervalos: {
       ociosoMs: env.QUEUE_POLL_INTERVAL_MS,
       retryMs: env.QUEUE_CLAIM_RETRY_INTERVAL_MS,
+      ociosoMaxMs: env.QUEUE_IDLE_MAX_INTERVAL_MS,
     },
     log,
   });
@@ -556,57 +570,63 @@ export async function startWorker(
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
-    log.info("sinal recebido — parando de claimar e drenando jobs em curso", {
-      signal,
-      in_flight: inFlight.size,
+    // (#2823) O prazo TOTAL arma no SINAL e cobre laços, drain e pool. Antes, a
+    // contagem começava DEPOIS de `await Promise.all(lacos)` e de
+    // `await workerLoop`, e `pool.end()` ficava fora dela: um laço preso (o do
+    // `event_log` numa chamada de rede, sem PostgREST) levou a parada ociosa a
+    // 19,6 s MEDIDOS por fora de qualquer prazo — e o que sobrava ainda competia
+    // com o SIGKILL do Docker, que chega no `stop_grace_period`. O porquê de o
+    // relógio ter de armar aqui está em `./desligamento-no-prazo.ts`.
+    const fim = await desligarNoPrazo({
+      prazoMs: env.SHUTDOWN_GRACE_MS,
+      sinal: signal,
+      emVoo: () => inFlight.size,
+      aoSinal: () => {
+        clearInterval(reaperTimer);
+        clearInterval(holdsTimer);
+        server.close();
+        server.closeIdleConnections();
+        loopsAbort.abort();
+      },
+      // A ORDEM importa: os laços param de claimar antes de o drain ser
+      // aguardado, e um claim já iniciado termina dentro de `workerLoop` (não
+      // larga lease no meio). Tudo isto é o que o prazo tem de cobrir.
+      encerrar: async () => {
+        await Promise.all([
+          drainLoop,
+          eventLogLoop,
+          healthLoop,
+          cronLoop,
+          sessionWatchdogLoop,
+          flywheelLoop,
+          voiceCallsBridgeLoop,
+        ]);
+        await workerLoop;
+        await Promise.all([...inFlight]);
+        await pool.end();
+      },
+      log,
     });
-    clearInterval(reaperTimer);
-    clearInterval(holdsTimer);
-    server.close();
-    server.closeIdleConnections();
-    loopsAbort.abort();
-    await Promise.all([
-      drainLoop,
-      eventLogLoop,
-      healthLoop,
-      cronLoop,
-      sessionWatchdogLoop,
-      flywheelLoop,
-      voiceCallsBridgeLoop,
-    ]);
-    await workerLoop;
-    let graceTimer: NodeJS.Timeout | undefined;
-    const grace = new Promise<"grace">((resolve) => {
-      graceTimer = setTimeout(() => resolve("grace"), env.SHUTDOWN_GRACE_MS);
-    });
-    const outcome = await Promise.race([
-      Promise.all([...inFlight]).then(() => "drained" as const),
-      grace,
-    ]);
-    clearTimeout(graceTimer);
-    if (outcome === "grace") {
-      log.error("shutdown: jobs em curso não drenaram no prazo — saindo sem esperar", {
-        grace_ms: env.SHUTDOWN_GRACE_MS,
-        in_flight: inFlight.size,
-      });
+    if (fim === "prazo-estourado") {
       process.exit(1);
     }
-    await pool.end();
-    log.info("worker encerrado limpo", {});
     resolveStopped();
   };
   process.once("SIGTERM", (signal) => void shutdown(signal));
   process.once("SIGINT", (signal) => void shutdown(signal));
 
   // A linha que a Fase 0 exige ver: worker conectado ao Supabase, schema ok, pronto.
-  // Os dois intervalos vão junto porque governam a conta de egress do banco (issue
-  // #258) e quem os ajusta precisa conseguir CONFERIR o que está em vigor sem ler
-  // o código-fonte — foi o que o autor da issue teve de fazer para achar o knob.
+  // Os três intervalos vão junto porque governam a conta de egress do banco (issues
+  // #258 e #3688) e quem os ajusta precisa conseguir CONFERIR o que está em vigor sem
+  // ler o código-fonte — foi o que os autores das issues tiveram de fazer para achar
+  // o knob.
   log.info("agent-engine pronto", {
     worker_id: workerId,
     healthz_port: port,
     max_concurrency: env.QUEUE_MAX_CONCURRENCY,
     poll_ocioso_ms: env.QUEUE_POLL_INTERVAL_MS,
+    // Igual ao piso = recuo desligado (o default, doc 242).
+    poll_ocioso_teto_ms: env.QUEUE_IDLE_MAX_INTERVAL_MS ?? env.QUEUE_POLL_INTERVAL_MS,
     claim_retry_ms: env.QUEUE_CLAIM_RETRY_INTERVAL_MS,
   });
   // Acima de 10 s a espera ociosa passa do idleTimeoutMillis do pool (10 s, o

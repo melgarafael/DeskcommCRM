@@ -9,6 +9,9 @@
 import { z } from "zod";
 import { webhookFormFieldsSchema } from "@/lib/webhooks/formulario";
 
+import { ESCOLHAS_NO_ENVIO } from "@/lib/agenda/escolha-no-envio";
+import { conditionsSchema } from "@/lib/automation/conditions";
+import { configDoAniversario } from "@/lib/automation/aniversario-do-contato";
 import {
   GATILHO_DE_DATA_DO_FUNIL,
   configDoGatilhoDeData,
@@ -216,11 +219,43 @@ export const TRIGGER_EVENTS = Object.keys(ENTIDADE_ESPERADA_POR_GATILHO) as [
   ...GatilhoDeAutomacao[],
 ];
 
-export const conditionSchema = z.object({
-  field: z.string().min(1).max(200),
-  op: z.enum(["eq", "neq", "contains"]),
-  value: z.string().max(500),
-});
+/**
+ * As condições de uma regra (#2727): o schema e o avaliador vivem juntos em
+ * `lib/automation/conditions.ts`, para a tela, a porta da API e o motor lerem a
+ * MESMA definição. Aqui só se reexporta — `conditionsSchema` aceita a lista
+ * antiga (≡ `all`) e o grupo `{all|any}` do topo (o aninhamento é recusado na
+ * porta; ver `conditionGroupSchema`).
+ */
+export { conditionSchema } from "@/lib/automation/conditions";
+
+/**
+ * A FILA do rodízio — a mesma forma em dois lugares: o modo `rodizio` (#2041) e
+ * o `fallback` do destino dinâmico (#3804). Uma regra, escrita uma vez: a fila
+ * não pode divergir entre os dois (o banco lê a mesma chave `fila` nos dois).
+ */
+const filaDoRodizioSchema = z
+  .array(z.object({ user_id: z.string().uuid(), pausado: z.boolean() }))
+  .min(1)
+  .max(50)
+  .superRefine((fila, ctx) => {
+    const vistos = new Set<string>();
+    for (const [indice, pessoa] of fila.entries()) {
+      if (vistos.has(pessoa.user_id)) {
+        ctx.addIssue({
+          code: "custom",
+          path: [indice, "user_id"],
+          message: "Cada pessoa entra uma vez só na fila do rodízio.",
+        });
+      }
+      vistos.add(pessoa.user_id);
+    }
+  });
+
+/**
+ * Os destinos que a regra pode pedir no modo `destino` (#3804) — o vocabulário
+ * é o MESMO de `CandidatoDoDestino`, em `lib/automation/destino-do-atribuir`.
+ */
+export const DESTINOS_DO_ATRIBUTO = ["responsavel_do_negocio", "dono_da_carteira"] as const;
 
 /**
  * O `config` de `assign_owner` (#2041): uma pessoa fixa, a forma de sempre, ou
@@ -231,33 +266,84 @@ export const conditionSchema = z.object({
  * do rodízio têm só `{ user_id }` e continuam válidas sem migração de dados. O
  * union discriminado (e não `z.union`) mantém o caminho do erro no campo
  * (`fila`, `user_id`), que é o que a tela usa para dizer o que corrigir.
+ *
+ * ─── As duas opções da #3514, e por que são OPT-IN ────────────────────────
+ *
+ * `contato` passa também a carteira do cliente (`contacts.carteira_user_id`) e
+ * `conversas` passa as conversas ABERTAS do contato para o novo responsável —
+ * a passagem SDR → Closer. As duas são `optional()` e o executor só as lê com
+ * `=== true`: payload gravado antes desta mudança (sem as chaves) continua
+ * válido e continua fazendo SÓ o que fazia. Nenhuma automação existente passa a
+ * mover conversa porque o schema ganhou um campo.
+ *
+ * No rodízio elas não entram NESTA entrega, e não por acaso: a vez é decidida
+ * dentro de `fn_automation_rodizio_atribuir`, que grava o dono do negócio na
+ * MESMA transação em que registra a escolha. Passar cliente e conversas ali
+ * seria uma SEGUNDA passada, com um destinatário que o banco escolheu e que a
+ * ação só conhece depois do commit — desenho que merece issue própria em vez de
+ * vir de carona nesta.
+ *
+ * ─── O modo `destino` (#3804) ────────────────────────────────────────────
+ *
+ * `destinos` é a CADEIA, na ordem: o responsável do negócio e/ou o dono da
+ * carteira do contato. Quem decide é `resolverDestinoDoAtribuir` (função pura,
+ * mesmo módulo), e a mesma pessoa que ela devolve passa pela régua de vínculo da
+ * ação (membro ativo, não `viewer`).
+ *
+ * `fallback` é OBRIGATÓRIO aqui — e é o item 2 da issue: sem responsável e sem
+ * carteira, a regra atribui a uma pessoa fixa ou entra no rodízio, nunca "não
+ * atribui e segue em silêncio". A obrigatoriedade é da porta, não do executor:
+ * uma regra sem fallback salvaria e só falharia no disparo, que é a regra
+ * quebrada que ninguém percebe.
  */
 export const configDoAtribuirSchema = z.discriminatedUnion("modo", [
-  z.object({ modo: z.literal("fixo").optional(), user_id: z.string().uuid() }),
+  z.object({
+    modo: z.literal("fixo").optional(),
+    user_id: z.string().uuid(),
+    /** #3514 — o cliente vai junto com o negócio? Desligado por padrão. */
+    contato: z.boolean().optional(),
+    /** #3514 — as conversas abertas do cliente vão junto? Desligado por padrão. */
+    conversas: z.boolean().optional(),
+  }),
   z.object({
     modo: z.literal("rodizio"),
-    fila: z
-      .array(z.object({ user_id: z.string().uuid(), pausado: z.boolean() }))
+    fila: filaDoRodizioSchema,
+  }),
+  z.object({
+    modo: z.literal("destino"),
+    destinos: z
+      .array(z.enum(DESTINOS_DO_ATRIBUTO))
       .min(1)
-      .max(50)
-      .superRefine((fila, ctx) => {
-        const vistos = new Set<string>();
-        for (const [indice, pessoa] of fila.entries()) {
-          if (vistos.has(pessoa.user_id)) {
-            ctx.addIssue({
-              code: "custom",
-              path: [indice, "user_id"],
-              message: "Cada pessoa entra uma vez só na fila do rodízio.",
-            });
-          }
-          vistos.add(pessoa.user_id);
+      .max(DESTINOS_DO_ATRIBUTO.length)
+      .superRefine((destinos, ctx) => {
+        if (new Set(destinos).size !== destinos.length) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Cada destino entra uma vez só: a ordem deles é a ordem em que são tentados.",
+          });
         }
       }),
+    fallback: z.discriminatedUnion("modo", [
+      z.object({ modo: z.literal("fixo"), user_id: z.string().uuid() }),
+      z.object({ modo: z.literal("rodizio"), fila: filaDoRodizioSchema }),
+    ]),
+    contato: z.boolean().optional(),
+    conversas: z.boolean().optional(),
   }),
 ]);
 
-const ehRodizio = (acao: { type: string; config?: unknown }) =>
-  acao.type === "assign_owner" && (acao.config as { modo?: unknown } | undefined)?.modo === "rodizio";
+/**
+ * O rodízio está nesta ação? Vale para os DOIS lugares onde ele mora: o modo
+ * `rodizio` de sempre e o `fallback` do destino dinâmico (#3804). A vez é
+ * contada por REGRA (`fn_automation_rodizio_atribuir` lê a fila da própria
+ * regra), então um rodízio escondido no fallback de outra ação andaria pela
+ * fila do primeiro — o mesmo defeito que este teto existe para barrar.
+ */
+const ehRodizio = (acao: { type: string; config?: unknown }) => {
+  if (acao.type !== "assign_owner") return false;
+  const config = acao.config as { modo?: unknown; fallback?: { modo?: unknown } } | undefined;
+  return config?.modo === "rodizio" || config?.fallback?.modo === "rodizio";
+};
 
 export const MENSAGEM_DO_RODIZIO_FORA_DO_LUGAR =
   "Uma automação tem no máximo um rodízio de atendentes, como ação direta: a vez de cada pessoa é contada pela automação.";
@@ -315,27 +401,44 @@ const acoesFixas = [
       template: z.string().min(1).max(2000),
       /**
        * #2734 — MÍDIA OPCIONAL por URL. Quando presente, o `template` deixa de ser
-       * a mensagem inteira e vira a LEGENDA da imagem/PDF. Opcional de propósito: a
-       * regra antiga (só texto) não tem a chave e continua idêntica. O `nullish`
-       * deixa o editor gravar `null`/ausente sem recusar a regra.
+       * a mensagem inteira e vira a LEGENDA da mídia (imagem, vídeo, áudio ou
+       * documento). Opcional de propósito: a regra antiga (só texto) não tem a
+       * chave e continua idêntica. O `nullish` deixa o editor gravar
+       * `null`/ausente sem recusar a regra.
        *
-       * O `type` (imagem × PDF) NÃO mora aqui: quem o decide é o envio, a partir do
-       * MIME — a extensão da URL quando não há MIME. Guardar uma cópia do tipo no
-       * config criaria uma segunda verdade que envelhece se a URL mudar.
+       * O `type` (imagem × vídeo × áudio × documento) NÃO mora aqui: quem o
+       * decide é o envio, a partir do MIME — a extensão da URL quando não há
+       * MIME. Guardar uma cópia do tipo no config criaria uma segunda verdade
+       * que envelhece se a URL mudar.
        */
       media_url: z.string().url().max(2000).nullish(),
+      /**
+       * #3813 — "Quando o contato tiver horário marcado": `adiar` (padrão, o
+       * comportamento de hoje), `enviar` ou `nao_enviar` (pulo registrado com
+       * motivo). Opcional de propósito: toda regra já gravada não tem a chave e
+       * continua idêntica — sem esta linha o `z.object` abaixo DESCARTA a chave
+       * no save e a tela mostraria uma escolha que não foi gravada.
+       */
+      quando_ha_compromisso: z.enum(ESCOLHAS_NO_ENVIO).optional(),
     }),
   }),
   // #2726 — o e-mail como SAÍDA. O transporte não é configuração da regra: ele
   // já existe em `lib/email` (SMTP ou Resend, escolhido em Admin › E-mail), e
   // esta ação só diz QUEM recebe, o ASSUNTO e o CORPO. `destinatario` é o modo
-  // (contato / responsável / endereço fixo) e `email_fixo` só existe para o
-  // terceiro — por isso é opcional: exigir endereço num envio ao contato
-  // recusaria na porta a regra que não precisa dele.
+  // (contato / responsável / pessoa da equipe / endereço fixo) e `email_fixo`
+  // só existe para o último — por isso é opcional: exigir endereço num envio ao
+  // contato recusaria na porta a regra que não precisa dele.
+  //
+  // #2642 (recorte do PR #2834) — o modo `membro_da_equipe` é o e-mail para uma
+  // PESSOA da equipe, que antes morava no `notify_team`. Duas peças vieram
+  // juntas: o vínculo do membro é conferido NO MOMENTO DO ENVIO (membro
+  // removido da organização não recebe — o defeito do #2794) e o modelo ganha a
+  // variável `{{resumo}}` com o resumo automático do negócio. O teto de envios
+  // por organização desta ação vale para tudo isso sem mudar uma linha.
   z.object({
     type: z.literal("send_email"),
     config: z.object({
-      destinatario: z.enum(["contato", "dono_do_lead", "fixo"]),
+      destinatario: z.enum(["contato", "dono_do_lead", "membro_da_equipe", "fixo"]),
       // O editor guarda o campo como "" (input controlado) quando o modo não
       // é `fixo`; "" vira AUSÊNCIA aqui, na porta que o editor e a API
       // dividem, e não um e-mail inválido. Quem EXIGE o endereço é o
@@ -344,8 +447,18 @@ const acoesFixas = [
         (v) => (v === "" ? undefined : v),
         z.string().email("E-mail inválido").max(320).optional(),
       ),
+      // Mesma tolerância de `email_fixo`: o editor deixa o campo em "" quando o
+      // modo não é `membro_da_equipe`. O endereço NÃO mora aqui — só o vínculo;
+      // o e-mail sai do GoTrue da própria pessoa, no disparo.
+      membro_id: z.preprocess(
+        (v) => (v === "" ? undefined : v),
+        z.string().uuid().optional(),
+      ),
       // Assunto e corpo levam as MESMAS variáveis do WhatsApp: `{{nome}}`,
       // `{{primeiro_nome}}`, `{{lead.*}}` e o campo do funil (`{{destino}}`).
+      // `{{resumo}}` é a variável desta ação (#2642): o resumo do negócio
+      // montado no disparo, com a pontuação, o motivo e o que a passagem
+      // combinou. Só é resolvida quando o modelo a referencia.
       assunto: z.string().min(1).max(200),
       corpo: z.string().min(1).max(5000),
       // Texto simples (padrão) ou HTML simples — negrito, links e quebras.
@@ -358,6 +471,15 @@ const acoesFixas = [
           code: "custom",
           path: ["email_fixo"],
           message: "Informe o endereço de e-mail que recebe os envios desta regra.",
+        });
+      }
+      // Mesma régua do endereço fixo: sem a pessoa escolhida, a regra salvaria
+      // e só falharia no disparo (`sem_membro` em send-email.ts).
+      if (config.destinatario === "membro_da_equipe" && !config.membro_id) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["membro_id"],
+          message: "Escolha a pessoa da equipe que recebe os envios desta regra.",
         });
       }
     }),
@@ -388,6 +510,8 @@ const acoesFixas = [
        * mais que isso está tentando pôr o prompt do agente aqui dentro.
        */
       instruction: z.string().min(1).max(1000),
+      /** #3813 — mesma escolha da irmã `send_whatsapp_message`. */
+      quando_ha_compromisso: z.enum(ESCOLHAS_NO_ENVIO).optional(),
     }),
   }),
   z.object({
@@ -448,6 +572,48 @@ const acoesFixas = [
     type: z.literal("apply_task_plan"),
     config: z.object({
       plano_id: z.string().trim().min(1).max(64),
+    }),
+  }),
+  // #3727 — a PONTE para o gatilho de data do funil (#989): grava a data do
+  // atendimento num campo de DATA do negócio, e é a regra "Quando faltarem N
+  // dias para uma data do funil" (com N negativo) que manda a mensagem N dias
+  // depois. Dois campos e nada mais: o `pipeline_id` é o funil dono do campo (é
+  // ele que a varredura consulta) e o `campo` é a CHAVE em
+  // `pipelines.settings.fields`, nunca o rótulo — o mesmo par que o
+  // `trigger_config` do gatilho de data guarda. Quem espera NÃO é esta ação:
+  // ela grava e sai na hora do comparecimento, e por isso não segura a vaga de
+  // "um follow-up vivo por contato".
+  z.object({
+    type: z.literal("set_lead_date_field"),
+    config: z.object({
+      pipeline_id: z.string().uuid(),
+      campo: z.string().trim().min(1).max(80),
+    }),
+  }),
+  // #2642 — a ação que avisa a EQUIPE na virada para ganho. O recorte do
+  // mantenedor no PR #2834 deixou UM caminho: o WhatsApp para o número que o
+  // ADMIN já registrou em Avisos. Por isso a configuração é só isto — não tem
+  // número, endereço, pessoa nem texto: colar destino aqui seria a mesma porta
+  // de spam que a disciplina da #1347 fechou, e "quem recebe" deixou de ser
+  // escolha (o destino é o da empresa).
+  //
+  // O e-mail para uma pessoa da equipe não mora mais nesta ação: ele é o
+  // destinatário `membro_da_equipe` do `send_email`, com o teto de envios por
+  // organização valendo e a variável `{{resumo}}` disponível no modelo.
+  z.object({
+    type: z.literal("notify_team"),
+    // `strictObject` SÓ aqui, entre as ações: é o único destino que a regra não
+    // pode carregar. As irmãs aceitam campos extras por tolerância a round-trip
+    // do editor; esta ação não tem o que tolerar — qualquer `telefone`/`email`
+    // colado na regra é a porta de spam que a disciplina da #1347 fechou, e o
+    // destinatário é sempre o que o ADMIN registrou (ver notify-team.ts).
+    //
+    // `canal` é `literal` e não `enum` de propósito: `z.enum(["whatsapp",
+    // "email"])` era o ramo de e-mail que o recorte tirou, e o literal faz a
+    // regra que ainda peça e-mail morrer aqui, na porta, em vez de sair pelo
+    // WhatsApp como se o pedido tivesse sido respeitado.
+    config: z.strictObject({
+      canal: z.literal("whatsapp"),
     }),
   }),
 ] as const;
@@ -545,13 +711,28 @@ export const updateWebhookSourceSchema = createWebhookSourceSchema.partial().ext
    * como antes do #2316, sem a integração poder reescrever edição manual.
    */
   update_existing_lead_on_capture: z.boolean().optional(),
+  /**
+   * A opção do #3101: quando o envio NÃO traz `external_id` e o contato casado
+   * já tem card ABERTO no mesmo funil, ATUALIZAR esse card (campos e etapa) em
+   * vez de abrir outro.
+   *
+   * Só entra no PATCH, como a opção irmã: nasce DESLIGADA por DEFAULT na coluna
+   * (migration 0722), e quem nunca mexer aqui segue exatamente como antes —
+   * cada envio vira um card novo.
+   *
+   * Como `update_existing_lead_on_capture`, só liga em fonte com assinatura
+   * configurada — mesma régua da opção irmã (`opcaoSemAssinatura`, conferida
+   * na rota do PATCH): reescrever um card que já existe é integração entre
+   * sistemas.
+   */
+  reuse_open_lead_on_capture: z.boolean().optional(),
 });
 
 export const createAutomationRuleSchema = z
   .object({
     name: z.string().min(1).max(120),
     trigger_event: z.enum(TRIGGER_EVENTS),
-    conditions: z.array(conditionSchema).max(10).default([]),
+    conditions: conditionsSchema.default([]),
     actions: z.array(actionSchema).min(1).max(10).superRefine(umRodizioPorRegra),
     /**
      * O que o gatilho precisa saber além do nome dele (#989).
@@ -566,7 +747,34 @@ export const createAutomationRuleSchema = z
   .superRefine(exigirConfigDoGatilhoDeData)
   .superRefine(exigirConfigDosGatilhosDeTempo)
   .superRefine(exigirIdDaFonteWebhook)
+  .superRefine(recusarLimitePorContatoTorto)
+  .superRefine(recusarAntecedenciaTorta)
   .superRefine(recusarLacoDeLead);
+
+/**
+ * "Dias de antecedência" do aniversário (#3726) é um inteiro de 0 a 365.
+ *
+ * A varredura lê a chave com `configDoAniversario`, que devolve `null` para
+ * qualquer coisa que não seja inteiro na faixa — e uma regra dessas seria salva
+ * e nunca dispararia, com a tela dizendo que foi salva. Recusar na porta é o
+ * único desfecho honesto, como nas demais chaves do gatilho.
+ *
+ * Ausente passa: é o `{}` de toda regra criada antes desta feature, que
+ * continua valendo com 0 (no dia).
+ */
+function recusarAntecedenciaTorta(
+  regra: { trigger_config?: Record<string, unknown> },
+  ctx: z.RefinementCtx,
+): void {
+  const config = regra.trigger_config;
+  if (!config || !("dias_antecedencia" in config)) return;
+  if (configDoAniversario(config)) return;
+  ctx.addIssue({
+    code: "custom",
+    path: ["trigger_config", "dias_antecedencia"],
+    message: "Escolha entre 0 e 365 dias de antecedência (0 = no dia do aniversário).",
+  });
+}
 
 function exigirIdDaFonteWebhook(
   regra: { trigger_config?: Record<string, unknown> },
@@ -581,6 +789,30 @@ function exigirIdDaFonteWebhook(
       message: "Escolha uma fonte de formulário válida.",
     });
   }
+}
+
+/**
+ * "No máximo uma vez por contato" (#2974) é LIGADO/DESLIGADO — booleano.
+ *
+ * O motor lê a chave com `=== true` (`regraRodaUmaVezPorContato`), então um
+ * `"sim"` ou um `1` gravado por outra porta seria silenciosamente DESLIGADO: a
+ * tela diria que a regra roda uma vez por contato e ela rodaria sempre. Recusar
+ * na porta é o único desfecho honesto, como nas demais chaves do gatilho.
+ *
+ * Ausente (ou `null`, que é o mesmo "não configurado") passa: é o comportamento
+ * de antes desta feature.
+ */
+function recusarLimitePorContatoTorto(
+  regra: { trigger_config?: Record<string, unknown> },
+  ctx: z.RefinementCtx,
+): void {
+  const valor = regra.trigger_config?.uma_vez_por_contato;
+  if (valor === undefined || valor === null || typeof valor === "boolean") return;
+  ctx.addIssue({
+    code: "custom",
+    path: ["trigger_config", "uma_vez_por_contato"],
+    message: "A opção “uma vez por contato” só aceita ligado ou desligado.",
+  });
 }
 
 /**
@@ -637,7 +869,7 @@ export const updateAutomationRuleSchema = z
   .object({
     name: z.string().min(1).max(120).optional(),
     trigger_event: z.enum(TRIGGER_EVENTS).optional(),
-    conditions: z.array(conditionSchema).max(10).optional(),
+    conditions: conditionsSchema.optional(),
     actions: z.array(actionSchema).min(1).max(10).superRefine(umRodizioPorRegra).optional(),
     trigger_config: z.record(z.string(), z.unknown()).optional(),
     is_active: z.boolean().optional(),
@@ -661,6 +893,8 @@ export const updateAutomationRuleSchema = z
     exigirConfigDosGatilhosDeTempo(patch as { trigger_event: string; trigger_config?: Record<string, unknown> }, ctx);
   })
   .superRefine(exigirIdDaFonteWebhook)
+  .superRefine(recusarLimitePorContatoTorto)
+  .superRefine(recusarAntecedenciaTorta)
   // Só vê o laço quando o PATCH traz gatilho E ações; o PATCH parcial é
   // conferido contra a regra gravada na rota.
   .superRefine(recusarLacoDeLead);

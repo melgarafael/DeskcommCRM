@@ -18,6 +18,8 @@ import { revalidatePath } from "next/cache";
 
 import { audit } from "@/lib/audit";
 import { loadAuthUser, resolveActiveOrg, sessionAal, isMfaEnrolled, mfaEmDivida } from "@/lib/auth/server";
+import { esquecerDispositivosConfiaveis } from "@/lib/auth/dispositivo-confiavel";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import {
   empresaExigeMfa,
   exigeCadastroDeMfa,
@@ -28,7 +30,10 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export type ResultadoDaPolitica = { ok: true } | { ok: false; erro: string };
+export type ResultadoDaPolitica =
+  | { ok: true }
+  /** `provarCodigo`: a sessão precisa do código AGORA (ex.: entrou por dispositivo confiável). */
+  | { ok: false; erro: string; provarCodigo?: true };
 
 /** O que a tela de Segurança envia: o nível mínimo e a carência, juntos. */
 export interface AlvoDaPoliticaDeMfa {
@@ -214,7 +219,8 @@ export async function desativarMfaDaConta(): Promise<ResultadoDaPolitica> {
   if ((await sessionAal()) !== "aal2") {
     return {
       ok: false,
-      erro: "Entre de novo e informe o código de 6 dígitos antes de desligar a verificação.",
+      erro: "Informe o código de 6 dígitos antes de desligar a verificação.",
+      provarCodigo: true,
     };
   }
 
@@ -225,6 +231,10 @@ export async function desativarMfaDaConta(): Promise<ResultadoDaPolitica> {
     const { error } = await supabase.auth.mfa.unenroll({ factorId: f.id });
     if (error) return { ok: false, erro: "Não consegui remover a verificação agora." };
   }
+  invalidarUsuario(user.id);
+  // Sem fator, a confiança não serve para nada — e, se a pessoa religar a
+  // verificação um dia, nenhum navegador antigo pode voltar dispensado em silêncio.
+  await esquecerDispositivosConfiaveis(user.id);
 
   await audit({
     action: "security.mfa_desativada",

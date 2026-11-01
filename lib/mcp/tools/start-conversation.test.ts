@@ -51,7 +51,9 @@ function makeCtx(state: IdemState): McpContext {
     from: (table: string) => {
       // Spec 21: a tool confere `is_personal` antes de abrir. Sem pessoal na
       // base do teste, a consulta volta vazia e o fluxo segue igual a antes.
-      if (table === "contacts") {
+      // Spec 31 B1: a busca do telefone extra lê `contact_phones`; sem extra na
+      // base do teste ela também volta vazia (`maybeSingle` com data nulo).
+      if (table === "contacts" || table === "contact_phones") {
         const cadeia: Record<string, () => unknown> = {};
         for (const metodo of ["select", "eq", "in", "is", "limit"]) {
           cadeia[metodo] = () => cadeia;

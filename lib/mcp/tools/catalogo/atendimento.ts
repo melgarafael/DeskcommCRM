@@ -73,11 +73,17 @@ export const TOOLS_ATENDIMENTO = declararTools([
     // Nenhum dos dois gerou conflito de texto — o `tsc` é que reprovou no merge.
     rotulo: "Anotar dado que o cliente informou",
     explicacao:
-      "Quando o cliente diz o e-mail, o nome ou o telefone dele na conversa, guarda essa informação para uma pessoa conferir antes de entrar na ficha.",
+      "Guarda o dado informado para revisão humana. A empresa pode permitir, em Configurações › Distribuição " +
+      "de atendimento, preencher telefone vazio ou nome vazio. Nome exige mensagem real do próprio contato " +
+      "neste atendimento; nome preexistente diferente e e-mail continuam aguardando confirmação.",
     oQueToca: "Cadastro de clientes",
-    // `atencao`, não `critico`: nada sai para o cliente e nada entra na ficha
-    // por conta dela — o peso mora na confirmação, que é humana. Marcar
-    // `critico` aqui faria a tela pedir cerimônia para uma anotação.
+    // `atencao`, não `critico`: nada sai para o cliente, e os ÚNICOS dados que
+    // entram na ficha por conta desta ferramenta são o telefone de um cadastro
+    // SEM número (#2593) e o nome de um cadastro SEM nome (#3784) — sozinhos,
+    // sem sobrescrever nada, com auditoria e rastro na linha do tempo, E SÓ COM
+    // A OPÇÃO DA ORGANIZAÇÃO LIGADA (as duas vêm desligadas). O resto continua
+    // esperando a confirmação humana, que é onde o peso mora. Marcar `critico`
+    // aqui faria a tela pedir cerimônia para uma anotação.
     risco: "atencao",
     // ⚠️ FORA de "atender", e a razão é o TETO — não o valor da capacidade.
     //

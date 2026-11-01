@@ -14,6 +14,10 @@
  *    caso que impede o conserto degenerado de "exigir chave sempre", que
  *    quebraria todo chamador atual.
  * 4. Chave malformada é recusada antes de qualquer efeito, e sem recibo.
+ * 5. O recurso de ÁUDIO nasce como linha sem texto — o conteúdo dele é o
+ *    arquivo, que entra pela rota de `midias` logo depois (#2833).
+ * 6. Campo de mídia no corpo da criação é IGNORADO: caminho de arquivo só
+ *    entra por upload, que é quem confere os bytes.
  *
  * O helper é exercitado de verdade (não é mockado): o que se testa é a
  * integração entre a rota e ele.
@@ -50,7 +54,19 @@ function banco() {
 
   h.from.mockImplementation((tabela: string) => {
     if (tabela === "message_templates") {
+      // A leitura da PRIMEIRA da lista (a criação nasce um passo acima dela).
+      const leitura = {
+        select: () => leitura,
+        eq: () => leitura,
+        order: () => leitura,
+        limit: () => leitura,
+        maybeSingle: async () => {
+          const [primeira] = [...templates].sort((a, b) => Number(a.ordem) - Number(b.ordem));
+          return { data: primeira ? { ordem: primeira.ordem } : null, error: null };
+        },
+      };
       return {
+        ...leitura,
         insert: (linha: Linha) => ({
           select: () => ({
             single: async () => {
@@ -182,5 +198,34 @@ describe("POST /api/v1/message-templates — idempotência", () => {
     expect(resposta.status).toBe(400);
     expect(db.templates).toHaveLength(0);
     expect(db.recibos).toHaveLength(0);
+  });
+
+  it("(5) recurso de ÁUDIO nasce como linha sem texto e sem coluna de mídia", async () => {
+    const db = banco();
+
+    // O corpo do áudio é VAZIO: o conteúdo é o arquivo, que entra por
+    // `POST /message-templates/:id/midias` logo depois (o id ainda não existe
+    // neste POST). Nenhum campo de mídia nasce aqui — não há coluna para ela:
+    // o áudio é uma entrada de `midias`, e quem a grava é a rota de upload.
+    const resposta = await POST(req({ title: "Áudio preço", body: "" }));
+
+    expect(resposta.status).toBe(201);
+    expect(db.templates[0]).toMatchObject({ title: "Áudio preço", body: "", midias: [] });
+    expect(db.templates[0]).not.toHaveProperty("media_path");
+    expect(db.templates[0]).not.toHaveProperty("tipo");
+  });
+
+  it("(6) campo de mídia no corpo da CRIAÇÃO é ignorado (mídia só pela rota de upload)", async () => {
+    const db = banco();
+
+    // Aceitar um caminho aqui seria aceitar um arquivo que ninguém conferiu —
+    // o mesmo motivo pelo qual `midias` não entra no POST de criação.
+    const resposta = await POST(
+      req({ ...CORPO, media_path: "org/recursos/preco.ogg", media_mime: "audio/ogg" }),
+    );
+
+    expect(resposta.status).toBe(201);
+    expect(db.templates[0]).toMatchObject({ midias: [] });
+    expect(db.templates[0]).not.toHaveProperty("media_path");
   });
 });

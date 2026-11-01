@@ -45,7 +45,7 @@ flowchart LR
 
 ## Alcance e limites
 
-Os escritores, permissões, isolamento, confirmação humana, distribuição de
+No fechamento original descrito nesta seção, os escritores, permissões, isolamento, confirmação humana, distribuição de
 atendimento e integrações externas não mudam. Não há configuração nova nem
 alteração de banco. A atividade e os eventos continuam vindo dos escritores
 nativos; o resumo não executa nem desfaz uma reserva.
@@ -59,3 +59,7 @@ Testes reproduzíveis:
 - `tests/invariants/agenda-atual-no-fechamento.test.ts`: motor completo com
   PostgreSQL descartável, alteração durante o turno e checkpoint persistido.
   Usa dublê de modelo; não mede a semântica de um provedor real.
+
+## Serviços programados
+
+A expansão opt-in está descrita em `docs/testing/agendas-de-servicos.md`. Ela acrescenta programação/ocorrência/capacidade e destino Google ao escritor, mantendo o fechamento como leitor. O contexto factual comum lê os estados atuais depois da ferramenta, inclusive participante, regra guardada, revisão do serviço e publicação verificável. Consulta não comprova reserva; reserva não comprova comunicação, publicação ou presença. A lista da turma de outros contatos não entra no contexto desse atendimento.

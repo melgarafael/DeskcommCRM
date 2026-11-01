@@ -1,5 +1,9 @@
 import type { AgentOperationContext } from '@/lib/ai/agents/operation';
 import type { JobClaim } from './queue/claim';
+// Tipo SÓ (erased no build): o vocabulário de mídia do passo automático vem da
+// régua única (`lib/messaging/media/midia-com-legenda.ts`) — e é `import type`
+// para este contrato continuar puro, sem dependência de runtime.
+import type { TipoDeMidiaComLegenda } from '@/lib/messaging/media/midia-com-legenda';
 /**
  * Contrato agnóstico de canal (F2-25; blueprint risco nº 1 + veredito executivo).
  *
@@ -39,7 +43,23 @@ export interface ChannelSendInput {
     language: string;
     /** Valor por slot, chaveado por `slotKey` — a mesma chave da tela. */
     values: Record<string, string>;
-  };  /**
+  };
+  /**
+   * Presente = este envio é uma NOTA DE VOZ (Fase 6b do plano de voz,
+   * `docs/superpowers/plans/2026-10-29-voz-elevenlabs.md`), não texto.
+   *
+   * Opcional pela MESMA razão do `template` acima: um adapter que ignore o
+   * campo manda `body` como texto — degrada, não quebra. Hoje só o adapter
+   * WAHA-via-CRM o lê (repassa direto a `SendMessageInput.voz`, mesmo shape).
+   */
+  voz?: {
+    textoOriginal: string;
+    apiKey: string;
+    voiceId: string;
+    modelId?: string;
+    upload: (audio: Buffer, mimeType: string) => Promise<string>;
+  };
+  /**
    * Presente = este envio é uma MÍDIA e o `body` é a legenda (pode ser vazio).
    *
    * Duas procedências, um caminho só: `storagePath` é a imagem que já mora no
@@ -50,7 +70,7 @@ export interface ChannelSendInput {
    */
   media?:
     | { storagePath: string; mime: string }
-    | { url: string; mime: string; type: 'image' | 'document' };
+    | { url: string; mime: string; type: TipoDeMidiaComLegenda };
 }
 
 /**

@@ -48,7 +48,7 @@ const PALAVRA_POR_IDIOMA: Record<string, string> = {
 
 const TEXTO_POR_IDIOMA: Record<string, (palavra: string) => string> = {
   pt: (p) => `Se não quiser mais receber mensagens, responda ${p}.`,
-  es: (p) => `Si no querés recibir más mensajes, respondé ${p}.`,
+  es: (p) => `Si no quieres recibir más mensajes, responde ${p}.`,
   en: (p) => `If you'd rather not receive these messages, reply ${p}.`,
 };
 
@@ -94,8 +94,12 @@ export function rodapeDeSaida(locale?: string | null): string {
  * primeira impressão.
  */
 export function comSaida(texto: string, locale?: string | null): string {
-  const rodape = rodapeDeSaida(locale);
   const corpo = texto.trimEnd();
-  if (corpo.toLowerCase().endsWith(rodape.toLowerCase())) return corpo;
-  return `${corpo}\n\n${rodape}`;
+  if (temSaida(corpo, locale)) return corpo;
+  return `${corpo}\n\n${rodapeDeSaida(locale)}`;
+}
+
+/** O texto já termina com o rodapé deste idioma (o mesmo critério do `comSaida`). */
+export function temSaida(texto: string, locale?: string | null): boolean {
+  return texto.trimEnd().toLowerCase().endsWith(rodapeDeSaida(locale).toLowerCase());
 }

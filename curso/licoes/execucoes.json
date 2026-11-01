@@ -1,0 +1,173 @@
+{
+  "id": "execucoes",
+  "titulo": "Execuções",
+  "tela": "/app/ai/runs",
+  "resumo": "Tudo o que a IA fez, uma linha por vez — e, quando algo falhou, o que o cliente viveu, o que fazer e a mensagem original do provedor.",
+  "licoes": [
+    {
+      "id": "execucoes-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Execuções",
+      "objetivo": "Saber onde fica a tela, ler o resumo que responde se está tudo bem e entender uma execução que deu certo.",
+      "papel": "manager",
+      "busca": [
+        "execuções",
+        "execuções de ia",
+        "o que a ia fez",
+        "a ia parou de responder",
+        "falha da ia",
+        "log da ia",
+        "tokens e custo por resposta"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/ai",
+          "texto": "Execuções não aparece direto no menu lateral. No grupo \"Agente de IA\" do menu, clique em \"Ver tudo em IA\". Na parte \"Acompanhar o agente\" está o cartão \"Execuções\". O caminho completo é: Agente de IA › Ver tudo em IA › Execuções.",
+          "dica": "Só gerente ou administrador vê este cartão. Para um atendente, o endereço da tela leva à página \"403 — Sem permissão\".",
+          "destaques": [
+            {
+              "alvo": { "role": "link", "nome": "Ver tudo em IA", "exato": true },
+              "rotulo": "Ver tudo em IA",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "link", "nome": "^Execuções", "regex": true },
+              "rotulo": "Abrir as Execuções",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": { "role": "link", "nome": "^Execuções", "regex": true }
+        },
+        {
+          "id": "p2",
+          "titulo": "O resumo responde primeiro",
+          "rota": "/app/ai/runs",
+          "texto": "Cada vez que a IA trabalha (responde um cliente, identifica a etapa de um negócio) vira uma linha nesta tela. Ela existe para responder uma pergunta: \"a IA parou de responder, o que aconteceu?\". Por isso abre pelo resumo. Quando nada falhou, ele diz \"Nenhuma falha\". Aqui ele diz quantas das últimas execuções falharam e, embaixo, o que fazer para cada motivo, com quantas vezes cada um aconteceu.",
+          "antes": [{ "acao": "aguardar", "alvo": { "testid": "resumo" } }],
+          "destaques": [
+            {
+              "alvo": { "testid": "resumo" },
+              "rotulo": "Está tudo bem?",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "testid": "tem-falhas" },
+              "rotulo": "Quantas falharam",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Uma execução que deu certo",
+          "texto": "Logo abaixo vem a lista, da mais nova para a mais antiga. No alto de cada cartão está o que a IA fez (aqui, \"Responder o cliente\") e, à direita, o provedor e o modelo usados. Embaixo, quantos tokens (pedaços de texto) a IA leu e escreveu, quanto tempo levou e quanto custou, em dólar. Na última linha, a data e por que esse modelo foi o escolhido.",
+          "destaques": [
+            {
+              "alvo": { "testid": "execucao-f1d00006-0000-4000-8000-000000000001" },
+              "rotulo": "Uma execução",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Responder o cliente",
+                "exato": true,
+                "dentro": { "testid": "execucao-f1d00006-0000-4000-8000-000000000001" }
+              },
+              "rotulo": "O que a IA fez",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "execucoes-entendendo-uma-falha",
+      "titulo": "Entendendo uma falha",
+      "objetivo": "Ler o que aconteceu numa execução que falhou, o que fazer a respeito, e filtrar só as falhas.",
+      "papel": "manager",
+      "busca": [
+        "execução falhou",
+        "chave recusada",
+        "provedor fora do ar",
+        "mensagem técnica do provedor",
+        "ver só as falhas",
+        "por que a ia não respondeu"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Um cartão de falha",
+          "rota": "/app/ai/runs",
+          "texto": "Uma execução que falhou ganha borda vermelha e o selo \"falhou\". O cartão conta três coisas, nesta ordem. \"O que aconteceu\" diz o que o cliente viveu: aqui, ele mandou mensagem e ninguém respondeu. \"O que fazer\" diz o caminho: neste caso, o provedor não aceitou a chave da IA, e é preciso conferir em Credenciais se ela ainda vale.",
+          "antes": [{ "acao": "aguardar", "alvo": { "testid": "execucao-f1d00006-0000-4000-8000-000000000007" } }],
+          "destaques": [
+            {
+              "alvo": { "testid": "execucao-f1d00006-0000-4000-8000-000000000007" },
+              "rotulo": "Execução que falhou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "testid": "consequencia", "dentro": { "testid": "execucao-f1d00006-0000-4000-8000-000000000007" } },
+              "rotulo": "O que o cliente viveu",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "testid": "o-que-fazer", "dentro": { "testid": "execucao-f1d00006-0000-4000-8000-000000000007" } },
+              "rotulo": "O que fazer",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "texto": "Mensagem técnica do provedor",
+            "exato": true,
+            "dentro": { "testid": "execucao-f1d00006-0000-4000-8000-000000000007" }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A mensagem técnica",
+          "texto": "Só no fim vem \"Mensagem técnica do provedor\", fechada. Clique para abrir: é o texto original que o provedor de IA devolveu, com o código do erro. Você não precisa entender essa parte; ela serve para quem for investigar, como o suporte de quem instalou o sistema.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "texto": "Mensagem técnica do provedor",
+                "exato": true,
+                "dentro": { "testid": "execucao-f1d00006-0000-4000-8000-000000000007" }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": { "css": "[data-testid='execucao-f1d00006-0000-4000-8000-000000000007'] details pre" },
+              "rotulo": "Texto original do provedor",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Ver só as falhas",
+          "texto": "O botão \"Ver só as falhas\" esconde o que deu certo e deixa na lista apenas as execuções que falharam. Ligado, ele passa a dizer \"Mostrando só as falhas\"; clique de novo para ver tudo. Aqui ficam três: duas vezes o provedor esteve fora do ar ou demorou demais (costuma se resolver sozinho) e uma vez a chave foi recusada.",
+          "antes": [
+            { "acao": "click", "alvo": { "testid": "filtro-erros" } },
+            { "acao": "aguardar", "alvo": { "role": "button", "nome": "Mostrando só as falhas", "exato": true } }
+          ],
+          "destaques": [
+            {
+              "alvo": { "testid": "filtro-erros" },
+              "rotulo": "Só as falhas",
+              "tipo": "seta"
+            },
+            {
+              "alvo": { "testid": "execucao-f1d00006-0000-4000-8000-000000000003" },
+              "rotulo": "Provedor fora do ar",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

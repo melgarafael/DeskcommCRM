@@ -9,6 +9,8 @@ export interface ComparativoSkill {
   matcher_mudou: boolean;
   any_adicionadas: string[];
   any_removidas: string[];
+  tags_adicionadas: string[];
+  tags_removidas: string[];
   corpo_mudou: boolean;
   linhas_adicionadas: number;
   linhas_removidas: number;
@@ -39,6 +41,7 @@ export interface SkillsState {
 export interface SkillMatcher {
   any_keywords: string[];
   probe_keywords?: string[];
+  any_tags?: string[];
 }
 
 /** Corpo completo de uma skill instalada, para o editor. */

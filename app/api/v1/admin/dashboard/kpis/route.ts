@@ -1,8 +1,8 @@
 import { type NextRequest } from "next/server";
 import { normalizarModoDeOrcamento } from "@/lib/agent-engine/edge/llm/orcamento";
-import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
+import { falhaDaEscritaDePlatformAdmin, requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { ok, fail } from "@/lib/api/wrappers";
+import { ok } from "@/lib/api/wrappers";
 import { corteDaJanela, diasDeAtraso, prazoEmBr } from "@/lib/lgpd/sla";
 
 export type AlertSeverity = "critical" | "warning" | "info";
@@ -47,9 +47,8 @@ const JANELA_DE_RISCO_EM_DIAS = 5;
 export async function GET(_req: NextRequest) {
   try {
     await requirePlatformAdmin();
-  } catch {
-    // requirePlatformAdmin redirects; if it throws, it's unexpected
-    return fail("forbidden", "Platform admin required", 403);
+  } catch (err) {
+    return falhaDaEscritaDePlatformAdmin(err);
   }
 
   const admin = createAdminClient();

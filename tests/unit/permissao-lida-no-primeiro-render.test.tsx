@@ -1,4 +1,5 @@
-import { renderToStaticMarkup } from "react-dom/server";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -17,15 +18,23 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * Quem tem a notificação bloqueada via, por um instante, um controle pronto
  * para uso que sumia na frente dele.
  *
- * ## Por que `renderToStaticMarkup`, e não Testing Library
+ * ## O instrumento: o PRIMEIRO render do cliente, gravado no próprio render
  *
- * É a escolha do instrumento, e ela é o teste inteiro. `render()` da Testing
- * Library roda os efeitos dentro de `act()` — com ele, o código ANTIGO e o NOVO
- * produzem o MESMO resultado final, e o teste ficaria verde sobre o defeito.
+ * `render()` da Testing Library roda os efeitos dentro de `act()` — com ele, o
+ * código ANTIGO e o NOVO produzem o MESMO resultado final, e o teste ficaria
+ * verde sobre o defeito. Por isso o `Switch` é trocado por um gravador que
+ * anota o `disabled` de cada interruptor de Push na PRIMEIRA passada: um efeito
+ * só consegue mudar passadas seguintes, então o valor gravado é o que existe
+ * antes de qualquer efeito. Um valor correto aqui só é possível se a leitura
+ * acontecer no RENDER.
  *
- * `renderToStaticMarkup` **não roda efeitos**. É exatamente a fatia de tempo
- * onde o defeito vive: o que a pessoa vê antes de o efeito chegar. Um valor
- * correto aqui só é possível se a leitura acontecer no RENDER.
+ * Até o #3113 o instrumento era `renderToStaticMarkup` — que é renderização de
+ * SERVIDOR e lê o snapshot do servidor de `useSyncExternalStore`. Ele só via a
+ * permissão real porque esse snapshot era o próprio `getPermission`, e era
+ * justamente esse o defeito de hidratação: o HTML saía `disabled` e o cliente
+ * hidratava `granted` (`_client.hidratacao.test.tsx`). Com o snapshot do
+ * servidor constante, o servidor diz sempre `"unsupported"` — e a pergunta
+ * "nasce habilitado?" passou a ser do cliente, que é onde este arquivo mede.
  *
  * ## O que isto NÃO cobre, declarado
  *
@@ -51,49 +60,46 @@ afterEach(() => {
   vi.resetModules();
 });
 
-async function markupSemEfeitos(): Promise<string> {
-  vi.resetModules();
-  const { NotificationPrefsClient } = await import(
-    "@/app/app/settings/notifications/_client"
-  );
-  return renderToStaticMarkup(<NotificationPrefsClient />);
-}
+/** O `disabled` de cada interruptor de Push, gravado na primeira passada do cliente. */
+const gravador = vi.hoisted(() => ({ primeiraPassada: [] as boolean[] }));
+vi.mock("@/components/ui/switch", () => ({
+  Switch: (p: { "aria-label"?: string; disabled?: boolean }) => {
+    if (p["aria-label"]?.endsWith(" via push") && gravador.primeiraPassada.length < 6) {
+      gravador.primeiraPassada.push(p.disabled === true);
+    }
+    return null;
+  },
+}));
 
-/**
- * Os `<button role="switch">` de Push, e se cada um traz o ATRIBUTO `disabled`.
- *
- * ⚠️ `includes("disabled")` NÃO serve aqui, e isto não é preciosismo: a classe
- * do `<Switch>` carrega `disabled:cursor-not-allowed disabled:opacity-50`, que
- * são utilitários do Tailwind e existem em TODO botão, habilitado ou não. A
- * primeira versão desta função usava `includes` e por isso respondia "sim" para
- * os dois estados — os casos abaixo ficaram verdes medindo a folha de estilo.
- *
- * O atributo real vem como `disabled=""` no markup. O `[=\s>]` no fim é o que
- * separa o atributo do prefixo `disabled:` das classes.
- */
-function pushDesabilitado(markup: string): boolean[] {
-  return [...markup.matchAll(/<button[^>]*aria-label="[^"]*via push"[^>]*>/g)].map((m) =>
-    /\sdisabled[=\s>]/.test(m[0]),
-  );
+/** Monta o componente de verdade no cliente e devolve o que a PRIMEIRA passada desenhou. */
+async function pushDesabilitadoNoPrimeiroRender(): Promise<boolean[]> {
+  vi.resetModules();
+  gravador.primeiraPassada.length = 0;
+  const { NotificationPrefsClient } = await import("@/app/app/settings/notifications/_client");
+  const container = document.createElement("div");
+  const raiz = createRoot(container);
+  await act(async () => {
+    raiz.render(<NotificationPrefsClient />);
+  });
+  raiz.unmount();
+  return [...gravador.primeiraPassada];
 }
 
 describe("a permissão do navegador é lida no primeiro render", () => {
   it("o instrumento está vivo — controle positivo antes de qualquer conclusão", async () => {
     comPermissaoDoNavegador("denied");
-    const markup = await markupSemEfeitos();
-    // Se o seletor parar de casar, todo caso abaixo vira `[] === []` e passa
+    // Se o gravador parar de gravar, todo caso abaixo vira `[] === []` e passa
     // verde medindo nada.
     expect(
-      pushDesabilitado(markup).length,
-      "não achei nenhum interruptor 'via push' no markup — o seletor morreu",
-    ).toBeGreaterThan(0);
+      (await pushDesabilitadoNoPrimeiroRender()).length,
+      "o gravador não viu nenhum interruptor 'via push' — o instrumento morreu",
+    ).toBe(6);
   });
 
   it("⭐ com a notificação BLOQUEADA no navegador, ele já nasce desabilitado", async () => {
     comPermissaoDoNavegador("denied");
-    const markup = await markupSemEfeitos();
     expect(
-      pushDesabilitado(markup).every(Boolean),
+      (await pushDesabilitadoNoPrimeiroRender()).every(Boolean),
       "o interruptor nasce habilitado e só desabilita depois do efeito — " +
         "é a janela em que a tela oferece o que já está negado",
     ).toBe(true);
@@ -101,14 +107,13 @@ describe("a permissão do navegador é lida no primeiro render", () => {
 
   it("⭐ com a notificação CONCEDIDA, ele já nasce habilitado", async () => {
     comPermissaoDoNavegador("granted");
-    const markup = await markupSemEfeitos();
     // O outro sentido: um conserto que simplesmente desabilitasse sempre
     // passaria no caso acima e falharia aqui. Guarda de um lado só vira defeito
     // do outro — e foi exatamente assim que o detector quebrado desta suíte
     // apareceu: os dois primeiros casos estavam verdes medindo a folha de
     // estilo, e só este reprovou.
     expect(
-      pushDesabilitado(markup).some(Boolean),
+      (await pushDesabilitadoNoPrimeiroRender()).some(Boolean),
       "a permissão está concedida e o interruptor nasce desabilitado",
     ).toBe(false);
   });
@@ -144,9 +149,8 @@ describe("a permissão do navegador é lida no primeiro render", () => {
     ).toBe("");
 
     comPermissaoDoNavegador("granted");
-    const markup = await markupSemEfeitos();
     expect(
-      pushDesabilitado(markup).some(Boolean),
+      (await pushDesabilitadoNoPrimeiroRender()).some(Boolean),
       "sem VAPID o Push nasceu desabilitado — é o conserto exagerado, que tira " +
         "o aviso com a aba aberta junto",
     ).toBe(false);

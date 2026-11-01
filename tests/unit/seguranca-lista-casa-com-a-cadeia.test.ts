@@ -25,7 +25,7 @@
 import { describe, expect, it } from "vitest";
 
 import { BEFORE_SEND_GATES } from "@/lib/agent-engine/guardrails/before-send";
-import { CAMADAS_SEMANTICAS } from "@/lib/agent-engine/guardrails/camadas-da-org";
+import { CAMADAS_CONFIGURAVEIS } from "@/lib/agent-engine/guardrails/camadas-da-org";
 import {
   CONFERENCIAS_DE_SAIDA,
   CONFERENCIA_DE_ENTRADA,
@@ -103,7 +103,7 @@ describe("a lista da tela casa com a cadeia que roda", () => {
       .map((c) => c.camada)
       .filter((c): c is NonNullable<typeof c> => c !== null);
 
-    expect(new Set(declaradas)).toEqual(new Set(CAMADAS_SEMANTICAS));
+    expect(new Set(declaradas)).toEqual(new Set(CAMADAS_CONFIGURAVEIS));
 
     // E o inverso: conferência COM escolha tem de declarar a camada, senão o
     // interruptor não teria o que gravar.

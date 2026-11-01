@@ -44,6 +44,9 @@ vi.mock("ai", () => ({
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
 vi.mock("@/lib/ai/credenciais/login-codex", () => ({
+  // #3371, fatia 4: o seam passou a renovar no 401 — o dublê do módulo tem de
+  // cobrir o símbolo novo, senão o import das duas funções quebra o teste.
+  renovarAssinaturaNoTurno: vi.fn(),
   lerLoginCodexRenovandoSeProxima: vi.fn(async () => ({
     access_token: "token-de-assinatura-de-teste",
     refresh_token: "refresh-de-teste",
@@ -201,5 +204,119 @@ describe("o ramo da assinatura (#2657): o modelo responde E o turno fecha", () =
     const { resultado } = await rodarPelaAssinatura();
     const chamada = resultado.result.toolCalls?.find((c) => c.toolName === "propor_mudancas");
     expect(chamada?.input).toEqual({ campo: "valor" });
+  });
+});
+
+/**
+ * O CUSTO GRAVADO em `llm_calls.cost_cents` pelo caminho da Anthropic: a divisão
+ * da gravação de cache por TTL vem do `usage` CRU de cada passo
+ * (`cache_creation.ephemeral_{5m,1h}_input_tokens`), e não do knob `cacheTtl`.
+ */
+function poolDaAnthropic(provider = "anthropic", model = "claude-sonnet-5") {
+  const inserts: Array<{ params: unknown[] }> = [];
+  const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+    if (sql.includes("settings->'llm'")) {
+      return {
+        rows: [
+          {
+            llm: {
+              provider,
+              default_model: model,
+              params: {},
+              enabled_models: [],
+              monthly_budget_cents: null,
+            },
+          },
+        ],
+      };
+    }
+    if (sql.includes("insert into llm_calls")) {
+      inserts.push({ params });
+      return { rows: [{ id: "call-2" }] };
+    }
+    return { rows: [] };
+  });
+  return { pool: { query } as never, inserts };
+}
+
+const registryDaAnthropic = {
+  anthropic: () => ({
+    specificationVersion: "v3",
+    provider: "anthropic.messages",
+    modelId: "claude-sonnet-5",
+    doGenerate: async () => {
+      throw new Error("SENTINELA: o dublê do generateText não foi usado");
+    },
+    doStream: async () => {
+      throw new Error("SENTINELA: stream fora do dublê");
+    },
+  }),
+} as never;
+
+/** Dois passos do laço de ferramentas, cada um com a divisão que a Anthropic manda. */
+function generateTextDuble(passos: Array<{ cincoMin: number; umaHora: number } | null>, gravado: number) {
+  vi.mocked(generateText).mockResolvedValue({
+    text: "Estamos abertos das 9h às 18h.",
+    usage: {
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      totalTokens: 1_000_000,
+      inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: gravado },
+    },
+    response: { id: "resp-2", modelId: "claude-sonnet-5" },
+    steps: passos.map((p) => ({
+      usage: {
+        raw: p
+          ? { cache_creation: { ephemeral_5m_input_tokens: p.cincoMin, ephemeral_1h_input_tokens: p.umaHora } }
+          : { input_tokens: 10 },
+      },
+    })),
+    responseMessages: [],
+    toolCalls: [],
+    finishReason: "stop",
+  } as never);
+}
+
+async function rodarPelaAnthropic(passos: Array<{ cincoMin: number; umaHora: number } | null>, gravado = 1_000_000) {
+  generateTextDuble(passos, gravado);
+  const { pool, inserts } = poolDaAnthropic();
+  const resultado = await runModelCall(
+    pool,
+    { anthropicApiKey: "chave-ant-de-teste", cacheTtl: "1h" },
+    { tenantId: ORG, purpose: "agent_preview", messages: [{ role: "user", content: "que horas abrem?" }] },
+    { registry: registryDaAnthropic },
+  );
+  // `cost_cents` é o 12º valor do insert (ver a lista de colunas no seam).
+  return { resultado, custoGravado: inserts[0]?.params[11] };
+}
+
+describe("o custo gravado lê a divisão da gravação de cache que a Anthropic informa", () => {
+  it("⭐ 800 mil a 5 min e 200 mil a 1 h, em dois passos: cada parcela pela sua tarifa, com o knob em 1h", async () => {
+    const { resultado, custoGravado } = await rodarPelaAnthropic([
+      { cincoMin: 500_000, umaHora: 200_000 },
+      { cincoMin: 300_000, umaHora: 0 },
+    ]);
+    expect(vi.mocked(generateText)).toHaveBeenCalled();
+    // Gravação: 0,8 × US$ 2,50 + 0,2 × US$ 4,00 = US$ 2,80; a entrada inteira foi gravada.
+    // Cobrando tudo a 1 h (o knob) seriam US$ 4,00.
+    expect(resultado.costCents).toBeCloseTo(280, 6);
+    expect(custoGravado).toBeCloseTo(280, 6);
+  });
+
+  it("sem a divisão em passo nenhum, vale o knob para a gravação inteira — o comportamento de antes", async () => {
+    // Outro provedor, ou o campo sumiu: o milhão gravado vai todo a 1 h = US$ 4,00.
+    const { resultado } = await rodarPelaAnthropic([null]);
+    expect(resultado.costCents).toBeCloseTo(400, 6);
+  });
+});
+
+describe("Terra grava custo real por passo do seam", () => {
+  it("não confunde o total do tool loop com contexto longo e conserva cache cru", async () => {
+    const passo = {inputTokens:200_000,outputTokens:0,inputTokenDetails:{cacheReadTokens:100_000,cacheWriteTokens:0},raw:{input_tokens_details:{cached_tokens:100_000,cache_write_tokens:100_000}}};
+    vi.mocked(generateText).mockResolvedValue({text:"ok",usage:{inputTokens:400_000,outputTokens:0,inputTokenDetails:{cacheReadTokens:200_000,cacheWriteTokens:0}},steps:[{usage:passo},{usage:passo}],response:{id:"terra-test",modelId:"gpt-6.1-terra"},responseMessages:[],toolCalls:[],finishReason:"stop"} as never);
+    const {pool,inserts}=poolDaAnthropic("openai","gpt-6.1-terra");
+    const resultado = await runModelCall(pool,{openaiApiKey:"sk-de-teste",cacheTtl:"1h"},{tenantId:ORG,purpose:"agent_preview",messages:[{role:"user",content:"oi"}]},{registry:{openai:()=>({modelId:"gpt-6.1-terra",provider:"openai.responses",specificationVersion:"v3"})} as never});
+    expect(resultado.costCents).toBeCloseTo(26);
+    expect(inserts[0]?.params[11]).toBeCloseTo(26);
   });
 });

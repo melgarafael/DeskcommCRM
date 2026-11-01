@@ -2,6 +2,8 @@ import {sendWithLedger,supabaseSendLedger} from "@/lib/agent-engine/edge/crm/sen
 import { randomUUID } from "node:crypto";
 import { assertAgendaEffectSupabase } from "@/lib/agenda/efeito";
 import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
+import { AgendaPuladoError, MOTIVO_DO_PULO } from "@/lib/agenda/escolha-no-envio";
+import { escolhaDoFluxo } from "@/lib/agenda/escolha-no-envio-leitura";
 import { parseServiceBoundary, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -9,6 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { ApiError } from "@/lib/api/types";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
+import { comercialExigeHumanoViaSupabase, restricaoComercialBarra } from "@/lib/escalacao/assunto-comercial";
 import { ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
 import { createSupabaseAdminClient, type FollowupJobRequest } from "@/lib/followup/engine";
 import { canalDaConversa, decidirAdiamentoPorJanela } from "@/lib/followup/janela-de-disparo";
@@ -17,7 +20,7 @@ import { adiamentoPorRitmo } from "@/lib/followup/ritmo-do-texto-fixo";
 import type { EnrollmentRow } from "@/lib/followup/node-handlers";
 import { completeTurnForEnrollment, type TurnBridgeAdminClient } from "@/lib/followup/turn-bridge";
 import { logger } from "@/lib/logger";
-import { classificarMidiaComLegenda } from "@/lib/messaging/media/midia-com-legenda";
+import { classificarMidiaComLegenda, type TipoDeMidiaComLegenda } from "@/lib/messaging/media/midia-com-legenda";
 import { recusaDeMidiaForaDaJanela } from "@/lib/messaging/media/recusa-de-midia-fora-da-janela";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 
@@ -127,15 +130,15 @@ export async function enviarTextoFixoPendente(
       await assertServiceBoundarySupabase(admin, boundary);
       const conversationId = boundary!.conversation_id;
       // #2734 — MÍDIA DO PASSO DE MENSAGEM, quando o nó de ação a declara: o
-      // `fixed_body` deixa de ser a mensagem inteira e vira a LEGENDA de uma
-      // imagem/PDF. A classificação é CONFIGURAÇÃO: o que não é imagem nem PDF não
-      // vira um "documento qualquer", e retry não conserta — o job fecha com o
-      // motivo em vez de ficar re-tentando.
+      // `fixed_body` deixa de ser a mensagem inteira e vira a LEGENDA da mídia
+      // (#2972: imagem, vídeo, áudio ou documento). A classificação é
+      // CONFIGURAÇÃO: o que não é um arquivo identificável não vira envio, e
+      // retry não conserta — o job fecha com o motivo em vez de ficar re-tentando.
       const mediaUrl =
         typeof payload.fixed_media_url === "string" && payload.fixed_media_url.trim()
           ? payload.fixed_media_url.trim()
           : null;
-      let midia: { type: "image" | "document"; mime: string } | null = null;
+      let midia: { type: TipoDeMidiaComLegenda; mime: string } | null = null;
       if (mediaUrl) {
         const classificada = classificarMidiaComLegenda(mediaUrl);
         if (!classificada.ok) {
@@ -173,6 +176,23 @@ export async function enviarTextoFixoPendente(
           motivo: elegib.motivo,
         });
         await settle(job.organization_id,job.id,jobClaim.acquired_at,true);
+        continue;
+      }
+
+      // #2877 — A RESTRIÇÃO COMERCIAL, TAMBÉM AQUI. O worker (`followup-turn.ts`)
+      // manda este mesmo `fixed_body` pela cadeia, e quem pegar o job primeiro
+      // manda: sem esta régua, o atalho entregava o preço que a cadeia barra. A
+      // regra e a falha fechada são as da cadeia (`restricaoComercialBarra`), e o
+      // desfecho é o do veto lá: passo `skipped` com o mesmo motivo, job `done` —
+      // o texto não muda na próxima tentativa, então não re-agenda.
+      const organizacao = job.organization_id as string;
+      if (await restricaoComercialBarra(body, () => comercialExigeHumanoViaSupabase(admin, organizacao), (m, c) => logger.warn(`[followup] ${m}`, { organization_id: organizacao, ...c }))) {
+        logger.info("[followup] texto fixo não enviado — restrição comercial da organização", {
+          organization_id: organizacao,
+          enrollment_id: enrollmentId,
+        });
+        await completeTurnForEnrollment(ponte, organizacao, enrollmentId, nodeId, { kind: "skipped", reason: "O envio foi recusado pelas regras do atendimento." }, undefined, job.id, jobClaim);
+        await settle(organizacao, job.id, jobClaim.acquired_at, true, "commercial_requires_human");
         continue;
       }
 
@@ -271,7 +291,28 @@ export async function enviarTextoFixoPendente(
       }
 
       const proactiveContext={organizationId:job.organization_id as string,contactId,enrollmentId,nodeId,jobId:job.id,jobClaim};
-      await assertAgendaEffectSupabase(admin,proactiveContext);
+      // #3813 — "Quando o contato tiver horário marcado" é escolha do FLUXO,
+      // lida da configuração publicada do follow-up (`ai_agent_versions.followup`,
+      // ao lado de `send_window`). Ausente = `adiar`, o comportamento de sempre.
+      const escolhaDaAgenda = await escolhaDoFluxo(admin, job.organization_id as string, enrollmentId);
+      try {
+        await assertAgendaEffectSupabase(admin, {...proactiveContext, escolhaNoEnvio: escolhaDaAgenda});
+      } catch (err) {
+        // Escolha `nao_enviar`: o pulo tem MOTIVO e volta para o enrollment como
+        // `skipped` — o mesmo canal dos outros pulos deste arquivo (mídia
+        // recusada), e não como falha que o dead-man leria como worker morto.
+        if (!(err instanceof AgendaPuladoError)) throw err;
+        logger.info("[followup] texto fixo pulado — contato com horário marcado", {
+          organization_id: job.organization_id,
+          conversation_id: conversationId,
+          enrollment_id: enrollmentId,
+          motivo: MOTIVO_DO_PULO,
+          appointment_id: err.protection.appointment_id,
+        });
+        await completeTurnForEnrollment(ponte, job.organization_id, enrollmentId, nodeId, { kind: "skipped", reason: MOTIVO_DO_PULO }, undefined, job.id, jobClaim);
+        await settle(job.organization_id, job.id, jobClaim.acquired_at, true, MOTIVO_DO_PULO);
+        continue;
+      }
       // #2734 — CANAL OFICIAL, JANELA FECHADA: a mídia não pode sair (mensagem
       // livre fora da janela é o 131047), e o texto NÃO sai sozinho no lugar dela —
       // o cliente receberia uma legenda de imagem nenhuma. Recusa explícita, com o

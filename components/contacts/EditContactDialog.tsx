@@ -4,7 +4,8 @@ import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { useActiveOrg } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
-import { perfilDoPais } from "@/lib/legal/perfil-do-pais";
+import { roleAtLeast } from "@/lib/auth/types";
+import { PAIS_PADRAO, perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import {
   Dialog,
   DialogContent,
@@ -16,10 +17,26 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
-import { contactPatchSchemaDoPais, type ContactPatch } from "@/lib/schemas/contacts";
+import { camposQueMudaram, mensagemDaRecusa, recusasDePadrao } from "@/lib/leads/padrao-do-campo";
+import {
+  contactPatchSchemaDoPais,
+  CONTACT_TIPOS,
+  type ContactPatch,
+  type ContactType,
+} from "@/lib/schemas/contacts";
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
+import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
+import { EtiquetasDoContato } from "@/components/contacts/EtiquetasDoContato";
+import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
 import type { Contact } from "@/lib/types/contacts";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 
@@ -29,9 +46,39 @@ interface FormShape {
   phone_number?: string;
   /** `AAAA-MM-DD` — a MESMA forma de `contactPatchSchema` e da coluna do banco. */
   birthdate?: string;
-  tagsRaw?: string;
+  // Endereço (issue 3494)
+  zip_code?: string;
+  street?: string;
+  number?: string;
+  complement?: string;
+  district?: string;
+  city?: string;
+  state?: string;
+  /**
+   * Issue 3005: o papel do contato. O `Select` abaixo grava aqui; o valor sai
+   * no PATCH como `contact_type` — é o único caminho de escrita do tipo pela ficha.
+   */
+  contact_type?: ContactType;
+  /** As etiquetas do contato — o seletor com autocompletar grava esta lista. */
+  tags?: string[];
   custom_fields?: Record<string, unknown>;
 }
+
+const CAMPOS_DO_ENDERECO = [
+  "zip_code",
+  "street",
+  "number",
+  "complement",
+  "district",
+  "city",
+  "state",
+] as const;
+
+/** O rótulo de cada tipo, na língua da tela — a chave é o valor da coluna. */
+const ROTULO_DO_TIPO: Record<ContactType, string> = {
+  cliente: "Cliente",
+  fornecedor: "Fornecedor",
+};
 
 interface Props {
   contact: Contact;
@@ -39,12 +86,30 @@ interface Props {
   onOpenChange: (v: boolean) => void;
   /** Definições vindas de `crm_pipelines.settings.fields[]`. Vazio = a seção some. */
   customFieldDefs?: CustomFieldDef[];
+  /** Etiquetas já usadas na organização (`useContactTagVocabulary`). */
+  vocabulario?: readonly string[] | null;
+  /** `pipelines.settings.canonical_tags` do funil padrão. */
+  canonicalTags?: readonly string[] | null;
 }
 
-export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs = [] }: Props) {
+export function EditContactDialog({
+  contact,
+  open,
+  onOpenChange,
+  customFieldDefs = [],
+  vocabulario,
+  canonicalTags,
+}: Props) {
   const t = useT();
-  const perfil = perfilDoPais(useActiveOrg()?.country);
+  const org = useActiveOrg();
+  const perfil = perfilDoPais(org?.country);
   const update = useUpdateContact(contact.id);
+  const { definirCor } = useDefinirCorDaEtiqueta();
+  // A cor da etiqueta é VOCABULÁRIO, não da linha: quem a escreve passa por
+  // `POST /api/v1/tags/vocabulario`, que exige manager + MFA. Para os outros
+  // papéis a paleta nem chega ao campo — a régua é "a tela não oferece o que a
+  // escrita recusa" (#2718), a MESMA do `SeletorDeCorDaEtiqueta`.
+  const podeDefinirCor = roleAtLeast(org?.role, "manager");
   const [serverError, setServerError] = useState<string | null>(null);
 
   const form = useForm<FormShape>({
@@ -53,12 +118,47 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
       email: contact.email ?? "",
       phone_number: contact.phone_number ? phoneForDisplay(contact.phone_number) : "",
       birthdate: contact.birthdate ?? "",
-      tagsRaw: contact.tags.join(", "),
+      zip_code: contact.zip_code ?? "",
+      street: contact.street ?? "",
+      number: contact.number ?? "",
+      complement: contact.complement ?? "",
+      district: contact.district ?? "",
+      city: contact.city ?? "",
+      state: contact.state ?? "",
+      // O tipo vem da COLUNA; ausente (cache antigo) cai no default do banco,
+      // que é 'cliente' — a mesma leitura do selo do painel.
+      contact_type: contact.contact_type ?? "cliente",
+      tags: contact.tags,
       custom_fields: contact.custom_fields ?? {},
     },
   });
 
   const customFields = useWatch({ control: form.control, name: "custom_fields" });
+  const tags = useWatch({ control: form.control, name: "tags" }) ?? [];
+  // O valor do `Select` de tipo. `useWatch` (e não `form.watch`) para o
+  // componente re-renderizar quando o tipo muda — o gatilho do Radix lê daqui.
+  const tipoDeContato = useWatch({ control: form.control, name: "contact_type" }) ?? "cliente";
+  // A etiqueta que o texto AINDA digitado no campo de etiquetas viraria — o
+  // campo avisa pelo `onPendente`, e o `Salvar` inclui isto no payload. Sem
+  // isso, quem digita e salva sem Enter perde o texto em silêncio (defeito
+  // medido na tela do PR #2831).
+  const [etiquetaPendente, setEtiquetaPendente] = useState<string | null>(null);
+  // O TEXTO DIGITADO no campo de etiquetas, e a pergunta que ele dispara ao
+  // MESMO vocabulário do Inbox (issue #3144): `GET /api/v1/contact-tags?busca=`
+  // cai na RPC do vocabulário curado, que enxerga a etiqueta de Configurações →
+  // Tags que nenhum contato usa ainda, a que só vive em `crm_leads`/`conversas`,
+  // a que só existe como `add_tag` de uma regra e a que passou do teto de 200 da
+  // lista em uso. Sem ela, quem digita "diam" na ficha não recebe "cliente
+  // diamante" e digita o nome inteiro — ou uma variante dele.
+  const [buscaDeEtiqueta, setBuscaDeEtiqueta] = useState("");
+  const buscaNoVocabulario = useContactTagVocabulary(
+    org?.orgId ?? null,
+    buscaDeEtiqueta.trim(),
+  );
+  // A falha da leitura de sugestões vira a frase do Inbox dentro do campo:
+  // silêncio ali leria como "não há etiquetas", e é justamente aí que a pessoa
+  // digita a variante que o seletor existe para evitar.
+  const erroNoVocabulario = buscaNoVocabulario.isError;
 
   useEffect(() => {
     if (open) {
@@ -67,17 +167,71 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
         email: contact.email ?? "",
         phone_number: contact.phone_number ? phoneForDisplay(contact.phone_number) : "",
         birthdate: contact.birthdate ?? "",
-        tagsRaw: contact.tags.join(", "),
+        zip_code: contact.zip_code ?? "",
+        street: contact.street ?? "",
+        number: contact.number ?? "",
+        complement: contact.complement ?? "",
+        district: contact.district ?? "",
+        city: contact.city ?? "",
+        state: contact.state ?? "",
+        contact_type: contact.contact_type ?? "cliente",
+        tags: contact.tags,
         custom_fields: contact.custom_fields ?? {},
       });
     }
   }, [open, contact, form]);
 
+  // Na ficha o diálogo fica MONTADO entre aberturas, e o pendente também:
+  // fechar por qualquer caminho o descarta, senão o texto de uma edição
+  // cancelada entra no próximo Salvar, e um chip removido volta sozinho.
+  function mudarAbertura(v: boolean) {
+    if (!v) {
+      setEtiquetaPendente(null);
+      // A busca é do campo, não do contato: fechar não pode deixar a lista
+      // filtrada pelo texto da edição cancelada.
+      setBuscaDeEtiqueta("");
+    }
+    onOpenChange(v);
+  }
+
   async function onSubmit(values: FormShape) {
     setServerError(null);
+
+    // ── O PADRÃO (#2730) ──────────────────────────────────────────────────
+    //
+    // A MESMA régua do servidor, mais um portão aqui: o `CustomFieldsEditor`
+    // já avisa conforme se digita, mas o submit é o último degrau antes do 422
+    // da API — e a frase que aparece é a DO CAMPO (`mensagem_padrao`), não
+    // "dados inválidos". Sem `padrao` a lista vem vazia: o campo livre segue
+    // livre, byte a byte, e nada disto acontece.
+    //
+    // ⚠️ Julga o DIFF, não o mapa que o formulário carrega (#2814). O
+    // `CustomFieldsEditor` devolve o `custom_fields` INTEIRO a cada tecla — o
+    // campo escondido por `mostrar_quando` viaja junto com o valor que ele já
+    // tinha — e o portão recusava a gravação por um campo que a pessoa nem
+    // tocou: trocar só o nome devolvia o erro de `idades`. Mesma conta do
+    // servidor (`camposQueMudaram` → `camposAlterados`), mesmo estado anterior
+    // (o contato que o diálogo recebeu para abrir).
+    const recusas = recusasDePadrao(
+      customFieldDefs,
+      camposQueMudaram(values.custom_fields, contact.custom_fields),
+    );
+    if (recusas.length > 0) {
+      setServerError(mensagemDaRecusa(recusas[0]!, t));
+      return;
+    }
+
+    // O texto que ficou NO CAMPO sem Enter não pode sumir ao salvar (defeito
+    // medido na tela do PR #2831): quem digita "cliente diamante", ou uma
+    // etiqueta que já existe, e clica em Salvar espera a etiqueta gravada. O
+    // campo já resolveu o pendente pela MESMA régua do Enter — reusa a grafia
+    // existente, ou cria a nova — e ela entra no payload aqui.
     // A MESMA normalização da API (lib/contacts/tag-normalizada): o que a ficha
     // grava é o que o filtro `?tag=` casa (issue #1224).
-    const tags = normalizarTags((values.tagsRaw ?? "").split(","));
+    const tags = normalizarTags([
+      ...(values.tags ?? []),
+      ...(etiquetaPendente ? [etiquetaPendente] : []),
+    ]);
 
     const payload: Record<string, unknown> = {};
     if (values.name?.trim()) payload.name = values.name.trim();
@@ -88,6 +242,18 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
     // exigem), então o diálogo não normaliza nada — o que se digita é o que se
     // grava, e a ficha recarregada mostra a MESMA string.
     if (values.birthdate?.trim()) payload.birthdate = values.birthdate.trim();
+    // Endereço (issue 3494): manda o que foi preenchido e `null` no campo que a
+    // ficha tinha e foi esvaziado — sem isso, apagar só o Complemento e salvar
+    // deixava o valor antigo no banco (medido na prova pela tela do #3670).
+    for (const campo of CAMPOS_DO_ENDERECO) {
+      const valor = values[campo]?.trim();
+      if (valor) payload[campo] = valor;
+      else if (contact[campo]) payload[campo] = null;
+    }
+    // O TIPO (issue 3005): sempre no payload, porque é ele que o `Select`
+    // acabou de mostrar — quem abriu a ficha como cliente e salvou continua
+    // cliente; quem trocou para fornecedor grava fornecedor.
+    payload.contact_type = values.contact_type ?? "cliente";
     payload.tags = tags;
     // Sempre no payload, mesmo vazio: o PATCH SUBSTITUI, e é assim que apagar um
     // campo pela tela chega ao banco.
@@ -103,14 +269,14 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
     try {
       await update.mutateAsync(parsed.data as ContactPatch);
       toast.success(t("Contato atualizado"));
-      onOpenChange(false);
+      mudarAbertura(false);
     } catch {
       // hook handles toast
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={mudarAbertura}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("Editar contato")}</DialogTitle>
@@ -126,16 +292,96 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
             <Input id="ec-email" type="email" {...form.register("email")} />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="ec-phone">{t("Telefone (E.164)")}</Label>
+            <Label htmlFor="ec-phone">
+              {perfil.codigo === PAIS_PADRAO
+                ? t("Telefone (DDD + número)")
+                : t("Telefone (E.164)")}
+            </Label>
             <Input id="ec-phone" {...form.register("phone_number")} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="ec-birthdate">{t("Data de nascimento")}</Label>
             <Input id="ec-birthdate" type="date" {...form.register("birthdate")} />
           </div>
+          {/* Endereço (issue 3494) */}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="ec-zip">{t("CEP")}</Label>
+              <Input id="ec-zip" {...form.register("zip_code")} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ec-state">{t("UF")}</Label>
+              <Input id="ec-state" {...form.register("state")} />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="ec-street">{t("Logradouro")}</Label>
+              <Input id="ec-street" {...form.register("street")} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ec-number">{t("Número")}</Label>
+              <Input id="ec-number" {...form.register("number")} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ec-complement">{t("Complemento")}</Label>
+              <Input id="ec-complement" {...form.register("complement")} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ec-district">{t("Bairro")}</Label>
+              <Input id="ec-district" {...form.register("district")} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ec-city">{t("Cidade")}</Label>
+              <Input id="ec-city" {...form.register("city")} />
+            </div>
+          </div>
+          {/*
+            O TIPO DE CONTATO (issue 3005, fatia 1). Não é campo de formulário
+            comum (`form.register`): o `Select` do Radix devolve o valor pelo
+            `onValueChange`, e é ele que grava no form. Cliente é o padrão que o
+            BANCO já aplica (migration 0763) — o seletor abre mostrando o que a
+            coluna diz, e a troca para Fornecedor sai no PATCH.
+          */}
+          <div className="space-y-2">
+            <Label htmlFor="ec-contact-type">{t("Tipo de contato")}</Label>
+            <Select
+              value={tipoDeContato}
+              onValueChange={(proximo) =>
+                form.setValue("contact_type", proximo as ContactType, { shouldDirty: true })
+              }
+              disabled={update.isPending}
+            >
+              <SelectTrigger id="ec-contact-type" aria-label={t("Tipo de contato")}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CONTACT_TIPOS.map((tipo) => (
+                  <SelectItem key={tipo} value={tipo}>
+                    {t(ROTULO_DO_TIPO[tipo])}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {t("Fornecedor conversa normalmente — o tipo muda o painel, não o envio.")}
+            </p>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="ec-tags">{t("Tags")}</Label>
-            <Input id="ec-tags" {...form.register("tagsRaw")} />
+            <EtiquetasDoContato
+              inputId="ec-tags"
+              value={tags}
+              onPendente={setEtiquetaPendente}
+              onChange={(next) => form.setValue("tags", next, { shouldDirty: true })}
+              vocabulario={vocabulario}
+              canonicalTags={canonicalTags}
+              disabled={update.isPending}
+              onDefinirCor={
+                podeDefinirCor ? (tag, cor) => void definirCor(tag, cor) : undefined
+              }
+              encontradas={buscaNoVocabulario.data}
+              onDigitar={setBuscaDeEtiqueta}
+              erroNoVocabulario={erroNoVocabulario}
+            />
           </div>
           {customFieldDefs.length > 0 && (
             <div className="space-y-3 rounded-md border border-border p-3">
@@ -153,12 +399,16 @@ export function EditContactDialog({ contact, open, onOpenChange, customFieldDefs
               />
             </div>
           )}
-          {serverError && <p className="text-sm text-error-fg">{serverError}</p>}
+          {serverError && (
+            <p role="alert" className="text-sm text-error-fg">
+              {serverError}
+            </p>
+          )}
           <DialogFooter>
             <Button
               type="button"
               variant="ghost"
-              onClick={() => onOpenChange(false)}
+              onClick={() => mudarAbertura(false)}
               disabled={update.isPending}
             >
               {t("Cancelar")}

@@ -38,8 +38,24 @@ import {
   createAutomationRuleSchema,
   type CreateAutomationRuleInput,
 } from "@/lib/schemas/webhooks";
+import {
+  contarCondicoes,
+  ehCondicaoDeCampo,
+  MAXIMO_DE_CONDICOES,
+  OPERADORES_SEM_VALOR,
+  type Conditions,
+  type ConditionNode,
+  type ConditionOp,
+} from "@/lib/automation/conditions";
 
-export type OperadorDaCondicao = "eq" | "neq" | "contains";
+/**
+ * O vocabulário de operadores é o MESMO do avaliador e da porta da API
+ * (`ConditionOp`, #2727). Antes do arremate o desenho mantinha uma cópia
+ * paralela (`"eq" | "neq" | "contains"`) que, com os operadores novos do #2727,
+ * divergiria em silêncio do que o schema aceita — e é o schema que valida o
+ * corpo salvo (`validarDesenho`).
+ */
+export type OperadorDaCondicao = ConditionOp;
 
 /**
  * Uma linha do SE. `avancado` é só da tela (mostrar o caminho digitado em vez
@@ -53,6 +69,37 @@ export type LinhaDeCondicao = {
 };
 
 /**
+ * As condições no formato que o DESENHO entende: uma fila de linhas. O motor
+ * guarda `Conditions` (#2727) — a lista antiga (≡ `all`) ou um grupo `{all|any}`
+ * do topo —, mas o designer desenha UMA caixa de condições, e ela só sabe editar
+ * a LISTA (que combina por E). Para a lista é a identidade; para um GRUPO, estas
+ * linhas são só o que a caixa MOSTRA — o grupo viaja preservado em
+ * `grupoPreservado` e é ele que volta ao salvar (ver `corpoDoDesenho`).
+ */
+export function linhasDeCondicoes(conditions: Conditions): LinhaDeCondicao[] {
+  const achata = (nos: readonly ConditionNode[]): LinhaDeCondicao[] =>
+    nos.flatMap((no) =>
+      ehCondicaoDeCampo(no)
+        ? [{ field: no.field, op: no.op, value: no.value }]
+        : achata(no.all ?? no.any ?? []),
+    );
+  return achata(Array.isArray(conditions) ? conditions : (conditions.all ?? conditions.any ?? []));
+}
+
+/**
+ * O desenho sabe editar as condições desta regra?
+ *
+ * A caixa de condições é uma fila combinada por E — a lista antiga. Um GRUPO do
+ * topo (`{all}` ou `{any}`) muda o combinador, e a caixa não o representa:
+ * achatá-lo perderia o "qualquer uma" e uma regra que dispara para alguns
+ * passaria a disparar para todos. Quando isto é `false`, o desenho NÃO edita as
+ * condições: mostra o grupo, manda para o formulário e grava o grupo como está.
+ */
+export function oDesenhoEditaAsCondicoes(conditions: Conditions): boolean {
+  return Array.isArray(conditions) && conditions.every(ehCondicaoDeCampo);
+}
+
+/**
  * O que a tela do gatilho edita além do evento. São três grupos porque o editor
  * de hoje guarda três estados separados (fonte, data do funil, tempo), e só o do
  * evento escolhido vai para o `trigger_config` ao salvar.
@@ -60,6 +107,15 @@ export type LinhaDeCondicao = {
 export type TelaDoGatilho = {
   /** `null` = qualquer fonte de formulário. */
   fonte: string | null;
+  /**
+   * "No máximo uma vez por contato" (#2974), do gatilho de contato novo.
+   *
+   * Booleano — e a tela GRAVA os dois valores, não só o ligado: se ela omitisse
+   * o `false`, um `true` gravado antes sobreviveria ao `configAoSalvarDaTela`
+   * (que faz merge com a configuração guardada) e o operador não conseguiria
+   * DESLIGAR a opção.
+   */
+  umaVezPorContato: boolean;
   data: { pipeline_id: string; campo: string; dias: string };
   tempo: { dias: string; direcao: DirecaoDoSilencio; proteger_pela_agenda: boolean };
 };
@@ -69,7 +125,18 @@ export type AcaoDaRegra = { type: string; config: Record<string, unknown> };
 /** Os problemas que o último "salvar" achou nesta caixa — a tela os mostra nela. */
 type ComProblemas = { problemas?: ProblemaDoDesenho[] };
 export type DadosDoGatilho = { kind: "gatilho"; evento: string; tela: TelaDoGatilho } & ComProblemas;
-export type DadosDasCondicoes = { kind: "condicoes"; linhas: LinhaDeCondicao[] } & ComProblemas;
+export type DadosDasCondicoes = {
+  kind: "condicoes";
+  linhas: LinhaDeCondicao[];
+  /**
+   * O grupo do topo que o desenho NÃO sabe editar, guardado verbatim (#2727).
+   * Presente quando a regra gravada traz `{all}`/`{any}`: as `linhas` são só o
+   * que a caixa mostra, e é ISTO que o `corpoDoDesenho` devolve. Sem este campo,
+   * o salvar do desenho achataria o grupo — `{any:[…]}` virava "todas" e a regra
+   * passava a disparar para todo mundo (defeito medido no CR do #2727).
+   */
+  grupoPreservado?: Conditions;
+} & ComProblemas;
 export type DadosDaAcao = { kind: "acao"; acao: AcaoDaRegra } & ComProblemas;
 export type DadosDaCaixa = DadosDoGatilho | DadosDasCondicoes | DadosDaAcao;
 export type TipoDeCaixa = DadosDaCaixa["kind"];
@@ -88,14 +155,15 @@ export type Desenho = { caixas: CaixaDoDesenho[]; ligacoes: LigacaoDoDesenho[] }
 export type RegraGravada = {
   trigger_event: string;
   trigger_config: Record<string, unknown> | null;
-  conditions: Array<{ field: string; op: OperadorDaCondicao; value: string }>;
+  conditions: Conditions;
   actions: AcaoDaRegra[];
 };
 
 export type CorpoDaRegra = {
   name: string;
   trigger_event: string;
-  conditions: Array<{ field: string; op: OperadorDaCondicao; value: string }>;
+  /** A lista de linhas ou o grupo do topo preservado — o que a API recebe. */
+  conditions: Conditions;
   actions: AcaoDaRegra[];
   trigger_config: Record<string, unknown>;
 };
@@ -106,7 +174,8 @@ export type ProblemaDoDesenho = { caixa: string | null; mensagem: string };
 export const ID_DO_GATILHO = "gatilho";
 export const ID_DAS_CONDICOES = "condicoes";
 export const MAXIMO_DE_ACOES = 10;
-export const MAXIMO_DE_CONDICOES = 10;
+/** O teto mora em `conditions.ts`, ao lado do schema que o aplica. */
+export { MAXIMO_DE_CONDICOES };
 const DIAS_PADRAO = "7";
 
 /**
@@ -171,8 +240,13 @@ export function telaDoGatilho(config: unknown): TelaDoGatilho {
     config && typeof config === "object" && !Array.isArray(config)
       ? (config as Record<string, unknown>).webhook_source_id
       : undefined;
+  const limite =
+    config && typeof config === "object" && !Array.isArray(config)
+      ? (config as Record<string, unknown>).uma_vez_por_contato
+      : undefined;
   return {
     fonte: typeof fonte === "string" ? fonte : null,
+    umaVezPorContato: limite === true,
     data: data
       ? { pipeline_id: data.pipeline_id, campo: data.campo, dias: String(data.dias) }
       : { pipeline_id: "", campo: "", dias: DIAS_PADRAO },
@@ -219,9 +293,24 @@ export function triggerConfigDaTela(
     });
   }
   if (evento === "lead.created") {
-    return configAoSalvarDaTela({ ...base, configDaTela: { webhook_source_id: tela.fonte } });
+    return configAoSalvarDaTela({
+      ...base,
+      configDaTela: {
+        webhook_source_id: tela.fonte,
+        // Sempre gravado, ligado OU desligado (#2974): ver o comentário de
+        // `TelaDoGatilho.umaVezPorContato` — omitir o `false` impediria
+        // desligar a opção, porque `configAoSalvarDaTela` faz merge com o que
+        // está guardado.
+        uma_vez_por_contato: tela.umaVezPorContato,
+      },
+    });
   }
-  return {};
+  // Gatilho sem configuração própria: nada é inventado aqui, mas o que a tela
+  // NÃO desenha não pode sumir no salvar — `configAoSalvarDaTela` com
+  // `configDaTela` vazio devolve a configuração guardada quando o gatilho é o
+  // mesmo (é assim que um "uma vez por contato" ligado pela API sobrevive) e
+  // `{}` quando o gatilho mudou, que é o comportamento de sempre.
+  return configAoSalvarDaTela({ ...base, configDaTela: {} });
 }
 
 /* ───────────────────────── regra → desenho ───────────────────────── */
@@ -242,14 +331,24 @@ export function desenhoDaRegra(regra: RegraGravada | null): Desenho {
     ligacoes.push({ id: `ligacao-${ligacoes.length + 1}`, source: anterior, target: destino });
     anterior = destino;
   };
-  if (regra && regra.conditions.length > 0) {
-    caixas.push({
-      id: ID_DAS_CONDICOES,
-      type: "condicoes",
-      position: { x: 0, y: 0 },
-      data: { kind: "condicoes", linhas: regra.conditions.map((c) => ({ field: c.field, op: c.op, value: c.value })) },
-    });
-    ligar(ID_DAS_CONDICOES);
+  if (regra) {
+    const editavel = oDesenhoEditaAsCondicoes(regra.conditions);
+    // A caixa existe se há condição para mostrar. Um grupo que o desenho não
+    // edita entra MESMO vazio (`{any:[]}` é sempre falso): sem a caixa, o salvar
+    // mandaria `[]`, que vale "todas" — o oposto do que a regra faz.
+    if (!editavel || contarCondicoes(regra.conditions) > 0) {
+      caixas.push({
+        id: ID_DAS_CONDICOES,
+        type: "condicoes",
+        position: { x: 0, y: 0 },
+        data: {
+          kind: "condicoes",
+          linhas: linhasDeCondicoes(regra.conditions),
+          ...(editavel ? {} : { grupoPreservado: regra.conditions }),
+        },
+      });
+      ligar(ID_DAS_CONDICOES);
+    }
   }
   (regra?.actions ?? []).forEach((acao, i) => {
     const id = `acao-${i + 1}`;
@@ -358,8 +457,18 @@ export function percorrer(desenho: Desenho): Percurso {
 
 /**
  * O corpo que o designer manda — o MESMO do editor de hoje: condições
- * incompletas (sem campo ou sem valor) são descartadas, as ações vão como
- * estão, na ordem da fila.
+ * incompletas (sem campo, ou sem valor QUANDO o operador pede valor) são
+ * descartadas, as ações vão como estão, na ordem da fila.
+ *
+ * ─── O que NÃO pode acontecer (#2727) ──────────────────────────────────────
+ *
+ *  1. `is_empty`/`is_not_empty` NÃO pedem valor: o filtro do `value.trim()`
+ *     descartava a linha e a regra "está vazio" era salva sem condição nenhuma
+ *     — passava a disparar para todo mundo. É `OPERADORES_SEM_VALOR`.
+ *  2. Um grupo do TOPO (`{any:[…]}`) não é desenhável na caixa de linhas. Ele
+ *     chega em `grupoPreservado` e é ELE que sai, verbatim: achatá-lo trocaria
+ *     "qualquer uma" por "todas". Sem esta saída, abrir e salvar uma regra
+ *     "qualquer uma" no desenho a destruía.
  */
 export function corpoDoDesenho(
   entrada: { nome: string; desenho: Desenho; regraGravada: RegraGravada | null },
@@ -367,13 +476,20 @@ export function corpoDoDesenho(
 ): CorpoDaRegra {
   const gatilho = percurso.gatilho?.data.kind === "gatilho" ? percurso.gatilho.data : null;
   const evento = gatilho?.evento ?? "";
-  const linhas = percurso.condicoes?.data.kind === "condicoes" ? percurso.condicoes.data.linhas : [];
+  const dados = percurso.condicoes?.data.kind === "condicoes" ? percurso.condicoes.data : null;
+  const conditions: Conditions =
+    dados?.grupoPreservado ??
+    (dados?.linhas ?? [])
+      .filter((c) => c.field.trim() && (OPERADORES_SEM_VALOR.has(c.op) || c.value.trim()))
+      .map((c) => ({
+        field: c.field.trim(),
+        op: c.op,
+        value: OPERADORES_SEM_VALOR.has(c.op) ? "" : c.value.trim(),
+      }));
   return {
     name: entrada.nome,
     trigger_event: evento,
-    conditions: linhas
-      .filter((c) => c.field.trim() && c.value.trim())
-      .map((c) => ({ field: c.field.trim(), op: c.op, value: c.value.trim() })),
+    conditions,
     actions: percurso.acoes.map((c) => (c.data as DadosDaAcao).acao),
     trigger_config: gatilho ? triggerConfigDaTela(evento, gatilho.tela, entrada.regraGravada) : {},
   };
@@ -391,6 +507,13 @@ function problemaDaRecusa(recusa: Recusa, percurso: Percurso): ProblemaDoDesenho
     return { caixa: gatilho, mensagem: recusa.code === "custom" ? recusa.message : PROBLEMAS.gatilhoInvalido };
   }
   if (raiz === "conditions") {
+    // A condição do contato (#3814) tem recusa `custom` escrita em português
+    // pelo próprio schema ("Escolha “sim” ou “não” nesta condição.") — é a
+    // frase que a pessoa precisa ler, e ela aponta o conserto. As demais são
+    // as de tamanho, que já têm frase própria.
+    if (recusa.code === "custom") {
+      return { caixa: percurso.condicoes?.id ?? gatilho, mensagem: recusa.message };
+    }
     return {
       caixa: percurso.condicoes?.id ?? gatilho,
       mensagem: indice === undefined ? PROBLEMAS.condicoesDemais : PROBLEMAS.condicaoGrandeDemais,

@@ -21,7 +21,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { agenteAtende } from "@/lib/ai/agents/no-ar";
 
 export async function orgTemAutomatico(
-  supabase: SupabaseClient,
+  supabase: Pick<SupabaseClient, "from">,
   organizationId: string,
 ): Promise<boolean | undefined> {
   // As mesmas quatro colunas de `/api/v1/ai/automatico-ativo` — a régua olha

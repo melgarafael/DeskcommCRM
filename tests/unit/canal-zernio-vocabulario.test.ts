@@ -36,6 +36,9 @@ describe("capabilities do canal intermediado", () => {
       costPerMessage: true,
       alteraMensagemEnviada: false,
       transmissao: true,
+      // A agenda do aparelho só existe para quem conversa com o aparelho
+      // (#2736); o canal oficial não lê agenda nenhuma de celular.
+      phonebook: false,
     });
   });
 

@@ -14,7 +14,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { avisoVisivelPara, resolverDestinosDosAvisos } from "@/lib/ai/inbox-destino";
+import { avisoVisivelPara, PAPEL_MINIMO_DA_CENTRAL, resolverDestinosDosAvisos } from "@/lib/ai/inbox-destino";
 import { anexarLinkDePagamento } from "@/lib/cobranca/central";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -30,7 +30,7 @@ const querySchema = z.object({
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "agent_inbox_items" });
+  const authz = await requireRole(PAPEL_MINIMO_DA_CENTRAL, { requestId, resource: "agent_inbox_items" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org } = authz;

@@ -18,6 +18,7 @@ const estado = vi.hoisted(() => ({
   conversaVisivel: true as boolean,
   carregar: vi.fn(),
   adminCriado: vi.fn(),
+  org: { data: { settings: {}, locale: "pt-BR" }, error: null } as { data: unknown; error: { message: string } | null },
 }));
 
 vi.mock("@/lib/auth/require-role", () => ({
@@ -42,7 +43,12 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => {
     estado.adminCriado();
-    return {};
+    return {
+      from: () => {
+        const q = { select: () => q, eq: () => q, maybeSingle: async () => estado.org };
+        return q;
+      },
+    };
   },
 }));
 vi.mock("@/lib/notifications/destinatarios-da-mensagem", async (original) => ({
@@ -56,7 +62,7 @@ async function pergunta(id = CONV) {
   const res = await GET(new NextRequest(`http://localhost/api/v1/conversations/${id}/aviso-de-mensagem`), {
     params: Promise.resolve({ id }),
   });
-  return { status: res.status, corpo: (await res.json()) as { data?: { avisar: boolean }; error?: { code: string } } };
+  return { status: res.status, corpo: (await res.json()) as { data?: { avisar: boolean; conteudo?: string }; error?: { code: string } } };
 }
 
 beforeEach(() => {
@@ -65,6 +71,7 @@ beforeEach(() => {
   estado.conversaVisivel = true;
   estado.carregar.mockReset();
   estado.adminCriado.mockReset();
+  estado.org = { data: { settings: {}, locale: "pt-BR" }, error: null };
 });
 
 describe("aviso-de-mensagem", () => {
@@ -73,29 +80,29 @@ describe("aviso-de-mensagem", () => {
     estado.carregar.mockResolvedValue({ tipo: "todos" });
     const { status, corpo } = await pergunta();
     expect(status).toBe(200);
-    expect(corpo.data).toEqual({ avisar: true });
+    expect(corpo.data).toEqual({ avisar: true, conteudo: "nome" });
     // Os fatos são lidos na organização ATIVA da sessão, para ESTA conversa.
     expect(estado.carregar.mock.calls[0]!.slice(1)).toEqual([ORG, CONV]);
   });
 
   it("com responsável → avisa o responsável", async () => {
     estado.carregar.mockResolvedValue({ tipo: "restrito", userIds: ["u-ana", "u-admin"] });
-    expect((await pergunta()).corpo.data).toEqual({ avisar: true });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "nome" });
   });
 
   it("com responsável → avisa o admin", async () => {
     estado.userId = "u-admin";
     estado.role = "admin";
     estado.carregar.mockResolvedValue({ tipo: "restrito", userIds: ["u-ana", "u-admin"] });
-    expect((await pergunta()).corpo.data).toEqual({ avisar: true });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "nome" });
   });
 
   it("com responsável → NÃO avisa outro atendente (nem gerente que não é admin)", async () => {
     estado.carregar.mockResolvedValue({ tipo: "restrito", userIds: ["u-bia", "u-admin"] });
-    expect((await pergunta()).corpo.data).toEqual({ avisar: false });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: false, conteudo: "nome" });
     estado.role = "manager";
     estado.userId = "u-gerente";
-    expect((await pergunta()).corpo.data).toEqual({ avisar: false });
+    expect((await pergunta()).corpo.data).toEqual({ avisar: false, conteudo: "nome" });
   });
 
   it("conversa que a sessão não enxerga → 404, sem ler nada com o service role", async () => {
@@ -114,5 +121,25 @@ describe("aviso-de-mensagem", () => {
   it("falha de leitura → 500 (o cliente cai para avisar)", async () => {
     estado.carregar.mockRejectedValue(new Error("boom"));
     expect((await pergunta()).status).toBe(500);
+  });
+
+  it("a IA conduz ('ninguem') → não avisa ninguém, nem admin", async () => {
+    estado.carregar.mockResolvedValue({ tipo: "ninguem" });
+    expect((await pergunta()).corpo.data?.avisar).toBe(false);
+    estado.role = "admin";
+    estado.userId = "u-admin";
+    expect((await pergunta()).corpo.data?.avisar).toBe(false);
+  });
+
+  it("diz o que a bandeja pode mostrar, pela opção da empresa", async () => {
+    estado.carregar.mockResolvedValue({ tipo: "todos" });
+    estado.org = { data: { settings: { notificacoes: { conteudo_na_tela_bloqueada: "oculto" } }, locale: "pt-BR" }, error: null };
+    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "oculto" });
+  });
+
+  it("falha ao ler a opção da empresa → esconde o conteúdo", async () => {
+    estado.carregar.mockResolvedValue({ tipo: "todos" });
+    estado.org = { data: null, error: { message: "fora" } };
+    expect((await pergunta()).corpo.data).toEqual({ avisar: true, conteudo: "oculto" });
   });
 });

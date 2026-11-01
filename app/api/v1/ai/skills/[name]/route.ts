@@ -262,7 +262,11 @@ export async function PUT(
     // `resource_id` é UUID: aqui a versão TEM id, então vai.
     resourceId: versionId,
     requestId,
-    metadata: { name, keywords: parsed.data.matcher.any_keywords.length },
+    metadata: {
+      name,
+      keywords: parsed.data.matcher.any_keywords.length,
+      tags: parsed.data.matcher.any_tags?.length ?? 0,
+    },
   });
 
   return ok({ name, version_id: versionId }, { requestId });

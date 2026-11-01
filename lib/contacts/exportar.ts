@@ -40,6 +40,7 @@ export const COLUNAS_DO_CSV = [
   "email",
   "phone_number",
   "cpf",
+  "birthdate",
   "tags",
 ] as const;
 
@@ -58,6 +59,8 @@ export interface ContatoParaExportar {
   email?: string | null;
   phone_number?: string | null;
   cpf?: string | null;
+  /** Data de calendário `YYYY-MM-DD`, no mesmo formato que o importador lê. */
+  birthdate?: string | null;
   tags?: readonly string[] | null;
 }
 
@@ -101,6 +104,7 @@ export function linhaDoCsv(contato: ContatoParaExportar): string {
     contato.email,
     contato.phone_number,
     contato.cpf,
+    contato.birthdate,
     tags,
   ]
     .map(csvEscape)

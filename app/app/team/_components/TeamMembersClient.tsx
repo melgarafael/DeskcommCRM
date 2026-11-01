@@ -44,6 +44,7 @@ import {
 import { ROLES, type Role } from "@/lib/schemas/team";
 import { rotuloDoPapel } from "@/lib/auth/types";
 import { DotsThree } from "@/lib/ui/icons";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 interface Props {
   currentUserId: string;
@@ -75,8 +76,8 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
   return (
     <>
       <div className="rounded-md border">
-        <Table>
-          <TableHeader>
+        <Table className="max-md:block">
+          <TableHeader className="max-md:hidden">
             <TableRow>
               <TableHead>{t("Membro")}</TableHead>
               <TableHead>{t("Papel")}</TableHead>
@@ -86,16 +87,19 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
               {canManage ? <TableHead className="w-[80px]" /> : null}
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className="max-md:block">
             {members.map((m) => (
-              <TableRow key={m.user_id}>
-                <TableCell>
+              <TableRow
+                key={m.user_id}
+                className="max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-3 max-md:px-4 max-md:py-2"
+              >
+                <TableCell className="max-md:basis-full max-md:p-0 max-md:wrap-anywhere">
                   <div className="font-medium">
-                    {m.full_name ?? m.email ?? m.user_id.slice(0, 8)}
+                    {rotuloDoMembro(m, t)}
                   </div>
                   {m.email ? <div className="text-xs text-muted-foreground">{m.email}</div> : null}
                 </TableCell>
-                <TableCell>
+                <TableCell className="max-md:p-0">
                   {canManage && m.user_id !== currentUserId ? (
                     <Select
                       value={m.role}
@@ -105,7 +109,7 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
                     >
                       <SelectTrigger
                         className="w-[130px]"
-                        aria-label={`${t("Papel de")} ${m.full_name ?? m.email ?? m.user_id}`}
+                        aria-label={`${t("Papel de")} ${rotuloDoMembro(m, t)}`}
                       >
                         <SelectValue />
                       </SelectTrigger>
@@ -121,12 +125,12 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
                     <Badge variant="secondary">{t(rotuloDoPapel(m.role))}</Badge>
                   )}
                 </TableCell>
-                <TableCell>
+                <TableCell className="max-md:p-0">
                   {canManage ? (
                     <Button
                       variant="outline"
                       size="sm"
-                      aria-label={`${t("Interface de")} ${m.full_name ?? m.email ?? m.user_id}`}
+                      aria-label={`${t("Interface de")} ${rotuloDoMembro(m, t)}`}
                       onClick={() => setInterfaceMember(m)}
                     >
                       {m.interface_settings?.destinos
@@ -145,7 +149,7 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
                     </span>
                   )}
                 </TableCell>
-                <TableCell>
+                <TableCell className="max-md:p-0">
                   {/*
                     "Revogado" vem ANTES dos outros dois: quem foi revogado tem
                     `accepted_at` preenchido (ele aceitou um dia), e sem esta
@@ -161,13 +165,17 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
                     <Badge variant="outline">{t("Pendente")}</Badge>
                   )}
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
+                {/* No celular o cabeçalho some, e o rótulo vem do atributo. */}
+                <TableCell
+                  data-rotulo={t("Última atividade")}
+                  className="text-sm text-muted-foreground max-md:flex-auto max-md:p-0 max-md:text-xs max-md:before:mr-1 max-md:before:content-[attr(data-rotulo)]"
+                >
                   {m.last_sign_in_at
                     ? new Date(m.last_sign_in_at).toLocaleString(tagDoIdioma)
                     : "—"}
                 </TableCell>
                 {canManage ? (
-                  <TableCell>
+                  <TableCell className="max-md:ml-auto max-md:p-0">
                     {m.user_id !== currentUserId ? (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>

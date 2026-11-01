@@ -31,6 +31,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     costPerMessage: false,
     alteraMensagemEnviada: true,
     transmissao: false,
+    // É a linha que conversa com um APARELHO pareado: a agenda salva no
+    // celular está lá dentro, e o `contacts/all` a devolve paginada (#2736).
+    phonebook: true,
   },
   // Hetero-restrição: não me banem, mas a Meta me proíbe e me cobra.
   meta_cloud: {
@@ -46,6 +49,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     costPerMessage: true,
     alteraMensagemEnviada: false,
     transmissao: false,
+    // Nenhuma destas linhas conversa com um aparelho pareado — não existe
+    // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
+    phonebook: false,
   },
   // Mesma hetero-restrição do canal oficial, por baixo: é um BSP: a WABA é da
   // Meta, os templates são aprovados pela Meta e a janela de 24h é da Meta. O
@@ -81,6 +87,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     costPerMessage: true,
     alteraMensagemEnviada: false,
     transmissao: false,
+    // Nenhuma destas linhas conversa com um aparelho pareado — não existe
+    // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
+    phonebook: false,
   },
   zernio: {
     freeformOutsideWindow: false,
@@ -97,6 +106,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // variável sai LITERAL do `components` — o `variableMapping` documentado
     // chegou ao destinatário como "{{1}}", e o nome que ele guarda é o número.
     transmissao: true,
+    // Nenhuma destas linhas conversa com um aparelho pareado — não existe
+    // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
+    phonebook: false,
   },
   // Parceiro homologado pela Meta que espelha a Cloud API (recorte do #1130):
   // a WABA, a janela de 24h e o custo são da Meta. O parceiro muda o TRANSPORTE
@@ -118,6 +130,9 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     costPerMessage: true,
     alteraMensagemEnviada: false,
     transmissao: false,
+    // Nenhuma destas linhas conversa com um aparelho pareado — não existe
+    // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
+    phonebook: false,
   },
 };
 
@@ -147,6 +162,15 @@ export const CHANNEL_PROVIDER_DATAFY: ChannelProvider = "datafy";
 export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
 
 /**
+ * O provider em que o NÚMERO é a conexão: pareado por QR, a linha só vira
+ * conexão quando um aparelho lê o código. A linha morta (`FAILED`/`STOPPED`)
+ * sem número, ali, é QR que ninguém leu e não ocupa a vaga do plano (#3416);
+ * nos outros provedores o número não identifica a conexão. É a mesma régua dos
+ * gatilhos `fn_trava_canais_do_plano` e `fn_vaga_ao_reviver_canal`.
+ */
+export const PROVIDER_EM_QUE_O_NUMERO_E_A_CONEXAO: ChannelProvider = CHANNEL_PROVIDER_WAHA;
+
+/**
  * Os providers por onde MENSAGEM entra e sai — a única lista que responde
  * "este canal serve para conversar?".
  *
@@ -168,6 +192,27 @@ export const PROVIDERS_DE_MENSAGEM = [
   "zernio_social",
   "datafy",
 ] as const satisfies readonly ProviderDeMensagem[];
+
+/**
+ * Os providers que alcançam um APARELHO: o endereço é o TELEFONE.
+ *
+ * É um recorte de `PROVIDERS_DE_MENSAGEM`, e a diferença é a das REDES SOCIAIS
+ * (`zernio_social`): o Instagram e o Facebook só falam com quem já escreveu, o
+ * contato de lá é outro endereço (handle) e não existe telefone a discar. Quem
+ * tem um número na mão e escolhe a sessão social escolheu um canal que NÃO
+ * alcança o destino — e o envio fora da janela de 24h é recusado (#3358,
+ * medido: "O canal recusou o envio. Confira a conexão em Conexões.").
+ *
+ * `satisfies` sobre o recorte declara a relação entre as duas listas: um
+ * provider que não seja de mensagem não pode entrar aqui, e um provider social
+ * que apareça nesta lista reprova em compilação, não em produção.
+ */
+export const PROVIDERS_DE_TELEFONE = [
+  "waha",
+  "meta_cloud",
+  "zernio",
+  "datafy",
+] as const satisfies readonly Exclude<(typeof PROVIDERS_DE_MENSAGEM)[number], "zernio_social">[];
 
 /**
  * `true` quando a linha de `channel_sessions` é um canal de mensagem.

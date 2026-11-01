@@ -29,6 +29,7 @@
  */
 import { expect, test } from "./helpers/test";
 
+import { esperarCacheCurtoVencer, esperarEscritaDeFora } from "./helpers/cache-curto";
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 
 const CAMPO_DE_BUSCA = "Buscar conversas";
@@ -174,4 +175,119 @@ test('a aba "Fechadas" mostra número', async ({ page }) => {
 
   await page.reload();
   await expect(page.getByRole("tab", { name: /Fechadas/i })).toHaveText(/\d/);
+});
+
+test("número e Não lidos sobrevivem à recarga e permanecem na sua organização", async ({ page }) => {
+  // +2 TTLs do cache curto (#3696): os vínculos novos chegarem, e a limpeza.
+  test.setTimeout(240_000);
+  const { randomUUID } = await import("node:crypto");
+  const { mkdirSync } = await import("node:fs");
+  const { createClient } = await import("@supabase/supabase-js");
+  const { credenciaisSupabaseDeTeste } = await import("../../scripts/lib/env-de-teste");
+  const c = credenciaisSupabaseDeTeste();
+  expect(["127.0.0.1", "localhost"]).toContain(new URL(c.url).hostname);
+  const db = createClient(c.url, c.serviceRole, { auth: { persistSession: false } });
+  const usuario = lerCreds().users.admin as { email: string; id: string };
+  const orgs: string[] = [];
+  const sufixo = randomUUID().slice(0, 8);
+  const inserir = async (tabela: string, dados: Record<string, unknown>): Promise<string> => {
+    const { data, error } = await db.from(tabela).insert(dados).select("id").single();
+    expect(error).toBeNull();
+    return data!.id as string;
+  };
+  const trocar = async (id: string) => {
+    const seletor = page.getByTestId("tenant-switcher");
+    await seletor.click();
+    await page.getByTestId(`tenant-switcher-item-${id}`).click();
+    await expect(seletor).toBeEnabled();
+    await expect.poll(async () => (await page.context().cookies()).find((cookie) => cookie.name === "active_org")?.value).toBe(id);
+  };
+  const numero = page.getByRole("combobox", { name: "Filtrar por número de WhatsApp" });
+  const naoLidos = page.getByRole("button", { name: "Não lidos", exact: true });
+  try {
+    const canais: { org: string; id: string; nome: string }[] = [];
+    for (const letra of ["A", "B"]) {
+      const org = await inserir("organizations", {
+        slug: `filtros-${letra.toLowerCase()}-${sufixo}`,
+        display_name: `Filtros ${letra} ${sufixo}`, legal_name: `Filtros ${letra}`,
+        onboarded_at: new Date().toISOString(),
+      });
+      orgs.push(org);
+      const vinculo = await db.from("user_organizations").insert({
+        organization_id: org, user_id: usuario.id, role: "admin", accepted_at: new Date().toISOString(),
+      });
+      expect(vinculo.error).toBeNull();
+      // Após excluir o escolhido, ainda ficam dois números. Com apenas um,
+      // o seletor some por contrato quando a pessoa limpa o filtro removido.
+      for (const reserva of [0, 1, 2]) {
+        const nome = `Número ${letra}${reserva ? ` reserva ${reserva}` : ""} ${sufixo}`;
+        const id = await inserir("channel_sessions", {
+          organization_id: org, display_name: nome, waha_session_name: `filtros-${randomUUID()}`,
+          status: "WORKING", webhook_secret_encrypted: "\\x00",
+        });
+        if (!reserva) canais.push({ org, id, nome });
+      }
+    }
+    // Os vínculos foram gravados direto no banco depois do login do `beforeEach`,
+    // e o snapshot de vínculos desta conta já está no cache curto (#3696): as
+    // organizações novas aparecem no seletor quando a entrada vence.
+    await esperarEscritaDeFora(async () => {
+      await page.reload();
+      await page.getByTestId("tenant-switcher").click({ timeout: 3_000 });
+      await expect(page.getByTestId(`tenant-switcher-item-${canais[1]!.org}`)).toBeVisible({ timeout: 3_000 });
+      await page.keyboard.press("Escape");
+    });
+    await trocar(canais[0]!.org);
+    await numero.click();
+    await page.getByRole("option", { name: canais[0]!.nome, exact: true }).click();
+    await naoLidos.click();
+    await expect(naoLidos).toHaveAttribute("aria-pressed", "true");
+    await page.reload();
+    await expect(numero).toHaveText(canais[0]!.nome);
+    await expect(naoLidos).toHaveAttribute("aria-pressed", "true");
+
+    await trocar(canais[1]!.org);
+    await expect(numero).toHaveText("Todos os números");
+    await expect(naoLidos).toHaveAttribute("aria-pressed", "false");
+    await numero.click();
+    await page.getByRole("option", { name: canais[1]!.nome, exact: true }).click();
+    await trocar(canais[0]!.org);
+    await expect(numero).toHaveText(canais[0]!.nome);
+    await expect(naoLidos).toHaveAttribute("aria-pressed", "true");
+    await trocar(canais[1]!.org);
+    await expect(numero).toHaveText(canais[1]!.nome);
+    await expect(naoLidos).toHaveAttribute("aria-pressed", "false");
+
+    const removido = await db.from("channel_sessions").delete().eq("organization_id", canais[1]!.org).eq("id", canais[1]!.id);
+    expect(removido.error).toBeNull();
+    await page.reload();
+    await expect(numero).toHaveText("Número removido");
+    mkdirSync("evidence/antigos-core-3402", { recursive: true });
+    await page.screenshot({ path: "evidence/antigos-core-3402/numero-removido.png" });
+    await page.getByRole("button", { name: "Limpar filtros", exact: true }).click();
+    await page.reload();
+    await expect(numero).toHaveText("Todos os números");
+    await trocar(canais[0]!.org);
+    await expect(numero).toHaveText(canais[0]!.nome);
+    await expect(naoLidos).toHaveAttribute("aria-pressed", "true");
+    await page.screenshot({ path: "evidence/antigos-core-3402/filtros-restaurados.png" });
+
+    // Restrição do navegador declarada: bloqueia só o armazenamento, sem
+    // substituir a rota, a UI ou os filtros que a pessoa escolhe nesta visita.
+    await page.addInitScript(() => {
+      Object.defineProperty(window, "localStorage", { configurable: true, get() { throw new DOMException("Bloqueado", "SecurityError"); } });
+    });
+    await page.reload();
+    await expect(naoLidos).toHaveAttribute("aria-pressed", "false");
+    await naoLidos.click();
+    await expect(naoLidos).toHaveAttribute("aria-pressed", "true");
+    await numero.click();
+    await page.getByRole("option", { name: canais[0]!.nome, exact: true }).click();
+    await expect(numero).toHaveText(canais[0]!.nome);
+  } finally {
+    const limpezas = await Promise.allSettled(orgs.map((id) => db.from("organizations").delete().eq("id", id)));
+    expect(limpezas.every((r) => r.status === "fulfilled" && r.value.error === null), "limpeza das organizações da própria spec").toBe(true);
+    // A próxima spec do `e2e-admin` não pode herdar do cache as organizações apagadas.
+    await esperarCacheCurtoVencer();
+  }
 });

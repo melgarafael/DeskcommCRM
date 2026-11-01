@@ -18,10 +18,12 @@ import { roleAtLeast } from "@/lib/auth/types";
 import { createTemplateSchema } from "@/lib/schemas/templates";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { grupoDaOrganizacao } from "@/lib/templates/grupo-da-resposta";
+import { posicaoEntre } from "@/lib/templates/ordem";
 
 export const dynamic = "force-dynamic";
 const COLS =
-  "id, organization_id, owner_user_id, title, body, shortcut, midias, created_by_user_id, created_at, updated_at";
+  "id, organization_id, owner_user_id, title, body, shortcut, midias, mostrar_na_barra, grupo_id, created_by_user_id, created_at, updated_at, ordem";
 /** Tag do endpoint no recibo de idempotência. Muda de rota muda de recibo. */
 const ENDPOINT = "/api/v1/message-templates";
 
@@ -33,11 +35,19 @@ export async function GET(_req: NextRequest): Promise<Response> {
 
   const supabase = await createClient();
   // RLS já limita a compartilhados + próprios da org ativa.
+  //
+  // A ordem é a que o OPERADOR escolheu (`ordem`, #3244), não a de edição: era
+  // `updated_at desc`, então editar o corpo de uma resposta a empurrava para o
+  // topo desta lista e do slash-menu do Inbox. Virou `ordem asc` + dois
+  // desempates (a resposta nova nasce ACIMA da primeira, ver o POST; duas que
+  // empatem — criadas ao mesmo tempo — saem mais recente primeiro).
   const { data, error } = await supabase
     .from("message_templates")
     .select(COLS)
     .eq("organization_id", org.orgId)
-    .order("updated_at", { ascending: false });
+    .order("ordem", { ascending: true })
+    .order("updated_at", { ascending: false })
+    .order("id", { ascending: true });
   if (error) return fail("internal_error", "Erro ao listar templates.", 500, { requestId });
   return ok(data ?? [], { requestId });
 }
@@ -60,7 +70,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       details: parsed.error.flatten().fieldErrors as Record<string, unknown>,
     });
   }
-  const { title, body, shortcut, shared } = parsed.data;
+  const { title, body, shortcut, shared, mostrar_na_barra, grupo_id } = parsed.data;
   // Compartilhado exige manager+. requireRole já resolveu o role efetivo do
   // banco em org.role — reusar em vez de uma 2ª chamada/RPC. A RLS with_check
   // barra de qualquer forma; isto só dá um erro claro antes do insert.
@@ -77,12 +87,42 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const supabase = await createClient();
 
+  // O GRUPO (#3245) tem de ser da organização ativa. `null` é sempre válido —
+  // é "sem grupo". A FK composta do banco é a segunda barreira; esta é a que
+  // devolve 422 dizendo QUAL campo está errado.
+  try {
+    if (!(await grupoDaOrganizacao(supabase, org.orgId, grupo_id))) {
+      return fail("validation_failed", t("Dados inválidos."), 422, {
+        requestId,
+        details: { grupo_id: [t("Grupo que não pertence a esta organização.")] },
+      });
+    }
+  } catch {
+    return fail("internal_error", "Erro ao criar template.", 500, { requestId });
+  }
+
   /**
    * O efeito. Lança em falha de propósito: assim o helper propaga sem gravar
    * recibo. Recibo de operação que falhou seria pior que não ter idempotência
    * — o cliente retentaria e receberia o replay de uma criação inexistente.
    */
   async function criar() {
+    // A resposta nova nasce no TOPO e sem empate: um passo acima da primeira da
+    // lista visível. Com todas nascendo na mesma posição, o desempate passava a
+    // ser `updated_at` — e editar uma resposta nova voltava a reordenar a lista
+    // (o defeito da #3244 pela porta da criação).
+    const { data: primeira, error: erroPrimeira } = await supabase
+      .from("message_templates")
+      .select("ordem")
+      .eq("organization_id", org.orgId)
+      .order("ordem", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (erroPrimeira) throw new Error("Erro ao criar template.");
+    const menor = (primeira as { ordem: number } | null)?.ordem ?? null;
+    // `posicaoEntre(null, x)` nunca é `null`: só o empate entre DUAS vizinhas é.
+    const ordem = posicaoEntre(null, menor)!;
+
     const { data, error } = await supabase
       .from("message_templates")
       .insert({
@@ -91,11 +131,20 @@ export async function POST(req: NextRequest): Promise<Response> {
         title,
         body,
         shortcut: shortcut ?? null,
-        // `midias` nasce vazia: a imagem nova é gravada pela rota de upload,
-        // que gera o caminho sabendo o id do template (#2526). Aceitar caminho
-        // aqui seria aceitar um arquivo que ninguém conferiu.
+        // O grupo (#3245): ausente na tela = `null` = lista plana, que é o
+        // estado de toda resposta anterior à 0808.
+        grupo_id: grupo_id ?? null,
+        // "Mostrar na barra do Inbox" (#3282): só vai quando a tela escolheu.
+        // Ausente, a coluna assume o default dela (`true`) — a resposta nasce
+        // aparecendo na barra, que é o comportamento de sempre.
+        ...(mostrar_na_barra === undefined ? {} : { mostrar_na_barra }),
+        // `midias` nasce vazia: a mídia nova (a imagem da #2526 ou o áudio do
+        // recurso, #2833) é gravada pela rota de upload, que gera o caminho
+        // sabendo o id do template. Aceitar caminho aqui seria aceitar um
+        // arquivo que ninguém conferiu.
         midias: [],
         created_by_user_id: user.id,
+        ordem,
       })
       .select(COLS)
       .single();

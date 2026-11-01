@@ -10,12 +10,13 @@
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { useMoedaDaOrgAtiva } from "@/hooks/auth/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { apiClient } from "@/lib/api/client";
-import { formatCents, parseReaisToCents } from "@/lib/money";
+import { MOEDA_PADRAO, formatCents, parseReaisToCents } from "@/lib/money";
 import { randomId } from "@/lib/random-id";
 
 type Parcela = {
@@ -24,6 +25,8 @@ type Parcela = {
   numero: number;
   vencimento: string;
   valor_cents: number;
+  /** A moeda da própria parcela (#3379): a da organização quando ela nasceu. */
+  currency: string;
   financial_entry_id: string | null;
   status: "pendente" | "pago";
 };
@@ -140,7 +143,7 @@ export function Parcelas({
                 <td className="py-1 text-text-muted">#{p.numero}</td>
                 <td className="py-1">{new Date(p.vencimento).toLocaleDateString(tagDoIdioma)}</td>
                 <td className="py-1 text-right tabular-nums">
-                  {formatCents(p.valor_cents, "BRL")}
+                  {formatCents(p.valor_cents, p.currency)}
                 </td>
                 <td className="py-1 text-right text-xs text-text-muted">
                   {p.status === "pago" ? t("pago") : t("pendente")}
@@ -181,7 +184,13 @@ function FormularioDeParcela({
   const [vencimento, setVencimento] = useState("");
   const [valor, setValor] = useState("");
 
-  const cents = parseReaisToCents(valor);
+  // A moeda da organização é a régua do valor digitado (#3367): em dólar `1,300`
+  // é mil e trezentos. O leitor de sessão é a mesma coluna
+  // (`organizations.currency`) que `moedaDaOrganizacao` lê no servidor para
+  // GRAVAR a parcela (#3379) — a régua de quem digita e a unidade da linha são a
+  // mesma, senão o número sai certo e o rótulo errado.
+  const moeda = useMoedaDaOrgAtiva() ?? MOEDA_PADRAO;
+  const cents = parseReaisToCents(valor, moeda);
   const pode = !criando && Number(numero) > 0 && vencimento !== "" && cents !== null;
 
   return (

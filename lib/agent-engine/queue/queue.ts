@@ -123,12 +123,70 @@ export interface ClaimOptions {
   batchSize?: number;
 }
 
+/**
+ * O mesmo canal que o handler usa: payload direto ou conversa do atendimento,
+ * sempre da organização e do contato do job. Comparar o id como texto mantém
+ * payload malformado fora do canal, sem derrubar a rodada com um cast de UUID.
+ * Compartilhado com o watchdog para o claim não voltar a usar outra régua.
+ */
+export const CANAL_DO_JOB_SQL = `coalesce(
+         j.payload->>'channel_session_id',
+         (select c.channel_session_id::text from conversations c
+           where c.organization_id = j.organization_id
+             and c.contact_id = j.contact_id
+             and c.id::text = j.payload #>> '{service_boundary,conversation_id}'))`;
+
+/**
+ * O watchdog retém em lotes; o claim precisa respeitar a trava também entre
+ * dois ticks. Go-live segura só o retorno que o negócio inicia. Canal fora do
+ * ar e os demais holds de saúde seguram tanto retorno quanto resposta.
+ * O claim retém o job, além de recusá-lo: a liberação precisa encontrar as
+ * marcas mesmo quando o humano resolve o aviso antes do próximo watchdog.
+ */
+const JOB_SEM_HOLD_DE_CANAL_SQL = `(j.kind not in ('inbound_turn', 'followup_turn')
+      or not exists (
+        select 1 from channel_sessions s
+        left join channel_session_health h
+          on h.organization_id = s.organization_id and h.channel_session_id = s.id
+        where s.organization_id = j.organization_id
+          and s.id::text = ${CANAL_DO_JOB_SQL}
+          and (s.status <> 'WORKING'
+               or (coalesce(h.health_hold_active, false)
+                   and (h.health_hold_reason is distinct from 'go_live' or j.kind = 'followup_turn')))
+      ))`;
+
 const CLAIM_SQL = `
-  with dedup as (
+  -- Reter também respeita o contrato não-bloqueante do claim: uma linha
+  -- travada por outra conexão não segura o job saudável de outra lane. Usa
+  -- o mesmo tamanho de lote já calculado, sem varrer/escrever toda a fila.
+  with para_reter as materialized (
+    select j.id, ${CANAL_DO_JOB_SQL} as canal
+    from job_queue j
+    where j.status = 'pending'
+      and not (j.payload ? 'held_run_after')
+      and not ${JOB_SEM_HOLD_DE_CANAL_SQL}
+    order by j.priority, j.run_after, j.id
+    limit $1
+    for update of j skip locked
+  ),
+  retidos as (
+    update job_queue j
+    set payload = jsonb_set(j.payload, '{held_run_after}', to_jsonb(j.run_after))
+                  || jsonb_build_object('held_channel_session_id', r.canal),
+        run_after = 'infinity'
+    from para_reter r
+    where j.id = r.id
+    returning j.id
+  ),
+  dedup as (
     -- etapa (a): no máximo 1 job por lane por lote; lane sem lead = o próprio id
     select distinct on (coalesce(j.contact_id, j.id)) j.id
     from job_queue j
     where j.status = 'pending' and j.run_after <= now()
+      -- CTEs compartilham a foto anterior ao UPDATE. O RETURNING torna os
+      -- conjuntos disjuntos sem depender de enxergar run_after já alterado.
+      and not exists (select 1 from retidos where retidos.id = j.id)
+      and ${JOB_SEM_HOLD_DE_CANAL_SQL}
       and (j.contact_id is null
            or not exists (select 1 from job_queue r
                           where r.contact_id = j.contact_id and r.status = 'running'))
@@ -159,6 +217,8 @@ const CLAIM_SQL = `
 /**
  * Quantos MILISSEGUNDOS faltam até o próximo job ficar claimável — `null` quando
  * não há nenhum `pending`. É o relógio que o loop consulta ANTES de abrir o claim.
+ * Inclui job sob hold ainda sem marca: acorda UMA vez para o claim retê-lo.
+ * Depois, `run_after = 'infinity'` faz o relógio dormir, sem girar em falso.
  *
  * Um `select` só, sem `connect`, sem `begin` e sem advisory lock: o claim custa 5
  * statements e 638 B de egress por rodada (medido no protocolo, fila vazia), e
@@ -378,17 +438,43 @@ export async function rescheduleJob(
   db: Queryable,
   jobId: string,
   workerId: string,
-  opts: { delayMs: number; reason: string; acquiredAt?: string },
+  opts: {
+    delayMs: number;
+    reason: string;
+    acquiredAt?: string;
+    /**
+     * Chaves a gravar no `payload` do MESMO job no MESMO update (#3383).
+     *
+     * O adiamento pela janela de resposta deixa o rastro `adiado_por_janela`
+     * aqui — é ele que o drain lê para recusar a carona da rajada num job que
+     * já não deveria estar dormindo, e que o `PUT /api/v1/ai/pacing` usa para
+     * acordar quem está na fila. Junto do reagendamento de propósito: são duas
+     * faces do MESMO fato, e em statements separados existiria um intervalo em
+     * que o job já está adiado e ainda sem rastro (ou ao contrário).
+     *
+     * `||` do jsonb não pisa em chave alheia do payload (`held_run_after` do
+     * session-watchdog, `ultima_inbound_vista` do anti-resposta-dupla).
+     */
+    payloadPatch?: Record<string, unknown>;
+  },
 ): Promise<JobRow | null> {
   const { rows } = await db.query<JobRow>(
     `update job_queue
      set status = 'pending', locked_by = null, locked_at = null,
          run_after = now() + ($3 * interval '1 millisecond'),
          attempts = greatest(attempts - 1, 0),
-         last_error = $4
+         last_error = $4,
+         payload = coalesce(payload, '{}'::jsonb) || coalesce($6::jsonb, '{}'::jsonb)
      where id = $1 and status = 'running' and locked_by = $2 and ($5::timestamptz is null or locked_at=$5)
      returning *`,
-    [jobId, workerId, opts.delayMs, normalizeError(opts.reason), opts.acquiredAt ?? null],
+    [
+      jobId,
+      workerId,
+      opts.delayMs,
+      normalizeError(opts.reason),
+      opts.acquiredAt ?? null,
+      opts.payloadPatch === undefined ? null : JSON.stringify(opts.payloadPatch),
+    ],
   );
   return rows[0] ?? null;
 }

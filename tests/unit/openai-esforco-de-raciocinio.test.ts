@@ -71,8 +71,8 @@ describe("knob em none/minimal num modelo que não aceita desligar o raciocínio
     expect(corpos[0]?.reasoning).toMatchObject({ effort: "low" });
   });
 
-  it("quem aceita none continua recebendo none (gpt-6-luna, gpt-6-sol, linha 5.x)", async () => {
-    for (const modelo of ["gpt-6-luna", "gpt-6-sol", "gpt-5.6-terra"]) {
+  it("quem aceita none continua recebendo none (gpt-6-luna, gpt-6-sol, gpt-6.1-terra, linha 5.x)", async () => {
+    for (const modelo of ["gpt-6-luna", "gpt-6-sol", "gpt-6.1-terra", "gpt-5.6-terra"]) {
       const { corpos } = interceptarSaida();
       await disparar(createDefaultRegistry({ openaiReasoningEffort: "none" })["openai"]!("sk-de-teste", modelo));
       expect(corpos[0]?.reasoning, modelo).toMatchObject({ effort: "none" });
@@ -81,7 +81,7 @@ describe("knob em none/minimal num modelo que não aceita desligar o raciocínio
 
   // Quem pediu minimal pediu velocidade: no Luna `low` é mais lento que o padrão
   // (medição na docstring do knob), então o que respeita o pedido é `none`.
-  it.each(["gpt-6-luna", "gpt-6-sol"])("%s com minimal recebe none", async (modelo) => {
+  it.each(["gpt-6-luna", "gpt-6-sol", "gpt-6.1-terra"])("%s com minimal recebe none", async (modelo) => {
     const { corpos } = interceptarSaida();
     await disparar(createDefaultRegistry({ openaiReasoningEffort: "minimal" })["openai"]!("sk-de-teste", modelo));
     expect(corpos[0]?.reasoning).toMatchObject({ effort: "none" });

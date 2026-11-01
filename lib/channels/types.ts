@@ -7,8 +7,13 @@ import type { SendMessageInput } from "@/lib/schemas";
 import type { FetchedMedia } from "@/lib/messaging/media/types";
 import type { OutboundMedia } from "@/lib/waha/media-send";
 import type { TemplateContract } from "@/lib/channels/meta/template-contract";
+import type { ContatoDoAparelho } from "@/lib/waha/client";
 
-export type { OutboundMedia };
+// O tipo do contato do aparelho ATRAVESSA o seam como tipo só (o import some na
+// compilação), do mesmo jeito do `OutboundMedia` acima: quem fora daqui precisa
+// tipar a lista que o canal devolve importa DESTE módulo, não de `lib/waha/` —
+// e o lint de canal reprovaria o caminho.
+export type { OutboundMedia, ContatoDoAparelho };
 
 export type ChannelProvider = "waha" | "meta_cloud" | "zernio" | "zernio_social" | "wacalls" | "datafy";
 
@@ -64,6 +69,21 @@ export interface ChannelCapabilities {
    * para todos — o provedor não recebe valor por destinatário.
    */
   transmissao: boolean;
+  /**
+   * O canal deixa LER, em bloco e paginado, a AGENDA DE CONTATOS do aparelho
+   * pareado — o que o número da empresa salvou no celular?
+   *
+   * Nasce de uma diferença física entre os canais: só quem conversa com um
+   * aparelho de verdade tem uma agenda do aparelho para devolver; um canal
+   * expõe os contatos que já passaram por ele, não a lista salva no celular.
+   *
+   * É a pergunta que a tela faz para decidir se OFFERECE o gesto ("Sincronizar
+   * agenda do celular", #2736) — declarativa porque a tela não tem adapter em
+   * mãos, e perguntar QUAL provider é justamente o que o invariante 1 da
+   * doutrina proíbe. Quem executa o gesto confirma do mesmo jeito, pela
+   * presença do método `listPhonebook` no adapter.
+   */
+  phonebook: boolean;
 }
 
 /**
@@ -88,6 +108,14 @@ export interface RecipientInput {
    * `waIdentity.startsWith("lid:")` — justo o caso que a regra protege.
    */
   waLid?: string | null | undefined;
+  /**
+   * Endereço (chat) da última mensagem RECEBIDA na conversa, só quando a ficha
+   * tem telefone extra. Com dois números na mesma ficha, responder pelo principal
+   * sairia por número que a pessoa não usou nesta conversa; a resposta vai, então,
+   * pelo número que ela escreveu. Vem preenchido só nesse caso: ficha sem extra
+   * segue pela regra de sempre (`waLid`, depois o principal).
+   */
+  ultimoRecebidoChatId?: string | null;
 }
 
 /** Contato compartilhado (vcard) — só `kind: "contact"`. */
@@ -440,6 +468,25 @@ export interface ChannelAdapter {
    * quem chama testa a presença em vez de perguntar QUAL provider é.
    */
   checkHealth?(input: ChannelTenantScope & { sessionRef: string }): Promise<ChannelHealth>;
+
+  /**
+   * Uma PÁGINA da agenda de contatos do APARELHO pareado — o que o número da
+   * empresa salvou no celular (`limit`/`offset`, com ordenação fixa lá dentro
+   * para o offset não pular nem repetir linha).
+   *
+   * Existe porque a agenda mora no APARELHO, não no CRM: ler pede um endpoint
+   * do transporte, e quem não conversa com um aparelho de verdade não tem o
+   * que ler. A tela pergunta a capability `phonebook` antes de oferecer o
+   * gesto; quem executa testa a presença do método em vez de perguntar QUAL
+   * provider é — o que o lint de canal proíbe fora daqui.
+   *
+   * OPCIONAL como os demais: canal sem agenda não implementa.
+   */
+  listPhonebook?(input: ChannelTenantScope & {
+    sessionRef: string;
+    limit: number;
+    offset: number;
+  }): Promise<ContatoDoAparelho[]>;
 
   /** Grupos do número. Ausente = o canal não lista grupos. */
   listGroups?(input: { sessionRef: string }): Promise<ChannelGroup[]>;

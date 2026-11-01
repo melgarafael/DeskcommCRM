@@ -38,10 +38,14 @@ import {
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
 import { randomId } from "@/lib/random-id";
 import { ArrowBendUpLeft } from "@/lib/ui/icons";
+import { LIMITES_DO_PLANO } from "@/lib/tarefas/limites-do-plano";
 import type { PassoDePlano, PlanoDeTarefas } from "@/lib/tarefas/plano";
+import { explicarRecusaDoPlano, frasePrazoDoPasso } from "@/lib/tarefas/recusa-do-plano";
 import { PRIORIDADES_DA_TAREFA, type PrioridadeDaTarefa } from "@/lib/tarefas/tipos";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 const CHAVE_DA_CONSULTA = ["settings", "task-plans"] as const;
 
@@ -96,13 +100,20 @@ export function PlanosDeTarefa() {
       setRascunho(null);
       void qc.invalidateQueries({ queryKey: CHAVE_DA_CONSULTA });
     },
-    onError: (e: Error) => setErro(e.message),
+    // O 422 diz QUAL campo passou do teto; "Dados inválidos." sozinho não
+    // deixava a pessoa saber o que corrigir.
+    onError: (e: Error) =>
+      setErro((e instanceof ApiError ? explicarRecusaDoPlano(e.details, t) : null) ?? e.message),
   });
 
+  // O PATCH substitui a lista INTEIRA. Sem a lista lida (carregando ou com erro),
+  // `[]` fingiria "não há planos" e salvar apagaria os que existem: tudo que
+  // grava fica desativado até `q.data` chegar.
+  const listaLida = q.data !== undefined;
   const planos = q.data?.planos ?? [];
 
   function guardar() {
-    if (!rascunho) return;
+    if (!rascunho || !listaLida) return;
     const nome = rascunho.nome.trim();
     if (!nome) {
       setErro(t("Dê um nome ao plano."));
@@ -116,6 +127,16 @@ export function PlanosDeTarefa() {
       setErro(t("Escreva o título de todos os passos."));
       return;
     }
+    const prazoTorto = rascunho.passos.findIndex(
+      (p) =>
+        !Number.isInteger(p.vence_em_dias) ||
+        p.vence_em_dias < 0 ||
+        p.vence_em_dias > LIMITES_DO_PLANO.venceEmDias,
+    );
+    if (prazoTorto >= 0) {
+      setErro(frasePrazoDoPasso(t, prazoTorto + 1));
+      return;
+    }
     const pronto: PlanoDeTarefas = {
       ...rascunho,
       nome,
@@ -127,6 +148,7 @@ export function PlanosDeTarefa() {
   }
 
   function excluir(plano: PlanoDeTarefas) {
+    if (!listaLida) return;
     salvar.mutate(planos.filter((p) => p.id !== plano.id));
   }
 
@@ -153,6 +175,7 @@ export function PlanosDeTarefa() {
         </div>
         <Button
           type="button"
+          disabled={!listaLida}
           onClick={() => {
             setErro(null);
             setRascunho(novoPlano());
@@ -177,13 +200,26 @@ export function PlanosDeTarefa() {
             setErro(null);
           }}
           onGuardar={guardar}
-          ocupado={salvar.isPending}
+          ocupado={salvar.isPending || !listaLida}
         />
       ) : null}
 
       {q.isLoading ? <Skeleton className="h-40 w-full" /> : null}
 
-      {!q.isLoading && planos.length === 0 && !rascunho ? (
+      {q.isError && !listaLida ? (
+        <Card role="alert" className="space-y-2 p-4 text-sm">
+          <p>
+            {t(
+              "Não foi possível carregar os planos. Para não apagar os que já existem, criar e salvar ficam desativados até a lista carregar.",
+            )}
+          </p>
+          <Button type="button" variant="outline" onClick={() => void q.refetch()}>
+            {t("Tentar de novo")}
+          </Button>
+        </Card>
+      ) : null}
+
+      {listaLida && planos.length === 0 && !rascunho ? (
         <Card className="p-4 text-sm text-muted-foreground">
           {t("Nenhum plano cadastrado ainda.")}
         </Card>
@@ -195,7 +231,7 @@ export function PlanosDeTarefa() {
             <div className="min-w-0">
               <h2 className="truncate font-medium">{plano.nome}</h2>
               {plano.descricao ? (
-                <p className="text-sm text-muted-foreground">{plano.descricao}</p>
+                <p className="break-words text-sm text-muted-foreground">{plano.descricao}</p>
               ) : null}
             </div>
             <div className="flex shrink-0 gap-2">
@@ -259,6 +295,7 @@ function Editor({
           value={plano.nome}
           onChange={(e) => onChange({ ...plano, nome: e.target.value })}
           placeholder={t("Proposta enviada")}
+          maxLength={LIMITES_DO_PLANO.nome}
         />
       </div>
 
@@ -268,7 +305,12 @@ function Editor({
           id="plano-descricao"
           value={plano.descricao ?? ""}
           onChange={(e) => onChange({ ...plano, descricao: e.target.value })}
+          maxLength={LIMITES_DO_PLANO.descricao}
+          aria-describedby="plano-descricao-contador"
         />
+        <p id="plano-descricao-contador" className="text-right text-xs text-muted-foreground">
+          {(plano.descricao ?? "").length}/{LIMITES_DO_PLANO.descricao}
+        </p>
       </div>
 
       <div className="space-y-3">
@@ -297,6 +339,7 @@ function Editor({
                 value={passo.titulo}
                 onChange={(e) => mudarPasso(indice, { titulo: e.target.value })}
                 placeholder={t("Ligar para {{contact.name}} sobre {{lead.title}}")}
+                maxLength={LIMITES_DO_PLANO.tituloDoPasso}
               />
             </div>
 
@@ -307,7 +350,8 @@ function Editor({
                   id={`passo-prazo-${indice}`}
                   type="number"
                   min={0}
-                  max={365}
+                  max={LIMITES_DO_PLANO.venceEmDias}
+                  step={1}
                   value={passo.vence_em_dias}
                   onChange={(e) => mudarPasso(indice, { vence_em_dias: Number(e.target.value) })}
                 />
@@ -351,7 +395,7 @@ function Editor({
                     <SelectItem value="dono_do_lead">{t("Dono do negócio")}</SelectItem>
                     {(members ?? []).map((m) => (
                       <SelectItem key={m.user_id} value={m.user_id}>
-                        {m.full_name ?? m.user_id.slice(0, 8)}
+                        {rotuloDoMembro(m, t)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -364,6 +408,7 @@ function Editor({
         <Button
           type="button"
           variant="outline"
+          disabled={plano.passos.length >= LIMITES_DO_PLANO.passos}
           onClick={() => onChange({ ...plano, passos: [...plano.passos, novoPasso()] })}
         >
           {t("Adicionar passo")}

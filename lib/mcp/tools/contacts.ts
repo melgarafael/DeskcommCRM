@@ -8,6 +8,7 @@
  * de cookie).
  */
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
   listContactsHandler,
@@ -17,6 +18,50 @@ import type { McpToolDefinition } from "../types";
 import { CAMPOS_PROPONIVEIS, proporDadoDoContato } from "@/lib/contacts/proposta-de-dado";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { audit } from "@/lib/audit";
+import { origemConfiavelDoNome, registrarNomeInformado } from "@/lib/contacts/nome-informado";
+import { registrarNomeAplicadoNaTimeline } from "@/lib/contacts/telefone-aplicado";
+import { currentExecutionJob, currentExecutionBoundary, guardServiceEffect } from "@/lib/atendimento/fronteira-server";
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+
+/**
+ * Os telefones da ficha para a IA (Spec 31, B1): o tipo e o WhatsApp do
+ * principal, e os extras com a MESMA forma da API (`GET /api/v1/contacts/{id}`).
+ * O cliente aqui é o administrador do MCP (service role, sem RLS): o filtro de
+ * organização é explícito nas duas leituras, e `wa_lid` fica de fora.
+ */
+async function telefonesDaFichaParaIa(
+  supabase: SupabaseClient,
+  organizationId: string,
+  contactId: string,
+) {
+  const { data: principal } = await supabase
+    .from("contacts")
+    .select("phone_type, phone_whatsapp")
+    .eq("organization_id", organizationId)
+    .eq("id", contactId)
+    .maybeSingle();
+  const { data: extras, error } = await supabase
+    .from("contact_phones")
+    .select("phone_number, tipo, whatsapp, rotulo, origem, created_at")
+    .eq("organization_id", organizationId)
+    .eq("contact_id", contactId);
+  if (error) throw new Error(`contact_phones: ${error.message}`);
+  // Ordenado por created_at na memória: a leitura é pequena (poucos números por
+  // ficha) e a ordem fica explícita aqui, como na API.
+  const ordenados = [...(extras ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at));
+  return {
+    phone_type: principal?.phone_type ?? null,
+    phone_whatsapp: principal?.phone_whatsapp ?? null,
+    additional_phones: ordenados.map((e) => ({
+      phone_number: e.phone_number,
+      type: e.tipo,
+      whatsapp: e.whatsapp,
+      label: e.rotulo,
+      origin: e.origem,
+      created_at: e.created_at,
+    })),
+  };
+}
 
 const searchInputShape = {
   query: z.string().min(1).max(200).describe("Termo de busca (nome, email ou telefone)."),
@@ -160,12 +205,14 @@ export const crmGetContact: McpToolDefinition<typeof getInputShape> = {
           "não é sua para abrir e nada se escreve para ele; siga a conversa com quem está falando.",
       };
     }
+    const telefones = await telefonesDaFichaParaIa(ctx.supabase, ctx.organizationId, contact.id);
     return {
       id: contact.id,
       name: contact.name,
       display_name: contact.display_name,
       email: contact.email,
       phone: contact.phone_number,
+      ...telefones,
       tags: contact.tags ?? [],
       source: contact.source,
       consent: contact.consent ?? {},
@@ -197,10 +244,18 @@ const propostaShape = {
 };
 
 /**
- * ⚠️ Esta ferramenta NÃO grava o dado. Ela cria uma proposta que uma pessoa
- * confirma — e o `description` diz isso ao modelo em primeiro lugar, de
- * propósito: um modelo que acredite ter gravado responderia "pronto, já
- * atualizei seu cadastro" ao cliente, prometendo o que não aconteceu.
+ * Proposta por padrão. As exceções de telefone vazio e nome vazio são opt-in.
+ * O nome exige seleção semântica nesta tool, contexto inbound do servidor e
+ * correspondência com a mensagem real. Isso não autentica identidade e não
+ * torna o classificador infalível. Só o retorno aplicado autoriza dizer "salvo".
+ *
+ * ⚠️ O TEXTO NÃO PROMETE A GRAVAÇÃO: as duas opções são POR ORGANIZAÇÃO e
+ * desligadas por padrão, e o nome ainda depende do turno real — quem lê a
+ * ferramenta não pode decidir antes de chamá-la se o desfecho foi escrita ou
+ * fila. Quem responde é o RETORNO (`motivo: "aplicado_automaticamente"`). Um
+ * modelo que acredite ter gravado responderia "pronto, já atualizei seu
+ * cadastro" prometendo o que não aconteceu; um que ache que nunca grava diria
+ * "vou anotar para alguém confirmar" quando o dado já entrou na ficha.
  *
  * Ela é de CATÁLOGO, e não nativa do Operador, porque o Operador não monta
  * ToolSet nativo nenhum (zero ocorrências de `tool(` em operator-turn.ts) e só
@@ -211,25 +266,113 @@ const propostaShape = {
 export const crmProposeContactField: McpToolDefinition<typeof propostaShape> = {
   name: "crm_propose_contact_field",
   description:
-    "Registra uma informação que o cliente forneceu (email, nome, telefone ou data de nascimento) como PROPOSTA para " +
-    "uma pessoa confirmar. NADA é gravado no cadastro por conta desta chamada, e a proposta vence " +
-    "sozinha se ninguém decidir. Nunca diga ao cliente que o cadastro foi atualizado. Recusa se já " +
-    "houver proposta do mesmo campo aguardando decisão, se o valor for igual ao que já está " +
-    "gravado, ou se o contato foi anonimizado.",
+    "Registra uma informação fornecida pelo cliente como PROPOSTA para uma pessoa confirmar. " +
+    "Use campo name somente quando a mensagem atual informar claramente o PRÓPRIO nome do cliente, " +
+    "inclusive uma resposta direta à pergunta sobre seu nome. Não trate saudações, concordância, " +
+    "negativas, pedidos, perguntas ou instruções como nomes, nem nome de outra pessoa. " +
+    "Copie o nome informado, sem inventar ou completar. EXCEÇÕES com opção da organização ligada: " +
+    "um TELEFONE para ficha SEM número pode ser gravado em E.164; um NOME de pelo menos duas partes " +
+    "para ficha SEM nome pode ser gravado quando o servidor confirmar a mensagem real deste turno. " +
+    "As opções vêm desligadas. Só o retorno motivo aplicado_automaticamente permite dizer que o cadastro " +
+    "foi atualizado. Nome ou telefone preexistente diferente, email e nascimento exigem revisão humana. " +
+    "Sem esse motivo no retorno, diga apenas que alguém vai conferir. Proposta já pendente ou contato " +
+    "anonimizado pode impedir o registro.",
   inputSchema: propostaShape,
   category: "write",
   requiresRole: "agent",
   requiresScope: "mcp:write",
   handler: async (input, ctx) => {
+    // Nenhum id ou trecho do modelo confere autoridade: só o job/limite do runtime.
+    const origemNome = input.campo === "name"
+      ? origemConfiavelDoNome(ctx, input.contact_id, currentExecutionJob(), currentExecutionBoundary())
+      : null;
+    let textoOriginalDoNome: string | undefined;
+    if (origemNome) {
+      const nome = await registrarNomeInformado(getRequestPool(), origemNome, input.valor, guardServiceEffect);
+      if (nome.aplicado) {
+        // O rastro visível, como o do telefone: a auditoria gravada junto com o
+        // nome não aparece na ficha. Nunca lança — o nome já está gravado.
+        await registrarNomeAplicadoNaTimeline(ctx.supabase, {
+          organizationId: ctx.organizationId,
+          contactId: origemNome.contactId,
+          nome: nome.nome,
+          agentId: ctx.actor.type === "ai_agent" ? (ctx.actor.agent_id ?? null) : null,
+        });
+        return {
+          proposta_criada: false,
+          motivo: "aplicado_automaticamente",
+          campo: "name",
+          nome: nome.nome,
+          mensagem: "O nome que a pessoa informou foi GRAVADO na ficha vazia deste contato; pode dizer que ficou anotado.",
+        };
+      }
+      textoOriginalDoNome = nome.textoOriginal;
+    }
     const r = await proporDadoDoContato(ctx.supabase, {
       organizationId: ctx.organizationId,
       contactId: input.contact_id,
       campo: input.campo,
       valor: input.valor,
-      trecho: input.trecho ?? null,
+      trecho: textoOriginalDoNome ?? input.trecho ?? null,
+      ...(origemNome && textoOriginalDoNome !== undefined
+        ? { conversationId: origemNome.conversationId, messageId: origemNome.messageId } : {}),
+      // ⚠️ `agent_id`, NUNCA `actor.id`: a coluna `crm_lead_activities.actor_agent_id`
+      // tem FK para `ai_agents`, e `actor.id` carrega o id do RUN (ou o do
+      // token, ou a string `agent-engine` dependendo do runtime). Sem
+      // `agent_id` a linha entra como sistema — perde-se a AUTORIA do rastro,
+      // que é ruim, em vez da linha inteira, que é pior. Ver `Actor` em
+      // `lib/api/handlers/types.ts`.
+      agentId: ctx.actor.type === "ai_agent" ? (ctx.actor.agent_id ?? null) : null,
     });
 
+    // Mesmo payload de ator das outras tools de escrita. Inline porque
+    // `retencao.ts` mantém o dele local — extrair para um módulo comum tocaria
+    // um arquivo alheio sem que este trabalho peça isso. Subiu para cima do
+    // `if` porque o desfecho APLICADO também audita (#2593) e é o mesmo ator.
+    const a =
+      ctx.actor.type === "user"
+        ? { actorUserId: ctx.actor.id as string | null, metadataActor: { actor_type: "user" } }
+        : { actorUserId: null, metadataActor: { actor_type: ctx.actor.type, actor_id: ctx.actor.id } };
+
     if (!r.criada) {
+      // ── #2593: o telefone de ficha vazia JÁ ESTÁ na ficha ──────────────────
+      //
+      // Este é o ÚNICO desfecho em que a mensagem pode ser repetida ao
+      // cliente — ele aconteceu de verdade. Os de baixo continuam sendo do
+      // fluxo interno, para o modelo decidir o que fazer em seguida.
+      if (r.motivo === "aplicado_automaticamente") {
+        await audit({
+          action: "contact.field_auto_applied",
+          actorUserId: a.actorUserId,
+          organizationId: ctx.organizationId,
+          resourceType: "contact",
+          resourceId: input.contact_id,
+          requestId: ctx.requestId,
+          // Quem aplicou, quando e o par antes/depois da L-06 — SEM o `trecho`.
+          // A auditoria não é alcançada pela anonimização (só sai pela retenção),
+          // e o trecho é texto livre do cliente: numa clínica pode trazer dado de
+          // saúde. Ele vai para a linha da timeline, que a cascata da LGPD limpa
+          // (`registrarTelefoneAplicadoNaTimeline`).
+          metadata: {
+            ...a.metadataActor,
+            campo: input.campo,
+            old_value: null,
+            new_value: r.telefone,
+            automatico: true,
+            legal_basis: "L-05 transactional (dado informado pelo titular em atendimento iniciado por ele)",
+          },
+        });
+        return {
+          proposta_criada: false,
+          motivo: r.motivo,
+          telefone: r.telefone,
+          mensagem:
+            "este contato estava SEM telefone e o número que a pessoa informou foi GRAVADO no cadastro, " +
+            `em formato internacional (${r.telefone}); pode dizer ao cliente que ficou anotado. ` +
+            "Um número que já existia no cadastro nunca é substituído por esta chamada.",
+        };
+      }
+
       // As mensagens são para o MODELO decidir o que fazer em seguida — e
       // nenhuma delas é para repetir ao cliente. Falam do fluxo interno, não do
       // atendimento.
@@ -247,13 +390,6 @@ export const crmProposeContactField: McpToolDefinition<typeof propostaShape> = {
       return { proposta_criada: false, motivo: r.motivo, mensagem: explicacao[r.motivo] };
     }
 
-    // Mesmo payload de ator das outras tools de escrita. Inline porque
-    // `retencao.ts` mantém o dele local — extrair para um módulo comum tocaria
-    // um arquivo alheio sem que este trabalho peça isso.
-    const a =
-      ctx.actor.type === "user"
-        ? { actorUserId: ctx.actor.id as string | null, metadataActor: { actor_type: "user" } }
-        : { actorUserId: null, metadataActor: { actor_type: ctx.actor.type, actor_id: ctx.actor.id } };
     await audit({
       action: "contact.field_proposed",
       actorUserId: a.actorUserId,

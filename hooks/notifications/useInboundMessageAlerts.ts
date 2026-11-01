@@ -9,7 +9,9 @@ import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { avatarUrlServivel } from "@/lib/notifications/avatar_url";
 import { entregarAviso } from "@/lib/notifications/deliver";
 import { shouldNotifyInbound } from "@/lib/notifications/policy";
+import { corpoDoAvisoDeMensagem } from "@/lib/notifications/push_payload";
 import { syncPushSubscription } from "@/lib/notifications/push_client";
+import { conteudoNaTelaBloqueadaWriteSchema, type ConteudoNaTelaBloqueada } from "@/lib/schemas/settings";
 
 function tabFocused(): boolean {
   if (typeof document === "undefined") return false;
@@ -31,11 +33,6 @@ function rowFromRealtime(payload: unknown): Record<string, unknown> | null {
   return raw as Record<string, unknown>;
 }
 
-function previewFromMessage(row: { type?: unknown; body?: unknown }): string {
-  if (row.type !== "text") return "Mídia";
-  const body = typeof row.body === "string" ? row.body.trim() : "";
-  return body || "Nova mensagem";
-}
 
 /**
  * ⚠️ POR QUE ESTA LEITURA PASSA PELA ROTA, E NÃO PELO SUPABASE DO BROWSER.
@@ -115,10 +112,11 @@ async function contactIdFromRow(
 }
 
 /**
- * Esta pessoa deve ser avisada desta mensagem? A regra (conversa com
- * responsável avisa só ele e os administradores; sem responsável, todos) é a
- * MESMA do push do servidor — `lib/notifications/destinatarios-da-mensagem.ts`
- * — e é decidida pela rota, no servidor.
+ * Esta pessoa deve ser avisada desta mensagem, e o que a bandeja do sistema
+ * pode mostrar? A regra de quem recebe é a MESMA do push do servidor —
+ * `lib/notifications/destinatarios-da-mensagem.ts` — e o conteúdo segue a
+ * opção da empresa para a tela bloqueada; as duas coisas são decididas pela
+ * rota, no servidor.
  *
  * Por que não decidir aqui com `GET /conversations/[id]` e o papel ativo: o
  * ramo "sem atendente, mas o contato tem negócio aberto com dono" depende de
@@ -129,19 +127,23 @@ async function contactIdFromRow(
  *
  * Só `avisar === false` cala. Rota fora do ar, 403, resposta sem o campo:
  * avisa, como antes da regra existir — um aviso a mais incomoda, um a menos
- * deixa cliente sem resposta.
+ * deixa cliente sem resposta. Já o conteúdo, sem resposta válida, fica oculto.
  */
-async function devoAvisar(conversationId: string | null): Promise<boolean> {
-  if (!conversationId) return true;
+async function decisaoDoAviso(
+  conversationId: string | null,
+): Promise<{ avisar: boolean; conteudo: ConteudoNaTelaBloqueada }> {
+  const semResposta = { avisar: true, conteudo: "oculto" as const };
+  if (!conversationId) return semResposta;
   try {
     const r = await fetch(`/api/v1/conversations/${conversationId}/aviso-de-mensagem`, {
       credentials: "include",
     });
-    if (!r.ok) return true;
-    const json = (await r.json()) as { data?: { avisar?: unknown } | null };
-    return json.data?.avisar !== false;
+    if (!r.ok) return semResposta;
+    const json = (await r.json()) as { data?: { avisar?: unknown; conteudo?: unknown } | null };
+    const conteudo = conteudoNaTelaBloqueadaWriteSchema.safeParse(json.data?.conteudo);
+    return { avisar: json.data?.avisar !== false, conteudo: conteudo.success ? conteudo.data : "oculto" };
   } catch {
-    return true;
+    return semResposta;
   }
 }
 
@@ -165,12 +167,18 @@ export function useInboundMessageAlerts(): void {
         openConversationId: getOpenConversationId(conversationId),
         tabFocused: tabFocused(),
         tipo: (payload as { tipo?: unknown }).tipo,
+        // O acervo importado chega por INSERT nesta tabela igual a mensagem
+        // nova (o push do servidor não sai — 0760 —, este aviso não passa pelo
+        // banco e saía para cada linha antiga). A marca viaja na própria linha:
+        // é a única coisa que distingue passado de agora aqui.
+        metadata: row.metadata,
       })
     ) {
       return;
     }
     void (async () => {
-      if (!(await devoAvisar(conversationId))) return;
+      const { avisar, conteudo } = await decisaoDoAviso(conversationId);
+      if (!avisar) return;
       const contactId = await contactIdFromRow(row, conversationId);
       const bits = contactId
         ? await contactNotifyBits(contactId)
@@ -178,14 +186,20 @@ export function useInboundMessageAlerts(): void {
       // Pessoal não avisa (spec 21, caminho 1): nem toast, nem push de tela —
       // o choke é aqui, antes do `entregarAviso`; `emit`/`sounds` não mudam.
       if (bits.pessoal) return;
+      const { body, corpoSemPrevia } = corpoDoAvisoDeMensagem(
+        typeof row.type === "string" ? row.type : "text",
+        typeof row.body === "string" ? row.body : null,
+      );
       entregarAviso({
         category: "message",
         kind: "message_inbound",
         title: bits.title,
-        body: previewFromMessage(row),
+        body,
         tag: conversationId ?? undefined,
         href: conversationId ? `/app/inbox?id=${conversationId}` : undefined,
         icon: bits.icon,
+        corpoSemPrevia,
+        conteudo,
       });
     })();
   }, []);

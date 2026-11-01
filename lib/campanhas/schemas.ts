@@ -28,6 +28,11 @@ export const ritmoSchema = z.object({
    * rota confere contra o número: rápida só com modelo aprovado.
    */
   velocidade: z.enum(VELOCIDADES_DA_CAMPANHA).optional(),
+  /**
+   * Migration 0765. Texto em balões, um por parágrafo; ausente = o que já está
+   * (`false` numa campanha nova). Modelo aprovado nunca se divide.
+   */
+  split_messages: z.boolean().optional(),
 });
 
 const baseDaCampanha = {

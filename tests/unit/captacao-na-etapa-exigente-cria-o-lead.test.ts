@@ -64,7 +64,16 @@ function supabaseDoHandler(): unknown {
         return {
           data: {
             settings: {
-              fields: [{ key: "concorrente", label: "Concorrente", type: "text", obrigatorio_em: { etapas: [ETAPA] } }],
+              fields: [
+                {
+                  key: "concorrente",
+                  label: "Concorrente",
+                  type: "text",
+                  obrigatorio_em: { etapas: [ETAPA] },
+                  // Só maiúsculas: o caso do #2730 manda um valor fora disto.
+                  padrao: "^[A-Z]+$",
+                },
+              ],
             },
           },
           error: null,
@@ -141,5 +150,25 @@ describe("webhook de captação numa etapa que exige campo", () => {
     await POST(req, { params: Promise.resolve({ token: "token-da-fonte-0001" }) });
 
     expect(h.leadsInseridos[0]).toMatchObject({ webhook_source_id: "fonte-1" });
+  });
+});
+
+describe("webhook de captação com valor fora do padrão do campo (#2730)", () => {
+  it("o formulário que manda o valor torto NÃO perde o lead", async () => {
+    const req = new NextRequest("http://localhost/api/v1/webhooks/in/token-da-fonte-0001", {
+      method: "POST",
+      body: JSON.stringify({ nome: "Dora", email: "dora@example.com", concorrente: "acme-ltda" }),
+      headers: { "content-type": "application/json" },
+    });
+
+    const res = await POST(req, { params: Promise.resolve({ token: "token-da-fonte-0001" }) });
+
+    expect(h.registrar).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ outcome: "recusado" }),
+    );
+    expect(res.status).toBe(200);
+    expect(h.leadsInseridos, "o lead do formulário se perdeu").toHaveLength(1);
+    expect(h.leadsInseridos[0]).toMatchObject({ custom_fields: { concorrente: "acme-ltda" } });
   });
 });

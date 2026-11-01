@@ -16,7 +16,11 @@ import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
 import { chaveDaEtiqueta } from "@/lib/tags/cor-da-etiqueta";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { ROLE_RANK } from "@/lib/auth/types";
-import { normalizarTag, TAMANHO_MAXIMO_DA_TAG } from "@/lib/contacts/tag-normalizada";
+import { sugestoesDeEtiqueta, etiquetaParaGravar, opcaoDeCriar } from "@/lib/contacts/etiquetas";
+import {
+  normalizarTags,
+  TAMANHO_MAXIMO_DA_TAG,
+} from "@/lib/contacts/tag-normalizada";
 
 /**
  * O alvo do editor — e ele é a ÚNICA coisa que decide para onde a etiqueta vai.
@@ -91,7 +95,12 @@ export function ContactTagsEditor(props: Props) {
   const rotuloVazio = noNegocio ? t("Sem tags no negócio.") : t("Sem tags no contato.");
   const rotuloCampo = noNegocio ? t("Adicionar tag ao negócio") : t("Adicionar tag ao contato");
   const { definirCor } = useDefinirCorDaEtiqueta();
-  const { data: vocabulary } = useContactTagVocabulary(orgId);
+  const { data: vocabulary, isError: erroNoVocabulario } = useContactTagVocabulary(orgId);
+  // #2855 — com texto, pergunta também ao vocabulário inteiro (curado + em uso,
+  // sem o teto de contatos lidos). Sem texto é a MESMA chave da linha acima:
+  // uma requisição só.
+  const { data: encontradas, isError: erroNaBusca } = useContactTagVocabulary(orgId, draft.trim());
+  const vocabularyError = erroNoVocabulario || erroNaBusca;
   // A cor de quem JÁ está no contato vem do MESMO mapa que o chip usa (#2771):
   // uma leitura só, sem pergunta por tag, e o gatilho abre já com o tom atual
   // marcado — abrir a paleta de uma etiqueta colorida como se ela não tivesse
@@ -118,11 +127,42 @@ export function ContactTagsEditor(props: Props) {
     daPessoa.mutate({ tags: next });
   }
 
+  // Sem sugestão cada operador digitava a sua variação da mesma tag (#852).
+  // A comparação é entre formas NORMALIZADAS: um contato que já tem "VIP"
+  // (gravado antes, pelo diálogo de contato, que não normaliza) recebia o chip
+  // "+ vip" e ficava com as duas — a duplicação que a sugestão veio impedir.
+  // E o chip MOSTRA a forma normalizada, não a que a fonte mandou: o rótulo
+  // precisa ser o que o clique grava mesmo que a lista chegue crua (a rota a
+  // normaliza hoje, mas a fonte está marcada para trocar).
+  //
+  // #3180 — e o texto digitado ENTRA no filtro, com a MESMA chave larga da
+  // busca (sem caixa, sem acento, casando no meio da palavra) que a ficha do
+  // contato já usa (#2732): `sugestoesDeEtiqueta`. Sem texto, a lista sai na
+  // ordem da FONTE — as mais usadas primeiro —, nunca reordenada no alfabeto.
+  // #2855 — o que a busca no vocabulário inteiro achou entra DEPOIS das em uso:
+  // a ordem por uso do #3180 continua valendo para o que já estava na lista.
+  const conhecidas = normalizarTags([
+    ...(vocabulary ?? []),
+    ...(draft.trim() ? (encontradas ?? []) : []),
+  ]);
+  const suggestions = sugestoesDeEtiqueta({
+    conhecidas,
+    selecionadas: tags,
+    digitado: draft,
+  });
+
+  // #3180 (critério 3) — a etiqueta NOVA, a ÚLTIMA opção da lista e só quando
+  // o texto não casa com nenhuma existente: `null` = não há o que criar.
+  const nova = opcaoDeCriar({ conhecidas, selecionadas: tags, digitado: draft });
+
   /** Grava a etiqueta com o tom escolhido. Devolve a tag gravada, ou `null` se recusada (duplicada/cheia). */
   function criar(raw: string, escolhida: string | null): string | null {
-    const tag = normalizarTag(raw);
-    if (!tag || tags.some((v) => normalizarTag(v) === tag) || tags.length >= 20)
-      return null;
+    // #3180 — o que se digita NÃO vira variante de uma etiqueta que já existe:
+    // quando o texto casa pela chave larga (sem caixa, sem acento), é a grafia
+    // EXISTENTE que se grava. É o que faz o Enter APLICAR a etiqueta em vez de
+    // criar "carteira-andréia" ao lado de "carteira-andreia".
+    const tag = etiquetaParaGravar({ conhecidas, selecionadas: tags, digitado: raw });
+    if (!tag || tags.length >= 20) return null;
     apply([...tags, tag]);
     // A cor é VOCABULÁRIO, não da linha (#2718): chamada independente do
     // attach — a SQL faz append do verbete, e falhar aqui não desfaz a tag.
@@ -141,18 +181,6 @@ export function ContactTagsEditor(props: Props) {
   function remove(tag: string) {
     apply(tags.filter((v) => v !== tag));
   }
-
-  // Sem sugestão cada operador digitava a sua variação da mesma tag (#852).
-  // A comparação é entre formas NORMALIZADAS: um contato que já tem "VIP"
-  // (gravado antes, pelo diálogo de contato, que não normaliza) recebia o chip
-  // "+ vip" e ficava com as duas — a duplicação que a sugestão veio impedir.
-  // E o chip MOSTRA a forma normalizada, não a que a fonte mandou: o rótulo
-  // precisa ser o que o clique grava mesmo que a lista chegue crua (a rota a
-  // normaliza hoje, mas a fonte está marcada para trocar).
-  const jaTem = new Set(tags.map(normalizarTag));
-  const suggestions = [...new Set((vocabulary ?? []).map(normalizarTag))]
-    .filter((v) => v && !jaTem.has(v))
-    .slice(0, 8);
 
   return (
     <div className="mt-2 space-y-2 rounded-md border border-border p-2">
@@ -216,7 +244,7 @@ export function ContactTagsEditor(props: Props) {
           type="button"
           size="sm"
           variant="outline"
-          className="h-7 px-2"
+          className="h-11 min-w-11 px-2 lg:h-7 lg:min-w-0"
           onClick={() => add(draft)}
           disabled={pendente || !draft.trim() || tags.length >= 20}
           aria-label={t("Adicionar tag")}
@@ -225,7 +253,8 @@ export function ContactTagsEditor(props: Props) {
         </Button>
       </div>
 
-      {suggestions.length > 0 && (
+      {vocabularyError && <p role="alert" className="text-xs text-destructive">{t("Não foi possível carregar as tags.")}</p>}
+      {(suggestions.length > 0 || nova !== null) && (
         <div className="flex flex-wrap gap-1">
           {suggestions.map((tag) => (
             <button
@@ -245,6 +274,20 @@ export function ContactTagsEditor(props: Props) {
               + {tag}
             </button>
           ))}
+          {/* #3180 (critério 3) — CRIAR fica por ÚLTIMO e só quando o texto não
+              casa com nenhuma etiqueta existente: assim a lista diz, sem
+              ambiguidade, o que já existe e o que nasceria. Clicar (ou o Enter
+              no campo, que passa pelo mesmo caminho) grava. */}
+          {nova !== null && (
+            <button
+              type="button"
+              onClick={() => add(draft)}
+              disabled={pendente || tags.length >= 20}
+              className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[10px] text-muted-foreground hover:border-solid hover:text-foreground disabled:opacity-50"
+            >
+              {t("Criar")} «{nova}»
+            </button>
+          )}
         </div>
       )}
 

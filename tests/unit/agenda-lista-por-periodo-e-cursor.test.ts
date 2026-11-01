@@ -182,9 +182,11 @@ describe("a janela de `de`/`ate` (issue #1744)", () => {
     // E o recorte chega ao banco como instante, dos dois lados.
     expect(limites(consultas, "gte")).toContain("2026-09-01T00:00:00Z");
     expect(limites(consultas, "lt")).toContain("2026-09-08T00:00:00Z");
-    // Sem filtro de contato/lead/responsável: é a agenda de todo mundo.
+    // Sem filtro de contato/lead/responsável: reservas de toda a organização.
+    // Marcadores de bloqueio são disponibilidade, não reservas de participantes.
     const eqs = chamadasDe(consultas, "calendar_appointments").filter((c) => c.metodo === "eq");
-    expect(eqs.map((c) => c.args[0])).toEqual(["organization_id"]);
+    expect(eqs.map((c) => c.args[0])).toEqual(["organization_id", "service_block"]);
+    expect(eqs[1]?.args).toEqual(["service_block", false]);
   });
 });
 

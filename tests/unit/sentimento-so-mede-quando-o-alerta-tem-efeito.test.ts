@@ -15,6 +15,12 @@
  *
  * O controle positivo é a conversa elegível: ela tem de continuar disparando o
  * alerta, senão "não chama o modelo" passaria por um worker que não faz nada.
+ *
+ * Canal desativado pelo operador (#2436) entra na mesma tabela: o veto mora na
+ * régua (`lib/ai/elegibilidade/gate.ts`, `canal_desativado`, entrou em
+ * `2cfe06a7b`) e o `processSentiment` o consulta ANTES de resolver o modelo.
+ * A linha abaixo é o que vigia esse veto no lugar onde ele mora — a régua é
+ * exercitada de verdade, sem dublê do worker.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -188,6 +194,11 @@ describe("sentimento — só mede quando o alerta teria efeito", () => {
   });
 
   it.each([
+    [
+      "canal desativado pelo operador",
+      { channel_sessions: { metadata: { disabled: true } } },
+      "canal_desativado",
+    ],
     ["uma pessoa no comando da conversa", { assignee_kind: "user" }, "conversa_de_humano"],
     ["conversa silenciada", { bot_silenced_until: "2999-01-01T00:00:00.000Z" }, "conversa_silenciada"],
     [

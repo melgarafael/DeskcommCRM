@@ -1,0 +1,1120 @@
+{
+  "id": "conversoes",
+  "titulo": "Conversões",
+  "tela": "/app/settings/conversoes",
+  "resumo": "Onde você liga a conta de anúncios para avisar à Meta quais clientes do anúncio viraram venda, confere o que chegou e marca a origem de quem vem pelo site.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela e ligando a Meta",
+      "objetivo": "Entender para que serve a tela de Conversões e o que cada campo da conexão com a Meta faz.",
+      "papel": "admin",
+      "busca": [
+        "conversões",
+        "devolver venda ao anúncio",
+        "ligar meta ads",
+        "token da meta",
+        "conjunto de dados",
+        "anúncio facebook instagram venda",
+        "pixel"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica",
+          "texto": "Clique em \"Configurações\", no rodapé do menu lateral, para abrir a lista de todas as configurações. \"Conversões\" fica no grupo \"Sua empresa\". Clique no cartão para abrir a tela.",
+          "dica": "Só o administrador da empresa vê este cartão, porque a tela guarda o acesso à conta de anúncios. Os outros cargos nem encontram o cartão, e quem digita o endereço cai na página de acesso negado.",
+          "rota": "/app/settings",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Conversões Devolver ao anúncio",
+                "regex": true
+              },
+              "rotulo": "Abrir Conversões",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Conversões Devolver ao anúncio",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Para que serve a tela",
+          "texto": "Quando um paciente que veio de um anúncio fecha e o negócio é marcado como ganho, o valor da venda volta para a plataforma do anúncio. É esse retorno que ensina o anúncio a procurar mais gente parecida com quem comprou. A tela tem quatro abas: \"Configuração\" (a conexão com a Meta, um cartão do Google Ads, as vendas que não chegaram e a marcação de quem vem pelo site), \"Histórico de envios\" (cada tentativa de envio), \"Diagnóstico\" (a saúde da ligação com o Google Ads) e \"Links rastreáveis\" (links que marcam de onde o cliente veio).",
+          "rota": "/app/settings/conversoes",
+          "destaques": [
+            {
+              "alvo": {
+                "css": "header:has(h1)"
+              },
+              "rotulo": "O que a tela faz",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "navigation",
+                "nome": "Seções de conversões"
+              },
+              "rotulo": "As quatro abas",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "A conexão com a Meta",
+          "texto": "O primeiro cartão, sem título, logo abaixo dos avisos, é o da conta de anúncios do Facebook e do Instagram (Meta). Em \"Identificador do destino de conversões\" vai o número da fonte de dados que recebe as vendas. Ele fica no Gerenciador de Eventos da Meta, em Fontes de dados. Em \"Token de acesso\" vai a chave gerada ali mesmo, nas configurações dessa fonte de dados. Aqui ela já foi salva: o campo aparece vazio, com \"Gravado. Deixe em branco para manter.\", porque a chave nunca volta para a tela. A chave \"Reportar vendas automaticamente\" liga e pausa o envio. Depois de mexer, clique em \"Salvar conexão\".",
+          "dica": "Não existe botão para apagar a conexão. Para parar de enviar, desligue \"Reportar vendas automaticamente\" e salve: o envio pausa e a chave fica guardada para quando você quiser voltar.",
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Identificador do destino de conversões"
+              },
+              "rotulo": "Número da fonte de dados",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Token de acesso"
+              },
+              "rotulo": "Chave já gravada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Reportar vendas automaticamente"
+              },
+              "rotulo": "Liga e pausa o envio",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar conexão",
+                "exato": true
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Conferir com o código de teste",
+          "texto": "Para conferir se as vendas estão chegando sem bagunçar os números do anúncio, cole em \"Código de teste (opcional)\" o código que o gerenciador de eventos da Meta mostra e salve. Enquanto ele estiver preenchido, as vendas vão marcadas como teste e não contam para o anúncio aprender. Depois de salvar, aparece um aviso azul no alto da tela para lembrar disso; na foto o código ainda não foi salvo. Terminou de conferir? Apague o código e salve de novo. As vendas que fecharem durante o teste aparecem nas pendências como \"Evento recebido em modo de teste\". Depois de apagar o código, clique em \"Verificar ou tentar novamente\" em cada uma para que contem de verdade.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Código de teste (opcional)"
+              },
+              "valor": "TEST48213"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Código de teste (opcional)"
+              },
+              "rotulo": "Código do gerenciador de eventos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar conexão",
+                "exato": true
+              },
+              "rotulo": "Salvar para valer",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "o-que-a-meta-recebe",
+      "titulo": "O que a Meta recebe além da venda",
+      "objetivo": "Saber quando ligar o envio pelo número de WhatsApp, preencher a página do anúncio e escolher o que cada etapa do funil avisa à Meta.",
+      "papel": "admin",
+      "busca": [
+        "anúncio clique para whatsapp",
+        "id da página",
+        "conta whatsapp business",
+        "evento por etapa do funil",
+        "avisar meta agendamento",
+        "lead qualificado meta"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Venda pelo canal da conversa",
+          "texto": "Esta chave só vale para quem NÃO preencheu a conexão direta do cartão de cima. Como esta clínica já tem a conexão, aqui ela não muda nada. Sem a conexão direta, a venda de quem veio de anúncio pode sair pelo provedor do número de WhatsApp. Isso só funciona quando o número foi conectado por um provedor parceiro que faz esse repasse e que já está ligado à sua fonte de dados da Meta. Um número conectado pelo QR Code não envia nada por aqui. Saem para o provedor o valor, a moeda, o telefone do cliente e a conversa. A chave vem desligada e salva assim que você clica: ligue só se a sua política de privacidade cobre esse uso.",
+          "rota": "/app/settings/conversoes",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Página e conta do WhatsApp Business das vendas de clique-para-WhatsApp"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Sem conexão direta com a Meta"
+              },
+              "rotulo": "Quando usar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Enviar vendas pelo canal da conversa"
+              },
+              "rotulo": "Salva no clique",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Página e conta do WhatsApp Business",
+          "texto": "Quando a venda vem de um anúncio que abre conversa no WhatsApp, a Meta exige saber de qual página do Facebook ou de qual conta do WhatsApp Business ela veio. Sem isso, a Meta recusa a venda. Preencha só um dos dois campos: \"ID da Página\" ou \"ID da conta do WhatsApp Business\". A Meta aceita um ou outro, não os dois juntos. Depois clique em \"Salvar\".",
+          "dica": "Este cartão só aparece depois que a conexão com a Meta foi salva.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "ID da Página"
+              },
+              "valor": "104223456789012"
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "form:has(#meta_page_id) button[type=submit]"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "ID da Página"
+              },
+              "rotulo": "Página do Facebook do anúncio",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "ID da conta do WhatsApp Business"
+              },
+              "rotulo": "Ou a conta do WhatsApp",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "form:has(#meta_page_id) button[type=submit]"
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O que cada etapa do funil avisa",
+          "texto": "Além da venda, a Meta pode ficar sabendo de quem agendou ou recebeu orçamento. Assim o anúncio aprende antes de a venda fechar. Cada etapa aberta do funil tem uma linha e uma chave. O contador mostra quantas etapas estão enviando. Clique em \"Usar o recomendado\" para o sistema sugerir pelo nome de cada etapa.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "regras-meta-por-etapa"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "etapas-meta-enviando"
+              },
+              "rotulo": "Quantas etapas enviam",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Usar o recomendado",
+                "exato": true
+              },
+              "rotulo": "Sugerir pelo nome",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Usar o recomendado",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "A sugestão aplicada",
+          "texto": "A etapa \"Consulta agendada\" foi ligada com o evento \"Lead enviado\". A sugestão vem do nome da etapa: nomes com agendamento, consulta, visita ou reunião viram \"Lead enviado\"; com orçamento, proposta ou cotação viram \"Início de compra (orçamento)\"; com qualificação ou interesse viram \"Lead qualificado\". Em \"Evento enviado à Meta\" você pode trocar o evento (o nome entre parênteses é o que a Meta usa, pode ignorar). Etapas sem sugestão ficam como estavam. A etapa de ganho não aparece aqui, porque a venda já vai pela conexão.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Usar o recomendado",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid^='regra-meta-']:has(p:text-is('Consulta agendada'))"
+              },
+              "rotulo": "Etapa ligada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Evento enviado à Meta"
+              },
+              "rotulo": "Trocar o evento",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Salvar as regras",
+          "texto": "A sugestão só vale depois de clicar em \"Salvar regras\". O evento sai uma vez por negócio, quando ele entra na etapa, seja pela equipe, pela IA ou por uma automação. Só vale para quem veio de anúncio da Meta, e vai sem valor: o valor vai junto com a venda. Negócios que já estavam na etapa antes de você ligar não são enviados.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Usar o recomendado",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar regras",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Os eventos só saem quando o negócio muda de etapa"
+              },
+              "rotulo": "Quando o evento sai",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar regras",
+                "exato": true
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "vendas-nao-reportadas",
+      "titulo": "Vendas que não chegaram ao anúncio",
+      "objetivo": "Ler a lista de vendas que não foram reportadas, entender o motivo de cada uma e mandar de novo depois de corrigir.",
+      "papel": "admin",
+      "busca": [
+        "venda não chegou na meta",
+        "conversão não reportada",
+        "reprocessar venda",
+        "venda sem valor",
+        "meta recusou a venda",
+        "pendências de conversão"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A lista do que não chegou",
+          "texto": "Mais abaixo, na aba \"Configuração\", fica \"Conversões que não foram reportadas\": as vendas de anúncio cujo envio ainda não foi confirmado pela plataforma. Ao lado do título aparece quantas conversões a plataforma já aceitou. Cada linha mostra o negócio, o evento, a origem, o valor, o que houve (com a instrução do que fazer), quando foi e o botão para tentar de novo. Aparecem só as 20 mais recentes; para ver todas, use a aba \"Histórico de envios\".",
+          "dica": "Lista vazia nem sempre quer dizer que está tudo certo: pode ser que ainda nenhuma venda de anúncio tenha fechado.",
+          "rota": "/app/settings/conversoes",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Conversões que não foram reportadas"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Conversões que não foram reportadas"
+              },
+              "rotulo": "O que não chegou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "conversões aceitas pela plataforma"
+              },
+              "rotulo": "O que já chegou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "table:has(th:text-is('Próximo passo'))"
+              },
+              "rotulo": "Uma linha por venda",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Venda sem valor",
+          "texto": "A avaliação da Bruna Tavares foi marcada como ganha sem valor preenchido, e a Meta exige valor e moeda numa compra. Clique no nome do negócio para abri-lo, preencha o valor e volte aqui. Então clique em \"Verificar ou tentar novamente\": o sistema agenda um novo envio e a linha mostra \"Reprocessamento agendado\".",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "tr:has-text('Bruna Tavares')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "tr:has-text('Bruna Tavares')"
+              },
+              "rotulo": "Fechou sem valor",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Verificar ou tentar novamente",
+                "dentro": {
+                  "css": "tr:has-text('Bruna Tavares')"
+                }
+              },
+              "rotulo": "Enviar de novo",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Venda recusada pela Meta",
+          "texto": "Quando a Meta recusa, o texto pequeno abaixo do motivo é a resposta dela, às vezes em inglês. Aqui ela diz que faltou a página ou a conta do WhatsApp Business. É só preencher o cartão \"Página e conta do WhatsApp Business das vendas de clique-para-WhatsApp\", mais acima, e depois clicar em \"Verificar ou tentar novamente\" nesta linha.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "tr:has-text('Eduardo Nakamura')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "tr:has-text('Eduardo Nakamura')"
+              },
+              "rotulo": "Recusada, com a resposta da Meta",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Venda esperando nova tentativa",
+          "texto": "Na linha da Sofia Andrade houve uma falha passageira, e o sistema já agendou uma nova tentativa sozinho: não precisa fazer nada. Lembre do aviso acima da lista: a plataforma aceitar o envio não garante que ela ligou a venda ao anúncio. Para ter certeza, confira no gerenciador da plataforma.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "tr:has-text('Sofia Andrade')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "tr:has-text('Sofia Andrade')"
+              },
+              "rotulo": "Nova tentativa agendada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Aceite da API não confirma atribuição ao anúncio"
+              },
+              "rotulo": "Confira no gerenciador",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "historico-e-diagnostico",
+      "titulo": "Histórico de envios e diagnóstico",
+      "objetivo": "Conferir tudo o que foi enviado, filtrar as falhas e ver a saúde da ligação com o Google Ads.",
+      "papel": "admin",
+      "busca": [
+        "histórico de conversões",
+        "conferir envio para meta",
+        "id do evento",
+        "conversões com falha",
+        "diagnóstico google ads",
+        "google ads não configurado"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir o histórico",
+          "texto": "A aba \"Histórico de envios\" mostra cada tentativa de mandar uma venda ou etapa às plataformas: as que deram certo, as que falharam e as que nem saíram. Clique nela.",
+          "rota": "/app/settings/conversoes",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Histórico de envios",
+                "exato": true
+              },
+              "rotulo": "Histórico de envios",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Histórico de envios",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Filtros e lista",
+          "texto": "No alto ficam os filtros: período (abre nos últimos 30 dias), status, evento, plataforma e uma busca pelo nome do negócio. Escolha e clique em \"Filtrar\". Abaixo aparece quantos envios há e a lista. O selo de cada linha diz o resultado: \"Entregue\", \"Falhou\", \"Aguardando\" (o envio está na fila: o sistema vai tentar de novo ou espera a confirmação da plataforma) ou \"Não enviado\" (falta algo do seu lado). Linhas \"Lead enviado\" são avisos das etapas do funil, não vendas.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Histórico de envios",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "historico-de-envios"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='historico-de-envios'] form"
+              },
+              "rotulo": "Filtros",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "historico-total"
+              },
+              "rotulo": "Quantos envios",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Falhou",
+                "exato": true
+              },
+              "rotulo": "Resultado de cada envio",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os detalhes de um envio",
+          "texto": "Clique numa linha para abrir os detalhes. Aqui, a venda que a Meta recusou: em cima vem o motivo e a resposta da Meta. \"ID do evento\" é o código para achar esta venda no gerenciador da plataforma; nos envios entregues aparece também o \"Protocolo\". Logo abaixo ficam o valor e quando a venda aconteceu. \"Abrir negócio\" leva ao negócio no funil e, como este envio não foi entregue, aparece também \"Verificar ou tentar novamente\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Histórico de envios",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "historico-de-envios"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "summary:has-text('Eduardo Nakamura')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "details[open] dl"
+              },
+              "rotulo": "Código para conferir na plataforma",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Abrir negócio",
+                "exato": true
+              },
+              "rotulo": "Ir ao negócio",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Verificar ou tentar novamente",
+                "dentro": {
+                  "css": "details[open]"
+                }
+              },
+              "rotulo": "Enviar de novo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Só as falhas",
+          "texto": "Para ver só o que deu errado, escolha \"Falhas\" em \"Status\" e clique em \"Filtrar\". O endereço da página guarda os filtros: dá para mandar o link para quem cuida dos anúncios conferir a mesma lista. Quem recebe o link precisa ser administrador desta empresa no sistema; os outros cargos não abrem esta tela.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Histórico de envios",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "historico-de-envios"
+              }
+            },
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "css": "select[name=situacao]"
+              },
+              "opcao": "Falhas"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Filtrar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "1 envio",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "select[name=situacao]"
+              },
+              "rotulo": "Falhas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "historico-total"
+              },
+              "rotulo": "Só o que falhou",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Diagnóstico do Google Ads",
+          "texto": "A aba \"Diagnóstico\" mostra a saúde da ligação com o Google Ads em cartões, cada um com o próximo passo. Verde está bem, amarelo pede atenção e vermelho é problema. Nesta instalação o Google Ads ainda não foi preparado por quem instalou o sistema, e o primeiro cartão diz o que falta com nomes técnicos em maiúsculas: copie esse texto e mande para quem cuida do servidor. Não é nada que você tenha feito.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Diagnóstico",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "diagnostico-google"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Diagnóstico",
+                "exato": true
+              },
+              "rotulo": "Diagnóstico",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid='diagnostico-google'] li",
+                "n": 0
+              },
+              "rotulo": "O que falta para ligar",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "links-rastreaveis",
+      "titulo": "Links rastreáveis",
+      "objetivo": "Criar um link de WhatsApp por campanha ou botão e ver quantos cliques, contatos e negócios cada um trouxe.",
+      "papel": "admin",
+      "busca": [
+        "link rastreável whatsapp",
+        "saber de onde veio o cliente",
+        "link da bio instagram",
+        "quantos cliques no link",
+        "link por campanha",
+        "utm"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Os links e o que trouxeram",
+          "texto": "Na aba \"Links rastreáveis\" você cria um link de WhatsApp para cada campanha ou botão. Quem clica abre o WhatsApp com um código curto na mensagem. Se a pessoa enviar sem apagar o código, o sistema liga a conversa àquele link. A tabela mostra os cliques, os contatos e os negócios de cada link e se ele está ativo.",
+          "dica": "Cliques contam acessos repetidos. Contatos e negócios contam pessoas e negócios diferentes de cada link. Registros antigos apagados pela limpeza automática saem da conta.",
+          "rota": "/app/settings/conversoes?aba=links",
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='links-rastreaveis'] table"
+              },
+              "rotulo": "Cliques, contatos e negócios",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Editar um link",
+          "texto": "Clique em \"Editar\" na linha do link. O formulário abaixo recebe os dados dele: nome, WhatsApp com código do país, mensagem inicial, onde será usado e os campos de campanha. A foto mostra a parte de baixo do formulário. Em \"Mensagem inicial\" você muda o texto; em \"Prévia da mensagem\" confere como ele vai sair com um código de exemplo no fim. Cada clique recebe o seu próprio código. Depois de mudar, clique em \"Salvar link\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar",
+                "dentro": {
+                  "css": "tr:has-text('Site — botão Agende sua avaliação')"
+                }
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar link",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Mensagem inicial",
+                "exato": true
+              },
+              "rotulo": "Mensagem que você pode editar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Prévia da mensagem",
+                "exato": false
+              },
+              "rotulo": "Texto com o código",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar link",
+                "exato": true
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O link e o script para o site",
+          "texto": "Com o link aberto, aparecem logo abaixo dois caminhos, cada um com seu botão de copiar. O link vai onde você controla o endereço, como a bio, o anúncio ou um botão. O script é um pedacinho de código que quem cuida do seu site cola uma vez em todas as páginas; com ele, os botões de WhatsApp normais daquele número continuam como estão e o código entra sozinho. Use só um script por número. Em \"URL do site\", digite o endereço da sua página começando com https:// e clique em \"Verificar instalação\": o sistema abre o site numa aba (permita a abertura) e, em até 20 segundos, diz se achou o script. Se não confirmar, confira com quem cuida do site antes de concluir que está faltando.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar",
+                "dentro": {
+                  "css": "tr:has-text('Site — botão Agende sua avaliação')"
+                }
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Verificar instalação"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Copiar link",
+                "exato": true
+              },
+              "rotulo": "Copiar o link",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Copiar script do site",
+                "exato": true
+              },
+              "rotulo": "Copiar o script",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Verificar instalação",
+                "exato": true
+              },
+              "rotulo": "Conferir o site",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Criar um link novo",
+          "texto": "Para começar do zero, clique em \"Novo link\". O formulário volta ao começo, com uma mensagem inicial sugerida e \"Site\" já escolhido. Dê um nome que você reconheça, como o da campanha, informe o WhatsApp com código do país (por exemplo +5511…), ajuste a mensagem, escolha onde será usado (Site, Anúncio ou Orgânico) e clique em \"Salvar link\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar",
+                "dentro": {
+                  "css": "tr:has-text('Site — botão Agende sua avaliação')"
+                }
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Novo link",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Nome",
+                "exato": true
+              },
+              "valor": "Panfleto — Feira de Saúde"
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "rotulo": "Onde será usado"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome",
+                "exato": true
+              },
+              "rotulo": "Nome do link",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Onde será usado"
+              },
+              "rotulo": "Site, Anúncio ou Orgânico",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar link",
+                "exato": true
+              },
+              "rotulo": "Salvar o link novo",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "origem-pelo-site",
+      "titulo": "Marcar quem chega pelo site",
+      "objetivo": "Ligar o endereço de captura para que quem toca no botão de WhatsApp da sua página entre no CRM com a origem da campanha.",
+      "papel": "admin",
+      "busca": [
+        "botão whatsapp do site",
+        "origem do cliente site",
+        "landing page whatsapp",
+        "endereço de captura",
+        "script do site",
+        "de qual campanha veio"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O endereço de captura",
+          "texto": "No fim da aba \"Configuração\" fica \"Quem chegou pelo site\". O jeito mais simples é o endereço de captura: em vez do link comum do WhatsApp, o botão da sua página aponta para um endereço do sistema. Ele guarda de qual campanha a pessoa veio e abre o WhatsApp com um código curto no texto. Em \"Para qual WhatsApp mandar\" já aparece o número da clínica. O texto que a pessoa vai enviar precisa manter o pedaço \"[ref:{token}]\" no fim: é ali que o código curto entra. Sem ele, o botão de salvar não libera.",
+          "rota": "/app/settings/conversoes",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "captura-meta"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Para qual WhatsApp mandar",
+                "dentro": {
+                  "testid": "captura-meta"
+                }
+              },
+              "rotulo": "Número da clínica",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Texto que a pessoa vai enviar",
+                "dentro": {
+                  "testid": "captura-meta"
+                }
+              },
+              "rotulo": "Mantenha o {token}",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Endereço de captura ligado",
+                "dentro": {
+                  "testid": "captura-meta"
+                }
+              },
+              "rotulo": "Liga e desliga o endereço",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Copiar e salvar",
+          "texto": "Em \"Cole este endereço no botão da sua página\" está o endereço pronto. Os campos entre chaves só são preenchidos pela Meta quando ficam nos parâmetros de URL do anúncio. Se a página atende mais de uma campanha, o botão precisa repassar o que a página recebeu, senão a conversa entra sem origem. Clique em \"Copiar endereço\" e cole no botão de WhatsApp da sua página. Depois clique em \"Salvar endereço de captura\": a chave já vem ligada, mas o endereço só funciona depois de salvo.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar endereço de captura",
+                "exato": true,
+                "dentro": {
+                  "testid": "captura-meta"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Copiar endereço",
+                "exato": true,
+                "dentro": {
+                  "testid": "captura-meta"
+                }
+              },
+              "rotulo": "Copiar",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar endereço de captura",
+                "exato": true,
+                "dentro": {
+                  "testid": "captura-meta"
+                }
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar endereço de captura",
+            "exato": true,
+            "dentro": {
+              "testid": "captura-meta"
+            }
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "O script do site aparece",
+          "texto": "Salvo o endereço, o cartão \"Script para instalar no site\", um pouco acima, passa a mostrar o script. É o outro caminho: em vez de trocar o botão pelo endereço, quem cuida do seu site cola esse pedacinho de código uma vez em todas as páginas e mantém os botões normais de WhatsApp. Ele guarda a origem enquanto a pessoa navega e ajusta os botões do número salvo. Clique em \"Copiar script do site\" se for usar esse caminho. Se trocar o número, copie o script de novo.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar endereço de captura",
+                "exato": true,
+                "dentro": {
+                  "testid": "captura-meta"
+                }
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar endereço de captura",
+                "exato": true,
+                "dentro": {
+                  "testid": "captura-meta"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Copiar script do site",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "script-do-site"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='script-do-site'] code"
+              },
+              "rotulo": "Script pronto",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Copiar script do site",
+                "exato": true
+              },
+              "rotulo": "Copiar",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Onde a origem aparece",
+          "texto": "O código só vale na primeira mensagem do contato e nunca apaga uma origem que já existia, nem a de um anúncio. Só viajam dados da campanha, nenhum dado pessoal. A origem aparece na ficha do contato e no filtro \"Site (landing page)\" da lista de contatos.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "texto": "O código vale só na primeira mensagem do contato"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "ul:has(> li:has-text('O código vale só na primeira mensagem'))"
+              },
+              "rotulo": "As regras do código",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

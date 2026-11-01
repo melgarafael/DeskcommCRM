@@ -82,6 +82,30 @@ describe("GET /api/v1/contact-tags", () => {
   });
 
   /**
+   * A ORDEM DAS SUGESTÕES É A DE USO (#3180). Com o campo vazio o editor
+   * oferece as PRIMEIRAS desta lista, então a ordem alfabética entregava sempre
+   * o mesmo bloco do começo do alfabeto: com 73 etiquetas, as mesmas oito.
+   *
+   * O controle abaixo tem o alfabeto e o uso em ordens DIFERENTES de propósito:
+   * "zebra" é a mais usada e "abelha" a menos usada, e uma rota que ordenasse
+   * pelo alfabeto devolveria o inverso. Empate cai no alfabeto (caso dos 200
+   * abaixo), para a resposta ser determinística.
+   */
+  it("as mais usadas vêm primeiro, não as primeiras do alfabeto", async () => {
+    vi.mocked(createClient).mockResolvedValue(bancoFalso([
+      { organization_id: ORG, tags: ["abelha"] },
+      { organization_id: ORG, tags: ["zebra"] },
+      { organization_id: ORG, tags: ["zebra"] },
+      { organization_id: ORG, tags: ["zebra"] },
+    ]));
+
+    const { status, body } = await chamaRota();
+
+    expect(status).toBe(200);
+    expect(body.data).toEqual(["zebra", "abelha"]);
+  });
+
+  /**
    * O rótulo do chip tem de dizer exatamente o que o clique grava. Cru, "VIP",
    * "vip " e "vip" viravam TRÊS chips que gravam a MESMA tag — e os dois
    * primeiros nunca sumiam da tela, porque o filtro do editor compara com

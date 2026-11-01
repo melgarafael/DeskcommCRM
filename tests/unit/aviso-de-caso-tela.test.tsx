@@ -17,7 +17,7 @@
  *
  * Mocar o componente esconderia a peça do único teste que monta esta árvore.
  */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 
@@ -28,6 +28,7 @@ vi.mock("@/hooks/ai/useAvisoDeCaso", () => ({
   CHAVE_DO_AVISO: ["ai-aviso-de-caso"],
   useAvisoDeCaso: () => consulta(),
   useSalvarAvisoDeCaso: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRemoverAvisoDeCaso: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useTestarAvisoDeCaso: () => ({ mutateAsync: vi.fn(), isPending: false, data: undefined }),
 }));
 
@@ -219,7 +220,12 @@ describe("o switch e o botão de teste", () => {
 describe("a lista de entregas", () => {
   it("vazia, explica o que vai aparecer ali — e não finge que está tudo bem", () => {
     montar(estado());
-    expect(screen.getByTestId("entregas-vazias").textContent).toContain("inclusive se ela falhar");
+    const vazia = screen.getByTestId("entregas-vazias");
+    expect(vazia.textContent).toContain("Ainda não há avisos de casos nesta lista");
+    expect(vazia.textContent).toContain("inclusive se falharem");
+    expect(screen.getByRole("heading", { name: "Últimos avisos de casos" })).toBeInTheDocument();
+    expect(screen.getByText(/o resultado dos avisos de transferência para atendimento humano/i).textContent)
+      .toContain("respectivo item da Central de alertas");
   });
 
   it("mostra a situação, o destino MASCARADO e a frase do erro", () => {
@@ -248,9 +254,18 @@ describe("a lista de entregas", () => {
 });
 
 describe("o que a tela diz sem ninguém perguntar", () => {
-  it("avisa que o aviso NÃO se repete quando o caso volta a esperar", () => {
+  it("distingue o caso que não repete do novo episódio de transferência", () => {
     montar(estado());
-    expect(screen.getByText(/o aviso não se repete/i)).toBeInTheDocument();
+    expect(screen.getByText(/o aviso não se repete/i).textContent)
+      .toContain("Quando o cliente responde e o caso volta a esperar você");
+    const transferencia = screen.getByText(/nas transferências para atendimento humano/i);
+    expect(transferencia.textContent).toContain("uma tentativa de aviso por episódio");
+    expect(transferencia.textContent).toContain("sem resumo da conversa");
+    expect(transferencia.textContent).toContain(
+      "Depois de retomar o atendimento automático, uma nova transferência pode gerar outro aviso",
+    );
+    expect(transferencia.textContent).toContain("Consulte o resultado na Central de alertas");
+    expect(transferencia.textContent).toContain("responda ao cliente pelo CRM");
   });
 
   it("o laço de retorno sem amostra diz que não há amostra, e não mostra zero", () => {
@@ -273,6 +288,40 @@ describe("o que a tela diz sem ninguém perguntar", () => {
     const laco = screen.getByTestId("laco-do-aviso");
     expect(laco.textContent).toContain("12 min");
     expect(laco.textContent).toContain("190 min");
+  });
+});
+
+describe("a remoção do destinatário (issue #3338)", () => {
+  it("só aparece com configuração SALVA — antes disso não há o que remover", () => {
+    montar(estado({ config: null }));
+    expect(screen.queryByRole("button", { name: /remover destinatário/i })).toBeNull();
+
+    montar(estado());
+    expect(
+      screen.getAllByRole("button", { name: /remover destinatário/i }).at(-1),
+    ).toBeInTheDocument();
+  });
+
+  it("a confirmação diz a consequência ANTES de apagar, e dá como voltar atrás", () => {
+    montar(estado());
+    fireEvent.click(screen.getByRole("button", { name: "Remover destinatário" }));
+
+    const bloco = screen.getByTestId("confirmar-remocao");
+    expect(bloco.textContent).toContain("volta a ser um número comum");
+    // A configuração apagada também é lida pela Agenda e pela ação "Mensagem
+    // para a equipe": a confirmação tem de dizer que esses envios param junto.
+    expect(bloco.textContent).toContain("Agenda");
+    expect(bloco.textContent).toContain("Mensagem para a equipe");
+    expect(screen.getByRole("button", { name: "Manter" })).toBeInTheDocument();
+
+    // Desistir fecha a pergunta e não é remoção nenhuma.
+    fireEvent.click(screen.getByRole("button", { name: "Manter" }));
+    expect(screen.queryByTestId("confirmar-remocao")).toBeNull();
+  });
+
+  it("a remoção é OUTRA coisa que o switch: a tela diz isso", () => {
+    montar(estado());
+    expect(screen.getByText(/sai da configuração e volta a entrar no Inbox/i)).toBeInTheDocument();
   });
 });
 

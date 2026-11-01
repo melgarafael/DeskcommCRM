@@ -181,7 +181,7 @@ export type LoseLeadInput = z.infer<typeof loseLeadSchema>;
 
 /**
  * createLeadSchema → POST /api/v1/leads
- * Status, source_metadata, custom_fields, position_in_stage are server-managed.
+ * Status, source_metadata, position_in_stage are server-managed.
  */
 export const createLeadSchema = z.object({
   pipeline_id: z.string().uuid(),
@@ -190,6 +190,25 @@ export const createLeadSchema = z.object({
   description: z.string().max(2000).nullable().optional(),
   contact_id: z.string().uuid().nullable().optional(),
   value_cents: z.coerce.number().int().nonnegative().nullable().optional(),
+  /**
+   * O VALOR RECORRENTE, ao lado do valor único (fatia 1 da #3602).
+   *
+   * `nonnegative` é a MESMA régua do `value_cents`: mensalidade negativa é dado
+   * impossível, e o CHECK da migration 9028 repete a regra no banco para quem
+   * escreve por fora do schema (psql, import, integração).
+   */
+  recurring_value_cents: z.coerce.number().int().nonnegative().nullable().optional(),
+  /**
+   * A periodicidade. `literal("monthly")` e não `z.string()`: a v1 conhece UMA,
+   * e aceitar texto livre deixaria "yearly" gravado sem nenhuma régua que o
+   * multiplique — o painel da fatia 2 somaria mensalidade com anualidade.
+   */
+  recurring_period: z.literal("monthly").nullable().optional(),
+  /**
+   * A duração em meses; ausente/nula = sem prazo. Zero não é "sem prazo" — é
+   * contrato que não dura nada, e quem divide pelo prazo dividiria por ele.
+   */
+  recurring_months: z.coerce.number().int().min(1).max(600).nullable().optional(),
   /**
    * Sem `default`, e isso É o conserto.
    *
@@ -211,6 +230,23 @@ export const createLeadSchema = z.object({
     .optional(),
   tags: z.array(z.string()).default([]),
   source: z.string().min(1).default("manual"),
+  /**
+   * Os campos personalizados JÁ PREENCHIDOS no formulário de criação (issue
+   * #3038).
+   *
+   * O `createLeadHandler` valida e grava `custom_fields` desde a criação — a
+   * régua da etapa em que o negócio NASCE (#1710) lê exatamente este campo —,
+   * mas a ROTA não aceitava a chave: `z.object` a descartava em silêncio, e a
+   * recusa chegava como "Preencha os campos obrigatórios antes de continuar" para
+   * um valor que o cliente tinha acabado de mandar. Com o `NewLeadDialog`
+   * exibindo os campos exigidos da etapa, sem esta linha o formulário coletaria
+   * e o servidor recusaria do mesmo jeito.
+   *
+   * Espelho do `updateLeadSchema` (mesmo `Record<string, unknown>`): o formato
+   * do valor é do funil, e quem o julga é `obrigatorio_em`/`padrao` do campo,
+   * nunca o schema.
+   */
+  custom_fields: z.record(z.string(), z.unknown()).optional(),
 });
 export type CreateLeadInput = z.infer<typeof createLeadSchema>;
 
@@ -223,6 +259,25 @@ export const updateLeadSchema = z.object({
   description: z.string().max(2000).nullable().optional(),
   contact_id: z.string().uuid().nullable().optional(),
   value_cents: z.coerce.number().int().nonnegative().nullable().optional(),
+  /**
+   * O VALOR RECORRENTE, ao lado do valor único (fatia 1 da #3602).
+   *
+   * `nonnegative` é a MESMA régua do `value_cents`: mensalidade negativa é dado
+   * impossível, e o CHECK da migration 9028 repete a regra no banco para quem
+   * escreve por fora do schema (psql, import, integração).
+   */
+  recurring_value_cents: z.coerce.number().int().nonnegative().nullable().optional(),
+  /**
+   * A periodicidade. `literal("monthly")` e não `z.string()`: a v1 conhece UMA,
+   * e aceitar texto livre deixaria "yearly" gravado sem nenhuma régua que o
+   * multiplique — o painel da fatia 2 somaria mensalidade com anualidade.
+   */
+  recurring_period: z.literal("monthly").nullable().optional(),
+  /**
+   * A duração em meses; ausente/nula = sem prazo. Zero não é "sem prazo" — é
+   * contrato que não dura nada, e quem divide pelo prazo dividiria por ele.
+   */
+  recurring_months: z.coerce.number().int().min(1).max(600).nullable().optional(),
   currency: z.string().length(3).optional(),
   owner_user_id: z.string().uuid().nullable().optional(),
   /**

@@ -77,6 +77,12 @@ function SerieDiaria({ dias }: { dias: LinhaDoDia[] }) {
             data-quantidade={d.quantidade}
           />
           <span className="text-[10px] tabular-nums text-muted-foreground">{d.rotulo}</span>
+          {/* O número do dia, escrito. Com mouse ele mora no `title` da barra
+              (passar o cursor mostra); no dedo não há hover, e a altura da
+              barra sozinha não diz quanto foi. */}
+          <span className="text-[10px] tabular-nums [@media(hover:hover)]:sr-only">
+            {d.quantidade}
+          </span>
         </div>
       ))}
     </div>
@@ -237,7 +243,7 @@ export function ActivityReportClient() {
                     {i.negocioId && (
                       <Link
                         href={`/app/leads/${i.negocioId}`}
-                        className="text-xs text-accent underline underline-offset-2"
+                        className="text-xs text-accent underline underline-offset-2 max-md:inline-flex max-md:min-h-11 max-md:items-center"
                       >
                         {i.negocioTitulo ?? `${vocabulario.deal} ${i.negocioId.slice(0, 8)}`}
                       </Link>
@@ -246,7 +252,7 @@ export function ActivityReportClient() {
                       <span className="text-xs text-muted-foreground">· {i.contatoNome}</span>
                     )}
                     {i.motivo && (
-                      <span className="w-full truncate text-xs text-muted-foreground">
+                      <span className="w-full text-xs text-muted-foreground max-md:wrap-anywhere md:truncate">
                         {i.motivo}
                       </span>
                     )}

@@ -131,6 +131,30 @@ describe("o ramo frio não afirma nada que a pessoa não fez", () => {
     expect(comForm).toMatch(/ACABOU DE PREENCHER UM FORMULÁRIO/);
     expect(comForm).toMatch(/ligando ao que ela preencheu/);
   });
+
+  it("a exceção da auditoria cita medição própria sem abrir invasão (spec 24)", () => {
+    // O campo `Auditoria` é medição do próprio servidor (verificado_em), não
+    // declaração de terceiro: pode ser citado como motivo do contato.
+    const frio = prompt("prospeccao_fria");
+    expect(frio).toMatch(/EXCEÇÃO: o campo `Auditoria`/);
+    expect(frio).toMatch(/medição feita pelo próprio sistema/);
+    // Mas a porta continua fechada para o resto: nada de dado pessoal ou
+    // histórico inventado com a desculpa da auditoria.
+    expect(frio).toMatch(/dado pessoal/i);
+    expect(frio).toMatch(/NÃO invente histórico, interesse, indicação/);
+    // E os outros ramos não ganharam a exceção: ela é do frio, não geral.
+    expect(prompt("formulario")).not.toContain("EXCEÇÃO: o campo `Auditoria`");
+    expect(prompt("automacao")).not.toContain("EXCEÇÃO: o campo `Auditoria`");
+  });
+
+  it("a exceção da auditoria é datada, nunca 'agora' (ponto 2 da triagem)", () => {
+    // O envio pode sair dias depois da medição: "agora" envelhece em mentira.
+    // A regra manda citar a data escrita no próprio campo — e proíbe o "agora".
+    const frio = prompt("prospeccao_fria");
+    expect(frio).toMatch(/na data escrita no próprio campo/);
+    expect(frio).toMatch(/nunca como medição de agora/);
+    expect(frio.toLowerCase()).not.toMatch(/pelo próprio sistema agora/);
+  });
 });
 
 describe("a prospecção usa o ramo frio — e não o de automação", () => {

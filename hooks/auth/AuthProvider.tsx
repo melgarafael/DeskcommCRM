@@ -10,6 +10,7 @@ import {
 } from "react";
 import { Providers } from "@/app/providers";
 import { definirOrgDaAba } from "@/lib/auth/org-da-aba";
+import { encerrarPushDesteAparelho } from "@/lib/notifications/push_client";
 import { createClient, resetRealtimeAuthentication } from "@/lib/supabase/browser";
 import type { AuthUser, ActiveOrg, Role } from "@/lib/auth/types";
 import { ROLE_RANK } from "@/lib/auth/types";
@@ -91,6 +92,9 @@ export function AuthProvider({
       refreshing,
       signOut: async () => {
         resetRealtimeAuthentication();
+        // Antes da action: o DELETE da inscrição precisa do cookie que ela
+        // apaga. `encerrarPushDesteAparelho` nunca lança, então não segura a saída.
+        await encerrarPushDesteAparelho();
         const { signOut } = await import("@/app/actions/auth/signOut");
         await signOut();
       },
@@ -147,6 +151,13 @@ const ACTION_MIN_ROLE: Record<string, Role> = {
   // briefing diz MAIS que a conversa — diz o que a IA concluiu sobre a pessoa.
   // Um `viewer` que sondasse esta rota levaria 403 em toda abertura de conversa.
   "inbox.passagens.view": "agent",
+  // Quem participa da conversa (o cabeçalho do atendimento conjunto). `agent` e
+  // não `viewer` pelo mesmo motivo das notas e das passagens: é o piso de quem
+  // ATENDE. Reusar uma das duas permissões irmãs amarraria a lista a um recurso
+  // que não é dela; uma permissão própria deixa o gate correto no dia em que a
+  // lista mudar de piso. Sem ele, um `viewer` que abre QUALQUER conversa pede a
+  // lista e a rota respondia com `authz.denied` a cada abertura.
+  "inbox.participantes.view": "agent",
   "message-templates.view": "agent",
   "ai.agents.view": "manager",
   "ai.agents.write": "admin",
@@ -182,4 +193,34 @@ export function usePermission(action: string): boolean {
   const required = ACTION_MIN_ROLE[action];
   if (!required) return false;
   return ROLE_RANK[activeOrg.role] >= ROLE_RANK[required];
+}
+
+/**
+ * O país da organização ativa, SEM exigir o provider: telas que também
+ * renderizam isoladas (testes, prévias) leem `null` — o Brasil, o padrão de
+ * todo leitor de país (`perfilDoPais(null)`) — em vez de lançar como
+ * `useActiveOrg`.
+ */
+export function usePaisDaOrgAtiva(): string | null {
+  return useContext(Ctx)?.activeOrg?.country ?? null;
+}
+
+/**
+ * O idioma padrão da organização ativa (`organizations.locale`, o que o
+ * instalador grava), tolerante como o leitor de país: fora do provider, `null`.
+ * NÃO é o idioma da interface (`useIdioma`), que segue a preferência de quem opera.
+ */
+export function useLocaleDaOrgAtiva(): string | null {
+  const ctx = useContext(Ctx);
+  const orgId = ctx?.activeOrg?.orgId;
+  return ctx?.user.organizations?.find((m) => m.organization_id === orgId)?.locale ?? null;
+}
+
+/**
+ * A moeda da organização ativa (`organizations.currency`) — a do campo
+ * personalizado de moeda. Tolerante como o leitor de país: fora do provider,
+ * `null`, e quem lê cai no `MOEDA_PADRAO`.
+ */
+export function useMoedaDaOrgAtiva(): string | null {
+  return useContext(Ctx)?.activeOrg?.currency ?? null;
 }

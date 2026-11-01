@@ -16,6 +16,7 @@ import {
   listarModelosDaAssinatura,
   type ModeloDaAssinatura,
 } from "@/lib/ai/catalogo/modelos-da-assinatura";
+import { ehVarianteEmLote } from "@/lib/ai/catalogo/variante-em-lote";
 
 export const dynamic = "force-dynamic";
 
@@ -107,7 +108,16 @@ export async function GET(
   // O filtro é em memória de propósito: são no máximo centenas de linhas, e
   // assim o teste da rota enxerga a regra (um `eq` no banco o esconderia do
   // dublê, que devolve a lista inteira).
-  const models = (data ?? []).filter((m) => m.supports_tools === true);
+  //
+  // A VARIANTE `:batch` TAMBÉM NÃO ENTRA. É a cópia do modelo que a OpenRouter
+  // reserva para processamento em lote: no endpoint de chat devolve 404, e o
+  // atendente falha junto com o classificador de etapa e o detector de
+  // jailbreak, que herdam o mesmo modelo (`lib/ai/catalogo/variante-em-lote.ts`).
+  // Filtrar AQUI, e não no sincronizador, esconde também as linhas que já
+  // estão no catálogo, sem esperar a próxima sincronização.
+  const models = (data ?? []).filter(
+    (m) => m.supports_tools === true && !ehVarianteEmLote(m.model_id),
+  );
 
   return ok({ models }, { requestId });
 }

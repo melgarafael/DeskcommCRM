@@ -72,7 +72,7 @@ export interface ConferenciaDeSaida {
    * a tela deixa de encontrar o estado e mostra "carregando…" para sempre —
    * aconteceu ao escrever isto, e o teste de componente pegou.
    */
-  camada: "promessa_semantica" | "jailbreak" | "afirmacao_clinica" | null;
+  camada: "promessa_semantica" | "jailbreak" | "afirmacao_clinica" | "restricao_comercial" | null;
 }
 
 /**
@@ -194,6 +194,22 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
     camada: "afirmacao_clinica",
   },
   {
+    nome: "commercial_restriction",
+    rotulo: "Deixar valores e negociação com a equipe",
+    oQueProtege:
+      "Quando ligada, o assistente não fala de preço, desconto, parcelamento nem forma de " +
+      "pagamento: o pedido vai direto para uma pessoa da equipe, o cliente é avisado, e a " +
+      "resposta do assistente que tocar nesses assuntos não sai.",
+    escolha: {
+      custo:
+        "Não custa nada e reconhece frases em português e espanhol. Vale para a organização " +
+        "inteira, e pode mandar à equipe uma pergunta que não era sobre preço.",
+      consultaModelo: false,
+    },
+    porQueNaoSeDesliga: "",
+    camada: "restricao_comercial",
+  },
+  {
     nome: "agenda_stall",
     rotulo: "Não prometer checar a agenda sem checar de verdade",
     oQueProtege:
@@ -203,6 +219,31 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
     porQueNaoSeDesliga:
       "É a mesma promessa vazia do 'vou pedir pro responsável', só que sobre agenda: o cliente " +
       "fica esperando uma confirmação que nunca foi checada. Regra fixa, sem custo.",
+    camada: null,
+  },
+  {
+    nome: "horario_da_agenda",
+    rotulo: "Só oferecer horário que a agenda devolveu",
+    oQueProtege:
+      "Barra a resposta que cita dia e horário que a busca da agenda não devolveu nesta " +
+      'resposta, e o "está agendado" quando a marcação não foi gravada. O assistente refaz ' +
+      "com a agenda; se insistir, passa a conversa para a equipe.",
+    escolha: null,
+    porQueNaoSeDesliga:
+      "Horário inventado vira consulta marcada em cima de outra, e confirmação sem marcação " +
+      "vira paciente esperando uma consulta que não existe. Regra fixa, sem custo.",
+    camada: null,
+  },
+  {
+    nome: "registro_sem_efeito",
+    rotulo: "Conferir a escrita antes de afirmar registro",
+    oQueProtege:
+      "Recusa a confirmação de registro quando a ferramenta não confirmou nenhuma escrita " +
+      "neste turno. O controle ainda não identifica a qual item cada escrita se refere.",
+    escolha: null,
+    porQueNaoSeDesliga:
+      "É a mesma promessa vazia do 'vou pedir pro responsável': o cliente fica esperando um " +
+      "contato que nunca acontece. Regra fixa, sem custo.",
     camada: null,
   },
   {

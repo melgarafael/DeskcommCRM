@@ -391,6 +391,30 @@ describe("GET /api/v1/ai/followups/enrollments", () => {
     expect(body.data).toHaveLength(1);
     expect(body.data[0]!.id).toBe("b");
   });
+
+  it("?contact_id= recorta pelo contato, junto do filtro de org", async () => {
+    const OUTRO_CONTATO = "44444444-4444-4444-8444-999999999999";
+    const rows = [
+      { id: "a", organization_id: ORG_ID, pointer_id: POINTER_ID, contact_id: CONTACT_ID, status: "waiting_reply", updated_at: "2026-01-01" },
+      { id: "b", organization_id: ORG_ID, pointer_id: POINTER_ID, contact_id: OUTRO_CONTATO, status: "active", updated_at: "2026-01-01" },
+      { id: "c", organization_id: OTHER_ORG_ID, pointer_id: POINTER_ID, contact_id: CONTACT_ID, status: "active", updated_at: "2026-01-01" },
+    ];
+    const db = makeDb([], [], [], rows);
+    session("viewer", db);
+    const { GET } = await import("@/app/api/v1/ai/followups/enrollments/route");
+    const res = await GET(req("GET", undefined, `?contact_id=${CONTACT_ID}`));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Row[] };
+    expect(body.data.map((r) => r.id)).toEqual(["a"]);
+  });
+
+  it("?contact_id= que não é uuid → 400", async () => {
+    const db = makeDb([], [], []);
+    session("viewer", db);
+    const { GET } = await import("@/app/api/v1/ai/followups/enrollments/route");
+    const res = await GET(req("GET", undefined, "?contact_id=nao-e-uuid"));
+    expect(res.status).toBe(400);
+  });
 });
 
 // Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.

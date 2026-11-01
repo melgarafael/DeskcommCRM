@@ -38,8 +38,10 @@ import { FaixaDaCarteira } from "@/components/inbox/FaixaDaCarteira";
 import { comandoDaConversa, ROTULO_DO_MOTIVO } from "@/lib/inbox/comando-da-conversa";
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
 import { SnoozeButton } from "@/components/inbox/SnoozeButton";
+import { ParticipantesDaConversa } from "@/components/inbox/ParticipantesDaConversa";
 import { DialButton } from "@/components/voice/DialButton";
 import { VideoCallButton } from "@/components/inbox/VideoCallButton";
+import { ReservarServicoNaConversa } from "@/components/agenda/ReservarServicoNaConversa";
 import { motivoDoContato } from "@/lib/inbox/motivo-do-envio-bloqueado";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
@@ -107,10 +109,30 @@ export function ConversationHeader({
   const automaticoDaOrg = useAutomaticoAtivo();
   const [reassignOpen, setReassignOpen] = useState(false);
   const [confirmFecharOpen, setConfirmFecharOpen] = useState(false);
+  /**
+   * A ESCOLHA AO FECHAR (#3313, item 1), e ela começa MARCADA em "devolver".
+   *
+   * O padrão não é preferência de produto: é o desfecho que a operação espera
+   * ao fechar. Medido na issue — a equipe fechava conversas achando que a trava
+   * de humano tinha ido embora com elas, e a próxima mensagem daquele cliente,
+   * dias depois, ficava sem resposta da IA. "Manter com a equipe" continua a um
+   * clique e é relembrado a cada abertura do diálogo (quem escolheu manter na
+   * conversa anterior não deve ver a escolha já virada na seguinte).
+   */
+  const [devolverAoFechar, setDevolverAoFechar] = useState(true);
   const [confirmArquivarOpen, setConfirmArquivarOpen] = useState(false);
   const [confirmPessoalOpen, setConfirmPessoalOpen] = useState(false);
 
   const c = conversation.contacts ?? null;
+  /**
+   * A TRAVA DE HUMANO MORA NO CONTATO, não na conversa — e é por isso que
+   * fechar a conversa não a solta. Enquanto `force_human` for `true`, os três
+   * guards do motor (`skip("force_human")`, `isLeadInHandoff`, `before-send`)
+   * continuam vetando a IA. Sem esta leitura, a escolha do fechamento apareceria
+   * em conversa nenhuma (ou em todas, que é pior: perguntaria sobre uma trava
+   * que não existe).
+   */
+  const contatoTravadoComEquipe = c?.force_human === true;
   const displayName = rotuloParaAEquipe(c, t);
   /**
    * POR ONDE ESTA CONVERSA ENTROU — o mesmo rótulo da lista e da tela de
@@ -134,6 +156,18 @@ export function ConversationHeader({
   // dispara porque o botão nem é desenhado.
   const ehPessoal = c?.is_personal === true;
   const podeMarcarPessoal =
+    (user.is_platform_admin && !user.support) ||
+    (activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager);
+  /**
+   * ATENDIMENTO CONJUNTO (#2542): quem pode CONVIDAR é o dono da conversa ou um
+   * gestor+ — exatamente o gate da rota. A tela não oferece o que a rota recusa:
+   * um botão que devolve 403 é pior que um botão que não existe, porque a pessoa
+   * descobre o limite depois de escolher o colega na lista. Não é gate de
+   * SEGURANÇA (esse mora na rota, que revalida papel e organização): é o mesmo
+   * desenho de `podeMarcarPessoal`, que também espelha a régua do servidor.
+   */
+  const podeConvidar =
+    isMineAssigned ||
     (user.is_platform_admin && !user.support) ||
     (activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager);
   const marcarPessoal = useMarkPersonalContact(c?.id ?? "");
@@ -304,7 +338,9 @@ export function ConversationHeader({
           )}
         </div>
         {phone && (
-          <p className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground">
+          // No celular o telefone sai: cada linha do cabeçalho é altura tirada
+          // do fio, e o número continua na Ficha.
+          <p className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground max-md:hidden">
             <Phone size={11} weight="regular" aria-hidden /> {phone}
           </p>
         )}
@@ -317,8 +353,13 @@ export function ConversationHeader({
           (#1625): na linha do nome ele alargava a identidade e empurrava a
           barra inteira para baixo. Ela também não é `shrink-0`, pelo mesmo
           motivo da barra. */}
-      <div className="flex min-w-0 flex-col items-end gap-1 max-md:w-full max-md:items-stretch">
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5 max-md:flex-nowrap max-md:overflow-x-auto max-md:pb-1 max-md:[&>*]:shrink-0">
+      {/* NO CELULAR (F2 da ADR-0006): com o teclado aberto a coluna sai e o fio
+          fica com a altura (`data-teclado-aberto`, de `useAlturaVisivel`); a
+          máscara apaga a borda direita para dizer que a fileira rola, e o `pr-8`
+          deixa o último botão fora da máscara quando rolado até o fim. Tudo
+          `max-md:` — no computador encolher a janela não é teclado. */}
+      <div className="flex min-w-0 flex-col items-end gap-1 max-md:w-full max-md:items-stretch max-md:group-data-[teclado-aberto]/conversa:hidden">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5 max-md:flex-nowrap max-md:overflow-x-auto max-md:pb-1 max-md:pr-8 max-md:[&>*]:shrink-0 max-md:[mask-image:linear-gradient(to_right,black_calc(100%_-_2rem),transparent)]">
         {/* Primeira da barra e sem rótulo escrito: é ferramenta de LEITURA, não
             ação de atendimento, e não muda de lugar com o estado da conversa.
             Só o ícone porque a barra já quebrou a caixa útil em 1280px uma vez
@@ -342,6 +383,9 @@ export function ConversationHeader({
         {!conversation.is_group && c?.id && (
           <DialButton contactId={c.id} hasPhone={!!c.phone_number} />
         )}
+        {!conversation.is_group && c?.id && activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && (
+          <ReservarServicoNaConversa key={`${activeOrg.orgId}:${conversation.id}`} contactId={c.id} conversationId={conversation.id} contactName={displayName}/>
+        )}
         {/* Videochamada (#2440): sem JITSI_SERVER_URL este botão não renderiza,
             então ele não ocupa lugar nem na instalação que não oferece a feature.
             A sala é aleatória por chamada (#2441) — não depende de telefone,
@@ -361,10 +405,25 @@ export function ConversationHeader({
           bloqueio={motivoDoContato(c, t)}
           encerrada={status === "closed"}
         />
+        {/* ATENDIMENTO CONJUNTO (#2542): quem participa desta conversa, e a
+            porta para convidar mais um. Fica na barra de ações, junto das
+            outras ações do cabeçalho, e ANTES de "Assumir" porque ela responde
+            à pergunta que a barra faz primeiro: "quem mais está aqui comigo?".
+            O componente só desenha o botão para quem a rota aceitaria (dono ou
+            gestor+) e não desenha NADA quando não há participante nem permissão
+            de convidar — nenhum espaço vazio no cabeçalho de quem só foi ler. */}
+        <ParticipantesDaConversa
+          conversationId={conversation.id}
+          podeConvidar={podeConvidar}
+          atendenteId={user.id}
+        />
         {isOpen && (
           <Button
             size="sm"
             variant="default"
+            // No celular, a ação que a pessoa veio fazer abre a fileira — sem
+            // rolar para achá-la. Só CSS: a ordem do DOM não muda.
+            className="max-md:order-first"
             disabled={claim.isPending}
             // O rótulo NÃO muda (é contrato: `inbox-header-nao-trava` e o
             // dicionário de espanhol o citam). O que faltava era a consequência
@@ -385,6 +444,7 @@ export function ConversationHeader({
           <Button
             size="sm"
             variant="outline"
+            className="max-md:order-first"
             disabled={release.isPending}
             // GUIA CURTA (#3003): o rótulo diz o GESTO, não a consequência. "Liberar"
             // não conta para onde a conversa vai — de volta ao automático ou para a
@@ -485,7 +545,11 @@ export function ConversationHeader({
             // arquivar — que é o clique errado relatado na issue. A guia diz o que
             // muda e o que continua disponível depois (reabrir).
             title={t("Encerra o atendimento. Depois você pode reabrir a conversa.")}
-            onClick={() => setConfirmFecharOpen(true)}
+            onClick={() => {
+              // Padrão marcado a cada abertura: a escolha é DESTA conversa.
+              setDevolverAoFechar(true);
+              setConfirmFecharOpen(true);
+            }}
           >
             {t("Fechar")}
           </Button>
@@ -609,15 +673,79 @@ export function ConversationHeader({
               {t("O atendimento é encerrado. Se o cliente escrever de novo, você pode reabrir.")}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {/* A PERGUNTA QUE FALTAVA (#3313, item 1). A trava de humano fica no
+              CONTATO: fechar a conversa não a solta, e a equipe descobria isso
+              dias depois, com o cliente sem resposta. Só aparece com a trava
+              ligada — sem ela não há o que perguntar, e fechar continua sendo
+              só fechar (nenhuma chave nova viaja no corpo).
+
+              Rádio nativo, e não um `Switch`: as duas opções são excludentes e
+              o estado atual PRECISA estar visível na abertura, que é justamente
+              o que o item pede ("padrão marcado"). */}
+          {contatoTravadoComEquipe ? (
+            <div className="space-y-2" data-testid="escolha-ao-fechar">
+              <p className="text-sm font-medium">
+                {t("Este contato está com a equipe. Ao fechar, o que acontece?")}
+              </p>
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="radio"
+                  name="devolver-ao-fechar"
+                  data-testid="fechar-devolver-ao-automatico"
+                  checked={devolverAoFechar}
+                  onChange={() => setDevolverAoFechar(true)}
+                  className="mt-1 h-4 w-4 shrink-0 accent-primary"
+                />
+                <span className="space-y-1">
+                  <span className="block text-sm font-medium">
+                    {t("Devolver ao automático ao fechar")}
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    {t(
+                      "A IA volta a atender este cliente na próxima mensagem dele. Se o contato estiver marcado como sempre atendimento humano, ele continua com a equipe.",
+                    )}
+                  </span>
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="radio"
+                  name="devolver-ao-fechar"
+                  data-testid="fechar-manter-com-a-equipe"
+                  checked={!devolverAoFechar}
+                  onChange={() => setDevolverAoFechar(false)}
+                  className="mt-1 h-4 w-4 shrink-0 accent-primary"
+                />
+                <span className="space-y-1">
+                  <span className="block text-sm font-medium">{t("Manter com a equipe")}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {t(
+                      "A conversa fecha e a IA continua calada para este cliente: a próxima mensagem dele espera uma pessoa.",
+                    )}
+                  </span>
+                </span>
+              </label>
+            </div>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() =>
-                close.mutate({
+              onClick={() => {
+                // A chave só entra no corpo quando a escolha existe: sem contato
+                // travado a tela não pergunta nada, e o fechamento é o de sempre.
+                const escolha: {
+                  conversation_id: string;
+                  expected_revision?: number;
+                  devolver_ao_automatico?: boolean;
+                } = {
                   conversation_id: conversation.id,
                   expected_revision: conversation.service_revision,
-                })
-              }
+                };
+                if (contatoTravadoComEquipe) {
+                  escolha.devolver_ao_automatico = devolverAoFechar;
+                }
+                close.mutate(escolha);
+              }}
             >
               {t("Fechar")}
             </AlertDialogAction>

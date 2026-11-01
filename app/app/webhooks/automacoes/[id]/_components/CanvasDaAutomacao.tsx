@@ -103,6 +103,9 @@ function regraGravadaDe(regra: AutomationRuleRow | null): RegraGravada | null {
   return {
     trigger_event: regra.trigger_event,
     trigger_config: regra.trigger_config,
+    // As condições vão INTEIRAS: quem decide se o desenho as edita (lista) ou as
+    // preserva (grupo `{any:[…]}`) é o `desenhoDaRegra` (#2727). Achatar aqui
+    // antes era o começo da destruição — a regra voltava como "todas".
     conditions: regra.conditions,
     actions: regra.actions,
   };
@@ -352,7 +355,16 @@ export function CanvasDaAutomacao({ regra }: Props) {
 
   const selecionado = nos.find((n) => n.id === noSelecionado) ?? null;
   const ligacao = ligacoes.find((l) => l.id === ligacaoSelecionada) ?? null;
-  const podeExcluir = (selecionado && selecionado.data.kind !== "gatilho") || ligacao;
+  /**
+   * #2727 — a caixa de condições que guarda um grupo do topo (`{any:[…]}`) NÃO
+   * pode ser excluída: `corpoDoDesenho` devolve o grupo por ela, e sem a caixa o
+   * salvar mandaria `[]`, que vale "todas" — a regra passaria a disparar para
+   * todo mundo. O desenho recusa editar e grava o grupo como está.
+   */
+  const preservadas = desenho.caixas.some((c) => c.data.kind === "condicoes" && Boolean(c.data.grupoPreservado));
+  const selecionadoGuardaGrupo =
+    selecionado?.data.kind === "condicoes" && Boolean(selecionado.data.grupoPreservado);
+  const podeExcluir = Boolean((selecionado && selecionado.data.kind !== "gatilho" && !selecionadoGuardaGrupo) || ligacao);
 
   const painel = selecionado ? (
     selecionado.data.kind === "gatilho" ? (
@@ -470,6 +482,14 @@ export function CanvasDaAutomacao({ regra }: Props) {
         </div>
       </div>
 
+      {preservadas ? (
+        <div role="note" className="border-b border-border bg-muted px-4 py-2 text-xs text-text-muted">
+          {t(
+            "Esta automação combina as condições por um grupo (qualquer uma, ou um grupo dentro de outro). Este desenho não edita esse grupo: ele é gravado como está.",
+          )}
+        </div>
+      ) : null}
+
       <div className="flex flex-1 overflow-hidden">
         <PaletaDaAutomacao
           evento={evento}
@@ -492,7 +512,7 @@ export function CanvasDaAutomacao({ regra }: Props) {
         </Sheet>
 
         <div
-          className="relative h-full flex-1"
+          className="relative min-h-0 flex-1 self-stretch"
           data-testid="designer-canvas"
           onDragOver={(e) => {
             e.preventDefault();

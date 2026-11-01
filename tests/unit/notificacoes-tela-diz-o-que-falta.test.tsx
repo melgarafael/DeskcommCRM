@@ -56,6 +56,8 @@ const vapidPronto = vi.hoisted(() => vi.fn<() => boolean>());
 // árvore do servidor sem o QueryClientProvider que o app tem no layout. O que
 // este arquivo mede é o texto sobre Push; a seção de sons tem teste próprio.
 vi.mock("@/app/app/settings/notifications/_sons", () => ({ SonsDosAvisos: () => null }));
+// A seção da tela bloqueada lê a organização no servidor; tem teste próprio.
+vi.mock("@/app/app/settings/notifications/_tela-bloqueada", () => ({ ConteudoNaTelaBloqueada: () => null }));
 vi.mock("@/lib/notifications/vapid", () => ({ vapidPronto }));
 vi.mock("@/lib/auth/server", () => ({ requireAuth: vi.fn().mockResolvedValue({}) }));
 vi.mock("@/app/app/settings/notifications/_client", () => ({
@@ -101,9 +103,17 @@ describe("tela de Notificações — o que ela afirma sobre esta instalação", 
 
     // E a saída. Um aviso que só informa a falta deixa o operador sabendo que
     // está quebrado e sem saber o que fazer — que é quase o silêncio de antes.
+    // Pelo kit, o par nasce na atualização, inclusive em quem já está na versão
+    // mais recente (o update.sh o cria antes da saída "nada a atualizar"). Sem
+    // --force: ele refaz backup, manutenção e banco, e pode voltar de versão.
+    expect(html).toMatch(/rodar a atualização da instalação/);
+    expect(html).toContain("<code>bash hostgator-setup-kit/update.sh</code>");
+    expect(html).not.toContain("--force");
+    // Fora do kit, o comando de sempre — e o aviso de não trocar um par existente.
     expect(html).toContain("npx web-push generate-vapid-keys");
     expect(html).toContain("VAPID_PUBLIC_KEY");
     expect(html).toContain("VAPID_PRIVATE_KEY");
+    expect(html).toMatch(/Não troque um par que já existe/);
   });
 
   it("⭐ SEM o par VAPID: NÃO afirma que o Push já funciona", async () => {

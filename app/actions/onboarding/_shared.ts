@@ -6,6 +6,7 @@
  * validated here, against the same operant-org rule as `resolveActiveOrg` —
  * never name an arbitrary org id.
  */
+import { invalidarOrg } from "@/lib/auth/cache-curto";
 import { supportWriteError } from "@/lib/impersonate/support";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -117,6 +118,23 @@ export async function patchOnboardingState(
 ): Promise<void> {
   const admin = createAdminClient();
   const { state } = await loadOnboardingState(orgId);
+  // #3696: nome e fuso da empresa viajam no snapshot de cada membro; o cabeçalho
+  // do passo seguinte lê dali. `finally`: a escrita condicional abaixo tem três saídas.
+  try {
+    await gravarPatchDoOnboarding(admin, orgId, state, patch, extra, opcoes);
+  } finally {
+    invalidarOrg(orgId);
+  }
+}
+
+async function gravarPatchDoOnboarding(
+  admin: ReturnType<typeof createAdminClient>,
+  orgId: string,
+  state: OnboardingState,
+  patch: Partial<OnboardingState>,
+  extra: { display_name?: string; timezone?: string } | undefined,
+  opcoes: { soNoWizard?: boolean } | undefined,
+): Promise<void> {
   const merged: OnboardingState = { ...state, ...patch };
   const update: Record<string, unknown> = { onboarding_state: merged };
   if (extra?.display_name) update.display_name = extra.display_name;

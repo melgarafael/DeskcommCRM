@@ -1,0 +1,455 @@
+{
+  "id": "alertas-da-ia",
+  "titulo": "Alertas",
+  "tela": "/app/ai/inbox",
+  "resumo": "A Central de avisos reúne o que a IA percebeu e precisa de uma pessoa da equipe: uma resposta que não chegou, um cliente que pediu para falar com gente, um gasto que passou do limite.",
+  "licoes": [
+    {
+      "id": "alertas-conhecendo-a-tela",
+      "titulo": "Conhecendo a Central de avisos",
+      "objetivo": "Saber onde fica a Central de avisos, como ler cada aviso e reconhecer os avisos que são assunto do gerente.",
+      "papel": "agent",
+      "busca": [
+        "alertas",
+        "central de avisos",
+        "sino",
+        "avisos da ia",
+        "o que a ia precisa de mim",
+        "resposta que não chegou",
+        "aviso crítico"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/ai",
+          "texto": "Alertas não aparece direto no menu lateral. No grupo \"Agente de IA\" do menu, clique em \"Ver tudo em IA\". Na parte \"Acompanhar o agente\" está o cartão \"Alertas\". O caminho completo é: Agente de IA › Ver tudo em IA › Alertas.",
+          "dica": "O sino no alto da tela leva à mesma Central, de qualquer lugar do sistema. Quem tem só permissão de leitura não vê o cartão nem o sino.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver tudo em IA",
+                "exato": true
+              },
+              "rotulo": "Ver tudo em IA",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Alertas",
+                "regex": true
+              },
+              "rotulo": "Abrir os Alertas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Alertas",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A Central de avisos",
+          "rota": "/app/ai/inbox",
+          "texto": "A tela se chama \"Central de avisos\". Cada linha é um assunto que a Bia, a IA da clínica, não conseguiu resolver sozinha e deixou para a equipe: uma resposta que não chegou ao cliente, um cliente que pediu para falar com uma pessoa, um retorno prometido que ficou sem dono. A lista mostra primeiro os avisos mais graves e, entre os de mesma gravidade, os mais recentes.",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "[data-testid='inbox-item']:has-text('Uma resposta não chegou ao cliente')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Central de avisos",
+                "exato": true
+              },
+              "rotulo": "Central de avisos",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "css": "ul:has([data-testid='inbox-item'])"
+              },
+              "rotulo": "Avisos em aberto",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Lendo um aviso",
+          "texto": "À esquerda, o selo diz a gravidade: \"crítico\", \"atenção\" ou \"informativo\". Ao lado vem o título e, logo embaixo, o tipo do assunto e há quanto tempo o aviso chegou. Depois vem o que aconteceu e uma orientação do que fazer. Neste aviso crítico, uma resposta da Bia ficou presa e não chegou ao cliente. O link no fim, \"Abrir uma conversa afetada\", leva direto à conversa desse cliente.",
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='inbox-item']:has-text('Uma resposta não chegou ao cliente')"
+              },
+              "rotulo": "Um aviso crítico",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "crítico",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid='inbox-item']:has-text('Uma resposta não chegou ao cliente')"
+                }
+              },
+              "rotulo": "Gravidade",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Abrir uma conversa afetada",
+                "exato": true
+              },
+              "rotulo": "Ir à conversa",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Um aviso que é do gerente",
+          "texto": "Alguns avisos são assunto do gerente ou de quem administra. O aviso de gasto de IA, por exemplo, aparece para toda a equipe, mas quem atende não recebe o botão que leva a resolver o problema: no lugar dele vem \"Peça ao gestor para revisar este contexto.\". O \"Marcar resolvido\" continua lá para todos. Assim todo mundo sabe o que está acontecendo, e quem resolve é o gerente, na tela de uso de IA.",
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='inbox-item']:has-text('O gasto de IA deste mês passou de 80% do limite')"
+              },
+              "rotulo": "Aviso de gasto de IA",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Peça ao gestor para revisar este contexto.",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid='inbox-item']:has-text('O gasto de IA deste mês passou de 80% do limite')"
+                }
+              },
+              "rotulo": "Quem resolve",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Abertos, Resolvidos e o sino",
+          "texto": "A aba \"Abertos\" mostra o que ainda espera alguém, com o total entre parênteses. A aba \"Resolvidos\" guarda os avisos que alguém da equipe já marcou como resolvidos. O sino no alto da tela traz você para cá de qualquer lugar do sistema, e o número vermelho nele é o total de avisos em aberto.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "tablist"
+              },
+              "rotulo": "Abertos e Resolvidos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "alerts-bell"
+              },
+              "rotulo": "O sino",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "alertas-resolvendo-um-aviso",
+      "titulo": "Resolvendo um aviso",
+      "objetivo": "Ir até o assunto de um aviso, marcá-lo como resolvido e reabri-lo se for preciso.",
+      "papel": "agent",
+      "busca": [
+        "marcar resolvido",
+        "resolver aviso",
+        "reabrir aviso",
+        "marcar todos resolvidos",
+        "limpar alertas",
+        "abrir conversa do aviso"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Ir até o assunto",
+          "rota": "/app/ai/inbox",
+          "texto": "O link no fim de cada aviso leva direto ao que precisa de atenção. Em \"Abrir uma conversa afetada\" você abre a conversa do cliente que não recebeu a resposta, confere o que faltou e responde você mesmo, se for o caso. No aviso da Mariana Souza, que pediu para falar com uma pessoa, o botão é \"Abrir conversa\".",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "[data-testid='inbox-item']:has-text('Uma resposta não chegou ao cliente')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Abrir uma conversa afetada",
+                "exato": true
+              },
+              "rotulo": "Conversa afetada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Abrir conversa",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid='inbox-item']:has-text('A Mariana Souza pediu para falar com uma pessoa')"
+                }
+              },
+              "rotulo": "Conversa da Mariana",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Marcar como resolvido",
+          "texto": "Depois de cuidar do assunto, clique em \"Marcar resolvido\" na linha do aviso. Ele sai da aba \"Abertos\" e o número do sino diminui. Marcar como resolvido não muda nada na conversa nem avisa o cliente: só conta para a equipe que alguém já cuidou disso.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Marcar resolvido",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid='inbox-item']:has-text('Uma resposta não chegou ao cliente')"
+                }
+              },
+              "rotulo": "Marcar resolvido",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Marcar resolvido",
+            "exato": true,
+            "dentro": {
+              "css": "[data-testid='inbox-item']:has-text('Uma resposta não chegou ao cliente')"
+            }
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Na aba Resolvidos",
+          "texto": "O aviso passa para a aba \"Resolvidos\", junto com os que já tinham sido resolvidos antes. Ali ele ganha o botão \"Reabrir\": use se marcou o aviso por engano ou se o problema voltou, e ele volta para \"Abertos\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Marcar resolvido",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid='inbox-item']:has-text('Uma resposta não chegou ao cliente')"
+                }
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "Resolvidos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "[data-testid='inbox-item']:has-text('Uma resposta não chegou ao cliente')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='inbox-item']:has-text('Uma resposta não chegou ao cliente')"
+              },
+              "rotulo": "Aviso resolvido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Reabrir",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid='inbox-item']:has-text('Uma resposta não chegou ao cliente')"
+                }
+              },
+              "rotulo": "Reabrir",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Resolver todos de uma vez",
+          "texto": "De volta à aba \"Abertos\", o botão \"Marcar todos resolvidos\" resolve de uma vez todos os avisos em aberto da clínica, inclusive os que não aparecem na tela. Use só depois de conferir a lista: um aviso resolvido sem ninguém olhar continua sendo um problema, só que escondido.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "^Abertos",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Marcar todos resolvidos",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Marcar todos resolvidos",
+                "exato": true
+              },
+              "rotulo": "Marcar todos resolvidos",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "alertas-lembrete-de-caso-parado",
+      "titulo": "O lembrete de caso parado",
+      "objetivo": "Ligar, desligar e ajustar de quanto em quanto tempo a Central volta a avisar sobre um caso que espera a equipe.",
+      "papel": "admin",
+      "busca": [
+        "lembrete de caso parado",
+        "caso parado",
+        "lembrar a equipe",
+        "avisar de novo",
+        "caso esperando decisão",
+        "frequência do lembrete"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O cartão do lembrete",
+          "rota": "/app/ai/inbox",
+          "texto": "Quem administra vê, no alto da Central, o cartão \"Lembrete de caso parado\". Ele cuida dos casos que a IA abre para a equipe decidir: enquanto ninguém responde, a Central volta a avisar de tempos em tempos, com o aviso \"Um atendimento espera decisão da equipe\". O relógio começa quando o caso chega à equipe e recomeça quando o cliente responde.",
+          "dica": "Só quem administra a empresa vê este cartão. Atendentes e gerentes veem apenas a lista de avisos.",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "lembrete-de-caso-parado"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "lembrete-de-caso-parado"
+              },
+              "rotulo": "Lembrete de caso parado",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Ligar e escolher o ritmo",
+          "texto": "A caixa \"Lembrar a equipe dos casos parados\" liga e desliga o lembrete. Em \"Lembrar a cada\" você escolhe de quanto em quanto tempo a Central volta a avisar, de 1 hora a 3 dias. Em \"Avisos por espera\" você escolhe quantas vezes ela avisa sobre o mesmo caso antes de parar, para a lista não encher de repetição. Com a caixa desmarcada, as duas escolhas ficam apagadas.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Lembrar a equipe dos casos parados",
+                "exato": true
+              },
+              "rotulo": "Liga e desliga",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "^Lembrar a cada",
+                "regex": true
+              },
+              "rotulo": "De quanto em quanto tempo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "^Avisos por espera",
+                "regex": true
+              },
+              "rotulo": "Quantas vezes",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Salvar o lembrete",
+          "texto": "Aqui o intervalo foi trocado para 12 horas: um caso parado volta a aparecer na Central duas vezes por dia. Nada muda até você clicar em \"Salvar lembrete\". Ao salvar, aparece por alguns segundos a confirmação \"Lembrete de caso parado salvo.\".",
+          "antes": [
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "role": "combobox",
+                "nome": "^Lembrar a cada",
+                "regex": true
+              },
+              "opcao": "12 horas"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "^Lembrar a cada",
+                "regex": true
+              },
+              "rotulo": "12 horas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar lembrete",
+                "exato": true
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar lembrete",
+            "exato": true
+          }
+        }
+      ]
+    }
+  ]
+}

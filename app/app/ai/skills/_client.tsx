@@ -197,6 +197,21 @@ export function SkillsClient({ initialState }: Props) {
                                     )}
                                   </span>
                                 )}
+                              {skill.comparativo.mudou_em.includes("matcher") &&
+                                (skill.comparativo.tags_adicionadas.length > 0 ||
+                                  skill.comparativo.tags_removidas.length > 0) && (
+                                  <span>
+                                    • {t("Etiquetas de ativação")}:{" "}
+                                    {skill.comparativo.tags_adicionadas.length > 0 && (
+                                      <span className="text-accent">+{skill.comparativo.tags_adicionadas.join(", ")}</span>
+                                    )}
+                                    {skill.comparativo.tags_adicionadas.length > 0 &&
+                                      skill.comparativo.tags_removidas.length > 0 && <span aria-hidden> </span>}
+                                    {skill.comparativo.tags_removidas.length > 0 && (
+                                      <span className="text-destructive">−{skill.comparativo.tags_removidas.join(", ")}</span>
+                                    )}
+                                  </span>
+                                )}
                               {skill.comparativo.mudou_em.includes("corpo") && (
                                 <span>
                                   • {t("Procedimento (corpo)")}: +{skill.comparativo.linhas_adicionadas} −

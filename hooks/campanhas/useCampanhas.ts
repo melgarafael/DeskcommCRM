@@ -62,6 +62,8 @@ export interface CampanhaDetalhada extends CampanhaDaLista {
   velocidade?: "gradual" | "rapida" | "transmissao";
   /** Migration 0712: o id do broadcast no provedor, depois que a lista foi entregue. */
   provider_broadcast_id?: string | null;
+  /** Migration 0765: texto sai em balões, um por parágrafo. */
+  split_messages?: boolean;
 }
 
 export interface Destinatario {

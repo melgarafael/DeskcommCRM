@@ -146,15 +146,6 @@ const SEM_FILTRO_LIBERADO: readonly { arquivo: string; tabela: string; motivo: s
       "carrega `organization_id` e volta a ser leitura de dado de inquilino, que " +
       "precisa de decisão própria sobre o que o dono da instalação pode ver.",
   },
-  {
-    arquivo: "lib/notifications/web_push.ts",
-    tabela: "push_subscriptions",
-    motivo:
-      "`store(admin)` devolve o BUILDER (`admin.from(\"push_subscriptions\")`); quem " +
-      "filtra é cada chamador — `enviarPushDaOrg`/`removerPush` filtram por " +
-      "`organization_id` e, na remoção, por `endpoint`. A cadeia sem filtro não " +
-      "consulta nada: ela não foi aguardada.",
-  },
 ];
 
 /**

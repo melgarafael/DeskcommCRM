@@ -1,0 +1,446 @@
+{
+  "id": "seguranca",
+  "titulo": "Segurança",
+  "tela": "/app/settings/security",
+  "resumo": "Onde você protege a sua conta com um código do celular, decide quem da equipe precisa fazer o mesmo e encerra o acesso em todos os aparelhos.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-seguranca",
+      "titulo": "Conhecendo a tela de Segurança",
+      "objetivo": "Achar a tela de Segurança e reconhecer cada quadro: verificação em duas etapas, regra para a equipe, códigos de recuperação, chamada de voz e sessões.",
+      "papel": "admin",
+      "busca": [
+        "segurança da conta",
+        "proteger minha conta",
+        "senha vazada",
+        "código no celular",
+        "sair de todos os aparelhos",
+        "onde fica a segurança",
+        "autenticação em dois fatores"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a Segurança",
+          "texto": "Abra \"Configurações\", no rodapé do menu lateral. Na parte \"Sua conta\" fica o cartão \"Segurança\". Clique nele.",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "a[href='/app/settings/security']"
+              },
+              "rotulo": "Segurança",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "css": "a[href='/app/settings/security']"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A verificação em duas etapas",
+          "texto": "O primeiro quadro é a \"Verificação em duas etapas\". Com ela ligada, além da senha o sistema pede um código de 6 dígitos que só aparece no seu celular. Assim, se alguém descobrir a sua senha, ainda não consegue entrar. O selo do lado direito mostra a situação da sua conta: aqui está \"Desativada\". Logo abaixo fica o quadro \"Exigir da equipe\", que só o administrador vê. Ele é explicado na lição \"Exigindo a verificação da equipe\".",
+          "dica": "Na próxima lição você vê como ativar pelo botão \"Ativar\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[href='/app/settings/security']"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Verificação em duas etapas",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(> div > div > h2:text-is('Verificação em duas etapas'))"
+              },
+              "rotulo": "Proteção com código do celular",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Desativada",
+                "exato": true
+              },
+              "rotulo": "Situação da sua conta",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Códigos de recuperação",
+          "texto": "Os códigos de recuperação são a sua saída se você perder o celular. Na tela que pede o código, clique em \"Perdi acesso ao autenticador\" e digite um deles: o sistema desliga a verificação da sua conta, e você entra só com a senha e cadastra o celular novo. Cada código vale uma vez só. Enquanto a verificação em duas etapas está desligada, o botão \"Regenerar códigos de recuperação\" fica cinza. Com ela ligada, o botão gera códigos novos e os antigos deixam de valer na mesma hora. A frase \"Habilite MFA antes de gerar códigos.\" quer dizer isso: ligue primeiro a verificação.",
+          "dica": "Guarde os códigos fora do celular: num papel ou num cofre de senhas.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Códigos de recuperação",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(> h2:text-is('Códigos de recuperação'))"
+              },
+              "rotulo": "Saída se perder o celular",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Chamada de voz pelo WhatsApp",
+          "texto": "Este quadro autoriza as chamadas de voz pelo número de WhatsApp da empresa. Leia o aviso amarelo antes: para fazer as chamadas, o sistema conecta um segundo aparelho ao número da empresa por um caminho que não é o oficial do WhatsApp, e o WhatsApp pode bloquear a conta inteira. Nesta instalação aparece a frase de que o servidor não tem a chamada de voz instalada: quem cuida da instalação precisa ligá-la primeiro.",
+          "dica": "Com a chamada de voz instalada, o administrador marca a caixa de aceite do risco e clica em \"Ligar chamada de voz\". Isso só autoriza: o aparelho ainda precisa ser conectado em Conexões, na aba \"Chamada de voz\".",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "painel-voz"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "painel-voz"
+              },
+              "rotulo": "Chamada de voz e o seu risco",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Sair de todos os aparelhos",
+          "texto": "Em \"Sessões ativas\" você encerra o acesso da sua conta em todos os aparelhos de uma vez: no computador da recepção, no celular, em qualquer lugar. Use quando perder um aparelho ou suspeitar que alguém entrou na sua conta. A lista de cada aparelho ainda não existe: por enquanto, só o botão de sair de todos. Clique em \"Sair de todos os dispositivos\".",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Sair de todos os dispositivos",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Sair de todos os dispositivos",
+                "exato": true
+              },
+              "rotulo": "Encerrar em todos os aparelhos",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Sair de todos os dispositivos",
+            "exato": true
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "Confirmar antes de sair",
+          "texto": "O sistema pede confirmação. Ao clicar em \"Confirmar\", a sua conta sai de todos os aparelhos, inclusive deste, e você volta para a tela de entrada. Junto, os avisos no celular param e os navegadores marcados como confiáveis voltam a pedir o código. Para desistir, clique em \"Cancelar\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Sair de todos os dispositivos",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "alertdialog"
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "main header h1"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "alertdialog"
+              },
+              "rotulo": "\"Confirmar\" sai de todos; \"Cancelar\" desiste",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ativando-a-verificacao",
+      "titulo": "Ativando a verificação em duas etapas",
+      "objetivo": "Saber o que acontece em cada etapa ao ligar o código do celular na sua conta.",
+      "papel": "admin",
+      "busca": [
+        "ativar verificação em duas etapas",
+        "código do celular para entrar",
+        "google authenticator",
+        "configurar autenticador",
+        "qr code de segurança",
+        "códigos de recuperação",
+        "proteger login"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O botão Ativar",
+          "texto": "Antes de começar, instale no celular um aplicativo autenticador, como Google Authenticator, Authy, 1Password ou Bitwarden. Depois, na tela de Segurança, clique em \"Ativar\".",
+          "rota": "/app/settings/security",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Ativar",
+                "exato": true
+              },
+              "rotulo": "Ligar a verificação",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Ativar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "As etapas do cadastro",
+          "texto": "Abre a janela \"Configure a verificação em duas etapas\". Ao clicar em \"Iniciar configuração\", aparece um QR code: no aplicativo autenticador, adicione uma conta nova e aponte a câmera para ele. Se não der para apontar a câmera, clique em \"Não consegue escanear? Digite o código manual\" e copie a sequência no aplicativo. O aplicativo passa a mostrar um código de 6 dígitos que muda a cada 30 segundos. Digite esse código na janela: ao digitar o sexto número ela confere sozinha (o botão \"Confirmar\" faz o mesmo).",
+          "dica": "Esta janela não tem botão de fechar. Se abriu sem querer e você ainda não digitou o código, recarregue a página: ela some sem mudar nada na sua conta. Depois que o código é aceito não recarregue, ou você perde os códigos de recuperação da próxima etapa.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Ativar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.max-w-md:has(#mfa-title)"
+              },
+              "rotulo": "Cadastro do código do celular",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Iniciar configuração",
+                "exato": true
+              },
+              "rotulo": "Mostra o QR code",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Depois de confirmar",
+          "texto": "Com o código certo, a janela mostra 10 códigos de recuperação. Eles não aparecem de novo: use \"Copiar todos\" ou \"Baixar .txt\", guarde num lugar seguro, marque \"Salvei meus códigos em local seguro.\" e clique em \"Concluir\". A página recarrega. A foto mostra esta tela antes da ativação. Depois de concluir, o selo \"Desativada\" passa para \"Ativada\" e o botão cinza \"Regenerar códigos de recuperação\" passa a funcionar. O botão \"Ativar\" vira \"Desligar\", a não ser que a empresa exija a verificação de você. A partir daí, toda entrada pede o código do aplicativo.",
+          "dica": "Na tela que pede o código ao entrar, marque \"Confiar neste dispositivo por 30 dias\" ANTES de digitar o código, porque a tela confere sozinha no sexto número. Esse navegador passa a aparecer no quadro \"Dispositivos confiáveis\" desta tela, que só existe com a verificação ligada.",
+          "rota": "/app/settings/security",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(> div > div > h2:text-is('Verificação em duas etapas'))"
+              },
+              "rotulo": "Hoje \"Desativada\"; depois, \"Ativada\"",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(> h2:text-is('Códigos de recuperação'))"
+              },
+              "rotulo": "Hoje cinza; depois, funciona",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "exigir-da-equipe",
+      "titulo": "Exigindo a verificação da equipe",
+      "objetivo": "Escolher quem da equipe precisa ligar a verificação em duas etapas e quantos dias de prazo cada um tem.",
+      "papel": "admin",
+      "busca": [
+        "obrigar equipe a usar código",
+        "exigir verificação dos funcionários",
+        "segurança da equipe",
+        "prazo para ativar verificação",
+        "dias de carência",
+        "proteger dados dos clientes"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O quadro Exigir da equipe",
+          "texto": "Só quem é administrador da empresa vê o quadro \"Exigir da equipe\". Nele você decide quem precisa ligar a verificação em duas etapas. Vale ligar se a sua equipe mexe com dados de clientes: uma senha vazada vira só um susto, não um vazamento. Aqui a clínica ainda está em \"Não exigir de ninguém\".",
+          "rota": "/app/settings/security",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Exigir da equipe",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(> h2:text-is('Exigir da equipe'))"
+              },
+              "rotulo": "Regra para a equipe",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Quem e em quanto tempo",
+          "texto": "Em \"Nível mínimo\", escolha o cargo a partir do qual a verificação passa a ser obrigatória. Aqui foi escolhido \"Atendente\": vale para atendentes, gerentes e administradores. Em \"Dias de carência\", diga quantos dias cada um tem para ativar, de 0 a 30; aqui, 7. O botão \"Salvar\" só acende quando algo mudou.",
+          "dica": "\"Somente leitura\" alcança todo mundo. Com \"Não exigir de ninguém\", o campo de dias fica cinza.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Exigir da equipe",
+                "exato": true
+              }
+            },
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "css": "#mfa-papel-minimo"
+              },
+              "opcao": "Atendente"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#mfa-carencia-dias"
+              },
+              "valor": "7"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "label:has(#mfa-papel-minimo)"
+              },
+              "rotulo": "A partir de qual cargo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "label:has(#mfa-carencia-dias)"
+              },
+              "rotulo": "Prazo em dias",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Grava a regra",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Como a regra funciona",
+          "texto": "As duas frases debaixo dos campos resumem a regra. A primeira diz quem é alcançado: o cargo escolhido e todos os acima dele. A segunda diz como corre o prazo: durante os dias de carência ninguém é bloqueado; depois deles, quem foi alcançado e ainda não ativou vê a tela travada até fazer o cadastro. O prazo conta a partir da mudança da regra, ou da entrada da pessoa na empresa, o que vier depois. Por isso, mudar a regra de novo reinicia a contagem de todos. Ao clicar em \"Salvar\", a regra é gravada e a página recarrega com a escolha nova nos campos.",
+          "dica": "A regra vale para você também. Se você ainda não ativou a sua verificação e escolher 0 dias, a sua tela trava logo depois de salvar: ative a sua antes. Quem é alcançado pela regra e já tem a verificação ligada não consegue mais desligá-la na própria tela de Segurança.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Exigir da equipe",
+                "exato": true
+              }
+            },
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "css": "#mfa-papel-minimo"
+              },
+              "opcao": "Atendente"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#mfa-carencia-dias"
+              },
+              "valor": "7"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "O nível escolhido alcança esse papel",
+                "exato": false
+              },
+              "rotulo": "Quem é alcançado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "A carência vai de 0 a 30 dias",
+                "exato": false
+              },
+              "rotulo": "Como o prazo funciona",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -27,7 +27,12 @@ import { createHash } from "node:crypto";
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
+import { valorDaInstalacao } from "@/lib/instalacao/config";
+import { perfilDaOrganizacao } from "@/lib/legal/perfil-do-pais";
 import { findContactByExternalId, findLgpdRequest } from "@/lib/lgpd/repository";
+import { evidenciaDoPedido, exclusaoForaDoBrasil, type DadosDoAtestado } from "@/lib/lgpd/atestado-de-anonimizacao";
+import { avisarTitularAposApagamento } from "@/lib/lgpd/aviso-apos-apagar";
+import { emitirAtestadoDeAnonimizacao, type AtestadoEmitido } from "@/lib/lgpd/emitir-atestado";
 import { cascadeRedactContact } from "@/lib/lgpd/redact-cascade";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -210,6 +215,60 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
         };
       }
 
+      // ─── A GUARDA DO PAÍS GOVERNA O AVISO E O ATESTADO ─────────────────
+      //
+      // Decisão de produto de 2026-10-16: os avisos novos valem só para
+      // organizações de FORA do Brasil (Portugal, por exemplo). No Brasil nada
+      // muda por enquanto — a promessa feita quando Portugal entrou foi "o
+      // Brasil fica exatamente igual", e texto jurídico com o artigo errado
+      // chegando a titular real é pior que nenhum texto.
+      //
+      // O CR do PR #3321 (item 3) estendeu a MESMA guarda ao atestado: no Brasil
+      // não sai papel — ele é texto novo chegando ao titular brasileiro, que é
+      // exatamente o que a decisão de 16/10 manda segurar —, e com isso a
+      // LEITURA da identidade do contato também fica atrás dela. Sem o atestado,
+      // nada mais no caminho lê nome, documento ou contato do titular: o único
+      // consumidor que sobra é o endereço de e-mail do aviso, e ele não existe
+      // no Brasil. O que a organização brasileira lê, grava e emite segue igual
+      // à main (#2342), provado em
+      // `tests/invariants/lgpd-aviso-do-artigo-12-so-fora-do-brasil.test.ts`;
+      // a rota `/art12` tem a guarda dela, e a rota do atestado devolve
+      // `atestado_ausente` porque não há papel emitido.
+      //
+      // A ordem, para quem PODE avisar, continua a de sempre: o endereço é lido
+      // ANTES da cascata (o passo 1 zera `contacts.email` — é o dado que está
+      // sendo apagado) e o aviso sai DEPOIS do apagamento (art. 12.º, n.º 3 do
+      // RGPD). O payload do pedido serve de fallback para o pedido que veio de
+      // plataforma, onde o contato pode nem ter e-mail.
+      const perfil = await perfilDaOrganizacao(admin, orgId);
+      // A regra mora em `exclusaoForaDoBrasil`, a mesma que a rota de aprovação
+      // lê para decidir se grava a evidência do ato: uma pergunta, uma resposta.
+      const avisaTitular = exclusaoForaDoBrasil(req.request_type, perfil.codigo);
+
+      let emailTitular: string | null = null;
+      if (avisaTitular) {
+        // Só o ENDEREÇO: era o único campo do contato que o aviso consome, e o
+        // atestado deixou de ler identidade (item 1 do CR) — trazer nome,
+        // telefone e `custom_fields` "por via das dúvidas" seria carregar PII do
+        // titular por um caminho que não a usa.
+        const { data: contatoAntes } = await admin
+          .from("contacts")
+          .select("email")
+          .eq("organization_id", orgId)
+          .eq("id", contactId)
+          .maybeSingle();
+        const emailNoPayload = req.request_payload?.["email"];
+        // Duas checagens `typeof` em vez de uma pilha de `??`: o endereço vem do
+        // contato (lido antes do apagamento) ou do payload, e o tipo de cada um
+        // é tratado de forma explícita — mesma ordem de preferência de antes.
+        const emailDoContato = (contatoAntes as { email?: string | null } | null)?.email;
+        if (typeof emailDoContato === "string") {
+          emailTitular = emailDoContato;
+        } else if (typeof emailNoPayload === "string") {
+          emailTitular = emailNoPayload;
+        }
+      }
+
       const cascade = await cascadeRedactContact({
         organizationId: orgId,
         contactId,
@@ -248,6 +307,95 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
       // Best-effort callback to upstream platform.
       const callback = await tryNuvemshopCallback(orgId, req.request_payload ?? {});
 
+      // O art. 12.º, n.º 3 (RGPD): avisar o titular DEPOIS de apagar — e só
+      // fora do Brasil (ver a guarda do país acima). Best-effort de propósito:
+      // o pedido já está cumprido quando aqui, e derrubar `completed` por causa
+      // de um e-mail trocaria um direito exercido por uma falha que o SLA
+      // registraria como atraso (#2342).
+      const aviso = avisaTitular
+        ? await avisarTitularAposApagamento(admin, {
+            organizationId: orgId,
+            requestId,
+            emailTitular,
+            recebidoEm: new Date(req.received_at),
+          })
+        : null;
+      // `null` = o aviso não é do país: a chave `art12_notice` não entra nem no
+      // pedido nem na auditoria, e é essa ausência que mantém o Brasil igual à
+      // main.
+      const art12Notice = aviso ? (aviso.enviado ? "sent" : aviso.motivo) : null;
+
+      // ─── O ATESTADO DE ANONIMIZAÇÃO (o papel do pedido) ──────────────────
+      //
+      // O aviso diz que apagou; o atestado é o PAPEL: datado, com o IP de quem
+      // executou, quem executou e um código de autenticidade. Nasce DEPOIS da
+      // cascata e — como o aviso, e pelo mesmo motivo (item 3 do CR do #3321) —
+      // só FORA do Brasil: no Brasil a decisão de 16/10 mantém tudo igual à
+      // main, e o papel é texto novo chegando ao titular brasileiro.
+      //
+      // O que ele NÃO carrega, pelo mesmo CR: a identidade do titular (item 1 —
+      // nome, documento e contatos, mesmo mascarados, seriam cópia nova de dado
+      // reidentificável sobrevivendo ao apagamento que o papel atesta) e citação
+      // de lei (item 2 — a citação do perfil é a do direito de ACESSO).
+      //
+      // Best-effort por decisão: o pedido do titular não pode virar `failed`
+      // porque o Storage, o renderizador ou a chave caíram. A falha fica dita
+      // em `result.atestado.erro` e no log — uma ausência silenciosa, aqui,
+      // leria-se como "não é para emitir". (No Brasil a AUSÊNCIA é a decisão, e
+      // é por isso que ela não deixa rastro: não houve falha nenhuma.)
+      let atestadoDoPedido: AtestadoEmitido | { erro: string } | null = null;
+      const instanteDaExecucao = new Date().toISOString();
+      if (avisaTitular) {
+        try {
+          const { data: orgLinha } = await admin
+            .from("organizations")
+            .select("legal_name, display_name, cnpj, dpo_email, timezone")
+            .eq("id", orgId)
+            .maybeSingle();
+          const org = orgLinha as {
+            legal_name?: string | null;
+            display_name?: string | null;
+            cnpj?: string | null;
+            dpo_email?: string | null;
+            timezone?: string | null;
+          } | null;
+          const dadosDoAtestado: DadosDoAtestado = {
+            request_id: requestId,
+            organization_id: orgId,
+            organization_name: org?.legal_name ?? org?.display_name ?? "não informado",
+            organization_document: org?.cnpj ?? null,
+            // O mesmo piso do relatório do art. 18, II (`lgpd-export-worker.ts`):
+            // sem encarregado no cadastro da organização, vale o da instalação.
+            organization_email:
+              org?.dpo_email?.trim() || (await valorDaInstalacao("LGPD_DPO_EMAIL")).valor?.trim() || null,
+            evidencia: evidenciaDoPedido(req.request_payload?.["execucao"], instanteDaExecucao),
+            escopo: req.scope === "tenant" ? "tenant" : "contact",
+            fuso: org?.timezone ?? "America/Sao_Paulo",
+          };
+          const emitido = await emitirAtestadoDeAnonimizacao(admin, dadosDoAtestado);
+          atestadoDoPedido = emitido;
+          await audit({
+            action: "lgpd.atestado_emitido",
+            organizationId: orgId,
+            resourceType: "lgpd_request",
+            resourceId: requestId,
+            metadata: {
+              codigo: emitido.codigo_curto,
+              algoritmo: emitido.algoritmo,
+              sha256: emitido.sha256,
+              path: emitido.path,
+              escopo: dadosDoAtestado.escopo,
+              origem: dadosDoAtestado.evidencia.origem,
+            },
+            bypassedRls: true,
+          });
+        } catch (erroDoAtestado) {
+          const motivo = erroDoAtestado instanceof Error ? erroDoAtestado.message : String(erroDoAtestado);
+          atestadoDoPedido = { erro: motivo };
+          logger.warn("lgpd: atestado de anonimização não emitido", { requestId, motivo });
+        }
+      }
+
       await admin
         .from("lgpd_requests")
         .update({
@@ -258,6 +406,13 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
             cascaded_to: cascade.counts,
             media_queued: cascade.mediaPaths.length,
             callback_status: callback.status,
+            // O aviso do art. 12.º é prova do cumprimento, não enfeite: a razão
+            // fica no resultado (`result.art12_notice`), com o POR QUÊ quando não saiu.
+            ...(art12Notice ? { art12_notice: art12Notice } : {}),
+            // O PAPEL do pedido: código de autenticidade, caminho no Storage e
+            // hash do arquivo — ou o motivo de não ter saído. Omitir a chave
+            // quando falha faria o resultado mentir por ausência.
+            ...(atestadoDoPedido ? { atestado: atestadoDoPedido } : {}),
           },
           cascaded_to: cascade.counts,
           error_message: null,
@@ -292,6 +447,7 @@ export async function processLgpdRedact(event: EventRow): Promise<HandlerResult>
           media_queued: cascade.mediaPaths.length,
           callback_status: callback.status,
           attempts: nextAttempts,
+          ...(art12Notice ? { art12_notice: art12Notice } : {}),
         },
         bypassedRls: true,
       });

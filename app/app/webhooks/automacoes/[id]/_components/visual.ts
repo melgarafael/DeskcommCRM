@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 import {
   Bell,
   Brain,
+  CalendarCheck,
   EnvelopeSimple,
   FlowArrow,
   Funnel,
@@ -13,6 +14,7 @@ import {
   Sparkle,
   Tag,
   UserCircle,
+  UsersThree,
   WebhooksLogo,
 } from "@/lib/ui/icons";
 
@@ -55,6 +57,16 @@ export const VISUAL_DA_ACAO: Record<ActionType, VisualDaCaixa> = {
   start_message_flow: { icon: FlowArrow, paleta: "Iniciar follow-up", ...SUCESSO },
   create_task: { icon: Bell, paleta: "Tarefa interna", ...AVISO },
   apply_task_plan: { icon: ListChecks, paleta: "Plano de tarefas", ...AVISO },
+  // #3727 — a caixa que grava um dado em vez de falar: CalendarCheck porque o
+  // dado é a data do COMPARECIMENTO, e INFO porque é escrita no card, não
+  // mensagem (mesma família do "Criar/mover lead").
+  set_lead_date_field: { icon: CalendarCheck, paleta: "Data do atendimento", ...INFO },
+  // #2642 — o único destino que não é o lead: a EQUIPE. UsersThree porque quem
+  // recebe é gente da casa (o WhatsApp cadastrado em Avisos), e SUCESSO
+  // porque a caixa envia, como as
+  // duas vizinhas de mensagem. Entrada exigida pelo Record<ActionType, …> da
+  // main (o tipo ganhou `notify_team` neste PR).
+  notify_team: { icon: UsersThree, paleta: "Mensagem para a equipe", ...SUCESSO },
 };
 
 /** A ordem da paleta: a mesma do seletor "Adicionar ação" do editor de hoje. */

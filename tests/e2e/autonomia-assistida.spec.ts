@@ -8,6 +8,8 @@ import { test, expect, type Page, type TestInfo, type Locator } from "./helpers/
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { createApprovedReplyHandler } from "../../lib/agent-engine/agent/approved-reply";
 import { seedPlatformPlaybook } from "../../lib/agent-engine/agent/playbook-seed";
+import { CENARIO_DE_SILENCIO_ASSISTIDO } from "../../lib/agent-engine/agent/preview-fixture";
+import { recordSend } from "../../lib/agent-engine/pacing/store";
 
 const credentials = credenciaisSupabaseDeTeste();
 const db = createClient(credentials.url, credentials.serviceRole, {
@@ -23,7 +25,7 @@ async function insert(table: string, value: Record<string, unknown>) {
   if (error) throw error;
   return data.id as string;
 }
-async function fixture(pool: pg.Pool) {
+async function fixture(pool: pg.Pool, systemPrompt = "Ajude com informações confirmadas.") {
   expect(["127.0.0.1", "localhost"]).toContain(new URL(credentials.dbUrl).hostname);
   expect(process.env.INTERNAL_AGENT_RUN_STUB).toBe("true");
   // O QA não sobe o worker: reproduzir seu bootstrap idempotente, sem mover ponteiro existente.
@@ -85,14 +87,14 @@ async function fixture(pool: pg.Pool) {
   const agent = await insert("ai_agents", {
     organization_id: org,
     name: "Assistente para revisão",
-    system_prompt: "Ajude com informações confirmadas.",
+    system_prompt: systemPrompt,
     operation_mode: "assisted",
   });
   const version = await insert("ai_agent_versions", {
     organization_id: org,
     agent_id: agent,
     version_number: 1,
-    system_prompt: "Ajude com informações confirmadas.",
+    system_prompt: systemPrompt,
     provider: "anthropic",
     model: "claude-sonnet-4-6",
     channel_session_id: channel,
@@ -212,17 +214,30 @@ async function receiver() {
   };
 }
 const panel = (page: Page) => page.locator('section[aria-label="Assistência do agente"]');
+/**
+ * O MESMO gesto, nas DUAS superfícies (issue #3027).
+ *
+ * Sem rascunho, o bloco não é montado e quem oferece a sugestão é o botão de
+ * ícone do compositor; com rascunho, é o botão de texto do bloco. Nunca os dois
+ * ao mesmo tempo — por isso um localizador de página serve para os dois estados,
+ * e é ele que o `generate` usa em vez de entrar pelo painel.
+ */
+const botaoSugerir = (page: Page) =>
+  page.getByRole("button", { name: "Sugerir resposta", exact: true });
 async function generate(page: Page) {
   const response = page.waitForResponse(
     (r) => r.url().endsWith("/draft-reply") && r.request().method() === "POST",
   );
-  await panel(page).getByRole("button", { name: "Sugerir resposta", exact: true }).click();
+  await botaoSugerir(page).click();
   const r = await response;
   expect(r.status(), await r.text()).toBe(200);
   await expect(panel(page).getByText("Sugestão para revisar", { exact: true })).toBeVisible();
   return (await r.json()).data.draft_id as string;
 }
-async function deliver(f: Fixture, draft: string, pool: pg.Pool) {
+// Veto de ritmo não é estado do rascunho (o CHECK de ai_reply_drafts.status não
+// tem 'queued'): fn_reply_settle('queued') devolve o job a 'pending' e o rascunho
+// segue 'approved', com o motivo em error_code.
+async function deliver(f: Fixture, draft: string, pool: pg.Pool, esperado: "sent" | "approved" = "sent") {
   const { rows } = await pool.query(
     "update job_queue j set status='running',locked_by='autonomia-browser',locked_at=clock_timestamp(),attempts=attempts+1 from ai_reply_drafts d where d.organization_id=$1 and d.id=$2 and j.organization_id=d.organization_id and j.id=d.send_job_id and j.status='pending' returning j.*,j.locked_at::text claim_acquired_at",
     [f.org, draft],
@@ -241,7 +256,7 @@ async function deliver(f: Fixture, draft: string, pool: pg.Pool) {
         draft,
       ])
     ).rows[0].status,
-  ).toBe("sent");
+  ).toBe(esperado);
   return rows[0].id as string;
 }
 test.afterAll(async () => {
@@ -338,10 +353,15 @@ test("testa sem enviar, pausa preserva publicação e duas aprovações entregam
     // Não é tempo: subir o teto para 15s não mudou nada, porque o elemento não
     // existe em instante nenhum.
     //
-    // O que a tela faz agora é o que se prova aqui: a sugestão SAI e o painel
-    // volta ao neutro — título genérico, e nada a aprovar.
-    await expect(panel(page).getByText("Assistência do agente", { exact: true })).toBeVisible();
-    await expect(panel(page).getByRole("button", { name: "Aprovar e enviar" })).toHaveCount(0);
+    // O que a tela faz agora é o que se prova aqui: a sugestão SAI — e, com ela,
+    // o BLOCO inteiro sai da faixa (issue #3027). O que sobra é o botão de ícone
+    // do compositor, que é o mesmo gesto sem custar 2-3 linhas do histórico.
+    await expect(
+      panel(page),
+      "o bloco 'Assistência do agente' continuou ocupando a faixa sem rascunho",
+    ).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Aprovar e enviar" })).toHaveCount(0);
+    await expect(botaoSugerir(page)).toBeVisible();
     await inbound(f, "Obrigada, pode continuar");
     const second = await generate(page);
     await panel(page)
@@ -383,11 +403,20 @@ test("testa sem enviar, pausa preserva publicação e duas aprovações entregam
     // Os três rótulos de `statuses` cobertos por esse conjunto (`sent`, `stale`,
     // `dismissed`) são hoje código inalcançável no componente. Está anotado; o
     // teste não é o lugar de decidir se eles voltam a aparecer.
-    await expect(panel(page).getByText("Assistência do agente", { exact: true })).toBeVisible();
-    await expect(panel(page).getByRole("button", { name: "Aprovar e enviar" })).toHaveCount(0);
+    await expect(
+      panel(page),
+      "o bloco 'Assistência do agente' continuou ocupando a faixa sem rascunho",
+    ).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Aprovar e enviar" })).toHaveCount(0);
+    // O aviso inline de aprovação saiu do componente: com o bloco fora da tela
+    // não há onde ele caiba (a confirmação virou toast). O que se prova é que ele
+    // não reaparece no bloco — que é o que existia antes do conserto.
     await expect(panel(page).getByText("Resposta aprovada. Acompanhe o envio aqui.", { exact: true })).toHaveCount(0);
     await page.setViewportSize({ width: 390, height: 844 });
-    await capture(page, panel(page), info, "obsoleta-mobile");
+    // O alvo do recorte era o BLOCO; sem rascunho ele não existe mais, e o que
+    // precisa caber nos 390px é a linha de ações do compositor — com o botão de
+    // ícone no lugar do bloco.
+    await capture(page, page.getByRole("textbox", { name: "Mensagem", exact: true }).locator("xpath=.."), info, "obsoleta-mobile");
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(`/app/ai/agents/${f.agent}`);
     await page.getByLabel("Modo de operação").selectOption("automatic");
@@ -411,6 +440,143 @@ test("testa sem enviar, pausa preserva publicação e duas aprovações entregam
       "automatico-desktop",
     );
     expect(channel.bodies).toHaveLength(2);
+  } finally {
+    await page.close();
+    await channel.close();
+    await pool.end();
+  }
+});
+
+
+test("pedido humano recupera o silêncio inicial e a aprovação mantém o veto de ritmo", async ({
+  page,
+}, info) => {
+  test.setTimeout(120_000);
+  const pool = new pg.Pool({
+    connectionString: credentials.dbUrl,
+    max: 5,
+    connectionTimeoutMillis: 5000,
+    query_timeout: 10_000,
+  });
+  const channel = await receiver();
+  try {
+    const f = await fixture(
+      pool,
+      `${CENARIO_DE_SILENCIO_ASSISTIDO} No automático, não responda a saudações.`,
+    );
+    await pool.query(
+      "update channel_sessions set daily_message_limit=2 where organization_id=$1 and id=$2",
+      [f.org, f.channel],
+    );
+    await inbound(f, "Bom dia!");
+    await inbound(f, "Como posso ajudar?");
+    await login(page, f);
+    await page.goto(`/app/inbox/${f.conversation}`);
+
+    const first = await generate(page);
+    await expect(panel(page).getByLabel("Resposta sugerida")).toHaveValue(
+      "Bom dia! Posso ajudar com o seu pedido?",
+    );
+    const { rows: draft } = await pool.query<{
+      status: string; original_body: string; error_code: string | null;
+    }>(
+      "select status,original_body,error_code from ai_reply_drafts where organization_id=$1 and id=$2",
+      [f.org, first],
+    );
+    expect(draft).toEqual([{
+      status: "pending",
+      original_body: "Bom dia! Posso ajudar com o seu pedido?",
+      error_code: null,
+    }]);
+    const { rows: calls } = await pool.query<{ n: number }>(
+      "select count(*)::int n from llm_calls where organization_id=$1 and agent_id=$2 and purpose='agent_preview' and status='ok'",
+      [f.org, f.agent],
+    );
+    expect(calls).toEqual([{ n: 2 }]);
+    expect(channel.bodies).toHaveLength(0);
+    const before = await pool.query<{ n: number }>(
+      "select count(*)::int n from messages where organization_id=$1 and conversation_id=$2 and direction='outbound'",
+      [f.org, f.conversation],
+    );
+    expect(before.rows).toEqual([{ n: 0 }]);
+    const edited = "Maria, revisei sua mensagem e posso ajudar com o atendimento.";
+    await panel(page).getByLabel("Resposta sugerida").fill(edited);
+    await capture(page, panel(page), info, "pedido-humano-revisao");
+    const approved = page.waitForResponse(
+      (r) => r.url().endsWith(`/ai/replies/${first}`) && r.request().method() === "POST",
+    );
+    await panel(page).getByRole("button", { name: "Aprovar e enviar" }).click();
+    expect((await approved).status()).toBe(200);
+    await deliver(f, first, pool);
+    expect(channel.bodies).toHaveLength(1);
+    expect(channel.bodies[0]).toMatchObject({
+      session: f.sessionName,
+      chatId: "15551234567@c.us",
+      text: edited,
+    });
+
+    await expect(panel(page)).toHaveCount(0);
+    await expect(botaoSugerir(page)).toBeVisible();
+
+    // Nova mensagem, nova revisão humana. O limite permanece fixo; consumo
+    // concorrente do número pode mudar sem invalidar o contexto da conversa.
+    await inbound(f, "Pode continuar com mais informações?");
+    const second = await generate(page);
+    const approvedAgain = page.waitForResponse(
+      (r) => r.url().endsWith(`/ai/replies/${second}`) && r.request().method() === "POST",
+    );
+    await panel(page).getByRole("button", { name: "Aprovar e enviar" }).click();
+    expect((await approvedAgain).status()).toBe(200);
+    // Entradas sintéticas explícitas do controle de ritmo, pelo writer real.
+    // Não são entregas HTTP: simulam o consumo concorrente de cota após a
+    // aprovação — dois DISPAROS esgotam o limite de 2 do número.
+    await recordSend(pool, f.org, f.channel, new Date());
+    await recordSend(pool, f.org, f.channel, new Date());
+    // Decisão 246 (A): a RESPOSTA não é barrada pelo teto do dia, mas a janela
+    // de resposta segue vetando. Janela de 1h, 12h longe de agora (em UTC):
+    // exclui a hora atual e a seguinte, sem depender de quando o teste roda.
+    await pool.query(
+      "update channel_knobs set timezone='UTC', resposta_start_hour=(extract(hour from now() at time zone 'UTC')::int+12)%24, resposta_end_hour=(extract(hour from now() at time zone 'UTC')::int+12)%24+1 where organization_id=$1 and channel_session_id=$2",
+      [f.org, f.channel],
+    );
+    await deliver(f, second, pool, "approved");
+    const veto = await pool.query<{
+      status: string; error_code: string; job_status: string; reagendado: boolean;
+    }>(
+      "select d.status,d.error_code,j.status job_status,j.run_after>now() reagendado from ai_reply_drafts d join job_queue j on j.organization_id=d.organization_id and j.id=d.send_job_id where d.organization_id=$1 and d.id=$2",
+      [f.org, second],
+    );
+    expect(veto.rows).toEqual([
+      { status: "approved", error_code: "outside_window", job_status: "pending", reagendado: true },
+    ]);
+    expect(channel.bodies).toHaveLength(1);
+    const after = await pool.query<{ n: number }>(
+      "select count(*)::int n from messages where organization_id=$1 and conversation_id=$2 and direction='outbound'",
+      [f.org, f.conversation],
+    );
+    expect(after.rows).toEqual([{ n: 1 }]);
+    // Janela aberta de novo (null = a de disparo, 0h-24h) com o teto ainda
+    // estourado: a resposta aprovada SAI — é a decisão 246 (A).
+    await pool.query(
+      "update channel_knobs set resposta_start_hour=null, resposta_end_hour=null where organization_id=$1 and channel_session_id=$2",
+      [f.org, f.channel],
+    );
+    const disparos = await pool.query<{ n: number }>(
+      "select count(*)::int n from pacing_ledger where organization_id=$1 and channel_session_id=$2 and not resposta",
+      [f.org, f.channel],
+    );
+    expect(disparos.rows).toEqual([{ n: 2 }]);
+    await deliver(f, second, pool, "sent");
+    expect(channel.bodies).toHaveLength(2);
+    writeFileSync(info.outputPath("pedido-humano-recibo.json"), JSON.stringify({
+      generation_calls_before_approval: calls[0]?.n,
+      sends_before_approval: before.rows[0]?.n,
+      delivered_after_review: channel.bodies.length,
+      synthetic_concurrent_pacing_entries: 2,
+      later_approval: veto.rows[0],
+      provider: "roteirizado pelo conteúdo da conversa; sem modelo externo",
+      delivery: "consumidor, cadeia, ledger e HTTP locais reais",
+    }, null, 2));
   } finally {
     await page.close();
     await channel.close();

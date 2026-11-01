@@ -35,21 +35,28 @@ import {
   useUnmarkAlwaysHumanContact,
 } from "@/hooks/contacts/useAlwaysHumanContact";
 import { useHierarquiaDoAnuncio } from "@/hooks/contacts/useHierarquiaDoAnuncio";
+import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
 import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
-import { ROLE_RANK } from "@/lib/auth/types";
+import { canonicalTagsDoFunil } from "@/lib/contacts/etiquetas";
+import { ROLE_RANK, roleAtLeast } from "@/lib/auth/types";
 import { TimelineView } from "@/components/contacts/TimelineView";
 import { EditContactDialog } from "@/components/contacts/EditContactDialog";
+import { JuntarComOutraFicha } from "@/components/contacts/JuntarComOutraFicha";
 import { CartaoDaCarteira } from "@/components/contacts/CartaoDaCarteira";
 import { AnonymizeDialog } from "@/components/contacts/AnonymizeDialog";
 import { PropostasDeDado } from "@/components/contacts/PropostasDeDado";
 import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
+import { UltimasComprasDoContato } from "@/components/contacts/UltimasCompras";
 import { ConversaNoDossie } from "@/components/kanban/ConversaNoDossie";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
-import { origemDoContato } from "@/lib/leads/origem-do-contato";
+import { ORIGEM_AGENDA_DO_CELULAR, origemDoContato } from "@/lib/leads/origem-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { DialButton } from "@/components/voice/DialButton";
+import type { Contact } from "@/lib/types/contacts";
+import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
+import { linksParaExibir } from "@/lib/leads/links-de-contato";
 
 interface Props {
   contactId: string;
@@ -75,6 +82,82 @@ function NivelDaOrigem({ rotulo, valor }: { rotulo: string; valor: string | null
   );
 }
 
+/**
+ * Rótulos do tipo e do WhatsApp de um telefone (Spec 31, B1). Cada ramo traz o
+ * `t("...")` LITERAL: o guardião de espanhol só enxerga texto escrito na tela, e
+ * `t(variavel)` escapa dele.
+ */
+function textoDoTipoDoTelefone(tipo: string | null | undefined, t: (texto: string) => string): string | null {
+  if (tipo === "fixo") return t("Fixo");
+  if (tipo === "celular") return t("Celular");
+  if (tipo === "outro") return t("Outro");
+  return null;
+}
+
+function textoDoWhatsappDoTelefone(
+  whatsapp: string | null | undefined,
+  t: (texto: string) => string,
+): string | null {
+  if (whatsapp === "sim") return t("Tem WhatsApp");
+  if (whatsapp === "nao") return t("Sem WhatsApp");
+  if (whatsapp === "nao_sei") return t("WhatsApp: não sabemos");
+  return null;
+}
+
+/**
+ * O bloco "Telefones" da ficha (Spec 31, B1), SÓ LEITURA: o principal e cada
+ * extra, com tipo, WhatsApp, rótulo e, quando a fusão trouxe o número, a origem.
+ * Editar é a próxima entrega (B2). Só aparece com extra; sem extra a ficha segue
+ * como hoje, com o tipo ao lado do número.
+ */
+function BlocoDeTelefones({ contato, t }: { contato: Contact; t: (texto: string) => string }) {
+  const extras = contato.additional_phones ?? [];
+  return (
+    <div className="md:col-span-2">
+      <dt className="text-xs uppercase text-muted-foreground">{t("Telefones")}</dt>
+      <dd className="mt-1">
+        <ul className="flex flex-col gap-2">
+          {contato.phone_number && (
+            <li className="flex flex-wrap items-center gap-2">
+              <span>{phoneForDisplay(contato.phone_number)}</span>
+              <Badge variant="secondary">{t("Principal")}</Badge>
+              {textoDoTipoDoTelefone(contato.phone_type, t) && (
+                <span className="text-xs text-muted-foreground">
+                  {textoDoTipoDoTelefone(contato.phone_type, t)}
+                </span>
+              )}
+              {textoDoWhatsappDoTelefone(contato.phone_whatsapp, t) && (
+                <span className="text-xs text-muted-foreground">
+                  {textoDoWhatsappDoTelefone(contato.phone_whatsapp, t)}
+                </span>
+              )}
+            </li>
+          )}
+          {extras.map((extra) => (
+            <li key={extra.phone_number} className="flex flex-wrap items-center gap-2">
+              <span>{phoneForDisplay(extra.phone_number)}</span>
+              {textoDoTipoDoTelefone(extra.type, t) && (
+                <span className="text-xs text-muted-foreground">
+                  {textoDoTipoDoTelefone(extra.type, t)}
+                </span>
+              )}
+              {textoDoWhatsappDoTelefone(extra.whatsapp, t) && (
+                <span className="text-xs text-muted-foreground">
+                  {textoDoWhatsappDoTelefone(extra.whatsapp, t)}
+                </span>
+              )}
+              {extra.label && <span className="text-xs text-muted-foreground">{extra.label}</span>}
+              {extra.origin === "fusao" && (
+                <span className="text-xs text-muted-foreground">{t("Veio da junção de fichas")}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </dd>
+    </div>
+  );
+}
+
 export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -84,8 +167,17 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
   // As DEFINIÇÕES continuam no funil (`crm_pipelines.settings.fields[]`) — só o
   // VALOR mora no contato. `camposDoFunil` é o mesmo leitor que o Kanban usa.
   const pipelineQuery = useDefaultPipeline(Boolean(activeOrg));
+  // As duas fontes do autocompletar de etiquetas (issue #2732). Os dois hooks
+  // ficam ANTES dos early returns pelo mesmo motivo do `desbloquear` abaixo:
+  // chamá-los depois mudaria a ordem dos hooks entre renderizações.
+  const vocabularioDeEtiquetas = useContactTagVocabulary(activeOrg?.orgId ?? null);
+  const canonicalTags = canonicalTagsDoFunil(pipelineQuery.data?.pipeline.settings ?? null);
   const [editOpen, setEditOpen] = useState(false);
   const [anonOpen, setAnonOpen] = useState(false);
+  // Juntar com outra ficha (spec 31, PR A): gestor, mesmo gate da fusão. Fica
+  // antes dos early returns pelo mesmo motivo dos hooks acima.
+  const podeJuntar = roleAtLeast(activeOrg?.role, "manager");
+  const [juntarOpen, setJuntarOpen] = useState(false);
   // Desfazer o descadastro é o override da regra W-02 — só admin, e auditado.
   // O hook fica ANTES dos early returns: chamá-lo depois mudaria a ordem dos
   // hooks entre renderizações e o React reprova.
@@ -135,6 +227,7 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
   }
 
   const contact = q.data.data;
+  const linksDoContato = linksParaExibir(contact.custom_fields);
   const isAdmin =
     (user.is_platform_admin && !user.support) || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.admin);
   // Gerente e dono marcam/desmarcam pessoal (spec 21, decisão 1, D3) — e este
@@ -200,6 +293,13 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
             {/* Selo lido da COLUNA, nunca da etiqueta (critério 5): editar
                 etiquetas não apaga o selo — mesma regra do "Bloqueado" acima. */}
             {contact.is_personal && <Badge variant="secondary">{t("Pessoal")}</Badge>}
+            {/* O TIPO DO CONTATO (issue 3005, fatia 1): selo lido da COLUNA
+                (`contacts.contact_type`), mesma regra dos de cima — a etiqueta
+                `fornecedor` é de trabalho e removível; o selo não. Só o
+                fornecedor aparece: cliente é o padrão da coluna. */}
+            {contact.contact_type === "fornecedor" && (
+              <Badge variant="secondary">{t("Fornecedor")}</Badge>
+            )}
             {/* A marca PERMANENTE (issue 2379): lida da COLUNA, mesma régua do
                 "Bloqueado" e do "Pessoal" — a devolução não a apaga, então o selo
                 continua a verdade mesmo quando a conversa já voltou ao automático. */}
@@ -343,6 +443,16 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
               </Button>
             )}
             <DialButton contactId={contactId} hasPhone={!!contact.phone_number} />
+            {podeJuntar && (
+              <Button
+                variant="outline"
+                onClick={() => setJuntarOpen(true)}
+                className="shrink-0"
+                data-testid="juntar-com-outra-ficha"
+              >
+                <span>{t("Juntar com outra ficha")}</span>
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setEditOpen(true)} className="shrink-0">
               <PencilSimple size={16} weight="bold" aria-hidden />
               <span>{t("Editar")}</span>
@@ -397,12 +507,33 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
                 <dt className="text-xs uppercase text-muted-foreground">Email</dt>
                 <dd className="mt-1">{contact.email ?? "—"}</dd>
               </div>
-              <div>
-                <dt className="text-xs uppercase text-muted-foreground">{t("Telefone")}</dt>
-                <dd className="mt-1">
-                  {contact.phone_number ? phoneForDisplay(contact.phone_number) : "—"}
-                </dd>
-              </div>
+              {/*
+                Com telefone extra, o bloco lista o principal e os extras (Spec 31,
+                B1). Sem extra, a linha segue como hoje; o tipo do número vai ao lado.
+              */}
+              {contact.additional_phones && contact.additional_phones.length > 0 ? (
+                <BlocoDeTelefones contato={contact} t={t} />
+              ) : (
+                <div>
+                  <dt className="text-xs uppercase text-muted-foreground">{t("Telefone")}</dt>
+                  <dd className="mt-1">
+                    {contact.phone_number ? phoneForDisplay(contact.phone_number) : "—"}
+                    {contact.phone_number && textoDoTipoDoTelefone(contact.phone_type, t) && (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {textoDoTipoDoTelefone(contact.phone_type, t)}
+                      </span>
+                    )}
+                  </dd>
+                </div>
+              )}
+              {linksDoContato.length > 0 && (
+                <div>
+                  <dt className="text-xs uppercase text-muted-foreground">{t("Links")}</dt>
+                  <dd className="mt-1">
+                    <ListaDeLinks links={linksDoContato} />
+                  </dd>
+                </div>
+              )}
               {/*
                 A data gravada pelo "Editar contato" (e pela proposta aprovada),
                 enxergada aqui — é ela que o cron `contact-birthdays` lê para
@@ -419,6 +550,16 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
                   {contact.birthdate ? contact.birthdate.split("-").reverse().join("/") : "—"}
                 </dd>
               </div>
+              {(contact.zip_code || contact.street || contact.city || contact.state) && (
+                <div className="sm:col-span-2">
+                  <dt className="text-xs uppercase text-muted-foreground">{t("Endereço")}</dt>
+                  <dd className="mt-1">
+                    {[contact.street, contact.number, contact.complement, contact.district, contact.city, contact.state, contact.zip_code]
+                      .filter(Boolean)
+                      .join(", ")}
+                  </dd>
+                </div>
+              )}
               {/*
                 A origem sai do `source_metadata` quando ele tem algo melhor a
                 dizer, e cai na coluna `source` quando não tem. Antes esta linha
@@ -428,7 +569,9 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
               */}
               <div>
                 <dt className="text-xs uppercase text-muted-foreground">{t("Origem")}</dt>
-                <dd className="mt-1">{origem.origem}</dd>
+                <dd className="mt-1">
+                  {origem.origem === ORIGEM_AGENDA_DO_CELULAR ? t("Agenda do celular") : origem.origem}
+                </dd>
               </div>
               <NivelDaOrigem rotulo={t("Campanha")} valor={origem.campanha} />
               <NivelDaOrigem rotulo={t("Conjunto")} valor={origem.conjunto} />
@@ -504,6 +647,14 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
           <div className="mt-4">
             <RoteirosDoContato contactId={contactId} />
           </div>
+          {/* AS ÚLTIMAS COMPRAS (issue #3179): a MESMA seção do painel do Inbox,
+              na ficha do contato — negócios ganhos em todos os funis, com data,
+              título, valor, campos escolhidos pela organização e atalho. */}
+          {!contact.is_anonymized && (
+            <div className="mt-4">
+              <UltimasComprasDoContato contactId={contactId} />
+            </div>
+          )}
           {/*
             O que os módulos de dados instalados guardam sobre esta pessoa. A lista vem do servidor e
             é vazia quando não há módulo com ficha de contato — então quem não instalou nada não vê
@@ -560,8 +711,17 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
           camposDoFunil(pipelineQuery.data?.pipeline.settings ?? null),
           "contato",
         )}
+        vocabulario={vocabularioDeEtiquetas.data}
+        canonicalTags={canonicalTags}
       />
       <AnonymizeDialog contactId={contactId} open={anonOpen} onOpenChange={setAnonOpen} />
+      {podeJuntar && (
+        <JuntarComOutraFicha
+          contatoAtual={contact}
+          open={juntarOpen}
+          onOpenChange={setJuntarOpen}
+        />
+      )}
     </div>
   );
 }

@@ -31,7 +31,7 @@ export function ComoUsar({ t }: { t: Traduzir }) {
             <li>{t("Crie o roteiro e dê um nome.")}</li>
             <li>
               {t(
-                "No Início, escreva as palavras-gatilho: quando a mensagem do cliente tiver uma delas, o roteiro começa sozinho. Ele também pode começar por uma intenção em IA › Roteadores.",
+                "No Início, escreva as palavras-gatilho: quando a mensagem do cliente tiver uma delas, o roteiro começa sozinho. Ele também começa por uma intenção em IA › Roteadores, ou quando o card do cliente entra numa etapa do funil que você marcar.",
               )}
             </li>
             <li>

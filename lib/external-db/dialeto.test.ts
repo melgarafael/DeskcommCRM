@@ -121,6 +121,8 @@ describe("criarDialetoDeLeitura (qualquer motor)", () => {
         tabela === "clientes" ? CLIENTES : tabela === "wp_users" ? WP_USERS : null,
       ),
       lerTabela: vi.fn(async (_pedido: PedidoDeLeitura, ..._resto: unknown[]) => ({ colunas: ["id"], linhas: [], limite: 20, offset: 0 })),
+      schemaDasReceitas: vi.fn(() => "public"),
+      executarReceita: vi.fn(async () => ({ colunas: ["id"], linhas: [], limite: 20, offset: 0, truncado: false })),
     };
   }
 
@@ -147,5 +149,122 @@ describe("criarDialetoDeLeitura (qualquer motor)", () => {
     await d.lerTabela(p, new Set());
     expect(op.lerTabela).toHaveBeenCalledTimes(1);
     expect(op.lerTabela.mock.calls[0]![0]).toEqual(p);
+  });
+
+  it("executarReceita com tabela não liberada: FonteNaoLiberadaError, o motor não é tocado", async () => {
+    const op = operacoes();
+    const d = criarDialetoDeLeitura(op, lista(fonte("clientes")));
+    await expect(
+      d.executarReceita(
+        { sql: "select * from wp_users", valores: [], tabelas: ["wp_users"], colunasPorTabela: {} },
+        { limiteMax: 5 },
+      ),
+    ).rejects.toBeInstanceOf(FonteNaoLiberadaError);
+    expect(op.executarReceita).not.toHaveBeenCalled();
+  });
+
+  describe("executarReceita — regra de fontes (J1, J2, J3)", () => {
+    const consultaValida = {
+      sql: "select ID, post_title from `wp_posts` where post_type = ?",
+      valores: ["product"],
+      tabelas: ["wp_posts"],
+      colunasPorTabela: { "wp_posts": ["ID", "post_title"] },
+    };
+
+    it("J1(a) modo list com fonte marcada no schema certo: passa e chama o motor", async () => {
+      const op = operacoes();
+      const d = criarDialetoDeLeitura(op, lista(fonte("clientes")));
+      // O SQL lê a mesma tabela que declara em `tabelas` (`clientes`); senão
+      // o validador (que agora enxerga tabela entre crases) recusaria.
+      await d.executarReceita(
+        {
+          ...consultaValida,
+          sql: "select id from `clientes` where id = ?",
+          tabelas: ["clientes"],
+          colunasPorTabela: { clientes: ["id"] },
+        },
+        { limiteMax: 5 },
+      );
+      expect(op.executarReceita).toHaveBeenCalledTimes(1);
+    });
+
+    it("J1(b) modo list com tabela da receita não marcada: fonte_nao_liberada, motor não tocado", async () => {
+      const op = operacoes();
+      const d = criarDialetoDeLeitura(op, lista(fonte("clientes")));
+      await expect(
+        d.executarReceita(consultaValida, { limiteMax: 5 }),
+      ).rejects.toBeInstanceOf(FonteNaoLiberadaError);
+      expect(op.executarReceita).not.toHaveBeenCalled();
+    });
+
+    it("J1(c) modo list com fonte marcada em OUTRO schema: fonte_nao_liberada", async () => {
+      const op = operacoes();
+      const d = criarDialetoDeLeitura(op, lista({ schema: "outro_schema", tabela: "clientes", colunas: null, descricao: "" }));
+      // fonte de outro schema não casa com schema "public" do dublê. O SQL lê
+      // a tabela declarada (`clientes`) para chegar até a checagem de fonte.
+      await expect(
+        d.executarReceita(
+          {
+            sql: "select id from `clientes` where id = ?",
+            valores: [1],
+            tabelas: ["clientes"],
+            colunasPorTabela: { clientes: ["id"] },
+          },
+          { limiteMax: 5 },
+        ),
+      ).rejects.toBeInstanceOf(FonteNaoLiberadaError);
+      expect(op.executarReceita).not.toHaveBeenCalled();
+    });
+
+    it("J2 modo list com coluna da receita não liberada: sem_colunas_liberadas", async () => {
+      // Fonte de clientes libera só ID e post_title; a receita usa post_status.
+      const op = operacoes();
+      vi.mocked(op.descreverTabela).mockResolvedValueOnce(CLIENTES);
+      const d = criarDialetoDeLeitura(
+        op,
+        lista(fonte("clientes", ["ID", "post_title"])),
+      );
+      await expect(
+        d.executarReceita(
+          {
+            sql: "select id from `clientes` where id = ?",
+            valores: [1],
+            tabelas: ["clientes"],
+            colunasPorTabela: { clientes: ["ID", "post_title", "post_status"] },
+          },
+          { limiteMax: 5 },
+        ),
+      ).rejects.toBeInstanceOf(FonteNaoLiberadaError);
+      expect(op.executarReceita).not.toHaveBeenCalled();
+    });
+
+    it("J3 consulta com INSERT: validador recusa e o motor NUNCA é chamado", async () => {
+      const op = operacoes();
+      const d = criarDialetoDeLeitura(op, TUDO);
+      await expect(
+        d.executarReceita(
+          { sql: "insert into wp_posts (post_title) values ('x')", valores: [], tabelas: ["wp_posts"], colunasPorTabela: {} },
+          { limiteMax: 5 },
+        ),
+      ).rejects.toBeInstanceOf(LeituraInvalidaError);
+      expect(op.executarReceita).not.toHaveBeenCalled();
+    });
+
+    it("J3 consulta com tabela fora da lista da receita: validador recusa, motor não tocado", async () => {
+      const op = operacoes();
+      const d = criarDialetoDeLeitura(op, TUDO);
+      await expect(
+        d.executarReceita(
+          {
+            sql: "select * from wp_posts where id = ?",
+            valores: [1],
+            tabelas: ["tabela_inexistente"],
+            colunasPorTabela: {},
+          },
+          { limiteMax: 5 },
+        ),
+      ).rejects.toBeInstanceOf(LeituraInvalidaError);
+      expect(op.executarReceita).not.toHaveBeenCalled();
+    });
   });
 });

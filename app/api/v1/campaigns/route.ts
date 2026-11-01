@@ -171,6 +171,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       teto_diario: entrada.teto_diario ?? null,
       teto_horario: entrada.teto_horario ?? null,
       velocidade: velocidade.velocidade,
+      split_messages: entrada.split_messages ?? false,
       pipeline_id: entrada.pipeline_id ?? null,
       stage_id: entrada.stage_id ?? null,
       agent_id: entrada.agent_id ?? null,

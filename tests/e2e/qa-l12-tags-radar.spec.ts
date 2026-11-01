@@ -133,6 +133,66 @@ test.describe("Lote 12 — #955 o vocabulário de etiquetas", () => {
     expect((regra as { actions: unknown[] }).actions).toHaveLength(1);
     await expect(page.getByRole("row", { name: new RegExp(novo) })).toBeVisible({ timeout: 30_000 });
     await captura(page, "955-04-renomeada-na-tela");
+
+    // #3507: preserva o controle anterior de renome real e mede a troca só de caixa.
+    const inicioDaConferenciaDeCaixa = performance.now();
+    await test.step("renomear só na caixa conserva os contatos no filtro real", async () => {
+      const nomeDigitado = novo.toUpperCase();
+      await page.getByRole("row", { name: new RegExp(novo) }).getByRole("button", { name: "Renomear" }).click();
+      await expect(page.getByText("Renomear " + novo + " para:")).toBeVisible();
+      await page.getByLabel("Novo nome").fill(nomeDigitado);
+      const [renome] = await Promise.all([
+        page.waitForResponse((resposta) => {
+          const url = new URL(resposta.url());
+          return url.pathname === "/api/v1/tags/vocabulario" && resposta.request().method() === "POST";
+        }),
+        page.getByRole("button", { name: "Confirmar" }).click(),
+      ]);
+      expect(renome.status()).toBe(200);
+      await expect(page.getByRole("row", { name: new RegExp(nomeDigitado) })).toBeVisible();
+      await captura(page, "3507-01-nome-de-exibicao-com-caixa");
+
+      await page.goto("/app/contacts");
+      await page.getByPlaceholder("Buscar por nome, email ou telefone…").fill("Tagueado " + SUFIXO);
+      const contato = (numero: number) => page.getByRole("row", { name: new RegExp("Tagueado " + SUFIXO + " " + numero + "\\b") });
+      // O controle sem etiqueta precisa existir ANTES e sumir DEPOIS do filtro.
+      for (const numero of [1, 2, 3]) await expect(contato(numero)).toBeVisible();
+      await page.getByRole("button", { name: "Tag: todas", exact: true }).click();
+      const [filtro] = await Promise.all([
+        page.waitForResponse((resposta) => {
+          const url = new URL(resposta.url());
+          return url.pathname === "/api/v1/contacts" && url.searchParams.getAll("tag").includes(novo) && resposta.request().method() === "GET";
+        }),
+        page.getByRole("menuitemcheckbox", { name: novo, exact: true }).click(),
+      ]);
+      expect(filtro.status()).toBe(200);
+      await page.keyboard.press("Escape");
+      await expect(contato(1)).toBeVisible();
+      await expect(contato(2)).toBeVisible();
+      await expect(contato(3)).toHaveCount(0);
+      await captura(page, "3507-02-filtro-real-preserva-os-contatos");
+
+      // A prova nova terminou. Restaura só a fixture para os casos anteriores,
+      // que continuam esperando o nome minúsculo depois do renome real.
+      const restauracao = await page.request.post("/api/v1/tags/vocabulario", {
+        data: { acao: "renomear", tag: nomeDigitado, destino: novo },
+        timeout: 5_000,
+      });
+      expect(restauracao.status()).toBe(200);
+      const prazoDoSnapshot = AbortSignal.timeout(5_000);
+      const [aposContatos, aposRegra] = await Promise.all([
+        admin.from("contacts").select("id, tags").eq("organization_id", c.org_id)
+          .in("id", contatos).abortSignal(prazoDoSnapshot),
+        admin.from("automation_rules").select("actions").eq("organization_id", c.org_id)
+          .eq("id", regraId).abortSignal(prazoDoSnapshot).single(),
+      ]);
+      expect(aposContatos.error).toBeNull();
+      expect(aposRegra.error).toBeNull();
+      expect(aposContatos.data?.sort((a, b) => a.id.localeCompare(b.id)))
+        .toEqual([...(cts ?? [])].sort((a, b) => a.id.localeCompare(b.id)));
+      expect(aposRegra.data?.actions).toEqual(regra?.actions);
+    }, { timeout: 30_000 });
+    registra("#3507 etapa adicional ms=" + Math.ceil(performance.now() - inicioDaConferenciaDeCaixa));
   });
 
   test("juntar duas etiquetas não deixa a etiqueta repetida (J24.2)", async ({ page }) => {
@@ -143,11 +203,15 @@ test.describe("Lote 12 — #955 o vocabulário de etiquetas", () => {
     await linha.getByRole("button", { name: "Juntar" }).click();
     await expect(page.getByText(`Juntar ${TAG_C} em outra etiqueta existente:`)).toBeVisible();
 
+    // #2855 — a tela é paginada: o destino é DIGITADO (com sugestões da página
+    // num datalist), porque a etiqueta que fica pode estar em outra página.
     const destino = page.getByLabel("Etiqueta de destino");
-    const opcoes = await destino.locator("option").allInnerTexts();
-    registra(`#955 juntar · opções de destino = ${JSON.stringify(opcoes)}`);
+    const opcoes = await page.locator("#destinos-da-juncao option").evaluateAll((os) =>
+      os.map((o) => (o as HTMLOptionElement).value),
+    );
+    registra(`#955 juntar · sugestões de destino = ${JSON.stringify(opcoes)}`);
     const alvo = `${TAG_A}-renomeada`;
-    await destino.selectOption(alvo);
+    await destino.fill(alvo);
     await captura(page, "955-05-juntar-formulario");
     const resposta = page.waitForResponse(
       (r) => r.url().includes("/api/v1/tags/vocabulario") && r.request().method() === "POST",

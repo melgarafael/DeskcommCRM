@@ -18,8 +18,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { ApiErrorCode } from "@/lib/api/errors";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
+import { PACING_DEFAULTS } from "@/lib/agent-engine/pacing/defaults";
 import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 
+import { baloesDaCampanha, enviarEmBaloes, pausaEntreBaloes } from "./baloes";
 import { baseLegalValida, motivoParaExcluir, recusouMarketing } from "./elegibilidade";
 import { ehStatusDaCampanha, podeTransitar } from "./maquina-de-estados";
 import { prepararCampanha } from "./preparacao";
@@ -67,6 +69,8 @@ export interface CampanhaCarregada {
   velocidade: VelocidadeDaCampanha;
   /** Migration 0712: o id da transmissão no provedor, depois que a lista foi entregue. */
   provider_broadcast_id: string | null;
+  /** Migration 0765: texto sai em balões, um por parágrafo. */
+  split_messages: boolean;
 }
 
 export type Recusa = { ok: false; codigo: ApiErrorCode; mensagem: string; status: number };
@@ -77,7 +81,7 @@ const COLUNAS =
   "audience_filter, audience_version, content_version, scheduled_at, description, " +
   "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario, " +
   "message_mode, provider_template_name, provider_template_language, provider_template_variables, velocidade, " +
-  "provider_broadcast_id";
+  "provider_broadcast_id, split_messages";
 
 export async function carregarCampanha(
   admin: SupabaseClient,
@@ -441,6 +445,7 @@ export async function duplicarAcao(
       teto_diario: c.teto_diario,
       teto_horario: c.teto_horario,
       velocidade: c.velocidade,
+      split_messages: c.split_messages,
       created_by: autorId,
       // Nada de destinatário, resultado, agenda ou carimbo de execução: a cópia
       // é uma INTENÇÃO nova, e herdar números faria a tela mostrar entrega de
@@ -575,21 +580,29 @@ export async function testarAcao(
   }
 
   const boundary = await beginServiceAtOrigin(admin, c.organization_id, linha.id, c.channel_session_id);
-  const mensagem = await sendMessageHandler(
-    admin,
-    {
-      organization_id: c.organization_id,
-      serviceBoundary: boundary,
-      proactiveContext: { organizationId: c.organization_id, contactId: linha.id },
-      actor: { type: "webhook_source", id: `campaign-test:${c.id}` },
-      requestId: `campaign-test:${c.id}:${randomUUID()}`,
-    } as Parameters<typeof sendMessageHandler>[1],
-    {
-      conversation_id: boundary.conversation_id,
-      ...conteudo,
-      metadata: { source: "campaign_test", campaign_id: c.id },
-    } as Parameters<typeof sendMessageHandler>[2],
-  );
+  // O teste divide como a rodada divide (`baloes.ts`): quem testa precisa ver
+  // no aparelho os mesmos balões que o destinatário vai receber.
+  const baloes = conteudo.type === "text" ? baloesDaCampanha(conteudo.body, c.split_messages === true) : [conteudo.body];
+  const { desfecho: mensagem } = await enviarEmBaloes(baloes, {
+    enviar: (texto) =>
+      sendMessageHandler(
+        admin,
+        {
+          organization_id: c.organization_id,
+          serviceBoundary: boundary,
+          proactiveContext: { organizationId: c.organization_id, contactId: linha.id },
+          actor: { type: "webhook_source", id: `campaign-test:${c.id}` },
+          requestId: `campaign-test:${c.id}:${randomUUID()}`,
+        } as Parameters<typeof sendMessageHandler>[1],
+        {
+          conversation_id: boundary.conversation_id,
+          ...conteudo,
+          ...(conteudo.type === "text" ? { body: texto } : {}),
+          metadata: { source: "campaign_test", campaign_id: c.id },
+        } as Parameters<typeof sendMessageHandler>[2],
+      ),
+    esperar: () => new Promise((ok) => setTimeout(ok, pausaEntreBaloes(PACING_DEFAULTS))),
+  });
 
   const status = (mensagem as { status?: string }).status ?? "desconhecido";
   if (status === "failed") {

@@ -797,7 +797,11 @@ function leDueAt(arquivo: string): string[] {
   return readFileSync(join(RAIZ, arquivo), "utf8")
     .split(/\r?\n/)
     .map((linha, i) => ({ linha: i + 1, texto: linha }))
-    .filter((l) => /due_at/.test(l.texto))
+    // Palavra inteira: `task_reminder_due_at` (9038) é o prazo da TAREFA que
+    // motivou um lembrete, não o prazo legal do titular, e o casamento por
+    // substring o puxava para cá. Nenhum outro identificador cola letra em
+    // `due_at` nas AREAS — a varredura continua achando os mesmos consumidores.
+    .filter((l) => /\bdue_at\b/.test(l.texto))
     .map((l) => `${l.linha}: ${l.texto.trim()}`);
 }
 
@@ -826,6 +830,11 @@ const LEEM_PELO_HELPER: readonly string[] = [
   "lib/lgpd/balde-de-sla.ts",
   "lib/lgpd/contagem-do-prazo.ts",
   "lib/lgpd/repository.ts",
+  // A rota do art. 12.º sabe comparar dois prazos sem ler instante: o vencimento
+  // novo e o `due_at` que a linha já prometia são comparados por DIA CIVIL
+  // (`diaDoPrazo`), e o valor gravado volta à meia-noite UTC do dia novo. Foi
+  // esta troca que tirou a rota da dívida congelada (#2342).
+  "app/api/v1/lgpd/requests/[id]/art12/route.ts",
   "app/api/v1/lgpd/requests/route.ts",
   "app/api/v1/admin/lgpd/requests/route.ts",
   "components/admin/lgpd/LgpdRequestsTable.tsx",
@@ -860,17 +869,20 @@ const REPASSA_O_VALOR: readonly string[] = [
  * milissegundos, e por quê. Cada entrada carrega o motivo escrito; entrada que
  * deixa de casar é vermelho pedindo remoção.
  *
- * ═══ ESTÁ VAZIA — sete recortes depois ═══
+ * ═══ HOJE: VAZIA — e vazia é o estado que a lista quer (#2342) ═══
  *
- * Ela nasceu com uma entrada só (#2101). Chegou a sete. Está vazia desde o
- * recorte do `admin/dashboard/kpis`, e vazia é o estado que a lista quer: cada
- * linha que sai é uma superfície que passou a ler o dia pelo helper.
+ * Ela nasceu com uma entrada só (#2101). Chegou a sete, foi a zero no recorte do
+ * `admin/dashboard/kpis`, e voltou a uma com a rota do art. 12.º, que comparava
+ * dois prazos em milissegundos. A rota passou a comparar os dois prazos pelo
+ * helper do dia (`diaDoPrazo`) e a gravar a meia-noite UTC do dia novo: a
+ * entrada saiu, e a lista voltou a zero. Cada linha que sai é uma superfície que
+ * passou a ler o dia pelo helper.
  *
- * **Vazia não é "o gate sumiu".** Os dois casos que a usam continuam valendo:
+ * **Lista vazia não é "o gate sumiu".** Os dois casos que a usam continuam valendo:
  * arquivo que lê `due_at` sem estar em nenhuma das três listas é vermelho, e um
- * arquivo em duas listas também. O que está vazio é só a TERCEIRA lista; a
- * varredura e a partição seguem de pé, e é por isso que este bloco fica aqui em
- * vez de ser apagado.
+ * arquivo em duas listas também. A varredura e a partição seguem de pé — lista
+ * que enche de volta volta a ser medida — e é por isso que este bloco fica aqui
+ * em vez de ser apagado.
  */
 const DIVIDA_CONGELADA: ReadonlyArray<{ arquivo: string; motivo: string }> = [];
 

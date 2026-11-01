@@ -14,6 +14,7 @@
   "messages_count_total": 0,
   "messages_recent": [],
   "leads": [],
+  "lead_field_proposals": [],
   "honorarios_contratos": [],
   "honorarios_parcelas": [],
   "orders": [],
@@ -39,6 +40,7 @@
   "campaign_suppressions": [],
   "channel_session_groups": [],
   "group_messages_authored": [],
+  "lead_attachments": [],
   "lead_notes": [],
   "ai_agent_runs": [],
   "lead_state": []

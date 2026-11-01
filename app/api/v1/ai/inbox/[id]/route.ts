@@ -10,7 +10,7 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { avisoVisivelPara } from "@/lib/ai/inbox-destino";
+import { avisoVisivelPara, PAPEL_MINIMO_DA_CENTRAL } from "@/lib/ai/inbox-destino";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -32,7 +32,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("invalid_request", "id inválido.", 400, { requestId });
   }
 
-  const authz = await requireRole("agent", { requestId, resource: "agent_inbox_items" });
+  const authz = await requireRole(PAPEL_MINIMO_DA_CENTRAL, { requestId, resource: "agent_inbox_items" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org } = authz;

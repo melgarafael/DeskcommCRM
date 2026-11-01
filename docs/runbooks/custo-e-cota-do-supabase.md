@@ -28,14 +28,15 @@ No painel do Supabase o número oficial está em **Settings → Usage**. É ele 
 vale para cobrança; `/proc/net/dev` mede o contêiner e serve para atribuir a
 origem.
 
-## 2. Os dois intervalos que governam o custo do worker
+## 2. Os três intervalos que governam o custo do worker
 
-Ambos vivem no `.env`, são opcionais, e o worker imprime os valores em vigor na
+Todos vivem no `.env`, são opcionais, e o worker imprime os valores em vigor na
 linha `agent-engine pronto` do log.
 
 | chave | default | o que faz |
 |---|---|---|
-| `QUEUE_POLL_INTERVAL_MS` | `2000` | **Teto de espera.** Com a fila vazia, é quanto o worker dorme entre uma consulta e a próxima. Com job agendado, ele acorda no vencimento e este valor só limita a soneca. |
+| `QUEUE_POLL_INTERVAL_MS` | `2000` | **Piso da espera ociosa.** Com a fila vazia, é quanto o worker dorme entre uma consulta e a próxima; com o recuo ligado (abaixo), o valor dobra a cada rodada ociosa até o teto. Com job agendado, ele acorda no vencimento e este valor só limita a soneca. |
+| `QUEUE_IDLE_MAX_INTERVAL_MS` | vazio (desligado) | **Teto do recuo com a fila vazia.** Desligado, a instalação parada consulta o banco a cada piso — 3.880 consultas em 2h19 (~28/min) medidas na issue #3688. Com `60000`, cai para ~1/min. Mensagem de cliente acorda a fila na hora; a resposta da equipe a um caso da IA e os disparos agendados pelo cron podem esperar até o teto. |
 | `QUEUE_CLAIM_RETRY_INTERVAL_MS` | `250` | Ritmo do *“havia trabalho e eu não peguei”* — todas as vagas de `QUEUE_MAX_CONCURRENCY` ocupadas, ou outro turno rodando para o mesmo contato. |
 
 **Não passe `QUEUE_POLL_INTERVAL_MS` de 10000.** A conexão ociosa do pool expira
@@ -43,6 +44,11 @@ em 10 s; acima disso cada rodada volta a pagar TCP+TLS+startup, e o intervalo
 maior passa a gastar **mais** do que economiza. O worker avisa no boot se você
 cruzar essa linha. Ele também não deve chegar perto de `INBOUND_DEBOUNCE_MS`
 (8000), senão o laço dorme através da janela de coalescência.
+
+O teto do recuo (`QUEUE_IDLE_MAX_INTERVAL_MS`) fica **acima** dos 10 s de
+propósito e não cai na mesma regra: depois de um sono longo a rodada reconecta
+(499 B medidos contra 66 B), mas 1 rodada/min a 499 B continua ~4× mais barata
+que 30 rodadas/min a 66 B. O que não vale é encurtar o **piso**.
 
 Depois de editar o `.env`:
 
@@ -135,10 +141,12 @@ mesmo cron e com o piso também dentro do banco:
 
 | chave | default | o que faz |
 |---|---|---|
-| `AI_TELEMETRY_RETENTION_DAYS` | `400` | `llm_calls`, `metrics`, `skill_activations`, `ai_router_decisions`. Piso de **100** dias. |
+| `AI_TELEMETRY_RETENTION_DAYS` | `400` | `llm_calls`, `metrics`, `skill_activations`, `ai_router_decisions` e o traço do turno (`agent_turn_traces`, 9021). Piso de **100** dias. |
 | `PACING_LEDGER_RETENTION_DAYS` | `2` | `pacing_ledger`. Piso de **2**; o último envio de cada número nunca sai. |
 | `OUTBOUND_COPIES_RETENTION_DAYS` | `30` | `outbound_copies`. Piso de **7**; as últimas que o anti-repetição compara nunca saem. |
 | `LEAD_CHECKPOINT_RETENTION_DAYS` | `180` | `lead_checkpoints` já superados. Piso de **30**; o vigente de cada atendimento nunca sai. |
+
+O traço do turno tem um [leitor técnico pela API](../specs/leitor-tecnico-do-traco-do-turno.md), restrito a gerentes da organização. Ele explicita o limite consultável e projeta recibos sem mensagens livres de erro. É uma entrega parcial: a tela permanece na issue #3201; uma lista vazia não prova que houve expurgo.
 
 `event_log` não tem poda, de propósito: é o livro-razão que impede os gatilhos
 de tempo de reenviarem WhatsApp.
@@ -179,7 +187,26 @@ psql "$SUPABASE_DB_URL" -c \
     where relname in ('job_queue','api_audit_log','send_ledger','before_send_traces');"
 ```
 
-## 5. Se ainda não fechar
+## 5. Quando o compute Nano do plano grátis não basta
+
+O sintoma não é lentidão, é indisponibilidade: o projeto fica fora do ar **sem ninguém usando**, toda chamada a
+`/rest/v1` responde `522` ou `503 PGRST002`, e o `/api/v1/health` diz `supabase: down` com
+`reason: projeto_indisponivel`.
+
+**O que foi medido, e em quantas instalações.** Uma instalação, em 29/10, no compute Nano (0,5 GB): ~6 h fora do ar,
+que só voltou com *Restart project*. O schema tinha 213 tabelas, 584 funções, 684 policies, 759 índices e 222
+triggers; a introspecção do schema cache do PostgREST leva ~722 ms com o banco saudável, contra o `statement_timeout`
+de 8 s do papel `authenticator`. Naquela instalação, a Nano entrou em swap, esgotou o *Disk IO Budget*, e essa
+consulta passou do teto: o cache se perdeu e o PostgREST ficou em laço. **Não está medido** se a Nano falha assim
+em toda instalação: o plano grátis continua sendo o caminho documentado de instalação.
+
+**Se acontecer com você:** *Restart project* devolve o serviço. Se voltar a cair parado, subir o compute para
+**Micro (1 GB)** é o próximo passo a testar: dá o dobro de memória à introspecção. **Não está medido que resolva:**
+na instalação medida (29/10), quem devolveu o serviço foi o *Restart project*. Antes de trocar, confirme que é este ramo e não o
+replay do gateway: `postgrest-replay-do-gateway.md` (seção "Outro ramo: falta de memória/IO") e
+`supabase-compute-insuficiente-free.md`.
+
+## 6. Se ainda não fechar
 
 Abra uma issue com: a saída dos três comandos da seção 1, a janela de tempo que
 elas cobrem, e o painel **Usage** do Supabase no mesmo período. Medição sem a

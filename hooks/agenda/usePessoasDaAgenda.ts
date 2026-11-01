@@ -12,12 +12,15 @@ import { ApiError } from "@/lib/api/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { idiomaAtual } from "@/lib/i18n/IdiomaProvider";
 
+import { rotuloDoResponsavel } from "@/lib/agenda/identidade-do-responsavel";
+
 import type { Pessoa } from "@/components/agenda/tipos";
 
 interface MembroDto {
   user_id: string;
   role: string;
   full_name: string | null;
+  display_label?: string;
   revoked_at?: string | null;
 }
 
@@ -48,12 +51,9 @@ export function usePessoasDaAgenda() {
         const trilhas = trilhasDaEquipe(ativos.map((m) => m.user_id));
         return ativos.map((m) => ({
           id: m.user_id,
-          // `full_name` pode vir null quando o service role não está
-          // configurado — a rota degrada assim de propósito. A lista mínima
-          // não traz e-mail (item 1 da issue 896: quem atende lê o nome e se
-          // a pessoa tem agenda, e nada além disso), então não há de onde
-          // tirar um apelido melhor: o rótulo neutro é o que sobra.
-          nome: m.full_name ?? "Sem nome",
+          // Só o rótulo mínimo resolvido no servidor; ID e trilha continuam os mesmos.
+          nome: rotuloDoResponsavel(m.user_id, m.display_label, m.full_name,
+            (texto) => traduzir(texto, idiomaAtual())),
           trilha: trilhas.get(m.user_id) ?? 1,
         }));
       } catch (err) {

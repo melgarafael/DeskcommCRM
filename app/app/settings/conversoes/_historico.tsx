@@ -22,6 +22,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 
 import { ReprocessarConversao } from "./_reprocessar";
+import { LinkDoNegocio } from "./_linkDoNegocio";
 
 const ROTULO_DO_PERIODO: Record<(typeof PERIODOS)[number], string> = {
   hoje: "Hoje",
@@ -71,8 +72,14 @@ export function HistoricoDeEnvios({
   const paginas = Math.max(1, Math.ceil(total / TAMANHO_DA_PAGINA));
   const eventos = [
     { valor: "Purchase", rotulo: "Compra" },
+    { valor: "LeadSubmitted", rotulo: "Nascimento por anúncio" },
     ...regras.map((r) => ({ valor: r.eventName, rotulo: r.label })),
   ];
+  const rotuloVisivel = (evento: string) => {
+    if (!evento.startsWith("MetaEtapa:")) return t(rotuloDoEvento(evento, regras));
+    const nome = regras.find((r) => r.eventName === evento)?.label;
+    return nome ? `${t("Entrada na etapa")} ${nome}` : t("Entrada na etapa");
+  };
   const link = (pagina: number) => {
     const p = new URLSearchParams({
       aba: "historico",
@@ -128,7 +135,7 @@ export function HistoricoDeEnvios({
             <option value="">{t("Todos os eventos")}</option>
             {eventos.map((e) => (
               <option key={e.valor} value={e.valor}>
-                {t(e.rotulo)}
+                {rotuloVisivel(e.valor)}
               </option>
             ))}
           </select>
@@ -180,7 +187,7 @@ export function HistoricoDeEnvios({
                   <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3 p-3 text-sm">
                     <div className="min-w-0">
                       <p className="font-medium">
-                        {t(rotuloDoEvento(l.evento, regras))}
+                        {rotuloVisivel(l.evento)}
                         <span className="ml-2 text-xs text-muted-foreground">
                           {l.plataforma === "google_ads"
                             ? "Google Ads"
@@ -232,12 +239,9 @@ export function HistoricoDeEnvios({
                       )}
                     </dl>
                     <div className="flex flex-wrap gap-2">
-                      <a
-                        className="underline underline-offset-2"
-                        href={`/app/kanban?lead=${l.leadId}`}
-                      >
+                      <LinkDoNegocio className="underline underline-offset-2" leadId={l.leadId}>
                         {t("Abrir negócio")}
-                      </a>
+                      </LinkDoNegocio>
                       {situacao !== "entregue" && (
                         <ReprocessarConversao leadId={l.leadId} idioma={idioma} evento={l.evento} />
                       )}

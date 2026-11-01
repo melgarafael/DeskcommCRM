@@ -26,6 +26,7 @@ const ORG = "00000000-0000-4000-8000-0000000000e5";
 
 const estado = vi.hoisted(() => ({ papelNoBanco: "viewer", papelDaMembresia: "viewer" }));
 const rpc = vi.hoisted(() => vi.fn());
+const from = vi.hoisted(() => vi.fn());
 const redirecionar = vi.hoisted(() =>
   vi.fn((destino: string) => {
     throw new Error(`REDIRECT:${destino}`);
@@ -48,13 +49,16 @@ vi.mock("@/lib/auth/server", () => ({
   orgAtivaSemPortao: async () => ({ orgId: ORG, name: "Org", role: estado.papelDaMembresia, org_status: "active" }),
   mfaEmDivida: async () => false,
 }));
-vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc }) }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc, from }) }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
 vi.mock("next/navigation", () => ({ redirect: redirecionar, useRouter: () => ({ refresh: vi.fn() }) }));
 
 import { GET, POST } from "@/app/api/v1/tags/vocabulario/route";
 import TagsPage from "@/app/app/settings/tags/page";
+
+/** A página sem `?page`/`?busca` (#2855: ela passou a ler a página do vocabulário). */
+const SEM_BUSCA = { searchParams: Promise.resolve({}) };
 
 /** As RPCs que a rota e a página chamam, na ordem em que chamaram. */
 const chamadas = () => rpc.mock.calls.map((c) => c[0] as string);
@@ -73,10 +77,22 @@ beforeEach(() => {
   estado.papelNoBanco = "viewer";
   estado.papelDaMembresia = "viewer";
   redirecionar.mockClear();
+  // #2353: a página de Tags agora também lê `organizations.settings` (a lista de
+  // contato interno) pelo client da SESSÃO. O dublê responde o suficiente para
+  // essa leitura — a catraca deste arquivo mede o PORTÃO, não a leitura.
+  from.mockReset();
+  from.mockImplementation(() => {
+    const chain: Record<string, unknown> = {};
+    chain.select = () => chain;
+    chain.eq = () => chain;
+    chain.maybeSingle = () => Promise.resolve({ data: { settings: {} }, error: null });
+    return chain;
+  });
   rpc.mockReset();
   rpc.mockImplementation(async (fn: string) => {
     if (fn === "fn_user_role_in_org") return { data: estado.papelNoBanco, error: null };
     if (fn === "fn_vocabulario_de_tags") return { data: [], error: null };
+    if (fn === "fn_vocabulario_de_tags_pagina") return { data: { items: [], total: 0 }, error: null };
     if (fn === "fn_vocabulario_de_tags_operar") return { data: { contatos: 0 }, error: null };
     return { data: null, error: { message: `rpc inesperada: ${fn}` } };
   });
@@ -84,7 +100,7 @@ beforeEach(() => {
 
 describe("platform admin sem papel de gerente NESTA organização", () => {
   it("⭐ GET da rota recusa com 403 antes de ler o vocabulário", async () => {
-    const resposta = await GET();
+    const resposta = await GET(new NextRequest("http://localhost/api/v1/tags/vocabulario"));
     expect(resposta.status).toBe(403);
     expect(chamadas()).not.toContain("fn_vocabulario_de_tags");
   });
@@ -96,8 +112,9 @@ describe("platform admin sem papel de gerente NESTA organização", () => {
   });
 
   it("⭐ a página manda para /403 em vez de oferecer os três botões", async () => {
-    await expect(TagsPage()).rejects.toThrow("REDIRECT:/403");
+    await expect(TagsPage(SEM_BUSCA)).rejects.toThrow("REDIRECT:/403");
     expect(chamadas()).not.toContain("fn_vocabulario_de_tags");
+    expect(chamadas()).not.toContain("fn_vocabulario_de_tags_pagina");
   });
 });
 
@@ -108,7 +125,7 @@ describe("CONTROLE: com papel de gerente a porta abre — senão os casos acima 
   });
 
   it("GET devolve 200 e lê o vocabulário", async () => {
-    const resposta = await GET();
+    const resposta = await GET(new NextRequest("http://localhost/api/v1/tags/vocabulario"));
     expect(resposta.status, await resposta.clone().text()).toBe(200);
     expect(chamadas()).toContain("fn_vocabulario_de_tags");
   });
@@ -119,9 +136,32 @@ describe("CONTROLE: com papel de gerente a porta abre — senão os casos acima 
     expect(chamadas()).toContain("fn_vocabulario_de_tags_operar");
   });
 
+  it.each([
+    ["obra123-renomeada", "OBRA123-RENOMEADA"],
+    ["Prospecção", "prospecção"],
+  ])("POST renomeia só a caixa de %s para %s sem barrar antes da RPC", async (tag, destino) => {
+    const resposta = await postar({ acao: "renomear", tag, destino });
+    expect(resposta.status, await resposta.clone().text()).toBe(200);
+    const operacoes = rpc.mock.calls.filter(([fn]) => fn === "fn_vocabulario_de_tags_operar");
+    expect(operacoes).toEqual([["fn_vocabulario_de_tags_operar", {
+      p_org: ORG, p_acao: "renomear", p_tag: tag, p_destino: destino, p_cor: null,
+    }]]);
+  });
+
+  it.each([
+    { acao: "renomear", tag: " vip ", destino: "vip" },
+    { acao: "renomear", tag: " ", destino: "VIP" },
+    { acao: "apagar", tag: "vip" },
+    { acao: "definir_cor", tag: "vip", cor: "#zzzzzz" },
+  ])("POST conserva a recusa do corpo inválido %j sem chamar a operação", async (corpo) => {
+    const resposta = await postar(corpo);
+    expect(resposta.status, await resposta.clone().text()).toBe(422);
+    expect(chamadas()).not.toContain("fn_vocabulario_de_tags_operar");
+  });
+
   it("a página lê o vocabulário sem redirecionar", async () => {
-    await TagsPage();
+    await TagsPage(SEM_BUSCA);
     expect(redirecionar).not.toHaveBeenCalled();
-    expect(chamadas()).toContain("fn_vocabulario_de_tags");
+    expect(chamadas()).toContain("fn_vocabulario_de_tags_pagina");
   });
 });

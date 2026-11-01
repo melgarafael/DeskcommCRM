@@ -126,6 +126,20 @@
       "col": 3,
       "type": "ui",
       "label": "Notificação no celular, com o CRM fechado"
+    },
+    {
+      "id": "funil",
+      "lane": "app",
+      "col": 3,
+      "type": "service",
+      "label": "web_push.entregarPush: o que aparece com a tela bloqueada (settings.notificacoes)"
+    },
+    {
+      "id": "config_tela_bloqueada",
+      "lane": "humano",
+      "col": 2,
+      "type": "ui",
+      "label": "Configurações › Notificações: o que aparece com o celular bloqueado (só admin muda)"
     }
   ],
   "edges": [
@@ -211,13 +225,23 @@
     },
     {
       "from": "push",
-      "to": "celular",
-      "label": "passagem, IA sem saldo, etapa que avisa (VAPID)"
+      "to": "funil",
+      "label": "payload com quem / o quê (passagem, IA sem saldo, etapa que avisa)"
     },
     {
       "from": "celular",
       "to": "contexto",
       "label": "toque abre conversa, negócio ou credenciais"
+    },
+    {
+      "from": "funil",
+      "to": "celular",
+      "label": "redigido pela opção da empresa (VAPID)"
+    },
+    {
+      "from": "config_tela_bloqueada",
+      "to": "funil",
+      "label": "settings.notificacoes.conteudo_na_tela_bloqueada"
     }
   ]
 }

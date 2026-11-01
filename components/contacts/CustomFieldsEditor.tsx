@@ -12,7 +12,8 @@ import { useEffect, useId, useState } from "react";
  * `tests/unit/campo-condicional-nos-pontos-de-renderizacao.test.ts`.
  */
 import { useActiveOrg } from "@/hooks/auth/AuthProvider";
-import { parseReaisToCents } from "@/lib/money";
+import { exemploDoCampoDeMoeda, lerCampoDeMoeda, semAMoeda, valorDoCampoDeMoeda } from "@/lib/leads/campo-de-moeda";
+import { MOEDA_PADRAO } from "@/lib/money";
 import { Input } from "@/components/ui/input";
 import { perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,6 +30,9 @@ import { useT } from "@/hooks/i18n/useT";
 import { buscarOpcoes, valorCanonico } from "@/lib/leads/campos-pesquisaveis";
 import { cn } from "@/lib/utils";
 import { camposVisiveis, type MostrarQuando } from "@/lib/schemas/mostrar-quando";
+import { mensagemDoCampo } from "@/lib/leads/padrao-do-campo";
+
+import { FileUploadCustomField } from "@/components/kanban/FileUploadCustomField";
 
 export type CustomFieldType =
   | "text"
@@ -42,7 +46,8 @@ export type CustomFieldType =
   | "boolean"
   | "email"
   | "phone"
-  | "url";
+  | "url"
+  | "file";
 
 export interface CustomFieldDef {
   key: string;
@@ -59,8 +64,20 @@ export interface CustomFieldDef {
    * e viaja no save — esconder não é limpar.
    */
   mostrar_quando?: MostrarQuando;
+  /** O FORMATO do valor (#2730) — ver `lib/leads/padrao-do-campo`. */
+  padrao?: string;
+  /** A frase do dono para quem digitar fora do formato (#2730). */
+  mensagem_padrao?: string;
   /** Só no `searchable_select`: aceita valor fora da lista (issue #2521). */
   allow_new?: boolean;
+  /**
+   * Só no `searchable_select`: guarda VÁRIOS valores canônicos, em vez de um
+   * (issue #3182). O registro vira uma lista e os escolhidos aparecem como
+   * chips — assim o negócio "forfait" registra o aéreo da consolidadora A junto
+   * do hotel da operadora B, sem o despejo da lista inteira de opções que
+   * tornava o `multiselect` inviável com listas longas.
+   */
+  multiple?: boolean;
 }
 
 interface Props {
@@ -70,9 +87,10 @@ interface Props {
   mode: "lead" | "contact";
   disabled?: boolean;
   className?: string;
+  leadId?: string;
 }
 
-export function CustomFieldsEditor({ fields, value, onChange, disabled, className }: Props) {
+export function CustomFieldsEditor({ fields, value, onChange, mode, disabled, className, leadId }: Props) {
   const t = useT();
   const [rascunhosDeMoeda, setRascunhosDeMoeda] = useState<Record<string, string>>({});
   // O rascunho do `searchable_select`: enquanto a pessoa digita, o input mostra
@@ -109,9 +127,26 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
   }, [baseId, buscaAberta, destacado, rascunhosDeBusca]);
   // O campo é do mesmo caminho do contato: o exemplo segue o país da
   // organização, e não o DDI brasileiro em duro.
-  const telefoneExemplo = perfilDoPais(useActiveOrg()?.country).telefoneExemplo;
+  const org = useActiveOrg();
+  const telefoneExemplo = perfilDoPais(org?.country).telefoneExemplo;
+  // O campo de moeda na moeda da organização (`lib/leads/campo-de-moeda.ts`).
+  const moedaDoCampo = org?.currency ?? MOEDA_PADRAO;
   function set(key: string, v: unknown) {
     onChange({ ...value, [key]: v });
+  }
+
+  function gravarMoeda(key: string) {
+    const draft = rascunhosDeMoeda[key];
+    if (draft === undefined) return;
+    const raw = semAMoeda(draft, moedaDoCampo);
+    const centavos = raw === "" ? null : lerCampoDeMoeda(raw, moedaDoCampo);
+    if (centavos !== null) set(key, centavos / 100);
+    else if (raw === "") set(key, null);
+    setRascunhosDeMoeda((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
   }
 
   /**
@@ -129,11 +164,36 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
         const v = value[f.key];
         const id = `cf-${f.key}`;
 
+        // ── O PADRÃO DO CAMPO (#2730) ──────────────────────────────────────
+        //
+        // A MESMA régua da API (`422`) e da gravação pela IA (erro de ensino),
+        // decidida em `lib/leads/padrao-do-campo`. Sem `padrao` o veredito é
+        // sempre `ok`: o campo livre continua livre e nada abaixo aparece —
+        // a régua nova só enxerga quem a configurou.
+        //
+        // A frase é a DO CAMPO (`mensagem_padrao`), não uma genérica: quem
+        // digita "dois" em "Idades das crianças" vê a instrução do dono do
+        // funil. Só quando não há instrução é que a genérica (ou a de
+        // CONFIGURAÇÃO quebrada, quando o regex nem compila) entra no lugar.
+        //
+        // Ela fica entre o rótulo e o input — o mesmo lugar do padrão GOV.UK,
+        // onde a mensagem de erro pertence ao rótulo e não ao fim do bloco: em
+        // `md:grid-cols-2` um elemento irmão DEPOIS do input cairia na célula
+        // do campo vizinho.
+        const textoDoErro = mensagemDoCampo(f, v, t);
+
         const labelEl = (
-          <Label htmlFor={id}>
-            {f.label}
-            {f.required && <span className="ml-1 text-error-fg">*</span>}
-          </Label>
+          <>
+            <Label htmlFor={id}>
+              {f.label}
+              {f.required && <span className="ml-1 text-error-fg">*</span>}
+            </Label>
+            {textoDoErro && (
+              <p id={`${id}-erro`} role="alert" className="text-sm text-error-fg">
+                {textoDoErro}
+              </p>
+            )}
+          </>
         );
 
         switch (f.type) {
@@ -168,7 +228,7 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
             const valorNumerico = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : null;
             const formatado =
               valorNumerico !== null && Number.isFinite(valorNumerico)
-                ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(valorNumerico)
+                ? valorDoCampoDeMoeda(valorNumerico, moedaDoCampo)
                 : "";
             return (
               <div key={f.key} className="space-y-2">
@@ -179,21 +239,14 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
                   inputMode="decimal"
                   value={rascunhosDeMoeda[f.key] ?? formatado}
                   onChange={(e) => setRascunhosDeMoeda((current) => ({ ...current, [f.key]: e.target.value }))}
-                  onBlur={() => {
-                    const draft = rascunhosDeMoeda[f.key];
-                    if (draft === undefined) return;
-                    const raw = draft.trim().replace(/^R\$\s*/i, "").replace(/\s/g, "");
-                    const centavos = raw === "" ? null : parseReaisToCents(raw);
-                    if (centavos !== null) set(f.key, centavos / 100);
-                    else if (raw === "") set(f.key, null);
-                    setRascunhosDeMoeda((current) => {
-                      const next = { ...current };
-                      delete next[f.key];
-                      return next;
-                    });
+                  onBlur={() => gravarMoeda(f.key)}
+                  onKeyDown={(e) => {
+                    // Enter envia o formulário sem tirar o foco. Entrega o
+                    // rascunho antes do submit, usando a mesma leitura do blur.
+                    if (e.key === "Enter") gravarMoeda(f.key);
                   }}
                   disabled={disabled}
-                  placeholder="R$ 0,00"
+                  placeholder={exemploDoCampoDeMoeda(moedaDoCampo)}
                 />
               </div>
             );
@@ -269,8 +322,25 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
             // relatório de "Maceió" voltarem a bater. `allow_new` deixa passar
             // um valor novo, aparado, quando o funil o permite.
             const opcoes = f.options ?? [];
-            const canonico = typeof v === "string" ? v : "";
+            // O MODO MÚLTIPLO da lista pesquisável (#3182): o registro é uma
+            // LISTA de `value` canônicos e o que já foi escolhido aparece em
+            // CHIPS, um por opção. No valor único o registro continua a string
+            // de sempre, e nada abaixo muda de comportamento.
+            const multiplo = f.multiple === true;
+            // Um valor único já gravado (o campo virou múltiplo depois, ou o
+            // diálogo de campos exigidos gravou uma escolha só) é uma lista de
+            // UM — a mesma leitura de `validarValorPesquisavel`. Sem isso o
+            // valor some da ficha e a próxima escolha o sobrescreve.
+            const escolhidos = !multiplo
+              ? []
+              : Array.isArray(v)
+                ? (v as unknown[]).filter((x): x is string => typeof x === "string")
+                : typeof v === "string" && v.trim() !== ""
+                  ? [v]
+                  : [];
+            const canonico = !multiplo && typeof v === "string" ? v : "";
             const rotuloAtual = opcoes.find((o) => o.value === canonico)?.label ?? canonico;
+            const rotuloDe = (valor: string) => opcoes.find((o) => o.value === valor)?.label ?? valor;
             const rascunho = rascunhosDeBusca[f.key];
             const listaId = `${baseId}-${f.key}-opcoes`;
             // A lista é NOSSA, não um `<datalist>`: o navegador refiltra o
@@ -284,8 +354,18 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
               setBuscaAberta(null);
               setDestacado(-1);
             };
+            // O REGISTRO de uma escolha: no valor único a string; no múltiplo a
+            // lista com o novo item no fim. Escolher de novo uma opção que já
+            // está lá é a MESMA escolha — o chip não duplica.
+            const gravar = (valor: string) => {
+              if (!multiplo) {
+                set(f.key, valor);
+                return;
+              }
+              set(f.key, escolhidos.includes(valor) ? escolhidos : [...escolhidos, valor]);
+            };
             const escolher = (valor: string) => {
-              set(f.key, valor);
+              gravar(valor);
               limparRascunho();
               setRecusados(({ [f.key]: _limpo, ...resto }) => resto);
               fechar();
@@ -296,9 +376,12 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
               fechar();
               if (rascunho === undefined) return;
               const achado = valorCanonico(opcoes, rascunho);
-              if (achado !== null) set(f.key, achado);
-              else if (rascunho.trim() === "") set(f.key, "");
-              else if (f.allow_new === true) set(f.key, rascunho.trim());
+              if (achado !== null) gravar(achado);
+              // Num campo múltiplo o rascunho vazio não é escrita: os chips já
+              // escolhidos são o registro, e limpar o texto do input não os apaga.
+              else if (rascunho.trim() === "") {
+                if (!multiplo) set(f.key, "");
+              } else if (f.allow_new === true) gravar(rascunho.trim());
               // Sem casar e sem `allow_new`, o valor não é gravado: o
               // input volta ao que estava, e o aviso abaixo explica.
               else setRecusados((current) => ({ ...current, [f.key]: true }));
@@ -307,6 +390,35 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
             return (
               <div key={f.key} className="space-y-2">
                 {labelEl}
+                {/* OS CHIPS (#3182): o que já foi escolhido, um por opção, com
+                    o rótulo da lista e um botão para tirar. É o que substitui o
+                    despejo da lista INTEIRA de opções na ficha — com 200
+                    fornecedores, o registro ocupa o espaço do que foi escolhido,
+                    não o da lista. */}
+                {multiplo && escolhidos.length > 0 && (
+                  <ul className="flex flex-wrap gap-1" aria-label={t("Escolhidos")}>
+                    {escolhidos.map((valor) => {
+                      const rotulo = rotuloDe(valor);
+                      return (
+                        <li
+                          key={valor}
+                          className="flex items-center gap-1 rounded-sm border border-border bg-surface px-2 py-0.5 text-xs"
+                        >
+                          {rotulo}
+                          <button
+                            type="button"
+                            aria-label={`${t("Remover")} ${rotulo}`}
+                            className="text-text-muted hover:text-error-fg"
+                            onClick={() => set(f.key, escolhidos.filter((x) => x !== valor))}
+                            disabled={disabled}
+                          >
+                            ×
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
                 <div className="relative">
                   <Input
                     id={id}
@@ -319,8 +431,10 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
                       aberta && destacado >= 0 ? `${listaId}-${destacado}` : undefined
                     }
                     autoComplete="off"
-                    placeholder={t("Digite para buscar…")}
-                    value={rascunho ?? rotuloAtual}
+                    placeholder={
+                      multiplo ? t("Digite para buscar e acrescentar…") : t("Digite para buscar…")
+                    }
+                    value={rascunho ?? (multiplo ? "" : rotuloAtual)}
                     onFocus={() => {
                       setBuscaAberta(f.key);
                       setDestacado(-1);
@@ -446,6 +560,28 @@ export function CustomFieldsEditor({ fields, value, onChange, disabled, classNam
                 />
                 <p className="text-xs text-muted-foreground">{t("Formato E.164")}</p>
               </div>
+            );
+          case "file":
+            // O anexo é do NEGÓCIO (`crm_lead_attachments.lead_id`): na ficha do
+            // contato não há negócio para pendurar o arquivo, então não há upload.
+            if (mode === "contact" || !leadId) {
+              return (
+                <div key={f.key} className="space-y-1">
+                  <Label className="text-xs">{f.label}</Label>
+                  <p className="text-xs text-muted-foreground">{t("Os anexos ficam no negócio.")}</p>
+                </div>
+              );
+            }
+            // Sem `onChange`: a lista mora em `crm_lead_attachments`, nunca em `custom_fields`.
+            return (
+              <FileUploadCustomField
+                key={f.key}
+                fieldKey={f.key}
+                label={f.label}
+                required={f.required}
+                leadId={leadId}
+                disabled={disabled}
+              />
             );
           case "url":
             return (

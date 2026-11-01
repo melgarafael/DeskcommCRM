@@ -5,8 +5,8 @@
  * com superfície).
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { ActionForm } from "./ActionForm";
 
@@ -15,11 +15,37 @@ const SEM_VARIAVEIS = "22222222-2222-4222-8222-222222222222";
 
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
+  // Sem grupo (#3245): a barra e o slash-menu são os de antes dos grupos.
+  useGruposDeRespostas: () => ({ data: [] }),
   useMessageTemplates: () => ({ data: [], isLoading: false, isError: false }),
 }));
+// Um campo do NEGÓCIO e um do CONTATO (#2791): o envio lê só
+// `crm_leads.custom_fields`, então o seletor só pode oferecer o primeiro.
 vi.mock("@/hooks/webhooks/useWebhookSources", () => ({
-  usePipelines: () => ({ data: { data: [] } }),
+  usePipelines: () => ({
+    data: {
+      data: [
+        {
+          id: "ffffffff-0000-4000-8000-00000000000f",
+          settings: {
+            fields: [
+              { key: "modelo_cafeteira", label: "Modelo", type: "text" },
+              { key: "cidade", label: "Cidade", type: "text", escopo: "contato" },
+            ],
+          },
+        },
+      ],
+    },
+  }),
 }));
+
+beforeAll(() => {
+  const proto = window.HTMLElement.prototype as unknown as Record<string, unknown>;
+  proto.hasPointerCapture ??= () => false;
+  proto.setPointerCapture ??= () => undefined;
+  proto.releasePointerCapture ??= () => undefined;
+  proto.scrollIntoView ??= () => undefined;
+});
 vi.mock("@/hooks/followup/useModelosAprovadosDoFluxo", () => ({
   useModelosAprovadosDoFluxo: () => ({
     isLoading: false,
@@ -96,5 +122,22 @@ describe("passo de modelo com variáveis", () => {
   it("modelo sem variável não mostra o mapa", () => {
     montar({ mode: "template", template_id: SEM_VARIAVEIS });
     expect(screen.queryByText("De onde sai cada variável")).toBeNull();
+  });
+
+  it("⭐ o seletor oferece campo do negócio, nunca campo do contato", async () => {
+    montar({
+      mode: "template",
+      template_id: COM_VARIAVEIS,
+      template_values: { "1": { kind: "contact_first_name" } },
+    });
+
+    fireEvent.click(screen.getByRole("combobox", { name: /\{\{2\}\}/ }));
+    const lista = await screen.findByRole("listbox");
+    const opcoes = within(lista)
+      .getAllByRole("option")
+      .map((o) => o.textContent ?? "");
+
+    expect(opcoes).toContain("Modelo (modelo_cafeteira)");
+    expect(opcoes.some((o) => o.includes("cidade"))).toBe(false);
   });
 });

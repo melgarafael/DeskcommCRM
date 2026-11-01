@@ -123,12 +123,15 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
     // O worker não pergunta QUAL canal é — o invariante 1 proíbe e o
     // `lint:channels` reprova. Ele pede a sessão, pede o adapter e testa a
     // presença do método.
-    const { data: sessao } = await admin
+    const { data: sessao, error: sessionErr } = await admin
       .from("channel_sessions")
       .select(`provider, ${CHANNEL_SESSION_REF_COLUMNS}`)
       .eq("organization_id", msg.organization_id)
       .eq("id", msg.channel_session_id)
       .maybeSingle();
+    // Leitura que falhou não prova ausência de suporte a mídia. O catch mantém
+    // as tentativas do dreno e só marca failed quando elas se esgotam.
+    if (sessionErr) throw new Error(`session lookup failed: ${sessionErr.message}`);
 
     const adapter = getAdapter(
       ((sessao?.provider as string) ?? DEFAULT_CHANNEL_PROVIDER) as ChannelProvider,
@@ -248,7 +251,12 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
   }
   const isGroup = Boolean((conv as { is_group?: boolean | null } | null)?.is_group);
 
-  if (!isGroup) {
+  // Histórico importado (#999) é guardado para análise de atendimento depois:
+  // sem transcrição nem visão automática, que são pagas e responderiam a conversa
+  // de meses atrás. A chave é texto 'true' (contrato da 0760).
+  const historicoImportado = msg.metadata?.historico_importado === "true";
+
+  if (!isGroup && !historicoImportado) {
     // Dispara a derivação textual (Onda 3) — fire-and-forget, mesmo padrão do
     // resto do repo: falha de emit não reverte a persistência já concluída.
     const { error: emitErr } = await admin.rpc("emit_event" as never, {

@@ -2,9 +2,11 @@ import { toast } from "sonner";
 
 import { traduzir } from "@/lib/i18n/dicionario";
 import { idiomaAtual } from "@/lib/i18n/IdiomaProvider";
+import { conteudoNaTelaBloqueadaWriteSchema, type ConteudoNaTelaBloqueada } from "@/lib/schemas/settings";
 import { emitNotification } from "./emit";
 import type { NotifyKind } from "./kinds";
 import { canalLigado, type NotifyCategory } from "./prefs";
+import { redigirParaATelaBloqueada } from "./tela-bloqueada";
 
 export interface EntregarAvisoInput {
   category: NotifyCategory;
@@ -14,6 +16,23 @@ export interface EntregarAvisoInput {
   tag?: string;
   href?: string;
   icon?: string;
+  /** O que a bandeja mostra no modo `nome` no lugar de `body`; ausente = corpo vazio. */
+  corpoSemPrevia?: string;
+  /** A opção da empresa, quando o produtor já a tem; senão é lida do servidor. */
+  conteudo?: ConteudoNaTelaBloqueada;
+}
+
+/** A opção da empresa para a bandeja. Sem resposta válida, `oculto`. */
+async function conteudoDaBandeja(): Promise<ConteudoNaTelaBloqueada> {
+  try {
+    const r = await fetch("/api/v1/notifications/push", { credentials: "include" });
+    if (!r.ok) return "oculto";
+    const json = (await r.json()) as { data?: { conteudo?: unknown } | null };
+    const conteudo = conteudoNaTelaBloqueadaWriteSchema.safeParse(json.data?.conteudo);
+    return conteudo.success ? conteudo.data : "oculto";
+  } catch {
+    return "oculto";
+  }
 }
 
 export function entregarAviso(input: EntregarAvisoInput): void {
@@ -43,14 +62,24 @@ export function entregarAviso(input: EntregarAvisoInput): void {
     });
   }
   if (canalLigado(input.category, "push")) {
-    emitNotification({
-      kind: input.kind,
-      title,
-      body,
-      tag: input.tag,
-      href: input.href,
-      icon: input.icon,
-      force: true,
-    });
+    // O toast fica dentro do app aberto; a bandeja aparece fora dele e segue a
+    // opção da empresa, como o push do servidor (`./web_push.ts`).
+    void (async () => {
+      const conteudo = input.conteudo ?? (await conteudoDaBandeja());
+      const bandeja = redigirParaATelaBloqueada(
+        { title: input.title, body: input.body, corpoSemPrevia: input.corpoSemPrevia, icon: input.icon },
+        conteudo,
+        idioma,
+      );
+      emitNotification({
+        kind: input.kind,
+        title: traduzir(bandeja.title, idioma),
+        body: traduzir(bandeja.body, idioma),
+        tag: input.tag,
+        href: input.href,
+        icon: bandeja.icon,
+        force: true,
+      });
+    })();
   }
 }

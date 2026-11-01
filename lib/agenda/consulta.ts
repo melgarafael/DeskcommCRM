@@ -1,4 +1,5 @@
 import { googleRpc } from "./google/sync-store";
+import { consultarServico, lerServico, type DisponibilidadeDoServico } from "./servicos/consulta";
 import { lerCorposDoLembrete } from "./lembretes";
 /**
  * OS HORÁRIOS LIVRES DE UMA ORGANIZAÇÃO — a coleta, num lugar só.
@@ -109,6 +110,21 @@ export interface ParametrosDaConsulta {
   ownerUserId?: string | null;
   de: Date;
   ate: Date;
+  /**
+   * A duração escolhida para ESTE atendimento, em minutos — ausente, a do tipo
+   * (issue #3709).
+   *
+   * Desce até `horariosLivres` como o comprimento de cada slot, e portanto é
+   * ela que decide o que está livre: pedir 90 minutos e receber a lista dos
+   * slots de 30 faria a tela oferecer um horário que a escrita precisa recusar.
+   *
+   * ⚠️ NÃO VALE PARA `service_enabled`. Ali quem manda no comprimento é a
+   * agenda do SERVIÇO (`calendar_service_schedule.duration_minutes`, com
+   * capacidade e ocorrências), e sobrepor uma duração avulsa à reserva
+   * quebraria a conta de vagas. A rota e o handler recusam a escolha nesse
+   * caminho em vez de ignorá-la em silêncio.
+   */
+  duracaoMin?: number | null;
   /** INJETADO, como em `horariosLivres`. Relógio lido aqui dentro é o defeito que `janela-do-canal.ts` documenta. */
   agora: Date;
   /**
@@ -149,6 +165,7 @@ export type ResultadoDaConsulta =
       agendaExternaNuncaLida: boolean;
       /** Cobertura incompleta para o trecho futuro consultado; o passado não oferece horários. */
       googleCoberturaParcial: boolean;
+      servico?: { event_type_id: string; booking_mode: string; revision: number; availability: DisponibilidadeDoServico[] };
     }
   | {
       ok: false;
@@ -188,7 +205,7 @@ export async function horariosLivresDaOrg(
   const { data: tipo, error: erroTipo } = await supabase
     .from("calendar_event_types")
     .select(
-      "id, name, is_active, duration_minutes, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, slot_interval_minutes, booking_window_days, default_owner_user_id",
+      "id, name, is_active, duration_minutes, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, slot_interval_minutes, booking_window_days, default_owner_user_id, service_enabled",
     )
     .eq("organization_id", organizationId)
     .eq(params.eventTypeSlug ? "slug" : "id", params.eventTypeSlug ?? params.eventTypeId ?? "")
@@ -221,6 +238,29 @@ export async function horariosLivresDaOrg(
       motivoParaOperador: `"${tipo.name}" está desativado.`,
       motivoParaCliente: `"${tipo.name}" não está sendo agendado no momento. ${NAO_OFERECA}`,
     };
+  }
+
+  if (tipo.service_enabled) {
+    try {
+      // ⚠️ `params.duracaoMin` NÃO entra aqui de propósito: num serviço o
+      // comprimento é da agenda publicada (`calendar_service_schedule`), e a
+      // reserva tem capacidade e ocorrência — ver o aviso no parâmetro. Quem
+      // recusa a escolha nesse caminho é a ESCRITA (`_handler.ts`), que é onde
+      // ignorar em silêncio viraria um compromisso com duração diferente da
+      // anunciada.
+      const service = await lerServico(supabase, organizationId, tipo.id);
+      if (!service) throw new Error("Serviço não encontrado.");
+      const result = await consultarServico(supabase, organizationId, service, { de: params.de, ate: params.ate, agora: params.agora, ownerUserId: params.ownerUserId });
+      const unverified = result.availability.some((row) => row.reason === "availability_unverified" || row.reason === "publication_unavailable");
+      return { ok: true, slots: result.availability.filter((row) => row.available && row.ends_at)
+        .map((row) => ({ inicio: new Date(row.starts_at), fim: new Date(row.ends_at!) })),
+        fusoDaRegra: service.service_timezone, publicouHorarios: service.schedule.length > 0, fusoSuposto: false,
+        fontesDefasadas: [], agendaExternaNuncaLida: unverified, googleCoberturaParcial: unverified,
+        servico: { event_type_id: tipo.id, booking_mode: service.booking_mode, revision: service.service_revision, availability: result.availability } };
+    } catch (error) {
+      return { ok: false, codigo: "erro_interno", motivoParaOperador: error instanceof Error ? error.message : "Não foi possível consultar o serviço.",
+        motivoParaCliente: `Não consegui verificar os horários deste serviço agora. ${NAO_OFERECA}` };
+    }
   }
 
   const donoId = params.ownerUserId ?? tipo.default_owner_user_id;
@@ -359,6 +399,9 @@ export async function horariosLivresDaOrg(
       intervaloMin: tipo.slot_interval_minutes,
       janelaDias: tipo.booking_window_days,
     },
+    // A escolha da tela entra no MOTOR, e não só no INSERT: é o comprimento do
+    // slot que decide se um horário está livre (issue #3709).
+    duracaoMin: params.duracaoMin ?? null,
     de: params.de,
     ate: params.ate,
     agora: params.agora,
@@ -535,9 +578,11 @@ export interface AgendamentoListado {
    * vínculo e não paga o preço de quem publica. (issue #1744)
    */
   leadIds?: string[];
+  servico?: { occurrence_id: string; participant_name: string | null; booking_mode: string; capacity_limit: number | null; google_publication: string };
 }
 
 export interface ParametrosDaLista {
+  somenteColetivas?: boolean;
   contactId?: string | null;
   /** Resolvido por `crm_lead_links` — ver o aviso acima. */
   leadId?: string | null;
@@ -852,7 +897,7 @@ export async function listaAgendamentos(
   let q = supabase
     .from("calendar_appointments")
     .select(
-      "id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name)",
+      "id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error",
     )
     .eq("organization_id", organizationId)
     .order("starts_at", { ascending: true })
@@ -862,8 +907,11 @@ export async function listaAgendamentos(
     .order("id", { ascending: true })
     .limit(params.limite + 1);
 
+  q = q.eq("service_block", false);
+
   if (idsPorLead) q = q.in("id", idsPorLead);
   if (params.contactId) q = q.eq("contact_id", params.contactId);
+  if (params.somenteColetivas) q = q.in("service_booking_mode", ["collective_limited", "collective_unlimited"]);
   if (params.ownerUserId) q = q.eq("owner_user_id", params.ownerUserId);
   if (params.situacao) q = q.eq("status", params.situacao);
   if (params.depoisDe) {
@@ -1000,6 +1048,10 @@ export async function listaAgendamentos(
         tipo: tipo ? { slug: texto(tipo.slug) ?? "", nome: texto(tipo.name) ?? "" } : null,
         local: { tipo: texto(l.location_kind), descricao: texto(l.location_details) },
         leadIds: vinculosPorAlvo?.get(String(l.id)) ?? [],
+        ...(l.service_occurrence_id ? { servico: { occurrence_id: String(l.service_occurrence_id), participant_name: texto(l.participant_name),
+          booking_mode: String(l.service_booking_mode), capacity_limit: l.service_capacity_limit == null ? null : Number(l.service_capacity_limit),
+          google_publication: l.service_publication_mode === "none" ? "not_configured" : l.google_conflict ? "conflict" : l.google_sync_error ? "failed"
+            : l.google_event_id && l.google_synced_local_revision === l.google_local_revision ? l.status === "cancelled" ? "removed" : "synced" : "pending" } } : {}),
       } satisfies AgendamentoListado;
     }),
     proximo:
@@ -1099,6 +1151,7 @@ export interface TipoDeAtendimento {
   lembreteMensagens: Record<string, string>;
   /** Preço padrão em centavos, ou null quando o negócio digita na hora. */
   precoPadraoCents: number | null;
+  servico?: { booking_mode: string; capacity: number | null; revision: number; publication_mode: string };
 }
 
 export type ResultadoDosTipos =
@@ -1128,7 +1181,7 @@ export async function listaTiposDeAtendimento(
   let q = supabase
     .from("calendar_event_types")
     .select(
-      "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents",
+        "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity, service_revision, service_publication_mode",
     )
     // Service role bypassa a RLS: este filtro é a única proteção no caminho da
     // ferramenta MCP (ver o cabeçalho do arquivo).
@@ -1178,6 +1231,8 @@ export async function listaTiposDeAtendimento(
         t.default_price_cents === null || t.default_price_cents === undefined
           ? null
           : Number(t.default_price_cents),
+      ...(t.service_enabled ? { servico: { booking_mode: String(t.booking_mode), capacity: t.service_capacity == null ? null : Number(t.service_capacity),
+        revision: Number(t.service_revision), publication_mode: String(t.service_publication_mode) } } : {}),
     })),
   };
 }

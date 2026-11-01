@@ -1,12 +1,13 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * GET  /api/v1/ai/followups/enrollments — lista enrollments da org ativa
- *   (any member), filtro opcional `?status=`.
+ *   (any member), filtros opcionais `?status=` e `?contact_id=` (uuid).
  * POST /api/v1/ai/followups/enrollments — enrollment (manager+); lógica em
  *   `lib/followup/enroll.ts`.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
+import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
@@ -40,6 +41,13 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (status !== null && !ENROLLMENT_STATUSES.includes(status)) {
     return fail("invalid_request", t("status inválido."), 400, { requestId });
   }
+  // O recorte por contato é do servidor: a porta de follow-up do painel da
+  // conversa (#3178) lê só o contato aberto, em vez de baixar a org inteira e
+  // esbarrar no `max_rows` do PostgREST.
+  const contactId = req.nextUrl.searchParams.get("contact_id");
+  if (contactId !== null && !z.string().uuid().safeParse(contactId).success) {
+    return fail("invalid_request", t("contact_id inválido."), 400, { requestId });
+  }
 
   const supabase = await createClient();
   let query = supabase
@@ -48,6 +56,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     .eq("organization_id", activeOrg.orgId)
     .order("updated_at", { ascending: false });
   if (status !== null) query = query.eq("status", status);
+  if (contactId !== null) query = query.eq("contact_id", contactId);
 
   const { data, error } = await query;
   if (error) return fail("internal_error", error.message, 500, { requestId });

@@ -8,16 +8,18 @@ date: 2026-04-28
 
 # 07 — Responsive Strategy
 
-> Como cada superfície responde a cada breakpoint. **Desktop ≥1280px é o foco MVP** (atendente passa o dia em laptop). Mobile não é foco mas degrada graciosamente para o atendente em deslocamento.
+> Como cada superfície responde a cada breakpoint. **O atendente no celular é superfície de primeira classe**: o app instalado é a PWA do mesmo Next.js, nas mesmas rotas `/app` ([ADR-0006](../../adr/0006-app-no-celular-e-a-pwa-do-mesmo-next.md)). Configuração pesada continua desenhada para tela grande, mas nunca bloqueada no celular.
+>
+> *Até 20/10/2026 esta linha dizia que mobile não era foco e que o celular seria só leitura/resposta rápida em algumas telas. A ADR-0006 trocou essa premissa; os princípios abaixo continuam valendo.*
 
 ## Breakpoints canônicos
 
-| Token     | Largura     | Uso primário                                                            |
-| --------- | ----------- | ----------------------------------------------------------------------- |
-| `desktop` | ≥1280px     | **default** — design otimizado                                          |
-| `laptop`  | 1024–1279px | aceito sem degradação grave                                             |
-| `tablet`  | 768–1023px  | "stacked" — layouts mudam                                               |
-| `mobile`  | 360–767px   | atendente em deslocamento; somente leitura/quick-reply em algumas telas |
+| Token     | Largura     | Uso primário                                                                                                 |
+| --------- | ----------- | ------------------------------------------------------------------------------------------------------------ |
+| `desktop` | ≥1280px     | **default** — design otimizado                                                                               |
+| `laptop`  | 1024–1279px | aceito sem degradação grave                                                                                  |
+| `tablet`  | 768–1023px  | "stacked" — layouts mudam                                                                                    |
+| `mobile`  | 360–767px   | atendente no celular (app instalado): atende de ponta a ponta; configuração pesada adaptada, nunca bloqueada |
 
 Tailwind: `lg:` ≥1024, `xl:` ≥1280, `2xl:` ≥1536. Para um ponto de corte próprio
 de tablet, declare `--breakpoint-<nome>` no `@theme inline` de `app/globals.css`

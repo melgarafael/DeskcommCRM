@@ -200,7 +200,37 @@ export type ActivityType =
    * possível (`lead_id` é NOT NULL), só auditoria (D6).
    */
   | "contact_marked_personal"
-  | "contact_unmarked_personal";
+  | "contact_unmarked_personal"
+  /**
+   * O TELEFONE ENTROU SOZINHO NA FICHA (#2593).
+   *
+   * A exceção da spec 17 §4b — o dado ouvido é proposto, não gravado — só vale
+   * para o telefone de um cadastro SEM número, e só com a opção da organização
+   * ligada (`organizations.settings.crm.telefone_de_ficha_vazia`). Sem esta
+   * linha, o número apareceria no cadastro e o ÚNICO registro seria a auditoria
+   * (`contact.field_auto_applied`), que não tem tela: quem opera lê a timeline,
+   * e "isso entrou sozinho" é exatamente o que ele precisa saber para não
+   * achar que alguém digitou.
+   *
+   * Emitida por `registrarTelefoneAplicadoNaTimeline` — junto e não dentro do
+   * UPDATE do telefone, porque a linha é rastro: falhar nela não pode desfazer
+   * a escrita que ela descreve.
+   */
+  | "contact_field_auto_applied"
+  /**
+   * O DOCUMENTO ENTROU NO CARD (#3316) — o anexo (PDF, imagem) registrado em
+   * `crm_lead_attachments` pela rota de anexos do negócio.
+   *
+   * Sem esta linha, o documento apareceria no card e sumiria da linha do tempo:
+   * quem abre o negócio dias depois não vê QUANDO o voucher chegou, nem que era
+   * aquele arquivo que sustentava a proposta de campo lida por IA. É a memória
+   * do porquê daquela fila de revisão.
+   *
+   * O payload NÃO leva o conteúdo nem o texto do documento: chave do campo,
+   * nome do arquivo, tipo. A leitura da IA não entra no vocabulário porque a
+   * própria fila é a memória dela, com trecho e decisão por proposta.
+   */
+  | "document_attached";
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   lead_created: "Entrou no funil",
@@ -313,6 +343,14 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   // que o contato saiu da operação (ou voltou), não o nome da coluna.
   contact_marked_personal: "Marcado como pessoal",
   contact_unmarked_personal: "Desmarcado como pessoal",
+  // Rótulo que diz DUAS coisas de uma vez: que entrou sozinho (e não por
+  // digitação de alguém) e de onde veio. Só assim quem lê a linha do tempo não
+  // vai procurar quem foi que digitou o número.
+  contact_field_auto_applied: "Telefone informado pelo cliente aplicado automaticamente",
+  // Rótulo com objeto, como o resto ("Documento anexado", não "Anexou"): o que
+  // quem lê a timeline do negócio precisa saber é que um documento entrou; qual
+  // campo e qual arquivo saem do payload (`field_key`/`file_name`).
+  document_attached: "Documento anexado ao negócio",
 };
 
 /** Quando o tipo é legado/desconhecido, a linha ainda é honesta — sem jargão. */
@@ -397,6 +435,9 @@ const NOME_DO_CAMPO: Record<string, string> = {
   title: "o título",
   description: "a descrição",
   value_cents: "o valor",
+  recurring_value_cents: "o valor recorrente",
+  recurring_period: "a periodicidade",
+  recurring_months: "a duração",
   currency: "a moeda",
   owner_user_id: "o responsável",
   owner_agent_id: "o agente responsável",
