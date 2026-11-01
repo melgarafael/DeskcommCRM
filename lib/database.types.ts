@@ -5721,6 +5721,8 @@ export type Database = {
           created_at: string;
           criado_por: string | null;
           destino_jid: string | null;
+          /** `fixo` (default) ou `responsavel` — ver #3803. */
+          destino_modo: string;
           ligado: boolean;
           mensagens_ignoradas: number;
           organization_id: string;
@@ -5737,6 +5739,7 @@ export type Database = {
           created_at?: string;
           criado_por?: string | null;
           destino_jid?: string | null;
+          destino_modo?: string;
           ligado?: boolean;
           mensagens_ignoradas?: number;
           organization_id: string;
@@ -5752,6 +5755,7 @@ export type Database = {
           created_at?: string;
           criado_por?: string | null;
           destino_jid?: string | null;
+          destino_modo?: string;
           ligado?: boolean;
           mensagens_ignoradas?: number;
           organization_id?: string;
@@ -13623,6 +13627,8 @@ export type Database = {
           role: string;
           updated_at: string;
           user_id: string;
+          /** WhatsApp PESSOAL do membro, E.164 — destino do aviso no modo `responsavel` (#3803). */
+          whatsapp_e164: string | null;
         };
         ComputedFields: never;
         Insert: {
@@ -13639,6 +13645,7 @@ export type Database = {
           role: string;
           updated_at?: string;
           user_id: string;
+          whatsapp_e164?: string | null;
         };
         Update: {
           accepted_at?: string | null;
@@ -13654,6 +13661,7 @@ export type Database = {
           role?: string;
           updated_at?: string;
           user_id?: string;
+          whatsapp_e164?: string | null;
         };
         Relationships: [
           {

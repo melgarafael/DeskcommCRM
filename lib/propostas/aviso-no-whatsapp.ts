@@ -22,6 +22,7 @@ import {
   type PacingDoAviso,
   type TransporteDoAviso,
 } from "@/lib/escalacao/aviso-ao-suporte";
+import { resolveDestinoDoEnvio, type MundoDoAviso } from "@/lib/escalacao/membros-do-aviso";
 import { primeiroNome } from "@/lib/escalacao/texto-do-aviso";
 import { urlPublicaUsavel } from "@/lib/escalacao/url-publica";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -32,7 +33,23 @@ export const EVENTO_PROPOSTA_PRONTA = "proposal.ready_for_review";
 export interface AvisoDePropostaDb {
   preferencia(orgId: string): Promise<boolean>;
   carregaConfig(orgId: string): Promise<ConfigDoAviso | null>;
-  carregaProposta(orgId: string, propostaId: string): Promise<{ titulo: string | null; status: string; contact_id: string | null } | null>;
+  carregaProposta(orgId: string, propostaId: string): Promise<{
+    titulo: string | null;
+    status: string;
+    contact_id: string | null;
+    /** A conversa que gerou o rascunho — de onde a #3803 tira o responsável. */
+    conversation_id?: string | null;
+  } | null>;
+  /**
+   * O mundo do destino dinâmico (#3803), o MESMO do aviso de caso. Opcional
+   * porque os dublês anteriores a esta entrega não o têm e seguem no número
+   * fixo; o adapter de produção (que é o do aviso de caso) o entrega.
+   */
+  carregaMundoDoAviso?(entrada: {
+    organizationId: string;
+    conversationId: string | null;
+    contactId: string | null;
+  }): Promise<MundoDoAviso>;
   avisoAberto(orgId: string, propostaId: string): Promise<boolean>;
   nomeDoContato(orgId: string, contactId: string): Promise<string | null>;
   carregaCanal(orgId: string, channelSessionId: string): Promise<CanalDoAviso | null>;
@@ -142,7 +159,22 @@ export async function aplicaAvisoDeProposta(deps: AvisoDePropostaDeps, row: Even
   const pacing = await deps.pacing.decide(orgId, canalId, agora);
   if (!pacing.liberado) return retry(pacing.liberaEm, `pacing:${pacing.motivo}`);
 
-  const to = await deps.transporte.resolveDestino(orgId, canal, cfg.telefone_destino);
+  // ── PARA QUEM vai o aviso (#3803) ─────────────────────────────────────────
+  // Mesma decisão do aviso de caso, pela mesma função: o modo `fixo` (o
+  // `default` da coluna) devolve o número da empresa sem uma consulta a mais, e
+  // o modo `responsavel` lê a conversa do rascunho, o negócio aberto do contato,
+  // a carteira e os telefones — e cai no número da empresa quando ninguém serve.
+  const destino = await resolveDestinoDoEnvio({
+    config: cfg as unknown as Record<string, unknown>,
+    organizationId: orgId,
+    conversationId: proposta.conversation_id ?? null,
+    contactId: proposta.contact_id,
+    carregaMundo: deps.db.carregaMundoDoAviso,
+    aviso: "proposta",
+  });
+  if (!destino.telefone) return falha("sem_destino");
+
+  const to = await deps.transporte.resolveDestino(orgId, canal, destino.telefone);
   if (!to) return falha("destino_invalido");
 
   const marca = await deps.db.marcaDaOrganizacao(orgId);
@@ -169,16 +201,29 @@ export async function aplicaAvisoDeProposta(deps: AvisoDePropostaDeps, row: Even
   } catch {
     /* o ledger é best-effort depois do envio — ver comentário acima */
   }
-  try {
-    await deps.db.registraJidDoAviso(orgId, to);
-  } catch {
-    /* idem */
+  // O JID só é registrado quando o destino é o número da EMPRESA: ele existe para
+  // o corte da ingestão reconhecer aquele chat como interno, e o celular de um
+  // vendedor que também conversa com o CRM não é interno (mesma decisão do aviso
+  // de caso).
+  if (destino.origem === "numero_da_empresa") {
+    try {
+      await deps.db.registraJidDoAviso(orgId, to);
+    } catch {
+      /* idem */
+    }
   }
   deps.audita({
     action: "proposal.aviso_whatsapp_enviado",
     organizationId: orgId,
     propostaId,
-    metadata: { canal: canalId, tentativas: tentativa, destino_mascarado: mascara(cfg.telefone_destino) },
+    metadata: {
+      canal: canalId,
+      tentativas: tentativa,
+      destino_mascarado: mascara(destino.telefone),
+      // O elo que decidiu — sem isso o aviso que foi para a pessoa errada não
+      // tem como ser explicado depois.
+      destino: destino.origem,
+    },
   });
   return { status: "ok", detail: `enviado canal=${canalId}` };
 }

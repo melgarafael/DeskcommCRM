@@ -31044,7 +31044,14 @@ create table if not exists public.config_aviso_de_caso (
   -- desliga (pelo trigger) e deixa a tela explicar.
   channel_session_id  uuid references public.channel_sessions(id) on delete set null,
   -- E.164, com `+`. É o que a pessoa digita e o que o transporte recebe.
+  -- Continua sendo o ÚLTIMO elo da cadeia quando `destino_modo = 'responsavel'`
+  -- (#3803): é ele que garante que o aviso nunca fica sem número.
   telefone_destino    text not null,
+  -- COMO escolher para quem vai o aviso (#3803): `fixo` = `telefone_destino`,
+  -- como sempre; `responsavel` = conversa → negócio aberto → carteira → e, se
+  -- ninguém servir, `telefone_destino`. O default `fixo` é o que deixa a
+  -- configuração de quem já usava o aviso exatamente como estava.
+  destino_modo        text not null default 'fixo',
   -- O JID que o transporte resolveu da última vez. É o que faz o corte da
   -- ingestão funcionar para destinatário em MODO PRIVACIDADE, onde o telefone
   -- nunca chega no webhook e o chat chega como um identificador opaco.
@@ -31068,6 +31075,7 @@ create table if not exists public.config_aviso_de_caso (
 -- anterior deste arquivo: `add column if not exists` é o que torna o apêndice
 -- auto-curativo.
 alter table public.config_aviso_de_caso
+  add column if not exists destino_modo                text not null default 'fixo',
   add column if not exists destino_jid                 text,
   add column if not exists rotulo                      text,
   add column if not exists mensagens_ignoradas         integer not null default 0,
@@ -31091,6 +31099,29 @@ alter table public.config_aviso_de_caso
 alter table public.config_aviso_de_caso
   add constraint config_aviso_de_caso_rotulo_curto
   check (rotulo is null or char_length(rotulo) <= 60);
+
+-- O vocabulário do destino é FECHADO (#3803): um valor fora dos dois que o
+-- motor conhece deixaria a tela dizendo uma coisa e o envio fazendo outra.
+alter table public.config_aviso_de_caso
+  drop constraint if exists config_aviso_de_caso_destino_modo_valido;
+alter table public.config_aviso_de_caso
+  add constraint config_aviso_de_caso_destino_modo_valido
+  check (destino_modo in ('fixo', 'responsavel'));
+
+-- O WhatsApp PESSOAL de cada membro, por organização (#3803): é dele que o
+-- aviso tira o telefone do responsável. Fica no vínculo (e não em
+-- `auth.users.user_metadata`) porque é por organização, é o que a RLS já
+-- protege e é a linha que a instalação já usa para saber quem é membro. Nulo é
+-- "não cadastrou", e é o caso que faz o elo cair para o próximo.
+alter table public.user_organizations
+  add column if not exists whatsapp_e164 text;
+-- A MESMA forma do CHECK de `config_aviso_de_caso_e164`: o número do membro vai
+-- para o mesmo transporte.
+alter table public.user_organizations
+  drop constraint if exists user_organizations_whatsapp_e164_valido;
+alter table public.user_organizations
+  add constraint user_organizations_whatsapp_e164_valido
+  check (whatsapp_e164 is null or whatsapp_e164 ~ '^\+[1-9][0-9]{7,14}$');
 
 -- Coerência que se AUTOCURA, em vez de um CHECK que aborta o DELETE da conexão
 -- (ver o cabeçalho). `before insert or update` para valer também quando o
@@ -56561,7 +56592,9 @@ create or replace function public.fn_definir_aviso_de_caso(
   p_rotulo text,
   p_ligado boolean,
   p_confirma_contato boolean default false,
-  p_resposta_whatsapp_habilitada boolean default false
+  p_resposta_whatsapp_habilitada boolean default false,
+  p_destino_modo text default 'fixo',
+  p_responsaveis jsonb default null
 ) returns jsonb
 language plpgsql
 security definer
@@ -56572,6 +56605,10 @@ declare
   v_arch timestamptz;
   v_digitos text;
   v_variantes text[];
+  v_modo text;
+  v_item jsonb;
+  v_uid uuid;
+  v_numero text;
 begin
   -- Papel + suporte, nesta ordem e na MESMA transação da escrita. `auth.uid()`
   -- nulo é o caminho do service role: quem escreve configuração é gente.
@@ -56587,6 +56624,13 @@ begin
   end if;
   if p_telefone is null or p_telefone !~ '^\+[1-9][0-9]{7,14}$' then
     raise exception 'aviso_de_caso_telefone_invalido' using errcode = '22023';
+  end if;
+
+  -- O modo é vocabulário FECHADO: um valor fora dos dois que o motor conhece
+  -- deixaria a tela dizendo uma coisa e o envio fazendo outra.
+  v_modo := coalesce(nullif(btrim(p_destino_modo), ''), 'fixo');
+  if v_modo not in ('fixo', 'responsavel') then
+    raise exception 'aviso_de_caso_destino_invalido' using errcode = '22023';
   end if;
 
   -- O canal é DA organização e não está arquivado. Sem isto a FK simples
@@ -56646,18 +56690,52 @@ begin
     raise exception 'aviso_de_caso_numero_de_cliente' using errcode = '22023';
   end if;
 
+  -- ─── O WhatsApp de cada pessoa da equipe (#3803) ─────────────────────────
+  --
+  -- Só membro ATIVO da organização é gravado: número de quem saiu da equipe não
+  -- recebe aviso, e aceitá-lo aqui daria um destino que nunca é resolvido.
+  -- Vazio (`''` ou nulo) É uma informação — significa "esta pessoa não tem
+  -- número" —, e por isso grava nulo em vez de recusar.
+  if p_responsaveis is not null then
+    if jsonb_typeof(p_responsaveis) <> 'array' then
+      raise exception 'aviso_de_caso_whatsapp_invalido' using errcode = '22023';
+    end if;
+    for v_item in select * from jsonb_array_elements(p_responsaveis) loop
+      v_uid := nullif(btrim(coalesce(v_item ->> 'user_id', '')), '')::uuid;
+      if v_uid is null then
+        raise exception 'aviso_de_caso_whatsapp_invalido' using errcode = '22023';
+      end if;
+      v_numero := nullif(btrim(coalesce(v_item ->> 'whatsapp', '')), '');
+      if v_numero is not null then
+        -- O mesmo "dígitos com `+` na frente" que a tela normaliza
+        -- (`normalizarTelefoneDeAviso`): quem manda `31 99888-7777` recebe o
+        -- número guardado na forma canônica em vez de um 22023 que não explica.
+        v_numero := '+' || regexp_replace(v_numero, '\D', '', 'g');
+        if v_numero !~ '^\+[1-9][0-9]{7,14}$' then
+          raise exception 'aviso_de_caso_whatsapp_invalido' using errcode = '22023';
+        end if;
+      end if;
+      update public.user_organizations uo
+         set whatsapp_e164 = v_numero
+       where uo.organization_id = p_org
+         and uo.user_id = v_uid
+         and uo.revoked_at is null;
+    end loop;
+  end if;
+
   select * into v_antes from public.config_aviso_de_caso where organization_id = p_org;
 
   insert into public.config_aviso_de_caso
-    (organization_id, channel_session_id, telefone_destino, rotulo, ligado, resposta_whatsapp_habilitada, criado_por, atualizado_por)
+    (organization_id, channel_session_id, telefone_destino, rotulo, ligado, resposta_whatsapp_habilitada, destino_modo, criado_por, atualizado_por)
   values
-    (p_org, p_channel, p_telefone, nullif(btrim(p_rotulo), ''), coalesce(p_ligado, false), coalesce(p_resposta_whatsapp_habilitada, false), auth.uid(), auth.uid())
+    (p_org, p_channel, p_telefone, nullif(btrim(p_rotulo), ''), coalesce(p_ligado, false), coalesce(p_resposta_whatsapp_habilitada, false), v_modo, auth.uid(), auth.uid())
   on conflict (organization_id) do update
     set channel_session_id = excluded.channel_session_id,
         telefone_destino   = excluded.telefone_destino,
         rotulo             = excluded.rotulo,
         ligado             = excluded.ligado,
         resposta_whatsapp_habilitada = excluded.resposta_whatsapp_habilitada,
+        destino_modo       = excluded.destino_modo,
         atualizado_por     = auth.uid(),
         -- Trocou o número, o JID resolvido do anterior não vale mais — e é o
         -- JID que o corte da ingestão usa para reconhecer quem está em modo
@@ -56672,13 +56750,14 @@ begin
 
   return jsonb_build_object(
     'trocou_numero', (v_antes.telefone_destino is distinct from p_telefone),
-    'antes_ligado',  coalesce(v_antes.ligado, false)
+    'antes_ligado',  coalesce(v_antes.ligado, false),
+    'destino_modo',  v_modo
   );
 end;
 $$;
-revoke all on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean) from public, anon;
-grant execute on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean) to authenticated;
-drop function if exists public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean);
+revoke all on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb) from public, anon;
+grant execute on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb) to authenticated;
+drop function if exists public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean);
 
 -- ---- #3042: desmarcar o exemplo tira do RAG os trechos já aprendidos da conversa (migration 0688) ----
 -- Desmarcar `usable_for_rag` só impedia ingestões futuras; os `ai_chunks` já gravados da conversa
