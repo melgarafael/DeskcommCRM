@@ -30,6 +30,18 @@ async function navegar(page: Page, url: string) {
   await esperarARevelacao(page);
 }
 
+/**
+ * Abre o menu ⋯ do cabeçalho da conversa (#3003) e espera o conteúdo montar.
+ *
+ * As ações secundárias — convidar, chamar, vídeo, reservar, adiar, arquivar,
+ * marcar pessoal — saíram da barra e moram ali. O Radix abre no `pointerdown`,
+ * que é o que o `.click()` do Playwright despacha.
+ */
+async function abrirOMenu(page: Page) {
+  await page.getByTestId("menu-de-acoes").click();
+  await page.getByTestId("menu-de-acoes-conteudo").waitFor({ state: "visible" });
+}
+
 test("convite chega em Minhas, permite resposta e revogação retira o acesso sem trocar o dono", async ({ browser, baseURL }) => {
   test.setTimeout(180_000);
   const ambiente = ambienteSintetico(baseURL);
@@ -129,6 +141,10 @@ test("convite chega em Minhas, permite resposta e revogação retira o acesso se
     expect((await convidada.page.request.get(`/api/v1/conversations/${principal.id}`)).status()).toBe(404);
 
     async function convidar() {
+      // #3003: o CONVITE é ação e mora no menu ⋯; a PRESENÇA (os avatares de quem
+      // já está na conversa) é informação e ficou na barra. O `data-testid` não
+      // mudou de nome — mudou de gaveta.
+      await abrirOMenu(gestor.page);
       await gestor.page.getByTestId("convidar-participante").click();
       await gestor.page.getByTestId("select-colega").click();
       await gestor.page.getByRole("option", { name: nomeConvidada, exact: true }).click();
@@ -167,7 +183,11 @@ test("convite chega em Minhas, permite resposta e revogação retira o acesso se
     expect((await semConvite.page.request.post("/api/v1/messages", { data: { conversation_id: principal.id, type: "text", body: "Sem convite não envia" } })).status()).toBe(404);
     await navegar(viewer.page, `/app/inbox?id=${principal.id}`);
     await expect(viewer.page.getByText(`Contexto sintético ${prefixo}`, { exact: true })).toBeVisible();
+    // O gate do viewer só é medido com o menu ABERTO: fechado, a ausência do
+    // item não prova nada (o Radix não monta o conteúdo).
+    await abrirOMenu(viewer.page);
     await expect(viewer.page.getByTestId("convidar-participante")).toHaveCount(0);
+    await viewer.page.keyboard.press("Escape");
     expect((await viewer.page.request.post("/api/v1/messages", { data: { conversation_id: principal.id, type: "text", body: "Viewer não envia" } })).status()).toBe(403);
     for (const pessoa of [gestor, convidada, semConvite, viewer]) {
       expect((await pessoa.page.request.get(`/api/v1/conversations/${outra.id}`)).status()).toBe(404);

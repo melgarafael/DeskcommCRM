@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "types/public-env.d.ts",
+    "tests/setup/vitest.setup.ts",
+    "components/inbox/ConversationHeader.tsx",
+    "components/inbox/SnoozeButton.tsx",
+    "components/inbox/VideoCallButton.tsx",
+    "components/inbox/ParticipantesDaConversa.tsx",
+    "components/voice/DialButton.tsx",
+    "components/agenda/ReservarServicoNaConversa.tsx",
+    "lib/i18n/dicionario.ts",
+    "components/inbox/ConversationHeader.acoes.test.tsx",
+    "components/inbox/ConversationHeader.test.tsx",
+    "tests/unit/inbox-barra-enxuta-3003.test.tsx",
+    "tests/unit/inbox-header-nao-trava.test.tsx",
+    "tests/unit/contato-pessoal-gates.test.tsx"
+  ],
+  "exclude": []
+}
