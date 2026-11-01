@@ -415,8 +415,10 @@ export async function cancelarAcao(
     .select("id");
   // Por broadcast, a lista está com o provedor: cancelar lá o que ainda não
   // saiu, trazer o último retrato e fechar quem ficou `sending` (migration 0712).
-  await encerrarTransmissao(admin, c, agora);
-  return { ok: true, cancelados: (cancelados ?? []).length };
+  // Numa transmissão todo mundo está `sending` — sem somar estes, o operador
+  // via «0 cancelados» com o cancelamento feito.
+  const fechadosNaTransmissao = await encerrarTransmissao(admin, c, agora);
+  return { ok: true, cancelados: (cancelados ?? []).length + fechadosNaTransmissao };
 }
 
 export async function duplicarAcao(

@@ -160,11 +160,18 @@ export function VelocidadeDaCampanha({
         </p>
       )}
       {valor === "transmissao" && (
-        <p className="text-sm text-muted-foreground">
-          {t(
-            "No broadcast vale a janela de horário; o máximo por dia e por hora não, porque a lista sai inteira. O limite diário quem põe é a plataforma, pelo nível do número.",
-          )}
-        </p>
+        <>
+          <p className="text-sm text-muted-foreground" data-testid="broadcast-teto">
+            {t(
+              "No broadcast vale a janela de horário, e a lista inteira tem de caber no teto diário do número (Conexões › Proteção de envio): ponha nele o nível de mensagens que a plataforma deu ao número. Se a lista não couber, a campanha pausa antes de mandar — o broadcast não manda em partes.",
+            )}
+          </p>
+          <p className="text-sm text-muted-foreground" data-testid="broadcast-parar">
+            {t(
+              "Quem pedir para parar enquanto o provedor entrega a lista sai das próximas campanhas, mas o provedor não tira uma pessoa do broadcast: para parar o envio, só cancelando a campanha inteira.",
+            )}
+          </p>
+        </>
       )}
     </fieldset>
   );

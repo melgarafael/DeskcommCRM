@@ -34,6 +34,16 @@
  * — o mesmo que a rodada de sempre mandaria a cada um. Se algum diferir, a
  * campanha pausa em vez de mandar a alguém um texto que não era o dele.
  *
+ * ═══ Por que o teto do número é conferido ANTES de entregar ═══
+ *
+ * O broadcast não espaça mensagens nem manda em partes: a lista sai inteira, de
+ * uma vez. Então o freio do número não pode ser o livro do ritmo
+ * (`recordSends`) — ele registra o que saiu, depois que saiu. A lista só é
+ * entregue se COUBER no teto diário do número e nos máximos da campanha
+ * (`tetoDaTransmissao`); se não couber, a campanha pausa com a frase, antes de
+ * criar a transmissão. Revisão do #3126: sem isto, o teto não era consultado,
+ * mas o volume era cobrado dele.
+ *
  * Nunca lança para o cron por falha do provedor: limite de velocidade espera a
  * próxima rodada; o resto pausa a campanha com a frase.
  */
@@ -75,6 +85,9 @@ export interface CampanhaDaTransmissao {
   provider_broadcast_id: string | null;
   janela_inicio_hora: number | null;
   janela_fim_hora: number | null;
+  /** Os máximos da própria campanha. A tela os deixa em branco no broadcast; a API não. */
+  teto_diario?: number | null;
+  teto_horario?: number | null;
 }
 
 export interface ResultadoDaTransmissao {
@@ -84,10 +97,16 @@ export interface ResultadoDaTransmissao {
   detalhe: string;
 }
 
-/** Páginas lidas do banco e do provedor: uma lista de 20.000 cabe com folga. */
+/** Páginas lidas do banco: 200 × 1.000 destinatários. */
 const POR_PAGINA = 1_000;
-const POR_PAGINA_DO_PROVEDOR = 100;
 const MAX_PAGINAS = 200;
+/**
+ * O relatório do provedor vem de 100 em 100. O teto de páginas dele é medido
+ * pelo tamanho da lista (`paginasDoRelatorio`), nunca fixo: com 200 fixas, uma
+ * lista acima de 20.000 terminava a leitura pelo teto, e quem ficou de fora do
+ * pedaço lido era fechado como falha — gente que o provedor entregou.
+ */
+const POR_PAGINA_DO_PROVEDOR = 100;
 /** Ids por filtro `in (...)`: a URL do PostgREST tem teto, e lista longa corta sem aviso. */
 const IDS_POR_FILTRO = 200;
 
@@ -151,6 +170,29 @@ async function entregarAoProvedor(
     return { enviadas: 0, pulados, concluidas, detalhe: concluidas > 0 ? "concluida" : "aguardando" };
   }
 
+  // O teto ANTES de criar a transmissão: o que sai daqui sai inteiro.
+  const tamanho = prontos.length + emVoo.length;
+  const teto = tetoDaTransmissao({
+    tamanho,
+    limiteDoNumero: janela.limiteDoNumero,
+    enviadosHojeNoNumero: janela.enviadosHoje,
+    tetoDiarioDaCampanha: campanha.teto_diario ?? null,
+    tetoHorarioDaCampanha: campanha.teto_horario ?? null,
+  });
+  if (!teto.cabe) {
+    logger.warn("[campanha] broadcast acima do teto — pausada antes de entregar", {
+      campanha: campanha.id,
+      tamanho,
+      livre: teto.livre,
+      de: teto.de,
+    });
+    await pausar(admin, campanha.id, agora, {
+      codigo: "transmissao_acima_do_teto",
+      detalhe: teto.de === "numero" ? DETALHE_ACIMA_DO_TETO_DO_NUMERO : DETALHE_ACIMA_DO_TETO_DA_CAMPANHA,
+    });
+    return { ...SO_O_CONTADOR, pulados, detalhe: `pausada:transmissao_acima_do_teto:${tamanho}>${teto.livre}` };
+  }
+
   const modelo = await modeloDaTransmissao(admin, campanha, [...prontos, ...emVoo]);
   if (!modelo.ok) {
     await pausar(admin, campanha.id, agora, { codigo: modelo.codigo, detalhe: modelo.detalhe });
@@ -160,13 +202,27 @@ async function entregarAoProvedor(
   let id = idExistente;
   if (!id) {
     const criada = await ops.criar({ nome: campanha.name, modelo: modelo.modelo });
-    const { data } = await admin
+    const { data, error } = await admin
       .from("campaigns")
       .update({ provider_broadcast_id: criada.id })
       .eq("id", campanha.id)
       .eq("status", "running")
       .is("provider_broadcast_id", null)
       .select("id");
+    if (error) {
+      // Erro de banco NÃO é corrida perdida: tratado como corrida, a rodada
+      // seguinte criaria e descartaria outra transmissão, para sempre, sem log.
+      // A nossa é descartada (sem o id gravado, ela viraria uma segunda) e a
+      // campanha pausa com a frase.
+      logger.warn("[campanha] id da transmissão não gravado", { campanha: campanha.id, codigo: error.code ?? null });
+      await ops.cancelar(criada.id).catch(() => undefined);
+      await pausar(admin, campanha.id, agora, {
+        codigo: "transmissao_id_nao_gravado",
+        detalhe:
+          "O CRM não conseguiu guardar o broadcast criado no provedor e o descartou, para a lista não sair duas vezes. Retome a campanha para tentar de novo.",
+      });
+      return { ...SO_O_CONTADOR, pulados, detalhe: "pausada:transmissao_id_nao_gravado" };
+    }
     if ((data ?? []).length === 0) {
       // Outra rodada chegou antes (ou a campanha saiu de `running`): a nossa
       // transmissão fica vazia no rascunho, e é ela que se descarta.
@@ -189,6 +245,16 @@ async function entregarAoProvedor(
     ).pulados;
     estado = (await ops.enviar(id)).estado;
   } catch (err) {
+    // 400 é "não dá neste estado" — a mesma leitura que o `cancelar` já faz. Com
+    // duas rodadas sobrepostas, as duas leem `draft` e as duas mandam: a segunda
+    // recebe 400 porque a primeira JÁ mandou. Pausar aqui congelaria a campanha
+    // com o provedor entregando; quem decide é o estado relido.
+    if (err instanceof ErroDaTransmissao && err.status === 400) {
+      const relido = await ops.ler(id).catch(() => null);
+      if (relido && relido.estado !== "draft") {
+        return await acompanhar(admin, campanha, ops, id, relido.estado, agora);
+      }
+    }
     // Nada saiu (ou não dá para saber): quem foi reservado volta à fila. Se o
     // provedor tiver mandado mesmo assim, o relatório da próxima rodada corrige
     // — `desfechoDaTransmissao` aceita `pending` como ponto de partida.
@@ -200,7 +266,9 @@ async function entregarAoProvedor(
   }
 
   // Fora do `try` de propósito: a lista JÁ saiu. Uma falha ao contar no livro do
-  // ritmo não pode devolver à fila quem o provedor está entregando agora.
+  // ritmo não pode devolver à fila quem o provedor está entregando agora. Conta
+  // como disparo, e o teto que ela consome já foi conferido lá em cima
+  // (`tetoDaTransmissao`): o livro não freia nada, ele registra.
   try {
     await recordSends(getRequestPool(), campanha.organization_id, campanha.channel_session_id, agora, lista.length);
   } catch (err) {
@@ -213,7 +281,9 @@ async function entregarAoProvedor(
     enviadas: lista.length,
     pulados,
     concluidas: 0,
-    detalhe: `transmissao:${estado}:${lista.length}${puladosNoProvedor > 0 ? `:sem_whatsapp_${puladosNoProvedor}` : ""}`,
+    // `skipped` do provedor é número sem WhatsApp OU telefone que já estava na
+    // lista — o caminho da retomada repõe os mesmos. O nome não escolhe um dos dois.
+    detalhe: `transmissao:${estado}:${lista.length}${puladosNoProvedor > 0 ? `:pulados_pelo_provedor_${puladosNoProvedor}` : ""}`,
   };
 }
 
@@ -394,15 +464,18 @@ async function devolverAFila(admin: SupabaseClient, ids: string[]): Promise<void
 }
 
 /**
- * A janela da campanha E a do número, como na rodada de sempre. A transmissão
- * não espaça mensagens nem conta teto: a lista sai inteira, de uma vez — o que
- * ela respeita é QUANDO sair.
+ * A janela da campanha E a do número, como na rodada de sempre, e o que o
+ * número já mandou hoje — para o teto, que `tetoDaTransmissao` confere com o
+ * tamanho da lista. A transmissão não espaça mensagens: o que ela respeita é
+ * QUANDO sair e QUANTO cabe.
  */
 async function janelaAberta(
   admin: SupabaseClient,
   campanha: CampanhaDaTransmissao,
   agora: Date,
-): Promise<{ aberta: true } | { aberta: false; motivo: string }> {
+): Promise<
+  { aberta: true; limiteDoNumero: number | null; enviadosHoje: number } | { aberta: false; motivo: string }
+> {
   const pool = getRequestPool();
   const k = await loadChannelKnobs(pool, campanha.organization_id, campanha.channel_session_id);
   const daCampanha = podeMandarAgora(
@@ -438,10 +511,56 @@ async function janelaAberta(
     knobs: k.knobs,
     state: estado,
     crmDailyLimit: linha.daily_message_limit ?? null,
-    // A transmissão só existe no número oficial: o que vale aqui é a janela.
+    // A transmissão só existe no número oficial: daqui sai a JANELA. O teto do
+    // dia não sai daqui porque este motor confere uma mensagem por vez — o
+    // broadcast precisa do teto contra a LISTA inteira (`tetoDaTransmissao`).
+    // O aquecimento e o espaçamento são do número por QR, como na rodada de
+    // sempre (`canalTemRiscoDeBanimento`).
     banRisk: false,
   });
-  return decisao.allow ? { aberta: true } : { aberta: false, motivo: `canal_${decisao.code}` };
+  if (!decisao.allow) return { aberta: false, motivo: `canal_${decisao.code}` };
+  return { aberta: true, limiteDoNumero: linha.daily_message_limit ?? null, enviadosHoje: estado.sentToday };
+}
+
+export const DETALHE_ACIMA_DO_TETO_DO_NUMERO =
+  "A lista inteira não cabe no teto diário deste número (Conexões › Proteção de envio). O broadcast não manda em partes: ponha no teto o nível de mensagens que a plataforma deu ao número, ou troque a velocidade para Rápido, e retome a campanha.";
+export const DETALHE_ACIMA_DO_TETO_DA_CAMPANHA =
+  "A lista inteira passa do máximo por dia ou por hora desta campanha, e o broadcast não manda em partes. Tire o máximo ou troque a velocidade para Rápido, e retome a campanha.";
+
+/**
+ * A lista inteira cabe no que o número e a campanha deixam mandar agora? Pura,
+ * para o teste.
+ *
+ * Os tetos são os que o CRM tem e que o operador vê: o diário do número
+ * (`channel_sessions.daily_message_limit`, em Conexões › Proteção de envio),
+ * descontado o que o número já mandou hoje; e os máximos da campanha, quando
+ * ela tem. O nível de mensagens que a plataforma dá ao número oficial não chega
+ * por aqui — o teto diário do número é onde o operador o declara, e a tela do
+ * broadcast diz isso.
+ *
+ * Não cabe = não sai: o broadcast não tem como mandar só uma parte, e mandar
+ * acima do nível da plataforma é a enxurrada de recusas que derruba a
+ * qualidade do número.
+ */
+export function tetoDaTransmissao(entrada: {
+  tamanho: number;
+  limiteDoNumero: number | null;
+  enviadosHojeNoNumero: number;
+  tetoDiarioDaCampanha: number | null;
+  tetoHorarioDaCampanha: number | null;
+}): { cabe: true } | { cabe: false; de: "numero" | "campanha"; livre: number } {
+  if (entrada.limiteDoNumero !== null) {
+    const livre = Math.max(0, entrada.limiteDoNumero - entrada.enviadosHojeNoNumero);
+    if (entrada.tamanho > livre) return { cabe: false, de: "numero", livre };
+  }
+  const daCampanha = [entrada.tetoDiarioDaCampanha, entrada.tetoHorarioDaCampanha].filter(
+    (t): t is number => t !== null,
+  );
+  if (daCampanha.length > 0) {
+    const livre = Math.min(...daCampanha);
+    if (entrada.tamanho > livre) return { cabe: false, de: "campanha", livre };
+  }
+  return { cabe: true };
 }
 
 /** Os valores do modelo congelados em `variables.modelo`, ou `null` se não há. */
@@ -578,15 +697,50 @@ async function acompanhar(
   estado: EstadoDaTransmissao,
   agora: Date,
 ): Promise<ResultadoDaTransmissao> {
-  const { mudancas, pendentesNoProvedor } = await sincronizarTransmissao(admin, campanha, ops, id);
+  const { mudancas, pendentesNoProvedor, completo } = await sincronizarTransmissao(admin, campanha, ops, id);
   if (!ESTADOS_FINAIS_DA_TRANSMISSAO.has(estado) || pendentesNoProvedor > 0) {
     return { ...SO_O_CONTADOR, detalhe: `transmissao:${estado}:${mudancas}` };
+  }
+  if (!completo) {
+    // A leitura parou pelo teto de páginas com o provedor dizendo que havia
+    // mais: quem não apareceu no pedaço lido NÃO é "sem registro". Fechar agora
+    // marcaria como falha gente que o provedor entregou; a próxima rodada relê.
+    logger.warn("[campanha] relatório da transmissão lido pela metade", { campanha: campanha.id, transmissao: id });
+    return { ...SO_O_CONTADOR, detalhe: `transmissao:${estado}:${mudancas}:relatorio_incompleto` };
   }
   // O provedor terminou. Quem ainda está `sending` não está no relatório dele:
   // o número não tem WhatsApp, ou se repetia na lista — nunca vai sair.
   await fecharQuemFicou(admin, campanha.id, estado === "cancelled" ? "cancelled" : "failed", agora);
+  if (estado !== "cancelled" && (await ninguemRecebeu(admin, campanha.id))) {
+    await falhar(admin, campanha.id, agora, {
+      codigo: "transmissao_tudo_falhou",
+      detalhe:
+        "A plataforma recusou o broadcast para todos os destinatários. Veja o motivo de cada pessoa na lista e confira o modelo e a qualidade do número antes de tentar de novo.",
+    });
+    return { ...SO_O_CONTADOR, detalhe: `transmissao:${estado}:${mudancas}:tudo_falhou` };
+  }
   const concluidas = await concluirSeNadaEmVoo(admin, campanha.id, agora);
   return { ...SO_O_CONTADOR, concluidas, detalhe: `transmissao:${estado}:${mudancas}:concluida` };
+}
+
+/**
+ * Ninguém recebeu e alguém falhou: a plataforma recusou todo mundo (teto,
+ * qualidade, modelo pausado). Concluir isso como "Concluída" esconderia a única
+ * notícia que o operador precisa ver sem abrir a lista.
+ */
+async function ninguemRecebeu(admin: SupabaseClient, campanhaId: string): Promise<boolean> {
+  const { count: recebidos } = await admin
+    .from("campaign_recipients")
+    .select("id", { count: "exact", head: true })
+    .eq("campaign_id", campanhaId)
+    .in("status", ["sent", "delivered", "read", "replied", "opted_out"]);
+  if ((recebidos ?? 0) > 0) return false;
+  const { count: falhos } = await admin
+    .from("campaign_recipients")
+    .select("id", { count: "exact", head: true })
+    .eq("campaign_id", campanhaId)
+    .eq("status", "failed");
+  return (falhos ?? 0) > 0;
 }
 
 /**
@@ -598,18 +752,23 @@ export async function sincronizarTransmissao(
   campanha: Pick<CampanhaDaTransmissao, "id" | "organization_id">,
   ops: OpsDeTransmissao,
   id: string,
-): Promise<{ mudancas: number; pendentesNoProvedor: number }> {
+): Promise<{ mudancas: number; pendentesNoProvedor: number; completo: boolean }> {
+  const nossos = await destinatariosEntregues(admin, campanha.id);
   const porTelefone = new Map<string, DestinatarioDaTransmissao>();
   let pular = 0;
-  for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
+  let completo = false;
+  const teto = paginasDoRelatorio(nossos.length);
+  for (let pagina = 0; pagina < teto; pagina++) {
     const p = await ops.destinatarios(id, { pular, quantos: POR_PAGINA_DO_PROVEDOR });
     for (const item of p.itens) porTelefone.set(item.telefone, item);
-    if (!p.temMais || p.lidos === 0) break;
+    if (!p.temMais || p.lidos === 0) {
+      completo = true;
+      break;
+    }
     pular += p.lidos;
   }
   const pendentesNoProvedor = [...porTelefone.values()].filter((i) => i.status === "pending").length;
 
-  const nossos = await destinatariosEntregues(admin, campanha.id);
   let mudancas = 0;
   const semMensagem: Array<{ id: string; wamid: string; corpo: string | null }> = [];
   for (const n of nossos) {
@@ -629,7 +788,16 @@ export async function sincronizarTransmissao(
     }
   }
   await ligarAsMensagens(admin, campanha.organization_id, semMensagem);
-  return { mudancas, pendentesNoProvedor };
+  return { mudancas, pendentesNoProvedor, completo };
+}
+
+/**
+ * Quantas páginas do relatório ler: a lista inteira, mais folga para o que o
+ * provedor guarda além dela (repetidos, quem a retomada repôs). Exportada para
+ * o teste.
+ */
+export function paginasDoRelatorio(destinatarios: number): number {
+  return Math.ceil(destinatarios / POR_PAGINA_DO_PROVEDOR) + 10;
 }
 
 async function destinatariosEntregues(admin: SupabaseClient, campanhaId: string): Promise<Nosso[]> {
@@ -715,8 +883,8 @@ async function fecharQuemFicou(
   campanhaId: string,
   como: "failed" | "cancelled",
   agora: Date,
-): Promise<void> {
-  await admin
+): Promise<number> {
+  const { data } = await admin
     .from("campaign_recipients")
     .update(
       como === "cancelled"
@@ -730,7 +898,9 @@ async function fecharQuemFicou(
           },
     )
     .eq("campaign_id", campanhaId)
-    .in("status", ["pending", "queued", "sending"]);
+    .in("status", ["pending", "queued", "sending"])
+    .select("id");
+  return (data ?? []).length;
 }
 
 async function concluirSeNadaEmVoo(admin: SupabaseClient, campanhaId: string, agora: Date): Promise<number> {
@@ -749,6 +919,19 @@ async function concluirSeNadaEmVoo(admin: SupabaseClient, campanhaId: string, ag
   return (data ?? []).length;
 }
 
+async function falhar(
+  admin: SupabaseClient,
+  campanhaId: string,
+  agora: Date,
+  falha: { codigo: string; detalhe: string },
+): Promise<void> {
+  await admin
+    .from("campaigns")
+    .update({ status: "failed", failed_at: agora.toISOString(), failure_code: falha.codigo, failure_detail: falha.detalhe })
+    .eq("id", campanhaId)
+    .eq("status", "running");
+}
+
 async function pausar(
   admin: SupabaseClient,
   campanhaId: string,
@@ -764,34 +947,66 @@ async function pausar(
 
 // ─── 3. O cancelamento ──────────────────────────────────────────────────────
 
+export const DETALHE_CANCELAMENTO_RECUSADO =
+  "Cancelada no CRM, mas o provedor recusou o cancelamento do broadcast. Confira no painel de broadcasts dele se o envio parou.";
+export const DETALHE_CANCELAMENTO_SEM_CONEXAO =
+  "Cancelada no CRM, mas este número não fala mais com o provedor do broadcast. Confira no painel de broadcasts dele se o envio parou.";
+
 /**
  * Cancelar a campanha cancela o que o provedor ainda não mandou, traz o último
- * retrato do relatório e fecha quem ficou. Melhor esforço: a campanha já está
- * cancelada no CRM quando isto roda, e uma falha do provedor não a desfaz — fica
- * no log, com o id para conferir no painel dele.
+ * retrato do relatório e fecha quem ficou. Devolve quantos destinatários fechou
+ * — numa transmissão todos estão `sending`, e é aqui que o cancelamento os
+ * alcança.
+ *
+ * A campanha já está cancelada no CRM quando isto roda, e uma falha do provedor
+ * não a desfaz. Mas ela não pode dizer só "cancelada" enquanto o provedor segue
+ * entregando: quando o provedor recusa (ou o número não fala mais com ele), a
+ * campanha ganha a frase em «Último problema», para o operador conferir no
+ * painel dele. Quem ficou `sending` é fechado nos dois caminhos — antes, a
+ * conexão trocada deixava as linhas em `sending` para sempre.
  */
 export async function encerrarTransmissao(
   admin: SupabaseClient,
   campanha: { id: string; organization_id: string; channel_session_id: string; provider_broadcast_id: string | null },
   agora: Date,
-): Promise<void> {
-  if (!campanha.provider_broadcast_id) return;
-  try {
-    const ops = await transmissaoDaConexao(admin, {
-      organizationId: campanha.organization_id,
-      channelSessionId: campanha.channel_session_id,
-    });
-    if (!ops) return;
-    await ops.cancelar(campanha.provider_broadcast_id);
-    await sincronizarTransmissao(admin, campanha, ops, campanha.provider_broadcast_id);
-  } catch (err) {
-    logger.warn("[campanha] cancelamento da transmissão no provedor falhou", {
-      campanha: campanha.id,
-      transmissao: campanha.provider_broadcast_id,
-      motivo: err instanceof Error ? err.message : String(err),
+): Promise<number> {
+  // Sem id, nada foi entregue ao provedor — e a reserva (`sending`) só nasce
+  // depois do id. Fechar `sending` aqui alcançaria a campanha de sempre, onde
+  // `sending` é mensagem que pode estar saindo neste instante.
+  if (!campanha.provider_broadcast_id) return 0;
+  let recusa: string | null = null;
+  const ops = await transmissaoDaConexao(admin, {
+    organizationId: campanha.organization_id,
+    channelSessionId: campanha.channel_session_id,
+  }).catch(() => null);
+  if (!ops) {
+    recusa = DETALHE_CANCELAMENTO_SEM_CONEXAO;
+  } else {
+    try {
+      await ops.cancelar(campanha.provider_broadcast_id);
+    } catch (err) {
+      recusa = DETALHE_CANCELAMENTO_RECUSADO;
+      logger.warn("[campanha] cancelamento da transmissão no provedor falhou", {
+        campanha: campanha.id,
+        transmissao: campanha.provider_broadcast_id,
+        motivo: err instanceof Error ? err.message : String(err),
+      });
+    }
+    // O último retrato é melhor esforço: sem ele, fecha-se igual.
+    await sincronizarTransmissao(admin, campanha, ops, campanha.provider_broadcast_id).catch((err: unknown) => {
+      logger.warn("[campanha] relatório da transmissão cancelada não lido", {
+        campanha: campanha.id,
+        motivo: err instanceof Error ? err.message : String(err),
+      });
     });
   }
-  await fecharQuemFicou(admin, campanha.id, "cancelled", agora);
+  if (recusa) {
+    await admin
+      .from("campaigns")
+      .update({ failure_code: "transmissao_cancelamento_recusado", failure_detail: recusa })
+      .eq("id", campanha.id);
+  }
+  return fecharQuemFicou(admin, campanha.id, "cancelled", agora);
 }
 
 // ─── 4. O eco de cada mensagem ──────────────────────────────────────────────
