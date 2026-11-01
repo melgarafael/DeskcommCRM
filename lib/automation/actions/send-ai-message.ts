@@ -69,6 +69,7 @@ async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): P
     // #3813 — `enviar`/`nao_enviar` não adiam o evento; só o padrão adia.
     const decisao = decidirNoEnvio(protection, escolha);
     if (decisao.acao === "adiar") return decisao.reavaliar_em;
+    if (decisao.acao === "pular") ctx.anotarPuloPelaAgenda?.(decisao.appointment_id);
   }
   const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
   if (!sessionId) return null;
@@ -139,6 +140,14 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   let boundary: ServiceBoundary;
   try { boundary = await serviceForAutomation(ctx, contact.id, sessionId); }
   catch (error) { return { type: TIPO, status: "failed", error: mensagemDeErro(error) }; }
+  // Decisão de pular congelada na primeira avaliação do evento (ver send-whatsapp.ts).
+  if (ctx.puloCongeladoPelaAgenda) {
+    return {
+      type: TIPO,
+      status: "skipped",
+      detail: { reason: MOTIVO_DO_PULO, appointment_id: ctx.puloCongeladoPelaAgenda.appointment_id },
+    };
+  }
   let texto: string;
   try {
     await assertAgendaEffectSupabase(ctx.admin, contextoDeEnvio);

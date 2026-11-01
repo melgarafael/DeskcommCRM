@@ -19,6 +19,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  avaliarPublico,
   carregarFatosDoContato,
   lerPublicoDoGatilho,
   passaNoPublico,
@@ -138,6 +139,88 @@ describe('passaNoPublico — a decisão', () => {
   it('exclusão de funil vence inclusão de etiqueta', () => {
     const p = publico({ incluirEtiquetas: ['cliente'], excluirFunis: ['funil-vendas'] });
     expect(passaNoPublico(p, { etiquetas: ['cliente'], funisAbertos: ['funil-vendas'] })).toBe(false);
+  });
+});
+
+/**
+ * O RASTRO da regra (#3722) — "por que" e não só "se".
+ *
+ * `passaNoPublico` responde sim/não e é tudo o que a ESCOLHA precisa para
+ * decidir. Quem investiga um turno precisa do resto: QUAL lista e QUAL item
+ * decidiram. `avaliarPublico` devolve isso, e `passaNoPublico` passa a delegar
+ * nela — uma regra só, com a decisão e o motivo sempre concordando (o teste de
+ * concordância no fim deste bloco é o que impede as duas de divergirem na
+ * primeira mudança, como já aconteceu com régua duplicada em SQL/TS).
+ *
+ * O `valor` é sempre o item DECLARADO na config (o que o admin digitou na
+ * tela), nunca um dado do contato: é o que o log pode carregar sem PII.
+ */
+describe('avaliarPublico — a decisão COM o motivo', () => {
+  it('público vazio: passa sem regra de exclusão/inclusão', () => {
+    expect(avaliarPublico(publico({}), vazio)).toEqual({ passa: true, regra: 'passou', valor: null });
+  });
+
+  it('exclusão de etiqueta vence a inclusão e devolve a ETIQUETA declarada', () => {
+    const vendas = publico({
+      incluirEtiquetas: ['prospect', 'cliente ativo'],
+      excluirEtiquetas: ['cliente ativo'],
+    });
+    expect(avaliarPublico(vendas, { etiquetas: ['Cliente Ativo'], funisAbertos: [] })).toEqual({
+      passa: false,
+      regra: 'barrado_por_etiqueta_excluida',
+      valor: 'cliente ativo',
+    });
+  });
+
+  it('exclusão de funil devolve o PIPELINE declarado', () => {
+    const p = publico({ excluirFunis: ['funil-vendas'] });
+    expect(avaliarPublico(p, { etiquetas: [], funisAbertos: ['funil-vendas'] })).toEqual({
+      passa: false,
+      regra: 'barrado_por_funil_excluido',
+      valor: 'funil-vendas',
+    });
+  });
+
+  it('inclusão de etiqueta não cumprida: barra sem valor (nada do contato casou)', () => {
+    const p = publico({ incluirEtiquetas: ['cliente ativo'] });
+    expect(avaliarPublico(p, { etiquetas: ['prospect'], funisAbertos: [] })).toEqual({
+      passa: false,
+      regra: 'barrado_por_etiqueta_exigida',
+      valor: null,
+    });
+  });
+
+  it('inclusão de funil não cumprida: barra sem valor', () => {
+    const p = publico({ incluirFunis: ['funil-contrato'] });
+    expect(avaliarPublico(p, { etiquetas: [], funisAbertos: ['funil-vendas'] })).toEqual({
+      passa: false,
+      regra: 'barrado_por_funil_exigido',
+      valor: null,
+    });
+  });
+
+  it('CONCORDÂNCIA: em toda a matriz, `passaNoPublico` == `avaliarPublico().passa`', () => {
+    const publicos = [
+      publico({}),
+      publico({ incluirEtiquetas: ['cliente'] }),
+      publico({ excluirEtiquetas: ['cliente'] }),
+      publico({ incluirEtiquetas: ['cliente'], excluirEtiquetas: ['cliente'] }),
+      publico({ incluirFunis: ['p1'], excluirEtiquetas: ['cliente'] }),
+      publico({ incluirEtiquetas: ['cliente'], incluirFunis: ['p1'], excluirFunis: ['p2'] }),
+      publico({ excluirFunis: ['p1'], incluirFunis: ['p1'] }),
+    ];
+    const fatos = [
+      { etiquetas: [], funisAbertos: [] },
+      { etiquetas: ['cliente'], funisAbertos: [] },
+      { etiquetas: ['CLIENTE'], funisAbertos: ['p1'] },
+      { etiquetas: ['outro'], funisAbertos: ['p1', 'p2'] },
+      { etiquetas: ['outro'], funisAbertos: ['p3'] },
+    ];
+    for (const p of publicos) {
+      for (const f of fatos) {
+        expect(passaNoPublico(p, f), `${JSON.stringify(p)} × ${JSON.stringify(f)}`).toBe(avaliarPublico(p, f).passa);
+      }
+    }
   });
 });
 

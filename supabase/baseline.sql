@@ -4380,7 +4380,7 @@ GRANT ALL ON FUNCTION "public"."fn_audit_log_row"() TO "service_role";
 
 
 
-GRANT ALL ON FUNCTION "public"."fn_crm_lead_close_on_stage"() TO "anon";
+REVOKE ALL ON FUNCTION "public"."fn_crm_lead_close_on_stage"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_crm_lead_close_on_stage"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_crm_lead_close_on_stage"() TO "service_role";
 
@@ -4488,7 +4488,7 @@ GRANT ALL ON FUNCTION "public"."fn_validate_activity_lead_org"() TO "service_rol
 
 
 
-GRANT ALL ON FUNCTION "public"."fn_validate_lost_reason_required"() TO "anon";
+REVOKE ALL ON FUNCTION "public"."fn_validate_lost_reason_required"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_validate_lost_reason_required"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_validate_lost_reason_required"() TO "service_role";
 
@@ -66701,6 +66701,33 @@ begin
 end
 $$;
 
+-- ---- EXECUTE das funções de motivo de perda e do activate_kb_version (0108, 0426, 0513, 9083) ----
+-- Três funções cuja ACL o espelho não repetia:
+--   · `activate_kb_version` fica só com `service_role`, como a 0108 declara.
+--     A 0108 é uma das migrations que não aplicam sobre o baseline (ver
+--     MIGRATIONS_QUE_NAO_RODAM em
+--     tests/invariants/baseline-e-cadeia-chegam-ao-mesmo-schema.test.ts), então
+--     no caminho da cadeia o grant da 0010 sobrevivia; a 9083 reafirma a 0108.
+--   · `fn_crm_lead_close_on_stage` e `fn_validate_lost_reason_required`:
+--     0426/0513 revogam de `public,anon`. São funções de gatilho — disparo de
+--     gatilho não confere EXECUTE —, então ficam com `authenticated,
+--     service_role`, sem `anon`; a 9083 faz o mesmo na cadeia. O corpo do dump
+--     já traz esse estado (REVOKE de PUBLIC, sem GRANT a `anon`): um GRANT ali
+--     reabriria a função a cada atualização até este revoke chegar
+--     (tests/invariants/update-nao-reabre-permissao.test.ts). O revoke abaixo
+--     fica para o clone antigo, que ainda tem a concessão.
+--
+-- Nenhum grant a `anon` neste bloco, então a posição em relação à VARREDURA
+-- anon (tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts) é neutra.
+revoke execute on function public.activate_kb_version(uuid, uuid) from public, anon, authenticated;
+grant  execute on function public.activate_kb_version(uuid, uuid) to service_role;
+
+revoke execute on function public.fn_crm_lead_close_on_stage() from public, anon;
+grant  execute on function public.fn_crm_lead_close_on_stage() to authenticated, service_role;
+
+revoke execute on function public.fn_validate_lost_reason_required() from public, anon;
+grant  execute on function public.fn_validate_lost_reason_required() to authenticated, service_role;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
@@ -71061,5 +71088,45 @@ alter table public.crm_pipelines
     'won', 'Ganho', 'lost', 'Perdido',
     'stage', 'Etapa', 'stage_plural', 'Etapas'
   );
+
+-- ---- índices das métricas de atrito (migration 0133) ----
+-- O bloco da 0133 chegou ao apêndice com a FUNÇÃO e sem os cinco índices, então
+-- a instalação nova punha `fn_atrito_metrics` (e o painel de atrito) para varrer
+-- `agent_cases`, `messages`, `contacts`, `crm_lead_activities` e
+-- `before_send_traces` por janela — o oposto do que a própria migration declara
+-- ("todos os predicados da função, nenhum seq scan por janela"). Quem atualizava
+-- pela cadeia tinha os índices; quem instalava do zero, não.
+--
+-- Nomes e predicados copiados da migration, byte a byte, para o `pg_get_indexdef`
+-- dos dois caminhos sair igual. Não cria função: pode ficar depois da VARREDURA anon.
+create index if not exists idx_agent_cases_org_closed
+  on public.agent_cases (organization_id, closed_at)
+  where closed_at is not null;
+
+create index if not exists idx_messages_org_direction_sent
+  on public.messages (organization_id, direction, sent_at);
+
+create index if not exists idx_contacts_org_blocked_at
+  on public.contacts (organization_id, blocked_at)
+  where blocked_at is not null;
+
+create index if not exists idx_crm_lead_activities_org_type_performed
+  on public.crm_lead_activities (organization_id, type, performed_at);
+
+create index if not exists idx_before_send_traces_org_created
+  on public.before_send_traces (organization_id, created_at);
+
+-- ---- superfície `anon` fechada nas tabelas de IA e na fila de redação (0018, 0023) ----
+-- O `pg_dump` não enumera o que NÃO foi concedido: as duas migrations revogam
+-- `anon` dessas tabelas, e o apêndice nunca repetiu a revogação. Numa instalação
+-- nova elas nascem com o ACL padrão do Supabase (ALL para `anon`, por causa do
+-- `alter default privileges … on tables`) e ficam legíveis e apagáveis pela anon
+-- key — a RLS ainda barra linha, mas o grant é a primeira barreira e ela não
+-- existia. Idempotente; não cria função.
+revoke all on public.storage_redaction_queue from anon;
+revoke all on public.ai_provider_credentials from anon;
+revoke all on public.ai_provider_credentials_safe from anon;
+revoke all on public.ai_agent_versions from anon;
+revoke all on public.ai_agent_runs from anon;
 
 notify pgrst, 'reload schema';
