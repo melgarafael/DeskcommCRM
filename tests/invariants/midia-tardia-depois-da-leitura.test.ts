@@ -18,10 +18,16 @@ import type * as ObsLogger from "@/lib/agent-engine/obs/logger";
  * resposta sai sem ver aquele áudio.
  *
  * Este arquivo MEDE a janela em que isso pode acontecer, com os carimbos que o
- * próprio código grava (`messages.created_at` de chegada, `job_queue.payload.
- * ultima_inbound_vista_em` da anotação, `send_ledger` do envio), no caminho de
- * produção: job `inbound_turn` → `createInboundTurnHandler` → `runAgentTurn`,
- * contra Postgres real e modelo fake. Três fatos são medidos:
+ * próprio código grava (`messages.created_at` de chegada e `job_queue.payload.
+ * ultima_inbound_vista_em` da anotação) e com o instante das consultas que
+ * decidem o envio, no caminho de produção: job `inbound_turn` →
+ * `createInboundTurnHandler` → `runAgentTurn`, contra Postgres real e modelo
+ * fake. Quatro fatos são medidos:
+ *
+ *  0. a régua `midiaDerivavelPendente` — que decide se o turno espera e se o
+ *     drain adia — VÊ a mídia pendente neste banco. (Ela não via: o driver
+ *     entrega `timestamptz` como `Date` e a guarda exigia `string`. Dublê de
+ *     pool devolve string e escondia a fronteira.)
  *
  *  1. mídia que chega DEPOIS da leitura (durante a chamada do modelo): a
  *     resposta NÃO sai — `respostaFicouObsoleta` (teto de 120 s, ligada por
@@ -129,9 +135,9 @@ async function derivar(id: string): Promise<void> {
 /**
  * Pool espião — o mesmo do banco, com dois poderes de BANCADA:
  *
- *  - CARIMBA o instante de cada leitura que alimenta o prompt (`media_mime`), da
- *    anotação (`ultima_inbound_vista_em`) e do envio (`send_ledger`), em ms de
- *    parede. São os carimbos que o código grava, lidos na ordem real;
+ *  - CARIMBA o instante da leitura que alimenta o prompt (`media_mime`), da
+ *    anotação (`ultima_inbound_vista_em`) e da guarda que decide o envio
+ *    (`respostaFicouObsoleta`), em ms de parede, na ordem real das consultas;
  *  - INJETA, se pedido, uma mensagem ANTES de uma query escolhida — é como este
  *    arquivo reproduz, sem corrida, a janela de um round-trip entre a última
  *    checagem de derivação e a anotação do turno.
