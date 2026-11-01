@@ -3,8 +3,8 @@
  *
  * ─── Por que isto não é "o telefone com outro nome" ─────────────────────────
  * `contacts.phone_number` e `contacts.email` guardam UMA ocorrência de cada
- * coisa, e `contacts.social_identity` guarda um perfil que a ingestão da
- * Zernio escreveu em jsonb. Nenhum dos três responde à pergunta desta fatia:
+ * coisa, e `contacts.social_identity` guarda um perfil que a ingestão do canal
+ * gravou em jsonb. Nenhum dos três responde à pergunta desta fatia:
  * *quais caminhos levam à MESMA ficha* — o número do WhatsApp, o @ do
  * Instagram, o perfil do Facebook e o e-mail profissional da mesma pessoa.
  * Quem chama no Instagram, depois no Facebook e depois no WhatsApp nasce em até
