@@ -4380,7 +4380,7 @@ GRANT ALL ON FUNCTION "public"."fn_audit_log_row"() TO "service_role";
 
 
 
-GRANT ALL ON FUNCTION "public"."fn_crm_lead_close_on_stage"() TO "anon";
+REVOKE ALL ON FUNCTION "public"."fn_crm_lead_close_on_stage"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_crm_lead_close_on_stage"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_crm_lead_close_on_stage"() TO "service_role";
 
@@ -4488,7 +4488,7 @@ GRANT ALL ON FUNCTION "public"."fn_validate_activity_lead_org"() TO "service_rol
 
 
 
-GRANT ALL ON FUNCTION "public"."fn_validate_lost_reason_required"() TO "anon";
+REVOKE ALL ON FUNCTION "public"."fn_validate_lost_reason_required"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_validate_lost_reason_required"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_validate_lost_reason_required"() TO "service_role";
 
@@ -66655,11 +66655,14 @@ notify pgrst,'reload schema';
 --     MIGRATIONS_QUE_NAO_RODAM em
 --     tests/invariants/baseline-e-cadeia-chegam-ao-mesmo-schema.test.ts), então
 --     no caminho da cadeia o grant da 0010 sobrevivia; a 9083 reafirma a 0108.
---   · `fn_crm_lead_close_on_stage` e `fn_validate_lost_reason_required` têm a
---     ACL com `=X` (PUBLIC) no corpo do dump; 0426/0513 revogam de
---     `public,anon`. São funções de gatilho — disparo de gatilho não confere
---     EXECUTE —, então o reconcedido fica com `authenticated, service_role`, sem
---     `anon`; a 9083 faz o mesmo na cadeia.
+--   · `fn_crm_lead_close_on_stage` e `fn_validate_lost_reason_required`:
+--     0426/0513 revogam de `public,anon`. São funções de gatilho — disparo de
+--     gatilho não confere EXECUTE —, então ficam com `authenticated,
+--     service_role`, sem `anon`; a 9083 faz o mesmo na cadeia. O corpo do dump
+--     já traz esse estado (REVOKE de PUBLIC, sem GRANT a `anon`): um GRANT ali
+--     reabriria a função a cada atualização até este revoke chegar
+--     (tests/invariants/update-nao-reabre-permissao.test.ts). O revoke abaixo
+--     fica para o clone antigo, que ainda tem a concessão.
 --
 -- Nenhum grant a `anon` neste bloco, então a posição em relação à VARREDURA
 -- anon (tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts) é neutra.
