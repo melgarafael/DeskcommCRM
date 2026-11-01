@@ -480,6 +480,11 @@ export const AUDIT_ACTIONS = [
   // respondendo) porque juntar os dois apagaria justamente quem agiu.
   "ai.case_noted_by_agent",
   "ai.case_closed_by_agent",
+  // (#3810) A pessoa encerrou o caso SEM avisar o cliente — o desfecho que não
+  // manda mensagem nenhuma (status `cancelled`). Separado de `ai.case_replied`
+  // porque nada foi respondido: quem lê a auditoria não pode concluir que o
+  // cliente recebeu alguma coisa.
+  "ai.case_closed_without_reply",
   "pipeline.agent_mapping_updated",
   "pipeline.stage_created",
   "pipeline.stage_updated",

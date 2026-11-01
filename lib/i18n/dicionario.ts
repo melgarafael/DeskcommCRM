@@ -3970,6 +3970,13 @@ export const DICIONARIO: Traducoes = {
   "Escreva sua resposta para a IA...": { es: "Escribe tu respuesta para la IA..." },
   "Escolha uma das opções acima para enviar.": { es: "Elige una de las opciones de arriba para enviar." },
   "Enviando...": { es: "Enviando..." },
+  // ─── #3810: encerrar sem avisar o cliente (lib/ai/case-copy.ts + painel) ───
+  "Encerrar sem avisar o cliente": { es: "Cerrar sin avisar al cliente" },
+  "Tira o caso da fila sem mandar nada: o cliente não recebe mensagem nenhuma.": { es: "Saca el caso de la cola sin enviar nada: el cliente no recibe ningún mensaje." },
+  "Caso encerrado. O cliente não recebeu mensagem.": { es: "Caso cerrado. El cliente no recibió ningún mensaje." },
+  "Escreva por que este caso não precisa mais de resposta (o cliente não recebe esta nota).": { es: "Escribe por qué este caso ya no necesita respuesta (el cliente no recibe esta nota)." },
+  "A nota é obrigatória e fica só no caso. Nada é enviado ao cliente.": { es: "La nota es obligatoria y queda solo en el caso. No se envía nada al cliente." },
+  "Encerrar caso": { es: "Cerrar caso" },
   // ─── lib/ai/case-copy.ts (status, ações e timeline dos casos humanos) ───
   "Aguardando você": { es: "Esperando tu respuesta" },
   // Os contadores do menu (`components/shell/ContadorDeCasos.tsx` e `ContadorDaFila.tsx`).
@@ -6197,6 +6204,32 @@ export const DICIONARIO: Traducoes = {
     es: "Cada valor CSS puede tener un máximo de 256 caracteres.",
   },
   "Informe ao menos uma regra CSS.": { es: "Indica al menos una regla CSS." },
+  "Tema da plataforma": { es: "Tema de la plataforma" },
+  "A paleta de superfícies, bordas e textos do login, do admin e das organizações que não escolheram tema. A cor de ação continua vindo da Marca.":
+    {
+      es: "La paleta de superficies, bordes y textos del inicio de sesión, del panel de administración y de las organizaciones que no eligieron tema. El color de acción sigue viniendo de Marca.",
+    },
+  "Nenhuma extensão instalada oferece um tema. Instale uma extensão com tema para poder escolher.":
+    {
+      es: "Ninguna extensión instalada ofrece un tema. Instala una extensión con tema para poder elegir.",
+    },
+  "Tema": { es: "Tema" },
+  "Vale para quem não tem tema próprio: dentro de uma organização com tema escolhido, a paleta dela é que manda.":
+    {
+      es: "Rige para quien no tiene tema propio: dentro de una organización con tema elegido, manda su paleta.",
+    },
+  "Salvar tema": { es: "Guardar tema" },
+  "Tema da plataforma salvo.": { es: "Tema de la plataforma guardado." },
+  "Escolha um tema da lista de extensões instaladas.":
+    { es: "Elige un tema de la lista de extensiones instaladas." },
+  "Não foi possível conferir a extensão agora. Tente de novo.":
+    { es: "No fue posible verificar la extensión ahora. Inténtalo de nuevo." },
+  "Essa extensão não está mais instalada nesta instalação.":
+    { es: "Esa extensión ya no está instalada en esta instalación." },
+  "A extensão escolhida não oferece um tema válido.":
+    { es: "La extensión elegida no ofrece un tema válido." },
+  "Não foi possível gravar o tema no banco da instalação.":
+    { es: "No se pudo guardar el tema en la base de datos de la instalación." },
   "Sua cor": { es: "Tu color" },
   "fora da escala — fica só no logo": { es: "fuera de la escala: solo se usa en el logo" },
   "Botões no modo claro": { es: "Botones en el modo claro" },
@@ -18395,6 +18428,23 @@ export const DICIONARIO: Traducoes = {
   "O aviso de caso ainda não tem número. Escolha abaixo um número só para a agenda.": { es: "El aviso de caso aún no tiene número. Elige abajo un número solo para la agenda." },
   "Nenhum número conectado consegue mandar estes avisos. Conecte um WhatsApp em Conexões.": { es: "Ningún número conectado puede enviar estos avisos. Conecta un WhatsApp en Conexiones." },
   "Receber avisos de agendamento no WhatsApp": { es: "Recibir avisos de citas en WhatsApp" },
+  "Grupo do WhatsApp que também recebe os avisos": { es: "Grupo de WhatsApp que también recibe los avisos" },
+  "Aviso de teste enviado ao número e ao grupo. Confira o WhatsApp.": { es: "Aviso de prueba enviado al número y al grupo. Revisa WhatsApp." },
+  "Aviso de teste enviado ao grupo. Confira o WhatsApp.": { es: "Aviso de prueba enviado al grupo. Revisa WhatsApp." },
+  "O teste não chegou ao grupo.": { es: "La prueba no llegó al grupo." },
+  "e para o grupo": { es: "y al grupo" },
+  "Enviado para o grupo": { es: "Enviado al grupo" },
+  "Esse número não começa com +55. Ele é de fora do Brasil? Se for, pode seguir; se não, comece por +55 e o DDD.": { es: "Este número no empieza por +55. ¿Es de fuera de Brasil? Si lo es, puedes seguir; si no, empieza por +55 y el código de área (DDD)." },
+  "Para ligar, escolha a conexão que envia e preencha o número que recebe os avisos.": { es: "Para activarlo, elige la conexión que envía y completa el número que recibe los avisos." },
+  "Para ligar, escolha a conexão que envia os avisos.": { es: "Para activarlo, elige la conexión que envía los avisos." },
+  "Para ligar, preencha o número completo que recebe os avisos.": { es: "Para activarlo, completa el número entero que recibe los avisos." },
+  "Nenhum grupo": { es: "Ningún grupo" },
+  "Grupo salvo": { es: "Grupo guardado" },
+  "Não foi possível listar os grupos desta conexão agora. Confira se ela está conectada.": { es: "No se pudieron listar los grupos de esta conexión ahora. Revisa si está conectada." },
+  "Opcional. A equipe vê no grupo os mesmos avisos e o resumo das 7h, sem ninguém repassar.": { es: "Opcional. El equipo ve en el grupo los mismos avisos y el resumen de las 7h, sin que nadie los reenvíe." },
+  "O WhatsApp desta conexão não respondeu, e o grupo não pôde ser conferido. Tente de novo.":
+    { es: "El WhatsApp de esta conexión no respondió y no se pudo verificar el grupo. Inténtalo de nuevo." },
+  "Esse grupo não é válido. Escolha um grupo da lista.": { es: "Ese grupo no es válido. Elige un grupo de la lista." },
   "Chega o primeiro nome do cliente, o serviço, o dia e a hora, quem atende e de onde veio: IA, equipe ou Google Agenda.": { es: "Llega el primer nombre del cliente, el servicio, el día y la hora, quién atiende y de dónde vino: IA, equipo o Google Calendar." },
   "Últimos avisos": { es: "Últimos avisos" },
   "Nenhum aviso ainda. Quando um horário for marcado com o aviso ligado, ele aparece aqui.": { es: "Ningún aviso todavía. Cuando se agende una cita con el aviso activado, aparece aquí." },
