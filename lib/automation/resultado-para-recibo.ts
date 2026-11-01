@@ -76,6 +76,7 @@ const CODIGOS_DAS_ACOES = new Set([
   "sem_alvo",
   "sem_compromisso",
   "sem_contato",
+  "sem_destino",
   "sem_dono",
   "sem_json",
   "sem_membro",
