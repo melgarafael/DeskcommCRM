@@ -126,6 +126,8 @@ interface Estado {
   linhas: () => Linha[];
   /** Idade da mídia pendente, em ms — é a âncora do teto. */
   idadeDaMidiaMs: number;
+  /** Ordem dos fatos que o caso da resposta dupla mede. */
+  eventos: string[];
 }
 
 /**
@@ -139,7 +141,10 @@ function poolDoTurno(estado: Estado) {
     // é a única que pergunta pelo estado da derivação.
     if (sql.includes("media_derived_status")) {
       estado.consultasDeMidia += 1;
-      if (estado.consultasDeMidia >= estado.prontaNaConsulta) return { rows: [] };
+      if (estado.consultasDeMidia >= estado.prontaNaConsulta) {
+        estado.eventos.push("midia-pronta");
+        return { rows: [] };
+      }
       return {
         rows: [
           {
@@ -150,6 +155,10 @@ function poolDoTurno(estado: Estado) {
         ],
       };
     }
+    if (/update job_queue/.test(sql) && sql.includes("ultima_inbound_vista_em")) {
+      estado.eventos.push("anotou");
+      return { rows: [] };
+    }
     if (sql.includes("m.metadata->>'ai_actor_id'")) return { rows: [{ respondeu: false }] };
     if (/from contacts where organization_id = \$1 and id = \$2/.test(sql)) {
       return { rows: [LINHA_DO_CONTATO] };
@@ -159,6 +168,7 @@ function poolDoTurno(estado: Estado) {
     }
     if (sql.includes("from messages") && sql.includes("media_mime")) {
       estado.derivacaoProntaQuandoLeu = estado.consultasDeMidia >= estado.prontaNaConsulta;
+      estado.eventos.push("leu");
       // O produtor pede DESC e inverte — devolve DESC, como o banco.
       return { rows: [...estado.linhas()].reverse() };
     }
@@ -258,6 +268,7 @@ function estadoDoRelato(): Estado {
     derivacaoProntaQuandoLeu: null,
     fixada: bomDia as Linha & { id: string },
     idadeDaMidiaMs: 30_000,
+    eventos: [],
     linhas: () => [
       texto("outbound", "Oi! Como posso ajudar?", -20_000),
       bomDia,
@@ -308,6 +319,32 @@ describe("#3836 — áudio que chega DURANTE o turno", () => {
     // de a derivação terminar (é o defeito, e é o que este caso reprova).
     expect(estado.consultasDeMidia).toBeGreaterThanOrEqual(3);
     expect(dormir).toHaveBeenCalled();
+  });
+
+  it("o que chegou durante a espera fica coberto pela anotação — o job da mensagem nova não responde de novo", async () => {
+    // A anotação `ultima_inbound_vista_em` é feita antes do turno. Os áudios que
+    // chegaram durante a espera (até 120s) são lidos e respondidos por ESTE
+    // turno; sem reanotar depois da espera, o job deles compara contra a
+    // anotação velha (`ultimaInboundJaRespondida`) e responde uma segunda vez.
+    const estado = estadoDoRelato();
+    const dormir = vi.fn(async () => {});
+
+    await expect(turno(estado, logFalso(), dormir)).rejects.toThrow(/config LLM/);
+
+    const fim = estado.eventos.indexOf("midia-pronta");
+    expect(fim, "a espera não terminou").toBeGreaterThan(-1);
+    const depois = estado.eventos.slice(fim);
+    expect(depois, "não reanotou depois da espera").toContain("anotou");
+    // E reanotou ANTES de ler a conversa: a anotação nunca promete mais do que
+    // o turno leu.
+    expect(depois.indexOf("anotou")).toBeLessThan(depois.indexOf("leu"));
+  });
+
+  it("sem mídia pendente não há espera e nada é reanotado", async () => {
+    const estado = estadoDoRelato();
+    estado.prontaNaConsulta = 1;
+    await expect(turno(estado, logFalso(), vi.fn(async () => {}))).rejects.toThrow(/config LLM/);
+    expect(estado.eventos).not.toContain("anotou");
   });
 
   it("mídia travada além do teto: o turno segue EM TEMPO e o desfecho é nomeado", async () => {

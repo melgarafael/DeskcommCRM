@@ -2840,13 +2840,26 @@ async function executarTurnoDoAgente(
    */
   const esperarMidiaDoTurno = async (): Promise<void> => {
     if (preview) return;
-    await esperarMidiaDerivavel(pool, {
+    const espera = await esperarMidiaDerivavel(pool, {
       organizationId: tenantId,
       conversationId: input.conversationId,
       prazoMs: prazoDaMidia,
       log: runLog,
       ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
     });
+    // A anotação de `ultima_inbound_vista_em` foi feita ANTES do turno, e a
+    // espera pode ter durado até o teto: o que chegou nesse intervalo será lido
+    // e respondido por ESTE turno. Sem reanotar, o job da mensagem nova não sabe
+    // que ela já foi vista e responde de novo (ver `turno-ja-respondido.ts`).
+    // Só `inbound_turn` é anotado — follow-up não entra na régua.
+    if (espera.desfecho !== 'sem_midia_pendente' && liveJob().kind === 'inbound_turn') {
+      await anotarUltimaInboundVista(pool, {
+        organizationId: tenantId,
+        contactId: leadId,
+        conversationId: input.conversationId,
+        jobId: liveJob().id,
+      });
+    }
   };
   /**
    * A leitura da conversa que alimenta o prompt. Existe para que a espera não
