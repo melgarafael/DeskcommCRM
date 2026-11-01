@@ -38,7 +38,12 @@ import {
   variaveisIncompletas,
   type EscolhaDoModelo,
 } from "../_components/ModeloDaCampanha";
-import { VelocidadeDaCampanha, type Velocidade } from "../_components/VelocidadeDaCampanha";
+import {
+  VelocidadeDaCampanha,
+  variaveisParaOBroadcast,
+  variaveisQueImpedemOBroadcast,
+  type Velocidade,
+} from "../_components/VelocidadeDaCampanha";
 
 export function NovaCampanha() {
   const t = useT();
@@ -74,8 +79,15 @@ export function NovaCampanha() {
   // (oficial). Quem decide é o servidor, pela capability do canal.
   const doCanal = useModelosDaCampanha(canal);
   const ehOficial = doCanal.data?.modo === "template";
-  // Rápida só no número oficial: trocar para um número por QR volta a gradual.
-  const rapida = ehOficial && velocidade === "rapida";
+  // Rápida e broadcast só no número oficial: trocar para um número por QR volta
+  // a gradual. O broadcast, só quando o provedor do número o faz.
+  const transmissaoNoNumero = ehOficial && doCanal.data?.transmissao === true;
+  const velocidadeEfetiva: Velocidade = !ehOficial
+    ? "gradual"
+    : velocidade === "transmissao" && !transmissaoNoNumero
+      ? "rapida"
+      : velocidade;
+  const emBroadcast = velocidadeEfetiva === "transmissao";
   const providerDoCanal = (canais.data ?? []).find((c) => c.id === canal)?.provider ?? null;
   const modeloEscolhido =
     modelo && doCanal.data
@@ -87,6 +99,8 @@ export function NovaCampanha() {
     modelo !== null &&
     modeloEscolhido !== null &&
     variaveisIncompletas(modeloEscolhido, modelo.variables).length === 0;
+  const variaveisDoBroadcast = variaveisParaOBroadcast(modeloEscolhido, modelo?.variables);
+  const broadcastTravado = emBroadcast && variaveisQueImpedemOBroadcast(variaveisDoBroadcast).length > 0;
 
   const funis = useFunis();
   const etapas = useEtapas(funil || null);
@@ -116,6 +130,7 @@ export function NovaCampanha() {
     nome.trim() !== "" &&
     canal !== "" &&
     (ehOficial ? modeloPronto : texto.trim() !== "") &&
+    !broadcastTravado &&
     temCriterio &&
     (baseLegal !== "legitimate_interest" || liaRef.trim() !== "");
 
@@ -134,13 +149,14 @@ export function NovaCampanha() {
       base_legal: baseLegal,
       lia_ref: liaRef.trim() || null,
       audience_filter: filtro,
-      // Na rápida o intervalo não vale (a rajada tem o próprio espaçamento).
-      intervalo_segundos: intervalo && !rapida ? Number(intervalo) : null,
-      velocidade: rapida ? "rapida" : "gradual",
+      // Na rápida o intervalo não vale (a rajada tem o próprio espaçamento); no
+      // broadcast também não valem os tetos (a lista sai inteira).
+      intervalo_segundos: intervalo && velocidadeEfetiva === "gradual" ? Number(intervalo) : null,
+      velocidade: velocidadeEfetiva,
       janela_inicio_hora: janelaInicio ? Number(janelaInicio) : null,
       janela_fim_hora: janelaFim ? Number(janelaFim) : null,
-      teto_diario: tetoDiario ? Number(tetoDiario) : null,
-      teto_horario: tetoHorario ? Number(tetoHorario) : null,
+      teto_diario: tetoDiario && !emBroadcast ? Number(tetoDiario) : null,
+      teto_horario: tetoHorario && !emBroadcast ? Number(tetoHorario) : null,
       channel_session_ids: ehOficial ? [] : extras,
       pipeline_id: funil || null,
       stage_id: etapa || null,
@@ -526,14 +542,21 @@ export function NovaCampanha() {
 
       <Card className="space-y-4 p-4">
         <h2 className="font-medium">{t("Ritmo desta campanha")}</h2>
-        {canal && <VelocidadeDaCampanha valor={velocidade} onChange={setVelocidade} ehOficial={ehOficial} />}
+        {canal && (
+          <VelocidadeDaCampanha
+            valor={velocidadeEfetiva}
+            onChange={setVelocidade}
+            ehOficial={ehOficial}
+            transmissao={transmissaoNoNumero ? { variaveis: variaveisDoBroadcast } : null}
+          />
+        )}
         <p className="text-sm text-muted-foreground">
           {t(
             "Em branco, vale o ritmo do número (Conexões › Proteção de envio). O que você puser aqui só pode deixar mais devagar.",
           )}
         </p>
         <div className="grid gap-4 sm:grid-cols-2">
-          {!rapida && (
+          {velocidadeEfetiva === "gradual" && (
             <div className="space-y-2">
               <Label htmlFor="intervalo">{t("Intervalo mínimo entre mensagens (segundos)")}</Label>
               <Input
@@ -545,26 +568,30 @@ export function NovaCampanha() {
               />
             </div>
           )}
-          <div className="space-y-2">
-            <Label htmlFor="teto">{t("Máximo por dia")}</Label>
-            <Input
-              id="teto"
-              type="number"
-              min={1}
-              value={tetoDiario}
-              onChange={(e) => setTetoDiario(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="teto-hora">{t("Máximo por hora")}</Label>
-            <Input
-              id="teto-hora"
-              type="number"
-              min={1}
-              value={tetoHorario}
-              onChange={(e) => setTetoHorario(e.target.value)}
-            />
-          </div>
+          {!emBroadcast && (
+            <div className="space-y-2">
+              <Label htmlFor="teto">{t("Máximo por dia")}</Label>
+              <Input
+                id="teto"
+                type="number"
+                min={1}
+                value={tetoDiario}
+                onChange={(e) => setTetoDiario(e.target.value)}
+              />
+            </div>
+          )}
+          {!emBroadcast && (
+            <div className="space-y-2">
+              <Label htmlFor="teto-hora">{t("Máximo por hora")}</Label>
+              <Input
+                id="teto-hora"
+                type="number"
+                min={1}
+                value={tetoHorario}
+                onChange={(e) => setTetoHorario(e.target.value)}
+              />
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="janela-inicio">{t("Enviar só a partir das (hora)")}</Label>
             <Input

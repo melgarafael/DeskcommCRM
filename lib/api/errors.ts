@@ -353,7 +353,9 @@ export const ApiErrorCodes = {
   campanha_modelo_nao_aprovado: "campanha_modelo_nao_aprovado", // 422: modelo pausado, recusado ou em análise
   campanha_modelo_variaveis: "campanha_modelo_variaveis", // 422: variável sem origem, ou origem que não serve
   // Migration 0711: envio rápido (rajada) só pelo número oficial, com modelo aprovado.
-  campanha_velocidade_do_canal: "campanha_velocidade_do_canal", // 422: envio rápido pedido num número por QR
+  campanha_velocidade_do_canal: "campanha_velocidade_do_canal", // 422: envio rápido ou broadcast pedido num número que não o faz
+  campanha_transmissao_variavel: "campanha_transmissao_variavel", // 422: broadcast com variável que muda por pessoa (migration 0712)
+  campanha_transmissao_entregue: "campanha_transmissao_entregue", // 409: a velocidade não muda depois que a lista foi entregue ao provedor
 
   // 500 / upstream
   internal_error: "internal_error",

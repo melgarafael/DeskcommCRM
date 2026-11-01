@@ -38,6 +38,7 @@ import {
 import { conferirModeloDaCampanha } from "./modelo-da-conexao";
 import type { ModeloPreparado } from "./preparacao";
 import { renderizar } from "./renderizador";
+import { encerrarTransmissao } from "./transmissao";
 import type { ModoDaMensagem, StatusDaCampanha, VelocidadeDaCampanha } from "./tipos";
 
 export interface CampanhaCarregada {
@@ -64,8 +65,10 @@ export interface CampanhaCarregada {
   provider_template_name: string | null;
   provider_template_language: string | null;
   provider_template_variables: unknown;
-  /** Migration 0711: `rapida` = rajada na rodada (só com modelo). */
+  /** Migration 0711: `rapida` = rajada na rodada (só com modelo); 0712: `transmissao`. */
   velocidade: VelocidadeDaCampanha;
+  /** Migration 0712: o id da transmissão no provedor, depois que a lista foi entregue. */
+  provider_broadcast_id: string | null;
   /** Migration 0765: texto sai em balões, um por parágrafo. */
   split_messages: boolean;
 }
@@ -77,7 +80,8 @@ const COLUNAS =
   "id, organization_id, name, status, channel_session_id, message_body, base_legal, lia_ref, " +
   "audience_filter, audience_version, content_version, scheduled_at, description, " +
   "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario, " +
-  "message_mode, provider_template_name, provider_template_language, provider_template_variables, velocidade, split_messages";
+  "message_mode, provider_template_name, provider_template_language, provider_template_variables, velocidade, " +
+  "provider_broadcast_id, split_messages";
 
 export async function carregarCampanha(
   admin: SupabaseClient,
@@ -409,7 +413,12 @@ export async function cancelarAcao(
     .eq("campaign_id", c.id)
     .in("status", ["pending", "queued"])
     .select("id");
-  return { ok: true, cancelados: (cancelados ?? []).length };
+  // Por broadcast, a lista está com o provedor: cancelar lá o que ainda não
+  // saiu, trazer o último retrato e fechar quem ficou `sending` (migration 0712).
+  // Numa transmissão todo mundo está `sending` — sem somar estes, o operador
+  // via «0 cancelados» com o cancelamento feito.
+  const fechadosNaTransmissao = await encerrarTransmissao(admin, c, agora);
+  return { ok: true, cancelados: (cancelados ?? []).length + fechadosNaTransmissao };
 }
 
 export async function duplicarAcao(

@@ -17,7 +17,12 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { FILTRO_VAZIO } from "@/lib/campanhas/audiencia";
-import { decidirConteudo, decidirVelocidade, lerModoDoCanal } from "@/lib/campanhas/conteudo-do-canal";
+import {
+  decidirConteudo,
+  decidirVelocidade,
+  fraseDaRecusa,
+  lerModoDoCanal,
+} from "@/lib/campanhas/conteudo-do-canal";
 import { gravarPool } from "@/lib/campanhas/pool-de-numeros";
 import {
   codificarCursor,
@@ -135,10 +140,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!conteudo.ok) {
     return fail(conteudo.codigo, t(conteudo.mensagem), conteudo.status, { requestId });
   }
-  // Rápida só com modelo aprovado (migration 0711).
-  const velocidade = decidirVelocidade({ pedida: entrada.velocidade, atual: "gradual", modo: conteudo.modo });
+  // Rápida e broadcast só com modelo aprovado (migrations 0711 e 0712); o
+  // broadcast, só no número que o faz e com variáveis de texto fixo.
+  const velocidade = decidirVelocidade({
+    pedida: entrada.velocidade,
+    atual: "gradual",
+    modo: conteudo.modo,
+    transmissao: canal.transmissao,
+    variaveis: conteudo.colunas.provider_template_variables,
+  });
   if (!velocidade.ok) {
-    return fail(velocidade.codigo, t(velocidade.mensagem), velocidade.status, { requestId });
+    return fail(velocidade.codigo, fraseDaRecusa(velocidade, t), velocidade.status, { requestId });
   }
 
   const { data, error } = await supabase

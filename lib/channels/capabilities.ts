@@ -30,6 +30,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "full",
     costPerMessage: false,
     alteraMensagemEnviada: true,
+    transmissao: false,
     // É a linha que conversa com um APARELHO pareado: a agenda salva no
     // celular está lá dentro, e o `contacts/all` a devolve paginada (#2736).
     phonebook: true,
@@ -47,6 +48,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "limited",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    transmissao: false,
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
@@ -84,6 +86,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "none",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    transmissao: false,
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
@@ -98,6 +101,11 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "limited",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    // MEDIDO em 16/10/2026 (2 destinatários, entregues em 1 a 3 s): o provedor
+    // cria a transmissão, recebe os telefones e manda a todos. O valor de cada
+    // variável sai LITERAL do `components` — o `variableMapping` documentado
+    // chegou ao destinatário como "{{1}}", e o nome que ele guarda é o número.
+    transmissao: true,
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
@@ -121,6 +129,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "limited",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    transmissao: false,
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
@@ -292,6 +301,21 @@ export function canalTemRiscoDeBanimento(provider: string | null | undefined): b
     return capabilitiesOf(provider as ProviderDeMensagem).banRisk;
   } catch {
     return true;
+  }
+}
+
+/**
+ * O provedor deste número faz a transmissão (a lista inteira de uma vez, com o
+ * relatório por destinatário)? Liga a terceira velocidade da campanha.
+ * Desconhecido responde `false`: sem a certeza, a campanha fica no envio que o
+ * próprio sistema controla.
+ */
+export function canalTemTransmissao(provider: string | null | undefined): boolean {
+  if (!transportaMensagem(provider)) return false;
+  try {
+    return capabilitiesOf(provider as ProviderDeMensagem).transmissao;
+  } catch {
+    return false;
   }
 }
 

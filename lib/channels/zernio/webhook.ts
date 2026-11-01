@@ -95,6 +95,18 @@ export interface ZernioInboundMessage {
    * traz — quem preenche é a ingestão, pela API (`./localizacao.ts`).
    */
   location?: Localizacao | null;
+  /**
+   * Que superfície do provedor produziu a saída (`message.sentVia`): `api`,
+   * `human` (o painel dele), `broadcast`, `sequence`, `workflow`… `null` quando
+   * ele não sabe — mensagem digitada no aplicativo do celular, ou anterior ao
+   * campo. Fonte: a especificação do provedor, evento `message.sent`.
+   */
+  sentVia?: string | null;
+  /**
+   * A transmissão que mandou esta mensagem (`message.broadcastId`, só com
+   * `sentVia = broadcast`). É por ele que o eco volta à campanha (migration 0712).
+   */
+  broadcastId?: string | null;
 }
 
 export interface ZernioIdentity {
@@ -258,6 +270,7 @@ export function parseZernioInbound(payload: unknown): ZernioInboundMessage | nul
     // veio e nenhuma venda chegava à Meta. As outras duas ficam como fallback
     // (forma documentada da Cloud API).
     referral: obj(p.metadata)?.referral ?? m.referral ?? p.referral ?? null,
+    ...(saida ? { sentVia: str(m.sentVia), broadcastId: str(m.broadcastId) } : {}),
   };
 }
 
