@@ -13,7 +13,12 @@ vi.mock("@/lib/env", () => ({
   },
 }));
 
-import { validateOpenRouterKey, validateProviderKey, validateTypeSafeKey } from "@/lib/ai/provider-validators";
+import {
+  validateElevenLabsKey,
+  validateOpenRouterKey,
+  validateProviderKey,
+  validateTypeSafeKey,
+} from "@/lib/ai/provider-validators";
 
 /**
  * POR QUE ESTE ARQUIVO EXISTE
@@ -287,5 +292,45 @@ describe("validateTypeSafeKey", () => {
     const r = await validateProviderKey("typesafe", "apikey_x");
     expect(r).toEqual({ ok: false, error: "auth_failed_401" });
     expect(chamadas).toEqual(["https://api.typesafe.ai/v1/models"]);
+  });
+});
+
+describe("validateElevenLabsKey", () => {
+  it("recusa a chave que o ElevenLabs não reconhece", async () => {
+    vi.stubGlobal("fetch", fetchFalso({ "/v1/voices": { status: 401 } }));
+    const r = await validateElevenLabsKey("sk_nao-existe");
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.error).toBe("auth_failed_401");
+  });
+
+  it("aceita a chave boa e devolve os voice_id das vozes da conta", async () => {
+    vi.stubGlobal(
+      "fetch",
+      fetchFalso({
+        "/v1/voices": {
+          status: 200,
+          body: { voices: [{ voice_id: "abc123", name: "Bella" }] },
+        },
+      }),
+    );
+    const r = await validateElevenLabsKey("sk_boa");
+    expect(r.ok).toBe(true);
+    expect(r.ok === true && r.models).toEqual(["abc123"]);
+  });
+
+  it("vai de propósito pela chave no header xi-api-key, não Authorization", async () => {
+    // ElevenLabs não segue o padrão `Bearer` dos outros três — header errado
+    // aqui é 401 silencioso que parece "chave inválida" e não é.
+    let headerVisto: string | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        const headers = init?.headers as Record<string, string> | undefined;
+        headerVisto = headers?.["xi-api-key"] ?? null;
+        return { ok: true, status: 200, json: async () => ({ voices: [] }) } as unknown as Response;
+      }),
+    );
+    await validateElevenLabsKey("sk_boa");
+    expect(headerVisto).toBe("sk_boa");
   });
 });

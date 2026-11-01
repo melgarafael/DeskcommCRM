@@ -9,7 +9,9 @@
 import { z } from "zod";
 import { webhookFormFieldsSchema } from "@/lib/webhooks/formulario";
 
+import { ESCOLHAS_NO_ENVIO } from "@/lib/agenda/escolha-no-envio";
 import { conditionsSchema } from "@/lib/automation/conditions";
+import { configDoAniversario } from "@/lib/automation/aniversario-do-contato";
 import {
   GATILHO_DE_DATA_DO_FUNIL,
   configDoGatilhoDeData,
@@ -227,6 +229,35 @@ export const TRIGGER_EVENTS = Object.keys(ENTIDADE_ESPERADA_POR_GATILHO) as [
 export { conditionSchema } from "@/lib/automation/conditions";
 
 /**
+ * A FILA do rodízio — a mesma forma em dois lugares: o modo `rodizio` (#2041) e
+ * o `fallback` do destino dinâmico (#3804). Uma regra, escrita uma vez: a fila
+ * não pode divergir entre os dois (o banco lê a mesma chave `fila` nos dois).
+ */
+const filaDoRodizioSchema = z
+  .array(z.object({ user_id: z.string().uuid(), pausado: z.boolean() }))
+  .min(1)
+  .max(50)
+  .superRefine((fila, ctx) => {
+    const vistos = new Set<string>();
+    for (const [indice, pessoa] of fila.entries()) {
+      if (vistos.has(pessoa.user_id)) {
+        ctx.addIssue({
+          code: "custom",
+          path: [indice, "user_id"],
+          message: "Cada pessoa entra uma vez só na fila do rodízio.",
+        });
+      }
+      vistos.add(pessoa.user_id);
+    }
+  });
+
+/**
+ * Os destinos que a regra pode pedir no modo `destino` (#3804) — o vocabulário
+ * é o MESMO de `CandidatoDoDestino`, em `lib/automation/destino-do-atribuir`.
+ */
+export const DESTINOS_DO_ATRIBUTO = ["responsavel_do_negocio", "dono_da_carteira"] as const;
+
+/**
  * O `config` de `assign_owner` (#2041): uma pessoa fixa, a forma de sempre, ou
  * um RODÍZIO, em que a posição na `fila` é a ordem e `pausado` tira a pessoa da
  * vez sem tirá-la da fila.
@@ -235,33 +266,84 @@ export { conditionSchema } from "@/lib/automation/conditions";
  * do rodízio têm só `{ user_id }` e continuam válidas sem migração de dados. O
  * union discriminado (e não `z.union`) mantém o caminho do erro no campo
  * (`fila`, `user_id`), que é o que a tela usa para dizer o que corrigir.
+ *
+ * ─── As duas opções da #3514, e por que são OPT-IN ────────────────────────
+ *
+ * `contato` passa também a carteira do cliente (`contacts.carteira_user_id`) e
+ * `conversas` passa as conversas ABERTAS do contato para o novo responsável —
+ * a passagem SDR → Closer. As duas são `optional()` e o executor só as lê com
+ * `=== true`: payload gravado antes desta mudança (sem as chaves) continua
+ * válido e continua fazendo SÓ o que fazia. Nenhuma automação existente passa a
+ * mover conversa porque o schema ganhou um campo.
+ *
+ * No rodízio elas não entram NESTA entrega, e não por acaso: a vez é decidida
+ * dentro de `fn_automation_rodizio_atribuir`, que grava o dono do negócio na
+ * MESMA transação em que registra a escolha. Passar cliente e conversas ali
+ * seria uma SEGUNDA passada, com um destinatário que o banco escolheu e que a
+ * ação só conhece depois do commit — desenho que merece issue própria em vez de
+ * vir de carona nesta.
+ *
+ * ─── O modo `destino` (#3804) ────────────────────────────────────────────
+ *
+ * `destinos` é a CADEIA, na ordem: o responsável do negócio e/ou o dono da
+ * carteira do contato. Quem decide é `resolverDestinoDoAtribuir` (função pura,
+ * mesmo módulo), e a mesma pessoa que ela devolve passa pela régua de vínculo da
+ * ação (membro ativo, não `viewer`).
+ *
+ * `fallback` é OBRIGATÓRIO aqui — e é o item 2 da issue: sem responsável e sem
+ * carteira, a regra atribui a uma pessoa fixa ou entra no rodízio, nunca "não
+ * atribui e segue em silêncio". A obrigatoriedade é da porta, não do executor:
+ * uma regra sem fallback salvaria e só falharia no disparo, que é a regra
+ * quebrada que ninguém percebe.
  */
 export const configDoAtribuirSchema = z.discriminatedUnion("modo", [
-  z.object({ modo: z.literal("fixo").optional(), user_id: z.string().uuid() }),
+  z.object({
+    modo: z.literal("fixo").optional(),
+    user_id: z.string().uuid(),
+    /** #3514 — o cliente vai junto com o negócio? Desligado por padrão. */
+    contato: z.boolean().optional(),
+    /** #3514 — as conversas abertas do cliente vão junto? Desligado por padrão. */
+    conversas: z.boolean().optional(),
+  }),
   z.object({
     modo: z.literal("rodizio"),
-    fila: z
-      .array(z.object({ user_id: z.string().uuid(), pausado: z.boolean() }))
+    fila: filaDoRodizioSchema,
+  }),
+  z.object({
+    modo: z.literal("destino"),
+    destinos: z
+      .array(z.enum(DESTINOS_DO_ATRIBUTO))
       .min(1)
-      .max(50)
-      .superRefine((fila, ctx) => {
-        const vistos = new Set<string>();
-        for (const [indice, pessoa] of fila.entries()) {
-          if (vistos.has(pessoa.user_id)) {
-            ctx.addIssue({
-              code: "custom",
-              path: [indice, "user_id"],
-              message: "Cada pessoa entra uma vez só na fila do rodízio.",
-            });
-          }
-          vistos.add(pessoa.user_id);
+      .max(DESTINOS_DO_ATRIBUTO.length)
+      .superRefine((destinos, ctx) => {
+        if (new Set(destinos).size !== destinos.length) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Cada destino entra uma vez só: a ordem deles é a ordem em que são tentados.",
+          });
         }
       }),
+    fallback: z.discriminatedUnion("modo", [
+      z.object({ modo: z.literal("fixo"), user_id: z.string().uuid() }),
+      z.object({ modo: z.literal("rodizio"), fila: filaDoRodizioSchema }),
+    ]),
+    contato: z.boolean().optional(),
+    conversas: z.boolean().optional(),
   }),
 ]);
 
-const ehRodizio = (acao: { type: string; config?: unknown }) =>
-  acao.type === "assign_owner" && (acao.config as { modo?: unknown } | undefined)?.modo === "rodizio";
+/**
+ * O rodízio está nesta ação? Vale para os DOIS lugares onde ele mora: o modo
+ * `rodizio` de sempre e o `fallback` do destino dinâmico (#3804). A vez é
+ * contada por REGRA (`fn_automation_rodizio_atribuir` lê a fila da própria
+ * regra), então um rodízio escondido no fallback de outra ação andaria pela
+ * fila do primeiro — o mesmo defeito que este teto existe para barrar.
+ */
+const ehRodizio = (acao: { type: string; config?: unknown }) => {
+  if (acao.type !== "assign_owner") return false;
+  const config = acao.config as { modo?: unknown; fallback?: { modo?: unknown } } | undefined;
+  return config?.modo === "rodizio" || config?.fallback?.modo === "rodizio";
+};
 
 export const MENSAGEM_DO_RODIZIO_FORA_DO_LUGAR =
   "Uma automação tem no máximo um rodízio de atendentes, como ação direta: a vez de cada pessoa é contada pela automação.";
@@ -330,6 +412,14 @@ const acoesFixas = [
        * que envelhece se a URL mudar.
        */
       media_url: z.string().url().max(2000).nullish(),
+      /**
+       * #3813 — "Quando o contato tiver horário marcado": `adiar` (padrão, o
+       * comportamento de hoje), `enviar` ou `nao_enviar` (pulo registrado com
+       * motivo). Opcional de propósito: toda regra já gravada não tem a chave e
+       * continua idêntica — sem esta linha o `z.object` abaixo DESCARTA a chave
+       * no save e a tela mostraria uma escolha que não foi gravada.
+       */
+      quando_ha_compromisso: z.enum(ESCOLHAS_NO_ENVIO).optional(),
     }),
   }),
   // #2726 — o e-mail como SAÍDA. O transporte não é configuração da regra: ele
@@ -420,6 +510,8 @@ const acoesFixas = [
        * mais que isso está tentando pôr o prompt do agente aqui dentro.
        */
       instruction: z.string().min(1).max(1000),
+      /** #3813 — mesma escolha da irmã `send_whatsapp_message`. */
+      quando_ha_compromisso: z.enum(ESCOLHAS_NO_ENVIO).optional(),
     }),
   }),
   z.object({
@@ -480,6 +572,22 @@ const acoesFixas = [
     type: z.literal("apply_task_plan"),
     config: z.object({
       plano_id: z.string().trim().min(1).max(64),
+    }),
+  }),
+  // #3727 — a PONTE para o gatilho de data do funil (#989): grava a data do
+  // atendimento num campo de DATA do negócio, e é a regra "Quando faltarem N
+  // dias para uma data do funil" (com N negativo) que manda a mensagem N dias
+  // depois. Dois campos e nada mais: o `pipeline_id` é o funil dono do campo (é
+  // ele que a varredura consulta) e o `campo` é a CHAVE em
+  // `pipelines.settings.fields`, nunca o rótulo — o mesmo par que o
+  // `trigger_config` do gatilho de data guarda. Quem espera NÃO é esta ação:
+  // ela grava e sai na hora do comparecimento, e por isso não segura a vaga de
+  // "um follow-up vivo por contato".
+  z.object({
+    type: z.literal("set_lead_date_field"),
+    config: z.object({
+      pipeline_id: z.string().uuid(),
+      campo: z.string().trim().min(1).max(80),
     }),
   }),
   // #2642 — a ação que avisa a EQUIPE na virada para ganho. O recorte do
@@ -640,7 +748,33 @@ export const createAutomationRuleSchema = z
   .superRefine(exigirConfigDosGatilhosDeTempo)
   .superRefine(exigirIdDaFonteWebhook)
   .superRefine(recusarLimitePorContatoTorto)
+  .superRefine(recusarAntecedenciaTorta)
   .superRefine(recusarLacoDeLead);
+
+/**
+ * "Dias de antecedência" do aniversário (#3726) é um inteiro de 0 a 365.
+ *
+ * A varredura lê a chave com `configDoAniversario`, que devolve `null` para
+ * qualquer coisa que não seja inteiro na faixa — e uma regra dessas seria salva
+ * e nunca dispararia, com a tela dizendo que foi salva. Recusar na porta é o
+ * único desfecho honesto, como nas demais chaves do gatilho.
+ *
+ * Ausente passa: é o `{}` de toda regra criada antes desta feature, que
+ * continua valendo com 0 (no dia).
+ */
+function recusarAntecedenciaTorta(
+  regra: { trigger_config?: Record<string, unknown> },
+  ctx: z.RefinementCtx,
+): void {
+  const config = regra.trigger_config;
+  if (!config || !("dias_antecedencia" in config)) return;
+  if (configDoAniversario(config)) return;
+  ctx.addIssue({
+    code: "custom",
+    path: ["trigger_config", "dias_antecedencia"],
+    message: "Escolha entre 0 e 365 dias de antecedência (0 = no dia do aniversário).",
+  });
+}
 
 function exigirIdDaFonteWebhook(
   regra: { trigger_config?: Record<string, unknown> },
@@ -760,6 +894,7 @@ export const updateAutomationRuleSchema = z
   })
   .superRefine(exigirIdDaFonteWebhook)
   .superRefine(recusarLimitePorContatoTorto)
+  .superRefine(recusarAntecedenciaTorta)
   // Só vê o laço quando o PATCH traz gatilho E ações; o PATCH parcial é
   // conferido contra a regra gravada na rota.
   .superRefine(recusarLacoDeLead);

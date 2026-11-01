@@ -1,6 +1,8 @@
 // lib/propostas/aviso-no-whatsapp.test.ts
 import { describe, expect, it, vi } from "vitest";
 
+import type { MundoDoAviso } from "@/lib/escalacao/membros-do-aviso";
+
 import { aplicaAvisoDeProposta, montarAvisoDeProposta, type AvisoDePropostaDeps } from "./aviso-no-whatsapp";
 
 const AGORA = new Date("2026-09-26T12:00:00.000Z");
@@ -31,6 +33,9 @@ function deps(over: Partial<{
   origem: "worker" | "request";
   pacing: unknown;
   enviaFalha: boolean;
+  /** Os números (só dígitos) que são conexão ATIVA da organização. */
+  conectados: string[];
+  mundo: MundoDoAviso;
 }> = {}) {
   const envia = vi.fn(async () => {
     if (over.enviaFalha) throw new Error("recusado");
@@ -38,6 +43,9 @@ function deps(over: Partial<{
   });
   const audita = vi.fn();
   const registraEnvio = vi.fn(async () => undefined);
+  const destinoEhDaPropriaOrganizacao = vi.fn(async (_org: string, telefone: string) =>
+    (over.conectados ?? []).includes(telefone.replace(/\D/g, "")),
+  );
   const d: AvisoDePropostaDeps = {
     db: {
       preferencia: async () => over.preferencia ?? true,
@@ -51,6 +59,8 @@ function deps(over: Partial<{
       nomeDoContato: async () => "Maria Silva",
       carregaCanal: async () =>
         (over.canal === undefined ? { id: "canal-1", status: "WORKING", archived_at: null, aceitaMensagemLivre: true } : over.canal) as never,
+      destinoEhDaPropriaOrganizacao,
+      ...(over.mundo ? { carregaMundoDoAviso: async () => over.mundo as MundoDoAviso } : {}),
       registraJidDoAviso: async () => undefined,
       marcaDaOrganizacao: async () => ({ nome: "Acme", idioma: "pt-BR" as const }),
     },
@@ -68,7 +78,7 @@ function deps(over: Partial<{
     origemDoDreno: () => over.origem ?? "worker",
     audita,
   };
-  return { d, envia, audita, registraEnvio };
+  return { d, envia, audita, registraEnvio, destinoEhDaPropriaOrganizacao };
 }
 
 describe("montarAvisoDeProposta", () => {
@@ -166,6 +176,46 @@ describe("aplicaAvisoDeProposta", () => {
     const ultima = deps({ enviaFalha: true });
     expect((await aplicaAvisoDeProposta(ultima.d, evento({ attempts: 2 }))).status).toBe("skipped");
     expect(ultima.audita).toHaveBeenCalledWith(expect.objectContaining({ action: "proposal.aviso_whatsapp_falhou" }));
+  });
+
+  it("o WhatsApp do responsável é um número conectado da organização: não envia e audita (#3803)", async () => {
+    const VENDEDOR = "11111111-1111-4111-8111-111111111111";
+    const { d, envia, audita, destinoEhDaPropriaOrganizacao } = deps({
+      config: {
+        organization_id: "org-1",
+        channel_session_id: "canal-1",
+        telefone_destino: "+5511999990000",
+        destino_jid: null,
+        ligado: true,
+        destino_modo: "responsavel",
+      },
+      mundo: {
+        conversa: { assigned_to_user_id: VENDEDOR, assignee_kind: "human" },
+        negocio: null,
+        contato: null,
+        whatsapps: new Map([[VENDEDOR, "+5531988887777"]]),
+      },
+      conectados: ["5531988887777"],
+    });
+    expect(await aplicaAvisoDeProposta(d, evento())).toMatchObject({
+      status: "skipped",
+      detail: "destino_da_propria_organizacao",
+    });
+    // A pergunta é feita sobre o número RESOLVIDO, não o da empresa.
+    expect(destinoEhDaPropriaOrganizacao).toHaveBeenCalledWith("org-1", "+5531988887777");
+    expect(envia).not.toHaveBeenCalled();
+    expect(audita).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "proposal.aviso_whatsapp_falhou",
+        metadata: expect.objectContaining({ codigo: "destino_da_propria_organizacao" }),
+      }),
+    );
+  });
+
+  it("o número fixo virou conexão ativa depois de configurado: também não envia", async () => {
+    const { d, envia } = deps({ conectados: ["5511999990000"] });
+    expect((await aplicaAvisoDeProposta(d, evento())).detail).toBe("destino_da_propria_organizacao");
+    expect(envia).not.toHaveBeenCalled();
   });
 
   it("instalação sem endereço público: não envia link que não abre", async () => {

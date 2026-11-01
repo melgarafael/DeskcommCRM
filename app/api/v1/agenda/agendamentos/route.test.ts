@@ -263,6 +263,95 @@ describe("POST /api/v1/agenda/agendamentos — teto de escrita do Bearer", () =>
 });
 
 /**
+ * O TÍTULO DO COMPROMISSO NA EDIÇÃO (#3776).
+ *
+ * ─── O defeito medido na main ──────────────────────────────────────────────
+ *
+ * `alterarSchema` não tinha `title` e o objeto não é `.strict()`: o campo era
+ * DESCARTADO em silêncio e o `.refine` respondia "Informe pelo menos um campo
+ * para alterar". O cliente mandava um campo, a rota dizia que ele não mandou
+ * nenhum — e o título continuava o de antes.
+ *
+ * ─── O que este bloco prende ───────────────────────────────────────────────
+ *
+ * 1. PATCH só com `title` CHEGA ao handler (antes: recusa do refine);
+ * 2. o valor chega APARADO (`"  Retorno  "` → `"Retorno"`: o `preprocess` da
+ *    rota);
+ * 3. `title: ""` — e `"   "` — é recusado com a mensagem do CAMPO, não com a
+ *    do refine: quem apagou o texto tem de saber que o problema é o vazio;
+ * 4. PATCH sem campo nenhum continua recusado pela mesma mensagem de antes, e
+ *    o handler não roda (a catraca do refine segue de pé).
+ */
+describe("PATCH /api/v1/agenda/agendamentos — editar o título (#3776)", () => {
+  const ID = "66666666-6666-4666-8666-666666666666";
+
+  function patchReq(body: unknown): NextRequest {
+    return new NextRequest("http://localhost/api/v1/agenda/agendamentos", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  it("só `title` → 200, e o handler recebe o título APARADO", async () => {
+    sessaoOk();
+    vi.mocked(alterarAgendamentoHandler).mockResolvedValue({ id: ID, title: "Retorno" });
+    const { PATCH } = await import("./route");
+
+    const res = await PATCH(patchReq({ id: ID, title: "  Retorno  " }));
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(alterarAgendamentoHandler).mock.calls[0]?.[2]).toEqual({
+      id: ID,
+      title: "Retorno",
+    });
+  });
+
+  it("`title: \"\"` → 422 com a recusa do CAMPO, nunca \"informe pelo menos um campo\"", async () => {
+    sessaoOk();
+    const { PATCH } = await import("./route");
+
+    const res = await PATCH(patchReq({ id: ID, title: "" }));
+    const corpo = (await res.json()) as {
+      error?: { message?: string; details?: Record<string, string[]> };
+    };
+
+    expect(res.status).toBe(422);
+    expect(alterarAgendamentoHandler).not.toHaveBeenCalled();
+    expect(corpo.error?.details?.title).toEqual(["O título do compromisso não pode ficar vazio."]);
+    expect(JSON.stringify(corpo)).not.toContain("Informe pelo menos um campo");
+  });
+
+  it("`title` só de espaços é o MESMO vazio — não vira um título de três espaços", async () => {
+    sessaoOk();
+    const { PATCH } = await import("./route");
+
+    const res = await PATCH(patchReq({ id: ID, title: "   " }));
+
+    expect(res.status).toBe(422);
+    expect(alterarAgendamentoHandler).not.toHaveBeenCalled();
+  });
+
+  it("sem campo nenhum continua recusado — e o handler não roda", async () => {
+    sessaoOk();
+    const { PATCH } = await import("./route");
+
+    const res = await PATCH(patchReq({ id: ID }));
+    const corpo = (await res.json()) as { error?: { details?: Record<string, unknown> } };
+
+    expect(res.status).toBe(422);
+    expect(alterarAgendamentoHandler).not.toHaveBeenCalled();
+    // ⚠️ MEDIDO: a mensagem do refine ("Informe pelo menos um campo para
+    // alterar") NÃO chega ao cliente — a rota serializa só
+    // `flatten().fieldErrors`, e a recusa de um `.refine` de OBJETO cai em
+    // `formErrors`. O corpo é `{"message":"Dados inválidos.","details":{}}`; é
+    // por isso que a recusa do título vazio deste PR tem de ser de CAMPO (com
+    // `details.title`), não de refine.
+    expect(corpo.error?.details).toEqual({});
+  });
+});
+
+/**
  * `/api/v1/agenda/agendamentos` agora está em `PUBLIC_PATHS` — o proxy deixa de
  * barrar o GET sem cookie. Quem barra é o `requireRole` da própria rota, que
  * NÃO lê Bearer: listar a agenda segue só-sessão.

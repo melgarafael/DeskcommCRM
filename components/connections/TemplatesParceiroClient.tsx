@@ -224,7 +224,7 @@ export function TemplatesParceiroClient({
                   className="flex w-full flex-wrap items-center gap-2 text-left"
                   aria-expanded={expandido}
                 >
-                  <span className="font-mono text-sm">{tpl.name}</span>
+                  <span className="break-all font-mono text-sm">{tpl.name}</span>
                   <span className="text-xs text-muted-foreground">{tpl.language}</span>
                   {tpl.category && (
                     <span className="rounded-md bg-muted px-1.5 text-[10px] uppercase text-muted-foreground">

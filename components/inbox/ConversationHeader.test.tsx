@@ -258,3 +258,109 @@ describe("ConversationHeader — busca dentro da conversa (#1793)", () => {
     expect(arquivarMutate).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * FECHAR UMA CONVERSA DE CONTATO COM A EQUIPE — A PERGUNTA QUE FALTAVA (#3313).
+ *
+ * A trava de humano mora no CONTATO (`contacts.force_human`), não na conversa:
+ * fechar não a soltava, e a próxima mensagem daquele cliente, dias depois, era
+ * pulada pela IA sem ninguém perceber. O diálogo de fechamento passa a
+ * perguntar, com «Devolver ao automático ao fechar» MARCADO por padrão.
+ *
+ * ─── SABOTAGEM ──────────────────────────────────────────────────────────────
+ *   - pôr a pergunta em toda conversa: o caso "sem a trava" acusa (a escolha
+ *     apareceria onde não há trava nenhuma para soltar);
+ *   - inverter o padrão (nascer marcado em "manter"): o primeiro caso acusa;
+ *   - mandar a chave sempre: o caso "sem a trava" acusa, porque o corpo
+ *     ganharia um `devolver_ao_automatico: false` que ninguém pediu.
+ */
+describe("ConversationHeader — fechar conversa de contato com a equipe (#3313)", () => {
+  function comTrava(force_human: boolean, status = "open"): ConversationWithContact {
+    const atual = conversa(status);
+    atual.contacts = {
+      id: "contato-1",
+      display_name: "Raphael",
+      name: "Raphael",
+      phone_number: "+5511999999999",
+      tags: [],
+      is_blocked: false,
+      is_personal: false,
+      is_anonymized: false,
+      force_human,
+    } as unknown as ConversationWithContact["contacts"];
+    return atual;
+  }
+
+  it("contato travado: o diálogo pergunta e «Devolver ao automático» vem MARCADO", async () => {
+    const user = userEvent.setup();
+    render(<ConversationHeader conversation={comTrava(true)} />);
+
+    await user.click(screen.getByRole("button", { name: "Fechar" }));
+    const dialogo = await screen.findByRole("alertdialog");
+
+    expect(within(dialogo).getByTestId("escolha-ao-fechar")).toBeTruthy();
+    expect(within(dialogo).getByTestId("fechar-devolver-ao-automatico")).toBeChecked();
+    expect(within(dialogo).getByTestId("fechar-manter-com-a-equipe")).not.toBeChecked();
+
+    await user.click(within(dialogo).getByRole("button", { name: "Fechar" }));
+    await waitFor(() => expect(closeMutate).toHaveBeenCalledTimes(1));
+    expect(closeMutate).toHaveBeenCalledWith({
+      conversation_id: "conv-1",
+      expected_revision: 3,
+      devolver_ao_automatico: true,
+    });
+  });
+
+  it("«Manter com a equipe»: fecha e manda NÃO devolver — a trava continua", async () => {
+    const user = userEvent.setup();
+    render(<ConversationHeader conversation={comTrava(true)} />);
+
+    await user.click(screen.getByRole("button", { name: "Fechar" }));
+    const dialogo = await screen.findByRole("alertdialog");
+
+    await user.click(within(dialogo).getByTestId("fechar-manter-com-a-equipe"));
+    expect(within(dialogo).getByTestId("fechar-manter-com-a-equipe")).toBeChecked();
+    expect(within(dialogo).getByTestId("fechar-devolver-ao-automatico")).not.toBeChecked();
+
+    await user.click(within(dialogo).getByRole("button", { name: "Fechar" }));
+    await waitFor(() => expect(closeMutate).toHaveBeenCalledTimes(1));
+    expect(closeMutate).toHaveBeenCalledWith({
+      conversation_id: "conv-1",
+      expected_revision: 3,
+      devolver_ao_automatico: false,
+    });
+  });
+
+  it("cancelar e reabrir volta ao PADRÃO MARCADO — a escolha não fica grudada", async () => {
+    const user = userEvent.setup();
+    render(<ConversationHeader conversation={comTrava(true)} />);
+
+    await user.click(screen.getByRole("button", { name: "Fechar" }));
+    const dialogo = await screen.findByRole("alertdialog");
+    await user.click(within(dialogo).getByTestId("fechar-manter-com-a-equipe"));
+    await user.click(within(dialogo).getByRole("button", { name: "Cancelar" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+
+    await user.click(screen.getByRole("button", { name: "Fechar" }));
+    const dialogo2 = await screen.findByRole("alertdialog");
+    expect(within(dialogo2).getByTestId("fechar-devolver-ao-automatico")).toBeChecked();
+    expect(closeMutate).not.toHaveBeenCalled();
+  });
+
+  it("sem a trava: não pergunta nada e o fechamento é o de sempre", async () => {
+    const user = userEvent.setup();
+    render(<ConversationHeader conversation={comTrava(false)} />);
+
+    await user.click(screen.getByRole("button", { name: "Fechar" }));
+    const dialogo = await screen.findByRole("alertdialog");
+
+    expect(within(dialogo).queryByTestId("escolha-ao-fechar")).toBeNull();
+
+    await user.click(within(dialogo).getByRole("button", { name: "Fechar" }));
+    await waitFor(() => expect(closeMutate).toHaveBeenCalledTimes(1));
+    expect(closeMutate).toHaveBeenCalledWith({
+      conversation_id: "conv-1",
+      expected_revision: 3,
+    });
+  });
+});

@@ -96,8 +96,15 @@ export function createBrasilApiClient(opts: BrasilApiClientOpts = {}): BrasilApi
 
   return {
     async lookupCnpj(normalizedCnpj: string): Promise<BrasilApiResult> {
-      if (!/^\d{14}$/.test(normalizedCnpj)) {
-        return { ok: false, code: "invalid_cnpj", message: "CNPJ deve ter 14 dígitos." };
+      // 12 posições de dígito ou LETRA + 2 dígitos verificadores: o CNPJ
+      // alfanumérico da Receita (#3495). Recusar aqui devolveria `invalid_cnpj`
+      // para um documento legítimo que a rota de empresa já aceita.
+      if (!/^[0-9A-Z]{14}$/.test(normalizedCnpj)) {
+        return {
+          ok: false,
+          code: "invalid_cnpj",
+          message: "CNPJ deve ter 14 posições (12 alfanuméricas e 2 dígitos verificadores).",
+        };
       }
 
       const ctrl = new AbortController();

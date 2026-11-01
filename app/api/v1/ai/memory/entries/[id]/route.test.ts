@@ -27,7 +27,10 @@ interface UpdateState {
   eqCalls: Array<[string, unknown]>;
 }
 
-function makeAdminStub(updateResult: { id: string; status: string } | null, state: UpdateState) {
+function makeAdminStub(
+  updateResult: { id: string; status: string; valid_until?: string | null } | null,
+  state: UpdateState,
+) {
   return {
     from(table: string) {
       if (table !== "org_memory_entries") throw new Error(`unexpected table ${table}`);
@@ -117,6 +120,46 @@ describe("PATCH /api/v1/ai/memory/entries/[id]", () => {
     expect(vi.mocked(audit)).toHaveBeenCalledWith(
       expect.objectContaining({ action: "ai.org_memory_entry_updated", organizationId: ORG_ID }),
     );
+  });
+
+  it("#2369 — data de validade sozinha atualiza só o prazo (arquivar continua separado)", async () => {
+    mockAuthzOk();
+    const state: UpdateState = { payload: null, eqCalls: [] };
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeAdminStub({ id: ENTRY_ID, status: "active", valid_until: "2026-11-01" }, state) as never,
+    );
+
+    const { PATCH } = await import("./route");
+    const res = await PATCH(patchReq({ valid_until: "2026-11-01" }), ctx());
+
+    expect(res.status).toBe(200);
+    expect(Object.keys(state.payload as object).sort()).toEqual(["updated_at", "valid_until"]);
+    expect(state.payload?.valid_until).toBe("2026-11-01");
+    const body = (await res.json()) as { data: { valid_until: string | null } };
+    expect(body.data.valid_until).toBe("2026-11-01");
+  });
+
+  it("#2369 — `valid_until: null` tira o prazo: o aprendizado volta a valer para sempre", async () => {
+    mockAuthzOk();
+    const state: UpdateState = { payload: null, eqCalls: [] };
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeAdminStub({ id: ENTRY_ID, status: "active", valid_until: null }, state) as never,
+    );
+
+    const { PATCH } = await import("./route");
+    const res = await PATCH(patchReq({ valid_until: null }), ctx());
+
+    expect(res.status).toBe(200);
+    expect(state.payload).toHaveProperty("valid_until", null);
+  });
+
+  it("#2369 — corpo sem status nem prazo → 422 (não é um PATCH vazio silencioso)", async () => {
+    mockAuthzOk();
+    const { PATCH } = await import("./route");
+    const res = await PATCH(patchReq({}), ctx());
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("validation_failed");
   });
 
   it("status fora do enum → 422 validation_failed", async () => {

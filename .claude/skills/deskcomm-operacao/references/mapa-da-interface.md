@@ -154,6 +154,7 @@ Hub: "Configurações" → `/app/settings`
 | API Tokens | Organização → Hub "Configurações" → API Tokens `/app/settings/api-tokens` | Chaves para outro sistema conversar com o seu CRM. | administrador |  |
 | Trunk SIP | Organização → Hub "Configurações" → Trunk SIP `/app/settings/voip-trunk` | Credenciais do provedor SIP para chamadas de voz por IA. | administrador |  |
 | Dados externos | Organização → Hub "Configurações" → Dados externos `/app/integracao-dados` | Conecte um banco de dados de outro sistema para o agente consultar em tempo real. | todos | Só aparece se o módulo `banco_externo` estiver ligado. |
+| Ajuda | Organização → rodapé do menu → Ajuda `/app/ajuda` | O caminho para cada tarefa e uma linha dizendo quando procurar cada tela. | todos | Último item do rodapé, fora do scroll. O bloco "Para quem instala e mantém" só aparece para quem instalou o servidor (`is_platform_admin`). |
 
 ## Fora do menu: administração da instalação
 

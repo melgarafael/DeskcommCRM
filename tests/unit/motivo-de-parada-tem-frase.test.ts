@@ -2,10 +2,13 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { erroTecnicoConhecido } from "@/lib/automation/resultado-para-recibo";
+
 import {
   cobrarFrases,
   descrever,
   lerMapaDeMotivos,
+  literaisDoProdutor,
   varrerMotivosDeParada,
   type DeclaracaoDeOrigem,
 } from "./helpers/motivos-de-parada";
@@ -91,6 +94,20 @@ const ORIGENS: DeclaracaoDeOrigem[] = [
   },
   {
     arquivo: "lib/automation/actions/send-whatsapp.ts",
+    expressao: "MOTIVO_DO_PULO",
+    porque:
+      "#3813 — a escolha `nao_enviar` (\"quando o contato tiver horário marcado\") devolve o pulo pelo `reason` do resultado; o código possível é um só e está escrito em `MOTIVO_DO_PULO`, no produtor declarado ao lado",
+    produtor: { arquivo: "lib/agenda/escolha-no-envio.ts" },
+  },
+  {
+    arquivo: "lib/automation/actions/send-ai-message.ts",
+    expressao: "MOTIVO_DO_PULO",
+    porque:
+      "a irmã de IA devolve o MESMO código de pulo por compromisso na agenda (#3813), pelo `reason` do resultado; a constante é uma e mora no produtor declarado ao lado",
+    produtor: { arquivo: "lib/agenda/escolha-no-envio.ts" },
+  },
+  {
+    arquivo: "lib/automation/actions/send-whatsapp.ts",
     expressao: "classificada.motivo",
     porque:
       "a recusa da mídia que não é imagem nem PDF (#2734) chega à tela pelo `error` do resultado; o motivo é a frase de gente que o produtor escreve, e o produtor é varrido ao lado",
@@ -109,6 +126,13 @@ const ORIGENS: DeclaracaoDeOrigem[] = [
     porque:
       "o texto gerado pelo agente devolve `reason` quando não há versão publicada ou o modelo não devolveu texto; o resultado o usa nos dois canais (detalhe e erro)",
     produtor: { arquivo: "lib/agent-engine/agent/abordagem-de-formulario.ts" },
+  },
+  {
+    arquivo: "lib/automation/actions/assign-owner.ts",
+    expressao: "elegibilidade.motivo",
+    porque:
+      "#3804 — o vínculo de quem vai receber virou UMA régua (`conferirElegibilidade`), usada pelo modo fixo de sempre e por cada elo do destino dinâmico; os dois códigos que ela devolve (`user_not_in_org`, `invalid_owner`) estão escritos no tipo `Elegibilidade` deste mesmo arquivo, têm frase no mapa desde a #2041/#3514, e o produtor varrido ao lado é o próprio arquivo",
+    produtor: { arquivo: "lib/automation/actions/assign-owner.ts" },
   },
   {
     arquivo: "lib/automation/actions/create-task.ts",
@@ -199,6 +223,27 @@ describe("o mapa de frases e o código que emite os motivos não podem divergir"
       `${semDeclaracao.length} motivo(s) que a guarda não sabe cobrar: declare a origem em ORIGENS, ` +
         `neste arquivo, com o \`porque\` escrito e o produtor varrido.\n  ${semDeclaracao.join("\n  ")}`,
     ).toEqual([]);
+  });
+
+  /**
+   * Frase no mapa não basta: o recibo (`resultadoParaRecibo`) troca por
+   * `internal_error` todo `reason`/`error` que `erroTecnicoConhecido` não
+   * reconhece, e a tela passa a mostrar "Falhou… internal_error" no lugar da
+   * frase. Foi o que aconteceu com `set_lead_date_field` (PR #3741): seis
+   * motivos com frase, nenhum em `CODIGOS_DAS_ACOES`.
+   */
+  it("todo motivo com frase sobrevive ao recibo (está em CODIGOS_DAS_ACOES)", () => {
+    const emitidos = [
+      ...varredura.literais,
+      ...ORIGENS.flatMap((o) => (o.produtor ? literaisDoProdutor(RAIZ, o.produtor.arquivo) : [])),
+    ];
+    const apagados = emitidos.filter((o) => mapa.has(o.motivo) && !erroTecnicoConhecido(o.motivo));
+    expect(
+      apagados.length,
+      `${apagados.length} motivo(s) com frase que o recibo troca por internal_error:\n` +
+        `${descrever(apagados)}\nConserto: acrescente o código a CODIGOS_DAS_ACOES em ` +
+        "lib/automation/resultado-para-recibo.ts.",
+    ).toBe(0);
   });
 
   it("declaração que o código não usa mais é vermelho — a lista só encolhe", () => {

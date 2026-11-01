@@ -117,7 +117,7 @@ describe("alcance da OPENROUTER_API_KEY", () => {
       conhecido: true,
     };
     for (const ponto of ["agent_turn", "operator_turn"]) {
-      const r = validarBinding({ pontoId: ponto, modelo: semFerramentas });
+      const r = validarBinding({ pontoId: ponto, provider: "openrouter", modelo: semFerramentas });
       expect(r.ok, `${ponto} aceitou modelo sem ferramentas`).toBe(false);
       if (!r.ok) expect(r.codigo).toBe("modelo_sem_ferramentas");
     }
@@ -129,6 +129,7 @@ describe("alcance da OPENROUTER_API_KEY", () => {
     // passaria igual.
     const r = validarBinding({
       pontoId: "stage_classifier",
+      provider: "openrouter",
       modelo: {
         model_id: "algum/modelo-barato",
         supports_tools: false,

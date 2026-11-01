@@ -30,6 +30,7 @@ import {
 import { categoriaDoMotivo } from "@/lib/leads/motivos-de-perda-do-funil";
 import { rotuloDoMotivoDePerda } from "@/lib/schemas/leads";
 import { cn } from "@/lib/utils";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 interface FilterBarProps {
   filters: LeadFilters;
@@ -103,7 +104,7 @@ export function FilterBar({ filters, onChange, leads, settings }: FilterBarProps
         .map((m) => ({
           key: `u:${m.user_id}`,
           owner: m.user_id,
-          name: m.full_name ?? t("Sem nome"),
+          name: rotuloDoMembro(m, t),
           kind: "user" as OwnerKind,
           version: null,
         })),

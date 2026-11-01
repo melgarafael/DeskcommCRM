@@ -1,5 +1,11 @@
 import type { SheetMatrix } from "@/lib/planilha/ler-arquivo";
-import { normalizeProspectPhone, safePublicLink, type Prospect } from "@/lib/prospecting/schema";
+import type {
+  CandidatoNaPlanilha,
+  LinhaExcluida,
+  MotivoDeExclusao,
+} from "@/lib/prospecting/importacao-previa";
+import { TEXTO_DO_MOTIVO } from "@/lib/prospecting/importacao-previa";
+import { normalizeProspectPhone, safePublicLink } from "@/lib/prospecting/schema";
 
 /**
  * A PLANILHA DE PROSPECÇÃO — a lista própria do operador como segunda porta de entrada
@@ -59,14 +65,12 @@ function siteDaCelula(bruto: string): string | null {
   return url && url.length <= 500 ? url : null;
 }
 
-export interface ErroDaLinhaDeProspeccao {
-  /** A linha como a pessoa a vê na planilha: 1 é o cabeçalho. */
-  linha: number;
-  motivo: string;
-}
-
 export type LeituraDaPlanilhaDeProspeccao =
-  | { candidatos: Prospect[]; erros: ErroDaLinhaDeProspeccao[]; colunasIgnoradas: string[] }
+  | {
+      candidatos: CandidatoNaPlanilha[];
+      erros: LinhaExcluida[];
+      colunasIgnoradas: string[];
+    }
   | { erro: string };
 
 export function lerPlanilhaDeProspeccao(sheet: SheetMatrix): LeituraDaPlanilhaDeProspeccao {
@@ -101,8 +105,8 @@ export function lerPlanilhaDeProspeccao(sheet: SheetMatrix): LeituraDaPlanilhaDe
     (colunas.get(campo) ?? []).map((i) => (linha[i] ?? "").trim()).filter(Boolean);
   const primeiro = (linha: string[], campo: Campo) => valores(linha, campo)[0] ?? "";
 
-  const candidatos: Prospect[] = [];
-  const erros: ErroDaLinhaDeProspeccao[] = [];
+  const candidatos: CandidatoNaPlanilha[] = [];
+  const erros: LinhaExcluida[] = [];
   const telefonesVistos = new Map<string, number>();
 
   sheet.rows.forEach((bruto, i) => {
@@ -111,18 +115,29 @@ export function lerPlanilhaDeProspeccao(sheet: SheetMatrix): LeituraDaPlanilhaDe
 
     const name = primeiro(bruto, "name").replace(/\s+/g, " ").slice(0, 200);
     if (name.length < 2) {
-      erros.push({ linha, motivo: "Sem nome da empresa." });
+      erros.push({ linha, telefone: null, codigo: "sem_nome", motivo: TEXTO_DO_MOTIVO.sem_nome });
       return;
     }
 
-    const phone = normalizeProspectPhone(primeiro(bruto, "phone"));
+    // Telefone EM BRANCO e telefone preenchido que não vira E.164 são dois problemas
+    // diferentes: o primeiro é a linha incompleta, o segundo é o número digitado errado
+    // (ou um "11 9999" sem o nono). O operador conserta um e o outro de formas distintas.
+    const brutoTelefone = primeiro(bruto, "phone");
+    const phone = normalizeProspectPhone(brutoTelefone);
     if (!phone) {
-      erros.push({ linha, motivo: "Sem telefone válido." });
+      const codigo: MotivoDeExclusao = brutoTelefone ? "telefone_invalido" : "sem_telefone";
+      erros.push({ linha, telefone: null, codigo, motivo: TEXTO_DO_MOTIVO[codigo] });
       return;
     }
     const jaVisto = telefonesVistos.get(phone);
     if (jaVisto !== undefined) {
-      erros.push({ linha, motivo: `Telefone repetido na planilha (linha ${jaVisto}).` });
+      erros.push({
+        linha,
+        telefone: phone,
+        codigo: "repetido_na_planilha",
+        motivo: TEXTO_DO_MOTIVO.repetido_na_planilha,
+        detalhe: `linha ${jaVisto}`,
+      });
       return;
     }
     telefonesVistos.set(phone, linha);
@@ -145,18 +160,21 @@ export function lerPlanilhaDeProspeccao(sheet: SheetMatrix): LeituraDaPlanilhaDe
     ].slice(0, 15);
 
     candidatos.push({
-      // Estável: reimportar o mesmo número bate no `unique` e no gatilho de supressão da LGPD.
-      key: `planilha:${phone}`,
-      name,
-      phone,
-      website: siteDaCelula(primeiro(bruto, "website")),
-      category: primeiro(bruto, "category").slice(0, 500) || null,
-      address: valores(bruto, "address").join(", ").slice(0, 500) || null,
-      maps_url: null,
-      rating: null,
-      reviews: null,
-      emails,
-      socials,
+      linha,
+      prospect: {
+        // Estável: reimportar o mesmo número bate no `unique` e no gatilho de supressão da LGPD.
+        key: `planilha:${phone}`,
+        name,
+        phone,
+        website: siteDaCelula(primeiro(bruto, "website")),
+        category: primeiro(bruto, "category").slice(0, 500) || null,
+        address: valores(bruto, "address").join(", ").slice(0, 500) || null,
+        maps_url: null,
+        rating: null,
+        reviews: null,
+        emails,
+        socials,
+      },
     });
   });
 

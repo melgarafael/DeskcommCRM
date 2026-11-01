@@ -2334,7 +2334,7 @@ grupo IA já usava.
 
 | caso | prioridade | estado |
 |---|---|---|
-| Em 1280×900 o menu inteiro cabe sem rolar | `[P1]` | **PASS**, medido por ferramenta em `tests/e2e/navegacao.spec.ts`: `scrollHeight` **763** = altura **763**, excesso **0**, 18 links. A folga real — distância entre o fim do último grupo e o fim da caixa de conteúdo da `<nav>`, que o `scrollHeight` grampeado NÃO revela — é **19px** |
+| Em 1280×900 o menu inteiro cabe sem rolar | `[P1]` | **PASS**, medido por ferramenta em `tests/e2e/navegacao.spec.ts`: `scrollHeight` **763** = altura **763**, excesso **0**, 18 links. A folga real — distância entre o fim do último grupo e o fim da caixa de conteúdo da `<nav>`, que o `scrollHeight` grampeado NÃO revela — é **7px** desde que o rodapé fixo ganhou o link da Ajuda (ver abaixo) |
 | Etapas do funil continua alcançável pelo CRM, não por Configurações | `[P1]` | **PASS**, e o caminho é percorrido inteiro: sidebar → "Ver tudo em CRM" → `/app/crm` → card → `settings/tenant/pipelines`. Evidência em `.superpowers/evidence/nav-hub-crm.png` |
 | Produtos, que saiu do menu, continua tendo porta (DoD 14) | `[P1]` | **PASS**, caso próprio na mesma spec: o link não existe no sidebar (`toHaveCount(0)`) e existe no hub |
 | A folga de 19px é real | — | **PROVADO POR SABOTAGEM.** Um sexto destino de CRM com `sidebar: true` devolve o excesso a exatamente **+13px** e reprova o mesmo caso — previsto antes de rodar, e batido |
@@ -2344,6 +2344,19 @@ grupo IA já usava.
 grampeado no `clientHeight`, então "excesso 0" e "sobra 200px" dão o MESMO número.
 Quem quiser saber quanta folga restou tem de medir o `bottom` do último filho
 contra a caixa de conteúdo da `<nav>` — foi assim que os 19px saíram.
+
+### O rodapé fixo também come altura (2026-10-30)
+
+O link da **Ajuda** entrou no rodapé fixo, e rodapé não tem hub: cada linha dele é
+altura subtraída da `<nav>`. O conteúdo da nav não mudou (**744px**, 18 links), mas
+a caixa visível caiu de **763** para **731** — os **32px** da linha nova (28px de
+item + `mb-1`) — e `navegacao.spec.ts:238` reprovou por **13px**.
+
+A devolução veio da moldura, não de item: 4px no topo/rodapé da nav (`p-2` →
+`px-2 py-1`), 4px no rodapé fixo (`p-2` → `px-2 py-1`) e 2px entre os dois links
+fixos (`mb-1` → `mb-0.5`) = **16px**. Resultado: conteúdo **736px** contra caixa
+**743px**, folga **7px**, `py-1`/`text-sm` de cada destino intactos. A regra do hub
+continua valendo — nenhum destino de menu apareceu aqui; quem pesou foi o rodapé.
 
 ## Os contadores do menu: Casos e a Fila (2026-09-27)
 

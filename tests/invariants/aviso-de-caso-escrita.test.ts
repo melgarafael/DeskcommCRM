@@ -402,10 +402,51 @@ describe("0292 — fn_definir_aviso_de_caso é a única porta, e ela confere o p
     sql(`update public.contacts set phone_number = null where id = '${CONTATO_A}';`);
   });
 
+  it("o WhatsApp da pessoa da equipe também não pode ser um número conectado (#3803)", () => {
+    // No modo `responsavel` o número da pessoa É o destino do aviso: aceitá-lo
+    // reabriria o laço robô-com-robô pela porta nova. As duas grafias do nono
+    // dígito contam, e a recusa desfaz a transação inteira.
+    sql(`update public.channel_sessions set phone_number = '+553188887777' where id = '${SESSAO_A}';`);
+    const whatsappDoAdmin = () =>
+      sql(
+        `select coalesce(whatsapp_e164, 'nulo') from public.user_organizations where organization_id = '${ORG_A}' and user_id = '${ADMIN_A}';`,
+      ).trim();
+    const define = (whatsapp: string) =>
+      sql(
+        `${comoMembro(ADMIN_A)}\nselect public.fn_definir_aviso_de_caso('${ORG_A}', null, '+5531977772222', null, true, false, false, 'responsavel', '[{"user_id":"${ADMIN_A}","whatsapp":"${whatsapp}"}]'::jsonb);`,
+      );
+
+    for (const grafia of ["+553188887777", "+5531988887777"]) {
+      let erro = "";
+      try {
+        define(grafia);
+      } catch (e) {
+        erro = motivoDoErro(e);
+      }
+      expect(erro, `o número conectado ${grafia} foi aceito como WhatsApp da pessoa`).toMatch(
+        /aviso_de_caso_numero_da_propria_org/i,
+      );
+      expect(whatsappDoAdmin(), "a recusa deixou o número gravado").not.toContain("88887777");
+    }
+
+    // Controle positivo: um número de fora é gravado — sem ele, uma porta que
+    // recusasse tudo também passaria acima.
+    expect(define("+5531911112222")).toContain("trocou_numero");
+    expect(whatsappDoAdmin()).toContain("+5531911112222");
+
+    sql(
+      `update public.channel_sessions set phone_number = null where id = '${SESSAO_A}';
+       update public.user_organizations set whatsapp_e164 = null where organization_id = '${ORG_A}' and user_id = '${ADMIN_A}';`,
+    );
+  });
+
   it("anon não tem EXECUTE na função", () => {
     expect(
       booleano(
-        `select has_function_privilege('anon', 'public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean)', 'EXECUTE')::text`,
+        // A assinatura é a da função VIVA: a 9078 trocou a de 7 argumentos por
+        // esta, e a antiga não existe mais — perguntar por ela devolveria erro
+        // de função inexistente, não um "não" honesto.
+        `select has_function_privilege('anon', 'public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb)', 'EXECUTE')::text`,
       ),
       "a função nasceu exposta à anon key, que vai para o browser",
     ).toBe(false);

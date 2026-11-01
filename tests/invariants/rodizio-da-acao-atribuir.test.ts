@@ -61,6 +61,32 @@ async function trocarFila(regra: string, fila: Pessoa[]) {
   await query("update automation_rules set actions=$2::jsonb where id=$1", [regra, JSON.stringify(acoes)]);
 }
 
+/**
+ * A regra do DESTINO DINÂMICO (#3804): o fallback é o rodízio, e a fila mora em
+ * `config.fallback.fila` — não em `config.fila`. A função do rodízio é a MESMA,
+ * e é isso que esta regra prova.
+ */
+async function novaRegraDeDestino(fila: Pessoa[], organizacao = org): Promise<string> {
+  const acoes = [
+    {
+      type: "assign_owner",
+      config: {
+        modo: "destino",
+        destinos: ["responsavel_do_negocio", "dono_da_carteira"],
+        fallback: {
+          modo: "rodizio",
+          fila: fila.map((p) => ({ user_id: p.user_id, pausado: p.pausado ?? false })),
+        },
+      },
+    },
+  ];
+  const r = await query(
+    "insert into automation_rules(organization_id,name,trigger_event,actions,is_active) values($1,'rodízio de teste','lead.created',$2::jsonb,true) returning id",
+    [organizacao, JSON.stringify(acoes)],
+  );
+  return r.rows[0].id as string;
+}
+
 async function novoLead(organizacao = org): Promise<string> {
   const r = await query(
     "insert into crm_leads(organization_id,pipeline_id,stage_id,title,source) values($1,$2,$3,$4,'webhook') returning id",
@@ -179,6 +205,20 @@ describe("rodízio da ação assign_owner", () => {
     expect(hist.rows[0].n).toBe(1);
     // Evento DIFERENTE anda a fila: a vez é de quem vinha depois de Ana.
     expect((await rodar(regra, await novoLead(), org, randomUUID())).dono).toBe(bruno);
+  });
+
+  it("a fila do FALLBACK do destino dinâmico é a MESMA fila do rodízio (#3804)", async () => {
+    // A fila mora em `config.fallback.fila`; a função do #2041 tem de achá-la,
+    // revezar pela mesma posição e gravar o dono na mesma transação.
+    const regra = await novaRegraDeDestino([{ user_id: ana }, { user_id: bruno }]);
+    const lead = await novoLead();
+    const r = await rodar(regra, lead);
+    expect(r.desfecho).toEqual({ user_id: ana, posicao: 1 });
+    expect(r.dono).toBe(ana);
+    const hist = await query("select user_id, member_position from automation_rodizio_atribuicoes where rule_id=$1", [regra]);
+    expect(hist.rows).toEqual([{ user_id: ana, member_position: 1 }]);
+    // A segunda vez é do próximo da MESMA fila: um rodízio só, um histórico só.
+    expect(await vez(regra)).toBe(bruno);
   });
 
   it("quatro leads simultâneos se repartem 2/2 (a trava é por regra)", async () => {

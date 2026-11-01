@@ -27,9 +27,12 @@ import { traduzir } from "@/lib/i18n/dicionario";
 export const dynamic = "force-dynamic";
 // As três colunas de anexo (migration 0483) entram nos DOIS caminhos: sem elas
 // no SELECT o card da nota devolveria `undefined` em vez de `null` e o renderer
-// ligaria o anexo com um path inexistente.
+// ligaria o anexo com um path inexistente. As duas da marca de retenção (9050,
+// #3756) pelo mesmo motivo, e com um a mais: o aviso só aparece se a tela
+// SOUBER que o anexo saiu por idade — sem elas no SELECT, a nota que perdeu o
+// anexo volta a ser indistinguível de uma nota que nunca teve.
 const COLS =
-  "id, conversation_id, body, created_by_user_id, created_by_name, created_at, media_storage_path, media_mime, media_size_bytes";
+  "id, conversation_id, body, created_by_user_id, created_by_name, created_at, media_storage_path, media_mime, media_size_bytes, media_expired_at, media_retention_days";
 
 interface RouteParams {
   params: Promise<{ id: string }>;

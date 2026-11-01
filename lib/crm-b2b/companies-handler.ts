@@ -9,12 +9,8 @@ import {
   type BrasilApiResult,
 } from "@/lib/brasil-api/client";
 import { enrichCompanyFromBrasilApi } from "@/lib/crm-b2b/enrich";
-import { formatCnpj, normalizeCnpj } from "@/lib/crm-b2b/normalize";
-import {
-  companyCreateSchema,
-  companyPatchSchema,
-  type CompanyCreate,
-} from "@/lib/crm-b2b/schemas";
+import { formatCnpj, MENSAGEM_DE_CNPJ_INVALIDO, normalizeCnpj } from "@/lib/crm-b2b/normalize";
+import { companyCreateSchema, companyPatchSchema, type CompanyCreate } from "@/lib/crm-b2b/schemas";
 
 type SB = SupabaseClient;
 
@@ -50,7 +46,9 @@ export async function listCompaniesHandler(
 
   if (opts.search?.trim()) {
     const s = `%${opts.search.trim()}%`;
-    q = q.or(`trade_name.ilike.${s},legal_name.ilike.${s},cnpj.ilike.${s},normalized_cnpj.ilike.${s}`);
+    q = q.or(
+      `trade_name.ilike.${s},legal_name.ilike.${s},cnpj.ilike.${s},normalized_cnpj.ilike.${s}`,
+    );
   }
 
   const { data, error } = await q;
@@ -103,7 +101,7 @@ export async function createCompanyHandler(
 ) {
   const body: CompanyCreate = companyCreateSchema.parse(raw);
   const normalized = body.cnpj ? normalizeCnpj(body.cnpj) : null;
-  if (body.cnpj && !normalized) err(ctx, 422, "validation_failed", "CNPJ inválido.");
+  if (body.cnpj && !normalized) err(ctx, 422, "validation_failed", MENSAGEM_DE_CNPJ_INVALIDO);
 
   if (normalized) {
     const { data: dup } = await supabase
@@ -175,7 +173,7 @@ export async function patchCompanyHandler(
   }
   if (body.cnpj !== undefined) {
     const normalized = body.cnpj ? normalizeCnpj(body.cnpj) : null;
-    if (body.cnpj && !normalized) err(ctx, 422, "validation_failed", "CNPJ inválido.");
+    if (body.cnpj && !normalized) err(ctx, 422, "validation_failed", MENSAGEM_DE_CNPJ_INVALIDO);
     patch.cnpj = normalized ? formatCnpj(normalized) : null;
     patch.normalized_cnpj = normalized;
   }
@@ -245,7 +243,7 @@ export async function lookupCompanyCnpjHandler(
 ) {
   const cnpj = typeof raw?.cnpj === "string" ? raw.cnpj.trim() : "";
   const normalized = normalizeCnpj(cnpj);
-  if (!normalized) err(ctx, 422, "validation_failed", "CNPJ inválido.");
+  if (!normalized) err(ctx, 422, "validation_failed", MENSAGEM_DE_CNPJ_INVALIDO);
 
   const { data: dup } = await supabase
     .from("companies")

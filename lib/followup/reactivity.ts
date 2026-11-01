@@ -173,6 +173,15 @@ export interface ReactivitySummary {
 function parseCancelOnReply(raw: unknown): boolean {
   const parsed = triggerConfigSchema.safeParse(raw);
   if (!parsed.success) return false;
+  // ⚠️ `appointment_no_show` CANCELA MESMO SEM O CAMPO GRAVADO — é o único
+  // gatilho em que a tela não oferece escolha (o interruptor nasce ligado e
+  // travado; ver `TriggerConfigControl.tsx`), e todo fluxo salvo pela tela até a
+  // #3400 está no banco SEM o campo. Persistir `true` só no próximo salvamento
+  // consertaria o futuro e deixaria esses fluxos roteando por cima de quem
+  // acabou de responder. Aqui o ausente significa `true`; `false` DECLARADO
+  // (API, importação, portabilidade) continua respeitado — default não
+  // sequestra configuração.
+  if (parsed.data.kind === "appointment_no_show") return parsed.data.cancel_on_reply ?? true;
   return parsed.data.cancel_on_reply ?? false;
 }
 
@@ -240,10 +249,18 @@ async function cancelAll(
 
 // ---- reação 1: message.received (inbound) ---------------------------------
 
+/**
+ * `semAcordar`: só a recuperação de mensagens de uma queda do número passa isto. A mensagem
+ * é antiga, então ela pode PARAR um fluxo que pede cancelamento na resposta (`cancel_on_reply`),
+ * mas nunca acordar uma espera nem mandar o próximo passo.
+ */
+export type OpcoesDaReatividade = { semAcordar?: boolean };
+
 async function reactToInbound(
   db: ReactivityAdminClient,
   clock: () => Date,
   row: EventRow,
+  opcoes: OpcoesDaReatividade = {},
 ): Promise<ReactivitySummary> {
   const contactId = strOrNull(row.payload.contact_id);
   if (!contactId) return { matched: false, reacted: 0 };
@@ -300,6 +317,9 @@ async function reactToInbound(
       continue;
     }
 
+    // Mensagem recuperada de uma queda não ACORDA a espera: acordar faz o fluxo falar agora,
+    // por causa de uma mensagem de horas ou dias atrás. Cancelar (acima) continua valendo.
+    if (opcoes.semAcordar) continue;
     if (await acordarPorInbound(db, clock, row, e)) reacted++;
   }
   // Uma espera por tempo fixo fica `active` com timer. Quando o fluxo declara
@@ -322,6 +342,9 @@ async function reactToInbound(
       continue;
     }
 
+    // Mensagem recuperada de uma queda não ACORDA a espera: acordar faz o fluxo falar agora,
+    // por causa de uma mensagem de horas ou dias atrás. Cancelar (acima) continua valendo.
+    if (opcoes.semAcordar) continue;
     if (await acordarPorInbound(db, clock, row, e)) reacted++;
   }
   return { matched: true, reacted };
@@ -458,10 +481,11 @@ export async function applyReactivityEvent(
   db: ReactivityAdminClient,
   clock: () => Date,
   row: EventRow,
+  opcoes: OpcoesDaReatividade = {},
 ): Promise<ReactivitySummary> {
   switch (row.event_type) {
     case "message.received":
-      return reactToInbound(db, clock, row);
+      return reactToInbound(db, clock, row, opcoes);
     case "ai.handoff_triggered":
       return reactToHandoffOpen(db, clock, row);
     case "ai.handoff_resolved":
