@@ -66648,6 +66648,31 @@ end; $$;
 revoke all on function public.fn_appointment_change_core(uuid,uuid,bigint,jsonb,boolean,jsonb) from public,anon,authenticated;
 notify pgrst,'reload schema';
 
+-- ---- EXECUTE das funções de motivo de perda e do activate_kb_version (0010, 0426, 0513) ----
+-- Três divergências de ACL entre os dois caminhos, todas com a cadeia mais
+-- fechada ou mais completa que o espelho:
+--   · `activate_kb_version` recebe `authenticated` em 0010; o dump só traz
+--     `service_role`, então a instalação nova negava a ativação de versão da KB
+--     a quem não é servidor.
+--   · `fn_crm_lead_close_on_stage` e `fn_validate_lost_reason_required` têm a
+--     ACL com `=X` (PUBLIC) no corpo do dump; 0426/0513 revogam de `public,anon`
+--     e reconcedem a anon/authenticated/service_role. Sem o espelho, a
+--     instalação nova deixava as duas executáveis por PUBLIC — que contém todo
+--     papel criado depois, inclusive o da conexão anônima.
+--
+-- Este bloco fica ACIMA da VARREDURA anon porque reconcede `anon`, e a regra
+-- (tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts) é que nada devolve
+-- privilégio a `anon` depois dela. Nenhuma das três funções é SECURITY DEFINER
+-- — a varredura só percorre `p.prosecdef` —, então a posição aqui é neutra.
+revoke execute on function public.activate_kb_version(uuid, uuid) from anon;
+grant  execute on function public.activate_kb_version(uuid, uuid) to authenticated, service_role;
+
+revoke execute on function public.fn_crm_lead_close_on_stage() from public, anon;
+grant  execute on function public.fn_crm_lead_close_on_stage() to anon, authenticated, service_role;
+
+revoke execute on function public.fn_validate_lost_reason_required() from public, anon;
+grant  execute on function public.fn_validate_lost_reason_required() to anon, authenticated, service_role;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
@@ -71008,5 +71033,45 @@ alter table public.crm_pipelines
     'won', 'Ganho', 'lost', 'Perdido',
     'stage', 'Etapa', 'stage_plural', 'Etapas'
   );
+
+-- ---- índices das métricas de atrito (migration 0133) ----
+-- O bloco da 0133 chegou ao apêndice com a FUNÇÃO e sem os cinco índices, então
+-- a instalação nova punha `fn_atrito_metrics` (e o painel de atrito) para varrer
+-- `agent_cases`, `messages`, `contacts`, `crm_lead_activities` e
+-- `before_send_traces` por janela — o oposto do que a própria migration declara
+-- ("todos os predicados da função, nenhum seq scan por janela"). Quem atualizava
+-- pela cadeia tinha os índices; quem instalava do zero, não.
+--
+-- Nomes e predicados copiados da migration, byte a byte, para o `pg_get_indexdef`
+-- dos dois caminhos sair igual. Não cria função: pode ficar depois da VARREDURA anon.
+create index if not exists idx_agent_cases_org_closed
+  on public.agent_cases (organization_id, closed_at)
+  where closed_at is not null;
+
+create index if not exists idx_messages_org_direction_sent
+  on public.messages (organization_id, direction, sent_at);
+
+create index if not exists idx_contacts_org_blocked_at
+  on public.contacts (organization_id, blocked_at)
+  where blocked_at is not null;
+
+create index if not exists idx_crm_lead_activities_org_type_performed
+  on public.crm_lead_activities (organization_id, type, performed_at);
+
+create index if not exists idx_before_send_traces_org_created
+  on public.before_send_traces (organization_id, created_at);
+
+-- ---- superfície `anon` fechada nas tabelas de IA e na fila de redação (0018, 0023) ----
+-- O `pg_dump` não enumera o que NÃO foi concedido: as duas migrations revogam
+-- `anon` dessas tabelas, e o apêndice nunca repetiu a revogação. Numa instalação
+-- nova elas nascem com o ACL padrão do Supabase (ALL para `anon`, por causa do
+-- `alter default privileges … on tables`) e ficam legíveis e apagáveis pela anon
+-- key — a RLS ainda barra linha, mas o grant é a primeira barreira e ela não
+-- existia. Idempotente; não cria função.
+revoke all on public.storage_redaction_queue from anon;
+revoke all on public.ai_provider_credentials from anon;
+revoke all on public.ai_provider_credentials_safe from anon;
+revoke all on public.ai_agent_versions from anon;
+revoke all on public.ai_agent_runs from anon;
 
 notify pgrst, 'reload schema';
