@@ -2855,16 +2855,23 @@ async function executarTurnoDoAgente(
     // Só quando a derivação CONCLUIU: no teto, a mídia vai como `[audio]` e quem
     // responde por ela é o turno dela (`espera-da-midia.ts`); reanotar faria o
     // job dela se calar por `ultimaInboundJaRespondida`, e a resposta se perderia.
-    // ponytail: mídia que chega entre o "nada pendente" e este UPDATE (1 RTT)
-    // fica coberta sem texto — janela rara, aceita; fecha com o UPDATE filtrando
-    // `media_derived_status` se um dia for medida.
+    // E a anotação vai FILTRADA (#3845): ela só promete mídia cujo texto já
+    // existe. Sem o filtro, a mídia que chegasse no round-trip entre a última
+    // checagem (que voltou "nada pendente") e este UPDATE ficava prometida — o
+    // turno a lia como `[audio]`, a resposta saía sem o conteúdo e o job dela se
+    // calava: o cliente ficava sem a resposta ao áudio. Medido em
+    // `tests/invariants/midia-tardia-depois-da-leitura.test.ts`.
     if (espera.desfecho === 'derivacao_concluida' && liveJob().kind === 'inbound_turn') {
-      await anotarUltimaInboundVista(pool, {
-        organizationId: tenantId,
-        contactId: leadId,
-        conversationId: input.conversationId,
-        jobId: liveJob().id,
-      });
+      await anotarUltimaInboundVista(
+        pool,
+        {
+          organizationId: tenantId,
+          contactId: leadId,
+          conversationId: input.conversationId,
+          jobId: liveJob().id,
+        },
+        { apenasMidiaComTexto: true },
+      );
     }
   };
   /**

@@ -36,25 +36,49 @@ export interface MidiaDerivavelPendente {
   type: string;
   /** `null` = a derivação nem foi pedida ainda; qualquer valor fora de `DERIVACAO_TERMINADA` é pendente. */
   status: string | null;
-  /** `messages.created_at` — a hora em que a mídia chegou, âncora de toda espera. */
+  /** `messages.created_at` (ISO 8601) — a hora em que a mídia chegou, âncora de toda espera. */
   quando: string;
+}
+
+/**
+ * O instante de chegada em ms, aceitando as DUAS formas que `pg` devolve para
+ * `timestamptz`.
+ *
+ * Isto não é zelo de tipo: o driver `pg` converte `timestamptz` em `Date` pelo
+ * parser do OID 1184, e o repositório NÃO troca esse parser (`setTypeParser` só
+ * aparece em um teste). Exigir `typeof quando === 'string'` fazia esta régua
+ * devolver `null` para mídia pendente REAL — medido contra Postgres de verdade
+ * em `tests/invariants/midia-tardia-depois-da-leitura.test.ts`: o áudio estava na
+ * conversa, sem derivação, e a régua dizia "nada pendente". O dublê de pool dos
+ * testes de unidade devolve string e escondia a fronteira.
+ *
+ * `null` = hora ilegível (ou ausente). Linha sem hora legível nunca sairia do
+ * teto (`NaN` não é maior que nada) e seguraria a resposta para sempre — o
+ * oposto do que a espera existe para fazer.
+ */
+function instanteDeChegada(quando: unknown): number | null {
+  if (typeof quando === 'string') {
+    const ms = new Date(quando).getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (quando instanceof Date) {
+    const ms = quando.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  return null;
 }
 
 /**
  * Uma linha só é PENDENTE se der para esperar por ela: tipo derivável (o `where`
  * já filtra, e a checagem aqui é a mesma régua do lado de cá), status fora de
  * `DERIVACAO_TERMINADA` e uma hora de chegada legível.
- *
- * As duas últimas condições são de robustez, e têm dono: linha sem hora legível
- * nunca sairia do teto (`NaN` não é maior que nada) e seguraria a resposta para
- * sempre — o oposto do que a espera existe para fazer.
  */
 function ehPendente(m: { type?: unknown; media_derived_status?: unknown; quando?: unknown }): boolean {
   if (typeof m.type !== 'string' || !TIPOS_DERIVAVEIS.has(m.type)) return false;
   if (DERIVACAO_TERMINADA.has(typeof m.media_derived_status === 'string' ? m.media_derived_status : '')) {
     return false;
   }
-  return typeof m.quando === 'string' && Number.isFinite(new Date(m.quando).getTime());
+  return instanteDeChegada(m.quando) !== null;
 }
 
 /**
@@ -65,7 +89,11 @@ export async function midiaDerivavelPendente(
   pool: pg.Pool,
   input: { organizationId: string; conversationId: string },
 ): Promise<MidiaDerivavelPendente | null> {
-  const { rows } = await pool.query<{ type: string; media_derived_status: string | null; quando: string }>(
+  const { rows } = await pool.query<{
+    type: string;
+    media_derived_status: string | null;
+    quando: string | Date;
+  }>(
     `select type, media_derived_status, created_at as quando
        from messages
       where organization_id = $1
@@ -79,5 +107,11 @@ export async function midiaDerivavelPendente(
   );
   const pendente = rows.find(ehPendente);
   if (pendente === undefined) return null;
-  return { type: pendente.type, status: pendente.media_derived_status ?? null, quando: pendente.quando };
+  const emMs = instanteDeChegada(pendente.quando);
+  if (emMs === null) return null;
+  return {
+    type: pendente.type,
+    status: pendente.media_derived_status ?? null,
+    quando: new Date(emMs).toISOString(),
+  };
 }

@@ -137,8 +137,15 @@ interface Estado {
  */
 function poolDoTurno(estado: Estado) {
   const query = vi.fn(async (sql: string) => {
-    // A consulta da ESPERA — tem de vir antes de qualquer `from messages`:
-    // é a única que pergunta pelo estado da derivação.
+    // A ANOTAÇÃO vem primeiro: desde o #3845 ela também cita
+    // `media_derived_status` (só promete mídia que já tem texto) e, sem esta
+    // ordem, a checagem abaixo a confundiria com a consulta da espera.
+    if (/update job_queue/.test(sql) && sql.includes("ultima_inbound_vista_em")) {
+      estado.eventos.push("anotou");
+      return { rows: [] };
+    }
+    // A consulta da ESPERA — é a única SELECT que pergunta pelo estado da
+    // derivação.
     if (sql.includes("media_derived_status")) {
       estado.consultasDeMidia += 1;
       if (estado.consultasDeMidia >= estado.prontaNaConsulta) {
@@ -154,10 +161,6 @@ function poolDoTurno(estado: Estado) {
           },
         ],
       };
-    }
-    if (/update job_queue/.test(sql) && sql.includes("ultima_inbound_vista_em")) {
-      estado.eventos.push("anotou");
-      return { rows: [] };
     }
     if (sql.includes("m.metadata->>'ai_actor_id'")) return { rows: [{ respondeu: false }] };
     if (/from contacts where organization_id = \$1 and id = \$2/.test(sql)) {
