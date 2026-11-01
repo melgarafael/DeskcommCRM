@@ -162,7 +162,29 @@ Para outro idioma, troque `CURSO_IDIOMA`; em PT a saída usual é `curso/saida`,
 o módulo. O comando de `CURSO_ANTES_DA_LICAO` é escrito pela sessão a partir de ids validados do
 curso, nunca de texto não confiável. Ele restaura o estado antes de cada aula, sem mudar o idioma.
 
-Jornadas relacionadas são uma captura própria, pois seus roteiros semeiam/evoluem o cenário:
+**Uma semente não pode mudar a foto de outro módulo.** A base recria conversas, contatos e
+negócios, mas não conhece as tabelas de cada módulo, e uma linha que sobra de uma aula entra na
+foto da seguinte (medido: compromissos da Agenda viravam atendimentos a faturar em Comandas;
+materiais de Conhecimento apagavam o aviso "sem acervo" de Agentes). Por isso toda semente pode
+exportar `limpar(c)`, que `curso/semear-demonstracao.ts` chama, para todas as sementes, antes de
+qualquer aula. `limpar` apaga só as linhas da própria semente e o que as lições dela criam pela
+tela, nas duas línguas, e `semear` começa por ela. Semente nova exporta `limpar`; para conferir
+quais ainda não exportam: `grep -L "export async function limpar" curso/semear/*.ts`.
+
+O catálogo `curso/espanhol-demonstracao.json` também é global: uma palavra solta traduzida por
+um módulo (ex.: a etiqueta `retorno`) passa a ser traduzida nos alvos de **todas** as aulas, e
+um trecho curto de `has-text` é traduzido quando aparece numa só frase do catálogo. Prefira
+frases inteiras na semente e o texto completo no alvo. Depois de acrescentar pares, rode as
+aulas que citam o mesmo texto em ES antes de concluir.
+
+Algumas telas dependem do relógio. Meta de vendas calcula o mês no fuso do servidor (achado R1
+de `curso/ACHADOS-HUBS.md`): não fotografe esse módulo das 21h às 23h59 do último dia do mês,
+horário de São Paulo.
+
+Jornadas relacionadas são uma captura própria, pois seus roteiros semeiam/evoluem o cenário.
+Prepare a base antes (`curso/semear-demonstracao.ts` sem módulo): as jornadas não chamam o
+`limpar` dos módulos, e uma linha deixada pela última aula fotografada pode empurrar o alvo de
+uma cena para fora da foto.
 
 A história `e-commerce-consultar-pedido` exige a fonte fictícia real de pedidos, preparada
 por `curso/preparar-fonte-loja.ts` conforme [a reprodução das jornadas](../testing/curso-em-acao.md).
