@@ -8,4 +8,4 @@ Na tela do agente aparece a seção **Servidores MCP do agente**: até cinco ser
 
 O acesso é renovado sozinho, é revogado quando a conversa encerra (ou depois de quantas horas você escolher) e some quando o contato é anonimizado. Na ficha do contato, na aba LGPD, a seção **Acessos a sistemas externos** mostra o que ele autorizou e tem o botão **Revogar**. Permitir que o agente faça ações na conta do cliente durante a conversa é uma opção separada, desligada de fábrica.
 
-O servidor que você já cadastrou em Configurações › Servidor MCP externo continua funcionando como antes. Você não precisa mudar nada. Crédito: Felipe Delvan (Beyond Domotics).
+O servidor que você já cadastrou em Configurações › Servidor MCP externo continua funcionando como antes. Você não precisa mudar nada. Crédito: @felipedelvan.
