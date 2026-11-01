@@ -20,8 +20,9 @@
  * 6. Fila de follow-up: o cartão cabe e «Cancelar» fica na tela.
  * 7. Construtor: tocar num passo abre o painel ACIMA da barra de abas, e os
  *    botões de zoom têm 44px (a folha da lib declara 26px).
- * 8. Caso: «Ver conversa» pega o dedo até 21px acima e abaixo do centro, e não
- *    a 24px (controle).
+ * 8. Caso: «Ver conversa» tem 44px de alvo e o dedo cai nele — medido pela
+ *    caixa do `::before`, e não por um ponto a 1px da borda dela (ver o
+ *    comentário do passo: a régua antiga media a rolagem).
  *
  * As alças de ligação do construtor NÃO ganharam área maior, e por isso não há
  * caso para elas: ficam dentro do viewport com zoom (44px de CSS viram 22px a
@@ -412,42 +413,97 @@ test("[P1] o gestor pausa o agente, abre o aviso e acompanha a IA pelo celular",
     await page.screenshot({ path: path.join(EVIDENCIA, "04-painel-acima-da-barra.png") });
   });
 
-  await test.step("8. caso: «Ver conversa» pega o dedo até 21px do centro", async () => {
+  await test.step("8. caso: «Ver conversa» tem 44px de alvo, e o dedo cai nele", async () => {
     await page.goto(`/app/ai/cases?caso=${semente.caso}`);
     const link = page.getByRole("link", { name: "Ver conversa" });
     await expect(link).toBeVisible({ timeout: 30_000 });
-    await link.evaluate((el) => el.scrollIntoView({ block: "center" }));
-    // DESVIO DE MÉTODO, escrito: a área declarada é 16px (a caixa `inline-block`
-    // do text-xs) + 2×14px (`-inset-3.5`) = 44px, ou seja, ±22px do centro. Mede
-    // a 21px, não a 22: a 22 o ponto cai exatamente na borda, e o arredondamento
-    // de subpixel da caixa decide sozinho. O controle a 24px (2px fora) tem de
-    // NÃO cair no link — se cair, a área é maior que a declarada e os 21px não
-    // provam o `-inset-3.5`.
-    // Os 21px sozinhos NÃO provam o `inline-block`: num link `inline` a caixa é a
-    // da fonte (~14,5px), e 14,5 + 28 ainda dá ±21,25. Quem prova o
-    // `inline-block` é a altura medida do `::before`, que só chega a 44 com a
-    // caixa de 16px.
+    // RÉGUA: a GEOMETRIA do alvo, não um ponto a 1px da borda dele.
+    //
+    // A régua anterior cravava `elementFromPoint` a 21px do centro de uma área
+    // declarada de ±22px — 1px antes da borda. Medido em 2026-11-01: o MESMO
+    // tree deu resultados OPOSTOS em duas execuções (41311223139 vermelho em
+    // 20m22s, 41313181514 verde), com a altura declarada do `::before` em 44px
+    // nos dois. A captura do job vermelho mostra o porquê: o container do caso
+    // estava rolado ~40px, o TOPO do link ficava fora do recorte do `<main>`
+    // (só a metade de baixo das letras do «Ver conversa» aparecia) e o ponto a
+    // 21px acima do centro não existia para o dedo — o `elementFromPoint`
+    // devolvia a barra do app. Recorte não é layout: a caixa continua 44px.
+    // Ou seja, a régua media uma posição de rolagem, não o alvo.
+    //
+    // Duas coisas consertam isso, e cada uma tem o seu papel:
+    //  - o estado é posto no lugar (o topo do caso, que é como a tela abre) e o
+    //    teste CONFERE que a caixa do alvo está inteira dentro do recorte —
+    //    sem isso, mede-se o recorte;
+    //  - o alvo é lido como CAIXA: 16px da caixa `inline-block` do `text-xs` +
+    //    2×14px do `-inset-3.5` = 44px. Isso é aritmética de layout; o toque é
+    //    provado 4px DENTRO da borda declarada e o controle 4px FORA, longe o
+    //    bastante da borda para o arredondamento de subpixel não decidir.
+    // A altura do `::before` também é o que prova o `inline-block`: num link
+    // `inline` a caixa é a da fonte (~14,5px) e a área não chega a 44px.
     const m = await link.evaluate((el) => {
+      // A tela abre no topo do caso; medir a partir de outra rolagem mede o
+      // recorte (ver o comentário acima).
+      window.scrollTo(0, 0);
+      let p = el.parentElement;
+      while (p !== null) {
+        const o = getComputedStyle(p).overflowY;
+        if (o === "auto" || o === "scroll") p.scrollTop = 0;
+        p = p.parentElement;
+      }
+      el.scrollIntoView({ block: "nearest" });
+
+      const estilo = getComputedStyle(el, "::before");
+      const altura = parseFloat(estilo.height);
       const r = el.getBoundingClientRect();
+      const folga = (altura - r.height) / 2; // os 14px do `-inset-3.5`
+      const caixa = { top: r.top - folga, bottom: r.bottom + folga };
+
+      // O recorte do alvo: o ancestral que rola (o `<main>` do caso).
+      let porto = { top: 0, bottom: window.innerHeight };
+      let q = el.parentElement;
+      while (q !== null) {
+        const o = getComputedStyle(q).overflowY;
+        if (o === "auto" || o === "scroll") {
+          const pr = q.getBoundingClientRect();
+          porto = { top: pr.top, bottom: pr.bottom };
+          break;
+        }
+        q = q.parentElement;
+      }
+
       const x = r.left + r.width / 2;
       const y = r.top + r.height / 2;
       const cai = (dy: number) => {
         const alvo = document.elementFromPoint(x, y + dy);
         return alvo !== null && (alvo === el || el.contains(alvo));
       };
+      const MARGEM = 4;
       return {
-        antes: parseFloat(getComputedStyle(el, "::before").height),
-        acima21: cai(-21),
-        abaixo21: cai(21),
-        acima24: cai(-24),
-        abaixo24: cai(24),
+        altura,
+        position: estilo.position,
+        caixaTop: +caixa.top.toFixed(2),
+        portoTop: +porto.top.toFixed(2),
+        inteiroNoRecorte: caixa.top >= porto.top - 0.5 && caixa.bottom <= porto.bottom + 0.5,
+        toque: altura / 2 - MARGEM,
+        controle: altura / 2 + MARGEM,
+        acima: cai(-(altura / 2 - MARGEM)),
+        abaixo: cai(altura / 2 - MARGEM),
+        acimaFora: cai(-(altura / 2 + MARGEM)),
+        abaixoFora: cai(altura / 2 + MARGEM),
       };
     });
-    expect(m.antes, "altura da área de toque (::before)").toBeGreaterThanOrEqual(PISO_DE_TOQUE - 0.5);
-    expect(m.acima21, "21px acima do centro não cai no link").toBe(true);
-    expect(m.abaixo21, "21px abaixo do centro não cai no link").toBe(true);
-    expect(m.acima24, "controle: 24px acima ainda cai no link").toBe(false);
-    expect(m.abaixo24, "controle: 24px abaixo ainda cai no link").toBe(false);
+    expect(m.position, "o `::before` do link não é posicionado: não há alvo declarado para medir").toBe("absolute");
+    expect(m.altura, "altura do alvo de toque (::before): caixa do text-xs + 2× `-inset-3.5`").toBeGreaterThanOrEqual(
+      PISO_DE_TOQUE - 0.5,
+    );
+    expect(
+      m.inteiroNoRecorte,
+      `o alvo não está inteiro no recorte (topo da caixa ${m.caixaTop}px, topo do recorte ${m.portoTop}px): a régua mediria o recorte, não o alvo`,
+    ).toBe(true);
+    expect(m.acima, `${m.toque}px acima do centro não cai no link`).toBe(true);
+    expect(m.abaixo, `${m.toque}px abaixo do centro não cai no link`).toBe(true);
+    expect(m.acimaFora, `controle: ${m.controle}px acima ainda cai no link`).toBe(false);
+    expect(m.abaixoFora, `controle: ${m.controle}px abaixo ainda cai no link`).toBe(false);
     await page.screenshot({ path: path.join(EVIDENCIA, "05-ver-conversa.png") });
   });
 });
