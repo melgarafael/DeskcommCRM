@@ -18902,8 +18902,10 @@ export const DICIONARIO: Traducoes = {
   "Setor não encontrado.": { es: "Sector no encontrado." },
   // O módulo opcional dos setores (doc 213) em /admin/sistema e em Recursos opcionais.
   "Setores de atendimento": { es: "Sectores de atención" },
-  "Agrupa os atendentes da Equipe por área e filtra a aba Atendimento por setor. Não muda quem recebe as conversas.": { es: "Agrupa a los asesores del Equipo por área y filtra la pestaña Atención por sector. No cambia quién recibe las conversaciones." },
-  "Ligado, cada empresa ganha na Equipe a aba Setores, para agrupar os atendentes por área, e a aba Atendimento passa a mostrar e filtrar o setor de cada um. O setor não muda quem recebe as conversas. Desligado, a aba e a coluna somem; os setores já cadastrados ficam guardados.": { es: "Activado, cada empresa obtiene en Equipo la pestaña Sectores, para agrupar a los asesores por área, y la pestaña Atención pasa a mostrar y filtrar el sector de cada uno. El sector no cambia quién recibe las conversaciones. Desactivado, la pestaña y la columna desaparecen; los sectores ya registrados quedan guardados." },
+  "Agrupa os atendentes da Equipe por área e distribui as conversas que têm setor definido entre quem atende aquela área, dentro do horário do setor. Conversa sem setor continua indo pelo número, como antes.": {
+    es: "Agrupa a los asesores del Equipo por área y distribuye las conversaciones que tienen sector definido entre quienes atienden esa área, dentro del horario del sector. Una conversación sin sector sigue yendo por el número, como antes.",
+  },
+  "Ligado, cada empresa ganha na Equipe a aba Setores, para agrupar os atendentes por área, e a aba Atendimento passa a mostrar e filtrar o setor de cada um. A conversa com setor definido vai só para quem atende aquele setor, dentro do horário dele; conversa sem setor continua indo pelo número. Desligado, a aba e a coluna somem e a distribuição volta a ser a de antes; os setores já cadastrados ficam guardados.": { es: "Activado, cada empresa obtiene en Equipo la pestaña Sectores, para agrupar a los asesores por área, y la pestaña Atención pasa a mostrar y filtrar el sector de cada uno. La conversación con sector definido va solo a quien atiende ese sector, dentro de su horario; la conversación sin sector sigue yendo por el número. Desactivado, la pestaña y la columna desaparecen y la distribución vuelve a ser la de antes; los sectores ya registrados quedan guardados." },
   "Não cria porta no menu do CRM: ele libera uma aba em": { es: "No crea entrada en el menú del CRM: habilita una pestaña en" },
   'Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.': {
     es: 'Para no depender del dato, pon un texto de respaldo: {{primeiro_nome|"alumno"}}.',
@@ -19089,6 +19091,26 @@ export const DICIONARIO: Traducoes = {
   },
   "O caminho do logo não é aceito. Envie a imagem de novo.": {
     es: "La ruta del logo no es aceptada. Vuelve a subir la imagen.",
+  },
+  // --- filas de atendimento (migration 9062) ---
+  // O horário da FILA, na aba Setores. Mesma régua da jornada do atendente; o
+  // texto diz o que muda e o que NÃO muda ("a conversa não é descartada"), para
+  // ninguém procurar defeito na abertura seguinte.
+  "Horário do setor": { es: "Horario del sector" },
+  "Sem janelas, este setor aceita conversa a qualquer hora. Com janelas, quem chega fora do horário espera a abertura — a conversa não é descartada.":
+    {
+      es: "Sin ventanas, este sector acepta conversaciones a cualquier hora. Con ventanas, quien llega fuera del horario espera la apertura: la conversación no se descarta.",
+    },
+  "Nenhuma janela: este setor atende 24 horas, todos os dias.": {
+    es: "Ninguna ventana: este sector atiende 24 horas, todos los días.",
+  },
+  "Salvar horário": { es: "Guardar horario" },
+  "24 horas, todos os dias": { es: "24 horas, todos los días" },
+  // Coluna "Setor" da aba Atendimento, agora com N filas por pessoa.
+  "Setores de": { es: "Sectores de" },
+  // Escrita do destino numa conversa: a fila tem de ser desta organização.
+  "Setor inexistente nesta organização.": {
+    es: "El sector no existe en esta organización.",
   },
 };
 
