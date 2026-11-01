@@ -80,8 +80,6 @@ function bancoFalso(tabelas: Record<string, Linha[]>): SupabaseClient {
       const consulta = {
         select: () => consulta,
         order: () => consulta,
-        // ponytail: o motor limita a leitura dos runs do evento por `created_at`; aqui não filtra.
-        gte: () => consulta,
         update: () => consulta,
         eq: (coluna: string, valor: unknown) => {
           filtros.push([coluna, valor]);

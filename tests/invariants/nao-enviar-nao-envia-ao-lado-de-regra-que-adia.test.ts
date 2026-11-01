@@ -21,18 +21,21 @@ import { GOV_ADMIN, GOV_ORG, seedGov, sql, lastLine } from "./gov-helpers";
  * "sem compromisso", a decisão virava `enviar`, e a regra que dizia "não envie"
  * enviava. Com UMA regra só ela pulava na hora (`compromisso_na_agenda`).
  *
- * O conserto (lib/automation/engine.ts): a pré-checagem adia só as regras que
- * pediram; as prontas rodam já; o evento volta se sobrar alguma adiada, e na
- * volta a regra que já tem run não-`adiado` deste evento não roda de novo.
+ * O conserto (lib/automation/engine.ts) mantém o tudo-ou-nada e CONGELA a
+ * decisão de pular: na pré-checagem, a `nao_enviar` que a agenda faria pular é
+ * anotada na linha de espera (`pular_por_agenda`); na volta ela pula sem reler
+ * a agenda. Adiar só uma parte das regras foi tentado e recusado: a pronta
+ * mudava o estado (etiqueta, etapa) e a adiada era julgada sobre ele (F).
  *
  *   A  — duas regras, reavaliação nos `retry_at` que o próprio motor devolve;
  *   A2 — duas regras, operador conclui o compromisso (`fn_appointment_change`);
+ *   A3 — A com a ordem invertida: a `adiar` vem antes, e a `nao_enviar` ainda
+ *        é consultada depois do adiamento;
  *   C  — controle: só a `nao_enviar`, pula na hora;
  *   D  — controle: só a `adiar`, espera e envia depois (o comportamento de sempre);
- *   E  — `enviar` ao lado de `adiar`: a pronta sai na hora e NÃO sai de novo na
- *        volta. O run dela pode ficar `adiado` (mensagem na fila, sem WhatsApp
- *        configurado) e mesmo assim é execução, não espera — é este cenário que
- *        segura o critério de "já rodou" do motor.
+ *   E  — `enviar` ao lado de `adiar`: espera junto e sai uma vez só;
+ *   F  — `adiar` com condição "sem a etiqueta atendido" ao lado de uma `add_tag
+ *        atendido`: as duas são julgadas sobre o estado do gatilho, como na main.
  *
  * Double de admin client copiado de `automation-send-whatsapp.test.ts` (o
  * Postgres efêmero não tem PostgREST), com `gt`/`gte` e jsonb de objetos. Cada
@@ -323,6 +326,14 @@ function fakeAdminClient(): SupabaseClient {
             return { data: null, error: { message: String(error) } };
           }
         }
+        if (name === "fn_contato_adicionar_etiquetas") {
+          try {
+            const out = sql(`select public.fn_contato_adicionar_etiquetas(${sqlLiteral(params.p_org)}::uuid, ${sqlLiteral(params.p_contato)}::uuid, ${sqlLiteral(params.p_etiquetas)});`);
+            return { data: JSON.parse(lastLine(out)), error: null };
+          } catch (error) {
+            return { data: null, error: { message: String(error) } };
+          }
+        }
         if (name !== "emit_event") throw new Error(`fakeAdminClient: unsupported rpc ${name}`);
         const p = params as unknown as EmitEventParams;
         try {
@@ -343,8 +354,6 @@ function fakeAdminClient(): SupabaseClient {
 }
 
 const admin = fakeAdminClient();
-vi.mocked(createAdminClient).mockReturnValue(admin);
-
 vi.mocked(createAdminClient).mockReturnValue(admin);
 
 function rows(query: string): Array<Record<string, unknown>> {
@@ -492,6 +501,23 @@ describe("nao_enviar não envia quando outra regra do mesmo gatilho adia pela ag
     esperarPuloUnico(RN, ev);
   });
 
+  it("A3. ordem invertida (adiar antes de nao_enviar): a nao_enviar ainda pula", async () => {
+    vi.setSystemTime(new Date(T0));
+    const { contato, sessao } = semearCena("a3", "+5511977770007");
+    const RA = "55555555-1111-4000-8000-0000000002a3";
+    const RN = "55555555-1111-4000-8000-0000000001a3";
+    await ensureConversation(admin, GOV_ORG, contato, sessao);
+    regra(RA, "ADIAR", sessao, null);
+    regra(RN, "NAO_ENVIAR", sessao, "nao_enviar");
+    const ev = emitirTag(contato);
+
+    expect((await runAutomationForEvent(admin, evento(ev))).status).toBe("retry");
+    expect(await voltarNasHoras(ev)).toBe("ok");
+    expect(mensagens(contato).filter((b) => b.startsWith("NAO_ENVIAR")), "a regra nao_enviar ENVIOU").toEqual([]);
+    expect(mensagens(contato).filter((b) => b.startsWith("ADIAR"))).toEqual(["ADIAR Bia"]);
+    esperarPuloUnico(RN, ev);
+  });
+
   it("C. controle: só a nao_enviar — pula na hora com compromisso_na_agenda", async () => {
     vi.setSystemTime(new Date(T0));
     const { contato, sessao } = semearCena("c1", "+5511977770003");
@@ -523,7 +549,7 @@ describe("nao_enviar não envia quando outra regra do mesmo gatilho adia pela ag
     expect(execucoes(runs(RA, ev))).toHaveLength(1);
   });
 
-  it("E. enviar + adiar: a enviar sai na hora e não sai de novo quando o evento volta", async () => {
+  it("E. enviar + adiar: a enviar espera junto e sai uma vez só", async () => {
     vi.setSystemTime(new Date(T0));
     const { contato, sessao } = semearCena("e1", "+5511977770005");
     const RE = "55555555-1111-4000-8000-0000000001e1";
@@ -539,5 +565,29 @@ describe("nao_enviar não envia quando outra regra do mesmo gatilho adia pela ag
     expect(mensagens(contato).filter((b) => b.startsWith("ADIAR"))).toEqual(["ADIAR Bia"]);
     expect(runs(RE, ev), "um run só da regra enviar, o da execução").toHaveLength(1);
     expect(execucoes(runs(RA, ev))).toHaveLength(1);
+  });
+
+  it("F. adiar (condição: contato sem 'atendido') + add_tag 'atendido': a adiar envia, como na main", async () => {
+    vi.setSystemTime(new Date(T0));
+    const { contato, sessao } = semearCena("f1", "+5511977770006");
+    sql(`update public.contacts set tags = ARRAY['vip']::text[] where id = '${contato}';`);
+    const RA = "55555555-1111-4000-8000-0000000002f1";
+    const RT = "55555555-1111-4000-8000-0000000001f1";
+    await ensureConversation(admin, GOV_ORG, contato, sessao);
+    const cfg = { channel_session_id: sessao, template: "ADIAR {{contact.name}}" };
+    sql(`insert into public.automation_rules (id, organization_id, name, trigger_event, conditions, actions, is_active)
+      values ('${RA}', '${GOV_ORG}', 'ADIAR', 'contact.tag_added',
+        ${sqlString(JSON.stringify([{ field: "contact.tags", op: "not_contains", value: "atendido" }]))}::jsonb,
+        ${sqlString(JSON.stringify([{ type: "send_whatsapp_message", config: cfg }]))}::jsonb, true);`);
+    sql(`insert into public.automation_rules (id, organization_id, name, trigger_event, conditions, actions, is_active)
+      values ('${RT}', '${GOV_ORG}', 'MARCA', 'contact.tag_added', '[]'::jsonb,
+        ${sqlString(JSON.stringify([{ type: "add_tag", config: { tags: ["atendido"], destino: "contato" } }]))}::jsonb, true);`);
+    const ev = emitirTag(contato);
+
+    expect((await runAutomationForEvent(admin, evento(ev))).status).toBe("retry");
+    expect(rows(`select tags from public.contacts where id = '${contato}'`)[0]?.tags, "nada roda enquanto a vizinha espera").toEqual(["vip"]);
+    expect(await voltarNasHoras(ev)).toBe("ok");
+    expect(mensagens(contato), "a regra adiada deixou de enviar").toEqual(["ADIAR Bia"]);
+    expect(execucoes(runs(RT, ev)), "a add_tag rodou uma vez").toHaveLength(1);
   });
 });

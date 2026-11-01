@@ -37,6 +37,7 @@ import {
   GATILHOS_DO_TRIGGER_DE_LEAD,
 } from "@/lib/schemas/webhooks";
 import { logger } from "@/lib/logger";
+import { lerEscolhaNoEnvio } from "@/lib/agenda/escolha-no-envio";
 import { ocultarProvaMetaNaResposta } from "@/lib/leads/prova-meta-lead-submitted";
 
 export const AUTOMATION_CONSUMER_KEY = "automation-rules";
@@ -155,12 +156,6 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
 }
 
 /**
- * O motivo gravado na linha de espera. `regrasJaExecutadasNoEvento` o lê para
- * separar ESPERA de EXECUÇÃO — quem trocar o texto troca nos dois lados por aqui.
- */
-const MOTIVO_DO_ADIAMENTO = "fora_da_janela_de_envio";
-
-/**
  * Grava a linha do adiamento — a única evidência de que a regra casou e está
  * esperando.
  *
@@ -178,6 +173,7 @@ async function registrarAdiamento(
   rule: RuleRow,
   actionType: string,
   retryAt: string,
+  puladasPelaAgenda: Map<string, string | null>,
 ): Promise<void> {
   const { error } = await admin.from("automation_rule_runs").insert({
     organization_id: row.organization_id,
@@ -189,10 +185,11 @@ async function registrarAdiamento(
         type: actionType,
         status: "postponed",
         detail: {
-          reason: MOTIVO_DO_ADIAMENTO,
+          reason: "fora_da_janela_de_envio",
           retry_at: retryAt,
           explicacao:
             "A regra casou e está esperando a janela de envio do número reabrir — nada foi tentado ainda.",
+          ...(puladasPelaAgenda.size ? { pular_por_agenda: Object.fromEntries(puladasPelaAgenda) } : {}),
         },
       },
     ],
@@ -207,44 +204,45 @@ async function registrarAdiamento(
 }
 
 /**
- * As regras que JÁ EXECUTARAM neste evento — numa passagem anterior dele.
+ * AS DECISÕES DE PULAR CONGELADAS NAS ESPERAS DESTE EVENTO.
  *
- * O evento volta (`retry`) quando sobra regra adiada, e as que estavam prontas
- * já rodaram na primeira passagem. O `consumed_by` é por consumidor, não por
- * regra: sem esta leitura, a volta executaria de novo quem já executou.
+ * Quando uma regra adia o evento, a vizinha `nao_enviar` só executa na volta —
+ * e aí o compromisso pode ter passado (ou sido concluído), a agenda diz "sem
+ * compromisso" e ela ENVIARIA. Por isso a decisão de pular é tomada na
+ * pré-checagem e gravada na linha de espera (`pular_por_agenda`); na volta ela
+ * vale sem reler a agenda. Regra → `appointment_id` do compromisso que decidiu.
  *
- * Execução é todo run deste evento que não seja a linha de espera
- * (`registrarAdiamento`). Não basta `status <> 'adiado'`: a execução cuja
- * mensagem ficou na fila também fecha `adiado` (`statusDoRun`).
- *
- * Só vale para evento que o motor JÁ ADIOU (tem linha de espera): é ali que
- * nasce a execução parcial. O reprocessamento de um evento que nunca foi
- * adiado segue como sempre — roda de novo, e o webhook repete o mesmo
- * `X-Webhook-Delivery` para o receptor deduplicar.
- *
- * `created_at` do evento limita a varredura (não há índice por `event_id`):
- * nenhum run dele é mais velho que ele. O `drain.ts` sempre o traz.
+ * Se a gravação da espera falhou (`registrarAdiamento` não lança), a marca não
+ * existe e a regra reavalia a agenda na volta — o comportamento de antes.
  */
-async function regrasJaExecutadasNoEvento(
+async function pulosCongeladosNoEvento(
   admin: SupabaseClient,
   row: EventRow,
-): Promise<{ ids: Set<string> } | { error: string }> {
+): Promise<{ pulos: Map<string, string | null> } | { error: string }> {
   let query = admin
     .from("automation_rule_runs")
-    .select("rule_id, actions_result")
+    .select("actions_result")
     .eq("organization_id", row.organization_id)
-    .eq("event_id", row.id);
+    .eq("event_id", row.id)
+    .eq("status", "adiado");
+  // Nenhum run é mais velho que o evento; o limite deixa o índice por (org, created_at) trabalhar.
   if (row.created_at) query = query.gte("created_at", row.created_at);
   const { data, error } = await query;
   if (error) return { error: error.message };
-  const runs = (data ?? []) as Array<{
-    rule_id: string;
-    actions_result: Array<{ detail?: { reason?: unknown } }> | null;
-  }>;
-  const ehEspera = (run: (typeof runs)[number]) =>
-    run.actions_result?.[0]?.detail?.reason === MOTIVO_DO_ADIAMENTO;
-  if (!runs.some(ehEspera)) return { ids: new Set() };
-  return { ids: new Set(runs.filter((run) => !ehEspera(run)).map((run) => run.rule_id)) };
+  const pulos = new Map<string, string | null>();
+  for (const run of (data ?? []) as Array<{ actions_result: Array<{ detail?: { pular_por_agenda?: unknown } }> | null }>) {
+    const marca = run.actions_result?.[0]?.detail?.pular_por_agenda;
+    if (!marca || typeof marca !== "object") continue;
+    for (const [regra, compromisso] of Object.entries(marca)) {
+      pulos.set(regra, typeof compromisso === "string" ? compromisso : null);
+    }
+  }
+  return { pulos };
+}
+
+/** A regra tem um passo que escolheu "não enviar" quando há compromisso (#3813). */
+function regraPulaPelaAgenda(rule: RuleRow): boolean {
+  return (rule.actions ?? []).some((action) => lerEscolhaNoEnvio(action.config) === "nao_enviar");
 }
 
 /** O contato do evento, quando ele existe — direto ou via conversa. */
@@ -540,17 +538,7 @@ export async function runAutomationForEvent(
   // devolve `null` e a seleção segue exatamente como sempre foi: todas as
   // regras ativas daquele tipo.
   const regraApontada = regraDoEvento(row.payload);
-  const apontadas = regraApontada ? todas.filter((r) => r.id === regraApontada) : todas;
-
-  // Idempotência por evento × regra: na volta de um evento adiado, quem já
-  // executou não executa de novo (ver `regrasJaExecutadasNoEvento`). Falha de
-  // leitura é `error` — o dreno tenta de novo; executar às cegas arriscaria a
-  // mesma mensagem duas vezes.
-  const jaExecutadas = await regrasJaExecutadasNoEvento(admin, row);
-  if ("error" in jaExecutadas) {
-    return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: jaExecutadas.error };
-  }
-  const matched = apontadas.filter((r) => !jaExecutadas.ids.has(r.id));
+  const matched = regraApontada ? todas.filter((r) => r.id === regraApontada) : todas;
   if (!matched.length) {
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok", detail: "no_rules" };
   }
@@ -656,40 +644,56 @@ export async function runAutomationForEvent(
     };
   }
 
-  // Pré-checagem de postpone (throttle, janela, agenda) ANTES de executar
-  // qualquer ação, POR REGRA: adia só a regra que pediu. Era tudo-ou-nada pelo
-  // evento, e aí a regra pronta só era avaliada na volta — a `nao_enviar` de
-  // `quando_ha_compromisso` decidia quando o compromisso já tinha passado, e
-  // enviava. A reexecução parcial que o tudo-ou-nada evitava agora é barrada por
-  // `regrasJaExecutadasNoEvento`. Dentro da regra continua tudo-ou-nada.
-  const adiadas = new Map<string, string>();
+  // Pré-checagem de postpone (throttle etc.): all-or-nothing ANTES de executar
+  // qualquer ação — reexecução parcial no retry seria pior que atraso.
+  //
+  // O tudo-ou-nada adia também a regra `nao_enviar` vizinha, e ela não pode
+  // decidir só na volta (ver `pulosCongeladosNoEvento`): por isso, depois do
+  // primeiro adiamento, só ela ainda é consultada — as demais seguem como
+  // sempre, sem pergunta nenhuma. A regra adiada por conta própria não congela
+  // nada: sozinha, ela também reavaliaria na volta.
+  let adiamento: { rule: RuleRow; actionType: string; until: string } | null = null;
+  const puladasPelaAgenda = new Map<string, string | null>();
   for (const rule of applicable) {
+    if (adiamento && !regraPulaPelaAgenda(rule)) continue;
+    let adiouAPropria = false;
     for (const action of rule.actions ?? []) {
       const executor = getAction(action.type);
       if (!executor?.postponeUntil) continue;
       const until = await executor.postponeUntil(
-        { admin, serviceBoundaries, organizationId: row.organization_id, ruleId: rule.id, ruleName: rule.name, event: row, context, requestId: row.id },
+        {
+          admin, serviceBoundaries, organizationId: row.organization_id, ruleId: rule.id, ruleName: rule.name, event: row, context, requestId: row.id,
+          anotarPuloPelaAgenda: (appointmentId) => puladasPelaAgenda.set(rule.id, appointmentId),
+        },
         action.config ?? {},
       );
       if (until) {
-        // A ESPERA É UM ESTADO, e um estado que ninguém vê é indistinguível de
-        // morte. Sem esta linha o evento sumia até a janela reabrir e a aba
-        // Atividade não mostrava NADA — para quem montou a regra, "não apareceu
-        // nada" e "não rodou" são a mesma tela (migration 0175).
-        await registrarAdiamento(admin, row, rule, action.type, until);
-        adiadas.set(rule.id, until);
+        adiouAPropria = true;
+        adiamento ??= { rule, actionType: action.type, until };
         break;
       }
     }
+    if (adiouAPropria) puladasPelaAgenda.delete(rule.id);
   }
-  // A volta mais cedo pedida: cada volta reavalia as que seguem adiadas.
-  const retornoDoAdiamento = (): HandlerResult => ({
-    consumer_key: AUTOMATION_CONSUMER_KEY,
-    status: "retry",
-    retry_at: [...adiadas.values()].reduce((a, b) => (Date.parse(b) < Date.parse(a) ? b : a)),
-  });
-  const prontas = applicable.filter((rule) => !adiadas.has(rule.id));
-  if (!prontas.length) return retornoDoAdiamento();
+  if (adiamento) {
+    // A ESPERA É UM ESTADO, e um estado que ninguém vê é indistinguível de
+    // morte. Sem esta linha o evento sumia até a janela reabrir e a aba
+    // Atividade não mostrava NADA — para quem montou a regra, "não apareceu
+    // nada" e "não rodou" são a mesma tela (migration 0175).
+    await registrarAdiamento(admin, row, adiamento.rule, adiamento.actionType, adiamento.until, puladasPelaAgenda);
+    return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "retry", retry_at: adiamento.until };
+  }
+
+  // Só a regra `nao_enviar` pode ter decisão congelada; sem ela, nenhuma leitura
+  // a mais. Falha de leitura é `error` — executar às cegas poderia enviar o que
+  // a regra mandou não enviar. Vem ANTES da reserva: um `error` depois dela
+  // deixaria a chave do contato tomada, e o retry se barraria sozinho.
+  let pulosCongelados = new Map<string, string | null>();
+  if (applicable.some(regraPulaPelaAgenda)) {
+    const lidos = await pulosCongeladosNoEvento(admin, row);
+    if ("error" in lidos) return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: lidos.error };
+    pulosCongelados = lidos.pulos;
+  }
 
   // ═══ A RESERVA ANTES DE EXECUTAR (#2974) ═══
   //
@@ -704,7 +708,7 @@ export async function runAutomationForEvent(
   // (fail-open já declarado no filtro acima).
   const barradasPelaReserva: RuleRow[] = [];
   if (contatoIdDoEvento) {
-    for (const rule of prontas) {
+    for (const rule of applicable) {
       if (!regraRodaUmaVezPorContato(rule)) continue;
       if (!(await reservarExecucaoPorContato(admin, row, rule, contatoIdDoEvento))) {
         barradasPelaReserva.push(rule);
@@ -715,9 +719,8 @@ export async function runAutomationForEvent(
     }
   }
 
-  const paraExecutar = prontas.filter((rule) => !barradasPelaReserva.includes(rule));
+  const paraExecutar = applicable.filter((rule) => !barradasPelaReserva.includes(rule));
   if (!paraExecutar.length) {
-    if (adiadas.size) return retornoDoAdiamento();
     // Toda regra que casou perdeu a corrida pela chave do contato. O desfecho é o
     // MESMO do bloqueio decidido na leitura (`detail: uma_vez_por_contato`) — a
     // diferença é só onde a corrida foi decidida: lá, sobre o estado gravado;
@@ -761,6 +764,9 @@ export async function runAutomationForEvent(
               requestId: row.id,
               actionIndex: indiceDaAcao,
               ruleActions: rule.actions ?? [],
+              puloCongeladoPelaAgenda: pulosCongelados.has(rule.id)
+                ? { appointment_id: pulosCongelados.get(rule.id) ?? null }
+                : undefined,
             },
             action.config ?? {},
           ),
@@ -844,6 +850,5 @@ export async function runAutomationForEvent(
       .eq("id", rule.id);
   }
 
-  if (adiadas.size) return retornoDoAdiamento();
   return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok" };
 }
