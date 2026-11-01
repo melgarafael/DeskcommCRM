@@ -137,7 +137,7 @@ describe("o quadro de um funil arquivado (#1298, item 1)", () => {
   it("não oferece o menu de ações do card nem a caixa de seleção", async () => {
     await montarQuadro(true);
 
-    expect(screen.queryByRole("button", { name: "Ações do lead" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ações do negócio" })).toBeNull();
     expect(screen.queryByRole("checkbox")).toBeNull();
     // E o card também não arrasta: a coluna recebeu `isDragDisabled`.
     expect(document.querySelector('[data-drag-disabled="sim"]')).not.toBeNull();
@@ -165,7 +165,7 @@ describe("o quadro de um funil arquivado (#1298, item 1)", () => {
     const user = userEvent.setup();
     await montarQuadro(false);
 
-    expect(screen.getByRole("button", { name: "Ações do lead" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ações do negócio" })).toBeTruthy();
     expect(screen.getAllByRole("checkbox")).toHaveLength(2); // etapa + card
     expect(document.querySelector('[data-drag-disabled="nao"]')).not.toBeNull();
     await user.click(screen.getByRole("button", { name: "Negócio antigo" }));

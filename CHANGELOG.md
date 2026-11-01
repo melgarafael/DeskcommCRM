@@ -8,6 +8,174 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.98.0] — 2026-11-01
+
+### ⚠️ Requer atenção
+
+- **Conta, recorrência, lançamento manual e parcela de honorários gravam na moeda da organização** A API do catálogo do financeiro (`POST` e `PATCH` em `/api/v1/financeiro/catalogo/contas`) deixa de ler o campo `currency` do corpo. Uma integração que criava conta em moeda diferente da organização passa a ter a conta na moeda da organização, sem erro, porque o campo é ignorado. Também não dá mais para trocar a moeda de uma conta existente por essa rota. Se a sua integração dependia disso, ajuste antes de atualizar.
+
+  As respostas de lançamentos e de parcelas de honorários passam a trazer o campo `currency`.
+
+  Contribuição de @webtecnica (#3459).
+
+### Adicionado
+
+- **Regra de automação e follow-up escolhem o que fazer quando o contato tem horário marcado** Até aqui, todo envio automático para quem tinha um compromisso pendente ou confirmado na
+  agenda ficava adiado até o horário, mesmo que o compromisso fosse daqui a meses. Agora as
+  ações de enviar mensagem (texto e IA) e a configuração do follow-up aceitam
+  `quando_ha_compromisso`: `adiar` (o padrão, igual a antes), `enviar` (a agenda não segura
+  este envio) ou `nao_enviar` (o envio é pulado; numa regra de automação, a aba Atividade
+  mostra o motivo). Opt-out, janela do número e limite diário continuam valendo sempre. A
+  escolha ainda não tem controle na tela: por enquanto ela é gravada pela API da regra e pela
+  configuração do agente. Quem não configura nada não vê diferença.
+
+  Contribuição de @webtecnica (#3818, issue #3813).
+
+- **A tela Marca ganhou o Tema da plataforma, que leva a paleta de uma extensão de tema ao login, ao admin e às organizações sem tema** Até aqui, o tema de uma extensão só pintava o `/app` da organização que o escolheu. A tela de login, todo o `/admin` e as organizações sem tema ficavam na paleta de fábrica, mesmo com a marca aplicada (medido numa 1.96.0: bordas, campos e textos em tons quentes dentro do `/admin`).
+
+  Agora `/admin/marca` tem o cartão «Tema da plataforma», onde quem administra a plataforma escolhe «Nenhum» ou um dos temas que as extensões instaladas oferecem. O tema pinta superfícies, bordas e textos; a cor de ação continua vindo da Marca, e dentro de uma organização que escolheu tema próprio a paleta dela continua mandando. Remover a extensão desliga o tema sozinho, e `?sem_css=1` mostra a tela sem ele. A troca fica registrada na auditoria como alteração da marca.
+
+  Sem escolha, nada muda na tela: nenhum `<style>` novo é emitido e as telas não consultam a tabela de extensões (só o cartão de `/admin/marca`, para montar a lista). O servidor faz uma leitura da configuração da instalação a cada 30 segundos por processo para saber se há escolha.
+
+  Um caso de borda: «Nenhum» apaga a escolha gravada pela tela, mas se `APP_TEMA_DA_PLATAFORMA` estiver no `.env`, o valor do `.env` volta a valer. Para desligar de vez nesse caso, tire a variável do `.env`.
+
+  Contribuição de @webtecnica (#3815), a partir da medição de @franklinferre (#3790).
+
+- **Caso que já se resolveu pode ser encerrado sem mandar mensagem ao cliente** Na tela do caso aparece uma nova opção: "Encerrar sem avisar o cliente". Ela serve para o caso que perdeu o sentido: o cliente comprou em outro lugar, a reunião já aconteceu, o assunto andou por fora. Antes, a única forma de tirar um caso da fila era responder, e as três respostas mandavam mensagem ao cliente.
+
+  A nota é obrigatória e fica só na linha do tempo do caso. O caso passa a cancelado, os avisos do sino daquele caso somem na mesma hora, e nada é enviado ao cliente. A mesma ação existe na API em `POST /api/v1/ai/cases/{id}/close`.
+
+  Você não precisa mudar nada.
+
+  Contribuição de @webtecnica (#3819, #3810).
+
+- **Regra de automação pode perguntar se o contato já está num follow-up ou tem horário marcado** O editor de regras ganhou duas condições, disponíveis em qualquer gatilho: «Contato tem follow-up vivo» e «Contato tem horário marcado». As duas respondem sim ou não. Na de agenda dá para limitar a «nos próximos N dias» (de 1 a 365) e a um tipo de atendimento.
+
+  Antes, uma regra que iniciava um fluxo para um contato que já estava em outro só falhava, e a falha aparecia depois, na Atividade da regra. Agora o mesmo gatilho pode ter duas regras: uma inicia o fluxo para quem não está em follow-up, e a outra cria a tarefa para a equipe. Se a leitura do contato falhar, a condição não decide nem para um lado nem para o outro. Regras que não usam essas condições funcionam como antes.
+
+  Contribuição de @webtecnica (#3814).
+
+- **O aviso de agendamento também pode ir para um grupo do WhatsApp** Na tela Agenda › Avisos dá para escolher um grupo do WhatsApp da conexão que envia os avisos. Cada horário marcado, remarcado ou cancelado e o resumo das 7h saem para o número e para o grupo, uma vez cada; das 22h às 7h o grupo espera o resumo, como o número. Se o grupo falhar (o número saiu dele, o grupo foi apagado), só o grupo fica sem o aviso e o número recebe normalmente. O cancelamento só vai para quem recebeu o aviso do horário: se o grupo ainda não tinha recebido, ele não recebe o cancelamento. Ao salvar, o servidor confere que o grupo é da conexão que envia. Sem grupo escolhido, nada muda. "Enviar teste" também manda para o grupo escolhido e diz para onde foi. A tela avisa, sem bloquear, quando o número não começa com +55, e diz o que falta (a conexão ou o número) enquanto o botão de ligar estiver travado. Contribuição de @resdasilva.
+
+- **Fechar uma conversa de contato com a equipe pergunta se o atendimento volta para o automático, e o prazo de devolver sozinho passou das 24 horas** A trava de atendimento humano mora no CONTATO, não na conversa — então fechar a conversa não a soltava: a próxima mensagem daquele cliente, dias depois, não recebia resposta da IA, e ninguém percebia até o cliente reclamar. Agora, ao fechar uma conversa cujo contato está com a equipe, o diálogo de confirmação pergunta o que fazer, com «Devolver ao automático ao fechar» MARCADO por padrão; a outra opção é «Manter com a equipe». Escolhendo devolver, a conversa encerra e a trava é solta pela mesma regra do botão «Devolver ao automático», com a memória do que a equipe falou gravada para a IA retomar. Contato marcado como «sempre atendimento humano» continua com a equipe, e a tela avisa isso ao fechar. Fechar uma conversa cujo contato NÃO está travado continua idêntico: nenhuma pergunta, nada muda.
+
+  Em Configurações › Distribuição de atendimento, o prazo de «Devolver ao agente sozinho depois de um tempo sem resposta da equipe» deixou de ter teto de 24 horas: agora vai de 5 minutos a 30 dias, e o cron de devolução respeita prazos longos. Quem não usa o ajuste continua com a regra de sempre — a IA só volta quando alguém clica em Devolver. As abas da Inbox (reordenar e ocultar) ficam para a próxima fatia e NÃO entraram aqui.
+
+- **A fila de respostas do agente ganhou um modo econômico opcional, que reduz as consultas ao banco com o sistema parado** Com o sistema parado, o worker consulta a fila de respostas do agente a cada 2 segundos, cerca de 28 vezes por minuto (medido na issue #3688). Quem precisa poupar a cota do banco agora pode ligar `QUEUE_IDLE_MAX_INTERVAL_MS` no `.env` (por exemplo `60000`): com a fila vazia, a espera entre consultas dobra a cada rodada até esse teto, cerca de 1 consulta por minuto, e volta a 2 segundos no primeiro trabalho. Mensagem nova de cliente acorda a fila na hora, então a primeira resposta do agente não espera o teto; a resposta da equipe a um caso da IA e os disparos agendados pelo cron podem esperar até ele. Sem a variável, nada muda: o modo econômico vem desligado. Contribuição de @webtecnica, com a medição de @DPalmercs.
+
+- **Medição do acervo do WhatsApp: memória e disco com histórico grande** Script `scripts/medir-acervo-waha.ts` (`pnpm medir:acervo-waha`) mede, só
+  lendo, a memória do contêiner do WAHA, o tamanho do diretório do store, o
+  número de sessões e de mensagens guardadas, e o crescimento por 1000
+  mensagens. Consulta que falha não vira contagem zero: o programa sai com
+  erro e diz o que não mediu. O doc `docs/medir-acervo-waha.md` traz a receita
+  que roda numa VPS do kit e o que a medida significa para os `mem_limit` do
+  compose (1280m do `waha`; 768m do `app`, onde roda o importe do histórico).
+  Nenhuma medição real foi inventada: a tabela do doc segue vazia até alguém
+  rodar a receita numa instalação com histórico.
+
+  Crédito: @webtecnica.
+
+### Alterado
+
+- **Depois de um retorno prometido, o follow-up de silêncio espera o tempo do próprio fluxo, nunca menos que 4 horas** Depois que o agente enviava um retorno prometido, todo fluxo de silêncio ficava 24 horas sem falar com aquele contato, qualquer que fosse o gatilho configurado: um fluxo de 1 hora esperava um dia inteiro. Agora o retorno conta como a última conversa e o relógio do silêncio recomeça dali: o fluxo espera o próprio gatilho, com um piso de 4 horas para não emendar uma mensagem logo depois da outra. Um fluxo de 40 minutos ou de 1 hora espera 4 horas; um de 3 dias espera 3 dias. Vale para a inscrição nova e para a que já estava em andamento. Obrigado a @EduFkn, que apontou o fluxo de 1 hora parado um dia inteiro (PR #3692).
+
+- **Três tabelas que nenhuma tela acompanha ao vivo deixam de pesar a cada gravação** O cadastro dos agentes de IA, o estado de risco do negócio e as propostas de reativação estavam na lista de tabelas que o banco anuncia em tempo real, mas nenhuma tela acompanha essas três ao vivo — elas são lidas quando a tela abre. Cada gravação nelas gerava trabalho no servidor sem ninguém ouvindo. Elas saem dessa lista; nada muda no que você vê, e um teste passa a reprovar se alguma tela voltar a depender delas sem republicá-las. Contribuição de @webtecnica (#3697).
+
+### Corrigido
+
+- **Menção apagada numa nota interna deixa de avisar a pessoa** Numa nota interna, a lista de menções era um histórico do que já tinha sido clicado: apagar
+  o trecho `@Ana Lima` tirava o nome do texto, mas a escolha continuava guardada e a nota
+  salva levava o id de quem não estava mais lá. Com duas pessoas de mesmo nome cadastrado,
+  o caso ficava pior — apagar a primeira menção de duas deixava o aviso para a primeira, e a
+  segunda, que era a que continuava escrita, não recebia nada.
+
+  Agora a lista de menções é derivada do texto, a cada tecla: cada escolha guarda a posição
+  onde foi escrita, e apagar aquele trecho tira a pessoa da lista e do aviso. Quem ficou no
+  texto continua recebendo; quem foi apagado não recebe mais nada. A nota já gravada não
+  muda — o que era texto continua texto.
+
+  Contribuição de @webtecnica (#2463).
+
+- **Conta, recorrência, lançamento manual e parcela de honorários gravam na moeda da organização** Numa organização configurada em outra moeda (dólar, por exemplo), quatro lugares ainda gravavam em real: a conta criada no catálogo do financeiro, a recorrência, o lançamento manual e a parcela de honorários. Na parcela, o valor certo aparecia com o rótulo `R$`. Ao pagar a parcela, o dinheiro entrava no caixa em real.
+
+  Agora os quatro nascem na moeda da organização, que o servidor lê do cadastro dela. A parcela de honorários guarda a própria moeda, e o pagamento leva essa moeda para o caixa. A tabela de parcelas mostra a moeda de cada parcela, como o extrato do caixa já fazia com os lançamentos. O que já estava gravado não muda: parcelas antigas continuam em real. Organização em real não vê diferença.
+
+  A atualização acrescenta a coluna de moeda às parcelas de honorários quando o módulo está instalado. Ela não faz nada se o módulo não estiver.
+
+- **Cadastro de empresa aceita o CNPJ alfanumérico da Receita e confere os dígitos verificadores** O cadastro de empresa recusava o CNPJ alfanumérico que a Receita passou a emitir — 12 posições de dígito ou letra e 2 dígitos verificadores. O documento certo voltava como "CNPJ inválido" na criação, na edição, na consulta e na importação de planilha. A cobrança já lia esse formato; o cadastro não.
+
+  Agora as quatro portas aceitam os dois formatos. A letra é guardada em maiúscula, então o mesmo documento digitado em caixa baixa e em caixa alta continua sendo uma empresa só. O dígito verificador é conferido pela mesma régua da cobrança: CNPJ com dígito trocado é recusado com a mensagem "CNPJ inválido: confira as 12 posições (dígitos ou letras) e os 2 dígitos verificadores.", em vez de entrar e virar empresa fantasma.
+
+  O CNPJ numérico continua entrando como antes. A atualização troca a regra do banco que só aceitava dígito na coluna do CNPJ normalizado; nada do que já está gravado muda.
+
+  Contribuição de @webtecnica (#3495).
+
+- **O worker para de consultar o banco a cada 10 segundos quando não há movimento** Com a instalação parada, o worker procurava acontecimentos novos a cada 10 segundos, para sempre. Numa instalação real isso deu cerca de 17 consultas por minuto, todas vazias: perto de 40% de todo o tráfego ocioso ao banco.
+
+  Agora, sem movimento, ele espaça as passadas: 10, 20 e depois 30 segundos. No primeiro acontecimento que encontra, volta a passar a cada 2 segundos. A procura por acontecimento travado no meio passa a rodar no máximo cerca de 1 vez por minuto, em vez de a cada passada. Quando chega um áudio e a resposta do agente está esperando a transcrição, o worker é acordado na hora, sem esperar o espaçamento.
+
+  Depois de um silêncio, o primeiro acontecimento pode esperar até 30 segundos para ser visto, em vez de até 10. O relógio de 1 minuto continua ligado como rede de segurança. Nenhum acontecimento se perde.
+
+  Você não precisa mudar nada. Há dois ajustes opcionais, com valor padrão: `EVENT_LOG_DRAIN_IDLE_MAX_INTERVAL_MS` (teto do espaçamento, 30000) e `EVENT_LOG_DRAIN_STALE_SWEEP_MS` (intervalo da procura por travados, 60000).
+
+  Contribuição de @webtecnica, a partir da medição de @DPalmercs (#3701, #3693).
+
+- **Formulário que manda só nome e e-mail cria o contato, e o envio completa telefone ou e-mail que faltavam na ficha** Quando um formulário do site (captação por webhook) mandava só nome e e-mail, o card nascia sem contato: a pessoa não aparecia em Contatos e não juntava histórico. E quando a mesma pessoa preenchia depois outro formulário com o mesmo e-mail e um telefone, o telefone era descartado, e o card ficava ligado a um contato sem número.
+
+  Agora o e-mail também identifica o contato: o envio sem telefone acha o contato pelo e-mail, ou cria um, e o card nasce ligado a ele. Quando o contato já existe, o envio completa só o que está vazio na ficha: o telefone num contato que só tinha e-mail, ou o e-mail num contato que só tinha telefone. Nada que já está preenchido é trocado. Se o telefone já pertence a outro contato da organização, o card segue o dono do número e nenhuma ficha é alterada. Contato marcado como pessoal e contato anonimizado nunca são completados.
+
+  Quando o contato ganha telefone por esse caminho, as automações com o gatilho «contato ganhou telefone» passam a disparar para ele, como já acontecia ao editar o contato pela tela.
+
+  Contribuição de @webtecnica (#3734).
+
+- **O rodízio deixa de entregar conversa cujo caso já foi concluído ou está esperando o cliente responder** Uma conversa que continuava aberta e sem dono voltava ao rodízio a cada mudança de disponibilidade da equipe, mesmo quando o caso dela já não pedia ninguém. Horas depois, alguém recebia uma conversa em que não tinha nada a fazer.
+
+  Agora, antes de sortear, a distribuição olha o caso mais recente da conversa. Se o caso foi concluído ou cancelado, a conversa não é distribuída. Se a equipe pediu uma informação ao cliente e ele ainda não respondeu, também não. Quando o cliente volta a escrever depois disso, a conversa volta ao rodízio como sempre. Caso que está com a equipe continua sendo distribuído, e conversa sem caso segue igual.
+
+  Você não precisa mudar nada.
+
+  Contribuição de @webtecnica (#3739, #3717).
+
+- **A tela de Marca da organização mostra o logo escuro na prévia e deixa removê-lo** Com o logo claro e o logo escuro da organização salvos, a tela de Marca (`/app/settings/marca`) mostrava o logo claro na prévia "Aparência escura" e não oferecia "Remover logo escuro", como se não houvesse logo escuro gravado. A barra lateral no modo escuro já mostrava o logo certo — o problema era só na tela de configuração, e deixava o administrador sem ver nem remover o logo escuro que gravou.
+
+  A prévia da organização montava a camada com o `logo_path` mas sem o `logo_dark_path`; como um logo próprio encerra a herança do par, a arte escura desaparecia da tela. Agora a camada recebe os dois caminhos, igual à tela da instalação (`/admin/marca`), e a prévia escura usa o logo escuro gravado. Nada muda no que já está no banco nem na VPS. Contribuição de @chiliec.
+
+- **O cartão da extensão instalada passa a escolher a paleta do tema, e salvar a configuração não apaga mais o tema da organização** Até aqui, o tema de uma extensão só podia ser ligado pela API: em Extensões não havia campo para isso, e a organização ativava uma extensão de tema sem ver o tema. Pior: quem tinha ligado o tema pela API e depois mudava «Densidade dos cards» e salvava perdia o tema sem aviso, porque a tela mandava só os campos que ela mostra e a configuração inteira era substituída.
+
+  Agora, quando o manifesto da extensão declara um tema, o cartão mostra o campo «Paleta da extensão», com «Nenhuma (padrão do produto)» e a paleta que o pacote oferece. Ao salvar, o produto já aparece com as cores novas, sem recarregar a página. Salvar a configuração preserva tudo o que a tela não edita, inclusive um tema gravado antes. Extensão sem tema não ganha campo nenhum. Nada muda para quem opera a VPS.
+
+  Contribuição de @webtecnica (#3799), a partir do relato de @franklinferre (#3792).
+
+- **A barra de rolagem acompanha a paleta do tema escolhido** Com um tema de extensão escolhido, a tela inteira mudava de cor e a barra de rolagem continuava no cinza da paleta padrão: ela era o único pedaço da tela pintado por uma cor que o tema não alcança, e num tema frio a barra quente ficava visível nas laterais.
+
+  Agora a barra lê o tom de borda do tema, que muda com a paleta e com o modo claro/escuro. Sem tema de extensão, no modo escuro a barra parada fica igual a antes; no modo claro ela fica um tom mais suave, o mesmo das bordas dos cartões. O realce ao passar o mouse muda de leve nos dois modos.
+
+  Contribuição de @webtecnica (#3789).
+
+- **O catálogo da Nuvemshop volta a entrar na base de conhecimento do agente** Com uma loja Nuvemshop conectada, a fonte "Catálogo de produtos" da base de conhecimento ficava com zero trechos e mostrava o erro `html.replace is not a function`. A Nuvemshop manda a descrição de cada produto separada por idioma da loja, e o preparo do material tratava a descrição como texto simples, então quebrava no primeiro produto. Agora a descrição é lida como o nome já era: português primeiro e, numa loja só em espanhol ou inglês, o idioma que existir. Produto sem descrição não derruba mais a fonte inteira. Para trazer o catálogo, abra a base de conhecimento e clique em "Preparar de novo" no cartão "Catálogo de produtos".
+
+  Cada aviso que a Nuvemshop manda (pedido ou produto) também passa a ficar registrado na auditoria. Antes, essa gravação falhava em todo aviso. Contribuição de @paulolimajr77.
+
+- **O formulário de modelo cabe na tela do celular, nas duas abas de Conexões** No celular, abrir "Criar modelo" em Conexões fazia a tela rolar para o lado e cortava os campos da direita: o nome, o idioma e o botão de enviar ficavam fora de alcance, sem barra de rolagem para chegar neles. Agora o formulário se ajusta à largura da tela em 375px — cada campo ocupa a linha inteira e a prévia da mensagem desce para baixo do formulário. Vale para a aba do canal oficial e para a do canal de parceiro, que usam o mesmo formulário. Nada muda no servidor e nada exige ação de quem instalou.
+
+  Crédito: @webtecnica.
+
+- **Coluna do funil, painel da agenda e hover das ações voltam a ter fundo** As colunas de etapa do quadro do funil apareciam sem fundo, e "Ignorar" (na próxima ação) e "Encerrar" (na reativação) não acendiam quando o cursor passava por cima. O mesmo acontecia com o aviso de funil arquivado no topo do quadro, com o esqueleto que aparece enquanto o quadro carrega e com dois painéis de aviso da agenda. A causa era uma só: essas telas pediam uma superfície que o produto não tem, e a classe não pintava nada.
+
+  Agora as três usam a superfície suave que existe nos temas claro e escuro — a mesma dos cartões de apoio, dos botões secundários e das barras de ação. Coluna com fundo próprio, hover visível e avisos destacados do fundo da página, nos dois temas.
+
+  Contribuição de @webtecnica (#3791).
+
+- **A lista do Inbox não pisca mais quando uma automação atualiza a conversa** Quando uma automação aplicava etiqueta ou mudava o estado da conversa, a lista do Inbox se refazia inteira: a busca saía de novo e a linha afetada continuava com os valores antigos até a resposta chegar. Na prática, a lista piscava e a posição em que a pessoa estava se perdia.
+
+  Agora a atualização entra na lista que já está na tela: a linha muda no lugar dela, com a ordem, a seleção e a rolagem preservadas, e nada é buscado de novo. Conversa nova continua entrando, e conversa que deixa de pertencer à aba aberta continua saindo.
+
+  Contribuição de @webtecnica (#2366).
+
+- **A IA responde quem escreveu mesmo depois de o número bater o limite do dia** O limite diário do número (o de aquecimento e o de **Conexões › Proteção de envio**) passou a contar só as mensagens que o número **inicia**: a primeira mensagem para alguém novo, o follow-up e a campanha. A resposta para quem escreveu não conta mais e não é mais segurada por ele.
+
+  Antes, quando o limite era atingido, a resposta da IA para um lead que tinha acabado de escrever ficava para o dia seguinte. Agora ela sai na hora, respeitando a janela de resposta e o intervalo entre mensagens do número, como sempre. Nada muda na configuração: o limite continua com o mesmo número, e os textos de **Conexões › Proteção de envio** passam a dizer o que ele conta. Contribuição de @ZvisionAutomations.
+
 ## [1.97.0] — 2026-10-31
 
 ### ⚠️ Requer atenção
@@ -13662,7 +13830,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.97.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.98.0...HEAD
+[1.98.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.97.0...v1.98.0
 [1.97.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.96.0...v1.97.0
 [1.96.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.95.0...v1.96.0
 [1.95.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.94.0...v1.95.0
