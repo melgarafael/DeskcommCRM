@@ -66648,6 +66648,202 @@ end; $$;
 revoke all on function public.fn_appointment_change_core(uuid,uuid,bigint,jsonb,boolean,jsonb) from public,anon,authenticated;
 notify pgrst,'reload schema';
 
+-- ---- identidades do contato: WhatsApp, Instagram, Facebook e e-mail (migration 9082) ----
+-- Uma tabela por IDENTIDADE, não uma coluna por canal: colunas fecham o
+-- vocabulário na migration e o índice de unicidade teria de ser escrito uma vez
+-- por canal. Aqui `canal` é dado e a unicidade é uma só —
+-- `unique (organization_id, canal, identificador)`.
+--
+-- O identificador é gravado SEMPRE na forma canônica, e é o banco que garante:
+-- sem `fn_identificador_canonico`, `+55 31 98888-7777`, `+5531988887777` e a
+-- grafia sem o nono dígito seriam três strings e uma pessoa só — o unique seria
+-- decorativo e o defeito, mudo.
+--
+-- Nasce VAZIA de propósito: preencher `whatsapp` a partir de
+-- `contacts.phone_number` afirmaria que o número TEM WhatsApp (a 9043 criou
+-- `contacts.phone_whatsapp` com `nao_sei` porque não se sabe), e o perfil social
+-- que a Zernio grava em `contacts.social_identity` não diz a que rede pertence.
+--
+-- Não funde ficha: `fn_mesclar_contatos` reponta toda FK por catálogo, e o
+-- unique por ORGANIZAÇÃO garante que duas fichas da mesma organização nunca têm
+-- o mesmo par — o repontamento não pode colidir.
+--
+-- Idempotente: `create ... if not exists`, `drop constraint if exists` + `add`,
+-- `create or replace` e `drop trigger if exists` + `create`. O porquê inteiro
+-- está no cabeçalho da migration.
+create or replace function public.fn_identificador_canonico(p_canal text, p_valor text)
+returns text
+language sql
+immutable
+parallel safe
+set search_path = ''
+as $$
+  with bruto as (
+    select btrim(coalesce(p_valor, '')) as v
+  ),
+  perfil as (
+    select nullif(
+      regexp_replace(
+        regexp_replace(
+          regexp_replace(
+            regexp_replace(lower(btrim(v)), '^https?://', ''),
+            '^(www\.|m\.)?(instagram\.com|facebook\.com|fb\.com|fb\.me)/', ''),
+          '[?#].*$', ''),
+        '/+$', ''),
+      '') as v
+    from bruto
+  ),
+  limpo as (select nullif(btrim(perfil.v, '@'), '') as v from perfil)
+  select case
+    when b.v = '' then null
+    when p_canal = 'whatsapp' then public.fn_telefone_canonico(b.v)
+    -- A mesma régua de `contacts_email_format`: sem `@` e sem domínio não é
+    -- e-mail, e `null` aqui vira recusa no gatilho em vez de identidade torta.
+    when p_canal = 'email' then
+      case when lower(b.v) ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then lower(b.v) else null end
+    when p_canal = 'instagram' then
+      case when l.v ~ '^[a-z0-9._]{1,30}$' and l.v !~ '^\.+$' then l.v else null end
+    when p_canal = 'facebook' then
+      case when l.v ~ '^[a-z0-9._-]{1,64}$' then l.v else null end
+    else null
+  end
+  from bruto b, limpo l;
+$$;
+
+revoke execute on function public.fn_identificador_canonico(text, text) from public, anon;
+grant execute on function public.fn_identificador_canonico(text, text) to authenticated, service_role;
+
+create table if not exists public.contact_identities (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+  canal text not null,
+  identificador text not null,
+  criado_em timestamptz not null default now()
+);
+
+alter table public.contact_identities drop constraint if exists contact_identities_canal_check;
+alter table public.contact_identities add constraint contact_identities_canal_check
+  check (canal in ('whatsapp', 'instagram', 'facebook', 'email'));
+
+-- O identificador gravado É a forma canônica do canal (segunda cerca; a
+-- primeira é o gatilho antes do insert).
+alter table public.contact_identities drop constraint if exists contact_identities_identificador_canonico;
+alter table public.contact_identities add constraint contact_identities_identificador_canonico
+  check (
+    identificador = public.fn_identificador_canonico(canal, identificador)
+    and char_length(identificador) between 1 and 320
+  );
+
+-- Um par `(canal, identificador)` aponta para UMA ficha da organização.
+create unique index if not exists uniq_contact_identities_org_canal_identificador
+  on public.contact_identities (organization_id, canal, identificador);
+
+create index if not exists idx_contact_identities_contato
+  on public.contact_identities (organization_id, contact_id);
+create index if not exists idx_contact_identities_org_canal
+  on public.contact_identities (organization_id, canal);
+
+alter table public.contact_identities enable row level security;
+
+-- Leitura para todo membro da organização; escrita a partir de `agent`, o mesmo
+-- piso de `contact_phones` (9043) e do PATCH de contato.
+drop policy if exists tenant_isolation_contact_identities_read on public.contact_identities;
+create policy tenant_isolation_contact_identities_read on public.contact_identities
+  for select
+  using (organization_id in (select public.fn_user_org_ids()));
+
+drop policy if exists tenant_isolation_contact_identities_write on public.contact_identities;
+create policy tenant_isolation_contact_identities_write on public.contact_identities
+  for all
+  using (organization_id in (select public.fn_user_org_ids())
+         and public.fn_role_at_least(organization_id, 'agent'))
+  with check (organization_id in (select public.fn_user_org_ids())
+              and public.fn_role_at_least(organization_id, 'agent'));
+
+-- Grant próprio (desde 30/10/2026 o default ACL de `public` nasce revogado,
+-- migration 9037): sem este bloco a Data API responde `42501`. `anon` fica fora.
+do $grants_contact_identities$
+begin
+  revoke all on table public.contact_identities from anon, authenticated, service_role;
+  grant select, insert, update, delete on table public.contact_identities to authenticated, service_role;
+end
+$grants_contact_identities$;
+
+-- A gravação: forma canônica e tenant do contato. `security definer` porque a
+-- conferência LÊ `contacts` — sob a RLS de quem chama, o contato de outra
+-- organização apareceria como inexistente e a recusa seria a errada.
+create or replace function public.fn_identidades_do_contato_canonica()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_contato record;
+begin
+  new.identificador := public.fn_identificador_canonico(new.canal, new.identificador);
+  if new.identificador is null then
+    raise exception using errcode = '23502', message = 'identidade_vazia';
+  end if;
+
+  select c.organization_id, c.is_merged_into, c.is_anonymized into v_contato
+    from public.contacts c where c.id = new.contact_id;
+  if not found or v_contato.organization_id <> new.organization_id then
+    raise exception using errcode = '23503', message = 'identidade_de_outra_organizacao';
+  end if;
+  if v_contato.is_merged_into is not null or v_contato.is_anonymized then
+    raise exception using errcode = 'P0002', message = 'identidade_de_ficha_indisponivel';
+  end if;
+
+  -- `criado_em` é carimbo de nascimento, não de edição: `update` preserva.
+  if tg_op = 'INSERT' then
+    new.criado_em := now();
+  else
+    new.criado_em := old.criado_em;
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.fn_identidades_do_contato_canonica() from public;
+revoke execute on function public.fn_identidades_do_contato_canonica() from anon, authenticated;
+
+drop trigger if exists trg_identidades_do_contato_canonica on public.contact_identities;
+create trigger trg_identidades_do_contato_canonica
+  before insert or update on public.contact_identities
+  for each row execute function public.fn_identidades_do_contato_canonica();
+
+-- LGPD: anonimizar apaga as identidades. Telefone, e-mail e perfil social não
+-- têm versão anonimizada que ainda sirva (mesmo critério do passo 1b de
+-- `contact_phones` na cascata). A porta é a virada de `is_anonymized` em
+-- `contacts` — o desenho da 0391, por onde passam os DOIS caminhos de
+-- anonimização, então não há caminho que escape por construção.
+create or replace function public.fn_identidades_do_contato_anonimizado()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.is_anonymized and not coalesce(old.is_anonymized, false) then
+    delete from public.contact_identities
+     where organization_id = new.organization_id
+       and contact_id = new.id;
+  end if;
+  return null;
+end;
+$$;
+
+revoke all on function public.fn_identidades_do_contato_anonimizado() from public;
+revoke execute on function public.fn_identidades_do_contato_anonimizado() from anon, authenticated;
+
+drop trigger if exists trg_identidades_do_contato_anonimizado on public.contacts;
+create trigger trg_identidades_do_contato_anonimizado
+  after update of is_anonymized on public.contacts
+  for each row execute function public.fn_identidades_do_contato_anonimizado();
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
