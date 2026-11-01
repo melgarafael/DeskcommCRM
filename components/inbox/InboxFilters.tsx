@@ -653,7 +653,7 @@ export function InboxFilters({
               <TabsTrigger
                 key={tab}
                 value={tab}
-                className="shrink-0 gap-1.5 rounded-none border-b-2 border-transparent px-0 pt-1 pb-2 text-[13px] font-medium text-text-muted data-[state=active]:border-[var(--kv-primary-bg)] data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-text data-[state=active]:shadow-none"
+                className="shrink-0 gap-1.5 rounded-none border-b-2 border-transparent px-0 pt-1 pb-2 text-[13px] font-medium text-text-muted data-[state=active]:border-accent data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-text data-[state=active]:shadow-none"
               >
                 {t(meta.label)}
                 {typeof count === "number" && count > 0 && (

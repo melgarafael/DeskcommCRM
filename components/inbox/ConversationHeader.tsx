@@ -408,7 +408,7 @@ export function ConversationHeader({
 
           {/* O BOTÃO DIVIDIDO: a ação primária + a seta com o resto do
               atendimento. Branco, 34px. */}
-          <div className="flex h-[34px] items-stretch overflow-hidden rounded-[7px] bg-[var(--kv-primary-bg)] text-[var(--kv-primary-fg)]">
+          <div className="flex h-[34px] items-stretch overflow-hidden rounded-[7px] bg-accent text-accent-foreground">
             {primaria === "reabrir" ? (
               <button
                 type="button"
@@ -456,7 +456,7 @@ export function ConversationHeader({
                   type="button"
                   aria-label={t("Mais ações de atendimento")}
                   data-testid="acoes-do-atendimento"
-                  className="flex w-7 items-center justify-center border-l border-[color-mix(in_srgb,var(--kv-primary-fg)_20%,transparent)] transition-opacity hover:opacity-80"
+                  className="flex w-7 items-center justify-center border-l border-[color-mix(in_srgb,var(--color-accent-fg)_20%,transparent)] transition-opacity hover:opacity-80"
                 >
                   <CaretDown size={12} aria-hidden />
                 </button>

@@ -473,11 +473,6 @@ html[data-theme="light"] body:has([data-marca-org]) {
   --color-neutral-800: #27272a;
   --color-neutral-900: #18181b;
   --color-neutral-950: #09090b;
-  --color-accent: #18181b;
-  --color-accent-fg: #fafafa;
-  --color-accent-hover: #27272a;
-  --color-accent-soft: #f4f4f5;
-  --ring: #a1a1aa;
   /* Tokens do redesign do Inbox (kvgroup). Prefixo próprio: usados por classe
      arbitrária (`bg-[var(--kv-surface-2)]`), sem entrar na ponte `@theme`. */
   --kv-sidebar: #fafafa;
@@ -486,8 +481,6 @@ html[data-theme="light"] body:has([data-marca-org]) {
   --kv-surface-selected: #f4f4f5;
   --kv-hover: #f4f4f5;
   --kv-text-faint: #71717a;
-  --kv-primary-bg: #18181b;
-  --kv-primary-fg: #fafafa;
   --kv-danger: #e5484d;
   --kv-danger-text: #dc2626;
   --kv-online: #16a34a;
@@ -522,19 +515,12 @@ html[data-theme="dark"] body:has([data-marca-org]) {
   --color-neutral-800: #27272a;
   --color-neutral-900: #18181b;
   --color-neutral-950: #09090b;
-  --color-accent: #f2f2f2;
-  --color-accent-fg: #0b0b0c;
-  --color-accent-hover: #e4e4e7;
-  --color-accent-soft: #1a1a1e;
-  --ring: #d4d4d8;
   --kv-sidebar: #0f0f11;
   --kv-surface: #17171a;
   --kv-surface-2: #1f1f23;
   --kv-surface-selected: #1a1a1e;
   --kv-hover: #1a1a1e;
   --kv-text-faint: #8a8a92;
-  --kv-primary-bg: #f2f2f2;
-  --kv-primary-fg: #0b0b0c;
   --kv-danger: #e5484d;
   --kv-danger-text: #ff8b8b;
   --kv-online: #3fb950;
@@ -546,6 +532,28 @@ html[data-theme="dark"] body:has([data-marca-org]) {
   --kv-shadow-menu: 0 12px 32px rgba(0, 0, 0, 0.5);
 }
 
+
+/* A COR DE AÇÃO do tema neutro (preto no claro, branco no escuro) mora num
+   bloco à parte, com especificidade MENOR que a da marca: `html:root` /
+   `html[data-theme="dark"]` (0,1,1) vencem o tema base (`:root`,
+   `[data-theme]`, 0,1,0), mas perdem para a cor que a tela Marca injeta
+   (`:root:root…` e `body:has([data-marca-org])`). Sem marca configurada, os
+   botões ficam neutros; com marca, valem as cores dela. */
+html:root {
+  --color-accent: #18181b;
+  --color-accent-fg: #fafafa;
+  --color-accent-hover: #27272a;
+  --color-accent-soft: #f4f4f5;
+  --ring: #a1a1aa;
+}
+
+html[data-theme="dark"] {
+  --color-accent: #f2f2f2;
+  --color-accent-fg: #0b0b0c;
+  --color-accent-hover: #e4e4e7;
+  --color-accent-soft: #1a1a1e;
+  --ring: #d4d4d8;
+}
 
 /* ─────────────────────────────────────────────────────────────────────────
    Ponte token → utilitário (o que era `theme.extend` no `tailwind.config.ts`).

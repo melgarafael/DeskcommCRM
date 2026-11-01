@@ -348,7 +348,7 @@ export function ConversationListItem({
               {truncated}
             </span>
             {unread > 0 && (
-              <span className="inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--kv-primary-bg)] px-1.5 text-[10px] font-semibold tabular-nums text-[var(--kv-primary-fg)]">
+              <span className="inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-accent px-1.5 text-[10px] font-semibold tabular-nums text-accent-foreground">
                 {unread}
               </span>
             )}
@@ -406,7 +406,7 @@ export function ConversationListItem({
             "absolute top-[12px] left-[10px] flex h-9 w-9 items-center justify-center rounded-full transition-opacity",
             "focus-visible:opacity-100 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
             selecionado
-              ? "bg-[var(--kv-primary-bg)] text-[var(--kv-primary-fg)] opacity-100"
+              ? "bg-accent text-accent-foreground opacity-100"
               : cn(
                   "bg-[var(--kv-surface-2)] text-text-muted",
                   algumSelecionado ? "opacity-100" : "opacity-0 group-hover/item:opacity-100",
