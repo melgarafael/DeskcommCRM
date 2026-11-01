@@ -30,6 +30,8 @@ const OTHER_ORG_ID = "22222222-2222-4222-8222-999999999999";
 const POINTER_ID = "33333333-3333-4333-8333-333333333333";
 const CONTACT_ID = "44444444-4444-4444-8444-444444444444";
 const VERSION_ID = "55555555-5555-4555-8555-555555555555";
+/** A conversa do payload (#3746) — uuid, como o schema cobra. */
+const CONVERSA_ID = "66666666-6666-4666-8666-666666666666";
 
 const pos = { x: 0, y: 0 };
 function trigger(id: string): FlowNode {
@@ -55,11 +57,17 @@ function makeDb(
   enrollments: Row[] = [],
   agents: Row[] = [],
   agentVersions: Row[] = [],
+  /**
+   * #3746: as conversas do contato. É por elas que a régua de posse sabe que o
+   * Atendente É o dono do cliente (e por isso pode inscrever o contato).
+   */
+  conversations: Row[] = [],
 ) {
   const tables: Record<string, Row[]> = {
     followup_flow_pointers: pointers,
     followup_flow_versions: versions,
     contacts,
+    conversations,
     followup_enrollments: enrollments,
     ai_agents: agents,
     ai_agent_versions: agentVersions,
@@ -207,12 +215,51 @@ beforeEach(() => {
 });
 
 describe("POST /api/v1/ai/followups/enrollments", () => {
-  it("agent (< manager) → 403, sem insert", async () => {
+  it("#3746 — agent SEM posse no cliente → 403 `fora_da_posse`, sem insert", async () => {
+    // O piso caiu para `agent` (#3746); o que recusa este caso é a POSSE: o
+    // contato não está na carteira dele e nenhuma conversa é dele.
     const db = makeDb([activePointer()], [version()], [contact()]);
     session("agent", db);
     const { POST } = await import("@/app/api/v1/ai/followups/enrollments/route");
     const res = await POST(req("POST", { pointer_id: POINTER_ID, contact_id: CONTACT_ID }));
     expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("fora_da_posse");
+  });
+
+  it("#3746 — agent dono da CONVERSA do payload → 201 (o botão da conversa funciona)", async () => {
+    const db = makeDb(
+      [activePointer()],
+      [version()],
+      [contact()],
+      [],
+      [],
+      [],
+      // `assigned_to_user_id` do USER_ID: o cliente é dele. O id é uuid porque
+      // `conversation_id` é validado pelo Zod strict antes de qualquer leitura.
+      [
+        {
+          id: CONVERSA_ID,
+          organization_id: ORG_ID,
+          contact_id: CONTACT_ID,
+          assigned_to_user_id: USER_ID,
+        },
+      ],
+    );
+    session("agent", db);
+    const { POST } = await import("@/app/api/v1/ai/followups/enrollments/route");
+    const res = await POST(
+      req("POST", { pointer_id: POINTER_ID, contact_id: CONTACT_ID, conversation_id: CONVERSA_ID }),
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it("#3746 — agent dono da CARTEIRA do contato → 201", async () => {
+    const db = makeDb([activePointer()], [version()], [contact({ carteira_user_id: USER_ID })]);
+    session("agent", db);
+    const { POST } = await import("@/app/api/v1/ai/followups/enrollments/route");
+    const res = await POST(req("POST", { pointer_id: POINTER_ID, contact_id: CONTACT_ID }));
+    expect(res.status).toBe(201);
   });
 
   it("body inválido (pointer_id não é uuid) → 422 validation_failed", async () => {

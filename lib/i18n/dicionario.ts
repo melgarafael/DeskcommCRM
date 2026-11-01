@@ -6748,8 +6748,10 @@ export const DICIONARIO: Traducoes = {
     es: "Este cliente pertenece a la cartera de otro vendedor. El negocio nuevo nace con el dueño de la cartera.",
   },
   // Respostas da porta dedicada `PATCH /contacts/[id]/carteira`.
-  "Só gerente e administrador podem mudar a carteira do cliente.": {
-    es: "Solo gerente y administrador pueden cambiar la cartera del cliente.",
+  // #3746: a régua deixou de ser "só gerente". O Atendente dono do cliente muda
+  // a carteira, e o que sobra recusando por papel é o `viewer` — quem só lê.
+  "Seu papel não permite mudar a carteira do cliente.": {
+    es: "Tu rol no permite cambiar la cartera del cliente.",
   },
   "O dono precisa ser membro ativo desta empresa, com papel de atendente, gerente ou administrador. Quem só lê, e quem saiu da equipe, não é dono de carteira.": {
     es: "El dueño debe ser miembro activo de esta empresa, con rol de agente, gerente o administrador. Quien solo lee, y quien salió del equipo, no es dueño de cartera.",
@@ -6762,6 +6764,18 @@ export const DICIONARIO: Traducoes = {
   },
   "Não foi possível salvar a carteira do cliente.": {
     es: "No fue posible guardar la cartera del cliente.",
+  },
+  // A régua de POSSE do atendente (#3746) — a mesma recusa nas duas portas:
+  // mudar a carteira e inscrever num follow-up. Diz o que fazer, não só que
+  // falhou: quem lê está no meio de um atendimento.
+  "Este cliente não está com você. Só o atendente da conversa, o dono da carteira ou um gerente pode fazer isso; peça a um gerente para assumir o cliente.": {
+    es: "Este cliente no está contigo. Solo el atendente de la conversación, el dueño de la cartera o un gerente puede hacerlo; pide a un gerente que asuma el cliente.",
+  },
+  "Não foi possível conferir se este cliente está com você. Nada foi alterado.": {
+    es: "No fue posible verificar si este cliente está contigo. No se cambió nada.",
+  },
+  "Conversa não encontrada para este contato.": {
+    es: "Conversación no encontrada para este contacto.",
   },
   // TELA da carteira (#2591): o cartão da ficha do contato e a faixa em cima do chat.
   "Carteira": { es: "Cartera" },

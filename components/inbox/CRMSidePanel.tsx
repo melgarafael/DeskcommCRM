@@ -778,9 +778,9 @@ export function CRMSidePanel({
   const podeLevarParaOutroFunil = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "agent");
   // O MESMO piso da ficha do contato para o bloco da carteira (#2591): `agent`+
   // é quem LÊ a carteira (o GET da rota cobra `requireRole("agent")`), e o
-  // `viewer` receberia 403. Escrever é outra régua (`manager`+) e mora dentro do
-  // `CartaoDaCarteira`, que só desenha o seletor para `manager`+. Aqui só se
-  // decide se o bloco existe — nunca se oferece um botão que o servidor recusaria.
+  // `viewer` receberia 403. Escrever é outra régua — e ela NÃO é decidida aqui:
+  // quem responde "posso mudar a carteira DESTE cliente?" é o servidor, no
+  // `pode_alterar` do GET, e o `CartaoDaCarteira` lê essa resposta (#3746).
   const podeVerCarteira = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "agent");
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -1132,7 +1132,7 @@ export function CRMSidePanel({
        não vê o bloco em vez de levar 403. */
     carteira: contactId && podeVerCarteira ? (
       <section data-testid="inbox-bloco-carteira">
-        <CartaoDaCarteira contactId={contactId} papelDoUsuario={activeOrg?.role ?? null} />
+        <CartaoDaCarteira contactId={contactId} />
       </section>
     ) : null,
 
@@ -1244,13 +1244,23 @@ export function CRMSidePanel({
     ),
 
     /* O FOLLOW-UP NA CONVERSA (#3178): a seção se AUTO-OCULTA quando não há
-       enrollment vivo nem fluxo ativo. Iniciar e parar são `manager`+ no
-       servidor (`requireRole("manager")` no POST e no cancel). */
+       enrollment vivo nem fluxo ativo.
+
+       INICIAR (#3746): o Atendente inscreve o cliente que ele atende. O piso e
+       o escopo de posse são do SERVIDOR (`lib/carteira/posse.ts`), e a seção lê
+       o resultado no `meta.pode_inscrever` do próprio GET — não há comparação de
+       papel aqui.
+
+       PARAR: o `POST .../[id]/cancel` continua `manager`+ — fora do recorte do
+       #3746 —, e é a única régua de papel que sobra neste bloco. Ela é dita como
+       tal, e não esconde a leitura de quem não pode parar. */
     followup: contactId && !contact?.is_anonymized ? (
       <>
         <FollowupDoContato
           contactId={contactId}
-          podeEscrever={
+          conversationId={conversation?.id ?? null}
+          somenteLeitura={Boolean(user.support)}
+          podeParar={
             !readonly && ((user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "manager"))
           }
         />

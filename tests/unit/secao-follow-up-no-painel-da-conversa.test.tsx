@@ -109,10 +109,25 @@ function renderPainel() {
   );
 }
 
-/** O GET do follow-up é por URL; o crm-summary do painel continua sendo o default. */
-function servirApi(opts: { enrollments?: unknown[]; flows?: unknown[] }) {
+/**
+ * O GET do follow-up é por URL; o crm-summary do painel continua sendo o default.
+ *
+ * `podeInscrever` é o `meta.pode_inscrever` da resposta (#3746): a capacidade que
+ * o servidor afirma para ESTE contato. `true` por padrão porque a maioria dos
+ * casos aqui mede outras coisas; quem mede a capacidade passa o valor.
+ */
+function servirApi(opts: {
+  enrollments?: unknown[];
+  flows?: unknown[];
+  podeInscrever?: boolean;
+}) {
   get.mockImplementation((url: string) => {
-    if (url.includes("/followups/enrollments")) return Promise.resolve({ data: opts.enrollments ?? [] });
+    if (url.includes("/followups/enrollments")) {
+      return Promise.resolve({
+        data: opts.enrollments ?? [],
+        meta: { pode_inscrever: opts.podeInscrever ?? true },
+      });
+    }
     if (url.includes("/followup-flows")) return Promise.resolve({ data: opts.flows ?? [] });
     return Promise.resolve({ data: RESPOSTA });
   });
@@ -139,9 +154,12 @@ describe("painel do inbox — seção de follow-up", () => {
     await userEvent.click(screen.getByTestId("iniciar-followup"));
 
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    // A CONVERSA vai no payload (#3746): é o escopo de posse que o servidor
+    // confere — o Atendente inscreve o cliente cuja conversa está com ele.
     expect(post).toHaveBeenCalledWith("/api/v1/ai/followups/enrollments", {
       pointer_id: FLUXO.id,
       contact_id: CONTACT,
+      conversation_id: "cv-1",
     });
   });
 
@@ -244,7 +262,12 @@ describe("painel do inbox — seção de follow-up", () => {
     servirApi({ enrollments: [{ ...ENROLLMENT, status: "dormente" }], flows: [FLUXO] });
     get.mockImplementation((url: string) => {
       if (url.includes("/followups/enrollments"))
-        return Promise.resolve({ data: encerrado ? [] : [{ ...ENROLLMENT, status: "dormente" }] });
+        return Promise.resolve({
+          data: encerrado ? [] : [{ ...ENROLLMENT, status: "dormente" }],
+          // A capacidade (#3746) é do servidor e não muda no cancel: o que muda
+          // é a vaga, que fica livre para outro fluxo.
+          meta: { pode_inscrever: true },
+        });
       if (url.includes("/followup-flows")) return Promise.resolve({ data: [FLUXO] });
       return Promise.resolve({ data: RESPOSTA });
     });
@@ -272,7 +295,7 @@ describe("painel do inbox — seção de follow-up", () => {
     expect(screen.getByTestId("iniciar-followup")).toBeTruthy();
   });
 
-  it("papel agent vê o fluxo vivo, mas sem Iniciar nem Parar (as rotas cobram manager)", async () => {
+  it("papel agent vê o fluxo vivo: Parar continua manager+ (fora do recorte do #3746)", async () => {
     authRole = "agent";
     servirApi({ enrollments: [ENROLLMENT], flows: [FLUXO] });
     renderPainel();
@@ -280,15 +303,27 @@ describe("painel do inbox — seção de follow-up", () => {
     const secao = await screen.findByTestId("inbox-followup");
     expect(secao.textContent).toContain(FLUXO.name);
     expect(screen.queryByTestId("parar-followup")).toBeNull();
+    // A vaga está ocupada: Iniciar não é oferecido a ninguém, com ou sem posse.
     expect(screen.queryByTestId("iniciar-followup")).toBeNull();
   });
 
-  it("papel agent sem follow-up vivo: a seção some, mesmo com fluxo ativo", async () => {
+  it("#3746 — o Atendente DONO do cliente vê Iniciar (a capacidade vem do servidor)", async () => {
     authRole = "agent";
-    servirApi({ flows: [FLUXO] });
+    servirApi({ flows: [FLUXO], podeInscrever: true });
     renderPainel();
 
+    await screen.findByTestId("inbox-followup");
+    expect(screen.getByTestId("iniciar-followup")).toBeTruthy();
+  });
+
+  it("#3746 — o Atendente de FORA do cliente não vê Iniciar (o servidor diria 403)", async () => {
+    authRole = "agent";
+    servirApi({ flows: [FLUXO], podeInscrever: false });
+    renderPainel();
+
+    // Sem enrollment vivo e sem a capacidade, não sobra nada para mostrar.
     await waitFor(() => expect(get).toHaveBeenCalled());
     expect(screen.queryByTestId("inbox-followup")).toBeNull();
+    expect(screen.queryByTestId("iniciar-followup")).toBeNull();
   });
 });

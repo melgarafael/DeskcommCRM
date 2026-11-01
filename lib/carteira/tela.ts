@@ -31,6 +31,20 @@ export interface CarteiraDaTela {
   dono_user_id: string | null;
   /** O vínculo de hoje conta? (membro ativo da org, papel `agent`/`manager`/`admin`.) */
   qualificado: boolean;
+  /**
+   * O servidor aceitaria uma troca de carteira FEITA POR MIM neste contato?
+   * (#3746)
+   *
+   * É a resposta da MESMA régua que o `PATCH` aplica (`lib/carteira/posse.ts`):
+   * `manager`+ sempre; `agent` só no cliente cuja conversa está atribuída a ele
+   * ou que já está na carteira dele. A tela lê este campo em vez de comparar
+   * papel — comparar papel dava o seletor a todo `manager` e negava a todo
+   * atendente, inclusive ao dono do cliente.
+   *
+   * Ausente/`false` esconde o seletor: é melhor não oferecer o botão do que
+   * oferecer um botão que o servidor recusa.
+   */
+  pode_alterar?: boolean;
 }
 
 /** Os quatro estados da tela — o resto da UI decide o texto a partir deles. */

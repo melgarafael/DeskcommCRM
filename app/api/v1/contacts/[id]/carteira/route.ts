@@ -8,11 +8,21 @@
  * UPDATE de `contacts` não olha papel (medido pelo autor da issue), então
  * qualquer autenticado se põe como dono pela REST e leva o negócio seguinte.
  * O gatilho `trg_contacts_carteira_so_pelo_servidor` recusa a SESSÃO (42501),
- * e esta porta é a única que passa — e ela só passa para `manager`+ chamando a
+ * e esta porta é a única que passa — chamando a
  * `fn_definir_carteira_do_cliente` (só do service_role, com o ator passado
- * depois do `requireRole`), que revalida o ator, valida o dono
+ * depois do gate de papel), que revalida o ator, valida o dono
  * candidato (membro ativo da MESMA org, papel que conta) e adota os negócios
  * abertos sem dono na mesma transação.
+ *
+ * ─── Quem passa: `agent`+ COM ESCOPO DE POSSE (#3746) ──────────────────────
+ *
+ * Até a v1.94 só `manager`+ mudava a carteira, e o efeito era o Atendente
+ * pedindo a um gerente para assumir o cliente que ele já atende. Hoje o piso é
+ * `agent`, e o escopo é a POSSE, conferida no servidor por
+ * `lib/carteira/posse.ts` (a mesma régua do POST de enrollment): o Atendente
+ * muda a carteira do cliente cuja conversa está atribuída a ele OU que já está
+ * na carteira dele. Fora disso, 403 `fora_da_posse` com o motivo escrito.
+ * `manager`+ segue podendo tudo.
  *
  * `viewer` não entra: enxerga sem poder. Os dois `.eq` com o `organization_id`
  * da sessão são obrigatórios — o usuário não lê contato de outra org nem por
@@ -29,6 +39,7 @@ import type { Actor } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { donoQualificado } from "@/lib/carteira/dono";
+import { conferirPosse, MENSAGEM_FORA_DA_POSSE, respostaDaPosse } from "@/lib/carteira/posse";
 import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
@@ -56,10 +67,23 @@ interface Recusa {
 function recusaDaFuncao(erro: { code?: string; message?: string } | null): Recusa {
   const bruto = erro?.message ?? "";
   if (bruto.includes("carteira_permissao_negada")) {
+    // O papel não opera carteira (o `viewer`; a rota já cobra `agent`+, então
+    // isto é a segunda rede). O Atendente NÃO cai aqui: ele cai na régua de
+    // posse, abaixo e na rota — o banco repete a checagem (#3746).
     return {
       status: 403,
       code: "carteira_permissao_negada",
-      mensagem: "Só gerente e administrador podem mudar a carteira do cliente.",
+      mensagem: "Seu papel não permite mudar a carteira do cliente.",
+    };
+  }
+  if (bruto.includes("carteira_fora_da_posse")) {
+    // A função do banco conferiu a posse e recusou — mesma frase da recusa da
+    // rota, para o Atendente não receber duas explicações diferentes para a
+    // mesma coisa conforme quem respondeu primeiro.
+    return {
+      status: 403,
+      code: "fora_da_posse",
+      mensagem: MENSAGEM_FORA_DA_POSSE,
     };
   }
   if (bruto.includes("carteira_dono_invalido")) {
@@ -97,7 +121,10 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  const authz = await requireRole("manager", { requestId, resource: "contacts" });
+  // Piso de papel: `agent`+. Quem de fato pode mudar ESTE cliente é a régua de
+  // posse abaixo — o papel sozinho não distingue "meu cliente" de "cliente do
+  // colega", e era essa a diferença que travava o atendimento (#3746).
+  const authz = await requireRole("agent", { requestId, resource: "contacts" });
   if (!authz.ok) return authz.response;
   const orgId = authz.org.orgId;
   const { id: contactId } = await ctx.params;
@@ -126,13 +153,26 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   }
   const antes = (contato as { carteira_user_id?: string | null } | null)?.carteira_user_id ?? null;
 
+  // #3746 — A POSSE, aqui e não na tela. `agent` muda a carteira do cliente cuja
+  // conversa está atribuída a ele ou que já está na carteira dele; `manager`+
+  // passa direto. A recusa (403/404/500) vem da régua, com o motivo escrito —
+  // nada é lido para a foto nem gravado antes desta decisão.
+  const admin = createAdminClient();
+  const posse = await conferirPosse({
+    db: admin,
+    organizationId: orgId,
+    atorId: authz.user.id,
+    papel: authz.org.role,
+    contactId,
+  });
+  if (!posse.pode) return respostaDaPosse(posse, { traduzir: t, requestId });
+
   // #3732: quais conversas deste contato estavam em qual número ANTES da troca.
   // A carteira passa as conversas abertas pela `fn_conversation_assign`, que
   // pode trocar o número de cada uma; a auditoria do contato não é a linha do
   // tempo da conversa, então o "continua pelo número de {nome}" tem de ser
   // escrito por conversa, depois, comparando com esta foto. Falha de leitura
   // não impede a troca de carteira — só deixa a linha do tempo sem o registro.
-  const admin = createAdminClient();
   const numerosAntes = await conversasDoContato(admin, orgId, contactId);
 
   const { error } = await admin.rpc("fn_definir_carteira_do_cliente", {
@@ -194,6 +234,12 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
  * (`/team/assignable`), que a tela já carrega para trocar o dono. Resolver o nome
  * aqui criaria uma segunda fonte de nomes para o mesmo id.
  *
+ * Devolve também `pode_alterar` (#3746): a MESMA régua de posse do PATCH,
+ * aplicada a este contato e a este usuário. A tela não escolhe por papel — ela
+ * lê esta resposta e desenha o seletor só quando o servidor aceitaria a
+ * gravação. Duas réguas (uma na tela, outra na rota) divergiriam na primeira
+ * mudança, e a tela prometeria o que a rota recusa.
+ *
  * `agent`+ lê (a regra 2 é para quem atende). O recorte de `viewer` — "vê só se
  * for da própria carteira, sem o nome dos outros" — fica FORA deste PR, como o
  * #2667 já declarou: exigiria visão por coluna, que o Postgres/RLS não faz.
@@ -224,16 +270,31 @@ export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
   const dono = (contato as { carteira_user_id?: string | null }).carteira_user_id ?? null;
   // Falha de leitura do vínculo degrada para "não conta" (a faixa/cartão trata
   // como dono inativo): nunca é a leitura de tela que estoura a ficha inteira.
+  const admin = createAdminClient();
   let qualificado = false;
   if (dono) {
     try {
-      qualificado = await donoQualificado(createAdminClient(), orgId, dono);
+      qualificado = await donoQualificado(admin, orgId, dono);
     } catch {
       qualificado = false;
     }
   }
 
-  return ok({ contact_id: contactId, dono_user_id: dono, qualificado }, { requestId });
+  // #3746 — a capacidade, respondida pelo SERVIDOR com a régua do PATCH. Falha
+  // de leitura devolve `false` (a tela esconde o seletor) em vez de estourar a
+  // ficha: o botão a menos é um incômodo, a ficha em branco é um defeito.
+  const posse = await conferirPosse({
+    db: admin,
+    organizationId: orgId,
+    atorId: authz.user.id,
+    papel: authz.org.role,
+    contactId,
+  });
+
+  return ok(
+    { contact_id: contactId, dono_user_id: dono, qualificado, pode_alterar: posse.pode },
+    { requestId },
+  );
 }
 
 /** O número em que cada conversa do contato está — a foto que a troca compara. */
