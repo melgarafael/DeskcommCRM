@@ -18319,8 +18319,8 @@ export const DICIONARIO: Traducoes = {
   // das respostas rápidas era « oi »; o título de excluir um fluxo leva o nome entre as aspas do idioma. (Os rótulos
   // do vocabulário do funil, que eram Lead/Deal/Won/Lost em toda língua, agora são Contato/Negócio/Ganho/Perdido —
   // chaves que já tinham espanhol.)
-  "Como este funil chama cada coisa nas telas. Ex.: numa loja, o Negócio pode se chamar Pedido.": {
-    es: "Cómo llama este embudo a cada cosa en las pantallas. Ej.: en una tienda, el Negocio puede llamarse Pedido.",
+  "Como este funil chama o card nas telas (o Negócio). Ex.: numa loja, o Negócio pode se chamar Pedido.": {
+    es: "Cómo llama este embudo a la tarjeta en las pantallas (el Negocio). Ej.: en una tienda, el Negocio puede llamarse Pedido.",
   },
   oi: { es: "hola" },
   "Excluir “{nome}”?": { es: "¿Eliminar “{nome}”?" },

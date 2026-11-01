@@ -1,4 +1,3 @@
-
 -- manifest: o vocabulário padrão de funil novo deixa de ser o de e-commerce (Cliente/Pedido/Pago/Cancelado) e passa a ser neutro (Contato/Negócio/Ganho/Perdido); só o DEFAULT da coluna muda, nenhuma linha existente é reescrita (doc 249, resposta B).
 --
 -- 9080 — o card do funil se chama "Negócio" em instalação nova.

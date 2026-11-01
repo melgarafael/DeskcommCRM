@@ -245,7 +245,7 @@ export function ActivityReportClient() {
                         href={`/app/leads/${i.negocioId}`}
                         className="text-xs text-accent underline underline-offset-2 max-md:inline-flex max-md:min-h-11 max-md:items-center"
                       >
-                        {i.negocioTitulo ?? `${vocabulario.deal} ${i.negocioId.slice(0, 8)}`}
+                        {i.negocioTitulo ?? `${t(vocabulario.deal)} ${i.negocioId.slice(0, 8)}`}
                       </Link>
                     )}
                     {i.contatoNome && (

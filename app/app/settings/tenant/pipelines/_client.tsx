@@ -937,7 +937,7 @@ function PipelineEditor({
     <div className="space-y-4" data-testid={`editor-${pipeline.id}`}>
       <h3 className="text-sm font-semibold">{t("Vocabulário e campos")}</h3>
       <p className="text-xs text-muted-foreground">
-        {t("Como este funil chama cada coisa nas telas. Ex.: numa loja, o Negócio pode se chamar Pedido.")}
+        {t("Como este funil chama o card nas telas (o Negócio). Ex.: numa loja, o Negócio pode se chamar Pedido.")}
       </p>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
