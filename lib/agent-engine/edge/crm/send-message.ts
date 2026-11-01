@@ -3,6 +3,8 @@ import { assertApprovedReplyPg, type ApprovedReplyContext } from '@/lib/ai/repli
 import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from '@/lib/agenda/meet-delivery';
 import type { JobClaim } from '../../queue/claim';
 import { assertAgendaEffectPg } from '@/lib/agenda/efeito';
+import { AgendaPuladoError } from '@/lib/agenda/escolha-no-envio';
+import { escolhaDoFluxoPg } from '@/lib/agenda/escolha-no-envio-leitura';
 import { AgendaDeferredError } from '@/lib/agenda/protecao-followup';
 import { StaleServiceBoundaryError } from '@/lib/atendimento/fronteira';
 import { requireCurrentAutonomousTurn, requireCurrentServiceBoundary } from '@/lib/atendimento/fronteira-server';
@@ -185,6 +187,15 @@ export async function sendTurnMessage(
     locked_by: input.jobClaim?.worker_id ?? null,
     claim_acquired_at: input.jobClaim?.acquired_at,
   });
+  // #3813 — a escolha do FLUXO ("Quando o contato tiver horário marcado") vale
+  // também aqui: este é o único ponto de envio do worker `pg`, e sem a escolha
+  // no contexto a guarda abaixo leria o padrão (`adiar`) e desfaria o que o
+  // fluxo publicou — um fluxo em `enviar` seguiria sendo segurado, e um em
+  // `nao_enviar` seguiria adiando em vez de registrar o pulo.
+  const enrollmentDoJob =
+    typeof sourceJobs[0]?.payload.followup_enrollment_id === 'string'
+      ? sourceJobs[0].payload.followup_enrollment_id
+      : undefined;
   const proactiveContext =
     sourceJobs[0]?.kind === 'followup_turn' && input.leadId
       ? {
@@ -192,14 +203,14 @@ export async function sendTurnMessage(
           contactId: input.leadId,
           jobId: input.jobId,
           jobClaim: input.jobClaim,
-          enrollmentId:
-            typeof sourceJobs[0].payload.followup_enrollment_id === 'string'
-              ? sourceJobs[0].payload.followup_enrollment_id
-              : undefined,
+          enrollmentId: enrollmentDoJob,
           nodeId:
             typeof sourceJobs[0].payload.node_id === 'string'
               ? sourceJobs[0].payload.node_id
               : undefined,
+          ...(enrollmentDoJob
+            ? { escolhaNoEnvio: await escolhaDoFluxoPg(db, input.tenantId, enrollmentDoJob) }
+            : {}),
         }
       : undefined;
   if (proactiveContext) await assertAgendaEffectPg(db, proactiveContext);
@@ -304,7 +315,16 @@ export async function sendTurnMessage(
         corpoDoEnvio(input, idempotencyKey, vozResolvida),
       );
     } catch (err) {
-      if (err instanceof AgendaDeferredError || err instanceof StaleServiceBoundaryError) throw err;
+      // #3813 — o PULO por compromisso não é falha de transporte: quem chama
+      // registra `skipped` com o motivo. Convertê-lo em `CrmTransportError`
+      // ("handler indisponível") mentiria sobre a causa e mandaria o turno
+      // re-tentar um envio que o fluxo decidiu não fazer.
+      if (
+        err instanceof AgendaPuladoError ||
+        err instanceof AgendaDeferredError ||
+        err instanceof StaleServiceBoundaryError
+      )
+        throw err;
       if (err instanceof ApiError && err.status === 403) {
         throw err;
       }
