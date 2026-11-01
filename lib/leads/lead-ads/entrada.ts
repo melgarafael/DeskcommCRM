@@ -22,10 +22,12 @@
  *      auditoria e timeline. Um segundo escritor divergiria no primeiro conserto.
  *   4. **o rastro**: `webhook_lead_captures`, a tabela durável que a tela "Leads
  *      recebidos" lê. `webhook_events_log` (arquivo forense) NÃO é usado nesta
- *      fatia: o CHECK de `provider` dele é uma lista fechada de provedores
- *      (`waha`, `nuvemshop`, `generic`, `meta_cloud`, …), e "meta_ads" exigiria
- *      migration — que esta fatia declara fora de escopo. `meta_cloud` está na
- *      lista e seria MENTIRA: é o WhatsApp Cloud API, outro canal.
+ *      fatia: o CHECK de `provider` dele é uma lista fechada, com os transportes
+ *      de canal e os provedores de cobrança que o produto já atende, e acrescentar
+ *      "meta_ads" exigiria migration — que esta fatia declara fora de escopo. O
+ *      valor de canal oficial que a lista já tem se refere a MENSAGENS, não a
+ *      formulário; usá-lo no arquivo de auditoria seria mentira, e é por isso que
+ *      o rastro vai para a tabela de captação.
  *
  * ═══ O QUE O CARD CARREGA DE ORIGEM (o "espírito" de lib/leads/) ═══
  *
