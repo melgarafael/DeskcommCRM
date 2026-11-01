@@ -197,6 +197,7 @@ describe("motor: regra que chegou por fora do schema não regrava o lead", () =>
           select: () => cadeia,
           eq: () => cadeia,
           order: () => cadeia,
+          gte: () => cadeia,
           update: () => cadeia,
           insert: (linha: Record<string, unknown>) => {
             inserida = { id: UUID, ...linha };

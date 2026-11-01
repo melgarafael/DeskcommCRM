@@ -155,6 +155,12 @@ export async function buildContext(admin: SupabaseClient, row: EventRow): Promis
 }
 
 /**
+ * O motivo gravado na linha de espera. `regrasJaExecutadasNoEvento` o lê para
+ * separar ESPERA de EXECUÇÃO — quem trocar o texto troca nos dois lados por aqui.
+ */
+const MOTIVO_DO_ADIAMENTO = "fora_da_janela_de_envio";
+
+/**
  * Grava a linha do adiamento — a única evidência de que a regra casou e está
  * esperando.
  *
@@ -183,7 +189,7 @@ async function registrarAdiamento(
         type: actionType,
         status: "postponed",
         detail: {
-          reason: "fora_da_janela_de_envio",
+          reason: MOTIVO_DO_ADIAMENTO,
           retry_at: retryAt,
           explicacao:
             "A regra casou e está esperando a janela de envio do número reabrir — nada foi tentado ainda.",
@@ -198,6 +204,47 @@ async function registrarAdiamento(
       error: error.message,
     });
   }
+}
+
+/**
+ * As regras que JÁ EXECUTARAM neste evento — numa passagem anterior dele.
+ *
+ * O evento volta (`retry`) quando sobra regra adiada, e as que estavam prontas
+ * já rodaram na primeira passagem. O `consumed_by` é por consumidor, não por
+ * regra: sem esta leitura, a volta executaria de novo quem já executou.
+ *
+ * Execução é todo run deste evento que não seja a linha de espera
+ * (`registrarAdiamento`). Não basta `status <> 'adiado'`: a execução cuja
+ * mensagem ficou na fila também fecha `adiado` (`statusDoRun`).
+ *
+ * Só vale para evento que o motor JÁ ADIOU (tem linha de espera): é ali que
+ * nasce a execução parcial. O reprocessamento de um evento que nunca foi
+ * adiado segue como sempre — roda de novo, e o webhook repete o mesmo
+ * `X-Webhook-Delivery` para o receptor deduplicar.
+ *
+ * `created_at` do evento limita a varredura (não há índice por `event_id`):
+ * nenhum run dele é mais velho que ele. O `drain.ts` sempre o traz.
+ */
+async function regrasJaExecutadasNoEvento(
+  admin: SupabaseClient,
+  row: EventRow,
+): Promise<{ ids: Set<string> } | { error: string }> {
+  let query = admin
+    .from("automation_rule_runs")
+    .select("rule_id, actions_result")
+    .eq("organization_id", row.organization_id)
+    .eq("event_id", row.id);
+  if (row.created_at) query = query.gte("created_at", row.created_at);
+  const { data, error } = await query;
+  if (error) return { error: error.message };
+  const runs = (data ?? []) as Array<{
+    rule_id: string;
+    actions_result: Array<{ detail?: { reason?: unknown } }> | null;
+  }>;
+  const ehEspera = (run: (typeof runs)[number]) =>
+    run.actions_result?.[0]?.detail?.reason === MOTIVO_DO_ADIAMENTO;
+  if (!runs.some(ehEspera)) return { ids: new Set() };
+  return { ids: new Set(runs.filter((run) => !ehEspera(run)).map((run) => run.rule_id)) };
 }
 
 /** O contato do evento, quando ele existe — direto ou via conversa. */
@@ -493,7 +540,17 @@ export async function runAutomationForEvent(
   // devolve `null` e a seleção segue exatamente como sempre foi: todas as
   // regras ativas daquele tipo.
   const regraApontada = regraDoEvento(row.payload);
-  const matched = regraApontada ? todas.filter((r) => r.id === regraApontada) : todas;
+  const apontadas = regraApontada ? todas.filter((r) => r.id === regraApontada) : todas;
+
+  // Idempotência por evento × regra: na volta de um evento adiado, quem já
+  // executou não executa de novo (ver `regrasJaExecutadasNoEvento`). Falha de
+  // leitura é `error` — o dreno tenta de novo; executar às cegas arriscaria a
+  // mesma mensagem duas vezes.
+  const jaExecutadas = await regrasJaExecutadasNoEvento(admin, row);
+  if ("error" in jaExecutadas) {
+    return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "error", detail: jaExecutadas.error };
+  }
+  const matched = apontadas.filter((r) => !jaExecutadas.ids.has(r.id));
   if (!matched.length) {
     return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok", detail: "no_rules" };
   }
@@ -599,8 +656,13 @@ export async function runAutomationForEvent(
     };
   }
 
-  // Pré-checagem de postpone (throttle etc.): all-or-nothing ANTES de executar
-  // qualquer ação — reexecução parcial no retry seria pior que atraso.
+  // Pré-checagem de postpone (throttle, janela, agenda) ANTES de executar
+  // qualquer ação, POR REGRA: adia só a regra que pediu. Era tudo-ou-nada pelo
+  // evento, e aí a regra pronta só era avaliada na volta — a `nao_enviar` de
+  // `quando_ha_compromisso` decidia quando o compromisso já tinha passado, e
+  // enviava. A reexecução parcial que o tudo-ou-nada evitava agora é barrada por
+  // `regrasJaExecutadasNoEvento`. Dentro da regra continua tudo-ou-nada.
+  const adiadas = new Map<string, string>();
   for (const rule of applicable) {
     for (const action of rule.actions ?? []) {
       const executor = getAction(action.type);
@@ -615,10 +677,19 @@ export async function runAutomationForEvent(
         // Atividade não mostrava NADA — para quem montou a regra, "não apareceu
         // nada" e "não rodou" são a mesma tela (migration 0175).
         await registrarAdiamento(admin, row, rule, action.type, until);
-        return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "retry", retry_at: until };
+        adiadas.set(rule.id, until);
+        break;
       }
     }
   }
+  // A volta mais cedo pedida: cada volta reavalia as que seguem adiadas.
+  const retornoDoAdiamento = (): HandlerResult => ({
+    consumer_key: AUTOMATION_CONSUMER_KEY,
+    status: "retry",
+    retry_at: [...adiadas.values()].reduce((a, b) => (Date.parse(b) < Date.parse(a) ? b : a)),
+  });
+  const prontas = applicable.filter((rule) => !adiadas.has(rule.id));
+  if (!prontas.length) return retornoDoAdiamento();
 
   // ═══ A RESERVA ANTES DE EXECUTAR (#2974) ═══
   //
@@ -633,7 +704,7 @@ export async function runAutomationForEvent(
   // (fail-open já declarado no filtro acima).
   const barradasPelaReserva: RuleRow[] = [];
   if (contatoIdDoEvento) {
-    for (const rule of applicable) {
+    for (const rule of prontas) {
       if (!regraRodaUmaVezPorContato(rule)) continue;
       if (!(await reservarExecucaoPorContato(admin, row, rule, contatoIdDoEvento))) {
         barradasPelaReserva.push(rule);
@@ -644,8 +715,9 @@ export async function runAutomationForEvent(
     }
   }
 
-  const paraExecutar = applicable.filter((rule) => !barradasPelaReserva.includes(rule));
+  const paraExecutar = prontas.filter((rule) => !barradasPelaReserva.includes(rule));
   if (!paraExecutar.length) {
+    if (adiadas.size) return retornoDoAdiamento();
     // Toda regra que casou perdeu a corrida pela chave do contato. O desfecho é o
     // MESMO do bloqueio decidido na leitura (`detail: uma_vez_por_contato`) — a
     // diferença é só onde a corrida foi decidida: lá, sobre o estado gravado;
@@ -772,5 +844,6 @@ export async function runAutomationForEvent(
       .eq("id", rule.id);
   }
 
+  if (adiadas.size) return retornoDoAdiamento();
   return { consumer_key: AUTOMATION_CONSUMER_KEY, status: "ok" };
 }
