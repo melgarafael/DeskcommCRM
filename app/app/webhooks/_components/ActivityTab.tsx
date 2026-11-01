@@ -106,6 +106,11 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   sem_rodizio:
     "A automação foi alterada e não tem mais o rodízio que disparou esta ação. Nada foi atribuído.",
   lead_nao_encontrado: "O lead deste evento não foi encontrado nesta organização, então ninguém foi atribuído.",
+  /* #3804 — o destino dinâmico não achou ninguém: nem o dono do negócio, nem a
+     carteira do cliente, nem o fallback servem. Emitido como `error` literal por
+     lib/automation/actions/assign-owner.ts. */
+  sem_destino:
+    "Ninguém pôde receber este negócio: o responsável e a carteira do cliente não existem ou estão fora da equipe, e o fallback também não pôde atender. O negócio ficou sem responsável.",
   /* #3514 — a passagem SDR → Closer. O negócio JÁ mudou de dono nestes dois
      casos; a frase diz o que ficou para trás, senão a ação "falhou" esconde uma
      troca que aconteceu. Emitidos como `error` literal por

@@ -114,6 +114,13 @@ const ORIGENS: DeclaracaoDeOrigem[] = [
     produtor: { arquivo: "lib/agent-engine/agent/abordagem-de-formulario.ts" },
   },
   {
+    arquivo: "lib/automation/actions/assign-owner.ts",
+    expressao: "elegibilidade.motivo",
+    porque:
+      "#3804 — o vínculo de quem vai receber virou UMA régua (`conferirElegibilidade`), usada pelo modo fixo de sempre e por cada elo do destino dinâmico; os dois códigos que ela devolve (`user_not_in_org`, `invalid_owner`) estão escritos no tipo `Elegibilidade` deste mesmo arquivo, têm frase no mapa desde a #2041/#3514, e o produtor varrido ao lado é o próprio arquivo",
+    produtor: { arquivo: "lib/automation/actions/assign-owner.ts" },
+  },
+  {
     arquivo: "lib/automation/actions/create-task.ts",
     expressao: "resultado.codigo",
     porque:

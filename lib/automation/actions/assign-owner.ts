@@ -79,6 +79,19 @@ type DesfechoDoRodizio =
 type NegocioDoContexto = { id: string; contact_id?: string | null };
 
 /**
+ * O rótulo de quem recebeu, para a frase da Atividade. Falhar aqui NÃO falha a
+ * ação: o dono já foi gravado, e a frase é informação — esconder uma atribuição
+ * que aconteceu é pior do que não saber o nome dela (#3023).
+ */
+async function nomeDaPessoa(ctx: ActionCtx, userId: string): Promise<string> {
+  const { data } = await ctx.admin.auth.admin.getUserById(userId);
+  return rotuloDoMembro({
+    full_name: data?.user?.user_metadata?.full_name as string | undefined,
+    user_id: userId,
+  });
+}
+
+/**
  * Modo rodízio (#2041). A escolha, o registro da vez e a gravação do dono
  * acontecem na função SQL, numa transação só, com trava por regra: se o
  * registro ficasse aqui, depois da RPC, dois leads simultâneos leriam o mesmo
@@ -96,13 +109,7 @@ async function executarRodizio(ctx: ActionCtx, leadId: string): Promise<ActionRe
   if (error) return { type: "assign_owner", status: "failed", error: error.message };
   const desfecho = data as DesfechoDoRodizio | null;
   if (desfecho && "user_id" in desfecho) {
-    const { data: pessoa } = await ctx.admin.auth.admin.getUserById(desfecho.user_id);
-    // ponytail: sem nome no perfil, o rótulo da régua (#3023) — o dono já foi gravado, e a
-    // frase é informação: falhar aqui esconderia uma atribuição que aconteceu.
-    const nome = rotuloDoMembro({
-      full_name: pessoa?.user?.user_metadata?.full_name as string | undefined,
-      user_id: desfecho.user_id,
-    });
+    const nome = await nomeDaPessoa(ctx, desfecho.user_id);
     return {
       type: "assign_owner",
       status: "success",
@@ -340,6 +347,24 @@ function comDestino(resultado: ActionResultDetail, destino: DestinoResolvido): A
   };
 }
 
+/**
+ * A frase da Atividade quando o destino dinâmico decide (#3804). O `motivo` diz
+ * QUAL elo decidiu; sem a frase, o recibo guardaria um código e quem opera a
+ * automação não saberia por que o negócio foi para aquela pessoa.
+ */
+function explicacaoDoDestino(motivo: DestinoResolvido["motivo"], nome: string): string {
+  switch (motivo) {
+    case "responsavel_do_negocio":
+      return `Ficou com ${nome}, o responsável do negócio.`;
+    case "dono_da_carteira":
+      return `Ficou com ${nome}, o dono da carteira do cliente.`;
+    case "fallback_fixo":
+      return `Nenhum destino do negócio serviu: ficou com ${nome}, a pessoa fixa do fallback.`;
+    default:
+      return `Ficou com ${nome}.`;
+  }
+}
+
 /** Quantas voltas a cadeia pode dar (dois destinos + o fallback de pessoa fixa). */
 const LIMITE_DA_CADEIA = 4;
 
@@ -383,7 +408,18 @@ async function executarDestinoDinamico(
         recusados.push(destino.user_id);
         continue;
       }
-      return comDestino(await atribuirAPessoa(ctx, lead, destino.user_id, config), destino);
+      const resultado = await atribuirAPessoa(ctx, lead, destino.user_id, config);
+      // Falha de PASSAGEM fala pelo código dela (`carteira_nao_passou`, ...): a
+      // frase de sucesso aqui esconderia justamente a metade que não passou.
+      if (resultado.status !== "success") return comDestino(resultado, destino);
+      const nome = await nomeDaPessoa(ctx, destino.user_id);
+      return comDestino(
+        {
+          ...resultado,
+          detail: { ...(resultado.detail ?? {}), nome, explicacao: explicacaoDoDestino(destino.motivo, nome) },
+        },
+        destino,
+      );
     }
 
     if (destino.motivo === "fallback_rodizio") {
@@ -398,6 +434,8 @@ async function executarDestinoDinamico(
       error: "sem_destino",
       detail: {
         destino: destino.motivo,
+        explicacao:
+          "Ninguém pôde receber: o responsável do negócio e o dono da carteira do cliente não existem ou estão fora da equipe, e o fallback também não pôde atender. O negócio ficou sem responsável.",
         ...(destino.descartes.length > 0 ? { descartes: destino.descartes } : {}),
       },
     };

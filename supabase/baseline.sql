@@ -56807,7 +56807,15 @@ begin
     end if;
   end if;
 
-  select a.valor -> 'config' -> 'fila'
+  -- A FILA do rodízio mora em DOIS lugares desde a #3804: no modo `rodizio` de
+  -- sempre (`config.fila`) e no `fallback` do destino dinâmico
+  -- (`config.fallback.fila`, com `config.fallback.modo = 'rodizio'`). A vez é a
+  -- MESMA — um histórico por regra, um `pg_advisory_xact_lock` por regra —, e por
+  -- isso as duas formas caem nesta leitura em vez de num rodízio paralelo.
+  -- `coalesce` e não dois SELECTs: quando a ação é o modo `rodizio` de sempre, a
+  -- fila é a dele; o schema recusa as duas formas na mesma regra (um rodízio por
+  -- regra), então não há ambiguidade a resolver aqui.
+  select coalesce(a.valor -> 'config' -> 'fila', a.valor -> 'config' -> 'fallback' -> 'fila')
     into v_fila
     from public.automation_rules r
    cross join lateral jsonb_array_elements(
@@ -56816,7 +56824,8 @@ begin
    where r.id = p_rule
      and r.organization_id = p_org
      and a.valor ->> 'type' = 'assign_owner'
-     and a.valor -> 'config' ->> 'modo' = 'rodizio'
+     and (a.valor -> 'config' ->> 'modo' = 'rodizio'
+          or a.valor -> 'config' -> 'fallback' ->> 'modo' = 'rodizio')
    order by a.ordem
    limit 1;
 

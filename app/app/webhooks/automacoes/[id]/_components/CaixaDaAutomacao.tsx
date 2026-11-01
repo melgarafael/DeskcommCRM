@@ -44,7 +44,9 @@ function DescricaoDoMover({ config }: { config: Record<string, unknown> }) {
   return <>{`${funil.name} › ${etapa.name}`}</>;
 }
 
-function DescricaoDoAtendente({ config }: { config: Record<string, unknown> }) {
+// Exportada para o teste do modo novo (#3804): a frase da caixa é o que o
+// operador lê no editor, e é barato provar que ela não volta a "Escolha o atendente".
+export function DescricaoDoAtendente({ config }: { config: Record<string, unknown> }) {
   const t = useT();
   const { data: membros } = useAssignableMembers(true);
   const nomeDe = (userId: unknown) => {
@@ -56,6 +58,24 @@ function DescricaoDoAtendente({ config }: { config: Record<string, unknown> }) {
     const fila = Array.isArray(config.fila) ? (config.fila as Array<{ user_id?: unknown }>) : [];
     const nomes = fila.map((p) => nomeDe(p.user_id)).filter((n): n is string => n !== null);
     return <>{nomes.length ? `${t("Rodízio")}: ${nomes.join(", ")}` : t("Escolha quem entra no rodízio")}</>;
+  }
+  // #3804 — no destino dinâmico a pessoa só é conhecida no disparo: a caixa diz
+  // QUEM decide e com quem a regra conta se ninguém do negócio puder receber.
+  if (config.modo === "destino") {
+    const destinos = Array.isArray(config.destinos) ? (config.destinos as unknown[]) : [];
+    const nomes = destinos
+      .map((d) => (d === "responsavel_do_negocio" ? t("Responsável do negócio") : d === "dono_da_carteira" ? t("Dono da carteira do contato") : null))
+      .filter((n): n is string => n !== null);
+    const fallback = config.fallback as { modo?: unknown; user_id?: unknown; fila?: unknown } | undefined;
+    const quemDoFallback =
+      fallback?.modo === "rodizio"
+        ? t("Rodízio")
+        : (nomeDe(fallback?.user_id) ?? t("Escolha o atendente"));
+    return (
+      <>
+        {`${nomes.length ? nomes.join(" · ") : t("Escolha pelo menos um destino")} — ${t("fallback")}: ${quemDoFallback}`}
+      </>
+    );
   }
   return <>{nomeDe(config.user_id) ?? t("Escolha o atendente")}</>;
 }

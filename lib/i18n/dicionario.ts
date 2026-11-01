@@ -18371,6 +18371,28 @@ export const DICIONARIO: Traducoes = {
   "O negócio passou para a pessoa escolhida, mas a carteira do cliente não: ela e as conversas que iam junto continuam com o dono anterior. A ficha do contato mostra quem é o dono agora.": { es: "El negocio pasó a la persona elegida, pero la cartera del cliente no: ella y las conversaciones que iban con ella siguen con el dueño anterior. La ficha del contacto muestra quién es el dueño ahora." },
   "O negócio passou para a pessoa escolhida, mas as conversas abertas do cliente que estavam com outra pessoa não foram transferidas: nenhuma mudou de dono. Transfira pela conversa, se precisar.": { es: "El negocio pasó a la persona elegida, pero las conversaciones abiertas del cliente que estaban con otra persona no se transfirieron: ninguna cambió de dueño. Transfiérelas desde la conversación, si hace falta." },
   "Vez de {nome}, posição {posicao} da fila do rodízio.": { es: "Turno de {nome}, posición {posicao} de la fila de la rotación." },
+  // #3804 — o destino dinâmico da ação assign_owner: o responsável do negócio e
+  // o dono da carteira do contato, com o fallback obrigatório.
+  "Responsável do negócio": { es: "Responsable del negocio" },
+  "Dono da carteira do contato": { es: "Dueño de la cartera del contacto" },
+  "Quem está com o negócio hoje — no pós-venda, quem vendeu.": { es: "Quien tiene el negocio hoy — en el posventa, quien vendió." },
+  "Quem cuida do cliente, mesmo quando o negócio está com outra pessoa.": { es: "Quien atiende al cliente, aunque el negocio esté con otra persona." },
+  "Destinos, na ordem em que são tentados": { es: "Destinos, en el orden en que se intentan" },
+  "Quem recebe é o que o negócio já tem: o responsável do negócio e, se ele não houver, o dono da carteira do cliente. Uma regra só para toda a equipe — o pós-venda de quem vendeu.": { es: "Quien recibe es lo que el negocio ya tiene: el responsable del negocio y, si no lo hay, el dueño de la cartera del cliente. Una sola regla para todo el equipo — el posventa de quien vendió." },
+  "Quem não puder receber (saiu da equipe ou é só leitor) é pulado, e a regra segue para o próximo. A Atividade mostra qual destino decidiu e por que os outros não serviram.": { es: "Quien no pueda recibir (salió del equipo o solo puede leer) se salta, y la regla pasa al siguiente. La Actividad muestra qué destino decidió y por qué los otros no sirvieron." },
+  "Se nenhum destino servir, atribuir a": { es: "Si ningún destino sirve, asignar a" },
+  "O fallback é obrigatório: é o que impede a regra de não atribuir e deixar o negócio sem dono em silêncio.": { es: "El respaldo es obligatorio: es lo que impide que la regla no asigne y deje el negocio sin dueño en silencio." },
+  "Uma pessoa fixa": { es: "Una persona fija" },
+  "Fila do rodízio do fallback": { es: "Fila de la rotación del respaldo" },
+  "Responsável do negócio ou dono da carteira": { es: "Responsable del negocio o dueño de la cartera" },
+  "Cada destino entra uma vez só: a ordem deles é a ordem em que são tentados.": { es: "Cada destino entra una sola vez: su orden es el orden en que se intentan." },
+  "Cada pessoa entra uma vez só na fila do rodízio.": { es: "Cada persona entra una sola vez en la fila de la rotación." },
+  "Escolha pelo menos um destino": { es: "Elige al menos un destino" },
+  "fallback": { es: "respaldo" },
+  "Ficou com {nome}, o responsável do negócio.": { es: "Quedó con {nome}, el responsable del negocio." },
+  "Ficou com {nome}, o dono da carteira do cliente.": { es: "Quedó con {nome}, el dueño de la cartera del cliente." },
+  "Nenhum destino do negócio serviu: ficou com {nome}, a pessoa fixa do fallback.": { es: "Ningún destino del negocio sirvió: quedó con {nome}, la persona fija del respaldo." },
+  "Ninguém pôde receber este negócio: o responsável e a carteira do cliente não existem ou estão fora da equipe, e o fallback também não pôde atender. O negócio ficou sem responsável.": { es: "Nadie pudo recibir este negocio: el responsable y la cartera del cliente no existen o están fuera del equipo, y el respaldo tampoco pudo atender. El negocio quedó sin responsable." },
   // #3006 — "usar como exemplo para a IA": a conversa marcada vira material do
   // agente (opt-in de LGPD). O selo fica curto de propósito: ele divide a faixa
   // com as etiquetas do contato, e o verbo inteiro mora no `title` do controle.
