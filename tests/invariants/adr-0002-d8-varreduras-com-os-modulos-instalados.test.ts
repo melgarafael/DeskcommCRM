@@ -209,6 +209,14 @@ const PROVA_DE_MODULO: Record<string, { readonly arquivo: string; readonly razao
       "lista org-scoped: vizinho vê zero movimentações. A leitura é medida aqui; a decisão de " +
       "NÃO redigir (razão `manter` do #1504) mora no redact-unificado, e é outra régua.",
   },
+  ouvidoria_manifestacoes: {
+    arquivo: "tests/invariants/ouvidoria-registro-privado.test.ts",
+    razao:
+      "JWT real (`set role authenticated` + claims): admin lê a manifestação da própria " +
+      "organização e zero do vizinho nos dois sentidos; agent e viewer da MESMA organização " +
+      "leem zero; authenticated e anon sem insert/update/delete (escrita só pelo service_role); " +
+      "protocolo único POR organização e forma fechada cobrada por CHECK.",
+  },
 };
 
 /* ── probe 1: a varredura de RLS, copiada do irmão (rls-completude-varredura.test.ts) ── */
