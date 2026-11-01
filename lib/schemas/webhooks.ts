@@ -228,6 +228,35 @@ export const TRIGGER_EVENTS = Object.keys(ENTIDADE_ESPERADA_POR_GATILHO) as [
 export { conditionSchema } from "@/lib/automation/conditions";
 
 /**
+ * A FILA do rodízio — a mesma forma em dois lugares: o modo `rodizio` (#2041) e
+ * o `fallback` do destino dinâmico (#3804). Uma regra, escrita uma vez: a fila
+ * não pode divergir entre os dois (o banco lê a mesma chave `fila` nos dois).
+ */
+const filaDoRodizioSchema = z
+  .array(z.object({ user_id: z.string().uuid(), pausado: z.boolean() }))
+  .min(1)
+  .max(50)
+  .superRefine((fila, ctx) => {
+    const vistos = new Set<string>();
+    for (const [indice, pessoa] of fila.entries()) {
+      if (vistos.has(pessoa.user_id)) {
+        ctx.addIssue({
+          code: "custom",
+          path: [indice, "user_id"],
+          message: "Cada pessoa entra uma vez só na fila do rodízio.",
+        });
+      }
+      vistos.add(pessoa.user_id);
+    }
+  });
+
+/**
+ * Os destinos que a regra pode pedir no modo `destino` (#3804) — o vocabulário
+ * é o MESMO de `CandidatoDoDestino`, em `lib/automation/destino-do-atribuir`.
+ */
+export const DESTINOS_DO_ATRIBUTO = ["responsavel_do_negocio", "dono_da_carteira"] as const;
+
+/**
  * O `config` de `assign_owner` (#2041): uma pessoa fixa, a forma de sempre, ou
  * um RODÍZIO, em que a posição na `fila` é a ordem e `pausado` tira a pessoa da
  * vez sem tirá-la da fila.
@@ -252,6 +281,19 @@ export { conditionSchema } from "@/lib/automation/conditions";
  * seria uma SEGUNDA passada, com um destinatário que o banco escolheu e que a
  * ação só conhece depois do commit — desenho que merece issue própria em vez de
  * vir de carona nesta.
+ *
+ * ─── O modo `destino` (#3804) ────────────────────────────────────────────
+ *
+ * `destinos` é a CADEIA, na ordem: o responsável do negócio e/ou o dono da
+ * carteira do contato. Quem decide é `resolverDestinoDoAtribuir` (função pura,
+ * mesmo módulo), e a mesma pessoa que ela devolve passa pela régua de vínculo da
+ * ação (membro ativo, não `viewer`).
+ *
+ * `fallback` é OBRIGATÓRIO aqui — e é o item 2 da issue: sem responsável e sem
+ * carteira, a regra atribui a uma pessoa fixa ou entra no rodízio, nunca "não
+ * atribui e segue em silêncio". A obrigatoriedade é da porta, não do executor:
+ * uma regra sem fallback salvaria e só falharia no disparo, que é a regra
+ * quebrada que ninguém percebe.
  */
 export const configDoAtribuirSchema = z.discriminatedUnion("modo", [
   z.object({
@@ -264,28 +306,43 @@ export const configDoAtribuirSchema = z.discriminatedUnion("modo", [
   }),
   z.object({
     modo: z.literal("rodizio"),
-    fila: z
-      .array(z.object({ user_id: z.string().uuid(), pausado: z.boolean() }))
+    fila: filaDoRodizioSchema,
+  }),
+  z.object({
+    modo: z.literal("destino"),
+    destinos: z
+      .array(z.enum(DESTINOS_DO_ATRIBUTO))
       .min(1)
-      .max(50)
-      .superRefine((fila, ctx) => {
-        const vistos = new Set<string>();
-        for (const [indice, pessoa] of fila.entries()) {
-          if (vistos.has(pessoa.user_id)) {
-            ctx.addIssue({
-              code: "custom",
-              path: [indice, "user_id"],
-              message: "Cada pessoa entra uma vez só na fila do rodízio.",
-            });
-          }
-          vistos.add(pessoa.user_id);
+      .max(DESTINOS_DO_ATRIBUTO.length)
+      .superRefine((destinos, ctx) => {
+        if (new Set(destinos).size !== destinos.length) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Cada destino entra uma vez só: a ordem deles é a ordem em que são tentados.",
+          });
         }
       }),
+    fallback: z.discriminatedUnion("modo", [
+      z.object({ modo: z.literal("fixo"), user_id: z.string().uuid() }),
+      z.object({ modo: z.literal("rodizio"), fila: filaDoRodizioSchema }),
+    ]),
+    contato: z.boolean().optional(),
+    conversas: z.boolean().optional(),
   }),
 ]);
 
-const ehRodizio = (acao: { type: string; config?: unknown }) =>
-  acao.type === "assign_owner" && (acao.config as { modo?: unknown } | undefined)?.modo === "rodizio";
+/**
+ * O rodízio está nesta ação? Vale para os DOIS lugares onde ele mora: o modo
+ * `rodizio` de sempre e o `fallback` do destino dinâmico (#3804). A vez é
+ * contada por REGRA (`fn_automation_rodizio_atribuir` lê a fila da própria
+ * regra), então um rodízio escondido no fallback de outra ação andaria pela
+ * fila do primeiro — o mesmo defeito que este teto existe para barrar.
+ */
+const ehRodizio = (acao: { type: string; config?: unknown }) => {
+  if (acao.type !== "assign_owner") return false;
+  const config = acao.config as { modo?: unknown; fallback?: { modo?: unknown } } | undefined;
+  return config?.modo === "rodizio" || config?.fallback?.modo === "rodizio";
+};
 
 export const MENSAGEM_DO_RODIZIO_FORA_DO_LUGAR =
   "Uma automação tem no máximo um rodízio de atendentes, como ação direta: a vez de cada pessoa é contada pela automação.";
