@@ -25,7 +25,7 @@
           "id": "p1",
           "titulo": "As partes da tela",
           "rota": "/app/agenda?tipo=be310000-0000-4000-8000-000000000001",
-          "texto": "A Agenda mostra os compromissos da clínica: consultas, sessões e reuniões da equipe. Abaixo do título \"Agendamentos\" ficam as setas para mudar de semana e os botões de visão. Logo depois vem a lista de compromissos, separada em abas, e mais abaixo a grade da semana, com um bloco colorido para cada compromisso. No topo, o quadro \"Sincronizar com o Google ainda não está disponível\" aparece enquanto a instalação não tem a ligação com o Google cadastrada. A Agenda funciona normalmente sem ela; só não troca compromissos com a agenda do Google.",
+          "texto": "A Agenda mostra os compromissos da clínica: consultas, sessões e reuniões da equipe. Abaixo do título \"Agendamentos\" ficam as setas para mudar de semana e os botões de visão. Logo depois vem a lista de compromissos, separada em abas. Mais abaixo começa a grade da semana, que o próximo passo mostra inteira. No topo, o quadro \"Sincronizar com o Google ainda não está disponível\" aparece enquanto a instalação não tem a ligação com o Google cadastrada. A Agenda funciona normalmente sem ela; só não troca compromissos com a agenda do Google.",
           "dica": "Quem administra a instalação vê o link \"Cadastrar as credenciais do Google\". O resto do quadro, com o endereço de retorno, é para essa pessoa e pode ser ignorado por quem só usa a Agenda. Na sua instalação, o endereço mostra o seu domínio; na foto aparece o desta demonstração (127.0.0.1). Depois do cadastro, o quadro troca pelo botão \"Conectar Google\".",
           "destaques": [
             {
@@ -50,13 +50,29 @@
               },
               "rotulo": "Lista de compromissos",
               "tipo": "caixa"
-            },
+            }
+          ],
+          "antes": []
+        },
+        {
+          "id": "p1b",
+          "titulo": "A grade da semana",
+          "texto": "Rolando a tela para baixo aparece a grade da semana inteira. Cada coluna é um dia, de domingo a sábado, e cada linha é uma hora, das 7h às 21h. Cada compromisso é um bloco colorido no dia e na hora em que acontece, na cor de quem atende: aqui, a reunião de equipe de quarta-feira, às 17h, está na cor da Helena. O número do dia de hoje aparece dentro de um círculo colorido.",
+          "dica": "Na coluna de hoje, uma linha vermelha marca a hora atual. Ela só aparece enquanto a hora atual cabe na grade, entre 7h e 22h.",
+          "destaques": [
             {
               "alvo": {
                 "testid": "grade-da-agenda"
               },
               "rotulo": "Grade da semana",
               "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "agendamento-be300000-0000-4000-8000-000000000009"
+              },
+              "rotulo": "Reunião de equipe",
+              "tipo": "seta"
             }
           ],
           "antes": []
@@ -152,58 +168,9 @@
             {
               "acao": "esperar",
               "ms": 1500
-            },
-            {
-              "acao": "press",
-              "alvo": {
-                "testid": "visao-mes"
-              },
-              "tecla": "ArrowDown"
-            },
-            {
-              "acao": "press",
-              "alvo": {
-                "testid": "visao-mes"
-              },
-              "tecla": "ArrowDown"
-            },
-            {
-              "acao": "press",
-              "alvo": {
-                "testid": "visao-mes"
-              },
-              "tecla": "ArrowDown"
-            },
-            {
-              "acao": "press",
-              "alvo": {
-                "testid": "visao-mes"
-              },
-              "tecla": "ArrowDown"
-            },
-            {
-              "acao": "press",
-              "alvo": {
-                "testid": "visao-mes"
-              },
-              "tecla": "ArrowDown"
-            },
-            {
-              "acao": "press",
-              "alvo": {
-                "testid": "visao-mes"
-              },
-              "tecla": "ArrowDown"
             }
           ],
           "destaques": [
-            {
-              "alvo": {
-                "testid": "alternador-de-visao"
-              },
-              "rotulo": "Voltar para Semana",
-              "tipo": "seta"
-            },
             {
               "alvo": {
                 "testid": "grade-da-agenda"
@@ -213,7 +180,7 @@
             },
             {
               "alvo": {
-                "css": "[data-testid^='celula-mes-']:has([data-testid='chip-mes-be300000-0000-4000-8000-000000000001'])"
+                "css": "[data-testid^='celula-mes-']:has([data-testid='chip-mes-be300000-0000-4000-8000-000000000010'])"
               },
               "rotulo": "Dia com +1",
               "tipo": "seta"

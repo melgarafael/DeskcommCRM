@@ -26,6 +26,7 @@ import pg from "pg";
 import { exigirBancoLocal, exigirHttpLocal, validarOrganizacoesExtras } from "./seguranca";
 import { idiomaDaCaptura } from "./configuracao";
 import { textoDaDemonstracao as demo } from "./espanhol-demonstracao";
+import { idDaHistoria, receitas } from "./receitas-jornadas";
 
 const SENHA = process.env.CURSO_SENHA ?? "Curso!Demo2026";
 let db: ReturnType<typeof criarBanco>;
@@ -615,6 +616,17 @@ export async function semearBase(): Promise<Contexto> {
   );
   semErro(await db.from("conversations").delete().eq("organization_id", org), "limpar conversas");
   semErro(await db.from("crm_leads").delete().eq("organization_id", org), "limpar leads");
+  // O compromisso de uma jornada aponta para o contato dela, e a FK recusa apagar
+  // contato com compromisso: depois de capturar as jornadas, toda aula seguinte
+  // quebrava aqui. Só os ids das histórias (prefixo deca0000), como a 1ª cena faz.
+  semErro(
+    await db
+      .from("calendar_appointments")
+      .delete()
+      .eq("organization_id", org)
+      .in("id", receitas.map((r) => idDaHistoria(r.jornada, 3))),
+    "limpar compromissos das jornadas",
+  );
   semErro(await db.from("contacts").delete().eq("organization_id", org), "limpar contatos");
   semErro(
     await db.from("message_templates").delete().eq("organization_id", org),
