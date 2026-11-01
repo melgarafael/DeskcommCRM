@@ -9,6 +9,7 @@
  */
 import { z } from "zod";
 import { ehToolIdRemoto } from "@/lib/mcp/servidor-externo/ids";
+import { ESCOLHAS_NO_ENVIO } from "@/lib/agenda/escolha-no-envio";
 import { VALID_TOOL_IDS } from "@/lib/mcp/tools/catalog";
 import { TETO_TOOLS_POR_AGENTE } from "@/lib/mcp/tools/selecao-por-pacote";
 import { TETO_DO_PUBLICO } from "@/lib/agent-engine/agent/publico-do-gatilho";
@@ -109,6 +110,17 @@ const followupConfigObjectSchema = z
     flow_pointer_ids: z.array(UUID).max(20).default([]),
     send_window: followupSendWindowSchema.nullable().optional().default(null),
     callback_enabled: z.boolean().optional(),
+    /**
+     * #3813 — "Quando o contato tiver horário marcado", por FLUXO de follow-up:
+     * `adiar` (padrão), `enviar` ou `nao_enviar` (pulo registrado com o motivo
+     * `compromisso_na_agenda`).
+     *
+     * Opcional de propósito: os agentes/versões já gravados não têm a chave, e
+     * ausente é o padrão — a MESMA tolerância de `send_window`. O schema é
+     * `.strict()`, então sem esta linha a tela receberia "campo desconhecido" e
+     * não conseguiria salvar o follow-up de quem usa a escolha.
+     */
+    quando_ha_compromisso: z.enum(ESCOLHAS_NO_ENVIO).optional(),
   })
   .strict();
 
@@ -221,6 +233,12 @@ const versionShapeSchema = z
     // Todos com `.default(...)`, e é o que mantém retrocompatível: agent e
     // version que já existem, e qualquer payload que não conheça o papel,
     // seguem válidos e leem o papel como DESLIGADO.
+    // ── Voz (Fase 6b/7 do plano de voz) ─────────────────────────────────────
+    // Default FALSE/'espelhar' preserva toda versão existente — a mesma
+    // doutrina de `operator_enabled` logo abaixo: feature que gasta dinheiro
+    // não se liga por acidente.
+    voz_enabled: z.boolean().default(false),
+    voz_quando: z.enum(["nunca", "espelhar", "sempre"]).default("espelhar"),
     operator_enabled: z.boolean().default(false),
     // `.nullable()` e não opcional: null é o valor que SIGNIFICA "herda o modelo
     // do Conversador". Omitir seria indistinguível de "ainda não decidi".
@@ -299,6 +317,8 @@ export const versionPatchSchema = versionShapeSchema
     operator_tool_ids: versionShapeSchema.shape.operator_tool_ids.removeDefault(),
     pipeline_ids: versionShapeSchema.shape.pipeline_ids.removeDefault(),
     knowledge_source_ids: versionShapeSchema.shape.knowledge_source_ids.removeDefault(),
+    voz_enabled: versionShapeSchema.shape.voz_enabled.removeDefault(),
+    voz_quando: versionShapeSchema.shape.voz_quando.removeDefault(),
   })
   .partial();
 

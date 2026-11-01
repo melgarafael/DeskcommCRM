@@ -18,8 +18,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Logger } from "@/lib/agent-engine/obs/logger";
 import { rodarLoopDaFila } from "@/lib/agent-engine/queue/loop";
+import type { SonecaDaFila } from "@/lib/agent-engine/queue/soneca";
 
-const INTERVALOS = { ociosoMs: 2_000, retryMs: 250 };
+const INTERVALOS = { ociosoMs: 2_000, retryMs: 250, ociosoMaxMs: 60_000 };
+
+/** Soneca inerte: o roteiro destes testes nunca chega a dormir de verdade. */
+function sonecaInerte(): SonecaDaFila {
+  return { acordar: () => undefined, geracao: () => 0, dormir: async () => undefined };
+}
 
 function logSpy(): Logger {
   const noop = (): void => undefined;
@@ -45,7 +51,7 @@ describe("fila × shutdown", () => {
       relogio,
       claimar,
       aoClaimar: () => undefined,
-      dormir: async () => undefined,
+      soneca: sonecaInerte(),
       deveParar: () => parado,
       intervalos: INTERVALOS,
       log: logSpy(),
@@ -73,7 +79,7 @@ describe("fila × shutdown", () => {
       relogio: async () => 0,
       claimar,
       aoClaimar: (jobs) => void despachados.push(...jobs),
-      dormir: async () => undefined,
+      soneca: sonecaInerte(),
       deveParar: () => parado,
       intervalos: INTERVALOS,
       log: logSpy(),

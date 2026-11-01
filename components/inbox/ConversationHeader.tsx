@@ -109,10 +109,30 @@ export function ConversationHeader({
   const automaticoDaOrg = useAutomaticoAtivo();
   const [reassignOpen, setReassignOpen] = useState(false);
   const [confirmFecharOpen, setConfirmFecharOpen] = useState(false);
+  /**
+   * A ESCOLHA AO FECHAR (#3313, item 1), e ela começa MARCADA em "devolver".
+   *
+   * O padrão não é preferência de produto: é o desfecho que a operação espera
+   * ao fechar. Medido na issue — a equipe fechava conversas achando que a trava
+   * de humano tinha ido embora com elas, e a próxima mensagem daquele cliente,
+   * dias depois, ficava sem resposta da IA. "Manter com a equipe" continua a um
+   * clique e é relembrado a cada abertura do diálogo (quem escolheu manter na
+   * conversa anterior não deve ver a escolha já virada na seguinte).
+   */
+  const [devolverAoFechar, setDevolverAoFechar] = useState(true);
   const [confirmArquivarOpen, setConfirmArquivarOpen] = useState(false);
   const [confirmPessoalOpen, setConfirmPessoalOpen] = useState(false);
 
   const c = conversation.contacts ?? null;
+  /**
+   * A TRAVA DE HUMANO MORA NO CONTATO, não na conversa — e é por isso que
+   * fechar a conversa não a solta. Enquanto `force_human` for `true`, os três
+   * guards do motor (`skip("force_human")`, `isLeadInHandoff`, `before-send`)
+   * continuam vetando a IA. Sem esta leitura, a escolha do fechamento apareceria
+   * em conversa nenhuma (ou em todas, que é pior: perguntaria sobre uma trava
+   * que não existe).
+   */
+  const contatoTravadoComEquipe = c?.force_human === true;
   const displayName = rotuloParaAEquipe(c, t);
   /**
    * POR ONDE ESTA CONVERSA ENTROU — o mesmo rótulo da lista e da tela de
@@ -525,7 +545,11 @@ export function ConversationHeader({
             // arquivar — que é o clique errado relatado na issue. A guia diz o que
             // muda e o que continua disponível depois (reabrir).
             title={t("Encerra o atendimento. Depois você pode reabrir a conversa.")}
-            onClick={() => setConfirmFecharOpen(true)}
+            onClick={() => {
+              // Padrão marcado a cada abertura: a escolha é DESTA conversa.
+              setDevolverAoFechar(true);
+              setConfirmFecharOpen(true);
+            }}
           >
             {t("Fechar")}
           </Button>
@@ -649,15 +673,79 @@ export function ConversationHeader({
               {t("O atendimento é encerrado. Se o cliente escrever de novo, você pode reabrir.")}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {/* A PERGUNTA QUE FALTAVA (#3313, item 1). A trava de humano fica no
+              CONTATO: fechar a conversa não a solta, e a equipe descobria isso
+              dias depois, com o cliente sem resposta. Só aparece com a trava
+              ligada — sem ela não há o que perguntar, e fechar continua sendo
+              só fechar (nenhuma chave nova viaja no corpo).
+
+              Rádio nativo, e não um `Switch`: as duas opções são excludentes e
+              o estado atual PRECISA estar visível na abertura, que é justamente
+              o que o item pede ("padrão marcado"). */}
+          {contatoTravadoComEquipe ? (
+            <div className="space-y-2" data-testid="escolha-ao-fechar">
+              <p className="text-sm font-medium">
+                {t("Este contato está com a equipe. Ao fechar, o que acontece?")}
+              </p>
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="radio"
+                  name="devolver-ao-fechar"
+                  data-testid="fechar-devolver-ao-automatico"
+                  checked={devolverAoFechar}
+                  onChange={() => setDevolverAoFechar(true)}
+                  className="mt-1 h-4 w-4 shrink-0 accent-primary"
+                />
+                <span className="space-y-1">
+                  <span className="block text-sm font-medium">
+                    {t("Devolver ao automático ao fechar")}
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    {t(
+                      "A IA volta a atender este cliente na próxima mensagem dele. Se o contato estiver marcado como sempre atendimento humano, ele continua com a equipe.",
+                    )}
+                  </span>
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="radio"
+                  name="devolver-ao-fechar"
+                  data-testid="fechar-manter-com-a-equipe"
+                  checked={!devolverAoFechar}
+                  onChange={() => setDevolverAoFechar(false)}
+                  className="mt-1 h-4 w-4 shrink-0 accent-primary"
+                />
+                <span className="space-y-1">
+                  <span className="block text-sm font-medium">{t("Manter com a equipe")}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {t(
+                      "A conversa fecha e a IA continua calada para este cliente: a próxima mensagem dele espera uma pessoa.",
+                    )}
+                  </span>
+                </span>
+              </label>
+            </div>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() =>
-                close.mutate({
+              onClick={() => {
+                // A chave só entra no corpo quando a escolha existe: sem contato
+                // travado a tela não pergunta nada, e o fechamento é o de sempre.
+                const escolha: {
+                  conversation_id: string;
+                  expected_revision?: number;
+                  devolver_ao_automatico?: boolean;
+                } = {
                   conversation_id: conversation.id,
                   expected_revision: conversation.service_revision,
-                })
-              }
+                };
+                if (contatoTravadoComEquipe) {
+                  escolha.devolver_ao_automatico = devolverAoFechar;
+                }
+                close.mutate(escolha);
+              }}
             >
               {t("Fechar")}
             </AlertDialogAction>

@@ -40,6 +40,8 @@ interface StageColumnProps {
   /** `manager`+ — mesmo corte de papel da rota que renomeia a etapa. */
   podeRenomear?: boolean;
   onRenomear?: (nome: string) => void;
+  /** Densidade dos cards (issue #3461, item 2) — atravessa como `pulses`. */
+  denso?: boolean;
   /**
    * Quadro de um funil ARQUIVADO (#1298): abre para OLHAR, e nada aqui grava.
    * Sem arraste, sem menu de ações de card, sem seleção (a barra em lote é
@@ -64,6 +66,7 @@ export function StageColumn({
   onMoverPara,
   podeRenomear = false,
   onRenomear,
+  denso = false,
   somenteLeitura = false,
 }: StageColumnProps) {
   const t = useT();
@@ -162,7 +165,7 @@ export function StageColumn({
         coluna de etapa não vira painel. De `md` para cima volta o `w-80` de
         sempre, onde a graça é justamente ver várias etapas ao mesmo tempo.
       */
-      className="bg-surface-muted/40 flex min-h-full w-[85vw] max-w-80 shrink-0 snap-center flex-col rounded-lg border border-border md:w-80"
+      className="bg-surface-elevated/40 flex min-h-full w-[85vw] max-w-80 shrink-0 snap-center flex-col rounded-lg border border-border md:w-80"
       data-etapa-do-quadro={stage.id}
     >
       {/* Cabeçalho e total PRESOS no alto do quadro enquanto os cards rolam: com
@@ -180,7 +183,7 @@ export function StageColumn({
         className="sticky top-0 z-10 -mx-px -mt-px rounded-t-lg border-x border-t border-border bg-background"
         data-cabecalho-da-etapa
       >
-        <div className="bg-surface-muted/40 rounded-t-lg">
+        <div className="bg-surface-elevated/40 rounded-t-lg">
           <div className="group/etapa flex items-center gap-2 border-b border-border px-3 py-2.5">
             {/* "Selecionar a etapa inteira" é o gesto que faz a ação em lote valer a
             pena: sem ele, mover trinta cards deixa de ser trinta arrastes e vira
@@ -284,6 +287,7 @@ export function StageColumn({
                 onOpen={somenteLeitura ? undefined : onOpen}
                 etapas={etapas}
                 onMoverPara={onMoverPara}
+                denso={denso}
                 somenteLeitura={somenteLeitura}
               />
             ))}

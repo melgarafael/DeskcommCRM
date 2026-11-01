@@ -8,7 +8,7 @@
  * e o negócio ainda não existe. A tela fazia o certo ao dizer "Os anexos ficam
  * no negócio." no lugar do uploader — e o errado ao continuar contando esse
  * campo em `faltandoNaEtapa`: o aviso "Preencha os campos obrigatórios antes de
- * continuar: <campo>" aparecia e o "Criar lead" NUNCA chamava a API. Pela API,
+ * continuar: <campo>" aparecia e o "Criar negócio" NUNCA chamava a API. Pela API,
  * o `POST /api/v1/leads` recusava com o mesmo 422. Não havia saída.
  *
  * ─── O que estes casos provam ───────────────────────────────────────────────
@@ -109,7 +109,7 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe("Novo Lead numa etapa que exige campo de ARQUIVO (#3433)", () => {
+describe("Novo negócio numa etapa que exige campo de ARQUIVO (#3433)", () => {
   it("cria o negócio, e a tela explica que o anexo entra depois", async () => {
     const user = userEvent.setup();
     abrir([campoArquivo()]);
@@ -119,7 +119,7 @@ describe("Novo Lead numa etapa que exige campo de ARQUIVO (#3433)", () => {
     expect(await screen.findByText("Os anexos ficam no negócio.")).toBeTruthy();
 
     await preencherTitulo(user);
-    await user.click(screen.getByRole("button", { name: "Criar lead" }));
+    await user.click(screen.getByRole("button", { name: "Criar negócio" }));
 
     await waitFor(() => expect(criarLead).toHaveBeenCalledTimes(1));
     expect(criarLead.mock.calls[0]?.[0]).toMatchObject({ title: "Contrato do João" });
@@ -140,7 +140,7 @@ describe("Novo Lead numa etapa que exige campo de ARQUIVO (#3433)", () => {
     abrir([campoArquivo(), campoTexto()]);
 
     await preencherTitulo(user);
-    await user.click(screen.getByRole("button", { name: "Criar lead" }));
+    await user.click(screen.getByRole("button", { name: "Criar negócio" }));
 
     expect(criarLead).not.toHaveBeenCalled();
     expect(screen.getByRole("alert").textContent).toContain("Tipo de cliente");

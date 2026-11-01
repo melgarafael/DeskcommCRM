@@ -99,7 +99,10 @@ export default async function Page() {
   // Módulo que ainda não se liga nesta versão só aparece se já estiver ligado
   // (pelo banco): dá para desligar, e quem nunca ligou não vê interruptor que recusa.
   const escondidos = MODULOS_AINDA_NAO_LIGAVEIS.filter((m) => !ligados.includes(m));
-  const fontes = { modulos: ligados, settings: null, servidor };
+  // `telefonia: null` porque esta tela é da INSTALAÇÃO: o sinal de telefonia é
+  // por organização (o tronco salvo) e não existe um "da instalação toda" para
+  // ler. `null` é "não lido", nunca "desligado".
+  const fontes = { modulos: ligados, settings: null, servidor, telefonia: null };
 
   // Os módulos que NÃO se ligam por interruptor aqui (módulo de tabela, ADR-0002)
   // aparecem com o caminho de onde se instalam — saem do catálogo, sem lista escrita.

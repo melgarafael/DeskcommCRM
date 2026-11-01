@@ -222,6 +222,19 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
     camada: null,
   },
   {
+    nome: "horario_da_agenda",
+    rotulo: "Só oferecer horário que a agenda devolveu",
+    oQueProtege:
+      "Barra a resposta que cita dia e horário que a busca da agenda não devolveu nesta " +
+      'resposta, e o "está agendado" quando a marcação não foi gravada. O assistente refaz ' +
+      "com a agenda; se insistir, passa a conversa para a equipe.",
+    escolha: null,
+    porQueNaoSeDesliga:
+      "Horário inventado vira consulta marcada em cima de outra, e confirmação sem marcação " +
+      "vira paciente esperando uma consulta que não existe. Regra fixa, sem custo.",
+    camada: null,
+  },
+  {
     nome: "registro_sem_efeito",
     rotulo: "Conferir a escrita antes de afirmar registro",
     oQueProtege:

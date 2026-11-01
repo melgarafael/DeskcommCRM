@@ -123,6 +123,32 @@ const corpo = z
     resposta_whatsapp_habilitada: z.boolean().default(false),
     /** `true` = "eu sei que este número é um cliente meu, e quero mesmo assim". */
     confirma_contato: z.boolean().optional(),
+    /**
+     * COMO escolher quem recebe (#3803). `fixo` é o comportamento de sempre e o
+     * default da coluna; `responsavel` liga a cadeia conversa → negócio →
+     * carteira → número da empresa.
+     */
+    destino_modo: z.enum(["fixo", "responsavel"]).default("fixo"),
+    /**
+     * O WhatsApp de cada pessoa da equipe, gravado na MESMA transação da
+     * configuração (a função do banco faz as duas escritas).
+     *
+     * `whatsapp` é o número PESSOAL de quem atende (o nome da coluna em
+     * `user_organizations`), e `null` explícito LIMPA o número — é a forma de a
+     * pessoa dizer "apague o meu" sem depender de um campo vazio significar a
+     * mesma coisa.
+     */
+    responsaveis: z
+      .array(
+        z
+          .object({
+            user_id: z.string().uuid(),
+            whatsapp: z.string().trim().nullable(),
+          })
+          .strict(),
+      )
+      .max(200)
+      .optional(),
   })
   .strict();
 
@@ -159,6 +185,16 @@ const RECUSAS_DO_RPC = {
     status: 422 as const,
     frase:
       "Esse é um dos números conectados da sua conta. Ele não pode receber os avisos, senão um responde ao outro sem parar.",
+  },
+  aviso_de_caso_destino_invalido: {
+    code: "validation_failed",
+    status: 422 as const,
+    frase: "Escolha uma forma de destino válida: o número da empresa ou o responsável pelo atendimento.",
+  },
+  aviso_de_caso_whatsapp_invalido: {
+    code: "validation_failed",
+    status: 422 as const,
+    frase: "Um dos números de WhatsApp da equipe não é válido. Use o código do país, por exemplo +55 31 99999-8888.",
   },
   aviso_de_caso_numero_de_cliente: {
     code: "aviso_numero_de_cliente",
@@ -224,6 +260,11 @@ export async function PUT(req: NextRequest): Promise<Response> {
       p_ligado: dados.ligado,
       p_confirma_contato: dados.confirma_contato ?? false,
       p_resposta_whatsapp_habilitada: dados.resposta_whatsapp_habilitada,
+      p_destino_modo: dados.destino_modo,
+      // A rota NÃO normaliza: quem normaliza é o corpo da função do banco, com a
+      // mesma régua da tela (`normalizarTelefoneDeAviso`). Normalizar nos dois
+      // lugares seria a segunda implementação da regra.
+      p_responsaveis: dados.responsaveis === undefined ? null : dados.responsaveis,
     } as never,
   );
 
@@ -256,6 +297,12 @@ export async function PUT(req: NextRequest): Promise<Response> {
       resposta_whatsapp_habilitada: dados.resposta_whatsapp_habilitada,
       canal: dados.channel_session_id,
       confirmou_contato: dados.confirma_contato ?? false,
+      // O MODO é o que muda o desenho do aviso depois desta entrega, e o log é
+      // append-only: sem ele não há como datar a troca de "número fixo" para
+      // "responsável" numa auditoria. CONTAGEM, nunca os números: telefone de
+      // funcionário no `api_audit_log` fica para sempre.
+      destino_modo: dados.destino_modo,
+      membros_com_whatsapp: (dados.responsaveis ?? []).filter((r) => r.whatsapp !== null).length,
     },
   });
 

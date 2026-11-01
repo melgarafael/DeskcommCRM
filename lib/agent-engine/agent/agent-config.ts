@@ -133,6 +133,15 @@ export interface PublishedAgentConfig {
   /** criadores (p/ mint do token efêmero de audit — padrão do runtime nativo). */
   versionCreatedBy: string | null;
   agentCreatedBy: string | null;
+  /**
+   * A resposta pode saír como nota de voz nesta versão (Fase 6b do plano de
+   * voz). Default do banco é FALSE — mesma doutrina de `operatorEnabled`:
+   * feature que gasta não se liga por migration, se liga na tela (que ainda
+   * não existe — Fase 7).
+   */
+  vozEnabled: boolean;
+  /** `'nunca' | 'espelhar' | 'sempre'` — decidido em `voz-do-turno.ts`. */
+  vozQuando: 'nunca' | 'espelhar' | 'sempre';
 }
 
 interface Row {
@@ -170,6 +179,8 @@ interface Row {
   trigger_config: unknown;
   version_created_by: string | null;
   agent_created_by: string | null;
+  voz_enabled: boolean | null;
+  voz_quando: string | null;
 }
 
 const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_revision::text,a.id as agent_id,
@@ -200,6 +211,8 @@ const SELECT_AGENT_CONFIG_COLUMNS = `a.operation_mode,a.paused_at,a.operation_re
             v.operator_tool_ids,
             v.pipeline_ids,
             v.knowledge_source_ids,
+            v.voz_enabled,
+            v.voz_quando,
             v.trigger_config,
             v.created_by as version_created_by,
             a.created_by as agent_created_by`;
@@ -282,6 +295,15 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     filtroDePalavraChave: lerFiltroDePalavraChave(r.trigger_config),
     versionCreatedBy: r.version_created_by,
     agentCreatedBy: r.agent_created_by,
+    // `?? false`: mesma direção segura de `operatorEnabled` — gasto novo nasce
+    // desligado, nunca ligado por acidente.
+    vozEnabled: r.voz_enabled ?? false,
+    // `?? 'espelhar'` é o default do BANCO, repetido aqui só por simetria com
+    // o resto do mapeamento — nunca deveria faltar (coluna NOT NULL), e um
+    // valor fora do vocabulário (CHECK do banco impede, mas TS não confia
+    // cegamente num texto livre) cai no mesmo default seguro.
+    vozQuando:
+      r.voz_quando === 'nunca' || r.voz_quando === 'sempre' ? r.voz_quando : 'espelhar',
   };
 }
 

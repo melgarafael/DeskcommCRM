@@ -27,7 +27,8 @@ type Context = { params: Promise<{ id: string }> };
  *   - `previa`   → cria linha `previa` com os números (teto de custo na lib);
  *                  409 se o número já tem uma `rodando`;
  *   - `importar` → `previa` → `rodando`;
- *   - `cancelar` → `previa`/`rodando`/`erro` → `cancelada`;
+ *   - `cancelar` → `previa`/`aguardando`/`rodando`/`erro` → `cancelada`
+ *                  (`aguardando` é a recuperação da queda, Spec 32);
  *   - `retomar`  → `erro` → `rodando`, limpando o erro.
  * Fora disso, 409. Uma `rodando` por número: o índice único parcial da 0761
  * garante, e a rota traduz o 23505 em 409.
@@ -55,19 +56,59 @@ async function sessaoOuFalha(
   }
 }
 
+/**
+ * Escopo da importação (Spec 32): `so_crm` traz só os chats de quem já tem ficha
+ * viva no CRM, sem criar ficha nova. É o padrão desde a Spec 32: quem pede a
+ * importação do histórico pela tela ganha o escopo mais seguro, e `todos` é uma
+ * escolha explícita do administrador.
+ */
+const ESCOPO = z.enum(["todos", "so_crm"]);
+
 const corpo = z.discriminatedUnion("acao", [
-  z.object({ acao: z.literal("previa"), dias: z.union([z.literal(30), z.literal(90), z.literal(180), z.literal(365)]) }),
+  z.object({
+    acao: z.literal("previa"),
+    dias: z.union([z.literal(30), z.literal(90), z.literal(180), z.literal(365)]),
+    escopo: ESCOPO.default("so_crm"),
+  }),
   z.object({ acao: z.literal("importar"), importacaoId: z.uuid() }),
   z.object({ acao: z.literal("cancelar"), importacaoId: z.uuid() }),
   z.object({ acao: z.literal("retomar"), importacaoId: z.uuid() }),
 ]);
 
+/**
+ * Estados em que uma importação ainda está "em andamento" no número. A da queda
+ * nasce `aguardando` e o cron a leva a `rodando`: a manual não pode passar na
+ * frente de nenhuma das duas (o índice único só cobre `rodando`).
+ */
+const EM_ANDAMENTO = ["aguardando", "rodando"] as const;
+
 /** De onde cada ação pode partir, para onde vai e o que audita. */
 const TRANSICOES = {
   importar: { de: ["previa"], para: "rodando", acao: "channel.historico_import_started" },
-  cancelar: { de: ["previa", "rodando", "erro"], para: "cancelada", acao: "channel.historico_import_cancelled" },
+  cancelar: { de: ["previa", "rodando", "erro", "aguardando"], para: "cancelada", acao: "channel.historico_import_cancelled" },
   retomar: { de: ["erro"], para: "rodando", acao: "channel.historico_import_resumed" },
 } as const satisfies Record<string, { de: readonly string[]; para: string; acao: AuditAction }>;
+
+/**
+ * Há importação em andamento neste número (manual ou da queda)? Erro de leitura
+ * vira erro, não "livre": a checagem falha fechada.
+ */
+async function haImportacaoEmAndamento(
+  admin: ReturnType<typeof createAdminClient>,
+  orgId: string,
+  canalId: string,
+): Promise<{ ocupado: boolean } | { erro: true }> {
+  const { data, error } = await admin
+    .from(TABELA)
+    .select("id")
+    .eq("organization_id", orgId)
+    .eq("channel_session_id", canalId)
+    .in("status", [...EM_ANDAMENTO])
+    .limit(1)
+    .maybeSingle();
+  if (error) return { erro: true };
+  return { ocupado: data !== null };
+}
 
 export async function GET(_req: NextRequest, { params }: Context): Promise<Response> {
   const requestId = randomUUID();
@@ -79,16 +120,34 @@ export async function GET(_req: NextRequest, { params }: Context): Promise<Respo
   const lida = await sessaoOuFalha(admin, auth.org.orgId, id, requestId);
   if ("resposta" in lida) return lida.resposta;
   const { sessao } = lida;
+  // A manual mais recente (a de sempre) e, à parte, a recuperação da queda que
+  // está aberta. A tela precisa das duas: a manual fica bloqueada enquanto a da
+  // queda espera ou roda, e sem a segunda a tela não diria por quê.
   const { data, error } = await admin
     .from(TABELA)
     .select("*")
     .eq("organization_id", auth.org.orgId)
     .eq("channel_session_id", id)
+    .eq("origem", "manual")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error) return fail("internal_error", "Não foi possível ler a importação.", 500, { requestId });
-  return ok({ guardar_historico: sessao.guardarHistorico, importacao: data ?? null }, { requestId });
+  const { data: daQueda, error: erroDaQueda } = await admin
+    .from(TABELA)
+    .select("*")
+    .eq("organization_id", auth.org.orgId)
+    .eq("channel_session_id", id)
+    .eq("origem", "queda")
+    .in("status", [...EM_ANDAMENTO])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (erroDaQueda) return fail("internal_error", "Não foi possível ler a importação.", 500, { requestId });
+  return ok(
+    { guardar_historico: sessao.guardarHistorico, importacao: data ?? null, recuperacao_da_queda: daQueda ?? null },
+    { requestId },
+  );
 }
 
 export async function POST(req: NextRequest, { params }: Context): Promise<Response> {
@@ -121,21 +180,14 @@ export async function POST(req: NextRequest, { params }: Context): Promise<Respo
   const pedido = parsed.data;
   if (pedido.acao === "previa") {
     if (!sessao.guardarHistorico || !sessao.nomeNoCanal) return fail("state_conflict", ACERVO_DESLIGADO, 409, { requestId });
-    // Com uma `rodando` no número, a prévia nova viraria a mais recente no GET e
-    // esconderia a que está andando (e o botão de cancelar dela). Duas abas.
-    const { data: andando, error: erroDoAndamento } = await admin
-      .from(TABELA)
-      .select("id")
-      .eq("organization_id", orgId)
-      .eq("channel_session_id", id)
-      .eq("status", "rodando")
-      .limit(1)
-      .maybeSingle();
-    if (erroDoAndamento) return fail("internal_error", "Não foi possível ler a importação.", 500, { requestId });
-    if (andando) return fail("state_conflict", "Já há uma importação em andamento neste número.", 409, { requestId });
+    // Com uma `rodando` (ou a da queda, `aguardando`) no número, a prévia nova
+    // viraria a mais recente no GET e esconderia a que está andando. Duas abas.
+    const andamento = await haImportacaoEmAndamento(admin, orgId, id);
+    if ("erro" in andamento) return fail("internal_error", "Não foi possível ler a importação.", 500, { requestId });
+    if (andamento.ocupado) return fail("state_conflict", "Já há uma importação em andamento neste número.", 409, { requestId });
     let previa;
     try {
-      previa = await calcularPrevia(sessao.nomeNoCanal, pedido.dias);
+      previa = await calcularPrevia(admin, orgId, pedido.escopo, sessao.nomeNoCanal, pedido.dias);
     } catch (err) {
       logger.warn("[historico] prévia falhou", { requestId, detail: err instanceof Error ? err.message : "erro" });
       return fail("channel_unavailable", "O servidor do canal não respondeu. Tente de novo em instantes.", 502, { requestId });
@@ -147,6 +199,7 @@ export async function POST(req: NextRequest, { params }: Context): Promise<Respo
         channel_session_id: id,
         status: "previa",
         dias: pedido.dias,
+        escopo: pedido.escopo,
         previa,
         criada_por: auth.user.id,
       } as never)
@@ -161,6 +214,12 @@ export async function POST(req: NextRequest, { params }: Context): Promise<Respo
   const t = TRANSICOES[pedido.acao];
   if (pedido.acao === "importar" && !sessao.guardarHistorico) {
     return fail("state_conflict", ACERVO_DESLIGADO, 409, { requestId });
+  }
+  // Com a recuperação da queda aberta, a manual espera: a da queda já tem a vez.
+  if (pedido.acao === "importar") {
+    const andamento = await haImportacaoEmAndamento(admin, orgId, id);
+    if ("erro" in andamento) return fail("internal_error", "Não foi possível ler a importação.", 500, { requestId });
+    if (andamento.ocupado) return fail("state_conflict", "Já há uma importação em andamento neste número.", 409, { requestId });
   }
   const daImportacao = () =>
     admin.from(TABELA).select("id, status").eq("id", pedido.importacaoId).eq("organization_id", orgId).eq("channel_session_id", id);

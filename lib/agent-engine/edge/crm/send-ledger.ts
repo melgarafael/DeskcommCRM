@@ -13,9 +13,20 @@ export type SendOutcome =
       crmMessageId: string | null;
     }
   | { kind: "blocked"; idempotencyKey: string };
-type Intent = { tenantId: string; leadId: string | null; jobId: string; seq: number; body: string };
-type Row = { id: string; status: SendLedgerStatus; crm_message_id: string | null };
-interface LedgerStore {
+export type Intent = { tenantId: string; leadId: string | null; jobId: string; seq: number; body: string };
+export type Row = {
+  id: string;
+  status: SendLedgerStatus;
+  crm_message_id: string | null;
+  /**
+   * Migration 9051. Opcional no TYPE (não no banco) de propósito: dublês de
+   * teste existentes constroem este objeto sem o campo, e exigi-lo quebraria
+   * cada um — a leitura trata ausência e `null` como a mesma coisa ("nada
+   * sintetizado ainda").
+   */
+  media_storage_path?: string | null;
+};
+export interface LedgerStore {
   create(input: Intent, hash: string): Promise<string>;
   find(input: Intent): Promise<Row | null>;
   rotate(input: Intent, hash: string): Promise<string>;
@@ -30,7 +41,56 @@ interface LedgerStore {
     id: string | null,
     error: string | null,
   ): Promise<void>;
+  /**
+   * Grava o caminho da mídia JÁ sintetizada — só se a linha ainda não tiver
+   * um (o `coalesce` é a defesa: duas tentativas correndo em paralelo nunca
+   * deveriam acontecer, já que o job tem dono exclusivo, mas um UPDATE que só
+   * escreve quando está vazio custa zero e fecha a dúvida).
+   */
+  setMediaPath(org: string, key: string, path: string): Promise<string>;
 }
+
+/** O hash que identifica o CORPO desta tentativa — nunca o corpo em si (PII) chega ao ledger. */
+export function bodyHash(body: string): string {
+  return createHash("sha256").update(body).digest("hex");
+}
+/**
+ * A resolução de CHAVE — extraída de `sendWithLedger` para que a síntese de
+ * voz (Fase 6a do plano de voz) possa resolver a MESMA identidade de linha
+ * ANTES de decidir se precisa sintetizar, sem duplicar a lógica de
+ * create/find/rotate num segundo lugar que pudesse divergir dela.
+ *
+ * Comportamento idêntico ao bloco que existia inline em `sendWithLedger` —
+ * refactor puro, sem mudança de regra. Os cinco casos de
+ * `tests/unit/followup-send-ledger.test.ts` são a prova de que a extração não
+ * mudou nada.
+ */
+type ResolucaoDeChave =
+  | { kind: "key"; key: string; row: Row | null }
+  | { kind: "already_sent"; key: string; crmMessageId: string | null }
+  | { kind: "blocked"; key: string };
+
+export async function resolverChaveDoLedger(
+  store: LedgerStore,
+  input: Intent,
+  hash: string,
+): Promise<ResolucaoDeChave> {
+  try {
+    const key = await store.create(input, hash);
+    return { kind: "key", key, row: null };
+  } catch (error) {
+    if (!(error && typeof error === "object" && "code" in error && error.code === "23505"))
+      throw error;
+    const prior = await store.find(input);
+    if (!prior) throw new Error("send_ledger_missing");
+    if (prior.status === "accepted")
+      return { kind: "already_sent", key: prior.id, crmMessageId: prior.crm_message_id };
+    if (prior.status === "vetoed") return { kind: "blocked", key: prior.id };
+    if (prior.status === "failed") return { kind: "key", key: await store.rotate(input, hash), row: null };
+    return { kind: "key", key: prior.id, row: prior };
+  }
+}
+
 /** Inline e daemon compartilham identidade (job,seq), reconciliação e mensagem.
  * Página/worker perdido não cria uma segunda intenção. queued é reavaliado pelo
  * handler com o MESMO id; somente sent/delivered/read confirmam entrega. */
@@ -39,27 +99,16 @@ export async function sendWithLedger(
   input: Intent,
   send: (key: string, messageId: string) => Promise<{ id: string; status: string }>,
 ): Promise<SendOutcome> {
-  const hash = createHash("sha256").update(input.body).digest("hex");
-  let key: string;
-  // Chave saída de `create` ou `rotate` é um uuid que acabou de nascer: nenhuma
-  // mensagem pode carregá-la ainda. Procurar seria uma leitura sob o lock do
-  // número que só pode devolver vazio.
-  let replay = false;
-  try {
-    key = await store.create(input, hash);
-  } catch (error) {
-    if (!(error && typeof error === "object" && "code" in error && error.code === "23505"))
-      throw error;
-    const prior = await store.find(input);
-    if (!prior) throw new Error("send_ledger_missing");
-    key = prior.id;
-    if (prior.status === "accepted")
-      return { kind: "already_sent", idempotencyKey: key, crmMessageId: prior.crm_message_id };
-    if (prior.status === "vetoed") return { kind: "blocked", idempotencyKey: key };
-    if (prior.status === "failed") key = await store.rotate(input, hash);
-    else replay = true;
-  }
-  const existing = replay ? await store.message(input.tenantId, key) : null;
+  const hash = bodyHash(input.body);
+  const resolucao = await resolverChaveDoLedger(store, input, hash);
+  if (resolucao.kind === "already_sent")
+    return { kind: "already_sent", idempotencyKey: resolucao.key, crmMessageId: resolucao.crmMessageId };
+  if (resolucao.kind === "blocked") return { kind: "blocked", idempotencyKey: resolucao.key };
+  const key = resolucao.key;
+  // Chave saída de `create` ou `rotate` é um uuid que acabou de nascer (`row`
+  // null): nenhuma mensagem pode carregá-la ainda. Procurar seria uma leitura
+  // sob o lock do número que só pode devolver vazio.
+  const existing = resolucao.row ? await store.message(input.tenantId, key) : null;
   let message = existing;
   if (!message || message.status === "queued") {
     try {
@@ -125,8 +174,13 @@ export function pgSendLedger(db: Queryable): LedgerStore {
       return rows[0] ?? null;
     },
     async rotate(i, hash) {
+      // `media_storage_path=null` É PARTE DA ROTAÇÃO, não um extra: rotate()
+      // é uma tentativa lógica NOVA (a anterior falhou), e o áudio que a
+      // tentativa anterior sintetizou — se houver — pode não corresponder ao
+      // texto desta. Herdar o path antigo serviria o ÁUDIO ERRADO para a
+      // mensagem nova, calado.
       const { rows } = await db.query<{ id: string }>(
-        "update send_ledger set id=gen_random_uuid(),status='requested',body_hash=$4,crm_message_id=null,last_error=null,updated_at=now() where organization_id=$1 and job_id=$2 and seq=$3 returning id",
+        "update send_ledger set id=gen_random_uuid(),status='requested',body_hash=$4,crm_message_id=null,last_error=null,media_storage_path=null,updated_at=now() where organization_id=$1 and job_id=$2 and seq=$3 returning id",
         [i.tenantId, i.jobId, i.seq, hash],
       );
       if (!rows[0]) throw new Error("send_ledger_rotation_missing");
@@ -150,6 +204,14 @@ export function pgSendLedger(db: Queryable): LedgerStore {
         [org, key, status, id, error],
       );
     },
+    async setMediaPath(org, key, path) {
+      const { rows } = await db.query<{ media_storage_path: string }>(
+        "update send_ledger set media_storage_path=coalesce(media_storage_path,$3),updated_at=now() where organization_id=$1 and id=$2 returning media_storage_path",
+        [org, key, path],
+      );
+      if (!rows[0]) throw new Error("send_ledger_set_media_path_missing");
+      return rows[0].media_storage_path;
+    },
   };
 }
 export function supabaseSendLedger(db: SupabaseClient): LedgerStore {
@@ -172,7 +234,7 @@ export function supabaseSendLedger(db: SupabaseClient): LedgerStore {
     async find(i) {
       const { data, error } = await db
         .from("send_ledger")
-        .select("id,status,crm_message_id")
+        .select("id,status,crm_message_id,media_storage_path")
         .eq("organization_id", i.tenantId)
         .eq("job_id", i.jobId)
         .eq("seq", i.seq)
@@ -181,6 +243,8 @@ export function supabaseSendLedger(db: SupabaseClient): LedgerStore {
       return data as Row | null;
     },
     async rotate(i, hash) {
+      // Ver o comentário irmão em `pgSendLedger.rotate`: path antigo não pode
+      // sobreviver a uma tentativa lógica nova.
       const { data, error } = await db
         .from("send_ledger")
         .update({
@@ -189,6 +253,7 @@ export function supabaseSendLedger(db: SupabaseClient): LedgerStore {
           body_hash: hash,
           crm_message_id: null,
           last_error: null,
+          media_storage_path: null,
           updated_at: new Date().toISOString(),
         })
         .eq("organization_id", i.tenantId)
@@ -230,6 +295,28 @@ export function supabaseSendLedger(db: SupabaseClient): LedgerStore {
         .eq("organization_id", org)
         .eq("id", key);
       if (error) throw error;
+    },
+    async setMediaPath(org, key, path) {
+      // `coalesce` não existe no builder do supabase-js para update — lê
+      // primeiro, decide, grava; a janela é a mesma "concorrência não
+      // realista" documentada em `pgSendLedger.setMediaPath`.
+      const atual = await db
+        .from("send_ledger")
+        .select("media_storage_path")
+        .eq("organization_id", org)
+        .eq("id", key)
+        .maybeSingle();
+      if (atual.error) throw atual.error;
+      if (atual.data?.media_storage_path) return atual.data.media_storage_path as string;
+      const { data, error } = await db
+        .from("send_ledger")
+        .update({ media_storage_path: path, updated_at: new Date().toISOString() })
+        .eq("organization_id", org)
+        .eq("id", key)
+        .select("media_storage_path")
+        .single();
+      if (error) throw error;
+      return data.media_storage_path as string;
     },
   };
 }

@@ -1311,7 +1311,7 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
       if (error) throw new Error(`pointer_query_failed: ${error.message}`);
       const gatilho = triggerConfigSchema.safeParse((data as { trigger_config?: unknown } | null)?.trigger_config);
       if (!gatilho.success || gatilho.data.kind !== "silence") return null;
-      return reavaliarDepoisDoRetorno(quando);
+      return reavaliarDepoisDoRetorno(quando, gatilho.data.params.threshold_minutes);
     },
     async assertAgenda(enrollment){await assertAgendaEffectSupabase(admin,{organizationId:enrollment.organization_id,contactId:enrollment.contact_id,enrollmentId:enrollment.id,nodeId:enrollment.current_node_id});},
     async claimDueEnrollments(limit, leaseSeconds) {

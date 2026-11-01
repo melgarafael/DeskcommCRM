@@ -7,6 +7,7 @@ import {
   montarMencao,
   partesDoCorpo,
   podarMencoes,
+  podarMencoesDaEdicao,
   textoLegivelDeMencao,
   tokensDeMencao,
 } from "./mentions";
@@ -214,5 +215,91 @@ describe("podarMencoes", () => {
   it("mesma referência quando nada saiu — o setState por tecla não re-renderiza à toa", () => {
     const lista = [ana1];
     expect(podarMencoes("fala com @Ana Lima", lista)).toBe(lista);
+  });
+});
+
+/**
+ * `podarMencoesDaEdicao` — a lista de menções DERIVADA do texto (#2463).
+ *
+ * O que a poda por presença não enxerga, e que aqui é o caso principal: duas
+ * `@Ana Lima` no campo e UMA apagada. O texto continua com o rótulo, então a
+ * presença deixa as duas escolhas na lista e a gravação pareia a ocorrência
+ * que sobrou com a escolha da ESQUERDA — a pessoa apagada. A posição guardada
+ * em cada escolha é o que diz qual das duas ficou.
+ */
+describe("podarMencoesDaEdicao", () => {
+  const ana1 = { id: "id-ana-1", nome: "Ana Lima" };
+  const ana2 = { id: "id-ana-2", nome: "Ana Lima" };
+  const carlos = { id: "id-carlos", nome: "Carlos Dias" };
+
+  it("apagar a PRIMEIRA de duas ocorrências homônimas: sobra a escolha da DIREITA, na posição nova", () => {
+    const antes = "fala com @Ana Lima e @Ana Lima sobre";
+    const depois = "fala com e @Ana Lima sobre";
+    // A 1ª escolha foi escrita no `@` de índice 9, a 2ª no de índice 21.
+    const lista = [
+      { ...ana1, inicio: 9 },
+      { ...ana2, inicio: 21 },
+    ];
+
+    expect(podarMencoesDaEdicao(antes, depois, lista)).toEqual([{ ...ana2, inicio: 11 }]);
+  });
+
+  it("e a gravação usa essa escolha: o token que sai é o da pessoa que ficou", () => {
+    const antes = "fala com @Ana Lima e @Ana Lima";
+    const depois = "fala com e @Ana Lima";
+    const lista = [
+      { ...ana1, inicio: 9 },
+      { ...ana2, inicio: 21 },
+    ];
+    const restantes = podarMencoesDaEdicao(antes, depois, lista);
+
+    expect(embutirMencoes(depois, restantes)).toBe("fala com e @[Ana Lima](mencao:id-ana-2)");
+  });
+
+  it("apagar a menção inteira tira a pessoa da lista", () => {
+    const antes = "fala com @Ana Lima e @Carlos Dias";
+    const depois = "fala com e @Carlos Dias";
+    const lista = [
+      { ...ana1, inicio: 9 },
+      { ...carlos, inicio: 21 },
+    ];
+
+    expect(podarMencoesDaEdicao(antes, depois, lista)).toEqual([{ ...carlos, inicio: 11 }]);
+  });
+
+  it("digitar ANTES da menção desloca a posição — a escolha não se perde", () => {
+    const lista = [{ ...ana1, inicio: 9 }];
+    expect(podarMencoesDaEdicao("fala com @Ana Lima", "oi, fala com @Ana Lima", lista)).toEqual([
+      { ...ana1, inicio: 13 },
+    ]);
+  });
+
+  it("digitar DEPOIS da menção não mexe em nada (mesma referência)", () => {
+    const lista = [{ ...ana1, inicio: 9 }];
+    expect(podarMencoesDaEdicao("fala com @Ana Lima", "fala com @Ana Lima sobre", lista)).toBe(lista);
+  });
+
+  it("escolha sem posição continua decidida pela presença do rótulo", () => {
+    expect(podarMencoesDaEdicao("fala com @Ana Lima", "fala com ", [ana1])).toEqual([]);
+    expect(podarMencoesDaEdicao("fala com @Ana Lima", "fala com @Ana Lima!", [ana1])).toEqual([ana1]);
+  });
+
+  it("a posição respeita a mesma fronteira do rótulo: `@Ana Lima123` não segura nem grava a escolha", () => {
+    // Escolheu a Ana Lima, apagou o espaço e seguiu digitando colado ao nome.
+    const lista = [{ ...ana1, inicio: 0 }];
+    expect(podarMencoesDaEdicao("@Ana Lima ", "@Ana Lima123", lista)).toEqual([]);
+    expect(embutirMencoes("@Ana Lima123", lista)).toBe("@Ana Lima123");
+  });
+
+  it("a posição decide o pareamento: duas homônimas, a ordem de escolha é a do texto", () => {
+    // A escolha da DIREITA foi feita antes (posição 21 com `inicio` menor? não):
+    // o que vale é a posição, e não a ordem em que as escolhas entraram na lista.
+    const lista = [
+      { ...ana2, inicio: 21 },
+      { ...ana1, inicio: 9 },
+    ];
+    expect(embutirMencoes("@Ana Lima e @Ana Lima", lista)).toBe(
+      "@[Ana Lima](mencao:id-ana-1) e @[Ana Lima](mencao:id-ana-2)",
+    );
   });
 });

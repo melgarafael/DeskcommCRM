@@ -154,3 +154,36 @@ describe("BulkActionBar — F2 (#2484): perdido em lote", () => {
     expect(screen.queryByRole("button", { name: "Marcar como perdido…" })).not.toBeInTheDocument();
   });
 });
+
+describe("BulkActionBar — o card é o NEGÓCIO do funil (#3811)", () => {
+  beforeEach(() => {
+    get.mockReset();
+    get.mockResolvedValue({ data: [] });
+  });
+
+  it("sem vocabulário: '1 Negócio selecionado', nunca o nome da pessoa", () => {
+    render(
+      <BulkActionBar selectedIds={["lead-1"]} stages={STAGES} pipelineId="p-1" tagsExistentes={[]} onClear={vi.fn()} />,
+    );
+    expect(screen.getByText(/^1 Negócio selecionado$/)).toBeInTheDocument();
+  });
+
+  it("o vocabulário do funil vence: no e-commerce o card é 'Pedido', não 'Cliente'", async () => {
+    const user = userEvent.setup();
+    render(
+      <BulkActionBar
+        selectedIds={["lead-1"]}
+        stages={STAGES}
+        pipelineId="p-1"
+        tagsExistentes={[]}
+        onClear={vi.fn()}
+        vocabulary={{ lead: "Cliente", deal: "Pedido" }}
+      />,
+    );
+    expect(screen.getByText(/^1 Pedido selecionado$/)).toBeInTheDocument();
+    expect(screen.queryByText(/Cliente/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Excluir" }));
+    expect(await screen.findByText("Excluir 1 Pedido?")).toBeInTheDocument();
+  });
+});

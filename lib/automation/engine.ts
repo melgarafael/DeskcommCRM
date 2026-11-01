@@ -23,7 +23,8 @@ import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EventRow, HandlerResult } from "@/lib/event-log/dispatcher";
-import { evaluateConditions, type Conditions } from "@/lib/automation/conditions";
+import { evaluateConditions, usaFatosDoContato, type Conditions } from "@/lib/automation/conditions";
+import { carregarFatosDoContato } from "@/lib/automation/fatos-do-contato";
 import { hidratarCamposDoFunil } from "@/lib/automation/campos-do-render";
 import { getAction } from "@/lib/automation/actions";
 import { falhaDeExecucaoParaRecibo, resultadosParaRecibo } from "@/lib/automation/resultado-para-recibo";
@@ -519,6 +520,25 @@ export async function runAutomationForEvent(
   // esconderia automação legítima, e é o mesmo desfecho do evento de contato
   // pessoal indisponível.
   const contatoIdDoEvento = (await contatoDoEvento(admin, row)) ?? contatoDoContexto(context);
+
+  // ═══ OS FATOS DO CONTATO, UMA LEITURA POR AVALIAÇÃO (#3814) ═══
+  //
+  // As condições "contato tem follow-up vivo" e "contato tem horário marcado"
+  // não moram no evento: são estado de `followup_enrollments` e de
+  // `calendar_appointments`. A leitura é feita AQUI, uma vez, e entregue pronta
+  // ao avaliador — que continua síncrono. Dentro do laço de regras seria uma
+  // consulta por regra (o N+1 que a condição existe para evitar), e no laço de
+  // condições uma por condição.
+  //
+  // Só se pergunta quando alguma regra casada USA estas condições: uma
+  // instalação sem nenhuma regra assim não ganha duas idas ao banco por evento.
+  // Sem contato resolvível não há o que perguntar — e o avaliador trata a
+  // ausência como "não sei" (falso), nunca como "não tem".
+  const fatosDoContato =
+    contatoIdDoEvento && matched.some((rule) => usaFatosDoContato(rule.conditions ?? []))
+      ? await carregarFatosDoContato(admin, row.organization_id, contatoIdDoEvento)
+      : null;
+
   // A pergunta ao banco é feita UMA vez por regra, antes do filtro (o filtro é
   // síncrono e não pode esperar): quem já rodou para este contato está aqui.
   const jaRodouParaOCntato = new Map<string, boolean>();
@@ -540,7 +560,7 @@ export async function runAutomationForEvent(
     ) {
       return false;
     }
-    if (!evaluateConditions(rule.conditions ?? [], context)) return false;
+    if (!evaluateConditions(rule.conditions ?? [], context, fatosDoContato)) return false;
     if (regraRodaUmaVezPorContato(rule)) {
       if (!contatoIdDoEvento) {
         // FAIL-OPEN: sem contato resolvível a regra segue como hoje e o run

@@ -143,7 +143,12 @@ export type SearchInput = z.infer<typeof searchSchema>;
  * de pessoa) nem linha de dado. `origem_da_lista` é o "de onde veio esta lista" da LGPD.
  */
 export interface BuscaDaPlanilha {
-  origem: "planilha";
+  /**
+   * Marca a campanha como IMPORTADA (#3724) — não houve busca no Maps nem engine. O nome é
+   * `importacao` e não `planilha` porque a origem que a esteira lê é o fato de a lista ter
+   * vindo de fora: o formato (csv/xlsx) é detalhe do arquivo, não da campanha.
+   */
+  origem: "importacao";
   name: string;
   niche: string;
   arquivo_bytes: number;
@@ -169,6 +174,13 @@ export const importarPlanilhaCamposSchema = z
     origem_da_lista: z.string().trim().min(3).max(500),
     avaliar_site: CAIXA_DO_FORMULARIO,
     gerar_previa: CAIXA_DO_FORMULARIO,
+    // `previa` só CONFERE: devolve o que entra e o que fica de fora (com o motivo de cada
+    // linha) e não cria campanha nenhuma. Ausente = importar, que é o que o formulário
+    // envia por padrão.
+    previa: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((v) => v === "true"),
   })
   .strict()
   .transform((c) => ({ ...c, gerar_previa: c.avaliar_site && c.gerar_previa }));

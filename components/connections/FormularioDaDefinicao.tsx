@@ -102,13 +102,13 @@ export function FormularioDaDefinicao({
 
   return (
     <div
-      className="grid scroll-mt-4 gap-4 rounded-md border border-border p-3 lg:grid-cols-[1fr_20rem]"
+      className="grid scroll-mt-4 grid-cols-1 gap-4 rounded-md border border-border p-3 lg:grid-cols-[1fr_20rem]"
       data-formulario-do-modelo={editando ? "editar" : "criar"}
     >
-      <div className="flex flex-col gap-2">
+      <div className="flex min-w-0 flex-col gap-2">
         {editando && (
-          <p className="text-sm font-medium">
-            {t("Editando")} <span className="font-mono">{editando.name}</span>{" "}
+          <p className="break-words text-sm font-medium">
+            {t("Editando")} <span className="break-all font-mono">{editando.name}</span>{" "}
             <span className="text-xs font-normal text-muted-foreground">
               — {t("nome, idioma e categoria não mudam depois de criado.")}
             </span>
@@ -121,7 +121,7 @@ export function FormularioDaDefinicao({
             placeholder="nome_do_modelo"
             aria-label={t("Nome do modelo")}
             disabled={!!editando}
-            className="h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-60"
+            className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-60"
           />
           {/* LISTA, e não campo livre. O contrato descreve o formato e não
               enumera os valores; digitar é onde o erro nasce — `esp`, `ES`,
@@ -132,7 +132,7 @@ export function FormularioDaDefinicao({
             onChange={(e) => setIdioma(e.target.value)}
             aria-label={t("Idioma")}
             disabled={!!editando}
-            className="h-9 w-56 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-60"
+            className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-60 sm:w-56"
           >
             {IDIOMAS_DA_DEFINICAO.map((i) => (
               <option key={i.codigo} value={i.codigo}>
@@ -151,7 +151,7 @@ export function FormularioDaDefinicao({
           onChange={(e) => setCategoria(e.target.value)}
           aria-label={t("Categoria")}
           disabled={!!editando}
-          className="h-9 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-60"
+          className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-60"
         >
           <option value="UTILITY">
             {t("Utilidade — aviso de pedido, agendamento, cobrança")}
@@ -172,7 +172,7 @@ export function FormularioDaDefinicao({
             placeholder={t("Cabeçalho de texto (opcional)")}
             aria-label={t("Cabeçalho de texto")}
             disabled={!!midiaUrl}
-            className="h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
+            className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-50"
           />
           {/* SUBIR, e não colar URL. Colar exigia que o operador já tivesse a
               imagem hospedada em algum lugar público — que é justamente o que
@@ -180,7 +180,7 @@ export function FormularioDaDefinicao({
               um link assinado, que é o que a plataforma baixa na revisão. */}
           <label
             className={cn(
-              "flex h-9 flex-1 cursor-pointer items-center justify-center rounded-md border border-dashed border-input px-2 text-sm text-muted-foreground hover:bg-muted",
+              "flex h-9 min-w-0 flex-1 cursor-pointer items-center justify-center rounded-md border border-dashed border-input px-2 text-sm text-muted-foreground hover:bg-muted",
               cabecalho && "pointer-events-none opacity-50",
             )}
           >
@@ -229,7 +229,7 @@ export function FormularioDaDefinicao({
             onChange={(e) => setCorpo(e.target.value.slice(0, LIMITE_CORPO))}
             placeholder={t("Texto da mensagem. Use {{1}}, {{2}} para os valores que mudam.")}
             aria-label={t("Conteúdo")}
-            className="min-h-20 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+            className="min-h-20 w-full min-w-0 rounded-md border border-input bg-background px-2 py-1.5 text-sm"
           />
           {/* O contador existe porque passar do limite é RECUSA, e a recusa
               chega horas depois sem dizer que o problema era o tamanho. */}
@@ -244,7 +244,7 @@ export function FormularioDaDefinicao({
             onChange={(e) => setRodape(e.target.value.slice(0, LIMITE_RODAPE))}
             placeholder={t("Rodapé (opcional) — texto pequeno no fim da mensagem")}
             aria-label={t("Rodapé")}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+            className="h-9 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm"
           />
           <span className="self-end text-[10px] text-muted-foreground">
             {rodape.length}/{LIMITE_RODAPE}
@@ -266,7 +266,7 @@ export function FormularioDaDefinicao({
                   setBotoes(p);
                 }}
                 aria-label={`${t("Tipo do botão")} ${i + 1}`}
-                className="h-8 w-40 rounded-md border border-input bg-background px-2 text-sm"
+                className="h-8 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm sm:w-40"
               >
                 <option value="quick_reply">{t("Resposta rápida")}</option>
                 <option value="url">{t("Abrir link")}</option>
@@ -285,7 +285,7 @@ export function FormularioDaDefinicao({
                 }}
                 placeholder={t("Texto do botão")}
                 aria-label={`${t("Texto do botão")} ${i + 1}`}
-                className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm"
               />
               {b.tipo === "url" && (
                 <input
@@ -297,7 +297,7 @@ export function FormularioDaDefinicao({
                   }}
                   placeholder="https://…"
                   aria-label={`${t("URL do botão")} ${i + 1}`}
-                  className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                  className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm"
                 />
               )}
               {b.tipo === "phone_number" && (
@@ -310,7 +310,7 @@ export function FormularioDaDefinicao({
                   }}
                   placeholder={telefoneExemplo}
                   aria-label={`${t("Telefone do botão")} ${i + 1}`}
-                  className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                  className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm"
                 />
               )}
               <button
@@ -358,7 +358,7 @@ export function FormularioDaDefinicao({
                   }}
                   placeholder={t("ex.: María")}
                   aria-label={`${t("Exemplo do valor")} ${i + 1}`}
-                  className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                  className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-sm"
                 />
               </div>
             ))}
@@ -411,7 +411,7 @@ export function FormularioDaDefinicao({
 
       {/* A prévia fica AO LADO, não embaixo: embaixo ela sai da tela junto
           com o botão de enviar, e o operador manda sem ter olhado. */}
-      <div className="lg:sticky lg:top-4 lg:self-start">
+      <div className="min-w-0 lg:sticky lg:top-4 lg:self-start">
         <PreviaDaDefinicao
           cabecalho={cabecalho}
           midiaUrl={midiaUrl}

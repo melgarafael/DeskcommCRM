@@ -88,6 +88,23 @@ export interface ConexaoParaAviso {
   atendeClientes: boolean;
 }
 
+/**
+ * COMO o destino do aviso é escolhido (#3803).
+ *
+ *   `fixo`        o número da empresa, como sempre.
+ *   `responsavel` conversa → negócio aberto → carteira → e o número da empresa
+ *                 quando ninguém serve.
+ */
+export type ModoDoDestinoNaTela = "fixo" | "responsavel";
+
+/** Uma pessoa da equipe, com o WhatsApp que ela cadastrou — ou `null`. */
+export interface MembroDoAvisoNaTela {
+  user_id: string;
+  nome: string | null;
+  /** `null` = a pessoa não cadastrou. É ele que faz o elo cair para o próximo. */
+  whatsapp: string | null;
+}
+
 /** A configuração como ela está no banco, projetada para a tela. */
 export interface ConfiguracaoNaTela {
   /** `null` depois de a conexão ser excluída (`on delete set null` + trigger). */
@@ -96,6 +113,8 @@ export interface ConfiguracaoNaTela {
   rotulo: string | null;
   ligado: boolean;
   respostaWhatsappHabilitada?: boolean;
+  /** Ausente = linha anterior ao #3803, e é lida como `fixo`. */
+  destinoModo?: ModoDoDestinoNaTela;
 }
 
 /** O que o `pacing_ledger` responde sobre o número que ENVIA os avisos. */

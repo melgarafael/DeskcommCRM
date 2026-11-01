@@ -522,7 +522,7 @@ export function MessageBubble({
 
             {!hasMedia && mediaExpirada && (
               <div className={cn(message.body && "mb-1")}>
-                <MediaUnavailable kind={avisoDeExpiracao} />
+                <MediaUnavailable detalhe={avisoDeExpiracao} />
               </div>
             )}
 

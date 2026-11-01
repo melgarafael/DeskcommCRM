@@ -157,9 +157,25 @@ export interface EscopoDoDreno {
 
 export async function drainEventLog(
   admin: SupabaseClient,
-  opts: { limit?: number; escopo?: EscopoDoDreno } = {},
+  opts: {
+    limit?: number;
+    escopo?: EscopoDoDreno;
+    /**
+     * Se `false`, este tick NÃO procura evento preso em `processing`.
+     *
+     * Existe para o laço do worker (#3693): ele varre a cada 2 s quando há
+     * trabalho, e a varredura procura linhas de MINUTOS atrás
+     * (`PROCESSING_STALE_MS`). Repetir a consulta vinte vezes por minuto era
+     * tráfego ao PostgREST sem chance de achar nada novo. O default é `true` —
+     * cron, webhook escopado e qualquer chamador que não pense no assunto
+     * continuam recuperando presos a cada passada, e é o laço quem se
+     * encarrega de não deixar passar mais de um minuto.
+     */
+    varrerPresos?: boolean;
+  } = {},
 ): Promise<DrainSummary> {
   const limit = opts.limit ?? 50;
+  const varrerPresos = opts.varrerPresos ?? true;
   const summary: DrainSummary = {
     scanned: 0,
     done: 0,
@@ -206,13 +222,14 @@ export async function drainEventLog(
   // O dreno escopado não reclama: a varredura é de TODAS as organizações, e é
   // do laço do worker e do cron.
   const limiteDePresos = new Date(Date.now() - PROCESSING_STALE_MS).toISOString();
-  const { data: presos } = escopo
-    ? { data: [] }
-    : await admin
-        .from("event_log")
-        .select("id, organization_id, event_type, attempts")
-        .eq("status", "processing")
-        .lt("updated_at", limiteDePresos);
+  const { data: presos } =
+    escopo || !varrerPresos
+      ? { data: [] }
+      : await admin
+          .from("event_log")
+          .select("id, organization_id, event_type, attempts")
+          .eq("status", "processing")
+          .lt("updated_at", limiteDePresos);
 
   // ─── E A VOLTA CONTA COMO TENTATIVA ────────────────────────────────────────
   //
