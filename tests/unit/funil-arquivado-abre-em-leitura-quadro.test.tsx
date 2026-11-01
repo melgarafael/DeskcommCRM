@@ -136,7 +136,7 @@ describe("a página de um funil arquivado (#1298, item 1)", () => {
     expect(visto.somenteLeitura).toBe(true);
   });
 
-  it("enquanto o quadro carrega, o funil do servidor já fecha o Nova oportunidade e as abas", async () => {
+  it("enquanto o quadro carrega, o funil do servidor já fecha a Nova oportunidade e as abas", async () => {
     carregando.valor = true;
     await montarPagina();
 

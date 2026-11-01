@@ -4,7 +4,7 @@
  * Dois defeitos que só a prova pela tela pegou, porque o teste da régua
  * (`tests/unit/negocio-valor-recorrente.test.ts`) não monta formulário:
  *
- *  D1. depois de criar um negócio com mensalidade, reabrir "Nova oportunidade" SEM
+ *  D1. depois de criar um negócio com mensalidade, reabrir a "Nova oportunidade" SEM
  *      recarregar mostrava a mensalidade e a duração do negócio anterior — o
  *      `form.reset` pós-criação não conhecia os dois campos novos, e o próximo
  *      negócio nascia com a mensalidade do outro;
@@ -121,7 +121,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("D1 — Nova oportunidade reaberto sem recarregar nasce sem a mensalidade do anterior", () => {
+describe("D1 — a Nova oportunidade reaberta sem recarregar nasce sem a mensalidade da anterior", () => {
   it("criar com 500/mês por 12 meses e reabrir: os dois campos voltam vazios", async () => {
     function Pai() {
       const [aberto, setAberto] = useState(true);

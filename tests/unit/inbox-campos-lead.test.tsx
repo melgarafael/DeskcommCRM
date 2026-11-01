@@ -163,20 +163,20 @@ describe("painel do inbox — campos do lead", () => {
     expect((screen.getByLabelText("Empresa") as HTMLInputElement).value).toBe("");
   });
 
-  it("leitura que FALHA não vira 'Sem leads.'", async () => {
+  it("leitura que FALHA não vira 'Sem oportunidades.'", async () => {
     get.mockRejectedValue(new Error("500"));
     renderPainel();
 
     const secao = await screen.findByTestId("inbox-campos-lead");
     await waitFor(() => expect(secao.textContent).toMatch(/não consegui ler/i));
-    expect(secao.textContent).not.toMatch(/sem leads/i);
+    expect(secao.textContent).not.toMatch(/sem oportunidades/i);
   });
 });
 
 describe("painel do inbox — o botão diz o que faz (issue #908)", () => {
   // "Lead" era lido como "ver o lead deste contato", mas abre o diálogo que
-  // CRIA um novo; o lead existente se edita em "Leads recentes", logo abaixo.
-  it("o botão que abre o Nova oportunidade se chama 'Nova oportunidade' — e abre o Nova oportunidade", async () => {
+  // CRIA um novo; o card existente se edita em "Oportunidades recentes", logo abaixo.
+  it("o botão que cria se chama 'Nova oportunidade' — e abre o diálogo de criação", async () => {
     get.mockResolvedValue({ data: RESPOSTA });
     renderPainel();
 
