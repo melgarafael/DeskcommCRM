@@ -278,6 +278,23 @@ async function marcarRecebimentoDaFonte(
 }
 
 /**
+ * O CARIMBO DE ATRASO da linha de captação (fatia 1-bis).
+ *
+ * A porta não recusa mais entrega velha: a plataforma reentrega por horas, e
+ * recusar uma reentrega assinada perdia o lead de vez. O que sobra é o RASTRO —
+ * quantos segundos o sinal tinha quando foi processado —, e ele vai no `utm` da
+ * linha, que é o jsonb de origem da captação (não tem coluna própria, e criar uma
+ * custaria migration por um número que só serve de diagnóstico).
+ *
+ * `undefined` quando o aviso não traz o instante (`entry[].time`): sem instante
+ * não há idade, e gravar `0` diria "chegou na hora", que é diferente de "não sei".
+ */
+function utmDoRastro(atrasoSegundos: number | null | undefined): Record<string, string> | undefined {
+  if (atrasoSegundos === null || atrasoSegundos === undefined) return undefined;
+  return { recebido_com_atraso_segundos: String(atrasoSegundos) };
+}
+
+/**
  * Um lead do formulário → contato + card + histórico. Idempotente por
  * `leadgen_id`.
  *
@@ -291,8 +308,12 @@ export async function entradaDoLeadDoFormulario(
   fonte: FonteDoLeadAds,
   lead: LeadDoFormulario,
   requestId: string,
+  /** O rastro da entrega (idade do sinal), opcional: ver `utmDoRastro`. */
+  rastro: { atrasoSegundos?: number | null } = {},
 ): Promise<ResultadoDaEntrada> {
   const organizationId = fonte.organizationId;
+  /** O mesmo carimbo em TODAS as linhas desta entrada — criado, duplicado ou recusado. */
+  const utm = utmDoRastro(rastro.atrasoSegundos);
 
   // 1 · a reentrega do provedor morre aqui, sem escrever nada.
   const existente = await cardPeloLeadgenId(admin, organizationId, lead.leadgenId);
@@ -314,6 +335,7 @@ export async function entradaDoLeadDoFormulario(
       capturedEmail: lead.email,
       fields: lead.campos,
       requestId,
+      utm,
     });
     return {
       leadgenId: lead.leadgenId,
@@ -392,6 +414,7 @@ export async function entradaDoLeadDoFormulario(
           capturedEmail: lead.email,
           fields: lead.campos,
           requestId,
+          utm,
         });
         return {
           leadgenId: lead.leadgenId,
@@ -417,6 +440,7 @@ export async function entradaDoLeadDoFormulario(
       capturedEmail: lead.email,
       fields: lead.campos,
       requestId,
+      utm,
     });
     logger.error("[lead-ads] o card do formulário não nasceu", {
       organization_id: organizationId,
@@ -441,6 +465,7 @@ export async function entradaDoLeadDoFormulario(
     capturedEmail: lead.email,
     fields: lead.campos,
     requestId,
+    utm,
   });
 
   await marcarRecebimentoDaFonte(admin, fonte);

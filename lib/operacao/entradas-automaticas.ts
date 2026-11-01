@@ -56,6 +56,15 @@ export interface FonteVisivel {
   form_fields: WebhookFormField[];
   last_received_at: string | null;
   has_secret: boolean;
+  /** A PÁGINA que esta fonte representa (issue #3768) — a chave de roteamento. */
+  meta_page_id: string | null;
+  /** Opção da fatia 1-bis: buscar as respostas na Graph API. Nasce desligada. */
+  meta_lead_retrieval: boolean;
+  /**
+   * O token de página EXISTE? O valor nunca sai daqui — é o mesmo contrato de
+   * `has_secret`, pelo mesmo motivo: é credencial que lê leads de uma página.
+   */
+  has_meta_page_token: boolean;
   created_at: string;
   updated_at: string;
   last_change_actor_kind: string | null;
@@ -73,14 +82,18 @@ const COLUNAS =
   "id, organization_id, name, is_active, kind, path_token, default_pipeline_id, default_stage_id, " +
   "redirect_to, field_map, form_fields, last_received_at, secret_encrypted, created_at, updated_at, " +
   "last_change_actor_kind, last_change_at, authorize_ai_on_capture, update_existing_lead_on_capture, " +
-  "reuse_open_lead_on_capture";
+  "reuse_open_lead_on_capture, meta_page_id, meta_lead_retrieval, meta_page_token_encrypted";
 
 function semSegredo(linha: Record<string, unknown>): FonteVisivel {
-  const { secret_encrypted, ...resto } = linha;
+  const { secret_encrypted, meta_page_token_encrypted, ...resto } = linha;
   return {
-    ...(resto as unknown as Omit<FonteVisivel, "has_secret" | "form_fields">),
+    ...(resto as unknown as Omit<FonteVisivel, "has_secret" | "form_fields" | "has_meta_page_token">),
     form_fields: Array.isArray(resto.form_fields) ? (resto.form_fields as WebhookFormField[]) : [],
     has_secret: secret_encrypted !== null,
+    // Dois segredos, dois fatos: o da fonte (assinatura da captação pública) e o
+    // da página (leitura de leads na Graph API). Um booleano só faria a tela
+    // dizer "configurado" para a metade errada.
+    has_meta_page_token: meta_page_token_encrypted !== null && meta_page_token_encrypted !== undefined,
   };
 }
 

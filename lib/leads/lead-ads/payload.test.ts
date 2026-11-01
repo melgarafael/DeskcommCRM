@@ -57,14 +57,31 @@ describe("lerLeadsDoFormularioMeta", () => {
     });
   });
 
-  it("sem field_data: descarte NOMEADO — a fatia não chama a Graph API", () => {
+  it("sem field_data: o parser devolve o lead ANÔNIMO — quem decide é a porta, depois da busca", () => {
+    // Mudou na fatia 1-bis, e o motivo é de desenho: o aviso real da Meta NÃO traz
+    // as respostas, então "sem field_data" deixou de ser sentença e passou a ser o
+    // caso NORMAL. Quem decide o que fazer com ele é a rota, que tenta a busca
+    // autenticada na Graph API (opção da fonte) e só então ignora o lead, com o
+    // motivo certo (`sem_field_data` ou `sem_respostas_na_meta` — medido em
+    // `app/api/v1/webhooks/meta-lead-ads/[token]/route.test.ts`).
+    //
+    // O que este caso garante é o que continua sendo do parser: o lead sai com os
+    // IDS preservados e identidade nula, e não some no meio do caminho — sem os
+    // ids não haveria nem como buscar as respostas nem como registrar qual lead
+    // foi ignorado.
     const leitura = lerLeadsDoFormularioMeta(entregaDoLeadAds({ comRespostas: false }));
     expect(leitura.ok).toBe(true);
     if (!leitura.ok) return;
-    expect(leitura.leads).toEqual([]);
-    expect(leitura.descartados).toEqual([
-      { leadgenId: ESPERADO_DO_EXEMPLO.leadgenId, motivo: "sem_field_data" },
-    ]);
+    expect(leitura.descartados).toEqual([]);
+    expect(leitura.leads).toHaveLength(1);
+    const lead = leitura.leads[0]!;
+    expect(lead.leadgenId).toBe(ESPERADO_DO_EXEMPLO.leadgenId);
+    expect(lead.pageId).toBe(ESPERADO_DO_EXEMPLO.pageId);
+    expect(lead.respostas).toEqual([]);
+    expect(lead.nome).toBeNull();
+    expect(lead.telefone).toBeNull();
+    expect(lead.email).toBeNull();
+    expect(lead.campos).toEqual({});
   });
 
   it("sem leadgen_id: descarte nomeado, e não um lead sem identidade", () => {

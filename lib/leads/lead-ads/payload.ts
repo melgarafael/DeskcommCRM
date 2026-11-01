@@ -12,11 +12,12 @@
  *
  * `value.field_data[]` é a lista de RESPOSTAS do formulário, na forma
  * `{ name, values: [...] }` — o mesmo par que a API de recuperação de lead
- * devolve. Ela é a única fonte de nome, telefone e e-mail aqui: **esta fatia não
- * chama a Graph API**. Sem credencial real, a prova é por fixture, e a chamada
- * autenticada é a próxima fatia — por isso a ausência de `field_data` é um
- * desfecho NOMEADO (`sem_field_data`), e não um `undefined` que alguém depois
- * confunde com "a pessoa não preencheu nada".
+ * devolve. Quando ela vem EMBUTIDA na entrega, é daqui que saem nome, telefone e
+ * e-mail. Quando NÃO vem — que é o caso do aviso real: ele traz só os ids —, este
+ * módulo devolve o lead com `respostas` vazia e **não** decide o desfecho: quem
+ * busca as respostas na Graph API é `lib/leads/lead-ads/respostas-na-meta.ts`,
+ * chamado pela rota, e é ela que recompõe a identidade com `leadComRespostas`.
+ * A separação é a mesma de sempre: aqui é texto → dado, sem rede e sem banco.
  *
  * ─── Por que módulo puro, sem rede e sem banco ─────────────────────────────
  *
@@ -85,8 +86,16 @@ export interface LeadDoFormulario {
   campos: Record<string, string>;
 }
 
-/** Por que um `changes[]` de leadgen não virou lead. Nunca é silêncio. */
-export type MotivoDoDescarte = "sem_leadgen_id" | "sem_field_data";
+/**
+ * Por que um `changes[]` de leadgen não virou lead. Nunca é silêncio.
+ *
+ * `sem_field_data` NÃO mora mais aqui: a leitura do corpo deixou de decidir o que
+ * fazer quando as respostas não vêm — quem decide é a rota, DEPOIS de tentar a
+ * busca autenticada (`respostas-na-meta.ts`). O vocabulário completo do que a
+ * porta ignora (`sem_field_data`, `sem_respostas_na_meta`, `pagina_sem_dono`) é
+ * da rota, que é quem conhece a configuração da fonte.
+ */
+export type MotivoDoDescarte = "sem_leadgen_id";
 
 export interface LeadDescartado {
   leadgenId: string | null;
@@ -209,20 +218,20 @@ function nomeEmDuasPartes(respostas: RespostaDoFormulario[]): string | null {
  * não em `value` — duas entradas de uma mesma entrega podem chegar com horas
  * diferentes, e é o sinal que diz se esta entrega ainda vale.
  */
-function leadDoValor(
-  valor: ValorDoLeadgen,
-  entryTime: number | null,
-  pageIdDoEntry: string | null,
-): LeadDoFormulario | LeadDescartado {
-  const leadgenId = texto(valor.leadgen_id);
-  if (leadgenId === null) return { leadgenId: null, motivo: "sem_leadgen_id" };
-
-  // A resposta que não veio: a rota NÃO busca na Graph API nesta fatia, e um
-  // lead criado só com o id seria um card em branco com nome de telefone.
-  const brutos = Array.isArray(valor.field_data) ? valor.field_data : [];
+/**
+ * As respostas de um `field_data` na forma normalizada `{ campo, valor }`.
+ *
+ * Exportada porque DOIS caminhos produzem esta lista: o aviso que já traz as
+ * respostas embutidas e a resposta da busca autenticada na Graph API. Duas
+ * leituras de `{ name, values }` divergiriam na primeira mudança de forma — e o
+ * segundo caminho é o único que existe para o lead real, então a divergência
+ * apareceria justamente nele.
+ */
+export function respostasDoFieldData(bruto: unknown): RespostaDoFormulario[] {
+  const lista = Array.isArray(bruto) ? bruto : [];
   const respostas: RespostaDoFormulario[] = [];
-  for (const bruto of brutos) {
-    const campo = campoDoFormulario(bruto);
+  for (const item of lista) {
+    const campo = campoDoFormulario(item);
     if (!campo) continue;
     const chave = chaveCanonica(campo.name as string);
     if (chave === "") continue;
@@ -230,8 +239,26 @@ function leadDoValor(
     if (valores.length === 0) continue;
     respostas.push({ campo: chave, valor: valores.join(", ") });
   }
-  if (respostas.length === 0) return { leadgenId, motivo: "sem_field_data" };
+  return respostas;
+}
 
+/**
+ * O lead COM a identidade tirada das respostas.
+ *
+ * Existe separado porque o mesmo lead chega em dois tempos: os ids (leadgen, page,
+ * form, ad, campanha, instante) vêm no aviso, e as respostas podem vir no aviso ou
+ * da busca na Graph API. Esta função é o passo que transforma respostas em
+ * `nome`/`telefone`/`email` e no que sobra em `campos` — uma régua só, aplicada
+ * nos dois tempos, sem caminho paralelo que divirja.
+ *
+ * Com `respostas` vazia devolve o lead do mesmo jeito, com identidade nula: quem
+ * decide que um lead sem respostas não entra é a rota, e ela precisa da linha
+ * anônima para dizer QUAL lead foi ignorado e por quê.
+ */
+export function leadComRespostas(
+  base: LeadDoFormulario,
+  respostas: RespostaDoFormulario[],
+): LeadDoFormulario {
   const doNome = primeiroCampo(respostas, CAMPOS_DE_NOME);
   const doTelefone = primeiroCampo(respostas, CAMPOS_DE_TELEFONE);
   const doEmail = primeiroCampo(respostas, CAMPOS_DE_EMAIL);
@@ -253,6 +280,34 @@ function leadDoValor(
   const email = doEmail?.valor.slice(0, 320) ?? null;
 
   return {
+    ...base,
+    respostas,
+    campos,
+    nome: nome !== null && nome.trim() !== "" ? nome : null,
+    // Sem número reconhecível o contato nasce sem telefone — o que NÃO pode
+    // acontecer é o número cru entrar na coluna, que tem CHECK de E.164 e
+    // derrubaria o INSERT inteiro.
+    telefone: normalizePhoneBR(doTelefone?.valor),
+    email: email !== null && email.trim() !== "" ? email : null,
+  };
+}
+
+/**
+ * Um `value` de leadgen vira lead — ou vira um DESCARTE nomeado.
+ *
+ * `entryTime` viaja junto porque a idade da entrega (`assinatura.ts`) é medida
+ * pelo instante do SINAL, que mora no `entry`, e não em `value` — duas entradas de
+ * uma mesma entrega podem chegar com horas diferentes.
+ */
+function leadDoValor(
+  valor: ValorDoLeadgen,
+  entryTime: number | null,
+  pageIdDoEntry: string | null,
+): LeadDoFormulario | LeadDescartado {
+  const leadgenId = texto(valor.leadgen_id);
+  if (leadgenId === null) return { leadgenId: null, motivo: "sem_leadgen_id" };
+
+  const base: LeadDoFormulario = {
     leadgenId,
     pageId: texto(valor.page_id) ?? pageIdDoEntry,
     formId: texto(valor.form_id),
@@ -260,15 +315,13 @@ function leadDoValor(
     campaignId: texto(valor.campaign_id),
     criadoEm: segundos(valor.created_time),
     entradaEm: entryTime,
-    nome: nome !== null && nome.trim() !== "" ? nome : null,
-    // Sem número reconhecível o contato nasce sem telefone — o que NÃO pode
-    // acontecer é o número cru entrar na coluna, que tem CHECK de E.164 e
-    // derrubaria o INSERT inteiro.
-    telefone: normalizePhoneBR(doTelefone?.valor),
-    email: email !== null && email.trim() !== "" ? email : null,
-    respostas,
-    campos,
+    nome: null,
+    telefone: null,
+    email: null,
+    respostas: [],
+    campos: {},
   };
+  return leadComRespostas(base, respostasDoFieldData(valor.field_data));
 }
 
 /**

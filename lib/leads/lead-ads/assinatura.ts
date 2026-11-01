@@ -19,28 +19,41 @@
  * que um atacante também produz, e o desfecho seria um 200 processando lead de
  * terceiro. Por isso o teste de segredo ausente vem primeiro e é explícito.
  *
- * ═══ A JANELA: `entry[].time`, E NÃO O CABEÇALHO ═══
+ * ═══ A IDADE DO SINAL MARCA, E NÃO BARRA (mudou neste commit) ═══════════════
  *
  * A assinatura da Meta (`x-hub-signature-256`) cobre o CORPO e não carrega
- * instante: `sha256=<hex>` do corpo cru, e só. Para uma entrega antiga capturada
- * na rede, a assinatura continua válida para sempre — e a idempotência por
- * `leadgen_id` só protege o lead que JÁ entrou. O instante que a Meta manda é o
+ * instante: `sha256=<hex>` do corpo cru, e só. O instante que a Meta manda é o
  * `entry[].time` (epoch em segundos), que está DENTRO do corpo assinado: depois
  * de a assinatura conferir, ele é tão confiável quanto o resto do payload, e é
- * ele que a janela mede.
+ * ele que diz a IDADE da entrega.
  *
- * Entrega sem `entry[].time` é recusada: sem instante não há como distinguir
- * reentrega legítima de replay, e "não dá para saber" tem de cair do lado de não
- * processar. O custo dessa escolha está declarado no corpo do PR: se a Meta
- * deixar de mandar `time`, a porta para de aceitar — e para, com 401 e log, que
- * é visível; aceitar sem janela pararia em silêncio.
+ * A versão anterior recusava com 401 tudo o que passasse de cinco minutos, e o
+ * custo disso está medido na documentação da própria plataforma: ela REENTREGA o
+ * que não recebe 2xx, em backoff, por HORAS. Uma instalação fora do ar por dez
+ * minutos acordava com uma fila de reentregas assinadas, recusava todas com 401 e
+ * perdia o lead DE VEZ — a reentrega seguinte levava outro 401, e o lead nunca
+ * mais voltava. A repetição que a janela tentava conter já é contida onde
+ * importa: `crm_leads.external_id` + o índice único
+ * `uniq_crm_leads_org_source_external` fazem de `leadgen_id` uma chave de
+ * idempotência (ver `lib/leads/lead-ads/entrada.ts`), então "o mesmo lead duas
+ * vezes" não é um risco que dependa de tempo.
  *
- * ─── Janela nos DOIS sentidos ───────────────────────────────────────────────
+ * O que a janela protegeva de verdade — um corpo capturado na rede e reenviado
+ * dias depois — não é resolvido por ela: a assinatura de uma entrega antiga
+ * continua válida para sempre. Contra isso, o que sobra e é honesto é o RASTRO:
+ * a entrega velha entra marcada, com a idade em segundos na linha de captação e
+ * no log, e quem opera vê que ela chegou atrasada em vez de o lead sumir em
+ * silêncio.
  *
- * `Math.abs` de propósito: entrega do futuro também é anômala (relógio errado de
- * quem forja, ou corpo remontado), e aceitar só o passado deixaria a janela ser
- * contornada por um `time` adiante. Tolerância simétrica é a mesma de qualquer
- * verificação de webhook assinado.
+ * Por isso o 401 fica reservado ao que não tem conserto: assinatura ausente,
+ * inválida, ou segredo que não decifra. Idade não é recusa.
+ *
+ * ─── A idade nos DOIS sentidos ─────────────────────────────────────────────
+ *
+ * `Math.abs` de propósito: entrega datada no FUTURO também é anômala (relógio de
+ * quem gerou o corpo adiantado, ou corpo remontado), e ela é marcada como
+ * atrasada do mesmo jeito — o `segundos` sai com o sinal, para o log distinguir
+ * "chegou tarde" de "veio do futuro".
  *
  * Módulo PURO: recebe texto, cabeçalho, segredo e o relógio. Sem rede, sem banco,
  * e sem ler `process.env` — é o que deixa a recusa ser provada sem credencial.
@@ -56,13 +69,16 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 export const CABECALHO_DA_ASSINATURA_DA_META = "x-hub-signature-256";
 
 /**
- * Cinco minutos. Curto o bastante para que um corpo capturado não sirva depois,
- * e largo o bastante para o retry do provedor (e o atraso normal de fila) não
- * perder lead legítimo. O valor não vem de configuração de propósito: uma janela
- * configurável por fonte seria uma janela que alguém desliga para "resolver" um
- * 401, e o desligamento não deixaria rastro.
+ * Cinco minutos é o limiar do CARIMBO, não da recusa: até aqui a entrega é
+ * "normal" (o retry imediato da plataforma, o atraso de fila); acima disso ela
+ * entra do mesmo jeito e a linha de captação diz quanto tempo levou.
+ *
+ * O valor não vem de configuração de propósito: um limiar configurável por fonte
+ * seria um número que alguém ajusta para o log parar de reclamar — e o ajuste não
+ * deixaria rastro. E ele não pode ser confundido com permissão de entrada: quem
+ * decide se o lead entra é a assinatura e a idempotência.
  */
-export const JANELA_DA_ENTREGA_SEGUNDOS = 300;
+export const ATRASO_QUE_CONTA_SEGUNDOS = 300;
 
 export type RecusaDaAssinatura = "segredo_ausente" | "assinatura_ausente" | "assinatura_invalida";
 
@@ -102,22 +118,37 @@ export function assinaturaDaMetaConfere(
   return timingSafeEqual(a, b) ? null : "assinatura_invalida";
 }
 
-export type RecusaDaJanela = "sem_instante" | "fora_de_tempo";
+export interface IdadeDoSinal {
+  /**
+   * Quantos segundos o sinal tem, CONTRA o relógio desta instalação — positivo =
+   * chegou atrasado, negativo = datado no futuro. `null` quando o corpo não traz
+   * `entry[].time`: sem instante não há idade para medir, e isso NÃO é motivo de
+   * recusa (a assinatura é que diz se o corpo é de quem diz ser).
+   */
+  segundos: number | null;
+  /** Passou do limiar (nos dois sentidos). Marca o rastro, não o desfecho. */
+  atrasada: boolean;
+}
 
 /**
- * O instante do sinal está dentro da janela? `null` = sim; senão, o motivo.
+ * A idade da entrega — carimbo, não porteiro.
  *
- * `agora` é parâmetro, e não `Date.now()` escondido, porque um teste de janela
- * que dependesse do relógio da máquina mediria o relógio, não a regra.
+ * `agora` é parâmetro, e não `Date.now()` escondido, porque um teste de idade que
+ * dependesse do relógio da máquina mediria o relógio, não a regra.
+ *
+ * Nunca recusa: devolver um booleano de recusa aqui convidaria a rota a voltar a
+ * tratar idade como entrada proibida, que é exatamente o defeito que esta versão
+ * conserta (ver o cabeçalho).
  */
-export function entregaDentroDaJanela(
+export function idadeDoSinal(
   instanteDoSinal: number | null,
   agora: Date,
-  janelaSegundos: number = JANELA_DA_ENTREGA_SEGUNDOS,
-): RecusaDaJanela | null {
+  limiarSegundos: number = ATRASO_QUE_CONTA_SEGUNDOS,
+): IdadeDoSinal {
   if (instanteDoSinal === null || !Number.isFinite(instanteDoSinal) || instanteDoSinal <= 0) {
-    return "sem_instante";
+    return { segundos: null, atrasada: false };
   }
-  const diferenca = Math.abs(Math.trunc(agora.getTime() / 1000) - Math.trunc(instanteDoSinal));
-  return diferenca > janelaSegundos ? "fora_de_tempo" : null;
+  const segundos =
+    Math.trunc(agora.getTime() / 1000) - Math.trunc(instanteDoSinal);
+  return { segundos, atrasada: Math.abs(segundos) > limiarSegundos };
 }

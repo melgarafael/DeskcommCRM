@@ -71009,4 +71009,33 @@ alter table public.crm_pipelines
     'stage', 'Etapa', 'stage_plural', 'Etapas'
   );
 
+-- ---- a fonte do Lead Ads guarda a PÁGINA (migration 9081) ----
+-- Espelho idempotente da migration 9081. O porquê inteiro está no cabeçalho dela;
+-- em uma linha: o aviso de formulário preenchido chega sem as respostas e o App
+-- tem UMA URL de destino para o objeto page, então a página é o que diz de quem
+-- é o lead, e o token que busca as respostas é credencial da PÁGINA (cifrada pelo
+-- mesmo fn_encrypt_oauth do secret da fonte, write-only na leitura). A busca
+-- nasce DESLIGADA (doc 235).
+alter table public.webhook_sources
+  add column if not exists meta_page_id text;
+
+alter table public.webhook_sources
+  add column if not exists meta_page_token_encrypted bytea;
+
+alter table public.webhook_sources
+  add column if not exists meta_lead_retrieval boolean not null default false;
+
+comment on column public.webhook_sources.meta_page_id is
+  'A página da Meta que esta fonte representa (issue #3768). É a chave de ROTEAMENTO: o aviso do formulário traz entry[].id e o App tem uma URL de destino só para o objeto page, então a mesma URL recebe leads de todas as páginas — quem é o dono do lead é esta coluna, não o path_token da URL. NULL = a fonte não reivindica página nenhuma e recebe o que chegar na própria URL (configuração de uma página só).';
+
+comment on column public.webhook_sources.meta_page_token_encrypted is
+  'Token de PÁGINA com permissão de leitura de leads, cifrado por fn_encrypt_oauth (o mesmo mecanismo de secret_encrypted e de platform_meta_app). Write-only: nenhuma leitura da API o devolve — a tela recebe has_meta_page_token. Sem a chave mestra de cifra o save RECUSA; nunca é gravado em claro.';
+
+comment on column public.webhook_sources.meta_lead_retrieval is
+  'Opção da fonte (issue #3768), DESLIGADA por padrão: quando o aviso chega sem as respostas (que é o que a Meta manda), a rota busca as respostas na Graph API com o token da página antes de desistir do lead. Critério da doc 235: no núcleo, desligado por padrão, quem administra liga. Desligada, o aviso sem respostas continua sendo registrado como ignorado, com motivo nomeado.';
+
+create unique index if not exists uniq_webhook_sources_meta_page
+  on public.webhook_sources (meta_page_id)
+  where meta_page_id is not null;
+
 notify pgrst, 'reload schema';

@@ -1,419 +1,626 @@
 /**
- * A PORTA DO LEAD ADS — os cinco casos que a fatia 1 precisa provar, mais a
- * janela.
+ * A PORTA DO LEAD ADS — issue #3768, fatias 1 e 1-bis.
  *
- * ## O que este arquivo mede, e por que cada caso existe
+ * ## O que este arquivo mede, e por quê
  *
- *   1. **payload bom**: entra no funil, na etapa CONFIGURADA na fonte, com o
- *      contato criado e a origem gravada;
- *   2. **assinatura ruim**: recusa em falha fechada — 401 e NENHUMA escrita;
- *   3. **payload sem `field_data`**: não processa nada, e diz por quê;
- *   4. **entrega repetida**: o mesmo `leadgen_id` responde 200 com marcador de
- *      duplicado e não cria segundo contato nem segundo card;
- *   5. **lead de telefone já existente**: o contato é reaproveitado pelo número
- *      normalizado, não duplicado;
- *   6. **fora de tempo**: entrega com `entry[].time` velho não processa nada.
+ * A rota é o único ponto da captação que é PÚBLICO: qualquer um na internet pode
+ * postar nela. Por isso o centro da prova não é "o lead entrou", é **o que acontece
+ * quando a entrega não é de quem diz ser** — e o que acontece quando ela é, mas o
+ * aviso chegou sem as respostas, ou de uma página que ninguém reivindica.
  *
- * ## O dublê
+ * As decisões da fatia 1-bis, com o caso que as prova:
  *
- * `bancoFalso` (o mesmo das rotas vizinhas) grava cada cadeia do PostgREST, e o
- * `responder` aqui FILTRA de verdade sobre um estado em memória (contatos e
- * cards). Filtro de mentira que devolve a linha para qualquer consulta esconde
- * justamente o defeito que o caso 4 mede: a segunda entrega achando o card da
- * primeira. `createLeadHandler` é dublado porque a régua dele já tem as próprias
- * suítes; o que se afirma aqui é O QUE a rota manda para ele.
+ *   - o `GET` de verificação responde o `hub.challenge` e 403 quando o
+ *     `verify_token` não confere → "GET de verificação";
+ *   - o segredo da assinatura é o do APP (`appDaMeta()`), não uma cópia por fonte,
+ *     e segredo ausente RECUSA → "assinatura";
+ *   - o dono do lead é a PÁGINA, e não o token do path → "roteamento por página";
+ *   - aviso sem respostas: busca autenticada quando a fonte ligou a opção, e
+ *     IGNORADO com motivo nomeado quando não ligou (ou a busca falhou) → "as
+ *     respostas que não vieram no aviso";
+ *   - entrega velha ENTRA, com a idade no rastro → "entrega atrasada".
+ *
+ * O banco é o dublê de `tests/helpers/banco-falso-da-cobranca.ts`: ele grava cada
+ * cadeia (tabela, método, argumentos), então os casos afirmam O QUE a rota mandou,
+ * e não só o status. A Graph API é dublada no módulo (`buscarRespostasDoLead`):
+ * aqui não há rede, e a peça que fala com a plataforma tem prova própria em
+ * `lib/leads/lead-ads/respostas-na-meta.test.ts`.
  */
 import { createHmac } from "node:crypto";
 
-import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { bancoFalso, operacao, type BancoFalso, type Cadeia } from "@/tests/helpers/banco-falso-da-cobranca";
 import {
-  argumentos,
-  bancoFalso,
-  operacao,
-  valorDoFiltro,
-  type BancoFalso,
-  type Cadeia,
-  type Resposta,
-} from "@/tests/helpers/banco-falso-da-cobranca";
-import { ESPERADO_DO_EXEMPLO, entregaDoLeadAds } from "@/lib/leads/lead-ads/payload-de-exemplo";
+  ESPERADO_DO_EXEMPLO,
+  entregaDoLeadAds,
+} from "@/lib/leads/lead-ads/payload-de-exemplo";
+
+const ORG = "11111111-1111-4111-8111-111111111111";
+const ORG_DA_PAGINA = "22222222-2222-4222-8222-222222222222";
+const SEGREDO_DO_APP = "segredo-do-app-da-meta-de-teste";
+const PATH_TOKEN = "token-do-caminho";
 
 const h = vi.hoisted(() => ({
-  criarLead: vi.fn(async (..._args: unknown[]) => ({ id: "lead-mock" })),
-  registrar: vi.fn(async (..._args: unknown[]) => undefined),
-  decifrar: vi.fn(async (..._args: unknown[]) => "segredo-do-app-da-meta" as string | null),
-  banco: undefined as unknown as BancoFalso,
+  criarLead: vi.fn(),
+  registrar: vi.fn(),
+  decifrar: vi.fn(),
+  app: vi.fn(),
+  busca: vi.fn(),
+  banco: undefined as unknown,
 }));
 
-vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => h.banco.cliente }));
-vi.mock("@/lib/webhooks/secrets", () => ({ decryptWebhookSecret: h.decifrar }));
-vi.mock("@/lib/webhooks/captacao", async (original) => ({
-  ...(await original<Record<string, unknown>>()),
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => h.banco,
+}));
+vi.mock("@/lib/webhooks/secrets", () => ({
+  decryptWebhookSecret: h.decifrar,
+  encryptWebhookSecret: vi.fn(),
+}));
+vi.mock("@/lib/webhooks/captacao", () => ({
   registrarCaptacao: h.registrar,
+  registrarCaptacaoRecusada: h.registrar,
 }));
-vi.mock("@/app/api/v1/leads/_handler", () => ({ createLeadHandler: h.criarLead }));
+vi.mock("@/app/api/v1/leads/_handler", () => ({
+  createLeadHandler: h.criarLead,
+}));
+// O App da Meta tem suíte própria; aqui ele é o PISO do segredo, e o que este
+// arquivo mede é o que a rota faz com ele (inclusive quando ele não existe).
+vi.mock("@/lib/channels/meta/app", () => ({
+  appDaMeta: h.app,
+}));
+vi.mock("@/lib/leads/lead-ads/respostas-na-meta", async (importarOriginal) => {
+  const original = (await importarOriginal()) as Record<string, unknown>;
+  return { ...original, buscarRespostasDoLead: h.busca };
+});
 
-import { POST } from "./route";
-
-const ORG = "org-1";
-const TOKEN = "token-da-fonte-da-meta";
-const SEGREDO = "segredo-do-app-da-meta";
-
-/** A fonte de captação que o `path_token` resolve — funil e etapa CONFIGURADOS. */
-const FONTE = {
+/** A fonte do ENDEREÇO: não reivindica página; a busca nasce desligada. */
+const FONTE_DA_URL = {
   id: "fonte-meta-1",
   name: "Formulário de captação",
   organization_id: ORG,
-  secret_encrypted: "\\x00ff00",
   default_pipeline_id: "pipe-1",
   default_stage_id: "stage-configurada",
   is_active: true,
+  meta_page_id: null as string | null,
+  meta_lead_retrieval: false,
+  meta_page_token_encrypted: null as string | null,
 };
 
-interface ContatoGravado {
-  id: string;
-  name: string | null;
-  phone_number: string | null;
-  email: string | null;
+/** A fonte que REIVINDICA a página do aviso — de outra organização, de propósito. */
+const FONTE_DA_PAGINA = {
+  id: "fonte-meta-2",
+  name: "Formulário da página B",
+  organization_id: ORG_DA_PAGINA,
+  default_pipeline_id: "pipe-2",
+  default_stage_id: "stage-b",
+  is_active: true,
+  meta_page_id: ESPERADO_DO_EXEMPLO.pageId as string | null,
+  meta_lead_retrieval: true,
+  meta_page_token_encrypted: "\\x00ff11" as string | null,
+};
+
+interface Estado {
+  /** A fonte resolvida pelo `path_token` do path. */
+  fonteDaUrl: typeof FONTE_DA_URL;
+  /** As fontes que reivindicam páginas (resultado do filtro `in`). */
+  donas: Array<typeof FONTE_DA_URL>;
+  /** Cards que já existem no funil, por telefone normalizado. */
+  cards: Array<{
+    id: string;
+    organization_id: string;
+    contact_id: string;
+    stage_id: string;
+    phone_number: string;
+    external_id: string;
+  }>;
+  /** Contatos que já existem, por telefone normalizado. */
+  contatos: Array<{ id: string; organization_id: string; phone_number: string }>;
 }
-interface CardGravado {
-  id: string;
-  contact_id: string | null;
-  source: string;
-  external_id: string;
+
+function estadoNovo(): Estado {
+  return { fonteDaUrl: { ...FONTE_DA_URL }, donas: [], cards: [], contatos: [] };
 }
+
+let estado: Estado = estadoNovo();
 
 /**
- * O estado que o dublê conhece. `contatos`/`cards` são escritos pelo dublê de
- * `createLeadHandler` e pelo INSERT de contato, e é sobre eles que as leituras
- * filtram — é o que faz o caso 4 medir a segunda entrega de verdade.
+ * O banco desta rota: `webhook_sources` responde por token do path e por página,
+ * e as leituras de card/contato casam pelo telefone normalizado do exemplo.
  */
-const estado = {
-  contatos: [] as ContatoGravado[],
-  cards: [] as CardGravado[],
-  proximoContato: 0,
-  falharInsertDeContato: false as false | { code: string; message: string },
-};
-
-function responder(cadeia: Cadeia): Resposta {
+function responder(cadeia: Cadeia) {
   if (cadeia.tabela === "webhook_sources") {
     if (operacao(cadeia) === "update") return {};
-    return { data: FONTE };
+    const paginas = cadeia.passos.find((p) => p.metodo === "in" && p.args[0] === "meta_page_id")?.args[1];
+    if (Array.isArray(paginas)) {
+      return { data: estado.donas.filter((f) => f.meta_page_id && paginas.includes(f.meta_page_id)) };
+    }
+    const tokenDoPath = cadeia.passos.find((p) => p.metodo === "eq" && p.args[0] === "path_token")?.args[1];
+    if (typeof tokenDoPath === "string") {
+      return { data: tokenDoPath === PATH_TOKEN ? estado.fonteDaUrl : null };
+    }
+    return { data: estado.fonteDaUrl };
   }
-
   if (cadeia.tabela === "crm_leads") {
-    const externalId = valorDoFiltro(cadeia, "eq", "external_id");
-    const source = valorDoFiltro(cadeia, "eq", "source");
-    const org = valorDoFiltro(cadeia, "eq", "organization_id");
-    const achado =
-      estado.cards.find(
-        (c) => c.external_id === externalId && c.source === source && org === ORG,
-      ) ?? null;
-    return { data: achado };
+    // A idempotência da rota é por `external_id` (o `leadgen_id`), e não por
+    // telefone: é o índice único `uniq_crm_leads_org_source_external` que
+    // garante, e a leitura tem de casar com ele para o teste medir a mesma coisa.
+    const peloLeadgen = cadeia.passos.find((p) => p.args[0] === "external_id")?.args[1];
+    if (typeof peloLeadgen === "string") {
+      const achado = estado.cards.find((c) => c.external_id === peloLeadgen);
+      return { data: achado ?? null };
+    }
+    const telefone = cadeia.passos.find((p) => p.args[0] === "phone_number")?.args[1];
+    const encontrado = estado.cards.find((c) => c.phone_number === telefone);
+    return { data: encontrado ?? null };
   }
-
   if (cadeia.tabela === "contacts") {
-    if (operacao(cadeia) === "insert") {
-      if (estado.falharInsertDeContato) {
-        return { data: null, error: estado.falharInsertDeContato };
-      }
-      const payload = argumentos(cadeia, "insert")?.[0] as Record<string, unknown>;
-      const id = `contato-${estado.proximoContato++}`;
-      estado.contatos.push({
-        id,
-        name: (payload.name as string | null) ?? null,
-        phone_number: (payload.phone_number as string | null) ?? null,
-        email: (payload.email as string | null) ?? null,
-      });
-      return { data: { id } };
-    }
-    const variantes = argumentos(cadeia, "in")?.[1] as string[] | undefined;
-    if (variantes) {
-      return {
-        data: estado.contatos.filter(
-          (c) => c.phone_number !== null && variantes.includes(c.phone_number),
-        ),
-      };
-    }
-    const email = valorDoFiltro(cadeia, "eq", "email_normalized");
-    if (typeof email === "string") {
-      return {
-        data: estado.contatos.find((c) => (c.email ?? "").toLowerCase() === email) ?? null,
-      };
-    }
-    const id = valorDoFiltro(cadeia, "eq", "id");
-    return { data: id ? (estado.contatos.find((c) => c.id === id) ?? null) : null };
+    const telefone = cadeia.passos.find((p) => p.args[0] === "phone_number")?.args[1];
+    const encontrado = estado.contatos.find((c) => c.phone_number === telefone);
+    return { data: encontrado ?? null };
   }
-
-  // `contact_phones`: nenhum número extra nesta organização.
-  if (cadeia.tabela === "contact_phones") return { data: null };
   return {};
 }
 
-/** `sha256=<hex>` do corpo cru — exatamente o que a Meta manda. */
-function assinar(corpo: string, segredo: string = SEGREDO): string {
+function banco(): BancoFalso {
+  const falso = bancoFalso(responder);
+  h.banco = falso.cliente;
+  return falso;
+}
+
+function corpoAssinado(corpo: string, segredo = SEGREDO_DO_APP): string {
   return `sha256=${createHmac("sha256", segredo).update(corpo, "utf8").digest("hex")}`;
+}
+
+function requisicao(corpo: string, opcoes: { assinatura?: string | null; url?: string } = {}) {
+  const assinatura = opcoes.assinatura === undefined ? corpoAssinado(corpo) : opcoes.assinatura;
+  const headers = new Headers({ "content-type": "application/json" });
+  if (assinatura !== null) headers.set("x-hub-signature-256", assinatura);
+  return {
+    url: opcoes.url ?? `http://localhost:3000/api/v1/webhooks/meta-lead-ads/${PATH_TOKEN}`,
+    nextUrl: new URL(opcoes.url ?? `http://localhost:3000/api/v1/webhooks/meta-lead-ads/${PATH_TOKEN}`),
+    headers,
+    text: async () => corpo,
+  };
+}
+
+async function carregarRota() {
+  return import("./route");
 }
 
 async function entregar(
   corpo: string,
   opcoes: { assinatura?: string | null; token?: string } = {},
 ): Promise<Response> {
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  const assinatura = opcoes.assinatura === undefined ? assinar(corpo) : opcoes.assinatura;
-  if (assinatura !== null) headers["x-hub-signature-256"] = assinatura;
-  const req = new NextRequest(
-    `http://localhost/api/v1/webhooks/meta-lead-ads/${opcoes.token ?? TOKEN}`,
-    { method: "POST", body: corpo, headers },
-  );
-  return (await POST(req, {
-    params: Promise.resolve({ token: opcoes.token ?? TOKEN }),
-  })) as Response;
+  const rota = await carregarRota();
+  const req = requisicao(corpo, { assinatura: opcoes.assinatura });
+  const resposta = await rota.POST(req as never, { params: Promise.resolve({ token: opcoes.token ?? PATH_TOKEN }) });
+  return resposta as unknown as Response;
 }
-
-/** O corpo de sucesso, já desembrulhado do `{ data }` canônico. */
-async function corpo(res: Response): Promise<Record<string, unknown>> {
-  return (await res.json()) as Record<string, unknown>;
-}
-
-const insertsDeContato = () =>
-  h.banco.cadeias.filter((c) => c.tabela === "contacts" && operacao(c) === "insert");
-
-const escritasEmCrmLeads = () =>
-  h.banco.cadeias.filter(
-    (c) => c.tabela === "crm_leads" && (operacao(c) === "insert" || operacao(c) === "upsert"),
-  );
 
 beforeEach(() => {
-  estado.contatos = [];
-  estado.cards = [];
-  estado.proximoContato = 0;
-  estado.falharInsertDeContato = false;
-  h.registrar.mockClear();
-  h.decifrar.mockClear();
-  h.decifrar.mockImplementation(async () => SEGREDO);
+  estado = estadoNovo();
   h.criarLead.mockReset();
-  // O dublê do escritor canônico GRAVA o card no estado: sem isso a segunda
-  // entrega não teria o que achar, e o caso 4 mediria um banco vazio.
-  h.criarLead.mockImplementation(async (...args: unknown[]) => {
-    const entrada = args[2] as Record<string, unknown>;
-    const card: CardGravado = {
-      id: `lead-${estado.cards.length + 1}`,
-      contact_id: (entrada.contact_id as string | undefined) ?? null,
-      source: entrada.source as string,
-      external_id: entrada.external_id as string,
-    };
-    estado.cards.push(card);
-    return { id: card.id };
+  h.registrar.mockReset();
+  h.decifrar.mockReset();
+  h.app.mockReset();
+  h.busca.mockReset();
+
+  h.app.mockResolvedValue({ appSecret: SEGREDO_DO_APP, verifyToken: "verify-token-do-app" });
+  h.decifrar.mockResolvedValue("token-de-pagina-em-claro");
+  h.busca.mockResolvedValue({
+    ok: true,
+    respostas: [
+      { campo: "full_name", valor: "Maria Aparecida Souza" },
+      { campo: "phone_number", valor: "+55 11 98888-7777" },
+      { campo: "email", valor: "maria@exemplo.com.br" },
+      { campo: "qual_o_seu_objetivo", valor: "Comprar nos próximos 30 dias" },
+    ],
   });
-  h.banco = bancoFalso(responder);
+  h.registrar.mockResolvedValue(undefined);
+  // O escritor canônico devolve a LINHA do card (`{ id, …campos }`), e não um
+  // envelope: é o contrato de `createLeadHandler(admin, { org, actor }, campos)`.
+  h.criarLead.mockImplementation(async (_admin: unknown, _ctx: unknown, campos: Record<string, unknown>) => ({
+    id: "card-novo",
+    ...campos,
+  }));
 });
 
-describe("POST /api/v1/webhooks/meta-lead-ads/[token]", () => {
-  it("payload bom: contato novo + card no funil e etapa CONFIGURADOS, com a origem gravada", async () => {
-    const corpoDoEnvio = entregaDoLeadAds({ entradaEm: Math.floor(Date.now() / 1000) });
-    const res = await entregar(corpoDoEnvio);
-    expect(res.status).toBe(200);
-
-    const dados = (await corpo(res)).data as {
-      recebido: boolean;
-      leads: Array<{ leadgen_id: string; desfecho: string; lead_id: string; contato_id: string }>;
-      ignorados: unknown[];
-    };
-    expect(dados.recebido).toBe(true);
-    expect(dados.ignorados).toEqual([]);
-    expect(dados.leads).toHaveLength(1);
-    expect(dados.leads[0]?.leadgen_id).toBe(ESPERADO_DO_EXEMPLO.leadgenId);
-    expect(dados.leads[0]?.desfecho).toBe("criado");
-
-    // O contato nasceu com o TELEFONE NORMALIZADO (E.164 canônico) e a origem
-    // que a ficha lê.
-    expect(insertsDeContato()).toHaveLength(1);
-    const contato = argumentos(insertsDeContato()[0]!, "insert")?.[0] as Record<string, unknown>;
-    expect(contato.organization_id).toBe(ORG);
-    expect(contato.phone_number).toBe(ESPERADO_DO_EXEMPLO.telefone);
-    expect(contato.name).toBe(ESPERADO_DO_EXEMPLO.nome);
-    expect(contato.source).toBe("meta_ads");
-    expect(contato.source_metadata).toMatchObject({
-      ad_platform: "meta_ads",
-      meta_lead_ads: {
-        form_id: ESPERADO_DO_EXEMPLO.formId,
-        leadgen_id: ESPERADO_DO_EXEMPLO.leadgenId,
-      },
+describe("GET — verificação da URL", () => {
+  it("devolve o desafio em TEXTO PURO quando o verify_token confere", async () => {
+    banco();
+    const rota = await carregarRota();
+    const req = requisicao("", {
+      url:
+        "http://localhost:3000/api/v1/webhooks/meta-lead-ads/qualquer-token" +
+        "?hub.mode=subscribe&hub.verify_token=verify-token-do-app&hub.challenge=desafio-123",
     });
 
-    // O card: funil e etapa da FONTE, origem no mesmo vocabulário do Kanban e as
-    // respostas do formulário como campos do negócio.
+    const resposta = (await rota.GET(req as never, { params: Promise.resolve({ token: "qualquer-token" }) })) as Response;
+
+    expect(resposta.status).toBe(200);
+    // Texto puro, sem envelope `{data:…}`: a plataforma compara o corpo com o
+    // desafio que mandou, e um JSON reprovaria a URL nova no cadastro.
+    expect(resposta.headers.get("content-type")).toContain("text/plain");
+    expect(await resposta.text()).toBe("desafio-123");
+  });
+
+  it("403 quando o verify_token NÃO confere — e não devolve o desafio", async () => {
+    banco();
+    const rota = await carregarRota();
+    const req = requisicao("", {
+      url:
+        "http://localhost:3000/api/v1/webhooks/meta-lead-ads/qualquer-token" +
+        "?hub.mode=subscribe&hub.verify_token=outro&hub.challenge=desafio-123",
+    });
+
+    const resposta = (await rota.GET(req as never, { params: Promise.resolve({ token: "qualquer-token" }) })) as Response;
+
+    expect(resposta.status).toBe(403);
+  });
+
+  it("403 sem o desafio — e sem verify token configurado na instalação", async () => {
+    banco();
+    h.app.mockResolvedValue({ appSecret: null, verifyToken: null });
+    const rota = await carregarRota();
+    const req = requisicao("", {
+      url: "http://localhost:3000/api/v1/webhooks/meta-lead-ads/x?hub.mode=subscribe&hub.verify_token=&hub.challenge=desafio",
+    });
+    const resposta = (await rota.GET(req as never, { params: Promise.resolve({ token: "x" }) })) as Response;
+    expect(resposta.status).toBe(403);
+  });
+});
+
+describe("POST — assinatura", () => {
+  it("payload bom: assinatura do APP confere, o lead entra e responde `recebido`", async () => {
+    const falso = banco();
+    const corpo = entregaDoLeadAds();
+
+    const resposta = await entregar(corpo);
+    expect(resposta.ok).toBe(true);
+    const json = (await resposta.json()) as { data: { recebido: boolean; leads: Array<{ desfecho: string; lead_id: string }>; ignorados: unknown[] } };
+    expect(json.data.recebido).toBe(true);
+    expect(json.data.leads).toHaveLength(1);
+    expect(json.data.leads[0]!.desfecho).toBe("criado");
+    expect(json.data.leads[0]!.lead_id).toBe("card-novo");
+    // A entrega boa não tem nada a ignorar — a lista vazia é o "nada a esconder".
+    expect(json.data.ignorados).toEqual([]);
+
     expect(h.criarLead).toHaveBeenCalledTimes(1);
-    const [, ctx, entrada] = h.criarLead.mock.calls[0]! as [
+    const [, ctx, campos] = h.criarLead.mock.calls[0]! as [
+      unknown,
+      { organization_id: string },
+      Record<string, unknown>,
+    ];
+    expect(ctx.organization_id).toBe(ORG);
+    expect(campos).toMatchObject({
+      stage_id: "stage-configurada",
+      external_id: ESPERADO_DO_EXEMPLO.leadgenId,
+      source: "meta_ads",
+    });
+
+    // A IDENTIDADE mora na ficha (`contacts`), e não no card: é o INSERT do
+    // contato que carrega nome, telefone e e-mail.
+    const insertDoContato = falso.cadeias.find((c) => c.tabela === "contacts" && operacao(c) === "insert");
+    expect(insertDoContato).toBeDefined();
+    const linhaDoContato = insertDoContato!.passos.find((p) => p.metodo === "insert")!.args[0] as Record<string, unknown>;
+    expect(linhaDoContato).toMatchObject({
+      organization_id: ORG,
+      name: ESPERADO_DO_EXEMPLO.nome,
+      email: ESPERADO_DO_EXEMPLO.email,
+      source: "meta_ads",
+    });
+    expect(String(linhaDoContato.phone_number)).toMatch(/^\+55/);
+    // A leitura da fonte foi UMA, pelo token do path.
+    const leituras = falso.cadeias.filter((c) => c.tabela === "webhook_sources" && operacao(c) === "select");
+    expect(leituras.length).toBe(2); // a do path + a das páginas do aviso
+  });
+
+  it("assinatura ausente → 401 e NADA é lido do banco depois do corpo", async () => {
+    const falso = banco();
+    const resposta = await entregar(entregaDoLeadAds(), { assinatura: null });
+
+    expect(resposta.status).toBe(401);
+    const envelope = (await resposta.json()) as { error: { code: string; message: string } };
+    expect(envelope.error.code).toBe("unauthorized");
+    expect(envelope.error.message).toBe("assinatura_ausente");
+    expect(h.criarLead).not.toHaveBeenCalled();
+    // A fonte do path é lida antes (é o 404); nenhuma escrita acontece.
+    expect(falso.cadeias.filter((c) => operacao(c) !== "select")).toEqual([]);
+  });
+
+  it("assinatura com OUTRO segredo → 401 assinatura_invalida", async () => {
+    banco();
+    const corpo = entregaDoLeadAds();
+    const resposta = await entregar(corpo, { assinatura: corpoAssinado(corpo, "segredo-do-atacante") });
+
+    expect(resposta.status).toBe(401);
+    const envelope = (await resposta.json()) as { error: { code: string; message: string } };
+    expect(envelope.error.code).toBe("unauthorized");
+    expect(envelope.error.message).toBe("assinatura_invalida");
+    expect(h.criarLead).not.toHaveBeenCalled();
+  });
+
+  it("corpo alterado depois da assinatura → 401 (a HMAC cobre o corpo CRU)", async () => {
+    banco();
+    const corpo = entregaDoLeadAds();
+    const resposta = await entregar(corpo.replace(ESPERADO_DO_EXEMPLO.nome, "Outra Pessoa"), {
+      assinatura: corpoAssinado(corpo),
+    });
+    expect(resposta.status).toBe(401);
+    expect(h.criarLead).not.toHaveBeenCalled();
+  });
+
+  it("instalação SEM segredo do App → 401 fechado, e não 200 generoso", async () => {
+    banco();
+    h.app.mockResolvedValue({ appSecret: null, verifyToken: null });
+    const corpo = entregaDoLeadAds();
+    // A assinatura é feita com o segredo que a instalação NÃO tem: nenhuma serve.
+    const resposta = await entregar(corpo, { assinatura: corpoAssinado(corpo, "qualquer") });
+
+    expect(resposta.status).toBe(401);
+    const envelope = (await resposta.json()) as { error: { code: string; message: string } };
+    expect(envelope.error.code).toBe("unauthorized");
+    // Distinto de `assinatura_ausente`: aqui não há segredo para conferir, e é a
+    // instalação que está sem configuração — o motivo diz qual dos dois é.
+    expect(envelope.error.message).toBe("segredo_ausente");
+    expect(h.criarLead).not.toHaveBeenCalled();
+  });
+
+  it("token do path desconhecido → 404, e nada mais é lido", async () => {
+    const falso = banco();
+    const resposta = await entregar(entregaDoLeadAds(), { token: "nao-existe" });
+
+    expect(resposta.status).toBe(404);
+    expect(h.criarLead).not.toHaveBeenCalled();
+    expect(falso.cadeias.filter((c) => operacao(c) !== "select")).toEqual([]);
+  });
+});
+
+describe("POST — as respostas que não vieram no aviso", () => {
+  it("busca DESLIGADA (o default): aviso sem respostas é IGNORADO com motivo nomeado", async () => {
+    const falso = banco();
+    const corpo = entregaDoLeadAds({ comRespostas: false });
+
+    const resposta = await entregar(corpo);
+    expect(resposta.ok).toBe(true);
+    const json = (await resposta.json()) as { data: { leads: unknown[]; ignorados: Array<{ leadgen_id: string; motivo: string }> } };
+    expect(json.data.leads).toEqual([]);
+    // `sem_field_data` e não `sem_respostas_na_meta`: a busca nem foi tentada,
+    // e a diferença é o que diz a quem opera "ligue a opção" em vez de "a
+    // plataforma não respondeu".
+    expect(json.data.ignorados).toEqual([
+      { leadgen_id: ESPERADO_DO_EXEMPLO.leadgenId, motivo: "sem_field_data" },
+    ]);
+    expect(h.busca).not.toHaveBeenCalled();
+    expect(h.criarLead).not.toHaveBeenCalled();
+    expect(falso.cadeias.filter((c) => operacao(c) !== "select")).toEqual([]);
+  });
+
+  it("busca LIGADA e a plataforma responde: o lead entra com as respostas da busca", async () => {
+    const falso = banco();
+    estado.fonteDaUrl.meta_lead_retrieval = true;
+    estado.fonteDaUrl.meta_page_token_encrypted = "\\x00ff22";
+
+    const resposta = await entregar(entregaDoLeadAds({ comRespostas: false }));
+    expect(resposta.ok).toBe(true);
+
+    // A busca foi UMA, pelo id do lead, com o token DECIFRADO — nunca o cifrado.
+    expect(h.busca).toHaveBeenCalledTimes(1);
+    expect(h.busca.mock.calls[0]![0]).toEqual({
+      leadgenId: ESPERADO_DO_EXEMPLO.leadgenId,
+      token: "token-de-pagina-em-claro",
+    });
+    expect(h.decifrar).toHaveBeenCalledWith(expect.anything(), "\\x00ff22");
+
+    expect(h.criarLead).toHaveBeenCalledTimes(1);
+    const [, , campos] = h.criarLead.mock.calls[0]! as [unknown, unknown, Record<string, unknown>];
+    expect(campos).toMatchObject({ external_id: ESPERADO_DO_EXEMPLO.leadgenId });
+
+    // O que a busca devolveu é o que a ficha recebe: sem isso, o lead entraria em
+    // branco, que é o defeito que a fatia 1-bis veio consertar.
+    const insertDoContato = falso.cadeias.find((c) => c.tabela === "contacts" && operacao(c) === "insert");
+    const linhaDoContato = insertDoContato!.passos.find((p) => p.metodo === "insert")!.args[0] as Record<string, unknown>;
+    expect(linhaDoContato).toMatchObject({
+      organization_id: ORG,
+      name: "Maria Aparecida Souza",
+      email: "maria@exemplo.com.br",
+    });
+    expect(String(linhaDoContato.phone_number)).toBe("+5511988887777");
+  });
+
+  it("busca LIGADA e a plataforma NÃO responde: ignorado `sem_respostas_na_meta`, sem dado inventado", async () => {
+    const falso = banco();
+    estado.fonteDaUrl.meta_lead_retrieval = true;
+    estado.fonteDaUrl.meta_page_token_encrypted = "\\x00ff22";
+    h.busca.mockResolvedValue({ ok: false, motivo: "recusada_pela_meta", detalhe: "http_401" });
+
+    const resposta = await entregar(entregaDoLeadAds({ comRespostas: false }));
+    expect(resposta.ok).toBe(true);
+    const json = (await resposta.json()) as { data: { leads: unknown[]; ignorados: Array<{ motivo: string; detalhe?: string }> } };
+    expect(json.data.leads).toEqual([]);
+    expect(json.data.ignorados).toEqual([
+      {
+        leadgen_id: ESPERADO_DO_EXEMPLO.leadgenId,
+        motivo: "sem_respostas_na_meta",
+        detalhe: "recusada_pela_meta:http_401",
+      },
+    ]);
+    // O ponto do desenho: NENHUM card em branco. Um lead sem nome não entra.
+    expect(h.criarLead).not.toHaveBeenCalled();
+    expect(falso.cadeias.filter((c) => operacao(c) !== "select")).toEqual([]);
+  });
+
+  it("busca LIGADA sem token de página colado: ignorado, e a plataforma não é chamada", async () => {
+    banco();
+    estado.fonteDaUrl.meta_lead_retrieval = true;
+    estado.fonteDaUrl.meta_page_token_encrypted = null;
+
+    const resposta = await entregar(entregaDoLeadAds({ comRespostas: false }));
+    const json = (await resposta.json()) as { data: { ignorados: Array<{ motivo: string; detalhe?: string }> } };
+    expect(json.data.ignorados[0]!.motivo).toBe("sem_respostas_na_meta");
+    expect(json.data.ignorados[0]!.detalhe).toBe("sem_token_da_pagina");
+    expect(h.busca).not.toHaveBeenCalled();
+    expect(h.criarLead).not.toHaveBeenCalled();
+  });
+
+  it("token gravado que NÃO decifra: recusa nomeada, sem chamar a plataforma", async () => {
+    banco();
+    estado.fonteDaUrl.meta_lead_retrieval = true;
+    estado.fonteDaUrl.meta_page_token_encrypted = "\\xdead";
+    h.decifrar.mockResolvedValue(null);
+
+    const resposta = await entregar(entregaDoLeadAds({ comRespostas: false }));
+    const json = (await resposta.json()) as { data: { ignorados: Array<{ detalhe?: string }> } };
+    expect(json.data.ignorados[0]!.detalhe).toBe("token_indecifravel");
+    expect(h.busca).not.toHaveBeenCalled();
+    expect(h.criarLead).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST — de quem é o lead: a PÁGINA, e não o token do path", () => {
+  it("a fonte que reivindica a página é a dona, mesmo sendo de OUTRA organização", async () => {
+    banco();
+    estado.donas = [{ ...FONTE_DA_PAGINA, meta_page_id: ESPERADO_DO_EXEMPLO.pageId }];
+
+    const resposta = await entregar(entregaDoLeadAds());
+    expect(resposta.ok).toBe(true);
+
+    // A URL é da fonte da org A; o lead é da página da org B. Sem o roteamento
+    // por página, este card cairia no funil da org A.
+    expect(h.criarLead).toHaveBeenCalledTimes(1);
+    const [, ctx, campos] = h.criarLead.mock.calls[0]! as [
       unknown,
       { organization_id: string; actor: { type: string; id: string } },
       Record<string, unknown>,
     ];
-    expect(ctx.organization_id).toBe(ORG);
-    expect(ctx.actor).toEqual({ type: "webhook_source", id: FONTE.id });
-    expect(entrada.pipeline_id).toBe("pipe-1");
-    expect(entrada.stage_id).toBe("stage-configurada");
-    expect(entrada.source).toBe("meta_ads");
-    expect(entrada.tags).toEqual(["Meta_ads"]);
-    expect(entrada.external_id).toBe(ESPERADO_DO_EXEMPLO.leadgenId);
-    expect(entrada.webhook_source_id).toBe(FONTE.id);
-    expect(entrada.contact_id).toBe(dados.leads[0]?.contato_id);
-    expect(entrada.custom_fields).toMatchObject({
-      qual_o_seu_objetivo: "Comprar nos próximos 30 dias",
-      cidade: "São Paulo",
-    });
-
-    // O rastro durável da captação.
-    expect(h.registrar).toHaveBeenCalledTimes(1);
-    expect(h.registrar.mock.calls[0]?.[1]).toMatchObject({
-      organizationId: ORG,
-      outcome: "criado",
-      capturedPhone: ESPERADO_DO_EXEMPLO.telefone,
-    });
+    expect(ctx.organization_id).toBe(ORG_DA_PAGINA);
+    expect(campos.stage_id).toBe("stage-b");
+    expect(campos.pipeline_id).toBe("pipe-2");
+    // O ator é a FONTE dona da página, e não a do endereço: é ela que a auditoria
+    // e a timeline do card mostram.
+    expect(ctx.actor).toEqual({ type: "webhook_source", id: "fonte-meta-2" });
   });
 
-  it("assinatura ruim é recusada em falha fechada — 401 e NENHUMA escrita", async () => {
-    const corpoDoEnvio = entregaDoLeadAds({ entradaEm: Math.floor(Date.now() / 1000) });
+  it("página sem dona NÃO herda a fonte da URL quando ela reivindica outra página", async () => {
+    banco();
+    estado.fonteDaUrl.meta_page_id = "999888777";
 
-    // (a) assinatura de outro segredo; (b) sem assinatura; (c) formato que não é
-    // o da Meta. Os três têm de morrer na porta.
-    const invalida = await entregar(corpoDoEnvio, { assinatura: assinar(corpoDoEnvio, "outro") });
-    const ausente = await entregar(corpoDoEnvio, { assinatura: null });
-    const formatoErrado = await entregar(corpoDoEnvio, { assinatura: "deadbeef" });
-
-    for (const [res, motivo] of [
-      [invalida, "assinatura_invalida"],
-      [ausente, "assinatura_ausente"],
-      [formatoErrado, "assinatura_invalida"],
-    ] as const) {
-      expect(res.status).toBe(401);
-      const erro = (await corpo(res)).error as { code: string; message: string };
-      expect(erro.code).toBe("unauthorized");
-      expect(erro.message).toBe(motivo);
-    }
-
-    // Nada atravessou a porta: nem contato, nem card, nem captação.
-    expect(insertsDeContato()).toHaveLength(0);
-    expect(escritasEmCrmLeads()).toHaveLength(0);
-    expect(h.criarLead).not.toHaveBeenCalled();
-    expect(h.registrar).not.toHaveBeenCalled();
-  });
-
-  it("segredo que não pôde ser lido recusa — 'não dá para conferir' é 'não confere'", async () => {
-    // `decryptWebhookSecret` devolve `null` quando a GUC de cifra está ausente ou
-    // o bytea está corrompido. A tentação é tratar isso como "fonte sem segredo,
-    // então aceita" — e é ela que transforma a porta pública em entrada livre.
-    h.decifrar.mockImplementation(async () => null);
-    const res = await entregar(entregaDoLeadAds({ entradaEm: Math.floor(Date.now() / 1000) }));
-
-    expect(res.status).toBe(401);
-    expect((await corpo(res)).error).toMatchObject({
-      code: "unauthorized",
-      message: "segredo_ausente",
-    });
-    expect(insertsDeContato()).toHaveLength(0);
-    expect(h.criarLead).not.toHaveBeenCalled();
-  });
-
-  it("payload sem field_data não processa nada e diz por quê", async () => {
-    const semRespostas = entregaDoLeadAds({
-      entradaEm: Math.floor(Date.now() / 1000),
-      comRespostas: false,
-    });
-    const res = await entregar(semRespostas);
-    expect(res.status).toBe(200);
-
-    const dados = (await corpo(res)).data as {
-      recebido: boolean;
-      leads: unknown[];
-      ignorados: Array<{ leadgen_id: string; motivo: string }>;
-    };
-    expect(dados.recebido).toBe(true);
-    expect(dados.leads).toEqual([]);
-    expect(dados.ignorados).toEqual([
-      { leadgen_id: ESPERADO_DO_EXEMPLO.leadgenId, motivo: "sem_field_data" },
+    const resposta = await entregar(entregaDoLeadAds());
+    expect(resposta.ok).toBe(true);
+    const json = (await resposta.json()) as { data: { leads: unknown[]; ignorados: Array<{ motivo: string }> } };
+    expect(json.data.leads).toEqual([]);
+    expect(json.data.ignorados).toEqual([
+      { leadgen_id: ESPERADO_DO_EXEMPLO.leadgenId, motivo: "pagina_sem_dono" },
     ]);
-
-    expect(insertsDeContato()).toHaveLength(0);
     expect(h.criarLead).not.toHaveBeenCalled();
-    expect(h.registrar).not.toHaveBeenCalled();
   });
 
-  it("entrega repetida do MESMO lead: 200 com marcador de duplicado, sem segundo contato nem segundo card", async () => {
-    const corpoDoEnvio = entregaDoLeadAds({ entradaEm: Math.floor(Date.now() / 1000) });
+  it("página com dona DESLIGADA: ignorado `pagina_desligada`, nada é escrito", async () => {
+    banco();
+    estado.donas = [{ ...FONTE_DA_PAGINA, is_active: false }];
 
-    const primeira = await entregar(corpoDoEnvio);
-    expect(primeira.status).toBe(200);
-    expect(
-      ((await corpo(primeira)).data as { leads: Array<{ desfecho: string }> }).leads[0]?.desfecho,
-    ).toBe("criado");
-
-    // A Meta reentrega o mesmo corpo (retry por timeout): o `leadgen_id` é a
-    // mesma pessoa, e o desfecho tem de ser 200 — senão ela reentrega para sempre.
-    const segunda = await entregar(corpoDoEnvio);
-    expect(segunda.status).toBe(200);
-    const dados = (await corpo(segunda)).data as {
-      leads: Array<{ leadgen_id: string; desfecho: string; lead_id: string }>;
-    };
-    expect(dados.leads[0]?.desfecho).toBe("duplicado");
-    expect(dados.leads[0]?.leadgen_id).toBe(ESPERADO_DO_EXEMPLO.leadgenId);
-    // O MESMO card da primeira entrega.
-    expect(dados.leads[0]?.lead_id).toBe("lead-1");
-
-    expect(insertsDeContato()).toHaveLength(1);
-    expect(h.criarLead).toHaveBeenCalledTimes(1);
-    expect(estado.cards).toHaveLength(1);
-    // A segunda passagem registra o desfecho como duplicado, para a tela
-    // "Leads recebidos" mostrar o retry em vez de escondê-lo.
-    expect(h.registrar).toHaveBeenCalledTimes(2);
-    expect(h.registrar.mock.calls[1]?.[1]).toMatchObject({ outcome: "duplicado" });
+    const resposta = await entregar(entregaDoLeadAds());
+    const json = (await resposta.json()) as { data: { ignorados: Array<{ motivo: string }> } };
+    expect(json.data.ignorados).toEqual([
+      { leadgen_id: ESPERADO_DO_EXEMPLO.leadgenId, motivo: "pagina_desligada" },
+    ]);
+    expect(h.criarLead).not.toHaveBeenCalled();
   });
 
-  it("lead de telefone já existente reaproveita o contato em vez de criar outro", async () => {
-    estado.contatos.push({
-      id: "contato-existente",
-      name: "Maria",
-      phone_number: ESPERADO_DO_EXEMPLO.telefone,
-      email: null,
+  it("a busca usa o token DA PÁGINA dona, e o decifra UMA vez por entrega", async () => {
+    banco();
+    estado.donas = [{ ...FONTE_DA_PAGINA }];
+    estado.fonteDaUrl.meta_lead_retrieval = true;
+    // A fonte da URL tem token próprio; o lead é da página, então o token que vale
+    // é o dela — usar o da URL seria buscar na página errada.
+    estado.fonteDaUrl.meta_page_token_encrypted = "\\xcafe";
+
+    // Duas entradas da MESMA página na mesma entrega: a decifra é uma RPC, e não
+    // deve ser paga duas vezes.
+    const corpo = JSON.stringify({
+      object: "page",
+      entry: [
+        {
+          id: ESPERADO_DO_EXEMPLO.pageId,
+          time: Math.floor(Date.now() / 1000),
+          changes: [
+            { field: "leadgen", value: { leadgen_id: "111", page_id: ESPERADO_DO_EXEMPLO.pageId, form_id: "1" } },
+            { field: "leadgen", value: { leadgen_id: "222", page_id: ESPERADO_DO_EXEMPLO.pageId, form_id: "1" } },
+          ],
+        },
+      ],
     });
 
-    const corpoDoEnvio = entregaDoLeadAds({
-      entradaEm: Math.floor(Date.now() / 1000),
-      // A MESMA pessoa, com o número escrito de outro jeito — é o caso real de
-      // quem já é contato por WhatsApp e preenche o formulário.
-      telefone: "+55 11 98888-7777",
-      leadgenId: "1122334455667788",
-    });
-    const res = await entregar(corpoDoEnvio);
-    expect(res.status).toBe(200);
+    const resposta = await entregar(corpo);
+    expect(resposta.ok).toBe(true);
+    expect(h.busca).toHaveBeenCalledTimes(2);
+    expect(h.decifrar).toHaveBeenCalledTimes(1);
+    expect(h.decifrar).toHaveBeenCalledWith(expect.anything(), "\\x00ff11");
+  });
+});
 
-    const dados = (await corpo(res)).data as {
-      leads: Array<{ desfecho: string; contato_id: string }>;
-    };
-    expect(dados.leads[0]?.desfecho).toBe("criado");
-    expect(dados.leads[0]?.contato_id).toBe("contato-existente");
+describe("POST — entrega atrasada", () => {
+  it("aviso de duas horas atrás ENTRA, com a idade marcada no rastro da captação", async () => {
+    banco();
+    const agora = Math.floor(Date.now() / 1000);
+    const corpo = entregaDoLeadAds({ entradaEm: agora - 7_200, comRespostas: false });
+    estado.fonteDaUrl.meta_lead_retrieval = true;
+    estado.fonteDaUrl.meta_page_token_encrypted = "\\x00ff22";
 
-    // Nenhum contato novo: o card aponta para a ficha que já existia.
-    expect(insertsDeContato()).toHaveLength(0);
-    expect(h.criarLead).toHaveBeenCalledTimes(1);
-    const entrada = h.criarLead.mock.calls[0]?.[2] as { contact_id: string };
-    expect(entrada.contact_id).toBe("contato-existente");
+    const resposta = await entregar(corpo);
+    expect(resposta.ok).toBe(true);
+    const json = (await resposta.json()) as { data: { leads: Array<{ desfecho: string }> } };
+    // O ponto: NÃO é 401. A plataforma reentrega por horas, e recusar aqui
+    // perdia o lead de vez.
+    expect(json.data.leads).toHaveLength(1);
+    expect(json.data.leads[0]!.desfecho).toBe("criado");
+
+    // A idade vai no `utm` da linha de captação: fica gravada, sem coluna nova.
+    const [, captacao] = h.registrar.mock.calls[0]! as [unknown, { utm?: Record<string, string> }];
+    const idade = Number(captacao.utm?.recebido_com_atraso_segundos);
+    expect(Number.isFinite(idade)).toBe(true);
+    expect(idade).toBeGreaterThanOrEqual(7_000);
   });
 
-  it("fora de tempo não processa nada — mesmo com a assinatura certa", async () => {
-    // Duas horas atrás: o corpo é legítimo (assinado com o segredo), mas é uma
-    // entrega velha — replay, ou fila parada além do aceitável.
-    const velho = entregaDoLeadAds({ entradaEm: Math.floor(Date.now() / 1000) - 7200 });
-    const res = await entregar(velho);
-    expect(res.status).toBe(401);
-    const erro = (await corpo(res)).error as { code: string; message: string };
-    expect(erro.code).toBe("unauthorized");
-    expect(erro.message).toBe("fora_de_tempo");
+  it("entrega no prazo não carrega o carimbo de atraso", async () => {
+    banco();
+    const corpo = entregaDoLeadAds({ entradaEm: Math.floor(Date.now() / 1000) });
+    await entregar(corpo);
+    const [, captacao] = h.registrar.mock.calls[0]! as [unknown, { utm?: Record<string, string> }];
+    // `undefined` e não `0`: "não sei a idade" é diferente de "chegou na hora".
+    expect(captacao.utm).toBeUndefined();
+  });
+});
 
-    expect(insertsDeContato()).toHaveLength(0);
-    expect(h.criarLead).not.toHaveBeenCalled();
-    expect(h.registrar).not.toHaveBeenCalled();
+describe("POST — o mesmo aviso duas vezes", () => {
+  it("reentrega do mesmo leadgen_id responde `duplicado`, sem segundo card nem segundo contato", async () => {
+    const falso = banco();
+    // O card já existe: o índice único e a busca por `external_id` devolvem o mesmo.
+    estado.cards = [
+      {
+        id: "card-existente",
+        organization_id: ORG,
+        contact_id: "contato-existente",
+        stage_id: "stage-configurada",
+        phone_number: ESPERADO_DO_EXEMPLO.telefone,
+        external_id: ESPERADO_DO_EXEMPLO.leadgenId,
+      },
+    ];
+    estado.contatos = [
+      { id: "contato-existente", organization_id: ORG, phone_number: ESPERADO_DO_EXEMPLO.telefone },
+    ];
+
+    const corpo = entregaDoLeadAds();
+    const primeira = await entregar(corpo);
+    const segunda = await entregar(corpo);
+
+    expect(primeira.ok).toBe(true);
+    expect(segunda.ok).toBe(true);
+    const json = (await segunda.json()) as { data: { leads: Array<{ desfecho: string; lead_id: string }> } };
+    // A segunda entrega NÃO é erro para a plataforma (200) e diz o que houve.
+    expect(json.data.leads[0]!.desfecho).toBe("duplicado");
+    expect(json.data.leads[0]!.lead_id).toBe("card-existente");
+    expect(falso.cadeias.filter((c) => c.tabela === "crm_leads" && operacao(c) === "insert")).toEqual([]);
   });
 });
