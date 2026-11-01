@@ -45,7 +45,14 @@ const RAIZ = join(__dirname, "..", "..");
  */
 function valoresDoCheck(): string[] {
   const baseline = readFileSync(join(RAIZ, "supabase", "baseline.sql"), "utf8");
-  const inline = baseline.lastIndexOf("check (outcome in (");
+  // O CHECK inline é procurado DENTRO do `create table` desta tabela: o
+  // `lastIndexOf` no arquivo inteiro pegava o CHECK de outra tabela que também
+  // chama a coluna de `outcome` assim que um apêndice novo a declarava depois
+  // (#3823, `ai_router_decisions`), e a cerca reprovava um PR que não mexe na captação.
+  const tabela = baseline.lastIndexOf("create table if not exists public.webhook_lead_captures (");
+  const corpo = tabela === -1 ? "" : baseline.slice(tabela, baseline.indexOf("\n);", tabela));
+  const noCorpo = corpo.indexOf("check (outcome in (");
+  const inline = noCorpo === -1 ? -1 : tabela + noCorpo;
   const constraint = baseline.lastIndexOf(
     "add constraint webhook_lead_captures_outcome_check",
   );

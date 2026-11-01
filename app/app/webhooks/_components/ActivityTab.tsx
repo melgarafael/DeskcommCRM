@@ -76,6 +76,12 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   no_contact: "Esse lead entrou sem contato vinculado, então não havia para quem escrever.",
   contact_blocked: "O contato pediu para não receber mensagens (opt-out).",
   no_phone: "O contato não tem telefone cadastrado.",
+  /* #3813 — a escolha "não enviar" quando o contato tem horário marcado. O pulo
+     é decisão de quem montou a regra/fluxo, não falha: a frase diz o motivo para
+     quem lê a aba Atividade não confundir com erro. Emitido por
+     lib/agenda/escolha-no-envio.ts (MOTIVO_DO_PULO). */
+  compromisso_na_agenda:
+    "O contato tem horário marcado na agenda — esta automação foi configurada para não enviar quando isso acontece.",
   missing_config: "Falta preencher alguma configuração desta ação — abra a automação e revise.",
   fora_da_janela_de_envio:
     "Está fora da janela de envio configurada para esse número. A mensagem sai sozinha quando ela reabrir.",

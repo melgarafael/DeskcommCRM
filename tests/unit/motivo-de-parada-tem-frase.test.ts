@@ -94,6 +94,20 @@ const ORIGENS: DeclaracaoDeOrigem[] = [
   },
   {
     arquivo: "lib/automation/actions/send-whatsapp.ts",
+    expressao: "MOTIVO_DO_PULO",
+    porque:
+      "#3813 — a escolha `nao_enviar` (\"quando o contato tiver horário marcado\") devolve o pulo pelo `reason` do resultado; o código possível é um só e está escrito em `MOTIVO_DO_PULO`, no produtor declarado ao lado",
+    produtor: { arquivo: "lib/agenda/escolha-no-envio.ts" },
+  },
+  {
+    arquivo: "lib/automation/actions/send-ai-message.ts",
+    expressao: "MOTIVO_DO_PULO",
+    porque:
+      "a irmã de IA devolve o MESMO código de pulo por compromisso na agenda (#3813), pelo `reason` do resultado; a constante é uma e mora no produtor declarado ao lado",
+    produtor: { arquivo: "lib/agenda/escolha-no-envio.ts" },
+  },
+  {
+    arquivo: "lib/automation/actions/send-whatsapp.ts",
     expressao: "classificada.motivo",
     porque:
       "a recusa da mídia que não é imagem nem PDF (#2734) chega à tela pelo `error` do resultado; o motivo é a frase de gente que o produtor escreve, e o produtor é varrido ao lado",
