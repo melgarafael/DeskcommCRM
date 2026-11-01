@@ -1,5 +1,5 @@
 ---
-impacto: corrigido
+impacto: nada_mudou
 secao: corrigido
 titulo: O Inbox para de dar erro de hidratação quando a contagem das abas chega durante o carregamento
 ---
