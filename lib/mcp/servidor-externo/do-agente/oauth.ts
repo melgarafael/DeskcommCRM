@@ -26,7 +26,7 @@ import { z } from "zod";
 
 import { codeChallengeS256, gerarCodeVerifier } from "@/lib/ai/pontos/pkce-da-assinatura";
 
-import { fetchDeSaida } from "../chamada";
+import { NOME_DO_CLIENTE_MCP, fetchDeSaida } from "../chamada";
 import type { MetadadosOauth } from "./registro";
 
 export type CodigoDeErroOauth =
@@ -169,7 +169,7 @@ async function urlsDoRecursoProtegido(endpoint: string, opcoes?: OpcoesDeRede): 
           params: {
             protocolVersion: "2025-06-18",
             capabilities: {},
-            clientInfo: { name: "deskcomm-crm", version: "0.1.0" },
+            clientInfo: { name: NOME_DO_CLIENTE_MCP, version: "0.1.0" },
           },
         }),
       },

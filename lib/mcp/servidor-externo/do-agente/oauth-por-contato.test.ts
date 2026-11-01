@@ -215,7 +215,7 @@ let banco: BancoEmMemoria;
 async function servidorCadastrado(opcoes: { escritaDelegada?: boolean; escopos?: string[] } = {}) {
   const d = await descobrir(endpoint, rede);
   const { metodosDeAutenticacaoNoToken: _m, ...meta } = d;
-  const clientId = await registrarCliente(d.registration_endpoint!, { redirectUri: "http://localhost:3000/api/v1/mcp-oauth/callback", nomeDoCliente: "Deskcomm — Teste", escopos: [] }, rede);
+  const clientId = await registrarCliente(d.registration_endpoint!, { redirectUri: "http://localhost:3000/api/v1/mcp-oauth/callback", nomeDoCliente: "Cliente de teste", escopos: [] }, rede);
   return {
     id: SERVIDOR,
     organization_id: ORG,

@@ -67,11 +67,12 @@ const MENSAGEM_DO_ERRO: Record<ErroDaAcao, string> = {
   rede: "Não foi possível falar com o servidor.",
 };
 
-const MODOS: Array<{ valor: Modo; rotulo: string }> = [
-  { valor: "nenhuma", rotulo: "Sem autenticação" },
-  { valor: "chave_estatica", rotulo: "Chave fixa (Bearer)" },
-  { valor: "oauth_por_contato", rotulo: "OAuth — cada cliente autoriza com o login dele" },
-];
+const ROTULO_DO_MODO: Record<Modo, string> = {
+  nenhuma: "Sem autenticação",
+  chave_estatica: "Chave fixa (Bearer)",
+  oauth_por_contato: "OAuth — cada cliente autoriza com o login dele",
+};
+const MODOS: Modo[] = ["nenhuma", "chave_estatica", "oauth_por_contato"];
 
 interface Formulario {
   nome: string;
@@ -292,8 +293,8 @@ export function ServidoresMcpDoAgente({ agentId, toolIds, onChangeToolIds, disab
                 className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
               >
                 {MODOS.map((m) => (
-                  <option key={m.valor} value={m.valor}>
-                    {t(m.rotulo)}
+                  <option key={m} value={m}>
+                    {t(ROTULO_DO_MODO[m])}
                   </option>
                 ))}
               </select>
@@ -304,7 +305,7 @@ export function ServidoresMcpDoAgente({ agentId, toolIds, onChangeToolIds, disab
             <Input
               id="mcp-endpoint"
               type="url"
-              placeholder="https://mcp.exemplo.com/mcp"
+              placeholder="https://…/mcp"
               value={f.endpoint}
               onChange={(e) => {
                 setDescoberta(null);
@@ -481,7 +482,6 @@ function ServidorNaLista({
   const [confirmarRemocao, setConfirmarRemocao] = useState(false);
 
   const escolhidas = escolhasDoServidor(toolIds, servidor.id);
-  const modo = MODOS.find((m) => m.valor === servidor.modo)?.rotulo ?? servidor.modo;
 
   async function carregar() {
     setErro(null);
@@ -518,7 +518,7 @@ function ServidorNaLista({
             {servidor.nome} {!servidor.ativo ? <span className="text-xs text-muted-foreground">({t("inativo")})</span> : null}
           </p>
           <p className="text-xs text-muted-foreground">
-            {t(modo)} · <code>{servidor.hosts[0]}</code> · {escolhidas.length} {t("ferramentas marcadas")}
+            {t(ROTULO_DO_MODO[servidor.modo])} · <code>{servidor.hosts[0]}</code> · {escolhidas.length} {t("ferramentas marcadas")}
             {servidor.escritaDelegada ? ` · ${t("ações permitidas na conversa")}` : ""}
           </p>
         </div>

@@ -20,6 +20,7 @@ import { revalidatePath } from "next/cache";
 import { audit } from "@/lib/audit";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
+import { marcaDaSaida } from "@/lib/branding/saida";
 import { supportWriteError } from "@/lib/impersonate/support";
 import { listarFerramentasDoServidor } from "@/lib/mcp/servidor-externo/chamada";
 import { apagado, cifrar, ultimos4 } from "@/lib/mcp/servidor-externo/cifra";
@@ -205,7 +206,9 @@ export async function salvarServidorMcpDoAgente(
         if (!metadados.registration_endpoint) return { ok: false, error: "sem_cliente" };
         clientId = await registrarCliente(metadados.registration_endpoint, {
           redirectUri: urlDoCallbackMcp(),
-          nomeDoCliente: `Deskcomm — ${g.orgNome}`.trim(),
+          // A marca da SAÍDA (white-label): o nome que o cliente final lê na
+          // tela de consentimento do terceiro é o da instalação/organização.
+          nomeDoCliente: `${(await marcaDaSaida(g.orgId)).nome} — ${g.orgNome}`.trim(),
           escopos: entrada.escoposPedidos,
         });
         metadados = { ...metadados, cliente_dinamico: true };

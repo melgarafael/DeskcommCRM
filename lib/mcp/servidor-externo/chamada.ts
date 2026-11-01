@@ -114,6 +114,9 @@ export const CABECALHOS_DO_CONTATO = {
 
 const TIMEOUT_PADRAO_MS = 15_000;
 
+/** O `clientInfo.name` que o cliente MCP declara no `initialize` (identificador técnico). */
+export const NOME_DO_CLIENTE_MCP = "deskcomm-crm";
+
 /**
  * O que a saída do processo confere antes de sair byte — injetável para o
  * teste provar o FILO sem depender de DNS nem de rede.
@@ -217,7 +220,7 @@ async function comOCliente<T>(
     // default é `fetchDeSaida` — protegido, e não o fetch global.
     fetch: observandoRecusas(fetch ?? fetchDeSaida(servidor.endpoint), aoRecusar),
   });
-  const cliente = new Client({ name: "deskcomm-crm", version: "0.1.0" });
+  const cliente = new Client({ name: NOME_DO_CLIENTE_MCP, version: "0.1.0" });
   try {
     await cliente.connect(transporte, { timeout: timeoutMs });
     return await oQueFazer(cliente);

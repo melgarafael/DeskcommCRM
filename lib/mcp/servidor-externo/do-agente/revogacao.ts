@@ -47,6 +47,7 @@ export async function revogarVencidas(
   let apagadas = 0;
   for (const linha of (data ?? []) as Array<Record<string, unknown>>) {
     const organizationId = String(linha.organization_id);
+    const contatoId = linha.contact_id as string;
     const servidor = await lerServidor(supabase, organizationId, String(linha.servidor_id));
     const anonimizado = (linha.contacts as { is_anonymized?: boolean } | null)?.is_anonymized === true;
     if (!servidor) {
@@ -65,7 +66,7 @@ export async function revogarVencidas(
       action: "contact.mcp_acesso_revogado",
       organizationId,
       resourceType: "contact",
-      resourceId: String(linha.contact_id),
+      resourceId: contatoId,
       metadata: {
         servidor_id: servidor.id,
         motivo: anonimizado ? "lgpd_anonimizacao" : "encerramento_da_conversa",
