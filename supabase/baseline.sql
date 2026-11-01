@@ -50874,17 +50874,46 @@ begin
   end if;
 
   if v_ator is not null then
-    -- Quem muda: manager+ da MESMA organização (e membro aceito, não revogado).
+    -- Quem muda: `agent`+ da MESMA organização (e membro aceito, não revogado).
+    -- #3746: o Atendente entrou nesta porta, mas com ESCOPO DE POSSE — o papel
+    -- sozinho não distingue "meu cliente" de "cliente do colega", e liberar o
+    -- papel seco deixaria qualquer Atendente se pôr como dono do cliente de
+    -- outro e levar o negócio seguinte no nome errado (o defeito do #2591).
     select uo.role into v_papel
       from public.user_organizations uo
      where uo.user_id = v_ator
        and uo.organization_id = p_org
        and uo.accepted_at is not null
        and uo.revoked_at is null;
-    if v_papel is null or v_papel not in ('manager', 'admin') then
+    if v_papel is null or v_papel not in ('agent', 'manager', 'admin') then
       raise exception 'carteira_permissao_negada'
         using errcode = '42501',
-              detail = 'Só manager e admin definem a carteira do cliente.';
+              detail = 'Só atendente, manager e admin definem a carteira do cliente.';
+    end if;
+    if v_papel = 'agent' then
+      -- A POSSE, conferida AQUI e não só na rota: esta é a porta ÚNICA de
+      -- gravação (`trg_contacts_carteira_so_pelo_servidor` recusa a sessão), e
+      -- um chamador novo não pode nascer sem a régua. Posse = o contato já está
+      -- na carteira dele OU alguma conversa do contato está atribuída a ele.
+      -- Fora das duas: `carteira_fora_da_posse`, que a rota traduz em 403.
+      if not exists (
+           select 1
+             from public.contacts c
+            where c.id = p_contact
+              and c.organization_id = p_org
+              and c.carteira_user_id = v_ator
+         )
+         and not exists (
+           select 1
+             from public.conversations cv
+            where cv.organization_id = p_org
+              and cv.contact_id = p_contact
+              and cv.assigned_to_user_id = v_ator
+         ) then
+        raise exception 'carteira_fora_da_posse'
+          using errcode = '42501',
+                detail = 'O atendente só muda a carteira do cliente que já está com ele: conversa atribuída a ele ou contato na carteira dele.';
+      end if;
     end if;
     if v_origem = 'automacao' then
       raise exception 'carteira_origem_invalida'

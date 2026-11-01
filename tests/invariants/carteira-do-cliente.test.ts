@@ -12,7 +12,10 @@
  *    `tenant_isolation_contacts_write`, FOR ALL cega a papel (é por isso que a
  *    issue dizia que um Atendente se põe como dono pela REST). Se o gatilho
  *    42501 não estiver lá, esta prova falha com a gravação passando.
- * 2. Só `manager`+ chama a porta; dono `viewer`/revogado não conta.
+ * 2. A porta cobra `manager`+ OU `agent` com POSSE (#3746: conversa do contato
+ *    atribuída a ele ou contato já na carteira dele); dono `viewer`/revogado não
+ *    conta. `agent` sem posse é recusado — é o que impede o Atendente de se pôr
+ *    como dono do cliente do colega.
  * 3. O negócio novo SEM dono nasce com o dono do contato — e o que já veio com
  *    dono não muda, e sem carteira nada muda (é o rodízio de sempre).
  * 4. Dono que virou `viewer` ou que saiu da equipe deixa de contar (regra 5).
@@ -38,6 +41,9 @@ const ETAPA = "eeeeeeee-5555-4000-8000-000000000002";
 
 const CONTATO_SEM_CARTEIRA = "eeeeeeee-3333-4000-8000-000000000001";
 const CONTATO_DA_CARTEIRA = "eeeeeeee-3333-4000-8000-000000000002";
+/** #3746: a conversa do cliente do Atendente — o outro jeito de ter posse. */
+const SESSAO = "eeeeeeee-4444-4000-8000-000000000001";
+const CONVERSA = "eeeeeeee-4444-4000-8000-000000000002";
 
 /** Roda um DML como `authenticated` (claims do usuário) e devolve o stderr quando recusado. */
 function recusaGravacao(userId: string, dml: string): string {
@@ -151,6 +157,10 @@ describe("carteira do cliente (#2591) — dono por contato, aviso e negócio nov
   afterAll(() => {
     sql(`
       delete from public.crm_leads where organization_id = '${ORG}';
+      -- #3746: a conversa do caso de posse segura o contato pela FK, então sai
+      -- antes dele (e a sessão do canal antes da conversa).
+      delete from public.conversations where organization_id = '${ORG}';
+      delete from public.channel_sessions where organization_id = '${ORG}';
       delete from public.user_organizations where organization_id = '${ORG}';
       delete from public.crm_stages where organization_id = '${ORG}';
       delete from public.crm_pipelines where organization_id = '${ORG}';
@@ -193,12 +203,54 @@ describe("carteira do cliente (#2591) — dono por contato, aviso e negócio nov
     expect(donoDe(CONTATO_DA_CARTEIRA)).toBe("NULL");
   });
 
-  it("só manager+ define a carteira, e dono que não conta é recusado", () => {
-    // Atendente não é dono da carteira do colega pela porta.
-    const atendente = chamaRpc(AGENTE_A, AGENTE_A, CONTATO_DA_CARTEIRA);
-    expect(atendente).toContain("carteira_permissao_negada");
-    expect(donoDe(CONTATO_DA_CARTEIRA)).toBe("NULL");
+  it("#3746 — o Atendente define a carteira COM posse; sem posse, recusa", () => {
+    // (a) SEM posse: nem conversa atribuída a ele, nem o contato na carteira
+    // dele. A recusa é a da POSSE — e é ela que impede o Atendente de se pôr
+    // como dono do cliente do colega e levar o negócio seguinte (o defeito do
+    // #2591 que a porta existe para fechar).
+    const semPosse = chamaRpc(AGENTE_A, AGENTE_A, CONTATO_SEM_CARTEIRA);
+    expect(semPosse).toContain("carteira_fora_da_posse");
+    expect(donoDe(CONTATO_SEM_CARTEIRA)).toBe("NULL");
 
+    // (b) POSSE pela CONVERSA: a conversa deste contato está atribuída a ele,
+    // então ele muda a carteira — inclusive a de um cliente que ainda não é
+    // dele no papel do contato. É o caso do Atendente que atende e descobre
+    // que o cliente é de outro.
+    sql(`
+      update public.contacts
+         set carteira_user_id = null, carteira_origem = null, carteira_definida_em = null
+       where id = '${CONTATO_SEM_CARTEIRA}';
+      insert into public.channel_sessions (id, organization_id, waha_session_name, webhook_secret_encrypted)
+        values ('${SESSAO}', '${ORG}', 'carteira-3746', '\\x00'::bytea)
+        on conflict (id) do nothing;
+      insert into public.conversations (id, organization_id, contact_id, channel_session_id, status)
+        values ('${CONVERSA}', '${ORG}', '${CONTATO_SEM_CARTEIRA}', '${SESSAO}', 'open')
+        on conflict (id) do nothing;
+      update public.conversations
+         set assigned_to_user_id = '${AGENTE_B}'
+       where id = '${CONVERSA}';
+    `);
+    expect(chamaRpc(AGENTE_B, AGENTE_B, CONTATO_SEM_CARTEIRA)).toBe("");
+    expect(donoDe(CONTATO_SEM_CARTEIRA)).toBe(AGENTE_B);
+
+    // (c) POSSE pela CARTEIRA: já é o dono, então pode passar adiante — quem
+    // atende o cliente decide com quem ele fica, e não precisa de gerente.
+    expect(chamaRpc(AGENTE_B, AGENTE_A, CONTATO_SEM_CARTEIRA)).toBe("");
+    expect(donoDe(CONTATO_SEM_CARTEIRA)).toBe(AGENTE_A);
+
+    // (d) `viewer` como ATOR continua recusado: a régua de posse não transforma
+    // quem só lê em quem escreve, mesmo com o cliente na carteira dele.
+    const somenteLeituraComoAtor = chamaRpc(SOMENTE_LEITURA, AGENTE_B, CONTATO_SEM_CARTEIRA);
+    expect(somenteLeituraComoAtor).toContain("carteira_permissao_negada");
+    expect(donoDe(CONTATO_SEM_CARTEIRA)).toBe(AGENTE_A);
+
+    // Devolve o contato ao estado sem carteira (os casos abaixo começam dele).
+    sql(`update public.contacts
+            set carteira_user_id = null, carteira_origem = null, carteira_definida_em = null
+          where id = '${CONTATO_SEM_CARTEIRA}';`);
+  });
+
+  it("manager+ segue definindo sem posse, e dono que não conta é recusado", () => {
     // Gestor sim — e a gravação é do servidor, não da sessão.
     expect(chamaRpc(GESTOR, AGENTE_A, CONTATO_DA_CARTEIRA)).toBe("");
     expect(donoDe(CONTATO_DA_CARTEIRA)).toBe(AGENTE_A);

@@ -43,8 +43,10 @@ import { estadoDaCarteira, faixaDaCarteiraAparece } from "@/lib/carteira/tela";
 
 const ANA = { user_id: "u-a", role: "agent", full_name: "Ana Vendas" };
 const BRUNO = { user_id: "u-b", role: "agent", full_name: "Bruno Vendas" };
-const SEM_DONO = { contact_id: "c1", dono_user_id: null, qualificado: false };
-const COM_ANA = { contact_id: "c1", dono_user_id: "u-a", qualificado: true };
+const SEM_DONO = { contact_id: "c1", dono_user_id: null, qualificado: false, pode_alterar: true };
+const COM_ANA = { contact_id: "c1", dono_user_id: "u-a", qualificado: true, pode_alterar: true };
+/** O servidor NÃO libera esta sessão a mudar ESTE cliente (#3746). */
+const SEM_PODER = { contact_id: "c1", dono_user_id: "u-a", qualificado: true, pode_alterar: false };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -56,7 +58,7 @@ afterEach(cleanup);
 describe("(a) a ficha mostra a carteira com o dono certo", () => {
   it("mostra o NOME do dono da carteira", async () => {
     deps.carteira.mockReturnValue({ isLoading: false, data: COM_ANA });
-    render(<CartaoDaCarteira contactId="c1" papelDoUsuario="manager" />);
+    render(<CartaoDaCarteira contactId="c1" />);
     const bloco = screen.getByTestId("carteira-dono");
     expect(bloco.textContent).toContain("Ana Vendas");
   });
@@ -66,15 +68,39 @@ describe("(a) a ficha mostra a carteira com o dono certo", () => {
       isLoading: false,
       data: { contact_id: "c1", dono_user_id: "u-a", qualificado: false },
     });
-    render(<CartaoDaCarteira contactId="c1" papelDoUsuario="manager" />);
+    render(<CartaoDaCarteira contactId="c1" />);
     expect(screen.getByTestId("carteira-dono-inativo")).toBeTruthy();
   });
 
-  it("quem NÃO é gerente+ não vê o seletor de troca", () => {
-    deps.carteira.mockReturnValue({ isLoading: false, data: COM_ANA });
-    render(<CartaoDaCarteira contactId="c1" papelDoUsuario="agent" />);
+  it("quem o SERVIDOR não autoriza não vê o seletor de troca (`pode_alterar: false`)", () => {
+    deps.carteira.mockReturnValue({ isLoading: false, data: SEM_PODER });
+    render(<CartaoDaCarteira contactId="c1" />);
     expect(screen.queryByTestId("carteira-seletor")).toBeNull();
     expect(screen.queryByTestId("carteira-salvar")).toBeNull();
+  });
+
+  /**
+   * #3746 — a capacidade é do SERVIDOR, e o Atendente dono do cliente entra.
+   *
+   * Antes, este cartão comparava `role === "manager"`: dava o seletor a todo
+   * gerente e negava a todo atendente, inclusive ao dono do cliente. O caso
+   * abaixo é o defeito medido pela issue — a sessão é de Atendente, e ele VÊ o
+   * seletor porque o `GET` respondeu `pode_alterar: true` para este contato.
+   */
+  it("#3746 — `agent` dono do cliente vê o seletor (o servidor disse que pode)", async () => {
+    deps.carteira.mockReturnValue({ isLoading: false, data: COM_ANA });
+    const u = userEvent.setup();
+    render(<CartaoDaCarteira contactId="c1" />);
+
+    const seletor = screen.getByTestId("carteira-seletor");
+    await waitFor(() => expect((seletor as HTMLSelectElement).value).toBe("u-a"));
+    await u.selectOptions(seletor, "u-b");
+    await waitFor(() =>
+      expect((screen.getByTestId("carteira-salvar") as HTMLButtonElement).disabled).toBe(false),
+    );
+    await u.click(screen.getByTestId("carteira-salvar"));
+
+    expect(deps.mutate).toHaveBeenCalledWith("u-b");
   });
 });
 
@@ -82,7 +108,7 @@ describe("(b) trocar o dono pela tela grava", () => {
   it("escolher outro vendedor e salvar chama a rota com o id escolhido", async () => {
     deps.carteira.mockReturnValue({ isLoading: false, data: COM_ANA });
     const u = userEvent.setup();
-    render(<CartaoDaCarteira contactId="c1" papelDoUsuario="manager" />);
+    render(<CartaoDaCarteira contactId="c1" />);
 
     const seletor = screen.getByTestId("carteira-seletor");
     // O valor do seletor acompanha o dono atual depois do efeito de montagem.
@@ -99,7 +125,7 @@ describe("(b) trocar o dono pela tela grava", () => {
   it("tirar da carteira (Sem vendedor dono) grava null", async () => {
     deps.carteira.mockReturnValue({ isLoading: false, data: COM_ANA });
     const u = userEvent.setup();
-    render(<CartaoDaCarteira contactId="c1" papelDoUsuario="manager" />);
+    render(<CartaoDaCarteira contactId="c1" />);
     const seletor = screen.getByTestId("carteira-seletor");
     await waitFor(() => expect((seletor as HTMLSelectElement).value).toBe("u-a"));
 
@@ -116,7 +142,7 @@ describe("(b) trocar o dono pela tela grava", () => {
 describe("(c) contato sem dono não quebra a tela", () => {
   it("a ficha mostra o estado vazio COM texto, não em branco", () => {
     deps.carteira.mockReturnValue({ isLoading: false, data: SEM_DONO });
-    render(<CartaoDaCarteira contactId="c1" papelDoUsuario="manager" />);
+    render(<CartaoDaCarteira contactId="c1" />);
     const vazio = screen.getByTestId("carteira-vazio");
     expect(vazio.textContent?.trim().length).toBeGreaterThan(0);
     expect(screen.queryByTestId("carteira-dono")).toBeNull();
@@ -124,7 +150,7 @@ describe("(c) contato sem dono não quebra a tela", () => {
 
   it("erro ao ler a carteira não vira \"sem dono\"", () => {
     deps.carteira.mockReturnValue({ isLoading: false, isError: true, data: undefined });
-    render(<CartaoDaCarteira contactId="c1" papelDoUsuario="agent" />);
+    render(<CartaoDaCarteira contactId="c1" />);
     expect(screen.queryByTestId("carteira-vazio")).toBeNull();
     expect(screen.queryByTestId("carteira-dono")).toBeNull();
   });

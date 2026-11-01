@@ -23,9 +23,10 @@ import type { ConversationWithContact } from "@/hooks/inbox/useConversationsReal
  *   3. com permissão (`manager`+), definir/trocar grava pela MESMA porta da
  *      ficha — a URL do `PATCH` é a mesma `/api/v1/contacts/[id]/carteira`, nada
  *      de rota nova;
- *   4. CONTROLE: sem permissão (`agent` não vê o botão; `viewer` não vê o
- *      bloco) — o gate de verdade é o `requireRole("manager")` da rota, e aqui
- *      só se mede que a tela não oferece o que o servidor recusaria.
+ *   4. CONTROLE: a tela não oferece o que o servidor recusaria — o `agent` de
+ *      FORA do cliente não vê o seletor (`pode_alterar: false` no GET), e o
+ *      `viewer` não vê o bloco. O Atendente DONO do cliente VÊ (o #3746 liberou
+ *      a escrita para ele), e quem decide é o servidor, não o papel lido aqui.
  *
  * O `CartaoDaCarteira` é o componente REAL neste arquivo: é exatamente o reuso
  * que a issue pede ("com o mesmo componente da ficha"), então um dublê aqui
@@ -120,12 +121,25 @@ const MEMBROS = { data: [{ user_id: MARIA, role: "agent", full_name: "Maria Vend
  */
 let donoNaCarteira: string | null = MARIA;
 let falhaDeLeitura = false;
+/**
+ * O `pode_alterar` do GET (#3746) — a capacidade que o cartão lê. `true` por
+ * padrão porque a maioria dos casos aqui mede outra coisa; quem mede a
+ * capacidade passa `false` (Atendente de fora do cliente).
+ */
+let possoAlterar = true;
 
 cenario.get.mockImplementation(async (url?: string) => {
   const bruto = url ?? "";
   if (bruto.includes("/carteira")) {
     if (falhaDeLeitura) throw new Error("rede fora");
-    return { data: { contact_id: CONTATO, dono_user_id: donoNaCarteira, qualificado: true } };
+    return {
+      data: {
+        contact_id: CONTATO,
+        dono_user_id: donoNaCarteira,
+        qualificado: true,
+        pode_alterar: possoAlterar,
+      },
+    };
   }
   if (bruto.includes("team/assignable")) return MEMBROS;
   if (bruto.includes("crm-summary")) return resumo;
@@ -139,6 +153,7 @@ beforeEach(() => {
   cenario.patch.mockClear();
   donoNaCarteira = MARIA;
   falhaDeLeitura = false;
+  possoAlterar = true;
 });
 
 function montar() {
@@ -212,14 +227,42 @@ describe("#3026 — definir a carteira pela MESMA porta da ficha", () => {
     expect(cenario.patch.mock.calls[0]![1]).toEqual({ dono_user_id: null, origem: "manual" });
   });
 
-  it("CONTROLE: 'agent' vê o bloco (a carteira é informação de quem atende), sem o botão", async () => {
+  it("CONTROLE: 'agent' de FORA do cliente vê o bloco, sem o botão (`pode_alterar: false`)", async () => {
     cenario.papel = "agent";
+    possoAlterar = false;
     montar();
 
     const secao = await screen.findByTestId("inbox-bloco-carteira");
     await waitFor(() => expect(within(secao).getByTestId("carteira-dono")).toBeInTheDocument());
     expect(within(secao).queryByTestId("carteira-seletor")).toBeNull();
     expect(within(secao).queryByTestId("carteira-salvar")).toBeNull();
+  });
+
+  /**
+   * #3746 — o Atendente DONO do cliente muda a carteira pela conversa.
+   *
+   * É o que a issue pede: o bloco já aparecia para ele, mas o seletor não, e
+   * quem atendia precisava sair da conversa e pedir a um gerente. Aqui a sessão
+   * é de `agent` e o servidor respondeu `pode_alterar: true` — o seletor aparece
+   * e grava pela MESMA porta da ficha.
+   */
+  it("#3746 — 'agent' dono do cliente vê o seletor e grava pela mesma porta", async () => {
+    cenario.papel = "agent";
+    possoAlterar = true;
+    const u = userEvent.setup();
+    montar();
+
+    const secao = await screen.findByTestId("inbox-bloco-carteira");
+    const seletor = (await within(secao).findByTestId("carteira-seletor")) as HTMLSelectElement;
+    await waitFor(() => expect(seletor.value).toBe(MARIA));
+
+    await u.selectOptions(seletor, "__sem_dono__");
+    const salvar = within(secao).getByTestId("carteira-salvar") as HTMLButtonElement;
+    await waitFor(() => expect(salvar.disabled).toBe(false));
+    await u.click(salvar);
+
+    await waitFor(() => expect(cenario.patch).toHaveBeenCalledTimes(1));
+    expect(cenario.patch.mock.calls[0]![0]).toBe(`/api/v1/contacts/${CONTATO}/carteira`);
   });
 
   it("CONTROLE: 'viewer' não vê o bloco — o GET da carteira cobra agent+", async () => {

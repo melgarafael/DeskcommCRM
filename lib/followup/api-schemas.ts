@@ -143,4 +143,10 @@ export const createFollowupEnrollmentSchema = z.strictObject({
   // ausente, resolve-se do próprio pointer (agentes que o armam). Validado
   // contra a org antes de gravar.
   agent_id: z.string().uuid().optional(),
+  // #3746: a conversa de onde a inscrição nasceu. Opcional porque a fila de
+  // follow-ups inscreve sem ter uma conversa aberta, e porque um cliente antigo
+  // que não manda o campo não pode parar de funcionar. Quando vem, é a conversa
+  // que a régua de posse confere (o Atendente inscreve o cliente que ele
+  // atende); sem ela, vale qualquer conversa do contato atribuída a ele.
+  conversation_id: z.string().uuid().optional(),
 });
