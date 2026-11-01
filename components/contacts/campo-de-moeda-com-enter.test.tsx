@@ -121,11 +121,11 @@ const negocio: Lead = {
   created_by_user_id: null,
 };
 
-const telas = ["Nova oportunidade", "Ficha do negócio", "Editar contato"] as const;
+const telas = ["Novo negócio", "Ficha do negócio", "Editar contato"] as const;
 type Tela = (typeof telas)[number];
 
 function abrir(tela: Tela, campos: Record<string, unknown> = negocio.custom_fields) {
-  if (tela === "Nova oportunidade") {
+  if (tela === "Novo negócio") {
     render(
       <NewLeadDialog
         open
@@ -178,7 +178,7 @@ describe.each(telas)("%s: salvar o campo de moeda (#3428)", (tela) => {
       // entregar o mesmo payload sem depender de tirar o foco do input.
       const salvar = abrir(tela);
       const usuario = userEvent.setup();
-      if (tela === "Nova oportunidade") await usuario.type(screen.getByLabelText("Título"), "Consulta");
+      if (tela === "Novo negócio") await usuario.type(screen.getByLabelText("Título"), "Consulta");
       const campo = screen.getByLabelText(CAMPO.label);
       await usuario.type(campo, texto);
 
@@ -186,7 +186,7 @@ describe.each(telas)("%s: salvar o campo de moeda (#3428)", (tela) => {
         expect(document.activeElement).toBe(campo);
         await usuario.keyboard("{Enter}");
       } else {
-        await usuario.click(screen.getByRole("button", { name: tela === "Nova oportunidade" ? "Criar oportunidade" : "Salvar" }));
+        await usuario.click(screen.getByRole("button", { name: tela === "Novo negócio" ? "Criar negócio" : "Salvar" }));
       }
 
       await waitFor(() => expect(salvar).toHaveBeenCalledTimes(1));
@@ -201,8 +201,8 @@ describe.each(telas)("%s: salvar o campo de moeda (#3428)", (tela) => {
   });
 });
 
-it("Nova oportunidade: Enter com moeda vazia continua recusando o campo obrigatório", async () => {
-  abrir("Nova oportunidade");
+it("Novo negócio: Enter com moeda vazia continua recusando o campo obrigatório", async () => {
+  abrir("Novo negócio");
   const usuario = userEvent.setup();
   await usuario.type(screen.getByLabelText("Título"), "Consulta");
   await usuario.click(screen.getByLabelText(CAMPO.label));

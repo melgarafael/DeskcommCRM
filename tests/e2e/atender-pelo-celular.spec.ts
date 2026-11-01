@@ -304,13 +304,13 @@ test.describe("atender pelo celular", () => {
 
     await page.getByRole("button", { name: "Ficha", exact: true }).tap();
     const ficha = page.getByRole("dialog");
-    await expect(ficha.getByRole("button", { name: "Nova oportunidade", exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(ficha.getByRole("button", { name: "Novo negócio", exact: true })).toBeVisible({ timeout: 20_000 });
     await ficha.getByRole("button", { name: "Tags do contato", exact: true }).tap();
     await expect(ficha.getByPlaceholder("Nova tag…").first()).toBeVisible();
 
     const alvos = [
       { nome: "Tags do contato", local: ficha.getByRole("button", { name: "Tags do contato", exact: true }), largura: false },
-      { nome: "Nova oportunidade", local: ficha.getByRole("button", { name: "Nova oportunidade", exact: true }), largura: false },
+      { nome: "Novo negócio", local: ficha.getByRole("button", { name: "Novo negócio", exact: true }), largura: false },
       { nome: "Ver contato", local: ficha.getByRole("link", { name: "Ver contato" }), largura: false },
       { nome: "Adicionar tag", local: ficha.getByRole("button", { name: "Adicionar tag", exact: true }), largura: true },
       { nome: "Nova tag…", local: ficha.getByPlaceholder("Nova tag…"), largura: false },

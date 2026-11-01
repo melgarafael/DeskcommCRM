@@ -27,7 +27,7 @@ import { AbrirConversaDoLead, temAlvoParaAbrir } from "./AbrirConversaDoLead";
  *
  * ─── Ausência é estado normal, não erro ─────────────────────────────────────
  *
- * Oportunidade criada à mão ou por webhook não tem contato; contato pode não ter
+ * Negócio criado à mão ou por webhook não tem contato; contato pode não ter
  * conversa. Nesses casos o slot não aparece — e NÃO aparece um "sem mensagens"
  * cinza, que ocuparia a mesma linha em metade dos cards para não dizer nada.
  *

@@ -128,7 +128,7 @@ export interface Lead {
    * Derivado (não é coluna): os marcadores do CONTATO deste negócio.
    *
    * O produto tem DUAS caixas de marcador e elas não são a mesma: `tags`, acima,
-   * é do negócio e se escreve em "Editar oportunidade"; esta é da pessoa, e se escreve
+   * é do negócio e se escreve em "Editar negócio"; esta é da pessoa, e se escreve
    * no Inbox e na ficha — é a que a campanha lê. O quadro precisa das duas para
    * o filtro não mentir, e por não ser coluna ela é opcional: um negócio sem
    * contato (criado à mão ou por webhook) simplesmente não tem.

@@ -1,5 +1,5 @@
 /**
- * UM NOME SÓ PARA O CARD: "OPORTUNIDADE" (#3811).
+ * UM NOME SÓ PARA O CARD: "NEGÓCIO" (#3811).
  *
  * ─── O defeito que este arquivo prende ─────────────────────────────────────
  *
@@ -11,22 +11,23 @@
  * "lead" onde o produto já falava "negócio", e "pipeline" onde o menu já diz
  * "Funis".
  *
- * A decisão do autor da issue é UM nome: **Oportunidade**. "Lead" continua
+ * A issue pede UM nome, e a decisão de produto (no PR #3820) é a palavra que
+ * o produto já fala em mais de cem textos: **Negócio**. "Lead" continua
  * valendo só para a PESSOA entrando (contato novo) — nada aqui renomeia
  * tabela, coluna, rota, tipo TS, `data-testid` nem chave de i18n existente.
  *
  * ─── O que este arquivo prova, e COMO ──────────────────────────────────────
  *
  *  1. o texto EXIBIDO pelo diálogo, pelo botão, pelo toast, pelo card e pelo
- *     quadro vazio sai como "oportunidade" — lido por RENDER (Testing Library),
+ *     quadro vazio sai como "negócio" — lido por RENDER (Testing Library),
  *     não por grep no arquivo;
  *  2. o texto vem da FONTE ÚNICA (`lib/i18n/dicionario.ts`): o mesmo diálogo
- *     renderizado em espanhol mostra "Nueva oportunidad". Se alguém voltar a
+ *     renderizado em espanhol mostra "Nuevo negocio". Se alguém voltar a
  *     escrever o texto em duro no JSX, o português continua verde e é esta
  *     asserção que fica vermelha;
  *  3. nenhum texto PT do funil diz "pipeline" — o nome é "funil";
  *  4. a lista `TEXTOS_DO_CARD` congela o vocabulário: cada frase é chave do
- *     dicionário, tem espanhol e diz "oportunidade".
+ *     dicionário, tem espanhol e diz "negócio".
  */
 import { DragDropContext, Droppable } from "@hello-pangea/dnd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -134,19 +135,19 @@ const LEAD = {
  * uma frase que não esteja na fonte única.
  */
 const TEXTOS_DO_CARD = [
-  "Nova oportunidade",
-  "Abra uma oportunidade para um contato neste funil.",
-  "Oportunidade criada",
-  "Criar oportunidade",
-  "Sem contato, esta oportunidade não recebe WhatsApp nem entra nas automações.",
-  "Nenhuma oportunidade neste funil ainda.",
-  "Oportunidade",
-  "Ações da oportunidade",
-  "Editar oportunidade",
-  "Oportunidade atualizada",
-  "Salve a oportunidade antes de anexar arquivos.",
-  "Oportunidades recentes",
-  "Sem oportunidades.",
+  "Novo negócio",
+  "Abra um negócio para um contato neste funil.",
+  "Negócio criado",
+  "Criar negócio",
+  "Sem contato, este negócio não recebe WhatsApp nem entra nas automações.",
+  "Nenhum negócio neste funil ainda.",
+  "Negócio",
+  "Ações do negócio",
+  "Editar negócio",
+  "Negócio atualizado",
+  "Salve o negócio antes de anexar arquivos.",
+  "Negócios recentes",
+  "Sem negócios.",
 ] as const;
 
 function cliente() {
@@ -209,17 +210,17 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("o funil chama o card de OPORTUNIDADE (#3811)", () => {
+describe("o funil chama o card de NEGÓCIO (#3811)", () => {
   it("o diálogo de criação: título, subtítulo, botão e texto sem contato", () => {
     const { container } = montarDialogo();
 
-    expect(screen.getByRole("dialog", { name: "Nova oportunidade" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Novo negócio" })).toBeInTheDocument();
     expect(
-      screen.getByText("Abra uma oportunidade para um contato neste funil."),
+      screen.getByText("Abra um negócio para um contato neste funil."),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Criar oportunidade" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Criar negócio" })).toBeInTheDocument();
     expect(
-      screen.getByText("Sem contato, esta oportunidade não recebe WhatsApp nem entra nas automações."),
+      screen.getByText("Sem contato, este negócio não recebe WhatsApp nem entra nas automações."),
     ).toBeInTheDocument();
 
     // O nome ANTIGO e a palavra "pipeline" não aparecem em NENHUM texto da tela.
@@ -230,33 +231,33 @@ describe("o funil chama o card de OPORTUNIDADE (#3811)", () => {
   it("em espanhol o MESMO diálogo mostra o texto do dicionário (fonte única)", () => {
     montarDialogo("es");
 
-    expect(screen.getByRole("dialog", { name: "Nueva oportunidad" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Crear oportunidad" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Nuevo negocio" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Crear negocio" })).toBeInTheDocument();
   });
 
-  it("o toast de criação diz 'Oportunidade criada'", async () => {
+  it("o toast de criação diz 'Negócio criado'", async () => {
     const user = userEvent.setup();
     montarDialogo();
 
     await user.type(screen.getByLabelText("Título"), "Renovação ACME");
-    await user.click(screen.getByRole("button", { name: "Criar oportunidade" }));
+    await user.click(screen.getByRole("button", { name: "Criar negócio" }));
 
-    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Oportunidade criada"));
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Negócio criado"));
   });
 
-  it("o card se anuncia como 'Oportunidade: <título>' e o menu como 'Ações da oportunidade'", () => {
+  it("o card se anuncia como 'Negócio: <título>' e o menu como 'Ações do negócio'", () => {
     const { container } = montarCard();
 
-    const cartao = screen.getByRole("group", { name: /^Oportunidade: / });
-    expect(cartao.getAttribute("aria-label")).toBe(`Oportunidade: ${LEAD.title}`);
-    expect(screen.getByRole("button", { name: "Ações da oportunidade" })).toBeInTheDocument();
+    const cartao = screen.getByRole("group", { name: /^Negócio: / });
+    expect(cartao.getAttribute("aria-label")).toBe(`Negócio: ${LEAD.title}`);
+    expect(screen.getByRole("button", { name: "Ações do negócio" })).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/pipeline/i);
   });
 
-  it("o quadro vazio diz 'Nenhuma oportunidade neste funil ainda.'", () => {
+  it("o quadro vazio diz 'Nenhum negócio neste funil ainda.'", () => {
     const { container } = montarQuadroVazio();
 
-    expect(screen.getByText("Nenhuma oportunidade neste funil ainda.")).toBeInTheDocument();
+    expect(screen.getByText("Nenhum negócio neste funil ainda.")).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/pipeline/i);
   });
 
@@ -269,10 +270,10 @@ describe("o funil chama o card de OPORTUNIDADE (#3811)", () => {
       [],
     );
 
-    // O nome é UM só: toda frase do card diz "oportunidade", e o português é a
+    // O nome é UM só: toda frase do card diz "negócio", e o português é a
     // própria chave (`traduzir` devolver outra coisa significaria dicionário
     // mentindo sobre o que a tela mostra).
-    const semONome = TEXTOS_DO_CARD.filter((texto) => !/oportunidade/i.test(texto));
+    const semONome = TEXTOS_DO_CARD.filter((texto) => !/negócio/i.test(texto));
     expect(semONome, `textos do card sem o nome novo: ${semONome.join(" | ")}`).toEqual([]);
 
     const ptDivergente = TEXTOS_DO_CARD.filter((texto) => traduzir(texto, "pt-BR") !== texto);

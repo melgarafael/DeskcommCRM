@@ -163,30 +163,30 @@ describe("painel do inbox — campos do lead", () => {
     expect((screen.getByLabelText("Empresa") as HTMLInputElement).value).toBe("");
   });
 
-  it("leitura que FALHA não vira 'Sem oportunidades.'", async () => {
+  it("leitura que FALHA não vira 'Sem negócios.'", async () => {
     get.mockRejectedValue(new Error("500"));
     renderPainel();
 
     const secao = await screen.findByTestId("inbox-campos-lead");
     await waitFor(() => expect(secao.textContent).toMatch(/não consegui ler/i));
-    expect(secao.textContent).not.toMatch(/sem oportunidades/i);
+    expect(secao.textContent).not.toMatch(/sem negócios/i);
   });
 });
 
 describe("painel do inbox — o botão diz o que faz (issue #908)", () => {
   // "Lead" era lido como "ver o lead deste contato", mas abre o diálogo que
-  // CRIA um novo; o card existente se edita em "Oportunidades recentes", logo abaixo.
-  it("o botão que cria se chama 'Nova oportunidade' — e abre o diálogo de criação", async () => {
+  // CRIA um novo; o card existente se edita em "Negócios recentes", logo abaixo.
+  it("o botão que cria se chama 'Novo negócio' — e abre o diálogo de criação", async () => {
     get.mockResolvedValue({ data: RESPOSTA });
     renderPainel();
 
-    const botao = await screen.findByRole("button", { name: "Nova oportunidade" });
+    const botao = await screen.findByRole("button", { name: "Novo negócio" });
     expect(screen.queryByRole("button", { name: "Lead" })).toBeNull();
 
     // O rótulo sozinho não diz de QUEM ele é: sem o clique, trocá-lo com o do
     // editor de tags mantinha o caso verde.
     await userEvent.click(botao);
-    expect(await screen.findByRole("dialog", { name: "Nova oportunidade" })).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: "Novo negócio" })).toBeTruthy();
   });
 });
 

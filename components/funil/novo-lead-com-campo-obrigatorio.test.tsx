@@ -4,8 +4,8 @@
  * ─── O defeito relatado ─────────────────────────────────────────────────────
  *
  * Com um campo personalizado marcado como obrigatório na etapa Prospecção
- * (`settings.fields[].obrigatorio_em.etapas`), clicar em "Criar oportunidade" no
- * formulário "Nova oportunidade" (`components/kanban/NewLeadDialog.tsx`) devolvia
+ * (`settings.fields[].obrigatorio_em.etapas`), clicar em "Criar negócio" no
+ * formulário "Novo negócio" (`components/kanban/NewLeadDialog.tsx`) devolvia
  * "Preencha os campos obrigatórios antes de continuar: Tipo de cliente" — a
  * recusa do `createLeadHandler` (#1710, a régua da etapa em que o negócio
  * NASCE) — e NÃO havia input de "Tipo de cliente" na tela: o botão ficava em
@@ -161,7 +161,7 @@ async function preencherTitulo(user: ReturnType<typeof userEvent.setup>) {
 }
 
 function clicarEmCriarLead(user: ReturnType<typeof userEvent.setup>) {
-  return user.click(screen.getByRole("button", { name: "Criar oportunidade" }));
+  return user.click(screen.getByRole("button", { name: "Criar negócio" }));
 }
 
 beforeEach(() => {
@@ -171,7 +171,7 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe("Nova oportunidade numa etapa que exige campo personalizado (#3038)", () => {
+describe("Novo negócio numa etapa que exige campo personalizado (#3038)", () => {
   it("campo de texto obrigatório aparece no formulário e a criação leva o valor", async () => {
     const user = userEvent.setup();
     abrir(settingsCom([campoTexto()]));
@@ -290,7 +290,7 @@ describe("Nova oportunidade numa etapa que exige campo personalizado (#3038)", (
     // em "Criando…" — a frase "Preencha os campos obrigatórios…" sozinha, sem
     // um único input para preencher.
     expect(criarLead).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Criar oportunidade" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Criar negócio" })).toBeTruthy();
     // O aviso continua existindo — mas agora AO LADO do campo que ele pede.
     expect(screen.getByLabelText("Tipo de cliente")).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toContain("Tipo de cliente");

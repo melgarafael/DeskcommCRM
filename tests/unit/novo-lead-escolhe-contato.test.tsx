@@ -1,5 +1,5 @@
 /**
- * "Nova oportunidade" pelo funil nasce sem contato (#852, fatia S2).
+ * "Novo negócio" pelo funil nasce sem contato (#852, fatia S2).
  *
  * Medido em `main@174cd0da`: `NewLeadDialog` pede título, descrição, etapa,
  * valor, fechamento e tags — e nada mais. O `contact_id` só vai quando o
@@ -79,7 +79,7 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe("Nova oportunidade pelo funil — o lead nasce com contato", () => {
+describe("Novo negócio pelo funil — o lead nasce com contato", () => {
   it("escolher um contato da base manda o contact_id na criação", async () => {
     const user = userEvent.setup();
     render(
@@ -95,7 +95,7 @@ describe("Nova oportunidade pelo funil — o lead nasce com contato", () => {
     await user.click(await screen.findByRole("button", { name: /Michelle/ }));
 
     await user.type(screen.getByLabelText("Título"), "Consulta trabalhista");
-    await user.click(screen.getByRole("button", { name: "Criar oportunidade" }));
+    await user.click(screen.getByRole("button", { name: "Criar negócio" }));
 
     await waitFor(() => expect(criarLead).toHaveBeenCalledTimes(1));
     expect(criarLead.mock.calls[0]?.[0]).toMatchObject({ contact_id: MICHELLE.id });
@@ -137,7 +137,7 @@ describe("Nova oportunidade pelo funil — o lead nasce com contato", () => {
     );
 
     await user.type(await screen.findByLabelText("Título"), "Outro assunto");
-    await user.click(screen.getByRole("button", { name: "Criar oportunidade" }));
+    await user.click(screen.getByRole("button", { name: "Criar negócio" }));
 
     await waitFor(() => expect(criarLead).toHaveBeenCalledTimes(1));
     expect(criarLead.mock.calls[0]?.[0]).not.toHaveProperty("contact_id");
@@ -157,7 +157,7 @@ describe("Nova oportunidade pelo funil — o lead nasce com contato", () => {
     expect(await screen.findByText(/não recebe WhatsApp/i)).toBeTruthy();
 
     await user.type(screen.getByLabelText("Título"), "Consulta trabalhista");
-    await user.click(screen.getByRole("button", { name: "Criar oportunidade" }));
+    await user.click(screen.getByRole("button", { name: "Criar negócio" }));
 
     await waitFor(() => expect(criarLead).toHaveBeenCalledTimes(1));
     expect(criarLead.mock.calls[0]?.[0]).not.toHaveProperty("contact_id");

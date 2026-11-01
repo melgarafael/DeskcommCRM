@@ -132,9 +132,9 @@ test.describe("Lote 12 — quadro do funil", () => {
   test("#938 caminho 1 — MENU do card: a janela pede o motivo do FUNIL e grava", async ({ page }) => {
     await login(page, c.users.manager!.email, c.password);
     await abreQuadro(page, pipelineId, `Menu ${SUFIXO}`);
-    const card = page.getByRole("group", { name: `Oportunidade: Menu ${SUFIXO}` });
+    const card = page.getByRole("group", { name: `Negócio: Menu ${SUFIXO}` });
 
-    await card.getByRole("button", { name: "Ações da oportunidade" }).click();
+    await card.getByRole("button", { name: "Ações do negócio" }).click();
     await page.getByRole("menuitem", { name: "Marcar como perdido" }).click();
     const dialogo = page.getByRole("dialog");
     await expect(dialogo).toBeVisible();
@@ -171,8 +171,8 @@ test.describe("Lote 12 — quadro do funil", () => {
   }) => {
     await login(page, c.users.manager!.email, c.password);
     await abreQuadro(page, pipelineId, `Outro ${SUFIXO}`);
-    const card = page.getByRole("group", { name: `Oportunidade: Outro ${SUFIXO}` });
-    await card.getByRole("button", { name: "Ações da oportunidade" }).click();
+    const card = page.getByRole("group", { name: `Negócio: Outro ${SUFIXO}` });
+    await card.getByRole("button", { name: "Ações do negócio" }).click();
     await page.getByRole("menuitem", { name: "Marcar como perdido" }).click();
 
     await page.locator('input[name="lost-reason"][value="other"]').check();
@@ -215,7 +215,7 @@ test.describe("Lote 12 — quadro do funil", () => {
   }) => {
     await login(page, c.users.manager!.email, c.password);
     await abreQuadro(page, pipelineId, `Arrasto ${SUFIXO}`);
-    const card = page.getByRole("group", { name: `Oportunidade: Arrasto ${SUFIXO}` });
+    const card = page.getByRole("group", { name: `Negócio: Arrasto ${SUFIXO}` });
 
     const moves: string[] = [];
     page.on("request", (req) => {
@@ -265,11 +265,11 @@ test.describe("Lote 12 — quadro do funil", () => {
   test("#935 caminho 3 — LOTE até a etapa de perda: recusa 422 nomeando os cards", async ({ page }) => {
     await login(page, c.users.manager!.email, c.password);
     await abreQuadro(page, pipelineId, `LoteA ${SUFIXO}`);
-    const a = page.getByRole("group", { name: `Oportunidade: LoteA ${SUFIXO}` });
+    const a = page.getByRole("group", { name: `Negócio: LoteA ${SUFIXO}` });
 
     await a.hover();
     await page.getByRole("checkbox", { name: `Selecionar: LoteA ${SUFIXO}` }).check();
-    const b = page.getByRole("group", { name: `Oportunidade: LoteB ${SUFIXO}` });
+    const b = page.getByRole("group", { name: `Negócio: LoteB ${SUFIXO}` });
     await b.hover();
     await page.getByRole("checkbox", { name: `Selecionar: LoteB ${SUFIXO}` }).check();
     await expect(page.locator("[data-lote-selecionados]")).toHaveAttribute(
@@ -311,10 +311,10 @@ test.describe("Lote 12 — quadro do funil", () => {
   }) => {
     await login(page, c.users.manager!.email, c.password);
     await abreQuadro(page, pipelineId, `LoteA ${SUFIXO}`);
-    const a = page.getByRole("group", { name: `Oportunidade: LoteA ${SUFIXO}` });
+    const a = page.getByRole("group", { name: `Negócio: LoteA ${SUFIXO}` });
     await a.hover();
     await page.getByRole("checkbox", { name: `Selecionar: LoteA ${SUFIXO}` }).check();
-    const b = page.getByRole("group", { name: `Oportunidade: LoteB ${SUFIXO}` });
+    const b = page.getByRole("group", { name: `Negócio: LoteB ${SUFIXO}` });
     await b.hover();
     await page.getByRole("checkbox", { name: `Selecionar: LoteB ${SUFIXO}` }).check();
 
@@ -370,9 +370,9 @@ test.describe("Lote 12 — quadro do funil", () => {
   test("#911 — excluir pelo menu do próprio card, com o aviso destrutivo", async ({ page }) => {
     await login(page, c.users.manager!.email, c.password);
     await abreQuadro(page, pipelineId, `Excluir ${SUFIXO}`);
-    const card = page.getByRole("group", { name: `Oportunidade: Excluir ${SUFIXO}` });
+    const card = page.getByRole("group", { name: `Negócio: Excluir ${SUFIXO}` });
 
-    await card.getByRole("button", { name: "Ações da oportunidade" }).click();
+    await card.getByRole("button", { name: "Ações do negócio" }).click();
     const itens = await page.getByRole("menuitem").allInnerTexts();
     registra(`#911 · itens do menu do card (manager) = ${JSON.stringify(itens)}`);
     expect(itens).toContain("Excluir");
@@ -462,7 +462,7 @@ test.describe("Lote 12 — #911 no TOQUE (sem hover)", () => {
     await login(page, cc.users.manager!.email, cc.password);
     await abreQuadro(page, pid, `Toque ${ST}`);
 
-    const botao = page.getByRole("button", { name: "Ações da oportunidade" }).first();
+    const botao = page.getByRole("button", { name: "Ações do negócio" }).first();
     await expect(botao).toBeVisible({ timeout: 30_000 });
     // Opacidade COMPUTADA, nunca a string do className — e SEM hover antes.
     const opacidade = await botao.evaluate((el) => getComputedStyle(el).opacity);
@@ -539,8 +539,8 @@ test.describe("Lote 12 — #911 no TOQUE (sem hover)", () => {
 
       await login(page, cc.users.agent!.email, cc.password);
       await abreQuadro(page, fid, `Mover ${ST}`);
-      const card = page.getByRole("group", { name: `Oportunidade: Mover ${ST}` });
-      const botao = card.getByRole("button", { name: "Ações da oportunidade" });
+      const card = page.getByRole("group", { name: `Negócio: Mover ${ST}` });
+      const botao = card.getByRole("button", { name: "Ações do negócio" });
 
       // O botão continua com 28px no desenho, mas o dedo acerta a 21px do
       // centro nos quatro sentidos (44px de área) — medido por elementFromPoint.
@@ -590,8 +590,8 @@ test.describe("Lote 12 — #911 no TOQUE (sem hover)", () => {
       expect(r.status()).toBe(200);
       // O card CHEGA à etapa: entra no TOPO, acima da âncora (#3461).
       await expect(
-        page.locator(`[data-rfd-droppable-id="${et.Contato}"] [role="group"][aria-label^="Oportunidade:"]`).first(),
-      ).toHaveAttribute("aria-label", `Oportunidade: Mover ${ST}`, { timeout: 15_000 });
+        page.locator(`[data-rfd-droppable-id="${et.Contato}"] [role="group"][aria-label^="Negócio:"]`).first(),
+      ).toHaveAttribute("aria-label", `Negócio: Mover ${ST}`, { timeout: 15_000 });
       const { data: noContato } = await admin
         .from("crm_leads")
         .select("stage_id, position_in_stage")
@@ -606,7 +606,7 @@ test.describe("Lote 12 — #911 no TOQUE (sem hover)", () => {
       page.on("request", (req) => {
         if (req.url().includes(`/leads/${ids.movido}/move`) && req.method() === "POST") moves.push(req.postData() ?? "");
       });
-      await card.getByRole("button", { name: "Ações da oportunidade" }).click();
+      await card.getByRole("button", { name: "Ações do negócio" }).click();
       await page.getByRole("menuitem", { name: "Perdido", exact: true }).click();
       const dialogo = page.getByRole("dialog", { name: "Marcar como perdido" });
       await expect(dialogo).toBeVisible();
@@ -696,7 +696,7 @@ test("próxima ação genérica preserva a proposta anterior e null limpa pelo t
     await page.getByTestId("tenant-switcher").click();
     await page.getByTestId(`tenant-switcher-item-${org}`).click();
     await expect.poll(async () => (await page.context().cookies()).find((cookie) => cookie.name === "active_org")?.value).toBe(org);
-    const card = page.getByRole("group", { name: `Oportunidade: Agente ${sufixo}`, exact: true });
+    const card = page.getByRole("group", { name: `Negócio: Agente ${sufixo}`, exact: true });
     const concreta = "Enviar o orçamento do modelo X até sexta";
     mkdirSync("evidence/antigos-core-3458", { recursive: true });
     for (const passo of [

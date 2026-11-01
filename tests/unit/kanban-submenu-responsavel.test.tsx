@@ -78,7 +78,7 @@ function renderCard() {
 /** Abre o menu "⋯" e o submenu "Responsável" (hover, o gesto do desktop). */
 async function abrirSubmenuResponsavel(user: ReturnType<typeof userEvent.setup>) {
   renderCard();
-  await user.click(screen.getByRole("button", { name: "Ações da oportunidade" }));
+  await user.click(screen.getByRole("button", { name: "Ações do negócio" }));
   await screen.findByRole("menuitem", { name: "Editar" });
   await user.hover(screen.getByRole("menuitem", { name: "Responsável" }));
   return await screen.findByRole("menu", { name: "Responsável" });

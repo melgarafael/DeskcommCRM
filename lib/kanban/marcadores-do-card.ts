@@ -5,7 +5,7 @@
  *
  * O produto tem TRÊS lugares onde se marca, e eles não são o mesmo:
  *
- * - `crm_leads.tags` — do NEGÓCIO, campo de texto livre em "Editar oportunidade".
+ * - `crm_leads.tags` — do NEGÓCIO, campo de texto livre em "Editar negócio".
  * - `contacts.tags`  — da PESSOA, escrito no Inbox e na ficha. É a caixa que a
  *   campanha lê e a que quem atende usa todo dia.
  * - `conversations.tags` — da CONVERSA, "Tags da conversa" no painel do Inbox,

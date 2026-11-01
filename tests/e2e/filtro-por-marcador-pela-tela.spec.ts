@@ -511,7 +511,7 @@ test.describe("filtro por marcador, pela tela", () => {
 
     // O quadro, com os dois cards.
     await abreQuadro(page, funil, cardMarcado);
-    await expect(page.getByRole("group", { name: `Oportunidade: ${cardNeutro}` })).toBeVisible();
+    await expect(page.getByRole("group", { name: `Negócio: ${cardNeutro}` })).toBeVisible();
 
     await page.getByRole("button", { name: "Tag: todas" }).click();
     await expect(page.getByRole("menuitemcheckbox", { name: tagDoContato, exact: true })).toBeVisible({
@@ -524,10 +524,10 @@ test.describe("filtro por marcador, pela tela", () => {
 
     await page.getByRole("menuitemcheckbox", { name: tagDoContato, exact: true }).click();
     await page.keyboard.press("Escape");
-    await expect(page.getByRole("group", { name: `Oportunidade: ${cardMarcado}` })).toBeVisible({
+    await expect(page.getByRole("group", { name: `Negócio: ${cardMarcado}` })).toBeVisible({
       timeout: 30_000,
     });
-    await expect(page.getByRole("group", { name: `Oportunidade: ${cardNeutro}` })).toHaveCount(0);
+    await expect(page.getByRole("group", { name: `Negócio: ${cardNeutro}` })).toHaveCount(0);
     await captura(page, "filtro-tela-05-quadro-filtrado-pelo-contato");
 
     // E pelo marcador da conversa: o mesmo card, e o neutro continua fora.
@@ -554,18 +554,18 @@ test.describe("filtro por marcador, pela tela", () => {
     await page.getByRole("menuitemcheckbox", { name: tagDoContato, exact: true }).click();
     await page.getByRole("menuitemcheckbox", { name: soNaConversa, exact: true }).click();
     await page.keyboard.press("Escape");
-    await expect(page.getByRole("group", { name: `Oportunidade: ${cardMarcado}` })).toBeVisible({
+    await expect(page.getByRole("group", { name: `Negócio: ${cardMarcado}` })).toBeVisible({
       timeout: 30_000,
     });
-    await expect(page.getByRole("group", { name: `Oportunidade: ${cardNeutro}` })).toHaveCount(0);
+    await expect(page.getByRole("group", { name: `Negócio: ${cardNeutro}` })).toHaveCount(0);
     // E DEPOIS que a URL chega: sem o conserto, é aqui que o "trocar" vira
     // "somar" — o quadro acima ainda mostrava o filtro velho. A URL só muda com
     // o RSC respondido, então nenhuma rota atrasada fica em voo depois daqui.
     await expect(page).toHaveURL(new RegExp(`\\?tag=${soNaConversa}$`), { timeout: 30_000 });
     await page.unroute(rscDoFunil);
     await expect(page.getByRole("button", { name: `Tag: ${soNaConversa}`, exact: true })).toBeVisible();
-    await expect(page.getByRole("group", { name: `Oportunidade: ${cardMarcado}` })).toBeVisible();
-    await expect(page.getByRole("group", { name: `Oportunidade: ${cardNeutro}` })).toHaveCount(0);
+    await expect(page.getByRole("group", { name: `Negócio: ${cardMarcado}` })).toBeVisible();
+    await expect(page.getByRole("group", { name: `Negócio: ${cardNeutro}` })).toHaveCount(0);
     await captura(page, "filtro-tela-06-quadro-filtrado-pela-conversa");
   });
 });

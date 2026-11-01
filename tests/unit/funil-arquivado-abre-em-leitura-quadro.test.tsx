@@ -115,7 +115,7 @@ describe("a página de um funil arquivado (#1298, item 1)", () => {
   it("não oferece criar negócio nem as abas que escrevem (Lista e Calendário)", async () => {
     await montarPagina();
 
-    expect(screen.queryByRole("button", { name: /Nova oportunidade/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Novo negócio/ })).toBeNull();
     expect(screen.queryByTestId("visao-quadro")).toBeNull();
     expect(screen.queryByTestId("visao-lista")).toBeNull();
     expect(screen.queryByTestId("visao-calendario")).toBeNull();
@@ -136,12 +136,12 @@ describe("a página de um funil arquivado (#1298, item 1)", () => {
     expect(visto.somenteLeitura).toBe(true);
   });
 
-  it("enquanto o quadro carrega, o funil do servidor já fecha a Nova oportunidade e as abas", async () => {
+  it("enquanto o quadro carrega, o funil do servidor já fecha o Novo negócio e as abas", async () => {
     carregando.valor = true;
     await montarPagina();
 
     expect(screen.getByTestId("funil-arquivado-aviso")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Nova oportunidade/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Novo negócio/ })).toBeNull();
     expect(screen.queryByTestId("visao-lista")).toBeNull();
   });
 
@@ -150,7 +150,7 @@ describe("a página de um funil arquivado (#1298, item 1)", () => {
     await montarPagina();
 
     expect(screen.queryByTestId("funil-arquivado-aviso")).toBeNull();
-    expect(screen.getByRole("button", { name: /Nova oportunidade/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Novo negócio/ })).toBeTruthy();
     expect(screen.getByTestId("visao-quadro")).toBeTruthy();
     expect(visto.somenteLeitura).toBe(false);
     expect(visto.podeRenomearEtapa).toBe(true);

@@ -557,7 +557,7 @@ test.describe("Quadro do funil — agir em vários cards de uma vez", () => {
       // ⚠️ Nenhum `hover()` antes desta leitura: num aparelho de toque o ponteiro
       // nunca "passa por cima", e era com `opacity-0` incondicional que o menu
       // ficava inalcançável.
-      const botao = page.getByRole("button", { name: "Ações da oportunidade" }).first();
+      const botao = page.getByRole("button", { name: "Ações do negócio" }).first();
       await expect(botao).toHaveCount(1);
       const opacidade = await botao.evaluate((el) => Number(getComputedStyle(el).opacity));
       expect(

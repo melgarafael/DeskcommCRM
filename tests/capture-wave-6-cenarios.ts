@@ -541,7 +541,7 @@ async function main(): Promise<void> {
     // cenário passa". É ensaio de instrumento, não veredito de produto.
     if (process.env.ENSAIO === "1") {
       const { card: cardEnsaio } = await cardLocator(page, caso.titulo);
-      await cardEnsaio.getByRole("button", { name: "Ações da oportunidade" }).click();
+      await cardEnsaio.getByRole("button", { name: "Ações do negócio" }).click();
       await page.getByRole("menuitem", { name: /editar/i }).click();
       await page.waitForTimeout(1200);
       const painelEnsaio = dossie(page);
@@ -563,7 +563,7 @@ async function main(): Promise<void> {
         await page.keyboard.press("Escape");
         await page.waitForTimeout(500);
         const { card: c } = await cardLocator(page, caso.titulo);
-        await c.getByRole("button", { name: "Ações da oportunidade" }).click();
+        await c.getByRole("button", { name: "Ações do negócio" }).click();
         await page.getByRole("menuitem", { name: /editar/i }).click();
         await page.waitForTimeout(700);
       }

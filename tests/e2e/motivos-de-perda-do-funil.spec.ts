@@ -171,7 +171,7 @@ test.describe("Janela de perder — os motivos são os do funil", () => {
     await page.goto(`/app/pipelines/${pipelineId}`);
     await expect(page.getByText(TITULO, { exact: true })).toBeVisible({ timeout: 30_000 });
 
-    await page.getByRole("button", { name: "Ações da oportunidade" }).first().click();
+    await page.getByRole("button", { name: "Ações do negócio" }).first().click();
     await page.getByRole("menuitem", { name: "Marcar como perdido" }).click();
     await expect(page.getByText("Marcar como perdido").last()).toBeVisible();
 

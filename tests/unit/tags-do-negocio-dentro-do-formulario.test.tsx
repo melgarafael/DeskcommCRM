@@ -2,7 +2,7 @@
  * O EDITOR DE ETIQUETAS DENTRO DO FORMULÁRIO DO NEGÓCIO NÃO SUBMETE O FORMULÁRIO (#3021).
  *
  * O `ContactTagsEditor` nasceu fora de `<form>` (Inbox). No funil ele mora
- * DENTRO do "Editar oportunidade" e do formulário do dossiê, e um `<button>` sem `type`
+ * DENTRO do "Editar negócio" e do formulário do dossiê, e um `<button>` sem `type`
  * dentro de `<form>` é `submit`: o "+" gravava a etiqueta E salvava os outros
  * campos (2 PATCH, e o diálogo fechava), e ainda virava o botão padrão do
  * formulário — desabilitado com o rascunho vazio, o Enter no Título parava de
