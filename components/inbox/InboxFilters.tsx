@@ -34,6 +34,7 @@ import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { useConversationTagVocabulary } from "@/hooks/inbox/useConversationTags";
 import { useConversationCounts } from "@/hooks/inbox/useConversationCounts";
+import { useDepoisDeMontar } from "@/hooks/ui/useDepoisDeMontar";
 import { roleAtLeast, type Role, type VisibilityMode } from "@/lib/auth/types";
 import { SeletorDeAtendente } from "@/components/inbox/SeletorDeAtendente";
 
@@ -213,6 +214,14 @@ export function InboxFilters({ value, onChange }: Props) {
   // Os MESMOS filtros que a lista aplicou. Badge que conta o que a aba não mostra
   // manda o atendente procurar trabalho que não existe — a regra já estava escrita
   // na rota; faltava alcançar os filtros ao lado da aba.
+  // #3736 — o badge de contagem NÃO entra no HTML do servidor nem no primeiro
+  // render da hidratação: a contagem chega por react-query e, quando a resposta
+  // chegava no meio da hidratação, o `<span>` aparecia num render que o React
+  // comparava com um HTML sem ele (React #418, `isText=false`). `depoisDeMontar`
+  // é `false` no servidor E no snapshot de servidor do cliente, então o primeiro
+  // render do cliente é idêntico ao HTML por construção; o badge entra na
+  // re-renderização seguinte. Ver `hooks/ui/useDepoisDeMontar.ts`.
+  const depoisDeMontar = useDepoisDeMontar();
   const { data: counts } = useConversationCounts(activeOrg?.orgId ?? null, {
     assigned_to: value.assigned_to,
     unread: value.onlyUnread,
@@ -687,7 +696,7 @@ export function InboxFilters({ value, onChange }: Props) {
                   className="shrink-0 gap-1 rounded-none border-b-2 border-transparent px-0 pb-2 pt-1 text-xs font-medium text-text-muted data-[state=active]:border-accent data-[state=active]:bg-transparent data-[state=active]:text-text data-[state=active]:shadow-none"
                 >
                   {t(meta.label)}
-                  {typeof count === "number" && count > 0 && (
+                  {depoisDeMontar && typeof count === "number" && count > 0 && (
                     <span className="text-[11px] tabular-nums text-text-subtle">{count}</span>
                   )}
                 </TabsTrigger>
