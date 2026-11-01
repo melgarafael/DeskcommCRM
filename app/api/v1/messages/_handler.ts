@@ -8,6 +8,7 @@ import {
 } from "@/lib/ai/replies/delivery";
 import { assertMeetingDeliverySupabase } from "@/lib/agenda/meet-delivery";
 import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
+import { AgendaPuladoError, MOTIVO_DO_PULO } from "@/lib/agenda/escolha-no-envio";
 import { assertAgendaEffectSupabase, guardAgendaEffect } from "@/lib/agenda/efeito";
 import { mesmaFronteira, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
@@ -1404,6 +1405,27 @@ export async function sendMessageHandler(
       if (updated) message = updated as unknown as Message;
       }
     } catch (err) {
+      if (err instanceof AgendaPuladoError) {
+        // O pulo por compromisso chega aqui pelo recheck do corte, DEPOIS do
+        // INSERT: relançar com a linha em `queued` deixava o redrive do
+        // watchdog (`redriveQueued`) mandá-la pelo canal — o que o operador
+        // escolheu NÃO mandar. A linha sai de `queued` como os bloqueios do
+        // watchdog saem (`pre_go_live`, `channel_disabled`); só se ainda estiver
+        // lá, para não rebaixar um `sent`.
+        await supabase
+          .from("messages")
+          .update({
+            status: "failed",
+            error_code: MOTIVO_DO_PULO,
+            error_message: "Não enviada: o contato tem horário marcado e o fluxo está configurado para não enviar.",
+          })
+          .eq("id", message.id)
+          .eq("organization_id", ctx.organization_id)
+          .eq("status", "queued")
+          .select("id")
+          .maybeSingle();
+        throw err;
+      }
       if (err instanceof StaleServiceBoundaryError || err instanceof AgendaDeferredError || err instanceof ApprovedReplyReceiptPersistenceError) throw err;
       const msg = err instanceof Error ? err.message : adapter.codes.unknownError;
       // `storage_sign_failed` fica literal: é falha do NOSSO Storage, não do
