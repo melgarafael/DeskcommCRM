@@ -1091,7 +1091,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
             usuarioId={usuarioId}
           />
         )}
-        <div className="flex items-end gap-2">
+        {/* O CAMPO EM CIMA, as ferramentas embaixo (redesign kvgroup, seção
+            6.3): o `order-first` + `basis-full` põe o campo numa linha só dele
+            sem mexer na ordem dos controles no DOM. */}
+        <div className="flex flex-wrap items-center gap-1">
           {/* O "+" existe nos DOIS modos desde a F3 da #1863: em "Nota interna"
               ele abre o mesmo menu, com as DUAS primeiras opções — foto/vídeo e
               documento — porque a nota passou a aceitar anexo. A terceira
@@ -1199,12 +1202,18 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
               // 16px abaixo do `md`: o Safari do iPhone AMPLIA a página ao focar
               // campo com fonte menor, e a conversa sai do quadro. 44px de alvo
               // até o `lg`, como o resto dos botões de toque.
-              "max-h-48 min-h-11 flex-1 resize-none rounded-md border border-transparent bg-transparent px-2 py-2 text-base md:text-sm lg:min-h-[4.5rem]",
+              "order-first max-h-48 min-h-11 basis-full resize-none rounded-md border border-transparent bg-transparent px-2 py-1.5 text-base md:text-sm lg:min-h-[2.75rem]",
               "placeholder:text-muted-foreground focus:ring-0 focus:outline-hidden",
             )}
             disabled={mode === "note" ? isDisabled : respostaBarrada}
             aria-label={t("Mensagem")}
           />
+          {mode === "reply" && (
+            <span className="ml-1 text-xs text-[var(--kv-text-faint)] max-lg:hidden">
+              {t("Digite / para respostas rápidas")}
+            </span>
+          )}
+          <span className="flex-1" aria-hidden />
           {text.trim() || mode === "note" ? (
             <Button
               type="button"
