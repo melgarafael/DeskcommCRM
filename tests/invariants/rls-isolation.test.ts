@@ -665,6 +665,16 @@ beforeAll(() => {
             (organization_id, preview_run_id, conversation_id, contact_id, is_dry_run, status, messages_sent)
           values (v_org, 'rls-invariant-' || v_org::text, v_conv, v_contact, true, 'completed', 0);
         end if;
+
+        -- 9082 (#3764, fatia 1) — a identidade do contato por canal. Vazar a
+        -- linha entrega ao vizinho o e-mail/telefone/perfil de uma pessoa que
+        -- não é cliente dele. O identificador é distinto por organização
+        -- porque o unique é (organization_id, canal, identificador).
+        if not exists (select 1 from public.contact_identities where organization_id = v_org) then
+          insert into public.contact_identities (organization_id, contact_id, canal, identificador)
+          values (v_org, v_contact, 'email',
+                  'rls-invariant-' || right(v_org::text, 1) || '@invariant.test');
+        end if;
       end loop;
     end
     $seed$;
@@ -879,6 +889,11 @@ export const TABLES = [
   // migration 9043 — o segundo telefone da ficha (Spec 31 B1). Leitura por
   // organização; a escrita exige `agent`, o papel semeado aqui.
   "contact_phones",
+  // migration 9082 — as identidades do contato por canal (#3764, fatia 1): o
+  // e-mail, o telefone do WhatsApp e o perfil social que levam à MESMA ficha.
+  // Leitura por organização; a escrita exige `agent` (mesmo piso da 9043), e o
+  // eixo do `viewer` é medido em `identidades-do-contato.test.ts`.
+  "contact_identities",
   // ⚠️ `cobranca_assinaturas` (migration 0583) NÃO entra nesta lista, pelo mesmo
   // motivo de `webhook_lead_captures`: a leitura é só do `admin` e o usuário
   // semeado aqui é `agent`, então o controle positivo falharia por ACERTO. A
