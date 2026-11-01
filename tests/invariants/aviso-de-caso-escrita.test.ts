@@ -405,7 +405,10 @@ describe("0292 — fn_definir_aviso_de_caso é a única porta, e ela confere o p
   it("anon não tem EXECUTE na função", () => {
     expect(
       booleano(
-        `select has_function_privilege('anon', 'public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean)', 'EXECUTE')::text`,
+        // A assinatura é a da função VIVA: a 9078 trocou a de 7 argumentos por
+        // esta, e a antiga não existe mais — perguntar por ela devolveria erro
+        // de função inexistente, não um "não" honesto.
+        `select has_function_privilege('anon', 'public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb)', 'EXECUTE')::text`,
       ),
       "a função nasceu exposta à anon key, que vai para o browser",
     ).toBe(false);

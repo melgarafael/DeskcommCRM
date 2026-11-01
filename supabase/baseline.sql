@@ -31044,14 +31044,7 @@ create table if not exists public.config_aviso_de_caso (
   -- desliga (pelo trigger) e deixa a tela explicar.
   channel_session_id  uuid references public.channel_sessions(id) on delete set null,
   -- E.164, com `+`. É o que a pessoa digita e o que o transporte recebe.
-  -- Continua sendo o ÚLTIMO elo da cadeia quando `destino_modo = 'responsavel'`
-  -- (#3803): é ele que garante que o aviso nunca fica sem número.
   telefone_destino    text not null,
-  -- COMO escolher para quem vai o aviso (#3803): `fixo` = `telefone_destino`,
-  -- como sempre; `responsavel` = conversa → negócio aberto → carteira → e, se
-  -- ninguém servir, `telefone_destino`. O default `fixo` é o que deixa a
-  -- configuração de quem já usava o aviso exatamente como estava.
-  destino_modo        text not null default 'fixo',
   -- O JID que o transporte resolveu da última vez. É o que faz o corte da
   -- ingestão funcionar para destinatário em MODO PRIVACIDADE, onde o telefone
   -- nunca chega no webhook e o chat chega como um identificador opaco.
@@ -31075,7 +31068,6 @@ create table if not exists public.config_aviso_de_caso (
 -- anterior deste arquivo: `add column if not exists` é o que torna o apêndice
 -- auto-curativo.
 alter table public.config_aviso_de_caso
-  add column if not exists destino_modo                text not null default 'fixo',
   add column if not exists destino_jid                 text,
   add column if not exists rotulo                      text,
   add column if not exists mensagens_ignoradas         integer not null default 0,
@@ -31099,29 +31091,6 @@ alter table public.config_aviso_de_caso
 alter table public.config_aviso_de_caso
   add constraint config_aviso_de_caso_rotulo_curto
   check (rotulo is null or char_length(rotulo) <= 60);
-
--- O vocabulário do destino é FECHADO (#3803): um valor fora dos dois que o
--- motor conhece deixaria a tela dizendo uma coisa e o envio fazendo outra.
-alter table public.config_aviso_de_caso
-  drop constraint if exists config_aviso_de_caso_destino_modo_valido;
-alter table public.config_aviso_de_caso
-  add constraint config_aviso_de_caso_destino_modo_valido
-  check (destino_modo in ('fixo', 'responsavel'));
-
--- O WhatsApp PESSOAL de cada membro, por organização (#3803): é dele que o
--- aviso tira o telefone do responsável. Fica no vínculo (e não em
--- `auth.users.user_metadata`) porque é por organização, é o que a RLS já
--- protege e é a linha que a instalação já usa para saber quem é membro. Nulo é
--- "não cadastrou", e é o caso que faz o elo cair para o próximo.
-alter table public.user_organizations
-  add column if not exists whatsapp_e164 text;
--- A MESMA forma do CHECK de `config_aviso_de_caso_e164`: o número do membro vai
--- para o mesmo transporte.
-alter table public.user_organizations
-  drop constraint if exists user_organizations_whatsapp_e164_valido;
-alter table public.user_organizations
-  add constraint user_organizations_whatsapp_e164_valido
-  check (whatsapp_e164 is null or whatsapp_e164 ~ '^\+[1-9][0-9]{7,14}$');
 
 -- Coerência que se AUTOCURA, em vez de um CHECK que aborta o DELETE da conexão
 -- (ver o cabeçalho). `before insert or update` para valer também quando o
@@ -56585,6 +56554,29 @@ grant execute on function public.fn_responder_caso_por_whatsapp(uuid, uuid, uuid
 
 -- A opção é gravada pela mesma RPC administrativa que protege o restante da
 -- configuração de avisos. A coluna e a guarda acima mantêm o opt-in no banco.
+-- ---- as colunas ----
+alter table public.config_aviso_de_caso
+  add column if not exists destino_modo text not null default 'fixo';
+
+alter table public.config_aviso_de_caso
+  drop constraint if exists config_aviso_de_caso_destino_modo_valido;
+alter table public.config_aviso_de_caso
+  add constraint config_aviso_de_caso_destino_modo_valido
+  check (destino_modo in ('fixo', 'responsavel'));
+
+alter table public.user_organizations
+  add column if not exists whatsapp_e164 text;
+
+-- A MESMA forma do CHECK de `config_aviso_de_caso_e164`: o número do membro vai
+-- para o mesmo transporte, e um valor torto aqui só apareceria como falha de
+-- envio meses depois.
+alter table public.user_organizations
+  drop constraint if exists user_organizations_whatsapp_e164_valido;
+alter table public.user_organizations
+  add constraint user_organizations_whatsapp_e164_valido
+  check (whatsapp_e164 is null or whatsapp_e164 ~ '^\+[1-9][0-9]{7,14}$');
+
+-- ---- a porta de escrita ----
 create or replace function public.fn_definir_aviso_de_caso(
   p_org uuid,
   p_channel uuid,
@@ -56757,6 +56749,7 @@ end;
 $$;
 revoke all on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb) from public, anon;
 grant execute on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb) to authenticated;
+drop function if exists public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean);
 drop function if exists public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean);
 
 -- ---- #3042: desmarcar o exemplo tira do RAG os trechos já aprendidos da conversa (migration 0688) ----
@@ -56886,15 +56879,7 @@ begin
     end if;
   end if;
 
-  -- A FILA do rodízio mora em DOIS lugares desde a #3804: no modo `rodizio` de
-  -- sempre (`config.fila`) e no `fallback` do destino dinâmico
-  -- (`config.fallback.fila`, com `config.fallback.modo = 'rodizio'`). A vez é a
-  -- MESMA — um histórico por regra, um `pg_advisory_xact_lock` por regra —, e por
-  -- isso as duas formas caem nesta leitura em vez de num rodízio paralelo.
-  -- `coalesce` e não dois SELECTs: quando a ação é o modo `rodizio` de sempre, a
-  -- fila é a dele; o schema recusa as duas formas na mesma regra (um rodízio por
-  -- regra), então não há ambiguidade a resolver aqui.
-  select coalesce(a.valor -> 'config' -> 'fila', a.valor -> 'config' -> 'fallback' -> 'fila')
+  select a.valor -> 'config' -> 'fila'
     into v_fila
     from public.automation_rules r
    cross join lateral jsonb_array_elements(
@@ -56903,8 +56888,7 @@ begin
    where r.id = p_rule
      and r.organization_id = p_org
      and a.valor ->> 'type' = 'assign_owner'
-     and (a.valor -> 'config' ->> 'modo' = 'rodizio'
-          or a.valor -> 'config' -> 'fallback' ->> 'modo' = 'rodizio')
+     and a.valor -> 'config' ->> 'modo' = 'rodizio'
    order by a.ordem
    limit 1;
 
