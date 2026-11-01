@@ -347,6 +347,23 @@ describe("#3836 — áudio que chega DURANTE o turno", () => {
     expect(estado.eventos).not.toContain("anotou");
   });
 
+  it("a espera estourou o teto: nada é reanotado — o job do áudio ainda responde por ele", async () => {
+    // O áudio chegou durante a espera e não derivou a tempo: este turno o lê
+    // como `[audio]`. Reanotar cobriria o áudio com essa resposta, e o job dele
+    // seria pulado por `ultimaInboundJaRespondida` — a resposta à transcrição
+    // nunca sairia.
+    const estado = estadoDoRelato();
+    estado.prontaNaConsulta = Number.POSITIVE_INFINITY;
+    const dormir = vi.fn(async () => {});
+    const log = logFalso();
+
+    await expect(turno(estado, log, dormir)).rejects.toThrow(/config LLM/);
+
+    expect(dormir).toHaveBeenCalled();
+    expect(log.frases().some((f) => f.includes("não derivou dentro do teto da espera"))).toBe(true);
+    expect(estado.eventos).not.toContain("anotou");
+  });
+
   it("mídia travada além do teto: o turno segue EM TEMPO e o desfecho é nomeado", async () => {
     // Mídia que já passou do teto de espera na chegada: esperar por ela é
     // segurar o cliente por uma derivação que não é deste turno.

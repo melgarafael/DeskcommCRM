@@ -2852,7 +2852,13 @@ async function executarTurnoDoAgente(
     // e respondido por ESTE turno. Sem reanotar, o job da mensagem nova não sabe
     // que ela já foi vista e responde de novo (ver `turno-ja-respondido.ts`).
     // Só `inbound_turn` é anotado — follow-up não entra na régua.
-    if (espera.desfecho !== 'sem_midia_pendente' && liveJob().kind === 'inbound_turn') {
+    // Só quando a derivação CONCLUIU: no teto, a mídia vai como `[audio]` e quem
+    // responde por ela é o turno dela (`espera-da-midia.ts`); reanotar faria o
+    // job dela se calar por `ultimaInboundJaRespondida`, e a resposta se perderia.
+    // ponytail: mídia que chega entre o "nada pendente" e este UPDATE (1 RTT)
+    // fica coberta sem texto — janela rara, aceita; fecha com o UPDATE filtrando
+    // `media_derived_status` se um dia for medida.
+    if (espera.desfecho === 'derivacao_concluida' && liveJob().kind === 'inbound_turn') {
       await anotarUltimaInboundVista(pool, {
         organizationId: tenantId,
         contactId: leadId,
