@@ -70810,4 +70810,44 @@ alter table public.pacing_ledger
 comment on column public.pacing_ledger.resposta is
   'true = resposta a quem escreveu: vale para o espaçamento, não para o teto do dia (warm-up/daily_message_limit), que conta só disparos (9061).';
 
+-- ---- passagem explícita entre agentes de IA na trilha do roteador (migration 9064, #3770) ----
+-- `transferred` é o desfecho da AÇÃO pedida — distinto de `reclassified`, que é
+-- o classificador trocando o agente. `origem` separa os dois mundos; `motivo` é
+-- vocabulário FECHADO porque a tabela tem contrato de "sem PII" desde a 0085
+-- (o par TypeScript é `MOTIVOS_DA_TRANSFERENCIA_DE_AGENTE`, em
+-- `lib/agent-engine/agent/transferir-agente.ts`).
+--
+-- Idempotente nas duas pontas: `add column if not exists` para a base que já
+-- existe e `drop constraint if exists` + `add` porque o CHECK do dump nasceu sem
+-- nome (o Postgres o batiza de `ai_router_decisions_outcome_check`, o MESMO nome
+-- que a constraint daqui). Não cria função, então pode ficar depois da
+-- VARREDURA anon, como o bloco da 9061 logo acima.
+alter table public.ai_router_decisions
+  drop constraint if exists ai_router_decisions_outcome_check;
+alter table public.ai_router_decisions
+  add constraint ai_router_decisions_outcome_check
+  check (outcome in ('classified', 'sticky', 'reclassified', 'fallback', 'no_match', 'classifier_failed', 'transferred'));
+
+alter table public.ai_router_decisions
+  add column if not exists origem text not null default 'classificador';
+alter table public.ai_router_decisions
+  drop constraint if exists ai_router_decisions_origem_check;
+alter table public.ai_router_decisions
+  add constraint ai_router_decisions_origem_check
+  check (origem in ('classificador', 'acao'));
+
+alter table public.ai_router_decisions
+  add column if not exists agente_anterior_id uuid references ai_agents(id) on delete set null;
+
+alter table public.ai_router_decisions
+  add column if not exists motivo text;
+alter table public.ai_router_decisions
+  drop constraint if exists ai_router_decisions_motivo_check;
+alter table public.ai_router_decisions
+  add constraint ai_router_decisions_motivo_check
+  check (motivo is null or motivo in ('pedido_do_agente', 'pedido_do_operador', 'regra_de_automacao'));
+
+alter table public.ai_router_decisions
+  add column if not exists solicitado_por uuid;
+
 notify pgrst, 'reload schema';

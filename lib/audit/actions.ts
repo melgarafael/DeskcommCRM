@@ -122,6 +122,11 @@ export const AUDIT_ACTIONS = [
   "conversation.created",
   "conversation.claimed",
   "conversation.transferred",
+  // A passagem de um agente de IA para outro, pedida explicitamente (#3770).
+  // Distinta de `conversation.transferred` (que troca o DONO humano) e da
+  // `ai_router_decisions.outcome = 'reclassified'` (que é o classificador
+  // trocando o agente sozinho): aqui alguém pediu, e a trilha diz quem.
+  "conversation.ai_agent_transferred",
   "conversation.released",
   "conversation.closed",
   // O arquivamento é terminal como o fechamento, e o evento é separado de
