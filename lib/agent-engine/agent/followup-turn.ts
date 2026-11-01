@@ -60,6 +60,9 @@ import {
   type LeadCheckpointRow,
 } from './inbound-turn';
 import { isLeadInHandoff } from './human-handoff';
+import { AgendaPuladoError, MOTIVO_DO_PULO, decidirNoEnvio } from '@/lib/agenda/escolha-no-envio';
+import { escolhaDoFluxoPg } from '@/lib/agenda/escolha-no-envio-leitura';
+import { protecaoAgendaPg } from '@/lib/agenda/protecao-followup';
 import { aplicarPessoaNoComandoAoTurno } from '@/lib/followup/pessoa-no-comando-no-turno';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import {
@@ -712,6 +715,44 @@ async function runFlowDrivenTurn(
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: target.tenantId, lead_id: target.leadId, enrollment_id: enrollmentId });
 
   if (input.purpose === 'send_message') {
+    // #3813 — O PULO PELA AGENDA ACONTECE ANTES DE QUALQUER GASTO, E TEM NOME.
+    //
+    // A escolha do FLUXO (`quando_ha_compromisso` na configuração publicada do
+    // follow-up) vale aqui como vale no caminho inline (`enviar-texto-fixo.ts`).
+    // Sem esta leitura o worker `pg` seguia no padrão `adiar` e um fluxo em
+    // `nao_enviar` nunca pulava — e, quando pulasse pela guarda do envio, o
+    // `AgendaPuladoError` subia como falha do run (o passo não tem desfecho).
+    //
+    // A leitura da proteção só é paga pela escolha que pode pular: em `adiar`
+    // (padrão) e em `enviar` esta decisão NUNCA é `pular`, então o caminho de
+    // hoje — inclusive o adiamento, que continua acontecendo na guarda do envio
+    // e re-agendando o job — não muda nem custa uma consulta a mais.
+    const escolhaDaAgenda = await escolhaDoFluxoPg(pool, target.tenantId, enrollmentId);
+    if (escolhaDaAgenda === 'nao_enviar') {
+      const decisaoDaAgenda = decidirNoEnvio(
+        await protecaoAgendaPg(pool, target.tenantId, target.leadId, clock()),
+        escolhaDaAgenda,
+      );
+      if (decisaoDaAgenda.acao === 'pular') {
+        runLog.info('passo do fluxo pulado — o contato tem horário marcado', {
+          motivo: MOTIVO_DO_PULO,
+          appointment_id: decisaoDaAgenda.appointment_id,
+          node_id: nodeId,
+        });
+        // O desfecho NOMEADO do pulo: o mesmo canal dos outros pulos deste
+        // arquivo (mídia recusada, modelo que não pode sair) — um `skipped`
+        // com o motivo, nunca um envio que não aconteceu em silêncio.
+        await complete(pool, {
+          jobId: job.id,
+          jobClaim: claimOfJob(job),
+          organizationId: target.tenantId,
+          enrollmentId,
+          nodeId,
+          result: { kind: 'skipped', reason: MOTIVO_DO_PULO },
+        });
+        return;
+      }
+    }
     let passo = await resolveFlowSendBody(pool, target.tenantId, target.channelSessionId, target.leadId, input);
     // O PLANO B DA MENSAGEM POR IA. Com a janela de 24 h fechada, o canal recusa
     // qualquer texto livre — o da IA inclusive —, e o passo terminava sem mandar
@@ -757,11 +798,34 @@ async function runFlowDrivenTurn(
         return;
       }
       // Texto do operador: sem camada semântica (ver o cabeçalho de sendFixedOutbound).
-      const desfecho = await sendFixedOutbound(
-        deps, job, pool, ctx, clock, target, passo.body, false,
-        passo.tipo === 'modelo_aprovado' ? passo.modelo : undefined,
-        passo.tipo === 'texto' ? passo.midia : undefined,
-      );
+      let desfecho: EnvioFixoDesfecho;
+      try {
+        desfecho = await sendFixedOutbound(
+          deps, job, pool, ctx, clock, target, passo.body, false,
+          passo.tipo === 'modelo_aprovado' ? passo.modelo : undefined,
+          passo.tipo === 'texto' ? passo.midia : undefined,
+        );
+      } catch (err) {
+        // #3813 — CORRIDA: o compromisso nasceu entre a leitura acima e o
+        // envio, e a guarda do envio (`sendTurnMessage`) pulou por `nao_enviar`.
+        // O desfecho continua sendo o PULO NOMEADO — o erro do pulo não vira
+        // falha de job (o dead-man leria worker morto onde houve decisão).
+        if (!(err instanceof AgendaPuladoError)) throw err;
+        runLog.info('passo do fluxo pulado na guarda do envio — o contato tem horário marcado', {
+          motivo: MOTIVO_DO_PULO,
+          appointment_id: err.protection.appointment_id,
+          node_id: nodeId,
+        });
+        await complete(pool, {
+          jobId: job.id,
+          jobClaim: claimOfJob(job),
+          organizationId: target.tenantId,
+          enrollmentId,
+          nodeId,
+          result: { kind: 'skipped', reason: MOTIVO_DO_PULO },
+        });
+        return;
+      }
       // TODO OS TRÊS DESFECHOS VOLTAM PARA O ENROLLMENT. O adiado era o que não
       // voltava, e o silêncio dele custava o enrollment inteiro: o motor ficava
       // rechecando um turno que ninguém ia fechar e, esgotado o orçamento do
