@@ -56,7 +56,7 @@
                 "texto": "Ativa",
                 "exato": true,
                 "dentro": {
-                  "css": "div.cursor-pointer:has-text('Avaliação nutricional')"
+                  "css": "div.cursor-pointer:has-text('Formulário do site — Avaliação nutricional')"
                 }
               },
               "rotulo": "Aceitando contatos",
@@ -67,7 +67,7 @@
                 "texto": "^último recebimento",
                 "regex": true,
                 "dentro": {
-                  "css": "div.cursor-pointer:has-text('Avaliação nutricional')"
+                  "css": "div.cursor-pointer:has-text('Formulário do site — Avaliação nutricional')"
                 }
               },
               "rotulo": "Último contato que chegou",
