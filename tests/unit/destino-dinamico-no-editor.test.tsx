@@ -29,6 +29,7 @@ vi.mock("@/lib/api/client", () => ({
 }));
 
 import { apiClient } from "@/lib/api/client";
+import { traduzir } from "@/lib/i18n/dicionario";
 import { ActionConfigForm, type ActionItem } from "@/app/app/webhooks/_components/ActionConfigForm";
 import { DescricaoDoAtendente } from "@/app/app/webhooks/automacoes/[id]/_components/CaixaDaAutomacao";
 import type { AssignableMember } from "@/hooks/inbox/useAssignableMembers";
@@ -101,6 +102,20 @@ describe("destino dinâmico no editor", () => {
 
     // O fallback fixo mostra a pessoa escolhida, pelo nome — nunca o uuid.
     expect(await screen.findByText("Ana Souza")).toBeTruthy();
+  });
+
+  it("a ajuda promete só o que a Atividade mostra: qual destino decidiu, em pt e es", () => {
+    vi.mocked(apiClient.get).mockResolvedValue({ data: MEMBROS } as never);
+    montar(COM_FALLBACK_FIXO);
+
+    const ajuda =
+      "Quem não puder receber (saiu da equipe ou é só leitor) é pulado, e a regra segue para o próximo. A Atividade mostra qual destino decidiu.";
+    expect(screen.getByText(ajuda)).toBeTruthy();
+    // A Atividade não lista os descartes: a ajuda não pode prometer o porquê.
+    expect(document.body.textContent).not.toContain("por que os outros");
+    expect(traduzir(ajuda, "es")).toBe(
+      "Quien no pueda recibir (salió del equipo o solo puede leer) se salta, y la regla pasa al siguiente. La Actividad muestra qué destino decidió.",
+    );
   });
 
   it("com um destino só, ele não pode ser desligado: a regra ficaria sem o que tentar", async () => {

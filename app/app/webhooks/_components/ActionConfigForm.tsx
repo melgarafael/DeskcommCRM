@@ -1006,7 +1006,7 @@ function DestinoForm({ config, onChange }: { config: ConfigDoDestino; onChange: 
         </ul>
         <p className="text-xs text-muted-foreground">
           {t(
-            "Quem não puder receber (saiu da equipe ou é só leitor) é pulado, e a regra segue para o próximo. A Atividade mostra qual destino decidiu e por que os outros não serviram.",
+            "Quem não puder receber (saiu da equipe ou é só leitor) é pulado, e a regra segue para o próximo. A Atividade mostra qual destino decidiu.",
           )}
         </p>
       </div>

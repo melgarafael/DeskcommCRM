@@ -18379,7 +18379,7 @@ export const DICIONARIO: Traducoes = {
   "Quem cuida do cliente, mesmo quando o negócio está com outra pessoa.": { es: "Quien atiende al cliente, aunque el negocio esté con otra persona." },
   "Destinos, na ordem em que são tentados": { es: "Destinos, en el orden en que se intentan" },
   "Quem recebe é o que o negócio já tem: o responsável do negócio e, se ele não houver, o dono da carteira do cliente. Uma regra só para toda a equipe — o pós-venda de quem vendeu.": { es: "Quien recibe es lo que el negocio ya tiene: el responsable del negocio y, si no lo hay, el dueño de la cartera del cliente. Una sola regla para todo el equipo — el posventa de quien vendió." },
-  "Quem não puder receber (saiu da equipe ou é só leitor) é pulado, e a regra segue para o próximo. A Atividade mostra qual destino decidiu e por que os outros não serviram.": { es: "Quien no pueda recibir (salió del equipo o solo puede leer) se salta, y la regla pasa al siguiente. La Actividad muestra qué destino decidió y por qué los otros no sirvieron." },
+  "Quem não puder receber (saiu da equipe ou é só leitor) é pulado, e a regra segue para o próximo. A Atividade mostra qual destino decidiu.": { es: "Quien no pueda recibir (salió del equipo o solo puede leer) se salta, y la regla pasa al siguiente. La Actividad muestra qué destino decidió." },
   "Se nenhum destino servir, atribuir a": { es: "Si ningún destino sirve, asignar a" },
   "O fallback é obrigatório: é o que impede a regra de não atribuir e deixar o negócio sem dono em silêncio.": { es: "El respaldo es obligatorio: es lo que impide que la regla no asigne y deje el negocio sin dueño en silencio." },
   "Uma pessoa fixa": { es: "Una persona fija" },
