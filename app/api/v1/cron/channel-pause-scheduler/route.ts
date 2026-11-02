@@ -82,7 +82,7 @@ import {
 } from "@/lib/channels/agenda-de-pausa";
 import { sincronizarAvisoDoAgendador } from "@/lib/channels/aviso-do-agendador";
 import { sincronizarAvisoDePausa } from "@/lib/channels/central-de-pausa";
-import { MOTIVO_DO_PULO, recursoLigado } from "@/lib/cron/recursos-ligados";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
@@ -434,6 +434,14 @@ export async function aplicarAgendasEavisar(
   }
 }
 
+/**
+ * Os passos que rodam DEPOIS do portão do piso ocioso, na ordem do arquivo.
+ * `tests/unit/cron-passa-pelo-portao.test.ts` lê o AST e reprova se divergir:
+ * passo novo aqui embaixo NÃO roda numa instalação sem janela começada.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = ["const db", "try"] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
+
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
@@ -441,28 +449,16 @@ async function handle(req: NextRequest): Promise<Response> {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 
-  const db = createAdminClient();
+  // #3694 (crédito: @webtecnica): sem janela viva (nada `scheduled`/`running`
+  // que já tenha começado), a batida saía vazia 120 de 120 vezes. O sinal do
+  // piso ocioso é a MESMA condição de `aplicarAgendas` — inclusive
+  // `starts_at <= now()`, porque a rodada nunca lê a janela que ainda vai
+  // começar. Batida com falha deixa a janela viva (não vira `done`), então a
+  // seguinte roda e fecha o aviso do agendador. O custo de perceber a abertura:
+  // até o TTL do retrato (30 s), no máximo um tique.
+  if (await recursoOcioso("pausa_de_canal")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
-  // #3694: sem janela viva (nada `scheduled`/`running` que já tenha começado),
-  // a batida saía vazia 120 de 120 vezes. A sonda é a MESMA condição de
-  // `aplicarAgendas` — inclusive `starts_at <= now()`, porque a rodada nunca lê
-  // a janela que ainda vai começar —, então nada fica de fora. O custo de
-  // perceber a abertura: até a validade da leitura compartilhada (45 s), no
-  // máximo um tique. Numa janela de manutenção programada isso é invisível.
-  if (!(await recursoLigado(db, "pausa_de_canal"))) {
-    const vazia: ResumoDaRodada = {
-      avaliadas: 0,
-      pausadas: 0,
-      retomadas: 0,
-      transferidas: 0,
-      iniciadas: 0,
-      encerradas: 0,
-      expiradas: 0,
-      semMudanca: 0,
-      falhas: 0,
-    };
-    return ok({ ...vazia, pulado: MOTIVO_DO_PULO }, { requestId });
-  }
+  const db = createAdminClient();
 
   try {
     const resumo = await aplicarAgendasEavisar(db, new Date(), requestId);

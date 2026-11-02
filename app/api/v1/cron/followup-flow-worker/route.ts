@@ -30,7 +30,7 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { invalidarRecursosLigados, recursoLigado } from "@/lib/cron/recursos-ligados";
+import { invalidarRetrato, recursoTemTrabalho } from "@/lib/cron/piso-ocioso";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseAdminClient, runFollowupTick, type FollowupJobRequest, type TickSummary } from "@/lib/followup/engine";
@@ -69,13 +69,16 @@ async function handle(req: NextRequest): Promise<Response> {
     enqueueJob,
   };
 
-  // ─── O QUE ESTÁ LIGADO NESTA INSTALAÇÃO (#3694) ───────────────────────────
+  // ─── O QUE TEM TRABALHO NESTA INSTALAÇÃO (#3694, crédito: @webtecnica) ────
   //
-  // Três das oito consultas vazias medidas na issue moram nesta rota: o claim
-  // do follow-up (1,0/min, 120/120 vazias), os pointers do silêncio (1,0/min) e
-  // a fila do follow-up (1,0/min). As três saem de UMA leitura compartilhada —
-  // as chamadas se coalescem numa só ida ao banco por janela de 45 s, a mesma
-  // que os outros crons de minuto usam.
+  // Três das consultas vazias medidas na issue moram nesta rota: o claim do
+  // follow-up (1,0/min, 120/120 vazias), os pointers do silêncio (1,0/min) e a
+  // fila do follow-up (1,0/min). As três saem do retrato do piso ocioso
+  // (lib/cron/piso-ocioso.ts): uma leitura pelo pool `pg` por janela de 30 s,
+  // dividida com os outros crons de minuto, sem gastar requisição ao PostgREST.
+  //
+  // Não é o `if (await recursoOcioso(...)) return` das outras rotas: cada sinal
+  // desliga só a SUA etapa, e o resto da batida segue.
   //
   // O que NÃO é gated aqui, de propósito: a varredura de confirmação de
   // presença (RPC, mutação de agenda) e `encerrarRoteirosVencidos` (RPC, muda
@@ -83,9 +86,9 @@ async function handle(req: NextRequest): Promise<Response> {
   // estavam na medição da issue e ficam fora — rodada que fecha roteiro vencido
   // é efeito, não consulta vazia.
   const [followupLigado, silencioLigado, filaLigada] = await Promise.all([
-    recursoLigado(admin, "followup"),
-    recursoLigado(admin, "followup_silencio"),
-    recursoLigado(admin, "fila_followup"),
+    recursoTemTrabalho("followup"),
+    recursoTemTrabalho("followup_silencio"),
+    recursoTemTrabalho("fila_followup"),
   ]);
 
   // A varredura de confirmação de presença pega carona neste cron, mas é OUTRO
@@ -110,7 +113,7 @@ async function handle(req: NextRequest): Promise<Response> {
 
   // ─── QUEM CRIA TRABALHO AVISA (#3694) ──────────────────────────────────────
   //
-  // A leitura dos recursos vale 45 s. Para o que NASCE FORA deste processo
+  // O retrato vale 30 s. Para o que NASCE FORA deste processo
   // (gatilho no banco, `agent-worker` em outro contêiner) o atraso é o preço
   // declarado do cache — no máximo um tique, porque o cron é de minuto. Para o
   // que nasce AQUI, não: esta mesma batida inscreve contatos (varredura de
@@ -120,7 +123,7 @@ async function handle(req: NextRequest): Promise<Response> {
   // resto da janela, que é exatamente "sair cedo atrasando trabalho real".
   //
   // Medido no e2e `followup-journey.spec.ts`: o enrollment nascia na varredura e
-  // os POSTs seguintes (mais rápidos que os 45 s) liam `followup: false` do
+  // os POSTs seguintes (mais rápidos que a janela) liam `followup: false` do
   // cache e devolviam 200 sem reclamar a inscrição.
   let houveMovimento = Boolean(summary.claimed || summary.advanced || summary.scheduled);
 
@@ -224,7 +227,7 @@ async function handle(req: NextRequest): Promise<Response> {
   // Depois de TODAS as etapas que criam trabalho — varredura, tick e dreno —,
   // uma invalidação só cobre a batida inteira: a seguinte relê os recursos e
   // entra no tick sem esperar a janela vencer.
-  if (houveMovimento) invalidarRecursosLigados();
+  if (houveMovimento) invalidarRetrato();
 
   return ok(
     {

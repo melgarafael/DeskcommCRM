@@ -21,7 +21,7 @@ import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
-import { MOTIVO_DO_PULO, recursoLigado } from "@/lib/cron/recursos-ligados";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 
 export const dynamic = "force-dynamic";
 
@@ -125,24 +125,28 @@ export async function recuperarPropostasTravadas(
   return { scanned: travadas.length, revertidas, organizations: organizacoesComAviso };
 }
 
+/**
+ * Os passos que rodam DEPOIS do portão do piso ocioso, na ordem do arquivo.
+ * `tests/unit/cron-passa-pelo-portao.test.ts` lê o AST e reprova se divergir:
+ * passo novo aqui embaixo NÃO roda numa instalação sem proposta em `enviando`.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = ["let result", "try", "if (result.revertidas > 0)", "return"] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
+
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   if (!autorizaCron(req)) return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
 
-  const admin = createAdminClient();
-
-  // #3694: instalação sem NENHUMA proposta em `enviando` saía vazia 117 de 117
-  // vezes. A sonda é a mesma condição da consulta abaixo (`status = 'enviando'`)
-  // — o corte de 5 min continua sendo da rodada real, porque a sonda sem ele é
-  // mais larga (a proposta recém-enviada também a liga). Esperar o TTL de 45 s
-  // aqui não custa nada: a proposta só é "presa" depois de 5 min.
-  if (!(await recursoLigado(admin, "propostas"))) {
-    return ok({ scanned: 0, revertidas: 0, organizations: 0, pulado: MOTIVO_DO_PULO }, { requestId });
-  }
+  // #3694 (crédito: @webtecnica): instalação sem NENHUMA proposta em `enviando`
+  // saía vazia 117 de 117 vezes. O sinal do piso ocioso é a mesma condição da
+  // consulta abaixo (`status = 'enviando'`) — o corte de 5 min continua sendo da
+  // rodada real, porque o sinal sem ele é mais largo. Esperar o TTL de 30 s aqui
+  // não custa nada: a proposta só é "presa" depois de 5 min.
+  if (await recursoOcioso("propostas")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   let result: RecuperarResult;
   try {
-    result = await recuperarPropostasTravadas(admin, new Date(), requestId);
+    result = await recuperarPropostasTravadas(createAdminClient(), new Date(), requestId);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     logger.error("[proposta-travada] falhou", { error: detail, requestId });

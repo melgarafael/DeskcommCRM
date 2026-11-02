@@ -24,11 +24,24 @@ import {
   reprocessarArquivoDeWebhooks,
   type ResultadoDoReplay,
 } from "@/lib/channels/reprocessar-arquivo-de-webhook";
-import { MOTIVO_DO_PULO, recursoLigado } from "@/lib/cron/recursos-ligados";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Os passos que rodam DEPOIS do portão do piso ocioso, na ordem do arquivo.
+ * `tests/unit/cron-passa-pelo-portao.test.ts` lê o AST e reprova se divergir:
+ * passo novo aqui embaixo NÃO roda numa instalação sem linha transitória.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "let result",
+  "try",
+  "if (result.processadas + result.desistidas > 0)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
 
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -36,23 +49,17 @@ async function handle(req: NextRequest): Promise<Response> {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 
-  const admin = createAdminClient();
-
-  // #3694: sem NENHUMA linha transitória no arquivo, a rodada saía vazia em
-  // 143 de 144 tiques (medido na issue). A leitura compartilhada responde isso
-  // sem trazer as 50 linhas com `payload_parsed` que o replay carrega. A sonda
-  // é um SUPERCONJUNTO do filtro daqui (não aplica o corte de `ESPERA_MS`), de
+  // #3694 (crédito: @webtecnica): sem NENHUMA linha transitória no arquivo, a
+  // rodada saía vazia em 143 de 144 tiques (medido na issue). O piso ocioso
+  // responde isso de um retrato em memória (lib/cron/piso-ocioso.ts), sem
+  // trazer as 50 linhas com `payload_parsed` que o replay carrega. O sinal é um
+  // SUPERCONJUNTO do filtro daqui (não aplica o corte de `ESPERA_MS`), de
   // propósito: linha recém-arquivada nunca fica invisível para o replay.
-  if (!(await recursoLigado(admin, "webhook_replay"))) {
-    return ok(
-      { lidas: 0, processadas: 0, ainda_falhando: 0, desistidas: 0, pulado: MOTIVO_DO_PULO },
-      { requestId },
-    );
-  }
+  if (await recursoOcioso("webhook_replay")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   let result: ResultadoDoReplay;
   try {
-    result = await reprocessarArquivoDeWebhooks(admin, new Date(), requestId);
+    result = await reprocessarArquivoDeWebhooks(createAdminClient(), new Date(), requestId);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     logger.error("[webhook-replay] falhou", { error: detail, requestId });

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 
-import { esquecerLeituraDosRecursos, recursoLigado } from "@/lib/cron/recursos-ligados";
+import { esquecerRetrato, recursoTemTrabalho } from "@/lib/cron/piso-ocioso";
 
 import { enrollFollowupFlow } from "./enroll";
 import { flowGraphSchema } from "./graph-schema";
@@ -107,22 +107,21 @@ describe("enrollFollowupFlow", () => {
     if (!result.ok) expect(result.code).toBe("flow_not_active");
   });
 
-  it("inscrição invalida a leitura dos recursos do cron — quem inscreve espera o fluxo começar agora (#3694)", async () => {
-    // O cron do follow-up sai cedo quando não há inscrição vencida, e a leitura
-    // vale 45 s. Se a inscrição não avisasse, o contato recém-inscrito ficaria
-    // parado no nó trigger até a janela vencer — até 45 s de espera que o
-    // operador vê como "inscrevi e nada aconteceu".
-    esquecerLeituraDosRecursos();
+  it("inscrição invalida o retrato do piso ocioso — quem inscreve espera o fluxo começar agora (#3694)", async () => {
+    // O cron do follow-up pula o tick quando não há inscrição vencida, e o
+    // retrato vale 30 s. Se a inscrição não avisasse, o contato recém-inscrito
+    // ficaria parado no nó trigger até a janela vencer.
+    esquecerRetrato();
     let leituras = 0;
     const db = {
-      rpc: () => {
+      query: () => {
         leituras += 1;
-        return Promise.resolve({ data: {}, error: null });
+        return Promise.resolve({ rows: [{ followup: false }], rowCount: 1 });
       },
     } as never;
 
     // Primeira leitura: instalação sem inscrição vencida.
-    expect(await recursoLigado(db, "followup", 0)).toBe(true); // corpo vazio = ligado (fail-open)
+    expect(await recursoTemTrabalho("followup", 0, db)).toBe(false);
     expect(leituras).toBe(1);
 
     const supabase = fakeDb({
@@ -140,10 +139,11 @@ describe("enrollFollowupFlow", () => {
     });
     expect(result.ok).toBe(true);
 
-    // Mesma janela de 45 s: sem a invalidação, a leitura seria servida pelo
-    // retrato de antes da inscrição (uma ida ao banco, não duas).
-    await recursoLigado(db, "followup", 1);
+    // Mesma janela: sem a invalidação, a leitura seria servida pelo retrato de
+    // antes da inscrição (uma ida ao banco, não duas).
+    await recursoTemTrabalho("followup", 1, db);
     expect(leituras).toBe(2);
+    esquecerRetrato();
   });
 
   it("recusa roteiro de atendimento — ele começa na conversa, não por inscrição", async () => {

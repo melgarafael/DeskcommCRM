@@ -9,21 +9,21 @@
  *   ligado    → a rodada de verdade roda (o gate não pode calar quem tem
  *               trabalho — esse é o erro que seria pior que a consulta vazia).
  *
- * O gate em si é mockado aqui: o que se mede é a decisão da ROTA. O relógio, o
- * cache e a invalidação estão em `cron-recursos-ligados.test.ts`.
+ * O portão é o REAL (`lib/cron/piso-ocioso.ts`), semeado com `semearRetrato` —
+ * mock de módulo vaza entre arquivos da suíte. O que se mede é a decisão da
+ * ROTA; o relógio, o cache e a invalidação estão em `lib/cron/piso-ocioso.test.ts`.
  *
  * `campaign-worker` e `historico-import` NÃO estão aqui: os dois ficaram com o
  * piso ocioso do #3731, que já cobria esses recursos quando este ramo foi
  * mesclado com a main. Quem mede essas duas rotas é
  * `tests/unit/piso-ocioso-dos-crons.test.ts`.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-import type * as RecursosLigadosMod from "@/lib/cron/recursos-ligados";
+import { esquecerRetrato, RECURSOS_DO_CRON, type RecursoDoCron, semearRetrato } from "@/lib/cron/piso-ocioso";
 
 const estado = vi.hoisted(() => ({
-  ligado: {} as Record<string, boolean>,
   /** Toda tabela tocada por `from()` — a prova de "não tocou o PostgREST". */
   consultas: {} as Record<string, number>,
   rpcs: [] as string[],
@@ -56,19 +56,6 @@ const clienteFalso = {
 
 vi.mock("@/lib/auth/cron-auth", () => ({ autorizaCron: () => true }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => clienteFalso }));
-vi.mock("@/lib/cron/recursos-ligados", async () => {
-  const real = await vi.importActual<typeof RecursosLigadosMod>("@/lib/cron/recursos-ligados");
-  return {
-    ...real,
-    recursoLigado: async (_db: unknown, recurso: string) => estado.ligado[recurso] !== false,
-  };
-});
-vi.mock("@/lib/campanhas/rodada", () => ({
-  rodarUmaRodadaDeCampanha: async () => {
-    estado.rodada += 1;
-    return { enviadas: 0, pulados: 0, concluidas: 0, promovidas: 0, detalhe: "nada_a_fazer" };
-  },
-}));
 vi.mock("@/lib/channels/reprocessar-arquivo-de-webhook", () => ({
   reprocessarArquivoDeWebhooks: async () => {
     estado.rodada += 1;
@@ -112,8 +99,20 @@ function chamar(rota: Rota, caminho: string): Promise<Response> {
 
 const dadosDe = async (res: Response) => ((await res.json()) as { data: Record<string, unknown> }).data;
 
+/** Semeia o retrato: tudo com trabalho, menos o que o caso desligar. */
+function retrato(desligados: Partial<Record<RecursoDoCron, false>>): void {
+  semearRetrato({
+    ...(Object.fromEntries(RECURSOS_DO_CRON.map((r) => [r, true])) as Record<RecursoDoCron, boolean>),
+    ...desligados,
+  });
+}
+
+afterEach(() => {
+  esquecerRetrato();
+});
+
 beforeEach(() => {
-  estado.ligado = {};
+  esquecerRetrato();
   estado.consultas = {};
   estado.rpcs = [];
   estado.rodada = 0;
@@ -121,16 +120,16 @@ beforeEach(() => {
 
 describe("webhook-replay", () => {
   it("desligado: sai cedo, sem NENHUM from() ao PostgREST", async () => {
-    estado.ligado.webhook_replay = false;
+    retrato({ webhook_replay: false });
     const dados = await dadosDe(await chamar(webhookReplay, "webhook-replay"));
 
-    expect(dados).toMatchObject({ lidas: 0, pulado: "recurso_desligado" });
+    expect(dados).toMatchObject({ pulado: "recurso_ocioso" });
     expect(estado.rodada).toBe(0);
     expect(estado.consultas).toEqual({});
   });
 
   it("ligado: o replay roda", async () => {
-    estado.ligado.webhook_replay = true;
+    retrato({});
     await chamar(webhookReplay, "webhook-replay");
     expect(estado.rodada).toBe(1);
   });
@@ -138,7 +137,7 @@ describe("webhook-replay", () => {
 
 describe("followup-flow-worker", () => {
   it("os três recursos desligados: nenhuma das três rodadas e nenhum from()", async () => {
-    estado.ligado = { followup: false, followup_silencio: false, fila_followup: false };
+    retrato({ followup: false, followup_silencio: false, fila_followup: false });
     const dados = await dadosDe(await chamar(followupFlowWorker, "followup-flow-worker"));
 
     expect(dados).toMatchObject({
@@ -153,7 +152,7 @@ describe("followup-flow-worker", () => {
   });
 
   it("só o follow-up ligado: o tick roda e o silêncio/dreno não", async () => {
-    estado.ligado = { followup: true, followup_silencio: false, fila_followup: false };
+    retrato({ followup_silencio: false, fila_followup: false });
     const dados = await dadosDe(await chamar(followupFlowWorker, "followup-flow-worker"));
 
     expect(dados).toMatchObject({ recursos: { followup: true, followup_silencio: false, fila_followup: false } });
@@ -163,15 +162,15 @@ describe("followup-flow-worker", () => {
 
 describe("channel-pause-scheduler", () => {
   it("desligado: sai cedo, sem NENHUM from() ao PostgREST", async () => {
-    estado.ligado.pausa_de_canal = false;
+    retrato({ pausa_de_canal: false });
     const dados = await dadosDe(await chamar(channelPauseScheduler, "channel-pause-scheduler"));
 
-    expect(dados).toMatchObject({ avaliadas: 0, pulado: "recurso_desligado" });
+    expect(dados).toMatchObject({ pulado: "recurso_ocioso" });
     expect(estado.consultas).toEqual({});
   });
 
   it("ligado: a batida lê as janelas de verdade", async () => {
-    estado.ligado.pausa_de_canal = true;
+    retrato({});
     await chamar(channelPauseScheduler, "channel-pause-scheduler");
     expect(estado.consultas.channel_schedules).toBeGreaterThan(0);
   });
@@ -179,15 +178,15 @@ describe("channel-pause-scheduler", () => {
 
 describe("proposta-travada", () => {
   it("desligado: sai cedo, sem NENHUM from() ao PostgREST", async () => {
-    estado.ligado.propostas = false;
+    retrato({ propostas: false });
     const dados = await dadosDe(await chamar(propostaTravada, "proposta-travada"));
 
-    expect(dados).toMatchObject({ scanned: 0, pulado: "recurso_desligado" });
+    expect(dados).toMatchObject({ pulado: "recurso_ocioso" });
     expect(estado.consultas).toEqual({});
   });
 
   it("ligado: varre as propostas em `enviando`", async () => {
-    estado.ligado.propostas = true;
+    retrato({});
     await chamar(propostaTravada, "proposta-travada");
     expect(estado.consultas.crm_proposals).toBeGreaterThan(0);
   });

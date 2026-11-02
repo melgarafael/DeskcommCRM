@@ -8,14 +8,17 @@
  * (`docker/scheduler/entrypoint.sh`) sustentam ~44 req/min enquanto ninguém usa
  * o produto. Boa parte delas é de recurso que a organização NÃO TEM LIGADO:
  * prospecção sem campanha, campanhas sem campanha, importação de histórico sem
- * importação e Google Agenda sem conexão nem compromisso a empurrar. Cada uma
- * dessas rotas ia ao PostgREST
+ * importação e Google Agenda sem conexão nem compromisso a empurrar — e, desde o
+ * #3694 (crédito: @webtecnica), replay de webhook sem linha transitória,
+ * follow-up sem inscrição vencida, pointer ou turno na fila, agendador de pausa
+ * sem janela começada e proposta sem envio em curso. Cada uma dessas rotas ia
+ * ao PostgREST
  * a cada minuto só para descobrir que a fila está vazia — e no plano grátis do
  * Supabase isso consome o projeto até o `PGRST002` derrubar a instalação.
  *
  * ─── O SINAL: um RETRATO em memória, alimentado por UMA consulta por janela ──
  *
- * O portão lê, de uma vez só, cinco `exists` (um por recurso) e guarda o
+ * O portão lê, de uma vez só, um `exists` por recurso e guarda o
  * resultado num mapa de PROCESSO com validade de `TTL_DO_RETRATO_MS` (30 s).
  *
  * Por que ele não custa requisição:
@@ -23,12 +26,12 @@
  * - **Não é PostgREST.** A consulta vai pelo pool `pg` direto (`getRequestPool`),
  *   então não gasta a cota de requisições do PostgREST — é justamente a cota que
  *   o `PGRST002` estoura.
- * - **Uma por janela, não uma por rota.** As cinco rotas que consultam o portão
+ * - **Uma por janela, não uma por rota.** Todas as rotas que consultam o portão
  *   dividem o MESMO retrato: ~60 consultas/h para a instalação inteira (uma
  *   por minuto, porque o crond dispara tudo no segundo 0 e o retrato de 30 s
  *   vence antes da batida seguinte), contra 60/h POR ROTA que cada uma fazia
  *   antes. Dentro da mesma batida, a resposta é do mapa.
- * - **Uma consulta, cinco recursos.** As cinco perguntas cabem num `select`
+ * - **Uma consulta, todos os recursos.** As perguntas cabem num `select`
  *   só; consultas separadas seriam o mesmo custo multiplicado.
  *
  * O que NÃO se perde: a 1ª batida depois de ligar um recurso já roda. Um TTL
@@ -47,6 +50,16 @@
  * O retrato com falha também fica em cache pela mesma janela — senão a leitura
  * quebrada voltaria a ser uma consulta por minuto, que é o que este arquivo
  * veio remover.
+ *
+ * ─── QUEM CRIA TRABALHO NO PROCESSO AVISA (`invalidarRetrato`) ──────────────
+ *
+ * Para o que nasce fora deste processo (gatilho no banco, `agent-worker` em
+ * outro contêiner), o atraso é o TTL — no máximo uma batida. Para o que nasce
+ * aqui, não: a inscrição manual num fluxo (`lib/followup/enroll.ts`) e a batida
+ * do follow-up que inscreveu, reclamou ou enfileirou trabalho chamam
+ * `invalidarRetrato()`, e a batida seguinte relê. Medido no e2e
+ * `followup-journey.spec.ts` (#3694): sem isso, os POSTs em rajada liam o
+ * retrato de ANTES da inscrição e o enrollment ficava parado em `trigger-1`.
  */
 import type pg from "pg";
 
@@ -60,6 +73,12 @@ export const RECURSOS_DO_CRON = [
   "historico",
   "agenda_google",
   "agenda_google_push",
+  "webhook_replay",
+  "followup",
+  "followup_silencio",
+  "fila_followup",
+  "pausa_de_canal",
+  "propostas",
 ] as const;
 export type RecursoDoCron = (typeof RECURSOS_DO_CRON)[number];
 
@@ -67,7 +86,7 @@ export type RecursoDoCron = (typeof RECURSOS_DO_CRON)[number];
  * Validade do retrato. 30 s = ~60 consultas/h para a instalação inteira (uma
  * por batida do crond), contra 60/h POR ROTA antes. Mais que um minuto faria a
  * batida seguinte a ligar um recurso pular — e a campanha recém-ligada ficar
- * parada; a economia vem de as cinco rotas dividirem o retrato e de ele ir pelo
+ * parada; a economia vem de as rotas dividirem o retrato e de ele ir pelo
  * pool `pg`, não de o TTL ser longo.
  */
 export const TTL_DO_RETRATO_MS = 30_000;
@@ -80,7 +99,7 @@ export const TTL_DO_RETRATO_MS = 30_000;
 const TETO_DA_LEITURA_MS = 2_000;
 
 /**
- * Uma linha, cinco booleanos. `exists` para na primeira linha encontrada — é o
+ * Uma linha, um booleano por recurso. `exists` para na primeira linha encontrada — é o
  * predicado mais barato que responde "esta fila tem trabalho?" sem contar nada.
  *
  * As colunas de status são as mesmas que as rotas já filtram:
@@ -107,7 +126,17 @@ const TETO_DA_LEITURA_MS = 2_000;
  *   `google_next_attempt_at`, o predicado é mais LARGO que o da rota, que é o
  *   lado seguro com cache — e não depende do GRANT da view (o baseline o dá
  *   explicitamente só ao `service_role`): uma role menor no pool sem ele
- *   derrubaria o retrato inteiro, e as cinco rotas voltariam a rodar sempre.
+ *   derrubaria o retrato inteiro, e as rotas voltariam a rodar sempre.
+ * - os seis do #3694 são a condição EXATA da consulta que cada rota faz, ou um
+ *   superconjunto dela: `webhook_events_log` sem o corte de espera de 2 min (a
+ *   linha recém-arquivada nunca fica invisível) e sem o filtro de provider (o
+ *   nome dele não sai de lib/channels/; mais largo é o lado seguro); `followup_enrollments` com o
+ *   mesmo filtro da CTE de `fn_claim_due_followup_enrollments` (status vivo,
+ *   vencido, sem lease, organização `active` — o teste do portão compara os
+ *   dois); pointer `active` (o que `runSilenceSweep` varre); `followup_turn`
+ *   `pending` (o dreno de texto fixo); janela `scheduled`/`running` já começada
+ *   (`aplicarAgendas` não lê a que ainda vai começar); proposta `enviando` (o
+ *   corte de 5 min continua sendo da rodada).
  */
 const SQL_DO_RETRATO = `
 select
@@ -144,43 +173,60 @@ select
      where needs_google_push
         or (google_event_id is not null and google_conflict is null)
         or google_conflict -> 'resolution' is not null
-  ) as agenda_google_push
+  ) as agenda_google_push,
+  exists (
+    select 1 from webhook_events_log
+     where status = 'error' and error_message like 'transitoria:%'
+  ) as webhook_replay,
+  exists (
+    select 1 from followup_enrollments e
+     where e.status in ('active', 'waiting_reply', 'dormente')
+       and e.next_eval_at <= now()
+       and (e.claimed_until is null or e.claimed_until < now())
+       and exists (select 1 from organizations o where o.id = e.organization_id and o.status = 'active')
+  ) as followup,
+  exists (
+    select 1 from followup_flow_pointers where status = 'active'
+  ) as followup_silencio,
+  exists (
+    select 1 from job_queue where kind = 'followup_turn' and status = 'pending'
+  ) as fila_followup,
+  exists (
+    select 1 from channel_schedules
+     where status in ('scheduled', 'running') and starts_at <= now()
+  ) as pausa_de_canal,
+  exists (
+    select 1 from crm_proposals where status = 'enviando'
+  ) as propostas
 `;
 
 type Retrato = { emUso: Record<RecursoDoCron, boolean>; ate: number };
 
 let retrato: Retrato | null = null;
 /**
- * A leitura em andamento. Sem ela, os cinco crons que batem na mesma janela
- * (o crontab dispara vários no mesmo segundo) começariam CINCO leituras em
+ * A leitura em andamento. Sem ela, os crons que batem na mesma janela
+ * (o crontab dispara vários no mesmo segundo) começariam uma leitura cada, em
  * paralelo — o retrato só existe depois do primeiro `await`, então todos veem
  * "vazio". Uma promessa dividida mantém a promessa do arquivo: uma leitura por
  * janela, não uma por rota.
  */
 let carregando: Promise<Record<RecursoDoCron, boolean>> | null = null;
+/**
+ * Conta as invalidações. A leitura que já estava em voo quando alguém
+ * invalidou NÃO pode gravar o retrato de antes do evento — seria devolver 30 s
+ * de "nada a fazer" para o trabalho que acabou de nascer.
+ */
+let geracao = 0;
 
 /** O banco do portão. Só `query` é usado — o pool inteiro não entra aqui. */
 export type BancoDoPortao = Pick<pg.Pool, "query">;
 
 function retratoCompleto(linha: Record<string, unknown> | undefined): Record<RecursoDoCron, boolean> {
-  const ligado = (v: unknown) => v === true;
-  return {
-    prospeccao: ligado(linha?.prospeccao),
-    campanhas: ligado(linha?.campanhas),
-    historico: ligado(linha?.historico),
-    agenda_google: ligado(linha?.agenda_google),
-    agenda_google_push: ligado(linha?.agenda_google_push),
-  };
+  return Object.fromEntries(RECURSOS_DO_CRON.map((r) => [r, linha?.[r] === true])) as Record<RecursoDoCron, boolean>;
 }
 
 /** O retrato de "tudo em uso" — o lado seguro, usado quando a leitura falha. */
-const TUDO_EM_USO: Record<RecursoDoCron, boolean> = {
-  prospeccao: true,
-  campanhas: true,
-  historico: true,
-  agenda_google: true,
-  agenda_google_push: true,
-};
+const TUDO_EM_USO = Object.fromEntries(RECURSOS_DO_CRON.map((r) => [r, true])) as Record<RecursoDoCron, boolean>;
 
 function comTeto<T>(promessa: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -228,11 +274,15 @@ export async function recursoTemTrabalho(
   db?: BancoDoPortao,
 ): Promise<boolean> {
   if (retrato !== null && retrato.ate > agora) return retrato.emUso[recurso];
+  const minhaGeracao = geracao;
   carregando ??= lerRetrato(db);
   const emUso = await carregando;
-  carregando = null;
-  retrato = { emUso, ate: agora + TTL_DO_RETRATO_MS };
-  return retrato.emUso[recurso];
+  // Só grava se ninguém invalidou no meio do caminho (ver `geracao`).
+  if (geracao === minhaGeracao) {
+    carregando = null;
+    retrato = { emUso, ate: agora + TTL_DO_RETRATO_MS };
+  }
+  return emUso[recurso];
 }
 
 /**
@@ -250,11 +300,19 @@ export async function recursoOcioso(
   return !(await recursoTemTrabalho(recurso, agora, db));
 }
 
-/** Esquece o retrato. Só o teste usa — em produção o TTL é quem manda. */
-export function esquecerRetrato(): void {
+/**
+ * Esquece o retrato: a próxima batida relê. Quem cria trabalho DENTRO deste
+ * processo chama (ver "Quem cria trabalho no processo avisa", no cabeçalho);
+ * o resto espera o TTL.
+ */
+export function invalidarRetrato(): void {
   retrato = null;
   carregando = null;
+  geracao += 1;
 }
+
+/** O nome que os testes usam para zerar o estado entre casos. */
+export const esquecerRetrato = invalidarRetrato;
 
 /**
  * Semeia o retrato sem tocar no banco. Só o teste usa (`tests/unit/piso-ocioso-dos-crons.test.ts`):

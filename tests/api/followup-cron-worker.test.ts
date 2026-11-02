@@ -13,10 +13,17 @@ import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runFollowupTick, createSupabaseAdminClient } from "@/lib/followup/engine";
 import { enviarTextoFixoPendente } from "@/lib/followup/enviar-texto-fixo";
-import { esquecerLeituraDosRecursos } from "@/lib/cron/recursos-ligados";
+import { esquecerRetrato } from "@/lib/cron/piso-ocioso";
 
 vi.mock("@/lib/env", () => ({ env: { INTERNAL_SECRET: "dev-secret", INTERNAL_CRON_SECRET: "" } }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+// Sem pool `pg` de propósito, e não por acaso do ambiente: o portão do piso
+// ocioso falha ao ler e vale "tem trabalho" (fail-open) — é o que esta suíte mede.
+vi.mock("@/lib/agent-engine/db/request-pool", () => ({
+  getRequestPool: () => {
+    throw new Error("sem pool nesta suíte");
+  },
+}));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: vi.fn(() => ({
     from: vi.fn(),
@@ -37,9 +44,9 @@ function req(headers: Record<string, string> = {}): NextRequest {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // A leitura dos recursos é memoizada no processo (#3694): sem esquecer entre
+  // O retrato do piso ocioso é memoizado no processo (#3694): sem esquecer entre
   // casos, um teste herdaria o retrato do anterior.
-  esquecerLeituraDosRecursos();
+  esquecerRetrato();
 });
 
 describe("GET/POST /api/v1/cron/followup-flow-worker", () => {
@@ -71,10 +78,9 @@ describe("GET/POST /api/v1/cron/followup-flow-worker", () => {
     const body = (await res.json()) as {
       data: typeof summary & { confirmation_sweep: unknown; recursos: Record<string, boolean> };
     };
-    // `recursos` (#3694) diz se o gate deixou o tick rodar. O dublê de `rpc`
-    // desta suíte devolve `{ data: 0 }`, que não é o `jsonb` do contrato — e
-    // corpo fora do contrato vale LIGADO de propósito (fail-open): o gate nunca
-    // é o motivo de um recurso parar em silêncio.
+    // `recursos` (#3694) diz se o portão deixou cada etapa rodar. Esta suíte não
+    // tem pool `pg` (o portão falha ao ler), e falha vale "tem trabalho" de
+    // propósito (fail-open): o portão nunca é o motivo de um recurso parar.
     expect(body.data).toEqual({
       ...summary,
       confirmation_sweep: { ok: true, avisos: 0 },

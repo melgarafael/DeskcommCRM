@@ -2,8 +2,8 @@
  * QUEM CRIA TRABALHO AVISA — O CACHE NÃO PODE ESCONDER O QUE A PRÓPRIA ROTA FEZ
  * (#3694).
  *
- * O gate dos crons de minuto lê "o que está ligado" uma vez por janela de 45 s
- * (`lib/cron/recursos-ligados.ts`). Para o que nasce FORA do processo — gatilho
+ * O portão dos crons de minuto lê "o que tem trabalho" uma vez por janela de
+ * 30 s (o retrato de `lib/cron/piso-ocioso.ts`). Para o que nasce FORA do processo — gatilho
  * no banco, `agent-worker` em outro contêiner — esse atraso é o preço declarado,
  * e o cron de minuto o limita a um tique. Para o que nasce DENTRO da rota, não:
  * a varredura de silêncio inscreve contatos e o próprio tick enfileira
@@ -11,7 +11,7 @@
  * retrato de ANTES desse trabalho e devolve 200 sem rodar nada.
  *
  * Foi medido no e2e `followup-journey.spec.ts` (parte 5): a inscrição nascia na
- * varredura e os POSTs seguintes — mais rápidos que os 45 s — liam
+ * varredura e os POSTs seguintes — mais rápidos que a janela — liam
  * `followup: false` do cache e deixavam o enrollment parado em `trigger-1`.
  * `pollEnrollment timeout esperando "trigger→wait"`, com `claimed_until: null` e
  * `steps_taken: 0`: o claim nunca foi chamado.
@@ -22,18 +22,19 @@
  *   não inscreveu → a batida seguinte é servida pelo cache (1 leitura) e o tick
  *   não roda — a economia da issue continua de pé.
  *
- * A leitura é a REAL (não mockada) de propósito: o defeito mora no módulo de
- * cache, e um dublê de `recursoLigado` esconderia exatamente ele.
+ * O portão é o REAL (não mockado) de propósito: o defeito mora no cache, e um
+ * dublê de `recursoTemTrabalho` esconderia exatamente ele. Só o pool `pg` é
+ * dublado — é ele que conta as leituras.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-import { esquecerLeituraDosRecursos, RECURSOS_DO_CRON } from "@/lib/cron/recursos-ligados";
+import { esquecerRetrato, RECURSOS_DO_CRON } from "@/lib/cron/piso-ocioso";
 
 const estado = vi.hoisted(() => ({
-  /** O retrato que o "banco" devolve a `fn_cron_recursos_ligados`. */
+  /** A linha que o "banco" devolve à consulta do retrato. */
   retrato: {} as Record<string, boolean>,
-  /** Quantas leituras da função o banco recebeu. */
+  /** Quantas leituras do retrato o banco recebeu. */
   leituras: 0,
   /** Quantas inscrições a varredura de silêncio cria nesta batida. */
   enrolled: 0,
@@ -53,14 +54,17 @@ const clienteFalso = {
     passo.then = (resolve: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(resolve);
     return passo;
   },
-  rpc: (fn: string) => {
-    if (fn === "fn_cron_recursos_ligados") {
-      estado.leituras += 1;
-      return Promise.resolve({ data: { ...estado.retrato }, error: null });
-    }
-    return Promise.resolve({ data: 0, error: null });
-  },
+  rpc: () => Promise.resolve({ data: 0, error: null }),
 };
+
+vi.mock("@/lib/agent-engine/db/request-pool", () => ({
+  getRequestPool: () => ({
+    query: async () => {
+      estado.leituras += 1;
+      return { rows: [{ ...estado.retrato }], rowCount: 1 };
+    },
+  }),
+}));
 
 vi.mock("@/lib/auth/cron-auth", () => ({ autorizaCron: () => true }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
@@ -91,7 +95,7 @@ const batida = () =>
   GET(new NextRequest("http://local/api/v1/cron/followup-flow-worker", { headers: { authorization: "Bearer t" } }));
 
 beforeEach(() => {
-  esquecerLeituraDosRecursos();
+  esquecerRetrato();
   estado.retrato = Object.fromEntries(RECURSOS_DO_CRON.map((r) => [r, false])) as Record<string, boolean>;
   estado.leituras = 0;
   estado.ticks = 0;
@@ -112,7 +116,7 @@ describe("followup-flow-worker: o trabalho criado na própria batida é visto na
     estado.enrolled = 0;
     estado.retrato.followup = true;
 
-    // Segunda batida DENTRO da janela de 45 s (o cenário do e2e: POSTs em
+    // Segunda batida DENTRO da janela de 30 s (o cenário do e2e: POSTs em
     // rajada). Só roda porque a primeira invalidou a leitura.
     await batida();
 
@@ -125,7 +129,7 @@ describe("followup-flow-worker: o trabalho criado na própria batida é visto na
     estado.retrato.followup_silencio = false;
 
     await batida();
-    await batida(); // 1 s depois, dentro da janela de 45 s
+    await batida(); // 1 s depois, dentro da janela de 30 s
 
     expect(estado.leituras).toBe(1); // uma ida ao banco para as duas batidas
     expect(estado.ticks).toBe(0); // e nenhum tick — nada a fazer, como antes do #3694
