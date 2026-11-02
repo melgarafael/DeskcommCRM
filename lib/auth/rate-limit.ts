@@ -126,6 +126,8 @@ export const AUTH_LIMITS = {
   // usado UMA vez na vida de uma conta — 3 por hora por identidade já é
   // folga para quem errou o nome duas vezes.
   org_recovery: { ip: 5, id: 3, windowSec: 3600 },
+  mfa: { ip: 30, id: 3, windowSec: 60 },
+  mfa_daily: { ip: 120, id: 15, windowSec: 86400 },
 } satisfies Record<string, AuthRateLimits>;
 
 export const __LOGIN_IP_DEFAULT_PARA_TESTE = LOGIN_IP_DEFAULT;
@@ -265,5 +267,53 @@ export async function registrarFalhaDeToken(
       "[auth.rate-limit] falha ao registrar tentativa de token (falha aberta)",
       err instanceof Error ? err.message : err,
     );
+  }
+}
+
+/**
+ * Bloqueio por FALHA no segundo fator (MFA/TOTP) — GHSA-vgq7-h88j-vqrq.
+ *
+ * O contador apenas em cookie (`mfa_attempts`) permitia que um cliente
+ * malicioso omitisse o cabeçalho `Cookie` para testar códigos TOTP de 6 dígitos
+ * sem estourar o teto. Aqui aplicamos a mesma dupla proteção de `login`:
+ *  - janela curta (`mfa`, 3 falhas / 60s por usuário e 30 por IP);
+ *  - janela diária (`mfa_daily`, 15 falhas / 24h por usuário) contra força bruta lenta.
+ */
+export async function mfaBloqueadoPorFalhas(
+  userId: string,
+  limits: AuthRateLimits = AUTH_LIMITS.mfa,
+  dailyLimits: AuthRateLimits = AUTH_LIMITS.mfa_daily,
+): Promise<boolean> {
+  const ip = ipDoCliente(await headers());
+  if (ip !== null) {
+    const atualIp = await peekRateLimit(`auth:mfa_fail:ip:${opaque(ip)}`, limits.windowSec);
+    if (atualIp >= limits.ip) return true;
+  }
+  if (limits.id !== undefined) {
+    const atualId = await peekRateLimit(`auth:mfa_fail:id:${opaque(userId)}`, limits.windowSec);
+    if (atualId >= limits.id) return true;
+  }
+  if (dailyLimits.id !== undefined) {
+    const atualDia = await peekRateLimit(`auth:mfa_fail_daily:id:${opaque(userId)}`, dailyLimits.windowSec);
+    if (atualDia >= dailyLimits.id) return true;
+  }
+  return false;
+}
+
+/** Registra uma tentativa de MFA/TOTP que falhou no contador do servidor. */
+export async function registrarFalhaDeMfa(
+  userId: string,
+  limits: AuthRateLimits = AUTH_LIMITS.mfa,
+  dailyLimits: AuthRateLimits = AUTH_LIMITS.mfa_daily,
+): Promise<void> {
+  const ip = ipDoCliente(await headers());
+  if (ip !== null) {
+    await checkRateLimit(`auth:mfa_fail:ip:${opaque(ip)}`, limits.ip, limits.windowSec);
+  }
+  if (limits.id !== undefined) {
+    await checkRateLimit(`auth:mfa_fail:id:${opaque(userId)}`, limits.id, limits.windowSec);
+  }
+  if (dailyLimits.id !== undefined) {
+    await checkRateLimit(`auth:mfa_fail_daily:id:${opaque(userId)}`, dailyLimits.id, dailyLimits.windowSec);
   }
 }
