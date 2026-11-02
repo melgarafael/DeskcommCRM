@@ -227,11 +227,15 @@ test.describe("responder citando", () => {
       });
       expect(upload.status()).toBe(200);
       await page.reload();
-      await expect(botao).toBeEnabled();
+      // A imagem altera o rótulo, mas continua sendo a mesma resposta rápida.
+      const botaoComImagem = barra.getByRole("button", { name: `🖼 ${titulo}`, exact: true });
+      await expect(botaoComImagem).toHaveAttribute("data-recurso-id", recurso.id);
+      await expect(botaoComImagem).toHaveAttribute("data-recurso-tipo", "texto+imagem");
+      await expect(botaoComImagem).toBeEnabled();
       const quantidadeAntes = await db.from("messages").select("id", { count: "exact", head: true })
         .eq("organization_id", orgId).eq("conversation_id", conversas[0]!);
       expect(quantidadeAntes.error).toBeNull();
-      await botao.click();
+      await botaoComImagem.click();
       const previa = page.getByRole("dialog", { name: "Enviar anexo", exact: true });
       await expect(previa).toBeVisible();
       await expect(previa.getByRole("img").first()).toBeVisible();

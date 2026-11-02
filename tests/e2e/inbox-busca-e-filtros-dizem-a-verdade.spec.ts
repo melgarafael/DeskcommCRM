@@ -29,6 +29,7 @@
  */
 import { expect, test } from "./helpers/test";
 
+import { esperarCacheCurtoVencer, esperarEscritaDeFora } from "./helpers/cache-curto";
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 
 const CAMPO_DE_BUSCA = "Buscar conversas";
@@ -177,7 +178,8 @@ test('a aba "Fechadas" mostra número', async ({ page }) => {
 });
 
 test("número e Não lidos sobrevivem à recarga e permanecem na sua organização", async ({ page }) => {
-  test.setTimeout(150_000);
+  // +2 TTLs do cache curto (#3696): os vínculos novos chegarem, e a limpeza.
+  test.setTimeout(240_000);
   const { randomUUID } = await import("node:crypto");
   const { mkdirSync } = await import("node:fs");
   const { createClient } = await import("@supabase/supabase-js");
@@ -226,7 +228,15 @@ test("número e Não lidos sobrevivem à recarga e permanecem na sua organizaç�
         if (!reserva) canais.push({ org, id, nome });
       }
     }
-    await page.reload();
+    // Os vínculos foram gravados direto no banco depois do login do `beforeEach`,
+    // e o snapshot de vínculos desta conta já está no cache curto (#3696): as
+    // organizações novas aparecem no seletor quando a entrada vence.
+    await esperarEscritaDeFora(async () => {
+      await page.reload();
+      await page.getByTestId("tenant-switcher").click({ timeout: 3_000 });
+      await expect(page.getByTestId(`tenant-switcher-item-${canais[1]!.org}`)).toBeVisible({ timeout: 3_000 });
+      await page.keyboard.press("Escape");
+    });
     await trocar(canais[0]!.org);
     await numero.click();
     await page.getByRole("option", { name: canais[0]!.nome, exact: true }).click();
@@ -277,5 +287,7 @@ test("número e Não lidos sobrevivem à recarga e permanecem na sua organizaç�
   } finally {
     const limpezas = await Promise.allSettled(orgs.map((id) => db.from("organizations").delete().eq("id", id)));
     expect(limpezas.every((r) => r.status === "fulfilled" && r.value.error === null), "limpeza das organizações da própria spec").toBe(true);
+    // A próxima spec do `e2e-admin` não pode herdar do cache as organizações apagadas.
+    await esperarCacheCurtoVencer();
   }
 });

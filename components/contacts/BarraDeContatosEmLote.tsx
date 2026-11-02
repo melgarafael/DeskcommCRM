@@ -30,6 +30,7 @@ import {
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useT } from "@/hooks/i18n/useT";
 import { Check, PencilSimple, Tag, Users, X } from "@/lib/ui/icons";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 interface Props {
   /** Quantos contatos estão marcados. Zero = a barra não existe. */
@@ -247,7 +248,7 @@ export function BarraDeContatosEmLote({
               <SelectContent>
                 {lista.map((m) => (
                   <SelectItem key={m.user_id} value={m.user_id}>
-                    {m.full_name ?? m.user_id}
+                    {rotuloDoMembro(m, t)}
                   </SelectItem>
                 ))}
               </SelectContent>

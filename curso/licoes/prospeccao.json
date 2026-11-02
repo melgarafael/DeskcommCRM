@@ -1,0 +1,1230 @@
+{
+  "id": "prospeccao",
+  "titulo": "Prospecção",
+  "tela": "/app/prospecting",
+  "resumo": "Onde você procura empresas no Google Maps, escolhe quais abordar e deixa um agente de IA começar a conversa com elas pelo WhatsApp, aos poucos, acompanhando quem responde.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-prospeccao",
+      "titulo": "Conhecendo a tela de Prospecção",
+      "objetivo": "Encontrar a Prospecção dentro de Ver tudo em CRM e entender as campanhas, os números e a tabela de empresas.",
+      "papel": "admin",
+      "busca": [
+        "onde fica prospecção",
+        "encontrar empresas",
+        "prospectar clientes",
+        "abordar empresas no whatsapp",
+        "lista de empresas para vender",
+        "campanha de prospecção",
+        "captar clientes novos"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Prospecção mora em Ver tudo em CRM",
+          "texto": "Abra \"Ver tudo em CRM\", no grupo \"CRM\" do menu lateral. Na parte \"O dia a dia da venda\" fica o cartão \"Prospecção\". O caminho é CRM › Ver tudo em CRM › Prospecção: ela não tem atalho próprio no menu lateral.",
+          "dica": "Só o administrador da empresa vê este cartão e abre a tela. Para gerente e atendente o cartão não aparece, e o endereço da tela leva de volta ao Inbox.",
+          "rota": "/app/crm",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Prospecção Busque",
+                "regex": true
+              },
+              "rotulo": "Prospecção",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Prospecção Busque",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Para que serve",
+          "texto": "A Prospecção serve para achar empresas e começar uma conversa com elas pelo WhatsApp, com a ajuda de um agente de IA. A tela segue três etapas: \"1. Encontrar empresas\" é a busca; \"2. Preparar a abordagem\" define quem conversa e como; \"3. Acompanhar resultados\", mais abaixo, mostra cada empresa. Ao abrir, a tela mostra a campanha mais recente.",
+          "dica": "Quem responde segue a conversa no Inbox, como qualquer outro contato.",
+          "rota": "/app/prospecting",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Prospecção",
+                "exato": true
+              },
+              "rotulo": "Prospecção",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "1. Encontrar empresas",
+                "exato": true
+              },
+              "rotulo": "Etapa 1",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "2. Preparar a abordagem",
+                "exato": true
+              },
+              "rotulo": "Etapa 2",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Suas campanhas",
+          "texto": "Cada busca vira uma campanha na lista \"Suas campanhas\", com o segmento e a região no nome. Embaixo do nome aparecem a situação e quantas empresas a busca trouxe: \"Preparar campanha\" (nada foi enviado ainda), \"Em andamento\" (enviando), \"Pausada\" ou \"Abordagens concluídas\". A campanha aberta fica com a borda colorida. Clique na campanha dos escritórios de contabilidade para abri-la.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Suas campanhas",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Suas campanhas",
+                "exato": true
+              },
+              "rotulo": "Suas campanhas",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "^escritórios de advocacia",
+                "regex": true
+              },
+              "rotulo": "Busca nova, em preparação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "^escritórios de contabilidade",
+                "regex": true
+              },
+              "rotulo": "Campanha pausada",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "^escritórios de contabilidade",
+            "regex": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Os números da campanha",
+          "texto": "O quadro do alto mostra a situação da busca, quanto ela custou na Apify e a situação da campanha (\"Pausada\"). Os números contam empresas: \"Encontrados\" é tudo o que a busca trouxe e \"Na fila\" espera a vez da primeira mensagem. \"Responderam\" já escreveram de volta. \"Pediram para parar\" estão bloqueados para novas mensagens. \"Qualificados\" chegaram à etapa do funil que você marcou como de qualificados. \"Score médio\" é a média do Score das empresas, que você vai conhecer na lição sobre escolher as empresas.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "^escritórios de contabilidade",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar ritmo",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Encontrados",
+                "exato": true
+              },
+              "rotulo": "Tudo o que a busca trouxe",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "Responderam",
+                "exato": true
+              },
+              "rotulo": "Escreveram de volta",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "Pediram para parar",
+                "exato": true
+              },
+              "rotulo": "Bloqueados",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "Qualificados",
+                "exato": true
+              },
+              "rotulo": "Na etapa de qualificados",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "A tabela de empresas",
+          "texto": "Em \"3. Acompanhar resultados\", cada linha é uma empresa: nome, segmento e telefone; endereço, site, nota e avaliações no Google; a situação em \"Progresso\"; e a análise em \"Auditoria\". Em \"Progresso\" a empresa passa por \"Encontrado\", \"Na fila\", \"Preparando abordagem\" e \"Abordado\" e, depois, \"Respondeu\" e \"Qualificado\". Quando aparece \"Não abordado\", o motivo vem logo abaixo, como \"Sem telefone brasileiro válido.\".",
+          "dica": "Quando a empresa já tem conversa, a última coluna, \"Conversa\", mostra o link \"Abrir no Inbox\". Numa tela do tamanho desta foto ela fica escondida à direita: role a tabela para o lado.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "^escritórios de contabilidade",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar ritmo",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "row",
+                "nome": "Contábil Domingos de Morais"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Na fila",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Contábil Domingos de Morais"
+                }
+              },
+              "rotulo": "Esperando a vez",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Progresso",
+                "exato": true
+              },
+              "rotulo": "Situação de cada empresa",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Auditoria",
+                "exato": true
+              },
+              "rotulo": "Score, site e prévia",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "configurar-e-buscar",
+      "titulo": "Configurar e fazer uma busca",
+      "objetivo": "Salvar a chave da Apify, dizer quem assina as mensagens e pedir uma busca de empresas por segmento e região.",
+      "papel": "admin",
+      "busca": [
+        "chave da apify",
+        "configurar prospecção",
+        "buscar empresas no google maps",
+        "quanto custa a busca",
+        "nome nas mensagens da prospecção",
+        "vocabulário por nicho",
+        "nova busca de empresas"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "A busca precisa de uma chave",
+          "texto": "Na instalação padrão, as empresas vêm da Apify, um serviço de fora que procura negócios no Google Maps e cobra cada busca do seu saldo lá. Por isso a Prospecção precisa da chave da sua conta na Apify. Na primeira vez, sem chave salva, os quadros de configuração já aparecem abertos e o botão \"Buscar empresas\" fica apagado. Depois, eles ficam atrás do botão \"Configurar busca\".",
+          "rota": "/app/prospecting",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Configurar busca",
+                "exato": true
+              },
+              "rotulo": "Configurar busca",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Configurar busca",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A chave da Apify",
+          "texto": "Em \"Chave da Apify\", cole a chave da sua conta na Apify. No site da Apify ela fica em Configurações e aparece com o nome \"API token\". Depois clique em \"Salvar chave\". Antes de gravar, o sistema confere a chave com a Apify: se ela não for aceita, nada é salvo e aparece o aviso. Aceita, ela fica cifrada no servidor, os quadros se fecham e aparece \"Chave de busca salva.\". A chave salva não volta a aparecer; para trocar, cole a nova e salve de novo.",
+          "dica": "O campo mostra só pontinhos enquanto você digita, para a chave não aparecer na tela.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Configurar busca",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Chave da Apify",
+                "exato": true
+              },
+              "valor": "apify_api_SUA0CHAVE0AQUI"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Chave da Apify",
+                "exato": true
+              },
+              "rotulo": "Cole a chave aqui",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar chave",
+                "exato": true
+              },
+              "rotulo": "Confere e grava",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Quem assina as mensagens",
+          "texto": "No quadro \"Voz e vocabulário\", preencha \"Seu nome\", \"O que você faz\" e \"Diferencial\": a IA escreve a primeira mensagem na voz dessa pessoa. Em \"Vocabulário por nicho\", escreva uma linha por segmento no formato \"termo: valor\". Quando o segmento da busca contém o termo, a estratégia de abordagem usa o seu valor para falar do que aquele tipo de empresa quer ganhar. Clique em \"Salvar personalização\": vale para todas as campanhas.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Seu nome",
+                "exato": true
+              },
+              "valor": "Helena Prado"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "O que você faz",
+                "exato": true
+              },
+              "valor": "Coordeno o programa Empresa Saudável da Clínica Bem Viver"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Diferencial",
+                "exato": true
+              },
+              "valor": "Ginástica laboral e avaliação postural no próprio escritório, sem tirar a equipe do trabalho"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Vocabulário por nicho",
+                "exato": true
+              },
+              "valor": "contabilidade: carteira de clientes"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Seu nome",
+                "exato": true
+              },
+              "rotulo": "Quem assina",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "O que você faz",
+                "exato": true
+              },
+              "rotulo": "O que faz",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Diferencial",
+                "exato": true
+              },
+              "rotulo": "O que destacar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Vocabulário por nicho",
+                "exato": true
+              },
+              "rotulo": "termo: valor",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar personalização",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "O que e onde procurar",
+          "texto": "No quadro \"1. Encontrar empresas\", escreva em \"Público ou segmento\" o tipo de empresa e em \"Cidade ou região\" onde ela fica, do jeito que você pesquisaria no Google Maps. \"Até quantas empresas\" é o máximo que a busca traz, de 1 a 100. \"Teto da busca (US$)\" é o máximo que esta busca pode gastar do seu saldo na Apify, de US$ 0,50 a US$ 10.",
+          "rota": "/app/prospecting",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Público ou segmento",
+                "exato": true
+              },
+              "valor": "escritórios de arquitetura"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Cidade ou região",
+                "exato": true
+              },
+              "valor": "Moema, São Paulo, SP"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Público ou segmento",
+                "exato": true
+              },
+              "rotulo": "Que tipo de empresa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Cidade ou região",
+                "exato": true
+              },
+              "rotulo": "Onde",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Até quantas empresas",
+                "exato": true
+              },
+              "rotulo": "De 1 a 100",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "rotulo": "Teto da busca (US$)",
+                "exato": true
+              },
+              "rotulo": "Gasto máximo",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "As opções e o botão de buscar",
+          "texto": "As três opções vêm marcadas. \"Enriquecer com e-mails comerciais e redes encontradas no site\" pede à busca os contatos publicados no site de cada empresa. \"Avaliar o site de cada empresa automaticamente\" faz o sistema abrir cada site e anotar o que encontrou, sem gastar IA. \"Gerar a prévia da mensagem automaticamente\" faz a IA escrever um rascunho da primeira mensagem para cada empresa marcada e consome crédito de IA; ela só funciona com a avaliação do site ligada. Clique em \"Buscar empresas\".",
+          "dica": "Nenhuma mensagem sai nesta etapa. A busca aparece em \"Suas campanhas\" como uma campanha nova; enquanto ela roda, a tela se atualiza sozinha, e no fim a campanha mostra \"Busca concluída\" e as empresas encontradas. Se nenhuma campanha anterior tem agente, a prévia automática espera a campanha ter um, e a linha mostra \"Prévia: escolha o agente na etapa 2\".",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Público ou segmento",
+                "exato": true
+              },
+              "valor": "escritórios de arquitetura"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Cidade ou região",
+                "exato": true
+              },
+              "valor": "Moema, São Paulo, SP"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Enriquecer com e-mails comerciais e redes encontradas no site",
+                "exato": true
+              },
+              "rotulo": "E-mails e redes",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Avaliar o site de cada empresa automaticamente",
+                "exato": true
+              },
+              "rotulo": "Avaliar o site",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Gerar a prévia da mensagem automaticamente (consome crédito de IA)",
+                "exato": true
+              },
+              "rotulo": "Prévia pela IA",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Buscar empresas",
+                "exato": true
+              },
+              "rotulo": "Começa a busca",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Buscar empresas",
+            "exato": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "escolher-as-empresas",
+      "titulo": "Escolher as empresas que serão abordadas",
+      "objetivo": "Ler o Score, a auditoria do site e a prévia de cada empresa e deixar de fora quem não deve receber mensagem.",
+      "papel": "admin",
+      "busca": [
+        "score da prospecção",
+        "auditoria do site",
+        "prévia da mensagem",
+        "desmarcar empresa",
+        "tirar empresa da lista",
+        "escolher quem abordar"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Leia cada empresa",
+          "texto": "Com a busca concluída, a campanha fica em \"Preparar campanha\" e cada empresa aparece como \"Encontrado\". Na coluna \"Auditoria\", o \"Score\" soma três sinais: a nota no Google, o número de avaliações e a situação do site. Embaixo vem o resumo do site, como \"Site com problemas\", \"Sem site próprio\" ou \"Site em ordem\", e, por último, o começo da prévia: o rascunho da primeira mensagem que a IA preparou. No alto da tabela, o seletor \"Ordenar\" com a opção \"Score\" põe primeiro as empresas com mais pontos.",
+          "dica": "O Score foi pensado para quem vende site ou automação. Com a oferta \"Site profissional\", empresa sem site ou com site ruim ganha mais pontos do que empresa com o site em ordem. Se a sua oferta é outra, use o Score só como uma pista.",
+          "rota": "/app/prospecting",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "row",
+                "nome": "Ferraz & Oliveira Advogados"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "^Score \\d+$",
+                "regex": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Ferraz & Oliveira Advogados"
+                }
+              },
+              "rotulo": "Score",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "^Site com problemas",
+                "regex": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Ferraz & Oliveira Advogados"
+                }
+              },
+              "rotulo": "Resumo do site",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Olá, bom dia! Aqui é a Bia, da Clínica Bem Viver, na Vila Mariana. Falo com o Ferraz & Oliveira Advogados?"
+              },
+              "rotulo": "Prévia da mensagem",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Ver detalhes",
+            "exato": true,
+            "dentro": {
+              "role": "row",
+              "nome": "Ferraz & Oliveira Advogados"
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A auditoria completa",
+          "texto": "Clique em \"Ver detalhes\" para abrir a \"Auditoria do site\" da empresa: os problemas encontrados, o que o site já tem, o que falta e uma sugestão de estratégia de abordagem, pensada para quem vende site ou automação. \"Reanalisar site\" abre o site de novo na hora. \"Prévia da abordagem\" pede à IA uma prévia nova, que fica guardada no lugar da anterior e consome crédito de IA. Para fechar, aperte Esc ou clique fora da janela.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Ver detalhes",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Ferraz & Oliveira Advogados"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "dialog"
+              },
+              "rotulo": "Auditoria do site",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Reanalisar site",
+                "exato": true
+              },
+              "rotulo": "Verifica de novo",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Prévia da abordagem",
+                "exato": true
+              },
+              "rotulo": "Nova prévia pela IA",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Deixe de fora quem não abordar",
+          "texto": "Na coluna \"Abordar\", todas as empresas vêm marcadas, e só as marcadas entram na fila quando você iniciar as abordagens. Para deixar uma de fora, desmarque a caixa dela. Aqui a clínica tira o \"Castro Lima Advogados Associados\", que tem só 6 avaliações.",
+          "rota": "/app/prospecting",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "row",
+                "nome": "Castro Lima Advogados Associados"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Marcar empresa para abordagem",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Castro Lima Advogados Associados"
+                }
+              },
+              "rotulo": "Desmarque",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "cell",
+                "nome": "^Castro Lima Advogados Associados",
+                "regex": true
+              },
+              "rotulo": "Empresa que fica de fora",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "checkbox",
+            "nome": "Marcar empresa para abordagem",
+            "exato": true,
+            "dentro": {
+              "role": "row",
+              "nome": "Castro Lima Advogados Associados"
+            }
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "As empresas desmarcadas",
+          "texto": "A empresa desmarcada sai da lista na hora, e o botão \"Mostrar desmarcadas\" passa a contar 2. Clique nele para ver quem ficou de fora; marcar a caixa de novo traz a empresa de volta. \"Marcar todas\" e \"Desmarcar todas\" mudam a lista inteira de uma vez. \"Excluir desmarcadas\" apaga essas empresas da campanha depois de pedir confirmação; numa busca futura, elas podem aparecer de novo.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "row",
+                "nome": "Castro Lima Advogados Associados"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Marcar empresa para abordagem",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Castro Lima Advogados Associados"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "^Mostrar desmarcadas \\(2\\)$",
+                "regex": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "^Mostrar desmarcadas \\(2\\)$",
+                "regex": true
+              },
+              "rotulo": "Quem ficou de fora",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "^Excluir desmarcadas",
+                "regex": true
+              },
+              "rotulo": "Apaga da campanha",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Marcar todas",
+                "exato": true
+              },
+              "rotulo": "Lista inteira",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "preparar-e-iniciar",
+      "titulo": "Preparar a abordagem, iniciar e ajustar o ritmo",
+      "objetivo": "Escolher o agente, a conexão e o funil da campanha, definir o ritmo e as regras da primeira mensagem, iniciar as abordagens e ajustar o ritmo de uma campanha pausada.",
+      "papel": "admin",
+      "busca": [
+        "iniciar abordagens com ia",
+        "agente da prospecção",
+        "ritmo de envio da prospecção",
+        "pausar campanha de prospecção",
+        "retomar fila",
+        "legítimo interesse",
+        "opção de parar de receber"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Quem vai conversar",
+          "texto": "Em \"2. Preparar a abordagem\" você escolhe o agente de IA que manda a primeira mensagem e atende as respostas. Há dois caminhos. \"Configurar por conversa\" abre um assistente que pergunta o que você oferece e o que quer descobrir, monta um agente novo e deixa você testá-lo em \"Testar como cliente\" antes de publicar. \"Usar agente existente / configurar manualmente\" usa um agente que você já publicou. A clínica vai usar a Bia, que já atende o WhatsApp.",
+          "rota": "/app/prospecting",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Vamos montar seu agente",
+                "exato": true
+              },
+              "rotulo": "Assistente: agente novo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Testar como cliente",
+                "exato": true
+              },
+              "rotulo": "Teste antes de publicar",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Usar agente existente / configurar manualmente",
+                "exato": true
+              },
+              "rotulo": "Agente que você já tem",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Usar agente existente / configurar manualmente",
+            "exato": true
+          },
+          "dica": "Atenção: ao clicar em \"Publicar e usar agente\", o agente novo passa a poder atender as mensagens que chegam nesse número, não só as da prospecção."
+        },
+        {
+          "id": "p2",
+          "titulo": "Agente, conexão e funil",
+          "texto": "Em \"Agente de IA\", escolha o agente: a lista só mostra agentes publicados, em modo automático e sem pausa. Em \"Conexão de saída\", escolha o número que envia as mensagens. Só aparecem conexões ativas, e ele precisa ser um número conectado pelo QR Code: o número oficial da Meta ainda não serve para a Prospecção. Em \"Funil\", o funil em que as empresas entram. \"Etapa inicial\" é onde elas começam e \"Etapa de qualificados\" é a etapa que marca quem se qualificou na conversa. As duas etapas precisam ser diferentes.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Usar agente existente / configurar manualmente",
+                "exato": true
+              }
+            },
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "exato": true,
+                "role": "combobox",
+                "nome": "Agente de IA"
+              },
+              "opcao": "Bia — Recepção virtual"
+            },
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "rotulo": "Conexão de saída",
+                "exato": true
+              },
+              "opcao": "Recepção Bem Viver"
+            },
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "rotulo": "Funil",
+                "exato": true
+              },
+              "opcao": "Pacientes"
+            },
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "rotulo": "Etapa inicial",
+                "exato": true
+              },
+              "opcao": "Primeiro contato"
+            },
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "rotulo": "Etapa de qualificados",
+                "exato": true
+              },
+              "opcao": "Consulta agendada"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "exato": true,
+                "role": "combobox",
+                "nome": "Agente de IA"
+              },
+              "rotulo": "Quem conversa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Conexão de saída",
+                "exato": true
+              },
+              "rotulo": "Número que envia",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Funil",
+                "exato": true
+              },
+              "rotulo": "Funil da campanha",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Etapa de qualificados",
+                "exato": true
+              },
+              "rotulo": "Marca quem se qualificou",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "A oferta e quando qualificar",
+          "texto": "Em \"O que a IA deve oferecer e como iniciar\", explique a oferta e o objetivo da primeira conversa; o texto se soma às instruções do agente nas conversas desta campanha. Em \"Quando considerar o cliente qualificado\", diga o que precisa ficar confirmado. \"O que esta campanha vende\" tem três opções fixas: site profissional, automação do atendimento e automações com N8N. Elas mudam o Score e a estratégia sugerida, e pelo menos uma fica marcada; como nenhuma é a oferta da clínica, ela deixa a que já vem.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Usar agente existente / configurar manualmente",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "O que a IA deve oferecer e como iniciar",
+                "exato": true
+              },
+              "valor": "Apresente o programa Empresa Saudável da Clínica Bem Viver: ginástica laboral e avaliação postural para a equipe, feitas no próprio escritório. O objetivo da primeira conversa é saber se a empresa aceita uma visita sem compromisso."
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Quando considerar o cliente qualificado",
+                "exato": true
+              },
+              "valor": "A pessoa decide ou participa da decisão sobre benefícios da equipe e aceita marcar uma visita ou receber uma proposta."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "O que a IA deve oferecer e como iniciar",
+                "exato": true
+              },
+              "rotulo": "Oferta e objetivo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Quando considerar o cliente qualificado",
+                "exato": true
+              },
+              "rotulo": "O que precisa ser confirmado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "group",
+                "nome": "O que esta campanha vende",
+                "exato": true
+              },
+              "rotulo": "Opções fixas",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Ritmo e entrada no funil",
+          "texto": "\"Máximo em 24 horas\" (de 1 a 50) e \"Intervalo mínimo (minutos)\" (de 5 a 1440) são o ritmo da campanha: no máximo tantas abordagens a cada 24 horas, com pelo menos tantos minutos entre uma e outra. Aqui a clínica usa 10 por dia, com 30 minutos de intervalo. Em \"Quando a empresa entra no funil\", a opção recomendada só cria o contato, o negócio e a conversa quando a empresa recebe a primeira mensagem; \"Todas ao iniciar\" cria tudo para a fila inteira assim que você inicia.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Usar agente existente / configurar manualmente",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Intervalo mínimo (minutos)",
+                "exato": true
+              },
+              "valor": "30"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Máximo em 24 horas",
+                "exato": true
+              },
+              "rotulo": "Por dia",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Intervalo mínimo (minutos)",
+                "exato": true
+              },
+              "rotulo": "Folga entre envios",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "group",
+                "nome": "Quando a empresa entra no funil",
+                "exato": true
+              },
+              "rotulo": "Entrada no funil",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "A saída, a base legal e o início",
+          "texto": "Em \"Quando oferecer a opção de parar de receber\", a recomendada já põe na primeira mensagem como parar de receber. A clínica escolhe \"Atrasar para a 2ª mensagem\": a primeira só cumprimenta e confirma se é a empresa certa, sem oferta, e a instrução para parar vai na seguinte. Em \"Referência da avaliação de legítimo interesse\", informe o documento real que justifica abordar essas empresas; ele não é o consentimento delas. Clique em \"Iniciar abordagens com IA\".",
+          "dica": "Antes de começar, o sistema confere o agente (publicado no número escolhido, com a ferramenta de mover negócios e acesso ao funil), a conexão e as etapas; se algo faltar, aparece o aviso e nada começa. Só uma campanha fica em andamento por vez, e a primeira abordagem é preparada depois de um minuto.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Usar agente existente / configurar manualmente",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "radio",
+                "nome": "^Atrasar para a 2ª mensagem",
+                "regex": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Referência da avaliação de legítimo interesse",
+                "exato": true
+              },
+              "valor": "Avaliação de legítimo interesse nº 03/2026 — prospecção de empresas"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "group",
+                "nome": "Quando oferecer a opção de parar de receber",
+                "exato": true
+              },
+              "rotulo": "Quando oferecer a saída",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Referência da avaliação de legítimo interesse",
+                "exato": true
+              },
+              "rotulo": "Base legal",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Iniciar abordagens com IA",
+                "exato": true
+              },
+              "rotulo": "Começa a fila",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Iniciar abordagens com IA",
+            "exato": true
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "Pausar e retomar",
+          "texto": "Depois de iniciada, a campanha mostra o ritmo e os botões de controle. Enquanto envia (\"Em andamento\"), aparece \"Pausar abordagens\". Pausada, como esta, ela mostra \"Editar ritmo\" e \"Retomar fila\". Com a campanha pausada, você também pode marcar e desmarcar na tabela as empresas que ainda estão na fila. Clique em \"Editar ritmo\".",
+          "dica": "Uma mensagem que já estava saindo no momento da pausa ainda pode ser enviada.",
+          "rota": "/app/prospecting",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "^escritórios de contabilidade",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar ritmo",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "^Ritmo:",
+                "regex": true
+              },
+              "rotulo": "Ritmo atual",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Editar ritmo",
+                "exato": true
+              },
+              "rotulo": "Muda o ritmo",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Retomar fila",
+                "exato": true
+              },
+              "rotulo": "Volta a enviar",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Editar ritmo",
+            "exato": true
+          }
+        },
+        {
+          "id": "p7",
+          "titulo": "Ajustar o ritmo",
+          "texto": "Mude \"Máximo em 24 horas\" e \"Intervalo mínimo (minutos)\" e clique em \"Salvar ritmo\". A campanha continua pausada, a linha \"Ritmo\" passa a mostrar os números novos e aparece \"Ritmo atualizado. A campanha continua pausada.\". O ritmo é a única parte da configuração que muda depois de iniciada. Para voltar a enviar, clique em \"Retomar fila\": o próximo envio já usa o ritmo novo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "^escritórios de contabilidade",
+                "regex": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar ritmo",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Máximo em 24 horas",
+                "exato": true
+              },
+              "valor": "6"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Intervalo mínimo (minutos)",
+                "exato": true
+              },
+              "valor": "45"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Máximo em 24 horas",
+                "exato": true
+              },
+              "rotulo": "De 1 a 50",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Intervalo mínimo (minutos)",
+                "exato": true
+              },
+              "rotulo": "De 5 a 1440",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar ritmo",
+                "exato": true
+              },
+              "rotulo": "Grava o ritmo",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar ritmo",
+            "exato": true
+          }
+        }
+      ]
+    }
+  ]
+}

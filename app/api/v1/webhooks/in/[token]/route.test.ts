@@ -515,3 +515,51 @@ describe("as bordas do portão 3 (#3366)", () => {
     expect(desfecho()).toBe("duplicado");
   });
 });
+
+/**
+ * #3508 — a captação é o caminho que NÃO recusa o valor fora da lista do funil.
+ *
+ * A régua da opção (`lib/leads/opcao-do-campo-no-servidor`) recusa com 422 na
+ * API e no MCP, e grava o texto cru na captação. Quem escolhe entre os dois é a
+ * ROTA, por esta opção — e ela tem de ir nas TRÊS chamadas do arquivo (criação,
+ * reenvio e atualização do card aberto), senão um dos caminhos vira loop de
+ * retry de quem integra.
+ *
+ * Aqui os handlers são dublês (o arquivo mede o que a ROTA manda); o efeito da
+ * opção no banco é medido em `tests/unit/campo-de-selecao-na-api.test.ts`, com
+ * os handlers de verdade.
+ */
+describe("captação passa `manterForaDaLista` nas três escritas (#3508)", () => {
+  const ENVIO_COM_OPCAO = { nome: "Joana", telefone: "+553****3302", estado: "sao paulo" };
+
+  it("criação: o valor do formulário chega ao handler, e a opção vai junto", async () => {
+    m.fonte = { ...FONTE, reuse_open_lead_on_capture: false };
+    m.cardAberto = null;
+
+    await enviar(ENVIO_COM_OPCAO);
+
+    const leadInput = h.criarLead.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(leadInput.custom_fields).toMatchObject({ estado: "sao paulo" });
+    expect(
+      h.criarLead.mock.calls[0]?.[3],
+      "sem a opção, um formulário com valor fora da lista derrubaria a captação inteira",
+    ).toEqual({ exigirCamposDaEtapa: false, exigirPadraoDoCampo: false, manterForaDaLista: true });
+  });
+
+  it("reenvio de um id já conhecido: a atualização também não recusa", async () => {
+    m.porExternalId = { ...CARD_ABERTO, external_id: "conta-3357", webhook_source_id: "fonte-1" };
+    m.fonte = { ...FONTE, update_existing_lead_on_capture: true };
+
+    await enviar({ ...ENVIO_COM_OPCAO, external_id: "conta-3357" });
+
+    expect(h.atualizarLead).toHaveBeenCalledTimes(1);
+    expect(h.atualizarLead.mock.calls[0]?.[4]).toEqual({ manterForaDaLista: true });
+  });
+
+  it("card aberto adotado: a atualização do card leva a mesma opção", async () => {
+    await enviar({ ...ENVIO_DO_TRIAL, external_id: "conta-3508", estado: "sao paulo" });
+
+    expect(h.atualizarLead).toHaveBeenCalledTimes(1);
+    expect(h.atualizarLead.mock.calls[0]?.[4]).toEqual({ manterForaDaLista: true });
+  });
+});

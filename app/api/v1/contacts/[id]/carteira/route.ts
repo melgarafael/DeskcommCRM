@@ -21,12 +21,15 @@
 import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import type { Actor } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { donoQualificado } from "@/lib/carteira/dono";
+import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -123,7 +126,16 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   }
   const antes = (contato as { carteira_user_id?: string | null } | null)?.carteira_user_id ?? null;
 
-  const { error } = await createAdminClient().rpc("fn_definir_carteira_do_cliente", {
+  // #3732: quais conversas deste contato estavam em qual número ANTES da troca.
+  // A carteira passa as conversas abertas pela `fn_conversation_assign`, que
+  // pode trocar o número de cada uma; a auditoria do contato não é a linha do
+  // tempo da conversa, então o "continua pelo número de {nome}" tem de ser
+  // escrito por conversa, depois, comparando com esta foto. Falha de leitura
+  // não impede a troca de carteira — só deixa a linha do tempo sem o registro.
+  const admin = createAdminClient();
+  const numerosAntes = await conversasDoContato(admin, orgId, contactId);
+
+  const { error } = await admin.rpc("fn_definir_carteira_do_cliente", {
     p_org: orgId,
     p_actor: authz.user.id,
     p_contact: contactId,
@@ -133,6 +145,17 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   if (error) {
     const recusa = recusaDaFuncao(error);
     return fail(recusa.code, t(recusa.mensagem), recusa.status, { requestId });
+  }
+
+  if (dono !== null) {
+    await registrarNumerosQueMudaram({
+      supabase,
+      admin,
+      organizationId: orgId,
+      contactId,
+      antes: numerosAntes,
+      ator: { type: "user", id: authz.user.id, role: authz.org.role },
+    });
   }
 
   await audit({
@@ -211,4 +234,73 @@ export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
   }
 
   return ok({ contact_id: contactId, dono_user_id: dono, qualificado }, { requestId });
+}
+
+/** O número em que cada conversa do contato está — a foto que a troca compara. */
+interface NumeroDaConversa {
+  id: string;
+  channel_session_id: string | null;
+  assigned_to_user_name: string | null;
+}
+
+/**
+ * Leitura pelo cliente ADMIN, filtrada pela organização do cookie: a foto é do
+ * contato inteiro, e conversa com outra pessoa não é visível pela RLS de quem
+ * troca a carteira. Falha de leitura devolve lista vazia — a troca de carteira
+ * não depende dela.
+ */
+async function conversasDoContato(
+  admin: SupabaseClient,
+  orgId: string,
+  contactId: string,
+): Promise<NumeroDaConversa[]> {
+  const { data, error } = await admin
+    .from("conversations")
+    .select("id, channel_session_id, assigned_to_user_name")
+    .eq("organization_id", orgId)
+    .eq("contact_id", contactId);
+  if (error || !data) return [];
+  return data as NumeroDaConversa[];
+}
+
+/**
+ * #3732 — o número que mudou na troca de carteira vira linha na linha do tempo.
+ *
+ * A `fn_definir_carteira_do_cliente` passa as conversas abertas pela
+ * `fn_conversation_assign`, que já troca o número junto com o dono; o que faltava
+ * era o registro na conversa — a auditoria do CONTATO (`contact.carteira_changed`)
+ * conta a troca de dono, não que o cliente passou a ser atendido por outro
+ * WhatsApp. A frase é a mesma da transferência ("Continua pelo número de
+ * {nome}"), porque é a mesma coisa que aconteceu: a conversa mudou de número.
+ *
+ * Fire-and-forget por dentro de `registrarTrocaDeComando`: a carteira já foi
+ * gravada, e a linha do tempo não pode derrubar a operação que ela descreve.
+ */
+async function registrarNumerosQueMudaram(p: {
+  supabase: SupabaseClient;
+  admin: SupabaseClient;
+  organizationId: string;
+  contactId: string;
+  antes: NumeroDaConversa[];
+  ator: Actor;
+}): Promise<void> {
+  const depois = await conversasDoContato(p.admin, p.organizationId, p.contactId);
+  if (depois.length === 0) return;
+  const antesPorId = new Map(p.antes.map((c) => [c.id, c.channel_session_id]));
+
+  for (const conversa of depois) {
+    if (!antesPorId.has(conversa.id)) continue;
+    const anterior = antesPorId.get(conversa.id) ?? null;
+    if (anterior === conversa.channel_session_id) continue;
+    await registrarTrocaDeComando({
+      supabase: p.supabase,
+      organizationId: p.organizationId,
+      conversationId: conversa.id,
+      contactId: p.contactId,
+      tipo: "conversation_transferred",
+      actor: p.ator,
+      motivo: `Continua pelo número de ${conversa.assigned_to_user_name?.trim() || "outro atendente"}`,
+      payload: { numero_anterior: anterior, numero_novo: conversa.channel_session_id },
+    });
+  }
 }

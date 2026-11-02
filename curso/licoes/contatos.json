@@ -43,7 +43,7 @@
       },
       {
        "alvo": {
-        "role": "table"
+        "css": "table > thead"
        },
        "rotulo": "Lista de contatos",
        "tipo": "caixa"
@@ -534,7 +534,7 @@
     {
      "id": "p2",
      "titulo": "Preencher o cadastro",
-     "texto": "Preencha o nome e pelo menos o e-mail ou o telefone. O telefone vai com DDD; não precisa digitar o +55. Em \"Tags\", separe as etiquetas por vírgula. O CPF é opcional.",
+     "texto": "Preencha o nome e pelo menos o e-mail ou o telefone. O telefone vai com DDD; não precisa digitar o +55. Em \"Tags\", escolha as etiquetas sugeridas ou digite uma por vez e aperte Enter. Se abrir a escolha de cor, confira e clique em \"Adicionar tag\" para confirmar. O CPF é opcional. Para cadastrar e já falar com a pessoa, use \"Salvar e iniciar conversa\": o contato é salvo e a conversa com ele abre em seguida.",
      "dica": "Se o telefone, o e-mail ou o CPF já pertencer a outro contato, o cadastro é recusado com um aviso.",
      "antes": [
       {
@@ -582,12 +582,68 @@
        "valor": "(11) 98765-0030"
       },
       {
-       "acao": "fill",
+       "acao": "click",
        "alvo": {
-        "rotulo": "Tags (separadas por vírgula)",
+        "testid": "sugestao-primeira-consulta",
+        "dentro": {
+         "role": "dialog",
+         "nome": "Novo contato",
+         "exato": true
+        }
+       }
+      },
+      {
+       "acao": "aguardar",
+       "alvo": {
+        "role": "dialog",
+        "nome": "Adicionar tag",
         "exato": true
-       },
-       "valor": "primeira-consulta, nutricao"
+       }
+      },
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Adicionar tag",
+        "exato": true,
+        "dentro": {
+         "role": "dialog",
+         "nome": "Adicionar tag",
+         "exato": true
+        }
+       }
+      },
+      {
+       "acao": "click",
+       "alvo": {
+        "testid": "sugestao-nutricao",
+        "dentro": {
+         "role": "dialog",
+         "nome": "Novo contato",
+         "exato": true
+        }
+       }
+      },
+      {
+       "acao": "aguardar",
+       "alvo": {
+        "role": "dialog",
+        "nome": "Adicionar tag",
+        "exato": true
+       }
+      },
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Adicionar tag",
+        "exato": true,
+        "dentro": {
+         "role": "dialog",
+         "nome": "Adicionar tag",
+         "exato": true
+        }
+       }
       }
      ],
      "destaques": [
@@ -605,6 +661,15 @@
        },
        "rotulo": "E-mail ou telefone é obrigatório",
        "tipo": "seta"
+      },
+      {
+       "alvo": {
+        "role": "button",
+        "nome": "Salvar e iniciar conversa",
+        "exato": true
+       },
+       "rotulo": "Salvar e já abrir a conversa",
+       "tipo": "caixa"
       }
      ],
      "clicar": {
@@ -699,7 +764,7 @@
     {
      "id": "p2",
      "titulo": "Mudar os dados",
-     "texto": "Na janela \"Editar contato\" você muda nome, e-mail, telefone e data de nascimento. Para pôr uma etiqueta, digite no campo de baixo e aperte Enter. Se ela já existir, aparece como sugestão para clicar. Para tirar uma etiqueta, clique no X dela. Aqui pusemos a etiqueta \"nutricao\". No fim, clique em \"Salvar\".",
+     "texto": "Na janela \"Editar contato\" você muda nome, e-mail, telefone e data de nascimento. Para pôr uma etiqueta, digite no campo de baixo e aperte Enter, ou clique numa sugestão. Se abrir a escolha de cor, confirme em \"Adicionar tag\". Para tirar uma etiqueta, clique no X dela. Aqui pusemos a etiqueta \"nutricao\". No fim, clique em \"Salvar\".",
      "antes": [
       {
        "acao": "click",
@@ -712,7 +777,9 @@
       {
        "acao": "aguardar",
        "alvo": {
-        "role": "dialog"
+        "role": "dialog",
+        "nome": "Editar contato",
+        "exato": true
        }
       },
       {
@@ -720,7 +787,12 @@
        "alvo": {
         "role": "textbox",
         "nome": "Adicionar etiqueta",
-        "exato": true
+        "exato": true,
+        "dentro": {
+         "role": "dialog",
+         "nome": "Editar contato",
+         "exato": true
+        }
        },
        "valor": "nutricao"
       },
@@ -730,7 +802,33 @@
        "alvo": {
         "role": "textbox",
         "nome": "Adicionar etiqueta",
+        "exato": true,
+        "dentro": {
+         "role": "dialog",
+         "nome": "Editar contato",
+         "exato": true
+        }
+       }
+      },
+      {
+       "acao": "aguardar",
+       "alvo": {
+        "role": "dialog",
+        "nome": "Adicionar tag",
         "exato": true
+       }
+      },
+      {
+       "acao": "click",
+       "alvo": {
+        "role": "button",
+        "nome": "Adicionar tag",
+        "exato": true,
+        "dentro": {
+         "role": "dialog",
+         "nome": "Adicionar tag",
+         "exato": true
+        }
        }
       }
      ],
@@ -746,7 +844,12 @@
      "clicar": {
       "role": "button",
       "nome": "Salvar",
-      "exato": true
+      "exato": true,
+      "dentro": {
+       "role": "dialog",
+       "nome": "Editar contato",
+       "exato": true
+      }
      }
     },
     {
@@ -759,7 +862,12 @@
        "alvo": {
         "role": "button",
         "nome": "Salvar",
-        "exato": true
+        "exato": true,
+        "dentro": {
+         "role": "dialog",
+         "nome": "Editar contato",
+         "exato": true
+        }
        }
       },
       {

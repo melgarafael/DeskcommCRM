@@ -1,7 +1,6 @@
 "use server";
 
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 
 import { createClientDeEntradaComGoogle } from "@/lib/supabase/server";
 import { urlDeRetornoDoGoogle } from "@/lib/auth/entrada-com-google";
@@ -9,11 +8,14 @@ import { estadoDoProvedorGoogle } from "@/lib/auth/provedor-google";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 
-export type SignInWithGoogleResult = {
-  ok: false;
-  /** `google_indisponivel` = o provedor não está habilitado nesta instalação. */
-  error: "google_indisponivel" | "erro_inesperado";
-};
+export type SignInWithGoogleResult =
+  /** A tela navega para `url` com `window.location.assign` (ver abaixo). */
+  | { ok: true; url: string }
+  | {
+      ok: false;
+      /** `google_indisponivel` = o provedor não está habilitado nesta instalação. */
+      error: "google_indisponivel" | "erro_inesperado";
+    };
 
 /**
  * Entrada com Google — a METADE DE IDA do OAuth.
@@ -24,6 +26,23 @@ export type SignInWithGoogleResult = {
  * navegação de volta). Feito no navegador com a chave anon, o verificador
  * ficaria no `localStorage` — lugar de onde o `/auth/callback` do servidor não
  * o lê, e o erro seria o mesmo `PKCE code verifier not found in storage`.
+ *
+ * ─── Por que devolve a URL em vez de chamar `redirect()` ────────────────────
+ *
+ * Quando o Supabase responde no MESMO domínio do app (o proxy manda `/auth/v1`
+ * para o gateway — `Caddyfile.single-server` faz isso, e stacks com Traefik
+ * também), a URL do `/authorize` é same-origin. O `redirect()` de server action
+ * vira então navegação INTERNA do roteador do Next: a barra passa a mostrar
+ * `/auth/v1/authorize`, nenhum pedido sai para o GoTrue e a tela de login fica
+ * parada até a pessoa recarregar. Medido em produção numa stack assim: a
+ * resposta da action trazia `x-action-redirect` e o navegador nunca pediu o
+ * `/authorize`. Com o Supabase em outro domínio o defeito não aparece, porque o
+ * roteador trata URL de fora com carga completa — e é por isso que passou.
+ *
+ * Por isso quem navega é a TELA (`EntrarComGoogle`), com
+ * `window.location.assign`, que é carga completa em qualquer topologia. O
+ * cookie do verificador de PKCE não depende do redirect: ele sai nos
+ * `Set-Cookie` da própria resposta da action, antes de a tela navegar.
  *
  * ─── Por que sem `skipBrowserRedirect` ──────────────────────────────────────
  *
@@ -61,8 +80,7 @@ export type SignInWithGoogleResult = {
  * redirect é a leitura de settings, que é um GET sem estado e sem teto.
  *
  * Em caso de erro, devolve discriminador para a tela mostrar (o Google pode não
- * estar habilitado na instalação). No sucesso, `redirect()` não retorna: o
- * navegador sai daqui direto para o Google.
+ * estar habilitado na instalação). No sucesso, devolve a URL do `/authorize`.
  */
 export async function signInWithGoogle(
   params: { next?: string; convite?: string } = {},
@@ -110,6 +128,6 @@ export async function signInWithGoogle(
     return { ok: false, error: indisponivel ? "google_indisponivel" : "erro_inesperado" };
   }
 
-  // Server-side redirect: os Set-Cookie do verificador de PKCE saem junto.
-  redirect(data.url);
+  // Os Set-Cookie do verificador de PKCE saem nesta resposta; a tela navega.
+  return { ok: true, url: data.url };
 }

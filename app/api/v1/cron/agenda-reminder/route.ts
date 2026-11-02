@@ -660,6 +660,7 @@ async function handle(req: NextRequest): Promise<Response> {
       linha,
       tipo.reminder_channel_session_id ?? null,
       agora,
+      contato.phone_number,
     );
     await atualizarAvisoDeRemetente(admin, org, linha.id, escolha.motivo);
     if (!escolha.canal) {

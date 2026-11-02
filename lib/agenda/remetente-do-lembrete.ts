@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { transportaMensagem } from "@/lib/channels/capabilities";
+import { PROVIDERS_DE_TELEFONE, transportaMensagem } from "@/lib/channels/capabilities";
 import { canalAceitaTextoLivreAgora } from "@/lib/channels/janela";
 
 export interface CanalDoLembrete {
@@ -27,6 +27,7 @@ export function decidirRemetenteDoLembrete(
   canais: CanalDoLembrete[],
   canalIndicadoId: string | null,
   agora: Date,
+  telefoneDoContato?: string | null,
 ): RemetenteDoLembrete {
   const operante = (c: CanalDoLembrete) =>
     c.status === "WORKING" &&
@@ -40,9 +41,22 @@ export function decidirRemetenteDoLembrete(
       ? { canal, motivo: null }
       : { canal: null, motivo: "canal_fora_da_janela_24h" };
   }
-  const candidatos = canais
+
+  const elegiveis = canais
     .filter(operante)
     .filter((c) => canalAceitaTextoLivreAgora(c.provider, c.lastInboundAt, agora));
+  // #2594: entre os ELEGÍVEIS, o canal do próprio contato — com telefone, o de
+  // telefone; sem, o social. A preferência só desempata: se nenhum elegível é do
+  // tipo preferido, os elegíveis valem como antes. Telefone não informado
+  // (undefined) não inventa preferência.
+  let candidatos = elegiveis;
+  if (telefoneDoContato !== undefined) {
+    const temTelefone = Boolean(telefoneDoContato?.trim());
+    const preferidos = elegiveis.filter(
+      (c) => (PROVIDERS_DE_TELEFONE as readonly string[]).includes(c.provider ?? "") === temTelefone,
+    );
+    if (preferidos.length > 0) candidatos = preferidos;
+  }
   if (candidatos.length > 1) return { canal: null, motivo: "remetente_ambiguo" };
   const unico = candidatos[0];
   if (candidatos.length === 1 && unico) return { canal: unico, motivo: null };
@@ -55,6 +69,7 @@ export async function resolverRemetenteDoLembrete(
   compromisso: { organization_id: string; contact_id: string; conversation_id?: string | null },
   canalDoTipoId: string | null,
   agora: Date,
+  telefoneDoContato?: string | null,
 ): Promise<RemetenteDoLembrete> {
   const org = compromisso.organization_id;
   let indicado = canalDoTipoId;
@@ -111,5 +126,6 @@ export async function resolverRemetenteDoLembrete(
       }
     }
   }
-  return decidirRemetenteDoLembrete(canais, indicado, agora);
+  return decidirRemetenteDoLembrete(canais, indicado, agora, telefoneDoContato);
 }
+

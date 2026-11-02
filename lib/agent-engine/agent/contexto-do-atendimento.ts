@@ -242,7 +242,17 @@ export async function carregarContextoDoAtendimento(db: Queryable, ids: { tenant
       from catalog_products where organization_id=$1 and codigo=any($7::text[])) as produtos,
     (select coalesce(jsonb_agg(x),'[]') from (
       select 'documento' as id,p.organization_id,v.content as body,v.created_at from org_memory_pointers p join org_memory_versions v on v.id=p.version_id and v.organization_id=p.organization_id where p.organization_id=$1
-      union all select e.id::text,e.organization_id,e.title || E'\n' || e.body,e.created_at from org_memory_entries e where e.organization_id=$1 and e.status='active' order by created_at desc limit 9) x) as auxiliares,
+      union all select e.id::text,e.organization_id,e.title || E'\n' || e.body,e.created_at from org_memory_entries e
+        where e.organization_id=$1 and e.status='active'
+          -- #2369 — aprendizado com prazo: vencido não é contexto. "Hoje" no fuso
+          -- da organização (o JOIN com pg_timezone_names recusa IANA inválido sem
+          -- levantar erro; sem fuso aproveitável cai no padrão do produto, que é o
+          -- mesmo FUSO_PADRAO de fusoUtilizavel). Data de calendário: vale até o
+          -- fim do último dia, como o valid_until de proposta.
+          and (e.valid_until is null or e.valid_until >= (now() at time zone coalesce(
+                (select o.timezone from organizations o join pg_timezone_names z on z.name=o.timezone where o.id=$1),
+                'America/Sao_Paulo'))::date)
+        order by created_at desc limit 9) x) as auxiliares,
     (select jsonb_build_object('jev',settings->'jev','timezone',timezone,
       'promise_table',(select version_id from promise_table_pointers where organization_id=$1),
       'bindings',(select jsonb_agg(jsonb_build_object('purpose',purpose,'provider',provider,'model',model_id,'credential',credential_id,'enabled',is_enabled,'base',base_url) order by purpose) from ai_purpose_bindings where organization_id=$1 and purpose in ('promise_semantic','human_return_confirmation')),

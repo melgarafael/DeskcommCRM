@@ -15,6 +15,7 @@ import { lancarFalhaDeIngestao } from "@/lib/waha/falha-transitoria";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { audit } from "@/lib/audit";
+import { descartarSessaoQueNuncaPareou } from "@/lib/channels/descartar-sem-parear";
 import { sincronizarSaudeDaConexao } from "@/lib/channels/health";
 import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
 import { gravarReacaoDeMensagem } from "@/lib/channels/reacao";
@@ -666,26 +667,87 @@ const TELEFONE_DE_REMETENTE = /^\+\d{8,15}$/;
  */
 export function remetenteDoGrupo(p: WahaPayload): RemetenteDeGrupo | null {
   const autorBruto = primeiroTexto(p.participant, p.author, p._data?.key?.participant);
+  const { lid, phone } = identidadeDoParticipante(autorBruto, primeiroTexto(p._data?.key?.participantAlt));
+  const nome = notifyNameOf(p)?.trim().slice(0, 200) || null;
+
+  if (!nome && !phone && !lid) return null;
+  return { name: nome, phone, lid };
+}
+
+/**
+ * Um JID de PARTICIPANTE → `{ lid, phone }`, pela régua do remetente.
+ *
+ * Existe separado porque a MENÇÃO de grupo (#3566) precisa exatamente disto: o
+ * `mentionedJid` do Baileys é a mesma forma de JID que o autor da mensagem, com
+ * o mesmo sufixo de dispositivo possível, e a informação disponível é a mesma —
+ * identificador opaco quando é `@lid`, número quando é `@c.us`/`@s.whatsapp.net`.
+ * Duas leituras do mesmo campo divergiriam no dia em que o WhatsApp mudasse o
+ * formato; aqui é uma só.
+ *
+ * Quem chama decide o que fazer com o resultado: `remetenteDoGrupo` usa o
+ * `nome` do payload, e a menção não tem nome no payload — o rótulo dela vem do
+ * contato no CRM (`lib/grupos/ingest.ts`).
+ */
+function identidadeDoParticipante(
+  jidBruto: string | null,
+  altBruto: string | null,
+): { lid: string | null; phone: string | null } {
   // Sufixo de DISPOSITIVO (`:4`, `:12`...) que o WhatsApp multi-device às vezes
   // ancora antes do `@` — `123456:4@lid` e `5511999990000:12@s.whatsapp.net`
   // são o MESMO lid/telefone de sempre, só que com o dispositivo colado. Sem
   // remover, o teto de dígitos de `LID_DE_REMETENTE`/`TELEFONE_DE_REMETENTE`
-  // reprova os dois e o remetente do grupo se perde.
-  const autor = autorBruto ? autorBruto.replace(/:\d+@/, "@") : null;
+  // reprova os dois e o participante se perde.
+  const autor = jidBruto ? jidBruto.replace(/:\d+@/, "@") : null;
   // Teto antes de qualquer varredura: é campo de fora, como o `from`.
   const id = autor && autor.length <= 128 ? parseChatId(autor) : null;
 
   const doAutor = id?.kind === "phone" ? canonicalPhoneBR(id.phone) : null;
-  const doAlt = telefoneDoJid(primeiroTexto(p._data?.key?.participantAlt));
+  const doAlt = telefoneDoJid(altBruto);
   const telefone = [doAutor, doAlt ? canonicalPhoneBR(doAlt) : null].find(
     (t): t is string => !!t && TELEFONE_DE_REMETENTE.test(t),
   );
   const lid = id?.kind === "lid" && LID_DE_REMETENTE.test(id.lid) ? id.lid : null;
-  const nome = notifyNameOf(p)?.trim().slice(0, 200) || null;
-
-  if (!nome && !telefone && !lid) return null;
-  return { name: nome, phone: telefone ?? null, lid };
+  return { lid: lid ?? null, phone: telefone ?? null };
 }
+
+/**
+ * QUEM FOI MENCIONADO numa mensagem de grupo (#3566) — a lista que faltava
+ * guardar. O texto do WhatsApp traz a menção como `@<lid>`, e a lista real está
+ * no `contextInfo.mentionedJid` do Baileys (o mesmo lugar de onde a citação já
+ * é lida).
+ *
+ * Cada entrada passa pelo MESMO leitor de JID do remetente
+ * (`identidadeDoParticipante`) e sai no MESMO formato (`{ name, phone, lid }`,
+ * `lib/messaging/remetente-de-grupo.ts`), com `name` nulo: o payload não traz
+ * nome por menção, e o rótulo é resolvido no ingest de grupo pelo contato do
+ * CRM.
+ *
+ * Nunca lança e nunca derruba a mensagem: campo de fora, forma variável. Lista
+ * ausente, item de outro tipo e JID irreconhecível são simplesmente ignorados.
+ * Teto de 50 entradas porque é o limite prático do WhatsApp numa mensagem — e
+ * porque lista de fora sem teto é lista que cresce com o payload.
+ */
+export function mencoesDoGrupo(p: WahaPayload): RemetenteDeGrupo[] {
+  const contexto = contextoDoBaileys(p);
+  const lista = contexto?.mentionedJid;
+  if (!Array.isArray(lista)) return [];
+  const mencoes: RemetenteDeGrupo[] = [];
+  const vistos = new Set<string>();
+  for (const item of lista) {
+    if (typeof item !== "string") continue;
+    const { lid, phone } = identidadeDoParticipante(item, null);
+    // Sem lid e sem telefone não há como resolver nada depois — guardar
+    // `{ name: null, phone: null, lid: null }` só encheria o metadata.
+    if (lid === null && phone === null) continue;
+    const chave = lid !== null ? `lid:${lid}` : `phone:${phone}`;
+    if (vistos.has(chave)) continue;
+    vistos.add(chave);
+    mencoes.push({ name: null, phone, lid });
+    if (mencoes.length >= 50) break;
+  }
+  return mencoes;
+}
+
 
 /**
  * O chat de GRUPO de uma mensagem `fromMe`, ou null.
@@ -742,6 +804,10 @@ async function ingerirMensagemDeGrupo(
       sentAt: dataDoTimestamp(p.timestamp, now),
       // `fromMe`: quem escreveu é o dono do número — o `pushName` é o da loja.
       remetente: direction === "inbound" ? remetenteDoGrupo(p) : null,
+      // #3566 — quem foi mencionado vai junto, nas duas direções: a lista está
+      // no payload de qualquer mensagem de grupo, e o eco de um envio nosso
+      // também tem as menções que o celular escreveu.
+      mencoes: mencoesDoGrupo(p),
       rawType: p.type ?? null,
     });
   } catch (err) {
@@ -914,13 +980,17 @@ export function ehReacao(p: WahaPayload): boolean {
 /**
  * O `contextInfo` do Baileys — o id cru da citada e a mensagem citada inteira.
  *
+ * É daqui também que sai a LISTA DE MENÇÕES (`mentionedJid`, #3566): o mesmo
+ * objeto, lido por `mencoesDoGrupo`. Por isso o nome é do CONTEXTO e não da
+ * citação — quem lê só metade do que mora ali nomeia o campo pela metade.
+ *
  * O formato varia: `extendedTextMessage.contextInfo` é o caso do texto (o
  * medido em produção), uma resposta com mídia carrega o dela em
  * `imageMessage.contextInfo`, e alguns formatos trazem direto na mensagem.
  * Varrer os valores evita acoplar a leitura a uma lista de tipos que o WhatsApp
  * muda sem avisar.
  */
-function contextoDaCitacao(p: WahaPayload): Record<string, unknown> | null {
+function contextoDoBaileys(p: WahaPayload): Record<string, unknown> | null {
   const msg = objetoSimples(p._data?.message);
   if (!msg) return null;
   const direto = objetoSimples(msg.contextInfo);
@@ -944,7 +1014,7 @@ function contextoDaCitacao(p: WahaPayload): Record<string, unknown> | null {
  */
 function citacaoDoPayload(p: WahaPayload): { id: string; texto: string | null } | null {
   const direto = objetoSimples(p.replyTo);
-  const contexto = contextoDaCitacao(p);
+  const contexto = contextoDoBaileys(p);
   const id = textoNaoVazio(direto?.id) ?? textoNaoVazio(contexto?.stanzaId);
   if (!id) return null;
   const citada = objetoSimples(contexto?.quotedMessage);
@@ -1476,7 +1546,16 @@ async function handleOutboundFromUserPhone(
   // de eco não o reconhece como nosso — sem este corte, o próprio aviso que
   // acabou de sair voltaria pelo webhook, viraria conversa com o número do
   // plantão e ainda chamaria `pausarIaPorAtendimentoManual` no fim.
-  if (!grupo && (await ehNumeroInternoDeAviso(admin, session.organization_id, parsed))) {
+  // ⚠️ `identidadeDoRemetente` e NÃO `parsed`: em modo privacidade o chat chega
+  // como `@lid` e `parseChatId` devolve `phone: null` — o número que a
+  // organização cadastrou em `config_aviso_de_caso.telefone_destino` só aparece
+  // em `_data.key.remoteJidAlt`. Com `parsed` cru o corte só casava pelo
+  // `destino_jid`, que é gravado DEPOIS do envio (`registraJidDoAviso`): o
+  // primeiro aviso de uma instalação em modo privacidade voltava como contato e
+  // conversa com o número do plantão. É a MESMA identidade que o ramo de
+  // entrada já passa (`handleInbound`) — os dois lados do aviso perguntam a
+  // mesma coisa e precisam perguntar do mesmo jeito.
+  if (!grupo && (await ehNumeroInternoDeAviso(admin, session.organization_id, identidadeDoRemetente(p, parsed)))) {
     await registrarMensagemIgnorada(admin, session.organization_id, {
       direction: "outbound",
       sessionId: session.id,
@@ -1939,6 +2018,57 @@ async function handleSessionStatus(
   if (!allowed.has(status)) return;
   const now = new Date().toISOString();
 
+  // ─── ANTES de gravar: esta queda é de um NÚMERO ou de um QR? (#3416) ──────
+  //
+  // A leitura já existia, mas vinha depois do UPDATE e servia só para o apelido.
+  // Ela é que decide os dois ramos novos: sem `phone_number`, o `FAILED` não é
+  // conexão fora do ar — é o código expirando na tela de quem nunca pareou, e a
+  // linha não deve virar uma sessão `FAILED` que ocupa o número do plano, puxa
+  // a faixa vermelha "WhatsApp sem nome" e abre crítico na Central.
+  //
+  // `null` SÓ quando a leitura veio e a coluna estava vazia. Leitura falhada ou
+  // coluna fora do select → `undefined` → nada muda aqui: sem descarte, e o
+  // aviso de sempre (quem não sabe o número não silencia conexão nenhuma).
+  const { data: linha, error: erroDaLeitura } = await admin
+    .from("channel_sessions")
+    .select("display_name, phone_number")
+    .eq("organization_id", session.organization_id)
+    .eq("id", session.id)
+    .maybeSingle();
+  const numero =
+    erroDaLeitura || !linha || !("phone_number" in linha)
+      ? undefined
+      : (linha.phone_number as string | null);
+  const apelido =
+    (linha?.display_name as string | null | undefined) ??
+    (linha?.phone_number as string | null | undefined) ??
+    "sem nome";
+
+  if (numero === null && status === "FAILED") {
+    // O QR expirou sem parear. Arquivar em vez de gravar: a linha sai do
+    // contador do plano, sai da faixa, não vira `FAILED` na tela — e o descarte
+    // fecha o episódio que a própria sessão pode ter aberto.
+    //
+    // Só `FAILED` (a expiração medida na #3416). `STOPPED` continua sendo o de
+    // sempre: parar é decisão de quem opera, não fim de QR.
+    const desfecho = await descartarSessaoQueNuncaPareou(admin, {
+      id: session.id,
+      organization_id: session.organization_id,
+      status,
+      phone_number: numero,
+    });
+    if (desfecho === "arquivada") {
+      logger.info("waha.ingest: sessão que nunca pareou foi arquivada ao expirar", {
+        channel_session_id: session.id,
+        organization_id: session.organization_id,
+        status,
+      });
+      return;
+    }
+    // `em_execucao` (reserva viva) ou `preservada`: o evento segue o caminho de
+    // sempre, que ainda assim não abre aviso — sessão sem número não avisa.
+  }
+
   const update: Record<string, unknown> = { status, last_status_change_at: now };
   if (status === "WORKING" && !session.is_warmup_complete) {
     if (!session.warmup_started_at) {
@@ -1965,7 +2095,17 @@ async function handleSessionStatus(
     // decide envio calcula na leitura com a mesma função.
     if (await aquecimentoTerminou(admin, session)) update.warmup_completed_at = now;
   }
-  await admin.from("channel_sessions").update(update).eq("id", session.id);
+  const atualizar = admin.from("channel_sessions").update(update)
+    .eq("organization_id", session.organization_id).eq("id", session.id);
+  if (numero === null && status === "FAILED") {
+    // O descarte pode ter perdido a corrida para o pareamento. O fallback
+    // também não pode sobrescrever WORKING/número novo com o FAILED antigo.
+    const { data: atualizadas, error } = await atualizar
+      .is("phone_number", null).is("archived_at", null).neq("status", "WORKING").select("id");
+    if (error || !atualizadas || atualizadas.length !== 1) return;
+  } else {
+    await atualizar;
+  }
 
   // ─── E agora alguém precisa SABER ────────────────────────────────────────
   //
@@ -1974,23 +2114,15 @@ async function handleSessionStatus(
   // chegou, a coluna atualizou, e o dono só descobriu ao estranhar que ninguém
   // escrevia. O estado certo no lugar que ninguém olha não vale nada.
   //
-  // O apelido é buscado aqui, e não recebido: com dois números ligados, um aviso
-  // que não diz QUAL conexão caiu obriga o operador a adivinhar. É uma consulta
-  // a mais num evento raro — status muda algumas vezes por dia, não por minuto.
-  const { data: apelidoRow } = await admin
-    .from("channel_sessions")
-    .select("display_name, phone_number")
-    .eq("id", session.id)
-    .maybeSingle();
-
+  // O `numero` vai junto: é o que separa conexão de QR nunca pareado dentro do
+  // próprio seam de aviso (#3416) — e ele é lido ANTES do UPDATE, de propósito,
+  // porque é a leitura que decide o ramo do descarte logo acima.
   await sincronizarSaudeDaConexao(
     admin,
-    { id: session.id, organization_id: session.organization_id, status },
+    { id: session.id, organization_id: session.organization_id, status, phone_number: numero },
     // Veio do próprio transporte: se ele conseguiu nos contar, está alcançável.
     { reachable: true, status, detail: null },
-    (apelidoRow?.display_name as string | null) ??
-      (apelidoRow?.phone_number as string | null) ??
-      "sem nome",
+    apelido,
   );
 }
 

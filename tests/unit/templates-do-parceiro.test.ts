@@ -33,6 +33,21 @@ import {
   montarComponents,
 } from "@/lib/channels/template-conteudo";
 
+/**
+ * O código que COMPÕE a tela do parceiro.
+ *
+ * Desde a #3635 o formulário (e o diálogo de apagar) mora em componente próprio,
+ * compartilhado com o canal oficial direto — as duas telas fazem a mesma coisa na
+ * mesma API. A tela é a soma dos dois arquivos, e é sobre ELA que as asserções
+ * abaixo falam: ler só o client reprovaria a extração, não um defeito.
+ */
+const FORMULARIO = "components/connections/FormularioDaDefinicao.tsx";
+const CLIENTE = "components/connections/TemplatesParceiroClient.tsx";
+const telaDoModelo = () => `${readFileSync(CLIENTE, "utf8")}\n${readFileSync(FORMULARIO, "utf8")}`;
+
+/** A lógica de upload saiu da rota para `lib/` (#3635): a rota é o handler. */
+const MIDIA = "lib/channels/templates-midia.ts";
+
 describe("de onde vêm as definições", () => {
   it("canal intermediado busca na rota do parceiro", () => {
     expect(fonteDeTemplates("zernio")).toBe("parceiro");
@@ -202,14 +217,14 @@ describe("o conteúdo da definição, e o campo que causava as recusas", () => {
   it("a tela OFERECE a categoria — antes tudo saía como UTILITY", () => {
     // Mandar promoção como utility é reclassificado ou recusado, e a tarifa da
     // categoria errada é mais cara.
-    const fonte = readFileSync("components/connections/TemplatesParceiroClient.tsx", "utf8");
+    const fonte = telaDoModelo();
     expect(fonte).toMatch(/category: categoria/);
     expect(fonte).toMatch(/value="MARKETING"/);
     expect(fonte).toMatch(/value="AUTHENTICATION"/);
   });
 
   it("e PEDE os exemplos, em vez de mandar sem eles", () => {
-    const fonte = readFileSync("components/connections/TemplatesParceiroClient.tsx", "utf8");
+    const fonte = telaDoModelo();
     // O `exemplos` chega a `montarComponents` — a forma da chamada mudou quando
     // cabeçalho e botões entraram, o objeto virou multilinha.
     expect(fonte).toMatch(/montarComponents\(\{[\s\S]{0,200}?exemplos,/);
@@ -226,7 +241,7 @@ describe("o formulário completo — idioma, cabeçalho e botões", () => {
   it("o idioma vem de LISTA, não digitado", () => {
     // `esp`, `ES`, `es-AR` e `español` são todos recusados, e a recusa volta
     // como "language not supported" horas depois. Escolher não erra.
-    const fonte = readFileSync("components/connections/TemplatesParceiroClient.tsx", "utf8");
+    const fonte = telaDoModelo();
     expect(fonte).toMatch(/IDIOMAS_DA_DEFINICAO\.map/);
     expect(fonte, "o idioma ainda é campo livre").not.toMatch(
       /placeholder="es"\s*\n\s*aria-label="Idioma"/,
@@ -317,7 +332,7 @@ describe("o formulário completo — idioma, cabeçalho e botões", () => {
 
   it("a tela respeita os limites de tamanho da plataforma", () => {
     // Passar do limite é recusa, e a recusa não diz que o problema era o tamanho.
-    const fonte = readFileSync("components/connections/TemplatesParceiroClient.tsx", "utf8");
+    const fonte = telaDoModelo();
     expect(fonte).toMatch(/slice\(0, LIMITE_CORPO\)/);
     expect(fonte).toMatch(/slice\(0, LIMITE_RODAPE\)/);
     expect(LIMITE_CORPO).toBe(1024);
@@ -329,7 +344,7 @@ describe("o formulário completo — idioma, cabeçalho e botões", () => {
     // texto. E o campo de texto DESABILITA o de imagem enquanto tem conteúdo —
     // a forma mudou quando o "colar URL" virou "subir arquivo", mas a regra é a
     // mesma: a plataforma aceita um formato por definição.
-    const fonte = readFileSync("components/connections/TemplatesParceiroClient.tsx", "utf8");
+    const fonte = telaDoModelo();
     expect(fonte).toMatch(/if \(e\.target\.value\) setMidiaUrl\(""\)/);
     expect(fonte).toMatch(/setMidiaUrl\(j\.data\.url\);\s*\n\s*setCabecalho\(""\);/);
     expect(fonte).toMatch(/cabecalho && "pointer-events-none opacity-50"/);
@@ -340,7 +355,7 @@ describe("subir a imagem e ver a prévia", () => {
   it("o cabeçalho de mídia SOBE o arquivo — não pede URL colada", () => {
     // Colar exigia que o operador já tivesse a imagem hospedada em algum lugar
     // público, que é justamente o que ele não tem.
-    const fonte = readFileSync("components/connections/TemplatesParceiroClient.tsx", "utf8");
+    const fonte = telaDoModelo();
     expect(fonte).toMatch(/type="file"/);
     expect(fonte).toMatch(/accept="image\/jpeg,image\/png"/);
     expect(fonte).toMatch(/\/api\/v1\/channels\/partner\/templates\/media/);
@@ -349,7 +364,7 @@ describe("subir a imagem e ver a prévia", () => {
   it("a rota devolve link ASSINADO — o bucket é privado", () => {
     // Tornar o bucket público resolveria o cabeçalho e exporia o histórico de
     // mídia de todos os clientes, que mora no mesmo lugar.
-    const fonte = readFileSync("app/api/v1/channels/partner/templates/media/route.ts", "utf8");
+    const fonte = readFileSync(MIDIA, "utf8");
     expect(fonte).toMatch(/createSignedUrl\(caminho, VALIDADE_SEGUNDOS\)/);
     expect(fonte).toMatch(/7 \* 24 \* 60 \* 60/);
   });
@@ -357,7 +372,7 @@ describe("subir a imagem e ver a prévia", () => {
   it("e recusa formato e tamanho ANTES de subir", () => {
     // Deixar subir faria a recusa chegar horas depois, falando de um formato
     // que o operador escolheu porque a tela deixou.
-    const fonte = readFileSync("app/api/v1/channels/partner/templates/media/route.ts", "utf8");
+    const fonte = readFileSync(MIDIA, "utf8");
     expect(fonte).toMatch(/TIPOS\.has\(mime\)/);
     expect(fonte).toMatch(/file\.size > TAMANHO_MAX/);
   });
@@ -365,7 +380,7 @@ describe("subir a imagem e ver a prévia", () => {
   it("a prévia é montada, e AO LADO do formulário", () => {
     // Embaixo ela sai da tela junto com o botão de enviar, e o operador manda
     // sem ter olhado.
-    const fonte = readFileSync("components/connections/TemplatesParceiroClient.tsx", "utf8");
+    const fonte = telaDoModelo();
     expect(fonte).toMatch(/\n\s*<PreviaDaDefinicao/);
     expect(fonte).toMatch(/lg:grid-cols-\[1fr_20rem\]/);
   });

@@ -241,7 +241,7 @@ describe("0707 — fn_definir_aviso_de_agendamento é a única porta", () => {
   it("anon não tem EXECUTE nas duas funções; o expurgo também é fechado a authenticated", () => {
     expect(
       booleano(
-        `select has_function_privilege('anon', 'public.fn_definir_aviso_de_agendamento(uuid,boolean,uuid,text,boolean,boolean)', 'EXECUTE')::text`,
+        `select has_function_privilege('anon', 'public.fn_definir_aviso_de_agendamento(uuid,boolean,uuid,text,boolean,boolean,text)', 'EXECUTE')::text`,
       ),
     ).toBe(false);
     for (const papel of ["anon", "authenticated"]) {
@@ -251,6 +251,65 @@ describe("0707 — fn_definir_aviso_de_agendamento é a única porta", () => {
         ),
       ).toBe(false);
     }
+  });
+});
+
+describe("9060 — o grupo é destino extra, com entrega própria", () => {
+  const GRUPO = "120363000000000001@g.us";
+  const EVENTO = "07670000-4444-4000-8000-000000000001";
+  const definirComGrupo = (grupo: string | null) =>
+    `select public.fn_definir_aviso_de_agendamento('${ORG_A}', true, null, null, true, false, ${
+      grupo === null ? "null" : `'${grupo}'`
+    });`;
+  const entregaDoEvento = (alvo: string) =>
+    `insert into public.entregas_de_aviso_de_agendamento (organization_id, tipo, event_id, evento, alvo, destino, status)
+       values ('${ORG_A}', 'aviso', '${EVENTO}', 'appointment.created', '${alvo}', '${alvo === "grupo" ? GRUPO : "+5531998966398"}', 'pendente');`;
+  const resumoDoDia = (alvo: string) =>
+    `insert into public.entregas_de_aviso_de_agendamento (organization_id, tipo, dia, alvo, destino, status)
+       values ('${ORG_A}', 'resumo', '2026-10-25', '${alvo}', '${alvo === "grupo" ? GRUPO : "+5531998966398"}', 'pendente');`;
+
+  it("CONTROLE POSITIVO: o admin salva um grupo, e `null` o tira", () => {
+    sql(`${comoMembro(ADMIN_A)}\n${definirComGrupo(GRUPO)}`);
+    expect(valor(`select grupo_destino from public.config_aviso_de_agendamento where organization_id = '${ORG_A}'`)).toBe(GRUPO);
+    sql(`${comoMembro(ADMIN_A)}\n${definirComGrupo(null)}`);
+    expect(valor(`select coalesce(grupo_destino, 'nenhum') from public.config_aviso_de_agendamento where organization_id = '${ORG_A}'`)).toBe(
+      "nenhum",
+    );
+  });
+
+  it("grupo que não é um chatId de grupo é recusado pela RPC e pelo CHECK", () => {
+    expect(erroDe(`${comoMembro(ADMIN_A)}\n${definirComGrupo("+5531998966398")}`)).toMatch(/aviso_de_agendamento_grupo_invalido/i);
+    expect(
+      erroDe(`update public.config_aviso_de_agendamento set grupo_destino = '5531998966398@c.us' where organization_id = '${ORG_A}';`),
+    ).toMatch(/config_aviso_de_agendamento_grupo_check/i);
+  });
+
+  it("a assinatura antiga de seis argumentos não existe mais", () => {
+    expect(
+      valor(
+        `select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+          where n.nspname = 'public' and p.proname = 'fn_definir_aviso_de_agendamento'`,
+      ),
+    ).toBe("1");
+  });
+
+  it("o mesmo evento tem uma entrega para o número e uma para o grupo, e nenhuma segunda", () => {
+    expect(erroDe(entregaDoEvento("numero"))).toBe("");
+    expect(erroDe(entregaDoEvento("grupo"))).toBe("");
+    expect(erroDe(entregaDoEvento("numero"))).toMatch(/duplicate key|unique/i);
+    expect(erroDe(entregaDoEvento("grupo"))).toMatch(/duplicate key|unique/i);
+    expect(erroDe(entregaDoEvento("todos"))).toMatch(/entregas_de_aviso_de_agendamento_alvo_check/i);
+  });
+
+  it("o resumo do dia sai uma vez para o número e uma para o grupo", () => {
+    expect(erroDe(resumoDoDia("numero"))).toBe("");
+    expect(erroDe(resumoDoDia("grupo"))).toBe("");
+    expect(erroDe(resumoDoDia("grupo"))).toMatch(/duplicate key|unique/i);
+  });
+
+  it("o histórico do grupo segue a mesma RLS: o vizinho não lê", () => {
+    expect(contaComoMembro(ADMIN_B, `${ENTREGAS} where organization_id = '${ORG_A}' and alvo = 'grupo'`)).toBe(0);
+    expect(contaComoMembro(GESTOR_A, `${ENTREGAS} where alvo = 'grupo'`)).toBe(2);
   });
 });
 

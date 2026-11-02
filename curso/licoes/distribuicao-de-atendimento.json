@@ -398,10 +398,7 @@
               "rotulo": "Ninguém veria a fila",
               "tipo": "caixa"
             }
-          ],
-          "clicar": {
-            "testid": "opcao-modo-round_robin"
-          }
+          ]
         },
         {
           "id": "p3",

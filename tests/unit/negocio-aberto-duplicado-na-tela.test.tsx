@@ -94,7 +94,7 @@ async function preencherEEnviar(user: ReturnType<typeof userEvent.setup>) {
   await user.type(await screen.findByLabelText("Contato"), "Michelle");
   await user.click(await screen.findByRole("button", { name: /Michelle/ }));
   await user.type(screen.getByLabelText("Título"), "Segundo negócio");
-  await user.click(screen.getByRole("button", { name: "Criar lead" }));
+  await user.click(screen.getByRole("button", { name: "Criar negócio" }));
 }
 
 function renderizar(leads?: Lead[], contactId?: string) {
@@ -122,7 +122,7 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe("Novo Lead — aviso de negócio aberto duplicado, sem bloqueio", () => {
+describe("Novo negócio — aviso de negócio aberto duplicado, sem bloqueio", () => {
   it("mesmo funil: mostra o aviso com link para o existente, e cria só se confirmado", async () => {
     const user = userEvent.setup();
     renderizar([negocio()]);
@@ -186,7 +186,7 @@ describe("Novo Lead — aviso de negócio aberto duplicado, sem bloqueio", () =>
     renderizar(undefined, MICHELLE.id);
 
     await user.type(screen.getByLabelText("Título"), "Segundo negócio");
-    await user.click(screen.getByRole("button", { name: "Criar lead" }));
+    await user.click(screen.getByRole("button", { name: "Criar negócio" }));
 
     await waitFor(() => expect(criarLead).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(toast.warning).toHaveBeenCalledTimes(1));

@@ -125,6 +125,10 @@ const TABELAS_NA_CASCATA = [
   // e decisão permanecem, o conteúdo identificável sai. Alcança por vínculo do
   // lead com o contato (crm_leads + crm_lead_links), como os passos 4 e 5.
   "lead_field_proposals",
+  // 9043 (Spec 31 §B8) — os telefones extras da ficha, com o `lid` do WhatsApp
+  // de cada um. A linha sai inteira (passo 1b): número de telefone não tem
+  // versão anonimizada que ainda sirva para alguma coisa.
+  "contact_phones",
 ] as const;
 
 /**

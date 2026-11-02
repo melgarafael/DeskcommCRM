@@ -159,4 +159,10 @@ export {
   ArrowsOutSimple,
   // /admin/modulos: módulo opcional com tabela própria (ADR-0002)
   Stack,
+  // atalhos do card (#3487): carrinho do app de pedidos e o link genérico.
+  // `LinkSimple` entra apelidado de `LinkIcon` porque `Link` é o do `next/link`
+  // em quase toda tela — dois identificadores iguais no mesmo import seriam
+  // erro de compilação na primeira tela que precisasse dos dois.
+  ShoppingCart,
+  LinkSimple as LinkIcon,
 } from "@phosphor-icons/react/dist/ssr";

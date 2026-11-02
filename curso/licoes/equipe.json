@@ -556,8 +556,9 @@
               "acao": "click",
               "alvo": {
                 "role": "combobox",
-                "nome": "Modo de roteamento",
-                "exato": true
+                "dentro": {
+                  "css": "div.rounded-lg.border:has-text('Como as conversas novas são distribuídas')"
+                }
               }
             }
           ],
@@ -594,8 +595,6 @@
             {
               "alvo": {
                 "role": "button",
-                "nome": "Salvar",
-                "exato": true,
                 "dentro": {
                   "css": "div.rounded-lg.border:has-text('Como as conversas novas são distribuídas')"
                 }
@@ -651,10 +650,14 @@
             },
             {
               "alvo": {
-                "texto": "Fora do horário",
-                "exato": true
+                "css": "td:nth-child(2) > div > :first-child",
+                "dentro": {
+                  "role": "row",
+                  "nome": "Ana Ribeiro",
+                  "regex": true
+                }
               },
-              "rotulo": "Fora do expediente",
+              "rotulo": "Plantão conforme a jornada",
               "tipo": "caixa"
             },
             {
@@ -784,8 +787,11 @@
             {
               "alvo": {
                 "role": "button",
-                "nome": "Editar horário de Carlos Mendes",
-                "exato": true
+                "dentro": {
+                  "role": "row",
+                  "nome": "Carlos Mendes",
+                  "regex": true
+                }
               },
               "rotulo": "Montar a semana",
               "tipo": "caixa"
@@ -793,8 +799,11 @@
           ],
           "clicar": {
             "role": "button",
-            "nome": "Editar horário de Carlos Mendes",
-            "exato": true
+            "dentro": {
+              "role": "row",
+              "nome": "Carlos Mendes",
+              "regex": true
+            }
           }
         },
         {
@@ -807,8 +816,11 @@
               "acao": "click",
               "alvo": {
                 "role": "button",
-                "nome": "Editar horário de Carlos Mendes",
-                "exato": true
+                "dentro": {
+                  "role": "row",
+                  "nome": "Carlos Mendes",
+                  "regex": true
+                }
               }
             },
             {
@@ -828,9 +840,10 @@
             },
             {
               "alvo": {
-                "role": "button",
-                "nome": "Adicionar janela",
-                "exato": true
+                "css": "div.space-y-2 > button:first-of-type",
+                "dentro": {
+                  "role": "dialog"
+                }
               },
               "rotulo": "Nova janela",
               "tipo": "seta"
@@ -847,8 +860,11 @@
               "acao": "click",
               "alvo": {
                 "role": "button",
-                "nome": "Editar horário de Carlos Mendes",
-                "exato": true
+                "dentro": {
+                  "role": "row",
+                  "nome": "Carlos Mendes",
+                  "regex": true
+                }
               }
             },
             {
@@ -860,9 +876,10 @@
             {
               "acao": "click",
               "alvo": {
-                "role": "button",
-                "nome": "Adicionar janela",
-                "exato": true
+                "css": "div.space-y-2 > button:first-of-type",
+                "dentro": {
+                  "role": "dialog"
+                }
               }
             }
           ],
@@ -895,8 +912,11 @@
               "acao": "click",
               "alvo": {
                 "role": "button",
-                "nome": "Editar horário de Carlos Mendes",
-                "exato": true
+                "dentro": {
+                  "role": "row",
+                  "nome": "Carlos Mendes",
+                  "regex": true
+                }
               }
             },
             {
@@ -908,9 +928,10 @@
             {
               "acao": "click",
               "alvo": {
-                "role": "button",
-                "nome": "Adicionar janela",
-                "exato": true
+                "css": "div.space-y-2 > button:first-of-type",
+                "dentro": {
+                  "role": "dialog"
+                }
               }
             },
             {
@@ -932,9 +953,7 @@
             },
             {
               "alvo": {
-                "role": "button",
-                "nome": "Salvar",
-                "exato": true,
+                "css": "div.flex-col-reverse > button:last-child",
                 "dentro": {
                   "role": "dialog"
                 }
@@ -954,8 +973,11 @@
               "acao": "click",
               "alvo": {
                 "role": "button",
-                "nome": "Editar horário de Carlos Mendes",
-                "exato": true
+                "dentro": {
+                  "role": "row",
+                  "nome": "Carlos Mendes",
+                  "regex": true
+                }
               }
             },
             {
@@ -967,9 +989,10 @@
             {
               "acao": "click",
               "alvo": {
-                "role": "button",
-                "nome": "Adicionar janela",
-                "exato": true
+                "css": "div.space-y-2 > button:first-of-type",
+                "dentro": {
+                  "role": "dialog"
+                }
               }
             },
             {
@@ -983,9 +1006,7 @@
             {
               "acao": "click",
               "alvo": {
-                "role": "button",
-                "nome": "Salvar",
-                "exato": true,
+                "css": "div.flex-col-reverse > button:last-child",
                 "dentro": {
                   "role": "dialog"
                 }

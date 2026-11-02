@@ -1233,3 +1233,34 @@ describe("o recorte de encerrados antigos do quadro (#2995)", () => {
     expect(updatePipelineConfig).not.toHaveBeenCalled();
   });
 });
+
+describe("o vocabulário do funil fala português (doc 249, resposta B)", () => {
+  // Os rótulos eram "Lead/Deal/Won/Lost" em inglês, e um funil sem vocabulário
+  // gravado abria a caixa do card com "Deal". O card se chama "Negócio".
+  const SEM_VOCABULARIO: PipelineRow = { ...FUNIL, vocabulary: null };
+
+  it("os quatro rótulos estão em português, e nenhum em inglês", () => {
+    render(<PipelinesClient pipelines={[SEM_VOCABULARIO]} etapas={{}} podeEditarConfig />);
+    abrirEditores();
+    for (const rotulo of ["Contato", "Negócio", "Ganho", "Perdido"]) {
+      expect(screen.getByText(rotulo, { selector: "label" })).toBeInTheDocument();
+    }
+    for (const ingles of ["Lead", "Deal", "Won", "Lost"]) {
+      expect(screen.queryByText(ingles, { selector: "label" })).toBeNull();
+    }
+  });
+
+  it("sem vocabulário gravado, as caixas abrem e salvam os nomes neutros", () => {
+    vi.mocked(updatePipelineConfig).mockClear();
+    render(<PipelinesClient pipelines={[SEM_VOCABULARIO]} etapas={{}} podeEditarConfig />);
+    abrirEditores();
+    fireEvent.click(screen.getByRole("button", { name: "Salvar vocabulário e campos" }));
+
+    expect(vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1].vocabulary).toEqual({
+      lead: "Contato",
+      deal: "Negócio",
+      won: "Ganho",
+      lost: "Perdido",
+    });
+  });
+});
