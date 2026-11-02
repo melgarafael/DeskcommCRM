@@ -19,19 +19,16 @@ import { siteEfetivo } from "@/lib/prospecting/site-efetivo";
 import {
   pontuarCandidato,
   rotuloDaClasse,
-  type EstrategiaDoLead,
   type OfertaDaCampanha,
-  type Pontuacao,
 } from "@/lib/prospecting/estrategia-site";
-import type { Prospect } from "@/lib/prospecting/schema";
+import type { CampaignConfig, Prospect } from "@/lib/prospecting/schema";
+import { previaAprovadaDoAgente, previaValida } from "@/lib/prospecting/previa";
 
 /** Classes que `vereditoPuro` resolve sem rede: não há verificação a datar. */
 const SEM_REDE: ReadonlySet<ClasseDeSite> = new Set(["sem-site", "agregador"]);
 
 export interface PreviaDaAbordagem {
   mensagem: string;
-  estrategia: EstrategiaDoLead;
-  score: Pontuacao;
 }
 
 /**
@@ -50,6 +47,9 @@ export function AuditoriaDoCandidato({
   sobrescritaVocabulario,
   onReanalisar,
   onPrevia,
+  onAprovar,
+  config,
+  podeAprovar,
 }: {
   candidateId: string;
   data: Prospect;
@@ -62,11 +62,16 @@ export function AuditoriaDoCandidato({
   sobrescritaVocabulario?: Record<string, string> | null;
   onReanalisar: (candidateId: string) => Promise<void>;
   onPrevia: (candidateId: string) => Promise<PreviaDaAbordagem | null>;
+  onAprovar: (candidateId: string, config: CampaignConfig) => Promise<boolean>;
+  config: CampaignConfig;
+  podeAprovar: boolean;
 }) {
   const t = useT();
   const [aberto, setAberto] = useState(false);
   const [previa, setPrevia] = useState<PreviaDaAbordagem | null>(null);
   const [gerando, setGerando] = useState(false);
+  const [aprovando, setAprovando] = useState(false);
+  const [aprovadaAgora, setAprovadaAgora] = useState(false);
   const [erroDaPrevia, setErroDaPrevia] = useState<string | null>(null);
   const previaRef = useRef<HTMLDivElement | null>(null);
   // O veredito da LEITURA (morada única em `site-efetivo.ts`): o gravado ou o
@@ -74,6 +79,8 @@ export function AuditoriaDoCandidato({
   // na web e ainda não foi auditado — por isso a linha sem site nunca fica
   // presa em "A verificar".
   const site = siteEfetivo(data, new Date().toISOString());
+  const previaAtual = previaValida(data);
+  const jaAprovada = !!previaAprovadaDoAgente(data, config.agent_id);
   // A1: quando a prévia chega, ela rola para a área visível da janela — o texto
   // caía fora do que o modal mostrava (medido: posição 777 numa janela de 726).
   useEffect(() => {
@@ -108,13 +115,14 @@ export function AuditoriaDoCandidato({
       nicho={nicho}
       status={status}
       sobrescritaVocabulario={sobrescritaVocabulario}
+      fontes={{ website: data.website, mapsUrl: data.maps_url, finalUrl: site.final_url }}
     />
   );
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline">
-          Score {score.valor}
+          {t("Prioridade")} {score.valor}
         </Badge>
         {mostraMotivo && (
           <span className="text-xs text-muted-foreground" title={score.motivo}>
@@ -130,8 +138,9 @@ export function AuditoriaDoCandidato({
         variant="outline"
         size="sm"
         onClick={() => {
-          setPrevia(null);
+          setPrevia(previaAtual ? { mensagem: previaAtual.texto } : null);
           setErroDaPrevia(null);
+          setAprovadaAgora(false);
           setAberto(true);
         }}
       >
@@ -195,6 +204,25 @@ export function AuditoriaDoCandidato({
           {previa && (
             <div ref={previaRef} className="rounded-md border p-3 text-xs leading-relaxed">
               <p className="whitespace-pre-wrap">{previa.mensagem}</p>
+              {jaAprovada || aprovadaAgora ? (
+                <p className="mt-3 font-medium text-green-700">{t("Prévia aprovada por uma pessoa")}</p>
+              ) : podeAprovar ? (
+                <Button
+                  type="button"
+                  className="mt-3"
+                  size="sm"
+                  disabled={disabled || aprovando}
+                  onClick={() => {
+                    setAprovando(true);
+                    void onAprovar(candidateId, config)
+                      .then((ok) => setAprovadaAgora(ok))
+                      .catch((erro: unknown) => setErroDaPrevia(erro instanceof Error ? erro.message : t("Não foi possível aprovar a prévia.")))
+                      .finally(() => setAprovando(false));
+                  }}
+                >
+                  {aprovando ? t("Aprovando…") : t("Aprovar prévia")}
+                </Button>
+              ) : null}
             </div>
           )}
         </DialogContent>
