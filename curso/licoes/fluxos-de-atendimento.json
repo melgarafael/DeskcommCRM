@@ -1,0 +1,217 @@
+{
+  "id": "fluxos-de-atendimento",
+  "titulo": "Fluxos de atendimento",
+  "tela": "/app/ai/atendimento",
+  "resumo": "Roteiros de perguntas que a IA faz durante a conversa, uma de cada vez, guardando cada resposta na ficha do cliente.",
+  "licoes": [
+    {
+      "id": "fluxos-conhecendo-a-tela",
+      "titulo": "Conhecendo os Fluxos de atendimento",
+      "objetivo": "Achar a tela, entender o que é um roteiro de perguntas e ler o cartão de cada um.",
+      "papel": "manager",
+      "busca": [
+        "fluxo de atendimento",
+        "roteiro de perguntas",
+        "cadastro pelo whatsapp",
+        "ia fazer perguntas ao cliente",
+        "coletar cpf",
+        "perguntas da primeira consulta"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/ai",
+          "texto": "Fluxos de atendimento não aparece direto no menu lateral. No grupo \"Agente de IA\" do menu, clique em \"Ver tudo em IA\". Na parte \"Montar o agente\" está o cartão \"Fluxos de atendimento\". O caminho completo é: Agente de IA › Ver tudo em IA › Fluxos de atendimento.",
+          "dica": "O cartão só aparece quando quem administra o servidor liga o recurso \"Fluxos de atendimento\" em Administração › Sistema. Desligado, a tela não existe. Ligado, gerente e administrador veem o cartão.",
+          "destaques": [
+            { "alvo": { "role": "link", "nome": "Ver tudo em IA", "exato": true }, "rotulo": "Ver tudo em IA", "tipo": "numero" },
+            { "alvo": { "role": "link", "nome": "^Fluxos de atendimento ", "regex": true }, "rotulo": "Abrir os Fluxos de atendimento", "tipo": "caixa" }
+          ],
+          "clicar": { "role": "link", "nome": "^Fluxos de atendimento ", "regex": true }
+        },
+        {
+          "id": "p2",
+          "titulo": "Para que serve um fluxo de atendimento",
+          "rota": "/app/ai/atendimento",
+          "texto": "Um fluxo de atendimento é um roteiro de perguntas que a IA segue durante a conversa no WhatsApp. Ela pergunta uma coisa por vez, entende a resposta e guarda o dado na ficha do cliente. Na Clínica Bem Viver, um roteiro faz o cadastro de quem vai à primeira consulta, e outro confere a carteirinha do convênio.",
+          "destaques": [
+            { "alvo": { "role": "heading", "nome": "Fluxos de atendimento", "exato": true }, "rotulo": "Fluxos de atendimento", "tipo": "seta" },
+            { "alvo": { "role": "button", "nome": "Novo fluxo de atendimento", "exato": true }, "rotulo": "Criar um roteiro", "tipo": "seta" },
+            { "alvo": { "testid": "import-followup-flow" }, "rotulo": "Trazer de um arquivo", "tipo": "seta" }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O cartão de um roteiro",
+          "texto": "Cada roteiro é um cartão. No alto ficam o nome e o selo da situação. \"Ativo\" quer dizer publicado: a IA já usa o roteiro nas conversas. \"Rascunho\" quer dizer que ele ainda não foi publicado e não faz pergunta nenhuma. \"Versão: publicada\" aparece quando o roteiro já foi publicado ao menos uma vez.",
+          "destaques": [
+            { "alvo": { "css": "li:has(h3[title=\"Primeira consulta · cadastro do paciente\"])" }, "rotulo": "Um roteiro", "tipo": "caixa" },
+            { "alvo": { "css": "[aria-label=\"status: Ativo\"]" }, "rotulo": "Ativo", "tipo": "seta" },
+            { "alvo": { "css": "[aria-label=\"status: Rascunho\"]" }, "rotulo": "Rascunho", "tipo": "seta" }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "O guia rápido",
+          "texto": "Em dúvida, clique em \"Como usar os fluxos de atendimento (guia rápido)\". Ele explica, em poucas linhas, como montar o roteiro e como a IA se comporta: ela só grava o que o cliente escreveu, não pergunta de novo o que ele já respondeu e para quando uma pessoa da equipe assume a conversa.",
+          "antes": [
+            { "acao": "click", "alvo": { "texto": "Como usar os fluxos de atendimento (guia rápido)", "exato": true } },
+            { "acao": "esperar", "ms": 500 }
+          ],
+          "destaques": [{ "alvo": { "testid": "como-usar" }, "rotulo": "Guia rápido", "tipo": "caixa" }]
+        }
+      ]
+    },
+    {
+      "id": "fluxos-lendo-um-roteiro",
+      "titulo": "Lendo um roteiro no construtor",
+      "objetivo": "Abrir um roteiro e entender o Início, as Perguntas e o Fim.",
+      "papel": "manager",
+      "busca": [
+        "palavra-gatilho",
+        "pergunta do roteiro",
+        "tipo da resposta",
+        "o que fazer ao concluir",
+        "construtor do fluxo de atendimento"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O construtor",
+          "rota": "/app/ai/atendimento/f1c00100-0000-4000-8000-000000000001",
+          "texto": "Clique no cartão de um roteiro para abrir o construtor. À esquerda, em \"Adicionar nó\", ficam as quatro peças de um roteiro: \"Gatilho\" (o Início), \"Pergunta\", \"Skill\" (um procedimento da clínica que a IA usa naquele passo) e \"Fim\". No meio fica o roteiro, lido da esquerda para a direita.",
+          "antes": [
+            { "acao": "aguardar", "alvo": { "testid": "node-card-inicio" } },
+            { "acao": "esperar", "ms": 800 },
+            { "acao": "press", "tecla": "Alt", "alvo": { "css": ".react-flow__node[data-id=\"inicio\"]" } },
+            { "acao": "esperar", "ms": 800 }
+          ],
+          "destaques": [
+            { "alvo": { "testid": "node-palette" }, "rotulo": "As peças", "tipo": "caixa" },
+            { "alvo": { "testid": "flow-canvas" }, "rotulo": "O roteiro", "tipo": "caixa" }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O Início e as palavras-gatilho",
+          "texto": "Clique no \"Início\" para ver quando o roteiro começa. Em \"Palavras-gatilho\" ficam as palavras que ligam o roteiro sozinho: quando a mensagem do cliente tem uma delas, como \"primeira consulta\", a IA começa a perguntar. Ele também pode começar quando o card do cliente entra numa etapa do funil escolhida logo abaixo, ou por um roteador em IA › Roteadores.",
+          "antes": [
+            { "acao": "click", "alvo": { "testid": "node-card-inicio" } },
+            { "acao": "aguardar", "alvo": { "testid": "configuracoes-do-roteiro" } }
+          ],
+          "destaques": [
+            { "alvo": { "css": "#roteiro-gatilhos" }, "rotulo": "Palavras-gatilho", "tipo": "caixa" },
+            { "alvo": { "testid": "roteiro-etapas-do-funil" }, "rotulo": "Começar por etapa", "tipo": "caixa" }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Quanto tempo o roteiro espera",
+          "texto": "Mais abaixo, \"Máximo de tentativas por pergunta\" diz quantas vezes a IA repete uma pergunta sem resposta antes de desistir dela. Desistir de uma pergunta não trava o roteiro. \"Encerrar o roteiro depois de quantas horas sem resposta\" fecha o roteiro de quem sumiu: aqui, 48 horas. Em branco, são 72 horas.",
+          "antes": [{ "acao": "rolar", "alvo": { "css": "#roteiro-prazo" } }],
+          "destaques": [
+            { "alvo": { "css": "#roteiro-tentativas" }, "rotulo": "Tentativas", "tipo": "caixa" },
+            { "alvo": { "css": "#roteiro-prazo" }, "rotulo": "Prazo", "tipo": "caixa" },
+            { "alvo": { "testid": "roteiro-pode-recomecar" }, "rotulo": "Recomeçar", "tipo": "seta" }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Uma pergunta",
+          "texto": "Clique numa \"Pergunta\". Em \"Pergunta\" fica o que a IA deve perguntar. Em \"Chave do campo\" fica o nome curto onde a resposta é guardada na ficha do cliente. Em \"Tipo da resposta\" você diz o que esperar: texto, número, data, sim ou não, uma escolha numa lista, ou CPF, que já confere se o número é válido.",
+          "antes": [
+            { "acao": "click", "alvo": { "testid": "node-card-cpf" } },
+            { "acao": "aguardar", "alvo": { "css": "#collect-label" } }
+          ],
+          "destaques": [
+            { "alvo": { "css": "#collect-label" }, "rotulo": "O que perguntar", "tipo": "numero" },
+            { "alvo": { "css": "#collect-key" }, "rotulo": "Onde guardar", "tipo": "numero" },
+            { "alvo": { "css": "#collect-type" }, "rotulo": "Tipo da resposta", "tipo": "numero" }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Uma pergunta com opções",
+          "texto": "Na pergunta do convênio, o tipo é \"Escolha numa lista\". Em \"Opções\" ficam as respostas aceitas, separadas por vírgula. A IA só grava uma resposta que esteja na lista.",
+          "antes": [
+            { "acao": "click", "alvo": { "testid": "node-card-convenio" } },
+            { "acao": "aguardar", "alvo": { "css": "#collect-options" } }
+          ],
+          "destaques": [{ "alvo": { "css": "#collect-options" }, "rotulo": "Opções", "tipo": "caixa" }]
+        },
+        {
+          "id": "p6",
+          "titulo": "O Fim",
+          "texto": "Clique no \"Fim\". Em \"Ao concluir, o que fazer\" você escolhe o que acontece quando o cliente responde tudo: nada, devolver à IA com uma orientação, chamar uma skill ou começar outro roteiro. Aqui, a IA agradece e oferece os horários livres da semana.",
+          "antes": [
+            { "acao": "click", "alvo": { "testid": "node-card-fim" } },
+            { "acao": "aguardar", "alvo": { "css": "#end-finish" } }
+          ],
+          "destaques": [
+            { "alvo": { "css": "#end-finish" }, "rotulo": "Ao concluir", "tipo": "numero" },
+            { "alvo": { "css": "#end-finish-prompt" }, "rotulo": "Orientação para a IA", "tipo": "numero" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fluxos-criar-e-publicar",
+      "titulo": "Criar e publicar um roteiro",
+      "objetivo": "Dar nome a um roteiro novo e publicar um rascunho para a IA começar a usá-lo.",
+      "papel": "manager",
+      "busca": [
+        "criar fluxo de atendimento",
+        "novo roteiro",
+        "publicar roteiro",
+        "rascunho do fluxo"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Dar nome ao roteiro",
+          "rota": "/app/ai/atendimento",
+          "texto": "Clique em \"Novo fluxo de atendimento\" e escreva um nome em \"Nome\" que diga para que o roteiro serve. Clique em \"Criar fluxo\". Ele nasce como rascunho, e o cartão dele aparece na lista. No construtor, você põe as peças e liga cada uma na próxima, do Início ao Fim.",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "button", "nome": "Novo fluxo de atendimento", "exato": true } },
+            { "acao": "aguardar", "alvo": { "role": "dialog", "nome": "Novo fluxo de atendimento", "exato": true } },
+            { "acao": "fill", "alvo": { "rotulo": "Nome", "exato": true }, "valor": "Pós-consulta · como foi o atendimento" }
+          ],
+          "destaques": [
+            { "alvo": { "rotulo": "Nome", "exato": true }, "rotulo": "Nome", "tipo": "caixa" },
+            { "alvo": { "role": "button", "nome": "Criar fluxo", "exato": true }, "rotulo": "Criar", "tipo": "seta" }
+          ],
+          "clicar": { "role": "button", "nome": "Criar fluxo", "exato": true }
+        },
+        {
+          "id": "p2",
+          "titulo": "Um rascunho pronto para publicar",
+          "rota": "/app/ai/atendimento/f1c00100-0000-4000-8000-000000000002",
+          "texto": "Este roteiro, \"Convênio · conferir a carteirinha\", está como \"Rascunho\". Ele pergunta o número e a validade da carteirinha. \"Salvar\" guarda as mudanças sem publicar. Para a IA começar a usar o roteiro, clique em \"Publicar\".",
+          "antes": [{ "acao": "aguardar", "alvo": { "testid": "publish-button" } }],
+          "destaques": [
+            { "alvo": { "css": "[aria-label=\"status: Rascunho\"]" }, "rotulo": "Rascunho", "tipo": "seta" },
+            { "alvo": { "role": "button", "nome": "Salvar", "exato": true }, "rotulo": "Só guardar", "tipo": "seta" },
+            { "alvo": { "testid": "publish-button" }, "rotulo": "Publicar", "tipo": "caixa" }
+          ],
+          "clicar": { "testid": "publish-button" }
+        },
+        {
+          "id": "p3",
+          "titulo": "Publicado",
+          "texto": "Ao publicar, o sistema confere o roteiro inteiro. Se faltar algo, a peça com problema fica com a borda vermelha e o roteiro não é publicado. Deu certo: o selo virou \"Ativo\". Na próxima conversa em que o cliente falar \"carteirinha\", a IA começa a perguntar. As respostas aparecem na ficha do cliente.",
+          "dica": "\"Desativar\" tira o roteiro de uso sem apagar. \"Rollback\" volta para a versão publicada antes desta.",
+          "antes": [
+            { "acao": "click", "alvo": { "testid": "publish-button" } },
+            { "acao": "aguardar", "alvo": { "css": "[aria-label=\"status: Ativo\"]" } },
+            { "acao": "esperar", "ms": 800 }
+          ],
+          "destaques": [
+            { "alvo": { "css": "[aria-label=\"status: Ativo\"]" }, "rotulo": "Ativo", "tipo": "seta" },
+            { "alvo": { "role": "button", "nome": "Desativar", "exato": true }, "rotulo": "Tirar de uso", "tipo": "seta" }
+          ]
+        }
+      ]
+    }
+  ]
+}

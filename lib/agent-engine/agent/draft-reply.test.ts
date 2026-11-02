@@ -56,6 +56,8 @@ const AGENT: PublishedAgentConfig = {
   operatorModel: null,
   operatorToolIds: [], pipelineIds: [],
   agentCreatedBy: null,
+  vozEnabled: false,
+  vozQuando: "espelhar",
 };
 
 function contextResult(overrides: Partial<LeadContextResult & { ok: true }> = {}): LeadContextResult {

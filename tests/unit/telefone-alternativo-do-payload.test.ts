@@ -152,3 +152,44 @@ describe("resolveWahaChatId — o canal de uma conversa viva não muda", () => {
     ).toBe("1203630@g.us");
   });
 });
+
+describe("resolveWahaChatId — ficha com telefone extra (Spec 31 B1)", () => {
+  const FICHA_COM_LID = {
+    isGroup: false,
+    groupChatId: null,
+    phoneNumber: "+5515999998888",
+    waIdentity: null,
+    waLid: "100000000000001",
+  };
+
+  it("a última mensagem recebida vence o wa_lid do principal", () => {
+    // A pessoa escreveu pelo extra (@c.us). Responder pelo `wa_lid` do principal
+    // mandaria a resposta ao número que ela não usou nesta conversa.
+    expect(
+      resolveWahaChatId({ ...FICHA_COM_LID, ultimoRecebidoChatId: "5515999998888@c.us" }),
+    ).toBe("5515999998888@c.us");
+    // Sabotagem: pôr o `wa_lid` antes do `ultimoRecebidoChatId` devolve
+    // "100000000000001@lid" e deixa este teste vermelho.
+  });
+
+  it("grupo continua vencendo a última mensagem recebida", () => {
+    expect(
+      resolveWahaChatId({
+        ...FICHA_COM_LID,
+        isGroup: true,
+        groupChatId: "1203630@g.us",
+        ultimoRecebidoChatId: "5515999998888@c.us",
+      }),
+    ).toBe("1203630@g.us");
+    // Sabotagem: pôr a última recebida antes do grupo devolve o chat individual e deixa vermelho.
+  });
+
+  it("sem ultimoRecebidoChatId (ou nulo), a resposta segue exatamente como hoje", () => {
+    expect(resolveWahaChatId(FICHA_COM_LID)).toBe("100000000000001@lid");
+    expect(resolveWahaChatId({ ...FICHA_COM_LID, ultimoRecebidoChatId: null })).toBe("100000000000001@lid");
+    expect(
+      resolveWahaChatId({ ...FICHA_COM_LID, waLid: null, ultimoRecebidoChatId: null }),
+    ).toBe("5515999998888@c.us");
+    // Sabotagem: exigir o campo (lançar sem ele) muda o envio de quem não tem extra e deixa vermelho.
+  });
+});

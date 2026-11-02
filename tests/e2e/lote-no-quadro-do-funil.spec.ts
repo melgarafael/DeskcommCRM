@@ -371,7 +371,7 @@ test.describe("Quadro do funil — agir em vários cards de uma vez", () => {
     expect(transbordo, "a página não rola na horizontal com a barra aberta").toBeLessThanOrEqual(0);
   });
 
-  test("mover vários de uma vez: os cards vão para a etapa nova, no fim e na mesma ordem", async ({
+  test("mover vários de uma vez: os cards vão para a etapa nova, no topo e na mesma ordem", async ({
     page,
   }) => {
     await login(page, creds.users.manager!.email, creds.password);
@@ -400,19 +400,22 @@ test.describe("Quadro do funil — agir em vários cards de uma vez", () => {
     await expect(page.getByText(TITULO(1), { exact: true })).toBeVisible({ timeout: 30_000 });
 
     const noBanco = await ordemNoBanco(etapaDestinoId);
-    expect(noBanco, "os três entraram no FIM do destino, na ordem em que estavam").toEqual([
-      TITULO_ANCORADO,
+    // Desde a #3461 o lote entra no TOPO do destino (encosta acima do card
+    // ancorado) e preserva entre si a ordem em que estava no quadro: quem
+    // chega por último é quem se olha primeiro.
+    expect(noBanco, "os três entraram no TOPO do destino, na ordem em que estavam").toEqual([
       TITULO(3),
       TITULO(4),
       TITULO(5),
+      TITULO_ANCORADO,
     ]);
 
     // E o quadro DESENHA a mesma ordem — banco e tela não podem divergir.
     expect(await ordemNaEtapa(page, etapaDestinoId)).toEqual([
-      TITULO_ANCORADO,
       TITULO(3),
       TITULO(4),
       TITULO(5),
+      TITULO_ANCORADO,
     ]);
     expect(await ordemNaEtapa(page, etapaOrigemId)).toEqual([
       TITULO(1),

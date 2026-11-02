@@ -44,6 +44,7 @@ import {
 import { ROLES, type Role } from "@/lib/schemas/team";
 import { rotuloDoPapel } from "@/lib/auth/types";
 import { DotsThree } from "@/lib/ui/icons";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 interface Props {
   currentUserId: string;
@@ -94,7 +95,7 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
               >
                 <TableCell className="max-md:basis-full max-md:p-0 max-md:wrap-anywhere">
                   <div className="font-medium">
-                    {m.full_name ?? m.email ?? m.user_id.slice(0, 8)}
+                    {rotuloDoMembro(m, t)}
                   </div>
                   {m.email ? <div className="text-xs text-muted-foreground">{m.email}</div> : null}
                 </TableCell>
@@ -108,7 +109,7 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
                     >
                       <SelectTrigger
                         className="w-[130px]"
-                        aria-label={`${t("Papel de")} ${m.full_name ?? m.email ?? m.user_id}`}
+                        aria-label={`${t("Papel de")} ${rotuloDoMembro(m, t)}`}
                       >
                         <SelectValue />
                       </SelectTrigger>
@@ -129,7 +130,7 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
                     <Button
                       variant="outline"
                       size="sm"
-                      aria-label={`${t("Interface de")} ${m.full_name ?? m.email ?? m.user_id}`}
+                      aria-label={`${t("Interface de")} ${rotuloDoMembro(m, t)}`}
                       onClick={() => setInterfaceMember(m)}
                     >
                       {m.interface_settings?.destinos

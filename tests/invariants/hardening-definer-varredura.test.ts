@@ -286,7 +286,7 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "função recusa tudo que não seja admin da própria organização.",
   },
   {
-    fn: "fn_definir_aviso_de_agendamento(uuid,boolean,uuid,text,boolean,boolean)",
+    fn: "fn_definir_aviso_de_agendamento(uuid,boolean,uuid,text,boolean,boolean,text)",
     razao:
       "A ÚNICA porta de escrita de `config_aviso_de_agendamento` (migration 0707) — " +
       "a tabela só tem `grant select` sob RLS de admin. PUT " +

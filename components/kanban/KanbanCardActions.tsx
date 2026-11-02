@@ -35,6 +35,7 @@ import { MoveToOtherPipelineDialog } from "./MoveToOtherPipelineDialog";
 import { EditLeadDialog } from "./EditLeadDialog";
 import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 interface KanbanCardActionsProps {
   lead: Lead;
@@ -154,7 +155,7 @@ export function KanbanCardActions({ lead, pipelineId, etapas, onMoverPara }: Kan
                     disabled={editMutation.isPending || m.user_id === lead.owner_user_id}
                     onSelect={() => reassignToUser(m.user_id)}
                   >
-                    {m.full_name ?? t("Sem nome")}
+                    {rotuloDoMembro(m, t)}
                   </DropdownMenuItem>
                 ))}
                 {(agents ?? []).length > 0 && <DropdownMenuSeparator />}

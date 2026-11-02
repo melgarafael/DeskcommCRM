@@ -43,6 +43,23 @@ export const IDIOMAS_DA_DEFINICAO: { codigo: string; rotulo: string }[] = [
   { codigo: "en_GB", rotulo: "Inglês (Reino Unido)" },
 ];
 
+/**
+ * O idioma com que um modelo NOVO nasce: o da organização (`pt-BR` → `pt_BR`,
+ * `es-PY` → `es`). Fora da lista, ou sem organização, o padrão do produto.
+ * Nascia `es` em toda instalação — herança da tela do parceiro —, e um modelo
+ * brasileiro enviado como espanhol é reprovado ou chega ao cliente errado.
+ */
+export function idiomaInicialDaDefinicao(locale: string | null | undefined): string {
+  const codigo = (locale ?? "").trim().replace("-", "_");
+  const codigos = IDIOMAS_DA_DEFINICAO.map((i) => i.codigo);
+  const base = codigo.split("_")[0]!.toLowerCase();
+  return (
+    codigos.find((c) => c.toLowerCase() === codigo.toLowerCase()) ??
+    codigos.find((c) => c === base) ??
+    "pt_BR"
+  );
+}
+
 /** Limites da plataforma. Passar deles é recusa, e o contador evita descobrir tarde. */
 export const LIMITE_CORPO = 1024;
 export const LIMITE_RODAPE = 60;

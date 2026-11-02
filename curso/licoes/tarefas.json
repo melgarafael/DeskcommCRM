@@ -263,7 +263,13 @@
             {
               "acao": "click",
               "alvo": {
-                "rotulo": "Responsável"
+                "rotulo": "Responsável",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog",
+                  "nome": "Nova tarefa",
+                  "exato": true
+                }
               }
             }
           ],
@@ -310,7 +316,13 @@
           "destaques": [
             {
               "alvo": {
-                "rotulo": "Responsável"
+                "rotulo": "Responsável",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog",
+                  "nome": "Nova tarefa",
+                  "exato": true
+                }
               },
               "rotulo": "Ana vai fazer",
               "tipo": "caixa"
@@ -718,7 +730,7 @@
             {
               "acao": "click",
               "alvo": {
-                "css": "button[role=combobox]"
+                "css": "button[role=combobox]:has-text('Concluída')"
               }
             },
             {

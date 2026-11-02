@@ -21,6 +21,10 @@ import type pg from 'pg';
 import { z } from 'zod';
 
 import { PROVEDOR_POR_ASSINATURA } from '@/lib/ai/pontos/provedores';
+import { chamarComRetryUnicoEm401 } from '@/lib/ai/pontos/renovacao-da-assinatura';
+import { sincronizarAvisoDaAssinatura } from '@/lib/ai/credenciais/aviso-da-assinatura';
+import { renovarAssinaturaNoTurno } from '@/lib/ai/credenciais/login-codex';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { PONTO_POR_ID } from '@/lib/ai/pontos/registro';
 // O par (provedor, modelo) é a mesma régua em TODOS os caminhos de execução:
 // este seam, a resolução dos pontos, a mídia, o embedding e o runtime do agente
@@ -56,7 +60,7 @@ import {
   SQL_ORCAMENTO,
   type ChaveDeOrcamento,
 } from './orcamento';
-import { costCents, gravacaoDeUmaHora } from './pricing';
+import { custoTerraPorPassos, costCents, gravacaoDeUmaHora } from './pricing';
 import { custoDoModeloForaDoMotor } from './pricing-do-catalogo';
 import { chaveDeOrcamentoDaInstalacao } from '../../../instalacao/comportamento';
 import { cobrancaLigadaComMemo } from '../../../instalacao/modulos';
@@ -335,7 +339,7 @@ export function usosCrusDosPassos(result: { usage: { raw?: unknown }; steps?: Re
  */
 
 /** Só o que a linha de recusa em `llm_calls` grava — quem chama de fora do seam não tem mensagens. */
-type RastroDaChamada = Pick<RunModelCallInput, 'tenantId' | 'leadId' | 'jobId' | 'variantId' | 'agentId'>;
+export type RastroDaChamada = Pick<RunModelCallInput, 'tenantId' | 'leadId' | 'jobId' | 'variantId' | 'agentId'>;
 
 /** O que o statement do gate devolve — uma ida ao banco, um snapshot. */
 interface LinhaDoOrcamento {
@@ -1000,6 +1004,92 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   };
 
   /**
+   * O 401 DO TURNO RENOVE ANTES DE CAIR (#3371, fatia 4).
+   *
+   * `chamarComRetryUnicoEm401` existia em `lib/ai/pontos/renovacao-da-assinatura.ts`
+   * e **não tinha chamador de produção** — só os testes dele. Consequência medida
+   * em produção (cliente Obralivre): o access_token vencia, todo turno recebia
+   * `401 · Provided authentication token is expired`, a chamada caía na política
+   * de reserva e o cliente ficou ~26 h sem resposta, com cota sobrando.
+   *
+   * Agora, no caminho REAL do provedor de assinatura: um 401 → renova UMA vez pelo
+   * mesmo caminho do botão de revalidar (`renovarAssinaturaNoTurno`, com a trava
+   * de banco) → tenta UMA vez. Segundo 401 é devolvido como está e cai na política
+   * de reserva que já existe — nada de laço aqui: o único lugar onde este seam
+   * insiste é o degrau econômico do classificador, que é outro assunto.
+   *
+   * `recusaDaRenovacao` guarda o PORQUÊ da recusa (fatia 3): é ele que vira o
+   * aviso único na Central (fatia 2) quando a conta precisa ser reconectada.
+   */
+  // Objeto e não `let`: o valor é escrito dentro do callback da renovação e lido
+  // depois, no catch — e é a leitura DEPOIS que decide o aviso da Central.
+  const renovacaoDoTurno: { recusa: string | null } = { recusa: null };
+  // O par tentativa/resposta do seam. Anotado porque o genérico de
+  // `chamarComRetryUnicoEm401` inferiria só o ramo de SUCESSO e recusaria o de
+  // erro — o tipo é o mesmo objeto, o retry único é que é o contrato.
+  type TentativaDaAssinatura =
+    | { ok: true; resultado: Awaited<ReturnType<typeof generateText>> }
+    | { ok: false; erro: unknown };
+  const chamarComRenovacaoNo401 = async (
+    cfgUsada: OrgLlmConfig,
+    fabrica: typeof factory,
+  ): Promise<Awaited<ReturnType<typeof generateText>>> => {
+    const { corpo, tentativas } = await chamarComRetryUnicoEm401<TentativaDaAssinatura>({
+      tentar: async () => {
+        try {
+          return {
+            status: 200,
+            corpo: { ok: true as const, resultado: await chamarCom(cfgUsada, fabrica) },
+          };
+        } catch (erro) {
+          // O status do provedor, e não uma classe de erro: é o 401 que decide.
+          return { status: normalizarErro(erro).http_status ?? 0, corpo: { ok: false as const, erro } };
+        }
+      },
+      renovarApos401: async () => {
+        const r = await renovarAssinaturaNoTurno({
+          admin: createAdminClient(),
+          orgId: input.tenantId,
+        });
+        if (r.ok) {
+          deps.log?.warn('llm: a assinatura respondeu 401 — login renovado no meio do turno', {
+            organization_id: input.tenantId,
+            purpose,
+            provider: cfgUsada.provider,
+            model,
+          });
+          return;
+        }
+        const motivo = r.motivoDetalhe ? `${r.motivo}:${r.motivoDetalhe}` : r.motivo;
+        // Só recusa de LOGIN vira aviso de conta desconectada. `em_curso` (outro
+        // processo renovando dentro da trava) e `modulo_desligado` não dizem nada
+        // sobre a conta — anunciá-la desconectada mandaria reconectar uma conta boa.
+        if (r.motivo === 'falha' || r.motivo === 'nao_encontrada') {
+          renovacaoDoTurno.recusa = motivo;
+        }
+        deps.log?.error('llm: a assinatura respondeu 401 e a renovação foi RECUSADA', {
+          organization_id: input.tenantId,
+          purpose,
+          provider: cfgUsada.provider,
+          model,
+          motivo,
+        });
+      },
+    });
+    if (corpo.ok) {
+      if (tentativas > 1) {
+        deps.log?.warn('llm: a chamada seguiu depois de renovar o login da assinatura', {
+          organization_id: input.tenantId,
+          purpose,
+          tentativas,
+        });
+      }
+      return corpo.resultado;
+    }
+    throw corpo.erro;
+  };
+
+  /**
    * A QUEDA DA ASSINATURA (#1639, item 3) — a metade que faltava da política.
    *
    * `decidirQuedaDoProvedor` já existe e é pura; o que faltava era respondê-lo:
@@ -1043,7 +1133,10 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     // `system` aceita SystemModelMessage (com providerOptions de cache) — igual
     // em v6 e v7 (smoke prova que o cacheControl continua virando cache_control).
     try {
-      result = await chamarCom(config, factory);
+      result =
+        config.provider === PROVEDOR_POR_ASSINATURA
+          ? await chamarComRenovacaoNo401(config, factory)
+          : await chamarCom(config, factory);
     } catch (falhaDaAssinatura) {
       const reserva = await reservaParaAFalha(falhaDaAssinatura);
       if (reserva === null) throw falhaDaAssinatura;
@@ -1105,6 +1198,25 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
     }).catch(() => {
       // O log da falha não pode causar uma segunda falha.
     });
+    // ─── O AVISO QUE A CENTRAL NÃO TINHA (#3371, fatia 2) ─────────────────────
+    //
+    // 401 com sinal de expiração + renovação RECUSADA = a conta desconectou e
+    // ninguém vai saber. Foi assim que o cliente Obralivre passou ~26 h com 107
+    // turnos recusados e a Central de avisos VAZIA. Um item por incidente (a
+    // regra pura + o índice único da migration 9027), aberto aqui e fechado
+    // sozinho pela rota do login novo. Best-effort: o turno já falhou, o aviso
+    // não pode virar uma segunda falha.
+    if (
+      config.provider === PROVEDOR_POR_ASSINATURA &&
+      statusDaFalha === 401 &&
+      renovacaoDoTurno.recusa !== null
+    ) {
+      await sincronizarAvisoDaAssinatura(createAdminClient(), {
+        organizationId: input.tenantId,
+        conectada: false,
+        recusa: renovacaoDoTurno.recusa,
+      }).catch(() => 'falhou');
+    }
     const camposDaFalha = {
       organization_id: input.tenantId,
       purpose,
@@ -1179,7 +1291,7 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   // nunca calado, e nunca um 0 inventado. O caminho dos modelos que já têm linha
   // na tabela estática não muda uma vírgula: `costCents` segue sendo chamado
   // primeiro, e só o `null` dele chega aqui.
-  let cost = costCents(model, usage, cfg.cacheTtl ?? '1h');
+  let cost = custoTerraPorPassos(model, result) ?? costCents(model, usage, cfg.cacheTtl ?? '1h');
   let origemDoCusto: 'catalogo_da_instalacao' | undefined;
   if (cost === null) {
     cost = await custoDoModeloForaDoMotor(db, {

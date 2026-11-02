@@ -1,7 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { logger } from "@/lib/logger";
-import { clientePelaAgendaLigado } from "@/lib/schemas/settings";
+import { lerRegrasDeCliente } from "@/lib/contacts/regras-de-cliente";
 
 /**
  * A regra "cliente pela agenda" está ligada nesta organização? — para o SERVIDOR.
@@ -9,6 +8,13 @@ import { clientePelaAgendaLigado } from "@/lib/schemas/settings";
  * Existe para o caminho que não passa pelo layout: o nascimento do lead, que
  * roda na ingestão com o client de service role. A tela lê a mesma chave pelo
  * `ActiveOrg` que o layout já monta.
+ *
+ * ⚠️ UMA LEITURA SÓ PARA AS TRÊS CHAVES (#3644). A partir da regra "cliente
+ * pela venda", o nascimento do lead precisa de `cliente_pela_agenda`,
+ * `cliente_pela_venda` E `pos_venda_dias` — as três na MESMA linha de
+ * `organizations`. Este nome continua existindo porque há chamador (e teste)
+ * que só quer a resposta da agenda; quem precisa das três pergunta a
+ * `lerRegrasDeCliente` e paga um `select` em vez de três.
  *
  * ⚠️ FALHA LÊ COMO DESLIGADA, e isso é o desenho. Quem consome isto escolhe o
  * funil de um lead que vai nascer de qualquer jeito: errar para o funil padrão
@@ -23,19 +29,5 @@ export async function lerClientePelaAgenda(
   db: SupabaseClient,
   organizationId: string,
 ): Promise<boolean> {
-  const { data, error } = await db
-    .from("organizations")
-    .select("settings")
-    .eq("id", organizationId)
-    .maybeSingle();
-
-  if (error) {
-    logger.warn("[cliente-pela-agenda] leitura do interruptor falhou", {
-      organization_id: organizationId,
-      error: error.message,
-    });
-    return false;
-  }
-  if (!data) return false;
-  return clientePelaAgendaLigado((data as { settings?: unknown }).settings);
+  return (await lerRegrasDeCliente(db, organizationId)).pelaAgenda;
 }

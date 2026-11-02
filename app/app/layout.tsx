@@ -9,7 +9,7 @@ import {
   resolveActiveOrg,
 } from "@/lib/auth/server";
 import { DEFAULT_VISIBILITY_MODE, roleAtLeast, type VisibilityMode } from "@/lib/auth/types";
-import { clientePelaAgendaLigado } from "@/lib/schemas/settings";
+import { clientePelaAgendaLigado, clientePelaVendaLigado } from "@/lib/schemas/settings";
 import { AuthProvider } from "@/hooks/auth/AuthProvider";
 import { ProvedorDeCoresDasEtiquetas } from "@/components/tags/CoresDasEtiquetas";
 import { AppShell } from "./_components/AppShell";
@@ -22,8 +22,10 @@ import { marcaDaInstalacao } from "@/lib/branding/instalacao";
 import { resolverMarcaDaOrganizacao } from "@/lib/branding/organizacao";
 import { env } from "@/lib/env";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { modulosLigados } from "@/lib/instalacao/modulos";
 import { capacidadesLigadas } from "@/lib/organizacao/capacidades";
+import { telefoniaEmUso } from "@/lib/telefonia/em-uso";
 import { ehOperante } from "@/lib/organizacao/operante";
 import {
   ImpersonateBanner,
@@ -94,6 +96,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     const temaDaExtensao = lerCssDoTemaDaExtensao(admin, activeOrg.orgId);
 
     /**
+     * A faixa lê com a identidade da sessão, como GET /api/v1/channel-sessions,
+     * para respeitar a RLS em vez de atravessá-la com o cliente de serviço.
+     *
+     * A SELECT nativa de channel_sessions é por organização, com o acesso de
+     * plataforma previsto na policy. Ela não divide canais por atendente.
+     * O relato #3088 veio de uma instalação adaptada: esta passagem de cliente
+     * respeita uma restrição adicional se ela estiver na RLS. Um filtro local
+     * apenas na rota não é herdado por esta consulta direta do layout.
+     *
+     * Sem linhas visíveis, a lista fica vazia. Não acrescentamos uma regra de
+     * papel ou vínculo; a consulta abaixo mantém o filtro da organização ativa.
+     * createClient monta o cliente com os cookies, sem uma consulta extra aqui.
+     */
+    const daSessao = await createClient();
+
+    /**
      * As cinco consultas que TODA página de `/app` paga, disparadas juntas.
      *
      * Elas eram sequenciais e independentes: cada uma esperava a anterior sem
@@ -116,14 +134,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
      *    `tests/unit/faixa-de-conexao-caida-vem-do-seam.test.tsx`, que EXECUTA
      *    este layout — a cerca anterior lia o texto-fonte e reprovava esta
      *    refatoração sem que nada tivesse quebrado.
+     *  - QUEM enxerga o quê é decidido pelo cliente que o seam recebe
+     *    (`daSessao`, acima): a mesma RLS que a rota do seletor de canais
+     *    aplica. Vigiado por
+     *    `tests/unit/faixa-respeita-os-canais-do-atendente.test.tsx`.
      */
-    const [orgRes, conexoes, isEnrolled, mfaRequired, modulos] = await Promise.all([
+    const [orgRes, conexoes, isEnrolled, mfaRequired, modulos, telefonia] = await Promise.all([
       admin
         .from("organizations")
         .select("onboarded_at, status, settings, timezone")
         .eq("id", activeOrg.orgId)
         .maybeSingle(),
-      listarConexoesCaidas(admin, activeOrg.orgId),
+      listarConexoesCaidas(daSessao, activeOrg.orgId),
       isMfaEnrolled(),
       requiresMfa(
         activeOrg.role,
@@ -133,6 +155,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       ),
       // Da INSTALAÇÃO: decide se a porta de um módulo opcional entra no menu.
       modulosLigados(admin),
+      // Da ORGANIZAÇÃO (#1290): a telefonia não tem chave de instalação que o app
+      // leia — o que se mede é o tronco SIP que esta empresa salvou. Entra no
+      // mesmo `Promise.all`, então custa a consulta mais lenta, não uma espera.
+      telefoniaEmUso(admin, activeOrg.orgId),
     ]);
 
     const orgRow = orgRes.data;
@@ -158,9 +184,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       visibility_mode: mode ?? DEFAULT_VISIBILITY_MODE,
       // Mesma linha de `settings` já lida acima — nenhuma consulta a mais.
       cliente_pela_agenda: clientePelaAgendaLigado(orgRow?.settings),
+      // #3644 — a regra da venda também decide se o funil de clientes está em
+      // uso: o menu e o selo do quadro não podem sumir de uma organização que
+      // roteia por ela. Mesma linha de `settings`, nenhuma consulta a mais.
+      cliente_pela_venda: clientePelaVendaLigado(orgRow?.settings),
       modulos_ligados: modulos,
       // Mesma linha de `settings` já lida acima — nenhuma consulta a mais.
-      capacidades_ligadas: capacidadesLigadas(orgRow?.settings, modulos),
+      capacidades_ligadas: capacidadesLigadas(orgRow?.settings, modulos, telefonia),
     };
 
     // A faixa do teste grátis (spec da cobrança §9): uma consulta a mais SÓ com

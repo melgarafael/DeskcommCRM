@@ -1,0 +1,497 @@
+{
+  "id": "memoria",
+  "titulo": "Memória",
+  "tela": "/app/ai/memory",
+  "resumo": "As regras da casa e os aprendizados que todos os agentes de IA da empresa seguem em qualquer conversa: escrever, publicar, voltar a uma versão antiga e arquivar o que não vale mais.",
+  "licoes": [
+    {
+      "id": "memoria-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Memória",
+      "objetivo": "Entender o que a Memória da IA guarda, onde ela fica e de onde vem cada aprendizado.",
+      "papel": "admin",
+      "busca": [
+        "memória da ia",
+        "regras da casa",
+        "regras para todos os agentes",
+        "o que o agente aprendeu",
+        "política da clínica para o agente",
+        "ensinar o agente",
+        "aprendizados do agente"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/ai",
+          "texto": "Memória não aparece direto no menu lateral. No grupo \"Agente de IA\" do menu, clique em \"Ver tudo em IA\". Na parte \"Ensinar o agente\" está o cartão \"Memória\". O caminho completo é: Agente de IA › Ver tudo em IA › Memória.",
+          "dica": "Só gerente ou administrador vê este cartão. Para um atendente, ou para quem só tem permissão de leitura, ele não aparece, e o endereço da tela leva a uma página de acesso negado.",
+          "destaques": [
+            {
+              "alvo": { "role": "link", "nome": "Ver tudo em IA", "exato": true },
+              "rotulo": "Ver tudo em IA",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "link", "nome": "^Memória ", "regex": true },
+              "rotulo": "Abrir a Memória",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": { "role": "link", "nome": "^Memória ", "regex": true }
+        },
+        {
+          "id": "p2",
+          "titulo": "Para que serve",
+          "rota": "/app/ai/memory",
+          "texto": "O agente de IA é o atendente virtual que conversa com os pacientes. A \"Memória da IA\" guarda as regras e os aprendizados que TODOS os agentes de IA da clínica seguem. Ela não é a configuração de um agente só: o que está aqui vale para todos de uma vez. Antes de cada resposta, o agente lê o que está em vigor nesta tela.",
+          "dica": "O que vale para um agente só, como o jeito de falar da recepção, fica na tela daquele agente, em \"Agentes\". Aqui ficam as regras comuns, escritas uma vez só.",
+          "destaques": [
+            {
+              "alvo": { "css": "header:has(> h1)" },
+              "rotulo": "Vale para todos os agentes",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O documento da organização",
+          "texto": "O primeiro quadro, \"Documento da organização\", é o texto-base com as regras gerais da clínica: endereço, horário, o que o agente nunca deve fazer. Escreva como você explicaria a um atendente novo. O selo \"v2 ativa\" diz que os agentes estão lendo a versão 2 deste texto.",
+          "dica": "Se, na configuração inicial do sistema, você preencheu \"As regras da casa (opcional)\", esse texto já aparece aqui como a primeira versão. Antes de qualquer publicação, o selo diz \"Nenhuma versão publicada ainda\".",
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Ex.: Nunca prometa desconto sem confirmar com um humano. Horário de atendimento: 9h–18h, seg-sex. Sempre chame o cliente pelo primeiro nome.",
+                "exato": true
+              },
+              "rotulo": "As regras da casa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "texto": "v2 ativa", "exato": true },
+              "rotulo": "Versão em uso",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "O histórico de versões",
+          "texto": "Cada vez que alguém publica o documento, nasce uma versão nova, com número, data e hora. A anterior não é apagada: fica guardada em \"Histórico de versões\". O selo \"ativa\" marca a versão que os agentes estão lendo. Clicar numa versão mostra o texto dela.",
+          "dica": "Como voltar a um texto antigo está na lição \"Voltar a uma versão anterior\".",
+          "destaques": [
+            {
+              "alvo": { "texto": "Histórico de versões", "exato": true },
+              "rotulo": "Todas as versões",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "button", "nome": "^v2 ", "regex": true },
+              "rotulo": "A versão em uso",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "button", "nome": "^v1 ", "regex": true },
+              "rotulo": "Uma versão antiga",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Os aprendizados",
+          "texto": "O segundo quadro, \"Aprendizados\", guarda fatos e correções pontuais, um por item, como o estacionamento conveniado. Cada item tem um título, um selo de origem, a data em que entrou e, embaixo, o texto que o agente lê. Os agentes levam em conta todos os aprendizados ativos, junto com o documento.",
+          "destaques": [
+            {
+              "alvo": { "role": "button", "nome": "Novo aprendizado", "exato": true },
+              "rotulo": "Ensinar um novo",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "css": "li:has-text('Estacionamento conveniado')" },
+              "rotulo": "Um aprendizado",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "De onde veio cada aprendizado",
+          "texto": "O selo ao lado do título diz quem escreveu o aprendizado. \"manual\": alguém da equipe escreveu nesta tela. \"aprendido automaticamente\": o sistema revisou conversas reais, sugeriu o aprendizado, e um administrador aprovou a sugestão. \"anotado pelo agente\": um agente de IA anotou sozinho, durante o trabalho.",
+          "dica": "As sugestões automáticas não aparecem nesta tela: elas esperam na aba \"Propostas\" da tela de um agente e só viram aprendizado quando um administrador clica em \"Aplicar como memória da org\". Nesse caso, o título é o começo do próprio texto. O agente só anota sozinho quando tem ligada a ferramenta \"Anotar uma regra aprendida\".",
+          "destaques": [
+            {
+              "alvo": { "texto": "manual", "exato": true },
+              "rotulo": "Escrito pela equipe",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "texto": "aprendido automaticamente", "exato": true },
+              "rotulo": "Sugerido e aprovado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "texto": "anotado pelo agente", "exato": true },
+              "rotulo": "Anotado pela IA",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "memoria-publicar-o-documento",
+      "titulo": "Escrever e publicar as regras da casa",
+      "objetivo": "Mudar o texto-base que todos os agentes seguem e colocar a versão nova em vigor.",
+      "papel": "admin",
+      "busca": [
+        "publicar regras",
+        "mudar as regras do agente",
+        "editar memória",
+        "regra nova para o agente",
+        "agente não segue regra",
+        "publicar versão",
+        "política da casa"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O que escrever aqui",
+          "rota": "/app/ai/memory",
+          "texto": "Tudo o que está neste quadro vai junto em cada resposta do agente. Por isso, guarde aqui só regras curtas que valem para qualquer atendimento: endereço, horário, o que nunca prometer. Uma regra por linha, em frases diretas. Material longo, como perguntas frequentes ou o preparo de exames, fica melhor em \"Conhecimento\", onde o agente procura o trecho que tem a ver com a pergunta.",
+          "dica": "Só o administrador publica. Um gerente também abre esta tela e consegue escrever no quadro, mas o botão \"Publicar versão\" fica apagado, com o aviso \"Somente admins podem publicar uma nova versão.\".",
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Ex.: Nunca prometa desconto sem confirmar com um humano. Horário de atendimento: 9h–18h, seg-sex. Sempre chame o cliente pelo primeiro nome.",
+                "exato": true
+              },
+              "rotulo": "As regras da casa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Escrever a regra nova",
+          "texto": "Clique no quadro e escreva. Aqui, a clínica acrescentou no fim uma regra sobre remarcação. Embaixo, o contador mostra quantos caracteres o texto tem. Enquanto você escreve, nada muda para os agentes. O botão \"Publicar versão\" só acende quando o texto está diferente da versão ativa e não está vazio.",
+          "dica": "O texto só fica guardado quando você publica. Se sair da tela antes, o que escreveu se perde.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Ex.: Nunca prometa desconto sem confirmar com um humano. Horário de atendimento: 9h–18h, seg-sex. Sempre chame o cliente pelo primeiro nome.",
+                "exato": true
+              },
+              "valor": "Você atende pela Clínica Bem Viver, na Rua das Acácias, 120 — 3º andar, Vila Mariana, São Paulo.\nHorário de atendimento: segunda a sexta, das 7h às 19h, e sábado, das 8h às 12h.\nChame o paciente pelo primeiro nome e escreva frases curtas.\nNunca dê diagnóstico nem indique remédio. Se o paciente contar uma dor forte ou um sintoma grave, oriente procurar um pronto-socorro.\nNão prometa desconto. Valores e convênios, confirme com a recepção antes de responder.\nPara remarcar uma consulta, peça aviso de pelo menos 24 horas. A remarcação não tem custo."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Ex.: Nunca prometa desconto sem confirmar com um humano. Horário de atendimento: 9h–18h, seg-sex. Sempre chame o cliente pelo primeiro nome.",
+                "exato": true
+              },
+              "rotulo": "Regra nova no fim",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "texto": "^\\d+ caracteres$", "regex": true },
+              "rotulo": "Tamanho do texto",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "button", "nome": "Publicar versão", "exato": true },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": { "role": "button", "nome": "Publicar versão", "exato": true }
+        },
+        {
+          "id": "p3",
+          "titulo": "A versão nova vale para todos",
+          "texto": "Depois do clique, o texto vira a versão 3, e o selo passa a dizer \"v3 ativa\". Um aviso rápido confirma a publicação. Na próxima resposta, todos os agentes já seguem o texto novo. A versão 2 continua guardada no histórico, logo abaixo.",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "button", "nome": "Publicar versão", "exato": true } },
+            { "acao": "aguardar", "alvo": { "texto": "v3 ativa", "exato": true } }
+          ],
+          "destaques": [
+            {
+              "alvo": { "texto": "v3 ativa", "exato": true },
+              "rotulo": "Versão nova em uso",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "button", "nome": "^v3 ", "regex": true },
+              "rotulo": "A nova no histórico",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "button", "nome": "^v2 ", "regex": true },
+              "rotulo": "A anterior, guardada",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "memoria-voltar-versao",
+      "titulo": "Voltar a uma versão anterior",
+      "objetivo": "Recuperar o texto de uma versão antiga do documento sem apagar nenhuma versão.",
+      "papel": "admin",
+      "busca": [
+        "voltar versão",
+        "desfazer regra",
+        "versão anterior da memória",
+        "restaurar regras",
+        "histórico de versões",
+        "regra nova deu problema"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir uma versão antiga",
+          "rota": "/app/ai/memory",
+          "texto": "Se uma regra nova deu problema, dá para voltar a um texto antigo. Em \"Histórico de versões\", clique na versão que você quer ver. Aqui, a v1.",
+          "destaques": [
+            {
+              "alvo": { "texto": "Histórico de versões", "exato": true },
+              "rotulo": "Todas as versões",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "button", "nome": "^v1 ", "regex": true },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": { "role": "button", "nome": "^v1 ", "regex": true }
+        },
+        {
+          "id": "p2",
+          "titulo": "Ler o texto da versão",
+          "texto": "Abre uma janela com o título \"Versão v1\", a data em que ela foi publicada e o texto exato daquela versão. Para fechar sem mudar nada, clique no X. Para voltar a esse texto, clique em \"Restaurar como nova versão\".",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "button", "nome": "^v1 ", "regex": true } },
+            { "acao": "aguardar", "alvo": { "role": "button", "nome": "Restaurar como nova versão", "exato": true } }
+          ],
+          "destaques": [
+            {
+              "alvo": { "role": "dialog" },
+              "rotulo": "O texto da v1",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "button", "nome": "Restaurar como nova versão", "exato": true },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": { "role": "button", "nome": "Restaurar como nova versão", "exato": true }
+        },
+        {
+          "id": "p3",
+          "titulo": "Conferir e publicar",
+          "texto": "O texto da v1 é copiado para o quadro, e a janela fecha. Por enquanto nada mudou para os agentes: o selo ainda diz \"v2 ativa\", e um aviso rápido lembra de clicar em \"Publicar versão\" para confirmar. Confira o texto, ajuste se quiser e publique. Ele entra como uma versão nova, a v3. A v2 continua no histórico: nenhuma versão é apagada.",
+          "dica": "Restaurar a versão que já está ativa só traz de volta o texto dela. Como ele é igual ao que já vale, o botão \"Publicar versão\" fica apagado.",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "button", "nome": "Restaurar como nova versão", "exato": true } },
+            { "acao": "esperar", "ms": 800 }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Ex.: Nunca prometa desconto sem confirmar com um humano. Horário de atendimento: 9h–18h, seg-sex. Sempre chame o cliente pelo primeiro nome.",
+                "exato": true
+              },
+              "rotulo": "O texto da v1",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "texto": "v2 ativa", "exato": true },
+              "rotulo": "Ainda vale a v2",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "button", "nome": "Publicar versão", "exato": true },
+              "rotulo": "Para confirmar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": { "role": "button", "nome": "Publicar versão", "exato": true }
+        }
+      ]
+    },
+    {
+      "id": "memoria-aprendizados",
+      "titulo": "Ensinar, arquivar e reativar aprendizados",
+      "objetivo": "Ensinar aos agentes um fato pontual e tirar de uso o que não vale mais, sem perder nada.",
+      "papel": "admin",
+      "busca": [
+        "novo aprendizado",
+        "ensinar um fato ao agente",
+        "corrigir o agente",
+        "arquivar aprendizado",
+        "reativar aprendizado",
+        "apagar aprendizado",
+        "o que o agente anotou"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir o formulário",
+          "rota": "/app/ai/memory",
+          "texto": "Um aprendizado é um fato ou uma correção pontual, como \"o retorno em até 30 dias não é cobrado\". Ao contrário do documento, ele não tem versão nem precisa ser publicado. Para ensinar um, clique em \"Novo aprendizado\", no quadro \"Aprendizados\".",
+          "dica": "Gerente também cria, arquiva e reativa aprendizados.",
+          "destaques": [
+            {
+              "alvo": { "role": "button", "nome": "Novo aprendizado", "exato": true },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": { "role": "button", "nome": "Novo aprendizado", "exato": true }
+        },
+        {
+          "id": "p2",
+          "titulo": "Escrever o aprendizado",
+          "texto": "Em \"Título\", escreva um resumo curto, de até 200 caracteres. Em \"O que o agente deve saber\", escreva a regra em texto simples, do jeito que você explicaria a um colega. Os dois campos são obrigatórios. Depois, clique em \"Salvar aprendizado\". \"Cancelar\" fecha o formulário sem guardar.",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "button", "nome": "Novo aprendizado", "exato": true } },
+            { "acao": "fill", "alvo": { "rotulo": "Título", "exato": true }, "valor": "Retorno em até 30 dias não é cobrado" },
+            {
+              "acao": "fill",
+              "alvo": { "rotulo": "O que o agente deve saber", "exato": true },
+              "valor": "Na nutrição e na fisioterapia, a consulta de retorno feita em até 30 dias depois da primeira não é cobrada. Depois disso, é cobrada como consulta normal."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": { "rotulo": "Título", "exato": true },
+              "rotulo": "Resumo curto",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "rotulo": "O que o agente deve saber", "exato": true },
+              "rotulo": "A regra em texto simples",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "button", "nome": "Salvar aprendizado", "exato": true },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": { "role": "button", "nome": "Salvar aprendizado", "exato": true }
+        },
+        {
+          "id": "p3",
+          "titulo": "O aprendizado já vale",
+          "texto": "O aprendizado novo aparece no topo da lista, com o selo \"manual\" e a data de hoje. Ele já vale: na próxima resposta, todos os agentes o levam em conta.",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "button", "nome": "Salvar aprendizado", "exato": true } },
+            { "acao": "aguardar", "alvo": { "css": "li:has-text('Retorno em até 30 dias não é cobrado')" } }
+          ],
+          "destaques": [
+            {
+              "alvo": { "css": "li:has-text('Retorno em até 30 dias não é cobrado')" },
+              "rotulo": "Aprendizado novo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "manual",
+                "exato": true,
+                "dentro": { "css": "li:has-text('Retorno em até 30 dias não é cobrado')" }
+              },
+              "rotulo": "Escrito pela equipe",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Arquivar o que não vale mais",
+          "texto": "Quando um aprendizado deixa de valer, ou quando você não concorda com algo que um agente anotou, clique em \"Arquivar\", no pé do item. Aqui, vamos arquivar a anotação do agente sobre o pilates.",
+          "dica": "Não existe botão de apagar. Arquivar tira o aprendizado de uso sem perder o texto.",
+          "destaques": [
+            {
+              "alvo": { "css": "li:has-text('Pacientes do pilates preferem o fim da tarde')" },
+              "rotulo": "Anotado pelo agente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Arquivar",
+                "exato": true,
+                "dentro": { "css": "li:has-text('Pacientes do pilates preferem o fim da tarde')" }
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Arquivar",
+            "exato": true,
+            "dentro": { "css": "li:has-text('Pacientes do pilates preferem o fim da tarde')" }
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Onde ficam os arquivados",
+          "texto": "O item sai da lista, e os agentes deixam de considerá-lo a partir da próxima resposta. Ele não foi apagado: fica entre os arquivados. Para vê-los, clique em \"Ver aprendizados arquivados\". Essa opção só aparece quando existe pelo menos um aprendizado arquivado.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Arquivar",
+                "exato": true,
+                "dentro": { "css": "li:has-text('Pacientes do pilates preferem o fim da tarde')" }
+              }
+            },
+            { "acao": "esperar", "ms": 1200 }
+          ],
+          "destaques": [
+            {
+              "alvo": { "role": "button", "nome": "Ver aprendizados arquivados", "exato": true },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": { "role": "button", "nome": "Ver aprendizados arquivados", "exato": true }
+        },
+        {
+          "id": "p6",
+          "titulo": "Reativar um aprendizado",
+          "texto": "Agora a lista mostra só os arquivados, cada um com o botão \"Reativar\". Reativar devolve o aprendizado à lista dos ativos, e os agentes voltam a levá-lo em conta. Para voltar à lista dos ativos, clique em \"Ver aprendizados ativos\".",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "button", "nome": "Ver aprendizados arquivados", "exato": true } },
+            { "acao": "aguardar", "alvo": { "role": "button", "nome": "Ver aprendizados ativos", "exato": true } }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Reativar",
+                "exato": true,
+                "dentro": { "css": "li:has-text('Pacientes do pilates preferem o fim da tarde')" }
+              },
+              "rotulo": "Devolver ao uso",
+              "tipo": "seta"
+            },
+            {
+              "alvo": { "role": "button", "nome": "Ver aprendizados ativos", "exato": true },
+              "rotulo": "Voltar aos ativos",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

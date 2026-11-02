@@ -153,3 +153,16 @@ describe("ConversationListItem — seleção em lote", () => {
     expect(linha.className).not.toContain("bg-accent-50");
   });
 });
+
+describe("ConversationListItem — etiquetas que não couberam (#3649)", () => {
+  it("o +N diz no title quais etiquetas ficaram de fora", () => {
+    const base = conversaDeExemplo.conversation;
+    render(
+      <ConversationListItem
+        conversation={{ ...base, contacts: { ...base.contacts!, tags: ["vip", "quente", "retorno", "boleto"] } }}
+        {...conversaDeExemplo.props}
+      />,
+    );
+    expect(screen.getByText("+2")).toHaveAttribute("title", "retorno, boleto");
+  });
+});

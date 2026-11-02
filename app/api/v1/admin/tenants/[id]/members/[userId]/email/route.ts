@@ -59,6 +59,7 @@ import {
   requirePlatformAdminEscrita,
   type PlatformAdminContext,
 } from "@/lib/auth/requirePlatformAdmin";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { sendEmail } from "@/lib/email/roteador";
 import { buildAvisoDeTrocaDeEmail } from "@/lib/email/templates/aviso-de-troca-de-email";
@@ -211,6 +212,8 @@ export async function PATCH(
     email,
     email_confirm: true,
   });
+  // #3696: o `getUser` da pessoa está no cache curto; sem isto, o e-mail velho segue até 30 s.
+  invalidarUsuario(userId);
   if (error) {
     // Compensação: os avisos diziam que a troca aconteceu, e ela não aconteceu.
     const { error: desfazerErr } = await admin

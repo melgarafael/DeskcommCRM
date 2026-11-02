@@ -77,14 +77,15 @@ número de migration que você.
 **Migrations novas do fork usam a faixa 5001 em diante** (`<timestamp>_5001_<slug>.sql`,
 depois 5002, 5003…). O original numera em sequência (máximo + 1, cerca de 200 por
 mês) e em 26/10/2026 pulou de 0807 para 9016 — por isso a faixa antiga do fork
-(9001+) passou a colidir: o PR #3579 do original já usa a 9022. Como ele nunca
-numera abaixo do próprio máximo, o buraco 0808–9015 não volta a ser usado por ele,
-e 5001 fica no meio desse buraco.
+(9001+) passou a colidir: o PR #3579 do original já usa a 9022. Ele também segue
+a série baixa (a v1.98.0 trouxe 0808 e 0809), que cresce devagar e está longe de
+5001. A faixa do fork é 5001–8999; se a série baixa do original chegar perto de
+5000, escolha outra faixa.
 
 As quatro do fork que já rodam em VPS (9001–9004) **não são renumeradas**: o número
 é a versão gravada no banco de quem instalou. Elas são as únicas do fork fora da
 faixa nova, e `tests/unit/fork-faixa-de-migration.test.ts` reprova qualquer outra
-no buraco fora de 5001+ e reprova este parágrafo se ele voltar a apontar 9001.
+entre 5000 e 9015 fora de 5001+ e reprova este parágrafo se ele voltar a apontar 9001.
 
 Para saber o próximo número livre do fork (vazio quer dizer 5001):
 

@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 /**
  * Filtro "por atendente" do Inbox (gerente para cima). Mora num componente
@@ -58,7 +59,7 @@ function SeletorComEquipe({
         )}
         {membros.map((m) => (
           <SelectItem key={m.user_id} value={m.user_id}>
-            {m.full_name ?? t("Sem nome")}
+            {rotuloDoMembro(m, t)}
           </SelectItem>
         ))}
       </SelectContent>

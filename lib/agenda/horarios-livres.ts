@@ -59,6 +59,7 @@
 import type { ScheduleWindow } from "@/lib/schemas/routing";
 
 import { diaDaSemanaLocal, diaLocalISO, instanteDe, type HoraDeParede } from "./fuso";
+import { duracaoEscolhidaValida } from "./duracao-escolhida";
 
 /**
  * A jornada semanal da pessoa — lida de `attendant_availability.schedule`, que
@@ -124,6 +125,25 @@ export interface EntradaDeHorariosLivres {
   excecoes: ExcecaoDeData[];
   ocupados: Ocupado[];
   tipo: TipoDeAgendamento;
+  /**
+   * A duração ESCOLHIDA para ESTE atendimento, em minutos — ausente, vale a do
+   * tipo (issue #3709).
+   *
+   * ⚠️ ELA MUDA O QUE O SLOT EXIGE LIVRE, e é o ponto inteiro desta entrada.
+   * Oferecer 09:00 para um atendimento de 90 minutos sobre uma consulta de
+   * 30 minutos das 09:30 é vender horário que não existe: o motor checava a
+   * colisão só do tamanho do molde, e a marcação acontecia encavalada. Aqui o
+   * slot nasce com o comprimento pedido, então `fim` — e a colisão inflada pelo
+   * buffer — crescem junto, e o que não cabe simplesmente não é oferecido.
+   *
+   * ⚠️ O PASSO DA GRADE NÃO MUDA COM ELA. Ele continua sendo
+   * `tipo.intervaloMin ?? tipo.duracaoMin`, a granularidade PUBLICADA: escolher
+   * 90 minutos não pode mover as âncoras de 09:00/10:00/11:00 para
+   * 09:00/10:30/12:00, senão o dono da agenda perde a régua que ele mesmo
+   * configurou. O que muda é quanto cada âncora exige livre — o que decide se
+   * ela continua na lista.
+   */
+  duracaoMin?: number | null;
   de: Date;
   ate: Date;
   /** INJETADO. Nunca `new Date()` aqui dentro. */
@@ -302,7 +322,12 @@ export function horariosLivres(entrada: EntradaDeHorariosLivres): Slot[] {
   const { jornada, excecoes, ocupados, tipo, de, ate, agora } = entrada;
   const fuso = jornada.timezone;
   const passo = tipo.intervaloMin ?? tipo.duracaoMin;
-  if (passo <= 0 || tipo.duracaoMin <= 0) return [];
+  // A duração do SLOT: a escolhida na marcação quando ela é sensata, senão a do
+  // molde. O `??` sozinho deixaria passar `0` (falsy mas não nulo) e `NaN` vindos
+  // de um chamador descuidado; um slot de duração zero colidiria com nada e
+  // ofereceria o dia inteiro. Ver `lib/agenda/duracao-escolhida.ts` para a faixa.
+  const duracao = duracaoEscolhidaValida(entrada.duracaoMin) ? entrada.duracaoMin : tipo.duracaoMin;
+  if (passo <= 0 || duracao <= 0) return [];
 
   // Os dois cortes do tempo, resolvidos uma vez: o começo é o mais tarde entre
   // o que se pediu e o aviso mínimo; o fim, o mais cedo entre o que se pediu e
@@ -383,7 +408,7 @@ export function horariosLivres(entrada: EntradaDeHorariosLivres): Slot[] {
 
       for (let minuto = faixa.inicio; ; minuto += passo) {
         const inicio = instanteDe(paredeDeMinutos(ano, mes, dia, minuto), fuso).getTime();
-        const fim = inicio + tipo.duracaoMin * MINUTO;
+        const fim = inicio + duracao * MINUTO;
 
         // O slot inteiro precisa caber na faixa publicada. Comparação em
         // INSTANTES, não em minutos de parede: numa virada de horário de verão

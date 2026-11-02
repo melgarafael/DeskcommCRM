@@ -25,7 +25,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 export const dynamic = "force-dynamic";
 
 const VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin,inbound_debounce_ms, max_sends_per_turn, handoff_target_user_id";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, split_messages, split_max_chars, followup, voz_enabled, voz_quando, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin,inbound_debounce_ms, max_sends_per_turn, handoff_target_user_id";
 
 const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -188,6 +188,8 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
         max_sends_per_turn: v.max_sends_per_turn,
         handoff_target_user_id: v.handoff_target_user_id,
         followup: v.followup,
+        voz_enabled: v.voz_enabled,
+        voz_quando: v.voz_quando,
         // Mesmo descarte silencioso da rota de criação de agente: o corpo aceita
         // e o INSERT ignorava. Criar uma versão nova pela API com escopo ou
         // acervo produzia uma versão vazia, com 201.

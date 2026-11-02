@@ -114,6 +114,29 @@ describe("recaptura de jornadas com manifesto anterior", () => {
     expect(readFileSync(path.join(f.saida, "index.html"), "utf8")).toBe("índice anterior");
   });
 
+  it("a montagem recusa chave bruta pendente com foto anterior e preserva o recorte não afetado", () => {
+    const f = fixture();
+    const chave = "agenda--conhecendo-a-agenda--p1";
+    expect(f.manifesto.capturas[chave]).toBeDefined();
+    const foto = path.join(f.saida, f.manifesto.capturas[chave]!.foto);
+    const fotoAnterior = readFileSync(foto);
+    expect(f.cli("montar.ts", "agenda").status).toBe(0);
+    const indiceAnterior = readFileSync(path.join(f.saida, "index.html"));
+    f.manifesto.falhas = [chave]; f.salvar(f.manifesto);
+    const montagem = f.cli("montar.ts", "agenda");
+    expect(montagem.status).toBe(1);
+    expect(montagem.stderr).toMatch(/capturas com falha nos módulos selecionados: agenda/);
+    expect(readFileSync(foto)).toEqual(fotoAnterior);
+    expect(readFileSync(path.join(f.saida, "index.html"))).toEqual(indiceAnterior);
+    const outroRecorte = f.cli("montar.ts", "inbox");
+    expect(outroRecorte.status).toBe(0);
+    const html = readFileSync(path.join(f.saida, "index.html"), "utf8");
+    const dados = JSON.parse(html.match(/<script[^>]+id="dados"[^>]*>(.*?)<\/script>/s)![1]!);
+    expect(dados.modulos.map((m: { id: string }) => m.id)).toEqual(["inbox"]);
+    expect(dados.capturas).not.toHaveProperty(chave);
+    expect(lerManifesto(f.arquivo).falhas).toEqual([chave]);
+  });
+
   it("só libera a cena concluída; a falha seguinte bloqueia a montagem até a recaptura terminar", async () => {
     const f = fixture();
     f.manifesto.falhas = [foraDoRecorte]; f.salvar(f.manifesto);

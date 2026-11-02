@@ -88,6 +88,17 @@ export interface LeadRow {
    */
   last_activity_at?: string | null;
   updated_at?: string | null;
+  /**
+   * As colunas que o PREENCHIMENTO de modelo de mensagem lê (#3605):
+   * `custom_fields` é de onde sai o valor de `{{campo}}`, e `pipeline_id` é o
+   * que diz QUAL lista traduz o código gravado em rótulo. `title`/valor/moeda
+   * entram junto porque é o mesmo `select` do negócio. Opcionais: a maioria dos
+   * testes do quadro não fala de mensagem.
+   */
+  title?: string;
+  value_cents?: number;
+  currency?: string;
+  custom_fields?: Record<string, unknown> | null;
 }
 
 export function negocio(id: string, stageId: string, over: Partial<LeadRow> = {}): LeadRow {

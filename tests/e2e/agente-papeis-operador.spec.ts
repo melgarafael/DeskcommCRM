@@ -20,6 +20,7 @@
  * e recusa subir sem ele — antes disso, esta suíte escrevia em produção.
  */
 import { execFileSync } from "node:child_process";
+import { mkdirSync } from "node:fs";
 
 import { test, expect, type Browser, type Page } from "./helpers/test";
 
@@ -183,6 +184,18 @@ test.describe("A aba do papel que organiza o sistema", () => {
       CARTOES_DECLARADOS,
     );
     expect(soltos, "interruptor no painel de segurança sem categoria declarada").toEqual([]);
+
+    const registro = painel.getByTestId("item-conferencia-registro_sem_efeito");
+    await expect(registro).toBeVisible();
+    await expect(registro.getByText("Conferir a escrita antes de afirmar registro", { exact: true })).toBeVisible();
+    await expect(registro).toContainText("nenhuma escrita neste turno");
+    const fixa = registro.getByTestId("conferencia-registro_sem_efeito-fixa");
+    await expect(fixa).toBeVisible();
+    await expect(fixa).toContainText("Isto não se desliga.");
+    await expect(fixa).toContainText("Regra fixa, sem custo.");
+    await expect(registro.getByRole("switch")).toHaveCount(0);
+    mkdirSync("evidence/registro-no-envio", { recursive: true });
+    await registro.screenshot({ path: "evidence/registro-no-envio/linha-fixa.png" });
   });
 
   test("desligado, a tela diz o que CONTINUA acontecendo — não só o que para", async () => {

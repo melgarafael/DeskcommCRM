@@ -142,11 +142,15 @@ test.describe("Lote 12 — #936 a troca de funil", () => {
     await cardNovo.click();
     const dossie = page.getByRole("dialog");
     await expect(dossie).toBeVisible({ timeout: 30_000 });
-    await page.waitForLoadState("networkidle").catch(() => {});
+    // A linha do tempo carrega DEPOIS do diálogo abrir ("Carregando a linha do
+    // tempo…"), e `networkidle` não espera por ela: uma leitura única de
+    // `innerText` corria contra a busca. Espera-se o ESTADO, e só então lê.
+    await expect(dossie, "o clone precisa dizer de onde veio").toContainText("Veio", {
+      timeout: 30_000,
+    });
+    await expect(dossie).toContainText(`Troca Origem ${S}`);
     const textoClone = await dossie.innerText();
     registra(`#936 · dossiê do CLONE = ${JSON.stringify(textoClone.slice(0, 900))}`);
-    expect(textoClone, "o clone precisa dizer de onde veio").toContain("Veio");
-    expect(textoClone).toContain(`Troca Origem ${S}`);
 
     // Os campos personalizados aparecem na tela do DESTINO — e eles moram em
     // <input>, cujo valor `innerText` não enxerga. A régua é `inputValue()`.
@@ -187,8 +191,11 @@ test.describe("Lote 12 — #936 a troca de funil", () => {
     const cardVelho = page.getByRole("group", { name: `Lead: Negócio ${S}` }).first();
     if (await cardVelho.count()) {
       await cardVelho.click();
-      await page.waitForLoadState("networkidle").catch(() => {});
-      const textoOrigem = await page.getByRole("dialog").innerText().catch(() => "");
+      // Mesma corrida do clone: espera a linha do tempo da origem contar para
+      // onde o negócio foi, e só então lê o texto para o registro.
+      const dossieOrigem = page.getByRole("dialog");
+      await expect(dossieOrigem).toContainText(`Troca Destino ${S}`, { timeout: 30_000 });
+      const textoOrigem = await dossieOrigem.innerText();
       registra(`#936 · dossiê da ORIGEM = ${JSON.stringify(textoOrigem.slice(0, 900))}`);
     }
     await captura(page, "936-04-linha-do-tempo-da-origem");

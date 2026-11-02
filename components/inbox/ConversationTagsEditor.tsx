@@ -17,7 +17,7 @@ import {
   useConversationTagVocabulary,
 } from "@/hooks/inbox/useConversationTags";
 import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
-import { sugestoesDeEtiqueta } from "@/lib/contacts/etiquetas";
+import { sugestoesDeEtiqueta, etiquetaParaGravar, opcaoDeCriar } from "@/lib/contacts/etiquetas";
 
 interface Props {
   conversationId: string;
@@ -51,6 +51,15 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
   const podeDefinirCor =
     !!activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
 
+  /**
+   * O vocabulário que este editor conhece: o da organização (as MAIS usadas
+   * primeiro, ordem que a rota entrega) e, com texto digitado, o que a busca no
+   * vocabulário inteiro achou — sem repetir, e DEPOIS das em uso (#2855, #3180).
+   */
+  const conhecidas = [
+    ...new Set([...(vocabulary ?? []), ...(draft.trim() ? (encontradas ?? []) : [])]),
+  ];
+
   // Normalização espelha o Zod do PATCH (trim+lowercase); dedup no set.
   function apply(next: string[]) {
     mutation.mutate({ conversation_id: conversationId, tags: next });
@@ -58,8 +67,13 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
 
   /** Grava a etiqueta com o tom escolhido. Devolve a tag gravada, ou `null` se recusada (duplicada/cheia). */
   function criar(raw: string, escolhida: string | null): string | null {
-    const tag = raw.trim().toLowerCase().slice(0, 40);
-    if (!tag || tags.includes(tag) || tags.length >= 20) return null;
+    // #3180 — o que se digita NÃO vira variante de uma etiqueta que já existe:
+    // quando o texto casa pela chave larga (sem caixa, sem acento), é a grafia
+    // EXISTENTE que se grava. É o mesmo caminho da ficha do contato
+    // (`etiquetaParaGravar`), e é ele que faz o Enter aplicar a etiqueta em vez
+    // de criar mais uma.
+    const tag = etiquetaParaGravar({ conhecidas, selecionadas: tags, digitado: raw });
+    if (!tag || tags.length >= 20) return null;
     apply([...tags, tag]);
     // A cor é VOCABULÁRIO, não da linha (#2718): chamada independente do
     // attach — a SQL faz append do verbete, e falhar aqui não desfaz a tag.
@@ -85,12 +99,14 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
   // (`GET /api/v1/conversation-tags`) entrega as mais usadas primeiro
   // (`uso_em_conversas`), não as oito primeiras do alfabeto.
   const suggestions = sugestoesDeEtiqueta({
-    // #2855 — o que a busca no vocabulário inteiro achou entra DEPOIS das mais
-    // usadas, sem repetir: a ordem por uso do #3180 segue valendo.
-    conhecidas: [...new Set([...(vocabulary ?? []), ...(draft.trim() ? (encontradas ?? []) : [])])],
+    conhecidas,
     selecionadas: tags,
     digitado: draft,
   });
+
+  // #3180 (critério 3) — a etiqueta NOVA, a ÚLTIMA opção da lista e só quando
+  // o texto não casa com nenhuma existente: `null` = não há o que criar.
+  const nova = opcaoDeCriar({ conhecidas, selecionadas: tags, digitado: draft });
 
   return (
     <section>
@@ -163,7 +179,7 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
       </div>
 
       {vocabularyError && <p role="alert" className="text-xs text-destructive">{t("Não foi possível carregar as tags.")}</p>}
-      {suggestions.length > 0 && (
+      {(suggestions.length > 0 || nova !== null) && (
         <div className="mt-2 flex flex-wrap gap-1">
           {suggestions.map((tag) => (
             <button
@@ -183,6 +199,20 @@ export function ConversationTagsEditor({ conversationId, orgId, tags }: Props) {
               + {tag}
             </button>
           ))}
+          {/* #3180 (critério 3) — CRIAR fica por ÚLTIMO e só quando o texto não
+              casa com nenhuma etiqueta existente: assim a lista diz, sem
+              ambiguidade, o que já existe e o que nasceria. Clicar (ou o Enter
+              no campo, que passa pelo mesmo caminho) grava. */}
+          {nova !== null && (
+            <button
+              type="button"
+              onClick={() => add(draft)}
+              disabled={mutation.isPending || tags.length >= 20}
+              className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[10px] text-muted-foreground hover:border-solid hover:text-foreground disabled:opacity-50"
+            >
+              {t("Criar")} «{nova}»
+            </button>
+          )}
         </div>
       )}
 

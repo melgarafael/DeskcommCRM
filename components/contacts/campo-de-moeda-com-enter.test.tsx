@@ -34,6 +34,13 @@ vi.mock("@/hooks/contacts/useUpdateContact", () => ({
 vi.mock("@/hooks/tags/useDefinirCorDaEtiqueta", () => ({
   useDefinirCorDaEtiqueta: () => ({ definirCor: vi.fn() }),
 }));
+// A leitura de sugestões de etiqueta é react-query e acontece dentro do diálogo
+// desde a #3144 (a ficha pergunta ao vocabulário curado o que o texto casaria).
+// Dublada como a da cor: este fixture não monta provider, e o assunto aqui é o
+// valor de moeda entregue ao salvar.
+vi.mock("@/hooks/contacts/useContactTagVocabulary", () => ({
+  useContactTagVocabulary: () => ({ data: [], isError: false }),
+}));
 // Etiquetas gravam por outro caminho. O editor de campos e os três formulários
 // ficam reais: é o valor entregue por eles ao salvar que a issue #3428 descreve.
 vi.mock("@/components/inbox/ContactTagsEditor", () => ({ ContactTagsEditor: () => null }));

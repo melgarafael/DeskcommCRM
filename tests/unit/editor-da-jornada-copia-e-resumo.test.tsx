@@ -26,7 +26,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 
-import { ScheduleDialog } from "@/app/app/team/_components/AttendantsClient";
+import { ScheduleDialog, fusoNoResumo } from "@/app/app/team/_components/AttendantsClient";
 import type { AttendantAvailability } from "@/hooks/team/useAttendants";
 import type { ScheduleWindow } from "@/lib/schemas/routing";
 
@@ -45,6 +45,7 @@ function disponibilidade(windows: ScheduleWindow[]): AttendantAvailability {
     current_load: 0,
     last_heartbeat_at: null,
     present: false,
+    sector_id: null,
   };
 }
 
@@ -53,7 +54,7 @@ type Salvador = (windows: ScheduleWindow[], timezone: string) => Promise<Schedul
 function abrir(windows: ScheduleWindow[], onSave: Salvador) {
   return render(
     <ScheduleDialog
-      attendant={{ userId: "11111111-1111-4111-8111-111111111111", name: "Ana", email: null, availability: disponibilidade(windows) }}
+      attendant={{ userId: "11111111-1111-4111-8111-111111111111", name: "Ana", email: null, sectorId: null, availability: disponibilidade(windows) }}
       open
       onOpenChange={vi.fn()}
       onSave={onSave}
@@ -112,7 +113,7 @@ describe("resumo do que foi publicado", () => {
 
     render(
       <ScheduleDialog
-        attendant={{ userId: "11111111-1111-4111-8111-111111111111", name: "Ana", email: null, availability: disponibilidade([{ dow: 1, start: "08:00", end: "11:30" }, { dow: 1, start: "20:00", end: "22:00" }]) }}
+        attendant={{ userId: "11111111-1111-4111-8111-111111111111", name: "Ana", email: null, sectorId: null, availability: disponibilidade([{ dow: 1, start: "08:00", end: "11:30" }, { dow: 1, start: "20:00", end: "22:00" }]) }}
         open
         onOpenChange={onOpenChange}
         onSave={onSave}
@@ -210,5 +211,19 @@ describe("a linha da janela no celular (ADR-0006, F4)", () => {
     for (const rotulo of ["Início", "Fim"]) {
       expect(within(linha).getByLabelText(rotulo)).toHaveClass("min-w-0", "max-md:px-2");
     }
+  });
+});
+
+describe("fuso no resumo da coluna Horário", () => {
+  const janela = [{ dow: 1, start: "08:00", end: "18:00" }];
+
+  it("aparece quando o fuso da pessoa difere do da organização", () => {
+    expect(fusoNoResumo(janela, "America/Manaus", "America/Sao_Paulo")).toBe(" (America/Manaus)");
+  });
+
+  it("some quando é o mesmo fuso, quando não há jornada ou quando o fuso não foi gravado", () => {
+    expect(fusoNoResumo(janela, "America/Sao_Paulo", "America/Sao_Paulo")).toBe("");
+    expect(fusoNoResumo([], "America/Manaus", "America/Sao_Paulo")).toBe("");
+    expect(fusoNoResumo(janela, undefined, "America/Sao_Paulo")).toBe("");
   });
 });
