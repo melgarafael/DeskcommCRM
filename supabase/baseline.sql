@@ -35571,7 +35571,13 @@ comment on column public.contacts.social_identity is
 -- primeira conexão de rede social.
 alter table public.conversations drop constraint if exists conversations_channel_check;
 alter table public.conversations add constraint conversations_channel_check
-  check (channel in ('whatsapp', 'instagram', 'facebook'));
+  check (channel in ('whatsapp', 'instagram', 'facebook', 'googlebusiness'));
+-- 'googlebusiness' (migration 9032, issue #3510) entra NESTE bloco, e não num
+-- bloco novo: a avaliação do Google vira conversa na Central, e a doutrina é
+-- "uma constraint, um bloco" (`tests/unit/baseline-constraint-reconstruida.test.ts`).
+-- Sem esta linha o primeiro INSERT de avaliação bate 23514 em toda instalação
+-- que já rodou o `update.sh` — o dump traz a lista de três valores e a última
+-- definição é a que vale.
 
 
 -- APÊNDICE 20260921030100_0369_prospeccao_nativa.sql
