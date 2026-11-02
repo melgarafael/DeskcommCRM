@@ -378,6 +378,18 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "conferido no catálogo; FK composta recusa resposta apontando para grupo de outra " +
       "organização e on delete set null (grupo_id) devolve a resposta à lista plana sem apagá-la.",
   },
+  {
+    tabela: "avisos",
+    razao:
+      "tests/invariants/aviso-do-admin-e-server-side.test.ts — privilégio NENHUM " +
+      "para anon e authenticated (catálogo + `permission denied` medido sob `set " +
+      "role` nos três verbos de escrita), RLS ligada, nenhuma policy alcançável " +
+      "por anon/authenticated, `organization_id` NOT NULL com FK em cascata e " +
+      "`autor_id` em `set null`. Deny-all em vez de policy de tenant porque o " +
+      "aviso é conteúdo escrito em nome do cliente e só o servidor (a rota " +
+      "`app/api/v1/admin/avisos`, com admin client) lê e grava. Migration 9050, " +
+      "issue #1418.",
+  },
 ];
 
 /**
