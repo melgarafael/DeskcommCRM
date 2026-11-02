@@ -40,6 +40,8 @@ const CHAMADORES: Record<string, string> = {
   "lib/mcp/tools/start-conversation.ts": "ferramenta MCP: o erro sobe ao cliente; o token da org parada já é recusado antes",
   "lib/inbox/encaminhar-mensagem.ts":
     "propaga o 403 org_suspended ao chamador da rota `forward`; nada é gravado — a linha do destino só nasce se o envio aceitar",
+  "lib/ouvidoria/whatsapp.ts":
+    "envio best-effort do fluxo: o 403 org_suspended (e qualquer falha de envio) vira log e o fluxo segue — sem fila, sem retentativa e sem desfecho gravado; a manifestação só nasce na confirmação",
 };
 
 const PORTA = "app/api/v1/messages/_handler.ts";
