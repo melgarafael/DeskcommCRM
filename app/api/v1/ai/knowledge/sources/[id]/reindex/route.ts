@@ -16,6 +16,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
+import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -114,6 +115,17 @@ export async function POST(
   if (emitErr) {
     console.warn("[ai-knowledge-reindex] emit_event failed (non-blocking):", emitErr.message);
   }
+
+  // Reindexar não muda o conteúdo, mas muda quando o agente passa a saber dele.
+  void audit({
+    action: "ai.knowledge_source_reindexed",
+    actorUserId: authz.user.id,
+    organizationId: activeOrg.orgId,
+    resourceType: "ai_knowledge_source",
+    resourceId: id,
+    requestId,
+    metadata: { source_type: ksRow.source_type },
+  });
 
   return ok({ id, queued: true as const, agent_id: ksRow.agent_id }, { requestId });
 }

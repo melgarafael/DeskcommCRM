@@ -58,6 +58,12 @@ import { acelerarFollowupDoInbound, drenarEventosDoInbound } from "@/lib/dev/kic
 import { origemDoNegocioPeloCanal } from "@/lib/channels/origem-do-negocio";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { casarCampanha, lerCampanhas } from "@/lib/ai/elegibilidade/campanha";
+import { lerPessoalDoContato } from "@/lib/contacts/contato-pessoal";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { EventRow } from "@/lib/event-log/dispatcher";
+import { applyReactivityEvent, createSupabaseReactivityClient } from "@/lib/followup/reactivity";
+import { aplicarRespostaNaCampanha } from "@/lib/campanhas/resposta";
+import { marcarConversaComMensagem } from "@/lib/channels/marcar-conversa";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -188,6 +194,160 @@ export async function aplicarEfeitosPosEntrada(
 }
 
 /**
+ * A mensagem recuperada de uma queda (Spec 32 §3): a entrada de `EntradaDeMensagem`
+ * com o que o efeito de "o cliente respondeu" precisa de mais. A hora é a REAL da
+ * mensagem, nunca `now()`: a recuperação chega dias depois, e a campanha e a reatividade
+ * comparam essa hora com a janela e com o último turno do follow-up.
+ */
+export type EntradaDaRecuperacao = EntradaDeMensagem & {
+  /** ISO da hora em que o cliente mandou a mensagem (vinda do acervo). */
+  enviadaEm: string;
+  /** A prévia que a conversa mostra na caixa (mesma regra do ao vivo). */
+  previa: string;
+};
+
+/**
+ * Só os efeitos de "o cliente respondeu" da mensagem recuperada (Spec 32 §3).
+ *
+ * NUNCA chama despacho do agente, demanda nova, guarda de origem de página nem
+ * drenagem de eventos: a mensagem é do passado, e acordar a IA ou abrir card por
+ * ela responderia a alguém que já foi atendido. Também não emite `message.received`:
+ * o efeito de follow-up roda com uma linha EM MEMÓRIA, que não entra no `event_log`.
+ *
+ * Guardas da ingestão, na mesma ordem: número interno de avisos e canal pausado
+ * não recebem nada; o pedido de PARE vale mesmo para contato pessoal (é regra de
+ * LGPD, a mesma da ingestão), e o restante é que é pulado para contato pessoal.
+ *
+ * Cada efeito falha para dentro, com log: um que falha não impede os outros nem
+ * para a rodada.
+ */
+export async function aplicarEfeitosDaRecuperacao(
+  admin: Admin,
+  entrada: EntradaDaRecuperacao,
+): Promise<void> {
+  try {
+    if (await ehContatoDoNumeroInterno(admin as unknown as SupabaseClient, entrada.organizationId, entrada.contactId)) {
+      return;
+    }
+    const desativados = await idsDosCanaisDesativados(admin as unknown as SupabaseClient, entrada.organizationId);
+    if (desativados.includes(entrada.channelSessionId)) {
+      logger.info("pos-entrada: recuperação pulada — canal desativado", {
+        organization_id: entrada.organizationId,
+        origem: entrada.origem,
+      });
+      return;
+    }
+
+    await passoDaRecuperacao("opt-out", () => aplicarOptOut(admin, entrada), entrada);
+    if (await ehContatoPessoal(admin, entrada)) {
+      logger.info("pos-entrada: recuperação pulada — contato pessoal", {
+        organization_id: entrada.organizationId,
+        origem: entrada.origem,
+      });
+      return;
+    }
+    await passoDaRecuperacao("campanha", () => avaliarCampanha(admin, entrada), entrada);
+
+    // Só a reatividade e o texto dos follow-ups: a mesma linha que o handler do
+    // event_log recebe, montada aqui e nunca gravada.
+    await passoDaRecuperacao(
+      "follow-up",
+      async () => {
+        const evento: EventRow = {
+          id: entrada.requestId ?? `recuperacao:${entrada.conversationId}:${entrada.enviadaEm}`,
+          organization_id: entrada.organizationId,
+          event_type: "message.received",
+          entity_kind: "message",
+          entity_id: null,
+          payload: {
+            message_id: null,
+            conversation_id: entrada.conversationId,
+            contact_id: entrada.contactId,
+            direction: "inbound",
+            channel_session_id: entrada.channelSessionId,
+            body_preview: entrada.texto ? entrada.texto.slice(0, 280) : null,
+            sent_at: entrada.enviadaEm,
+          },
+          metadata: { source: entrada.origem },
+          consumed_by: [],
+          attempts: 0,
+          created_at: entrada.enviadaEm,
+        };
+        // A mensagem é de antes da volta: ela pode PARAR o fluxo que pede cancelamento na resposta,
+        // mas nunca acordar a espera nem aplicar o texto como resposta (isso manda o próximo passo
+        // agora, a quem pode já ter sido atendido pelo celular).
+        await applyReactivityEvent(
+          createSupabaseReactivityClient(admin as unknown as SupabaseClient),
+          () => new Date(),
+          evento,
+          { semAcordar: true },
+        );
+      },
+      entrada,
+    );
+    await passoDaRecuperacao(
+      "resposta-de-campanha",
+      () =>
+        aplicarRespostaNaCampanha(admin as unknown as SupabaseClient, {
+          organizationId: entrada.organizationId,
+          contactId: entrada.contactId,
+          recebidoEm: new Date(entrada.enviadaEm),
+        }),
+      entrada,
+    );
+    await passoDaRecuperacao(
+      "conversa",
+      async () => {
+        // O carimbo da conversa só anda para a FRENTE: o que chegou ao vivo depois da volta já
+        // marcou uma hora mais nova, e a RPC grava o que recebe, sem `greatest`. Sem esta
+        // leitura a conversa voltava para a hora da mensagem velha, e a prévia mostrava o texto
+        // antigo no lugar do mais recente.
+        const { data } = await admin
+          .from("conversations")
+          .select("last_message_at")
+          .eq("organization_id", entrada.organizationId)
+          .eq("id", entrada.conversationId)
+          .maybeSingle();
+        const ultima = (data as { last_message_at?: string | null } | null)?.last_message_at;
+        if (ultima && Date.parse(ultima) >= Date.parse(entrada.enviadaEm)) return;
+        await marcarConversaComMensagem(admin as unknown as SupabaseClient, {
+          organizationId: entrada.organizationId,
+          conversationId: entrada.conversationId,
+          direction: "inbound",
+          preview: entrada.previa,
+          at: entrada.enviadaEm,
+          canal: "waha",
+        });
+      },
+      entrada,
+    );
+  } catch (err) {
+    logger.warn("pos-entrada: efeitos da recuperação falharam (a mensagem já está gravada)", {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
+  }
+}
+
+/** Um efeito da recuperação: se falhar, registra e deixa os outros rodarem. */
+async function passoDaRecuperacao(
+  nome: string,
+  efeito: () => Promise<unknown>,
+  entrada: EntradaDeMensagem,
+): Promise<void> {
+  try {
+    await efeito();
+  } catch (err) {
+    logger.warn(`pos-entrada: efeito da recuperação falhou (${nome}); os demais seguem`, {
+      organization_id: entrada.organizationId,
+      conversation_id: entrada.conversationId,
+      detail: err instanceof Error ? err.message.slice(0, 160) : "desconhecido",
+    });
+  }
+}
+
+/**
  * 2b · A mensagem casa uma campanha registrada? (caso 2 da elegibilidade)
  *
  * Campanhas de Meta/Google que levam direto para o WhatsApp: o lead chega com
@@ -258,16 +418,27 @@ async function avaliarCampanha(admin: Admin, entrada: EntradaDeMensagem): Promis
  * recusa em `garantirLeadDaConversa`, `contato_pessoal`) continua valendo para
  * o negócio. Uma exceção aqui viraria 500 para o provider e tempestade de
  * reentregas.
+ *
+ * A CONSULTA não mora aqui: ela é `lib/contacts/contato-pessoal.ts`, a régua
+ * única da marca. Este arquivo só decide a POLÍTICA da dúvida (seguir), porque
+ * essa decisão é da entrada de mensagem — a derivação de mídia usa a mesma
+ * régua e decide o contrário (#3592: sem saber de quem é o arquivo, não gasta
+ * token).
  */
 async function ehContatoPessoal(admin: Admin, entrada: EntradaDeMensagem): Promise<boolean> {
   try {
-    const { data } = await admin
-      .from("contacts")
-      .select("is_personal")
-      .eq("organization_id", entrada.organizationId)
-      .eq("id", entrada.contactId)
-      .maybeSingle();
-    return (data as { is_personal?: boolean } | null)?.is_personal === true;
+    const { pessoal, erro } = await lerPessoalDoContato(admin, {
+      organizationId: entrada.organizationId,
+      contactId: entrada.contactId,
+    });
+    if (erro) {
+      logger.warn("pos-entrada: leitura de is_personal falhou (os efeitos seguem)", {
+        organization_id: entrada.organizationId,
+        contact_id: entrada.contactId,
+        detail: erro,
+      });
+    }
+    return pessoal;
   } catch (err) {
     logger.warn("pos-entrada: leitura de is_personal falhou (os efeitos seguem)", {
       organization_id: entrada.organizationId,
@@ -538,11 +709,14 @@ async function encerrarDemandasAbertasDeQuemPediuParar(
  * bloqueado — por isso o passo 1 vem antes.
  */
 async function abrirDemanda(admin: Admin, entrada: EntradaDeMensagem): Promise<void> {
+  // Sem ID retornado pelo INSERT, ainda tentamos abrir a demanda pelo caminho
+  // legado. A prova CTWA exige um ID persistido e não nasce desta alternativa.
   try {
     const nascimento = await garantirLeadDaConversa(admin, {
       organizationId: entrada.organizationId,
       contactId: entrada.contactId,
       conversationId: entrada.conversationId,
+      messageId: entrada.messageId,
       nomeDoContato: entrada.nomeDoContato,
       origem: origemDoNegocioPeloCanal(entrada.canal),
     });

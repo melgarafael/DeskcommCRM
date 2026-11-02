@@ -217,8 +217,10 @@ test.describe("kit visual da Agenda", () => {
     // duas vezes na página, e um localizador global resolve para 2 elementos —
     // o modo estrito do Playwright reprova. Custou um run inteiro descobrir.
     //
-    // Escolhe um dia que TEM horário (a fixture garante).
-    await painel.getByTestId("dia-2026-08-24").click();
+    // Escolhe um dia que TEM horário E que vem DEPOIS do agora da vitrine
+    // (quarta 26/08 14h37): horário anterior ao agora não é agendável (#3774),
+    // então 24 e 25/08, que a fixture ainda publica, aparecem desabilitados.
+    await painel.getByTestId("dia-2026-08-28").click();
 
     await expect(painel).toHaveAttribute("data-tempo", "escolhendo-horario", { timeout: ESPERA });
     await expect(coluna).toHaveAttribute("data-aberta", "true");
@@ -250,7 +252,7 @@ test.describe("kit visual da Agenda", () => {
     const painel = page.getByTestId("secao-sem-lembrete").getByTestId("painel-de-marcacao");
     await painel.scrollIntoViewIfNeeded();
 
-    await painel.getByTestId("dia-2026-08-24").click();
+    await painel.getByTestId("dia-2026-08-28").click();
     await painel.getByTestId("horario-10:00").click();
     await expect(painel).toHaveAttribute("data-tempo", "confirmando", { timeout: ESPERA });
 
@@ -279,7 +281,7 @@ test.describe("kit visual da Agenda", () => {
     // nos dois — e um aviso que aparece sempre não informa nada.
     const painel = page.getByTestId("secao-marcacao").getByTestId("painel-de-marcacao");
     await painel.scrollIntoViewIfNeeded();
-    await painel.getByTestId("dia-2026-08-24").click();
+    await painel.getByTestId("dia-2026-08-28").click();
     await painel.getByTestId("horario-10:00").click();
     await expect(painel).toHaveAttribute("data-tempo", "confirmando", { timeout: ESPERA });
     await expect(painel.getByTestId("aviso-sem-lembrete")).toHaveCount(0);
@@ -687,7 +689,7 @@ test.describe("kit visual da Agenda", () => {
     // horários) ainda não existe. Sem esta foto, a evidência mostraria tudo
     // menos aquilo que se foi construir.
     const painelDaFoto = page.getByTestId("secao-marcacao").getByTestId("painel-de-marcacao");
-    await painelDaFoto.getByTestId("dia-2026-08-25").click();
+    await painelDaFoto.getByTestId("dia-2026-08-28").click();
     await expect(painelDaFoto.getByTestId("coluna-de-horarios")).toHaveAttribute(
       "data-aberta",
       "true",

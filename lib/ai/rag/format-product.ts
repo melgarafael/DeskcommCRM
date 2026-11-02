@@ -10,25 +10,43 @@ export interface NuvemshopProductVariant {
   sku?: string;
 }
 
+/**
+ * A API de produtos da Nuvemshop devolve os textos por idioma da loja
+ * (`{ "pt": "...", "es": "..." }`) — o nome E a descrição. A descrição era
+ * tipada como texto puro e ia direto para `stripHtml`, que quebrava com
+ * `html.replace is not a function` em todo produto: a fonte "Catálogo de
+ * produtos" ficava com zero trechos e o agente nunca enxergava a loja.
+ */
+type TextoPorIdioma = string | Partial<Record<string, string | null>>;
+
 export interface NuvemshopProduct {
   id: string;
-  name: { pt: string } | string;
-  description?: string;
+  name: TextoPorIdioma;
+  description?: TextoPorIdioma | null;
   price?: string;
   sku?: string;
   permalink?: string;
   variants?: NuvemshopProductVariant[];
-  categories?: Array<{ name: { pt: string } | string }>;
+  categories?: Array<{ name: TextoPorIdioma }>;
 }
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, " ").replace(/\s{2,}/g, " ").trim();
 }
 
-function resolveName(name: { pt: string } | string | undefined): string {
-  if (!name) return "";
-  if (typeof name === "string") return name;
-  return name.pt ?? "";
+/**
+ * Português primeiro; loja só em espanhol ou inglês cai no primeiro idioma
+ * preenchido, em vez de sair vazia.
+ */
+function resolveName(texto: TextoPorIdioma | null | undefined): string {
+  if (!texto) return "";
+  if (typeof texto === "string") return texto;
+  const pt = texto.pt;
+  if (typeof pt === "string" && pt.trim()) return pt;
+  for (const valor of Object.values(texto)) {
+    if (typeof valor === "string" && valor.trim()) return valor;
+  }
+  return "";
 }
 
 /**
@@ -36,7 +54,7 @@ function resolveName(name: { pt: string } | string | undefined): string {
  */
 export function formatProductForRag(product: NuvemshopProduct): string {
   const name = resolveName(product.name);
-  const description = product.description ? stripHtml(product.description) : "";
+  const description = stripHtml(resolveName(product.description));
   const price = product.price ? `R$ ${product.price}` : "N/A";
   const sku = product.sku ?? "N/A";
   const permalink = product.permalink ?? "";

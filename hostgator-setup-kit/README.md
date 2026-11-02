@@ -169,6 +169,13 @@ entrega WhatsApp ou restauração de dados: essas jornadas exigem teste real.
 > com mensagem própria** — nada é alterado e o `psql` nem é chamado. Ou seja: hoje ele **não**
 > volta o backup por cima da instalação que está em uso (isso está em aberto na issue #2120).
 >
+> Antes de restaurar, o kit verifica a integridade do `.sql.gz` e dos snapshots `.tgz`
+> presentes que usará (WhatsApp e, no single-server, Storage). Se algum estiver corrompido
+> ou cortado, para antes de alterar banco ou volumes. Essa conferência não garante que a
+> escrita vá funcionar: se a extração falhar depois, o comando sai com erro e informa que
+> o banco já foi restaurado. Confira o destino antes de reiniciar; repetir o script não
+> restaura por cima do banco populado. Snapshots ausentes continuam opcionais.
+>
 > O caminho que funciona hoje é restaurar num **projeto Supabase novo, em que o instalador
 > ainda não rodou** (o instalador cria as tabelas, e aí o restore recusa), e depois apontar a
 > instalação para esse projeto — trocando no `.env` a conexão e as chaves do Supabase pelas do

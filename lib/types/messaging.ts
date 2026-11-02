@@ -167,16 +167,34 @@ export interface Note {
   media_storage_path: string | null;
   media_mime: string | null;
   media_size_bytes: number | null;
+  /**
+   * O rastro da retenção por idade (#3756): quando o prazo da organização apaga
+   * o anexo, o passo 2c de `fn_enfileirar_midia_vencida` zera os três ponteiros
+   * acima e grava o "quando" e os "dias" aqui. `null` = nada foi apagado — é o
+   * que separa uma nota que perdeu o anexo de uma nota que nunca teve, e é o
+   * que o card lê para mostrar o aviso no lugar do arquivo.
+   *
+   * A redação por LGPD NÃO grava esta marca de propósito: ali o anexo não saiu
+   * por política de retenção, e o aviso fala de prazo.
+   */
+  media_expired_at: string | null;
+  media_retention_days: number | null;
 }
 
 /**
- * Mapeia ack do WAHA (0..3) para o status canônico em messages.status.
- * 0=pending/sent server-side, 1=server-confirmed, 2=delivered (device), 3=read.
+ * Mapeia o ack do WAHA para o status de `messages.status` quando o aviso MUDA o
+ * status. Valores do WAHA: -1 erro, 0 pendente, 1 servidor, 2 aparelho
+ * (entregue), 3 lido, 4 ouvido.
+ *
+ * Devolve `null` para "não muda o status": 0 (pendente, ainda não é "enviada"),
+ * -1 (erro — quem trata é `handleAck`, que grava `failed`, nunca `sending`) e
+ * ausente. Não há mais um `"sending"` de reserva: um aviso que não sabe o que
+ * dizer não pode fazer a mensagem regredir.
  */
-export function ackToStatus(ack: number | null | undefined): Message["status"] {
-  if (ack == null) return "sent";
+export function ackToStatus(ack: number | null | undefined): Message["status"] | null {
+  if (ack == null) return null;
   if (ack >= 3) return "read";
   if (ack >= 2) return "delivered";
   if (ack >= 1) return "sent";
-  return "sending";
+  return null;
 }

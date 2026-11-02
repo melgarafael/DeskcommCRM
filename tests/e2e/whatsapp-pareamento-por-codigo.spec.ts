@@ -39,7 +39,7 @@ async function insert(table: string, value: Record<string, unknown>): Promise<st
   return data.id as string;
 }
 
-test("o administrador conecta o WhatsApp digitando o código no celular", async ({ page }) => {
+test("o código aparece; expirar o QR sem parear libera a vaga e permite retomar", async ({ page }) => {
   const receiverUrl = new URL(process.env.WAHA_API_BASE_URL ?? "");
   expect(["127.0.0.1", "localhost", "::1", "[::1]"]).toContain(receiverUrl.hostname);
   expect(receiverUrl.port).toBe("3999");
@@ -73,6 +73,12 @@ test("o administrador conecta o WhatsApp digitando o código no celular", async 
       if (metodo === "POST" && url === `/api/${sessao}/auth/request-code`) {
         pedidosDeCodigo.push({ caminho: url, corpo });
         return json(201, { code: "abcd1234" });
+      }
+      // Imagem sintética: prova o proxy e a UI, sem parear um aparelho real.
+      if (metodo === "GET" && url === `/api/${sessao}/auth/qr?format=image`) {
+        res.writeHead(200, { "content-type": "image/png" });
+        res.end(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=", "base64"));
+        return;
       }
       if (metodo === "GET" && url === "/api/server/version") return json(200, { engine: "NOWEB" });
       return json(404, { statusCode: 404, error: "Not Found", message: "Not Found" });
@@ -116,6 +122,7 @@ test("o administrador conecta o WhatsApp digitando o código no celular", async 
       display_name: "Recepção",
       status: "STOPPED",
       webhook_secret_encrypted: "\\x00",
+      metadata: { onboarding: true },
     });
 
     await page.goto("/login");
@@ -166,6 +173,59 @@ test("o administrador conecta o WhatsApp digitando o código no celular", async 
         { timeout: 15_000 },
       )
       .toBe(1);
+
+    // Ninguém leu o código nem o QR. O evento entra pela rota real, não por
+    // UPDATE da spec; arquivamento, contador e reativação passam pelo baseline.
+    await dialogo.getByRole("button", { name: "QR Code", exact: true }).click();
+    const imagem = dialogo.getByAltText("QR Code para conectar WhatsApp");
+    await expect(imagem).toBeVisible();
+    await expect.poll(() => imagem.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+    await page.screenshot({ path: `${EVIDENCIA}/qr-aberto-sem-parear.png`, fullPage: true });
+    const leitura = await db.from("channel_sessions").select("webhook_path_token")
+      .eq("organization_id", org).eq("id", canal).single();
+    expect(leitura.error).toBeNull();
+    estado = "FAILED";
+    const expirou = await page.request.post(`/api/v1/webhooks/waha/${leitura.data!.webhook_path_token}`, {
+      data: { event: "session.status", session: sessao, payload: { status: "FAILED" } },
+    });
+    expect(expirou.status(), await expirou.text()).toBe(200);
+    const lerCanal = async () => {
+      const r = await db.from("channel_sessions").select("id,status,phone_number,archived_at")
+        .eq("organization_id", org).eq("id", canal).single();
+      expect(r.error).toBeNull();
+      return r.data;
+    };
+    await expect.poll(lerCanal).toMatchObject({ id: canal, status: "STOPPED", phone_number: null, archived_at: expect.any(String) });
+    const ativos = await db.from("channel_sessions").select("id", { count: "exact", head: true })
+      .eq("organization_id", org).is("archived_at", null);
+    expect(ativos.error).toBeNull();
+    expect(ativos.count).toBe(0);
+    const reaberto = await page.request.get("/api/v1/onboarding/whatsapp/session");
+    expect(reaberto.status()).toBe(200);
+    expect((await reaberto.json()).data.status).toBe("NOT_STARTED");
+    const listaAposExpirar = page.waitForResponse(r => new URL(r.url()).pathname === "/api/v1/channel-sessions" && r.request().method() === "GET");
+    await page.goto("/app/connections");
+    expect((await listaAposExpirar).status()).toBe(200);
+    await expect(page.getByText("Carregando conexões…", { exact: true })).toBeHidden();
+    await expect(page.getByRole("main").getByText("Conecte seu primeiro número de WhatsApp para começar a atender.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Recepção", { exact: true })).toHaveCount(0);
+    await page.screenshot({ path: `${EVIDENCIA}/expiracao-nao-deixa-canal-caido.png`, fullPage: true });
+
+    // Retoma pela API do assistente e confere a volta na tela. Não afirma que
+    // o clique do assistente nem um pareamento físico foram exercitados aqui.
+    const retomar = await page.request.post("/api/v1/onboarding/whatsapp/session", {
+      headers: { "Idempotency-Key": randomUUID() },
+    });
+    expect(retomar.status(), await retomar.text()).toBe(200);
+    expect((await retomar.json()).data.channel_session_id).toBe(canal);
+    expect(await lerCanal()).toMatchObject({ id: canal, archived_at: null, status: "SCAN_QR_CODE" });
+    const listaAposRetomar = page.waitForResponse(r => new URL(r.url()).pathname === "/api/v1/channel-sessions" && r.request().method() === "GET");
+    await page.reload();
+    expect((await listaAposRetomar).status()).toBe(200);
+    await expect(page.getByText("Carregando conexões…", { exact: true })).toBeHidden();
+    // O banner também nomeia Recepção; a prova precisa encontrar o card no main.
+    await expect(page.getByRole("main").getByText("Recepção", { exact: true })).toBeVisible();
+    await page.screenshot({ path: `${EVIDENCIA}/mesmo-canal-retomado.png`, fullPage: true });
   } finally {
     await new Promise<void>((resolve) => upstream.close(() => resolve()));
     if (org) {

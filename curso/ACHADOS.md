@@ -297,3 +297,450 @@ Grupo C: 16 itens (último parágrafo).
 ## C · Fora do produto
 
 16 itens, todos do ambiente de captura ou da semente do curso. O navegador da captura roda em en-US e mostra `mm/dd/yyyy`, AM/PM e "Choose File"; falta `locale: 'pt-BR'` e `timezoneId: 'America/Sao_Paulo'` no Playwright. O selo numerado do montador cobre textos e botões vizinhos. As capturas e a revisão são indexadas só por lição, e como `conhecendo-a-tela` existe em 7 módulos, as imagens se sobrescrevem. **Uma imagem de Respostas rápidas acabou expondo a URL de um webhook com o token: conferir antes de publicar.** Problemas da semente: a mensagem da Fernanda em falha sem explicação; horários de abertura que divergem entre lições; cronologia impossível (última atividade antes da criação); duplicados com telefone idêntico; o funil "Pacientes" com slug `/pedidos` e etapas de e-commerce; áudio 0:00 e imagem em quadrado verde; o contato-grupo "Turma de Pilates"; tarefas sem o emissor de produção, o que deixa a linha do tempo vazia; o modelo do agente gravado como `anthropic/claude-sonnet-4-6`, que deixa o campo "Modelo" vazio e repete o provedor no cartão (`curso/semear-demonstracao.ts:267`, quando o formato do produto é sem prefixo). A semente não é reiniciada entre capturas, então Leads de Teste se acumulam e uma edição "não aparece" nas fotos seguintes. O endereço aparece como `127.0.0.1` porque falta a URL pública. A ordem das respostas rápidas varia entre capturas, embora a ordenação tenha desempate (`ordem`, `updated_at`, `id`). A animação do gráfico foi capturada no meio.
+
+## D · Revisão dos módulos novos — retomada de 26/10/2026
+
+O curso passou a ter 61 módulos, 259 lições e 1097 passos. A autoria e as revisões dos 46 módulos novos foram lidas nesta retomada. O app fotografado destes módulos é a versão **1.89.0**, em 24 e 26/10; o checkout de montagem foi rebaseado depois. Portanto, estes relatos **não afirmam o estado atual do produto após o rebase**. Nenhum defeito do produto foi corrigido nesta tarefa.
+
+O [inventário detalhado com procedência](achados-revisao-2026-10-26.json) preserva a descrição inteira, arquivos citados e origem de cada observação. Relatos cético e visual sobre a mesma causa foram unidos; prazo LGPD, rótulos de auditoria, recuperação SMTP, cobrança e extensões têm referências cruzadas, sem criar um segundo defeito para cada tela. As observações visuais adicionais estão separadas nesse arquivo e abaixo; continuam sem reprodução independente. Notas do ambiente/curso e sugestões rejeitadas têm categorias próprias com motivo, e não foram promovidas a defeitos confirmados.
+
+**Régua de evidência:** “leitura” abaixo significa causa descrita na revisão do código, **não reprodução**. Hipóteses continuam identificadas como hipóteses no inventário. Só três causas foram reconferidas pontualmente nesta retomada: os status impossíveis de WhatsApp no painel, os escopos de tokens oferecidos sem consumidor e o CNPJ aceito como texto sem normalização. A prova de tela dos novos módulos é trabalho de recaptura/revisão visual do controlador.
+
+### admin-audit
+
+- **D001 · leitura.** O "Limpar" desliga o filtro de datas, mas os campos continuam mostrando a data. components/admin/audit/AuditFiltersAdmin.tsx:206-209 chama onChange({}), e os campos datetime-local das linhas 238-256 não têm value controlado.
+- **D002 · leitura.** Erro da consulta aparece como lista vazia. app/admin/(protected)/audit/_client.tsx:24-27 ignora isError, e qualquer 400 ou 500 vira "Nenhum evento encontrado / Ajuste os filtros" (AuditTable.tsx:90-93) com o contador em "0 eventos". Fonte: `(app/api/v1/admin/audit/route.ts:15`.
+- **D003 · leitura.** O filtro de empresas oferece só as primeiras 30. hooks/useAdminTenants.ts:48 pede limit=30, e o _client.tsx:16-22 nunca chama fetchNextPage (o comentário diz "up to 200").
+- **D004 · leitura.** A coluna Actor mostra o código bruto da pessoa: AuditTable.tsx:153 aplica maskEmail sobre actor_user_id, que é o código e não o e-mail.
+- **D005 · leitura.** A espera de 400 ms do campo Actor sobrevive ao Limpar. Fonte: `AuditFiltersAdmin.tsx:174-183,`.
+
+### admin-cadastro
+
+- **D006 · leitura.** Texto da chave promete redirecionamento que não existe: _form.tsx:60 diz 'Quem abrir a tela de cadastro sem convite vê um aviso e é levado ao login', mas app/(public)/signup/page.tsx:76-95 só mostra o aviso e um botão 'Entrar'.
+- **D007 · leitura.** Jargão técnico no aviso para quem administra (público leigo): 'GoTrue', 'VPS', 'Em GoTrue próprio' e 'DISABLE_SIGNUP=true' em app/admin/(protected)/cadastro/page.tsx:82,97,113-116.
+- **D008 · leitura.** Fila sem aviso (Sistema Vivo, saída sem consumidor): pedido novo não avisa o administrador da instalação (só audit em app/actions/auth/recoverOrganization.ts:156-163) e a decisão não avisa quem pediu (app/actions/registration/decide.ts:91-113 só grava e audita).
+- **D009 · leitura.** A recusa só vale com 'Cadastro com aprovação' ligado: app/get-started/page.tsx:52-54 e recoverOrganization.ts:142-147 consultam o pedido apenas nesse modo; ao desligar a chave, conta recusada abre empresa própria sem aprovação.
+- **D010 · leitura.** Pedido pendente fica velho: quem abre a empresa sozinho depois que a chave é desligada mantém o pedido 'pending' para sempre (nada o encerra), e ele reaparece na fila de /admin/cadastro se a chave for religada (lib/auth/registration-requests.ts:66-74).
+
+### admin-cobranca
+
+- **D011 · leitura.** components/admin/tenants/CardDeCobranca.tsx:151: o aviso 'Suspensa por falta de pagamento. Fonte: `(app/api/v1/admin/tenants/[id]/assinatura/route.ts:186-187`.
+- **D012 · leitura.** app/admin/(protected)/cobranca/_planos.tsx:212: o selo 'Plano do cadastro' continua num plano arquivado, porque não olha arquivado_em. Fonte: `(supabase/baseline.sql:47669`.
+- **D013 · leitura.** app/admin/(protected)/cobranca/_visao-geral.tsx:101: o texto 'mais de 7 horas: confira se o agendador está rodando.' usa jargão ('agendador', o serviço scheduler do compose) e não dá ao revendedor leigo nenhum caminho de ação.
+- **D014 · hipótese.** app/admin/(protected)/cobranca/_conexao.tsx:150: diz que a Stripe 'aceita boleto' sem condição, mas o Checkout não define meios de pagamento (lib/cobranca/provedores/stripe.ts:52).
+
+### admin-configuracao
+
+- **D015 · leitura.** app/admin/(protected)/configuracao/page.tsx:35: o resumo do quadro E-mail diz "Sem isto o sistema não envia convite para a equipe nem recuperação de senha." Isso ficou desatualizado depois que a chave e o remetente foram para /admin/email (DEC-009).
+- **D016 · leitura.** lib/instalacao/catalogo.ts:282: a explicação da "Chave que tranca as credenciais" diz "inclusive as que você digita nesta tela".
+- **D017 · leitura.** app/actions/admin/salvarConfiguracaoDaInstalacao.ts:75-83: SUPPORT_EMAIL e LGPD_DPO_EMAIL são gravados sem validar o formato de e-mail. Fonte: `(billing/page.tsx:80`.
+- **D018 · leitura.** lib/instalacao/catalogo.ts:148: a explicação do E-mail de suporte ("mostra a quem usa") promete mais do que entrega. Fonte: `(app/account-suspended/page.tsx:96-100`.
+
+### admin-dashboard
+
+- **D019 · leitura.** O cartão 'Alertas WAHA' e os alertas de WhatsApp não funcionam: a rota filtra channel_sessions.status em ('ban_suspected', 'disconnected_unexpected') ou 'disconnected' (app/api/v1/admin/dashboard/kpis/route.ts:80 e 121), mas o schema só aceita STARTING, SCAN_QR_CODE, WORKING, STOPPED e FAILED…
+- **D020 · leitura.** 'Pendentes >10min' e o alerta 'Overflow' contam só status = 'pending' (kpis/route.ts:73 e 170) e ignoram 'open', embora a fila canônica seja open + pending (lib/schemas/messaging.ts:285).
+- **D021 · leitura.** A contagem de alertas para em 20: kpis/route.ts:339 corta antes de devolver, e AlertsBanner.tsx:39 mostra esse total cortado como se fosse o total real.
+- **D022 · leitura.** O alerta de Overflow lê no máximo 2000 conversas pendentes da instalação inteira (kpis/route.ts:171).
+- **D023 · leitura.** O cartão 'Budgets IA' e o alerta 'IA Budget' usam o contador ai_budgets.current_month_consumed_cents, que só acumula e é recalculado apenas no install.sh ou no update.sh (baseline.sql:11500-11516 e 13232-13235). Fonte: `kpis/route.ts:229-253`.
+- **D024 · leitura.** 'LGPD em Risco' exclui os pedidos com status 'failed' (kpis/route.ts:86 e 137).
+- **D025 · leitura.** O canal em tempo real 'alerts-platform' tem quem escuta (hooks/useAlertsRealtime.ts:39), mas ninguém transmite nele: a única outra ocorrência só cria o canal (lib/realtime/channels.ts:13).
+- **D026 · leitura.** Jargão e rótulos inconsistentes na tela para leigos: 'Visão cross-tenant' (_client.tsx:48), 'Tenants Ativos' (KPICards.tsx:57), 'Alertas WAHA' (KPICards.tsx:79), 'Overflow' (AlertItem.tsx:20). Fonte: `(kpis/route.ts:287`.
+
+### admin-destinos-internos
+
+- **D027 · leitura.** lib/recursos-opcionais/catalogo.ts:212 descreve Destinos internos como algo que 'Libera endereços da rede interna, como um modelo de IA rodando na própria máquina.' Isso é falso. Fonte: `(lib/ai/provider-validators.ts:351,`.
+- **D028 · leitura.** app/app/ai/providers/_components/PainelDeProvedores.tsx:661 aponta um caminho que não existe: 'só funciona se quem administra a instalação o tiver liberado em Destinos internos — e, mesmo liberado, ele não vale para o endereço que esta empresa escolhe aqui'.
+- **D029 · hipótese.** Mesmo liberado na lista, um endereço interno com http é recusado no servidor de verdade: unsafe_url:https_required (outbound-url.ts:28-30) roda antes da exceção da lista (destinos-internos-autorizados.ts:300-303).
+- **D030 · leitura.** app/admin/(protected)/destinos-internos/_form.tsx:28: depois de salvar, o campo não é atualizado com a lista que de fato foi gravada (sem duplicatas e normalizada pela action em updateDestinosInternos.ts:64-74).
+- **D031 · leitura.** Só o processo do site zera a lista guardada depois de salvar (destinos-internos-autorizados.ts:265).
+
+### admin-email
+
+- **D032 · leitura.** O campo 'Nome que aparece como remetente' (app/admin/(protected)/email/_form.tsx:216) é ignorado em convites, entrega da LGPD e avisos de prazo.
+- **D033 · leitura.** A explicação da 'Chave do serviço de e-mail' (lib/instalacao/catalogo.ts:126-127) diz 'Sem ela o sistema não consegue enviar e-mail nenhum — nem convite para a equipe, nem recuperação de senha'.
+- **D034 · leitura.** A tela não diz qual serviço externo é aceito. Fonte: `(lib/email/resend.ts:71-74`.
+- **D035 · leitura.** Salvar no quadro 'Serviço externo de envio' não atualiza o resto da tela. salvarConfiguracaoDaInstalacao e voltarConfiguracaoAoPadrao só chamam revalidatePath('/admin/configuracao') (app/actions/admin/salvarConfiguracaoDaInstalacao.ts:114,144), e CampoEditavel não chama router.refresh().
+- **D036 · leitura.** O fluxo do servidor próprio obriga a salvar antes de testar. 'Testar conexão' confere só o que está salvo (lib/email/smtp.ts:97-99), e salvar já desvia TODO o envio para o servidor próprio, sem volta automática ao serviço externo (lib/email/roteador.ts:14-29, 83-85).
+- **D037 · leitura.** A tarja de aviso usa jargão e um endereço como texto de link: 'Sem SMTP configurado' e 'Configurar em /admin/email' (components/admin/AvisoSemSmtp.tsx:42,51). Fonte: `(components/admin/AdminSidebar.tsx:72`.
+- **D038 · hipótese.** No erro do teste, só a recusa com código 535 vira 'recusou o usuário e a senha'. Fonte: `(lib/email/smtp.ts:104-105`.
+
+### admin-extensoes
+
+- **D039 · leitura.** A frase "X de Y empresa(s) com ela ligada" (app/admin/(protected)/extensoes/page.tsx:64, 67-73, 145-147) usa como denominador o número de empresas com uma linha em organization_extensions, e não o total de empresas do servidor.
+- **D040 · leitura.** As duas telas usam vocabulário diferente para o mesmo estado: o Admin diz "ligada" (page.tsx:147) e a tela da empresa diz "Ativa"/"Desativada"/"Ativa no CRM" (components/extensions/InstalledExtensionCard.tsx:159-160).
+- **D041 · leitura.** O Admin lista TODOS os catálogos admitidos (page.tsx:54, sem limite), mas a tela da empresa só lê os 8 mais recentes (lib/extensions/service.ts:307-311, .limit(8)).
+- **D042 · leitura.** A leitura de organization_extensions no Admin (page.tsx:64) não tem paginação.
+
+### admin-google
+
+- **D043 · leitura; complementa A65.** Jargão para quem não administra: quem não administra a instalação vê na Agenda 'Quem instalou o sistema precisa configurar GOOGLE_CALENDAR_CLIENT_ID e GOOGLE_CALENDAR_CLIENT_SECRET', com os nomes das variáveis em fonte de código (app/app/agenda/_components/CartaoDaConexaoGoogle.tsx:74-80, e a lista vem de…
+- **D044 · leitura.** Promessa enganosa para o admin: 'Falta cadastrar o aplicativo do Google desta instalação. Fonte: `(CartaoDaConexaoGoogle.tsx:70`.
+- **D045 · leitura.** Botão que não existe: o aviso data-testid=google-tem-no-ambiente diz 'apagar o que está aqui faz o sistema voltar a usar as do arquivo' (app/admin/(protected)/google/_form.tsx:129), e o comentário da action diz que 'apagar é outro botão' (app/actions/settings/updateGoogleOAuth.ts:61).
+- **D046 · leitura.** Erro técnico em aviso para leigo: se a cifra não estiver disponível, o aviso de erro mostra 'cifra indisponível nesta instalação (GUC app.nuvemshop_oauth_key ausente) — o segredo não foi gravado' (app/actions/settings/updateGoogleOAuth.ts:122-126).
+- **D047 · leitura.** Salvar não valida nada com o Google: qualquer ID com 10 ou mais caracteres e qualquer chave com [A-Za-z0-9_-] gravam com 'Credenciais do Google salvas.' (updateGoogleOAuth.ts:57-85, 131-143).
+- **D048 · leitura.** Textos fora do i18n em _form.tsx: 'Última alteração em ...' (linha 147), 'Salvando…'/'Salvar' (171), o rótulo 'ID do cliente' (85) e a orientação 'Cole exatamente isto em "URIs de redirecionamento autorizados"...' (79-80) não passam por t().
+
+### admin-inbox
+
+- **D049 · leitura.** Texto velho e com código interno à vista do usuário: app/admin/(protected)/inbox/_components/AdminThread.tsx:110-113 mostra 'Use “Impersonate” (em breve, S-11.07) para responder.', mas o recurso já existe e se chama 'Acompanhar organização' (components/admin/ImpersonateButton.tsx:98).…
+- **D050 · leitura.** A situação da conversa aparece como a palavra técnica em inglês: AdminThread.tsx:72-74 imprime conversation.status cru ('Ai_handling', 'Claimed', 'Closed'). components/inbox/ConversationHeader.tsx:80-88 já tem o STATUS_LABEL que traduz os 7 valores e avisa no próprio comentário que um buraco 'imprime o token cru em… Fonte: `_components/AdminSidePanel.tsx:75-77`.
+- **D051 · hipótese.** Histórico de auditoria inflado sem ação do admin (plausível, não reproduzido): hooks/useAdminInboxRealtime.ts:18-20 invalida ['admin','inbox'] a cada INSERT em messages de qualquer empresa. Fonte: `([id]/route.ts:106`.
+- **D052 · hipótese.** Paginação da lista do Admin (plausível, não reproduzido): route.ts:111-114 monta o cursor com last_inbound_at.lt/eq, o que exclui as linhas com last_inbound_at NULL. Fonte: `(route.ts:115-118`.
+- **D053 · leitura.** O detalhe da conversa no Admin não busca metadata nem sent_on_behalf_of_user_id (app/api/v1/admin/inbox/conversations/[id]/route.ts:74-92).
+- **D054 · leitura.** O filtro de situação oferece opções mortas e esconde as reais: InboxList.tsx:60-65 e route.ts:15 só aceitam pending/open/resolved, mas nenhum código atual grava pending nem resolved (lib/inbox/comando-da-conversa.ts:191).
+- **D055 · leitura.** Débito cosmético de i18n e de privacidade: os rótulos 'Contato', 'Contato anonimizado', 'Bloqueado', 'Tenant', 'Slug:', 'Status:' e 'Abrir tenant' estão fixos no código, sem t() (AdminSidePanel.tsx:30, 36, 52, 64, 73, 76, 82), e não viram espanhol.
+
+### admin-incidents
+
+- **D056 · leitura.** Tela sem fonte de dados: nenhum código do produto cria incidentes. Fonte: `(app/api/v1/admin/incidents/[id]/resolve/route.ts:69-78`.
+- **D057 · leitura.** Filtro 'Reconhecidos' sem caminho: o status 'acknowledged' existe no filtro e no selo (app/admin/(protected)/incidents/_client.tsx:25; components/admin/incidents/IncidentsTable.tsx:41,47), mas não há rota nem botão que leve um incidente a esse estado.
+- **D058 · leitura.** O limite de 1000 caracteres da nota de resolução só existe no servidor (resolve/route.ts:19-24). Fonte: `(components/admin/incidents/ResolveIncidentDialog.tsx:67-75`.
+- **D059 · leitura.** O botão de confirmar usa AlertDialogPrimitive.Action (components/ui/alert-dialog.tsx:89-94), que fecha a janela no clique.
+- **D060 · leitura.** O detalhe do incidente resolvido não mostra quem resolveu: o quadro 'Resolução' exibe só a nota e a data (app/admin/(protected)/incidents/[id]/_client.tsx:190-210), embora resolved_by seja gravado (resolve/route.ts:74).
+- **D061 · leitura.** Inconsistência de identificação da empresa: a lista mostra o display_name (IncidentsTable.tsx:166-167) e o detalhe mostra o slug em fonte mono (incidents/[id]/_client.tsx:112-116).
+- **D062 · leitura.** Cada GET do detalhe grava platform_admin.incident_viewed com incident_id (app/api/v1/admin/incidents/[id]/route.ts:64-73), e isso inclui as recargas automáticas do React Query ao voltar o foco para a aba depois de 30s (hooks/useAdminIncident.ts:42).
+
+### admin-lgpd
+
+- **D063 · leitura.** Selo de risco ignora a situação: computeRiskLevel é chamado só com due_at/received_at (app/api/v1/admin/lgpd/requests/route.ts:157).
+- **D064 · leitura.** Link 'Ver detalhes' do aviso vermelho não funciona: aponta para /admin/lgpd?risk_level=expired (LgpdRiskBanner.tsx:45-49), mas LgpdAdminClient começa com useState({}) e nunca lê a URL (app/admin/(protected)/lgpd/_client.tsx:30).
+- **D065 · leitura.** Filtro de risco aplicado depois da paginação: o servidor busca 50 linhas por prazo e só então filtra por risco (app/api/v1/admin/lgpd/requests/route.ts:162-164).
+- **D066 · leitura.** Trilha de auditoria cortada nas 50 mais ANTIGAS: order asc + limit 50 (app/api/v1/admin/lgpd/requests/[id]/route.ts:58-63).
+- **D067 · leitura.** Prazo acaba à meia-noite UTC: em instalação brasileira, o selo 'Vencido' e o 'em atraso' viram às 21h (Brasília) do último dia (lib/lgpd/sla.ts, comentário de horasAteOFimDoPrazo).
+- **D068 · leitura.** Detalhe da ficha mostra jargão cru ao administrador: rótulos 'Escopo' com o valor bruto 'contact'/'tenant', 'Slug', 'Contact ID', 'External customer ID' sem tradução ([id]/_client.tsx:331, 336, 340, 343); 'Origem' mostra o valor bruto 'nuvemshop' (:330).
+
+### admin-marca
+
+- **D069 · leitura.** app/admin/(protected)/marca/_estado.tsx:178-182: a frase miúda 'O logo ainda é trocado no arquivo de instalação do servidor…' está desatualizada.
+- **D070 · leitura.** app/admin/(protected)/marca/_form.tsx:294 e :340: 'Deixe em branco para voltar ao nome padrão' e 'voltar à cor padrão do sistema' são imprecisos. Fonte: `(hostgator-setup-kit/install.sh:1467`.
+- **D071 · hipótese.** app/api/v1/marca/logo/route.ts:272 (plausível, não reproduzido): enviar só o logo ou o ícone grava seeded_from_env=false na linha inteira.
+- **D072 · leitura.** lib/branding/css-personalizado.ts:131-161: as recusas do CSS personalizado não dizem QUAL regra ou propriedade foi barrada ('Essa propriedade não é permitida…').
+- **D073 · leitura.** components/branding/CampoDoIconeDaAba.tsx:76-83: o ícone da aba não passa pelo ajustarLogo que o logo usa (CampoDeLogo.tsx:275).
+- **D074 · leitura.** app/admin/(protected)/marca/page.tsx:94: o subtítulo 'O nome e a cor que este sistema mostra…' omite o logo, o ícone e o CSS que a mesma tela edita (cosmético).
+
+### admin-meta
+
+- **D075 · leitura.** CONFIRMADO, leve: o cabeçalho de /admin/meta (app/admin/(protected)/meta/_form.tsx:124) diz 'É com estas duas informações que o sistema confere que cada mensagem recebida... veio mesmo da Meta'.
+- **D076 · hipótese.** PLAUSÍVEL: depois de 'Gerar novo token', os números que o sistema registrou sozinho na Meta continuam com o token antigo gravado lá (webhook-override.ts:107-115). Fonte: `(components/connections/CanalOficialClient.tsx:129-148`.
+- **D077 · leitura.** CONFIRMADO, leve: na falha de cifra, a tela mostra ao administrador um texto técnico cru: 'cifra indisponível nesta instalação (GUC app.nuvemshop_oauth_key ausente)' (app/actions/settings/updateMetaApp.ts:227, 242, 284, exibido por _form.tsx:85).
+
+### admin-modulos
+
+- **D078 · leitura.** Um módulo Suspenso não tem como ser recuperado pela tela. Fonte: `(supabase/baseline.sql:33479-33481`.
+- **D079 · leitura.** O motivo da suspensão aparece cru para quem administra. motivo_suspensao recebe o sqlerrm do Postgres (supabase/baseline.sql:33532), e ModulosManager.tsx:90-93 exibe esse texto sem tradução: mensagem técnica, muitas vezes em inglês, para um usuário leigo.
+- **D080 · leitura.** A página 'Acesso negado' (app/admin/forbidden/page.tsx:36) diz 'restrita a administradores da plataforma com MFA ativo' e manda 'contate o time de operações'.
+- **D081 · leitura.** A tela usa jargão onde um leigo vai ler. Fonte: `(app/admin/(protected)/modulos/page.tsx:35`.
+- **D082 · hipótese.** A mensagem de erro genérica 'Não foi possível confirmar o resultado. Fonte: `(lib/modulos/service.ts:56`.
+
+### admin-platform-admins
+
+- **D083 · leitura.** Link quebrado: o "Ver runbook →" do aviso de Platform Admins (components/admin/platform-admins/DBAOnlyNotice.tsx:32-37) aponta para /runbook/platform-admin-management.md.
+- **D084 · leitura.** A tabela de Platform Admins não mostra quando, por quem nem por que um acesso foi revogado. Fonte: `(app/api/v1/admin/platform-admins/route.ts:154-157`.
+- **D085 · leitura.** O aviso da tela é escrito em jargão para quem é o dono da instalação: "Conforme Spec 01 §3.4 T-04", "via SQL pelo DBA", "api_audit_log", "read-only" (DBAOnlyNotice.tsx:16-28).
+- **D086 · hipótese.** (plausível, ainda não reproduzido) Um admin da plataforma com mfa_required=true e sem código cadastrado que abre /admin é mandado para /login/mfa. Fonte: `(app/(public)/login/mfa/page.tsx:26`.
+
+### admin-sistema
+
+- **D087 · leitura.** A chave "Divulgação de pagamento no atendimento" não faz nada e tem nome enganoso. Fonte: `(lib/agent-engine/guardrails/disclosure/template.ts:2,15`.
+- **D088 · leitura.** A conferência de promessa mostra estados que se contradizem entre duas telas. Fonte: `(lib/agent-engine/agent/turn-knobs.ts:58`.
+- **D089 · leitura.** A tela /admin/sistema afirma "Cada escolha vale para todas as empresas daqui" (_form.tsx:93).
+- **D090 · hipótese.** Dúvida, ainda não confirmada: na instalação de servidor único, a tarja diz que a recuperação de senha 'não sai até configurá-lo aqui' (AvisoSemSmtp.tsx:45). Fonte: `(hostgator-setup-kit/_common.sh:759,`.
+- **D091 · leitura.** Jargão técnico no texto da tela /admin/sistema, que é para leigos: "entrega de webhook precisa vir assinada com o segredo da sessão" (_form.tsx:132); "devolve ao modelo a razão, para ele reescrever" (_form.tsx:187); "conferência de modelo" e "chamada de modelo por envio" (_form.tsx:219); "declarar um valor no…
+
+### admin-tenants
+
+- **D092 · leitura.** A faixa de empresa suspensa sempre mostra 'Sem razão registrada.', mesmo quando o motivo foi gravado. Fonte: `(app/admin/(protected)/tenants/[id]/_client.tsx:45-47`.
+- **D093 · leitura.** A contagem 'Users' (lista) e 'Usuários' (ficha) inclui vínculos revogados: user_organizations é contada sem filtro de revoked_at (app/api/v1/admin/tenants/_lista.ts:103; app/api/v1/admin/tenants/[id]/route.ts:84-86).
+- **D094 · leitura.** 'WAHA sessions' (ficha) e o cartão 'WAHA' (saúde) contam channel_sessions de TODOS os provedores (waha, meta_cloud, zernio, zernio_social, wacalls, datafy) sem filtrar provider='waha' (app/api/v1/admin/tenants/[id]/route.ts:129-131; app/api/v1/admin/tenants/[id]/health/route.ts:191-196).
+- **D095 · leitura.** O cartão Nuvemshop da saúde fica em 'Atenção' em toda empresa que nunca integrou loja: status null cai em NUVEMSHOP_DESCONHECIDO com saude 'warning' (app/api/v1/admin/tenants/[id]/health/route.ts:118-125).
+- **D096 · leitura.** O selo de situação no topo da ficha não calcula 'Onboarding': mostra 'Ativo' para uma empresa que a lista mostra como 'Onboarding' (app/admin/(protected)/tenants/[id]/layout.tsx:95-98 contra components/admin/tenants/TenantsTable.tsx:49-50).
+- **D097 · leitura.** O 'Audit Lag' se contamina com a própria leitura: a página de saúde grava platform_admin.tenant_health_viewed em toda consulta (health/route.ts:318-327) e se atualiza a cada 60 segundos (hooks/useTenantHealth.ts:22).
+- **D098 · leitura.** Rótulos em inglês ou técnicos na interface em português: 'Users' (TenantsTable.tsx:161; o dicionário não traduz a chave), 'WAHA sessions' (TenantOverview.tsx:167), 'Audit Lag' e 'Lag' (HealthGrid.tsx:107,139) e 'DPO email' (app/app/settings/tenant/_form.tsx:104).
+
+### admin-usage
+
+- **D099 · leitura.** Números truncados acima de 1.000 linhas. app/api/v1/admin/usage/route.ts:139-147, 159-163, 185-189, 264-268 e 283-287 lê as linhas de messages, conversations e llm_calls para somar no código, mas o PostgREST devolve no máximo 1.000 linhas (supabase/config.toml:12). Fonte: `(lib/ai/usage/aggregate.ts:5-8`.
+- **D100 · leitura.** O título do gráfico diz "Custo AI / dia (R$)" (components/admin/usage/UsageCharts.tsx:120; também em lib/i18n/traducoes/en.json:3181 e lib/i18n/dicionario.ts:5711), mas os valores são em dólar (formatCentsUSD, lib/money.ts:133-135).
+- **D101 · leitura.** O CSV não abre direito no Excel em português (UsageTable.tsx:58-59): usa vírgula como separador e ponto como decimal, e é UTF-8 sem BOM.
+- **D102 · leitura.** A coluna "Agente" mostra agente pausado como se estivesse atendendo. Fonte: `(app/api/v1/ai/agents/[id]/pause/route.ts:5-7`.
+- **D103 · leitura.** O gráfico "Mensagens / dia" conta contatos pessoais (route.ts:264-268), e a coluna "Mensagens" não conta (route.ts:144-146), então gráfico e tabela não fecham.
+- **D104 · leitura.** Os dias dos gráficos são contados em UTC (route.ts:257, 271 e 290): o que acontece depois das 21h de Brasília cai no dia seguinte. Fonte: `(route.ts:132-134`.
+- **D105 · leitura.** "Invoc. Fonte: `(route.ts:185-200`.
+
+### admin-users
+
+- **D106 · leitura.** Uma falha do servidor aparece como lista vazia. Fonte: `app/admin/(protected)/users/_client.tsx:35-39`.
+- **D107 · leitura.** O seletor 'Filtrar por tenant' só lista as 30 primeiras empresas. Fonte: `(hooks/useAdminTenants.ts:48,`.
+- **D108 · leitura.** A paginação por cursor repete linhas quando alguém faz login entre uma página e outra. Fonte: `app/api/v1/admin/users/route.ts:310-322`.
+- **D109 · leitura.** A busca diferencia acento. Fonte: `route.ts:284-290,`.
+- **D110 · leitura.** Contas sem vínculo com empresa ficam invisíveis no Admin. Fonte: `route.ts:92-104`.
+
+### api-tokens
+
+- **D111 · leitura.** A tela oferece permissões que nada confere. "contacts:read", "contacts:write", "leads:read", "leads:write", "messages:read", "messages:write" e "audit:read" (ApiTokensClient.tsx:63-71) não são exigidas por nenhuma rota nem ferramenta.
+- **D112 · leitura.** Nenhum caminho com chave cria contato. Fonte: `(app/api/v1/contacts/route.ts:169`.
+- **D113 · leitura.** Chave vencida aparece como "Ativo". Fonte: `(lib/mcp/auth.ts:177-178`.
+- **D114 · leitura.** "Revogar" é irreversível e não pede confirmação (ApiTokensClient.tsx:168-178).
+- **D115 · leitura.** Jargão na tela: "Tokens server-to-server. Fonte: `(ApiTokensClient.tsx:193`.
+- **D116 · leitura.** A lista busca last_used_at (route.ts:23) mas não tem coluna de último uso.
+- **D117 · leitura.** O catálogo não tem role:ai_operator. Fonte: `(app/api/v1/agenda/agendamentos/route.ts:372`.
+
+### app-no-celular
+
+- **D118 · leitura.** O interruptor Push de 'Nova mensagem' aparece LIGADO por padrão (prefsPadrao push: true, lib/notifications/prefs.ts:19-30) mesmo quando o navegador nunca deu permissão. Fonte: `(notifications/_client.tsx:88-93`.
+
+### automacoes
+
+- **D119 · leitura.** Na aba Atividade, o passo aparece com o nome técnico "ai_decide" em vez de "A IA decide". Fonte: `(app/app/webhooks/_components/ActivityTab.tsx:34-36`.
+- **D120 · leitura.** A frase da tela Configurações › Automações promete mais do que faz: "Com o interruptor desligado, nenhuma regra consulta o modelo" (app/app/settings/automacoes/_interruptor.tsx:55).
+- **D121 · leitura.** O passo "A IA decide" não pode ser criado nem editado pela interface, só pela API (CaixaDaAutomacao.tsx:238; PainelDaCaixa.tsx:493-497).
+- **D122 · leitura.** Quando a empresa desliga a chave de propósito, as execuções viram "Parcial" (com aviso), ou "Falhou" (vermelho) se o passo da IA for o único da regra (lib/automation/engine.ts:421-427, com skipped contando como não-enviado).
+
+### aviso-de-agendamento
+
+- **D123 · leitura.** Frase de erro errada na tela da agenda: FRASE_DO_ERRO_DO_AVISO.canal_nao_aceita_aviso_livre diz "...ela não serve para o aviso de caso." (lib/escalacao/vocabulario-do-aviso.ts:79-80). Fonte: `(app/app/agenda/avisos/_components/AvisoDeAgendamento.tsx:163-164,`.
+- **D124 · leitura.** A ajuda da chave lista só as origens 'IA, equipe ou Google Agenda' (AvisoDeAgendamento.tsx:259-261). Fonte: `(lib/agenda/google/mudanca-vinda-do-google.ts:1-12`.
+- **D125 · leitura.** O seletor 'Conexão que envia os avisos' mostra números desconectados sem nenhuma indicação (o filtro é só por aceitaMensagemLivre, AvisoDeAgendamento.tsx:124 e :209-213).
+- **D126 · leitura.** Na lista 'Últimos avisos', a palavra 'Cancelado' é ao mesmo tempo o tipo do evento (TITULO_DO_EVENTO, AvisoDeAgendamento.tsx:55) e a situação da entrega (FRASE_DO_STATUS_DE_AGENDAMENTO.cancelado, lib/agenda/vocabulario-do-aviso-de-agendamento.ts:48).
+- **D127 · leitura.** As entregas guardadas para o resumo ('para_o_resumo') não têm limite de data: represadasParaOResumo (lib/agenda/aviso-de-agendamento.ts:787-795) pega todas, sem filtro de idade.
+
+### conversoes
+
+- **D128 · leitura.** O cartão de conexão com a Meta não tem título (app/app/settings/conversoes/_form.tsx:101-104).
+- **D129 · hipótese.** A ajuda do campo 'Identificador do destino de conversões' manda procurar 'no gerenciador de anúncios' (_form.tsx:113).
+- **D130 · leitura.** 'Enviar vendas pelo canal da conversa' aparece sempre (page.tsx:340), mas só o adaptador do canal parceiro Zernio implementa reportConversion (lib/channels/conversao-pelo-canal.ts:80-82; lib/channels/adapters/zernio.ts).
+- **D131 · hipótese.** PLAUSÍVEL: etapas arquivadas aparecem nas regras por etapa da Meta e do Google. Fonte: `(app/actions/settings/salvarRegrasDeConversaoMeta.ts:80-85`.
+- **D132 · leitura.** A lista 'Conversões que não foram reportadas' corta nas 20 mais recentes (lib/conversoes/estado-da-conexao.ts:85,95) sem aviso nem link para ver o resto.
+- **D133 · leitura.** O Diagnóstico mostra nomes de variável de ambiente ao administrador leigo: 'GOOGLE_ADS_OAUTH_CLIENT_ID e GOOGLE_ADS_OAUTH_CLIENT_SECRET' (lib/conversoes/historico.ts:275).
+- **D134 · leitura.** O seletor 'Evento enviado à Meta' mostra o nome técnico em inglês entre parênteses, por exemplo 'Lead enviado (LeadSubmitted)' (_regrasMeta.tsx:170).
+- **D135 · leitura.** A lista de pendências mistura envios que a plataforma já recebeu e aguardam confirmação ('aguardando_processamento') sob o título 'Conversões que não foram reportadas' (estado-da-conexao.ts:93; page.tsx:394).
+
+### dados-externos
+
+- **D136 · leitura.** O botão 'Testar' aparece para qualquer pessoa da equipe (app/app/integracao-dados/_components/ListaDeConexoes.tsx:211-218, sem a trava canWrite), mas a rota POST /api/v1/external-db/connections/[id]/test exige administrador (route.ts:42).
+- **D137 · leitura.** A tela de Dados externos não avisa que o agente só usa o banco se tiver as capacidades 'Ver as tabelas do banco conectado' e 'Buscar dados no banco conectado' ligadas. Fonte: `(lib/mcp/tools/catalogo/dados-externos.ts:33,44`.
+- **D138 · leitura.** O erro do último teste aparece cru e em inglês no cartão (ListaDeConexoes.tsx:193-195). Fonte: `(lib/external-db/conexao.ts:156-162`.
+- **D139 · leitura.** O aviso da página de uma conexão desativada diz 'Ative-a na lista para consultar os dados.' (app/app/integracao-dados/[id]/page.tsx:86), mas na lista não existe chave de ativar.
+
+### distribuicao-de-atendimento
+
+- **D140 · leitura.** Texto que não bate com o botão: o texto da tela em app/app/settings/atendimento/_form.tsx:287 diz 'a IA só volta quando alguém clica em Devolver', mas o botão da conversa se chama 'Devolver ao automático' (components/inbox/ConversationHeader.tsx:455).
+- **D141 · leitura.** O rótulo 'Tentativas antes de desistir' e o texto 'Ao estourar, a conversa fica na fila esperando alguém' (_form.tsx:187 e 201) prometem que o sistema desiste.
+- **D142 · leitura.** Destino padrão do número sem plano B e sem aviso: se o 'Atendente de destino padrão' está indisponível ou com a capacidade cheia, fn_channel_routing_claim devolve capacity_changed. Fonte: `(lib/routing/worker.ts:246-251`.
+- **D143 · leitura.** Armadilha no quadro por número: escolher só uma regra própria em 'Como este número distribui' e clicar em 'Salvar responsáveis' sem marcar ninguém cria a política com a lista vazia (fn_set_channel_routing, baseline.sql:23013-23024). Fonte: `(_channels-form.tsx:49`.
+- **D144 · leitura.** Primeira impressão: attendant_availability.is_available nasce false (baseline.sql:5894).
+
+### equipe
+
+- **D145 · leitura.** O diálogo de revogar membro tem jargão e uma afirmação falsa: "perderá acesso ao tenant. Fonte: `(app/app/team/_components/TeamMembersClient.tsx:234`.
+- **D146 · leitura.** Na tela de Equipe e no convite aparece jargão técnico para o leigo: o subtítulo "Gestão de membros, roles e atendimento do tenant." (app/app/team/page.tsx:55), "escolha a role compartilhada" (app/app/team/invite/page.tsx:24), "Resend não configurado — link copiável abaixo (DEV)."… Fonte: `(app/api/v1/team/[user_id]/revoke/route.ts:68`.
+- **D147 · leitura.** "Copiar link" de um convite Expirado copia um link já vencido. Fonte: `(app/api/v1/team/invites/route.ts:50`.
+- **D148 · leitura.** Um membro revogado continua com o seletor de papel ativo (TeamMembersClient.tsx:102 só testa canManage e se é a própria pessoa). Fonte: `(app/api/v1/team/[user_id]/_shared.ts:58-59`.
+- **D149 · leitura.** "Devolver acesso" não desfaz por inteiro o que a revogação fez. Fonte: `(app/api/v1/team/[user_id]/reactivate/route.ts:81-84`.
+- **D150 · leitura.** A chave "Disponível" tem efeitos diferentes em dois lugares. Fonte: `(lib/agenda/consulta.ts:259-263`.
+- **D151 · hipótese.** O diálogo de interface promete "aparece para o membro sem sair da conta" (components/team/MemberInterfaceDialog.tsx:52), mas não há atualização ao vivo.
+- **D152 · leitura.** O selo de plantão usa um relógio congelado no momento em que a tela abriu (AttendantsClient.tsx:559, useMemo sem dependência).
+- **D153 · leitura.** A coluna "Última atividade" mostra a data do último login (last_sign_in_at), não a última atividade (TeamMembersClient.tsx:85, 172-174).
+
+### extensoes
+
+- **D154 · leitura.** components/extensions/ExtensionsManager.tsx:912: o cabeçalho da tela de Extensões diz 'Antes de abrir Tarefas, o acesso e a ativação são conferidos novamente.' Tarefas está escrito fixo no texto, mas desde a ADR-0003 cada extensão pode abrir Agenda, Conversas, Contatos, Funil ou Radar.
+- **D155 · leitura.** components/extensions/ExtensionOperations.tsx:47 com supabase/baseline.sql:28326: o recibo de 'Configuração' de uma empresa (ligar/desligar um guia) é gravado sem publisher/name.
+- **D156 · leitura.** components/extensions/InstalledExtensionCard.tsx:249: a frase 'Os guias aparecem no hub do CRM.' usa o termo técnico 'hub'.
+
+### financeiro
+
+- **D157 · leitura.** Contas de todo mês: depois de 'Adicionar', o formulário NÃO é limpo (app/app/settings/tenant/financeiro/_client.tsx:394 chama criar.mutate sem onSuccess; _recorrencias.tsx:156 chama onCriar sem callback de limpar).
+- **D158 · leitura.** Seção 'Comissão' (módulo Comandas): o tipo Pessoa lê name/email (_comissao.tsx:25, 71, 115), mas GET /api/v1/team/assignable devolve full_name (app/api/v1/team/assignable/route.ts:23, 59) e não traz email.
+- **D159 · leitura.** Desativar uma conta não afeta quem aponta para ela: fn_finalizar da comanda só recusa account_id null e não confere is_active da conta (supabase/baseline.sql:34008-34018), e o cron recurring-entries não filtra conta inativa (app/api/v1/cron/recurring-entries/route.ts:59-64).
+- **D160 · leitura.** Desativar (contas, formas, planos) e o '×' das contas fixas agem na hora, sem confirmação (_client.tsx:447, _recorrencias.tsx:213-220), e nenhuma tela permite reativar: a API aceita ?inativos=1 (app/api/v1/financeiro/catalogo/[tipo]/route.ts:71), mas nada a usa.
+- **D161 · leitura.** Cron de contas fixas não olha a data de cadastro: uma conta cadastrada com um dia que já passou no mês gera o lançamento pendente do mês corrente na rodada seguinte (app/api/v1/cron/recurring-entries/route.ts:75-81).
+- **D162 · leitura.** Inconsistência de rótulo: o '×' das contas fixas tem aria-label 'Remover lançamento recorrente' (_recorrencias.tsx:215), mas a ação só inativa.
+- **D163 · leitura.** Textos da tela presumem Comandas ligado: a descrição de 'Formas de pagamento' ('quando a comanda é fechada', _client.tsx:214) e o aviso 'sem conta definida' aparecem também na instalação nova, onde o módulo vem desligado (lib/modulos/catalogo.ts:29-36) e a forma de pagamento não é usada em lugar nenhum.
+
+### lgpd
+
+- **D164 · leitura.** Anonimização da loja inteira pula contatos: o loop do 'tenant' em workers/lgpd-redact-worker.ts:384-391 filtra is_anonymized=false e, ao mesmo tempo, avança o offset (range(progress.batch_offset, ...)).
+- **D165 · leitura.** Apagamentos vindos da Nuvemshop rodam sem aprovação humana: customer-redact e store-redact emitem lgpd.redact_received direto (customer-redact/route.ts:234-236, store-redact/route.ts:234-236), e workers/lgpd-redact-worker.ts não tem o portão manually_approved que o export tem (workers/lgpd-export-worker.ts:118).
+- **D166 · leitura.** Não há como registrar um pedido LGPD fora da Nuvemshop: os únicos criadores de lgpd_requests são os 3 webhooks da Nuvemshop (createLgpdRequest em customer-data-request/route.ts:236, customer-redact/route.ts:209, store-redact/route.ts:208), e source 'admin_panel'/'api' existe no tipo (lib/lgpd/repository.ts:20) sem…
+- **D167 · leitura.** Filtro de SLA quebra o contador e a paginação: app/api/v1/lgpd/requests/route.ts:70-78 conta sem o filtro de SLA, e :108-110 aplica o filtro só nas 25 linhas da página.
+- **D168 · hipótese.** Aprovação pode deixar o pedido preso em 'Processando': em app/api/v1/lgpd/requests/[id]/approve/route.ts:166 a falha do emit_event só é logada, e :173 muda o status para 'processing' mesmo assim.
+- **D169 · leitura.** A janela de confirmação da anonimização não mostra quem vai ser apagado: ApproveButton.tsx:97-108 só mostra 'Titular'/'Envio para' para data_request.
+- **D170 · leitura.** Etapas da 'Linha do tempo SLA' em dias corridos (D+5, D+7, D+10, D+15 somados em 24h, app/admin/(protected)/lgpd/requests/[id]/_client.tsx:48-59, 88-90) enquanto o prazo real é em dias úteis. 'Entrega ao titular' e 'Anonimização concluída' aparecem verdes ('já passou') antes do prazo legal.
+- **D171 · leitura.** Jargão e inglês na tela de LGPD: o toast 'Aprovação registrada — request mudou para processing' (ApproveButton.tsx:71); 'O histórico de timestamps é preservado' e 'tenant' nos textos da anonimização (ApproveButton.tsx:43-49, RequestsTable.tsx:40); os rótulos 'Contact ID' e 'External customer ID' e o valor cru de…
+- **D172 · leitura.** Rótulo do tipo diferente entre telas: a lista diz 'Solicitação dados' (RequestsTable.tsx:39) e o detalhe diz 'Solicitação de dados' (_client.tsx:29).
+
+### marca
+
+- **D173 · leitura.** Três frases da tela prometem que a cor original 'fica no logo' ou 'nos destaques', e isso não acontece: lib/branding/linguagem.ts:293 ('A sua cor original continua no logo e nos destaques.'), lib/branding/linguagem.ts:121 ('a sua fica reservada ao logo'), lib/branding/linguagem.ts:100 ('ela aparece no logo') e a… Fonte: `(lib/branding/css.ts:109`.
+- **D174 · leitura.** O texto de ajuda 'Aparece no menu lateral, para quem trabalha aqui' (app/app/settings/marca/_form.tsx:333) vale só sem logo.
+- **D175 · hipótese.** O campo 'Nome de exibição' em branco mostra como placeholder o nome da instalação (_form.tsx:502, semAOrganizacao.name), mas o e-mail não sai com esse nome. Fonte: `(lib/automation/actions/send-email.ts:402`.
+
+### meta-ads-conexao
+
+- **D176 · leitura.** O aviso de formato errado não diz QUAL campo está errado nem qual é o formato. Fonte: `(app/actions/settings/updateAdInsightsConnection.ts:84,`.
+- **D177 · leitura.** A frase "Cole o token para poder salvar." (_form.tsx:144-147) aparece também quando já há algo colado com menos de 20 caracteres (_form.tsx:54).
+- **D178 · leitura.** "Desconectar" apaga na hora, sem confirmação, um segredo que não pode ser recuperado: o token e a conta padrão (_form.tsx:133-141; updateAdInsightsConnection.ts:210-214).
+- **D179 · leitura.** Ao apagar a conta padrão com a conta ligada e clicar em "Salvar", a escolha é apagada (envia null; _form.tsx:62 e updateAdInsightsConnection.ts:144-146).
+
+### meta-de-vendas
+
+- **D180 · leitura.** Para o atendente, a linha "Empresa" do quadro "Meta do mês" mostra um número de vendas errado. /api/v1/metrics/metas conta os negócios ganhos com o acesso de quem pediu (app/api/v1/metrics/metas/route.ts:162-168), e o crm_leads_select deixa o agent ver só os negócios dele e os sem dono…
+- **D181 · leitura; complementa A55.** O viewer (somente leitura) não abre o Desempenho: a página não tem minRole (lib/navigation/catalogo.ts:846-853), mas as APIs exigem agent (app/api/v1/metrics/attendants/route.ts:60).
+- **D182 · leitura.** O quadro do Desempenho fica desatualizado por até 30 segundos depois de corrigir a meta: useMetasDoMes tem staleTime 30_000 (hooks/metrics/useMetasDoMes.ts:42-47), o cache é global (app/providers.tsx) e definirMetaMensal não limpa ['metrics','metas'] (só chama revalidatePath,…
+- **D183 · leitura.** Na tela de Meta de vendas, o seletor "Mês" não recarrega nada. Fonte: `(app/app/settings/metas/_form.tsx:44-45,`.
+- **D184 · leitura.** O erro mfa_required, que a action pode devolver (definirMetaMensal.ts:87), não está em ERRO_EM_PORTUGUES (_form.tsx:25-31).
+- **D185 · leitura.** Na tela de cadastro, o mês vem do relógio do SERVIDOR (page.tsx:39, mesLocal() com new Date() no servidor). Fonte: `(MetricsClient.tsx:67`.
+- **D186 · leitura.** A nota da tela usa jargão interno de desenvolvimento: "Nesta primeira versão... ficam para as próximas fatias" e "EMPRESA" em caixa alta (app/app/settings/metas/page.tsx:68-70).
+
+### modelos-de-proposta
+
+- **D187 · leitura.** O campo 'Para que serve (opcional)' dos modelos (proposal_templates.descricao) não é lido por ninguém. Fonte: `(app/api/v1/settings/proposal-templates/route.ts:167`.
+- **D188 · leitura.** A caixa 'Obrigatória' do editor de modelo não tem efeito no documento. Fonte: `([slug]/_client.tsx:180-183`.
+- **D189 · leitura.** O hub de Configurações não filtra o cartão 'Modelos de proposta' por capacidade nem por módulo. app/app/settings/page.tsx:34-45 não passa capacidadesLigadas ao NavHub (sem esse parâmetro, o hub não filtra: components/shell/NavHub.tsx:25-26), e a entrada do catálogo tem capacidade mas não tem modulo… Fonte: `(app/app/settings/tenant/proposals/layout.tsx:14`.
+- **D190 · leitura.** A mensagem de falha da IA na importação de modelo chega ao usuário em linguagem técnica. importar/route.ts:89 devolve err.message, por exemplo 'provider LLM desconhecido na config da org: …' ou 'modelo não habilitado para a org (enabled_models): …' (lib/agent-engine/edge/llm/run-model-call.ts:105,113). Fonte: `(app/app/settings/tenant/proposals/modelos/_client.tsx:105,173`.
+- **D191 · leitura.** O editor de modelo não mostra quais campos existem. Fonte: `([slug]/_client.tsx:202-209`.
+- **D192 · leitura.** 'Personalizar' grava a cópia no clique, antes de qualquer edição (route.ts:111-134).
+- **D193 · leitura.** As páginas /app/settings/tenant/proposals/modelos e /modelos/[slug] não verificam o papel do usuário (page.tsx só faz requireAuth).
+
+### notificacoes
+
+- **D194 · leitura.** Push com o site fechado ignora a escolha por tipo: o servidor envia 'Lead atribuído', 'Lead ganho', 'Lead perdido' e 'Você foi mencionado' a todo aparelho inscrito sem consultar os interruptores de Push por linha (lib/notifications/push.handler.ts:286-316; o próprio lib/notifications/prefs.ts:133-135 admite que 'o… Fonte: `(app/app/settings/notifications/_client.tsx:171-178`.
+- **D195 · leitura.** O cartão push-status-pronto diz 'In-app (toast) e Push (Chrome) já funcionam para as cinco categorias, inclusive com a aba fechada.' (app/app/settings/notifications/_push-neste-endereco.tsx:43-45).
+- **D196 · leitura.** O lembrete de tarefa por WhatsApp manda só o nome da tarefa, sem dizer que é um lembrete nem se está perto de vencer ou já venceu (app/api/v1/cron/task-reminder/route.ts:415 usa texto.corpo; lib/tarefas/preferencia-de-lembrete.ts:242-249).
+- **D197 · leitura.** O rótulo do campo de WhatsApp diz 'Número com DDD, só dígitos' (_tarefas.tsx:155) e não pede o código do país, mas sem o 55 a busca do contato nunca casa (lib/channels/phone-variants.ts:35-38 só prefixa '+'), e o lembrete cai em silêncio no motivo sem_contato.
+- **D198 · hipótese.** Apagar o número de WhatsApp e sair do campo grava string vazia, que a validação recusa (regex ^[0-9]{8,15}$ em lib/tarefas/preferencia-de-lembrete.ts:111-115).
+- **D199 · leitura.** Menor: o quadro sem chaves mostra comandos de terminal ('bash hostgator-setup-kit/update.sh', 'npx web-push generate-vapid-keys') e nomes de variável .env a qualquer membro, inclusive leigos sem acesso ao servidor (app/app/settings/notifications/page.tsx:87-105).
+
+### organizacao
+
+- **D200 · leitura.** Texto da tela diz o contrário da regra: app/app/settings/tenant/_inbox.tsx:67 diz que a trava vale para quem abre 'uma conversa sem responsável', mas lib/inbox/bloqueio-ate-assumir.ts:31 trava qualquer conversa cujo responsável não é quem está na tela, inclusive a que é de um colega.
+- **D201 · leitura.** 'URL política de privacidade' não chega ao público: lib/legal/operador.ts:97-108 e 120-122 só preenche politicaPropria com sessão de um membro da empresa, então app/legal/privacy/page.tsx:20 só redireciona a equipe logada.
+- **D202 · leitura.** A Zona de perigo omite as propostas: _danger-zone.tsx:79 e 107 listam 'mensagens, conversas, negócios, contatos, agendamentos e pedidos', mas lib/settings/apagar-dados-operacionais.ts:66 e 142-147 também apaga crm_proposals e os PDFs delas.
+- **D203 · leitura.** O CNPJ é único só como texto exato e não é validado: lib/schemas/settings.ts:90-95 aceita qualquer texto de até 20 caracteres, e baseline.sql:2383 (UNIQUE(cnpj)) não normaliza o formato.
+- **D204 · leitura.** O aviso 'Dados inválidos.' do formulário da organização (app/app/settings/tenant/_form.tsx:58-61) não diz qual campo está errado: quem passa de 120 caracteres no nome ou de 20 no CNPJ não tem pista do que corrigir.
+
+### perfil
+
+- **D205 · leitura.** 'Sair' desconecta todos os aparelhos sem avisar: o menu só diz 'Sair' (components/shell/UserMenu.tsx:90-93), mas a ação faz o signOut global e desliga os avisos (push) em todos os aparelhos (app/actions/auth/signOut.ts:18-23).
+- **D206 · leitura.** Fuso horário pessoal é gravado e não é usado: o Perfil grava user_metadata.timezone (app/actions/settings/updateProfile.ts:41), e o único lugar que o lê é a Agenda, que só o põe num atributo data-fuso (app/app/agenda/page.tsx:66; app/app/agenda/_client.tsx:469).
+- **D207 · leitura.** O fuso aparece pelo código técnico ('America/Sao_Paulo') no Perfil (app/app/settings/profile/_form.tsx:27,119-123) e na Organização (app/app/settings/tenant/_form.tsx:119-123), embora lib/tempo/fusos.ts:33+ já tenha o nome legível ('São Paulo (Brasil)').
+- **D208 · hipótese.** Plausível, não provado: salvar o Perfil chama só revalidatePath('/app/settings/profile') (app/actions/settings/updateProfile.ts:82). Fonte: `(app/actions/settings/trocarIdioma.ts:59`.
+- **D209 · leitura.** Texto da tela errado: o subtítulo do Perfil diz 'Informações pessoais. Fonte: `(app/app/settings/profile/page.tsx:34`.
+
+### plano-e-cobranca
+
+- **D210 · leitura.** Faixa de cancelamento oferece uma ação que não existe: com a assinatura 'ativa' e cancela_no_fim=true, FaixaDaCobranca mostra 'Sua assinatura termina em DD/MM.' com o link 'Assinar de novo' para /app/settings/billing (components/cobranca/FaixaDaCobranca.tsx:35-47). Fonte: `(components/cobranca/AcoesDaAssinatura.tsx:120`.
+- **D211 · hipótese.** Troca de plano no teste grátis promete o contrário do que acontece: o servidor aplica a troca NA HORA quando estado='trial' e trial_ate está no futuro (lib/cobranca/troca.ts:186, 370-376, 406-407). Fonte: `(components/cobranca/AcoesDaAssinatura.tsx:355-366`.
+- **D212 · leitura.** 'Números conectados' conta mais do que números conectados: lerUsoDaOrganizacao conta todo channel_sessions não arquivado, exceto wacalls (lib/cobranca/uso.ts:39-44). Fonte: `(components/cobranca/PainelDaAssinatura.tsx:64`.
+- **D213 · leitura.** app/app/settings/billing/page.tsx:71-72: a tela onde o e-mail de suporte aparece mostra ao cliente final "Em breve — Fase 2" e "Billing entra na Fase 2 do roadmap.".
+
+### propostas
+
+- **D214 · leitura.** A validade padrão é ignorada nas propostas criadas à mão. app/app/proposals/novo/_client.tsx:57-60 e 81 preenche hoje + 15 dias fixos, sem ler 'Validade padrão (dias)'. Fonte: `(app/api/v1/proposals/route.ts:128-132`.
+- **D215 · hipótese.** Configurações › Propostas não confirma quando salva (app/app/settings/tenant/proposals/_client.tsx:34-49).
+- **D216 · leitura.** O campo de validade tem min=1 mas não tem max=365 (_client.tsx:69-75), embora o servidor recuse acima de 365 (route.ts:17).
+- **D217 · leitura.** A dica da chave 'Avisar no WhatsApp da equipe…' diz só 'Sem ele configurado e ligado, nada é enviado' (_client.tsx:96-98). Fonte: `(lib/propostas/aviso-no-whatsapp.ts:126-133`.
+
+### recursos-opcionais
+
+- **D218 · leitura.** Os módulos falham fechados na leitura. Fonte: `(lib/instalacao/modulos.ts:136-150`.
+- **D219 · leitura.** O subtítulo da parte 'Em cada agente' diz 'Estes se ligam em cada agente, em Agente de IA › Agentes.' (app/app/settings/recursos/page.tsx:145).
+- **D220 · leitura.** O cabeçalho da tela da empresa diz 'Tudo o que se liga e desliga, num lugar só' (page.tsx:86), mas a lista deixa de fora os recursos da instalação e do servidor (E-mail, Google Agenda, API Oficial da Meta, voz, Nuvemshop, Google Ads, Transcrição, Quem pode criar conta), em catalogo.ts:163-350 e page.tsx:55-57.
+- **D221 · leitura.** O módulo 'Login do Codex por assinatura', quando está ligado, aparece como 'Disponível nesta instalação' sem botão Ajustar. Fonte: `lib/navigation/catalogo.ts`.
+
+### seguranca
+
+- **D222 · leitura.** Recuperação só procura nos primeiros 200 usuários: useRecoveryCode chama admin.auth.admin.listUsers({ page: 1, perPage: 200 }) e procura o e-mail só nessa página (app/actions/auth/useRecoveryCode.ts:~55-66).
+- **D223 · leitura.** Aviso que some antes de aparecer: toast.success seguido de window.location.reload() na linha seguinte, em salvarPolitica ('A política de verificação foi salva.', app/app/settings/security/_client.tsx:85-86) e ao desligar a verificação ('Verificação desligada.', _client.tsx:382-383).
+- **D224 · leitura.** No login com código, a caixa 'Confiar neste dispositivo por 30 dias' fica depois de um campo que já abre com o cursor e envia sozinho no sexto dígito (components/auth/MfaForm.tsx:77-94).
+- **D225 · leitura.** A janela de cadastro aberta pelo botão 'Ativar' em Segurança (motivo='escolha') não tem botão de cancelar nem fecha com Esc (components/auth/MfaEnrollModal.tsx:88-223).
+- **D226 · leitura.** Jargão técnico na tela: 'Habilite MFA antes de gerar códigos.' (app/app/settings/security/_client.tsx:106,264).
+- **D227 · leitura.** O painel de chamada de voz afirma 'Ligada. Fonte: `(components/voice/PainelDeChamadaDeVoz.tsx:152`.
+- **D228 · leitura.** console.warn/console.error em código de produção: app/actions/auth/useRecoveryCode.ts (aviso de service role ausente e falha ao apagar fatores).
+
+### servidor-mcp-externo
+
+- **D229 · leitura.** Cadastrar o servidor MCP externo não tem efeito em nenhum agente, e não há porta na interface para isso. Fonte: `(app/app/ai/agents/[id]/_components/ToolPicker.tsx`.
+- **D230 · leitura.** A tela não mostra se já existe servidor cadastrado. Fonte: `(listarFerramentasMcpExternas.ts:87-90`.
+- **D231 · leitura.** Os rótulos de carregamento vêm de um único estado 'pendente' (CadastroDoServidorMcpExterno.tsx:95, 207-211).
+- **D232 · leitura.** Remover não pede confirmação (CadastroDoServidorMcpExterno.tsx:135-149) e anuncia 'Servidor externo removido' mesmo quando não havia nada cadastrado.
+- **D233 · hipótese.** A checagem anti-SSRF no Salvar é só sobre o texto do endereço (lib/automation/outbound-url.ts).
+
+### tags
+
+- **D234 · leitura.** A coluna "Regras de agente" e o aviso de exclusão contam regras de automação DESLIGADAS. Fonte: `(lib/automation/engine.ts:268`.
+- **D235 · leitura.** Seletor de cor da etiqueta: o title de cada bolinha é o código hex, por exemplo '#cf3716' (app/app/settings/tags/_painel.tsx:441).
+- **D236 · leitura.** Contador com 1 etiqueta sai como '1 Etiqueta · Página 1 / 1', com E maiúsculo (app/app/settings/tags/page.tsx:122).
+
+### tipos-de-agendamento
+
+- **D237 · leitura.** app/app/settings/tenant/agenda/_client.tsx:473: depois de criar um tipo, `setRascunho(VAZIO)` zera `default_owner_user_id`.
+- **D238 · leitura.** app/api/v1/agenda/tipos/route.ts:353: com `service_draft`, a rota força `default_owner_user_id: null` e descarta em silêncio o "Quem atende" que o formulário continua mostrando já preenchido com o criador (_client.tsx:533-555).
+- **D239 · leitura.** app/app/settings/tenant/agenda/_client.tsx:556: a dica do rascunho manda abrir "Serviço e horários", mas não existe botão com esse texto.
+- **D240 · leitura.** app/app/settings/tenant/agenda/_client.tsx:659-665: a linha mostra as antecedências do lembrete em minutos crus ("1440, 120 min antes"), enquanto o editor trabalha em dias/horas (_client.tsx:284-286).
+- **D241 · leitura.** components/agenda/DiasBloqueados.tsx:298: o botão "Reabrir" aparece também nos dias marcados como "aberto excepcionalmente".
+- **D242 · leitura.** app/app/settings/tenant/agenda/_client.tsx:894 + components/agenda/DiasBloqueados.tsx:176: o formulário de fechar dia só aparece para gerente ou administrador (podeEditar). Fonte: `(app/api/v1/agenda/excecoes/route.ts:98,114,`.
+- **D243 · leitura.** i18n: textos sem t(): "Desativar" (_client.tsx:696), "Reativar" (:721), toasts "Tipo desativado."/"Tipo reativado."/"Tipo alterado." (:692,:717,:798) e o rótulo "Nome" do formulário de edição (:805). Fonte: `(app/api/v1/agenda/tipos/route.ts:360`.
+- **D244 · leitura.** components/agenda/MeetComAcessoAberto.tsx:49-50,125: o aviso de self-host mostra a todo gerente termos técnicos ("app OAuth", "Meet API do Google Cloud", "escopo meetings.space.created", "tela de consentimento") numa tela de configuração usada por leigos.
+
+### trunk-sip
+
+- **D245 · leitura.** Trunk SIP: salvar uma alteração com a senha em branco sempre falha, apesar do texto cinza 'Deixe em branco para manter a atual' (app/app/settings/voip-trunk/_client.tsx:187). Fonte: `(app/api/v1/voip/trunk/route.ts:98`.
+- **D246 · leitura.** Trunk SIP: o estado 'copiou' não volta ao normal depois de um novo Salvar (app/app/settings/voip-trunk/_client.tsx:76,101-105,243).
+
+### Observações visuais adicionais do produto
+
+Estes itens vieram das capturas dos revisores. Permanecem observações ou hipóteses, **sem reprodução independente nesta retomada**. As duplicatas dos itens D foram anexadas à causa correspondente no inventário; notas de montagem, dados de exemplo e limitações anunciadas ficaram em categorias próprias.
+
+- **V001 · Admin — vocabulário comum.** O menu, as faixas e a auditoria misturam português, inglês e códigos internos no Admin.
+- **V002 · admin-cadastro.** /admin/cadastro: com 'Cadastro apenas por convite' ligado, a chave 'Cadastro com aprovação' fica desabilitada, mas o texto dela continua 'Desligado: quem cria conta abre a própria empresa na hora.
+- **V003 · admin-cadastro.** /admin/cadastro: a tela deixa ligar o cadastro só por convite com a faixa 'Sem SMTP configurado' ativa e não avisa que, nesse estado, os convites não saem por e-mail.
+- **V004 · admin-configuracao.** Frase curta errada na 'Chave que assina os documentos de privacidade' (LGPD_SIGNING_KEY).
+- **V005 · admin-dashboard.** Na página de saúde do tenant, o cartão 'AUDIT LAG' mostra o selo amarelo 'Atenção' com valores vazios ('—' em 'Último evento' e 'Lag').
+- **V006 · admin-dashboard.** Na foto, o cartão 'LGPD em Risco' mostra 4 e a lista de alertas tem só 2 linhas de LGPD visíveis.
+- **V007 · admin-inbox.** Página do tenant (/admin/tenants/<id>): a linha 'Plano' mostra um selo cinza vazio, sem texto, quando a empresa não tem plano.
+- **V008 · admin-incidents.** O seletor de gravidade é estreito demais: o texto 'Todas severidades' encosta na setinha e aparece cortado em todas as fotos da lista (filtrando p1–p3, conhecendo p1–p3, resolvendo p5).
+- **V009 · admin-incidents.** O Audit Trail não mostra a visita que acabou de acontecer: na abertura (p2) aparece vazio, mas depois (p4) mostra platform_admin.incident_viewed às 09:46:08, horário dessa mesma visita.
+- **V010 · admin-lgpd.** O aviso vermelho conta só a primeira página (50) da lista sem filtro (_client.tsx:38, useAdminLGPDRequests({}) sem paginar).
+- **V011 · admin-marca.** Os campos "Cor da marca" e "Cor da marca no tema escuro" mostram o quadradinho cinza com o placeholder "#7a5cd6" (roxo) escrito em clarinho.
+- **V012 · admin-meta.** /admin/meta: o link "Abrir Conexões em outra aba" (data-testid meta-abrir-conexoes) quebra no meio, com "Abrir" numa linha e "Conexões em outra aba" na seguinte.
+- **V013 · admin-meta.** /admin/meta, janela "Gerar um novo token de verificação?": o texto fala em "endereço do webhook", jargão para quem instala sem saber programar (a página diz "servidor"/"Conexões").
+- **V014 · admin-platform-admins.** Em 'Concedido por', shortEmail (components/admin/platform-admins/PlatformAdminsTable.tsx:40-42) corta o domínio no primeiro ponto, então 'ana@empresa.com' e 'ana@empresa.com.br' aparecem iguais ('ana@empresa').
+- **V015 · admin-users.** Pode ser auditoria em dobro: na ficha da Helena aparecem duas entradas organization.deleted no mesmo segundo (24/10 09:31:20) com o mesmo começo de código (organization · a9166666…).
+- **V016 · api-tokens.** O campo "Expira em (dias)" usa placeholder="365".
+- **V017 · automacoes.** Texto do produto, na tela Automações e no cartão da aba Atividade: 'o passo a IA decide é pulado' e 'desligou todos os passos a IA decide' trazem o nome do passo sem aspas, e a frase fica truncada para quem lê.
+- **V018 · conversoes.** lib/conversoes/estado-da-conexao.ts:160: a mensagem de 'venda sem valor' é uma só para as duas plataformas.
+- **V019 · conversoes.** Placeholders numéricos com cara de valor real ('123456789012345', '104987654321098', 'TEST12345', '+5511999998888') em _form.tsx, _identidadeDaMeta.tsx e _linksRastreaveis.tsx.
+- **V020 · dados-externos.** Na confirmação "Remover esta conexão?", o botão "Remover" é verde, o mesmo verde dos botões de ação normais, quando deveria ser vermelho de ação perigosa.
+- **V021 · dados-externos.** No guia 'Como criar um acesso só de leitura' do MySQL, os comandos saem cortados na direita ('TROQUE_POR_U…', "TO '") e precisam de rolagem lateral.
+- **V022 · dados-externos.** O texto que aparece no campo Senha ao editar, 'Guardada — preencha só para trocar', é cortado na largura padrão do campo.
+- **V023 · distribuicao-de-atendimento.** Aviso da combinação que trava tudo (aviso-combinacao-morta, _form.tsx ~250) usa bg-amber-50/60 com borda amber-500/40 e fica quase branco.
+- **V024 · distribuicao-de-atendimento.** 'Voltar ao padrão da organização' confirma com a mesma frase do salvar: 'Responsáveis salvos.' (_channels-form.tsx:33, save(reset=true)).
+- **V025 · equipe.** Aba Atendimento, coluna Horário: o ícone de relógio fica por cima do texto 'Não publicado', e o 'Editar' da Ana encosta na chave 'Disponível' (layout apertado)
+- **V026 · equipe.** Editor de horário: o cabeçalho 'Sem janelas, o roteamento aceita conversa a qualquer hora...' continua aparecendo depois que as janelas são publicadas
+- **V027 · extensoes.** Provável, deduzido só das fotos e não conferido num navegador ao vivo: o menu lateral e a barra do topo deixam de ficar fixos quando uma lista (Select) ou um aviso (AlertDialog) abre com a página rolada.
+- **V028 · extensoes.** Falta o espaço depois do ponto e vírgula na permissão dos cartões instalados: 'Abre Agenda;não lê seus dados.' / 'Abre Contatos e Tarefas;não lê seus dados.'.
+- **V029 · financeiro.** A seção Contas diz 'o valor aqui é só o ponto de partida', mas a tela não tem campo de saldo inicial. opening_balance_cents existe na API (lib/financeiro/catalogo.ts:46), só que o formulário e a lista não mostram esse valor.
+- **V030 · lgpd.** O atraso aparece diferente na lista e no detalhe do mesmo pedido (7c41e9a2).
+- **V031 · lgpd.** Pedido Concluído continua com o prazo contando.
+- **V032 · lgpd.** Há duas réguas para o 'amarelo'.
+- **V033 · meta-ads-conexao.** Produto (UX): o placeholder "act_123456789012345" em app/app/settings/meta-ads/_form.tsx:119 parece um valor real.
+- **V034 · organizacao.** Subtítulo da tela Organização em inglês para o leigo: "Dados da empresa, retenção de mídia, DPO.
+- **V035 · organizacao.** A explicação da própria tela sob "Perfil de interface" ("Perfil, segurança e acesso à equipe de quem administra continuam disponíveis") não cita Notificações, App no celular nem Organização, que também são essenciais em PORTAS_ESSENCIAIS.
+- **V036 · plano-e-cobranca.** Os quadros "Trocar de plano" e "Cancelar assinatura" não têm botão de fechar ou voltar.
+- **V037 · propostas.** Existem duas telas chamadas "Propostas": a de CRM (/app/proposals) e a de IA (/app/ai/proposals, 'Melhorias que a IA sugere para si mesma').
+- **V038 · trunk-sip.** Trunk SIP: o texto do topo da tela usa jargão de servidor ('Asterisk/AudioSocket', 'VPS', 'asterisk/pjsip.conf') numa tela de Configurações que um administrador leigo vai abrir.
+
+### O que foi corrigido no curso, fora do produto
+
+- A restauração inclui `country`, `currency` e `media_retention_enforced`; snapshots novos guardam os valores exatos. Para snapshot antigo, os padrões do baseline são `null` (Brasil), `BRL` e `true`.
+- A organização principal é resolvida pelo vínculo do dono. Antes da limpeza, a base recusa qualquer organização que não tenha um dos ids declarados pelas sementes; nem a principal pode entrar nesse conjunto. Não se escolhe mais a empresa pela data de criação.
+- O App da Meta volta ao snapshot mesmo depois de uma captura parcial. O acesso direto exige Postgres local e a presença da mesma organização resolvida pelo client Supabase. Pedidos LGPD de ids próprios da demonstração são limpos antes de outra lição.
+- O token real fotografado ao criar uma chave é revogado pela UI no `finally` da lição; falha de limpeza reprova a captura. A próxima preparação da base também revoga somente essa chave pelo nome e organização. Chaves cenográficas têm hash de segredo aleatório descartado. A regra de automação e os ponteiros de follow-up de demonstração ficam desarmados fora do módulo que os recria; não se usa o status do ponteiro como prova de que inscrições antigas pararam — a base também recria os contatos/conversas, e o ambiente foi conferido sem workers/agendador/WAHA pelo controlador.
+- Organização › Salvar não espera um toast oculto pelo capturador: a persistência é conferida ao reabrir a página no passo seguinte.
+- Medidas sem interseção com a foto falham explicitamente; alvos parcialmente visíveis são recortados nas quatro bordas. Nenhuma altura negativa é aceita. Os dois atalhos fora da foto em Distribuição foram removidos, mantendo o passo seguinte com o botão correspondente.
+- As datas e versões das fotos são preservadas individualmente, e o rodapé distingue a atualização do material das datas reais de captura.
+
+As anotações de ambiente da seção C continuam como histórico da primeira rodada. Os itens resolvidos acima não devem voltar a ser registrados como defeitos do produto.

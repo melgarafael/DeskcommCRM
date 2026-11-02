@@ -67,8 +67,20 @@ vi.mock("@/components/kanban/OwnerBadge", () => ({ OwnerBadge: () => null }));
 vi.mock("@/components/inbox/ReassignDialog", () => ({ ReassignDialog: () => null }));
 vi.mock("@/components/inbox/SnoozeButton", () => ({ SnoozeButton: () => null }));
 vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
+// O atendimento conjunto (#2542) desenha no cabeçalho e lê react-query (exigiria
+// QueryClientProvider). Este arquivo mede o gate do BOTÃO PESSOAL; a lista de
+// participantes tem arquivo próprio. Mesmo caminho do ConversationHeader.test.tsx.
+vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
+  ParticipantesDaConversa: () => null,
+}));
 // A reserva tem sua própria prova autenticada; este gate isola o botão pessoal.
 vi.mock("@/components/agenda/ReservarServicoNaConversa", () => ({ ReservarServicoNaConversa: () => null }));
+// O atendimento conjunto (#2542) desenha no cabeçalho e lê react-query (exigiria
+// QueryClientProvider). Este arquivo mede o gate do BOTÃO PESSOAL; a lista de
+// participantes tem arquivo próprio. Mesmo caminho do ConversationHeader.test.tsx.
+vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
+  ParticipantesDaConversa: () => null,
+}));
 vi.mock("@/components/inbox/ChannelLogo", () => ({ ChannelLogo: () => null }));
 vi.mock("@/hooks/voice/useVoiceSessionStatus", () => ({
   useVoiceSessionStatus: () => ({ data: { configured: true, paired: true } }),

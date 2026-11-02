@@ -28,6 +28,7 @@ const deps = vi.hoisted(() => ({
   audit: vi.fn(),
   log: vi.fn(),
   upsert: vi.fn(),
+  leituraSenha: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/requirePlatformAdmin", () => ({
@@ -43,7 +44,7 @@ vi.mock("@/lib/supabase/admin", () => ({
     from: () => ({
       select: () => ({
         eq: () => ({
-          maybeSingle: async () => ({ data: { smtp_password_encrypted: null }, error: null }),
+          maybeSingle: () => deps.leituraSenha(),
         }),
       }),
       upsert: (...args: unknown[]) => deps.upsert(...args),
@@ -95,6 +96,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   deps.escrita.mockResolvedValue({ user: { id: "eu" } });
   deps.upsert.mockResolvedValue({ error: null });
+  deps.leituraSenha.mockResolvedValue({
+    data: { smtp_password_encrypted: null },
+    error: null,
+  });
 });
 
 describe("o endereço do servidor SMTP não chega cru à tela (issue #2804)", () => {
@@ -146,6 +151,28 @@ describe("o endereço do servidor SMTP não chega cru à tela (issue #2804)", ()
     const r = await updateSmtp(entrada());
 
     expect(r).toEqual({ ok: false, error: MENSAGEM_DO_REMETENTE_INVALIDO });
+  });
+
+  it("falha ao ler a senha existente interrompe o salvamento e preserva a senha no banco", async () => {
+    deps.leituraSenha.mockResolvedValue({
+      data: null,
+      error: {
+        code: "08006",
+        message: "connection failure",
+        details: null,
+        hint: null,
+      },
+    });
+
+    const r = await updateSmtp(entrada());
+
+    expect(r).toEqual({ ok: false, error: MENSAGEM_DA_FALHA_AO_SALVAR_SMTP });
+    expect(JSON.stringify(r)).not.toContain("connection failure");
+    expect(deps.upsert).not.toHaveBeenCalled();
+    expect(deps.log).toHaveBeenCalledWith(
+      expect.stringContaining("[email.config]"),
+      expect.objectContaining({ code: "08006" }),
+    );
   });
 
   it("erro inesperado do banco vira a genérica — nenhum texto do Postgres na resposta", async () => {

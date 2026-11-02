@@ -18,8 +18,9 @@ import { CRMSidePanel } from "@/components/inbox/CRMSidePanel";
  *     outro contato na lista é o caso que separa "leu" de "filtrou".
  *  2. **Iniciar manda pointer_id e contact_id** — sem os dois o POST não inscreve
  *     ninguém; a rota cobra o par em `createFollowupEnrollmentSchema`.
- *  3. **Parar chama o cancel do enrollment vivo** — não é um "desmarcar" local:
- *     a escrita vai para `POST .../:id/cancel`.
+ *  3. **Parar chama o cancel do enrollment mostrado** — não é um "desmarcar"
+ *     local: a escrita vai para `POST .../:id/cancel`, que aceita os vivos e o
+ *     `dormente` (o caso novo da #3375).
  *  4. **Auto-ocultação** — sem enrollment vivo e sem fluxo ativo a seção não
  *     existe; é o contrato de `RoteirosDoContato` (módulo/estado sem dado não
  *     muda a tela de quem não usa).
@@ -224,14 +225,50 @@ describe("painel do inbox — seção de follow-up", () => {
     },
   );
 
-  it("dormente aparece com o status, sem Parar (o cancel o recusa), e Iniciar segue oferecido", async () => {
+  it("dormente aparece com o status e com o Parar (o cancel o aceita desde #3292), e Iniciar segue oferecido", async () => {
     servirApi({ enrollments: [{ ...ENROLLMENT, status: "dormente" }], flows: [FLUXO] });
     renderPainel();
 
     const secao = await screen.findByTestId("inbox-followup");
     expect(secao.textContent).toContain(FLUXO.name);
     expect(secao.textContent).toMatch(/aguardando a data do retorno/i);
-    expect(screen.queryByTestId("parar-followup")).toBeNull();
+    // O dormente não ocupa a vaga, mas é cancelável: as DUAS portas ficam de pé.
+    expect(screen.getByTestId("parar-followup")).toBeTruthy();
+    expect(screen.getByTestId("iniciar-followup")).toBeTruthy();
+  });
+
+  it("dormente: o Parar manda o cancel, o enrollment sai de cena e a seção volta ao select (#3375)", async () => {
+    // O cancel grava `cancelled` no servidor; o refetch da seção por isso não
+    // devolve mais a inscrição e só a porta de iniciar sobra.
+    let encerrado = false;
+    servirApi({ enrollments: [{ ...ENROLLMENT, status: "dormente" }], flows: [FLUXO] });
+    get.mockImplementation((url: string) => {
+      if (url.includes("/followups/enrollments"))
+        return Promise.resolve({ data: encerrado ? [] : [{ ...ENROLLMENT, status: "dormente" }] });
+      if (url.includes("/followup-flows")) return Promise.resolve({ data: [FLUXO] });
+      return Promise.resolve({ data: RESPOSTA });
+    });
+    post.mockImplementation((url: string) => {
+      if (String(url).endsWith("/cancel")) {
+        encerrado = true;
+        return Promise.resolve({ data: { status: "cancelled" } });
+      }
+      return Promise.resolve({ data: { id: "e-novo" } });
+    });
+
+    renderPainel();
+    const secao = await screen.findByTestId("inbox-followup");
+    expect(secao.textContent).toMatch(/aguardando a data do retorno/i);
+
+    await userEvent.click(screen.getByTestId("parar-followup"));
+
+    // A escrita vai para a rota que grava `cancelled` (cancel_reason manual).
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post).toHaveBeenCalledWith(`/api/v1/ai/followups/enrollments/${ENROLLMENT.id}/cancel`, {});
+
+    // Sem a inscrição, a seção volta ao select — e o Parar some com ela.
+    await waitFor(() => expect(screen.queryByTestId("parar-followup")).toBeNull());
+    expect(screen.getByTestId("escolher-fluxo-followup")).toBeTruthy();
     expect(screen.getByTestId("iniciar-followup")).toBeTruthy();
   });
 

@@ -66,6 +66,52 @@ pool, e o PostgREST não tenta de novo quando falha. O destravamento de emergên
 funções que estão sendo reexecutadas (uma linha `perform public.fn_pgrst_recusar_replay_do_gateway();` logo após o
 `begin`), esperar os rollbacks zerarem, mandar o `NOTIFY` de novo e RESTAURAR os corpos originais com `diff` vazio.
 
+## Outro ramo: falta de memória/IO (NÃO é replay do gateway)
+
+O sintoma é o mesmo 503 `PGRST002`, o mecanismo é outro — e trocar o diagnóstico aqui faz perder horas. Antes de
+suspeitar do replay, confirme que **o hook está registrado e o pool está vazio**; se estiver, este é o outro ramo.
+
+Medido numa instalação em Supabase **free, compute Nano (0,5 GB)** em 29/10: 100% das chamadas `/rest/v1` em 522 por
+~6 h, sem ninguém usando, e só voltou com *Restart project* manual.
+
+**Como o cache se perde sem ninguém pedir nada.** A Nano entra em swap (o painel mostrou ~480–600 MB e commitment de
+1,49 GB na véspera) e consome o *Disk IO Budget* (saldo 58%; esgotado = 5 MB/s). Com o disco lento, tudo passa do
+`statement_timeout=8s` do papel `authenticator` — inclusive a **introspecção do schema cache** do PostgREST
+(`WITH -- Recursively get the base types of domains …`), que com o banco saudável leva ~722 ms neste schema
+(213 tabelas, 584 funções, 684 policies, 759 índices, 222 triggers). Sem cache, toda requisição vira `PGRST002`, o
+PostgREST tenta de novo, a introspecção estoura de novo — e fica nesse laço por horas.
+
+**Diagnóstico (cada passo é um comando ou um caminho exato no painel, não uma afirmação):**
+
+1. **A introspecção estourou o teto?** É o sinal mais direto deste ramo, e ele **não** se lê pelo `psql`:
+   `postgres_logs` é uma fonte do *Logs Explorer* do painel, não uma tabela do banco (pelo `psql` dá
+   `relation "postgres_logs" does not exist`). No painel: **Logs → Logs Explorer**, e rode:
+
+   ```sql
+   select timestamp, event_message from postgres_logs
+   where regexp_contains(event_message, 'base types of domains')
+     and regexp_contains(event_message, 'statement timeout')
+   order by timestamp desc limit 20
+   ```
+
+   **Zero linhas não descarta este ramo.** Esta sonda não foi medida contra um projeto no laço: no `postgres_logs`,
+   o texto da consulta pode vir em outro campo (o `metadata`), e não na linha
+   `canceling statement due to statement timeout`. Se der zero, rode de novo casando só
+   `regexp_contains(event_message, 'statement timeout')` e abra o `metadata` das linhas na janela da queda para ver
+   qual consulta foi cancelada.
+
+2. **O hook do replay está mesmo registrado?** Se está, este NÃO é o ramo do replay:
+
+   ```bash
+   psql "$SUPABASE_DB_URL" -Atc "select rolconfig from pg_roles where rolname='authenticator'"
+   ```
+
+3. **O disco está no limite?** No painel: **Project Settings → Infrastructure → Disk IO Budget**.
+
+**Conserto:** *Restart project* no painel do Supabase (é o único caminho que devolve o cache sem esperar a janela de
+IO). Se o projeto voltar a cair parado, o compute é o gargalo: ver `supabase-compute-insuficiente-free.md` para o que
+medir antes de subir da Nano.
+
 ## Follow-up (não feito aqui)
 
 Conflito benigno não deveria sair como 5xx. Trocar `40001` por um código `PTxxx` (409) nas 25 funções / 71 pontos de

@@ -1,6 +1,6 @@
 "use client";
 import { useT } from "@/hooks/i18n/useT";
-import { rotuloDoAtendente, type Tradutor } from "@/lib/users/rotulo-do-atendente";
+import { rotuloDoMembro, type Tradutor } from "@/lib/users/rotulo-do-atendente";
 import { cn } from "@/lib/utils";
 
 /**
@@ -50,14 +50,15 @@ export function resolverMencao(texto: string, caret: number): { start: number; q
 /**
  * A lista de opções, já com o rótulo de cada um (puro, testável).
  *
- * O rótulo sai de `rotuloDoAtendente` (#3023) — a MESMA fonte do seletor de
- * transferência. Até então este arquivo tinha o seu próprio arranjo
- * (`t("Atendente")` + `user_id.slice(0, 8)`), gêmeo do do `ReassignDialog` e
- * igualmente errado: o `uuid8` não é nome de ninguém, e aqui ele ia além do
- * que a tela mostrava — entrava GRAVADO no corpo da nota (`@[Atendente
- * 4fa3a91c](mencao:…)`) e virava o texto que o colega mencionado lê na
- * notificação. Sem nome cadastrado, a linha mostra o rótulo genérico estável e
- * o `user_id` continua indo só no token, que é coisa de banco, nunca de tela.
+ * O rótulo sai de `rotuloDoMembro` (#3023) — a MESMA régua do seletor de
+ * transferência: nome, senão e-mail, senão `Atendente <sufixo do hash do id>`.
+ * Até então este arquivo tinha o seu próprio arranjo (`t("Atendente")` +
+ * `user_id.slice(0, 8)`), gêmeo do do `ReassignDialog` e igualmente errado: o
+ * `uuid8` não é nome de ninguém, e aqui ele ia além do que a tela mostrava —
+ * entrava GRAVADO no corpo da nota (`@[Atendente 4fa3a91c](mencao:…)`) e virava
+ * o texto que o colega mencionado lê na notificação. O sufixo é hash, não
+ * pedaço do id: identifica a pessoa na lista sem deixar o `user_id` ir para a
+ * tela — ele continua indo só no token, que é coisa de banco.
  *
  * O filtro continua casando pelo rótulo exibido: quem digita `@ana` acha a
  * Ana; membro sem nome não é achável por um pedaço de id — de propósito.
@@ -71,7 +72,7 @@ export function opcoesDeMencao(
   return membros
     .map((membro) => ({
       membro,
-      rotulo: rotuloDoAtendente(membro.full_name, t),
+      rotulo: rotuloDoMembro(membro, t),
     }))
     .filter((opcao) => opcao.rotulo.toLowerCase().includes(q));
 }

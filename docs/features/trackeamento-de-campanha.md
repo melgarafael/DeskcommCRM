@@ -75,6 +75,7 @@ Linha sem valor não aparece: um travessão em cinco linhas seguidas lê como de
 ## Limites declarados
 
 - **A origem vale só na PRIMEIRA mensagem do contato, e não sobrescreve o primeiro toque.** Testar com um número que já é contato antigo não estampa nada — parece defeito, é a regra funcionando. Quem chegou de anúncio pago primeiro mantém o anúncio pago; quem chegou do site primeiro mantém o site.
+- Essa regra descreve a **atribuição exibida no contato**. O [LeadSubmitted por clique CTWA recebido](feature-a-leadsubmitted-ctwa.md) mantém um ledger separado: um novo `ctwa_clid` válido pode gerar outra conversão sem alterar o primeiro toque ou criar outro card.
 - **Um ref só é consumido uma vez.** O mesmo texto encaminhado adiante não vira atribuição de quem o recebeu.
 - **Posicionamento não existe no clique-para-WhatsApp.** A plataforma expõe *placement* só em breakdown de insights agregado, nunca por clique individual.
 - **Falha de captura nunca vira tela de erro.** Todo caminho ruim do endereço de captura devolve o WhatsApp — sem o código, se for o caso. Clique de anúncio é dinheiro gasto: perder a atribuição é aceitável, perder o lead não.

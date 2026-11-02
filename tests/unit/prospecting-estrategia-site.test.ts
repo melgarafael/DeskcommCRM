@@ -37,7 +37,10 @@ describe("estrategia-site", () => {
     const e = montarEstrategia(base);
     expect(e.cenario).toBe("Sem site");
     expect(e.angulo).toContain("complemento");
-    expect(e.ganchos.join(" ")).toContain("whatsapp");
+    // O checklist NÃO vira gancho (#3723): `falta-*` é melhoria, não defeito
+    // medido — e o gancho antigo mandava citar uma delas na primeira mensagem.
+    expect(e.ganchos.join(" ")).not.toContain("Faltas concretas");
+    expect(e.ganchos.join(" ")).not.toContain("whatsapp");
     expect(e.objecoes.length).toBeGreaterThan(0);
   });
 
@@ -116,8 +119,41 @@ describe("estrategia-site", () => {
     expect(score.motivo).toContain("verificação pendente");
   });
 
+  it("não medido não gera ângulo, não é citado e pesa neutro", () => {
+    const e = montarEstrategia({ ...base, classe: "nao-medido", problemas: ["medicao-bloqueada"] });
+    expect(e.cenario).toBe("Site não medido");
+    expect(e.ganchos).toEqual([]);
+    expect(e.objecoes).toEqual([]);
+    expect(e.angulo).toContain("NÃO há defeito medido");
+    const dados = montarDadosDeAbordagem(
+      { name: "Vitta", category: "Estética", address: "Rua X", website: "https://x.com", rating: 5, socials: [] },
+      {
+        classe: "nao-medido",
+        problemas: ["medicao-bloqueada"],
+        conteudo_resumo: "Título: Vitta",
+        provisorio: false,
+        verificado_em: "2026-10-10T12:00:00.000Z",
+      },
+    );
+    // Definitivo, mas NÃO medido: nem o campo Auditoria, nem o resumo raspado.
+    expect(dados["Auditoria"]).toBeUndefined();
+    expect(dados["Detalhe"]).toBeUndefined();
+    const score = pontuarCandidato(5.0, 120, "nao-medido", "site");
+    expect(score.valor).toBe(40 + 30 + 18);
+    expect(score.motivo).not.toContain("site com problemas");
+    expect(pontuarCandidato(null, null, "nao-medido").motivo).toBe("site não medido");
+  });
+
   it("rótulos cobrem todas as classes e itens (Record fechado)", () => {
-    for (const classe of ["agregador", "sem-site", "site-ok", "site-ruim", "ssl-invalido", "fora-do-ar"] as const) {
+    for (const classe of [
+      "agregador",
+      "sem-site",
+      "site-ok",
+      "site-ruim",
+      "ssl-invalido",
+      "fora-do-ar",
+      "nao-medido",
+    ] as const) {
       expect(rotuloDaClasse(classe, (s) => s).length).toBeGreaterThan(0);
     }
     for (const item of ["whatsapp", "tel", "mailto", "social", "mapa", "fotos", "titulo", "description", "favicon"] as const) {

@@ -43,6 +43,17 @@ export interface ContactSnapshot {
    * Brasil o arquivo fica guardado sem ser enviado, e o PDF não lê este campo.
    */
   address_book_name: string | null;
+  /**
+   * Endereço da pessoa física (issue #3494). A anonimização o apaga
+   * (`trg_contato_anonimizado_esquece_o_endereco`), então o titular o recebe.
+   */
+  zip_code: string | null;
+  street: string | null;
+  number: string | null;
+  complement: string | null;
+  district: string | null;
+  city: string | null;
+  state: string | null;
   email: string | null;
   phone_number: string | null;
   cpf_present: boolean;
@@ -58,6 +69,12 @@ export interface ContactSnapshot {
   /** Primeiro atendimento marcado. Sobrevive à anonimização: é registro de operação. */
   first_service_at: string | null;
   /**
+   * Os telefones EXTRAS da ficha (Spec 31, B1), com o `lid` do WhatsApp de cada
+   * número. Ausente quando a ficha não tem extra: o `data.json` dela sai como saía
+   * antes (a chave só aparece quando há o que entregar).
+   */
+  additional_phones?: ContactPhoneSnapshot[];
+  /**
    * Campos personalizados — onde os roteiros de atendimento gravam o que o
    * cliente respondeu (CPF inclusive). A anonimização já os zera; sem esta
    * linha o titular pedia acesso e não recebia o que o roteiro coletou.
@@ -67,6 +84,18 @@ export interface ContactSnapshot {
   campos_legiveis: CampoLegivel[];
   /** Um roteiro guardou o CPF nos campos (texto, não a coluna cifrada). */
   cpf_informado_na_conversa: boolean;
+}
+
+/** Um telefone extra da ficha, como o titular o recebe (Spec 31, B1). */
+export interface ContactPhoneSnapshot {
+  phone_number: string;
+  tipo: string;
+  whatsapp: string;
+  rotulo: string | null;
+  origem: string;
+  /** O `lid` do WhatsApp DAQUELE número: é o que casa a mensagem de grupo dele. */
+  wa_lid: string | null;
+  created_at: string;
 }
 
 export interface ConsentRow {
@@ -134,6 +163,29 @@ export interface ActivityRow {
   type: string;
   source_module: string | null;
   performed_at: string;
+}
+
+/**
+ * A proposta de campo lida num documento do negócio (`lead_field_proposals`,
+ * migration 0772).
+ *
+ * Entra porque a anonimização a REDIGE: `trecho`, `valor_proposto` e
+ * `valor_anterior` são conteúdo do documento de quem pediu o acesso. Sem esta
+ * coleta, o Art. 18 II devolveria um export sem exatamente o dado que a casa
+ * apaga — e a régua de `lgpd-exporta-o-que-redige` reprova por isso.
+ */
+export interface LeadFieldProposalRow {
+  id: string;
+  lead_id: string;
+  campo: string;
+  valor_proposto: unknown;
+  valor_anterior: unknown;
+  trecho: string | null;
+  attachment_id: string | null;
+  status: string;
+  proposed_at: string;
+  expires_at: string;
+  decided_at: string | null;
 }
 
 /**
@@ -516,6 +568,15 @@ export interface ProspectingCandidateRow {
   updated_at: string;
 }
 
+/** O clique do próprio titular e o resultado do envio à plataforma de anúncios. */
+export interface MetaCtwaClickRow {
+  ctwa_clid: string;
+  captured_at: string;
+  status: string;
+  attempted_at: string | null;
+  created_at: string;
+}
+
 /**
  * Uma campanha que falou com este titular (migration 0374).
  *
@@ -664,6 +725,7 @@ export interface ExportPayload {
    */
   honorarios_contratos: HonorariosContratoRow[];
   honorarios_parcelas: HonorariosParcelaRow[];
+  lead_field_proposals: LeadFieldProposalRow[];
   orders: OrderRow[];
   activities: ActivityRow[];
   checkpoints: CheckpointRow[];
@@ -686,6 +748,12 @@ export interface ExportPayload {
    */
   voice_calls: VoiceCallRow[];
   prospecting_candidates: ProspectingCandidateRow[];
+  /**
+   * O registro por clique é apagado na anonimização (0806), então também entra
+   * no acesso. Ausente quando vazio para preservar a cópia anterior de quem
+   * não tem cliques; tokens de claim e detalhes internos não são coletados.
+   */
+  meta_ctwa_click_dispatches?: MetaCtwaClickRow[];
   /**
    * Casos, linha do tempo do caso e demandas (migration 0280).
    *
@@ -1098,7 +1166,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     const { data, error } = await admin
       .from("contacts")
       .select(
-        "id, name, display_name, address_book_name, email, phone_number, wa_lid, cpf_encrypted, birthdate, is_blocked, is_anonymized, consent, tags, source, source_metadata, custom_fields, created_at, last_activity_at, first_service_at",
+        "id, name, display_name, address_book_name, zip_code, street, number, complement, district, city, state, email, phone_number, wa_lid, cpf_encrypted, birthdate, is_blocked, is_anonymized, consent, tags, source, source_metadata, custom_fields, created_at, last_activity_at, first_service_at",
       )
       .eq("organization_id", organizationId)
       .eq("id", contactId)
@@ -1153,6 +1221,13 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
         name: data.name ?? null,
         display_name: data.display_name ?? null,
         address_book_name: data.address_book_name ?? null,
+        zip_code: data.zip_code ?? null,
+        street: data.street ?? null,
+        number: data.number ?? null,
+        complement: data.complement ?? null,
+        district: data.district ?? null,
+        city: data.city ?? null,
+        state: data.state ?? null,
         email: data.email ?? null,
         phone_number: data.phone_number ?? null,
         cpf_present: Boolean(data.cpf_encrypted),
@@ -1172,6 +1247,35 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
       };
     }
   }
+
+  // (9043) Os telefones extras da ficha, com o `lid` de cada número. Vêm ANTES da
+  // busca de mensagens de grupo, que casa pelo número e pelo `lid` de cada um. A
+  // consulta filtra organização e ficha: o cliente é o administrador (sem RLS).
+  let telefonesExtras: ContactPhoneSnapshot[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("contact_phones")
+      .select("phone_number, tipo, whatsapp, rotulo, origem, wa_lid, created_at")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: true });
+    if (error) {
+      logger.warn("[lgpd-export-worker] contact phones load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    }
+    telefonesExtras = (data ?? []).map((t) => ({
+      phone_number: t.phone_number,
+      tipo: t.tipo,
+      whatsapp: t.whatsapp,
+      rotulo: t.rotulo ?? null,
+      origem: t.origem,
+      wa_lid: t.wa_lid ?? null,
+      created_at: t.created_at,
+    }));
+  }
+  if (contact && telefonesExtras.length > 0) contact.additional_phones = telefonesExtras;
 
   // No `consents` table in current schema; legal basis is in contacts.consent JSONB.
   const consents: ConsentRow[] = [];
@@ -1373,11 +1477,36 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   // coletados: o contrato é `lead_id`, não `contact_id` direto.
   //
   // Módulo pode não estar instalado nesta instalação — a tabela então não
-  // existe (42P01) — e o bloco sai vazio nesse caso, sem falhar o export
+  // existe (42P01 no SQL, PGRST205 no PostgREST) — e o bloco sai vazio, sem falhar o export
   // inteiro por causa de um módulo que a organização nem ligou.
   let honorarios_contratos: HonorariosContratoRow[] = [];
   let honorarios_parcelas: HonorariosParcelaRow[] = [];
   const leadIds = leads.map((l) => l.id);
+
+  // Propostas de campos lidos no documento — a cascata da 0772 redige `trecho`
+  // e os valores, então o Art. 18 II tem de alcançá-las pela mesma porta dos
+  // outros dados do negócio: o `lead_id` já coletado. Tabela de módulo: num
+  // clone sem a migration ela não existe (42P01) e o bloco sai vazio.
+  let lead_field_proposals: LeadFieldProposalRow[] = [];
+  if (leadIds.length > 0) {
+    const { data, error } = await admin
+      .from("lead_field_proposals")
+      .select(
+        "id, lead_id, campo, valor_proposto, valor_anterior, trecho, attachment_id, status, proposed_at, expires_at, decided_at",
+      )
+      .eq("organization_id", organizationId)
+      .in("lead_id", leadIds)
+      .order("proposed_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      if (error.code !== "42P01") {
+        throw new Error(`lead_field_proposals_load_failed: ${error.message}`);
+      }
+    } else if (data) {
+      conferirTeto("lead_field_proposals", data, 500);
+      lead_field_proposals = data;
+    }
+  }
   if (leadIds.length > 0) {
     const { data, error } = await admin
       .from("honorarios_contratos")
@@ -1390,7 +1519,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     // novo, em vez de entregar ao titular um export sem o contrato como se fosse
     // completo (ADR-0002 D8 — seção de módulo ilegível nunca sai como completa).
     if (error) {
-      if (error.code !== "42P01") {
+      if (error.code !== "42P01" && error.code !== "PGRST205") {
         throw new Error(`honorarios_contratos_load_failed: ${error.message}`);
       }
     } else if (data) {
@@ -1754,10 +1883,22 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   // Duas consultas (telefone, lid) em vez de um `or` sobre caminho JSON: cada
   // uma é um filtro simples, e a união por id desfaz a mensagem que casa as duas.
   const porId = new Map<string, MessageRow>();
-  const telefones = contact?.phone_number ? phoneLookupVariants(contact.phone_number) : [];
+  // (9043) O principal E os extras, cada um com as variantes do nono dígito; e o
+  // `lid` do principal junto com o de cada extra. Sem extra, é a busca de antes.
+  const telefones = [
+    ...new Set([
+      ...(contact?.phone_number ? phoneLookupVariants(contact.phone_number) : []),
+      ...telefonesExtras.flatMap((t) => phoneLookupVariants(t.phone_number)),
+    ]),
+  ];
+  const lids = [
+    ...new Set(
+      [contactLid, ...telefonesExtras.map((t) => t.wa_lid)].filter((l): l is string => Boolean(l)),
+    ),
+  ];
   const buscas = [
     telefones.length > 0 ? { campo: "metadata->group_sender->>phone", valores: telefones } : null,
-    contactLid ? { campo: "metadata->group_sender->>lid", valores: [contactLid] } : null,
+    lids.length > 0 ? { campo: "metadata->group_sender->>lid", valores: lids } : null,
   ];
   for (const busca of buscas) {
     if (!busca) continue;
@@ -1838,6 +1979,25 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
       // Uma falha não pode virar um relatório que diz que não guardamos dados.
       if (error) throw error;
       contact_field_proposals.push(...(data ?? []));
+      if (!data || data.length < 500) break;
+    }
+  }
+
+  // O clique liga o titular ao anúncio. A 0806 o apaga na anonimização; no
+  // acesso ele precisa aparecer, inclusive além da primeira página. A chave
+  // id ordena empates sem entregar o identificador interno no arquivo.
+  const meta_ctwa_click_dispatches: MetaCtwaClickRow[] = [];
+  if (contactId) {
+    for (let offset = 0; ; offset += 500) {
+      const { data, error } = await admin
+        .from("meta_ctwa_click_dispatches")
+        .select("ctwa_clid, captured_at, status, attempted_at, created_at")
+        .eq("organization_id", organizationId)
+        .eq("contact_id", contactId)
+        .order("id")
+        .range(offset, offset + 499);
+      if (error) throw error;
+      meta_ctwa_click_dispatches.push(...(data ?? []));
       if (!data || data.length < 500) break;
     }
   }
@@ -2309,6 +2469,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     messages_count_total,
     messages_recent,
     leads,
+    lead_field_proposals,
     honorarios_contratos,
     honorarios_parcelas,
     orders,
@@ -2325,6 +2486,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     appointment_notices,
     voice_calls,
     prospecting_candidates,
+    ...(meta_ctwa_click_dispatches.length > 0 ? { meta_ctwa_click_dispatches } : {}),
     cases,
     case_events,
     demandas,
@@ -2504,6 +2666,7 @@ function emptyPayload(
     messages_count_total: 0,
     messages_recent: [],
     leads: [],
+    lead_field_proposals: [],
     honorarios_contratos: [],
     honorarios_parcelas: [],
     orders: [],

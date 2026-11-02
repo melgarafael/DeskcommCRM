@@ -1,0 +1,26 @@
+{
+  "synthetic": true,
+  "build": {
+    "sha": "20f335eaede5c423a0fcc902d79eaabb103ea342",
+    "id": "cyznjcUkNaQa9Fn5H6iU4"
+  },
+  "inboxReload": "passed; conversa/section/select carregados antes da ausência de Parar",
+  "pauseReload": "passed; mensagem humana visível e automático retomado",
+  "enrollments": [
+    {
+      "id": "fdc9ff58-fc5c-4abe-9017-0bb9f0e7f36c",
+      "status": "cancelled",
+      "next_eval_at": null
+    },
+    {
+      "id": "6bdeead7-d480-4c55-8012-6a52e4863d75",
+      "status": "cancelled",
+      "next_eval_at": null
+    },
+    {
+      "id": "66cc483a-8dd9-41c7-8eb4-82e6e30a221e",
+      "status": "cancelled",
+      "next_eval_at": null
+    }
+  ]
+}

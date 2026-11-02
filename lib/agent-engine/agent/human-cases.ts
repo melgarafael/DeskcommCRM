@@ -497,6 +497,69 @@ export async function encerrarChamadoPeloAgente(
   caseId: string,
   input: { desfecho: DesfechoDoChamado; nota: string },
 ): Promise<boolean> {
+  return encerrarChamadoComAutor(db, tenantId, caseId, {
+    ...input,
+    autor: { kind: 'agent' },
+  });
+}
+
+/**
+ * Quem assina o encerramento. `human` carrega o `auth.users.id`, porque a
+ * timeline do chamado tem de dizer QUAL pessoa decidiu — `agent` não tem autor
+ * humano (`actor_user_id` fica null, como sempre ficou).
+ *
+ * ⚠️ O valor do banco é `'human'`, não `'user'`: o CHECK de
+ * `agent_case_events.actor_kind` aceita `('agent','human','system','lead')`
+ * (supabase/baseline.sql:7887) e `fn_atrito_metrics` conta toque humano por
+ * `actor_kind='human'` (migration 0281). Escrever `'user'` daria `23514` num
+ * UPDATE que já teria fechado o caso — o pior desfecho possível, porque a
+ * transição viaja no mesmo statement da nota.
+ */
+type AutorDoEncerramento = { kind: 'agent' } | { kind: 'human'; userId: string };
+
+/**
+ * O encerramento com AUTOR explícito — a mecânica única dos dois caminhos
+ * (`crm_close_human_case` do agente e a porta da pessoa na rota API).
+ *
+ * Um statement por autor, e não um com o ator parametrizado: o caminho do
+ * agente grava DOIS eventos (a nota em `agent_noted`, que a tela rotula "A IA
+ * registrou o que aconteceu", e a transição), enquanto o da pessoa grava UM —
+ * o `cancelled` com a nota no corpo. `agent_noted` assinado por gente faria a
+ * timeline dizer que a IA agiu, e `human_replied` com `human_action` nulo
+ * (o CHECK de `human_action` só conhece resolved/need_lead_info/escalate)
+ * apareceria na tela como "Você respondeu" — mentira nos dois casos. A nota
+ * continua em `agent_case_events`, que é o que o próximo atendente lê.
+ */
+async function encerrarChamadoComAutor(
+  db: Queryable,
+  tenantId: string,
+  caseId: string,
+  input: { desfecho: DesfechoDoChamado; nota: string; autor: AutorDoEncerramento },
+): Promise<boolean> {
+  if (input.autor.kind === 'agent') {
+    const { rowCount } = await db.query(
+      `with updated as (
+         update agent_cases
+            set status = $3, closed_at = now(), updated_at = now()
+          where organization_id = $1 and id = $2 and status = any($6::text[])
+          returning id
+       )
+       insert into agent_case_events (organization_id, case_id, kind, actor_kind, body)
+       select $1::uuid, id, 'agent_noted', 'agent', $5::text from updated
+       union all
+       select $1::uuid, id, $4::text, 'agent', null::text from updated`,
+      [
+        tenantId,
+        caseId,
+        STATUS_DO_DESFECHO[input.desfecho],
+        EVENTO_DO_DESFECHO[input.desfecho],
+        input.nota,
+        OPEN_STATUSES,
+      ],
+    );
+    return transitioned(rowCount);
+  }
+
   const { rowCount } = await db.query(
     `with updated as (
        update agent_cases
@@ -504,10 +567,8 @@ export async function encerrarChamadoPeloAgente(
         where organization_id = $1 and id = $2 and status = any($6::text[])
         returning id
      )
-     insert into agent_case_events (organization_id, case_id, kind, actor_kind, body)
-     select $1::uuid, id, 'agent_noted', 'agent', $5::text from updated
-     union all
-     select $1::uuid, id, $4::text, 'agent', null::text from updated`,
+     insert into agent_case_events (organization_id, case_id, kind, actor_kind, actor_user_id, body)
+     select $1::uuid, id, $4::text, 'human', $7::uuid, $5::text from updated`,
     [
       tenantId,
       caseId,
@@ -515,9 +576,78 @@ export async function encerrarChamadoPeloAgente(
       EVENTO_DO_DESFECHO[input.desfecho],
       input.nota,
       OPEN_STATUSES,
+      input.autor.userId,
     ],
   );
   return transitioned(rowCount);
+}
+
+/**
+ * A PORTA DA PESSOA para o caso que a vida já resolveu (#3810).
+ *
+ * Até aqui o único caminho humano era `POST .../reply`, e as TRÊS ações dele
+ * mandam mensagem ao cliente: `resolved`/`need_lead_info` enfileiram
+ * `case_reply_turn` (a IA volta a falar) e `escalate` chama o handoff. Um caso
+ * que perdeu o objeto — o cliente comprou em outro lugar, o problema se
+ * resolveu sozinho — só podia ser fechado MENTINDO para o cliente, ou ficava
+ * imortal na fila de alguém.
+ *
+ * O desfecho certo já existia para o agente (`crm_close_human_case` com
+ * `outcome: 'sem_necessidade'` grava `cancelled` e não enfileira nada). Esta
+ * função é o MESMO caminho — a mesma `encerrarChamadoComAutor`, mudando só o
+ * ator — mais o que a pessoa espera que aconteça quando fecha um caso: os
+ * avisos do sino que apontam para ele deixam de existir.
+ *
+ * Não enfileira job, não faz handoff e não avisa o cliente de propósito: quem
+ * escolhe "encerrar sem avisar" está dizendo que o cliente NÃO precisa de
+ * mensagem. Qualquer efeito colateral aqui seria o defeito de volta.
+ *
+ * @returns false quando o caso não é da organização ou já não está aberto (a
+ * corrida com outro atendente é perdida sem efeito nenhum).
+ */
+export async function encerrarChamadoPelaPessoa(
+  db: Queryable,
+  tenantId: string,
+  caseId: string,
+  actorUserId: string,
+  nota: string,
+): Promise<boolean> {
+  const encerrado = await encerrarChamadoComAutor(db, tenantId, caseId, {
+    desfecho: 'sem_necessidade',
+    nota,
+    autor: { kind: 'human', userId: actorUserId },
+  });
+  if (!encerrado) return false;
+  await resolverAvisosDoCaso(db, tenantId, caseId);
+  return true;
+}
+
+/**
+ * Fecha os avisos do sino (`agent_inbox_items`) que apontam para o caso.
+ *
+ * O fechamento normal passa pelo barramento (`ai.case_closed` →
+ * `escalacao.caso-na-central`), que só resolve os itens `kind='other'` — e é
+ * assíncrono: entre fechar o caso e o dreno rodar, o sino segue cobrando uma
+ * decisão que já foi tomada. Os itens `case_stale` e
+ * `aviso_de_caso_nao_entregue`, que também nascem com `ref_kind='agent_case'`,
+ * nem passam por aquele consumidor. Aqui a pessoa vê o sino limpo no mesmo
+ * commit em que fechou o caso.
+ *
+ * Casa por `ref_id` (o id do caso), que é o que o issue pede, e não por
+ * `ref_kind`: o id é uuid de caso e nenhum outro aviso aponta para ele.
+ */
+export async function resolverAvisosDoCaso(
+  db: Queryable,
+  tenantId: string,
+  caseId: string,
+): Promise<number> {
+  const { rowCount } = await db.query(
+    `update agent_inbox_items
+        set status = 'resolved', resolved_at = now()
+      where organization_id = $1 and ref_id = $2 and status in ('open','ack')`,
+    [tenantId, caseId],
+  );
+  return rowCount ?? 0;
 }
 
 /** Resumo curto do caso para o inbox de escalação (mesmo espírito de buildHandoffSummary). */

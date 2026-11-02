@@ -1,0 +1,1033 @@
+{
+  "id": "extensoes",
+  "titulo": "Extensões",
+  "tela": "/app/extensions",
+  "resumo": "Onde você instala e liga guias prontos que orientam a equipe no CRM, como o roteiro da primeira consulta, vendo antes quais telas cada guia pode abrir.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Extensões",
+      "objetivo": "Achar a tela de Extensões e ler o cartão de uma extensão instalada: se está ativa, a versão, de onde veio e quais telas ela pode abrir.",
+      "papel": "admin",
+      "busca": [
+        "extensões",
+        "guias do crm",
+        "o que é extensão",
+        "instalar guia no crm",
+        "complementos",
+        "permissões da extensão"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde ficam as extensões",
+          "texto": "Abra \"Configurações\", no rodapé do menu lateral. Na parte \"Sua empresa\" fica o cartão \"Extensões\". Clique nele.",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "a[href='/app/extensions']"
+              },
+              "rotulo": "Extensões",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "css": "a[href='/app/extensions']"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Guias que orientam o trabalho",
+          "texto": "Uma extensão é um guia pronto: um passo a passo que aparece no CRM para orientar a equipe, como o roteiro para marcar a primeira consulta. Ela não recebe os dados dos seus pacientes e não roda programa de ninguém: no máximo, um botão do guia abre uma tela do CRM, como a Agenda. A tela tem duas abas: \"Instaladas\", o que já está no seu CRM, e \"Catálogo\", o que pode ser instalado.",
+          "dica": "O quadro \"Oriente o trabalho com novos guias\", no alto, só aparece para quem cuida do servidor onde o CRM roda (o responsável pela instalação). O administrador de uma empresa não o vê. A frase do topo fala em \"Tarefas\", mas cada guia abre a tela escrita no próprio cartão.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[href='/app/extensions']"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Extensões",
+                "exato": true
+              },
+              "rotulo": "Extensões",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "tablist"
+              },
+              "rotulo": "Instaladas e Catálogo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O cartão de uma extensão",
+          "texto": "Cada extensão instalada ganha um cartão. Ao lado do nome, o selo diz se ela está \"Ativa\" ou \"Desativada\" na sua empresa. O quadro cinza mostra a \"Versão\", a \"Origem\" (o endereço de onde ela veio) e a \"Permissão\": as telas do CRM que o guia pode abrir. Aqui, o \"Roteiro da primeira consulta\" só abre a Agenda e não lê seus dados.",
+          "dica": "Extensão instalada não aparece sozinha para a equipe. Ela só vale na sua empresa depois que um administrador a ativa, como mostra a próxima lição.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "switch",
+                "nome": "Ativa no CRM",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Desativada",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              },
+              "rotulo": "Situação na sua empresa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta') dl"
+              },
+              "rotulo": "Versão, origem e permissão",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Procurar uma extensão",
+          "texto": "Com muitas extensões, use a busca: digite parte do nome ou da descrição e a lista mostra só as que combinam. Aqui, \"retorno\" deixou só o guia \"Retorno de pacientes\". A busca vale nas duas abas.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Buscar por nome ou descrição"
+              },
+              "valor": "retorno"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Buscar por nome ou descrição"
+              },
+              "rotulo": "Busca",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid^='extension-installed-']:has-text('Retorno de pacientes') h2"
+              },
+              "rotulo": "A extensão encontrada",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Filtrar por categoria",
+          "texto": "Ao lado da busca, a lista de categorias separa as extensões pelo assunto: \"Produtividade\", \"Vendas\" ou \"Atendimento\". Escolha uma para ver só as daquele assunto, ou \"Todas as categorias\" para ver tudo de novo.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Extensões",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Buscar por nome ou descrição"
+              },
+              "valor": ""
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox",
+                "nome": "Filtrar por categoria"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "listbox"
+              },
+              "rotulo": "Categorias",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ativar-um-guia",
+      "titulo": "Ativar um guia e usá-lo",
+      "objetivo": "Ligar uma extensão instalada na sua empresa, abrir o guia dela e achar os cartões do guia no CRM.",
+      "papel": "admin",
+      "busca": [
+        "ativar extensão",
+        "ligar guia",
+        "abrir guia",
+        "usar extensão no crm",
+        "guia da recepção",
+        "orientações instaladas"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Ligar a extensão",
+          "texto": "No cartão do \"Roteiro da primeira consulta\", a chave \"Ativa no CRM\" liga a extensão só na sua empresa. Desligada, a frase embaixo avisa que a configuração fica guardada. Clique na chave.",
+          "dica": "Só o administrador da empresa vê a chave. Os outros cargos não mudam nada aqui: com a extensão desativada, veem o aviso \"Peça a um administrador da organização para ativar este guia.\"; depois de ativada, veem o botão \"Abrir guia\".",
+          "rota": "/app/extensions",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Ativa no CRM",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              },
+              "rotulo": "Ativa no CRM",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "switch",
+            "nome": "Ativa no CRM",
+            "exato": true,
+            "dentro": {
+              "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Salvar a mudança",
+          "texto": "A chave ligou e a frase mudou para \"Os guias aparecem no hub do CRM.\" (o \"hub do CRM\" é a tela CRM, que vamos ver no fim desta lição). Mas nada vale antes de salvar: clique em \"Salvar configuração\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Ativa no CRM",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Ativa no CRM",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              },
+              "rotulo": "Ligada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar configuração",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              },
+              "rotulo": "Salvar configuração",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar configuração",
+            "exato": true,
+            "dentro": {
+              "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+            }
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Extensão ativa",
+          "texto": "Salvo. O selo passou para \"Ativa\" e aparece a frase \"Configuração salva.\". Agora surgiu o botão \"Abrir guia\", que leva ao conteúdo do guia. Clique nele.",
+          "dica": "Para tirar o guia da equipe, desligue a chave e salve de novo. A configuração fica guardada para quando você religar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar configuração",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Configuração salva.",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Ativa",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              },
+              "rotulo": "Agora está ativa",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Configuração salva.",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              },
+              "rotulo": "Salvo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Abrir guia",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              },
+              "rotulo": "Abrir guia",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Abrir guia",
+            "exato": true,
+            "dentro": {
+              "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+            }
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "O conteúdo do guia",
+          "texto": "O guia mostra o nome, a versão e as telas que ele pode abrir. Embaixo vêm os cartões com o passo a passo, como \"Marcar a primeira consulta\". O botão do cartão, aqui \"Abrir a Agenda\", confere de novo se a extensão continua ativa e então leva você à Agenda do CRM.",
+          "dica": "A frase pequena embaixo do botão fala em \"Tarefas\", mas o botão abre a tela que está escrita nele, aqui a Agenda.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Abrir guia",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "extension-guide-card-marcar-primeira-consulta"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "extension-guide-card-marcar-primeira-consulta"
+              },
+              "rotulo": "Passo a passo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "extension-open-marcar-primeira-consulta"
+              },
+              "rotulo": "Abre a Agenda",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "O guia no dia a dia",
+          "texto": "A equipe não precisa vir até Extensões. Na tela \"CRM\" (no menu lateral, o link \"Ver tudo em CRM\") aparece a parte \"Orientações instaladas\", com um cartão para cada passo a passo das extensões ativas. Clicar no cartão abre o guia com esse passo em primeiro lugar. O link \"Gerenciar extensões\" volta para esta configuração.",
+          "rota": "/app/crm",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "section[aria-labelledby='hub-crm-orientacoes-instaladas']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid^='extension-contribution-'][data-testid$='-marcar-primeira-consulta']"
+              },
+              "rotulo": "Cartão do guia",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Gerenciar extensões",
+                "exato": true,
+                "dentro": {
+                  "css": "section[aria-labelledby='hub-crm-orientacoes-instaladas']"
+                }
+              },
+              "rotulo": "Gerenciar extensões",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "aparencia-dos-cartoes",
+      "titulo": "Ajustar como os cartões aparecem",
+      "objetivo": "Deixar os cartões de um guia mais compactos e sem a descrição, e conferir o resultado na tela inicial do CRM.",
+      "papel": "admin",
+      "busca": [
+        "cartões compactos",
+        "densidade dos cards",
+        "esconder descrição do guia",
+        "aparência da extensão",
+        "configurar extensão",
+        "deixar guia menor"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "As duas opções de aparência",
+          "texto": "Abaixo da chave \"Ativa no CRM\" ficam duas opções que mudam só a aparência dos cartões do guia. \"Densidade dos cards\" escolhe entre \"Confortável\", com mais espaço, e \"Compacta\". \"Mostrar descrição nos cards\" liga ou desliga a frase curta embaixo do título de cada cartão.",
+          "rota": "/app/extensions",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar configuração",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta') [data-testid^='extension-density-']"
+              },
+              "rotulo": "Densidade dos cards",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Mostrar descrição nos cards",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              },
+              "rotulo": "Mostrar descrição",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Escolher a densidade",
+          "texto": "Clique em \"Densidade dos cards\" e escolha \"Compacta\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta') [data-testid^='extension-density-']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta') [data-testid^='extension-density-']"
+              },
+              "rotulo": "Densidade dos cards",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Compacta",
+                "exato": true
+              },
+              "rotulo": "Compacta",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Compacta",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Esconder a descrição e salvar",
+          "texto": "Desligue \"Mostrar descrição nos cards\". Como a extensão está desativada, ligue também \"Ativa no CRM\": só os guias ativos aparecem para a equipe. Por fim, clique em \"Salvar configuração\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Compacta",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Mostrar descrição nos cards",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Ativa no CRM",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Ativa no CRM",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              },
+              "rotulo": "Ativa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta') [data-testid^='extension-density-']"
+              },
+              "rotulo": "Compacta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Mostrar descrição nos cards",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              },
+              "rotulo": "Sem descrição",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar configuração",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              },
+              "rotulo": "Salvar configuração",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar configuração",
+            "exato": true,
+            "dentro": {
+              "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+            }
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Configuração salva",
+          "texto": "Pronto: apareceu a frase \"Configuração salva.\". A extensão está ativa, com a densidade \"Compacta\" e sem a descrição nos cartões. As escolhas ficaram gravadas na sua empresa.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar configuração",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Configuração salva.",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta') [data-testid^='extension-density-']"
+              },
+              "rotulo": "Compacta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Configuração salva.",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              },
+              "rotulo": "Salvo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "O resultado na tela inicial",
+          "texto": "Agora abra a tela \"CRM\" (link \"Ver tudo em CRM\" no menu lateral). Em \"Orientações instaladas\", o cartão \"Marcar a primeira consulta\" ficou mais baixo e perdeu a frase de descrição embaixo do título. O nome do guia, no alto, e a linha \"Abre Agenda; não lê seus dados.\" continuam lá.",
+          "dica": "A escolha vale só para a sua empresa. Outra empresa no mesmo CRM pode usar o mesmo guia com outra aparência.",
+          "rota": "/app/crm",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid^='extension-contribution-'][data-testid$='-marcar-primeira-consulta']"
+              },
+              "rotulo": "Cartão compacto, sem descrição",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "catalogo-e-versoes",
+      "titulo": "Catálogo, versões e remoção",
+      "objetivo": "Para quem administra a instalação: entender o catálogo, instalar e trocar a versão de uma extensão, desfazer uma troca e remover.",
+      "papel": "admin",
+      "busca": [
+        "catálogo de extensões",
+        "instalar extensão",
+        "atualizar extensão",
+        "voltar versão anterior",
+        "remover extensão",
+        "admitir catálogo"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Admitir um catálogo",
+          "texto": "Este quadro só aparece para quem administra a instalação do CRM. Um catálogo é um arquivo com a lista de extensões que alguém oferece para instalar. Clique em \"Escolher arquivo JSON\", escolha o arquivo e depois em \"Admitir catálogo\". O CRM guarda quem admitiu, quando, o endereço de origem e o número da versão do arquivo, e as extensões dele passam a aparecer na aba \"Catálogo\". Admitir não instala nada: instalar é o passo seguinte.",
+          "dica": "Como diz o quadro à direita, o arquivo não comprova quem o publicou. Só admita um catálogo de uma fonte em que você confia.",
+          "rota": "/app/extensions",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "button:has-text('Escolher arquivo JSON')"
+              },
+              "rotulo": "Escolher o arquivo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "extension-catalog-submit"
+              },
+              "rotulo": "Admitir catálogo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Antes de admitir",
+                "exato": true
+              },
+              "rotulo": "Leia antes",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "A aba Catálogo",
+          "texto": "Na aba \"Catálogo\" cada cartão é uma versão de uma extensão. O quadro mostra a \"Identidade\" (um código com o editor, o nome e a versão), a \"Origem revisada\", o \"Publicado por\" e \"O que ela abre\". Aqui o \"Roteiro da primeira consulta\" aparece em duas versões: a 1.1.0 já está instalada, e a 1.0.0 oferece \"Trocar para 1.0.0\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "Catálogo",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "extension-catalog-guias-clinica-roteiro-primeira-consulta-1.1.0"
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "extension-install-guias-clinica-roteiro-primeira-consulta-1.0.0"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='extension-catalog-guias-clinica-roteiro-primeira-consulta-1.0.0'] dl"
+              },
+              "rotulo": "Identidade e origem",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "extension-install-guias-clinica-roteiro-primeira-consulta-1.0.0"
+              },
+              "rotulo": "Trocar de versão",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Esta versão já está instalada.",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid='extension-catalog-guias-clinica-roteiro-primeira-consulta-1.1.0']"
+                }
+              },
+              "rotulo": "Versão em uso",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Instalar uma extensão nova",
+          "texto": "\"Orientações pós-consulta\" ainda não está instalada. O botão \"Instalar versão revisada\" baixa o pacote do endereço do catálogo, confere se é o mesmo arquivo revisado e instala para a instalação inteira. Depois disso, o administrador de cada empresa decide se ativa.",
+          "dica": "Se o endereço do catálogo estiver fora do ar, a instalação falha e o motivo aparece em \"Atividade recente\", no fim da tela.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "extension-install-guias-clinica-orientacoes-pos-consulta-1.0.0"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "[data-testid='extension-catalog-guias-clinica-orientacoes-pos-consulta-1.0.0'] dl"
+              },
+              "rotulo": "Abre Conversas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "extension-install-guias-clinica-orientacoes-pos-consulta-1.0.0"
+              },
+              "rotulo": "Instalar versão revisada",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Trocar de versão",
+          "texto": "Ao clicar em \"Trocar para 1.0.0\", o CRM pede confirmação. A versão escolhida substitui a atual em todas as empresas, e quem estava com a extensão ativa continua com ela ativa. Ao confirmar em \"Trocar\", o pacote é baixado de novo do endereço do catálogo; se ele estiver fora do ar, a troca falha e a versão atual continua. Aqui vamos só ler e clicar em \"Cancelar\".",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "testid": "extension-install-guias-clinica-roteiro-primeira-consulta-1.0.0"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "extension-install-guias-clinica-roteiro-primeira-consulta-1.0.0"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "alertdialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "alertdialog"
+              },
+              "rotulo": "Confirmação da troca",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "extension-install-confirm-guias-clinica-roteiro-primeira-consulta-1.0.0"
+              },
+              "rotulo": "Trocar: confirma de verdade",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar",
+                "exato": true,
+                "dentro": {
+                  "role": "alertdialog"
+                }
+              },
+              "rotulo": "Cancelar (o que fazemos aqui)",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Desfazer a última troca",
+          "texto": "De volta à aba \"Instaladas\", quem administra a instalação vê no cartão o quadro \"Em todas as organizações\", que conta quantas empresas estão com a extensão ativa. O botão \"Desfazer a última troca (volta para 1.0.0)\" devolve a versão anterior em todas as empresas sem baixar nada, então funciona mesmo com o catálogo fora do ar. Ele também pede confirmação.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "tab",
+                "nome": "Instaladas",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Remover da instalação",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Em todas as organizações",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              },
+              "rotulo": "Vale para todas as empresas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "button[data-testid^='extension-revert-']",
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              },
+              "rotulo": "Volta para a versão anterior",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Remover da instalação",
+          "texto": "\"Remover da instalação\" tira a extensão de todas as empresas: quem a usava deixa de ver os guias, e a configuração de cada empresa fica guardada. Não há desfazer: para voltar, é preciso reinstalar pelo catálogo, o que só funciona se o endereço do catálogo estiver no ar e ainda listar a versão. Depois, cada empresa ativa de novo. Aqui só abrimos a confirmação; para sair sem remover, clique em \"Cancelar\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Remover da instalação",
+                "exato": true,
+                "dentro": {
+                  "css": "[data-testid^='extension-installed-']:has-text('Roteiro da primeira consulta')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "alertdialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "alertdialog"
+              },
+              "rotulo": "Confirmação da remoção",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Remover de todas",
+                "exato": true
+              },
+              "rotulo": "Remover de todas: não tem desfazer",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar",
+                "exato": true,
+                "dentro": {
+                  "role": "alertdialog"
+                }
+              },
+              "rotulo": "Cancelar (o que fazemos aqui)",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p7",
+          "titulo": "Atividade recente",
+          "texto": "No fim da tela, \"Atividade recente\" guarda o recibo de cada pedido: catálogo admitido, instalação, atualização ou troca de versão, troca desfeita, remoção e configuração. Cada um mostra o resultado (\"Concluída\", \"Falhou\" ou \"Cancelada\"), a data e a hora. Um pedido ainda em andamento aparece como \"Preparando\": quem o fez pode verificar ou cancelar; os outros responsáveis só podem cancelar.",
+          "dica": "Nos recibos de \"Configuração\", a linha de baixo diz \"Operação da plataforma\", mas eles registram uma mudança feita só na sua empresa, como ligar um guia.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Atividade recente",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Atividade recente",
+                "exato": true
+              },
+              "rotulo": "Atividade recente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "[data-testid^='extension-operation-']",
+                "n": 0
+              },
+              "rotulo": "O pedido mais recente",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

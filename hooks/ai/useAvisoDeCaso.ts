@@ -29,7 +29,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
-import type { AvisoDaTela, ConexaoParaAviso } from "@/lib/escalacao/estado-do-aviso";
+import type { AvisoDaTela, ConexaoParaAviso, MembroDoAvisoNaTela } from "@/lib/escalacao/estado-do-aviso";
 import type { MotivoDoTeste } from "@/lib/escalacao/aviso-de-teste";
 import type { EntregaNaTela } from "@/lib/escalacao/tela-do-aviso";
 import type { LacoDoAviso } from "@/lib/escalacao/laco-do-aviso";
@@ -43,10 +43,14 @@ export interface ConfigDoAvisoNaTela {
   ligado: boolean;
   resposta_whatsapp_habilitada: boolean;
   atualizado_em: string;
+  /** `fixo` (o número da empresa) ou `responsavel` (#3803). */
+  destino_modo: "fixo" | "responsavel";
 }
 
 export interface EstadoDoAviso {
   config: ConfigDoAvisoNaTela | null;
+  /** A equipe e o WhatsApp de cada um (#3803). */
+  equipe: MembroDoAvisoNaTela[];
   conexoes: ConexaoParaAviso[];
   avisos: AvisoDaTela[];
   pode_ligar: boolean;
@@ -112,6 +116,14 @@ export interface EntradaDoSalvar {
   resposta_whatsapp_habilitada: boolean;
   /** `true` = "eu sei que esse número é um cliente meu, e quero mesmo assim". */
   confirma_contato?: boolean;
+  /** COMO escolher quem recebe (#3803). Ausente = `fixo`, o default do banco. */
+  destino_modo?: "fixo" | "responsavel";
+  /**
+   * O WhatsApp de cada pessoa da equipe. `null` LIMPA o número de quem não tem
+   * mais celular cadastrado — é a diferença entre "não mexi" (campo omitido) e
+   * "esta pessoa não tem número" (nulo explícito).
+   */
+  responsaveis?: Array<{ user_id: string; whatsapp: string | null }>;
 }
 
 export function useSalvarAvisoDeCaso() {

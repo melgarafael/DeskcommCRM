@@ -42,6 +42,36 @@ export interface EscopoDaGestao {
   orgId: string;
   sessionId: string;
   sessionRef: string;
+  /**
+   * Só o canal OFICIAL: a WABA desta sessão. O sync oficial grava o espelho por
+   * `waba_id` e deixa `channel_session_id` NULO (ver `linha-do-espelho.ts`), então
+   * filtrar pela conexão não acharia nenhuma linha dele — o apagar não tirava o
+   * modelo do espelho e o "em uso" não via os follow-ups que apontam para ele.
+   */
+  wabaOficial?: string;
+}
+
+/**
+ * As linhas do espelho deste modelo NESTA conexão. É a mesma régua que decide se
+ * a conexão pode editar/apagar o modelo: o espelho é da organização inteira, e o
+ * homônimo de outra conexão é de outra conta.
+ */
+export async function linhasDoModeloNaConexao(
+  admin: SupabaseClient,
+  escopo: EscopoDaGestao,
+  alvo: { name: string; language: string },
+): Promise<string[]> {
+  const base = admin
+    .from("meta_templates")
+    .select("id")
+    .eq("organization_id", escopo.orgId)
+    .eq("name", alvo.name)
+    .eq("language", alvo.language);
+  const { data, error } = await (escopo.wabaOficial
+    ? base.is("channel_session_id", null).eq("waba_id", escopo.wabaOficial)
+    : base.eq("channel_session_id", escopo.sessionId));
+  if (error) throw new Error(`modelo_espelho: ${error.message}`);
+  return ((data ?? []) as { id: string }[]).map((l) => l.id);
 }
 
 /**
@@ -128,15 +158,7 @@ export async function executarGestao(
     return { ok: true, acao: "editar" };
   }
 
-  const { data: linhas, error } = await admin
-    .from("meta_templates")
-    .select("id")
-    .eq("organization_id", escopo.orgId)
-    .eq("channel_session_id", escopo.sessionId)
-    .eq("name", corpo.name)
-    .eq("language", corpo.language);
-  if (error) throw new Error(`modelo_espelho: ${error.message}`);
-  const ids = ((linhas ?? []) as { id: string }[]).map((l) => l.id);
+  const ids = await linhasDoModeloNaConexao(admin, escopo, corpo);
 
   if (!corpo.confirmado) {
     const usos = await usosDoModelo(admin, escopo.orgId, { name: corpo.name, ids });
@@ -152,13 +174,13 @@ export async function executarGestao(
   // O sincronizar só ACRESCENTA modelos desta conta (ausência na lista pode ser
   // erro transitório); o apagado sai do espelho aqui, porque aqui sabemos que
   // ele deixou de existir.
-  const { error: ed } = await admin
-    .from("meta_templates")
-    .delete()
-    .eq("organization_id", escopo.orgId)
-    .eq("channel_session_id", escopo.sessionId)
-    .eq("name", corpo.name)
-    .eq("language", corpo.language);
-  if (ed) throw new Error(`modelo_espelho_apagar: ${ed.message}`);
+  if (ids.length > 0) {
+    const { error: ed } = await admin
+      .from("meta_templates")
+      .delete()
+      .eq("organization_id", escopo.orgId)
+      .in("id", ids);
+    if (ed) throw new Error(`modelo_espelho_apagar: ${ed.message}`);
+  }
   return { ok: true, acao: "apagar" };
 }

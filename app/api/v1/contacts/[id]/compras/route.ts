@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
 
 /** O embed do funil alimenta os RÓTULOS dos campos escolhidos (título da coluna). */
 const COMPRA_COLS =
-  "id, title, status, value_cents, currency, closed_at, pipeline_id, custom_fields, crm_pipelines(settings)";
+  "id, title, status, value_cents, recurring_value_cents, recurring_period, recurring_months, currency, closed_at, pipeline_id, custom_fields, crm_pipelines(settings)";
 
 /** A janela da lista: o suficiente para o histórico do atendimento, sem paginar. */
 const LIMITE = 20;

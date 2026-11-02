@@ -22,6 +22,7 @@ import { HistoricoDaAgenda } from "@/components/agenda/HistoricoDaAgenda";
 import type { Agendamento, HorarioLivre, VisaoDaAgenda } from "@/components/agenda/tipos";
 import { EmptyAgenda } from "@/components/empty";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
+import { duracaoEscolhidaValida } from "@/lib/agenda/duracao-escolhida";
 import { ancoraAoFecharPainel } from "@/lib/agenda/ancora-depois-de-marcar";
 import { ancoraLocalDoDia } from "@/lib/agenda/semana-semente";
 import { dataDeParede, diaLocalISO, partesNoFuso } from "@/lib/agenda/fuso";
@@ -118,6 +119,12 @@ export function AgendaClient({
     duracaoMin: number;
     donoId: string | null;
     servicoColetivo?: boolean;
+    /**
+     * Qualquer serviço (`service_enabled`), individual ou coletivo. Nele a
+     * duração é da agenda publicada, e a rota recusa `duration_minutes` com
+     * `agenda_duracao_do_servico` — por isso a tela não oferece nem envia.
+     */
+    servico?: boolean;
     localKind: string | null;
     localDetalhes: string | null;
   }>;
@@ -203,6 +210,19 @@ export function AgendaClient({
   // vazia) = a pessoa editou, e o tipo novo não pode devolver o que ela apagou.
   const [enderecoEditado, setEnderecoEditado] = React.useState<string | null>(null);
   const [observacao, setObservacao] = React.useState("");
+  /**
+   * O TÍTULO LIVRE DO COMPROMISSO (#3766) — a agenda também serve para
+   * atendimento externo, e "OS 1234" ou "Atendimento fulano" é o que quem olha
+   * a grade precisa ler.
+   *
+   * ⚠️ A COLUNA JÁ EXISTIA (`calendar_appointments.title`), e a rota já a
+   * aceitava: o que faltava era o CAMPO. Vazio manda `undefined`, e aí a
+   * decisão de hoje continua valendo — `title: input.title ?? tipo.name`, num
+   * lugar só (`app/api/v1/agenda/agendamentos/_handler.ts:508`). É de propósito
+   * que a tela NÃO repita o nome do tipo: duas cópias da mesma regra divergem
+   * na primeira vez que alguém mudar uma delas.
+   */
+  const [tituloLivre, setTituloLivre] = React.useState("");
   const marcar = useMarcarAgendamento();
   const remarcar = useRemarcarAgendamento();
   const cancelar = useCancelarAgendamento();
@@ -322,6 +342,20 @@ export function AgendaClient({
   // A estabilidade continua: a chave do React Query só muda quando o mês, o
   // tipo ou a abertura mudam — nunca a cada render. `new Date()` aqui corre
   // uma vez por essas mudanças, não no corpo.
+  /**
+   * A DURAÇÃO ESCOLHIDA NA MARCAÇÃO (issue #3709) — `null` = a do serviço.
+   *
+   * Vive AQUI, e não no painel, porque é ela que entra na chave da consulta de
+   * horários: quem oferece os slots é a rota. O painel é quem a escolhe e a
+   * anuncia (`onDuracaoMudar`), inclusive ao abrir — é assim que os dois lados
+   * nunca discordam sobre "para quanto tempo" a lista foi calculada.
+   */
+  const [duracaoEscolhida, setDuracaoEscolhida] = React.useState<number | null>(null);
+  // Trocar o serviço volta ao padrão DELE: a duração escolhida era do outro, e
+  // não deve nem por um render viajar na consulta do serviço novo.
+  React.useEffect(() => {
+    setDuracaoEscolhida(null);
+  }, [tipoId]);
   // Mesmo relógio da grade: o mini-calendário abre no mês da ORGANIZAÇÃO.
   const [mesDoPainel, setMesDoPainel] = React.useState(() =>
     startOfMonth(ancoraLocalDoDia(hojeNaOrganizacao)),
@@ -342,37 +376,10 @@ export function AgendaClient({
     return { de: de.toISOString(), ate: ate.toISOString() };
   }, [mesDoPainel, agoraDaAbertura]);
 
-  // Os horários vêm da rota real — a mesma que a IA usa, então tela e agente
-  // oferecem exatamente os mesmos horários. Só consulta quando o painel abre.
-  // `isError` junto, e não só `data`: sem ele a tela MENTE por default. O
-  // `publicouHorarios={horarios?.publicou_horarios ?? true}` abaixo transforma
-  // "a consulta falhou" em "publicou, só não tem vaga" — dias travados e aviso
-  // nenhum, que é exatamente o que uma instalação fresca produz (a rota devolve
-  // 422 porque ninguém está em `attendant_availability`).
-  const { data: horarios, isError: horariosFalharam } = useHorariosLivres(
-    marcando && tipo
-      ? { event_type_id: tipo.id, de: janelaDeBusca.de, ate: janelaDeBusca.ate }
-      : null,
-  );
+  // A consulta de horários mora MAIS ABAIXO (#3709): ela precisa da duração do
+  // compromisso que está sendo remarcado, que só existe depois da lista de
+  // agendamentos. Movê-la para lá é o que permite a lista e o PATCH concordarem.
 
-  const horariosPorDia = React.useMemo(() => {
-    const mapa: Record<string, Array<{ instante: string; rotulo: string }>> = {};
-    for (const s of horarios?.slots ?? []) {
-      const d = new Date(s.inicio);
-      // A CHAVE E O RÓTULO SAEM DO FUSO DA ORGANIZAÇÃO: o slot das 09:00 da
-      // clínica é daquele dia e daquela hora PARA ELA, não para quem está
-      // olhando (issue #1362). O lookup em `PainelDeMarcacao` continua batendo,
-      // porque ele indexa pela data de calendário da mesma âncora.
-      const chave = diaLocalISO(d, fusoDaAgenda);
-      const p = partesNoFuso(d, fusoDaAgenda);
-      const dois = (n: number) => String(n).padStart(2, "0");
-      (mapa[chave] ??= []).push({
-        instante: s.inicio,
-        rotulo: `${dois(p.hora)}:${dois(p.minuto)}`,
-      });
-    }
-    return mapa;
-  }, [horarios, fusoDaAgenda]);
 
   // OS AGENDAMENTOS SÃO REAIS, e agora TAMBÉM se atualizam sem recarregar.
   //
@@ -423,6 +430,70 @@ export function AgendaClient({
     () => (isolada === null ? todos : todos.filter((a) => a.responsavelId === isolada)),
     [isolada, todos],
   );
+
+  /**
+   * A DURAÇÃO DO COMPROMISSO QUE ESTÁ SENDO REMARCADO (#3709).
+   *
+   * Remarcar move o bloco e PRESERVA o comprimento (`_handler.ts` passou a ler
+   * `ends_at - starts_at`). A lista ao lado tem de ser calculada para o MESMO
+   * comprimento, senão ela oferece um horário que o PATCH recusa: um atendimento
+   * de 90 minutos num serviço de 30 veria slots de 30 e levaria 422 em cima do
+   * primeiro clique. `null` = não sei (linha sem fim, fora da faixa), e aí vale
+   * o padrão do serviço, como antes.
+   */
+  const duracaoDoCompromisso = React.useMemo(() => {
+    if (!remarcandoId) return null;
+    const alvo = agendamentos.find((a) => a.id === remarcandoId);
+    if (!alvo) return null;
+    const minutos = Math.round(
+      (new Date(alvo.termina).getTime() - new Date(alvo.comeca).getTime()) / 60_000,
+    );
+    return duracaoEscolhidaValida(minutos) ? minutos : null;
+  }, [remarcandoId, agendamentos]);
+
+  // Os horários vêm da rota real — a mesma que a IA usa, então tela e agente
+  // oferecem exatamente os mesmos horários. Só consulta quando o painel abre.
+  // `isError` junto, e não só `data`: sem ele a tela MENTE por default. O
+  // `publicouHorarios={horarios?.publicou_horarios ?? true}` abaixo transforma
+  // "a consulta falhou" em "publicou, só não tem vaga" — dias travados e aviso
+  // nenhum, que é exatamente o que uma instalação fresca produz (a rota devolve
+  // 422 porque ninguém está em `attendant_availability`).
+  const { data: horarios, isError: horariosFalharam } = useHorariosLivres(
+    marcando && tipo
+      ? {
+          event_type_id: tipo.id,
+          de: janelaDeBusca.de,
+          ate: janelaDeBusca.ate,
+          // A DURAÇÃO ENTRA NA CONSULTA (#3709): quem decide o que está livre é
+          // o motor, no servidor, e ele precisa saber quanto tempo cada slot
+          // exige. Remarcando, é o comprimento do bloco que vai ser movido;
+          // marcando, é a escolha da tela (ou o padrão do serviço). Sem isso a
+          // lista e a escrita discordariam sobre o mesmo horário.
+          duracao_minutos: tipo.servico
+            ? undefined
+            : (duracaoDoCompromisso ?? duracaoEscolhida ?? tipo.duracaoMin),
+        }
+      : null,
+  );
+
+  const horariosPorDia = React.useMemo(() => {
+    const mapa: Record<string, Array<{ instante: string; rotulo: string }>> = {};
+    for (const s of horarios?.slots ?? []) {
+      const d = new Date(s.inicio);
+      // A CHAVE E O RÓTULO SAEM DO FUSO DA ORGANIZAÇÃO: o slot das 09:00 da
+      // clínica é daquele dia e daquela hora PARA ELA, não para quem está
+      // olhando (issue #1362). O lookup em `PainelDeMarcacao` continua batendo,
+      // porque ele indexa pela data de calendário da mesma âncora.
+      const chave = diaLocalISO(d, fusoDaAgenda);
+      const p = partesNoFuso(d, fusoDaAgenda);
+      const dois = (n: number) => String(n).padStart(2, "0");
+      (mapa[chave] ??= []).push({
+        instante: s.inicio,
+        rotulo: `${dois(p.hora)}:${dois(p.minuto)}`,
+      });
+    }
+    return mapa;
+  }, [horarios, fusoDaAgenda]);
 
   // A GRADE não mostra cancelado — ele fica só na aba "Cancelados" do
   // histórico, que lê `agendamentos` (cheio) e o separa sozinha em `separar()`.
@@ -676,6 +747,11 @@ export function AgendaClient({
             setEmailConvidado("");
             setEnderecoEditado(null);
             setObservacao("");
+            // O título livre digitado e não usado é o mesmo caso do convidado:
+            // reapareceria na marcação seguinte, que é de OUTRO atendimento —
+            // e um título que não corresponde ao compromisso é pior que um
+            // genérico, porque parece de propósito.
+            setTituloLivre("");
             // E o próprio cliente, que é o pior dos quatro a sobrar: medido numa
             // instalação real em 2026-09-12, "Novo agendamento" abriu com um
             // contato JÁ selecionado, herdado de uma abertura anterior feita a
@@ -790,6 +866,40 @@ export function AgendaClient({
                 </div>
               </div>
             )}
+            {!remarcandoId ? (
+              /*
+                O TÍTULO LIVRE (#3766) — opcional, e por isso vem ANTES dos
+                outros campos opcionais: é o que a grade mostra no bloco.
+
+                Sem texto, o corpo do POST sai sem `title` e a rota grava o
+                nome do tipo, como sempre. Com texto, é ELE o título do
+                compromisso na grade, no histórico, no evento do Google e
+                no lembrete que vai ao cliente (`montarLembrete` usa `title`).
+              */
+              <div className="lg:col-span-2">
+                <label className="block" htmlFor="titulo-do-compromisso">
+                  {t("Título do compromisso")}{" "}
+                  <span className="font-normal opacity-70">({t("opcional")})</span>
+                </label>
+                <input
+                  id="titulo-do-compromisso"
+                  data-testid="titulo-do-compromisso"
+                  type="text"
+                  autoComplete="off"
+                  // 200 é o teto do schema da rota (`marcarSchema`): o mesmo
+                  // número aqui evita um 422 por uma letra a mais.
+                  maxLength={200}
+                  value={tituloLivre}
+                  onChange={(e) => setTituloLivre(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-border bg-surface p-2 outline-hidden focus:border-border-strong"
+                  placeholder={t("OS 1234 · Atendimento fulano")}
+                  aria-describedby="ajuda-do-titulo"
+                />
+                <p id="ajuda-do-titulo" className="mt-1 text-xs text-text-muted">
+                  {t("Aparece na agenda e também para o cliente, no lembrete e no convite. Em branco, usa o nome do tipo de agendamento.")}
+                </p>
+              </div>
+            ) : null}
             {/*
               O CONVIDADO — opcional. O e-mail da ficha do cliente já entra no
               convite do Google; este campo é para outra pessoa (acompanhante).
@@ -877,7 +987,19 @@ export function AgendaClient({
                   resolverResponsavelDoPainel({ pessoas, donoId: tipo.donoId, usuarioId })
                 }
                 tipo={tipo.nome}
-                duracaoMin={tipo.duracaoMin}
+                tipoId={tipo.id}
+                duracaoMin={duracaoDoCompromisso ?? tipo.duracaoMin}
+                /*
+                  A DURAÇÃO É ESCOLHIDA AQUI, E SÓ AQUI (issue #3709).
+
+                  Desligada em dois casos: num serviço, quem manda no comprimento
+                  é a agenda publicada (com capacidade e ocorrência) e a rota
+                  recusa `agenda_duracao_do_servico`; numa remarcação, o PATCH
+                  move o bloco e PRESERVA o comprimento que ele já tem. Nos dois,
+                  oferecer o campo seria oferecer um caminho que não existe.
+                */
+                permiteEscolherDuracao={!remarcandoId && !tipo.servico}
+                onDuracaoMudar={setDuracaoEscolhida}
                 // O LOCAL e o FUSO de verdade, que a tela tinha e não passava.
                 //
                 // `PainelDeMarcacao` trazia `local = "Presencial · Sala 2"` e
@@ -911,7 +1033,7 @@ export function AgendaClient({
                 permiteEncaixe={podeMarcar}
                 // ESTE é o fio que faltava. Sem ele o "Marcado ✓" era estado
                 // local do React e nenhuma linha nascia no banco.
-                onConfirmar={(instante) => {
+                onConfirmar={(instante, duracaoDoAtendimento) => {
                   // ⚠️ SEM `owner_user_id`, e é isto que conserta o 422.
                   //
                   // Isto mandava `pessoas[0]?.id` — a PRIMEIRA pessoa da lista.
@@ -959,14 +1081,29 @@ export function AgendaClient({
                       contact_id: contactId || undefined,
                       conversation_id: conversationId || undefined,
                       starts_at: instante,
+                      // ⚠️ A DURAÇÃO VAI JUNTO (issue #3709). A lista ao lado foi
+                      // calculada para ela e a rota a confere como horário livre;
+                      // mandar o horário sem ela marcaria 30 minutos num bloco
+                      // que a pessoa pediu de 90 — o servidor devolveria 422 e a
+                      // tela teria mostrado a lista certa para a pergunta errada.
+                      // Num serviço ela NÃO vai: o comprimento é o da agenda
+                      // publicada e a rota recusa qualquer duration_minutes ali.
+                      duration_minutes: tipo.servico ? undefined : duracaoDoAtendimento,
                       guest_email: convidado,
                       location_details: endereco.trim(),
                       description: observacao.trim() || undefined,
+                      // TÍTULO LIVRE (#3766): digitado, é ele o `title` da
+                      // linha; vazio fica FORA do corpo e a rota grava o nome
+                      // do tipo (`_handler.ts:508`). `|| undefined` e não `""`:
+                      // a rota exige `min(1)` e string vazia seria 422 — a
+                      // tela estaria recusando o caminho de sempre.
+                      title: tituloLivre.trim() || undefined,
                     })
                     .then((r) => {
                       setEmailConvidado("");
                       setEnderecoEditado(null);
                       setObservacao("");
+                      setTituloLivre("");
                       // Guardado para o fechamento saber para onde levar a grade.
                       setMarcadoEm(instante);
                       return r;

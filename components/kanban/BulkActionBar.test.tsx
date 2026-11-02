@@ -10,7 +10,13 @@ const bulkMutateAsync = vi.hoisted(() => vi.fn());
 const toastSuccess = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/api/client", () => ({ apiClient: { get, post: vi.fn(), patch: vi.fn() } }));
-vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (chave: string) => chave }));
+// O idioma da tela é trocável por caso: o nome do card vem do BANCO, e o padrão
+// neutro ("Negócio") é palavra portuguesa — numa tela em espanhol ele tem de sair traduzido.
+const idioma = vi.hoisted(() => ({ atual: "pt-BR" as "pt-BR" | "es" }));
+vi.mock("@/hooks/i18n/useT", async () => {
+  const { traduzir } = await import("@/lib/i18n/dicionario");
+  return { useT: () => (chave: string) => traduzir(chave, idioma.atual) };
+});
 vi.mock("sonner", () => ({ toast: { success: toastSuccess, warning: vi.fn(), error: vi.fn() } }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useUser: () => ({ id: "u1", is_platform_admin: false }),
@@ -152,5 +158,59 @@ describe("BulkActionBar — F2 (#2484): perdido em lote", () => {
   it("funil sem etapa de perda: a ação não é oferecida", () => {
     montar(STAGES);
     expect(screen.queryByRole("button", { name: "Marcar como perdido…" })).not.toBeInTheDocument();
+  });
+});
+
+describe("BulkActionBar — o card é o NEGÓCIO do funil (#3811)", () => {
+  beforeEach(() => {
+    idioma.atual = "pt-BR";
+    get.mockReset();
+    get.mockResolvedValue({ data: [] });
+  });
+
+  it("tela em espanhol, funil com o padrão neutro: '1 Negocio', nunca o português cru", async () => {
+    idioma.atual = "es";
+    const user = userEvent.setup();
+    render(
+      <BulkActionBar
+        selectedIds={["lead-1"]}
+        stages={STAGES}
+        pipelineId="p-1"
+        tagsExistentes={[]}
+        onClear={vi.fn()}
+        vocabulary={null}
+      />,
+    );
+    expect(screen.getByText(/^1 Negocio /)).toBeInTheDocument();
+    expect(screen.queryByText(/Negócio/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Eliminar" }));
+    expect(await screen.findByText(/ 1 Negocio\?$/)).toBeInTheDocument();
+  });
+
+  it("sem vocabulário: '1 Negócio selecionado', nunca o nome da pessoa", () => {
+    render(
+      <BulkActionBar selectedIds={["lead-1"]} stages={STAGES} pipelineId="p-1" tagsExistentes={[]} onClear={vi.fn()} />,
+    );
+    expect(screen.getByText(/^1 Negócio selecionado$/)).toBeInTheDocument();
+  });
+
+  it("o vocabulário do funil vence: no e-commerce o card é 'Pedido', não 'Cliente'", async () => {
+    const user = userEvent.setup();
+    render(
+      <BulkActionBar
+        selectedIds={["lead-1"]}
+        stages={STAGES}
+        pipelineId="p-1"
+        tagsExistentes={[]}
+        onClear={vi.fn()}
+        vocabulary={{ lead: "Cliente", deal: "Pedido" }}
+      />,
+    );
+    expect(screen.getByText(/^1 Pedido selecionado$/)).toBeInTheDocument();
+    expect(screen.queryByText(/Cliente/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Excluir" }));
+    expect(await screen.findByText("Excluir 1 Pedido?")).toBeInTheDocument();
   });
 });

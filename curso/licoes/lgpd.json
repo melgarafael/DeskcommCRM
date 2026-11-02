@@ -1,0 +1,786 @@
+{
+  "id": "lgpd",
+  "titulo": "LGPD",
+  "tela": "/app/lgpd/requests",
+  "resumo": "Onde chegam os pedidos dos clientes da loja virtual para receber uma cópia dos próprios dados ou apagá-los, com o prazo de cada um.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-lista",
+      "titulo": "Conhecendo a lista de pedidos",
+      "objetivo": "Achar a tela da LGPD, entender o aviso de prazo e ler cada coluna da lista.",
+      "papel": "admin",
+      "busca": [
+        "lgpd",
+        "pedido de dados do cliente",
+        "cliente pediu para apagar os dados",
+        "lei de proteção de dados",
+        "exportar dados do cliente",
+        "prazo lgpd",
+        "privacidade"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "texto": "Clique em \"Configurações\", no rodapé do menu lateral, e desça até a parte \"Dados e acesso\": ali fica o cartão \"LGPD\". É nele que chegam os pedidos dos clientes que querem uma cópia dos próprios dados ou que querem ser apagados do seu cadastro.",
+          "dica": "Só quem administra a conta vê esta tela.",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^LGPD",
+                "regex": true
+              },
+              "rotulo": "Abrir LGPD",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Configurações",
+                "exato": true
+              },
+              "rotulo": "Configurações",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^LGPD",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "De onde vêm os pedidos",
+          "texto": "A tela \"Solicitações LGPD\" mostra os pedidos de clientes sobre os próprios dados. Eles só chegam aqui se a sua loja Nuvemshop estiver conectada ao CRM: quando um cliente da loja pede uma cópia dos dados ou pede para ser apagado, a loja manda o pedido para cá e o prazo começa a contar. Pedido feito por WhatsApp ou telefone não aparece nesta lista. Para apagar essa pessoa, abra a ficha dela em Contatos e use \"Anonimizar contato\". A Clínica Bem Viver tem a loja conectada e quatro pedidos.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "^LGPD",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Solicitações LGPD",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Solicitações LGPD",
+                "exato": true
+              },
+              "rotulo": "Título da tela",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "4 solicitações",
+                "exato": true
+              },
+              "rotulo": "Total de pedidos",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O aviso vermelho de prazo",
+          "texto": "Quando algum pedido em aberto já passou do prazo, ou tem menos de 2 dias para vencer, aparece este aviso vermelho no alto. Ele conta quantos pedidos estão nessa situação. Aqui é 1: o pedido do cliente 48213907, que já passou do prazo. Quando nenhum está tão perto do fim, mas algum já gastou mais da metade do prazo, o aviso fica amarelo. Pedido concluído não entra na conta.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div[role=alert]:has-text('solicitação crítica')"
+              },
+              "rotulo": "Pedido atrasado",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "As colunas da lista",
+          "texto": "Cada linha é um pedido, e o que vence primeiro fica em cima. \"Tipo\" diz o que o cliente pediu: \"Solicitação dados\" é uma cópia dos dados; \"Anonimização cliente\" é apagar os dados pessoais. \"Sujeito\" é o número do cliente na loja virtual. \"Recebido\" diz há quanto tempo o pedido chegou e \"Vence\" quanto falta para o prazo (em vermelho quando faltam menos de 2 dias; depois do prazo aparece \"atrasado hoje\" ou quantos dias de atraso). \"SLA\" resume o prazo: \"OK\", \"Alerta\" (mais da metade do prazo já passou), \"Crítico\" (menos de 2 dias) ou \"Vencido\".",
+          "dica": "são os prazos que o sistema usa, e não números escritos na lei. A cópia dos dados tem 7 dias úteis e o apagamento 15 dias úteis, contados do dia em que o pedido chegou. Sábado, domingo e feriados nacionais não contam.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Tipo",
+                "exato": true
+              },
+              "rotulo": "O que o cliente pediu",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Vence",
+                "exato": true
+              },
+              "rotulo": "Quanto falta para o prazo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Vencido",
+                "exato": true
+              },
+              "rotulo": "Situação do prazo",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "O andamento de cada pedido",
+          "texto": "A coluna \"Status\" diz em que pé o pedido está. Num pedido de cópia, \"Recebido\" quer dizer que ele espera a sua aprovação. Num pedido de apagamento, o sistema começa sozinho: se ele ficou em \"Recebido\", o processamento automático não rodou e você pode aprovar à mão. Depois vem \"Processando\" e, quando termina, \"Concluído\". \"Revisão pendente\" quer dizer que o sistema não conseguiu terminar sozinho: a cópia ficou pronta mas não foi enviada por e-mail (você baixa e entrega), ou o cliente do pedido de apagamento não foi achado no CRM. \"Falhou\" quer dizer que deu erro três vezes seguidas. Para abrir um pedido, clique em \"Ver\", no fim da linha.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "48213907"
+              },
+              "rotulo": "Pedido mais urgente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Concluído",
+                "exato": true
+              },
+              "rotulo": "Pedido já atendido",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "48213907"
+                }
+              },
+              "rotulo": "Abrir o pedido",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "filtrar-pedidos",
+      "titulo": "Filtrar os pedidos",
+      "objetivo": "Mostrar só os pedidos de um tipo ou de uma situação, e voltar para a lista completa.",
+      "papel": "admin",
+      "busca": [
+        "filtrar pedidos lgpd",
+        "ver só pedidos de exclusão",
+        "pedidos de dados atrasados",
+        "limpar filtros lgpd",
+        "pedidos lgpd concluídos"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Os três filtros",
+          "texto": "Acima da lista ficam três filtros. \"Status: todos\" separa pelo andamento (por exemplo, só os recebidos). \"Tipo: todos\" separa cópia de dados de apagamento. \"SLA: todos\" separa pela situação do prazo. Eles podem ser usados juntos.",
+          "rota": "/app/lgpd/requests",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Status: todos')"
+              },
+              "rotulo": "Andamento",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Tipo: todos')"
+              },
+              "rotulo": "Tipo de pedido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "button[role=combobox]:has-text('SLA: todos')"
+              },
+              "rotulo": "Situação do prazo",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "css": "button[role=combobox]:has-text('Tipo: todos')"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Escolher um tipo",
+          "texto": "Clique em \"Tipo: todos\" para abrir a lista de tipos. \"Solicitação dados\" é o cliente pedindo uma cópia dos dados. \"Anonimização cliente\" é o cliente pedindo para ser apagado. \"Anonimização tenant\" aparece quando alguém desinstala o aplicativo do CRM da loja Nuvemshop. Nesse caso o sistema apaga sozinho os dados pessoais de todos os contatos da empresa no CRM, e não só dos clientes da loja.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Tipo: todos')"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "listbox"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Solicitação dados",
+                "exato": true
+              },
+              "rotulo": "Só cópias de dados",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Solicitação dados",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "A lista filtrada",
+          "texto": "Agora a lista mostra só os 2 pedidos de cópia de dados, e o contador ao lado dos filtros diz \"2 solicitações\". Para voltar a ver tudo, clique em \"Limpar filtros\": ele só aparece quando algum filtro está ligado. Repare que o aviso do alto ficou amarelo: ele conta só os pedidos que aparecem na lista, e entre as cópias de dados nenhuma venceu, mas uma já gastou mais da metade do prazo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Solicitação dados",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "2 solicitações",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Solicitação dados')"
+              },
+              "rotulo": "Filtro ligado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "2 solicitações",
+                "exato": true
+              },
+              "rotulo": "Quantos sobraram",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Limpar filtros",
+                "exato": true
+              },
+              "rotulo": "Voltar a ver tudo",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Limpar filtros",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Ver só os que esperam por você",
+          "texto": "No filtro \"Status: todos\", escolha \"Recebido\" para ver só os pedidos que ainda não começaram a ser atendidos. É um bom jeito de começar o dia: aqui são 3, as duas cópias que esperam a sua aprovação e o apagamento atrasado.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Limpar filtros",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "4 solicitações",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Status: todos')"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Recebido",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "3 solicitações",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "button[role=combobox]:has-text('Recebido')"
+              },
+              "rotulo": "Só os recebidos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "3 solicitações",
+                "exato": true
+              },
+              "rotulo": "Ainda não atendidos",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pedido-de-copia",
+      "titulo": "Atender um pedido de cópia dos dados",
+      "objetivo": "Abrir um pedido de cópia dos dados, conferir o que será enviado e preparar a aprovação.",
+      "papel": "admin",
+      "busca": [
+        "cliente pediu cópia dos dados",
+        "aprovar exportação de dados lgpd",
+        "enviar dados para o cliente",
+        "pré-visualizar dados do titular",
+        "como responder pedido lgpd"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir o pedido",
+          "texto": "O Pedro Henrique Lima pediu, pela loja virtual, uma cópia dos dados que a clínica guarda sobre ele. Na linha do pedido dele (cliente 48227316), clique em \"Ver\".",
+          "rota": "/app/lgpd/requests",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "48227316"
+              },
+              "rotulo": "Pedido do Pedro",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "48227316"
+                }
+              },
+              "rotulo": "Abrir",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Ver",
+            "exato": true,
+            "dentro": {
+              "role": "row",
+              "nome": "48227316"
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O topo do pedido",
+          "texto": "No alto aparecem o código do pedido, o andamento (\"Recebido\") e o tipo (\"Solicitação de dados\"). Logo abaixo ficam o dia e a hora em que o pedido chegou e a data-limite para responder (\"Vence em\"). O link \"Solicitações\", acima do código, volta para a lista.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Ver",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "48227316"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "#d415b7e0",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "#d415b7e0",
+                "exato": true
+              },
+              "rotulo": "Código do pedido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "^Recebido em",
+                "regex": true
+              },
+              "rotulo": "Chegada e data-limite",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Prazo e detalhes",
+          "texto": "O quadro \"Linha do tempo SLA\" mostra a barra do prazo (verde no começo, amarela a partir de três quartos, vermelha no fim) e as etapas \"Recebido\" (D+0), \"Revisão intermediária\" (D+5) e \"Entrega ao titular\" (D+7). Essas etapas contam dias corridos: o prazo que vale é o \"Vence em\", no alto da página. O quadro \"Detalhes\" traz o tipo, a origem (\"nuvemshop\" é a loja virtual), quantas tentativas o sistema já fez e o número do cliente na loja, que aparece como \"External customer ID\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(> div > div:text-is('Linha do tempo SLA'))"
+              },
+              "rotulo": "Prazo do pedido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(> div > div:text-is('Detalhes'))"
+              },
+              "rotulo": "Dados do pedido",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "O histórico do pedido",
+          "texto": "Embaixo, a \"Trilha de auditoria\" lista tudo o que acontece com o pedido, com dia e hora. Por enquanto só tem a chegada pela loja (\"lgpd.data_request_received\"); a aprovação e o envio entram aqui depois. Esse registro fica guardado e não pode ser editado, e serve de prova de que a clínica respondeu no prazo.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(> div > div:has-text('Trilha de auditoria'))"
+              },
+              "rotulo": "Tudo o que aconteceu",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Ver o que será enviado",
+          "texto": "Antes de aprovar, clique em \"Pré-visualizar dados\". A janela mostra o cadastro do cliente, com o e-mail e o telefone parcialmente escondidos, e quantos registros dele existem no sistema: conversas, mensagens, \"Leads\" (negócios no funil), pedidos, atividades, entradas de auditoria e consentimentos. Nada é enviado nem alterado ao abrir esta janela. A janela se chama \"Prévia de dados do titular\". Em \"Expandir amostra\" você vê até 10 exemplos de cada tipo de registro. O CPF nunca aparece nesta prévia.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Pré-visualizar dados",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Mensagens (total)",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "dialog"
+              },
+              "rotulo": "Prévia dos dados do cliente",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Aprovar o envio",
+          "texto": "Feche a prévia e clique em \"Aprovar export\". A janela mostra o nome do cliente e o e-mail para onde a cópia vai: confira se é a pessoa certa, porque o envio não pode ser desfeito. No campo \"Justificativa\", escreva o motivo da aprovação (no mínimo 10 caracteres) e clique em \"Confirmar aprovação\". O pedido passa para \"Processando\", e o sistema monta um PDF com os dados e manda por e-mail. Se o envio de e-mails do sistema não estiver configurado, ou se o cliente não tiver e-mail, o pedido fica em \"Revisão pendente\" e aparece o botão \"Baixar PDF\" para você entregar o arquivo. O link do botão vale por 72 horas.",
+          "dica": "O botão de aprovar só aparece enquanto o pedido está em \"Recebido\".",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "esperar",
+              "ms": 500
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Aprovar export",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "alertdialog"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#approved_reason"
+              },
+              "valor": "Pedido conferido com o paciente por telefone."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Envio para",
+                "exato": true
+              },
+              "rotulo": "Conferir antes de enviar",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar aprovação",
+                "exato": true
+              },
+              "rotulo": "Envia a cópia",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pedido-de-exclusao",
+      "titulo": "Atender um pedido para apagar os dados",
+      "objetivo": "Abrir um pedido de apagamento que ficou parado, entender o que a aprovação apaga e ler um pedido já concluído.",
+      "papel": "admin",
+      "busca": [
+        "cliente pediu para apagar os dados",
+        "anonimizar cliente lgpd",
+        "excluir dados do paciente",
+        "pedido lgpd vencendo",
+        "direito ao esquecimento"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O pedido atrasado",
+          "texto": "A Juliana Castro pediu para ser apagada do cadastro. Normalmente o sistema faz o apagamento sozinho assim que o pedido chega. Este ficou parado em \"Recebido\" e já passou do prazo (selo \"Vencido\"), então precisa de alguém hoje. Clique em \"Ver\" na linha dele (cliente 48213907).",
+          "rota": "/app/lgpd/requests",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "48213907"
+              },
+              "rotulo": "Pedido da Juliana",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "48213907"
+                }
+              },
+              "rotulo": "Abrir",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Ver",
+            "exato": true,
+            "dentro": {
+              "role": "row",
+              "nome": "48213907"
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O prazo vencido",
+          "texto": "O tipo é \"Anonimização cliente\" e o prazo de 15 dias úteis já acabou. Na \"Linha do tempo SLA\", a barra está cheia e vermelha, e o canto direito diz há quantos dias o prazo passou (\"d em atraso\"). As etapas de um apagamento são outras: \"Processamento\" (D+10) e \"Anonimização concluída\" (D+15), contadas em dias corridos. A bolinha fica verde quando o dia da etapa chega, mesmo que nada tenha sido feito: quem diz se o pedido foi atendido é o selo \"Recebido\" ao lado do código.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Ver",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "48213907"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "#7c41e9a2",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Recebido",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "Ainda não atendido",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(> div > div:text-is('Linha do tempo SLA'))"
+              },
+              "rotulo": "Prazo vencido",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Aprovar a anonimização",
+          "texto": "Antes de aprovar, use \"Pré-visualizar dados\" para conferir que é a pessoa certa: a janela de aprovação não mostra o nome. Depois clique em \"Aprovar anonimização\", na janela \"Aprovar anonimização de contato\", escreva no campo \"Justificativa\" o motivo, com pelo menos 10 caracteres, e clique em \"Confirmar aprovação\". Isso não tem volta. O sistema troca o nome do cliente por \"Cliente Anonimizado\" seguido de um código e apaga o telefone, o e-mail e o conteúdo das conversas, mensagens e arquivos dele. As datas ficam guardadas, para os seus números continuarem certos. O pedido passa para \"Processando\" e, quando termina, vira \"Concluído\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Aprovar anonimização",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "alertdialog"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#approved_reason"
+              },
+              "valor": "Paciente confirmou o pedido de exclusão por telefone."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "^Ao confirmar",
+                "regex": true
+              },
+              "rotulo": "Ação sem volta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar aprovação",
+                "exato": true
+              },
+              "rotulo": "Apaga os dados",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Um pedido já concluído",
+          "texto": "Este pedido de apagamento foi atendido há 3 dias. O selo diz \"Concluído\", o quadro \"Detalhes\" mostra quando terminou em \"Concluído em\", e a \"Trilha de auditoria\" guarda as três etapas: a chegada pela loja (\"lgpd.redact_received\"), a aprovação (\"lgpd.manually_approved\", com o começo do código de quem aprovou depois de \"por\") e o apagamento terminado (\"lgpd.redact_completed\"). A \"Linha do tempo SLA\" continua contando os dias mesmo depois de concluído: quem diz que o pedido foi atendido é o selo \"Concluído\" e a data em \"Concluído em\".",
+          "rota": "/app/lgpd/requests/9e06c2f8-7d35-4b81-b6e4-be7000000004",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "#9e06c2f8",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Concluído em",
+                "exato": true
+              },
+              "rotulo": "Quando terminou",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(> div > div:has-text('Trilha de auditoria'))"
+              },
+              "rotulo": "As três etapas",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -27,6 +27,13 @@ function db(
     marcarConversa: vi.fn<IngestDeGrupoDb["marcarConversa"]>(async () => {}),
     reabrirSeFechada: vi.fn<IngestDeGrupoDb["reabrirSeFechada"]>(async () => {}),
     pedirDespachoDeIa: vi.fn<IngestDeGrupoDb["pedirDespachoDeIa"]>(async () => {}),
+    // #3566 — o dublê resolve o rótulo como o de verdade faria: devolve a
+    // menção com o nome que o "contato" tem, e sem nome quando não tem.
+    rotulosDasMencoes: vi.fn<IngestDeGrupoDb["rotulosDasMencoes"]>(async (_org, mencoes) =>
+      mencoes.map((m) =>
+        m.lid === "75235009282237" ? { ...m, name: "Maria Exemplo" } : m,
+      ),
+    ),
   } satisfies IngestDeGrupoDb;
 }
 const ligado = (extra: Partial<NonNullable<Awaited<ReturnType<IngestDeGrupoDb["grupoLigado"]>>>> = {}) => ({
@@ -81,6 +88,42 @@ describe("gravarMensagemDeGrupo", () => {
     expect(d.inserirMensagem.mock.calls[0]![0]).toMatchObject({ direction: "outbound", sent_via: "external_device" });
     expect((d.inserirMensagem.mock.calls[0]![0]!.metadata as Record<string, unknown>).group_sender).toBeUndefined();
   });
+  // ── #3566 — as menções ─────────────────────────────────────────────────────
+  it("menção: o metadata guarda a lista resolvida e o CORPO continua cru", async () => {
+    const d = db(ligado());
+    await gravarMensagemDeGrupo(
+      d,
+      entrada({ body: "oi @75235009282237", mencoes: [{ lid: "75235009282237", phone: null, name: null }] }),
+    );
+    const row = d.inserirMensagem.mock.calls[0]![0]!;
+    expect(row.body).toBe("oi @75235009282237");
+    expect((row.metadata as Record<string, unknown>).mentions).toEqual([
+      { lid: "75235009282237", phone: null, name: "Maria Exemplo" },
+    ]);
+  });
+
+  it("menção a desconhecido é guardada sem nome, e o texto dela não muda", async () => {
+    const d = db(ligado());
+    await gravarMensagemDeGrupo(
+      d,
+      entrada({ body: "oi @99887766554433", mencoes: [{ lid: "99887766554433", phone: null, name: null }] }),
+    );
+    expect((d.inserirMensagem.mock.calls[0]![0]!.metadata as Record<string, unknown>).mentions).toEqual([
+      { lid: "99887766554433", phone: null, name: null },
+    ]);
+  });
+
+  it("CONTROLE: mensagem SEM menção grava o metadata igual ao de antes, e nem consulta contato", async () => {
+    const d = db(ligado());
+    await gravarMensagemDeGrupo(d, entrada({ body: "bom dia, grupo" }));
+    expect(d.rotulosDasMencoes).not.toHaveBeenCalled();
+    // Igualdade EXATA: nenhuma chave nova entra na mensagem sem menção.
+    expect(d.inserirMensagem.mock.calls[0]![0]!.metadata).toEqual({
+      raw_type: "chat",
+      group_sender: { name: "Maria", phone: "+5521999990000", lid: null },
+    });
+  });
+
   it("mensagem sem texto e sem mídia é ignorada", async () => {
     const d = db(ligado());
     await expect(gravarMensagemDeGrupo(d, entrada({ body: null }))).resolves.toBe("vazia");
@@ -214,6 +257,7 @@ function adminDeMentira(cfg: {
       eq: (c: string, v: unknown) => { cmd.filtros.push([c, v]); return q; },
       in: (c: string, v: unknown) => { cmd.filtros.push([c, v]); return q; },
       is: (c: string, v: unknown) => { cmd.filtros.push([c, v]); return q; },
+      limit: () => q,
       single: fim,
       maybeSingle: fim,
       then: (ok: (v: unknown) => unknown) => fim().then(ok),
@@ -231,6 +275,63 @@ function adminDeMentira(cfg: {
 }
 
 const DUP = { data: null, error: { code: "23505", message: "duplicate key" } };
+
+/**
+ * #3566 — o rótulo da menção, pela régua do `group_sender`: `wa_lid` primeiro,
+ * `phone_number` nas duas grafias do nono dígito depois, contato fundido fora.
+ */
+describe("criarIngestDeGrupoDb — rótulo das menções (#3566)", () => {
+  it("resolve por wa_lid e por telefone (duas grafias), e deixa sem nome quem não achou", async () => {
+    const { admin, comandos } = adminDeMentira({
+      leitura: {
+        contacts: {
+          data: [
+            // `name` vazio: o rótulo vem do `display_name` pela `nomeDoContato`.
+            { name: null, display_name: "Maria Exemplo", phone_number: "+5511999990000", wa_lid: "75235009282237" },
+            // Celular gravado SEM o nono dígito — a menção chegou COM ele.
+            { name: "João", display_name: null, phone_number: "+553198966398", wa_lid: null },
+          ],
+          error: null,
+        },
+      },
+    });
+    const r = await criarIngestDeGrupoDb(admin as never).rotulosDasMencoes(ORG, [
+      { lid: "75235009282237", phone: null, name: null },
+      { lid: null, phone: "+5531998966398", name: null },
+      { lid: "11111111111111", phone: null, name: null },
+    ]);
+    expect(r).toEqual([
+      { lid: "75235009282237", phone: null, name: "Maria Exemplo" },
+      { lid: null, phone: "+5531998966398", name: "João" },
+      { lid: "11111111111111", phone: null, name: null },
+    ]);
+    const leituras = comandos.filter((c) => c.tabela === "contacts" && c.op === "select");
+    expect(leituras.map((c) => c.filtros.find(([k]) => k === "wa_lid" || k === "phone_number"))).toEqual([
+      ["wa_lid", ["75235009282237", "11111111111111"]],
+      ["phone_number", ["+5531998966398", "+553198966398"]],
+    ]);
+    for (const c of leituras) {
+      expect(c.filtros).toContainEqual(["organization_id", ORG]);
+      // Contato fundido em outro não dá rótulo: quem aparece é o sobrevivente.
+      expect(c.filtros).toContainEqual(["is_merged_into", null]);
+    }
+  });
+
+  it("leitura que falha não derruba nada: a menção volta sem rótulo", async () => {
+    const { admin } = adminDeMentira({ leitura: { contacts: { data: null, error: { message: "sem rede" } } } });
+    await expect(
+      criarIngestDeGrupoDb(admin as never).rotulosDasMencoes(ORG, [{ lid: "75235009282237", phone: null, name: null }]),
+    ).resolves.toEqual([{ lid: "75235009282237", phone: null, name: null }]);
+  });
+
+  it("menção sem lid e sem telefone não paga leitura nenhuma", async () => {
+    const { admin, comandos } = adminDeMentira({});
+    await expect(
+      criarIngestDeGrupoDb(admin as never).rotulosDasMencoes(ORG, [{ lid: null, phone: null, name: null }]),
+    ).resolves.toEqual([{ lid: null, phone: null, name: null }]);
+    expect(comandos).toEqual([]);
+  });
+});
 
 describe("criarIngestDeGrupoDb — dois webhooks do mesmo grupo novo terminam num contato só", () => {
   it("contato: 23505 no INSERT relê o contato do grupo que o outro webhook criou", async () => {

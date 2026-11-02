@@ -1,0 +1,805 @@
+{
+  "id": "credenciais",
+  "titulo": "Credenciais",
+  "tela": "/app/ai/credentials",
+  "resumo": "Onde você guarda a chave da sua conta de inteligência artificial, a que os agentes usam para pensar, e confere se ela está funcionando.",
+  "licoes": [
+    {
+      "id": "credenciais-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Credenciais",
+      "objetivo": "Entender o que é uma chave de IA, onde ela fica guardada e o que cada cartão da tela mostra.",
+      "papel": "admin",
+      "busca": [
+        "credenciais",
+        "chave da ia",
+        "chave de api",
+        "onde coloco a chave",
+        "chave da anthropic",
+        "chave da openai",
+        "conta de inteligência artificial"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Credenciais fica no hub de IA",
+          "rota": "/app/ai",
+          "texto": "A tela Credenciais não tem atalho próprio no menu lateral. No grupo \"Agente de IA\", clique em \"Ver tudo em IA\". Na parte \"Montar o agente\" está o cartão \"Credenciais\". É ali que você guarda a chave da sua conta de inteligência artificial (IA), a que os agentes usam para pensar e responder.",
+          "dica": "Só o gerente e o administrador veem este cartão e entram nesta tela.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Credenciais ",
+                "regex": true
+              },
+              "rotulo": "Abrir Credenciais",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Credenciais ",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O que é uma chave de IA",
+          "rota": "/app/ai/credentials",
+          "texto": "Os agentes usam uma inteligência artificial contratada de uma empresa, chamada provedor, como a Anthropic (Claude) ou a OpenAI (GPT). A conta nesse provedor é sua: você contrata direto com ele, e a cobrança vai para essa conta. Para o sistema usar a sua conta, o provedor entrega uma chave: um código longo, que funciona como uma senha. Você cola a chave aqui. Ela fica guardada criptografada e nunca mais aparece inteira na tela, nem para você.",
+          "dica": "A chave colocada durante a instalação do sistema não aparece nesta lista, mas os agentes podem usá-la: no editor do agente ela aparece como \"A chave desta instalação\".",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Chaves de acesso à IA",
+                "exato": true
+              },
+              "rotulo": "Suas chaves de IA",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Um grupo para cada provedor",
+          "texto": "As chaves aparecem agrupadas por provedor, com o nome dele em cima de cada grupo. Cada cartão é uma chave. No alto do cartão fica o nome que você deu a ela e, logo abaixo, só os quatro últimos caracteres da chave, para você reconhecer qual é. No canto, um selo diz se a chave está funcionando; a próxima lição explica cada selo. \"Adicionar credencial\" cadastra mais uma chave.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "DeepSeek",
+                "exato": true
+              },
+              "rotulo": "Nome do provedor",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "css": "li:has(h3[title=\"Chave de testes\"])"
+              },
+              "rotulo": "Uma chave",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "…d41f",
+                "exato": true
+              },
+              "rotulo": "Só o final da chave",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Adicionar credencial",
+                "exato": true
+              },
+              "rotulo": "Cadastrar outra chave",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Modelos, uso e os botões do cartão",
+          "texto": "\"Modelos\" conta quantos modelos de IA o provedor liberou para essa chave na última conferência. \"Em uso por\" conta quantas versões de agente estão ligadas a ela, contando rascunhos e versões antigas; o agente escolhe a chave no campo \"Chave de acesso\" do editor dele. Embaixo ficam três botões: o lápis edita a chave, as setas em círculo testam a chave de novo e a lixeira exclui.",
+          "dica": "O gerente vê esta tela só para consultar: para ele não aparecem \"Adicionar credencial\" nem os botões dos cartões. Cadastrar, editar, testar de novo e excluir são tarefas do administrador.",
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li:has(h3[title=\"Chave principal\"]) dl"
+              },
+              "rotulo": "Modelos e uso",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Editar credencial",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has(h3[title=\"Chave principal\"])"
+                }
+              },
+              "rotulo": "Editar",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Revalidar credencial",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has(h3[title=\"Chave principal\"])"
+                }
+              },
+              "rotulo": "Testar de novo",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir credencial",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has(h3[title=\"Chave principal\"])"
+                }
+              },
+              "rotulo": "Excluir",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "credenciais-o-selo-de-cada-chave",
+      "titulo": "O que o selo de cada chave quer dizer",
+      "objetivo": "Saber se uma chave está funcionando e o que fazer quando ela é recusada ou ainda não foi conferida.",
+      "papel": "admin",
+      "busca": [
+        "chave inválida",
+        "chave validada",
+        "não validada",
+        "chave recusada",
+        "testar a chave",
+        "revalidar credencial",
+        "ia parou de responder"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Validada: a chave funciona",
+          "rota": "/app/ai/credentials",
+          "texto": "Toda chave cadastrada passa por uma conferência: o sistema pergunta ao provedor se ela vale. \"Validada\", em verde, quer dizer que o provedor aceitou a chave. A IA só usa chave validada.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Validada",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has(h3[title=\"Chave principal\"])"
+                }
+              },
+              "rotulo": "Aceita pelo provedor",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Inválida: a conferência falhou",
+          "texto": "\"Inválida\", em vermelho, quer dizer que a conferência falhou. A frase vermelha embaixo do nome diz o motivo. Aqui o provedor recusou a chave: por exemplo, ela foi copiada pela metade ou apagada no site do provedor. O link \"Onde pegar a chave\" abre a página do provedor onde se cria uma chave nova. Depois, troque a chave pelo lápis, como mostra a lição \"Trocar, renomear ou excluir uma chave\".",
+          "dica": "Nem sempre a culpa é da chave. Se o provedor estiver fora do ar, ou se este servidor não conseguir falar com ele, a frase diz isso e pede para testar de novo mais tarde.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Inválida",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has(h3[title=\"Chave antiga da recepção\"])"
+                }
+              },
+              "rotulo": "Recusada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "O provedor recusou a chave. Confira se copiou inteira ou gere uma nova."
+              },
+              "rotulo": "O motivo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Onde pegar a chave",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has(h3[title=\"Chave antiga da recepção\"])"
+                }
+              },
+              "rotulo": "Criar uma chave nova",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Não validada: a conferência não terminou",
+          "texto": "Logo depois de salva, a chave aparece como \"Validando…\" enquanto o sistema confere com o provedor, e a tela se atualiza sozinha. Se o resultado não chega em dois minutos, o selo vira \"Não validada\": a conferência foi interrompida no meio. Clique nas setas em círculo, \"Revalidar credencial\", para testar a chave de novo na hora. O resultado aparece no selo.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Não validada",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has(h3[title=\"Chave de testes\"])"
+                }
+              },
+              "rotulo": "Sem resultado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Revalidar credencial",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has(h3[title=\"Chave de testes\"])"
+                }
+              },
+              "rotulo": "Testar de novo",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Revalidar credencial",
+            "exato": true,
+            "dentro": {
+              "css": "li:has(h3[title=\"Chave de testes\"])"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "credenciais-cadastrar-uma-chave",
+      "titulo": "Cadastrar uma chave nova",
+      "objetivo": "Escolher o provedor, colar a chave e guardá-la para os agentes usarem.",
+      "papel": "admin",
+      "busca": [
+        "cadastrar chave",
+        "adicionar credencial",
+        "colar a chave",
+        "nova chave de ia",
+        "onde pegar a chave",
+        "configurar a ia",
+        "escolher provedor"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir o formulário",
+          "rota": "/app/ai/credentials",
+          "texto": "Antes, entre no site do provedor que você contratou, crie uma chave e copie-a inteira. Depois, volte aqui e clique em \"Adicionar credencial\".",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Adicionar credencial",
+                "exato": true
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Adicionar credencial",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Escolher o provedor",
+          "texto": "Em \"Provedor\", escolha a empresa de IA que você contratou. O formulário já abre com a Anthropic (Claude). Embaixo do campo aparece uma frase curta dizendo quando vale a pena escolher aquele provedor.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Adicionar credencial",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog",
+                "nome": "Adicionar credencial",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Provedor",
+                "exato": true
+              },
+              "rotulo": "De quem é a chave",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "O padrão recomendado para conversar com o cliente"
+              },
+              "rotulo": "Quando escolher",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "rotulo": "Provedor",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Os provedores da lista",
+          "texto": "A lista traz todos os provedores que o sistema sabe usar. Os de cima podem conversar com o cliente. O último, \"Jev (TypeSafe AI)\", não conversa: só toma decisões rápidas, como perceber se o cliente está irritado. Aqui escolhemos a Anthropic (Claude).",
+          "dica": "\"Provedor personalizado (compatível com OpenAI)\" é para quem tem um servidor próprio que fala como a OpenAI: o formulário pede também o \"Endereço (base URL)\" e testa a conexão antes de salvar. \"OpenAI pela assinatura (ChatGPT)\" não aceita chave colada: a conta se conecta por um painel de login próprio, que só aparece nesta tela quando quem administra o servidor liga \"Login do Codex por assinatura\" em Admin › Recursos opcionais.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "rotulo": "Provedor",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "listbox"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "listbox"
+              },
+              "rotulo": "Provedores",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Anthropic (Claude)",
+                "exato": true
+              },
+              "rotulo": "A escolha do exemplo",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Jev (TypeSafe AI)",
+                "exato": true
+              },
+              "rotulo": "Só decide",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Anthropic (Claude)",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Nome e chave",
+          "texto": "Em \"Nome\", escreva um nome que ajude a reconhecer a chave depois. Ele é opcional: em branco, a chave recebe o nome do provedor. Em \"Chave\", cole a chave que você copiou; ela aparece como bolinhas. Se ainda não tem a chave, \"Onde pegar a chave\" abre a página do provedor onde ela é criada.",
+          "dica": "Duas chaves do mesmo provedor não podem ter o mesmo nome.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Anthropic (Claude)",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Nome",
+                "exato": true
+              },
+              "valor": "Chave do atendimento"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Chave",
+                "exato": true
+              },
+              "valor": "sk-ant-api03-exemplo-do-curso-nao-vale-0000"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome",
+                "exato": true
+              },
+              "rotulo": "Um nome para reconhecer",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Chave",
+                "exato": true
+              },
+              "rotulo": "A chave colada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Onde pegar a chave",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog",
+                  "nome": "Adicionar credencial",
+                  "exato": true
+                }
+              },
+              "rotulo": "Site do provedor",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Salvar e conferir",
+          "texto": "Clique em \"Salvar e validar\". A chave é guardada criptografada e o formulário fecha. Em seguida o sistema confere a chave com o provedor, sem você precisar esperar: o cartão novo aparece com \"Validando…\" e, em alguns segundos, passa para \"Validada\" ou \"Inválida\". \"Cancelar\" fecha o formulário sem guardar nada.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar e validar",
+                "exato": true
+              },
+              "rotulo": "Guardar e conferir",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog",
+                  "nome": "Adicionar credencial",
+                  "exato": true
+                }
+              },
+              "rotulo": "Desistir",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar e validar",
+            "exato": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "credenciais-trocar-renomear-excluir",
+      "titulo": "Trocar, renomear ou excluir uma chave",
+      "objetivo": "Trocar uma chave recusada sem desligar os agentes, dar outro nome a uma chave e apagar a que não serve mais.",
+      "papel": "admin",
+      "busca": [
+        "trocar a chave",
+        "editar credencial",
+        "renomear chave",
+        "excluir chave",
+        "apagar credencial",
+        "chave vazou",
+        "chave nova no lugar da antiga"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir a edição",
+          "rota": "/app/ai/credentials",
+          "texto": "A chave antiga da recepção foi recusada pelo provedor. Para trocá-la, clique no lápis, \"Editar credencial\", no cartão dela.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Editar credencial",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has(h3[title=\"Chave antiga da recepção\"])"
+                }
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Editar credencial",
+            "exato": true,
+            "dentro": {
+              "css": "li:has(h3[title=\"Chave antiga da recepção\"])"
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Colar a chave nova",
+          "texto": "Cole a chave nova em \"Nova chave (opcional)\" e clique em \"Salvar\". Trocar a chave por aqui mantém os agentes ligados a ela. Depois de salvar, o sistema confere a chave nova com o provedor: assim que o selo mostrar \"Validada\", os agentes já usam a chave nova. Se o selo mostrar \"Inválida\", eles ficam sem chave até você corrigir.",
+          "dica": "Se uma chave vazou, crie outra no site do provedor, troque aqui e depois apague a antiga lá no provedor.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar credencial",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has(h3[title=\"Chave antiga da recepção\"])"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog",
+                "nome": "Editar credencial",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Nova chave (opcional)",
+                "exato": true
+              },
+              "valor": "rqsty-exemplo-do-curso-chave-nova-0000"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nova chave (opcional)",
+                "exato": true
+              },
+              "rotulo": "A chave nova",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Em branco mantém a chave atual"
+              },
+              "rotulo": "Em branco, fica a atual",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog",
+                  "nome": "Editar credencial",
+                  "exato": true
+                }
+              },
+              "rotulo": "Guardar a troca",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true,
+            "dentro": {
+              "role": "dialog",
+              "nome": "Editar credencial",
+              "exato": true
+            }
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Mudar só o nome",
+          "rota": "/app/ai/credentials",
+          "texto": "Para mudar só o nome, abra a edição pelo lápis, troque o \"Nome\" e deixe \"Nova chave (opcional)\" em branco. Assim a chave continua a mesma e nada é conferido de novo. Aqui a \"Chave de testes\" ganha um nome que diz para que ela serve. O botão \"Salvar\" só fica disponível quando algo mudou.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar credencial",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has(h3[title=\"Chave de testes\"])"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog",
+                "nome": "Editar credencial",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Nome",
+                "exato": true
+              },
+              "valor": "Testes do novo atendimento"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome",
+                "exato": true
+              },
+              "rotulo": "O nome novo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Nova chave (opcional)",
+                "exato": true
+              },
+              "rotulo": "Em branco",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog",
+                  "nome": "Editar credencial",
+                  "exato": true
+                }
+              },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true,
+            "dentro": {
+              "role": "dialog",
+              "nome": "Editar credencial",
+              "exato": true
+            }
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "O nome novo na lista",
+          "texto": "O cartão já aparece com o nome novo. Os quatro últimos caracteres e o selo continuam iguais, porque a chave não mudou.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog",
+                  "nome": "Editar credencial",
+                  "exato": true
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Testes do novo atendimento",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li:has(h3[title=\"Testes do novo atendimento\"])"
+              },
+              "rotulo": "Nome novo, mesma chave",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Excluir uma chave",
+          "texto": "A lixeira, \"Excluir credencial\", apaga a chave do sistema. Antes, uma janela pede confirmação: \"Remover\" apaga de vez, e \"Cancelar\" desiste. Não dá para desfazer.",
+          "dica": "Uma chave ligada a alguma versão de agente não pode ser excluída: com \"Em uso por\" maior que zero, a lixeira fica apagada, e passar o mouse sobre ela mostra o motivo. Para trocar essa chave, use o lápis.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir credencial",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has(h3[title=\"Chave antiga da recepção\"])"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "alertdialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "alertdialog"
+              },
+              "rotulo": "Confirmar a exclusão",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Remover",
+                "exato": true,
+                "dentro": {
+                  "role": "alertdialog"
+                }
+              },
+              "rotulo": "Apagar de vez",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar",
+                "exato": true,
+                "dentro": {
+                  "role": "alertdialog"
+                }
+              },
+              "rotulo": "Desistir",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Remover",
+            "exato": true,
+            "dentro": {
+              "role": "alertdialog"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

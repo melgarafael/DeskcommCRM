@@ -16,7 +16,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiClient } from "@/lib/api/client";
 import type { VisibilityMode } from "@/lib/auth/types";
-import { PRAZO_MAX_MINUTOS, PRAZO_MIN_MINUTOS } from "@/lib/escalacao/devolucao-automatica";
+import {
+  PRAZO_MAX_MINUTOS,
+  PRAZO_MAX_MINUTOS_DEVOLUCAO,
+  PRAZO_MIN_MINUTOS,
+} from "@/lib/escalacao/devolucao-automatica";
 import { PRAZO_PADRAO_DO_SILENCIO_MINUTOS } from "@/lib/escalacao/atendimento-manual";
 import { ROUTING_MODES, VISIBILITY_MODES, type RoutingMode } from "@/lib/schemas/routing";
 import { useT } from "@/hooks/i18n/useT";
@@ -296,7 +300,9 @@ export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
               id="handoff_return_after_minutes"
               type="number"
               min={PRAZO_MIN_MINUTOS}
-              max={PRAZO_MAX_MINUTOS}
+              // Teto LARGO (#3313), e só deste campo: o silêncio do celular logo
+              // abaixo continua com o teto de 24 h.
+              max={PRAZO_MAX_MINUTOS_DEVOLUCAO}
               value={form.handoff_return_after_minutes ?? 60}
               disabled={isPending}
               onChange={(e) =>
@@ -304,7 +310,9 @@ export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
               }
             />
             <p className="text-xs text-muted-foreground">
-              {t("Entre 5 minutos e 24 horas. Sessenta minutos é a ordem de grandeza de um atendimento humano.")}
+              {t(
+                "De 5 minutos a 30 dias. Uma cotação com fornecedor leva dias — 5.000 minutos são três dias e meio. Sessenta minutos é a ordem de grandeza de um atendimento humano.",
+              )}
             </p>
           </div>
         ) : null}

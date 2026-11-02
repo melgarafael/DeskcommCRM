@@ -1,7 +1,13 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
-import { ehRecursoDeAudio, recursosDaBarra, type Recurso } from "@/lib/inbox/recursos";
+import { recursosDaBarra, type Recurso } from "@/lib/inbox/recursos";
+import { secoesDeRespostas, type GrupoDeRespostas } from "@/lib/templates/grupos";
+import {
+  lerRespostaRapidaGravada,
+  type ConteudoDeRespostaRapida,
+  type LeituraDeRespostaRapida,
+} from "@/lib/inbox/resposta-rapida";
 import {
   RECURSOS_VISIVEIS_RECOLHIDA,
   armazenamentoDoNavegador,
@@ -39,11 +45,29 @@ import {
  * A leitura é num `useEffect`, não na inicialização do estado: o `localStorage`
  * não existe no servidor, e ler no render faria o HTML nascer recolhido e pular
  * para aberto na hidratação. É o mesmo desenho das divisórias do Inbox (#2579).
+ *
+ * ─── O ÍCONE É A RÉGUA, NÃO UM `if` DE ÁUDIO (#3009) ────────────────────────
+ *
+ * O botão diz o que o clique prepara: só texto (o título, como sempre), imagem,
+ * áudio, ou a combinação. Quem responde isso é `lerRespostaRapidaGravada` — a
+ * MESMA régua que o envio (`Composer.applyTemplate`) consulta para recusar uma
+ * resposta vazia. Um `if` de áudio aqui e outro no compositor foi exatamente o
+ * que deixou texto+áudio e imagem+áudio sem existir: cada lado via o recurso de
+ * um jeito.
+ *
+ * O que NÃO mudou: resposta só de texto continua saindo como `título`, sem
+ * ícone nenhum, e só de áudio continua com o 🎧 na frente — o caso de 99% da
+ * base sai byte a byte como antes.
  */
 interface Props {
   recursos: Recurso[];
   onEscolher: (recurso: Recurso) => void;
   disabled?: boolean;
+  /**
+   * Por que os botões estão desligados, quando o compositor sabe dizer
+   * (#3354: "há rascunho no campo, e a resposta rápida o substituiria").
+   */
+  dica?: string;
   /** O usuário logado — a memória do recolhimento é POR usuário (#3282). */
   usuarioId?: string | null;
   /**
@@ -51,14 +75,44 @@ interface Props {
    * resolve o `localStorage` do navegador; `null` é "sem memória".
    */
   storage?: StorageLeve | null;
+  /**
+   * Os GRUPOS de respostas rápidas (#3245). Vazio/ausente = o recurso não
+   * existe para esta empresa, e a barra é a de hoje, byte a byte.
+   */
+  grupos?: GrupoDeRespostas[] | null;
+}
+
+/**
+ * O ícone de cada conteúdo DE MÍDIA. O texto não tem ícone de propósito: ele é
+ * o próprio título do botão, e um 📝 na frente mudaria o rótulo de toda resposta
+ * rápida de texto — o caso que não podia mudar de aparência.
+ */
+const ICONE_DO_CONTEUDO: Record<Exclude<ConteudoDeRespostaRapida, "texto">, string> = {
+  imagem: "🖼",
+  audio: "🎧",
+};
+
+/**
+ * O rótulo do botão: os ícones das mídias que o clique prepara, na ordem
+ * canônica (imagem, áudio), e o título. Sem mídia, o título SOZINHO — é o
+ * rótulo de antes, byte a byte.
+ */
+function rotuloDoBotao(leitura: LeituraDeRespostaRapida, titulo: string): string {
+  if (!leitura.ok) return titulo;
+  const icones = leitura.conteudos
+    .filter((conteudo): conteudo is Exclude<ConteudoDeRespostaRapida, "texto"> => conteudo !== "texto")
+    .map((conteudo) => ICONE_DO_CONTEUDO[conteudo]);
+  return icones.length ? `${icones.join("")} ${titulo}` : titulo;
 }
 
 export function BarraDeRecursos({
   recursos,
   onEscolher,
   disabled = false,
+  dica,
   usuarioId = null,
   storage,
+  grupos = null,
 }: Props) {
   const t = useT();
   const guarda = storage === undefined ? armazenamentoDoNavegador() : storage;
@@ -83,27 +137,14 @@ export function BarraDeRecursos({
     gravarBarraAberta(guarda, chave, proxima);
   }
 
-  return (
-    <div
-      data-testid="barra-de-recursos"
-      role="toolbar"
-      aria-label={t("Respostas rápidas")}
-      className="mb-1.5 flex flex-wrap items-center gap-1"
-    >
-      {visiveis.map((recurso) => (
-        <button
-          key={recurso.id}
-          type="button"
-          disabled={disabled}
-          data-recurso-id={recurso.id}
-          data-recurso-tipo={ehRecursoDeAudio(recurso) ? "audio" : "texto"}
-          onClick={() => onEscolher(recurso)}
-          title={t("Prepara no compositor — você revisa e envia")}
-          className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
-        >
-          {ehRecursoDeAudio(recurso) ? `🎧 ${recurso.title}` : recurso.title}
-        </button>
-      ))}
+  // Sem grupo, o caminho é o de hoje: `secoesDeRespostas` devolve `null` e a
+  // barra desenha a lista plana do MESMO markup (o componente abaixo é o que
+  // ela sempre foi). Com grupo, cada grupo vira um rótulo seguido dos botões
+  // dele — e o recolhimento continua valendo, porque as seções saem dos
+  // recursos JÁ recortados (`visiveis`).
+  const secoes = secoesDeRespostas(visiveis, grupos);
+  const controles = (
+    <>
       {restantes > 0 && (
         <button
           type="button"
@@ -124,6 +165,101 @@ export function BarraDeRecursos({
           {t("menos")}
         </button>
       )}
+    </>
+  );
+
+  if (secoes) {
+    return (
+      <div
+        data-testid="barra-de-recursos"
+        role="toolbar"
+        aria-label={t("Respostas rápidas")}
+        className="mb-1.5 flex flex-wrap items-center gap-1"
+      >
+        {secoes
+          .filter((secao) => secao.respostas.length > 0)
+          .map((secao) => (
+            <span
+              key={secao.grupo?.id ?? "sem-grupo"}
+              data-secao-de-recursos={secao.grupo?.id ?? "sem-grupo"}
+              className="inline-flex flex-wrap items-center gap-1"
+            >
+              <span className="px-1 text-[11px] font-medium text-muted-foreground">
+                {secao.grupo ? secao.grupo.name : t("Sem grupo")}
+              </span>
+              {secao.respostas.map((recurso) => (
+                <BotaoDeRecurso
+                  key={recurso.id}
+                  recurso={recurso}
+                  disabled={disabled}
+                  dica={dica}
+                  onEscolher={onEscolher}
+                />
+              ))}
+            </span>
+          ))}
+        {controles}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      data-testid="barra-de-recursos"
+      role="toolbar"
+      aria-label={t("Respostas rápidas")}
+      className="mb-1.5 flex flex-wrap items-center gap-1"
+    >
+      {visiveis.map((recurso) => (
+        <BotaoDeRecurso
+          key={recurso.id}
+          recurso={recurso}
+          disabled={disabled}
+          dica={dica}
+          onEscolher={onEscolher}
+        />
+      ))}
+      {controles}
     </div>
+  );
+}
+
+/**
+ * O botão de UM recurso — o mesmo markup na barra plana e nas seções. Extraído
+ * para a barra agrupada não divergir da plana em rótulo, `title` ou atributo de
+ * teste que um e2e procura.
+ */
+function BotaoDeRecurso({
+  recurso,
+  disabled,
+  dica,
+  onEscolher,
+}: {
+  recurso: Recurso;
+  disabled: boolean;
+  dica?: string;
+  onEscolher: (recurso: Recurso) => void;
+}) {
+  const t = useT();
+  // A régua decide o rótulo, o `data-recurso-tipo` e o motivo do título — os
+  // três leem a MESMA leitura, e o envio lê a mesma função (#3009).
+  const leitura = lerRespostaRapidaGravada(recurso);
+  // O bloqueio do compositor e a invalidade do conteúdo são informações
+  // diferentes: quando coexistem, nenhuma pode esconder a outra.
+  const motivos = [dica, leitura.ok ? undefined : t(leitura.motivo)].filter(
+    (motivo): motivo is string => motivo !== undefined,
+  );
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      data-recurso-id={recurso.id}
+      data-recurso-tipo={leitura.ok ? leitura.tipo : "invalida"}
+      onClick={() => onEscolher(recurso)}
+      title={motivos.length ? motivos.join(" — ") : t("Prepara no compositor — você revisa e envia")}
+      className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
+    >
+      {rotuloDoBotao(leitura, recurso.title)}
+    </button>
   );
 }

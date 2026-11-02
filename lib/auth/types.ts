@@ -88,9 +88,49 @@ export function rotuloDoPapel(papel: string): string {
 /**
  * Escopo de visualização de conversas por atendente (G4-01, spec 13 §3.5).
  * Só restringe o role `agent`; viewer/manager/admin seguem org-wide.
+ *
+ * ESTA É A ÚNICA LISTA dos três modos. O tipo sai dela e o schema do PATCH
+ * (`lib/schemas/routing.ts`) valida a partir dela — antes eram duas listas
+ * literais em arquivos diferentes, mantidas iguais por um teste que comparava
+ * array com array. Um modo a mais aqui passa a valer nos dois lugares sem
+ * ninguém sincronizar nada.
  */
-export type VisibilityMode = "all" | "own_and_unassigned" | "own";
+export const VISIBILITY_MODES = ["all", "own_and_unassigned", "own"] as const;
+export type VisibilityMode = (typeof VISIBILITY_MODES)[number];
 export const DEFAULT_VISIBILITY_MODE: VisibilityMode = "own_and_unassigned"; // G1-06a
+
+/**
+ * O Atendente é RESTRITO por este modo? (o predicado único, lido pela tela e
+ * pelo catálogo de recursos)
+ *
+ * Duas coisas que o produto confunde com facilidade, e que este par separa:
+ *
+ *   • `visibilidadeRestritaAoAtendente` — o modo tira do Atendente a visão da
+ *     organização inteira. É o que a aba "Todas" do Inbox e o recurso opcional
+ *     "Atendente só vê os seus" querem dizer.
+ *   • `somenteOProprio` — o modo é o mais estreito (`own`), em que nem a conversa
+ *     SEM DONO conta. É o modo da #3479: a conversa nasce sem dono, o Atendente
+ *     não a enxerga, e é por isso que o fluxo que a abre precisa dar dono a ela
+ *     (`app/api/v1/conversations/open-with-contact/route.ts`).
+ *
+ * Antes deste par a mesma pergunta estava escrita à mão em três lugares
+ * (`=== "own" || === "own_and_unassigned"`, `!== "all"` e o par do default), e
+ * quem mexesse num deles deixava os outros mentindo em silêncio — o modo em que
+ * a fila sem dono conta é justamente o que a #3479 mediu errado.
+ *
+ * Aceita `unknown` de propósito: quem lê vem de `settings` (jsonb) e pode ser
+ * qualquer coisa. Valor que não é modo nenhum conta como NÃO restrito aqui — a
+ * RLS é quem fecha em "não vê nada" (o `else` de `fn_can_view_conversation`),
+ * e uma tela que adivinhasse "restrito" esconderia a aba de quem não devia.
+ */
+export function visibilidadeRestritaAoAtendente(modo: unknown): boolean {
+  return modo === "own" || modo === "own_and_unassigned";
+}
+
+/** O modo mais estreito: o Atendente só enxerga o que já é dele. */
+export function somenteOProprio(modo: unknown): boolean {
+  return modo === "own";
+}
 
 export interface UserOrgMembership {
   interface_settings?: InterfaceSettings;
@@ -229,6 +269,18 @@ export interface ActiveOrg {
    * `first_service_at` está congelada.
    */
   cliente_pela_agenda?: boolean;
+  /**
+   * A regra "cliente pela venda" está ligada nesta organização
+   * (`organizations.settings.crm.cliente_pela_venda`, #3644)?
+   *
+   * Contato com negócio GANHO e nenhum aberto conta como cliente, e a conversa
+   * nova nasce no funil de clientes em vez do de captação. Opcional pelo mesmo
+   * motivo de `cliente_pela_agenda`: só o layout de `/app` preenche, e ausente é
+   * desligado. Serve ao MESMO par de controles (marcar um funil como de
+   * clientes e o selo do quadro), que passam a fazer sentido com qualquer uma
+   * das duas regras.
+   */
+  cliente_pela_venda?: boolean;
   /**
    * Os módulos opcionais LIGADOS na instalação (`lib/instalacao/modulos.ts`).
    * É da instalação, não da organização — mora aqui porque este é o contexto

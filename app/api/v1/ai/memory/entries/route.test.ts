@@ -100,6 +100,44 @@ describe("POST /api/v1/ai/memory/entries", () => {
     );
   });
 
+  it("#2369 — grava o prazo do aprendizado (#2369)", async () => {
+    mockAuthzOk();
+    const state: InsertState = { payload: null };
+    vi.mocked(createAdminClient).mockReturnValue(makeAdminStub({ id: "entry-1" }, state) as never);
+
+    const { POST } = await import("./route");
+    const res = await POST(
+      postReq({ title: "Programação da semana", body: "Sexta: Fulano. Sábado: Beltrano.", valid_until: "2026-11-01" }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(state.payload?.valid_until).toBe("2026-11-01");
+    expect(vi.mocked(audit)).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { valid_until: "2026-11-01" } }),
+    );
+  });
+
+  it("#2369 — sem o campo, a entrada nasce SEM prazo (o cliente antigo não muda de comportamento)", async () => {
+    mockAuthzOk();
+    const state: InsertState = { payload: null };
+    vi.mocked(createAdminClient).mockReturnValue(makeAdminStub({ id: "entry-1" }, state) as never);
+
+    const { POST } = await import("./route");
+    const res = await POST(postReq({ title: "Lição", body: "Conteúdo" }));
+
+    expect(res.status).toBe(200);
+    expect(state.payload).toHaveProperty("valid_until", null);
+  });
+
+  it("#2369 — data em formato inválido → 422 (prazo é dia de calendário, não instante)", async () => {
+    mockAuthzOk();
+    const { POST } = await import("./route");
+    const res = await POST(
+      postReq({ title: "Programação", body: "Sexta: Fulano, sábado: Beltrano.", valid_until: "01/11/2026" }),
+    );
+    expect(res.status).toBe(422);
+  });
+
   it("body inválido (title vazio) → 422 validation_failed", async () => {
     mockAuthzOk();
     const { POST } = await import("./route");

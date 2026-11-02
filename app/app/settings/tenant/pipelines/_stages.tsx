@@ -282,6 +282,35 @@ export function fraseDeTempoNaEtapa(
 }
 
 /**
+ * A frase READ-ONLY dos fluxos armados nesta etapa (issue #3603).
+ *
+ * O gatilho por etapa já existia — quem configurou sabe que ele existe, quem
+ * abre o funil depois não descobre: nenhuma tela dizia «entrar aqui dispara uma
+ * sequência de toques». Esta linha é só a ponte entre o editor de follow-up e a
+ * configuração do funil; ela NÃO edita nada (não há botão, não há seletor), e o
+ * texto é o nome que o dono do fluxo deu a ele.
+ *
+ * Fluxo que pede IA e que nenhum agente com follow-up ligado arma sai com o
+ * aviso entre parênteses: o motor o barra, e a linha não pode prometê-lo.
+ *
+ * `null` quando o campo veio ausente — a leitura dos fluxos falhou ou é cache
+ * antigo. Nesse caso a tela não diz nem «tem» nem «não tem»: `[]` é a única
+ * situação em que «nenhum fluxo» é afirmação verdadeira.
+ */
+export function fraseDosFluxosDaEtapa(
+  etapa: EtapaDoFunil,
+  t: (texto: string) => string = (texto) => texto,
+): string | null {
+  if (!Array.isArray(etapa.fluxos)) return null;
+  if (etapa.fluxos.length === 0) return t("Nenhum fluxo de follow-up armado nesta etapa.");
+  // O fluxo que o motor barra por falta de agente aparece, mas marcado: ele
+  // existe e está parado, e é esse o conserto que quem lê precisa fazer.
+  const aviso = t("não dispara: nenhum agente com follow-up ligado arma este fluxo");
+  const nomes = etapa.fluxos.map((f) => (f.sem_agente ? `${f.name} (${aviso})` : f.name)).join(", ");
+  return `${t("Fluxos de follow-up armados nesta etapa:")} ${nomes}.`;
+}
+
+/**
  * A contagem ao lado do campo de probabilidade, com o convite só quando a
  * amostra sustenta.
  *
@@ -502,6 +531,7 @@ export function StagesSection({
             corpoDasTaxas?.tempo_na_etapa?.etapas.find((linha) => linha.etapa_id === etapa.id) ??
             null;
           const fraseDeTempo = tempo ? fraseDeTempoNaEtapa(tempo, t) : null;
+          const fraseDosFluxos = fraseDosFluxosDaEtapa(etapa, t);
           const erroDaLinha = erro?.etapaId === etapa.id ? erro.texto : null;
           const confirmandoAqui = confirmacao?.etapaId === etapa.id ? confirmacao : null;
           const arquivandoAqui = arquivamento?.etapaId === etapa.id ? arquivamento : null;
@@ -681,6 +711,20 @@ export function StagesSection({
                 em={etapa.last_change_at ?? null}
                 className={`etapa-autoria-${etapa.id}`}
               />
+
+              {/* #3603 — «quais fluxos disparam ao entrar aqui» é LEITURA: texto
+                  simples, sem botão nem seletor. O fluxo se configura no editor
+                  de follow-up; o funil só diz o que já está armado, para quem
+                  suspeita de mensagem automática ter onde conferir. A frase sai
+                  quando o campo não veio (ver `fraseDosFluxosDaEtapa`). */}
+              {fraseDosFluxos ? (
+                <p
+                  className="text-xs leading-snug text-text-muted"
+                  data-testid={`fluxos-de-${etapa.id}`}
+                >
+                  {fraseDosFluxos}
+                </p>
+              ) : null}
 
               {/* Numa venda com pagamento na entrega o momento que pede ação é o
                   pedido confirmado, não o ganho — e quem sabe qual etapa é essa é

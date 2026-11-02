@@ -125,7 +125,7 @@ describe("catálogo de modelos", () => {
         where m.deprecated_at is null
           and m.model_id in ('claude-opus-5','claude-sonnet-5','claude-opus-4-8',
                              'claude-haiku-5-5','claude-sonnet-5-5','claude-opus-5-5',
-                             'gpt-6-luna','gpt-6.1-sol','gpt-6-astra',
+                             'gpt-6-luna','gpt-6.1-sol','gpt-6.1-terra','gpt-6-astra',
                              'gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna','gpt-5.5',
                              'gpt-5.5-pro','gpt-5.4','gpt-5.4-mini','gpt-5.4-nano',
                              'gpt-5.4-pro','gemini-3.1-pro-preview','gemini-3.5-flash',
@@ -159,6 +159,7 @@ describe("catálogo de modelos", () => {
       "gpt-5.6-luna",
       "gpt-6-luna",
       "gpt-6.1-sol",
+      "gpt-6.1-terra",
       "gpt-6-astra",
       "gemini-3.5-flash",
       "gemini-3.5-flash-lite",

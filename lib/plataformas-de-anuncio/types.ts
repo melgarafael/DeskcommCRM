@@ -54,10 +54,7 @@ export type PlataformaDeAnuncio = "meta_ads" | "google_ads";
  * (0436) e `MetaEtapa:<uuid>` das da Meta (0524).
  */
 export type NomeDoEvento =
-  | "Purchase"
-  | "QualifiedLead"
-  | `Etapa:${string}`
-  | `MetaEtapa:${string}`;
+  "Purchase" | "LeadSubmitted" | "QualifiedLead" | `Etapa:${string}` | `MetaEtapa:${string}`;
 
 /**
  * Uma conversão pronta para sair — no formato da CASA, não no da plataforma.
@@ -67,10 +64,12 @@ export type NomeDoEvento =
  */
 export interface ConversaoOffline {
   organizationId: string;
-  leadId: string;
+  /** Nulo apenas no LeadSubmitted por clique quando nenhum card foi criado. */
+  leadId: string | null;
   evento: NomeDoEvento;
   /**
-   * Deduplicação, determinística: `<leadId>:<evento>`.
+   * Deduplicação determinística: por lead nos eventos antigos, por clique no
+   * LeadSubmitted causal. O transporte nunca deriva esta identidade.
    *
    * A plataforma descarta a segunda cópia com o mesmo par (id, evento). É a
    * SEGUNDA camada — a primeira é o índice único do livro-razão. Duas porque
