@@ -7343,6 +7343,9 @@ export const DICIONARIO: Traducoes = {
   "Conecte o número com o token antes de gravar o segredo.": {
     es: "Conecta el número con el token antes de guardar el secreto.",
   },
+  "Informe o access token do provedor e a conta de vendedor.": {
+    es: "Indica el access token del proveedor y la cuenta de vendedor.",
+  },
   "Segredo gravado. O canal passa a receber mensagens.": {
     es: "Secreto guardado. El canal empieza a recibir mensajes.",
   },
