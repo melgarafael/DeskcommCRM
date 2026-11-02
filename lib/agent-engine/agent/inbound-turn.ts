@@ -3021,10 +3021,6 @@ async function executarTurnoDoAgente(
   // Vive em função de módulo (`blocoDoModoDePrevia`) para poder ser testada.
   if (preview) blocosResidentes.push(blocoDoModoDePrevia(preview.kind));
   if (agentConfig !== null) blocosResidentes.push(...blocosDeInteresseExternoResidentes(agentConfig.toolIds));
-  if (preview)
-    blocosResidentes.push(
-      'MODO PRÉVIA: proponha a resposta com send_message. Operações são propostas separadas; nunca diga que executou uma proposta. Nenhum envio real acontece.',
-    );
   const system = blocosResidentes.join('\n\n');
   const openingContext = preview
     ? preview.context
@@ -4664,11 +4660,7 @@ async function executarTurnoDoAgente(
                     sleep,
                     jitter,
                     restantes: () => maxSendsPerTurn - seq,
-                    enviarFoto: async (foto, legenda) => {
-                      const resultado = await enviar(legenda, foto);
-                      if (temImagemPorUrl && OK_KINDS.has(resultado.kind)) fotoUrlEnviada = true;
-                      return resultado;
-                    },
+                    enviarFoto: (foto, legenda) => enviar(legenda, foto).then(marcarFoto),
                     enviarTexto: (texto) => enviarVoz(texto) ?? sendInBubbles(texto, {
                         enabled: agentConfig?.splitMessages ?? false,
                         maxChars: agentConfig?.splitMaxChars ?? 600,
