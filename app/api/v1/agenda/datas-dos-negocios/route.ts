@@ -23,6 +23,21 @@
  * cookie validado e é filtrado explicitamente além da RLS, como em toda consulta
  * desta base.
  *
+ * ─── A querystring é validada pelo schema canônico, e as duas recusas ───────
+ *
+ * Os parâmetros passam por `datasDosNegociosQuerySchema`
+ * (`lib/schemas/agenda.ts`), e não por leitura manual: a chave do campo vai
+ * INTERPOLADA num caminho jsonb do PostgREST (`custom_fields->>campo`), e uma
+ * chave com vírgula ou ponto seria sintaxe de filtro. `pipeline_id` é UUID, e o
+ * dia é `YYYY-MM-DD` — as duas coisas que o PostgREST recusaria tarde, com um
+ * 400 que a tela não sabe explicar.
+ *
+ * A forma inválida é `validation_error`; a data que NÃO EXISTE no calendário
+ * (`2026-02-31`) é `data_de_calendario_invalida`. Antes, as duas caiam no
+ * `RE_DIA`, que só confere a FORMA: o filtro ia para o banco, voltava vazio, e
+ * a grade dizia "ninguém embarca neste período" para um dia que ninguém
+ * digitou — o oposto da resposta explícita que esta rota promete.
+ *
  * ─── Por que o campo escolhido é conferido no SERVIDOR ─────────────────────
  *
  * `campo` tem de estar declarado no funil como campo de data do negócio
@@ -51,6 +66,11 @@ import { itensDaCamada, type NegocioComDatas } from "@/lib/agenda/datas-dos-nego
 import { traduzir } from "@/lib/i18n/dicionario";
 import { camposDeDataDoNegocio } from "@/lib/leads/campos-do-funil";
 import { LIMITE_DO_INTERVALO } from "@/lib/kanban/calendario-do-funil";
+import {
+  CODIGO_DATA_DE_CALENDARIO_INVALIDA,
+  datasDosNegociosQuerySchema,
+  recusaDeCalendario,
+} from "@/lib/schemas/agenda";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -64,8 +84,6 @@ export const dynamic = "force-dynamic";
  * período, não carregar o funil inteiro para descobrir.
  */
 export const NEGOCIOS_POR_LEITURA = 500;
-
-const RE_DIA = /^\d{4}-\d{2}-\d{2}$/;
 
 /** `YYYY-MM-DD` menos N dias, no calendário puro (sem fuso: é dia, não instante). */
 function diasAntes(dia: string, dias: number): string {
@@ -86,18 +104,36 @@ export async function GET(req: NextRequest): Promise<Response> {
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const params = req.nextUrl.searchParams;
-  const pipelineId = (params.get("pipeline_id") ?? "").trim();
-  const campo = (params.get("campo") ?? "").trim();
-  const campoFim = (params.get("campo_fim") ?? "").trim();
-  const de = (params.get("de") ?? "").trim();
-  const ate = (params.get("ate") ?? "").trim();
-
-  if (!pipelineId || !campo) {
-    return fail("validation_error", t("Informe o funil e o campo de data."), 422, { requestId });
+  const consulta = datasDosNegociosQuerySchema.safeParse({
+    pipeline_id: params.get("pipeline_id") ?? undefined,
+    campo: params.get("campo") ?? undefined,
+    campo_fim: params.get("campo_fim") ?? undefined,
+    de: params.get("de") ?? undefined,
+    ate: params.get("ate") ?? undefined,
+  });
+  if (!consulta.success) {
+    // O dia que não existe no calendário é recusa PRÓPRIA, e não
+    // `validation_error`: a tela precisa do motivo para esquecer a escolha em
+    // vez de mostrar grade vazia. As duas acontecem antes de qualquer consulta.
+    if (recusaDeCalendario(consulta.error)) {
+      return fail(CODIGO_DATA_DE_CALENDARIO_INVALIDA, t("Data de calendário inválida."), 422, {
+        requestId,
+        details: consulta.error.flatten().fieldErrors as Record<string, unknown>,
+      });
+    }
+    // Funil/campo ausentes mantêm a frase de sempre; o resto é "período
+    // inválido" — a mesma distinção de mensagem que a leitura manual fazia.
+    const faltaEscolha = consulta.error.issues.some(
+      (issue) => issue.path[0] === "pipeline_id" || issue.path[0] === "campo",
+    );
+    return fail(
+      "validation_error",
+      t(faltaEscolha ? "Informe o funil e o campo de data." : "Período inválido."),
+      422,
+      { requestId, details: consulta.error.flatten().fieldErrors as Record<string, unknown> },
+    );
   }
-  if (!RE_DIA.test(de) || !RE_DIA.test(ate) || de > ate) {
-    return fail("validation_error", t("Período inválido."), 422, { requestId });
-  }
+  const { pipeline_id: pipelineId, campo, campo_fim: campoFim, de, ate } = consulta.data;
 
   const supabase = await createClient();
 

@@ -30,6 +30,13 @@ negócio no dia de cada data, acima da grade.
 - **Campo renomeado ou removido** deixa de valer: a camada esquece a escolha e
   volta a pedir o campo, com o motivo à vista (o servidor responde
   `campo_nao_e_data`).
+- **Data que não existe no calendário** (`2026-02-31`, `2026-13-01`) é recusa
+  explícita: o servidor responde `data_de_calendario_invalida` (422) antes de
+  consultar o banco, e a camada diz o motivo — em vez de mostrar uma grade vazia
+  que se confundiria com "ninguém embarca neste período". Os parâmetros passam
+  pelo schema canônico `datasDosNegociosQuerySchema` (`lib/schemas/agenda.ts`):
+  `pipeline_id` é UUID, `campo`/`campo_fim` seguem a régua da escrita do funil e
+  `de`/`ate` são dias de calendário reais, com `de <= ate`.
 - **Recorte = o que a grade desenha.** Dia, semana ou mês, no fuso da organização.
 - A leitura usa a lista de funis e a visibilidade que a pessoa já tem no CRM; quem
   não enxerga o funil não enxerga a data.

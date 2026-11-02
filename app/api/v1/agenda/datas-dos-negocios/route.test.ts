@@ -302,8 +302,69 @@ describe("GET /api/v1/agenda/datas-dos-negocios", () => {
 
   it("período inválido não chega ao banco", async () => {
     const res = await GET(req({ ...CONSULTA_BASE, de: "2026-03-15", ate: "2026-03-09" }));
+    const corpo = await res.json();
 
     expect(res.status).toBe(422);
+    expect(corpo.error.code).toBe("validation_error");
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it("data de calendário impossível: 422 data_de_calendario_invalida, sem tocar o banco", async () => {
+    for (const de of ["2026-02-31", "2026-13-01"]) {
+      const res = await GET(req({ ...CONSULTA_BASE, de, ate: "2026-03-05" }));
+      const corpo = await res.json();
+
+      expect(res.status, `de=${de}`).toBe(422);
+      expect(corpo.error.code, `de=${de}`).toBe("data_de_calendario_invalida");
+    }
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it("data de calendário impossível no FIM do período também é recusada", async () => {
+    const res = await GET(req({ ...CONSULTA_BASE, de: "2026-03-01", ate: "2026-04-31" }));
+    const corpo = await res.json();
+
+    expect(res.status).toBe(422);
+    expect(corpo.error.code).toBe("data_de_calendario_invalida");
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it("2026-02-28 é data de calendário válida: 200", async () => {
+    const { cliente } = fakeDb({ pipelines: [funilComDatas()], leads: [] });
+    vi.mocked(createClient).mockResolvedValue(cliente);
+
+    const res = await GET(req({ ...CONSULTA_BASE, de: "2026-02-28", ate: "2026-03-05" }));
+
+    expect(res.status).toBe(200);
+  });
+
+  it("pipeline_id que não é UUID: 422 validation_error, sem chegar ao PostgREST", async () => {
+    const res = await GET(req({ ...CONSULTA_BASE, pipeline_id: "nao-e-uuid" }));
+    const corpo = await res.json();
+
+    expect(res.status).toBe(422);
+    expect(corpo.error.code).toBe("validation_error");
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it("campo_fim vazio vale ausente: a camada é de PONTO, e não erro", async () => {
+    const { cliente } = fakeDb({ pipelines: [funilComDatas()], leads: [] });
+    vi.mocked(createClient).mockResolvedValue(cliente);
+
+    const res = await GET(req({ ...CONSULTA_BASE, campo_fim: "" }));
+
+    expect(res.status).toBe(200);
+  });
+
+  it("campo com sintaxe de filtro do PostgREST é recusado ANTES de virar consulta", async () => {
+    // `campo` é interpolado em `custom_fields->>campo`: uma vírgula ali seria
+    // sintaxe de filtro, não nome de campo — a régua da escrita do funil fecha
+    // essa porta, e nada chega ao banco.
+    const res = await GET(req({ ...CONSULTA_BASE, campo: "data_inicio,status" }));
+    const corpo = await res.json();
+
+    expect(res.status).toBe(422);
+    expect(corpo.error.code).toBe("validation_error");
     expect(createClient).not.toHaveBeenCalled();
   });
 

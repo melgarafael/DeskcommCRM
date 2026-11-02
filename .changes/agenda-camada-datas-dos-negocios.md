@@ -17,4 +17,9 @@ entra nos horários sugeridos e não manda lembrete de compromisso — clicar nu
 abre o negócio no funil, que é onde a data muda. Quem não enxerga o funil não
 enxerga a data: a leitura passa pela mesma regra de visibilidade do CRM.
 
+Os parâmetros da consulta são validados antes de chegar ao banco, e a resposta diz
+**por que** não veio lista: período com data que não existe no calendário (31 de
+fevereiro, mês 13) volta como `data_de_calendario_invalida`, em vez de uma grade
+vazia que pareceria "ninguém embarca neste período".
+
 Nada a fazer na VPS: sem migration, sem variável nova.

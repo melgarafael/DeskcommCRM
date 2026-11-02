@@ -207,6 +207,29 @@ describe("Camada 'Datas dos negócios' na Agenda", () => {
     expect(screen.getByTestId("camada-datas-aviso").textContent).toContain("Escolha o campo de data");
   });
 
+  it("data do período que não existe no calendário: mesma saída — escolha esquecida, motivo à vista", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        json: async () => ({ error: { code: "data_de_calendario_invalida", message: "data" } }),
+      }) as unknown as Response),
+    );
+
+    render(<CamadaDatasDosNegocios funis={FUNIS} janela={JANELA} />);
+    await userEvent.click(screen.getByTestId("camada-datas-alternar"));
+    await userEvent.click(screen.getByRole("combobox", { name: "Campo de data do negócio" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Embarque" }));
+
+    // A chave nova NÃO cai no erro genérico ("não foi possível carregar"): ela
+    // é da mesma classe de `campo_nao_e_data` — o motivo aparece e a camada
+    // volta a pedir a escolha em vez de mostrar uma grade vazia.
+    expect((await screen.findByTestId("camada-datas-erro")).textContent).toContain(
+      "não existe no calendário",
+    );
+    expect(screen.getByTestId("camada-datas-aviso").textContent).toContain("Escolha o campo de data");
+  });
+
   it("lista vazia é resposta, não erro: diz que ninguém tem data no período", async () => {
     render(<CamadaDatasDosNegocios funis={FUNIS} janela={JANELA} />);
     await userEvent.click(screen.getByTestId("camada-datas-alternar"));

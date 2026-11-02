@@ -58,6 +58,19 @@ import { cn } from "@/lib/utils";
  */
 const SEM_SEGUNDO_CAMPO = "-sem-segundo-campo";
 
+/**
+ * As recusas da rota que fazem a camada ESQUECER a escolha (#3221).
+ *
+ * `campo_nao_e_data` é a decisão (c) da issue: o campo escolhido deixou de
+ * existir no funil. `data_de_calendario_invalida` é a mesma classe de resposta —
+ * o dia pedido não existe no calendário (`2026-02-31`) —, e tratá-la como falha
+ * genérica deixaria a grade vazia com "não foi possível carregar", que não diz o
+ * que corrigir. As duas zeram a escolha: insistir nela repetiria o 422 a cada
+ * repintura.
+ */
+const RECUSAS_QUE_ESQUECEM = ["campo_nao_e_data", "data_de_calendario_invalida"] as const;
+type RecusaDaCamada = (typeof RECUSAS_QUE_ESQUECEM)[number];
+
 interface Props {
   /** Os funis que declaram campo de data — descobertos no servidor. Vazio = a camada nem aparece. */
   funis: FunilComDatas[];
@@ -99,16 +112,16 @@ export function CamadaDatasDosNegocios({ funis, janela }: Props) {
     truncado: boolean;
   } | null>(null);
   /** A falha, também carimbada: só vale para a consulta que a produziu. */
-  const [falha, setFalha] = React.useState<{ chave: string; tipo: "geral" | "campo_nao_e_data" } | null>(
+  const [falha, setFalha] = React.useState<{ chave: string; tipo: "geral" | RecusaDaCamada } | null>(
     null,
   );
   /**
-   * O campo escolhido sumiu do funil (renomeado/apagado).
+   * O motivo pelo qual a escolha foi esquecida.
    *
    * Vive FORA do carimbo porque é o único aviso que precisa sobreviver à
    * consulta: ele mesmo zera a escolha, então não há mais chave a que pertencer.
    */
-  const [campoSumiu, setCampoSumiu] = React.useState(false);
+  const [escolhaEsquecida, setEscolhaEsquecida] = React.useState<RecusaDaCamada | null>(null);
 
   /**
    * Derivados, não sincronizados por efeito — a mesma regra do Calendário do
@@ -168,14 +181,20 @@ export function CamadaDatasDosNegocios({ funis, janela }: Props) {
         if (!retorno.ok || !corpo.data) {
           // `campo_nao_e_data` tem tratamento próprio (decisão (c) da issue): o
           // campo que a pessoa escolheu deixou de existir no funil — renomeado
-          // ou apagado. A escolha é ESQUECIDA, e a camada volta ao estado
-          // "escolha o campo" com o motivo à vista; insistir nela repetiria o
-          // 422 a cada repintura, e uma grade vazia sem explicação é
-          // indistinguível de "ninguém embarca neste período".
-          const sumiu = corpo.error?.code === "campo_nao_e_data";
-          setFalha({ chave, tipo: sumiu ? "campo_nao_e_data" : "geral" });
-          if (sumiu) {
-            setCampoSumiu(true);
+          // ou apagado. `data_de_calendario_invalida` é a mesma classe: o dia
+          // que a consulta pediu não existe no calendário, e uma grade vazia
+          // seria lida como "ninguém embarca neste período". Nos dois casos a
+          // escolha é ESQUECIDA, e a camada volta ao estado "escolha o campo"
+          // com o motivo à vista; insistir nela repetiria o 422 a cada
+          // repintura.
+          const codigo = corpo.error?.code;
+          const recusa: RecusaDaCamada | null =
+            codigo === "campo_nao_e_data" || codigo === "data_de_calendario_invalida"
+              ? codigo
+              : null;
+          setFalha({ chave, tipo: recusa ?? "geral" });
+          if (recusa) {
+            setEscolhaEsquecida(recusa);
             setCampoEscolhido(null);
           }
           return;
@@ -197,8 +216,8 @@ export function CamadaDatasDosNegocios({ funis, janela }: Props) {
   // ─── O que esta consulta sabe, e o que é de outra ─────────────────────────
   const itens = resposta && resposta.chave === chaveDaConsulta ? resposta.itens : null;
   const truncado = resposta && resposta.chave === chaveDaConsulta ? resposta.truncado : false;
-  const erro = campoSumiu
-    ? "campo_nao_e_data"
+  const erro = escolhaEsquecida
+    ? escolhaEsquecida
     : falha && falha.chave === chaveDaConsulta
       ? falha.tipo
       : null;
@@ -276,9 +295,10 @@ export function CamadaDatasDosNegocios({ funis, janela }: Props) {
               value={campo ?? ""}
               onValueChange={(valor) => {
                 setCampoEscolhido(valor);
-                // Escolha nova é página virada: o aviso de campo que sumiu já
-                // cumpriu o papel e não pode acompanhar a próxima consulta.
-                setCampoSumiu(false);
+                // Escolha nova é página virada: o aviso de campo que sumiu (ou
+                // de data impossível) já cumpriu o papel e não pode acompanhar
+                // a próxima consulta.
+                setEscolhaEsquecida(null);
                 if (valor === campoFimEscolhido) setCampoFimEscolhido(null);
               }}
             >
@@ -341,6 +361,10 @@ export function CamadaDatasDosNegocios({ funis, janela }: Props) {
           {erro === "campo_nao_e_data" ? (
             <p data-testid="camada-datas-erro" className="text-xs text-text-muted">
               {t("Este campo de data não existe mais neste funil.")}
+            </p>
+          ) : erro === "data_de_calendario_invalida" ? (
+            <p data-testid="camada-datas-erro" className="text-xs text-text-muted">
+              {t("A data do período não existe no calendário.")}
             </p>
           ) : erro === "geral" ? (
             <p data-testid="camada-datas-erro" className="text-xs text-danger">

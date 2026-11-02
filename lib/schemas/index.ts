@@ -7,6 +7,7 @@
  *   const input = await validateRequest(createLeadSchema, req);
  */
 export * from "./_validate";
+export * from "./agenda";
 export * from "./health";
 export * from "./leads";
 export * from "./contacts";

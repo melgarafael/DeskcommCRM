@@ -12016,6 +12016,13 @@ export const DICIONARIO: Traducoes = {
     es: "Indica el embudo y el campo de fecha.",
   },
   "Período inválido.": { es: "Período inválido." },
+  // A data que NÃO EXISTE no calendário (2026-02-31) é recusa própria: o dia
+  // tem a forma certa e mesmo assim não é dia nenhum. A frase existe para a
+  // camada dizer o motivo em vez de mostrar grade vazia (#3221).
+  "Data de calendário inválida.": { es: "Fecha de calendario inválida." },
+  "A data do período não existe no calendário.": {
+    es: "La fecha del período no existe en el calendario.",
+  },
   "Remarcar agendamento": { es: "Reagendar cita" },
   "Cancelar agendamento": { es: "Cancelar cita" },
   "Este agendamento não está mais na lista.": { es: "Esta cita ya no está en la lista." },
