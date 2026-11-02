@@ -998,6 +998,25 @@ export const NAV_CATALOG = [
     minRole: "manager",
   },
   {
+    // A tela da #3603 (fatia 3). As duas decisões existiam no backend e não
+    // tinham superfície: a entrada automática da conversa nova no funil morava em
+    // `settings.entrada_automatica_no_funil` (fatia 1) e o acompanhamento por
+    // etapa só se montava no construtor de fluxos (fatia 2). Sem esta porta, a
+    // única forma de configurar era UPDATE à mão no Postgres — o anti-exemplo de
+    // "toda configuração tem superfície" (docs/doctrine/restricao-de-canal.md).
+    //
+    // `manager` e não `admin`, pela mesma linha da matriz da spec 13 §4 que cobre
+    // "atendimento/routing": quem monta a régua comercial da empresa é o gerente,
+    // e nada aqui apaga conversa nem mexe em dinheiro.
+    href: "/app/settings/entrada-e-followup",
+    label: "Entrada e follow-up",
+    description: "O funil e a etapa da conversa nova, e o acompanhamento de cada etapa.",
+    icon: "FlowArrow",
+    group: "organizacao",
+    section: "Sua empresa",
+    minRole: "manager",
+  },
+  {
     // A porta do freio POR EMPRESA do passo `ai_decide` (issue #2367). O #2228
     // criou o passo e o deixou opcional POR REGRA; sem esta tela, desligar de
     // uma vez todos os `ai_decide` de uma organização só existiria como
