@@ -50,6 +50,11 @@ export const DICIONARIO: Traducoes = {
   "Últimos avisos de casos": { es: "Últimos avisos de casos" },
   "Esta lista registra avisos de casos. O resultado dos avisos de transferência para atendimento humano aparece no respectivo item da Central de alertas.": { es: "Esta lista registra avisos de casos. El resultado de los avisos de transferencia a atención humana aparece en el elemento correspondiente de la Central de alertas." },
   "Ainda não há avisos de casos nesta lista. As tentativas aparecem aqui quando o assistente abre um caso, inclusive se falharem.": { es: "Todavía no hay avisos de casos en esta lista. Los intentos aparecen aquí cuando el asistente abre un caso, incluso si fallan." },
+  // #1418 — o aviso agendado para o futuro é recusado (não há quem o publique
+  // depois nesta fatia). A frase diz o que fazer: publicar agora ou sem data.
+  "O agendamento de aviso ainda não está disponível. Publique agora ou envie sem data de publicação.": {
+    es: "La programación de avisos aún no está disponible. Publica ahora o envía sin fecha de publicación.",
+  },
   "Preencher o nome que o cliente informa no atendimento": { es: "Completar el nombre que el cliente informa durante la atención" },
   "Quando o assistente identifica o próprio nome informado por texto e usa a capacidade Anotar dado que o cliente informou, pode preencher o nome vazio da ficha. O apelido do WhatsApp fica separado. Nomes existentes e e-mail continuam exigindo revisão humana. Confira a ficha se o assistente interpretar a mensagem incorretamente.": { es: "Cuando el asistente identifica el nombre propio informado por texto y usa la capacidad Anotar un dato que el cliente informó, puede completar el nombre vacío de la ficha. El apodo de WhatsApp queda separado. Los nombres existentes y el correo siguen requiriendo revisión humana. Revise la ficha si el asistente interpreta incorrectamente el mensaje." },
   "Ligado para novas mensagens de atendimento.": { es: "Activado para nuevos mensajes de atención." },
@@ -18973,11 +18978,6 @@ export const DICIONARIO: Traducoes = {
   },
   "O caminho do logo não é aceito. Envie a imagem de novo.": {
     es: "La ruta del logo no es aceptada. Vuelve a subir la imagen.",
-  },
-  // #1418 — o aviso agendado para o futuro é recusado (não há quem o publique
-  // depois nesta fatia). A frase diz o que fazer: publicar agora ou sem data.
-  "O agendamento de aviso ainda não está disponível. Publique agora ou envie sem data de publicação.": {
-    es: "La programación de avisos aún no está disponible. Publica ahora o envía sin fecha de publicación.",
   },
 };
 

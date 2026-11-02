@@ -6375,6 +6375,7 @@
   "Falha ao carregar o caso.": "Failed to load the case.",
   "Falha ao carregar o radar.": "Failed to load the radar.",
   "Falha ao carregar os avisos.": "Failed to load the notices.",
+  "O agendamento de aviso ainda não está disponível. Publique agora ou envie sem data de publicação.": "Scheduling an announcement is not available yet. Publish it now or send it without a publication date.",
   "Falha ao carregar os casos.": "Failed to load the cases.",
   "Falha ao decifrar credential.": "Failed to decrypt credential.",
   "Falha ao listar funis.": "Failed to list pipelines.",
@@ -9516,6 +9517,5 @@
   "O vocabulário que a sua operação usa, no lugar do padrão.": "The vocabulary your operation uses, instead of the default.",
   "Atualizar esta instalação": "Update this installation",
   "A versão que roda aqui, a que já existe e o que muda ao atualizar.": "The version running here, the one that already exists and what changes when updating.",
-  "Chamar a equipe": "Call the team",
-  "O agendamento de aviso ainda não está disponível. Publique agora ou envie sem data de publicação.": "Scheduling an announcement is not available yet. Publish it now or send it without a publication date."
+  "Chamar a equipe": "Call the team"
 }
