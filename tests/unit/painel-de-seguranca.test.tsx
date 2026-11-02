@@ -174,6 +174,7 @@ describe("painel de segurança — o que se confere antes de enviar", () => {
       "case_promise",
       "internal_vocabulary",
       "agenda_stall",
+      "horario_da_agenda",
       "registro_sem_efeito",
       "disclosure",
     ]);

@@ -268,7 +268,7 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "com segurança sem medir o disparo de cada trigger.",
   },
   {
-    fn: "fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean)",
+    fn: "fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb)",
     razao:
       "A ÚNICA porta de escrita de `config_aviso_de_caso` — a tabela não tem " +
       "INSERT/UPDATE/DELETE para authenticated, só `grant select` sob RLS de " +
@@ -280,13 +280,16 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "tests/invariants/aviso-de-caso-escrita.test.ts prova agent e viewer " +
       "recusados (42501), admin aprovado, admin de OUTRA organização recusado, " +
       "canal do vizinho recusado e anon sem EXECUTE. " +
+      "Desde a 9078 (#3803) ela grava também `user_organizations.whatsapp_e164`, " +
+      "só na linha de membro ATIVO de p_org (organization_id = p_org e " +
+      "revoked_at is null), depois das mesmas checagens de papel. " +
       "⚠️ A TELA QUE A CHAMA COM A SESSÃO DO USUÁRIO É DA ONDA SEGUINTE " +
       "(Configurações › Avisos de atendimento). Até ela existir, o grant é " +
       "superfície sem consumidor — declarado aqui em vez de presumido —, e a " +
       "função recusa tudo que não seja admin da própria organização.",
   },
   {
-    fn: "fn_definir_aviso_de_agendamento(uuid,boolean,uuid,text,boolean,boolean)",
+    fn: "fn_definir_aviso_de_agendamento(uuid,boolean,uuid,text,boolean,boolean,text)",
     razao:
       "A ÚNICA porta de escrita de `config_aviso_de_agendamento` (migration 0707) — " +
       "a tabela só tem `grant select` sob RLS de admin. PUT " +

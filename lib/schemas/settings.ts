@@ -277,8 +277,8 @@ export const customFieldSchema = z.object({
    * ele é gravado como digitado. DESLIGADO (o padrão, e a chave ausente em toda
    * definição que já existe), a escrita só aceita um valor que case com uma
    * opção (por `value`, `label` ou apelido), gravando o `value` CANÔNICO.
-   * Hoje a régua vale na ficha (CustomFieldsEditor); `validarValorPesquisavel`
-   * existe pronta para as escritas do servidor, ainda não plugada (#2521).
+   * A régua vale na ficha (CustomFieldsEditor) e, desde #3508, nas escritas do
+   * servidor (`lib/leads/opcao-do-campo-no-servidor.ts`).
    */
   allow_new: z.boolean().optional(),
   /**
@@ -669,6 +669,19 @@ export const crmSettingsSchema = z
      * o bloco que as regras de contato já usam.
      */
     telefone_de_ficha_vazia: z.boolean().catch(false),
+    nome_informado_no_atendimento: z.boolean().catch(false),
+    /**
+     * `avisar_transferencia_no_whatsapp` (#3784): a transferência para atendimento
+     * humano também manda o aviso ao número do Aviso no WhatsApp.
+     *
+     * ⚠️ NASCE LIGADA, ao contrário das vizinhas: é a régua do aviso de
+     * Propostas (`proposals.avisar_no_whatsapp !== false`), e não a das regras
+     * de contato. Ela não grava dado de ninguém; só existe para quem já ligou o
+     * Aviso de caso poder tirar as transferências do teto diário do número.
+     * Só o booleano `false` desliga — e é a mesma régua do SQL do handoff
+     * (`is distinct from 'false'::jsonb`), que decide se o evento nem nasce.
+     */
+    avisar_transferencia_no_whatsapp: z.boolean().catch(true),
     /**
      * `cliente_pela_venda` (#3644): quem JÁ COMPROU (tem negócio `won` e nenhum
      * aberto) volta pelo funil de clientes, e não pelo de captação.
@@ -700,6 +713,8 @@ export const crmSettingsSchema = z
     cliente_pela_agenda: false,
     internal_contact_tags: [],
     telefone_de_ficha_vazia: false,
+    nome_informado_no_atendimento: false,
+    avisar_transferencia_no_whatsapp: true,
     cliente_pela_venda: false,
     pos_venda_dias: 0,
   });
@@ -875,4 +890,18 @@ export function meetAbertoLigado(settings: unknown): boolean {
       ? (settings as Record<string, unknown>)
       : undefined;
   return raiz?.google_meet_acesso_aberto === true;
+}
+
+/** Só true booleano autoriza preencher o nome vazio a partir do texto real do atendimento. */
+export function nomeInformadoLigado(settings: unknown): boolean {
+  const crm = settings && typeof settings === 'object' && !Array.isArray(settings)
+    ? (settings as Record<string, unknown>).crm : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).nome_informado_no_atendimento === true;
+}
+
+/** Ausente liga; só o booleano `false` tira as transferências do Aviso no WhatsApp. */
+export function avisoDeTransferenciaLigado(settings: unknown): boolean {
+  const crm = settings && typeof settings === 'object' && !Array.isArray(settings)
+    ? (settings as Record<string, unknown>).crm : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).avisar_transferencia_no_whatsapp;
 }

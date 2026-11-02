@@ -1,6 +1,10 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import type { ModuloOpcional } from "@/lib/instalacao/modulos";
+import type { CapacidadeDaOrganizacao } from "@/lib/organizacao/capacidades";
 import {
   NAV_DESTINATIONS,
   NAV_GROUPS,
@@ -279,5 +283,76 @@ describe("searchable", () => {
   it("respeita o papel", () => {
     const hrefs = searchable(AGENT.platform, AGENT.role).map((d) => d.href);
     expect(hrefs).not.toContain("/app/audit");
+  });
+});
+
+/**
+ * #1290 — o item de menu de um módulo OPCIONAL só aparece para quem tem o módulo
+ * em uso, e isso vale para TODAS as projeções do menu.
+ *
+ * O caso que abriu a issue é Chamadas (`/app/calls`, telefonia por SIP do #677):
+ * a tela aparecia no hub e no ⌘K de toda instalação e levava a um histórico
+ * vazio para quem nunca ligou a telefonia.
+ *
+ * A régua é a MESMA de Propostas — `capacidadesLigadas()`. Este bloco não conhece
+ * `voip_trunk_settings`: ele prova a projeção, que é o que o usuário vê.
+ */
+describe("capacidade da organização (#1290): Chamadas só com a telefonia em uso", () => {
+  /** As três projeções que desenham menu, com a lista de capacidades da organização. */
+  function menu(capacidades: readonly CapacidadeDaOrganizacao[]) {
+    return {
+      sidebar: sidebarGroups(true, null, undefined, [], capacidades).flatMap((g) =>
+        g.items.map((i) => i.href),
+      ),
+      hub: hubSections("crm", true, null, undefined, [], capacidades).flatMap((s) =>
+        s.items.map((i) => i.href),
+      ),
+      busca: searchable(true, null, undefined, [], capacidades).map((d) => d.href),
+    };
+  }
+
+  it("telefonia desligada para a organização: o item não existe em menu nenhum", () => {
+    const sem = menu([]);
+    expect(sem.hub, "o hub é menu: item de módulo desligado não pode estar nele").not.toContain(
+      "/app/calls",
+    );
+    expect(sem.busca, "⌘K também é menu").not.toContain("/app/calls");
+    expect(sem.sidebar).not.toContain("/app/calls");
+  });
+
+  it("⭐ telefonia em uso: o item aparece (controle — o filtro não esconde módulo ligado)", () => {
+    const com = menu(["telefonia"]);
+    expect(com.hub).toContain("/app/calls");
+    expect(com.busca).toContain("/app/calls");
+  });
+
+  it("o filtro é cirúrgico: o resto do menu do CRM não se move", () => {
+    // Se o filtro por capacidade derrubasse o grupo ou vizinhos, o teste acima
+    // passaria e o menu teria encolhido inteiro. A DIFERENÇA exata é a régua:
+    // ligar a telefonia acrescenta UMA porta, e não reorganiza as outras.
+    const sem = menu([]);
+    const com = menu(["telefonia"]);
+    expect(com.hub.filter((h) => !sem.hub.includes(h))).toEqual(["/app/calls"]);
+    expect(com.busca.filter((h) => !sem.busca.includes(h))).toEqual(["/app/calls"]);
+    expect(sem.hub.filter((h) => !com.hub.includes(h))).toEqual([]);
+    // Vizinhos sem condição declarada continuam no lugar — a régua deles é
+    // outra (`modulo`, papel, destinos da empresa) e este filtro não a toca.
+    expect(sem.hub).toContain("/app/kanban");
+    expect(sem.hub).toContain("/app/products");
+  });
+
+  it("nem o administrador da instalação ganha a porta de módulo desligado", () => {
+    // Medição, não escolha nova: `permitidos()` aplica `capacidade` DEPOIS de
+    // `canSee()`, que é o único ponto com bypass de plataforma. Bypass é para
+    // PAPEL; módulo desligado esconde para todos.
+    const doAdminDaPlataforma = searchable(true, null, undefined, [], []).map((d) => d.href);
+    expect(doAdminDaPlataforma).not.toContain("/app/calls");
+  });
+
+  it("esconder do menu não apaga a porta: a URL direta continua existindo", () => {
+    // "Não é autorização" é contrato do registro: o item sai do menu, a tela
+    // fica. Quem tem o link chega, e `/app/calls` decide lá o que fazer.
+    expect(NAV_DESTINATIONS.map((d) => d.href)).toContain("/app/calls");
+    expect(existsSync(join(process.cwd(), "app/app/calls/page.tsx"))).toBe(true);
   });
 });

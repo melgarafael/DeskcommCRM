@@ -75,7 +75,12 @@ beforeEach(() => {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
-      const data = url === "/api/v1/ai/jev" ? jev(jevLigado) : PROVEDORES;
+      const data =
+        url === "/api/v1/ai/jev"
+          ? jev(jevLigado)
+          : url === "/api/v1/ai/voz"
+            ? { voiceId: null, vozesDisponiveis: [], temCredencial: false }
+            : PROVEDORES;
       return new Response(JSON.stringify({ data }), { status: 200 });
     }),
   );
@@ -167,5 +172,53 @@ describe("PainelDeProvedores — o Jev no painel", () => {
     fireEvent.click(screen.getByTestId("avancado-entender"));
     expect(screen.getByTestId("ponto-sentiment_classify")).toBeInTheDocument();
     expect(screen.queryByTestId("jev-no-ponto-sentiment_classify")).toBeNull();
+  });
+});
+
+describe("PainelDeProvedores — ponto com menu fechado", () => {
+  it("sem binding e com o efetivo fora do menu, o seletor abre na opção padrão ('Automático')", async () => {
+    const transcricao = {
+      ...PROVEDORES.pontos[0]!,
+      id: "transcricao_de_audio",
+      rotulo: "Ouvir o áudio do cliente",
+      papel: "perceber",
+      fixo: {
+        razao: "Transcrição não fala a API de chat.",
+        opcoes: [
+          { provider: "openai", modelId: "whisper-1", rotulo: "Automático" },
+          { provider: "elevenlabs", modelId: "scribe_v1", rotulo: "ElevenLabs (Scribe)" },
+        ],
+      },
+      // Instalação sem chave OpenAI: a escada anuncia o provedor sem modelo.
+      efetivo: {
+        provider: "openai",
+        modelId: null,
+        credentialId: null,
+        baseUrl: null,
+        origem: "fixo_do_produto",
+        porQue: "fixo do produto",
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const data =
+          url === "/api/v1/ai/jev"
+            ? jev(false)
+            : url === "/api/v1/ai/voz"
+              ? { voiceId: null, vozesDisponiveis: [], temCredencial: false }
+              : {
+                  ...PROVEDORES,
+                  papeis: { perceber: { rotulo: "Ver e ouvir", explicacao: "" } },
+                  pontos: [transcricao],
+                  podeEditar: true,
+                };
+        return new Response(JSON.stringify({ data }), { status: 200 });
+      }),
+    );
+    montar();
+    fireEvent.click(await screen.findByTestId("avancado-perceber"));
+    expect(screen.getByTestId("servico-transcricao_de_audio")).toHaveTextContent("Automático");
+    expect(screen.getByTestId("salvar-transcricao_de_audio")).toBeEnabled();
   });
 });

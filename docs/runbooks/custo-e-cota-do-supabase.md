@@ -28,14 +28,15 @@ No painel do Supabase o número oficial está em **Settings → Usage**. É ele 
 vale para cobrança; `/proc/net/dev` mede o contêiner e serve para atribuir a
 origem.
 
-## 2. Os dois intervalos que governam o custo do worker
+## 2. Os três intervalos que governam o custo do worker
 
-Ambos vivem no `.env`, são opcionais, e o worker imprime os valores em vigor na
+Todos vivem no `.env`, são opcionais, e o worker imprime os valores em vigor na
 linha `agent-engine pronto` do log.
 
 | chave | default | o que faz |
 |---|---|---|
-| `QUEUE_POLL_INTERVAL_MS` | `2000` | **Teto de espera.** Com a fila vazia, é quanto o worker dorme entre uma consulta e a próxima. Com job agendado, ele acorda no vencimento e este valor só limita a soneca. |
+| `QUEUE_POLL_INTERVAL_MS` | `2000` | **Piso da espera ociosa.** Com a fila vazia, é quanto o worker dorme entre uma consulta e a próxima; com o recuo ligado (abaixo), o valor dobra a cada rodada ociosa até o teto. Com job agendado, ele acorda no vencimento e este valor só limita a soneca. |
+| `QUEUE_IDLE_MAX_INTERVAL_MS` | vazio (desligado) | **Teto do recuo com a fila vazia.** Desligado, a instalação parada consulta o banco a cada piso — 3.880 consultas em 2h19 (~28/min) medidas na issue #3688. Com `60000`, cai para ~1/min. Mensagem de cliente acorda a fila na hora; a resposta da equipe a um caso da IA e os disparos agendados pelo cron podem esperar até o teto. |
 | `QUEUE_CLAIM_RETRY_INTERVAL_MS` | `250` | Ritmo do *“havia trabalho e eu não peguei”* — todas as vagas de `QUEUE_MAX_CONCURRENCY` ocupadas, ou outro turno rodando para o mesmo contato. |
 
 **Não passe `QUEUE_POLL_INTERVAL_MS` de 10000.** A conexão ociosa do pool expira
@@ -43,6 +44,11 @@ em 10 s; acima disso cada rodada volta a pagar TCP+TLS+startup, e o intervalo
 maior passa a gastar **mais** do que economiza. O worker avisa no boot se você
 cruzar essa linha. Ele também não deve chegar perto de `INBOUND_DEBOUNCE_MS`
 (8000), senão o laço dorme através da janela de coalescência.
+
+O teto do recuo (`QUEUE_IDLE_MAX_INTERVAL_MS`) fica **acima** dos 10 s de
+propósito e não cai na mesma regra: depois de um sono longo a rodada reconecta
+(499 B medidos contra 66 B), mas 1 rodada/min a 499 B continua ~4× mais barata
+que 30 rodadas/min a 66 B. O que não vale é encurtar o **piso**.
 
 Depois de editar o `.env`:
 

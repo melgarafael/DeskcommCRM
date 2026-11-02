@@ -915,6 +915,12 @@ jobs:
       # (COBRANCA_API_BASE_URL_TESTE do .env.e2e) e devolve as chaves da
       # instalação como achou.
       # PREVISÃO, não medida: ~5 min de caso.
+      # `modelos-cabem-em-375` (#3702) é irmã de `celular-cabe-na-tela` e entra
+      # pelo mesmo critério: o que ela mede é a REGRA (formulário de modelo ×
+      # 375px), não um fluxo — um login, sem WAHA, sem Graph, sem seed próprio.
+      # Ela abre Conexões nas duas abas e mede `main.scrollWidth ×
+      # clientWidth` com o formulário aberto, que é justamente a medida que a
+      # spec de celular não faz: o formulário só existe depois de um clique.
       SPECS_PARTE_2: >-
         agente-marca-consulta.spec.ts
         agenda-marcar-pela-tela.spec.ts
@@ -946,6 +952,7 @@ jobs:
         agenda-conectar-google.spec.ts
         agenda-painel-cabe-na-tela.spec.ts
         celular-cabe-na-tela.spec.ts
+        modelos-cabem-em-375.spec.ts
         agenda-ver-na-agenda.spec.ts
         agenda-escopo-da-organizacao.spec.ts
         aba-e-cookie-divergentes.spec.ts

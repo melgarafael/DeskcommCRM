@@ -71,6 +71,11 @@ const NAO_AVALIAVEIS_SEM_TURNO: ReadonlyArray<{ gate: string; porque: string }> 
     porque: "depende de a ferramenta de agenda ter sido chamada neste turno — não há turno real no teste",
   },
   {
+    gate: "horario_da_agenda",
+    porque:
+      "depende do que as ferramentas de agenda devolveram neste turno — não há turno real no teste",
+  },
+  {
     gate: "registro_sem_efeito",
     porque:
       "depende de a escrita de registro ter produzido efeito neste turno — não há turno real no teste",

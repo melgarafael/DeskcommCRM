@@ -65,6 +65,7 @@ interface Props {
     /** A cor do TEMA ESCURO (#2482) — o par; `null` = só a cor acima pinta. */
     readonly accent_dark_hex: string | null;
     readonly logo_path: string | null;
+    readonly logo_dark_path: string | null;
     /**
      * O remetente do e-mail de AUTOMAÇÃO (#3287, fatia 1) — nome de exibição e
      * "responder para". `null` = a organização não configurou, e o e-mail sai
@@ -196,12 +197,13 @@ export function FormularioDaMarcaDaOrganizacao({ gravada, instalacao, ambiente, 
             // já está no banco quando esta tela renderiza. Entra na prévia para
             // que o bloco "de onde vem cada coisa" possa responder sobre ele.
             logo_path: gravada.logo_path,
+            logo_dark_path: gravada.logo_dark_path,
           }),
           ...abaixo,
         ],
         REGUA_DO_PRODUTO,
       ),
-    [nomeLimpo, hexLimpo, hexEscuroLimpo, gravada.logo_path, abaixo],
+    [nomeLimpo, hexLimpo, hexEscuroLimpo, gravada.logo_path, gravada.logo_dark_path, abaixo],
   );
 
   // A MESMA serialização, com o MESMO escopo, que o layout de `/app` roda no

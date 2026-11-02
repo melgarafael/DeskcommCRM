@@ -66,8 +66,8 @@ beforeAll(() => {
       on conflict do nothing;
 
     insert into public.prospecting_campaigns (id, organization_id, request_id, name, search, search_status) values
-      ('${CAMPANHA_A}', '${ORG_A}', gen_random_uuid(), 'Planilha A', '{"origem":"planilha"}'::jsonb, 'succeeded'),
-      ('${CAMPANHA_B}', '${ORG_B}', gen_random_uuid(), 'Planilha B', '{"origem":"planilha"}'::jsonb, 'succeeded')
+      ('${CAMPANHA_A}', '${ORG_A}', gen_random_uuid(), 'Planilha A', '{"origem":"importacao"}'::jsonb, 'succeeded'),
+      ('${CAMPANHA_B}', '${ORG_B}', gen_random_uuid(), 'Planilha B', '{"origem":"importacao"}'::jsonb, 'succeeded')
       on conflict (id) do nothing;
 
     delete from public.prospecting_candidates where organization_id in ('${ORG_A}', '${ORG_B}');

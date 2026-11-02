@@ -44,6 +44,9 @@ vi.mock("ai", () => ({
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn(() => ({})) }));
 vi.mock("@/lib/ai/credenciais/login-codex", () => ({
+  // #3371, fatia 4: o seam passou a renovar no 401 — o dublê do módulo tem de
+  // cobrir o símbolo novo, senão o import das duas funções quebra o teste.
+  renovarAssinaturaNoTurno: vi.fn(),
   lerLoginCodexRenovandoSeProxima: vi.fn(async () => ({
     access_token: "token-de-assinatura-de-teste",
     refresh_token: "refresh-de-teste",

@@ -135,6 +135,11 @@ export interface AlterarInput {
   notes?: string;
   /** Igual ao de `MarcarInput`: `""` desconvida, ausente não mexe. */
   guest_email?: string;
+  /**
+   * O texto do bloco na grade (#3776). Ausente não mexe; vazio é RECUSA — a
+   * régua da edição, e o porquê, estão em `tituloDoCompromisso` na rota.
+   */
+  title?: string;
 }
 
 export interface CancelarInput {
@@ -618,6 +623,28 @@ export async function alterarAgendamentoHandler(
   }
   if(input.confirmation_next_at) mudanca.confirmation_next_at=input.confirmation_next_at;
   if (input.notes !== undefined) mudanca.notes = input.notes;
+  /**
+   * O TÍTULO ENTRA PELO MESMO `mudanca` — e o vazio morre aqui TAMBÉM.
+   *
+   * A rota já recusa `""` no schema, mas o handler é a mesma porta da
+   * ferramenta MCP (`lib/mcp/tools/agendamento.ts`) e de qualquer chamador
+   * interno. Deixar a recusa só na rota faria o título em branco chegar à RPC
+   * por um caminho que não foi medido — e lá o resultado seria um erro de
+   * constraint (`not null`), em inglês, sem apontar o campo.
+   */
+  if (input.title !== undefined) {
+    const titulo = input.title.trim();
+    if (!titulo) {
+      throw new ApiError(
+        422,
+        "agenda_titulo_vazio",
+        undefined,
+        ctx.requestId,
+        "O título do compromisso não pode ficar vazio. Escreva um nome ou desmarque e marque de novo com o título do tipo.",
+      );
+    }
+    mudanca.title = titulo;
+  }
   // Trocar SÓ o convidado não é remarcação nem mudança de situação, então não
   // produz `transicao` — e não deveria: a timeline do lead não ganha notícia
   // por causa de um e-mail digitado. Quem leva a mudança ao Google é a coluna

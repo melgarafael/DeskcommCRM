@@ -83,6 +83,14 @@ export function NewContactDialog({
   // O MESMO vocabulário de sugestões da ficha (#2732): a chave do react-query é
   // a mesma, então quem já leu na lista de contatos não paga outra requisição.
   const vocabulario = useContactTagVocabulary(org?.orgId ?? null);
+  // O texto digitado no campo de etiquetas e a MESMA pergunta que o Inbox faz
+  // com ele (issue #3144): a leitura com `?busca=` alcança o vocabulário curado
+  // inteiro, que a lista "em uso" (teto de 200, só contatos) não vê.
+  const [buscaDeEtiqueta, setBuscaDeEtiqueta] = useState("");
+  const buscaNoVocabulario = useContactTagVocabulary(
+    org?.orgId ?? null,
+    buscaDeEtiqueta.trim(),
+  );
   const { definirCor } = useDefinirCorDaEtiqueta();
   // A cor da etiqueta é VOCABULÁRIO e a rota exige manager + MFA: para os outros
   // papéis a paleta nem chega ao campo, como na ficha e no editor do Inbox.
@@ -119,6 +127,12 @@ export function NewContactDialog({
   });
 
   const cpfError = form.formState.errors.cpf;
+  // ENQUANTO O DOCUMENTO ESTIVER INVÁLIDO, O ENVIO FICA IMPEDIDO (#3496).
+  // Avisar no campo e deixar o clique seguir faria o aviso virar decoração: o
+  // botão é a segunda testemunha do mesmo erro, e não a primeira. Quem digitou
+  // errado e nunca saiu do campo ainda é barrado pelo `handleSubmit`, que
+  // valida tudo de novo — o botão desabilitado é conveniência, não a defesa.
+  const documentoInvalido = Boolean(cpfError);
   const tags = useWatch({ control: form.control, name: "tags" }) ?? [];
 
   async function onSubmit(values: FormShape) {
@@ -297,6 +311,9 @@ export function NewContactDialog({
               onDefinirCor={
                 podeDefinirCor ? (tag, cor) => void definirCor(tag, cor) : undefined
               }
+              encontradas={buscaNoVocabulario.data}
+              onDigitar={setBuscaDeEtiqueta}
+              erroNoVocabulario={vocabulario.isError || buscaNoVocabulario.isError}
             />
           </div>
           {serverError && (
@@ -320,13 +337,13 @@ export function NewContactDialog({
               <Button
                 type="button"
                 variant="secondary"
-                disabled={create.isPending}
+                disabled={create.isPending || documentoInvalido}
                 onClick={form.handleSubmit((values) => void salvar(values, true))}
               >
                 {t("Salvar e iniciar conversa")}
               </Button>
             )}
-            <Button type="submit" disabled={create.isPending}>
+            <Button type="submit" disabled={create.isPending || documentoInvalido}>
               {create.isPending ? t("Criando…") : t("Criar contato")}
             </Button>
           </DialogFooter>

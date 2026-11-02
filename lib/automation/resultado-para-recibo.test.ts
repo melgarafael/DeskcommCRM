@@ -152,4 +152,20 @@ describe("recibo técnico de automação não guarda a frase do provedor", () =>
     });
     expect(resultadoParaRecibo(seguro)).toEqual(seguro);
   });
+
+  it.each(["carteira_nao_passou", "conversas_nao_passaram"])(
+    "a passagem parcial do assign_owner (%s) grava o código, e não a mensagem do banco",
+    (codigo) => {
+      const seguro = resultadoParaRecibo({
+        type: "assign_owner",
+        status: "failed",
+        error: codigo,
+        detail: { user_id: "dono-sintetico", carteira: "falhou", erro: `conversa x: ${PESSOAL}` },
+      });
+      // O código fica: é ele que a Atividade traduz na frase da falha parcial.
+      expect(seguro.error).toBe(codigo);
+      expect(seguro.detail).toMatchObject({ user_id: "dono-sintetico", carteira: "falhou", erro: codigo });
+      expect(JSON.stringify(seguro)).not.toContain(PESSOAL);
+    },
+  );
 });

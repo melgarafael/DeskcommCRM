@@ -40,6 +40,8 @@
     { "id": "legado", "lane": "gasta", "col": 4, "type": "service", "label": "ai-response-worker", "sublabel": "caminho pré-engine (org sem versão publicada) · veto DEPOIS de G1/G4" },
     { "id": "fila", "lane": "gasta", "col": 5, "type": "service", "label": "agent-worker/main.ts", "sublabel": "erro terminal → cancelJob, não failJob (não afoga a Central em job_dead)" },
     { "id": "midia", "lane": "gasta", "col": 6, "type": "service", "label": "media-derive-worker (describeImage + transcrição do degrau 3)", "sublabel": "visão de foto, de cada quadro de vídeo e áudio ouvido pelo modelo da organização, fora do runModelCall · recusa → marcador de mídia não lida" },
+    { "id": "voz", "lane": "gasta", "col": 7, "type": "service", "label": "voz-do-turno (resolverVozDoTurno)", "sublabel": "a nota de voz do agente (ElevenLabs) passa pelo mesmo teto antes de sintetizar · recusa → o turno responde em texto" },
+    { "id": "previa", "lane": "borda", "col": 7, "type": "api", "label": "POST /api/v1/ai/voz/preview (route.ts)", "sublabel": "a prévia de voz da tela de Provedores passa pelo mesmo teto antes de sintetizar · recusa → 402 budget_exceeded" },
 
     { "id": "budgets", "lane": "dados", "col": 1, "type": "database", "label": "ai_budgets", "sublabel": "enforcement_mode (default off) · enforcement_effective_at · escrita só por service role (0160)" },
     { "id": "regua", "lane": "dados", "col": 2, "type": "database", "label": "fn_gasto_de_ia_do_mes(uuid)", "sublabel": "a definição ÚNICA de gasto · security invoker, revogada de anon/authenticated" },
@@ -98,6 +100,10 @@
     { "id": "e43", "from": "kpis", "to": "saude", "label": "o alerta leva para a tela que tem o número real" },
     { "id": "e44", "from": "midia", "to": "runmodel", "label": "visão, quadros de vídeo e transcrição pelo modelo da organização, mesmo gate; a transcrição pelo serviço (degraus 1 e 2) fica fora (custo null)" },
     { "id": "e45", "from": "midia", "to": "llmcalls", "label": "o sucesso grava custo em visao_de_imagem e transcricao_de_audio (degrau 3) e soma no gasto do mês" },
+    { "id": "e49", "from": "voz", "to": "runmodel", "label": "síntese de voz, mesmo gate; recusado, o agente escreve em vez de falar" },
+    { "id": "e50", "from": "voz", "to": "llmcalls", "label": "a síntese que aconteceu grava custo em sintese_de_voz (por caractere) e soma no gasto do mês" },
+    { "id": "e51", "from": "previa", "to": "runmodel", "label": "a prévia de voz, mesmo gate e mesmo purpose da voz do agente" },
+    { "id": "e52", "from": "previa", "to": "llmcalls", "label": "a prévia sintetizada grava custo em sintese_de_voz (sem job) e soma no gasto do mês" },
     { "id": "e46", "from": "card", "to": "usoapi", "label": "a mesma tela: custo, chamadas, turnos e cache do período" },
     { "id": "e47", "from": "usoapi", "to": "usofn", "label": "RPC, security invoker — a RLS isola, p_org é defesa em profundidade" },
     { "id": "e48", "from": "usofn", "to": "llmcalls", "label": "sum(cost_cents) por dia e por purpose; turnos = jobs com agent_turn ok" }

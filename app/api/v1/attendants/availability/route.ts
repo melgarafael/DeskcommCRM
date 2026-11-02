@@ -49,19 +49,26 @@ interface AvailabilityRow {
   last_heartbeat_at: string | null;
 }
 
-/** user_id → sector_id da org. Org filtrada à mão: o admin client ignora RLS. */
+/**
+ * user_id → FILAS da pessoa (migration 9062: N setores por atendente).
+ * Org filtrada à mão: o admin client ignora RLS.
+ */
 async function setoresPorAtendente(
   client: Pick<SupabaseClient, "from">,
   organizationId: string,
-): Promise<Map<string, string>> {
+): Promise<Map<string, string[]>> {
   const { data, error } = await client
     .from("attendant_sector_members")
     .select("user_id, sector_id")
     .eq("organization_id", organizationId);
   if (error) throw new Error(error.message);
-  return new Map(
-    ((data ?? []) as Array<{ user_id: string; sector_id: string }>).map((m) => [m.user_id, m.sector_id]),
-  );
+  const porUsuario = new Map<string, string[]>();
+  for (const m of (data ?? []) as Array<{ user_id: string; sector_id: string }>) {
+    const lista = porUsuario.get(m.user_id) ?? [];
+    lista.push(m.sector_id);
+    porUsuario.set(m.user_id, lista);
+  }
+  return porUsuario;
 }
 
 export async function GET(_req: NextRequest): Promise<Response> {
@@ -82,7 +89,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
       .eq("organization_id", activeOrg.orgId);
     if (error) return fail("internal_error", error.message, 500, { requestId });
     const rows = (data ?? []) as AvailabilityRow[];
-    let setores: Map<string, string>;
+    let setores: Map<string, string[]>;
     try {
       setores = await setoresPorAtendente(supabase, activeOrg.orgId);
     } catch (err) {
@@ -95,7 +102,12 @@ export async function GET(_req: NextRequest): Promise<Response> {
         name: null,
         email: null,
         current_load: 0,
-        sector_id: setores.get(r.user_id) ?? null,
+        sector_ids: setores.get(r.user_id) ?? [],
+        // Compat (revisão do mantenedor, 31/10): `sector_id` continua saindo
+        // com o primeiro setor, para quem já lê este campo não perder dado. Ele
+        // só perde a graça quando o N:N acrescenta o segundo — e aí o campo
+        // novo (`sector_ids`) é quem manda.
+        sector_id: (setores.get(r.user_id) ?? [])[0] ?? null,
         // Presença DERIVADA aqui, e não no cliente: o prazo do sinal mora em
         // `lib/atendimento/presenca.ts`, e uma tela que recalculasse a conta
         // sozinha passaria a discordar do servidor no dia em que o prazo
@@ -112,7 +124,7 @@ export async function GET(_req: NextRequest): Promise<Response> {
   // do agente ("quem pode assumir agora?") lê exatamente a mesma coisa. Enquanto
   // a regra morou aqui dentro, o agente escalava para uma fila cega.
   let roster;
-  let setores: Map<string, string>;
+  let setores: Map<string, string[]>;
   try {
     [roster, setores] = await Promise.all([
       carregarRosterDeAtendimento(admin, activeOrg.orgId, agora),
@@ -150,7 +162,8 @@ export async function GET(_req: NextRequest): Promise<Response> {
     schedule: m.agenda,
     updated_at: m.atualizadoEm,
     current_load: m.cargaAtual,
-    sector_id: setores.get(m.userId) ?? null,
+    sector_ids: setores.get(m.userId) ?? [],
+    sector_id: (setores.get(m.userId) ?? [])[0] ?? null,
     // Presença: "tem sinal recente" — nunca "está de plantão". Os dois campos
     // andam juntos de propósito, para a tela poder dizer as duas coisas sem
     // confundi-las (o selo de Status lê o plantão; a linha de presença lê isto).
