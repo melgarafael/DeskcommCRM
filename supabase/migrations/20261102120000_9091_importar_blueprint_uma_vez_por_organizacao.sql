@@ -120,3 +120,6 @@ revoke all on function public.fn_importar_blueprint_de_respostas_rapidas(uuid, j
   from public, anon;
 grant execute on function public.fn_importar_blueprint_de_respostas_rapidas(uuid, jsonb)
   to authenticated, service_role;
+
+-- Assinatura nova no schema exposto: sem isto a RPC só aparece no próximo reload.
+notify pgrst, 'reload schema';
