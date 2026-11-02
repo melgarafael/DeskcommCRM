@@ -75,7 +75,7 @@ const req = (body: unknown = {}, method = "POST") =>
 const comoAdmin = (orgId = org, role = "admin") =>
   vi.mocked(requireRole).mockResolvedValue({ ok: true, user: { id: "u1" }, org: { orgId, role } } as Awaited<ReturnType<typeof requireRole>>);
 const linha = (extra: Linha = {}): Linha => {
-  const l = { id: `00000000-0000-4000-8000-0000000000a${tabela.length}`, organization_id: org, channel_session_id: canal, status: "previa", dias: 90, previa: previaOk, cursor: {}, erro: null, created_at: `2026-10-19T00:00:0${tabela.length}Z`, ...extra };
+  const l = { id: `00000000-0000-4000-8000-0000000000a${tabela.length}`, organization_id: org, channel_session_id: canal, status: "previa", dias: 90, origem: "manual", escopo: "so_crm", previa: previaOk, cursor: {}, erro: null, created_at: `2026-10-19T00:00:0${tabela.length}Z`, ...extra };
   tabela.push(l);
   return l;
 };
@@ -120,7 +120,7 @@ describe("importação do histórico: rotas (#999)", () => {
   it("os quatro períodos são aceitos, 180 dias inclusive", async () => {
     for (const dias of [30, 90, 180, 365]) {
       expect((await POST(req({ acao: "previa", dias }), context())).status).toBe(200);
-      expect(vi.mocked(calcularPrevia)).toHaveBeenLastCalledWith("sessao-1", dias);
+      expect(vi.mocked(calcularPrevia)).toHaveBeenLastCalledWith(expect.anything(), org, "so_crm", "sessao-1", dias);
     }
     const inseridas = escritas.filter((e) => e.op === "insert").map((e) => (e.payload as { dias?: number }).dias);
     expect(inseridas).toContain(180);
@@ -197,9 +197,9 @@ describe("importação do histórico: rotas (#999)", () => {
   it("prévia ok grava status 'previa' com a prévia, na org e no número do path, e audita", async () => {
     const r = await POST(req({ acao: "previa", dias: 90, organization_id: outraOrg }), context());
     expect(r.status).toBe(200);
-    expect(calcularPrevia).toHaveBeenCalledWith("sessao-1", 90);
+    expect(calcularPrevia).toHaveBeenCalledWith(expect.anything(), org, "so_crm", "sessao-1", 90);
     expect(tabela).toHaveLength(1);
-    expect(tabela[0]).toMatchObject({ organization_id: org, channel_session_id: canal, status: "previa", dias: 90, previa: previaOk, criada_por: "u1" });
+    expect(tabela[0]).toMatchObject({ organization_id: org, channel_session_id: canal, status: "previa", dias: 90, escopo: "so_crm", previa: previaOk, criada_por: "u1" });
     expect((await r.json()).data.importacao).toMatchObject({ status: "previa", previa: previaOk });
     expect(acoes()).toEqual(["channel.historico_previa"]);
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ organizationId: org, resourceType: "channel_session", resourceId: canal }));
@@ -269,5 +269,42 @@ describe("importação do histórico: rotas (#999)", () => {
     const { data } = await r.json();
     expect(data).toMatchObject({ guardar_historico: true, importacao: { id: ultima.id, status: "rodando" } });
     expect(requireRole).toHaveBeenCalledWith("admin", expect.objectContaining({ allowPlatformAdmin: "leitura" }));
+  });
+
+  it("Spec 32: prévia sem escopo nasce so_crm; 'todos' é escolha explícita; escopo fora da lista é 422", async () => {
+    expect((await POST(req({ acao: "previa", dias: 30 }), context())).status).toBe(200);
+    expect((await POST(req({ acao: "previa", dias: 30, escopo: "todos" }), context())).status).toBe(200);
+    expect((await POST(req({ acao: "previa", dias: 30, escopo: "algum" }), context())).status).toBe(422);
+    const escopos = escritas.filter((e) => e.op === "insert").map((e) => (e.payload as { escopo?: string }).escopo);
+    expect(escopos).toEqual(["so_crm", "todos"]);
+    expect(vi.mocked(calcularPrevia).mock.calls.map((c) => c[2] as string)).toEqual(["so_crm", "todos"]);
+  });
+
+  it("Spec 32: com a recuperação da queda aguardando, prévia e importar manuais respondem 409 sem tocar no banco", async () => {
+    linha({ origem: "queda", status: "aguardando", dias: null, escopo: "so_crm", channel_session_id: canal });
+    const previa = linha({ status: "previa" });
+    const r = await POST(req({ acao: "previa", dias: 90 }), context());
+    expect(r.status).toBe(409);
+    expect(calcularPrevia).not.toHaveBeenCalled();
+    const imp = await POST(req({ acao: "importar", importacaoId: previa.id }), context());
+    expect(imp.status).toBe(409);
+    expect(previa.status).toBe("previa");
+    expect(acoes()).toEqual([]);
+  });
+
+  it("Spec 32: cancelar aceita 'aguardando' (a recuperação da queda)", async () => {
+    const l = linha({ origem: "queda", status: "aguardando", dias: null });
+    expect((await POST(req({ acao: "cancelar", importacaoId: l.id }), context())).status).toBe(200);
+    expect(l.status).toBe("cancelada");
+    expect(acoes()).toEqual(["channel.historico_import_cancelled"]);
+  });
+
+  it("Spec 32: GET devolve a manual mais recente e, à parte, a recuperação da queda aberta", async () => {
+    const manual = linha({ status: "concluida" });
+    const daQueda = linha({ origem: "queda", status: "rodando", dias: null, escopo: "so_crm" });
+    const r = await GET(req({}, "GET"), context());
+    const { data } = await r.json();
+    expect(data.importacao).toMatchObject({ id: manual.id, origem: "manual" });
+    expect(data.recuperacao_da_queda).toMatchObject({ id: daQueda.id, origem: "queda", status: "rodando" });
   });
 });

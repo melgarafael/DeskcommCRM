@@ -33,8 +33,13 @@ export interface AttendantAvailability {
    * `is_available` + jornada (`estaDePlantao`), e nada aqui desliga a chave.
    */
   present: boolean;
-  /** Setor do atendente (migration 0801). `null` = sem setor. */
-  sector_id: string | null;
+  /**
+   * FILAS do atendente (migrations 0801 e 9062). Vazio = sem fila.
+   *
+   * Era `sector_id: string | null`. Com N setores por pessoa, a leitura passa a
+   * ser o conjunto — e quem só quer saber "tem fila?" olha o tamanho.
+   */
+  sector_ids: string[];
 }
 
 export const ATTENDANTS_KEY = ["team", "attendants"] as const;

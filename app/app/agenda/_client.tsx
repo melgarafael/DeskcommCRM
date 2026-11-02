@@ -210,6 +210,19 @@ export function AgendaClient({
   // vazia) = a pessoa editou, e o tipo novo não pode devolver o que ela apagou.
   const [enderecoEditado, setEnderecoEditado] = React.useState<string | null>(null);
   const [observacao, setObservacao] = React.useState("");
+  /**
+   * O TÍTULO LIVRE DO COMPROMISSO (#3766) — a agenda também serve para
+   * atendimento externo, e "OS 1234" ou "Atendimento fulano" é o que quem olha
+   * a grade precisa ler.
+   *
+   * ⚠️ A COLUNA JÁ EXISTIA (`calendar_appointments.title`), e a rota já a
+   * aceitava: o que faltava era o CAMPO. Vazio manda `undefined`, e aí a
+   * decisão de hoje continua valendo — `title: input.title ?? tipo.name`, num
+   * lugar só (`app/api/v1/agenda/agendamentos/_handler.ts:508`). É de propósito
+   * que a tela NÃO repita o nome do tipo: duas cópias da mesma regra divergem
+   * na primeira vez que alguém mudar uma delas.
+   */
+  const [tituloLivre, setTituloLivre] = React.useState("");
   const marcar = useMarcarAgendamento();
   const remarcar = useRemarcarAgendamento();
   const cancelar = useCancelarAgendamento();
@@ -734,6 +747,11 @@ export function AgendaClient({
             setEmailConvidado("");
             setEnderecoEditado(null);
             setObservacao("");
+            // O título livre digitado e não usado é o mesmo caso do convidado:
+            // reapareceria na marcação seguinte, que é de OUTRO atendimento —
+            // e um título que não corresponde ao compromisso é pior que um
+            // genérico, porque parece de propósito.
+            setTituloLivre("");
             // E o próprio cliente, que é o pior dos quatro a sobrar: medido numa
             // instalação real em 2026-09-12, "Novo agendamento" abriu com um
             // contato JÁ selecionado, herdado de uma abertura anterior feita a
@@ -848,6 +866,40 @@ export function AgendaClient({
                 </div>
               </div>
             )}
+            {!remarcandoId ? (
+              /*
+                O TÍTULO LIVRE (#3766) — opcional, e por isso vem ANTES dos
+                outros campos opcionais: é o que a grade mostra no bloco.
+
+                Sem texto, o corpo do POST sai sem `title` e a rota grava o
+                nome do tipo, como sempre. Com texto, é ELE o título do
+                compromisso na grade, no histórico, no evento do Google e
+                no lembrete que vai ao cliente (`montarLembrete` usa `title`).
+              */
+              <div className="lg:col-span-2">
+                <label className="block" htmlFor="titulo-do-compromisso">
+                  {t("Título do compromisso")}{" "}
+                  <span className="font-normal opacity-70">({t("opcional")})</span>
+                </label>
+                <input
+                  id="titulo-do-compromisso"
+                  data-testid="titulo-do-compromisso"
+                  type="text"
+                  autoComplete="off"
+                  // 200 é o teto do schema da rota (`marcarSchema`): o mesmo
+                  // número aqui evita um 422 por uma letra a mais.
+                  maxLength={200}
+                  value={tituloLivre}
+                  onChange={(e) => setTituloLivre(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-border bg-surface p-2 outline-hidden focus:border-border-strong"
+                  placeholder={t("OS 1234 · Atendimento fulano")}
+                  aria-describedby="ajuda-do-titulo"
+                />
+                <p id="ajuda-do-titulo" className="mt-1 text-xs text-text-muted">
+                  {t("Aparece na agenda e também para o cliente, no lembrete e no convite. Em branco, usa o nome do tipo de agendamento.")}
+                </p>
+              </div>
+            ) : null}
             {/*
               O CONVIDADO — opcional. O e-mail da ficha do cliente já entra no
               convite do Google; este campo é para outra pessoa (acompanhante).
@@ -1040,11 +1092,18 @@ export function AgendaClient({
                       guest_email: convidado,
                       location_details: endereco.trim(),
                       description: observacao.trim() || undefined,
+                      // TÍTULO LIVRE (#3766): digitado, é ele o `title` da
+                      // linha; vazio fica FORA do corpo e a rota grava o nome
+                      // do tipo (`_handler.ts:508`). `|| undefined` e não `""`:
+                      // a rota exige `min(1)` e string vazia seria 422 — a
+                      // tela estaria recusando o caminho de sempre.
+                      title: tituloLivre.trim() || undefined,
                     })
                     .then((r) => {
                       setEmailConvidado("");
                       setEnderecoEditado(null);
                       setObservacao("");
+                      setTituloLivre("");
                       // Guardado para o fechamento saber para onde levar a grade.
                       setMarcadoEm(instante);
                       return r;

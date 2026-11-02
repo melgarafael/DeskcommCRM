@@ -527,3 +527,41 @@ describe("#3642 (doc 237, 2-A) — o número na transferência", () => {
     expect(res.status).toBe(400);
   });
 });
+
+/**
+ * #3732 — a troca de número vira LINHA DO TEMPO, não só auditoria.
+ *
+ * O #3658 gravava o par antigo/novo no `metadata` da auditoria (lido por
+ * `admin`), e a linha do tempo da conversa — onde quem atende olha — não dizia
+ * nada. Aqui a atividade da troca passa a dizer por qual número a conversa
+ * continua, com o nome de quem atende, e o par vai no payload.
+ */
+describe("#3732 — o número que mudou entra na linha do tempo", () => {
+  /** A atividade da troca de comando, como a rota a escreveu. */
+  function atividadeDaTroca(): { motivo?: string; payload?: Record<string, unknown> } {
+    const chamada = vi.mocked(registrarTrocaDeComando).mock.calls.at(-1);
+    return (chamada?.[0] ?? {}) as { motivo?: string; payload?: Record<string, unknown> };
+  }
+
+  it("quando a conversa troca de número, a linha diz por qual número ela continua", async () => {
+    estado.conversas = [conversa({ assigned_to_user_name: "Bruno Vendedor" })];
+    estado.numeroNovo = NUMERO_NOVO;
+
+    const res = await transferir();
+
+    expect(res.status).toBe(200);
+    expect(atividadeDaTroca().motivo).toContain("Continua pelo número de Bruno Vendedor");
+    expect(atividadeDaTroca().payload).toMatchObject({
+      to_user_id: DESTINO,
+      numero_anterior: NUMERO_ANTIGO,
+      numero_novo: NUMERO_NOVO,
+    });
+  });
+
+  it("CONTROLE: no mesmo número, a linha não promete troca nenhuma", async () => {
+    await transferir();
+
+    expect(atividadeDaTroca().motivo).not.toContain("Continua pelo número de");
+    expect(atividadeDaTroca().payload).not.toHaveProperty("numero_novo");
+  });
+});

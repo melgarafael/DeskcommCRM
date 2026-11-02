@@ -78,7 +78,22 @@ export default async function TeamPage({
           ) : null}
         </TabsList>
         <TabsContent value="members" className="mt-4 flex flex-col gap-8">
-          <TeamMembersClient currentUserId={user.id} canManage={isAdmin} />
+          {/*
+            Ler a equipe é de gerente em diante (spec 13 §4; `GET /api/v1/team` faz
+            `requireRole("manager")`). A página é aberta a todos — setores e a aba de
+            atendimento valem para qualquer membro —, então quem atende ou só lê
+            caía aqui num "Erro ao carregar membros." em vermelho. A recusa diz o
+            que fazer, como a da aba de atendimento.
+          */}
+          {isManager ? (
+            <TeamMembersClient currentUserId={user.id} canManage={isAdmin} />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {t(
+                "A lista de membros e os papéis ficam com gerentes e administradores. Para mudar o seu papel ou chamar alguém para a equipe, fale com quem administra a empresa.",
+              )}
+            </p>
+          )}
           {/*
             Convites pendentes vivem AQUI, na mesma aba de quem já entrou —
             antes só apareciam numa lista efêmera dentro do modal "Convidar

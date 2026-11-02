@@ -381,6 +381,28 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
           ? { provider: conversa.provider, apiKey: conversa.apiKey, modelId: conversa.defaultModel }
           : null,
       chaveOpenai,
+      // Degrau 0: o Scribe que a organização escolheu no painel. Binding
+      // apontando para ElevenLabs sem chave utilizável NÃO derruba a derivação —
+      // a escada segue para o degrau seguinte e o log diz por quê, a mesma
+      // regra do binding de visão acima.
+      elevenlabsEscolhido: async () => {
+        if (!precisaTranscricao) return null;
+        const binding = await lerBindingDoPonto(admin, row.organization_id, "transcricao_de_audio");
+        if (binding?.provider !== "elevenlabs") return null;
+        try {
+          const el = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, {
+            provider: "elevenlabs",
+            credentialId: binding.credential_id,
+          });
+          return { apiKey: el.apiKey, modelId: binding.model_id || "scribe_v1" };
+        } catch (err) {
+          logger.warn("[media-derive] ElevenLabs escolhido para transcrever, sem credencial utilizável; seguindo a escada", {
+            organization_id: row.organization_id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return null;
+        }
+      },
     });
     logger.info("[media-derive] transcrição resolvida", {
       organization_id: row.organization_id,

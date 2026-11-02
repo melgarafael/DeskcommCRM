@@ -213,3 +213,132 @@ export const MENSAGEM_DO_NUMERO: Record<CodigoDoNumero, string> = {
   [CODIGO_NUMERO_DE_OUTRO]:
     "Esta conversa está no número de outro atendente, e você tem número próprio. Responda ao cliente pela conversa do seu número, ou peça que esta seja transferida para você.",
 };
+
+/**
+ * PARA ONDE A CONVERSA CONTINUA (#3732).
+ *
+ * A recusa da 409 dizia o que fazer ("transfira para você"), mas não dizia para
+ * ONDE ir — e no caso que a issue mediu não há o que transferir: a conversa já
+ * está no nome de quem tenta responder, presa num número que não é dele, e a
+ * conversa viva do contato está no número dele, com outra conversa.
+ *
+ * Esta é a conversa que continua: a do MESMO contato no número de quem está
+ * enviando — exatamente o que impede a conversa antiga de seguir o vendedor
+ * (`fn_conversa_que_continua`, migration 9054). Quem decide é o banco, a mesma
+ * peça que a adoção usa: duas cópias da regra divergiriam.
+ */
+export interface ConversaQueContinua {
+  /** A conversa nova, a que o atendente deve abrir para responder. */
+  id: string;
+  /** Quem atende esse número hoje — `null` quando não há nome gravado. */
+  nome: string | null;
+  /** O número da conversa que continua é o de quem está enviando? */
+  propria: boolean;
+}
+
+export interface ConversaQueContinuaParams {
+  organizationId: string;
+  /** A conversa em que o envio foi recusado. */
+  conversationId: string;
+  /** Quem está enviando. */
+  userId: string;
+}
+
+type LinhaDaContinua = {
+  id: string;
+  assigned_to_user_id: string | null;
+  assigned_to_user_name: string | null;
+};
+
+/**
+ * Lê a conversa que continua, para o aviso da recusa.
+ *
+ * `db` precisa ser o cliente ADMIN: a conversa nova pode estar com outra pessoa,
+ * e a RLS de quem envia responde zero linhas justamente no caso em que o aviso
+ * mais importa ("continua pelo número de {nome}"). Toda leitura é filtrada pela
+ * organização que a rota resolveu do cookie.
+ *
+ * Falha de leitura devolve `null` — o aviso cai na frase de sempre. O envio já
+ * está recusado; um erro aqui não pode virar erro de outra coisa.
+ */
+export async function conversaQueContinua(
+  db: SupabaseClient,
+  p: ConversaQueContinuaParams,
+): Promise<ConversaQueContinua | null> {
+  const { data: alvo, error: erroDoAlvo } = await db.rpc("fn_conversa_que_continua", {
+    p_organization_id: p.organizationId,
+    p_conversation_id: p.conversationId,
+    p_user_id: p.userId,
+  });
+  if (erroDoAlvo || !alvo) return null;
+
+  const { data: linha, error: erroDaLinha } = await db
+    .from("conversations")
+    .select("id, assigned_to_user_id, assigned_to_user_name")
+    .eq("organization_id", p.organizationId)
+    .eq("id", alvo as string)
+    .maybeSingle();
+  if (erroDaLinha || !linha) return null;
+
+  const conversa = linha as LinhaDaContinua;
+  return {
+    id: conversa.id,
+    nome: conversa.assigned_to_user_name ?? null,
+    // Sem dono também é "no seu número": a conversa que continua está sempre
+    // num número de quem envia (é assim que `fn_conversa_que_continua` a acha).
+    // É o caso da conversa que a IA atende, que a adoção não toma (doc 237, 3-B).
+    propria: conversa.assigned_to_user_id === p.userId || conversa.assigned_to_user_id === null,
+  };
+}
+
+/**
+ * A frase do aviso, como MODELO — a interpolação do nome vem DEPOIS da
+ * tradução, nos dois lados (servidor e tela). Interpolar antes trocaria a chave
+ * do dicionário e o espanhol cairia no português.
+ */
+export function modeloDaContinua(c: Pick<ConversaQueContinua, "nome" | "propria">): string {
+  if (c.propria) {
+    return "Esta conversa continua no seu número, em outra conversa do mesmo contato. Abra a conversa para responder.";
+  }
+  if (c.nome) {
+    return "Esta conversa continua pelo número de {nome}, em outra conversa do mesmo contato. Abra a conversa para responder.";
+  }
+  return "Esta conversa continua em outra conversa do mesmo contato, no número de outro atendente. Abra a conversa para responder.";
+}
+
+/** O modelo já traduzido e com o nome de quem atende — o caminho do servidor. */
+export function mensagemDaContinua(c: ConversaQueContinua, traduzir: (t: string) => string): string {
+  return traduzir(modeloDaContinua(c)).replace("{nome}", c.nome ?? "");
+}
+
+/**
+ * O que a TELA faz com a recusa do envio (#3732).
+ *
+ * Pura de propósito: recebe o erro e devolve o que mostrar. O detalhe viaja no
+ * corpo da recusa (`details.conversa_que_continua`), então a caixa de resposta
+ * trava com o botão certo em vez de repetir a frase genérica que não dizia para
+ * onde ir.
+ */
+export interface AvisoDaContinua {
+  conversaId: string;
+  /** O modelo em português — quem traduz é a tela (`t`), que é quem sabe o idioma. */
+  modelo: string;
+  nome: string | null;
+}
+
+export function avisoDaContinua(
+  codigo: string | undefined,
+  detalhes: Record<string, unknown> | undefined,
+): AvisoDaContinua | null {
+  if (codigo !== CODIGO_NUMERO_DE_OUTRO) return null;
+  const bruto = detalhes?.conversa_que_continua;
+  if (!bruto || typeof bruto !== "object") return null;
+  const c = bruto as { id?: unknown; nome?: unknown; propria?: unknown };
+  if (typeof c.id !== "string" || c.id === "") return null;
+  const nome = typeof c.nome === "string" ? c.nome : null;
+  return {
+    conversaId: c.id,
+    modelo: modeloDaContinua({ nome, propria: c.propria === true }),
+    nome,
+  };
+}

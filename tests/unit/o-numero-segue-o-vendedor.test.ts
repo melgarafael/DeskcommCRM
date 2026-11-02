@@ -19,8 +19,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 
 import {
+  avisoDaContinua,
   CODIGO_NUMERO_DE_OUTRO,
   MENSAGEM_DO_NUMERO,
+  modeloDaContinua,
   quadroDoNumero,
   vereditoDoNumero,
   type QuadroDoNumero,
@@ -33,6 +35,8 @@ const COLEGA = "44444444-4444-4444-8444-444444444444";
 const POLITICA = "55555555-5555-4555-8555-555555555555";
 const MINHA_POLITICA = "66666666-6666-4666-8666-666666666666";
 const MINHA_SESSAO = "77777777-7777-4777-8777-777777777777";
+/** A conversa NOVA do mesmo contato, no número de quem responde (#3732). */
+const NOVA = "88888888-8888-4888-8888-888888888888";
 
 // ─── Banco falso (as tabelas do roteamento e as sessões) ─────────────────────
 type Linha = Record<string, unknown>;
@@ -250,5 +254,62 @@ describe("#3642 — a leitura do roteamento (quadroDoNumero)", () => {
       erroEm: "channel_routing_responsibles",
     });
     expect(await quadroDoNumero(db, LEITURA)).toEqual({ leitura: "indisponivel" });
+  });
+});
+
+/**
+ * #3732 — a recusa diz PARA ONDE IR.
+ *
+ * O caso medido na issue: a conversa antiga não pôde seguir o vendedor (o
+ * contato já tem conversa no número dele), então ela fica com o dono novo num
+ * número que não é dele e o envio responde 409 — mandando "transfira para você",
+ * que já foi feito. A frase sozinha não levava a lugar nenhum.
+ *
+ * A peça é pura de propósito: o servidor manda o detalhe no corpo da recusa
+ * (`details.conversa_que_continua`) e a tela decide o que mostrar a partir dele.
+ */
+describe("#3732 — o aviso da conversa que continua (puro, sem banco)", () => {
+  it("o número é de QUEM ATENDE: a frase nomeia a pessoa", () => {
+    expect(modeloDaContinua({ nome: "Ana Lima", propria: false })).toMatch(/número de \{nome\}/);
+    expect(modeloDaContinua({ nome: "Ana Lima", propria: false })).toMatch(/Abra a conversa/i);
+  });
+
+  it("quando a conversa nova está no número de quem está enviando, a frase é a do próprio número", () => {
+    const modelo = modeloDaContinua({ nome: "Ana Lima", propria: true });
+    expect(modelo).toMatch(/seu número/);
+    // Não promete o número de outra pessoa para quem já está no dele.
+    expect(modelo).not.toMatch(/\{nome\}/);
+  });
+
+  it("sem nome gravado, a frase não inventa um nome", () => {
+    const modelo = modeloDaContinua({ nome: null, propria: false });
+    expect(modelo).not.toMatch(/\{nome\}/);
+    expect(modelo).toMatch(/outro atendente/);
+  });
+
+  it("o detalhe da recusa vira o aviso da tela, com o id da conversa nova", () => {
+    const aviso = avisoDaContinua(CODIGO_NUMERO_DE_OUTRO, {
+      channel_session_id: SESSAO,
+      conversa_que_continua: { id: NOVA, nome: "Ana Lima", propria: false },
+    });
+    expect(aviso).toEqual({
+      conversaId: NOVA,
+      modelo: modeloDaContinua({ nome: "Ana Lima", propria: false }),
+      nome: "Ana Lima",
+    });
+  });
+
+  it("CONTROLE: sem a conversa que continua, o detalhe não vira aviso (a frase de sempre fica)", () => {
+    expect(avisoDaContinua(CODIGO_NUMERO_DE_OUTRO, { channel_session_id: SESSAO })).toBeNull();
+    // E o id vazio não abre conversa nenhuma.
+    expect(
+      avisoDaContinua(CODIGO_NUMERO_DE_OUTRO, { conversa_que_continua: { id: "" } }),
+    ).toBeNull();
+  });
+
+  it("CONTROLE: outra recusa (de outro código) não vira aviso de continuação", () => {
+    expect(
+      avisoDaContinua("janela_fechada", { conversa_que_continua: { id: NOVA } }),
+    ).toBeNull();
   });
 });

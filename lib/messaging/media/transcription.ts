@@ -30,11 +30,16 @@ export interface TranscriptionProvider {
  * `padrao_openrouter` (#3382) é o degrau 3: a própria OpenRouter transcreve
  * com a chave da conversa. `usage.cost`, quando válido, mede USD da chamada;
  * sem esse campo, o custo continua desconhecido.
+ *
+ * `elevenlabs_escolhido` é o degrau 0: o Scribe que a organização escolheu no
+ * painel (`escada-de-transcricao.ts`). Cobrado por minuto pelo ElevenLabs, sem
+ * custo informado na resposta — mesmo caso dos serviços acima.
  */
 export const ORIGENS_DA_TRANSCRICAO_POR_SERVICO = [
   "servico_da_instalacao",
   "padrao_openai_compativel",
   "padrao_openrouter",
+  "elevenlabs_escolhido",
 ] as const;
 
 export interface TranscriptionCreds {
@@ -124,7 +129,8 @@ export function camposDeIdioma(model: string, languages: readonly string[]): [st
     : [["language", languages[0]!]];
 }
 
-function extFor(mime: string): string {
+/** Exportada: `transcription-elevenlabs.ts` precisa do mesmo mapeamento MIME→extensão. */
+export function extFor(mime: string): string {
   const base = mime.split(";")[0]!.trim().toLowerCase();
   if (base.includes("ogg")) return "ogg";
   if (base.includes("mpeg") || base.includes("mp3")) return "mp3";

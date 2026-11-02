@@ -205,7 +205,7 @@ export async function loadPacingState(
               order by sent_at desc limit 1) as last_sent_at,
             (select count(*) from pacing_ledger
               where organization_id = $1 and channel_session_id = $2
-                and sent_at >= $3) as sent_today`,
+                and sent_at >= $3 and not resposta) as sent_today`,
     [tenantId, channelSessionId, dayStart],
   );
   const row = rows[0];
@@ -216,16 +216,23 @@ export async function loadPacingState(
   };
 }
 
-/** Registra um envio efetivado — chamado pela cadeia de envio (F2-13) após o accept do CRM. */
+/**
+ * Registra um envio efetivado — chamado pela cadeia de envio (F2-13) após o accept do CRM.
+ *
+ * `resposta: true` marca a linha como resposta a quem escreveu: ela segue valendo
+ * para o espaçamento (`lastSentAt`), mas não gasta o teto do dia (`sentToday`),
+ * que mede só quantas pessoas o número aborda. Omitir = disparo (conta).
+ */
 export async function recordSend(
   db: Queryable,
   tenantId: string,
   channelSessionId: string,
   sentAt: Date = new Date(),
+  opts: { resposta?: boolean } = {},
 ): Promise<void> {
   await db.query(
-    `insert into pacing_ledger (organization_id, channel_session_id, sent_at)
-     values ($1, $2, $3)`,
-    [tenantId, channelSessionId, sentAt],
+    `insert into pacing_ledger (organization_id, channel_session_id, sent_at, resposta)
+     values ($1, $2, $3, $4)`,
+    [tenantId, channelSessionId, sentAt, opts.resposta === true],
   );
 }

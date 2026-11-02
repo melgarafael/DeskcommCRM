@@ -13,6 +13,13 @@
  * `null` legítimo no fim que o chamador grava como `failed` + motivo — nunca
  * silêncio, nunca nulo.
  *
+ *  0. **ElevenLabs Scribe escolhido pela organização** — a única escolha que o
+ *     painel oferece neste ponto (menu de `transcricao_de_audio` em
+ *     `lib/ai/pontos/registro.ts`; o outro item é "Automático", a escada daqui
+ *     para baixo). Vem antes de tudo porque é escolha EXPLÍCITA de quem
+ *     administra a organização, para ESTE ponto. Sem chave do ElevenLabs
+ *     utilizável o degrau não existe e a escada segue — nunca um áudio mudo
+ *     por causa de uma escolha que não pode ser cumprida.
  *  1. **Serviço de transcrição da instalação** (`TRANSCRIPTION_API_KEY`) — a
  *     escolha EXPLÍCITA de transcrição do `.env`. Ignorá-la em silêncio para
  *     falar com o modelo de conversa seria trocar o fornecedor de quem já
@@ -77,6 +84,7 @@ import {
 import { env } from "@/lib/env";
 
 import type { TranscriptionProvider } from "@/lib/messaging/media/transcription";
+import { elevenLabsTranscriptionProvider } from "@/lib/messaging/media/transcription-elevenlabs";
 import {
   apiTranscriptionProvider,
   idiomasDaTranscricao,
@@ -112,6 +120,8 @@ export interface AnuncioDaTranscricao {
  * precisa de tradução: `tests/unit/i18n-provedores-e-pontos.test.ts` cobra.
  */
 export const MOTIVOS_DA_TRANSCRICAO = {
+  elevenlabsEscolhido:
+    "a organização escolheu o ElevenLabs (Scribe) para ouvir os áudios, com a chave do ElevenLabs dela",
   servicoDaInstalacao:
     "o serviço de transcrição configurado nesta instalação (TRANSCRIPTION_API_KEY) é o que ouve os áudios",
   chaveOpenai: "a chave OpenAI desta organização ou instalação usa o padrão de transcrição de sempre",
@@ -233,8 +243,25 @@ export async function decidirTranscricao(entrada: {
   conversa?: ConversaDaOrganizacao | null;
   idiomas?: readonly string[];
   chaveOpenai?: () => Promise<string | null>;
+  /**
+   * Degrau 0. Thunk como `chaveOpenai`: só quem tem o binding do ponto sabe se a
+   * organização escolheu o Scribe, e a credencial só é LIDA nesse caso. `null` =
+   * não escolheu, ou escolheu sem chave utilizável.
+   */
+  elevenlabsEscolhido?: () => Promise<{ apiKey: string; modelId: string } | null>;
 }): Promise<DecisaoDeTranscricao> {
   const idiomas = entrada.idiomas ?? idiomasDaTranscricao(env.TRANSCRIPTION_LANGUAGES);
+
+  // 0 · ElevenLabs Scribe escolhido no painel — escolha explícita para o ponto.
+  const scribe = entrada.elevenlabsEscolhido ? await entrada.elevenlabsEscolhido() : null;
+  if (scribe) {
+    return {
+      origem: "elevenlabs_escolhido",
+      transcriber: elevenLabsTranscriptionProvider({ apiKey: scribe.apiKey, model: scribe.modelId }),
+      motivo: MOTIVOS_DA_TRANSCRICAO.elevenlabsEscolhido,
+      anuncio: { provider: "elevenlabs", modelId: scribe.modelId },
+    };
+  }
 
   // 1 · Serviço de transcrição da instalação — escolha explícita.
   const servico = env.TRANSCRIPTION_API_KEY;

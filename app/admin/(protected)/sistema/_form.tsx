@@ -324,7 +324,7 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     id: "modulo-setores",
     rotulo: "Setores de atendimento",
     descricao:
-      "Ligado, cada empresa ganha na Equipe a aba Setores, para agrupar os atendentes por área, e a aba Atendimento passa a mostrar e filtrar o setor de cada um. O setor não muda quem recebe as conversas. Desligado, a aba e a coluna somem; os setores já cadastrados ficam guardados.",
+      "Ligado, cada empresa ganha na Equipe a aba Setores, para agrupar os atendentes por área, e a aba Atendimento passa a mostrar e filtrar o setor de cada um. A conversa com setor definido vai só para quem atende aquele setor, dentro do horário dele; conversa sem setor continua indo pelo número. Desligado, a aba e a coluna somem e a distribuição volta a ser a de antes; os setores já cadastrados ficam guardados.",
     foraDoMenu: "Não cria porta no menu do CRM: ele libera uma aba em",
     painelEm: "/app/team",
   },

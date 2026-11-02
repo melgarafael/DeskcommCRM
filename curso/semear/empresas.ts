@@ -34,7 +34,7 @@
  * cada rodada, então estes só existem durante a aula deste módulo). CNPJs têm
  * dígito verificador válido e são fictícios; domínios em exemplo.com.br.
  */
-import { normalizePersonName } from "../../lib/crm-b2b/normalize";
+import { MENSAGEM_DE_CNPJ_INVALIDO, normalizePersonName } from "../../lib/crm-b2b/normalize";
 import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
 import { type Contexto, ha, semErro } from "../semear-demonstracao";
 
@@ -170,7 +170,7 @@ const LINHAS: Linha[] = [
   { n: 8, lote: 1, status: "conflict", erro: "Telefone já vinculado a outra pessoa.", empresa: 4, pessoa: 7, telefone: 3,
     planilha: { empresa: "Transportes Rota Sul", cnpj: "73.820.564/0001-44", nome: "Paulo Henrique Sales", cargo: "Coordenador de frota", telefone: "(11) 97654-1003", email: "" } },
   // dígito verificador errado: a linha para antes de criar qualquer coisa
-  { n: 9, lote: 1, status: "failed", erro: "CNPJ inválido.",
+  { n: 9, lote: 1, status: "failed", erro: MENSAGEM_DE_CNPJ_INVALIDO,
     planilha: { empresa: "Mercado Bom Preço", cnpj: "52.638.417/0001-00", nome: "Rogério Antunes", cargo: "Comprador", telefone: "(11) 97654-1008", email: "" } },
   { n: 10, lote: 1, status: "failed", erro: "Telefone inválido.",
     planilha: { empresa: "Lavanderia Bolha Azul", cnpj: "", nome: "Tânia Reis", cargo: "Gerente", telefone: "9765-41", email: "" } },
@@ -345,7 +345,7 @@ export async function semear(c: Contexto) {
               phone: x.planilha.telefone,
               email: x.planilha.email,
               phone_e164: x.status === "failed" ? null : (tel?.numero ?? null),
-              normalized_cnpj: x.erro === "CNPJ inválido." || !x.planilha.cnpj ? null : digitos(x.planilha.cnpj),
+              normalized_cnpj: x.erro === MENSAGEM_DE_CNPJ_INVALIDO || !x.planilha.cnpj ? null : digitos(x.planilha.cnpj),
             },
             status: x.status,
             error: x.erro ?? null,

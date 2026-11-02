@@ -557,7 +557,16 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       .select("*")
       .eq("pipeline_id", pipelineId)
       .neq("status", "archived")
-      .order("position_in_stage"),
+      .order("position_in_stage")
+      // O DESEMPATE (#3461): a ordem do quadro tem de ser ESTÁVEL. Sem esta
+      // linha, dois cards com a MESMA `position_in_stage` — o lote antigo que
+      // gravou a mesma posição em N linhas, ou duas entradas que empataram —
+      // saem na ordem que o plano escolher, e essa ordem pode mudar de uma
+      // leitura para outra: os dois cards TROCAM DE LUGAR a cada render, sem
+      // ninguém arrastar nada. `id` é imutável, então a ordem é a mesma em toda
+      // leitura. Mesma regra (e mesmo motivo) do `.order("id")` da lista em
+      // `app/api/v1/pipelines/[id]/leads/route.ts`.
+      .order("id"),
   ]);
 
   if (pipelineErr) return fail("internal_error", pipelineErr.message, 500, { requestId });
