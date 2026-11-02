@@ -441,6 +441,13 @@ export const AUDIT_ACTIONS = [
   // linha de lugar" — o conteúdo não foi tocado nenhuma vez (é o que a issue
   // pede: preservar os cadastros).
   "template.reordered",
+  // Levar a configuração embora e aplicá-la em outra organização são atos
+  // próprios (issue #1995): o blueprint exportado é o primeiro passo de sair do
+  // produto, e o importado muda a operação inteira de uma vez. Nenhum dos dois
+  // é `template.created`: as respostas rápidas criadas têm o SEU
+  // `template.created`, um por linha, com o autor certo.
+  "template.exported",
+  "template.imported",
   // GRUPOS de respostas rápidas (#3245): criar/renomear/reordenar/apagar um
   // grupo não é `template.updated` — o ato muda a ESTRUTURA da equipe (as
   // etapas que todos veem), não o texto de uma resposta. O audit responde
