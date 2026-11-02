@@ -58,12 +58,7 @@ afterEach(cleanup);
 
 describe("cartão da frase do aviso de passagem", () => {
   it("mostra a frase já gravada", () => {
-    render(
-      <FraseDoAviso
-        agentId={AGENTE}
-        inicial="Já chamei o time, pode ficar tranquilo!"
-      />,
-    );
+    render(<FraseDoAviso agentId={AGENTE} inicial="Já chamei o time, pode ficar tranquilo!" />);
     expect((campo() as HTMLInputElement).value).toBe("Já chamei o time, pode ficar tranquilo!");
   });
 
@@ -104,10 +99,7 @@ describe("cartão da frase do aviso de passagem", () => {
 
   it("o editor do agente MONTA o cartão", () => {
     const fonte = readFileSync(
-      join(
-        process.cwd(),
-        "app/app/ai/agents/[id]/_components/AgentForm.tsx",
-      ),
+      join(process.cwd(), "app/app/ai/agents/[id]/_components/AgentForm.tsx"),
       "utf8",
     );
     expect(fonte).toContain("<FraseDoAviso");

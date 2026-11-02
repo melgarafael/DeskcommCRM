@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  casePromiseGate,
-  type GateContext,
-} from "@/lib/agent-engine/guardrails/before-send";
+import { casePromiseGate, type GateContext } from "@/lib/agent-engine/guardrails/before-send";
 import { deveAbrirCasoDoFailsafe } from "@/lib/agent-engine/guardrails/failsafe-do-caso";
 import {
   detectHumanHandoffPromise,

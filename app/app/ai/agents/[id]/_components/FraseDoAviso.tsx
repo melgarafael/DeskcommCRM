@@ -126,9 +126,7 @@ export function FraseDoAviso({ agentId, inicial, disabled }: Props) {
         >
           {t("Salvar frase")}
         </Button>
-        <p className="text-xs text-muted-foreground">
-          {t("Vazio = frase padrão do produto.")}
-        </p>
+        <p className="text-xs text-muted-foreground">{t("Vazio = frase padrão do produto.")}</p>
       </div>
     </Card>
   );
