@@ -204,20 +204,14 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
           "A resposta continha uma promessa que o sistema não registrou (ex.: um retorno combinado). Marque o retorno ou gere de novo sem prometer.",
       };
     case "case_promise_without_case":
+    // #2916 — o mesmo efeito para quem opera; o código separado serve ao trace e ao fail-safe.
+    case "followup_promise_without_followup":
       return {
         codigo,
         causa: "prometia voltar a falar com o cliente sem deixar o retorno marcado no CRM",
         acionavel: true,
         texto:
           "A resposta prometeu voltar a falar com o cliente, mas não deixou o retorno marcado no CRM. Agende o retorno ou gere de novo sem a promessa.",
-      };
-    case "followup_promise_without_followup":
-      return {
-        codigo,
-        causa: "prometia voltar a falar com o cliente e não deixou o retorno marcado, com os casos humanos desligados (#2916)",
-        acionavel: true,
-        texto:
-          "A resposta prometeu voltar a falar com o cliente, mas não deixou o retorno marcado. Agende o retorno (schedule_followup) ou gere de novo sem a promessa.",
       };
     case "internal_vocabulary_leak":
       return {
@@ -351,6 +345,7 @@ export const CODIGOS_DE_VETO_CONHECIDOS: readonly string[] = [
   "promise_out_of_table",
   "promise_semantic",
   "case_promise_without_case",
+  "followup_promise_without_followup",
   "internal_vocabulary_leak",
   "clinical_claim",
   "agenda_stall_sem_ferramenta",
