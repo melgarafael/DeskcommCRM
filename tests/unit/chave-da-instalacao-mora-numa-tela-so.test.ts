@@ -46,10 +46,15 @@ describe("uma chave da instalação mora numa tela só", () => {
       .map((d) => d.chave)
       .sort();
     expect(daCobranca).toEqual([
-      "ASAAS_API_KEY", "ASAAS_WEBHOOK_TOKEN", "COBRANCA_PROVEDOR", "COBRANCA_TOLERANCIA_DIAS", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET",
+      "ASAAS_API_KEY", "ASAAS_WEBHOOK_TOKEN", "COBRANCA_PROVEDOR", "COBRANCA_TOLERANCIA_DIAS",
+      // #3509: o segredo do aviso de pagamento do CLIENTE FINAL. Mora aqui porque
+      // é da mesma natureza das outras (credencial de provedor de pagamento) e
+      // quem a cadastra é quem já está nesta tela.
+      "INFINITEPAY_WEBHOOK_SECRET",
+      "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET",
     ]);
-    // As quatro credenciais são segredo: cifradas no banco, a tela vê só os 4 últimos.
-    for (const chave of ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "ASAAS_API_KEY", "ASAAS_WEBHOOK_TOKEN"]) {
+    // As credenciais são segredo: cifradas no banco, a tela vê só os últimos.
+    for (const chave of ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "ASAAS_API_KEY", "ASAAS_WEBHOOK_TOKEN", "INFINITEPAY_WEBHOOK_SECRET"]) {
       expect(acharChave(chave)?.natureza, chave).toBe("segredo");
     }
   });

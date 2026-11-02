@@ -130,6 +130,16 @@ export type ActivityType =
    */
   | "voice_call_unanswered"
   /**
+   * O AVISO DE PAGAMENTO do cliente final (#3509). O provedor confirmou o
+   * pagamento do link que foi colado nesta conversa.
+   *
+   * Tipo próprio, e não `note`: quem lê a timeline precisa distinguir "alguém
+   * escreveu que pagou" de "o provedor confirmou que pagou" — a diferença é
+   * exatamente a que faz o negócio andar sozinho. Nasce UMA vez por pagamento
+   * (o compare-and-set de `lib/pagamentos/confirmar.ts` é quem garante).
+   */
+  | "payment_confirmed"
+  /**
    * A TAREFA COMBINADA, na linha do tempo do negócio (migration 0210).
    *
    * "Ligar de volta na terça" só existe por causa de um negócio. Sem estas duas
@@ -323,6 +333,7 @@ export const ACTIVITY_LABELS: Record<ActivityType, string> = {
   voice_call: "Chamada de voz",
   voice_call_missed: "Chamada de voz perdida",
   voice_call_unanswered: "Chamada de voz sem resposta",
+  payment_confirmed: "Pagamento confirmado",
   task_created: "Tarefa combinada",
   task_completed: "Tarefa concluída",
   task_plan_applied: "Plano de tarefas aplicado",
