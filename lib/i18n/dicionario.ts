@@ -18739,6 +18739,16 @@ export const DICIONARIO: Traducoes = {
     es: "Define la meta en Configuración › Meta de ventas para ver aquí cuánto se ha hecho ya y cuánto falta.",
   },
   "Definir a meta": { es: "Definir la meta" },
+  // As duas parcelas do período (fatia 2, item 1, da #3602). O sufixo é chave
+  // curta pelo mesmo motivo dos conectivos acima: ele é colado ao valor.
+  "Vendido único": { es: "Vendido único" },
+  "Recorrência nova (mensal)": { es: "Recurrencia nueva (mensual)" },
+  "/mês": { es: "/mes" },
+  "negócio com recorrência": { es: "negocio con recurrencia" },
+  "negócios com recorrência": { es: "negocios con recurrencia" },
+  "Leitura parcial: as parcelas somam o que foi lido no período.": {
+    es: "Lectura parcial: las partes suman lo que se leyó en el período.",
+  },
   "Só quem administra a empresa define a meta.": {
     es: "Solo quien administra la empresa define la meta.",
   },
