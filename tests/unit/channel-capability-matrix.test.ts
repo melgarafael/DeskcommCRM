@@ -41,6 +41,7 @@ const CAPABILITIES = [
   "costPerMessage",
   "alteraMensagemEnviada",
   "phonebook",
+  "statusUpdates",
 ] as const;
 
 describe("matriz capability × provider é exaustiva", () => {
