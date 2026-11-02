@@ -50,9 +50,7 @@ type ModuloDeRelacionados = {
   chaveDosContatosRelacionados: (leadId: string | null) => readonly string[];
 };
 vi.mock("@/hooks/leads/useContatosRelacionados", async () => {
-  const real = await vi.importActual<ModuloDeRelacionados>(
-    "@/hooks/leads/useContatosRelacionados",
-  );
+  const real = await vi.importActual<ModuloDeRelacionados>("@/hooks/leads/useContatosRelacionados");
   return { ...real, useContatosRelacionados };
 });
 vi.mock("@/hooks/leads/useParticipantesDoNegocio", () => ({
@@ -174,9 +172,7 @@ describe("dossiê — vincular contato a um negócio que já existe (#852)", () 
     // digitado é o que a rota recebe — nome ou telefone, quem decide é ela.
     const busca = screen.getByLabelText("Buscar contato");
     fireEvent.change(busca, { target: { value: "joão" } });
-    await waitFor(() =>
-      expect(useContactList).toHaveBeenCalledWith({ search: "joão", limit: 5 }),
-    );
+    await waitFor(() => expect(useContactList).toHaveBeenCalledWith({ search: "joão", limit: 5 }));
 
     fireEvent.click(screen.getByRole("button", { name: "Vincular João Souza" }));
 
@@ -189,7 +185,9 @@ describe("dossiê — vincular contato a um negócio que já existe (#852)", () 
         expect.objectContaining({ queryKey: ["contatos-relacionados", "l-1"] }),
       ),
     );
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Contato vinculado ao negócio."));
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith("Contato vinculado ao negócio."),
+    );
   });
 
   it("⭐ depois de vincular, o dossiê mostra o contato SEM recarregar a página", async () => {
@@ -213,7 +211,13 @@ describe("dossiê — vincular contato a um negócio que já existe (#852)", () 
 
   it("⭐ falha do servidor aparece NO BLOCO, com o motivo que ele mandou", async () => {
     api.patch.mockRejectedValue(
-      new ApiError(422, "validation_error", undefined, "req-1", "O contato é de outra organização."),
+      new ApiError(
+        422,
+        "validation_error",
+        undefined,
+        "req-1",
+        "O contato é de outra organização.",
+      ),
     );
     montar();
     fireEvent.click(screen.getByRole("button", { name: "Vincular contato" }));
@@ -265,6 +269,8 @@ describe("dossiê — vincular contato a um negócio que já existe (#852)", () 
     expect(await screen.findByTestId("erro-ao-vincular")).toHaveTextContent(
       "O contato é o principal da conversa.",
     );
-    expect(within(screen.getByTestId("contato-do-negocio")).getByText("Ana Souza")).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("contato-do-negocio")).getByText("Ana Souza"),
+    ).toBeInTheDocument();
   });
 });
