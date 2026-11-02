@@ -26,6 +26,7 @@ import type pg from "pg";
 
 import {
   flowGraphSchema,
+  type DestinoDaResposta,
   type EndFinish,
   type FlowGraph,
   type FlowNode,
@@ -220,6 +221,11 @@ export function melhorFluxoPorGatilho(
 //   * a RESPOSTA vai para `contacts.custom_fields[chave]` — um só lugar para o
 //     dado do contato, já exportado ao titular e já zerado pela anonimização nos
 //     dois caminhos. Um campo que o contato JÁ tem não é perguntado;
+//   * EXCETO quando a pergunta declara `destino: 'negocio'` (#3363): aí a
+//     resposta vai para `crm_leads.custom_fields` do card ABERTO do contato e a
+//     régua "já respondido" lê o card, não o histórico do contato — cada
+//     negócio responde por si. O default continua `contato` (ausência da chave
+//     no grafo = o comportamento de sempre, byte a byte);
 //   * a EXECUÇÃO é uma linha de `followup_enrollments` com status 'coletando'
 //     (0394) — fora, por construção, de tudo que o relógio do follow-up lê;
 //   * a TRILHA vai para `followup_enrollment_events` (`roteiro_*`), e o payload
@@ -335,7 +341,11 @@ export interface EstadoDeAtendimento {
   enrollment: EnrollmentDeAtendimento;
   nomeDoFluxo: string;
   checklist: ChecklistDeAtendimento;
-  /** Valor atual de cada chave do checklist em `contacts.custom_fields`. */
+  /**
+   * Valor atual de cada chave do checklist — lido na FONTE da própria pergunta:
+   * `contacts.custom_fields` para `destino: 'contato'` (o de sempre) e
+   * `crm_leads.custom_fields` do card aberto para `destino: 'negocio'` (#3363).
+   */
   valores: Record<string, string>;
   tentativas: Record<string, number>;
   /**
@@ -362,19 +372,61 @@ function comoTexto(v: unknown): string | null {
   return null;
 }
 
-/** Os valores das chaves do checklist, lidos de `custom_fields`. Puro. */
+/** Um `custom_fields` que veio torto (null, array, string) vira objeto vazio. */
+function comoObjeto(v: unknown): Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : {};
+}
+
+/**
+ * PARA ONDE A RESPOSTA DESTA PERGUNTA VAI (#3363).
+ *
+ * `contato` é `contacts.custom_fields` — o caminho de sempre, e o de TODO grafo
+ * que já existe, porque a chave `destino` é opcional no schema e a ausência lê
+ * como `contato`. `negocio` é `crm_leads.custom_fields` do card ABERTO do
+ * contato: o que o card da tela, os campos obrigatórios da etapa do funil e as
+ * automações por data do funil leem (a mesma fonte que `persistir-resposta.ts`
+ * já usa no follow-up, `save_to.kind: 'lead_custom'`).
+ *
+ * Invertido de propósito em relação ao `escopo` dos campos do funil (#2791,
+ * cuja ausência é `negocio`): aqui o legado é o contato, e inverter o default
+ * mudaria o destino de toda pergunta instalada.
+ */
+export type { DestinoDaResposta };
+
+/** A ausência da chave é `contato` — o comportamento de antes, sem exceção. */
+export function destinoDaResposta(
+  config: Extract<FlowNode, { type: "collect" }>["config"],
+): DestinoDaResposta {
+  return config.destino === "negocio" ? "negocio" : "contato";
+}
+
+/** Alguma pergunta desta lista grava no NEGÓCIO? Só aí o card é lido (custo). */
+function temPerguntaNoNegocio(checklist: ChecklistDeAtendimento): boolean {
+  return checklist.passos.some(
+    (p) => p.kind === "collect" && destinoDaResposta(p.node.config) === "negocio",
+  );
+}
+
+/**
+ * Os valores das chaves do checklist. Cada pergunta lê na SUA fonte: `contato`
+ * no primeiro `custom_fields`, `negocio` no segundo (o do card). O terceiro
+ * argumento é opcional e, ausente, nenhuma chave de negócio é lida — que é o
+ * comportamento de sempre para todo grafo que não declara `destino`. Puro.
+ */
 export function valoresDoChecklist(
   checklist: ChecklistDeAtendimento,
   customFields: unknown,
+  customFieldsDoNegocio: unknown = {},
 ): Record<string, string> {
-  const cf =
-    customFields !== null && typeof customFields === "object" && !Array.isArray(customFields)
-      ? (customFields as Record<string, unknown>)
-      : {};
+  const cf = comoObjeto(customFields);
+  const cfNegocio = comoObjeto(customFieldsDoNegocio);
   const valores: Record<string, string> = {};
   for (const passo of checklist.passos) {
     if (passo.kind !== "collect") continue;
-    const texto = comoTexto(cf[passo.node.config.key]);
+    const fonte = destinoDaResposta(passo.node.config) === "negocio" ? cfNegocio : cf;
+    const texto = comoTexto(fonte[passo.node.config.key]);
     if (texto !== null) valores[passo.node.config.key] = texto;
   }
   return valores;
@@ -390,6 +442,30 @@ async function lerCamposDoContato(
     [organizationId, contactId],
   );
   return rows[0]?.custom_fields ?? {};
+}
+
+/**
+ * O CARD ABERTO do contato — id e `custom_fields` (#3363). É o MESMO card que a
+ * porta da etapa do funil lê (`lerEtapaDoCard`): `status = 'open'`, o de
+ * `updated_at` mais recente, `contacts` e `crm_leads` juntos pelo `contact_id`.
+ *
+ * `null` quando o contato não tem negócio aberto: não há de onde ler nem para
+ * onde gravar — e o card FECHADO (ganho/perdido) não recebe dado novo, do mesmo
+ * jeito que não liga um roteiro por etapa.
+ */
+async function lerCardAberto(
+  db: BancoDoRoteiro,
+  args: { organizationId: string; contactId: string },
+): Promise<{ id: string; custom_fields: unknown } | null> {
+  const { rows } = await db.query<{ id: string; custom_fields: unknown }>(
+    `select id, custom_fields
+       from crm_leads
+      where organization_id = $1 and contact_id = $2 and status = 'open'
+      order by updated_at desc
+      limit 1`,
+    [args.organizationId, args.contactId],
+  );
+  return rows[0] ?? null;
 }
 
 /**
@@ -433,10 +509,12 @@ export async function carregarEstadoDeAtendimento(
   const checklist = mapearChecklist(parsed.data);
   if (!checklist.ok) return null;
 
-  const valores = valoresDoChecklist(
-    checklist.checklist,
-    await lerCamposDoContato(db, args.organizationId, args.contactId),
-  );
+  const camposDoContato = await lerCamposDoContato(db, args.organizationId, args.contactId);
+  // O CARD só é lido quando alguma pergunta grava nele (#3363): um roteiro
+  // inteiro `contato` — hoje, todo — não paga a consulta extra. Lido, é o card
+  // ABERTO mais recente, o mesmo que a porta da etapa usa.
+  const card = temPerguntaNoNegocio(checklist.checklist) ? await lerCardAberto(db, args) : null;
+  const valores = valoresDoChecklist(checklist.checklist, camposDoContato, card?.custom_fields);
 
   const { rows: contagem } = await db.query<{ tipo: string; campo: string | null; n: number }>(
     `select event_type as tipo, payload->>'campo' as campo, count(*)::int as n
@@ -533,6 +611,59 @@ export async function gravarRespostaNoContato(
     [args.organizationId, args.contactId, args.campo, args.valor],
   );
   return (r.rowCount ?? 0) > 0;
+}
+
+/**
+ * Grava a resposta NO CARD ABERTO do contato (`crm_leads.custom_fields`) — o que
+ * o card da tela, os campos obrigatórios da etapa do funil e as automações por
+ * data do funil leem (#3363).
+ *
+ * O alvo é o MESMO card que `lerCardAberto` lê (aberto, `updated_at` mais
+ * recente), e a régua é a MESMA de `gravarRespostaNoContato`: sem card aberto,
+ * contato de outra organização, contato sumiu ou anonimizado ⇒ `false`, nada
+ * gravado. Depois do esquecimento o roteiro não regrava dado pessoal — e a
+ * anonimização em cascata também zera `crm_leads.custom_fields` (0019), então o
+ * card não vira a porta de trás do LGPD.
+ */
+export async function gravarRespostaNoNegocio(
+  db: BancoDoRoteiro,
+  args: { organizationId: string; contactId: string; campo: string; valor: string },
+): Promise<boolean> {
+  const r = await db.query(
+    `update crm_leads
+        set custom_fields = coalesce(custom_fields, '{}'::jsonb) || jsonb_build_object($3::text, $4::text),
+            updated_at = now()
+      where organization_id = $1
+        and contact_id = $2
+        and status = 'open'
+        and id = (select id from crm_leads
+                   where organization_id = $1 and contact_id = $2 and status = 'open'
+                   order by updated_at desc
+                   limit 1)
+        and exists (select 1 from contacts c
+                     where c.organization_id = $1 and c.id = $2
+                       and not coalesce(c.is_anonymized, false))`,
+    [args.organizationId, args.contactId, args.campo, args.valor],
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
+/**
+ * A gravação no destino que a PERGUNTA declara (#3363). `contato` é a chamada
+ * de sempre, byte a byte; `negocio` só existe para quem marcou a chave no nó.
+ */
+async function gravarResposta(
+  db: BancoDoRoteiro,
+  args: {
+    organizationId: string;
+    contactId: string;
+    campo: string;
+    valor: string;
+    destino: DestinoDaResposta;
+  },
+): Promise<boolean> {
+  if (args.destino === "negocio") return gravarRespostaNoNegocio(db, args);
+  return gravarRespostaNoContato(db, args);
 }
 
 /**
@@ -756,11 +887,12 @@ export async function processarInboundDoFluxo(
       if (!ehPendente && !ehCorrecao && !ehEsgotada) continue;
       // NO-OP: o valor não mudou — não é resposta nova.
       if (v.valor === "" || v.valor === (valoresNovos[v.campo] ?? "")) continue;
-      const gravou = await gravarRespostaNoContato(db, {
+      const gravou = await gravarResposta(db, {
         organizationId: args.organizationId,
         contactId,
         campo: v.campo,
         valor: v.valor,
+        destino: destinoDaResposta(node.config),
       });
       if (!gravou) continue;
       await registrarEventoDoRoteiro(db, {
@@ -809,11 +941,12 @@ export async function processarInboundDoFluxo(
   }
 
   if (leitura.resultado === "respondeu") {
-    const gravou = await gravarRespostaNoContato(db, {
+    const gravou = await gravarResposta(db, {
       organizationId: args.organizationId,
       contactId,
       campo: primeiro.config.key,
       valor: leitura.captura.valor,
+      destino: destinoDaResposta(primeiro.config),
     });
     if (!gravou) return { estado, concluiu: false };
     await registrarEventoDoRoteiro(db, {
