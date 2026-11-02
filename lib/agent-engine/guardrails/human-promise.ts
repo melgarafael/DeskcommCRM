@@ -111,6 +111,21 @@ function buildPatternsDaAcao(target: string): RegExp[] {
         `(?:encaminhei|repassei|transferi|acionei|escalei)|(?:ja\\s+)?(?:encaminhad|repassad|transferid|acionad|escalad)[oa])` +
         `(?:\\s+(?:aqui|agora|internamente))?\\s*(?:[.!]|$)`,
     ),
+    // (2e) o alvo humano como SUJEITO de um verbo de PASSAGEM no futuro — a família que
+    //      faltava (#3816, ponto 3 do CR): "Uma pessoa da equipe vai te atender agora",
+    //      "Nosso time vai assumir a partir daqui", "A equipe vai entrar em contato com
+    //      você". `atender`, `assumir` e `entrar em contato` são o vocabulário REAL de
+    //      quem recebe a conversa — exigir "humano" literal era régua de dicionário, e
+    //      esses três caíam na família do RETORNO (padrão 2), que não abre caso.
+    //      As formas dos verbos são FECHADAS (e não `\w*`) para não casar o substantivo
+    //      "atendimento" nem "contato" solto: quem promete passagem diz "vai te atender",
+    //      não "vai atendimento".
+    new RegExp(
+      `\\b${target}\\b${gap(20)}\\b(?:vai|vao|vamos|vou|ira|irao|pode|podem)\\b${gap(12)}` +
+        `(?:\\b(?:te|lhe|se|nos)\\b\\s*)?` +
+        `(?:atender|atende|atendem|atendam|assumir|assume|assumem|assumam|` +
+        `entrar em contato|entra em contato|entram em contato|contatar|contata|contatam)`,
+    ),
   ];
 }
 

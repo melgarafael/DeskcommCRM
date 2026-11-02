@@ -30,8 +30,10 @@
  * **Papel explícito em cada linha.** "Cliente:" / "Atendimento:" — sem rótulo,
  * seis linhas de fala alternada são indistinguíveis para quem lê.
  *
- * **O motivo entra no fim.** É o que a IA não sabe dizer: por que o caso
- * existe (a promessa sem caso, a intervenção do guardrail).
+ * **O motivo entra na CABEÇA.** É o que a IA não sabe dizer: por que o caso
+ * existe (a promessa sem caso, a intervenção do guardrail). Fica junto da última
+ * fala do cliente, e não no fim, porque o aviso da equipe corta em 160
+ * caracteres: motivo no fim era motivo perdido.
  *
  * **Vazio é vazio.** Sem mensagens e sem motivo, devolve string vazia — quem
  * chama decide o fallback. Inventar "Conversa sem histórico" faria o campo
@@ -49,6 +51,14 @@ export const MENSAGENS_NO_RESUMO = 6;
 
 /** Teto de cada fala, em caracteres. */
 export const TETO_DA_FALA_NO_RESUMO = 160;
+
+/**
+ * Teto da ÚLTIMA fala do cliente na CABEÇA do resumo (#3816). Menor que o das
+ * falas do extrato de propósito: o aviso da equipe corta em 160 caracteres
+ * (`TETOS_DO_TEXTO_DO_LEAD.summary`) e a cabeça precisa caber com o motivo
+ * junto — 70 + o rótulo + `Motivo: …` cabem, uma fala inteira de 160 não.
+ */
+export const TETO_DA_ULTIMA_FALA = 70;
 
 /** Rótulo do lado na conversa. `direction` é `inbound` (cliente) / `outbound` (nós). */
 function rotulo(direction: string): string {
@@ -71,10 +81,19 @@ function linha(mensagem: MensagemParaResumo): string | null {
 }
 
 /**
- * Monta o resumo do caso. `mensagens` na ORDEM da conversa (mais antiga
- * primeiro); só as últimas `limite` entram. `motivo` é a razão do caso escrita
- * pelo sistema — vai no fim, e é opcional porque há chamador que só quer o
- * extrato.
+ * Monta o resumo do caso.
+ *
+ * `mensagens` na ORDEM da conversa (mais antiga primeiro); só as últimas
+ * `limite` entram no EXTRATO. `motivo` é a razão do caso escrita pelo sistema.
+ *
+ * A ORDEM é o contrato (#3816, ponto 4 do CR): a CABEÇA vem primeiro — a última
+ * fala do cliente e o motivo da abertura —, e o extrato completo vem depois. A
+ * razão é o corte: o mesmo campo alimenta o aviso de caso no WhatsApp da equipe,
+ * que trunca em 160 caracteres (`TETOS_DO_TEXTO_DO_LEAD.summary`). Com o extrato
+ * cronológico na frente, esse corte comia justamente a fala mais recente — quem
+ * ia responder lia o "bom dia" de ontem e não o pedido de agora. O extrato
+ * inteiro continua ali embaixo, que é o que a Central mostra; o aviso fica com
+ * a cabeça.
  */
 export function montarResumoDoCaso(
   mensagens: readonly MensagemParaResumo[],
@@ -84,6 +103,19 @@ export function montarResumoDoCaso(
   const janela = mensagens.slice(-Math.max(1, limite));
   const falas = janela.map(linha).filter((l): l is string => l !== null);
   const razao = (motivo ?? "").replace(/\s+/g, " ").trim();
-  if (falas.length === 0) return razao;
-  return razao === "" ? falas.join("\n") : `${falas.join("\n")}\n\nMotivo: ${razao}`;
+  const ultimaDoCliente = [...mensagens]
+    .reverse()
+    .find((m) => m.direction === "inbound" && m.body.replace(/\s+/g, " ").trim() !== "");
+  const cabeca: string[] = [];
+  if (ultimaDoCliente !== undefined) {
+    const texto = ultimaDoCliente.body.replace(/\s+/g, " ").trim();
+    const cortado =
+      texto.length > TETO_DA_ULTIMA_FALA
+        ? `${texto.slice(0, TETO_DA_ULTIMA_FALA - 1).trimEnd()}…`
+        : texto;
+    cabeca.push(`Último do cliente: ${cortado}`);
+  }
+  if (razao !== "") cabeca.push(`Motivo: ${razao}`);
+  if (falas.length === 0) return cabeca.join("\n");
+  return cabeca.length === 0 ? falas.join("\n") : `${cabeca.join("\n")}\n\n${falas.join("\n")}`;
 }

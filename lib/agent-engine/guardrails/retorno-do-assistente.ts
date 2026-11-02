@@ -79,6 +79,16 @@ const PATTERNS: readonly RegExp[] = [
   /\b(?:chamo|chamarei)\b[^.!?\n]{0,12}\b(?:voce|vc|voces)\b/,
   // (5) "a gente se fala" — futuro por construção (o passado seria "a gente se falou").
   /\ba gente se fala\b/,
+  // (6) a EQUIPE (ou o time/setor) como sujeito de um verbo de RETOMADA — #3816, o
+  //     caso novo do #3856: "Nossa equipe vai te responder em breve." Com os casos
+  //     desligados ela saía pelo `if (!ctx.casesEnabled) return { pass: true }` sem
+  //     nada agendado, porque este detector não a conhecia e é ele que abre o ramo
+  //     do retorno (`before-send.ts`). Prometer que A EQUIPE responde é prometer
+  //     RETOMADA DA CONVERSA — o destino é `schedule_followup`, não a fila humana.
+  //     Só o futuro (vai/vão/irá/irão) conta: "a equipe respondeu ontem" é fato, e
+  //     "a equipe está à disposição" é institucional (o `human-promise.ts` também
+  //     recusa as duas).
+  /\b(?:nossa|nosso|a|o)\s+(?:equipe|time|setor|pessoal)\b[^.!?\n]{0,20}\b(?:vai|vao|ira|irao)\b[^.!?\n]{0,20}\b(?:te\s+|lhe\s+)?(?:responder|retornar|dar\s+um\s+retorno|entrar\s+em\s+contato|atender)\b/,
 ];
 
 /**

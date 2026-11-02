@@ -129,15 +129,21 @@ describe("#3725 (b) — o summary do caso vem da conversa", () => {
     expect(resumo.trim().startsWith("Sem problema!")).toBe(false);
   });
 
-  it("leva o motivo no fim e respeita a janela de mensagens", () => {
+  it("leva o motivo na CABEÇA e respeita a janela de mensagens do extrato", () => {
     const longa = Array.from({ length: 12 }, (_, i) => ({
       direction: i % 2 === 0 ? "inbound" : "outbound",
       body: `fala ${i}`,
     }));
     const resumo = montarResumoDoCaso(longa, "a IA prometeu humano sem caso aberto");
-    expect(resumo).toContain("Motivo: a IA prometeu humano sem caso aberto");
+    // #3816: o motivo abre o resumo, junto da última fala do cliente — é o que o
+    // corte de 160 caracteres do aviso da equipe consegue ler.
+    expect(resumo.split("\n").slice(0, 2)).toEqual([
+      "Último do cliente: fala 10",
+      "Motivo: a IA prometeu humano sem caso aberto",
+    ]);
     expect(resumo).not.toContain("fala 0");
-    expect(resumo.split("\n").filter((l) => l.includes(": fala")).length).toBe(
+    const extrato = resumo.split("\n\n")[1] ?? "";
+    expect(extrato.split("\n").filter((l) => l.includes(": fala"))).toHaveLength(
       MENSAGENS_NO_RESUMO,
     );
   });

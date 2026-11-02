@@ -17,10 +17,18 @@
  *
  * ## As duas réguas, em OU
  *
- *   1. **Pedido explícito do cliente** — `detectHumanHandoffRequest`, o mesmo
- *      detector determinístico do handoff G1 ("falar com um atendente", "me
- *      passa para uma pessoa", "atendimento humano"). Resposta curta de sim/não
- *      NÃO casa: não tem verbo de contato nem alvo humano;
+ *   1. **Sinal de pessoa vindo do CLIENTE** — em QUALQUER mensagem dele na
+ *      demanda atual. O fail-safe é fail-safe, não filtro de qualidade: uma
+ *      mensagem com sinal de pessoa basta (decisão do Marcos no #3816). A régua
+ *      começou estreita — só `detectHumanHandoffRequest` — e a medição do
+ *      mantenedor mostrou o custo: dos 24 pedidos coloquiais dele, só 2 casavam.
+ *      "preciso de um humano", "quero falar com o gerente", "atendente", "pessoa
+ *      real" e "vou no procon se ninguém me atender" ficavam de fora, e os dois
+ *      erros não custam o mesmo: um aviso de passagem a mais incomoda, mas quem
+ *      pediu uma pessoa com palavras comuns e não chega a ninguém é o erro mais
+ *      caro. Por isso `SINAL_DE_PESSOA` é o vocabulário NOMINAL de
+ *      pessoa/retaguarda (mais os termos jurídicos que a issue mediu), e não uma
+ *      régua de verbo: "atendente" sozinho já é pedido;
  *   2. **Promessa explícita de envolver alguém AGORA** —
  *      `detectHumanHandoffPromise` (família da AÇÃO do `human-promise.ts`). A
  *      família do RETORNO ("a equipe vai te responder", "assim que liberarem")
@@ -57,12 +65,43 @@ export interface EntradaDoFailsafeDoCaso {
 }
 
 /**
+ * O vocabulário NOMINAL de pessoa/retaguarda, do lado de quem ESCREVE (o
+ * cliente). Cargos, coletivos e os termos jurídicos que a issue mediu — "vou no
+ * procon se ninguém me atender" é pedido de gente mesmo sem verbo de contato.
+ * Acentuação e caixa não importam: o texto é normalizado antes de casar.
+ */
+const SINAL_DE_PESSOA =
+  /\b(?:humano|humana|humanos|humanas|pessoa|pessoas|gente|alguem|ninguem|atendente|atendentes|gerente|gerentes|supervisor|supervisora|responsavel|responsaveis|setor|setores|departamento|equipe|equipes|time|times|consultor|consultora|vendedor|vendedora|representante|representantes|especialista|especialistas|operador|operadora|chefe|dono|dona|procon|advogado|advogada)\b/;
+
+/** Minúsculas + sem diacríticos (NFD), como os demais detetores determinísticos. */
+function normalize(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/gu, "");
+}
+
+/**
+ * True quando a mensagem do CLIENTE tem sinal de pessoa: pedido explícito de
+ * atendimento humano (`detectHumanHandoffRequest`, a régua do handoff G1) ou
+ * qualquer nome de pessoa/retaguarda. Resposta curta de sim/não não casa — não
+ * tem alvo humano nenhum.
+ *
+ * Só faz sentido sobre mensagem `inbound`; quem filtra a direção é quem chama.
+ */
+export function temSinalDePessoaNaMensagem(mensagem: string): boolean {
+  if (mensagem.trim() === "") return false;
+  if (detectHumanHandoffRequest(mensagem)) return true;
+  return SINAL_DE_PESSOA.test(normalize(mensagem));
+}
+
+/**
  * True quando o fail-safe PODE abrir caso humano. Fora das duas réguas, ele
  * devolve o erro-de-ensino e deixa o modelo reformular.
  */
 export function deveAbrirCasoDoFailsafe(entrada: EntradaDoFailsafeDoCaso): boolean {
   const pedidoDoCliente = entrada.mensagens.some(
-    (m) => m.direction === "inbound" && detectHumanHandoffRequest(m.body),
+    (m) => m.direction === "inbound" && temSinalDePessoaNaMensagem(m.body),
   );
   if (pedidoDoCliente) return true;
   return detectHumanHandoffPromise(entrada.corpo, entrada.alvosExtras);
