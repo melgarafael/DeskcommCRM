@@ -16,4 +16,4 @@ A escolha é por passo, então a mesma regra pode adiar o lembrete de cobrança 
 
 Nada muda para quem já usa o sistema: a automação que nunca configurou a escolha continua adiando exatamente como antes, e abrir e salvar a regra não grava escolha nenhuma. Nenhuma migração é necessária.
 
-Contribuição de @webtecnica (#PR).
+Contribuição de @webtecnica (#3864).
