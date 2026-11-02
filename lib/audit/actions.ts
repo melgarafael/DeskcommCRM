@@ -1411,6 +1411,9 @@ export const AUDIT_ACTIONS = [
   // sugestão, e quando". A fila guarda o usuário, mas a trilha é o rastro que a
   // organização consulta, e só ela tem o mesmo formato das outras ações de contato.
   "contact.duplicate_dismissed",
+  // Aviso escrito pelo admin da empresa e empurrado para a equipe (#1418). O
+  // metadata leva só a janela de publicação; título e corpo ficam em `avisos`.
+  "aviso.created",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -50,6 +50,11 @@ export const DICIONARIO: Traducoes = {
   "Últimos avisos de casos": { es: "Últimos avisos de casos" },
   "Esta lista registra avisos de casos. O resultado dos avisos de transferência para atendimento humano aparece no respectivo item da Central de alertas.": { es: "Esta lista registra avisos de casos. El resultado de los avisos de transferencia a atención humana aparece en el elemento correspondiente de la Central de alertas." },
   "Ainda não há avisos de casos nesta lista. As tentativas aparecem aqui quando o assistente abre um caso, inclusive se falharem.": { es: "Todavía no hay avisos de casos en esta lista. Los intentos aparecen aquí cuando el asistente abre un caso, incluso si fallan." },
+  // #1418 — o aviso agendado para o futuro é recusado (não há quem o publique
+  // depois nesta fatia). A frase diz o que fazer: publicar agora ou sem data.
+  "O agendamento de aviso ainda não está disponível. Publique agora ou envie sem data de publicação.": {
+    es: "La programación de avisos aún no está disponible. Publica ahora o envía sin fecha de publicación.",
+  },
   "Preencher o nome que o cliente informa no atendimento": { es: "Completar el nombre que el cliente informa durante la atención" },
   "Quando o assistente identifica o próprio nome informado por texto e usa a capacidade Anotar dado que o cliente informou, pode preencher o nome vazio da ficha. O apelido do WhatsApp fica separado. Nomes existentes e e-mail continuam exigindo revisão humana. Confira a ficha se o assistente interpretar a mensagem incorretamente.": { es: "Cuando el asistente identifica el nombre propio informado por texto y usa la capacidad Anotar un dato que el cliente informó, puede completar el nombre vacío de la ficha. El apodo de WhatsApp queda separado. Los nombres existentes y el correo siguen requiriendo revisión humana. Revise la ficha si el asistente interpreta incorrectamente el mensaje." },
   "Ligado para novas mensagens de atendimento.": { es: "Activado para nuevos mensajes de atención." },
@@ -18943,6 +18948,11 @@ export const DICIONARIO: Traducoes = {
   },
   "Ligado, cada empresa ganha na Equipe a aba Setores, para agrupar os atendentes por área, e a aba Atendimento passa a mostrar e filtrar o setor de cada um. A conversa com setor definido vai só para quem atende aquele setor, dentro do horário dele; conversa sem setor continua indo pelo número. Desligado, a aba e a coluna somem e a distribuição volta a ser a de antes; os setores já cadastrados ficam guardados.": { es: "Activado, cada empresa obtiene en Equipo la pestaña Sectores, para agrupar a los asesores por área, y la pestaña Atención pasa a mostrar y filtrar el sector de cada uno. La conversación con sector definido va solo a quien atiende ese sector, dentro de su horario; la conversación sin sector sigue yendo por el número. Desactivado, la pestaña y la columna desaparecen y la distribución vuelve a ser la de antes; los sectores ya registrados quedan guardados." },
   "Não cria porta no menu do CRM: ele libera uma aba em": { es: "No crea entrada en el menú del CRM: habilita una pestaña en" },
+  // O módulo opcional dos avisos para a equipe (#1418) em /admin/sistema e em Recursos opcionais.
+  "Avisos para a equipe": { es: "Avisos para el equipo" },
+  "O administrador da empresa escreve um aviso e ele chega como notificação nos aparelhos da equipe.": { es: "El administrador de la empresa escribe un aviso y este llega como notificación a los dispositivos del equipo." },
+  "Ligado, o administrador de cada empresa pode escrever um aviso com título e texto, e ele chega como notificação nos aparelhos da equipe que ativaram as notificações. Desligado, ninguém envia avisos; os já enviados ficam guardados.": { es: "Activado, el administrador de cada empresa puede escribir un aviso con título y texto, y este llega como notificación a los dispositivos del equipo que activaron las notificaciones. Desactivado, nadie envía avisos; los ya enviados quedan guardados." },
+  "Não cria porta no menu do CRM: por enquanto o aviso é enviado pela API, em /api/v1/avisos.": { es: "No crea entrada en el menú del CRM: por ahora el aviso se envía por la API, en /api/v1/avisos." },
   'Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.': {
     es: 'Para no depender del dato, pon un texto de respaldo: {{primeiro_nome|"alumno"}}.',
   },
