@@ -258,6 +258,25 @@ describe("dossiê — vincular contato a um negócio que já existe (#852)", () 
     expect(screen.getByRole("button", { name: "Vincular contato" })).toBeInTheDocument();
   });
 
+  it("contato que não carrega ainda pode ser desvinculado — é quando mais precisa", async () => {
+    // Contato apagado, fundido ou fora do alcance: a ficha não abre, e o
+    // vínculo quebrado continua pendurado no negócio. Sem o botão aqui, o
+    // conserto dependeria do banco.
+    useContact.mockReturnValue({ data: undefined, isLoading: false, isError: true });
+    montar({ contactId: "c-1" });
+    api.patch.mockResolvedValue({ data: { id: "l-1", contact_id: null } });
+
+    expect(screen.getByText("Não consegui carregar o contato.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Desvincular contato" }));
+
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith("/api/v1/leads/l-1", { contact_id: null }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Vincular contato" })).toBeInTheDocument(),
+    );
+  });
+
   it("falha ao desvincular também aparece no bloco, com o motivo", async () => {
     montar({ contactId: "c-1" });
     api.patch.mockRejectedValue(

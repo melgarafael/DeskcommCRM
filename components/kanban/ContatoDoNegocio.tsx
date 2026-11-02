@@ -275,16 +275,63 @@ function ContatoVinculado({
 }) {
   const t = useT();
   const { data, isLoading, isError } = useContact(contactId);
-  const [erro, setErro] = useState<string | null>(null);
-  const editar = useEditLead(pipelineId);
   const contato = data?.data;
 
-  /**
-   * DESFAZER O VÍNCULO (#852). `contact_id: null` é aceito pelo schema de
-   * propósito, e a rota só valida o contato NOVO quando ele vem — então
-   * desvincular não custa nenhuma regra nova no servidor. Sem isto, um vínculo
-   * errado seria irreversível pela tela.
-   */
+  return (
+    <>
+      {isLoading ? (
+        <p className="text-xs text-text-muted">{t("Carregando…")}</p>
+      ) : isError || !contato ? (
+        <p className="text-xs text-text-muted">{t("Não consegui carregar o contato.")}</p>
+      ) : (
+        <Tabs defaultValue="dados" data-testid="contato-do-negocio">
+          <TabsList>
+            <TabsTrigger value="dados">{t("Dados")}</TabsTrigger>
+            <TabsTrigger value="links">{t("Links")}</TabsTrigger>
+          </TabsList>
+          <TabsContent value="dados">
+            <DadosDoContato contato={contato} />
+          </TabsContent>
+          <TabsContent value="links">
+            {/* `key` = updated_at: quando o contato é relido depois de salvar
+                (ou editado em outra tela), o formulário reinicia com o valor do
+                servidor, sem um efeito de sincronização que pisaria no que a
+                pessoa está digitando. */}
+            <FormularioDeLinks key={contato.updated_at} contato={contato} pipelineId={pipelineId} />
+          </TabsContent>
+        </Tabs>
+      )}
+      <RodapeDoVinculo pipelineId={pipelineId} leadId={leadId} onDesvinculado={onDesvinculado} />
+    </>
+  );
+}
+
+/**
+ * O "Desvincular contato" — FORA das abas e FORA do caminho de erro.
+ *
+ * Dois motivos para ele não estar dentro da ficha: (1) o vínculo é do NEGÓCIO,
+ * não do contato; (2) um contato que falha ao carregar — apagado, fundido, fora
+ * do alcance — é justamente quando o vínculo PRECISA ser desfeito, e um botão
+ * que só nasce depois de o `useContact` dar certo seria inalcançável aí.
+ *
+ * `contact_id: null` é aceito pelo schema de propósito, e a rota só valida o
+ * contato NOVO quando ele vem (`if (input.contact_id && …)`) — então desfazer
+ * não custa nenhuma regra nova no servidor.
+ */
+function RodapeDoVinculo({
+  pipelineId,
+  leadId,
+  onDesvinculado,
+}: {
+  pipelineId: string;
+  leadId: string | null;
+  onDesvinculado: () => void;
+}) {
+  const t = useT();
+  const [erro, setErro] = useState<string | null>(null);
+  const editar = useEditLead(pipelineId);
+  if (!leadId) return null;
+
   async function desvincular() {
     if (!leadId) return;
     setErro(null);
@@ -299,47 +346,20 @@ function ContatoVinculado({
     }
   }
 
-  if (isLoading) {
-    return <p className="text-xs text-text-muted">{t("Carregando…")}</p>;
-  }
-  if (isError || !contato) {
-    return <p className="text-xs text-text-muted">{t("Não consegui carregar o contato.")}</p>;
-  }
-
   return (
-    <>
-      <Tabs defaultValue="dados" data-testid="contato-do-negocio">
-        <TabsList>
-          <TabsTrigger value="dados">{t("Dados")}</TabsTrigger>
-          <TabsTrigger value="links">{t("Links")}</TabsTrigger>
-        </TabsList>
-        <TabsContent value="dados">
-          <DadosDoContato contato={contato} />
-        </TabsContent>
-        <TabsContent value="links">
-          {/* `key` = updated_at: quando o contato é relido depois de salvar (ou
-              editado em outra tela), o formulário reinicia com o valor do
-              servidor, sem um efeito de sincronização que pisaria no que a
-              pessoa está digitando. */}
-          <FormularioDeLinks key={contato.updated_at} contato={contato} pipelineId={pipelineId} />
-        </TabsContent>
-      </Tabs>
-      {leadId && (
-        <div className="mt-1 space-y-1">
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="h-6 px-2 text-[11px] text-text-muted hover:text-destructive"
-            disabled={editar.isPending}
-            onClick={desvincular}
-          >
-            {t("Desvincular contato")}
-          </Button>
-          {erro && <MensagemDeErro texto={erro} />}
-        </div>
-      )}
-    </>
+    <div className="mt-1 space-y-1">
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        className="h-6 px-2 text-[11px] text-text-muted hover:text-destructive"
+        disabled={editar.isPending}
+        onClick={desvincular}
+      >
+        {t("Desvincular contato")}
+      </Button>
+      {erro && <MensagemDeErro texto={erro} />}
+    </div>
   );
 }
 
