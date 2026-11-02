@@ -1,5 +1,5 @@
 ---
-impacto: nada_mudou
+impacto: capacidade_nova
 secao: adicionado
 titulo: A pergunta do roteiro de atendimento pode gravar a resposta no card do negócio, e cada negócio responde por si
 ---
