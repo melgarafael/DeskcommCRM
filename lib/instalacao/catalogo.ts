@@ -225,6 +225,21 @@ export const CATALOGO_DA_INSTALACAO: readonly ChaveDaInstalacao[] = [
     controle: "edita",
     telaDona: "cobranca",
   },
+  {
+    // O recebimento do CLIENTE FINAL (#3509), que é outro eixo: aqui a empresa
+    // cobra quem ela atende, e a credencial é da conta dela no provedor. Sem
+    // esta chave o aviso de "pago" é RECUSADO (503) — de propósito: webhook de
+    // pagamento aceito sem conferência é porta aberta, e o negócio andaria de
+    // etapa com um POST de qualquer um.
+    chave: "INFINITEPAY_WEBHOOK_SECRET",
+    rotulo: "Segredo dos avisos de pagamento da InfinitePay",
+    explicacao:
+      "Confere que o aviso de \"pago\" veio mesmo do seu provedor. Cole aqui o mesmo segredo que você cadastrou no aviso de pagamento da InfinitePay; sem ele o sistema recusa todo aviso, em vez de aceitar qualquer um.",
+    grupo: "integracao",
+    natureza: "segredo",
+    controle: "edita",
+    telaDona: "cobranca",
+  },
 
   // ── DIAGNÓSTICO: de partida ───────────────────────────────────────────────
   {
