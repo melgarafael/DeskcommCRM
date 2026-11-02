@@ -8,6 +8,7 @@ import {
   googleEstaConfigurado,
   origemLocalDosCabecalhos,
 } from "@/lib/agenda/google/config";
+import { funisComCamposDeData } from "@/lib/agenda/datas-dos-negocios";
 import { donosDaAgenda } from "@/lib/agenda/donos-da-agenda";
 import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
 import { PROVEDOR_GOOGLE } from "@/lib/agenda/tipos";
@@ -127,7 +128,7 @@ export default async function AgendaPage() {
   // organizações via seis tipos onde há três — e clicar no da outra org dava
   // "Tipo de agendamento não encontrado", porque a rota que marca ESCAPA a org
   // certa e não achava o tipo que esta tela ofereceu.
-  const [{ data: tipos }, { data: linhas }, { data: apresentacao }] = await Promise.all([
+  const [{ data: tipos }, { data: linhas }, { data: apresentacao }, { data: funis }] = await Promise.all([
     supabase
       .from("calendar_event_types")
       .select(
@@ -146,6 +147,24 @@ export default async function AgendaPage() {
       .lt("starts_at", fim.toISOString())
       .order("starts_at"),
     supabase.from("organizations").select("settings").eq("id", activeOrg.orgId).maybeSingle(),
+    // ─── OS FUNIS, para a camada "Datas dos negócios" (#3221) ────────────────
+    //
+    // Só `id`, `name` e `settings`: os campos de data moram em `settings.fields`,
+    // e é deles que sai a lista de campos que a camada oferece. Descoberta no
+    // servidor, e não no cliente, porque a MESMA régua já existe
+    // (`camposDeDataDoNegocio`) e porque a RLS de `crm_pipelines` é quem decide
+    // quais funis esta pessoa enxerga — funil que ela não vê não aparece na
+    // escolha da camada.
+    //
+    // Arquivado fica de fora pela mesma razão do seletor de troca rápida do
+    // quadro: funil arquivado não recebe negócio novo, e oferecê-lo seria um
+    // destino que não existe.
+    supabase
+      .from("crm_pipelines")
+      .select("id, name, settings")
+      .eq("organization_id", activeOrg.orgId)
+      .eq("is_archived", false)
+      .order("position"),
   ]);
 
   /**
@@ -267,6 +286,23 @@ export default async function AgendaPage() {
       // uma pessoa chamada "Você" para a jornada de OUTRA pessoa — ver o painel
       // em `_client.tsx`.
       usuarioId={user.id}
+      // A CAMADA "Datas dos negócios" (#3221) — os funis que declaram campo de
+      // data do negócio, e só eles.
+      //
+      // Lista vazia é o estado de quem não usa campo de data: a camada não
+      // aparece, e a Agenda fica exatamente como era. Quem escolhe o que ver é
+      // a pessoa (a camada nasce desligada), e a escolha de QUAIS campos são
+      // datas não é feita aqui — ela vem do funil, pela mesma função que o
+      // Calendário do funil usa (`camposDeDataDoNegocio`).
+      funisComDatas={funisComCamposDeData(
+        (
+          (funis ?? []) as Array<{
+            id: string;
+            name: string;
+            settings: Record<string, unknown> | null;
+          }>
+        ).map((f) => ({ id: f.id, nome: f.name, settings: f.settings })),
+      )}
       googleConfigurado={googleConfigurado}
       contaConectada={conexoes?.map((c) => c.account_email).join(", ") || null}
       enderecoDeRetorno={enderecoDeRetorno(origemLocal ?? undefined)}
