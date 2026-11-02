@@ -6,6 +6,9 @@ import { CENARIO_DE_SILENCIO_ASSISTIDO, previewFixtureRegistry } from "./preview
 import { createFakeRegistry } from "../edge/llm/providers";
 import { INSTRUCAO_DO_PEDIDO_HUMANO, previaContinuaAtePropor } from "./proposta-sob-pedido";
 
+// O provider só reporta estes términos; "interrupted" é do SDK (ai >= 7.0.156), não do provider.
+type TerminoDoProvider = Exclude<FinishReason, "interrupted">;
+
 async function gerar(system: string, messages: ModelMessage[]) {
   const factory = previewFixtureRegistry().anthropic;
   if (!factory) throw new Error("O provedor controlado do cenário não existe.");
@@ -49,7 +52,7 @@ describe("provider de QA mantém silêncio até receber o pedido humano", () => 
 });
 
 describe("resultado vazio do SDK real só admite pedido humano quando terminou em stop", () => {
-  it.each<FinishReason>([
+  it.each<TerminoDoProvider>([
     "stop", "content-filter", "error", "other", "length", "tool-calls",
   ])("preserva e decide pelo término %s do provider controlado", async (finishReason) => {
     const factory = createFakeRegistry(async () => ({

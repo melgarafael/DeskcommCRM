@@ -5,12 +5,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { enrichCompanyFromBrasilApi } from "@/lib/crm-b2b/enrich";
-import { normalizeCnpj, normalizePersonName } from "@/lib/crm-b2b/normalize";
 import {
-  applyMapping,
-  type MappingField,
-  type SheetMatrix,
-} from "@/lib/crm-b2b/spreadsheet";
+  MENSAGEM_DE_CNPJ_INVALIDO,
+  normalizeCnpj,
+  normalizePersonName,
+} from "@/lib/crm-b2b/normalize";
+import { applyMapping, type MappingField, type SheetMatrix } from "@/lib/crm-b2b/spreadsheet";
 import { normalizePhoneBR } from "@/lib/webhooks/inbound";
 import { contatosDonosDosExtras } from "@/lib/channels/contato-por-telefone";
 import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
@@ -194,14 +194,11 @@ async function processOneRow(
   // Documento informado e inválido não é ausência: cair no cache por nome
   // juntaria empresas distintas e seus contatos sem avisar (#3497).
   if (mapped.cnpj.trim() && !normalizedCnpj) {
-    return { status: "failed", error: "CNPJ inválido.", normalizedCnpj: null };
+    return { status: "failed", error: MENSAGEM_DE_CNPJ_INVALIDO, normalizedCnpj: null };
   }
   const personName = mapped.person_name.trim();
   const trade =
-    mapped.trade_name.trim() ||
-    mapped.company_name.trim() ||
-    mapped.legal_name.trim() ||
-    "";
+    mapped.trade_name.trim() || mapped.company_name.trim() || mapped.legal_name.trim() || "";
   const legal = mapped.legal_name.trim() || mapped.company_name.trim() || trade;
 
   // Linha sem nada útil
@@ -248,7 +245,11 @@ async function processOneRow(
           .select("id")
           .single();
         if (error || !created) {
-          return { status: "failed", error: error?.message ?? "falha ao criar empresa", normalizedCnpj };
+          return {
+            status: "failed",
+            error: error?.message ?? "falha ao criar empresa",
+            normalizedCnpj,
+          };
         }
         companyId = created.id as string;
         ctx.companiesToEnrich.add(companyId);

@@ -1054,7 +1054,7 @@ export function PainelDeMarcacao({
           <div
             data-testid="motivo-do-bloqueio"
             data-motivo="sem-vaga"
-            className="mb-3 rounded-sm border border-border bg-surface-sunken p-3"
+            className="mb-3 rounded-sm border border-border bg-surface-elevated p-3"
           >
             <p className="text-sm font-semibold text-text">
               {t("Nenhum horário livre em")} {format(mes, "MMMM", { locale: localeDaData })}

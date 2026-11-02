@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
+import type { AvailabilitySchedule } from "@/lib/schemas/routing";
 import { ATTENDANTS_KEY } from "@/hooks/team/useAttendants";
 
 export interface Sector {
@@ -13,8 +14,19 @@ export interface Sector {
   description: string | null;
   created_at: string;
   updated_at: string;
-  /** Quantos atendentes estão neste setor agora. */
+  /** Quantos atendentes estão nesta fila agora. */
   member_count: number;
+  /**
+   * Quem atende esta fila (migration 9062). Vem junto do contador porque a tela
+   * de membros precisa saber quem JÁ está nela — um atendente pode estar em
+   * várias filas.
+   */
+  member_user_ids: string[];
+  /**
+   * Horário da fila. `{}` = 24/7 — janela existe para restringir, igual à
+   * jornada do atendente (`AvailabilitySchedule`).
+   */
+  schedule: AvailabilitySchedule;
 }
 
 const SECTORS_KEY = ["team", "sectors"] as const;
@@ -49,7 +61,11 @@ export function useCreateSector() {
   const t = useT();
   const invalidar = useInvalidarSetores();
   return useMutation({
-    mutationFn: async (input: { name: string; description: string | null }) =>
+    mutationFn: async (input: {
+      name: string;
+      description: string | null;
+      schedule?: AvailabilitySchedule;
+    }) =>
       apiClient.post<{ data: Sector }>("/api/v1/attendants/sectors", input),
     onError: (err) => showApiError(err),
     onSuccess: () => {
@@ -63,7 +79,13 @@ export function useUpdateSector() {
   const t = useT();
   const invalidar = useInvalidarSetores();
   return useMutation({
-    mutationFn: async ({ id, patch }: { id: string; patch: { name?: string; description?: string | null } }) =>
+    mutationFn: async ({
+      id,
+      patch,
+    }: {
+      id: string;
+      patch: { name?: string; description?: string | null; schedule?: AvailabilitySchedule };
+    }) =>
       apiClient.patch<{ data: Sector }>(`/api/v1/attendants/sectors/${id}`, patch),
     onError: (err) => showApiError(err),
     onSuccess: () => {
@@ -87,15 +109,18 @@ export function useDeleteSector() {
   });
 }
 
-/** Põe/troca/tira (`null`) o setor de um atendente (manager+; a API enforça). */
+/**
+ * Define as FILAS de um atendente (manager+; a API enforça). A lista recebida
+ * SUBSTITUI o conjunto — vazia = sem fila nenhuma.
+ */
 export function useAssignSector() {
   const t = useT();
   const invalidar = useInvalidarSetores();
   return useMutation({
-    mutationFn: async ({ userId, sectorId }: { userId: string; sectorId: string | null }) =>
-      apiClient.put<{ data: { user_id: string; sector_id: string | null } }>(
+    mutationFn: async ({ userId, sectorIds }: { userId: string; sectorIds: string[] }) =>
+      apiClient.put<{ data: { user_id: string; sector_ids: string[] } }>(
         `/api/v1/attendants/sector/${userId}`,
-        { sector_id: sectorId },
+        { sector_ids: sectorIds },
       ),
     onError: (err) => showApiError(err),
     onSuccess: () => {

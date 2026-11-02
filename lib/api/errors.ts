@@ -12,6 +12,11 @@ export const ApiErrorCodes = {
   invalid_request: "invalid_request",
   validation_failed: "validation_failed", // Zod retornou erros de schema (422 também aceita)
   invalid_cursor: "invalid_cursor",
+  // POST /api/v1/avisos (#1418): `publicar_em` no futuro é recusado
+  // porque nada publica o aviso depois — gravar seria criar um recado que
+  // nunca chega. Código próprio para a tela distinguir de "corpo inválido" e
+  // oferecer o caminho: publicar agora ou enviar sem data.
+  aviso_agendado_nao_suportado: "aviso_agendado_nao_suportado",
 
   // Configuração de agentes: validação/estado ou indisponibilidade do provedor.
   prospecting_agent_session_failed: "prospecting_agent_session_failed",
