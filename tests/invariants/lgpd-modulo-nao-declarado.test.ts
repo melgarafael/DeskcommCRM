@@ -100,6 +100,13 @@ const ALLOWLIST: Record<string, string> = {
     "quantidade, reason em vocabulário do programa e idempotency_key são dado " +
     "do programa de fidelidade, e a pessoa por trás já está anônima na cascata " +
     "(contact_id vira contato anonimizado, não contato legível).",
+  "ouvidoria.ouvidoria_manifestacoes":
+    "Decisão escrita no catálogo LGPD (#3611, fatia 1): a manifestação é o " +
+    "documento da ouvidoria que a empresa tem de responder, e redigir o texto " +
+    "apagaria a própria manifestação. A identificação do manifestante sai junto " +
+    "com o contato: contact_id é on delete set null, então apagar/anonimizar a " +
+    "pessoa desliga o vínculo e a linha continua legível só para administradores " +
+    "(RLS da 9030). Não é seção declarada porque não há o que redigir.",
 };
 
 /**

@@ -35,6 +35,14 @@ export const CATALOGO_DE_MODULOS: readonly ModuloCatalogo[] = [
       "continua no sistema mesmo sem este módulo. Toda instalação anterior a esta versão " +
       "continua com Comandas ligada.",
   },
+  {
+    slug: "ouvidoria",
+    nome: "Ouvidoria",
+    descricao:
+      "Registro de manifestações (reclamações, denúncias, elogios, sugestões) com protocolo " +
+      "próprio, leitura restrita a administradores e sem cartão no funil. Quem não instala " +
+      "o módulo não carrega a tabela.",
+  },
 ];
 
 export function moduloDoCatalogo(slug: string): ModuloCatalogo | undefined {
