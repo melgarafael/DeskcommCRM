@@ -19103,6 +19103,57 @@ export const DICIONARIO: Traducoes = {
   "Grupo que não pertence a esta organização.": {
     es: "Grupo que no pertenece a esta organización.",
   },
+  // ─── Ouvidoria: a tela de gestão (#3611, fatia 3) ──────────────────────────
+  // O módulo se chama "Ouvidoria" em português; em espanhol a instituição é a
+  // "Defensoría". O resto é o vocabulário da tela: lista, detalhe e transição de
+  // status. Cada chave aqui é uma frase que a tela RENDERIZA — nada de texto de
+  // wire (`em_analise` não se traduz).
+  Ouvidoria: { es: "Defensoría" },
+  Manifestação: { es: "Manifestación" },
+  Manifestações: { es: "Manifestaciones" },
+  manifestação: { es: "manifestación" },
+  manifestações: { es: "manifestaciones" },
+  Recebida: { es: "Recibida" },
+  Recebidas: { es: "Recibidas" },
+  "Concluídas": { es: "Concluidas" },
+  "Recebida em": { es: "Recibida el" },
+  "Última atualização": { es: "Última actualización" },
+  Relato: { es: "Relato" },
+  "Voltar para a lista": { es: "Volver a la lista" },
+  "Manifestação não encontrada.": { es: "Manifestación no encontrada." },
+  "Não foi possível carregar a manifestação.": { es: "No se pudo cargar la manifestación." },
+  "Não foi possível carregar as manifestações.": {
+    es: "No se pudieron cargar las manifestaciones.",
+  },
+  "Nenhuma manifestação registrada.": { es: "Ninguna manifestación registrada." },
+  "As manifestações aparecem aqui assim que alguém falar com a empresa.": {
+    es: "Las manifestaciones aparecen aquí en cuanto alguien hable con la empresa.",
+  },
+  "Manifestações recebidas pela empresa. Só quem a organização autoriza lê o relato.": {
+    es: "Manifestaciones recibidas por la empresa. Solo quien la organización autoriza lee el relato.",
+  },
+  "Reclamações, denúncias e elogios recebidos pela empresa, com protocolo.": {
+    es: "Reclamaciones, denuncias y elogios recibidos por la empresa, con protocolo.",
+  },
+  "Mudar status": { es: "Cambiar estado" },
+  "Status atual": { es: "Estado actual" },
+  "Motivo da mudança": { es: "Motivo del cambio" },
+  "Explique por que a manifestação está sendo reaberta.": {
+    es: "Explique por qué se reabre la manifestación.",
+  },
+  "Status atualizado.": { es: "Estado actualizado." },
+  "Não há outra etapa para esta manifestação.": {
+    es: "No hay otra etapa para esta manifestación.",
+  },
+  "Este já é o status da manifestação.": { es: "Este ya es el estado de la manifestación." },
+  "Não é possível pular a etapa de análise.": { es: "No se puede omitir la etapa de análisis." },
+  "Escreva o motivo da reabertura.": { es: "Escriba el motivo de la reapertura." },
+  "O motivo está longo demais.": { es: "El motivo es demasiado largo." },
+  "A manifestação mudou enquanto você decidia. Recarregue a página.": {
+    es: "La manifestación cambió mientras decidías. Recarga la página.",
+  },
+  "Sem permissão para mudar o status.": { es: "Sin permiso para cambiar el estado." },
+  "Não foi possível salvar o status.": { es: "No se pudo guardar el estado." },
   // Frases de `lib/erros/para-operador.ts` (#3747): o que a tela diz quando o
   // banco recusa. O texto do Postgres não passa daqui — ele nomeia constraint,
   // relação e coluna, e é assunto do log, não do toast.
