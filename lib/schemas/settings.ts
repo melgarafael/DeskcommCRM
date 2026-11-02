@@ -905,3 +905,59 @@ export function avisoDeTransferenciaLigado(settings: unknown): boolean {
     ? (settings as Record<string, unknown>).crm : undefined;
   return crmSettingsSchema.parse(crm ?? {}).avisar_transferencia_no_whatsapp;
 }
+
+/**
+ * O MÓDULO DE OUVIDORIA (#3611, fatia 1) — `settings.ouvidoria`.
+ *
+ * A empresa LIGA o módulo para si: recebe manifestações (reclamação, denúncia,
+ * elogio, sugestão) que ganham protocolo próprio e NÃO viram cartão no funil.
+ * Quem grava é `lib/ouvidoria/registro.ts`; quem lê é
+ * `lib/ouvidoria/leitura.ts`. Este bloco é o CONTRATO do jsonb — a leitura
+ * existe UMA vez para o serviço, a tela (fatia seguinte) e qualquer script não
+ * divergirem.
+ *
+ * ─── Por que jsonb e não coluna ──────────────────────────────────────────────
+ * É preferência da organização, sem invariante que o banco prove sozinho: o
+ * resto do estado do módulo (perfis autorizados, destinatários do aviso) chega
+ * nas fatias seguintes e cada um é uma decisão de empresa, não uma coluna da
+ * manifestação. A manifestação em si é TABELA (`ouvidoria_manifestacoes`,
+ * migration 9030) — protocolo, unicidade e privacidade não cabem em jsonb.
+ *
+ * ─── Régua de leitura ────────────────────────────────────────────────────────
+ * Só o `true` EXPLÍCITO liga, a mesma de `settings.entrada_do_inbox.ativa` e de
+ * `settings.crm.cliente_pela_agenda`: ausente, `false`, `"true"` ou lixo é
+ * DESLIGADO — e desligado é "nenhuma manifestação é aceita", que é o estado de
+ * TODA instalação que já existe. Quem desliga não perde o acervo: a leitura das
+ * manifestações já recebidas continua valendo para os administradores (decisão
+ * de `lib/ouvidoria/leitura.ts`), porque fechar a porta de entrada não pode
+ * apagar o que a ouvidoria precisa responder.
+ *
+ * ⚠️ O VALOR É JSONB ESCRITO POR FORA (script, seed, API antiga) e não passa
+ * pelo zod de escrita; por isso o `.catch` de cada campo. Um jsonb torto
+ * desliga o módulo em silêncio, nunca lança — esta leitura roda no caminho do
+ * registro, e um throw ali derrubaria o atendimento.
+ */
+export const OUVIDORIA_CHAVE = "ouvidoria";
+
+export const ouvidoriaSchema = z
+  .object({
+    /** A porta de ENTRADA do módulo. Ausente/`false`/lixo = desligado. */
+    ativa: z.boolean().catch(false),
+  })
+  .catch({ ativa: false });
+
+export type OuvidoriaDaOrganizacao = z.infer<typeof ouvidoriaSchema>;
+
+/** O bloco lido de `organizations.settings`. Nunca lança. */
+export function ouvidoriaDeclarada(settings: unknown): OuvidoriaDaOrganizacao {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  return ouvidoriaSchema.parse(raiz?.[OUVIDORIA_CHAVE] ?? {});
+}
+
+/** Atalho booleano para quem só precisa saber se o módulo aceita registro. */
+export function ouvidoriaLigada(settings: unknown): boolean {
+  return ouvidoriaDeclarada(settings).ativa === true;
+}
