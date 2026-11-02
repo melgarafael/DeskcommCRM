@@ -40,7 +40,14 @@ export interface RetomadaPendente {
 export interface RecusaDeCampos {
   /** Os argumentos originais do move — o diálogo só acrescenta o que coletou. */
   args: MoveArgs;
-  faltando: { chave: string; rotulo: string; tipo?: string; opcoes?: { value: string; label: string }[] }[];
+  /** Campos que faltam — `exigido_pela_etapa` diz que a ETAPA venceu a condição. */
+  faltando: {
+    chave: string;
+    rotulo: string;
+    tipo?: string;
+    opcoes?: { value: string; label: string }[];
+    exigido_pela_etapa?: boolean;
+  }[];
 }
 
 interface OpcoesDeMove {

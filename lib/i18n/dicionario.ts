@@ -18120,6 +18120,35 @@ export const DICIONARIO: Traducoes = {
   "Escondido, o campo não aparece no formulário nem é validado como obrigatório, e o valor já gravado continua no registro.": {
     es: "Oculto, el campo no aparece en el formulario ni se valida como obligatorio, y el valor ya guardado sigue en el registro.",
   },
+  // #3036 — campos condicionais: a obrigatoriedade POR VALOR compõe com a
+  // obrigatoriedade por etapa. As frases abaixo são as que DIZEM a composição
+  // na configuração do funil, no diálogo do arrasto e na ficha do negócio.
+  "Exigir só quando:": { es: "Exigir solo cuando:" },
+  "Sempre exigir na etapa": { es: "Exigir siempre en la etapa" },
+  "Campo da exigência": { es: "Campo de la exigencia" },
+  "Operador da exigência": { es: "Operador de la exigencia" },
+  "Valor da exigência": { es: "Valor de la exigencia" },
+  "Valores da condição": { es: "Valores de la condición" },
+  "está entre": { es: "está entre" },
+  "Escondido, o campo não aparece no formulário e não é cobrado pela condição, e o valor já gravado continua no registro.":
+    {
+      es: "Oculto, el campo no aparece en el formulario y no se exige por la condición, y el valor ya guardado sigue en el registro.",
+    },
+  "A condição não substitui a etapa: ela acrescenta uma situação em que o campo passa a ser exigido. Campo exigido pela etapa continua exigido mesmo quando a condição não vale.":
+    {
+      es: "La condición no sustituye a la etapa: añade una situación en la que el campo pasa a ser exigido. Un campo exigido por la etapa sigue exigiéndose aunque la condición no se cumpla.",
+    },
+  "Este campo também é exigido por etapa. Quando as duas regras discordarem, a etapa vence: o formulário mostra o campo com um aviso, em vez de travar sem explicação.":
+    {
+      es: "Este campo también es exigido por la etapa. Cuando las dos reglas no coincidan, gana la etapa: el formulario muestra el campo con un aviso, en lugar de bloquear sin explicación.",
+    },
+  "A etapa de destino exige este campo, mesmo que a condição de exibição o esconda — por isso ele aparece aqui.":
+    {
+      es: "La etapa de destino exige este campo, aunque la condición de visualización lo oculte; por eso aparece aquí.",
+    },
+  "Esta etapa exige o campo, mesmo que a condição de exibição o esconda.": {
+    es: "Esta etapa exige el campo, aunque la condición de visualización lo oculte.",
+  },
   // #2730 — validação de formato em campo de texto: a frase do CAMPO na tela,
   // na API e no erro de ensino da IA. `padrao`/`mensagem_padrao` são dado do
   // dono do funil; estas duas abaixo são as da CASA, para quando ele não deu a

@@ -47,7 +47,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { camposDoFunil, escopoDoCampo } from "@/lib/leads/campos-do-funil";
 import { logger } from "@/lib/logger";
-import { camposVisiveis } from "@/lib/schemas/mostrar-quando";
+import { camposVisiveis, condicaoCasa } from "@/lib/schemas/mostrar-quando";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 
 /**
@@ -96,6 +96,19 @@ export interface CampoFaltando {
    */
   tipo?: CustomFieldDef["type"];
   opcoes?: { value: string; label: string }[];
+  /**
+   * A cobrança vem da ETAPA (ou do fechamento), não da condição — e a condição
+   * de visibilidade mandaria esconder este campo (#3036).
+   *
+   * Existe porque a composição das duas réguas tem um caso em que a tela
+   * precisaria de uma frase: campo escondido PELA CONDIÇÃO e exigido PELA
+   * ETAPA não pode virar bloqueio invisível. A etapa vence (é regra do dono do
+   * funil, e ignorá-la abriria um buraco de dado em silêncio), e este marcador
+   * é o que autoriza a tela a dizer POR QUE o campo está ali em vez de mostrar
+   * um campo a mais sem explicação. Ausente no caminho comum — quem só lê
+   * `chave`/`rotulo` não muda nada.
+   */
+  exigido_pela_etapa?: boolean;
 }
 
 /** O veredito: lista vazia = pode escrever. */
@@ -251,6 +264,26 @@ export function camposExigidosNoDestino(
 }
 
 /**
+ * OS CAMPOS QUE UMA CONDIÇÃO EXIGE — o recorte de `exigir_quando` (#3036).
+ *
+ * É a segunda pergunta da obrigatoriedade, ao lado de `obrigatorio_em`: "este
+ * campo é exigido SEMPRE nesta etapa/gatilho" e "este campo é exigido QUANDO
+ * outro tem determinado valor" convivem, e quem responde as duas é esta
+ * dupla de funções — não há uma terceira cópia da regra em lugar nenhum.
+ *
+ * Só campo do NEGÓCIO entra, pela mesma razão de `camposExigidosNoDestino`:
+ * campo do contato nem aparece no card.
+ *
+ * A visibilidade NÃO é filtrada aqui — quem a decide precisa dos valores, e é
+ * a régua (`validaCamposExigidos`) que os tem.
+ */
+export function camposComExigenciaCondicional(settingsDoFunil: unknown): CustomFieldDef[] {
+  return camposDoFunil(settingsComoRecord(settingsDoFunil)).filter(
+    (campo) => escopoDoCampo(campo) === "negocio" && campo.exigir_quando !== undefined,
+  );
+}
+
+/**
  * Devolve o que FALTA para esta escrita poder acontecer — nunca decide se a
  * escrita acontece (quem escreve é quem chama, e a recusa é 422 com esta lista
  * em `details.faltando`).
@@ -258,6 +291,25 @@ export function camposExigidosNoDestino(
  * A lista sai em ordem de cadastro dos campos, com `chave` (o que o PATCH do
  * dossiê espera) e `rotulo` (o que a pessoa lê): a tela monta o diálogo só com
  * o que falta, e a IA devolve os dois ao modelo para ele perguntar ao cliente.
+ *
+ * ─── Duas réguas, uma decisão (issue #3036) ────────────────────────────────
+ *
+ * A obrigatoriedade tem DUAS origens, e elas se somam:
+ *
+ *   1. `obrigatorio_em` — a etapa de destino, o ganho, a perda (issue #1536);
+ *   2. `exigir_quando` — o valor de outro campo do mesmo funil (#3036).
+ *
+ * A condição de VISIBILIDADE (`mostrar_quando`) não substitui nenhuma das
+ * duas, e a composição tem duas metades:
+ *
+ *   - exigido pela CONDIÇÃO e escondido → não cobra. É a promessa da #2728:
+ *     quem não vê o campo não tem como preenchê-lo, e cobrar o que a tela
+ *     esconde transforma "esconder" em "travar";
+ *   - exigido pela ETAPA e escondido → COBRA, marcado com
+ *     `exigido_pela_etapa`. A etapa é regra do dono do funil e ignorá-la
+ *     abriria um buraco de dado em silêncio (o motivo do #1536 existir). O
+ *     marcador é o que faz a tela DIZER por que o campo está sendo pedido, em
+ *     vez de bloquear sem explicação.
  */
 export function validaCamposExigidos(entrada: EntradaDeCampos): VereditoDeCampos {
   const faltando: CampoFaltando[] = [];
@@ -270,30 +322,42 @@ export function validaCamposExigidos(entrada: EntradaDeCampos): VereditoDeCampos
   const campos = camposDoFunil(settings);
   const visiveis = new Set(camposVisiveis(campos, valores).map((campo) => campo.key));
 
-  // Escopo (só campo do NEGÓCIO) e destino (`obrigatorio_em`) são filtrados
-  // pelo recorte compartilhado com a tela — ver `camposExigidosNoDestino`.
-  for (const campo of camposExigidosNoDestino(settings, entrada.destino)) {
-    // O campo OCULTO pela condição não é cobrado (issue #2728): quem não o
-    // vê na ficha não tem como preenchê-lo, e barar a escrita por um campo
-    // que a tela escondeu transformaria "esconder" em "travar". O valor que
-    // ele já tinha continua no lead — esta função só decide se PERGUNTA.
-    if (!visiveis.has(campo.key)) continue;
+  /** Cobra o campo (se vazio) e o registra na lista — o único ponto de push. */
+  const cobra = (campo: CustomFieldDef, exigidoPelaEtapa: boolean): void => {
     // A CRIAÇÃO não cobra o arquivo (#3433): o anexo é do negócio que ainda vai
     // nascer. Sem esta linha o campo `file` conta sempre como vazio na criação
     // (não há `camposComAnexo` para ler) e a etapa que exige documento vira
     // impossível de entrar — nem pela tela, nem pela API, nem pela captação.
-    if (campo.type === "file" && entrada.semAnexosAinda) continue;
+    if (campo.type === "file" && entrada.semAnexosAinda) return;
     const preenchido =
       campo.type === "file"
         ? (entrada.camposComAnexo?.has(campo.key) ?? false)
         : valorPreenchido(valores[campo.key]);
-    if (preenchido) continue;
+    if (preenchido) return;
     faltando.push({
       chave: campo.key,
       rotulo: campo.label,
       tipo: campo.type,
       ...(campo.options ? { opcoes: campo.options } : {}),
+      ...(exigidoPelaEtapa ? { exigido_pela_etapa: true } : {}),
     });
+  };
+
+  // ── 1. A RÉGUA DA ETAPA (#1536) — escopo e destino filtrados pelo recorte
+  // compartilhado com a tela (`camposExigidosNoDestino`).
+  //
+  // A condição `exigir_quando` COMPÕE com a etapa: o campo só é exigido quando
+  // a etapa casa E (se houver condição) ela casa também. Fora das etapas de
+  // `obrigatorio_em` nada é cobrado por esta régua — nem por condição.
+  //
+  // A regra da #2728 fica intacta: campo escondido pela condição NÃO é cobrado
+  // (quem não vê não tem como preencher). Sem a marcação `exigido_pela_etapa`,
+  // que a inversão antiga usava.
+  for (const campo of camposExigidosNoDestino(settings, entrada.destino)) {
+    if (!visiveis.has(campo.key)) continue;
+    // `exigir_quando` compõe: se houver condição e ela não casar, não cobra.
+    if (campo.exigir_quando !== undefined && !condicaoCasa(campo.exigir_quando, valores)) continue;
+    cobra(campo, false);
   }
 
   // O MOTIVO DE GANHO NATIVO (issue #1536): coluna própria, lista própria,
