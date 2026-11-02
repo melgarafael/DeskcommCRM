@@ -33,12 +33,12 @@ Postgres: o PostgREST continuaria na frente do banco novo.
 | Fato | Onde foi medido |
 | --- | --- |
 | "Migrar para Postgres" não descreve mudança: o schema e as funções já aplicam em Postgres puro, com `auth`/`storage` como stubs | `scripts/selfhost-prelude.sql:1-4`; invariante em `tests/invariants/selfhost-prelude-aplica-o-baseline.test.ts:35` |
-| **728** arquivos de código importam o SDK (`@supabase/supabase-js` ou `@supabase/ssr`): `lib/` 379, `tests/` 264, `scripts/` 48, `app/` 31, `hooks/` 1, `components/` 0, `types/` 0, e 5 fora dessas camadas (`proxy.ts`, três em `curso/`, um em `evidence/`) | contagem no sha desta ADR; o 769 que circulou vinha de `git grep "@supabase"` (770 menções), que conta comentário, doc e string — 42 arquivos a mais que a importação real |
+| **718** arquivos de código importam o SDK (`@supabase/supabase-js` ou `@supabase/ssr`): `lib/` 370, `tests/` 264, `scripts/` 48, `app/` 31, `hooks/` 1, `curso/` 3, `proxy.ts` 1, `components/` 0, `types/` 0 — e há mais 5 documentos que apenas citam o pacote | comando e saída no sha desta ADR: `git grep -lE 'from "@supabase/(supabase-js\|ssr)"' 9a1467d02 \| wc -l` → **723**, dos quais 5 são `docs/**`; o 769 que circulou vinha de `git grep "@supabase"`, que conta comentário, doc e string (770 menções) |
 | A fronteira já existe: três fábricas concentram o SDK, e o frontend não fala com o banco | `lib/supabase/server.ts:75`, `lib/supabase/admin.ts:26`, `lib/supabase/browser.ts:121`; `components/` e `types/` com zero importação |
 | RLS **não** é o bloqueio: `lib/` tem 17 arquivos não-teste no cliente de usuário contra 144 no cliente admin, que bypassa RLS por declaração | `lib/supabase/admin.ts:2` ("BYPASSA RLS") e a regra de filtro manual em `lib/supabase/admin.ts:4-17`; 405 arquivos não-teste de `app/` usam o admin client |
 | Já existe caminho `pg` em produção, maduro, com `query_timeout`, `keepAlive` e listener por cliente | `lib/agent-engine/db/pool.ts:25-65` |
 | O custo escondido é o teste, não a sintaxe: os fakes implementam a **forma da cadeia** do PostgREST à mão, e cada domínio migrado quebra o seu | `lib/tarefas/criar-tarefa.test.ts:100-130` (a classe `Cadeia`, com `PromiseLike` no comentário de `:117`) |
-| O banco escreve sozinho: 187 gatilhos e 432 funções nomeadas no SQL versionado | `supabase/baseline.sql` + `supabase/migrations/` |
+| O banco escreve sozinho: **186** gatilhos e **416** funções nomeadas no SQL versionado | nomes distintos (minúsculos) em `supabase/baseline.sql` + `supabase/migrations/`, contados uma vez cada: `git grep -hoiE "create (or replace )?trigger +[a-z0-9_]+" 9a1467d02 -- supabase \| awk '{print tolower($NF)}' \| sort -u \| wc -l` → 186; o mesmo com `function` → 416 |
 
 ## Decisão
 
@@ -65,7 +65,7 @@ Cada domínio troca de cliente num commit próprio. O produto fica inteiro o tem
 ainda não migrados continuam no PostgREST, e o revert de um domínio é o revert de um commit.
 
 **Dual-write é inviável, e está recusado explicitamente.** Não é preferência: o banco tem 187
-gatilhos e 432 funções que escrevem por conta própria (`supabase/baseline.sql`, `supabase/migrations/`).
+gatilhos e 416 funções que escrevem por conta própria (`supabase/baseline.sql`, `supabase/migrations/`).
 Não existe forma de "escrever nos dois lados" quando um dos lados é o próprio banco — a segunda
 escrita acontece sem o código saber, e a divergência é silenciosa. O que não pode haver é **dois donos
 da mesma tabela ao mesmo tempo**; uma janela de minutos por domínio é mais barata que qualquer
@@ -130,10 +130,10 @@ query sem filtro de organização devolve zero linhas — o harness já existe
 
 | Alternativa | Por que não | Reconsideraríamos se |
 | --- | --- | --- |
-| **Dual-write** durante a migração | 187 gatilhos e 432 funções escrevem sozinhos no banco: não há como o código escrever "dos dois lados" de uma escrita que ele não fez. O custo é a divergência silenciosa, não o código | nunca, enquanto o schema tiver gatilho de escrita |
+| **Dual-write** durante a migração | 186 gatilhos e 416 funções escrevem sozinhos no banco: não há como o código escrever "dos dois lados" de uma escrita que ele não fez. O custo é a divergência silenciosa, não o código | nunca, enquanto o schema tiver gatilho de escrita |
 | **Sair do Supabase inteiro agora** (Auth + Storage + Realtime no mesmo movimento) | Multiplica o escopo por uma peça que a issue não pede e que é a única irreversível; transforma uma migração de fases numa reescrita de plataforma | depois de F4, com decisão própria e nova ADR |
 | **Manter o PostgREST e só pagar mais/upgrade de compute** | Resolve a cota de hoje e mantém os dois incidentes estruturais (replay do gateway, `max-rows` silencioso). É remendo, não decisão | se o custo de operar Postgres próprio se mostrar maior que o do fornecedor — decisão de operação, não de código |
-| **ORM (Prisma/Drizzle) sobre o banco** | O schema é escrito à mão em 616 migrations com 432 funções e 187 gatilhos; um ORM cobriria a leitura e mentiria no resto, e ainda esconderia o `LIMIT` que D5 exige explicitar | se a superfície migrada fosse só CRUD sem função — não é o caso |
+| **ORM (Prisma/Drizzle) sobre o banco** | O schema é escrito à mão em 616 migrations com 416 funções e 186 gatilhos; um ORM cobriria a leitura e mentiria no resto, e ainda esconderia o `LIMIT` que D5 exige explicitar | se a superfície migrada fosse só CRUD sem função — não é o caso |
 | **Um PR único, big bang, para os 728 arquivos** | Sem janela por domínio não há rollback por commit; a revisão de 292 arquivos de uma vez não é revisão | nunca |
 | **Trocar Auth junto** | 58 `auth.getUser()` em produção são o mecanismo de autorização de toda rota; migrar hashes de senha, MFA e PKCE é projeto, não tarefa | decisão separada do dono, com orçamento próprio |
 
