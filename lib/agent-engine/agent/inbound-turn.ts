@@ -233,7 +233,9 @@ import {
 import { criarRecuperadorDeEvidencias } from '../guardrails/promise/recuperar-evidencias';
 import { classifyPromise, memoizarPorCandidata } from '../guardrails/promise/semantic';
 import { montarContextoDaRevisao } from '../guardrails/promise/contexto-da-revisao';
+import { deveAbrirCasoDoFailsafe } from '../guardrails/failsafe-do-caso';
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
+import { montarResumoDoCaso } from '@/lib/escalacao/resumo-do-caso';
 import {
   montarBriefingDaPassagem,
   type BriefingDaPassagem,
@@ -1909,6 +1911,8 @@ export async function deteccoesDeterministicasDoAssistido(
       log,
       ...(lgpd !== undefined ? { lgpd } : {}),
       agentId: agent.agentId,
+      // #3725: a frase do tenant, quando ele escreveu uma (`ai_agents.config`).
+      fraseConfigurada: agent.fraseDoAviso ?? null,
       ...(deps.knobs.disclosureMode !== undefined
         ? { disclosureMode: deps.knobs.disclosureMode }
         : {}),
@@ -3058,6 +3062,8 @@ async function executarTurnoDoAgente(
       log: runLog,
       lgpd,
       agentId: agentConfig?.agentId ?? null,
+      // #3725: a frase do tenant, quando ele escreveu uma (`ai_agents.config`).
+      fraseConfigurada: agentConfig?.fraseDoAviso ?? null,
       ...(deps.knobs.disclosureMode !== undefined
         ? { disclosureMode: deps.knobs.disclosureMode }
         : {}),
@@ -4565,6 +4571,19 @@ async function executarTurnoDoAgente(
               });
             },
           };
+          // #3725 — a régua do fail-safe de caso e o resumo do caso saem UMA vez
+          // aqui: a conversa e a candidata não mudam entre o 1º veto e o
+          // auto-abre-caso, e o porquê de cada um está nos módulos
+          // (`guardrails/failsafe-do-caso.ts`, `escalacao/resumo-do-caso.ts`).
+          const podeAbrirCasoNoFailsafe = deveAbrirCasoDoFailsafe({
+            mensagens: effectiveContext.messages,
+            corpo: body,
+            alvosExtras: agentConfig?.handoffKeywords ?? [],
+          });
+          const resumoDoFailsafe = montarResumoDoCaso(
+            [...effectiveContext.messages, { direction: 'outbound', body }],
+            'a IA prometeu humano sem caso aberto (fail-safe do guardrail)',
+          );
           let chain = await runBeforeSend(beforeSendArgs);
           if (
             chain.status === 'vetoed' &&
@@ -4577,8 +4596,20 @@ async function executarTurnoDoAgente(
             // humano sem caso aberto. 1ª vez no turno: erro-de-ensino (o modelo re-tenta —
             // abre o caso OU reformula sem prometer humano). Persistiu (2ª vez): o SISTEMA
             // abre um caso mínimo e libera o envio — nunca deixa a promessa passar sem caso.
+            // #3725: o auto-abre-caso exige pedido explícito do cliente ou promessa
+            // explícita de humano (`podeAbrirCasoNoFailsafe`); sem isso o veto ensina.
             casePromiseVetoCount += 1;
             if (casePromiseVetoCount < 2) {
+              return { ok: false, error: { code: chain.code, message: chain.message } };
+            }
+            // #3725: sem pedido explícito do cliente nem promessa explícita de
+            // humano, o caso NÃO abre — o veto segue ensinando o modelo. A régua
+            // inteira (e o porquê) está em `guardrails/failsafe-do-caso.ts`.
+            if (!podeAbrirCasoNoFailsafe) {
+              runLog.warn(
+                'fail-safe de caso: sem pedido explícito nem promessa explícita — caso NÃO aberto',
+                { vetos: casePromiseVetoCount },
+              );
               return { ok: false, error: { code: chain.code, message: chain.message } };
             }
             const auto = await openCase(
@@ -4590,7 +4621,7 @@ async function executarTurnoDoAgente(
               },
               {
                 title: 'Atendimento que precisa de um humano',
-                summary: body, // a mensagem-promessa que a IA tentou enviar
+                summary: resumoDoFailsafe,
                 blocker:
                   'Aberto automaticamente: a IA prometeu envolver um humano e não abriu o caso (fail-safe do guardrail).',
                 source: 'guardrail_autofallback',

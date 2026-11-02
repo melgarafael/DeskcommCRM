@@ -51,6 +51,7 @@
 
 import { createHash } from "node:crypto";
 
+import { normalizarFraseDoAviso } from "./frase-do-aviso-configurada";
 import type { QuemPodeAssumir } from "./disponibilidade";
 
 /**
@@ -139,7 +140,7 @@ const ABERTURAS: Record<MotivoDoAviso, readonly string[]> = {
   ],
   outro: [
     "Esse caso é melhor resolvido por uma pessoa. Já acionei o time.",
-    "Prefiro não arriscar aqui: passei seu pedido para um atendente humano.",
+    "Deixei isso com uma pessoa da equipe, que continua daqui.",
     "Vou pedir ajuda de alguém da equipe para cuidar disso com você.",
   ],
 };
@@ -194,7 +195,7 @@ const ABERTURAS_ES: Record<MotivoDoAviso, readonly string[]> = {
   ],
   outro: [
     "Esto lo resuelve mejor una persona del equipo. Ya les avisé.",
-    "Prefiero no arriesgarme: pasé tu consulta a una persona del equipo.",
+    "Ya le pedí a alguien del equipo que lo vea contigo.",
     "Voy a pedir ayuda a alguien del equipo para que lo vea contigo.",
   ],
 };
@@ -243,7 +244,7 @@ const ABERTURAS_TR: Record<MotivoDoAviso, readonly string[]> = {
   ],
   outro: [
     "Bu konuyu bir çalışanımız daha iyi çözer. Ekibe haber verdim.",
-    "Burada risk almak istemem: talebinizi ekibimizden bir çalışana ilettim.",
+    "Bunu ekibimizden birinin sizinle birlikte görmesini rica ettim.",
     "Bu konuda sizinle ilgilenmesi için ekipten birinden yardım istiyorum.",
   ],
 };
@@ -326,13 +327,24 @@ function variante<T>(leadId: string, opcoes: readonly T[]): T {
  * uma saudação montada em código ("Oi, {nome}!") em cima de uma conversa já em
  * andamento soa a robô — que é exatamente o que ele é, mas não precisa parecer
  * duas vezes.
+ *
+ * `fraseConfigurada` (#3725) — a frase que o TENANT escreveu para o agente
+ * (`ai_agents.config.aviso_de_handoff`, ver `./frase-do-aviso-configurada`).
+ * Quando ela existe e passa na validação, é ELA que o cliente lê: substitui o
+ * aviso inteiro, fecho incluído. O padrão do produto é curto e humano
+ * justamente porque a frase fixa antiga ("Prefiro não arriscar aqui: passei seu
+ * pedido para um atendente humano.") soava a robô no meio de uma conversa de
+ * venda — quem quiser o próprio tom, escreve na configuração do agente.
  */
 export function textoDoAviso(
   motivo: MotivoDoAviso,
   quem: QuemPodeAssumir | null,
   leadId: string,
   idioma: string | null = null,
+  fraseConfigurada: string | null = null,
 ): string {
+  const configurada = fraseConfigurada === null ? null : normalizarFraseDoAviso(fraseConfigurada);
+  if (configurada !== null) return configurada;
   const textos = textosDoIdioma(idioma);
   const abertura = variante(leadId, textos.aberturas[motivo]);
 
