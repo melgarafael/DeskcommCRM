@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireRole } from "@/lib/auth/require-role";
@@ -16,6 +16,11 @@ import { POST } from "./route";
  * tocou o celular de alguém": a janela. Publicar cedo demais entrega antes da
  * hora combinada; publicar um aviso já expirado entrega o que não vale mais.
  * Nos dois casos o certo é gravar e NÃO empurrar.
+ *
+ * O agendamento é o terceiro caso, e a resposta é outra: nada publica o aviso
+ * DEPOIS nesta fatia (não há cron/worker), então um `publicar_em` no futuro
+ * ficaria gravado para sempre sem tocar em ninguém. Ele é RECUSADO com 400
+ * antes do insert, e a mensagem diz o caminho — publicar agora ou sem data.
  */
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
@@ -28,6 +33,11 @@ vi.mock("@/lib/notifications/web_push", () => ({
 const ORG = "22222222-2222-4222-8222-222222222222";
 const AUTOR = "11111111-1111-4111-8111-111111111111";
 
+/** O relógio congelado da rota: o `new Date()` dela devolve exatamente isto. */
+const AGORA = new Date("2026-11-02T12:00:00.000Z");
+const TOLERANCIA_MS = 60_000;
+const HORA_MS = 60 * 60 * 1000;
+
 function avisoSalvo(extra: Record<string, unknown> = {}) {
   return {
     id: "aviso-1",
@@ -35,9 +45,9 @@ function avisoSalvo(extra: Record<string, unknown> = {}) {
     autor_id: AUTOR,
     titulo: "Manutenção às 22h",
     corpo: "O WhatsApp fica ~20 min fora.",
-    publicar_em: new Date().toISOString(),
+    publicar_em: AGORA.toISOString(),
     expira_em: null,
-    created_at: new Date().toISOString(),
+    created_at: AGORA.toISOString(),
     ...extra,
   };
 }
@@ -61,13 +71,19 @@ function pedido(corpo: unknown) {
 const CORPO_VALIDO = { titulo: "Manutenção às 22h", corpo: "O WhatsApp fica ~20 min fora." };
 
 beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(AGORA);
   vi.clearAllMocks();
   vi.mocked(requireSupportWrite).mockResolvedValue(null);
   vi.mocked(requireRole).mockResolvedValue({
     ok: true,
     org: { orgId: ORG },
-    user: { id: AUTOR },
+    user: { id: AUTOR, idioma: "pt-BR" },
   } as never);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("POST /api/v1/admin/avisos", () => {
@@ -79,7 +95,7 @@ describe("POST /api/v1/admin/avisos", () => {
 
     expect(resposta.status).toBe(201);
     expect(banco.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ organization_id: ORG, autor_id: AUTOR }),
+      expect.objectContaining({ organization_id: ORG, autor_id: AUTOR, publicar_em: null }),
     );
     expect(enviarPushDaOrg).toHaveBeenCalledTimes(1);
     expect(enviarPushDaOrg).toHaveBeenCalledWith(
@@ -88,27 +104,114 @@ describe("POST /api/v1/admin/avisos", () => {
     );
   });
 
-  it("grava mas NÃO publica quando a hora de publicar ainda não chegou", async () => {
+  it("recusa com 400 o aviso marcado para o futuro, sem gravar nem empurrar", async () => {
     const banco = bancoQueSalva(avisoSalvo());
     vi.mocked(createAdminClient).mockReturnValue(banco as never);
 
-    const futuro = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const futuro = new Date(AGORA.getTime() + HORA_MS).toISOString();
     const resposta = await POST(pedido({ ...CORPO_VALIDO, publicar_em: futuro }));
 
-    expect(resposta.status).toBe(201);
-    expect(banco.insert).toHaveBeenCalledTimes(1);
+    const corpo = (await resposta.json()) as ApiError;
+    expect(resposta.status).toBe(400);
+    expect(corpo.error.code).toBe("aviso_agendado_nao_suportado");
+    expect(corpo.error.message).toContain("Publique agora");
+    // O ponto do arremate: o aviso agendado não é gravado nem empurrado.
+    expect(createAdminClient).not.toHaveBeenCalled();
+    expect(banco.insert).not.toHaveBeenCalled();
     expect(enviarPushDaOrg).not.toHaveBeenCalled();
+  });
+
+  it("recusa um segundo além da tolerância de relógio", async () => {
+    const banco = bancoQueSalva(avisoSalvo());
+    vi.mocked(createAdminClient).mockReturnValue(banco as never);
+
+    const alem = new Date(AGORA.getTime() + TOLERANCIA_MS + 1_000).toISOString();
+    const resposta = await POST(pedido({ ...CORPO_VALIDO, publicar_em: alem }));
+
+    expect(resposta.status).toBe(400);
+    expect(banco.insert).not.toHaveBeenCalled();
+    expect(enviarPushDaOrg).not.toHaveBeenCalled();
+  });
+
+  it("absorve o relógio do cliente adiantado alguns segundos e grava como agora", async () => {
+    // "Publicar agora" num navegador com skew manda um instante à frente do
+    // servidor. Isso NÃO é agendamento: entra, e o valor gravado é o relógio
+    // desta rota — a linha não nasce no futuro.
+    const banco = bancoQueSalva(avisoSalvo({ publicar_em: AGORA.toISOString() }));
+    vi.mocked(createAdminClient).mockReturnValue(banco as never);
+
+    const adiantado = new Date(AGORA.getTime() + TOLERANCIA_MS).toISOString();
+    const resposta = await POST(pedido({ ...CORPO_VALIDO, publicar_em: adiantado }));
+
+    expect(resposta.status).toBe(201);
+    expect(banco.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ publicar_em: AGORA.toISOString() }),
+    );
+    expect(enviarPushDaOrg).toHaveBeenCalledTimes(1);
+  });
+
+  it("aceita e publica `publicar_em` no passado", async () => {
+    const banco = bancoQueSalva(avisoSalvo());
+    vi.mocked(createAdminClient).mockReturnValue(banco as never);
+
+    const passado = new Date(AGORA.getTime() - HORA_MS).toISOString();
+    const resposta = await POST(pedido({ ...CORPO_VALIDO, publicar_em: passado }));
+
+    expect(resposta.status).toBe(201);
+    expect(banco.insert).toHaveBeenCalledWith(expect.objectContaining({ publicar_em: passado }));
+    expect(enviarPushDaOrg).toHaveBeenCalledTimes(1);
   });
 
   it("grava mas NÃO publica quando o aviso já expirou", async () => {
     const banco = bancoQueSalva(avisoSalvo());
     vi.mocked(createAdminClient).mockReturnValue(banco as never);
 
-    const passado = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const passado = new Date(AGORA.getTime() - HORA_MS).toISOString();
     const resposta = await POST(pedido({ ...CORPO_VALIDO, expira_em: passado }));
 
     expect(resposta.status).toBe(201);
     expect(enviarPushDaOrg).not.toHaveBeenCalled();
+  });
+
+  it("nenhum aviso aceito nasce com `publicar_em` no futuro", async () => {
+    // A varredura dos caminhos que chegam ao insert: ausente, passado e o
+    // futuro que a tolerância transforma em "agora". Em todos, o valor gravado
+    // é nulo ou <= relógio da rota — o banco não guarda um agendamento órfão.
+    const casos: Array<string | undefined> = [
+      undefined,
+      new Date(AGORA.getTime() - HORA_MS).toISOString(),
+      new Date(AGORA.getTime() + TOLERANCIA_MS).toISOString(),
+    ];
+
+    for (const publicarEm of casos) {
+      const banco = bancoQueSalva(avisoSalvo());
+      vi.mocked(createAdminClient).mockReturnValue(banco as never);
+
+      const resposta = await POST(
+        pedido(publicarEm ? { ...CORPO_VALIDO, publicar_em: publicarEm } : CORPO_VALIDO),
+      );
+
+      expect(resposta.status).toBe(201);
+      const gravado = banco.insert.mock.calls[0]![0] as { publicar_em: string | null };
+      expect(gravado.publicar_em === null || new Date(gravado.publicar_em) <= AGORA).toBe(true);
+    }
+  });
+
+  it("a recusa fala o idioma de quem pediu", async () => {
+    vi.mocked(requireRole).mockResolvedValue({
+      ok: true,
+      org: { orgId: ORG },
+      user: { id: AUTOR, idioma: "es" },
+    } as never);
+    const banco = bancoQueSalva(avisoSalvo());
+    vi.mocked(createAdminClient).mockReturnValue(banco as never);
+
+    const futuro = new Date(AGORA.getTime() + HORA_MS).toISOString();
+    const resposta = await POST(pedido({ ...CORPO_VALIDO, publicar_em: futuro }));
+
+    const corpo = (await resposta.json()) as ApiError;
+    expect(resposta.status).toBe(400);
+    expect(corpo.error.message).toContain("Publica ahora");
   });
 
   it("recusa quem não é admin", async () => {

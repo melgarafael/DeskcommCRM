@@ -18974,6 +18974,11 @@ export const DICIONARIO: Traducoes = {
   "O caminho do logo não é aceito. Envie a imagem de novo.": {
     es: "La ruta del logo no es aceptada. Vuelve a subir la imagen.",
   },
+  // #1418 — o aviso agendado para o futuro é recusado (não há quem o publique
+  // depois nesta fatia). A frase diz o que fazer: publicar agora ou sem data.
+  "O agendamento de aviso ainda não está disponível. Publique agora ou envie sem data de publicação.": {
+    es: "La programación de avisos aún no está disponible. Publica ahora o envía sin fecha de publicación.",
+  },
 };
 
 /**
