@@ -8,4 +8,4 @@ O gatilho “entrar nesta etapa” já existia e já armava o follow-up, mas só
 
 Agora cada etapa mostra, em texto e sem editor, os fluxos de follow-up armados nela — só os ativos e publicados, que são exatamente os que o motor dispara. Etapa sem fluxo diz isso com todas as letras; se a leitura dos fluxos falhar, a tela não afirma nem “tem” nem “não tem”, em vez de tranquilizar por engano.
 
-Nada muda para quem não usa o gatilho por etapa: a lista sai vazia e o comportamento do funil é o mesmo. Configurar o fluxo continua sendo no editor de follow-up. Contribuição de @webtecnica (#PR).
+Nada muda para quem não usa o gatilho por etapa: a lista sai vazia e o comportamento do funil é o mesmo. Configurar o fluxo continua sendo no editor de follow-up. Contribuição de @webtecnica (#3860).
