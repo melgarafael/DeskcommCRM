@@ -206,9 +206,11 @@ async function book(page: Page, f: Fixture) {
 const meet = (page: Page) => page.locator('section[aria-label="Google Meet"]');
 async function detail(page: Page, id: string) {
   await page.goto(`/app/agenda?compromisso=${id}`);
+  // O painel abre em "Carregando…" e só depois traz o título. No primeiro caso da parte, os 5 s
+  // padrão não bastaram para essa primeira leitura.
   await expect(
     page.getByRole("dialog").getByRole("heading", { name: "Consulta Meet", exact: true }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 20_000 });
   await expect(meet(page)).toBeVisible();
 }
 async function action(page: Page, label: string, kind: "retry" | "deliver") {
