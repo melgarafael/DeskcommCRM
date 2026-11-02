@@ -93,6 +93,13 @@ oferece) e apaga o acesso daqui. O token nunca aparece em tela, log ou auditoria
 - O servidor da organização (**Configurações › Servidor MCP externo**) continua funcionando sem
   ação nenhuma, como servidor compartilhado por todos os agentes.
 
+## Evidência
+
+A prova pela tela, numa instalação fresca contra um servidor MCP real com OAuth:
+
+- `evidence/mcp-por-agente-oauth/01-descoberta-oauth-staging-beyond.png`: o cadastro com o resultado da descoberta (authorization server, registro automático, revogação, hosts e escopos)
+- `evidence/mcp-por-agente-oauth/02-acesso-na-ficha-do-contato.png`: o acesso autorizado na ficha do contato, com o botão Revogar
+
 ## Para quem opera a VPS
 
 Nada a fazer: a migration entra pelo `update.sh` de sempre, o cron entra no `scheduler` e o

@@ -132,7 +132,11 @@ export function ServidoresMcpDoAgente({ agentId, toolIds, onChangeToolIds, disab
   const [ocupado, setOcupado] = useState(false);
 
   const recarregar = useCallback(async () => {
-    const r = await listarServidoresMcpDoAgente(agentId);
+    // A action é rede: falha de transporte (ou teste sem request scope) vira
+    // estado da tela, nunca rejeição não tratada.
+    const r = await listarServidoresMcpDoAgente(agentId).catch(
+      () => ({ ok: false, error: "rede" }) as const,
+    );
     if (!r.ok) {
       setErro(t(MENSAGEM_DO_ERRO[r.error]));
       setServidores([]);

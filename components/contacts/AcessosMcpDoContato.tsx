@@ -22,7 +22,7 @@ export function AcessosMcpDoContato({ contactId }: { contactId: string }) {
   const [revogando, setRevogando] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
-    const r = await listarAcessosMcpDoContato(contactId);
+    const r = await listarAcessosMcpDoContato(contactId).catch(() => ({ ok: false as const }));
     if (!r.ok) {
       setVisivel(false);
       return;
