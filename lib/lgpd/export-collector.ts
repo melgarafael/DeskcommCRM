@@ -253,6 +253,40 @@ export interface AppointmentRow {
 }
 
 /**
+ * O "quero encaixe" do titular na lista de espera (`calendar_waitlist`,
+ * migration 0771).
+ *
+ * Entra porque a anonimização a REDIGE: `fn_redigir_espera_do_contato_anonimizado`
+ * zera `observacoes` — o texto livre da recepção ("prefere manhã, falar com a
+ * Ana") — quando o contato vira anonimizado. Sem este bloco, o titular exercia o
+ * Art. 18 II e recebia um arquivo sem a inscrição cujo texto acabou de ser
+ * apagado a pedido dele; a régua de `lgpd-exporta-o-que-redige` reprova por
+ * isso (a redação e o export são as duas pontas da mesma regra).
+ *
+ * `janelas`, `antecedencia_minima_horas`, `urgencia` e `status` a redação
+ * PRESERVA (parâmetro de operação, não identificação) e ainda assim entram: "eu
+ * pedi encaixe para tal semana, com tal urgência, e fui atendido" é informação a
+ * respeito dele. `owner_user_id` e `created_by_user_id` ficam de fora: são a
+ * equipe, não ele.
+ */
+export interface WaitlistRow {
+  id: string;
+  event_type_id: string;
+  status: string;
+  urgencia: number;
+  janelas: Json;
+  antecedencia_minima_horas: number;
+  valido_ate: string | null;
+  oferta_appointment_id: string | null;
+  oferta_expira_em: string | null;
+  ofertada_em: string | null;
+  observacoes: string | null;
+  created_by_kind: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
  * A comanda do titular (migrations 0350-0359).
  *
  * Entra porque a anonimização APAGA: a 0359 pôs `sales` na cascata de redação
@@ -730,6 +764,13 @@ export interface ExportPayload {
   activities: ActivityRow[];
   checkpoints: CheckpointRow[];
   appointments: AppointmentRow[];
+  /**
+   * A inscrição do titular na lista de espera (migration 0771). Ausente quando
+   * vazia — a cópia de quem nunca pediu encaixe não ganha uma chave a mais —,
+   * e nunca ausente de propósito: quem tem inscrição precisa receber a linha
+   * cujo `observacoes` a anonimização apaga.
+   */
+  calendar_waitlist?: WaitlistRow[];
   sales: SaleRow[];
   proposals: ProposalRow[];
   tasks: TaskRow[];
@@ -1649,6 +1690,37 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Lista de espera — contact_id direto em calendar_waitlist (migration 0771).
+  //
+  // ⚠️ A OUTRA PONTA da mesma regra que a agenda abriu: a 0771 ligou o gatilho
+  // `fn_redigir_espera_do_contato_anonimizado`, que zera `observacoes` quando o
+  // contato vira anonimizado — e o export não visitava a tabela. O titular
+  // pedia acesso e o relatório não mencionava a inscrição cujo texto a casa
+  // acabou de apagar a pedido dele. Mesmas colunas que a redação toca
+  // (`observacoes`), mais as que ela preserva e que descrevem o pedido dele.
+  // Só no `data.json`: como `activities`, é linha de operação, não seção do PDF.
+  let calendar_waitlist: WaitlistRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("calendar_waitlist")
+      .select(
+        "id, event_type_id, status, urgencia, janelas, antecedencia_minima_horas, valido_ate, oferta_appointment_id, oferta_expira_em, ofertada_em, observacoes, created_by_kind, created_at, updated_at",
+      )
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      logger.warn("[lgpd-export-worker] calendar_waitlist load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    } else if (data) {
+      conferirTeto("calendar_waitlist", data, 500);
+      calendar_waitlist = data;
+    }
+  }
+
   // Comandas — contact_id direto em sales (migrations 0350-0359).
   //
   // A 0359 acrescentou esta tabela à cascata de redação; este bloco é a outra
@@ -2476,6 +2548,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     activities,
     checkpoints,
     appointments,
+    ...(calendar_waitlist.length > 0 ? { calendar_waitlist } : {}),
     sales,
     proposals,
     tasks,

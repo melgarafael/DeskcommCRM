@@ -52,6 +52,7 @@ import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { agendaSettingsSchema } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { varrerOfertasVencidas } from "@/lib/agenda/encaixe-supabase";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 
 export const dynamic = "force-dynamic";
@@ -68,6 +69,16 @@ async function handle(req: NextRequest): Promise<Response> {
 
   const admin = createAdminClient();
   const agora = new Date();
+
+  // A OFERTA DE ENCAIXE SEM RESPOSTA SOLTA O HORÁRIO PELA MESMA LEI.
+  //
+  // A vaga oferecida à lista de espera é um compromisso `pending`, então ela
+  // cai nesta varredura depois do prazo da organização — mas o prazo da OFERTA
+  // é de duas horas, e esperar 24h para devolvê-la à fila seria horário preso
+  // pelo mesmo motivo que esta rota existe. Roda antes dos laços porque é
+  // independente do que vence nos pendentes, e o que sobrar volta na próxima
+  // rodada.
+  const encaixes = await varrerOfertasVencidas(admin, { agora });
 
   // O prazo é POR ORGANIZAÇÃO, então a varredura não pode usar um corte único
   // de `created_at` no SQL. Busca os pendentes de todas as orgs e aplica o prazo
@@ -86,7 +97,10 @@ async function handle(req: NextRequest): Promise<Response> {
 
   const linhas = data ?? [];
   if (linhas.length === 0) {
-    return ok({ examinados: 0, expirados: 0, mantidos: 0 }, { requestId });
+    return ok(
+      { examinados: 0, expirados: 0, mantidos: 0, encaixes: encaixes.vencidas, reoferecidos: encaixes.reoferecidas },
+      { requestId },
+    );
   }
 
   // Um SELECT por organização presente, não um por linha.
@@ -120,7 +134,10 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   if (expirados.length === 0) {
-    return ok({ examinados: linhas.length, expirados: 0, mantidos }, { requestId });
+    return ok(
+      { examinados: linhas.length, expirados: 0, mantidos, encaixes: encaixes.vencidas, reoferecidos: encaixes.reoferecidas },
+      { requestId },
+    );
   }
 
   // `.eq("status","pending")` de novo: se alguém confirmou entre a leitura e
@@ -161,7 +178,13 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   return ok(
-    { examinados: linhas.length, expirados: quantos, mantidos },
+    {
+      examinados: linhas.length,
+      expirados: quantos,
+      mantidos,
+      encaixes: encaixes.vencidas,
+      reoferecidos: encaixes.reoferecidas,
+    },
     { requestId },
   );
 }

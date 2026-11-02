@@ -39,6 +39,7 @@ import {
   DURACAO_MINIMA_MIN,
   duracaoEscolhidaValida,
 } from "@/lib/agenda/duracao-escolhida";
+import { aposVagaLiberada, fecharEncaixeConfirmado } from "@/lib/agenda/encaixe-supabase";
 import { colide } from "@/lib/agenda/horarios-livres";
 import {
   atividadeDaTransicao,
@@ -774,6 +775,19 @@ export async function alterarAgendamentoHandler(
 
   }
 
+  // A VAGA SEGURADA VIROU COMPROMISSO CONFIRMADO.
+  //
+  // A oferta da lista de espera é um compromisso `pending`: o agente manda o
+  // convite, a pessoa responde SIM, e `crm_confirm_appointment` chega aqui como
+  // qualquer outra confirmação. Sem este fecho, a inscrição ficaria `offered`
+  // para sempre e a fila mostraria alguém esperando um horário que já é dele.
+  if (String(salvo.status ?? "") === "confirmed" && String(atual.status) !== "confirmed") {
+    await fecharEncaixeConfirmado(supabase, {
+      organizationId: ctx.organization_id,
+      appointmentId: input.id,
+    });
+  }
+
   if (!transicao) void audit({action:"agenda.appointment_updated",actorUserId:ctx.actor.type==="user"?ctx.actor.id:null,
     organizationId:ctx.organization_id,resourceType:"calendar_appointment",resourceId:input.id,requestId:ctx.requestId,
     metadata:{revision:salvo.revision,confirmation_next_at:salvo.confirmation_next_at}});
@@ -839,6 +853,21 @@ export async function cancelarAgendamentoHandler(
     resourceId: atual.id as string,
     requestId: ctx.requestId,
     metadata: { reason: input.reason },
+  });
+
+  // A VAGA ABRIU — e é aqui que ela passa adiante.
+  //
+  // Chamado depois de a desmarcação estar gravada, e não numa varredura minutos
+  // depois: o horário que acabou de abrir é o produto inteiro do encaixe, e
+  // quem espera na fila há dias perde a chance se a oferta sair com atraso.
+  //
+  // `aposVagaLiberada` não lança (o efeito principal já está no banco) e
+  // distingue os dois casos: se o compromisso era a vaga SEGURADA de alguém, a
+  // pessoa recusou — a vaga vai para o próximo antes de ela voltar à fila.
+  await aposVagaLiberada(supabase, {
+    organizationId: ctx.organization_id,
+    appointmentId: atual.id as string,
+    agora: new Date(),
   });
 
   return salvo as Record<string, unknown>;

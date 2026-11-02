@@ -82,10 +82,14 @@ function clienteCom(startsAt: string, status: string): SupabaseClient {
     return cadeia;
   };
   return {
-    from: () => ({
+    from: (tabela: string) => ({
       select: () => leitura(),
       update: (mudanca: Record<string, unknown>) => {
-        atualizado = mudanca;
+        // Só o COMPROMISSO é o alvo deste dublê. O handler também atualiza a
+        // lista de espera (fechar o encaixe quando a vaga confirmada vira
+        // `confirmed`); capturar aquilo aqui faria o teste medir a tabela
+        // errada e ler `status: "booked"` como se fosse o compromisso.
+        if (tabela === "calendar_appointments") atualizado = mudanca;
         const cadeia: Record<string, unknown> = {};
         for (const m of ["eq"]) cadeia[m] = () => cadeia;
         cadeia.select = () => cadeia;

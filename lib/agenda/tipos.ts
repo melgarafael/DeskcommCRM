@@ -158,8 +158,21 @@ export const ROTULO_DO_AUTOR: Record<AutorDoAgendamento, string> = {
   sync: "Veio da agenda conectada",
 };
 
-/** Por qual porta o agendamento entrou. */
-export const ORIGENS_DO_AGENDAMENTO = ["ui", "mcp", "google_sync", "public_page"] as const;
+/**
+ * Por qual porta o agendamento entrou.
+ *
+ * `waitlist` é a vaga que o ENCAIXE segurou: quem criou a linha foi o produto,
+ * e não uma pessoa (`ui`), uma ferramenta (`mcp`) ou o espelho do Google
+ * (`google_sync`). Gravar `ui` ali faria a timeline e o aviso do dono dizerem
+ * que alguém marcou, quando ninguém marcou. Migration 0771.
+ */
+export const ORIGENS_DO_AGENDAMENTO = [
+  "ui",
+  "mcp",
+  "google_sync",
+  "public_page",
+  "waitlist",
+] as const;
 export type OrigemDoAgendamento = (typeof ORIGENS_DO_AGENDAMENTO)[number];
 
 /**

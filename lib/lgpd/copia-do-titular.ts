@@ -99,6 +99,8 @@ export const O_QUE_FICA = {
   activities: "o que foi registrado sobre ele e quando",
   checkpoints: "o resumo que a máquina fez da conversa com ele (LGPD art. 20)",
   appointments: "os compromissos dele, com o link da reunião e a anotação que o PDF já imprime",
+  calendar_waitlist:
+    "a inscrição dele na lista de espera de encaixe: o serviço, as janelas que ele pediu, a urgência, a oferta que recebeu e a observação da recepção que a anonimização apaga (seção só do data.json, como `activities`)",
   sales: "as compras dele e por que foram canceladas ou estornadas",
   proposals: "as propostas comerciais enviadas a ele",
   tasks: "o que se combinou fazer para ele",
