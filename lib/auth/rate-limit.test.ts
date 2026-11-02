@@ -131,7 +131,7 @@ describe("sem IP identificável — o balde global que era um DoS", () => {
   });
 });
 
-describe("mfaBloqueadoPorFalhas & registrarFalhaDeMfa (GHSA-vgq7-h88j-vqrq)", () => {
+describe("mfaBloqueadoPorFalhas & registrarFalhaDeMfa", () => {
   beforeEach(() => {
     vi.resetModules();
   });
