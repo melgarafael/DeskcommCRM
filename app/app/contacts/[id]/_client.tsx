@@ -55,7 +55,6 @@ import { ORIGEM_AGENDA_DO_CELULAR, origemDoContato } from "@/lib/leads/origem-do
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
 import { TelefonesDaFicha } from "@/components/contacts/TelefonesDaFicha";
 import { DialButton } from "@/components/voice/DialButton";
-import type { Contact } from "@/lib/types/contacts";
 import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
 
