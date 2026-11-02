@@ -18743,7 +18743,7 @@ export const DICIONARIO: Traducoes = {
   // curta pelo mesmo motivo dos conectivos acima: ele é colado ao valor.
   "Vendido único": { es: "Vendido único" },
   "Recorrência nova (mensal)": { es: "Recurrencia nueva (mensual)" },
-  "/mês": { es: "/mes" },
+  // `/mês` já existe desde o card da fatia 1 (uma chave, um tradutor).
   "negócio com recorrência": { es: "negocio con recurrencia" },
   "negócios com recorrência": { es: "negocios con recurrencia" },
   "Leitura parcial: as parcelas somam o que foi lido no período.": {
