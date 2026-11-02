@@ -378,8 +378,9 @@ while IFS= read -r nome; do
     continue
   fi
 
-  colisao_n="$(grep -E "^[0-9]{14}_${nnnn}_.+\.sql$" <<<"$base_arvore" || true)"
-  colisao_t="$(grep -E "^${ts}_[0-9]{4}_.+\.sql$" <<<"$base_arvore" || true)"
+  # Só conta o que segue no HEAD: arquivo da base que o PR renomeou ou removeu não colide depois do merge.
+  colisao_n="$(grep -E "^[0-9]{14}_${nnnn}_.+\.sql$" <<<"$base_arvore" | grep -Fxf <(printf '%s\n' "$head_arvore") || true)"
+  colisao_t="$(grep -E "^${ts}_[0-9]{4}_.+\.sql$" <<<"$base_arvore" | grep -Fxf <(printf '%s\n' "$head_arvore") || true)"
   if [ -n "$colisao_n" ]; then
     lista="$(tr '\n' ' ' <<<"$colisao_n" | sed 's/ *$//')"
     echo "::error file=$caminho::NNNN=$nnnn já existe em '$BASE': $lista"

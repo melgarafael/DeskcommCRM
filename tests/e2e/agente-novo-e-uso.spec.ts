@@ -100,7 +100,8 @@ test.describe("Criar um agente pela tela", () => {
       const gatilho = page.locator(`#${id}`);
       if ((await gatilho.count()) === 0) continue;
       await gatilho.click();
-      const opcoes = page.getByRole("option");
+      // Só a lista aberta: `<select>` nativo da tela (ex.: quem recebe as passagens) também tem `option`, escondido.
+      const opcoes = page.getByRole("listbox").getByRole("option");
       const quantas = await opcoes.count();
       expect(quantas, `o campo "${id}" abriu sem nenhuma opção para escolher`).toBeGreaterThan(0);
       await opcoes.first().click();
