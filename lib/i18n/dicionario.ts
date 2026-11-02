@@ -18558,6 +18558,12 @@ export const DICIONARIO: Traducoes = {
   "Grupo que não pertence a esta organização.": {
     es: "Grupo que no pertenece a esta organización.",
   },
+  // Blueprint de respostas rápidas (#1995): arquivo só com itens de áudio, que
+  // não entram porque o blueprint não leva o arquivo de mídia.
+  "Este arquivo só tem respostas de áudio, e o blueprint não leva o arquivo de mídia. Nada foi aplicado.":
+    {
+      es: "Este archivo solo tiene respuestas de audio, y el blueprint no lleva el archivo de multimedia. No se aplicó nada.",
+    },
 };
 
 /**

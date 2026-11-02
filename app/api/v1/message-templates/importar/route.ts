@@ -25,10 +25,21 @@
  * recebe é o `requireRole`, que resolve a org ativa do cookie, nunca do corpo;
  * nada no arquivo escolhe o destino.
  *
- * ─── Uma transação, ou nada ─────────────────────────────────────────────────
+ * ─── UMA operação, ou nada ──────────────────────────────────────────────────
  *
- * Um único `insert` com todos os itens: o PostgREST executa a instrução inteira
- * ou nenhuma linha. Import pela metade é pior que import recusado — quem
+ * Conferir e gravar são UMA chamada só, à função
+ * `fn_importar_blueprint_de_respostas_rapidas` (migration 9091): ela toma
+ * `pg_advisory_xact_lock` por ORGANIZAÇÃO, conta as compartilhadas e grava o
+ * lote inteiro na MESMA transação. Antes eram duas requisições ao PostgREST —
+ * `count` e `insert` —, e dois POST simultâneos do mesmo arquivo passavam os
+ * dois pela conferência antes de qualquer escrita aparecer: a organização
+ * terminava com 2× as respostas. Não há índice único em `message_templates`
+ * (título e corpo iguais são legítimos), então o remédio não é constraint.
+ * O segundo POST, agora, espera a trava e recebe o mesmo 409 — declarado, não
+ * um no-op silencioso.
+ *
+ * Um único `insert` continua valendo dentro da função: instrução inteira ou
+ * nenhuma linha. Import pela metade é pior que import recusado — quem
  * reaplicasse depois cairia no 409 do guarda e não teria como terminar a
  * primeira metade.
  *
@@ -38,6 +49,15 @@
  * seria caminho de OUTRA organização no bucket privado (é o mesmo motivo pelo
  * qual o export não a leva). A resposta chega como texto; a imagem se recarrega
  * na tela de destino, com os bytes do destino.
+ *
+ * E por isso o item SEM TEXTO não entra. `body` vazio é legal de propósito na
+ * criação (#2833): a resposta de áudio é uma linha sem texto, e o arquivo entra
+ * por `POST /message-templates/:id/midias`. Mas o blueprint não carrega mídia
+ * nenhuma — importar o item assim criaria uma resposta sem texto e sem arquivo,
+ * que não serve para nada e ainda ocuparia lugar na barra do Inbox. O item fica
+ * de fora e a perda é CONTADA em `sem_texto` (resposta e audit). Arquivo só com
+ * itens de áudio é 422: não há o que aplicar, e um 201 que não aplicou nada
+ * seria mentira.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -64,6 +84,16 @@ export const dynamic = "force-dynamic";
  * porque lá tem PDF).
  */
 const TAMANHO_MAXIMO = 2 * 1024 * 1024;
+
+/**
+ * O que a função do banco devolve. `aplicado: false` é o desfecho PREVISTO de
+ * "a organização já tem compartilhada" — a função não levanta exceção por isso,
+ * e é a rota que escolhe o 409.
+ */
+interface ResultadoDaAplicacao {
+  aplicado: boolean;
+  importadas: number;
+}
 
 /**
  * Cada motivo de recusa tem a sua mensagem: "inválido" não ensina ninguém.
@@ -130,22 +160,48 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
+  // ─── O item sem texto (recurso de áudio) não viaja ─────────────────────────
+  // `corpo` já vem trimado do schema. Filtrar ANTES da função mantém a conta da
+  // perda no lado de quem lê o arquivo, e o `where` da função repete a regra
+  // como cinto: nenhum caminho cria a linha vazia.
+  const comTexto = lido.itens.filter((item) => item.corpo.length > 0);
+  const semTexto = lido.itens.length - comTexto.length;
+
+  if (comTexto.length === 0) {
+    // Nada a aplicar. 201 aqui diria "importado" para uma organização que não
+    // recebeu nada — e a tela mostraria a lista vazia como sucesso.
+    return fail(
+      "validation_failed",
+      t(
+        "Este arquivo só tem respostas de áudio, e o blueprint não leva o arquivo de mídia. Nada foi aplicado.",
+      ),
+      422,
+      { requestId, details: { sem_texto: semTexto } },
+    );
+  }
+
   const supabase = await createClient();
 
-  // O guarda do recorte: organização que já tem resposta compartilhada não
-  // recebe blueprint. `head: true` porque o número é tudo o que interessa.
-  const { count, error: erroContagem } = await supabase
-    .from("message_templates")
-    .select("id", { count: "exact", head: true })
-    .eq("organization_id", authz.org.orgId)
-    .is("owner_user_id", null);
+  // Conferência e gravação numa chamada só (migration 9091): a função trava por
+  // organização e só grava se ela continuar vazia — dois POST simultâneos não
+  // duplicam. Chamada pelo cliente do USUÁRIO: a RLS `message_templates_write`
+  // continua sendo a autoridade sobre quem grava onde.
+  const { data, error: erroDaAplicacao } = await supabase.rpc(
+    "fn_importar_blueprint_de_respostas_rapidas",
+    {
+      p_org: authz.org.orgId,
+      // A ordem é a posição no array (ver `lib/templates/blueprint.ts`): a
+      // fração da origem não significa nada numa organização que não a tem.
+      p_itens: comTexto,
+    },
+  );
 
-  if (erroContagem) {
-    return fail("internal_error", t("Erro ao conferir as respostas rápidas da organização."), 500, {
-      requestId,
-    });
+  if (erroDaAplicacao) {
+    return fail("internal_error", t("Erro ao aplicar o blueprint."), 500, { requestId });
   }
-  if ((count ?? 0) > 0) {
+
+  const resultado = data as Partial<ResultadoDaAplicacao> | null;
+  if (!resultado?.aplicado) {
     return fail(
       "state_conflict",
       t(
@@ -156,26 +212,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  const linhas = lido.itens.map((item, indice) => ({
-    organization_id: authz.org.orgId,
-    // Compartilhada: o arquivo não carrega dono, e não há usuário do destino
-    // com quem as pessoais da origem se pareçam.
-    owner_user_id: null,
-    title: item.titulo,
-    body: item.corpo,
-    shortcut: item.atalho,
-    mostrar_na_barra: item.mostrar_na_barra,
-    // A ORDEM é a posição no arquivo (ver `lib/templates/blueprint.ts`): a
-    // fração da origem não significa nada numa organização que não a tem.
-    ordem: indice,
-    midias: [],
-  }));
-
-  // Um insert só: instrução inteira ou nenhuma linha (ver o cabeçalho).
-  const { error: erroDoInsert } = await supabase.from("message_templates").insert(linhas);
-  if (erroDoInsert) {
-    return fail("internal_error", t("Erro ao aplicar o blueprint."), 500, { requestId });
-  }
+  const importadas = resultado.importadas ?? 0;
 
   await audit({
     action: "template.imported",
@@ -186,19 +223,24 @@ export async function POST(req: NextRequest): Promise<Response> {
     requestId,
     metadata: {
       // Contagem, nunca conteúdo: o audit diz o que a organização recebeu.
-      total: linhas.length,
+      total: importadas,
       // Nada do arquivo trouxe mídia (o export não a leva), mas o número
       // registra que as respostas entraram como texto.
       midias_importadas: 0,
+      // O que ficou de fora POR NÃO TER TEXTO: a perda tem de estar no rastro,
+      // não só no corpo da resposta que a tela talvez não mostre.
+      sem_texto: semTexto,
       teto: TETO_DE_ITENS_DO_BLUEPRINT,
     },
   });
 
   return ok(
     {
-      importadas: linhas.length,
+      importadas,
       // Explícito na resposta: quem importou precisa saber que a imagem não veio.
       midias_importadas: 0,
+      // E que os itens só de áudio ficaram de fora — nada de esconder a perda.
+      sem_texto: semTexto,
     },
     { status: 201, requestId },
   );

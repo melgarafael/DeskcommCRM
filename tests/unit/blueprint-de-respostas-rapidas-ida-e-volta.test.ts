@@ -27,12 +27,15 @@ const h = vi.hoisted(() => ({
   apoio: vi.fn(),
   audit: vi.fn(),
   from: vi.fn(),
+  rpc: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: h.guard }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: h.apoio }));
 vi.mock("@/lib/audit", () => ({ audit: h.audit }));
-vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ from: h.from }) }));
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: async () => ({ from: h.from, rpc: h.rpc }),
+}));
 
 import { GET as exportar } from "@/app/api/v1/message-templates/exportar/route";
 import { POST as importar } from "@/app/api/v1/message-templates/importar/route";
@@ -106,6 +109,34 @@ function banco() {
         return Promise.resolve({ error: null });
       },
     };
+  });
+
+  // A GRAVAÇÃO DO IMPORT agora é uma função no banco (migration 9091):
+  // conferência e insert na mesma transação. O fake faz o mesmo, e é por isso
+  // que ele não expõe o par `select`+`insert` para a rota de import.
+  h.rpc.mockImplementation(async (nome: string, args: { p_org: string; p_itens: Linha[] }) => {
+    if (nome !== "fn_importar_blueprint_de_respostas_rapidas") {
+      throw new Error(`rpc inesperada: ${nome}`);
+    }
+    const ocupada = linhas.some(
+      (linha) => linha.organization_id === args.p_org && linha.owner_user_id === null,
+    );
+    if (ocupada) return { data: { aplicado: false, importadas: 0 }, error: null };
+
+    const novas = args.p_itens.map((item, indice) => ({
+      id: `tpl-${++seq}`,
+      organization_id: args.p_org,
+      owner_user_id: null,
+      title: item.titulo,
+      body: item.corpo,
+      shortcut: item.atalho ?? null,
+      mostrar_na_barra: item.mostrar_na_barra ?? true,
+      ordem: indice,
+      midias: [],
+      updated_at: `2026-10-27T12:00:0${seq}.000Z`,
+    }));
+    linhas.push(...novas);
+    return { data: { aplicado: true, importadas: novas.length }, error: null };
   });
 
   return { linhas };
