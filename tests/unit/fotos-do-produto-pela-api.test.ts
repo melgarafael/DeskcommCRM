@@ -54,6 +54,8 @@ let insercoes: Array<Record<string, unknown>> = [];
 let atualizacoes: Array<Record<string, unknown>> = [];
 /** A linha que a leitura de apoio do PATCH encontra (null = produto de fora). */
 let linhaAtual: { id: string; fotos: string[] | null } | null = null;
+/** Erro que o banco devolve no insert/update (null = grava normalmente). */
+let erroDoBanco: { code: string } | null = null;
 
 /** Cadeia auto-referente do supabase-js: `eq`/`or`/`select` devolvem a si mesmos. */
 function consulta(resolver: () => { data: unknown; error: unknown }) {
@@ -74,6 +76,7 @@ function montarMundo() {
   insercoes = [];
   atualizacoes = [];
   linhaAtual = null;
+  erroDoBanco = null;
 
   // `mockReset` (e não só o `mockImplementation` abaixo): sem zerar a contagem,
   // "não foi chamado" de um teste passa a ler as chamadas do teste anterior.
@@ -98,10 +101,11 @@ function montarMundo() {
     insert: (linha: Record<string, unknown>) => {
       insercoes.push(linha);
       const gravado = { ...linha, id: (linha.id as string) ?? PRODUTO };
-      return consulta(() => ({ data: gravado, error: null }));
+      return consulta(() => (erroDoBanco ? { data: null, error: erroDoBanco } : { data: gravado, error: null }));
     },
     update: (mudanca: Record<string, unknown>) => {
       atualizacoes.push(mudanca);
+      if (erroDoBanco) return consulta(() => ({ data: null, error: erroDoBanco }));
       return consulta(() => ({
         data: linhaAtual
           ? { ...linhaAtual, ...mudanca, id: linhaAtual.id }
@@ -197,6 +201,37 @@ describe("#3587 — fotos por URL na API de produto", () => {
     // O motivo do downloader chega a quem chamou — sem ele, "não deu" não ajuda.
     expect(`${json.error.message} ${(json.error.details?.fotos ?? []).join(" ")}`).toContain("HTTP 404");
     expect(insercoes).toHaveLength(0);
+  });
+
+  it("POST que esbarra em código repetido (409) apaga as fotos que já baixou", async () => {
+    erroDoBanco = { code: "23505" };
+
+    const resposta = await POST(corpo({ ...produtoNovo, fotos: [URL_A, URL_B] }));
+    const json = (await resposta.json()) as { error: { code: string } };
+
+    expect(resposta.status).toBe(409);
+    expect(json.error.code).toBe("conflict");
+    const { produtoId } = vi.mocked(guardarFotosPorUrl).mock.calls[0]![0];
+    const baixadas = [`${ORG}/${produtoId}/foto-1.jpg`, `${ORG}/${produtoId}/foto-2.jpg`];
+    // A linha não existe e os arquivos já subiram: sem a limpeza, ficam órfãos no bucket.
+    expect(apagarDoBucket).toHaveBeenCalledWith(ORG, produtoId, baixadas, expect.any(String));
+  });
+
+  it("PATCH cujo update falha apaga as fotos novas e preserva as antigas", async () => {
+    const antiga = `${ORG}/${PRODUTO}/00000000-0000-4000-8000-000000000001.jpg`;
+    linhaAtual = { id: PRODUTO, fotos: [antiga] };
+    erroDoBanco = { code: "23505" };
+
+    const resposta = await PATCH(pedidoDePatch(PRODUTO, { fotos: [URL_A, URL_B] }), {
+      params: Promise.resolve({ id: PRODUTO }),
+    });
+
+    expect(resposta.status).toBe(409);
+    const novas = [`${ORG}/${PRODUTO}/foto-1.jpg`, `${ORG}/${PRODUTO}/foto-2.jpg`];
+    expect(apagarDoBucket).toHaveBeenCalledTimes(1);
+    expect(apagarDoBucket).toHaveBeenCalledWith(ORG, PRODUTO, novas, expect.any(String));
+    // A linha não mudou: a foto antiga continua sendo a do produto.
+    expect(vi.mocked(apagarDoBucket).mock.calls.flatMap((c) => c[2])).not.toContain(antiga);
   });
 
   it("PATCH troca o conjunto de fotos e apaga os arquivos que saíram", async () => {
