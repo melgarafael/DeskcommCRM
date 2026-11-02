@@ -24,7 +24,8 @@ describe("endpoints para sistemas externos", () => {
   });
 
   it("a página do admin tem porta no menu", () => {
-    const menu = readFileSync(join(process.cwd(), "components/admin/AdminSidebar.tsx"), "utf8");
+    // A lista do menu do admin mora em lib/admin/navegacao.ts desde a v1.98.0.
+    const menu = readFileSync(join(process.cwd(), "lib/admin/navegacao.ts"), "utf8");
     expect(menu).toContain('href: "/admin/endpoints"');
   });
 });
