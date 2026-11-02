@@ -19046,6 +19046,17 @@ export const DICIONARIO: Traducoes = {
   "O caminho para cada tarefa, e onde ir quando algo não sai como esperado.": {
     es: "El camino para cada tarea, y adónde ir cuando algo no sale como se espera.",
   },
+  // #3567, fatia F4 — a versão do artigo. As duas frases levam o número por
+  // `.replace("{versao}", …)`, o mesmo mecanismo da frase de sugestão barrada
+  // (ReplyReviewPanel): a CHAVE continua sendo o português, e o espanhol
+  // repete o marcador na mesma posição.
+  "Vale a partir da versão {versao}": {
+    es: "Vale a partir de la versión {versao}",
+  },
+  "Este caminho é da versão {versao}, e esta instalação está na {instalada}. Atualize antes de segui-lo.":
+    {
+      es: "Este camino es de la versión {versao}, y esta instalación está en la {instalada}. Actualiza antes de seguirlo.",
+    },
   "Para quem instala e mantém": {
     es: "Para quien instala y mantiene",
   },
