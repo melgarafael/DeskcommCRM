@@ -9,8 +9,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const deps = vi.hoisted(() => ({ role: vi.fn(), client: vi.fn(), modulo: vi.fn() }));
+const deps = vi.hoisted(() => ({
+  role: vi.fn(),
+  client: vi.fn(),
+  modulo: vi.fn(),
+  suporte: vi.fn(),
+  audit: vi.fn(),
+}));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: deps.role }));
+vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: deps.suporte }));
+vi.mock("@/lib/audit", () => ({ audit: deps.audit }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: deps.client }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
 vi.mock("@/lib/instalacao/modulos", () => ({ moduloLigado: deps.modulo }));
@@ -77,6 +85,7 @@ const leadAberto = { id: LEAD, status: "open", contact_id: CONTATO };
 beforeEach(() => {
   vi.clearAllMocks();
   deps.modulo.mockResolvedValue(true);
+  deps.suporte.mockResolvedValue(null);
   deps.role.mockResolvedValue({
     ok: true,
     user: { id: "eu", idioma: "pt-BR" },
@@ -85,6 +94,14 @@ beforeEach(() => {
 });
 
 describe("POST .../roteiros/:enrollmentId/negocio", () => {
+  it("acompanhamento em modo leitura: a guarda de efeito recusa antes do RBAC", async () => {
+    deps.suporte.mockResolvedValue(new Response(null, { status: 403 }));
+    const res = await POST(req(), ctx);
+    expect(res.status).toBe(403);
+    expect(deps.role).not.toHaveBeenCalled();
+    expect(deps.client).not.toHaveBeenCalled();
+  });
+
   it("módulo desligado: 404 e o banco nem é tocado", async () => {
     deps.modulo.mockResolvedValue(false);
     const res = await POST(req(), ctx);
@@ -140,6 +157,7 @@ describe("POST .../roteiros/:enrollmentId/negocio", () => {
       data: { lead_id: "44444444-4444-4444-8444-444444444444" },
     });
     expect(inseridos).toHaveLength(0);
+    expect(deps.audit).not.toHaveBeenCalled();
   });
 
   it("grava o vínculo na TRILHA da execução, com chave fixa e só o lead_id", async () => {
@@ -160,6 +178,17 @@ describe("POST .../roteiros/:enrollmentId/negocio", () => {
         idempotency_key: "roteiro_negocio",
       },
     ]);
+    // A autoria de quem escolheu mora no log de auditoria — a trilha não tem autor.
+    expect(deps.audit).toHaveBeenCalledTimes(1);
+    expect(deps.audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "followup_enrollment.negocio_escolhido",
+        actorUserId: "eu",
+        organizationId: "org",
+        resourceId: ENROLLMENT,
+        metadata: { lead_id: LEAD, contact_id: CONTATO },
+      }),
+    );
   });
 
   it("corrida no insert (23505): a resposta é o vínculo do primeiro, não um erro", async () => {

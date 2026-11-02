@@ -22,6 +22,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -37,6 +38,11 @@ const CHAVE_DO_VINCULO = "roteiro_negocio";
 type RouteCtx = { params: Promise<{ id: string; enrollmentId: string }> };
 
 export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  // Acompanhamento administrativo em modo leitura não escolhe o negócio: a
+  // guarda de efeito vem antes de tudo, como nas demais rotas mutantes.
+  const supportDenied = await requireSupportWrite();
+  if (supportDenied) return supportDenied;
+
   const requestId = randomUUID();
   const { id, enrollmentId } = await ctx.params;
   if (!UUID_RX.test(id) || !UUID_RX.test(enrollmentId)) {

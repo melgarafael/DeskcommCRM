@@ -1,6 +1,7 @@
 "use client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
+import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { apiClient } from "@/lib/api/client";
 
 /**
@@ -26,5 +27,8 @@ export function useEscolherNegocioDoRoteiro(contactId: string) {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["contact", contactId, "roteiros"] });
     },
+    // Quem não é gestor vê a escolha na ficha e no painel da conversa, e a rota
+    // é manager+: sem isto, o 403 (ou o 409 de roteiro que acabou) sumia calado.
+    onError: showApiError,
   });
 }

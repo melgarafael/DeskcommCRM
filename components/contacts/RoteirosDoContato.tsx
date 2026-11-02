@@ -87,7 +87,7 @@ function EscolhaDoNegocio({
         disabled={escolhido === "" || escolher.isPending}
         onClick={() => {
           if (escolhido === "") return;
-          void escolher.mutateAsync({ enrollmentId, leadId: escolhido });
+          escolher.mutate({ enrollmentId, leadId: escolhido });
         }}
       >
         {t("Confirmar negócio")}

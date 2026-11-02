@@ -17,7 +17,7 @@ import { RoteirosDoContato } from "./RoteirosDoContato";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  deps.escolher.mockReturnValue({ mutateAsync: vi.fn(async () => ({})), isPending: false });
+  deps.escolher.mockReturnValue({ mutate: vi.fn(), isPending: false });
   deps.hook.mockReturnValue({
     isLoading: false,
     data: [
@@ -101,8 +101,8 @@ describe("RoteirosDoContato — escolha do negócio (#3363)", () => {
   });
 
   it("escolher manda o lead_id do card escolhido", async () => {
-    const mutateAsync = vi.fn(async () => ({}));
-    deps.escolher.mockReturnValue({ mutateAsync, isPending: false });
+    const mutate = vi.fn();
+    deps.escolher.mockReturnValue({ mutate, isPending: false });
     deps.hook.mockReturnValue(
       roteiroCom({
         vinculo: null,
@@ -118,7 +118,7 @@ describe("RoteirosDoContato — escolha do negócio (#3363)", () => {
     await userEvent.selectOptions(screen.getByTestId("roteiro-escolha-do-negocio"), "l2");
     await userEvent.click(screen.getByTestId("roteiro-confirmar-negocio"));
 
-    expect(mutateAsync).toHaveBeenCalledWith({ enrollmentId: "e1", leadId: "l2" });
+    expect(mutate).toHaveBeenCalledWith({ enrollmentId: "e1", leadId: "l2" });
   });
 
   it("um negócio só: não pergunta e diz qual é o destino", () => {
