@@ -8386,6 +8386,14 @@ export const DICIONARIO: Traducoes = {
     es: "Solo una etapa puede ser la de pérdida. Marcar esta desmarca",
   },
   "saiu do quadro.": { es: "salió del tablero." },
+  // #3603 — a linha read-only do funil. «Fluxos de follow-up» é o nome que a
+  // tela de Follow-ups usa; «seguimiento» é como o espanhol do produto a chama.
+  "Fluxos de follow-up armados nesta etapa:": {
+    es: "Flujos de seguimiento armados en esta etapa:",
+  },
+  "Nenhum fluxo de follow-up armado nesta etapa.": {
+    es: "Ningún flujo de seguimiento armado en esta etapa.",
+  },
   "entrou no fim do funil.": { es: "entró al final del embudo." },
   "Etapas deste funil": { es: "Etapas de este embudo" },
   "Estas são as colunas do seu quadro, na ordem em que o cliente avança. Você pode renomear, criar, reordenar e arquivar.": {

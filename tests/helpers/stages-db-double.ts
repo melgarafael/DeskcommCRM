@@ -173,6 +173,13 @@ export interface DbOpts {
   /** Erro do banco numa LEITURA, decidido pela tabela e pelos filtros `eq` dela. */
   readError?: (table: string, filtros: Array<[string, unknown]>) => { code: string; message: string } | null;
   /**
+   * Fluxos de follow-up da org (issue #3603) — é deles que sai a lista read-only
+   * de «quais fluxos disparam ao entrar nesta etapa». O `trigger_config` vai
+   * cru, como no banco: quem decide se ele arma alguma coisa é o código da rota,
+   * não o dublê.
+   */
+  pointers?: Array<Record<string, unknown>>;
+  /**
    * O `max_rows` do PostgREST (1000 em `supabase/config.toml`): corta TODA
    * leitura nesse tamanho, sem erro, por maior que seja o `.limit`/`.range`.
    * Ausente = sem corte, que é o que os testes que não falam de volume querem.
@@ -210,6 +217,14 @@ export interface Registro {
   escritas: Escrita[];
   eventos: string[];
   rpcs: Array<{ nome: string; args: unknown }>;
+  /**
+   * As tabelas LIDAS, na ordem — uma entrada por consulta emitida.
+   *
+   * Existe para medir N+1: a lista de fluxos por etapa (#3603) tem de custar UMA
+   * consulta por requisição, não uma por etapa. Contar `createClient().from`
+   * fora daqui mediria o dublê, não o handler.
+   */
+  leituras: string[];
   /** As tabelas DEPOIS das escritas — é aqui que se confere que os negócios andaram. */
   tabelas: {
     crm_pipelines: Linha[];
@@ -219,6 +234,7 @@ export interface Registro {
     webhook_sources: Linha[];
     automation_rules: Linha[];
     contacts: Linha[];
+    followup_flow_pointers: Linha[];
   };
 }
 
@@ -270,6 +286,7 @@ export function makeDb(opts: DbOpts = {}): Registro {
     escritas: [],
     eventos: [],
     rpcs: [],
+    leituras: [],
     tabelas: {
       crm_pipelines: (opts.pipelines ?? [
         { id: PIPE, name: "Pedidos", organization_id: opts.pipelineOrg ?? ORG_ID },
@@ -280,6 +297,7 @@ export function makeDb(opts: DbOpts = {}): Registro {
       webhook_sources: (opts.webhookSources ?? []) as Linha[],
       automation_rules: (opts.automationRules ?? []) as Linha[],
       contacts: (opts.contacts ?? []) as Linha[],
+      followup_flow_pointers: (opts.pointers ?? []) as Linha[],
     },
   };
   const tables = registro.tabelas as unknown as Record<string, Linha[] | undefined>;
@@ -447,6 +465,7 @@ export function makeDb(opts: DbOpts = {}): Registro {
       // atividades do arquivamento sumir com a suíte verde.
       const erroDeLeitura = opts.readError?.(table, filtros) ?? null;
       if (erroDeLeitura) return { data: null, error: erroDeLeitura, count: null };
+      registro.leituras.push(table);
       if (head) return { data: null, error: null, count: casam().length };
       if (contar) return { data: lidos(), error: null, count: casam().length };
       return { data: lidos(), error: null, count: null };
