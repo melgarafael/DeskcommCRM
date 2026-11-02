@@ -172,6 +172,9 @@ export function FormularioDaDefinicao({
   const erroDoCorpo = erroDoCampo("corpo", problemaDe("corpo"));
   const contadorDoRodape = contador("rodape", rodape.length, LIMITE_RODAPE);
   const erroDoRodape = erroDoCampo("rodape", problemaDe("rodape"));
+  // Fora do JSX de propósito: a cerca de botão mudo (`controle-decorativo`) lê o
+  // atributo até o primeiro `>`, e um `problemas.length > 0` inline a cortaria.
+  const temProblema = problemas.length > 0;
 
   return (
     <div
@@ -507,7 +510,7 @@ export function FormularioDaDefinicao({
           <Button
             type="button"
             size="sm"
-            disabled={!nome.trim() || !corpo.trim() || salvando || problemas.length > 0}
+            disabled={!nome.trim() || !corpo.trim() || salvando || temProblema}
             onClick={() => {
               const components = montarComponents({
                 body: corpo,

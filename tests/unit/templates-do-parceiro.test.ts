@@ -341,7 +341,8 @@ describe("o formulário completo — idioma, cabeçalho e botões", () => {
     expect(fonte, "o corte silencioso voltou").not.toMatch(/slice\(0, LIMITE_/);
     expect(fonte).toMatch(/problemasDoModelo\(/);
     expect(fonte).toMatch(/data-contador/);
-    expect(fonte).toMatch(/problemas\.length > 0/);
+    expect(fonte).toMatch(/const temProblema = problemas\.length > 0;/);
+    expect(fonte).toMatch(/disabled=\{[^}]*\|\| temProblema\}/);
     expect(LIMITE_CORPO).toBe(1024);
     expect(LIMITE_RODAPE).toBe(60);
   });
