@@ -10,7 +10,7 @@
 import { z } from "zod";
 
 import { VISIBILITY_MODES as MODOS_DE_VISIBILIDADE } from "@/lib/auth/types";
-import { PRAZO_MAX_MINUTOS, PRAZO_MIN_MINUTOS } from "@/lib/escalacao/devolucao-automatica";
+import { PRAZO_MAX_MINUTOS, PRAZO_MAX_MINUTOS_DEVOLUCAO, PRAZO_MIN_MINUTOS } from "@/lib/escalacao/devolucao-automatica";
 import { fusoValido } from "@/lib/tempo/fusos";
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -39,13 +39,19 @@ export const routingConfigSchema = z.object({
    * IA-06 de sempre (o bot não reassume até alguém clicar "Devolver"), que é o
    * padrão para não mudar o comportamento de quem já instalou. Quem devolve é
    * o cron `handoff-devolucao`; a regra pura está em
-   * `lib/escalacao/devolucao-automatica.ts`, e a faixa (5 min – 24 h) também.
+   * `lib/escalacao/devolucao-automatica.ts`, e a faixa (5 min – 30 dias)
+   * também.
+   *
+   * SEM teto de 24 h (#3313): o teto antigo recusava, na borda, o prazo que a
+   * operação pediu (dias de cotação com fornecedor). O teto largo vive em
+   * `PRAZO_MAX_MINUTOS_DEVOLUCAO` e NÃO é o mesmo do silêncio do celular nem
+   * o da devolução ao rodízio.
    */
   handoff_return_after_minutes: z
     .number()
     .int()
     .min(PRAZO_MIN_MINUTOS)
-    .max(PRAZO_MAX_MINUTOS)
+    .max(PRAZO_MAX_MINUTOS_DEVOLUCAO)
     .nullable()
     .default(null),
   /**
@@ -144,13 +150,16 @@ export const atendimentoConfigPatchSchema = routingConfigSchema.extend({
   /**
    * Opcional pela MESMA razão de `visibility_mode`: a rota preserva o prazo em
    * vigor quando a chave não vem — um cliente antigo, que só conhece o modo de
-   * roteamento, não pode desligar a devolução automática por omissão.
+   * roteamento, não pode desligar a devolução automática por omissão. O teto é
+   * o LARGO (`PRAZO_MAX_MINUTOS_DEVOLUCAO`, 30 dias), o mesmo do leitor do cron
+   * (#3313): schema e leitor divergindo fariam a tela salvar um prazo que o cron
+   * descartaria em silêncio.
    */
   handoff_return_after_minutes: z
     .number()
     .int()
     .min(PRAZO_MIN_MINUTOS)
-    .max(PRAZO_MAX_MINUTOS)
+    .max(PRAZO_MAX_MINUTOS_DEVOLUCAO)
     .nullable()
     .optional(),
   /** Opcional pela mesma razão: cliente antigo não desliga o ajuste por omissão. */
@@ -297,6 +306,11 @@ export const sectorCreateSchema = z
       .nullable()
       .optional()
       .transform((v) => (v ? v : null)),
+    /**
+     * Horário da FILA (migration 9062). O MESMO shape da jornada do atendente —
+     * um formato por pergunta, não dois. Omitir = `{}` no banco = 24/7.
+     */
+    schedule: availabilityScheduleSchema.optional(),
   })
   .strict();
 export type SectorCreate = z.infer<typeof sectorCreateSchema>;
@@ -310,19 +324,40 @@ export const sectorPatchSchema = z
       .max(SETOR_DESCRICAO_MAX)
       .nullable()
       .transform((v) => (v ? v : null)),
+    /** Horário da fila (migration 9062): casa com `isWithinSchedule`. */
+    schedule: availabilityScheduleSchema,
   })
   .partial()
   .strict()
   .refine((v) => Object.keys(v).length > 0, {
-    message: "Informe ao menos um campo (name ou description).",
+    message: "Informe ao menos um campo (name, description ou schedule).",
   });
 export type SectorPatch = z.infer<typeof sectorPatchSchema>;
 
-/** PUT do setor de um atendente. `null` = tirar do setor ("sem setor"). */
+/**
+ * PUT das filas de um atendente (migration 9062). Lista VAZIA = sem fila.
+ *
+ * Era `{ sector_id }` — um setor por pessoa, que era o que a PK de 0801
+ * permitia. Com N:N, o corpo passa a ser o CONJUNTO: a rota substitui os
+ * vínculos da pessoa pela lista recebida, numa transação só. Lista vazia é
+ * intenção explícita ("esta pessoa não atende fila nenhuma"), não erro.
+ */
 export const sectorAssignmentSchema = z
-  .object({ sector_id: z.string().uuid().nullable() })
+  .object({ sector_ids: z.array(z.string().uuid()).max(50) })
   .strict();
 export type SectorAssignment = z.infer<typeof sectorAssignmentSchema>;
+
+/**
+ * PUT da fila de uma conversa (migration 9062) — o DESTINO.
+ *
+ * `null` = tirar da fila (volta ao comportamento de sempre). A fila tem de ser
+ * da mesma organização: a FK composta do banco recusa o contrário, e a rota
+ * confere antes para devolver 422 em vez de 500.
+ */
+export const conversationSectorSchema = z
+  .object({ sector_id: z.string().uuid().nullable() })
+  .strict();
+export type ConversationSector = z.infer<typeof conversationSectorSchema>;
 
 /**
  * Corpo do PATCH de `/api/v1/settings/routing/channels` (regras POR NÚMERO,

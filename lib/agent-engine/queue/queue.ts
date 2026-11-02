@@ -438,17 +438,43 @@ export async function rescheduleJob(
   db: Queryable,
   jobId: string,
   workerId: string,
-  opts: { delayMs: number; reason: string; acquiredAt?: string },
+  opts: {
+    delayMs: number;
+    reason: string;
+    acquiredAt?: string;
+    /**
+     * Chaves a gravar no `payload` do MESMO job no MESMO update (#3383).
+     *
+     * O adiamento pela janela de resposta deixa o rastro `adiado_por_janela`
+     * aqui — é ele que o drain lê para recusar a carona da rajada num job que
+     * já não deveria estar dormindo, e que o `PUT /api/v1/ai/pacing` usa para
+     * acordar quem está na fila. Junto do reagendamento de propósito: são duas
+     * faces do MESMO fato, e em statements separados existiria um intervalo em
+     * que o job já está adiado e ainda sem rastro (ou ao contrário).
+     *
+     * `||` do jsonb não pisa em chave alheia do payload (`held_run_after` do
+     * session-watchdog, `ultima_inbound_vista` do anti-resposta-dupla).
+     */
+    payloadPatch?: Record<string, unknown>;
+  },
 ): Promise<JobRow | null> {
   const { rows } = await db.query<JobRow>(
     `update job_queue
      set status = 'pending', locked_by = null, locked_at = null,
          run_after = now() + ($3 * interval '1 millisecond'),
          attempts = greatest(attempts - 1, 0),
-         last_error = $4
+         last_error = $4,
+         payload = coalesce(payload, '{}'::jsonb) || coalesce($6::jsonb, '{}'::jsonb)
      where id = $1 and status = 'running' and locked_by = $2 and ($5::timestamptz is null or locked_at=$5)
      returning *`,
-    [jobId, workerId, opts.delayMs, normalizeError(opts.reason), opts.acquiredAt ?? null],
+    [
+      jobId,
+      workerId,
+      opts.delayMs,
+      normalizeError(opts.reason),
+      opts.acquiredAt ?? null,
+      opts.payloadPatch === undefined ? null : JSON.stringify(opts.payloadPatch),
+    ],
   );
   return rows[0] ?? null;
 }

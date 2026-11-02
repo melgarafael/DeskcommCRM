@@ -8,7 +8,9 @@ import {
 } from "@/lib/ai/replies/delivery";
 import { assertMeetingDeliverySupabase } from "@/lib/agenda/meet-delivery";
 import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
+import { AgendaPuladoError, MOTIVO_DO_PULO } from "@/lib/agenda/escolha-no-envio";
 import { assertAgendaEffectSupabase, guardAgendaEffect } from "@/lib/agenda/efeito";
+import { CHAVE_DO_PULO, retratoDoPulo } from "@/lib/inbox/pulo-da-agenda";
 import { mesmaFronteira, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import {
@@ -1404,6 +1406,60 @@ export async function sendMessageHandler(
       if (updated) message = updated as unknown as Message;
       }
     } catch (err) {
+      if (err instanceof AgendaPuladoError) {
+        // O pulo por compromisso chega aqui pelo recheck do corte, DEPOIS do
+        // INSERT: relançar com a linha em `queued` deixava o redrive do
+        // watchdog (`redriveQueued`) mandá-la pelo canal — o que o operador
+        // escolheu NÃO mandar. A linha sai de `queued` como os bloqueios do
+        // watchdog saem (`pre_go_live`, `channel_disabled`); só se ainda estiver
+        // lá, para não rebaixar um `sent`.
+        //
+        // O RETRATO do compromisso vai no mesmo UPDATE (#3848): o código diz que
+        // foi um pulo, não diz QUAL compromisso barrou, e a Inbox mostra o selo
+        // com o motivo e o compromisso. A leitura do título é best-effort — se
+        // falhar, o selo aparece sem ele; o que não pode é a linha continuar em
+        // `queued` por causa de uma leitura acessória.
+        const protecao = err.protection;
+        let titulo: string | null = null;
+        if (protecao.appointment_id) {
+          // `try` porque esta leitura não decide nada: o que decide é o UPDATE
+          // abaixo, e um erro aqui (tabela ausente num clone antigo, dublê sem o
+          // método) não pode deixar a linha em `queued` — seria justamente o
+          // pedido de reenvio que este ramo existe para evitar.
+          try {
+            const { data: compromisso } = await supabase
+              .from("calendar_appointments")
+              .select("title")
+              .eq("organization_id", ctx.organization_id)
+              .eq("id", protecao.appointment_id)
+              .maybeSingle();
+            titulo = (compromisso as { title?: string | null } | null)?.title ?? null;
+          } catch {
+            titulo = null;
+          }
+        }
+        await supabase
+          .from("messages")
+          .update({
+            status: "failed",
+            error_code: MOTIVO_DO_PULO,
+            error_message: "Não enviada: o contato tem horário marcado e o fluxo está configurado para não enviar.",
+            metadata: {
+              ...((message.metadata ?? {}) as Record<string, unknown>),
+              [CHAVE_DO_PULO]: retratoDoPulo({
+                appointment_id: protecao.appointment_id,
+                motivo: protecao.motivo,
+                titulo,
+              }),
+            },
+          })
+          .eq("id", message.id)
+          .eq("organization_id", ctx.organization_id)
+          .eq("status", "queued")
+          .select("id")
+          .maybeSingle();
+        throw err;
+      }
       if (err instanceof StaleServiceBoundaryError || err instanceof AgendaDeferredError || err instanceof ApprovedReplyReceiptPersistenceError) throw err;
       const msg = err instanceof Error ? err.message : adapter.codes.unknownError;
       // `storage_sign_failed` fica literal: é falha do NOSSO Storage, não do

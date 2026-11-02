@@ -76,6 +76,7 @@ import {
   loadPublishedAgentConfigById,
   type EscolhaDoNumero,
   type PublishedAgentConfig,
+  type RastroDoPublico,
 } from './agent-config';
 import { classifyIntent, type ClassifierContextMessage, type IntentVerdict } from './intent-classifier';
 import { corpoDaMensagem, type CorpoDaMensagemRow } from '../edge/crm/get-lead-context';
@@ -119,6 +120,13 @@ export interface TurnAgentResolution {
    * issue, em que o genérico assumia calado.
    */
   silencioPeloPublico?: boolean;
+  /**
+   * O RASTRO da decisão do público neste turno (#3722): a fila de candidatos do
+   * número, a posição de cada um e a regra que o liberou ou barrou. Só existe
+   * quando alguém declarou público — é o que permite responder "por que o
+   * agente de vendas não respondeu este cliente?" sem abrir o banco.
+   */
+  rastroDoPublico?: RastroDoPublico;
 }
 
 export interface ResolveTurnAgentDeps {
@@ -256,6 +264,37 @@ export async function resolveTurnAgent(
   /** O agente do número para ESTE contato, com o motivo (público incluído). */
   const agenteDoNumero = (): Promise<EscolhaDoNumero> =>
     _escolherDoNumero(db, input.tenantId, input.channelSessionId, input.leadId);
+  /**
+   * O rastro do público (#3722), registrado UMA vez por turno e devolvido na
+   * resolução.
+   *
+   * O log leva a FILA com a decisão de cada candidato — não uma frase solta:
+   * "o vendedor barrou por `exclude_tags: cliente ativo`, o suporte liberou".
+   * Leva só o item DECLARADO na config (nunca a lista de etiquetas do contato:
+   * `fields` do logger não carrega dado do lead) e nada quando nenhum agente do
+   * número declarou público — quem não usa o recurso não paga uma linha por
+   * turno.
+   */
+  const rastroDoPublico = (escolha: EscolhaDoNumero): Pick<TurnAgentResolution, 'rastroDoPublico'> => {
+    const rastro = escolha.rastro;
+    if (rastro === undefined) return {};
+    deps.log.info('público do agente: quem foi considerado no número (#3722)', {
+      tenantId: input.tenantId,
+      conversationId: input.conversationId,
+      contactId: input.leadId,
+      escolhido: rastro.escolhidoAgentId,
+      contatoAvaliado: rastro.contatoAvaliado,
+      candidatos: rastro.candidatos.map((c) => ({
+        agente: c.agentName,
+        posicao: c.posicao,
+        pausado: c.pausado,
+        sem_publico: c.semPublico,
+        regra: c.decisao?.regra ?? 'nao_avaliado',
+        valor: c.decisao?.valor ?? null,
+      })),
+    });
+    return { rastroDoPublico: rastro };
+  };
   const _classifyIntent = deps.classifyIntent ?? classifyIntent;
   const _consultarJev = deps.consultarJev ?? consultarJevNoRoteador;
 
@@ -319,6 +358,7 @@ export async function resolveTurnAgent(
         confidence: null,
         outcome: 'no_router',
         ...(escolha.motivo === 'publico_barrou' ? { silencioPeloPublico: true } : {}),
+        ...rastroDoPublico(escolha),
       };
     }
 
@@ -340,7 +380,15 @@ export async function resolveTurnAgent(
             outcome,
             contactId: input.leadId,
           });
-          return { config: null, routerId: router.id, intentName: null, confidence, outcome, silencioPeloPublico: true };
+          return {
+            config: null,
+            routerId: router.id,
+            intentName: null,
+            confidence,
+            outcome,
+            silencioPeloPublico: true,
+            ...rastroDoPublico(escolha),
+          };
         }
         if (escolha.config === null) {
           deps.log.warn('resolve-turn-agent: router sem fallback e sessão sem agente publicado — turno cai no genérico', {
@@ -348,7 +396,14 @@ export async function resolveTurnAgent(
             outcome,
           });
         }
-        return { config: escolha.config, routerId: router.id, intentName: null, confidence, outcome };
+        return {
+          config: escolha.config,
+          routerId: router.id,
+          intentName: null,
+          confidence,
+          outcome,
+          ...rastroDoPublico(escolha),
+        };
       }
       const config = await _loadAgentById(db, input.tenantId, router.fallbackAgentId);
       if (config === null) {

@@ -7,6 +7,7 @@ import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { createClient } from "@/lib/supabase/server";
 import { resetPasswordSchema, type ResetPasswordInput } from "@/lib/auth/schemas";
 import { audit } from "@/lib/audit";
+import { mfaBloqueadoPorFalhas, registrarFalhaDeMfa } from "@/lib/auth/rate-limit";
 
 export type UpdatePasswordResult = {
   ok: false;
@@ -16,7 +17,8 @@ export type UpdatePasswordResult = {
     | "same_password"
     | "update_failed"
     | "mfa_required"
-    | "mfa_invalid";
+    | "mfa_invalid"
+    | "mfa_locked";
   details?: Record<string, unknown>;
 };
 
@@ -54,6 +56,8 @@ export async function updatePassword(
   const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
   if (aal?.currentLevel === "aal1" && aal?.nextLevel === "aal2") {
     if (!parsed.data.mfa_code) return { ok: false, error: "mfa_required" };
+    // Mesmo balde por usuário do verifyMfa: o código conferido aqui é o mesmo.
+    if (await mfaBloqueadoPorFalhas(user.id)) return { ok: false, error: "mfa_locked" };
     const { data: factors } = await supabase.auth.mfa.listFactors();
     const totp = factors?.totp?.[0];
     if (!totp) return { ok: false, error: "update_failed" };
@@ -66,7 +70,10 @@ export async function updatePassword(
       challengeId: challenge.id,
       code: parsed.data.mfa_code,
     });
-    if (verifyErr) return { ok: false, error: "mfa_invalid" };
+    if (verifyErr) {
+      await registrarFalhaDeMfa(user.id);
+      return { ok: false, error: "mfa_invalid" };
+    }
   }
 
   const { error } = await supabase.auth.updateUser({ password: parsed.data.password });

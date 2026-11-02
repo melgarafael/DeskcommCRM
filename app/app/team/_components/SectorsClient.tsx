@@ -10,7 +10,7 @@ import {
   useUpdateSector,
   type Sector,
 } from "@/hooks/team/useSectors";
-import { SETOR_DESCRICAO_MAX, SETOR_NOME_MAX } from "@/lib/schemas/routing";
+import { SETOR_DESCRICAO_MAX, SETOR_NOME_MAX, type AvailabilitySchedule } from "@/lib/schemas/routing";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,7 +35,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { PencilSimple, Plus, Trash } from "@/lib/ui/icons";
+import { Clock, PencilSimple, Plus, Trash } from "@/lib/ui/icons";
+import { HorarioDoSetorDialog } from "@/app/app/team/_components/HorarioDoSetor";
+import { resumoDaJornada } from "@/lib/agenda/editor-de-jornada";
 
 /**
  * Cadastro de setores de atendimento (migration 0801).
@@ -118,6 +120,7 @@ export function SectorsClient({ canManage }: { canManage: boolean }) {
   const remove = useDeleteSector();
   const [editing, setEditing] = useState<Sector | null>(null);
   const [deleting, setDeleting] = useState<Sector | null>(null);
+  const [horario, setHorario] = useState<Sector | null>(null);
 
   const list = sectors.data?.data ?? [];
 
@@ -179,9 +182,28 @@ export function SectorsClient({ canManage }: { canManage: boolean }) {
                   {s.description ? (
                     <p className="text-xs text-muted-foreground wrap-anywhere">{s.description}</p>
                   ) : null}
+                  {/*
+                    O horário do setor, na linha do setor. Sem esta linha, a única
+                    forma de saber que uma fila atende só até as 18h seria abrir
+                    o diálogo de cada uma — e "por que ninguém recebeu depois das
+                    18h?" voltaria a ser pergunta sem resposta na tela.
+                  */}
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {s.schedule?.windows?.length
+                      ? resumoDaJornada(s.schedule.windows, t).join(" · ")
+                      : t("24 horas, todos os dias")}
+                  </p>
                 </div>
                 {canManage ? (
                   <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`${t("Horário do setor")} ${s.name}`}
+                      onClick={() => setHorario(s)}
+                    >
+                      <Clock size={16} />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -224,6 +246,23 @@ export function SectorsClient({ canManage }: { canManage: boolean }) {
             <DialogFooter />
           </DialogContent>
         </Dialog>
+      ) : null}
+
+      {horario ? (
+        <HorarioDoSetorDialog
+          setor={horario}
+          open
+          onOpenChange={(o) => !o && setHorario(null)}
+          isPending={update.isPending}
+          onSave={async (schedule: AvailabilitySchedule) => {
+            const salvo = await update.mutateAsync({ id: horario.id, patch: { schedule } });
+            // NÃO fecha aqui: o resumo do que ficou gravado só faz sentido se a
+            // pessoa puder lê-lo ao lado do formulário. Quem fecha é quem decide
+            // que terminou ("Fechar") — o resto é o diálogo se fechando sozinho
+            // em cima da única prova que o operador tem.
+            return (salvo as { data?: Sector }).data?.schedule ?? null;
+          }}
+        />
       ) : null}
 
       <AlertDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)}>

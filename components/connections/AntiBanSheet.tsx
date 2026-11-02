@@ -310,7 +310,7 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
             </div>
             <p className="text-xs text-muted-foreground">
               {t(
-                "Quando o cliente escreve, o agente responde nesta janela. Em branco, segue a janela de disparo. Use 0 e 24 para responder a qualquer hora — o teto diário e o intervalo entre envios continuam valendo.",
+                "Quando o cliente escreve, o agente responde nesta janela. Em branco, segue a janela de disparo. Use 0 e 24 para responder a qualquer hora — o intervalo entre envios continua valendo. A resposta não conta no teto diário.",
               )}
             </p>
           </fieldset>
@@ -528,7 +528,7 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
             />
             <p className="text-xs text-muted-foreground">
               {t(
-                "Máximo de mensagens que este número envia por dia. Números novos também respeitam o aquecimento automático abaixo, o que for menor.",
+                "Máximo de mensagens que este número inicia por dia: primeira mensagem, follow-up e campanha. A resposta a quem escreveu não conta. Números novos também respeitam o aquecimento automático abaixo, o que for menor.",
               )}
             </p>
           </fieldset>

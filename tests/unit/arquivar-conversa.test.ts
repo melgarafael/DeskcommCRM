@@ -260,7 +260,10 @@ describe("PATCH /conversations/[id] — arquivar (#923)", () => {
     const res = await POST(
       new NextRequest(`http://localhost/api/v1/conversations/${CONV_ID}/close`, {
         method: "POST",
-        body: JSON.stringify({ expected_revision: 3 }),
+        // #3323: a rota confere a revisão LIDA antes de escrever (revisão diferente da lida
+        // sai 409 sem chegar à RPC). Para exercitar o PT409 da RPC — alguém mexeu entre a
+        // leitura e o UPDATE —, o cliente manda a revisão que a leitura devolveu.
+        body: JSON.stringify({ expected_revision: CONV_ROW.service_revision }),
         headers: { "content-type": "application/json" },
       }),
       params,
@@ -269,7 +272,7 @@ describe("PATCH /conversations/[id] — arquivar (#923)", () => {
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error: { code: string } };
     expect(body.error.code).toBe("conflict");
-    expect(rpcDoStatus(state)?.args).toMatchObject({ p_status: "closed", p_expected: 3 });
+    expect(rpcDoStatus(state)?.args).toMatchObject({ p_status: "closed", p_expected: CONV_ROW.service_revision });
     expect(acoesAuditadas()).not.toContain("conversation.closed");
   });
 
