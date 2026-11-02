@@ -7641,6 +7641,36 @@ export const DICIONARIO: Traducoes = {
   "A plataforma revisa antes de aprovar — o modelo nasce pendente e some da lista de envio até ela decidir.": {
     es: "La plataforma revisa la plantilla antes de aprobarla. Hasta que decida, queda como pendiente y no aparece en la lista de envío.",
   },
+  // ─── Limites do modelo, ditos ANTES do envio (#3635) ───────────────────────
+  // A recusa da Meta chega horas depois e não diz qual campo estourou; estas
+  // frases existem para o operador saber ONDE corrigir. O `{atual}`/`{limite}`
+  // entram por `replace` (mesmo padrão de `t("Dia {n}")`), e os números são os
+  // de `lib/channels/limites-do-modelo.ts`.
+  "O corpo do modelo tem {atual} caracteres e o limite da Meta é {limite}.": {
+    es: "El cuerpo de la plantilla tiene {atual} caracteres y el límite de Meta es {limite}.",
+  },
+  "O cabeçalho de texto tem {atual} caracteres e o limite da Meta é {limite}.": {
+    es: "El encabezado de texto tiene {atual} caracteres y el límite de Meta es {limite}.",
+  },
+  "A imagem do cabeçalho passa do limite de 5 MB da Meta.": {
+    es: "La imagen del encabezado supera el límite de 5 MB de Meta.",
+  },
+  "O rodapé tem {atual} caracteres e o limite da Meta é {limite}.": {
+    es: "El pie de página tiene {atual} caracteres y el límite de Meta es {limite}.",
+  },
+  "O texto do botão {botao} tem {atual} caracteres e o limite da Meta é {limite}.": {
+    es: "El texto del botón {botao} tiene {atual} caracteres y el límite de Meta es {limite}.",
+  },
+  "O endereço do botão {botao} tem {atual} caracteres e o limite da Meta é {limite}.": {
+    es: "La dirección del botón {botao} tiene {atual} caracteres y el límite de Meta es {limite}.",
+  },
+  "O modelo tem {atual} botões e o limite da Meta é {limite}.": {
+    es: "La plantilla tiene {atual} botones y el límite de Meta es {limite}.",
+  },
+  "A variável {variavel} do corpo está sem exemplo. A revisão da Meta exige um valor de amostra para cada variável.":
+    {
+      es: "La variable {variavel} del cuerpo está sin ejemplo. La revisión de Meta exige un valor de muestra para cada variable.",
+    },
   "Nenhum modelo espelhado ainda. Clique em": { es: "Aún no hay plantillas sincronizadas. Haz clic en" },
   "para trazer os que já existem na plataforma.": {
     es: "para traer las que ya existen en la plataforma.",
