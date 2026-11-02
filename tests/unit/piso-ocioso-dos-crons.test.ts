@@ -16,7 +16,7 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { esquecerRetrato, semearRetrato } from "@/lib/cron/piso-ocioso";
+import { esquecerRetrato, RECURSOS_DO_CRON, type RecursoDoCron, semearRetrato } from "@/lib/cron/piso-ocioso";
 
 const h = vi.hoisted(() => ({
   reqs: [] as string[],
@@ -131,20 +131,10 @@ async function chamar(rota: string): Promise<{ status: number; body: { data?: { 
   return { status: res.status, body: (await res.json()) as { data?: { pulado?: string } } };
 }
 
-const TODOS_DESLIGADOS = {
-  prospeccao: false,
-  campanhas: false,
-  historico: false,
-  agenda_google: false,
-  agenda_google_push: false,
-};
-const TODOS_LIGADOS = {
-  prospeccao: true,
-  campanhas: true,
-  historico: true,
-  agenda_google: true,
-  agenda_google_push: true,
-};
+const todos = (valor: boolean) =>
+  Object.fromEntries(RECURSOS_DO_CRON.map((r) => [r, valor])) as Record<RecursoDoCron, boolean>;
+const TODOS_DESLIGADOS = todos(false);
+const TODOS_LIGADOS = todos(true);
 
 beforeEach(() => {
   h.reqs = [];
