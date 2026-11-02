@@ -13,6 +13,7 @@
  * só esta tela escreve (conexão da Meta, regras da Meta, endereço de captura).
  */
 import { type Contexto, exigir, ha, semErro } from "../semear-demonstracao";
+import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
 
 const contato = (n: number) => `c7a50000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const negocio = (n: number) => `c7a51000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -58,7 +59,7 @@ export async function semear(c: Contexto) {
     "etapas",
   ) as Array<{ id: string; name: string; is_won: boolean }>;
   const ganho = etapas.find((e) => e.is_won)?.id;
-  const agendada = etapas.find((e) => e.name === "Consulta agendada")?.id;
+  const agendada = etapas.find((e) => e.name === demo("Consulta agendada"))?.id;
   if (!ganho || !agendada) throw new Error("funil Pacientes sem etapa de ganho ou sem \"Consulta agendada\"");
 
   // ---------- contatos e negócios ----------

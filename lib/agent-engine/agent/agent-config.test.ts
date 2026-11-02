@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type pg from 'pg';
 
-import { loadPublishedAgentConfig, loadPublishedAgentConfigById } from './agent-config';
+import { escolherAgenteDoNumero, loadPublishedAgentConfig, loadPublishedAgentConfigById } from './agent-config';
 
 const baseRow = {
   agent_id: 'a1', version_id: 'v1', agent_name: 'Vendedor', system_prompt: 'p',
@@ -113,5 +113,151 @@ describe('loadPublishedAgentConfigById', () => {
     expect(cfg?.activeKbVersionId).toBe('kb-1');
     expect(cfg?.ragTopK).toBe(7);
     expect(cfg?.ragSimilarityThreshold).toBe(0.8);
+  });
+});
+
+/**
+ * PÚBLICO DO AGENTE NA SELEÇÃO (#3722) — o teste que fica VERMELHO sem o
+ * conserto.
+ *
+ * O defeito medido pelo autor da issue: dois agentes publicados no MESMO
+ * número, e a seleção pegava `limit 1` na ordem de prioridade — o segundo
+ * nunca era escolhido, então não havia como dar o cliente com contrato ao
+ * agente de suporte e o prospect ao de vendas.
+ *
+ * Aqui a seleção é exercitada com o pool fingido devolvendo as DUAS linhas na
+ * ordem que o SQL devolveria. Sem a escolha por público, o primeiro (vendas)
+ * vence sempre e os casos "o cliente com contrato vai para o suporte" e
+ * "ninguém elegível ⇒ silêncio" reprovam.
+ */
+function agentRow(id: string, trigger: unknown, extra: Record<string, unknown> = {}) {
+  return {
+    ...baseRow,
+    agent_id: id,
+    version_id: `v-${id}`,
+    agent_name: id,
+    trigger_config: trigger,
+    ...extra,
+  };
+}
+
+const NUMERO = 'cs1';
+const CONTATO = 'contato-1';
+
+/** Pool que responde à seleção e à leitura dos fatos do contato. */
+function poolDaSelecao(
+  candidatos: Record<string, unknown>[],
+  fatos: { tags?: string[]; funis?: string[] } | null = { tags: [], funis: [] },
+): pg.Pool {
+  return {
+    query: vi.fn(async (sql: string) => {
+      if (/from contacts c/.test(sql)) {
+        return { rows: fatos === null ? [] : [{ tags: fatos.tags ?? [], funis: fatos.funis ?? [] }] };
+      }
+      return { rows: candidatos };
+    }),
+  } as unknown as pg.Pool;
+}
+
+const VENDAS = agentRow('vendas', {
+  filters: { exclude_tags: ['cliente ativo'] },
+  // prioridade maior: é o primeiro da fila de sempre
+}, { priority: 10, created_at: '2026-01-01T00:00:00Z' });
+
+const SUPORTE = agentRow('suporte', {
+  filters: { include_tags: ['cliente ativo'] },
+}, { priority: 5, created_at: '2026-02-01T00:00:00Z' });
+
+describe('público do agente — quem atende no mesmo número (#3722)', () => {
+  it('cliente com contrato NÃO é atendido pelo agente de vendas: o suporte assume', async () => {
+    const pool = poolDaSelecao([VENDAS, SUPORTE], { tags: ['Cliente Ativo'], funis: [] });
+    const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+    expect(escolha.config?.agentId).toBe('suporte');
+    expect(escolha.motivo).toBe('publico_liberou');
+  });
+
+  it('prospect (sem a etiqueta) é atendido pelo agente de vendas', async () => {
+    const pool = poolDaSelecao([VENDAS, SUPORTE], { tags: ['prospect'], funis: [] });
+    const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+    expect(escolha.config?.agentId).toBe('vendas');
+    expect(escolha.motivo).toBe('publico_liberou');
+  });
+
+  it('ninguém elegível ⇒ config null e motivo `publico_barrou` (o genérico não assume)', async () => {
+    const pool = poolDaSelecao(
+      [
+        agentRow('so-clientes', { filters: { include_tags: ['cliente ativo'] } }),
+        agentRow('so-prospects', { filters: { exclude_tags: ['prospect'] } }),
+      ],
+      { tags: ['prospect'], funis: [] },
+    );
+    const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+    expect(escolha).toEqual({ config: null, motivo: 'publico_barrou' });
+  });
+
+  it('precedência com critérios sobrepostos: vence o PRIMEIRO da ordem de sempre', async () => {
+    // Os dois aceitam o cliente; a ordem (priority desc) decide — não existe
+    // pontuação de especificidade no meio.
+    const pool = poolDaSelecao(
+      [
+        agentRow('primeiro', {
+          filters: { include_tags: ['cliente ativo'] },
+        }, { priority: 10, created_at: '2026-01-01T00:00:00Z' }),
+        agentRow('segundo', {
+          filters: { include_tags: ['cliente ativo'], include_pipeline_ids: ['p1'] },
+        }, { priority: 5, created_at: '2026-02-01T00:00:00Z' }),
+      ],
+      { tags: ['cliente ativo'], funis: ['p1'] },
+    );
+    const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+    expect(escolha.config?.agentId).toBe('primeiro');
+  });
+
+  it('quem não configurou público não paga a leitura do contato', async () => {
+    const pool = poolDaSelecao([agentRow('unico', { filters: { keyword_regex: 'oi' } })]);
+    const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+    expect(escolha.motivo).toBe('primeiro_da_fila');
+    const sqls = (pool.query as unknown as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c) => c[0] as string,
+    );
+    expect(sqls.some((s) => /from contacts c/.test(s))).toBe(false);
+  });
+
+  it('pausado continua por último e um pausado de prioridade alta não sequestra o número', async () => {
+    const pool = poolDaSelecao(
+      [
+        agentRow('no-ar', { filters: {} }, { priority: 0, paused_at: null }),
+        agentRow('pausado', { filters: {} }, { priority: 99, paused_at: '2026-10-01T00:00:00Z' }),
+      ],
+      { tags: [], funis: [] },
+    );
+    const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+    expect(escolha.config?.agentId).toBe('no-ar');
+  });
+
+  it('sem candidato nenhum o motivo é `sem_agente` (comportamento de sempre)', async () => {
+    const escolha = await escolherAgenteDoNumero(poolDaSelecao([]), 'org1', NUMERO, CONTATO);
+    expect(escolha).toEqual({ config: null, motivo: 'sem_agente' });
+  });
+
+  it('público configurado e contato ausente: a régua não é aplicada e o motivo diz isso', async () => {
+    const escolha = await escolherAgenteDoNumero(poolDaSelecao([VENDAS]), 'org1', NUMERO, null);
+    expect(escolha).toEqual({ config: expect.objectContaining({ agentId: 'vendas' }), motivo: 'sem_contato' });
+  });
+
+  it('erro ao ler os dados do contato SOBE (a fila re-tenta o job)', async () => {
+    const pool = {
+      query: vi.fn(async (sql: string) => {
+        if (/from contacts c/.test(sql)) throw new Error('timeout');
+        return { rows: [VENDAS, SUPORTE] };
+      }),
+    } as unknown as pg.Pool;
+    await expect(escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO)).rejects.toThrow('timeout');
+  });
+
+  it('loadPublishedAgentConfig continua devolvendo o mesmo agente que a escolha', async () => {
+    const pool = poolDaSelecao([VENDAS, SUPORTE], { tags: ['cliente ativo'], funis: [] });
+    const cfg = await loadPublishedAgentConfig(pool, 'org1', NUMERO, CONTATO);
+    expect(cfg?.agentId).toBe('suporte');
   });
 });

@@ -319,6 +319,15 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     foraDoMenu: "Não cria porta no menu do CRM: ele libera um painel em",
     painelEm: "/app/ai/credentials",
   },
+  {
+    modulo: "setores",
+    id: "modulo-setores",
+    rotulo: "Setores de atendimento",
+    descricao:
+      "Ligado, cada empresa ganha na Equipe a aba Setores, para agrupar os atendentes por área, e a aba Atendimento passa a mostrar e filtrar o setor de cada um. O setor não muda quem recebe as conversas. Desligado, a aba e a coluna somem; os setores já cadastrados ficam guardados.",
+    foraDoMenu: "Não cria porta no menu do CRM: ele libera uma aba em",
+    painelEm: "/app/team",
+  },
 ];
 
 /**

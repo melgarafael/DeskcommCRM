@@ -30,9 +30,11 @@ import {
   exportarOpcoesCsv,
   importarOpcoesCsv,
 } from "@/lib/leads/campos-pesquisaveis";
+import { atalhosDoFunil, motivoDaRecusaDoModelo, type AtalhoDoCard } from "@/lib/leads/atalhos-do-card";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
 import { CATEGORIAS_DE_PERDA } from "@/lib/schemas/leads";
 import { rotuloDoTipo } from "@/lib/schemas/rotulos-do-campo";
+import { EditorDeAtalhos } from "./_atalhos-do-card";
 import { useMoedaDaOrgAtiva } from "@/hooks/auth/AuthProvider";
 import { MOEDA_PADRAO } from "@/lib/money";
 import {
@@ -751,6 +753,16 @@ function PipelineEditor({
   // enquanto a pessoa cola; "Importar" o transforma em opções e o limpa.
   const [csvDeOpcoes, setCsvDeOpcoes] = useState<Record<string, string>>({});
   const [fields, setFields] = useState<CustomFieldDef[]>(camposDoFunil(pipeline.settings));
+  /**
+   * OS ATALHOS DO CARD (#3487) — os botões que abrem outro sistema com o dado
+   * do cliente. O estado nasce do que está GRAVADO (não de uma lista vazia):
+   * quem abre a tela para trocar um rótulo não pode apagar os outros cinco sem
+   * perceber. Item cujo modelo é inválido volta para cá de propósito
+   * (`atalhosDoFunil` não julga o esquema) — é assim que ele aparece em vermelho
+   * e pode ser consertado.
+   */
+  const atalhosIniciais = atalhosDoFunil(pipeline.settings);
+  const [atalhos, setAtalhos] = useState<AtalhoDoCard[]>(atalhosIniciais);
   const [isPending, startTransition] = useTransition();
 
   function handleSave() {
@@ -836,6 +848,24 @@ function PipelineEditor({
       return;
     }
 
+    // OS ATALHOS DO CARD (#3487). A régua é a MESMA da gravação
+    // (`modeloAceito`, via `motivoDaRecusaDoModelo`) e é aplicada aqui por dois
+    // motivos: a linha já mostra o motivo enquanto se digita (no editor), e o
+    // `javascript:` não pode nem sair do formulário — o schema recusaria depois,
+    // mas com uma mensagem que não nomeia o campo.
+    const semNome = atalhos.filter((a) => a.rotulo.trim() === "");
+    if (semNome.length > 0) {
+      toast.error(t("Dê um nome a cada atalho do card antes de salvar."));
+      return;
+    }
+    const comModeloRuim = atalhos.filter((a) => motivoDaRecusaDoModelo(a.url) !== null);
+    if (comModeloRuim.length > 0) {
+      toast.error(
+        t("Corrija o endereço dos atalhos do card: só tel:, http:// e https:// são aceitos."),
+      );
+      return;
+    }
+
     const patch: PipelineConfigPatch = {
       vocabulary: { lead, deal, won, lost },
       fields: ok,
@@ -863,6 +893,12 @@ function PipelineEditor({
           }
         : {}),
       ocultar_encerrados_dias: ocultarEncerrados ? diasDigitados : 0,
+      // OS ATALHOS DO CARD (#3487) vão no MESMO patch, pela MESMA porta de
+      // escrita do settings. A chave só entra quando há o que dizer — um funil
+      // que nunca declarou atalho continua idêntico ao de antes —, mas quem JÁ
+      // tinha e apagou todos manda `[]`: é o único jeito de o botão sumir do
+      // card depois de removido.
+      ...(atalhos.length > 0 || atalhosIniciais.length > 0 ? { atalhos } : {}),
     };
     startTransition(async () => {
       const r = await updatePipelineConfig(pipeline.id, patch);
@@ -1144,6 +1180,15 @@ function PipelineEditor({
           </p>
         </div>
       )}
+
+      {/* ─── OS ATALHOS DO CARD (#3487) ───────────────────────────────
+          Botões que abrem outro sistema com o dado do cliente: `tel:` para o
+          softphone do PABX (o caso que o telefone como texto não resolve), e
+          `https://…?cliente={{erp_id}}` para o app de pedidos. A configuração
+          mora no `settings` do funil, como os motivos de perda e os campos —
+          nada de tabela nova. O esquema é validado ao salvar (`refine` no
+          `pipelineConfigPatchSchema`) e de novo ao renderizar no card. */}
+      <EditorDeAtalhos valor={atalhos} onChange={setAtalhos} />
 
       <div className="space-y-2">
         <Label className="text-xs">{t("Campos do lead neste funil")}</Label>

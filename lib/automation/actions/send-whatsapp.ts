@@ -1,5 +1,12 @@
 import { assertAgendaEffectSupabase } from "@/lib/agenda/efeito";
 import { protecaoAgendaSupabase } from "@/lib/agenda/protecao-followup";
+import {
+  AgendaPuladoError,
+  MOTIVO_DO_PULO,
+  decidirNoEnvio,
+  lerEscolhaNoEnvio,
+  type EscolhaNoEnvio,
+} from "@/lib/agenda/escolha-no-envio";
 import { registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { renderTemplate } from "@/lib/automation/template";
@@ -14,11 +21,14 @@ import { recusaDeMidiaForaDaJanela } from "@/lib/messaging/media/recusa-de-midia
 import { mensagemDeErro } from "@/lib/automation/actions/erro-legivel";
 
 async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): Promise<string | null> {
+  const escolha = lerEscolhaNoEnvio(config);
   const contato = checarGuardasDeContato(ctx);
   if (contato.ok) {
     const protection = (await protecaoAgendaSupabase(ctx.admin, ctx.organizationId, [contato.contact.id])).get(contato.contact.id)!;
     if (protection.motivo === "leitura_indisponivel") throw new Error("agenda_read_failed");
-    if (protection.adiar) return protection.reavaliar_em;
+    // #3813 — a escolha do passo manda: `enviar`/`nao_enviar` NÃO adiam o evento.
+    const decisao = decidirNoEnvio(protection, escolha);
+    if (decisao.acao === "adiar") return decisao.reavaliar_em;
   }
   const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
   if (!sessionId) return null; // config inválida falha no execute, não adia
@@ -60,10 +70,17 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   if (!guarda.ok) return { type: "send_whatsapp_message", status: "skipped", detail: { reason: guarda.reason } };
   const contact = guarda.contact;
 
+  // #3813 — "Quando o contato tiver horário marcado", escolhido NO PASSO da regra
+  // (`config.quando_ha_compromisso`). O mesmo objeto vai para a guarda daqui e
+  // para a do handler de envio: uma escolha que valesse só na primeira seria
+  // desfeita pela segunda, e a mensagem não sairia mesmo autorizada.
+  const escolha: EscolhaNoEnvio = lerEscolhaNoEnvio(config);
+  const contextoDeEnvio = { organizationId: ctx.organizationId, contactId: contact.id, escolhaNoEnvio: escolha };
+
   // O espaçamento é COMPARTILHADO com a ação de IA (mesmo número, mesmo
   // contador) — ver lib/automation/throttle.ts.
   try {
-    await assertAgendaEffectSupabase(ctx.admin, { organizationId: ctx.organizationId, contactId: contact.id });
+    await assertAgendaEffectSupabase(ctx.admin, contextoDeEnvio);
     const boundary = await serviceForAutomation(ctx, contact.id, sessionId);
     const conversationId = boundary.conversation_id;
     // CANAL OFICIAL, janela fechada: a mídia NÃO sai — e o texto NÃO sai sozinho
@@ -86,7 +103,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       {
         organization_id: ctx.organizationId,
         serviceBoundary: boundary,
-        proactiveContext: { organizationId: ctx.organizationId, contactId: contact.id },
+        proactiveContext: contextoDeEnvio,
         actor: { type: "webhook_source", id: ctx.ruleId },
         requestId: `rule:${ctx.ruleId}`,
       },
@@ -107,6 +124,17 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     // lib/automation/desfecho-do-envio.ts para o defeito medido).
     return await reportarEnvio(ctx, "send_whatsapp_message", message as unknown as MensagemEnviada, conversationId);
   } catch (err) {
+    // #3813 — escolha `nao_enviar`: o pulo tem MOTIVO e vira `skipped` (o mesmo
+    // canal dos outros pulos: `guarda-do-contato`, `elegibilidade`), não falha.
+    // Antes desta escolha o `AgendaDeferredError` chegava aqui e o run dizia
+    // "falhou" para uma recusa que é decisão de produto.
+    if (err instanceof AgendaPuladoError) {
+      return {
+        type: "send_whatsapp_message",
+        status: "skipped",
+        detail: { reason: MOTIVO_DO_PULO, appointment_id: err.protection.appointment_id },
+      };
+    }
     return {
       type: "send_whatsapp_message",
       status: "failed",

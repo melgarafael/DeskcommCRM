@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 const mocks=vi.hoisted(()=>({rpc:vi.fn(),audit:vi.fn(),atividade:vi.fn(),auth:vi.fn()}));
 vi.mock("@/lib/impersonate/support",()=>({requireSupportWrite:async()=>null}));
-vi.mock("@/lib/supabase/server",()=>({createClient:async()=>({rpc:mocks.rpc})}));
+// A transferência lê o número da conversa antes da troca (#3642): a leitura não acha nada aqui.
+const leitura=vi.hoisted(()=>{const l:Record<string,unknown>={};l.select=()=>l;l.eq=()=>l;l.maybeSingle=async()=>({data:null,error:null});return l;});
+vi.mock("@/lib/supabase/server",()=>({createClient:async()=>({rpc:mocks.rpc,from:()=>leitura})}));
 vi.mock("@/lib/supabase/admin",()=>({createAdminClient:vi.fn()}));
 vi.mock("@/lib/audit",()=>({audit:mocks.audit,isServiceRoleConfigured:()=>false}));
 vi.mock("@/lib/inbox/atividade-de-comando",()=>({registrarTrocaDeComando:mocks.atividade}));

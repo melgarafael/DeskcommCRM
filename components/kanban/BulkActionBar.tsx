@@ -29,6 +29,7 @@ import { useBulkAction } from "@/hooks/kanban/useBulkAction";
 import { resolveVocabulary } from "@/lib/kanban/vocabulary";
 import type { PipelineVocabulary, Stage } from "@/lib/kanban/types";
 import { LoseLeadDialog } from "./LoseLeadDialog";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 interface BulkActionBarProps {
   selectedIds: string[];
@@ -263,7 +264,7 @@ export function BulkActionBar({
                 .filter((m) => m.user_id !== user.id)
                 .map((m) => (
                   <DropdownMenuItem key={m.user_id} onClick={() => runAssign(m.user_id)}>
-                    {m.full_name ?? t("Sem nome")}
+                    {rotuloDoMembro(m, t)}
                   </DropdownMenuItem>
                 ))}
               <DropdownMenuSeparator />

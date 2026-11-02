@@ -337,7 +337,10 @@
               "alvo": {
                 "role": "link",
                 "nome": "Incidentes",
-                "exato": true
+                "exato": true,
+                "dentro": {
+                  "role": "main"
+                }
               },
               "rotulo": "Voltar para a lista",
               "tipo": "seta"
@@ -467,7 +470,10 @@
               "alvo": {
                 "role": "link",
                 "nome": "Incidentes",
-                "exato": true
+                "exato": true,
+                "dentro": {
+                  "role": "main"
+                }
               }
             },
             {

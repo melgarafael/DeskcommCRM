@@ -22,7 +22,7 @@ import { useAgentsList } from "@/hooks/ai/useAgents";
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
-import { camposDoFunil } from "@/lib/leads/campos-do-funil";
+import { camposDeDataDoNegocio, camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { apiClient } from "@/lib/api/client";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import {
@@ -31,13 +31,25 @@ import {
 } from "@/hooks/followup/useFollowupFlows";
 import type { PlanoDeTarefas } from "@/lib/tarefas/plano";
 import { CaretDown, CaretUp, Pause, Play, X } from "@/lib/ui/icons";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 /**
  * #2041 — uma pessoa fixa (a forma de sempre, sem `modo`) ou um rodízio, em que
  * a posição na `fila` é a ordem. Mesma forma do `configDoAtribuirSchema` da API.
  */
 export type ConfigDoAtribuir =
-  | { modo?: "fixo"; user_id: string }
+  | {
+      modo?: "fixo";
+      user_id: string;
+      /**
+       * #3514 — a passagem SDR → Closer. O negócio muda de dono sempre; estas
+       * duas caixas decidem se o CLIENTE vai junto. Desligadas por padrão, e
+       * `undefined` (não `false`) é o que está gravado nas regras de antes: o
+       * payload antigo continua idêntico.
+       */
+      contato?: boolean;
+      conversas?: boolean;
+    }
   | { modo: "rodizio"; fila: Array<{ user_id: string; pausado: boolean }> };
 
 export type ActionItem =
@@ -89,6 +101,10 @@ export type ActionItem =
   // e o editor só escolhe QUAL deles aplicar. `plano_id` é o id do JSON (não
   // uuid) — mesmos campos do schema da API e da ação `apply_task_plan`.
   | { type: "apply_task_plan"; config: { plano_id: string } }
+  // #3727 — a data do atendimento vai para um campo de DATA do negócio; quem
+  // conta os dias é a regra do gatilho de data do funil (#989). Mesmos campos
+  // do schema da API: o funil dono do campo e a CHAVE do campo.
+  | { type: "set_lead_date_field"; config: { pipeline_id: string; campo: string } }
   // #2642 — o destino é o WhatsApp que o ADMIN já registrou em Avisos. Por
   // isso não existe campo de número, de endereço, de pessoa nem de canal: a
   // configuração guarda só o canal, e é o executor que lê o destino
@@ -135,6 +151,10 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
       };
     case "apply_task_plan":
       return { type, config: { plano_id: "" } };
+    // #3727 — o funil dono do campo e a chave dele. `campo` nasce vazio e só é
+    // preenchido depois de escolher o funil: a lista de campos é DELE.
+    case "set_lead_date_field":
+      return { type, config: { pipeline_id: "", campo: "" } };
     // #2642 — o destino é o WhatsApp que o ADMIN cadastrou em Avisos, e só
     // ele: depois do recorte do PR #2834 não há pessoa nem canal a escolher, e
     // por isso o `config` guarda apenas o canal (o schema exige o literal).
@@ -427,7 +447,7 @@ function SendEmailForm({
             <SelectContent>
               {(membros ?? []).map((m) => (
                 <SelectItem key={m.user_id} value={m.user_id}>
-                  {m.full_name ?? m.user_id.slice(0, 8)}
+                  {rotuloDoMembro(m, t)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -486,6 +506,9 @@ function SendEmailForm({
         {t(
           "As variáveis do WhatsApp valem aqui: {{nome}}, {{primeiro_nome}}, {{lead.title}} e os campos do formulário como {{destino}}.",
         )}
+      </p>
+      <p className="text-xs text-muted-foreground">
+        {t('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')}
       </p>
       <p className="text-xs text-muted-foreground">
         {t(
@@ -653,7 +676,7 @@ function AssignOwnerForm({ config, onChange }: FormProps<ConfigDoAtribuir>) {
   const nomeDe = (userId: string) => {
     if (carregandoMembros) return null;
     const membro = members?.find((m) => m.user_id === userId);
-    return membro?.full_name ?? userId.slice(0, 8);
+    return membro ? rotuloDoMembro(membro, t) : rotuloDoMembro({ user_id: userId }, t);
   };
 
   if (config.modo !== "rodizio") {
@@ -667,18 +690,51 @@ function AssignOwnerForm({ config, onChange }: FormProps<ConfigDoAtribuir>) {
         />
         <div className="space-y-1">
           <Label>{t("Atendente")}</Label>
-          <Select value={config.user_id} onValueChange={(v) => onChange({ user_id: v })}>
+          <Select value={config.user_id} onValueChange={(v) => onChange({ ...config, user_id: v })}>
             <SelectTrigger>
               <SelectValue placeholder={t("Escolha o atendente")} />
             </SelectTrigger>
             <SelectContent>
               {(members ?? []).map((m) => (
                 <SelectItem key={m.user_id} value={m.user_id}>
-                  {m.full_name ?? m.user_id.slice(0, 8)}
+                  {rotuloDoMembro(m, t)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+        </div>
+        {/* #3514 — a passagem SDR → Closer. OPT-IN, e o texto diz o que NÃO
+            muda quando a caixa está desligada: quem já tem automação no ar não
+            pode passar a mover conversa por causa de uma tela nova. */}
+        <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+          <div className="space-y-0.5">
+            <Label htmlFor="atribuir-passar-contato">{t("Passar também o contato (carteira)")}</Label>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "O cliente passa a ser deste atendente, no lugar do dono atual, e leva junto as conversas abertas que estavam com o dono anterior ou sem dono (as que a IA está atendendo ficam com a IA). Desligado, o cliente e as conversas ficam como estão.",
+              )}
+            </p>
+          </div>
+          <Switch
+            id="atribuir-passar-contato"
+            checked={config.contato === true}
+            onCheckedChange={(v) => onChange({ ...config, contato: v ? true : undefined })}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+          <div className="space-y-0.5">
+            <Label htmlFor="atribuir-passar-conversas">{t("Passar também as conversas abertas do contato")}</Label>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "As conversas abertas que hoje estão com qualquer outra pessoa vão para este atendente, como no botão Transferir. Esta opção não toca conversa encerrada nem conversa sem dono.",
+              )}
+            </p>
+          </div>
+          <Switch
+            id="atribuir-passar-conversas"
+            checked={config.conversas === true}
+            onCheckedChange={(v) => onChange({ ...config, conversas: v ? true : undefined })}
+          />
         </div>
       </div>
     );
@@ -788,7 +844,7 @@ function AssignOwnerForm({ config, onChange }: FormProps<ConfigDoAtribuir>) {
             <SelectContent>
               {foraDaFila.map((m) => (
                 <SelectItem key={m.user_id} value={m.user_id}>
-                  {m.full_name ?? m.user_id.slice(0, 8)}
+                  {rotuloDoMembro(m, t)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -887,7 +943,7 @@ function CreateTaskForm({
             <SelectItem value="dono_do_lead">{t("Dono do negócio")}</SelectItem>
             {(members ?? []).map((m) => (
               <SelectItem key={m.user_id} value={m.user_id}>
-                {m.full_name ?? m.user_id.slice(0, 8)}
+                {rotuloDoMembro(m, t)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -1137,6 +1193,87 @@ function ApplyTaskPlanForm({ config, onChange }: FormProps<{ plano_id: string }>
 }
 
 /**
+ * `set_lead_date_field` (#3727) — a data do comparecimento vai para um campo de
+ * DATA do negócio, e quem conta os dias é o gatilho de data do funil (#989).
+ *
+ * As duas escolhas são as MESMAS do `trigger_config` daquele gatilho — funil e
+ * chave do campo —, e a lista de campos é a `camposDeDataDoNegocio`, nunca
+ * `camposDoFunil`: campo de data do CONTATO mora em `contacts.custom_fields` e a
+ * varredura só lê o negócio, então oferecê-lo aqui gravaria num lugar que
+ * ninguém consulta (a recusa do servidor diria o mesmo, depois do save).
+ *
+ * A frase de baixo é o que o operador precisa saber e o formulário não pode
+ * dizer sozinho: o PRAZO não mora aqui. Quem escreve N é a regra de data, com N
+ * NEGATIVO para "depois" — e é isso que faz um único campo servir à manutenção
+ * de 4 meses e à de 6.
+ */
+function SetLeadDateFieldForm({
+  config,
+  onChange,
+}: FormProps<{ pipeline_id: string; campo: string }>) {
+  const t = useT();
+  const { data: pipelinesRes, isLoading } = usePipelines();
+  const pipelines = pipelinesRes?.data ?? [];
+  const funil = pipelines.find((p) => p.id === config.pipeline_id) ?? null;
+  const campos = camposDeDataDoNegocio(funil?.settings ?? null);
+
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      <div className="space-y-1">
+        <Label>{t("Funil")}</Label>
+        <Select
+          value={config.pipeline_id}
+          onValueChange={(v) => onChange({ pipeline_id: v, campo: "" })}
+          disabled={isLoading}
+        >
+          <SelectTrigger aria-label={t("Funil")}>
+            <SelectValue placeholder={t("Escolha o funil")} />
+          </SelectTrigger>
+          <SelectContent>
+            {pipelines.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-1">
+        <Label>{t("Campo de data")}</Label>
+        <Select
+          value={config.campo}
+          onValueChange={(v) => onChange({ ...config, campo: v })}
+          disabled={!config.pipeline_id}
+        >
+          <SelectTrigger aria-label={t("Campo de data")}>
+            <SelectValue
+              placeholder={config.pipeline_id ? t("Escolha o campo") : t("Escolha o funil primeiro")}
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {campos.map((campo) => (
+              <SelectItem key={campo.key} value={campo.key}>
+                {campo.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <p className="text-xs text-muted-foreground sm:col-span-2">
+        {t(
+          "Grava a data do atendimento neste campo. Quem conta os dias é a regra “Quando faltarem N dias para uma data do funil”, com N negativo para agir depois do atendimento.",
+        )}
+      </p>
+      {config.pipeline_id && campos.length === 0 ? (
+        <p role="alert" className="text-xs text-destructive sm:col-span-2">
+          {t("Este funil não tem campo de data do negócio. Crie um nas configurações do funil para usar esta ação.")}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * `notify_team` (#2642) — o formulário do aviso que NUNCA vai para o lead.
  *
  * Depois do recorte do PR #2834 não há escolha nenhuma aqui: o resumo vai para
@@ -1238,6 +1375,13 @@ export function ActionConfigForm({
     case "apply_task_plan":
       return (
         <ApplyTaskPlanForm
+          config={action.config}
+          onChange={(config) => onChange({ type: action.type, config })}
+        />
+      );
+    case "set_lead_date_field":
+      return (
+        <SetLeadDateFieldForm
           config={action.config}
           onChange={(config) => onChange({ type: action.type, config })}
         />

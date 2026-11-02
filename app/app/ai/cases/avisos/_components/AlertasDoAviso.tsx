@@ -58,9 +58,9 @@ const CORPO_DO_ESTADO = {
   conexao_atende_clientes:
     "Os avisos vão contar no mesmo limite diário desse número. Funciona — mas um número só para avisos é mais seguro.",
   casos_desligados:
-    "Enquanto ninguém puder abrir um caso, nenhum aviso vai sair. Ligue a opção de abrir casos na configuração do assistente.",
+    "Os avisos de casos dependem dessa permissão. As transferências para atendimento humano continuam podendo avisar a equipe, sem habilitar a abertura de casos.",
   agente_assistido:
-    "Um assistente em modo assistido não abre caso sozinho: ele escreve a sugestão e espera alguém. Nenhum aviso vai sair por ele.",
+    "Um assistente em modo assistido não abre casos sozinho. Os avisos de transferência dependem de a conversa ser efetivamente passada para atendimento humano.",
   atendimento_externo:
     "Quem conduz as conversas desta conta é um sistema de fora, e ele não abre casos aqui.",
   aquecimento:

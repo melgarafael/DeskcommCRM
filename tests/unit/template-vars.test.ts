@@ -127,3 +127,20 @@ describe("motivoDoCuringaLiteral (#2744)", () => {
     expect(motivoDoCuringaLiteral("Cupom {{codigo}}", { name: null })).toBeNull();
   });
 });
+
+describe("interpolateTemplate: texto de reserva", () => {
+  it("sem nome, sai a reserva", () => {
+    expect(interpolateTemplate('Oi {{primeiro_nome|"aluno"}}', { name: null })).toBe("Oi aluno");
+    expect(interpolateTemplate('Oi {{nome|"aluno"}}', { name: null })).toBe("Oi aluno");
+  });
+  it("com nome, a reserva é ignorada", () => {
+    expect(interpolateTemplate('Oi {{primeiro_nome|"aluno"}}', { name: "Ana Paula" })).toBe("Oi Ana");
+  });
+  it("reserva cobre a falta: o aviso de curinga literal não dispara", () => {
+    expect(faltouNomeDeContato('Oi {{primeiro_nome|"aluno"}}', { name: null })).toBe(false);
+    expect(faltouNomeDeContato("Oi {{primeiro_nome}}", { name: null })).toBe(true);
+  });
+  it("variável desconhecida com reserva fica literal", () => {
+    expect(interpolateTemplate('Cupom {{codigo|"x"}}', { name: "X" })).toBe('Cupom {{codigo|"x"}}');
+  });
+});

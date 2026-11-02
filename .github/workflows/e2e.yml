@@ -278,8 +278,8 @@ jobs:
     # superado é pulado ANTES de pedir vaga; o que já está na vaga é cancelado
     # pelo grupo. Um cobre o outro, e é por isso que os dois ficam.
     concurrency:
-      group: ${{ github.workflow }}-e2e-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}
-      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+      group: ${{ github.workflow }}-e2e-parte${{ matrix.parte }}-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && github.run_attempt != '1' && format('-reentrada-{0}', github.event.pull_request.head.sha) || '' }}${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt != '1' && format('-reentrada-{0}', github.sha) || '' }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     strategy:
       # Sem fail-fast: se a parte 1 quebrar, ainda quero saber se a 2 também.
       # Com ele ligado, o primeiro vermelho esconde o outro e o conserto vira
@@ -814,7 +814,7 @@ jobs:
         contato-pessoal-sai-da-operacao.spec.ts
         confirmar-dado-do-contato.spec.ts
         credenciais-de-ia.spec.ts
-        risk-radar.spec.ts invite-lifecycle.spec.ts system-update.spec.ts
+        risk-radar.spec.ts invite-lifecycle.spec.ts
         agente-papeis-operador.spec.ts
         followup-linguagem.spec.ts followup-ramos.spec.ts
         wizard-do-funcionario.spec.ts mfa-opcional.spec.ts inbox-responder-citando.spec.ts
@@ -836,6 +836,7 @@ jobs:
         qa-l12-troca-de-funil.spec.ts
         qa-l12-agente-ia.spec.ts
         prospeccao-auditoria-do-site.spec.ts
+        prospeccao-por-planilha.spec.ts
       # ⚠️ A ORDEM DESTA LISTA NÃO DECIDE A ORDEM DE EXECUÇÃO. O Playwright
       # ordena os arquivos por CAMINHO, não pela ordem em que são passados na
       # linha de comando. Medido no run 31838253496: `marca-logo.spec.ts` estava
@@ -914,6 +915,12 @@ jobs:
       # (COBRANCA_API_BASE_URL_TESTE do .env.e2e) e devolve as chaves da
       # instalação como achou.
       # PREVISÃO, não medida: ~5 min de caso.
+      # `modelos-cabem-em-375` (#3702) é irmã de `celular-cabe-na-tela` e entra
+      # pelo mesmo critério: o que ela mede é a REGRA (formulário de modelo ×
+      # 375px), não um fluxo — um login, sem WAHA, sem Graph, sem seed próprio.
+      # Ela abre Conexões nas duas abas e mede `main.scrollWidth ×
+      # clientWidth` com o formulário aberto, que é justamente a medida que a
+      # spec de celular não faz: o formulário só existe depois de um clique.
       SPECS_PARTE_2: >-
         agente-marca-consulta.spec.ts
         agenda-marcar-pela-tela.spec.ts
@@ -944,6 +951,8 @@ jobs:
         agenda-kit-visual.spec.ts
         agenda-conectar-google.spec.ts
         agenda-painel-cabe-na-tela.spec.ts
+        celular-cabe-na-tela.spec.ts
+        modelos-cabem-em-375.spec.ts
         agenda-ver-na-agenda.spec.ts
         agenda-escopo-da-organizacao.spec.ts
         aba-e-cookie-divergentes.spec.ts
@@ -1156,25 +1165,19 @@ jobs:
       # todas. Os 3 arquivos que o cancelamento impediu de medir vêm junto, porque
       # eles são justamente o fim da fila.
       SPECS_PARTE_3: >-
-        autonomia-assistida.spec.ts
         roteamento-por-canal.spec.ts
         whatsapp-pareamento-por-codigo.spec.ts
         central-avisos-destino.spec.ts
         agenda-google-sync.spec.ts
         agenda-servicos.spec.ts
-        encerramento-atendimento.spec.ts
-        atendimento-conjunto.spec.ts
         passagem-com-contexto.spec.ts
-        interface-por-vinculo.spec.ts
         pipelines-gestao.spec.ts
         qa-agente-usa-as-maos.spec.ts
         qa-selo-no-funil-usado.spec.ts
         qa-telas-descobertas-w4.spec.ts
         retorno-anti-morte.spec.ts
-        webhooks.spec.ts
         traco-do-turno-leitor.spec.ts
         designer-de-automacoes.spec.ts
-        logo-moldura-no-tema-escuro.spec.ts
         historico-de-captacao.spec.ts
         inbox-quem-manda.spec.ts
         inbox-tempo-real.spec.ts
@@ -1183,7 +1186,6 @@ jobs:
         organizacoes-criacao-convite-e-cache.spec.ts
         inbox-abas-espelham-o-comando.spec.ts
         busca-na-conversa.spec.ts
-        moeda-da-organizacao.spec.ts
         zona-de-perigo-apaga-dados-de-teste.spec.ts
         email-da-instalacao-pela-tela.spec.ts
         central-avisos-resolver-em-lote.spec.ts
@@ -1205,7 +1207,6 @@ jobs:
         fotos-no-catalogo.spec.ts
         catalogo-busca-no-catalogo-inteiro.spec.ts
         relatorio-por-etiqueta.spec.ts
-        integracao-dados-mysql-na-tela.spec.ts
         minhas-tarefas-no-celular.spec.ts
 
       # ─── PARTE 4 — a spec de VPS fresca, e quem pode entrar ao lado dela ───
@@ -1456,7 +1457,6 @@ jobs:
         agenda-google-meet.spec.ts
         agenda-presenca-recuperacao.spec.ts
         app-no-celular.spec.ts
-        celular-cabe-na-tela.spec.ts
         cobranca-desligada.spec.ts
         cobranca-link-pelo-dono.spec.ts
         cobranca-suspensao-e-limites.spec.ts
@@ -1524,17 +1524,27 @@ jobs:
       #   - o passo "Semear funil de nascimento para a prova causal" roda
       #     `scripts/seed-e2e-nascimento-do-lead.ts` além dos seeds de sempre.
       # Os seeds comuns (`!= 4`) rodam aqui também. Um rebalanceamento pode
-      # TRAZER spec para esta parte (ela usa ~1/3 do orçamento) desde que a spec
+      # TRAZER spec para esta parte, com orçamento medido, desde que a spec
       # não poste no webhook do WAHA sem assinatura nem dependa do Graph real —
       # para listar quem posta: `grep -lE 'webhooks/waha' tests/e2e/*.spec.ts
       # tests/e2e/helpers/*.ts` (helper conta: `jev.ts` arrasta as jev-*).
       # Pode também LEVAR a causal para outra parte: o `if: matrix.parte == N`
       # dos dois passos acompanha a spec, e `tests/unit/e2e-cobertura-completa`
       # reprova se a spec e os passos ficarem em partes diferentes.
-      # PREVISÃO, não medida (o e2e deste PR mede): ~6 min de preparo, como as
-      # demais, + ~2 min de caso (9 casos, dublês locais) — job de ~8 a 10 min.
+      # O relógio publicado em cada run separa preparo, suíte e total da parte.
+      # Toda admissão exige medir a composição; teto de caso não é duração medida.
       SPECS_PARTE_8: >-
         meta-lead-submitted-causal.spec.ts
+        atendimento-conjunto.spec.ts
+        autonomia-assistida.spec.ts
+        encerramento-atendimento.spec.ts
+        integracao-dados-mysql-na-tela.spec.ts
+        interface-por-vinculo.spec.ts
+        logo-moldura-no-tema-escuro.spec.ts
+        moeda-da-organizacao.spec.ts
+        webhooks.spec.ts
+        system-update.spec.ts
+        respostas-rapidas-conteudos.spec.ts
 
       # ─── FORA_DO_CI — as que ficaram fora, e o motivo de cada uma ───
       #

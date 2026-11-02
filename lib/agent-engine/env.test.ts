@@ -94,3 +94,20 @@ describe("loadEnv — a chave da OpenRouter existe no contrato do worker", () =>
     expect("VAR_QUE_NAO_EXISTE_NO_SCHEMA" in env).toBe(false);
   });
 });
+
+/**
+ * Decisão do dono (doc 242, opção B): o recuo ocioso do laço do event_log para
+ * em 30s, não em 60s. 60s fazia o primeiro evento depois de um silêncio esperar
+ * até um minuto (automação, aviso ao atendente, primeiro salto do áudio).
+ * Voltar o default a 60s reprova aqui.
+ */
+describe("loadEnv — teto do recuo ocioso do event_log (#3693)", () => {
+  it("sem a variável no .env, o teto é 30s", () => {
+    expect(loadEnv(REQUIRED).EVENT_LOG_DRAIN_IDLE_MAX_INTERVAL_MS).toBe(30_000);
+  });
+
+  it("vazia no .env vale o mesmo default de 30s", () => {
+    const env = loadEnv({ ...REQUIRED, EVENT_LOG_DRAIN_IDLE_MAX_INTERVAL_MS: "" });
+    expect(env.EVENT_LOG_DRAIN_IDLE_MAX_INTERVAL_MS).toBe(30_000);
+  });
+});

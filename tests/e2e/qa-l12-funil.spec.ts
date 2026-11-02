@@ -3,7 +3,7 @@
  *
  * Cobre, pela TELA, num banco montado só do `supabase/baseline.sql`:
  *  · #935/#938 — os TRÊS caminhos para a etapa de perda (menu, arrasto, lote)
- *  · "Mover para…" no menu do card, no TOQUE: área de 44px, fim da etapa, janela do motivo
+ *  · "Mover para…" no menu do card, no TOQUE: área de 44px, topo da etapa, janela do motivo
  *  · "Outro" com e sem detalhe
  *  · #911 — excluir pelo menu do próprio card, no desktop e no TOQUE
  *  · #948 — tag em lote oferecendo as tags que já existem
@@ -480,7 +480,7 @@ test.describe("Lote 12 — #911 no TOQUE (sem hover)", () => {
     registra(`#911 toque · documento 390px: scrollWidth=${pagina.scrollWidth} clientWidth=${pagina.clientWidth} transborda=${pagina.transborda}`);
   });
 
-  test("Mover para… pelo menu do card: área de 44px, fim da etapa inteira e janela do motivo", async ({ page }) => {
+  test("Mover para… pelo menu do card: área de 44px, topo da etapa inteira e janela do motivo", async ({ page }) => {
     // Funil próprio, semeado e limpo aqui: os vizinhos do bloco usam o deles.
     const { data: funil, error } = await admin
       .from("crm_pipelines")
@@ -588,9 +588,9 @@ test.describe("Lote 12 — #911 no TOQUE (sem hover)", () => {
       const r = await resposta;
       registra(`mover toque · Contato → POST /move = ${r.status()} · enviado = ${r.request().postData()}`);
       expect(r.status()).toBe(200);
-      // O card entra no FIM da etapa, depois da âncora.
+      // O card CHEGA à etapa: entra no TOPO, acima da âncora (#3461).
       await expect(
-        page.locator(`[data-rfd-droppable-id="${et.Contato}"] [role="group"][aria-label^="Lead:"]`).last(),
+        page.locator(`[data-rfd-droppable-id="${et.Contato}"] [role="group"][aria-label^="Lead:"]`).first(),
       ).toHaveAttribute("aria-label", `Lead: Mover ${ST}`, { timeout: 15_000 });
       const { data: noContato } = await admin
         .from("crm_leads")
@@ -599,8 +599,8 @@ test.describe("Lote 12 — #911 no TOQUE (sem hover)", () => {
         .single();
       registra(`mover toque · banco depois de Contato = ${JSON.stringify(noContato)}`);
       expect((noContato as { stage_id: string }).stage_id).toBe(et.Contato);
-      expect((noContato as { position_in_stage: number }).position_in_stage).toBeGreaterThan(5000);
-      await captura(page, "mover-03-no-fim-do-contato");
+      expect((noContato as { position_in_stage: number }).position_in_stage).toBeLessThan(5000);
+      await captura(page, "mover-03-no-topo-do-contato");
 
       const moves: string[] = [];
       page.on("request", (req) => {
@@ -648,4 +648,110 @@ test.describe("Lote 12 — #911 no TOQUE (sem hover)", () => {
     registra(`#911 escuro · quadro 400px tema escuro: scrollWidth=${pagina.scrollWidth} clientWidth=${pagina.clientWidth} transborda=${pagina.transborda}`);
     await captura(page, "911-15-quadro-400px-escuro");
   });
+});
+
+
+test("próxima ação genérica preserva a proposta anterior e null limpa pelo turno e pela ferramenta", async ({ page }) => {
+  test.setTimeout(150_000);
+  const { randomUUID } = await import("node:crypto");
+  const { mkdirSync } = await import("node:fs");
+  const pg = (await import("pg")).default;
+  const { credenciaisSupabaseDeTeste } = await import("../../scripts/lib/env-de-teste");
+  const { loginComoAdmin, lerCreds } = await import("./helpers/login-admin");
+  const { applyLeadStateUpdate } = await import("../../lib/agent-engine/agent/lead-state");
+  const { seedPlatformPlaybook } = await import("../../lib/agent-engine/agent/playbook-seed");
+  const { iniciarFilhoDoTurno } = await import("./helpers/filho-do-turno-local");
+  const filhos: ReturnType<typeof iniciarFilhoDoTurno>[] = [];
+  const fimDosTurnos = Date.now() + 120_000;
+  const ambiente = credenciaisSupabaseDeTeste();
+  expect(["127.0.0.1", "localhost"]).toContain(new URL(ambiente.dbUrl).hostname);
+  const pool = new pg.Pool({ connectionString: ambiente.dbUrl, max: 2 });
+  const usuario = lerCreds().users.admin as { email: string; id: string };
+  const sufixo = randomUUID().slice(0, 8);
+  let org = "";
+  const inserir = async (tabela: string, dados: Record<string, unknown>): Promise<string> => {
+    const { data, error } = await admin.from(tabela).insert(dados).select("id").single();
+    expect(error).toBeNull();
+    return data!.id as string;
+  };
+  try {
+    org = await inserir("organizations", { slug: `proposta-${sufixo}`, display_name: `Próxima ação ${sufixo}`, legal_name: "Próxima ação local", onboarded_at: new Date().toISOString() });
+    const vinculo = await admin.from("user_organizations").insert({ organization_id: org, user_id: usuario.id, role: "admin", accepted_at: new Date().toISOString() });
+    expect(vinculo.error).toBeNull();
+    await seedPlatformPlaybook(pool);
+    const canal = await inserir("channel_sessions", { organization_id: org, display_name: "Canal da proposta", waha_session_name: `proposta-${sufixo}`, status: "WORKING", webhook_secret_encrypted: "\\x00" });
+    const knobs = await admin.from("channel_knobs").insert({ organization_id: org, channel_session_id: canal, window_start_hour: 0, window_end_hour: 24, timezone: "UTC", allow_sunday: true, throttle_ms: 0, jitter_max_ms: 0 });
+    expect(knobs.error).toBeNull();
+    const pipeline = await inserir("crm_pipelines", { organization_id: org, name: `Proposta ${sufixo}`, slug: `proposta-${sufixo}` });
+    const etapa = await inserir("crm_stages", { organization_id: org, pipeline_id: pipeline, name: "Entrada", slug: "entrada", position: 1000 });
+    const contatos: string[] = [];
+    for (const [i, modo] of ["Agente", "Direta"].entries()) {
+      const contato = await inserir("contacts", { organization_id: org, name: `${modo} ${sufixo}`, phone_number: `+551198${Date.now().toString().slice(-6)}${i}` });
+      contatos.push(contato);
+      await inserir("crm_leads", { organization_id: org, pipeline_id: pipeline, stage_id: etapa, title: `${modo} ${sufixo}`, contact_id: contato, position_in_stage: (i + 1) * 1000 });
+    }
+    const conversa = await inserir("conversations", { organization_id: org, contact_id: contatos[0], channel_session_id: canal, status: "ai_handling", is_group: false });
+    await loginComoAdmin(page, lerCreds());
+    await page.goto("/app/inbox");
+    await page.getByTestId("tenant-switcher").click();
+    await page.getByTestId(`tenant-switcher-item-${org}`).click();
+    await expect.poll(async () => (await page.context().cookies()).find((cookie) => cookie.name === "active_org")?.value).toBe(org);
+    const card = page.getByRole("group", { name: `Lead: Agente ${sufixo}`, exact: true });
+    const concreta = "Enviar o orçamento do modelo X até sexta";
+    mkdirSync("evidence/antigos-core-3458", { recursive: true });
+    for (const passo of [
+      { texto: "Responder o cliente", esperado: null, seq: 0 },
+      { texto: concreta, esperado: concreta, seq: 1 },
+      { texto: "Responder o cliente", esperado: concreta, seq: 1 },
+      { texto: null, esperado: null, seq: 2 },
+    ]) {
+      // O MESMO campo cru nos dois caminhos. O transporte LLM é sintético,
+      // explicitamente; o handler e o writer usam o Postgres real da suíte.
+      // O grafo do motor usa o loader tsx do worker, em um filho isolado:
+      // não mistura sua resolução CJS/ESM com a transformação do Playwright.
+      const filho = iniciarFilhoDoTurno(
+        [
+          "--max-old-space-size=768",
+          "--import",
+          "tsx",
+          "tests/e2e/helpers/proxima-acao-no-turno.ts",
+          "--executar-proxima-acao",
+          JSON.stringify({
+            ids: { org, contato: contatos[0]!, canal, conversa },
+            nextAction: passo.texto,
+          }),
+        ],
+        Math.min(30_000, fimDosTurnos - Date.now()),
+        { E2E_TURNO_DB_URL: ambiente.dbUrl },
+      );
+      filhos.push(filho);
+      await filho.resultado;
+      const direta = await applyLeadStateUpdate(pool, { tenantId: org, leadId: contatos[1]! }, { next_action: passo.texto });
+      expect(direta.ok).toBe(true);
+      const { rows } = await pool.query("select next_action, next_action_seq from lead_state where organization_id=$1 and contact_id=any($2::uuid[]) order by contact_id", [org, contatos]);
+      expect(rows).toHaveLength(2);
+      for (const row of rows) expect({ texto: row.next_action, seq: Number(row.next_action_seq) }).toEqual({ texto: passo.esperado, seq: passo.seq });
+      await page.goto(`/app/pipelines/${pipeline}`);
+      await expect(card).toBeVisible();
+      await expect(card.getByText("Responder o cliente", { exact: true })).toHaveCount(0);
+      if (passo.esperado === null) {
+        await expect(card.getByText(/Propõe:/)).toHaveCount(0);
+      } else {
+        await expect(card.getByText(concreta, { exact: false })).toBeVisible();
+        if (passo.texto !== concreta) await page.screenshot({ path: "evidence/antigos-core-3458/proposta-preservada.png" });
+      }
+    }
+    await page.screenshot({ path: "evidence/antigos-core-3458/proposta-limpa.png" });
+  } finally {
+    try {
+      // Junta somente os filhos desta prova antes de remover qualquer fixture.
+      for (const filho of filhos) await filho.encerrar();
+      if (org) {
+        const limpeza = await admin.from("organizations").delete().eq("id", org);
+        expect(limpeza.error).toBeNull();
+      }
+    } finally {
+      await pool.end();
+    }
+  }
 });

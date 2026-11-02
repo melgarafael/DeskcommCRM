@@ -115,10 +115,11 @@ export interface LeadContext {
    * O mesmo valor de `lead_id`, com o nome verdadeiro (issue #509).
    *
    * OPCIONAL no tipo, e não por preguiça: exigir o campo obrigaria a editar
-   * fixtures em `tests/invariants/**`, que é CONGELADO pelo hook de governança
-   * (`loop/hooks/freeze-invariants.sh` — invariante existente não se edita). A
-   * produção sempre o preenche; quem constrói contexto à mão num teste não
-   * precisa dele.
+   * fixtures em todo `tests/invariants/**` que monta contexto à mão. Na época em
+   * que nasceu, o diretório era congelado pelo hook de governança — hoje editar é
+   * livre (`loop/hooks/guard-invariants.sh`), e o opcional continua valendo pelo
+   * motivo que sobra: a produção sempre o preenche; quem constrói contexto à mão
+   * num teste não precisa dele.
    */
   contact_id?: string;
   contact: {

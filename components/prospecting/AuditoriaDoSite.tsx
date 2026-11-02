@@ -20,7 +20,7 @@ import {
 export interface AuditoriaDoSiteDados {
   classe: ClasseDeSite;
   problemas: string[];
-  checklist: { tem: string[]; falta: string[] };
+  checklist: { tem: string[]; falta: string[]; inconclusivo?: boolean };
   provisorio?: boolean;
   /** Quando o veredito foi medido (ISO). Ausente em dado antigo: a data não aparece. */
   verificado_em?: string;
@@ -78,7 +78,11 @@ export function AuditoriaDoSite({
         <h4 className="font-medium">{t("Auditoria do site")}</h4>
         <p className="mt-1 text-xs text-muted-foreground">
           {rotuloDaClasse(site.classe, t)}
-          {site.provisorio === true ? ` — ${t("verificação pendente, sem citar na abordagem")}` : ""}
+          {site.provisorio === true
+            ? ` — ${t("verificação pendente, sem citar na abordagem")}`
+            : site.classe === "nao-medido"
+              ? ` — ${t("não medido, sem citar na abordagem")}`
+              : ""}
         </p>
         {verificadoEm && !Number.isNaN(verificadoEm.getTime()) && (
           <p className="text-xs text-muted-foreground">
@@ -92,6 +96,13 @@ export function AuditoriaDoSite({
             <li key={problema}>{descreverProblema(problema, t)}</li>
           ))}
         </ul>
+      )}
+      {site.checklist?.inconclusivo === true && (
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Checklist não medido: a página é montada por JavaScript e o HTML baixado não traz o conteúdo. Não cite estes itens.",
+          )}
+        </p>
       )}
       {(tem.length > 0 || falta.length > 0) && (
         <div className="grid grid-cols-2 gap-2 text-xs">

@@ -19,6 +19,7 @@
 import { revalidatePath } from "next/cache";
 
 import { audit } from "@/lib/audit";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { loadAuthUser } from "@/lib/auth/server";
 import { supportWriteError } from "@/lib/impersonate/support";
 import { logger } from "@/lib/logger";
@@ -60,6 +61,8 @@ export async function updateTaskReminderPrefs(
   const { error } = await supabase.auth.updateUser({
     data: { [CHAVE_DA_PREFERENCIA]: parsed.data },
   });
+  // #3696: o `getUser` vai para o cache curto; outra sessão da pessoa leria o metadata velho.
+  invalidarUsuario(authUser.id);
   if (error) {
     logger.error("[task-reminder-prefs] updateUser falhou", {
       user_id: authUser.id,

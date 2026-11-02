@@ -140,6 +140,11 @@ export function AvisoNoWhatsApp() {
           "O aviso sai quando o assistente abre o caso. Quando o cliente responde e o caso volta a esperar você, o aviso não se repete — acompanhe pela Central de alertas.",
         )}
       </p>
+      <p className="text-xs text-muted-foreground">
+        {t(
+          "Nas transferências para atendimento humano, há uma tentativa de aviso por episódio, sem resumo da conversa. Depois de retomar o atendimento automático, uma nova transferência pode gerar outro aviso. Consulte o resultado na Central de alertas; responda ao cliente pelo CRM.",
+        )}
+      </p>
 
       <EntregasDoAviso entregas={estado.entregas} laco={estado.laco} />
     </div>
@@ -347,7 +352,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
           </Label>
           <p className="text-xs text-muted-foreground">
             {t(
-              "O aviso sai na hora, inclusive fora do horário comercial — sua equipe não é cliente.",
+              "Os avisos podem sair fora do horário comercial e respeitam a conexão e os limites de envio do número.",
             )}
           </p>
         </div>
@@ -420,7 +425,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
             </p>
             <p className="text-xs text-muted-foreground">
               {t(
-                "Também param de sair, até você cadastrar um número de novo: os avisos da Agenda que usam o mesmo número dos casos e as automações com a ação \"Mensagem para a equipe\".",
+                "Também param de sair, até você cadastrar um número de novo: os avisos de transferência para atendimento humano, os avisos da Agenda que usam o mesmo número dos casos e as automações com a ação \"Mensagem para a equipe\".",
               )}
             </p>
             <div className="flex gap-2">

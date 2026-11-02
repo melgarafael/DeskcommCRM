@@ -1,3 +1,4 @@
+import type { AnexosDoCampoNoCard } from "@/lib/kanban/anexos-no-card";
 import type { ScoreBand } from "@/lib/kanban/score-band";
 import type { ResumoDasTarefas } from "@/lib/tarefas/tipos";
 
@@ -43,7 +44,22 @@ export interface Lead {
   status: LeadStatus;
   lost_reason: string | null;
   position_in_stage: number;
+  /**
+   * O VALOR ÚNICO do contrato — setup, implantação, matrícula (fatia 1 da
+   * #3602). Continua sendo a MESMA coluna de sempre: negócio que só preenche
+   * este campo fica idêntico ao que era antes da recorrência existir.
+   */
   value_cents: number | null;
+  /**
+   * A MENSALIDADE (fatia 1 da #3602), separada do valor único de propósito.
+   * Somar os dois num número só é o defeito que a issue descreve: ninguém
+   * sabe quanto entra todo mês e o contrato perde o tamanho real.
+   */
+  recurring_value_cents?: number | null;
+  /** Periodicidade da recorrência — a v1 conhece `monthly` (`valor-recorrente.ts`). */
+  recurring_period?: "monthly" | null;
+  /** Duração em meses; `null` = sem prazo (diferente de "12 meses"). */
+  recurring_months?: number | null;
   currency: string | null;
   owner_user_id: string | null;
   /** 0070: quem é dono do negócio — humano, agente de IA, ou ninguém. */
@@ -144,6 +160,17 @@ export interface Lead {
    * `lib/kanban/tarefas-no-quadro.ts`.
    */
   tarefas?: ResumoDasTarefas;
+  /**
+   * Derivado (não é coluna): o que os campos `file` do funil TÊM neste negócio
+   * — o bloco que o card desenha sem abrir o dossiê (#2829, fatia 1).
+   *
+   * Um item por campo DECLARADO no funil, inclusive os vazios (`total: 0`): o
+   * operador criou o campo e precisa ver que falta documento. Ausente por
+   * inteiro quando o funil não declara nenhum campo `file` — o payload do quadro
+   * não engorda para quem não usa o recurso. Ver
+   * `lib/kanban/anexos-no-card.ts`.
+   */
+  anexos?: AnexosDoCampoNoCard[];
   created_at: string;
   updated_at: string;
   created_by_user_id: string | null;

@@ -534,7 +534,10 @@ async function upsertContact(
   // (`fn_upsert_wa_contact`, #3315) faz: quando ela preenche a ficha vazia, este
   // `update` já não casa linha nenhuma e não emite; quando ela não preenche (ou
   // `kind` é lid), quem preenche é este update, e só ele emite.
-  if (msg.identity.phone) {
+  // Achada pelo EXTRA (`contact_phones`): o número não é o principal da ficha, e
+  // gravá-lo aqui o promoveria a principal — o banco recusaria com 23505 e a
+  // ingestão cairia. Ficha dona de extra sem principal é caso raro; não grava.
+  if (msg.identity.phone && !existente?.achado_pelo_extra) {
     const telefone = canonicalPhoneBR(msg.identity.phone);
     const { data: afetadas } = await admin
       .from("contacts")

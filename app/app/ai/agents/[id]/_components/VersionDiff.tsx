@@ -95,6 +95,8 @@ function buildFieldChanges(a: AgentVersionRow, b: AgentVersionRow): FieldChange[
     ["inbound_debounce_ms", "inbound_debounce_ms"],
     ["max_sends_per_turn", "max_sends_per_turn"],
     ["handoff_target_user_id", "handoff_target_user_id"],
+    ["voz_enabled", "voz_enabled"],
+    ["voz_quando", "voz_quando"],
   ];
   return fields
     .filter(([k]) => a[k] !== b[k])

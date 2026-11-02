@@ -71,7 +71,6 @@ if (!sentryDsn) {
 }
 
 import { hostname } from "node:os";
-import { setTimeout as sleep } from "node:timers/promises";
 
 import type pg from "pg";
 
@@ -109,6 +108,7 @@ import {
   type CacheAlertKnobs,
 } from "@/lib/agent-engine/obs/metrics";
 import { rodarLoopDaFila } from "@/lib/agent-engine/queue/loop";
+import { criarSonecaDaFila } from "@/lib/agent-engine/queue/soneca";
 import { createHealthzServer } from "./healthz";
 import { desligarNoPrazo } from "./desligamento-no-prazo";
 import {
@@ -288,6 +288,12 @@ export async function startWorker(
 
   const loopsAbort = new AbortController();
 
+  // A soneca do laço da fila (#3688). Nasce aqui porque DOIS laços a usam: o da
+  // fila dorme nela, e o drain a acorda ao enfileirar um turno — mesmo worker,
+  // promessa local, sem polling novo. O `signal` é o que faz o `docker stop`
+  // cortar a soneca em curso na hora.
+  const sonecaDaFila = criarSonecaDaFila({ signal: loopsAbort.signal });
+
   // Drain do event_log (mesmo banco pós-fusão) — transforma dispatch_requested em
   // jobs. Fase 0 (convergência, spec 2026-07-23): o drain liga SEMPRE — o
   // dispatcher nativo EPIC-13 foi aposentado, o engine é o único consumidor.
@@ -306,6 +312,8 @@ export async function startWorker(
       debounceMs: env.INBOUND_DEBOUNCE_MS,
       reapTimeoutMs: env.CRM_EVENT_REAP_TIMEOUT_MS,
       allowlistTtlMs: env.AI_ALLOWLIST_TTL_DAYS * 24 * 60 * 60 * 1000,
+      // Quem corta a soneca do laço da fila quando um turno nasce (#3688).
+      acordarFila: () => sonecaDaFila.acordar(),
     },
     log,
     loopsAbort.signal,
@@ -313,7 +321,7 @@ export async function startWorker(
 
   // Handlers do event_log (mídia, branding, follow-up…) no ritmo do worker.
   // Antes disto eles só rodavam pelo cron `event-log-drain`, 1×/min: a cadeia
-  // persist→derive de um áudio levava 103-188s contra os 45s que o drain do
+  // persist→derive de um áudio levava 103-188s contra os 120s que o drain do
   // turno espera, e o agente respondia "não consigo ouvir" com a transcrição
   // pronta segundos depois. O cron continua como rede de segurança — o claim
   // otimista do `drainEventLog` torna os dois seguros em paralelo.
@@ -321,6 +329,8 @@ export async function startWorker(
     {
       intervalMs: env.EVENT_LOG_DRAIN_INTERVAL_MS,
       idleIntervalMs: env.EVENT_LOG_DRAIN_IDLE_INTERVAL_MS,
+      idleMaxMs: env.EVENT_LOG_DRAIN_IDLE_MAX_INTERVAL_MS,
+      staleSweepMs: env.EVENT_LOG_DRAIN_STALE_SWEEP_MS,
       batchSize: env.EVENT_LOG_DRAIN_BATCH_SIZE,
     },
     log,
@@ -538,15 +548,16 @@ export async function startWorker(
         void running.finally(() => inFlight.delete(running));
       }
     },
-    // O `{ signal }` é o que faz o `docker stop` não esperar a espera inteira —
-    // e é por isso que `rodarLoopDaFila` trata a rejeição em vez de propagá-la:
-    // `sleep` abortado REJEITA, e essa rejeição chegaria ao `await workerLoop`
-    // logo abaixo, matando o processo antes do drain dos jobs em voo.
-    dormir: (ms) => sleep(ms, undefined, { signal: loopsAbort.signal }),
+    // O `{ signal }` (dentro da soneca) é o que faz o `docker stop` não esperar a
+    // espera inteira — e é por isso que `rodarLoopDaFila` trata a rejeição em vez
+    // de propagá-la: `sleep` abortado REJEITA, e essa rejeição chegaria ao `await
+    // workerLoop` logo abaixo, matando o processo antes do drain dos jobs em voo.
+    soneca: sonecaDaFila,
     deveParar: () => shuttingDown,
     intervalos: {
       ociosoMs: env.QUEUE_POLL_INTERVAL_MS,
       retryMs: env.QUEUE_CLAIM_RETRY_INTERVAL_MS,
+      ociosoMaxMs: env.QUEUE_IDLE_MAX_INTERVAL_MS,
     },
     log,
   });
@@ -605,14 +616,17 @@ export async function startWorker(
   process.once("SIGINT", (signal) => void shutdown(signal));
 
   // A linha que a Fase 0 exige ver: worker conectado ao Supabase, schema ok, pronto.
-  // Os dois intervalos vão junto porque governam a conta de egress do banco (issue
-  // #258) e quem os ajusta precisa conseguir CONFERIR o que está em vigor sem ler
-  // o código-fonte — foi o que o autor da issue teve de fazer para achar o knob.
+  // Os três intervalos vão junto porque governam a conta de egress do banco (issues
+  // #258 e #3688) e quem os ajusta precisa conseguir CONFERIR o que está em vigor sem
+  // ler o código-fonte — foi o que os autores das issues tiveram de fazer para achar
+  // o knob.
   log.info("agent-engine pronto", {
     worker_id: workerId,
     healthz_port: port,
     max_concurrency: env.QUEUE_MAX_CONCURRENCY,
     poll_ocioso_ms: env.QUEUE_POLL_INTERVAL_MS,
+    // Igual ao piso = recuo desligado (o default, doc 242).
+    poll_ocioso_teto_ms: env.QUEUE_IDLE_MAX_INTERVAL_MS ?? env.QUEUE_POLL_INTERVAL_MS,
     claim_retry_ms: env.QUEUE_CLAIM_RETRY_INTERVAL_MS,
   });
   // Acima de 10 s a espera ociosa passa do idleTimeoutMillis do pool (10 s, o

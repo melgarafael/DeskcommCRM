@@ -24,6 +24,12 @@ export interface LgpdRequestDetailResponse {
     };
     audit_trail: AuditTrailEntry[];
     signed_pdf_url: string | null;
+    /**
+     * A ligação do `data.json` — a cópia que o PDF resume (issue #2341). Sai
+     * junto da do PDF, no mesmo prazo; `null` quando o pedido é anterior ao
+     * `json_path` ou a assinatura falhou.
+     */
+    signed_json_url: string | null;
     /** Quem recebe o envio — mostrado na confirmação da aprovação (doc 134). */
     titular: { nome: string | null; email_destino: string | null };
   };

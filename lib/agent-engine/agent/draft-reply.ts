@@ -32,7 +32,10 @@ export async function generateDraftReply(
   crmCfg: CrmEdgeConfig,
   input: DraftReplyInput,
 ): Promise<DraftReplyResult> {
-  const agent = await loadPublishedAgentConfig(db, input.tenantId, input.channelSessionId);
+  // #3722: `leadId` é o CONTATO — o público do agente decide se ele entra. Sem
+  // o contato, o rascunho sairia pelo agente errado (o de vendas escrevendo
+  // para o cliente com contrato), e a tela mostraria isso como sugestão.
+  const agent = await loadPublishedAgentConfig(db, input.tenantId, input.channelSessionId, input.leadId);
   if (agent === null) return { ok: false, reason: 'no_agent' };
 
   const ctx = await getLeadContext(

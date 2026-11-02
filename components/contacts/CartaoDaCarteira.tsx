@@ -11,6 +11,7 @@ import { useCarteiraDoContato, useDefinirCarteira } from "@/hooks/contacts/useCa
 import { useT } from "@/hooks/i18n/useT";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { UsersThree } from "@/lib/ui/icons";
+import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 interface Props {
   contactId: string;
@@ -116,7 +117,7 @@ export function CartaoDaCarteira({ contactId, papelDoUsuario }: Props) {
                   <option value="__sem_dono__">{t("Sem vendedor dono")}</option>
                   {(membros.data ?? []).map((m) => (
                     <option key={m.user_id} value={m.user_id}>
-                      {m.full_name ?? `${t("Atendente")} ${m.user_id.slice(0, 8)}`}
+                      {rotuloDoMembro(m, t)}
                     </option>
                   ))}
                 </select>

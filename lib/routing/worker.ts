@@ -17,7 +17,12 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { filtrarCandidatosExcluidos } from "@/lib/escalacao/devolucao-ao-rodizio";
 import { logger } from "@/lib/logger";
-import { decideRouting, resolverRoteamentoPorNumero, type RegraDoNumero } from "@/lib/routing/decide";
+import {
+  decideRouting,
+  resolverRoteamentoPorNumero,
+  type RegraDoNumero,
+} from "@/lib/routing/decide";
+import { motivoParaNaoRotear, type MotivoDoCaso } from "@/lib/routing/caso-da-conversa";
 import { loadEligibleAttendants, InvalidRoutingChannel } from "@/lib/routing/eligibles";
 import { routingConfigSchema } from "@/lib/schemas/routing";
 
@@ -36,6 +41,8 @@ export type RoutingOutcome =
   | "skipped_conv_missing"
   | "skipped_invalid_payload"
   | "skipped_contato_pessoal"
+  /** #3717: o caso mais recente da conversa não pede uma pessoa agora. */
+  | "skipped_caso_sem_humano"
   | "assign_lost_race"
   | "error";
 
@@ -65,6 +72,7 @@ const EMPTY_OUTCOMES = (): Record<RoutingOutcome, number> => ({
   skipped_conv_missing: 0,
   skipped_invalid_payload: 0,
   skipped_contato_pessoal: 0,
+  skipped_caso_sem_humano: 0,
   assign_lost_race: 0,
   error: 0,
 });
@@ -83,19 +91,32 @@ export async function runRoutingWorker(opts: RoutingWorkerOptions = {}): Promise
 
   // Recupera execução interrompida sem criar outro evento. O timestamp do
   // claim cerca o fechamento: um worker antigo não conclui a nova tentativa.
-  const { data: abandoned, error: recoveryError } = await admin.from("event_log")
-    .select("id, organization_id, updated_at").eq("event_type", ROUTING_EVENT_TYPE)
-    .eq("status", "processing").lte("updated_at", new Date(now.getTime() - 300_000).toISOString()).limit(batchSize);
-  if (recoveryError) { summary.errors.push("routing_recovery_failed"); return summary; }
+  const { data: abandoned, error: recoveryError } = await admin
+    .from("event_log")
+    .select("id, organization_id, updated_at")
+    .eq("event_type", ROUTING_EVENT_TYPE)
+    .eq("status", "processing")
+    .lte("updated_at", new Date(now.getTime() - 300_000).toISOString())
+    .limit(batchSize);
+  if (recoveryError) {
+    summary.errors.push("routing_recovery_failed");
+    return summary;
+  }
   for (const previous of abandoned ?? []) {
-    const { error } = await admin.from("event_log").update({ status: "pending", next_attempt_at: now.toISOString() })
-      .eq("organization_id", previous.organization_id).eq("id", previous.id)
-      .eq("status", "processing").eq("updated_at", previous.updated_at);
+    const { error } = await admin
+      .from("event_log")
+      .update({ status: "pending", next_attempt_at: now.toISOString() })
+      .eq("organization_id", previous.organization_id)
+      .eq("id", previous.id)
+      .eq("status", "processing")
+      .eq("updated_at", previous.updated_at);
     if (error) summary.errors.push("routing_recovery_failed");
   }
   const { data: rawEvents, error: pullErr } = await admin
     .from("event_log")
-    .select("id, organization_id, payload, metadata, consumed_by, attempts, next_attempt_at, status")
+    .select(
+      "id, organization_id, payload, metadata, consumed_by, attempts, next_attempt_at, status",
+    )
     .eq("event_type", ROUTING_EVENT_TYPE)
     .eq("status", "pending")
     .or(`next_attempt_at.is.null,next_attempt_at.lte.${now.toISOString()}`)
@@ -140,14 +161,20 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
   const orgId = strOrNull(payload.organization_id) ?? event.organization_id;
   const conversationId = strOrNull(payload.conversation_id);
 
-  if (!conversationId || !z.string().uuid().safeParse(conversationId).success || orgId !== event.organization_id) {
+  if (
+    !conversationId ||
+    !z.string().uuid().safeParse(conversationId).success ||
+    orgId !== event.organization_id
+  ) {
     await markDone(event, "skipped_invalid_payload");
     return "skipped_invalid_payload";
   }
 
   const { data: conv, error: convError } = await admin
     .from("conversations")
-    .select("id, organization_id, contact_id, channel_session_id, assigned_to_user_id, status, metadata")
+    .select(
+      "id, organization_id, contact_id, channel_session_id, assigned_to_user_id, status, metadata, last_inbound_at",
+    )
     .eq("id", conversationId)
     .eq("organization_id", orgId)
     .maybeSingle();
@@ -170,6 +197,15 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
     await markDone(event, "skipped_contato_pessoal");
     return "skipped_contato_pessoal";
   }
+
+  // O CASO DA CONVERSA (#3717): a pergunta que a fila nunca fazia. Fica AQUI —
+  // depois de a conversa existir no pool e de não ser contato pessoal (não
+  // gastar query em quem já saiu) —, e antes de qualquer leitura de config ou
+  // de candidatos: o caso barra a conversa ANTES de o rodízio montar a lista.
+  const motivoDoCaso = await motivoDoCasoParaRoteamento(admin, orgId, {
+    id: conversationId,
+    last_inbound_at: (conv as { last_inbound_at?: string | null }).last_inbound_at ?? null,
+  });
 
   // organizations.settings.routing → Zod (default manual; knobs = config, não hardcode).
   const { data: org, error: orgError } = await admin
@@ -194,10 +230,15 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
   // direta. Por isso só carregamos elegíveis quando o modo vai distribuir.
   const viaDestinoPadrao = !alreadyAssigned && Boolean(efetivo.defaultAssigneeUserId);
   let eligibles: Awaited<ReturnType<typeof loadEligibleAttendants>> = [];
-  if (!alreadyAssigned && !viaDestinoPadrao && (efetivo.mode === "round_robin" || efetivo.mode === "load")) {
+  if (
+    !alreadyAssigned &&
+    !viaDestinoPadrao &&
+    (efetivo.mode === "round_robin" || efetivo.mode === "load")
+  ) {
     try {
       eligibles = await loadEligibleAttendants(admin, orgId, now, {
-        kind: "conversation_channel", channelSessionId: conv.channel_session_id,
+        kind: "conversation_channel",
+        channelSessionId: conv.channel_session_id,
       });
     } catch (error) {
       if (!(error instanceof InvalidRoutingChannel)) throw error;
@@ -224,6 +265,7 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
     defaultAssigneeUserId: efetivo.defaultAssigneeUserId,
     attempts: event.attempts,
     now,
+    motivoDoCaso,
   });
 
   switch (action.kind) {
@@ -233,10 +275,15 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
       // capacidade, mas não compara jornada de quem ninguém escolheu.
       const schedule = viaDestinoPadrao
         ? null
-        : (eligibles.find((candidate) => candidate.userId === action.userId)?.scheduleSnapshot ?? {});
+        : (eligibles.find((candidate) => candidate.userId === action.userId)?.scheduleSnapshot ??
+          {});
       const { data: result, error } = await admin.rpc("fn_channel_routing_claim", {
-        p_org: orgId, p_conversation: conversationId, p_channel: conv.channel_session_id,
-        p_user: action.userId, p_reason: "routing", p_schedule: schedule,
+        p_org: orgId,
+        p_conversation: conversationId,
+        p_channel: conv.channel_session_id,
+        p_user: action.userId,
+        p_reason: "routing",
+        p_schedule: schedule,
       });
       if (error) throw new Error(`fn_channel_routing_claim: ${error.message}`);
       if (result === "already_assigned" || result === "conversation_changed") {
@@ -244,10 +291,16 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
         return "assign_lost_race";
       }
       if (result !== "assigned") {
-        if (!["candidate_revoked", "candidate_not_allowed", "capacity_changed"].includes(String(result))) {
+        if (
+          !["candidate_revoked", "candidate_not_allowed", "capacity_changed"].includes(
+            String(result),
+          )
+        ) {
           throw new Error("routing_claim_invalid_result");
         }
-        await requeueEvent(event, now, Math.min(event.attempts + 1, config.max_retries), { reason: result });
+        await requeueEvent(event, now, Math.min(event.attempts + 1, config.max_retries), {
+          reason: result,
+        });
         return "requeued_no_eligible";
       }
       const leads = await adotarLeadsDoContato(
@@ -268,22 +321,37 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
           ? "skipped_manual"
           : action.reason === "already_assigned"
             ? "skipped_already_assigned"
-            : "skipped_unsupported_mode";
+            : action.reason === "caso_aguardando_cliente" || action.reason === "caso_encerrado"
+              ? "skipped_caso_sem_humano"
+              : "skipped_unsupported_mode";
       if (action.reason.startsWith("unsupported_mode")) {
         logger.warn("[routing-worker] modo não suportado (post-MVP) — no-op", {
           organization_id: orgId,
           mode: config.mode,
         });
       }
-      await markDone(event, outcome);
+      // #3717: o motivo do caso vai para o `metadata` do evento. As duas causas
+      // ("esperando o cliente" × "caso concluído") viram o MESMO outcome de
+      // contagem — o que se mede é "quantas conversas a fila recusou por causa
+      // do caso" —, e a distinção fica no evento para quem for investigar.
+      await markDone(
+        event,
+        outcome,
+        outcome === "skipped_caso_sem_humano" ? { motivo_do_caso: action.reason } : {},
+      );
       return outcome;
     }
     case "requeue": {
       if (action.attempts >= config.max_retries) await notice(orgId, conversationId, "no_eligible");
-      await requeueEvent(event, now, action.attempts, { reason: "no_eligible" }, action.nextAttemptAt);
+      await requeueEvent(
+        event,
+        now,
+        action.attempts,
+        { reason: "no_eligible" },
+        action.nextAttemptAt,
+      );
       return "requeued_no_eligible";
     }
-
   }
 }
 
@@ -328,7 +396,8 @@ async function markDone(
     .eq("organization_id", event.organization_id)
     .eq("status", "processing")
     .eq("updated_at", event.claimed_at!);
-  if (error) logger.warn("[routing-worker] markDone failed", { event_id: event.id, error: error.message });
+  if (error)
+    logger.warn("[routing-worker] markDone failed", { event_id: event.id, error: error.message });
 }
 
 async function requeueEvent(
@@ -353,12 +422,15 @@ async function requeueEvent(
     .eq("organization_id", event.organization_id)
     .eq("status", "processing")
     .eq("updated_at", event.claimed_at!);
-  if (error) logger.warn("[routing-worker] requeue failed", { event_id: event.id, error: error.message });
+  if (error)
+    logger.warn("[routing-worker] requeue failed", { event_id: event.id, error: error.message });
 }
 
 async function notice(orgId: string, conversationId: string, reason: string): Promise<void> {
   const { error } = await createAdminClient().rpc("fn_routing_unassigned_notice", {
-    p_org: orgId, p_conversation: conversationId, p_reason: reason,
+    p_org: orgId,
+    p_conversation: conversationId,
+    p_reason: reason,
   });
   if (error) throw new Error(error.message);
 }
@@ -395,6 +467,67 @@ export async function carregarRegraDoNumero(
     distribution_mode: (row.distribution_mode ?? null) as RegraDoNumero["distribution_mode"],
     default_assignee_user_id: row.default_assignee_user_id ?? null,
   };
+}
+
+/**
+ * Lê o caso MAIS RECENTE da conversa e responde se ele tira a conversa da fila
+ * (issue #3717). `null` = a fila pode distribuir.
+ *
+ * ## Por que a leitura é separada da regra
+ *
+ * `motivoParaNaoRotear` (`lib/routing/caso-da-conversa.ts`) é puro e não sabe o
+ * que é um banco; aqui só existe a pergunta "qual é a linha mais recente?".
+ * `agent_cases_conv_idx` (organization_id, conversation_id) existe desde a 0066
+ * — não há índice novo a criar.
+ *
+ * ## Falha de leitura distribui (falha ABERTA)
+ *
+ * Se o SELECT do caso estourar, o worker segue para a decisão com `null`, e não
+ * derruba o evento. Mesma escolha de `operator-turn.ts:686` ("na dúvida o aviso
+ * sai, que é o erro barato"): subir a exceção reenfileiraria o evento e deixaria
+ * a conversa sem dono — o desfecho caro. O erro sai no log, com a org e a
+ * conversa, para não sumir.
+ */
+export async function motivoDoCasoParaRoteamento(
+  admin: Pick<SupabaseClient, "from">,
+  orgId: string,
+  conversa: { id: string; last_inbound_at?: string | null },
+): Promise<MotivoDoCaso | null> {
+  const { data, error } = await admin
+    .from("agent_cases")
+    .select("status, closed_at, updated_at")
+    .eq("organization_id", orgId)
+    .eq("conversation_id", conversa.id)
+    // O MAIS RECENTE, com desempate determinístico: `created_at` sozinho pode
+    // empatar (dois casos no mesmo instante) e dois ticks leriam linhas
+    // diferentes para a mesma conversa.
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    logger.warn("[routing-worker] não consegui ler o caso da conversa — seguindo para a fila", {
+      organization_id: orgId,
+      conversation_id: conversa.id,
+      error: error.message,
+    });
+    return null;
+  }
+  const caso = data as {
+    status: string;
+    closed_at: string | null;
+    updated_at: string | null;
+  } | null;
+  return motivoParaNaoRotear(
+    caso
+      ? {
+          status: caso.status,
+          encerradoEm: caso.closed_at ?? null,
+          atualizadoEm: caso.updated_at ?? null,
+        }
+      : null,
+    conversa.last_inbound_at ?? null,
+  );
 }
 
 /**

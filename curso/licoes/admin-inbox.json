@@ -247,7 +247,8 @@
           "destaques": [
             {
               "alvo": {
-                "css": "section:has(> h3:text-is('Contato'))"
+                "css": "aside > section:has(> div > div:text-is('Rafaela Duarte'))",
+                "literal": true
               },
               "rotulo": "Dados do cliente",
               "tipo": "caixa"

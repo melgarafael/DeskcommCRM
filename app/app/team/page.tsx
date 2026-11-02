@@ -9,13 +9,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TeamMembersClient } from "./_components/TeamMembersClient";
 import { TeamInvitesClient } from "./_components/TeamInvitesClient";
 import { AttendantsClient } from "./_components/AttendantsClient";
+import { SectorsClient } from "./_components/SectorsClient";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Equipe" };
 
 /**
- * As duas abas são endereçáveis, e isso não é conveniência.
+ * As abas são endereçáveis, e isso não é conveniência.
  *
  * O editor de jornada — "meus horários de atendimento" — mora na aba
  * "Atendimento", atrás de um botão só de ícone. Quem abre a Agenda numa
@@ -34,10 +37,14 @@ export default async function TeamPage({
   searchParams: Promise<{ aba?: string }>;
 }) {
   const { aba } = await searchParams;
+  const user = await requireAuth();
+  // Setores são módulo opcional da instalação (doc 213): desligado, a aba, o
+  // endereço `?aba=setores` e a coluna da aba Atendimento somem juntos.
+  const setoresLigado = await moduloLigado(createAdminClient(), "setores");
+  const abas = setoresLigado ? { ...ABAS, setores: "sectors" } : ABAS;
   // Valor desconhecido cai na aba padrão em vez de deixar as duas fechadas —
   // link velho ou digitado errado não pode devolver uma tela sem conteúdo.
-  const abaInicial = ABAS[aba ?? ""] ?? "members";
-  const user = await requireAuth();
+  const abaInicial = abas[aba ?? ""] ?? "members";
   // `t` local em vez do hook: esta página é componente de SERVIDOR, e lá o
   // idioma vem resolvido em `user.idioma` (a cadeia pessoa → organização →
   // padrão vive em `lib/auth/server.ts`).
@@ -66,9 +73,27 @@ export default async function TeamPage({
         <TabsList>
           <TabsTrigger value="members">{t("Membros")}</TabsTrigger>
           <TabsTrigger value="attendants">{t("Atendimento")}</TabsTrigger>
+          {setoresLigado ? (
+            <TabsTrigger value="sectors">{t("Setores")}</TabsTrigger>
+          ) : null}
         </TabsList>
         <TabsContent value="members" className="mt-4 flex flex-col gap-8">
-          <TeamMembersClient currentUserId={user.id} canManage={isAdmin} />
+          {/*
+            Ler a equipe é de gerente em diante (spec 13 §4; `GET /api/v1/team` faz
+            `requireRole("manager")`). A página é aberta a todos — setores e a aba de
+            atendimento valem para qualquer membro —, então quem atende ou só lê
+            caía aqui num "Erro ao carregar membros." em vermelho. A recusa diz o
+            que fazer, como a da aba de atendimento.
+          */}
+          {isManager ? (
+            <TeamMembersClient currentUserId={user.id} canManage={isAdmin} />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {t(
+                "A lista de membros e os papéis ficam com gerentes e administradores. Para mudar o seu papel ou chamar alguém para a equipe, fale com quem administra a empresa.",
+              )}
+            </p>
+          )}
           {/*
             Convites pendentes vivem AQUI, na mesma aba de quem já entrou —
             antes só apareciam numa lista efêmera dentro do modal "Convidar
@@ -79,7 +104,11 @@ export default async function TeamPage({
         </TabsContent>
         <TabsContent value="attendants" className="mt-4">
           {isManager ? (
-            <AttendantsClient canManage={isManager} organizationTimezone={fusoUtilizavel(activeOrg?.timezone)} />
+            <AttendantsClient
+              canManage={isManager}
+              organizationTimezone={fusoUtilizavel(activeOrg?.timezone)}
+              setoresLigado={setoresLigado}
+            />
           ) : (
             <p className="text-sm text-muted-foreground">
               {/*
@@ -100,6 +129,13 @@ export default async function TeamPage({
             </p>
           )}
         </TabsContent>
+        {setoresLigado ? (
+          <TabsContent value="sectors" className="mt-4">
+            {/* Qualquer membro lê os setores; só manager+ cadastra
+                (as rotas de escrita exigem manager). */}
+            <SectorsClient canManage={isManager} />
+          </TabsContent>
+        ) : null}
       </Tabs>
     </div>
   );
