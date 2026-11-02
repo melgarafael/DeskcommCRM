@@ -211,6 +211,14 @@ export function motivoDoVeto(codigo: string | null | undefined): MotivoDaFalha |
         texto:
           "A resposta prometeu voltar a falar com o cliente, mas não deixou o retorno marcado no CRM. Agende o retorno ou gere de novo sem a promessa.",
       };
+    case "followup_promise_without_followup":
+      return {
+        codigo,
+        causa: "prometia voltar a falar com o cliente e não deixou o retorno marcado, com os casos humanos desligados (#2916)",
+        acionavel: true,
+        texto:
+          "A resposta prometeu voltar a falar com o cliente, mas não deixou o retorno marcado. Agende o retorno (schedule_followup) ou gere de novo sem a promessa.",
+      };
     case "internal_vocabulary_leak":
       return {
         codigo,
