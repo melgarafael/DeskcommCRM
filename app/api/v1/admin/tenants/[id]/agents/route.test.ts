@@ -18,13 +18,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
+import type * as RequirePlatformAdmin from "@/lib/auth/requirePlatformAdmin";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { GET } from "./route";
 
 vi.mock("@/lib/auth/requirePlatformAdmin", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/auth/requirePlatformAdmin")>()),
+  ...(await importOriginal<typeof RequirePlatformAdmin>()),
   requirePlatformAdmin: vi.fn(),
 }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
