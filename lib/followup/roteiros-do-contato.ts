@@ -7,14 +7,22 @@
  * rótulo e a ordem, do grafo publicado do roteiro. Sem modelo: o resumo é
  * montado dos campos (decisão do titular, 23/09).
  */
-import { flowGraphSchema } from "./graph-schema";
-import { mapearChecklist, valoresDoChecklist } from "./atendimento";
+import { flowGraphSchema, type DestinoDaResposta } from "./graph-schema";
+import { destinoDaResposta, mapearChecklist, valoresDoChecklist } from "./atendimento";
 
 export interface CampoDoRoteiro {
   key: string;
   label: string;
   /** `null` = o cliente ainda não respondeu (ou a pergunta foi encerrada). */
   valor: string | null;
+  /**
+   * Só existe quando a pergunta NÃO grava no contato (#3363): a resposta vale
+   * para o card do negócio, então a ficha não tem valor dele para mostrar — e
+   * mostrar "não respondido" seria mentira sobre uma pergunta já respondida.
+   * A marca é a AUSÊNCIA da chave para o destino de sempre, o mesmo padrão do
+   * grafo (`destino` opcional): nenhuma resposta de contato muda de formato.
+   */
+  onde?: Extract<DestinoDaResposta, "negocio">;
 }
 
 export interface RoteiroDoContato {
@@ -55,7 +63,18 @@ export function montarRoteirosDoContato(
       concluido_em: linha.completed_at,
       campos: checklist.checklist.passos.flatMap((p) =>
         p.kind === "collect"
-          ? [{ key: p.node.config.key, label: p.node.config.label, valor: valores[p.node.config.key] ?? null }]
+          ? [
+              {
+                key: p.node.config.key,
+                label: p.node.config.label,
+                valor: valores[p.node.config.key] ?? null,
+                // A MESMA régua do fluxo (`destinoDaResposta`): pergunta de
+                // negócio não tem valor no contato, e a ficha diz onde ele está.
+                ...(destinoDaResposta(p.node.config) === "negocio"
+                  ? { onde: "negocio" as const }
+                  : {}),
+              },
+            ]
           : [],
       ),
     });
