@@ -5,12 +5,14 @@ import { requireRole } from "@/lib/auth/require-role";
 import { type ApiError } from "@/lib/api/wrappers";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { audit } from "@/lib/audit";
+import { seAvisosDesligado } from "@/lib/avisos/modulo";
 import { enviarPushDaOrg } from "@/lib/notifications/web_push";
 
 import { POST } from "./route";
 
 /**
- * POST /api/v1/admin/avisos — o aviso escrito pelo ADMIN (#1418, fatia 1).
+ * POST /api/v1/avisos — o aviso escrito pelo ADMIN (#1418, fatia 1).
  *
  * O que este teste protege é a diferença entre "salvei o recado" e "o recado
  * tocou o celular de alguém": a janela. Publicar cedo demais entrega antes da
@@ -26,6 +28,8 @@ import { POST } from "./route";
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
+vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+vi.mock("@/lib/avisos/modulo", () => ({ seAvisosDesligado: vi.fn(async () => null) }));
 vi.mock("@/lib/notifications/web_push", () => ({
   enviarPushDaOrg: vi.fn(async () => undefined),
 }));
@@ -55,13 +59,13 @@ function avisoSalvo(extra: Record<string, unknown> = {}) {
 function bancoQueSalva(salvo: Record<string, unknown>) {
   const single = vi.fn(async () => ({ data: salvo, error: null }));
   const select = vi.fn(() => ({ single }));
-  const insert = vi.fn(() => ({ select }));
+  const insert = vi.fn((_linha: { publicar_em: string | null }) => ({ select }));
   const from = vi.fn(() => ({ insert }));
   return { from, insert, select, single };
 }
 
 function pedido(corpo: unknown) {
-  return new NextRequest("http://localhost/api/v1/admin/avisos", {
+  return new NextRequest("http://localhost/api/v1/avisos", {
     method: "POST",
     body: JSON.stringify(corpo),
     headers: { "content-type": "application/json" },
@@ -75,6 +79,7 @@ beforeEach(() => {
   vi.setSystemTime(AGORA);
   vi.clearAllMocks();
   vi.mocked(requireSupportWrite).mockResolvedValue(null);
+  vi.mocked(seAvisosDesligado).mockResolvedValue(null);
   vi.mocked(requireRole).mockResolvedValue({
     ok: true,
     org: { orgId: ORG },
@@ -86,7 +91,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("POST /api/v1/admin/avisos", () => {
+describe("POST /api/v1/avisos", () => {
   it("publica quando o aviso está dentro da janela", async () => {
     const banco = bancoQueSalva(avisoSalvo());
     vi.mocked(createAdminClient).mockReturnValue(banco as never);
@@ -95,7 +100,9 @@ describe("POST /api/v1/admin/avisos", () => {
 
     expect(resposta.status).toBe(201);
     expect(banco.insert).toHaveBeenCalledWith(
-      expect.objectContaining({ organization_id: ORG, autor_id: AUTOR, publicar_em: null }),
+      // Sem data, grava o relógio da rota — nunca `null`: a coluna é
+      // `not null default now()`, e `null` explícito não aciona o default (23502).
+      expect.objectContaining({ organization_id: ORG, autor_id: AUTOR, publicar_em: AGORA.toISOString() }),
     );
     expect(enviarPushDaOrg).toHaveBeenCalledTimes(1);
     expect(enviarPushDaOrg).toHaveBeenCalledWith(
@@ -176,7 +183,7 @@ describe("POST /api/v1/admin/avisos", () => {
   it("nenhum aviso aceito nasce com `publicar_em` no futuro", async () => {
     // A varredura dos caminhos que chegam ao insert: ausente, passado e o
     // futuro que a tolerância transforma em "agora". Em todos, o valor gravado
-    // é nulo ou <= relógio da rota — o banco não guarda um agendamento órfão.
+    // é preenchido e <= relógio da rota — o banco não guarda um agendamento órfão.
     const casos: Array<string | undefined> = [
       undefined,
       new Date(AGORA.getTime() - HORA_MS).toISOString(),
@@ -192,8 +199,9 @@ describe("POST /api/v1/admin/avisos", () => {
       );
 
       expect(resposta.status).toBe(201);
-      const gravado = banco.insert.mock.calls[0]![0] as { publicar_em: string | null };
-      expect(gravado.publicar_em === null || new Date(gravado.publicar_em) <= AGORA).toBe(true);
+      const gravado = banco.insert.mock.calls[0]![0];
+      expect(gravado.publicar_em).not.toBeNull();
+      expect(new Date(gravado.publicar_em!) <= AGORA).toBe(true);
     }
   });
 
@@ -251,6 +259,72 @@ describe("POST /api/v1/admin/avisos", () => {
     expect(requireRole).not.toHaveBeenCalled();
     expect(banco.insert).not.toHaveBeenCalled();
     expect(enviarPushDaOrg).not.toHaveBeenCalled();
+  });
+
+  it("módulo desligado (o padrão): 404 antes de autorizar, gravar ou empurrar", async () => {
+    vi.mocked(seAvisosDesligado).mockResolvedValue(
+      NextResponse.json<ApiError>({ error: { code: "not_found", message: "Not found." } }, { status: 404 }),
+    );
+    const banco = bancoQueSalva(avisoSalvo());
+    vi.mocked(createAdminClient).mockReturnValue(banco as never);
+
+    const resposta = await POST(pedido(CORPO_VALIDO));
+
+    expect(resposta.status).toBe(404);
+    expect(requireSupportWrite).not.toHaveBeenCalled();
+    expect(requireRole).not.toHaveBeenCalled();
+    expect(banco.insert).not.toHaveBeenCalled();
+    expect(enviarPushDaOrg).not.toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("audita a criação com a janela, sem o texto do aviso", async () => {
+    const banco = bancoQueSalva(avisoSalvo());
+    vi.mocked(createAdminClient).mockReturnValue(banco as never);
+
+    const resposta = await POST(pedido(CORPO_VALIDO));
+
+    expect(resposta.status).toBe(201);
+    expect(audit).toHaveBeenCalledTimes(1);
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "aviso.created",
+        actorUserId: AUTOR,
+        organizationId: ORG,
+        resourceType: "avisos",
+        resourceId: "aviso-1",
+        metadata: { publicar_em: AGORA.toISOString(), expira_em: null },
+      }),
+    );
+  });
+
+  it("recusa título e corpo acima do teto, sem gravar", async () => {
+    const banco = bancoQueSalva(avisoSalvo());
+    vi.mocked(createAdminClient).mockReturnValue(banco as never);
+
+    for (const corpo of [
+      { ...CORPO_VALIDO, titulo: "t".repeat(121) },
+      { ...CORPO_VALIDO, corpo: "c".repeat(2_001) },
+    ]) {
+      const resposta = await POST(pedido(corpo));
+      expect(resposta.status).toBe(400);
+    }
+    expect(banco.insert).not.toHaveBeenCalled();
+    expect(enviarPushDaOrg).not.toHaveBeenCalled();
+  });
+
+  it("o corpo do push é truncado; o aviso gravado fica inteiro", async () => {
+    const longo = "c".repeat(2_000);
+    const banco = bancoQueSalva(avisoSalvo({ corpo: longo }));
+    vi.mocked(createAdminClient).mockReturnValue(banco as never);
+
+    const resposta = await POST(pedido({ ...CORPO_VALIDO, corpo: longo }));
+
+    expect(resposta.status).toBe(201);
+    expect(banco.insert).toHaveBeenCalledWith(expect.objectContaining({ corpo: longo }));
+    const push = vi.mocked(enviarPushDaOrg).mock.calls[0]![1];
+    expect(push.body.length).toBeLessThan(longo.length);
+    expect(push.body.endsWith("…")).toBe(true);
   });
 
   it("recusa aviso sem corpo", async () => {

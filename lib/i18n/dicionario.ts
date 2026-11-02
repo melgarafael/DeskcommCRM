@@ -18794,6 +18794,11 @@ export const DICIONARIO: Traducoes = {
   "Agrupa os atendentes da Equipe por área e filtra a aba Atendimento por setor. Não muda quem recebe as conversas.": { es: "Agrupa a los asesores del Equipo por área y filtra la pestaña Atención por sector. No cambia quién recibe las conversaciones." },
   "Ligado, cada empresa ganha na Equipe a aba Setores, para agrupar os atendentes por área, e a aba Atendimento passa a mostrar e filtrar o setor de cada um. O setor não muda quem recebe as conversas. Desligado, a aba e a coluna somem; os setores já cadastrados ficam guardados.": { es: "Activado, cada empresa obtiene en Equipo la pestaña Sectores, para agrupar a los asesores por área, y la pestaña Atención pasa a mostrar y filtrar el sector de cada uno. El sector no cambia quién recibe las conversaciones. Desactivado, la pestaña y la columna desaparecen; los sectores ya registrados quedan guardados." },
   "Não cria porta no menu do CRM: ele libera uma aba em": { es: "No crea entrada en el menú del CRM: habilita una pestaña en" },
+  // O módulo opcional dos avisos para a equipe (#1418) em /admin/sistema e em Recursos opcionais.
+  "Avisos para a equipe": { es: "Avisos para el equipo" },
+  "O administrador da empresa escreve um aviso e ele chega como notificação nos aparelhos da equipe.": { es: "El administrador de la empresa escribe un aviso y este llega como notificación a los dispositivos del equipo." },
+  "Ligado, o administrador de cada empresa pode escrever um aviso com título e texto, e ele chega como notificação nos aparelhos da equipe que ativaram as notificações. Desligado, ninguém envia avisos; os já enviados ficam guardados.": { es: "Activado, el administrador de cada empresa puede escribir un aviso con título y texto, y este llega como notificación a los dispositivos del equipo que activaron las notificaciones. Desactivado, nadie envía avisos; los ya enviados quedan guardados." },
+  "Não cria porta no menu do CRM: por enquanto o aviso é enviado pela API, em /api/v1/avisos.": { es: "No crea entrada en el menú del CRM: por ahora el aviso se envía por la API, en /api/v1/avisos." },
   'Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.': {
     es: 'Para no depender del dato, pon un texto de respaldo: {{primeiro_nome|"alumno"}}.',
   },
