@@ -11,19 +11,33 @@
  * mesma pergunta, e elas divergiriam no primeiro ajuste — a tela mostraria o
  * fluxo que a API não devolve.
  *
- * ─── O recorte é o MESMO do motor, de propósito ───────────────────────────
+ * ─── O que a lista mostra, e o que o aviso marca ──────────────────────────
  *
- * `status='active'` E `active_version_id` preenchido. É exatamente o que
- * `carregaPointersDeEtapa` (`./gatilho-etapa.ts`) exige para armar: rascunho
- * nunca publicado não dispara nada, e desativado parou de disparar. Uma lista
- * mais generosa ("mostre tudo que já apontou para esta etapa") faria o gestor
- * caçar mensagem que nunca sai — o oposto do que a tela existe para responder.
- * Só LEITURA: o motor e o envio não são tocados por este arquivo.
+ * O motor (`aplicaGatilhoDeEtapa`, `./gatilho-etapa.ts`) passa cada pointer por
+ * três portas que não dependem do negócio, e esta leitura chama as MESMAS
+ * funções, não uma cópia delas:
  *
- * ─── Uma consulta, não uma por etapa ──────────────────────────────────────
+ *   1. `etapaQueOPointerArma` — ativo, com versão publicada, fora do roteiro de
+ *      atendimento e com `trigger_config` de etapa válido. Quem não passa NÃO
+ *      aparece: rascunho, desativado ou roteiro nunca disparam por etapa.
+ *   2. `noDeGatilhoDoGrafo` — a versão ativa tem nó de gatilho. Sem ele (ou com
+ *      grafo que não passa no `flowGraphSchema`) o motor não arma, e a linha NÃO
+ *      aparece.
+ *   3. `decidirAgenteDoEnrollmentAutomatico` — fluxo que pede IA e que nenhum
+ *      agente publicado com follow-up ligado arma é BARRADO pelo motor. Esse
+ *      APARECE, marcado com `sem_agente: true`: escondê-lo deixaria o gestor sem
+ *      saber que o fluxo existe e está parado, que é justamente o conserto que
+ *      ele precisa fazer.
  *
- * A tabela é lida UMA vez por requisição e agrupada em memória pelo
- * `stage_id` do `trigger_config`. O caminho N+1 (uma consulta por coluna do
+ * O que fica de fora por natureza: o que depende do NEGÓCIO (sem contato, já
+ * vivo noutro fluxo, janela de origem). A lista diz "entrar aqui arma isto",
+ * não "este negócio vai receber isto".
+ *
+ * ─── Nenhuma consulta por etapa ───────────────────────────────────────────
+ *
+ * Os pointers são lidos UMA vez por requisição e agrupados em memória pelo
+ * `stage_id` do `trigger_config`; as portas 2 e 3 custam uma leitura cada
+ * (grafos das versões ativas, agentes publicados), nunca uma por fluxo. O caminho N+1 (uma consulta por coluna do
  * quadro) custaria vinte idas ao banco num funil de vinte etapas, numa tela que
  * reabre a cada edição.
  *
@@ -34,59 +48,34 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { triggerConfigSchema } from "./api-schemas";
+import {
+  createSupabaseFollowupGateDb,
+  decidirAgenteDoEnrollmentAutomatico,
+  noDeGatilhoDoGrafo,
+  type EnabledFollowupAgent,
+  type FollowupGateDb,
+  type NoDeGatilho,
+} from "./agent-followup-gate";
+import { etapaQueOPointerArma } from "./gatilho-etapa";
+import { flowGraphSchema } from "./graph-schema";
 
 /** O mínimo que a tela precisa para citar o fluxo — id para link futuro, nome para ler. */
 export interface FluxoDeEtapa {
   id: string;
   name: string;
+  /** Pede IA e nenhum agente publicado com follow-up ligado o arma: o motor o barra. */
+  sem_agente: boolean;
 }
 
 /** `stage_id` → fluxos armados nele, na ordem de nome. */
 export type FluxosPorEtapa = ReadonlyMap<string, readonly FluxoDeEtapa[]>;
 
-const COLUNAS_DO_POINTER = "id, name, status, active_version_id, trigger_config";
-
 /**
- * Agrupa as linhas de `followup_flow_pointers` por etapa — PURA, para o teste
- * cobrir o recorte sem dublê de banco.
- *
- * Ordem de chegada é preservada dentro de cada etapa; a consulta ordena por
- * nome, então a lista sai estável entre renders.
- */
-export function agrupaFluxosPorEtapa(linhas: ReadonlyArray<unknown>): Map<string, FluxoDeEtapa[]> {
-  const porEtapa = new Map<string, FluxoDeEtapa[]>();
-  for (const linha of linhas) {
-    if (!linha || typeof linha !== "object") continue;
-    const {
-      id,
-      name,
-      status,
-      active_version_id: versaoAtiva,
-      trigger_config: gatilho,
-    } = linha as Record<string, unknown>;
-
-    if (typeof id !== "string" || id.length === 0) continue;
-    if (typeof name !== "string" || name.length === 0) continue;
-    // Rascunho e desativado ficam de fora pela mesma porta do motor.
-    if (status !== "active") continue;
-    if (typeof versaoAtiva !== "string" || versaoAtiva.length === 0) continue;
-
-    const parsed = triggerConfigSchema.safeParse(gatilho);
-    if (!parsed.success || parsed.data.kind !== "stage_change") continue;
-
-    const etapaId = parsed.data.params.stage_id;
-    const lista = porEtapa.get(etapaId);
-    if (lista) lista.push({ id, name });
-    else porEtapa.set(etapaId, [{ id, name }]);
-  }
-  return porEtapa;
-}
-
-/**
- * Lê os fluxos armados por etapa da organização. LANÇA quando o banco recusa —
- * quem chama decide o que fazer (as duas rotas seguem sem o campo, que é
- * diferente de dizer "não há nenhum").
+ * Lê os fluxos armados por etapa da organização. Custa no máximo TRÊS leituras
+ * por requisição, nenhuma por etapa: pointers, grafos das versões ativas e
+ * agentes publicados. LANÇA quando o banco recusa — quem chama decide o que
+ * fazer (as duas rotas seguem sem o campo, que é diferente de dizer "não há
+ * nenhum").
  */
 export async function carregaFluxosPorEtapa(
   supabase: SupabaseClient,
@@ -96,12 +85,59 @@ export async function carregaFluxosPorEtapa(
     .from("followup_flow_pointers")
     // `organization_id` explícito mesmo com RLS: é a convenção do repo para toda
     // leitura de tenant, e é a rede que sobra se a policy mudar.
-    .select(COLUNAS_DO_POINTER)
+    .select("id, name, active_version_id, trigger_config, surface")
     .eq("organization_id", organizationId)
     .eq("status", "active")
     .order("name", { ascending: true });
   if (error) throw new Error(error.message);
-  return agrupaFluxosPorEtapa((data ?? []) as unknown[]);
+
+  const armados: Array<FluxoDeEtapa & { etapaId: string; versaoId: string }> = [];
+  for (const linha of (data ?? []) as Array<Record<string, unknown>>) {
+    const { id, name, active_version_id: versaoId } = linha;
+    if (typeof id !== "string" || typeof name !== "string" || name.length === 0) continue;
+    if (typeof versaoId !== "string") continue;
+    const etapaId = etapaQueOPointerArma({
+      active_version_id: versaoId,
+      trigger_config: linha.trigger_config,
+      surface: typeof linha.surface === "string" ? linha.surface : null,
+    });
+    if (etapaId) armados.push({ id, name, sem_agente: false, etapaId, versaoId });
+  }
+  const porEtapa = new Map<string, FluxoDeEtapa[]>();
+  if (armados.length === 0) return porEtapa;
+
+  const { data: versoes, error: erroDoGrafo } = await supabase
+    .from("followup_flow_versions")
+    .select("id, graph")
+    .eq("organization_id", organizationId)
+    .in("id", [...new Set(armados.map((a) => a.versaoId))]);
+  if (erroDoGrafo) throw new Error(erroDoGrafo.message);
+  const noPorVersao = new Map<string, NoDeGatilho | null>();
+  for (const v of (versoes ?? []) as Array<{ id: string; graph: unknown }>) {
+    // O motor faz `flowGraphSchema.parse` e falha o evento num grafo inválido:
+    // nos dois casos nada dispara, então aqui ele vale como "sem gatilho".
+    const grafo = flowGraphSchema.safeParse(v.graph);
+    noPorVersao.set(v.id, grafo.success ? noDeGatilhoDoGrafo(grafo.data) : null);
+  }
+
+  // Os agentes da org são lidos UMA vez e servidos à função do motor para cada
+  // fluxo — a decisão é a dele, a ida ao banco é uma só.
+  const gateReal = createSupabaseFollowupGateDb(supabase);
+  let agentes: Promise<EnabledFollowupAgent[]> | null = null;
+  const gateDb: FollowupGateDb = {
+    loadEnabledPublishedFollowupAgents: (orgId) => (agentes ??= gateReal.loadEnabledPublishedFollowupAgents(orgId)),
+  };
+
+  for (const { etapaId, versaoId, ...fluxo } of armados) {
+    const no = noPorVersao.get(versaoId);
+    if (!no) continue;
+    const { barrado } = await decidirAgenteDoEnrollmentAutomatico(gateDb, organizationId, fluxo.id, no.pedeAgente);
+    const item = { ...fluxo, sem_agente: barrado };
+    const lista = porEtapa.get(etapaId);
+    if (lista) lista.push(item);
+    else porEtapa.set(etapaId, [item]);
+  }
+  return porEtapa;
 }
 
 /**

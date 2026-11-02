@@ -43,7 +43,9 @@ export interface EtapaDoFunil {
   last_change_at?: string | null;
   /**
    * #3603 — os fluxos de follow-up cujo gatilho é «entrar nesta etapa»
-   * (`trigger_config.kind='stage_change'`), só os ativos com versão publicada.
+   * (`trigger_config.kind='stage_change'`) que passam nas portas do motor que
+   * não dependem do negócio (`lib/followup/fluxos-da-etapa.ts`). O que pede IA
+   * sem agente que o arme vem com `sem_agente: true`.
    *
    * `undefined` (leitura antiga em cache, ou a consulta dos fluxos falhou) é
    * DIFERENTE de `[]` (nenhum fluxo armado): a tela só afirma «nenhum» no

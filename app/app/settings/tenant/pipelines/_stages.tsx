@@ -290,6 +290,9 @@ export function fraseDeTempoNaEtapa(
  * configuração do funil; ela NÃO edita nada (não há botão, não há seletor), e o
  * texto é o nome que o dono do fluxo deu a ele.
  *
+ * Fluxo que pede IA e que nenhum agente com follow-up ligado arma sai com o
+ * aviso entre parênteses: o motor o barra, e a linha não pode prometê-lo.
+ *
  * `null` quando o campo veio ausente — a leitura dos fluxos falhou ou é cache
  * antigo. Nesse caso a tela não diz nem «tem» nem «não tem»: `[]` é a única
  * situação em que «nenhum fluxo» é afirmação verdadeira.
@@ -300,7 +303,10 @@ export function fraseDosFluxosDaEtapa(
 ): string | null {
   if (!Array.isArray(etapa.fluxos)) return null;
   if (etapa.fluxos.length === 0) return t("Nenhum fluxo de follow-up armado nesta etapa.");
-  const nomes = etapa.fluxos.map((f) => f.name).join(", ");
+  // O fluxo que o motor barra por falta de agente aparece, mas marcado: ele
+  // existe e está parado, e é esse o conserto que quem lê precisa fazer.
+  const aviso = t("não dispara: nenhum agente com follow-up ligado arma este fluxo");
+  const nomes = etapa.fluxos.map((f) => (f.sem_agente ? `${f.name} (${aviso})` : f.name)).join(", ");
   return `${t("Fluxos de follow-up armados nesta etapa:")} ${nomes}.`;
 }
 

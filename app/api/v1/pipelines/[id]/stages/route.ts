@@ -87,8 +87,8 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (error) return fail("internal_error", t("Falha ao listar etapas."), 500, { requestId });
 
   // #3603 — a lista read-only de «quais fluxos disparam ao entrar nesta etapa».
-  // Vai numa consulta só (não uma por etapa) e no MESMO recorte do motor: só
-  // fluxo ativo com versão publicada. Se esta leitura falhar, a resposta sai
+  // Nenhuma consulta por etapa, e as MESMAS portas do motor
+  // (`lib/followup/fluxos-da-etapa.ts`). Se esta leitura falhar, a resposta sai
   // SEM o campo — a tela então não afirma nem "tem" nem "não tem" —, em vez de
   // derrubar uma listagem de etapas que já foi lida com sucesso.
   let fluxos: Awaited<ReturnType<typeof carregaFluxosPorEtapa>> | null = null;

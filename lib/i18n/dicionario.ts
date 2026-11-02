@@ -8394,6 +8394,9 @@ export const DICIONARIO: Traducoes = {
   "Nenhum fluxo de follow-up armado nesta etapa.": {
     es: "Ningún flujo de seguimiento armado en esta etapa.",
   },
+  "não dispara: nenhum agente com follow-up ligado arma este fluxo": {
+    es: "no se dispara: ningún agente con seguimiento activado arma este flujo",
+  },
   "entrou no fim do funil.": { es: "entró al final del embudo." },
   "Etapas deste funil": { es: "Etapas de este embudo" },
   "Estas são as colunas do seu quadro, na ordem em que o cliente avança. Você pode renomear, criar, reordenar e arquivar.": {

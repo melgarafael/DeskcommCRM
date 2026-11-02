@@ -6,6 +6,7 @@ import { fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import type { AuthUser } from "@/lib/auth/types";
+import { grafoDeFluxo } from "@/tests/helpers/stages-db-double";
 
 /**
  * Task 2 — GET/PUT /api/v1/pipelines/[id]/agent-mapping.
@@ -61,6 +62,8 @@ interface DbOpts {
   updateError?: (n: number) => { code: string; message: string } | null;
   /** #3603 — fluxos de follow-up da org; `trigger_config` cru, como no banco. */
   pointers?: Array<Record<string, unknown>>;
+  /** `followup_flow_versions` — o grafo decide se o fluxo tem gatilho e se pede IA. */
+  flowVersions?: Array<Record<string, unknown>>;
 }
 
 function makeDb(opts: DbOpts = {}) {
@@ -76,16 +79,20 @@ function makeDb(opts: DbOpts = {}) {
     ],
     crm_stages: (opts.stages ?? []) as unknown as Array<Record<string, unknown>>,
     followup_flow_pointers: (opts.pointers ?? []) as Array<Record<string, unknown>>,
+    followup_flow_versions: (opts.flowVersions ?? []) as Array<Record<string, unknown>>,
   };
 
   function builder(table: string) {
     const filtros: Array<[string, unknown]> = [];
+    const pertinencias: Array<[string, unknown[]]> = [];
     let patch: Record<string, unknown> | null = null;
     let colunas: string[] | null = null;
     let ordem: string | null = null;
 
     const casam = () =>
-      (tables[table] ?? []).filter((r) => filtros.every(([c, v]) => r[c] === v));
+      (tables[table] ?? [])
+        .filter((r) => filtros.every(([c, v]) => r[c] === v))
+        .filter((r) => pertinencias.every(([c, vs]) => vs.includes(r[c])));
 
     /** Ordena e projeta como o PostgREST faria: `order()` e a lista do `select()`. */
     const lidos = () => {
@@ -123,6 +130,10 @@ function makeDb(opts: DbOpts = {}) {
       },
       eq: (c: string, v: unknown) => {
         filtros.push([c, v]);
+        return b;
+      },
+      in: (c: string, vs: unknown[]) => {
+        pertinencias.push([c, vs]);
         return b;
       },
       order: (col: string) => {
@@ -327,6 +338,9 @@ describe("GET /api/v1/pipelines/[id]/agent-mapping", () => {
           trigger_config: { kind: "stage_change", params: { stage_id: ETAPA_A } },
         },
       ],
+      flowVersions: [
+        { id: "99999999-9999-4999-8999-999999999999", organization_id: ORG_ID, graph: grafoDeFluxo() },
+      ],
     });
     const { GET } = await import("./route");
     const res = await GET(reqGet(), ctx);
@@ -337,7 +351,7 @@ describe("GET /api/v1/pipelines/[id]/agent-mapping", () => {
     };
     const porId = Object.fromEntries(body.data.etapas.map((e) => [e.id, e]));
     expect(porId[ETAPA_A]?.fluxos).toEqual([
-      { id: "11111111-aaaa-4aaa-8aaa-111111111111", name: "Retomada da proposta" },
+      { id: "11111111-aaaa-4aaa-8aaa-111111111111", name: "Retomada da proposta", sem_agente: false },
     ]);
     expect(porId[ETAPA_B]?.fluxos).toEqual([]);
   });
@@ -463,6 +477,9 @@ describe("PUT /api/v1/pipelines/[id]/agent-mapping", () => {
           trigger_config: { kind: "stage_change", params: { stage_id: ETAPA_A } },
         },
       ],
+      flowVersions: [
+        { id: "99999999-9999-4999-8999-999999999999", organization_id: ORG_ID, graph: grafoDeFluxo() },
+      ],
     });
     const { PUT } = await import("./route");
     const res = await PUT(reqPut({ mapeamento: mapa({ new: ETAPA_A }) }), ctx);
@@ -472,7 +489,7 @@ describe("PUT /api/v1/pipelines/[id]/agent-mapping", () => {
       data: { etapas: Array<{ id: string; fluxos?: Array<{ name: string }> }> };
     };
     expect(body.data.etapas[0]?.fluxos).toEqual([
-      { id: "11111111-aaaa-4aaa-8aaa-111111111111", name: "Retomada da proposta" },
+      { id: "11111111-aaaa-4aaa-8aaa-111111111111", name: "Retomada da proposta", sem_agente: false },
     ]);
   });
 

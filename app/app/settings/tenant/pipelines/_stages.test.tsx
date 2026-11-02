@@ -1012,7 +1012,7 @@ describe("StagesSection — os fluxos armados na etapa, só leitura (#3603)", ()
    */
   it("mostra o NOME do fluxo armado na etapa e diz quando não há nenhum", async () => {
     vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
-    comFluxos({ e1: [{ id: "f1", name: "Retomada da proposta" }], e2: [] });
+    comFluxos({ e1: [{ id: "f1", name: "Retomada da proposta", sem_agente: false }], e2: [] });
     montar();
 
     const linha = await screen.findByTestId("fluxos-de-e1");
@@ -1024,6 +1024,27 @@ describe("StagesSection — os fluxos armados na etapa, só leitura (#3603)", ()
   });
 
   /**
+   * O fluxo que o motor barra por falta de agente aparece, mas com o aviso:
+   * a linha diz que ele existe e que está parado, nunca que vai disparar.
+   */
+  it("marca o fluxo que nenhum agente com follow-up ligado arma", async () => {
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
+    comFluxos({
+      e1: [
+        { id: "f1", name: "Retomada da proposta", sem_agente: true },
+        { id: "f2", name: "Lembrete fixo", sem_agente: false },
+      ],
+      e2: [],
+    });
+    montar();
+
+    const linha = await screen.findByTestId("fluxos-de-e1");
+    expect(linha).toHaveTextContent(
+      "Retomada da proposta (não dispara: nenhum agente com follow-up ligado arma este fluxo), Lembrete fixo.",
+    );
+  });
+
+  /**
    * «Texto, não editor». Este teste é a cerca contra a tentação de transformar a
    * linha num segundo lugar para armar/desarmar gatilho: o fluxo se configura no
    * editor de follow-up, e duas superfícies escrevendo o mesmo `trigger_config`
@@ -1031,7 +1052,7 @@ describe("StagesSection — os fluxos armados na etapa, só leitura (#3603)", ()
    */
   it("é LEITURA: a linha não traz campo, seletor nem botão", async () => {
     vi.mocked(apiClient.patch).mockResolvedValue({ data: { etapas: [] } });
-    comFluxos({ e1: [{ id: "f1", name: "Retomada da proposta" }], e2: [] });
+    comFluxos({ e1: [{ id: "f1", name: "Retomada da proposta", sem_agente: false }], e2: [] });
     montar();
 
     const linha = await screen.findByTestId("fluxos-de-e1");
