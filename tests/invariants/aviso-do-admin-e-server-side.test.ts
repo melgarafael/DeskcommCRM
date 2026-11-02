@@ -1,5 +1,5 @@
 /**
- * O AVISO ESCRITO PELO ADMIN É SERVER-SIDE ONLY — E ISSO SE MEDE (migration 9043).
+ * O AVISO ESCRITO PELO ADMIN É SERVER-SIDE ONLY — E ISSO SE MEDE (migration 9059).
  *
  * `public.avisos` guarda o recado que o admin da empresa escreve para empurrar
  * como push para o time inteiro (#1418, fatia 1). Não é dado pessoal, mas é
@@ -8,7 +8,7 @@
  * de outro tenant. Por isso a postura é a mesma de `map_provider_credentials`
  * (0504) e das tabelas de anúncios (0213): RLS ligada, ZERO policy alcançável
  * por anon/authenticated, privilégio nenhum, escrita e leitura só pelo
- * service_role — que é quem a rota `app/api/v1/admin/avisos` usa.
+ * service_role — que é quem a rota `app/api/v1/avisos` usa.
  *
  * Esta é a prova comportamental que a varredura de completude
  * (`tests/invariants/rls-completude-varredura.test.ts`) cobra de toda tabela
@@ -48,7 +48,7 @@ function privilegiosDe(papel: string): string {
 
 describe("o PostgREST não serve o aviso escrito pelo admin", () => {
   it("a tabela EXISTE no baseline — controle positivo da sonda", () => {
-    // Sem esta guarda, um baseline em que o bloco da 9043 não chegou faria os
+    // Sem esta guarda, um baseline em que o bloco da 9059 não chegou faria os
     // `count(*)` abaixo devolverem 0 e o arquivo inteiro passar por AUSÊNCIA.
     const existe = sql(`
       select count(*) from information_schema.tables
