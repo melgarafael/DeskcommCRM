@@ -63302,6 +63302,236 @@ $$;
 revoke execute on function public.fn_nascer_lead_da_conversa(uuid, uuid, uuid, uuid, text, text, jsonb, text[]) from public, anon;
 grant  execute on function public.fn_nascer_lead_da_conversa(uuid, uuid, uuid, uuid, text, text, jsonb, text[]) to authenticated, service_role;
 
+-- ---- catálogo de serviços: tipo, unidade, prazo e sinal (migration 0774, #3372) ----
+-- Espelho idempotente da migration 0774. É este apêndice que chega a todo
+-- self-host: o `install.sh` aplica o baseline num banco novo e o `update.sh` o
+-- re-aplica num banco existente — nenhum dos dois roda as migrations.
+--
+-- O serviço é um ITEM do catálogo com tipo (`tipo_servico is null` = produto, e é
+-- o que toda linha anterior a esta migration é). A variação também é item,
+-- ligada ao principal por `pai_id`, e não repete tipo, unidade, prazo nem sinal:
+-- o CHECK `catalog_products_servico_variacao_check` recusa (issue #3372, fatia B,
+-- complemento da #2497 — nenhuma tabela de serviço com preço).
+alter table public.catalog_products
+  add column if not exists tipo_servico text,
+  add column if not exists unidade_cobranca text,
+  add column if not exists prazo_dias_uteis integer,
+  add column if not exists sinal_tipo text,
+  add column if not exists sinal_percentual numeric(5, 2),
+  add column if not exists sinal_cents bigint,
+  add column if not exists instrucoes_ia text,
+  add column if not exists ia_oferece boolean not null default true,
+  add column if not exists ia_agenda boolean not null default false,
+  add column if not exists pai_id uuid,
+  add column if not exists revision integer not null default 1;
+
+-- Comentário em bloco com guarda `to_regclass`: `comment on column` num objeto
+-- que não existe derruba a passada do `update.sh` sem ON_ERROR_STOP, e o desfecho
+-- seria uma atualização interrompida por causa de documentação.
+do $servico_comentarios$
+begin
+  if to_regclass('public.catalog_products') is not null then
+    execute $c$comment on column public.catalog_products.tipo_servico is
+      'Tipo do serviço (issue #3372): hora_marcada, projeto ou recorrente. NULL = produto de prateleira, que é o que toda linha anterior a esta migration é.'$c$;
+    execute $c$comment on column public.catalog_products.unidade_cobranca is
+      'Como o item é cobrado: sessao/hora (hora marcada), valor_fechado/hora (projeto), mes/trimestre/ano (recorrente). A compatibilidade com o tipo é CHECK, não convenção.'$c$;
+    execute $c$comment on column public.catalog_products.prazo_dias_uteis is
+      'Prazo de entrega em dias úteis — só existe em projeto; CHECK recusa em qualquer outro tipo.'$c$;
+    execute $c$comment on column public.catalog_products.sinal_tipo is
+      'Como o sinal é calculado: percentual (sinal_percentual, 1 a 100) ou fixo (sinal_cents). O valor por variação é calculado na leitura, nunca copiado.'$c$;
+    execute $c$comment on column public.catalog_products.instrucoes_ia is
+      'Instruções internas para a IA: orientam a conversa e NUNCA vão ao cliente. A busca do agente devolve marcadas como "não repita ao cliente".'$c$;
+    execute $c$comment on column public.catalog_products.ia_agenda is
+      'Quando ligado, a IA pode reservar horário deste serviço. Nasce desligado: quem escreve (agenda) nasce fechado, quem só lê (ia_oferece) nasce aberto.'$c$;
+    execute $c$comment on column public.catalog_products.pai_id is
+      'Variação do serviço: aponta para o item principal, que carrega tipo, unidade, prazo e sinal. A variação tem nome, código e preço próprios e ZERO detalhe de serviço (CHECK).'$c$;
+    execute $c$comment on column public.catalog_products.revision is
+      'Só cresce (gatilho). É o que faz PATCH com `expected_revision` velho responder 409 em vez de sobrescrever a edição de outra pessoa.'$c$;
+  end if;
+end
+$servico_comentarios$;
+
+do $$
+begin
+  alter table public.catalog_products
+    drop constraint if exists catalog_products_tipo_servico_check;
+  alter table public.catalog_products
+    add constraint catalog_products_tipo_servico_check
+      check (
+        tipo_servico is null
+        or tipo_servico in ('hora_marcada', 'projeto', 'recorrente')
+      );
+
+  alter table public.catalog_products
+    drop constraint if exists catalog_products_unidade_cobranca_check;
+  alter table public.catalog_products
+    add constraint catalog_products_unidade_cobranca_check
+      check (
+        unidade_cobranca is null
+        or unidade_cobranca in ('sessao', 'hora', 'valor_fechado', 'mes', 'trimestre', 'ano')
+      );
+
+  alter table public.catalog_products
+    drop constraint if exists catalog_products_servico_unidade_check;
+  alter table public.catalog_products
+    add constraint catalog_products_servico_unidade_check
+      check (
+        (tipo_servico is null) = (unidade_cobranca is null)
+        and (
+          tipo_servico is null
+          or (tipo_servico = 'hora_marcada' and unidade_cobranca in ('sessao', 'hora'))
+          or (tipo_servico = 'projeto' and unidade_cobranca in ('valor_fechado', 'hora'))
+          or (tipo_servico = 'recorrente' and unidade_cobranca in ('mes', 'trimestre', 'ano'))
+        )
+      );
+
+  alter table public.catalog_products
+    drop constraint if exists catalog_products_servico_prazo_check;
+  alter table public.catalog_products
+    add constraint catalog_products_servico_prazo_check
+      check (
+        prazo_dias_uteis is null
+        or (tipo_servico = 'projeto' and prazo_dias_uteis between 1 and 3650)
+      );
+
+  alter table public.catalog_products
+    drop constraint if exists catalog_products_servico_sinal_check;
+  alter table public.catalog_products
+    add constraint catalog_products_servico_sinal_check
+      check (
+        (sinal_tipo is null and sinal_percentual is null and sinal_cents is null)
+        or (
+          tipo_servico is not null
+          and (
+            (sinal_tipo = 'percentual' and sinal_percentual between 1 and 100 and sinal_cents is null)
+            or (sinal_tipo = 'fixo' and sinal_cents > 0 and sinal_percentual is null)
+          )
+        )
+      );
+
+  alter table public.catalog_products
+    drop constraint if exists catalog_products_servico_sem_estoque_check;
+  alter table public.catalog_products
+    add constraint catalog_products_servico_sem_estoque_check
+      check (
+        tipo_servico is null
+        or (controla_estoque = false and quantidade = 0)
+      );
+
+  alter table public.catalog_products
+    drop constraint if exists catalog_products_servico_variacao_check;
+  alter table public.catalog_products
+    add constraint catalog_products_servico_variacao_check
+      check (
+        pai_id is null
+        or (
+          tipo_servico is null
+          and unidade_cobranca is null
+          and prazo_dias_uteis is null
+          and sinal_tipo is null
+          and sinal_percentual is null
+          and sinal_cents is null
+        )
+      );
+
+  alter table public.catalog_products
+    drop constraint if exists catalog_products_pai_nao_e_ele_mesmo_check;
+  alter table public.catalog_products
+    add constraint catalog_products_pai_nao_e_ele_mesmo_check
+      check (pai_id is null or pai_id <> id);
+
+  alter table public.catalog_products
+    drop constraint if exists catalog_products_revision_check;
+  alter table public.catalog_products
+    add constraint catalog_products_revision_check
+      check (revision >= 1);
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'catalog_products_pai_fkey'
+      and conrelid = 'public.catalog_products'::regclass
+  ) then
+    alter table public.catalog_products
+      add constraint catalog_products_pai_fkey
+        foreign key (pai_id) references public.catalog_products(id) on delete set null;
+  end if;
+end
+$$;
+
+create index if not exists catalog_products_pai_idx
+  on public.catalog_products (pai_id)
+  where (pai_id is not null);
+
+create index if not exists catalog_products_servico_idx
+  on public.catalog_products (organization_id, tipo_servico)
+  where (tipo_servico is not null);
+
+create or replace function public.fn_catalog_products_proxima_revisao()
+returns trigger
+language plpgsql
+set search_path = public
+as $fn$
+begin
+  new.revision := old.revision + 1;
+  return new;
+end;
+$fn$;
+
+drop trigger if exists trg_catalog_products_proxima_revisao on public.catalog_products;
+create trigger trg_catalog_products_proxima_revisao
+  before update on public.catalog_products
+  for each row execute function public.fn_catalog_products_proxima_revisao();
+
+create or replace function public.fn_catalog_products_servico_variacao()
+returns trigger
+language plpgsql
+set search_path = public
+as $fn$
+declare
+  pai public.catalog_products%rowtype;
+begin
+  if new.pai_id is null then
+    return new;
+  end if;
+
+  select * into pai from public.catalog_products where id = new.pai_id;
+
+  if not found then
+    raise exception 'variacao_sem_pai: o serviço principal informado não existe nesta organização'
+      using errcode = '23503';
+  end if;
+  if pai.organization_id <> new.organization_id then
+    raise exception 'variacao_de_outra_organizacao: a variação precisa ser da mesma organização do serviço principal'
+      using errcode = '23514';
+  end if;
+  -- A variação de uma variação vem ANTES da checagem de tipo: a variação tem
+  -- `tipo_servico` nulo (o CHECK a proíbe de carregar tipo), então perguntar
+  -- "o pai é serviço?" primeiro responderia `pai_nao_e_servico` para um erro
+  -- que é outro — e quem lê a mensagem iria procurar o problema no lugar errado.
+  if pai.pai_id is not null then
+    raise exception 'variacao_nao_tem_variacao: o item principal já é uma variação'
+      using errcode = '23514';
+  end if;
+  if pai.tipo_servico is null then
+    raise exception 'pai_nao_e_servico: uma variação só pode pertencer a um item marcado como serviço'
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$fn$;
+
+drop trigger if exists trg_catalog_products_servico_variacao on public.catalog_products;
+create trigger trg_catalog_products_servico_variacao
+  before insert or update of pai_id on public.catalog_products
+  for each row execute function public.fn_catalog_products_servico_variacao();
+
+notify pgrst, 'reload schema';
+
 do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
 -- ---- card que entra na etapa entra no topo (migration 9058, issue #3461) ----
 --

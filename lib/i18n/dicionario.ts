@@ -13430,6 +13430,18 @@ export const DICIONARIO: Traducoes = {
   "Os funis desta lista estão empatados na ordenação. Recarregue a página e mova o funil para outro lugar.": { es: "Hay embudos con la misma posición en esta lista. Recarga la página y mueve el embudo a otra posición." },
   "Payload inválido.": { es: "Payload inválido." },
   "Produto não encontrado.": { es: "Producto no encontrado." },
+  "Serviço não encontrado.": { es: "Servicio no encontrado." },
+  "Serviço principal não encontrado para esta variação.": {
+    es: "No se encontró el servicio principal para esta variación.",
+  },
+  "Este serviço foi alterado por outra pessoa.": {
+    es: "Otra persona modificó este servicio.",
+  },
+  "Este serviço não passou nas regras do cadastro.": {
+    es: "Este servicio no cumple las reglas del catálogo.",
+  },
+  "Já existe um item com esse código.": { es: "Ya existe un artículo con ese código." },
+  "Erro ao salvar o serviço.": { es: "Error al guardar el servicio." },
   "Query inválida.": { es: "Query inválida." },
   "Responsável não é um atendente ativo desta organização.": { es: "El responsable no es un asesor activo de esta organización." },
   "Retomada de contato descartada — decisão registrada": { es: "Reanudación de contacto descartada — decisión registrada" },
