@@ -19,13 +19,14 @@
  * ═══ O BANCO VEM PELA PORTA (#3715) ═══
  *
  * As três consultas (negócio, contato, INSERT da tarefa) deixaram de ser a
- * cadeia do PostgREST e são SQL com parâmetros em `lib/db`. A assinatura
- * continua aceitando o cliente antigo (`FonteDeBanco`) porque automação,
- * follow-up e carteira — fora desta fatia — ainda passam um `SupabaseClient`;
- * `resolverPorta` troca por `$1`, `$2`… e o MESMO Postgres. A organização é
- * filtro de SQL em toda leitura: o pool não passa por RLS.
+ * cadeia do PostgREST e são SQL com parâmetros em `lib/db`. Quem chama passa a
+ * PORTA (`portaDaAplicacao()`), não mais o cliente do SDK: aceitar os dois
+ * seria aceitar um cliente que a função ignora — e o chamador acharia que a
+ * escrita foi por ele. Os quatro chamadores (as duas ações de automação, o nó
+ * `internal_task` do follow-up e o aviso de carteira) foram adaptados junto.
+ * A organização é filtro de SQL em toda leitura: o pool não passa por RLS.
  */
-import { resolverPorta, type Db, type FonteDeBanco } from "@/lib/db";
+import type { Db } from "@/lib/db";
 
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
@@ -168,10 +169,9 @@ function mensagemDoErro(err: unknown): string {
  * lista de tarefas sem responsável vira ruído que ensina o time a ignorar.
  */
 export async function criarTarefaInterna(
-  fonte: FonteDeBanco,
+  db: Db,
   pedido: PedidoDeTarefa,
 ): Promise<ResultadoDaTarefa> {
-  const db = resolverPorta(fonte);
   const agora = pedido.agora ?? new Date();
 
   const lead = pedido.leadId

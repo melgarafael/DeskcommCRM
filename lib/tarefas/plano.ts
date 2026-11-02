@@ -40,7 +40,7 @@
  */
 import { z } from "zod";
 
-import { resolverPorta, type Db, type FonteDeBanco } from "@/lib/db";
+import type { Db } from "@/lib/db";
 import {
   criarTarefaInterna,
   recusaDeConfiguracao,
@@ -193,10 +193,9 @@ export interface PedidoDeAplicacao {
  * leu, e a ordem é metade do contrato de um plano.
  */
 export async function aplicarPlanoDeTarefas(
-  fonte: FonteDeBanco,
+  db: Db,
   pedido: PedidoDeAplicacao,
 ): Promise<ResultadoDaAplicacao> {
-  const db = resolverPorta(fonte);
   const { organizationId, leadId, planoId, origem, requestId, agora } = pedido;
   if (!leadId) return { ok: false, codigo: "sem_alvo" };
 

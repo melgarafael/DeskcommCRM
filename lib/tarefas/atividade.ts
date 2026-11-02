@@ -1,4 +1,4 @@
-import { resolverPorta, type FonteDeBanco } from "@/lib/db";
+import type { Db } from "@/lib/db";
 
 import type { Actor } from "@/lib/api/handlers/types";
 import {
@@ -50,10 +50,9 @@ import type { Tarefa } from "@/lib/tarefas/tipos";
 
 /** O INSERT de uma linha em `crm_lead_activities` — nunca lança. */
 export async function insereAtividadeDoLead(
-  fonte: FonteDeBanco,
+  db: Db,
   input: EmitLeadActivityInput,
 ): Promise<{ ok: boolean; error?: string }> {
-  const db = resolverPorta(fonte);
   const linha = buildLeadActivityRow(input);
 
   try {
@@ -85,7 +84,7 @@ export async function insereAtividadeDoLead(
 }
 
 export async function registraAtividadeDaTarefa(
-  fonte: FonteDeBanco,
+  db: Db,
   args: {
     organizationId: string;
     tarefa: Pick<Tarefa, "id" | "title" | "due_date" | "priority" | "lead_id" | "contact_id">;
@@ -98,7 +97,7 @@ export async function registraAtividadeDaTarefa(
   // e ela vive na tela de Tarefas — não é perda.
   if (!args.tarefa.lead_id) return { ok: true };
 
-  return insereAtividadeDoLead(fonte, {
+  return insereAtividadeDoLead(db, {
     organizationId: args.organizationId,
     leadId: args.tarefa.lead_id,
     contactId: args.tarefa.contact_id,

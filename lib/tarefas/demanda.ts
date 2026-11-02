@@ -22,17 +22,15 @@
  * atendimento que já acabou ela some da seção do inbox e contradiz o
  * "Nenhuma demanda aberta" ao lado. Vale para criar e para vincular na edição.
  */
-import { resolverPorta, type FonteDeBanco } from "@/lib/db";
+import type { Db } from "@/lib/db";
 
 export type VereditoDaDemanda = "aceita" | "encerrada" | "fora_da_organizacao" | "falha_na_consulta";
 
 export async function conferirDemanda(
-  fonte: FonteDeBanco,
+  db: Db,
   organizationId: string,
   demandaId: string,
 ): Promise<VereditoDaDemanda> {
-  const db = resolverPorta(fonte);
-
   try {
     const demanda = await db.queryOne<{ id: string; fechada_em: string | Date | null }>(
       `select id, fechada_em

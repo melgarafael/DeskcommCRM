@@ -13,6 +13,7 @@
  * "criam tarefa", só que um esquece o audit.
  */
 import { registerAction } from "@/lib/automation/actions";
+import { portaDaAplicacao } from "@/lib/db";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 import { criarTarefaInterna, type AtribuicaoDaTarefa } from "@/lib/tarefas/criar-tarefa";
 
@@ -32,7 +33,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     return { type: "create_task", status: "skipped", detail: { reason: "no_target" } };
   }
 
-  const resultado = await criarTarefaInterna(ctx.admin, {
+  const resultado = await criarTarefaInterna(portaDaAplicacao(), {
     organizationId: ctx.organizationId,
     titulo,
     venceEmDias,

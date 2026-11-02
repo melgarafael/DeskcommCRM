@@ -88,28 +88,3 @@ export function queryOne<T>(sql: string, parametros?: Parametros): Promise<T | n
   return portaDaAplicacao().queryOne<T>(sql, parametros);
 }
 
-/**
- * A forma MÍNIMA de um cliente PostgREST — só o `from` que qualquer cliente do
- * SDK tem. Existe para os chamadores que a fase F1 NÃO migrou (automação, fluxo
- * de follow-up, carteira) continuarem compilando e funcionando sem mudança:
- * eles passam o cliente antigo e a porta resolve para o pool do processo, que
- * fala com o MESMO Postgres. Some quando o último domínio migrar.
- */
-export interface ClientePostgrest {
-  from(relacao: string): unknown;
-}
-
-export type FonteDeBanco = Db | ClientePostgrest;
-
-/**
- * Resolve a fonte recebida para a porta.
- *
- * ⚠️ A escolha é por FORMA (`query` presente), não por instância: um `Db` falso
- * de teste também tem `query` e é usado como veio. Cliente do PostgREST não
- * tem, e cai no pool — o que é equivalente em produção (mesma URL do banco) e é
- * o que permite migrar um domínio por vez sem quebrar quem ainda não migrou.
- */
-export function resolverPorta(fonte: FonteDeBanco | null | undefined): Db {
-  if (fonte && typeof (fonte as Db).query === "function") return fonte as Db;
-  return portaDaAplicacao();
-}

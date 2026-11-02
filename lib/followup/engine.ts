@@ -21,6 +21,7 @@ import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { idsDoContatoEGemeos } from "@/lib/channels/contato-por-telefone";
+import { portaDaAplicacao } from "@/lib/db";
 import { logger } from "@/lib/logger";
 
 import { flowGraphSchema, type FlowGraph, type FlowNode, type ReplySaveTo } from "./graph-schema";
@@ -1532,7 +1533,7 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
         .maybeSingle();
       if (leadErr) throw new Error(leadErr.message);
 
-      const resultado = await criarTarefaNoCrm(admin, {
+      const resultado = await criarTarefaNoCrm(portaDaAplicacao(), {
         organizationId: item.organization_id,
         titulo: item.config.titulo,
         venceEmDias: item.config.vence_em_dias,

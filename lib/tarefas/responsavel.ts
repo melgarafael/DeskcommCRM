@@ -23,17 +23,15 @@
  * organização da sessão, justamente porque a RLS de `user_organizations`
  * mostra a um `agent` só o próprio vínculo.
  */
-import { resolverPorta, type FonteDeBanco } from "@/lib/db";
+import type { Db } from "@/lib/db";
 
 export type VereditoDoResponsavel = "aceito" | "fora_da_equipe" | "falha_na_consulta";
 
 export async function conferirResponsavel(
-  fonte: FonteDeBanco,
+  db: Db,
   organizationId: string,
   userId: string,
 ): Promise<VereditoDoResponsavel> {
-  const db = resolverPorta(fonte);
-
   try {
     const linha = await db.queryOne<{ user_id: string }>(
       `select user_id
