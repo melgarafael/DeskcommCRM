@@ -32,6 +32,7 @@ import {
   type EstadoDeAtendimento,
 } from "./atendimento";
 import { collectConfigSchema, type FlowEdge, type FlowGraph, type FlowNode } from "./graph-schema";
+import type { VinculoDoNegocio } from "./negocio-do-roteiro";
 
 const ORG = "org-A";
 const CONTATO = "ct";
@@ -81,10 +82,17 @@ function grafoDe(key: string, destino?: "contato" | "negocio"): FlowGraph {
 const roteiroDe = (key: string, destino?: "contato" | "negocio") =>
   checklist(grafoDe(key, destino));
 
+/**
+ * O estado que o turno recebe. `negocio` é o VÍNCULO desta execução (#3363):
+ * nos cenários de negócio ele é obrigatório — é ele que decide o card, e não
+ * mais o "último editado". Nos cenários de contato ele não existe, como em todo
+ * roteiro que não grava no card.
+ */
 function estadoCom(
   chk: ChecklistDeAtendimento,
   valores: Record<string, string> = {},
   tentativas: Record<string, number> = {},
+  negocio?: VinculoDoNegocio,
 ): EstadoDeAtendimento {
   return {
     enrollment: {
@@ -98,6 +106,7 @@ function estadoCom(
     nomeDoFluxo: "Qualificação",
     checklist: chk,
     valores,
+    ...(negocio !== undefined ? { negocio } : {}),
     tentativas,
     perguntasFeitas: new Set(
       chk.passos.flatMap((p) => (p.kind === "collect" ? [p.node.config.key] : [])),
@@ -124,6 +133,8 @@ function poolGravacao(
   const sqls: string[] = [];
   const params: unknown[][] = [];
   const chaves = new Set<string>();
+  /** O `lead_id` do ÚLTIMO `update crm_leads` — o alvo explícito do vínculo. */
+  let alvo: string | null = null;
   const query = async (sql: string, values: unknown[] = []) => {
     sqls.push(sql);
     params.push(values);
@@ -137,6 +148,7 @@ function poolGravacao(
     }
     if (/update contacts/.test(sql)) return { rows: [], rowCount: opts.contatoAnonimizado ? 0 : 1 };
     if (/update crm_leads/.test(sql)) {
+      alvo = values[4] as string;
       if (opts.card === null) return { rows: [], rowCount: 0 };
       opts.card[values[2] as string] = values[3];
       return { rows: [], rowCount: 1 };
@@ -152,7 +164,7 @@ function poolGravacao(
         tipo: p[3] as string,
         payload: JSON.parse(p[4] as string) as Record<string, unknown>,
       }));
-  return { pool: { query } as unknown as pg.Pool, sqls, params, eventos };
+  return { pool: { query } as unknown as pg.Pool, sqls, params, eventos, alvoDoCard: () => alvo };
 }
 
 // ─── dublê de leitura (carregarEstadoDeAtendimento) ──────────────────────────
@@ -163,8 +175,26 @@ function poolLeitura(opts: {
   card: { id: string; custom_fields: Record<string, unknown> } | null;
 }) {
   const sqls: string[] = [];
-  const query = async (sql: string) => {
+  const candidatos = () =>
+    opts.card === null ? [] : [{ id: opts.card.id, title: null as string | null }];
+  const query = async (sql: string, values: unknown[] = []) => {
     sqls.push(sql);
+    // O vínculo fixado desta execução: o dublê fixa o único card que ele tem.
+    if (/event_type = 'roteiro_negocio'/.test(sql)) {
+      return {
+        rows: opts.card === null ? [] : [{ lead_id: opts.card.id }],
+        rowCount: opts.card === null ? 0 : 1,
+      };
+    }
+    // Candidatos: os cards abertos do contato.
+    if (/select id, title/.test(sql)) {
+      const rows = candidatos();
+      return { rows, rowCount: rows.length };
+    }
+    if (/select custom_fields[\s\S]*from crm_leads/.test(sql)) {
+      const alvo = opts.card !== null && values[1] === opts.card.id;
+      return { rows: alvo ? [{ custom_fields: opts.card!.custom_fields }] : [], rowCount: alvo ? 1 : 0 };
+    }
     if (/e\.status = 'coletando'/.test(sql)) {
       return {
         rows: [
@@ -185,9 +215,6 @@ function poolLeitura(opts: {
     if (/e\.status = 'completed'/.test(sql)) return { rows: [], rowCount: 0 };
     if (/select custom_fields from contacts/.test(sql)) {
       return { rows: [{ custom_fields: opts.camposDoContato }], rowCount: 1 };
-    }
-    if (/from crm_leads/.test(sql)) {
-      return { rows: opts.card === null ? [] : [opts.card], rowCount: opts.card === null ? 0 : 1 };
     }
     if (/followup_enrollment_events/.test(sql)) return { rows: [], rowCount: 0 };
     return { rows: [], rowCount: 0 };
@@ -218,12 +245,15 @@ describe("destino no schema do nó collect (#3363)", () => {
 });
 
 describe("cenário A — destino negócio grava no card e NÃO no contato", () => {
+  /** O vínculo que a execução fixou no início — é ELE que decide o card. */
+  const VINCULO: VinculoDoNegocio = { tipo: "fixado", leadId: "lead-1", titulo: "Viagem Chile" };
+
   it("pelo leitor do validador: o SQL é de `crm_leads` e nenhum `update contacts` sai", async () => {
     const card: Record<string, unknown> = {};
-    const { pool, sqls, params, eventos } = poolGravacao({ card });
+    const { pool, sqls, params, eventos, alvoDoCard } = poolGravacao({ card });
     const r = await processarInboundDoFluxo(pool, {
       organizationId: ORG,
-      estado: estadoCom(roteiroDe("destino_viagem", "negocio")),
+      estado: estadoCom(roteiroDe("destino_viagem", "negocio"), {}, {}, VINCULO),
       texto: "quero viajar para Cancun",
       messageId: "m1",
       validacoes: [{ campo: "destino_viagem", valor: "Cancun" }],
@@ -233,8 +263,11 @@ describe("cenário A — destino negócio grava no card e NÃO no contato", () =
     const i = sqls.findIndex((s) => /update crm_leads/.test(s));
     expect(i, "a resposta precisa ir para o card").toBeGreaterThanOrEqual(0);
     expect(sqls[i]).toMatch(/status = 'open'/);
-    expect(sqls[i]).toMatch(/order by updated_at desc/);
-    expect(params[i]).toEqual([ORG, CONTATO, "destino_viagem", "Cancun"]);
+    // O alvo é o id EXPLÍCITO do vínculo — não uma subconsulta por `updated_at`.
+    expect(sqls[i]).toMatch(/id = \$5/);
+    expect(sqls[i]).not.toMatch(/order by updated_at/);
+    expect(params[i]).toEqual([ORG, CONTATO, "destino_viagem", "Cancun", "lead-1"]);
+    expect(alvoDoCard()).toBe("lead-1");
     expect(sqls.some((s) => /update contacts/.test(s))).toBe(false);
     expect(card).toEqual({ destino_viagem: "Cancun" });
     expect(eventos().map((e) => e.tipo)).toEqual([
@@ -253,7 +286,7 @@ describe("cenário A — destino negócio grava no card e NÃO no contato", () =
     } as FlowGraph;
     await processarInboundDoFluxo(pool, {
       organizationId: ORG,
-      estado: estadoCom(checklist(g)),
+      estado: estadoCom(checklist(g), {}, {}, VINCULO),
       texto: "dia 12/03/2027",
       messageId: "m1",
     });
@@ -263,18 +296,21 @@ describe("cenário A — destino negócio grava no card e NÃO no contato", () =
     expect(card).toEqual({ data_ida: "2027-03-12" });
   });
 
-  it("sem card aberto não há onde gravar: nada é gravado (nem no contato)", async () => {
+  it("sem negócio aberto o passo NÃO grava em lugar nenhum (nem no contato)", async () => {
+    // A asserção antiga esperava o `update crm_leads` sair e voltar 0 linhas —
+    // era o desenho por subconsulta. Com vínculo, "nenhum negócio aberto" é
+    // `tipo: 'nenhum'` e a gravação nem é tentada: nada muda de lugar.
     const { pool, sqls } = poolGravacao({ card: null });
     const r = await processarInboundDoFluxo(pool, {
       organizationId: ORG,
-      estado: estadoCom(roteiroDe("destino_viagem", "negocio")),
+      estado: estadoCom(roteiroDe("destino_viagem", "negocio"), {}, {}, { tipo: "nenhum" }),
       texto: "Cancun",
       messageId: "m1",
       validacoes: [{ campo: "destino_viagem", valor: "Cancun" }],
     });
     expect(r.concluiu).toBe(false);
     expect(sqls.some((s) => /update contacts/.test(s))).toBe(false);
-    expect(sqls.some((s) => /update crm_leads/.test(s))).toBe(true);
+    expect(sqls.some((s) => /update crm_leads/.test(s))).toBe(false);
   });
 
   it("campos obrigatórios da etapa do funil ENXERGAM o valor gravado no card", async () => {
@@ -282,7 +318,7 @@ describe("cenário A — destino negócio grava no card e NÃO no contato", () =
     const { pool } = poolGravacao({ card });
     await processarInboundDoFluxo(pool, {
       organizationId: ORG,
-      estado: estadoCom(roteiroDe("destino_viagem", "negocio")),
+      estado: estadoCom(roteiroDe("destino_viagem", "negocio"), {}, {}, VINCULO),
       texto: "Cancun",
       messageId: "m1",
       validacoes: [{ campo: "destino_viagem", valor: "Cancun" }],

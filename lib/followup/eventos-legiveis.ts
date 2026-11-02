@@ -613,6 +613,17 @@ export function descreveEvento(
         detalhe: "o follow-up existia para esse caso e parou junto com ele",
         ...motor,
       };
+    // O vínculo do negócio (#3363): a execução do roteiro passou a ter um card
+    // EXPLÍCITO, e o roteiro continua nele até terminar. Sem frase, a escolha
+    // aparecia como "Passo registrado pelo motor, código: roteiro_negocio" — o
+    // nome da variável no lugar do fato, que é o defeito que este arquivo existe
+    // para não ter.
+    case "roteiro_negocio":
+      return {
+        titulo: "Negócio do roteiro definido",
+        detalhe: "as respostas deste roteiro vão para este negócio até ele terminar",
+        ...motor,
+      };
     default:
       return { titulo: "Passo registrado pelo motor", detalhe: `código: ${evento.event_type}`, ...motor };
   }
