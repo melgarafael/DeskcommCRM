@@ -4614,11 +4614,7 @@ async function executarTurnoDoAgente(
                     sleep,
                     jitter,
                     restantes: () => maxSendsPerTurn - seq,
-                    enviarFoto: async (foto, legenda) => {
-                      const resultado = await enviar(legenda, foto);
-                      if (temImagemPorUrl && OK_KINDS.has(resultado.kind)) fotoUrlEnviada = true;
-                      return resultado;
-                    },
+                    enviarFoto: (foto, legenda) => enviar(legenda, foto).then(marcarFoto),
                     enviarTexto: (texto) => enviarVoz(texto) ?? sendInBubbles(texto, {
                         enabled: agentConfig?.splitMessages ?? false,
                         maxChars: agentConfig?.splitMaxChars ?? 600,
