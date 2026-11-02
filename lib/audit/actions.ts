@@ -1414,6 +1414,16 @@ export const AUDIT_ACTIONS = [
   // Aviso escrito pelo admin da empresa e empurrado para a equipe (#1418). O
   // metadata leva só a janela de publicação; título e corpo ficam em `avisos`.
   "aviso.created",
+  // A credencial de e-mail da organização foi removida pela tela de conexão.
+  // A trilha guarda o provider e o id opaco da configuração, nunca o endereço
+  // nem a senha da caixa.
+  "email.connection_disconnected",
+  // O admin autoriza ou pausa o uso da caixa Hostinger nas automações.
+  "email.automation_sending_enabled",
+  "email.automation_sending_disabled",
+  // O admin autoriza ou pausa a leitura de novas mensagens na Inbox do CRM.
+  "email.inbox_sync_enabled",
+  "email.inbox_sync_disabled",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

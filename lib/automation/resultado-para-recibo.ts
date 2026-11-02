@@ -34,6 +34,7 @@ const CODIGOS_DAS_ACOES = new Set([
   "dono_fora_da_equipe",
   "dono_sem_email",
   "elegibilidade_indeterminada",
+  "email_caixa_indisponivel",
   "email_limite_atingido",
   "email_nao_configurado",
   "email_recusado",

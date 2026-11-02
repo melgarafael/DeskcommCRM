@@ -21,6 +21,10 @@ export interface AuditoriaDoSiteDados {
   classe: ClasseDeSite;
   problemas: string[];
   checklist: { tem: string[]; falta: string[]; inconclusivo?: boolean };
+  /** Contatos empresariais publicados no site; nunca indicam consentimento de marketing. */
+  contatos_publicos?: { emails: string[]; telefones: string[]; fontes?: string[] };
+  /** Registra o uso ou a tentativa do fallback externo para páginas JS. */
+  metodo?: "firecrawl" | "firecrawl-sem-resultado";
   provisorio?: boolean;
   /** Quando o veredito foi medido (ISO). Ausente em dado antigo: a data não aparece. */
   verificado_em?: string;
@@ -89,6 +93,16 @@ export function AuditoriaDoSite({
             {t("Verificado em")} {format(verificadoEm, "P", { locale })}
           </p>
         )}
+        {site.metodo === "firecrawl" && (
+          <p className="text-xs text-muted-foreground">
+            {t("Conteúdo renderizado pelo Firecrawl (serviço externo)")}
+          </p>
+        )}
+        {site.metodo === "firecrawl-sem-resultado" && (
+          <p className="text-xs text-muted-foreground">
+            {t("Firecrawl foi acionado para tentar ler esta página; o resultado não foi usado.")}
+          </p>
+        )}
       </div>
       {site.problemas.length > 0 && (
         <ul className="list-disc space-y-1 pl-4 text-xs">
@@ -100,10 +114,42 @@ export function AuditoriaDoSite({
       {site.checklist?.inconclusivo === true && (
         <p className="text-xs text-muted-foreground">
           {t(
-            "Checklist não medido: a página é montada por JavaScript e o HTML baixado não traz o conteúdo. Não cite estes itens.",
+            "Checklist inconclusivo: a captura não trouxe conteúdo suficiente para confirmar estes itens. Não cite estas ausências.",
           )}
         </p>
       )}
+      {(site.contatos_publicos?.emails.length ?? 0) > 0 || (site.contatos_publicos?.telefones.length ?? 0) > 0 ? (
+        <div className="rounded-md border bg-muted/20 p-3 text-xs">
+          <h5 className="font-medium">{t("Contatos publicados no site")}</h5>
+          <p className="mt-1 text-muted-foreground">
+            {t("Dados encontrados em páginas públicas do site; confira antes de usar. A publicação não comprova consentimento para marketing.")}
+          </p>
+          <ul className="mt-2 space-y-1">
+            {(site.contatos_publicos?.emails ?? []).map((email) => (
+              <li key={email}><a className="underline underline-offset-2" href={`mailto:${email}`}>{email}</a></li>
+            ))}
+            {(site.contatos_publicos?.telefones ?? []).map((telefone) => (
+              <li key={telefone}><a className="underline underline-offset-2" href={`tel:${telefone}`}>{telefone}</a></li>
+            ))}
+          </ul>
+          {(site.contatos_publicos?.fontes?.length ?? 0) > 0 && (
+            <p className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-muted-foreground">
+              <span>{t("Fonte:")}</span>
+              {site.contatos_publicos?.fontes?.map((fonte, indice) => (
+                <a
+                  key={fonte}
+                  className="underline underline-offset-2"
+                  href={fonte}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {indice === 0 ? t("Página inicial") : t("Página de contato")}
+                </a>
+              ))}
+            </p>
+          )}
+        </div>
+      ) : null}
       {(tem.length > 0 || falta.length > 0) && (
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div>

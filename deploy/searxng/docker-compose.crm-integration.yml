@@ -1,0 +1,18 @@
+# Add this file to the existing SearXNG compose invocation. The dedicated
+# network contains only SearXNG and the CRM app; it is not exposed to the host.
+services:
+  searxng:
+    networks:
+      crm-search:
+        ipv4_address: ${SEARXNG_INTERNAL_IP:-172.31.253.2}
+        aliases:
+          - searxng-search
+
+networks:
+  crm-search:
+    name: ${SEARXNG_DOCKER_NETWORK:-dreamland-search-crm}
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: ${SEARXNG_DOCKER_SUBNET:-172.31.253.0/29}

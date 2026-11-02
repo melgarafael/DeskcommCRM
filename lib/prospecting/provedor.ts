@@ -34,11 +34,11 @@
  * coluna, mesmo endereçamento, mesma cifra. Ela NÃO está presa a um provedor:
  * a escolha mora em `organizations.settings` e a chave em `prospecting_settings`,
  * e nada liga uma à outra. Trocar a escolha sem regravar a chave mandaria a
- * chave antiga ao provedor novo. Com o `local-http` da #2942 o catálogo de
- * produção deixou de ser só a Apify — prender a chave ao provedor dela segue
- * pendente (#2174). Exceção desta fatia: o `local-http` NÃO usa essa coluna
- * (`exigeCredencialDaOrganizacao: false`) — a URL dele vem da instalação
- * (`PROSPECTING_LOCAL_HTTP_URL`), nunca da organização.
+ * chave antiga ao provedor novo. Com o SearXNG o catálogo de produção deixou
+ * de ser só a Apify — prender a chave ao provedor dela segue pendente (#2174).
+ * O `searxng` NÃO usa essa coluna (`exigeCredencialDaOrganizacao: false`): a
+ * URL vem da instalação (`SEARXNG_BASE_URL` ou da rede Docker dedicada), nunca da
+ * organização.
  */
 import {
   ProspectingError,
@@ -48,6 +48,7 @@ import {
   startSearch as startSearchDaApify,
 } from "./provider";
 import { provedorLocalHttp, validarCredencialLocalHttp } from "./provedor-local-http";
+import { provedorSearxng, validarSearxng } from "./provedor-searxng";
 import { provedorDeTeste } from "./provedor-teste";
 import type { SearchInput } from "./schema";
 
@@ -57,6 +58,8 @@ export interface DadosDaExecucao {
   status: string;
   defaultDatasetId?: string;
   usageTotalUsd?: number;
+  /** Provedores de busca síncronos entregam o lote junto com a conclusão. */
+  results?: Record<string, unknown>[];
 }
 
 /**
@@ -87,9 +90,9 @@ interface RegistroDoProvedor {
   /**
    * Esta escolha exige uma credencial SALVA por organização (`credential()`,
    * `store.ts`)? `apify` e `teste` sim — a chave é da organização. O
-   * `local-http` da #2942 NÃO: a URL do engine vem da INSTALAÇÃO
-   * (`PROSPECTING_LOCAL_HTTP_URL`), nunca da organização, então não há segredo
-   * por organização para exigir.
+   * `searxng` NÃO: a URL do engine vem da INSTALAÇÃO
+   * (`SEARXNG_BASE_URL` ou da rede Docker dedicada), nunca da organização, então
+   * não há segredo por organização para exigir.
    */
   exigeCredencialDaOrganizacao: boolean;
 }
@@ -118,13 +121,15 @@ const REGISTRO: Record<string, RegistroDoProvedor> = {
     },
     exigeCredencialDaOrganizacao: true,
   },
-  /**
-   * #2942: o engine de scraping self-hosted, apontado pela INSTALAÇÃO
-   * (`PROSPECTING_LOCAL_HTTP_URL`) e não pela organização. A régua é o health
-   * check dele. Diferente de `teste`, ele NÃO é de ambiente: existe em
-   * produção, que é justamente quem precisa dele. E não exige credencial por
-   * organização — não há segredo por organização nesta fatia.
-   */
+  /** A busca web self-hosted é uma configuração da instalação, sem chave por organização. */
+  searxng: {
+    provedor: provedorSearxng,
+    validarCredencial: validarSearxng,
+    exigeCredencialDaOrganizacao: false,
+  },
+  // Compatibilidade de leitura para execuções local-http que já estavam em
+  // andamento antes de a seleção sair da interface. A criação de buscas novas
+  // por essa fonte é bloqueada em store.ts.
   "local-http": {
     provedor: provedorLocalHttp,
     validarCredencial: validarCredencialLocalHttp,
@@ -151,6 +156,11 @@ function escolhaNasSettings(settings: unknown): string | null {
   if (!prospeccao || typeof prospeccao !== "object") return null;
   const provider = (prospeccao as Record<string, unknown>).provider;
   return typeof provider === "string" && provider.trim() ? provider.trim() : null;
+}
+
+/** Nome configurado, sem presumir que o jsonb legado seja válido. */
+export function provedorNasSettings(settings: unknown): string {
+  return escolhaNasSettings(settings) ?? PROVEDOR_PADRAO;
 }
 
 async function escolha(banco: FonteDeSettings, organizacao: string): Promise<string> {
@@ -189,10 +199,19 @@ export async function provedorDaOrganizacao(
   return registroDaEscolha(await escolha(banco, organizacao)).provedor;
 }
 
+/** Nome e implementação lidos juntos para decisões que dependem da fonte escolhida. */
+export async function provedorEIdentidadeDaOrganizacao(
+  banco: FonteDeSettings,
+  organizacao: string,
+): Promise<{ nome: string; provedor: ProvedorDeBusca }> {
+  const nome = await escolha(banco, organizacao);
+  return { nome, provedor: registroDaEscolha(nome).provedor };
+}
+
 /**
  * A escolha desta organização exige uma credencial salva (`credential()`,
- * `store.ts`)? `false` só para o `local-http` (#2942), cuja URL vem da
- * INSTALAÇÃO. Sem escolha nenhuma, vale a Apify — que exige.
+ * `store.ts`)? `false` só para o `searxng`, cuja URL vem da INSTALAÇÃO.
+ * Sem escolha nenhuma, vale a Apify — que exige.
  */
 export async function provedorExigeCredencialDaOrganizacao(
   banco: FonteDeSettings,
@@ -208,4 +227,12 @@ export async function validarCredencialDaOrganizacao(
   chave: string,
 ): Promise<void> {
   await registroDaEscolha(await escolha(banco, organizacao)).validarCredencial(chave);
+}
+
+/** Valida uma fonte antes de torná-la ativa; a organização não escolhe URLs externas. */
+export async function validarCredencialDoProvedor(
+  nome: string,
+  chave: string,
+): Promise<void> {
+  await registroDaEscolha(nome).validarCredencial(chave);
 }

@@ -15,7 +15,7 @@ import type { ContatoDoAparelho } from "@/lib/waha/client";
 // e o lint de canal reprovaria o caminho.
 export type { OutboundMedia, ContatoDoAparelho };
 
-export type ChannelProvider = "waha" | "meta_cloud" | "zernio" | "zernio_social" | "wacalls" | "datafy";
+export type ChannelProvider = "waha" | "meta_cloud" | "zernio" | "zernio_social" | "wacalls" | "datafy" | "hostinger_email";
 
 /**
  * Os providers que transportam MENSAGEM — o subconjunto sobre o qual a matriz
@@ -93,6 +93,8 @@ export interface RecipientInput {
   isGroup: boolean;
   groupChatId: string | null;
   phoneNumber: string | null | undefined;
+  /** Endereço de e-mail usado por canais que não endereçam por telefone. */
+  email?: string | null | undefined;
   /** `contacts.wa_identity` (migration 0027): 'phone:+E164' | 'lid:<digits>' | null. */
   waIdentity: string | null | undefined;
   /**
@@ -157,6 +159,12 @@ export interface OutboundEnvelope extends ChannelTenantScope {
   to: string;
   kind: OutboundKind;
   body?: string;
+  /** Assunto original da conversa, disponível para canais de e-mail. */
+  emailSubject?: string | null;
+  /** Histórico RFC 5322 do tópico, quando o canal suporta cabeçalhos de resposta. */
+  emailReferences?: string[];
+  /** true quando o envio foi iniciado por agente/automação, não por pessoa. */
+  automated?: boolean;
   media?: OutboundMedia;
   /** Cartão de contato — preenchido quando `kind === "contact"`. */
   contact?: OutboundContact;

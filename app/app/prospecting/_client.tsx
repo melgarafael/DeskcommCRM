@@ -68,6 +68,14 @@ type Candidate = {
 };
 type State = {
   configured: boolean;
+  provider: string;
+  searxng_configured?: boolean;
+  searxng_configuration_status?:
+    | "nao-configurado"
+    | "conflito"
+    | "configuracao-invalida"
+    | "https"
+    | "docker";
   campaigns: Campaign[];
   candidates: Candidate[];
   agents: { id: string; name: string }[];
@@ -712,39 +720,108 @@ export function ProspectingClient() {
       {(settings || data?.configured === false) && (
         <>
         <Card className="p-5">
-          <form
-            className="flex flex-col gap-3 sm:flex-row sm:items-end"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (
-                await perform({ action: "configure", api_key: key }, t("Chave de busca salva."))
-              ) {
-                setKey("");
-                setSettings(false);
-              }
-            }}
-          >
-            <div className="flex-1">
-              <Label htmlFor="prospecting-key">{t("Chave da Apify")}</Label>
-              <Input
-                id="prospecting-key"
-                type="password"
-                autoComplete="off"
-                value={key}
-                onChange={(e) => setKey(e.target.value)}
-                required
-                minLength={10}
-                className="mt-2"
-              />
-              <p className="mt-2 text-xs text-muted-foreground">
-                {t("A chave fica cifrada no servidor. Cada busca tem seu próprio limite de gasto.")}
+          <h2 className="text-lg font-semibold">{t("Fonte de busca")}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t("Escolha onde a prospecção encontra empresas. A troca não altera campanhas já concluídas.")}
+          </p>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className={`rounded-lg border p-4 ${data?.provider === "searxng" ? "border-primary bg-primary/5" : "border-border"}`}>
+              <p className="font-medium">{t("Busca web · SearXNG")}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t("Encontra sites de empresas na web. Telefones e e-mails dos resultados são pistas públicas e ainda precisam ser conferidos.")}
               </p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {data?.searxng_configuration_status === "conflito"
+                  ? t("Há duas rotas do SearXNG configuradas. Mantenha apenas a rota HTTPS ou a rota Docker no servidor do CRM.")
+                  : data?.searxng_configuration_status === "configuracao-invalida"
+                    ? t("A configuração do SearXNG está incompleta ou inválida. Confira o endereço e os dados da rede Docker no servidor do CRM.")
+                    : data?.searxng_configuration_status === "nao-configurado"
+                      ? t("Configure uma rota HTTPS ou a rede Docker do SearXNG no servidor do CRM.")
+                      : data?.searxng_configuration_status === "docker"
+                        ? t("SearXNG configurado na rede Docker; a conexão é verificada ao selecionar.")
+                        : data?.searxng_configuration_status === "https"
+                          ? t("SearXNG configurado por HTTPS; a conexão é verificada ao selecionar.")
+                          : data?.searxng_configured
+                            ? t("Endereço definido; a conexão é verificada ao selecionar.")
+                            : t("Configure uma rota HTTPS ou a rede Docker do SearXNG no servidor do CRM.")}
+              </p>
+              <Button
+                className="mt-3"
+                variant={data?.provider === "searxng" ? "secondary" : "outline"}
+                disabled={busy || !data?.searxng_configured}
+                onClick={() =>
+                  void perform(
+                    { action: "select_provider", provider: "searxng" },
+                    t("Busca web conectada e selecionada."),
+                  )
+                }
+                type="button"
+              >
+                {data?.provider === "searxng"
+                  ? t("Verificar SearXNG")
+                  : data?.searxng_configured
+                    ? t("Usar busca web")
+                    : t("SearXNG indisponível")}
+              </Button>
             </div>
-            <Button disabled={busy || !key} type="submit">
-              {t("Salvar chave")}
-            </Button>
-          </form>
+            <div className={`rounded-lg border p-4 ${data?.provider === "apify" ? "border-primary bg-primary/5" : "border-border"}`}>
+              <p className="font-medium">{t("Apify")}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t("Usa a chave da organização e pode cobrar pelo provedor de busca. Confira os termos da fonte usada.")}
+              </p>
+              <Button
+                className="mt-3"
+                variant={data?.provider === "apify" ? "secondary" : "outline"}
+                disabled={busy || data?.provider === "apify"}
+                onClick={() =>
+                  void perform(
+                    { action: "select_provider", provider: "apify" },
+                    t("Apify selecionada. Configure a chave para habilitar buscas."),
+                  )
+                }
+                type="button"
+              >
+                {data?.provider === "apify" ? t("Fonte selecionada") : t("Usar Apify")}
+              </Button>
+            </div>
+          </div>
         </Card>
+        {data?.provider === "apify" && (
+          <Card className="p-5">
+            <form
+              className="flex flex-col gap-3 sm:flex-row sm:items-end"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (
+                  await perform({ action: "configure", api_key: key }, t("Chave de busca salva."))
+                ) {
+                  setKey("");
+                  setSettings(false);
+                }
+              }}
+            >
+              <div className="flex-1">
+                <Label htmlFor="prospecting-key">{t("Chave da Apify")}</Label>
+                <Input
+                  id="prospecting-key"
+                  type="password"
+                  autoComplete="off"
+                  value={key}
+                  onChange={(e) => setKey(e.target.value)}
+                  required
+                  minLength={10}
+                  className="mt-2"
+                />
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {t("A chave fica cifrada no servidor. Cada busca tem seu próprio limite de gasto.")}
+                </p>
+              </div>
+              <Button disabled={busy || !key} type="submit">
+                {t("Salvar chave")}
+              </Button>
+            </form>
+          </Card>
+        )}
         <Card className="p-5">
           <h2 className="text-lg font-semibold">{t("Voz e vocabulário")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">

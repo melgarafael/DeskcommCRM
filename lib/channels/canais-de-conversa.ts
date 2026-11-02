@@ -10,7 +10,7 @@ import { SOCIAL_NETWORKS } from "./social/catalog";
  *   1. `SOCIAL_NETWORKS[].inbox` — em TypeScript, decide se uma rede pode ter
  *      atendimento no CRM. Hoje: Instagram e Facebook.
  *   2. `conversations_channel_check` — no banco, decide o que a coluna aceita.
- *      Hoje: `whatsapp`, `instagram`, `facebook`.
+ *      Hoje: `whatsapp`, `email`, `instagram`, `facebook`.
  *
  * `lib/channels/zernio/ingest.ts` grava a plataforma **crua** na coluna
  * (`.update({ channel: input.socialMessage.platform })`). Marcar `inbox: true`
@@ -33,14 +33,15 @@ import { SOCIAL_NETWORKS } from "./social/catalog";
  * Ou seja: a divergência deixa de ser possível em silêncio. Ou as duas listas
  * andam juntas, ou o CI reprova.
  *
- * ## `whatsapp` é o membro que não vem do catálogo
+ * ## `whatsapp` e `email` não vêm do catálogo
  *
  * Ele precede as redes sociais e não tem entrada em `SOCIAL_NETWORKS` — o canal
- * dele é o WAHA/Meta, não o intermediário social. Fica explícito aqui, e é a
- * única parte escrita à mão.
+ * dele é WAHA/Meta, não o intermediário social. O e-mail usa a caixa Hostinger
+ * da organização, não uma rede social. Ambos ficam explícitos aqui.
  */
 export const CANAIS_DE_CONVERSA = [
   "whatsapp",
+  "email",
   ...SOCIAL_NETWORKS.filter((rede) => rede.inbox).map((rede) => rede.id),
 ] as const satisfies readonly string[];
 

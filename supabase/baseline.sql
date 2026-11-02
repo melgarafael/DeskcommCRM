@@ -2759,6 +2759,11 @@ CREATE INDEX IF NOT EXISTS "idx_messages_conversation_sent" ON "public"."message
 
 CREATE INDEX IF NOT EXISTS "idx_messages_external_lookup" ON "public"."messages" USING "btree" ("organization_id", "external_id") WHERE ("external_id" IS NOT NULL);
 
+-- Hostinger RFC Message-ID dedupe: secondary key when IMAP UIDVALIDITY changes.
+create unique index if not exists messages_email_rfc_id_unique
+  on public.messages (organization_id, channel_session_id, lower(metadata->>'email_message_id_key'))
+  where nullif(metadata->>'email_message_id_key', '') is not null;
+
 
 
 CREATE INDEX IF NOT EXISTS "idx_messages_org_status_created" ON "public"."messages" USING "btree" ("organization_id", "status", "created_at") WHERE ("status" = ANY (ARRAY['sending'::"text", 'failed'::"text"]));
@@ -4998,7 +5003,7 @@ create unique index if not exists uniq_contacts_org_wa_identity
   where wa_identity is not null and is_merged_into is null;
 create unique index if not exists uniq_conversations_1to1_per_contact_session
   on public.conversations (organization_id, contact_id, channel_session_id)
-  where is_group = false;
+  where is_group = false and channel is distinct from 'email';
 
 -- D. Upsert atômico (a aplicação usa via lib/waha/ingest.ts)
 create or replace function public.fn_upsert_wa_contact(
@@ -7817,6 +7822,73 @@ begin
 end
 $comentarios$;
 
+-- ---- canal de e-mail Hostinger isolado por organização (9084) ----
+-- O segredo só é consultado pelo serviço servidor; RLS sem policy e ACL fechada
+-- impedem que anon/authenticated leiam a coluna cifrada pelo PostgREST.
+create table if not exists public.organization_email_connections (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null unique references public.organizations(id) on delete cascade,
+  provider text not null default 'hostinger',
+  mailbox_email text not null,
+  mailbox_password_encrypted bytea not null,
+  status text not null default 'disconnected',
+  outbound_automation_enabled boolean not null default false,
+  inbox_sync_enabled boolean not null default false,
+  inbox_uid_validity text,
+  inbox_last_uid bigint not null default 0,
+  last_sync_at timestamptz,
+  last_error_code text,
+  created_by uuid references auth.users(id) on delete set null,
+  updated_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint organization_email_connections_provider_check
+    check (provider in ('hostinger')),
+  constraint organization_email_connections_status_check
+    check (status in ('disconnected', 'healthy', 'error')),
+  constraint organization_email_connections_uid_check
+    check (inbox_last_uid >= 0)
+);
+alter table public.organization_email_connections
+  add column if not exists outbound_automation_enabled boolean not null default false;
+alter table public.organization_email_connections
+  add column if not exists inbox_claim_token uuid,
+  add column if not exists inbox_claim_until timestamptz;
+do $claim_constraint$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conrelid = 'public.organization_email_connections'::regclass
+       and conname = 'organization_email_connections_claim_pair_check'
+  ) then
+    alter table public.organization_email_connections
+      add constraint organization_email_connections_claim_pair_check
+      check ((inbox_claim_token is null) = (inbox_claim_until is null));
+  end if;
+end
+$claim_constraint$;
+comment on table public.organization_email_connections is
+  'Conta de e-mail de entrada/saída da organização. A senha deve permanecer cifrada; nenhuma credencial é servida diretamente pelo PostgREST.';
+comment on column public.organization_email_connections.mailbox_password_encrypted is
+  'Cifrada por public.fn_encrypt_oauth (pgp_sym AES-256). Somente código servidor autorizado pode decifrar; nunca retornar à interface.';
+comment on column public.organization_email_connections.inbox_sync_enabled is
+  'A sincronização da caixa começa desligada e só pode ser habilitada quando o worker e as regras de entrada estiverem disponíveis.';
+comment on column public.organization_email_connections.outbound_automation_enabled is
+  'A caixa verificada só envia automações depois de um opt-in explícito do administrador da organização.';
+comment on column public.organization_email_connections.inbox_claim_token is
+  'Token efêmero do worker que reservou a caixa; não é credencial de canal nem é exposto ao cliente.';
+comment on column public.organization_email_connections.inbox_claim_until is
+  'Expiração da reserva IMAP. Outro worker pode assumir a caixa após esta data se o processo original cair.';
+create index if not exists organization_email_connections_sync_idx
+  on public.organization_email_connections (last_sync_at)
+  where inbox_sync_enabled and status = 'healthy';
+create index if not exists organization_email_connections_claim_idx
+  on public.organization_email_connections (inbox_claim_until, last_sync_at)
+  where inbox_sync_enabled and status = 'healthy';
+alter table public.organization_email_connections enable row level security;
+revoke all on public.organization_email_connections from public, anon, authenticated;
+grant all on public.organization_email_connections to service_role;
+
 notify pgrst, 'reload schema';
 
 -- ---- snooze por conversa (migration 0062) ----
@@ -9609,9 +9681,10 @@ alter table public.channel_sessions
 
 alter table public.channel_sessions
   add constraint channel_sessions_provider_check
-  -- 'wacalls' (0233), 'zernio_social' (0368) e 'datafy' (0387) somados AQUI —
+  -- 'wacalls' (0233), 'zernio_social' (0368), 'datafy' (0387) e
+  -- 'hostinger_email' (9085) somados AQUI —
   -- UM bloco só por constraint (não duplicar drop+add por migration).
-  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text]));
+  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text, 'hostinger_email'::text]));
 
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_ref_check;
@@ -9624,7 +9697,8 @@ alter table public.channel_sessions
     -- é o mesmo intermediário, com outra superfície de canal.
     (provider in ('zernio', 'zernio_social') and zernio_account_id is not null) or
     (provider = 'wacalls'    and wacalls_session_id    is not null) or
-    (provider = 'datafy'     and datafy_phone_number_id is not null)
+    (provider = 'datafy'     and datafy_phone_number_id is not null) or
+    (provider = 'hostinger_email' and waha_session_name is not null)
   );
 
 comment on column public.channel_sessions.zernio_account_id is
@@ -35571,7 +35645,7 @@ comment on column public.contacts.social_identity is
 -- primeira conexão de rede social.
 alter table public.conversations drop constraint if exists conversations_channel_check;
 alter table public.conversations add constraint conversations_channel_check
-  check (channel in ('whatsapp', 'instagram', 'facebook'));
+  check (channel in ('whatsapp', 'email', 'instagram', 'facebook'));
 
 
 -- APÊNDICE 20260921030100_0369_prospeccao_nativa.sql
@@ -71075,6 +71149,75 @@ revoke all on public.ai_provider_credentials from anon;
 revoke all on public.ai_provider_credentials_safe from anon;
 revoke all on public.ai_agent_versions from anon;
 revoke all on public.ai_agent_runs from anon;
+
+-- ---- conversas por fio de e-mail (migration 9088) ----
+update public.conversations c
+   set metadata = coalesce(c.metadata, '{}'::jsonb)
+       || jsonb_build_object(
+         'email_thread_root_id',
+         coalesce(
+           nullif(c.metadata->>'email_thread_root_id', ''),
+           (
+             select lower(btrim(reference.value))
+               from jsonb_array_elements_text(
+                 case
+                   when jsonb_typeof(c.metadata->'email_references') = 'array'
+                     then c.metadata->'email_references'
+                   else '[]'::jsonb
+                 end
+               ) with ordinality as reference(value, position)
+              where reference.value like '<%>'
+                and length(reference.value) <= 998
+              order by reference.position
+              limit 1
+           ),
+           lower(nullif(btrim(c.provider_conversation_id), '')),
+           'legacy:' || c.contact_id::text
+         )
+       )
+ where c.channel = 'email'
+   and c.is_group = false
+   and not (coalesce(c.metadata, '{}'::jsonb) ? 'email_thread_root_id');
+
+do $email_conversation_index$
+declare
+  v_index regclass := to_regclass('public.uniq_conversations_1to1_per_contact_session');
+  v_definition text;
+begin
+  if v_index is not null then
+    v_definition := pg_get_indexdef(v_index);
+    if position('is distinct from' in lower(v_definition)) = 0
+       or position('email' in lower(v_definition)) = 0 then
+      drop index public.uniq_conversations_1to1_per_contact_session;
+    end if;
+  end if;
+end
+$email_conversation_index$;
+
+create unique index if not exists uniq_conversations_1to1_per_contact_session
+  on public.conversations (organization_id, contact_id, channel_session_id)
+  where is_group = false and channel is distinct from 'email';
+
+create unique index if not exists uniq_conversations_email_thread_per_contact
+  on public.conversations (
+    organization_id,
+    contact_id,
+    channel_session_id,
+    (metadata->>'email_thread_root_id')
+  )
+  where channel = 'email'
+    and is_group = false
+    and nullif(metadata->>'email_thread_root_id', '') is not null;
+
+create index if not exists conversations_email_references_gin
+  on public.conversations using gin (metadata jsonb_path_ops)
+  where channel = 'email' and is_group = false;
+
+create index if not exists conversations_email_provider_message_id_idx
+  on public.conversations (organization_id, contact_id, channel_session_id, provider_conversation_id)
+  where channel = 'email'
+    and is_group = false
+    and provider_conversation_id is not null;
 
 notify pgrst, 'reload schema';
 

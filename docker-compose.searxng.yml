@@ -1,0 +1,19 @@
+# Opt-in bridge to the dedicated private network owned by the SearXNG stack.
+# Pair with deploy/searxng/docker-compose.crm-integration.yml there.
+# This file does not publish a port or attach the CRM to SearXNG's other networks.
+services:
+  app:
+    environment:
+      # This overlay explicitly selects the private Docker route. It prevents
+      # a public SEARXNG_BASE_URL left in .env from creating a two-source config.
+      SEARXNG_BASE_URL: ""
+      SEARXNG_INTERNAL_BASE_URL: ${SEARXNG_INTERNAL_BASE_URL:-http://searxng-search:8080}
+      SEARXNG_INTERNAL_IP: ${SEARXNG_INTERNAL_IP:-172.31.253.2}
+    networks:
+      - internal
+      - searxng-search
+
+networks:
+  searxng-search:
+    external: true
+    name: ${SEARXNG_DOCKER_NETWORK:-dreamland-search-crm}

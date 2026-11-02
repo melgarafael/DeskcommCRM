@@ -78,6 +78,10 @@ const nextConfig: NextConfig = {
   typedRoutes: true,
   experimental: {
     optimizePackageImports: ["@phosphor-icons/react", "lucide-react", "date-fns"],
+    // Keep the fallback Webpack build isolated and memory-optimized on the Mac.
+    // Turbopack remains the default build engine.
+    webpackBuildWorker: true,
+    webpackMemoryOptimizations: true,
   },
   images: {
     // O app não usa next/image de fato (só <img> raw); desligar o otimizador

@@ -130,6 +130,10 @@ export interface EntradaDeMensagem {
    * nascia com `source = 'whatsapp'`.
    */
   canal?: string;
+  /** Evita reemitir o turno quando um canal confiável retoma a mensagem. */
+  despachoIdempotente?: boolean;
+  /** Propaga falha de despacho ao ingestor para manter o cursor. */
+  despachoObrigatorio?: boolean;
 }
 
 /**
@@ -778,6 +782,32 @@ async function pedirDespachoDoAgente(admin: Admin, entrada: EntradaDeMensagem): 
     });
   }
 
+  if (entrada.despachoIdempotente) {
+    const { data: existente, error: lookupError } = await admin
+      .from("event_log")
+      .select("id")
+      .eq("organization_id", entrada.organizationId)
+      .eq("event_type", "ai_agent.dispatch_requested")
+      .eq("entity_kind", "message")
+      .eq("entity_id", entrada.messageId)
+      .in("status", ["pending", "processing", "done"])
+      .limit(1)
+      .maybeSingle();
+
+    if (lookupError) {
+      logger.warn("pos-entrada: leitura do despacho existente falhou", {
+        organization_id: entrada.organizationId,
+        message_id: entrada.messageId,
+        detail: lookupError.message.slice(0, 160),
+      });
+      if (entrada.despachoObrigatorio) {
+        throw new Error(`agent_dispatch_lookup_failed:${lookupError.code ?? "unknown"}`);
+      }
+    } else if (existente) {
+      return;
+    }
+  }
+
   const { error } = await admin.rpc("emit_event" as never, {
     p_event_type: "ai_agent.dispatch_requested",
     p_entity_kind: "message",
@@ -800,6 +830,9 @@ async function pedirDespachoDoAgente(admin: Admin, entrada: EntradaDeMensagem): 
       origem: entrada.origem,
       detail: error.message.slice(0, 160),
     });
+    if (entrada.despachoObrigatorio) {
+      throw new Error(`agent_dispatch_emit_failed:${error.code ?? "unknown"}`);
+    }
   }
 }
 

@@ -229,20 +229,25 @@ const schema = z.object({
   // devolve 401 em toda chamada — por isso `getWacallsClient()` exige os dois.
   WACALLS_API_TOKEN: z.string().optional().default(""),
 
-  // ─── Prospecção: engine de scraping self-hosted (local-http, #2942) ───────
-  //
-  // Mesmo desenho de WACALLS_API_BASE_URL: NUNCA `required()`. Vazio = a
-  // instalação não oferece o engine de scraping self-hosted, e a organização
-  // que escolher `local-http` em `settings.prospecting.provider` cai no erro
-  // FECHADO de sempre ("Informe a URL do engine de busca local.").
-  //
-  // A URL é da INSTALAÇÃO — e não da organização, como a #2942 propôs: é isso
-  // que faz a liberação de destino interno valer (`lib/automation/
-  // destinos-internos-autorizados.ts`, regra 2 — endereço escolhido por uma
-  // organização nunca alcança a rede de dentro). Quem lê é
-  // `baseDoEngineDaInstalacao()` em `lib/prospecting/provedor-local-http.ts`,
-  // que ainda passa o endereço pela régua de saída antes de chamar o engine.
+  // ─── Prospecção: engine self-hosted legado (local-http) ──────────────────
+  // Retido para compatibilidade com dados/instalações anteriores. Busca nova
+  // por essa fonte está desativada; a configuração não é exigida no boot.
   PROSPECTING_LOCAL_HTTP_URL: z.string().optional().default(""),
+
+  // ─── Prospecção: busca web SearXNG self-hosted (opcional) ─────────────────
+  // A URL pertence à instalação, nunca a uma organização. Vazia = fonte
+  // desativada. O provedor valida HTTPS externo ou o endpoint Docker fixo.
+  SEARXNG_BASE_URL: z.string().optional().default(""),
+  // Opção self-host dedicada: o provedor só aceita alias e porta fixos do
+  // serviço na rede Docker privada, e confere o IP antes da chamada.
+  SEARXNG_INTERNAL_BASE_URL: z.string().optional().default(""),
+  SEARXNG_INTERNAL_IP: z.string().optional().default(""),
+
+  // ─── Prospecção: renderização de sites com JavaScript (opcional) ─────────
+  // Firecrawl recebe somente URLs públicas quando o fallback foi explicitamente
+  // ligado. Sem a chave e a alavanca, toda auditoria permanece local.
+  FIRECRAWL_API_KEY: z.string().optional().default(""),
+  FIRECRAWL_SITE_FALLBACK_ENABLED: z.string().optional().default("false"),
 
   // ─── Videochamada (Jitsi Meet, #2440) — OPCIONAL, DESLIGADA POR PADRÃO ───
   //

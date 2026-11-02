@@ -168,17 +168,24 @@ export function montarEstrategia(entrada: EntradaDaEstrategia, t: TradutorDeText
   // "fora do ar" e a primeira mensagem dizia que o site não abre (#3723).
   if (entrada.provisorio || entrada.classe === "nao-medido") {
     const medido = entrada.classe === "nao-medido" && !entrada.provisorio;
+    const conteudoNaoRenderizado = entrada.problemas.includes("conteudo-nao-renderizado");
     return {
       cenario: t(medido ? "Site não medido" : "Verificação pendente"),
       angulo: t(
-        medido
+        conteudoNaoRenderizado
+          ? "O servidor respondeu, mas a captura automática não conseguiu ler o conteúdo da página. Ela pode depender de JavaScript; isso não prova que esteja vazia ou com defeito. Não cite problemas do site até uma leitura renderizada confirmar."
+          : medido
           ? "Não deu para abrir o site daqui (bloqueio ao nosso acesso automático ou rede instável), então NÃO há defeito medido para citar. Aborde pelo que é público e comprovado — nota, avaliações, presença — e não fale do site."
           : "A verificação do site foi inconclusiva (instabilidade de rede, não defeito comprovado). Sem gancho até a reverificação confirmar — abordar citando queda seria mentir com dados.",
       ),
       ganchos: [],
       objecoes: [],
       proximoPasso: t(
-        medido
+        conteudoNaoRenderizado
+          ? medido
+            ? "Aborde sem citar o site; a captura não conseguiu ler o conteúdo. Para obter um diagnóstico, rode \"Reanalisar site\" quando a leitura renderizada estiver disponível."
+            : "Aguardar as reverificações automáticas. Se a captura continuar sem conseguir ler a página, o site fica \"não medido\" e a abordagem segue sem citar defeitos."
+          : medido
           ? "Aborde sem citar o site. Para ter diagnóstico, rode \"Reanalisar site\" de outra rede ou noutro dia."
           : "Aguardar a reverificação automática; se esgotar as tentativas, o veredito fica \"não medido\" e a abordagem segue sem citar o site.",
       ),

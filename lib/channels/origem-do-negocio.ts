@@ -63,6 +63,13 @@ export const ORIGEM_DO_WHATSAPP_OPERADOR: OrigemDoNascimento = {
 };
 
 export function origemDoNegocioPeloCanal(canal: string | null | undefined): OrigemDoNascimento {
+  if (canal === "email") {
+    return {
+      rotulo: "E-mail",
+      source: "email",
+      motivo: "primeira mensagem recebida por e-mail",
+    };
+  }
   const rede = SOCIAL_NETWORKS.find((r) => r.inbox && r.id === canal);
   if (!rede) return ORIGEM_DO_WHATSAPP;
   return {

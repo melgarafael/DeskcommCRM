@@ -19,10 +19,15 @@
     {
       "id": "db",
       "label": "Banco"
+    },
+    {
+      "id": "external",
+      "label": "Serviço opcional"
     }
   ],
   "mainPath": [
     "operator",
+    "search-source",
     "discovery",
     "candidates",
     "site-enrich",
@@ -45,6 +50,13 @@
       "col": 1,
       "type": "component",
       "label": "Busca e enriquecimento comercial"
+    },
+    {
+      "id": "search-source",
+      "lane": "app",
+      "col": 0,
+      "type": "component",
+      "label": "Fonte por organização: Apify ou SearXNG da instalação por HTTPS/rede Docker privada"
     },
     {
       "id": "candidates",
@@ -121,7 +133,14 @@
       "lane": "app",
       "col": 3,
       "type": "component",
-      "label": "Auditoria de site no tick (spec 24)"
+      "label": "Auditoria da página inicial e um link público de contato (spec 24)"
+    },
+    {
+      "id": "firecrawl-fallback",
+      "lane": "external",
+      "col": 4,
+      "type": "component",
+      "label": "Firecrawl opt-in: renderiza no máximo duas páginas públicas com HTML JS vazio"
     },
     {
       "id": "inbound-turn",
@@ -162,8 +181,18 @@
   "edges": [
     {
       "from": "operator",
+      "to": "search-source",
+      "label": "seleciona fonte e verifica a conexão"
+    },
+    {
+      "from": "search-source",
       "to": "discovery",
-      "label": "busca com teto"
+      "label": "Apify por organização ou SearXNG HTTPS/rede Docker privada da instalação"
+    },
+    {
+      "from": "search-source",
+      "to": "operator",
+      "label": "falha na verificação impede a troca e explica o ajuste necessário"
     },
     {
       "from": "operator",
@@ -268,7 +297,17 @@
     {
       "from": "candidates",
       "to": "site-enrich",
-      "label": "auditoria de site em data.site"
+      "label": "página inicial + no máximo um link público de contato no mesmo domínio"
+    },
+    {
+      "from": "site-enrich",
+      "to": "firecrawl-fallback",
+      "label": "somente HTTP 2xx com shell JS vazio; chave, opt-in e limite global de 8/min"
+    },
+    {
+      "from": "firecrawl-fallback",
+      "to": "site-enrich",
+      "label": "HTML até 200 KB para conteúdo; status e tempo continuam locais"
     },
     {
       "from": "site-enrich",

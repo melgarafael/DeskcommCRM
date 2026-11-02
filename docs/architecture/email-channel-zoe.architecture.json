@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Canal de e-mail da Zoe",
+    "subtitle": "Canal Hostinger local na branch; captura IMAP, Inbox e resposta preparados, pendentes de ligação real",
+    "output": "email-channel-zoe.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    { "id": "operador", "label": "Organização" },
+    { "id": "app", "label": "Aplicativo" },
+    { "id": "dados", "label": "Persistência" },
+    { "id": "provedores", "label": "Serviços de e-mail" }
+  ],
+  "mainPath": ["admin", "configuracao", "connect-action", "connection", "automation", "roteador", "smtp-hostinger"],
+  "nodes": [
+    { "id": "admin", "lane": "operador", "col": 0, "type": "component", "label": "Admin da empresa" },
+    { "id": "configuracao", "lane": "app", "col": 1, "type": "frontend", "label": "Configurações › E-mail: conectar e verificar Hostinger" },
+    { "id": "connect-action", "lane": "app", "col": 2, "type": "route", "label": "ConnectHostingerEmail: confere SMTP/IMAP, cifra senha e audita" },
+    { "id": "connection", "lane": "dados", "col": 3, "type": "database", "label": "organization_email_connections — credencial cifrada, envio e sincronização desligados por padrão" },
+    { "id": "outbound-toggle", "lane": "app", "col": 3, "type": "route", "label": "Opt-in admin, MFA, estado saudável e auditoria" },
+    { "id": "automation", "lane": "app", "col": 1, "type": "component", "label": "Ação send_email com guarda de destinatário e limite existente" },
+    { "id": "roteador", "lane": "app", "col": 2, "type": "lib", "label": "Roteador: Hostinger da empresa ou transporte legado da plataforma" },
+    { "id": "smtp-hostinger", "lane": "provedores", "col": 4, "type": "external", "label": "Hostinger SMTP TLS — remetente da empresa" },
+    { "id": "imap-hostinger", "lane": "provedores", "col": 4, "type": "external", "label": "Hostinger IMAP TLS — busca limitada por cursor" },
+    { "id": "platform-mail", "lane": "provedores", "col": 4, "type": "external", "label": "SMTP / Resend da instalação — e-mail de sistema e fallback sem caixa da empresa" },
+    { "id": "system-mail", "lane": "app", "col": 1, "type": "component", "label": "Convites, cobrança, LGPD e recuperação de conta" },
+    { "id": "inbound-worker", "lane": "app", "col": 2, "type": "component", "label": "Cron IMAP: lease por caixa, cursor CAS, Inbox e efeitos pós-entrada" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "admin", "to": "configuracao", "label": "informa endereço e senha" },
+    { "id": "e2", "from": "configuracao", "to": "connect-action", "label": "solicita validação e gravação" },
+    { "id": "e3", "from": "connect-action", "to": "smtp-hostinger", "label": "verify() confirma o login SMTP, sem enviar mensagem" },
+    { "id": "e11", "from": "connect-action", "to": "imap-hostinger", "label": "confirma INBOX em modo somente leitura" },
+    { "id": "e4", "from": "connect-action", "to": "connection", "label": "cifra segredo; envio e sincronização começam desligados" },
+    { "id": "e12", "from": "admin", "to": "outbound-toggle", "label": "ativa ou pausa o envio das automações uma vez" },
+    { "id": "e13", "from": "outbound-toggle", "to": "connection", "label": "atualiza opt-in e grava evento de auditoria" },
+    { "id": "e14", "from": "connection", "to": "automation", "label": "automação usa a caixa somente após opt-in" },
+    { "id": "e15", "from": "connection", "to": "inbound-worker", "label": "sync opt-in; página IMAP com cursor e persistência deduplicada" },
+    { "id": "e16", "from": "imap-hostinger", "to": "inbound-worker", "label": "mensagens novas por UID" },
+    { "id": "e17", "from": "inbound-worker", "to": "connection", "label": "compare-and-set do cursor após persistir a página" },
+    { "id": "e5", "from": "automation", "to": "roteador", "label": "envia com escopo organization_id" },
+    { "id": "e6", "from": "roteador", "to": "connection", "label": "releitura da caixa saudável antes do envio" },
+    { "id": "e7", "from": "connection", "to": "roteador", "label": "credencial descriptografada só no servidor" },
+    { "id": "e8", "from": "roteador", "to": "smtp-hostinger", "label": "caixa da empresa configurada e saudável" },
+    { "id": "e9", "from": "roteador", "to": "platform-mail", "label": "sem caixa configurada, mantém comportamento legado" },
+    { "id": "e10", "from": "system-mail", "to": "platform-mail", "label": "permanece fora das credenciais da organização" }
+  ],
+  "contracts": {
+    "status": "saída e entrada implementadas localmente nesta branch; conexão, mensagens e respostas reais ainda não verificadas no Mac",
+    "spec": "docs/specs/33-spec-email-channel-zoe.md",
+    "no_links": [
+      "Falha ou credencial inválida de uma caixa salva não faz fallback para outro remetente.",
+      "A conexão e a verificação nunca enviam mensagens de teste.",
+      "Não há conexão de caixa configurada nem mensagens reais importadas ou respondidas.",
+      "E-mail de sistema não usa o remetente da organização."
+    ],
+    "limits": [
+      "A separação de tópicos por remetente ainda não existe; mensagens do mesmo remetente compartilham a conversa CRM.",
+      "O marcador external_content_untrusted acrescenta uma mitigação de prompt no runtime, mas não é uma fronteira determinística de segurança.",
+      "Persistência, efeitos da Zoe e cursor IMAP não são uma transação única; crash-recovery idempotente ainda falta.",
+      "A captura importa texto simples limitado; HTML e anexos não são processados.",
+      "Autenticação SMTP confirmada não garante entrega, reputação, SPF, DKIM ou DMARC."
+    ]
+  }
+}

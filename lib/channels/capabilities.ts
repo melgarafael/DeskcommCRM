@@ -125,6 +125,21 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
   },
+  // E-mail não tem janela de atendimento nem modelos pré-aprovados da Meta.
+  // O limite para respostas automáticas é a autorização da caixa da empresa,
+  // checada no adapter imediatamente antes do SMTP.
+  hostinger_email: {
+    freeformOutsideWindow: true,
+    requiresTemplates: false,
+    canManageTemplates: false,
+    banRisk: false,
+    minIntervalMs: null,
+    voiceNote: "server-convert",
+    groups: "none",
+    costPerMessage: false,
+    alteraMensagemEnviada: false,
+    phonebook: false,
+  },
 };
 
 /**
@@ -149,6 +164,8 @@ export const CHANNEL_PROVIDER_SOCIAL: ChannelProvider = "zernio_social";
 export const CHANNEL_PROVIDER_ZERNIO: ChannelProvider = "zernio";
 /** Parceiro que espelha a Cloud API — canal opcional da instalação, desligado por padrão. */
 export const CHANNEL_PROVIDER_DATAFY: ChannelProvider = "datafy";
+/** Canal de conversa por IMAP/SMTP da caixa Hostinger da organização. */
+export const CHANNEL_PROVIDER_HOSTINGER_EMAIL: ChannelProvider = "hostinger_email";
 /** Chamada de voz WhatsApp (spec 18). Não transporta mensagem — ver abaixo. */
 export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
 
@@ -182,6 +199,7 @@ export const PROVIDERS_DE_MENSAGEM = [
   "zernio",
   "zernio_social",
   "datafy",
+  "hostinger_email",
 ] as const satisfies readonly ProviderDeMensagem[];
 
 /**
@@ -203,7 +221,7 @@ export const PROVIDERS_DE_TELEFONE = [
   "meta_cloud",
   "zernio",
   "datafy",
-] as const satisfies readonly Exclude<(typeof PROVIDERS_DE_MENSAGEM)[number], "zernio_social">[];
+] as const satisfies readonly Exclude<(typeof PROVIDERS_DE_MENSAGEM)[number], "zernio_social" | "hostinger_email">[];
 
 /**
  * `true` quando a linha de `channel_sessions` é um canal de mensagem.

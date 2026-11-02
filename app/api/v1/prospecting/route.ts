@@ -10,9 +10,20 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { capabilitiesOf } from "@/lib/channels/capabilities";
 import type { ChannelProvider } from "@/lib/channels/types";
 import { ProspectingError } from "@/lib/prospecting/provider";
-import { campaignConfigSchema, prospectingInputSchema, type Prospect } from "@/lib/prospecting/schema";
+import {
+  searxngConfiguradoNaInstalacao,
+  statusDaInstalacaoSearxng,
+} from "@/lib/prospecting/provedor-searxng";
+import {
+  campaignConfigSchema,
+  prospectingInputSchema,
+  type Prospect,
+} from "@/lib/prospecting/schema";
 import { configPadraoDaOrganizacao } from "@/lib/prospecting/config-padrao";
-import { provedorExigeCredencialDaOrganizacao } from "@/lib/prospecting/provedor";
+import {
+  provedorExigeCredencialDaOrganizacao,
+  provedorNasSettings,
+} from "@/lib/prospecting/provedor";
 import { auditarSite } from "@/lib/prospecting/site-fetch";
 import { gravarPrevia } from "@/lib/prospecting/previa";
 import { gerarPreviaDoCandidato } from "@/lib/prospecting/previa-gerar";
@@ -29,6 +40,7 @@ import {
   configureCredential,
   createSearch,
   descartarDesmarcadas,
+  selecionarProvedorDeBusca,
   selecionarNaFila,
   validateConfig,
   withProspectingLock,
@@ -121,19 +133,30 @@ export async function GET(req: NextRequest) {
     const previaPadrao = await configPadraoDaOrganizacao(db, org)
       .then((p) => p !== null)
       .catch(() => false);
-    // `configured` libera a busca na tela. O `local-http` (#2942) não grava chave
-    // por organização (a URL é da instalação), então a linha em
-    // prospecting_settings nunca existe para ele. Escolha desconhecida cai na
+    // `configured` libera a busca na tela. O `searxng` não grava chave por
+    // organização (a URL é da instalação), então a linha em prospecting_settings
+    // nunca existe para ele. Escolha desconhecida cai na
     // régua antiga: a busca falha fechado no POST, a lista não cai aqui.
-    const configured =
-      !!settings.rows.length ||
-      !(await provedorExigeCredencialDaOrganizacao(db, org).catch(() => true));
+    const provider = provedorNasSettings(
+      (organizacao.rows[0] as { settings?: unknown } | undefined)?.settings,
+    );
+    const fonteConhecida = provider === "apify" || provider === "searxng";
+    const searxngConfigurado = searxngConfiguradoNaInstalacao();
+    const statusSearxng = statusDaInstalacaoSearxng();
+    const configured = fonteConhecida && (
+      (await provedorExigeCredencialDaOrganizacao(db, org).catch(() => true))
+        ? !!settings.rows.length
+        : provider === "searxng" && searxngConfigurado
+    );
     const personalizacao = lerPersonalizacao(
       (organizacao.rows[0] as { settings?: unknown } | undefined)?.settings,
     );
     return ok(
       {
         configured,
+        provider,
+        searxng_configured: searxngConfigurado,
+        searxng_configuration_status: statusSearxng,
         campaigns: campaigns.rows,
         candidates: candidates.rows,
         previa_padrao: previaPadrao,
@@ -198,6 +221,14 @@ export async function POST(req: NextRequest) {
     if (body.action === "configure") {
       await configureCredential(pool, admin, org, body.api_key);
       result = { configured: true };
+    } else if (body.action === "select_provider") {
+      const escolha = await selecionarProvedorDeBusca(pool, org, body.provider);
+      result = { provider: escolha.provider, changed: escolha.changed };
+      auditMetadata = {
+        operation: body.action,
+        previous_provider: escolha.previous_provider,
+        provider: escolha.provider,
+      };
     } else if (body.action === "search")
       result = await createSearch(pool, admin, org, body.request_id, body.search);
     else if (body.action === "start")
@@ -451,7 +482,7 @@ export async function POST(req: NextRequest) {
         return { resumed: true };
       });
     }
-    const resourceId = "id" in body ? body.id : null;
+    const resourceId = body.action === "select_provider" ? org : "id" in body ? body.id : null;
     // A prévia audita DENTRO do bloco (só quando a gravação venceu): aqui é só
     // devolver, para não gravar uma trilha de "changed" que não houve.
     if (body.action === "prever_abordagem") return ok(result, { requestId, headers });

@@ -13,6 +13,7 @@
  */
 export type ChannelSessionRef =
   | { provider: "waha"; waha_session_name: string }
+  | { provider: "hostinger_email"; waha_session_name: string }
   | { provider: "meta_cloud"; meta_phone_number_id: string }
   | { provider: "zernio" | "zernio_social"; zernio_account_id: string }
   | { provider: "datafy"; datafy_phone_number_id: string };
@@ -34,6 +35,7 @@ export function resolveSessionRef(session: ChannelSessionRef): string {
     case "datafy":
       return session.datafy_phone_number_id;
     case "waha":
+    case "hostinger_email":
       return session.waha_session_name;
     // O `accountId` que o provider devolve ao conectar a WABA. NÃO é o
     // phone_number_id da Meta: quem intermedeia guarda o número por dentro e

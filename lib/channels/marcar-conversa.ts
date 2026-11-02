@@ -55,6 +55,8 @@ export async function marcarConversaComMensagem(
     at: string;
     /** Nome do canal, só para o log da segunda linha de defesa. */
     canal: string;
+    /** Propaga a falha ao worker que pode retomar a mensagem depois. */
+    falharEmErro?: boolean;
   },
 ): Promise<void> {
   const { error } = await admin.rpc("fn_mark_conversation_message" as never, {
@@ -86,5 +88,9 @@ export async function marcarConversaComMensagem(
       erro: error.message,
       aviso: erroAviso.message,
     });
+  }
+
+  if (args.falharEmErro) {
+    throw new Error(`conversation_message_mark_failed:${error.code ?? "unknown"}`);
   }
 }

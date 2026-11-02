@@ -28,6 +28,8 @@ import {
   assertDestinoResolvidoSeguro,
   ipEhEspecial,
 } from "@/lib/automation/outbound-ip";
+import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
+import { env } from "@/lib/env";
 import {
   derivarClasse,
   detectarConstrutor,
@@ -49,12 +51,20 @@ import {
   temLinkComHrefHttp,
 } from "@/lib/prospecting/leitura-do-html";
 import { LIMITE_TENTATIVAS } from "@/lib/prospecting/site-efetivo";
+import { normalizeProspectPhone } from "@/lib/prospecting/schema";
 
 const TIMEOUT_MS = 8000;
 const MAX_REDIRECTS = 5;
 const MAX_BODY_BYTES = 200_000;
+const FIRECRAWL_TIMEOUT_MS = 12_000;
+const FIRECRAWL_REQUESTS_PER_MINUTE = 8;
+const CONTACT_PAGE_TIMEOUT_MS = 4000;
 const LIMITE_LENTO_MS = 5000;
 const MAX_CHARS_RESUMO = 1200;
+const RAIZ_SPA_VAZIA = new RegExp(
+  `<(div|main|section)\\b(?=[^>]*\\bid=["'](?:root|app|__next|__nuxt|gatsby-focus-wrapper|site_container|site-container)["'])[^>]*>([\\s\\S]*?)<\\/\\1\\s*>|<(app-root)\\b[^>]*>([\\s\\S]*?)<\\/\\3\\s*>`,
+  "i",
+);
 /**
  * Prazo do LOTE de auditoria (todos os sites juntos). Um site pode pendurar
  * mesmo com `AbortSignal.timeout` (medido na VPS: o tick ficou ~30 min
@@ -183,7 +193,9 @@ async function lerLimitado(res: Response): Promise<string> {
     if (done) break;
     recebido += value.byteLength;
     if (recebido > MAX_BODY_BYTES) {
-      await leitor.cancel().catch(() => undefined);
+      // Alguns streams têm uma leitura de prefetch pendente; aguardar a
+      // promessa de cancelamento pode prender a auditoria mesmo após o teto.
+      void leitor.cancel().catch(() => undefined);
       break;
     }
     texto += decoder.decode(value, { stream: true });
@@ -197,8 +209,77 @@ interface Busca {
   status: number;
   html: string;
   ms: number;
+  metodo?: "firecrawl" | "firecrawl-sem-resultado";
   /** O servidor respondeu com um DESAFIO anti-robô (`cf-mitigated`): barrou o nosso IP, não o visitante. */
   desafioAntiRobo?: boolean;
+}
+
+/**
+ * Renderiza uma única página pública com Firecrawl quando o fetch local só
+ * encontrou o shell de uma aplicação JavaScript. A chamada fica desligada por
+ * padrão, nunca tenta acessar destinos privados, nunca segue redirects por
+ * conta própria e nunca usa o HTML do provedor para concluir URL/status/tempo.
+ */
+async function buscarHtmlRenderizado(
+  url: string,
+  fetchFn: typeof fetch,
+  verificar: VerificadorDeHost,
+): Promise<{ html: string | null; tentado: boolean }> {
+  const apiKey = env.FIRECRAWL_API_KEY.trim();
+  if (
+    !apiKey ||
+    env.FIRECRAWL_SITE_FALLBACK_ENABLED.trim().toLowerCase() !== "true"
+  ) return { html: null, tentado: false };
+
+  // Revalida o destino imediatamente antes de enviar a URL ao terceiro. A
+  // resposta Firecrawl não escolhe URL de follow-up nem é buscada pelo CRM.
+  if (await hostLiberado(url, verificar)) return { html: null, tentado: false };
+
+  // O plano gratuito documenta limite de 10 chamadas/minuto em /scrape. Deixamos
+  // folga para chamadas administrativas e compartilhamos o teto via Redis entre
+  // app e worker. Se o Redis estiver indisponível, o helper degrada para o teto
+  // local e o fallback segue opcional.
+  const limite = await checkRateLimit(
+    "prospeccao:firecrawl:scrape",
+    FIRECRAWL_REQUESTS_PER_MINUTE,
+    60,
+  );
+  if (!limite.allowed) return { html: null, tentado: false };
+
+  try {
+    const resposta = await fetchFn("https://api.firecrawl.dev/v2/scrape", {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(FIRECRAWL_TIMEOUT_MS),
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        url,
+        formats: ["html"],
+        onlyMainContent: false,
+        maxAge: 172_800_000,
+      }),
+    });
+    if (!resposta.ok) {
+      await resposta.body?.cancel().catch(() => undefined);
+      return { html: null, tentado: true };
+    }
+
+    const bruto = await lerLimitado(resposta);
+    const payload: unknown = JSON.parse(bruto);
+    if (!payload || typeof payload !== "object") return { html: null, tentado: true };
+    const data = (payload as { data?: unknown }).data;
+    if (!data || typeof data !== "object") return { html: null, tentado: true };
+    const html = (data as { html?: unknown }).html;
+    if (typeof html !== "string" || html.length === 0) return { html: null, tentado: true };
+    if (new TextEncoder().encode(html).byteLength > MAX_BODY_BYTES) return { html: null, tentado: true };
+    return { html, tentado: true };
+  } catch {
+    // Firecrawl é melhoria opcional. Qualquer falha mantém a medição original.
+    return { html: null, tentado: true };
+  }
 }
 
 /**
@@ -220,6 +301,7 @@ async function buscar(
   urlInicial: string,
   fetchFn: typeof fetch = fetch,
   verificar: VerificadorDeHost = verificadorPadrao,
+  timeoutMs = TIMEOUT_MS,
 ): Promise<Busca> {
   let atual = urlInicial.startsWith("http://") || urlInicial.startsWith("https://")
     ? urlInicial
@@ -230,7 +312,7 @@ async function buscar(
     if (bloqueio) throw Object.assign(new Error(bloqueio), { bloqueioSSRF: bloqueio });
     const res = await fetchFn(atual, {
       redirect: "manual",
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
       headers: { "User-Agent": UA_NAVEGADOR },
     });
     const destino = res.headers.get("location");
@@ -294,14 +376,173 @@ function montarResumo(html: string): string | null {
 }
 
 /**
- * O texto que um visitante lê, sem tags, scripts e estilos. Serve ao teste do
- * checklist inconclusivo (página montada por JavaScript): `html.trim().length`
- * conta `<script>` e markup de construtor como se fosse conteúdo.
+ * O texto que um visitante lê, sem tags, scripts e estilos. A classificação e
+ * o checklist usam este conteúdo — `html.trim().length` conta `<script>` e
+ * markup de construtor como se fossem texto legível.
  */
 export function textoVisivel(html: string): string {
   return semTags(semBlocosDeScript(html || ""))
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Detecta um shell SPA vazio sem confundir páginas estáticas apenas concisas. */
+function pareceShellJavascript(html: string, texto = textoVisivel(html)): boolean {
+  if (!/<script\b[^>]*\b(?:src|type=["']module["'])/i.test(html)) return false;
+  const raiz = RAIZ_SPA_VAZIA.exec(html);
+  if (!raiz) return false;
+  return (
+    texto.length < MINIMO_CHARS_PAGINA_REAL &&
+    textoVisivel(raiz[2] ?? raiz[4] ?? "").length === 0
+  );
+}
+
+/** Extrai apenas contatos publicados de forma legível ou em mailto/tel. */
+function contatosPublicos(
+  html: string,
+  visivel: string,
+  fonte?: string,
+): NonNullable<SiteEnrichment["contatos_publicos"]> {
+  const encontradosEmail = [
+    ...visivel.matchAll(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi),
+    ...html.matchAll(/href\s*=\s*["']mailto:([^"'?#\s]+)/gi),
+  ];
+  const emails = [...new Set(encontradosEmail
+    .map((match) => (match[1] ?? match[0] ?? "").replace(/^mailto:/i, "").trim().toLowerCase())
+    .filter((email) => email.length <= 254 && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email))
+    .filter((email) => !/^(?:example|teste|test|noreply|no-reply)@/i.test(email)))].slice(0, 5);
+
+  // Texto livre só aceita formatos telefônicos reconhecíveis (DDD entre
+  // parênteses ou número separado por hífens). Isso evita transformar CNPJ,
+  // CEP ou sequências aleatórias em telefones brasileiros por inferência.
+  const telefoneBrasileiroFormatado = /(?:\+55\s*)?\(?\d{2}\)?[\s.-]*\d{4,5}[-\s]\d{4}/g;
+  const brutoTelefone = [
+    ...visivel.matchAll(telefoneBrasileiroFormatado),
+    ...html.matchAll(/href\s*=\s*["']tel:([^"'?#\s]+)/gi),
+  ];
+  const telefones = [...new Set(brutoTelefone
+    .map((match) => match[1] ?? match[0] ?? "")
+    .map((value) => {
+      const limpo = value.trim();
+      const digitos = limpo.replace(/\D/g, "");
+      if (!limpo.startsWith("+") && /^55\d{10,11}$/.test(digitos)) return `+${digitos}`;
+      return normalizeProspectPhone(limpo);
+    })
+    .filter((value): value is string => value !== null))].slice(0, 5);
+  const fontes = emails.length > 0 || telefones.length > 0 ? [fonte].filter(
+    (valor): valor is string => typeof valor === "string" && /^https?:\/\//i.test(valor),
+  ) : [];
+  return { emails, telefones, ...(fontes.length > 0 ? { fontes } : {}) };
+}
+
+/**
+ * Escolhe no máximo um link público de contato que a própria página inicial
+ * publicou. Não adivinha caminhos, não segue domínios externos e não transforma
+ * links `mailto:`/`tel:` em páginas. Isso amplia a coleta comercial sem abrir um
+ * crawler arbitrário.
+ */
+function urlDaPaginaDeContato(html: string, baseUrl: string): string | null {
+  let base: URL;
+  try {
+    base = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+
+  const anchors = [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi)].slice(0, 500);
+  const candidatos: Array<{ url: string; prioridade: number }> = [];
+  for (const [, atributos, conteudo] of anchors) {
+    const hrefMatch = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(atributos ?? "");
+    const href = hrefMatch?.[1] ?? hrefMatch?.[2] ?? hrefMatch?.[3];
+    if (!href || /^(?:mailto:|tel:|javascript:|data:)/i.test(href.trim())) continue;
+
+    let destino: URL;
+    try {
+      destino = new URL(href.trim(), base);
+    } catch {
+      continue;
+    }
+    if (
+      (destino.protocol !== "http:" && destino.protocol !== "https:") ||
+      destino.origin !== base.origin ||
+      destino.username ||
+      destino.password
+    ) continue;
+
+    const caminho = destino.pathname.toLowerCase().replace(/\/+$/, "");
+    if (!caminho || caminho === base.pathname.toLowerCase().replace(/\/+$/, "")) continue;
+    const rotulo = semTags(conteudo ?? "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+    const caminhoContato = /(?:^|\/)(?:contato|contact|fale-conosco|atendimento|sobre|about|empresa|quem-somos|contact-us|get-in-touch)(?:\/|[-_.]|$)/i.test(caminho);
+    const rotuloContato = /\b(?:contato|contact|fale conosco|fale com a gente|atendimento|quem somos|about us)\b/.test(rotulo);
+    if (!caminhoContato && !rotuloContato) continue;
+
+    destino.hash = "";
+    destino.search = "";
+    candidatos.push({ url: destino.href, prioridade: caminhoContato ? 0 : 1 });
+  }
+  candidatos.sort((a, b) => a.prioridade - b.prioridade);
+  return candidatos[0]?.url ?? null;
+}
+
+interface PaginaComplementarDeContato {
+  url: string;
+  html: string;
+  metodo?: "firecrawl" | "firecrawl-sem-resultado";
+}
+
+/** Busca uma única página de contato, somente no mesmo host e com prazo menor. */
+async function buscarPaginaComplementarDeContato(
+  htmlInicial: string,
+  urlInicial: string,
+  fetchFn: typeof fetch,
+  verificar: VerificadorDeHost,
+): Promise<PaginaComplementarDeContato | null> {
+  const alvo = urlDaPaginaDeContato(htmlInicial, urlInicial);
+  if (!alvo) return null;
+  try {
+    const pagina = await buscar(alvo, fetchFn, verificar, CONTACT_PAGE_TIMEOUT_MS);
+    if (pagina.status < 200 || pagina.status >= 300) return null;
+
+    const origemEsperada = new URL(urlInicial).origin;
+    // Redirects externos são seguros no aspecto SSRF, mas não são fonte do site
+    // anunciado para este candidato.
+    if (new URL(pagina.finalUrl).origin !== origemEsperada) return null;
+    if (!pareceShellJavascript(pagina.html)) {
+      return { url: pagina.finalUrl, html: pagina.html };
+    }
+
+    const renderizado = await buscarHtmlRenderizado(pagina.finalUrl, fetchFn, verificar);
+    if (!renderizado.html) {
+      return renderizado.tentado
+        ? { url: pagina.finalUrl, html: "", metodo: "firecrawl-sem-resultado" }
+        : null;
+    }
+    return { url: pagina.finalUrl, html: renderizado.html, metodo: "firecrawl" };
+  } catch {
+    // Uma página complementar não determina a saúde nem o veredito do domínio.
+    return null;
+  }
+}
+
+function combinarContatosPublicos(
+  htmlPrincipal: string,
+  urlPrincipal: string,
+  paginaContato: PaginaComplementarDeContato | null,
+): NonNullable<SiteEnrichment["contatos_publicos"]> {
+  const principal = contatosPublicos(htmlPrincipal, textoVisivel(htmlPrincipal), urlPrincipal);
+  const complementar = paginaContato?.html
+    ? contatosPublicos(paginaContato.html, textoVisivel(paginaContato.html), paginaContato.url)
+    : { emails: [], telefones: [], fontes: [] };
+  return {
+    emails: [...new Set([...principal.emails, ...complementar.emails])].slice(0, 5),
+    telefones: [...new Set([...principal.telefones, ...complementar.telefones])].slice(0, 5),
+    fontes: [...new Set([...(principal.fontes ?? []), ...(complementar.fontes ?? [])])].slice(0, 2),
+  };
 }
 
 function anoDesatualizado(html: string): string | null {
@@ -337,6 +578,7 @@ export async function auditarSite(
   fetchFn: typeof fetch = fetch,
   verificar: VerificadorDeHost = verificadorPadrao,
   tentativasAnteriores = 0,
+  firecrawlTentadoAntes = false,
 ): Promise<SiteEnrichment> {
   // Portão puro antes de qualquer rede: Instagram/WhatsApp/linktree e afins
   // nunca foram site — as linhas antigas (de antes do veredito no insert)
@@ -363,9 +605,34 @@ export async function auditarSite(
    */
   const naoMedido = (
     tentativas: number,
-    problema: "medicao-bloqueada" | "medicao-instavel",
-  ): SiteEnrichment =>
-    falha("nao-medido", [problema], tentativas + 1 < LIMITE_TENTATIVAS, tentativas + 1);
+    problema: "medicao-bloqueada" | "medicao-instavel" | "conteudo-nao-renderizado",
+    pagina?: {
+      html: string;
+      finalUrl: string;
+      status: number;
+      ms: number;
+      metodo?: "firecrawl-sem-resultado";
+    },
+  ): SiteEnrichment => {
+    const resultado = falha(
+      "nao-medido",
+      [problema],
+      tentativas + 1 < LIMITE_TENTATIVAS,
+      tentativas + 1,
+    );
+    if (!pagina) return resultado;
+    const visivel = textoVisivel(pagina.html);
+    return {
+      ...resultado,
+      checklist: { tem: [], falta: [], inconclusivo: true },
+      final_url: pagina.finalUrl.slice(0, 500),
+      http_status: pagina.status,
+      tempo_ms: pagina.ms,
+      conteudo_resumo: montarResumo(pagina.html),
+      contatos_publicos: contatosPublicos(pagina.html, visivel, pagina.finalUrl),
+      ...(pagina.metodo ? { metodo: pagina.metodo } : {}),
+    };
+  };
 
   const tentar = async (): Promise<SiteEnrichment> => {
     let busca: Busca;
@@ -401,8 +668,26 @@ export async function auditarSite(
       }
     }
 
+    if (
+      !firecrawlTentadoAntes &&
+      busca.status >= 200 &&
+      busca.status < 300 &&
+      pareceShellJavascript(busca.html)
+    ) {
+      const renderizado = await buscarHtmlRenderizado(busca.finalUrl, fetchFn, verificar);
+      if (renderizado.html) busca = { ...busca, html: renderizado.html, metodo: "firecrawl" };
+      else if (renderizado.tentado) busca = { ...busca, metodo: "firecrawl-sem-resultado" };
+    }
+    if (firecrawlTentadoAntes && !busca.metodo && pareceShellJavascript(busca.html)) {
+      busca = { ...busca, metodo: "firecrawl-sem-resultado" };
+    }
+
     const html = busca.html;
     const minusculo = html.toLowerCase();
+    const textoDaPagina = textoVisivel(html);
+    const conteudoCurto = textoDaPagina.length < MINIMO_CHARS_PAGINA_REAL;
+    const shellJavascript = pareceShellJavascript(html, textoDaPagina);
+    const conteudoNaoRenderizado = shellJavascript && busca.metodo !== "firecrawl";
     const problemas: string[] = [];
     if (busca.status >= 400) {
       // Firewall/limite/anti-robô: quem não passou fomos nós, não o site.
@@ -423,19 +708,39 @@ export async function auditarSite(
       problemas.push((await httpsAbre(busca.finalUrl, fetchFn, verificar)) ? "http-sem-redirecionar" : "sem-https");
     }
     else if (/\ssrc=["']http:\/\//i.test(html) || temLinkComHrefHttp(html)) problemas.push("conteudo-misto");
-    if (!minusculo.includes("viewport")) problemas.push("nao-mobile");
-    if (html.trim().length < MINIMO_CHARS_PAGINA_REAL) problemas.push("quase-vazia");
     const construtor = detectarConstrutor(busca.finalUrl, html);
-    if (construtor) problemas.push(`construtor-${construtor}`);
-    const parado = anoDesatualizado(html);
-    if (parado) problemas.push(parado);
+    if (conteudoCurto && busca.metodo === "firecrawl") problemas.push("quase-vazia");
+    else if (conteudoCurto && !conteudoNaoRenderizado && !construtor) problemas.push("quase-vazia");
 
-    // Construtor que monta a página por JavaScript entrega um HTML quase vazio:
-    // o que "não achamos" ali não é falta do site, é falta de renderização
-    // (caso D do #3723 — Wix com `falta-whatsapp`, `falta-fotos`, `falta-mapa`).
-    const checklist = montarChecklist(html, {
-      inconclusivo: construtor !== null && textoVisivel(html).length < MINIMO_CHARS_PAGINA_REAL,
-    });
+    // Uma resposta HTTP 200 com raiz SPA vazia e scripts externos não prova que
+    // o site está vazio. Tentamos o renderizador externo uma única vez por ciclo de
+    // vida do veredito; se ele não estiver configurado ou não devolver conteúdo,
+    // guardamos a inspeção como inconclusiva e não fabricamos defeitos de UX.
+    if (conteudoNaoRenderizado && problemas.length === 0) {
+      return naoMedido(tentativasAnteriores, "conteudo-nao-renderizado", {
+        html,
+        finalUrl: busca.finalUrl,
+        status: busca.status,
+        ms: busca.ms,
+        ...(busca.metodo === "firecrawl-sem-resultado" ? { metodo: busca.metodo } : {}),
+      });
+    }
+
+    // Os sinais abaixo dependem de termos visto a página. Evita chamar um shell
+    // JavaScript sem conteúdo de versão mobile ausente ou site parado.
+    if (!conteudoCurto && !minusculo.includes("viewport")) problemas.push("nao-mobile");
+    if (!conteudoNaoRenderizado) {
+      if (construtor) problemas.push(`construtor-${construtor}`);
+    }
+    if (!conteudoCurto && !conteudoNaoRenderizado) {
+      const parado = anoDesatualizado(html);
+      if (parado) problemas.push(parado);
+    }
+
+    // O que não aparece em uma página que não conseguimos ler não é uma falta
+    // comprovada. O checklist inconclusivo impede transformar ausência no HTML
+    // em diagnóstico de venda (inclui páginas montadas por JavaScript).
+    const checklist = montarChecklist(html, { inconclusivo: conteudoNaoRenderizado });
     // `falta-*` NÃO entra em `problemas`: item de checklist é melhoria, não
     // defeito medido — e `problemas` é o que a classe e a copy citam. O
     // checklist guarda o tem/falta para a ficha da tela.
@@ -448,12 +753,22 @@ export async function auditarSite(
       urlFinal: busca.finalUrl,
       problemas,
     });
+    const paginaContato = busca.status < 400 && !conteudoNaoRenderizado
+      ? await buscarPaginaComplementarDeContato(html, busca.finalUrl, fetchFn, verificar)
+      : null;
+    const contatos = combinarContatosPublicos(html, busca.finalUrl, paginaContato);
+    const metodo = busca.metodo === "firecrawl" || paginaContato?.metodo === "firecrawl"
+      ? "firecrawl"
+      : busca.metodo ?? paginaContato?.metodo;
 
     return {
       ver: 1, classe, problemas,
       checklist, final_url: busca.finalUrl.slice(0, 500),
       http_status: busca.status, tempo_ms: busca.ms,
-      conteudo_resumo: montarResumo(html), pagespeed: null, verificado_em: agoraIso,
+      conteudo_resumo: montarResumo(html),
+      contatos_publicos: contatos,
+      ...(metodo ? { metodo } : {}),
+      pagespeed: null, verificado_em: agoraIso,
       provisorio: false, tentativas: tentativasAnteriores,
     };
   };
@@ -494,12 +809,15 @@ export async function auditarSites(
   verificar: VerificadorDeHost = verificadorPadrao,
   tentativasAnteriores: number[] | number = 0,
   prazoMs = PRAZO_DO_LOTE_MS,
+  firecrawlTentadoAntes: boolean[] | boolean = false,
 ): Promise<SiteEnrichment[]> {
   const saidas: SiteEnrichment[] = new Array(urls.length);
   const abortadorDoLote = new AbortController();
   const relogioDoLote = setTimeout(() => abortadorDoLote.abort(), prazoMs);
   const anteriorDe = (i: number) =>
     Array.isArray(tentativasAnteriores) ? (tentativasAnteriores[i] ?? 0) : tentativasAnteriores;
+  const firecrawlAnteriorDe = (i: number) =>
+    Array.isArray(firecrawlTentadoAntes) ? (firecrawlTentadoAntes[i] ?? false) : firecrawlTentadoAntes;
   // Quem não coube no prazo do lote NÃO teve fetch concluído: não há evidência de nada,
   // então fica PROVISÓRIO e a tentativa NÃO é consumida. Contá-la fazia o item do fim do
   // lote (a seleção é `order by created_at limit 30`) congelar como "fora do ar" na
@@ -530,7 +848,7 @@ export async function auditarSites(
         // chega ao `fetch`, que segue em segundo plano até o próprio timeout
         // (`TIMEOUT_MS`). O bloqueio da organização é liberado; o efeito é pequeno.
         saidas[i] = await Promise.race([
-          auditarSite(urls[i]!, agoraIso, fetchFn, verificar, anterior),
+          auditarSite(urls[i]!, agoraIso, fetchFn, verificar, anterior, firecrawlAnteriorDe(i)),
           new Promise<SiteEnrichment>((resolve) => {
             abortadorDoLote.signal.addEventListener(
               "abort",

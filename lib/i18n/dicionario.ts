@@ -40,6 +40,13 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Endereço definido; a conexão é verificada ao selecionar.": { es: "Dirección configurada; la conexión se verifica al seleccionar." },
+  "Configure um endereço HTTPS ou a rede Docker do SearXNG no servidor do CRM.": { es: "Configura una dirección HTTPS o la red Docker de SearXNG en el servidor del CRM." },
+  "Configure uma rota HTTPS ou a rede Docker do SearXNG no servidor do CRM.": { es: "Configura una ruta HTTPS o la red Docker de SearXNG en el servidor del CRM." },
+  "Há duas rotas do SearXNG configuradas. Mantenha apenas a rota HTTPS ou a rota Docker no servidor do CRM.": { es: "Hay dos rutas de SearXNG configuradas. Mantén solo la ruta HTTPS o la ruta Docker en el servidor del CRM." },
+  "A configuração do SearXNG está incompleta ou inválida. Confira o endereço e os dados da rede Docker no servidor do CRM.": { es: "La configuración de SearXNG está incompleta o no es válida. Revisa la dirección y los datos de la red Docker en el servidor del CRM." },
+  "SearXNG configurado na rede Docker; a conexão é verificada ao selecionar.": { es: "SearXNG está configurado en la red Docker; la conexión se verifica al seleccionar." },
+  "SearXNG configurado por HTTPS; a conexão é verificada ao selecionar.": { es: "SearXNG está configurado mediante HTTPS; la conexión se verifica al seleccionar." },
   "Avisar também nas transferências para atendimento humano": { es: "Avisar también en las transferencias a atención humana" },
   "Cada transferência manda uma mensagem ao mesmo número e conta no limite diário dele. Desligue para receber só os avisos de casos.": { es: "Cada transferencia envía un mensaje al mismo número y cuenta en su límite diario. Desactívalo para recibir solo los avisos de casos." },
   "Também param de sair, até você cadastrar um número de novo: os avisos de transferência para atendimento humano, os avisos da Agenda que usam o mesmo número dos casos e as automações com a ação \"Mensagem para a equipe\".": { es: "También dejan de salir, hasta que registres otro número: los avisos de transferencia a atención humana, los avisos de la Agenda que usan el mismo número que los casos y las automatizaciones con la acción \"Mensaje para el equipo\"." },
@@ -803,6 +810,12 @@ export const DICIONARIO: Traducoes = {
   "Sem dados de enriquecimento para este contato.": { es: "Sin datos de enriquecimiento para este contacto." },
   "Avaliações no Google": { es: "Reseñas en Google" },
   "E-mails comerciais": { es: "Correos comerciales" },
+  "Contatos publicados no site": { es: "Contactos publicados en el sitio" },
+  "Dados encontrados em páginas públicas do site; confira antes de usar. A publicação não comprova consentimento para marketing.": {
+    es: "Datos encontrados en páginas públicas del sitio; revíselos antes de usarlos. Su publicación no demuestra consentimiento para marketing.",
+  },
+  "Página inicial": { es: "Página principal" },
+  "Página de contato": { es: "Página de contacto" },
   "Fonte: pesquisa de empresas": { es: "Fuente: búsqueda de empresas" },
   "Ver no Google Maps": { es: "Ver en Google Maps" },
   "Dados públicos coletados na busca; podem ter mudado.": { es: "Datos públicos recopilados en la búsqueda; pueden haber cambiado." },
@@ -18112,6 +18125,15 @@ export const DICIONARIO: Traducoes = {
   },
   "Sites verificados:": { es: "Sitios verificados:" },
   "Verificado em": { es: "Verificado el" },
+  "Conteúdo renderizado pelo Firecrawl (serviço externo)": {
+    es: "Contenido renderizado por Firecrawl (servicio externo)",
+  },
+  "Firecrawl foi acionado para tentar ler esta página; o resultado não foi usado.": {
+    es: "Se inició Firecrawl para intentar leer esta página; el resultado no se utilizó.",
+  },
+  "Checklist inconclusivo: a captura não trouxe conteúdo suficiente para confirmar estes itens. Não cite estas ausências.": {
+    es: "Lista inconclusa: la captura no obtuvo suficiente contenido para confirmar estos elementos. No menciones estas ausencias.",
+  },
   "Prévias:": { es: "Vistas previas:" },
   "Prévia: escolha o agente na etapa 2": { es: "Vista previa: elige el agente en el paso 2" },
   "Avaliar o site de cada empresa automaticamente": { es: "Evaluar automáticamente el sitio de cada empresa" },
@@ -18665,6 +18687,10 @@ export const DICIONARIO: Traducoes = {
   "certificado de segurança inválido ou vencido (o navegador mostra alerta antes de abrir)": { es: "certificado de seguridad inválido o vencido (el navegador muestra una alerta antes de abrir)" },
   "o site não abre": { es: "el sitio no abre" },
   "não deu para abrir o site daqui (bloqueio ao nosso acesso ou rede instável) — não é defeito do site": { es: "no se pudo abrir el sitio desde aquí (bloqueo a nuestro acceso o red inestable) — no es un defecto del sitio" },
+  "o servidor respondeu, mas a captura não conseguiu ler o conteúdo da página; ela pode depender da renderização do navegador — não é defeito comprovado": { es: "el servidor respondió, pero la captura no pudo leer el contenido de la página; puede depender de la representación del navegador — no es un defecto comprobado" },
+  "O servidor respondeu, mas a captura automática não conseguiu ler o conteúdo da página. Ela pode depender de JavaScript; isso não prova que esteja vazia ou com defeito. Não cite problemas do site até uma leitura renderizada confirmar.": { es: "El servidor respondió, pero la captura automática no pudo leer el contenido de la página. Puede depender de JavaScript; esto no demuestra que esté vacía o tenga defectos. No menciones problemas del sitio hasta confirmarlos con una lectura renderizada." },
+  "Aborde sem citar o site; a captura não conseguiu ler o conteúdo. Para obter um diagnóstico, rode \"Reanalisar site\" quando a leitura renderizada estiver disponível.": { es: "Contacta sin mencionar el sitio; la captura no pudo leer el contenido. Para obtener un diagnóstico, vuelve a analizar el sitio cuando esté disponible la lectura renderizada." },
+  "Aguardar as reverificações automáticas. Se a captura continuar sem conseguir ler a página, o site fica \"não medido\" e a abordagem segue sem citar defeitos.": { es: "Espera las reverificaciones automáticas. Si la captura sigue sin poder leer la página, el sitio quedará \"sin medir\" y el contacto seguirá sin mencionar defectos." },
   "o servidor do site barrou o nosso acesso automático (proteção anti-robô) — para quem visita, o site abre": { es: "el servidor del sitio bloqueó nuestro acceso automático (protección anti-robot) — para quien lo visita, el sitio abre" },
   "a nossa rede não conseguiu abrir o site a tempo — não é prova de que ele esteja fora do ar": { es: "nuestra red no logró abrir el sitio a tiempo — no es prueba de que esté caído" },
   "O endereço do site NÃO EXISTE MAIS (domínio pode ter expirado) — quem clica no link do Google não chega a lugar nenhum. Abra como AVISO de cortesia e ofereça um endereço novo, rápido: a marca perde quem pesquisa todos os dias.": { es: "La dirección del sitio YA NO EXISTE (el dominio puede haber expirado) — quien hace clic en el enlace de Google no llega a ningún lado. Abre con un AVISO de cortesía y ofrece una dirección nueva, rápido: la marca pierde cada día a quien busca." },

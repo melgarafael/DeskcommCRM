@@ -775,6 +775,15 @@ export const NAV_CATALOG = [
     healthDot: true,
   },
   {
+    href: "/app/settings/email",
+    label: "E-mail da Zoe",
+    description: "Conecte uma caixa Hostinger para preparar conversas comerciais por e-mail.",
+    icon: "Inbox",
+    group: "canais",
+    minRole: "admin",
+    sidebar: true,
+  },
+  {
     // Não tinha link nenhum no app inteiro: só se chegava digitando a URL.
     href: "/app/integrations/nuvemshop",
     label: "Nuvemshop",

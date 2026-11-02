@@ -64,9 +64,15 @@ export const searchSchema = z
     gerar_previa: z.boolean().default(true),
   })
   .strict();
+/** Fontes que o administrador pode escolher pela tela. `teste` continua interno aos testes. */
+export const prospectingProviderSchema = z.enum(["apify", "searxng"]);
+export type ProspectingProvider = z.infer<typeof prospectingProviderSchema>;
 export const prospectingInputSchema = z.discriminatedUnion("action", [
   z
     .object({ action: z.literal("configure"), api_key: z.string().trim().min(10).max(500) })
+    .strict(),
+  z
+    .object({ action: z.literal("select_provider"), provider: prospectingProviderSchema })
     .strict(),
   z
     .object({ action: z.literal("search"), search: searchSchema, request_id: z.string().uuid() })
@@ -296,6 +302,19 @@ export const siteEnrichmentSchema = z.object({
   http_status: z.number().int().min(100).max(599).nullable(),
   tempo_ms: z.number().int().min(0).max(60000),
   conteudo_resumo: z.string().max(1500).nullable(),
+  contatos_publicos: z.object({
+    emails: z.array(z.string().email().max(254)).max(5),
+    telefones: z.array(z.string().regex(/^\+\d{8,15}$/)).max(5),
+    fontes: z.array(z.string().url().max(500).refine((value) => {
+      try {
+        const protocolo = new URL(value).protocol;
+        return protocolo === "https:" || protocolo === "http:";
+      } catch {
+        return false;
+      }
+    })).max(2).optional(),
+  }).optional(),
+  metodo: z.enum(["firecrawl", "firecrawl-sem-resultado"]).optional(),
   pagespeed: z
     .object({
       nota: z.number().int().min(0).max(100),

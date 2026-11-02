@@ -3,10 +3,11 @@
  *
  * ═══ O que esta ação NÃO faz ═══
  *
- * Ela não escolhe transporte, não abre conexão e não conhece credencial: quem
- * entrega é `lib/email/roteador.ts` (SMTP configurado → SMTP; sem SMTP →
- * Resend), o MESMO caminho de um convite ou de um alarme de LGPD. Escrever um
- * segundo transporte aqui seria o defeito que o roteador existe para matar
+ * Ela não escolhe transporte nem abre conexão: quem entrega é
+ * `lib/email/roteador.ts`. Para automações, uma caixa Hostinger saudável da
+ * organização tem precedência; sem caixa configurada, o transporte da
+ * plataforma (SMTP/Resend) é preservado. E-mail de sistema segue na plataforma.
+ * Escrever um segundo transporte aqui seria o defeito que o roteador existe para matar
  * (ver o cabeçalho dele: trocar oito `import` por um não é somar).
  *
  * ═══ O que ela faz ═══
@@ -57,8 +58,9 @@
  *
  * O remetente é da ORG quando ela configurou nome de exibição e/ou "responder
  * para" (`lib/email/remetente-da-organizacao.ts`), e da PLATAFORMA quando não.
- * O ENDEREÇO do `From` NUNCA vem daqui: trocar o transporte é a fatia 2 desta
- * mesma issue (o SMTP próprio da organização), e o e-mail de SISTEMA — convite,
+ * Com uma caixa Hostinger conectada, o endereço do `From` é o da organização.
+ * Sem caixa configurada, o endereço da plataforma é preservado. Uma conexão
+ * inválida falha sem trocar de remetente. O e-mail de SISTEMA — convite,
  * recuperação de senha, LGPD — segue intocado, com o remetente da plataforma.
  */
 import { registerAction } from "@/lib/automation/actions";
@@ -224,6 +226,8 @@ function codigoDaFalha(erro: EmailDeliveryError | undefined): string {
   switch (erro) {
     case "not_configured":
       return "email_nao_configurado";
+    case "organization_mailbox_unavailable":
+      return "email_caixa_indisponivel";
     case "rate_limited":
       return "email_limite_atingido";
     case "sender_rejected":
@@ -391,20 +395,20 @@ async function execute(
     subject: assuntoPronto,
     html: corpoParaHtml(corpoHtml, formato),
     text: corpoParaTexto(corpoPronto, formato),
-    // O remetente da ORGANIZAÇÃO (#3287, fatia 1): quando ela configurou um
-    // nome de exibição e/ou um "responder para", o e-mail da automação sai com
-    // eles. O ENDEREÇO do `From` continua sendo o da PLATAFORMA — quem entrega
-    // não muda nesta fatia (o SMTP próprio é a fatia 2). Sem configuração, as
-    // duas chaves ficam AUSENTES e o envio sai byte a byte como sempre saiu:
+    // O nome e o "responder para" vêm das configurações da organização. Se a
+    // caixa Hostinger estiver conectada, ela fornece também o endereço do From;
+    // sem conexão, o roteador preserva o remetente da plataforma. Uma caixa
+    // salva mas indisponível falha sem trocar silenciosamente de identidade.
+    // Sem configuração de marca, as duas chaves ficam AUSENTES e o envio segue:
     // `fromName: undefined` não é o mesmo que a chave ausente para quem monta o
     // cabeçalho (o SMTP da plataforma usa o `fromName` DELE quando ninguém
     // passa um).
     ...(remetente.fromName ? { fromName: remetente.fromName } : {}),
     ...(remetente.replyTo ? { replyTo: remetente.replyTo } : {}),
-    // Mesma tag da cobrança, com o valor que diz de ONDE veio: no painel da
-    // Resend dá para separar o envio de automação do convite de equipe.
+    // No caminho Resend, esta tag separa a automação do convite de equipe no
+    // painel do provedor. O recibo do CRM registra a origem para Hostinger.
     tags: [{ name: "origem", value: "automacao" }],
-  });
+  }, { organizationId: ctx.organizationId });
 
   const base = { destinatario, via: resultado.via ?? null };
   if (!resultado.ok) {

@@ -8,6 +8,12 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Automações podem enviar pela caixa Hostinger da própria empresa** A opção começa desligada e um administrador da empresa precisa ativá-la em Configurações › E-mail. Quando ativa, a caixa verificada é usada como remetente das ações `send_email`; e-mails de sistema continuam no SMTP/Resend da plataforma. Sem opção ativa, o comportamento anterior é mantido. Se a caixa ativa ficar indisponível, o envio falha de forma explícita e não troca silenciosamente de remetente. A caixa de entrada do CRM e campanhas comerciais continuam pendentes.
+
+- **Nova fonte web para a prospecção via SearXNG** A fonte usa a instância da instalação por HTTPS ou por uma rede Docker privada dedicada com alias e IP fixos. A conexão interna não aceita outros endereços HTTP nem publica a porta do SearXNG. Não depende de chave por organização. Os resultados trazem sites e eventuais contatos dos trechos dos buscadores, que continuam sem verificação. A fonte Apify permanece disponível conforme a configuração da organização; campanhas continuam em rascunho até uma pessoa revisar e ativar.
+
 ## [1.99.0] — 2026-11-02
 
 ### Adicionado
@@ -171,7 +177,6 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   Quem já instalou continua com os nomes que tem: nada é trocado nos funis existentes. Para mudar, edite os nomes em Configurações › Funis.
 
   Você não precisa mudar nada.
-
 ## [1.98.0] — 2026-11-01
 
 ### ⚠️ Requer atenção

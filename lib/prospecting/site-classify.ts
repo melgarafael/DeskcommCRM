@@ -267,8 +267,8 @@ export function montarChecklist(
   };
 }
 
-/** Página "quase vazia": existe mas não apresenta nada. Limiar pinado por teste. */
-export const MINIMO_CHARS_PAGINA_REAL = 800;
+/** Texto realmente mínimo: uma página curta, mas legível, não é uma SPA vazia. */
+export const MINIMO_CHARS_PAGINA_REAL = 120;
 
 /** Erros de rede classificados sem adivinhação. `ssl` carrega o código (ex: CERT_HAS_EXPIRED). */
 export type ErroDeRede =
@@ -317,6 +317,7 @@ const DESCRICOES: Record<string, string> = {
   "ssl-invalido": "certificado de segurança inválido ou vencido (o navegador mostra alerta antes de abrir)",
   "fora-do-ar": "o site não abre",
   "nao-medido": "não deu para abrir o site daqui (bloqueio ao nosso acesso ou rede instável) — não é defeito do site",
+  "conteudo-nao-renderizado": "o servidor respondeu, mas a captura não conseguiu ler o conteúdo da página; ela pode depender da renderização do navegador — não é defeito comprovado",
   "medicao-bloqueada": "o servidor do site barrou o nosso acesso automático (proteção anti-robô) — para quem visita, o site abre",
   "medicao-instavel": "a nossa rede não conseguiu abrir o site a tempo — não é prova de que ele esteja fora do ar",
   "dns-morto": "o endereço do site não existe mais (domínio pode ter expirado)",
@@ -388,6 +389,10 @@ export interface SiteEnrichment {
   /** Milissegundos do fetch (teto 8000). Fase pura grava 0: nunca houve rede. */
   tempo_ms: number;
   conteudo_resumo: string | null;
+  /** Contatos que a página publicou; evidência pública, não consentimento de marketing. */
+  contatos_publicos?: { emails: string[]; telefones: string[]; fontes?: string[] };
+  /** Método usado para obter o HTML. Firecrawl é apenas fallback de conteúdo JS. */
+  metodo?: "firecrawl" | "firecrawl-sem-resultado";
   /** Best-effort (§3.5 da spec 24). v1: sempre null; faixa lenta em fase posterior. */
   pagespeed: { nota: number; lcp: string | null; medida_em: string } | null;
   verificado_em: string;

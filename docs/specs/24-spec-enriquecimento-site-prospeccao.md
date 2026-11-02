@@ -49,9 +49,9 @@ Conclusão `CONFIRMADA`: 40% do que a busca chama de "com site" **não é site p
 ### 1.2 Classificação 100% TS funciona no worker real — medido
 
 * `fetch` + `AbortSignal.timeout(8000)` distingue os 3 erros que o sistema de referência (ProspectOS, Python) separava na mão: `ENOTFOUND` = DNS-morto definitivo em ~70ms (sem retry); `CERT_*`/`DEPTH_ZERO_SELF_SIGNED_CERT` = SSL inválido em ~500ms; timeout/conexão recusada = fora do ar.
-* `http://` final após redirects = sem HTTPS; ausência de `viewport` = não-mobile; `<800` chars = quase-vazia; assinaturas de URL+HTML = construtor pronto.
+* `http://` final após redirects = sem HTTPS; ausência de `viewport` em conteúdo legível = não-mobile; menos de 120 caracteres legíveis em página estática = quase-vazia. Shells SPA vazios (raiz de aplicação sem conteúdo e scripts externos) sem captura renderizada viram `nao-medido`/`conteudo-nao-renderizado`; o checklist fica inconclusivo e a Zoe não cita defeitos. Firecrawl pode tentar uma vez no primeiro ciclo quando configurado.
 * 6 fetches em paralelo: wall 700ms contra ~580ms cada (speedup ~5×), `+19MB` RSS — cabe no teto do worker (`docker-compose.prod.yml`: 512m; medido em produção: worker 245/512MiB, app 299/768MiB, host 16GB, disco 19%).
-* Calibragens que o spike expôs (viram casos de teste, §7): `example.com` cai em "quase-vazia" (limiar precisa de exceção para páginas mínimas válidas); `wix.com` trigou 3 assinaturas Wix de uma vez (deduplicar para um rótulo); `http://neverssl.com` deu timeout nesta rede — a regra "tenta HTTPS, sem DNS-morto tenta HTTP puro" precisa de re-medição em staging antes de virar definitiva.
+* Calibragens que o spike expôs (viram casos de teste, §7): o limiar de conteúdo precisa distinguir página estática curta de raiz SPA sem conteúdo; `wix.com` trigou 3 assinaturas Wix de uma vez (deduplicar para um rótulo); `http://neverssl.com` deu timeout nesta rede — a regra "tenta HTTPS, sem DNS-morto tenta HTTP puro" precisa de re-medição em staging antes de virar definitiva.
 
 ### 1.3 Onde o enriquecimento mora hoje — medido no código
 
@@ -87,7 +87,7 @@ Tudo mora em `prospecting_candidates.data` (JSONB que já existe), mesclado com 
 // data.site — escrita só pelo worker de enriquecimento, lida pela tela e pela abordagem
 interface SiteEnrichment {
   ver: 1;
-  classe: "agregador" | "sem-site" | "site-ok" | "site-ruim" | "ssl-invalido" | "fora-do-ar";
+  classe: "agregador" | "sem-site" | "site-ok" | "site-ruim" | "ssl-invalido" | "fora-do-ar" | "nao-medido";
   // "sem-site": website nulo/vazio (nunca faz fetch)
   problemas: string[];      // ex: ["sem-https","nao-mobile","construtor-Wix"] — vocabulário fechado (§3.3)
   checklist: { tem: string[]; falta: string[] };  // raio-X: whatsapp,tel,mailto,social,mapa,fotos,titulo,description,favicon
@@ -95,6 +95,8 @@ interface SiteEnrichment {
   http_status: number | null;
   tempo_ms: number;         // TTFB+leitura (teto 8000)
   conteudo_resumo: string | null; // título + h1/h2 + trecho, máx 1200 chars — o que a copy pode citar
+  contatos_publicos?: { emails: string[]; telefones: string[]; fontes?: string[] }; // no máximo 2 páginas do mesmo domínio; nunca consentimento
+  metodo?: "firecrawl" | "firecrawl-sem-resultado"; // registra uso ou tentativa externa; opt-in obrigatório
   pagespeed: { nota: number; lcp: string | null; medida_em: string } | null; // best-effort, §3.5
   verificado_em: string;    // ISO-8601 UTC
   provisorio: boolean;      // true = falha passageira (timeout/reset/DNS), NÃO citável, reverificado até o teto
@@ -123,7 +125,7 @@ interface SiteEnrichment {
 
 ### 3.3 Vocabulário fechado de problemas (o que a tela e a IA podem dizer)
 
-`sem-https, ssl-invalido, fora-do-ar, dns-morto, http-{status}, nao-mobile, lento, quase-vazia, construtor-{Wix,Canva,...}, sem-atualizacao-desde-{ano}, conteudo-misto, falta-{whatsapp,tel,mailto,social,mapa,fotos,titulo,description,favicon}`. Nada fora desta lista chega à tela nem ao prompt — é a cerca contra IA inventando diagnóstico.
+`sem-https, ssl-invalido, fora-do-ar, dns-morto, http-{status}, nao-mobile, lento, quase-vazia, conteudo-nao-renderizado, construtor-{Wix,Canva,...}, sem-atualizacao-desde-{ano}, conteudo-misto, falta-{whatsapp,tel,mailto,social,mapa,fotos,titulo,description,favicon}`. `conteudo-nao-renderizado` só leva a `nao-medido`, mantém o checklist inconclusivo e nunca vira gancho de venda. Nada fora desta lista chega à tela nem ao prompt — é a cerca contra IA inventando diagnóstico.
 
 Os domínios das assinaturas (agregadores, construtores) viajam no código que embarca: estão declarados na catraca de marca (`branding.test.ts`, categoria `RECONHECIMENTO` com decisão escrita — nunca chamados, nunca exibidos). Assinatura nova de construtor/agregador exige a linha na lista, ou o teste reprova.
 
@@ -145,6 +147,13 @@ Os domínios das assinaturas (agregadores, construtores) viajam no código que e
 ### 3.5 PageSpeed — fase posterior, não desta
 
 * Contrato pronto (`pagespeed` no `SiteEnrichment`, sempre `null` nesta fase) e UX definida (chave opcional por organização, mascarada, com link e validação real antes de salvar — nunca env global). Rede e chave ficam para fase posterior explícita: cada chamada leva 15–40s e não cabe no deadline de 180s do tick — exige faixa lenta própria, fora deste PR. Tripwire: primeira org com chave em mãos + medição de latência. Sem chave e sem resposta, a tela mostra "medição indisponível".
+
+### 3.5.1 Firecrawl — fallback opcional para HTML montado por JavaScript
+
+* O caminho padrão continua sendo o fetch local com validação SSRF. Firecrawl é usado só quando o fetch local recebeu HTTP 2xx e detectou uma raiz SPA vazia acompanhada por script externo; páginas estáticas curtas continuam sendo auditadas localmente.
+* A auditoria pode ler a página inicial e, no máximo, um link explícito de contato/sobre que a própria página inicial publica. Esse segundo fetch é limitado a 4 segundos, permanece no mesmo domínio, passa pela guarda SSRF a cada redirect e não adivinha caminhos. Firecrawl pode renderizar cada uma dessas páginas quando necessário: no máximo duas páginas por candidato, em `POST /v2/scrape` (`html`), sem rastrear o domínio. A resposta do provedor não escolhe URL de follow-up nem altera status, domínio ou tempo medido.
+* A integração hospedada é desligada por padrão e só funciona com `FIRECRAWL_API_KEY` e `FIRECRAWL_SITE_FALLBACK_ENABLED=true`. Quando ligada, URLs públicas e suas páginas são processadas pelo Firecrawl e podem consumir créditos. O HTML é limitado a 200 KB por resposta e serve apenas para classificar conteúdo, checklist e contatos públicos. Um limite compartilhado entre app e worker permite até oito chamadas de scrape por minuto, abaixo do limite gratuito publicado, com folga para outras chamadas. O tempo `tempo_ms` permanece o do fetch local; Firecrawl não mede velocidade do site.
+* Falha, limite de créditos, resposta inválida ou timeout do Firecrawl não muda o veredito técnico do fetch local. O campo opcional `metodo` registra `firecrawl` quando o HTML renderizado foi efetivamente aproveitado e `firecrawl-sem-resultado` quando a tentativa foi acionada sem produzir HTML utilizável, para dar transparência ao processamento externo.
 
 ### 3.6 Score com 4ª categoria
 
@@ -226,3 +235,9 @@ Living System Checklist — enriquecimento de site
 ## 9. Critério de pronto (Definition of Done aplicável)
 
 typecheck/lint/`lint:channels`/`lint:role-rank` zerados; unit + invariants + e2e da mudança verdes; `audit()` onde houve mutação; Zod em inputs externos (actions de reanálise/prévia, `ofertas[]`, `settings.prospeccao`); nenhuma tabela/coluna/grant novos (ou tripla completa se surgirem); prova visual da auditoria inline; Living System Checklist acima respondido; mapa em `docs/architecture/` atualizado; fragmento `.changes/` (`capacidade_nova`) no PR — nunca seção à mão no `CHANGELOG.md`.
+
+### Aditivo — contatos empresariais publicados no site
+
+A auditoria pode guardar até cinco e-mails e cinco telefones encontrados no HTML público da página inicial e de, no máximo, uma página de contato/sobre explicitamente ligada a ela. A extração é best-effort. O segundo fetch fica no mesmo domínio, tem prazo de 4 segundos e usa a guarda SSRF e o teto de 200 KB; não cria buscas externas, não segue links sugeridos por terceiros e não altera a fila de envio. A tela apresenta a origem de cada contato e links para revisão manual.
+
+Um contato publicado comprova apenas que o endereço foi encontrado naquela página e naquela data. Não comprova que pertença ao decisor, que continue ativo, nem que exista consentimento ou outra base legal para abordagem. A Zoe não envia mensagens a esses contatos automaticamente. Qualquer campanha continua sujeita à configuração de base legal, revisão humana, opt-out e proteções de envio já existentes.

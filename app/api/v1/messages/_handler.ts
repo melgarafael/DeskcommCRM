@@ -467,7 +467,7 @@ export async function sendMessageHandler(
   // envio com 42703. Sem a coluna, nada está arquivado — e a consulta sem ela é a
   // consulta certa (ver lib/channels/archived).
   const convSelect = (comArchived: boolean) =>
-    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, last_inbound_at, contacts:contact_id(phone_number, wa_identity, wa_lid, is_blocked, is_personal), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, metadata${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
+    `id, organization_id, contact_id, channel_session_id, is_group, group_chat_id, bot_silenced_until, provider_conversation_id, last_inbound_at, metadata, contacts:contact_id(phone_number, email, wa_identity, wa_lid, is_blocked, is_personal), channel_sessions:channel_session_id(${CHANNEL_SESSION_REF_COLUMNS}, status, metadata${comArchived ? `, ${ARCHIVED_AT}` : ""})`;
   //
   // O filtro por `organization_id` NÃO é redundância com a RLS — é a única
   // proteção que existe na metade dos chamadores. Este handler é a porta de
@@ -530,8 +530,10 @@ export async function sendMessageHandler(
      * que é o mesmo valor que `fn_reply_record_receipt` usa no caminho do banco.
      */
     last_inbound_at: string | null;
+    metadata: Record<string, unknown> | null;
     contacts: {
       phone_number: string | null;
+      email: string | null;
       wa_identity: string | null;
       wa_lid: string | null;
       is_blocked: boolean;
@@ -1056,10 +1058,19 @@ export async function sendMessageHandler(
     isGroup: c.is_group,
     groupChatId: c.group_chat_id,
     phoneNumber: c.contacts?.phone_number,
+    email: c.contacts?.email,
     waIdentity: c.contacts?.wa_identity,
     waLid: c.contacts?.wa_lid,
     ultimoRecebidoChatId,
   });
+  const emailReferences = Array.isArray(c.metadata?.email_references)
+    ? c.metadata.email_references.filter((value): value is string => typeof value === "string").slice(-50)
+    : [];
+  const emailContext = {
+    emailSubject: typeof c.metadata?.email_subject === "string" ? c.metadata.email_subject : null,
+    emailReferences,
+    automated: ctx.actor.type !== "user",
+  };
 
   // Releitura no sink: o operador pode ter fechado o canal enquanto o modelo
   // gerava a resposta. Envio humano não passa por esta restrição da IA.
@@ -1131,8 +1142,8 @@ export async function sendMessageHandler(
       .from("messages")
       .update({
         status: "failed",
-        error_code: "missing_phone_number",
-        error_message: "Contato sem telefone para envio WhatsApp.",
+        error_code: "missing_input",
+        error_message: "Contato sem endereço para este canal.",
       })
       .eq("id", message.id)
       .select(MSG_COLS)
@@ -1258,6 +1269,7 @@ export async function sendMessageHandler(
           sessionRef: resolveSessionRef(c.channel_sessions),
           to: chatId,
           providerConversationId: c.provider_conversation_id,
+          ...emailContext,
           kind: input.type,
           media: {
             url: signed.signedUrl,
@@ -1285,6 +1297,7 @@ export async function sendMessageHandler(
           sessionRef: resolveSessionRef(c.channel_sessions),
           to: chatId,
           providerConversationId: c.provider_conversation_id,
+          ...emailContext,
           kind: input.type,
           media: {
             url: input.media_url,
@@ -1313,6 +1326,7 @@ export async function sendMessageHandler(
           sessionRef: resolveSessionRef(c.channel_sessions),
           to: chatId,
           providerConversationId: c.provider_conversation_id,
+          ...emailContext,
           kind: "contact",
           body: outboundBody ?? nome,
           contact: {
@@ -1330,9 +1344,10 @@ export async function sendMessageHandler(
           sessionRef: resolveSessionRef(c.channel_sessions),
           to: chatId,
           providerConversationId: c.provider_conversation_id,
+          ...emailContext,
           kind: input.type,
           body: corpoDoCanal(input.body ?? "") ?? "",
-          replyToExternalId: citada?.external_id ?? null,
+          replyToExternalId: citada?.external_id ?? c.provider_conversation_id ?? null,
         }));
       }
 
@@ -1404,6 +1419,40 @@ export async function sendMessageHandler(
         if (erroAoMarcar?.code === "23505") ({ data: updated } = await marcarEnviada(false));
       }
       if (updated) message = updated as unknown as Message;
+
+      // Email uses the latest RFC Message-ID as the provider thread anchor.
+      // After our reply, subsequent inbound replies must reference this sent
+      // message so the mailbox remains one RFC conversation end-to-end.
+      if (externalId && c.channel_sessions?.provider === "hostinger_email") {
+        const emailMessageId = /^<[^<>\s@]+@[^<>\s@]+>$/.test(externalId)
+          ? externalId.trim().toLowerCase()
+          : externalId;
+        const references = Array.isArray(c.metadata?.email_references)
+          ? c.metadata.email_references
+              .filter((value): value is string => typeof value === "string")
+              .map((value) => /^<[^<>\s@]+@[^<>\s@]+>$/.test(value) ? value.trim().toLowerCase() : value)
+          : [];
+        const metadata = {
+          ...(c.metadata ?? {}),
+          channel_kind: "email",
+          email_references: [...new Set([...references, emailMessageId])].slice(-50),
+        };
+        const { error: emailThreadError } = await supabase
+          .from("conversations")
+          .update({ provider_conversation_id: emailMessageId, metadata })
+          .eq("organization_id", ctx.organization_id)
+          .eq("id", c.id);
+        if (emailThreadError) {
+          // The SMTP send is already accepted. Do not turn it into a failed
+          // message or retry; leave a sanitized operational breadcrumb only.
+          logger.warn("[messages] resposta de e-mail enviada, atualização do fio falhou", {
+            organization_id: ctx.organization_id,
+            conversation_id: c.id,
+            message_id: message.id,
+            code: emailThreadError.code,
+          });
+        }
+      }
       }
     } catch (err) {
       if (err instanceof AgendaPuladoError) {

@@ -75,11 +75,12 @@ export async function enriquecerSitesPendentes(
       requestId,
     });
   }
-  let rows: Array<{ id: string; website: string; tentativas: number }>;
+  let rows: Array<{ id: string; website: string; tentativas: number; metodo: string | null }>;
   try {
-    const resultado = await db.query<{ id: string; website: string; tentativas: number }>(
+    const resultado = await db.query<{ id: string; website: string; tentativas: number; metodo: string | null }>(
       "select id, data->>'website' as website, " +
-        "coalesce(nullif(data->'site'->>'tentativas', '')::int, 0) as tentativas " +
+        "coalesce(nullif(data->'site'->>'tentativas', '')::int, 0) as tentativas, " +
+        "data->'site'->>'metodo' as metodo " +
         "from prospecting_candidates " +
         "where organization_id=$1 " +
         // O botão da tela é POR CAMPANHA: sem este filtro, "Verificar sites" de
@@ -138,6 +139,8 @@ export async function enriquecerSitesPendentes(
       fetch,
       undefined,
       rows.map((r) => r.tentativas ?? 0),
+      undefined,
+      rows.map((r) => r.metodo === "firecrawl-sem-resultado"),
     );
   } catch (error) {
     logger.error("[prospecting.enriquecer-sites] lote falhou", {

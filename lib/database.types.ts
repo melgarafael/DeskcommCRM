@@ -11634,6 +11634,77 @@ export type Database = {
           },
         ];
       };
+      organization_email_connections: {
+        Row: {
+          created_at: string;
+          created_by: string | null;
+          id: string;
+          inbox_claim_token: string | null;
+          inbox_claim_until: string | null;
+          inbox_last_uid: number;
+          inbox_sync_enabled: boolean;
+          inbox_uid_validity: string | null;
+          last_error_code: string | null;
+          last_sync_at: string | null;
+          mailbox_email: string;
+          mailbox_password_encrypted: string;
+          organization_id: string;
+          outbound_automation_enabled: boolean;
+          provider: string;
+          status: string;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          created_at?: string;
+          created_by?: string | null;
+          id?: string;
+          inbox_claim_token?: string | null;
+          inbox_claim_until?: string | null;
+          inbox_last_uid?: number;
+          inbox_sync_enabled?: boolean;
+          inbox_uid_validity?: string | null;
+          last_error_code?: string | null;
+          last_sync_at?: string | null;
+          mailbox_email: string;
+          mailbox_password_encrypted: string;
+          organization_id: string;
+          outbound_automation_enabled?: boolean;
+          provider?: string;
+          status?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          created_at?: string;
+          created_by?: string | null;
+          id?: string;
+          inbox_claim_token?: string | null;
+          inbox_claim_until?: string | null;
+          inbox_last_uid?: number;
+          inbox_sync_enabled?: boolean;
+          inbox_uid_validity?: string | null;
+          last_error_code?: string | null;
+          last_sync_at?: string | null;
+          mailbox_email?: string;
+          mailbox_password_encrypted?: string;
+          organization_id?: string;
+          outbound_automation_enabled?: boolean;
+          provider?: string;
+          status?: string;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "organization_email_connections_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: true;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       organization_extensions: {
         Row: {
           configuration: NonNullable<Json>;

@@ -1,5 +1,5 @@
 /**
- * QUAL DOS DOIS CAMINHOS DE E-MAIL ATENDE CADA ENVIO.
+ * QUAL CAMINHO DE E-MAIL ATENDE CADA ENVIO.
  *
  * Esta é a peça que faz "os dois caminhos convivem" existir em CÓDIGO, e não só
  * em prosa. Sem ela, acrescentar SMTP significaria trocar oito `import` de
@@ -8,8 +8,8 @@
  *
  * ── A regra ─────────────────────────────────────────────────────────────────
  *
- *   SMTP configurado  →  o envio sai pelo SMTP.
- *   SMTP ausente      →  o envio sai pela Resend.
+ *   E-mail de sistema  →  SMTP da instalação, ou Resend se não houver SMTP.
+ *   Automação da org   →  Hostinger própria quando saudável; sem caixa, usa o caminho acima.
  *
  * ── Por que a decisão é por CONFIGURAÇÃO, e nunca por falha ─────────────────
  *
@@ -28,6 +28,10 @@
  * SMTP do operador está errado, ele recebe o erro do SMTP, não um sucesso
  * emprestado do outro caminho.
  *
+ * A caixa Hostinger da organização é uma decisão separada, só passada pela ação
+ * de automação. Uma credencial salva mas indisponível falha fechada; nunca cai
+ * para o remetente da instalação, o que poderia mudar a identidade do envio.
+ *
  * ── O que NÃO muda ──────────────────────────────────────────────────────────
  *
  * Instalação sem nenhum dos dois continua devolvendo `not_configured`, que é o
@@ -39,9 +43,12 @@
 import { getSmtpConfig } from "@/lib/email/config";
 import { isEmailConfigured as resendConfigurada, sendEmail as enviarPelaResend } from "@/lib/email/resend";
 import { isSmtpConfigured, sendEmail as enviarPorSmtp } from "@/lib/email/smtp";
+import { getHostingerEmailAccountForSending } from "@/lib/email/hostinger-config";
+import { sendHostingerEmail } from "@/lib/email/hostinger";
 
 /** Quem entregou (ou tentou entregar). Vai ao audit, nunca ao destinatário. */
-export type TransporteDeEmail = "smtp" | "resend";
+export type TransporteDeEmail = "smtp" | "resend" | "hostinger";
+type TransporteDaPlataforma = Exclude<TransporteDeEmail, "hostinger">;
 
 /**
  * A união dos dois vocabulários de erro, e de propósito NÃO um denominador
@@ -51,6 +58,7 @@ export type TransporteDeEmail = "smtp" | "resend";
  */
 export type EmailDeliveryError =
   | "not_configured"
+  | "organization_mailbox_unavailable"
   | "send_failed"
   | "rate_limited"
   | "sender_rejected"
@@ -75,12 +83,17 @@ interface SendArgs {
   tags?: { name: string; value: string }[];
 }
 
+interface SendOptions {
+  /** Selects a tenant mailbox for automation; system email remains platform-owned. */
+  organizationId?: string;
+}
+
 /**
  * Qual transporte atende agora. `resend` aqui NÃO afirma que a Resend está
  * configurada — afirma que ela é quem responde, inclusive para devolver
  * `not_configured` quando também não estiver.
  */
-export async function transporteDeEmail(): Promise<TransporteDeEmail> {
+export async function transporteDeEmail(): Promise<TransporteDaPlataforma> {
   return isSmtpConfigured(await getSmtpConfig()) ? "smtp" : "resend";
 }
 
@@ -98,7 +111,7 @@ export async function emailConfigurado(): Promise<boolean> {
  * funciona pela Resend — verdade sobre o SMTP, e leitura errada sobre o
  * produto.
  */
-export async function transporteEmVigor(): Promise<TransporteDeEmail | "nenhum"> {
+export async function transporteEmVigor(): Promise<TransporteDaPlataforma | "nenhum"> {
   if ((await transporteDeEmail()) === "smtp") return "smtp";
   // `await` OBRIGATÓRIO: `isEmailConfigured` virou assíncrona quando a chave da
   // Resend passou a vir do banco (migration 0341). Sem ele a condição testa a
@@ -108,7 +121,23 @@ export async function transporteEmVigor(): Promise<TransporteDeEmail | "nenhum">
   return (await resendConfigurada()) ? "resend" : "nenhum";
 }
 
-export async function sendEmail(args: SendArgs): Promise<EmailSendResult> {
+export async function sendEmail(args: SendArgs, options: SendOptions = {}): Promise<EmailSendResult> {
+  if (options.organizationId) {
+    const account = await getHostingerEmailAccountForSending(options.organizationId);
+    if (account.state === "unavailable") {
+      return {
+        ok: false,
+        error: "organization_mailbox_unavailable",
+        details: "organization_mailbox_unavailable",
+        via: "hostinger",
+      };
+    }
+    if (account.state === "ready") {
+      const result = await sendHostingerEmail(account.credentials, args);
+      return { ...result, via: "hostinger" };
+    }
+  }
+
   const via = await transporteDeEmail();
   const resultado = via === "smtp" ? await enviarPorSmtp(args) : await enviarPelaResend(args);
   return { ...resultado, via };

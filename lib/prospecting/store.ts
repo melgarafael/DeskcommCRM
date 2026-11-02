@@ -29,6 +29,7 @@ import type {
   MotivoDeExclusao,
   PreviaDaImportacao,
 } from "./importacao-previa";
+import type { DadosDaExecucao } from "./provedor";
 import { montarPrevia, motivosDe, resumoVazio } from "./importacao-previa";
 import { audit } from "@/lib/audit";
 import { vereditoPuro } from "./site-classify";
@@ -38,9 +39,13 @@ import { logger } from "@/lib/logger";
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import {
   provedorDaOrganizacao,
+  provedorEIdentidadeDaOrganizacao,
+  provedorNasSettings,
   provedorExigeCredencialDaOrganizacao,
+  validarCredencialDoProvedor,
   validarCredencialDaOrganizacao,
 } from "./provedor";
+import type { ProspectingProvider } from "./schema";
 
 export interface Campaign {
   id: string;
@@ -149,10 +154,9 @@ export async function configureCredential(
   // responde com a MESMA validação de sempre — `users/me`, mesma URL, mesmo
   // erro — então quem não pediu nada não muda de comportamento.
   await validarCredencialDaOrganizacao(pool, org, key);
-  // #2942: o `local-http` NÃO tem segredo por organização — a URL do engine
-  // vem da INSTALAÇÃO (`PROSPECTING_LOCAL_HTTP_URL`). Nessa escolha o
-  // `configure` é só o gatilho de validação (o health check do engine) e o
-  // valor recebido é IGNORADO: não é gravado nem usado.
+  // O `searxng` NÃO tem segredo por organização — a URL do engine vem da
+  // INSTALAÇÃO (`SEARXNG_BASE_URL` ou rede Docker). Nessa escolha o `configure`
+  // é só o gatilho de validação; o valor recebido é IGNORADO e nunca gravado.
   if (!(await provedorExigeCredencialDaOrganizacao(pool, org))) return;
   const encrypted = await encryptWebhookSecret(admin, key);
   if (!encrypted)
@@ -162,6 +166,64 @@ export async function configureCredential(
     [org, encrypted],
   );
 }
+
+/**
+ * Troca a fonte de busca da organização. A conexão do motor local é validada
+ * antes da gravação; uma busca que já esteja sendo acompanhada não pode trocar
+ * de provedor no meio do job, pois o id externo pertence à fonte que o criou.
+ */
+export async function selecionarProvedorDeBusca(
+  pool: pg.Pool,
+  org: string,
+  provider: ProspectingProvider,
+) {
+  return withProspectingLock(pool, org, async (db) => {
+    const atual = (
+      await db.query<{ settings: unknown }>("select settings from organizations where id=$1", [org])
+    ).rows[0];
+    if (!atual) throw new ProspectingError("Organização não encontrada.", 404);
+    const anterior = provedorNasSettings(atual.settings);
+    const mudou = anterior !== provider;
+
+    if (mudou) {
+      const buscaAtiva = await db.query(
+        "select id from prospecting_campaigns where organization_id=$1 and search_status in ('starting','running') limit 1",
+        [org],
+      );
+      if (buscaAtiva.rows.length)
+        throw new ProspectingError(
+          "Aguarde a busca em andamento terminar antes de trocar a fonte.",
+          409,
+        );
+    }
+
+    if (provider === "searxng") {
+      // Não envia nem persiste segredo: esta fonte é configurada pela instalação.
+      await validarCredencialDoProvedor(provider, "");
+    }
+
+    if (mudou) {
+      const gravado = await db.query(
+        `update organizations
+            set settings = jsonb_set(
+              coalesce(settings, '{}'::jsonb),
+              '{prospecting}',
+              (case
+                when jsonb_typeof(settings->'prospecting') = 'object' then settings->'prospecting'
+                else '{}'::jsonb
+              end) || jsonb_build_object('provider', $2::text),
+              true
+            )
+          where id=$1 returning id`,
+        [org, provider],
+      );
+      if (!gravado.rows.length) throw new ProspectingError("Organização não encontrada.", 404);
+    }
+
+    return { provider, previous_provider: anterior, changed: mudou };
+  });
+}
+
 export async function createSearch(
   pool: pg.Pool,
   admin: SupabaseClient,
@@ -179,10 +241,15 @@ export async function createSearch(
     // qualquer escrita: escolha desconhecida falha fechado sem deixar campanha
     // órfã no banco. As outras organizações resolvem as suas próprias — a
     // escolha de uma não vaza para a outra.
-    const provedor = await provedorDaOrganizacao(db, org);
+    const { nome: nomeDoProvedor, provedor } = await provedorEIdentidadeDaOrganizacao(db, org);
+    if (nomeDoProvedor === "local-http")
+      throw new ProspectingError(
+        "Esta fonte local antiga não inicia novas buscas. Escolha outra fonte nas configurações da prospecção.",
+        410,
+      );
     // A credencial só é exigida de quem tem segredo POR ORGANIZAÇÃO: o
-    // `local-http` da #2942 lê a URL do engine da INSTALAÇÃO
-    // (`PROSPECTING_LOCAL_HTTP_URL`) e não tem o que buscar aqui.
+    // `searxng` lê a URL do engine da INSTALAÇÃO (`SEARXNG_BASE_URL` ou rede
+    // Docker) e não tem credencial por organização para buscar aqui.
     const key = (await provedorExigeCredencialDaOrganizacao(db, org))
       ? await credential(db, admin, org)
       : "";
@@ -193,10 +260,16 @@ export async function createSearch(
     const campaign = rows[0]!;
     try {
       const run = await provedor.startSearch(key, search);
-      await db.query(
-        "update prospecting_campaigns set run_id=$3,dataset_id=$4,search_status='running',updated_at=now() where organization_id=$1 and id=$2",
-        [org, campaign.id, run.id, run.defaultDatasetId ?? null],
-      );
+      if (run.results) {
+        if (run.status !== "SUCCEEDED")
+          throw new ProspectingError("O provedor entregou resultados sem confirmar a conclusão.", 502);
+        await finalizarBuscaComResultados(db, campaign, run, run.defaultDatasetId ?? null, run.results);
+      } else {
+        await db.query(
+          "update prospecting_campaigns set run_id=$3,dataset_id=$4,search_status='running',updated_at=now() where organization_id=$1 and id=$2",
+          [org, campaign.id, run.id, run.defaultDatasetId ?? null],
+        );
+      }
     } catch (error) {
       await db.query(
         "update prospecting_campaigns set search_status='unknown',error=$3,updated_at=now() where organization_id=$1 and id=$2",
@@ -251,6 +324,70 @@ export async function gravarCandidatos(
   }
   return { inseridos, classesPuras };
 }
+
+async function finalizarBuscaComResultados(
+  db: pg.PoolClient,
+  campanha: Campaign,
+  execucao: DadosDaExecucao,
+  dataset: string | null,
+  items: Record<string, unknown>[],
+): Promise<void> {
+  let invalidos = 0;
+  const validos: Prospect[] = [];
+  for (const item of items) {
+    const prospect = normalizeProspect(item);
+    if (!prospect) invalidos++;
+    else validos.push(prospect);
+  }
+
+  let inserted = 0;
+  let classesPuras: Record<string, number> = {};
+  await db.query("begin");
+  try {
+    ({ inseridos: inserted, classesPuras } = await gravarCandidatos(
+      db,
+      campanha.organization_id,
+      campanha.id,
+      validos,
+    ));
+    await db.query(
+      "update prospecting_campaigns set run_id=coalesce($3,run_id),search_status='succeeded',dataset_id=$4,cost_usd=$5,result_count=$6,skipped_count=$7,error=null,updated_at=now() where organization_id=$1 and id=$2",
+      [
+        campanha.organization_id,
+        campanha.id,
+        execucao.id,
+        dataset,
+        execucao.usageTotalUsd ?? null,
+        inserted,
+        items.length - inserted,
+      ],
+    );
+    await db.query("commit");
+  } catch (error) {
+    await db.query("rollback");
+    throw error;
+  }
+
+  if (items.length > 0) {
+    void audit({
+      action: "prospecting.search_completed",
+      organizationId: campanha.organization_id,
+      bypassedRls: true,
+      resourceType: "prospecting",
+      resourceId: campanha.id,
+      metadata: {
+        campaign_id: campanha.id,
+        total: items.length,
+        inseridos: inserted,
+        duplicados: items.length - invalidos - inserted,
+        invalidos,
+        classes_puras: classesPuras,
+      },
+      requestId: `prospecting:search:${campanha.id}`,
+    });
+  }
+}
+
 export async function synchronizeSearch(db: pg.PoolClient, admin: SupabaseClient, c: Campaign) {
   if (!c.run_id) return;
   // Campanha importada de planilha nasce `succeeded` e sem `run_id`; este ponto não a alcança,
@@ -263,7 +400,7 @@ export async function synchronizeSearch(db: pg.PoolClient, admin: SupabaseClient
   // trouxer um provedor real (#2174).
   const provedor = await provedorDaOrganizacao(db, c.organization_id);
   // Como em `createSearch`: só quem tem segredo POR ORGANIZAÇÃO busca a
-  // credencial aqui (#2942, `local-http` lê a URL da instalação).
+  // credencial aqui (`searxng` lê a URL da instalação).
   const key = (await provedorExigeCredencialDaOrganizacao(db, c.organization_id))
     ? await credential(db, admin, c.organization_id)
     : "";
@@ -279,60 +416,7 @@ export async function synchronizeSearch(db: pg.PoolClient, admin: SupabaseClient
   const dataset = run.defaultDatasetId ?? c.dataset_id;
   if (!dataset) throw new ProspectingError("Busca concluída sem resultado disponível.");
   const items = await provedor.readResults(key, dataset, c.search.limit);
-  let invalidos = 0;
-  const validos: Prospect[] = [];
-  for (const item of items) {
-    const p = normalizeProspect(item);
-    if (!p) invalidos++;
-    else validos.push(p);
-  }
-  let inserted = 0;
-  let classesPuras: Record<string, number> = {};
-  await db.query("begin");
-  try {
-    ({ inseridos: inserted, classesPuras } = await gravarCandidatos(
-      db,
-      c.organization_id,
-      c.id,
-      validos,
-    ));
-    await db.query(
-      "update prospecting_campaigns set search_status='succeeded',dataset_id=$3,cost_usd=$4,result_count=$5,skipped_count=$6,error=null,updated_at=now() where organization_id=$1 and id=$2",
-      [
-        c.organization_id,
-        c.id,
-        dataset,
-        run.usageTotalUsd ?? null,
-        inserted,
-        items.length - inserted,
-      ],
-    );
-    await db.query("commit");
-  } catch (error) {
-    await db.query("rollback");
-    throw error;
-  }
-  // Funil de descarte (spec 24): inválidos + duplicados (já na base) + classes
-  // puras do enriquecimento. Uma vez por busca, no fechamento — a transição
-  // para `succeeded` acima é o efeito que autoriza o audit.
-  if (items.length > 0) {
-    void audit({
-      action: "prospecting.search_completed",
-      organizationId: c.organization_id,
-      bypassedRls: true,
-      resourceType: "prospecting",
-      resourceId: c.id,
-      metadata: {
-        campaign_id: c.id,
-        total: items.length,
-        inseridos: inserted,
-        duplicados: items.length - invalidos - inserted,
-        invalidos,
-        classes_puras: classesPuras,
-      },
-      requestId: `prospecting:search:${c.id}`,
-    });
-  }
+  await finalizarBuscaComResultados(db, c, run, dataset, items);
 }
 /** O que o operador informa ao importar; o resto da `BuscaDaPlanilha` é fixo (`origem`). */
 export type CamposDaImportacao = Omit<BuscaDaPlanilha, "origem">;

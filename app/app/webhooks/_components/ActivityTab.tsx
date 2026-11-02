@@ -282,12 +282,14 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   membro_fora_da_equipe:
     "A pessoa escolhida não faz mais parte da equipe, então o e-mail não foi enviado. Escolha outra pessoa na automação.",
   membro_sem_email: "A pessoa escolhida não tem e-mail cadastrado no acesso dela.",
+  email_caixa_indisponivel:
+    "A caixa de e-mail desta empresa está indisponível. Confira a conexão em Configurações › E-mail; nenhuma mensagem foi enviada por outro remetente.",
+  email_limite_atingido:
+    "O provedor de e-mail limitou os envios por causa do volume. Tente de novo mais tarde.",
   email_nao_configurado:
     "Nenhum e-mail está configurado nesta instalação: ligue o servidor em Admin › E-mail ou conecte o serviço externo de envio.",
   email_recusado:
     "O servidor de e-mail recusou a mensagem. O detalhe técnico abaixo traz o motivo que o provedor devolveu.",
-  email_limite_atingido:
-    "O provedor de e-mail limitou os envios por causa do volume. Tente de novo mais tarde.",
   remetente_recusado:
     "O servidor recusou o endereço de quem envia. Confira o remetente em Admin › E-mail.",
   dominio_nao_verificado:

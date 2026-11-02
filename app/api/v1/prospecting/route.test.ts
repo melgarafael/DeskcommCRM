@@ -376,9 +376,14 @@ describe("GET /api/v1/prospecting: configured segue o provedor (#2942)", () => {
     return ((await res.json()) as { data: { configured: boolean } }).data.configured;
   }
 
-  it("local-http sem chave salva: configured=true (a URL é da instalação)", async () => {
-    deps.pool.mockReturnValue(poolCom(false, { prospecting: { provider: "local-http" } }));
-    expect(await configured()).toBe(true);
+  it("SearXNG sem chave salva: configured=true (a URL é da instalação)", async () => {
+    vi.stubEnv("SEARXNG_BASE_URL", "https://search.example.test");
+    deps.pool.mockReturnValue(poolCom(false, { prospecting: { provider: "searxng" } }));
+    try {
+      expect(await configured()).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("Apify (sem escolha) sem chave salva: configured=false, como sempre", async () => {
