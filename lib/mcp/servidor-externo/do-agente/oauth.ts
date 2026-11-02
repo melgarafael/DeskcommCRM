@@ -327,7 +327,12 @@ function corpoECabecalhos(
     "Content-Type": "application/x-www-form-urlencoded",
     Accept: "application/json",
   };
-  if (cliente.clientSecret) {
+  // O AS diz que só aceita cliente público (`none`)? Então segredo não sai, nem
+  // que exista: Basic sem `client_id` no corpo vira invalid_grant num AS público.
+  const metodos = cliente.metodos ?? [];
+  const aceitaSegredo =
+    metodos.length === 0 || metodos.includes("client_secret_basic") || metodos.includes("client_secret_post");
+  if (cliente.clientSecret && aceitaSegredo) {
     const soPost = (cliente.metodos ?? []).includes("client_secret_post") &&
       !(cliente.metodos ?? []).includes("client_secret_basic");
     if (soPost) {

@@ -199,8 +199,13 @@ export async function salvarServidorMcpDoAgente(
     try {
       if (!metadados) {
         const d = await descobrir(entrada.endpoint);
-        const { metodosDeAutenticacaoNoToken: _m, ...resto } = d;
-        metadados = { ...resto, cliente_dinamico: false, descoberto_em: new Date().toISOString() };
+        const { metodosDeAutenticacaoNoToken, ...resto } = d;
+        metadados = {
+          ...resto,
+          cliente_dinamico: false,
+          descoberto_em: new Date().toISOString(),
+          metodos_no_token: metodosDeAutenticacaoNoToken,
+        };
       }
       if (!clientId) {
         if (!metadados.registration_endpoint) return { ok: false, error: "sem_cliente" };
@@ -218,7 +223,10 @@ export async function salvarServidorMcpDoAgente(
     }
     colunas.oauth_metadados = metadados;
     colunas.oauth_client_id = clientId;
-    if (entrada.oauthClientSecret !== "") Object.assign(colunas, cifrar("oauth_client_secret", entrada.oauthClientSecret));
+    // Cliente do registro dinâmico é público: segredo NUNCA é gravado (um campo
+    // de senha autopreenchido pelo navegador não pode virar credencial).
+    if (metadados.cliente_dinamico) Object.assign(colunas, apagado("oauth_client_secret"));
+    else if (entrada.oauthClientSecret !== "") Object.assign(colunas, cifrar("oauth_client_secret", entrada.oauthClientSecret));
     else if (mudouEndereco) Object.assign(colunas, apagado("oauth_client_secret"));
   } else {
     Object.assign(colunas, { oauth_metadados: {}, oauth_client_id: null }, apagado("oauth_client_secret"));

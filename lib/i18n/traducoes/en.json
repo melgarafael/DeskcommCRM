@@ -9587,5 +9587,6 @@
   "Marca desta ferramenta": "Mark for this tool",
   "O servidor não anunciou nenhuma ferramenta.": "The server did not announce any tools.",
   "Escrita": "Write",
-  "Leitura": "Read"
+  "Leitura": "Read",
+  "O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.": "The authorization link is automatic: until the customer authorizes, the agent automatically gets the tool that generates the link. You don't need to select it here."
 }

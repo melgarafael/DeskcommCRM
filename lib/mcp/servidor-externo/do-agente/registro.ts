@@ -45,6 +45,11 @@ export const MetadadosOauthSchema = z.object({
   escopos_suportados: z.array(z.string()).default([]),
   /** O `client_id` veio do registro dinâmico (e não da tela)? */
   cliente_dinamico: z.boolean().default(false),
+  /**
+   * `token_endpoint_auth_methods_supported` do AS. `["none"]` = só cliente
+   * público: o Deskcomm nunca manda segredo, mesmo que haja um gravado.
+   */
+  metodos_no_token: z.array(z.string()).optional(),
   /** Para quem lê na tela: quando a descoberta foi feita. */
   descoberto_em: z.string(),
   /**

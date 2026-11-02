@@ -128,6 +128,7 @@ beforeAll(async () => {
           registration_endpoint: `${origem}/register`,
           revocation_endpoint: `${origem}/revoke`,
           ...(stub.anunciaS256 ? { code_challenge_methods_supported: ["S256"] } : { code_challenge_methods_supported: ["plain"] }),
+          token_endpoint_auth_methods_supported: ["none"],
         });
       }
       if (url.pathname === "/register") {
@@ -152,6 +153,8 @@ beforeAll(async () => {
           const c = stub.codigos.get(f.get("code") ?? "");
           const desafio = createHash("sha256").update(f.get("code_verifier") ?? "").digest("base64url");
           if (!c || c.challenge !== desafio || c.redirect !== f.get("redirect_uri")) return json(res, 400, { error: "invalid_grant" });
+          // Como o beyond-MCP: o client_id do authorize tem de voltar NO CORPO.
+          if (f.get("client_id") !== "cliente-dinamico-1") return json(res, 400, { error: "invalid_grant" });
           stub.codigos.delete(f.get("code")!);
           return json(res, 200, emitir(c.usuario, c.escopo));
         }
@@ -379,6 +382,16 @@ describe("fluxo ponta a ponta: A autoriza, B recebe o próprio link [§8.2, 8.3,
     const deY = await carregarServidoresDoAgenteNoTurno(banco.cliente as never, ORG_Y, AGENTE, TOOL_IDS, { contatoDoTurno: CONTATO_A, fetch: saida });
     expect(deY).toEqual([]);
     expect(await credencialDoContato(banco.cliente as never, ORG_Y, SERVIDOR, CONTATO_A)).toBeNull();
+  });
+});
+
+describe("cliente público do DCR com segredo espúrio gravado (regressão, VPS 2026-11-02)", () => {
+  it("o navegador preencheu o client_secret: a troca ignora o segredo e manda o client_id no corpo", async () => {
+    // Medido na VPS: o Chrome autopreencheu o campo de senha `client_secret` com a
+    // senha do CRM; o segredo foi gravado num cliente público (DCR, auth `none`),
+    // a troca foi por Basic sem `client_id` no corpo e o AS respondeu invalid_grant.
+    Object.assign(banco.tabelas.ai_agent_mcp_servers![0]!, cifrar("oauth_client_secret", "senha-do-crm-autopreenchida"));
+    expect(await contatoAutoriza(await pedirLink(CONTATO_A, CONVERSA_A), "alice")).toBe("autorizado");
   });
 });
 

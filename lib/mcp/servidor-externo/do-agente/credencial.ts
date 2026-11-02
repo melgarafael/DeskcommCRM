@@ -173,7 +173,12 @@ export function clienteDoServidor(servidor: ServidorDoAgenteComSegredo): Cliente
   return {
     tokenEndpoint: servidor.oauth.token_endpoint,
     clientId: servidor.oauthClientId,
-    clientSecret: servidor.oauthClientSecret,
+    // Cliente do registro dinâmico é PÚBLICO (`token_endpoint_auth_method: none`):
+    // um segredo gravado ali só pode ser lixo — medido na VPS, a senha do CRM
+    // autopreenchida pelo navegador —, e mandá-lo troca o `client_id` do corpo
+    // por Basic, que o AS recusa com invalid_grant.
+    clientSecret: servidor.oauth.cliente_dinamico ? null : servidor.oauthClientSecret,
+    ...(servidor.oauth.metodos_no_token ? { metodos: servidor.oauth.metodos_no_token } : {}),
     recurso: servidor.oauth.recurso,
   };
 }

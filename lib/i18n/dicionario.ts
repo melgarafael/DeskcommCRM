@@ -41,6 +41,7 @@ type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>
 
 export const DICIONARIO: Traducoes = {
   // Servidores MCP por agente e OAuth por contato (migration 9081).
+  "O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.": { es: "El enlace de autorización es automático: mientras el cliente no autorice, el agente recibe por sí solo la herramienta que genera el enlace. No hace falta marcarla aquí." },
   "0 = o acesso é revogado assim que a conversa é encerrada.": { es: "0 = el acceso se revoca en cuanto se cierra la conversación." },
   "Acesso apagado daqui. O sistema externo não confirmou a revogação.": { es: "Acceso borrado de aquí. El sistema externo no confirmó la revocación." },
   "Acesso revogado no sistema externo e apagado daqui.": { es: "Acceso revocado en el sistema externo y borrado de aquí." },

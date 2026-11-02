@@ -320,7 +320,11 @@ export function ServidoresMcpDoAgente({ agentId, toolIds, onChangeToolIds, disab
               <Input
                 id="mcp-chave"
                 type="password"
-                autoComplete="off"
+                // "new-password": o navegador NÃO preenche com a senha salva do CRM
+                // (o "off" é ignorado em campo de senha — medido na VPS).
+                autoComplete="new-password"
+                data-1p-ignore
+                data-lpignore="true"
                 placeholder={
                   editando.id && servidores?.find((s) => s.id === editando.id)?.chaveLast4
                     ? `•••• ${servidores.find((s) => s.id === editando.id)?.chaveLast4} — ${t("deixe em branco para manter")}`
@@ -397,7 +401,7 @@ export function ServidoresMcpDoAgente({ agentId, toolIds, onChangeToolIds, disab
                   </div>
                   <div className="space-y-1">
                     <Label htmlFor="mcp-client-secret">client_secret</Label>
-                    <Input id="mcp-client-secret" type="password" autoComplete="off" value={f.oauthClientSecret} onChange={(e) => mudar({ oauthClientSecret: e.target.value })} />
+                    <Input id="mcp-client-secret" type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" value={f.oauthClientSecret} onChange={(e) => mudar({ oauthClientSecret: e.target.value })} />
                   </div>
                   <p className="text-muted-foreground sm:col-span-2">
                     {t("Endereço de retorno para cadastrar no servidor de autorização")}:{" "}
@@ -544,9 +548,14 @@ function ServidorNaLista({
       {aberto ? (
         <div className="mt-3 space-y-2 border-t border-border pt-3">
           {servidor.modo === "oauth_por_contato" ? (
-            <p className="text-xs text-muted-foreground">
-              {t("Este servidor só lista as ferramentas com o acesso de um cliente. A lista abaixo é o que já apareceu em conversas; você também pode escrever o nome de uma ferramenta.")}
-            </p>
+            <>
+              <p className="text-xs text-muted-foreground">
+                {t("Este servidor só lista as ferramentas com o acesso de um cliente. A lista abaixo é o que já apareceu em conversas; você também pode escrever o nome de uma ferramenta.")}
+              </p>
+              <p className="text-xs text-muted-foreground" data-testid="acesso-e-automatico">
+                {t("O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.")}
+              </p>
+            </>
           ) : null}
           {erro ? <p role="alert" className="text-xs text-destructive">{erro}</p> : null}
           {lista !== null && nomes.size === 0 ? (
@@ -599,7 +608,9 @@ function ServidorNaLista({
               <Button
                 size="sm"
                 variant="outline"
-                disabled={disabled || !/^[A-Za-z0-9_-]{1,64}$/.test(manual)}
+                // `solicitar_acesso_*` é a ferramenta que o Deskcomm cria sozinho:
+                // marcá-la como do servidor só gasta uma vaga do teto.
+                disabled={disabled || !/^[A-Za-z0-9_-]{1,64}$/.test(manual) || manual.startsWith("solicitar_acesso_")}
                 onClick={() => {
                   alternar(manual, true);
                   setManual("");
