@@ -75,6 +75,13 @@ export interface ContactSnapshot {
    */
   additional_phones?: ContactPhoneSnapshot[];
   /**
+   * As identidades do contato nos outros canais (#3764, fatia 1): o @ do
+   * Instagram, o perfil do Facebook, o e-mail — cada uma com o canal de onde
+   * veio. A anonimização já as apaga pelo gatilho da ficha; sem esta linha o
+   * titular pedia acesso e não recebia o que a ingestão guardou sobre ele.
+   */
+  identities?: ContactIdentitySnapshot[];
+  /**
    * Campos personalizados — onde os roteiros de atendimento gravam o que o
    * cliente respondeu (CPF inclusive). A anonimização já os zera; sem esta
    * linha o titular pedia acesso e não recebia o que o roteiro coletou.
@@ -96,6 +103,13 @@ export interface ContactPhoneSnapshot {
   /** O `lid` do WhatsApp DAQUELE número: é o que casa a mensagem de grupo dele. */
   wa_lid: string | null;
   created_at: string;
+}
+
+/** Uma identidade do contato num canal, como o titular a recebe (#3764). */
+export interface ContactIdentitySnapshot {
+  canal: string;
+  identificador: string;
+  criado_em: string;
 }
 
 export interface ConsentRow {
@@ -1276,6 +1290,29 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }));
   }
   if (contact && telefonesExtras.length > 0) contact.additional_phones = telefonesExtras;
+
+  // (#3764) As identidades do contato nos outros canais. A anonimização as apaga
+  // pelo gatilho da ficha — e o titular que pede ACESSO tem de receber o que a
+  // ingestão guardou sobre ele. Sem esta leitura, o dado existia no banco e não
+  // saía no `data.json`: a mesma assimetria que a cerca de acesso×redação cobra.
+  // A consulta filtra organização e ficha: o cliente aqui é o administrador.
+  let identidades: ContactIdentitySnapshot[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("contact_identities")
+      .select("canal, identificador, criado_em")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("criado_em", { ascending: true });
+    if (error) {
+      logger.warn("[lgpd-export-worker] contact identities load failed", {
+        request_id: requestId,
+        error: error.message,
+      });
+    }
+    identidades = (data ?? []) as ContactIdentitySnapshot[];
+  }
+  if (contact && identidades.length > 0) contact.identities = identidades;
 
   // No `consents` table in current schema; legal basis is in contacts.consent JSONB.
   const consents: ConsentRow[] = [];
