@@ -46,11 +46,17 @@ vi.mock("@/lib/supabase/admin", () => ({
         update: () => consulta,
         eq: () => consulta,
         single: async () => ({
-          data: { id: "chamada-1", organization_id: "org-1", contact_id: "contato-1", direction: fakes.direcao },
+          data: {
+            id: "chamada-1",
+            organization_id: "org-1",
+            contact_id: "contato-1",
+            direction: fakes.direcao,
+          },
           error: null,
         }),
         maybeSingle: async () => ({ data: { status: "active" }, error: null }),
-        then: (ok: (r: unknown) => unknown) => Promise.resolve({ data: null, error: null }).then(ok),
+        then: (ok: (r: unknown) => unknown) =>
+          Promise.resolve({ data: null, error: null }).then(ok),
       };
       return consulta;
     },
@@ -76,7 +82,9 @@ vi.mock("@/lib/ai/knowledge/busca", () => ({
   resolverAcervoDoAgente: async () => [],
 }));
 vi.mock("@/lib/organizacao/operante", () => ({ ehOperante: () => true }));
-vi.mock("@/lib/ai/usage/registrar-chamada", () => ({ registrarChamadaDeIa: async () => undefined }));
+vi.mock("@/lib/ai/usage/registrar-chamada", () => ({
+  registrarChamadaDeIa: async () => undefined,
+}));
 
 import { AudioSocketCallBridge } from "./audioSocketBridge";
 import { handleAudioSocketConnection } from "./index";
@@ -93,7 +101,9 @@ function socketDeBrinquedo() {
 
 /** Os `type` enviados à OpenAI, na ordem. */
 function enviados(): string[] {
-  return fakes.ultimoWs!.send.mock.calls.map((c) => (JSON.parse(c[0] as string) as { type: string }).type);
+  return fakes.ultimoWs!.send.mock.calls.map(
+    (c) => (JSON.parse(c[0] as string) as { type: string }).type,
+  );
 }
 
 /** Dispara o "open" do WebSocket e espera o handler assíncrono terminar. */
@@ -173,7 +183,7 @@ describe("o fio: a direção da chamada decide", () => {
     expect(await conectar()).toContain("response.create");
   });
 
-  it("saída (outbound): espera o \"alô\" de quem atende", async () => {
+  it('saída (outbound): espera o "alô" de quem atende', async () => {
     fakes.direcao = "outbound";
     expect(await conectar()).not.toContain("response.create");
   });
