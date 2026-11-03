@@ -10,15 +10,11 @@ import type { ConversationWithContact } from "@/hooks/inbox/useConversationsReal
  * ─── O que este arquivo prova, e o que ele NÃO prova ─────────────────────────
  *
  * A issue pede duas coisas: (1) menu "⋯" para as ações menos usadas e (2) guia
- * curta em cada botão. A (2) está aqui. A (1) NÃO foi implementada — e o motivo
- * é medido, não estético: `tests/unit/inbox-header-nao-trava.test.tsx` (do
- * mantenedor, commit `e079acf30`) afirma que as ações continuam TODAS na barra e
- * que um botão "Mais ações" **não pode existir**; o próprio JSX deste componente
- * diz por quê ("um menu 'mais' … esconderia ação de quem atende"). Esconder ação
- * da barra é regra de PRODUTO (`#1625`, `#1627`, `#2700` fechado sem merge em
- * 14/10 — e `#2810`, do mantenedor, merged no mesmo dia, nos MESMOS arquivos,
- * resolveu a mesma altura com uma fileira que rola). Quem muda essa regra é ele.
- * A paridade abaixo é o que garante que seguimos do lado certo dela.
+ * curta em cada botão. As duas estão no cabeçalho. A (1) era proibida pela regra
+ * "nenhuma ação de quem atende some da vista" (`#1625`, `#1627`, `#2700`); o doc
+ * de decisão 251 (03/11, opção A) a trocou por "nenhuma ação some da conversa:
+ * as do dia a dia ficam à vista e o resto fica no ⋯". A paridade abaixo é o que
+ * garante que seguimos do lado certo dela: nenhuma ação sai da tela sem ter casa.
  *
  * ─── Por que a paridade é por CENÁRIO, e não uma lista só ────────────────────
  *

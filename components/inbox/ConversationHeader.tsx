@@ -292,8 +292,8 @@ export function ConversationHeader({
     //
     // Reorganizar em vez de esconder: acima de ~1440px o header fica IDÊNTICO ao
     // de antes (uma linha), e quando aperta a barra desce para a linha de baixo.
-    // Nenhuma ação some — um menu "mais" esconderia o "Lembrar" que a spec
-    // `canais-baseline` clica, e, pior, esconderia ação de quem atende.
+    // Nenhuma ação some da conversa (doc de decisão 251, 03/11): as do dia a
+    // dia ficam à vista e o resto fica no menu ⋯ (#3003).
     //
     // NO CELULAR a quebra vira o problema oposto: com ~390px de largura a barra
     // descia em três ou quatro fileiras de botões e comia metade da tela,
@@ -563,15 +563,16 @@ export function ConversationHeader({
             falha se uma ação sair da tela sem estar aqui, e falha de novo se
             sair daqui sem estar na tela.
 
-            O `aria-label` é "Mais" — nunca "Mais ações", que a catraca
-            `inbox-header-nao-trava` procura e proíbe desde o #1625. */}
+            O nome acessível é "Mais ações", o mesmo da barra de ações em lote.
+            No celular o gatilho tem 44px (`w-11`, como a busca ao lado); o
+            `lg:w-8` só vale onde há ponteiro fino. */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               size="sm"
               variant="ghost"
-              className="w-8 px-0"
-              aria-label={t("Mais")}
+              className="w-11 px-0 lg:w-8"
+              aria-label={t("Mais ações")}
               title={t("Mais ações desta conversa")}
               data-testid="menu-de-acoes"
             >

@@ -397,15 +397,15 @@ describe("#3003 — a barra enxuta: as ações do dia a dia ficam, o resto vai p
     // SEM abrir o menu: com ele aberto, o Radix é MODAL e marca `aria-hidden`
     // nos irmãos (`hideOthers`), então `getByRole` não acharia o próprio gatilho
     // — e a asserção passaria por ausência, não por acerto.
-    const { container } = montar(FILA, false);
+    montar(FILA, false);
     const gatilho = screen.getByTestId("menu-de-acoes");
     expect(gatilho, "o cabeçalho não tem o menu ⋯ — as ações secundárias não têm para onde ir").toBeTruthy();
-    // O nome acessível é "Mais", e NUNCA "Mais ações": a catraca
-    // `inbox-header-nao-trava` procura este nome e reprova se ele existir.
-    expect(gatilho.getAttribute("aria-label")).toBe("Mais");
-    expect(container.querySelector('[aria-label="Mais ações"]')).toBeNull();
-    // E ele é alcançável por nome, como qualquer outro controle do cabeçalho.
-    expect(screen.getByRole("button", { name: "Mais" })).toBeTruthy();
+    // Alcançável por nome, como qualquer outro controle do cabeçalho.
+    expect(screen.getByRole("button", { name: "Mais ações" })).toBe(gatilho);
+    // Alvo de dedo no celular: 44px (`w-11`, e `h-11` vem do `size="sm"`);
+    // o `w-8` só a partir de `lg`. Sem prefixo, o ⋯ volta a ter 32px no toque.
+    expect(gatilho.className.split(/\s+/)).toContain("w-11");
+    expect(gatilho.className.split(/\s+/)).not.toContain("w-8");
   });
 });
 

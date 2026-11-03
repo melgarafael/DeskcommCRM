@@ -172,14 +172,11 @@ describe("header do inbox — não trava a largura da tela", () => {
     // ─── A RÉGUA MUDOU DE LUGAR, NÃO DE TAMANHO (#3003) ────────────────────
     //
     // Este caso dizia "as seis ações estão DENTRO da barra" e proibia um menu.
-    // Desde o #3003 a decisão do dono na issue é a inversa — a barra guarda as
-    // ações de todo atendimento e o resto mora no ⋯ —, então o que se mede
-    // aqui é o que o caso sempre quis proteger: NENHUMA AÇÃO SOME. Cada um dos
-    // seis rótulos continua alcançável no cabeçalho, e as que saíram da barra
-    // têm de estar no menu (não basta não estarem em lugar nenhum).
-    //
-    // O menu NÃO pode se chamar "Mais ações": o nome acessível é "Mais", e o
-    // `getByRole` abaixo continua sendo a catraca disso.
+    // Desde o #3003 a regra é a do doc de decisão 251 (03/11, opção A):
+    // "nenhuma ação some da conversa: as do dia a dia ficam à vista e o resto
+    // fica no ⋯". É o que o caso sempre quis proteger — NENHUMA AÇÃO SOME. Cada
+    // um dos seis rótulos continua alcançável no cabeçalho, e as que saíram da
+    // barra têm de estar no menu (não basta não estarem em lugar nenhum).
     const menu = abrirOMenu();
     for (const rotulo of ["Liberar", "Devolver ao automático", "Transferir", "Lembrar", "Fechar", "Arquivar"]) {
       expect(
@@ -201,7 +198,6 @@ describe("header do inbox — não trava a largura da tela", () => {
         `"${rotulo}" saiu da barra e não está no menu: ação de quem atende escondida`,
       ).toBeGreaterThan(0);
     }
-    expect(screen.queryByRole("button", { name: "Mais ações" }), "o gatilho do menu não pode se chamar 'Mais ações'").toBeNull();
   });
 
   it("no celular a barra é UMA fileira que rola, não três ou quatro que comem a conversa", () => {
