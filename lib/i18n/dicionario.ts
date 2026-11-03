@@ -19185,6 +19185,70 @@ export const DICIONARIO: Traducoes = {
   "Setor inexistente nesta organização.": {
     es: "El sector no existe en esta organización.",
   },
+  // Catálogo de instalação (`lib/instalacao/catalogo.ts`), tela /admin/configuracao e /admin/email.
+  "Chave do serviço de e-mail": { es: "Clave del servicio de correo" },
+  "Sem ela o sistema não consegue enviar e-mail nenhum — nem convite para a equipe, nem recuperação de senha.": {
+    es: "Sin ella el sistema no puede enviar ningún correo — ni invitación al equipo, ni recuperación de contraseña.",
+  },
+  "Endereço que aparece como remetente": { es: "Dirección que aparece como remitente" },
+  "O e-mail que seus clientes veem como remetente. Precisa ser de um domínio verificado no serviço de e-mail.": {
+    es: "El correo que tus clientes ven como remitente. Tiene que ser de un dominio verificado en el servicio de correo.",
+  },
+  "E-mail de suporte": { es: "Correo de soporte" },
+  "O endereço que o sistema mostra a quem usa, quando alguém precisa de ajuda.": {
+    es: "La dirección que el sistema muestra a quien lo usa, cuando alguien necesita ayuda.",
+  },
+  "E-mail do encarregado de dados (DPO)": { es: "Correo del encargado de datos (DPO)" },
+  "O contato obrigatório pela LGPD para pedidos de privacidade. Aparece nos documentos legais.": {
+    es: "El contacto obligatorio por la LGPD para pedidos de privacidad. Aparece en los documentos legales.",
+  },
+  "Endereço do banco de dados": { es: "Dirección de la base de datos" },
+  "Onde ficam todos os seus dados.": { es: "Dónde están todos tus datos." },
+  "Esta é a porta de entrada do banco: o sistema precisa dela para ler qualquer coisa, inclusive esta tela. Guardá-la no banco seria como trancar a chave dentro do cofre. Troca-se no arquivo de instalação do servidor.": {
+    es: "Esta es la puerta de entrada a la base de datos: el sistema la necesita para leer cualquier cosa, incluida esta pantalla. Guardarla en la base de datos sería como encerrar la llave dentro de la caja fuerte. Se cambia en el archivo de instalación del servidor.",
+  },
+  "Senha administrativa do banco": { es: "Contraseña administrativa de la base de datos" },
+  "A credencial que dá ao sistema acesso total aos dados.": {
+    es: "La credencial que le da al sistema acceso total a los datos.",
+  },
+  "Sem ela o sistema não lê o banco — nem esta tela. Troca-se no arquivo de instalação do servidor.": {
+    es: "Sin ella el sistema no lee la base de datos — ni esta pantalla. Se cambia en el archivo de instalación del servidor.",
+  },
+  "Senha da fila de tarefas": { es: "Contraseña de la cola de tareas" },
+  "Protege a fila que controla o ritmo dos envios e evita bloqueio do seu número.": {
+    es: "Protege la cola que controla el ritmo de los envíos y evita el bloqueo de tu número.",
+  },
+  "O par dela vive no programa da fila. Trocam-se juntas, no arquivo de instalação.": {
+    es: "Su par vive en el programa de la cola. Se cambian juntas, en el archivo de instalación.",
+  },
+  "Senha das tarefas automáticas": { es: "Contraseña de las tareas automáticas" },
+  "Protege as rotinas que rodam sozinhas — cobrança de follow-up, limpeza, verificações.": {
+    es: "Protege las rutinas que corren solas — cobro de follow-up, limpieza, verificaciones.",
+  },
+  "O agendador é um programa separado que recebe esta senha ao ligar e não consulta o banco. Trocar aqui não mudaria o agendador. A troca é no arquivo de instalação.": {
+    es: "El programador es un programa separado que recibe esta contraseña al arrancar y no consulta la base de datos. Cambiarla aquí no cambiaría el programador. El cambio es en el archivo de instalación.",
+  },
+  "Chave que tranca as credenciais": { es: "Clave que cierra las credenciales" },
+  "É com ela que o sistema embaralha as senhas guardadas — inclusive as que você digita nesta tela.": {
+    es: "Con ella el sistema cifra las contraseñas guardadas — incluidas las que escribís en esta pantalla.",
+  },
+  "Esta é a chave do cofre. Guardá-la dentro do próprio cofre não protegeria nada — e é por isso que ela fica no arquivo do servidor, fora do banco: assim, uma cópia de segurança do banco que vaze não abre nada. Se você perdê-la, as senhas guardadas não voltam.": {
+    es: "Esta es la llave de la caja fuerte. Guardarla dentro de la propia caja fuerte no protegería nada — por eso queda en el archivo del servidor, fuera de la base de datos: así, una copia de seguridad de la base de datos que se filtre no abre nada. Si la perdés, las contraseñas guardadas no se recuperan.",
+  },
+  "Chave que assina os documentos de privacidade": { es: "Clave que firma los documentos de privacidad" },
+  "Assina digitalmente os relatórios de dados que a LGPD obriga a entregar.": {
+    es: "Firma digitalmente los informes de datos que la LGPD obliga a entregar.",
+  },
+  "É uma chave de assinatura, não uma configuração: trocá-la invalida a conferência dos documentos já assinados. Fica no arquivo de instalação.": {
+    es: "Es una clave de firma, no una configuración: cambiarla invalida la verificación de los documentos ya firmados. Queda en el archivo de instalación.",
+  },
+  "Modo de distribuição das conversas da IA": { es: "Modo de distribución de las conversaciones de la IA" },
+  "Decide como o programa de segundo plano pega as conversas para responder.": {
+    es: "Decide cómo el programa en segundo plano toma las conversaciones para responder.",
+  },
+  "Quem lê esta opção é o programa de segundo plano, uma única vez, quando liga — e ele não pergunta ao banco. Mostrar um campo aqui daria a impressão de que mudou, sem mudar nada. A troca é no arquivo de instalação, seguida de reinício.": {
+    es: "Quien lee esta opción es el programa en segundo plano, una única vez, al arrancar — y no vuelve a consultar la base de datos. Mostrar un campo aquí daría la impresión de que cambió, sin cambiar nada. El cambio es en el archivo de instalación, seguido de un reinicio.",
+  },
 };
 
 /**

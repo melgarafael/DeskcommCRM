@@ -544,7 +544,7 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     return { consumer_key, status: "ok" };
   } catch (err) {
     if (err instanceof TranscriptionTooLargeError) {
-      const motivo = "o áudio excede o limite de 25 MB da transcrição pela OpenRouter e não foi enviado ao serviço";
+      const motivo = "el audio supera el límite de 25 MB de la transcripción por OpenRouter y no fue enviado al servicio";
       try {
         const { error } = await markFailed(motivo);
         if (error) return { consumer_key, status: "error", detail: "failed_status_update_failed" };
@@ -553,7 +553,7 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
       }
       await avisarMidiaNaoLida(
         msg.organization_id, rotuloDoTipo, motivo,
-        "Envie um áudio menor, de até 25 MB, para que o conteúdo possa ser transcrito.",
+        "Enviá un audio más chico, de hasta 25 MB, para que el contenido pueda transcribirse.",
       );
       return { consumer_key, status: "skipped", detail: "transcription_audio_too_large" };
     }
@@ -760,9 +760,9 @@ function buildDeriveDeps(
       // enxerga imagens" seria gravar uma alegação que ninguém verificou (e
       // era o que acontecia com todo modelo da OpenRouter).
       const motivo = visao.sabemos
-        ? `o modelo ${llm.defaultModel ?? "configurado"} não enxerga imagens`
-        : `não sei se o modelo ${llm.defaultModel ?? "configurado"} enxerga imagens, ` +
-          `então não arrisquei enviar a foto — escolha um modelo do catálogo em Agente de IA → Provedores`;
+        ? `el modelo ${llm.defaultModel ?? "configurado"} no puede ver imágenes`
+        : `no sé si el modelo ${llm.defaultModel ?? "configurado"} puede ver imágenes, ` +
+          `así que no me arriesgué a enviar la foto — elegí un modelo del catálogo en Agente de IA → Proveedores`;
       await avisarMidiaNaoLida(orgId, "imagen", motivo);
       return MARCADOR_NAO_LIDA;
     }
