@@ -6507,6 +6507,10 @@ export const DICIONARIO: Traducoes = {
   "Como o outro sistema confere a assinatura e reconhece reenvios: guia de integração em docs/integracao/webhooks-de-saida.md, na documentação do projeto.": {
     es: "Cómo el otro sistema verifica la firma y reconoce los reenvíos: guía de integración en docs/integracao/webhooks-de-saida.md, en la documentación del proyecto.",
   },
+  "Tirar o contato de outro fluxo": { es: "Sacar al contacto de otro flujo" },
+  "Se o contato já estiver em outro fluxo, ele sai daquele e entra neste. Fluxo pausado por uma pessoa não é trocado.": {
+    es: "Si el contacto ya está en otro flujo, sale de ese y entra en este. Un flujo pausado por una persona no se cambia.",
+  },
   "Incluir o responsável no corpo": { es: "Incluir al responsable en el cuerpo" },
   "Padrão: o aviso não diz quem atende. Ligue só se o outro sistema precisar do nome da equipe.": {
     es: "Por defecto, el aviso no dice quién atiende. Actívalo solo si el otro sistema necesita el nombre del equipo.",
@@ -7082,6 +7086,12 @@ export const DICIONARIO: Traducoes = {
     {
       es: "El embudo elegido no está activo, así que la inscripción no se hizo. Activa el embudo o elige otro en la automatización.",
     },
+  "O contato já está neste mesmo fluxo — a automação não o recomeça.": {
+    es: "El contacto ya está en este mismo flujo: la automatización no lo vuelve a empezar.",
+  },
+  "O contato está em outro fluxo pausado por uma pessoa da equipe, e a automação não passa por cima dessa decisão.": {
+    es: "El contacto está en otro flujo pausado por una persona del equipo, y la automatización no pasa por encima de esa decisión.",
+  },
   "O contato já está em um funil ativo — esta ação não inscreve duas vezes.": {
     es: "El contacto ya está en un embudo activo, así que esta acción no lo inscribe de nuevo.",
   },
@@ -9788,6 +9798,9 @@ export const DICIONARIO: Traducoes = {
   "O agente decidiu quanto esperar em cada passo": { es: "El agente decidió cuánto esperar en cada paso" },
   "Seguiu sem o plano de tempo": { es: "Continuó sin el plan de tiempos" },
   "Cancelado por uma pessoa da equipe": { es: "Cancelado por una persona del equipo" },
+  "Encerrado porque uma automação o colocou em outro fluxo": {
+    es: "Terminado porque una automatización lo puso en otro flujo",
+  },
   "Pausado por uma pessoa da equipe": { es: "Pausado por una persona del equipo" },
   "Retomado por uma pessoa da equipe": { es: "Reanudado por una persona del equipo" },
   "Adiado por uma pessoa da equipe": { es: "Pospuesto por una persona del equipo" },
