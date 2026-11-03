@@ -16,9 +16,12 @@ import { requireRole } from "@/lib/auth/require-role";
 import {
   configDoFunil,
   ETAPAS_DO_COLD_CALL,
-  ROTEIRO_PADRAO,
+  motivoParaNaoLigar,
+  roteiroPadrao,
   roteiroSchema,
 } from "@/lib/cold-call/regras";
+import { seColdCallDesligado } from "@/lib/cold-call/modulo";
+import { lotesDeIds } from "@/lib/kanban/selecao";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { posicaoEntre, slugDeFunil } from "@/lib/pipelines/pipeline-editing";
 import { createClient } from "@/lib/supabase/server";
@@ -30,6 +33,21 @@ const NOME_DO_FUNIL = "Cold Call";
 const LIMITE_DA_FILA = 1000;
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
+
+/** `.in()` em lotes que cabem na URL; o erro de qualquer lote sobe. */
+async function emLotes<T>(
+  ids: readonly string[],
+  consulta: (lote: string[]) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  // ponytail: lotes em paralelo (até 20 com a fila de 1000); sequencial se o pool reclamar.
+  const respostas = await Promise.all(lotesDeIds(ids).map(consulta));
+  const linhas: T[] = [];
+  for (const { data, error } of respostas) {
+    if (error) throw new Error(error.message);
+    linhas.push(...(data ?? []));
+  }
+  return linhas;
+}
 
 async function funilDoColdCall(supabase: Supabase, orgId: string) {
   const { data, error } = await supabase
@@ -49,6 +67,8 @@ export async function GET(): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
   if (!authz.ok) return authz.response;
+  const desligado = await seColdCallDesligado(requestId);
+  if (desligado) return desligado;
   const orgId = authz.org.orgId;
   const supabase = await createClient();
 
@@ -76,58 +96,47 @@ export async function GET(): Promise<Response> {
 
     const ids = (leads ?? []).map((l) => l.id);
     const idsDeContato = [...new Set((leads ?? []).map((l) => l.contact_id).filter((c): c is string => !!c))];
-    const [{ data: contatos }, { data: tentativas }] = await Promise.all([
-      idsDeContato.length
-        ? supabase
-            .from("contacts")
-            .select("id, name, display_name, phone_number, email, street, number, district, city, state, avatar_storage_path, is_anonymized")
-            .eq("organization_id", orgId)
-            .in("id", idsDeContato)
-        : Promise.resolve({
-            data: [] as {
-              id: string;
-              name: string | null;
-              display_name: string | null;
-              phone_number: string | null;
-              avatar_storage_path: string | null;
-              is_anonymized: boolean;
-              email: string | null;
-              street: string | null;
-              number: string | null;
-              district: string | null;
-              city: string | null;
-              state: string | null;
-            }[],
-          }),
-      ids.length
-        ? supabase
-            .from("crm_lead_activities")
-            .select("lead_id, performed_at, payload")
-            .eq("organization_id", orgId)
-            .eq("type", "cold_call_result")
-            .in("lead_id", ids)
-            .order("performed_at")
-        : Promise.resolve({ data: [] as { lead_id: string; performed_at: string; payload: unknown }[] }),
-    ]);
-
-    // A conversa mais recente de cada contato: é ela que abre no meio da tela de ligação.
-    const { data: conversas } = idsDeContato.length
-      ? await supabase
+    // A lista de ids viaja na URL do PostgREST, e o Kong recusa a partir de ~187 ids (414, ver
+    // app/api/v1/conversations/_handler.ts). Em lotes, e erro de qualquer lote derruba a fila:
+    // fila sem nome e sem telefone, sem aviso, é pior que a tela de erro.
+    const [contatos, tentativas, conversas] = await Promise.all([
+      emLotes(idsDeContato, (lote) =>
+        supabase
+          .from("contacts")
+          .select("id, name, display_name, phone_number, email, street, number, district, city, state, avatar_storage_path, is_anonymized, is_blocked, is_personal")
+          .eq("organization_id", orgId)
+          .in("id", lote),
+      ),
+      emLotes(ids, (lote) =>
+        supabase
+          .from("crm_lead_activities")
+          .select("lead_id, performed_at, payload")
+          .eq("organization_id", orgId)
+          .eq("type", "cold_call_result")
+          .in("lead_id", lote),
+      ),
+      // A conversa mais recente de cada contato: é ela que abre no meio da tela de ligação.
+      emLotes(idsDeContato, (lote) =>
+        supabase
           .from("conversations")
           .select("id, contact_id, last_message_at")
           .eq("organization_id", orgId)
-          .in("contact_id", idsDeContato)
-          .order("last_message_at", { ascending: false, nullsFirst: false })
-      : { data: [] as { id: string; contact_id: string; last_message_at: string | null }[] };
+          .in("contact_id", lote),
+      ),
+    ]);
+    // A ordem vale entre lotes, então ordena aqui e não no banco.
+    tentativas.sort((a, b) => a.performed_at.localeCompare(b.performed_at));
+    conversas.sort((a, b) => (b.last_message_at ?? "").localeCompare(a.last_message_at ?? ""));
+
     const conversaPorContato = new Map<string, string>();
-    for (const c of conversas ?? []) {
+    for (const c of conversas) {
       if (!conversaPorContato.has(c.contact_id)) conversaPorContato.set(c.contact_id, c.id);
     }
 
     const etapaPorId = new Map((etapas ?? []).map((e) => [e.id, e]));
-    const contatoPorId = new Map((contatos ?? []).map((c) => [c.id, c]));
+    const contatoPorId = new Map(contatos.map((c) => [c.id, c]));
     const historico = new Map<string, { em: string; resultado: string | null }[]>();
-    for (const linha of tentativas ?? []) {
+    for (const linha of tentativas) {
       const lista = historico.get(linha.lead_id) ?? [];
       lista.push({
         em: linha.performed_at,
@@ -154,6 +163,7 @@ export async function GET(): Promise<Response> {
             contato_id: l.contact_id,
             contato_nome: nomeDoContato(contato),
             tem_foto: Boolean(contato?.avatar_storage_path && !contato.is_anonymized),
+            nao_ligar: motivoParaNaoLigar(contato),
             telefone: contato?.phone_number ?? null,
             email: contato?.email ?? null,
             endereco: [rua, contato?.district, cidade].filter(Boolean).join(" - ") || null,
@@ -183,6 +193,8 @@ export async function POST(): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "crm_pipelines" });
   if (!authz.ok) return authz.response;
+  const desligado = await seColdCallDesligado(requestId);
+  if (desligado) return desligado;
   const orgId = authz.org.orgId;
   const supabase = await createClient();
 
@@ -203,7 +215,7 @@ export async function POST(): Promise<Response> {
         slug: slugDeFunil(nome, funis.map((f) => f.slug)),
         position: posicaoEntre(funis[funis.length - 1]?.position ?? null, null),
         is_default: false,
-        settings: { cold_call: { ativo: true, roteiro: ROTEIRO_PADRAO } },
+        settings: { cold_call: { ativo: true, roteiro: roteiroPadrao(authz.user.idioma) } },
       })
       .select("id")
       .single();
@@ -248,6 +260,8 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "crm_pipelines" });
   if (!authz.ok) return authz.response;
+  const desligado = await seColdCallDesligado(requestId);
+  if (desligado) return desligado;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const orgId = authz.org.orgId;
 

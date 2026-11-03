@@ -8,7 +8,12 @@ import { z } from "zod";
  * uma mudança de etapa (ou um encerramento) e uma linha na timeline do lead. Assim o
  * quadro, as métricas e a importação de planilha continuam valendo sem nada a mais.
  *
- * A ligação em si ainda não sai daqui: sem tronco SIP, a tela só abre o discador do aparelho.
+ * A ligação sai pelo canal de voz do CRM quando ele está pareado, e pelo discador do aparelho
+ * (`tel:`) quando não está (`caminhoDaLigacao`). Nos DOIS caminhos vale a regra da rota de voz
+ * (`app/api/v1/voice/calls/route.ts`): quem pediu para não ser incomodado, o contato pessoal e o
+ * anonimizado não recebem ligação (`motivoParaNaoLigar`).
+ *
+ * É módulo opcional da instalação, desligado por padrão (`cold_call` em `lib/instalacao/modulos.ts`).
  */
 export const ETAPAS_DO_COLD_CALL = [
   { slug: "na-fila", name: "Na fila", is_won: false, is_lost: false },
@@ -62,20 +67,64 @@ export function configDoFunil(settings: unknown): { roteiro: string } | null {
   return lido.success ? { roteiro: lido.data.roteiro } : null;
 }
 
-export const ROTEIRO_PADRAO = `# Abertura
-- É da [nome do negócio]?
-- Meu nome é [seu nome], da [sua empresa]. Sei que liguei do nada. Me dá 30 segundos e aí você decide se continua?
+/**
+ * O roteiro com que o funil nasce. Neutro de propósito: vai para toda instalação, de qualquer
+ * nicho, então não vende produto nenhum. As lacunas entre colchetes são preenchidas na ligação
+ * (`linhasDoRoteiro`); `[o que você oferece]` fica para quem edita o roteiro.
+ */
+const ROTEIROS_PADRAO: Record<"pt" | "es" | "en", string> = {
+  pt: `# Abertura
+- Olá, falo com alguém da [nome do lead]?
+- Meu nome é [seu nome], da [sua empresa]. Sei que a ligação não estava marcada. Posso usar 30 segundos para contar o motivo, e aí você decide se seguimos?
 
 # Se a pessoa deixar
-- [Resposta positiva] A gente coloca um atendente de IA no WhatsApp da empresa, que responde na hora e agenda sozinho. Hoje, quando chega mensagem fora do horário, quem responde aí?
-- [Resposta positiva] Faz sentido a gente marcar 30 minutinhos pelo Google Meet pra eu te mostrar funcionando? Qual dia fica bom pra você?
-- [Agendou] Confirmar nome e e-mail para enviar o convite.
+- [Resposta positiva] Eu ligo porque trabalhamos com [o que você oferece]. Hoje, como vocês resolvem isso aí?
+- [Interesse] Faz sentido marcarmos uma conversa rápida para eu explicar com calma? Qual dia fica bom?
+- [Agendou] Confirmar nome, e-mail e horário para mandar o convite.
 
 # Se a pessoa travar
-- [Sem tempo] Sem problema. Qual o melhor horário pra eu te ligar de novo?
-- [Já tenho] Boa. E ele responde de madrugada e no fim de semana?
-- [Manda por WhatsApp] Mando sim. Esse número aqui é o seu WhatsApp?
-- [Não é o responsável] Quem cuida disso aí? Pode me passar o nome e o melhor horário?`;
+- [Sem tempo] Sem problema. Qual o melhor horário para eu ligar de novo?
+- [Já tenho] Entendi. O que faria vocês olharem outra opção?
+- [Manda por mensagem] Mando, sim. Este número é o melhor para isso?
+- [Não é o responsável] Quem cuida disso aí? Pode me passar o nome e o melhor horário?`,
+  es: `# Apertura
+- Hola, ¿hablo con alguien de [nombre del lead]?
+- Mi nombre es [tu nombre], de [tu empresa]. Sé que la llamada no estaba agendada. ¿Me das 30 segundos para contarte el motivo y luego decides si seguimos?
+
+# Si la persona lo permite
+- [Respuesta positiva] Te llamo porque trabajamos con [lo que ofreces]. Hoy, ¿cómo lo resuelven ustedes?
+- [Interés] ¿Tiene sentido agendar una conversación corta para explicarlo con calma? ¿Qué día te queda bien?
+- [Agendó] Confirmar nombre, correo y horario para enviar la invitación.
+
+# Si la persona se traba
+- [Sin tiempo] No hay problema. ¿Cuál es el mejor horario para volver a llamarte?
+- [Ya tengo] Entiendo. ¿Qué haría que miren otra opción?
+- [Mándalo por mensaje] Sí, te lo mando. ¿Este número es el mejor para eso?
+- [No es el responsable] ¿Quién se encarga de eso? ¿Me pasas el nombre y el mejor horario?`,
+  en: `# Opening
+- Hi, am I speaking with someone from [lead name]?
+- My name is [your name], from [your company]. I know this call wasn't scheduled. Can I take 30 seconds to tell you why I'm calling, and then you decide if we go on?
+
+# If they let you continue
+- [Positive answer] I'm calling because we work with [what you offer]. How do you handle that today?
+- [Interested] Would it make sense to book a short call so I can walk you through it? Which day works for you?
+- [Booked] Confirm name, email and time to send the invite.
+
+# If they push back
+- [No time] No problem. When is a better time to call you back?
+- [Already have one] Got it. What would make you look at another option?
+- [Send it by message] Sure, I'll send it. Is this number the best one for that?
+- [Not the decision maker] Who takes care of that? Could you give me their name and the best time to reach them?`,
+};
+
+/**
+ * O roteiro inicial no idioma de quem cria o funil; o que não for espanhol nem inglês sai em
+ * português. `string`, e não `Idioma`: o inglês ainda está em construção e não entra no tipo,
+ * mas o roteiro dele já fica pronto para quando entrar.
+ */
+export function roteiroPadrao(idioma: string): string {
+  return idioma === "es" ? ROTEIROS_PADRAO.es : idioma === "en" ? ROTEIROS_PADRAO.en : ROTEIROS_PADRAO.pt;
+}
 
 export type LinhaDoRoteiro =
   | { tipo: "titulo"; texto: string }
@@ -84,10 +133,12 @@ export type LinhaDoRoteiro =
 /** O texto vira linhas para a tela, com o nome do lead no lugar da lacuna. Nunca vira HTML. */
 export function linhasDoRoteiro(roteiro: string, dados: { negocio: string; quemLiga: string; suaEmpresa?: string }): LinhaDoRoteiro[] {
   const preenchido = roteiro
-    .replace(/\[sua empresa\]/gi, () => dados.suaEmpresa ?? "")
+    .replace(/\[(?:sua empresa|tu empresa|your company)\]/gi, () => dados.suaEmpresa ?? "")
     // `$` no nome do lead é texto: a função impede o `replace` de ler como padrão.
     .replace(/\[(?:nome d[ao] )?(?:neg[oó]cio|empresa|lead|cliente)\]/gi, () => dados.negocio)
-    .replace(/\[(?:seu nome|meu nome|nome de quem liga)\]/gi, () => dados.quemLiga)
+    .replace(/\[(?:nombre del? )?(?:negocio|empresa|lead|cliente)\]/gi, () => dados.negocio)
+    .replace(/\[(?:lead|client|business|company)(?: name)?\]/gi, () => dados.negocio)
+    .replace(/\[(?:seu nome|meu nome|nome de quem liga|tu nombre|mi nombre|your name|my name)\]/gi, () => dados.quemLiga)
     // O negrito colado de outro lugar: a tela mostra texto puro, e os asteriscos sobravam.
     .replace(/\*\*(.+?)\*\*/g, "$1");
   const linhas: LinhaDoRoteiro[] = [];
@@ -155,7 +206,34 @@ export function comoTerminou(fim: { end_reason: string | null; atendida: boolean
 export function caminhoDaLigacao(
   voz: { configured: boolean; paired: boolean } | null | undefined,
   contatoId: string | null | undefined,
-): "crm" | "discador" | "indefinido" {
+  naoLigar: MotivoParaNaoLigar | null = null,
+): "crm" | "discador" | "indefinido" | "nao-ligar" {
+  // Antes de qualquer canal: o discador do aparelho não passa pela rota de voz, e é aqui que
+  // ele aprende a mesma recusa que ela dá.
+  if (naoLigar) return "nao-ligar";
   if (!voz) return "indefinido";
   return voz.configured && voz.paired && contatoId ? "crm" : "discador";
 }
+
+/**
+ * Por que este contato NÃO recebe ligação — a regra de `app/api/v1/voice/calls/route.ts`
+ * (403 para bloqueado e pessoal, 422 para anonimizado), num lugar que a fila, o botão Ligar,
+ * o discador `tel:` e a rota de resultado leem igual. `null` = pode ligar.
+ */
+export type MotivoParaNaoLigar = "bloqueado" | "pessoal" | "anonimizado";
+
+export function motivoParaNaoLigar(
+  contato: { is_blocked?: boolean | null; is_personal?: boolean | null; is_anonymized?: boolean | null } | null | undefined,
+): MotivoParaNaoLigar | null {
+  if (contato?.is_blocked) return "bloqueado";
+  if (contato?.is_personal) return "pessoal";
+  if (contato?.is_anonymized) return "anonimizado";
+  return null;
+}
+
+/** O motivo como a tela o escreve (chave de `t()`). */
+export const ROTULO_DE_NAO_LIGAR: Record<MotivoParaNaoLigar, string> = {
+  bloqueado: "Pediu para não ser incomodado",
+  pessoal: "Contato pessoal",
+  anonimizado: "Contato anonimizado",
+};

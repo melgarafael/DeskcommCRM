@@ -153,6 +153,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Conferir WhatsApp na prospecção",
     oQueFaz: "Antes de abordar, pergunta ao WhatsApp se o telefone da empresa achada tem conta, e tira da abordagem quem não tem.",
   },
+  cold_call: {
+    nome: "Cold Call (fila de ligações)",
+    oQueFaz: "Uma fila para ligar para uma lista de leads, um por vez, com roteiro e o resultado de cada ligação movendo o lead no funil.",
+  },
 };
 
 /**

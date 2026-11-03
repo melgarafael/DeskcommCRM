@@ -32,6 +32,8 @@ import {
   ordenarFila,
   RESULTADOS,
   RESULTADOS_DA_LIGACAO,
+  ROTULO_DE_NAO_LIGAR,
+  type MotivoParaNaoLigar,
   type ResultadoDaLigacao,
 } from "@/lib/cold-call/regras";
 import { liberarSons, tocarAtendeu, tocarDiscando, tocarEncerrou, tocarRecusada } from "@/lib/cold-call/sons";
@@ -78,6 +80,8 @@ interface Lead {
   tags: string[];
   contato_id: string | null;
   tem_foto: boolean;
+  /** Bloqueado, pessoal ou anonimizado: fica visível na lista, mas não recebe ligação. */
+  nao_ligar: MotivoParaNaoLigar | null;
   contato_nome: string | null;
   telefone: string | null;
   email: string | null;
@@ -308,7 +312,7 @@ function Fila({
   });
 
   const comecar = () => {
-    const ordem = fila.filter((l) => marcados.size === 0 || marcados.has(l.id)).map((l) => l.id);
+    const ordem = fila.filter((l) => !l.nao_ligar && (marcados.size === 0 || marcados.has(l.id))).map((l) => l.id);
     if (ordem.length > 0) aoComecar(ordem);
   };
 
@@ -345,7 +349,7 @@ function Fila({
             {t("Ligações para fazer, um contato por vez, com o roteiro e o resultado de cada uma.")}
           </p>
         </div>
-        <Button onClick={comecar} disabled={fila.length === 0} data-testid="vamos-comecar">
+        <Button onClick={comecar} disabled={!fila.some((l) => !l.nao_ligar)} data-testid="vamos-comecar">
           <Play size={16} className="mr-2" weight="fill" aria-hidden /> {t("Vamos começar")}
         </Button>
       </section>
@@ -480,7 +484,7 @@ function Fila({
                           disabled={!naFila}
                           className="flex items-center gap-2.5 text-left font-medium text-text enabled:hover:text-accent"
                           onClick={() => {
-                            const resto = fila.filter((l) => l.id !== lead.id).map((l) => l.id);
+                            const resto = fila.filter((l) => l.id !== lead.id && !l.nao_ligar).map((l) => l.id);
                             aoComecar([lead.id, ...resto]);
                           }}
                         >
@@ -509,7 +513,15 @@ function Fila({
                       </td>
                       <td className="px-3 py-2.5 text-text">{t("Ligação")}</td>
                       <td className="px-3 py-2.5 text-text">
-                        {lead.tentativas === 0 && lead.etapa === "na-fila" ? t("Não iniciada") : t(lead.etapa_nome)}
+                        {lead.nao_ligar ? (
+                          <span className="font-medium text-error" data-testid="nao-ligar">
+                            {t("Não ligar")} · {t(ROTULO_DE_NAO_LIGAR[lead.nao_ligar])}
+                          </span>
+                        ) : lead.tentativas === 0 && lead.etapa === "na-fila" ? (
+                          t("Não iniciada")
+                        ) : (
+                          t(lead.etapa_nome)
+                        )}
                         {lead.tentativas > 0 && (
                           <span className="ml-1.5 text-xs tabular-nums text-text-muted">· {lead.tentativas}x</span>
                         )}
@@ -1081,7 +1093,7 @@ function Sessao({
                 {ligacao.fase !== "pronta" && <span className="text-sm font-bold tabular-nums text-text">{tempo}</span>}
                 {ligacao.motivo && <span className="text-xs text-text-muted">{ligacao.motivo}</span>}
               </p>
-              {!ligacao.viaCrm && ligacao.fase === "pronta" && (
+              {!ligacao.viaCrm && !lead.nao_ligar && ligacao.fase === "pronta" && (
                 <p className="mt-2 text-center text-[11px] leading-relaxed text-text-muted" data-testid="aviso-sem-telefonia">
                   {t("A ligação pelo CRM ainda não está ligada. Por enquanto, o botão abre o discador do seu aparelho.")}
                 </p>
@@ -1091,6 +1103,17 @@ function Sessao({
                   <Button variant="outline" className="flex-1 border-error/50 text-error transition-transform active:scale-[.98]" onClick={ligacao.desligar} data-testid="desligar">
                     <PhoneX size={16} className="mr-2" aria-hidden /> {t("Desligar")}
                   </Button>
+                ) : lead.nao_ligar ? (
+                  // Mesma recusa da rota de voz, mostrada antes do clique: o botão existe, e diz por que não liga.
+                  <div className="flex flex-1 flex-col items-center gap-1">
+                    <Button className="w-full" disabled data-testid="ligar">
+                      <Phone size={16} className="mr-2" weight="fill" aria-hidden />
+                      {t("Não ligar")}
+                    </Button>
+                    <span className="text-center text-xs text-text-muted" data-testid="motivo-nao-ligar">
+                      {t(ROTULO_DE_NAO_LIGAR[lead.nao_ligar])}
+                    </span>
+                  </div>
                 ) : lead.telefone ? (
                   <Button className="flex-1 transition-transform active:scale-[.98]" onClick={() => void ligacao.ligar()} data-testid="ligar">
                     <Phone size={16} className="mr-2" weight="fill" aria-hidden />
@@ -1099,7 +1122,7 @@ function Sessao({
                 ) : (
                   <span className="flex-1 text-center text-xs text-text-muted">{t("Este lead não tem telefone.")}</span>
                 )}
-                {lead.telefone && (
+                {lead.telefone && !lead.nao_ligar && (
                   <Button
                     variant="outline"
                     size="icon"
@@ -1128,10 +1151,11 @@ function Sessao({
                     key={id}
                     type="button"
                     aria-pressed={resultado === id}
+                    disabled={!!lead.nao_ligar}
                     onClick={() => setResultado(resultado === id ? null : id)}
                     data-testid={`resultado-${id}`}
                     className={cn(
-                      "flex min-h-11 items-center gap-1.5 rounded-xl border px-2 py-1.5 text-left text-xs font-medium transition-all duration-150 active:scale-[.97]",
+                      "flex min-h-11 items-center gap-1.5 rounded-xl border px-2 py-1.5 text-left text-xs font-medium transition-all duration-150 active:scale-[.97] disabled:pointer-events-none disabled:opacity-50",
                       resultado === id
                         ? "border-transparent bg-accent text-accent-foreground"
                         : "border-border/70 bg-surface-elevated/30 text-text hover:border-accent/50 hover:bg-surface-elevated/60",
@@ -1367,7 +1391,7 @@ function useLigacao(lead: Lead | null): Ligacao {
   const { data: voz, refetch: conferirVoz } = useVoiceSessionStatus();
   const t = useT();
   const { call, startCall, hangUp, ultimoFim } = useVoiceCall();
-  const viaCrm = caminhoDaLigacao(voz, lead?.contato_id) === "crm";
+  const viaCrm = caminhoDaLigacao(voz, lead?.contato_id, lead?.nao_ligar) === "crm";
   const [local, setLocal] = useState<{ inicio: number; fim: number | null } | null>(null);
   const [agora, setAgora] = useState(() => Date.now());
 
@@ -1433,14 +1457,14 @@ function useLigacao(lead: Lead | null): Ligacao {
   const segundos = inicioDoRelogio === null ? 0 : Math.max(0, Math.floor(((fimDoRelogio ?? agora) - inicioDoRelogio) / 1000));
 
   const ligar = useCallback(async () => {
-    if (!lead?.telefone) return;
+    if (!lead?.telefone || lead.nao_ligar) return;
     liberarSons();
     // O que está na tela pode estar velho: o chip pode ter sido conectado há pouco, ou o status
     // ainda não ter voltado. Antes de cair no discador, pergunta de novo.
-    let caminho = caminhoDaLigacao(voz, lead.contato_id);
+    let caminho = caminhoDaLigacao(voz, lead.contato_id, lead.nao_ligar);
     if (caminho !== "crm") {
       const { data: conferida } = await conferirVoz();
-      caminho = caminhoDaLigacao(conferida, lead.contato_id);
+      caminho = caminhoDaLigacao(conferida, lead.contato_id, lead.nao_ligar);
     }
     if (caminho === "indefinido") {
       toast.error(t("Não consegui confirmar o canal de voz. Tente ligar de novo."));
@@ -1450,6 +1474,8 @@ function useLigacao(lead: Lead | null): Ligacao {
       void Promise.resolve(startCall(lead.contato_id)).catch(showApiError);
       return;
     }
+    // O discador `tel:` não passa pela rota de voz: a recusa dela precisa valer aqui também.
+    if (caminho !== "discador") return;
     setAgora(Date.now());
     setLocal({ inicio: Date.now(), fim: null });
     const discador = document.createElement("a");

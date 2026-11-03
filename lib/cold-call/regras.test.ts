@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { caminhoDaLigacao, comoTerminou, configDoFunil, linhasDoRoteiro, ordenarFila, ROTEIRO_PADRAO, RESULTADOS, ETAPAS_DO_COLD_CALL } from "./regras";
+import {
+  caminhoDaLigacao,
+  comoTerminou,
+  configDoFunil,
+  linhasDoRoteiro,
+  motivoParaNaoLigar,
+  ordenarFila,
+  roteiroPadrao,
+  RESULTADOS,
+  ETAPAS_DO_COLD_CALL,
+} from "./regras";
+
+const ROTEIRO_PADRAO = roteiroPadrao("pt-BR");
 
 const lead = (id: string, etapa: string, tentativas: number, ultima: string | null, criado = "2026-11-01") => ({
   id,
@@ -43,6 +55,10 @@ describe("linhasDoRoteiro", () => {
       expect(texto(`- É da ${variavel}?`)).toEqual(["É da Pet Exemplo?"]);
     }
     expect(texto("- Sou o [meu nome].")).toEqual(["Sou o Caio."]);
+    for (const variavel of ["[nombre del lead]", "[lead name]", "[company name]"]) {
+      expect(texto(`- ${variavel}`)).toEqual(["Pet Exemplo"]);
+    }
+    expect(texto("- [tu nombre] / [your name]")).toEqual(["Caio / Caio"]);
   });
 
   it("o roteiro padrão usa o nome da organização, sem marca fixa", () => {
@@ -78,6 +94,25 @@ describe("linhasDoRoteiro", () => {
     const texto = linhas.map((l) => l.texto).join(" ");
     expect(texto).not.toMatch(/\[nome do neg|\[seu nome/);
     expect(texto).not.toMatch(/link/i);
+  });
+
+  it("o roteiro padrão é neutro nos três idiomas: não vende produto, e as lacunas se preenchem", () => {
+    // Ele vai para TODA instalação, de qualquer nicho. Vender "atendente de IA no WhatsApp"
+    // aqui era o pitch de quem escreveu o PR, não o do cliente que instala.
+    for (const idioma of ["pt-BR", "es", "en"]) {
+      const roteiro = roteiroPadrao(idioma);
+      expect(roteiro).not.toMatch(/\bIA\b|\bAI\b|WhatsApp|Google Meet|atendente/i);
+      const texto = linhasDoRoteiro(roteiro, { negocio: "Pet Exemplo", quemLiga: "Caio", suaEmpresa: "Clínica Sol" })
+        .map((l) => l.texto)
+        .join(" ");
+      expect(texto).toContain("Pet Exemplo");
+      expect(texto).toContain("Caio");
+      expect(texto).toContain("Clínica Sol");
+      expect(texto).not.toMatch(/\[(?:nome do lead|nombre del lead|lead name|seu nome|tu nombre|your name|sua empresa|tu empresa|your company)\]/i);
+    }
+    expect(roteiroPadrao("es")).toContain("Apertura");
+    expect(roteiroPadrao("en")).toContain("Opening");
+    expect(roteiroPadrao("tr")).toBe(roteiroPadrao("pt-BR"));
   });
 });
 
@@ -131,5 +166,32 @@ describe("por onde a ligação sai", () => {
     expect(caminhoDaLigacao({ configured: true, paired: false }, "contato")).toBe("discador");
     expect(caminhoDaLigacao({ configured: false, paired: false }, "contato")).toBe("discador");
     expect(caminhoDaLigacao(conectado, null)).toBe("discador");
+  });
+});
+
+describe("quem pediu para não ser incomodado não recebe ligação", () => {
+  // A mesma regra de app/api/v1/voice/calls/route.ts, que o discador `tel:` não atravessa.
+  const conectado = { configured: true, paired: true };
+  const semVoz = { configured: false, paired: false };
+
+  it("os três estados viram motivo; contato comum, nenhum", () => {
+    expect(motivoParaNaoLigar({ is_blocked: true })).toBe("bloqueado");
+    expect(motivoParaNaoLigar({ is_personal: true })).toBe("pessoal");
+    expect(motivoParaNaoLigar({ is_anonymized: true })).toBe("anonimizado");
+    expect(motivoParaNaoLigar({ is_blocked: false, is_personal: false, is_anonymized: false })).toBeNull();
+    expect(motivoParaNaoLigar(null)).toBeNull();
+  });
+
+  for (const motivo of ["bloqueado", "pessoal", "anonimizado"] as const) {
+    it(`${motivo}: nem pelo canal de voz, nem pelo discador do aparelho, nem com status indefinido`, () => {
+      expect(caminhoDaLigacao(conectado, "contato", motivo)).toBe("nao-ligar");
+      expect(caminhoDaLigacao(semVoz, "contato", motivo)).toBe("nao-ligar");
+      expect(caminhoDaLigacao(undefined, "contato", motivo)).toBe("nao-ligar");
+    });
+  }
+
+  it("sem motivo, os dois caminhos seguem como antes", () => {
+    expect(caminhoDaLigacao(conectado, "contato", null)).toBe("crm");
+    expect(caminhoDaLigacao(semVoz, "contato", null)).toBe("discador");
   });
 });

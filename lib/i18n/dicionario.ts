@@ -85,7 +85,7 @@ export const DICIONARIO: Traducoes = {
   "Leads da fila que pediram reunião, entre os já tentados": { es: "Leads de la cola que pidieron reunión, entre los ya intentados" },
   "Libere o microfone": { es: "Permite el micrófono" },
   "Ligação em andamento": { es: "Llamada en curso" },
-  "Ligações": { es: "Conexiones" },
+  "Ligações": { es: "Llamadas" },
   "Ligações para fazer, um contato por vez, com o roteiro e o resultado de cada uma.": { es: "Llamadas por hacer, un contacto a la vez, con el guion y el resultado de cada una." },
   "Mantenha o foco e siga o roteiro.": { es: "Mantén el foco y sigue el guion." },
   "Monte sua fila de ligações": { es: "Arma tu cola de llamadas" },
@@ -130,6 +130,15 @@ export const DICIONARIO: Traducoes = {
   "conectado": { es: "conectado" },
   "ligações registradas nesta sessão.": { es: "llamadas registradas en esta sesión." },
   "sai da fila e o lead é marcado como perdido no funil. Nada é apagado, e o histórico continua lá.": { es: "sale de la cola y el lead queda como perdido en el embudo. No se borra nada y el historial sigue ahí." },
+  // Cold Call como módulo opcional (#3933) e a recusa de ligar para quem não recebe ligação.
+  "Não ligar": { es: "No llamar" },
+  "Pediu para não ser incomodado": { es: "Pidió no ser molestado" },
+  "Contato pessoal": { es: "Contacto personal" },
+  "Contato anonimizado não pode ser chamado.": { es: "Un contacto anonimizado no puede ser llamado." },
+  "Cold Call (fila de ligações)": { es: "Cold Call (cola de llamadas)" },
+  "Leads para ligar, um por um.": { es: "Leads para llamar, uno por uno." },
+  "Ligado, cada empresa ganha no CRM a tela Cold Call: um funil próprio, a importação da lista e a ligação para um lead por vez, pelo canal de voz quando ele está pareado ou pelo discador do aparelho. Quem pediu para não ser incomodado, contato pessoal e contato anonimizado não recebem ligação. Desligado, a tela e o menu somem.": { es: "Activado, cada empresa obtiene en el CRM la pantalla Cold Call: un embudo propio, la importación de la lista y la llamada a un lead a la vez, por el canal de voz cuando está emparejado o por el marcador del dispositivo. Quien pidió no ser molestado, el contacto personal y el contacto anonimizado no reciben llamadas. Desactivado, la pantalla y el menú desaparecen." },
+  "Uma fila para ligar para uma lista de leads, um por vez, com roteiro e o resultado de cada ligação movendo o lead no funil.": { es: "Una cola para llamar a una lista de leads, uno a la vez, con guion y el resultado de cada llamada moviendo el lead en el embudo." },
   // Ordenação da tabela de campanhas (#3911). "Ordenar por" é igual nos dois
   // idiomas de propósito: é a mesma expressão em espanhol.
   "Ordenar por": { es: "Ordenar por" },

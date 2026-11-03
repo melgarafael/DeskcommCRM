@@ -13,7 +13,8 @@ import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { configDoFunil, RESULTADOS, resultadoSchema } from "@/lib/cold-call/regras";
+import { configDoFunil, motivoParaNaoLigar, RESULTADOS, resultadoSchema } from "@/lib/cold-call/regras";
+import { seColdCallDesligado } from "@/lib/cold-call/modulo";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { encerraDemanda } from "@/lib/leads/encerramento";
@@ -28,6 +29,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
   if (!authz.ok) return authz.response;
+  const desligado = await seColdCallDesligado(requestId);
+  if (desligado) return desligado;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const orgId = authz.org.orgId;
 
@@ -49,6 +52,25 @@ export async function POST(req: NextRequest): Promise<Response> {
   const funil = lead.crm_pipelines as unknown as { settings: unknown } | null;
   if (!configDoFunil(funil?.settings)) {
     return fail("unprocessable_entity", t("Este lead não está no funil de cold call."), 422, { requestId });
+  }
+
+  // Quem pediu para não ser incomodado não recebe ligação — a regra da rota de voz
+  // (app/api/v1/voice/calls/route.ts), com os mesmos códigos. Se não houve ligação, não há
+  // resultado de ligação para gravar. "Tirado da fila" passa: é o gesto certo para esse contato.
+  if (resultado !== "removido" && lead.contact_id) {
+    const { data: contato, error: erroContato } = await supabase
+      .from("contacts")
+      .select("is_blocked, is_personal, is_anonymized")
+      .eq("id", lead.contact_id)
+      .eq("organization_id", orgId)
+      .maybeSingle();
+    if (erroContato) return fail("internal_error", erroContato.message, 500, { requestId });
+    const motivo = motivoParaNaoLigar(contato);
+    if (motivo === "bloqueado") return fail("forbidden", t("Contato bloqueou o atendimento."), 403, { requestId });
+    if (motivo === "pessoal") return fail("forbidden", t("Contato marcado como pessoal."), 403, { requestId });
+    if (motivo === "anonimizado") {
+      return fail("contact_anonymized", t("Contato anonimizado não pode ser chamado."), 422, { requestId });
+    }
   }
 
   const ctx = { organization_id: orgId, actor: { type: "user" as const, id: authz.user.id }, requestId };
