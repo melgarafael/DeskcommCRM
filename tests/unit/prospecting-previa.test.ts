@@ -13,8 +13,10 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  aprovarPrevia,
   chaveDaAuditoria,
   gravarPrevia,
+  previaAprovadaDoAgente,
   previaValida,
   type PreviaSalva,
 } from "@/lib/prospecting/previa";
@@ -120,3 +122,50 @@ describe("gravarPrevia: merge de UMA chave, com filtro de organização", () => 
     ).toBe(true);
   });
 });
+
+describe("aprovação humana da prévia", () => {
+  const atual = {
+    website: "https://vitta.test/",
+    site: SITE_DEFINITIVO,
+    previa: {
+      ...previa("fora-do-ar@2026-10-10T12:00:00.000Z"),
+      aprovada_por: "99999999-9999-4999-8999-999999999999",
+      aprovada_em: "2026-10-11T10:00:00.000Z",
+    },
+  };
+
+  it("só uma aprovação atual, humana e pelo mesmo agente libera o envio", () => {
+    expect(previaAprovadaDoAgente(atual, actualAgent)).not.toBeNull();
+    expect(previaAprovadaDoAgente({ ...atual, previa: { ...atual.previa, aprovada_por: undefined } }, actualAgent)).toBeNull();
+    expect(previaAprovadaDoAgente(atual, "22222222-2222-4222-8222-222222222222")).toBeNull();
+    expect(previaAprovadaDoAgente({ ...atual, site: { ...SITE_DEFINITIVO, verificado_em: "2026-10-12T12:00:00.000Z" } }, actualAgent)).toBeNull();
+  });
+
+  it("grava aprovação com organização, campanha, candidato e âncora da prévia", async () => {
+    const chamadas: Array<{ sql: string; params?: unknown[] }> = [];
+    const db = {
+      query: async (sql: string, params?: unknown[]) => {
+        chamadas.push({ sql, params });
+        return { rowCount: 1 };
+      },
+    };
+    await expect(aprovarPrevia(db, {
+      organizationId: ORG,
+      campaignId: CAMPANHA,
+      candidateId: CANDIDATO,
+      agentId: actualAgent,
+      baseadaEm: "fora-do-ar@2026-10-10T12:00:00.000Z",
+        geradaEm: "2026-10-10T12:05:00.000Z",
+      approverUserId: "99999999-9999-4999-8999-999999999999",
+      approvedAt: "2026-10-11T10:00:00.000Z",
+    })).resolves.toBe(true);
+    expect(chamadas[0]!.sql).toContain("organization_id=$1");
+    expect(chamadas[0]!.sql).toContain("campaign_id=$2");
+    expect(chamadas[0]!.sql).toContain("data->'previa'->>'baseada_em'=$5");
+      expect(chamadas[0]!.sql).toContain("data->'previa'->>'gerada_em'=$6");
+    expect(chamadas[0]!.params).toContain(ORG);
+    expect(chamadas[0]!.params).toContain(CANDIDATO);
+  });
+});
+
+const actualAgent = "11111111-1111-4111-8111-111111111111";

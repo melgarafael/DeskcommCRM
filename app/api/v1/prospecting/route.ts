@@ -10,11 +10,20 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { capabilitiesOf } from "@/lib/channels/capabilities";
 import type { ChannelProvider } from "@/lib/channels/types";
 import { ProspectingError } from "@/lib/prospecting/provider";
-import { campaignConfigSchema, prospectingInputSchema, type Prospect } from "@/lib/prospecting/schema";
+import {
+  campaignConfigSchema,
+  prospectingInputSchema,
+  type CampaignConfig,
+  type Prospect,
+} from "@/lib/prospecting/schema";
 import { configPadraoDaOrganizacao } from "@/lib/prospecting/config-padrao";
 import { provedorExigeCredencialDaOrganizacao } from "@/lib/prospecting/provedor";
 import { auditarSite } from "@/lib/prospecting/site-fetch";
-import { gravarPrevia } from "@/lib/prospecting/previa";
+import {
+  aprovarPrevia,
+  gravarPrevia,
+  previaDoAgente,
+} from "@/lib/prospecting/previa";
 import { gerarPreviaDoCandidato } from "@/lib/prospecting/previa-gerar";
 import { enriquecerSitesPendentes } from "@/lib/prospecting/site-enrich";
 import { lerPersonalizacao } from "@/lib/prospecting/personalizar";
@@ -29,6 +38,7 @@ import {
   configureCredential,
   createSearch,
   descartarDesmarcadas,
+  exigirAprovacaoAntesDoPrimeiroContato,
   selecionarNaFila,
   validateConfig,
   withProspectingLock,
@@ -65,6 +75,18 @@ function failure(error: unknown, requestId: string) {
     error instanceof ProspectingError ? error.status : 500,
     { requestId, headers },
   );
+}
+async function validateConfigUsingPool(
+  pool: ReturnType<typeof getRequestPool>,
+  organizationId: string,
+  config: CampaignConfig,
+): Promise<CampaignConfig> {
+  const client = await pool.connect();
+  try {
+    return await validateConfig(client, organizationId, config);
+  } finally {
+    client.release();
+  }
 }
 export async function GET(req: NextRequest) {
   const requestId = randomUUID();
@@ -290,7 +312,7 @@ export async function POST(req: NextRequest) {
       // somente leitura: a copy que a pessoa revisa vira o rascunho que o tick
       // envia, e a gravação precisa de trilha.
       const linhas = await pool.query(
-        "select pc.id, pc.data, pc.status, pc.contact_id, pc.campaign_id, c.config, c.search from prospecting_candidates pc join prospecting_campaigns c on c.organization_id=pc.organization_id and c.id=pc.campaign_id where pc.organization_id=$1 and pc.campaign_id=$2 and pc.id=$3",
+        "select pc.id, pc.data, pc.status, pc.contact_id, pc.campaign_id, c.config, c.search, c.status as campaign_status from prospecting_candidates pc join prospecting_campaigns c on c.organization_id=pc.organization_id and c.id=pc.campaign_id where pc.organization_id=$1 and pc.campaign_id=$2 and pc.id=$3",
         [org, body.id, body.candidate_id],
       );
       const linha = linhas.rows[0] as
@@ -301,6 +323,7 @@ export async function POST(req: NextRequest) {
             contact_id: string | null;
             config: unknown;
             search: { niche?: string };
+            campaign_status: string;
           }
         | undefined;
       if (!linha) throw new ProspectingError("Candidato não encontrado.", 404);
@@ -309,7 +332,12 @@ export async function POST(req: NextRequest) {
       // guarda sozinho saem do mesmo código. Esta rota só traduz o motivo em HTTP.
       // Campanha ainda sem agente (busca nova): a prévia usa o agente PADRÃO da
       // organização, como o preparo automático — o botão e o tick não divergem.
-      const configDaCampanha = campaignConfigSchema.safeParse(linha.config);
+      if (body.config && linha.campaign_status !== "draft" && linha.campaign_status !== "paused")
+        throw new ProspectingError("Pause a campanha antes de preparar ou revisar uma prévia.", 409);
+      const configParaPrevia = body.config
+        ? await validateConfigUsingPool(pool, org, body.config)
+        : linha.config;
+      const configDaCampanha = campaignConfigSchema.safeParse(configParaPrevia);
       const padrao =
         configDaCampanha.success && configDaCampanha.data.agent_id
           ? null
@@ -317,7 +345,7 @@ export async function POST(req: NextRequest) {
       const gerada = await gerarPreviaDoCandidato(
         pool,
         org,
-        padrao ? { ...linha, config: padrao.config } : linha,
+        padrao ? { ...linha, config: padrao.config } : { ...linha, config: configParaPrevia },
       );
       if (!gerada.ok) {
         if (gerada.motivo === "auditoria_pendente")
@@ -366,6 +394,60 @@ export async function POST(req: NextRequest) {
         });
       }
       result = { mensagem: gerada.texto, estrategia, score, salva };
+    } else if (body.action === "aprovar_previa") {
+      if (auth.actor.type !== "user")
+        return fail("forbidden", "A aprovação da primeira abordagem exige uma sessão humana.", 403, {
+          requestId,
+          headers,
+        });
+      const aprovadoEm = new Date().toISOString();
+      result = await withProspectingLock(pool, org, async (db) => {
+        const linha = (
+          await db.query<{
+            id: string;
+            data: Prospect;
+            status: string;
+            selected: boolean;
+            config: unknown;
+            campaign_status: string;
+          }>(
+            "select pc.id,pc.data,pc.status,pc.selected,c.config,c.status as campaign_status from prospecting_candidates pc join prospecting_campaigns c on c.organization_id=pc.organization_id and c.id=pc.campaign_id where pc.organization_id=$1 and pc.campaign_id=$2 and pc.id=$3",
+            [org, body.id, body.candidate_id],
+          )
+        ).rows[0];
+        if (!linha) throw new ProspectingError("Candidato não encontrado.", 404);
+        if (linha.selected === false || !["new", "queued"].includes(linha.status))
+          throw new ProspectingError("Só é possível aprovar uma empresa ainda não abordada e selecionada.", 409);
+        if (!["draft", "paused"].includes(linha.campaign_status))
+          throw new ProspectingError("Pause a campanha antes de aprovar a prévia.", 409);
+        const configBruta = body.config ?? campaignConfigSchema.parse(linha.config);
+        const config = await validateConfig(db, org, configBruta);
+        const previa = previaDoAgente(linha.data, config.agent_id);
+        if (!previa)
+          throw new ProspectingError("Gere uma nova prévia com o agente escolhido antes de aprová-la.", 409);
+        const gravada = await aprovarPrevia(db, {
+          organizationId: org,
+          campaignId: body.id,
+          candidateId: body.candidate_id,
+          agentId: config.agent_id,
+          baseadaEm: previa.baseada_em,
+          geradaEm: previa.gerada_em,
+          approverUserId: auth.actor.id,
+          approvedAt: aprovadoEm,
+        });
+        if (!gravada) throw new ProspectingError("A prévia mudou. Gere e revise a versão atual.", 409);
+        return { approved: true, approved_at: aprovadoEm };
+      });
+      await audit({
+        action: "prospecting.preview_approved",
+        organizationId: org,
+        actorUserId: auth.actor.id,
+        resourceType: "prospecting",
+        resourceId: body.candidate_id,
+        metadata: { campaignId: body.id },
+        requestId,
+      });
+      return ok(result, { requestId, headers });
     } else if (body.action === "verificar_sites") {
       // "Verificar agora" (spec 24): ADIANTA o que o preparo automático do tick
       // faria sozinho (`prepararCandidatos`) — o MESMO enriquecimento, com teto de
@@ -435,6 +517,18 @@ export async function POST(req: NextRequest) {
         ).rows[0];
         if (!c?.config) throw new ProspectingError("Campanha pausada não encontrada.", 404);
         await validateConfig(db, org, c.config);
+        const config = campaignConfigSchema.parse(c.config);
+        const candidatos = await db.query<{
+          id: string;
+          data: Prospect;
+          phone: string | null;
+          selected: boolean;
+          automatic_sends: number;
+        }>(
+          "select id,data,phone,selected,automatic_sends from prospecting_candidates where organization_id=$1 and campaign_id=$2 and status='queued' and selected is not false and coalesce(automatic_sends,0)=0",
+          [org, body.id],
+        );
+        exigirAprovacaoAntesDoPrimeiroContato(candidatos.rows, config.agent_id);
         if (
           (
             await db.query(

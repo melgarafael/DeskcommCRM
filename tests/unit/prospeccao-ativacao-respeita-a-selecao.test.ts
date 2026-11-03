@@ -109,7 +109,19 @@ const candidato = (id: string, selected: boolean, phone: string | null) => ({
   phone,
   contact_id: null,
   lead_id: null,
-  data: { key: `place-${id}`, name: `Empresa ${id}` },
+  data: {
+    key: `place-${id}`,
+    name: `Empresa ${id}`,
+    website: null,
+    previa: {
+      texto: "Prévia revisada pela pessoa.",
+      baseada_em: "sem-site@derivado",
+      gerada_em: "2026-10-20T12:00:00.000Z",
+      agente_id: AGENT,
+      aprovada_por: ORG,
+      aprovada_em: "2026-10-20T12:05:00.000Z",
+    },
+  },
 });
 
 describe("activateCampaign respeita a seleção do operador (#1896)", () => {
@@ -117,6 +129,18 @@ describe("activateCampaign respeita a seleção do operador (#1896)", () => {
     createContact.mockReset();
     createLead.mockReset();
     beginService.mockReset();
+  });
+
+  it("não inicia a campanha se um primeiro contato selecionado não foi aprovado", async () => {
+    const pendente = {
+      ...candidato("pendente", true, "+5511999990003"),
+      data: { key: "place-pendente", name: "Empresa pendente", website: null },
+    };
+    const { pool, campanhaAtualizada } = fakePool([pendente]);
+    await expect(activateCampaign(pool, {} as SupabaseClient, ORG, CAMP, config)).rejects.toThrow(
+      "Revise e aprove a prévia",
+    );
+    expect(campanhaAtualizada.some((u) => u.sql.includes("status='running'"))).toBe(false);
   });
 
   it("o desmarcado vira 'Não abordado' com o motivo e não toca contato, lead nem conversa", async () => {

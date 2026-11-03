@@ -2,9 +2,22 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { AuditoriaDoCandidato, type PreviaDaAbordagem } from "./_auditoria-site";
-import type { Prospect } from "@/lib/prospecting/schema";
+import type { CampaignConfig, Prospect } from "@/lib/prospecting/schema";
 
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
+
+const CONFIG = {
+  agent_id: "11111111-1111-4111-8111-111111111111",
+  channel_session_id: "22222222-2222-4222-8222-222222222222",
+  pipeline_id: "33333333-3333-4333-8333-333333333333",
+  stage_id: "44444444-4444-4444-8444-444444444444",
+  qualified_stage_id: "55555555-5555-4555-8555-555555555555",
+  instruction: "Apresente a empresa com cordialidade.",
+  qualification: "Há uma necessidade identificada.",
+  daily_limit: 10,
+  interval_minutes: 15,
+  legal_basis_ref: "LIA cadastrada pela organização",
+} as CampaignConfig;
 
 function candidato(site: Prospect["site"]): Prospect {
   return {
@@ -14,7 +27,7 @@ function candidato(site: Prospect["site"]): Prospect {
     website: "https://vitta.test/",
     category: "Estética",
     address: "Rua X",
-    maps_url: null,
+    maps_url: "https://maps.google.com/?q=vitta",
     rating: 5.0,
     reviews: 120,
     emails: [],
@@ -27,7 +40,10 @@ const SITE_OK: NonNullable<Prospect["site"]> = {
   ver: 1,
   classe: "site-ok",
   problemas: [],
-  checklist: { tem: ["tel"], falta: [] },
+  checklist: {
+    tem: ["whatsapp", "tel", "mailto", "social", "endereco", "mapa", "fotos", "titulo", "description", "favicon"],
+    falta: [],
+  },
   final_url: "https://vitta.test/",
   http_status: 200,
   tempo_ms: 300,
@@ -46,6 +62,9 @@ function props(data: Prospect) {
     nicho: "clínica",
     status: "new",
     disabled: false,
+    config: CONFIG,
+    podeAprovar: true,
+    onAprovar: vi.fn(async () => true),
     // Campanha com agente: o caso comum. O caso sem agente é testado à parte.
     temAgente: true,
     onReanalisar: vi.fn(async () => undefined),
@@ -72,7 +91,7 @@ describe("AuditoriaDoCandidato: resumo na linha, total no modal", () => {
     render(<AuditoriaDoCandidato {...props(candidato({ ...SITE_OK }))} />);
     // "Score" e o número vivem em nós de texto separados dentro do Badge.
     // site-ok + nota 5.0 + 120 avaliações = 40 + 30 + 10 = 80.
-    expect(screen.getByText((_, el) => el?.textContent === "Score 80")).toBeVisible();
+    expect(screen.getByText((_, el) => el?.textContent === "Prioridade 80")).toBeVisible();
     // Estratégia e objeções moram no modal, não na linha.
     expect(screen.queryByText("Estratégia de abordagem")).toBeNull();
     expect(screen.queryByRole("button", { name: "Reanalisar site" })).toBeNull();
@@ -82,16 +101,18 @@ describe("AuditoriaDoCandidato: resumo na linha, total no modal", () => {
   it("abrir o modal mostra o total + ações, e a prévia renderiza a mensagem", async () => {
     const onPrevia = vi.fn(async () => ({
       mensagem: "Olá!",
-      estrategia: { cenario: "", angulo: "", ganchos: [], objecoes: [], proximoPasso: "" },
-      score: { valor: 0, motivo: "" },
     }));
     render(<AuditoriaDoCandidato {...props(candidato({ ...SITE_OK }))} onPrevia={onPrevia} />);
     fireEvent.click(screen.getByRole("button", { name: "Ver detalhes" }));
     expect(await screen.findByRole("dialog")).toBeVisible();
     expect(screen.getByRole("button", { name: "Reanalisar site" })).toBeVisible();
+    expect(screen.getByText("Completude do site: 100% (10/10)")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Google Maps" })).toHaveAttribute("href", "https://maps.google.com/?q=vitta");
     fireEvent.click(screen.getByRole("button", { name: "Prévia da abordagem" }));
     await waitFor(() => expect(screen.getByText("Olá!")).toBeVisible());
     expect(onPrevia).toHaveBeenCalledWith("cand-1");
+    fireEvent.click(screen.getByRole("button", { name: "Aprovar prévia" }));
+    expect(await screen.findByText("Prévia aprovada por uma pessoa")).toBeVisible();
   });
 
   it("motivo igual ao veredito não repete na linha", () => {
@@ -116,8 +137,6 @@ describe("AuditoriaDoCandidato: resumo na linha, total no modal", () => {
 
   const PREVIA: PreviaDaAbordagem = {
     mensagem: "Olá, vi o site de vocês.",
-    estrategia: { cenario: "", angulo: "", ganchos: [], objecoes: [], proximoPasso: "" },
-    score: { valor: 0, motivo: "" },
   };
 
   it("A1: a prévia pede rolagem para o próprio texto, com block=nearest", async () => {

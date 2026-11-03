@@ -31,7 +31,7 @@ import {
   LIMITE_TENTATIVAS,
   siteEfetivo,
 } from "./site-efetivo";
-import { previaDoAgente } from "./previa";
+import { previaAprovadaDoAgente, previaDoAgente } from "./previa";
 import { blocoVozVendedor, personalizacaoDaOrganizacao } from "./personalizar";
 import { campaignConfigSchema, type OfertaDaCampanha } from "./schema";
 import { prepararCandidatos } from "./preparo";
@@ -226,6 +226,26 @@ export async function sendNextCandidate(
       "update prospecting_campaigns set status='completed',updated_at=now() where organization_id=$1 and id=$2 and status='running'",
       [c.organization_id, c.id],
     );
+    return;
+  }
+  if (
+    (queued.automatic_sends ?? 0) === 0 &&
+    !previaAprovadaDoAgente(queued.data, cfg.agent_id)
+  ) {
+    const pause = await db.query(
+      "update prospecting_campaigns set status='paused',error='A primeira abordagem aguarda revisão e aprovação humana da prévia.',updated_at=now() where organization_id=$1 and id=$2 and status='running' returning id",
+      [c.organization_id, c.id],
+    );
+    if ((pause.rowCount ?? 0) > 0) {
+      await audit({
+        action: "prospecting.approval_required",
+        organizationId: c.organization_id,
+        resourceType: "prospecting",
+        resourceId: c.id,
+        metadata: { candidateId: queued.id },
+        requestId: randomUUID(),
+      });
+    }
     return;
   }
   // A checagem do canal olha o telefone desta empresa (modo de teste, lista liberada) e vem
