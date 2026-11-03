@@ -1,5 +1,5 @@
 /**
- * Os ids de ferramenta dos servidores MCP DO AGENTE (migration 9081):
+ * Os ids de ferramenta dos servidores MCP DO AGENTE (migration 9095):
  * `mcp_externo:<servidor_id>:<marca>:<nome>`, ao lado do formato do servidor
  * compartilhado da organização, que não muda de significado.
  */

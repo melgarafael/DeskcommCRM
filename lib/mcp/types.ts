@@ -79,7 +79,7 @@ export interface McpToolDefinition<TInput extends z.ZodRawShape = z.ZodRawShape>
    */
   redigirParaAuditoria?: (args: Record<string, unknown>) => Record<string, unknown>;
   /**
-   * ESCRITA DELEGADA AO CONTATO (servidores MCP por agente, migration 9081).
+   * ESCRITA DELEGADA AO CONTATO (servidores MCP por agente, migration 9095).
    *
    * Só uma remota de servidor `oauth_por_contato`, com `escrita_delegada`
    * ligada no cadastro, marcada `escrita` pelo admin em `tool_ids` E montada com

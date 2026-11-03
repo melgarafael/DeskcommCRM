@@ -146,6 +146,15 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     oQueFaz:
       "Agrupa os atendentes da Equipe por área e distribui as conversas que têm setor definido entre quem atende aquela área, dentro do horário do setor. Conversa sem setor continua indo pelo número, como antes.",
   },
+  avisos: {
+    nome: "Avisos para a equipe",
+    oQueFaz: "O administrador da empresa escreve um aviso e ele chega como notificação nos aparelhos da equipe.",
+  },
+  mcp_por_agente: {
+    nome: "Ferramentas externas por agente",
+    oQueFaz:
+      "Cada agente conecta os próprios servidores de ferramentas externas, e o cliente pode autorizar, pela conversa, o acesso à conta dele num sistema de terceiro.",
+  },
 };
 
 /**

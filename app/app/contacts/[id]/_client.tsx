@@ -63,6 +63,8 @@ interface Props {
   contactId: string;
   /** Painéis de módulo de dados que declaram referência a contato. Resolvido no servidor. */
   paineisDeModulo?: { modulo: string; objeto: string }[];
+  /** Módulo opcional `mcp_por_agente` ligado (doc 252). Ausente = desligado. */
+  acessosMcp?: boolean;
 }
 
 /**
@@ -159,7 +161,7 @@ function BlocoDeTelefones({ contato, t }: { contato: Contact; t: (texto: string)
   );
 }
 
-export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) {
+export function ContactDetailClient({ contactId, paineisDeModulo = [], acessosMcp = false }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const q = useContact(contactId);
@@ -678,8 +680,8 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
 
         {isAdmin && (
           <TabsContent value="lgpd" className="mt-4 space-y-4">
-            {/* Acessos OAuth do contato a servidores MCP externos (9081). */}
-            <AcessosMcpDoContato contactId={contactId} />
+            {/* Acessos OAuth do contato a servidores MCP externos (9095). */}
+            {acessosMcp && <AcessosMcpDoContato contactId={contactId} />}
             <Card className="space-y-4 p-4">
               <div>
                 <h2 className="text-lg font-semibold">{t("Direito ao esquecimento (LGPD)")}</h2>

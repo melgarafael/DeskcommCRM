@@ -174,7 +174,7 @@ export async function buildMcpTurnTools(
     },
   );
 
-  // Servidores MCP DO AGENTE (migration 9081) — mesma carga do runtime nativo.
+  // Servidores MCP DO AGENTE (migration 9095) — mesma carga do runtime nativo.
   const servidoresDoAgente = await carregarServidoresDoAgenteNoTurno(
     cfg.supabase,
     ids.organizationId,

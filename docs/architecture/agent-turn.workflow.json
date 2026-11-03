@@ -354,6 +354,15 @@
       "tag": "montarContextoDaRevisao"
     },
     {
+      "id": "recibosAgenda",
+      "lane": "guardrails",
+      "col": 4,
+      "type": "backend",
+      "label": "Comprovantes da agenda",
+      "sublabel": "recibo do turno + estado atual por org/contato; sem bypass",
+      "tag": "conferirRecibosDeAgendamento"
+    },
+    {
       "id": "bloqueioProvedor",
       "lane": "guardrails",
       "col": 6,
@@ -846,6 +855,18 @@
       "from": "contextoRevisor",
       "to": "gates",
       "label": "contexto de elegibilidade → classificador; conversa não autoriza oferta"
+    },
+    {
+      "id": "turn-recibos-agenda",
+      "from": "turn",
+      "to": "recibosAgenda",
+      "label": "ponte publica resultado real; nova mutação invalida comprovantes"
+    },
+    {
+      "id": "recibos-agenda-gates",
+      "from": "recibosAgenda",
+      "to": "gates",
+      "label": "estado, instantes e revisão atuais → mesmo classificador e chave de memo"
     },
     {
       "id": "turn-bloqueio-provedor",

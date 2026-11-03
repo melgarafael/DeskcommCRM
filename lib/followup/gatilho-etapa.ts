@@ -69,6 +69,30 @@ export interface PointerDeEtapa {
   stage_id: string;
 }
 
+/** A linha de `followup_flow_pointers` que a regra de seleção lê — `status='active'` já veio recortado no SQL. */
+export interface LinhaDePointer {
+  active_version_id: string | null;
+  trigger_config: unknown;
+  surface?: string | null;
+}
+
+/**
+ * A etapa que este pointer arma por `stage_change` — `null` quando ele não arma
+ * nenhuma. PURA, e a MESMA para o motor (`carregaPointersDeEtapa`, abaixo) e
+ * para a tela de etapas (`./fluxos-da-etapa.ts`, #3603): duas cópias da regra
+ * dariam uma tela listando fluxo que o motor não dispara.
+ */
+export function etapaQueOPointerArma(row: LinhaDePointer): string | null {
+  // Roteiro de atendimento (0394) é do turno, nunca do relógio: o banco
+  // já o prende em gatilho manual, e este corte é a segunda porta.
+  if (!row.active_version_id || row.surface === "atendimento") return null;
+  // O parse é o MESMO schema do publish — um `trigger_config` que não
+  // passa nele não arma nada, em vez de armar torto.
+  const parsed = triggerConfigSchema.safeParse(row.trigger_config);
+  if (!parsed.success || parsed.data.kind !== "stage_change") return null;
+  return parsed.data.params.stage_id;
+}
+
 /** Interface estreita de DB — mesma doutrina de `SilenceSweepDb`/`ReactivityAdminClient`:
  *  narrow por consumidor, para o teste rodar contra Postgres cru sem arrastar o
  *  `SupabaseClient` inteiro. */
@@ -258,18 +282,13 @@ export function createSupabaseGatilhoEtapaDb(admin: SupabaseClient): GatilhoEtap
         trigger_config: unknown;
         surface?: string | null;
       }>) {
-        // Roteiro de atendimento (0394) é do turno, nunca do relógio: o banco
-        // já o prende em gatilho manual, e este corte é a segunda porta.
-        if (!row.active_version_id || row.surface === "atendimento") continue;
-        // O parse é o MESMO schema do publish — um `trigger_config` que não
-        // passa nele não arma nada, em vez de armar torto.
-        const parsed = triggerConfigSchema.safeParse(row.trigger_config);
-        if (!parsed.success || parsed.data.kind !== "stage_change") continue;
+        const stageId = etapaQueOPointerArma(row);
+        if (!stageId || !row.active_version_id) continue;
         pointers.push({
           id: row.id,
           organization_id: row.organization_id,
           active_version_id: row.active_version_id,
-          stage_id: parsed.data.params.stage_id,
+          stage_id: stageId,
         });
       }
       return pointers;

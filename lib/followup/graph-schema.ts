@@ -455,11 +455,31 @@ export const collectConfigSchema = z
     options: z.array(z.string().min(1).max(80)).max(20).optional(),
     /** Texto sugerido da pergunta; o agente pode reescrever (checklist guiado pela IA). */
     question: z.string().max(400).optional(),
+    /**
+     * ONDE A RESPOSTA É GRAVADA (#3363): `contato` em `contacts.custom_fields`
+     * (o caminho de sempre) ou `negocio` no card aberto do contato
+     * (`crm_leads.custom_fields`) — que é o que o card da tela, os campos
+     * obrigatórios da etapa do funil e as automações por data do funil leem.
+     *
+     * A AUSÊNCIA é `contato`, e é o que todo grafo existente tem: sem `.default()`
+     * de propósito (a mesma escolha do `escopo` do #2791, com o padrão invertido
+     * — aqui o comportamento legado é o contato). Sem default, `safeParse` devolve
+     * o grafo byte a byte e editar uma pergunta não reescreve a chave à toa.
+     *
+     * Com `negocio`, a régua "já respondido não se repergunta" vale só DENTRO do
+     * negócio atual: o valor é lido do card, então um novo negócio pergunta de
+     * novo. Um contato sem card aberto não tem onde gravar — a pergunta segue
+     * pendente até o teto de tentativas.
+     */
+    destino: z.enum(['contato', 'negocio']).optional(),
   })
   .refine((c) => c.type !== 'select' || (c.options?.length ?? 0) > 0, {
     message: 'tipo "select" exige ao menos uma opção',
     path: ['options'],
   });
+
+/** O destino da gravação de UMA pergunta (#3363) — ausência no grafo = `contato`. */
+export type DestinoDaResposta = NonNullable<z.infer<typeof collectConfigSchema>['destino']>;
 
 /**
  * Skill node (`skill`) — puxa uma skill instalada em paralelo ao passo do fluxo.

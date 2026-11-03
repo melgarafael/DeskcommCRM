@@ -96,7 +96,8 @@ correspondentes localizados no repo):
   customer 360, contatos, tags, Nuvemshop.
 - **IA nativa** — agentes com RAG por tenant (pgvector), sentiment, handoff IA→humano,
   budget por org, MCP server interno.
-- **Servidores MCP por agente (migration 9081)** — até 5 por agente, modos `nenhuma`,
+- **Servidores MCP por agente (migration 9095)** — módulo opcional `mcp_por_agente`, desligado
+  de fábrica (doc 252; liga em `/admin/sistema`). Até 5 por agente, modos `nenhuma`,
   `chave_estatica` e `oauth_por_contato` (cada cliente autoriza a própria conta pelo link que o
   agente envia; RFC 9728/8414/7591/7636/8707/7009), escrita delegada opcional, revogação no
   encerramento e por LGPD. **Incompleto:** o callback não reabre o turno (a próxima mensagem do

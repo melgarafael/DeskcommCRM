@@ -24,6 +24,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
 
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
 
 import { fetchDeSaida, listarFerramentasDoServidor, type FerramentaRemota } from "../chamada";
@@ -235,7 +236,13 @@ async function carregarComChave(
 
 /**
  * Os servidores do agente para ESTE turno. `[]` sem rede quando o agente não
- * escolheu ferramenta de nenhum servidor dele.
+ * escolheu ferramenta de nenhum servidor dele, e `[]` quando o módulo opcional
+ * `mcp_por_agente` está desligado (doc 252): o que já foi cadastrado fica
+ * guardado e para de valer — a mesma porta para os dois runtimes.
+ *
+ * ponytail: leitura sem memo — só chega aqui o agente que escolheu ferramenta
+ * de servidor dele, e desligar vale no turno seguinte. Memo
+ * (`moduloLigadoComMemo`) se isto aparecer medido num perfil.
  */
 export async function carregarServidoresDoAgenteNoTurno(
   supabase: SupabaseClient,
@@ -246,6 +253,7 @@ export async function carregarServidoresDoAgenteNoTurno(
 ): Promise<ServidorDoAgenteNoTurno[]> {
   const escolhidos = servidoresEscolhidos(toolIds);
   if (escolhidos.size === 0) return [];
+  if (!(await moduloLigado(supabase, "mcp_por_agente"))) return [];
   const servidores = (await lerServidoresDoAgente(supabase, organizationId, agentId, { somenteAtivos: true })).filter(
     (s) => escolhidos.has(s.id),
   );

@@ -1,6 +1,6 @@
 "use server";
 /**
- * Server actions dos SERVIDORES MCP DO AGENTE (migration 9081) — a seção
+ * Server actions dos SERVIDORES MCP DO AGENTE (migration 9095) — a seção
  * "Servidores MCP" da tela do agente.
  *
  * ── As regras que nenhuma action aqui dispensa ───────────────────────────────
@@ -14,6 +14,8 @@
  * 4. Anti-SSRF no cadastro (prova textual) e em toda saída da descoberta.
  * 5. Auditoria em toda mutação, com FORMA (servidor, modo, host) e nunca
  *    credencial.
+ * 6. Módulo opcional `mcp_por_agente` desligado (doc 252) recusa tudo, depois
+ *    do papel: a tela some, e a action não fala com terceiro nenhum.
  */
 import { revalidatePath } from "next/cache";
 
@@ -22,6 +24,7 @@ import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { marcaDaSaida } from "@/lib/branding/saida";
 import { supportWriteError } from "@/lib/impersonate/support";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { listarFerramentasDoServidor } from "@/lib/mcp/servidor-externo/chamada";
 import { apagado, cifrar, ultimos4 } from "@/lib/mcp/servidor-externo/cifra";
 import { revogarCredencialPorId } from "@/lib/mcp/servidor-externo/do-agente/credencial";
@@ -59,6 +62,7 @@ export type ErroDaAcao =
   | "limite_de_servidores"
   | "endpoint_inseguro"
   | "erro_ao_gravar"
+  | "modulo_desligado"
   | CodigoDeErroOauth;
 
 export type Resultado<T> = { ok: true; data: T } | { ok: false; error: ErroDaAcao };
@@ -80,8 +84,9 @@ async function exigirAdminDoAgente(agentId: string, escrita: boolean) {
   const org = await resolveActiveOrg(user);
   if (!org) return { ok: false as const, error: "forbidden_tenant" as const };
   if (ROLE_RANK[org.role] < ROLE_RANK.admin) return { ok: false as const, error: "forbidden_role" as const };
-  if (!UUID.test(agentId)) return { ok: false as const, error: "validation_failed" as const };
   const admin = createAdminClient();
+  if (!(await moduloLigado(admin, "mcp_por_agente"))) return { ok: false as const, error: "modulo_desligado" as const };
+  if (!UUID.test(agentId)) return { ok: false as const, error: "validation_failed" as const };
   const { data: agente } = await admin
     .from("ai_agents")
     .select("id")

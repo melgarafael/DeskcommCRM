@@ -1,5 +1,5 @@
 /**
- * Servidores MCP por agente e OAuth por contato (migration 9081), medidos no
+ * Servidores MCP por agente e OAuth por contato (migration 9095), medidos no
  * banco que o `baseline.sql` instala:
  *
  * 1. As TRÊS tabelas guardam segredo de terceiro (chave, `client_secret`,
@@ -20,18 +20,18 @@ import { motivoDoErro, sql } from "./psql-transporte";
 
 const TABELAS = ["ai_agent_mcp_servers", "mcp_oauth_pedidos", "contato_mcp_credenciais"] as const;
 
-const ORG_X = "9081aaaa-0000-4000-8000-000000000001";
-const ORG_Y = "9081aaaa-0000-4000-8000-000000000002";
-const USUARIO_X = "9081bbbb-0000-4000-8000-000000000001";
-const USUARIO_Y = "9081bbbb-0000-4000-8000-000000000002";
-const AGENTE = "9081cccc-0000-4000-8000-000000000001";
-const SERVIDOR = "9081dddd-0000-4000-8000-000000000001";
-const SESSAO = "9081eeee-0000-4000-8000-000000000001";
-const CONTATO_A = "9081ffff-0000-4000-8000-00000000000a";
-const CONTATO_B = "9081ffff-0000-4000-8000-00000000000b";
-const CONVERSA_A = "90811111-0000-4000-8000-00000000000a";
-const CRED_A = "90812222-0000-4000-8000-00000000000a";
-const CRED_B = "90812222-0000-4000-8000-00000000000b";
+const ORG_X = "9095aaaa-0000-4000-8000-000000000001";
+const ORG_Y = "9095aaaa-0000-4000-8000-000000000002";
+const USUARIO_X = "9095bbbb-0000-4000-8000-000000000001";
+const USUARIO_Y = "9095bbbb-0000-4000-8000-000000000002";
+const AGENTE = "9095cccc-0000-4000-8000-000000000001";
+const SERVIDOR = "9095dddd-0000-4000-8000-000000000001";
+const SESSAO = "9095eeee-0000-4000-8000-000000000001";
+const CONTATO_A = "9095ffff-0000-4000-8000-00000000000a";
+const CONTATO_B = "9095ffff-0000-4000-8000-00000000000b";
+const CONVERSA_A = "90951111-0000-4000-8000-00000000000a";
+const CRED_A = "90952222-0000-4000-8000-00000000000a";
+const CRED_B = "90952222-0000-4000-8000-00000000000b";
 
 function erroSob(papel: string, comando: string, usuario?: string): string | null {
   const jwt = usuario
@@ -62,26 +62,26 @@ const credencial = (id: string, contato: string) => `
 beforeAll(() => {
   sql(`
     insert into auth.users (id, email) values
-      ('${USUARIO_X}', 'x9081@invariant.test'), ('${USUARIO_Y}', 'y9081@invariant.test')
+      ('${USUARIO_X}', 'x9095@invariant.test'), ('${USUARIO_Y}', 'y9095@invariant.test')
       on conflict do nothing;
     insert into public.organizations (id, slug, legal_name, display_name) values
-      ('${ORG_X}', 'inv-9081-x', 'Org X 9081', 'X'), ('${ORG_Y}', 'inv-9081-y', 'Org Y 9081', 'Y')
+      ('${ORG_X}', 'inv-9095-x', 'Org X 9095', 'X'), ('${ORG_Y}', 'inv-9095-y', 'Org Y 9095', 'Y')
       on conflict do nothing;
     insert into public.user_organizations (user_id, organization_id, role, accepted_at) values
       ('${USUARIO_X}', '${ORG_X}', 'admin', now()), ('${USUARIO_Y}', '${ORG_Y}', 'admin', now())
       on conflict do nothing;
     do $s$ begin
       insert into public.channel_sessions (id, organization_id, waha_session_name, webhook_secret_encrypted)
-        values ('${SESSAO}', '${ORG_X}', 'inv-9081', '\\x00'::bytea);
+        values ('${SESSAO}', '${ORG_X}', 'inv-9095', '\\x00'::bytea);
     exception when unique_violation then null; end $s$;
     insert into public.contacts (id, organization_id, display_name) values
-      ('${CONTATO_A}', '${ORG_X}', 'Contato A 9081'), ('${CONTATO_B}', '${ORG_X}', 'Contato B 9081')
+      ('${CONTATO_A}', '${ORG_X}', 'Contato A 9095'), ('${CONTATO_B}', '${ORG_X}', 'Contato B 9095')
       on conflict do nothing;
     insert into public.conversations (id, organization_id, contact_id, channel_session_id, status)
       values ('${CONVERSA_A}', '${ORG_X}', '${CONTATO_A}', '${SESSAO}', 'open')
       on conflict do nothing;
     insert into public.ai_agents (id, organization_id, name, system_prompt)
-      values ('${AGENTE}', '${ORG_X}', 'Agente 9081', '') on conflict (id) do nothing;
+      values ('${AGENTE}', '${ORG_X}', 'Agente 9095', '') on conflict (id) do nothing;
     insert into public.ai_agent_mcp_servers
       (id, organization_id, agent_id, nome, slug, endpoint, modo_autenticacao, retencao_apos_encerramento_horas)
     values ('${SERVIDOR}', '${ORG_X}', '${AGENTE}', 'Casa', 'casa', 'https://mcp.casa.test/mcp', 'oauth_por_contato', 2)
@@ -96,7 +96,7 @@ describe("as três tabelas do OAuth por contato são server-side only [§5.2]", 
     for (const t of TABELAS) {
       expect(
         sql(`select count(*) from information_schema.tables where table_schema='public' and table_name='${t}';`).trim(),
-        `a 9081 não chegou ao baseline: ${t}`,
+        `a 9095 não chegou ao baseline: ${t}`,
       ).toBe("1");
     }
   });
@@ -128,7 +128,7 @@ describe("as três tabelas do OAuth por contato são server-side only [§5.2]", 
   });
 
   it("unique (servidor, contato): um token por servidor × contato", () => {
-    expect(() => sql(credencial("90812222-0000-4000-8000-0000000000ff", CONTATO_A))).toThrow();
+    expect(() => sql(credencial("90952222-0000-4000-8000-0000000000ff", CONTATO_A))).toThrow();
   });
 });
 
@@ -179,16 +179,16 @@ describe("LGPD: anonimizar revoga e apaga os acessos do contato [§3]", () => {
   it("excluir o servidor leva credenciais e pedidos em cascata", () => {
     sql(`
       insert into public.ai_agent_mcp_servers (id, organization_id, agent_id, nome, slug, endpoint, modo_autenticacao)
-      values ('9081dddd-0000-4000-8000-000000000002', '${ORG_X}', '${AGENTE}', 'Outro', 'outro', 'https://o.test/mcp', 'oauth_por_contato')
+      values ('9095dddd-0000-4000-8000-000000000002', '${ORG_X}', '${AGENTE}', 'Outro', 'outro', 'https://o.test/mcp', 'oauth_por_contato')
       on conflict (id) do nothing;
       insert into public.contato_mcp_credenciais
         (organization_id, servidor_id, contact_id, access_token_encrypted, access_token_iv, access_token_tag)
-      values ('${ORG_X}', '9081dddd-0000-4000-8000-000000000002', '${CONTATO_A}', '\\x01', '\\x02', '\\x03')
+      values ('${ORG_X}', '9095dddd-0000-4000-8000-000000000002', '${CONTATO_A}', '\\x01', '\\x02', '\\x03')
       on conflict do nothing;
-      delete from public.ai_agent_mcp_servers where id = '9081dddd-0000-4000-8000-000000000002';
+      delete from public.ai_agent_mcp_servers where id = '9095dddd-0000-4000-8000-000000000002';
     `);
     expect(
-      sql(`select count(*) from public.contato_mcp_credenciais where servidor_id = '9081dddd-0000-4000-8000-000000000002';`).trim(),
+      sql(`select count(*) from public.contato_mcp_credenciais where servidor_id = '9095dddd-0000-4000-8000-000000000002';`).trim(),
     ).toBe("0");
   });
 

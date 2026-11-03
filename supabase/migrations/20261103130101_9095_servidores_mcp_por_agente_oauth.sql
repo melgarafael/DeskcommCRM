@@ -1,6 +1,6 @@
 -- manifest: **Servidores MCP externos POR AGENTE, com OAuth 2.1 + PKCE delegado pelo CONTATO.** Três tabelas server-side only (RLS ligada sem policy, privilégio nenhum para `anon`/`authenticated`, como `map_provider_credentials`): `ai_agent_mcp_servers` (até 5 servidores por agente; modo `nenhuma` | `chave_estatica` | `oauth_por_contato`; chave e `client_secret` cifrados em AES-256-GCM pela chave de instalação; cache da descoberta RFC 9728/8414 em `oauth_metadados`), `mcp_oauth_pedidos` (o pedido de autorização de USO ÚNICO cujo `id` é o `state`; amarrado ao contato e à conversa do turno; `code_verifier` cifrado; expira em 10 min) e `contato_mcp_credenciais` (um token por servidor × contato, cifrado; `versao` para a renovação concorrente; `revogar_apos` agendado pelo encerramento da conversa). O gatilho `fn_mcp_agenda_revogacao_no_encerramento` só GRAVA o prazo (nunca faz HTTP); quem chama o `revocation_endpoint` (RFC 7009) é o cron `mcp-oauth-revogacao`. O servidor da organização (`organizations.settings.mcp_externo`) continua como está — servidor compartilhado legado, sem migração de dados. Funções novas revogadas de `public, anon` (as duas origens). Apêndice espelhado no fim do `baseline.sql`.
 
--- 9081 — servidores MCP por agente e OAuth por contato.
+-- 9095 — servidores MCP por agente e OAuth por contato.
 --
 -- ── Por que as três tabelas são server-side only ─────────────────────────────
 --

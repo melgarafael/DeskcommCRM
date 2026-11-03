@@ -433,6 +433,7 @@ export const AUDIT_ACTIONS = [
   "followup_enrollment.resumed",
   "followup_enrollment.snoozed",
   "followup_enrollment.step_skipped",
+  "followup_enrollment.negocio_escolhido",
   "template.created",
   "template.updated",
   "template.deleted",
@@ -1216,7 +1217,7 @@ export const AUDIT_ACTIONS = [
   // por isso vai com `organization_id` e `resource_id` = uuid da org. A CHAVE
   // do servidor nunca entra aqui: o metadata traz endpoint e forma.
   "org.mcp_externo_registrado",
-  // Servidores MCP POR AGENTE (migration 9081). Cadastro, edição e remoção na
+  // Servidores MCP POR AGENTE (migration 9095). Cadastro, edição e remoção na
   // tela do agente (metadata: servidor, modo, host — nunca chave, segredo nem
   // token); a autorização de um contato pelo callback público (metadata:
   // servidor, escopos); a revogação (manual pela ficha, no encerramento da
@@ -1421,6 +1422,9 @@ export const AUDIT_ACTIONS = [
   // sugestão, e quando". A fila guarda o usuário, mas a trilha é o rastro que a
   // organização consulta, e só ela tem o mesmo formato das outras ações de contato.
   "contact.duplicate_dismissed",
+  // Aviso escrito pelo admin da empresa e empurrado para a equipe (#1418). O
+  // metadata leva só a janela de publicação; título e corpo ficam em `avisos`.
+  "aviso.created",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

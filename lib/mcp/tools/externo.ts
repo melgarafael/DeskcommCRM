@@ -174,7 +174,7 @@ export function definirFerramentasRemotas(
   return definicoes;
 }
 
-// ─── Servidores MCP DO AGENTE (migration 9081) ───────────────────────────────
+// ─── Servidores MCP DO AGENTE (migration 9095) ───────────────────────────────
 
 /**
  * As remotas escolhidas de UM servidor do agente, com o nome NAMESPACED que o

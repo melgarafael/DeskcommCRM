@@ -1,6 +1,6 @@
 /**
  * Pedidos de autorização e credenciais OAuth POR CONTATO — o armazenamento
- * (`mcp_oauth_pedidos`, `contato_mcp_credenciais`, migration 9081).
+ * (`mcp_oauth_pedidos`, `contato_mcp_credenciais`, migration 9095).
  *
  * ── As regras que este arquivo guarda ────────────────────────────────────────
  *

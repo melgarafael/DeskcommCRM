@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
- * OAuth POR CONTATO de servidor MCP externo (migration 9081), ponta a ponta,
+ * OAuth POR CONTATO de servidor MCP externo (migration 9095), ponta a ponta,
  * contra um stub HTTP de verdade que implementa RFC 9728 (recurso protegido),
  * RFC 8414 (metadados do AS), RFC 7591 (registro dinâmico), PKCE S256,
  * RFC 7009 (revogação) e o Streamable HTTP do MCP — no padrão do stub de ERP
@@ -248,6 +248,8 @@ beforeEach(async () => {
       { id: CONTATO_A, organization_id: ORG, is_anonymized: false },
       { id: CONTATO_B, organization_id: ORG, is_anonymized: false },
     ],
+    // Módulo opcional `mcp_por_agente` ligado (doc 252); o desligado tem caso próprio.
+    platform_config: [{ chave: "MODULO_MCP_POR_AGENTE", valor: "ligado" }],
   });
 });
 
@@ -307,6 +309,19 @@ function montar(servidores: ServidorDoAgenteNoTurno[], contato?: string) {
 }
 
 // ─── Descoberta e cadastro ──────────────────────────────────────────────────
+
+describe("módulo opcional desligado (doc 252)", () => {
+  it("o turno não monta servidor do agente, nem o de chave nem o de OAuth", async () => {
+    banco.tabelas.platform_config = [{ chave: "MODULO_MCP_POR_AGENTE", valor: "desligado" }];
+    expect(await carga(CONTATO_A, CONVERSA_A)).toEqual([]);
+    banco.tabelas.platform_config = [];
+    expect(await carga(CONTATO_A, CONVERSA_A)).toEqual([]);
+    expect(stub.chamadas).toEqual([]);
+    // Controle: a mesma carga, com o módulo ligado, monta o servidor.
+    banco.tabelas.platform_config = [{ chave: "MODULO_MCP_POR_AGENTE", valor: "ligado" }];
+    expect((await carga(CONTATO_A, CONVERSA_A)).map((s) => s.estado)).toEqual(["sem_autorizacao"]);
+  });
+});
 
 describe("descoberta RFC 9728 + 8414 e registro RFC 7591 [§3, 5]", () => {
   it("descobre o AS pelo 401 + resource_metadata e registra cliente público", async () => {
@@ -561,7 +576,7 @@ describe("revogação no encerramento e por LGPD [§8.5, §3]", () => {
   it("revogar_apos vencido: revoga no AS (RFC 7009), esvazia os tokens e marca revogado_em", async () => {
     await contatoAutoriza(await pedirLink(CONTATO_A, CONVERSA_A), "alice");
     const linha = banco.tabelas.contato_mcp_credenciais![0]!;
-    linha.revogar_apos = new Date(Date.now() - 1000).toISOString(); // o gatilho da 9081 grava isto
+    linha.revogar_apos = new Date(Date.now() - 1000).toISOString(); // o gatilho da 9095 grava isto
     expect(await credencialDoContato(banco.cliente as never, ORG, SERVIDOR, CONTATO_A)).toBeNull();
 
     const r = await revogarVencidas(banco.cliente as never, rede);

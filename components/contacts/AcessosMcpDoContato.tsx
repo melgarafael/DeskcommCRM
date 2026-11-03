@@ -1,7 +1,7 @@
 "use client";
 /**
  * Os acessos que o contato deu a servidores MCP externos (OAuth por contato,
- * migration 9081): servidor, escopos, desde quando e último uso, com
+ * migration 9095): servidor, escopos, desde quando e último uso, com
  * "Revogar". O token nunca aparece. Só `admin` da organização — para os demais
  * a action recusa e o cartão não aparece.
  */

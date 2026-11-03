@@ -127,6 +127,11 @@ interface BaseProps {
   routerMembership?: { routerId: string; routerName: string; channelSessionId: string; channelStatus: string | null } | null;
   readOnly?: boolean;
   organizationTimezone?: string;
+  /**
+   * O módulo opcional `mcp_por_agente` (doc 252) está ligado nesta instalação.
+   * Ausente = desligado (falha fechada): a seção Servidores MCP não aparece.
+   */
+  mcpPorAgente?: boolean;
 }
 
 interface EditProps extends BaseProps {
@@ -1512,11 +1517,12 @@ export function AgentForm(props: Props) {
             />
           )}
 
-          {/* Servidores MCP DO AGENTE (migration 9081): N servidores, cada um
+          {/* Servidores MCP DO AGENTE (migration 9095): N servidores, cada um
               com o seu modo de autenticação — inclusive OAuth em que cada
               cliente autoriza a própria conta. A escolha das ferramentas vai
-              para o `tool_ids` da versão, pelo mesmo salvar do formulário. */}
-          {isEdit && !readOnly && (
+              para o `tool_ids` da versão, pelo mesmo salvar do formulário.
+              Módulo opcional desligado de fábrica (doc 252). */}
+          {isEdit && !readOnly && props.mcpPorAgente === true && (
             <ServidoresMcpDoAgente
               agentId={props.agent.id}
               toolIds={form.tool_ids}

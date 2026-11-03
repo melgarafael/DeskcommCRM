@@ -9,7 +9,7 @@
     },
     {
       "id": "dados",
-      "label": "Banco (server-side only, migration 9081)"
+      "label": "Banco (server-side only, migration 9095)"
     },
     {
       "id": "turno",
@@ -101,7 +101,7 @@
     {
       "id": "gatilhos",
       "lane": "dados",
-      "label": "gatilhos da 9081",
+      "label": "gatilhos da 9095",
       "sublabel": "encerramento/anonimização só AGENDAM revogar_apos — sem HTTP",
       "type": "table",
       "dot": "slate"

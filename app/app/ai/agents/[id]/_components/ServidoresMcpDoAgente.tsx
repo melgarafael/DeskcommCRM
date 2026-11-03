@@ -1,6 +1,6 @@
 "use client";
 /**
- * "Servidores MCP" — os servidores MCP externos DESTE agente (migration 9081).
+ * "Servidores MCP" — os servidores MCP externos DESTE agente (migration 9095).
  *
  * Lista, adiciona, edita, remove e testa. Para `oauth_por_contato` mostra o que
  * a descoberta achou (authorization server, escopos, registro dinâmico,
@@ -58,6 +58,7 @@ const MENSAGEM_DO_ERRO: Record<ErroDaAcao, string> = {
   limite_de_servidores: "Este agente já tem o máximo de servidores MCP.",
   endpoint_inseguro: "Endereço recusado: use https, sem senha, sem parâmetros e sem endereço interno.",
   erro_ao_gravar: "Não foi possível gravar. Tente de novo.",
+  modulo_desligado: "Quem administra o servidor desligou as ferramentas externas por agente.",
   descoberta_falhou: "O servidor não informou como autorizar (descoberta OAuth falhou).",
   sem_s256: "O servidor de autorização não aceita PKCE S256 — o cadastro foi recusado.",
   sem_cliente: "Este servidor não aceita registro automático: informe o client_id.",

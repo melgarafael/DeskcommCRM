@@ -1,6 +1,6 @@
 # Como conectar um servidor MCP com OAuth (cada cliente autoriza a própria conta)
 
-> Para quem administra a organização. Recurso entregue na migration 9081.
+> Para quem administra a organização. Recurso entregue na migration 9095.
 > Mapa do fluxo: [`docs/architecture/mcp-por-agente-oauth.architecture.json`](../architecture/mcp-por-agente-oauth.architecture.json).
 
 ## Para que serve
@@ -21,6 +21,11 @@ siga a especificação funciona, sem integração escrita para ele.
 
 ## Passo a passo
 
+0. O recurso é um **módulo opcional, desligado de fábrica** (doc 252). Quem administra o servidor
+   liga em **Admin › Sistema › Ferramentas externas por agente**. Desligado, a seção do agente e a
+   lista da ficha do contato não aparecem, o agente não usa os servidores cadastrados e os dois
+   endereços públicos (`/api/v1/mcp-oauth/iniciar/…` e `/callback`) respondem 404. A revogação
+   no terceiro continua rodando: desligar para de usar o acesso, não deixa de devolvê-lo.
 1. Abra **IA › Agentes**, escolha o agente e role até **Servidores MCP do agente**.
 2. **Adicionar servidor**. Preencha o nome que vai aparecer (ex.: "Minha Casa") e o endereço do
    servidor MCP (Streamable HTTP, `https://…/mcp`). O endereço não pode ter senha, `?parâmetros`

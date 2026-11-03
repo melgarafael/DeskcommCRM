@@ -1,6 +1,6 @@
 /**
  * GET /api/v1/mcp-oauth/callback — a volta do authorization server de um
- * servidor MCP externo `oauth_por_contato` (migration 9081). É a
+ * servidor MCP externo `oauth_por_contato` (migration 9095). É a
  * `redirect_uri` registrada (a mesma para todo servidor e todo contato),
  * derivada de `NEXT_PUBLIC_APP_URL`.
  *
@@ -8,6 +8,8 @@
  * sessão nossa. Organização, servidor, contato e conversa saem da linha do
  * `state` (uso único, consumido ANTES da troca do code) — nunca da URL.
  * Responde uma página simples, sem dado sensível. Rate limit por IP.
+ * Módulo opcional `mcp_por_agente` desligado (doc 252) = 404, a resposta de
+ * uma rota nunca instalada.
  *
  * Retomada do turno: NÃO reabre o turno nesta fatia. O próximo turno do contato
  * (a próxima mensagem dele) já encontra o token e monta as ferramentas. A
@@ -16,6 +18,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { paginaDoDesfecho, processarRetorno } from "@/lib/mcp/servidor-externo/do-agente/retorno";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -39,8 +42,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!limite.allowed) {
     return new NextResponse(null, { status: 429, headers: { "Retry-After": String(JANELA_SEGUNDOS) } });
   }
+  const admin = createAdminClient();
+  if (!(await moduloLigado(admin, "mcp_por_agente"))) return new NextResponse(null, { status: 404 });
   const p = req.nextUrl.searchParams;
-  const desfecho = await processarRetorno(createAdminClient(), {
+  const desfecho = await processarRetorno(admin, {
     state: p.get("state"),
     code: p.get("code"),
     error: p.get("error"),

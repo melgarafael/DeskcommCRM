@@ -197,7 +197,7 @@ export interface LeadFieldProposalRow {
  */
 /**
  * Os acessos que o titular deu a servidores MCP externos (OAuth por contato,
- * migration 9081): os pedidos de autorização (apagados na anonimização) e as
+ * migration 9095): os pedidos de autorização (apagados na anonimização) e as
  * credenciais. Entra o QUE ele autorizou, a quem e quando — nunca o token, o
  * `code_verifier` nem o `state`, que são segredo e não dado dele.
  */
@@ -745,7 +745,7 @@ export interface ExportPayload {
   orders: OrderRow[];
   activities: ActivityRow[];
   checkpoints: CheckpointRow[];
-  /** Opcionais: payload gerado antes da 9081 não os tem. */
+  /** Opcionais: payload gerado antes da 9095 não os tem. */
   mcp_pedidos_de_acesso?: AcessoMcpRow[];
   mcp_acessos?: AcessoMcpRow[];
   appointments: AppointmentRow[];
@@ -1638,7 +1638,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
-  // Acessos a servidores MCP externos (OAuth por contato, 9081). A anonimização
+  // Acessos a servidores MCP externos (OAuth por contato, 9095). A anonimização
   // APAGA os pedidos e revoga as credenciais: o que se apaga a pedido dele é o
   // que se entrega a pedido dele. Só metadado — nenhuma coluna cifrada.
   let mcpPedidos: AcessoMcpRow[] = [];

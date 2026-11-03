@@ -260,12 +260,12 @@ const DECISOES: Record<string, Decisao> = {
   contato_mcp_credenciais: {
     decidida: "redigir",
     caminho: "gatilho",
-    razao: "9081: fn_mcp_contato_anonimizado_revoga_acessos agenda a revogação IMEDIATA na virada; o cron mcp-oauth-revogacao revoga no terceiro (RFC 7009 — precisa do token) e, com o contato anonimizado, apaga a linha.",
+    razao: "9095: fn_mcp_contato_anonimizado_revoga_acessos agenda a revogação IMEDIATA na virada; o cron mcp-oauth-revogacao revoga no terceiro (RFC 7009 — precisa do token) e, com o contato anonimizado, apaga a linha.",
   },
   mcp_oauth_pedidos: {
     decidida: "redigir",
     caminho: "gatilho",
-    razao: "9081: fn_mcp_contato_anonimizado_revoga_acessos APAGA os pedidos de autorização pendentes na virada — link de acesso de contato anonimizado não tem mais destinatário.",
+    razao: "9095: fn_mcp_contato_anonimizado_revoga_acessos APAGA os pedidos de autorização pendentes na virada — link de acesso de contato anonimizado não tem mais destinatário.",
   },
   crm_tasks: {
     decidida: "redigir",

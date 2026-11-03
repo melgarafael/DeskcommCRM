@@ -19,6 +19,7 @@ import type { FunilDaResposta } from "@/hooks/pipelines/usePipelines";
 import { coberturaDoFunil, type EtapaDoMapa } from "@/lib/leads/agent-mapping";
 import type { CoberturaPorFunil } from "./_components/FunisDoAgente";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { escolherVersoesDaTela } from "@/lib/ai/agents/versoes-da-tela";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
 
@@ -248,6 +249,7 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
         routerMembership={routerMembership}
         readOnly={readOnly}
         organizationTimezone={fusoUtilizavel(activeOrg.timezone)}
+        mcpPorAgente={await moduloLigado(createAdminClient(), "mcp_por_agente")}
       />
     </div>
   );

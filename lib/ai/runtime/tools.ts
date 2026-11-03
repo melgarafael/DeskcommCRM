@@ -39,6 +39,7 @@ import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/act
 import { podeChamarFerramenta, recusaParaOModelo } from "@/lib/leads/escopo-de-funil";
 import { escritaCabeNoTurno } from "./escopo-das-escritas";
 import type { DesfechoDaEscrita, EfeitoDasEscrituras } from "./efeito-das-escritas";
+import { ESCRITAS_DE_AGENDAMENTO } from "./recibos-de-agendamento";
 import {
   chaveDaEscritaDoNegocio,
   criarFilaDeEscritasDoNegocio,
@@ -103,7 +104,7 @@ export interface PickToolsInput {
    */
   servidorMcpExterno?: ServidorMcpExternoMontado;
   /**
-   * Servidores MCP DO AGENTE já carregados para este turno (migration 9081),
+   * Servidores MCP DO AGENTE já carregados para este turno (migration 9095),
    * por `carregarServidoresDoAgenteNoTurno`. Ausente/vazio = nenhum.
    */
   servidoresDoAgente?: readonly ServidorDoAgenteNoTurno[];
@@ -258,6 +259,8 @@ function wrapMcpTool(
     inputSchema,
     execute: async (args: unknown) => {
       const startedAt = Date.now();
+      const geracaoDaAgenda = ESCRITAS_DE_AGENDAMENTO.has(def.name)
+        ? input.efeitos?.iniciarAgendamento() : undefined;
       // ── O UUID QUE O MODELO INVENTA PARA "NÃO SEI" ────────────────────────
       //
       // Aqui, na fronteira, e não em cada handler. Medido em produção: um
@@ -541,6 +544,9 @@ function wrapMcpTool(
         });
         // O MESMO critério do audit: vazio declarado não é efeito (#484).
         anotarEfeito(motivoDoVazio === null ? "produziu_efeito" : "falhou");
+        if (geracaoDaAgenda !== undefined && motivoDoVazio === null) {
+          input.efeitos?.registrarRecibosDeAgendamento(geracaoDaAgenda, result);
+        }
         return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : "unknown_error";
@@ -736,7 +742,7 @@ export function pickToolsFromMcp(input: PickToolsInput): Record<string, Tool> {
     }
   }
 
-  // ── Servidores MCP DO AGENTE (migration 9081) ────────────────────────────
+  // ── Servidores MCP DO AGENTE (migration 9095) ────────────────────────────
   //
   // Mesma porta das remotas acima — `wrapMcpTool`, auditoria, papel, escopo —,
   // com nomes namespaced (`<slug>__<nome>`). Servidor `oauth_por_contato` só

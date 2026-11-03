@@ -1,7 +1,7 @@
 "use server";
 /**
  * Os ACESSOS que um contato deu a servidores MCP externos (OAuth por contato,
- * migration 9081) — a seção da ficha do contato, só para `admin`.
+ * migration 9095) — a seção da ficha do contato, só para `admin`.
  *
  * A lista mostra servidor, escopos, desde quando e último uso. O token nunca:
  * nem aqui, nem no log, nem na auditoria. "Revogar" chama o `revocation_endpoint`

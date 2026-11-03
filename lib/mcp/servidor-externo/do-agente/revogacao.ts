@@ -1,6 +1,6 @@
 /**
  * A revogação AGENDADA das credenciais por contato — o lado HTTP do que os
- * gatilhos da migration 9081 só marcam (`revogar_apos`).
+ * gatilhos da migration 9095 só marcam (`revogar_apos`).
  *
  * Quem agenda: o encerramento da conversa (`fn_mcp_agenda_revogacao_no_encerramento`,
  * com a retenção do servidor) e a anonimização do contato

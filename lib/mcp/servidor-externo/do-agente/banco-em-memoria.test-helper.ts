@@ -117,6 +117,10 @@ export function bancoEmMemoria(inicial: Record<string, Linha[]> = {}): BancoEmMe
         filtros.push((l) => l[c] === v);
         return b;
       },
+      in(c: string, v: readonly unknown[]) {
+        filtros.push((l) => v.includes(l[c]));
+        return b;
+      },
       is(c: string, v: unknown) {
         filtros.push((l) => (l[c] ?? null) === v);
         return b;

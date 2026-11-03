@@ -45,7 +45,11 @@ test("admin configura testes, remove número, confirma abertura e volta a restri
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/app/);
   await page.goto("/app/connections");
-  await expect(page.getByText("Canal de validação", { exact: true })).toBeVisible();
+  // O canal nasce STOPPED, então a faixa de conexão caída também mostra este nome. Sem o recorte,
+  // o teste passava pela faixa enquanto a lista carregava e reprovava quando a lista chegava antes.
+  await expect(
+    page.getByRole("tabpanel", { name: "Números por QR" }).getByText("Canal de validação", { exact: true }),
+  ).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText("IA em modo de teste", { exact: true })).toBeVisible();
   const openPanel = () => page.getByRole("button", { name: "Configurar acesso da IA" }).click();
   const input = page.getByLabel("Números autorizados para teste");

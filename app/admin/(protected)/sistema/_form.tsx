@@ -328,6 +328,23 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     foraDoMenu: "Não cria porta no menu do CRM: ele libera uma aba em",
     painelEm: "/app/team",
   },
+  {
+    modulo: "avisos",
+    id: "modulo-avisos",
+    rotulo: "Avisos para a equipe",
+    descricao:
+      "Ligado, o administrador de cada empresa pode escrever um aviso com título e texto, e ele chega como notificação nos aparelhos da equipe que ativaram as notificações. Desligado, ninguém envia avisos; os já enviados ficam guardados.",
+    foraDoMenu: "Não cria porta no menu do CRM: por enquanto o aviso é enviado pela API, em /api/v1/avisos.",
+  },
+  {
+    modulo: "mcp_por_agente",
+    id: "modulo-mcp-por-agente",
+    rotulo: "Ferramentas externas por agente",
+    descricao:
+      "Ligado, a tela de cada agente ganha a seção Servidores MCP, para conectar sistemas de terceiros com chave fixa ou com o login de cada cliente, que autoriza a própria conta por um link na conversa. Desligado, a seção some, o agente deixa de usar esses servidores e os links de autorização param de abrir; o que já foi cadastrado fica guardado.",
+    foraDoMenu: "Não cria porta no menu do CRM: ele libera uma seção na tela de cada agente, em",
+    painelEm: "/app/ai/agents",
+  },
 ];
 
 /**
