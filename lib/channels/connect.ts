@@ -198,6 +198,8 @@ export interface PartnerSession {
   phoneNumber: string | null;
   displayName: string | null;
   status: string | null;
+  /** O defeito de um número de pé, gravado pelo vigia de saúde (`./defeito-do-numero.ts`). */
+  statusReason: string | null;
   webhookPathToken: string | null;
   hasApiKey: boolean;
   archivedAt: string | null;
@@ -210,7 +212,7 @@ export interface PartnerSession {
 }
 
 const COLUNAS =
-  "id, zernio_account_id, phone_number, display_name, status, webhook_path_token, zernio_token_encrypted, zernio_credencial_da_instalacao, zernio_profile_id, zernio_webhook_id";
+  "id, zernio_account_id, phone_number, display_name, status, status_reason, webhook_path_token, zernio_token_encrypted, zernio_credencial_da_instalacao, zernio_profile_id, zernio_webhook_id";
 
 function toPartnerSession(row: Record<string, unknown> | null): PartnerSession | null {
   if (!row) return null;
@@ -220,6 +222,7 @@ function toPartnerSession(row: Record<string, unknown> | null): PartnerSession |
     phoneNumber: (row.phone_number as string) ?? null,
     displayName: (row.display_name as string) ?? null,
     status: (row.status as string) ?? null,
+    statusReason: (row.status_reason as string) ?? null,
     webhookPathToken: (row.webhook_path_token as string) ?? null,
     hasApiKey: !!row.zernio_token_encrypted,
     archivedAt: (row.archived_at as string) ?? null,

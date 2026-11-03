@@ -44,6 +44,7 @@ import type { TemplateContract } from "../meta/template-contract";
 import { assertDestinoResolvidoSeguro } from "@/lib/automation/outbound-ip";
 import { assertSafeOutboundUrl } from "@/lib/automation/outbound-url";
 import { zernioMediaFetchInit } from "../zernio/webhook";
+import { DETALHE_NAO_RECEBE, PREFIXO_ENVIO_RESTRITO } from "../defeito-do-numero";
 import type {
   ChannelAdapter,
   ChannelHealth,
@@ -431,6 +432,26 @@ export const zernioAdapter: ChannelAdapter = {
    *                    publicou a sonda. Cai no `status` geral em vez de falhar:
    *                    campo ausente é ausência de informação, não más notícias.
    *   qualquer outro → NÃO sabemos. `reachable: false`, sem status.
+   *
+   * ─── De pé, mas não inteiro (27/10/2026) ───────────────────────────────────
+   *
+   * Dois campos que a sonda traz e que esta leitura ignorava — e com eles
+   * ignorados, o número aparecia `WORKING` nos dois casos:
+   *
+   *   `platformConnection.inboundWebhookSubscribed: false`
+   *                  → a Meta diz que o provedor não assina o webhook de
+   *                    mensagens deste número: ele ENVIA e não RECEBE. `null` é
+   *                    "a Meta não informou" — não é evidência, não avisa.
+   *   `messagingRestriction` (na RAIZ — medido nesta instalação: `null` quando
+   *                    não há nada) → a plataforma recusou envio deste número
+   *                    com 131042 (pagamento), 131031 (conta bloqueada) ou 368
+   *                    (política). É observado nos envios, não sondado: atrasa
+   *                    uma mensagem em cada direção, e some quando uma mensagem
+   *                    volta a ser entregue.
+   *
+   * Os dois seguem `WORKING`, com o defeito no `detail` (`DETALHE_NAO_RECEBE`,
+   * `PREFIXO_ENVIO_RESTRITO`): barrar o envio seria pior, e quem avisa é a regra
+   * de `../health.ts`. O porquê inteiro está em `../defeito-do-numero.ts`.
    */
   async checkHealth(
     input: ChannelTenantScope & { sessionRef: string },
@@ -474,10 +495,29 @@ export const zernioAdapter: ChannelAdapter = {
         status?: string;
         phoneStatus?: string | null;
         metaError?: { code?: number; subcode?: number; message?: string } | null;
+        inboundWebhookSubscribed?: boolean | null;
       } | null;
+      messagingRestriction?: { code?: number | null; subcode?: number | null } | null;
     } | null;
 
     const elo = json?.platformConnection;
+
+    // De pé, mas não inteiro: o detalhe diz o quê, e o status continua WORKING.
+    // Não receber vem antes: é o defeito que ninguém vê — o envio segue saindo.
+    const restricao = json?.messagingRestriction;
+    const restricaoCodigo =
+      restricao && typeof restricao === "object"
+        ? (restricao.code ?? restricao.subcode ?? "desconhecido")
+        : null;
+    const dePe = (): ChannelHealth => {
+      if (elo?.inboundWebhookSubscribed === false) {
+        return { reachable: true, status: "WORKING", detail: DETALHE_NAO_RECEBE };
+      }
+      if (restricaoCodigo !== null) {
+        return { reachable: true, status: "WORKING", detail: `${PREFIXO_ENVIO_RESTRITO}${restricaoCodigo}` };
+      }
+      return { reachable: true, status: "WORKING", detail: null };
+    };
 
     if (elo?.status === "disconnected") {
       const e = elo.metaError;
@@ -489,14 +529,12 @@ export const zernioAdapter: ChannelAdapter = {
     if (elo?.status === "unknown") {
       return { reachable: false, status: null, detail: "sonda_do_elo_meta_inconclusiva" };
     }
-    if (elo?.status === "connected") {
-      return { reachable: true, status: "WORKING", detail: null };
-    }
+    if (elo?.status === "connected") return dePe();
 
     // Sem `platformConnection`: decide pelo veredito geral da conta.
     return json?.status === "error"
       ? { reachable: true, status: "FAILED", detail: "conta_em_erro" }
-      : { reachable: true, status: "WORKING", detail: null };
+      : dePe();
   },
 
   /** Gestão das definições aprovadas — ver `../zernio/templates.ts`. */
