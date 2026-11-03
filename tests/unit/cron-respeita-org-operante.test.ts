@@ -79,7 +79,7 @@ const SEM_FILTRO: Record<string, string> = {
   "storage-redaction": "LGPD e retenção nunca são bloqueadas (spec §1.3)",
   "sync-model-catalog": "catálogo da instalação inteira; não pertence a organização nenhuma",
   "webhook-log-retention": "retenção do arquivo de webhook: obrigação, nunca bloqueada",
-  "webhook-replay": "reprocessa ENTRADA do WAHA; mensagem que chega continua gravada (spec §1.3)",
+  "webhook-replay": "reprocessa ENTRADA dos canais pela mesma ingestão da rota; mensagem que chega continua gravada (spec §1.3)",
 };
 
 function rotasDeCron(): string[] {

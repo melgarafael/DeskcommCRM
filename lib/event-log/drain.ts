@@ -9,6 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   avisoDeEventoMorto,
   IA_QUE_NAO_RESPONDEU,
+  MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU,
   MENSAGEM_QUE_NAO_ENTROU,
 } from "@/lib/event-log/aviso-de-evento-morto";
 import { dispatchEvent, getRegisteredHandlers, type EventRow } from "@/lib/event-log/dispatcher";
@@ -96,6 +97,7 @@ export async function avisarEventoMorto(
       .eq("status", "open")
       .neq("title", IA_QUE_NAO_RESPONDEU.titulo)
       .neq("title", MENSAGEM_QUE_NAO_ENTROU.titulo)
+      .neq("title", MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU.titulo)
       .limit(1)
       .maybeSingle();
     if (jaAberto) return;

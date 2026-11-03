@@ -21,7 +21,10 @@
  *   - 401 assinatura que não confere, com rastro no log;
  *   - 200 `ignored` para evento que não é de nenhuma conexão de um clique: o
  *     provedor reentrega o que não recebeu 200;
- *   - 500 só para falha de ESCRITA, que é quando a reentrega é o que queremos.
+ *   - 500 só para falha de ESCRITA, que é quando a reentrega é o que queremos;
+ *   - 200 `accepted` para mensagem nova, ANTES de processá-la: o arquivo do
+ *     webhook a guardou e a ingestão roda depois da resposta; 503 quando nem o
+ *     arquivo gravou (`_entrada-do-canal.ts`).
  *
  * O caminho é público no `proxy.ts` pelo prefixo `/api/v1/webhooks/`
  * (`lib/auth/public-paths.ts`): quem autentica é a assinatura.

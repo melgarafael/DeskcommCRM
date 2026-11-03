@@ -112,6 +112,40 @@ export const MENSAGEM_QUE_NAO_ENTROU = {
     "depois de conferir, marque-o como resolvido para voltar a ser avisado.",
 } as const;
 
+/**
+ * A mensagem do NÚMERO OFICIAL que o reprocessamento não conseguiu gravar — a
+ * quarta família, irmã da terceira.
+ *
+ * O canal intermediado responde ao provedor antes de processar
+ * (`lib/channels/entrada-aceita.ts`), então quem desiste dela é o cron
+ * `webhook-replay`, depois do teto de tentativas. O texto da terceira não serve:
+ * ela culpa o banco (aqui a causa pode ser outra) e manda olhar "o celular do
+ * número", que o número oficial não tem — as conversas ficam no painel do
+ * provedor.
+ *
+ * Título próprio pela mesma razão da terceira: o dreno de handlers o exclui do
+ * seu dedupe — senão um aviso destes aberto calaria as outras tarefas que param
+ * de tentar.
+ */
+export const MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU = {
+  titulo: "Uma mensagem do número oficial não entrou no CRM",
+  consequencia:
+    "Um cliente escreveu para o número oficial, mas a mensagem não pôde ser gravada, mesmo depois de várias tentativas. " +
+    "Ela não aparece no Inbox e a IA não a respondeu: confira no painel do provedor do número as conversas desse horário e responda por lá.",
+  rearme:
+    "Enquanto este aviso estiver aberto, outras mensagens do número oficial que também não entrarem não abrem aviso novo: " +
+    "depois de conferir, marque-o como resolvido para voltar a ser avisado.",
+} as const;
+
+/** O aviso da quarta família: o que aconteceu e o que fazer primeiro, o técnico no fim. */
+export function avisoDaMensagemDoNumeroOficial(evento: {
+  eventType: string;
+  tentativas: number;
+  motivo: string;
+}): { title: string; body: string } {
+  return avisoDeEventoMorto({ ...evento, efeito: MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU });
+}
+
 export const TITULO_GENERICO = "Uma tarefa automática parou de tentar";
 
 const CONSEQUENCIA_GENERICA =
