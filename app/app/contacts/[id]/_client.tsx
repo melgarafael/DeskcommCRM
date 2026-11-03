@@ -572,6 +572,13 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
                 <dd className="mt-1">
                   {origem.origem === ORIGEM_AGENDA_DO_CELULAR ? t("Agenda do celular") : origem.origem}
                 </dd>
+                {origem.inferidaPorHorario && (
+                  <dd className="mt-1 text-sm text-muted-foreground">
+                    {t(
+                      "Provável: deduzida pelo horário do clique. A mensagem chegou sem o código do link.",
+                    )}
+                  </dd>
+                )}
               </div>
               <NivelDaOrigem rotulo={t("Campanha")} valor={origem.campanha} />
               <NivelDaOrigem rotulo={t("Conjunto")} valor={origem.conjunto} />
@@ -635,13 +642,14 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
           </Card>
           {/* CARTEIRA DO CLIENTE (#2591): de quem é este cliente. Fica na Visão
               geral, junto dos dados que dizem "quem é esta pessoa" — quem atende
-              responde a pergunta antes de prometer o negócio, e o gerente muda o
-              dono aqui (o seletor só aparece para `manager`+; o gate real é o da
-              rota `PATCH /contacts/[id]/carteira`). Só de `agent` para cima: é
-              o piso do GET da carteira, e o `viewer` receberia 403. */}
+              responde a pergunta antes de prometer o negócio, e o seletor de dono
+              aparece para quem o servidor autoriza NAQUELE cliente: `manager`+ e o
+              Atendente que atende o cliente (#3746). Quem decide é o `pode_alterar`
+              do GET, não o papel lido aqui. Só de `agent` para cima: é o piso do
+              GET da carteira, e o `viewer` receberia 403. */}
           {activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && (
             <div className="mt-4">
-              <CartaoDaCarteira contactId={contactId} papelDoUsuario={activeOrg.role} />
+              <CartaoDaCarteira contactId={contactId} />
             </div>
           )}
           <div className="mt-4">

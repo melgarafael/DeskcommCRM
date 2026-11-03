@@ -166,7 +166,7 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
         ...base,
         resumo:
           node.config.mode === "fixed"
-            ? `espera ${duracaoLegivel(node.config.duration_ms)}`
+            ? `espera ${duracaoLegivel(node.config.duration_ms)}${node.config.ate_o_horario ? " e só termina em horário comercial" : ""}`
             : `espera adaptativa, entre ${duracaoLegivel(node.config.min_ms)} e ${duracaoLegivel(node.config.max_ms)}`,
       };
     case "condition":
@@ -556,6 +556,14 @@ export function descreveEvento(
       return {titulo:"Acompanhamento encerrado sem novo envio",detalhe:texto(p.reason),...motor};
     case "cancelled_manual":
       return { titulo: "Cancelado por uma pessoa da equipe", detalhe: null, ...pessoa };
+    case "replaced_by_rule":
+      // `start_message_flow` com `replace_live_flow`: outra regra pôs o contato
+      // num fluxo diferente. O nome da regra é o que a pessoa procura na tela.
+      return {
+        titulo: "Encerrado porque uma automação o colocou em outro fluxo",
+        detalhe: texto(p.rule_name),
+        ...motor,
+      };
     case "paused_manual":
       return { titulo: "Pausado por uma pessoa da equipe", detalhe: texto(p.motivo), ...pessoa };
     case "resumed_manual": {

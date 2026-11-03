@@ -178,7 +178,7 @@ function hhmmParaMinutos(hhmm: string): number {
  * hora de PAREDE (ano/mês/dia/hora/minuto), que só então vira instante no fuso
  * certo. Faz `24:00` virar meia-noite do dia seguinte sem caso especial.
  */
-function paredeDeMinutos(ano: number, mes: number, dia: number, minuto: number): HoraDeParede {
+export function paredeDeMinutos(ano: number, mes: number, dia: number, minuto: number): HoraDeParede {
   const base = new Date(Date.UTC(ano, mes - 1, dia, 0, 0, 0));
   base.setUTCMinutes(base.getUTCMinutes() + minuto);
   return {

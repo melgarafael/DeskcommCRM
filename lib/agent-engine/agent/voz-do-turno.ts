@@ -19,6 +19,7 @@ import { aplicarOrcamento, LlmBudgetExceededError, type RastroDaChamada } from '
 import { chaveDeOrcamentoDaInstalacao } from '@/lib/instalacao/comportamento';
 import { logger } from '@/lib/logger';
 import type { ChannelCapabilities } from '@/lib/channels/types';
+import { formatoDaVozParaCanal, type FormatoDaVoz } from '@/lib/ai/voz/formato';
 
 export type VozQuando = 'nunca' | 'espelhar' | 'sempre';
 
@@ -28,9 +29,10 @@ export interface ResolverVozDoTurnoInput {
   vozEnabled: boolean;
   vozQuando: VozQuando;
   /**
-   * O que o canal da conversa faz com áudio. A síntese grava mp3, e só o canal
-   * que CONVERTE o entrega como nota de voz — no `opus-only` ele chegaria como
-   * anexo de música (`lib/channels/capabilities.ts`). Lá, a resposta segue em texto.
+   * O que o canal da conversa faz com áudio — e daí o FORMATO da síntese: mp3
+   * para quem converte, ogg/opus para o canal oficial, que exige opus e não
+   * converte (`lib/ai/voz/formato.ts`). Até 02/11/2026 o `opus-only` respondia
+   * sempre em texto; a ElevenLabs sintetiza em opus, então ele também fala.
    */
   voiceNote: ChannelCapabilities['voiceNote'];
   /** `messages.type` da mensagem inbound que disparou o turno — `null` quando não há (ex.: follow-up proativo). */
@@ -53,6 +55,8 @@ export interface VozResolvidaDoTurno {
   apiKey: string;
   voiceId: string;
   modelId?: string;
+  /** O formato que ESTE canal entrega como nota de voz. */
+  formato: FormatoDaVoz;
 }
 
 /** `organizations.settings->'voz'` — mesmo padrão jsonb de `settings->'llm'`. */
@@ -68,11 +72,40 @@ function deveFalar(vozQuando: VozQuando, inboundType: string | null): boolean {
   return inboundType === 'audio';
 }
 
+/**
+ * O BLOCO QUE AVISA O MODELO DE QUE A RESPOSTA VAI SER OUVIDA.
+ *
+ * A síntese não reescreve nada: `textoFalavel` só tira emoji, markdown e
+ * símbolo do texto que o modelo escreveu. Se o modelo não sabe que vai ser
+ * ouvido, escreve para a TELA — e o que se lê de relance cansa no ouvido.
+ * Medido numa instalação real (03/11/2026, número oficial): a resposta a um áudio de
+ * cliente saiu numa nota de 35 segundos, com lista ("funil, follow-up, agente
+ * de IA…") e sigla ("API oficial da Meta"). Uma nota confortável fica entre 15 e
+ * 25 segundos — ~300 caracteres de fala.
+ *
+ * Só entra quando a voz JÁ foi resolvida para este turno (`null` = o turno sai em
+ * texto e nada muda). Link e texto longo seguem caindo para texto em
+ * `textoParaFalar`: o bloco pede o curto, a régua de lá continua sendo a garantia.
+ */
+export const BLOCO_DA_RESPOSTA_FALADA =
+  '## Esta resposta vai sair como NOTA DE VOZ\n' +
+  'O cliente vai OUVIR o que você mandar com send_message: a voz é gerada a partir do seu texto. ' +
+  'Escreva para ser ouvido, no idioma da conversa:\n' +
+  '- curto: no máximo uns 20 segundos de fala (cerca de 300 caracteres);\n' +
+  '- uma ideia por vez, com frases simples, como num áudio de WhatsApp;\n' +
+  '- sem listas, tópicos, emojis, siglas nem símbolos; números e preços escritos como se falam;\n' +
+  '- se fizer sentido, termine com UMA pergunta.\n' +
+  'Link, endereço longo ou dado para copiar não cabem em áudio: se precisar mandar, mande por escrito.';
+
+/** O bloco da resposta falada, ou `null` quando este turno sai em texto. */
+export function blocoDaRespostaFalada(voz: VozResolvidaDoTurno | null): string | null {
+  return voz ? BLOCO_DA_RESPOSTA_FALADA : null;
+}
+
 export async function resolverVozDoTurno(
   input: ResolverVozDoTurnoInput,
 ): Promise<VozResolvidaDoTurno | null> {
   if (!input.vozEnabled) return null;
-  if (input.voiceNote !== 'server-convert') return null;
   if (!deveFalar(input.vozQuando, input.inboundType)) return null;
 
   try {
@@ -131,6 +164,7 @@ export async function resolverVozDoTurno(
       apiKey: elevenlabs.apiKey,
       voiceId: voz.voice_id,
       modelId,
+      formato: formatoDaVozParaCanal(input.voiceNote),
     };
   } catch (err) {
     if (err instanceof LlmBudgetExceededError) {
