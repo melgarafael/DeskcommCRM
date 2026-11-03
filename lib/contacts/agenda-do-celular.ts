@@ -309,7 +309,7 @@ export async function sincronizarAgendaDoCelular(
   e: {
     organizationId: string;
     session: string;
-    actorUserId: string;
+    actorUserId: string | null;
     requestId: string;
     /** De onde ESTE clique começa na agenda — o `proximo_offset` do anterior. */
     offset?: number;

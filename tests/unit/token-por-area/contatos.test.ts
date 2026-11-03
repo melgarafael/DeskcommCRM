@@ -635,7 +635,9 @@ function requisicao(c: Caso, cabecalhos: Record<string, string> = {}): NextReque
 }
 
 async function chamar(c: Caso, req: NextRequest): Promise<Response> {
-  const modulo = (await CARREGA[c.rota]()) as unknown as Record<string, unknown>;
+  const carregar = CARREGA[c.rota];
+  if (!carregar) throw new Error(`rota sem carregador: ${c.rota}`);
+  const modulo = (await carregar()) as unknown as Record<string, unknown>;
   const manipulador = modulo[c.metodo] as Manipulador;
   return manipulador(req, { params: Promise.resolve(c.params ?? {}) });
 }
@@ -682,7 +684,7 @@ async function comoSessao(c: Caso) {
     tabelasSemOrganizacao: SEM_ORGANIZACAO,
   });
   vi.mocked(createClient).mockResolvedValue({
-    ...falso.cliente,
+    ...(falso.cliente as object),
     auth: {
       getUser: vi.fn().mockResolvedValue({
         data: { user: { id: PESSOA_DA_SESSAO, idioma: "pt-BR" } },

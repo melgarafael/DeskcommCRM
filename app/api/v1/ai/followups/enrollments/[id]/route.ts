@@ -185,14 +185,14 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const lidos = eventos ?? [];
   const truncado = lidos.length > TETO_DE_EVENTOS;
 
-  const linha = row as {
+  const linha = row as unknown as {
     id: string;
     status: string;
-    contact_id: string | null;
-    pointer_id: string | null;
+    contact_id: string;
+    pointer_id: string;
     agent_id: string | null;
-    version_id: string | null;
-    current_node_id: string | null;
+    version_id: string;
+    current_node_id: string;
     next_eval_at: string | null;
     claimed_until: string | null;
     started_at: string;

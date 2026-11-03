@@ -425,7 +425,7 @@ function emitirTokens(opcoes: { scopes: string[]; role: Papel }): void {
 }
 
 function requisicao(c: Caso, headers: Record<string, string>): NextRequest {
-  const init: RequestInit = { method: c.metodo, headers };
+  const init: NonNullable<ConstructorParameters<typeof NextRequest>[1]> = { method: c.metodo, headers };
   return new NextRequest(`http://localhost${c.caminho}`, init);
 }
 

@@ -10,6 +10,7 @@ import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Actor } from "@/lib/api/handlers/types";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/active-lead";
@@ -129,7 +130,7 @@ async function registraNaTimeline(
     leadId: string;
     tipo: "contact_marked_personal" | "contact_unmarked_personal";
     motivo: string;
-    atorUserId: string;
+    ator: Actor;
     requestId: string;
     origem: string;
   },
@@ -141,7 +142,7 @@ async function registraNaTimeline(
     type: entrada.tipo,
     sourceModule: "crm",
     sourceId: entrada.leadId,
-    actor: { type: "user", id: entrada.atorUserId },
+    actor: entrada.ator,
     reason: entrada.motivo,
     payload: { origem: entrada.origem },
   });
@@ -479,7 +480,7 @@ export async function POST(req: NextRequest, ctx: Context): Promise<Response> {
       leadId,
       tipo: "contact_marked_personal",
       motivo: "Contato marcado como pessoal pela equipe",
-      atorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+      ator: authz.actor,
       requestId,
       origem: "contacts/[id]/personal.POST",
     });
@@ -569,7 +570,7 @@ export async function DELETE(req: NextRequest, ctx: Context): Promise<Response> 
       leadId,
       tipo: "contact_unmarked_personal",
       motivo: "Marca de pessoal retirada pela equipe",
-      atorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+      ator: authz.actor,
       requestId,
       origem: "contacts/[id]/personal.DELETE",
     });

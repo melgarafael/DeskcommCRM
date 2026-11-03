@@ -20,6 +20,7 @@
  * quem funde é `manager`, e esse gate está na rota de POST /contacts/merge.
  */
 import { randomUUID } from "node:crypto";
+import type { NextRequest } from "next/server";
 
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";

@@ -11,6 +11,7 @@ import { z } from "zod";
 
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
+import { requireRole } from "@/lib/auth/require-role";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createFollowupEnrollmentSchema } from "@/lib/followup/api-schemas";

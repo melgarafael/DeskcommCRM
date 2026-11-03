@@ -68,7 +68,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     if (!authz.ok) return authz.response;
     const teto = await tetoDeEscritaDoToken(authz, "org_voice_calls", requestId);
     if (teto) return teto;
-    const podeEditar = roleAtLeast(authz.actor.role, "admin");
+    // O token só lê; "pode editar" é dica de tela, e a sessão é quem edita.
+    const podeEditar = false;
     return responderOptIn(authz.supabase, authz.organizationId, podeEditar, requestId);
   }
 

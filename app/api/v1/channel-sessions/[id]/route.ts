@@ -194,7 +194,7 @@ export async function GET(
 async function responderGet(
   db: SupabaseClient,
   organizationId: string,
-  user: { support?: { access_mode?: string | null } } | undefined,
+  user: { support?: { access_mode?: string | null } | null } | undefined,
   requestId: string,
   id: string,
   req: NextRequest,
