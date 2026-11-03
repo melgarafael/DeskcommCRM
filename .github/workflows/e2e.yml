@@ -1492,6 +1492,10 @@ jobs:
       # regra de entrada: cada uma semeia o que usa ou só lê os seeds de
       # passo (ex.: o catálogo da OpenRouter que `seed-e2e-catalogo-openrouter`
       # semeia em toda parte comum), e nenhuma cita WAHA, Graph ou webhook.
+      # `molde-de-ia-empresas-novas` grava uma escolha da INSTALAÇÃO
+      # (`platform_settings.molde_de_ia_org_id`, migration 9096) e a devolve a
+      # nulo no fim: deixada escolhida, as empresas das specs seguintes desta
+      # parte nasceriam com a IA do molde.
       SPECS_PARTE_7: >-
         celular-toque-nos-controles.spec.ts
         agente-novo-e-uso.spec.ts
@@ -1503,6 +1507,7 @@ jobs:
         prova-painel-provedores.spec.ts
         comercial-no-celular.spec.ts
         propostas-de-campos-do-card.spec.ts
+        molde-de-ia-empresas-novas.spec.ts
       # Ambiente isolado: esta spec exige HMAC WAHA e Graph sintético no
       # processo next start. As demais partes preservam a configuração WAHA.
       #
