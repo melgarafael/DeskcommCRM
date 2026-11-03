@@ -21,6 +21,8 @@ import { motivoDoErro } from "./psql-transporte";
  */
 
 const RECUSA = "canal_ligacao_ao_provedor_e_do_servidor";
+/** Outra organização, criada na transação, para o caso de trocar a linha de dona. */
+const OUTRA_ORG = "cccccccc-9093-4000-8000-0000000000aa";
 const CANAL = "cccccccc-9093-4000-8000-000000000001";
 const CONTA = "9093".repeat(6);
 
@@ -36,9 +38,15 @@ function linhaDoServidor(pelaInstalacao = true): string {
        '\\x00'::bytea, 'Canal 9093', now());`;
 }
 
+const OUTRA_ORG_SQL = `
+    insert into public.organizations (id, slug, legal_name, display_name)
+      values ('${OUTRA_ORG}', 'inv-9093-outra', 'Inv 9093 Outra', 'Inv 9093 Outra')
+      on conflict do nothing;`;
+
 function comoAdmin(dml: string, pelaInstalacao = true): string {
   return sql(`
     begin;
+    ${OUTRA_ORG_SQL}
     ${linhaDoServidor(pelaInstalacao)}
     set local role authenticated;
     select set_config('request.jwt.claims', '{"sub":"${GOV_ADMIN}","role":"authenticated"}', true) is not null;
@@ -49,6 +57,7 @@ function comoAdmin(dml: string, pelaInstalacao = true): string {
 function comoServidor(dml: string): string {
   return sql(`
     begin;
+    ${OUTRA_ORG_SQL}
     ${linhaDoServidor()}
     set local role service_role;
     with w as (${dml} returning 1) select 'LINHAS:' || count(*) from w;
@@ -81,6 +90,31 @@ describe("9093: o admin da organização não grava a ligação do canal com o p
     );
     expect(erro, `o admin alterou ${coluna} SEM erro`).not.toBeNull();
     expect(erro).toContain(RECUSA);
+  });
+
+  it.each([
+    ["desarquivar (archived_at = null)", "archived_at = null"],
+    ["mudar o arquivamento", "archived_at = now() - interval '1 day'"],
+    ["trocar o provedor", "provider = 'zernio_social'"],
+    ["trocar a organização", `organization_id = '${OUTRA_ORG}'`],
+  ])("linha da instalação: %s pela API do banco: 42501", (_rotulo, atribuicao) => {
+    const erro = erroDe(() =>
+      comoAdmin(`update public.channel_sessions set ${atribuicao} where id = '${CANAL}'`),
+    );
+    expect(erro, `o admin conseguiu ${_rotulo} SEM erro`).not.toBeNull();
+    expect(erro).toContain(RECUSA);
+  });
+
+  it("linha da instalação: DELETE pela API do banco: 42501", () => {
+    const erro = erroDe(() => comoAdmin(`delete from public.channel_sessions where id = '${CANAL}'`));
+    expect(erro, "o admin apagou a linha da instalação SEM erro").not.toBeNull();
+    expect(erro).toContain(RECUSA);
+  });
+
+  it("CONTROLE: fora das linhas da instalação, o admin apaga a própria linha", () => {
+    expect(comoAdmin(`delete from public.channel_sessions where id = '${CANAL}'`, false)).toContain(
+      "LINHAS:1",
+    );
   });
 
   it("INSERT de uma linha que aponta para a chave da instalação (arquivada, fora do índice único): 42501", () => {
@@ -139,6 +173,22 @@ describe("9093: o servidor (service role) grava a ligação", () => {
                zernio_webhook_id = 'webhook-novo', phone_number = '+5511980000000'
          where id = '${CANAL}'`),
     ).toContain("LINHAS:1");
+  });
+
+  it.each([
+    ["mudar o arquivamento", "archived_at = now() - interval '1 day'"],
+    ["trocar o provedor", "provider = 'zernio_social'"],
+    ["trocar a organização", `organization_id = '${OUTRA_ORG}'`],
+  ])("linha da instalação: %s", (_rotulo, atribuicao) => {
+    expect(
+      comoServidor(`update public.channel_sessions set ${atribuicao} where id = '${CANAL}'`),
+    ).toContain("LINHAS:1");
+  });
+
+  it("DELETE da linha da instalação — sem o `coalesce(new, old)` a exclusão seria cancelada em silêncio", () => {
+    expect(comoServidor(`delete from public.channel_sessions where id = '${CANAL}'`)).toContain(
+      "LINHAS:1",
+    );
   });
 
   it("INSERT de uma linha pela instalação", () => {

@@ -539,15 +539,20 @@ export async function DELETE(
     patch.webhook_path_token = randomUUID().replace(/-/g, "");
   }
 
+  // A linha da conexão pela instalação só é arquivada ou apagada pelo service
+  // role (gatilho da migration 9093): por fora desta rota, o número ficaria na
+  // conta da instalação sem passar por `desfazerNoProvedor`. O filtro de
+  // organização abaixo é o mesmo nos dois clientes, resolvido da sessão.
+  const escritor = session.zernio_credencial_da_instalacao === true ? createAdminClient() : supabase;
   if (arquivar) {
-    const { error: archErr } = await supabase
+    const { error: archErr } = await escritor
       .from("channel_sessions")
       .update(patch)
       .eq("organization_id", activeOrg.orgId)
       .eq("id", id);
     if (archErr) return fail("internal_error", archErr.message, 500, { requestId });
   } else {
-    const { error: delErr } = await supabase
+    const { error: delErr } = await escritor
       .from("channel_sessions")
       .delete()
       .eq("organization_id", activeOrg.orgId)

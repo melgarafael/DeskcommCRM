@@ -41,16 +41,25 @@ vi.mock("@/lib/channels/connect", async (original) => ({
   ...(await original<Record<string, unknown>>()),
   desfazerNoProvedor: h.desfazer,
 }));
-// As contagens do impacto: canal virgem, então a saída é o hard delete.
+// As contagens do impacto: canal virgem, então a saída é o hard delete. A
+// escrita pelo service role fica registrada com o prefixo `admin:`.
 vi.mock("@/lib/supabase/admin", () => ({
-  createAdminClient: () => {
-    const q = {
-      select: () => q,
-      eq: () => q,
-      then: (ok: (r: unknown) => unknown) => Promise.resolve({ count: 0, error: null }).then(ok),
-    };
-    return { from: () => q };
-  },
+  createAdminClient: () => ({
+    from() {
+      let op = "select";
+      const q = {
+        select: () => q,
+        eq: () => q,
+        update: () => ((op = "update"), q),
+        delete: () => ((op = "delete"), q),
+        then: (ok: (r: unknown) => unknown) => {
+          if (op !== "select") h.escritas.push(`admin:${op}`);
+          return Promise.resolve({ count: 0, data: null, error: null }).then(ok);
+        },
+      };
+      return q;
+    },
+  }),
 }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
@@ -108,12 +117,12 @@ describe("exclusão de canal do provedor parceiro com o provedor fora do ar", ()
     expect(h.escritas).toEqual([]);
   });
 
-  it("CONTROLE: com o provedor respondendo, a mesma conexão é excluída", async () => {
+  it("CONTROLE: com o provedor respondendo, a mesma conexão é excluída — pelo service role, o único que o gatilho da 9093 deixa", async () => {
     h.sessao = sessao(true);
     h.desfazer.mockResolvedValue("desfeito");
     const r = await excluir();
     expect(r.status).toBe(200);
-    expect(h.escritas).toEqual(["delete"]);
+    expect(h.escritas).toEqual(["admin:delete"]);
   });
 
   it("chave própria: a falha do provedor não segura a exclusão (o número é da conta da organização)", async () => {
