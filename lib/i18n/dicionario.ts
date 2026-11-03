@@ -19249,6 +19249,9 @@ export const DICIONARIO: Traducoes = {
   "Quem lê esta opção é o programa de segundo plano, uma única vez, quando liga — e ele não pergunta ao banco. Mostrar um campo aqui daria a impressão de que mudou, sem mudar nada. A troca é no arquivo de instalação, seguida de reinício.": {
     es: "Quien lee esta opción es el programa en segundo plano, una única vez, al arrancar — y no vuelve a consultar la base de datos. Mostrar un campo aquí daría la impresión de que cambió, sin cambiar nada. El cambio es en el archivo de instalación, seguido de un reinicio.",
   },
+  // Rótulo do provedor de IA, tela /app/ai/credentials (AddCredentialDialog, CredentialsList).
+  "OpenAI pela assinatura (ChatGPT)": { es: "OpenAI por suscripción (ChatGPT)" },
+  "Provedor personalizado (compatível com OpenAI)": { es: "Proveedor personalizado (compatible con OpenAI)" },
 };
 
 /**

@@ -154,7 +154,7 @@ export function CredentialsList({
         return (
           <section key={p} className="space-y-2">
             <h2 className="text-sm font-medium text-muted-foreground">
-              {PROVIDER_LABELS[p]}
+              {t(PROVIDER_LABELS[p])}
             </h2>
             <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {rows.map((row) => (

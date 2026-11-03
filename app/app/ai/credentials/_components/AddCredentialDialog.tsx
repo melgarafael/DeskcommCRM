@@ -262,7 +262,7 @@ export function AddCredentialDialog({ open, onOpenChange, providerInicial = "ant
                 <SelectGroup>
                   {PROVEDORES_COM_CHAVE.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
-                      {p.rotulo}
+                      {t(p.rotulo)}
                     </SelectItem>
                   ))}
                 </SelectGroup>
@@ -271,7 +271,7 @@ export function AddCredentialDialog({ open, onOpenChange, providerInicial = "ant
                   <SelectLabel>{t("Serviços de voz")}</SelectLabel>
                   {PROVEDORES_DE_SERVICO.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
-                      {p.rotulo}
+                      {t(p.rotulo)}
                     </SelectItem>
                   ))}
                 </SelectGroup>
