@@ -967,6 +967,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "endpoint da Graph API do WhatsApp Cloud — 6 arquivos: envio de template, sincronização de modelos, validação de credencial, conversões e insights. É contrato da Meta, não escolha nossa.",
   },
+  "apps.olx.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "raiz da API de chat do canal do chat de vendedor (#2927): o POST que registra o webhook na conta do vendedor e o POST que envia a mensagem, ambos em `lib/channels/chat-de-vendedor/` e `lib/channels/adapters/olx.ts`. Domínio do fornecedor, trocável só por `OLX_API_BASE_URL` (homologação).",
+  },
   "www.googleapis.com": {
     categoria: "FORNECEDOR",
     motivo:

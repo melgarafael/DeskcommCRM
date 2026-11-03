@@ -20,7 +20,8 @@ import { CHANNEL_PROVIDER_SOCIAL } from "./capabilities";
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
+import { CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_OLX, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
+import { entradaChatDeVendedorAceitavel } from "./chat-de-vendedor/webhook";
 import { canalGraphParceiroLigado } from "./graph-parceiro/credentials";
 import { graphPartnerRefsDaSessao } from "./graph-parceiro/session";
 import {
@@ -42,6 +43,8 @@ import {
 import { aplicarEdicaoZernio, ingestZernioInbound } from "./zernio/ingest";
 import { lerEnvelopeZernio } from "./zernio/envelope";
 import { parseZernioEdicao, verifyZernioSignature } from "./zernio/webhook";
+import { lerEntradaOlx } from "./adapters/olx";
+import { ingestOlxInbound } from "./olx/ingest";
 import type { ChannelProvider } from "./types";
 
 /** Curto demais para ser segredo — placeholder ou lixo de decrypt. */
@@ -86,11 +89,17 @@ export function acceptsInboundWebhook(provider: string): boolean {
   // O canal Datafy é opcional da instalação: desligado, a entrada dele não
   // existe — nem para quem tem o token de uma sessão gravada antes.
   if (provider === CHANNEL_PROVIDER_DATAFY) return canalGraphParceiroLigado();
+  // Mesma lei para o canal do chat de vendedor, que nasce desligado (#1459).
+  if (provider === CHANNEL_PROVIDER_OLX) return entradaChatDeVendedorAceitavel();
   return provider === CHANNEL_PROVIDER_ZERNIO || provider === CHANNEL_PROVIDER_SOCIAL;
 }
 
 /** Authenticate before archiving raw payloads. The handler repeats this guard for non-HTTP callers. */
 export function verifyInboundWebhookSignature(provider: string, raw: string, headers: Headers, secret: string | null): boolean {
+  // Este canal não tem assinatura documentada: a autenticação é o token do
+  // path (conferido pela rota) e a pergunta que sobra é o interruptor.
+  // Vem ANTES do guard de segredo porque `secret` aqui é sempre `null`.
+  if (provider === CHANNEL_PROVIDER_OLX) return entradaChatDeVendedorAceitavel();
   if (!acceptsInboundWebhook(provider) || !secret || secret.length < MIN_SECRET_LEN) return false;
   // Cada canal assina do seu jeito; o esquema do Datafy está em `graph-parceiro/webhook`.
   if (provider === CHANNEL_PROVIDER_DATAFY) {
@@ -194,6 +203,8 @@ export async function handleInboundWebhook(
       return zernioInbound(admin, input);
     case CHANNEL_PROVIDER_DATAFY:
       return datafyInbound(admin, input);
+    case CHANNEL_PROVIDER_OLX:
+      return olxInbound(admin, input);
     default:
       // Token de um canal que não entra por aqui. É configuração trocada, não
       // ataque — mas processar seria ler o payload com o parser errado.
@@ -454,4 +465,46 @@ async function datafyInbound(
   }
 
   return { ok: true, body: { received: eventos.length, outcomes: desfechos } };
+}
+
+/**
+ * Entrada do canal do chat de vendedor (issue #2927, fatia 2).
+ *
+ * A sessão veio do token do path (a rota resolveu); o corpo é lido pela
+ * leitura PURA do adapter (`lerEntradaOlx`), que recusa contrato violado
+ * nomeando os CAMPOS — e os efeitos moram em `olx/ingest`.
+ *
+ * Sem assinatura para conferir (a OLX não documenta uma), a única pergunta
+ * desta função é o interruptor da instalação — e ela já foi feita duas vezes
+ * antes desta linha: em `acceptsInboundWebhook` (a rota) e em
+ * `verifyInboundWebhookSignature`. Repetir aqui não é redundância molesta: esta
+ * função também é chamada fora da rota, e canal desligado não ingere nem por
+ * essa porta.
+ */
+async function olxInbound(
+  admin: SupabaseClient,
+  input: InboundWebhookInput,
+): Promise<InboundWebhookOutcome> {
+  if (!verifyInboundWebhookSignature(input.session.provider, input.rawBody, input.headers, input.secret)) {
+    return { ok: false, code: "unauthorized", message: "canal_desligado_na_instalacao" };
+  }
+
+  const leitura = lerEntradaOlx(input.rawBody);
+  if (!leitura.ok) {
+    if (leitura.motivo === "json_invalido") {
+      return { ok: false, code: "invalid_json", message: "invalid_json" };
+    }
+    return {
+      ok: false,
+      code: "contrato_violado",
+      message: `payload fora do contrato do canal: ${leitura.campos.join(", ")}`,
+    };
+  }
+
+  const r = await ingestOlxInbound(admin, {
+    organizationId: input.session.organization_id,
+    channelSessionId: input.session.id,
+    mensagem: leitura.mensagem,
+  });
+  return { ok: true, body: { ...r } };
 }
