@@ -407,3 +407,34 @@ describe("a tela degrada sem mentir", () => {
     expect(screen.getByText(/Não foi possível abrir esta tela agora/i)).toBeInTheDocument();
   });
 });
+
+describe("o membro da equipe que também é cliente (#3900)", () => {
+  it("o bloco da equipe diz que o número dele CONTINUA entrando no CRM", () => {
+    // A tela é o único lugar em que a pessoa vê a diferença entre "só recebe
+    // avisos" e "número interno". Sem esta frase, quem configura o modo
+    // `responsavel` lê o aviso de um membro da equipe como se fosse o plantão.
+    montar(
+      estado({
+        config: {
+          channel_session_id: CANAL_QR,
+          telefone: "+5531998966398",
+          rotulo: "Plantão da Ana",
+          ligado: true,
+          resposta_whatsapp_habilitada: false,
+          atualizado_em: "2026-09-18T12:00:00.000Z",
+          destino_modo: "responsavel",
+        },
+        equipe: [
+          {
+            user_id: "5f000000-0000-4000-8000-00000000a001",
+            nome: "Ana",
+            whatsapp: "+5531998887777",
+          },
+        ],
+      }),
+    );
+    const frase = screen.getByTestId("membro-que-tambem-e-cliente");
+    expect(frase.textContent).toContain("continua entrando no CRM");
+    expect(frase.textContent).toContain("número interno");
+  });
+});
