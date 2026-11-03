@@ -474,6 +474,14 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
               "É este número que recebe o aviso quando a pessoa é a responsável. Sem número, ela é pulada — o aviso não fica sem destinatário.",
             )}
           </p>
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="membro-que-tambem-e-cliente"
+          >
+            {t(
+              "A pessoa pode ser cliente da própria empresa — a equipe que viaja pela própria agência, por exemplo. Nesse caso o número ainda recebe o aviso e continua entrando no CRM: diferente de um número interno, que deixa de virar atendimento.",
+            )}
+          </p>
           {equipe.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               {t("Ainda não há outras pessoas nesta organização.")}
