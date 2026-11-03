@@ -20,9 +20,11 @@
  * pedindo a um gerente para assumir o cliente que ele já atende. Hoje o piso é
  * `agent`, e o escopo é a POSSE, conferida no servidor por
  * `lib/carteira/posse.ts` (a mesma régua do POST de enrollment): o Atendente
- * muda a carteira do cliente cuja conversa está atribuída a ele OU que já está
- * na carteira dele. Fora disso, 403 `fora_da_posse` com o motivo escrito.
- * `manager`+ segue podendo tudo.
+ * muda a carteira do cliente que já está na carteira dele (e pode passá-lo
+ * adiante) ou põe na carteira o cliente SEM dono cuja conversa está atribuída a
+ * ele. Fora disso, 403 `fora_da_posse` com o motivo escrito. Tirar o cliente da
+ * carteira de OUTRO vendedor segue sendo de `manager`+ (403
+ * `carteira_permissao_negada`, doc 250, escolha 1-B). `manager`+ segue podendo tudo.
  *
  * `viewer` não entra: enxerga sem poder. Os dois `.eq` com o `organization_id`
  * da sessão são obrigatórios — o usuário não lê contato de outra org nem por
@@ -153,12 +155,14 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   }
   const antes = (contato as { carteira_user_id?: string | null } | null)?.carteira_user_id ?? null;
 
-  // #3746 — A POSSE, aqui e não na tela. `agent` muda a carteira do cliente cuja
-  // conversa está atribuída a ele ou que já está na carteira dele; `manager`+
+  // #3746 — A POSSE, aqui e não na tela. `agent` muda a carteira do cliente que
+  // já está na carteira dele, ou a do cliente SEM dono cuja conversa está com
+  // ele (doc 250, 1-B: a carteira de um colega é do gerente); `manager`+
   // passa direto. A recusa (403/404/500) vem da régua, com o motivo escrito —
   // nada é lido para a foto nem gravado antes desta decisão.
   const admin = createAdminClient();
   const posse = await conferirPosse({
+    acao: "carteira",
     db: admin,
     organizationId: orgId,
     atorId: authz.user.id,
@@ -284,6 +288,7 @@ export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
   // de leitura devolve `false` (a tela esconde o seletor) em vez de estourar a
   // ficha: o botão a menos é um incômodo, a ficha em branco é um defeito.
   const posse = await conferirPosse({
+    acao: "carteira",
     db: admin,
     organizationId: orgId,
     atorId: authz.user.id,

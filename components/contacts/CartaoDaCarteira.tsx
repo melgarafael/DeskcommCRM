@@ -32,8 +32,8 @@ interface Props {
  * Até a v1.94 essa rota era `manager`+, e este cartão repetia a régua em
  * `role === "manager"` — o que dava o seletor a todo gerente e NEGAVA ao
  * atendente dono do cliente (#3746). Hoje quem responde é o servidor, no
- * `pode_alterar` do GET: `manager`+ sempre; `agent` no cliente cuja conversa
- * está atribuída a ele ou que já está na carteira dele. A tela só desenha o
+ * `pode_alterar` do GET: `manager`+ sempre; `agent` no cliente que já está na
+ * carteira dele, ou no cliente SEM dono cuja conversa está com ele (doc 250). A tela só desenha o
  * seletor quando essa resposta é `true`, e continua não sendo ela a guarda —
  * quem recusa o `PATCH` é `lib/carteira/posse.ts`.
  *

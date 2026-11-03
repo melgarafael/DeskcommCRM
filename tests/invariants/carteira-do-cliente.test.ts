@@ -12,10 +12,15 @@
  *    `tenant_isolation_contacts_write`, FOR ALL cega a papel (é por isso que a
  *    issue dizia que um Atendente se põe como dono pela REST). Se o gatilho
  *    42501 não estiver lá, esta prova falha com a gravação passando.
- * 2. A porta cobra `manager`+ OU `agent` com POSSE (#3746: conversa do contato
- *    atribuída a ele ou contato já na carteira dele); dono `viewer`/revogado não
- *    conta. `agent` sem posse é recusado — é o que impede o Atendente de se pôr
- *    como dono do cliente do colega.
+ * 2. A porta cobra `manager`+ OU `agent` com POSSE (#3746: contato já na
+ *    carteira dele, ou conversa do contato atribuída a ele com o contato SEM
+ *    dono); dono `viewer`/revogado não conta. `agent` sem posse é recusado, e a
+ *    conversa NÃO tira o cliente da carteira de um colega — é o que impede o
+ *    Atendente do rodízio de se pôr como dono do cliente do outro.
+ *    A troca das duas conferências antigas ("atendente → carteira_permissao_negada")
+ *    por estes casos foi autorizada pelo dono no doc 250 (escolhas 1-B e 3-A),
+ *    com a condição de este arquivo ganhar o caso "carteira de A, conversa com
+ *    B (atendente) → recusa".
  * 3. O negócio novo SEM dono nasce com o dono do contato — e o que já veio com
  *    dono não muda, e sem carteira nada muda (é o rodízio de sempre).
  * 4. Dono que virou `viewer` ou que saiu da equipe deixa de contar (regra 5).
@@ -236,6 +241,18 @@ describe("carteira do cliente (#2591) — dono por contato, aviso e negócio nov
     // (c) POSSE pela CARTEIRA: já é o dono, então pode passar adiante — quem
     // atende o cliente decide com quem ele fica, e não precisa de gerente.
     expect(chamaRpc(AGENTE_B, AGENTE_A, CONTATO_SEM_CARTEIRA)).toBe("");
+    expect(donoDe(CONTATO_SEM_CARTEIRA)).toBe(AGENTE_A);
+
+    // (c2) Doc 250, escolha 1-B — o caso que a autorização do 3-A exige: o
+    // cliente está na carteira de A e a conversa está atribuída a B (atendente).
+    // A conversa NÃO dá a B o direito de tirar o cliente da carteira de A: isso
+    // segue sendo do gerente (a regra do #2591 — o rodízio não leva a venda de
+    // quem atende o cliente). Recusa, e o dono continua A.
+    // A troca de (c) levou a conversa aberta para A (#3642); ela volta para B,
+    // que é o Atendente do rodízio deste caso.
+    sql(`update public.conversations set assigned_to_user_id = '${AGENTE_B}' where id = '${CONVERSA}';`);
+    const carteiraDeOutro = chamaRpc(AGENTE_B, AGENTE_B, CONTATO_SEM_CARTEIRA);
+    expect(carteiraDeOutro).toContain("carteira_permissao_negada");
     expect(donoDe(CONTATO_SEM_CARTEIRA)).toBe(AGENTE_A);
 
     // (d) `viewer` como ATOR continua recusado: a régua de posse não transforma

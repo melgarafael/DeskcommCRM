@@ -29,6 +29,21 @@
  * antes: papel de gerência não tem escopo de posse — quem responde pela equipe
  * inteira responde pela carteira inteira.
  *
+ * ─── A carteira de OUTRO vendedor continua sendo do gerente (doc 250, 1-B) ───
+ *
+ * Na CARTEIRA, a conversa sozinha não basta: a conversa chega pelo rodízio, e o
+ * Atendente que a recebeu não pode tirar o cliente da carteira de um colega e
+ * se pôr como dono — a venda e a comissão de quem atende o cliente há anos iam
+ * junto (a regra do #2591). Então, para `acao: "carteira"`:
+ *
+ *   • dono da carteira → pode (inclusive passar o cliente adiante);
+ *   • conversa com ele + contato SEM dono → pode pôr na carteira;
+ *   • conversa com ele + contato na carteira de OUTRO → 403
+ *     `carteira_permissao_negada` (só gerente tira o cliente de um colega).
+ *
+ * No FOLLOW-UP (`acao: "follow_up"`, doc 250, 2-A) a conversa basta: inscrever
+ * o cliente num lembrete não muda de quem ele é.
+ *
  * ─── Por que um arquivo só, e não um `if` copiado em cada rota ───────────────
  *
  * As duas rotas precisam da MESMA resposta, e a TELA precisa dela também (para
@@ -61,9 +76,16 @@ import { roleAtLeast } from "@/lib/auth/types";
 export const MENSAGEM_FORA_DA_POSSE =
   "Este cliente não está com você. Só o atendente da conversa, o dono da carteira ou um gerente pode fazer isso; peça a um gerente para assumir o cliente.";
 
+/** A carteira de um colega: a conversa não dá posse sobre ela (doc 250, 1-B). */
+export const MENSAGEM_CARTEIRA_DE_OUTRO =
+  "Este cliente está na carteira de outro vendedor. Só um gerente tira o cliente da carteira de um colega.";
+
 /** A falha de leitura da régua — nunca vira "não é seu": é "não deu para conferir". */
 export const MENSAGEM_POSSE_NAO_CONFERIDA =
   "Não foi possível conferir se este cliente está com você. Nada foi alterado.";
+
+/** O que o Atendente quer fazer — a carteira cobra mais que o follow-up (doc 250). */
+export type AcaoDaPosse = "carteira" | "follow_up";
 
 /** Por que a posse foi reconhecida — o motivo vai para o log/audit de quem chamar. */
 export type MotivoDaPosse = "papel" | "conversa" | "carteira";
@@ -71,13 +93,21 @@ export type MotivoDaPosse = "papel" | "conversa" | "carteira";
 /**
  * O que a régua responde.
  *
- * `pode: false` tem quatro motivos, e cada um é um status diferente na rota —
+ * `pode: false` tem cinco motivos, e cada um é um status diferente na rota —
  * juntá-los num "403" só esconderia um contato inexistente atrás de uma recusa
  * de permissão, que é o tipo de erro que faz o suporte caçar o problema errado.
  */
 export type DecisaoDePosse =
   | { pode: true; motivo: MotivoDaPosse }
-  | { pode: false; motivo: "fora_da_posse" | "contato_inexistente" | "conversa_inexistente" | "nao_conferida" };
+  | {
+      pode: false;
+      motivo:
+        | "fora_da_posse"
+        | "carteira_de_outro"
+        | "contato_inexistente"
+        | "conversa_inexistente"
+        | "nao_conferida";
+    };
 
 /**
  * A RÉGUA, sem banco: papel + os dois fatos que decidem a posse.
@@ -88,18 +118,28 @@ export type DecisaoDePosse =
  */
 export function decidirPosse(p: {
   papel: string | null | undefined;
+  acao: AcaoDaPosse;
   /** Alguma conversa do contato (ou a conversa em jogo) está atribuída ao ator? */
   donoDaConversa: boolean;
   /** O contato já está na carteira do ator? */
   contatoNaCarteira: boolean;
+  /** O contato está na carteira de OUTRA pessoa (dono não nulo e não é o ator)? */
+  carteiraDeOutro: boolean;
 }): DecisaoDePosse {
   if (roleAtLeast(p.papel, "manager")) return { pode: true, motivo: "papel" };
   // O PISO também é da régua, e não só da rota: um `viewer` que "tem" o contato
   // não escreve nada — ele só lê. As duas rotas já cobram `agent`+, mas a régua
   // não pode depender de quem chama ter lembrado disso.
   if (!roleAtLeast(p.papel, "agent")) return { pode: false, motivo: "fora_da_posse" };
-  if (p.donoDaConversa) return { pode: true, motivo: "conversa" };
   if (p.contatoNaCarteira) return { pode: true, motivo: "carteira" };
+  if (p.donoDaConversa) {
+    // Doc 250, 1-B: a conversa dá posse sobre a carteira só quando o cliente
+    // ainda não tem dono. Tirar da carteira de um colega é do gerente.
+    if (p.acao === "carteira" && p.carteiraDeOutro) {
+      return { pode: false, motivo: "carteira_de_outro" };
+    }
+    return { pode: true, motivo: "conversa" };
+  }
   return { pode: false, motivo: "fora_da_posse" };
 }
 
@@ -121,6 +161,7 @@ export async function conferirPosse(p: {
   organizationId: string;
   atorId: string;
   papel: string | null | undefined;
+  acao: AcaoDaPosse;
   contactId: string;
   conversaId?: string | null;
 }): Promise<DecisaoDePosse> {
@@ -162,8 +203,10 @@ export async function conferirPosse(p: {
   const carteira = (contato as { carteira_user_id?: string | null }).carteira_user_id ?? null;
   return decidirPosse({
     papel: p.papel,
+    acao: p.acao,
     donoDaConversa: conversasDoContato.some((c) => c.assigned_to_user_id === p.atorId),
     contatoNaCarteira: carteira === p.atorId,
+    carteiraDeOutro: carteira !== null && carteira !== p.atorId,
   });
 }
 
@@ -192,6 +235,11 @@ export function respostaDaPosse(
         404,
         { requestId: p.requestId },
       );
+    case "carteira_de_outro":
+      // O MESMO código que a função do banco levanta neste caso (9077).
+      return fail("carteira_permissao_negada", p.traduzir(MENSAGEM_CARTEIRA_DE_OUTRO), 403, {
+        requestId: p.requestId,
+      });
     case "nao_conferida":
       return fail("posse_nao_conferida", p.traduzir(MENSAGEM_POSSE_NAO_CONFERIDA), 500, {
         requestId: p.requestId,

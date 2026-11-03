@@ -50856,6 +50856,7 @@ declare
   v_origem text := coalesce(p_origem, 'manual');
   v_anterior uuid;
   v_conversa uuid;
+  v_dono_atual uuid;
 begin
   if v_origem not in ('manual', 'importacao', 'atribuicao_automatica', 'automacao') then
     raise exception 'carteira_origem_invalida' using errcode = '22023';
@@ -50893,26 +50894,36 @@ begin
     if v_papel = 'agent' then
       -- A POSSE, conferida AQUI e não só na rota: esta é a porta ÚNICA de
       -- gravação (`trg_contacts_carteira_so_pelo_servidor` recusa a sessão), e
-      -- um chamador novo não pode nascer sem a régua. Posse = o contato já está
-      -- na carteira dele OU alguma conversa do contato está atribuída a ele.
-      -- Fora das duas: `carteira_fora_da_posse`, que a rota traduz em 403.
-      if not exists (
-           select 1
-             from public.contacts c
-            where c.id = p_contact
-              and c.organization_id = p_org
-              and c.carteira_user_id = v_ator
-         )
-         and not exists (
-           select 1
-             from public.conversations cv
-            where cv.organization_id = p_org
-              and cv.contact_id = p_contact
-              and cv.assigned_to_user_id = v_ator
-         ) then
-        raise exception 'carteira_fora_da_posse'
-          using errcode = '42501',
-                detail = 'O atendente só muda a carteira do cliente que já está com ele: conversa atribuída a ele ou contato na carteira dele.';
+      -- um chamador novo não pode nascer sem a régua. Doc 250, escolha 1-B:
+      --   • o contato já está na carteira dele → passa (pode passar adiante);
+      --   • conversa do contato atribuída a ele + contato SEM dono → passa;
+      --   • conversa com ele + contato na carteira de OUTRO →
+      --     `carteira_permissao_negada`: tirar o cliente de um colega segue
+      --     sendo do gerente (a regra do #2591 — o rodízio não leva a venda
+      --     de quem atende o cliente);
+      --   • nenhuma das duas → `carteira_fora_da_posse`.
+      -- A rota traduz as duas recusas em 403.
+      select c.carteira_user_id into v_dono_atual
+        from public.contacts c
+       where c.id = p_contact
+         and c.organization_id = p_org;
+      if v_dono_atual is distinct from v_ator then
+        if not exists (
+             select 1
+               from public.conversations cv
+              where cv.organization_id = p_org
+                and cv.contact_id = p_contact
+                and cv.assigned_to_user_id = v_ator
+           ) then
+          raise exception 'carteira_fora_da_posse'
+            using errcode = '42501',
+                  detail = 'O atendente só muda a carteira do cliente que já está com ele: contato na carteira dele, ou conversa atribuída a ele com o contato sem dono.';
+        end if;
+        if v_dono_atual is not null then
+          raise exception 'carteira_permissao_negada'
+            using errcode = '42501',
+                  detail = 'O cliente está na carteira de outro vendedor: só manager e admin tiram o cliente da carteira de um colega.';
+        end if;
       end if;
     end if;
     if v_origem = 'automacao' then

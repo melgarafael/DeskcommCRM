@@ -6808,6 +6808,10 @@ export const DICIONARIO: Traducoes = {
   "Conversa não encontrada para este contato.": {
     es: "Conversación no encontrada para este contacto.",
   },
+  // Doc 250, 1-B: a conversa não tira o cliente da carteira de um colega.
+  "Este cliente está na carteira de outro vendedor. Só um gerente tira o cliente da carteira de um colega.": {
+    es: "Este cliente está en la cartera de otro vendedor. Solo un gerente saca al cliente de la cartera de un colega.",
+  },
   // TELA da carteira (#2591): o cartão da ficha do contato e a faixa em cima do chat.
   "Carteira": { es: "Cartera" },
   "O vendedor dono deste cliente. Sem dono, o atendimento segue o fluxo de sempre.": {

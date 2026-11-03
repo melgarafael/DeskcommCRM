@@ -324,6 +324,31 @@ describe("#3746 — a carteira do cliente que o Atendente já atende", () => {
     expect(mocks.atividade).not.toHaveBeenCalled();
   });
 
+  it("⭐ doc 250 (1-B): `agent` com a CONVERSA não tira o cliente da carteira de OUTRO", async () => {
+    comoAtendente();
+    // A conversa é dele, mas o contato já está na carteira de um colega.
+    mocks.conversas.mockReturnValue(
+      conversasFalsas([
+        {
+          id: "conv-1",
+          channel_session_id: "numero-a",
+          assigned_to_user_name: null,
+          assigned_to_user_id: ATENDENTE,
+        },
+      ]),
+    );
+    mocks.contatoAdmin.mockReturnValue(contatoDoAdmin(OUTRO_ATENDENTE));
+
+    const resposta = await PATCH(pedido(ATENDENTE), { params: Promise.resolve({ id: CONTATO }) });
+
+    expect(resposta.status).toBe(403);
+    expect(((await resposta.json()) as { error: { code: string } }).error.code).toBe(
+      "carteira_permissao_negada",
+    );
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.audit).not.toHaveBeenCalled();
+  });
+
   it("CONTROLE: `manager` continua gravando sem posse nenhuma (anti-regressão)", async () => {
     // O `beforeEach` já monta a sessão de `manager`, e a posse está vazia.
     const resposta = await PATCH(pedido(DONO), { params: Promise.resolve({ id: CONTATO }) });

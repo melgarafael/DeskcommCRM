@@ -16,13 +16,17 @@
  *                         atendente muda a carteira de qualquer cliente");
  *   viewer              → NÃO pode (não chega à rota, que cobra `agent`, mas a
  *                         régua não mente sobre o papel que só lê).
+ *
+ * E a diferença entre as duas ações (doc 250): na CARTEIRA, a conversa só dá
+ * posse sobre o cliente SEM dono — o da carteira de um colega é do gerente
+ * (1-B). No FOLLOW-UP a conversa basta (2-A).
  */
 import { describe, expect, it } from "vitest";
 
 import { decidirPosse } from "./posse";
 
 function decisao(papel: string | null, donoDaConversa: boolean, contatoNaCarteira: boolean) {
-  return decidirPosse({ papel, donoDaConversa, contatoNaCarteira });
+  return decidirPosse({ papel, acao: "carteira", donoDaConversa, contatoNaCarteira, carteiraDeOutro: false });
 }
 
 describe("#3746 — quem pode mexer no cliente", () => {
@@ -57,6 +61,23 @@ describe("#3746 — quem pode mexer no cliente", () => {
   it("papel ausente/desconhecido não pode — falha fechada", () => {
     expect(decisao(null, false, false).pode).toBe(false);
     expect(decisao("papel-que-nao-existe", false, false).pode).toBe(false);
+  });
+});
+
+describe("doc 250 — a carteira de OUTRO vendedor não sai pela conversa", () => {
+  const deOutro = (papel: string, acao: "carteira" | "follow_up") =>
+    decidirPosse({ papel, acao, donoDaConversa: true, contatoNaCarteira: false, carteiraDeOutro: true });
+
+  it("⭐ 1-B: `agent` com a conversa NÃO tira o cliente da carteira de um colega", () => {
+    expect(deOutro("agent", "carteira")).toEqual({ pode: false, motivo: "carteira_de_outro" });
+  });
+
+  it("2-A: no follow-up a conversa basta, mesmo com o cliente na carteira de outro", () => {
+    expect(deOutro("agent", "follow_up")).toEqual({ pode: true, motivo: "conversa" });
+  });
+
+  it("CONTROLE: `manager` tira o cliente da carteira de um colega", () => {
+    expect(deOutro("manager", "carteira")).toEqual({ pode: true, motivo: "papel" });
   });
 
 });

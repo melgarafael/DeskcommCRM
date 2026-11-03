@@ -84,6 +84,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       meta = {
         pode_inscrever: (
           await conferirPosse({
+            acao: "follow_up",
             db: createAdminClient(),
             organizationId: activeOrg.orgId,
             atorId: authz.user.id,
@@ -136,6 +137,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // fora de uma conversa — vale qualquer conversa do contato atribuída a ele.
   const admin = createAdminClient();
   const posse = await conferirPosse({
+    acao: "follow_up",
     db: admin,
     organizationId: activeOrg.orgId,
     atorId: user.id,

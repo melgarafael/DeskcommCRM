@@ -36,8 +36,8 @@ export interface CarteiraDaTela {
    * (#3746)
    *
    * É a resposta da MESMA régua que o `PATCH` aplica (`lib/carteira/posse.ts`):
-   * `manager`+ sempre; `agent` só no cliente cuja conversa está atribuída a ele
-   * ou que já está na carteira dele. A tela lê este campo em vez de comparar
+   * `manager`+ sempre; `agent` só no cliente que já está na carteira dele, ou
+   * no cliente SEM dono cuja conversa está atribuída a ele (doc 250, 1-B). A tela lê este campo em vez de comparar
    * papel — comparar papel dava o seletor a todo `manager` e negava a todo
    * atendente, inclusive ao dono do cliente.
    *
