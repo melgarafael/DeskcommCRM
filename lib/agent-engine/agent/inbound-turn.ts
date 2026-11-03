@@ -4,6 +4,7 @@ import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 import { TIPOS_DE_CASO, TIPOS_DE_CASO_PARA_A_IA } from "@/lib/ai/case-copy";
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
+import { etiquetarProdutoAposEnvio } from './etiqueta-apos-envio';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
 /**
@@ -68,7 +69,7 @@ import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 // applySendOutcome é disposição de FILA (cancel/reschedule + cache de opt-out), não
 // egress de canal — o envio em si vai pelo adapter (ChannelAdapter). Ver F2-25.
 import { applySendOutcome } from '../edge/crm/send-message';
-import { resolverVozDoTurno } from './voz-do-turno';
+import { blocoDaRespostaFalada, resolverVozDoTurno } from './voz-do-turno';
 import { textoParaFalar } from '@/lib/ai/voz/texto-falavel';
 import {
   LlmBudgetExceededError,
@@ -80,6 +81,7 @@ import {
 } from '../edge/llm/run-model-call';
 import type { ProviderRegistry } from '../edge/llm/providers';
 import { HANDOFF_REASON_ORCAMENTO } from '../edge/llm/orcamento';
+import { bindingOuNulo } from '../edge/llm/binding-do-ponto';
 import { abreAvisoDoEspelhoRecusado, mirrorLeadStageToCrm } from '../edge/crm/move-lead-stage';
 import { insertInboxItem } from '../db/repository';
 import { criarConferidorDeAfirmacoes } from '@/lib/ai/decisao/afirmacao-de-fato';
@@ -273,6 +275,7 @@ import {
 import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 import { perguntarUrgenciaAoJev, registrarUrgenciaDoJev } from '@/lib/ai/decisao/urgencia';
 import { fusoDaOrganizacao } from './fuso-da-org';
+import { blocoDoFeriado, lerFeriadoDoTurno } from './feriado-nacional';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 import {
@@ -778,7 +781,10 @@ export async function uploadDeVoz(input: {
   audio: Buffer;
   mimeType: string;
 }): Promise<string> {
-  const path = `${input.tenantId}/${input.conversationId}/voz-agente-${input.jobId}-${input.seq}.mp3`;
+  // A extensão acompanha o formato: `.ogg` é a nota de voz em opus do canal
+  // oficial, e é ela que diz o formato a um retry (`mimeDoCaminhoDeVoz`).
+  const extensao = input.mimeType.toLowerCase().startsWith('audio/ogg') ? 'ogg' : 'mp3';
+  const path = `${input.tenantId}/${input.conversationId}/voz-agente-${input.jobId}-${input.seq}.${extensao}`;
   const admin = createAdminClient();
   // `upsert: true`, e não `false`: este caminho só é chamado quando
   // `resolverCaminhoDeVoz` JÁ decidiu que precisa sintetizar de novo — ou é a
@@ -1733,7 +1739,9 @@ export interface AgentTurnInput {
  * Núcleo do run do agente, compartilhado por inbound_turn (F2-09) e followup_turn
  * (F3-03): ritual de abertura, loop de tools, fechamento com checkpoint e veto. Não
  * guarda NADA entre invocações — sessão fresca por job (todo estado no closure). O
- * que varia entre os dois tipos de turno vem em `input` (AgentTurnInput).
+ * que varia entre os dois tipos de turno vem em `input` (AgentTurnInput) — menos o
+ * ponto de IA da chamada principal, que sai do `kind` do job: `followup_turn` no
+ * follow-up (modelo escolhível no painel), `agent_turn` no resto.
  */
 /**
  * O aviso de que o agente atendeu SEM as capacidades configuradas.
@@ -2965,7 +2973,6 @@ async function executarTurnoDoAgente(
   // rascunho saía em terceira pessoa — "vou avisar o atendente e ele responde".
   // Vive em função de módulo (`blocoDoModoDePrevia`) para poder ser testada.
   if (preview) blocosResidentes.push(blocoDoModoDePrevia(preview.kind));
-  const system = blocosResidentes.join('\n\n');
   const openingContext = preview
     ? preview.context
     : await lerContextoDaConversa();
@@ -3005,6 +3012,15 @@ async function executarTurnoDoAgente(
                 }),
         })
       : null;
+
+  // A resposta que vai virar ÁUDIO é escrita PARA SER OUVIDA. Sem este bloco o
+  // modelo escrevia como sempre — três bolhas, lista e sigla — e a síntese lia
+  // tudo numa nota de 35 segundos (medido numa instalação real em 03/11/2026, número
+  // oficial). Por isso o `system` só é montado DEPOIS de a voz ser resolvida, e
+  // o bloco vai NO FIM: o prefixo dos turnos em texto continua o mesmo.
+  const blocoDaVoz = blocoDaRespostaFalada(vozParaEsteTurno);
+  if (blocoDaVoz) blocosResidentes.push(blocoDaVoz);
+  const system = blocosResidentes.join('\n\n');
 
   // Seam de canal (F2-25): o envio vai SÓ pela interface ChannelAdapter — o
   // default WAHA-via-CRM envolve o sink F2-06. Instanciado por job (o pool é
@@ -4273,6 +4289,9 @@ async function executarTurnoDoAgente(
         // ele segue inteiramente síncrono do `checar` até a reserva.
         let fotosDoProduto: FotoParaEnvio[] = [];
         let fotosQueFaltaram = 0;
+        // O código que resolveu um produto ATIVO do catálogo — só com ele a
+        // mensagem, se sair, etiqueta o negócio (ver o bloco depois do envio).
+        let produtoApresentado: string | null = null;
         try {
           dupTrava.reservar(body);
           // RESPOSTA OBSOLETA: o cliente escreveu de novo enquanto este turno pensava.
@@ -4326,6 +4345,7 @@ async function executarTurnoDoAgente(
             }
             fotosDoProduto = preparadas.fotos;
             fotosQueFaltaram = preparadas.tinha - preparadas.fotos.length;
+            produtoApresentado = produto_codigo.trim();
           }
           // F4-04: sinaliza (independente do gate F4-01/F4-08) se ESTA candidata é uma
           // promessa fora de tabela — usado só para correlacionar com o jailbreak no fim do
@@ -4389,6 +4409,7 @@ async function executarTurnoDoAgente(
                 apiKey: voz.apiKey,
                 voiceId: voz.voiceId,
                 ...(voz.modelId ? { modelId: voz.modelId } : {}),
+                formato: voz.formato,
                 upload: (audio, mimeType) =>
                   uploadDeVoz({ tenantId, conversationId: input.conversationId, jobId: liveJob().id, seq: seqDesteEnvio, audio, mimeType }),
               },
@@ -4763,6 +4784,20 @@ async function executarTurnoDoAgente(
             }
             pendingCitations = [];
           }
+          // O PRODUTO APRESENTADO VIRA ETIQUETA DO NEGÓCIO. O fluxo de
+          // acompanhamento escolhe o modelo pela etiqueta do negócio, e pedir ao
+          // modelo que a ponha não é confiável; o envio com `produto_codigo` é o
+          // fato determinístico. Depois do envio, só quando o canal disse
+          // "enviada", nunca em prévia — e nunca lança: a mensagem já saiu.
+          // Ver `etiqueta-apos-envio.ts`.
+          await etiquetarProdutoAposEnvio(pool, runLog, {
+            preview: Boolean(preview),
+            produtoApresentado,
+            outcome,
+            tenantId,
+            contactId: leadId,
+            agentId: agentConfig?.agentId ?? null,
+          });
           switch (outcome.kind) {
             case 'sent':
             case 'already_sent':
@@ -5693,8 +5728,23 @@ async function executarTurnoDoAgente(
     // ponto só cobre os três — e alcança de carona a chamada de fechamento, que
     // reusa `openingTextOnly` e é onde nasce o `prazo` ISO da declaração.
     const agoraBlock = renderAgora(clock(), fusoDaOrg);
+    // ── O FERIADO NACIONAL DO TURNO (#3877) ───────────────────────────────────
+    //
+    // Em 02/11/2026 (Finados) o agente disse "atendemos hoje até as 18h" e
+    // convidou a pessoa à loja, com a empresa fechada: sabia o dia da semana
+    // (`## Agora`) e o horário semanal, e não sabia que aquele dia é feriado.
+    //
+    // Entra logo DEPOIS do relógio porque é a mesma família de fato — "que dia
+    // é hoje" — e porque é dele que o modelo precisa ao decidir se promete
+    // atendimento. No sufixo por-lead, junto do relógio, pelo mesmo motivo: o
+    // país não muda entre leads, mas o dia sim (virada de meia-noite), e o
+    // prefixo estável (`stable-prefix.ts`) não pode carregar fato do dia.
+    const feriadoBlock = blocoDoFeriado(
+      await lerFeriadoDoTurno(pool, tenantId, clock(), fusoDaOrg, runLog),
+    );
     const openingSuffixes = [
       agoraBlock,
+      feriadoBlock,
       matchedSkillsBlock,
       stageHintBlock,
       splitHint,
@@ -5706,6 +5756,20 @@ async function executarTurnoDoAgente(
       openingSuffixes.length === 0
         ? openingBase
         : `${openingBase}\n\n${openingSuffixes.join('\n\n')}`;
+    // O agente escrevendo SOZINHO para quem parou de responder. É o mesmo turno,
+    // com outro ponto de IA (`followup_turn`): o modelo pode ser o do painel, e o
+    // custo fica registrado à parte em `llm_calls`. Ver o cabeçalho do ponto em
+    // `lib/ai/pontos/registro.ts`. `inbound_turn` e `case_reply_turn` seguem em
+    // `agent_turn`; a prévia, em `agent_preview`.
+    const escreveFollowup = !preview && job !== null && job.kind === 'followup_turn';
+    // QUEM vai receber a mídia nativa. No follow-up com escolha no painel, é o
+    // modelo do painel — montar a parte para o do agente mandaria a foto a um
+    // modelo que talvez não a enxergue, e o provedor recusaria o follow-up
+    // inteiro. Sem escolha (ou sem mídia ligada), é o agente, como sempre foi.
+    const escolhaDoFollowup =
+      escreveFollowup && agentConfig?.multimodalInput === true
+        ? await bindingOuNulo(pool, tenantId, 'followup_turn', runLog)
+        : null;
     // Onda 3 (aprimoramento): mídia inbound recente vira part nativa (image/file) SÓ para
     // provider+modelo capazes (T2 modelCapabilities) — modelo incapaz/desconhecido → [] e o
     // derivado textual (já embutido em openingText via LeadContextMessage) cobre sozinho.
@@ -5714,8 +5778,8 @@ async function executarTurnoDoAgente(
         ? []
         : await buildNativeMediaParts({
             messages: effectiveContext.messages,
-            provider: agentConfig?.provider ?? 'anthropic',
-            model: agentConfig?.model ?? '',
+            provider: escolhaDoFollowup?.provider ?? agentConfig?.provider ?? 'anthropic',
+            model: escolhaDoFollowup?.model_id ?? agentConfig?.model ?? '',
             multimodalInput: agentConfig?.multimodalInput ?? false,
             admin: deps.crmCfg.supabase,
           });
@@ -5776,7 +5840,11 @@ async function executarTurnoDoAgente(
         // lia `ai_agent_runs`, tabela que motor nenhum vivo escreve, e dizia
         // "Nenhuma execução ainda" com o agente respondendo no WhatsApp.
         agentId: agentConfig?.agentId ?? null,
-        purpose: preview ? 'agent_preview' : 'agent_turn',
+        // O follow-up é o mesmo turno com o próprio ponto — e por isso com o
+        // próprio binding (o seam o lê por `purpose`) e a própria linha de custo.
+        // Literais no próprio `purpose:`, de propósito: é aqui que a cerca de
+        // completude do registro procura quem emite cada ponto.
+        purpose: preview ? 'agent_preview' : escreveFollowup ? 'followup_turn' : 'agent_turn',
         system,
         messages: openingMessages,
         tools,

@@ -51,6 +51,7 @@ import {
 import { logger } from "@/lib/logger";
 import { PADRAO_DO_REF } from "@/lib/plataformas-de-anuncio/captura-de-clique";
 import { casarClickRef } from "@/lib/plataformas-de-anuncio/meta/captura-de-clique";
+import { casarOrigemPorHorario } from "@/lib/leads/origem-por-horario";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ehPedidoDeOptOut } from "@/lib/opt-out/deteccao";
 import { ehContatoDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
@@ -837,8 +838,14 @@ async function guardarOrigemDaPagina(admin: Admin, entrada: EntradaDeMensagem): 
   // O ref não é lido no banco aqui: a leitura CONSOME o clique, e consumir um
   // clique fora da primeira mensagem o queimaria sem estampar ninguém.
   const ref = achada ? null : (PADRAO_DO_REF.exec(entrada.texto ?? "")?.[1] ?? null);
-  // O caso comum: quase nenhuma mensagem traz código de página nem ref.
-  if (!achada && !ref) return;
+  // O caso comum: quase nenhuma mensagem traz código de página nem ref. Sem
+  // código, ainda pode ser quem clicou num link rastreável e APAGOU o código ao
+  // editar a mensagem — a origem sai do horário do clique, e o caso sem clique
+  // pendente custa uma consulta (ver `lib/leads/origem-por-horario.ts`).
+  if (!achada && !ref) {
+    await casarOrigemPorHorario(admin, entrada);
+    return;
+  }
 
   try {
     // A consulta vem ANTES de qualquer escrita, e DENTRO do try: falha de

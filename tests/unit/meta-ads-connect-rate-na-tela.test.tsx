@@ -29,6 +29,8 @@ function linha(ajustes: Partial<LinhaDeCampanha> = {}): LinhaDeCampanha {
     status: "ACTIVE",
     veiculacao: "ACTIVE",
     objetivo: "OUTCOME_LEADS",
+    criadaEm: "2026-03-02T08:15:00+0000",
+    iniciadaEm: "2026-03-03T08:15:00+0000",
     resultado: {
       valor: 13,
       custoPorResultado: 28.05,

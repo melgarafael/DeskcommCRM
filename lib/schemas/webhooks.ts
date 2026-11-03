@@ -543,6 +543,14 @@ const acoesFixas = [
     config: z.object({
       flow_pointer_id: z.string().uuid(),
       surface: z.enum(["followup", "atendimento"]).optional(),
+      /**
+       * Se o contato já está em OUTRO fluxo (ativo ou esperando), encerra aquele
+       * e inscreve neste. Desligado por padrão: o contato só tem uma inscrição
+       * viva, e sem isto a regra perde para o fluxo que chegou antes. Só vale
+       * para o follow-up (`surface` ausente ou `followup`); o roteiro de
+       * atendimento não lê esta chave.
+       */
+      replace_live_flow: z.boolean().optional(),
     }),
   }),
   // #1540 — a ação que NUNCA fala com o cliente: grava `crm_tasks` e avisa o

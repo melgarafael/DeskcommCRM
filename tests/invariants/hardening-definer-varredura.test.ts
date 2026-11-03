@@ -268,7 +268,7 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "com segurança sem medir o disparo de cada trigger.",
   },
   {
-    fn: "fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb)",
+    fn: "fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb,uuid)",
     razao:
       "A ÚNICA porta de escrita de `config_aviso_de_caso` — a tabela não tem " +
       "INSERT/UPDATE/DELETE para authenticated, só `grant select` sob RLS de " +
@@ -277,6 +277,8 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "fn_session_mfa_proven(), E.164 no destino, canal DA organização e não " +
       "arquivado, recusa do número da própria organização (o laço robô-com-robô) " +
       "e recusa de número que já é contato, a menos que p_confirma_contato. " +
+      "Desde a 9094, também recusa p_modelo de outra organização ou de outra " +
+      "conexão (tests/invariants/aviso-por-modelo-aprovado.test.ts). " +
       "tests/invariants/aviso-de-caso-escrita.test.ts prova agent e viewer " +
       "recusados (42501), admin aprovado, admin de OUTRA organização recusado, " +
       "canal do vizinho recusado e anon sem EXECUTE. " +

@@ -26,6 +26,8 @@ interface ResumoDaImportacao {
   total_linhas: number;
   criados: number;
   atualizados: number;
+  /** Quantos produtos tiveram a descrição escrita pela planilha. */
+  descricoes?: number;
   erros: Array<{ linha: number; motivo: string }>;
   colunas_ignoradas: string[];
 }
@@ -39,6 +41,7 @@ interface Rascunho {
   custo: string;
   quantidade: string;
   controla_estoque: boolean;
+  descricao: string;
 }
 
 const VAZIO: Rascunho = {
@@ -50,6 +53,7 @@ const VAZIO: Rascunho = {
   custo: "",
   quantidade: "0",
   controla_estoque: true,
+  descricao: "",
 };
 
 function doRascunho(
@@ -70,6 +74,7 @@ function doRascunho(
     custo_cents,
     controla_estoque: r.controla_estoque,
     quantidade: Number(r.quantidade) || 0,
+    ...(r.descricao.trim() ? { descricao: r.descricao.trim() } : {}),
   };
 }
 
@@ -403,6 +408,14 @@ export function ProdutosClient({
             {resumo.criados} {t("novos")} · {resumo.atualizados} {t("atualizados")} ·{" "}
             {resumo.total_linhas} {t("linhas na planilha")}
           </p>
+          {resumo.descricoes ? (
+            <p className="mt-1 text-muted-foreground" data-testid="resumo-descricoes">
+              {t("Descrição escrita pela planilha em {quantidade} produto(s).").replace(
+                "{quantidade}",
+                String(resumo.descricoes),
+              )}
+            </p>
+          ) : null}
           {resumo.colunas_ignoradas.length > 0 ? (
             <p className="mt-2 text-muted-foreground">
               {t("Não usei estas colunas:")} {resumo.colunas_ignoradas.join(", ")}.
@@ -492,6 +505,21 @@ export function ProdutosClient({
             </label>
           </div>
 
+          <label className="mt-3 block text-sm">
+            {t("Descrição")} <span className="text-muted-foreground">{t("(opcional)")}</span>
+            <textarea
+              value={rascunho.descricao}
+              onChange={(e) => setRascunho({ ...rascunho, descricao: e.target.value })}
+              maxLength={2000}
+              rows={3}
+              className="mt-1 w-full rounded-md border px-3 py-2"
+              data-testid="produto-descricao"
+            />
+            <span className="mt-1 block text-xs text-muted-foreground">
+              {t("É o que o atendente de IA conta ao cliente: para que serve, medidas, materiais, diferenciais. Ele repete o que estiver aqui — e não inventa o que faltar.")}
+            </span>
+          </label>
+
           <label className="mt-3 flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -560,6 +588,8 @@ export function ProdutosClient({
                   {p.controla_estoque
                     ? ` · ${p.quantidade} ${t("em estoque")}`
                     : ` · ${t("sem controle de estoque")}`}
+                  {/* Sem descrição, o atendente de IA só sabe nome e preço: a lista diz onde falta. */}
+                  {p.descricao?.trim() ? "" : ` · ${t("sem descrição")}`}
                 </p>
               </div>
               <span className="shrink-0 tabular-nums font-medium">
