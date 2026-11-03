@@ -2209,8 +2209,8 @@ mesmas funções de calendário do horário de atendimento do agente). Spec:
 | J63.5 | O cliente responde no meio da noite | a resposta corta a espera na hora (o horário segura o toque proativo, não a resposta) | **PASS (unit)** |
 | J63.6 | Horário torto (fim antes do início, nenhum dia) | o rascunho aceita; o publish recusa com `horario_da_espera_invalido` | **PASS (unit)** |
 
-Evidência, quando a spec roda: `evidence/espera-so-em-horario-comercial/01-horario-ligado.png` e
-`02-recarregado.png`.
+Evidência de tela: nenhuma captura versionada neste PR — a prova pela tela é a spec e2e do
+editor de follow-up, que roda no CI.
 
 Não provado: um envio real atravessando a madrugada num worker (o relógio do motor é medido em
 unit e no teste do motor com banco dublê).
