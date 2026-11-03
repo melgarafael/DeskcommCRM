@@ -204,7 +204,7 @@ export async function estamparOrigemDaPagina(
   organizationId: string,
   contactId: string,
   origem: OrigemDaPagina,
-  inferencia?: { inferidaPor: "horario" },
+  inferencia?: { inferidaPor: "horario"; sourceAnterior: string | null },
 ): Promise<boolean> {
   const { error } = await admin.rpc("fn_estampar_atribuicao_de_anuncio", {
     p_org: organizationId,
@@ -215,7 +215,14 @@ export async function estamparOrigemDaPagina(
       ad_source_id: null,
       origem: "site",
       origem_capturada_em: origem.capturadaEm,
-      ...(inferencia ? { origem_inferida_por: inferencia.inferidaPor } : {}),
+      // `origem_inferida_source_anterior` é o que a origem deduzida desfeita devolve ao contato
+      // (`desfazerOrigemDeduzida`): a estampa troca `source` para "site".
+      ...(inferencia
+        ? {
+            origem_inferida_por: inferencia.inferidaPor,
+            origem_inferida_source_anterior: inferencia.sourceAnterior,
+          }
+        : {}),
       ...origem.utm,
     },
   });

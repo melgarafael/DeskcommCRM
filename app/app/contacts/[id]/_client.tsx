@@ -575,7 +575,7 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
                 {origem.inferidaPorHorario && (
                   <dd className="mt-1 text-sm text-muted-foreground">
                     {t(
-                      "Deduzida pelo horário do clique: o cliente apagou o código da mensagem.",
+                      "Provável: deduzida pelo horário do clique. A mensagem chegou sem o código do link.",
                     )}
                   </dd>
                 )}

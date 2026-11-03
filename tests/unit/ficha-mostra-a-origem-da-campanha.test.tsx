@@ -138,7 +138,7 @@ describe("a ficha do contato mostra a origem da campanha", () => {
     expect(screen.queryByText(FRASE)).toBeNull();
   });
 
-  const AVISO = "Deduzida pelo horário do clique: o cliente apagou o código da mensagem.";
+  const AVISO = "Provável: deduzida pelo horário do clique. A mensagem chegou sem o código do link.";
 
   it("origem deduzida pelo horário do clique: a ficha avisa que é dedução", () => {
     abrirFicha(

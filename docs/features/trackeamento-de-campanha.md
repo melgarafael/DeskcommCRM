@@ -72,17 +72,20 @@ Primeiro que existir vence, da esquerda para a direita:
 
 Linha sem valor não aparece: um travessão em cinco linhas seguidas lê como defeito de cadastro, não como "este contato não veio de anúncio".
 
-Quando a origem foi **deduzida pelo horário do clique** (ver abaixo), a linha Origem ganha o aviso *"Deduzida pelo horário do clique: o cliente apagou o código da mensagem."* — chave `origem_inferida_por: "horario"` no `source_metadata`.
+Quando a origem foi **deduzida pelo horário do clique** (ver abaixo), a linha Origem ganha o aviso *"Provável: deduzida pelo horário do clique. A mensagem chegou sem o código do link."* — chave `origem_inferida_por: "horario"` no `source_metadata`.
 
 ## Quando o cliente apaga o código
 
-O código viaja no texto, e o cliente pode apagá-lo ao editar a mensagem. Para o **link rastreável**, a ingestão tenta então o horário: contato **novo** (primeira mensagem de entrada), **sem** origem nenhuma (nem anúncio, nem site), e um clique de link rastreável **sem dono** nos últimos 10 minutos (`JANELA_DO_CLIQUE_MINUTOS`) para o **mesmo número** que recebeu a mensagem → o contato recebe a origem daquele clique, marcada como dedução.
+**É uma opção da empresa, e vem DESLIGADA de fábrica** (doc de decisão 259). Liga em **Configurações → Conversões → Links rastreáveis**, na chave *"Deduzir a origem do site pelo horário do clique"* (`organizations.settings.conversions.site_origin_by_click_time`; ausente = desligada). Desligada, a Origem continua sendo só o que tem prova, e a ingestão nem consulta os cliques.
 
+O código viaja no texto, e o cliente pode apagá-lo ao editar a mensagem. Com a opção ligada, para o **link rastreável**, a ingestão tenta então o horário: contato **novo** (primeira mensagem de entrada), **sem** origem nenhuma (nem anúncio, nem site), e um clique de link rastreável **sem dono** nos últimos 10 minutos (`JANELA_DO_CLIQUE_MINUTOS`) para o **mesmo número** que recebeu a mensagem → o contato recebe a origem daquele clique, marcada como dedução.
+
+- **É palpite, não prova.** Quem clica e desiste, ou o cliente antigo que usa o botão (a mensagem dele não é a primeira, então o clique fica sem dono), deixa um clique órfão; o próximo contato novo no mesmo número, dentro da janela, herda aquela campanha sem nunca ter visto o site.
 - Com mais de um clique candidato, vale o mais recente, mas só as UTMs em que todos concordam: "veio do site" é certo, "de qual campanha" só sem dúvida.
 - **O código vence a dedução.** A dedução grava só o `contact_id` no clique e deixa `matched_at` nulo; quem chegar depois com o `[ref:]` daquele clique ainda o consome.
-- **Um clique nunca vira origem de dois contatos:** a reserva repete a trava da leitura (`contact_id` nulo).
+- **Quando o código prova outro dono, a dedução é desfeita.** O `casarClickRef` lê quem tinha reservado o clique e chama `desfazerOrigemDeduzida`: o contato do palpite volta ao `source` de antes (`origem_inferida_source_anterior`), perde as chaves de origem e as UTMs, e o card que copiou a origem perde o `source`, o metadata e a etiqueta "Site". O que já saiu por causa do palpite (webhook do card que nasceu) não volta.
 - **Fora de propósito:** o clique do Google Ads (o `gclid` vira conversão, e conversão não se manda por palpite) e o endereço de captura sem link rastreável.
-- O caso comum — nenhum clique pendente — custa uma consulta por mensagem sem código.
+- Ligada, o caso comum — nenhum clique pendente — custa uma consulta por mensagem sem código; a chave é lida com memo de 30 s por organização.
 
 ## Limites declarados
 

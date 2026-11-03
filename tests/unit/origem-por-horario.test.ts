@@ -4,15 +4,19 @@
  * Duas metades: a decisão pura (`escolherCliquePorHorario`) e o caminho com
  * banco (`casarOrigemPorHorario`), contra um PostgREST de mentira que registra
  * cada filtro e cada escrita. O que se mede é o que protege o resto do produto:
- * o anúncio pago nunca perde para a inferência, o código continua podendo
- * reivindicar o clique, e um clique nunca vira origem de dois contatos.
+ * a dedução só roda com a chave da empresa ligada (vem desligada), o anúncio
+ * pago nunca perde para a inferência, e o código continua podendo reivindicar
+ * o clique. A sequência em que o código prova OUTRO dono está em
+ * `um-clique-nao-vira-origem-de-dois-contatos.test.ts`.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   casarOrigemPorHorario,
   escolherCliquePorHorario,
+  esquecerChaveDaOrigemPorHorario,
   JANELA_DO_CLIQUE_MINUTOS,
+  origemPorHorarioLigada,
   type CliqueCandidato,
 } from "@/lib/leads/origem-por-horario";
 
@@ -96,6 +100,7 @@ let metadataDoContato: Record<string, unknown> | null = {};
 let numeroDaSessao: string | null = NUMERO;
 let reservaVolta: { id: string } | null = { id: "c-1" };
 let erroDaEstampa: { message: string } | null = null;
+let settingsDaEmpresa: unknown = { conversions: { site_origin_by_click_time: true } };
 
 function construtor(tabela: string, tipo: Operacao["tipo"], payload?: Record<string, unknown>) {
   const op: Operacao = { tabela, tipo, payload, filtros: [] };
@@ -113,9 +118,10 @@ function construtor(tabela: string, tipo: Operacao["tipo"], payload?: Record<str
         error: null,
       };
     }
+    if (tabela === "organizations") return { data: { settings: settingsDaEmpresa }, error: null };
     if (tabela === "contacts") {
       return {
-        data: metadataDoContato ? { source_metadata: metadataDoContato } : null,
+        data: metadataDoContato ? { source: "whatsapp", source_metadata: metadataDoContato } : null,
         error: null,
       };
     }
@@ -179,6 +185,35 @@ beforeEach(() => {
   numeroDaSessao = NUMERO;
   reservaVolta = { id: "c-1" };
   erroDaEstampa = null;
+  settingsDaEmpresa = { conversions: { site_origin_by_click_time: true } };
+  esquecerChaveDaOrigemPorHorario();
+});
+
+describe("a chave da empresa (doc 259): desligada de fábrica", () => {
+  it("ausente, nula ou não-booleana é desligada; só `true` liga", () => {
+    expect(origemPorHorarioLigada(null)).toBe(false);
+    expect(origemPorHorarioLigada({})).toBe(false);
+    expect(origemPorHorarioLigada({ conversions: {} })).toBe(false);
+    expect(origemPorHorarioLigada({ conversions: { site_origin_by_click_time: "true" } })).toBe(false);
+    expect(origemPorHorarioLigada({ conversions: { site_origin_by_click_time: true } })).toBe(true);
+  });
+
+  it("desligada, não consulta clique nenhum e não estampa", async () => {
+    settingsDaEmpresa = {};
+    await casarOrigemPorHorario(admin, ENTRADA);
+
+    expect(operacoes.map((o) => o.tabela)).toEqual(["organizations"]);
+    expect(estampa()).toBeUndefined();
+  });
+
+  it("a chave é lida uma vez e fica no memo: a segunda mensagem não relê", async () => {
+    settingsDaEmpresa = {};
+    await casarOrigemPorHorario(admin, ENTRADA);
+    await casarOrigemPorHorario(admin, ENTRADA);
+
+    expect(operacoes.filter((o) => o.tabela === "organizations")).toHaveLength(1);
+    expect(operacoes.filter((o) => o.tabela === "meta_ads_click_refs")).toHaveLength(0);
+  });
 });
 
 describe("casarOrigemPorHorario — com banco", () => {
@@ -192,6 +227,8 @@ describe("casarOrigemPorHorario — com banco", () => {
       p_metadata: {
         ad_platform: "site",
         origem_inferida_por: "horario",
+        // O `source` de antes, para a dedução desfeita devolver ao contato.
+        origem_inferida_source_anterior: "whatsapp",
         utm_campaign: "Landing · Verão",
         utm_content: "banner-a",
       },
@@ -232,11 +269,11 @@ describe("casarOrigemPorHorario — com banco", () => {
     );
   });
 
-  it("o caso comum — nenhum clique pendente — custa UMA consulta e não estampa", async () => {
+  it("ligada, o caso comum — nenhum clique pendente — custa a chave e UMA consulta de cliques", async () => {
     cliquesPendentes = [];
     await casarOrigemPorHorario(admin, ENTRADA);
 
-    expect(operacoes).toHaveLength(1);
+    expect(operacoes.map((o) => o.tabela)).toEqual(["organizations", "meta_ads_click_refs"]);
     expect(estampa()).toBeUndefined();
   });
 
