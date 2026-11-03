@@ -1113,6 +1113,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     motivo:
       "site oficial da Comissão Nacional de Proteção de Dados, a autoridade de controlo portuguesa (`autoridadeDeSupervisao` do perfil PT em lib/legal/perfil-do-pais.ts). Sai impresso no relatório de acesso do titular, alínea f) do art. 15.º, n.º 1 (#2354). O código nunca chama o host — quem o visita é o titular que vai reclamar —, e trocá-lo pelo domínio do revendedor mandaria a reclamação para quem é reclamado.",
   },
+  "www.argentina.gob.ar": {
+    categoria: "AUTORIDADE",
+    motivo:
+      "site oficial da Agencia de Acceso a la Información Pública (AAIP), autoridade de controlo argentina da Ley N.º 25.326 (`autoridadeDeSupervisao` do perfil AR em lib/legal/perfil-do-pais.ts, fork Holospace, 03/11/2026). Mesma régua do CNPD português: sai impresso no relatório de acesso do titular, o código nunca chama o host, e é quem o titular visita para reclamar.",
+  },
   "deskcomm.app": {
     categoria: "PROTOCOLO",
     motivo:
@@ -1441,6 +1446,10 @@ describe("catraca de host de terceiro no código que embarca", () => {
       // Decisão escrita (spec 24, auditoria de site): assinatura de construtor
       // (WordPress.com gratuito) — nunca chamada, nunca exibida.
       "wordpress.com",
+      // Decisão escrita (03/11/2026, fork Holospace): a AAIP, autoridade de
+      // controlo argentina citada no perfil AR. Mesma categoria AUTORIDADE
+      // que a CNPD portuguesa, logo abaixo.
+      "www.argentina.gob.ar",
       // Decisão escrita (#2354): a CNPD, autoridade de controlo citada na
       // alínea f) do relatório de acesso de Portugal. Categoria própria,
       // AUTORIDADE, porque não é painel, amostra nem plataforma: é o endereço

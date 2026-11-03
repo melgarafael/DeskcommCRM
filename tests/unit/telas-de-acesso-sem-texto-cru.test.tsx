@@ -147,8 +147,12 @@ describe("o título da aba das telas de acesso segue o idioma do corpo", () => {
   it.each([
     ["navegador em espanhol, sem sessão", "es-ES,es;q=0.9", null, "Crear cuenta"],
     ["navegador em português, perfil em espanhol", "pt-BR,pt;q=0.9", "es", "Crear cuenta"],
-    ["navegador em português, sem sessão", "pt-BR,pt;q=0.9", null, "Criar conta"],
-    ["nada", null, null, "Criar conta"],
+    // Instalação Holospace (fork): `idiomaDoVisitante` não negocia pelo
+    // Accept-Language, cai direto em "es" — ver lib/i18n/idiomaAnonimo.ts.
+    // Os dois casos abaixo eram "Criar conta" no upstream (fallback pt-BR);
+    // aqui são sempre espanhol, com ou sem header.
+    ["navegador em português, sem sessão", "pt-BR,pt;q=0.9", null, "Crear cuenta"],
+    ["nada", null, null, "Crear cuenta"],
   ])("%s: « %s »", async (_rotulo, aceita, locale, esperado) => {
     m.aceita = aceita;
     m.locale = locale;

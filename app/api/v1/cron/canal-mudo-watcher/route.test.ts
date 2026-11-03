@@ -119,7 +119,7 @@ describe("canal-mudo-watcher", () => {
       ref_id: CANAL,
     });
     // O corpo diz a SAÍDA, não só o diagnóstico: quem lê precisa saber o que fazer.
-    expect(String(cap.avisos[0]!.body)).toMatch(/Conexões/);
+    expect(String(cap.avisos[0]!.body)).toMatch(/Conexiones/);
   });
 
   it("não abre um segundo aviso enquanto o primeiro está aberto", async () => {
@@ -149,7 +149,7 @@ describe("canal-mudo-watcher", () => {
 
     expect(corpo.data.resolvidos).toBe(1);
     expect(cap.resolucoes[0]!.patch.status).toBe("resolved");
-    expect(String(cap.resolucoes[0]!.patch.body)).toMatch(/ganhou número autorizado/);
+    expect(String(cap.resolucoes[0]!.patch.body)).toMatch(/consiguió un número autorizado/);
     // O filtro por `status=open` é a trava contra duas rodadas simultâneas.
     expect(cap.resolucoes[0]!.filtros).toContainEqual(["status", "open"]);
   });
@@ -163,7 +163,7 @@ describe("canal-mudo-watcher", () => {
     await GET(req());
 
     expect(cap.resolucoes).toHaveLength(1);
-    expect(String(cap.resolucoes[0]!.patch.body)).toMatch(/saiu do modo de teste/);
+    expect(String(cap.resolucoes[0]!.patch.body)).toMatch(/salió del modo de prueba/);
   });
 
   it("aviso de canal que sumiu da varredura (arquivado) também fecha", async () => {
@@ -178,7 +178,7 @@ describe("canal-mudo-watcher", () => {
     const corpo = (await r.json()) as { data: { resolvidos: number } };
 
     expect(corpo.data.resolvidos).toBe(1);
-    expect(String(cap.resolucoes[0]!.patch.body)).toMatch(/arquivado/);
+    expect(String(cap.resolucoes[0]!.patch.body)).toMatch(/archivado/);
   });
 
   it("canal recém-ligado não vira aviso — e a rodada não audita", async () => {

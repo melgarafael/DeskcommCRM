@@ -417,7 +417,7 @@ describe("deriveMessageMedia", () => {
       // de "modelo que sua conta não assina" — duas ações diferentes.
       expect(String(aviso.body)).toContain("claude-sonnet-5");
       // E o tipo tem que ser o que o operador chama de "isto", não `msg.type`.
-      expect(String(aviso.title)).toContain("imagem");
+      expect(String(aviso.title)).toContain("imagen");
       // O turno que já correu seguiu sem o texto — isso o aviso continua
       // dizendo. O que mudou é o DEPOIS: `markFailed` grava o marcador, então
       // do próximo turno em diante o agente sabe que houve arquivo ilegível.

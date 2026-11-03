@@ -60,13 +60,13 @@ const ERRO_EM_PORTUGUES: Record<string, string> = {
 /** A sugestão para uma etapa, pelo lugar e pelo nome. Só preenche; não liga ação nenhuma. */
 function recomendado(etapa: EtapaAberta): Pick<Rascunho, "label" | "category"> | null {
   const nome = etapa.nome.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
-  if (etapa.primeira) return { label: "Nuevo lead", category: "CONTACT" };
+  if (etapa.primeira) return { label: "Novo lead", category: "CONTACT" };
   if (/qualific|problema|interess|diagnost/.test(nome))
-    return { label: "Lead calificado", category: "QUALIFIED_LEAD" };
+    return { label: "Lead qualificado", category: "QUALIFIED_LEAD" };
   if (/orcament|proposta|cotac/.test(nome))
-    return { label: "Presupuesto enviado", category: "REQUEST_QUOTE" };
+    return { label: "Orçamento enviado", category: "REQUEST_QUOTE" };
   if (/agend|consulta|visita|reuniao/.test(nome))
-    return { label: "Turno agendado", category: "BOOK_APPOINTMENT" };
+    return { label: "Agendamento", category: "BOOK_APPOINTMENT" };
   return null;
 }
 
@@ -130,7 +130,7 @@ export function RegrasDeConversaoGoogle({
         novo[e.id] = {
           ...r,
           enabled: true,
-          label: r.label || sugestao.label,
+          label: r.label || t(sugestao.label),
           category: r.label ? r.category : sugestao.category,
         };
       }

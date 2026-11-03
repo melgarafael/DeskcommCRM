@@ -90,7 +90,7 @@ describe("quando avisar", () => {
     expect(a?.severity).toBe("critical");
     expect(a?.episodio).toBe("CREDENCIAL_RECUSADA");
     expect(a?.title).toContain("Vendas");
-    expect(a?.body).toMatch(/QR não resolve/i);
+    expect(a?.body).toMatch(/QR no resuelve/i);
     // Episódio PRÓPRIO: se dividisse "UNREACHABLE" com o caso acima, a troca de
     // um pelo outro não abriria aviso nenhum — o dedup por episódio veria o
     // mesmo valor e ficaria calado justamente na piora.

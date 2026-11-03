@@ -129,7 +129,7 @@ describe("case-stale-watcher", () => {
       ref_id: "c1",
     });
     // O título fala de quem espera, não da idade de uma linha.
-    expect(String(cap.avisos[0]!.title)).toContain("espera decisão");
+    expect(String(cap.avisos[0]!.title)).toContain("espera una decisión");
   });
 
   it("quem venceu vem da função do banco, com o limite da rodada", async () => {

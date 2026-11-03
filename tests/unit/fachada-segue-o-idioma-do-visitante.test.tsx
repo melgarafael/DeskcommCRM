@@ -66,8 +66,8 @@ describe("a casca das telas de acesso segue o idioma do visitante", () => {
     expect(traduzir("Criar conta", "es")).not.toBe("Criar conta");
   });
 
-  it("sem sessão e sem cabeçalho: o padrão, português", async () => {
-    expect(await fachada()).toBe("Criar conta");
+  it("sem sessão e sem cabeçalho: o padrão desta instalação, espanhol (não mais pt-BR do upstream)", async () => {
+    expect(await fachada()).toBe(traduzir("Criar conta", "es"));
   });
 
   it("com sessão, o perfil vence o navegador", async () => {

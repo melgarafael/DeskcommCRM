@@ -194,7 +194,7 @@ describe("2. o convite de equipe diz o papel pelo nome", () => {
     });
     expect(html).toContain("<strong>Atendente</strong>");
     expect(html).not.toContain(">agent<");
-    expect(text.split("\n")[0]).toBe("Você foi convidado para a Clínica Bem Viver como Atendente no Vendas Turbo.");
+    expect(text.split("\n")[0]).toBe("Te invitaron a Clínica Bem Viver como Atendente en Vendas Turbo.");
   });
 
   it("papel desconhecido continua aparecendo pelo código: nunca some", () => {

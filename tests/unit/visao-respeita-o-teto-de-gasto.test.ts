@@ -250,8 +250,8 @@ describe("a visão de imagem respeita o teto de gasto", () => {
     expect(avisoInsertMock).toHaveBeenCalledTimes(1);
     const aviso = avisoInsertMock.mock.calls[0]![0] as Record<string, string>;
     expect(aviso.kind).toBe("midia_nao_lida");
-    expect(aviso.body).toContain("limite de gasto com IA");
-    expect(aviso.body).toContain("Uso de IA › Orçamento");
+    expect(aviso.body).toContain("límite de gasto en IA");
+    expect(aviso.body).toContain("Uso de IA › Presupuesto");
     expect(aviso.body).not.toContain("Agente de IA → Provedores");
   });
 
@@ -301,9 +301,9 @@ describe("a visão de imagem respeita o teto de gasto", () => {
     expect(avisoInsertMock).toHaveBeenCalledTimes(1);
     const aviso = avisoInsertMock.mock.calls[0]![0] as Record<string, string>;
     expect(aviso.kind).toBe("midia_nao_lida");
-    expect(aviso.title).toContain("áudio");
-    expect(aviso.body).toContain("o áudio não foi enviado ao provedor");
-    expect(aviso.body).toContain("Uso de IA › Orçamento");
+    expect(aviso.title).toContain("audio");
+    expect(aviso.body).toContain("el audio no se envió al proveedor");
+    expect(aviso.body).toContain("Uso de IA › Presupuesto");
   });
 
   it("o degrau 4 sem teto segue igual: o áudio vai ao modelo", async () => {

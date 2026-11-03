@@ -723,9 +723,9 @@ function buildDeriveDeps(
         orgId,
         d.tipo,
         `se llegó al límite de gasto en IA de este mes y la IA está configurada para frenar en ese punto, así que ${d.oQueNaoSaiu} al proveedor`,
-        "Enquanto o limite valer, a IA também não responde: as conversas vão para a fila de atendimento humano.",
+        "Mientras el límite siga vigente, la IA tampoco responde: las conversaciones van a la cola de atención humana.",
         undefined,
-        "Para resolver, suba o limite ou desligue a parada em Uso de IA › Orçamento.",
+        "Para resolverlo, subí el límite o desactivá el freno en Uso de IA › Presupuesto.",
       );
       return true;
     }

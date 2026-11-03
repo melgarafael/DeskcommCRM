@@ -428,7 +428,7 @@ describe("worker de mídia: base_url do binding de visão (#855)", () => {
     const corpos = inboxInsertMock.mock.calls.map((c) =>
       String((c[0] as { body?: string } | undefined)?.body ?? ""),
     );
-    expect(corpos.some((b) => b.includes("cadastre a chave da empresa"))).toBe(true);
+    expect(corpos.some((b) => b.includes("carga la clave de la empresa"))).toBe(true);
   });
 
   it("com endereço da organização e credencial DELA, segue enviando", async () => {
@@ -593,7 +593,7 @@ describe("worker de mídia: base_url do binding de visão (#855)", () => {
       expect(corpos.some((b) => b.includes("unsafe_url:private_host"))).toBe(true);
       // E o aviso NÃO oferece a lista como saída aqui: oferecê-la mandaria o
       // admin da empresa pedir ao dono algo que a decisão diz que ele não pode.
-      expect(corpos.some((b) => b.includes("escolhido pela empresa"))).toBe(true);
+      expect(corpos.some((b) => b.includes("elegida por la empresa"))).toBe(true);
     });
 
     it("4. listado, mas com protocolo que as guardas recusam, continua recusado", async () => {
@@ -645,7 +645,7 @@ describe("worker de mídia: base_url do binding de visão (#855)", () => {
 
       expect(factoryMock).not.toHaveBeenCalled();
       expect(texto).toBeTruthy();
-      expect(corposDaCentral().some((b) => b.includes("cadastre a chave da empresa"))).toBe(true);
+      expect(corposDaCentral().some((b) => b.includes("carga la clave de la empresa"))).toBe(true);
     });
 
     it("CONTROLE: a lista não engole o caminho que já funcionava", async () => {

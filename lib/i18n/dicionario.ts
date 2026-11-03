@@ -8474,6 +8474,7 @@ export const DICIONARIO: Traducoes = {
   "a pessoa fechou": { es: "la persona cerró" },
   "a pessoa desistiu ou parou de responder": { es: "la persona desistió o dejó de responder" },
   "Novo lead": { es: "Lead nuevo" },
+  "Orçamento enviado": { es: "Presupuesto enviado" },
   "Primeiro contato": { es: "Primer contacto" },
   "Em qualificação": { es: "En calificación" },
   Qualificado: { es: "Calificado" },

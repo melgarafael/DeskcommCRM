@@ -40,8 +40,11 @@ describe("manifest do ícone configurável", () => {
     expect(antes.scope).toBe(depois.scope);
     expect(antes.id).toBe(depois.id);
   });
-  it("a descrição segue o idioma do aparelho que pede (não há idioma da instalação)", async () => {
-    expect((await manifest()).description).toBe("Atendimento e vendas pelo WhatsApp, também no celular.");
+  it("a descrição sai sempre em espanhol nesta instalação (fork Holospace, não negocia Accept-Language)", async () => {
+    // app/manifest.ts chama idiomaDoVisitante(null), que nesta instalação
+    // (lib/i18n/idiomaAnonimo.ts) não negocia o header — cai direto em "es",
+    // com ou sem Accept-Language. Era o do aparelho que pede no upstream.
+    expect((await manifest()).description).toBe("Atención y ventas por WhatsApp, también en el celular.");
     mocks.lingua.valor = "es-AR,es;q=0.9";
     expect((await manifest()).description).toBe("Atención y ventas por WhatsApp, también en el celular.");
   });

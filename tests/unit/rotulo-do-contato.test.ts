@@ -205,7 +205,7 @@ describe("a sétima cópia não nasce", () => {
     },
     {
       arquivo: "app/api/v1/cron/channel-health/route.ts",
-      trecho: 'const apelido = s.display_name ?? s.phone_number ?? "sem nome";',
+      trecho: 'const apelido = s.display_name ?? s.phone_number ?? "sin nombre";',
       motivo: "apelido do CANAL no aviso de saúde; `channel_sessions` não tem `name`",
     },
     {
