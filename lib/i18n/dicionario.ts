@@ -8904,6 +8904,8 @@ export const DICIONARIO: Traducoes = {
   "Conexões → Templates": { es: "Conexiones → Plantillas" },
   "e envie quando a plataforma aprovar.": { es: "y envíala cuando la plataforma la apruebe." },
   "Modelo aprovado": { es: "Plantilla aprobada" },
+  "Modelo do WhatsApp": { es: "Plantilla de WhatsApp" },
+  "Opções enviadas ao cliente": { es: "Opciones enviadas al cliente" },
   "Este modelo pede": { es: "Esta plantilla pide" },
   "valor(es) e ainda não dá para preenchê-los aqui — envie por": {
     es: "valor(es) y todavía no se pueden completar aquí — envía por",
