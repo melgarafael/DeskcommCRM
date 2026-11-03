@@ -68,7 +68,7 @@ import { WahaChannelAdapter } from '../edge/channel/waha-adapter';
 // applySendOutcome é disposição de FILA (cancel/reschedule + cache de opt-out), não
 // egress de canal — o envio em si vai pelo adapter (ChannelAdapter). Ver F2-25.
 import { applySendOutcome } from '../edge/crm/send-message';
-import { resolverVozDoTurno } from './voz-do-turno';
+import { blocoDaRespostaFalada, resolverVozDoTurno } from './voz-do-turno';
 import { textoParaFalar } from '@/lib/ai/voz/texto-falavel';
 import {
   LlmBudgetExceededError,
@@ -273,6 +273,7 @@ import {
 import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 import { perguntarUrgenciaAoJev, registrarUrgenciaDoJev } from '@/lib/ai/decisao/urgencia';
 import { fusoDaOrganizacao } from './fuso-da-org';
+import { blocoDoFeriado, lerFeriadoDoTurno } from './feriado-nacional';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 import {
@@ -778,7 +779,10 @@ export async function uploadDeVoz(input: {
   audio: Buffer;
   mimeType: string;
 }): Promise<string> {
-  const path = `${input.tenantId}/${input.conversationId}/voz-agente-${input.jobId}-${input.seq}.mp3`;
+  // A extensão acompanha o formato: `.ogg` é a nota de voz em opus do canal
+  // oficial, e é ela que diz o formato a um retry (`mimeDoCaminhoDeVoz`).
+  const extensao = input.mimeType.toLowerCase().startsWith('audio/ogg') ? 'ogg' : 'mp3';
+  const path = `${input.tenantId}/${input.conversationId}/voz-agente-${input.jobId}-${input.seq}.${extensao}`;
   const admin = createAdminClient();
   // `upsert: true`, e não `false`: este caminho só é chamado quando
   // `resolverCaminhoDeVoz` JÁ decidiu que precisa sintetizar de novo — ou é a
@@ -2965,7 +2969,6 @@ async function executarTurnoDoAgente(
   // rascunho saía em terceira pessoa — "vou avisar o atendente e ele responde".
   // Vive em função de módulo (`blocoDoModoDePrevia`) para poder ser testada.
   if (preview) blocosResidentes.push(blocoDoModoDePrevia(preview.kind));
-  const system = blocosResidentes.join('\n\n');
   const openingContext = preview
     ? preview.context
     : await lerContextoDaConversa();
@@ -3005,6 +3008,15 @@ async function executarTurnoDoAgente(
                 }),
         })
       : null;
+
+  // A resposta que vai virar ÁUDIO é escrita PARA SER OUVIDA. Sem este bloco o
+  // modelo escrevia como sempre — três bolhas, lista e sigla — e a síntese lia
+  // tudo numa nota de 35 segundos (medido numa instalação real em 03/11/2026, número
+  // oficial). Por isso o `system` só é montado DEPOIS de a voz ser resolvida, e
+  // o bloco vai NO FIM: o prefixo dos turnos em texto continua o mesmo.
+  const blocoDaVoz = blocoDaRespostaFalada(vozParaEsteTurno);
+  if (blocoDaVoz) blocosResidentes.push(blocoDaVoz);
+  const system = blocosResidentes.join('\n\n');
 
   // Seam de canal (F2-25): o envio vai SÓ pela interface ChannelAdapter — o
   // default WAHA-via-CRM envolve o sink F2-06. Instanciado por job (o pool é
@@ -4389,6 +4401,7 @@ async function executarTurnoDoAgente(
                 apiKey: voz.apiKey,
                 voiceId: voz.voiceId,
                 ...(voz.modelId ? { modelId: voz.modelId } : {}),
+                formato: voz.formato,
                 upload: (audio, mimeType) =>
                   uploadDeVoz({ tenantId, conversationId: input.conversationId, jobId: liveJob().id, seq: seqDesteEnvio, audio, mimeType }),
               },
@@ -5693,8 +5706,23 @@ async function executarTurnoDoAgente(
     // ponto só cobre os três — e alcança de carona a chamada de fechamento, que
     // reusa `openingTextOnly` e é onde nasce o `prazo` ISO da declaração.
     const agoraBlock = renderAgora(clock(), fusoDaOrg);
+    // ── O FERIADO NACIONAL DO TURNO (#3877) ───────────────────────────────────
+    //
+    // Em 02/11/2026 (Finados) o agente disse "atendemos hoje até as 18h" e
+    // convidou a pessoa à loja, com a empresa fechada: sabia o dia da semana
+    // (`## Agora`) e o horário semanal, e não sabia que aquele dia é feriado.
+    //
+    // Entra logo DEPOIS do relógio porque é a mesma família de fato — "que dia
+    // é hoje" — e porque é dele que o modelo precisa ao decidir se promete
+    // atendimento. No sufixo por-lead, junto do relógio, pelo mesmo motivo: o
+    // país não muda entre leads, mas o dia sim (virada de meia-noite), e o
+    // prefixo estável (`stable-prefix.ts`) não pode carregar fato do dia.
+    const feriadoBlock = blocoDoFeriado(
+      await lerFeriadoDoTurno(pool, tenantId, clock(), fusoDaOrg, runLog),
+    );
     const openingSuffixes = [
       agoraBlock,
+      feriadoBlock,
       matchedSkillsBlock,
       stageHintBlock,
       splitHint,
