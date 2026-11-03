@@ -8,7 +8,16 @@ import { enviarPushAoUsuario, enviarPushAQuemVeAConversa, enviarPushDaOrg } from
 import { carregarDestinatariosDaMensagem, type DestinatariosDaMensagem } from "./destinatarios-da-mensagem";
 import { logger } from "@/lib/logger";
 import { vapidPronto } from "./vapid";
-import { pushDoAvisoDaCentral } from "./push-dos-avisos";
+import { organizacaoDoPush, pushDoAvisoDaCentral } from "./push-dos-avisos";
+import {
+  escopoDeQuemRecebe,
+  ganhosDeHoje,
+  inicioDoDia,
+  linhaDoDia,
+  tituloComValor,
+  valorDoNegocio,
+} from "./push-de-venda";
+import { traduzir } from "@/lib/i18n/dicionario";
 import type { PushPayload } from "./push_payload";
 import { rotuloDoContato, SEM_NOME } from "@/lib/contacts/rotulo-do-contato";
 
@@ -142,7 +151,7 @@ async function destinatariosDoInbound(
  * `kind='whatsapp_group'`), mas nunca a cópia do 1:1: não busca nome/avatar de
  * contato (a IA não serve grupos, e a Task 8 não abre exceção só para a
  * notificação), não cria nem roteia nada — só avisa o atendente que o grupo
- * está falando. Título fixo, igual em toda organização.
+ * está falando. Título fixo, no idioma da organização.
  *
  * Quem recebe é a mesma régua do 1:1: só quem pode ver a conversa do grupo.
  */
@@ -157,9 +166,10 @@ async function handleGroupInbound(row: EventRow): Promise<HandlerResult> {
     return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "skipped", detail: "sem_conversa" };
   }
   const { body, corpoSemPrevia } = corpoDoEvento(row);
+  const { idioma } = await organizacaoDoPush(createAdminClient(), row.organization_id);
 
   const payload: PushPayload = {
-    title: "Nova mensagem no grupo",
+    title: traduzir("Nova mensagem no grupo", idioma),
     body,
     corpoSemPrevia,
     tag: `${NOTIFY_KINDS.message_inbound.tagPrefix}:${conversationId}`,
@@ -185,11 +195,12 @@ async function leadBits(organizationId: string, leadId: string): Promise<{
   title: string;
   ownerUserId: string | null;
   pipelineId: string | null;
+  valor: ReturnType<typeof valorDoNegocio>;
 }> {
   const admin = createAdminClient();
   const { data } = await admin
     .from("crm_leads")
-    .select("title, owner_user_id, pipeline_id")
+    .select("title, owner_user_id, pipeline_id, value_cents, currency")
     .eq("id", leadId)
     .eq("organization_id", organizationId)
     .maybeSingle();
@@ -197,11 +208,14 @@ async function leadBits(organizationId: string, leadId: string): Promise<{
     title?: string | null;
     owner_user_id?: string | null;
     pipeline_id?: string | null;
+    value_cents?: number | null;
+    currency?: string | null;
   } | null;
   return {
     title: row?.title?.trim() || "Lead",
     ownerUserId: row?.owner_user_id ?? null,
     pipelineId: row?.pipeline_id ?? null,
+    valor: valorDoNegocio(row),
   };
 }
 
@@ -242,6 +256,10 @@ export const webPushInboundHandler: EventHandler = {
     if (row.event_type === "message.group_received") return handleGroupInbound(row);
     if (row.event_type === "central.aviso_criado") return handleAvisoQuePedeGente(row);
 
+    // Os títulos saem no idioma da ORGANIZAÇÃO: ninguém está logado quando o
+    // push sai. O fuso diz onde começa o "hoje" da soma dos ganhos.
+    const { idioma, fuso, visibilidade } = await organizacaoDoPush(createAdminClient(), row.organization_id);
+
     if (row.event_type === "user.mentioned") {
       const toUserId = typeof row.payload.to_user_id === "string" ? row.payload.to_user_id : null;
       const conversationId =
@@ -253,8 +271,8 @@ export const webPushInboundHandler: EventHandler = {
       if (!conversationId) {
         return { consumer_key: WEB_PUSH_INBOUND_KEY, status: "skipped", detail: "sem_conversa" };
       }
-      const preview =
-        typeof row.payload.body_preview === "string" ? row.payload.body_preview : "Você foi mencionado";
+      const titulo = traduzir("Você foi mencionado", idioma);
+      const preview = typeof row.payload.body_preview === "string" ? row.payload.body_preview : titulo;
       // Mencionado que não pode ver a conversa não recebe aviso nenhum — nem sem
       // prévia: tag e link já apontam a conversa. É o que o sino dentro do app
       // já faz (a nota chega pela RLS de `conversation_notes`).
@@ -263,7 +281,7 @@ export const webPushInboundHandler: EventHandler = {
         conversationId,
         // Sem corpo sem prévia: o texto da nota é conteúdo.
         {
-          title: "Você foi mencionado",
+          title: titulo,
           body: truncar(preview),
           tag: `${NOTIFY_KINDS.mention.tagPrefix}:${conversationId}`,
           href: `/app/inbox/${conversationId}`,
@@ -285,7 +303,7 @@ export const webPushInboundHandler: EventHandler = {
     if (row.event_type === "lead.assigned") {
       const toUserId = typeof row.payload.to_user_id === "string" ? row.payload.to_user_id : lead.ownerUserId;
       return enviarParaUsuario(row.organization_id, toUserId, {
-        title: "Lead atribuído a você",
+        title: traduzir("Lead atribuído a você", idioma),
         body: truncar(lead.title),
         corpoSemPrevia: truncar(lead.title),
         tag: `${NOTIFY_KINDS.lead_assigned.tagPrefix}:${leadId}`,
@@ -293,16 +311,33 @@ export const webPushInboundHandler: EventHandler = {
       });
     }
     if (row.event_type === "lead.won") {
+      // O valor do negócio no título e, no corpo, ao lado de quem ganhou,
+      // quantos ganhos o dia já tem e a soma deles na mesma moeda
+      // (`./push-de-venda.ts`). Só lê o dia quando há alguém para receber, e só
+      // os ganhos que ESSA pessoa veria na tela (o papel dela e o
+      // `visibility_mode`). O valor do próprio negócio entra: o dono o vê.
+      const moeda = lead.valor?.moeda ?? null;
+      const admin = createAdminClient();
+      const hoje = lead.ownerUserId
+        ? await ganhosDeHoje(
+            admin,
+            row.organization_id,
+            moeda,
+            inicioDoDia(new Date(), fuso),
+            await escopoDeQuemRecebe(admin, row.organization_id, lead.ownerUserId, visibilidade),
+          )
+        : null;
+      const dia = linhaDoDia(traduzir("Ganhos hoje: {quantidade}", idioma), hoje, moeda);
       return enviarParaUsuario(row.organization_id, lead.ownerUserId, {
-        title: "Lead ganho",
-        body: truncar(lead.title),
+        title: truncar(tituloComValor(traduzir("Lead ganho", idioma), lead.valor)),
+        body: truncar(dia ? `${lead.title} · ${dia}` : lead.title),
         corpoSemPrevia: truncar(lead.title),
         tag: `${NOTIFY_KINDS.lead_won.tagPrefix}:${leadId}`,
         href,
       });
     }
     return enviarParaUsuario(row.organization_id, lead.ownerUserId, {
-      title: "Lead perdido",
+      title: traduzir("Lead perdido", idioma),
       body: truncar(lead.title),
       corpoSemPrevia: truncar(lead.title),
       tag: `${NOTIFY_KINDS.lead_lost.tagPrefix}:${leadId}`,
