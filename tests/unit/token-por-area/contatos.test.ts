@@ -434,8 +434,22 @@ const PROPOSTA_DECIDIR: Caso = {
   metodo: "POST",
   caminho: `/api/v1/contacts/${CONTATO_A}/proposals/${DEMANDA_A}`,
   params: { id: CONTATO_A, proposal_id: DEMANDA_A },
-  corpo: { decision: "confirm", motivo: "confirmado" },
-  linhas: { ...LINHAS_BASE, contact_field_proposals: [], crm_leads: NEGOCIOS },
+  corpo: { decision: "accept", motivo: "confirmado" },
+  linhas: {
+    ...LINHAS_BASE,
+    contact_field_proposals: [
+      {
+        id: DEMANDA_A,
+        contact_id: CONTATO_A,
+        organization_id: ORG_A,
+        campo: "nome",
+        valor_proposto: "Novo Nome",
+        valor_anterior: "Nome Antigo",
+        status: "pending",
+      },
+    ],
+    crm_leads: NEGOCIOS,
+  },
   papel: "agent",
   escopo: "mcp:write",
   papelDoToken: undefined,
@@ -505,7 +519,7 @@ const BULK_POST: Caso = {
   rota: "contacts/bulk",
   metodo: "POST",
   caminho: "/api/v1/contacts/bulk",
-  corpo: { ids: [CONTATO_A], action: "tag", tag: "vip" },
+  corpo: { ids: [CONTATO_A], action: "tag", op: "add", tag: "vip" },
   linhas: LINHAS_BASE,
   papel: "agent",
   escopo: "mcp:write",
@@ -560,7 +574,22 @@ const IMPORT_AGENDA_POST: Caso = {
   metodo: "POST",
   caminho: "/api/v1/contacts/import/agenda",
   corpo: { channel_session_id: NEGOCIO_A },
-  linhas: { ...LINHAS_BASE, channel_sessions: [] },
+  linhas: {
+    ...LINHAS_BASE,
+    channel_sessions: [
+      {
+        id: NEGOCIO_A,
+        organization_id: ORG_A,
+        waha_session_name: "sessao-da-a",
+        engine: "NOWEB",
+        webhook_path_token: "token-webhook-a",
+        webhook_secret_encrypted: "",
+        status: "WORKING",
+        phone_number: "+5511999999999",
+        display_name: "Telefone da A",
+      },
+    ],
+  },
   papel: "agent",
   escopo: "mcp:write",
   papelDoToken: undefined,
@@ -880,7 +909,21 @@ describe("o ramo do token em contatos e contact-tags", () => {
 
   it("POST /api/v1/contacts/[id]/proposals/[proposal_id]: decisão grava proposta com actor null", async () => {
     const { res, texto, falso } = await comoToken(PROPOSTA_DECIDIR, {
-      linhas: { ...LINHAS_BASE, contact_field_proposals: [], crm_leads: NEGOCIOS },
+      linhas: {
+        ...LINHAS_BASE,
+        contact_field_proposals: [
+          {
+            id: DEMANDA_A,
+            contact_id: CONTATO_A,
+            organization_id: ORG_A,
+            campo: "nome",
+            valor_proposto: "Novo Nome",
+            valor_anterior: "Nome Antigo",
+            status: "pending",
+          },
+        ],
+        crm_leads: NEGOCIOS,
+      },
     });
     expect(res.status, texto).toBe(200);
     expect(audit).toHaveBeenCalledWith(
@@ -891,7 +934,7 @@ describe("o ramo do token em contatos e contact-tags", () => {
   it("POST /api/v1/contacts/bulk: o item de outra organização é recusado por item, não derruba o lote", async () => {
     const c: Caso = {
       ...BULK_POST,
-      corpo: { ids: [CONTATO_A, CONTATO_B], action: "tag", tag: "vip" },
+      corpo: { ids: [CONTATO_A, CONTATO_B], action: "tag", op: "add", tag: "vip" },
     };
     const { res, texto, falso } = await comoToken(c);
     expect(res.status, texto).toBe(200);
@@ -910,7 +953,22 @@ describe("o ramo do token em contatos e contact-tags", () => {
 
   it("POST /api/v1/contacts/import/agenda: sincronização grava actor da sessão mesmo com token", async () => {
     const { res, texto, falso } = await comoToken(IMPORT_AGENDA_POST, {
-      linhas: { ...LINHAS_BASE, channel_sessions: [] },
+      linhas: {
+        ...LINHAS_BASE,
+        channel_sessions: [
+          {
+            id: NEGOCIO_A,
+            organization_id: ORG_A,
+            waha_session_name: "sessao-da-a",
+            engine: "NOWEB",
+            webhook_path_token: "token-webhook-a",
+            webhook_secret_encrypted: "",
+            status: "WORKING",
+            phone_number: "+5511999999999",
+            display_name: "Telefone da A",
+          },
+        ],
+      },
     });
     expect(res.status, texto).toBe(200);
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ actorApiTokenId: TOKEN_A, actorUserId: null }));

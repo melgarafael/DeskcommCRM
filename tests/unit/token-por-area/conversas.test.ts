@@ -300,6 +300,7 @@ const LISTA_TAGS: Caso = {
   caminho: "/api/v1/conversation-tags",
   linhas: { ...LINHAS_BASE, conversation_tags: [] },
   papel: "viewer",
+  papelDoToken: "agent",
   escopo: "mcp:read",
   recurso: "conversations",
   status: 200,
@@ -320,6 +321,7 @@ const MESSAGES_GET: Caso = {
   status: 200,
   audita: false,
   receitaB: true,
+  semDadosDeB: true,
 };
 
 const NOTES_GET: Caso = {
@@ -435,7 +437,7 @@ const USABLE_FOR_RAG_POST: Caso = {
   metodo: "POST",
   caminho: `/api/v1/conversations/${CONVERSA_A}/usable-for-rag`,
   params: { id: CONVERSA_A },
-  corpo: { enabled: true },
+  corpo: { enabled: false },
   linhas: LINHAS_BASE,
   papel: "agent",
   escopo: "mcp:write",
