@@ -415,7 +415,15 @@ describe("o membro da equipe que também é cliente (#3900)", () => {
     // `responsavel` lê o aviso de um membro da equipe como se fosse o plantão.
     montar(
       estado({
-        config: { ...estado().config, destino_modo: "responsavel" },
+        config: {
+          channel_session_id: CANAL_QR,
+          telefone: "+5531998966398",
+          rotulo: "Plantão da Ana",
+          ligado: true,
+          resposta_whatsapp_habilitada: false,
+          atualizado_em: "2026-09-18T12:00:00.000Z",
+          destino_modo: "responsavel",
+        },
         equipe: [
           {
             user_id: "5f000000-0000-4000-8000-00000000a001",

@@ -92,6 +92,8 @@ function dbDeAviso(opcoes: {
 }) {
   const destino = opcoes.destino ?? NUMERO_DA_MEMBRO;
   const leituras: string[] = [];
+  /** `[tabela, coluna, valor]` de cada `.eq` — é por aqui que o filtro de organização é medido. */
+  const filtros: Array<[string, string, unknown]> = [];
   const rpc = vi.fn(async (nome: string) => ({
     data: nome === "fn_responder_caso_por_whatsapp" ? "accepted" : null,
     error: null,
@@ -124,7 +126,10 @@ function dbDeAviso(opcoes: {
     };
     const builder: Record<string, unknown> = {};
     builder.select = () => builder;
-    builder.eq = () => builder;
+    builder.eq = (coluna: string, valor: unknown) => {
+      filtros.push([tabela, coluna, valor]);
+      return builder;
+    };
     builder.is = () => builder;
     builder.not = () => builder;
     builder.update = () => builder;
@@ -135,7 +140,7 @@ function dbDeAviso(opcoes: {
     return builder;
   });
 
-  return { rpc, from, db: { rpc, from } as unknown as SupabaseClient, leituras };
+  return { rpc, from, db: { rpc, from } as unknown as SupabaseClient, leituras, filtros };
 }
 
 function entrada(texto: string | null, direcao: "inbound" | "outbound" = "inbound") {
@@ -232,24 +237,17 @@ describe("lerNumeroInternoDeAviso — o que a leitura quente carrega", () => {
     expect(leituras).not.toContain("user_organizations");
   });
 
-  it("a leitura continua por organização: o membro de uma não vale para a outra", async () => {
-    const daMembro = dbDeAviso({ modo: "responsavel", whatsapps: [NUMERO_DA_MEMBRO] });
-    const { db: daVizinha } = dbDeAviso({
-      modo: "responsavel",
-      destino: NUMERO_DE_CLIENTE,
-      whatsapps: [],
-    });
-    expect(
-      await ehNumeroInternoDeAviso(daVizinha, ORG_VIZINHA, {
-        kind: "phone",
-        phone: NUMERO_DA_MEMBRO,
-        lid: null,
-      }),
-    ).toBe(false);
-    // E a da membro continua respondendo por si.
-    expect(
-      await lerNumeroInternoDeAviso(daMembro.db, ORG).then((c) => c.destinoModo),
-    ).toBe("responsavel");
+  it("a leitura continua por organização: as duas consultas filtram pela org de quem pergunta", async () => {
+    // O dublê não separa tenants sozinho: o que se mede é o FILTRO que a consulta
+    // leva. Sem o `.eq("organization_id", …)` em `user_organizations`, o membro de
+    // uma organização viraria exceção na ingestão da outra.
+    const { db, leituras, filtros } = dbDeAviso({ modo: "responsavel", whatsapps: [NUMERO_DA_MEMBRO] });
+    await lerNumeroInternoDeAviso(db, ORG_VIZINHA);
+    expect(leituras).toEqual(["config_aviso_de_caso", "user_organizations"]);
+    for (const tabela of ["config_aviso_de_caso", "user_organizations"]) {
+      expect(filtros).toContainEqual([tabela, "organization_id", ORG_VIZINHA]);
+    }
+    expect(filtros.filter(([, coluna, valor]) => coluna === "organization_id" && valor !== ORG_VIZINHA)).toEqual([]);
   });
 
   it("falha ao ler os membros NÃO inventa a exceção: o destino segue interno", async () => {
