@@ -1716,6 +1716,13 @@ export const DICIONARIO: Traducoes = {
   "Nenhum dia fora da rotina daqui para a frente.": { es: "No hay días fuera de la rutina a partir de hoy." },
   "Nenhum dia fechado daqui para a frente.": { es: "No hay días cerrados a partir de hoy." },
   "aberto excepcionalmente": { es: "abierto excepcionalmente" },
+  "Fechado": { es: "Cerrado" },
+  "Fechar só algumas horas": { es: "Cerrar solo algunas horas" },
+  "Fechar estas horas": { es: "Cerrar estas horas" },
+  "fechado nessas horas": { es: "cerrado en esas horas" },
+  "Nessas horas a agenda deixa de oferecer horários, para a equipe e para a IA. O resto do dia segue a jornada de sempre.": {
+    es: "En esas horas la agenda deja de ofrecer horarios, al equipo y a la IA. El resto del día sigue la jornada de siempre.",
+  },
   "Abrir atendimento": { es: "Abrir atención" },
   "Abra o atendimento e diga o que fazer: concluir, pedir informação ao cliente ou passar para uma pessoa.": { es: "Abre la atención e indica qué hacer: concluirla, pedir información al cliente o pasarla a una persona." },
   "Confira em Conexões se o número voltou e se o histórico do período fora do ar entrou como esperado.": { es: "Revise en Conexiones si el número volvió y si el historial del período sin conexión entró como se esperaba." },
@@ -6788,8 +6795,10 @@ export const DICIONARIO: Traducoes = {
     es: "Este cliente pertenece a la cartera de otro vendedor. El negocio nuevo nace con el dueño de la cartera.",
   },
   // Respostas da porta dedicada `PATCH /contacts/[id]/carteira`.
-  "Só gerente e administrador podem mudar a carteira do cliente.": {
-    es: "Solo gerente y administrador pueden cambiar la cartera del cliente.",
+  // #3746: a régua deixou de ser "só gerente". O Atendente dono do cliente muda
+  // a carteira, e o que sobra recusando por papel é o `viewer` — quem só lê.
+  "Seu papel não permite mudar a carteira do cliente.": {
+    es: "Tu rol no permite cambiar la cartera del cliente.",
   },
   "O dono precisa ser membro ativo desta empresa, com papel de atendente, gerente ou administrador. Quem só lê, e quem saiu da equipe, não é dono de carteira.": {
     es: "El dueño debe ser miembro activo de esta empresa, con rol de agente, gerente o administrador. Quien solo lee, y quien salió del equipo, no es dueño de cartera.",
@@ -6802,6 +6811,22 @@ export const DICIONARIO: Traducoes = {
   },
   "Não foi possível salvar a carteira do cliente.": {
     es: "No fue posible guardar la cartera del cliente.",
+  },
+  // A régua de POSSE do atendente (#3746) — a mesma recusa nas duas portas:
+  // mudar a carteira e inscrever num follow-up. Diz o que fazer, não só que
+  // falhou: quem lê está no meio de um atendimento.
+  "Este cliente não está com você. Só o atendente da conversa, o dono da carteira ou um gerente pode fazer isso; peça a um gerente para assumir o cliente.": {
+    es: "Este cliente no está contigo. Solo el atendente de la conversación, el dueño de la cartera o un gerente puede hacerlo; pide a un gerente que asuma el cliente.",
+  },
+  "Não foi possível conferir se este cliente está com você. Nada foi alterado.": {
+    es: "No fue posible verificar si este cliente está contigo. No se cambió nada.",
+  },
+  "Conversa não encontrada para este contato.": {
+    es: "Conversación no encontrada para este contacto.",
+  },
+  // Doc 250, 1-B: a conversa não tira o cliente da carteira de um colega.
+  "Este cliente está na carteira de outro vendedor. Só um gerente tira o cliente da carteira de um colega.": {
+    es: "Este cliente está en la cartera de otro vendedor. Solo un gerente saca al cliente de la cartera de un colega.",
   },
   // TELA da carteira (#2591): o cartão da ficha do contato e a faixa em cima do chat.
   "Carteira": { es: "Cartera" },
