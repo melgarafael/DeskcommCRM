@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 
 /** Normaliza o nome da empresa para um slug candidato (citext unique no DB). */
 export function slugify(name: string): string {
@@ -133,6 +134,10 @@ export async function ensureTenantForUser(
   if (memberError && memberError.code !== "23505") {
     throw new Error(`signup provisioning: membership insert failed: ${memberError.message}`);
   }
+
+  // #3696: vínculo novo não pode conviver com um snapshot em cache que diz
+  // "sem organização" (a tela de cadastro já chamou `loadAuthUser` antes).
+  invalidarUsuario(user.id);
 
   void audit({
     action:
@@ -316,6 +321,10 @@ export async function provisionExternalTenant(
     throw new Error(`provisioning: membership insert failed: ${memberError.message}`);
   }
 
+  // #3696: idem — o dono pode ter sessão aberta enquanto o provisionamento de
+  // fora o vincula à empresa recém-criada.
+  invalidarUsuario(ownerId);
+
   // Ator NULO: quem criou foi um sistema de fora, com o segredo da instalação
   // (decisão do dono, doc 40, 19/09). O dono é dado da linha, não o autor da
   // ação — creditá-lo afirmaria que uma pessoa fez o que uma máquina fez.
@@ -415,6 +424,9 @@ async function garantirAdminDaOrganizacao(
   // Sobrou só `23505`: já havia linha (revogada, rebaixada, ou corrida com
   // outra chamada). Nada mudou — e o que não teve efeito não audita.
   if (error) return;
+
+  // #3696: o conserto do vínculo também é escrita de permissão.
+  invalidarUsuario(p.ownerId);
 
   // O conserto DEIXA RASTRO. Sem esta linha, a organização que nasceu de uma
   // tentativa partida não tem registro nenhum do que a completou: a

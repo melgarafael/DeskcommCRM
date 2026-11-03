@@ -6,6 +6,7 @@ import { ensureTenantForUser } from "@/lib/auth/provision";
 import { decidirConviteDoSignup } from "@/lib/auth/convite-no-signup";
 import { modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 import { aplicarConvite } from "@/lib/auth/aplicar-convite";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 
@@ -183,6 +184,11 @@ async function confirmar({
     // o conserto é configurar os templates (hostgator-setup-kit/marca-emails.sh).
     return redirectTo(viaTokenHash ? "/login?error=link_invalido" : "/login?error=template_padrao");
   }
+
+  // Entrar de novo é o jeito que a pessoa tem de "atualizar" o que vê. O cache
+  // curto de autorização só é derrubado por quem escreve PELO APP; vínculo
+  // gravado por fora (seed, worker, SQL) esperaria o TTL. Um MISS por login.
+  invalidarUsuario(usuario.id);
 
   if (sessaoPreservada) {
     // O link falhou — isso continua sendo fato e continua auditado. O que muda

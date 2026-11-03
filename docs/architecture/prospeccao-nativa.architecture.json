@@ -166,6 +166,11 @@
       "label": "busca com teto"
     },
     {
+      "from": "operator",
+      "to": "candidates",
+      "label": "planilha (CSV/XLSX)"
+    },
+    {
       "from": "discovery",
       "to": "candidates",
       "label": "normalizar e deduplicar"
@@ -173,7 +178,7 @@
     {
       "from": "candidates",
       "to": "crm",
-      "label": "ativação autorizada"
+      "label": "ativação autorizada (o contato nasce com os links)"
     },
     {
       "from": "crm",

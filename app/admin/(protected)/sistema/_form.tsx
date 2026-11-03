@@ -319,6 +319,23 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     foraDoMenu: "Não cria porta no menu do CRM: ele libera um painel em",
     painelEm: "/app/ai/credentials",
   },
+  {
+    modulo: "setores",
+    id: "modulo-setores",
+    rotulo: "Setores de atendimento",
+    descricao:
+      "Ligado, cada empresa ganha na Equipe a aba Setores, para agrupar os atendentes por área, e a aba Atendimento passa a mostrar e filtrar o setor de cada um. A conversa com setor definido vai só para quem atende aquele setor, dentro do horário dele; conversa sem setor continua indo pelo número. Desligado, a aba e a coluna somem e a distribuição volta a ser a de antes; os setores já cadastrados ficam guardados.",
+    foraDoMenu: "Não cria porta no menu do CRM: ele libera uma aba em",
+    painelEm: "/app/team",
+  },
+  {
+    modulo: "avisos",
+    id: "modulo-avisos",
+    rotulo: "Avisos para a equipe",
+    descricao:
+      "Ligado, o administrador de cada empresa pode escrever um aviso com título e texto, e ele chega como notificação nos aparelhos da equipe que ativaram as notificações. Desligado, ninguém envia avisos; os já enviados ficam guardados.",
+    foraDoMenu: "Não cria porta no menu do CRM: por enquanto o aviso é enviado pela API, em /api/v1/avisos.",
+  },
 ];
 
 /**

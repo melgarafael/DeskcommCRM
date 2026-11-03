@@ -23,7 +23,7 @@ vi.mock("@/lib/notifications/web_push", () => ({
 import { createAdminClient } from "@/lib/supabase/admin";
 import { enviarPushDaOrg } from "@/lib/notifications/web_push";
 import { webPushInboundHandler } from "@/lib/notifications/push.handler";
-import type { EventRow } from "@/lib/event-log/dispatcher";
+import { dispatchEvent, registerHandler, type EventRow } from "@/lib/event-log/dispatcher";
 import { corpoDoAvisoDeEtapa, tituloDoAvisoDeEtapa } from "@/lib/leads/aviso-de-etapa";
 import { PAPEL_MINIMO_DA_CENTRAL } from "@/lib/ai/inbox-destino";
 
@@ -31,7 +31,10 @@ const ORG = "11111111-1111-4111-8111-111111111111";
 
 const filtros: Array<[string, string, unknown]> = [];
 
-function banco(linhas: Record<string, Record<string, unknown> | null>) {
+function banco(
+  linhas: Record<string, Record<string, unknown> | null>,
+  erros: Record<string, { message: string; code: string }> = {},
+) {
   return {
     from(tabela: string) {
       const q = {
@@ -40,7 +43,7 @@ function banco(linhas: Record<string, Record<string, unknown> | null>) {
           filtros.push([tabela, coluna, valor]);
           return q;
         },
-        maybeSingle: async () => ({ data: linhas[tabela] ?? null, error: null }),
+        maybeSingle: async () => ({ data: linhas[tabela] ?? null, error: erros[tabela] ?? null }),
       };
       return q;
     },
@@ -231,5 +234,50 @@ describe("aviso da Central → celular", () => {
     const r = await webPushInboundHandler.handle(evento("central.aviso_criado", { item_id: "ausente" }));
     expect(r.status).toBe("skipped");
     expect(enviarPushDaOrg).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { code: "57014", message: "canceling statement due to statement timeout" },
+    { code: "PGRST002", message: "Could not query the database for the schema cache" },
+  ])("falha $code ao ler o aviso não vira descarte definitivo", async (erro) => {
+    vi.mocked(createAdminClient).mockReturnValue(banco({}, { agent_inbox_items: erro }) as never);
+    registerHandler(webPushInboundHandler);
+    const resultado = await dispatchEvent(evento("central.aviso_criado", { item_id: "i1" }), {
+      orgParada: false, soHandlers: [webPushInboundHandler.key],
+    });
+
+    // O dreno só põe ok/skipped em consumed_by. Error conserva este consumidor
+    // para a retentativa existente, antes de qualquer envio ao provedor.
+    expect(resultado).toEqual([{
+      consumer_key: webPushInboundHandler.key, status: "error",
+      detail: expect.stringContaining(erro.message),
+    }]);
+    expect(enviarPushDaOrg).not.toHaveBeenCalled();
+    expect(filtros).toContainEqual(["agent_inbox_items", "organization_id", ORG]);
+    expect(filtros).toContainEqual(["agent_inbox_items", "id", "i1"]);
+  });
+
+  it("a leitura recuperada na tentativa seguinte entrega o aviso uma vez", async () => {
+    vi.mocked(createAdminClient).mockReturnValue(banco({}, {
+      agent_inbox_items: { code: "57014", message: "statement timeout" },
+    }) as never);
+    const row = evento("central.aviso_criado", { item_id: "i1" });
+    await expect(webPushInboundHandler.handle(row)).rejects.toThrow("statement timeout");
+    expect(enviarPushDaOrg).not.toHaveBeenCalled();
+
+    vi.mocked(createAdminClient).mockReturnValue(banco({
+      agent_inbox_items: {
+        id: "i1", kind: "handoff", ref_kind: "conversation", ref_id: "c1",
+        title: "Handoff", body: null, para_user_id: "u-dono",
+      },
+      organizations: { locale: "pt-BR" },
+    }) as never);
+    await expect(webPushInboundHandler.handle({ ...row, attempts: 1 })).resolves.toMatchObject({
+      status: "ok", detail: "sent:1",
+    });
+    expect(enviarPushDaOrg).toHaveBeenCalledTimes(1);
+    expect(enviarPushDaOrg).toHaveBeenCalledWith(ORG, expect.objectContaining({
+      tag: "aviso:i1", href: "/app/inbox/c1",
+    }), { papelMinimo: PAPEL_MINIMO_DA_CENTRAL, soUsuario: "u-dono" });
   });
 });

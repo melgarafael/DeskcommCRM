@@ -41,6 +41,8 @@ export interface AgentVersionRow {
     callback_enabled?: boolean;
     send_window?: { start: string; end: string; weekdays: number[] } | null;
   };
+  voz_enabled: boolean;
+  voz_quando: "nunca" | "espelhar" | "sempre";
   status: "draft" | "published" | "superseded" | "archived";
   published_at: string | null;
   superseded_at: string | null;

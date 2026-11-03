@@ -3,8 +3,9 @@
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { ArrowBendUpLeft, ArrowBendUpRight, CaretDown, Check, Checks, Clock, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
+import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
@@ -15,8 +16,10 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Message } from "@/lib/types/messaging";
 import type { ReacaoNoBalao } from "@/lib/inbox/reacoes-no-fio";
+import { lerMencoesDeGrupo, textoComMencoesResolvidas } from "@/lib/messaging/mencoes-de-grupo";
 import { lerRemetenteDeGrupo, rotuloDoRemetente } from "@/lib/messaging/remetente-de-grupo";
 import { motivoDaFalhaDaMensagem } from "@/lib/inbox/motivo-da-falha";
+import { hrefDoCompromisso, puloDaAgendaDaMensagem } from "@/lib/inbox/pulo-da-agenda";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
 import { MediaUnavailable } from "@/components/inbox/media/MediaUnavailable";
@@ -197,6 +200,24 @@ export function MessageBubble({
   const reenvio = onReenviar
     ? reenvioDaMensagem(message, { userId: viewerUserId, podeReenviarDeOutros, agora })
     : "nenhum";
+  // PULO DA AGENDA (#3848): o fluxo escolheu não enviar porque o contato tem
+  // compromisso marcado. A linha do banco carrega `failed` + o código do pulo
+  // (é o par que já identifica o caso — ver lib/inbox/pulo-da-agenda.ts), e é
+  // aqui que os dois desfechos se separam na tela: falha de verdade continua
+  // com "Falhou" e com o botão; pulo ganha selo próprio e NÃO oferece reenvio
+  // (a regra é `reenvioDaMensagem`, a mesma da rota — acrescentar um botão aqui
+  // seria oferecer um toque que o servidor recusa).
+  const pulo = puloDaAgendaDaMensagem(message);
+  const puloHref = pulo ? hrefDoCompromisso(pulo) : null;
+  // O motivo medido pela guarda muda a frase: horário no futuro, atendimento
+  // acontecendo agora e presença sem confirmação são coisas diferentes para
+  // quem lê o fio.
+  const fraseDoPulo =
+    pulo?.motivo === "em_atendimento"
+      ? t("O contato está na agenda agora — o fluxo está configurado para não enviar quando isso acontece.")
+      : pulo?.motivo === "presenca_pendente"
+        ? t("O compromisso do contato já terminou e a presença ainda não foi confirmada — o fluxo está configurado para não enviar quando isso acontece.")
+        : t("O contato tem compromisso marcado na agenda — o fluxo está configurado para não enviar quando isso acontece.");
   const paradaSemConexao = message.status === "queued" && Boolean(message.metadata?.queued_reason)
     && !message.metadata?._optimistic;
   // O MOTIVO à vista, e não só no Tooltip: o dedo não abre Tooltip. O texto
@@ -237,7 +258,16 @@ export function MessageBubble({
       // o mesmo erro de #1046.
       return emNomeDe.token_name ? `${nome} · ${t("via")} ${emNomeDe.token_name}` : nome;
     }
-    if (message.sent_via === "ai") return "IA";
+    if (message.sent_via === "ai") {
+      // #3649: o nome do agente vem GRAVADO na linha, como o de `sent_on_behalf`.
+      // Só `ai_actor_name`: é o campo que o handler grava DEPOIS de
+      // `input.metadata`, então o cliente não o forja; outro apelido em
+      // `metadata` seria entrada do cliente. Sem nome (linha antiga), "IA".
+      // "IA" passa por `t()`; o nome do agente sai como cadastrado (#1046).
+      const gravado = message.metadata?.ai_actor_name;
+      const nome = typeof gravado === "string" ? gravado.trim() : "";
+      return nome ? `${t("IA")} · ${nome}` : "IA";
+    }
     // A REGRA falou, e não a IA: texto fixo de automação, follow-up ou lembrete
     // de agenda (#652). O ramo passou a existir porque o valor passou a ser
     // gravado — antes dele, um rótulo aqui seria promessa sem dado atrás.
@@ -264,6 +294,14 @@ export function MessageBubble({
   // `lerRemetenteDeGrupo` (Task 2): este componente não conhece o formato de
   // `metadata.group_sender`, só o resultado já validado.
   const remetente = !isOutbound ? lerRemetenteDeGrupo(message.metadata) : null;
+  // #3566 — AS MENÇÕES do grupo. Em grupo o WhatsApp escreve `@<lid>` no texto,
+  // e `metadata.mentions` guarda quem é cada identificador. O corpo GRAVADO
+  // continua cru (é o dado do provedor, auditável); a troca acontece aqui, por
+  // ocorrência e pelo PRÓPRIO lid — menção repetida resolve cada uma pelo seu, e
+  // dois contatos chamados "João" não trocam de lugar. Sem menção conhecida, o
+  // texto sai idêntico (o número que já estava lá é a informação disponível).
+  const mencoes = lerMencoesDeGrupo(message.metadata);
+  const corpo = textoComMencoesResolvidas(message.body, mencoes);
   // O anúncio que gerou ESTA mensagem (a ingestão grava em `metadata.anuncio`
   // a mensagem nascida de um clique). Só na recebida: é o cliente que chega
   // pelo anúncio, como o WhatsApp mostra no celular.
@@ -321,7 +359,9 @@ export function MessageBubble({
                   ? "rounded-br-sm bg-primary text-primary-foreground"
                   : "rounded-bl-sm bg-muted text-foreground",
               ),
-          isFailed && "border border-destructive",
+          // O pulo da agenda não é falha: o selo diz isso, e a moldura de erro
+          // diria o contrário (#3850).
+          isFailed && !pulo && "border border-destructive",
           // Apagada sai das cores da DIREÇÃO e vai para o CINZA: a diferença
           // entre o que foi apagado e o que está vivo tem de ser vista de
           // relance, e o fundo é justamente o que diz de quem é a mensagem —
@@ -444,7 +484,7 @@ export function MessageBubble({
         )}
         {senderLabel && (
           <div className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold opacity-80">
-            {senderLabel === "IA" ? (
+            {message.sent_via === "ai" ? (
               <Robot size={10} weight="duotone" aria-hidden />
             ) : null}
             {senderLabel && t(senderLabel)}
@@ -504,7 +544,7 @@ export function MessageBubble({
 
             {!hasMedia && mediaExpirada && (
               <div className={cn(message.body && "mb-1")}>
-                <MediaUnavailable kind={avisoDeExpiracao} />
+                <MediaUnavailable detalhe={avisoDeExpiracao} />
               </div>
             )}
 
@@ -517,7 +557,7 @@ export function MessageBubble({
             {localizacao && <LocationCard localizacao={localizacao} />}
 
             {message.body && !isContact && !localizacao && (
-              <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{message.body}</p>
+              <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{corpo}</p>
             )}
           </>
         )}
@@ -544,7 +584,7 @@ export function MessageBubble({
           )}
           {isOutbound && !isFailed && <AckIndicator status={message.status} paradaSemConexao={paradaSemConexao}
             saiSozinha={SAI_SOZINHA_QUANDO_VOLTAR.has(message.sent_via)} t={t} />}
-          {isFailed && (
+          {isFailed && !pulo && (
             // Provider local: o painel do inbox não tem TooltipProvider ancestral e
             // este Tooltip só monta em mensagem failed — sem o provider, abrir uma
             // conversa com falha de envio derrubava o painel inteiro (error boundary).
@@ -559,10 +599,48 @@ export function MessageBubble({
               </Tooltip>
             </TooltipProvider>
           )}
+          {pulo && (
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    data-testid="selo-pulada-pela-agenda"
+                    className="inline-flex items-center gap-0.5 font-semibold"
+                  >
+                    <CalendarX size={10} weight="bold" aria-hidden /> {t("Pulada pela agenda")}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{fraseDoPulo}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </div>
-        {(isFailed || reenvio !== "nenhum") && (
+        {(isFailed || reenvio !== "nenhum" || pulo) && (
           <div className="mt-1.5 space-y-1.5 border-t border-current/20 pt-1.5">
-            {isFailed && <p data-testid="motivo-da-falha" className="text-xs leading-snug">{motivoDaFalha}</p>}
+            {isFailed && !pulo && <p data-testid="motivo-da-falha" className="text-xs leading-snug">{motivoDaFalha}</p>}
+            {pulo && (
+              // O pulo não tem botão de reenvio: quem decidiu não enviar foi a
+              // escolha do fluxo, e insistir por aqui a furaria em silêncio. A
+              // ação é abrir o compromisso que barrou; mandar assim mesmo é
+              // mudar a escolha do fluxo ou escrever pelo campo de resposta —
+              // a tela diz isso, em vez de esconder a saída.
+              <div data-testid="pulo-da-agenda" className="space-y-1">
+                <p className="text-xs leading-snug">{fraseDoPulo}</p>
+                {pulo.titulo && (
+                  <p className="text-xs leading-snug opacity-80">
+                    {t("Compromisso: {titulo}").replace("{titulo}", pulo.titulo)}
+                  </p>
+                )}
+                {puloHref && (
+                  <Link href={puloHref} className="inline-flex text-xs underline">
+                    {t("Abrir compromisso")}
+                  </Link>
+                )}
+                <p className="text-[10px] leading-snug opacity-70">
+                  {t("Para mandar mesmo assim, mude a escolha do fluxo ou escreva pelo campo de resposta.")}
+                </p>
+              </div>
+            )}
             {reenvio !== "nenhum" && (
               <Button size="sm" variant="secondary" disabled={ocupado}
                 onClick={() => (reenvio === "confirmar" ? setConfirmandoReenvio(true) : void reenviar(false))}>

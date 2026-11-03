@@ -14,20 +14,28 @@ import { AvisoSemResposta, useEnvioComTeto } from "@/components/auth/teto-da-esp
  * veio de um convite: o Google não devolve nada nosso além do que pusermos na
  * URL de retorno (ver `lib/auth/entrada-com-google.ts`).
  *
- * No sucesso nada volta para cá — a server action redireciona o navegador para
- * o Google. O que pode voltar é a recusa, e ela é mostrada aqui mesmo, embaixo
- * do botão, para não perder o que a pessoa já tinha digitado no formulário.
+ * No sucesso a action devolve a URL do `/authorize` e quem sai para o Google
+ * é esta tela, com `window.location.assign` — carga completa. O `redirect()`
+ * da action virava navegação interna do Next quando o Supabase responde no
+ * mesmo domínio do app, e a tela ficava parada (ver `signInWithGoogle.ts`).
+ * O que pode voltar é a recusa, e ela é mostrada aqui mesmo, embaixo do botão,
+ * para não perder o que a pessoa já tinha digitado no formulário.
  */
 export function EntrarComGoogle({ next, convite }: { next?: string; convite?: string }) {
   const t = useT();
   const { pendente: isPending, semResposta, enviar } = useEnvioComTeto();
   const [erro, setErro] = useState<string | null>(null);
+  // O navegador ainda está trocando de página: o botão não volta a ser clicável.
+  const [saindo, setSaindo] = useState(false);
 
   const onClick = () => {
     setErro(null);
     void enviar(() => signInWithGoogle({ next, convite }), (res) => {
-      // `res` indefinido = o redirect do sucesso aconteceu (ele lança).
-      if (!res) return;
+      if (res.ok) {
+        setSaindo(true);
+        window.location.assign(res.url);
+        return;
+      }
 
       setErro(
         res.error === "google_indisponivel"
@@ -59,10 +67,10 @@ export function EntrarComGoogle({ next, convite }: { next?: string; convite?: st
         type="button"
         variant="outline"
         className="w-full"
-        disabled={isPending}
+        disabled={isPending || saindo}
         onClick={onClick}
       >
-        {isPending ? t("Abrindo o Google...") : t("Entrar com Google")}
+        {isPending || saindo ? t("Abrindo o Google...") : t("Entrar com Google")}
       </Button>
     </div>
   );

@@ -282,6 +282,16 @@ describe("B) quem recebe prévia", () => {
     expect(sql).toMatch(/limit \$3/);
   });
 
+  it("o SQL não recusa classe que o TS aceita: `nao-medido` definitivo ganha prévia (#3742)", async () => {
+    // Se o SQL excluísse uma classe que `previaPorGerar` aceita, a tela mostraria
+    // "Gerando prévia…" para sempre e a recarga de 10 s nunca pararia.
+    const { pool, sqls } = montar({ candidatos: { [C1]: [] } });
+    await rodar(pool);
+    const sql = sqls.find((s) => s.sql.startsWith("select") && s.sql.includes("from prospecting_candidates"))!
+      .sql;
+    expect(sql).not.toContain("classe");
+  });
+
   it("grava a prévia pelo merge de uma chave, com organização e campanha", async () => {
     const { pool, sqls } = montar({ candidatos: { [C1]: [cand("a")] } });
     await rodar(pool);

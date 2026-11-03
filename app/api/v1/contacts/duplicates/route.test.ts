@@ -21,11 +21,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
+import { parDeContatos } from "@/lib/contacts/duplicados";
 import { createClient } from "@/lib/supabase/server";
+
+/**
+ * As dispensas ("não são a mesma empresa") são lidas pelo cliente administrador. O
+ * teste da ROTA prova que a lista as respeita; a sabotagem de QUEM as lê (o cliente
+ * do usuário, que a policy de `merge_queue` esvazia para quem não é gestor) fica na
+ * suíte de invariantes, onde há banco de verdade.
+ */
+const dispensa = vi.hoisted(() => ({ pares: new Set<string>() }));
 
 vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn() }));
 vi.mock("@/lib/auth/require-role", () => ({ orgAtivaDaApi: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
+vi.mock("@/lib/contacts/dispensar-par", () => ({
+  lerParesDispensados: async () => new Set(dispensa.pares),
+}));
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -137,6 +150,7 @@ function corpo(res: Response): Promise<{ data: unknown; meta: Record<string, unk
 }
 
 beforeEach(() => {
+  dispensa.pares.clear();
   vi.mocked(loadAuthUser).mockResolvedValue({
     id: USER_ID,
     email: "a@example.com",
@@ -227,5 +241,56 @@ describe("a varredura de duplicados responde ao que foi LIDO", () => {
     expect(json.meta.contatos_varridos).toBe(TETO);
     const grupos = json.data as Array<{ contatos: Array<{ id: string }> }>;
     expect(grupos[0]!.contatos.map((c) => c.id).sort()).toEqual(["contato-0005", "contato-1500"]);
+  });
+});
+
+describe("o repetido pelo nome: sugestão depois dos fortes, e dispensa que vale para a lista", () => {
+  /** Um grupo forte (o mesmo celular, com e sem o nono dígito) e um par só pelo nome. */
+  function cenario(): Linha[] {
+    const linhas = base(60);
+    linhas[4] = contato(5, { phone_number: "+553198966398" });
+    linhas[5] = contato(6, { phone_number: "+5531998966398" });
+    linhas[9] = contato(10, { name: "Clínica Santos Odontologia", phone_number: "+553191110010" });
+    linhas[19] = contato(20, {
+      name: "Santos Odontologia Clínica Avançada",
+      phone_number: "+553191110020",
+    });
+    return linhas;
+  }
+
+  it("o par por nome vem com motivos nome_parecido, DEPOIS do grupo forte", async () => {
+    // Sabotagem: concatenar os parecidos ANTES dos fortes deixa a ordem vermelha.
+    const { client } = fakeSupabase({ contacts: cenario() });
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const grupos = (await corpo(await chamar())).data as Array<{
+      motivos: string[];
+      contatos: Array<{ id: string; address_book_name: unknown }>;
+    }>;
+
+    expect(grupos.map((g) => g.motivos)).toEqual([["telefone"], ["nome_parecido"]]);
+    expect(grupos[1]!.contatos.map((c) => c.id)).toEqual(["contato-0010", "contato-0020"]);
+    // O campo novo chega à tela, mesmo quando é nulo.
+    expect(grupos[1]!.contatos[0]!.address_book_name).toBeNull();
+  });
+
+  it("par dispensado (com a ordem invertida) não aparece, e o papel de quem olha não muda isso", async () => {
+    // Sabotagem: ignorar `lerParesDispensados` deixa o par de nome na lista.
+    dispensa.pares.add(parDeContatos("contato-0020", "contato-0010"));
+    vi.mocked(loadAuthUser).mockResolvedValue({
+      id: USER_ID,
+      email: "a@example.com",
+      full_name: null,
+      avatar_url: null,
+      is_platform_admin: false,
+      idioma: "pt-BR",
+      organizations: [{ organization_id: ORG_ID, organization_name: "Org", role: "viewer" }],
+    } as never);
+    const { client } = fakeSupabase({ contacts: cenario() });
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const grupos = (await corpo(await chamar())).data as Array<{ motivos: string[] }>;
+
+    expect(grupos.map((g) => g.motivos)).toEqual([["telefone"]]);
   });
 });

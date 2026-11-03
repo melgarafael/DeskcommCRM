@@ -82,13 +82,19 @@ function envolver(ui: ReactNode) {
 let buscar: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
-  buscar = vi.fn(
-    async () =>
-      new Response(JSON.stringify({ data: { contact: CONTATO } }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
-  );
+  // O `fetch` responde por ROTA, e não com o mesmo corpo para todas: o diálogo
+  // também lê o vocabulário de sugestões (`GET /api/v1/contact-tags`, a lista
+  // sem texto) e a leitura COM busca (`?busca=`), que a #3144 trouxe para a
+  // ficha. Devolver o corpo do contato para elas daria um objeto onde o campo
+  // espera lista — o dublê estaria mentindo sobre a rota.
+  buscar = vi.fn(async (entrada: unknown) => {
+    const url = typeof entrada === "string" ? entrada : String((entrada as Request)?.url ?? "");
+    const corpo = url.includes("/api/v1/contact-tags") ? { data: [] } : { data: { contact: CONTATO } };
+    return new Response(JSON.stringify(corpo), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  });
   vi.stubGlobal("fetch", buscar);
 });
 
@@ -198,6 +204,15 @@ function montar(contact: Contact, open: boolean) {
 }
 const qcFixo = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
 
+/** Os corpos dos PATCH do contato, na ordem em que saíram. */
+function patches(): Record<string, unknown>[] {
+  return buscar.mock.calls
+    .filter(([url]) => String(url).includes("/api/v1/contacts/"))
+    .map(([, init]) =>
+      JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}")),
+    ) as Record<string, unknown>[];
+}
+
 describe("EditContactDialog · o pendente não sobrevive a fechar o diálogo (ficha, #2831)", () => {
   it("digitar, CANCELAR, reabrir e salvar NÃO grava o texto cancelado", async () => {
     const user = userEvent.setup();
@@ -217,14 +232,15 @@ describe("EditContactDialog · o pendente não sobrevive a fechar o diálogo (fi
     const r = render(montar(CONTATO, true));
     await user.type(screen.getByLabelText("Adicionar etiqueta"), "cliente diamante");
     await user.click(screen.getByRole("button", { name: "Salvar" }));
-    await waitFor(() => expect(buscar).toHaveBeenCalledTimes(1));
+    // Os PATCHES, não o total de `fetch`: desde a #3144 a ficha também LÊ o
+    // vocabulário a cada tecla, e contar tudo misturaria leitura com escrita.
+    await waitFor(() => expect(patches()).toHaveLength(1));
     const salvo = { ...CONTATO, tags: ["cliente diamante"] };
     r.rerender(montar(salvo, false));
     r.rerender(montar(salvo, true));
     await user.click(screen.getByLabelText("Remover etiqueta cliente diamante"));
     await user.click(screen.getByRole("button", { name: "Salvar" }));
-    await waitFor(() => expect(buscar).toHaveBeenCalledTimes(2));
-    const init = buscar.mock.calls[1]?.[1] as RequestInit;
-    expect(JSON.parse(String(init.body)).tags).toEqual([]);
+    await waitFor(() => expect(patches()).toHaveLength(2));
+    expect(patches()[1]?.tags).toEqual([]);
   });
 });

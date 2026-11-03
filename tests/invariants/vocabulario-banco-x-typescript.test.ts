@@ -430,6 +430,13 @@ const PARES: Array<{
   },
   {
     tabela: "entregas_de_aviso_de_agendamento",
+    coluna: "alvo",
+    // Migration 9060: o número do dono ou o grupo da equipe.
+    arquivo: "lib/agenda/vocabulario-do-aviso-de-agendamento.ts",
+    simbolo: "ALVOS_DA_ENTREGA_DE_AGENDAMENTO",
+  },
+  {
+    tabela: "entregas_de_aviso_de_agendamento",
     coluna: "evento",
     // Migration 0707: os três eventos da agenda que o aviso escuta. Coluna
     // `null`-ável (o resumo não tem evento), CHECK na forma `IS NULL OR`.

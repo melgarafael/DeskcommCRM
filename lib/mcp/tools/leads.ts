@@ -92,6 +92,39 @@ const VALOR_DO_NEGOCIO =
   "O preço do catálogo (preco_cents) NÃO segue esta régua em moeda sem centavos: multiplique por 100.";
 
 /**
+ * A MENSALIDADE, e por que ela NÃO é o `value_cents` (fatia 1 da #3602).
+ *
+ * Num negócio de setup + mensalidade o `value_cents` guarda SÓ o setup. Somar a
+ * mensalidade nele (ou mandá-la no lugar dele) é o erro que a issue descreve: o
+ * card passa a mostrar um número que ninguém sabe separar, e o painel não
+ * consegue dizer quanto entra todo mês. A régua de centavos é a mesma do valor
+ * único — é dinheiro de negócio, ×100 em qualquer moeda.
+ */
+const VALOR_RECORRENTE =
+  "mensalidade × 100, separada do valor único (setup NUNCA entra aqui): R$ 500/mês → 50000.";
+
+/** Os três campos que o agente pode escrever — e que a leitura devolve. */
+const RECORRENCIA = {
+  recurring_value_cents: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional()
+    .describe(VALOR_RECORRENTE),
+  recurring_period: z
+    .literal("monthly")
+    .optional()
+    .describe("Periodicidade da recorrência: hoje só 'monthly'. Omitida com mensalidade presente, nasce mensal."),
+  recurring_months: z
+    .number()
+    .int()
+    .min(1)
+    .max(600)
+    .optional()
+    .describe("Duração do contrato em meses. Omitida = sem prazo (não é 12)."),
+};
+
+/**
  * Enriquece rows de lead com os campos de governança aditivos (G6-03):
  * `owner_user_name` (só o nome — LGPD) e `stage` ({ id, name }, o label legível
  * que o get_lead_context compõe). owner_user_id, stage_id, status e tags[] já
@@ -257,6 +290,7 @@ const createInputShape = {
   description: z.string().max(2000).optional(),
   contact_id: z.string().uuid().optional(),
   value_cents: z.number().int().nonnegative().optional().describe(VALOR_DO_NEGOCIO),
+  ...RECORRENCIA,
   currency: z.string().length(3).optional(),
   owner_user_id: z.string().uuid().optional(),
   /** 0070: o agente pode nascer dono do negócio que ele mesmo abriu. */
@@ -297,6 +331,13 @@ export const crmCreateLead: McpToolDefinition<typeof createInputShape> = {
       description: input.description ?? null,
       contact_id: input.contact_id ?? null,
       value_cents: input.value_cents ?? null,
+      // A mensalidade viaja SEPARADA do valor único (fatia 1 da #3602). Sem
+      // estas três linhas o `createLeadSchema.parse` abaixo descartaria as
+      // chaves em silêncio — o agente criaria o negócio de setup + mensalidade
+      // com metade do contrato, e nada falharia.
+      recurring_value_cents: input.recurring_value_cents ?? null,
+      recurring_period: input.recurring_period,
+      recurring_months: input.recurring_months ?? null,
       // Ausente, a moeda é a da organização (`createLeadHandler` a lê): um
       // literal "BRL" aqui fazia o agente criar em real numa empresa em euro.
       currency: input.currency,
@@ -357,6 +398,7 @@ const updateInputShape = {
   description: z.string().max(2000).optional(),
   contact_id: z.string().uuid().optional(),
   value_cents: z.number().int().nonnegative().optional().describe(VALOR_DO_NEGOCIO),
+  ...RECORRENCIA,
   currency: z.string().length(3).optional(),
   owner_user_id: z.string().uuid().optional(),
   /** 0070: transferir o negócio para (ou de) um agente — passa pelo mesmo helper. */

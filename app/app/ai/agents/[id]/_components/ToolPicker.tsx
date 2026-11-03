@@ -40,6 +40,10 @@ import {
   vagasRestantes,
   type CapacidadeSelecionavel,
 } from "@/lib/mcp/tools/selecao-por-pacote";
+// Id de ferramenta do servidor MCP externo (`mcp_externo:*`, #3586) não é
+// capacidade deste catálogo — é escolha do cartão do servidor externo, e este
+// seletor só a carrega adiante.
+import { ehToolIdRemoto } from "@/lib/mcp/servidor-externo/ids";
 
 /** O que a rota `/api/v1/mcp/tools` serve (snake_case no wire). */
 export interface McpToolMeta extends CapacidadeSelecionavel {
@@ -226,7 +230,19 @@ export function ToolPicker({ value: valorSalvo, onChange, disabled, ocultar }: P
   const cheio = vagas <= 0;
 
   /** Ids salvos que o servidor não oferece mais — some da tela seria mentir. */
-  const orfas = value.filter((id) => !porNome.has(id) && !desligadasPelaOrg.has(id));
+  const orfas = value.filter(
+    (id) => !ehToolIdRemoto(id) && !porNome.has(id) && !desligadasPelaOrg.has(id),
+  );
+  /**
+   * Escolhas de ferramenta do SERVIDOR MCP EXTERNO (`mcp_externo:*`, #3586).
+   *
+   * Elas moram no mesmo `tool_ids` e NÃO pertencem a este catálogo: quem as
+   * oferece é o servidor da instalação, e quem as marca é o cartão do servidor
+   * externo. Aqui elas são só carregadas adiante — tratar uma delas como "não
+   * existe mais nesta versão do sistema" inventaria um aviso falso (o nome é de
+   * um ERP, não do produto) com um botão que apagaria a escolha de verdade.
+   */
+  const remotas = value.filter((id) => ehToolIdRemoto(id));
   /** Ids salvos de capacidade que a organização desligou — voltam a valer ao ligar. */
   const desligadasSalvas = value.filter((id) => desligadasPelaOrg.has(id));
 
@@ -286,7 +302,7 @@ export function ToolPicker({ value: valorSalvo, onChange, disabled, ocultar }: P
       return;
     }
     aplicar(
-      [...catalogo.map((c) => c.name), ...orfas].filter(
+      [...catalogo.map((c) => c.name), ...remotas, ...orfas].filter(
         (n) => value.includes(n) || n === name,
       ),
       `${t("Você já ligou")} ${TETO_TOOLS_POR_AGENTE} ${t("capacidades. Desligue uma antes de ligar outra.")}`,
@@ -475,7 +491,9 @@ export function ToolPicker({ value: valorSalvo, onChange, disabled, ocultar }: P
             disabled={disabled}
             onClick={() => {
               setRecusa(null);
-              onChange(value.filter((id) => porNome.has(id)));
+              // As remotas (#3586) não são do catálogo e também não são órfãs:
+              // "desligar as órfãs" não pode levá-las junto.
+              onChange(value.filter((id) => porNome.has(id) || remotas.includes(id)));
             }}
             className="font-medium underline underline-offset-4 disabled:opacity-50"
           >

@@ -26,7 +26,7 @@ Traz as releases do upstream (`melgarafael/DeskcommCRM`) para o fork **sem perde
 1. **Nunca `docker compose -f …` cru na VPS.** Use `dc`, o helper do kit (`source hostgator-setup-kit/_common.sh && enter_project && dc …`): ele monta os arquivos certos para o modo da instalação (single-server, proxy). Sem ele, app e worker podem voltar sem enxergar o banco ou o proxy.
 2. **Tag móvel + política de pull `missing` = `up -d` não puxa nada.** Imagem nova só chega com `dc pull` explícito.
 3. **Sem "foto" não há volta.** Depois do pull a imagem antiga perde o nome. Sempre `na-vps.sh antes` primeiro.
-4. **Nada vai para a `main` antes da custódia e dos gates.** A `main` dispara o build das imagens de produção.
+4. **Nada vai para a `main` antes da custódia e do CI verde.** A `main` dispara o build das imagens de produção.
 5. **`SUPABASE_REF` mudou? Pare.** O deploy manual desta skill **não** atualiza o Supabase da VPS (só o `update.sh` do kit faz isso). Decida com o dono antes.
 6. **Nunca imprima `.env` nem chaves.** Os scripts já não imprimem; ao diagnosticar, filtre as linhas.
 7. **Nada de cliente ou segredo no git.** Arme o guarda uma vez: `bash .agents/skills/atualizar-crm-custom/scripts/guardar-vazamento.sh --instalar`.
@@ -39,7 +39,7 @@ Traz as releases do upstream (`melgarafael/DeskcommCRM`) para o fork **sem perde
 ```
 Checkpoint 1: checar-novidades ─► autoriza? ─ não ─► encerra
         │ sim
-Checkpoint 2: branch sync + merge da TAG ─► custodia.sh --testes ─► PR + CI verde ─► autoriza o merge? ─► main ─► build das imagens
+Checkpoint 2: branch sync + merge da TAG ─► custodia.sh (leve) ─► PR + CI verde (os testes rodam aqui) ─► autoriza o merge? ─► main ─► build das imagens
         │
 Checkpoint 3 (autorização própria): antes ─► código ─► proxy ─► banco ─► pull + up ─► depois ─ falhou ─► rollback
 ```
@@ -68,12 +68,12 @@ Lê a **versão que roda de verdade** (commit carimbado na imagem do app na VPS)
    git merge vX.Y.Z          # a tag que o Checkpoint 1 mostrou
    ```
 2. **Conflitos:** preserve o que é do fork. A lista do que é do fork **não está escrita aqui**: sai do git (`checar-novidades.sh`, seção de customizações). Como resolver cada tipo: `references/conflitos.md`.
-3. **Custódia + gates** (peça `pnpm install --frozen-lockfile` antes):
+3. **Custódia leve, local** (sem `pnpm install`, sem testes):
    ```bash
-   bash .agents/skills/atualizar-crm-custom/scripts/custodia.sh --testes --alvo vX.Y.Z
+   bash .agents/skills/atualizar-crm-custom/scripts/custodia.sh --alvo vX.Y.Z
    ```
-   Confere se cada arquivo e cada linha que o fork acrescentou sobreviveram ao merge, roda `typecheck`, `lint`, `test:unit` (e `test:shell` se kit ou compose mudaram) e as checagens de `custodia.d/` da instância. **O código de saída é a autoridade.** Falhou: pare na branch de sync e traga o diagnóstico. Se um teste do upstream vigia uma customização do fork, ajuste o teste, não a customização, e registre em `.astra/README.md`.
-4. **PR e CI antes da `main`:** `git push -u origin sync/upstream-vX.Y.Z`, `gh pr create --base main`, `gh pr checks --watch`. Verde = pode pedir autorização. Se o CI do fork não rodar, vale o `--testes` local, dito explicitamente.
+   Confere se cada arquivo e cada linha que o fork acrescentou sobreviveram ao merge, e roda as checagens de `custodia.d/` da instância. É rápida e quase não usa memória. **O código de saída é a autoridade.** **Não rode `--testes` por padrão:** `test:unit` percorre o repositório inteiro (500+ arquivos) e já travou a máquina do dono por falta de RAM. Typecheck, lint, `test:unit`, `invariants` e o build são provados pelo CI do passo 4, que é a prova que vale. Só rode `--testes` local se o dono pedir, ou se o CI do fork não rodar (diga isso explicitamente) — e então depois de `pnpm install --frozen-lockfile`, de preferência rodando `pnpm vitest run --maxWorkers=2` à mão em vez do gate completo.
+4. **PR e CI antes da `main`:** `git push -u origin sync/upstream-vX.Y.Z`, `gh pr create --base main`, `gh pr checks --watch`. Verde = pode pedir autorização. Falhou: pare na branch de sync e traga o diagnóstico. Se um teste do upstream vigia uma customização do fork, ajuste o teste, não a customização, e registre em `.astra/README.md`. O push publica a branch, então peça o aval do dono antes.
 5. **Autorização do merge:** *"Custódia OK e CI verde. Autoriza mesclar na `main`? Isso dispara o build das imagens de produção."* Ao receber: `gh pr merge --merge`.
 6. **Build das imagens:** `gh run list --workflow=publish-image.yml --limit 1` até `completed success`. Reporte ao dono.
 

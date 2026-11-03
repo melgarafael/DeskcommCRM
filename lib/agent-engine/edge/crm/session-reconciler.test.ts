@@ -215,3 +215,48 @@ describe("redrive × canal pausado (#2318)", () => {
     expect(query).toHaveBeenCalledWith(expect.stringContaining("error_code = 'channel_disabled'"), ["message-test", "org-test"]);
   });
 });
+
+/**
+ * Spec 31 B1: o reenvio do watchdog também responde pelo número que a pessoa
+ * escreveu quando a ficha tem telefone extra. Mesma regra do envio normal, em SQL.
+ */
+describe("redrive × ficha com telefone extra (Spec 31 B1)", () => {
+  it("ficha com extra: o reenvio vai para o chat da última mensagem recebida", async () => {
+    const send = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ id: { id: "3EB0NEW" } }), { status: 200 }));
+    const consultas: string[] = [];
+    const query = vi.fn(async (sql: string) => {
+      consultas.push(sql);
+      if (/select\s+m\.id/i.test(sql)) {
+        return { rows: [{
+          id: "m-1", organization_id: "org-1", conversation_id: "conv-1", contact_id: "ficha-1",
+          body: "Olá", waha_session_name: "default", wa_identity: null, wa_lid: null,
+          phone_number: "+5527999998888", is_group: false, group_chat_id: null,
+        }] };
+      }
+      if (/from contact_phones/i.test(sql)) return { rows: [{ "?column?": 1 }] };
+      if (/direction = 'inbound'/i.test(sql)) {
+        return { rows: [{ external_id: "false_5531988887777@c.us_3EB0XYZ" }] };
+      }
+      if (/count\(\*\)/i.test(sql)) return { rows: [{ n: "0" }] };
+      if (/select\s+s\.metadata/i.test(sql)) {
+        return { rows: [{ metadata: {}, phone_number: "+5527999998888", operante: true }] };
+      }
+      return { rows: [] };
+    });
+
+    const reenviadas = await redriveQueued({ query } as unknown as pg.Pool, {
+      wahaBaseUrl: "http://127.0.0.1:9999", wahaApiKey: "test-key",
+      intervalMs: 1, redriveMinAgeMs: 0, redriveBatchSize: 10, redriveSpacingMs: 0,
+    }, createLogger());
+
+    expect(reenviadas).toBe(1);
+    const corpo = JSON.parse((send.mock.calls[0]![1] as { body: string }).body) as { chatId: string };
+    expect(corpo.chatId).toBe("5531988887777@c.us");
+    // A consulta de extras e a das mensagens filtram pela organização da linha.
+    expect(consultas.some((s) => /from contact_phones[\s\S]*organization_id = \$1/i.test(s))).toBe(true);
+    // Sabotagem: deixar `chatIdOf` sem o `ultimoRecebido` manda o reenvio para o
+    // principal (5527999998888@c.us) e deixa este teste vermelho.
+  });
+});

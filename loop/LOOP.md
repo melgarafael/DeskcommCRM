@@ -241,13 +241,14 @@ elegível — só congeladas/human_input):
   errado, ou a feature está mal-escrita — o segundo caso vai pra inbox, não pro
   Edit. (O pre-commit barra edição de acceptance; o hook PreToolUse barra deleção
   de teste e Edit/Write em invariante existente.)
-- **`tests/invariants/**` é o eval do épico — semi-congelado.** ADICIONAR arquivo
-  novo é permitido (G1-03 cria a suíte; fases seguintes podem acrescentar).
-  MODIFICAR ou DELETAR arquivo existente é bloqueado (PreToolUse + pre-commit
-  `freeze-invariants.sh`) sem `DESKCOMM_GOV_INVARIANTS_EDIT=1`. A exceção legítima
-  é o catraca da G1-03: quando uma fase G2+ corrige um gap, o `test.fails` passa a
-  falhar e OBRIGA o flip para teste normal — a sessão exporta a env no commit e o
-  commit message cita o flip. Qualquer outra edição de invariante vai pra inbox.
+- **`tests/invariants/**` — MODIFICAR é livre, DELETAR não.** O congelamento era
+  do eval do épico e foi aposentado com o fim dele: hoje o diretório é a suíte
+  geral de invariantes do projeto, atrás do check `invariants` (`pnpm test:db`), e
+  ajustar um invariante é manutenção normal de teste. O que segue barrado é a
+  DELEÇÃO (e o rename, que é deleção disfarçada) de invariante que a `main` tem —
+  `loop/hooks/guard-invariants.sh` no pre-commit, e o `rm` barrado antes de virar
+  comando pelo PreToolUse. Deleção deliberada: `DESKCOMM_GOV_INVARIANTS_EDIT=1`
+  com a razão no commit. Invariante que parece errado vai pra inbox, não pro rm.
 - **Migration fora da tripla não commita.** `loop/hooks/check-migration-triple.sh`
   exige baseline.sql + `-- manifest:` no .sql no mesmo commit e NNNN inédito em TODAS as
   branches locais (bypass só orientado pelo dono: `DESKCOMM_GOV_MIGRATION_EDIT=1`).
