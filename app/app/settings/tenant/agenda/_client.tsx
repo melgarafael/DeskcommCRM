@@ -221,7 +221,7 @@ function LembreteDoCompromisso({
           disabled={!ligado || Boolean(erroCanais)}
           defaultValue={tipo.reminder_channel_session_id ?? ""}
           data-testid={`editar-lembrete-canal-${tipo.id}`}
-          className="rounded-md border border-border bg-surface p-2 text-sm text-text disabled:opacity-50"
+          className="w-full min-w-0 rounded-md border border-border bg-surface p-2 text-sm text-text disabled:opacity-50 max-md:min-h-11"
         >
           <option value="">
             {t("Automático — conversa da reserva ou único canal disponível")}
@@ -265,7 +265,7 @@ function LembreteDoCompromisso({
           disabled={!ligado || Boolean(erroModelos)}
           defaultValue={tipo.reminder_meta_template_id ?? ""}
           data-testid={`editar-lembrete-modelo-${tipo.id}`}
-          className="rounded-md border border-border bg-surface p-2 text-sm text-text disabled:opacity-50"
+          className="w-full min-w-0 rounded-md border border-border bg-surface p-2 text-sm text-text disabled:opacity-50 max-md:min-h-11"
         >
           <option value="">
             {t("Nenhum — fora da janela o lembrete não sai e a equipe recebe um aviso")}
