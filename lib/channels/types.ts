@@ -247,7 +247,20 @@ export interface ChannelAdapter {
    * porque carregam nome de provider, e o lint da Task 7 proíbe esse nome fora
    * de `lib/channels/`. Quem chama escreve o que o adapter disser.
    */
-  readonly codes: { notConfigured: string; sendFailed: string; unknownError: string };
+  readonly codes: {
+    notConfigured: string;
+    sendFailed: string;
+    unknownError: string;
+    /**
+     * O canal pediu para DESACELERAR — não é falha da mensagem: muitas para a
+     * mesma pessoa (~10 por minuto, 131056 da plataforma) ou a conta limitada
+     * (429 com `Retry-After`). O handler de envio trata como `queued` e pede a
+     * nova tentativa (`lib/messaging/reenvio-desacelerado.ts`) para a mensagem
+     * sem outro dono; falhar uma mensagem que sairia daqui a um minuto é perder
+     * venda por pressa. Opcional: canal que não distingue segue `failed`.
+     */
+    throttled?: string;
+  };
 
   /**
    * URL da foto de perfil do contato, ou null quando não há (sem foto,

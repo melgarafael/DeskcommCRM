@@ -45,6 +45,7 @@ import { assertDestinoResolvidoSeguro } from "@/lib/automation/outbound-ip";
 import { assertSafeOutboundUrl } from "@/lib/automation/outbound-url";
 import { zernioMediaFetchInit } from "../zernio/webhook";
 import { DETALHE_NAO_RECEBE, PREFIXO_ENVIO_RESTRITO } from "../defeito-do-numero";
+import { marcaDeEspera, segundosDoRetryAfter } from "../erro-da-plataforma";
 import type {
   ChannelAdapter,
   ChannelHealth,
@@ -228,6 +229,7 @@ export const zernioAdapter: ChannelAdapter = {
       data?: { messageId?: string };
       error?: string;
       code?: string;
+      platformError?: { code?: number | string } | null;
     } | null;
 
     if (!res.ok || json?.success === false) {
@@ -235,6 +237,33 @@ export const zernioAdapter: ChannelAdapter = {
       // distingue "fora da janela" de "número bloqueado" de "conta suspensa", e
       // sem isso o operador vê só "falhou".
       const detalhe = json?.code ? `${json.code}: ${json.error ?? ""}` : (json?.error ?? res.statusText);
+      // ─── DESACELERAR não é falhar ─────────────────────────────────────────
+      //
+      // Dois avisos de VELOCIDADE, e nenhum diz que a mensagem está errada —
+      // por isso o código próprio, que o handler traduz em `queued` (e numa
+      // nova tentativa) em vez de `failed` quando a mensagem é da pessoa ou do
+      // agente; a que tem laço próprio (campanha, automação) segue `failed`,
+      // com este texto, e o laço dela reconhece o 429 (`ehLimiteDeVelocidade`):
+      //
+      //   - 131056 da Meta ("pace to ~10/min per recipient", changelog 28/08).
+      //     Chega como `code: "131056"` OU, na forma documentada do OpenAPI
+      //     v1.370.0, como `code: "platform_api_error"` com `platformError.code:
+      //     131056` e um `error` de texto livre. Ler só o primeiro deixava o
+      //     segundo virar `failed`;
+      //   - 429 do provedor (changelog 25/09): a conta foi limitada, e a
+      //     especificação diz "No message was sent" — tentar de novo não
+      //     duplica nada. O `Retry-After` vai carimbado (`[espera:Ns]`) para
+      //     quem reagenda respeitar.
+      const codigoDaPlataforma = String(json?.platformError?.code ?? "");
+      if (
+        res.status === 429 ||
+        String(json?.code ?? "") === "131056" ||
+        codigoDaPlataforma === "131056" ||
+        `${detalhe}`.includes("131056")
+      ) {
+        const espera = res.status === 429 ? segundosDoRetryAfter(res.headers?.get("retry-after")) : null;
+        throw new Error(`zernio_throttled: ${res.status} ${detalhe}${marcaDeEspera(espera)}`.trim());
+      }
       throw new Error(`zernio_send_failed: ${res.status} ${detalhe}`.trim());
     }
 
@@ -547,5 +576,8 @@ export const zernioAdapter: ChannelAdapter = {
     notConfigured: "zernio_not_configured",
     sendFailed: "zernio_error",
     unknownError: "zernio_unknown",
+    // O pedido de DESACELERAR (131056 da plataforma, 429 do provedor). Código
+    // próprio porque o desfecho é outro — ver o ramo de `send` acima.
+    throttled: "zernio_throttled",
   },
 };
