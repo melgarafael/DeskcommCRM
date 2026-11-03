@@ -10,6 +10,10 @@
  * Os casos medem o valor (na moeda do negócio, nunca uma fixa), a soma do dia
  * (só a mesma moeda, desde a meia-noite do fuso da organização, um por
  * negócio), o escopo por organização das leituras, e o idioma de cada título.
+ *
+ * E o escopo por PAPEL: as leituras são do service role, então o push reaplica
+ * a régua de `fn_can_view_lead`. Fora de `visibility_mode = 'all'`, o atendente
+ * não recebe valor nem soma de negócio que a tela não lhe mostra.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -32,9 +36,11 @@ import { formatValorDoNegocio } from "@/lib/money";
 import { webPushInboundHandler } from "@/lib/notifications/push.handler";
 import {
   entradasDeHoje,
+  escopoDoPapel,
   ganhosDeHoje,
   inicioDoDia,
   linhaDoDia,
+  modoDeVisibilidade,
   tituloComValor,
   valorDoNegocio,
 } from "@/lib/notifications/push-de-venda";
@@ -56,6 +62,9 @@ type Linha = Record<string, unknown>;
  * Banco de mentira que responde às duas formas de leitura: `maybeSingle()`
  * devolve `unicos[tabela]`, e o `await` direto na consulta devolve
  * `listas[tabela]`. Os filtros ficam registrados para o teste conferir o escopo.
+ *
+ * Na lista, `eq` e `or` por DONO filtram de verdade (como o PostgREST): o caso
+ * do atendente mede o que chega, não só o filtro que foi pedido.
  */
 function banco(unicos: Record<string, Linha | null>, listas: Record<string, Linha[]> = {}) {
   const filtros: Array<[string, string, string, unknown]> = [];
@@ -63,23 +72,37 @@ function banco(unicos: Record<string, Linha | null>, listas: Record<string, Linh
     filtros,
     from(tabela: string) {
       const q: Record<string, unknown> = {};
+      const passa: Array<(l: Linha) => boolean> = [];
       const anota = (op: string) => (col: string, val: unknown) => {
         filtros.push([tabela, op, col, val]);
         return q;
       };
       Object.assign(q, {
         select: () => q,
-        eq: anota("eq"),
+        eq: (col: string, val: unknown) => {
+          if (col === "owner_user_id") passa.push((l) => l.owner_user_id === val);
+          return anota("eq")(col, val);
+        },
+        or: (expr: string) => {
+          const ramos = expr.split(",").map((r) => r.split("."));
+          passa.push((l) => ramos.some(([c, op, v]) => (op === "is" ? l[c!] == null : l[c!] === v)));
+          return anota("or")(expr, undefined);
+        },
+        is: anota("is"),
         gte: anota("gte"),
         in: anota("in"),
         limit: () => q,
         maybeSingle: async () => ({ data: unicos[tabela] ?? null, error: null }),
-        then: (ok: (v: unknown) => unknown) => ok({ data: listas[tabela] ?? [], error: null }),
+        then: (ok: (v: unknown) => unknown) =>
+          ok({ data: (listas[tabela] ?? []).filter((l) => passa.every((f) => f(l))), error: null }),
       });
       return q;
     },
   };
 }
+
+/** A organização em que todo atendente vê todo negócio. */
+const TODOS_VEEM = { visibility_mode: "all" };
 
 const evento = (event_type: string, payload: Record<string, unknown>, entity_kind = "lead"): EventRow => ({
   id: "evt",
@@ -166,7 +189,7 @@ describe("a soma do dia", () => {
   it("ganhos: os negócios ganhos desde a meia-noite, da organização", async () => {
     const db = banco({}, { crm_leads: [{ value_cents: 100_000, currency: "BRL" }, { value_cents: 100_000, currency: "BRL" }] });
     const desde = new Date("2026-09-25T03:00:00Z");
-    expect(await ganhosDeHoje(db as never, ORG, "BRL", desde)).toEqual({ quantidade: 2, totalCents: 200_000 });
+    expect(await ganhosDeHoje(db as never, ORG, "BRL", desde, null)).toEqual({ quantidade: 2, totalCents: 200_000 });
     expect(db.filtros).toContainEqual(["crm_leads", "eq", "organization_id", ORG]);
     expect(db.filtros).toContainEqual(["crm_leads", "eq", "status", "won"]);
     expect(db.filtros).toContainEqual(["crm_leads", "gte", "closed_at", desde.toISOString()]);
@@ -175,7 +198,25 @@ describe("a soma do dia", () => {
   it("leitura que falha devolve null — o push sai sem o resumo, nunca deixa de sair", async () => {
     const quebrado = { from: () => { throw new Error("rede"); } };
     expect(await entradasDeHoje(quebrado as never, ORG, "t", "BRL", new Date())).toBeNull();
-    expect(await ganhosDeHoje(quebrado as never, ORG, "BRL", new Date())).toBeNull();
+    expect(await ganhosDeHoje(quebrado as never, ORG, "BRL", new Date(), null)).toBeNull();
+  });
+});
+
+describe("a régua de quem pode ver o negócio (fn_can_view_lead)", () => {
+  it("o modo gravado: ausente é o padrão, e um valor estranho restringe ao próprio", () => {
+    expect(modoDeVisibilidade(null)).toBe("own_and_unassigned");
+    expect(modoDeVisibilidade({})).toBe("own_and_unassigned");
+    expect(modoDeVisibilidade({ visibility_mode: "all" })).toBe("all");
+    expect(modoDeVisibilidade({ visibility_mode: "own" })).toBe("own");
+    expect(modoDeVisibilidade({ visibility_mode: "tudo" })).toBe("own");
+  });
+
+  it("gestão vê a organização; o atendente, só o dele (e o sem dono no modo padrão)", () => {
+    for (const papel of ["viewer", "manager", "admin"]) expect(escopoDoPapel(papel, "own", "u")).toBeNull();
+    expect(escopoDoPapel("agent", "all", "u")).toBeNull();
+    expect(escopoDoPapel("agent", "own_and_unassigned", "u")).toEqual({ dono: "u", semDono: true });
+    expect(escopoDoPapel("agent", "own", "u")).toEqual({ dono: "u", semDono: false });
+    expect(escopoDoPapel(null, "own_and_unassigned", "u")).toEqual({ dono: "u", semDono: true });
   });
 });
 
@@ -188,7 +229,7 @@ describe("o push que chega ao celular", () => {
             id: "i1", kind: "other", ref_kind: "lead", ref_id: "l1",
             title: tituloDoAvisoDeEtapa("Pagado", "es"), body: corpoDoAvisoDeEtapa("es"),
           },
-          organizations: { locale: "es", timezone: "America/Mexico_City" },
+          organizations: { locale: "es", timezone: "America/Mexico_City", settings: TODOS_VEEM },
           crm_leads: { pipeline_id: "p1", value_cents: 125_000, currency: "BRL", title: "Maria Souza +5511999990000" },
         },
         {
@@ -203,12 +244,41 @@ describe("o push que chega ao celular", () => {
     expect(payload).toEqual({
       title: "Negocio entró en «Pagado» · R$ 1.250,00",
       body: "Hoy en esta etapa: 2 (R$ 1.500,00)",
-      corpoSemPrevia: "Hoy en esta etapa: 2 (R$ 1.500,00)",
+      corpoSemPrevia: corpoDoAvisoDeEtapa("es"),
       tag: "aviso:i1",
       href: "/app/pipelines/p1?lead=l1",
     });
     expect(JSON.stringify(payload)).not.toContain("Maria");
   });
+
+  it.each([[{}], [{ visibility_mode: "own" }]])(
+    "etapa que avisa fora do modo 'all' (%j): nem valor nem soma, porque o aviso vai a todo atendente",
+    async (settings) => {
+      const db = banco(
+        {
+          agent_inbox_items: {
+            id: "i3", kind: "other", ref_kind: "lead", ref_id: "l1",
+            title: tituloDoAvisoDeEtapa("Pago", "pt-BR"), body: corpoDoAvisoDeEtapa("pt-BR"),
+          },
+          organizations: { locale: "pt-BR", settings },
+          crm_leads: { pipeline_id: "p1", value_cents: 125_000, currency: "BRL", owner_user_id: "u-outro" },
+        },
+        {
+          agent_inbox_items: [{ ref_id: "l1" }, { ref_id: "l9" }],
+          crm_leads: [{ value_cents: 125_000, currency: "BRL" }, { value_cents: 25_000, currency: "BRL" }],
+        },
+      );
+      vi.mocked(createAdminClient).mockReturnValue(db as never);
+      await webPushInboundHandler.handle(evento("central.aviso_criado", { item_id: "i3" }, "agent_inbox_item"));
+      const payload = vi.mocked(enviarPushDaOrg).mock.calls[0]![1];
+      expect(payload).toMatchObject({
+        title: "Negócio entrou em «Pago»",
+        body: corpoDoAvisoDeEtapa("pt-BR"),
+        corpoSemPrevia: corpoDoAvisoDeEtapa("pt-BR"),
+      });
+      expect(plano(JSON.stringify(payload))).not.toContain("R$");
+    },
+  );
 
   it("etapa que avisa sem valor e sem resumo: o texto de antes, intacto", async () => {
     vi.mocked(createAdminClient).mockReturnValue(
@@ -232,10 +302,15 @@ describe("o push que chega ao celular", () => {
     vi.mocked(createAdminClient).mockReturnValue(
       banco(
         {
-          organizations: { locale: "es", timezone: "America/Sao_Paulo" },
+          organizations: { locale: "es", timezone: "America/Sao_Paulo", settings: TODOS_VEEM },
           crm_leads: { title: "Pedido da Ana", owner_user_id: "u-dono", pipeline_id: "p1", value_cents: 125_000, currency: "BRL" },
         },
-        { crm_leads: [{ value_cents: 125_000, currency: "BRL" }, { value_cents: 75_000, currency: "BRL" }] },
+        {
+          crm_leads: [
+            { value_cents: 125_000, currency: "BRL", owner_user_id: "u-dono" },
+            { value_cents: 75_000, currency: "BRL", owner_user_id: "u-outro" },
+          ],
+        },
       ) as never,
     );
     await webPushInboundHandler.handle(evento("lead.won", { lead_id: "l1" }));
@@ -244,9 +319,37 @@ describe("o push que chega ao celular", () => {
     expect(payload).toMatchObject({
       title: "Lead ganado · R$ 1.250,00",
       body: "Pedido da Ana · Ganados hoy: 2 (R$ 2.000,00)",
-      corpoSemPrevia: "Pedido da Ana · Ganados hoy: 2 (R$ 2.000,00)",
+      corpoSemPrevia: "Pedido da Ana",
       href: "/app/pipelines/p1",
     });
+  });
+
+  it.each([
+    ["agent", {}, "Ganhos hoje: 2 (R$ 1.350,00)"],
+    ["agent", { visibility_mode: "own" }, "Ganhos hoje: 1 (R$ 1.250,00)"],
+    ["manager", {}, "Ganhos hoje: 3 (R$ 2.100,00)"],
+  ])("lead.won para um %s (%j): só soma os ganhos que ele veria na tela", async (papel, settings, linha) => {
+    vi.mocked(createAdminClient).mockReturnValue(
+      banco(
+        {
+          organizations: { locale: "pt-BR", settings },
+          user_organizations: { role: papel },
+          crm_leads: { title: "Pedido da Ana", owner_user_id: "u-dono", pipeline_id: "p1", value_cents: 125_000, currency: "BRL" },
+        },
+        {
+          crm_leads: [
+            { value_cents: 125_000, currency: "BRL", owner_user_id: "u-dono" },
+            { value_cents: 75_000, currency: "BRL", owner_user_id: "u-outro" },
+            { value_cents: 10_000, currency: "BRL", owner_user_id: null },
+          ],
+        },
+      ) as never,
+    );
+    await webPushInboundHandler.handle(evento("lead.won", { lead_id: "l1" }));
+    const payload = vi.mocked(enviarPushAoUsuario).mock.calls[0]![2];
+    expect(plano(payload.title)).toBe("Lead ganho · R$ 1.250,00");
+    expect(plano(payload.body)).toBe(`Pedido da Ana · ${linha}`);
+    expect(payload.corpoSemPrevia).toBe("Pedido da Ana");
   });
 
   it.each([

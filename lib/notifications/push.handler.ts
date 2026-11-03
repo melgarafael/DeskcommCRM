@@ -9,7 +9,14 @@ import { carregarDestinatariosDaMensagem, type DestinatariosDaMensagem } from ".
 import { logger } from "@/lib/logger";
 import { vapidPronto } from "./vapid";
 import { organizacaoDoPush, pushDoAvisoDaCentral } from "./push-dos-avisos";
-import { ganhosDeHoje, inicioDoDia, linhaDoDia, tituloComValor, valorDoNegocio } from "./push-de-venda";
+import {
+  escopoDeQuemRecebe,
+  ganhosDeHoje,
+  inicioDoDia,
+  linhaDoDia,
+  tituloComValor,
+  valorDoNegocio,
+} from "./push-de-venda";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { PushPayload } from "./push_payload";
 import { rotuloDoContato, SEM_NOME } from "@/lib/contacts/rotulo-do-contato";
@@ -251,7 +258,7 @@ export const webPushInboundHandler: EventHandler = {
 
     // Os títulos saem no idioma da ORGANIZAÇÃO: ninguém está logado quando o
     // push sai. O fuso diz onde começa o "hoje" da soma dos ganhos.
-    const { idioma, fuso } = await organizacaoDoPush(createAdminClient(), row.organization_id);
+    const { idioma, fuso, visibilidade } = await organizacaoDoPush(createAdminClient(), row.organization_id);
 
     if (row.event_type === "user.mentioned") {
       const toUserId = typeof row.payload.to_user_id === "string" ? row.payload.to_user_id : null;
@@ -306,17 +313,25 @@ export const webPushInboundHandler: EventHandler = {
     if (row.event_type === "lead.won") {
       // O valor do negócio no título e, no corpo, ao lado de quem ganhou,
       // quantos ganhos o dia já tem e a soma deles na mesma moeda
-      // (`./push-de-venda.ts`). Só lê o dia quando há alguém para receber.
+      // (`./push-de-venda.ts`). Só lê o dia quando há alguém para receber, e só
+      // os ganhos que ESSA pessoa veria na tela (o papel dela e o
+      // `visibility_mode`). O valor do próprio negócio entra: o dono o vê.
       const moeda = lead.valor?.moeda ?? null;
+      const admin = createAdminClient();
       const hoje = lead.ownerUserId
-        ? await ganhosDeHoje(createAdminClient(), row.organization_id, moeda, inicioDoDia(new Date(), fuso))
+        ? await ganhosDeHoje(
+            admin,
+            row.organization_id,
+            moeda,
+            inicioDoDia(new Date(), fuso),
+            await escopoDeQuemRecebe(admin, row.organization_id, lead.ownerUserId, visibilidade),
+          )
         : null;
       const dia = linhaDoDia(traduzir("Ganhos hoje: {quantidade}", idioma), hoje, moeda);
-      const corpo = truncar(dia ? `${lead.title} · ${dia}` : lead.title);
       return enviarParaUsuario(row.organization_id, lead.ownerUserId, {
         title: truncar(tituloComValor(traduzir("Lead ganho", idioma), lead.valor)),
-        body: corpo,
-        corpoSemPrevia: corpo,
+        body: truncar(dia ? `${lead.title} · ${dia}` : lead.title),
+        corpoSemPrevia: truncar(lead.title),
         tag: `${NOTIFY_KINDS.lead_won.tagPrefix}:${leadId}`,
         href,
       });
