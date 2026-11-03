@@ -35,6 +35,7 @@ import { previaDoAgente } from "./previa";
 import { blocoVozVendedor, personalizacaoDaOrganizacao } from "./personalizar";
 import { campaignConfigSchema, type OfertaDaCampanha } from "./schema";
 import { prepararCandidatos } from "./preparo";
+import { provedoresQueConferemNumero } from "@/lib/channels";
 import { CanalReconectandoError, ProspectingError } from "./provider";
 // O carimbo do pedido da prospecção: `prospecting:` — nunca `rule:` (#3072).
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
@@ -657,7 +658,13 @@ const ORGS_COM_PREPARO_PENDENTE =
   // existe um é o preparo, em TS.
   "or (coalesce(pc.search->>'avaliar_site','true') <> 'false' and coalesce(pc.search->>'gerar_previa','false') = 'true' and c.data->'previa' is null " +
   "and ((c.data->'site' is not null and not coalesce((c.data->'site'->>'provisorio')::boolean, false)) " +
-  "or (c.data->'site' is null and nullif(trim(c.data->>'website'), '') is null))))) " +
+  "or (c.data->'site' is null and nullif(trim(c.data->>'website'), '') is null))) " +
+  // (c) WhatsApp por conferir (`whatsapp.ts`): telefone sem veredito, e uma conexão
+  // conectada cujo canal sabe perguntar ($1 = `provedoresQueConferemNumero()`). Sem ela
+  // a organização NÃO entra — senão voltaria toda rodada para nada.
+  "or (nullif(trim(c.data->>'phone'), '') is not null and c.data->'whatsapp' is null " +
+  "and exists (select 1 from channel_sessions s where s.organization_id=pc.organization_id " +
+  "and s.provider = any($1::text[]) and s.status='WORKING' and s.archived_at is null)))) " +
   "group by pc.organization_id order by min(pc.updated_at) limit 20";
 
 /** Teto de tempo do preparo de UMA organização dentro do tick. */
@@ -683,7 +690,9 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requ
   let apenasPreparo: string[] = [];
   try {
     apenasPreparo = (
-      await pool.query<{ organization_id: string }>(ORGS_COM_PREPARO_PENDENTE)
+      await pool.query<{ organization_id: string }>(ORGS_COM_PREPARO_PENDENTE, [
+        provedoresQueConferemNumero(),
+      ])
     ).rows.map((r) => r.organization_id);
   } catch (error) {
     logger.error("[prospecting] consulta das organizações a preparar falhou", {

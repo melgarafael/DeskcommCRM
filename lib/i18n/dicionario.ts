@@ -18132,6 +18132,9 @@ export const DICIONARIO: Traducoes = {
   "Sites verificados:": { es: "Sitios verificados:" },
   "Verificado em": { es: "Verificado el" },
   "Prévias:": { es: "Vistas previas:" },
+  "WhatsApp verificado:": { es: "WhatsApp verificado:" },
+  "sem WhatsApp, fora da abordagem": { es: "sin WhatsApp, no se las contactará" },
+  "Sem WhatsApp neste número.": { es: "Este número no tiene WhatsApp." },
   "Prévia: escolha o agente na etapa 2": { es: "Vista previa: elige el agente en el paso 2" },
   "Avaliar o site de cada empresa automaticamente": { es: "Evaluar automáticamente el sitio de cada empresa" },
   "Gerar a prévia da mensagem automaticamente (consome crédito de IA)": {

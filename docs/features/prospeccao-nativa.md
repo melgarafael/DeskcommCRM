@@ -1,6 +1,8 @@
 # Prospecção nativa
 
-Em **CRM → Prospecção**, um administrador configura a chave Apify, pesquisa empresas no Brasil por segmento/região e consulta dados comerciais. O adaptador usa o mesmo Actor Google Maps dos fluxos existentes. Não depende de n8n nem grava em Airtable.
+Em **CRM → Prospecção**, um administrador configura a chave Apify, pesquisa empresas por segmento/região e consulta dados comerciais. O adaptador usa o mesmo Actor Google Maps dos fluxos existentes. Não depende de n8n nem grava em Airtable.
+
+**Idioma.** A busca e o agente criado pela campanha seguem o idioma da organização (`organizations.locale`, `lib/prospecting/idioma.ts`). Em português do Brasil nada muda: a busca vai com `language: "pt-BR"` e país Brasil. Em espanhol, a busca pede os dados em espanhol (o rubro deixa de chegar como "Concessionária") e não prende o país no Brasil — quem diz onde buscar é a localização digitada ("Montevideo, Uruguay"); e o agente criado por **Configurar por conversa** nasce instruído a conversar em espanhol. Agente criado antes desta mudança continua com o prompt que tinha: ajuste no editor do agente, se for o caso.
 
 A busca é paga pelo saldo da conta Apify: limite de até 100 empresas e teto de US$ 0,50 a US$ 10 por execução. A quantidade pode ser menor. O enriquecimento consulta e-mails comerciais e redes do site, sem buscar pessoas físicas ou decisores. Chave cifrada por `fn_encrypt_oauth`, indisponível aos papéis do navegador. Não existe chave obrigatória no `.env`.
 
@@ -16,6 +18,18 @@ Se você já tem a lista de empresas (de uma feira, de uma associação, de uma 
 - **Enviar o mesmo arquivo duas vezes não duplica** a campanha nem as empresas.
 - **LGPD:** quem foi anonimizado a pedido do titular não volta por planilha, mesmo que o telefone venha escrito de outro jeito.
 - Nenhuma abordagem começa nesta etapa: a planilha vira uma campanha em preparação, e daí em diante é o caminho de sempre (seleção das empresas, avaliação do site, prévia, agente, ritmo e fila).
+
+### WhatsApp conferido antes da abordagem
+
+O telefone que a empresa publicou nem sempre tem WhatsApp. Depois da busca, o preparo automático pergunta ao WhatsApp, número por número, se ele existe lá (`check-exists` do WAHA, `lib/prospecting/whatsapp.ts`) — sem mandar mensagem nenhuma. A pergunta sai pela conexão WAHA da campanha ou, antes de ela ser escolhida, por qualquer conexão WAHA conectada da organização; no máximo 15 números por minuto, com 2 segundos entre um e outro, porque quem consulta é o número do cliente.
+
+- **Tem WhatsApp:** a linha mostra "Tem WhatsApp" e segue normalmente.
+- **Sem WhatsApp:** a empresa sai da seleção (fica nas desmarcadas, com "Sem WhatsApp", e a caixa não a devolve), não ganha prévia de IA e não entra na fila; ao iniciar, vai para "Não abordado" com o motivo "Sem WhatsApp neste número.". Se ela já estava na fila de uma campanha pausada ou rodando, sai da fila com o mesmo motivo.
+- **Não é o prefixo que decide.** Medido numa busca real: um telefone fixo tinha WhatsApp Business. Descartar fixos por prefixo perderia essa empresa.
+- **WAHA fora do ar não descarta ninguém:** a rodada para sem gravar nada e tenta de novo no minuto seguinte.
+- **Sem conexão WAHA** (só canal oficial), nada é conferido e tudo segue como antes.
+
+O contador da lista mostra "WhatsApp verificado: X de Y" e quantas ficaram fora. Cada rodada com efeito entra em `api_audit_log` como `prospecting.whatsapp_checked`, só com contagens.
 
 ## Campanha
 
