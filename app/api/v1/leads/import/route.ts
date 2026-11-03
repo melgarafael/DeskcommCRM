@@ -23,13 +23,14 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * um insert em lote com a regra reescrita aqui — criaria a segunda verdade sobre
  * "como um negócio nasce", e é ela que envelhece sozinha.
  */
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { contatosDonosDosExtras } from "@/lib/channels/contato-por-telefone";
 import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { CSV_MAX_BYTES, CSV_MAX_DATA_ROWS, decodificarCsv } from "@/lib/contacts/csv";
@@ -37,7 +38,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { lerPlanilhaDeLeads, type ErroDaLinha } from "@/lib/leads/planilha";
 import { createLeadHandler } from "@/app/api/v1/leads/_handler";
 import { logger } from "@/lib/logger";
-import { createClient } from "@/lib/supabase/server";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -55,10 +56,18 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const requestId = randomUUID();
   // Mesma régua do POST unitário de lead: escrita é `agent` para cima.
-  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const orgId = authz.org.orgId;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "leads_import", requestId);
+  if (teto) return teto;
+  const { organizationId, actor, idioma } = authz;
+  const orgId = organizationId;
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
 
   let form: FormData;
   try {
@@ -142,7 +151,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   if (!stageId) {
     // Primeira etapa ABERTA do funil, por posição, dentro da organização ativa —
@@ -255,7 +264,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
       await createLeadHandler(
         supabase,
-        { organization_id: orgId, actor: { type: "user", id: authz.user.id }, requestId },
+        { organization_id: orgId, actor, requestId },
         {
           pipeline_id: pipelineId,
           stage_id: stageId,
@@ -293,7 +302,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   await audit({
     organizationId: orgId,
-    actorUserId: authz.user.id,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     action: "lead.imported",
     resourceType: "crm_leads",
     requestId,
@@ -332,7 +342,7 @@ export async function POST(req: NextRequest): Promise<Response> {
  * trocaria um resto rastreável por uma importação sem diagnóstico.
  */
 async function desfazContatosCriados(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   orgId: string,
   ids: string[],
 ): Promise<void> {
@@ -366,10 +376,17 @@ async function desfazContatosCriados(
   }
 }
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "agent",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "leads_import", requestId);
+  if (teto) return teto;
 
   // ⚠️ VALOR E TAGS ENTRE ASPAS, e não é estilo: "12.500,00" tem uma vírgula
   // dentro, e o delimitador desta planilha É a vírgula. Sem as aspas o modelo

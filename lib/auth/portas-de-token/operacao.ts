@@ -69,4 +69,30 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/conversations/[id]/sector",
   "/api/v1/conversations/[id]/snooze",
   "/api/v1/conversations/[id]/usable-for-rag",
+  // LEADS (tarefa 3 da R2). Quem autentica é a própria rota, por `resolveAuthDual`
+  // (sessão OU Bearer `dsk_…`, a organização vinda da linha do token): `mcp:read`
+  // no GET e `mcp:write` na escrita, com o papel que a sessão já exige
+  // (`viewer` lê, `agent` escreve). Segmentos `[id]`, `[attachmentId]` e `[pid]`
+  // em forma de UUID: nenhum desses diretórios tem irmão literal que dê carona
+  // além dos que ficaram só de sessão (`leads/[id]/conversion/retry` e
+  // `leads/at-risk`), listados na borda do teste da área.
+  "/api/v1/leads",
+  "/api/v1/leads/[id]/attachments",
+  "/api/v1/leads/[id]/attachments/[attachmentId]/media",
+  "/api/v1/leads/[id]/clone",
+  "/api/v1/leads/[id]/contatos-relacionados",
+  "/api/v1/leads/[id]/eventos",
+  "/api/v1/leads/[id]/field-proposals",
+  "/api/v1/leads/[id]/field-proposals/[pid]",
+  "/api/v1/leads/[id]/lose",
+  "/api/v1/leads/[id]/move",
+  "/api/v1/leads/[id]/next-action",
+  "/api/v1/leads/[id]/reactivation",
+  "/api/v1/leads/[id]/retomar",
+  "/api/v1/leads/[id]/timeline",
+  "/api/v1/leads/[id]/win",
+  "/api/v1/leads/bulk",
+  "/api/v1/leads/import",
+  "/api/v1/leads/proposals",
+  "/api/v1/leads/reactivations",
 ];

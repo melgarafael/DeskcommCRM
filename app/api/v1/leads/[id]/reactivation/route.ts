@@ -21,11 +21,11 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
-import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -46,19 +46,25 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: leadId } = await ctx.params;
 
-  const guard = await requireRole("agent", { requestId });
-  if (!guard.ok) return guard.response;
-  const t = (texto: string) => traduzir(texto, guard.user.idioma);
-  const orgId = guard.org.orgId;
-  const userId = guard.user.id;
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "agent",
+    scope: "mcp:write",
+  });
+  if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "leads_reactivation", requestId);
+  if (teto) return teto;
+  const { supabase, organizationId, actor, idioma } = authz;
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
+  const orgId = organizationId;
+  const userId = actor.type === "user" ? actor.id : null;
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return fail("invalid_body", t("decision e proposal_id são obrigatórios."), 400, { requestId });
   }
   const { decision, proposal_id } = parsed.data;
-
-  const supabase = await createClient();
 
   // O UPDATE condicional É a trava: `status = 'pending'` no WHERE. Ler-e-depois-
   // escrever deixaria a janela em que o watcher vence a proposta no meio.
@@ -86,6 +92,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       .select("status")
       .eq("id", proposal_id)
       .eq("lead_id", leadId)
+      .eq("organization_id", orgId)
       .maybeSingle();
     if (existe) {
       return fail(
@@ -104,6 +111,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .from("crm_leads")
     .select("contact_id")
     .eq("id", leadId)
+    .eq("organization_id", orgId)
     .maybeSingle();
   const contactId = (lead as { contact_id: string | null } | null)?.contact_id ?? null;
 
@@ -160,7 +168,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     type: decision === "accept" ? "reactivation_accepted" : "reactivation_dismissed",
     sourceModule: "crm",
     sourceId: leadId,
-    actor: { type: "user", id: userId },
+    actor: authz.actor,
     // Nomeia a decisão, nunca o conteúdo da proposta nem dado do negócio.
     // Canônico em português: quem traduz é a LEITURA (`t(item.reason)`). Ver o
     // bloco "vocabulario de dominio persistido" em `lib/i18n/dicionario.ts`.
