@@ -41,6 +41,7 @@ import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 
 import { mascara } from "./aviso-ao-suporte";
 import { modoDoDestinoDoAviso } from "./destino-do-aviso";
+import { modelosDoAvisoDaConexao } from "./modelo-do-aviso";
 import {
   avisosDaTela,
   podeLigarOAviso,
@@ -75,6 +76,8 @@ export interface ConfigNaResposta {
   rotulo: string | null;
   ligado: boolean;
   resposta_whatsapp_habilitada: boolean;
+  /** O modelo aprovado que leva o aviso pela conexão que só manda modelo (9094). */
+  modelo_id: string | null;
   atualizado_em: string;
   /** `fixo` ou `responsavel` (#3803). */
   destino_modo: ModoDoDestinoNaTela;
@@ -109,6 +112,7 @@ interface LinhaDeConfig {
   rotulo: string | null;
   ligado: boolean;
   resposta_whatsapp_habilitada: boolean;
+  modelo_id?: string | null;
   mensagens_ignoradas: number;
   ultima_mensagem_ignorada_em: string | null;
   updated_at: string;
@@ -152,6 +156,7 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
         ligado: config.ligado,
         respostaWhatsappHabilitada: config.resposta_whatsapp_habilitada,
         destinoModo: modoDoDestinoDoAviso({ destino_modo: config.destino_modo }),
+        modeloId: config.modelo_id ?? null,
       }
     : null;
 
@@ -180,6 +185,7 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
           rotulo: config.rotulo,
           ligado: config.ligado,
           resposta_whatsapp_habilitada: config.resposta_whatsapp_habilitada,
+          modelo_id: config.modelo_id ?? null,
           atualizado_em: config.updated_at,
           destino_modo: modoDoDestinoDoAviso({ destino_modo: config.destino_modo }),
         }
@@ -237,7 +243,7 @@ async function lerConfig(db: SupabaseClient, orgId: string): Promise<LinhaDeConf
   const { data, error } = await db
     .from("config_aviso_de_caso")
     .select(
-      "channel_session_id, destino_modo, telefone_destino, rotulo, ligado, resposta_whatsapp_habilitada, mensagens_ignoradas, ultima_mensagem_ignorada_em, updated_at",
+      "channel_session_id, destino_modo, telefone_destino, rotulo, ligado, resposta_whatsapp_habilitada, modelo_id, mensagens_ignoradas, ultima_mensagem_ignorada_em, updated_at",
     )
     .eq("organization_id", orgId)
     .maybeSingle();
@@ -296,12 +302,24 @@ async function lerConexoes(db: SupabaseClient, orgId: string): Promise<ConexaoPa
     }
   }
 
+  // Os modelos aprovados que levam o aviso, só para quem não manda texto livre
+  // (migration 9094): para as outras a lista não serve para nada, e lê-la
+  // custaria uma ida ao banco por conexão.
+  const modelos = new Map(
+    await Promise.all(
+      canais
+        .filter((c) => !c.aceitaMensagemLivre)
+        .map(async (c) => [c.id, await modelosDoAvisoDaConexao(db, orgId, c.id)] as const),
+    ),
+  );
+
   return canais.map((c) => ({
     id: c.id,
     nome: c.display_name,
     status: c.status,
     aceitaMensagemLivre: c.aceitaMensagemLivre,
     atendeClientes: emUso.has(c.id),
+    ...(c.aceitaMensagemLivre ? {} : { modelos: modelos.get(c.id) ?? [] }),
   }));
 }
 

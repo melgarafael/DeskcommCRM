@@ -42,6 +42,8 @@ export interface ConfigDoAvisoNaTela {
   rotulo: string | null;
   ligado: boolean;
   resposta_whatsapp_habilitada: boolean;
+  /** O modelo aprovado que leva o aviso pela conexão que só manda modelo (9094). */
+  modelo_id?: string | null;
   atualizado_em: string;
   /** `fixo` (o número da empresa) ou `responsavel` (#3803). */
   destino_modo: "fixo" | "responsavel";
@@ -124,6 +126,8 @@ export interface EntradaDoSalvar {
    * "esta pessoa não tem número" (nulo explícito).
    */
   responsaveis?: Array<{ user_id: string; whatsapp: string | null }>;
+  /** `null` = sem modelo (texto livre). Ver a rota. */
+  modelo_id?: string | null;
 }
 
 export function useSalvarAvisoDeCaso() {
