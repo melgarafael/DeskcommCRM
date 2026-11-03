@@ -15180,8 +15180,32 @@ export const DICIONARIO: Traducoes = {
     { es: "La conexión de WhatsApp elegida para los avisos está fuera de servicio." },
   "A conexão de WhatsApp escolhida para os avisos foi removida.":
     { es: "La conexión de WhatsApp elegida para los avisos fue eliminada." },
-  "A conexão escolhida só envia mensagens aprovadas — ela não serve para o aviso de caso.":
-    { es: "La conexión elegida solo envía mensajes aprobados, así que no sirve para los avisos de casos." },
+  "A conexão escolhida só envia mensagens aprovadas, e o aviso não tem um modelo aprovado com uma variável escolhido para ela.":
+    { es: "La conexión elegida solo envía mensajes aprobados, y el aviso no tiene elegida una plantilla aprobada con una variable para ella." },
+  "A conexão escolhida só manda modelo aprovado fora das 24 horas. Escolha abaixo um modelo dela com uma variável — o aviso vai dentro dele. Se não houver nenhum, crie na aba de modelos do número, em Conexões.":
+    { es: "La conexión elegida solo envía plantillas aprobadas fuera de las 24 horas. Elige abajo una plantilla suya con una variable: el aviso va dentro de ella. Si no hay ninguna, créala en la pestaña de plantillas del número, en Conexiones." },
+  "Aparecem aqui os números que mandam mensagem a qualquer hora e os números oficiais que já têm um modelo aprovado com uma variável.":
+    { es: "Aquí aparecen los números que envían mensajes a cualquier hora y los números oficiales que ya tienen una plantilla aprobada con una variable." },
+  "Esta conexão não tem nenhum modelo aprovado com uma variável. Crie um na aba de modelos do número, em Conexões, ou escolha outra conexão.":
+    { es: "Esta conexión no tiene ninguna plantilla aprobada con una variable. Crea una en la pestaña de plantillas del número, en Conexiones, o elige otra conexión." },
+  "Escolha o modelo aprovado que leva o aviso":
+    { es: "Elige la plantilla aprobada que lleva el aviso" },
+  "Escolha um modelo aprovado":
+    { es: "Elige una plantilla aprobada" },
+  "Esse modelo ainda não está aprovado. Escolha um modelo aprovado.":
+    { es: "Esa plantilla todavía no está aprobada. Elige una plantilla aprobada." },
+  "Esse modelo não existe mais nesta conta. Escolha outro modelo aprovado.":
+    { es: "Esa plantilla ya no existe en esta cuenta. Elige otra plantilla aprobada." },
+  "Esse modelo não é da conexão escolhida. Escolha um dos modelos aprovados dela.":
+    { es: "Esa plantilla no es de la conexión elegida. Elige una de sus plantillas aprobadas." },
+  "Fora das 24 horas este número só manda modelo aprovado. O aviso vai dentro dele, numa linha só, no lugar da variável. Cada aviso é uma mensagem cobrada pela plataforma do número oficial.":
+    { es: "Fuera de las 24 horas este número solo envía plantillas aprobadas. El aviso va dentro de ella, en una sola línea, en lugar de la variable. Cada aviso es un mensaje que cobra la plataforma del número oficial." },
+  "Modelo aprovado que leva o aviso":
+    { es: "Plantilla aprobada que lleva el aviso" },
+  "Não foi possível conferir o modelo agora. Tente de novo em instantes.":
+    { es: "No se pudo revisar la plantilla ahora. Inténtalo de nuevo en unos instantes." },
+  "O modelo precisa ter uma variável só, no texto — é nela que o aviso entra.":
+    { es: "La plantilla necesita tener una sola variable, en el texto: ahí entra el aviso." },
   "A conexão escolhida para os avisos está pausada. Retome-a na Central de Conexões para os avisos voltarem a sair.":
     { es: "La conexión elegida para los avisos está en pausa. Reanúdala en la Central de Conexiones para que los avisos vuelvan a salir." },
   "O serviço de WhatsApp desta instalação não está configurado.":
@@ -15355,8 +15379,10 @@ export const DICIONARIO: Traducoes = {
     { es: "Tus asistentes solo sugieren respuestas" },
   "Seus números atuais não servem para avisar a equipe":
     { es: "Tus números actuales no sirven para avisar al equipo" },
-  "Seus números atuais só enviam mensagem para quem falou com você nas últimas 24 horas — isso não serve para um aviso interno. Conecte um número pelo QR code para usar este recurso.":
-    { es: "Tus números actuales solo envían mensajes a quien habló contigo en las últimas 24 horas, y eso no sirve para un aviso interno. Conecta un número por código QR para usar esta función." },
+  "Seus números atuais só enviam mensagem para quem falou com você nas últimas 24 horas, e nenhum tem um modelo aprovado com uma variável para levar o aviso. Crie esse modelo na aba de modelos do número, em Conexões, ou conecte um número pelo QR code.":
+    { es: "Tus números actuales solo envían mensajes a quien habló contigo en las últimas 24 horas, y ninguno tiene una plantilla aprobada con una variable para llevar el aviso. Crea esa plantilla en la pestaña de plantillas del número, en Conexiones, o conecta un número por código QR." },
+  "só modelo aprovado":
+    { es: "solo plantilla aprobada" },
   "Só aparecem aqui os números que conseguem mandar uma mensagem a qualquer hora.":
     { es: "Aquí solo aparecen los números que pueden enviar un mensaje a cualquier hora." },
   "Tempo típico entre o assistente travar e alguém da equipe agir, nos últimos 30 dias. Os dois grupos contam a partir do mesmo momento.":

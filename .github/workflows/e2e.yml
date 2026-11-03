@@ -1503,6 +1503,7 @@ jobs:
         prova-painel-provedores.spec.ts
         comercial-no-celular.spec.ts
         propostas-de-campos-do-card.spec.ts
+        aviso-pelo-numero-oficial.spec.ts
       # Ambiente isolado: esta spec exige HMAC WAHA e Graph sintético no
       # processo next start. As demais partes preservam a configuração WAHA.
       #
