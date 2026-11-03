@@ -20,7 +20,7 @@
  * falha DENTRO do caso (o especificador dinâmico abaixo garante isso, em vez de
  * derrubar o arquivo inteiro no carregamento).
  */
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -102,6 +102,31 @@ describe("(a) a ficha mostra a carteira com o dono certo", () => {
 
     expect(deps.mutate).toHaveBeenCalledWith("u-b");
   });
+});
+
+/**
+ * #3824 — a conversa monta o cartão DUAS vezes (painel xl, oculto mas montado,
+ * e o diálogo "Ficha"). Com `id` fixo, o label do segundo apontava para o
+ * select do primeiro, e o do diálogo ficava sem nome acessível.
+ */
+it("#3824 — duas instâncias: cada seletor tem o PRÓPRIO nome acessível", () => {
+  deps.carteira.mockReturnValue({ isLoading: false, data: COM_ANA });
+  render(
+    <>
+      <div data-testid="instancia-1">
+        <CartaoDaCarteira contactId="c1" />
+      </div>
+      <div data-testid="instancia-2">
+        <CartaoDaCarteira contactId="c1" />
+      </div>
+    </>,
+  );
+  for (const id of ["instancia-1", "instancia-2"]) {
+    const instancia = within(screen.getByTestId(id));
+    expect(instancia.getByRole("combobox", { name: "Escolha o vendedor dono" })).toBe(
+      instancia.getByTestId("carteira-seletor"),
+    );
+  }
 });
 
 describe("(b) trocar o dono pela tela grava", () => {

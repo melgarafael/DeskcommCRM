@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -56,6 +56,9 @@ export function CartaoDaCarteira({ contactId }: Props) {
   // quem vê a ficha.
   const membros = useAssignableMembers(true);
   const definir = useDefinirCarteira(contactId);
+  // O cartão monta DUAS vezes na conversa (painel xl, oculto mas montado, e o
+  // diálogo "Ficha"): id fixo fazia o label do diálogo apontar para o select oculto.
+  const idDoSeletor = useId();
 
   // `__sem_dono__` é o sentinela de "sem dono" no select nativo (a opção de valor
   // vazio existe no HTML, mas o sentinela deixa o estado explícito no código).
@@ -108,14 +111,14 @@ export function CartaoDaCarteira({ contactId }: Props) {
           {podeMudar && (
             <div className="mt-3 flex flex-wrap items-end gap-2">
               <div className="space-y-1">
-                <Label htmlFor="carteira-dono">{t("Escolha o vendedor dono")}</Label>
+                <Label htmlFor={idDoSeletor}>{t("Escolha o vendedor dono")}</Label>
                 {/* Select NATIVO, como o das telas de cobrança e agenda: o dono é um
                     punhado de ids e o rótulo é o nome do membro — a lista não pede
                     um combobox com busca, e um `<select>` é alcançável por teclado
                     e leitor de tela sem mais uma camada de JS. */}
                 <select
-                  id="carteira-dono"
-                  className="h-9 w-full max-w-xs rounded-md border bg-background px-2 text-sm"
+                  id={idDoSeletor}
+                  className="h-11 w-full lg:h-9 max-w-xs rounded-md border bg-background px-2 text-sm"
                   value={selecionado}
                   data-testid="carteira-seletor"
                   onChange={(e) => setSelecionado(e.target.value)}

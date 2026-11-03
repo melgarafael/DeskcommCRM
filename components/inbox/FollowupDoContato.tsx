@@ -247,7 +247,7 @@ export function FollowupDoContato({
           <select
             aria-label={t("Fluxo de follow-up")}
             data-testid="escolher-fluxo-followup"
-            className="w-full rounded-md border bg-background p-2 text-xs"
+            className="h-11 w-full rounded-md border bg-background p-2 text-xs lg:h-auto"
             value={escolhido}
             onChange={(e) => setEscolhido(e.target.value)}
           >
