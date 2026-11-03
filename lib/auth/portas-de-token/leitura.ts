@@ -60,4 +60,26 @@ export const MODELOS_DA_LEITURA: readonly ModeloDePorta[] = [
   "/api/v1/voice/calls/history",
   "/api/v1/voice/opt-in",
   "/api/v1/voice/sessions/status",
+
+  // messages e modulos (R3, tarefa 4). Quem autentica é a própria rota, por
+  // `resolveAuthDual` (a organização sai da linha do token). Escopo `mcp:write`
+  // no POST/DELETE de `messages/[id]/hide`, `mcp:read` no GET de
+  // `messages/[id]/media` e no GET de `modulos/[modulo]/[objeto]`; papel do
+  // token = papel da sessão (manager em `hide`, viewer em `media` e `modulos`),
+  // sem `tokenRole` porque nenhuma tool MCP faz estas ações (conferido: nenhuma
+  // tool MCP exige papel maior para ocultar mensagem nem para ler módulos).
+  // `messages` (listagem) e `modulos` (listagem) seguem só de sessão e não entram.
+  "/api/v1/messages/[id]/hide",
+  "/api/v1/messages/[id]/media",
+  {
+    caminho: "/api/v1/modulos/[modulo]/[objeto]",
+    segmentos: {
+      modulo: "[a-z0-9][a-z0-9-]{0,62}[a-z0-9]",
+      objeto: "[a-z0-9][a-z0-9-]{0,62}[a-z0-9]",
+    },
+    amostras: {
+      modulo: "meu-modulo",
+      objeto: "meu-objeto",
+    },
+  },
 ];
