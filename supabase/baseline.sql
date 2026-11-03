@@ -71104,3 +71104,15 @@ create index if not exists avisos_org_publicar_idx
 alter table public.avisos enable row level security;
 revoke all on public.avisos from public, anon, authenticated;
 grant select, insert, update, delete on public.avisos to service_role;
+
+-- ---- cor da fila de atendimento (migration 9084) ----
+-- manifest: attendant_sectors.color — a cor de identificação da fila (`#rrggbb`) ou nula; o CHECK recusa fora do formato, então a forma vale mesmo fora da rota
+--
+-- Espelho da 9084. `null` é ausência de escolha (o visual de antes da fatia),
+-- não uma cor zero; por isso não há `default`.
+alter table public.attendant_sectors
+  add column if not exists color text
+  check (color is null or color ~ '^#[0-9a-fA-F]{6}$');
+
+comment on column public.attendant_sectors.color is
+  'Cor de identificação da fila (migration 9084): #rrggbb, ou NULL = sem cor. O CHECK guarda a FORMA; a paleta é a da tela (PALETA_DE_ETIQUETAS) e não se valida no banco. Lida por GET /api/v1/attendants/sectors e gravada por PATCH /api/v1/attendants/sectors/[id] (manager+).';

@@ -8,6 +8,14 @@ import { useT } from "@/hooks/i18n/useT";
 import type { AvailabilitySchedule } from "@/lib/schemas/routing";
 import { ATTENDANTS_KEY } from "@/hooks/team/useAttendants";
 
+/**
+ * Nota de contrato (#3876 F3): **não existe `member_user_ids` aqui**, e é
+ * deliberado. "Quem atende esta fila" é pergunta de PESSOA e já tem dono —
+ * `sector_ids` de cada atendente em `/api/v1/attendants/availability`, a mesma
+ * leitura da aba Atendimento. Um segundo leitor da mesma pergunta divergiria na
+ * primeira correção, e o GET dos setores continua com o contrato de antes desta
+ * fatia (o próprio texto dele recusa devolver `member_user_ids`).
+ */
 export interface Sector {
   id: string;
   name: string;
@@ -17,11 +25,11 @@ export interface Sector {
   /** Quantos atendentes estão nesta fila agora. */
   member_count: number;
   /**
-   * Quem atende esta fila (migration 9062). Vem junto do contador porque a tela
-   * de membros precisa saber quem JÁ está nela — um atendente pode estar em
-   * várias filas.
+   * Cor de identificação da fila (`#rrggbb`, migration 9084) ou `null` = sem
+   * cor, que é o visual de antes da fatia. A frente do chip sai de
+   * `escolheAFrente` — nunca de escolha de quem pinta.
    */
-  member_user_ids: string[];
+  color: string | null;
   /**
    * Horário da fila. `{}` = 24/7 — janela existe para restringir, igual à
    * jornada do atendente (`AvailabilitySchedule`).
@@ -84,7 +92,13 @@ export function useUpdateSector() {
       patch,
     }: {
       id: string;
-      patch: { name?: string; description?: string | null; schedule?: AvailabilitySchedule };
+      patch: {
+        name?: string;
+        description?: string | null;
+        schedule?: AvailabilitySchedule;
+        /** `#rrggbb` ou `null` (apagar a cor). Validado no Zod e no CHECK. */
+        color?: string | null;
+      };
     }) =>
       apiClient.patch<{ data: Sector }>(`/api/v1/attendants/sectors/${id}`, patch),
     onError: (err) => showApiError(err),
