@@ -71183,3 +71183,41 @@ alter table public.attendant_sectors
 
 comment on column public.attendant_sectors.color is
   'Cor de identificação da fila (migration 9084): #rrggbb, ou NULL = sem cor. O CHECK guarda a FORMA; a paleta é a da tela (PALETA_DE_ETIQUETAS) e não se valida no banco. Lida por GET /api/v1/attendants/sectors e gravada por PATCH /api/v1/attendants/sectors/[id] (manager+).';
+
+-- ---- o lembrete da agenda sai por modelo aprovado fora da janela de 24 h (migration 9092) ----
+-- manifest: calendar_event_types.reminder_meta_template_id — o modelo aprovado do número para o lembrete quando a janela de 24 h do cliente fechou
+--
+-- Espelho da 9092. Não cria função, então pode ficar depois da VARREDURA anon.
+-- FK composta com a organização, como a do remetente (0625): o banco recusa
+-- modelo de outra organização. A chave (organization_id, id) em meta_templates
+-- não recusa linha nenhuma (o id já é único); existe para a FK. Apagar o modelo
+-- zera só a coluna e volta o tipo ao comportamento de antes.
+do $$ begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'meta_templates_organization_id_id_key'
+      and conrelid = 'public.meta_templates'::regclass
+  ) then
+    alter table public.meta_templates
+      add constraint meta_templates_organization_id_id_key unique (organization_id, id);
+  end if;
+end $$;
+
+alter table public.calendar_event_types
+  add column if not exists reminder_meta_template_id uuid;
+
+do $$ begin
+  alter table public.calendar_event_types
+    drop constraint if exists calendar_event_types_reminder_template_org_fkey;
+  alter table public.calendar_event_types add constraint calendar_event_types_reminder_template_org_fkey
+    foreign key (organization_id, reminder_meta_template_id)
+    references public.meta_templates(organization_id, id)
+    on delete set null (reminder_meta_template_id) deferrable initially deferred;
+end $$;
+
+comment on column public.calendar_event_types.reminder_meta_template_id is
+  'Modelo aprovado do número para o lembrete quando a janela de 24 h do cliente fechou (migration 9092). Variáveis do corpo, por posição: primeiro nome, dia e hora, título, endereço. Lido pelo cron agenda-reminder; gravado por /api/v1/agenda/tipos (manager+).';
+
+-- A coluna nova entra no `select` do cron agenda-reminder: sem recarregar o
+-- cache de schema, o PostgREST recusa a consulta inteira até o próximo restart.
+notify pgrst, 'reload schema';
