@@ -6,7 +6,7 @@ import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
 import type { AvailabilitySchedule } from "@/lib/schemas/routing";
-import { ATTENDANTS_KEY } from "@/hooks/team/useAttendants";
+import { ATTENDANTS_KEY, type AttendantAvailability } from "@/hooks/team/useAttendants";
 
 /**
  * Nota de contrato (#3876 F3): **não existe `member_user_ids` aqui**, e é
@@ -129,6 +129,7 @@ export function useDeleteSector() {
  */
 export function useAssignSector() {
   const t = useT();
+  const qc = useQueryClient();
   const invalidar = useInvalidarSetores();
   return useMutation({
     mutationFn: async ({ userId, sectorIds }: { userId: string; sectorIds: string[] }) =>
@@ -137,8 +138,22 @@ export function useAssignSector() {
         { sector_ids: sectorIds },
       ),
     onError: (err) => showApiError(err),
-    onSuccess: () => {
+    onSuccess: (res) => {
       toast.success(t("Setor do atendente atualizado."));
+      // Grava já o conjunto que o PUT devolveu. A próxima ação sobre a mesma
+      // pessoa monta a lista a partir do roster em cache; esperar o refetch da
+      // invalidação deixaria uma janela em que ela parte da lista ANTIGA e
+      // desfaz a ação anterior (#3879: a pessoa saía das duas filas).
+      qc.setQueryData<{ data: AttendantAvailability[] }>(ATTENDANTS_KEY, (antigo) =>
+        antigo
+          ? {
+              ...antigo,
+              data: antigo.data.map((a) =>
+                a.user_id === res.data.user_id ? { ...a, sector_ids: res.data.sector_ids } : a,
+              ),
+            }
+          : antigo,
+      );
       invalidar();
     },
   });

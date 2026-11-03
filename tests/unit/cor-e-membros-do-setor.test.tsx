@@ -260,6 +260,59 @@ describe("#3876 F3 — membros dentro do card", () => {
   });
 });
 
+describe("#3879 — duas ações seguidas sobre a mesma pessoa não se desfazem", () => {
+  /**
+   * A tela monta o PUT a partir do roster em cache, e a rota SUBSTITUI o
+   * conjunto. Medido na triagem: adicionar a Ana ao Suporte e, antes de o
+   * roster voltar, tirá-la do Comercial mandava `sector_ids: []` — a Ana saía
+   * das DUAS filas. São duas janelas, e este teste segura as duas: o PUT
+   * pendente (controles travados) e o refetch do roster depois dele (o cache
+   * já tem de carregar o conjunto que o PUT devolveu).
+   */
+  it("com o PUT e o refetch segurados, a segunda ação parte do estado novo", async () => {
+    const user = userEvent.setup();
+    let soltarPut!: () => void;
+    const putsEnviados: string[][] = [];
+    vi.mocked(apiClient.put).mockImplementation(async (url: string, body: unknown) => {
+      const userId = url.replace("/api/v1/attendants/sector/", "");
+      const { sector_ids } = body as { sector_ids: string[] };
+      putsEnviados.push(sector_ids);
+      if (putsEnviados.length === 1) await new Promise<void>((r) => (soltarPut = r));
+      return { data: { user_id: userId, sector_ids } };
+    });
+    let leiturasDoRoster = 0;
+    vi.mocked(apiClient.get).mockImplementation(async (url: string) => {
+      if (url === "/api/v1/attendants/sectors") return { data: setores };
+      if (url === "/api/v1/attendants/availability") {
+        leiturasDoRoster += 1;
+        // Só a primeira leitura volta: o refetch depois do PUT fica pendurado.
+        if (leiturasDoRoster > 1) return new Promise(() => {});
+        return { data: atendentes };
+      }
+      throw new Error(`GET inesperado no teste: ${url}`);
+    });
+    renderClient();
+
+    const suporte = await cardDoSetor("Suporte");
+    const comercial = await cardDoSetor("Comercial");
+    await user.selectOptions(within(suporte).getByLabelText("Adicionar pessoa ao setor"), ANA);
+
+    // Janela 1: PUT pendente — remover a Ana do Comercial não está disponível.
+    await waitFor(() => expect(putsEnviados).toHaveLength(1));
+    expect(within(comercial).getByLabelText("Remover do setor Ana")).toBeDisabled();
+
+    // Janela 2: o PUT respondeu, o refetch do roster não voltou.
+    soltarPut();
+    await waitFor(() =>
+      expect(within(comercial).getByLabelText("Remover do setor Ana")).toBeEnabled(),
+    );
+    await user.click(within(comercial).getByLabelText("Remover do setor Ana"));
+
+    await waitFor(() => expect(putsEnviados).toHaveLength(2));
+    expect(putsEnviados[1]).toEqual([SETOR_SUPORTE]);
+  });
+});
+
 describe("#3876 F3 — módulo desligado", () => {
   it("(e) nada novo aparece e a tela nem pergunta pelos setores", async () => {
     renderClient({ setoresLigado: false });

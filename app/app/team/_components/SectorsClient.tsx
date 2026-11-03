@@ -157,7 +157,7 @@ function SectorForm({
                 title={tom}
                 onClick={() => setColor(tom)}
                 className={cn(
-                  "size-7 rounded-full border-2 transition-transform",
+                  "size-11 rounded-full border-2 transition-transform lg:size-7",
                   color === tom
                     ? "border-foreground ring-2 ring-ring ring-offset-1 ring-offset-background"
                     : "border-transparent hover:scale-110",
@@ -381,7 +381,8 @@ export function SectorsClient({
                                   type="button"
                                   aria-label={`${t("Remover do setor")} ${nomeDoAtendente(a)}`}
                                   onClick={() => alternarMembro(a, s.id, false)}
-                                  className="rounded-full p-0.5 text-muted-foreground hover:text-destructive"
+                                  disabled={assign.isPending}
+                                  className="inline-flex size-11 items-center justify-center rounded-full text-muted-foreground hover:text-destructive disabled:opacity-50 lg:size-6"
                                 >
                                   <X size={12} />
                                 </button>
@@ -395,11 +396,12 @@ export function SectorsClient({
                       <select
                         aria-label={t("Adicionar pessoa ao setor")}
                         value=""
+                        disabled={assign.isPending}
                         onChange={(e) => {
                           const escolhido = deFora.find((a) => a.user_id === e.target.value);
                           if (escolhido) alternarMembro(escolhido, s.id, true);
                         }}
-                        className="mt-1.5 h-8 w-full max-w-xs rounded-md border bg-surface px-2 text-xs text-text sm:w-auto"
+                        className="mt-1.5 h-11 w-full max-w-xs rounded-md border bg-surface px-2 text-xs text-text disabled:opacity-50 sm:w-auto lg:h-8"
                       >
                         <option value="">{t("+ Adicionar pessoa")}</option>
                         {deFora.map((a) => (
