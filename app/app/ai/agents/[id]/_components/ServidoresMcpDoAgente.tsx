@@ -584,25 +584,28 @@ function ServidorNaLista({
               const marca = marcaDaRemota(toolIds, nome, servidor.id);
               return (
                 <li key={nome} className="flex flex-wrap items-start gap-3 rounded-md border border-border px-3 py-2" data-testid={`ferramenta-mcp-${servidor.slug}-${nome}`}>
-                  <input
-                    type="checkbox"
-                    className="mt-1 h-4 w-4 shrink-0 accent-primary"
-                    checked={marca !== null}
-                    onChange={(e) => alternar(nome, e.target.checked)}
-                    disabled={disabled}
-                    aria-label={nome}
-                  />
-                  <span className="flex-1 space-y-1">
-                    <code className="block font-medium">{`${servidor.slug}__${nome}`}</code>
-                    {info.description ? <span className="block text-xs text-muted-foreground">{info.description}</span> : null}
-                  </span>
+                  {/* O label leva o toque do nome para a caixa: sozinha ela tem 16px. */}
+                  <label className="flex flex-1 cursor-pointer items-start gap-3 max-md:min-h-11">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-4 w-4 shrink-0 accent-primary"
+                      checked={marca !== null}
+                      onChange={(e) => alternar(nome, e.target.checked)}
+                      disabled={disabled}
+                      aria-label={nome}
+                    />
+                    <span className="flex-1 space-y-1">
+                      <code className="block font-medium">{`${servidor.slug}__${nome}`}</code>
+                      {info.description ? <span className="block text-xs text-muted-foreground">{info.description}</span> : null}
+                    </span>
+                  </label>
                   {marca !== null ? (
                     <select
                       aria-label={`${t("Marca desta ferramenta")}: ${nome}`}
                       value={marca}
                       onChange={(e) => onChangeToolIds(marcarRemota(toolIds, nome, e.target.value as MarcaRemota, servidor.id))}
                       disabled={disabled}
-                      className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                      className="rounded-md border border-border bg-background px-2 py-1 text-xs max-md:min-h-11"
                     >
                       {info.somenteLeitura !== false ? <option value="leitura">{t("Leitura")}</option> : null}
                       <option value="escrita">{t("Escrita")}</option>
@@ -618,7 +621,7 @@ function ServidorNaLista({
                 value={manual}
                 placeholder={t("nome_da_ferramenta")}
                 onChange={(e) => setManual(e.target.value)}
-                className="h-8 max-w-xs text-xs"
+                className="h-8 max-w-xs md:text-xs"
                 aria-label={t("Nome da ferramenta")}
               />
               <Button
