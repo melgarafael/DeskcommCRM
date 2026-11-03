@@ -27,10 +27,12 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import type { Actor } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireRole } from "@/lib/auth/require-role";
 import { donoQualificado } from "@/lib/carteira/dono";
 import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -97,6 +99,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
+  // SÓ SESSÃO, como no HEAD: `fn_definir_carteira_do_cliente` recusa ator nulo,
+  // e o token não tem pessoa para ser o autor da troca de dono.
   const authz = await requireRole("manager", { requestId, resource: "contacts" });
   if (!authz.ok) return authz.response;
   const orgId = authz.org.orgId;
@@ -127,11 +131,6 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   const antes = (contato as { carteira_user_id?: string | null } | null)?.carteira_user_id ?? null;
 
   // #3732: quais conversas deste contato estavam em qual número ANTES da troca.
-  // A carteira passa as conversas abertas pela `fn_conversation_assign`, que
-  // pode trocar o número de cada uma; a auditoria do contato não é a linha do
-  // tempo da conversa, então o "continua pelo número de {nome}" tem de ser
-  // escrito por conversa, depois, comparando com esta foto. Falha de leitura
-  // não impede a troca de carteira — só deixa a linha do tempo sem o registro.
   const admin = createAdminClient();
   const numerosAntes = await conversasDoContato(admin, orgId, contactId);
 
@@ -167,7 +166,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
       antes: antes ?? null,
       depois: dono ?? null,
       origem: dono === null ? null : origem,
-      adotados: dono !== null, // a RPC adota, na mesma transação, os negócios abertos sem dono
+      adotados: dono !== null,
     },
   });
 
@@ -201,14 +200,23 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
 export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
   const requestId = randomUUID();
 
-  const authz = await requireRole("agent", { requestId, resource: "contacts" });
+  // Sessão OU token de integração (Spec 33, R2): `mcp:read` e papel `agent`.
+  // A organização sai da sessão ou da LINHA DO TOKEN.
+  const authz = await resolveAuthDual(_req, {
+    requestId,
+    resource: "contacts",
+    role: "agent",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const orgId = authz.org.orgId;
+  const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+  if (teto) return teto;
+  const orgId = authz.organizationId;
   const { id: contactId } = await ctx.params;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
-  const supabase = await createClient();
-  // Os dois `.eq` (id + organization_id da sessão) são obrigatórios: a RLS de
+  const supabase = authz.supabase;
+  // Os dois `.eq` (id + organization_id do token) são obrigatórios: a RLS de
   // contacts deixa passar as orgs do usuário, e um membro de duas leria a
   // carteira do contato da org que não está selecionada.
   const { data: contato, error } = await supabase

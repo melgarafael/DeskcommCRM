@@ -9,14 +9,15 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import type { CandidatoAoNegocio } from "@/lib/followup/negocio-do-roteiro";
 import { montarRoteirosDoContato, type LinhaDoRoteiro } from "@/lib/followup/roteiros-do-contato";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
@@ -35,23 +36,102 @@ function um<T>(v: T | T[] | null): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : v;
 }
 
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }): Promise<Response> {
+/**
+ * Ramo do TOKEN, sem embed: o embed `!inner` da sessão filtra o atendimento ANTES
+ * do limite de 20 execuções. Aqui a mesma ordem vira leituras próprias, todas
+ * por organização: os ponteiros de atendimento, as execuções desses ponteiros
+ * (com o limite), e as versões dos grafos dessas execuções.
+ */
+async function lerRoteirosPorConsultas(
+  supabase: SupabaseClient,
+  organizationId: string,
+  contactId: string,
+): Promise<{ data: LinhaDoBanco[]; error: { message: string } | null }> {
+  const { data: ponteiros, error: erroPonteiros } = await supabase
+    .from("followup_flow_pointers")
+    .select("id, name")
+    .eq("organization_id", organizationId)
+    .eq("surface", "atendimento");
+  if (erroPonteiros) return { data: [], error: erroPonteiros };
+  const nomes = new Map(
+    ((ponteiros ?? []) as Array<{ id: string; name: string }>).map((p) => [p.id, p.name] as const),
+  );
+  if (nomes.size === 0) return { data: [], error: null };
+
+  const { data: execucoes, error: erroExecucoes } = await supabase
+    .from("followup_enrollments")
+    .select("id, status, started_at, completed_at, pointer_id, version_id")
+    .eq("organization_id", organizationId)
+    .eq("contact_id", contactId)
+    .in("pointer_id", [...nomes.keys()])
+    .order("started_at", { ascending: false })
+    .limit(20);
+  if (erroExecucoes) return { data: [], error: erroExecucoes };
+  const linhasDeExecucao = (execucoes ?? []) as Array<{
+    id: string;
+    status: string;
+    started_at: string;
+    completed_at: string | null;
+    pointer_id: string;
+    version_id: string;
+  }>;
+
+  const versoes = [...new Set(linhasDeExecucao.map((e) => e.version_id))];
+  const grafos = new Map<string, unknown>();
+  if (versoes.length > 0) {
+    const { data: versoesLidas, error: erroVersoes } = await supabase
+      .from("followup_flow_versions")
+      .select("id, graph")
+      .in("id", versoes)
+      .eq("organization_id", organizationId);
+    if (erroVersoes) return { data: [], error: erroVersoes };
+    for (const v of (versoesLidas ?? []) as Array<{ id: string; graph: unknown }>) {
+      grafos.set(v.id, v.graph);
+    }
+  }
+
+  return {
+    data: linhasDeExecucao.map((e) => ({
+      id: e.id,
+      status: e.status,
+      started_at: e.started_at,
+      completed_at: e.completed_at,
+      followup_flow_pointers: { name: nomes.get(e.pointer_id) ?? "", surface: "atendimento" },
+      followup_flow_versions: grafos.has(e.version_id) ? { graph: grafos.get(e.version_id) } : null,
+    })),
+    error: null,
+  };
+}
+
+export async function GET(
+  _req: NextRequest,
+  ctx: { params: Promise<{ id: string }> },
+): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) return fail("invalid_request", "id inválido.", 400, { requestId });
 
-  const authz = await requireRole("viewer", { requestId, resource: "contacts" });
+  // Sessão OU token de integração (Spec 33, R2): `mcp:read` e papel `viewer`.
+  // A organização sai da sessão ou da LINHA DO TOKEN.
+  const authz = await resolveAuthDual(_req, {
+    requestId,
+    resource: "contacts",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   if (!(await moduloLigado(createAdminClient(), "fluxos_atendimento"))) {
     return fail("not_found", t("Recurso não encontrado."), 404, { requestId });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data: contato, error: contatoErr } = await supabase
     .from("contacts")
     .select("id, custom_fields, is_anonymized")
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("id", id)
     .maybeSingle();
   if (contatoErr) return fail("internal_error", contatoErr.message, 500, { requestId });
@@ -61,19 +141,25 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   // a ficha e o painel da conversa passam os dois por aqui.
   if (contato.is_anonymized) return ok([], { requestId });
 
-  const { data, error } = await supabase
-    .from("followup_enrollments")
-    .select(
-      "id, status, started_at, completed_at, followup_flow_pointers!inner(name, surface), followup_flow_versions(graph)",
-    )
-    .eq("organization_id", authz.org.orgId)
-    .eq("contact_id", id)
-    .eq("followup_flow_pointers.surface", "atendimento")
-    .order("started_at", { ascending: false })
-    .limit(20);
-  if (error) return fail("internal_error", error.message, 500, { requestId });
+  let leitura: { data: LinhaDoBanco[]; error: { message: string } | null };
+  if (authz.via === "token") {
+    leitura = await lerRoteirosPorConsultas(supabase, authz.organizationId, id);
+  } else {
+    const { data, error } = await supabase
+      .from("followup_enrollments")
+      .select(
+        "id, status, started_at, completed_at, followup_flow_pointers!inner(name, surface), followup_flow_versions(graph)",
+      )
+      .eq("organization_id", authz.organizationId)
+      .eq("contact_id", id)
+      .eq("followup_flow_pointers.surface", "atendimento")
+      .order("started_at", { ascending: false })
+      .limit(20);
+    leitura = { data: (data ?? []) as unknown as LinhaDoBanco[], error };
+  }
+  if (leitura.error) return fail("internal_error", leitura.error.message, 500, { requestId });
 
-  const linhas: LinhaDoRoteiro[] = ((data ?? []) as unknown as LinhaDoBanco[]).flatMap((r) => {
+  const linhas: LinhaDoRoteiro[] = leitura.data.flatMap((r) => {
     const pointer = um(r.followup_flow_pointers);
     const versao = um(r.followup_flow_versions);
     if (!pointer || pointer.surface !== "atendimento" || !versao) return [];
@@ -106,7 +192,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     const { data: eventos } = await supabase
       .from("followup_enrollment_events")
       .select("enrollment_id, payload")
-      .eq("organization_id", authz.org.orgId)
+      .eq("organization_id", authz.organizationId)
       .eq("event_type", "roteiro_negocio")
       .in("enrollment_id", ids)
       .order("created_at", { ascending: true });
@@ -121,7 +207,7 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
     const { data: leads } = await supabase
       .from("crm_leads")
       .select("id, title, custom_fields")
-      .eq("organization_id", authz.org.orgId)
+      .eq("organization_id", authz.organizationId)
       .eq("contact_id", id)
       .eq("status", "open")
       .order("created_at", { ascending: true });
