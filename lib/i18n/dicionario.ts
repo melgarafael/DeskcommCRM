@@ -15404,6 +15404,8 @@ export const DICIONARIO: Traducoes = {
     { es: "Elige un número del equipo para recibir un mensaje cada vez que el asistente se trabe y necesite a una persona." },
   "Escolher outro número":
     { es: "Elegir otro número" },
+  "A pessoa pode ser cliente da própria empresa — a equipe que viaja pela própria agência, por exemplo. Nesse caso o número ainda recebe o aviso e continua entrando no CRM: diferente de um número interno, que deixa de virar atendimento.":
+    { es: "La persona puede ser cliente de la propia empresa — el equipo que viaja por la propia agencia, por ejemplo. En ese caso el número sigue recibiendo el aviso y sigue entrando al CRM: distinto de un número interno, que deja de convertirse en atención." },
   "Esse número ainda não está completo.":
     { es: "Ese número todavía no está completo." },
   "Esse número passa a ser só da equipe: o que ele mandar deixa de virar atendimento.":
