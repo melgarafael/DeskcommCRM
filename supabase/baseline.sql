@@ -67076,6 +67076,296 @@ drop function if exists public.fn_definir_aviso_de_caso(uuid,uuid,text,text,bool
 drop function if exists public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean);
 drop function if exists public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean);
 
+-- ---- aviso a membro da equipe que também é cliente (migration 9099) ----
+-- O modo `responsavel` deixou de pedir confirmação quando o destino é o
+-- WhatsApp de um membro ATIVO da equipe: esse número não vira interno, então
+-- a consequência que a confirmação protege não acontece. Cliente comum
+-- continua perguntando, e `fixo` não muda. O corpo é o da migration 9099,
+-- copiado byte a byte; `create or replace` da MESMA assinatura, idempotente.
+create or replace function public.fn_definir_aviso_de_caso(
+  p_org uuid,
+  p_channel uuid,
+  p_telefone text,
+  p_rotulo text,
+  p_ligado boolean,
+  p_confirma_contato boolean default false,
+  p_resposta_whatsapp_habilitada boolean default false,
+  p_destino_modo text default 'fixo',
+  p_responsaveis jsonb default null,
+  p_modelo uuid default null
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_antes public.config_aviso_de_caso;
+  v_arch timestamptz;
+  v_digitos text;
+  v_variantes text[];
+  v_modo text;
+  v_item jsonb;
+  v_uid uuid;
+  v_numero text;
+  v_digitos_do_membro text;
+  v_variantes_do_membro text[];
+  v_destino_e_de_membro boolean;
+begin
+  -- Papel + suporte, nesta ordem e na MESMA transação da escrita. `auth.uid()`
+  -- nulo é o caminho do service role: quem escreve configuração é gente.
+  if auth.uid() is null or p_org is null
+     or not public.fn_role_at_least(p_org, 'admin')
+     or not public.fn_support_write_allowed(p_org) then
+    raise exception 'aviso_de_caso_forbidden' using errcode = '42501';
+  end if;
+  -- Quem NÃO tem fator cadastrado passa: a função já trata isso, e é coerente
+  -- com a política de MFA opcional deste produto.
+  if not public.fn_session_mfa_proven() then
+    raise exception 'aviso_de_caso_mfa_required' using errcode = '42501';
+  end if;
+  if p_telefone is null or p_telefone !~ '^\+[1-9][0-9]{7,14}$' then
+    raise exception 'aviso_de_caso_telefone_invalido' using errcode = '22023';
+  end if;
+
+  -- O modo é vocabulário FECHADO: um valor fora dos dois que o motor conhece
+  -- deixaria a tela dizendo uma coisa e o envio fazendo outra.
+  v_modo := coalesce(nullif(btrim(p_destino_modo), ''), 'fixo');
+  if v_modo not in ('fixo', 'responsavel') then
+    raise exception 'aviso_de_caso_destino_invalido' using errcode = '22023';
+  end if;
+
+  -- O canal é DA organização e não está arquivado. Sem isto a FK simples
+  -- deixaria apontar para o canal de outro tenant — a FK composta do padrão
+  -- 0228 não serve aqui porque o `on delete set null` anularia também
+  -- `organization_id`, que é a chave primária desta tabela.
+  if p_channel is not null then
+    select archived_at into v_arch
+      from public.channel_sessions
+     where id = p_channel and organization_id = p_org;
+    if not found or v_arch is not null then
+      raise exception 'aviso_de_caso_canal_invalido' using errcode = '22023';
+    end if;
+  end if;
+
+  -- O MODELO APROVADO é DESTA organização e DESTA conexão (migration 9094). A
+  -- mesma regra de `lib/channels/linha-do-espelho.ts`: a linha gravada para a
+  -- conexão, ou a linha sem conexão da conta oficial dela. A FK composta já
+  -- recusa o modelo de outro tenant, mas não sabe de conexão: sem isto, o
+  -- envio sairia com uma definição que este número não tem. Se ele está
+  -- APROVADO e tem uma variável só é pergunta da rota
+  -- (`lib/escalacao/modelo-do-aviso.ts`), e de novo do envio: o status muda
+  -- na plataforma sem passar por aqui.
+  if p_modelo is not null then
+    if p_channel is null or not exists (
+         select 1 from public.meta_templates t
+          where t.id = p_modelo
+            and t.organization_id = p_org
+            and (t.channel_session_id = p_channel
+                 or (t.channel_session_id is null and exists (
+                       select 1 from public.channel_sessions s
+                        where s.organization_id = p_org
+                          and s.id = p_channel
+                          and s.provider = 'meta_cloud'
+                          and s.meta_waba_id = t.waba_id)))) then
+      raise exception 'aviso_de_caso_modelo_invalido' using errcode = '22023';
+    end if;
+  end if;
+
+  -- As duas grafias do nono dígito — a MESMA regra de
+  -- `lib/channels/phone-variants.ts`. Comparar a string crua deixaria passar o
+  -- número do suporte cadastrado com 9 e registrado sem.
+  v_digitos := regexp_replace(p_telefone, '\D', '', 'g');
+  v_variantes := array[v_digitos];
+  if v_digitos like '55%' then
+    if length(v_digitos) = 13
+       and substring(v_digitos from 5 for 1) = '9'
+       and substring(v_digitos from 6 for 1) between '6' and '9' then
+      v_variantes := v_variantes || (substring(v_digitos from 1 for 4) || substring(v_digitos from 6));
+    elsif length(v_digitos) = 12
+       and substring(v_digitos from 5 for 1) between '6' and '9' then
+      v_variantes := v_variantes || (substring(v_digitos from 1 for 4) || '9' || substring(v_digitos from 5));
+    end if;
+  end if;
+
+  -- O NÚMERO DE AVISO NÃO PODE SER UM NÚMERO DA PRÓPRIA ORGANIZAÇÃO. É o laço
+  -- robô-com-robô: a conexão de avisos manda para o número oficial, o agente
+  -- dele responde, e as duas pontas se alimentam sem fim.
+  -- A conexão ARQUIVADA fica FORA da conta. Ela não envia nem recebe, então o
+  -- laço não acontece por ela — e contá-la bloqueia o número PARA SEMPRE, porque
+  -- a conexão que já teve agente publicado não pode ser apagada (as versões a
+  -- seguram) e o número nunca mais poderia receber aviso.
+  if exists (
+       select 1 from public.channel_sessions s
+        where s.organization_id = p_org
+          and s.archived_at is null
+          and s.phone_number is not null
+          and regexp_replace(s.phone_number, '\D', '', 'g') = any (v_variantes)) then
+    raise exception 'aviso_de_caso_numero_da_propria_org' using errcode = '22023';
+  end if;
+
+  -- ─── O NÚMERO DE AVISO QUE É DE UM MEMBRO DA EQUIPE (#3900) ──────────────
+  --
+  -- Em `responsavel` o destino é o WhatsApp PESSOAL de quem atende, e essa
+  -- pessoa pode ser cliente da própria empresa (agência em que a equipe viaja
+  -- pela agência). O número dela não vira INTERNO: o aviso sai e o que chega
+  -- dele continua virando contato, conversa e atendimento — é a regra de
+  -- `lib/escalacao/numero-interno-de-aviso.ts`, que lê `whatsapp_e164` para
+  -- saber disto. Perguntar "as mensagens dele vão parar de chegar?" seria
+  -- perguntar sobre uma consequência que NÃO acontece neste modo, então a
+  -- pergunta não é feita — e a resposta volta para a rota, que a registra.
+  --
+  -- Membro ATIVO nos dois lugares em que o número pode estar: já gravado
+  -- (`whatsapp_e164`) ou chegando AGORA em `p_responsaveis` — na primeira
+  -- gravação a coluna ainda está nula, porque esta guarda roda antes do laço
+  -- que a escreve. Quem saiu da equipe (`revoked_at`) não conta: o número dele
+  -- não recebe aviso nenhum.
+  --
+  -- Fora de `responsavel` a pergunta continua sendo feita, sem exceção: em
+  -- `fixo` o destino é o número da empresa, o número VIRA interno, e calar
+  -- essa confirmação é o que a tela existe para evitar.
+  v_destino_e_de_membro := false;
+  if v_modo = 'responsavel' then
+    select exists (
+      select 1 from public.user_organizations uo
+       where uo.organization_id = p_org
+         and uo.revoked_at is null
+         and uo.whatsapp_e164 is not null
+         and regexp_replace(uo.whatsapp_e164, '\D', '', 'g') = any (v_variantes)
+    ) into v_destino_e_de_membro;
+
+    if not v_destino_e_de_membro and jsonb_typeof(p_responsaveis) = 'array' then
+      select exists (
+        select 1
+          from jsonb_array_elements(p_responsaveis) as e
+          join public.user_organizations uo
+            on uo.organization_id = p_org
+           and uo.revoked_at is null
+           -- `::text` e não `::uuid`: um `user_id` torto no corpo tem de cair na
+           -- recusa de formato do laço abaixo (`aviso_de_caso_whatsapp_invalido`),
+           -- não virar erro de cast cru no meio da guarda.
+           and uo.user_id::text = btrim(coalesce(e ->> 'user_id', ''))
+         where nullif(btrim(coalesce(e ->> 'whatsapp', '')), '') is not null
+           and regexp_replace(e ->> 'whatsapp', '\D', '', 'g') = any (v_variantes)
+      ) into v_destino_e_de_membro;
+    end if;
+  end if;
+
+  -- O número de aviso vira INTERNO: tudo o que chegar dele deixa de virar
+  -- contato, conversa, lead e despacho do agente. Se ele já é um CLIENTE desta
+  -- organização, as mensagens dessa pessoa param de chegar ao CRM — e isso não
+  -- pode acontecer por engano. A tela pergunta e reenvia com `p_confirma_contato`.
+  -- A exceção é o membro da equipe do #3900, e só em `responsavel`.
+  if not v_destino_e_de_membro
+     and not coalesce(p_confirma_contato, false)
+     and exists (
+       select 1 from public.contacts c
+        where c.organization_id = p_org
+          and c.phone_number is not null
+          and regexp_replace(c.phone_number, '\D', '', 'g') = any (v_variantes)) then
+    raise exception 'aviso_de_caso_numero_de_cliente' using errcode = '22023';
+  end if;
+
+  -- ─── O WhatsApp de cada pessoa da equipe (#3803) ─────────────────────────
+  --
+  -- Só membro ATIVO da organização é gravado: número de quem saiu da equipe não
+  -- recebe aviso, e aceitá-lo aqui daria um destino que nunca é resolvido.
+  -- Vazio (`''` ou nulo) É uma informação — significa "esta pessoa não tem
+  -- número" —, e por isso grava nulo em vez de recusar.
+  if p_responsaveis is not null then
+    if jsonb_typeof(p_responsaveis) <> 'array' then
+      raise exception 'aviso_de_caso_whatsapp_invalido' using errcode = '22023';
+    end if;
+    for v_item in select * from jsonb_array_elements(p_responsaveis) loop
+      v_uid := nullif(btrim(coalesce(v_item ->> 'user_id', '')), '')::uuid;
+      if v_uid is null then
+        raise exception 'aviso_de_caso_whatsapp_invalido' using errcode = '22023';
+      end if;
+      v_numero := nullif(btrim(coalesce(v_item ->> 'whatsapp', '')), '');
+      if v_numero is not null then
+        -- O mesmo "dígitos com `+` na frente" que a tela normaliza
+        -- (`normalizarTelefoneDeAviso`): quem manda `31 99888-7777` recebe o
+        -- número guardado na forma canônica em vez de um 22023 que não explica.
+        v_numero := '+' || regexp_replace(v_numero, '\D', '', 'g');
+        if v_numero !~ '^\+[1-9][0-9]{7,14}$' then
+          raise exception 'aviso_de_caso_whatsapp_invalido' using errcode = '22023';
+        end if;
+        -- No modo `responsavel` este número É o destino do aviso. Um número
+        -- conectado desta organização abriria por aqui o mesmo laço
+        -- robô-com-robô que a guarda do número da empresa fecha: mesma conta
+        -- (conexão ativa, as duas grafias do nono dígito) e mesmo código.
+        v_digitos_do_membro := regexp_replace(v_numero, '\D', '', 'g');
+        v_variantes_do_membro := array[v_digitos_do_membro];
+        if v_digitos_do_membro like '55%' then
+          if length(v_digitos_do_membro) = 13
+             and substring(v_digitos_do_membro from 5 for 1) = '9'
+             and substring(v_digitos_do_membro from 6 for 1) between '6' and '9' then
+            v_variantes_do_membro := v_variantes_do_membro
+              || (substring(v_digitos_do_membro from 1 for 4) || substring(v_digitos_do_membro from 6));
+          elsif length(v_digitos_do_membro) = 12
+             and substring(v_digitos_do_membro from 5 for 1) between '6' and '9' then
+            v_variantes_do_membro := v_variantes_do_membro
+              || (substring(v_digitos_do_membro from 1 for 4) || '9' || substring(v_digitos_do_membro from 5));
+          end if;
+        end if;
+        if exists (
+             select 1 from public.channel_sessions s
+              where s.organization_id = p_org
+                and s.archived_at is null
+                and s.phone_number is not null
+                and regexp_replace(s.phone_number, '\D', '', 'g') = any (v_variantes_do_membro)) then
+          raise exception 'aviso_de_caso_numero_da_propria_org' using errcode = '22023';
+        end if;
+      end if;
+      update public.user_organizations uo
+         set whatsapp_e164 = v_numero
+       where uo.organization_id = p_org
+         and uo.user_id = v_uid
+         and uo.revoked_at is null;
+    end loop;
+  end if;
+
+  select * into v_antes from public.config_aviso_de_caso where organization_id = p_org;
+
+  insert into public.config_aviso_de_caso
+    (organization_id, channel_session_id, telefone_destino, rotulo, ligado, resposta_whatsapp_habilitada, destino_modo, modelo_id, criado_por, atualizado_por)
+  values
+    (p_org, p_channel, p_telefone, nullif(btrim(p_rotulo), ''), coalesce(p_ligado, false), coalesce(p_resposta_whatsapp_habilitada, false), v_modo, p_modelo, auth.uid(), auth.uid())
+  on conflict (organization_id) do update
+    set channel_session_id = excluded.channel_session_id,
+        telefone_destino   = excluded.telefone_destino,
+        rotulo             = excluded.rotulo,
+        ligado             = excluded.ligado,
+        resposta_whatsapp_habilitada = excluded.resposta_whatsapp_habilitada,
+        destino_modo       = excluded.destino_modo,
+        -- Gravar o que veio, inclusive o `null`: é o que impede o modelo de
+        -- uma conexão antiga de ficar para trás depois da troca de número.
+        modelo_id          = excluded.modelo_id,
+        atualizado_por     = auth.uid(),
+        -- Trocou o número, o JID resolvido do anterior não vale mais — e é o
+        -- JID que o corte da ingestão usa para reconhecer quem está em modo
+        -- privacidade. Mantê-lo faria o corte continuar valendo para o número
+        -- ANTIGO, que pode voltar a ser um cliente.
+        destino_jid        = case
+                               when excluded.telefone_destino is distinct from config_aviso_de_caso.telefone_destino
+                               then null
+                               else config_aviso_de_caso.destino_jid
+                             end,
+        updated_at         = now();
+
+  return jsonb_build_object(
+    'trocou_numero', (v_antes.telefone_destino is distinct from p_telefone),
+    'antes_ligado',  coalesce(v_antes.ligado, false),
+    'destino_modo',  v_modo,
+    -- QUAL regra autorizou um destino que já é cliente (#3900). A rota registra
+    -- isto na auditoria: sem esta resposta, "membro da equipe" e "confirmação
+    -- explícita" ficariam indistinguíveis no `api_audit_log`, que é append-only.
+    'destino_e_de_membro', v_destino_e_de_membro
+  );
+end;
+$$;
+revoke execute on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb,uuid) from public, anon;
+grant execute on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb,uuid) to authenticated;
+
 -- ---- o follow-up continua contando como turno no uso de IA (migration 9097) ----
 -- manifest: fn_uso_de_ia conta o job de follow-up (`followup_turn`) como turno do agente, para o cartão "Turnos do agente" e o custo médio por turno não perderem o follow-up quando ele ganha ponto de IA próprio (#3897).
 --
@@ -67213,6 +67503,218 @@ revoke execute on function public.fn_uso_de_ia(uuid, timestamptz, timestamptz, u
   from public, anon;
 grant  execute on function public.fn_uso_de_ia(uuid, timestamptz, timestamptz, uuid, text)
   to authenticated, service_role;
+
+-- ---- busca do inbox sem acento (migration 9098) ----
+-- manifest: A busca do Inbox passa a achar "Andréia" digitando "andreia" — e o contrário (issue #3918, fatia 1). `ILIKE` dobra a CAIXA, não o ACENTO (`lower('Á') = 'á'`, que não é `'a'`), então o termo digitado sem acento nunca encontrava o nome acentuado: no Brasil as duas grafias convivem e o cliente parecia não existir no CRM. Entra `unaccent` (extensão disponível na imagem, nunca instalada — `git grep unaccent origin/main -- supabase/` dava 0) com o wrapper `public.f_unaccent(text)` marcado `immutable`, que é o que falta no `unaccent()` da extensão (`STABLE`, porque depende do dicionário — índice e coluna gerada sobre ele falham com "functions in index expression must be marked IMMUTABLE"). A coluna `contacts.busca_sem_acento` é GERADA (`lower(public.f_unaccent(display_name, name, address_book_name))`), e não mantida por gatilho, por um motivo medido: a anonimização (LGPD) zera os campos de nome, e coluna gerada recalcula junto — gatilho que esquecesse a linha deixaria o nome antigo encontrável, que é exatamente o vazamento que a busca já evita com `is_anonymized = false`. Índice `gin_trgm_ops` para o `like '%termo%'` do handler (mesma forma do `idx_contacts_org_name_trgm` que já existe e usa `public.gin_trgm_ops`: nesta instalação as duas extensões moram em `public`). Escopo desta fatia: só a busca de CONVERSAS do inbox; Contatos, funil e seletor têm régua própria (`lib/contacts/busca-regex.ts`, #1835) e ficam fora. Idempotente: `if not exists` nas três DDLs e `create or replace` na função, então roda em install e em update.
+create extension if not exists unaccent;
+create extension if not exists pg_trgm;
+
+-- O `unaccent()` da extensão é STABLE (depende do dicionário carregado), e o
+-- Postgres recusa STABLE em expressão de índice e de coluna gerada com
+-- "functions in index expression must be marked IMMUTABLE". Este wrapper é a
+-- forma conhecida de fechar isso: corpo de UMA expressão, `immutable`, e o
+-- dicionário e a função QUALIFICADOS dentro dele — `set search_path = ''`
+-- impede que um schema no caminho mude o que a função resolve (é também o que
+-- o lint do Security Advisor cobra de toda função de public).
+create or replace function public.f_unaccent(p_texto text)
+returns text
+language sql
+immutable
+strict
+parallel safe
+set search_path = ''
+as $$
+  select public.unaccent('public.unaccent'::regdictionary, p_texto);
+$$;
+
+-- Função nova em `public` nasce com EXECUTE para PUBLIC (Postgres) e para anon
+-- (default privileges do baseline): as duas origens saem. `authenticated` fica
+-- porque a coluna gerada abaixo é calculada com o papel de quem grava o contato.
+revoke execute on function public.f_unaccent(text) from public, anon;
+grant  execute on function public.f_unaccent(text) to authenticated, service_role;
+
+-- Coluna GERADA, e não gatilho: a anonimização (LGPD) zera `display_name`,
+-- `name` e `address_book_name`, e o recálculo vem junto — uma coluna mantida à
+-- mão ficaria com o nome antigo, que é justamente o que a busca evita não
+-- achar depois de anonimizar (`is_anonymized = false` no handler).
+--
+-- `add column if not exists` reescreve a tabela UMA vez na instalação/update
+-- que a aplica (`contacts` é ordem de milhares de linhas, medido em produção).
+-- Em troca, a coluna não pode divergir do nome: quem escreve o nome não precisa
+-- lembrar dela.
+alter table public.contacts
+  add column if not exists busca_sem_acento text
+  generated always as (
+    lower(public.f_unaccent(
+      coalesce(display_name, '') || ' ' || coalesce(name, '') || ' ' || coalesce(address_book_name, '')
+    ))
+  ) stored;
+
+-- Trigrama para o `like '%termo%'` da busca (que sempre tem curinga dos dois
+-- lados, então b-tree não serve). Padrão com menos de 3 caracteres não rende
+-- trigrama nenhum e cai em varredura — o piso da rota é 2 (`PISO_DA_BUSCA`),
+-- então termos de 2 letras continuam varrendo, como hoje.
+create index if not exists idx_contacts_busca_sem_acento_trgm
+  on public.contacts using gin (busca_sem_acento public.gin_trgm_ops);
+
+notify pgrst, 'reload schema';
+
+-- ---- o molde de IA das empresas novas: as funções e o gatilho (migration 9096) ----
+--
+-- A PRIMEIRA metade da 9096, aqui porque cria FUNÇÃO e a VARREDURA anon (logo
+-- abaixo) proíbe `create function` depois dela. A coluna
+-- `platform_settings.molde_de_ia_org_id` nasce na SEGUNDA metade, no fim do
+-- arquivo: numa instalação NOVA `platform_settings` só é criada mais adiante
+-- (0253). Quem ATUALIZA já tem a tabela, e o `do` abaixo cria a coluna AQUI,
+-- antes do gatilho que a lê — sem ele, uma empresa criada durante o
+-- `update.sh`, entre as duas metades, falharia por coluna inexistente. As
+-- funções são plpgsql: o corpo não é conferido contra o catálogo ao criar, só
+-- ao rodar. Cabeçalho da 9096 para o racional inteiro.
+do $$
+begin
+  if to_regclass('public.platform_settings') is not null then
+    alter table public.platform_settings
+      add column if not exists molde_de_ia_org_id uuid
+        references public.organizations(id) on delete set null;
+  end if;
+end $$;
+
+-- O padrão do molde, quando há um molde e o padrão dele serve à empresa nova.
+-- Definer porque lê `platform_settings` (sem policy, só service_role) e a linha
+-- de OUTRA organização; quem chama são os dois gatilhos abaixo, também definer.
+create or replace function public.fn_llm_do_molde_de_ia()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_llm jsonb;
+begin
+  select jsonb_build_object(
+           'provider', o.settings->'llm'->>'provider',
+           'default_model', o.settings->'llm'->>'default_model')
+    into v_llm
+    from public.platform_settings ps
+    join public.organizations o on o.id = ps.molde_de_ia_org_id
+   where ps.id = 1
+     and o.settings->'llm'->>'provider' in ('anthropic', 'openai', 'openrouter')
+     and coalesce(btrim(o.settings->'llm'->>'default_model'), '') <> '';
+  return v_llm;
+end;
+$$;
+
+revoke execute on function public.fn_llm_do_molde_de_ia() from public, anon, authenticated;
+
+-- O padrão de quem nasce: o que veio de quem cria, senão o do molde, senão o do
+-- produto. Corpo da 0096 com o degrau do molde no meio. Passa a ser definer
+-- (com `search_path` vazio) para a leitura do molde não depender do papel de
+-- quem insere a organização.
+create or replace function public.fn_seed_org_llm_defaults()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_llm jsonb;
+begin
+  if coalesce(new.settings->'llm'->>'default_model', '') = '' then
+    v_llm := public.fn_llm_do_molde_de_ia();
+    if v_llm is null then
+      v_llm := jsonb_build_object(
+        'provider', 'anthropic',
+        'default_model', coalesce(
+          (select m.model_id from public.ai_models m
+            where m.provider = 'anthropic' and m.is_default_for_provider
+              and m.deprecated_at is null limit 1),
+          'claude-sonnet-4-6'));
+    end if;
+    new.settings := jsonb_set(
+      coalesce(new.settings, '{}'::jsonb),
+      '{llm}',
+      coalesce(new.settings->'llm', '{}'::jsonb) || v_llm,
+      true);
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_seed_org_llm_defaults() from public, anon, authenticated;
+
+-- As funções do molde vão para a empresa nova, e o efeito fica na auditoria
+-- DELA — é onde Painel › Empresas › [empresa] o lê.
+create or replace function public.fn_molde_de_ia_na_org_nova()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_molde          uuid;
+  v_copiadas       integer := 0;
+  v_deixadas       integer := 0;
+  v_llm            jsonb;
+  v_padrao_copiado boolean;
+begin
+  select ps.molde_de_ia_org_id into v_molde
+    from public.platform_settings ps
+   where ps.id = 1;
+  if v_molde is null then
+    return null;
+  end if;
+
+  with copiadas as (
+    insert into public.ai_purpose_bindings
+      (organization_id, purpose, provider, credential_id, model_id, base_url, is_enabled)
+    select new.id, b.purpose, b.provider, null::uuid, b.model_id, null::text, b.is_enabled
+      from public.ai_purpose_bindings b
+     where b.organization_id = v_molde
+       and nullif(btrim(b.base_url), '') is null
+       and b.provider in ('anthropic', 'openai', 'openrouter')
+    on conflict (organization_id, purpose) do nothing
+    returning 1
+  )
+  select count(*) into v_copiadas from copiadas;
+
+  select count(*) into v_deixadas
+    from public.ai_purpose_bindings b
+   where b.organization_id = v_molde
+     and not (nullif(btrim(b.base_url), '') is null
+              and b.provider in ('anthropic', 'openai', 'openrouter'));
+
+  -- O padrão foi decidido pelo BEFORE (`fn_seed_org_llm_defaults`); aqui só se
+  -- confere se ele é o do molde, para a auditoria dizer a verdade.
+  v_llm := public.fn_llm_do_molde_de_ia();
+  v_padrao_copiado := v_llm is not null
+    and ((new.settings->'llm')->>'provider') is not distinct from (v_llm->>'provider')
+    and ((new.settings->'llm')->>'default_model') is not distinct from (v_llm->>'default_model');
+
+  if v_copiadas = 0 and not v_padrao_copiado then
+    return null;
+  end if;
+
+  insert into public.api_audit_log
+    (organization_id, action, resource_type, resource_id, bypassed_rls, metadata)
+  values (
+    new.id, 'ai.molde_de_ia_aplicado', 'organization', new.id, true,
+    jsonb_build_object(
+      'molde_org_id', v_molde,
+      'funcoes_copiadas', v_copiadas,
+      'funcoes_deixadas', v_deixadas,
+      'padrao_copiado', v_padrao_copiado,
+      'padrao', case when v_padrao_copiado then v_llm end));
+  return null;
+end;
+$$;
+
+revoke execute on function public.fn_molde_de_ia_na_org_nova() from public, anon, authenticated;
+
+drop trigger if exists trg_molde_de_ia_na_org_nova on public.organizations;
+create trigger trg_molde_de_ia_na_org_nova
+  after insert on public.organizations
+  for each row execute function public.fn_molde_de_ia_na_org_nova();
 
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
@@ -71687,4 +72189,18 @@ comment on column public.calendar_event_types.reminder_meta_template_id is
 
 -- A coluna nova entra no `select` do cron agenda-reminder: sem recarregar o
 -- cache de schema, o PostgREST recusa a consulta inteira até o próximo restart.
+notify pgrst, 'reload schema';
+
+-- ---- o molde de IA das empresas novas: a coluna (migration 9096) ----
+-- A SEGUNDA metade da 9096: a coluna que escolhe o molde. No fim do arquivo
+-- porque numa instalação NOVA `platform_settings` só existe depois da 0253; em
+-- quem atualiza, a primeira metade (antes da VARREDURA anon) já a criou, e o
+-- `if not exists` passa sem efeito. As funções e o gatilho estão lá.
+alter table public.platform_settings
+  add column if not exists molde_de_ia_org_id uuid
+    references public.organizations(id) on delete set null;
+
+comment on column public.platform_settings.molde_de_ia_org_id is
+  'Empresa cuja configuração de IA as empresas NOVAS copiam ao nascer (migration 9096): as funções de ai_purpose_bindings sem endpoint próprio e de provedor com chave da instalação (anthropic, openai, openrouter), sempre com credential_id nulo, e o padrão settings.llm (provider, default_model). Nunca credenciais, Jev, agentes nem base de conhecimento. null = cada empresa nasce com o padrão do produto. Quem copia: fn_molde_de_ia_na_org_nova e fn_seed_org_llm_defaults. Escrita por app/actions/settings/updateMoldeDeIa.ts.';
+
 notify pgrst, 'reload schema';

@@ -80,6 +80,16 @@
  * `confirma_contato: true`. Isso é irreversível o bastante para custar um
  * clique deliberado.
  *
+ * ## …menos quando o número é da EQUIPE (#3900)
+ *
+ * Em `destino_modo = 'responsavel'` o destino é o WhatsApp pessoal de quem
+ * atende, e numa agência de viagens essa pessoa viaja pela própria agência — é
+ * cliente também. Tornar esse número interno é o defeito da issue: quando ela
+ * escreve como cliente, a mensagem não entra. Para número de membro ATIVO o
+ * banco não pergunta (não há consequência a confirmar) e responde
+ * `destino_e_de_membro`, que vira `autorizacao_do_destino` na auditoria. A rota
+ * não decide isso: ela só registra o que a função respondeu.
+ *
  * ## i18n
  *
  * `PASTAS_IGNORADAS` do gate de espanhol inclui `api`, então as frases desta
@@ -345,7 +355,12 @@ export async function PUT(req: NextRequest): Promise<Response> {
     return fail("internal_error", t("Não foi possível salvar o aviso."), 500, { requestId });
   }
 
-  const resultado = (data ?? {}) as { trocou_numero?: boolean; antes_ligado?: boolean };
+  const resultado = (data ?? {}) as {
+    trocou_numero?: boolean;
+    antes_ligado?: boolean;
+    /** #3900 — o destino é o WhatsApp de um membro ativo da equipe. */
+    destino_e_de_membro?: boolean;
+  };
 
   // ⚠️ O número entra MASCARADO. `api_audit_log` é append-only — sem UPDATE nem
   // DELETE para papel nenhum, nem para `service_role` —, então o que entra ali
@@ -367,6 +382,16 @@ export async function PUT(req: NextRequest): Promise<Response> {
       canal: dados.channel_session_id,
       modelo: modeloId,
       confirmou_contato: dados.confirma_contato ?? false,
+      // QUAL regra autorizou um destino que já é cliente (#3900). O banco diz se
+      // o número é de um membro ativo da equipe; sem esta linha, "a pessoa
+      // confirmou" e "o número é da equipe, e por isso não vira interno" ficam
+      // indistinguíveis num log append-only — e a próxima pessoa não consegue
+      // responder por que uma atendente continuou chegando ao CRM.
+      autorizacao_do_destino: resultado.destino_e_de_membro
+        ? "membro_da_equipe"
+        : dados.confirma_contato
+          ? "confirmacao_explicita"
+          : "sem_confirmacao",
       // O MODO é o que muda o desenho do aviso depois desta entrega, e o log é
       // append-only: sem ele não há como datar a troca de "número fixo" para
       // "responsável" numa auditoria. CONTAGEM, nunca os números: telefone de

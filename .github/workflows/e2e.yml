@@ -1497,6 +1497,11 @@ jobs:
       # conversa e duas mensagens pelo service role (reaproveita um canal da
       # organização, ou grava uma linha de canal sem transporte nenhum no ar) e
       # apaga tudo no fim; só lê a tela. PREVISÃO, não medida: ~30 s de caso.
+      #
+      # `molde-de-ia-empresas-novas` grava uma escolha da INSTALAÇÃO
+      # (`platform_settings.molde_de_ia_org_id`, migration 9096) e a devolve a
+      # nulo no fim: deixada escolhida, as empresas das specs seguintes desta
+      # parte nasceriam com a IA do molde.
       SPECS_PARTE_7: >-
         celular-toque-nos-controles.spec.ts
         agente-novo-e-uso.spec.ts
@@ -1510,6 +1515,7 @@ jobs:
         comercial-no-celular.spec.ts
         propostas-de-campos-do-card.spec.ts
         aviso-pelo-numero-oficial.spec.ts
+        molde-de-ia-empresas-novas.spec.ts
       # Ambiente isolado: esta spec exige HMAC WAHA e Graph sintético no
       # processo next start. As demais partes preservam a configuração WAHA.
       #
