@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { blocoDoFeriado, feriadoNacionalNoTurno } from "@/lib/agent-engine/agent/feriado-nacional";
+import {
+  blocoDoFeriado,
+  feriadoNacionalNoTurno,
+  lerFeriadoDoTurno,
+} from "@/lib/agent-engine/agent/feriado-nacional";
 
 /**
  * O TURNO PRECISA SABER QUE O DIA É FERIADO NACIONAL (#3877).
@@ -120,6 +124,55 @@ describe("feriadoNacionalNoTurno — hoje e amanhã, no fuso da organização", 
     expect(feriadoNacionalNoTurno(NO_FERIADO, "America/Sao_Paulo", null)?.hoje).toBe(true);
     expect(feriadoNacionalNoTurno(NO_FERIADO, "America/Sao_Paulo", "")?.hoje).toBe(true);
     expect(feriadoNacionalNoTurno(NO_FERIADO, "America/Sao_Paulo", "BR")?.hoje).toBe(true);
+  });
+});
+
+describe("lerFeriadoDoTurno — o país vem do banco, e a leitura falha ABERTA", () => {
+  /** Dublê de `Queryable`: só a linha de `organizations` interessa aqui. */
+  const bancoCom = (pais: string | null) => ({
+    query: async () => ({ rows: [{ country: pais }] }),
+  });
+
+  it("organização brasileira (coluna nula) recebe o fato", async () => {
+    const f = await lerFeriadoDoTurno(
+      bancoCom(null) as never,
+      "org-1",
+      NO_FERIADO,
+      "America/Sao_Paulo",
+    );
+
+    expect(f?.hoje).toBe(true);
+    expect(f?.hojeEm).toBe(FINADOS);
+  });
+
+  it("organização de Portugal não recebe feriado brasileiro", async () => {
+    const f = await lerFeriadoDoTurno(
+      bancoCom("PT") as never,
+      "org-2",
+      NO_FERIADO,
+      "Europe/Lisbon",
+    );
+
+    expect(f).toBeNull();
+  });
+
+  it("banco indisponível NÃO derruba o turno — o bloco apenas não entra", async () => {
+    // O turno não pode virar agente mudo porque uma leitura de configuração
+    // falhou; e o `null` é "não sei o país", não "não é feriado".
+    const quebrado = {
+      query: async () => {
+        throw new Error("relation organizations does not exist");
+      },
+    };
+    const avisos: unknown[] = [];
+    const log = { warn: (_m: string, campos?: unknown) => avisos.push(campos) };
+
+    await expect(
+      lerFeriadoDoTurno(quebrado as never, "org-3", NO_FERIADO, "America/Sao_Paulo", log as never),
+    ).resolves.toBeNull();
+    // O rastro existe: sem ele, a organização de outro país nunca saberia por
+    // que o bloco sumiu.
+    expect(avisos).toHaveLength(1);
   });
 });
 

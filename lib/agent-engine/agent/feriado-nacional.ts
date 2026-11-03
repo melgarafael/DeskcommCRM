@@ -60,12 +60,16 @@
  *
  * `organizations.timezone` não tem CHECK e o `Intl` lança em fuso torto: fuso
  * inválido degrada para `FUSO_PADRAO`, como em `renderAgora`. A leitura do país
- * é opcional (`pais` ausente/`null` = Brasil, a régua da coluna) e nunca lança.
+ * (`lerFeriadoDoTurno`) nunca lança: falhou, o turno segue sem o fato, nunca sem
+ * o atendimento.
  */
 import { isHolidayBR } from "@/lib/lgpd/holidays-br";
 import { perfilDoPais } from "@/lib/legal/perfil-do-pais";
 import { dataIsoNoFuso, somarDiasNoFuso } from "@/lib/propostas/data-no-fuso";
 import { FUSO_PADRAO, fusoValido } from "@/lib/tempo/fusos";
+
+import type { Logger } from "../obs/logger";
+import type { Queryable } from "../queue/queue";
 
 /** O que o turno precisa saber: as duas datas locais e se cada uma é feriado. */
 export interface FeriadoNoTurno {
@@ -120,6 +124,44 @@ export function feriadoNacionalNoTurno(
     hoje: ehFeriadoNacionalBrasileiro(hojeEm),
     amanha: ehFeriadoNacionalBrasileiro(amanhaEm),
   };
+}
+
+/**
+ * O fato do turno, lido do banco: o país vem de `organizations.country` (nulo =
+ * Brasil, a régua de `perfil-do-pais.ts`) e o resto é `feriadoNacionalNoTurno`.
+ *
+ * A leitura é PRÓPRIA deste módulo, e não do `fuso-da-org.ts`: aquela função é
+ * mockada por vários testes de vizinhança (`assistido-*`, `janela-*`,
+ * `autonomia-*`), e acrescentar um segundo export a um módulo mockado quebra
+ * todos eles por um motivo que não tem nada a ver com o defeito. O custo é uma
+ * consulta de chave primária por turno.
+ *
+ * ⚠️ Falha ABERTA, e o `null` aqui significa "não sei o país", não "não é
+ * feriado": derrubar o turno por causa de uma leitura de configuração seria
+ * trocar uma frase errada por um agente mudo (doutrina de `fuso-da-org.ts`).
+ * Sem o país, o bloco não entra e o motivo vai ao log.
+ */
+export async function lerFeriadoDoTurno(
+  db: Queryable,
+  organizationId: string,
+  agora: Date,
+  fuso: string,
+  log?: Logger,
+): Promise<FeriadoNoTurno | null> {
+  let pais: string | null = null;
+  try {
+    const { rows } = await db.query<{ country: string | null }>(
+      "select country from organizations where id = $1",
+      [organizationId],
+    );
+    pais = rows[0]?.country ?? null;
+  } catch (err) {
+    log?.warn("não consegui ler o país da organização — o turno segue sem feriado nacional", {
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+    });
+    return null;
+  }
+  return feriadoNacionalNoTurno(agora, fuso, pais);
 }
 
 /**

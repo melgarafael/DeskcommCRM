@@ -271,8 +271,8 @@ import {
 } from '@/lib/ai/decisao/manipulacao';
 import type { DependenciasDoPonto } from '@/lib/ai/decisao/ponto';
 import { perguntarUrgenciaAoJev, registrarUrgenciaDoJev } from '@/lib/ai/decisao/urgencia';
-import { fusoDaOrganizacao, fusoEPaisDaOrganizacao } from './fuso-da-org';
-import { blocoDoFeriado, feriadoNacionalNoTurno } from './feriado-nacional';
+import { fusoDaOrganizacao } from './fuso-da-org';
+import { blocoDoFeriado, lerFeriadoDoTurno } from './feriado-nacional';
 import { renderAgora } from '@/lib/tempo/agora';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
 import {
@@ -2383,10 +2383,8 @@ async function executarTurnoDoAgente(
   // O fuso da ORGANIZAÇÃO — o que o bloco `## Agora` usa lá embaixo, na montagem
   // da abertura. Lido aqui pela mesma razão da linha acima: uma query por turno,
   // longe do ponto de uso, para não virar duas respostas para a mesma pergunta.
-  // Nunca lança e nunca vem vazio (ver `fuso-da-org.ts`). O PAÍS vem na mesma
-  // linha (#3877): é ele que decide se o feriado nacional entra no turno.
-  const relogioDaOrg = await fusoEPaisDaOrganizacao(pool, tenantId, runLog);
-  const fusoDaOrg = relogioDaOrg.fuso;
+  // Nunca lança e nunca vem vazio (ver `fuso-da-org.ts`).
+  const fusoDaOrg = await fusoDaOrganizacao(pool, tenantId, runLog);
 
   // F4-06 (acceptance 2): lead em handoff humano → NO-OP no INÍCIO do turno, antes de
   // qualquer chamada de modelo/CRM. O bot silenciou (bot_silenced_until='infinity', cache
@@ -5688,8 +5686,9 @@ async function executarTurnoDoAgente(
     // atendimento. No sufixo por-lead, junto do relógio, pelo mesmo motivo: o
     // país não muda entre leads, mas o dia sim (virada de meia-noite), e o
     // prefixo estável (`stable-prefix.ts`) não pode carregar fato do dia.
-    const feriadoDoTurno = feriadoNacionalNoTurno(clock(), fusoDaOrg, relogioDaOrg.pais);
-    const feriadoBlock = blocoDoFeriado(feriadoDoTurno);
+    const feriadoBlock = blocoDoFeriado(
+      await lerFeriadoDoTurno(pool, tenantId, clock(), fusoDaOrg, runLog),
+    );
     const openingSuffixes = [
       agoraBlock,
       feriadoBlock,
