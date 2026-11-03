@@ -130,6 +130,12 @@ export const DICIONARIO: Traducoes = {
   "conectado": { es: "conectado" },
   "ligações registradas nesta sessão.": { es: "llamadas registradas en esta sesión." },
   "sai da fila e o lead é marcado como perdido no funil. Nada é apagado, e o histórico continua lá.": { es: "sale de la cola y el lead queda como perdido en el embudo. No se borra nada y el historial sigue ahí." },
+  // Ordenação da tabela de campanhas (#3911). "Ordenar por" é igual nos dois
+  // idiomas de propósito: é a mesma expressão em espanhol.
+  "Ordenar por": { es: "Ordenar por" },
+  "Mais recentes": { es: "Más recientes" },
+  "Mais antigas": { es: "Más antiguas" },
+  "Ativas primeiro": { es: "Activas primero" },
   "Avisar também nas transferências para atendimento humano": { es: "Avisar también en las transferencias a atención humana" },
   "Cada transferência manda uma mensagem ao mesmo número e conta no limite diário dele. Desligue para receber só os avisos de casos.": { es: "Cada transferencia envía un mensaje al mismo número y cuenta en su límite diario. Desactívalo para recibir solo los avisos de casos." },
   "Também param de sair, até você cadastrar um número de novo: os avisos de transferência para atendimento humano, os avisos da Agenda que usam o mesmo número dos casos e as automações com a ação \"Mensagem para a equipe\".": { es: "También dejan de salir, hasta que registres otro número: los avisos de transferencia a atención humana, los avisos de la Agenda que usan el mismo número que los casos y las automatizaciones con la acción \"Mensaje para el equipo\"." },
@@ -328,6 +334,20 @@ export const DICIONARIO: Traducoes = {
   "Ex.: WA | Fixo 7906": { es: "Ej.: WA | Fijo 7906" },
   "Informe um nome interno com até 80 caracteres.": { es: "Indica un nombre interno de hasta 80 caracteres." },
   "Não foi possível consultar o canal do lembrete.": { es: "No se pudo consultar el canal del recordatorio." },
+  // O modelo do lembrete fora da janela de 24 h (migration 9092).
+  "Se a janela de 24 h do cliente já tiver fechado, mandar este modelo aprovado": { es: "Si la ventana de 24 h del cliente ya se cerró, enviar esta plantilla aprobada" },
+  "Nenhum — fora da janela o lembrete não sai e a equipe recebe um aviso": { es: "Ninguna — fuera de la ventana el recordatorio no sale y el equipo recibe un aviso" },
+  "Modelo configurado indisponível — escolha outro": { es: "Plantilla configurada no disponible — elige otra" },
+  "Vale só para o número oficial, que depois de 24 horas sem mensagem do cliente aceita apenas modelo aprovado. O modelo sai pelo número dono dele, e as variáveis recebem, nesta ordem: {{1}} primeiro nome, {{2}} dia e hora, {{3}} título, {{4}} endereço.": {
+    es: "Solo vale para el número oficial, que después de 24 horas sin mensaje del cliente acepta únicamente plantillas aprobadas. La plantilla sale por el número al que pertenece, y las variables reciben, en este orden: {{1}} nombre, {{2}} día y hora, {{3}} título, {{4}} dirección.",
+  },
+  "Não foi possível carregar os modelos aprovados. A escolha guardada será preservada; tente novamente.": { es: "No se pudieron cargar las plantillas aprobadas. Se conservará la elección guardada; inténtalo de nuevo." },
+  "Não foi possível consultar o modelo do lembrete.": { es: "No se pudo consultar la plantilla del recordatorio." },
+  "Escolha um modelo aprovado desta organização.": { es: "Elige una plantilla aprobada de esta organización." },
+  "Este modelo não serve para o lembrete: ele só pode ter variáveis de texto no corpo, de {{1}} a {{4}}, sem pular número.": {
+    es: "Esta plantilla no sirve para el recordatorio: solo puede tener variables de texto en el cuerpo, de {{1}} a {{4}}, sin saltarse ningún número.",
+  },
+  "O modelo escolhido é de outro número. Escolha um modelo do número que envia os lembretes.": { es: "La plantilla elegida es de otro número. Elige una plantilla del número que envía los recordatorios." },
   "Escolha um canal de mensagem não arquivado desta organização.": { es: "Elige un canal de mensajes no archivado de esta organización." },
   "Conectar a assinatura do ChatGPT": { es: "Conectar la suscripción de ChatGPT" },
   "Cada empresa conecta a própria conta do ChatGPT. Abra o link e entre com a conta que tem a assinatura. No fim, o navegador vai para http://127.0.0.1:1455/auth/callback, que pode não abrir — é esperado. Copie esse endereço inteiro, da barra do navegador, e cole aqui.": {
