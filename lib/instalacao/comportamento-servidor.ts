@@ -16,6 +16,7 @@ import { normalizarChaveDeOrcamento } from "@/lib/agent-engine/edge/llm/orcament
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { semearLinhaDaInstalacao } from "@/lib/auth/politica-de-cadastro";
 
 import {
   carregarComportamento,
@@ -90,6 +91,9 @@ export async function gravarComportamentoDaInstalacao(
   atorUserId: string,
 ): Promise<boolean> {
   try {
+    // Sem a semente, esta gravação criaria a linha com `signup_mode='aberto'`
+    // e reabriria o cadastro de quem declarou `SIGNUP_MODE=so_convite`.
+    if (!(await semearLinhaDaInstalacao())) return false;
     const { error } = await createAdminClient()
       .from("platform_settings")
       .upsert({ id: 1, ...valores, updated_by: atorUserId }, { onConflict: "id" });
