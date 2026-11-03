@@ -1353,6 +1353,7 @@ jobs:
         etapa-pela-conversa.spec.ts
         pausa-de-reentrada.spec.ts
         funil-arquivado-volta-pela-tela.spec.ts
+        numero-oficial-um-clique.spec.ts
         inbox-selecionada-no-escuro.spec.ts
         inbox-anuncio-de-origem.spec.ts
         campanha-com-modelo-aprovado.spec.ts
