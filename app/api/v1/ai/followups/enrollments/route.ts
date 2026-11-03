@@ -9,10 +9,10 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import { createFollowupEnrollmentSchema } from "@/lib/followup/api-schemas";
 import { ENROLLMENT_LIST_COLUMNS, enrollFollowupFlow } from "@/lib/followup/enroll";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -32,10 +32,18 @@ const ENROLLMENT_STATUSES = [
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "followup_enrollments" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "followup_enrollments",
+    role: "viewer",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "followup_enrollments", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId } = authz;
 
   const status = req.nextUrl.searchParams.get("status");
   if (status !== null && !ENROLLMENT_STATUSES.includes(status)) {
@@ -49,11 +57,11 @@ export async function GET(req: NextRequest): Promise<Response> {
     return fail("invalid_request", t("contact_id inválido."), 400, { requestId });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   let query = supabase
     .from("followup_enrollments")
     .select(ENROLLMENT_LIST_COLUMNS)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .order("updated_at", { ascending: false });
   if (status !== null) query = query.eq("status", status);
   if (contactId !== null) query = query.eq("contact_id", contactId);

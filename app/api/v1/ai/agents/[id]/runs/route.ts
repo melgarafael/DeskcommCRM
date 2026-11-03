@@ -41,14 +41,22 @@
  *
  * Cursor pagination opaco base64 (created_at + id), como as demais rotas.
  * Filtro opcional ?status=.
+ *
+ * ## Sessão OU token de integração (Spec 33, R1)
+ *
+ * O token precisa de `config:read` e de papel admin (`tokenRole`), como o irmão
+ * `GET /ai/agents/:id`. A organização sai de `authz.organizationId` (linha do
+ * token, nunca do path). No ramo do token o cliente é a service role, que
+ * ignora a RLS: o `organization_id` da consulta abaixo deixou de ser reforço e
+ * é a única barreira.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
 import { runsListQuerySchema } from "@/lib/ai/agents/validation";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -160,10 +168,18 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) return fail("invalid_request", "id inválido.", 400, { requestId });
 
-  const authz = await requireRole("manager", { requestId, resource: "ai_agents" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_agents",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_agents", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId, supabase } = authz;
 
   const sp = req.nextUrl.searchParams;
   const parsed = runsListQuerySchema.safeParse({
@@ -179,13 +195,12 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   }
   const q = parsed.data;
 
-  const supabase = await createClient();
   let query = supabase
     .from("llm_calls")
     .select(CALL_COLUMNS)
-    // `organization_id` explícito mesmo com RLS: é a convenção do repo e o que
-    // sobrevive a alguém trocar o client por um admin um dia.
-    .eq("organization_id", activeOrg.orgId)
+    // `organization_id` explícito: pela sessão a RLS repete o filtro; pelo
+    // token o cliente é a service role e este é o único.
+    .eq("organization_id", organizationId)
     .eq("agent_id", id)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
