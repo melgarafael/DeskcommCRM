@@ -12,10 +12,16 @@ import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
  * em OpenClaw/Hermes que transforma continuação fria em retomada natural.
  *
  * Reusa runAgentTurn (F2-09) por inteiro — sessão fresca, loop de tools, checkpoint,
- * veto. A ÚNICA diferença é a abertura: o bloco temporal entra no SUFIXO (messages),
+ * veto. A diferença no PROMPT é a abertura: o bloco temporal entra no SUFIXO (messages),
  * DEPOIS do prefixo cacheável (system do playbook + tools — F2-17), então não
  * invalida o cache org-wide. O delta é RELATIVO ao now do run (clock injetável),
  * nunca persistido estático.
+ *
+ * A outra diferença é o PONTO DE IA: a chamada principal de um job `followup_turn`
+ * sai como `followup_turn`, não `agent_turn` (o turno decide pelo `kind` do job, em
+ * `executarTurnoDoAgente`). É o que deixa o painel de provedores escolher um modelo
+ * só para o follow-up — sem escolha, vale o da versão publicada, como antes — e o
+ * que separa o custo dele em `llm_calls`.
  *
  * Ids de envio (conversa + número) vêm da ROW do lead no harness (fonte confiável),
  * NUNCA do payload do modelo — o cron só carrega o snapshot da promessa (F3-02).
