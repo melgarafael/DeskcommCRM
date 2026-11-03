@@ -96,14 +96,17 @@ describe("busca do inbox — o contato entra no predicado", () => {
     const c = await buscar("Maria", [{ id: "contato-maria" }]);
 
     // 1ª metade: a consulta em contacts existe, é da MESMA organização, e casa
-    // os dois campos de nome (o produto usa `display_name` e `name`).
+    // pelo nome. Desde a #3918 o campo do nome é a coluna GERADA
+    // `busca_sem_acento`, que carrega `display_name`, `name` e
+    // `address_book_name` já sem acento e em minúscula — os três campos que o
+    // produto usa continuam no OR, só que do lado do banco. Que a coluna é
+    // gerada EXATAMENTE dessas três colunas é provado em
+    // `tests/invariants/busca-do-inbox-ignora-acento.test.ts`, lendo a expressão
+    // de geração no catálogo (aqui só se veria a forma da consulta).
     const nomes = args(c, "contacts", "or");
     expect(nomes, "nenhuma consulta em contacts: a busca segue cega ao nome").toContain(
-      "display_name",
+      "busca_sem_acento",
     );
-    expect(nomes).toContain("name");
-    // O nome da agenda do celular (#2439) é o que a lista mostra sem nome no CRM.
-    expect(nomes).toContain("address_book_name");
     expect(
       args(c, "contacts", "eq"),
       "consulta em contacts sem filtro de organização — service role bypassa RLS",
