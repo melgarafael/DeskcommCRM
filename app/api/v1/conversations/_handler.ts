@@ -426,7 +426,7 @@ export async function listConversationsHandler(
       // caberia só aqui: limpar o termo e comparar com a coluna crua continua
       // devolvendo zero. O lado do banco é a coluna GERADA
       // `contacts.busca_sem_acento` — `lower(public.f_unaccent(display_name,
-      // name, address_book_name))`, com índice `pg_trgm` (migration 9095) —, e o
+      // name, address_book_name))`, com índice `pg_trgm` (migration 9098) —, e o
       // lado do termo é `termoSemAcento`, que é a mesma régua em TypeScript.
       // As duas são comparadas por `tests/invariants/busca-do-inbox-ignora-acento.test.ts`.
       //

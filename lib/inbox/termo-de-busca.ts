@@ -127,7 +127,7 @@ const NAO_DECOMPOEM: Record<string, string> = {
  *
  * ─── O outro lado mora no banco, e não aqui ──────────────────────────────────
  * A coluna `contacts.busca_sem_acento` é GERADA por
- * `lower(public.f_unaccent(…))` (migration 9095). Comparar o termo limpo contra
+ * `lower(public.f_unaccent(…))` (migration 9098). Comparar o termo limpo contra
  * a coluna crua não resolveria nada — os dois lados têm de estar normalizados,
  * e é por isso que a coluna existe: `ilike` sobre `display_name` continua sem
  * achar nada, por mais limpo que o termo chegue.
