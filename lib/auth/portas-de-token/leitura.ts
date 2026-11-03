@@ -11,4 +11,16 @@ import type { ModeloDePorta } from "./porta";
 // proxy filtra por caminho e não por método. A cerca
 // `tests/unit/rotas-bearer-tem-porta-no-proxy.test.ts` reprova porta sem rota
 // com token e rota com token sem porta.
-export const MODELOS_DA_LEITURA: readonly ModeloDePorta[] = [];
+export const MODELOS_DA_LEITURA: readonly ModeloDePorta[] = [
+  // ads, audit, imports (R3, tarefa 2). Quem autentica é a própria rota, por
+  // `resolveAuthDual` (a organização sai da linha do token). Escopo `mcp:read`
+  // nos GET e `mcp:write` no POST de `imports`; papel do token = papel da sessão
+  // (manager em `ads`, `audit` e no POST; viewer nos GET de `imports`), sem
+  // `tokenRole` porque nenhuma tool MCP faz estas ações. `audit/export` segue só
+  // de sessão e não entra.
+  "/api/v1/ads/meta/accounts",
+  "/api/v1/ads/meta/campaigns",
+  "/api/v1/audit",
+  "/api/v1/imports",
+  "/api/v1/imports/[id]",
+];
