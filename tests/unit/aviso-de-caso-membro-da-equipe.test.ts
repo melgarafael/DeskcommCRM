@@ -135,7 +135,7 @@ function dbDeAviso(opcoes: {
     return builder;
   });
 
-  return { rpc, from, db: { rpc, from } as never, leituras };
+  return { rpc, from, db: { rpc, from } as unknown as SupabaseClient, leituras };
 }
 
 function entrada(texto: string | null, direcao: "inbound" | "outbound" = "inbound") {
@@ -240,7 +240,7 @@ describe("lerNumeroInternoDeAviso — o que a leitura quente carrega", () => {
       whatsapps: [],
     });
     expect(
-      await ehNumeroInternoDeAviso(daVizinha.db, ORG_VIZINHA, {
+      await ehNumeroInternoDeAviso(daVizinha, ORG_VIZINHA, {
         kind: "phone",
         phone: NUMERO_DA_MEMBRO,
         lid: null,
