@@ -34,4 +34,27 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/ai/cases",
   "/api/v1/ai/cases/[id]",
   "/api/v1/ai/routing-results/[id]",
+
+  // ai/followup-flows. Quem autentica é a própria rota, por `resolveAuthDual`:
+  // token com `config:read` (GET) ou `config:write` (escrita) e papel admin
+  // (`tokenRole`). `[id]` é forma de UUID; `publish`, `rollback` e `from-model`
+  // continuam só de sessão e não entram de carona.
+  "/api/v1/ai/followup-flows/[id]/disable",
+  "/api/v1/ai/followup-flows/[id]/duplicate",
+  "/api/v1/ai/followup-flows/[id]/export",
+  "/api/v1/ai/followup-flows/[id]",
+  "/api/v1/ai/followup-flows/import",
+  "/api/v1/ai/followup-flows/modelos-aprovados",
+
+  // ai/followups. Quem autentica é a própria rota, por `resolveAuthDual`:
+  // token com `config:read` (GET) ou `config:write` (escrita) e papel admin
+  // (`tokenRole`). `[id]` é forma de UUID; `resume` e `skip` continuam só de
+  // sessão e não entram de carona.
+  "/api/v1/ai/followups/enrollments/[id]/cancel",
+  "/api/v1/ai/followups/enrollments/[id]/pause",
+  "/api/v1/ai/followups/enrollments/[id]",
+  "/api/v1/ai/followups/enrollments/[id]/snooze",
+  "/api/v1/ai/followups/enrollments",
+  "/api/v1/ai/followups/promises/[id]/cancel",
+  "/api/v1/ai/followups/queue",
 ];
