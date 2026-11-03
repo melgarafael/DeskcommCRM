@@ -16,11 +16,11 @@
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { dispensarParDeContatos } from "@/lib/contacts/dispensar-par";
 import { contactsDismissDuplicateSchema, validateRequest } from "@/lib/schemas";
 import { requireSupportWrite } from "@/lib/impersonate/support";
@@ -33,9 +33,17 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const requestId = randomUUID();
 
-  const authz = await requireRole("manager", { requestId, resource: "contact" });
+  // Sessão OU token de integração (Spec 33, R2): `mcp:write` e papel `manager`.
+  // A organização sai da sessão ou da LINHA DO TOKEN.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "contact",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const { user, org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+  if (teto) return teto;
 
   let input;
   try {
@@ -55,9 +63,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   let resultado: Awaited<ReturnType<typeof dispensarParDeContatos>>;
   try {
     resultado = await dispensarParDeContatos(getRequestPool(), {
-      organizationId: org.orgId,
+      organizationId: authz.organizationId,
       contactIds: input.contact_ids as [string, string],
-      userId: user.id,
+      userId: authz.actor.type === "user" ? authz.actor.id : null,
     });
   } catch {
     return fail("internal_error", "Não foi possível dispensar a sugestão agora.", 500, { requestId });
@@ -87,8 +95,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     const [primeiroId] = resultado.candidatos;
     await audit({
       action: "contact.duplicate_dismissed",
-      actorUserId: user.id,
-      organizationId: org.orgId,
+      actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+      actorApiTokenId: authz.apiTokenId ?? null,
+      organizationId: authz.organizationId,
       resourceType: "contact",
       resourceId: primeiroId,
       requestId,

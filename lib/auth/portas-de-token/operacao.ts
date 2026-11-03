@@ -26,4 +26,32 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/tasks/[id]",
   "/api/v1/demandas/[id]",
   "/api/v1/calls",
+  // CONTATOS E TAGS DE CONTATO (tarefa 1 da R2). Quem autentica é a própria
+  // rota, por `resolveAuthDual` (sessão OU Bearer `dsk_…`, a organização vinda
+  // da linha do token): `mcp:read` no GET e `mcp:write` na escrita, com o papel
+  // que a sessão já exige. Segmentos `[id]` e `[proposal_id]`/`[enrollmentId]`
+  // em forma de UUID: nenhum desses diretórios tem irmão literal que dê carona
+  // além de `proposals/[proposal_id]` (não convertido: fica só de sessão).
+  "/api/v1/contact-tags",
+  "/api/v1/contacts/[id]",
+  "/api/v1/contacts/[id]/always-human",
+  "/api/v1/contacts/[id]/carteira",
+  "/api/v1/contacts/[id]/compras",
+  "/api/v1/contacts/[id]/crm-summary",
+  "/api/v1/contacts/[id]/hierarquia-do-anuncio",
+  "/api/v1/contacts/[id]/person",
+  "/api/v1/contacts/[id]/personal",
+  "/api/v1/contacts/[id]/proposals",
+  "/api/v1/contacts/[id]/proposals/[proposal_id]",
+  "/api/v1/contacts/[id]/roteiros",
+  "/api/v1/contacts/[id]/roteiros/[enrollmentId]/negocio",
+  "/api/v1/contacts/[id]/timeline",
+  "/api/v1/contacts/[id]/vinculos",
+  "/api/v1/contacts/bulk",
+  "/api/v1/contacts/compare",
+  "/api/v1/contacts/duplicates",
+  "/api/v1/contacts/duplicates/dismiss",
+  "/api/v1/contacts/import/agenda",
+  "/api/v1/contacts/import",
+  "/api/v1/contacts/merge",
 ];

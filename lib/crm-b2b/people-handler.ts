@@ -230,9 +230,10 @@ export async function patchCompanyPersonHandler(
 export async function linkContactToPersonHandler(
   supabase: SB,
   ctx: HandlerCtx,
-  actorUserId: string,
+  actorUserId: string | null,
   contactId: string,
   personId: string | null,
+  actorApiTokenId?: string | null,
 ) {
   if (personId) {
     const { data: person } = await supabase
@@ -259,6 +260,7 @@ export async function linkContactToPersonHandler(
     organizationId: ctx.organization_id,
     actorUserId,
     action: "contacts.person_linked",
+    actorApiTokenId: actorApiTokenId ?? null,
     resourceType: "contacts",
     resourceId: contactId,
     requestId: ctx.requestId,
