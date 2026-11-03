@@ -433,6 +433,7 @@ export const AUDIT_ACTIONS = [
   "followup_enrollment.resumed",
   "followup_enrollment.snoozed",
   "followup_enrollment.step_skipped",
+  "followup_enrollment.negocio_escolhido",
   "template.created",
   "template.updated",
   "template.deleted",
@@ -1419,6 +1420,9 @@ export const AUDIT_ACTIONS = [
   "contact.extra_phone_updated",
   "contact.extra_phone_removed",
   "contact.primary_phone_changed",
+  // Aviso escrito pelo admin da empresa e empurrado para a equipe (#1418). O
+  // metadata leva só a janela de publicação; título e corpo ficam em `avisos`.
+  "aviso.created",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -10,6 +10,7 @@ import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { audit } from "@/lib/audit";
+import { invalidarRetrato } from "@/lib/cron/piso-ocioso";
 import {
   createSupabaseFollowupGateDb,
   resolveAgentForAutomaticTrigger,
@@ -158,6 +159,11 @@ export async function enrollFollowupFlow(
       status: 500,
     };
   }
+
+  // #3694: o cron do follow-up pula o tick quando não há inscrição vencida, e o
+  // retrato do piso ocioso vale 30 s. Quem acabou de inscrever espera o fluxo
+  // COMEÇAR na batida seguinte, não uma janela depois.
+  invalidarRetrato();
 
   if (input.actorUserId) {
     void audit({
