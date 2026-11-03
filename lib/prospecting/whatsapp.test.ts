@@ -161,15 +161,24 @@ describe("consultaPelaConexao", () => {
     const db = dbCom([canal]);
     const consultar = await consultaPelaConexao(db as never, ORG, "c1");
     const [sql, params] = db.query.mock.calls[0]!;
-    expect(sql).toContain("provider = any($3::text[])");
+    expect(sql).toContain("provider = any($2::text[])");
     expect(sql).toContain("status='WORKING'");
-    expect(params).toEqual([ORG, "c1", ["canal-pareado"]]);
+    expect(params).toEqual([ORG, ["canal-pareado"]]);
     expect(await consultar!("+5511987650001")).toBe(true);
     expect(mocks.numeroTemConta).toHaveBeenCalledWith({
       organizationId: ORG,
       sessionRef: "sessao-1",
       phone: "+5511987650001",
     });
+  });
+
+  it("campanha que escolheu uma conexão que não sabe perguntar (o canal oficial) não consulta por outro número", async () => {
+    // A consulta só devolve as capazes conectadas — a da campanha (oficial) não está entre elas.
+    const outraPorQr = { id: "qr-1", provider: "canal-pareado", ref: "sessao-qr" };
+    expect(await consultaPelaConexao(dbCom([outraPorQr]) as never, ORG, "oficial-1")).toBeNull();
+    expect(mocks.numeroTemConta).not.toHaveBeenCalled();
+    // Controle: sem conexão escolhida, a mesma conexão por QR serve.
+    expect(await consultaPelaConexao(dbCom([outraPorQr]) as never, ORG, null)).not.toBeNull();
   });
 
   it("repassa o 'não' e o 'não deu para saber' do canal; exceção do canal também é 'não deu para saber'", async () => {

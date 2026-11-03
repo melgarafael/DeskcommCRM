@@ -16,9 +16,13 @@
  *
  * ═══ Como ═══
  *
+ * Só com o módulo opcional `conferir_whatsapp` ligado (`lib/instalacao/modulos.ts`,
+ * desligado por padrão): quem pergunta é o número do cliente, e consulta em massa
+ * a partir dele é risco de banimento que ninguém mediu.
+ *
  * `numeroTemConta` do adapter do canal (`lib/channels/types.ts`), pela sessão de
  * uma conexão da organização que saiba perguntar (a da campanha, se ela já
- * escolheu; senão qualquer uma conectada — `provedoresQueConferemNumero`). Não
+ * escolheu — e SÓ ela; senão qualquer uma conectada — `provedoresQueConferemNumero`). Não
  * manda mensagem nenhuma: só pergunta se o número existe no WhatsApp. Sem
  * conexão capaz, nada acontece — o veredito fica ausente e a abordagem segue como
  * antes (o canal oficial não tem esta pergunta).
@@ -77,8 +81,10 @@ export function motivoSemWhatsapp(data: Pick<Prospect, "whatsapp"> | null | unde
 
 /**
  * A consulta pela sessão de uma conexão CONECTADA da organização cujo canal sabe
- * perguntar (`numeroTemConta`). Prefere a conexão da campanha; sem ela, a mais
- * antiga conectada. `null` quando não há conexão capaz conectada.
+ * perguntar (`numeroTemConta`). Campanha que escolheu a conexão pergunta só por
+ * ela: se ela não sabe perguntar (o canal oficial) ou não está conectada, `null`
+ * — nunca por outro número, que a campanha não usa. Sem conexão escolhida, a
+ * mais antiga conectada. `null` quando não há conexão capaz conectada.
  */
 export async function consultaPelaConexao(
   db: Pick<pg.PoolClient, "query">,
@@ -87,14 +93,14 @@ export async function consultaPelaConexao(
 ): Promise<ConsultaWhatsapp | null> {
   const provedores = provedoresQueConferemNumero();
   if (provedores.length === 0) return null;
-  const canal = (
+  const capazes = (
     await db.query<ChannelSessionRef & { id: string }>(
-      "select * from channel_sessions where organization_id=$1 and provider = any($3::text[]) " +
-        "and status='WORKING' and archived_at is null " +
-        "order by (id::text = coalesce($2::text, '')) desc, created_at limit 1",
-      [org, canalPreferido, provedores],
+      "select * from channel_sessions where organization_id=$1 and provider = any($2::text[]) " +
+        "and status='WORKING' and archived_at is null order by created_at",
+      [org, provedores],
     )
-  ).rows[0];
+  ).rows;
+  const canal = canalPreferido ? capazes.find((c) => c.id === canalPreferido) : capazes[0];
   if (!canal) return null;
   const adapter = getAdapter(canal.provider);
   if (typeof adapter.numeroTemConta !== "function") return null;
