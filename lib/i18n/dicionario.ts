@@ -3220,6 +3220,12 @@ export const DICIONARIO: Traducoes = {
   "Mínimo (min)": { es: "Mínimo (min)" },
   "Máximo (min)": { es: "Máximo (min)" },
   "Orientação (opcional)": { es: "Orientación (opcional)" },
+  // Espera com horário (`wait.ate_o_horario`) — o painel da espera e o card.
+  "Só terminar a espera em horário comercial": { es: "Terminar la espera solo en horario comercial" },
+  "Se a espera vencer fora deste horário, o fluxo continua esperando até a próxima abertura. Vale o fuso da organização.": {
+    es: "Si la espera vence fuera de este horario, el flujo sigue esperando hasta la próxima apertura. Vale la zona horaria de la organización.",
+  },
+  "só em horário comercial": { es: "solo en horario comercial" },
   "Classes (separadas por vírgula)": { es: "Clases (separadas por comas)" },
   "Esperar a resposta por (minutos)": { es: "Esperar la respuesta durante (minutos)" },
   "O que a IA vai ler": { es: "Qué va a leer la IA" },
