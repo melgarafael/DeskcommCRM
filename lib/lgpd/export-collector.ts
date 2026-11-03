@@ -1143,10 +1143,13 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   // DEPOIS do ponto que devolve o payload vazio: a coleta sem identificador
   // visita só `organizations` (tests/invariants/agenda-meet-export), e é neste
   // caminho que há pedido para entregar.
+  //
+  // RGPD, e não "fora do Brasil" (03/11/2026, ao entrar a Argentina): a
+  // alínea h) é do art. 15.º do RGPD, e um país com lei revisada que NÃO seja
+  // RGPD (Ley 25.326 argentina) não tem essa obrigação — computar a descrição
+  // para descartá-la em `blocoArt15` seria uma consulta ao banco sem uso.
   const decisoes_automatizadas =
-    perfil.codigo === PAIS_PADRAO
-      ? ""
-      : await descreveDecisoesAutomatizadas(admin, organizationId, requestId);
+    perfil.lei?.nome === "RGPD" ? await descreveDecisoesAutomatizadas(admin, organizationId, requestId) : "";
 
   // Seções cuja consulta voltou no TETO de linhas (`.limit()`): pode haver mais
   // do que o `data.json` entrega, e o titular tem de saber quais são. É o que
@@ -2595,10 +2598,16 @@ async function descreveDecisoesAutomatizadas(
 /**
  * O bloco do art. 15.º para o `data.json` e o PDF (issue #2340).
  *
- * Sai FORA do Brasil, com lei revisada e com autoridade declarada no perfil —
- * três condições para uma: o Brasil segue a LGPD (art. 18, II), cuja lista não
- * é esta, e o `data.json` brasileiro é travado byte a byte pelo doc 88; país sem
- * citação revisada não ganha a de um outro (mesma régua de `citacaoDaLei`).
+ * Sai para países com a lei RGPD, revisada, e com autoridade declarada no
+ * perfil — três condições para uma. "RGPD", e não "fora do Brasil" (corrigido
+ * 03/11/2026, ao entrar a Argentina): a lista de alíneas (a, c, d, e, f, h) É
+ * a do art. 15.º, n.º 1 do RGPD, byte a byte, inclusive o título da seção no
+ * renderizador. O Brasil segue a LGPD (art. 18, II), cuja lista não é esta;
+ * a Argentina segue a Ley 25.326 (Art. 14), que também não é esta — tem
+ * autoridade (AAIP) e lei revisada, mas citar "art. 15.º, n.º 1" num
+ * documento que responde pela lei argentina seria a citação errada, a mesma
+ * classe de defeito que a régua do #1033 já proíbe para a lei inteira. País
+ * sem citação revisada não ganha a de um outro (mesma régua de `citacaoDaLei`).
  */
 function blocoArt15(
   perfil: PerfilDoPais,
@@ -2606,7 +2615,7 @@ function blocoArt15(
   decisoes: string,
 ): Pick<ExportPayload, "art15"> {
   const autoridade = perfil.autoridadeDeSupervisao;
-  if (perfil.codigo === PAIS_PADRAO || !autoridade || !perfil.lei?.revisada || !decisoes) {
+  if (perfil.lei?.nome !== "RGPD" || !autoridade || !perfil.lei.revisada || !decisoes) {
     return {};
   }
   return {

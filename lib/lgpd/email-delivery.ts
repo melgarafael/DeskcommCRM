@@ -27,13 +27,19 @@
  * ── O texto depende do PAÍS da organização (doc 88) ─────────────────────────
  *
  * O Brasil recebe o texto de sempre, byte a byte, mais o link do arquivo de
- * dados (doc 103, A — a única mudança desde o doc 88). Fora do Brasil o e-mail sai
- * em pt-PT, sem LGPD, citando a lei do país só quando o perfil tem citação
- * revisada (`citacaoDaLei`), e com o prazo do link no fuso da organização e o
- * nome do fuso escrito. Antes, com Portugal no seletor, o PDF citaria o RGPD e
- * este e-mail diria "LGPD Lei nº 13.709/2018" ao mesmo titular.
- * ponytail: o ramo não-BR é pt-PT; quando entrar país que não fala português,
- * ele vira ramo por idioma.
+ * dados (doc 103, A — a única mudança desde o doc 88). Fora do Brasil o e-mail
+ * sai na LÍNGUA do perfil (`perfil.idioma`), sem LGPD, citando a lei do país
+ * só quando o perfil tem citação revisada (`citacaoDaLei`), e com o prazo do
+ * link no fuso da organização e o nome do fuso escrito. Antes, com Portugal no
+ * seletor, o PDF citaria o RGPD e este e-mail diria "LGPD Lei nº 13.709/2018"
+ * ao mesmo titular.
+ *
+ * 03/11/2026 (entrada da Argentina): o ramo "fora do Brasil" era pt-PT fixo —
+ * exatamente o que o comentário anterior já avisava que aconteceria. Agora
+ * ramifica por `perfil.idioma`: `pt-*` continua em português (Portugal),
+ * `es-*` sai em espanhol (Argentina). Um terceiro idioma cai no texto em
+ * português — não há terceira tradução ainda, e ponytail: quando entrar, este
+ * `switch` ganha o próximo `case`.
  */
 
 import { createHash } from "node:crypto";
@@ -94,7 +100,9 @@ export async function sendExportEmail(args: SendArgs): Promise<{ messageId: stri
   const { subject, html, text } =
     args.perfil.codigo === PAIS_PADRAO
       ? mensagemDoBrasil(args, shortId)
-      : mensagemForaDoBrasil(args, shortId);
+      : args.perfil.idioma.startsWith("es")
+        ? mensagemEmEspanhol(args, shortId)
+        : mensagemForaDoBrasil(args, shortId);
 
   const result = await sendEmail({
     to: args.to,
@@ -173,7 +181,7 @@ ${rotulo}: LGPD Lei nº 13.709/2018, Art. 18, II.`;
 function mensagemForaDoBrasil(args: SendArgs, shortId: string): Mensagem {
   const orgName = escapeHtml(args.marca.nome);
   const citacao = citacaoDaLei(args.perfil);
-  const expiresFmt = expiraEm(args.expiresAt, args.fuso);
+  const expiresFmt = expiraEm(args.expiresAt, args.fuso, "pt-PT");
   const direito = citacao ? `Direito exercido: acesso aos dados pessoais, ${citacao}.` : null;
 
   const subject = `Pedido de acesso aos seus dados pessoais #${shortId}`;
@@ -222,14 +230,65 @@ Se não fez este pedido, ignore este e-mail.${direito ? `\n${direito}` : ""}`;
  * que o `Intl` recusa não pode derrubar a entrega ao titular: cai em UTC, que
  * continua verdadeiro porque o nome do fuso vai junto.
  */
-function expiraEm(quando: Date, fuso: string | undefined): string {
-  const formato = (timeZone: string) =>
-    quando.toLocaleString("pt-PT", { timeZone, timeZoneName: "short" });
+function expiraEm(quando: Date, fuso: string | undefined, locale: string): string {
+  const formato = (timeZone: string) => quando.toLocaleString(locale, { timeZone, timeZoneName: "short" });
   try {
     return formato(fuso ?? "UTC");
   } catch {
     return formato("UTC");
   }
+}
+
+/**
+ * Fora do Brasil, idioma espanhol (Argentina, 03/11/2026): mesma estrutura de
+ * `mensagemForaDoBrasil`, texto em espanhol. A linha do direito exercido só
+ * existe com citação revisada — país sem revisão não cita lei nenhuma.
+ */
+function mensagemEmEspanhol(args: SendArgs, shortId: string): Mensagem {
+  const orgName = escapeHtml(args.marca.nome);
+  const citacao = citacaoDaLei(args.perfil);
+  const expiresFmt = expiraEm(args.expiresAt, args.fuso, "es-AR");
+  const derecho = citacao ? `Derecho ejercido: acceso a los datos personales, ${citacao}.` : null;
+
+  const subject = `Solicitud de acceso a tus datos personales #${shortId}`;
+
+  const html = `<!doctype html>
+<html lang="es-AR">
+<body style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:${NEUTROS_DE_SAIDA.texto};line-height:1.5;max-width:560px;margin:0 auto;padding:24px;">
+  <h2 style="margin:0 0 12px;font-size:18px;">Solicitud de acceso a tus datos personales #${shortId}</h2>
+  <p>Hola,</p>
+  <p>Tu solicitud de acceso a tus datos personales fue procesada por <strong>${orgName}</strong>.</p>
+  <p>El informe está disponible en el siguiente enlace. Por motivos de seguridad, el enlace vence el <strong>${expiresFmt}</strong>.</p>
+  <p style="margin:24px 0;">
+    <a href="${escapeHtml(args.signedUrl)}" style="background:${args.marca.accent};color:${args.marca.accentFg};padding:10px 18px;border-radius:6px;text-decoration:none;display:inline-block;">Descargar informe</a>
+  </p>${
+    args.signedUrlDados
+      ? `\n  <p style="font-size:12px;color:${NEUTROS_DE_SAIDA.suave};">La copia de tus datos personales (data.json) está en <a href="${escapeHtml(args.signedUrlDados)}" style="color:inherit;">${escapeHtml(args.signedUrlDados)}</a>.</p>`
+      : ""
+  }
+  <p style="font-size:12px;color:${NEUTROS_DE_SAIDA.suave};">Si no hiciste esta solicitud, ignorá este correo.</p>${
+    derecho ? `\n  <p style="font-size:12px;color:${NEUTROS_DE_SAIDA.suave};">${escapeHtml(derecho)}</p>` : ""
+  }
+</body>
+</html>`;
+
+  const text = `Solicitud de acceso a tus datos personales #${shortId}, procesada por ${args.marca.nome}.
+
+El informe está disponible en:
+${args.signedUrl}${
+    args.signedUrlDados
+      ? `
+
+La copia de tus datos personales (data.json) está en:
+${args.signedUrlDados}`
+      : ""
+  }
+
+El enlace vence el ${expiresFmt}.
+
+Si no hiciste esta solicitud, ignorá este correo.${derecho ? `\n${derecho}` : ""}`;
+
+  return { subject, html, text };
 }
 
 /**

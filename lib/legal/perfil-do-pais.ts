@@ -67,6 +67,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { HOLIDAYS_AR_ISO } from "@/lib/lgpd/holidays-ar";
 import { HOLIDAYS_BR_ISO } from "@/lib/lgpd/holidays-br";
 import { HOLIDAYS_PT_ISO } from "@/lib/lgpd/holidays-pt";
 
@@ -166,6 +167,16 @@ export interface LeiCitada {
    * declara isso a quem responde pelo documento (ver o cabeçalho).
    */
   revisadaPorIa?: true;
+  /**
+   * O texto do aviso que a tela de Configurações mostra quando
+   * `revisadaPorIa` é `true` — obrigatório nesse caso (03/11/2026, ao entrar
+   * a Argentina: o aviso falava de Portugal, RGPD e NIF em duro, e um
+   * segundo país revisado por IA mostraria o aviso ERRADO). Cada país
+   * revisado por IA declara o seu: a lei citada, o limite da revisão e a
+   * ressalva que vale para ESSE país (regra de documento do contato,
+   * exigência de consentimento de marketing, o que falta no relatório).
+   */
+  avisoDaRevisaoPorIa?: string;
   /**
    * Como o documento de acesso rotula a citação.
    *
@@ -425,6 +436,8 @@ const PERFIL_PT: PerfilDoPais = {
     revisada: true,
     revisadaPorIa: true,
     rotuloNoDocumento: "Direito exercido",
+    avisoDaRevisaoPorIa:
+      "A citação do RGPD (artigo 15.º do Regulamento (UE) 2016/679) foi conferida contra o texto oficial numa revisão feita por IA, sem advogado em Portugal. Os prazos do sistema (7 e 15 dias úteis) são mais curtos que o prazo legal de um mês, e o relatório de acesso ainda não traz todas as informações do art. 15.º. Trocar o país muda a regra do documento do contato: a partir daí, CPF enviado por API, importação ou integração é recusado como NIF inválido. O sistema não substitui o seu encarregado da proteção de dados: confirme com ele os textos enviados aos titulares, sobretudo nas campanhas de marketing, que em Portugal, em regra, exigem consentimento prévio (Lei 41/2004, art. 13.º-A).",
   },
   // Os papéis como o RGPD em pt-PT os chama: "responsável pelo tratamento"
   // (art. 4.º, n.º 7) e "encarregado da proteção de dados" (art. 37.º) — as
@@ -483,6 +496,79 @@ const PERFIL_PT: PerfilDoPais = {
   ],
 };
 
+const DOCUMENTO_AR: DocumentoDoTitular = {
+  rotulo: "DNI",
+  exemplo: "30.111.222",
+  regra: "forma (7 a 8 dígitos) — a Argentina não publica dígito verificador para o DNI",
+  mensagemInvalido: "DNI inválido — tiene que tener de 7 a 8 dígitos",
+  confereDigito: false,
+  apelidosDoCabecalho: ["dni", "documento"],
+  valida: (valor) => /^\d{7,8}$/.test(valor.replace(/\D/g, "")),
+  normaliza: (valor) => valor.replace(/\D/g, ""),
+};
+
+/**
+ * Perfil da Argentina — revisão feita por IA, por delegação do dono do
+ * produto, em 03/11/2026 (mesmo critério do doc 88 para Portugal). NÃO é
+ * parecer jurídico e não houve advogado na Argentina.
+ *
+ * Fontes conferidas: a Ley N.º 25.326 de Protección de Datos Personales
+ * (texto do HCDN e resumo do InfoLEG — verNorma.do?id=64790), Art. 14
+ * (derecho de acceso: solicitar e obter informação, 10 dias corridos para
+ * responder ou fica expedita a ação de hábeas data, gratuito a intervalos
+ * não inferiores a seis meses salvo interesse legítimo, direito que passa
+ * aos sucessores no caso de pessoa falecida); e o site oficial da Agencia de
+ * Acceso a la Información Pública (AAIP, argentina.gob.ar/aaip), que atua
+ * como órgão de controle da lei desde o Decreto 746/2017.
+ */
+const PERFIL_AR: PerfilDoPais = {
+  codigo: "AR",
+  nome: "Argentina",
+  documento: DOCUMENTO_AR,
+  // CUIT é o número da EMPRESA (como CNPJ/NIPC); o DNI acima é do titular.
+  empresa: {
+    rotuloNomeLegal: "Razón social",
+    rotuloNumero: "CUIT",
+  },
+  telefoneExemplo: "+5491155556666",
+  idioma: "es-AR",
+  fusoDoSugerido: "America/Argentina/Buenos_Aires",
+  lei: {
+    nome: "Ley de Protección de Datos Personales",
+    numero: "Ley N.º 25.326",
+    artigo: "Art. 14",
+    revisada: true,
+    revisadaPorIa: true,
+    // Mesmo rótulo de BR/PT (issue #2344/doc 88): o Art. 14 é o DIREITO que o
+    // titular exerce, não a base legal do tratamento.
+    rotuloNoDocumento: "Derecho ejercido",
+    avisoDaRevisaoPorIa:
+      "La cita de la Ley N.º 25.326 (Art. 14, derecho de acceso) fue confrontada con el texto oficial en una revisión hecha por IA, sin abogado en Argentina. El relatorio de acceso de este sistema no reproduce el procedimiento íntegro de acceso (identificación, plazo de 10 días corridos, vía de hábeas data si no hay respuesta) ni dice si corresponde a la Ley 25.326 vigente o a algún proyecto de reforma en trámite. Los feriados que cuentan el plazo son solo los inamovibles (ver lib/lgpd/holidays-ar.ts) — no incluyen los trasladables ni los días turísticos, que dependen de un decreto de cada año. El sistema no reemplaza a tu responsable de cumplimiento: confirmá con él los textos que se le envían al titular.",
+  },
+  // A Ley 25.326 nomeia "responsable" e "usuario de datos" (Art. 2.º) — ela
+  // NÃO cria uma figura equivalente ao encarregado/DPO do RGPD ou da LGPD.
+  // "Encargado de Protección de Datos" abaixo é o rótulo de PRÁTICA comum em
+  // avisos de privacidade argentinos (influência do RGPD), não um cargo que a
+  // lei exige — revisar com um advogado antes de assumir que é obrigatório.
+  papel: {
+    controlador: "Responsable del tratamiento",
+    encarregado: "Encargado de Protección de Datos",
+  },
+  autoridadeDeSupervisao: {
+    nome: "Agencia de Acceso a la Información Pública (AAIP)",
+    site: "https://www.argentina.gob.ar/aaip",
+  },
+  calendario: {
+    feriados: HOLIDAYS_AR_ISO,
+    rotulo: "feriados nacionales argentinos inamovibles",
+  },
+  // Nenhum padrão de PII próprio ainda (DNI sem checksum é ruído alto para
+  // redigir por regex — 7 a 8 dígitos soltos casam número de pedido, preço,
+  // etc.). Fica para quando houver um padrão mais específico — CUIT com os
+  // dígitos de controle, por exemplo.
+  padroesDePii: [],
+};
+
 /**
  * O registro de países conhecidos.
  *
@@ -496,6 +582,7 @@ const PERFIL_PT: PerfilDoPais = {
  * sintético para provar o mecanismo sem publicar citação não revisada.
  */
 export const PERFIS_DO_PAIS: Record<CodigoDePais, PerfilDoPais> = {
+  AR: PERFIL_AR,
   BR: PERFIL_BR,
   PT: PERFIL_PT,
 };

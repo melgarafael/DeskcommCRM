@@ -496,8 +496,14 @@ export function formatSomaPorMoeda(
  * zona euro. É o caso que a maximização não resolve (ver
  * `LOCALE_DA_MOEDA_SEM_PAIS`): sem a exceção, `formatCents(24990, "EUR")`
  * sairia `€249.90`, e a varredura de degradação deixaria passar.
+ *
+ * `ARS` (peso argentino) entrou em 03/11/2026, fork Holospace — produto
+ * pensado para Argentina. Medido antes de entrar (ICU do Node 26): `und-AR`
+ * maximiza para `es-AR` sem exceção nenhuma (não precisa de
+ * `LOCALE_DA_MOEDA_SEM_PAIS`), `formatCents(24990, "ARS")` → `"$ 249,90"`, e
+ * `maximumFractionDigits` responde 2 — mesma régua de centavos do BRL.
  */
-export const MOEDAS_SERVIDAS = ["AOA", "BRL", "EUR", "MXN", "USD"] as const;
+export const MOEDAS_SERVIDAS = ["AOA", "ARS", "BRL", "EUR", "MXN", "USD"] as const;
 export type MoedaServida = (typeof MOEDAS_SERVIDAS)[number];
 
 /** O que o `default` da coluna grava quando ninguém escolheu. */
