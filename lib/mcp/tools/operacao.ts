@@ -81,7 +81,9 @@ export const crmListStages: McpToolDefinition<typeof listStagesShape> = {
     "Lista as etapas ativas de um pipeline, na ordem do quadro, com id, name, slug, position, " +
     "is_won/is_lost, win_probability (probabilidade de ganho 0-100 ou null quando a etapa nao foi " +
     "calibrada), expected_duration_hours (janela de esfriando em HORAS, ou null quando a etapa " +
-    "usa o padrao de 24 h) e a autoria da última mudança de configuração (last_change_actor_kind: user|ai|system). " +
+    "usa o padrao de 24 h), description (o criterio da etapa: quando um card entra nela, ou null), agent_stage_hint (a que passo do funil do agente a etapa corresponde: " +
+    "new|contacted|qualifying|qualified|negotiating|won|lost, ou null quando nao ha equivalente) e a " +
+    "autoria da última mudança de configuração (last_change_actor_kind: user|ai|system). " +
     "Use antes de mover um lead ou de criar etapa nova, para não duplicar coluna existente.",
   inputSchema: listStagesShape,
   category: "read",

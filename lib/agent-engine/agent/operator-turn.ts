@@ -348,41 +348,27 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
       origin_job_id: payload.origin_job_id,
     });
 
-    // Um humano assumiu ENTRE o turno do Conversador e este job. O Operador é
-    // enfileirado no fim daquele turno e roda depois — inclusive depois de um
-    // handoff pedido NO MEIO dele (a tool `request_human_handoff`) ou pelo botão
-    // "assumir eu" da tela. Escrever no CRM aqui seria a IA operando por cima da
-    // pessoa que assumiu, e handoff não se revoga pelo agente.
+    // UM HUMANO ASSUMIU (handoff) — e o Operador ORGANIZA o card mesmo assim.
     //
-    // A guarda é AQUI, na EXECUÇÃO, e não no enfileiramento: o estado nasce
-    // durante o turno anterior e pode mudar depois dele, então só o instante da
-    // execução lê o estado que vale. Era o único dos quatro handlers de turno sem
-    // ela — `inbound-turn` e `followup-turn` a têm, e o formato aqui é o deles
-    // (registrar o motivo e sair). Persistir o desfecho de cada caminho é
-    // trabalho separado, e vale para os quatro do mesmo jeito.
-    if (await isLeadInHandoff(pool, tenantId, leadId)) {
-      // Único caminho que sai SEM apurar promessa, e é deliberado: quem assumiu
-      // está com a conversa aberta na frente. Abrir um item de Central para uma
-      // pessoa que já está olhando é o alarme redundante que ensina a ignorar os
-      // outros. O desfecho vai a registro do mesmo jeito.
-      await registrarDesfecho(
-        pool,
-        {
-          tenantId,
-          leadId,
-          jobId: job.id,
-          originJobId: payload.origin_job_id,
-          conversationId: payload.conversation_id,
-          agentId: payload.agent_id,
-          desfecho: { tipo: 'pulado', porque: 'handoff_humano' },
-          promessasDeclaradas: 0,
-          dono: null,
-          ferramentasChamadas: [],
-          houveCheckpoint: null,
-        },
-        log,
-      );
-      return;
+    // O Operador é enfileirado no fim do turno do Conversador (ou, no atendimento humano,
+    // pela fala `fromMe` / pelo turno assistido) e roda depois — inclusive depois de um
+    // handoff pedido no meio dele ou pelo botão "assumir eu" da tela. Antes, handoff o
+    // pulava; o efeito era o funil parado justamente nos leads que uma pessoa atende
+    // (e em toda organização 100% humana).
+    //
+    // O que muda e o que NÃO muda:
+    //   * MUDA: ele roda e usa SÓ as ferramentas dele (`operator_tool_ids`: mover etapa, tags,
+    //     campos, nota) — organiza o CRM com base na conversa. Não tem `send_message`,
+    //     então continua sem falar com o lead.
+    //   * NÃO MUDA: em handoff ele NÃO apura promessa e NÃO abre aviso na Central. Quem
+    //     assumiu está com a conversa aberta na frente (é a razão original da exceção), e o
+    //     aviso de "promessa sem dono" seria alarme redundante para quem já está olhando.
+    //     O desfecho continua registrado (`event_log`), com `em_handoff` no log.
+    //   * NÃO MUDA: o Conversador segue calado — `inbound_turn`/`runAgentTurn` continuam
+    //     barrando handoff.
+    const emHandoff = await isLeadInHandoff(pool, tenantId, leadId);
+    if (emHandoff) {
+      log.info('operador segue em lead com handoff humano (só organiza o CRM; sem apurar promessa nem abrir aviso)');
     }
 
     // A DECLARAÇÃO É LIDA ANTES DA CONFIG, e a ordem é o conserto.
@@ -419,7 +405,7 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
           agentId: payload.agent_id,
           desfecho: { tipo: 'pulado', porque: 'sem_agente' },
           promessasDeclaradas: promessas.length,
-          dono: await apurarComRetorno(pool, tenantId, leadId, promessas.length, {
+          dono: emHandoff ? null : await apurarComRetorno(pool, tenantId, leadId, promessas.length, {
             ferramentasChamadas: [],
             operadorRodou: false,
             operadorTemFerramentas: false,
@@ -433,7 +419,8 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
       return;
     }
 
-    if (agentConfig.pausedAt || agentConfig.operationMode === 'assisted') return;
+    // Modo assistido NÃO barra o Operador (ele não envia nada); só a pausa do agente.
+    if (agentConfig.pausedAt) return;
     if (agentConfig.operationRevision)
       setExecutionAgentOperation({
         organizationId: tenantId,
@@ -458,7 +445,7 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
           agentId: payload.agent_id,
           desfecho: decisao.desfecho,
           promessasDeclaradas: promessas.length,
-          dono: await apurarComRetorno(pool, tenantId, leadId, promessas.length, {
+          dono: emHandoff ? null : await apurarComRetorno(pool, tenantId, leadId, promessas.length, {
             ferramentasChamadas: [],
             operadorRodou: false,
             operadorTemFerramentas: agentConfig.operatorToolIds.length > 0,
@@ -591,7 +578,7 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
         agentId: payload.agent_id,
         desfecho: { tipo: 'agiu', ferramentas: ferramentasChamadas.length },
         promessasDeclaradas: promessas.length,
-        dono: await apurarComRetorno(pool, tenantId, leadId, promessas.length, {
+        dono: emHandoff ? null : await apurarComRetorno(pool, tenantId, leadId, promessas.length, {
           ferramentasChamadas,
           operadorRodou: true,
           operadorTemFerramentas: agentConfig.operatorToolIds.length > 0,

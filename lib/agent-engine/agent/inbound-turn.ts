@@ -167,7 +167,11 @@ import {
   catalogoEntregueAoOperador,
 } from './entrega-de-capacidade';
 import { composeSystemPrompt, loadOrgMemory, renderOrgMemory } from './org-memory';
-import { matchesHandoffKeyword, type PublishedAgentConfig } from './agent-config';
+import {
+  loadConversationAgentConfig,
+  matchesHandoffKeyword,
+  type PublishedAgentConfig,
+} from './agent-config';
 import { garantirPerguntaDoRoteiro, perguntaDoRoteiroPodeSair, prepararRoteiroDoTurno } from './roteiro-no-turno';
 import { validarRespostaDoFluxo } from './flow-validate';
 import { moduloLigadoComMemo } from '@/lib/instalacao/modulos';
@@ -1594,6 +1598,56 @@ export function decidirSeEnfileiraOperador(input: {
   if (!input.temAgentePublicado) return { enfileira: false, porque: 'sem_agente' };
   if (!input.papelLigado) return { enfileira: false, porque: 'papel_desligado' };
   return { enfileira: true, porque: 'ligado' };
+}
+
+/**
+ * OPERADOR SILENCIOSO — enfileira `operator_turn` nos turnos em que o
+ * Conversador NÃO roda (lead em handoff humano; agente em modo assistido), que antes
+ * saíam sem Operador e deixavam o funil parado. O Operador não tem `send_message`:
+ * isto nunca aciona envio de mensagem. Mesma `sourceEventId` do turno (dedup no retry).
+ * Nunca lança — falha aqui não derruba o turno.
+ */
+export async function enfileirarOperadorSemConversador(
+  pool: pg.Pool,
+  log: Logger,
+  job: JobRow,
+  alvo: { conversationId: string; channelSessionId: string },
+  porque: 'handoff' | 'assistido',
+): Promise<void> {
+  try {
+    if (!job.contact_id) return;
+    const agente = await loadConversationAgentConfig(
+      pool,
+      job.organization_id,
+      alvo.conversationId,
+      alvo.channelSessionId,
+    );
+    const disparo = decidirSeEnfileiraOperador({
+      temAgentePublicado: agente !== null,
+      papelLigado: agente?.operatorEnabled ?? false,
+    });
+    if (!disparo.enfileira) {
+      log.info('operador silencioso não enfileirado', { porque: disparo.porque, origem: porque });
+      return;
+    }
+    const { deduped } = await enqueueJob(pool, job.organization_id, {
+      kind: 'operator_turn',
+      leadId: job.contact_id,
+      sourceEventId: job.id,
+      payload: {
+        conversation_id: alvo.conversationId,
+        origin_job_id: job.id,
+        agent_id: agente?.agentId ?? null,
+        trigger: porque,
+      },
+    });
+    log.info('operador silencioso enfileirado', { deduped, origem: porque });
+  } catch (err) {
+    log.error('operador silencioso NÃO foi enfileirado (o turno segue)', {
+      origem: porque,
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+    });
+  }
 }
 
 /**
@@ -6684,6 +6738,10 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         job_id: job.id,
         conversation_id: payload.conversation_id,
       });
+      await enfileirarOperadorSemConversador(pool, deps.log, job, {
+        conversationId: payload.conversation_id,
+        channelSessionId: payload.channel_session_id,
+      }, 'handoff');
       return;
     }
     try {
@@ -6759,6 +6817,10 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
         boundary: currentExecutionBoundary() ?? undefined,
         agent: operationAgent,
       });
+      await enfileirarOperadorSemConversador(pool, deps.log, job, {
+        conversationId: payload.conversation_id,
+        channelSessionId: payload.channel_session_id,
+      }, 'assistido');
       return;
     }
     if (operationAgent?.pausedAt) return;

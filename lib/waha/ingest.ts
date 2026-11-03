@@ -30,6 +30,9 @@ import {
 import { agenteAceitaComandoDeCelular, lerComandoDeControle } from "@/lib/escalacao/comando-de-canal";
 import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
 import { getWahaClient } from "@/lib/waha/client";
+import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { enqueueJob } from "@/lib/agent-engine/queue/queue";
+import { loadConversationAgentConfig } from "@/lib/agent-engine/agent/agent-config";
 import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
@@ -1813,6 +1816,9 @@ async function handleOutboundFromUserPhone(
   // `nascerLeadDaConversaPeloCelular`.
   if (!ehEco) {
     await nascerLeadDaConversaPeloCelular(admin, session, contactId, conversationId);
+    if (insertedOutbound?.id) {
+      await enfileirarOperadorDaFalaHumana(session, contactId, conversationId, insertedOutbound.id);
+    }
   }
 
   await audit({
@@ -1842,6 +1848,50 @@ async function handleOutboundFromUserPhone(
       .then(({ error }) => {
         if (error) console.error("[waha.ingest] emit media.persist_requested failed", error.message);
       });
+  }
+}
+
+/**
+ * OPERADOR SILENCIOSO — a fala HUMANA de saída (`fromMe`, não-eco) acorda o
+ * Operador do agente da conversa, com debounce: se já há `operator_turn` pendente para o
+ * contato, a fala entra de carona (o turno lê o histórico inteiro); senão enfileira com
+ * 60 s de atraso. O Operador não tem `send_message` — isto NUNCA envia mensagem ao
+ * cliente. Nunca lança: falhar aqui não pode derrubar a ingestão do webhook.
+ */
+const DEBOUNCE_OPERADOR_FROMME_MS = 60_000;
+async function enfileirarOperadorDaFalaHumana(
+  session: { id: string; organization_id: string },
+  contactId: string,
+  conversationId: string,
+  messageId: string,
+): Promise<void> {
+  try {
+    const pool = getRequestPool();
+    const agente = await loadConversationAgentConfig(pool, session.organization_id, conversationId, session.id);
+    if (agente === null || !agente.operatorEnabled) return;
+    const { rows } = await pool.query(
+      "select 1 from job_queue where organization_id = $1 and contact_id = $2 and kind = 'operator_turn' and status = 'pending' limit 1",
+      [session.organization_id, contactId],
+    );
+    if (rows.length > 0) return;
+    await enqueueJob(pool, session.organization_id, {
+      kind: "operator_turn",
+      leadId: contactId,
+      sourceEventId: messageId,
+      runAfter: new Date(Date.now() + DEBOUNCE_OPERADOR_FROMME_MS),
+      payload: {
+        conversation_id: conversationId,
+        origin_job_id: messageId,
+        agent_id: agente.agentId,
+        trigger: "fala_humana",
+      },
+    });
+  } catch (err) {
+    logger.warn("waha.ingest: operador silencioso nao enfileirado (a ingestao segue)", {
+      organization_id: session.organization_id,
+      conversation_id: conversationId,
+      erro: err instanceof Error ? err.message.slice(0, 160) : String(err).slice(0, 160),
+    });
   }
 }
 
