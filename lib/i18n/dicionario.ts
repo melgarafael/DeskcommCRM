@@ -7096,6 +7096,9 @@ export const DICIONARIO: Traducoes = {
   "A plataforma não informa o posicionamento de cada clique em anúncio.": {
     es: "La plataforma no informa la ubicación de cada clic en un anuncio.",
   },
+  "Deduzida pelo horário do clique: o cliente apagou o código da mensagem.": {
+    es: "Deducido por la hora del clic: el cliente borró el código del mensaje.",
+  },
   "Etapa de destino": { es: "Etapa de destino" },
   // #2065 — nós de ação do follow-up (mover lead no funil / editar tag)
   "Mover lead no funil": { es: "Mover lead en el embudo" },

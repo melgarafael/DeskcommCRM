@@ -3536,6 +3536,7 @@
   "Anúncio (utm_ad)": "Ad (utm_ad)",
   "Posicionamento (utm_placement)": "Placement (utm_placement)",
   "A plataforma não informa o posicionamento de cada clique em anúncio.": "The platform doesn't report the placement of each ad click.",
+  "Deduzida pelo horário do clique: o cliente apagou o código da mensagem.": "Inferred from the click time: the customer deleted the code from the message.",
   "Etapa de destino": "Destination stage",
   "Motivo da perda": "Loss reason",
   "Escolha o motivo": "Choose the reason",

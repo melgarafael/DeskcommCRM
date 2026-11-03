@@ -194,12 +194,17 @@ export function extrairOrigemDaPagina(texto: string | null | undefined): OrigemD
  *
  * `utm_*` vão achatados no metadata junto do resto: é o formato que a leitura
  * de conversões e a ficha do contato já consomem.
+ *
+ * `inferencia` marca a origem que NÃO veio de um código no texto, e sim do
+ * horário de um clique sem dono (`lib/leads/origem-por-horario.ts`). Ela vira
+ * `origem_inferida_por` no metadata, para a ficha dizer que é dedução.
  */
 export async function estamparOrigemDaPagina(
   admin: Admin,
   organizationId: string,
   contactId: string,
   origem: OrigemDaPagina,
+  inferencia?: { inferidaPor: "horario" },
 ): Promise<boolean> {
   const { error } = await admin.rpc("fn_estampar_atribuicao_de_anuncio", {
     p_org: organizationId,
@@ -210,6 +215,7 @@ export async function estamparOrigemDaPagina(
       ad_source_id: null,
       origem: "site",
       origem_capturada_em: origem.capturadaEm,
+      ...(inferencia ? { origem_inferida_por: inferencia.inferidaPor } : {}),
       ...origem.utm,
     },
   });

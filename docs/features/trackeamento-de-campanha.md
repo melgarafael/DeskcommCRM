@@ -72,6 +72,18 @@ Primeiro que existir vence, da esquerda para a direita:
 
 Linha sem valor não aparece: um travessão em cinco linhas seguidas lê como defeito de cadastro, não como "este contato não veio de anúncio".
 
+Quando a origem foi **deduzida pelo horário do clique** (ver abaixo), a linha Origem ganha o aviso *"Deduzida pelo horário do clique: o cliente apagou o código da mensagem."* — chave `origem_inferida_por: "horario"` no `source_metadata`.
+
+## Quando o cliente apaga o código
+
+O código viaja no texto, e o cliente pode apagá-lo ao editar a mensagem. Para o **link rastreável**, a ingestão tenta então o horário: contato **novo** (primeira mensagem de entrada), **sem** origem nenhuma (nem anúncio, nem site), e um clique de link rastreável **sem dono** nos últimos 10 minutos (`JANELA_DO_CLIQUE_MINUTOS`) para o **mesmo número** que recebeu a mensagem → o contato recebe a origem daquele clique, marcada como dedução.
+
+- Com mais de um clique candidato, vale o mais recente, mas só as UTMs em que todos concordam: "veio do site" é certo, "de qual campanha" só sem dúvida.
+- **O código vence a dedução.** A dedução grava só o `contact_id` no clique e deixa `matched_at` nulo; quem chegar depois com o `[ref:]` daquele clique ainda o consome.
+- **Um clique nunca vira origem de dois contatos:** a reserva repete a trava da leitura (`contact_id` nulo).
+- **Fora de propósito:** o clique do Google Ads (o `gclid` vira conversão, e conversão não se manda por palpite) e o endereço de captura sem link rastreável.
+- O caso comum — nenhum clique pendente — custa uma consulta por mensagem sem código.
+
 ## Limites declarados
 
 - **A origem vale só na PRIMEIRA mensagem do contato, e não sobrescreve o primeiro toque.** Testar com um número que já é contato antigo não estampa nada — parece defeito, é a regra funcionando. Quem chegou de anúncio pago primeiro mantém o anúncio pago; quem chegou do site primeiro mantém o site.
@@ -92,4 +104,5 @@ Linha sem valor não aparece: um travessão em cinco linhas seguidas lê como de
 | Endereço de captura de UTM | `app/api/v1/anuncios/meta/[org]/route.ts` |
 | Endereço de captura de gclid | `app/api/v1/anuncios/google/[org]/route.ts` |
 | Consumo na ingestão | `lib/channels/pos-entrada.ts` (`guardarOrigemDaPagina`) |
+| Dedução pelo horário do clique | `lib/leads/origem-por-horario.ts` |
 | Tela | `app/app/settings/conversoes/` |
