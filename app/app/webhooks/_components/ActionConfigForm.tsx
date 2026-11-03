@@ -134,7 +134,7 @@ export type ActionItem =
   | { type: "call_webhook"; config: { url: string; secret?: string; secret_enc?: string; include_owner?: boolean } }
   | {
       type: "start_message_flow";
-      config: { flow_pointer_id: string; surface?: "followup" | "atendimento" };
+      config: { flow_pointer_id: string; surface?: "followup" | "atendimento"; replace_live_flow?: boolean };
     }
   // #1540 — o lembrete interno: mesmos campos do schema da API e do nó de fluxo.
   | {
@@ -1425,7 +1425,7 @@ function CallWebhookForm({
 function StartMessageFlowForm({
   config,
   onChange,
-}: FormProps<{ flow_pointer_id: string; surface?: "followup" | "atendimento" }>) {
+}: FormProps<{ flow_pointer_id: string; surface?: "followup" | "atendimento"; replace_live_flow?: boolean }>) {
   const t = useT();
   const superficie: "followup" | "atendimento" =
     config.surface === "atendimento" ? "atendimento" : "followup";
@@ -1515,6 +1515,27 @@ function StartMessageFlowForm({
               "O roteiro de atendimento acontece na conversa: a automação abre o atendimento e a primeira pergunta sai quando o cliente responder.",
             )}
           </p>
+        ) : null}
+        {/* Trocar de fluxo só existe no follow-up: o roteiro de atendimento tem a
+            própria regra de um por contato. Um contato só anda em UM follow-up
+            por vez; desligado, a regra perde para o fluxo que chegou antes — e
+            quem acabou de pedir pode ficar sem a confirmação porque já estava
+            num fluxo de remarketing. */}
+        {!ehRoteiro ? (
+          <div className="mt-2 flex items-center justify-between gap-3 rounded-md border p-3">
+            <div className="space-y-0.5">
+              <Label>{t("Tirar o contato de outro fluxo")}</Label>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Se o contato já estiver em outro fluxo, ele sai daquele e entra neste. Fluxo pausado por uma pessoa não é trocado.",
+                )}
+              </p>
+            </div>
+            <Switch
+              checked={config.replace_live_flow === true}
+              onCheckedChange={(v) => onChange({ ...config, replace_live_flow: v ? true : undefined })}
+            />
+          </div>
         ) : null}
       </div>
     </div>

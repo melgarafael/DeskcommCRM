@@ -2190,6 +2190,31 @@ fresca ponta a ponta com a marca de um revendedor — `install.sh` numa VPS, res
 quem compra funciona inteira. Os defeitos de marca que mais custam caro moram exatamente aí,
 porque são vistos primeiro por um terceiro. **A receita para fechá-la está em J10, abaixo.**
 
+## J63 — A espera do follow-up só termina em horário comercial `[P1]` (2026-11-03)
+
+Medido numa instalação real: o fluxo "boas-vindas → 24 h → lembrete → 48 h → último toque"
+mandava o lembrete à mesma hora do formulário (2h da manhã para quem se cadastrou às 2h). A
+janela do número seguraria também a boas-vindas, que precisa sair na hora, e a faixa do agente
+vale para a inscrição inteira. A caixa Aguardar (tempo fixo) ganhou "Só terminar a espera em
+horário comercial" (`wait.ate_o_horario`, regra em `lib/followup/espera-no-horario.ts`, sobre as
+mesmas funções de calendário do horário de atendimento do agente). Spec:
+`tests/e2e/followup-builder.spec.ts` (bloco "espera só termina em horário comercial").
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J63.1 | Ligar o horário no painel da espera | início, fim e dias aparecem (padrão seg–sex 09–18); o card diz "só em horário comercial" | spec acima — a medir (CI) |
+| J63.2 | Salvar e recarregar | o painel volta com o horário gravado, não com o padrão | spec acima — a medir (CI) |
+| J63.3 | Mudar a duração com o horário ligado | o rascunho guarda a duração nova E o horário inteiro (prova pela API) | spec acima — a medir (CI); o conserto do formulário também em `WaitForm.test.tsx` |
+| J63.4 | A espera vence de noite ou no fim de semana | o motor grava a próxima abertura, no fuso da organização; na saída fora do horário, espera de novo | **PASS (unit)** — `lib/followup/espera-no-horario.test.ts` |
+| J63.5 | O cliente responde no meio da noite | a resposta corta a espera na hora (o horário segura o toque proativo, não a resposta) | **PASS (unit)** |
+| J63.6 | Horário torto (fim antes do início, nenhum dia) | o rascunho aceita; o publish recusa com `horario_da_espera_invalido` | **PASS (unit)** |
+
+Evidência de tela: nenhuma captura versionada neste PR — a prova pela tela é a spec e2e do
+editor de follow-up, que roda no CI.
+
+Não provado: um envio real atravessando a madrugada num worker (o relógio do motor é medido em
+unit e no teste do motor com banco dublê).
+
 ## J57 — Vendas e dinheiro no celular `[P1]` (2026-10-23)
 
 ADR-0006, fase F4. Telas do gestor que, a 390px, deixavam ação fora da tela ou
