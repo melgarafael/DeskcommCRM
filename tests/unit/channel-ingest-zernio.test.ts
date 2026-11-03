@@ -263,12 +263,23 @@ describe("o que a ingestão GRAVA", () => {
   });
 });
 
-describe("o pino do WhatsApp — o webhook não traz as coordenadas", () => {
-  // Medido em produção: o evento chega com `text: "📍 Location"` e nada mais;
-  // a MESMA mensagem, na API de mensagens da conversa, tem metadata.location.
-  const pino = () => evento({ text: "📍 Location", platformMessageId: "wamid.PINO" });
-  const listagem = (mensagens: unknown[]) =>
-    new Response(JSON.stringify({ status: "success", messages: mensagens }), { status: 200 });
+describe("o pino do WhatsApp — as coordenadas vêm no próprio webhook", () => {
+  // Medido em 24/09/2026: o evento chegava com `text: "📍 Location"` e nada mais,
+  // e a ingestão buscava as coordenadas na API DENTRO da requisição do webhook.
+  // Medido de novo em 27/10/2026 no log de entregas do provedor (30 dias): os 50
+  // pinos chegaram com `metadata.location`, e 29 das 129 entregas de pino tinham
+  // vencido o limite de 5 s. A API saiu do caminho da requisição.
+  const pinoDoWebhook = (location: Record<string, unknown>, texto = "📍 Location", id = "wamid.PINO") => ({
+    ...evento({ text: texto, platformMessageId: id }),
+    metadata: { location },
+  });
+  const pinoSemCoordenadas = () => evento({ text: "📍 Location", platformMessageId: "wamid.PINO" });
+  const chamadasAoProvedor = (f: { mock: { calls: unknown[][] } }) =>
+    f.mock.calls.filter(([u]) => String(u).includes("z.test")).length;
+  const pediuNovaBusca = () =>
+    ops.find(
+      (o) => o.op === "emit_event" && (o.payload as { p_event_type?: string }).p_event_type === "message.location_retry_requested",
+    )?.payload as Record<string, unknown> | undefined;
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -277,53 +288,58 @@ describe("o pino do WhatsApp — o webhook não traz as coordenadas", () => {
     });
   });
 
-  it("busca a mensagem na API e grava tipo location, link do mapa e coordenadas", async () => {
-    const f = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      listagem([
-        { id: "wamid.OUTRA", message: "hola", metadata: {} },
-        { id: "wamid.PINO", message: "📍 Location", metadata: { location: { latitude: -25.334888, longitude: -57.543594 } } },
-      ]),
-    );
-    await ingestZernioInbound(admin, { ...ENTRADA, payload: pino() });
-
-    const url = String(f.mock.calls[0]![0]);
-    expect(url).toContain("/v1/inbox/conversations/6a76a2dc4b8fe115e5f6c300/messages");
-    expect(url).toContain("accountId=acc_1");
-    // Mais recentes primeiro: o pino acabou de chegar.
-    expect(url).toContain("sortOrder=desc");
-    const ins = ops.find((o) => o.tabela === "messages" && o.op === "insert")?.payload as Record<string, unknown>;
-    expect(ins.type).toBe("location");
-    expect(ins.body).toBe("📍 https://maps.google.com/?q=-25.334888,-57.543594");
-    expect(ins.metadata).toEqual({ location: { latitude: -25.334888, longitude: -57.543594 } });
-    // Com coordenadas, nada a buscar de novo.
-    expect(ops.some((o) => o.op === "emit_event" && (o.payload as { p_event_type?: string }).p_event_type === "message.location_retry_requested")).toBe(false);
+  afterEach(() => {
+    vi.mocked(resolveZernioCreds).mockReset();
   });
 
-  it("lugar com nome ('📍 Praça…'): também busca, e grava nome, endereço e link", async () => {
-    // Caso real (24/09/2026): o cliente escolheu uma praça no mapa; o webhook
-    // trouxe só "📍 Praça da Matriz", e a API trouxe coordenadas, nome e endereço.
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      listagem([
-        {
-          id: "wamid.PRACA",
-          message: "📍 Praça da Matriz",
-          metadata: { location: { latitude: -23.55, longitude: -46.63, name: "Praça da Matriz", address: "Centro, São Paulo, SP" } },
-        },
-      ]),
-    );
+  it("⭐ grava tipo location, link do mapa e coordenadas do webhook — sem nenhuma chamada ao provedor", async () => {
+    const f = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
     await ingestZernioInbound(admin, {
       ...ENTRADA,
-      payload: evento({ text: "📍 Praça da Matriz", platformMessageId: "wamid.PRACA" }),
+      payload: pinoDoWebhook({ latitude: -23.561414, longitude: -46.655881 }),
+    });
+
+    expect(chamadasAoProvedor(f), "a ingestão perguntou ao provedor o que o webhook já trouxe").toBe(0);
+    const ins = ops.find((o) => o.tabela === "messages" && o.op === "insert")?.payload as Record<string, unknown>;
+    expect(ins.type).toBe("location");
+    expect(ins.body).toBe("📍 https://maps.google.com/?q=-23.561414,-46.655881");
+    expect(ins.metadata).toEqual({ location: { latitude: -23.561414, longitude: -46.655881 } });
+    // Com coordenadas, nada a buscar de novo.
+    expect(pediuNovaBusca()).toBeUndefined();
+  });
+
+  it("lugar com nome ('📍 Praça…'): nome e endereço do webhook entram no corpo", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+    await ingestZernioInbound(admin, {
+      ...ENTRADA,
+      payload: pinoDoWebhook(
+        { latitude: -23.55, longitude: -46.63, name: "Praça da Matriz", address: "Centro, São Paulo, SP" },
+        "📍 Praça da Matriz",
+        "wamid.PRACA",
+      ),
     });
     const ins = ops.find((o) => o.tabela === "messages" && o.op === "insert")?.payload as Record<string, unknown>;
     expect(ins.type).toBe("location");
     expect(ins.body).toBe("📍 Praça da Matriz — Centro, São Paulo, SP — https://maps.google.com/?q=-23.55,-46.63");
   });
 
-  it("texto que só COMEÇA com o alfinete e não é pino na API segue como texto", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      listagem([{ id: "wamid.TXT", message: "📍 minha casa é a do portão azul", metadata: {} }]),
-    );
+  it("⭐ webhook SEM coordenadas: nenhuma chamada ao provedor dentro da requisição — a busca vai para depois", async () => {
+    const f = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: pinoSemCoordenadas() });
+
+    expect(r.status).toBe("ingested");
+    expect(chamadasAoProvedor(f), "a busca do pino segurou a resposta ao provedor").toBe(0);
+    const ins = ops.find((o) => o.tabela === "messages" && o.op === "insert")?.payload as Record<string, unknown>;
+    expect(ins).toMatchObject({ type: "text", body: "📍 Location", metadata: {} });
+    expect(pediuNovaBusca()).toMatchObject({
+      p_event_type: "message.location_retry_requested",
+      p_entity_id: "msg-1",
+      p_organization_id: "org-1",
+      p_payload: { message_id: "msg-1", account_id: "acc_1", provider_conversation_id: "6a76a2dc4b8fe115e5f6c300" },
+    });
+  });
+
+  it("texto que só COMEÇA com o alfinete segue como texto (quem decide, depois, é a API)", async () => {
     await ingestZernioInbound(admin, {
       ...ENTRADA,
       payload: evento({ text: "📍 minha casa é a do portão azul", platformMessageId: "wamid.TXT" }),
@@ -332,43 +348,19 @@ describe("o pino do WhatsApp — o webhook não traz as coordenadas", () => {
     expect(ins).toMatchObject({ type: "text", body: "📍 minha casa é a do portão azul" });
   });
 
-  it("API fora do ar: a mensagem entra como antes, com o marcador — nunca se perde", async () => {
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ECONNRESET"));
-    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: pino() });
-    expect(r.status).toBe("ingested");
-    const ins = ops.find((o) => o.tabela === "messages" && o.op === "insert")?.payload as Record<string, unknown>;
-    expect(ins).toMatchObject({ type: "text", body: "📍 Location", metadata: {} });
-  });
-
-  it("⭐ API fora do ar: pede uma NOVA busca das coordenadas para depois (29/09/2026: timeout, pino sem mapa)", async () => {
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("The operation was aborted due to timeout"));
-    await ingestZernioInbound(admin, { ...ENTRADA, payload: pino() });
-    const pedido = ops.find((o) => o.op === "emit_event" && (o.payload as { p_event_type?: string }).p_event_type === "message.location_retry_requested")?.payload as Record<string, unknown> | undefined;
-    expect(pedido).toMatchObject({
-      p_event_type: "message.location_retry_requested",
-      p_entity_id: "msg-1",
-      p_organization_id: "org-1",
-      p_payload: { message_id: "msg-1", account_id: "acc_1", provider_conversation_id: "6a76a2dc4b8fe115e5f6c300" },
-    });
-  });
-
-  afterEach(() => {
-    vi.mocked(resolveZernioCreds).mockReset();
-  });
-
   it("o mesmo pedido de nova busca no caminho da conversa JÁ associada à thread", async () => {
     conversaExistente = { id: "conv-existente", contact_id: "contact-1" };
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("The operation was aborted due to timeout"));
-    await ingestZernioInbound(admin, { ...ENTRADA, payload: pino() });
-    const pedido = ops.find((o) => o.op === "emit_event" && (o.payload as { p_event_type?: string }).p_event_type === "message.location_retry_requested");
-    expect(pedido?.payload).toMatchObject({ p_payload: { message_id: "msg-1", external_id: "wamid.PINO" } });
+    const f = vi.spyOn(globalThis, "fetch");
+    await ingestZernioInbound(admin, { ...ENTRADA, payload: pinoSemCoordenadas() });
+    expect(f).not.toHaveBeenCalled();
+    expect(pediuNovaBusca()).toMatchObject({ p_payload: { message_id: "msg-1", external_id: "wamid.PINO" } });
   });
 
   it("texto comum não consulta a API — nem pede nova busca", async () => {
     const f = vi.spyOn(globalThis, "fetch");
     await ingestZernioInbound(admin, { ...ENTRADA, payload: evento() });
     expect(f).not.toHaveBeenCalled();
-    expect(ops.some((o) => o.op === "emit_event" && (o.payload as { p_event_type?: string }).p_event_type === "message.location_retry_requested")).toBe(false);
+    expect(pediuNovaBusca()).toBeUndefined();
   });
 });
 

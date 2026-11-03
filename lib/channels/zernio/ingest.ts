@@ -85,8 +85,9 @@ export async function ingestZernioInbound(
 ): Promise<ZernioIngestResult> {
   const lida = input.socialMessage ?? parseZernioInbound(input.payload);
   if (!lida) return { status: "ignored", reason: "evento_sem_interesse" };
-  // O pino do WhatsApp chega como "📍 Location", sem coordenadas: elas moram
-  // só na API. Rede social não manda pino — a busca é só do WhatsApp.
+  // O pino do WhatsApp traz as coordenadas no próprio evento (`metadata.location`);
+  // aqui ele só ganha o endereço aproximado. Sem elas, a busca pela API é da nova
+  // busca do pino, fora desta requisição. Rede social não manda pino.
   const msg = input.socialMessage ? lida : await completarLocalizacao(admin, input.organizationId, lida);
 
   // Evento de DESFECHO: a mensagem já existe (ou nem é nossa). Só atualiza o
