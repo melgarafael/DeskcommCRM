@@ -25,6 +25,9 @@
  *     (`agent_inbox_items`, kind `message_send_stuck`), porque marcar `failed`
  *     em silêncio troca uma falha invisível por outra: a bolha muda de ícone
  *     numa conversa que ninguém tem motivo para reabrir;
+ *   - avisa (sem tocar na linha) a outbound `queued` há mais de 15 min numa
+ *     conexão que JÁ VOLTOU a WORKING — a espera que ninguém vê
+ *     (`avisarEsperaEsquecida`, abaixo);
  *   - **não reenvia nada.** Reenviar exigiria saber POR QUE não foi, e o envio
  *     em dobro é pior que o não-envio: o cliente recebe a mesma mensagem duas
  *     vezes. Retry é decisão de quem lê o aviso.
@@ -58,6 +61,21 @@ export const dynamic = "force-dynamic";
  */
 export const STUCK_AFTER_MS = 5 * 60 * 1000;
 
+/**
+ * Quanto tempo uma mensagem pode esperar antes de virar aviso.
+ *
+ * Mais folgado que o de `sending` de propósito: esperar é legítimo enquanto a
+ * conexão está caída, e só vira problema quando ela volta e a mensagem fica.
+ */
+const ESPERA_ESQUECIDA_MS = 15 * 60 * 1000;
+
+interface EsperaRow {
+  id: string;
+  organization_id: string;
+  conversation_id: string;
+  channel_sessions: { status: string | null } | null;
+}
+
 /** Teto por invocação — a rodada seguinte pega o resto. */
 const SCAN_LIMIT = 500;
 
@@ -75,6 +93,122 @@ export interface RecoverResult {
   scanned: number;
   failed: number;
   organizations: number;
+  /** Mensagens que esperavam num canal que já voltou — viraram aviso. */
+  esperando: number;
+}
+
+/**
+ * AS QUE FICARAM ESPERANDO NUM CANAL QUE JÁ VOLTOU.
+ *
+ * ─── O defeito, medido numa instalação real ─────────────────────────────────
+ *
+ *   20:00:16  a conexão oficial sai de WORKING
+ *   20:00:22  o operador manda um texto   → queued
+ *   20:01:19  o operador manda um áudio   → queued
+ *   20:05:01  a conexão volta
+ *             ...e nada nunca as reintentou
+ *
+ * Duas mensagens de cliente, escritas à mão, que nunca saíram — e nada na tela
+ * dizia isso. `queued` não parece erro: parece "indo".
+ *
+ * ─── Por que este cron não as MARCA como falha ──────────────────────────────
+ *
+ * Porque `queued` tem dono no canal por QR — o agent-engine reagenda, e falhar
+ * a linha perderia mensagem que ia sair. A doutrina do repo está certa ali. O
+ * que ela não previu é o canal cujo dono NÃO o alcança: `redriveQueued` fala um
+ * transporte só e pula quem não é dele, então para o canal oficial ninguém
+ * reagenda a mensagem que esperava a conexão voltar. (A que esperava porque o
+ * canal pediu para DESACELERAR tem dono — `lib/messaging/reenvio-desacelerado.ts`
+ * — e este aviso é a rede dela quando o pedido de nova tentativa se perde.)
+ *
+ * Aqui a linha não é tocada. O que muda é que ela deixa de ser invisível: se
+ * está esperando há tempo demais E a conexão já voltou, alguém precisa saber —
+ * porque nesse estado o motivo original não existe mais, e o único desfecho
+ * possível é ninguém receber a mensagem.
+ *
+ * Reenviar automaticamente ficou de fora de propósito: reenviar é a decisão de
+ * quem escreveu, e o texto pode não fazer mais sentido meia hora depois.
+ */
+async function avisarEsperaEsquecida(
+  admin: ReturnType<typeof createAdminClient>,
+  now: Date,
+  requestId: string,
+): Promise<number> {
+  const corte = new Date(now.getTime() - ESPERA_ESQUECIDA_MS).toISOString();
+
+  const { data, error } = await admin
+    .from("messages")
+    .select("id, organization_id, conversation_id, channel_sessions:channel_session_id(status)")
+    .eq("direction", "outbound")
+    .eq("status", "queued")
+    .lt("created_at", corte)
+    .limit(SCAN_LIMIT);
+
+  if (error) {
+    logger.warn("[recover-stuck-messages] varredura de espera falhou", {
+      error: error.message,
+      requestId,
+    });
+    return 0;
+  }
+
+  // Só as que esperam num canal que JÁ VOLTOU. Enquanto a conexão segue caída,
+  // esperar é o comportamento certo e avisar seria repetir o alerta de queda.
+  const esquecidas = ((data ?? []) as unknown as EsperaRow[]).filter(
+    (m) => m.channel_sessions?.status === "WORKING",
+  );
+  if (esquecidas.length === 0) return 0;
+
+  const porOrg = new Map<string, EsperaRow[]>();
+  for (const m of esquecidas) {
+    porOrg.set(m.organization_id, [...(porOrg.get(m.organization_id) ?? []), m]);
+  }
+
+  let avisadas = 0;
+  for (const [orgId, linhas] of porOrg) {
+    const n = linhas.length;
+    // Um aviso por organização enquanto houver espera esquecida: o dedup por
+    // (kind, title, open) evita que cada rodada de 1 minuto empilhe outro.
+    const titulo =
+      n === 1
+        ? "Uma mensagem sua ficou esperando e não saiu"
+        : `${n} mensagens suas ficaram esperando e não saíram`;
+
+    const { data: jaAberto } = await admin
+      .from("agent_inbox_items")
+      .select("id")
+      .eq("organization_id", orgId)
+      .eq("kind", "message_send_stuck")
+      .eq("title", titulo)
+      .eq("status", "open")
+      .limit(1)
+      .maybeSingle();
+    if (jaAberto) continue;
+
+    const { error: insErr } = await admin.from("agent_inbox_items").insert({
+      organization_id: orgId,
+      kind: "message_send_stuck",
+      severity: "critical",
+      title: titulo,
+      body:
+        `Foram escritas quando a conexão estava fora do ar e ficaram aguardando. ` +
+        `A conexão já voltou, mas elas não saem sozinhas — abra a conversa e reenvie. ` +
+        `Nada foi reenviado automaticamente: reenviar é a decisão de quem escreveu, ` +
+        `e o texto pode não fazer mais sentido depois de tanto tempo.`,
+      ref_kind: "conversation",
+      ref_id: linhas[0]?.conversation_id ?? null,
+    });
+    if (insErr) {
+      logger.error("[recover-stuck-messages] aviso de espera esquecida falhou", {
+        error: insErr.message,
+        organization_id: orgId,
+        requestId,
+      });
+      continue;
+    }
+    avisadas += n;
+  }
+  return avisadas;
 }
 
 /**
@@ -104,7 +238,14 @@ export async function recoverStuckMessages(
   if (error) throw new Error(`query_failed: ${error.message}`);
 
   const stuck = (data ?? []) as StuckMessage[];
-  if (stuck.length === 0) return { scanned: 0, failed: 0, organizations: 0 };
+  if (stuck.length === 0) {
+    // Sair aqui seria pular a varredura de espera — e ela é o caso COMUM: o
+    // normal é não haver nada preso em `sending` e haver mensagem esperando
+    // num canal que já voltou. A primeira versão deste conserto tinha esse
+    // buraco, e teria deixado o defeito exatamente onde estava.
+    const esperando = await avisarEsperaEsquecida(admin, now, requestId);
+    return { scanned: 0, failed: 0, organizations: 0, esperando };
+  }
 
   const porOrg = new Map<string, StuckMessage[]>();
   for (const m of stuck) porOrg.set(m.organization_id, [...(porOrg.get(m.organization_id) ?? []), m]);
@@ -206,7 +347,16 @@ export async function recoverStuckMessages(
     }
   }
 
-  return { scanned: stuck.length, failed: marcadas, organizations: orgsComAviso.length };
+  // A outra metade do mesmo problema: `sending` morre em silêncio, `queued`
+  // espera em silêncio. Roda mesmo quando não havia nada em `sending`.
+  const esperando = await avisarEsperaEsquecida(admin, now, requestId);
+
+  return {
+    scanned: stuck.length,
+    failed: marcadas,
+    organizations: orgsComAviso.length,
+    esperando,
+  };
 }
 
 async function handle(req: NextRequest): Promise<Response> {

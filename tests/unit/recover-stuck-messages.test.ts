@@ -138,7 +138,7 @@ describe("recover-stuck-messages", () => {
     const { client, chamadas } = clientDuble([]);
     const r = await recoverStuckMessages(client as never, AGORA, "req-2");
 
-    expect(r).toEqual({ scanned: 0, failed: 0, organizations: 0 });
+    expect(r).toEqual({ scanned: 0, failed: 0, organizations: 0, esperando: 0 });
     expect(chamadas.filter((c) => c.op !== "select")).toEqual([]);
   });
 
@@ -174,7 +174,7 @@ describe("recover-stuck-messages", () => {
     expect(avisos[0]?.valores?.kind).toBe("message_send_stuck");
     expect(avisos[0]?.valores?.severity).toBe("critical");
     expect(String(avisos[0]?.valores?.title)).toContain("3");
-    expect(r).toEqual({ scanned: 3, failed: 3, organizations: 1 });
+    expect(r).toEqual({ scanned: 3, failed: 3, organizations: 1, esperando: 0 });
   });
 
   it("emite message.failed por mensagem marcada (W-12)", async () => {
@@ -228,6 +228,6 @@ describe("recover-stuck-messages", () => {
 
     expect(chamadas.filter((c) => c.tabela === "agent_inbox_items")).toEqual([]);
     expect(chamadas.filter((c) => c.tabela === "rpc:emit_event")).toEqual([]);
-    expect(r).toEqual({ scanned: 1, failed: 0, organizations: 0 });
+    expect(r).toEqual({ scanned: 1, failed: 0, organizations: 0, esperando: 0 });
   });
 });
