@@ -21,7 +21,9 @@ Se você já tem a lista de empresas (de uma feira, de uma associação, de uma 
 
 ### WhatsApp conferido antes da abordagem
 
-O telefone que a empresa publicou nem sempre tem WhatsApp. Depois da busca, o preparo automático pergunta ao WhatsApp, número por número, se ele existe lá (`check-exists` do WAHA, `lib/prospecting/whatsapp.ts`) — sem mandar mensagem nenhuma. A pergunta sai pela conexão WAHA da campanha ou, antes de ela ser escolhida, por qualquer conexão WAHA conectada da organização; no máximo 15 números por minuto, com 2 segundos entre um e outro, porque quem consulta é o número do cliente.
+**Módulo opcional, desligado por padrão.** Quem administra o servidor liga em `/admin/sistema` › "Conferir WhatsApp na prospecção" (`MODULO_CONFERIR_WHATSAPP` em `platform_config`). A pergunta sai do número do cliente, para todo telefone achado (inclusive em rascunho que nunca será lançado), a qualquer hora e sem o aquecimento de número novo, num ritmo que ninguém mediu contra banimento. Desligado, nada é consultado, a lista não mostra contador e a abordagem segue como antes.
+
+O telefone que a empresa publicou nem sempre tem WhatsApp. Com o módulo ligado, depois da busca, o preparo automático pergunta ao WhatsApp, número por número, se ele existe lá (`check-exists` do WAHA, `lib/prospecting/whatsapp.ts`) — sem mandar mensagem nenhuma. A pergunta sai pela conexão da campanha e só por ela (se a campanha escolheu o número oficial, nada é conferido); antes de a conexão ser escolhida, por qualquer conexão WAHA conectada da organização. No máximo 15 números por minuto, com 2 segundos entre um e outro, porque quem consulta é o número do cliente.
 
 - **Tem WhatsApp:** a linha mostra "Tem WhatsApp" e segue normalmente.
 - **Sem WhatsApp:** a empresa sai da seleção (fica nas desmarcadas, com "Sem WhatsApp", e a caixa não a devolve), não ganha prévia de IA e não entra na fila; ao iniciar, vai para "Não abordado" com o motivo "Sem WhatsApp neste número.". Se ela já estava na fila de uma campanha pausada ou rodando, sai da fila com o mesmo motivo.
@@ -29,7 +31,7 @@ O telefone que a empresa publicou nem sempre tem WhatsApp. Depois da busca, o pr
 - **WAHA fora do ar não descarta ninguém:** a rodada para sem gravar nada e tenta de novo no minuto seguinte.
 - **Sem conexão WAHA** (só canal oficial), nada é conferido e tudo segue como antes.
 
-O contador da lista mostra "WhatsApp verificado: X de Y" e quantas ficaram fora. Cada rodada com efeito entra em `api_audit_log` como `prospecting.whatsapp_checked`, só com contagens.
+Quando há ao menos um veredito, o contador da lista mostra "WhatsApp verificado: X de Y" e quantas ficaram fora. Cada rodada com efeito entra em `api_audit_log` como `prospecting.whatsapp_checked`, só com contagens.
 
 ## Campanha
 
