@@ -4185,3 +4185,27 @@ reprova, depois da tentativa de limpeza. Trace e vídeo ficam desligados apenas
 nesta spec para não arquivar URLs assinadas. A limpeza é limitada aos UUIDs
 sintéticos desta execução. A coleta `--list` não é prova de UX; a aceitação
 depende do CI do candidato e da inspeção das capturas produzidas.
+
+## J59 — Avisar a equipe pelo número oficial, com modelo aprovado `[P1]` (2026-11-03)
+
+Quem só tem o número oficial estável não conseguia avisar a equipe: fora da janela de 24 h ele
+só manda modelo aprovado, e a tela Aviso no WhatsApp (Agente de IA › Acompanhar o agente) só oferecia número de texto livre —
+o aviso de caso era condenado (`canal_nao_aceita_aviso_livre`) e a ação "Mensagem para a equipe"
+pulava em todo disparo. Desde a 9094 a configuração guarda o modelo aprovado
+(`config_aviso_de_caso.modelo_id`), com UMA variável no corpo, e o texto do aviso entra nela numa
+linha só. Regra única em `lib/escalacao/modelo-do-aviso.ts`. Spec:
+`tests/e2e/aviso-pelo-numero-oficial.spec.ts` (sem rede: o teste é recusado antes do provedor).
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J59.1 | Número oficial com um modelo aprovado de uma variável | aparece no seletor marcado «só modelo aprovado»; a tela pede o modelo, já escolhido quando é o único, com a prévia do texto e o aviso de que cada mensagem é cobrada; o de duas variáveis não é oferecido | spec escrita; **não executada nesta entrega** (sem Docker na bancada) — fica com o `e2e` do CI, parte 7 |
+| J59.2 | Salvar | o banco guarda o modelo DESTA conexão; recarregar mostra o mesmo modelo | idem |
+| J59.3 | Enviar aviso de teste | passa da barreira do canal: a recusa que sobra é a do endereço público da bancada, não «só envia mensagens aprovadas» | idem |
+| J59.4 | O modelo volta para revisão na plataforma | bloqueio «Escolha o modelo aprovado que leva o aviso», switch travado; a conexão salva segue no seletor e diz que não tem modelo; em 390px sem rolagem lateral | idem |
+| J59.5 | Modelo de outra organização ou de outro número | a FK composta recusa o de outra organização; o RPC recusa os dois (`aviso_de_caso_modelo_invalido`); a linha sem conexão da conta oficial serve só ao número dela | `tests/invariants/aviso-por-modelo-aprovado.test.ts` (test:db) |
+| J59.6 | Aviso de caso e "Mensagem para a equipe" pelo número oficial | saem DENTRO do modelo, conferido no envio; sem modelo que sirva, o mesmo motivo de antes | **PASS (unit)** — `tests/unit/aviso-de-caso-decide.test.ts`, `tests/unit/aviso-por-modelo-acao-equipe.test.ts` |
+
+Não provado: a entrega real no celular por um número oficial de verdade (precisa de um modelo
+aprovado pela plataforma); o comando RESPONDER/PERGUNTAR por esse número, que segue fora do
+escopo; e os avisos de proposta, de agendamento e de passagem para humano, que dividem a conexão
+do aviso de caso e continuam exigindo texto livre.

@@ -5737,6 +5737,8 @@ export type Database = {
           destino_modo: string;
           ligado: boolean;
           mensagens_ignoradas: number;
+          /** Modelo aprovado que leva o aviso pela conexão que só manda modelo (9094). */
+          modelo_id: string | null;
           organization_id: string;
           resposta_whatsapp_habilitada: boolean;
           rotulo: string | null;
@@ -5754,6 +5756,7 @@ export type Database = {
           destino_modo?: string;
           ligado?: boolean;
           mensagens_ignoradas?: number;
+          modelo_id?: string | null;
           organization_id: string;
           resposta_whatsapp_habilitada?: boolean;
           rotulo?: string | null;
@@ -5770,6 +5773,7 @@ export type Database = {
           destino_modo?: string;
           ligado?: boolean;
           mensagens_ignoradas?: number;
+          modelo_id?: string | null;
           organization_id?: string;
           resposta_whatsapp_habilitada?: boolean;
           rotulo?: string | null;
@@ -5784,6 +5788,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "channel_sessions";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "config_aviso_de_caso_modelo_org_fkey";
+            columns: ["organization_id", "modelo_id"];
+            isOneToOne: false;
+            referencedRelation: "meta_templates";
+            referencedColumns: ["organization_id", "id"];
           },
           {
             foreignKeyName: "config_aviso_de_caso_organization_id_fkey";
@@ -15323,8 +15334,11 @@ export type Database = {
         Args: {
           p_channel: string;
           p_confirma_contato?: boolean;
+          p_destino_modo?: string;
           p_ligado: boolean;
+          p_modelo?: string | null;
           p_org: string;
+          p_responsaveis?: Json | null;
           p_resposta_whatsapp_habilitada?: boolean;
           p_rotulo: string;
           p_telefone: string;
