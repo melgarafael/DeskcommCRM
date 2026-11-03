@@ -11401,6 +11401,7 @@
   "Acesso apagado daqui. O sistema externo não confirmou a revogação.": "Erişim buradan silindi. Harici sistem iptali onaylamadı.",
   "Nenhum servidor MCP cadastrado neste agente.": "Bu ajanda kayıtlı MCP sunucusu yok.",
   "Endereço de retorno para cadastrar no servidor de autorização": "Yetkilendirme sunucusuna kaydedilecek dönüş adresi",
+  "Clique em Testar conexão para ver o endereço de retorno deste servidor.": "Bu sunucunun dönüş adresini görmek için Bağlantıyı test et'e tıklayın.",
   "Servidor MCP removido. Os acessos dos clientes a ele foram revogados.": "MCP sunucusu kaldırıldı. Müşterilerin bu sunucuya erişimleri iptal edildi.",
   "Ferramentas": "Araçlar",
   "ferramentas marcadas": "araç seçildi",

@@ -52,30 +52,56 @@ export interface OpcoesDeRede {
 }
 
 const TIMEOUT_PADRAO_MS = 10_000;
+/** Teto do corpo JSON de qualquer resposta OAuth (metadados, registro, token). */
+export const TETO_DO_CORPO_BYTES = 64 * 1024;
 
 function saida(urls: readonly string[], opcoes?: OpcoesDeRede): FetchLike {
   return opcoes?.fetch ?? fetchDeSaida(urls);
 }
 
+/**
+ * O prazo vale até o FIM da leitura do corpo: `AbortSignal.timeout` continua
+ * armado depois que os cabeçalhos chegam, e o abort cancela o stream — um
+ * corpo a conta-gotas não prende a requisição nem o turno.
+ */
 async function pedir(
   url: string,
   init: RequestInit,
   opcoes?: OpcoesDeRede,
 ): Promise<Response> {
-  const controle = new AbortController();
-  const relogio = setTimeout(() => controle.abort(), opcoes?.timeoutMs ?? TIMEOUT_PADRAO_MS);
   try {
-    return await saida([url], opcoes)(url, { ...init, signal: controle.signal });
+    return await saida([url], opcoes)(url, {
+      ...init,
+      signal: AbortSignal.timeout(opcoes?.timeoutMs ?? TIMEOUT_PADRAO_MS),
+    });
   } catch {
     throw new ErroDeOauth("rede");
-  } finally {
-    clearTimeout(relogio);
   }
 }
 
+/** JSON com teto de bytes; corpo grande demais, cortado ou inválido = `null`. */
 async function json(resposta: Response): Promise<unknown> {
+  const declarado = Number(resposta.headers.get("content-length") ?? "0");
+  const leitor = resposta.body?.getReader();
+  if (!leitor) return null;
+  if (declarado > TETO_DO_CORPO_BYTES) {
+    await leitor.cancel().catch(() => undefined);
+    return null;
+  }
+  const pedacos: Uint8Array[] = [];
+  let recebido = 0;
   try {
-    return await resposta.json();
+    for (;;) {
+      const { done, value } = await leitor.read();
+      if (done) break;
+      recebido += value.byteLength;
+      if (recebido > TETO_DO_CORPO_BYTES) {
+        await leitor.cancel().catch(() => undefined);
+        return null;
+      }
+      pedacos.push(value);
+    }
+    return JSON.parse(Buffer.concat(pedacos).toString("utf8"));
   } catch {
     return null;
   }

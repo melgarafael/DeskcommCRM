@@ -9588,6 +9588,7 @@
   "Acesso apagado daqui. O sistema externo não confirmou a revogação.": "Access deleted here. The external system did not confirm the revocation.",
   "Nenhum servidor MCP cadastrado neste agente.": "No MCP server registered for this agent.",
   "Endereço de retorno para cadastrar no servidor de autorização": "Redirect address to register in the authorization server",
+  "Clique em Testar conexão para ver o endereço de retorno deste servidor.": "Click Test connection to see this server's redirect address.",
   "Servidor MCP removido. Os acessos dos clientes a ele foram revogados.": "MCP server removed. Customer access to it has been revoked.",
   "Ferramentas": "Tools",
   "ferramentas marcadas": "tools selected",

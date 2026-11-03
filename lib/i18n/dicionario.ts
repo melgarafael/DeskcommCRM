@@ -54,6 +54,7 @@ export const DICIONARIO: Traducoes = {
   "Confirmar remoção": { es: "Confirmar eliminación" },
   "Contas de outros sistemas que este cliente autorizou o agente a acessar pela conversa.": { es: "Cuentas de otros sistemas a las que este cliente autorizó al agente a acceder por la conversación." },
   "Endereço de retorno para cadastrar no servidor de autorização": { es: "Dirección de retorno para registrar en el servidor de autorización" },
+  "Clique em Testar conexão para ver o endereço de retorno deste servidor.": { es: "Haz clic en Probar conexión para ver la dirección de retorno de este servidor." },
   "Endereço do servidor (Streamable HTTP)": { es: "Dirección del servidor (Streamable HTTP)" },
   "Endereço recusado: use https, sem senha, sem parâmetros e sem endereço interno.": { es: "Dirección rechazada: usa https, sin contraseña, sin parámetros y sin dirección interna." },
   "Escopos pedidos ao cliente": { es: "Alcances solicitados al cliente" },

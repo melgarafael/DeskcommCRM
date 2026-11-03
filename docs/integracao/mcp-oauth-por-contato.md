@@ -24,7 +24,7 @@ siga a especificação funciona, sem integração escrita para ele.
 0. O recurso é um **módulo opcional, desligado de fábrica** (doc 252). Quem administra o servidor
    liga em **Admin › Sistema › Ferramentas externas por agente**. Desligado, a seção do agente e a
    lista da ficha do contato não aparecem, o agente não usa os servidores cadastrados e os dois
-   endereços públicos (`/api/v1/mcp-oauth/iniciar/…` e `/callback`) respondem 404. A revogação
+   endereços públicos (`/api/v1/mcp-oauth/iniciar/…` e `/callback/…`) respondem 404. A revogação
    no terceiro continua rodando: desligar para de usar o acesso, não deixa de devolvê-lo.
 1. Abra **IA › Agentes**, escolha o agente e role até **Servidores MCP do agente**.
 2. **Adicionar servidor**. Preencha o nome que vai aparecer (ex.: "Minha Casa") e o endereço do
@@ -36,8 +36,10 @@ siga a especificação funciona, sem integração escrita para ele.
    alcança. Se o servidor de autorização não aceitar PKCE S256, o cadastro é recusado.
 5. Marque os **escopos** que serão pedidos ao cliente (peça só o necessário).
 6. Se o servidor **não** aceita registro automático, abra **Cliente OAuth manual**, cadastre no
-   terceiro o endereço de retorno mostrado ali (`https://<sua-instalação>/api/v1/mcp-oauth/callback`)
-   e preencha o `client_id` (e o `client_secret`, se o terceiro exigir).
+   terceiro o endereço de retorno mostrado ali e preencha o `client_id` (e o `client_secret`, se o
+   terceiro exigir). O endereço é **um por servidor**
+   (`https://<sua-instalação>/api/v1/mcp-oauth/callback/<id-do-servidor>`) e aparece depois do
+   **Testar conexão**: a volta de um servidor nunca é aceita no endereço de outro.
 7. **Manter o acesso depois que a conversa encerra**: `0` (padrão) revoga assim que a conversa é
    encerrada. Até 720 horas.
 8. **Permitir ações (escrita) durante a conversa**: desligado por padrão. Leia o risco na tela
@@ -84,9 +86,11 @@ oferece) e apaga o acesso daqui. O token nunca aparece em tela, log ou auditoria
 | Evento | O que acontece |
 |---|---|
 | Conversa encerrada | Revogação agendada para agora + a retenção do servidor; o cron `mcp-oauth-revogacao` (a cada 5 min) revoga no terceiro e esvazia o acesso |
-| Contato anonimizado (LGPD) | Pedidos pendentes apagados; revogação imediata; a linha é apagada |
-| Contato excluído | Tudo apagado em cascata |
+| Autorização concluída depois de a conversa encerrar | O acesso já nasce com a revogação agendada (agora + a retenção) |
+| Contato anonimizado (LGPD) | Pedidos pendentes apagados; revogação imediata; a linha é apagada — inclusive a de um acesso já revogado |
+| Contato excluído | Acessos revogados no terceiro antes; depois tudo apagado em cascata |
 | Servidor removido | Todos os acessos dele revogados no terceiro e apagados |
+| Endereço, modo ou `client_id` do servidor trocado | Os acessos emitidos pela configuração antiga são revogados nela e apagados; os clientes autorizam de novo |
 | Nova autorização do mesmo cliente | Substitui e revoga a anterior |
 
 ## Os outros dois modos

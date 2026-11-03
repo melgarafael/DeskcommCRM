@@ -10,8 +10,9 @@
  * 2. O encerramento da conversa só AGENDA a revogação (`revogar_apos` = agora +
  *    retenção), sem HTTP; reabrir não agenda; credencial de outro contato ou de
  *    outra organização não é tocada.
- * 3. Anonimizar o contato apaga os pedidos pendentes e agenda a revogação
- *    imediata; excluir o contato leva tudo em cascata.
+ * 3. Anonimizar o contato apaga os pedidos pendentes e as credenciais já
+ *    revogadas, e agenda a revogação imediata; excluir o contato leva tudo em
+ *    cascata (a revogação no terceiro, antes, é da rota de exclusão).
  * 4. As funções dos gatilhos não são executáveis por `anon`/`authenticated`.
  */
 import { beforeAll, describe, expect, it } from "vitest";
@@ -174,6 +175,21 @@ describe("LGPD: anonimizar revoga e apaga os acessos do contato [§3]", () => {
     `);
     expect(sql(`select count(*) from public.mcp_oauth_pedidos where contact_id = '${CONTATO_B}';`).trim()).toBe("0");
     expect(sql(`select revogar_apos <= now() from public.contato_mcp_credenciais where id = '${CRED_B}';`).trim()).toBe("t");
+  });
+
+  it("a credencial JÁ revogada (sem token) também some na anonimização — o cron só vê as vivas", () => {
+    const contato = "9095ffff-0000-4000-8000-00000000000c";
+    sql(`
+      insert into public.contacts (id, organization_id, display_name)
+        values ('${contato}', '${ORG_X}', 'Contato C 9095') on conflict do nothing;
+      insert into public.contato_mcp_credenciais (organization_id, servidor_id, contact_id, escopos, revogado_em)
+        values ('${ORG_X}', '${SERVIDOR}', '${contato}', '{casa:leitura}', now())
+        on conflict do nothing;
+    `);
+    // Controle positivo: a linha revogada existe antes.
+    expect(sql(`select count(*) from public.contato_mcp_credenciais where contact_id = '${contato}';`).trim()).toBe("1");
+    sql(`update public.contacts set is_anonymized = true, anonymized_at = now() where id = '${contato}';`);
+    expect(sql(`select count(*) from public.contato_mcp_credenciais where contact_id = '${contato}';`).trim()).toBe("0");
   });
 
   it("excluir o servidor leva credenciais e pedidos em cascata", () => {

@@ -159,7 +159,7 @@ export function urlDeAutorizacaoDoPedido(servidor: ServidorDoAgenteComSegredo, p
   return montarUrlDeAutorizacao({
     authorizationEndpoint: servidor.oauth.authorization_endpoint,
     clientId: servidor.oauthClientId,
-    redirectUri: urlDoCallbackMcp(),
+    redirectUri: urlDoCallbackMcp(servidor.id),
     state: pedido.id,
     codeVerifier: pedido.codeVerifier,
     escopos: pedido.escopos,
@@ -244,13 +244,14 @@ export async function credencialDoContato(
 /**
  * Grava a credencial nova do (servidor, contato). Se havia uma viva, ela é
  * REVOGADA no terceiro antes (uma autorização nova substitui a anterior).
+ * `revogarApos`: a revogação já agendada no nascimento (conversa encerrada).
  */
 export async function gravarCredencial(
   supabase: SupabaseClient,
   servidor: ServidorDoAgenteComSegredo,
   contactId: string,
   tokens: TokensDoContato,
-  opcoes?: OpcoesDeRede,
+  opcoes?: OpcoesDeRede & { revogarApos?: Date | null },
 ): Promise<boolean> {
   const anterior = await credencialDoContato(supabase, servidor.organizationId, servidor.id, contactId);
   if (anterior) await revogarNoTerceiro(servidor, anterior, opcoes);
@@ -265,7 +266,7 @@ export async function gravarCredencial(
       // a autorização nova com o token derivado da antiga.
       versao: Math.floor(Date.now() / 1000),
       revogado_em: null,
-      revogar_apos: null,
+      revogar_apos: opcoes?.revogarApos ? opcoes.revogarApos.toISOString() : null,
       criado_em: new Date().toISOString(),
       atualizado_em: new Date().toISOString(),
     },
@@ -422,9 +423,16 @@ export async function revogarNoTerceiro(
 }
 
 /**
- * Revoga (terceiro + banco) uma credencial lida pelo id, dentro da organização.
- * `apagar` remove a linha inteira (LGPD, servidor removido); sem ele a linha
- * fica com os tokens em `NULL` e `revogado_em` marcado.
+ * Revoga (terceiro + banco) uma credencial VIVA lida pelo id, dentro da
+ * organização. `apagar` remove a linha inteira (LGPD, servidor removido); sem
+ * ele a linha fica com os tokens em `NULL` e `revogado_em` marcado.
+ *
+ * A linha é RECLAMADA antes da rede: um UPDATE condicional (`revogado_em is
+ * null and versao = <lida>`) esvazia os tokens e marca `revogado_em`, e só quem
+ * ganhou fala com o terceiro, com os tokens que leu. Duas rodadas do cron (ou
+ * o cron e o botão da ficha) sobre a mesma linha: uma revoga e audita, a outra
+ * recebe `null`. A versão sobe junto, então uma renovação em curso não grava
+ * token novo por cima da linha revogada.
  */
 export async function revogarCredencialPorId(
   supabase: SupabaseClient,
@@ -438,27 +446,34 @@ export async function revogarCredencialPorId(
     .eq("organization_id", servidor.organizationId)
     .eq("servidor_id", servidor.id)
     .eq("id", credencialId)
+    .is("revogado_em", null)
     .maybeSingle();
   if (error || !data) return null;
   const linha = data as Record<string, unknown>;
+  const versao = Number(linha.versao);
+  const agora = new Date().toISOString();
+  const { data: ganhou, error: erroDoClaim } = await supabase
+    .from("contato_mcp_credenciais")
+    .update({
+      ...apagado("access_token"),
+      ...apagado("refresh_token"),
+      versao: versao + 1,
+      revogado_em: agora,
+      atualizado_em: agora,
+    })
+    .eq("organization_id", servidor.organizationId)
+    .eq("id", credencialId)
+    .is("revogado_em", null)
+    .eq("versao", versao)
+    .select("id")
+    .maybeSingle();
+  if (erroDoClaim || !ganhou) return null;
+
   const accessToken = abrir("access_token", linha);
   const revogadaNoTerceiro = accessToken
     ? await revogarNoTerceiro(servidor, { accessToken, refreshToken: abrir("refresh_token", linha) }, opcoes)
     : false;
-  if (opcoes?.apagar) {
-    await apagarCredencial(supabase, servidor.organizationId, credencialId);
-  } else {
-    await supabase
-      .from("contato_mcp_credenciais")
-      .update({
-        ...apagado("access_token"),
-        ...apagado("refresh_token"),
-        revogado_em: new Date().toISOString(),
-        atualizado_em: new Date().toISOString(),
-      })
-      .eq("organization_id", servidor.organizationId)
-      .eq("id", credencialId);
-  }
+  if (opcoes?.apagar) await apagarCredencial(supabase, servidor.organizationId, credencialId);
   return { revogadaNoTerceiro };
 }
 

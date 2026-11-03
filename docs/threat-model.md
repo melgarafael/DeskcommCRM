@@ -41,7 +41,7 @@ São conclusões de leitura de código.
 | `/api/v1/webhooks/cobranca/:provedor` | Stripe: `Stripe-Signature` (HMAC com horário). Asaas: token estático em `asaas-access-token` (sha256 + `timingSafeEqual`); o corpo é só ponteiro e a decisão vem da releitura. Token vazado: o dono gera outro em Admin › Cobrança › Conexão, "Testar e conectar" de novo | ✅ recusas 120/min por IP; Asaas, avisos válidos de cliente desconhecido 120/min por provedor, chave global (acima, 200 sem gravar) |
 | `/api/v1/cron/*` (9 rotas) | `Bearer INTERNAL_CRON_SECRET\|INTERNAL_SECRET`, **fail-closed** | ❌ |
 | `/api/mcp` | `Bearer tok_...` validado contra `api_tokens` (hash SHA256) | ❌ |
-| `/api/v1/mcp-oauth/iniciar/:state` e `/api/v1/mcp-oauth/callback` (OAuth por contato, 9095) | o `state` de `mcp_oauth_pedidos`: 256 bits, uso único (consumido por UPDATE condicional ANTES da troca do `code`), 10 min, amarrado a organização, servidor, contato e conversa; o `code` só vira token com o `code_verifier` cifrado daquela linha (PKCE S256). Nada da URL escolhe tenant | ✅ 30/min por IP |
+| `/api/v1/mcp-oauth/iniciar/:state` e `/api/v1/mcp-oauth/callback/:servidor` (OAuth por contato, 9095) | o `state` de `mcp_oauth_pedidos`: 256 bits, uso único (consumido por UPDATE condicional ANTES da troca do `code`), 10 min, amarrado a organização, servidor, contato e conversa; o `code` só vira token com o `code_verifier` cifrado daquela linha (PKCE S256). O endereço de retorno é um por servidor e tem de ser o do pedido; o `iss` (RFC 9207), quando vem, tem de ser o emissor dele. Nada da URL escolhe tenant | ✅ 30/min por IP |
 | `/403`, `/404`, `/500`, `/503`, `/admin/forbidden` | — | ❌ |
 
 **Leitura:** a autenticação de cada superfície está bem construída — HMAC com

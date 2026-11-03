@@ -7,8 +7,11 @@
  * - `/api/v1/mcp-oauth/iniciar/<state>`: o link CURTO que vai no WhatsApp; ele
  *   confere validade e uso e responde 302 para o authorization server. Legível
  *   na conversa e sem expor parâmetro nenhum do OAuth.
- * - `/api/v1/mcp-oauth/callback`: a volta do authorization server — a mesma
- *   para todo servidor e todo contato, é a `redirect_uri` registrada no DCR.
+ * - `/api/v1/mcp-oauth/callback/<servidor_id>`: a volta do authorization
+ *   server, a `redirect_uri` registrada no DCR. UMA POR SERVIDOR, de propósito:
+ *   o callback recusa o `state` de um servidor que volta pelo endereço de
+ *   outro, então um authorization server não recebe o `code` emitido por
+ *   outro (RFC 9700 §4.4). A mesma para todo contato do servidor.
  */
 import { env } from "@/lib/env";
 
@@ -19,8 +22,8 @@ function base(): string {
   return (env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/+$/, "");
 }
 
-export function urlDoCallbackMcp(): string {
-  return `${base()}${CAMINHO_DO_CALLBACK_MCP}`;
+export function urlDoCallbackMcp(servidorId: string): string {
+  return `${base()}${CAMINHO_DO_CALLBACK_MCP}/${encodeURIComponent(servidorId)}`;
 }
 
 export function urlDeInicioMcp(state: string): string {

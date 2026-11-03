@@ -122,13 +122,16 @@ interface Descoberta {
   temRegistroDinamico: boolean;
   temRevogacao: boolean;
   hosts: string[];
+  redirectUri: string | null;
 }
 
 export function ServidoresMcpDoAgente({ agentId, toolIds, onChangeToolIds, disabled }: Props) {
   const t = useT();
   const [servidores, setServidores] = useState<ServidorNaTela[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [editando, setEditando] = useState<{ id: string | null; form: Formulario } | null>(null);
+  // `idNovo`: o id reservado para o servidor novo — o endereço de retorno é
+  // por servidor, e o cadastro manual no terceiro precisa dele antes de salvar.
+  const [editando, setEditando] = useState<{ id: string | null; idNovo: string; form: Formulario } | null>(null);
   const [descoberta, setDescoberta] = useState<Descoberta | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
@@ -156,7 +159,7 @@ export function ServidoresMcpDoAgente({ agentId, toolIds, onChangeToolIds, disab
   function abrir(s: ServidorNaTela | null) {
     setDescoberta(null);
     setErro(null);
-    setEditando({ id: s?.id ?? null, form: s ? doServidor(s) : VAZIO });
+    setEditando({ id: s?.id ?? null, idNovo: crypto.randomUUID(), form: s ? doServidor(s) : VAZIO });
   }
 
   function mudar(p: Partial<Formulario>) {
@@ -168,7 +171,7 @@ export function ServidoresMcpDoAgente({ agentId, toolIds, onChangeToolIds, disab
     setOcupado(true);
     setErro(null);
     try {
-      const r = await descobrirOauthDoServidor(agentId, editando.form.endpoint.trim());
+      const r = await descobrirOauthDoServidor(agentId, editando.form.endpoint.trim(), editando.id ?? editando.idNovo);
       if (!r.ok) {
         setDescoberta(null);
         setErro(t(MENSAGEM_DO_ERRO[r.error]));
@@ -190,7 +193,7 @@ export function ServidoresMcpDoAgente({ agentId, toolIds, onChangeToolIds, disab
         ...editando.form,
         nome: editando.form.nome.trim(),
         endpoint: editando.form.endpoint.trim(),
-      });
+      }, editando.id ? undefined : editando.idNovo);
       if (!r.ok) {
         setErro(t(MENSAGEM_DO_ERRO[r.error]));
         return;
@@ -222,6 +225,8 @@ export function ServidoresMcpDoAgente({ agentId, toolIds, onChangeToolIds, disab
   }
 
   const f = editando?.form;
+  const enderecoDeRetorno =
+    servidores?.find((s) => s.id === editando?.id)?.redirectUri ?? descoberta?.redirectUri ?? null;
   const escoposOferecidos = [...new Set([...(descoberta?.escopos ?? []), ...(f?.escoposPedidos ?? [])])];
   const limiteAtingido = (servidores?.length ?? 0) >= 5;
 
@@ -409,8 +414,14 @@ export function ServidoresMcpDoAgente({ agentId, toolIds, onChangeToolIds, disab
                     <Input id="mcp-client-secret" type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" value={f.oauthClientSecret} onChange={(e) => mudar({ oauthClientSecret: e.target.value })} />
                   </div>
                   <p className="text-muted-foreground sm:col-span-2">
-                    {t("Endereço de retorno para cadastrar no servidor de autorização")}:{" "}
-                    <code>{servidores?.[0]?.redirectUri ?? "/api/v1/mcp-oauth/callback"}</code>
+                    {enderecoDeRetorno ? (
+                      <>
+                        {t("Endereço de retorno para cadastrar no servidor de autorização")}:{" "}
+                        <code data-testid="endereco-de-retorno-mcp">{enderecoDeRetorno}</code>
+                      </>
+                    ) : (
+                      t("Clique em Testar conexão para ver o endereço de retorno deste servidor.")
+                    )}
                   </p>
                 </div>
               </details>

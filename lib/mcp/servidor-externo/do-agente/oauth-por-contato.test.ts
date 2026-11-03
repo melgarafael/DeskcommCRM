@@ -44,7 +44,7 @@ import { carregarServidoresDoAgenteNoTurno, type ServidorDoAgenteNoTurno } from 
 import { consumirPedido, credencialDoContato, escoposDoPedido, renovarCredencial } from "./credencial";
 import { ErroDeOauth, descobrir, registrarCliente } from "./oauth";
 import { iniciarAutorizacao, processarRetorno } from "./retorno";
-import { revogarVencidas } from "./revogacao";
+import { revogarAcessosDoContato, revogarAcessosDoServidor, revogarVencidas } from "./revogacao";
 
 const ORG = "bcc12320-f555-4fef-8d90-38a0ac5950e0";
 const ORG_Y = "0f0f0f0f-0000-4000-8000-0000000000f0";
@@ -54,6 +54,7 @@ const CONTATO_A = "c0000000-0000-4000-8000-00000000000a";
 const CONTATO_B = "c0000000-0000-4000-8000-00000000000b";
 const CONVERSA_A = "d0000000-0000-4000-8000-00000000000a";
 const CONVERSA_B = "d0000000-0000-4000-8000-00000000000b";
+const OUTRO_SERVIDOR = "5e5e5e5e-0000-4000-8000-000000000002";
 
 // ─── O stub: MCP + authorization server no mesmo processo ──────────────────
 
@@ -130,6 +131,28 @@ beforeAll(async () => {
           ...(stub.anunciaS256 ? { code_challenge_methods_supported: ["S256"] } : { code_challenge_methods_supported: ["plain"] }),
           token_endpoint_auth_methods_supported: ["none"],
         });
+      }
+      if (url.pathname === "/register-gigante") {
+        // 1 MB de JSON VÁLIDO, sem content-length (chunked): só o teto de bytes o recusa.
+        res.writeHead(201, { "content-type": "application/json" });
+        res.write('{"client_id":"gigante","p":"');
+        for (let i = 0; i < 16; i += 1) res.write("a".repeat(64 * 1024));
+        return res.end('"}');
+      }
+      if (url.pathname === "/register-lento") {
+        // Cabeçalhos na hora, corpo a conta-gotas: termina VÁLIDO só depois de 4 s.
+        res.writeHead(201, { "content-type": "application/json" });
+        res.write('{"client_id":"lento"');
+        const gota = setInterval(() => res.write(" "), 50);
+        const fim = setTimeout(() => {
+          clearInterval(gota);
+          res.end("}");
+        }, 4000);
+        res.on("close", () => {
+          clearInterval(gota);
+          clearTimeout(fim);
+        });
+        return;
       }
       if (url.pathname === "/register") {
         const r = JSON.parse(corpo);
@@ -218,7 +241,7 @@ let banco: BancoEmMemoria;
 async function servidorCadastrado(opcoes: { escritaDelegada?: boolean; escopos?: string[] } = {}) {
   const d = await descobrir(endpoint, rede);
   const { metodosDeAutenticacaoNoToken: _m, ...meta } = d;
-  const clientId = await registrarCliente(d.registration_endpoint!, { redirectUri: "http://localhost:3000/api/v1/mcp-oauth/callback", nomeDoCliente: "Cliente de teste", escopos: [] }, rede);
+  const clientId = await registrarCliente(d.registration_endpoint!, { redirectUri: `http://localhost:3000/api/v1/mcp-oauth/callback/${SERVIDOR}`, nomeDoCliente: "Cliente de teste", escopos: [] }, rede);
   return {
     id: SERVIDOR,
     organization_id: ORG,
@@ -263,18 +286,27 @@ function carga(contato: string | undefined, conversa?: string) {
   });
 }
 
-/** O navegador do contato: link curto → AS (login como `usuario`) → callback. */
-async function contatoAutoriza(link: string, usuario: string) {
+/**
+ * O navegador do contato: link curto → AS (login como `usuario`) → callback.
+ * `volta` troca o que chega ao callback (o servidor do endereço, o `iss`).
+ */
+async function contatoAutoriza(link: string, usuario: string, volta: { servidor?: string; iss?: string } = {}) {
   const state = link.split("/").pop()!;
   const inicio = await iniciarAutorizacao(banco.cliente as never, state);
   if (!inicio.ok) throw new Error(inicio.motivo);
   const destino = new URL(inicio.destino);
   destino.searchParams.set("usuario", usuario);
   const r = await fetch(destino, { redirect: "manual" });
-  const volta = new URL(r.headers.get("location")!);
+  const retorno = new URL(r.headers.get("location")!);
   return processarRetorno(
     banco.cliente as never,
-    { state: volta.searchParams.get("state"), code: volta.searchParams.get("code"), error: null },
+    {
+      servidor: volta.servidor ?? retorno.pathname.split("/").pop()!,
+      state: retorno.searchParams.get("state"),
+      code: retorno.searchParams.get("code"),
+      error: null,
+      iss: volta.iss ?? null,
+    },
     rede,
   );
 }
@@ -420,17 +452,17 @@ describe("o link é de uso único, expira e o state é amarrado [5.4]", () => {
     const credenciais = banco.tabelas.contato_mcp_credenciais!.length;
 
     // reuso
-    expect(await processarRetorno(banco.cliente as never, { state, code: "qualquer", error: null }, rede)).toBe("pedido_invalido");
+    expect(await processarRetorno(banco.cliente as never, { servidor: SERVIDOR, state, code: "qualquer", error: null }, rede)).toBe("pedido_invalido");
     expect((await iniciarAutorizacao(banco.cliente as never, state)).ok).toBe(false);
     // inexistente
-    expect(await processarRetorno(banco.cliente as never, { state: "x".repeat(43), code: "c", error: null }, rede)).toBe("pedido_invalido");
-    expect(await processarRetorno(banco.cliente as never, { state: null, code: "c", error: null }, rede)).toBe("pedido_invalido");
+    expect(await processarRetorno(banco.cliente as never, { servidor: SERVIDOR, state: "x".repeat(43), code: "c", error: null }, rede)).toBe("pedido_invalido");
+    expect(await processarRetorno(banco.cliente as never, { servidor: SERVIDOR, state: null, code: "c", error: null }, rede)).toBe("pedido_invalido");
     // expirado
     const link2 = await pedirLink(CONTATO_B, CONVERSA_B);
     const state2 = link2.split("/").pop()!;
     banco.tabelas.mcp_oauth_pedidos!.find((p) => p.id === state2)!.expira_em = new Date(Date.now() - 1000).toISOString();
     expect((await iniciarAutorizacao(banco.cliente as never, state2)).ok).toBe(false);
-    expect(await processarRetorno(banco.cliente as never, { state: state2, code: "c", error: null }, rede)).toBe("pedido_invalido");
+    expect(await processarRetorno(banco.cliente as never, { servidor: SERVIDOR, state: state2, code: "c", error: null }, rede)).toBe("pedido_invalido");
 
     expect(banco.tabelas.contato_mcp_credenciais!.length).toBe(credenciais);
   });
@@ -443,10 +475,84 @@ describe("o link é de uso único, expira e o state é amarrado [5.4]", () => {
 
   it("o contato nega no AS (error=access_denied) → nada gravado e o state morre", async () => {
     const state = (await pedirLink(CONTATO_A, CONVERSA_A)).split("/").pop()!;
-    expect(await processarRetorno(banco.cliente as never, { state, code: null, error: "access_denied" }, rede)).toBe("recusado_pelo_contato");
+    expect(await processarRetorno(banco.cliente as never, { servidor: SERVIDOR, state, code: null, error: "access_denied" }, rede)).toBe("recusado_pelo_contato");
     expect(banco.tabelas.contato_mcp_credenciais ?? []).toHaveLength(0);
-    expect(await processarRetorno(banco.cliente as never, { state, code: "c", error: null }, rede)).toBe("pedido_invalido");
+    expect(await processarRetorno(banco.cliente as never, { servidor: SERVIDOR, state, code: "c", error: null }, rede)).toBe("pedido_invalido");
   });
+});
+
+describe("o endereço de retorno é POR SERVIDOR e o callback confere servidor e iss", () => {
+  it("o authorize leva a redirect_uri DESTE servidor", async () => {
+    const state = (await pedirLink(CONTATO_A, CONVERSA_A)).split("/").pop()!;
+    const inicio = await iniciarAutorizacao(banco.cliente as never, state);
+    expect(inicio.ok && new URL(inicio.destino).searchParams.get("redirect_uri")).toMatch(
+      new RegExp(`/api/v1/mcp-oauth/callback/${SERVIDOR}$`),
+    );
+  });
+
+  it("o state de um servidor que volta pelo endereço de OUTRO é recusado, sem troca do code", async () => {
+    stub.codigos.clear();
+    const link = await pedirLink(CONTATO_A, CONVERSA_A);
+    const codigosAntes = stub.codigos.size;
+    expect(await contatoAutoriza(link, "alice", { servidor: OUTRO_SERVIDOR })).toBe("pedido_invalido");
+    expect(banco.tabelas.contato_mcp_credenciais ?? []).toHaveLength(0);
+    // O code não foi resgatado: continua no AS, e o state morreu.
+    expect(stub.codigos.size).toBe(codigosAntes + 1);
+    expect(await processarRetorno(banco.cliente as never, { servidor: SERVIDOR, state: link.split("/").pop()!, code: "c", error: null }, rede)).toBe("pedido_invalido");
+  });
+
+  it("iss (RFC 9207) de outro emissor é recusado; o do emissor do servidor passa", async () => {
+    expect(await contatoAutoriza(await pedirLink(CONTATO_A, CONVERSA_A), "alice", { iss: "https://outro-as.example" })).toBe("pedido_invalido");
+    expect(banco.tabelas.contato_mcp_credenciais ?? []).toHaveLength(0);
+    // Controle: o `iss` do próprio emissor (com ou sem a barra final).
+    expect(await contatoAutoriza(await pedirLink(CONTATO_A, CONVERSA_A), "alice", { iss: `${origem}/` })).toBe("autorizado");
+  });
+});
+
+describe("autorização concluída com a conversa JÁ encerrada nasce com a revogação agendada", () => {
+  it("retenção 0: nasce vencida, não serve ao turno, e o cron revoga no terceiro", async () => {
+    banco.tabelas.conversations = [{ id: CONVERSA_A, organization_id: ORG, contact_id: CONTATO_A, status: "open" }];
+    const link = await pedirLink(CONTATO_A, CONVERSA_A);
+    banco.tabelas.conversations![0]!.status = "closed"; // encerrou com o link na mão do contato
+    expect(await contatoAutoriza(link, "alice")).toBe("autorizado");
+    const linha = banco.tabelas.contato_mcp_credenciais![0]!;
+    expect(new Date(String(linha.revogar_apos)).getTime()).toBeLessThanOrEqual(Date.now());
+    expect(await credencialDoContato(banco.cliente as never, ORG, SERVIDOR, CONTATO_A)).toBeNull();
+    expect(await revogarVencidas(banco.cliente as never, rede)).toMatchObject({ revogadas: 1 });
+    expect(stub.revogados.some((t) => t.startsWith("RT-MARCADOR-alice"))).toBe(true);
+  });
+
+  it("com retenção de 2 h, nasce com revogar_apos = agora + 2 h; conversa aberta não agenda", async () => {
+    banco.tabelas.ai_agent_mcp_servers![0]!.retencao_apos_encerramento_horas = 2;
+    banco.tabelas.conversations = [
+      { id: CONVERSA_A, organization_id: ORG, contact_id: CONTATO_A, status: "resolved" },
+      { id: CONVERSA_B, organization_id: ORG, contact_id: CONTATO_B, status: "open" },
+    ];
+    await contatoAutoriza(await pedirLink(CONTATO_A, CONVERSA_A), "alice");
+    await contatoAutoriza(await pedirLink(CONTATO_B, CONVERSA_B), "bruno");
+    const deA = banco.tabelas.contato_mcp_credenciais!.find((c) => c.contact_id === CONTATO_A)!;
+    const deB = banco.tabelas.contato_mcp_credenciais!.find((c) => c.contact_id === CONTATO_B)!;
+    const horas = (new Date(String(deA.revogar_apos)).getTime() - Date.now()) / 3_600_000;
+    expect(horas).toBeGreaterThan(1.9);
+    expect(horas).toBeLessThanOrEqual(2);
+    expect(deB.revogar_apos).toBeNull();
+  });
+});
+
+describe("saídas OAuth: prazo até o fim do corpo e teto de bytes", () => {
+  it("corpo JSON acima do teto é recusado (registro_falhou), mesmo válido", async () => {
+    await expect(
+      registrarCliente(`${origem}/register-gigante`, { redirectUri: "http://x/cb", nomeDoCliente: "n", escopos: [] }, rede),
+    ).rejects.toMatchObject({ codigo: "registro_falhou" });
+  });
+
+  it("corpo a conta-gotas não prende além do prazo da chamada", async () => {
+    const inicio = Date.now();
+    await expect(
+      registrarCliente(`${origem}/register-lento`, { redirectUri: "http://x/cb", nomeDoCliente: "n", escopos: [] }, { ...rede, timeoutMs: 300 }),
+    ).rejects.toMatchObject({ codigo: "registro_falhou" });
+    expect(Date.now() - inicio).toBeLessThan(2000);
+  }, 10_000);
 });
 
 // ─── Renovação ──────────────────────────────────────────────────────────────
@@ -604,6 +710,51 @@ describe("revogação no encerramento e por LGPD [§8.5, §3]", () => {
     await contatoAutoriza(await pedirLink(CONTATO_A, CONVERSA_A, "pronto"), "alice");
     expect(banco.tabelas.contato_mcp_credenciais).toHaveLength(1);
     expect(stub.revogados.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("revogação: rodadas sobrepostas, orçamento, troca de origem e exclusão do contato", () => {
+  it("duas rodadas do cron ao mesmo tempo: uma chamada ao terceiro por token e UMA auditoria", async () => {
+    await contatoAutoriza(await pedirLink(CONTATO_A, CONVERSA_A), "alice");
+    banco.tabelas.contato_mcp_credenciais![0]!.revogar_apos = new Date(Date.now() - 1000).toISOString();
+    auditSpy.mockClear();
+    const [x, y] = await Promise.all([revogarVencidas(banco.cliente as never, rede), revogarVencidas(banco.cliente as never, rede)]);
+    expect(x.revogadas + y.revogadas).toBe(1);
+    expect(stub.revogados).toHaveLength(2); // refresh + access, uma vez cada
+    const revogacoes = auditSpy.mock.calls.filter((c) => (c[0] as { action?: string }).action === "contact.mcp_acesso_revogado");
+    expect(revogacoes).toHaveLength(1);
+  });
+
+  it("orçamento esgotado: a rodada para e o que não coube fica para a próxima", async () => {
+    await contatoAutoriza(await pedirLink(CONTATO_A, CONVERSA_A), "alice");
+    banco.tabelas.contato_mcp_credenciais![0]!.revogar_apos = new Date(Date.now() - 1000).toISOString();
+    expect(await revogarVencidas(banco.cliente as never, { ...rede, orcamentoMs: 0 })).toMatchObject({ revogadas: 0, apagadas: 0 });
+    expect(stub.revogados).toHaveLength(0);
+    expect(await revogarVencidas(banco.cliente as never, rede)).toMatchObject({ revogadas: 1 });
+  });
+
+  it("acessos de um servidor: revoga com a configuração que os emitiu, apaga as linhas e os pedidos pendentes", async () => {
+    await contatoAutoriza(await pedirLink(CONTATO_A, CONVERSA_A), "alice");
+    await pedirLink(CONTATO_B, CONVERSA_B); // pedido pendente de B
+    const servidor = (await import("./registro")).lerLinhaDoServidor(banco.tabelas.ai_agent_mcp_servers![0]!)!;
+    expect(await revogarAcessosDoServidor(banco.cliente as never, servidor, rede)).toBe(1);
+    expect(stub.revogados.some((t) => t.startsWith("RT-MARCADOR-alice"))).toBe(true);
+    expect(banco.tabelas.contato_mcp_credenciais).toHaveLength(0);
+    expect(banco.tabelas.mcp_oauth_pedidos).toHaveLength(0);
+  });
+
+  it("antes de excluir o contato: revoga no terceiro e apaga; outra organização não alcança", async () => {
+    await contatoAutoriza(await pedirLink(CONTATO_A, CONVERSA_A), "alice");
+    expect(await revogarAcessosDoContato(banco.cliente as never, ORG_Y, CONTATO_A, rede)).toBe(0);
+    expect(banco.tabelas.contato_mcp_credenciais).toHaveLength(1);
+    expect(stub.revogados).toHaveLength(0);
+
+    expect(await revogarAcessosDoContato(banco.cliente as never, ORG, CONTATO_A, rede)).toBe(1);
+    expect(stub.revogados.some((t) => t.startsWith("RT-MARCADOR-alice"))).toBe(true);
+    expect(banco.tabelas.contato_mcp_credenciais).toHaveLength(0);
+    expect(auditSpy.mock.calls.map((c) => c[0])).toContainEqual(
+      expect.objectContaining({ action: "contact.mcp_acesso_revogado", metadata: expect.objectContaining({ motivo: "exclusao_do_contato" }) }),
+    );
   });
 });
 

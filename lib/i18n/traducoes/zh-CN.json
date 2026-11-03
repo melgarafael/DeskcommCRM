@@ -5966,6 +5966,7 @@
   "Acesso apagado daqui. O sistema externo não confirmou a revogação.": "已在此删除访问。外部系统未确认撤销。",
   "Nenhum servidor MCP cadastrado neste agente.": "此智能体尚未登记 MCP 服务器。",
   "Endereço de retorno para cadastrar no servidor de autorização": "需在授权服务器中登记的回调地址",
+  "Clique em Testar conexão para ver o endereço de retorno deste servidor.": "点击“测试连接”查看此服务器的回调地址。",
   "Servidor MCP removido. Os acessos dos clientes a ele foram revogados.": "MCP 服务器已移除。客户对它的访问已被撤销。",
   "Ferramentas": "工具",
   "ferramentas marcadas": "个已选工具",

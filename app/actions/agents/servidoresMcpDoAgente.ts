@@ -17,6 +17,8 @@
  * 6. Módulo opcional `mcp_por_agente` desligado (doc 252) recusa tudo, depois
  *    do papel: a tela some, e a action não fala com terceiro nenhum.
  */
+import { randomUUID } from "node:crypto";
+
 import { revalidatePath } from "next/cache";
 
 import { audit } from "@/lib/audit";
@@ -27,7 +29,6 @@ import { supportWriteError } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { listarFerramentasDoServidor } from "@/lib/mcp/servidor-externo/chamada";
 import { apagado, cifrar, ultimos4 } from "@/lib/mcp/servidor-externo/cifra";
-import { revogarCredencialPorId } from "@/lib/mcp/servidor-externo/do-agente/credencial";
 import { urlDoCallbackMcp } from "@/lib/mcp/servidor-externo/do-agente/enderecos";
 import {
   ErroDeOauth,
@@ -47,6 +48,7 @@ import {
   type MetadadosOauth,
   type ServidorDoAgente,
 } from "@/lib/mcp/servidor-externo/do-agente/registro";
+import { revogarAcessosDoServidor } from "@/lib/mcp/servidor-externo/do-agente/revogacao";
 import { hostDoEndpoint } from "@/lib/mcp/servidor-externo/registro";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -74,7 +76,7 @@ export interface ServidorNaTela extends ServidorDoAgente {
 }
 
 function naTela(s: ServidorDoAgente): ServidorNaTela {
-  return { ...s, hosts: hostsDoServidor(s.endpoint, s.oauth), redirectUri: urlDoCallbackMcp() };
+  return { ...s, hosts: hostsDoServidor(s.endpoint, s.oauth), redirectUri: urlDoCallbackMcp(s.id) };
 }
 
 async function exigirAdminDoAgente(agentId: string, escrita: boolean) {
@@ -115,12 +117,25 @@ export async function listarServidoresMcpDoAgente(agentId: string): Promise<Resu
 /**
  * Descoberta OAuth do endereço (sem gravar) — o "Testar conexão" do modo
  * `oauth_por_contato`. Valida RFC 9728/8414, exige S256 e diz se há DCR e
- * revogação. Não registra cliente (isso é do salvar).
+ * revogação. Não registra cliente (isso é do salvar). Devolve também o
+ * endereço de retorno DESTE servidor (é por servidor), para o cadastro manual
+ * de cliente no terceiro — `servidorId` é o do servidor em edição, ou o id que
+ * a tela reservou para o novo (o mesmo que ela manda ao salvar).
  */
 export async function descobrirOauthDoServidor(
   agentId: string,
   endpoint: string,
-): Promise<Resultado<{ emissor: string; escopos: string[]; temRegistroDinamico: boolean; temRevogacao: boolean; hosts: string[] }>> {
+  servidorId?: string,
+): Promise<
+  Resultado<{
+    emissor: string;
+    escopos: string[];
+    temRegistroDinamico: boolean;
+    temRevogacao: boolean;
+    hosts: string[];
+    redirectUri: string | null;
+  }>
+> {
   const g = await exigirAdminDoAgente(agentId, false);
   if (!g.ok) return g;
   try {
@@ -138,6 +153,7 @@ export async function descobrirOauthDoServidor(
         temRegistroDinamico: Boolean(d.registration_endpoint),
         temRevogacao: Boolean(d.revocation_endpoint),
         hosts: hostsDoServidor(endpoint, { ...d, cliente_dinamico: false, descoberto_em: "" }),
+        redirectUri: servidorId && UUID.test(servidorId) ? urlDoCallbackMcp(servidorId) : null,
       },
     };
   } catch (err) {
@@ -148,12 +164,15 @@ export async function descobrirOauthDoServidor(
 /**
  * Cria (sem `servidorId`) ou edita um servidor. Para `oauth_por_contato`, faz a
  * descoberta e — sem `client_id` informado e com `registration_endpoint` — o
- * registro dinâmico (RFC 7591) com o callback da instalação.
+ * registro dinâmico (RFC 7591) com o endereço de retorno DESTE servidor.
+ * `idNovo` (só na criação) é o id que a tela reservou para mostrar o endereço
+ * de retorno antes de salvar; um id que já exista faz o INSERT falhar.
  */
 export async function salvarServidorMcpDoAgente(
   agentId: string,
   servidorId: string | null,
   entradaBruta: unknown,
+  idNovo?: string,
 ): Promise<Resultado<ServidorNaTela>> {
   const g = await exigirAdminDoAgente(agentId, true);
   if (!g.ok) return g;
@@ -170,6 +189,9 @@ export async function salvarServidorMcpDoAgente(
   const atual = servidorId ? existentes.find((s) => s.id === servidorId) ?? null : null;
   if (servidorId && !atual) return { ok: false, error: "servidor_inexistente" };
   if (!atual && existentes.length >= LIMITE_DE_SERVIDORES_POR_AGENTE) return { ok: false, error: "limite_de_servidores" };
+  // O id nasce AQUI no cadastro: o endereço de retorno é por servidor e vai no
+  // registro dinâmico, antes do INSERT.
+  const idDoServidor = atual?.id ?? (idNovo && UUID.test(idNovo) ? idNovo : randomUUID());
 
   // Slug estável: nasce do nome e NÃO muda na edição (mudaria o nome que o
   // modelo vê e as ferramentas já escolhidas pareceriam outras).
@@ -215,7 +237,7 @@ export async function salvarServidorMcpDoAgente(
       if (!clientId) {
         if (!metadados.registration_endpoint) return { ok: false, error: "sem_cliente" };
         clientId = await registrarCliente(metadados.registration_endpoint, {
-          redirectUri: urlDoCallbackMcp(),
+          redirectUri: urlDoCallbackMcp(idDoServidor),
           // A marca da SAÍDA (white-label): o nome que o cliente final lê na
           // tela de consentimento do terceiro é o da instalação/organização.
           nomeDoCliente: `${(await marcaDaSaida(g.orgId)).nome} — ${g.orgNome}`.trim(),
@@ -237,10 +259,23 @@ export async function salvarServidorMcpDoAgente(
     Object.assign(colunas, { oauth_metadados: {}, oauth_client_id: null }, apagado("oauth_client_secret"));
   }
 
+  // Trocou a ORIGEM dos tokens (endereço, modo ou cliente OAuth)? Os acessos
+  // de contato emitidos pela configuração antiga são revogados nela e apagados
+  // ANTES de gravar a nova — senão o próximo turno mandaria o token ao host novo.
+  if (
+    atual?.modo === "oauth_por_contato" &&
+    (entrada.modo !== "oauth_por_contato" ||
+      atual.endpoint !== entrada.endpoint ||
+      (colunas.oauth_client_id ?? null) !== atual.oauthClientId)
+  ) {
+    await revogarAcessosDoServidor(g.admin, atual);
+  }
+
   const gravacao = atual
     ? g.admin.from("ai_agent_mcp_servers").update(colunas).eq("organization_id", g.orgId).eq("id", atual.id)
     : g.admin.from("ai_agent_mcp_servers").insert({
         ...colunas,
+        id: idDoServidor,
         organization_id: g.orgId,
         agent_id: agentId,
         slug,
@@ -249,9 +284,7 @@ export async function salvarServidorMcpDoAgente(
   const { error } = await gravacao;
   if (error) return { ok: false, error: "erro_ao_gravar" };
 
-  const salvo = (await lerServidoresDoAgente(g.admin, g.orgId, agentId)).find((s) =>
-    atual ? s.id === atual.id : s.slug === slug,
-  );
+  const salvo = (await lerServidoresDoAgente(g.admin, g.orgId, agentId)).find((s) => s.id === idDoServidor);
   if (!salvo) return { ok: false, error: "erro_ao_gravar" };
 
   await audit({
@@ -289,18 +322,7 @@ export async function removerServidorMcpDoAgente(
   const servidor = await lerServidor(g.admin, g.orgId, servidorId);
   if (!servidor || servidor.agentId !== agentId) return { ok: false, error: "servidor_inexistente" };
 
-  let revogadas = 0;
-  if (servidor.modo === "oauth_por_contato") {
-    const { data } = await g.admin
-      .from("contato_mcp_credenciais")
-      .select("id")
-      .eq("organization_id", g.orgId)
-      .eq("servidor_id", servidorId)
-      .is("revogado_em", null);
-    for (const linha of (data ?? []) as Array<{ id: string }>) {
-      if (await revogarCredencialPorId(g.admin, servidor, linha.id, { apagar: true })) revogadas += 1;
-    }
-  }
+  const revogadas = servidor.modo === "oauth_por_contato" ? await revogarAcessosDoServidor(g.admin, servidor) : 0;
   const { error } = await g.admin
     .from("ai_agent_mcp_servers")
     .delete()

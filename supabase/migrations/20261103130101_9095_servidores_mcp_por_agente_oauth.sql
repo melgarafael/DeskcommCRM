@@ -198,11 +198,14 @@ create trigger trg_conversations_mcp_revogacao
 
 -- ── LGPD: anonimizar o contato revoga e APAGA os acessos dele ──────────────
 --
--- Excluir o contato já leva tudo (FK em cascata). Anonimizar mantém a linha do
--- contato, então aqui: os pedidos de autorização pendentes somem na hora, e as
--- credenciais ficam com revogação IMEDIATA agendada — o cron revoga no
--- terceiro (precisa do token para isso) e, por o contato estar anonimizado,
--- apaga a linha inteira em vez de só esvaziá-la.
+-- Excluir o contato: a rota de exclusão revoga no terceiro ANTES (o token
+-- some na cascata, e sem ele não há RFC 7009) e a FK em cascata apaga o resto.
+-- Anonimizar mantém a linha do contato, então aqui: os pedidos de autorização
+-- pendentes somem na hora; a credencial JÁ revogada (sem token, só o registro
+-- de que houve acesso) também, porque o cron só escolhe as vivas; e as vivas
+-- ficam com revogação IMEDIATA agendada — o cron revoga no terceiro (precisa
+-- do token para isso) e, por o contato estar anonimizado, apaga a linha
+-- inteira em vez de só esvaziá-la.
 create or replace function public.fn_mcp_contato_anonimizado_revoga_acessos()
 returns trigger
 language plpgsql
@@ -213,6 +216,10 @@ begin
   delete from public.mcp_oauth_pedidos p
    where p.organization_id = new.organization_id
      and p.contact_id = new.id;
+  delete from public.contato_mcp_credenciais c
+   where c.organization_id = new.organization_id
+     and c.contact_id = new.id
+     and c.revogado_em is not null;
   update public.contato_mcp_credenciais c
      set revogar_apos = now(),
          atualizado_em = now()

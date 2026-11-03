@@ -19,10 +19,11 @@ vi.mock("@/lib/mcp/servidor-externo/do-agente/retorno", () => ({
   paginaDoDesfecho: () => "<html></html>",
 }));
 
-import { GET as callback } from "@/app/api/v1/mcp-oauth/callback/route";
+import { GET as callback } from "@/app/api/v1/mcp-oauth/callback/[servidor]/route";
 import { GET as inicio } from "@/app/api/v1/mcp-oauth/iniciar/[state]/route";
 
 const STATE = "a".repeat(43);
+const SERVIDOR = "5e5e5e5e-0000-4000-8000-000000000001";
 
 function chamarInicio() {
   return inicio(new NextRequest(`http://localhost/api/v1/mcp-oauth/iniciar/${STATE}`), {
@@ -30,7 +31,9 @@ function chamarInicio() {
   });
 }
 function chamarCallback() {
-  return callback(new NextRequest(`http://localhost/api/v1/mcp-oauth/callback?state=${STATE}&code=c`));
+  return callback(new NextRequest(`http://localhost/api/v1/mcp-oauth/callback/${SERVIDOR}?state=${STATE}&code=c&iss=https%3A%2F%2Fas.example`), {
+    params: Promise.resolve({ servidor: SERVIDOR }),
+  });
 }
 
 beforeEach(() => {
@@ -61,5 +64,7 @@ describe("controle: módulo ligado", () => {
     expect((await chamarCallback()).status).toBe(200);
     expect(iniciar).toHaveBeenCalledTimes(1);
     expect(processar).toHaveBeenCalledTimes(1);
+    // O servidor da URL e o `iss` chegam ao fluxo, para ele conferir contra o pedido.
+    expect(processar.mock.calls[0]![1]).toMatchObject({ servidor: SERVIDOR, iss: "https://as.example", state: STATE });
   });
 });

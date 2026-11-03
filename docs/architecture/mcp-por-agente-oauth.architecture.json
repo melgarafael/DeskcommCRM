@@ -149,8 +149,8 @@
     {
       "id": "callback",
       "lane": "publico",
-      "label": "GET callback",
-      "sublabel": "consome o state ANTES da troca · troca code+verifier · grava credencial",
+      "label": "GET callback/:servidor",
+      "sublabel": "consome o state ANTES da troca · confere servidor e iss · troca code+verifier · grava credencial",
       "type": "api",
       "dot": "green"
     },
