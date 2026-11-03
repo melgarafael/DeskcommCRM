@@ -1,0 +1,135 @@
+import { describe, expect, it } from "vitest";
+
+import { caminhoDaLigacao, comoTerminou, configDoFunil, linhasDoRoteiro, ordenarFila, ROTEIRO_PADRAO, RESULTADOS, ETAPAS_DO_COLD_CALL } from "./regras";
+
+const lead = (id: string, etapa: string, tentativas: number, ultima: string | null, criado = "2026-11-01") => ({
+  id,
+  etapa,
+  tentativas,
+  ultima_tentativa_em: ultima,
+  criado_em: criado,
+});
+
+describe("ordenarFila", () => {
+  it("quem nunca foi tentado vem antes, e quem foi tentado há mais tempo em seguida", () => {
+    const fila = ordenarFila([
+      lead("recente", "nao-atendeu", 1, "2026-11-03"),
+      lead("novo", "na-fila", 0, null),
+      lead("antigo", "caixa-postal", 1, "2026-11-01"),
+    ]);
+    expect(fila.map((l) => l.id)).toEqual(["novo", "antigo", "recente"]);
+  });
+
+  it("follow-up e reunião saem da fila", () => {
+    const fila = ordenarFila([lead("a", "follow-up", 1, null), lead("b", "reuniao-pedida", 1, null)]);
+    expect(fila).toEqual([]);
+  });
+});
+
+describe("configDoFunil", () => {
+  it("só o funil marcado é de cold call", () => {
+    expect(configDoFunil({ cold_call: { ativo: true, roteiro: "oi" } })).toEqual({ roteiro: "oi" });
+    expect(configDoFunil({})).toBeNull();
+    expect(configDoFunil(null)).toBeNull();
+    expect(configDoFunil({ cold_call: { ativo: false } })).toBeNull();
+  });
+});
+
+describe("linhasDoRoteiro", () => {
+  it("aceita os jeitos comuns de escrever as variáveis", () => {
+    const texto = (roteiro: string) =>
+      linhasDoRoteiro(roteiro, { negocio: "Pet Exemplo", quemLiga: "Caio" }).map((l) => l.texto);
+    for (const variavel of ["[nome da empresa]", "[NOME DA EMPRESA]", "[nome do negocio]", "[empresa]", "[nome do lead]", "[cliente]"]) {
+      expect(texto(`- É da ${variavel}?`)).toEqual(["É da Pet Exemplo?"]);
+    }
+    expect(texto("- Sou o [meu nome].")).toEqual(["Sou o Caio."]);
+  });
+
+  it("o roteiro padrão usa o nome da organização, sem marca fixa", () => {
+    const textos = linhasDoRoteiro(ROTEIRO_PADRAO, { negocio: "Pet", quemLiga: "Caio", suaEmpresa: "Clínica Sol" }).map((l) => l.texto).join(" ");
+    expect(textos).toContain("da Clínica Sol");
+    expect(textos).not.toContain("[sua empresa]");
+  });
+
+  it("tira o negrito colado e ainda separa a marca", () => {
+    expect(linhasDoRoteiro("- **[Agendou]** Pegar o **e-mail**.", { negocio: "X", quemLiga: "Y" })).toEqual([
+      { tipo: "fala", marca: "Agendou", texto: "Pegar o e-mail." },
+    ]);
+  });
+
+  it("nome com cifrão entra como texto", () => {
+    expect(linhasDoRoteiro("- [empresa]", { negocio: "R$& Cia", quemLiga: "Y" })[0]).toMatchObject({ texto: "R$& Cia" });
+  });
+
+  it("preenche as lacunas e separa título, marca e fala", () => {
+    const linhas = linhasDoRoteiro("# Abertura\n- É da [nome do negócio]?\n- [Resposta positiva] Sou o [seu nome].", {
+      negocio: "Pet Exemplo",
+      quemLiga: "Caio",
+    });
+    expect(linhas).toEqual([
+      { tipo: "titulo", texto: "Abertura" },
+      { tipo: "fala", marca: null, texto: "É da Pet Exemplo?" },
+      { tipo: "fala", marca: "Resposta positiva", texto: "Sou o Caio." },
+    ]);
+  });
+
+  it("o roteiro padrão não promete link de reunião e não sobra lacuna sem preencher", () => {
+    const linhas = linhasDoRoteiro(ROTEIRO_PADRAO, { negocio: "X", quemLiga: "Y" });
+    const texto = linhas.map((l) => l.texto).join(" ");
+    expect(texto).not.toMatch(/\[nome do neg|\[seu nome/);
+    expect(texto).not.toMatch(/link/i);
+  });
+});
+
+describe("os resultados", () => {
+  it("todo resultado leva a uma etapa que o funil tem, ou encerra como perdido", () => {
+    const slugs = ETAPAS_DO_COLD_CALL.map((e) => e.slug) as string[];
+    for (const r of Object.values(RESULTADOS)) {
+      if ("etapa" in r) expect(slugs).toContain(r.etapa);
+      else expect(r.perde).toBe(true);
+    }
+  });
+});
+
+describe("como a ligação terminou", () => {
+  const fim = (end_reason: string | null, atendida = false, porMim = false) => ({ end_reason, atendida, porMim });
+
+  it("o lead barrou sem atender: é recusa, mesmo vindo como user_ended", () => {
+    for (const motivo of ["user_ended", "declined", "rejected", "busy", "do_not_disturb"]) {
+      expect(comoTerminou(fim(motivo))).toBe("recusada");
+    }
+  });
+
+  it("desligar daqui, antes de atenderem, não é recusa", () => {
+    expect(comoTerminou(fim("user_ended", false, true))).toBe("encerrada");
+  });
+
+  it("depois de atendida, quem desliga só encerra", () => {
+    expect(comoTerminou(fim("user_ended", true))).toBe("encerrada");
+  });
+
+  it("tocou até o fim é sem resposta, e motivo desconhecido não vira recusa", () => {
+    expect(comoTerminou(fim("timeout"))).toBe("sem_resposta");
+    expect(comoTerminou(fim("failed"))).toBe("encerrada");
+    expect(comoTerminou(fim(null))).toBe("encerrada");
+  });
+});
+
+describe("por onde a ligação sai", () => {
+  const conectado = { configured: true, paired: true };
+
+  it("canal de voz pareado e contato salvo: sai pelo CRM", () => {
+    expect(caminhoDaLigacao(conectado, "contato")).toBe("crm");
+  });
+
+  it("status que não voltou não vira discador", () => {
+    expect(caminhoDaLigacao(undefined, "contato")).toBe("indefinido");
+    expect(caminhoDaLigacao(null, "contato")).toBe("indefinido");
+  });
+
+  it("sem canal pareado ou sem contato, abre o discador", () => {
+    expect(caminhoDaLigacao({ configured: true, paired: false }, "contato")).toBe("discador");
+    expect(caminhoDaLigacao({ configured: false, paired: false }, "contato")).toBe("discador");
+    expect(caminhoDaLigacao(conectado, null)).toBe("discador");
+  });
+});

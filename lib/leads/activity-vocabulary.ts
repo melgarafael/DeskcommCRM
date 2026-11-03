@@ -230,9 +230,11 @@ export type ActivityType =
    * nome do arquivo, tipo. A leitura da IA não entra no vocabulário porque a
    * própria fila é a memória dela, com trecho e decisão por proposta.
    */
-  | "document_attached";
+  | "document_attached"
+  | "cold_call_result";
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
+  cold_call_result: "Ligação de cold call",
   lead_created: "Entrou no funil",
   stage_changed: "Mudou de estágio",
   agent_move_corrected: "Correção do que o assistente tinha feito",

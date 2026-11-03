@@ -186,6 +186,15 @@ export const NAV_CATALOG = [
     sidebar: true,
   },
   {
+    // Fila de ligações sobre um funil próprio. A régua está em lib/cold-call/regras.ts.
+    href: "/app/cold-call",
+    label: "Cold Call",
+    description: "Ligue para uma lista de leads, um por vez, com roteiro e resultado de cada ligação.",
+    icon: "Phone",
+    group: "atendimento",
+    minRole: "agent",
+  },
+  {
     // Entra em "atendimento", e não em "organizacao", porque a Agenda é onde o
     // dia acontece e não onde ele se configura: quem atende abre isto de manhã
     // junto com o Inbox. Os TIPOS de agendamento — que são configuração de

@@ -29,6 +29,8 @@
  * `tests/unit/audit-lista-do-painel-e-derivada.test.tsx` reprova quem tentar.
  */
 export const AUDIT_ACTIONS = [
+  "cold_call.result",
+  "cold_call.script_updated",
   "settings.agenda_presentation_updated",
   "ad_tracking_link.saved",
   "auth.login_success",
