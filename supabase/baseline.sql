@@ -66675,6 +66675,73 @@ grant  execute on function public.fn_crm_lead_close_on_stage() to authenticated,
 revoke execute on function public.fn_validate_lost_reason_required() from public, anon;
 grant  execute on function public.fn_validate_lost_reason_required() to authenticated, service_role;
 
+-- ---- papel único nos helpers de visibilidade (migration 9090) ----
+-- manifest: Reutiliza o papel uma vez por chamada de visibilidade, preservando curto-circuito master e regras por linha (#3882).
+-- Contexto por CHAMADA, não cache por consulta ou entre instruções.
+create or replace function public.fn_can_view_lead(
+  p_org uuid,
+  p_owner_user_id uuid
+) returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select case
+    when public.fn_is_platform_admin() then true
+    else (
+      with actor as materialized (
+        select public.fn_user_role_in_org(p_org) as role
+      )
+      select case
+        when actor.role is null then false
+        when actor.role in ('viewer','manager','admin') then true
+        when p_owner_user_id = auth.uid() then true
+        else case coalesce(
+               (select settings->>'visibility_mode' from public.organizations where id = p_org),
+               'own_and_unassigned')
+             when 'all' then true
+             when 'own_and_unassigned' then p_owner_user_id is null
+             else false
+           end
+      end
+      from actor
+    )
+  end;
+$$;
+
+create or replace function public.fn_can_view_conversation(
+  p_org uuid,
+  p_assigned_to_user_id uuid
+) returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select case
+    when public.fn_is_platform_admin() then true
+    else (
+      with actor as materialized (
+        select public.fn_user_role_in_org(p_org) as role
+      )
+      select case
+        when actor.role is null then false
+        when actor.role in ('viewer','manager','admin') then true
+        when p_assigned_to_user_id = auth.uid() then true
+        else case coalesce(
+               (select settings->>'visibility_mode' from public.organizations where id = p_org),
+               'own_and_unassigned')
+             when 'all' then true
+             when 'own_and_unassigned' then p_assigned_to_user_id is null
+             else false
+           end
+      end
+      from actor
+    )
+  end;
+$$;
+
+-- Mesma superfície já concedida na main; nenhuma role nova.
+REVOKE EXECUTE ON FUNCTION public.fn_can_view_lead(uuid,uuid), public.fn_can_view_conversation(uuid,uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_can_view_lead(uuid,uuid), public.fn_can_view_conversation(uuid,uuid) TO authenticated, service_role;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
@@ -71104,3 +71171,15 @@ create index if not exists avisos_org_publicar_idx
 alter table public.avisos enable row level security;
 revoke all on public.avisos from public, anon, authenticated;
 grant select, insert, update, delete on public.avisos to service_role;
+
+-- ---- cor da fila de atendimento (migration 9084) ----
+-- manifest: attendant_sectors.color — a cor de identificação da fila (`#rrggbb`) ou nula; o CHECK recusa fora do formato, então a forma vale mesmo fora da rota
+--
+-- Espelho da 9084. `null` é ausência de escolha (o visual de antes da fatia),
+-- não uma cor zero; por isso não há `default`.
+alter table public.attendant_sectors
+  add column if not exists color text
+  check (color is null or color ~ '^#[0-9a-fA-F]{6}$');
+
+comment on column public.attendant_sectors.color is
+  'Cor de identificação da fila (migration 9084): #rrggbb, ou NULL = sem cor. O CHECK guarda a FORMA; a paleta é a da tela (PALETA_DE_ETIQUETAS) e não se valida no banco. Lida por GET /api/v1/attendants/sectors e gravada por PATCH /api/v1/attendants/sectors/[id] (manager+).';
