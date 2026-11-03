@@ -568,7 +568,9 @@ function requisicao(c: Pedido, cabecalhos: Record<string, string> = {}): NextReq
 }
 
 async function chamar(c: Pedido, req: NextRequest): Promise<Response> {
-  const modulo = (await CARREGA[c.rota]()) as unknown as Record<string, unknown>;
+  const carregar = CARREGA[c.rota];
+  if (!carregar) throw new Error(`rota sem carregador: ${c.rota}`);
+  const modulo = (await carregar()) as unknown as Record<string, unknown>;
   const manipulador = modulo[c.metodo] as Manipulador;
   return manipulador(req, { params: Promise.resolve(c.params ?? {}) });
 }
@@ -613,7 +615,7 @@ async function comoSessao(c: Caso) {
     tabelasSemOrganizacao: SEM_ORGANIZACAO,
   });
   vi.mocked(createClient).mockResolvedValue({
-    ...falso.cliente,
+    ...(falso.cliente as object),
     auth: {
       getUser: vi.fn().mockResolvedValue({
         data: { user: { id: PESSOA_DA_SESSAO, idioma: "pt-BR" } },
@@ -856,7 +858,7 @@ describe("o ramo do token em conversas e conversation-tags", () => {
       ...LINHAS_BASE,
       conversations: [
         { ...CONVERSAS[0], assigned_to_user_id: PESSOA_DA_SESSAO, assignee_kind: "user", sector_id: null },
-        CONVERSAS[1],
+        CONVERSAS[1]!,
       ],
     };
     const { res, texto, falso } = await comoToken(SECTOR_PUT, { linhas });

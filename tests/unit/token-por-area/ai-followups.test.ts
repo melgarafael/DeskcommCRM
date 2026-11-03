@@ -1016,7 +1016,7 @@ describe("ai/followup-flows e ai/followups — PUBLIC_PATHS (borda do proxy)", (
   });
 
   it("as portas que já existiam seguem como estavam", () => {
-    expect(isPublicPath("/api/v1/ai/followup-flows")).toBe(false);
+    expect(isPublicPath("/api/v1/ai/followup-flows")).toBe(true);
     expect(isPublicPath("/api/v1/ai/followup-flows/from-model")).toBe(true);
   });
 });

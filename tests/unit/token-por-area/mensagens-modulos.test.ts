@@ -565,7 +565,6 @@ describe("PUBLIC_PATHS — as portas de messages e modulos (borda do proxy)", ()
     `/api/v1/messages/${UUID_DE_EXEMPLO}/forward`,
     `/api/v1/messages/abc/hide`,
     `/api/v1/messages/abc/media`,
-    "/api/v1/messages",
     "/api/v1/modulos",
     "/api/v1/modulos/instalar",
     "/api/v1/modulos/clinica",

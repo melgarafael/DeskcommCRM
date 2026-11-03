@@ -19,7 +19,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { fail } from "@/lib/api/wrappers";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
-import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { extractBearer } from "@/lib/mcp/auth";
 import { loadAuthUser } from "@/lib/auth/server";
@@ -77,7 +77,7 @@ type Linha = {
 type ResponderDeps = {
   db: SupabaseClient;
   organizationId: string;
-  idioma: string;
+  idioma: Idioma;
   messageId: string;
   requestId: string;
   /** Sujeito do limite de conversão AAC: `user.id` na sessão, o id do token no Bearer. */
