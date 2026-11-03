@@ -10,7 +10,9 @@
  *     recarga (`lib/agent-engine/queue/espera-de-saldo.ts`);
  *   - a IA rascunhou uma proposta que só uma pessoa pode revisar e enviar
  *     (`lib/propostas/aviso-de-revisao.ts`);
- *   - um negócio entrou numa etapa que avisa (migration 0440).
+ *   - um negócio entrou numa etapa que avisa (migration 0440) — com o valor
+ *     do negócio no título e quantos entraram hoje no corpo
+ *     (`./push-de-venda.ts`), só quando todo atendente vê todo negócio.
  *
  * São os MESMOS que têm som próprio: a regra de quais avisos pedem gente é uma
  * só (`somDoAviso`). Todos chegam pelo barramento como `central.aviso_criado`
@@ -24,16 +26,27 @@
  * contexto com a permissão que tem. O destino é o mesmo que a Central daria ao
  * aviso (`REFERENCIAS_DE_AVISO`).
  *
- * Os corpos são frases fixas, por isso todo ramo declara `corpoSemPrevia` igual
- * ao `body`. O que de fato aparece com a tela bloqueada segue, além disso, a
- * opção da empresa, aplicada pelo funil `./web_push.ts`.
+ * Os corpos são frases fixas, por isso todo ramo declara `corpoSemPrevia`
+ * igual ao `body` — menos a etapa que avisa, cujo corpo pode levar a soma do
+ * dia: aí o corpo sem prévia é a frase fixa, sem número. O que de fato aparece
+ * com a tela bloqueada segue, além disso, a opção da empresa, aplicada pelo
+ * funil `./web_push.ts`.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { PAPEL_MINIMO_DA_CENTRAL, REFERENCIAS_DE_AVISO } from "@/lib/ai/inbox-destino";
+import type { VisibilityMode } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 
+import {
+  entradasDeHoje,
+  inicioDoDia,
+  linhaDoDia,
+  modoDeVisibilidade,
+  tituloComValor,
+  valorDoNegocio,
+} from "./push-de-venda";
 import { truncar, type PushPayload } from "./push_payload";
 import { somDoAviso } from "./sons-da-org";
 import type { DestinoDoPush } from "./web_push";
@@ -41,9 +54,26 @@ import type { DestinoDoPush } from "./web_push";
 /** Sem destino próprio, o push abre a Central — onde o aviso está. */
 const CENTRAL = "/app/ai/inbox";
 
-async function idiomaDaOrganizacao(admin: SupabaseClient, orgId: string): Promise<Idioma> {
-  const { data } = await admin.from("organizations").select("locale").eq("id", orgId).maybeSingle();
-  return normalizarIdioma((data as { locale?: string | null } | null)?.locale ?? null);
+/**
+ * Idioma, fuso e visibilidade da organização: o push sai sem ninguém logado, o
+ * fuso diz onde começa o "hoje" da soma do dia, e o `visibility_mode` diz que
+ * número de negócio cada papel pode ler (`./push-de-venda.ts`).
+ */
+export async function organizacaoDoPush(
+  admin: SupabaseClient,
+  orgId: string,
+): Promise<{ idioma: Idioma; fuso: string | null; visibilidade: VisibilityMode }> {
+  const { data } = await admin
+    .from("organizations")
+    .select("locale, timezone, settings")
+    .eq("id", orgId)
+    .maybeSingle();
+  const org = data as { locale?: string | null; timezone?: string | null; settings?: unknown } | null;
+  return {
+    idioma: normalizarIdioma(org?.locale ?? null),
+    fuso: org?.timezone ?? null,
+    visibilidade: modoDeVisibilidade(org?.settings ?? null),
+  };
 }
 
 type Aviso = {
@@ -102,7 +132,7 @@ export async function pushDoAvisoDaCentral(
 async function montarPush(admin: SupabaseClient, orgId: string, item: Aviso): Promise<PushPayload | null> {
   const som = somDoAviso(item);
   if (som === null) return null;
-  const idioma = await idiomaDaOrganizacao(admin, orgId);
+  const { idioma, fuso, visibilidade } = await organizacaoDoPush(admin, orgId);
   const tag = `aviso:${item.id}`;
 
   // Sem saldo no provedor: o título já nasceu no idioma da organização
@@ -155,17 +185,36 @@ async function montarPush(admin: SupabaseClient, orgId: string, item: Aviso): Pr
   // Etapa que avisa: título e corpo já nasceram no idioma da organização, só
   // com o nome da etapa (`lib/leads/aviso-de-etapa.ts`). O destino é o negócio
   // dentro do funil dele — o mesmo botão «Abrir negócio» da Central.
+  //
+  // O VALOR do negócio vai depois do título, e o corpo vira quantos negócios
+  // entraram hoje nesta etapa, com a soma na mesma moeda (`./push-de-venda.ts`).
+  // Só com `visibility_mode = 'all'`: o aviso vai a todo atendente (não tem
+  // destinatário), e nos outros modos um atendente leria o valor de negócio
+  // que a tela não lhe mostra. O corpo sem prévia segue a frase fixa, sem
+  // número. Sem resumo do dia, o corpo também fica a frase fixa.
   let href = CENTRAL;
+  let valor: ReturnType<typeof valorDoNegocio> = null;
   if (item.ref_kind === "lead" && item.ref_id) {
     const { data: lead } = await admin
       .from("crm_leads")
-      .select("pipeline_id")
+      .select("pipeline_id, value_cents, currency")
       .eq("organization_id", orgId)
       .eq("id", item.ref_id)
       .maybeSingle();
-    const pipelineId = (lead as { pipeline_id?: string | null } | null)?.pipeline_id;
-    if (pipelineId) href = REFERENCIAS_DE_AVISO.lead.href(item.ref_id, pipelineId);
+    const linha = lead as { pipeline_id?: string | null; value_cents?: number | null; currency?: string | null } | null;
+    if (linha?.pipeline_id) href = REFERENCIAS_DE_AVISO.lead.href(item.ref_id, linha.pipeline_id);
+    if (visibilidade === "all") valor = valorDoNegocio(linha);
   }
-  const body = truncar(item.body ?? "");
-  return { title: truncar(item.title), body, corpoSemPrevia: body, tag, href };
+  const fixo = truncar(item.body ?? "");
+  if (visibilidade !== "all") return { title: truncar(item.title), body: fixo, corpoSemPrevia: fixo, tag, href };
+  const moeda = valor?.moeda ?? null;
+  const hoje = await entradasDeHoje(admin, orgId, item.title, moeda, inicioDoDia(new Date(), fuso));
+  const dia = linhaDoDia(traduzir("Hoje nesta etapa: {quantidade}", idioma), hoje, moeda);
+  return {
+    title: truncar(tituloComValor(item.title, valor)),
+    body: dia ? truncar(dia) : fixo,
+    corpoSemPrevia: fixo,
+    tag,
+    href,
+  };
 }
