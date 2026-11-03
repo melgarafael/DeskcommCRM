@@ -200,6 +200,7 @@ interface FormState {
   split_max_chars: number;
   /** Janela de rajada (ms) do agente. `null` = usa a env da instalação. */
   inbound_debounce_ms: number | null;
+  reply_min_interval_ms: number | null;
   followup: FollowupValue;
   voz_enabled: boolean;
   voz_quando: "nunca" | "espelhar" | "sempre";
@@ -312,6 +313,7 @@ export function buildState(args: {
     split_messages: version?.split_messages ?? false,
     split_max_chars: version?.split_max_chars ?? 600,
     inbound_debounce_ms: version?.inbound_debounce_ms ?? null,
+    reply_min_interval_ms: version?.reply_min_interval_ms ?? null,
     followup: version?.followup
       ? {
           ...DEFAULT_FOLLOWUP,
@@ -379,6 +381,7 @@ function toVersionPayload(s: FormState) {
     split_messages: s.split_messages,
     split_max_chars: s.split_max_chars,
     inbound_debounce_ms: s.inbound_debounce_ms,
+    reply_min_interval_ms: s.reply_min_interval_ms,
     followup: s.followup,
     voz_enabled: s.voz_enabled,
     voz_quando: s.voz_quando,
@@ -1144,6 +1147,42 @@ export function AgentForm(props: Props) {
                 <p className="text-xs text-muted-foreground">
                   {t(
                     "Mensagens do mesmo contato dentro desse tempo viram uma resposta só. Vazio usa a janela padrão da instalação (máximo 60 segundos).",
+                  )}
+                </p>
+              </div>
+              <div className="col-span-2 space-y-1">
+                <Label htmlFor="reply_min_interval_ms">
+                  {t("Pausa entre uma resposta e a próxima (segundos)")}
+                </Label>
+                <Input
+                  id="reply_min_interval_ms"
+                  type="number"
+                  min={0}
+                  max={600}
+                  step={1}
+                  placeholder={t("Vazio = sem pausa")}
+                  value={
+                    form.reply_min_interval_ms === null
+                      ? ""
+                      : String(Math.round(form.reply_min_interval_ms / 1000))
+                  }
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    // Vazio = sem pausa (campo null). A UI fala em SEGUNDOS; o
+                    // banco e o worker falam em ms (conversão aqui, num ponto só).
+                    // Teto de 600s no campo espelha o da validação e do worker.
+                    patch({
+                      reply_min_interval_ms:
+                        raw === ""
+                          ? null
+                          : Math.round(Math.max(0, Math.min(600, Number(raw))) * 1000),
+                    });
+                  }}
+                  disabled={disabled}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Depois que a IA responde uma conversa, ela só responde de novo depois desse tempo. O que o cliente escrever nesse meio-tempo é respondido junto. Vazio ou 0 = sem pausa (máximo 600 segundos).",
                   )}
                 </p>
               </div>
