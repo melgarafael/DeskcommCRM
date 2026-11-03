@@ -67028,7 +67028,7 @@ begin
   );
 end;
 $$;
-revoke all on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb,uuid) from public, anon;
+revoke execute on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb,uuid) from public, anon;
 grant execute on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb,uuid) to authenticated;
 -- As sobrecargas antigas saem: a de 9 (9078) e, por garantia, as de 6 e 7, que
 -- vivas ao lado desta deixariam ambígua a chamada com menos argumentos.
