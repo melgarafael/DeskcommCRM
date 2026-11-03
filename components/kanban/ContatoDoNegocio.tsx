@@ -153,7 +153,7 @@ function SemContato({
           type="button"
           size="sm"
           variant="outline"
-          className="h-7 px-2 text-xs"
+          className="px-2 text-xs lg:h-7"
           data-testid="vincular-contato"
           onClick={() => setAberto(true)}
         >
@@ -236,7 +236,7 @@ function SeletorDeVinculo({
                 type="button"
                 size="sm"
                 variant="ghost"
-                className="ml-auto h-6 px-2 text-[11px]"
+                className="ml-auto px-2 text-[11px] lg:h-6"
                 disabled={editar.isPending}
                 // Numa lista de pessoas, "Vincular" sozinho não diz a quem.
                 aria-label={`${t("Vincular")} ${nome}`.trim()}
@@ -352,7 +352,7 @@ function RodapeDoVinculo({
         type="button"
         size="sm"
         variant="ghost"
-        className="h-6 px-2 text-[11px] text-text-muted hover:text-destructive"
+        className="px-2 text-[11px] text-text-muted hover:text-destructive lg:h-6"
         disabled={editar.isPending}
         onClick={desvincular}
       >
