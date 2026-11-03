@@ -4,6 +4,7 @@ import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 import { TIPOS_DE_CASO, TIPOS_DE_CASO_PARA_A_IA } from "@/lib/ai/case-copy";
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
+import { etiquetarProdutoAposEnvio } from './etiqueta-apos-envio';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
 /**
@@ -4273,6 +4274,9 @@ async function executarTurnoDoAgente(
         // ele segue inteiramente síncrono do `checar` até a reserva.
         let fotosDoProduto: FotoParaEnvio[] = [];
         let fotosQueFaltaram = 0;
+        // O código que resolveu um produto ATIVO do catálogo — só com ele a
+        // mensagem, se sair, etiqueta o negócio (ver o bloco depois do envio).
+        let produtoApresentado: string | null = null;
         try {
           dupTrava.reservar(body);
           // RESPOSTA OBSOLETA: o cliente escreveu de novo enquanto este turno pensava.
@@ -4326,6 +4330,7 @@ async function executarTurnoDoAgente(
             }
             fotosDoProduto = preparadas.fotos;
             fotosQueFaltaram = preparadas.tinha - preparadas.fotos.length;
+            produtoApresentado = produto_codigo.trim();
           }
           // F4-04: sinaliza (independente do gate F4-01/F4-08) se ESTA candidata é uma
           // promessa fora de tabela — usado só para correlacionar com o jailbreak no fim do
@@ -4763,6 +4768,20 @@ async function executarTurnoDoAgente(
             }
             pendingCitations = [];
           }
+          // O PRODUTO APRESENTADO VIRA ETIQUETA DO NEGÓCIO. O fluxo de
+          // acompanhamento escolhe o modelo pela etiqueta do negócio, e pedir ao
+          // modelo que a ponha não é confiável; o envio com `produto_codigo` é o
+          // fato determinístico. Depois do envio, só quando o canal disse
+          // "enviada", nunca em prévia — e nunca lança: a mensagem já saiu.
+          // Ver `etiqueta-apos-envio.ts`.
+          await etiquetarProdutoAposEnvio(pool, runLog, {
+            preview: Boolean(preview),
+            produtoApresentado,
+            outcome,
+            tenantId,
+            contactId: leadId,
+            agentId: agentConfig?.agentId ?? null,
+          });
           switch (outcome.kind) {
             case 'sent':
             case 'already_sent':
