@@ -387,6 +387,7 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response>
     action: "lead.attachment_deleted",
     actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
     actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId,
     resourceType: "crm_leads",
     resourceId: leadId,
     metadata: {

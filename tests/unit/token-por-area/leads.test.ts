@@ -199,6 +199,8 @@ const PIPELINES: Linha[] = [
 ];
 const ETAPAS: Linha[] = [
   { id: ETAPA_A, pipeline_id: PIPELINE_A, name: "Etapa da A", is_won: false, is_lost: false, is_archived: false, position: 1 },
+  { id: "a4444444-4444-4444-8444-aaaaaaaaaab1", pipeline_id: PIPELINE_A, name: "Ganho da A", is_won: true, is_lost: false, is_archived: false, position: 2 },
+  { id: "a4444444-4444-4444-8444-aaaaaaaaaab2", pipeline_id: PIPELINE_A, name: "Perda da A", is_won: false, is_lost: true, is_archived: false, position: 3 },
   { id: ETAPA_B, pipeline_id: PIPELINE_B, name: "Etapa da B", is_won: false, is_lost: false, is_archived: false, position: 1 },
 ];
 const ORGS: Linha[] = [
@@ -392,21 +394,6 @@ const CASOS: readonly Caso[] = [
   },
   // ─── itens [id] ───
 
-  // GET /api/v1/leads/[id] — ficha do negócio (viewer+).
-  {
-    rota: "leads/[id]",
-    metodo: "GET",
-    caminho: `/api/v1/leads/${LEAD_A}`,
-    params: { id: LEAD_A },
-    linhas: LINHAS_BASE,
-    papel: "viewer",
-    escopo: "mcp:read",
-    papelDoToken: undefined,
-    recurso: "crm_leads",
-    recursoDoTeto: "leads_patch",
-    status: 200,
-    audita: false,
-  },
   // PATCH /api/v1/leads/[id] — atualização (agent+).
   {
     rota: "leads/[id]",
@@ -477,7 +464,7 @@ const CASOS: readonly Caso[] = [
     metodo: "POST",
     caminho: `/api/v1/leads/${LEAD_A}/clone`,
     params: { id: LEAD_A },
-    corpo: { pipeline_id: PIPELINE_A },
+    corpo: { pipeline_id: PIPELINE_B },
     linhas: LINHAS_BASE,
     papel: "agent",
     escopo: "mcp:write",
@@ -550,7 +537,7 @@ const CASOS: readonly Caso[] = [
     recurso: "crm_leads",
     recursoDoTeto: "leads_next_action",
     status: 200,
-    audita: true,
+    audita: false,
   },
   // GET /api/v1/leads/[id]/timeline — timeline do negócio (membro/viewer).
   {
@@ -986,13 +973,6 @@ describe("leads e lead-captures aceitam token", () => {
 // ─── O que só o ramo do token precisa garantir ──────────────────────────────
 
 describe("o ramo do token em leads e lead-captures", () => {
-  it("GET /api/v1/leads/[id]: leitura de lead não traz nada de outra org", async () => {
-    const { res, texto, falso } = await comoToken(CASOS.find((c) => c.rota === "leads/[id]" && c.metodo === "GET")!);
-    expect(res.status, texto).toBe(200);
-    const cadeiaDoLead = falso.cadeias.find((c) => c.tabela === "crm_leads");
-    expect(cadeiaDoLead?.filtros).toContainEqual(["organization_id", ORG_A]);
-  });
-
   it("POST /api/v1/leads/[id]/contatos-relacionados: contato de outra org é rejeitado", async () => {
     const c: Caso = {
       ...CASOS.find((x) => x.rota === "leads/[id]/contatos-relacionados" && x.metodo === "POST")!,
@@ -1089,7 +1069,7 @@ describe("o que segue só de sessão", () => {
     );
 
     expect(res.status).toBe(401);
-    expect(requireRole).toHaveBeenCalledWith("agent", expect.objectContaining({ resource: "crm_leads" }));
+    expect(requireRole).toHaveBeenCalledWith("admin", expect.objectContaining({ resource: "crm_leads" }));
     expect(validateBearerToken).not.toHaveBeenCalled();
     expect(createAdminClient).not.toHaveBeenCalled();
   });

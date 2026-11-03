@@ -336,6 +336,7 @@ export async function encerraDemanda(
   await audit({
     action: eventType,
     actorUserId: a.actorUserId,
+    actorApiTokenId: ctx.actor.type === "api_token" ? ctx.actor.id : null,
     organizationId: ctx.organization_id,
     resourceType: "crm_lead",
     resourceId: input.leadId,

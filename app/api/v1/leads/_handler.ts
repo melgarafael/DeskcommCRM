@@ -598,6 +598,7 @@ export async function createLeadHandler(
     .from("crm_stages")
     .select("id, pipeline_id, organization_id")
     .eq("id", input.stage_id)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
 
   if (stageErr) {
@@ -924,6 +925,7 @@ export async function createLeadHandler(
   await audit({
     action: "lead.created",
     actorUserId: a.actorUserId,
+    actorApiTokenId: ctx.actor.type === "api_token" ? ctx.actor.id : null,
     organizationId: ctx.organization_id,
     resourceType: "crm_lead",
     resourceId: (lead as { id: string }).id,
@@ -1291,6 +1293,7 @@ export async function updateLeadHandler(
   await audit({
     action: "lead.updated",
     actorUserId: a.actorUserId,
+    actorApiTokenId: ctx.actor.type === "api_token" ? ctx.actor.id : null,
     organizationId: existing.organization_id,
     resourceType: "crm_lead",
     resourceId: leadId,
@@ -1719,6 +1722,7 @@ export async function moveLeadHandler(
   await audit({
     action: "lead.moved",
     actorUserId: a.actorUserId,
+    actorApiTokenId: ctx.actor.type === "api_token" ? ctx.actor.id : null,
     organizationId: lead.organization_id,
     resourceType: "crm_lead",
     resourceId: leadId,
