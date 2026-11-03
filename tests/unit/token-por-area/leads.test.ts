@@ -513,7 +513,7 @@ const CASOS: readonly Caso[] = [
     metodo: "POST",
     caminho: `/api/v1/leads/${LEAD_A}/reactivation`,
     params: { id: LEAD_A },
-    corpo: { decision: "accept", proposal_id: REACTIVATIONS[0].id as string },
+    corpo: { decision: "accept", proposal_id: REACTIVATIONS[0]?.id as string },
     linhas: LINHAS_BASE,
     papel: "agent",
     escopo: "mcp:write",
@@ -1087,7 +1087,6 @@ describe("o que segue só de sessão", () => {
         method: "GET",
         headers: { ...AUTORIZACAO },
       }),
-      { params: Promise.resolve({}) },
     );
 
     expect(res.status).toBe(401);
@@ -1112,7 +1111,6 @@ describe("o que segue só de sessão", () => {
         method: "GET",
         headers: { ...AUTORIZACAO },
       }),
-      { params: Promise.resolve({}) },
     );
 
     expect(res.status).toBe(401);
