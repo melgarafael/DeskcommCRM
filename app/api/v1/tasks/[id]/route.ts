@@ -27,10 +27,10 @@ import { z } from "zod";
 
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { audit, isServiceRoleConfigured } from "@/lib/audit";
+import { audit } from "@/lib/audit";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { portaDaAplicacao } from "@/lib/db";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
 import { conferirDemanda } from "@/lib/tarefas/demanda";
 import {
@@ -98,9 +98,13 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   if (parsed.data.assigned_to) {
     // A chave estrangeira de `assigned_to` é só para `auth.users`: sem esta conferência, um id de
     // outra organização (ou de quem saiu da equipe) gravaria sem erro. A régua
-    // e o porquê do admin client estão em `lib/tarefas/responsavel.ts`.
-    const equipe = isServiceRoleConfigured() ? createAdminClient() : authz.supabase;
-    const veredito = await conferirResponsavel(equipe, organizationId, parsed.data.assigned_to);
+    // e o porquê do filtro de organização estão em `lib/tarefas/responsavel.ts`
+    // (SQL direto na porta de `lib/db` — o pool NÃO passa por RLS).
+    const veredito = await conferirResponsavel(
+      portaDaAplicacao(),
+      organizationId,
+      parsed.data.assigned_to,
+    );
     if (veredito === "falha_na_consulta") {
       return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
     }
@@ -131,7 +135,11 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   if (parsed.data.demanda_id) {
     // A chave estrangeira não passa pela RLS: sem esta conferência, a demanda
     // de outra organização gravaria sem erro. A régua está em `lib/tarefas/demanda.ts`.
-    const veredito = await conferirDemanda(supabase, organizationId, parsed.data.demanda_id);
+    const veredito = await conferirDemanda(
+      portaDaAplicacao(),
+      organizationId,
+      parsed.data.demanda_id,
+    );
     if (veredito === "falha_na_consulta") {
       return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
     }
@@ -193,7 +201,7 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   const fechouAgora =
     gravada.status === "done" && (antes as { status?: string } | null)?.status !== "done";
   if (fechouAgora) {
-    await registraAtividadeDaTarefa(supabase, {
+    await registraAtividadeDaTarefa(portaDaAplicacao(), {
       organizationId,
       tarefa: gravada,
       tipo: "task_completed",

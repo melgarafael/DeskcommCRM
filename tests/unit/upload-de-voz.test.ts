@@ -33,6 +33,27 @@ describe("uploadDeVoz", () => {
     );
   });
 
+  it("a nota de voz em opus do canal oficial sobe como .ogg, com a etiqueta audio/ogg;codecs=opus", async () => {
+    uploadMock.mockResolvedValue({ error: null });
+    createAdminClientMock.mockReturnValue({ storage: { from: () => ({ upload: uploadMock }) } });
+
+    const path = await uploadDeVoz({
+      tenantId: "org1",
+      conversationId: "conv1",
+      jobId: "job1",
+      seq: 3,
+      audio: Buffer.from("OggS"),
+      mimeType: "audio/ogg;codecs=opus",
+    });
+
+    // A extensão é o que diz o formato a um retry (`mimeDoCaminhoDeVoz`).
+    expect(path).toBe("org1/conv1/voz-agente-job1-3.ogg");
+    expect(uploadMock).toHaveBeenCalledWith("org1/conv1/voz-agente-job1-3.ogg", expect.any(Buffer), {
+      contentType: "audio/ogg;codecs=opus",
+      upsert: true,
+    });
+  });
+
   // Achado na revisão de código, antes da Fase 7: com `upsert: false`, um
   // envio que sintetiza e sobe o áudio mas falha no TRANSPORTE (WAHA fora)
   // trava para sempre — o retry rotaciona o ledger e sintetiza de novo, mas

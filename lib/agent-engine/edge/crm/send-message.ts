@@ -29,6 +29,7 @@ import { parseServiceBoundary } from '@/lib/atendimento/fronteira';
  */
 import { sendWithLedger, pgSendLedger, type SendOutcome } from './send-ledger';
 import { registrarCustoDeVoz, resolverCaminhoDeVoz, VozLedgerTerminalError } from './send-voice';
+import type { FormatoDaVoz } from '@/lib/ai/voz/formato';
 import { logger } from '@/lib/logger';
 export type { SendOutcome, SendLedgerStatus } from './send-ledger';
 
@@ -86,6 +87,8 @@ export interface SendMessageInput {
     apiKey: string;
     voiceId: string;
     modelId?: string;
+    /** mp3 ou ogg/opus — o que o canal da conversa entrega como nota de voz (`lib/ai/voz/formato.ts`). */
+    formato?: FormatoDaVoz;
     /**
      * Grava os bytes no Storage e devolve o path — ver `send-voice.ts`.
      *
@@ -250,7 +253,12 @@ export async function sendTurnMessage(
         store: pgSendLedger(db),
         identidade: { tenantId: input.tenantId, leadId: input.leadId, jobId: input.jobId, seq: input.seq },
         textoFalado: input.body,
-        voz: { apiKey: input.voz.apiKey, voiceId: input.voz.voiceId, modelId: input.voz.modelId },
+        voz: {
+          apiKey: input.voz.apiKey,
+          voiceId: input.voz.voiceId,
+          modelId: input.voz.modelId,
+          ...(input.voz.formato ? { formato: input.voz.formato } : {}),
+        },
         upload: input.voz.upload,
       });
       vozResolvida = { mediaStoragePath: r.mediaStoragePath, mimeType: r.mimeType };
