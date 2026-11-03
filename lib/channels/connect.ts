@@ -293,6 +293,42 @@ export async function savePartnerSession(
     archived_at: null,
   };
 
+  // ─── A CONEXÃO TROCOU DE CONTA? OS MODELOS DA ANTERIOR NÃO FICAM ──────────
+  //
+  // Medido numa instalação real: o dono reconectou a MESMA linha de conexão
+  // apontando para outra conta do provedor (outro número), e a aba "Modelos do
+  // parceiro" seguiu listando os modelos aprovados da conta ANTERIOR — com o
+  // `waba_id` velho e tudo. A tela lista por `channel_session_id`, que não
+  // mudou; quem mudou foi a conta, e ninguém contou aos modelos.
+  //
+  // O estrago não é cosmético: modelo aprovado pertence a uma conta de
+  // WhatsApp Business ESPECÍFICA. Mandar um da conta antiga pelo número novo é
+  // uma recusa garantida da plataforma — e o operador vê "modelo aprovado" na
+  // tela enquanto o envio falha, que é a pior forma de descobrir.
+  //
+  // A limpeza vai ANTES da escrita, e é restrita ao que não pertence à conta
+  // nova: `neq('waba_id', accountId)`. Reconectar a MESMA conta (trocar só a
+  // chave, o caso comum) não apaga nada.
+  //
+  // Falha aqui NÃO impede a conexão — erro devolvido OU lançado: um modelo
+  // velho a mais é ruim, uma conexão que não fecha é pior. Fica no log.
+  if (input.existingId) {
+    try {
+      const { error: erroDaLimpeza } = await admin
+        .from("meta_templates")
+        .delete()
+        .eq("organization_id", input.organizationId)
+        .eq("channel_session_id", input.existingId)
+        .neq("waba_id", input.accountId);
+      if (erroDaLimpeza) throw new Error(erroDaLimpeza.message);
+    } catch (err) {
+      logger.warn("[channels.connect] modelos da conta anterior não foram limpos", {
+        session_id: input.existingId,
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   if (input.existingId) {
     const { error } = await admin
       .from("channel_sessions")

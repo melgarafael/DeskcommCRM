@@ -260,6 +260,36 @@ export async function POST(req: NextRequest): Promise<Response> {
     const admin = createAdminClient();
     const agora = new Date().toISOString();
 
+    // ─── SINCRONIZAR É ESPELHAR, NÃO SÓ ACRESCENTAR ──────────────────────────
+    //
+    // O laço abaixo faz `upsert` do que o provedor devolveu. Sozinho, ele nunca
+    // TIRA nada — e foi assim que uma instalação real ficou com os modelos de
+    // uma conta anterior listados sob o número novo: a linha da conexão foi
+    // reapontada para outra conta, e os modelos velhos seguiram ali, com o
+    // `waba_id` antigo, porque nada os apagava.
+    //
+    // Modelo aprovado pertence a uma conta ESPECÍFICA: usar um da conta errada
+    // é recusa certa da plataforma, com a tela dizendo "aprovado". Por isso o
+    // que não é desta conta sai — e só isso. Modelo desta conta que o provedor
+    // não devolveu FICA: a lista pode vir curta por erro transitório, e apagar
+    // por ausência trocaria um defeito visível por perda silenciosa.
+    // Limpeza é acessória: se ela falhar — erro devolvido OU lançado —, a
+    // sincronização segue. Trocar modelo sobrando por 502 seria pior.
+    try {
+      const { error: erroDoEspelho } = await admin
+        .from("meta_templates")
+        .delete()
+        .eq("organization_id", r.ctx.orgId)
+        .eq("channel_session_id", r.ctx.sessionId)
+        .neq("waba_id", r.ctx.sessionRef);
+      if (erroDoEspelho) throw new Error(erroDoEspelho.message);
+    } catch (err) {
+      logger.warn("[partner/templates] modelos de outra conta não foram limpos", {
+        session_id: r.ctx.sessionId,
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
+
     let gravadas = 0;
     for (const t of remotas) {
       const { error } = await admin.from("meta_templates").upsert(

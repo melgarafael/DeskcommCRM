@@ -17,6 +17,11 @@ const h = vi.hoisted(() => ({
   create: vi.fn(),
   list: vi.fn(),
   upserts: [] as Record<string, unknown>[],
+  // O sincronizar espelha: apaga os modelos de OUTRA conta da mesma conexão
+  // (`delete().eq().eq().neq("waba_id", …)`) antes do upsert.
+  deletes: [] as Array<{ tabela: string; filtros: Array<[string, string, unknown]> }>,
+  erroDoDelete: null as { message: string } | null,
+  ordem: [] as string[],
 }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: h.role }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
@@ -29,10 +34,21 @@ vi.mock("@/lib/channels", async (original) => ({
 }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
-    from: () => {
+    from: (tabela: string) => {
       const q = {
         select: () => q,
         eq: () => q,
+        delete: () => {
+          const registro = { tabela, filtros: [] as Array<[string, string, unknown]> };
+          h.deletes.push(registro);
+          h.ordem.push(`delete:${tabela}`);
+          const d = {
+            eq: (c: string, v: unknown) => (registro.filtros.push(["eq", c, v]), d),
+            neq: (c: string, v: unknown) => (registro.filtros.push(["neq", c, v]), d),
+            then: (ok: (r: unknown) => unknown) => ok({ error: h.erroDoDelete }),
+          };
+          return d;
+        },
         order: () => q,
         maybeSingle: async () => ({
           data: { id: "sess-1", provider: "zernio", zernio_account_id: "ACC" },
@@ -40,6 +56,7 @@ vi.mock("@/lib/supabase/admin", () => ({
         }),
         upsert: async (linha: Record<string, unknown>) => {
           h.upserts.push(linha);
+          h.ordem.push(`upsert:${tabela}`);
           return { error: null };
         },
         then: (ok: (r: unknown) => unknown) => ok({ data: [], error: null }),
@@ -62,6 +79,9 @@ const RECUSADO = () => ({ ok: false, response: new Response(null, { status: 403 
 beforeEach(() => {
   vi.clearAllMocks();
   h.upserts = [];
+  h.deletes = [];
+  h.erroDoDelete = null;
+  h.ordem = [];
   h.role.mockResolvedValue(PERMITIDO);
   h.find.mockResolvedValue({ id: "sess-1", archivedAt: null });
   h.list.mockResolvedValue([
@@ -120,5 +140,33 @@ describe("rota de modelos do canal intermediado", () => {
       expect.objectContaining({ action: "template.created", actorUserId: "u-1", organizationId: "org-da-sessao" }),
     );
     expect(h.upserts[0]).toMatchObject({ organization_id: "org-da-sessao", channel_session_id: "sess-1" });
+  });
+
+  /**
+   * SINCRONIZAR É ESPELHAR: a linha da conexão reapontada para outra conta
+   * seguia listando os modelos da conta anterior, porque o sincronizar só fazia
+   * `upsert`. O que não é desta conta sai; o que É desta conta e o provedor não
+   * devolveu FICA (lista curta por erro transitório não apaga dado bom).
+   */
+  it("⭐ sincronizar apaga, antes do upsert, só os modelos de OUTRA conta desta conexão", async () => {
+    expect((await post({ acao: "sincronizar" })).status).toBe(200);
+
+    expect(h.deletes).toEqual([
+      {
+        tabela: "meta_templates",
+        filtros: [
+          ["eq", "organization_id", "org-da-sessao"],
+          ["eq", "channel_session_id", "sess-1"],
+          ["neq", "waba_id", "ACC"],
+        ],
+      },
+    ]);
+    expect(h.ordem).toEqual(["delete:meta_templates", "upsert:meta_templates"]);
+  });
+
+  it("a limpeza que falha não derruba a sincronização — o upsert segue e a rota responde 200", async () => {
+    h.erroDoDelete = { message: "permission denied" };
+    expect((await post({ acao: "sincronizar" })).status).toBe(200);
+    expect(h.upserts).toHaveLength(1);
   });
 });
