@@ -14,6 +14,20 @@ const h = vi.hoisted(() => ({
   limit: vi.fn(),
   iniciar: vi.fn(),
   concluir: vi.fn(),
+  baseConfigurada: "https://crm.exemplo.com" as string | undefined,
+  provedor: "https://provedor.exemplo.com/api",
+}));
+vi.mock("@/lib/env", async (original) => {
+  const { env: real } = await original<{ env: Record<string, unknown> }>();
+  return {
+    env: new Proxy(real, {
+      get: (alvo, chave) => (chave === "NEXT_PUBLIC_APP_URL" ? h.baseConfigurada : alvo[chave as string]),
+    }),
+  };
+});
+vi.mock("@/lib/channels/connect", async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  partnerEndpoint: () => h.provedor,
 }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: h.role }));
 vi.mock("@/lib/auth/server", () => ({ mfaEmDivida: h.mfa }));
@@ -35,11 +49,12 @@ import { ErroDaConexaoUmClique } from "@/lib/channels/conexao-um-clique";
 
 import { POST } from "./route";
 
-const chamar = (corpo: unknown) =>
+const chamar = (corpo: unknown, cabecalhos: Record<string, string> = {}) =>
   POST(
     new Request("https://crm.test/api/v1/channels/partner/um-clique", {
       method: "POST",
       body: JSON.stringify(corpo),
+      headers: cabecalhos,
     }) as never,
   );
 
@@ -52,6 +67,8 @@ const concluida = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  h.baseConfigurada = "https://crm.exemplo.com";
+  h.provedor = "https://provedor.exemplo.com/api";
   h.role.mockResolvedValue({
     ok: true,
     org: { orgId: "org-1", name: "Loja" },
@@ -164,4 +181,41 @@ it("falha inesperada do provedor: 502 sem vazar o detalhe", async () => {
   const r = await chamar({ acao: "iniciar", coexistencia: true });
   expect(r.status).toBe(502);
   expect(JSON.stringify(await r.json())).not.toContain("corpo interno");
+});
+
+const FORJADO = { origin: "https://outro-lugar.example", host: "outro-lugar.example" };
+
+it("o endereço do webhook único vem da configuração, nunca do Origin de quem pediu", async () => {
+  const r = await chamar({ acao: "iniciar", coexistencia: true }, FORJADO);
+  expect(r.status).toBe(200);
+  const [, ctx] = h.iniciar.mock.calls[0] ?? [];
+  expect(ctx).toMatchObject({ publicBase: "https://crm.exemplo.com" });
+});
+
+it.each([
+  ["ausente", undefined],
+  ["o placeholder da imagem genérica", "https://placeholder.invalid"],
+  ["a própria máquina", "http://localhost:3000"],
+  ["a própria máquina por IP", "http://127.0.0.1:3000"],
+])("base configurada %s: recusa sem falar com o provedor, mesmo com Origin", async (_r, base) => {
+  h.baseConfigurada = base;
+  for (const corpo of [
+    { acao: "iniciar", coexistencia: true },
+    { acao: "concluir", estado: "e".repeat(30), account_id: "b".repeat(24), profile_id: "a".repeat(24) },
+  ]) {
+    const r = await chamar(corpo, FORJADO);
+    expect(r.status).toBe(503);
+    expect((await r.json()).error.code).toBe("base_publica_nao_configurada");
+  }
+  expect(h.iniciar).not.toHaveBeenCalled();
+  expect(h.concluir).not.toHaveBeenCalled();
+});
+
+it("a própria máquina vale quando o provedor também está nela (o dublê das provas de tela)", async () => {
+  h.baseConfigurada = "http://localhost:3000/";
+  h.provedor = "http://127.0.0.1:3996";
+  const r = await chamar({ acao: "iniciar", coexistencia: true }, FORJADO);
+  expect(r.status).toBe(200);
+  const [, ctx] = h.iniciar.mock.calls[0] ?? [];
+  expect(ctx).toMatchObject({ publicBase: "http://localhost:3000" });
 });

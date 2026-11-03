@@ -33,7 +33,11 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { basePublicaDaInstalacao } from "@/lib/webhooks/url-publica";
+import { partnerEndpoint } from "@/lib/channels/connect";
+import {
+  basePublicaConfiguradaDaInstalacao,
+  enderecoDaPropriaMaquina,
+} from "@/lib/webhooks/url-publica";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -85,6 +89,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
   }
 
+  // O webhook ÚNICO entrega os eventos de todas as organizações: o endereço
+  // dele vem só da configuração da instalação, nunca de quem fez o pedido. A
+  // própria máquina só vale com o provedor também nela (o dublê das provas).
+  const publicBase = basePublicaConfiguradaDaInstalacao({
+    aceitarMaquinaLocal: enderecoDaPropriaMaquina(partnerEndpoint()),
+  });
+  if (!publicBase) {
+    return fail(
+      "base_publica_nao_configurada",
+      t("O endereço público desta instalação não está configurado. Quem administra a instalação precisa definir NEXT_PUBLIC_APP_URL com o endereço pelo qual ela é acessada."),
+      503,
+      { requestId, headers },
+    );
+  }
+
   const admin = createAdminClient();
   const ctx: ContextoDaConexao = {
     organizationId: orgId,
@@ -93,7 +112,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     idioma: authz.user.idioma,
     segredo: env.INTERNAL_SECRET,
     agora: new Date(),
-    publicBase: basePublicaDaInstalacao(req),
+    publicBase,
   };
   const corpo = parsed.data;
 

@@ -5,13 +5,13 @@
  */
 import { beforeEach, expect, it, vi } from "vitest";
 
-const h = vi.hoisted(() => ({ resolver: vi.fn(), processar: vi.fn(), warn: vi.fn() }));
+const h = vi.hoisted(() => ({ resolver: vi.fn(), processar: vi.fn(), warn: vi.fn(), error: vi.fn() }));
 vi.mock("@/lib/channels/entrada-da-instalacao", () => ({
   resolverEntradaDaInstalacao: h.resolver,
 }));
 vi.mock("../_entrada-do-canal", () => ({ processarEntradaDoCanal: h.processar }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
-vi.mock("@/lib/logger", () => ({ logger: { warn: h.warn, info: vi.fn(), error: vi.fn() } }));
+vi.mock("@/lib/logger", () => ({ logger: { warn: h.warn, info: vi.fn(), error: h.error } }));
 
 import { POST } from "./route";
 
@@ -71,4 +71,12 @@ it("sessão achada: o MESMO processamento da rota por token, com o corpo cru e o
 it("falha ao ler o banco: 500, que é quando a reentrega é o que queremos", async () => {
   h.resolver.mockRejectedValue(new Error("banco fora"));
   expect((await chamar()).status).toBe(500);
+});
+
+it("o 500 de uma rota pública não devolve o detalhe do erro interno — ele vai só para o log", async () => {
+  h.resolver.mockRejectedValue(new Error("relation channel_sessions: coluna interna xyz"));
+  const r = await chamar();
+  expect(r.status).toBe(500);
+  expect(JSON.stringify(await r.json())).not.toContain("coluna interna xyz");
+  expect(JSON.stringify(h.error.mock.calls)).toContain("coluna interna xyz");
 });

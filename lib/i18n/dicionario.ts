@@ -7409,6 +7409,9 @@ export const DICIONARIO: Traducoes = {
   "URL do webhook": { es: "URL del webhook" },
   "Segredo (assinatura)": { es: "Secreto (firma)" },
   "Qualidade do número segundo a plataforma:": { es: "Calidad del número según la plataforma:" },
+  "O endereço público desta instalação não está configurado. Quem administra a instalação precisa definir NEXT_PUBLIC_APP_URL com o endereço pelo qual ela é acessada.": {
+    es: "La dirección pública de esta instalación no está configurada. Quien administra la instalación debe definir NEXT_PUBLIC_APP_URL con la dirección por la que se accede a ella.",
+  },
   "O provedor não confirmou a remoção do número. A conexão continua aqui: tente excluir de novo em alguns minutos.": {
     es: "El proveedor no confirmó la eliminación del número. La conexión sigue aquí: intenta eliminarla de nuevo en unos minutos.",
   },
