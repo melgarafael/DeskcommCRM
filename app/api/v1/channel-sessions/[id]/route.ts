@@ -338,7 +338,7 @@ export async function DELETE(
   const { data: session } = await supabase
     .from("channel_sessions")
     .select(
-      "id, provider, waha_session_name, display_name, phone_number, meta_phone_number_id, meta_token_encrypted",
+      "id, provider, waha_session_name, display_name, phone_number, meta_phone_number_id, meta_token_encrypted, zernio_credencial_da_instalacao",
     )
     .eq("organization_id", activeOrg.orgId)
     .eq("id", id)
@@ -431,9 +431,14 @@ export async function DELETE(
     // instalação depois de sair do CRM —, ou apaga a assinatura do número na
     // chave própria. Webhook colado à mão não é tocado.
     //
-    // Antes do patch, que gira o token; best-effort como o ramo social: provedor
-    // fora do ar vai para o log e para a auditoria (`parceiro`), e NÃO desfaz a
-    // exclusão que o operador pediu.
+    // Antes do patch, que gira o token. Na chave própria é best-effort como o
+    // ramo social: provedor fora do ar vai para o log e para a auditoria
+    // (`parceiro`), e NÃO desfaz a exclusão que o operador pediu — o número é
+    // da conta da organização. Na conexão por um clique o número está na conta
+    // (e na fatura) da INSTALAÇÃO: arquivar ou apagar a linha assim mesmo
+    // levaria embora o único registro de que ele ainda está lá, e nada voltaria
+    // a desconectá-lo. Ali a exclusão falha fechada, como o ramo do WAHA, e a
+    // linha fica para o operador excluir de novo.
     try {
       parceiro = await desfazerNoProvedor(createAdminClient(), activeOrg.orgId, id);
     } catch (err) {
@@ -444,6 +449,14 @@ export async function DELETE(
         organization_id: activeOrg.orgId,
         erro: err instanceof Error ? err.message : String(err),
       });
+      if (session.zernio_credencial_da_instalacao === true) {
+        return fail(
+          "upstream_unavailable",
+          t("O provedor não confirmou a remoção do número. A conexão continua aqui: tente excluir de novo em alguns minutos."),
+          502,
+          { requestId },
+        );
+      }
     }
     patch.webhook_path_token = randomUUID().replace(/-/g, "");
   } else {

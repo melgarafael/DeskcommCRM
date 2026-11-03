@@ -401,7 +401,7 @@ export function CanalParceiroClient() {
               <strong>{t("envia mas não recebe")}</strong>
               {t(": a resposta do cliente não chega, e nada na tela avisa. O segredo aparece")}{" "}
               <strong>{t("uma única vez")}</strong>
-              {t(" — se sair desta tela sem copiá-lo, reconecte para gerar outro.")}
+              {t(" — se sair desta tela sem copiá-lo, exclua a conexão e conecte de novo para gerar outro.")}
             </p>
           </div>
           <ParaColar rotulo={t("URL do webhook")} valor={recemConectado.webhook_url} />
@@ -436,7 +436,7 @@ export function CanalParceiroClient() {
             <h3 className="text-sm font-semibold">Webhook</h3>
             <p className="text-xs text-muted-foreground">
               {t(
-                "O endereço que o provedor usa para entregar as mensagens. O segredo não é mostrado de novo — para obter um novo, reconecte.",
+                "O endereço que o provedor usa para entregar as mensagens. O segredo não é mostrado de novo — para gerar outro, exclua a conexão e conecte de novo.",
               )}
             </p>
           </div>

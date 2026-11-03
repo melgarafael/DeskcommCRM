@@ -66742,6 +66742,58 @@ $$;
 REVOKE EXECUTE ON FUNCTION public.fn_can_view_lead(uuid,uuid), public.fn_can_view_conversation(uuid,uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.fn_can_view_lead(uuid,uuid), public.fn_can_view_conversation(uuid,uuid) TO authenticated, service_role;
 
+-- ---- a ligação do canal com o provedor é do servidor (migration 9093) ----
+-- Espelho do gatilho da 9093. Fica ACIMA da VARREDURA anon porque cria função;
+-- as colunas que ele olha nascem no bloco da 9093, mais abaixo. Antes delas
+-- existirem, só o servidor (postgres) escreve na tabela durante o próprio
+-- baseline, e o gatilho sai na primeira linha sem tocar nelas.
+-- ═══ Só o servidor grava a ligação do canal com o provedor ═══
+--
+-- Estas colunas decidem com que chave e por qual conta a instalação fala com o
+-- provedor — e a da instalação alcança todos os números da conta dela. A
+-- tabela tem GRANT ALL para `authenticated`, e as policies deixam o admin da
+-- organização inserir e alterar a própria linha direto pela API do banco: sem
+-- esta trava, a linha diria "use a chave da instalação com a conta X" sem que
+-- o servidor tivesse conectado X. Quem as grava é sempre a rota do servidor,
+-- pelo service role; `anon` e `authenticated` não as escrevem (42501).
+-- `phone_number` entra junto nas linhas da instalação: os eventos de número
+-- do provedor são roteados por ele.
+--
+-- Gatilho e não privilégio por coluna: o GRANT ALL de tabela prevalece sobre
+-- um revoke de coluna, e trocá-lo por uma lista de colunas teria de ser
+-- lembrado a cada coluna nova. A função não precisa de EXECUTE para disparar.
+create or replace function public.fn_channel_sessions_ligacao_ao_provedor_e_do_servidor()
+returns trigger language plpgsql set search_path = public, pg_temp as $$
+begin
+  if current_user not in ('authenticated', 'anon') then
+    return new;
+  end if;
+  if tg_op = 'INSERT' then
+    if new.zernio_credencial_da_instalacao
+       or new.zernio_account_id is not null
+       or new.zernio_profile_id is not null
+       or new.zernio_webhook_id is not null then
+      raise exception 'canal_ligacao_ao_provedor_e_do_servidor' using errcode = '42501';
+    end if;
+    return new;
+  end if;
+  if (new.zernio_credencial_da_instalacao, new.zernio_account_id, new.zernio_profile_id, new.zernio_webhook_id)
+       is distinct from
+     (old.zernio_credencial_da_instalacao, old.zernio_account_id, old.zernio_profile_id, old.zernio_webhook_id)
+     or (old.zernio_credencial_da_instalacao and new.phone_number is distinct from old.phone_number) then
+    raise exception 'canal_ligacao_ao_provedor_e_do_servidor' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_channel_sessions_ligacao_ao_provedor_e_do_servidor() from public, anon, authenticated;
+
+drop trigger if exists trg_channel_sessions_ligacao_ao_provedor_e_do_servidor on public.channel_sessions;
+create trigger trg_channel_sessions_ligacao_ao_provedor_e_do_servidor
+  before insert or update on public.channel_sessions
+  for each row execute function public.fn_channel_sessions_ligacao_ao_provedor_e_do_servidor();
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
@@ -71192,10 +71244,12 @@ comment on column public.attendant_sectors.color is
 -- webhook que entrega os eventos (`zernio_webhook_id` — na conexão por um
 -- clique, o webhook ÚNICO da instalação).
 --
--- Idempotente e auto-curativo: `add column if not exists` e constraint
--- recriada por nome. Toda linha existente nasce com `false` e satisfaz o
--- CHECK, então o `update.sh` de um clone com dados não tem o que corrigir.
--- Não cria função, então pode ficar depois da VARREDURA anon.
+-- Idempotente e auto-curativo: `add column if not exists`, constraint
+-- recriada por nome, `create or replace function` e gatilho recriado por
+-- nome. Toda linha existente nasce com `false` e satisfaz o CHECK, então o
+-- `update.sh` de um clone com dados não tem o que corrigir. O gatilho que
+-- deixa estas colunas só para o servidor cria função, então mora ACIMA da
+-- VARREDURA anon (bloco "a ligação do canal com o provedor é do servidor").
 alter table public.channel_sessions
   add column if not exists zernio_profile_id text,
   add column if not exists zernio_webhook_id text,
