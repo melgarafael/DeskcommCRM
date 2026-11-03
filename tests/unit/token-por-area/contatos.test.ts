@@ -719,7 +719,7 @@ async function comoSessao(c: Caso) {
     rpc: c.rpc,
     tabelasSemOrganizacao: SEM_ORGANIZACAO,
   });
-  vi.mocked(createClient).mockResolvedValue({
+  vi.mocked(createClient).mockImplementation(async () => ({
     ...(falso.cliente as object),
     auth: {
       getUser: vi.fn().mockResolvedValue({
@@ -727,7 +727,7 @@ async function comoSessao(c: Caso) {
         error: null,
       }),
     },
-  } as never);
+  } as never));
   vi.mocked(createAdminClient).mockReturnValue(falso.cliente as never);
   vi.mocked(requireRole).mockResolvedValue({
     ok: true,

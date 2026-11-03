@@ -41,6 +41,7 @@ import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { audit } from "@/lib/audit";
 import { isPublicPath } from "@/lib/auth/public-paths";
 import { requireRole } from "@/lib/auth/require-role";
+import { portaDaAplicacao, type Db } from "@/lib/db";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -67,6 +68,10 @@ vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(), isServiceRoleConfigured: vi.fn(() => true) }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/db")>()),
+  portaDaAplicacao: vi.fn(),
+}));
 vi.mock("@/lib/mcp/auth", async () => {
   const actual = await vi.importActual<typeof import("@/lib/mcp/auth")>("@/lib/mcp/auth");
   return { ...actual, validateBearerToken: vi.fn() };
@@ -425,13 +430,16 @@ type OpcoesDoToken = { org?: string; papel?: string; escopos?: string[]; linhas?
 /** Chama o método com um Bearer; o cliente do banco é o falso, dono das `linhas`. */
 async function comoToken(c: Caso, o: OpcoesDoToken = {}) {
   const org = o.org ?? ORG_A;
+  const linhas = o.linhas ?? c.linhas;
   const falso = criarClienteAdminFalso({
     orgDona: org,
-    linhas: o.linhas ?? c.linhas,
+    linhas,
     rpc: c.rpc,
     tabelasSemOrganizacao: SEM_ORGANIZACAO,
   });
+  const porta = portaFalsa(linhas);
   vi.mocked(createAdminClient).mockReturnValue(falso.cliente as never);
+  vi.mocked(portaDaAplicacao).mockReturnValue(porta.porta);
   tokenValido({
     org,
     id: org === ORG_A ? TOKEN_A : TOKEN_B,
@@ -451,8 +459,10 @@ async function comoSessao(c: Caso) {
     rpc: c.rpc,
     tabelasSemOrganizacao: SEM_ORGANIZACAO,
   });
+  const porta = portaFalsa(c.linhas);
   vi.mocked(createClient).mockResolvedValue(falso.cliente as never);
   vi.mocked(createAdminClient).mockReturnValue(falso.cliente as never);
+  vi.mocked(portaDaAplicacao).mockReturnValue(porta.porta);
   vi.mocked(requireRole).mockResolvedValue({
     ok: true,
     user: { id: PESSOA_DA_SESSAO, idioma: "pt-BR" },
@@ -471,6 +481,35 @@ function daOrganizacao(linhas: Linhas, org: string, tabelas: string[]): Linhas {
 
 function json<T>(texto: string): T {
   return JSON.parse(texto) as T;
+}
+
+/** Dublê da porta SQL: responde `user_organizations` (responsável) e `demandas`
+ * com base nas `linhas` do caso, e `query` (atividade) com lista vazia. */
+function portaFalsa(linhas: Linhas): { porta: Db; consultas: Array<{ sql: string; parametros: readonly unknown[] }> } {
+  const consultas: Array<{ sql: string; parametros: readonly unknown[] }> = [];
+  const porta: Db = {
+    async query(sql, parametros = []) {
+      consultas.push({ sql, parametros });
+      return [];
+    },
+    async queryOne(sql, parametros = []) {
+      consultas.push({ sql, parametros });
+      if (sql.includes("user_organizations")) {
+        const [orgId, userId] = parametros as [string, string];
+        const linha = (linhas.user_organizations ?? []).find(
+          (l) => l.organization_id === orgId && l.user_id === userId && l.revoked_at === null && l.role !== "viewer",
+        );
+        return (linha ?? null) as never;
+      }
+      if (sql.includes("demandas")) {
+        const [orgId, demandaId] = parametros as [string, string];
+        const linha = (linhas.demandas ?? []).find((l) => l.organization_id === orgId && l.id === demandaId);
+        return (linha ?? null) as never;
+      }
+      return null;
+    },
+  };
+  return { porta, consultas };
 }
 
 beforeEach(() => {

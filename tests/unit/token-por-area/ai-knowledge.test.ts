@@ -216,7 +216,13 @@ function reqVazio(token?: string, metodo = "POST"): NextRequest {
 function reqUpload(token: string | undefined, campos: Record<string, string>): NextRequest {
   const form = new FormData();
   for (const [chave, valor] of Object.entries(campos)) form.set(chave, valor);
-  form.set("file", new File(["conteúdo do arquivo"], "material.md", { type: "text/markdown" }));
+  const conteudo = Buffer.from("conteúdo do arquivo");
+  const file = new File([conteudo], "material.md", { type: "text/markdown" });
+  // No ambiente node do vitest, `File.arrayBuffer` pode não expor `_buffer`;
+  // garante um `arrayBuffer` que devolva o conteúdo do arquivo.
+  (file as unknown as { arrayBuffer?: () => Promise<ArrayBuffer> }).arrayBuffer = async () =>
+    conteudo.buffer;
+  form.set("file", file);
   return new NextRequest("http://localhost/api/v1/ai/knowledge/sources/upload", {
     method: "POST",
     body: form,

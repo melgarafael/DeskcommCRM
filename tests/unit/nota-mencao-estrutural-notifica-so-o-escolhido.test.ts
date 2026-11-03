@@ -61,6 +61,9 @@ let idasAoAuth: string[];
 /** Cliente falso que APPLICA o mínimo que a rota usa: conversa existe, nota insere. */
 function clientFalso() {
   return {
+    auth: {
+      getUser: async () => ({ data: { user: { id: AUTOR, idioma: "pt-BR" } }, error: null }),
+    },
     from(tabela: string) {
       if (tabela === "conversations") {
         const cadeia = {
