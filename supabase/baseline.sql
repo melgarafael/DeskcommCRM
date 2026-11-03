@@ -67076,11 +67076,11 @@ drop function if exists public.fn_definir_aviso_de_caso(uuid,uuid,text,text,bool
 drop function if exists public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean);
 drop function if exists public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean);
 
--- ---- aviso a membro da equipe que também é cliente (migration 3900) ----
+-- ---- aviso a membro da equipe que também é cliente (migration 9099) ----
 -- O modo `responsavel` deixou de pedir confirmação quando o destino é o
 -- WhatsApp de um membro ATIVO da equipe: esse número não vira interno, então
 -- a consequência que a confirmação protege não acontece. Cliente comum
--- continua perguntando, e `fixo` não muda. O corpo é o da migration 3900,
+-- continua perguntando, e `fixo` não muda. O corpo é o da migration 9099,
 -- copiado byte a byte; `create or replace` da MESMA assinatura, idempotente.
 create or replace function public.fn_definir_aviso_de_caso(
   p_org uuid,

@@ -1,6 +1,6 @@
 -- manifest: O aviso de caso em modo `responsavel` deixa de pedir confirmação quando o número de destino é o WhatsApp de um membro ativo da equipe — ele não vira interno, então a consequência que a confirmação protege não acontece (#3900); a função devolve `destino_e_de_membro` para a rota registrar na auditoria qual regra autorizou.
 --
--- 3900 — avisar um membro da equipe que também é cliente, sem tornar o número interno.
+-- 9099 — avisar um membro da equipe que também é cliente, sem tornar o número interno.
 --
 -- ─── O defeito, medido ──────────────────────────────────────────────────────
 --
