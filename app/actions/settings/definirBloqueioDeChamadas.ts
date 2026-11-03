@@ -17,7 +17,11 @@ import { audit } from "@/lib/audit";
 import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
 import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import { supportWriteError } from "@/lib/impersonate/support";
-import { comBloqueioDeChamadas } from "@/lib/organizacao/bloqueio-de-chamadas";
+import {
+  comBloqueioDeChamadas,
+  comMensagemDeRecusaDeChamadas,
+  MENSAGEM_DE_RECUSA_MAX,
+} from "@/lib/organizacao/bloqueio-de-chamadas";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type ResultadoBloqueioDeChamadas =
@@ -27,9 +31,18 @@ export type ResultadoBloqueioDeChamadas =
       error: "validation_failed" | "unauthenticated" | "forbidden_tenant" | "forbidden_role" | "mfa_required" | "erro_ao_gravar";
     };
 
-export async function definirBloqueioDeChamadas(ligar: boolean): Promise<ResultadoBloqueioDeChamadas> {
+const Entrada = z.object({
+  ligar: z.boolean(),
+  mensagem: z.string().max(MENSAGEM_DE_RECUSA_MAX),
+});
+
+/** `mensagem` vazia = não avisar quem ligou. */
+export async function definirBloqueioDeChamadas(
+  ligar: boolean,
+  mensagem: string,
+): Promise<ResultadoBloqueioDeChamadas> {
   // Server Action é endpoint público: o tipo do parâmetro não chega ao servidor.
-  const entrada = z.boolean().safeParse(ligar);
+  const entrada = Entrada.safeParse({ ligar, mensagem });
   if (!entrada.success) return { ok: false, error: "validation_failed" };
 
   const user = await loadAuthUser();
@@ -49,7 +62,10 @@ export async function definirBloqueioDeChamadas(ligar: boolean): Promise<Resulta
   if (erroLeitura) return { ok: false, error: "erro_ao_gravar" };
 
   // `settings` é jsonb compartilhado: ler, mesclar e gravar preserva o que não é nosso.
-  const novo = comBloqueioDeChamadas(atual?.settings, entrada.data);
+  const novo = comMensagemDeRecusaDeChamadas(
+    comBloqueioDeChamadas(atual?.settings, entrada.data.ligar),
+    entrada.data.mensagem,
+  );
   const { error } = await admin.from("organizations").update({ settings: novo }).eq("id", org.orgId);
   if (error) return { ok: false, error: "erro_ao_gravar" };
 
@@ -59,7 +75,7 @@ export async function definirBloqueioDeChamadas(ligar: boolean): Promise<Resulta
     organizationId: org.orgId,
     resourceType: "organization",
     resourceId: org.orgId,
-    metadata: { ligado: entrada.data },
+    metadata: { ligado: entrada.data.ligar, com_mensagem: entrada.data.mensagem.trim() !== "" },
   });
 
   revalidatePath("/app/settings/security");

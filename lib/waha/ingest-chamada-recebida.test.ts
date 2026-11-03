@@ -1,11 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const rejectCall = vi.fn();
+const sendMessage = vi.fn();
 vi.mock("@/lib/waha/client", () => ({
-  getWahaClient: () => ({ rejectCall }),
+  getWahaClient: () => ({ rejectCall, sendMessage }),
 }));
 
-import { bloqueioDeChamadasLigado, comBloqueioDeChamadas } from "@/lib/organizacao/bloqueio-de-chamadas";
+import {
+  bloqueioDeChamadasLigado,
+  comBloqueioDeChamadas,
+  comMensagemDeRecusaDeChamadas,
+  mensagemDeRecusaDeChamadas,
+} from "@/lib/organizacao/bloqueio-de-chamadas";
 import { dispatchWahaEvent } from "@/lib/waha/ingest";
 
 type Admin = Parameters<typeof dispatchWahaEvent>[0];
@@ -52,11 +58,66 @@ describe("bloqueio de chamadas recebidas — a chave", () => {
   });
 });
 
+describe("bloqueio de chamadas recebidas — a mensagem", () => {
+  it("ausente, vazia, só espaços ou não-texto é nenhuma mensagem", () => {
+    expect(mensagemDeRecusaDeChamadas(null)).toBeNull();
+    expect(mensagemDeRecusaDeChamadas({ calls: { block_incoming: true } })).toBeNull();
+    expect(mensagemDeRecusaDeChamadas({ calls: { reject_message: "   " } })).toBeNull();
+    expect(mensagemDeRecusaDeChamadas({ calls: { reject_message: 42 } })).toBeNull();
+    expect(mensagemDeRecusaDeChamadas({ calls: { reject_message: " Oi " } })).toBe("Oi");
+  });
+
+  it("gravar preserva o resto e mensagem vazia apaga a chave", () => {
+    const base = { plan: "pro", calls: { block_incoming: true } };
+    const com = comMensagemDeRecusaDeChamadas(base, "  Escreva aqui  ");
+    expect(com).toEqual({ plan: "pro", calls: { block_incoming: true, reject_message: "Escreva aqui" } });
+    expect(comMensagemDeRecusaDeChamadas(com, "")).toEqual(base);
+  });
+});
+
 describe("call.received", () => {
   beforeEach(() => {
     // Chaves: `mockReset()` devolve o próprio mock, e o Vitest chamaria o retorno
     // de um `beforeEach` como limpeza — rodando `rejectCall` depois do teste.
     rejectCall.mockReset();
+    sendMessage.mockReset();
+  });
+
+  it("com mensagem configurada, avisa quem ligou depois de recusar", async () => {
+    rejectCall.mockResolvedValue(undefined);
+    sendMessage.mockResolvedValue({});
+    const settings = { calls: { block_incoming: true, reject_message: "Escreva, por favor." } };
+    const ligacao = { ...LIGACAO, payload: { ...LIGACAO.payload, from: "5511911111111@c.us" } };
+    await dispatchWahaEvent(adminCom(settings), SESSAO, ligacao, "r1");
+    expect(sendMessage).toHaveBeenCalledWith("sessao-1", "5511911111111@c.us", "Escreva, por favor.");
+    // Quem insiste em ligar não recebe o mesmo texto de novo.
+    await dispatchWahaEvent(adminCom(settings), SESSAO, ligacao, "r2");
+    expect(rejectCall).toHaveBeenCalledTimes(2);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("sem mensagem, só recusa", async () => {
+    rejectCall.mockResolvedValue(undefined);
+    const ligacao = { ...LIGACAO, payload: { ...LIGACAO.payload, from: "5511922222222@c.us" } };
+    await dispatchWahaEvent(adminCom({ calls: { block_incoming: true } }), SESSAO, ligacao, "r1");
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("bloqueio desligado não manda mensagem, mesmo com texto salvo", async () => {
+    const ligacao = { ...LIGACAO, payload: { ...LIGACAO.payload, from: "5511933333333@c.us" } };
+    await dispatchWahaEvent(adminCom({ calls: { reject_message: "Oi" } }), SESSAO, ligacao, "r1");
+    expect(rejectCall).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("falha ao avisar não lança e libera nova tentativa", async () => {
+    rejectCall.mockResolvedValue(undefined);
+    sendMessage.mockRejectedValueOnce(new Error("waha_500")).mockResolvedValue({});
+    const settings = { calls: { block_incoming: true, reject_message: "Oi" } };
+    const ligacao = { ...LIGACAO, payload: { ...LIGACAO.payload, from: "5511944444444@c.us" } };
+    await expect(dispatchWahaEvent(adminCom(settings), SESSAO, ligacao, "r1")).resolves.toBeUndefined();
+    await dispatchWahaEvent(adminCom(settings), SESSAO, ligacao, "r2");
+    expect(sendMessage).toHaveBeenCalledTimes(2);
   });
 
   it("com o bloqueio ligado, recusa a chamada com o from e o id do evento", async () => {

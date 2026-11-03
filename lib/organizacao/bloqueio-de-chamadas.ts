@@ -35,19 +35,57 @@ export function comBloqueioDeChamadas(settings: unknown, ligar: boolean): Record
   return { ...base, calls: { ...calls, block_incoming: ligar } };
 }
 
+/** Teto do texto avisado a quem ligou: uma frase curta, não um comunicado. */
+export const MENSAGEM_DE_RECUSA_MAX = 500;
+
 /**
- * Lê a chave da organização. LANÇA quando a leitura falha: quem chama decide
+ * A mensagem mandada a quem teve a chamada recusada, em
+ * `organizations.settings.calls.reject_message`. `null` = não manda nada (o
+ * padrão): ausente, vazia, só espaços ou malformada.
+ */
+export function mensagemDeRecusaDeChamadas(settings: unknown): string | null {
+  if (!settings || typeof settings !== "object") return null;
+  const calls = (settings as Record<string, unknown>).calls;
+  if (!calls || typeof calls !== "object") return null;
+  const texto = (calls as Record<string, unknown>).reject_message;
+  if (typeof texto !== "string") return null;
+  const limpo = texto.trim().slice(0, MENSAGEM_DE_RECUSA_MAX);
+  return limpo === "" ? null : limpo;
+}
+
+/** `settings` com a mensagem gravada (vazia apaga), preservando o resto. */
+export function comMensagemDeRecusaDeChamadas(
+  settings: unknown,
+  mensagem: string | null,
+): Record<string, unknown> {
+  const base = comBloqueioDeChamadas(settings, bloqueioDeChamadasLigado(settings));
+  const { reject_message: _antiga, ...calls } = base.calls as Record<string, unknown>;
+  const limpo = (mensagem ?? "").trim();
+  return { ...base, calls: limpo === "" ? calls : { ...calls, reject_message: limpo } };
+}
+
+export interface PoliticaDeChamadas {
+  bloqueio: boolean;
+  mensagem: string | null;
+}
+
+/**
+ * Lê a política da organização. LANÇA quando a leitura falha: quem chama decide
  * (a ingestão registra e deixa a ligação tocar — nunca recusa por dúvida).
  */
-export async function lerBloqueioDeChamadas(
+export async function lerPoliticaDeChamadas(
   admin: SupabaseClient,
   organizationId: string,
-): Promise<boolean> {
+): Promise<PoliticaDeChamadas> {
   const { data, error } = await admin
     .from("organizations")
     .select("settings")
     .eq("id", organizationId)
     .maybeSingle();
   if (error) throw new Error(`leitura do bloqueio de chamadas falhou: ${error.message}`);
-  return bloqueioDeChamadasLigado((data as { settings?: unknown } | null)?.settings);
+  const settings = (data as { settings?: unknown } | null)?.settings;
+  return {
+    bloqueio: bloqueioDeChamadasLigado(settings),
+    mensagem: mensagemDeRecusaDeChamadas(settings),
+  };
 }
