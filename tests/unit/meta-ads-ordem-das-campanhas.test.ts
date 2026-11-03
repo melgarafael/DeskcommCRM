@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { CampanhaCrua, LinhaDeInsightCrua } from "@/lib/plataformas-de-anuncio/meta/insights";
+import {
+  lerCampanhas,
+  type CampanhaCrua,
+  type LinhaDeInsightCrua,
+} from "@/lib/plataformas-de-anuncio/meta/insights";
 import {
   montarTabelaDeCampanhas,
   ORDEM_PADRAO,
@@ -58,6 +62,10 @@ const CAMPANHAS_NA_ORDEM_DA_API: CampanhaCrua[] = [
     start_time: "2026-08-15T09:31:10+0000",
   },
 ];
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function ids(linhas: { campanhaId: string }[]): string[] {
   return linhas.map((linha) => linha.campanhaId);
@@ -209,5 +217,53 @@ describe("as outras ordens que a tela oferece", () => {
     // inválido não pode virar "ordem nenhuma" em silêncio.
     const criterioInvalido = "gasto" as unknown as "mais_recentes";
     expect(ids(ordenarCampanhas(montadas(), criterioInvalido))).toEqual(["nova", "meio", "antiga"]);
+  });
+});
+
+describe("a data vem do pedido de campanhas", () => {
+  it("pede `created_time` e `start_time` na MESMA leitura de campanhas", async () => {
+    // Sem estes dois nomes no `fields`, a tabela volta sem data nenhuma e cai
+    // na ordem da plataforma — o defeito de novo, em silêncio. Por isso o
+    // pedido é asserção, e não detalhe de implementação.
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        urls.push(String(url));
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "1",
+                name: "Engajamento: Astra Mídia",
+                status: "ACTIVE",
+                effective_status: "ACTIVE",
+                created_time: "2026-08-14T09:31:10+0000",
+                start_time: "2026-08-15T09:31:10+0000",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }),
+    );
+
+    const leitura = await lerCampanhas("token-de-teste", "act_1");
+
+    const pedido = urls[0] ?? "";
+    expect(pedido).toContain("created_time");
+    expect(pedido).toContain("start_time");
+    // Uma leitura só: os dois campos pegam carona na chamada que já existia.
+    expect(urls).toHaveLength(1);
+
+    if (!leitura.ok) throw new Error(`leitura falhou: ${leitura.detalhe}`);
+    const [campanha] = leitura.dados;
+    if (!campanha) throw new Error("esperava uma campanha");
+    expect(campanha.created_time).toBe("2026-08-14T09:31:10+0000");
+
+    // E a data chega na linha da tabela, que é onde a ordenação a usa.
+    const [linhaMontada] = montarTabelaDeCampanhas(leitura.dados, []);
+    expect(linhaMontada?.criadaEm).toBe("2026-08-14T09:31:10+0000");
+    expect(linhaMontada?.iniciadaEm).toBe("2026-08-15T09:31:10+0000");
   });
 });
