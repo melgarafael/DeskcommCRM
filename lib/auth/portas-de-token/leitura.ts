@@ -23,4 +23,19 @@ export const MODELOS_DA_LEITURA: readonly ModeloDePorta[] = [
   "/api/v1/audit",
   "/api/v1/imports",
   "/api/v1/imports/[id]",
+
+  // metrics, reports (R3, tarefa 1). Quem autentica é a própria rota, por
+  // `resolveAuthDual` (a organização sai da linha do token). Escopo `mcp:read`
+  // nos GET e `mcp:write` no PATCH de `metrics/atrito`; papel do token = papel da
+  // sessão (agent em `attendants` e `serie`, manager em `lost` e no PATCH de
+  // `atrito`, viewer em `reports/*`), sem `tokenRole` porque nenhuma tool MCP faz
+  // estas ações. O GET de `metrics/atrito` segue só de sessão (401 sem cookie);
+  // `metrics/channels`, `metrics/funil`, `metrics/metas` e `reports/activities`
+  // não entram.
+  "/api/v1/metrics/atrito",
+  "/api/v1/metrics/attendants",
+  "/api/v1/metrics/lost",
+  "/api/v1/metrics/serie",
+  "/api/v1/reports/financeiro",
+  "/api/v1/reports/tags",
 ];
