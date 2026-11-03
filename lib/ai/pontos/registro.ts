@@ -3,7 +3,8 @@
  *
  * ## Por que este arquivo existe
  *
- * O DeskcommCRM chama modelo de linguagem em 23 lugares. Até aqui, QUAL modelo
+ * O DeskcommCRM chama modelo de linguagem em vários lugares — quantos, quem
+ * responde é `PONTOS_DE_IA.length`, não esta frase. Até aqui, QUAL modelo
  * cada um usava estava espalhado por três pilhas que não se falavam
  * (`runModelCall` com BYOK por org, `lib/ai/gateway.ts` por variável de
  * ambiente, `lib/ai/runtime/agent.ts` com um terceiro `switch`) e por sete
@@ -218,6 +219,42 @@ export const PONTOS_DE_IA: readonly PontoDeIa[] = [
     emissor: "lib/agent-engine/agent/inbound-turn.ts",
     sintomaDeFalha:
       "O cliente manda mensagem e ninguém responde. A conversa fica parada na Caixa de entrada sem aviso.",
+    registraEm: "llm_calls",
+  },
+  {
+    // ═══ POR QUE O FOLLOW-UP TEM PONTO PRÓPRIO, separado de `agent_turn` ═══
+    //
+    // O mesmo turno do agente (`executarTurnoDoAgente`, em `inbound-turn.ts`)
+    // roda em dois tipos de trabalho que custam e exigem coisas diferentes:
+    //
+    //  - `inbound_turn` RESPONDE quem escreveu. É ali que o agente opera o CRM
+    //    de verdade — move etapa, grava o pedido —, e o modelo é a
+    //    personalidade dele: fica na versão publicada (`agent_turn`).
+    //  - `followup_turn` RETOMA quem parou de responder — o passo de IA de um
+    //    fluxo de follow-up, ou o retorno que o próprio agente combinou. Não há
+    //    pergunta nova do cliente: o trabalho é quase só escrever.
+    //
+    // Medido numa instalação real (30/09–02/10/2026): os follow-ups eram 31%
+    // do gasto do agente (162 turnos, 3,7¢ cada no modelo da versão publicada).
+    // Comparados em 42 turnos reais, um modelo barato escreveu bem as retomadas
+    // e NÃO operou o CRM (não moveu etapa nem guardou pedido) — então trocar o
+    // modelo do agente inteiro custaria o funil. Trocar só aqui, não.
+    //
+    // A escolha mora no painel, mas SEM escolha nada muda: vale o modelo da
+    // versão publicada, como antes deste ponto existir
+    // (`PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL`, em `resolver.ts`). Exige
+    // ferramentas como `agent_turn`, porque o turno é o mesmo e as ferramentas
+    // do CRM continuam na mão do modelo — a catraca recusa o modelo que não as
+    // sabe usar.
+    id: "followup_turn",
+    rotulo: "Escrever o follow-up",
+    oQueFaz:
+      "Escreve as mensagens que o agente manda sozinho quando o cliente para de responder: os passos de IA dos fluxos de follow-up e os retornos que ele mesmo combinou. Sem escolha aqui, usa o modelo da versão publicada do agente.",
+    papel: "atender",
+    exige: { tools: true, imagem: true },
+    emissor: "lib/agent-engine/agent/inbound-turn.ts",
+    sintomaDeFalha:
+      "O follow-up não sai: o cliente que parou de responder não recebe a retomada, e o fluxo fica parado no passo da mensagem.",
     registraEm: "llm_calls",
   },
   {
