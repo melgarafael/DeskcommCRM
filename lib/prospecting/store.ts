@@ -36,6 +36,8 @@ import { linksDoCandidato } from "./links-do-candidato";
 import { aplicarLinks } from "@/lib/leads/links-de-contato";
 import { logger } from "@/lib/logger";
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
+import { motivoSemWhatsapp } from "./whatsapp";
+import { idiomaDaOrganizacao } from "./idioma";
 import {
   provedorDaOrganizacao,
   provedorExigeCredencialDaOrganizacao,
@@ -192,7 +194,10 @@ export async function createSearch(
     );
     const campaign = rows[0]!;
     try {
-      const run = await provedor.startSearch(key, search);
+      // O idioma da organização: o rubro e o endereço voltam na língua de quem vai abordar.
+      const run = await provedor.startSearch(key, search, {
+        idioma: await idiomaDaOrganizacao(db, org),
+      });
       await db.query(
         "update prospecting_campaigns set run_id=$3,dataset_id=$4,search_status='running',updated_at=now() where organization_id=$1 and id=$2",
         [org, campaign.id, run.id, run.defaultDatasetId ?? null],
@@ -656,6 +661,10 @@ export async function triarCandidato(
   p: Candidate,
 ): Promise<{ motivo: string } | { contatoDaCampanha: string | null }> {
   if (!p.phone) return { motivo: "Sem telefone brasileiro válido." };
+  // O WhatsApp já respondeu que este número não existe lá (`whatsapp.ts`): abordar
+  // seria escrever (e pagar) uma mensagem que ninguém recebe.
+  const semWhatsapp = motivoSemWhatsapp(p.data);
+  if (semWhatsapp) return { motivo: semWhatsapp };
   let known = await db.query(
     "select id from contacts where organization_id=$1 and phone_number=any($2::text[])",
     [org, phoneLookupVariants(p.phone)],
@@ -879,7 +888,9 @@ export async function enfileirarCandidatos(
 ) {
   const id = c.id;
   for (const p of candidates) {
-    const selectionReason = razaoDeAbordarSelecionado(p.selected);
+    // Quem saiu da seleção por NÃO TER WHATSAPP leva esse motivo, e não "não
+    // selecionada pelo operador": quem tirou foi o produto, e a tela não a devolve.
+    const selectionReason = motivoSemWhatsapp(p.data) ?? razaoDeAbordarSelecionado(p.selected);
     if (selectionReason) {
       await db.query(
         "update prospecting_candidates set status='skipped',error=$3 where organization_id=$1 and id=$2",

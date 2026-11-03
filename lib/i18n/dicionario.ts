@@ -105,6 +105,12 @@ export const DICIONARIO: Traducoes = {
   "revogação agendada": { es: "revocación programada" },
   "sim": { es: "sí" },
   "último uso": { es: "último uso" },
+  // Ordenação da tabela de campanhas (#3911). "Ordenar por" é igual nos dois
+  // idiomas de propósito: é a mesma expressão em espanhol.
+  "Ordenar por": { es: "Ordenar por" },
+  "Mais recentes": { es: "Más recientes" },
+  "Mais antigas": { es: "Más antiguas" },
+  "Ativas primeiro": { es: "Activas primero" },
   "Avisar também nas transferências para atendimento humano": { es: "Avisar también en las transferencias a atención humana" },
   "Cada transferência manda uma mensagem ao mesmo número e conta no limite diário dele. Desligue para receber só os avisos de casos.": { es: "Cada transferencia envía un mensaje al mismo número y cuenta en su límite diario. Desactívalo para recibir solo los avisos de casos." },
   "Também param de sair, até você cadastrar um número de novo: os avisos de transferência para atendimento humano, os avisos da Agenda que usam o mesmo número dos casos e as automações com a ação \"Mensagem para a equipe\".": { es: "También dejan de salir, hasta que registres otro número: los avisos de transferencia a atención humana, los avisos de la Agenda que usan el mismo número que los casos y las automatizaciones con la acción \"Mensaje para el equipo\"." },
@@ -303,6 +309,20 @@ export const DICIONARIO: Traducoes = {
   "Ex.: WA | Fixo 7906": { es: "Ej.: WA | Fijo 7906" },
   "Informe um nome interno com até 80 caracteres.": { es: "Indica un nombre interno de hasta 80 caracteres." },
   "Não foi possível consultar o canal do lembrete.": { es: "No se pudo consultar el canal del recordatorio." },
+  // O modelo do lembrete fora da janela de 24 h (migration 9092).
+  "Se a janela de 24 h do cliente já tiver fechado, mandar este modelo aprovado": { es: "Si la ventana de 24 h del cliente ya se cerró, enviar esta plantilla aprobada" },
+  "Nenhum — fora da janela o lembrete não sai e a equipe recebe um aviso": { es: "Ninguna — fuera de la ventana el recordatorio no sale y el equipo recibe un aviso" },
+  "Modelo configurado indisponível — escolha outro": { es: "Plantilla configurada no disponible — elige otra" },
+  "Vale só para o número oficial, que depois de 24 horas sem mensagem do cliente aceita apenas modelo aprovado. O modelo sai pelo número dono dele, e as variáveis recebem, nesta ordem: {{1}} primeiro nome, {{2}} dia e hora, {{3}} título, {{4}} endereço.": {
+    es: "Solo vale para el número oficial, que después de 24 horas sin mensaje del cliente acepta únicamente plantillas aprobadas. La plantilla sale por el número al que pertenece, y las variables reciben, en este orden: {{1}} nombre, {{2}} día y hora, {{3}} título, {{4}} dirección.",
+  },
+  "Não foi possível carregar os modelos aprovados. A escolha guardada será preservada; tente novamente.": { es: "No se pudieron cargar las plantillas aprobadas. Se conservará la elección guardada; inténtalo de nuevo." },
+  "Não foi possível consultar o modelo do lembrete.": { es: "No se pudo consultar la plantilla del recordatorio." },
+  "Escolha um modelo aprovado desta organização.": { es: "Elige una plantilla aprobada de esta organización." },
+  "Este modelo não serve para o lembrete: ele só pode ter variáveis de texto no corpo, de {{1}} a {{4}}, sem pular número.": {
+    es: "Esta plantilla no sirve para el recordatorio: solo puede tener variables de texto en el cuerpo, de {{1}} a {{4}}, sin saltarse ningún número.",
+  },
+  "O modelo escolhido é de outro número. Escolha um modelo do número que envia os lembretes.": { es: "La plantilla elegida es de otro número. Elige una plantilla del número que envía los recordatorios." },
   "Escolha um canal de mensagem não arquivado desta organização.": { es: "Elige un canal de mensajes no archivado de esta organización." },
   "Conectar a assinatura do ChatGPT": { es: "Conectar la suscripción de ChatGPT" },
   "Cada empresa conecta a própria conta do ChatGPT. Abra o link e entre com a conta que tem a assinatura. No fim, o navegador vai para http://127.0.0.1:1455/auth/callback, que pode não abrir — é esperado. Copie esse endereço inteiro, da barra do navegador, e cole aqui.": {
@@ -1781,6 +1801,13 @@ export const DICIONARIO: Traducoes = {
   "Nenhum dia fora da rotina daqui para a frente.": { es: "No hay días fuera de la rutina a partir de hoy." },
   "Nenhum dia fechado daqui para a frente.": { es: "No hay días cerrados a partir de hoy." },
   "aberto excepcionalmente": { es: "abierto excepcionalmente" },
+  "Fechado": { es: "Cerrado" },
+  "Fechar só algumas horas": { es: "Cerrar solo algunas horas" },
+  "Fechar estas horas": { es: "Cerrar estas horas" },
+  "fechado nessas horas": { es: "cerrado en esas horas" },
+  "Nessas horas a agenda deixa de oferecer horários, para a equipe e para a IA. O resto do dia segue a jornada de sempre.": {
+    es: "En esas horas la agenda deja de ofrecer horarios, al equipo y a la IA. El resto del día sigue la jornada de siempre.",
+  },
   "Abrir atendimento": { es: "Abrir atención" },
   "Abra o atendimento e diga o que fazer: concluir, pedir informação ao cliente ou passar para uma pessoa.": { es: "Abre la atención e indica qué hacer: concluirla, pedir información al cliente o pasarla a una persona." },
   "Confira em Conexões se o número voltou e se o histórico do período fora do ar entrou como esperado.": { es: "Revise en Conexiones si el número volvió y si el historial del período sin conexión entró como se esperaba." },
@@ -3285,6 +3312,12 @@ export const DICIONARIO: Traducoes = {
   "Mínimo (min)": { es: "Mínimo (min)" },
   "Máximo (min)": { es: "Máximo (min)" },
   "Orientação (opcional)": { es: "Orientación (opcional)" },
+  // Espera com horário (`wait.ate_o_horario`) — o painel da espera e o card.
+  "Só terminar a espera em horário comercial": { es: "Terminar la espera solo en horario comercial" },
+  "Se a espera vencer fora deste horário, o fluxo continua esperando até a próxima abertura. Vale o fuso da organização.": {
+    es: "Si la espera vence fuera de este horario, el flujo sigue esperando hasta la próxima apertura. Vale la zona horaria de la organización.",
+  },
+  "só em horário comercial": { es: "solo en horario comercial" },
   "Classes (separadas por vírgula)": { es: "Clases (separadas por comas)" },
   "Esperar a resposta por (minutos)": { es: "Esperar la respuesta durante (minutos)" },
   "O que a IA vai ler": { es: "Qué va a leer la IA" },
@@ -4797,6 +4830,15 @@ export const DICIONARIO: Traducoes = {
   },
   "O cliente manda mensagem e ninguém responde. A conversa fica parada na Caixa de entrada sem aviso.": {
     es: "El cliente manda un mensaje y nadie responde. La conversación se queda parada en la Bandeja de entrada, sin aviso.",
+  },
+  "Escrever o follow-up": {
+    es: "Escribir el seguimiento",
+  },
+  "Escreve as mensagens que o agente manda sozinho quando o cliente para de responder: os passos de IA dos fluxos de follow-up e os retornos que ele mesmo combinou. Sem escolha aqui, usa o modelo da versão publicada do agente.": {
+    es: "Escribe los mensajes que el agente envía por su cuenta cuando el cliente deja de responder: los pasos con IA de los flujos de seguimiento y los retornos que él mismo acordó. Si no eliges nada aquí, usa el modelo de la versión publicada del agente.",
+  },
+  "O follow-up não sai: o cliente que parou de responder não recebe a retomada, e o fluxo fica parado no passo da mensagem.": {
+    es: "El seguimiento no sale: nadie le vuelve a escribir al cliente que dejó de responder, y el flujo se queda parado en el paso del mensaje.",
   },
   "Trabalhar o funil": {
     es: "Trabajar el embudo",
@@ -6559,6 +6601,10 @@ export const DICIONARIO: Traducoes = {
   "Como o outro sistema confere a assinatura e reconhece reenvios: guia de integração em docs/integracao/webhooks-de-saida.md, na documentação do projeto.": {
     es: "Cómo el otro sistema verifica la firma y reconoce los reenvíos: guía de integración en docs/integracao/webhooks-de-saida.md, en la documentación del proyecto.",
   },
+  "Tirar o contato de outro fluxo": { es: "Sacar al contacto de otro flujo" },
+  "Se o contato já estiver em outro fluxo, ele sai daquele e entra neste. Fluxo pausado por uma pessoa não é trocado.": {
+    es: "Si el contacto ya está en otro flujo, sale de ese y entra en este. Un flujo pausado por una persona no se cambia.",
+  },
   "Incluir o responsável no corpo": { es: "Incluir al responsable en el cuerpo" },
   "Padrão: o aviso não diz quem atende. Ligue só se o outro sistema precisar do nome da equipe.": {
     es: "Por defecto, el aviso no dice quién atiende. Actívalo solo si el otro sistema necesita el nombre del equipo.",
@@ -6844,8 +6890,10 @@ export const DICIONARIO: Traducoes = {
     es: "Este cliente pertenece a la cartera de otro vendedor. El negocio nuevo nace con el dueño de la cartera.",
   },
   // Respostas da porta dedicada `PATCH /contacts/[id]/carteira`.
-  "Só gerente e administrador podem mudar a carteira do cliente.": {
-    es: "Solo gerente y administrador pueden cambiar la cartera del cliente.",
+  // #3746: a régua deixou de ser "só gerente". O Atendente dono do cliente muda
+  // a carteira, e o que sobra recusando por papel é o `viewer` — quem só lê.
+  "Seu papel não permite mudar a carteira do cliente.": {
+    es: "Tu rol no permite cambiar la cartera del cliente.",
   },
   "O dono precisa ser membro ativo desta empresa, com papel de atendente, gerente ou administrador. Quem só lê, e quem saiu da equipe, não é dono de carteira.": {
     es: "El dueño debe ser miembro activo de esta empresa, con rol de agente, gerente o administrador. Quien solo lee, y quien salió del equipo, no es dueño de cartera.",
@@ -6858,6 +6906,22 @@ export const DICIONARIO: Traducoes = {
   },
   "Não foi possível salvar a carteira do cliente.": {
     es: "No fue posible guardar la cartera del cliente.",
+  },
+  // A régua de POSSE do atendente (#3746) — a mesma recusa nas duas portas:
+  // mudar a carteira e inscrever num follow-up. Diz o que fazer, não só que
+  // falhou: quem lê está no meio de um atendimento.
+  "Este cliente não está com você. Só o atendente da conversa, o dono da carteira ou um gerente pode fazer isso; peça a um gerente para assumir o cliente.": {
+    es: "Este cliente no está contigo. Solo el atendente de la conversación, el dueño de la cartera o un gerente puede hacerlo; pide a un gerente que asuma el cliente.",
+  },
+  "Não foi possível conferir se este cliente está com você. Nada foi alterado.": {
+    es: "No fue posible verificar si este cliente está contigo. No se cambió nada.",
+  },
+  "Conversa não encontrada para este contato.": {
+    es: "Conversación no encontrada para este contacto.",
+  },
+  // Doc 250, 1-B: a conversa não tira o cliente da carteira de um colega.
+  "Este cliente está na carteira de outro vendedor. Só um gerente tira o cliente da carteira de um colega.": {
+    es: "Este cliente está en la cartera de otro vendedor. Solo un gerente saca al cliente de la cartera de un colega.",
   },
   // TELA da carteira (#2591): o cartão da ficha do contato e a faixa em cima do chat.
   "Carteira": { es: "Cartera" },
@@ -7116,6 +7180,12 @@ export const DICIONARIO: Traducoes = {
     {
       es: "El embudo elegido no está activo, así que la inscripción no se hizo. Activa el embudo o elige otro en la automatización.",
     },
+  "O contato já está neste mesmo fluxo — a automação não o recomeça.": {
+    es: "El contacto ya está en este mismo flujo: la automatización no lo vuelve a empezar.",
+  },
+  "O contato está em outro fluxo pausado por uma pessoa da equipe, e a automação não passa por cima dessa decisão.": {
+    es: "El contacto está en otro flujo pausado por una persona del equipo, y la automatización no pasa por encima de esa decisión.",
+  },
   "O contato já está em um funil ativo — esta ação não inscreve duas vezes.": {
     es: "El contacto ya está en un embudo activo, así que esta acción no lo inscribe de nuevo.",
   },
@@ -7160,6 +7230,16 @@ export const DICIONARIO: Traducoes = {
   "Posicionamento (utm_placement)": { es: "Ubicación (utm_placement)" },
   "A plataforma não informa o posicionamento de cada clique em anúncio.": {
     es: "La plataforma no informa la ubicación de cada clic en un anuncio.",
+  },
+  "Provável: deduzida pelo horário do clique. A mensagem chegou sem o código do link.": {
+    es: "Probable: deducido por la hora del clic. El mensaje llegó sin el código del enlace.",
+  },
+  // Doc de decisão 259 (PR #3906): a chave da empresa, desligada de fábrica.
+  "Deduzir a origem do site pelo horário do clique": {
+    es: "Deducir el origen del sitio por la hora del clic",
+  },
+  "Quando o cliente apaga o código da mensagem, a origem se perde. Ligada, o primeiro contato novo que escrever até 10 minutos depois de um clique sem dono num link deste número recebe a origem desse clique. É um palpite, não uma prova: quem escreve na mesma hora sem ter visto o site pode receber a campanha de outra pessoa. A ficha do contato marca a origem como provável. Vem desligada.": {
+    es: "Cuando el cliente borra el código del mensaje, el origen se pierde. Activada, el primer contacto nuevo que escriba hasta 10 minutos después de un clic sin dueño en un enlace de este número recibe el origen de ese clic. Es una suposición, no una prueba: quien escribe a la misma hora sin haber visto el sitio puede recibir la campaña de otra persona. La ficha del contacto marca el origen como probable. Viene desactivada.",
   },
   "Etapa de destino": { es: "Etapa de destino" },
   // #2065 — nós de ação do follow-up (mover lead no funil / editar tag)
@@ -8209,6 +8289,10 @@ export const DICIONARIO: Traducoes = {
   "Lead ganho": { es: "Lead ganado" },
   "Lead perdido": { es: "Lead perdido" },
   "Você foi mencionado": { es: "Te mencionaron" },
+  // ─── lib/notifications/push.handler.ts + push-de-venda.ts (o push no celular) ───
+  "Nova mensagem no grupo": { es: "Mensaje nuevo en el grupo" },
+  "Hoje nesta etapa: {quantidade}": { es: "Hoy en esta etapa: {quantidade}" },
+  "Ganhos hoje: {quantidade}": { es: "Ganados hoy: {quantidade}" },
   "Ligação recebida": { es: "Llamada recibida" },
   Email: { es: "Correo" },
   "In-app": { es: "En la app" },
@@ -8914,6 +8998,8 @@ export const DICIONARIO: Traducoes = {
   "Conexões → Templates": { es: "Conexiones → Plantillas" },
   "e envie quando a plataforma aprovar.": { es: "y envíala cuando la plataforma la apruebe." },
   "Modelo aprovado": { es: "Plantilla aprobada" },
+  "Modelo do WhatsApp": { es: "Plantilla de WhatsApp" },
+  "Opções enviadas ao cliente": { es: "Opciones enviadas al cliente" },
   "Este modelo pede": { es: "Esta plantilla pide" },
   "valor(es) e ainda não dá para preenchê-los aqui — envie por": {
     es: "valor(es) y todavía no se pueden completar aquí — envía por",
@@ -9656,6 +9742,14 @@ export const DICIONARIO: Traducoes = {
   "Cuiabá e Mato Grosso": { es: "Cuiabá y Mato Grosso" },
   "Rio Branco e Acre": { es: "Río Branco y Acre" },
   "Buenos Aires": { es: "Buenos Aires" },
+  "Assunção": { es: "Asunción" },
+  "Montevidéu": { es: "Montevideo" },
+  "Santiago": { es: "Santiago" },
+  "La Paz": { es: "La Paz" },
+  "Lima": { es: "Lima" },
+  "Bogotá": { es: "Bogotá" },
+  "Quito e Guayaquil": { es: "Quito y Guayaquil" },
+  "Cidade do México": { es: "Ciudad de México" },
   "Lisboa": { es: "Lisboa" },
   "Madri": { es: "Madrid" },
   "Nova York": { es: "Nueva York" },
@@ -9810,6 +9904,9 @@ export const DICIONARIO: Traducoes = {
   "O agente decidiu quanto esperar em cada passo": { es: "El agente decidió cuánto esperar en cada paso" },
   "Seguiu sem o plano de tempo": { es: "Continuó sin el plan de tiempos" },
   "Cancelado por uma pessoa da equipe": { es: "Cancelado por una persona del equipo" },
+  "Encerrado porque uma automação o colocou em outro fluxo": {
+    es: "Terminado porque una automatización lo puso en otro flujo",
+  },
   "Pausado por uma pessoa da equipe": { es: "Pausado por una persona del equipo" },
   "Retomado por uma pessoa da equipe": { es: "Reanudado por una persona del equipo" },
   "Adiado por uma pessoa da equipe": { es: "Pospuesto por una persona del equipo" },
@@ -12825,6 +12922,14 @@ export const DICIONARIO: Traducoes = {
     es: "Edita en el origen: lo que cambies aquí se vuelve a sobrescribir en la próxima sincronización.",
   },
   "(opcional)": { es: "(opcional)" },
+  // ─── app/app/products/_client.tsx — descrição do produto no cadastro e na planilha ───
+  "sem descrição": { es: "sin descripción" },
+  "É o que o atendente de IA conta ao cliente: para que serve, medidas, materiais, diferenciais. Ele repete o que estiver aqui — e não inventa o que faltar.": {
+    es: "Es lo que el asistente de IA le cuenta al cliente: para qué sirve, medidas, materiales, diferenciales. Repite lo que esté aquí y no inventa lo que falte.",
+  },
+  "Descrição escrita pela planilha em {quantidade} produto(s).": {
+    es: "Descripción escrita por la planilla en {quantidade} producto(s).",
+  },
   "Serve para o atendente saber até onde pode negociar. Não aparece para o cliente.": {
     es: "Sirve para que el asistente sepa hasta dónde puede negociar. No se muestra al cliente.",
   },
@@ -15245,8 +15350,32 @@ export const DICIONARIO: Traducoes = {
     { es: "La conexión de WhatsApp elegida para los avisos está fuera de servicio." },
   "A conexão de WhatsApp escolhida para os avisos foi removida.":
     { es: "La conexión de WhatsApp elegida para los avisos fue eliminada." },
-  "A conexão escolhida só envia mensagens aprovadas — ela não serve para o aviso de caso.":
-    { es: "La conexión elegida solo envía mensajes aprobados, así que no sirve para los avisos de casos." },
+  "A conexão escolhida só envia mensagens aprovadas, e o aviso não tem um modelo aprovado com uma variável escolhido para ela.":
+    { es: "La conexión elegida solo envía mensajes aprobados, y el aviso no tiene elegida una plantilla aprobada con una variable para ella." },
+  "A conexão escolhida só manda modelo aprovado fora das 24 horas. Escolha abaixo um modelo dela com uma variável — o aviso vai dentro dele. Se não houver nenhum, crie na aba de modelos do número, em Conexões.":
+    { es: "La conexión elegida solo envía plantillas aprobadas fuera de las 24 horas. Elige abajo una plantilla suya con una variable: el aviso va dentro de ella. Si no hay ninguna, créala en la pestaña de plantillas del número, en Conexiones." },
+  "Aparecem aqui os números que mandam mensagem a qualquer hora e os números oficiais que já têm um modelo aprovado com uma variável.":
+    { es: "Aquí aparecen los números que envían mensajes a cualquier hora y los números oficiales que ya tienen una plantilla aprobada con una variable." },
+  "Esta conexão não tem nenhum modelo aprovado com uma variável. Crie um na aba de modelos do número, em Conexões, ou escolha outra conexão.":
+    { es: "Esta conexión no tiene ninguna plantilla aprobada con una variable. Crea una en la pestaña de plantillas del número, en Conexiones, o elige otra conexión." },
+  "Escolha o modelo aprovado que leva o aviso":
+    { es: "Elige la plantilla aprobada que lleva el aviso" },
+  "Escolha um modelo aprovado":
+    { es: "Elige una plantilla aprobada" },
+  "Esse modelo ainda não está aprovado. Escolha um modelo aprovado.":
+    { es: "Esa plantilla todavía no está aprobada. Elige una plantilla aprobada." },
+  "Esse modelo não existe mais nesta conta. Escolha outro modelo aprovado.":
+    { es: "Esa plantilla ya no existe en esta cuenta. Elige otra plantilla aprobada." },
+  "Esse modelo não é da conexão escolhida. Escolha um dos modelos aprovados dela.":
+    { es: "Esa plantilla no es de la conexión elegida. Elige una de sus plantillas aprobadas." },
+  "Fora das 24 horas este número só manda modelo aprovado. O aviso vai dentro dele, numa linha só, no lugar da variável. Cada aviso é uma mensagem cobrada pela plataforma do número oficial.":
+    { es: "Fuera de las 24 horas este número solo envía plantillas aprobadas. El aviso va dentro de ella, en una sola línea, en lugar de la variable. Cada aviso es un mensaje que cobra la plataforma del número oficial." },
+  "Modelo aprovado que leva o aviso":
+    { es: "Plantilla aprobada que lleva el aviso" },
+  "Não foi possível conferir o modelo agora. Tente de novo em instantes.":
+    { es: "No se pudo revisar la plantilla ahora. Inténtalo de nuevo en unos instantes." },
+  "O modelo precisa ter uma variável só, no texto — é nela que o aviso entra.":
+    { es: "La plantilla necesita tener una sola variable, en el texto: ahí entra el aviso." },
   "A conexão escolhida para os avisos está pausada. Retome-a na Central de Conexões para os avisos voltarem a sair.":
     { es: "La conexión elegida para los avisos está en pausa. Reanúdala en la Central de Conexiones para que los avisos vuelvan a salir." },
   "O serviço de WhatsApp desta instalação não está configurado.":
@@ -15360,6 +15489,8 @@ export const DICIONARIO: Traducoes = {
     { es: "Elige un número del equipo para recibir un mensaje cada vez que el asistente se trabe y necesite a una persona." },
   "Escolher outro número":
     { es: "Elegir otro número" },
+  "A pessoa pode ser cliente da própria empresa — a equipe que viaja pela própria agência, por exemplo. Nesse caso o número ainda recebe o aviso e continua entrando no CRM: diferente de um número interno, que deixa de virar atendimento.":
+    { es: "La persona puede ser cliente de la propia empresa — el equipo que viaja por la propia agencia, por ejemplo. En ese caso el número sigue recibiendo el aviso y sigue entrando al CRM: distinto de un número interno, que deja de convertirse en atención." },
   "Esse número ainda não está completo.":
     { es: "Ese número todavía no está completo." },
   "Esse número passa a ser só da equipe: o que ele mandar deixa de virar atendimento.":
@@ -15420,8 +15551,10 @@ export const DICIONARIO: Traducoes = {
     { es: "Tus asistentes solo sugieren respuestas" },
   "Seus números atuais não servem para avisar a equipe":
     { es: "Tus números actuales no sirven para avisar al equipo" },
-  "Seus números atuais só enviam mensagem para quem falou com você nas últimas 24 horas — isso não serve para um aviso interno. Conecte um número pelo QR code para usar este recurso.":
-    { es: "Tus números actuales solo envían mensajes a quien habló contigo en las últimas 24 horas, y eso no sirve para un aviso interno. Conecta un número por código QR para usar esta función." },
+  "Seus números atuais só enviam mensagem para quem falou com você nas últimas 24 horas, e nenhum tem um modelo aprovado com uma variável para levar o aviso. Crie esse modelo na aba de modelos do número, em Conexões, ou conecte um número pelo QR code.":
+    { es: "Tus números actuales solo envían mensajes a quien habló contigo en las últimas 24 horas, y ninguno tiene una plantilla aprobada con una variable para llevar el aviso. Crea esa plantilla en la pestaña de plantillas del número, en Conexiones, o conecta un número por código QR." },
+  "só modelo aprovado":
+    { es: "solo plantilla aprobada" },
   "Só aparecem aqui os números que conseguem mandar uma mensagem a qualquer hora.":
     { es: "Aquí solo aparecen los números que pueden enviar un mensaje a cualquier hora." },
   "Tempo típico entre o assistente travar e alguém da equipe agir, nos últimos 30 dias. Os dois grupos contam a partir do mesmo momento.":
@@ -17458,6 +17591,34 @@ export const DICIONARIO: Traducoes = {
   "Padrão: varia": { es: "Por defecto: varía" },
   "Desligado por quem administra o servidor": { es: "Desactivado por quien administra el servidor" },
   "Recursos opcionais": { es: "Recursos opcionales" },
+  // Recursos opcionais › IA das empresas novas (migration 9096) e os dois lugares que a citam.
+  "IA das empresas novas": { es: "IA de las empresas nuevas" },
+  "Toda empresa criada daqui em diante nasce com a mesma escolha de modelo por função da empresa que você escolher aqui. As empresas que já existem não mudam.": { es: "Toda empresa creada a partir de ahora nace con la misma elección de modelo por función de la empresa que elijas aquí. Las empresas que ya existen no cambian." },
+  "Copiar a IA de": { es: "Copiar la IA de" },
+  "Copia o modelo de cada função e o modelo padrão, sempre usando a chave de IA desta instalação. Chaves, Jev, agentes e base de conhecimento nunca são copiados.": { es: "Copia el modelo de cada función y el modelo predeterminado, siempre usando la clave de IA de esta instalación. Las claves, el Jev, los agentes y la base de conocimiento nunca se copian." },
+  "Nenhuma (cada empresa começa com o padrão do produto)": { es: "Ninguna (cada empresa empieza con lo predeterminado del producto)" },
+  "não está ativa": { es: "no está activa" },
+  "Só uma empresa ativa pode servir de molde. Recarregue a página e escolha outra.": { es: "Solo una empresa activa puede servir de molde. Recarga la página y elige otra." },
+  "Não deu para ler a lista de empresas agora. Recarregue a página em instantes.": { es: "No se pudo leer la lista de empresas ahora. Recarga la página en unos instantes." },
+  "Cada empresa nova começa com o modelo padrão do produto e sem escolha por função.": { es: "Cada empresa nueva empieza con el modelo predeterminado del producto y sin elección por función." },
+  "Escolha salva, mas não deu para ler agora o que esta empresa tem configurado.": { es: "Elección guardada, pero no se pudo leer ahora lo que esta empresa tiene configurado." },
+  "Esta empresa não tem nada que se possa copiar: as empresas novas vão nascer com o padrão do produto.": { es: "Esta empresa no tiene nada que se pueda copiar: las empresas nuevas van a nacer con lo predeterminado del producto." },
+  "A próxima empresa vai nascer com 1 função de IA configurada:": { es: "La próxima empresa va a nacer con 1 función de IA configurada:" },
+  "A próxima empresa vai nascer com {n} funções de IA configuradas:": { es: "La próxima empresa va a nacer con {n} funciones de IA configuradas:" },
+  "1 função": { es: "1 función" },
+  "{n} funções": { es: "{n} funciones" },
+  "Modelo padrão:": { es: "Modelo predeterminado:" },
+  "Modelo padrão: o do produto — o desta empresa usa um provedor que só funciona com a chave dela.": { es: "Modelo predeterminado: el del producto — el de esta empresa usa un proveedor que solo funciona con su propia clave." },
+  "1 função desta empresa fica de fora: usa um endereço próprio ou um provedor que só funciona com a chave da própria empresa.": { es: "1 función de esta empresa queda fuera: usa una dirección propia o un proveedor que solo funciona con la clave de la propia empresa." },
+  "{n} funções desta empresa ficam de fora: usam um endereço próprio ou um provedor que só funciona com a chave da própria empresa.": { es: "{n} funciones de esta empresa quedan fuera: usan una dirección propia o un proveedor que solo funciona con la clave de la propia empresa." },
+  "A IA com que as empresas novas nascem se escolhe em Recursos opcionais →": { es: "La IA con la que nacen las empresas nuevas se elige en Recursos opcionales →" },
+  "A IA desta empresa vai nascer copiada de {empresa}, o molde escolhido em Recursos opcionais: o modelo de cada função e o modelo padrão, com a chave de IA desta instalação.": { es: "La IA de esta empresa va a nacer copiada de {empresa}, el molde elegido en Recursos opcionales: el modelo de cada función y el modelo predeterminado, con la clave de IA de esta instalación." },
+  "IA copiada do molde": { es: "IA copiada del molde" },
+  "Esta empresa nasceu com a IA de {empresa}.": { es: "Esta empresa nació con la IA de {empresa}." },
+  "Esta empresa nasceu com a IA de uma empresa que já foi excluída.": { es: "Esta empresa nació con la IA de una empresa que ya fue eliminada." },
+  "1 função de IA copiada": { es: "1 función de IA copiada" },
+  "{n} funções de IA copiadas": { es: "{n} funciones de IA copiadas" },
+  "Depois de nascer, a IA é desta empresa: trocar o molde não muda o que ela já tem.": { es: "Después de nacer, la IA es de esta empresa: cambiar el molde no cambia lo que ya tiene." },
   "Ligado, cada empresa ainda precisa ligar o módulo de proposta comercial nas configurações dela — o caminho aparece abaixo. A IA levanta o que o cliente precisa, monta a proposta pelos modelos da empresa e o PDF sai pelo WhatsApp. Desligado, nenhuma empresa vê a tela, o menu nem as ferramentas do agente.": { es: "Activado, cada empresa todavía necesita activar el módulo de propuesta comercial en su configuración — la ruta aparece abajo. La IA levanta lo que el cliente necesita, arma la propuesta con las plantillas de la empresa y el PDF sale por WhatsApp. Desactivado, ninguna empresa ve la pantalla, el menú ni las herramientas del agente." },
   "Não cria porta no menu do CRM: ele libera um painel em": { es: "No crea entrada en el menú del CRM: habilita un panel en" },
   "Aparece no menu em:": { es: "Aparece en el menú en:" },
@@ -18197,6 +18358,9 @@ export const DICIONARIO: Traducoes = {
   "Sites verificados:": { es: "Sitios verificados:" },
   "Verificado em": { es: "Verificado el" },
   "Prévias:": { es: "Vistas previas:" },
+  "WhatsApp verificado:": { es: "WhatsApp verificado:" },
+  "sem WhatsApp, fora da abordagem": { es: "sin WhatsApp, no se las contactará" },
+  "Sem WhatsApp neste número.": { es: "Este número no tiene WhatsApp." },
   "Prévia: escolha o agente na etapa 2": { es: "Vista previa: elige el agente en el paso 2" },
   "Avaliar o site de cada empresa automaticamente": { es: "Evaluar automáticamente el sitio de cada empresa" },
   "Gerar a prévia da mensagem automaticamente (consome crédito de IA)": {
@@ -19093,6 +19257,11 @@ export const DICIONARIO: Traducoes = {
   "Cada agente conecta os próprios servidores de ferramentas externas, e o cliente pode autorizar, pela conversa, o acesso à conta dele num sistema de terceiro.": { es: "Cada agente conecta sus propios servidores de herramientas externas, y el cliente puede autorizar, por la conversación, el acceso a su cuenta en un sistema de terceros." },
   "Ligado, a tela de cada agente ganha a seção Servidores MCP, para conectar sistemas de terceiros com chave fixa ou com o login de cada cliente, que autoriza a própria conta por um link na conversa. Desligado, a seção some, o agente deixa de usar esses servidores e os links de autorização param de abrir; o que já foi cadastrado fica guardado.": { es: "Activado, la pantalla de cada agente gana la sección Servidores MCP, para conectar sistemas de terceros con clave fija o con el inicio de sesión de cada cliente, que autoriza su propia cuenta por un enlace en la conversación. Desactivado, la sección desaparece, el agente deja de usar esos servidores y los enlaces de autorización dejan de abrirse; lo que ya fue registrado queda guardado." },
   "Não cria porta no menu do CRM: ele libera uma seção na tela de cada agente, em": { es: "No crea entrada en el menú del CRM: habilita una sección en la pantalla de cada agente, en" },
+  // O módulo opcional da conferência de WhatsApp na prospecção (#3887) em /admin/sistema e em Recursos opcionais.
+  "Conferir WhatsApp na prospecção": { es: "Verificar WhatsApp en la prospección" },
+  "Ligado, a prospecção pergunta ao WhatsApp, pela conexão por QR da empresa, se cada telefone achado numa busca tem conta, e quem não tem sai da abordagem. A pergunta sai do número da empresa, para todo telefone achado, a qualquer hora; consulta em massa assim pode chamar a atenção do WhatsApp e arriscar o número. Desligado, nada é consultado e a abordagem segue como antes.": { es: "Activado, la prospección le pregunta a WhatsApp, por la conexión por QR de la empresa, si cada teléfono encontrado en una búsqueda tiene cuenta, y quien no tiene sale del abordaje. La pregunta sale del número de la empresa, para todo teléfono encontrado, a cualquier hora; una consulta masiva así puede llamar la atención de WhatsApp y poner en riesgo el número. Desactivado, no se consulta nada y el abordaje sigue como antes." },
+  "Não cria porta no menu do CRM: a conferência aparece na lista de empresas em": { es: "No crea entrada en el menú del CRM: la verificación aparece en la lista de empresas en" },
+  "Antes de abordar, pergunta ao WhatsApp se o telefone da empresa achada tem conta, e tira da abordagem quem não tem.": { es: "Antes de abordar, le pregunta a WhatsApp si el teléfono de la empresa encontrada tiene cuenta, y saca del abordaje a quien no tiene." },
   'Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.': {
     es: 'Para no depender del dato, pon un texto de respaldo: {{primeiro_nome|"alumno"}}.',
   },

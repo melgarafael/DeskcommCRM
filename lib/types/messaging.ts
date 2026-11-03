@@ -145,6 +145,13 @@ export interface Message {
    * do `MSG_COLS` (otimistas antigas, fixtures) não o trazem.
    */
   updated_at?: string;
+  /**
+   * O modelo aprovado pelo qual a mensagem saiu (`type = 'template'`). Opcionais:
+   * ausentes em linhas montadas fora do `MSG_COLS`. O balão os usa para dizer
+   * que a mensagem foi por modelo; os botões moram em `metadata.template_buttons`.
+   */
+  template_name?: string | null;
+  template_language?: string | null;
 }
 
 /** Nota interna de conversa (Onda 5.2) — nunca vai ao cliente, tabela separada de messages. */

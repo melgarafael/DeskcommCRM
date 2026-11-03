@@ -7,6 +7,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 
 import { useT } from "@/hooks/i18n/useT";
+import { useIdioma } from "@/lib/i18n/IdiomaProvider";
+import { fusoDoNavegador } from "@/lib/tempo/fuso-do-navegador";
 import {
   signupSchema,
   signupComConviteSchema,
@@ -44,6 +46,7 @@ export function SignupForm({
   planoInicial?: string;
 }) {
   const t = useT();
+  const idioma = useIdioma();
   const router = useRouter();
   const { pendente: isPending, semResposta, enviar } = useEnvioComTeto();
   const [serverError, setServerError] = useState<string | null>(null);
@@ -91,7 +94,9 @@ export function SignupForm({
           password_confirm: values.password_confirm,
         }
       : values;
-    void enviar(() => signUp(entrada, convite?.token), (res) => {
+    // O idioma desta tela e o fuso do navegador: a empresa nasce com eles
+    // quando o e-mail for confirmado (`lib/auth/perfil-da-empresa-nova.ts`).
+    void enviar(() => signUp(entrada, convite?.token, { idioma, fuso: fusoDoNavegador() }), (res) => {
       if (res.ok) {
         /**
          * ⚠️ O PROVEDOR JÁ DEIXOU A PESSOA ENTRAR — não existe e-mail para ela

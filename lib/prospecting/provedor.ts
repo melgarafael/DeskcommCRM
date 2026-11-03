@@ -46,6 +46,7 @@ import {
   readResults as readResultsDaApify,
   readSearch as readSearchDaApify,
   startSearch as startSearchDaApify,
+  type OpcoesDaBusca,
 } from "./provider";
 import { provedorLocalHttp, validarCredencialLocalHttp } from "./provedor-local-http";
 import { provedorDeTeste } from "./provedor-teste";
@@ -66,7 +67,8 @@ export interface DadosDaExecucao {
  * de sempre, venham de onde vierem.
  */
 export interface ProvedorDeBusca {
-  startSearch(chave: string, input: SearchInput): Promise<DadosDaExecucao>;
+  /** `opcoes.idioma`: o da organização (`idioma.ts`). Provedor que não o usa, ignora. */
+  startSearch(chave: string, input: SearchInput, opcoes?: OpcoesDaBusca): Promise<DadosDaExecucao>;
   readSearch(chave: string, id: string): Promise<DadosDaExecucao>;
   readResults(chave: string, dataset: string, limit: number): Promise<Record<string, unknown>[]>;
 }

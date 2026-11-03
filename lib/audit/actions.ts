@@ -1151,6 +1151,9 @@ export const AUDIT_ACTIONS = [
   // "Enviar vendas pelo canal da conversa" (doc 76, PR #1819): ligar faz o
   // valor da venda e o telefone do cliente saírem para o provedor do canal.
   "conversions.report_via_channel_updated",
+  // "Deduzir a origem do site pelo horário do clique" (doc 259, PR #3906):
+  // ligar faz a Origem passar a aceitar palpite, além de prova.
+  "conversions.site_origin_by_click_time_updated",
 
   // CRM B2B fase 1 — companies / people / import (migration 0239)
   "companies.created",
@@ -1425,6 +1428,23 @@ export const AUDIT_ACTIONS = [
   // Aviso escrito pelo admin da empresa e empurrado para a equipe (#1418). O
   // metadata leva só a janela de publicação; título e corpo ficam em `avisos`.
   "aviso.created",
+  // A prospecção perguntou ao WhatsApp (`numeroTemConta` do canal) se os telefones de
+  // uma campanha têm WhatsApp, e tirou da seleção quem não tem
+  // (`lib/prospecting/whatsapp.ts`). UMA linha por campanha por rodada e só com
+  // efeito; metadata só com contagens — nunca o telefone. `resource_id` = a campanha.
+  "prospecting.whatsapp_checked",
+  // O MOLDE DE IA da instalação trocado em `/admin/sistema`
+  // (`platform_settings.molde_de_ia_org_id`, migration 9096) — mutação de
+  // plataforma, sem `organization_id`. metadata com o molde anterior e o novo e
+  // quantas funções ele copia: "desde quando as empresas novas nascem com a IA
+  // da empresa X?" só tem resposta aqui, porque a coluna guarda o estado e não
+  // o histórico.
+  "platform.molde_de_ia_updated",
+  // O EFEITO do molde: a empresa nova nasceu com as funções e o padrão de IA
+  // do molde. Quem grava é o gatilho `fn_molde_de_ia_na_org_nova` (migration
+  // 9096), na organização NOVA, com o id do molde e as contagens no metadata;
+  // quem lê é Painel › Empresas › [empresa] ("IA copiada do molde").
+  "ai.molde_de_ia_aplicado",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

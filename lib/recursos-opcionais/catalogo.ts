@@ -149,6 +149,9 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
   avisos: {
     nome: "Avisos para a equipe",
     oQueFaz: "O administrador da empresa escreve um aviso e ele chega como notificação nos aparelhos da equipe.",
+  },  conferir_whatsapp: {
+    nome: "Conferir WhatsApp na prospecção",
+    oQueFaz: "Antes de abordar, pergunta ao WhatsApp se o telefone da empresa achada tem conta, e tira da abordagem quem não tem.",
   },
   mcp_por_agente: {
     nome: "Ferramentas externas por agente",
