@@ -14,6 +14,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { desfazerOrigemDeduzida } from "@/lib/leads/origem-por-horario";
 import { logger } from "@/lib/logger";
 
 export interface ClickRefDaPaginaCasado {
@@ -29,6 +30,12 @@ export interface ClickRefDaPaginaCasado {
  *
  * `organization_id` no WHERE é a lição da #236: ref de uma organização nunca
  * pode casar na outra.
+ *
+ * O clique pode estar RESERVADO por dedução para outro contato
+ * (`contact_id` preenchido, `matched_at` nulo — ver
+ * `lib/leads/origem-por-horario.ts`). O código é a prova e vence: o clique
+ * passa a ser de quem o trouxe, e a origem deduzida do outro é desfeita. Sem
+ * isso, um clique virava origem de dois contatos.
  */
 export async function casarClickRef(
   admin: SupabaseClient,
@@ -36,6 +43,30 @@ export async function casarClickRef(
   token: string,
   contactId: string,
 ): Promise<ClickRefDaPaginaCasado | null> {
+  // Quem a dedução tinha posto no clique, lido ANTES do consumo (o UPDATE
+  // troca o `contact_id`). O token é único por organização, então o
+  // `matched_at` é conferido aqui, não no filtro.
+  // ponytail: dedução que reserve ENTRE esta leitura e o UPDATE escapa; a
+  // janela é de milissegundos, e fechá-la pediria uma função no banco.
+  const { data: antes, error: erroDaReserva } = await admin
+    .from("meta_ads_click_refs")
+    .select("contact_id, matched_at")
+    .eq("organization_id", organizationId)
+    .eq("token", token)
+    .maybeSingle();
+  // O consumo segue: a prova vale mesmo sem saber quem a dedução tinha posto.
+  if (erroDaReserva) {
+    logger.warn("[meta.captura-de-clique] leitura da reserva por dedução falhou", {
+      organizationId,
+      detalhe: erroDaReserva.message,
+    });
+  }
+  const reserva = antes as { contact_id?: string | null; matched_at?: string | null } | null;
+  const deduzidoPara =
+    reserva && reserva.matched_at == null && reserva.contact_id && reserva.contact_id !== contactId
+      ? reserva.contact_id
+      : null;
+
   const { data, error } = await admin
     .from("meta_ads_click_refs")
     .update({ matched_at: new Date().toISOString(), contact_id: contactId })
@@ -59,5 +90,6 @@ export async function casarClickRef(
   // A coluna é `not null` com `check (utm <> '{}')`, então isto é defesa de
   // borda, não caso esperado: linha sem UTM não teria o que estampar.
   if (!utm || Object.keys(utm).length === 0) return null;
+  if (deduzidoPara) await desfazerOrigemDeduzida(admin, organizationId, deduzidoPara);
   return { utm };
 }

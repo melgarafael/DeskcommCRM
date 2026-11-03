@@ -133,6 +133,12 @@ export const AUDIT_ACTIONS = [
   // auditoria. Desligar uma automação é decisão auditável tanto quanto religá-la.
   "conversation.ai_paused",
   "conversation.tags_changed",
+  // (migration 9062) Mudar a FILA de uma conversa é decisão auditável: quem
+  // escolheu, de qual fila para qual, e se aquilo disparou redistribuição. Sem
+  // esta ação, mover uma conversa de setor não deixaria rastro — e "por que
+  // esta conversa do comercial foi parar no financeiro?" é pergunta de
+  // operação, não de curiosidade.
+  "conversation.sector_changed",
   // Atendimento conjunto (issue #2542): convidar alguém para a MESMA conversa
   // e tirar o participante são decisões auditáveis, com o `user_id` alvo no
   // metadata. O convidado entra sem herdar o dono — por isso a trilha precisa
@@ -427,6 +433,7 @@ export const AUDIT_ACTIONS = [
   "followup_enrollment.resumed",
   "followup_enrollment.snoozed",
   "followup_enrollment.step_skipped",
+  "followup_enrollment.negocio_escolhido",
   "template.created",
   "template.updated",
   "template.deleted",
@@ -480,6 +487,11 @@ export const AUDIT_ACTIONS = [
   // respondendo) porque juntar os dois apagaria justamente quem agiu.
   "ai.case_noted_by_agent",
   "ai.case_closed_by_agent",
+  // (#3810) A pessoa encerrou o caso SEM avisar o cliente — o desfecho que não
+  // manda mensagem nenhuma (status `cancelled`). Separado de `ai.case_replied`
+  // porque nada foi respondido: quem lê a auditoria não pode concluir que o
+  // cliente recebeu alguma coisa.
+  "ai.case_closed_without_reply",
   "pipeline.agent_mapping_updated",
   "pipeline.stage_created",
   "pipeline.stage_updated",
@@ -1140,6 +1152,9 @@ export const AUDIT_ACTIONS = [
   // valor da venda e o telefone do cliente saírem para o provedor do canal.
   "conversions.report_via_channel_updated",
   "calls.block_incoming_updated",
+  // "Deduzir a origem do site pelo horário do clique" (doc 259, PR #3906):
+  // ligar faz a Origem passar a aceitar palpite, além de prova.
+  "conversions.site_origin_by_click_time_updated",
 
   // CRM B2B fase 1 — companies / people / import (migration 0239)
   "companies.created",
@@ -1401,6 +1416,14 @@ export const AUDIT_ACTIONS = [
   // sugestão, e quando". A fila guarda o usuário, mas a trilha é o rastro que a
   // organização consulta, e só ela tem o mesmo formato das outras ações de contato.
   "contact.duplicate_dismissed",
+  // Aviso escrito pelo admin da empresa e empurrado para a equipe (#1418). O
+  // metadata leva só a janela de publicação; título e corpo ficam em `avisos`.
+  "aviso.created",
+  // A prospecção perguntou ao WhatsApp (`numeroTemConta` do canal) se os telefones de
+  // uma campanha têm WhatsApp, e tirou da seleção quem não tem
+  // (`lib/prospecting/whatsapp.ts`). UMA linha por campanha por rodada e só com
+  // efeito; metadata só com contagens — nunca o telefone. `resource_id` = a campanha.
+  "prospecting.whatsapp_checked",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

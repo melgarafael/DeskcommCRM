@@ -232,8 +232,12 @@ export function describeNodeConfig(
       return t("Início do fluxo");
     case "wait": {
       const c = config as ConfigOf<"wait">;
+      // O horário da espera aparece no card: sem isto, "1440 min" prometia o
+      // toque à mesma hora do dia seguinte, e o motor o segura até a próxima abertura.
       return c.mode === "fixed"
-        ? minutos(c.duration_ms)
+        ? c.ate_o_horario
+          ? `${minutos(c.duration_ms)} · ${t("só em horário comercial")}`
+          : minutos(c.duration_ms)
         : `${Math.round(c.min_ms / 60_000)}–${minutos(c.max_ms)} ${t("(adaptativo)")}`;
     }
     case "condition": {

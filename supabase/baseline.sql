@@ -4380,7 +4380,7 @@ GRANT ALL ON FUNCTION "public"."fn_audit_log_row"() TO "service_role";
 
 
 
-GRANT ALL ON FUNCTION "public"."fn_crm_lead_close_on_stage"() TO "anon";
+REVOKE ALL ON FUNCTION "public"."fn_crm_lead_close_on_stage"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_crm_lead_close_on_stage"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_crm_lead_close_on_stage"() TO "service_role";
 
@@ -4488,7 +4488,7 @@ GRANT ALL ON FUNCTION "public"."fn_validate_activity_lead_org"() TO "service_rol
 
 
 
-GRANT ALL ON FUNCTION "public"."fn_validate_lost_reason_required"() TO "anon";
+REVOKE ALL ON FUNCTION "public"."fn_validate_lost_reason_required"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."fn_validate_lost_reason_required"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."fn_validate_lost_reason_required"() TO "service_role";
 
@@ -23427,6 +23427,17 @@ begin
  if found and p_user is distinct from v_default
   and not exists(select 1 from public.channel_routing_responsibles r where r.organization_id=p_org and r.policy_id=v_policy_id and r.user_id=p_user)
  then return 'candidate_not_allowed';end if;
+ -- (migration 9062) FILA É DESTINO: com fila na conversa, a distribuição
+ -- automática não sai dela. Vale para o worker de rodízio e para o handoff da IA,
+ -- que entram por esta função; a atribuição MANUAL não passa aqui de propósito.
+ -- Módulo `setores` desligado ⇒ a fila não manda (mesma leitura de
+ -- lib/instalacao/modulos.ts: só `ligado` liga). Quem liga, usa e desliga não
+ -- fica com a fila velha gravada restringindo o rodízio sem tela que a mostre.
+ if c.sector_id is not null
+  and exists(select 1 from public.platform_config pc where pc.chave='MODULO_SETORES' and pc.valor='ligado')
+  and not exists(select 1 from public.attendant_sector_members m where m.organization_id=p_org
+                  and m.sector_id=c.sector_id and m.user_id=p_user)
+ then return 'candidate_not_in_sector';end if;
  select * into availability from public.attendant_availability where organization_id=p_org and user_id=p_user for share;
  if not found or not availability.is_available or (p_schedule is not null and availability.schedule is distinct from p_schedule)
  then return 'capacity_changed';end if;
@@ -41680,7 +41691,10 @@ create table if not exists public.companies (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint companies_normalized_cnpj_digits
-    check (normalized_cnpj is null or normalized_cnpj ~ '^\d{14}$')
+    -- #3495: 12 posições de dígito ou LETRA maiúscula + 2 dígitos verificadores.
+    -- O CNPJ alfanumérico da Receita (`12.ABC.345/01DE-35`) cabe aqui; o dígito
+    -- em si quem confere é `isValidCnpj`, no código.
+    check (normalized_cnpj is null or normalized_cnpj ~ '^[0-9A-Z]{14}$')
 );
 
 create index if not exists idx_companies_org_updated
@@ -50842,6 +50856,7 @@ declare
   v_origem text := coalesce(p_origem, 'manual');
   v_anterior uuid;
   v_conversa uuid;
+  v_dono_atual uuid;
 begin
   if v_origem not in ('manual', 'importacao', 'atribuicao_automatica', 'automacao') then
     raise exception 'carteira_origem_invalida' using errcode = '22023';
@@ -50860,17 +50875,56 @@ begin
   end if;
 
   if v_ator is not null then
-    -- Quem muda: manager+ da MESMA organização (e membro aceito, não revogado).
+    -- Quem muda: `agent`+ da MESMA organização (e membro aceito, não revogado).
+    -- #3746: o Atendente entrou nesta porta, mas com ESCOPO DE POSSE — o papel
+    -- sozinho não distingue "meu cliente" de "cliente do colega", e liberar o
+    -- papel seco deixaria qualquer Atendente se pôr como dono do cliente de
+    -- outro e levar o negócio seguinte no nome errado (o defeito do #2591).
     select uo.role into v_papel
       from public.user_organizations uo
      where uo.user_id = v_ator
        and uo.organization_id = p_org
        and uo.accepted_at is not null
        and uo.revoked_at is null;
-    if v_papel is null or v_papel not in ('manager', 'admin') then
+    if v_papel is null or v_papel not in ('agent', 'manager', 'admin') then
       raise exception 'carteira_permissao_negada'
         using errcode = '42501',
-              detail = 'Só manager e admin definem a carteira do cliente.';
+              detail = 'Só atendente, manager e admin definem a carteira do cliente.';
+    end if;
+    if v_papel = 'agent' then
+      -- A POSSE, conferida AQUI e não só na rota: esta é a porta ÚNICA de
+      -- gravação (`trg_contacts_carteira_so_pelo_servidor` recusa a sessão), e
+      -- um chamador novo não pode nascer sem a régua. Doc 250, escolha 1-B:
+      --   • o contato já está na carteira dele → passa (pode passar adiante);
+      --   • conversa do contato atribuída a ele + contato SEM dono → passa;
+      --   • conversa com ele + contato na carteira de OUTRO →
+      --     `carteira_permissao_negada`: tirar o cliente de um colega segue
+      --     sendo do gerente (a regra do #2591 — o rodízio não leva a venda
+      --     de quem atende o cliente);
+      --   • nenhuma das duas → `carteira_fora_da_posse`.
+      -- A rota traduz as duas recusas em 403.
+      select c.carteira_user_id into v_dono_atual
+        from public.contacts c
+       where c.id = p_contact
+         and c.organization_id = p_org;
+      if v_dono_atual is distinct from v_ator then
+        if not exists (
+             select 1
+               from public.conversations cv
+              where cv.organization_id = p_org
+                and cv.contact_id = p_contact
+                and cv.assigned_to_user_id = v_ator
+           ) then
+          raise exception 'carteira_fora_da_posse'
+            using errcode = '42501',
+                  detail = 'O atendente só muda a carteira do cliente que já está com ele: contato na carteira dele, ou conversa atribuída a ele com o contato sem dono.';
+        end if;
+        if v_dono_atual is not null then
+          raise exception 'carteira_permissao_negada'
+            using errcode = '42501',
+                  detail = 'O cliente está na carteira de outro vendedor: só manager e admin tiram o cliente da carteira de um colega.';
+        end if;
+      end if;
     end if;
     if v_origem = 'automacao' then
       raise exception 'carteira_origem_invalida'
@@ -56551,6 +56605,29 @@ grant execute on function public.fn_responder_caso_por_whatsapp(uuid, uuid, uuid
 
 -- A opção é gravada pela mesma RPC administrativa que protege o restante da
 -- configuração de avisos. A coluna e a guarda acima mantêm o opt-in no banco.
+-- ---- as colunas ----
+alter table public.config_aviso_de_caso
+  add column if not exists destino_modo text not null default 'fixo';
+
+alter table public.config_aviso_de_caso
+  drop constraint if exists config_aviso_de_caso_destino_modo_valido;
+alter table public.config_aviso_de_caso
+  add constraint config_aviso_de_caso_destino_modo_valido
+  check (destino_modo in ('fixo', 'responsavel'));
+
+alter table public.user_organizations
+  add column if not exists whatsapp_e164 text;
+
+-- A MESMA forma do CHECK de `config_aviso_de_caso_e164`: o número do membro vai
+-- para o mesmo transporte, e um valor torto aqui só apareceria como falha de
+-- envio meses depois.
+alter table public.user_organizations
+  drop constraint if exists user_organizations_whatsapp_e164_valido;
+alter table public.user_organizations
+  add constraint user_organizations_whatsapp_e164_valido
+  check (whatsapp_e164 is null or whatsapp_e164 ~ '^\+[1-9][0-9]{7,14}$');
+
+-- ---- a porta de escrita ----
 create or replace function public.fn_definir_aviso_de_caso(
   p_org uuid,
   p_channel uuid,
@@ -56558,7 +56635,9 @@ create or replace function public.fn_definir_aviso_de_caso(
   p_rotulo text,
   p_ligado boolean,
   p_confirma_contato boolean default false,
-  p_resposta_whatsapp_habilitada boolean default false
+  p_resposta_whatsapp_habilitada boolean default false,
+  p_destino_modo text default 'fixo',
+  p_responsaveis jsonb default null
 ) returns jsonb
 language plpgsql
 security definer
@@ -56569,6 +56648,12 @@ declare
   v_arch timestamptz;
   v_digitos text;
   v_variantes text[];
+  v_modo text;
+  v_item jsonb;
+  v_uid uuid;
+  v_numero text;
+  v_digitos_do_membro text;
+  v_variantes_do_membro text[];
 begin
   -- Papel + suporte, nesta ordem e na MESMA transação da escrita. `auth.uid()`
   -- nulo é o caminho do service role: quem escreve configuração é gente.
@@ -56584,6 +56669,13 @@ begin
   end if;
   if p_telefone is null or p_telefone !~ '^\+[1-9][0-9]{7,14}$' then
     raise exception 'aviso_de_caso_telefone_invalido' using errcode = '22023';
+  end if;
+
+  -- O modo é vocabulário FECHADO: um valor fora dos dois que o motor conhece
+  -- deixaria a tela dizendo uma coisa e o envio fazendo outra.
+  v_modo := coalesce(nullif(btrim(p_destino_modo), ''), 'fixo');
+  if v_modo not in ('fixo', 'responsavel') then
+    raise exception 'aviso_de_caso_destino_invalido' using errcode = '22023';
   end if;
 
   -- O canal é DA organização e não está arquivado. Sem isto a FK simples
@@ -56643,18 +56735,78 @@ begin
     raise exception 'aviso_de_caso_numero_de_cliente' using errcode = '22023';
   end if;
 
+  -- ─── O WhatsApp de cada pessoa da equipe (#3803) ─────────────────────────
+  --
+  -- Só membro ATIVO da organização é gravado: número de quem saiu da equipe não
+  -- recebe aviso, e aceitá-lo aqui daria um destino que nunca é resolvido.
+  -- Vazio (`''` ou nulo) É uma informação — significa "esta pessoa não tem
+  -- número" —, e por isso grava nulo em vez de recusar.
+  if p_responsaveis is not null then
+    if jsonb_typeof(p_responsaveis) <> 'array' then
+      raise exception 'aviso_de_caso_whatsapp_invalido' using errcode = '22023';
+    end if;
+    for v_item in select * from jsonb_array_elements(p_responsaveis) loop
+      v_uid := nullif(btrim(coalesce(v_item ->> 'user_id', '')), '')::uuid;
+      if v_uid is null then
+        raise exception 'aviso_de_caso_whatsapp_invalido' using errcode = '22023';
+      end if;
+      v_numero := nullif(btrim(coalesce(v_item ->> 'whatsapp', '')), '');
+      if v_numero is not null then
+        -- O mesmo "dígitos com `+` na frente" que a tela normaliza
+        -- (`normalizarTelefoneDeAviso`): quem manda `31 99888-7777` recebe o
+        -- número guardado na forma canônica em vez de um 22023 que não explica.
+        v_numero := '+' || regexp_replace(v_numero, '\D', '', 'g');
+        if v_numero !~ '^\+[1-9][0-9]{7,14}$' then
+          raise exception 'aviso_de_caso_whatsapp_invalido' using errcode = '22023';
+        end if;
+        -- No modo `responsavel` este número É o destino do aviso. Um número
+        -- conectado desta organização abriria por aqui o mesmo laço
+        -- robô-com-robô que a guarda do número da empresa fecha: mesma conta
+        -- (conexão ativa, as duas grafias do nono dígito) e mesmo código.
+        v_digitos_do_membro := regexp_replace(v_numero, '\D', '', 'g');
+        v_variantes_do_membro := array[v_digitos_do_membro];
+        if v_digitos_do_membro like '55%' then
+          if length(v_digitos_do_membro) = 13
+             and substring(v_digitos_do_membro from 5 for 1) = '9'
+             and substring(v_digitos_do_membro from 6 for 1) between '6' and '9' then
+            v_variantes_do_membro := v_variantes_do_membro
+              || (substring(v_digitos_do_membro from 1 for 4) || substring(v_digitos_do_membro from 6));
+          elsif length(v_digitos_do_membro) = 12
+             and substring(v_digitos_do_membro from 5 for 1) between '6' and '9' then
+            v_variantes_do_membro := v_variantes_do_membro
+              || (substring(v_digitos_do_membro from 1 for 4) || '9' || substring(v_digitos_do_membro from 5));
+          end if;
+        end if;
+        if exists (
+             select 1 from public.channel_sessions s
+              where s.organization_id = p_org
+                and s.archived_at is null
+                and s.phone_number is not null
+                and regexp_replace(s.phone_number, '\D', '', 'g') = any (v_variantes_do_membro)) then
+          raise exception 'aviso_de_caso_numero_da_propria_org' using errcode = '22023';
+        end if;
+      end if;
+      update public.user_organizations uo
+         set whatsapp_e164 = v_numero
+       where uo.organization_id = p_org
+         and uo.user_id = v_uid
+         and uo.revoked_at is null;
+    end loop;
+  end if;
+
   select * into v_antes from public.config_aviso_de_caso where organization_id = p_org;
 
   insert into public.config_aviso_de_caso
-    (organization_id, channel_session_id, telefone_destino, rotulo, ligado, resposta_whatsapp_habilitada, criado_por, atualizado_por)
+    (organization_id, channel_session_id, telefone_destino, rotulo, ligado, resposta_whatsapp_habilitada, destino_modo, criado_por, atualizado_por)
   values
-    (p_org, p_channel, p_telefone, nullif(btrim(p_rotulo), ''), coalesce(p_ligado, false), coalesce(p_resposta_whatsapp_habilitada, false), auth.uid(), auth.uid())
+    (p_org, p_channel, p_telefone, nullif(btrim(p_rotulo), ''), coalesce(p_ligado, false), coalesce(p_resposta_whatsapp_habilitada, false), v_modo, auth.uid(), auth.uid())
   on conflict (organization_id) do update
     set channel_session_id = excluded.channel_session_id,
         telefone_destino   = excluded.telefone_destino,
         rotulo             = excluded.rotulo,
         ligado             = excluded.ligado,
         resposta_whatsapp_habilitada = excluded.resposta_whatsapp_habilitada,
+        destino_modo       = excluded.destino_modo,
         atualizado_por     = auth.uid(),
         -- Trocou o número, o JID resolvido do anterior não vale mais — e é o
         -- JID que o corte da ingestão usa para reconhecer quem está em modo
@@ -56669,13 +56821,15 @@ begin
 
   return jsonb_build_object(
     'trocou_numero', (v_antes.telefone_destino is distinct from p_telefone),
-    'antes_ligado',  coalesce(v_antes.ligado, false)
+    'antes_ligado',  coalesce(v_antes.ligado, false),
+    'destino_modo',  v_modo
   );
 end;
 $$;
-revoke all on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean) from public, anon;
-grant execute on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean) to authenticated;
+revoke all on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb) from public, anon;
+grant execute on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb) to authenticated;
 drop function if exists public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean);
+drop function if exists public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean);
 
 -- ---- #3042: desmarcar o exemplo tira do RAG os trechos já aprendidos da conversa (migration 0688) ----
 -- Desmarcar `usable_for_rag` só impedia ingestões futuras; os `ai_chunks` já gravados da conversa
@@ -56804,7 +56958,15 @@ begin
     end if;
   end if;
 
-  select a.valor -> 'config' -> 'fila'
+  -- A FILA do rodízio mora em DOIS lugares desde a #3804: no modo `rodizio` de
+  -- sempre (`config.fila`) e no `fallback` do destino dinâmico
+  -- (`config.fallback.fila`, com `config.fallback.modo = 'rodizio'`). A vez é a
+  -- MESMA — um histórico por regra, um `pg_advisory_xact_lock` por regra —, e por
+  -- isso as duas formas caem nesta leitura em vez de num rodízio paralelo.
+  -- `coalesce` e não dois SELECTs: quando a ação é o modo `rodizio` de sempre, a
+  -- fila é a dele; o schema recusa as duas formas na mesma regra (um rodízio por
+  -- regra), então não há ambiguidade a resolver aqui.
+  select coalesce(a.valor -> 'config' -> 'fila', a.valor -> 'config' -> 'fallback' -> 'fila')
     into v_fila
     from public.automation_rules r
    cross join lateral jsonb_array_elements(
@@ -56813,7 +56975,8 @@ begin
    where r.id = p_rule
      and r.organization_id = p_org
      and a.valor ->> 'type' = 'assign_owner'
-     and a.valor -> 'config' ->> 'modo' = 'rodizio'
+     and (a.valor -> 'config' ->> 'modo' = 'rodizio'
+          or a.valor -> 'config' -> 'fallback' ->> 'modo' = 'rodizio')
    order by a.ordem
    limit 1;
 
@@ -60062,12 +60225,25 @@ alter table public.entregas_de_aviso_de_agendamento
 
 -- AS DUAS CHAVES DA IDEMPOTÊNCIA. O `23505` delas é o sinal que o handler lê
 -- para REIVINDICAR a entrega antes de tocar a rede.
-create unique index if not exists entregas_de_aviso_de_agendamento_evento_unico
-  on public.entregas_de_aviso_de_agendamento (organization_id, event_id)
-  where event_id is not null;
-create unique index if not exists entregas_de_aviso_de_agendamento_resumo_unico
-  on public.entregas_de_aviso_de_agendamento (organization_id, dia)
-  where tipo = 'resumo';
+-- Desde a 9060 as duas chaves são por destino (`alvo`), e o bloco da 9060
+-- apaga estas. Na reaplicação do `update.sh` a coluna já existe: recriar a
+-- chave estreita aqui falharia sobre um evento entregue ao número E ao grupo.
+do $$
+begin
+  if not exists (
+       select 1 from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'entregas_de_aviso_de_agendamento'
+          and column_name = 'alvo') then
+    create unique index if not exists entregas_de_aviso_de_agendamento_evento_unico
+      on public.entregas_de_aviso_de_agendamento (organization_id, event_id)
+      where event_id is not null;
+    create unique index if not exists entregas_de_aviso_de_agendamento_resumo_unico
+      on public.entregas_de_aviso_de_agendamento (organization_id, dia)
+      where tipo = 'resumo';
+  end if;
+end
+$$;
 
 -- Os leitores declarados: a lista da tela e o cancelamento por agendamento.
 create index if not exists entregas_de_aviso_de_agendamento_org_idx
@@ -61331,6 +61507,180 @@ $$;
 
 revoke execute on function public.fn_casos_parados_para_lembrar(integer) from public, anon, authenticated;
 grant execute on function public.fn_casos_parados_para_lembrar(integer) to service_role;
+
+-- ---- aviso de agendamento também em grupo do WhatsApp (migration 9060) ----
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 9060 — O aviso de agendamento também vai para um grupo do WhatsApp.
+--
+-- Quem trabalha em equipe quer ver a agenda num grupo da empresa, sem repassar
+-- mensagem. O grupo é destino EXTRA: o número continua como era, e cada
+-- destino tem a SUA linha de entrega — por isso a chave da idempotência ganha
+-- `alvo`. Uma unique só por evento faria o grupo e o número disputarem a mesma
+-- linha, e um deles nunca sairia. O motor mora em
+-- `lib/agenda/aviso-de-agendamento.ts`, no MESMO commit.
+--
+-- Reaplicação: tudo idempotente (`add column if not exists`, `drop … if
+-- exists` + `add`, índices novos com nome novo). Linhas existentes nascem
+-- `alvo = 'numero'`, então as `unique` novas (mais largas) não falham.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+alter table public.config_aviso_de_agendamento
+  add column if not exists grupo_destino text;
+alter table public.config_aviso_de_agendamento
+  drop constraint if exists config_aviso_de_agendamento_grupo_check;
+alter table public.config_aviso_de_agendamento
+  add constraint config_aviso_de_agendamento_grupo_check
+  check (grupo_destino is null or grupo_destino ~ '^[0-9-]+@g\.us$');
+
+alter table public.entregas_de_aviso_de_agendamento
+  add column if not exists alvo text not null default 'numero';
+alter table public.entregas_de_aviso_de_agendamento
+  drop constraint if exists entregas_de_aviso_de_agendamento_alvo_check;
+alter table public.entregas_de_aviso_de_agendamento
+  add constraint entregas_de_aviso_de_agendamento_alvo_check
+  check (alvo in ('numero', 'grupo'));
+
+-- As chaves novas nascem ANTES de as antigas saírem: o update.sh roda sem
+-- ON_ERROR_STOP, e a ordem inversa deixaria uma janela sem unique.
+create unique index if not exists entregas_de_aviso_de_agendamento_evento_alvo_unico
+  on public.entregas_de_aviso_de_agendamento (organization_id, event_id, alvo)
+  where event_id is not null;
+create unique index if not exists entregas_de_aviso_de_agendamento_resumo_alvo_unico
+  on public.entregas_de_aviso_de_agendamento (organization_id, dia, alvo)
+  where tipo = 'resumo';
+drop index if exists public.entregas_de_aviso_de_agendamento_evento_unico;
+drop index if exists public.entregas_de_aviso_de_agendamento_resumo_unico;
+
+-- A assinatura muda (`p_grupo` no fim, com default): a de seis argumentos sai,
+-- senão ficariam duas portas de escrita para a mesma tabela.
+drop function if exists public.fn_definir_aviso_de_agendamento(uuid,boolean,uuid,text,boolean,boolean);
+create or replace function public.fn_definir_aviso_de_agendamento(
+  p_org uuid,
+  p_usa_numero_do_aviso_de_caso boolean,
+  p_channel uuid,
+  p_telefone text,
+  p_ligado boolean,
+  p_confirma_contato boolean default false,
+  p_grupo text default null
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_antes public.config_aviso_de_agendamento;
+  v_arch timestamptz;
+  v_digitos text;
+  v_variantes text[];
+  v_usa boolean := coalesce(p_usa_numero_do_aviso_de_caso, true);
+  v_channel uuid := p_channel;
+  v_telefone text := nullif(btrim(coalesce(p_telefone, '')), '');
+  v_grupo text := nullif(btrim(coalesce(p_grupo, '')), '');
+begin
+  if auth.uid() is null or p_org is null
+     or not public.fn_role_at_least(p_org, 'admin')
+     or not public.fn_support_write_allowed(p_org) then
+    raise exception 'aviso_de_agendamento_forbidden' using errcode = '42501';
+  end if;
+  if not public.fn_session_mfa_proven() then
+    raise exception 'aviso_de_agendamento_mfa_required' using errcode = '42501';
+  end if;
+
+  if v_usa then
+    -- O número do aviso de caso já passou pelas guardas da 0292 quando foi
+    -- salvo. Aqui só se exige que ele EXISTA, senão a tela diria "usando o
+    -- número do aviso de caso" sobre um número que não há.
+    if not exists (
+         select 1 from public.config_aviso_de_caso c
+          where c.organization_id = p_org
+            and c.channel_session_id is not null) then
+      raise exception 'aviso_de_agendamento_sem_aviso_de_caso' using errcode = '22023';
+    end if;
+    v_channel := null;
+    v_telefone := null;
+  else
+    if v_telefone is null or v_telefone !~ '^\+[1-9][0-9]{7,14}$' then
+      raise exception 'aviso_de_agendamento_telefone_invalido' using errcode = '22023';
+    end if;
+    if v_channel is null then
+      raise exception 'aviso_de_agendamento_canal_invalido' using errcode = '22023';
+    end if;
+    select archived_at into v_arch
+      from public.channel_sessions
+     where id = v_channel and organization_id = p_org;
+    if not found or v_arch is not null then
+      raise exception 'aviso_de_agendamento_canal_invalido' using errcode = '22023';
+    end if;
+
+    -- As duas grafias do nono dígito — a MESMA regra da 0292 e de
+    -- `lib/channels/phone-variants.ts`.
+    v_digitos := regexp_replace(v_telefone, '\D', '', 'g');
+    v_variantes := array[v_digitos];
+    if v_digitos like '55%' then
+      if length(v_digitos) = 13
+         and substring(v_digitos from 5 for 1) = '9'
+         and substring(v_digitos from 6 for 1) between '6' and '9' then
+        v_variantes := v_variantes || (substring(v_digitos from 1 for 4) || substring(v_digitos from 6));
+      elsif length(v_digitos) = 12
+         and substring(v_digitos from 5 for 1) between '6' and '9' then
+        v_variantes := v_variantes || (substring(v_digitos from 1 for 4) || '9' || substring(v_digitos from 5));
+      end if;
+    end if;
+
+    -- O número de destino NÃO pode ser de uma conexão da própria organização:
+    -- é o laço robô-com-robô (a conexão avisa o número oficial, o agente dele
+    -- responde, e as duas pontas se alimentam).
+    if exists (
+         select 1 from public.channel_sessions s
+          where s.organization_id = p_org
+            and s.archived_at is null
+            and s.phone_number is not null
+            and regexp_replace(s.phone_number, '\D', '', 'g') = any (v_variantes)) then
+      raise exception 'aviso_de_agendamento_numero_da_propria_org' using errcode = '22023';
+    end if;
+
+    -- O número de aviso vira INTERNO (o que chega dele não vira atendimento).
+    -- Se ele já é um cliente, isso não pode acontecer por engano.
+    if not coalesce(p_confirma_contato, false) and exists (
+         select 1 from public.contacts c
+          where c.organization_id = p_org
+            and c.phone_number is not null
+            and regexp_replace(c.phone_number, '\D', '', 'g') = any (v_variantes)) then
+      raise exception 'aviso_de_agendamento_numero_de_cliente' using errcode = '22023';
+    end if;
+  end if;
+
+  -- O grupo é destino EXTRA, da mesma conexão que envia. Só a forma é
+  -- conferida aqui: se o número saiu do grupo, o envio cai só para ele.
+  if v_grupo is not null and v_grupo !~ '^[0-9-]+@g\.us$' then
+    raise exception 'aviso_de_agendamento_grupo_invalido' using errcode = '22023';
+  end if;
+
+  select * into v_antes from public.config_aviso_de_agendamento where organization_id = p_org;
+
+  insert into public.config_aviso_de_agendamento
+    (organization_id, usa_numero_do_aviso_de_caso, channel_session_id, telefone_destino, grupo_destino, ligado, criado_por, atualizado_por)
+  values
+    (p_org, v_usa, v_channel, v_telefone, v_grupo, coalesce(p_ligado, false), auth.uid(), auth.uid())
+  on conflict (organization_id) do update
+    set usa_numero_do_aviso_de_caso = excluded.usa_numero_do_aviso_de_caso,
+        channel_session_id          = excluded.channel_session_id,
+        telefone_destino            = excluded.telefone_destino,
+        grupo_destino               = excluded.grupo_destino,
+        ligado                      = excluded.ligado,
+        atualizado_por              = auth.uid(),
+        updated_at                  = now();
+
+  return jsonb_build_object(
+    'trocou_numero', (v_antes.telefone_destino is distinct from v_telefone
+                      or v_antes.usa_numero_do_aviso_de_caso is distinct from v_usa),
+    'antes_ligado',  coalesce(v_antes.ligado, false)
+  );
+end;
+$$;
+-- AS DUAS ORIGENS DE EXECUTE (item 9 da doutrina de migrations).
+revoke all     on function public.fn_definir_aviso_de_agendamento(uuid,boolean,uuid,text,boolean,boolean,text) from public, anon;
+grant  execute on function public.fn_definir_aviso_de_agendamento(uuid,boolean,uuid,text,boolean,boolean,text) to authenticated;
 
 notify pgrst, 'reload schema';
 
@@ -66338,6 +66688,532 @@ end; $$;
 revoke all on function public.fn_appointment_change_core(uuid,uuid,bigint,jsonb,boolean,jsonb) from public,anon,authenticated;
 notify pgrst,'reload schema';
 
+-- ---- EXECUTE das funções de motivo de perda e do activate_kb_version (0108, 0426, 0513, 9083) ----
+-- Três funções cuja ACL o espelho não repetia:
+--   · `activate_kb_version` fica só com `service_role`, como a 0108 declara.
+--     A 0108 é uma das migrations que não aplicam sobre o baseline (ver
+--     MIGRATIONS_QUE_NAO_RODAM em
+--     tests/invariants/baseline-e-cadeia-chegam-ao-mesmo-schema.test.ts), então
+--     no caminho da cadeia o grant da 0010 sobrevivia; a 9083 reafirma a 0108.
+--   · `fn_crm_lead_close_on_stage` e `fn_validate_lost_reason_required`:
+--     0426/0513 revogam de `public,anon`. São funções de gatilho — disparo de
+--     gatilho não confere EXECUTE —, então ficam com `authenticated,
+--     service_role`, sem `anon`; a 9083 faz o mesmo na cadeia. O corpo do dump
+--     já traz esse estado (REVOKE de PUBLIC, sem GRANT a `anon`): um GRANT ali
+--     reabriria a função a cada atualização até este revoke chegar
+--     (tests/invariants/update-nao-reabre-permissao.test.ts). O revoke abaixo
+--     fica para o clone antigo, que ainda tem a concessão.
+--
+-- Nenhum grant a `anon` neste bloco, então a posição em relação à VARREDURA
+-- anon (tests/unit/varredura-anon-e-o-ultimo-bloco.test.ts) é neutra.
+revoke execute on function public.activate_kb_version(uuid, uuid) from public, anon, authenticated;
+grant  execute on function public.activate_kb_version(uuid, uuid) to service_role;
+
+revoke execute on function public.fn_crm_lead_close_on_stage() from public, anon;
+grant  execute on function public.fn_crm_lead_close_on_stage() to authenticated, service_role;
+
+revoke execute on function public.fn_validate_lost_reason_required() from public, anon;
+grant  execute on function public.fn_validate_lost_reason_required() to authenticated, service_role;
+
+-- ---- papel único nos helpers de visibilidade (migration 9090) ----
+-- manifest: Reutiliza o papel uma vez por chamada de visibilidade, preservando curto-circuito master e regras por linha (#3882).
+-- Contexto por CHAMADA, não cache por consulta ou entre instruções.
+create or replace function public.fn_can_view_lead(
+  p_org uuid,
+  p_owner_user_id uuid
+) returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select case
+    when public.fn_is_platform_admin() then true
+    else (
+      with actor as materialized (
+        select public.fn_user_role_in_org(p_org) as role
+      )
+      select case
+        when actor.role is null then false
+        when actor.role in ('viewer','manager','admin') then true
+        when p_owner_user_id = auth.uid() then true
+        else case coalesce(
+               (select settings->>'visibility_mode' from public.organizations where id = p_org),
+               'own_and_unassigned')
+             when 'all' then true
+             when 'own_and_unassigned' then p_owner_user_id is null
+             else false
+           end
+      end
+      from actor
+    )
+  end;
+$$;
+
+create or replace function public.fn_can_view_conversation(
+  p_org uuid,
+  p_assigned_to_user_id uuid
+) returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select case
+    when public.fn_is_platform_admin() then true
+    else (
+      with actor as materialized (
+        select public.fn_user_role_in_org(p_org) as role
+      )
+      select case
+        when actor.role is null then false
+        when actor.role in ('viewer','manager','admin') then true
+        when p_assigned_to_user_id = auth.uid() then true
+        else case coalesce(
+               (select settings->>'visibility_mode' from public.organizations where id = p_org),
+               'own_and_unassigned')
+             when 'all' then true
+             when 'own_and_unassigned' then p_assigned_to_user_id is null
+             else false
+           end
+      end
+      from actor
+    )
+  end;
+$$;
+
+-- Mesma superfície já concedida na main; nenhuma role nova.
+REVOKE EXECUTE ON FUNCTION public.fn_can_view_lead(uuid,uuid), public.fn_can_view_conversation(uuid,uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_can_view_lead(uuid,uuid), public.fn_can_view_conversation(uuid,uuid) TO authenticated, service_role;
+
+-- ---- aviso à equipe pelo número oficial, com modelo aprovado (migration 9094) ----
+-- `config_aviso_de_caso.modelo_id`: o modelo aprovado, com UMA variável no
+-- corpo, que leva o aviso à equipe quando a conexão escolhida só manda modelo
+-- fora da janela de 24 h. FK composta com a organização; a função ganha
+-- `p_modelo` e confere que o modelo é desta conexão. Entra ANTES da VARREDURA
+-- anon porque recria uma função. Cabeçalho da 9094 para o racional inteiro.
+
+-- ---- a coluna e a FK composta ----
+--
+-- A chave (organization_id, id) em `meta_templates` é a MESMA que outra FK
+-- composta para o espelho de modelos pode precisar, com o MESMO nome: o `if not
+-- exists` deixa as duas entrarem em qualquer ordem sem duplicar o índice. O
+-- `id` já é único, então ela não recusa linha nenhuma de quem já tem dados.
+do $$ begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'meta_templates_organization_id_id_key'
+      and conrelid = 'public.meta_templates'::regclass
+  ) then
+    alter table public.meta_templates
+      add constraint meta_templates_organization_id_id_key unique (organization_id, id);
+  end if;
+end $$;
+
+alter table public.config_aviso_de_caso
+  add column if not exists modelo_id uuid;
+
+-- Auto-cura ANTES da constraint: uma linha que já aponte para modelo inexistente
+-- ou de OUTRA organização faria o `update.sh` quebrar ao criar a FK. Ela perde o
+-- modelo (volta ao texto livre, e a tela diz o que falta) e fica.
+update public.config_aviso_de_caso c
+   set modelo_id = null
+ where c.modelo_id is not null
+   and not exists (
+         select 1 from public.meta_templates t
+          where t.id = c.modelo_id
+            and t.organization_id = c.organization_id);
+
+-- Uma FK simples na mesma coluna, se existir, sai: a composta a substitui, e
+-- as duas juntas só duplicariam a checagem.
+alter table public.config_aviso_de_caso
+  drop constraint if exists config_aviso_de_caso_modelo_id_fkey;
+
+do $$ begin
+  alter table public.config_aviso_de_caso
+    drop constraint if exists config_aviso_de_caso_modelo_org_fkey;
+  alter table public.config_aviso_de_caso add constraint config_aviso_de_caso_modelo_org_fkey
+    foreign key (organization_id, modelo_id)
+    references public.meta_templates(organization_id, id)
+    on delete set null (modelo_id) deferrable initially deferred;
+end $$;
+
+comment on column public.config_aviso_de_caso.modelo_id is
+  'Modelo aprovado (meta_templates) que leva o aviso quando a conexão só manda modelo fora da janela de 24 h. Uma variável só, no corpo: o texto do aviso entra nela numa linha só. Nulo = texto livre (a conexão precisa aceitar). Gravado por fn_definir_aviso_de_caso (admin), lido pelo aviso de caso, pelo teste da tela e pela ação "Mensagem para a equipe". Migration 9094.';
+
+-- ---- a porta de escrita ----
+--
+-- A função ganha o décimo parâmetro. `create or replace` com outra lista de
+-- parâmetros cria OUTRA função: a de 9 sai logo abaixo, senão o PostgREST
+-- teria duas e a chamada de 9 argumentos ficaria ambígua.
+create or replace function public.fn_definir_aviso_de_caso(
+  p_org uuid,
+  p_channel uuid,
+  p_telefone text,
+  p_rotulo text,
+  p_ligado boolean,
+  p_confirma_contato boolean default false,
+  p_resposta_whatsapp_habilitada boolean default false,
+  p_destino_modo text default 'fixo',
+  p_responsaveis jsonb default null,
+  p_modelo uuid default null
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_antes public.config_aviso_de_caso;
+  v_arch timestamptz;
+  v_digitos text;
+  v_variantes text[];
+  v_modo text;
+  v_item jsonb;
+  v_uid uuid;
+  v_numero text;
+  v_digitos_do_membro text;
+  v_variantes_do_membro text[];
+begin
+  -- Papel + suporte, nesta ordem e na MESMA transação da escrita. `auth.uid()`
+  -- nulo é o caminho do service role: quem escreve configuração é gente.
+  if auth.uid() is null or p_org is null
+     or not public.fn_role_at_least(p_org, 'admin')
+     or not public.fn_support_write_allowed(p_org) then
+    raise exception 'aviso_de_caso_forbidden' using errcode = '42501';
+  end if;
+  -- Quem NÃO tem fator cadastrado passa: a função já trata isso, e é coerente
+  -- com a política de MFA opcional deste produto.
+  if not public.fn_session_mfa_proven() then
+    raise exception 'aviso_de_caso_mfa_required' using errcode = '42501';
+  end if;
+  if p_telefone is null or p_telefone !~ '^\+[1-9][0-9]{7,14}$' then
+    raise exception 'aviso_de_caso_telefone_invalido' using errcode = '22023';
+  end if;
+
+  -- O modo é vocabulário FECHADO: um valor fora dos dois que o motor conhece
+  -- deixaria a tela dizendo uma coisa e o envio fazendo outra.
+  v_modo := coalesce(nullif(btrim(p_destino_modo), ''), 'fixo');
+  if v_modo not in ('fixo', 'responsavel') then
+    raise exception 'aviso_de_caso_destino_invalido' using errcode = '22023';
+  end if;
+
+  -- O canal é DA organização e não está arquivado. Sem isto a FK simples
+  -- deixaria apontar para o canal de outro tenant — a FK composta do padrão
+  -- 0228 não serve aqui porque o `on delete set null` anularia também
+  -- `organization_id`, que é a chave primária desta tabela.
+  if p_channel is not null then
+    select archived_at into v_arch
+      from public.channel_sessions
+     where id = p_channel and organization_id = p_org;
+    if not found or v_arch is not null then
+      raise exception 'aviso_de_caso_canal_invalido' using errcode = '22023';
+    end if;
+  end if;
+
+  -- O MODELO APROVADO é DESTA organização e DESTA conexão (migration 9094). A
+  -- mesma regra de `lib/channels/linha-do-espelho.ts`: a linha gravada para a
+  -- conexão, ou a linha sem conexão da conta oficial dela. A FK composta já
+  -- recusa o modelo de outro tenant, mas não sabe de conexão: sem isto, o
+  -- envio sairia com uma definição que este número não tem. Se ele está
+  -- APROVADO e tem uma variável só é pergunta da rota
+  -- (`lib/escalacao/modelo-do-aviso.ts`), e de novo do envio: o status muda
+  -- na plataforma sem passar por aqui.
+  if p_modelo is not null then
+    if p_channel is null or not exists (
+         select 1 from public.meta_templates t
+          where t.id = p_modelo
+            and t.organization_id = p_org
+            and (t.channel_session_id = p_channel
+                 or (t.channel_session_id is null and exists (
+                       select 1 from public.channel_sessions s
+                        where s.organization_id = p_org
+                          and s.id = p_channel
+                          and s.provider = 'meta_cloud'
+                          and s.meta_waba_id = t.waba_id)))) then
+      raise exception 'aviso_de_caso_modelo_invalido' using errcode = '22023';
+    end if;
+  end if;
+
+  -- As duas grafias do nono dígito — a MESMA regra de
+  -- `lib/channels/phone-variants.ts`. Comparar a string crua deixaria passar o
+  -- número do suporte cadastrado com 9 e registrado sem.
+  v_digitos := regexp_replace(p_telefone, '\D', '', 'g');
+  v_variantes := array[v_digitos];
+  if v_digitos like '55%' then
+    if length(v_digitos) = 13
+       and substring(v_digitos from 5 for 1) = '9'
+       and substring(v_digitos from 6 for 1) between '6' and '9' then
+      v_variantes := v_variantes || (substring(v_digitos from 1 for 4) || substring(v_digitos from 6));
+    elsif length(v_digitos) = 12
+       and substring(v_digitos from 5 for 1) between '6' and '9' then
+      v_variantes := v_variantes || (substring(v_digitos from 1 for 4) || '9' || substring(v_digitos from 5));
+    end if;
+  end if;
+
+  -- O NÚMERO DE AVISO NÃO PODE SER UM NÚMERO DA PRÓPRIA ORGANIZAÇÃO. É o laço
+  -- robô-com-robô: a conexão de avisos manda para o número oficial, o agente
+  -- dele responde, e as duas pontas se alimentam sem fim.
+  -- A conexão ARQUIVADA fica FORA da conta. Ela não envia nem recebe, então o
+  -- laço não acontece por ela — e contá-la bloqueia o número PARA SEMPRE, porque
+  -- a conexão que já teve agente publicado não pode ser apagada (as versões a
+  -- seguram) e o número nunca mais poderia receber aviso.
+  if exists (
+       select 1 from public.channel_sessions s
+        where s.organization_id = p_org
+          and s.archived_at is null
+          and s.phone_number is not null
+          and regexp_replace(s.phone_number, '\D', '', 'g') = any (v_variantes)) then
+    raise exception 'aviso_de_caso_numero_da_propria_org' using errcode = '22023';
+  end if;
+
+  -- O número de aviso vira INTERNO: tudo o que chegar dele deixa de virar
+  -- contato, conversa, lead e despacho do agente. Se ele já é um CLIENTE desta
+  -- organização, as mensagens dessa pessoa param de chegar ao CRM — e isso não
+  -- pode acontecer por engano. A tela pergunta e reenvia com `p_confirma_contato`.
+  if not coalesce(p_confirma_contato, false) and exists (
+       select 1 from public.contacts c
+        where c.organization_id = p_org
+          and c.phone_number is not null
+          and regexp_replace(c.phone_number, '\D', '', 'g') = any (v_variantes)) then
+    raise exception 'aviso_de_caso_numero_de_cliente' using errcode = '22023';
+  end if;
+
+  -- ─── O WhatsApp de cada pessoa da equipe (#3803) ─────────────────────────
+  --
+  -- Só membro ATIVO da organização é gravado: número de quem saiu da equipe não
+  -- recebe aviso, e aceitá-lo aqui daria um destino que nunca é resolvido.
+  -- Vazio (`''` ou nulo) É uma informação — significa "esta pessoa não tem
+  -- número" —, e por isso grava nulo em vez de recusar.
+  if p_responsaveis is not null then
+    if jsonb_typeof(p_responsaveis) <> 'array' then
+      raise exception 'aviso_de_caso_whatsapp_invalido' using errcode = '22023';
+    end if;
+    for v_item in select * from jsonb_array_elements(p_responsaveis) loop
+      v_uid := nullif(btrim(coalesce(v_item ->> 'user_id', '')), '')::uuid;
+      if v_uid is null then
+        raise exception 'aviso_de_caso_whatsapp_invalido' using errcode = '22023';
+      end if;
+      v_numero := nullif(btrim(coalesce(v_item ->> 'whatsapp', '')), '');
+      if v_numero is not null then
+        -- O mesmo "dígitos com `+` na frente" que a tela normaliza
+        -- (`normalizarTelefoneDeAviso`): quem manda `31 99888-7777` recebe o
+        -- número guardado na forma canônica em vez de um 22023 que não explica.
+        v_numero := '+' || regexp_replace(v_numero, '\D', '', 'g');
+        if v_numero !~ '^\+[1-9][0-9]{7,14}$' then
+          raise exception 'aviso_de_caso_whatsapp_invalido' using errcode = '22023';
+        end if;
+        -- No modo `responsavel` este número É o destino do aviso. Um número
+        -- conectado desta organização abriria por aqui o mesmo laço
+        -- robô-com-robô que a guarda do número da empresa fecha: mesma conta
+        -- (conexão ativa, as duas grafias do nono dígito) e mesmo código.
+        v_digitos_do_membro := regexp_replace(v_numero, '\D', '', 'g');
+        v_variantes_do_membro := array[v_digitos_do_membro];
+        if v_digitos_do_membro like '55%' then
+          if length(v_digitos_do_membro) = 13
+             and substring(v_digitos_do_membro from 5 for 1) = '9'
+             and substring(v_digitos_do_membro from 6 for 1) between '6' and '9' then
+            v_variantes_do_membro := v_variantes_do_membro
+              || (substring(v_digitos_do_membro from 1 for 4) || substring(v_digitos_do_membro from 6));
+          elsif length(v_digitos_do_membro) = 12
+             and substring(v_digitos_do_membro from 5 for 1) between '6' and '9' then
+            v_variantes_do_membro := v_variantes_do_membro
+              || (substring(v_digitos_do_membro from 1 for 4) || '9' || substring(v_digitos_do_membro from 5));
+          end if;
+        end if;
+        if exists (
+             select 1 from public.channel_sessions s
+              where s.organization_id = p_org
+                and s.archived_at is null
+                and s.phone_number is not null
+                and regexp_replace(s.phone_number, '\D', '', 'g') = any (v_variantes_do_membro)) then
+          raise exception 'aviso_de_caso_numero_da_propria_org' using errcode = '22023';
+        end if;
+      end if;
+      update public.user_organizations uo
+         set whatsapp_e164 = v_numero
+       where uo.organization_id = p_org
+         and uo.user_id = v_uid
+         and uo.revoked_at is null;
+    end loop;
+  end if;
+
+  select * into v_antes from public.config_aviso_de_caso where organization_id = p_org;
+
+  insert into public.config_aviso_de_caso
+    (organization_id, channel_session_id, telefone_destino, rotulo, ligado, resposta_whatsapp_habilitada, destino_modo, modelo_id, criado_por, atualizado_por)
+  values
+    (p_org, p_channel, p_telefone, nullif(btrim(p_rotulo), ''), coalesce(p_ligado, false), coalesce(p_resposta_whatsapp_habilitada, false), v_modo, p_modelo, auth.uid(), auth.uid())
+  on conflict (organization_id) do update
+    set channel_session_id = excluded.channel_session_id,
+        telefone_destino   = excluded.telefone_destino,
+        rotulo             = excluded.rotulo,
+        ligado             = excluded.ligado,
+        resposta_whatsapp_habilitada = excluded.resposta_whatsapp_habilitada,
+        destino_modo       = excluded.destino_modo,
+        -- Gravar o que veio, inclusive o `null`: é o que impede o modelo de
+        -- uma conexão antiga de ficar para trás depois da troca de número.
+        modelo_id          = excluded.modelo_id,
+        atualizado_por     = auth.uid(),
+        -- Trocou o número, o JID resolvido do anterior não vale mais — e é o
+        -- JID que o corte da ingestão usa para reconhecer quem está em modo
+        -- privacidade. Mantê-lo faria o corte continuar valendo para o número
+        -- ANTIGO, que pode voltar a ser um cliente.
+        destino_jid        = case
+                               when excluded.telefone_destino is distinct from config_aviso_de_caso.telefone_destino
+                               then null
+                               else config_aviso_de_caso.destino_jid
+                             end,
+        updated_at         = now();
+
+  return jsonb_build_object(
+    'trocou_numero', (v_antes.telefone_destino is distinct from p_telefone),
+    'antes_ligado',  coalesce(v_antes.ligado, false),
+    'destino_modo',  v_modo
+  );
+end;
+$$;
+revoke execute on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb,uuid) from public, anon;
+grant execute on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb,uuid) to authenticated;
+-- As sobrecargas antigas saem: a de 9 (9078) e, por garantia, as de 6 e 7, que
+-- vivas ao lado desta deixariam ambígua a chamada com menos argumentos.
+drop function if exists public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb);
+drop function if exists public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean);
+drop function if exists public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean);
+
+-- ---- o follow-up continua contando como turno no uso de IA (migration 9097) ----
+-- manifest: fn_uso_de_ia conta o job de follow-up (`followup_turn`) como turno do agente, para o cartão "Turnos do agente" e o custo médio por turno não perderem o follow-up quando ele ganha ponto de IA próprio (#3897).
+--
+-- O #3897 deu ao follow-up o ponto de IA `followup_turn`: a chamada principal de
+-- todo job `followup_turn` passa a gravar `purpose = 'followup_turn'` em
+-- `llm_calls`, com ou sem modelo escolhido no painel. A 0586 contava turno como
+-- "job distinto com chamada `agent_turn` ok" — então, sem esta migration, o
+-- follow-up sumiria em silêncio do cartão "Turnos do agente" e do custo médio por
+-- turno da tela Uso de IA (numa instalação real, ~31% do gasto era follow-up).
+--
+-- Decisão: preservar o número de hoje. O follow-up É o agente escrevendo — mesmo
+-- turno, mesma versão publicada, mesmas ferramentas — e sempre contou como turno.
+-- Só muda a CTE `jobs_de_turno`: `c.purpose in ('agent_turn', 'followup_turn')`.
+-- O resto do corpo é o da 0586, inteiro. O custo POR PONTO continua separado no
+-- agrupamento por `purpose` — é isso que o ponto próprio compra.
+--
+-- Corpo, comment e grants iguais ao apêndice do baseline (`apendice-do-baseline-
+-- nao-diverge-da-cadeia`). Invoker: a VARREDURA anon nem a alcançaria; o
+-- `revoke ... from public, anon` abaixo é a proteção, como na 0586.
+--
+-- "Turnos do agente" = jobs distintos com chamada `agent_turn` ou `followup_turn`
+-- de status 'ok'. A chamada que falhou grava o mesmo purpose na mesma tabela
+-- (status 'erro', custo null): contar o job dela como turno inventaria respostas
+-- que nunca saíram e puxaria o custo médio por turno para baixo.
+--
+-- O custo do turno é o do JOB inteiro (checkpoint, classificador de etapa,
+-- compactação), e essas chamadas gravam `agent_id` null. Por isso os turnos NÃO
+-- passam pelos filtros de `p_agent_id`/`p_purpose` das outras somas: o agente
+-- escolhe quais jobs entram (pela chamada de turno dele), e o custo de cada
+-- job é sempre inteiro. Filtrar antes faria o mesmo cartão mostrar um custo por
+-- turno menor com o filtro ligado, e "sem turnos" ao filtrar por outro tipo.
+--
+-- `llm_calls.job_id` é `on delete set null`, então um turno cujo job a poda da
+-- fila já apagou (`JOB_QUEUE_RETENTION_DAYS`, padrão 90) deixa de ser contado —
+-- e o custo dele sai junto do custo por turno, para a média não ficar inflada.
+create or replace function public.fn_uso_de_ia(
+  p_org uuid,
+  p_desde timestamptz,
+  p_ate timestamptz,
+  p_agent_id uuid default null,
+  p_purpose text default null
+)
+returns jsonb
+  language sql
+  stable
+  security invoker
+  set search_path to 'public', 'pg_temp'
+as $$
+  with chamadas as (
+    select (c.created_at at time zone 'UTC')::date as dia,
+           c.purpose,
+           c.cost_cents,
+           c.input_tokens,
+           c.output_tokens,
+           c.cache_read_tokens,
+           c.cache_write_tokens,
+           c.latency_ms
+      from public.llm_calls c
+     where c.organization_id = p_org
+       and c.created_at >= p_desde
+       and c.created_at <= p_ate
+       and (p_agent_id is null or c.agent_id = p_agent_id)
+       and (p_purpose is null or c.purpose = p_purpose)
+  ),
+  jobs_de_turno as (
+    select distinct c.job_id
+      from public.llm_calls c
+     where c.organization_id = p_org
+       and c.created_at >= p_desde
+       and c.created_at <= p_ate
+       and c.purpose in ('agent_turn', 'followup_turn')
+       and c.status = 'ok'
+       and c.job_id is not null
+       and (p_agent_id is null or c.agent_id = p_agent_id)
+  ),
+  turnos as (
+    select (select count(*) from jobs_de_turno) as turnos,
+           coalesce(sum(c.cost_cents), 0) as custo_dos_turnos_cents
+      from public.llm_calls c
+      join jobs_de_turno t on t.job_id = c.job_id
+     where c.organization_id = p_org
+       and c.created_at >= p_desde
+       and c.created_at <= p_ate
+  ),
+  agregado as (
+    select grouping(dia) as sem_dia,
+           grouping(purpose) as sem_purpose,
+           dia,
+           purpose,
+           count(*) as chamadas,
+           coalesce(sum(cost_cents), 0) as custo_cents,
+           coalesce(sum(input_tokens), 0) as input_tokens,
+           coalesce(sum(output_tokens), 0) as output_tokens,
+           coalesce(sum(cache_read_tokens), 0) as cache_read_tokens,
+           coalesce(sum(cache_write_tokens), 0) as cache_write_tokens,
+           coalesce(percentile_disc(0.5) within group (order by latency_ms) filter (where latency_ms > 0), 0) as p50_latency_ms,
+           coalesce(percentile_disc(0.95) within group (order by latency_ms) filter (where latency_ms > 0), 0) as p95_latency_ms
+      from chamadas
+     group by grouping sets ((dia), (purpose), ())
+  ),
+  inbounds as (
+    select (m.created_at at time zone 'UTC')::date as dia, count(*) as n
+      from public.messages m
+     where m.organization_id = p_org
+       and m.direction = 'inbound'
+       and m.created_at >= p_desde
+       and m.created_at <= p_ate
+     group by 1
+  ),
+  handoffs as (
+    select (e.created_at at time zone 'UTC')::date as dia, count(*) as n
+      from public.event_log e
+     where e.organization_id = p_org
+       and e.event_type = 'ai.handoff_triggered'
+       and e.created_at >= p_desde
+       and e.created_at <= p_ate
+     group by 1
+  )
+  select jsonb_build_object(
+    'totais', (select (to_jsonb(a) - 'sem_dia' - 'sem_purpose' - 'dia' - 'purpose') || to_jsonb(tr)
+                 from agregado a, turnos tr where a.sem_dia = 1 and a.sem_purpose = 1),
+    'dias', coalesce((select jsonb_agg(to_jsonb(a) - 'sem_dia' - 'sem_purpose' - 'purpose' order by a.dia)
+                        from agregado a where a.sem_dia = 0), '[]'::jsonb),
+    'purposes', coalesce((select jsonb_agg(to_jsonb(a) - 'sem_dia' - 'sem_purpose' - 'dia' order by a.purpose)
+                            from agregado a where a.sem_dia = 1 and a.sem_purpose = 0), '[]'::jsonb),
+    'inbounds', coalesce((select jsonb_object_agg(i.dia::text, i.n) from inbounds i), '{}'::jsonb),
+    'handoffs', coalesce((select jsonb_object_agg(h.dia::text, h.n) from handoffs h), '{}'::jsonb)
+  );
+$$;
+
+comment on function public.fn_uso_de_ia(uuid, timestamptz, timestamptz, uuid, text) is
+  'Uso de IA da organização num período, agregado no banco para a tela Uso de IA (/api/v1/ai/usage): totais, por dia (UTC) e por purpose de llm_calls — custo, tokens, cache, p50/p95 de latência de UMA chamada, turnos do agente (jobs distintos com agent_turn ou followup_turn ok, sem os filtros de agente/purpose sobre o custo do job) e o custo desses turnos, só nos totais — mais inbounds e ai.handoff_triggered por dia. Devolve jsonb para não passar pelo max_rows do PostgREST. security invoker: a RLS isola; p_org é defesa em profundidade. Não é a régua do teto mensal (fn_gasto_de_ia_do_mes).';
+
+revoke execute on function public.fn_uso_de_ia(uuid, timestamptz, timestamptz, uuid, text)
+  from public, anon;
+grant  execute on function public.fn_uso_de_ia(uuid, timestamptz, timestamptz, uuid, text)
+  to authenticated, service_role;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
@@ -70132,6 +71008,73 @@ comment on table public.attendant_sector_members is
 
 notify pgrst, 'reload schema';
 
+-- ---- fila de atendimento: destino, horário e N:N (migration 9062) ----
+-- manifest: conversations.sector_id (FK composta com a organização, on delete set null (sector_id)), attendant_sectors.schedule e N atendentes por fila; fn_channel_routing_claim recusa candidato fora da fila
+--
+-- Espelho da 9062. `on delete set null (sector_id)` usa a lista de colunas da
+-- FK (Postgres 15+): sem ela o padrão anularia `organization_id` também e apagar
+-- a fila estouraria not-null em toda conversa dela.
+alter table public.conversations add column if not exists sector_id uuid;
+
+do $mig$
+begin
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'conversations_sector_fk'
+       and conrelid = 'public.conversations'::regclass
+  ) then
+    alter table public.conversations
+      add constraint conversations_sector_fk
+      foreign key (organization_id, sector_id)
+      references public.attendant_sectors (organization_id, id)
+      on delete set null (sector_id);
+  end if;
+end;
+$mig$;
+
+comment on column public.conversations.sector_id is
+  'Fila de atendimento da conversa (migration 9062). NULL = sem fila, o comportamento de sempre. FK composta com a organização; apagar a fila solta a conversa e não apaga histórico. Governa a distribuição automática (fn_channel_routing_claim), não a atribuição manual.';
+
+create index if not exists conversations_org_sector_awaiting
+  on public.conversations (organization_id, sector_id, awaiting_since)
+  where sector_id is not null;
+
+alter table public.attendant_sectors
+  add column if not exists schedule jsonb not null default '{}'::jsonb;
+
+comment on column public.attendant_sectors.schedule is
+  'Horário de funcionamento da fila (migration 9062): { timezone, windows: [{ dow, start, end }] }, o MESMO shape de attendant_availability.schedule. {} = 24/7 — janela existe para restringir. Lido por isWithinSchedule em lib/routing/eligibility.ts; escrita só pela rota PATCH /api/v1/attendants/sectors/[id] (manager+).';
+
+do $mig$
+begin
+  if exists (
+    select 1 from pg_constraint c
+      join pg_class t on t.oid = c.conrelid
+     where t.relname = 'attendant_sector_members'
+       and c.contype = 'p'
+       and pg_get_constraintdef(c.oid) not like '%sector_id%'
+  ) then
+    alter table public.attendant_sector_members
+      drop constraint attendant_sector_members_pkey;
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint c
+      join pg_class t on t.oid = c.conrelid
+     where t.relname = 'attendant_sector_members'
+       and c.contype = 'p'
+  ) then
+    alter table public.attendant_sector_members
+      add primary key (organization_id, user_id, sector_id);
+  end if;
+end;
+$mig$;
+
+comment on table public.attendant_sector_members is
+  'Vínculo atendente → fila (migrations 0801 e 9062). N filas por atendente: PK (organization_id, user_id, sector_id). Apagar a fila solta os atendentes dela.';
+
+notify pgrst, 'reload schema';
+
 -- ---- vínculo e motivo legado das propostas de campos (migration 0807) ----
 -- manifest: lead_field_proposals: WITH CHECK exige negócio visível da mesma organização; motivos legados de contatos já anonimizados saem pelos vínculos direto e crm_lead_links, sem repetir a anonimização
 --
@@ -70543,6 +71486,18 @@ create unique index if not exists agent_inbox_cliente_sem_resposta_na_queda_aber
   on public.agent_inbox_items (organization_id, kind, ref_id)
   where status = 'open' and kind = 'cliente_sem_resposta_na_queda';
 
+-- ---- CNPJ alfanumérico da Receita em normalized_cnpj (migration 9056, #3495) ----
+-- Espelho idempotente da 9056: `update.sh` re-aplica este arquivo sem
+-- `ON_ERROR_STOP`, então o `drop ... if exists` vem antes do `add`. O corpo
+-- acima (CREATE TABLE) já nasce com a régua nova; este bloco é a cura para quem
+-- instalou antes da 9056. O porquê está no cabeçalho da migration.
+alter table public.companies
+  drop constraint if exists companies_normalized_cnpj_digits;
+
+alter table public.companies
+  add constraint companies_normalized_cnpj_digits
+  check (normalized_cnpj is null or normalized_cnpj ~ '^[0-9A-Z]{14}$');
+
 notify pgrst, 'reload schema';
 
 -- ---- realtime sem consumidor: o que ninguém assina sai da publicação (9046, #3697) ----
@@ -70608,4 +71563,128 @@ alter table public.pacing_ledger
 comment on column public.pacing_ledger.resposta is
   'true = resposta a quem escreveu: vale para o espaçamento, não para o teto do dia (warm-up/daily_message_limit), que conta só disparos (9061).';
 
+-- ---- vocabulário neutro do funil (migration 9080) ----
+-- Funil novo nasce com Contato/Negócio/Ganho/Perdido, não com o vocabulário de
+-- loja do CREATE TABLE acima (doc 249, resposta B). Só o DEFAULT: nenhuma linha
+-- existente é reescrita. Idempotente. O porquê está no cabeçalho da migration.
+alter table public.crm_pipelines
+  alter column vocabulary set default jsonb_build_object(
+    'lead', 'Contato', 'lead_plural', 'Contatos',
+    'deal', 'Negócio', 'deal_plural', 'Negócios',
+    'won', 'Ganho', 'lost', 'Perdido',
+    'stage', 'Etapa', 'stage_plural', 'Etapas'
+  );
+
+-- ---- índices das métricas de atrito (migration 0133) ----
+-- O bloco da 0133 chegou ao apêndice com a FUNÇÃO e sem os cinco índices, então
+-- a instalação nova punha `fn_atrito_metrics` (e o painel de atrito) para varrer
+-- `agent_cases`, `messages`, `contacts`, `crm_lead_activities` e
+-- `before_send_traces` por janela — o oposto do que a própria migration declara
+-- ("todos os predicados da função, nenhum seq scan por janela"). Quem atualizava
+-- pela cadeia tinha os índices; quem instalava do zero, não.
+--
+-- Nomes e predicados copiados da migration, byte a byte, para o `pg_get_indexdef`
+-- dos dois caminhos sair igual. Não cria função: pode ficar depois da VARREDURA anon.
+create index if not exists idx_agent_cases_org_closed
+  on public.agent_cases (organization_id, closed_at)
+  where closed_at is not null;
+
+create index if not exists idx_messages_org_direction_sent
+  on public.messages (organization_id, direction, sent_at);
+
+create index if not exists idx_contacts_org_blocked_at
+  on public.contacts (organization_id, blocked_at)
+  where blocked_at is not null;
+
+create index if not exists idx_crm_lead_activities_org_type_performed
+  on public.crm_lead_activities (organization_id, type, performed_at);
+
+create index if not exists idx_before_send_traces_org_created
+  on public.before_send_traces (organization_id, created_at);
+
+-- ---- superfície `anon` fechada nas tabelas de IA e na fila de redação (0018, 0023) ----
+-- O `pg_dump` não enumera o que NÃO foi concedido: as duas migrations revogam
+-- `anon` dessas tabelas, e o apêndice nunca repetiu a revogação. Numa instalação
+-- nova elas nascem com o ACL padrão do Supabase (ALL para `anon`, por causa do
+-- `alter default privileges … on tables`) e ficam legíveis e apagáveis pela anon
+-- key — a RLS ainda barra linha, mas o grant é a primeira barreira e ela não
+-- existia. Idempotente; não cria função.
+revoke all on public.storage_redaction_queue from anon;
+revoke all on public.ai_provider_credentials from anon;
+revoke all on public.ai_provider_credentials_safe from anon;
+revoke all on public.ai_agent_versions from anon;
+revoke all on public.ai_agent_runs from anon;
+
+notify pgrst, 'reload schema';
+
+-- ============================================================================
+-- 9059 — O AVISO ESCRITO PELO ADMIN (#1418, fatia 1)
+--
+-- Não cria função, então pode ficar depois da VARREDURA anon.
+-- Até aqui todo push do produto nascia de evento de sistema (`kinds.ts`); esta
+-- tabela dá AUTOR ao recado: quem escreveu, para qual organização, com que
+-- janela. O envio reaproveita `enviarPushDaOrg()` (web-push já instalado).
+-- ============================================================================
+create table if not exists public.avisos (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  autor_id uuid references auth.users(id) on delete set null,
+  titulo text not null,
+  corpo text not null,
+  publicar_em timestamptz not null default now(),
+  expira_em timestamptz,
+  created_at timestamptz not null default now()
+);
+-- Índice da leitura quente: os publicados de uma organização, mais recentes
+-- primeiro. Espelha a migration da 9059 — instalação nova e atualização
+-- precisam nascer com o mesmo schema.
+create index if not exists avisos_org_publicar_idx
+  on public.avisos (organization_id, publicar_em desc);
+alter table public.avisos enable row level security;
+revoke all on public.avisos from public, anon, authenticated;
+grant select, insert, update, delete on public.avisos to service_role;
+
+-- ---- cor da fila de atendimento (migration 9084) ----
+-- manifest: attendant_sectors.color — a cor de identificação da fila (`#rrggbb`) ou nula; o CHECK recusa fora do formato, então a forma vale mesmo fora da rota
+--
+-- Espelho da 9084. `null` é ausência de escolha (o visual de antes da fatia),
+-- não uma cor zero; por isso não há `default`.
+alter table public.attendant_sectors
+  add column if not exists color text
+  check (color is null or color ~ '^#[0-9a-fA-F]{6}$');
+
+comment on column public.attendant_sectors.color is
+  'Cor de identificação da fila (migration 9084): #rrggbb, ou NULL = sem cor. O CHECK guarda a FORMA; a paleta é a da tela (PALETA_DE_ETIQUETAS) e não se valida no banco. Lida por GET /api/v1/attendants/sectors e gravada por PATCH /api/v1/attendants/sectors/[id] (manager+).';
+
+-- ---- o lembrete da agenda sai por modelo aprovado fora da janela de 24 h (migration 9092) ----
+-- manifest: calendar_event_types.reminder_meta_template_id — o modelo aprovado do número para o lembrete quando a janela de 24 h do cliente fechou
+--
+-- Espelho da 9092. Não cria função, então pode ficar depois da VARREDURA anon.
+-- FK composta com a organização, como a do remetente (0625): o banco recusa
+-- modelo de outra organização. Apagar o modelo zera só a coluna e volta o tipo
+-- ao comportamento de antes.
+--
+-- A chave (organization_id, id) em meta_templates, que esta FK referencia, NÃO
+-- é criada aqui: vem do bloco da 9094, mais acima neste arquivo — uma
+-- constraint, um bloco (tests/unit/baseline-constraint-reconstruida.test.ts).
+-- A ordem importa: aquele bloco precisa ficar ANTES deste, senão a FK abaixo
+-- falha no install.sh (ON_ERROR_STOP=1) por falta da chave referenciada.
+
+alter table public.calendar_event_types
+  add column if not exists reminder_meta_template_id uuid;
+
+do $$ begin
+  alter table public.calendar_event_types
+    drop constraint if exists calendar_event_types_reminder_template_org_fkey;
+  alter table public.calendar_event_types add constraint calendar_event_types_reminder_template_org_fkey
+    foreign key (organization_id, reminder_meta_template_id)
+    references public.meta_templates(organization_id, id)
+    on delete set null (reminder_meta_template_id) deferrable initially deferred;
+end $$;
+
+comment on column public.calendar_event_types.reminder_meta_template_id is
+  'Modelo aprovado do número para o lembrete quando a janela de 24 h do cliente fechou (migration 9092). Variáveis do corpo, por posição: primeiro nome, dia e hora, título, endereço. Lido pelo cron agenda-reminder; gravado por /api/v1/agenda/tipos (manager+).';
+
+-- A coluna nova entra no `select` do cron agenda-reminder: sem recarregar o
+-- cache de schema, o PostgREST recusa a consulta inteira até o próximo restart.
 notify pgrst, 'reload schema';

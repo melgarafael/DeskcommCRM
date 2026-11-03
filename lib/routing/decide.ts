@@ -10,6 +10,8 @@
 import type { Json } from "@/lib/database.types";
 import type { RoutingConfig, RoutingMode } from "@/lib/schemas/routing";
 
+import type { MotivoDoCaso } from "./caso-da-conversa";
+
 /** Um atendente já FILTRADO por elegibilidade (§5: disponível ∧ horário ∧ folga). */
 export interface RoutingCandidate {
   userId: string;
@@ -49,6 +51,16 @@ export interface DecideRoutingInput {
   /** attempts atual do event_log (antes deste processamento). */
   attempts: number;
   now: Date;
+  /**
+   * O CASO DESTA CONVERSA TIRA ELA DA FILA? (#3717) — `null`/ausente = não.
+   *
+   * Quem responde a pergunta é `motivoParaNaoRotear` (`./caso-da-conversa`), a
+   * partir do caso mais recente lido pelo worker. Vem como argumento pronto, e
+   * não como a linha do caso, por dois motivos: a decisão continua sem banco (as
+   * regras do acceptance test seguem testáveis por unit) e existe UM lugar — o
+   * módulo da regra — onde o vocabulário de `agent_cases.status` é lido.
+   */
+  motivoDoCaso?: MotivoDoCaso | null;
 }
 
 /**
@@ -84,6 +96,16 @@ export function decideRouting(input: DecideRoutingInput): RoutingAction {
   // Idempotência (acceptance 3): conversa que já ganhou dono não é reatribuída.
   if (input.alreadyAssigned) return { kind: "skip", reason: "already_assigned" };
 
+  // O CASO MANDA ANTES DA FILA (#3717). Se o caso mais recente da conversa não
+  // pede uma pessoa agora — `awaiting_lead` (a bola está com o cliente) ou um
+  // caso já concluído sem entrada nova do cliente —, a conversa sai da fila
+  // mesmo estando `open`/`ai_handling` e sem dono. Vem DEPOIS da idempotência
+  // (conversa com dono não é assunto da fila) e ANTES do destino padrão do
+  // número (#2331): aquele decide QUEM recebe quando há distribuição; este
+  // decide SE há distribuição. Um caso concluído não vira trabalho de ninguém
+  // só porque o número entrega tudo a uma pessoa específica.
+  if (input.motivoDoCaso) return { kind: "skip", reason: input.motivoDoCaso };
+
   // Destino padrão do NÚMERO (#2331): vence o modo. O canal que entrega tudo a
   // uma pessoa específica recebe mesmo quando o modo da organização é manual (o
   // caso "sem IA, direto para o fulano") ou rodízio.
@@ -98,7 +120,8 @@ export function decideRouting(input: DecideRoutingInput): RoutingAction {
     return { kind: "skip", reason: `unsupported_mode:${input.mode}` };
   }
 
-  const picked = input.mode === "load" ? selectByLoad(input.eligibles) : selectRoundRobin(input.eligibles);
+  const picked =
+    input.mode === "load" ? selectByLoad(input.eligibles) : selectRoundRobin(input.eligibles);
   if (picked) return { kind: "assign", userId: picked };
 
   // Sem elegível (acceptance 4): re-agenda com backoff da config (não hardcoded).

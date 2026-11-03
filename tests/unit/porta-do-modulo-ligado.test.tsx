@@ -160,6 +160,8 @@ describe("ondeOModuloAparece: a tela pode dizer o que ligar vai mudar", () => {
       "cobranca",
       "login_codex",
       "setores",
+      "avisos",
+      "conferir_whatsapp",
     ]);
   });
 });

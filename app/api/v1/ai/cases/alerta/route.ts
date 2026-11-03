@@ -48,12 +48,14 @@
  *
  * (`DELETE` é a exceção, e está declarada acima: não existe RPC de remoção.)
  *
- * `fn_definir_aviso_de_caso` faz, dentro da MESMA transação da escrita, sete
- * guardas que uma rota faria em sete idas ao banco com uma janela de corrida
- * entre cada duas: papel, suporte, MFA, E.164, canal da organização, recusa do
- * número da própria organização e recusa de número que já é um cliente. Um
- * `upsert` daqui repetiria as sete e divergiria delas no primeiro dia em que
- * alguém mudasse uma.
+ * `fn_definir_aviso_de_caso` faz, dentro da MESMA transação da escrita, oito
+ * guardas que uma rota faria em oito idas ao banco com uma janela de corrida
+ * entre cada duas: papel, suporte, MFA, E.164, canal da organização, modelo da
+ * organização e da conexão (9094), recusa do número da própria organização e
+ * recusa de número que já é um cliente. Um `upsert` daqui repetiria as oito e
+ * divergiria delas no primeiro dia em que alguém mudasse uma. O que o banco NÃO
+ * pergunta sobre o modelo — aprovado, uma variável só — a rota pergunta antes
+ * (`lib/escalacao/modelo-do-aviso.ts`).
  *
  * ## …E mesmo assim a rota chama `requireSupportWrite()` na primeira linha
  *
@@ -94,6 +96,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { mfaEmDivida } from "@/lib/auth/server";
 import { env } from "@/lib/env";
 import { mascara } from "@/lib/escalacao/aviso-ao-suporte";
+import { carregarModeloDoAviso, type MotivoDoModeloRecusado } from "@/lib/escalacao/modelo-do-aviso";
 import { limparCacheDoNumeroInterno } from "@/lib/escalacao/numero-interno-de-aviso";
 import { lerEstadoDaTelaDeAviso } from "@/lib/escalacao/tela-do-aviso";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -123,8 +126,72 @@ const corpo = z
     resposta_whatsapp_habilitada: z.boolean().default(false),
     /** `true` = "eu sei que este número é um cliente meu, e quero mesmo assim". */
     confirma_contato: z.boolean().optional(),
+    /**
+     * COMO escolher quem recebe (#3803). `fixo` é o comportamento de sempre e o
+     * default da coluna; `responsavel` liga a cadeia conversa → negócio →
+     * carteira → número da empresa.
+     */
+    destino_modo: z.enum(["fixo", "responsavel"]).default("fixo"),
+    /**
+     * O WhatsApp de cada pessoa da equipe, gravado na MESMA transação da
+     * configuração (a função do banco faz as duas escritas).
+     *
+     * `whatsapp` é o número PESSOAL de quem atende (o nome da coluna em
+     * `user_organizations`), e `null` explícito LIMPA o número — é a forma de a
+     * pessoa dizer "apague o meu" sem depender de um campo vazio significar a
+     * mesma coisa.
+     */
+    responsaveis: z
+      .array(
+        z
+          .object({
+            user_id: z.string().uuid(),
+            whatsapp: z.string().trim().nullable(),
+          })
+          .strict(),
+      )
+      .max(200)
+      .optional(),
+    /**
+     * O modelo aprovado que leva o aviso quando a conexão só manda modelo
+     * (migration 9094). Ausente/`null` = sem modelo: a conexão precisa mandar
+     * texto livre. Gravar o que veio — inclusive o `null` — é o que impede um
+     * modelo de outra conexão de ficar para trás depois de trocar de número.
+     */
+    modelo_id: z.string().uuid().nullable().optional(),
   })
   .strict();
+
+/**
+ * Por que o modelo escolhido não serve — a frase de cada motivo da regra única
+ * (`lib/escalacao/modelo-do-aviso.ts`). `indeterminado` não é culpa de quem
+ * escolheu: é a leitura que falhou, e a resposta é tentar de novo.
+ */
+const RECUSAS_DO_MODELO: Record<
+  MotivoDoModeloRecusado,
+  { status: 422 | 503; frase: string }
+> = {
+  inexistente: {
+    status: 422,
+    frase: "Esse modelo não existe mais nesta conta. Escolha outro modelo aprovado.",
+  },
+  outra_conexao: {
+    status: 422,
+    frase: "Esse modelo não é da conexão escolhida. Escolha um dos modelos aprovados dela.",
+  },
+  nao_aprovado: {
+    status: 422,
+    frase: "Esse modelo ainda não está aprovado. Escolha um modelo aprovado.",
+  },
+  variaveis: {
+    status: 422,
+    frase: "O modelo precisa ter uma variável só, no texto — é nela que o aviso entra.",
+  },
+  indeterminado: {
+    status: 503,
+    frase: "Não foi possível conferir o modelo agora. Tente de novo em instantes.",
+  },
+};
 
 /**
  * O que cada exceção do RPC vira no wire.
@@ -160,11 +227,26 @@ const RECUSAS_DO_RPC = {
     frase:
       "Esse é um dos números conectados da sua conta. Ele não pode receber os avisos, senão um responde ao outro sem parar.",
   },
+  aviso_de_caso_destino_invalido: {
+    code: "validation_failed",
+    status: 422 as const,
+    frase: "Escolha uma forma de destino válida: o número da empresa ou o responsável pelo atendimento.",
+  },
+  aviso_de_caso_whatsapp_invalido: {
+    code: "validation_failed",
+    status: 422 as const,
+    frase: "Um dos números de WhatsApp da equipe não é válido. Use o código do país, por exemplo +55 31 99999-8888.",
+  },
   aviso_de_caso_numero_de_cliente: {
     code: "aviso_numero_de_cliente",
     status: 422 as const,
     frase:
       "Esse número já é de um cliente seu. Se você continuar, as mensagens dele param de chegar ao CRM.",
+  },
+  aviso_de_caso_modelo_invalido: {
+    code: "aviso_modelo_invalido",
+    status: 422 as const,
+    frase: "Esse modelo não é da conexão escolhida. Escolha um dos modelos aprovados dela.",
   },
 } as const;
 
@@ -214,6 +296,28 @@ export async function PUT(req: NextRequest): Promise<Response> {
   // primeira guarda do corpo da função recusaria — com o código de quem não
   // tem permissão, sobre um admin que tem.
   const db = await createClient();
+
+  // O modelo serve? A regra única, ANTES do RPC: o banco confere que ele é
+  // desta organização e desta conexão, mas "aprovado" e "uma variável" moram no
+  // espelho e no contrato derivado — perguntas que o SQL não faz.
+  const modeloId = dados.modelo_id ?? null;
+  if (modeloId) {
+    const avaliacao = await carregarModeloDoAviso(db, {
+      organizationId: authz.org.orgId,
+      channelSessionId: dados.channel_session_id,
+      modeloId,
+    });
+    if (!avaliacao.ok) {
+      const recusa = RECUSAS_DO_MODELO[avaliacao.motivo];
+      return fail(
+        recusa.status === 503 ? "unavailable" : "aviso_modelo_invalido",
+        t(recusa.frase),
+        recusa.status,
+        { requestId },
+      );
+    }
+  }
+
   const { data, error } = await db.rpc(
     "fn_definir_aviso_de_caso" as never,
     {
@@ -224,6 +328,12 @@ export async function PUT(req: NextRequest): Promise<Response> {
       p_ligado: dados.ligado,
       p_confirma_contato: dados.confirma_contato ?? false,
       p_resposta_whatsapp_habilitada: dados.resposta_whatsapp_habilitada,
+      p_destino_modo: dados.destino_modo,
+      // A rota NÃO normaliza: quem normaliza é o corpo da função do banco, com a
+      // mesma régua da tela (`normalizarTelefoneDeAviso`). Normalizar nos dois
+      // lugares seria a segunda implementação da regra.
+      p_responsaveis: dados.responsaveis === undefined ? null : dados.responsaveis,
+      p_modelo: modeloId,
     } as never,
   );
 
@@ -255,7 +365,14 @@ export async function PUT(req: NextRequest): Promise<Response> {
       depois_ligado: dados.ligado,
       resposta_whatsapp_habilitada: dados.resposta_whatsapp_habilitada,
       canal: dados.channel_session_id,
+      modelo: modeloId,
       confirmou_contato: dados.confirma_contato ?? false,
+      // O MODO é o que muda o desenho do aviso depois desta entrega, e o log é
+      // append-only: sem ele não há como datar a troca de "número fixo" para
+      // "responsável" numa auditoria. CONTAGEM, nunca os números: telefone de
+      // funcionário no `api_audit_log` fica para sempre.
+      destino_modo: dados.destino_modo,
+      membros_com_whatsapp: (dados.responsaveis ?? []).filter((r) => r.whatsapp !== null).length,
     },
   });
 

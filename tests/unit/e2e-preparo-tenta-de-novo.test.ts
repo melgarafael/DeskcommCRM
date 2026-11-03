@@ -17,6 +17,8 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { binariosDoSistema, BINARIOS_DO_SISTEMA } from "../helpers/path-hermetico-do-preparo";
+
 const E2E = path.resolve(__dirname, "../../.github/workflows/e2e.yml");
 
 function scriptDoPasso(nome: string): string {
@@ -59,9 +61,19 @@ if [ "$rc" = 0 ]; then printf '#!/bin/sh\\necho " A..... aac   AAC (Advanced Aud
 exit "$rc"`,
   );
   falso("sudo", `echo "sudo $*" >> "${log}"`);
+  // PATH hermético (issue #3827): symlink só dos binários que o passo usa.
+  // Herdar `/usr/bin` inteiro deixava o `ffmpeg` da máquina responder ao
+  // `if ! command -v ffmpeg` e o laço de tentativas nunca rodava.
+  const sistema = binariosDoSistema(path.join(raiz, "sistema"));
+  const ambiente = {
+    ...process.env,
+    PATH: `${bin}:${sistema}`,
+    HOME: raiz,
+    GITHUB_ACTIONS: "true",
+    RUNNER_ENVIRONMENT: "github-hosted",
+  };
   const r = spawnSync("bash", ["-e", "-c", scriptDoPasso(passo)], {
-    // PATH mínimo: um ffmpeg da máquina de quem roda o teste pularia o laço.
-    env: { ...process.env, PATH: `${bin}:/usr/bin:/bin`, HOME: raiz, GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "github-hosted" },
+    env: ambiente,
     encoding: "utf-8",
   });
   return {
@@ -69,6 +81,7 @@ exit "$rc"`,
     saida: r.stdout + r.stderr,
     chamadas: readFileSync(log, "utf-8").trim().split("\n"),
     home: raiz,
+    path: ambiente.PATH,
   };
 }
 
@@ -117,6 +130,30 @@ describe("e2e.yml — o preparo não espera o espelho do apt para sempre", () =>
     const caminhos = [...yml.matchAll(/path: (~\/\.cache\/ffmpeg-apt\/\*\.deb)/g)].map((m) => m[1]);
     expect(caminhos, "restaurar e guardar").toHaveLength(2);
     expect(scriptDoPasso(FFMPEG)).toContain('debs="$HOME/.cache/ffmpeg-apt"');
+  });
+
+  it("a fixture é hermética: no PATH dela não mora o ffmpeg da máquina", () => {
+    const r = rodar(FFMPEG, [0]);
+    // A sonda replica o que a máquina de quem roda o teste tem (aqui `ffmpeg`
+    // está em /usr/bin) e mostra que nada dela é alcançável: o único `ffmpeg`
+    // que responde é o dublê que a fixture instalou no `bin`, e `jq`/`pnpm` —
+    // que o passo não usa — não existem.
+    expect(BINARIOS_DO_SISTEMA.filter((n) => ["ffmpeg", "jq", "pnpm"].includes(n))).toEqual([]);
+    const sonda = spawnSync(
+      "bash",
+      [
+        "-c",
+        'for n in ffmpeg jq pnpm; do printf "%s=%s\\n" "$n" "$(command -v "$n" || echo -)"; done; ' +
+          'printf "grep=%s\\n" "$(command -v grep)"',
+      ],
+      { env: { ...process.env, PATH: r.path }, encoding: "utf-8" },
+    );
+    expect(sonda.stdout.trim().split("\n")).toEqual([
+      `ffmpeg=${path.join(r.home, "bin", "ffmpeg")}`,
+      "jq=-",
+      "pnpm=-",
+      expect.stringContaining("/sistema/grep"),
+    ]);
   });
 
   it("os dois passos têm cinto próprio de timeout-minutes", () => {

@@ -52,7 +52,11 @@ function estado(patch: Partial<EstadoDoAviso> = {}): EstadoDoAviso {
       ligado: true,
       resposta_whatsapp_habilitada: false,
       atualizado_em: "2026-09-18T12:00:00.000Z",
+      destino_modo: "fixo",
     },
+    // A equipe e o WhatsApp de cada um (#3803). Vazia nestes casos, que são
+    // sobre conexão, switch e remoção — no modo `fixo` ninguém é consultado.
+    equipe: [],
     conexoes: [
       { id: CANAL_QR, nome: "Plantão", status: "WORKING", aceitaMensagemLivre: true, atendeClientes: false },
       { id: CANAL_OFICIAL, nome: "Oficial", status: "WORKING", aceitaMensagemLivre: false, atendeClientes: true },
@@ -91,7 +95,78 @@ describe("o seletor de conexão", () => {
         config: null,
       }),
     );
-    expect(screen.getByRole("combobox")).toBeDisabled();
+    // O seletor da CONEXÃO, pelo rótulo: desde o #3803 há um segundo combobox
+    // na tela (o modo do destino), e `getByRole("combobox")` passou a achar dois.
+    expect(screen.getByLabelText("Conexão que envia os avisos")).toBeDisabled();
+  });
+});
+
+describe("o número oficial com modelo aprovado (migration 9094)", () => {
+  const MODELO = {
+    id: "33333333-3333-4333-8333-333333333333",
+    nome: "aviso_da_equipe",
+    idioma: "pt_BR",
+    corpo: "🔔 Aviso do CRM\n\n{{1}}\n\nAbra o CRM.",
+  };
+  const oficialComModelo = {
+    id: CANAL_OFICIAL,
+    nome: "Oficial",
+    status: "WORKING",
+    aceitaMensagemLivre: false,
+    atendeClientes: false,
+    modelos: [MODELO],
+  };
+  const configOficial = (modelo_id: string | null) => ({
+    channel_session_id: CANAL_OFICIAL,
+    telefone: "+5531900000001",
+    rotulo: null,
+    ligado: false,
+    resposta_whatsapp_habilitada: false,
+    modelo_id,
+    atualizado_em: "2026-10-23T12:00:00.000Z",
+    destino_modo: "fixo" as const,
+  });
+
+  it("escolhido, ele pede o modelo e mostra a prévia do texto que vai sair", () => {
+    montar(estado({ conexoes: [oficialComModelo], config: configOficial(MODELO.id) }));
+    expect(screen.getByTestId("bloco-do-modelo")).toBeInTheDocument();
+    expect(screen.getByTestId("previa-do-modelo").textContent).toContain("{{1}}");
+    // Com o modelo que serve, o switch destrava como numa conexão de texto livre.
+    expect(screen.getByRole("switch", { name: "Receber avisos no WhatsApp" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Salvar" })).toBeEnabled();
+  });
+
+  it("sem o modelo escolhido, nem liga nem salva", () => {
+    montar(estado({ conexoes: [oficialComModelo], config: configOficial(null) }));
+    expect(screen.getByTestId("bloco-do-modelo")).toBeInTheDocument();
+    expect(screen.queryByTestId("previa-do-modelo")).toBeNull();
+    expect(screen.getByRole("switch", { name: "Receber avisos no WhatsApp" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
+  });
+
+  it("a conexão SALVA cujo modelo saiu de vigor continua no seletor, e diz o que falta", () => {
+    montar(estado({ conexoes: [{ ...oficialComModelo, modelos: [] }], config: configOficial(MODELO.id) }));
+    expect(screen.getByTestId("conexao-sem-modelo").textContent).toContain("nenhum modelo aprovado");
+    expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
+    expect(screen.getByRole("switch", { name: "Receber avisos no WhatsApp" })).toBeDisabled();
+  });
+
+  it("a conexão de texto livre não pede modelo nenhum", () => {
+    montar(estado({ conexoes: [estado().conexoes[0]!, oficialComModelo] }));
+    expect(screen.queryByTestId("bloco-do-modelo")).toBeNull();
+  });
+
+  it("o bloqueio do modelo vira frase, com o caminho para criar um", () => {
+    montar(
+      estado({
+        conexoes: [oficialComModelo],
+        config: configOficial(null),
+        avisos: [{ codigo: "oficial_sem_modelo", bloqueia: true, dados: { conexao: "Oficial", modelos: 1 } }],
+      }),
+    );
+    const bloco = screen.getByTestId("alerta-oficial_sem_modelo");
+    expect(bloco.dataset.bloqueia).toBe("sim");
+    expect(bloco.textContent).toContain("modelo dela com uma variável");
   });
 });
 

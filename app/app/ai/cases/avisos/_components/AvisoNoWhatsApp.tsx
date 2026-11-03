@@ -5,11 +5,11 @@
  *
  * ## As três coisas que esta tela faz, nesta ordem
  *
- * 1. **Diz o estado efetivo** (`AlertasDoAviso`): onze situações em que a
+ * 1. **Diz o estado efetivo** (`AlertasDoAviso`): doze situações em que a
  *    configuração é aceita e nenhum aviso chega. Elas vêm antes do formulário
  *    de propósito — ler "seus números não servem para isso" depois de preencher
  *    tudo é a definição de tela que não avisou.
- * 2. **Salva pelo RPC**, que é quem faz as sete guardas na mesma transação — e
+ * 2. **Salva pelo RPC**, que é quem faz as oito guardas na mesma transação — e
  *    **remove** pelo `DELETE`, a ação que devolve o número à ingestão normal
  *    (issue #3338). As duas são coisas diferentes de propósito: desligar o
  *    switch PRESERVA o número e ele continua interno (o que chega dele não vira
@@ -19,9 +19,12 @@
  *
  * ## O seletor filtra por CAPACIDADE, nunca por provedor
  *
- * A lista só oferece conexões com `aceitaMensagemLivre`, e essa resposta vem
- * resolvida de `lib/channels/`. Esta tela não sabe — e não pode saber — o nome
- * de nenhum provedor: `pnpm lint:channels` reprova, inclusive em comentário.
+ * A lista oferece as conexões com `aceitaMensagemLivre` e, desde a migration
+ * 9094, as que só mandam modelo mas têm um modelo aprovado que leva o aviso
+ * (`conexaoServeParaAviso`). Para essas, a tela pede o modelo — o aviso vai
+ * dentro dele. As duas respostas vêm resolvidas de `lib/channels/` e de
+ * `lib/escalacao/modelo-do-aviso.ts`. Esta tela não sabe — e não pode saber — o
+ * nome de nenhum provedor: `pnpm lint:channels` reprova, inclusive em comentário.
  *
  * ## `aviso_numero_de_cliente` é uma PERGUNTA
  *
@@ -60,7 +63,12 @@ import {
   type EstadoDoAviso,
 } from "@/hooks/ai/useAvisoDeCaso";
 import { ApiError } from "@/lib/api/types";
-import { normalizarTelefoneDeAviso, telefoneDeAvisoValido } from "@/lib/escalacao/estado-do-aviso";
+import {
+  conexaoServeParaAviso,
+  normalizarTelefoneDeAviso,
+  telefoneDeAvisoValido,
+  type ConexaoParaAviso,
+} from "@/lib/escalacao/estado-do-aviso";
 import { FRASE_DO_ERRO_DO_AVISO } from "@/lib/escalacao/vocabulario-do-aviso";
 import { CheckCircle, PaperPlaneTilt, WarningOctagon } from "@/lib/ui/icons";
 
@@ -79,7 +87,17 @@ const FRASE_EXTRA_DO_TESTE = {
 } as const;
 
 const RASCUNHO_VAZIO = {
-  canal: "", telefone: "", rotulo: "", ligado: false, respostaWhatsappHabilitada: false,
+  canal: "",
+  telefone: "",
+  rotulo: "",
+  ligado: false,
+  respostaWhatsappHabilitada: false,
+  /** COMO escolher quem recebe (#3803). `fixo` é o que a instalação já fazia. */
+  destinoModo: "fixo" as "fixo" | "responsavel",
+  /** `user_id` → WhatsApp do rascunho. Ausente = "não mexi". */
+  whatsapps: {} as Record<string, string>,
+  /** O modelo aprovado que leva o aviso pela conexão que só manda modelo. */
+  modelo: "",
 };
 type Rascunho = typeof RASCUNHO_VAZIO;
 
@@ -91,7 +109,34 @@ function rascunhoDoEstado(estado: EstadoDoAviso | undefined): Rascunho {
     rotulo: estado.config.rotulo ?? "",
     ligado: estado.config.ligado,
     respostaWhatsappHabilitada: estado.config.resposta_whatsapp_habilitada,
+    destinoModo: estado.config.destino_modo ?? "fixo",
+    whatsapps: whatsappsDoRascunho(estado),
+    modelo: estado.config.modelo_id ?? "",
   };
+}
+
+/**
+ * O rascunho dos números da equipe: o que está GRAVADO, e não o que veio da
+ * tela — quem não cadastrou aparece com campo vazio, e salvar sem digitar nada
+ * não apaga o número de ninguém.
+ */
+function whatsappsDoRascunho(estado: EstadoDoAviso): Record<string, string> {
+  const mapa: Record<string, string> = {};
+  // `?? []`: um estado em cache de antes desta versão não tem `equipe`, e a tela
+  // não pode quebrar por causa de um pacote de JS antigo no navegador de alguém.
+  for (const membro of estado.equipe ?? []) mapa[membro.user_id] = membro.whatsapp ?? "";
+  return mapa;
+}
+
+/**
+ * O modelo que entra quando a pessoa troca de conexão: o único, se só há um —
+ * escolher por ela o que não tem alternativa poupa um clique sem decidir nada.
+ * Trocar de conexão sempre descarta o modelo anterior: ele é DAQUELA conexão.
+ */
+function modeloAoTrocarDeConexao(conexao: ConexaoParaAviso | undefined): string {
+  if (!conexao || conexao.aceitaMensagemLivre) return "";
+  const modelos = conexao.modelos ?? [];
+  return modelos.length === 1 ? modelos[0]!.id : "";
 }
 
 export function AvisoNoWhatsApp() {
@@ -174,9 +219,30 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
    */
   const [confirmarRemocao, setConfirmarRemocao] = useState(false);
 
-  const oferecidas = estado.conexoes.filter((c) => c.aceitaMensagemLivre);
+  // A conexão SALVA fica na lista mesmo quando deixou de servir (o modelo dela
+  // voltou para revisão): sem ela o seletor apareceria vazio com uma
+  // configuração gravada, e o bloco do modelo não teria onde dizer o que falta.
+  const salva = estado.config?.channel_session_id ?? null;
+  const oferecidas = estado.conexoes.filter((c) => conexaoServeParaAviso(c) || c.id === salva);
   const telefoneOk = telefoneDeAvisoValido(rascunho.telefone);
-  const podeSalvar = rascunho.canal !== "" && telefoneOk && !salvar.isPending;
+  /**
+   * Os números da equipe: vazio é ACEITO (a pessoa não cadastrou, e o elo cai
+   * para o próximo); preenchido e incompleto NÃO é — salvar um número torto faria
+   * o aviso falhar no transporte, longe daqui.
+   */
+  const numerosDaEquipeOk = Object.values(rascunho.whatsapps).every(
+    (n) => n.trim() === "" || telefoneDeAvisoValido(n),
+  );
+  const equipe = estado.equipe ?? [];
+  const comNumero = equipe.filter((m) => (rascunho.whatsapps[m.user_id] ?? "").trim() !== "").length;
+  const escolhida = oferecidas.find((c) => c.id === rascunho.canal);
+  /** A conexão escolhida só manda modelo: o aviso precisa de um (migration 9094). */
+  const precisaModelo = escolhida !== undefined && !escolhida.aceitaMensagemLivre;
+  const modelosDaConexao = precisaModelo ? (escolhida.modelos ?? []) : [];
+  const modeloEscolhido = modelosDaConexao.find((m) => m.id === rascunho.modelo);
+  const modeloOk = !precisaModelo || modeloEscolhido !== undefined;
+  const podeSalvar =
+    rascunho.canal !== "" && telefoneOk && numerosDaEquipeOk && modeloOk && !salvar.isPending;
   /**
    * O switch, e por que ele NÃO é `estado.pode_ligar` sozinho nem um `||` com o
    * rascunho.
@@ -192,7 +258,7 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
    * rascunho precisa ter uma conexão que serve e um número completo.
    */
   const semEnderecoPublico = estado.avisos.some((a) => a.codigo === "sem_endereco_publico");
-  const canalServe = oferecidas.some((c) => c.id === rascunho.canal);
+  const canalServe = escolhida !== undefined && modeloOk;
   const podeLigar = !semEnderecoPublico && canalServe && telefoneOk;
   const jaSalvo = Boolean(estado.config?.channel_session_id);
 
@@ -204,6 +270,20 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
         rotulo: rascunho.rotulo.trim() === "" ? null : rascunho.rotulo.trim(),
         ligado: rascunho.ligado,
         resposta_whatsapp_habilitada: rascunho.respostaWhatsappHabilitada,
+        destino_modo: rascunho.destinoModo,
+        // Todos os membros vão SEMPRE, com `null` para quem está sem número: é
+        // assim que "apague o meu" chega ao banco. Mandar só quem tem número
+        // deixaria o número antigo vivo depois de a pessoa apagá-lo na tela.
+        responsaveis: equipe.map((m) => {
+          const bruto = (rascunho.whatsapps[m.user_id] ?? "").trim();
+          return {
+            user_id: m.user_id,
+            whatsapp: bruto === "" ? null : normalizarTelefoneDeAviso(bruto),
+          };
+        }),
+        // Sempre enviado, inclusive `null`: é o que tira o modelo de uma conexão
+        // antiga quando a pessoa troca para uma de texto livre.
+        modelo_id: precisaModelo ? rascunho.modelo : null,
         ...(confirma ? { confirma_contato: true } : {}),
       });
       setConfirmarContato(null);
@@ -263,7 +343,13 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
         <Label htmlFor="conexao">{t("Conexão que envia os avisos")}</Label>
         <Select
           value={rascunho.canal}
-          onValueChange={(v) => setRascunho((r) => ({ ...r, canal: v }))}
+          onValueChange={(v) =>
+            setRascunho((r) => ({
+              ...r,
+              canal: v,
+              modelo: modeloAoTrocarDeConexao(oferecidas.find((c) => c.id === v)),
+            }))
+          }
           disabled={oferecidas.length === 0}
         >
           <SelectTrigger id="conexao" className="w-full sm:w-96">
@@ -272,15 +358,58 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
           <SelectContent>
             {oferecidas.map((c) => (
               <SelectItem key={c.id} value={c.id}>
-                {c.nome}
+                {c.aceitaMensagemLivre ? c.nome : `${c.nome} · ${t("só modelo aprovado")}`}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          {t("Só aparecem aqui os números que conseguem mandar uma mensagem a qualquer hora.")}
+          {t(
+            "Aparecem aqui os números que mandam mensagem a qualquer hora e os números oficiais que já têm um modelo aprovado com uma variável.",
+          )}
         </p>
       </div>
+
+      {precisaModelo ? (
+        <div className="flex flex-col gap-1.5" data-testid="bloco-do-modelo">
+          <Label htmlFor="modelo">{t("Modelo aprovado que leva o aviso")}</Label>
+          <Select
+            value={rascunho.modelo}
+            onValueChange={(v) => setRascunho((r) => ({ ...r, modelo: v }))}
+          >
+            <SelectTrigger id="modelo" className="w-full sm:w-96">
+              <SelectValue placeholder={t("Escolha um modelo aprovado")} />
+            </SelectTrigger>
+            <SelectContent>
+              {modelosDaConexao.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {`${m.nome} · ${m.idioma}`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {modelosDaConexao.length === 0 ? (
+            <p className="text-xs text-destructive" data-testid="conexao-sem-modelo">
+              {t(
+                "Esta conexão não tem nenhum modelo aprovado com uma variável. Crie um na aba de modelos do número, em Conexões, ou escolha outra conexão.",
+              )}
+            </p>
+          ) : null}
+          {modeloEscolhido ? (
+            <p
+              className="whitespace-pre-line rounded-md border bg-muted/40 p-2 text-xs"
+              data-testid="previa-do-modelo"
+            >
+              {modeloEscolhido.corpo}
+            </p>
+          ) : null}
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Fora das 24 horas este número só manda modelo aprovado. O aviso vai dentro dele, numa linha só, no lugar da variável. Cada aviso é uma mensagem cobrada pela plataforma do número oficial.",
+            )}
+          </p>
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="telefone">{t("Número que recebe os avisos")}</Label>
@@ -307,6 +436,95 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
           </p>
         ) : null}
       </div>
+
+      {/* ── PARA QUEM VAI O AVISO (#3803) ────────────────────────────────
+          O modo vem ANTES do switch porque ele muda o significado do número
+          acima: em `fixo` ele é o destinatário; em `responsavel` ele é o último
+          recurso. Ler o número sem saber disso é ler a tela errado. */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="destino-modo">{t("Quem recebe os avisos")}</Label>
+        <Select
+          value={rascunho.destinoModo}
+          onValueChange={(v) =>
+            setRascunho((r) => ({ ...r, destinoModo: v as Rascunho["destinoModo"] }))
+          }
+        >
+          <SelectTrigger id="destino-modo" className="w-full sm:w-96">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="fixo">{t("Sempre o número da empresa")}</SelectItem>
+            <SelectItem value="responsavel">{t("Quem está com o atendimento")}</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {rascunho.destinoModo === "responsavel"
+            ? t(
+                "O aviso vai para quem está com a conversa; se essa pessoa não tiver WhatsApp cadastrado, para quem é dono do negócio; depois, para o dono da carteira do contato. Se ninguém tiver, vai para o número acima.",
+              )
+            : t("Todo aviso vai para o número acima, como sempre foi.")}
+        </p>
+      </div>
+
+      {rascunho.destinoModo === "responsavel" ? (
+        <div className="flex flex-col gap-2 rounded-lg border p-3" data-testid="whatsapp-da-equipe">
+          <p className="text-sm font-medium">{t("WhatsApp de cada pessoa da equipe")}</p>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "É este número que recebe o aviso quando a pessoa é a responsável. Sem número, ela é pulada — o aviso não fica sem destinatário.",
+            )}
+          </p>
+          {equipe.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {t("Ainda não há outras pessoas nesta organização.")}
+            </p>
+          ) : (
+            equipe.map((membro) => {
+              const valor = rascunho.whatsapps[membro.user_id] ?? "";
+              const ok = valor.trim() === "" || telefoneDeAvisoValido(valor);
+              return (
+                <div
+                  key={membro.user_id}
+                  className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3"
+                >
+                  <span className="w-full truncate text-sm sm:w-44">
+                    {membro.nome ?? t("Sem nome")}
+                  </span>
+                  <Input
+                    inputMode="tel"
+                    className="w-full sm:w-64"
+                    placeholder={telefoneExemplo}
+                    value={valor}
+                    onChange={(e) =>
+                      setRascunho((r) => ({
+                        ...r,
+                        whatsapps: {
+                          ...r.whatsapps,
+                          [membro.user_id]: normalizarTelefoneDeAviso(e.target.value),
+                        },
+                      }))
+                    }
+                    aria-invalid={!ok}
+                    aria-label={membro.nome ?? membro.user_id}
+                  />
+                  {ok ? null : (
+                    <span className="text-xs text-destructive">
+                      {t("Esse número ainda não está completo.")}
+                    </span>
+                  )}
+                </div>
+              );
+            })
+          )}
+          {comNumero === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Ninguém da equipe tem WhatsApp cadastrado: os avisos vão continuar saindo para o número acima.",
+              )}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="flex items-start gap-3 rounded-lg border p-3">
         <Switch

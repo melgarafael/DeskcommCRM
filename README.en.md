@@ -229,6 +229,27 @@ backup back over the database in use: it only restores into an empty database (s
 > **Backups matter:** Supabase's free plan **does not back up on its own**. Schedule `backup.sh`
 > daily via cron. `update.sh` already takes one before every update.
 
+### 🧹 Uninstall (take this application out of Docker)
+
+To stop and delete **only the Docker resources of this installation**, from the repository root:
+
+```bash
+bash desinstalar_docker.sh
+```
+
+It finds the project through the label Docker Compose writes and removes only the containers,
+volumes and internal networks of **this** project. Other applications on the same server, images,
+build cache, the reverse proxy's external network, the code, the `.env`, the backups and an
+external Supabase are left untouched.
+
+The interactive mode shows how many resources it found and requires the confirmation
+`REMOVER-<project-name>` before removing anything. For throwing an environment away,
+`bash desinstalar_docker.sh --force` skips the question. Use `--project-name NAME` only when the
+installation has a custom `COMPOSE_PROJECT_NAME` that is no longer in the `.env`.
+
+> **The volumes go with it** — local WhatsApp sessions included. Run `backup.sh` before if you
+> need to keep them.
+
 ---
 
 ## ✨ What is it
@@ -317,6 +338,14 @@ docker compose up -d        # local WAHA (optional in dev without WhatsApp)
 # The real schema lives in baseline.sql, the same one install.sh applies on the VPS.
 # `supabase db push` "succeeds" and leaves you with an empty database.
 supabase link --project-ref <your-ref>
+
+# On a NEW Supabase project, first enable the extensions the schema uses —
+# without them the baseline stops at `type public.vector does not exist`.
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c \
+  'create extension if not exists vector with schema public;
+   create extension if not exists citext with schema public;
+   create extension if not exists pg_trgm with schema public;'
+
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/baseline.sql
 
 pnpm dev
