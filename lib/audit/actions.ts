@@ -1418,6 +1418,11 @@ export const AUDIT_ACTIONS = [
   // Aviso escrito pelo admin da empresa e empurrado para a equipe (#1418). O
   // metadata leva só a janela de publicação; título e corpo ficam em `avisos`.
   "aviso.created",
+  // A prospecção perguntou ao WhatsApp (`numeroTemConta` do canal) se os telefones de
+  // uma campanha têm WhatsApp, e tirou da seleção quem não tem
+  // (`lib/prospecting/whatsapp.ts`). UMA linha por campanha por rodada e só com
+  // efeito; metadata só com contagens — nunca o telefone. `resource_id` = a campanha.
+  "prospecting.whatsapp_checked",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -1,0 +1,7 @@
+---
+impacto: capacidade_nova
+secao: adicionado
+titulo: A Prospecção pode conferir quem tem WhatsApp antes de abordar (módulo opcional), e busca e escreve no idioma da organização
+---
+
+A conferência é um módulo opcional, desligado por padrão: quem administra o servidor liga em /admin/sistema, em "Conferir WhatsApp na prospecção". Ela consulta a partir do seu número todo telefone achado, e consulta em massa pode chamar a atenção do WhatsApp; desligada, nada muda. Ligada, depois de cada busca, a Prospecção pergunta ao WhatsApp, número por número, se o telefone de cada empresa tem WhatsApp — sem mandar mensagem nenhuma, pela conexão por QR da campanha (se a campanha usa o número oficial, nada é conferido), no máximo 15 números por minuto. Quem não tem sai da seleção sozinho, aparece como "Sem WhatsApp", não gasta prévia de IA e nunca entra na fila; a lista mostra quantos foram conferidos e quantos ficaram de fora. Não é o prefixo que decide: um telefone fixo com WhatsApp Business continua na lista. Se a conexão por QR estiver fora do ar, ninguém é descartado: a conferência tenta de novo no minuto seguinte. Sem conexão por QR (só o número oficial), nada muda. E, numa organização em espanhol, a busca passa a trazer os dados em espanhol (sem prender o país no Brasil) e o agente criado por "Configurar por conversa" nasce conversando em espanhol — antes os dois saíam em português. Em português do Brasil, nada muda. Crédito: @jmpo.
