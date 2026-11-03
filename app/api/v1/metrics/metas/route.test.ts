@@ -58,12 +58,23 @@ type Resposta = { data: unknown; count: number | null; error: { message: string 
  * `count`, exatamente como o PostgREST — é o caminho da contagem do realizado.
  */
 function fakeSupabase(dados: Record<string, Linha[]>, erroEm?: string) {
-  const consultas: Array<{ tabela: string; filtros: Array<[string, unknown]>; contou: boolean }> =
-    [];
+  const consultas: Array<{
+    tabela: string;
+    filtros: Array<[string, unknown]>;
+    ordens: string[];
+    faixas: Array<[number, number]>;
+    contou: boolean;
+  }> = [];
 
   const client = {
     from(tabela: string) {
-      const registro = { tabela, filtros: [] as Array<[string, unknown]>, contou: false };
+      const registro = {
+        tabela,
+        filtros: [] as Array<[string, unknown]>,
+        ordens: [] as string[],
+        faixas: [] as Array<[number, number]>,
+        contou: false,
+      };
       consultas.push(registro);
 
       const filtros: Array<(linha: Linha) => boolean> = [];
@@ -106,6 +117,22 @@ function fakeSupabase(dados: Record<string, Linha[]>, erroEm?: string) {
         );
         return builder;
       };
+      // A partir da #3602 a rota faz uma leitura PAGINADA própria (as duas
+      // parcelas do período): `.order()` e `.range()` precisam existir aqui com
+      // a régua do servidor — `range` fatia o dataset e o `count` continua
+      // sendo o total ANTES do corte, como no PostgREST.
+      builder.order = (coluna: string) => {
+        registro.ordens.push(coluna);
+        return builder;
+      };
+      builder.range = (inicio: number, fim: number) => {
+        registro.faixas.push([inicio, fim]);
+        const resposta = executar();
+        return Promise.resolve({
+          ...resposta,
+          data: ((resposta.data as Linha[] | null) ?? []).slice(inicio, fim + 1),
+        });
+      };
       builder.then = (
         ok?: (v: Resposta) => unknown,
         erro?: (e: unknown) => unknown,
@@ -139,6 +166,12 @@ function lead(id: string, parcial: Record<string, unknown>): Linha {
     status: "won",
     pipeline_id: null,
     closed_at: "2026-09-10T12:00:00.000Z",
+    currency: "BRL",
+    value_cents: null,
+    // O trio da fatia 1 (#3602): "não preenchido" é `null` — e é o que a
+    // maioria das organizações tem, então é o default da fixture.
+    recurring_value_cents: null,
+    recurring_period: null,
     ...parcial,
   };
 }
@@ -313,6 +346,148 @@ describe("GET /api/v1/metrics/metas", () => {
     expect(res.status).toBe(500);
     const corpo = (await res.json()) as { error?: { code?: string } };
     expect(corpo.error?.code).toBe("internal_error");
+  });
+
+  // ─── As duas parcelas do período (fatia 2, item 1, da #3602) ──────────────
+  //
+  // O defeito medido antes do conserto: a rota devolvia só a contagem e o
+  // painel mostrava o setup como se fosse o contrato inteiro — a mensalidade
+  // nova do mês não aparecia em número nenhum.
+
+  it("devolve vendido único (R$ 3.000) e recorrência nova (R$ 500/mês) SEPARADOS", async () => {
+    permitido();
+    const dados = setembro();
+    dados.crm_leads = [
+      lead("g1", {
+        value_cents: 300_000,
+        recurring_value_cents: 50_000,
+        recurring_period: "monthly",
+      }),
+      // O outro ganho da janela não tem recorrência: entra no único, não na
+      // recorrência.
+      lead("g2", { value_cents: null }),
+    ];
+    const { client } = fakeSupabase(dados);
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const { status, data } = await chamar();
+    expect(status).toBe(200);
+
+    // Antes do conserto o bloco não existia: o painel somava só `value_cents` e
+    // a recorrência nova do mês não aparecia em número nenhum.
+    expect(data).toHaveProperty("valores_do_periodo");
+
+    const valores = data.valores_do_periodo as {
+      base: string;
+      moeda: string | null;
+      moeda_mista: boolean;
+      unico: { centavos: number | null; negocios: number };
+      recorrente_mensal: { centavos: number | null; negocios: number };
+      negocios_com_recorrencia: number;
+      truncado: boolean;
+    };
+    expect(valores.unico.centavos).toBe(300_000);
+    expect(valores.unico.negocios).toBe(2);
+    expect(valores.recorrente_mensal.centavos).toBe(50_000);
+    expect(valores.recorrente_mensal.negocios).toBe(1);
+    expect(valores.negocios_com_recorrencia).toBe(1);
+    expect(valores.moeda).toBe("BRL");
+    expect(valores.moeda_mista).toBe(false);
+    expect(valores.truncado).toBe(false);
+
+    // A fronteira: NENHUM número somado. Nem campo, nem valor, na resposta.
+    expect(valores).not.toHaveProperty("total");
+    expect(valores).not.toHaveProperty("total_centavos");
+    expect(JSON.stringify(data)).not.toContain("350000");
+
+    // E o que já existia continua igual: a meta conta VENDAS, não valor.
+    const m = (data.metas as MetaNaResposta[])[0]!;
+    expect(m.realizado).toBe(2);
+    expect(m.alvo).toBe(10);
+    expect(m.percentual).toBe(20);
+  });
+
+  it("retrocompatível: negócio sem recorrência não entra na recorrência e o resto não muda", async () => {
+    permitido();
+    const dados = setembro();
+    dados.crm_leads = [lead("g1", { value_cents: 300_000 })];
+    const { client } = fakeSupabase(dados);
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const { data } = await chamar();
+    const valores = data.valores_do_periodo as {
+      unico: { centavos: number | null; negocios: number };
+      recorrente_mensal: { centavos: number | null; negocios: number };
+      negocios_com_recorrencia: number;
+      por_moeda: Array<{ moeda: string; unico_centavos: number }>;
+    };
+    // O único é o de sempre (o `value_cents` que a tela já mostrava)…
+    expect(valores.unico.centavos).toBe(300_000);
+    // …e a recorrência é ZERO, não o valor do negócio repetido.
+    expect(valores.recorrente_mensal.centavos).toBe(0);
+    expect(valores.recorrente_mensal.negocios).toBe(0);
+    expect(valores.negocios_com_recorrencia).toBe(0);
+    expect(valores.por_moeda).toEqual([
+      {
+        moeda: "BRL",
+        unico_centavos: 300_000,
+        recorrente_mensal_centavos: 0,
+        negocios: 1,
+        negocios_com_recorrencia: 0,
+      },
+    ]);
+
+    const m = (data.metas as MetaNaResposta[])[0]!;
+    expect(m.realizado).toBe(1);
+    expect(m.alvo).toBe(10);
+  });
+
+  it("período respeitado: ganho FORA da janela não conta em nenhuma das duas parcelas", async () => {
+    permitido();
+    const dados = setembro();
+    dados.crm_leads = [
+      // Fechado em agosto, com setup e mensalidade: fora da janela.
+      lead("g4", {
+        closed_at: "2026-08-31T23:00:00.000Z",
+        value_cents: 300_000,
+        recurring_value_cents: 50_000,
+        recurring_period: "monthly",
+      }),
+      lead("g1", { closed_at: "2026-09-10T12:00:00.000Z", value_cents: 200_000 }),
+    ];
+    const { client } = fakeSupabase(dados);
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const { data } = await chamar();
+    const valores = data.valores_do_periodo as {
+      unico: { centavos: number | null; negocios: number };
+      recorrente_mensal: { centavos: number | null; negocios: number };
+      negocios_com_recorrencia: number;
+    };
+    expect(valores.unico.centavos).toBe(200_000);
+    expect(valores.unico.negocios).toBe(1);
+    expect(valores.recorrente_mensal.centavos).toBe(0);
+    expect(valores.negocios_com_recorrencia).toBe(0);
+  });
+
+  it("sem meta cadastrada as parcelas continuam saindo: 'sem alvo' não é 'sem valor'", async () => {
+    permitido();
+    const dados = setembro();
+    dados.crm_metas = [];
+    dados.crm_leads = [
+      lead("g1", { value_cents: 300_000, recurring_value_cents: 50_000, recurring_period: "monthly" }),
+    ];
+    const { client } = fakeSupabase(dados);
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const { data } = await chamar();
+    expect(data.motivo).toBe("sem_meta");
+    const valores = data.valores_do_periodo as {
+      unico: { centavos: number | null };
+      recorrente_mensal: { centavos: number | null };
+    };
+    expect(valores.unico.centavos).toBe(300_000);
+    expect(valores.recorrente_mensal.centavos).toBe(50_000);
   });
 
   it("janela inválida (from >= to) é recusada antes de qualquer leitura", async () => {

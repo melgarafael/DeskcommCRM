@@ -296,6 +296,29 @@ export type AvailabilityPatch = z.infer<typeof availabilityPatchSchema>;
 export const SETOR_NOME_MAX = 60;
 export const SETOR_DESCRICAO_MAX = 280;
 
+/**
+ * A cor de identificação da FILA (#3876 F3, migration 9084): `#rrggbb` ou `null`.
+ *
+ * ─── Por que uma regex própria, e não `ehHexValido` ────────────────────────
+ *
+ * `ehHexValido` (`lib/branding/rampa.ts`) aceita `#abc` e também a forma SEM
+ * cerquilha — três grafias que o CHECK da coluna recusa. Usá-la aqui daria duas
+ * réguas para a mesma coluna: o Zod aceitaria, o banco recusaria, e o 500
+ * apareceria primeiro em produção. A régua tem de ser a MESMA das duas pontas, e
+ * `tests/invariants/setores-cor-da-fila.test.ts` compara as duas grafia por
+ * grafia — a discordância reprova citando o texto recusado.
+ *
+ * A PERTINÊNCIA À PALETA não se valida, igual à cor de etiqueta (#1271): quem
+ * oferece os tons é a tela (`PALETA_DE_ETIQUETAS`), e o banco não precisa saber
+ * o que é decoração de tela. O que o banco precisa garantir é a FORMA.
+ */
+export const COR_DA_FILA = /^#[0-9a-fA-F]{6}$/;
+
+export const corDaFilaSchema = z
+  .string()
+  .regex(COR_DA_FILA, "A cor da fila precisa ser um hexadecimal de seis dígitos, como #1a2b3c.")
+  .nullable();
+
 export const sectorCreateSchema = z
   .object({
     name: z.string().trim().min(1, "Dê um nome ao setor.").max(SETOR_NOME_MAX),
@@ -306,6 +329,11 @@ export const sectorCreateSchema = z
       .nullable()
       .optional()
       .transform((v) => (v ? v : null)),
+    /**
+     * Horário da FILA (migration 9062). O MESMO shape da jornada do atendente —
+     * um formato por pergunta, não dois. Omitir = `{}` no banco = 24/7.
+     */
+    schedule: availabilityScheduleSchema.optional(),
   })
   .strict();
 export type SectorCreate = z.infer<typeof sectorCreateSchema>;
@@ -319,19 +347,45 @@ export const sectorPatchSchema = z
       .max(SETOR_DESCRICAO_MAX)
       .nullable()
       .transform((v) => (v ? v : null)),
+    /** Horário da fila (migration 9062): casa com `isWithinSchedule`. */
+    schedule: availabilityScheduleSchema,
+    /**
+     * Cor da fila (migration 9084). `null` = sem cor, o visual de antes desta
+     * fatia — apagar a cor é intenção explícita, não campo ausente.
+     */
+    color: corDaFilaSchema,
   })
   .partial()
   .strict()
   .refine((v) => Object.keys(v).length > 0, {
-    message: "Informe ao menos um campo (name ou description).",
+    message: "Informe ao menos um campo (name, description, schedule ou color).",
   });
 export type SectorPatch = z.infer<typeof sectorPatchSchema>;
 
-/** PUT do setor de um atendente. `null` = tirar do setor ("sem setor"). */
+/**
+ * PUT das filas de um atendente (migration 9062). Lista VAZIA = sem fila.
+ *
+ * Era `{ sector_id }` — um setor por pessoa, que era o que a PK de 0801
+ * permitia. Com N:N, o corpo passa a ser o CONJUNTO: a rota substitui os
+ * vínculos da pessoa pela lista recebida, numa transação só. Lista vazia é
+ * intenção explícita ("esta pessoa não atende fila nenhuma"), não erro.
+ */
 export const sectorAssignmentSchema = z
-  .object({ sector_id: z.string().uuid().nullable() })
+  .object({ sector_ids: z.array(z.string().uuid()).max(50) })
   .strict();
 export type SectorAssignment = z.infer<typeof sectorAssignmentSchema>;
+
+/**
+ * PUT da fila de uma conversa (migration 9062) — o DESTINO.
+ *
+ * `null` = tirar da fila (volta ao comportamento de sempre). A fila tem de ser
+ * da mesma organização: a FK composta do banco recusa o contrário, e a rota
+ * confere antes para devolver 422 em vez de 500.
+ */
+export const conversationSectorSchema = z
+  .object({ sector_id: z.string().uuid().nullable() })
+  .strict();
+export type ConversationSector = z.infer<typeof conversationSectorSchema>;
 
 /**
  * Corpo do PATCH de `/api/v1/settings/routing/channels` (regras POR NÚMERO,

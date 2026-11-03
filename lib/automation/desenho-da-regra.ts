@@ -507,6 +507,13 @@ function problemaDaRecusa(recusa: Recusa, percurso: Percurso): ProblemaDoDesenho
     return { caixa: gatilho, mensagem: recusa.code === "custom" ? recusa.message : PROBLEMAS.gatilhoInvalido };
   }
   if (raiz === "conditions") {
+    // A condição do contato (#3814) tem recusa `custom` escrita em português
+    // pelo próprio schema ("Escolha “sim” ou “não” nesta condição.") — é a
+    // frase que a pessoa precisa ler, e ela aponta o conserto. As demais são
+    // as de tamanho, que já têm frase própria.
+    if (recusa.code === "custom") {
+      return { caixa: percurso.condicoes?.id ?? gatilho, mensagem: recusa.message };
+    }
     return {
       caixa: percurso.condicoes?.id ?? gatilho,
       mensagem: indice === undefined ? PROBLEMAS.condicoesDemais : PROBLEMAS.condicaoGrandeDemais,

@@ -509,3 +509,50 @@ describe("aviso ao suporte — o laço fecha no fechamento do caso", () => {
     expect(r.status).toBe("skipped");
   });
 });
+
+describe("aviso ao suporte — RESPONDER/PERGUNTAR só para o número da empresa (#3803)", () => {
+  // O comando só é reconhecido quando chega do número interno de aviso
+  // (`resposta-whatsapp-ao-caso.ts`). O celular do vendedor não é esse número:
+  // ensinar o comando a ele faria a resposta entrar no CRM como mensagem comum.
+  const VENDEDOR = "88888888-8888-4888-8888-888888888888";
+  const CELULAR_DO_VENDEDOR = "+5531988881111";
+
+  function comResposta(destinoModo: "fixo" | "responsavel") {
+    const { deps, estado } = monta({
+      cfg: {
+        organization_id: ORG,
+        channel_session_id: CANAL,
+        telefone_destino: "+5531998966398",
+        destino_jid: null,
+        ligado: true,
+        resposta_whatsapp_habilitada: true,
+        destino_modo: destinoModo,
+      },
+    });
+    deps.db.carregaMundoDoAviso = async () => ({
+      conversa: { assigned_to_user_id: VENDEDOR, assignee_kind: "human" },
+      negocio: null,
+      contato: null,
+      whatsapps: new Map([[VENDEDOR, CELULAR_DO_VENDEDOR]]),
+    });
+    return { deps, estado };
+  }
+
+  it("aviso para o vendedor NÃO ensina o comando, e diz para abrir o link", async () => {
+    const { deps, estado } = comResposta("responsavel");
+    const r = await aplicaAvisoDeCaso(deps, evento());
+    expect(r.status).toBe("ok");
+    expect(estado.enviados).toHaveLength(1);
+    expect(estado.enviados[0]?.to).toBe("5531988881111@c.us");
+    expect(estado.enviados[0]?.body).not.toContain("RESPONDER");
+    expect(estado.enviados[0]?.body).toContain("Responder aqui não chega ao cliente");
+  });
+
+  it("aviso para o número da empresa continua ensinando o comando", async () => {
+    const { deps, estado } = comResposta("fixo");
+    const r = await aplicaAvisoDeCaso(deps, evento());
+    expect(r.status).toBe("ok");
+    expect(estado.enviados[0]?.to).toBe("5531998966398@c.us");
+    expect(estado.enviados[0]?.body).toContain(`RESPONDER ${CASO}`);
+  });
+});

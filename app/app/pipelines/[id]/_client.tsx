@@ -253,7 +253,7 @@ export function PipelinePageClient({
    * lote, renomear etapa e dossiê.
    */
   // O funil da leitura do servidor já diz se está arquivado: sem ele, o
-  // "Novo Lead" e a `?visao=lista` apareceriam até o quadro carregar.
+  // "Novo negócio" e a `?visao=lista` apareceriam até o quadro carregar.
   const arquivado = (data?.pipeline ?? funilInicial).is_archived === true;
   /**
    * Funil arquivado só tem o quadro em leitura: nem `?visao=lista` escapa. A
@@ -384,7 +384,7 @@ export function PipelinePageClient({
           {/* Funil arquivado abre só no quadro, e o quadro é leitura (#1298):
               a Lista e o Calendário têm ações de negócio, e oferecê-las num
               funil que não recebe mais escrita seria a mesma promessa falsa
-              que o "Novo Lead" apagado. Por isso as abas nem aparecem. */}
+              que o "Novo negócio" apagado. Por isso as abas nem aparecem. */}
           {!arquivado && (
             <div className="flex items-center gap-0.5 rounded-md border bg-muted p-0.5">
               <button
@@ -441,7 +441,7 @@ export function PipelinePageClient({
               disabled={etapasIniciais.length === 0}
               className="shrink-0"
             >
-              <Plus size={16} className="mr-2" /> {t("Novo Lead")}
+              <Plus size={16} className="mr-2" /> {t("Novo negócio")}
             </Button>
           )}
         </div>
