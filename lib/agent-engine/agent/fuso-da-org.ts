@@ -36,6 +36,63 @@ import { FUSO_PADRAO, fusoValido } from '@/lib/tempo/fusos';
 import type { Queryable } from '../queue/queue';
 import type { Logger } from '../obs/logger';
 
+/** O relógio do turno E o país da organização — lidos na MESMA linha. */
+export interface RelogioDaOrganizacao {
+  /** IANA em vigor, nunca vazio (ver `fusoDaOrganizacao`). */
+  fuso: string;
+  /**
+   * ISO-3166 alpha-2 de `organizations.country`, ou `null` quando a coluna está
+   * vazia (que significa Brasil) — o país é do calendário do turno (#3877), e
+   * quem o interpreta é `perfil-do-pais.ts`.
+   */
+  pais: string | null;
+}
+
+/**
+ * As duas informações de `organizations` que o turno usa: o fuso (para o bloco
+ * `## Agora`, de sempre) e o país (para o feriado nacional, #3877).
+ *
+ * Uma query só porque o turno já lia a linha, e duas leituras da mesma linha
+ * viram duas respostas no dia em que uma ganhar fallback e a outra não — a
+ * mesma razão anotada em `perfil-do-pais.ts` e em `moeda-da-org.ts`.
+ */
+export async function fusoEPaisDaOrganizacao(
+  db: Queryable,
+  organizationId: string,
+  log?: Logger,
+): Promise<RelogioDaOrganizacao> {
+  let bruto: string | null = null;
+  let pais: string | null = null;
+  try {
+    const { rows } = await db.query<{ timezone: string | null; country: string | null }>(
+      'select timezone, country from organizations where id = $1',
+      [organizationId],
+    );
+    bruto = rows[0]?.timezone ?? null;
+    pais = rows[0]?.country ?? null;
+  } catch (err) {
+    log?.warn('não consegui ler o fuso da organização — o turno segue no padrão', {
+      fuso_padrao: FUSO_PADRAO,
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
+    });
+    // Sem a linha não há país declarado: `null` é Brasil, o valor de quem nunca
+    // trocou o campo — e é o que a coluna vazia também significa.
+    return { fuso: FUSO_PADRAO, pais: null };
+  }
+
+  const tz = bruto?.trim() ?? '';
+  const fuso = tz !== '' && fusoValido(tz) ? tz : FUSO_PADRAO;
+  if (fuso !== tz) {
+    log?.warn('fuso da organização inutilizável — o turno segue no padrão', {
+      // O valor recusado vai ao log porque é ele que diz o que corrigir na tela.
+      // Não é PII: é um código IANA de configuração, não dado de pessoa.
+      fuso_recusado: tz,
+      fuso_padrao: FUSO_PADRAO,
+    });
+  }
+  return { fuso, pais };
+}
+
 /**
  * O fuso IANA da organização, sempre utilizável.
  *
@@ -49,29 +106,5 @@ export async function fusoDaOrganizacao(
   organizationId: string,
   log?: Logger,
 ): Promise<string> {
-  let bruto: string | null = null;
-  try {
-    const { rows } = await db.query<{ timezone: string | null }>(
-      'select timezone from organizations where id = $1',
-      [organizationId],
-    );
-    bruto = rows[0]?.timezone ?? null;
-  } catch (err) {
-    log?.warn('não consegui ler o fuso da organização — o turno segue no padrão', {
-      fuso_padrao: FUSO_PADRAO,
-      error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
-    });
-    return FUSO_PADRAO;
-  }
-
-  const tz = bruto?.trim() ?? '';
-  if (tz !== '' && fusoValido(tz)) return tz;
-
-  log?.warn('fuso da organização inutilizável — o turno segue no padrão', {
-    // O valor recusado vai ao log porque é ele que diz o que corrigir na tela.
-    // Não é PII: é um código IANA de configuração, não dado de pessoa.
-    fuso_recusado: tz,
-    fuso_padrao: FUSO_PADRAO,
-  });
-  return FUSO_PADRAO;
+  return (await fusoEPaisDaOrganizacao(db, organizationId, log)).fuso;
 }
