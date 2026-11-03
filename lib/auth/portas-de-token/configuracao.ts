@@ -57,4 +57,17 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/ai/followups/enrollments",
   "/api/v1/ai/followups/promises/[id]/cancel",
   "/api/v1/ai/followups/queue",
+
+  // ai/knowledge. Quem autentica é a própria rota, por `resolveAuthDual`: token
+  // com `config:read` (GET) ou `config:write` (escrita) e papel admin
+  // (`tokenRole`). `[id]` é forma de UUID. `chave` e `provedor` seguem só de
+  // sessão e não entram de carona.
+  "/api/v1/ai/knowledge/busca",
+  "/api/v1/ai/knowledge/reindex-all",
+  "/api/v1/ai/knowledge/sources/[id]/conteudo",
+  "/api/v1/ai/knowledge/sources/[id]/reindex",
+  "/api/v1/ai/knowledge/sources/[id]",
+  "/api/v1/ai/knowledge/sources/[id]/trechos",
+  "/api/v1/ai/knowledge/sources",
+  "/api/v1/ai/knowledge/sources/upload",
 ];
