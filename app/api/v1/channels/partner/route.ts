@@ -14,8 +14,12 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * entender que não na primeira mensagem que não sai, com o lead esperando.
  *
  * A chave **nunca volta num GET**. Uma vez gravada, a tela mostra que existe,
- * não qual é. O segredo do webhook volta UMA vez, na gravação, porque o
- * operador precisa colá-lo do outro lado — depois disso, nunca mais.
+ * não qual é. O segredo do webhook volta UMA vez, na gravação, e só quando o
+ * operador precisa colá-lo do outro lado: depois de gravar, a rota registra o
+ * webhook no provedor com a própria chave, filtrado ao número, e só quando o
+ * provedor recusa (chave sem permissão de webhook) a tela volta a pedir o
+ * passo manual. A conexão por UM CLIQUE, pela conta da instalação, é a rota
+ * irmã `./um-clique`.
  */
 import { randomBytes, randomUUID } from "node:crypto";
 import type { NextRequest, NextResponse } from "next/server";
@@ -23,11 +27,15 @@ import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { audit } from "@/lib/audit";
+import { umCliqueDisponivel } from "@/lib/channels/conexao-um-clique";
 import {
   PARTNER_CHANNEL_LABEL,
   findPartnerSession,
   partnerEndpoint,
+  registrarWebhookDoNumero,
   savePartnerSession,
+  segredoAtualDoWebhook,
   validatePartnerCredentials,
 } from "@/lib/channels/connect";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -67,6 +75,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const sessao = await findPartnerSession(createAdminClient(), orgId);
   const conectado = !!sessao && !sessao.archivedAt;
+  const umClique = await umCliqueDisponivel();
 
   return ok(
     {
@@ -83,6 +92,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       endpoint: conectado ? partnerEndpoint() : null,
       webhook_url:
         conectado && sessao.webhookPathToken ? urlDoWebhook(req, sessao.webhookPathToken) : null,
+      /** A instalação tem conta no provedor: a tela oferece a conexão por um clique. */
+      um_clique: umClique,
+      pela_instalacao: conectado ? sessao.pelaInstalacao : false,
+      webhook_automatico: conectado ? sessao.webhookId !== null : false,
     },
     { requestId },
   );
@@ -113,10 +126,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!v.ok) return fail("invalid_request", v.reason, 422, { requestId });
 
   const admin = createAdminClient();
+  const existente = await findPartnerSession(admin, orgId);
+  // A conexão por um clique fala pela conta da INSTALAÇÃO, e o número está na
+  // fatura dela: gravar uma chave própria por cima deixaria esse número e o
+  // webhook dele órfãos lá. Excluir a conexão primeiro desfaz os dois.
+  if (existente && !existente.archivedAt && existente.pelaInstalacao) {
+    return fail(
+      "state_conflict",
+      t("Este número foi conectado pela instalação. Para usar a sua chave, exclua a conexão atual em Conexões antes."),
+      409,
+      { requestId },
+    );
+  }
   const chaveCifrada = await encryptWebhookSecret(admin, parsed.data.api_key);
   // Segredo do webhook: é o que autentica o que ENTRA. Sem ele a rota de entrada
-  // recusa tudo — que é o comportamento certo, mas o canal ficaria mudo.
-  const segredoWebhook = randomBytes(32).toString("hex");
+  // recusa tudo — que é o comportamento certo, mas o canal ficaria mudo. Ao
+  // reconectar, o MESMO segredo: a assinatura que já entrega continua valendo
+  // enquanto recebe o filtro, e nenhum evento se perde na troca.
+  const segredoAtual = existente ? await segredoAtualDoWebhook(admin, orgId, existente.id) : null;
+  const segredoWebhook = segredoAtual ?? randomBytes(32).toString("hex");
   const segredoCifrado = await encryptWebhookSecret(admin, segredoWebhook);
 
   if (!chaveCifrada || !segredoCifrado) {
@@ -130,7 +158,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const existente = await findPartnerSession(admin, orgId);
   // Reconectar por cima de um canal excluído RESSUSCITA a linha, e o token de
   // webhook é preservado para não invalidar o que já está colado do outro lado.
   const token = existente?.webhookPathToken ?? randomBytes(16).toString("hex");
@@ -138,11 +165,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // (Renomear), e salvar a credencial de novo não o apaga.
   const displayName = existente?.displayName || (v.displayName ?? PARTNER_CHANNEL_LABEL);
 
-  const { error } = await savePartnerSession(admin, {
+  const { error, id } = await savePartnerSession(admin, {
     organizationId: orgId,
     existingId: existente?.id ?? null,
     accountId: parsed.data.account_id.trim(),
-    apiKeyEncrypted: chaveCifrada,
+    credencial: { tipo: "propria", apiKeyEncrypted: chaveCifrada },
     webhookPathToken: token,
     webhookSecretEncrypted: segredoCifrado,
     phoneNumber: v.phoneNumber ? `+${v.phoneNumber.replace(/\D/g, "")}` : null,
@@ -155,6 +182,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return fail("internal_error", error, 500, { requestId });
   }
 
+  const webhookId = id
+    ? await registrarWebhookDoNumero(admin, {
+        organizationId: orgId,
+        sessionId: id,
+        apiKey: parsed.data.api_key,
+        accountId: parsed.data.account_id.trim(),
+        url: urlDoWebhook(req, token),
+        segredo: segredoWebhook,
+        segredoNovo: segredoAtual === null,
+      })
+    : null;
+
+  void audit({
+    action: "channel.connected",
+    actorUserId: authz.user.id,
+    organizationId: orgId,
+    resourceType: "channel_session",
+    resourceId: id,
+    requestId,
+    metadata: { canal: "parceiro", modo: "chave_propria", webhook: webhookId ? "registrado" : "manual" },
+  });
+
   return ok(
     {
       connected: true,
@@ -162,8 +211,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       display_name: displayName,
       quality_rating: v.qualityRating,
       webhook_url: urlDoWebhook(req, token),
-      // Volta UMA vez, porque o operador precisa colá-lo no provedor.
-      webhook_secret: segredoWebhook,
+      webhook_automatico: webhookId !== null,
+      // Volta UMA vez, e só quando o operador precisa colá-lo no provedor: com o
+      // webhook registrado pela rota, não há o que colar.
+      webhook_secret: webhookId ? null : segredoWebhook,
     },
     { requestId },
   );
