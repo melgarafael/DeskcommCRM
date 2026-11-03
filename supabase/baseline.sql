@@ -67504,44 +67504,62 @@ revoke execute on function public.fn_uso_de_ia(uuid, timestamptz, timestamptz, u
 grant  execute on function public.fn_uso_de_ia(uuid, timestamptz, timestamptz, uuid, text)
   to authenticated, service_role;
 
--- ---- busca do inbox sem acento (migration 9098) ----
--- manifest: A busca do Inbox passa a achar "Andréia" digitando "andreia" — e o contrário (issue #3918, fatia 1). `ILIKE` dobra a CAIXA, não o ACENTO (`lower('Á') = 'á'`, que não é `'a'`), então o termo digitado sem acento nunca encontrava o nome acentuado: no Brasil as duas grafias convivem e o cliente parecia não existir no CRM. Entra `unaccent` (extensão disponível na imagem, nunca instalada — `git grep unaccent origin/main -- supabase/` dava 0) com o wrapper `public.f_unaccent(text)` marcado `immutable`, que é o que falta no `unaccent()` da extensão (`STABLE`, porque depende do dicionário — índice e coluna gerada sobre ele falham com "functions in index expression must be marked IMMUTABLE"). A coluna `contacts.busca_sem_acento` é GERADA (`lower(public.f_unaccent(display_name, name, address_book_name))`), e não mantida por gatilho, por um motivo medido: a anonimização (LGPD) zera os campos de nome, e coluna gerada recalcula junto — gatilho que esquecesse a linha deixaria o nome antigo encontrável, que é exatamente o vazamento que a busca já evita com `is_anonymized = false`. Índice `gin_trgm_ops` para o `like '%termo%'` do handler (mesma forma do `idx_contacts_org_name_trgm` que já existe e usa `public.gin_trgm_ops`: nesta instalação as duas extensões moram em `public`). Escopo desta fatia: só a busca de CONVERSAS do inbox; Contatos, funil e seletor têm régua própria (`lib/contacts/busca-regex.ts`, #1835) e ficam fora. Idempotente: `if not exists` nas três DDLs e `create or replace` na função, então roda em install e em update.
-create extension if not exists unaccent;
-create extension if not exists pg_trgm;
+-- ---- busca do inbox sem acento, com unaccent em qualquer schema (migration 9100) ----
+-- Substitui o bloco da 9098 (#3924) neste apêndice: aquele fixava `public.unaccent`
+-- e, reaplicado a cada `update.sh`, recriava o corpo quebrado onde a extensão mora em
+-- `extensions`. Este é o estado final das duas migrations. ⚠️ ANTES da VARREDURA anon:
+-- cria função.
+-- manifest: A busca sem acento do Inbox (9098, #3924) passa a funcionar quando a extensão `unaccent` JÁ existe em outro schema — o caso do Supabase na nuvem, onde o painel liga extensões em `extensions`. A 9098 escrevia `public.unaccent('public.unaccent'::regdictionary, …)` fixo; com a extensão em `extensions` o `create extension if not exists unaccent` não faz nada, e o resultado medido num pg17 descartável foi pior que a coluna faltando: com `contacts` vazia o baseline instala com rc=0 (o `pg_dump` desliga `check_function_bodies`) e TODO insert em `contacts` passa a falhar com `text search dictionary "public.unaccent" does not exist` — a ingestão do WhatsApp para de criar contato; com `contacts` povoada o `add column` falha e o `update.sh`, sem `ON_ERROR_STOP`, segue com a tabela sem a coluna e a busca do Inbox em erro. Agora um bloco `DO` lê o schema da extensão em `pg_extension` e (re)cria `public.f_unaccent(text)` apontando para ele; a extensão só é criada (em `public`) quando não existe em lugar nenhum, e NUNCA é movida (`alter extension … set schema` quebraria quem mais depende dela). Coluna e índice vêm DEPOIS da função, então existem ao fim de todo install e update. Idempotente e auto-curativa: reaplicar redesenha a função com o schema daquele momento. Mesmo bloco, idêntico, no apêndice do `supabase/baseline.sql`, no lugar do bloco da 9098 (que recriava o corpo quebrado a cada `update.sh`).
+create extension if not exists unaccent with schema public;
+create extension if not exists pg_trgm with schema public;
 
 -- O `unaccent()` da extensão é STABLE (depende do dicionário carregado), e o
--- Postgres recusa STABLE em expressão de índice e de coluna gerada com
--- "functions in index expression must be marked IMMUTABLE". Este wrapper é a
--- forma conhecida de fechar isso: corpo de UMA expressão, `immutable`, e o
--- dicionário e a função QUALIFICADOS dentro dele — `set search_path = ''`
--- impede que um schema no caminho mude o que a função resolve (é também o que
--- o lint do Security Advisor cobra de toda função de public).
-create or replace function public.f_unaccent(p_texto text)
-returns text
-language sql
-immutable
-strict
-parallel safe
-set search_path = ''
-as $$
-  select public.unaccent('public.unaccent'::regdictionary, p_texto);
+-- Postgres recusa STABLE em expressão de índice e de coluna gerada. O wrapper
+-- `immutable` fecha isso, com função e dicionário QUALIFICADOS e
+-- `search_path = ''`.
+--
+-- O schema NÃO é fixo: é o de onde a extensão mora NESTA instalação. `public`
+-- num banco que a recebeu daqui; `extensions` num Supabase que a ligou pelo
+-- painel antes. Escrever `public.` fixo (a 9098) quebra o segundo caso — e
+-- quebra calado, porque o `pg_dump` do baseline desliga `check_function_bodies`
+-- e a função é criada sem conferir que o dicionário existe.
+do $$
+declare
+  v_schema text;
+begin
+  select n.nspname into strict v_schema
+    from pg_extension e
+    join pg_namespace n on n.oid = e.extnamespace
+   where e.extname = 'unaccent';
+
+  execute format(
+    $f$
+    create or replace function public.f_unaccent(p_texto text)
+    returns text
+    language sql
+    immutable
+    strict
+    parallel safe
+    set search_path = ''
+    as $corpo$
+      select %1$I.unaccent(%2$L::regdictionary, p_texto);
+    $corpo$
+    $f$,
+    v_schema,
+    format('%I.unaccent', v_schema)
+  );
+end
 $$;
 
--- Função nova em `public` nasce com EXECUTE para PUBLIC (Postgres) e para anon
+-- Função em `public` nasce com EXECUTE para PUBLIC (Postgres) e para anon
 -- (default privileges do baseline): as duas origens saem. `authenticated` fica
 -- porque a coluna gerada abaixo é calculada com o papel de quem grava o contato.
 revoke execute on function public.f_unaccent(text) from public, anon;
 grant  execute on function public.f_unaccent(text) to authenticated, service_role;
 
--- Coluna GERADA, e não gatilho: a anonimização (LGPD) zera `display_name`,
--- `name` e `address_book_name`, e o recálculo vem junto — uma coluna mantida à
--- mão ficaria com o nome antigo, que é justamente o que a busca evita não
--- achar depois de anonimizar (`is_anonymized = false` no handler).
---
--- `add column if not exists` reescreve a tabela UMA vez na instalação/update
--- que a aplica (`contacts` é ordem de milhares de linhas, medido em produção).
--- Em troca, a coluna não pode divergir do nome: quem escreve o nome não precisa
--- lembrar dela.
+-- Coluna GERADA (e não gatilho): a anonimização (LGPD) zera os campos de nome e
+-- o recálculo vem junto. Num banco onde a 9098 falhou ao adicioná-la, é aqui
+-- que ela nasce; onde já existe, `if not exists` não reescreve a tabela.
 alter table public.contacts
   add column if not exists busca_sem_acento text
   generated always as (
@@ -67550,10 +67568,6 @@ alter table public.contacts
     ))
   ) stored;
 
--- Trigrama para o `like '%termo%'` da busca (que sempre tem curinga dos dois
--- lados, então b-tree não serve). Padrão com menos de 3 caracteres não rende
--- trigrama nenhum e cai em varredura — o piso da rota é 2 (`PISO_DA_BUSCA`),
--- então termos de 2 letras continuam varrendo, como hoje.
 create index if not exists idx_contacts_busca_sem_acento_trgm
   on public.contacts using gin (busca_sem_acento public.gin_trgm_ops);
 
