@@ -642,7 +642,7 @@ export async function createLeadHandler(
       : camposDoCorpo;
   const settingsDaCriacao =
     opcoes.exigirCamposDaEtapa !== false || Object.keys(recorteInicial).length > 0
-      ? await settingsDoFunil(supabase, input.pipeline_id)
+      ? await settingsDoFunil(supabase, input.pipeline_id, ctx.organization_id)
       : null;
 
   // ── A OPÇÃO DO CAMPO DE SELEÇÃO (#3508) — o que veio vira o `value` ────────
@@ -997,7 +997,7 @@ export async function updateLeadHandler(
       (existing as { custom_fields?: unknown }).custom_fields,
     );
     if (Object.keys(alterados).length > 0) {
-      const settingsDoEdicao = await settingsDoFunil(supabase, existing.pipeline_id);
+      const settingsDoEdicao = await settingsDoFunil(supabase, existing.pipeline_id, ctx.organization_id);
       // ── A OPÇÃO (#3508) — a mesma régua da criação, no MESMO recorte ──────
       //
       // Só o que MUDOU é julgado (ver o bloco acima), e o que casa vira o
@@ -1404,7 +1404,7 @@ export async function moveLeadHandler(
   // porque duas réguas para a mesma regra é como o defeito nasce.
   // Vem ANTES da régua de campos, como no arrasto: um encerrado que não reabre
   // não tem campo de etapa a pedir.
-  const settings = await settingsDoFunil(supabase, lead.pipeline_id);
+  const settings = await settingsDoFunil(supabase, lead.pipeline_id, ctx.organization_id);
   {
     const recusa = recusaReabertura({
       modo: modoDeReabertura(settings),

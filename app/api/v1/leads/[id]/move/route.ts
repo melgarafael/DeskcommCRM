@@ -125,7 +125,7 @@ export async function POST(
   // Vem ANTES da régua de campos: o card encerrado não reabre, então perguntar
   // pelos campos da etapa seria abrir um diálogo para uma escrita que o 409
   // abaixo recusa de qualquer jeito.
-  const settings = await settingsDoFunil(supabase, lead.pipeline_id);
+  const settings = await settingsDoFunil(supabase, lead.pipeline_id, organizationId);
   const recusa = recusaReabertura({
     modo: modoDeReabertura(settings),
     statusAtual: (lead as { status?: string }).status,

@@ -197,6 +197,7 @@ export async function encerraDemanda(
   const settings = await settingsDoFunil(
     supabase,
     (lead as { pipeline_id: string }).pipeline_id,
+    ctx.organization_id,
   );
   const vereditoDeCampos = validaCamposExigidos({
     lead: lead as Record<string, unknown>,

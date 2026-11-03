@@ -197,7 +197,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
 
   // Só se anexa a um campo `file` do NEGÓCIO que o funil deste lead declara.
-  const settings = await settingsDoFunil(supabase, lead.pipeline_id);
+  const settings = await settingsDoFunil(supabase, lead.pipeline_id, orgId);
   const campo = camposDoFunil(settings as Record<string, unknown> | null).find(
     (c) => c.key === fieldKey,
   );

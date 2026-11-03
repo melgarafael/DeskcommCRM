@@ -331,7 +331,7 @@ export async function POST(
     // etapa que exige documento respondia 422 para sempre, e o clone nunca
     // acontecia. A cobrança volta no próximo move, no lote ou no fechamento —
     // lá `camposComAnexo` é lido do banco.
-    const settingsDoDestino = await settingsDoFunil(supabase, destino.etapa.pipeline_id);
+    const settingsDoDestino = await settingsDoFunil(supabase, destino.etapa.pipeline_id, organizationId);
     const vereditoDeCampos = validaCamposExigidos({
       lead: { custom_fields: (origem as OrigemParaClonar).custom_fields ?? {} },
       settingsDoFunil: settingsDoDestino,

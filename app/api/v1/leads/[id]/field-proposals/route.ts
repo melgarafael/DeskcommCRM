@@ -88,7 +88,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (leadErr) return fail("internal_error", leadErr.message, 500, { requestId });
   if (!lead) return fail("not_found", t("Negócio não encontrado."), 404, { requestId });
 
-  const settings = await settingsDoFunil(supabase, (lead as { pipeline_id?: string | null }).pipeline_id);
+  const settings = await settingsDoFunil(supabase, (lead as { pipeline_id?: string | null }).pipeline_id, orgId);
   // Os campos do NEGÓCIO (#2791): o do contato mora em `contacts.custom_fields`
   // e não é do card — a mesma régua do nascimento da proposta.
   const defs = camposPorEscopo(

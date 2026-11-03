@@ -341,7 +341,7 @@ export async function sincronizaEstagioDoAgente(
   // transforma em item de inbox acionável. `settingsDoFunil` é fail-open por
   // decisão escrita em `campos-exigidos.ts`: leitura indisponível = nada exigido,
   // como em todo o resto.
-  const settings = await settingsDoFunil(admin, lead.pipeline_id);
+  const settings = await settingsDoFunil(admin, lead.pipeline_id, input.organizationId);
   const etapasCandidatas = (stageRows ?? []) as Array<{
     id: string;
     is_lost?: boolean | null;

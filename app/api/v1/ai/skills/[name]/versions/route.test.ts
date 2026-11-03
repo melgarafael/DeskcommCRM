@@ -37,6 +37,7 @@ function mockAuthzOk() {
     org: { orgId: ORG_ID, name: "Org", role: "agent" },
   });
   vi.mocked(createClient).mockResolvedValue(adminStub() as never);
+  vi.mocked(createAdminClient).mockReturnValue(adminStub() as never);
   vi.mocked(validateBearerToken).mockResolvedValue(null as never);
 }
 

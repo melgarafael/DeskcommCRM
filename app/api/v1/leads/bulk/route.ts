@@ -226,7 +226,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       for (const linha of visible) {
         const funilId = (linha as { pipeline_id?: string | null }).pipeline_id ?? "";
         if (!settingsPorFunil.has(funilId)) {
-          settingsPorFunil.set(funilId, await settingsDoFunil(supabase, funilId || null));
+          settingsPorFunil.set(funilId, await settingsDoFunil(supabase, funilId || null, organizationId));
         }
       }
       let recusaDeReabertura: { codigo: string; mensagem: string } | null = null;

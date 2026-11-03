@@ -67,20 +67,29 @@ function makeAdminStub(cfg: Stubs) {
           if (col === "organization_id") isNullOrg = true;
           return b;
         },
-        in(_column: string, values: unknown[]) {
-          if (cfg.rejectNullVersionIds && values.some((value) => value === null)) {
-            return Promise.resolve({
-              data: null,
-              error: { message: "invalid input syntax for type uuid" },
-            });
-          }
-          return Promise.resolve({ data: cfg.versions ?? [], error: cfg.versionsError ?? null });
+        in(_column: string, _values: unknown[]) {
+          return b;
+        },
+        or(_expression: string) {
+          return b;
         },
         then(onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) {
           if (table === "skill_pointers" && !isNullOrg) {
             return Promise.resolve({
               data: cfg.orgPointers ?? [],
               error: cfg.orgPointersError ?? null,
+            }).then(onF, onR);
+          }
+          if (table === "skill_versions") {
+            if (cfg.rejectNullVersionIds) {
+              return Promise.resolve({
+                data: null,
+                error: { message: "invalid input syntax for type uuid" },
+              }).then(onF, onR);
+            }
+            return Promise.resolve({
+              data: cfg.versions ?? [],
+              error: cfg.versionsError ?? null,
             }).then(onF, onR);
           }
           return Promise.resolve({
