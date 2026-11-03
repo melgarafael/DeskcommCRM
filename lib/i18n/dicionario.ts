@@ -4746,6 +4746,15 @@ export const DICIONARIO: Traducoes = {
   "O cliente manda mensagem e ninguém responde. A conversa fica parada na Caixa de entrada sem aviso.": {
     es: "El cliente manda un mensaje y nadie responde. La conversación se queda parada en la Bandeja de entrada, sin aviso.",
   },
+  "Escrever o follow-up": {
+    es: "Escribir el seguimiento",
+  },
+  "Escreve as mensagens que o agente manda sozinho quando o cliente para de responder: os passos de IA dos fluxos de follow-up e os retornos que ele mesmo combinou. Sem escolha aqui, usa o modelo da versão publicada do agente.": {
+    es: "Escribe los mensajes que el agente envía por su cuenta cuando el cliente deja de responder: los pasos con IA de los flujos de seguimiento y los retornos que él mismo acordó. Si no eliges nada aquí, usa el modelo de la versión publicada del agente.",
+  },
+  "O follow-up não sai: o cliente que parou de responder não recebe a retomada, e o fluxo fica parado no passo da mensagem.": {
+    es: "El seguimiento no sale: nadie le vuelve a escribir al cliente que dejó de responder, y el flujo se queda parado en el paso del mensaje.",
+  },
   "Trabalhar o funil": {
     es: "Trabajar el embudo",
   },
@@ -7137,6 +7146,16 @@ export const DICIONARIO: Traducoes = {
   "A plataforma não informa o posicionamento de cada clique em anúncio.": {
     es: "La plataforma no informa la ubicación de cada clic en un anuncio.",
   },
+  "Provável: deduzida pelo horário do clique. A mensagem chegou sem o código do link.": {
+    es: "Probable: deducido por la hora del clic. El mensaje llegó sin el código del enlace.",
+  },
+  // Doc de decisão 259 (PR #3906): a chave da empresa, desligada de fábrica.
+  "Deduzir a origem do site pelo horário do clique": {
+    es: "Deducir el origen del sitio por la hora del clic",
+  },
+  "Quando o cliente apaga o código da mensagem, a origem se perde. Ligada, o primeiro contato novo que escrever até 10 minutos depois de um clique sem dono num link deste número recebe a origem desse clique. É um palpite, não uma prova: quem escreve na mesma hora sem ter visto o site pode receber a campanha de outra pessoa. A ficha do contato marca a origem como provável. Vem desligada.": {
+    es: "Cuando el cliente borra el código del mensaje, el origen se pierde. Activada, el primer contacto nuevo que escriba hasta 10 minutos después de un clic sin dueño en un enlace de este número recibe el origen de ese clic. Es una suposición, no una prueba: quien escribe a la misma hora sin haber visto el sitio puede recibir la campaña de otra persona. La ficha del contacto marca el origen como probable. Viene desactivada.",
+  },
   "Etapa de destino": { es: "Etapa de destino" },
   // #2065 — nós de ação do follow-up (mover lead no funil / editar tag)
   "Mover lead no funil": { es: "Mover lead en el embudo" },
@@ -8894,6 +8913,8 @@ export const DICIONARIO: Traducoes = {
   "Conexões → Templates": { es: "Conexiones → Plantillas" },
   "e envie quando a plataforma aprovar.": { es: "y envíala cuando la plataforma la apruebe." },
   "Modelo aprovado": { es: "Plantilla aprobada" },
+  "Modelo do WhatsApp": { es: "Plantilla de WhatsApp" },
+  "Opções enviadas ao cliente": { es: "Opciones enviadas al cliente" },
   "Este modelo pede": { es: "Esta plantilla pide" },
   "valor(es) e ainda não dá para preenchê-los aqui — envie por": {
     es: "valor(es) y todavía no se pueden completar aquí — envía por",

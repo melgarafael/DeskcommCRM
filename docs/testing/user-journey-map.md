@@ -2235,6 +2235,21 @@ só o que aparece sem canal conectado de verdade.
 | J57.7 | Faturamento a 390px e a 1280px | a linha do lançamento vira cartão; «Pagar» e «×» com ≥ 44×44px, dentro da tela, sem um cobrir o outro; a 1280px a linha volta a `table-row` e «Pagar» volta a texto | classe conferida (unit) `tests/unit/pagar-e-remover-sao-alvos-separados.test.tsx`; geometria a medir (CI) |
 | J57.8 | Nome da campanha no Meta Ads | a 1ª coluna e o nome dentro dela param em 9rem abaixo de `md` e voltam a 22rem acima | classe conferida (unit) `tests/unit/meta-ads-connect-rate-na-tela.test.tsx`; geometria a medir (CI) — a spec de hoje não chega à tabela: sem conta Meta no CI ela não aparece |
 
+## J62 — Escolher o modelo que escreve o follow-up `[P2]` (2026-11-03)
+
+Em Agente de IA › Provedores, grupo "Atender o cliente", o ponto **"Escrever o follow-up"**
+(`followup_turn`) mostra o modelo da versão publicada do agente enquanto ninguém escolheu outro, e
+aceita um modelo próprio (com ferramentas). Escolhido, só os follow-ups (passos de IA dos fluxos de
+silêncio e retornos combinados pelo agente) passam a usá-lo; a resposta ao cliente continua no
+modelo do agente. Quem escolhe o ponto no motor é o `kind` do job, em `executarTurnoDoAgente`; a
+prova de que o follow-up sai como `followup_turn` e a resposta como `agent_turn`, lida em
+`llm_calls`, é `tests/invariants/follow-up-usa-o-proprio-ponto.test.ts`.
+
+| # | Caso | Esperado | Estado |
+|---|---|---|---|
+| J62.1 | Abrir Provedores e o grupo "Atender o cliente" | o ponto aparece com o nome, a exigência de ferramentas e o sintoma de falha | spec `prova-painel-provedores.spec.ts` ("o follow-up tem modelo próprio…"); evidência em `evidence/modelo-do-follow-up/` quando roda |
+| J62.2 | Escolher outro modelo no ponto, gravar e recarregar | a escolha volta do banco com origem "Escolhido por você"; `agent_turn` não muda de origem | mesma spec |
+
 ## J10 — Instalação fresca com a marca do revendedor `[P0]` (receita manual)
 
 **Por que isto é receita escrita e não spec.** O lugar natural desses casos seria
@@ -3929,6 +3944,24 @@ do commit (resposta perdida, processo reiniciado) e retomada pela segunda tentat
 partir da lápide, com o 500 que não diz "nada foi apagado": medida por unidade em
 `lib/tenants/exclusao.test.ts` e `…/delete/route.test.ts`, e o inventário da lápide em
 `tests/invariants/gestao-de-tenants.test.ts`.
+
+## J60 — A mensagem que saiu por modelo diz qual e mostra as opções `[P1]` (2026-11-03)
+
+Contexto: com a janela de 24 h fechada, só sai modelo aprovado. A conversa
+mostrava o corpo como um texto qualquer — quem lia não sabia que tinha saído por
+modelo nem quais botões o cliente recebeu, e a resposta dele («Quero mudar
+algo») ficava solta. O envio passa a gravar os textos dos botões, lidos do
+espelho da definição, em `messages.metadata.template_buttons`
+(`app/api/v1/messages/_handler.ts`, `lib/messaging/botoes-do-modelo.ts`), e a
+rota de mensagens passa a devolver `template_name`/`template_language`.
+
+Spec: `tests/e2e/inbox-mensagem-por-modelo.spec.ts`.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J60.1 | Abrir uma conversa com uma mensagem por modelo e uma de texto | o balão do modelo tem o selo «Modelo do WhatsApp · <nome>» e a lista «Opções enviadas ao cliente» com os botões na ordem; o de texto, nenhum dos dois; as opções cabem no balão (`boundingBox`) | **Spec escrita, não rodada localmente** — a prova pela tela fica com o CI (`SPECS_PARTE_7`); a captura sai em `evidence/inbox-mensagem-por-modelo/` |
+| J60.2 | Enviar modelo com botões / sem espelho / texto comum com botões forjados no `metadata` | grava os botões da definição, na ordem / não grava nada e envia / não grava nada (o `metadata` de entrada não fala pelos botões) | **PASS (unit)** — `tests/unit/messages-handler-canal-intermediado.test.ts` |
+| J60.3 | Mensagem por modelo enviada antes desta versão (sem botões gravados) | só o selo, sem lista | **PASS (unit)** — `components/inbox/MessageBubble.test.tsx` |
 
 ## J50 — Reenviar uma mensagem que falhou `[P0]` (2026-10-21)
 

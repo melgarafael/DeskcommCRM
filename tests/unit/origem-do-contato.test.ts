@@ -106,3 +106,17 @@ describe("o posicionamento que não existe no clique-para-WhatsApp", () => {
     expect(r.semPosicionamentoDeAnuncio).toBe(false);
   });
 });
+
+describe("a origem deduzida pelo horário do clique", () => {
+  it("a marca da inferência chega à ficha", () => {
+    const r = origemDoContato(
+      { ad_platform: "site", utm_source: "site", origem_inferida_por: "horario" },
+      "site",
+    );
+    expect(r.inferidaPorHorario).toBe(true);
+  });
+
+  it("a origem que veio no código não é dedução", () => {
+    expect(origemDoContato({ ad_platform: "site", utm_source: "site" }, "site").inferidaPorHorario).toBe(false);
+  });
+});
