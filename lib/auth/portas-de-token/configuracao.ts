@@ -70,4 +70,29 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/ai/knowledge/sources/[id]/trechos",
   "/api/v1/ai/knowledge/sources",
   "/api/v1/ai/knowledge/sources/upload",
+
+  // ai/memory. Quem autentica é a própria rota, por `resolveAuthDual`: token
+  // com `config:read` (GET) ou `config:write` (escrita) e papel admin
+  // (`tokenRole`). `[id]` é forma de UUID.
+  "/api/v1/ai/memory",
+  "/api/v1/ai/memory/entries",
+  "/api/v1/ai/memory/entries/[id]",
+  "/api/v1/ai/memory/versions/[id]",
+
+  // ai/skills. Quem autentica é a própria rota, por `resolveAuthDual`: token
+  // com `config:read` (GET) ou `config:write` (escrita) e papel admin
+  // (`tokenRole`). `[name]` é o nome da skill (kebab-case `[a-z0-9][a-z0-9-]{0,119}`
+  // — os nomes do catálogo seguem `objecao-preco`/`agendamento` no baseline) — não é
+  // UUID, então declara classe e amostra. `import`, `install`, `restore` e o
+  // PUT de `[name]` seguem só de sessão (usam `getSkillsPool`, pg Pool cru) e
+  // não entram de carona.
+  //
+  // DECISAO: a classe do segmento e o Zod da rota (`nameSchema`) são apertados para
+  // `[a-z0-9][a-z0-9-]{0,119}` porque todos os nomes de skill no baseline e na
+  // lib seguem esse formato kebab-case (ex.: `objecao-preco`, `agendamento`). Assim
+  // irmãos literais como `import`, `install`, `restore` e `upload` não caem de
+  // carona na porta do `[name]` por engano.
+  "/api/v1/ai/skills",
+  { caminho: "/api/v1/ai/skills/[name]", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
+  "/api/v1/ai/skills/[name]/versions",
 ];

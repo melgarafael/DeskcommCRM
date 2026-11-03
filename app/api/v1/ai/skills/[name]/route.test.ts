@@ -6,6 +6,8 @@ import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fail } from "@/lib/api/wrappers";
 import type { AuthUser } from "@/lib/auth/types";
+import { createClient } from "@/lib/supabase/server";
+import { validateBearerToken } from "@/lib/mcp/auth";
 
 /**
  * Task 5 — DELETE /api/v1/ai/skills/[name]: remove SÓ o skill_pointers da org
@@ -13,8 +15,10 @@ import type { AuthUser } from "@/lib/auth/types";
  */
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+vi.mock("@/lib/mcp/auth", () => ({ validateBearerToken: vi.fn() }));
 vi.mock("@/lib/ai/skills/db", () => ({ getSkillsPool: vi.fn(() => ({})) }));
 vi.mock("@/lib/agent-engine/agent/skills", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/agent-engine/agent/skills")>();
@@ -41,6 +45,13 @@ function mockAuthzOk() {
     user,
     org: { orgId: ORG_ID, name: "Org", role: "manager" },
   });
+  // `resolveAuthDual` na sessão chama `await createClient()`. Cada teste que
+  // exercita GET ou DELETE deve sobrescrever `createClient` com o dublê
+  // específico (mesmo objeto que antes passava a `createAdminClient`).
+  vi.mocked(createClient).mockResolvedValue(
+    makeAdminGetStub({ pointer: null }) as never,
+  );
+  vi.mocked(validateBearerToken).mockResolvedValue(null as never);
 }
 
 function makeAdminStub(deletedRows: Array<{ name: string }> | null, error: unknown = null) {
@@ -87,7 +98,7 @@ describe("DELETE /api/v1/ai/skills/[name]", () => {
   it("pointer existe na org → remove, responde {name}, audita", async () => {
     mockAuthzOk();
     const stub = makeAdminStub([{ name: "frete-gratis" }]);
-    vi.mocked(createAdminClient).mockReturnValue(stub as never);
+    vi.mocked(createClient).mockResolvedValue(stub as never);
 
     const { DELETE } = await import("./route");
     const res = await DELETE(req("frete-gratis"), { params: Promise.resolve({ name: "frete-gratis" }) });
@@ -105,7 +116,7 @@ describe("DELETE /api/v1/ai/skills/[name]", () => {
 
   it("pointer não existe na org → 404, sem audit", async () => {
     mockAuthzOk();
-    vi.mocked(createAdminClient).mockReturnValue(makeAdminStub([]) as never);
+    vi.mocked(createClient).mockResolvedValue(makeAdminStub([]) as never);
 
     const { DELETE } = await import("./route");
     const res = await DELETE(req("nao-instalada"), { params: Promise.resolve({ name: "nao-instalada" }) });
@@ -159,7 +170,7 @@ const BODY_VALIDO = {
 describe("GET /api/v1/ai/skills/[name]", () => {
   it("skill instalada → devolve corpo e matcher", async () => {
     mockAuthzOk();
-    vi.mocked(createAdminClient).mockReturnValue(
+    vi.mocked(createClient).mockResolvedValue(
       makeAdminGetStub({
         pointer: { version_id: "v1", updated_at: "2026-09-19T00:00:00Z" },
         version: { id: "v1", name: "catalogo", description: "d", body: "b", matcher: { any_keywords: ["moto"] } },
@@ -175,7 +186,7 @@ describe("GET /api/v1/ai/skills/[name]", () => {
 
   it("skill não instalada → 404", async () => {
     mockAuthzOk();
-    vi.mocked(createAdminClient).mockReturnValue(makeAdminGetStub({ pointer: null }) as never);
+    vi.mocked(createClient).mockResolvedValue(makeAdminGetStub({ pointer: null }) as never);
     const { GET } = await import("./route");
     const res = await GET(reqGet("nao-instalada"), { params: Promise.resolve({ name: "nao-instalada" }) });
     expect(res.status).toBe(404);

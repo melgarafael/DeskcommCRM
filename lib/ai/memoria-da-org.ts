@@ -20,7 +20,7 @@ export type ResultadoDaPublicacao =
 export async function publicarMemoriaDaOrg(
   admin: SupabaseClient,
   orgId: string,
-  userId: string,
+  userId: string | null,
   content: string,
 ): Promise<ResultadoDaPublicacao> {
   const { data: maxRow } = await admin
