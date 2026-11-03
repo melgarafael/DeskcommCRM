@@ -19,8 +19,8 @@ async function insert(table: string, value: Record<string, unknown>) {
 async function login(page: Page, role: string) {
   const user = users.find(u => u.role === role)!;
   await page.goto("/login");
-  await page.getByLabel(/e-?mail/i).fill(user.email);
-  await page.getByLabel(/senha/i).fill(password);
+  await page.getByLabel(/e-?mail|correo/i).fill(user.email);
+  await page.getByLabel(/senha|contraseña/i).fill(password);
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/app(?:\/|$)/, { timeout: 60_000 });
 }

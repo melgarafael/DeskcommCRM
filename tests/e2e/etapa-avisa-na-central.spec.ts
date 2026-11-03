@@ -60,8 +60,8 @@ async function inserir(tabela: string, valor: Record<string, unknown>): Promise<
 
 async function entrar(page: Page): Promise<void> {
   await page.goto("/login");
-  await page.getByLabel(/e-?mail/i).fill(email);
-  await page.getByLabel(/senha/i).fill(SENHA);
+  await page.getByLabel(/e-?mail|correo/i).fill(email);
+  await page.getByLabel(/senha|contraseña/i).fill(SENHA);
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/app(?:\/|$)/, { timeout: ESPERA });
 }

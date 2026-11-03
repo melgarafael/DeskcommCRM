@@ -181,8 +181,8 @@ async function entrada(
 
 async function entrar(page: Page, f: Fixture) {
   await page.goto("/login");
-  await page.getByLabel(/e-?mail/i).fill(f.email);
-  await page.getByLabel(/senha/i).fill(senha);
+  await page.getByLabel(/e-?mail|correo/i).fill(f.email);
+  await page.getByLabel(/senha|contraseña/i).fill(senha);
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/app(?:\/|$)/, { timeout: 60_000 });
 }

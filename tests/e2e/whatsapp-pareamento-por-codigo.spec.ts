@@ -126,8 +126,8 @@ test("o código aparece; expirar o QR sem parear libera a vaga e permite retomar
     });
 
     await page.goto("/login");
-    await page.getByLabel(/e-?mail/i).fill(email);
-    await page.getByLabel(/senha/i).fill(password);
+    await page.getByLabel(/e-?mail|correo/i).fill(email);
+    await page.getByLabel(/senha|contraseña/i).fill(password);
     await page.getByRole("button", { name: "Entrar", exact: true }).click();
     await page.waitForURL(/\/app(?:\/|$)/);
 

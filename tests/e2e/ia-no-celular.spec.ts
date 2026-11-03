@@ -279,8 +279,8 @@ test.afterAll(async () => {
 test("[P1] o gestor pausa o agente, abre o aviso e acompanha a IA pelo celular", async ({ page }) => {
   mkdirSync(EVIDENCIA, { recursive: true });
   await page.goto("/login");
-  await page.getByLabel(/e-?mail/i).fill(semente.email);
-  await page.getByLabel(/senha/i).fill(senha);
+  await page.getByLabel(/e-?mail|correo/i).fill(semente.email);
+  await page.getByLabel(/senha|contraseña/i).fill(senha);
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/app(?:\/|$)/, { timeout: 60_000 });
   // Sem toque emulado o `pointer-coarse:` não vale, e o caso mediria o mouse.

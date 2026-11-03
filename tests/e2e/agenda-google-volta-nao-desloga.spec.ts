@@ -69,8 +69,8 @@ async function entrar(page: Page, creds: Creds) {
   const usuario = creds.users.manager;
   if (!usuario) throw new Error(".e2e-creds.json sem o usuário `manager`");
   await page.goto("/login");
-  await page.getByLabel(/e-?mail/i).fill(usuario.email);
-  await page.getByLabel(/senha/i).fill(creds.password);
+  await page.getByLabel(/e-?mail|correo/i).fill(usuario.email);
+  await page.getByLabel(/senha|contraseña/i).fill(creds.password);
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/app(\/|$)/, { timeout: 20_000 });
 }

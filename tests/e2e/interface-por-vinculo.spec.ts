@@ -11,8 +11,8 @@ const password = `Local-${randomUUID()}!`;
 const evidence = "evidence/comunidade-360";
 async function login(page: Page, email: string) {
   await page.goto("/login");
-  await page.getByLabel(/e-?mail/i).fill(email);
-  await page.getByLabel(/senha/i).fill(password);
+  await page.getByLabel(/e-?mail|correo/i).fill(email);
+  await page.getByLabel(/senha|contraseña/i).fill(password);
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/app\//, { timeout: 60_000 });
 }

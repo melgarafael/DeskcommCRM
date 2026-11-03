@@ -225,8 +225,8 @@ test("sete combinações e edição de áudio no teto5 conservam bytes e snapsho
     await inserir("messages", { organization_id: org, contact_id: contato, conversation_id: conversa, channel_session_id: canal,
       direction: "inbound", type: "text", status: "received", body: "Contexto sintético de respostas", sent_via: "external_device" });
     await navegar("/login");
-    await page.getByLabel(/e-?mail/i).fill(email);
-    await page.getByLabel(/senha/i).fill(senha);
+    await page.getByLabel(/e-?mail|correo/i).fill(email);
+    await page.getByLabel(/senha|contraseña/i).fill(senha);
     await page.getByRole("button", { name: "Entrar", exact: true }).click();
     await page.waitForURL(/\/app(\/|$)/);
     recibo.preparoMs = Math.round(performance.now() - inicio);

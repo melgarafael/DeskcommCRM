@@ -164,8 +164,8 @@ async function inbound(
 async function login(page: Page, email: string) {
   await page.context().clearCookies();
   await page.goto("/login");
-  await page.getByLabel(/e-?mail/i).fill(email);
-  await page.getByLabel(/senha/i).fill(password);
+  await page.getByLabel(/e-?mail|correo/i).fill(email);
+  await page.getByLabel(/senha|contraseña/i).fill(password);
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/app(?:\/|$)/, { timeout: 60000 });
 }

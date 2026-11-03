@@ -27,7 +27,7 @@ test.describe("auth flow", () => {
     await expect(page.locator("#password")).toBeFocused();
     await page.keyboard.press("Tab");
     // O botão de mostrar a senha fica no Tab de propósito: quem usa só o teclado precisa alcançá-lo.
-    await expect(page.getByRole("button", { name: "Mostrar senha" })).toBeFocused();
+    await expect(page.getByRole("button", { name: /mostrar (senha|contraseña)/i })).toBeFocused();
     await page.keyboard.press("Tab");
     // Next focusable is the submit button
     const submit = page.getByRole("button", { name: "Entrar", exact: true });

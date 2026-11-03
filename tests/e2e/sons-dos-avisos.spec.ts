@@ -71,8 +71,8 @@ function wav(): Buffer {
 
 async function entrar(page: Page, quem: keyof typeof usuarios): Promise<void> {
   await page.goto("/login");
-  await page.getByLabel(/e-?mail/i).fill(usuarios[quem].email);
-  await page.getByLabel(/senha/i).fill(SENHA);
+  await page.getByLabel(/e-?mail|correo/i).fill(usuarios[quem].email);
+  await page.getByLabel(/senha|contraseña/i).fill(SENHA);
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await page.waitForURL(/\/app(?:\/|$)/, { timeout: ESPERA });
 }
