@@ -214,6 +214,7 @@ import {
 // #3333 — o predicado único do efeito, do lado de quem PERGUNTA. Do lado de quem RESPONDE é
 // a ponte das tools MCP (`lib/ai/runtime/tools.ts`), que recebe este mesmo coletor.
 import { criarEfeitoDasEscrituras } from '@/lib/ai/runtime/efeito-das-escritas';
+import { conferirRecibosDeAgendamento, type EvidenciaDeAgendamento } from '@/lib/ai/runtime/recibos-de-agendamento';
 import { ferramentasDeRegistroDoAgente } from '../guardrails/registro-sem-efeito';
 import { colherDaFerramenta } from '../guardrails/horario-da-agenda';
 import { isStatusSendable } from '../../channels/meta/template-binding';
@@ -231,7 +232,7 @@ import {
   criarEvidenciasComerciaisDoTurno,
 } from '../guardrails/promise/evidencias-comerciais';
 import { criarRecuperadorDeEvidencias } from '../guardrails/promise/recuperar-evidencias';
-import { classifyPromise, memoizarPorCandidata } from '../guardrails/promise/semantic';
+import { classifyPromise, memoizarPorCandidata, protegerRevisaoDeAgendamento } from '../guardrails/promise/semantic';
 import { montarContextoDaRevisao } from '../guardrails/promise/contexto-da-revisao';
 import { expectativaDeAtendimento } from '@/lib/escalacao/disponibilidade';
 import {
@@ -3589,6 +3590,8 @@ async function executarTurnoDoAgente(
     return [];
   });
   const evidenciasComerciais = criarEvidenciasComerciaisDoTurno(fontesQueProvamOferta);
+  const efeitosDoTurno = criarEfeitoDasEscrituras();
+  let evidenciasDeAgendamento: EvidenciaDeAgendamento[] = [];
   const recuperarEvidencias = criarRecuperadorDeEvidencias(pool, {
     tenantId,
     fontes: fontesQueProvamOferta,
@@ -3613,6 +3616,7 @@ async function executarTurnoDoAgente(
           {
             candidate,
             commercialEvidence: evidenciasComerciais.ler(candidate),
+            bookingEvidence: evidenciasDeAgendamento,
             conversationContext: montarContextoDaRevisao(
               effectiveContext.messages, effectivePrevious?.rolling_summary,
               (deps.clock?.() ?? new Date()).toISOString(), fusoDaOrg,
@@ -3623,12 +3627,28 @@ async function executarTurnoDoAgente(
         ),
         // As evidências crescem entre o veto e o reenvio; o veredito de antes
         // da consulta não vale para a mesma frase depois dela.
-        () => evidenciasComerciais.contexto(),
+        () => JSON.stringify([evidenciasComerciais.contexto(), evidenciasDeAgendamento]),
       )
     : undefined;
   const semanticClassifier = classificadorMemoizado === undefined ? undefined : async (candidate: string) => {
     await recuperarEvidencias(candidate);
-    return classificadorMemoizado(candidate);
+    const recibos = efeitosDoTurno.recibosDeAgendamento();
+    return protegerRevisaoDeAgendamento(async () => {
+      const geracaoDaAgenda = efeitosDoTurno.geracaoDeAgendamento();
+      evidenciasDeAgendamento = await conferirRecibosDeAgendamento(
+        deps.crmCfg.supabase, { organizationId: tenantId, contactId: leadId || null }, recibos,
+      ).catch(() => {
+        runLog.warn('recibos da agenda indisponíveis — nenhuma confirmação comprovada', {
+          event: 'booking_evidence_lookup_failed',
+        });
+        return [];
+      });
+      // Uma mutação pode ter começado enquanto a leitura aguardava o banco.
+      if (geracaoDaAgenda !== efeitosDoTurno.geracaoDeAgendamento()) {
+        evidenciasDeAgendamento = [];
+      }
+      return classificadorMemoizado(candidate);
+    }, () => efeitosDoTurno.geracaoDeAgendamento(), () => recibos.length > 0)(candidate);
   };
   // Conferência de fato (#2231): a TERCEIRA camada do before_send, depois da
   // F4-01/F4-02. A evidência é lida NA HORA (nasce no meio do turno) e a
@@ -3777,7 +3797,6 @@ async function executarTurnoDoAgente(
   //
   // `active`/`ferramentas` no molde do `agenda` logo abaixo: a família é única
   // (`ESCRITAS_QUE_REGISTRAM_O_INTERESSE`) e o veto só nomeia ferramenta que o agente TEM.
-  const efeitosDoTurno = criarEfeitoDasEscrituras();
   const registroDoTurno = (): NonNullable<GateContext['registro']> => {
     const ferramentas =
       agentConfig === null ? [] : ferramentasDeRegistroDoAgente(agentConfig.toolIds);
