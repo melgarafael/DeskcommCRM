@@ -36,6 +36,7 @@ import { blocoVozVendedor, personalizacaoDaOrganizacao } from "./personalizar";
 import { campaignConfigSchema, type OfertaDaCampanha } from "./schema";
 import { prepararCandidatos } from "./preparo";
 import { provedoresQueConferemNumero } from "@/lib/channels";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { CanalReconectandoError, ProspectingError } from "./provider";
 // O carimbo do pedido da prospecção: `prospecting:` — nunca `rule:` (#3072).
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
@@ -660,8 +661,9 @@ const ORGS_COM_PREPARO_PENDENTE =
   "and ((c.data->'site' is not null and not coalesce((c.data->'site'->>'provisorio')::boolean, false)) " +
   "or (c.data->'site' is null and nullif(trim(c.data->>'website'), '') is null))) " +
   // (c) WhatsApp por conferir (`whatsapp.ts`): telefone sem veredito, e uma conexão
-  // conectada cujo canal sabe perguntar ($1 = `provedoresQueConferemNumero()`). Sem ela
-  // a organização NÃO entra — senão voltaria toda rodada para nada.
+  // conectada cujo canal sabe perguntar ($1 = `provedoresQueConferemNumero()`, ou vazio
+  // com o módulo `conferir_whatsapp` desligado). Sem ela a organização NÃO entra —
+  // senão voltaria toda rodada para nada.
   "or (nullif(trim(c.data->>'phone'), '') is not null and c.data->'whatsapp' is null " +
   "and exists (select 1 from channel_sessions s where s.organization_id=pc.organization_id " +
   "and s.provider = any($1::text[]) and s.status='WORKING' and s.archived_at is null)))) " +
@@ -689,9 +691,11 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requ
   // Fail-open: se ela falhar, as organizações que já rodam seguem como antes.
   let apenasPreparo: string[] = [];
   try {
+    // Módulo desligado (o padrão): lista vazia, e o ramo (c) não seleciona ninguém.
+    const conferir = await moduloLigado(admin, "conferir_whatsapp");
     apenasPreparo = (
       await pool.query<{ organization_id: string }>(ORGS_COM_PREPARO_PENDENTE, [
-        provedoresQueConferemNumero(),
+        conferir ? provedoresQueConferemNumero() : [],
       ])
     ).rows.map((r) => r.organization_id);
   } catch (error) {

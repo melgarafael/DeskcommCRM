@@ -556,11 +556,22 @@ describe("F) auditoria prospecting.previews_generated", () => {
 });
 
 describe("Passo 0 — o WhatsApp vem antes do site e da prévia (whatsapp.ts)", () => {
-  const rodarCom = (pool: unknown, consultaWhatsapp: unknown) =>
+  const rodarCom = (pool: unknown, consultaWhatsapp: unknown, ligado = true) =>
     prepararCandidatos(pool as never, {} as never, ORG, "req-1", Date.now() + 60_000, {
+      conferirWhatsapp: async () => ligado,
       consultaWhatsapp: consultaWhatsapp as never,
       dormir: async () => {},
     });
+
+  it("módulo conferir_whatsapp desligado (o padrão): nenhuma consulta sai, e o preparo segue igual", async () => {
+    const { pool, sqls } = montar({ candidatos: { [C1]: [cand("w1", { phone: "+5511987650001" })] } });
+    const consulta = vi.fn(async () => async () => true);
+    const r = await rodarCom(pool, consulta, false);
+    expect(consulta).not.toHaveBeenCalled();
+    expect(r.whatsapp).toBe(0);
+    expect(sqls.some((s) => s.sql.includes("'whatsapp'"))).toBe(false);
+    expect(r.previas).toBe(1);
+  });
 
   it("confere pela conexão DA CAMPANHA, grava o veredito e só depois verifica sites", async () => {
     const { pool, sqls } = montar({

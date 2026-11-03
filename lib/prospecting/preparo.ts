@@ -44,6 +44,7 @@ import type pg from "pg";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { audit } from "@/lib/audit";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
 import { configPadraoDaOrganizacao, type ConfigPadrao } from "./config-padrao";
 import { personalizacaoDaOrganizacao } from "./personalizar";
@@ -89,10 +90,15 @@ type CandidatoDoPreparo = {
 
 /** O que o preparo pede de fora — trocável nos testes (a plataforma real não entra lá). */
 export interface DependenciasDoPreparo {
+  /** O módulo `conferir_whatsapp` (`lib/instalacao/modulos.ts`), desligado por padrão. */
+  conferirWhatsapp: (admin: SupabaseClient) => Promise<boolean>;
   consultaWhatsapp: typeof consultaPelaConexao;
   dormir?: (ms: number) => Promise<void>;
 }
-const DEPENDENCIAS_PADRAO: DependenciasDoPreparo = { consultaWhatsapp: consultaPelaConexao };
+const DEPENDENCIAS_PADRAO: DependenciasDoPreparo = {
+  conferirWhatsapp: (admin) => moduloLigado(admin, "conferir_whatsapp"),
+  consultaWhatsapp: consultaPelaConexao,
+};
 
 /** A chave NÃO é a do `withProspectingLock` (`prospecting:<org>`): bloqueios independentes. */
 const chaveDoBloqueio = (org: string) => `prospecting:${org}:preparo`;
@@ -115,12 +121,12 @@ const mensagemDe = (error: unknown) =>
   (error instanceof Error ? error.message : String(error)).slice(0, 200);
 
 /**
- * `_admin` acompanha a assinatura do tick (todo passo do worker recebe o cliente
- * de serviço), mas o preparo não o usa: a geração fala com o modelo pelo `pool`.
+ * `admin` só lê se o módulo `conferir_whatsapp` está ligado: a geração fala com o
+ * modelo pelo `pool`.
  */
 export async function prepararCandidatos(
   pool: pg.Pool,
-  _admin: SupabaseClient,
+  admin: SupabaseClient,
   org: string,
   requestId: string,
   deadline: number,
@@ -142,7 +148,7 @@ export async function prepararCandidatos(
       resumo.pulou = true;
       return resumo;
     }
-    await trabalhar(db, pool, org, requestId, deadline, resumo, deps);
+    await trabalhar(db, pool, admin, org, requestId, deadline, resumo, deps);
   } catch (error) {
     logger.error("[prospecting.preparo] rodada falhou", {
       organization_id: org,
@@ -167,6 +173,7 @@ export async function prepararCandidatos(
 async function trabalhar(
   db: pg.PoolClient,
   pool: pg.Pool,
+  admin: SupabaseClient,
   org: string,
   requestId: string,
   deadline: number,
@@ -183,9 +190,13 @@ async function trabalhar(
 
   // Passo 0 — o WhatsApp: o telefone da empresa tem WhatsApp? Vem ANTES de tudo
   // porque decide quem sai da lista — e quem sai não deve gastar verificação de
-  // site nem, sobretudo, prévia de IA. Pela conexão da campanha (ou qualquer uma
-  // conectada que saiba perguntar); sem ela, o passo não faz nada e o resto segue igual.
-  let restanteDeWhatsapp = TETO_DE_WHATSAPP_POR_RODADA;
+  // site nem, sobretudo, prévia de IA. Pela conexão da campanha, se ela escolheu uma
+  // (senão qualquer uma conectada que saiba perguntar); sem ela, o passo não faz nada
+  // e o resto segue igual.
+  // Só com o módulo `conferir_whatsapp` ligado: quem pergunta é o número do cliente,
+  // e consulta em massa é risco de banimento que ninguém mediu (#3887).
+  const conferir = campanhas.length > 0 && (await deps.conferirWhatsapp(admin));
+  let restanteDeWhatsapp = conferir ? TETO_DE_WHATSAPP_POR_RODADA : 0;
   const consultas = new Map<string, ConsultaWhatsapp | null>();
   for (const c of campanhas) {
     if (restanteDeWhatsapp <= 0 || Date.now() >= deadline) break;
