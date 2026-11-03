@@ -10,7 +10,7 @@ describe("papel único nos helpers de visibilidade", () => {
     const lines = sql(source).split("\n").filter((line) => line.startsWith("{"));
     expect(lines).toHaveLength(1);
     const result = JSON.parse(lastLine(lines.join("\n"))) as { checks: number; failures: number; failed_labels: string[] };
-    expect(result.checks).toBe(44);
+    expect(result.checks).toBe(116);
     expect(result.failed_labels).toEqual([]);
     expect(result.failures).toBe(0);
   });
