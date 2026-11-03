@@ -231,6 +231,15 @@ export function motivoParaNaoLigar(
   return null;
 }
 
+/**
+ * Resultado de LIGAÇÃO só existe para quem pode receber ligação. A rota de resultado e a tela
+ * (seletor, atalhos e Salvar) leem esta mesma resposta. "Tirado da fila" não é resultado de
+ * ligação e não passa por aqui.
+ */
+export function aceitaResultadoDaLigacao(naoLigar: MotivoParaNaoLigar | null | undefined): boolean {
+  return !naoLigar;
+}
+
 /** O motivo como a tela o escreve (chave de `t()`). */
 export const ROTULO_DE_NAO_LIGAR: Record<MotivoParaNaoLigar, string> = {
   bloqueado: "Pediu para não ser incomodado",

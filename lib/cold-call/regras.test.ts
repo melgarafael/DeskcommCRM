@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  aceitaResultadoDaLigacao,
   caminhoDaLigacao,
   comoTerminou,
   configDoFunil,
@@ -193,5 +194,15 @@ describe("quem pediu para não ser incomodado não recebe ligação", () => {
   it("sem motivo, os dois caminhos seguem como antes", () => {
     expect(caminhoDaLigacao(conectado, "contato", null)).toBe("crm");
     expect(caminhoDaLigacao(semVoz, "contato", null)).toBe("discador");
+  });
+});
+
+describe("resultado de ligação só para quem recebe ligação", () => {
+  it("os três estados recusam; contato comum aceita", () => {
+    expect(aceitaResultadoDaLigacao("bloqueado")).toBe(false);
+    expect(aceitaResultadoDaLigacao("pessoal")).toBe(false);
+    expect(aceitaResultadoDaLigacao("anonimizado")).toBe(false);
+    expect(aceitaResultadoDaLigacao(null)).toBe(true);
+    expect(aceitaResultadoDaLigacao(undefined)).toBe(true);
   });
 });

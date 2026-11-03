@@ -25,6 +25,7 @@ import { apiClient } from "@/lib/api/client";
 import { copyToClipboard } from "@/lib/clipboard";
 import { ROLE_RANK } from "@/lib/auth/types";
 import {
+  aceitaResultadoDaLigacao,
   caminhoDaLigacao,
   comoTerminou,
   ETAPAS_DA_FILA,
@@ -137,6 +138,51 @@ function Iniciais({ nome, tamanho = "size-8" }: { nome: string; tamanho?: string
     >
       {iniciais(nome)}
     </span>
+  );
+}
+
+/**
+ * O resultado da ligação, na coluna do contato. Para quem não recebe ligação (bloqueado,
+ * pessoal, anonimizado) ele fica desabilitado e diz por quê: o servidor recusaria com 403.
+ */
+export function SeletorDoResultado({
+  valor,
+  aoMudar,
+  naoLigar,
+}: {
+  valor: ResultadoDaLigacao | null;
+  aoMudar: (resultado: ResultadoDaLigacao | null) => void;
+  naoLigar: MotivoParaNaoLigar | null;
+}) {
+  const t = useT();
+  const aceita = aceitaResultadoDaLigacao(naoLigar);
+  return (
+    <>
+      <label className="mt-3 block text-xs text-text-muted" htmlFor="resultado-cold-call">
+        {t("Resultado Cold Call")}
+      </label>
+      <select
+        id="resultado-cold-call"
+        value={aceita ? (valor ?? "") : ""}
+        disabled={!aceita}
+        aria-describedby={naoLigar ? "resultado-cold-call-motivo" : undefined}
+        onChange={(e) => aoMudar((e.target.value || null) as ResultadoDaLigacao | null)}
+        className="mt-1 h-10 w-full rounded-xl border border-border bg-surface-elevated/40 px-2 text-sm text-text outline-hidden transition-colors focus:border-accent disabled:opacity-50"
+        data-testid="resultado-cold-call"
+      >
+        <option value="">--</option>
+        {RESULTADOS_DA_LIGACAO.map((id) => (
+          <option key={id} value={id}>
+            {t(RESULTADOS[id].rotulo)}
+          </option>
+        ))}
+      </select>
+      {naoLigar && (
+        <p id="resultado-cold-call-motivo" className="mt-1 text-xs font-medium text-error" data-testid="motivo-sem-resultado">
+          {t("Não ligar")} · {t(ROTULO_DE_NAO_LIGAR[naoLigar])}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -338,7 +384,9 @@ function Fila({
           </button>
         </nav>
         <div className="ml-auto">
-          <ImportarLeads funis={[funil]} />
+          {/* O QueryClient não refaz a consulta no foco, e o staleTime é de 30 s: sem isto a fila
+              seguia "(0)" depois de importar, até recarregar a página. */}
+          <ImportarLeads funis={[funil]} onImportado={() => void qc.invalidateQueries({ queryKey: CHAVE })} />
         </div>
       </header>
 
@@ -533,7 +581,8 @@ function Fila({
                           title={t("Tirar da fila")}
                           aria-label={`${t("Tirar da fila")}: ${lead.titulo}`}
                           onClick={() => setRemovendo(lead)}
-                          className="rounded-md p-1 text-text-muted hover:text-error"
+                          // 44 px de alvo no celular, como o Button size="icon"; compacto só a partir de lg.
+                          className="flex size-11 items-center justify-center rounded-md text-text-muted hover:text-error lg:size-8"
                         >
                           <Trash size={17} aria-hidden />
                         </button>
@@ -758,7 +807,7 @@ function Sessao({
   });
 
   const seguir = () => {
-    if (resultado) salvar.mutate(resultado);
+    if (resultado && aceitaResultadoDaLigacao(lead?.nao_ligar)) salvar.mutate(resultado);
     else proximo();
   };
 
@@ -922,23 +971,7 @@ function Sessao({
                 </span>
               </p>
             </div>
-            <label className="mt-3 block text-xs text-text-muted" htmlFor="resultado-cold-call">
-              {t("Resultado Cold Call")}
-            </label>
-            <select
-              id="resultado-cold-call"
-              value={resultado ?? ""}
-              onChange={(e) => setResultado((e.target.value || null) as ResultadoDaLigacao | null)}
-              className="mt-1 h-10 w-full rounded-xl border border-border bg-surface-elevated/40 px-2 text-sm text-text outline-hidden transition-colors focus:border-accent"
-              data-testid="resultado-cold-call"
-            >
-              <option value="">--</option>
-              {RESULTADOS_DA_LIGACAO.map((id) => (
-                <option key={id} value={id}>
-                  {t(RESULTADOS[id].rotulo)}
-                </option>
-              ))}
-            </select>
+            <SeletorDoResultado valor={resultado} aoMudar={setResultado} naoLigar={lead.nao_ligar} />
             <p className="mt-2 text-xs tabular-nums text-text-muted">
               {t("Tentativas")}: {lead.tentativas}
             </p>
@@ -1151,7 +1184,7 @@ function Sessao({
                     key={id}
                     type="button"
                     aria-pressed={resultado === id}
-                    disabled={!!lead.nao_ligar}
+                    disabled={!aceitaResultadoDaLigacao(lead.nao_ligar)}
                     onClick={() => setResultado(resultado === id ? null : id)}
                     data-testid={`resultado-${id}`}
                     className={cn(
@@ -1187,7 +1220,7 @@ function Sessao({
             <Button
               className="flex-1 transition-transform active:scale-[.98]"
               onClick={() => resultado && salvar.mutate(resultado)}
-              disabled={!resultado || salvar.isPending}
+              disabled={!resultado || salvar.isPending || !aceitaResultadoDaLigacao(lead.nao_ligar)}
               data-testid="salvar-e-seguir"
             >
               <Check size={16} className="mr-2" aria-hidden /> {t("Salvar")}
