@@ -44,6 +44,14 @@ export const dynamic = "force-dynamic";
 const COLUNAS =
   "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, created_at, updated_at, lead:crm_leads(id, title)";
 
+/**
+ * Com o filtro de funil o `lead` vira INNER JOIN: o PostgREST só filtra pela coluna de um
+ * recurso embutido se o embutido for obrigatório; com o join comum a tarefa de outro funil
+ * continuaria na lista, só que com `lead: null`. Sem o filtro a consulta é a de sempre — o
+ * join obrigatório esconderia as tarefas soltas (sem negócio), que são caso real.
+ */
+const COLUNAS_NO_FUNIL = COLUNAS.replace("lead:crm_leads(", "lead:crm_leads!inner(");
+
 const criacaoSchema = z.object({
   title: z.string().trim().min(1).max(255),
   description: z.string().max(5000).nullable().optional(),
@@ -79,6 +87,13 @@ const listaSchema = z.object({
    * da sessão e a RLS segura o resto.
    */
   assigned_to: z.union([z.literal("me"), z.literal("ninguem"), z.string().uuid()]).optional(),
+  /**
+   * Só as tarefas de negócios DESTE funil (`crm_leads.pipeline_id`). A tarefa não tem funil
+   * próprio: ela herda o do negócio a que está presa, então tarefa solta fica de fora quando
+   * o filtro está ligado. Um id de outra organização não devolve nada — o `organization_id`
+   * da consulta e a RLS continuam valendo.
+   */
+  pipeline_id: z.string().uuid().optional(),
 });
 
 export async function GET(req: NextRequest): Promise<Response> {
@@ -103,7 +118,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   // (que bypassa RLS) o filtro já está aqui.
   let query = supabase
     .from("crm_tasks")
-    .select(COLUNAS)
+    .select(filtros.pipeline_id ? COLUNAS_NO_FUNIL : COLUNAS)
     .eq("organization_id", authz.org.orgId)
     .order("due_date", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false })
@@ -120,6 +135,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (filtros.assigned_to === "me") query = query.eq("assigned_to", authz.user.id);
   else if (filtros.assigned_to === "ninguem") query = query.is("assigned_to", null);
   else if (filtros.assigned_to) query = query.eq("assigned_to", filtros.assigned_to);
+  if (filtros.pipeline_id) query = query.eq("lead.pipeline_id", filtros.pipeline_id);
 
   const { data, error } = await query;
   if (error) {
