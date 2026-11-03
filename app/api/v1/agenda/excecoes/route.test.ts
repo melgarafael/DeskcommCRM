@@ -159,3 +159,74 @@ describe("POST /api/v1/agenda/excecoes", () => {
     expect(deps.criarClientDeSessao).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Uma consulta encadeável do supabase-js: todo filtro devolve a própria
+ * consulta, e o `await` resolve para o resultado da tabela.
+ */
+function consulta(resultado: { data: unknown; error?: unknown }) {
+  const q: Record<string, unknown> = {};
+  for (const m of ["select", "eq", "in", "order", "limit", "gte", "lte"]) q[m] = () => q;
+  q.maybeSingle = async () => ({ data: resultado.data, error: resultado.error ?? null });
+  q.then = (ok: (v: unknown) => unknown, erro: (e: unknown) => unknown) =>
+    Promise.resolve({ data: resultado.data, error: resultado.error ?? null }).then(ok, erro);
+  return q;
+}
+
+function clientQueLista(tabelas: Record<string, { data: unknown; error?: unknown }>) {
+  return { from: (tabela: string) => consulta(tabelas[tabela] ?? { data: null }) };
+}
+
+const LINHAS = [
+  { id: "f1", user_id: EU, exception_date: "2026-11-03", is_unavailable: true, start_minute: 840, end_minute: 900, reason: "Banco" },
+  { id: "f2", user_id: COLEGA, exception_date: "2026-11-03", is_unavailable: true, start_minute: 840, end_minute: 900, reason: null },
+];
+
+describe("GET /api/v1/agenda/excecoes — os instantes para a grade", () => {
+  it("cada linha ganha comeca/termina no fuso da JORNADA da pessoa, e o da organização sem jornada", async () => {
+    deps.criarClientDeSessao.mockResolvedValue(
+      clientQueLista({
+        calendar_availability_exceptions: { data: LINHAS },
+        // Só EU tem jornada (em Tóquio); o COLEGA não tem linha nenhuma.
+        attendant_availability: { data: [{ user_id: EU, schedule: { timezone: "Asia/Tokyo", windows: [] } }] },
+        organizations: { data: { timezone: "America/Sao_Paulo" } },
+      }),
+    );
+    const { GET } = await import("./route");
+    const r = await GET(new NextRequest("http://localhost/x?de=2026-11-01&ate=2026-11-08"));
+    const corpo = (await r.json()) as { data: Array<Record<string, unknown>> };
+
+    expect(r.status).toBe(200);
+    expect(corpo.data).toEqual([
+      // Os campos que a lista já lia seguem iguais; os instantes são acréscimo.
+      { ...LINHAS[0], comeca: "2026-11-03T05:00:00.000Z", termina: "2026-11-03T06:00:00.000Z" },
+      { ...LINHAS[1], comeca: "2026-11-03T17:00:00.000Z", termina: "2026-11-03T18:00:00.000Z" },
+    ]);
+  });
+
+  it("falha ao ler as jornadas não derruba a lista: cai no fuso da organização", async () => {
+    deps.criarClientDeSessao.mockResolvedValue(
+      clientQueLista({
+        calendar_availability_exceptions: { data: [LINHAS[0]] },
+        attendant_availability: { data: null, error: { message: "boom" } },
+        organizations: { data: { timezone: "America/Sao_Paulo" } },
+      }),
+    );
+    const { GET } = await import("./route");
+    const r = await GET(new NextRequest("http://localhost/x"));
+    const corpo = (await r.json()) as { data: Array<Record<string, unknown>> };
+
+    expect(r.status).toBe(200);
+    expect(corpo.data[0]).toMatchObject({ id: "f1", comeca: "2026-11-03T17:00:00.000Z" });
+  });
+
+  it("lista vazia não consulta jornada nenhuma", async () => {
+    const from = vi.fn((t: string) => consulta(t === "calendar_availability_exceptions" ? { data: [] } : { data: null }));
+    deps.criarClientDeSessao.mockResolvedValue({ from });
+    const { GET } = await import("./route");
+    const r = await GET(new NextRequest("http://localhost/x"));
+
+    expect(((await r.json()) as { data: unknown[] }).data).toEqual([]);
+    expect(from.mock.calls.map((c) => c[0])).toEqual(["calendar_availability_exceptions"]);
+  });
+});
