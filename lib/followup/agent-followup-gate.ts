@@ -18,6 +18,28 @@
  * Task 8.6: quando o grafo pede IA, o consumidor precisa saber QUAL agente
  * pinar. `resolveAgentForAutomaticTrigger` devolve o agent_id — menor uuid
  * se >1 agente publicado habilita o mesmo pointer.
+ *
+ * ─── O canal da conversa (#3852) ──────────────────────────────────────────
+ *
+ * Com dois números, cada um com seu agente, a escolha por ponteiro só pegava
+ * lead que conversou no número do OUTRO agente e escrevia com a persona
+ * errada. `decidirAgenteDoEnrollmentAutomatico` aceita, como ÚLTIMO parâmetro
+ * OPCIONAL, o canal da conversa (`conversations.channel_session_id`); quando
+ * ele vem, os candidatos são só os agentes armando o ponteiro E publicados
+ * naquele número (`ai_agent_versions.channel_session_id` — a mesma coluna que
+ * o roteamento de entrada lê, `lib/ai/agents/quem-atende-a-sessao.ts`).
+ *
+ * Sem o parâmetro, a decisão é EXATAMENTE a de antes: todos os agentes que
+ * armam o ponteiro, menor uuid vence. É o que mantém compatível a tela de
+ * etapas (`fluxos-da-etapa.ts`, pergunta por ORGANIZAÇÃO, não por número) e o
+ * enrollment manual (`enroll.ts`, escolha explícita de um humano).
+ *
+ * Canal conhecido e sem candidato NÃO cai no agente de outro número: a
+ * resolução devolve `null` e `agenteDoGatilhoAutomatico` decide — fluxo que
+ * pede IA é BARRADO (não inscreve), fluxo de texto fixo segue com `agent_id`
+ * nulo, como já era. Inscrever sem agente um fluxo de IA entregaria turno sem
+ * persona; escolher o agente do outro número é o defeito que este parâmetro
+ * fecha.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -101,8 +123,10 @@ export async function decidirAgenteDoEnrollmentAutomatico(
   orgId: string,
   pointerId: string,
   pedeAgente: boolean,
+  /** Canal da conversa (`conversations.channel_session_id`). Ausente/nulo = decisão por organização, a de sempre. */
+  canalConversa?: string | null,
 ): Promise<{ agentId: string | null; barrado: boolean }> {
-  const agentId = await resolveAgentForAutomaticTrigger(db, orgId, pointerId);
+  const agentId = await resolveAgentForAutomaticTrigger(db, orgId, pointerId, canalConversa);
   return agenteDoGatilhoAutomatico(agentId, pedeAgente);
 }
 
@@ -110,6 +134,16 @@ export async function decidirAgenteDoEnrollmentAutomatico(
 export interface EnabledFollowupAgent {
   agentId: string;
   pointerIds: string[];
+  /**
+   * Número em que esta versão foi publicada (`ai_agent_versions.channel_session_id`,
+   * migration 0665 — `channel_session_id` segue como número principal da versão).
+   *
+   * OPCIONAL de propósito: os dublês dos testes montam só `{agentId, pointerIds}`
+   * e o contrato antigo continua valendo. Ausente/nulo = canal DESCONHECIDO, e
+   * agente de canal desconhecido só compete quando a chamada não pede canal —
+   * nunca é escolhido "por eliminação" para um número que não é o dele.
+   */
+  channelSessionId?: string | null;
 }
 
 /** Interface estreita de DB — mesma doutrina de `AdminClient`/`ReactivityAdminClient`
@@ -119,10 +153,18 @@ export interface FollowupGateDb {
   loadEnabledPublishedFollowupAgents(orgId: string): Promise<EnabledFollowupAgent[]>;
 }
 
-/** Puro: agent_ids que armam este pointer, em ordem determinística (menor uuid primeiro). */
-function agentsEnablingPointer(agents: EnabledFollowupAgent[], pointerId: string): string[] {
+/** Puro: agent_ids que armam este pointer — e, com `canalConversa`, que também estão publicados nele —, em ordem determinística (menor uuid primeiro). */
+function agentsEnablingPointer(
+  agents: EnabledFollowupAgent[],
+  pointerId: string,
+  canalConversa?: string | null,
+): string[] {
+  const canal = canalConversa ?? null;
   return agents
     .filter((a) => a.pointerIds.includes(pointerId))
+    // Agente de canal desconhecido não é candidato a um canal CONCRETO: escolher
+    // "quem sobrou" é exatamente o defeito do #3852 (persona do número errado).
+    .filter((a) => canal === null || a.channelSessionId === canal)
     .map((a) => a.agentId)
     .sort();
 }
@@ -142,14 +184,20 @@ export async function isPointerEnabledForAutomaticTrigger(
  * exibição na fila). Determinístico quando >1 agente habilita o mesmo pointer:
  * MENOR agent_id (uuid asc). `null` = nenhum agente publicado arma (gate-out) —
  * mesma condição em que `isPointerEnabledForAutomaticTrigger` retorna false.
+ *
+ * Com `canalConversa`, o universo encolhe para os agentes que armam o pointer E
+ * estão publicados NAQUELE número: `null` passa a significar "nenhum agente
+ * deste número arma este fluxo", e o consumidor barra o fluxo de IA em vez de
+ * escrever com a persona do outro número (#3852).
  */
 export async function resolveAgentForAutomaticTrigger(
   db: FollowupGateDb,
   orgId: string,
   pointerId: string,
+  canalConversa?: string | null,
 ): Promise<string | null> {
   const agents = await db.loadEnabledPublishedFollowupAgents(orgId);
-  return agentsEnablingPointer(agents, pointerId)[0] ?? null;
+  return agentsEnablingPointer(agents, pointerId, canalConversa)[0] ?? null;
 }
 
 interface FollowupColumnShape {
@@ -157,13 +205,41 @@ interface FollowupColumnShape {
   flow_pointer_ids?: unknown;
 }
 
-/** Production adapter: lê `ai_agent_versions.{agent_id,followup}` via o client service-role real. */
+/**
+ * Canal (`conversations.channel_session_id`) — o número em que a conversa
+ * aconteceu. É a chave do filtro do #3852: quem escreve num número só pode ser
+ * o agente publicado NELE.
+ *
+ * Uma leitura por conversa, não por contato: um contato com dois números tem
+ * DUAS conversas, e é a da mensagem/evento que manda — escolher a "do contato"
+ * seria repetir o defeito de escolher por aproximação.
+ *
+ * `null` (conversa sem número, ou linha ausente) significa canal DESCONHECIDO e
+ * o chamador volta ao comportamento por organização — nunca inventa um número.
+ */
+export async function canalDaConversaSupabase(
+  admin: SupabaseClient,
+  orgId: string,
+  conversationId: string,
+): Promise<string | null> {
+  const { data, error } = await admin
+    .from("conversations")
+    .select("channel_session_id")
+    .eq("organization_id", orgId)
+    .eq("id", conversationId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  const canal = (data as { channel_session_id?: string | null } | null)?.channel_session_id;
+  return typeof canal === "string" && canal.length > 0 ? canal : null;
+}
+
+/** Production adapter: lê `ai_agent_versions.{agent_id,followup,channel_session_id}` via o client service-role real. */
 export function createSupabaseFollowupGateDb(admin: SupabaseClient): FollowupGateDb {
   return {
     async loadEnabledPublishedFollowupAgents(orgId) {
       const { data, error } = await admin
         .from("ai_agent_versions")
-        .select("agent_id, followup")
+        .select("agent_id, followup, channel_session_id")
         .eq("organization_id", orgId)
         .eq("status", "published");
       if (error) throw new Error(`followup_gate_query_failed: ${error.message}`);
@@ -171,16 +247,35 @@ export function createSupabaseFollowupGateDb(admin: SupabaseClient): FollowupGat
       // Um agente tem no máximo 1 versão publicada; ainda assim agrego por
       // agent_id (defensivo) unindo os pointers habilitados.
       const byAgent = new Map<string, Set<string>>();
-      for (const row of (data ?? []) as Array<{ agent_id: string; followup: FollowupColumnShape | null }>) {
+      // O número de cada agente vem da MESMA linha — nenhuma ida a mais ao banco.
+      const canalDoAgente = new Map<string, string>();
+      const canalAmbiguo = new Set<string>();
+      for (const row of (data ?? []) as Array<{
+        agent_id: string;
+        followup: FollowupColumnShape | null;
+        channel_session_id: string | null;
+      }>) {
         const f = row.followup;
         if (!f || f.enabled !== true || !Array.isArray(f.flow_pointer_ids)) continue;
+        if (typeof row.channel_session_id === "string") {
+          const anterior = canalDoAgente.get(row.agent_id);
+          // Duas versões publicadas em números DIFERENTES: não há um canal para
+          // dizer "este é o agente do número X" — fica desconhecido, e ele só
+          // concorre em decisões sem canal.
+          if (anterior !== undefined && anterior !== row.channel_session_id) canalAmbiguo.add(row.agent_id);
+          else canalDoAgente.set(row.agent_id, row.channel_session_id);
+        }
         const set = byAgent.get(row.agent_id) ?? new Set<string>();
         for (const id of f.flow_pointer_ids) {
           if (typeof id === "string") set.add(id);
         }
         if (set.size > 0) byAgent.set(row.agent_id, set);
       }
-      return [...byAgent].map(([agentId, ids]) => ({ agentId, pointerIds: [...ids] }));
+      return [...byAgent].map(([agentId, ids]) => ({
+        agentId,
+        pointerIds: [...ids],
+        channelSessionId: canalAmbiguo.has(agentId) ? null : (canalDoAgente.get(agentId) ?? null),
+      }));
     },
   };
 }

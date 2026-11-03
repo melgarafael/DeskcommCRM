@@ -11,9 +11,11 @@
  * tick — gatilho TIME-DRIVEN (varredura periódica, não event-driven): acha
  * pointers `trigger_config.kind='silence'` ativos, decide o agente pelo grafo
  * (`decidirAgenteDoEnrollmentAutomatico`: texto fixo segue sem agente; nó de
- * IA exige agente publicado armando o pointer), acha contatos silenciosos e
- * cria enrollment. Falha do sweep NUNCA aborta a resposta do tick (try/catch
- * isolado, só loga) — o cron sempre devolve o resultado de `runFollowupTick`.
+ * IA exige agente publicado armando o pointer — e, desde o #3852, publicado no
+ * NÚMERO da conversa do silencioso; sem agente naquele número o contato de
+ * fluxo de IA não é inscrito), acha contatos silenciosos e cria enrollment.
+ * Falha do sweep NUNCA aborta a resposta do tick (try/catch isolado, só loga)
+ * — o cron sempre devolve o resultado de `runFollowupTick`.
  *
  * No fim, drena texto fixo pendente (`enviarTextoFixoPendente`) — o mesmo
  * atalho do relógio HTTP. Onde não há `agent-worker` (instalação sem o
