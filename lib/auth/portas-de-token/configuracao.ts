@@ -25,4 +25,13 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/ai/agents/[id]/reconcile",
   "/api/v1/ai/agents/[id]/runs",
   "/api/v1/ai/agents/[id]/tool-usage",
+
+  // ai/cases e ai/routing-results. Quem autentica é a própria rota, por
+  // `resolveAuthDual`: token com `config:read` (GET) ou `config:write` (PATCH) e
+  // papel admin (`tokenRole`). `[id]` é forma de UUID; `alerta` (irmão literal de
+  // `[id]` em ai/cases) segue só de sessão e não entra de carona. `chat`, `close`
+  // e `reply` seguem só de sessão.
+  "/api/v1/ai/cases",
+  "/api/v1/ai/cases/[id]",
+  "/api/v1/ai/routing-results/[id]",
 ];
