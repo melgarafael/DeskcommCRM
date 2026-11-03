@@ -693,6 +693,13 @@ describe("WhatsApp conferido antes da abordagem (lib/prospecting/whatsapp.ts)", 
     expect(within(screen.getByRole("row", { name: /Tem zap/ })).getByText("Tem WhatsApp")).toBeVisible();
   });
 
+  it("sem nenhum veredito (módulo desligado ou sem conexão por QR), o contador do WhatsApp não aparece", async () => {
+    api.get.mockImplementation(async () => ({ data: fixture() }));
+    openPage();
+    await screen.findByText(/Sites verificados:/);
+    expect(screen.queryByText(/WhatsApp verificado:/)).toBeNull();
+  });
+
   it("quem não tem WhatsApp aparece só nas desmarcadas, com o motivo, e sem caixa para marcar de volta", async () => {
     api.get.mockImplementation(async () => ({ data: comWhatsapp() }));
     openPage();

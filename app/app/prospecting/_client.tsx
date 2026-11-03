@@ -646,7 +646,9 @@ export function ProspectingClient() {
   const opcoes = opcoesDoPreparo(campaign?.search);
   const sitesVerificados = marcadas.length - pendentesDeSite;
   // WhatsApp (`lib/prospecting/whatsapp.ts`): sobre TODAS as que têm telefone — quem não
-  // tem WhatsApp sai da seleção, e é justamente ela que a conta precisa mostrar.
+  // tem WhatsApp sai da seleção, e é justamente ela que a conta precisa mostrar. Só
+  // aparece com algum veredito: sem conexão capaz, ou com o módulo `conferir_whatsapp`
+  // desligado (o padrão), "0 de N" ficaria parado para sempre.
   const comTelefone = candidates.filter((c) => !!c.data.phone);
   const whatsappVerificados = comTelefone.filter((c) => c.data.whatsapp != null).length;
   const semWhatsapp = comTelefone.filter((c) => c.data.whatsapp?.existe === false).length;
@@ -1804,7 +1806,7 @@ export function ProspectingClient() {
                               {t("Prévias:")} {previasProntas} {t("de")} {marcadas.length}
                             </>
                           )}
-                          {comTelefone.length > 0 && (
+                          {whatsappVerificados > 0 && (
                             <>
                               {" · "}
                               {t("WhatsApp verificado:")} {whatsappVerificados} {t("de")}{" "}
