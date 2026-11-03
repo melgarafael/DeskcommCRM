@@ -225,17 +225,24 @@ const CARREGA: Record<string, () => Promise<Record<string, unknown>>> = {
   "contacts/merge": () => import("@/app/api/v1/contacts/merge/route"),
 };
 
+// A lista de contact-tags devolve ETIQUETAS (não ids): a fixture precisa de
+// contatos com tags, senão o filtro `neq("tags", "{}")` esvazia a resposta e o
+// teste não prova nada. Cada org tem uma etiqueta própria para o caso "B".
+const CONTATOS_COM_ETIQUETAS: Linha[] = CONTATOS.map((c) => ({
+  ...c,
+  tags: c.id === CONTATO_A ? ["etiqueta-da-a"] : ["etiqueta-da-b"],
+}));
 const LISTA_TAGS: Caso = {
   rota: "contact-tags",
   metodo: "GET",
   caminho: "/api/v1/contact-tags",
-  linhas: { ...LINHAS_BASE, contact_phones: [] },
+  linhas: { ...LINHAS_BASE, contacts: CONTATOS_COM_ETIQUETAS, contact_phones: [] },
   papel: "viewer",
   escopo: "mcp:read",
   papelDoToken: undefined,
   recurso: "contacts",
   status: 200,
-  colecao: { daA: CONTATO_A, daB: CONTATO_B },
+  colecao: { daA: "etiqueta-da-a", daB: "etiqueta-da-b" },
   audita: false,
 };
 

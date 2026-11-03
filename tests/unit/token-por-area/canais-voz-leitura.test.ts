@@ -537,7 +537,14 @@ for (const c of CASOS) {
         expect(res.status).toBe(404);
       }
       for (const marca of c.soDeA) expect(texto).not.toContain(marca);
-      nadaTocado(f);
+      // Lista vazia ou 404 vêm de LEITURAS DA PRÓPRIA organização de B: a rota
+      // consulta com `organization_id` = B (o dublê não tem linha de A). A prova
+      // é que toda consulta é de B, que nada é escrito e que nenhuma chamada
+      // de função leva outra organização.
+      expect(cadeiasForaDaOrganizacao(f.cadeias, ORG_B)).toEqual([]);
+      expect(f.cadeias.filter((c) => c.operacao !== "select")).toEqual([]);
+      expect(rpcsForaDaOrganizacao(f.rpcs, ORG_B)).toEqual([]);
+      expect(f.uploads).toEqual([]);
     });
 
     it(`${rotulo}: token sem o escopo da operação é recusado`, async () => {

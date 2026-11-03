@@ -687,10 +687,16 @@ async function chamar(caso: Caso, comToken: boolean): Promise<Response> {
   return manipulador(requisicao(caso, comToken), { params: Promise.resolve(caso.params ?? {}) });
 }
 
-/** As linhas da organização `org`, tabela a tabela. */
+/**
+ * As linhas da organização `org`, tabela a tabela. Tabela sem nenhuma linha da
+ * organização fica de fora: o falso cria a tabela vazia no primeiro acesso (uma
+ * leitura, sem escrita), e uma lista vazia não é linha tocada.
+ */
 function linhasDe(org: string, linhas: Linhas): Linhas {
   return Object.fromEntries(
-    Object.entries(linhas).map(([tabela, lista]) => [tabela, lista.filter((l) => l.organization_id === org)]),
+    Object.entries(linhas)
+      .map(([tabela, lista]) => [tabela, lista.filter((l) => l.organization_id === org)] as const)
+      .filter(([, lista]) => lista.length > 0),
   );
 }
 

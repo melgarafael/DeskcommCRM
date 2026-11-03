@@ -196,7 +196,13 @@ type Caso = {
   esperaNaResposta: string[];
   esperaChamarRpc?: string[];
   confere?: (viva: Linhas) => void;
-  statusDeB: 404 | 200;
+  statusDeB: 404 | 200 | 201;
+  /**
+   * Rota que CRIA: o token de B grava na PRÓPRIA organização (201). A prova não
+   * muda — toda escrita e toda auditoria saem com a organização de B, e nada de A
+   * aparece —, só deixa de exigir "nenhuma escrita".
+   */
+  criaNaPropriaOrganizacao?: boolean;
   listaVaziaParaB?: boolean;
   esperaNaRespostaDeB?: string[];
   naoEsperaNaRespostaDeB?: string[];
@@ -272,6 +278,11 @@ function cronDe(l: Lado, id: string, extra: Linha = {}): Linha {
     job_kind: "followup_turn",
     next_run_at: MOMENTO,
     enabled: true,
+    // Linha viva: sem cancelamento. Sem estes campos, `situacaoDoRetorno` lê
+    // `undefined !== null` como cancelado e a promessa já nasce "encerrada".
+    cancelled_at: null,
+    cancel_reason: null,
+    last_error: null,
     attempts: 0,
     max_attempts: 5,
     payload: {},
@@ -306,6 +317,18 @@ function metaDe(l: Lado, id: string, extra: Linha = {}): Linha {
     ...extra,
   };
 }
+
+/** Grafo mínimo que passa no schema de fluxo (gatilho + fim): o que a exportação aceita. */
+const GRAFO_EXPORTAVEL = {
+  nodes: [
+    { id: "t1", type: "trigger", label: "t1", position: { x: 0, y: 0 }, config: {} },
+    { id: "e1", type: "end", label: "e1", position: { x: 0, y: 0 }, config: { outcome: "exhausted" } },
+  ],
+  edges: [{ id: "edge1", source: "t1", target: "e1", priority: 0, condition: { type: "always" } }],
+};
+
+/** Snooze precisa ser FUTURO (e até 90 dias): a data é relativa ao relógio da execução. */
+const DEPOIS_EM_DOIS_DIAS = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
 
 // ─── A tabela de casos ───────────────────────────────────────────────────────
 
@@ -368,16 +391,19 @@ const CASOS: Caso[] = [
     caminho: `/api/v1/ai/followup-flows/${A.pointer}/export`,
     params: { id: A.pointer },
     linhas: {
+      // Exportar exige um grafo que passe no schema (gatilho e fim): o rascunho
+      // vazio da fixture padrão é recusado com 422 `flow_empty`.
       followup_flow_pointers: [
-        ponteiroDe(A, A.pointer),
-        ponteiroDe(B, B.pointer),
+        ponteiroDe(A, A.pointer, { draft_graph: GRAFO_EXPORTAVEL }),
+        ponteiroDe(B, B.pointer, { draft_graph: GRAFO_EXPORTAVEL }),
       ],
     },
     papel: "viewer",
     escopo: "config:read",
     papelDoToken: "admin",
     resource: "followup_flows",
-    esperaNaResposta: [A.pointer],
+    // O arquivo leva o NOME do fluxo, não o id do ponteiro (portabilidade.ts).
+    esperaNaResposta: ["Fluxo A"],
     statusDeB: 404,
   },
   {
@@ -496,7 +522,10 @@ const CASOS: Caso[] = [
       const criado = viva.followup_flow_pointers?.find((l) => l.name === "Fluxo importado A");
       expect(criado?.organization_id).toBe(ORG_A);
     },
-    statusDeB: 200,
+    // Importar é CRIAR (201, como a rota responde). O token de B importa na
+    // própria organização: o arquivo não traz organização, e o fluxo nasce em B.
+    statusDeB: 201,
+    criaNaPropriaOrganizacao: true,
   },
   {
     rota: "app/api/v1/ai/followup-flows/modelos-aprovados/route.ts",
@@ -515,8 +544,10 @@ const CASOS: Caso[] = [
     papelDoToken: "admin",
     resource: "followup_flows",
     esperaNaResposta: ["Modelo Meta A"],
+    // B tem o SEU modelo aprovado: a lista dele não é vazia, e ela só traz o dele.
     statusDeB: 200,
-    listaVaziaParaB: true,
+    esperaNaRespostaDeB: ["Modelo Meta B"],
+    naoEsperaNaRespostaDeB: ["Modelo Meta A"],
   },
   {
     rota: "app/api/v1/ai/followups/enrollments/[id]/cancel/route.ts",
@@ -596,7 +627,7 @@ const CASOS: Caso[] = [
     metodo: "POST",
     caminho: `/api/v1/ai/followups/enrollments/${A.enrollment}/snooze`,
     params: { id: A.enrollment },
-    corpo: { next_eval_at: "2026-02-01T00:00:00.000Z" },
+    corpo: { next_eval_at: DEPOIS_EM_DOIS_DIAS },
     linhas: {
       followup_enrollments: [
         enrollmentDe(A, A.enrollment),
@@ -611,7 +642,7 @@ const CASOS: Caso[] = [
     esperaNaResposta: [A.enrollment],
     confere: (viva) => {
       const alvo = viva.followup_enrollments?.find((l) => l.id === A.enrollment);
-      expect(alvo?.next_eval_at).toBe("2026-02-01T00:00:00.000Z");
+      expect(alvo?.next_eval_at).toBe(DEPOIS_EM_DOIS_DIAS);
     },
     statusDeB: 404,
   },
@@ -748,9 +779,16 @@ async function chamar(caso: Caso, comToken: boolean): Promise<Response> {
   return manipulador(requisicao(caso, comToken), { params: Promise.resolve(caso.params ?? {}) });
 }
 
+/**
+ * As linhas da organização `org`, tabela a tabela. Tabela sem nenhuma linha da
+ * organização fica de fora: o falso cria a tabela vazia no primeiro acesso (uma
+ * leitura, sem escrita), e uma lista vazia não é linha tocada.
+ */
 function linhasDe(org: string, linhas: Linhas): Linhas {
   return Object.fromEntries(
-    Object.entries(linhas).map(([tabela, lista]) => [tabela, lista.filter((l) => l.organization_id === org)]),
+    Object.entries(linhas)
+      .map(([tabela, lista]) => [tabela, lista.filter((l) => l.organization_id === org)] as const)
+      .filter(([, lista]) => lista.length > 0),
   );
 }
 
@@ -833,7 +871,8 @@ describe("ai/followup-flows e ai/followups aceitam token de integração (Spec 3
       const texto = await res.text();
 
       expect(res.status, texto).toBe(caso.statusDeB);
-      expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
+      // Quem cria, cria na organização de B: a escrita é permitida, mas só nela.
+      if (!caso.criaNaPropriaOrganizacao) expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
       expect(falso.rpcs).toEqual([]);
       expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B, { tabelasSemOrganizacao: SEM_ORGANIZACAO })).toEqual([]);
       expect(rpcsForaDaOrganizacao(falso.rpcs, ORG_B)).toEqual([]);
@@ -845,7 +884,14 @@ describe("ai/followup-flows e ai/followups aceitam token de integração (Spec 3
       }
       for (const pedaco of caso.esperaNaRespostaDeB ?? []) expect(texto).toContain(pedaco);
       for (const pedaco of caso.naoEsperaNaRespostaDeB ?? []) expect(texto).not.toContain(pedaco);
-      expect(audit).not.toHaveBeenCalled();
+      if (caso.criaNaPropriaOrganizacao) {
+        expect(audit).toHaveBeenCalled();
+        for (const [entrada] of vi.mocked(audit).mock.calls) {
+          expect(entrada).toMatchObject({ organizationId: ORG_B, actorApiTokenId: TOKEN_B });
+        }
+      } else {
+        expect(audit).not.toHaveBeenCalled();
+      }
     });
 
     it(`${nome}: token sem o escopo é recusado`, async () => {
@@ -960,7 +1006,7 @@ describe("ai/followup-flows e ai/followups — PUBLIC_PATHS (borda do proxy)", (
     "/api/v1/ai/followup-flows/abc/export",
     `/api/v1/ai/followup-flows/${A.pointer}/publish`,
     `/api/v1/ai/followup-flows/${A.pointer}/rollback`,
-    "/api/v1/ai/followup-flows/from-model",
+    // `from-model` NÃO entra aqui: é porta pública de propósito (ver o último caso).
     "/api/v1/ai/followup-flows/xpto",
     "/api/v1/ai/followups/enrollments/abc/resume",
     "/api/v1/ai/followups/enrollments/abc/skip",
