@@ -78,7 +78,7 @@ vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
   DialogoDeConvite: () => null,
 }));
 // A reserva tem sua própria prova autenticada; este gate isola o botão pessoal.
-vi.mock("@/components/agenda/ReservarServicoNaConversa", () => ({ ReservarServicoNaConversa: () => null }));
+vi.mock("@/components/agenda/ReservarServicoNaConversa", () => ({ ItemReservarServico: () => null, ReservarServicoNaConversa: () => null }));
 // O atendimento conjunto (#2542) desenha no cabeçalho e lê react-query (exigiria
 // QueryClientProvider). Este arquivo mede o gate do BOTÃO PESSOAL; a lista de
 // participantes tem arquivo próprio. Mesmo caminho do ConversationHeader.test.tsx.

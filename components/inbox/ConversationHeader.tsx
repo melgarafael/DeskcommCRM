@@ -48,7 +48,7 @@ import { SnoozeButton } from "@/components/inbox/SnoozeButton";
 import { DialogoDeConvite, ParticipantesDaConversa } from "@/components/inbox/ParticipantesDaConversa";
 import { DialButton } from "@/components/voice/DialButton";
 import { VideoCallButton } from "@/components/inbox/VideoCallButton";
-import { ReservarServicoNaConversa } from "@/components/agenda/ReservarServicoNaConversa";
+import { ItemReservarServico, ReservarServicoNaConversa } from "@/components/agenda/ReservarServicoNaConversa";
 import { motivoDoContato } from "@/lib/inbox/motivo-do-envio-bloqueado";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
@@ -135,6 +135,9 @@ export function ConversationHeader({
   // quem entrou, por exemplo — fica invisível para leitores de tela e para o
   // e2e. Aqui o item só levanta a bandeira e o menu fecha como qualquer outro.
   const [conviteAberto, setConviteAberto] = useState(false);
+  // A folha de reserva segue o MESMO desenho do convite: o item do ⋯ só levanta
+  // a bandeira, a folha mora fora do menu e o menu fecha como qualquer outro.
+  const [reservaAberta, setReservaAberta] = useState(false);
 
   const c = conversation.contacts ?? null;
   /**
@@ -199,6 +202,9 @@ export function ConversationHeader({
     isMineAssigned ||
     (user.is_platform_admin && !user.support) ||
     (activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager);
+  // Reservar exige papel de atendente (o mesmo gate da rota); grupo não é pessoa.
+  const podeReservar =
+    !conversation.is_group && !!c?.id && activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent;
   const marcarPessoal = useMarkPersonalContact(c?.id ?? "");
   const desmarcarPessoal = useUnmarkPersonalContact(c?.id ?? "");
 
@@ -604,15 +610,7 @@ export function ConversationHeader({
             {!conversation.is_group && c?.id && (
               <DialButton contactId={c.id} hasPhone={!!c.phone_number} comoItemDeMenu />
             )}
-            {!conversation.is_group && c?.id && activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && (
-              <ReservarServicoNaConversa
-                key={`${activeOrg.orgId}:${conversation.id}`}
-                contactId={c.id}
-                conversationId={conversation.id}
-                contactName={displayName}
-                comoItemDeMenu
-              />
-            )}
+            {podeReservar && <ItemReservarServico onSelect={() => setReservaAberta(true)} />}
             {/* Vídeo: sem JITSI_SERVER_URL o componente devolve `null` e o item
                 não existe — o menu não promete o que a instalação não tem. */}
             <VideoCallButton
@@ -748,6 +746,16 @@ export function ConversationHeader({
         aberto={conviteAberto}
         onAbertoChange={setConviteAberto}
       />
+      {podeReservar && c?.id && activeOrg && (
+        <ReservarServicoNaConversa
+          key={`${activeOrg.orgId}:${conversation.id}`}
+          contactId={c.id}
+          conversationId={conversation.id}
+          contactName={displayName}
+          aberto={reservaAberta}
+          onAbertoChange={setReservaAberta}
+        />
+      )}
       <AlertDialog open={confirmFecharOpen} onOpenChange={setConfirmFecharOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

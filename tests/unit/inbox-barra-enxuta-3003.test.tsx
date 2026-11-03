@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 
@@ -482,5 +482,38 @@ describe("#3003 — o menu respeita as MESMAS condições da barra", () => {
     const menu = await conteudoDoMenu();
     expect(within(menu).queryByTestId("acao-arquivar")).toBeNull();
     expect(within(menu).queryByTestId("marcar-pessoal")).toBeTruthy();
+  });
+});
+
+describe("#3003 — a folha aberta pelo ⋯ não deixa o menu preso aberto", () => {
+  it("Reservar serviço: ao fechar a folha, o ⋯ está fechado e a página não fica aria-hidden", async () => {
+    // Medido na tela (vps-teste): a folha era FILHA do item do menu, o item
+    // segurava o menu aberto com `preventDefault`, e ao fechar a folha o ⋯
+    // continuava aberto — gatilho `aria-expanded=true` e o resto da página sob
+    // `aria-hidden`. O desenho certo é o do convite: o item só levanta a
+    // bandeira, a folha mora fora do menu.
+    const fetchDublado = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "content-type": "application/json" } }),
+      );
+    try {
+      montar(FILA);
+      const menu = await conteudoDoMenu();
+      fireEvent.click(within(menu).getByTestId("acao-reservar-servico"));
+      const folha = await screen.findByRole("dialog");
+      expect(within(folha).getAllByText("Reservar serviço").length).toBeGreaterThan(0);
+
+      fireEvent.keyDown(folha, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+      expect(
+        screen.queryByTestId("menu-de-acoes-conteudo"),
+        "o ⋯ continuou aberto depois de fechar a folha de reserva",
+      ).toBeNull();
+      expect(screen.getByTestId("menu-de-acoes").getAttribute("aria-expanded")).toBe("false");
+    } finally {
+      fetchDublado.mockRestore();
+    }
   });
 });
