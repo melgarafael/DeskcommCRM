@@ -1,3 +1,4 @@
+import { resultadosParaRecibo } from "@/lib/automation/resultado-para-recibo";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/automation-rules/runs/[runId]/resend — reexecuta SÓ as ações
@@ -170,7 +171,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
       rule_id: rule.id,
       event_id: typedEvent.id,
       status,
-      actions_result: results,
+      actions_result: resultadosParaRecibo(results),
     })
     .select("*")
     .single();

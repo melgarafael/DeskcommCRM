@@ -80,12 +80,15 @@ export async function pushDoAvisoDaCentral(
   itemId: string,
 ): Promise<{ payload: PushPayload; para: DestinoDoPush } | null> {
   // ⚠️ Organização junto do id: o client é service-role e ignora RLS.
-  const { data } = await admin
+  const { data, error } = await admin
     .from("agent_inbox_items")
     .select("id, kind, ref_kind, ref_id, title, body, para_user_id")
     .eq("organization_id", orgId)
     .eq("id", itemId)
     .maybeSingle();
+  // Ainda não enviamos nada: falha de leitura deve chegar ao dispatcher para
+  // a retentativa do dreno. Retornar null consumiria o aviso como skipped.
+  if (error) throw new Error(`Não foi possível ler o aviso da Central: ${error.message}`);
   const item = data as Aviso | null;
   if (!item) return null;
   const payload = await montarPush(admin, orgId, item);

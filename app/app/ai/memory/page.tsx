@@ -53,7 +53,7 @@ export default async function OrgMemoryPage() {
 
   const { data: entriesRaw } = await supabase
     .from("org_memory_entries")
-    .select("id, title, body, source, status, created_at")
+    .select("id, title, body, source, status, created_at, valid_until")
     .eq("organization_id", activeOrg.orgId)
     .neq("status", "proposed")
     .order("created_at", { ascending: false });

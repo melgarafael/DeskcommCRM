@@ -89,7 +89,10 @@ vi.mock("@/hooks/inbox/useAssignableMembers", () => ({
 }));
 
 vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
-  useMessageTemplates: () => ({ data: [] }),
+  useMessageTemplates: () => ({ data: [], isLoading: false }),
+  // Sem grupo (#3245): a barra e o slash-menu são os de antes dos grupos, que é
+  // o caminho que estes casos medem.
+  useGruposDeRespostas: () => ({ data: [] }),
 }));
 
 vi.mock("sonner", () => ({
@@ -102,6 +105,7 @@ vi.mock("@/lib/inbox/clipboard-image", () => ({
 
 vi.mock("@/lib/notifications/mentions", () => ({
   embutirMencoes: vi.fn((body: string) => body),
+  podarMencoesDaEdicao: vi.fn((_antes: string, _depois: string, m: unknown) => m),
   podarMencoes: vi.fn((_texto: string, m: unknown) => m),
   resolverMencao: vi.fn(() => null),
 }));

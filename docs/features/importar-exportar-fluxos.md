@@ -132,7 +132,8 @@ Todo objeto é **estrito**: chave desconhecida é recusada (é o que pega erro d
 | `appointment_no_show` | Falta confirmada pela equipe | Quando a equipe confirma a falta num compromisso. | opcional `event_type_ids` (vazio = todos os tipos) |
 
 Todos aceitam `cancel_on_reply` (`true`/`false`): `true` encerra a inscrição na primeira resposta do
-contato em vez de seguir o fluxo.
+contato em vez de seguir o fluxo. Ausente vale `false`, salvo em `appointment_no_show`, onde ausente
+vale `true`: a sequência de falta sempre para quando o paciente responde.
 
 Um roteiro de atendimento (`surface: "atendimento"`) só publica com gatilho `manual`: ele começa por
 palavra-gatilho (`settings.gatilhos`) ou pelo roteador.

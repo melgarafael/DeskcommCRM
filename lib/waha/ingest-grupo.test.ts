@@ -13,7 +13,13 @@ import { acelerarPipelineDeEventos } from "@/lib/dev/kick-local-pipeline";
 import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
 import { estamparAtribuicaoDoContato } from "@/lib/leads/atribuicao-de-anuncio";
 import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
-import { dispatchWahaEvent, remetenteDoGrupo, type WahaEnvelope, type WahaPayload } from "@/lib/waha/ingest";
+import {
+  dispatchWahaEvent,
+  mencoesDoGrupo,
+  remetenteDoGrupo,
+  type WahaEnvelope,
+  type WahaPayload,
+} from "@/lib/waha/ingest";
 
 /**
  * A ENTRADA DE GRUPO, medida pelo roteador que os dois webhooks chamam.
@@ -36,20 +42,26 @@ interface Banco {
   inserts: Array<{ tabela: string; linha: Record<string, unknown> }>;
   updates: Array<{ tabela: string; linha: Record<string, unknown> }>;
   rpcs: Array<{ fn: string; args: Record<string, unknown> }>;
+  /** As tabelas lidas (op `select`), na ordem — #3566 cobra a conta das leituras. */
+  consultas: string[];
 }
 
 function banco(cfg: {
   ligado?: { contact_id: string | null; conversation_id: string | null } | null;
   externosJaGravados?: string[];
+  /** #3566 — os contatos que o rótulo da menção pode achar. */
+  contatos?: Array<{ name: string | null; display_name: string | null; phone_number: string | null; wa_lid: string | null }>;
 } = {}): Banco {
   const inserts: Banco["inserts"] = [];
   const updates: Banco["updates"] = [];
   const rpcs: Banco["rpcs"] = [];
+  const consultas: Banco["consultas"] = [];
   const from = (tabela: string) => {
     const filtros = new Map<string, unknown>();
     let op = "select";
     const resposta = async () => {
       if (op === "insert") return { data: { id: `${tabela}-novo` }, error: null };
+      consultas.push(tabela);
       if (tabela === "channel_session_groups" && op === "select") {
         const casa =
           cfg.ligado &&
@@ -63,6 +75,16 @@ function banco(cfg: {
         const ids = (filtros.get("external_id") as string[] | undefined) ?? [];
         const achou = ids.find((i) => cfg.externosJaGravados?.includes(i));
         return { data: achou ? { id: "ja" } : null, error: null };
+      }
+      if (tabela === "contacts" && op === "select") {
+        const porLid = filtros.get("wa_lid") as string[] | undefined;
+        const porTelefone = filtros.get("phone_number") as string[] | undefined;
+        const linhas = (cfg.contatos ?? []).filter(
+          (c) =>
+            (porLid && c.wa_lid !== null && porLid.includes(c.wa_lid)) ||
+            (porTelefone && c.phone_number !== null && porTelefone.includes(c.phone_number)),
+        );
+        return { data: linhas, error: null };
       }
       return { data: null, error: null };
     };
@@ -89,7 +111,7 @@ function banco(cfg: {
       return { data: null, error: null };
     },
   };
-  return { admin, inserts, updates, rpcs };
+  return { admin, inserts, updates, rpcs, consultas };
 }
 
 function envelope(payload: WahaPayload): WahaEnvelope {
@@ -243,5 +265,130 @@ describe("remetenteDoGrupo — quem escreveu, tirado do autor e nunca do `from`"
       _data: { pushName: "x".repeat(500), key: { participantAlt: "abc@s.whatsapp.net" } },
     });
     expect(r).toEqual({ name: "x".repeat(200), phone: null, lid: null });
+  });
+});
+
+/**
+ * #3566 — AS MENÇÕES: a lista que faltava guardar.
+ *
+ * O defeito relatado: em grupo o WhatsApp escreve `@75235009282237` no texto, e
+ * quem foi mencionado se perdia na entrada — `metadata.group_sender` dizia quem
+ * ESCREVEU, e nada dizia quem foi CHAMADO. O que se mede aqui é a entrada: a
+ * lista vai para `metadata.mentions` com o rótulo do contato do CRM, pelo MESMO
+ * leitor de JID do remetente, e o `body` continua CRU (a exibição resolve).
+ */
+const MENCIONANDO: WahaPayload = {
+  id: `false_${GRUPO}_3EB0CCC_100000000000001@lid`,
+  from: GRUPO,
+  fromMe: false,
+  body: "oi @75235009282237, pode vir?",
+  participant: "100000000000001@lid",
+  _data: {
+    pushName: "Maria",
+    key: { participantAlt: "5521999990000@s.whatsapp.net" },
+    message: {
+      extendedTextMessage: {
+        text: "oi @75235009282237, pode vir?",
+        contextInfo: { mentionedJid: ["75235009282237@lid"] },
+      },
+    },
+  },
+};
+
+const MARIA_NO_CRM = {
+  name: null,
+  display_name: "Maria Exemplo",
+  phone_number: "+5511999990000",
+  wa_lid: "75235009282237",
+};
+
+describe("#3566 — menção em grupo: guarda a lista e NÃO reescreve o texto", () => {
+  it("grava metadata.mentions com o nome do contato, e o body continua com o @lid", async () => {
+    const b = banco({ ligado: { contact_id: "c-g", conversation_id: "v-g" }, contatos: [MARIA_NO_CRM] });
+    await dispatchWahaEvent(b.admin as never, SESSION as never, envelope(MENCIONANDO), "req-1");
+
+    const msg = b.inserts.find((i) => i.tabela === "messages")!.linha;
+    // O TEXTO CRU fica no banco: a resolução é da exibição.
+    expect(msg.body).toBe("oi @75235009282237, pode vir?");
+    expect((msg.metadata as Record<string, unknown>).mentions).toEqual([
+      { lid: "75235009282237", phone: null, name: "Maria Exemplo" },
+    ]);
+  });
+
+  it("menção a quem NÃO está no CRM entra sem nome — a tela mostra o número, como hoje", async () => {
+    const b = banco({ ligado: { contact_id: "c-g", conversation_id: "v-g" }, contatos: [] });
+    await dispatchWahaEvent(b.admin as never, SESSION as never, envelope(MENCIONANDO), "req-1");
+
+    expect((b.inserts.find((i) => i.tabela === "messages")!.linha.metadata as Record<string, unknown>).mentions).toEqual([
+      { lid: "75235009282237", phone: null, name: null },
+    ]);
+  });
+
+  it("menção que chega como NÚMERO acha o contato pelas duas grafias do nono dígito", async () => {
+    const b = banco({
+      ligado: { contact_id: "c-g", conversation_id: "v-g" },
+      // Gravado COM o nono dígito; a menção chega SEM ele.
+      contatos: [MARIA_NO_CRM],
+    });
+    await dispatchWahaEvent(
+      b.admin as never,
+      SESSION as never,
+      envelope({
+        ...MENCIONANDO,
+        body: "oi @5511988887777",
+        _data: {
+          ...MENCIONANDO._data,
+          message: { extendedTextMessage: { contextInfo: { mentionedJid: ["5511988887777@s.whatsapp.net"] } } },
+        },
+      }),
+      "req-1",
+    );
+    const mencoes = (b.inserts.find((i) => i.tabela === "messages")!.linha.metadata as Record<string, unknown>)
+      .mentions as Array<Record<string, unknown>>;
+    expect(mencoes[0]).toMatchObject({ phone: "+5511988887777", lid: null });
+  });
+
+  it("CONTROLE: mensagem sem menção não ganha a chave e não paga leitura de contato", async () => {
+    const b = banco({ ligado: { contact_id: "c-g", conversation_id: "v-g" } });
+    await dispatchWahaEvent(b.admin as never, SESSION as never, envelope(RECEBIDA), "req-1");
+
+    const metadata = b.inserts.find((i) => i.tabela === "messages")!.linha.metadata as Record<string, unknown>;
+    expect(Object.keys(metadata)).toEqual(["raw_type", "group_sender"]);
+    expect(metadata.mentions).toBeUndefined();
+    expect(b.consultas).not.toContain("contacts");
+  });
+});
+
+describe("mencoesDoGrupo — o mesmo leitor de JID do remetente", () => {
+  it("lê o `mentionedJid` do contextInfo do Baileys", () => {
+    expect(mencoesDoGrupo(MENCIONANDO)).toEqual([{ name: null, phone: null, lid: "75235009282237" }]);
+  });
+
+  it("sufixo de dispositivo, item de outro tipo, JID irreconhecível e repetido não sujam a lista", () => {
+    expect(
+      mencoesDoGrupo({
+        from: GRUPO,
+        _data: {
+          message: {
+            extendedTextMessage: {
+              contextInfo: {
+                mentionedJid: ["75235009282237:4@lid", "75235009282237@lid", 42, "lixo@lid", "99887766554433@lid"],
+              },
+            },
+          },
+        },
+      }),
+    ).toEqual([
+      { name: null, phone: null, lid: "75235009282237" },
+      { name: null, phone: null, lid: "99887766554433" },
+    ]);
+  });
+
+  it("sem contextInfo, sem lista ou sem menção: lista vazia, e nada lança", () => {
+    expect(mencoesDoGrupo({ from: GRUPO })).toEqual([]);
+    expect(mencoesDoGrupo({ from: GRUPO, _data: { message: { extendedTextMessage: {} } } })).toEqual([]);
+    expect(mencoesDoGrupo({ from: GRUPO, _data: { message: { contextInfo: { mentionedJid: "x" } } } })).toEqual([]);
+    // O AUTOR da mensagem não é menção: `participant` sozinho não produz lista.
+    expect(mencoesDoGrupo({ from: GRUPO, participant: "100000000000001@lid" })).toEqual([]);
   });
 });

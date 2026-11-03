@@ -48,6 +48,7 @@ import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/arch
 import { createClient } from "@/lib/supabase/server";
 import { getWahaClient, wahaFriendlyError } from "@/lib/waha/client";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { traduzirLimiteDoPlano } from "@/lib/cobranca/limites";
 
 export const dynamic = "force-dynamic";
 
@@ -169,6 +170,15 @@ export async function POST(
 
   try {
     await assertWahaConnectionIdle(createAdminClient(), activeOrg.orgId, id);
+    // A linha morta e sem número não ocupa vaga do plano (0809); revivê-la volta
+    // a ocupar. A vaga é conferida e tomada no banco (9036) ANTES de tocar o
+    // transporte — número já pareado passa direto, mesmo acima do teto.
+    const vaga = await createAdminClient().rpc("fn_vaga_ao_reviver_canal", { p_org: activeOrg.orgId, p_canal: id });
+    if (vaga.error) {
+      const limite = traduzirLimiteDoPlano(vaga.error, authz.user.idioma);
+      if (limite) return fail(limite.code, limite.message, 409, { requestId, details: limite.details });
+      return fail("internal_error", t("Não foi possível concluir a conexão. Tente novamente."), 500, { requestId });
+    }
     await waha.stopSession(nomeParaOTransporte);
     // Só no modo forçado: descartar a credencial é irreversível — obriga a
     // reescanear o QR mesmo que ela ainda estivesse boa.

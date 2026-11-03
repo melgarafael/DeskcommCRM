@@ -12,6 +12,13 @@ import { ehHexValido } from "@/lib/branding/rampa";
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { IDIOMAS } from "@/lib/i18n/idiomas";
 import { DIAS_MAXIMO_DO_RECORTE } from "@/lib/kanban/recorte-de-encerrados";
+import {
+  ICONES_DE_ATALHO,
+  MAX_ATALHOS,
+  modeloAceito,
+  TAMANHO_MAXIMO_DO_MODELO,
+  TAMANHO_MAXIMO_DO_ROTULO,
+} from "@/lib/leads/atalhos-do-card";
 import { MOEDAS_SERVIDAS } from "@/lib/money";
 
 import { conversationTagSchema } from "./messaging";
@@ -270,8 +277,8 @@ export const customFieldSchema = z.object({
    * ele é gravado como digitado. DESLIGADO (o padrão, e a chave ausente em toda
    * definição que já existe), a escrita só aceita um valor que case com uma
    * opção (por `value`, `label` ou apelido), gravando o `value` CANÔNICO.
-   * Hoje a régua vale na ficha (CustomFieldsEditor); `validarValorPesquisavel`
-   * existe pronta para as escritas do servidor, ainda não plugada (#2521).
+   * A régua vale na ficha (CustomFieldsEditor) e, desde #3508, nas escritas do
+   * servidor (`lib/leads/opcao-do-campo-no-servidor.ts`).
    */
   allow_new: z.boolean().optional(),
   /**
@@ -456,6 +463,42 @@ export const pipelineConfigPatchSchema = z.object({
    * válido: um número escrito aqui e outro lá divergiriam no primeiro ajuste.
    */
   ocultar_encerrados_dias: z.number().int().min(0).max(DIAS_MAXIMO_DO_RECORTE).optional(),
+  /**
+   * OS ATALHOS DO CARD (issue #3487) — os botões que abrem outro sistema com o
+   * dado do cliente: `tel:` para o softphone do PABX, `https://…?cliente={{erp_id}}`
+   * para o app de pedidos.
+   *
+   * ─── A régua do ESQUEMA, e por que ela está aqui ──────────────────────────
+   *
+   * O `url` é digitado por uma pessoa e renderizado para outras: o valor vira
+   * `<a href>`, e `javascript:`/`data:` num href é execução de código a um
+   * clique. A allowlist (`tel:`, `http:`, `https:`) RECUSA NA GRAVAÇÃO, e a
+   * renderização revalida o que veio do banco (`lib/leads/atalhos-do-card.ts`,
+   * `atalhosParaExibir`) — o `settings` é jsonb, escrito também por script, seed
+   * e restauração de backup, e um valor posto por fora passaria por esta porta
+   * sem tocá-la.
+   *
+   * ⚠️ `refine` e não `z.enum`: a mensagem de erro precisa dizer QUAL regra
+   * caiu, e o formulário lê o `details` para marcar a linha errada.
+   *
+   * `atalhos` AUSENTE é o estado de todo funil instalado: nenhum botão, e o card
+   * continua idêntico ao de antes desta entrega.
+   */
+  atalhos: z
+    .array(
+      z.object({
+        rotulo: z.string().trim().min(1).max(TAMANHO_MAXIMO_DO_ROTULO),
+        icone: z.enum(ICONES_DE_ATALHO),
+        url: z
+          .string()
+          .trim()
+          .min(1)
+          .max(TAMANHO_MAXIMO_DO_MODELO)
+          .refine(modeloAceito, { message: "esquema_nao_permitido" }),
+      }),
+    )
+    .max(MAX_ATALHOS)
+    .optional(),
 });
 export type PipelineConfigPatch = z.infer<typeof pipelineConfigPatchSchema>;
 
@@ -590,6 +633,11 @@ export const agendaSettingsSchema = agendaSettingsWriteSchema.catch({confirmatio
  * qualquer lixo é desligado aqui E lá. Se os dois idiomas divergissem, a tela
  * mostraria o selo de uma regra que o trigger não aplica.
  *
+ * `cliente_pela_venda` e `pos_venda_dias` (#3644): quem já COMPROU volta pelo
+ * funil de clientes, e não pelo de captação — e, dentro da janela de pós-venda,
+ * a conversa não vira card nenhum. As duas nascem desligadas; a régua de leitura
+ * é a mesma da chave acima.
+ *
  * `internal_contact_tags` (#2353): a lista de etiquetas que marcam um contato
  * INTERNO (equipe, sócio, família, fornecedor). Contato com uma delas não vira
  * card e não recebe atendimento da IA — ver `lib/contacts/tags-internas.ts`.
@@ -621,8 +669,55 @@ export const crmSettingsSchema = z
      * o bloco que as regras de contato já usam.
      */
     telefone_de_ficha_vazia: z.boolean().catch(false),
+    nome_informado_no_atendimento: z.boolean().catch(false),
+    /**
+     * `avisar_transferencia_no_whatsapp` (#3784): a transferência para atendimento
+     * humano também manda o aviso ao número do Aviso no WhatsApp.
+     *
+     * ⚠️ NASCE LIGADA, ao contrário das vizinhas: é a régua do aviso de
+     * Propostas (`proposals.avisar_no_whatsapp !== false`), e não a das regras
+     * de contato. Ela não grava dado de ninguém; só existe para quem já ligou o
+     * Aviso de caso poder tirar as transferências do teto diário do número.
+     * Só o booleano `false` desliga — e é a mesma régua do SQL do handoff
+     * (`is distinct from 'false'::jsonb`), que decide se o evento nem nasce.
+     */
+    avisar_transferencia_no_whatsapp: z.boolean().catch(true),
+    /**
+     * `cliente_pela_venda` (#3644): quem JÁ COMPROU (tem negócio `won` e nenhum
+     * aberto) volta pelo funil de clientes, e não pelo de captação.
+     *
+     * ⚠️ NASCE DESLIGADA em toda organização, e a régua é a mesma das outras
+     * duas chaves: só o booleano `true` liga. Desligada, o roteamento é
+     * exatamente o de antes desta chave existir (`first_service_at` com a regra
+     * da agenda ligada) — é o que permite entregar a regra sem tocar em quem não
+     * a pediu.
+     *
+     * Mora no `crm` porque é uma regra de CONTATO, como as vizinhas — nenhuma
+     * coluna nem tabela nova, como o mantenedor decidiu no #2593.
+     */
+    cliente_pela_venda: z.boolean().catch(false),
+    /**
+     * `pos_venda_dias` (#3644): a janela em que a conversa de quem acabou de
+     * comprar NÃO abre negócio nenhum. `0` (o padrão) desliga a janela: o card
+     * nasce sempre, como hoje.
+     *
+     * Teto de 365 porque o que isto cobre é pós-venda imediato ("chegou
+     * certinho?"), não o relacionamento inteiro com o cliente — e um número
+     * fora da faixa é configuração torta, não intenção: cai em `0` (o
+     * comportamento de sempre) em vez de segurar conversa por um ano por causa
+     * de um dígito a mais.
+     */
+    pos_venda_dias: z.number().int().min(0).max(365).catch(0),
   })
-  .catch({ cliente_pela_agenda: false, internal_contact_tags: [], telefone_de_ficha_vazia: false });
+  .catch({
+    cliente_pela_agenda: false,
+    internal_contact_tags: [],
+    telefone_de_ficha_vazia: false,
+    nome_informado_no_atendimento: false,
+    avisar_transferencia_no_whatsapp: true,
+    cliente_pela_venda: false,
+    pos_venda_dias: 0,
+  });
 
 /**
  * `organizations.settings.notificacoes.conteudo_na_tela_bloqueada` — o que o
@@ -698,6 +793,45 @@ export function telefoneDeFichaVaziaLigado(settings: unknown): boolean {
 }
 
 /**
+ * As regras de CONTATO do bloco `settings.crm`, lidas de UMA vez (#3644).
+ *
+ * ⚠️ EXISTE PORQUE AGORA SÃO TRÊS CHAVES NO MESMO OBJETO. O nascimento do lead
+ * decide o funil por duas delas (`cliente_pela_agenda` e `cliente_pela_venda`)
+ * e a janela de pós-venda pela terceira: lendo chave por chave, seriam três
+ * `select settings` na MESMA linha de `organizations` — no caminho quente da
+ * ingestão, por mensagem recebida. Uma leitura só, três respostas.
+ *
+ * A régua é a das vizinhas: só o booleano `true` liga, `pos_venda_dias` fora de
+ * 0–365 (ou torto) cai em `0`. Nunca lança.
+ */
+export interface RegrasDeCliente {
+  /** `first_service_at` preenchido passa a contar como cliente (migration 0262). */
+  pelaAgenda: boolean;
+  /** Negócio ganho sem nada aberto conta como cliente (#3644). */
+  pelaVenda: boolean;
+  /** Janela, em dias, em que a conversa de quem acabou de comprar não abre card. */
+  posVendaDias: number;
+}
+
+export function regrasDeCliente(settings: unknown): RegrasDeCliente {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  const lido = crmSettingsSchema.parse(crm ?? {});
+  return {
+    pelaAgenda: lido.cliente_pela_agenda === true,
+    pelaVenda: lido.cliente_pela_venda === true,
+    posVendaDias: lido.pos_venda_dias,
+  };
+}
+
+/** A regra "cliente pela venda" está ligada nesta organização? Nunca lança. */
+export function clientePelaVendaLigado(settings: unknown): boolean {
+  return regrasDeCliente(settings).pelaVenda;
+}
+
+/**
  * A OPÇÃO "ATENDENTES PODEM MEXER NA AGENDA DOS COLEGAS" (migration 0343,
  * issue #978) — a agenda como opção POR ORGANIZAÇÃO, LIGADA POR PADRÃO.
  *
@@ -756,4 +890,18 @@ export function meetAbertoLigado(settings: unknown): boolean {
       ? (settings as Record<string, unknown>)
       : undefined;
   return raiz?.google_meet_acesso_aberto === true;
+}
+
+/** Só true booleano autoriza preencher o nome vazio a partir do texto real do atendimento. */
+export function nomeInformadoLigado(settings: unknown): boolean {
+  const crm = settings && typeof settings === 'object' && !Array.isArray(settings)
+    ? (settings as Record<string, unknown>).crm : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).nome_informado_no_atendimento === true;
+}
+
+/** Ausente liga; só o booleano `false` tira as transferências do Aviso no WhatsApp. */
+export function avisoDeTransferenciaLigado(settings: unknown): boolean {
+  const crm = settings && typeof settings === 'object' && !Array.isArray(settings)
+    ? (settings as Record<string, unknown>).crm : undefined;
+  return crmSettingsSchema.parse(crm ?? {}).avisar_transferencia_no_whatsapp;
 }

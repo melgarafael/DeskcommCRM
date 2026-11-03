@@ -34,6 +34,10 @@ export interface OrigemParaClonar {
   description?: string | null;
   contact_id?: string | null;
   value_cents?: number | null;
+  /** O recorrente viaja com o valor único (fatia 1 da #3602). */
+  recurring_value_cents?: number | null;
+  recurring_period?: "monthly" | null;
+  recurring_months?: number | null;
   currency?: string | null;
   owner_user_id?: string | null;
   owner_agent_id?: string | null;
@@ -187,8 +191,8 @@ export function escolheEtapaDeDestino(
  *   nem nasceria;
  * - `status`/`lost_reason`/`closed_at` — o clone NASCE aberto (o banco fecha pelo
  *   trigger da etapa, que aqui é sempre uma etapa aberta);
- * - `position_in_stage` — quem posiciona é o handler de criação (MAX + 1000), que
- *   é quem conhece o fim da fila da etapa escolhida.
+ * - `position_in_stage` — quem posiciona é o handler de criação (MIN − 1000, o
+ *   TOPO da etapa — #3461), que é quem conhece a fila da etapa escolhida.
  *
  * ⚠️ `custom_fields` vem INTEIRO, inclusive chaves que o funil de destino não
  * declara em `settings.fields` — e já foi filtrado, por uma rodada que tratou a
@@ -223,6 +227,14 @@ export function montaPayloadDoClone(
     description: origem.description ?? null,
     contact_id: origem.contact_id ?? null,
     value_cents: origem.value_cents ?? null,
+    // O RECORRENTE vai junto (fatia 1 da #3602): trocar de funil é o caminho
+    // que a P-01 manda usar, e levar só o setup deixaria metade do contrato no
+    // funil antigo sem que ninguém visse a mensalidade sumir. O
+    // `createLeadHandler` normaliza o trio (recorrente sem periodicidade nasce
+    // mensal; sem recorrente, duração não fica órfã).
+    recurring_value_cents: origem.recurring_value_cents ?? null,
+    recurring_period: origem.recurring_period ?? null,
+    recurring_months: origem.recurring_months ?? null,
     currency: origem.currency ?? "BRL",
     ...dono,
     // O dono é o da origem: se ele não pode mais ser dono, o clone nasce sem

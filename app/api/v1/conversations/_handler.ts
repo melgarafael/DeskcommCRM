@@ -453,9 +453,27 @@ export async function listConversationsHandler(
       // ou o formato do id mudarem.
       .limit(TETO_DE_CONTATOS_NA_BUSCA);
 
-    const ids = idsQueCabemNaURL(
-      (contatos ?? []).map((c) => (c as { id: string }).id),
-    );
+    // Ficha cujo TELEFONE EXTRA casa o número também entra na lista: a busca acima
+    // só olha o principal. A consulta embute a ficha e aplica os mesmos filtros de
+    // organização, anonimizado, pessoal e lápide — e não manda lista de ids na URL.
+    let idsDoExtra: string[] = [];
+    if (pareceTelefone) {
+      const { data: extras } = await supabase
+        .from("contact_phones")
+        .select("contact_id, contacts!inner(id)")
+        .eq("organization_id", ctx.organization_id)
+        .eq("contacts.organization_id", ctx.organization_id)
+        .eq("contacts.is_anonymized", false)
+        .eq("contacts.is_personal", false)
+        .is("contacts.is_merged_into", null)
+        .ilike("phone_number", `*${somenteDigitos}*`)
+        .limit(TETO_DE_CONTATOS_NA_BUSCA);
+      idsDoExtra = ((extras ?? []) as { contact_id: string }[]).map((r) => r.contact_id);
+    }
+
+    const ids = idsQueCabemNaURL([
+      ...new Set([...(contatos ?? []).map((c) => (c as { id: string }).id), ...idsDoExtra]),
+    ]);
     if (ids.length > 0) {
       query = query.or(
         `last_message_preview.ilike.*${s}*,contact_id.in.(${ids.join(",")})`,

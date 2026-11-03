@@ -299,4 +299,83 @@ describe("assign_owner: atendente fixo ou rodízio", () => {
     const patch = updateAutomationRuleSchema.safeParse({ actions: [rodizio(fila), rodizio(fila)] });
     expect(patch.success).toBe(false);
   });
+
+  /*
+   * #3514 — as duas opções da passagem SDR → Closer. A regra que estes testes
+   * protegem é a de COMPATIBILIDADE: o payload que já está gravado em toda
+   * instalação não ganha chave nenhuma, e quem não marcou nada continua com o
+   * comportamento de antes. Por isso a asserção é de igualdade EXATA, e não de
+   * "contém": uma chave `contato: false` inventada pelo parse já seria uma
+   * mudança de contrato.
+   */
+  it("a passagem para o cliente é opt-in: sem as chaves, o config sai igual ao gravado", () => {
+    const r = regra([{ type: "assign_owner", config: { user_id: UUID } }]);
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.actions[0]?.config).toEqual({ user_id: UUID });
+  });
+
+  it("aceita as duas caixas e as devolve como vieram", () => {
+    const r = regra([{ type: "assign_owner", config: { user_id: UUID, contato: true, conversas: true } }]);
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.actions[0]?.config).toEqual({ user_id: UUID, contato: true, conversas: true });
+
+    // Uma caixa só também vale: quem quer o cliente sem mexer nas conversas.
+    const soContato = regra([{ type: "assign_owner", config: { user_id: UUID, contato: true } }]);
+    expect(soContato.success && soContato.data.actions[0]?.config).toEqual({ user_id: UUID, contato: true });
+  });
+
+  it("recusa valor que não é booleano, apontando a caixa", () => {
+    const r = regra([{ type: "assign_owner", config: { user_id: UUID, conversas: "sim" } }]);
+    expect(r.success).toBe(false);
+    expect(r.error?.issues[0]?.path).toEqual(["actions", 0, "config", "conversas"]);
+  });
+
+  it("no rodízio as caixas não existem: o parse as descarta (a vez é decidida no banco)", () => {
+    const fila = [{ user_id: UUID, pausado: false }];
+    const r = regra([{ type: "assign_owner", config: { modo: "rodizio", fila, contato: true, conversas: true } }]);
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.actions[0]?.config).toEqual({ modo: "rodizio", fila });
+  });
+});
+
+// #2974 — "no máximo uma vez por contato". O motor lê a chave com `=== true`;
+// um valor torto gravado por outra porta seria silenciosamente DESLIGADO (a tela
+// diria uma coisa e a regra faria outra), então a porta recusa.
+describe("trigger_config.uma_vez_por_contato: ligado/desligado, nunca outra coisa", () => {
+  const criar = (trigger_config: Record<string, unknown>) =>
+    createAutomationRuleSchema.safeParse({
+      name: "Boas-vindas",
+      trigger_event: "lead.created",
+      conditions: [],
+      actions: [{ type: "add_tag", config: { tags: ["novo"] } }],
+      trigger_config,
+    });
+
+  it("aceita ligado, desligado e a chave ausente (o comportamento de antes)", () => {
+    expect(criar({ uma_vez_por_contato: true }).success).toBe(true);
+    expect(criar({ uma_vez_por_contato: false }).success).toBe(true);
+    expect(criar({}).success).toBe(true);
+    // `null` é "não configurado", o mesmo que ausente.
+    expect(criar({ uma_vez_por_contato: null }).success).toBe(true);
+  });
+
+  it("recusa string e número, apontando a chave", () => {
+    const texto = criar({ uma_vez_por_contato: "sim" });
+    expect(texto.success).toBe(false);
+    expect(texto.error?.issues[0]?.path).toEqual(["trigger_config", "uma_vez_por_contato"]);
+    expect(texto.error?.issues[0]?.message).toBe(
+      "A opção “uma vez por contato” só aceita ligado ou desligado.",
+    );
+
+    const numero = criar({ uma_vez_por_contato: 1 });
+    expect(numero.success).toBe(false);
+    expect(numero.error?.issues[0]?.path).toEqual(["trigger_config", "uma_vez_por_contato"]);
+  });
+
+  it("o PATCH passa pela mesma régua", () => {
+    expect(updateAutomationRuleSchema.safeParse({ trigger_config: { uma_vez_por_contato: true } }).success).toBe(true);
+    const torto = updateAutomationRuleSchema.safeParse({ trigger_config: { uma_vez_por_contato: "1" } });
+    expect(torto.success).toBe(false);
+    expect(torto.error?.issues[0]?.path).toEqual(["trigger_config", "uma_vez_por_contato"]);
+  });
 });

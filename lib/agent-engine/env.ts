@@ -73,15 +73,28 @@ const envSchema = z.object({
   QUEUE_VISIBILITY_TIMEOUT_MS: z.coerce.number().int().positive().default(600_000),
   // Porta do /healthz (bind 0.0.0.0 no container; 0 = porta efêmera em teste).
   HEALTH_PORT: z.coerce.number().int().min(0).max(65_535).default(8787),
-  // TETO de espera do laço da fila: com a fila vazia é quanto ele dorme entre uma
-  // consulta ao relógio e a próxima; com job agendado, ele acorda no vencimento e
-  // este valor só limita a soneca. Era 250 e a fila era consultada abrindo uma
+  // PISO da espera ociosa do laço da fila: com a fila vazia é quanto ele dorme na
+  // PRIMEIRA rodada ociosa, e o valor dobra a cada rodada seguinte até
+  // QUEUE_IDLE_MAX_INTERVAL_MS; com job agendado, ele acorda no vencimento e este
+  // valor só limita a soneca. Era 250 e a fila era consultada abrindo uma
   // transação de claim inteira — 5 statements, ~17/s para sempre numa instalação
   // que não atende ninguém (issue #258: 8,09 GB/mês de egress medidos contra uma
   // cota de 5 GB do plano free do Supabase). O 2000 mantém o SIGNIFICADO da chave
   // para quem já a configurou, cabe 4× dentro do INBOUND_DEBOUNCE_MS (8000) e fica
   // abaixo do idleTimeoutMillis do pool (10s), acima do qual cada rodada reconecta.
   QUEUE_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(2_000),
+  // TETO do recuo exponencial com a fila VAZIA (issue #3688). OPCIONAL, e
+  // ausente = recuo DESLIGADO (a fila vazia dorme sempre o piso, como antes).
+  // Ligar economiza consultas: o autor da issue mediu 3.880 chamadas do relógio
+  // em 2h19 (~28/min) numa instalação parada; com 60000 a mesma instalação cai
+  // para ~1 consulta/min. O custo: só o inbound que passa pelo drain do worker
+  // acorda a soneca — job enfileirado pela API do app (resposta da equipe a um
+  // caso da IA) e os disparos agendados pelo cron podem esperar até o teto.
+  // Por isso não é default (doc 242, C).
+  // O teto fica ACIMA do idleTimeoutMillis do pool (10 s) de propósito: cada
+  // rodada depois de um sono longo reconecta (499 B medidos contra 66 B), mas
+  // 1 rodada/min a 499 B continua 4× mais barata que 30 rodadas/min a 66 B.
+  QUEUE_IDLE_MAX_INTERVAL_MS: z.coerce.number().int().positive().optional(),
   // Ritmo do "havia trabalho e eu não peguei" — cap QUEUE_MAX_CONCURRENCY cheio ou
   // lane do contato ocupada. Aqui há job vencido esperando vaga, então recolher o
   // ritmo custaria throughput no pico sem economizar nada no ocioso: é o único
@@ -142,6 +155,17 @@ const envSchema = z.object({
   // `event-log-drain` (1×/min) — ver o cabeçalho de lib/event-log/drain-loop.ts.
   EVENT_LOG_DRAIN_INTERVAL_MS: z.coerce.number().int().positive().default(2_000),
   EVENT_LOG_DRAIN_IDLE_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),
+  // Teto do recuo do ocioso (#3693). O laço não fica em 10s para sempre: 10s →
+  // 20s → 30s e para aqui. Sem teto, uma instalação sem uso passaria a
+  // esperar horas entre ticks — e um evento que chegasse esperaria junto.
+  // 30s e não 60s é decisão do dono (doc 242, opção B): corta a maior parte das
+  // consultas vazias sem deixar automação e aviso ao atendente com cara de
+  // "travou". Preso por `lib/agent-engine/env.test.ts`.
+  EVENT_LOG_DRAIN_IDLE_MAX_INTERVAL_MS: z.coerce.number().int().positive().default(30_000),
+  // De quanto em quanto tempo, no MÁXIMO, o laço procura evento preso em
+  // `processing`. A varredura procura linhas 10 min atrasadas: fazê-la a cada
+  // tick (2s) era consulta ao PostgREST sem chance de achar nada novo.
+  EVENT_LOG_DRAIN_STALE_SWEEP_MS: z.coerce.number().int().positive().default(60_000),
   EVENT_LOG_DRAIN_BATCH_SIZE: z.coerce.number().int().positive().default(50),
   // Coalescência de rajada inbound: mensagens do MESMO contato dentro desta
   // janela viram UM job (responder em rajada é gatilho de ban). 0 = sem debounce.

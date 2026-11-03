@@ -28,8 +28,9 @@ export const createFollowupFlowSchema = z.strictObject({
 // desse fluxo cancela (outcome='replied') na 1ª resposta do contato em vez de
 // acordar o classify. Sibling de `kind` (não dentro de `params`) porque é uma
 // política de REAÇÃO À RESPOSTA, ortogonal a como o fluxo foi disparado — vale
-// pros kinds igualmente. Default false quando ausente (fluxos existentes
-// continuam acordando o classify, comportamento inalterado).
+// pros kinds igualmente. Default false quando ausente, EXCETO em
+// `appointment_no_show`, em que ausente vale true (#3400; ver
+// `parseCancelOnReply` em `lib/followup/reactivity.ts`).
 const CANCEL_ON_REPLY = { cancel_on_reply: z.boolean().optional() };
 
 export const triggerConfigSchema = z.discriminatedUnion("kind", [

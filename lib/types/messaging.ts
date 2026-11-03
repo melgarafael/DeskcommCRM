@@ -167,6 +167,18 @@ export interface Note {
   media_storage_path: string | null;
   media_mime: string | null;
   media_size_bytes: number | null;
+  /**
+   * O rastro da retenção por idade (#3756): quando o prazo da organização apaga
+   * o anexo, o passo 2c de `fn_enfileirar_midia_vencida` zera os três ponteiros
+   * acima e grava o "quando" e os "dias" aqui. `null` = nada foi apagado — é o
+   * que separa uma nota que perdeu o anexo de uma nota que nunca teve, e é o
+   * que o card lê para mostrar o aviso no lugar do arquivo.
+   *
+   * A redação por LGPD NÃO grava esta marca de propósito: ali o anexo não saiu
+   * por política de retenção, e o aviso fala de prazo.
+   */
+  media_expired_at: string | null;
+  media_retention_days: number | null;
 }
 
 /**

@@ -9,7 +9,7 @@ import {
   resolveActiveOrg,
 } from "@/lib/auth/server";
 import { DEFAULT_VISIBILITY_MODE, roleAtLeast, type VisibilityMode } from "@/lib/auth/types";
-import { clientePelaAgendaLigado } from "@/lib/schemas/settings";
+import { clientePelaAgendaLigado, clientePelaVendaLigado } from "@/lib/schemas/settings";
 import { AuthProvider } from "@/hooks/auth/AuthProvider";
 import { ProvedorDeCoresDasEtiquetas } from "@/components/tags/CoresDasEtiquetas";
 import { AppShell } from "./_components/AppShell";
@@ -25,6 +25,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { modulosLigados } from "@/lib/instalacao/modulos";
 import { capacidadesLigadas } from "@/lib/organizacao/capacidades";
+import { telefoniaEmUso } from "@/lib/telefonia/em-uso";
 import { ehOperante } from "@/lib/organizacao/operante";
 import {
   ImpersonateBanner,
@@ -138,7 +139,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
      *    aplica. Vigiado por
      *    `tests/unit/faixa-respeita-os-canais-do-atendente.test.tsx`.
      */
-    const [orgRes, conexoes, isEnrolled, mfaRequired, modulos] = await Promise.all([
+    const [orgRes, conexoes, isEnrolled, mfaRequired, modulos, telefonia] = await Promise.all([
       admin
         .from("organizations")
         .select("onboarded_at, status, settings, timezone")
@@ -154,6 +155,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       ),
       // Da INSTALAÇÃO: decide se a porta de um módulo opcional entra no menu.
       modulosLigados(admin),
+      // Da ORGANIZAÇÃO (#1290): a telefonia não tem chave de instalação que o app
+      // leia — o que se mede é o tronco SIP que esta empresa salvou. Entra no
+      // mesmo `Promise.all`, então custa a consulta mais lenta, não uma espera.
+      telefoniaEmUso(admin, activeOrg.orgId),
     ]);
 
     const orgRow = orgRes.data;
@@ -179,9 +184,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       visibility_mode: mode ?? DEFAULT_VISIBILITY_MODE,
       // Mesma linha de `settings` já lida acima — nenhuma consulta a mais.
       cliente_pela_agenda: clientePelaAgendaLigado(orgRow?.settings),
+      // #3644 — a regra da venda também decide se o funil de clientes está em
+      // uso: o menu e o selo do quadro não podem sumir de uma organização que
+      // roteia por ela. Mesma linha de `settings`, nenhuma consulta a mais.
+      cliente_pela_venda: clientePelaVendaLigado(orgRow?.settings),
       modulos_ligados: modulos,
       // Mesma linha de `settings` já lida acima — nenhuma consulta a mais.
-      capacidades_ligadas: capacidadesLigadas(orgRow?.settings, modulos),
+      capacidades_ligadas: capacidadesLigadas(orgRow?.settings, modulos, telefonia),
     };
 
     // A faixa do teste grátis (spec da cobrança §9): uma consulta a mais SÓ com

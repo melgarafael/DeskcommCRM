@@ -9,6 +9,7 @@ import {
   motivoDoVeto,
   sugestaoParaMostrar,
 } from "@/lib/agent-engine/agent/sugestao-de-resposta";
+import { DICIONARIO } from "@/lib/i18n/dicionario";
 
 /**
  * Os dois defeitos medidos em produção em 2026-09-12, na tela de atendimento.
@@ -164,6 +165,46 @@ describe("o código do veto vira a causa em linguagem de quem opera", () => {
       expect(motivo!.texto.length, `texto curto demais em ${codigo}`).toBeGreaterThan(30);
       expect(typeof motivo!.acionavel).toBe("boolean");
     }
+  });
+
+  /**
+   * `causa` vai no aviso de versão barrada (doc 234), sobre uma sugestão que
+   * está sendo OFERECIDA: frase curta, sem instrução e sem ponto (a moldura põe
+   * o seu). Quem não barra versão nenhuma não tem causa — um veto novo sem ela
+   * sumiria do aviso em silêncio, por isso a lista dos sem-causa é fechada.
+   */
+  it("só os vetos de envio têm causa, e a causa não manda agir", () => {
+    const semCausa = CODIGOS_DE_VETO_CONHECIDOS.filter((c) => !motivoDoVeto(c)!.causa);
+    expect(semCausa.sort()).toEqual(
+      ["generation_failed", "max_steps_exhausted", "no_candidate", "output_truncated", "unknown_preview_tool"],
+    );
+    for (const codigo of CODIGOS_DE_VETO_CONHECIDOS) {
+      const causa = motivoDoVeto(codigo)!.causa;
+      if (!causa) continue;
+      expect(causa, codigo).not.toMatch(/gere de novo|nada foi enviado|confira|ajuste|\.$/i);
+      // A tela passa a causa por `t(motivo.causa)`, forma que a guarda do
+      // espanhol não resolve: a cobertura no dicionário é cobrada aqui.
+      expect(DICIONARIO[causa]?.es, `sem espanhol para a causa de ${codigo}`).toBeTruthy();
+    }
+  });
+
+  /**
+   * A CONFERÊNCIA DE AFIRMAÇÃO DE FATO (#2231) tem duas causas que se parecem
+   * e não são a mesma: o material CONTRADIZ o que a resposta dizia, ou o
+   * material simplesmente não apoia. Quem atende age igual nos dois casos, mas
+   * a frase não pode ser a mesma — e, até aqui, nenhum teste comparava as duas.
+   * Medido: invertendo os dois corpos em `motivoDoVeto`, os 24 casos da base
+   * seguiam verdes.
+   */
+  it("⛔ a afirmação CONTRADITA e a SEM APOIO não podem trocar de frase", () => {
+    const contradita = motivoDoVeto("factual_claim_contradicted")!;
+    const semApoio = motivoDoVeto("factual_claim_unsupported")!;
+
+    expect(contradita.texto).not.toBe(semApoio.texto);
+    expect(contradita.texto).toMatch(/CONTRADIZ/);
+    expect(contradita.texto).not.toMatch(/sem apoio/);
+    expect(semApoio.texto).toMatch(/sem apoio/);
+    expect(semApoio.texto).not.toMatch(/CONTRADIZ/);
   });
 
   it("as causas DEFINITIVAS (opt-out, LGPD) não fingem ter ação local", () => {

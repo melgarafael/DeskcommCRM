@@ -34,7 +34,7 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({
   }),
 }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
-vi.mock("next/navigation", () => ({ usePathname: () => estado.caminho }));
+vi.mock("next/navigation", () => ({ usePathname: () => estado.caminho, useRouter: () => ({ prefetch: vi.fn() }) }));
 // Os contadores leem React Query; a presença deles tem teste próprio. Aqui
 // interessa que a barra os POSICIONE, então viram marcas visíveis.
 vi.mock("@/components/shell/ContadorDaFila", () => ({

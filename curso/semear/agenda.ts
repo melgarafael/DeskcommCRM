@@ -15,6 +15,7 @@
  * pelos ids fixos desta semente.
  */
 import { type Contexto, semErro } from "../semear-demonstracao";
+import { limparTiposDasLicoes } from "./tipos-de-agendamento";
 
 const tipoId = (n: number) => `be310000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const compromissoId = (n: number) => `be300000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -67,6 +68,7 @@ const SEMANA: Array<[number, number, number, number, Quem, number | null, string
 
 export async function semear(c: Contexto) {
   const { db, org, pessoa } = c;
+  await limparTiposDasLicoes(c);
 
   // ---------- tipos de atendimento da clínica ----------
   const TIPOS = [

@@ -26,6 +26,7 @@ import {
   usePublishOrgMemory,
   useCreateOrgMemoryEntry,
   useSetOrgMemoryEntryStatus,
+  useSetOrgMemoryEntryValidity,
   useOrgMemoryVersion,
   type OrgMemoryState,
   type OrgMemoryVersionMeta,
@@ -35,6 +36,58 @@ import { useT } from "@/hooks/i18n/useT";
 
 interface Props {
   initialState: OrgMemoryState;
+}
+
+/**
+ * Data de CALENDÁRIO (`YYYY-MM-DD`) para a tela.
+ *
+ * `formatDate` converte instante — e "2026-10-26" lido como instante é meia-noite
+ * UTC, que no Brasil aparece como 25/10 às 21h. O prazo do aprendizado é um dia,
+ * não um momento: monta-se a data no calendário local, sem fuso no meio.
+ */
+/**
+ * Campo "Vale até" da linha. Grava ao SAIR do campo, e só se mudou: o navegador
+ * emite um valor completo a cada segmento digitado ("0002-11-15" no primeiro
+ * dígito do ano), e gravar a cada `onChange` salvava essa data pela metade e
+ * tirava o foco no meio da digitação. A `key` de quem usa remonta o campo quando
+ * o servidor devolve outro valor.
+ */
+export function ValidadeDaLinha({
+  id,
+  valor,
+  onSalvar,
+}: {
+  id: string;
+  valor: string;
+  onSalvar: (dia: string) => void;
+}) {
+  return (
+    <Input
+      id={id}
+      type="date"
+      defaultValue={valor}
+      onBlur={(e) => {
+        if (e.target.value !== valor) onSalvar(e.target.value);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+      }}
+      className="w-full sm:w-44"
+    />
+  );
+}
+
+export function formatDateOnly(dia: string, idioma: string): string {
+  const [ano, mes, diaDoMes] = dia.split("-").map(Number);
+  if (!ano || !mes || !diaDoMes) return dia;
+  // `new Date(2, …)` lê o ano 2 como 1902; setFullYear não reinterpreta.
+  const data = new Date(2000, mes - 1, diaDoMes);
+  data.setFullYear(ano);
+  return data.toLocaleDateString(idioma, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }
 
 function formatDate(iso: string, idioma: string): string {
@@ -69,10 +122,12 @@ export function OrgMemoryClient({ initialState }: Props) {
   const [formOpen, setFormOpen] = React.useState(false);
   const [title, setTitle] = React.useState("");
   const [body, setBody] = React.useState("");
+  const [validUntil, setValidUntil] = React.useState("");
 
   const publish = usePublishOrgMemory();
   const createEntry = useCreateOrgMemoryEntry();
   const setStatus = useSetOrgMemoryEntryStatus();
+  const setValidity = useSetOrgMemoryEntryValidity();
   const versionDetail = useOrgMemoryVersion(historyTarget?.id ?? null);
 
   // Sincroniza o textarea quando a versão ativa mudar sob nós (ex.: outro admin publicou).
@@ -110,14 +165,25 @@ export function OrgMemoryClient({ initialState }: Props) {
     e.preventDefault();
     if (!title.trim() || !body.trim()) return;
     createEntry.mutate(
-      { title: title.trim(), body: body.trim() },
+      { title: title.trim(), body: body.trim(), valid_until: validUntil || null },
       {
         onSuccess: () => {
           toast.success(t("Aprendizado adicionado."));
           setTitle("");
           setBody("");
+          setValidUntil("");
           setFormOpen(false);
         },
+        onError: showApiError,
+      },
+    );
+  }
+
+  function handleSetValidity(id: string, dia: string) {
+    setValidity.mutate(
+      { id, valid_until: dia || null },
+      {
+        onSuccess: () => toast.success(t("Validade atualizada.")),
         onError: showApiError,
       },
     );
@@ -258,6 +324,21 @@ export function OrgMemoryClient({ initialState }: Props) {
                   required
                 />
               </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="entry-valid-until">{t("Vale até (opcional)")}</Label>
+                <Input
+                  id="entry-valid-until"
+                  type="date"
+                  value={validUntil}
+                  onChange={(e) => setValidUntil(e.target.value)}
+                  className="w-full sm:w-56"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Sem data, o aprendizado vale para sempre. Com data, ele sai sozinho da conversa dos agentes depois desse dia — é assim que a programação da semana ou o cardápio do dia deixam de valer.",
+                  )}
+                </p>
+              </div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="ghost" size="sm" onClick={() => setFormOpen(false)}>
                   {t("Cancelar")}
@@ -302,7 +383,25 @@ export function OrgMemoryClient({ initialState }: Props) {
                     <span className="ml-auto text-xs text-muted-foreground">{formatDate(entry.created_at, tagDoIdioma)}</span>
                   </div>
                   <p className="whitespace-pre-wrap text-text-muted">{entry.body}</p>
-                  <div className="flex sm:justify-end">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <div className="flex flex-col gap-1">
+                      <Label htmlFor={`entry-validade-${entry.id}`} className="text-xs">
+                        {t("Vale até")}
+                      </Label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <ValidadeDaLinha
+                          key={`${entry.id}-${entry.valid_until ?? ""}`}
+                          id={`entry-validade-${entry.id}`}
+                          valor={entry.valid_until ?? ""}
+                          onSalvar={(dia) => handleSetValidity(entry.id, dia)}
+                        />
+                        <Badge variant={entry.valid_until ? "info" : "neutral"} className="text-[10px]">
+                          {entry.valid_until
+                            ? `${t("vale até")} ${formatDateOnly(entry.valid_until, tagDoIdioma)}`
+                            : t("sem prazo")}
+                        </Badge>
+                      </div>
+                    </div>
                     <Button
                       variant="ghost"
                       size="sm"

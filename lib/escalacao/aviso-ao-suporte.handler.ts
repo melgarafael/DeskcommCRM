@@ -144,11 +144,13 @@ export async function criarTransporteDoAviso(
     async resolveDestino(organizationId, canal, telefone) {
       const ref = await refDoCanal(organizationId, canal.id);
       if (!ref) return null;
-      // O CHECK do banco já garantiu E.164 com `+`. Quem traduz para o endereço
-      // do canal é o adapter — e é por isso que a tradução não mora aqui.
+      // O CHECK do banco já garantiu E.164 com `+` — ou o `chatId` de um grupo
+      // (`…@g.us`, aviso de agendamento). Quem traduz para o endereço do canal
+      // é o adapter — e é por isso que a tradução não mora aqui.
+      const ehGrupo = telefone.endsWith("@g.us");
       return getAdapter(ref.provider as never).resolveRecipient({
-        isGroup: false,
-        groupChatId: null,
+        isGroup: ehGrupo,
+        groupChatId: ehGrupo ? telefone : null,
         phoneNumber: telefone,
         waIdentity: null,
         waLid: null,
