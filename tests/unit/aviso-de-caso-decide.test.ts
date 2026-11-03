@@ -345,6 +345,107 @@ describe("aviso ao suporte — o que impede o envio", () => {
     expect(estado.patches.at(-1)).toMatchObject({ erro_codigo: "canal_nao_aceita_aviso_livre" });
   });
 
+  describe("canal que só manda modelo, com o modelo aprovado escolhido (migration 9094)", () => {
+    const MODELO_ID = "88888888-8888-4888-8888-888888888888";
+    const MODELO = { id: MODELO_ID, name: "aviso_da_equipe", language: "pt_BR", chave: "1", corpo: "Aviso: {{1}}" };
+    const SO_MODELO = { id: CANAL, status: "WORKING", archived_at: null, aceitaMensagemLivre: false };
+    const CFG = {
+      organization_id: ORG,
+      channel_session_id: CANAL,
+      telefone_destino: "+5531998966398",
+      destino_jid: null,
+      ligado: true,
+      modelo_id: MODELO_ID,
+    };
+
+    function comModelo(modelo: typeof MODELO | null | "indeterminado") {
+      const montado = monta({ canal: SO_MODELO, cfg: CFG });
+      const chamadas: Array<{ org: string; canal: string; modeloId: string }> = [];
+      const opcoes: unknown[] = [];
+      montado.deps.db.carregaModeloDoAviso = async (org, canal, modeloId) => {
+        chamadas.push({ org, canal, modeloId });
+        if (modelo === "indeterminado") return { ok: false, motivo: "indeterminado" };
+        return modelo ? { ok: true, modelo } : { ok: false, motivo: "nao_aprovado" };
+      };
+      montado.deps.transporte.envia = async (_org, _canal, to, body, op) => {
+        montado.estado.enviados.push({ to, body });
+        opcoes.push(op);
+        return { externalId: "modelo.ABC" };
+      };
+      return { ...montado, chamadas, opcoes };
+    }
+
+    it("sai pelo transporte DENTRO do modelo, conferido no envio", async () => {
+      const { deps, estado, chamadas, opcoes } = comModelo(MODELO);
+      const r = await aplicaAvisoDeCaso(deps, evento());
+      expect(r.status).toBe("ok");
+      expect(chamadas).toEqual([{ org: ORG, canal: CANAL, modeloId: MODELO_ID }]);
+      expect(estado.enviados).toHaveLength(1);
+      expect(opcoes).toEqual([{ modelo: MODELO }]);
+      expect(estado.patches.at(-1)).toMatchObject({ status: "enviado", external_id: "modelo.ABC" });
+    });
+
+    it("o modelo que deixou de servir condena com o código de sempre — e não envia", async () => {
+      const { deps, estado } = comModelo(null);
+      await aplicaAvisoDeCaso(deps, evento());
+      expect(estado.enviados).toHaveLength(0);
+      expect(estado.patches.at(-1)).toMatchObject({ erro_codigo: "canal_nao_aceita_aviso_livre" });
+    });
+
+    it("a leitura do modelo que FALHOU volta mais tarde — não condena o aviso", async () => {
+      const { deps, estado } = comModelo("indeterminado");
+      const r = await aplicaAvisoDeCaso(deps, evento());
+      expect(r.status).toBe("retry");
+      expect(estado.enviados).toHaveLength(0);
+      expect(estado.patches.at(-1)).toMatchObject({ erro_codigo: "indeterminado" });
+      expect(estado.patches.at(-1)).not.toHaveProperty("status");
+    });
+
+    it("no modo `responsavel` (#3803) o modelo leva o aviso ao celular de quem atende", async () => {
+      // O destino muda, o número que envia não: o modelo é do NÚMERO, e vale
+      // para qualquer elo da cadeia de destino.
+      const VENDEDOR = "77777777-7777-4777-8777-777777777777";
+      const montado = monta({ canal: SO_MODELO, cfg: { ...CFG, destino_modo: "responsavel" } });
+      const opcoes: unknown[] = [];
+      montado.deps.db.carregaModeloDoAviso = async () => ({ ok: true, modelo: MODELO });
+      montado.deps.db.carregaMundoDoAviso = async () => ({
+        conversa: { assigned_to_user_id: VENDEDOR, assignee_kind: "human" },
+        negocio: null,
+        contato: null,
+        whatsapps: new Map([[VENDEDOR, "+5531988881111"]]),
+      });
+      montado.deps.transporte.envia = async (_org, _canal, to, body, op) => {
+        montado.estado.enviados.push({ to, body });
+        opcoes.push(op);
+        return { externalId: "modelo.DEF" };
+      };
+      const r = await aplicaAvisoDeCaso(montado.deps, evento());
+      expect(r.status).toBe("ok");
+      expect(montado.estado.enviados.map((e) => e.to)).toEqual(["5531988881111@c.us"]);
+      expect(opcoes).toEqual([{ modelo: MODELO }]);
+    });
+
+    it("canal de texto livre NUNCA consulta nem usa o modelo, mesmo gravado", async () => {
+      const montado = monta({ cfg: CFG });
+      let consultou = false;
+      const opcoes: unknown[] = [];
+      montado.deps.db.carregaModeloDoAviso = async () => {
+        consultou = true;
+        return { ok: true, modelo: MODELO };
+      };
+      montado.deps.transporte.envia = async (_org, _canal, to, body, ...resto) => {
+        montado.estado.enviados.push({ to, body });
+        opcoes.push(resto.length);
+        return { externalId: "wamid.ABC" };
+      };
+      await aplicaAvisoDeCaso(montado.deps, evento());
+      expect(consultou).toBe(false);
+      expect(montado.estado.enviados).toHaveLength(1);
+      // Quatro argumentos, como sempre: o texto livre não recebe opção nenhuma.
+      expect(opcoes).toEqual([0]);
+    });
+  });
+
   it("canal PAUSADO pelo operador não envia: falha com o código próprio e avisa na Central (#2318)", async () => {
     const { deps, estado } = monta({
       canal: { id: CANAL, status: "WORKING", archived_at: null, aceitaMensagemLivre: true, desativado: true },
