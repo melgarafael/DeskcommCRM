@@ -16133,6 +16133,15 @@ export const DICIONARIO: Traducoes = {
   "Empresa atualizada": { es: "Empresa actualizada" },
   "Contatos da empresa": { es: "Contactos de la empresa" },
   "Vincular contato": { es: "Vincular contacto" },
+  // O vínculo do NEGÓCIO feito e desfeito pelo dossiê (#852). Separado do
+  // bloco da empresa acima: lá se liga um contato a um cadastro de empresa.
+  "Desvincular contato": { es: "Desvincular contacto" },
+  "Contato vinculado ao negócio.": { es: "Contacto vinculado al negocio." },
+  "Contato desvinculado do negócio.": { es: "Contacto desvinculado del negocio." },
+  "Não foi possível vincular o contato.": { es: "No fue posible vincular el contacto." },
+  "Não foi possível desvincular o contato.": {
+    es: "No fue posible desvincular el contacto.",
+  },
   "Nenhum contato vinculado. Vincule quem fala por esta empresa.": {
     es: "Ningún contacto vinculado. Vincule a quien habla por esta empresa.",
   },
