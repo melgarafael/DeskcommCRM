@@ -186,13 +186,6 @@ const CHAVE_SEM_TENANT_LIBERADA: readonly { arquivo: string; tabela: string; mot
       "lido com filtro de organização logo acima.",
   },
   {
-    arquivo: "app/api/v1/ai/skills/route.ts",
-    tabela: "skill_versions",
-    motivo:
-      "Mesma razão: os ids vêm dos pointers da organização e dos de plataforma " +
-      "(organization_id nulo).",
-  },
-  {
     arquivo: "app/app/ai/skills/page.tsx",
     tabela: "skill_versions",
     motivo:

@@ -194,7 +194,7 @@ async function responder(
   // de decisão — que é exatamente o defeito que a wave 4 consertou.
   const { data: decididas, error: decErr } = await supabase
     .from("crm_lead_activities")
-    .select("id, lead_id, type, payload, performed_at, performed_by_user_id, crm_leads(title)")
+    .select("id, lead_id, type, payload, performed_at, performed_by_user_id, crm_leads!crm_lead_activities_lead_id_fkey(title)")
     .eq("organization_id", orgId)
     .in("type", ["next_action_approved", "next_action_dismissed"])
     .order("performed_at", { ascending: false })
