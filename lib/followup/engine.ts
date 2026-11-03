@@ -1,6 +1,8 @@
 import type { VariaveisDoModelo } from "@/lib/channels/meta/variaveis-do-fluxo";
 import type { JobClaim } from "@/lib/agent-engine/queue/claim";
 import { assertAgendaEffectSupabase } from "@/lib/agenda/efeito";
+import { AgendaPuladoError } from "@/lib/agenda/escolha-no-envio";
+import { escolhaDoFluxo } from "@/lib/agenda/escolha-no-envio-leitura";
 import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
 import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 import { isFollowupCasRecusado, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
@@ -955,7 +957,19 @@ async function processEnrollment(
     await db.assertServiceBoundary?.(enrollment);
     if (enrollment.status !== "dormente") {
       guarda = "agenda";
-      await db.assertAgenda?.(enrollment);
+      try {
+        await db.assertAgenda?.(enrollment);
+      } catch (agendaErr) {
+        // #3813 — escolha do FLUXO em `nao_enviar`: a agenda não segura o PASSO.
+        // Quem pula é o ENVIO, que registra `skipped` com o motivo lá na frente
+        // (`followup-turn.ts`). Reagendar aqui (como o `adiar` faz) mandaria a
+        // mensagem depois do compromisso — o oposto do que a escolha pediu — e
+        // tratar como fronteira vencida cancelaria o acompanhamento inteiro.
+        // A guarda de MOEDA (`fn_appointment_enrollment_current`) não é escolha
+        // e continua valendo: só o pulo por compromisso chega como
+        // `AgendaPuladoError`.
+        if (!(agendaErr instanceof AgendaPuladoError)) throw agendaErr;
+      }
     }
   } catch (error) {
     if(error instanceof AgendaDeferredError){
@@ -1313,7 +1327,16 @@ export function createSupabaseAdminClient(admin: SupabaseClient): AdminClient {
       if (!gatilho.success || gatilho.data.kind !== "silence") return null;
       return reavaliarDepoisDoRetorno(quando, gatilho.data.params.threshold_minutes);
     },
-    async assertAgenda(enrollment){await assertAgendaEffectSupabase(admin,{organizationId:enrollment.organization_id,contactId:enrollment.contact_id,enrollmentId:enrollment.id,nodeId:enrollment.current_node_id});},
+    async assertAgenda(enrollment){
+      // #3813 — A ESCOLHA DO FLUXO VALE TAMBÉM NO TICK. Sem esta leitura o
+      // motor usava o padrão (`adiar`) e segurava TODO passo de quem tem
+      // horário marcado: um fluxo publicado em `enviar` nunca enviava, e um em
+      // `nao_enviar` só voltava a andar depois do compromisso (mandando, no
+      // fim, a mensagem que a escolha mandou não mandar). A guarda de moeda
+      // continua dentro de `assertAgendaEffectSupabase`.
+      const escolha = await escolhaDoFluxo(admin, enrollment.organization_id, enrollment.id);
+      await assertAgendaEffectSupabase(admin,{organizationId:enrollment.organization_id,contactId:enrollment.contact_id,enrollmentId:enrollment.id,nodeId:enrollment.current_node_id,escolhaNoEnvio:escolha});
+    },
     async claimDueEnrollments(limit, leaseSeconds) {
       const { data, error } = await admin.rpc("fn_claim_due_followup_enrollments", {
         p_limit: limit,
