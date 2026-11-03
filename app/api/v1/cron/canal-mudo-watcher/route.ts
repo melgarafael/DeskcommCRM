@@ -49,15 +49,15 @@ const LIMITE = 500;
 
 /** O que o corpo do aviso diz a quem abre a Central. Sem jargão e com a saída. */
 const CORPO_DO_AVISO =
-  "Este canal está em modo de teste e não tem nenhum número autorizado, " +
-  "então a IA não responde a ninguém nele — as mensagens chegam no Inbox e " +
-  "ficam sem resposta automática. Em Conexões, autorize os números de teste " +
-  "ou abra o canal ao público.";
+  "Este canal está en modo de prueba y no tiene ningún número autorizado, " +
+  "así que la IA no responde a nadie en él — los mensajes llegan al Inbox y " +
+  "quedan sin respuesta automática. En Conexiones, autorizá los números de prueba " +
+  "o abrí el canal al público.";
 
 const MOTIVO_LEGIVEL: Record<MotivoDaResolucao, string> = {
-  ganhou_numero: "o canal ganhou número autorizado",
-  saiu_do_modo_de_teste: "o canal saiu do modo de teste",
-  canal_arquivado: "o canal foi arquivado",
+  ganhou_numero: "el canal consiguió un número autorizado",
+  saiu_do_modo_de_teste: "el canal salió del modo de prueba",
+  canal_arquivado: "el canal fue archivado",
 };
 
 interface AvisoAberto {
@@ -120,7 +120,7 @@ async function handle(req: NextRequest): Promise<Response> {
       .from("agent_inbox_items")
       .update({
         status: "resolved",
-        body: `${CORPO_DO_AVISO}\n\nResolvido pelo sistema: ${MOTIVO_LEGIVEL[motivo]}.`,
+        body: `${CORPO_DO_AVISO}\n\nResuelto por el sistema: ${MOTIVO_LEGIVEL[motivo]}.`,
       })
       .eq("id", aviso.id)
       // O `status` no filtro é a trava: duas rodadas simultâneas (cron + curl à
@@ -151,8 +151,8 @@ async function handle(req: NextRequest): Promise<Response> {
         // assim de propósito. Crítico aqui gastaria o alarme que a Central
         // reserva para o que já custou dinheiro ou cliente.
         severity: "warn",
-        title: "Este canal está em modo de teste — a IA não responde ninguém",
-        body: `${CORPO_DO_AVISO}\n\nAssim há ${desfecho.diasMudo} dia(s).`,
+        title: "Este canal está en modo de prueba — la IA no responde a nadie",
+        body: `${CORPO_DO_AVISO}\n\nAsí hace ${desfecho.diasMudo} día(s).`,
         ref_kind: "channel_session",
         ref_id: canal.id,
       })

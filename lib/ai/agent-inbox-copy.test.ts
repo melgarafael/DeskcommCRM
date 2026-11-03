@@ -62,13 +62,7 @@ describe("agent-inbox-copy — rótulos leigos dos avisos do runtime", () => {
    * estava sem `es` antes desta cerca: ela só encolhe.
    */
   it("todo rótulo tem tradução em espanhol", () => {
-    const AINDA_SEM_ES = new Set([
-      "appointment_outcome_required",
-      "appointment_recovery_review",
-      "proposal_expired_notice",
-      "proposal_acceptance_rate_drop",
-      "proposal_promised_not_created",
-    ]);
+    const AINDA_SEM_ES = new Set<string>([]);
     const semEs = Object.entries(KIND_LABEL)
       .filter(([, rotulo]) => !DICIONARIO[rotulo]?.es)
       .map(([k]) => k);

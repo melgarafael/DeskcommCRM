@@ -62,8 +62,8 @@ async function rodar(admin: ReturnType<typeof createAdminClient>, requestId: str
     if (!existente) {
       const { error: inboxErr } = await admin.from("agent_inbox_items").insert({
         organization_id: org.id, kind: "proposal_acceptance_rate_drop", severity: "warn",
-        title: "A taxa de aceite de propostas caiu",
-        body: `${Math.round(taxa * 100)}% das propostas decididas nos últimos 30 dias foram aceitas — abaixo do piso de ${Math.round(PISO_DE_ACEITE * 100)}%.`,
+        title: "La tasa de aceptación de propuestas bajó",
+        body: `El ${Math.round(taxa * 100)}% de las propuestas decididas en los últimos 30 días fueron aceptadas — por debajo del piso de ${Math.round(PISO_DE_ACEITE * 100)}%.`,
       });
       if (inboxErr) {
         logger.error("[proposal-acceptance-rate] aviso na Central falhou", { error: inboxErr.message, organization_id: org.id, requestId });

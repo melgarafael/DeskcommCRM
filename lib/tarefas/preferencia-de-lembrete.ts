@@ -245,6 +245,6 @@ export function textoDoAvisoDeTarefa(
 ): { titulo: string; corpo: string } {
   const titulo = tarefa.title.trim();
   return categoria === "task_due"
-    ? { titulo: "Uma tarefa está perto do vencimento", corpo: titulo }
-    : { titulo: "Uma tarefa venceu sem conclusão", corpo: titulo };
+    ? { titulo: "Una tarea está cerca del vencimiento", corpo: titulo }
+    : { titulo: "Una tarea venció sin terminarse", corpo: titulo };
 }

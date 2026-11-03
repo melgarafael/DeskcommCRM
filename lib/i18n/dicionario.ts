@@ -19252,6 +19252,17 @@ export const DICIONARIO: Traducoes = {
   // Rótulo do provedor de IA, tela /app/ai/credentials (AddCredentialDialog, CredentialsList).
   "OpenAI pela assinatura (ChatGPT)": { es: "OpenAI por suscripción (ChatGPT)" },
   "Provedor personalizado (compatível com OpenAI)": { es: "Proveedor personalizado (compatible con OpenAI)" },
+  // Gaps encontrados na varredura de 03/11/2026: strings que já passavam por
+  // t() mas não tinham entrada aqui (degradavam pro português em silêncio).
+  "Tipo de atendimento": { es: "Tipo de atención" },
+  "Em risco": { es: "En riesgo" },
+  "Em voo": { es: "En curso" },
+  "Preparando": { es: "Preparando" },
+  "Confirme a presença no compromisso": { es: "Confirmá la presencia en el turno" },
+  "A recuperação precisa de uma decisão da equipe": { es: "La recuperación necesita una decisión del equipo" },
+  "Uma proposta venceu sem decisão": { es: "Una propuesta venció sin decisión" },
+  "A taxa de aceite de propostas caiu": { es: "La tasa de aceptación de propuestas bajó" },
+  "Uma proposta prometida não foi criada": { es: "Una propuesta prometida no fue creada" },
 };
 
 /**

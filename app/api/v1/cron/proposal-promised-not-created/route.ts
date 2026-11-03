@@ -84,8 +84,8 @@ async function rodar(admin: ReturnType<typeof createAdminClient>, requestId: str
     if (!existente) {
       const { error: inboxErr } = await admin.from("agent_inbox_items").insert({
         organization_id: t.organization_id, kind: "proposal_promised_not_created", severity: "warn",
-        title: "Uma proposta prometida não foi criada",
-        body: "Um compromisso de enviar proposta venceu e nenhuma proposta foi criada para este negócio.",
+        title: "Una propuesta prometida no fue creada",
+        body: "Un compromiso de enviar una propuesta venció y no se creó ninguna propuesta para este negocio.",
         ref_kind: "lead", ref_id: t.lead_id,
       });
       if (inboxErr) {

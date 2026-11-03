@@ -104,8 +104,8 @@ const LIMITE_DA_VARREDURA = 200;
 
 function comoFaz(horas: number): string {
   const dias = Math.floor(horas / 24);
-  if (dias >= 1) return dias === 1 ? "há um dia" : `há ${dias} dias`;
-  return `há ${Math.max(1, Math.round(horas))} horas`;
+  if (dias >= 1) return dias === 1 ? "hace un día" : `hace ${dias} días`;
+  return `hace ${Math.max(1, Math.round(horas))} horas`;
 }
 
 /**
@@ -118,10 +118,9 @@ function comoFaz(horas: number): string {
  * O "há" é uma chave com lacuna (`há {tempo}`), e não um pedaço solto, porque
  * a ordem é da língua: o inglês põe o marcador depois ("3 days ago").
  *
- * ⚠️ O braço dos CASOS continua usando `comoFaz` e continua saindo em português
- * para toda organização. É dívida ANTERIOR a esta onda e está declarada, não
- * consertada de carona: mudar o título daquele aviso mexeria num texto que
- * `central-avisos-*` já observa, e o lugar de decidir isso é o PR daquele braço.
+ * O braço dos CASOS usa `comoFaz` com o texto fixo em espanhol (03/11/2026,
+ * fork Holospace, instalação de um só idioma) em vez de `esperaEmPalavras` —
+ * não precisa do dicionário porque não há outro idioma para escolher aqui.
  */
 function esperaEmPalavras(horas: number, t: (texto: string) => string): string {
   const dias = Math.floor(horas / 24);
@@ -184,13 +183,13 @@ async function handle(req: NextRequest): Promise<Response> {
       // `warn` e não `critical`: há um cliente esperando, mas nada quebrou. O
       // vermelho é para o que está fora do ar — usá-lo aqui o desvaloriza.
       severity: "warn",
-      title: `Um atendimento espera decisão ${comoFaz(horas)}`,
+      title: `Un caso espera una decisión ${comoFaz(horas)}`,
       body:
-        `"${caso.title}" está aguardando alguém da equipe desde que foi aberto, ` +
-        `e o cliente continua do outro lado. Abra o caso e diga o que fazer — concluir, ` +
-        `pedir informação ao cliente ou passar para uma pessoa.` +
+        `"${caso.title}" está esperando que alguien del equipo actúe desde que se abrió, ` +
+        `y el cliente sigue del otro lado. Abrí el caso y decidí qué hacer — concluir, ` +
+        `pedir información al cliente o pasarlo a una persona.` +
         (tentativa >= caso.teto
-          ? " Este é o último aviso automático sobre ele."
+          ? " Este es el último aviso automático sobre él."
           : ""),
       ref_kind: "agent_case",
       ref_id: caso.id,

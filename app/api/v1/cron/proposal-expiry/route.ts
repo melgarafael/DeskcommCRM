@@ -93,8 +93,8 @@ async function rodarVencimento(
         organization_id: p.organization_id,
         kind: "proposal_expired_notice",
         severity: "warn",
-        title: "Uma proposta venceu sem decisão do cliente",
-        body: "O prazo de validade passou e ninguém marcou aceite ou recusa. Reveja a proposta e decida os próximos passos com o cliente.",
+        title: "Una propuesta venció sin decisión del cliente",
+        body: "El plazo de validez pasó y nadie marcó aceptación o rechazo. Revisá la propuesta y decidí los próximos pasos con el cliente.",
         ref_kind: "proposal",
         ref_id: p.id,
       });

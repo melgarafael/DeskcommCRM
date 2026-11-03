@@ -129,7 +129,7 @@ export function MatchReplyForm({
               const usados = new Set(branches.map((b) => b.id));
               const next = [
                 ...branches,
-                { id: novoId(usados), label: "Nova regra", op: "contains" as const, pattern: "ok" },
+                { id: novoId(usados), label: "Nueva regla", op: "contains" as const, pattern: "ok" },
               ];
               setBranches(next);
               commit({ branches: next, graceMin, saveTo, ifExists });

@@ -107,10 +107,10 @@ export async function recuperarPropostasTravadas(
       organization_id: orgId,
       kind: "proposta_travada",
       severity: "critical",
-      title: n === 1 ? "Uma proposta não confirmou o envio" : `${n} propostas não confirmaram o envio`,
+      title: n === 1 ? "Una propuesta no confirmó el envío" : `${n} propuestas no confirmaron el envío`,
       body:
-        `Ficaram mais de ${STUCK_AFTER_MS / 60000} minutos em envio e voltaram a rascunho, com o número mantido. ` +
-        `Verifique a conexão do WhatsApp e reenvie manualmente — nada foi reenviado sozinho.`,
+        `Quedaron más de ${STUCK_AFTER_MS / 60000} minutos en envío y volvieron a borrador, manteniendo el número. ` +
+        `Revisá la conexión de WhatsApp y reenviá manualmente — nada se reenvió solo.`,
       // "proposal" é a chave de `REFERENCIAS_DE_AVISO` (lib/ai/inbox-destino.ts)
       // — não o nome da tabela. Errar aqui faz o botão "Abrir proposta" nunca
       // aparecer (falha fechada, sem erro visível).
