@@ -300,7 +300,7 @@ export function ServidoresMcpDoAgente({ agentId, toolIds, onChangeToolIds, disab
                   setDescoberta(null);
                   mudar({ modo: e.target.value as Modo, escritaDelegada: false });
                 }}
-                className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm max-md:min-h-11"
               >
                 {MODOS.map((m) => (
                   <option key={m} value={m}>
@@ -382,7 +382,7 @@ export function ServidoresMcpDoAgente({ agentId, toolIds, onChangeToolIds, disab
                   <legend className="text-xs font-medium">{t("Escopos pedidos ao cliente")}</legend>
                   <div className="flex flex-wrap gap-2">
                     {escoposOferecidos.map((e) => (
-                      <label key={e} className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs">
+                      <label key={e} className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs max-md:min-h-11">
                         <input
                           type="checkbox"
                           className="h-3.5 w-3.5 accent-primary"
@@ -403,7 +403,7 @@ export function ServidoresMcpDoAgente({ agentId, toolIds, onChangeToolIds, disab
               ) : null}
 
               <details className="text-xs">
-                <summary className="cursor-pointer font-medium">{t("Cliente OAuth manual (opcional)")}</summary>
+                <summary className="cursor-pointer font-medium max-md:min-h-11 max-md:py-3.5">{t("Cliente OAuth manual (opcional)")}</summary>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label htmlFor="mcp-client-id">client_id</Label>

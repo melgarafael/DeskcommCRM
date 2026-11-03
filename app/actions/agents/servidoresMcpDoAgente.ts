@@ -25,6 +25,7 @@ import { audit } from "@/lib/audit";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { marcaDaSaida } from "@/lib/branding/saida";
+import type { Tables } from "@/lib/database.types";
 import { supportWriteError } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { listarFerramentasDoServidor } from "@/lib/mcp/servidor-externo/chamada";
@@ -96,12 +97,19 @@ async function exigirAdminDoAgente(agentId: string, escrita: boolean) {
     .eq("id", agentId)
     .maybeSingle();
   if (!agente) return { ok: false as const, error: "agente_inexistente" as const };
-  const { data: orgRow } = await admin.from("organizations").select("name").eq("id", org.orgId).maybeSingle();
+  // O admin client não é tipado com `Database`: o `.select()` aceita qualquer
+  // coluna. O genérico do `maybeSingle` amarra a LEITURA ao tipo gerado — a
+  // tabela não tem `name`, e ler `.name` voltava vazio sem o typecheck ver.
+  const { data: orgRow } = await admin
+    .from("organizations")
+    .select("display_name")
+    .eq("id", org.orgId)
+    .maybeSingle<Pick<Tables<"organizations">, "display_name">>();
   return {
     ok: true as const,
     user,
     orgId: org.orgId,
-    orgNome: String((orgRow as { name?: unknown } | null)?.name ?? ""),
+    orgNome: orgRow?.display_name ?? "",
     admin,
   };
 }

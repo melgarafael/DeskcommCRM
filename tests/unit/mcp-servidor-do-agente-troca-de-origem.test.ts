@@ -6,11 +6,14 @@
  * mandar o token ao host novo. Trocar só o nome não mexe em nada.
  *
  * E o servidor novo registra no DCR o endereço de retorno DELE (por servidor),
- * com o id que a tela reservou.
+ * com o id que a tela reservou — e com o nome visível da organização
+ * (`display_name`) no `client_name`: a tabela não tem `name`, e ler `name`
+ * mandava "Marca —" com o nome vazio à tela de consentimento do terceiro.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { bancoEmMemoria, type BancoEmMemoria } from "@/lib/mcp/servidor-externo/do-agente/banco-em-memoria.test-helper";
+import type { Tables } from "@/lib/database.types";
 import type * as Oauth from "@/lib/mcp/servidor-externo/do-agente/oauth";
 
 const ORG = "bcc12320-f555-4fef-8d90-38a0ac5950e0";
@@ -22,7 +25,13 @@ const ANTIGO = "https://mcp-antigo.example.com/mcp";
 let banco: BancoEmMemoria;
 /** O endpoint gravado no banco no instante em que a revogação foi chamada. */
 const revogacoes: Array<{ servidorEndpoint: string; noBanco: unknown }> = [];
-const registros: Array<{ redirectUri: string }> = [];
+const registros: Array<{ redirectUri: string; nomeDoCliente: string }> = [];
+/** A linha com o tipo de PRODUÇÃO: um nome de coluna inventado não compila. */
+const ORGANIZACAO: Pick<Tables<"organizations">, "id" | "display_name" | "legal_name"> = {
+  id: ORG,
+  display_name: "Clínica Sorriso",
+  legal_name: "Sorriso Odontologia Ltda",
+};
 
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: async () => ({ id: "u1", support: null }),
@@ -55,8 +64,8 @@ vi.mock("@/lib/mcp/servidor-externo/do-agente/oauth", async (original) => ({
       metodosDeAutenticacaoNoToken: ["none"],
     };
   },
-  registrarCliente: async (_url: string, entrada: { redirectUri: string }) => {
-    registros.push({ redirectUri: entrada.redirectUri });
+  registrarCliente: async (_url: string, entrada: { redirectUri: string; nomeDoCliente: string }) => {
+    registros.push({ redirectUri: entrada.redirectUri, nomeDoCliente: entrada.nomeDoCliente });
     return "cliente-novo";
   },
 }));
@@ -73,7 +82,7 @@ beforeEach(() => {
   const o = new URL(ANTIGO).origin;
   banco = bancoEmMemoria({
     ai_agents: [{ id: AGENTE, organization_id: ORG }],
-    organizations: [{ id: ORG, name: "Org" }],
+    organizations: [{ ...ORGANIZACAO }],
     ai_agent_mcp_servers: [
       {
         id: SERVIDOR,
@@ -129,7 +138,12 @@ describe("servidor novo: o DCR registra o endereço de retorno DESTE servidor", 
   it("com o id reservado pela tela, que vira o id do servidor", async () => {
     const r = await salvarServidorMcpDoAgente(AGENTE, null, entrada({ nome: "Outro", endpoint: "https://mcp-novo.example.com/mcp" }), ID_NOVO);
     expect(r.ok && r.data.id).toBe(ID_NOVO);
-    expect(registros).toEqual([{ redirectUri: expect.stringMatching(new RegExp(`/api/v1/mcp-oauth/callback/${ID_NOVO}$`)) }]);
+    expect(registros).toEqual([
+      {
+        redirectUri: expect.stringMatching(new RegExp(`/api/v1/mcp-oauth/callback/${ID_NOVO}$`)),
+        nomeDoCliente: "Marca — Clínica Sorriso",
+      },
+    ]);
     expect(r.ok && r.data.redirectUri).toBe(registros[0]!.redirectUri);
   });
 });
