@@ -12793,6 +12793,14 @@ export const DICIONARIO: Traducoes = {
     es: "Edita en el origen: lo que cambies aquí se vuelve a sobrescribir en la próxima sincronización.",
   },
   "(opcional)": { es: "(opcional)" },
+  // ─── app/app/products/_client.tsx — descrição do produto no cadastro e na planilha ───
+  "sem descrição": { es: "sin descripción" },
+  "É o que o atendente de IA conta ao cliente: para que serve, medidas, materiais, diferenciais. Ele repete o que estiver aqui — e não inventa o que faltar.": {
+    es: "Es lo que el asistente de IA le cuenta al cliente: para qué sirve, medidas, materiales, diferenciales. Repite lo que esté aquí y no inventa lo que falte.",
+  },
+  "Descrição escrita pela planilha em {quantidade} produto(s).": {
+    es: "Descripción escrita por la planilla en {quantidade} producto(s).",
+  },
   "Serve para o atendente saber até onde pode negociar. Não aparece para o cliente.": {
     es: "Sirve para que el asistente sepa hasta dónde puede negociar. No se muestra al cliente.",
   },
