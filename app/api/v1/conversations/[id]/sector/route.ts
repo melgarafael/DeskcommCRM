@@ -36,11 +36,13 @@ import { audit } from "@/lib/audit";
 import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
 import { seSetoresDesligado } from "@/lib/atendimento/setores-modulo";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireRole } from "@/lib/auth/require-role";
 import { conversationSectorSchema, validateRequest } from "@/lib/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -59,11 +61,43 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const moduloDesligado = await seSetoresDesligado(requestId);
   if (moduloDesligado) return moduloDesligado;
 
+  const authHeader = req.headers.get("authorization");
+  if (authHeader && /^Bearer\s+/i.test(authHeader.trim())) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "conversations",
+      role: "agent",
+      scope: "mcp:write",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "conversations", requestId);
+    if (teto) return teto;
+    const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+    const orgId = authz.organizationId;
+    const supabase = authz.supabase;
+    const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
+    return responderSetorPut(supabase, orgId, id, req, requestId, t, actorUserId, authz.apiTokenId ?? null);
+  }
+
+  // Caminho de sessão: byte a byte igual.
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const orgId = authz.org.orgId; // fonte confiável (cookie validado), nunca o body
+  const orgId = authz.org.orgId;
+  const supabase = await createClient();
+  return responderSetorPut(supabase, orgId, id, req, requestId, t, authz.user.id, null);
+}
 
+async function responderSetorPut(
+  supabase: SupabaseClient,
+  orgId: string,
+  conversationId: string,
+  req: NextRequest,
+  requestId: string,
+  t: (texto: string) => string,
+  actorUserId: string | null,
+  actorApiTokenId: string | null,
+): Promise<Response> {
   let input;
   try {
     input = await validateRequest(conversationSectorSchema, req);
@@ -79,11 +113,10 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   // Quem mexe precisa ENXERGAR a conversa: leitura pelo cliente da SESSÃO, com a
   // RLS de sempre. Quem não vê a conversa não escolhe a fila dela.
-  const supabase = await createClient();
   const { data: conversa, error: erroConversa } = await supabase
     .from("conversations")
     .select("id, contact_id, status, assigned_to_user_id, sector_id")
-    .eq("id", id)
+    .eq("id", conversationId)
     .eq("organization_id", orgId)
     .maybeSingle();
   if (erroConversa) return fail("internal_error", erroConversa.message, 500, { requestId });
@@ -111,7 +144,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const { data: atualizada, error: erroUpdate } = await supabase
     .from("conversations")
     .update({ sector_id: input.sector_id })
-    .eq("id", id)
+    .eq("id", conversationId)
     .eq("organization_id", orgId)
     .select("id, sector_id, assigned_to_user_id, status")
     .maybeSingle();
@@ -125,7 +158,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (!atualizada.assigned_to_user_id && ["open", "pending"].includes(String(atualizada.status))) {
     const { error: erroFila } = await createAdminClient().rpc("fn_request_channel_routing", {
       p_org: orgId,
-      p_conversation: id,
+      p_conversation: conversationId,
     });
     if (erroFila) {
       // A conversa já está com a fila gravada; o evento de distribuição é o que
@@ -139,10 +172,11 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   await audit({
     action: "conversation.sector_changed",
-    actorUserId: authz.user.id,
+    actorUserId,
+    actorApiTokenId,
     organizationId: orgId,
     resourceType: "conversation",
-    resourceId: id,
+    resourceId: conversationId,
     requestId,
     metadata: {
       de: (conversa as { sector_id: string | null }).sector_id,
@@ -156,7 +190,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // publicação em tempo real. Quando a fatia 2 (menu/IA e filtro no Inbox)
   // chegar, o evento nasce junto com quem o escuta.
 
-  return ok({ id, sector_id: input.sector_id, redistribuiu }, { requestId });
+  return ok({ id: conversationId, sector_id: input.sector_id, redistribuiu }, { requestId });
 }
 
 /** GET /api/v1/conversations/[id]/sector — a fila atual da conversa. */
@@ -167,15 +201,40 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const moduloDesligado = await seSetoresDesligado(requestId);
   if (moduloDesligado) return moduloDesligado;
 
+  const authHeader = _req.headers.get("authorization");
+  if (authHeader && /^Bearer\s+/i.test(authHeader.trim())) {
+    const authz = await resolveAuthDual(_req, {
+      requestId,
+      resource: "conversations",
+      role: "agent",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "conversations", requestId);
+    if (teto) return teto;
+    const orgId = authz.organizationId;
+    const supabase = authz.supabase;
+    return responderSetorGet(supabase, orgId, id, requestId);
+  }
+
+  // Caminho de sessão: byte a byte igual.
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
   const orgId = authz.org.orgId;
-
   const supabase = await createClient();
+  return responderSetorGet(supabase, orgId, id, requestId);
+}
+
+async function responderSetorGet(
+  supabase: SupabaseClient,
+  orgId: string,
+  conversationId: string,
+  requestId: string,
+): Promise<Response> {
   const { data, error } = await supabase
     .from("conversations")
     .select("id, sector_id")
-    .eq("id", id)
+    .eq("id", conversationId)
     .eq("organization_id", orgId)
     .maybeSingle();
   if (error) return fail("internal_error", error.message, 500, { requestId });

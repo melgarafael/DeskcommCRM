@@ -54,4 +54,19 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/contacts/import/agenda",
   "/api/v1/contacts/import",
   "/api/v1/contacts/merge",
+  // CONVERSAS E TAGS DE CONVERSA (tarefa 2 da R2). Quem autentica é a própria
+  // rota, por `resolveAuthDual` (sessão OU Bearer `dsk_…`, a organização vinda
+  // da linha do token): `mcp:read` no GET e `mcp:write` na escrita, com o papel
+  // que a sessão já exige (`viewer` lê, `agent` escreve). Segmento `[id]` em
+  // forma de UUID: nenhum desses diretórios tem irmão literal que dê carona
+  // além dos que não ganharam porta (`claim`, `mark-read`, `release`, `export`,
+  // `drafts`, e as rotas que ficaram só de sessão: ver o plano R2), listados na borda do teste da área.
+  "/api/v1/conversation-tags",
+  "/api/v1/conversations/[id]/messages",
+  "/api/v1/conversations/[id]/notes",
+  "/api/v1/conversations/[id]/passagens",
+  "/api/v1/conversations/[id]/retention",
+  "/api/v1/conversations/[id]/sector",
+  "/api/v1/conversations/[id]/snooze",
+  "/api/v1/conversations/[id]/usable-for-rag",
 ];
