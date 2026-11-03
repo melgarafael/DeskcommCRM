@@ -75,9 +75,11 @@ import { FormularioDeConversoes } from "./_form";
 import { FormularioDeConversoesGoogle } from "./_formGoogle";
 import { IdentidadeDaConversao } from "./_identidadeDaMeta";
 import { VendaPeloCanal } from "./_vendaPeloCanal";
+import { OrigemPorHorario } from "./_origemPorHorario";
 import { LeadSubmittedCausal } from "./_leadSubmittedCausal";
 import { ativacaoLeadMeta } from "@/lib/conversoes/ativacao-lead-meta";
 import { vendaPeloCanalLigada } from "@/lib/conversoes/venda-pelo-canal";
+import { origemPorHorarioLigada } from "@/lib/leads/origem-por-horario";
 import { identidadeDaMeta } from "@/lib/plataformas-de-anuncio/meta/identidade";
 import { RegrasDeConversaoGoogle, type EtapaAberta } from "./_regrasGoogle";
 import { listarRegrasGoogle } from "@/lib/conversoes/regras-google";
@@ -293,7 +295,15 @@ export default async function ConversoesPage({
 
       {aba === "links" ? (
         links ? (
-          <LinksRastreaveis links={links} metricas={metricas} idioma={idioma} />
+          <div className="flex flex-col gap-4">
+            {/* A dedução só vale para link rastreável: é o clique dele que fica sem dono. */}
+            <OrigemPorHorario
+              key={`${activeOrg.orgId}:${origemPorHorarioLigada(linhaDaOrganizacao?.settings)}`}
+              ligada={origemPorHorarioLigada(linhaDaOrganizacao?.settings)}
+              idioma={idioma}
+            />
+            <LinksRastreaveis links={links} metricas={metricas} idioma={idioma} />
+          </div>
         ) : (
           <p role="alert">
             {t("Não foi possível ler os links. Atualize a página para tentar novamente.")}

@@ -4,6 +4,7 @@ import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
 import { TIPOS_DE_CASO, TIPOS_DE_CASO_PARA_A_IA } from "@/lib/ai/case-copy";
 import { DEFAULT_CHANNEL_PROVIDER } from '@/lib/channels/capabilities';
 import { applyPreviewPolicy, previewGateContext, type TurnPreview } from './preview';
+import { etiquetarProdutoAposEnvio } from './etiqueta-apos-envio';
 import { claimOfJob } from '../queue/claim';
 import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/fronteira-server';
 /**
@@ -80,6 +81,7 @@ import {
 } from '../edge/llm/run-model-call';
 import type { ProviderRegistry } from '../edge/llm/providers';
 import { HANDOFF_REASON_ORCAMENTO } from '../edge/llm/orcamento';
+import { bindingOuNulo } from '../edge/llm/binding-do-ponto';
 import { abreAvisoDoEspelhoRecusado, mirrorLeadStageToCrm } from '../edge/crm/move-lead-stage';
 import { insertInboxItem } from '../db/repository';
 import { criarConferidorDeAfirmacoes } from '@/lib/ai/decisao/afirmacao-de-fato';
@@ -1737,7 +1739,9 @@ export interface AgentTurnInput {
  * Núcleo do run do agente, compartilhado por inbound_turn (F2-09) e followup_turn
  * (F3-03): ritual de abertura, loop de tools, fechamento com checkpoint e veto. Não
  * guarda NADA entre invocações — sessão fresca por job (todo estado no closure). O
- * que varia entre os dois tipos de turno vem em `input` (AgentTurnInput).
+ * que varia entre os dois tipos de turno vem em `input` (AgentTurnInput) — menos o
+ * ponto de IA da chamada principal, que sai do `kind` do job: `followup_turn` no
+ * follow-up (modelo escolhível no painel), `agent_turn` no resto.
  */
 /**
  * O aviso de que o agente atendeu SEM as capacidades configuradas.
@@ -4285,6 +4289,9 @@ async function executarTurnoDoAgente(
         // ele segue inteiramente síncrono do `checar` até a reserva.
         let fotosDoProduto: FotoParaEnvio[] = [];
         let fotosQueFaltaram = 0;
+        // O código que resolveu um produto ATIVO do catálogo — só com ele a
+        // mensagem, se sair, etiqueta o negócio (ver o bloco depois do envio).
+        let produtoApresentado: string | null = null;
         try {
           dupTrava.reservar(body);
           // RESPOSTA OBSOLETA: o cliente escreveu de novo enquanto este turno pensava.
@@ -4338,6 +4345,7 @@ async function executarTurnoDoAgente(
             }
             fotosDoProduto = preparadas.fotos;
             fotosQueFaltaram = preparadas.tinha - preparadas.fotos.length;
+            produtoApresentado = produto_codigo.trim();
           }
           // F4-04: sinaliza (independente do gate F4-01/F4-08) se ESTA candidata é uma
           // promessa fora de tabela — usado só para correlacionar com o jailbreak no fim do
@@ -4776,6 +4784,20 @@ async function executarTurnoDoAgente(
             }
             pendingCitations = [];
           }
+          // O PRODUTO APRESENTADO VIRA ETIQUETA DO NEGÓCIO. O fluxo de
+          // acompanhamento escolhe o modelo pela etiqueta do negócio, e pedir ao
+          // modelo que a ponha não é confiável; o envio com `produto_codigo` é o
+          // fato determinístico. Depois do envio, só quando o canal disse
+          // "enviada", nunca em prévia — e nunca lança: a mensagem já saiu.
+          // Ver `etiqueta-apos-envio.ts`.
+          await etiquetarProdutoAposEnvio(pool, runLog, {
+            preview: Boolean(preview),
+            produtoApresentado,
+            outcome,
+            tenantId,
+            contactId: leadId,
+            agentId: agentConfig?.agentId ?? null,
+          });
           switch (outcome.kind) {
             case 'sent':
             case 'already_sent':
@@ -5734,6 +5756,20 @@ async function executarTurnoDoAgente(
       openingSuffixes.length === 0
         ? openingBase
         : `${openingBase}\n\n${openingSuffixes.join('\n\n')}`;
+    // O agente escrevendo SOZINHO para quem parou de responder. É o mesmo turno,
+    // com outro ponto de IA (`followup_turn`): o modelo pode ser o do painel, e o
+    // custo fica registrado à parte em `llm_calls`. Ver o cabeçalho do ponto em
+    // `lib/ai/pontos/registro.ts`. `inbound_turn` e `case_reply_turn` seguem em
+    // `agent_turn`; a prévia, em `agent_preview`.
+    const escreveFollowup = !preview && job !== null && job.kind === 'followup_turn';
+    // QUEM vai receber a mídia nativa. No follow-up com escolha no painel, é o
+    // modelo do painel — montar a parte para o do agente mandaria a foto a um
+    // modelo que talvez não a enxergue, e o provedor recusaria o follow-up
+    // inteiro. Sem escolha (ou sem mídia ligada), é o agente, como sempre foi.
+    const escolhaDoFollowup =
+      escreveFollowup && agentConfig?.multimodalInput === true
+        ? await bindingOuNulo(pool, tenantId, 'followup_turn', runLog)
+        : null;
     // Onda 3 (aprimoramento): mídia inbound recente vira part nativa (image/file) SÓ para
     // provider+modelo capazes (T2 modelCapabilities) — modelo incapaz/desconhecido → [] e o
     // derivado textual (já embutido em openingText via LeadContextMessage) cobre sozinho.
@@ -5742,8 +5778,8 @@ async function executarTurnoDoAgente(
         ? []
         : await buildNativeMediaParts({
             messages: effectiveContext.messages,
-            provider: agentConfig?.provider ?? 'anthropic',
-            model: agentConfig?.model ?? '',
+            provider: escolhaDoFollowup?.provider ?? agentConfig?.provider ?? 'anthropic',
+            model: escolhaDoFollowup?.model_id ?? agentConfig?.model ?? '',
             multimodalInput: agentConfig?.multimodalInput ?? false,
             admin: deps.crmCfg.supabase,
           });
@@ -5804,7 +5840,11 @@ async function executarTurnoDoAgente(
         // lia `ai_agent_runs`, tabela que motor nenhum vivo escreve, e dizia
         // "Nenhuma execução ainda" com o agente respondendo no WhatsApp.
         agentId: agentConfig?.agentId ?? null,
-        purpose: preview ? 'agent_preview' : 'agent_turn',
+        // O follow-up é o mesmo turno com o próprio ponto — e por isso com o
+        // próprio binding (o seam o lê por `purpose`) e a própria linha de custo.
+        // Literais no próprio `purpose:`, de propósito: é aqui que a cerca de
+        // completude do registro procura quem emite cada ponto.
+        purpose: preview ? 'agent_preview' : escreveFollowup ? 'followup_turn' : 'agent_turn',
         system,
         messages: openingMessages,
         tools,

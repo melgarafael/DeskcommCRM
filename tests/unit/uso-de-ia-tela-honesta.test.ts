@@ -17,12 +17,14 @@ import { describe, expect, it } from "vitest";
 import { montarPayloadDeUso, usoDeIaSchema, type UsoDeIaDoBanco } from "@/lib/ai/usage/aggregate";
 
 const ROTA = readFileSync("app/api/v1/ai/usage/route.ts", "utf8");
-const MIGRATION = readFileSync("supabase/migrations/20261007131331_0586_uso_de_ia_agregado_no_banco.sql", "utf8");
+// A migration que define a função VIVA: a 0586 criou, a 9097 (#3897) redefiniu contando o follow-up.
+const MIGRATION = readFileSync("supabase/migrations/20261103163315_9097_uso_de_ia_conta_followup_como_turno.sql", "utf8");
 const BASELINE = readFileSync("supabase/baseline.sql", "utf8");
 const ASSINATURA = "public.fn_uso_de_ia(uuid, timestamptz, timestamptz, uuid, text)";
 
 function definicao(sql: string): string | null {
-  const inicio = sql.search(/^create or replace function public\.fn_uso_de_ia\(/m);
+  // A ÚLTIMA definição: no baseline, a primeira é a da 0586, já redefinida pela 9097.
+  const inicio = sql.lastIndexOf("create or replace function public.fn_uso_de_ia(");
   if (inicio === -1) return null;
   return sql.slice(inicio, sql.indexOf("$$;", inicio) + 3);
 }
@@ -65,6 +67,9 @@ describe("a rota soma no banco, não sobre o que o PostgREST deixou passar", () 
     const turnos = cte("turnos");
     expect(jobs, "a chamada agent_turn que falhou (status 'erro') virava turno").toMatch(
       /c\.status = 'ok'/,
+    );
+    expect(jobs, "o follow-up (followup_turn, #3897) deixou de contar como turno").toMatch(
+      /c\.purpose in \('agent_turn', 'followup_turn'\)/,
     );
     for (const [nome, trecho] of [["jobs_de_turno", jobs], ["turnos", turnos]] as const) {
       expect(trecho, `${nome} sumiu da função`).toMatch(/from public\.llm_calls c/);
