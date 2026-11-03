@@ -4,6 +4,7 @@ import { slotKey } from "@/lib/channels/meta/build-components";
 import { renderTemplateBody } from "@/lib/channels/meta/render-template";
 import { isStatusSendable } from "@/lib/channels/meta/template-binding";
 import { deriveTemplateContract } from "@/lib/channels/meta/template-contract";
+import { valorParaParametro } from "@/lib/channels/meta/variaveis-do-fluxo";
 
 /**
  * O LEMBRETE POR MODELO APROVADO — quando a janela de 24 h do cliente fechou.
@@ -105,7 +106,9 @@ export function valoresDoModeloDoLembrete(
   if (quantas === null) return null;
   const valores: Record<string, string> = {};
   for (let n = 1; n <= quantas; n += 1) {
-    const valor = (pecas[ORDEM_DAS_VARIAVEIS_DO_LEMBRETE[n - 1]!] ?? "").trim();
+    // A mesma limpeza das campanhas e dos fluxos: o título e o endereço vêm de
+    // formulário e podem ter quebra de linha, que a plataforma recusa.
+    const valor = valorParaParametro(pecas[ORDEM_DAS_VARIAVEIS_DO_LEMBRETE[n - 1]!] ?? "");
     if (!valor) return null;
     valores[slotKey({ kind: "body" }, String(n))] = valor;
   }

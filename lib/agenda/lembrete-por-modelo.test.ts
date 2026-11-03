@@ -57,6 +57,21 @@ describe("valores do lembrete por modelo", () => {
       valoresDoModeloDoLembrete(modelo("{{1}} {{2}} {{3}} {{4}}"), { ...pecas, endereco: "Rua A, 10" })?.valores,
     ).toEqual({ "1": "Ana", "2": "quinta-feira, 30/10 às 15:00", "3": "Consulta de retorno", "4": "Rua A, 10" });
   });
+
+  it("quebra de linha e tabulação no título e no endereço viram espaço (a plataforma recusa o parâmetro)", () => {
+    expect(
+      valoresDoModeloDoLembrete(modelo("{{1}} {{2}} {{3}} {{4}}"), {
+        ...pecas,
+        titulo: "Consulta\nde\tretorno",
+        endereco: "Rua A, 10\r\nSala 3\t\t     fundos",
+      })?.valores,
+    ).toEqual({
+      "1": "Ana",
+      "2": "quinta-feira, 30/10 às 15:00",
+      "3": "Consulta de retorno",
+      "4": "Rua A, 10 Sala 3 fundos",
+    });
+  });
 });
 
 describe("o modelo que o lembrete não tem como preencher", () => {
