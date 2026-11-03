@@ -11,4 +11,53 @@ import type { ModeloDePorta } from "./porta";
 // proxy filtra por caminho e não por método. A cerca
 // `tests/unit/rotas-bearer-tem-porta-no-proxy.test.ts` reprova porta sem rota
 // com token e rota com token sem porta.
-export const MODELOS_DA_LEITURA: readonly ModeloDePorta[] = [];
+export const MODELOS_DA_LEITURA: readonly ModeloDePorta[] = [
+  // ads, audit, imports (R3, tarefa 2). Quem autentica é a própria rota, por
+  // `resolveAuthDual` (a organização sai da linha do token). Escopo `mcp:read`
+  // nos GET e `mcp:write` no POST de `imports`; papel do token = papel da sessão
+  // (manager em `ads`, `audit` e no POST; viewer nos GET de `imports`), sem
+  // `tokenRole` porque nenhuma tool MCP faz estas ações. `audit/export` segue só
+  // de sessão e não entra.
+  "/api/v1/ads/meta/accounts",
+  "/api/v1/ads/meta/campaigns",
+  "/api/v1/audit",
+  "/api/v1/imports",
+  "/api/v1/imports/[id]",
+
+  // metrics, reports (R3, tarefa 1). Quem autentica é a própria rota, por
+  // `resolveAuthDual` (a organização sai da linha do token). Escopo `mcp:read`
+  // nos GET e `mcp:write` no PATCH de `metrics/atrito`; papel do token = papel da
+  // sessão (agent em `attendants` e `serie`, manager em `lost` e no PATCH de
+  // `atrito`, viewer em `reports/*`), sem `tokenRole` porque nenhuma tool MCP faz
+  // estas ações. O GET de `metrics/atrito` segue só de sessão (401 sem cookie);
+  // `metrics/channels`, `metrics/funil`, `metrics/metas` e `reports/activities`
+  // não entram.
+  "/api/v1/metrics/atrito",
+  "/api/v1/metrics/attendants",
+  "/api/v1/metrics/lost",
+  "/api/v1/metrics/serie",
+  "/api/v1/reports/financeiro",
+  "/api/v1/reports/tags",
+
+  // channel-sessions e voice, leitura (R3, tarefa 3, e follow-up). Quem autentica
+  // é a própria rota, por `resolveAuthDual` (a organização sai da linha do token).
+  // Escopo `mcp:read` nos GET; papel do token = papel da sessão: viewer em
+  // `channel-sessions`, `channel-sessions/[id]` e `voice/sessions/status`; agent em
+  // `voice/calls/history`; manager em `voice/opt-in` e `channel-sessions/[id]/groups`;
+  // admin em `channel-sessions/[id]/acervo`, `ai-access`, `disabled` e `historico`.
+  // Sem `tokenRole`, porque nenhuma tool MCP faz estas ações. Os métodos de escrita
+  // dessas rotas (acervo PATCH, ai-access PATCH, disabled PATCH, groups PUT,
+  // historico POST, DELETE de `[id]`, `voice/opt-in` PUT) e as demais rotas de
+  // `channel-sessions` (qr, pairing-code, reconnect, name) e de `voice/*` de escrita
+  // seguem só de sessão e não entram.
+  "/api/v1/channel-sessions",
+  "/api/v1/channel-sessions/[id]",
+  "/api/v1/channel-sessions/[id]/acervo",
+  "/api/v1/channel-sessions/[id]/ai-access",
+  "/api/v1/channel-sessions/[id]/disabled",
+  "/api/v1/channel-sessions/[id]/groups",
+  "/api/v1/channel-sessions/[id]/historico",
+  "/api/v1/voice/calls/history",
+  "/api/v1/voice/opt-in",
+  "/api/v1/voice/sessions/status",
+];

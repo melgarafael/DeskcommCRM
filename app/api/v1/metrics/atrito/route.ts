@@ -27,6 +27,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import {
@@ -38,7 +39,7 @@ import {
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { normalizarIdioma } from "@/lib/i18n/idiomas";
+import { IDIOMA_PADRAO, normalizarIdioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -200,10 +201,19 @@ export async function PATCH(req: NextRequest): Promise<Response> {
 
   const requestId = randomUUID();
 
-  const authz = await requireRole("manager", { requestId, resource: "metrics" });
+  // Sessão OU token `dsk_…` (`mcp:write`, manager+; Spec 33, R3). O GET segue só
+  // de sessão: ele lê `user.locale`, que `resolveAuthDual` não devolve.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "metrics",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg, user } = authz;
+  // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.
+  const teto = await tetoDeEscritaDoToken(authz, "metrics", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   let corpo: unknown;
   try {
@@ -225,7 +235,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   const { data: orgRow, error: readErr } = await admin
     .from("organizations")
     .select("settings")
-    .eq("id", activeOrg.orgId)
+    .eq("id", authz.organizationId)
     .maybeSingle();
   if (readErr) return fail("internal_error", readErr.message, 500, { requestId });
 
@@ -241,17 +251,18 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   const { error: updErr } = await admin
     .from("organizations")
     .update({ settings: próximas })
-    .eq("id", activeOrg.orgId);
+    .eq("id", authz.organizationId);
   if (updErr) return fail("internal_error", updErr.message, 500, { requestId });
 
   // Mudar a régua muda a leitura histórica do índice — é mutação relevante e
   // vai para o audit (invariante 3).
   void audit({
     action: "metrics.atrito_regua_changed",
-    actorUserId: user.id,
-    organizationId: activeOrg.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "organization",
-    resourceId: activeOrg.orgId,
+    resourceId: authz.organizationId,
     requestId,
     metadata: { abandono_horas: parsed.data.abandono_horas },
   });
