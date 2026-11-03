@@ -34,7 +34,10 @@ import { lastLine, sql } from "./gov-helpers";
  *    contato anonimizado (LGPD).
  */
 
-const ORG = "dddddddd-0000-4000-8000-000000000001";
+// Ids próprios (prefixo da issue): o `dddddddd-3333-…` já é contato de outros
+// invariantes, em OUTRA organização, e o `on conflict (id)` abaixo herdaria a
+// organização de quem rodasse antes.
+const ORG = "39180000-0000-4000-8000-000000000001";
 
 /** Um contato por par do relato, mais o de `%` e o que será anonimizado. */
 const CONTATOS: Array<{
@@ -44,23 +47,23 @@ const CONTATOS: Array<{
   agenda: string | null;
 }> = [
   {
-    id: "dddddddd-3333-4000-8000-000000000001",
+    id: "39180000-3333-4000-8000-000000000001",
     display: "Andréia Souza",
     nome: null,
     agenda: null,
   },
-  { id: "dddddddd-3333-4000-8000-000000000002", display: null, nome: "Letícia Lima", agenda: null },
-  { id: "dddddddd-3333-4000-8000-000000000003", display: "João Pereira", nome: null, agenda: null },
+  { id: "39180000-3333-4000-8000-000000000002", display: null, nome: "Letícia Lima", agenda: null },
+  { id: "39180000-3333-4000-8000-000000000003", display: "João Pereira", nome: null, agenda: null },
   {
-    id: "dddddddd-3333-4000-8000-000000000004",
+    id: "39180000-3333-4000-8000-000000000004",
     display: "Conceição Alves",
     nome: null,
     agenda: null,
   },
-  { id: "dddddddd-3333-4000-8000-000000000005", display: "Julia Ramos", nome: null, agenda: null },
+  { id: "39180000-3333-4000-8000-000000000005", display: "Julia Ramos", nome: null, agenda: null },
   // O nome da agenda do celular só existe lá (#2439): a busca tem de alcançá-lo.
   {
-    id: "dddddddd-3333-4000-8000-000000000006",
+    id: "39180000-3333-4000-8000-000000000006",
     display: null,
     nome: null,
     agenda: "Joaquim da Agenda",
@@ -68,14 +71,14 @@ const CONTATOS: Array<{
   // Controle do curinga: um `%` LITERAL no nome. Sem o escape, buscar `%`
   // devolveria a organização inteira.
   {
-    id: "dddddddd-3333-4000-8000-000000000007",
+    id: "39180000-3333-4000-8000-000000000007",
     display: "Maria 100% Certeza",
     nome: null,
     agenda: null,
   },
   // Vai ser anonimizado no último caso.
   {
-    id: "dddddddd-3333-4000-8000-000000000008",
+    id: "39180000-3333-4000-8000-000000000008",
     display: "Titular Anonimizado",
     nome: null,
     agenda: null,

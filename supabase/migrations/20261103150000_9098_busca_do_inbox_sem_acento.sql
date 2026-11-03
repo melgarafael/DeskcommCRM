@@ -20,6 +20,12 @@ as $$
   select public.unaccent('public.unaccent'::regdictionary, p_texto);
 $$;
 
+-- Função nova em `public` nasce com EXECUTE para PUBLIC (Postgres) e para anon
+-- (default privileges do baseline): as duas origens saem. `authenticated` fica
+-- porque a coluna gerada abaixo é calculada com o papel de quem grava o contato.
+revoke execute on function public.f_unaccent(text) from public, anon;
+grant  execute on function public.f_unaccent(text) to authenticated, service_role;
+
 -- Coluna GERADA, e não gatilho: a anonimização (LGPD) zera `display_name`,
 -- `name` e `address_book_name`, e o recálculo vem junto — uma coluna mantida à
 -- mão ficaria com o nome antigo, que é justamente o que a busca evita não
