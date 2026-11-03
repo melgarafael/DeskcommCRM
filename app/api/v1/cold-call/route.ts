@@ -9,6 +9,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
@@ -79,12 +80,13 @@ export async function GET(): Promise<Response> {
       idsDeContato.length
         ? supabase
             .from("contacts")
-            .select("id, display_name, phone_number, email, street, number, district, city, state, avatar_storage_path, is_anonymized")
+            .select("id, name, display_name, phone_number, email, street, number, district, city, state, avatar_storage_path, is_anonymized")
             .eq("organization_id", orgId)
             .in("id", idsDeContato)
         : Promise.resolve({
             data: [] as {
               id: string;
+              name: string | null;
               display_name: string | null;
               phone_number: string | null;
               avatar_storage_path: string | null;
@@ -150,7 +152,7 @@ export async function GET(): Promise<Response> {
             descricao: l.description,
             tags: l.tags ?? [],
             contato_id: l.contact_id,
-            contato_nome: contato?.display_name ?? null,
+            contato_nome: nomeDoContato(contato),
             tem_foto: Boolean(contato?.avatar_storage_path && !contato.is_anonymized),
             telefone: contato?.phone_number ?? null,
             email: contato?.email ?? null,

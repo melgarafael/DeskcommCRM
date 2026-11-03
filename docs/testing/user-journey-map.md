@@ -4157,3 +4157,8 @@ reprova, depois da tentativa de limpeza. Trace e vídeo ficam desligados apenas
 nesta spec para não arquivar URLs assinadas. A limpeza é limitada aos UUIDs
 sintéticos desta execução. A coleta `--list` não é prova de UX; a aceitação
 depende do CI do candidato e da inspeção das capturas produzidas.
+
+## Cold Call: ligar para uma lista de leads, um por vez (2026-11-03)
+
+- `[P1]` Fila e sessão de ligações abertas pela tela, com a API simulada por Playwright: `evidence/cold-call/fila-desktop.png`, `evidence/cold-call/sessao-desktop.png` e `evidence/cold-call/sessao-celular.png`. As variáveis do roteiro saem preenchidas com o lead, quem liga e a organização, sem rolagem lateral em 1920 px nem no celular.
+- **Não medido:** banco fresco do `baseline.sql` e ligação real pelo canal de voz.
