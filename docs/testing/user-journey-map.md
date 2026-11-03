@@ -2190,6 +2190,31 @@ fresca ponta a ponta com a marca de um revendedor — `install.sh` numa VPS, res
 quem compra funciona inteira. Os defeitos de marca que mais custam caro moram exatamente aí,
 porque são vistos primeiro por um terceiro. **A receita para fechá-la está em J10, abaixo.**
 
+## J63 — A espera do follow-up só termina em horário comercial `[P1]` (2026-11-03)
+
+Medido numa instalação real: o fluxo "boas-vindas → 24 h → lembrete → 48 h → último toque"
+mandava o lembrete à mesma hora do formulário (2h da manhã para quem se cadastrou às 2h). A
+janela do número seguraria também a boas-vindas, que precisa sair na hora, e a faixa do agente
+vale para a inscrição inteira. A caixa Aguardar (tempo fixo) ganhou "Só terminar a espera em
+horário comercial" (`wait.ate_o_horario`, regra em `lib/followup/espera-no-horario.ts`, sobre as
+mesmas funções de calendário do horário de atendimento do agente). Spec:
+`tests/e2e/followup-builder.spec.ts` (bloco "espera só termina em horário comercial").
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J63.1 | Ligar o horário no painel da espera | início, fim e dias aparecem (padrão seg–sex 09–18); o card diz "só em horário comercial" | spec acima — a medir (CI) |
+| J63.2 | Salvar e recarregar | o painel volta com o horário gravado, não com o padrão | spec acima — a medir (CI) |
+| J63.3 | Mudar a duração com o horário ligado | o rascunho guarda a duração nova E o horário inteiro (prova pela API) | spec acima — a medir (CI); o conserto do formulário também em `WaitForm.test.tsx` |
+| J63.4 | A espera vence de noite ou no fim de semana | o motor grava a próxima abertura, no fuso da organização; na saída fora do horário, espera de novo | **PASS (unit)** — `lib/followup/espera-no-horario.test.ts` |
+| J63.5 | O cliente responde no meio da noite | a resposta corta a espera na hora (o horário segura o toque proativo, não a resposta) | **PASS (unit)** |
+| J63.6 | Horário torto (fim antes do início, nenhum dia) | o rascunho aceita; o publish recusa com `horario_da_espera_invalido` | **PASS (unit)** |
+
+Evidência de tela: nenhuma captura versionada neste PR — a prova pela tela é a spec e2e do
+editor de follow-up, que roda no CI.
+
+Não provado: um envio real atravessando a madrugada num worker (o relógio do motor é medido em
+unit e no teste do motor com banco dublê).
+
 ## J57 — Vendas e dinheiro no celular `[P1]` (2026-10-23)
 
 ADR-0006, fase F4. Telas do gestor que, a 390px, deixavam ação fora da tela ou
@@ -4157,3 +4182,27 @@ reprova, depois da tentativa de limpeza. Trace e vídeo ficam desligados apenas
 nesta spec para não arquivar URLs assinadas. A limpeza é limitada aos UUIDs
 sintéticos desta execução. A coleta `--list` não é prova de UX; a aceitação
 depende do CI do candidato e da inspeção das capturas produzidas.
+
+## J59 — Avisar a equipe pelo número oficial, com modelo aprovado `[P1]` (2026-11-03)
+
+Quem só tem o número oficial estável não conseguia avisar a equipe: fora da janela de 24 h ele
+só manda modelo aprovado, e a tela Aviso no WhatsApp (Agente de IA › Acompanhar o agente) só oferecia número de texto livre —
+o aviso de caso era condenado (`canal_nao_aceita_aviso_livre`) e a ação "Mensagem para a equipe"
+pulava em todo disparo. Desde a 9094 a configuração guarda o modelo aprovado
+(`config_aviso_de_caso.modelo_id`), com UMA variável no corpo, e o texto do aviso entra nela numa
+linha só. Regra única em `lib/escalacao/modelo-do-aviso.ts`. Spec:
+`tests/e2e/aviso-pelo-numero-oficial.spec.ts` (sem rede: o teste é recusado antes do provedor).
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J59.1 | Número oficial com um modelo aprovado de uma variável | aparece no seletor marcado «só modelo aprovado»; a tela pede o modelo, já escolhido quando é o único, com a prévia do texto e o aviso de que cada mensagem é cobrada; o de duas variáveis não é oferecido | spec escrita; **não executada nesta entrega** (sem Docker na bancada) — fica com o `e2e` do CI, parte 7 |
+| J59.2 | Salvar | o banco guarda o modelo DESTA conexão; recarregar mostra o mesmo modelo | idem |
+| J59.3 | Enviar aviso de teste | passa da barreira do canal: a recusa que sobra é a do endereço público da bancada, não «só envia mensagens aprovadas» | idem |
+| J59.4 | O modelo volta para revisão na plataforma | bloqueio «Escolha o modelo aprovado que leva o aviso», switch travado; a conexão salva segue no seletor e diz que não tem modelo; em 390px sem rolagem lateral | idem |
+| J59.5 | Modelo de outra organização ou de outro número | a FK composta recusa o de outra organização; o RPC recusa os dois (`aviso_de_caso_modelo_invalido`); a linha sem conexão da conta oficial serve só ao número dela | `tests/invariants/aviso-por-modelo-aprovado.test.ts` (test:db) |
+| J59.6 | Aviso de caso e "Mensagem para a equipe" pelo número oficial | saem DENTRO do modelo, conferido no envio; sem modelo que sirva, o mesmo motivo de antes | **PASS (unit)** — `tests/unit/aviso-de-caso-decide.test.ts`, `tests/unit/aviso-por-modelo-acao-equipe.test.ts` |
+
+Não provado: a entrega real no celular por um número oficial de verdade (precisa de um modelo
+aprovado pela plataforma); o comando RESPONDER/PERGUNTAR por esse número, que segue fora do
+escopo; e os avisos de proposta, de agendamento e de passagem para humano, que dividem a conexão
+do aviso de caso e continuam exigindo texto livre.

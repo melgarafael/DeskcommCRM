@@ -77,7 +77,7 @@ export const FRASE_DO_ERRO_DO_AVISO = {
   canal_desconectado: "A conexão de WhatsApp escolhida para os avisos está fora do ar.",
   canal_arquivado: "A conexão de WhatsApp escolhida para os avisos foi removida.",
   canal_nao_aceita_aviso_livre:
-    "A conexão escolhida só envia mensagens aprovadas — ela não serve para o aviso de caso.",
+    "A conexão escolhida só envia mensagens aprovadas, e o aviso não tem um modelo aprovado com uma variável escolhido para ela.",
   canal_desativado:
     "A conexão escolhida para os avisos está pausada. Retome-a na Central de Conexões para os avisos voltarem a sair.",
   transporte_ausente: "O serviço de WhatsApp desta instalação não está configurado.",

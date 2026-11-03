@@ -65,10 +65,16 @@ describe("#2591 — fatia 1: dono por contato", () => {
     );
   });
 
-  it("a porta manager+ da carteira existe na API", () => {
+  it("a porta da carteira existe na API e cobra `agent`+ com posse (#3746)", () => {
     const rota = path.join(raiz, "app/api/v1/contacts/[id]/carteira/route.ts");
-    expect(existsSync(rota), "sem rota não há como o gerente pôr o cliente na carteira").toBe(true);
-    expect(readFileSync(rota, "utf8")).toContain('requireRole("manager"');
+    expect(existsSync(rota), "sem rota não há como pôr o cliente na carteira").toBe(true);
+    const fonte = readFileSync(rota, "utf8");
+    // O piso de papel caiu para `agent` (#3746) e o escopo de posse entrou no
+    // lugar dele: quem decide o cliente é a régua, não a comparação de papel.
+    expect(fonte).toContain('requireRole("agent"');
+    expect(fonte).toContain("conferirPosse");
+    // E a rota continua sendo a ÚNICA porta: a gravação sai pela função do banco.
+    expect(fonte).toContain("fn_definir_carteira_do_cliente");
   });
 });
 
