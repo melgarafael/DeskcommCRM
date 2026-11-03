@@ -67559,6 +67559,163 @@ create index if not exists idx_contacts_busca_sem_acento_trgm
 
 notify pgrst, 'reload schema';
 
+-- ---- o molde de IA das empresas novas: as funções e o gatilho (migration 9096) ----
+--
+-- A PRIMEIRA metade da 9096, aqui porque cria FUNÇÃO e a VARREDURA anon (logo
+-- abaixo) proíbe `create function` depois dela. A coluna
+-- `platform_settings.molde_de_ia_org_id` nasce na SEGUNDA metade, no fim do
+-- arquivo: numa instalação NOVA `platform_settings` só é criada mais adiante
+-- (0253). Quem ATUALIZA já tem a tabela, e o `do` abaixo cria a coluna AQUI,
+-- antes do gatilho que a lê — sem ele, uma empresa criada durante o
+-- `update.sh`, entre as duas metades, falharia por coluna inexistente. As
+-- funções são plpgsql: o corpo não é conferido contra o catálogo ao criar, só
+-- ao rodar. Cabeçalho da 9096 para o racional inteiro.
+do $$
+begin
+  if to_regclass('public.platform_settings') is not null then
+    alter table public.platform_settings
+      add column if not exists molde_de_ia_org_id uuid
+        references public.organizations(id) on delete set null;
+  end if;
+end $$;
+
+-- O padrão do molde, quando há um molde e o padrão dele serve à empresa nova.
+-- Definer porque lê `platform_settings` (sem policy, só service_role) e a linha
+-- de OUTRA organização; quem chama são os dois gatilhos abaixo, também definer.
+create or replace function public.fn_llm_do_molde_de_ia()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_llm jsonb;
+begin
+  select jsonb_build_object(
+           'provider', o.settings->'llm'->>'provider',
+           'default_model', o.settings->'llm'->>'default_model')
+    into v_llm
+    from public.platform_settings ps
+    join public.organizations o on o.id = ps.molde_de_ia_org_id
+   where ps.id = 1
+     and o.settings->'llm'->>'provider' in ('anthropic', 'openai', 'openrouter')
+     and coalesce(btrim(o.settings->'llm'->>'default_model'), '') <> '';
+  return v_llm;
+end;
+$$;
+
+revoke execute on function public.fn_llm_do_molde_de_ia() from public, anon, authenticated;
+
+-- O padrão de quem nasce: o que veio de quem cria, senão o do molde, senão o do
+-- produto. Corpo da 0096 com o degrau do molde no meio. Passa a ser definer
+-- (com `search_path` vazio) para a leitura do molde não depender do papel de
+-- quem insere a organização.
+create or replace function public.fn_seed_org_llm_defaults()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_llm jsonb;
+begin
+  if coalesce(new.settings->'llm'->>'default_model', '') = '' then
+    v_llm := public.fn_llm_do_molde_de_ia();
+    if v_llm is null then
+      v_llm := jsonb_build_object(
+        'provider', 'anthropic',
+        'default_model', coalesce(
+          (select m.model_id from public.ai_models m
+            where m.provider = 'anthropic' and m.is_default_for_provider
+              and m.deprecated_at is null limit 1),
+          'claude-sonnet-4-6'));
+    end if;
+    new.settings := jsonb_set(
+      coalesce(new.settings, '{}'::jsonb),
+      '{llm}',
+      coalesce(new.settings->'llm', '{}'::jsonb) || v_llm,
+      true);
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_seed_org_llm_defaults() from public, anon, authenticated;
+
+-- As funções do molde vão para a empresa nova, e o efeito fica na auditoria
+-- DELA — é onde Painel › Empresas › [empresa] o lê.
+create or replace function public.fn_molde_de_ia_na_org_nova()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_molde          uuid;
+  v_copiadas       integer := 0;
+  v_deixadas       integer := 0;
+  v_llm            jsonb;
+  v_padrao_copiado boolean;
+begin
+  select ps.molde_de_ia_org_id into v_molde
+    from public.platform_settings ps
+   where ps.id = 1;
+  if v_molde is null then
+    return null;
+  end if;
+
+  with copiadas as (
+    insert into public.ai_purpose_bindings
+      (organization_id, purpose, provider, credential_id, model_id, base_url, is_enabled)
+    select new.id, b.purpose, b.provider, null::uuid, b.model_id, null::text, b.is_enabled
+      from public.ai_purpose_bindings b
+     where b.organization_id = v_molde
+       and nullif(btrim(b.base_url), '') is null
+       and b.provider in ('anthropic', 'openai', 'openrouter')
+    on conflict (organization_id, purpose) do nothing
+    returning 1
+  )
+  select count(*) into v_copiadas from copiadas;
+
+  select count(*) into v_deixadas
+    from public.ai_purpose_bindings b
+   where b.organization_id = v_molde
+     and not (nullif(btrim(b.base_url), '') is null
+              and b.provider in ('anthropic', 'openai', 'openrouter'));
+
+  -- O padrão foi decidido pelo BEFORE (`fn_seed_org_llm_defaults`); aqui só se
+  -- confere se ele é o do molde, para a auditoria dizer a verdade.
+  v_llm := public.fn_llm_do_molde_de_ia();
+  v_padrao_copiado := v_llm is not null
+    and ((new.settings->'llm')->>'provider') is not distinct from (v_llm->>'provider')
+    and ((new.settings->'llm')->>'default_model') is not distinct from (v_llm->>'default_model');
+
+  if v_copiadas = 0 and not v_padrao_copiado then
+    return null;
+  end if;
+
+  insert into public.api_audit_log
+    (organization_id, action, resource_type, resource_id, bypassed_rls, metadata)
+  values (
+    new.id, 'ai.molde_de_ia_aplicado', 'organization', new.id, true,
+    jsonb_build_object(
+      'molde_org_id', v_molde,
+      'funcoes_copiadas', v_copiadas,
+      'funcoes_deixadas', v_deixadas,
+      'padrao_copiado', v_padrao_copiado,
+      'padrao', case when v_padrao_copiado then v_llm end));
+  return null;
+end;
+$$;
+
+revoke execute on function public.fn_molde_de_ia_na_org_nova() from public, anon, authenticated;
+
+drop trigger if exists trg_molde_de_ia_na_org_nova on public.organizations;
+create trigger trg_molde_de_ia_na_org_nova
+  after insert on public.organizations
+  for each row execute function public.fn_molde_de_ia_na_org_nova();
+
 -- ---- a ligação do canal com o provedor é do servidor (migration 9093) ----
 -- Espelho do gatilho da 9093. Fica ACIMA da VARREDURA anon porque cria função;
 -- as colunas que ele olha nascem no bloco da 9093, mais abaixo. Antes delas
@@ -72099,6 +72256,20 @@ comment on column public.calendar_event_types.reminder_meta_template_id is
 
 -- A coluna nova entra no `select` do cron agenda-reminder: sem recarregar o
 -- cache de schema, o PostgREST recusa a consulta inteira até o próximo restart.
+notify pgrst, 'reload schema';
+
+-- ---- o molde de IA das empresas novas: a coluna (migration 9096) ----
+-- A SEGUNDA metade da 9096: a coluna que escolhe o molde. No fim do arquivo
+-- porque numa instalação NOVA `platform_settings` só existe depois da 0253; em
+-- quem atualiza, a primeira metade (antes da VARREDURA anon) já a criou, e o
+-- `if not exists` passa sem efeito. As funções e o gatilho estão lá.
+alter table public.platform_settings
+  add column if not exists molde_de_ia_org_id uuid
+    references public.organizations(id) on delete set null;
+
+comment on column public.platform_settings.molde_de_ia_org_id is
+  'Empresa cuja configuração de IA as empresas NOVAS copiam ao nascer (migration 9096): as funções de ai_purpose_bindings sem endpoint próprio e de provedor com chave da instalação (anthropic, openai, openrouter), sempre com credential_id nulo, e o padrão settings.llm (provider, default_model). Nunca credenciais, Jev, agentes nem base de conhecimento. null = cada empresa nasce com o padrão do produto. Quem copia: fn_molde_de_ia_na_org_nova e fn_seed_org_llm_defaults. Escrita por app/actions/settings/updateMoldeDeIa.ts.';
+
 notify pgrst, 'reload schema';
 
 -- ---- o número oficial conectado com um clique, pela conta do provedor da instalação (migration 9093) ----
