@@ -3,6 +3,9 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * Épico Operação Visível (F1) — PATCH: arquiva/reativa uma entrada de memória
  * da org (migration 0067). Filtro `organization_id` sempre (admin client
  * bypassa RLS).
+ *
+ * Aceita sessão de navegador OU Bearer `dsk_…` com escopo `config:write`
+ * e papel admin (`tokenRole`). A organização vem da linha do token, nunca do corpo.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -10,7 +13,8 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -43,10 +47,18 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("invalid_request", "id inválido.", 400, { requestId });
   }
 
-  const authz = await requireRole("manager", { requestId, resource: "org_memory" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "org_memory_entry_update",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user: authUser, org } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
+  const teto = await tetoDeEscritaDoToken(authz, "org_memory_entries", requestId);
+  if (teto) return teto;
 
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
@@ -66,12 +78,12 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   if (parsed.data.status !== undefined) alteracoes.status = parsed.data.status;
   if (parsed.data.valid_until !== undefined) alteracoes.valid_until = parsed.data.valid_until;
 
-  const admin = createAdminClient();
-  const { data, error } = await admin
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
     .from("org_memory_entries")
     .update(alteracoes)
     .eq("id", id)
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", authz.organizationId)
     .select("id, status, valid_until")
     .single();
   if (error || !data) {
@@ -82,8 +94,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   await audit({
     action: "ai.org_memory_entry_updated",
-    actorUserId: authUser.id,
-    organizationId: org.orgId,
+    actorUserId,
+    actorApiTokenId: authz.apiTokenId,
+    organizationId: authz.organizationId,
     resourceType: "org_memory_entries",
     resourceId: id,
     requestId,
