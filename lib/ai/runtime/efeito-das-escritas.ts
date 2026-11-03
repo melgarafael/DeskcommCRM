@@ -54,6 +54,8 @@
  */
 
 /** O que aconteceu com UMA escrita. Só `produziu_efeito` autoriza a fala a afirmar sucesso. */
+import { extrairRecibosDeAgendamento, type ReciboDeAgendamento } from "./recibos-de-agendamento";
+
 export type DesfechoDaEscrita = "produziu_efeito" | "falhou" | "incerto";
 
 /** A leitura para quem pergunta: os três desfechos + "ninguém tentou". */
@@ -70,11 +72,19 @@ export interface EfeitoDasEscrituras {
   desfechoDe(ferramenta: string): LeituraDoEfeito;
   /** O predicado ÚNICO: `true` só quando a escrita de fato produziu efeito neste turno. */
   produziuEfeito(ferramenta: string): boolean;
+  /** Invalida o comprovante anterior ANTES de uma nova mutação da agenda. */
+  iniciarAgendamento(): number;
+  /** A ponte publica somente o resultado real; uma chamada antiga não repõe o recibo. */
+  registrarRecibosDeAgendamento(geracao: number, resultado: unknown): void;
+  recibosDeAgendamento(): ReciboDeAgendamento[];
+  geracaoDeAgendamento(): number;
 }
 
 /** Coletor vazio — o turno cria um; quem não tem nada a registrar pode usar este. */
 export function criarEfeitoDasEscrituras(): EfeitoDasEscrituras {
   const desfechos = new Map<string, DesfechoDaEscrita>();
+  let geracaoDaAgenda = 0;
+  let recibos: ReciboDeAgendamento[] = [];
   return {
     registrar(ferramenta: string, desfecho: DesfechoDaEscrita): void {
       // Efeito é MONOTÔNICO (ver cabeçalho): o registro que já existe não é desfeito por
@@ -87,6 +97,20 @@ export function criarEfeitoDasEscrituras(): EfeitoDasEscrituras {
     },
     produziuEfeito(ferramenta: string): boolean {
       return desfechos.get(ferramenta) === "produziu_efeito";
+    },
+    iniciarAgendamento(): number {
+      recibos = [];
+      return ++geracaoDaAgenda;
+    },
+    registrarRecibosDeAgendamento(geracao: number, resultado: unknown): void {
+      if (geracao !== geracaoDaAgenda) return;
+      recibos = extrairRecibosDeAgendamento(resultado);
+    },
+    recibosDeAgendamento(): ReciboDeAgendamento[] {
+      return recibos.map((r) => ({ ...r }));
+    },
+    geracaoDeAgendamento(): number {
+      return geracaoDaAgenda;
     },
   };
 }

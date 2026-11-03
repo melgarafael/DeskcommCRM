@@ -19224,6 +19224,16 @@ export const DICIONARIO: Traducoes = {
   "24 horas, todos os dias": { es: "24 horas, todos los días" },
   // Coluna "Setor" da aba Atendimento, agora com N filas por pessoa.
   "Setores de": { es: "Sectores de" },
+  // #3876 (F3) — a cor da fila e quem está nela, dentro do card do setor.
+  // A paleta é a das etiquetas: os nomes dos tons já moram acima, com tradução.
+  "Cor do setor": { es: "Color del sector" },
+  "O texto sobre a cor é escolhido pelo sistema, para continuar legível.": {
+    es: "El texto sobre el color lo elige el sistema, para que siga siendo legible.",
+  },
+  "Membros do setor": { es: "Miembros del sector" },
+  "Remover do setor": { es: "Quitar del sector" },
+  "Adicionar pessoa ao setor": { es: "Agregar persona al sector" },
+  "+ Adicionar pessoa": { es: "+ Agregar persona" },
   // Escrita do destino numa conversa: a fila tem de ser desta organização.
   "Setor inexistente nesta organização.": {
     es: "El sector no existe en esta organización.",

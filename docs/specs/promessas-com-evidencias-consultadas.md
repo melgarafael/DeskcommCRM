@@ -57,11 +57,73 @@ independentes a detecção de retorno humano e suas regras de caso/follow-up.
 O veto orienta recuperar a política e preservar gratuidade autorizada, sem
 contorná-lo por sinônimos ou por remoção de informação comercial correta.
 
-Sem evidências, a chamada conserva a instrução anterior. Envios fixos de
+Sem evidências comerciais ou operacionais, a chamada conserva a instrução anterior. Envios fixos de
 follow-up, que não consultam essas ferramentas, permanecem nesse caminho.
 `semanticPromiseGate`, tabela de valores, demais gates e tratamento de parse
 permanecem iguais. A distinção semântica depende do modelo escolhido: não é uma
 garantia absoluta de ausência de falsos positivos/negativos.
+
+## Confirmação operacional de agendamento
+
+A ponte MCP publica no coletor de efeitos do turno os recibos estruturados de
+marcações, remarcações e confirmações concluídas. O booleano de efeito por nome
+de ferramenta não comprova uma reserva: somente id, estado `confirmed`, início,
+fim e revisão devolvidos pelo handler podem originar um comprovante. `pending`,
+falha, resultado incerto, ressalva de agenda externa nunca lida e confirmação
+humana ainda não comprovada ficam sem autorização. Nenhum dado é extraído dos
+argumentos, da candidata, da FAQ ou do histórico.
+
+Antes de cada revisão semântica com recibos, uma consulta em lote confere as
+linhas atuais por id, organização e contato do turno, incluindo o filtro de
+organização do tipo de atendimento relacionado. Estado, instantes e revisão
+devem corresponder ao retorno: replay de idempotência anterior a uma alteração
+não autoriza a confirmação. Tipo, local/unidade e fuso vêm dessa leitura atual;
+o retorno legado não os contém. Mudanças no compromisso que incrementem a
+revisão invalidam o recibo. A consulta não regrava a reserva nem comprova envio
+de link ou publicação em calendário externo. A conferência é um retrato nesse
+instante, não uma trava contra alteração humana posterior.
+
+Toda nova tentativa de mutação da agenda descarta os recibos anteriores antes
+das guardas, inclusive quando a chamada falha. Uma geração do coletor impede
+que resposta de uma chamada anterior, concluída em paralelo, os restaure.
+Os recibos e a evidência vivem somente na instância do turno. Falha de leitura
+retira a evidência e emite `booking_evidence_lookup_failed`, sem dados pessoais.
+Se uma mutação começar enquanto o banco ou o classificador responde, a geração
+também invalida a aprovação em voo: a revisão devolve veto conservador, sem
+exceção ou nova chamada de modelo, mesmo se o replay repuser um recibo idêntico.
+
+A candidata inteira e `evidencias_agendamento` chegam em campos separados ao
+mesmo `classifyPromise`. A instrução permite relatar aquela confirmação factual
+e exige correspondência de pessoa, tipo, local, horário e fuso. Não libera
+descontos, gratuidade, promessa clínica ou qualquer compromisso adicional.
+O classificador mantém o veredito e as duas perguntas existentes: não há bypass,
+remoção de frases nem chamada adicional de IA. A chave de memoização inclui a
+evidência operacional atual e sua ausência; um veto anterior ao booking não é
+reutilizado com comprovante, nem uma aprovação com prova retirada.
+Somente estado, tipo, local/unidade, intervalo, fuso e beneficiário entram no corpo do prompt;
+identificadores de organização, contato, tipo e reserva e a revisão são usados
+somente nos filtros, conferências e memo internos. Há contexto adicional de IA
+e uma consulta em lote por revisão com recibos, sem nova chamada de modelo.
+Quando há dependente/participante, `participant_name` atual (até 120 caracteres)
+viaja como `beneficiario`, dado JSON separado de instruções: a reserva comprova
+somente essa pessoa, não o contato responsável nem outro participante. Sem nome
+operacional, a evidência é somente do contato atendido. Não consulta nem envia
+nome do responsável, e-mail ou telefone para comprovar a reserva.
+
+Destino: núcleo. Entrada: resultado real de `wrapMcpTool` e leitura escopada de
+`calendar_appointments`; saída: `classifyPromise` → `semanticPromiseGate`.
+Auditoria MCP, atividade da agenda, `llm_calls` e impedimentos na prévia
+continuam nas portas existentes (Agenda, Agentes → Teste e Execuções). Não há
+nova configuração: camada semântica/modelo e agenda mantêm as telas atuais.
+O anti-morte e a continuidade IA↔humano permanecem na reformulação/handoff do
+harness. O retorno do veto permite corrigir a fala; alterações operacionais
+voltam pela próxima leitura, sem autorização persistida. Mapa:
+`docs/architecture/agent-turn.workflow.json`, turno → recibos → cadeia.
+
+Testes com banco e modelo simulados medem transporte, escopo, invalidação,
+memoização e preservação do veto. Não provam a precisão de um modelo real nem
+o atendimento completo pela tela; essa medição exige o par agente/ferramenta
+em ambiente sintético com provedor configurado.
 
 ## Operação e visibilidade
 
