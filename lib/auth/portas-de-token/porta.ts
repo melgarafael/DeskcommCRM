@@ -50,9 +50,10 @@ export function portaDeToken(modelo: ModeloDePorta): RegExp {
       const dinamico = /^\[(.+)\]$/.exec(parte);
       if (!dinamico) return escapar(parte);
       const nome = dinamico[1] ?? "";
-      if (nome.startsWith("...")) throw new Error(`catch-all não ganha porta: ${caminho}`);
+      if (nome.startsWith("...") || nome.startsWith("[")) throw new Error(`catch-all não ganha porta: ${caminho}`);
       nomes.add(nome);
-      return segmentos[nome] ?? FORMA_DE_UUID;
+      // Entre parênteses: uma classe com `|` não pode levar a âncora junto.
+      return `(?:${segmentos[nome] ?? FORMA_DE_UUID})`;
     });
 
   for (const [nome, classe] of Object.entries(segmentos)) {
