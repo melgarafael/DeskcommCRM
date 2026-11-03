@@ -71523,19 +71523,14 @@ comment on column public.attendant_sectors.color is
 --
 -- Espelho da 9092. Não cria função, então pode ficar depois da VARREDURA anon.
 -- FK composta com a organização, como a do remetente (0625): o banco recusa
--- modelo de outra organização. A chave (organization_id, id) em meta_templates
--- não recusa linha nenhuma (o id já é único); existe para a FK. Apagar o modelo
--- zera só a coluna e volta o tipo ao comportamento de antes.
-do $$ begin
-  if not exists (
-    select 1 from pg_constraint
-    where conname = 'meta_templates_organization_id_id_key'
-      and conrelid = 'public.meta_templates'::regclass
-  ) then
-    alter table public.meta_templates
-      add constraint meta_templates_organization_id_id_key unique (organization_id, id);
-  end if;
-end $$;
+-- modelo de outra organização. Apagar o modelo zera só a coluna e volta o tipo
+-- ao comportamento de antes.
+--
+-- A chave (organization_id, id) em meta_templates, que esta FK referencia, NÃO
+-- é criada aqui: vem do bloco da 9094, mais acima neste arquivo — uma
+-- constraint, um bloco (tests/unit/baseline-constraint-reconstruida.test.ts).
+-- A ordem importa: aquele bloco precisa ficar ANTES deste, senão a FK abaixo
+-- falha no install.sh (ON_ERROR_STOP=1) por falta da chave referenciada.
 
 alter table public.calendar_event_types
   add column if not exists reminder_meta_template_id uuid;
