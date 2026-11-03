@@ -51,7 +51,7 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
-import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -138,9 +138,9 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
 }
 
 async function responder(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   organizationId: string | null,
-  idioma: string,
+  idioma: Idioma,
   leadId: string,
   requestId: string,
 ): Promise<Response> {

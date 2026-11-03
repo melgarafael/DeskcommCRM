@@ -19,6 +19,7 @@ import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { encerraDemanda } from "@/lib/leads/encerramento";
 import { loseLeadSchema, validateRequest } from "@/lib/schemas";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 

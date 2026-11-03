@@ -49,7 +49,7 @@ import {
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { TimelineItem } from "@/lib/types/contacts";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
-import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -91,7 +91,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 async function responder(
   supabase: SupabaseClient,
   organizationId: string | null,
-  idioma: string,
+  idioma: Idioma,
   leadId: string,
   req: NextRequest,
   requestId: string,

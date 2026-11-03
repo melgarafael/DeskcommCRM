@@ -298,17 +298,26 @@ export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
   // #3746 — a capacidade, respondida pelo SERVIDOR com a régua do PATCH. Falha
   // de leitura devolve `false` (a tela esconde o seletor) em vez de estourar a
   // ficha: o botão a menos é um incômodo, a ficha em branco é um defeito.
-  const posse = await conferirPosse({
-    acao: "carteira",
-    db: admin,
-    organizationId: orgId,
-    atorId: authz.user.id,
-    papel: authz.org.role,
-    contactId,
-  });
+  // A régua de posse pergunta por pessoa e papel: só a sessão tem os dois. O token
+  // não escolhe "dono desta carteira", então `pode_alterar` fica `false` nele.
+  let podeAlterar = false;
+  if (authz.via === "session") {
+    const sessao = await requireRole("agent", { requestId, resource: "contacts" });
+    if (sessao.ok) {
+      const posse = await conferirPosse({
+        acao: "carteira",
+        db: admin,
+        organizationId: orgId,
+        atorId: sessao.user.id,
+        papel: sessao.org.role,
+        contactId,
+      });
+      podeAlterar = posse.pode;
+    }
+  }
 
   return ok(
-    { contact_id: contactId, dono_user_id: dono, qualificado, pode_alterar: posse.pode },
+    { contact_id: contactId, dono_user_id: dono, qualificado, pode_alterar: podeAlterar },
     { requestId },
   );
 }

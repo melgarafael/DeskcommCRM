@@ -28,13 +28,14 @@ import { roteiaProximasAcoes, type EstadoDoContato } from "@/lib/leads/next-acti
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isServiceRoleConfigured } from "@/lib/audit";
+import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { extractBearer } from "@/lib/mcp/auth";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
-import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -94,7 +95,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 async function responder(
   supabase: SupabaseClient,
   orgId: string,
-  idioma: string,
+  idioma: Idioma,
   requestId: string,
 ): Promise<Response> {
   // ── PENDENTES ────────────────────────────────────────────────────────────
