@@ -67214,7 +67214,7 @@ revoke execute on function public.fn_uso_de_ia(uuid, timestamptz, timestamptz, u
 grant  execute on function public.fn_uso_de_ia(uuid, timestamptz, timestamptz, uuid, text)
   to authenticated, service_role;
 
--- ---- busca do inbox sem acento, com unaccent em qualquer schema (migration 9099) ----
+-- ---- busca do inbox sem acento, com unaccent em qualquer schema (migration 9100) ----
 -- Substitui o bloco da 9098 (#3924) neste apêndice: aquele fixava `public.unaccent`
 -- e, reaplicado a cada `update.sh`, recriava o corpo quebrado onde a extensão mora em
 -- `extensions`. Este é o estado final das duas migrations. ⚠️ ANTES da VARREDURA anon:

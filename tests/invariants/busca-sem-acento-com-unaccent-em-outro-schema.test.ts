@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { sql } from "./psql-transporte";
 
 /**
- * A BUSCA SEM ACENTO SOBREVIVE À `unaccent` MORANDO EM OUTRO SCHEMA (migration 9099).
+ * A BUSCA SEM ACENTO SOBREVIVE À `unaccent` MORANDO EM OUTRO SCHEMA (migration 9100).
  *
  * O banco do `pnpm test:db` não tem `unaccent` antes do baseline, então o baseline
  * a cria em `public` e o invariante da 9098 (`busca-do-inbox-ignora-acento`) só
