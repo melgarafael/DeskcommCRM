@@ -11,4 +11,18 @@ import type { ModeloDePorta } from "./porta";
 // proxy filtra por caminho e não por método. A cerca
 // `tests/unit/rotas-bearer-tem-porta-no-proxy.test.ts` reprova porta sem rota
 // com token e rota com token sem porta.
-export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [];
+export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
+  // ai/agents. Quem autentica é a própria rota, por `resolveAuthDual`: token
+  // com `config:read` (GET) ou `config:write` (escrita) e papel admin
+  // (`tokenRole`). O `[id]` e o `[pid]` são forma de UUID (as rotas validam com
+  // `UUID_RX`/`z.uuid()`), então nenhum irmão literal de `[id]` entra de
+  // carona; `assignable` é um desses irmãos e tem a entrada própria, exata.
+  "/api/v1/ai/agents/assignable",
+  "/api/v1/ai/agents/[id]/duplicate",
+  "/api/v1/ai/agents/[id]/pause",
+  "/api/v1/ai/agents/[id]/proposals",
+  "/api/v1/ai/agents/[id]/proposals/[pid]/apply",
+  "/api/v1/ai/agents/[id]/reconcile",
+  "/api/v1/ai/agents/[id]/runs",
+  "/api/v1/ai/agents/[id]/tool-usage",
+];
