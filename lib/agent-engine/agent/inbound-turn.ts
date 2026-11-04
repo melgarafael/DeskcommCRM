@@ -1,3 +1,4 @@
+import { prepararFotosIneditas, congelarTextoFinalDasFotos, validarLegendaDeFotos, FotosIneditasError } from './fotos-ineditas';
 import { contemAssuntoComercialRestrito, comercialExigeHumano } from '@/lib/escalacao/assunto-comercial';
 import { prospectingConversationContext } from "@/lib/prospecting/context";
 import { setExecutionAgentOperation } from '@/lib/atendimento/fronteira-server';
@@ -384,6 +385,13 @@ export const AGENT_TOOL_DEFS = {
       'Envia UMA mensagem de WhatsApp ao lead desta conversa. É o ÚNICO jeito de falar com o lead; texto fora desta tool nunca é enviado.',
     inputSchema: z.object({
       body: z.string().min(1).describe('corpo da mensagem, no idioma da conversa com o lead, pronto para envio'),
+      fotos_modo: z.enum(['ineditas']).optional().describe(
+        'Opt-in: somente fotos ainda não enviadas nesta conversa; para a primeira foto ou mais fotos. Sem este campo preserva o envio legado.',
+      ),
+      fotos_quantidade: z.number().int().min(1).max(3).optional().describe(
+        'Com fotos_modo ineditas: quantidade desejada (padrão 1, até 3); respeita o teto do turno. Requer produto_codigo.',
+      ),
+      texto_apos_fotos: z.boolean().optional().describe('Somente com fotos_modo ineditas: body será enviado como texto separado depois das fotos confirmadas. Reserva uma mensagem do teto; não use legenda vazia em body.'),
       produto_codigo: z
         .string()
         .optional()
@@ -4292,7 +4300,7 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body: corpoDoModelo, produto_codigo }) => {
+      execute: async ({ body: corpoDoModelo, produto_codigo, fotos_modo, fotos_quantidade, texto_apos_fotos }) => {
         tentativasDeEnvio += 1;
         // O texto sai no formato do WhatsApp — sem `\n` literal nem
         // `**negrito**` de Markdown na tela do cliente. Antes de qualquer gate,
@@ -4417,6 +4425,11 @@ async function executarTurnoDoAgente(
             },
           };
         }
+        if (texto_apos_fotos && (fotos_modo !== 'ineditas' || !produto_codigo?.trim())) return {ok:false,error:{code:'pedido_fotos_invalido',message:'Texto após fotos exige produto consultado e modo ineditas.'}};
+        if ((fotos_modo || fotos_quantidade !== undefined) && (!fotos_modo || !produto_codigo?.trim())) {
+          return { ok: false, error: { code: 'pedido_fotos_invalido', message: 'Para fotos inéditas use fotos_modo ineditas e produto_codigo consultado.' } };
+        }
+        let fotosConfirmadas = 0;
         // RESERVA EM VOO (#2996, item 6): do gate até aqui o CAMINHO DE PASSAGEM
         // é tudo síncrono (nenhuma operação assíncrona entre `checar` e
         // `reservar`; o único ponto que cede o event loop mora no ramo de
@@ -4486,14 +4499,29 @@ async function executarTurnoDoAgente(
           // fora do lock do número — a cópia no Storage é rede. Código errado volta
           // ao modelo sem enviar nada; foto que não copiou sai do envio e o texto
           // segue (degradar para só texto). Ver `agent/fotos-do-produto.ts`.
-          if (produto_codigo !== undefined && produto_codigo.trim() !== '' && !preview) {
+        if (produto_codigo !== undefined && produto_codigo.trim() !== '' && !preview) {
+          if (fotos_modo === 'ineditas') {
+            try {
+              const preparadas = await prepararFotosIneditas(pool, copiarFotoNoStorage(runLog), {
+                tenantId, conversationId: input.conversationId, codigo: produto_codigo,
+                jobId: liveJob().id, jobClaim: claimOfJob(liveJob()), seq: seq + 1,
+                quantidade: fotos_quantidade, restantes: maxSendsPerTurn - seq - (texto_apos_fotos ? 1 : 0), body, textoAposFotos: texto_apos_fotos === true,
+              });
+              fotosDoProduto = preparadas.fotos;
+            } catch (err) {
+              if (err instanceof FotosIneditasError) {
+                dupTrava.liberar(body);
+                return { ok: false, error: { code: err.code, message: err.message } };
+              }
+              throw err;
+            }
+          } else {
             const preparadas = await prepararFotosDoProduto(pool, copiarFotoNoStorage(runLog), {
               tenantId,
               conversationId: input.conversationId,
               codigo: produto_codigo,
             });
             if (!preparadas.ok) {
-              // Nada saiu: libera a reserva antes de devolver o erro ao modelo.
               dupTrava.liberar(body);
               return { ok: false, error: { code: preparadas.code, message: preparadas.message } };
             }
@@ -4501,6 +4529,7 @@ async function executarTurnoDoAgente(
             fotosQueFaltaram = preparadas.tinha - preparadas.fotos.length;
             produtoApresentado = produto_codigo.trim();
           }
+        }
           // F4-04: sinaliza (independente do gate F4-01/F4-08) se ESTA candidata é uma
           // promessa fora de tabela — usado só para correlacionar com o jailbreak no fim do
           // turno. A detecção é determinística (decidePromise); sem tabela do tenant = no-op.
@@ -4705,8 +4734,17 @@ async function executarTurnoDoAgente(
             },
             // `finalBody` = corpo após a cadeia (o disclosureGate F4-05 pode prependar o
             // disclosure via inject); é ELE que vai ao canal, não o `body` capturado da tool.
-            send: (finalBody: string) => {
-              pararDigitando(); // a mensagem sai agora; renovar depois dela mentiria
+            send: async (finalBody: string) => {
+              pararDigitando();
+              if (fotos_modo === 'ineditas') validarLegendaDeFotos(finalBody);
+              if(fotos_modo==='ineditas' && texto_apos_fotos===true) {
+                const claim=claimOfJob(liveJob());
+                if(!claim) throw new FotosIneditasError('fotos_texto_lease_ausente','Envio sem aquisição confirmada; nenhuma nova mensagem foi enviada.');
+                await congelarTextoFinalDasFotos(pool,{
+                tenantId,jobId:liveJob().id,seq:seq+1,jobClaim:claim,body:finalBody,
+                split:agentConfig?.splitMessages??false,maxChars:agentConfig?.splitMaxChars??600,
+              });
+              }
               const sleep =
                 deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
               const jitter = () =>
@@ -4740,11 +4778,17 @@ async function executarTurnoDoAgente(
                   // Cada foto é uma mensagem física: só vão as que cabem no teto do turno,
                   // medido ANTES DE CADA FOTO, depois do texto.
                   return enviarComFotos(finalBody, fotosDoProduto, {
+                    pararEmQueued: fotos_modo === 'ineditas',
+                    textoAposFotos: fotos_modo === 'ineditas' && texto_apos_fotos === true,
                     sleep,
                     jitter,
                     restantes: () => maxSendsPerTurn - seq,
-                    enviarFoto: (foto, legenda) => enviar(legenda, foto),
-                    enviarTexto: (texto) => enviarVoz(texto) ?? sendInBubbles(texto, {
+                    enviarFoto: async (foto, legenda) => {
+                      const resultado = await enviar(legenda, foto);
+                      if (resultado.kind === 'sent' || resultado.kind === 'already_sent') fotosConfirmadas += 1;
+                      return resultado;
+                    },
+                    enviarTexto: (texto) => (texto_apos_fotos ? null : enviarVoz(texto)) ?? sendInBubbles(texto, {
                         enabled: agentConfig?.splitMessages ?? false,
                         maxChars: agentConfig?.splitMaxChars ?? 600,
                         // O teto do turno vale para as bolhas: o que passa dele vai
@@ -4962,7 +5006,7 @@ async function executarTurnoDoAgente(
                 ok: true,
                 status: 'enviada',
                 message_id: outcome.messageId,
-                ...(produto_codigo !== undefined ? { fotos_enviadas: fotosDoProduto.length } : {}),
+                ...(produto_codigo !== undefined ? { fotos_enviadas: fotos_modo === 'ineditas' ? fotosConfirmadas : fotosDoProduto.length } : {}),
                 ...(fotosQueFaltaram > 0
                   ? {
                       aviso: `${fotosQueFaltaram} foto(s) do produto não puderam ser enviadas; o texto foi. Não diga ao cliente que mandou essas fotos.`,
@@ -5012,6 +5056,9 @@ async function executarTurnoDoAgente(
               };
           }
         } catch (err) {
+          if (err instanceof FotosIneditasError) {
+            return { ok: false, error: { code: err.code, message: err.message } };
+          }
           // bug de programação no adapter: ensina o modelo a encerrar E derruba o job.
           noteRunError(err instanceof Error ? err : new Error(String(err)));
           return {

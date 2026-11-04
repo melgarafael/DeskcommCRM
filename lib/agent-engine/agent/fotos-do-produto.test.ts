@@ -157,6 +157,24 @@ describe("enviarComFotos — o texto é a legenda da primeira foto", () => {
     });
   });
 
+  it("no opt-in uma foto queued não autoriza a próxima nem texto de conclusão", async () => {
+    const c = canal(["queued"]);
+    const r = await enviarComFotos("Detalhes", [FOTO_1, FOTO_2], {
+      ...c.opts, pararEmQueued: true, textoAposFotos: true, restantes: () => 3 - c.enviados.length,
+    });
+    expect(r.kind).toBe("queued");
+    expect(c.enviados).toEqual([{ tipo: "foto", corpo: "", foto: FOTO_1.storagePath }]);
+  });
+
+  it("o texto posterior reserva uma posição e só sai após as fotos confirmadas", async () => {
+    const c = canal();
+    await enviarComFotos("Detalhes", [FOTO_1, FOTO_2, FOTO_1], {
+      ...c.opts, pararEmQueued: true, textoAposFotos: true, restantes: () => 3 - c.enviados.length,
+    });
+    expect(c.enviados.map(e => e.tipo)).toEqual(["foto", "foto", "texto"]);
+    expect(c.enviados[2]?.corpo).toBe("Detalhes");
+  });
+
   it("para no primeiro desfecho que não é sucesso — contato bloqueado não recebe a segunda foto", async () => {
     const c = canal(["blocked"]);
     const r = await enviarComFotos("oi", [FOTO_1, FOTO_2], c.opts);

@@ -31,6 +31,8 @@ import { ClientePelaVenda } from "./_clientePelaVenda";
 import { ChannelRoutingForm } from "./_channels-form";
 import { AtendimentoForm } from "./_form";
 import { TelefoneDeFichaVazia } from "./_telefoneDeFichaVazia";
+import { FotosProgressivasForm } from "./_fotos-form";
+import { fotosProgressivasConfig } from "@/lib/catalogo/fotos-progressivas-config";
 import { NomeInformado } from "./_nomeInformado";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -45,7 +47,7 @@ export default async function AtendimentoSettingsPage() {
   }
 
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data, error: erroDaConfiguracao } = await supabase
     .from("organizations")
     .select("settings")
     .eq("id", activeOrg.orgId)
@@ -90,6 +92,7 @@ export default async function AtendimentoSettingsPage() {
           )}
         </p>
       </header>
+      <FotosProgressivasForm initial={fotosProgressivasConfig(settings)} erroLeitura={!!erroDaConfiguracao || !data} />
 
       <AtendimentoForm
         initial={{ ...routing, visibility_mode: settings.visibility_mode ?? DEFAULT_VISIBILITY_MODE }}
