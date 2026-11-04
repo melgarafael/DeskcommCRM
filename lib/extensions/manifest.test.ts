@@ -355,6 +355,45 @@ describe("manifesto conectado (F1)", () => {
     expect(() => parseManifest(manifestBytes(valor))).toThrow(ExtensionError);
   });
 
+  it("recusa perfil conectado com navigation.tasks sozinho", () => {
+    const valor = { ...connectedBase, permissions: ["navigation.tasks"] };
+    expect(() => parseManifest(manifestBytes(valor))).toThrow(ExtensionError);
+  });
+
+  it("recusa perfil conectado que mistura área com navigation.tasks", () => {
+    const valor = {
+      ...connectedBase,
+      permissions: ["area.contatos.leitura", "navigation.tasks"],
+    };
+    expect(() => parseManifest(manifestBytes(valor))).toThrow(ExtensionError);
+  });
+
+  it("aceita perfil conectado com host_api {min:2,max:2}", () => {
+    const valor = { ...connectedBase, host_api: { min: 2, max: 2 } };
+    expect(() => parseManifest(manifestBytes(valor))).not.toThrow();
+  });
+
+  it("recusa perfil de dados que declara permissão de área", () => {
+    const valor = {
+      ...manifest,
+      profile: "data",
+      permissions: ["area.contatos.leitura"],
+      data: {
+        mode: "declarado",
+        objetos: [
+          {
+            slug: "ficha",
+            rotulo: { "pt-BR": "Ficha" },
+            campos: [{ slug: "nome", tipo: "texto" }],
+          },
+        ],
+      },
+      configuration: {},
+      contributions: {},
+    };
+    expect(() => parseManifest(manifestBytes(valor))).toThrow(ExtensionError);
+  });
+
   it("recusa perfil conectado sem nenhuma permissão de área", () => {
     expect(() => parseManifest(manifestBytes({ ...connectedBase, permissions: [] }))).toThrow(
       ExtensionError,
@@ -444,11 +483,18 @@ describe("origem do serviço na entrada do catálogo (F1)", () => {
     expect(catalogo.entries[0]?.service_origin).toBe("https://servico.exemplo.com");
   });
 
+  it("aceita a origem exata https://modulo.exemplo.com", () => {
+    const catalogo = parseCatalog(catalogoCom("https://modulo.exemplo.com"));
+    expect(catalogo.entries[0]?.service_origin).toBe("https://modulo.exemplo.com");
+  });
+
   it.each([
     ["barra final", "https://servico.exemplo.com/"],
     ["caminho", "https://servico.exemplo.com/api"],
     ["query", "https://servico.exemplo.com?x=1"],
+    ["fragmento", "https://modulo.exemplo.com#secao"],
     ["sem esquema", "servico.exemplo.com"],
+    ["texto que não é URL", "isto não é uma url"],
   ])("recusa origem de serviço com %s", (_nome, servico) => {
     expect(() => parseCatalog(catalogoCom(servico))).toThrow(ExtensionError);
   });
