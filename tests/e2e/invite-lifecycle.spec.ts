@@ -285,7 +285,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
       exp: Math.floor(Date.now() / 1000) - 60, // 1min no passado
     });
     await page.goto(`/team/accept-invite/${expired}`);
-    await expect(page.getByRole("heading", { name: /inválido ou expirado/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /inválida o vencida/i })).toBeVisible();
   });
 
   test("7. token adulterado (HMAC quebrado) → inválido", async ({ page }) => {
@@ -299,7 +299,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     // vira a assinatura: troca o último char por outro
     const flipped = valid.slice(0, -1) + (valid.slice(-1) === "A" ? "B" : "A");
     await page.goto(`/team/accept-invite/${flipped}`);
-    await expect(page.getByRole("heading", { name: /inválido ou expirado/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /inválida o vencida/i })).toBeVisible();
   });
 
   test("8. email não corresponde: logado com outra conta → mismatch", async ({ page }) => {
@@ -313,7 +313,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     // mas logamos como o AGENT do seed base (email diferente)
     await login(page, base.users.agent!.email);
     await page.goto(`/team/accept-invite/${valid}`);
-    await expect(page.getByRole("heading", { name: /não corresponde/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /no coincide/i })).toBeVisible();
   });
 
   test("9. não autenticado → CTA de login, não o formulário de aceite", async ({ page }) => {
@@ -325,8 +325,8 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
     await page.goto(`/team/accept-invite/${valid}`);
-    await expect(page.getByRole("heading", { name: /Você foi convidado/i })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Já tenho conta? Entrar", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Te invitaron/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: "¿Ya tienes cuenta? Iniciar sesión", exact: true })).toBeVisible();
   });
 
   /**
@@ -352,7 +352,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     });
 
     await page.goto(`/team/accept-invite/${valid}`);
-    await page.getByRole("link", { name: "Criar minha conta", exact: true }).click();
+    await page.getByRole("link", { name: "Crear mi cuenta", exact: true }).click();
 
     // O token viaja: é ele que faz a conta nova nascer amarrada a este convite
     // em vez de ganhar uma organização própria.
@@ -378,7 +378,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     });
 
     await page.goto(`/signup?invite=${encodeURIComponent(valid)}`);
-    await expect(page.getByLabel("Nome da empresa")).toHaveCount(0);
+    await expect(page.getByLabel("Nombre de la empresa")).toHaveCount(0);
     const email = page.getByLabel("Email");
     await expect(email).toHaveValue(inv.invitee_email);
     await expect(email).toHaveAttribute("readonly", /.*/);
@@ -397,9 +397,9 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     // `.first()`: o Next monta um `<div role="alert" id="__next-route-announcer__">`
     // vazio em toda navegação de cliente, então `getByRole("alert")` sozinho casa
     // DOIS elementos e o strict mode reprova — sobre uma tela que está correta.
-    await expect(page.getByRole("alert").first()).toContainText(/expirou|não é mais válido/i);
+    await expect(page.getByRole("alert").first()).toContainText(/venció|ya no es válida/i);
     // E cai no signup COMUM só depois do aviso — nunca em silêncio.
-    await expect(page.getByLabel("Nome da empresa")).toBeVisible();
+    await expect(page.getByLabel("Nombre de la empresa")).toBeVisible();
   });
 
   /**
@@ -535,7 +535,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await expect(
       ip.locator('p[role="alert"]'),
       "a tela não disse nada ao convidado: o aceite foi recusado em silêncio",
-    ).toContainText(/revogado|vencido|não foi possível/i);
+    ).toContainText(/revocó|caducó|no se pudo/i);
 
     // E o outro lado, que é o que o caso existe para provar: NÃO entrou.
     // Sem isto, um alerta visível junto com um aceite bem-sucedido passaria.
@@ -588,9 +588,9 @@ test("convite novo: alternar cadastro/login, confirmar no Mailpit e entrar só n
     await expect(page.getByLabel("Email")).toHaveValue("");
 
     await page.goto(`/team/accept-invite/${token}`);
-    await page.getByRole("link", { name: "Criar minha conta", exact: true }).click();
+    await page.getByRole("link", { name: "Crear mi cuenta", exact: true }).click();
     await expect(page).toHaveURL((url) => url.pathname === "/signup" && url.searchParams.get("invite") === token);
-    await expect(page.getByLabel("Nome da empresa")).toHaveCount(0);
+    await expect(page.getByLabel("Nombre de la empresa")).toHaveCount(0);
     await expect(page.getByLabel("Email")).toHaveValue(email);
     fs.mkdirSync("evidence/lote-bugfixes-01a178b3", { recursive: true });
     await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/convite-01-cadastro.png" });
@@ -603,14 +603,14 @@ test("convite novo: alternar cadastro/login, confirmar no Mailpit e entrar só n
     await page.getByRole("link", { name: "Crear cuenta", exact: true }).click();
     await expect(page).toHaveURL((url) => url.pathname === "/signup" && url.searchParams.get("invite") === token);
     expect(new URL(page.url()).searchParams.get("invite") === token).toBe(true);
-    await page.getByLabel("Seu nome").fill("Pessoa convidada sintética");
-    await page.getByLabel("Senha", { exact: true }).fill(senha);
-    await page.getByLabel("Confirmar senha").fill(senha);
+    await page.getByLabel("Tu nombre").fill("Pessoa convidada sintética");
+    await page.getByLabel("Contraseña", { exact: true }).fill(senha);
+    await page.getByLabel("Confirmar contraseña").fill(senha);
     await page.getByRole("button", { name: "Crear cuenta", exact: true }).click();
-    await expect(page.getByText("Confirme seu e-mail")).toBeVisible();
+    await expect(page.getByText("Confirma tu correo")).toBeVisible();
     await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/convite-03-confirmar-email.png" });
 
-    const html = await waitForEmail(email, "Confirme seu e-mail");
+    const html = await waitForEmail(email, "Confirma tu correo");
     const link = extractAuthConfirmLink(html, baseURL!);
     // Confirmação usa o token_hash real entregue ao endereço do convite.
     expect(Boolean(new URL(link).searchParams.get("token_hash"))).toBe(true);
