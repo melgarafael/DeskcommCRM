@@ -38,7 +38,7 @@ interface ConversaEmbed {
     ai_opt_out: boolean | null;
     ai_authorized_at: string | null;
     phone_number: string | null;
-    /** `contacts.tags` — a régua de contato interno (#2353). */
+    /** `contacts.tags` — a régua de contato interno (#2353) e a da equipe (#3534). */
     tags: string[] | null;
   } | null;
   channel_sessions: { metadata: Record<string, unknown> | null } | null;

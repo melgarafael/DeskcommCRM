@@ -23,9 +23,9 @@ interface LinhaDeElegibilidade {
   ai_authorized_at: Date | string | null;
   phone_number: string | null;
   org_status: string | null;
-  /** `contacts.tags` — a régua de contato interno (#2353). */
+  /** `contacts.tags` — a régua de contato interno (#2353) e a da equipe (#3534). */
   contact_tags: string[] | null;
-  /** `organizations.settings` — a lista interna mora em `.crm.internal_contact_tags`. */
+  /** `organizations.settings` — as listas moram em `.crm.internal_contact_tags` e `.crm.team_contact_tags`. */
   org_settings: unknown;
 }
 

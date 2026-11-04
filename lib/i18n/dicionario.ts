@@ -318,6 +318,14 @@ export const DICIONARIO: Traducoes = {
   ...TEXTOS_AGENDA_SERVICOS,
   ...TEXTOS_AGENDA_CONFIGURACAO,
   "Etiquetas de contato interno": { es: "Etiquetas de contacto interno" },
+  "Etiquetas de contato da equipe": { es: "Etiquetas de contacto del equipo" },
+  "Contato marcado com uma destas etiquetas continua sendo atendido pela IA, é medido pelo clima e não é passado a uma pessoa nem silenciado por isso — o sócio que testa o agente e pede informação a qualquer hora. Também não vira card no funil. Uma etiqueta por linha.":
+    {
+      es: "Un contacto marcado con una de estas etiquetas sigue siendo atendido por la IA, se mide su clima y no se pasa a una persona ni se silencia por eso — el socio que prueba el agente y pide información a cualquier hora. Tampoco genera una tarjeta en el embudo. Una etiqueta por línea.",
+    },
+  "Deixe em branco para nenhum contato ser da equipe — o comportamento de antes.": {
+    es: "Déjelo en blanco para que ningún contacto sea del equipo — el comportamiento anterior.",
+  },
   "Contato marcado com uma destas etiquetas não vira card no funil e não recebe resposta da IA — equipe, sócio, família, fornecedor. A conversa continua normal na Inbox, inclusive para envio manual. Uma etiqueta por linha.": {
     es: "Contacto marcado con una de estas etiquetas no se convierte en tarjeta en el embudo y no recibe respuesta de la IA — equipo, socio, familia, proveedor. La conversación sigue normal en la Bandeja de entrada, incluso para el envío manual. Una etiqueta por línea.",
   },

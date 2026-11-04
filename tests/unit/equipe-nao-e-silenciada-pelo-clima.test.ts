@@ -21,6 +21,8 @@
  *      `allowlist` sem autorização, onde o cliente comum é barrado.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import { decidirElegibilidade, type EstadoDeElegibilidade } from "@/lib/ai/elegibilidade/gate";
 import { ehContatoDaEquipe } from "@/lib/contacts/tags-da-equipe";
@@ -199,5 +201,36 @@ describe("#3534 · a régua da equipe", () => {
     expect(ehContatoDaEquipe(null, ["socio"])).toBe(false);
     expect(ehContatoDaEquipe(["socio"], [])).toBe(false);
     expect(ehContatoDaEquipe(["socio"], null)).toBe(false);
+  });
+
+  /**
+   * Paridade de transporte: a régua da equipe chega aos DOIS caminhos pelo mesmo
+   * par de campos da lista interna (`contacts.tags` × `organizations.settings`).
+   * Apagar um `tags` do `select`, ou o `contactTags:` do mapeamento, faz o
+   * contato da equipe voltar a ser passado por clima — sem nenhum teste
+   * comportamental reprovar, porque o dublê de banco não projeta colunas.
+   */
+  it("os dois transportes leem `contacts.tags` e a decisão carrega a régua", () => {
+    const semComentarios = (src: string) =>
+      src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const fonte = (rel: string) =>
+      semComentarios(readFileSync(path.join(process.cwd(), rel), "utf8"));
+
+    const pg = fonte("lib/ai/elegibilidade/consulta-pg.ts");
+    expect(pg).toMatch(/ct\.tags\s+as contact_tags/);
+    expect(pg).toMatch(/contactTags:\s*r\.contact_tags/);
+    expect(pg).toMatch(/contatoDaEquipe:\s*estado\.contatoDaEquipe/);
+
+    const sb = fonte("lib/ai/elegibilidade/consulta-supabase.ts");
+    expect(sb).toMatch(/contacts:contact_id\([^)]*\btags\b/);
+    expect(sb).toMatch(/contactTags:\s*row\.contacts\?\.tags/);
+    expect(sb).toMatch(/contatoDaEquipe:\s*estado\.contatoDaEquipe/);
+
+    const gate = fonte("lib/ai/elegibilidade/gate.ts");
+    expect(gate).toMatch(
+      /contatoDaEquipe:\s*ehContatoDaEquipe\(raw\.contactTags,\s*tagsDaEquipeDaOrg\(raw\.orgSettings\)\)/,
+    );
+    expect(gate).toMatch(/if \(e\.contatoDaEquipe\)/);
+    expect(gate).toMatch(/motivo:\s*"contato_da_equipe"/);
   });
 });

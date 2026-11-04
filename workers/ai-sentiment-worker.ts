@@ -179,6 +179,12 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     // `messages.metadata` como para qualquer conversa, e o cartão do clima
     // segue medindo. Só o repasse automático não sai.
     const contatoDaEquipe = elegib?.contatoDaEquipe === true;
+    // Os pedidos do cliente também não se aplicam a quem É a equipe: "pediu
+    // para falar com uma pessoa" e "pare de me mandar mensagens" são pedidos de
+    // CLIENTE, e o aviso resultante seria ruído sobre o próprio dono. Não é
+    // repasse (os pedidos abrem item na Central, não silenciam), mas é o mesmo
+    // princípio: para a equipe, o medidor não chama ninguém.
+    const pedidosParaEsteContato = pedidosRodam && !contatoDaEquipe;
 
     // ── Qual agente atende ESTA conversa? ─────────────────────────────────
     //
@@ -262,7 +268,9 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     );
 
     // Sem IA de linguagem e sem o Jev, não há quem meça nem o que perguntar.
-    if (!resolvido && climaDoJev === "desligada" && !pedidosRodam) {
+    // Para contato da equipe, `pedidosParaEsteContato` já é `false`: nada a
+    // fazer neste worker.
+    if (!resolvido && climaDoJev === "desligada" && !pedidosParaEsteContato) {
       return { skipped: true, reason: "ai_gateway_key_missing" };
     }
 
@@ -330,7 +338,7 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     // dreno não segue com ela ainda no ar. Nunca rejeita. O aviso de "Avisar a
     // equipe" sai no `finally`, depois de se saber o que o clima fez e de reler
     // a conversa (`aConversaAgora`).
-    const pedidos: Promise<PedidosObservados | null> = pedidosRodam
+    const pedidos: Promise<PedidosObservados | null> = pedidosParaEsteContato
       ? perguntarOsPedidosDoCliente(admin, {
           organizationId: event.organization_id,
           messageId,
