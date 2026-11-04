@@ -62,6 +62,7 @@ const MENSAGEM_DO_ERRO: Record<ErroDaAcao, string> = {
   modulo_desligado: "Quem administra o servidor desligou as ferramentas externas por agente.",
   descoberta_falhou: "O servidor não informou como autorizar (descoberta OAuth falhou).",
   sem_s256: "O servidor de autorização não aceita PKCE S256 — o cadastro foi recusado.",
+  metadados_divergentes: "Os dados de autorização devolvidos são de outro endereço, não do servidor informado — o cadastro foi recusado.",
   sem_cliente: "Este servidor não aceita registro automático: informe o client_id.",
   registro_falhou: "O registro automático do cliente foi recusado pelo servidor.",
   invalid_grant: "O servidor recusou a autorização.",

@@ -43,6 +43,7 @@ import { bancoEmMemoria, type BancoEmMemoria } from "./banco-em-memoria.test-hel
 import { carregarServidoresDoAgenteNoTurno, type ServidorDoAgenteNoTurno } from "./carregar";
 import { consumirPedido, credencialDoContato, escoposDoPedido, renovarCredencial } from "./credencial";
 import { ErroDeOauth, descobrir, registrarCliente } from "./oauth";
+import { TIMEOUT_DA_CHAMADA_NO_TURNO_MS, TIMEOUT_DA_DESCOBERTA_NO_TURNO_MS } from "../tempos-do-turno";
 import { iniciarAutorizacao, processarRetorno } from "./retorno";
 import { revogarAcessosDoContato, revogarAcessosDoServidor, revogarVencidas } from "./revogacao";
 
@@ -72,6 +73,11 @@ const stub = {
   refreshesFeitos: 0,
   emitidos: 0,
   fora: false,
+  /** O que a metadata devolve em `issuer`/`resource`; `undefined` = o certo. */
+  issuer: undefined as string | undefined,
+  resource: undefined as string | undefined,
+  /** O `/mcp` aceita o pedido e nunca responde. */
+  trava: false,
 };
 
 function emitir(usuario: string, escopo: string) {
@@ -119,11 +125,11 @@ beforeAll(async () => {
     req.on("end", () => {
       if (stub.fora) return json(res, 503, { error: "fora" });
       if (url.pathname === "/.well-known/oauth-protected-resource/mcp") {
-        return json(res, 200, { resource: endpoint, authorization_servers: [origem], scopes_supported: ["casa:leitura", "casa:escrita"] });
+        return json(res, 200, { resource: stub.resource ?? endpoint, authorization_servers: [origem], scopes_supported: ["casa:leitura", "casa:escrita"] });
       }
       if (url.pathname === "/.well-known/oauth-authorization-server") {
         return json(res, 200, {
-          issuer: origem,
+          issuer: stub.issuer ?? origem,
           authorization_endpoint: `${origem}/authorize`,
           token_endpoint: `${origem}/token`,
           registration_endpoint: `${origem}/register`,
@@ -200,6 +206,7 @@ beforeAll(async () => {
       }
       if (url.pathname === "/mcp") {
         if (req.method !== "POST") return void res.writeHead(405).end();
+        if (stub.trava) return;
         const at = (req.headers.authorization ?? "").replace(/^Bearer /, "");
         const acesso = stub.acessos.get(at);
         if (!acesso) {
@@ -229,6 +236,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  http.closeAllConnections();
   await new Promise<void>((ok) => http.close(() => ok()));
 });
 
@@ -260,7 +268,7 @@ async function servidorCadastrado(opcoes: { escritaDelegada?: boolean; escopos?:
 }
 
 beforeEach(async () => {
-  Object.assign(stub, { anunciaS256: true, expiraEmSegundos: 3600, refreshesFeitos: 0, fora: false });
+  Object.assign(stub, { anunciaS256: true, expiraEmSegundos: 3600, refreshesFeitos: 0, fora: false, issuer: undefined, resource: undefined, trava: false });
   stub.chamadas.length = 0;
   stub.revogados.length = 0;
   auditSpy.mockClear();
@@ -368,6 +376,27 @@ describe("descoberta RFC 9728 + 8414 e registro RFC 7591 [§3, 5]", () => {
     stub.anunciaS256 = false;
     await expect(descobrir(endpoint, rede)).rejects.toMatchObject({ codigo: "sem_s256" });
     await expect(descobrir(endpoint, rede)).rejects.toBeInstanceOf(ErroDeOauth);
+  });
+
+  it("issuer da metadata do AS diferente do emissor pedido → metadados_divergentes (RFC 8414 §3.3)", async () => {
+    stub.issuer = "https://outro-emissor.example";
+    await expect(descobrir(endpoint, rede)).rejects.toMatchObject({ codigo: "metadados_divergentes" });
+  });
+
+  it("resource da metadata do recurso diferente do endpoint → metadados_divergentes (RFC 9728 §3.3)", async () => {
+    stub.resource = `${origem}/outro-mcp`;
+    await expect(descobrir(endpoint, rede)).rejects.toMatchObject({ codigo: "metadados_divergentes" });
+    stub.resource = "https://outro-host.example/mcp";
+    await expect(descobrir(endpoint, rede)).rejects.toMatchObject({ codigo: "metadados_divergentes" });
+  });
+
+  it("controle: os mesmos identificadores com barra final e esquema em maiúsculo passam", async () => {
+    stub.issuer = `${origem.replace("http://", "HTTP://")}/`;
+    stub.resource = `${endpoint}/`;
+    expect((await descobrir(endpoint, rede)).emissor).toBe(origem);
+    // O `.well-known` da raiz descreve a ORIGEM: um endpoint dentro dela é deste recurso.
+    stub.resource = origem;
+    expect((await descobrir(endpoint, rede)).recurso).toBe(origem);
   });
 
   it("escopos do pedido ficam limitados aos do cadastro (step-up não amplia)", () => {
@@ -675,6 +704,28 @@ describe("terceiro fora do ar não derruba o turno [5.9]", () => {
     await contatoAutoriza(await pedirLink(CONTATO_A, CONVERSA_A), "alice");
     stub.fora = true;
     await expect(carga(CONTATO_A, CONVERSA_A)).resolves.toEqual([]);
+  });
+
+  // #3957: o mesmo teto do servidor da organização (`tempos-do-turno.ts`); sem
+  // ele, o default do cliente MCP (15 s por operação) estoura a folga abaixo.
+  it("servidor que não responde na carga: corta no teto do turno e o turno segue sem a ferramenta", { timeout: 30_000 }, async () => {
+    await contatoAutoriza(await pedirLink(CONTATO_A, CONVERSA_A), "alice");
+    stub.trava = true;
+    const comeco = Date.now();
+    const servidores = await carga(CONTATO_A, CONVERSA_A);
+    expect(Date.now() - comeco).toBeLessThan(TIMEOUT_DA_DESCOBERTA_NO_TURNO_MS + 4_000);
+    expect(servidores).toEqual([]);
+    expect(Object.keys(montar(servidores, CONTATO_A))).toEqual([]);
+  });
+
+  it("servidor que trava na chamada: a ferramenta corta no teto do turno", { timeout: 30_000 }, async () => {
+    await contatoAutoriza(await pedirLink(CONTATO_A, CONVERSA_A), "alice");
+    const ferramentas = montar(await carga(CONTATO_A, CONVERSA_A), CONTATO_A);
+    stub.trava = true;
+    const comeco = Date.now();
+    await ferramentas.casa__casa_ler!.execute({});
+    expect(Date.now() - comeco).toBeLessThan(TIMEOUT_DA_CHAMADA_NO_TURNO_MS + 4_000);
+    expect(stub.chamadas).toEqual([]);
   });
 });
 
