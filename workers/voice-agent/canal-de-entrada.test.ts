@@ -10,11 +10,15 @@ describe("uuidDoAudioSocketDeEntrada", () => {
   });
 
   it("o mesmo canal dá sempre o mesmo UUID — é o que permite voltar do evento para a linha", () => {
-    expect(uuidDoAudioSocketDeEntrada("1789081888.0")).toBe(uuidDoAudioSocketDeEntrada("1789081888.0"));
+    expect(uuidDoAudioSocketDeEntrada("1789081888.0")).toBe(
+      uuidDoAudioSocketDeEntrada("1789081888.0"),
+    );
   });
 
   it("canais diferentes dão UUIDs diferentes", () => {
-    expect(uuidDoAudioSocketDeEntrada("1789081888.0")).not.toBe(uuidDoAudioSocketDeEntrada("1789081888.1"));
+    expect(uuidDoAudioSocketDeEntrada("1789081888.0")).not.toBe(
+      uuidDoAudioSocketDeEntrada("1789081888.1"),
+    );
   });
 });
 

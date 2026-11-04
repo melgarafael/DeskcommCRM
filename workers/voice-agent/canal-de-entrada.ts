@@ -28,7 +28,10 @@ const ESPACO = "deskcomm/voice-agent/audiosocket-de-entrada:";
 
 /** UUID (formato v5: SHA-1 + versão/variante) do AudioSocket de uma ligação recebida. */
 export function uuidDoAudioSocketDeEntrada(channelId: string): string {
-  const b = createHash("sha1").update(ESPACO + channelId).digest().subarray(0, 16);
+  const b = createHash("sha1")
+    .update(ESPACO + channelId)
+    .digest()
+    .subarray(0, 16);
   b[6] = (b[6]! & 0x0f) | 0x50;
   b[8] = (b[8]! & 0x3f) | 0x80;
   const h = b.toString("hex");

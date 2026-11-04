@@ -103,7 +103,11 @@ describe("fio: a recebida que cai antes da IA não fica tocando", () => {
   it("o ChannelDestroyed do canal nativo encerra a linha que o StasisStart gravou", async () => {
     await handleStasisStart({
       type: "StasisStart",
-      channel: { id: CANAL_NATIVO, dialplan: { exten: "552731912377" }, caller: { number: "27992759009" } },
+      channel: {
+        id: CANAL_NATIVO,
+        dialplan: { exten: "552731912377" },
+        caller: { number: "27992759009" },
+      },
     } as never);
     expect(fakes.tabela).toHaveLength(1);
     expect(fakes.tabela[0]).toMatchObject({ direction: "inbound", status: "ringing" });
@@ -125,10 +129,18 @@ describe("fio: a recebida que cai antes da IA não fica tocando", () => {
 
   it("a feita (o id do canal É o asterisk_channel_id) continua sendo encerrada", async () => {
     const canalDaFeita = "7aba2d23-3b56-494f-a486-952cb4a0071d";
-    fakes.tabela.push({ id: "feita", direction: "outbound", status: "ringing", asterisk_channel_id: canalDaFeita });
+    fakes.tabela.push({
+      id: "feita",
+      direction: "outbound",
+      status: "ringing",
+      asterisk_channel_id: canalDaFeita,
+    });
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     try {
-      await handleChannelDestroyed({ type: "ChannelDestroyed", channel: { id: canalDaFeita } } as never);
+      await handleChannelDestroyed({
+        type: "ChannelDestroyed",
+        channel: { id: canalDaFeita },
+      } as never);
     } finally {
       info.mockRestore();
     }
@@ -138,9 +150,16 @@ describe("fio: a recebida que cai antes da IA não fica tocando", () => {
   it("o canal de OUTRA ligação não encerra esta", async () => {
     await handleStasisStart({
       type: "StasisStart",
-      channel: { id: CANAL_NATIVO, dialplan: { exten: "552731912377" }, caller: { number: "27992759009" } },
+      channel: {
+        id: CANAL_NATIVO,
+        dialplan: { exten: "552731912377" },
+        caller: { number: "27992759009" },
+      },
     } as never);
-    await handleChannelDestroyed({ type: "ChannelDestroyed", channel: { id: "1789081888.6" } } as never);
+    await handleChannelDestroyed({
+      type: "ChannelDestroyed",
+      channel: { id: "1789081888.6" },
+    } as never);
     expect(fakes.tabela[0]).toMatchObject({ status: "ringing" });
   });
 });
