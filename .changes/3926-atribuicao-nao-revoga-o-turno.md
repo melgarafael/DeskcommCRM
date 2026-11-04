@@ -1,5 +1,5 @@
 ---
-impacto: exige_acao
+impacto: nada_mudou
 secao: corrigido
 titulo: Atribuir a conversa não derruba mais o turno que atribuiu
 ---
@@ -17,11 +17,3 @@ cancelados. A ordem das ações no mesmo turno deixou de importar.
 Uma pessoa assumindo pela tela continua interrompendo o agente na hora, como
 antes: a proteção não foi afrouxada, e a atribuição de uma pessoa não tem como
 se declarar "turno" — o banco recusa.
-
-## Requer atenção
-
-Se a sua instalação tem rotina própria que chama `fn_conversation_assign`
-passando os argumentos por posição, confira a chamada depois de atualizar: a
-função ganhou um sétimo argumento, `p_source_job_id`, com nulo por padrão. Quem
-chama por nome do argumento — todas as telas do produto — não precisa fazer
-nada.
