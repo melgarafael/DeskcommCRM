@@ -4,14 +4,16 @@
  * modelo de chat (camada universal). Um backend mlx-whisper local implementa a
  * mesma interface para self-host em Apple Silicon (fora deste MVP).
  */
-import type { TokenUsage } from "@/lib/agent-engine/edge/llm/pricing";
+import { custoDeAudioCents, type TokenUsage } from "@/lib/agent-engine/edge/llm/pricing";
 
 export interface TranscriptionProvider {
   transcribe(audio: Buffer, mime: string): Promise<string>;
   /**
    * Medição devolvida pelo fornecedor. O modelo de conversa traz tokens;
-   * o serviço OpenRouter pode trazer o custo em USD, convertido para centavos.
-   * Ausência de custo continua null, nunca uma estimativa de preço.
+   * o serviço OpenRouter pode trazer o custo em USD, convertido para centavos;
+   * a OpenAI devolve a duração que ela própria cobra (`usage.seconds` no
+   * `whisper-1`), que vezes o preço publicado por minuto é o custo — não é
+   * estimativa. Ausência de custo continua null, nunca um preço inventado.
    */
   transcribeMedindo?(audio: Buffer, mime: string): Promise<{
     texto: string;
@@ -30,6 +32,11 @@ export interface TranscriptionProvider {
  * `padrao_openrouter` (#3382) é o degrau 3: a própria OpenRouter transcreve
  * com a chave da conversa. `usage.cost`, quando válido, mede USD da chamada;
  * sem esse campo, o custo continua desconhecido.
+ *
+ * Na OpenAI (degrau 2, e o degrau 1 sem endereço próprio), o `whisper-1` é
+ * cobrado por DURAÇÃO: a resposta traz `usage.type='duration'` com `seconds`,
+ * e o custo é esse número vezes o preço publicado (`custoDeAudioCents`). Sem o
+ * campo, ou em outro endereço que aceite o nome `whisper-1`, continua null.
  *
  * `elevenlabs_escolhido` é o degrau 0: o Scribe que a organização escolheu no
  * painel (`escada-de-transcricao.ts`). Cobrado por minuto pelo ElevenLabs, sem
@@ -165,14 +172,19 @@ export function apiTranscriptionProvider(
       body: form,
     });
     if (!res.ok) throw new Error(`transcription_${res.status}`);
-    const json = (await res.json()) as { text?: string; usage?: { cost?: unknown } };
-    const custoEmUsd = json.usage?.cost;
-    const custoCents = typeof custoEmUsd === "number" && Number.isFinite(custoEmUsd) && custoEmUsd >= 0
+    const json = (await res.json()) as { text?: string; usage?: { cost?: unknown; seconds?: unknown } };
+    // `usage.cost` só no contrato que o declara em USD (OpenRouter): outro servidor
+    // compatível poderia devolver `cost` noutra unidade.
+    const custoEmUsd = creds.medirCustoEmUsd ? json.usage?.cost : undefined;
+    const informado = typeof custoEmUsd === "number" && Number.isFinite(custoEmUsd) && custoEmUsd >= 0
       && Number.isFinite(custoEmUsd * 100) ? custoEmUsd * 100 : null;
-    return { texto: json.text ?? "", uso: null, custoCents };
+    // O preço da OpenAI só vale para pedido que FOI à OpenAI: um servidor
+    // compatível (Groq, local) que aceite o nome `whisper-1` cobra outra coisa.
+    const porDuracao = base === DEFAULT_BASE ? custoDeAudioCents(model, json.usage?.seconds) : null;
+    return { texto: json.text ?? "", uso: null, custoCents: informado ?? porDuracao };
   };
   return {
     transcribe: async (audio, mime) => (await transcrever(audio, mime)).texto,
-    ...(creds.medirCustoEmUsd ? { transcribeMedindo: transcrever } : {}),
+    transcribeMedindo: transcrever,
   };
 }

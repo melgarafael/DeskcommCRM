@@ -213,6 +213,10 @@ const versionShapeSchema = z
     // `true` porque quem não mexer tem de ficar com o resultado de hoje; o
     // efeito da chave (trocar a descrição da ferramenta) mora no turno.
     handoff_legal_enabled: z.boolean().default(true),
+    // Ver as fotos que o cliente envia (migration 9108) — mesmo molde: ligado por
+    // padrão, porque quem não mexer fica com o que tem hoje. O efeito mora no
+    // turno (aviso no lugar da foto) e em `haLeitorDaDescricao` (quem paga a visão).
+    image_vision_enabled: z.boolean().default(true),
     proposal_ai_draft_enabled: z.boolean().default(true),
     cases_enabled: z.boolean().default(false),
     // Onda 4 — quebra a resposta em bolhas curtas (splitIntoBubbles) espaçadas
@@ -294,6 +298,19 @@ const versionShapeSchema = z
      * organização é o servidor.
      */
     knowledge_source_ids: z.array(z.string().uuid()).default([]),
+    /**
+     * Skills que este agente usa (migration 9107). `null` = TODAS as da
+     * organização e da plataforma — o comportamento de antes, e o default;
+     * `[]` = nenhuma. Sem `.refine()` de existência pelo mesmo motivo dos dois
+     * campos acima: quem confere que a skill existe é o servidor
+     * (`validarEscopoDaVersao`). Repetidos viram um só.
+     */
+    skill_names: z
+      .array(z.string().trim().min(1).max(120))
+      .max(100)
+      .transform((nomes) => [...new Set(nomes)])
+      .nullable()
+      .default(null),
   })
   .strict();
 
@@ -313,6 +330,7 @@ export const versionPatchSchema = versionShapeSchema
     handoff_keywords: versionShapeSchema.shape.handoff_keywords.removeDefault(),
     handoff_tool_enabled: versionShapeSchema.shape.handoff_tool_enabled.removeDefault(),
     handoff_legal_enabled: versionShapeSchema.shape.handoff_legal_enabled.removeDefault(),
+    image_vision_enabled: versionShapeSchema.shape.image_vision_enabled.removeDefault(),
     proposal_ai_draft_enabled: versionShapeSchema.shape.proposal_ai_draft_enabled.removeDefault(),
     cases_enabled: versionShapeSchema.shape.cases_enabled.removeDefault(),
     split_messages: versionShapeSchema.shape.split_messages.removeDefault(),
@@ -323,6 +341,7 @@ export const versionPatchSchema = versionShapeSchema
     operator_tool_ids: versionShapeSchema.shape.operator_tool_ids.removeDefault(),
     pipeline_ids: versionShapeSchema.shape.pipeline_ids.removeDefault(),
     knowledge_source_ids: versionShapeSchema.shape.knowledge_source_ids.removeDefault(),
+    skill_names: versionShapeSchema.shape.skill_names.removeDefault(),
     voz_enabled: versionShapeSchema.shape.voz_enabled.removeDefault(),
     voz_quando: versionShapeSchema.shape.voz_quando.removeDefault(),
   })

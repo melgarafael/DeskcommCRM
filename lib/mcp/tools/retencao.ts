@@ -426,7 +426,8 @@ export const crmListAtRiskLeads: McpToolDefinition<typeof radarShape> = {
     "Traz TAMBÉM `sem_proximo_passo`: demandas abertas para as quais nada está marcado para " +
     "acontecer — cada uma é alguém esperando sem previsão. Campos: contact_id, contact_name, " +
     "horas_aberta e origem. Essas NÃO saem sozinhas: resolva cada uma agendando um retorno " +
-    "(crm_schedule_followup com contact_id) ou registrando o desfecho (crm_close_demand), " +
+    "para o contact_id do item " +
+    "ou registrando o desfecho (crm_close_demand), " +
     "conforme o caso. `total_sem_proximo_passo` cabe zerar; é o único número aqui cujo alvo é 0." +
     " Em conversa de atendimento, o radar cobre apenas o contato desta conversa.",
   inputSchema: radarShape,
