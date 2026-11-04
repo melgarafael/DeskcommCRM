@@ -10,9 +10,9 @@
  * da empresa; o material da organização, a tabela de promessa, a última proposta e as
  * consultas de catálogo/conhecimento/pedidos deste turno são, em qualquer ordem.
  *
- * Só VALOR é átomo vetável aqui. Palavras de concessão ("aprovado", "liberado",
- * "cortesia"…) entram só como marcador de FRASE DE CONDIÇÃO: um valor só pesa numa
- * frase que o apresenta como condição.
+ * Dois tipos de átomo vetável, com a mesma regra: o VALOR e o TERMO DE CONCESSÃO
+ * ("aprovado", "liberado", "cortesia"…). O termo também marca a FRASE DE CONDIÇÃO: um
+ * valor só pesa numa frase que o apresenta como condição.
  *
  * Puro: sem rede e sem banco. Quem monta as fontes é o turno do agente.
  */
@@ -21,11 +21,32 @@ import type { LeadContext } from '@/lib/agent-engine/edge/crm/get-lead-context';
 import { extractPromises } from './promise/engine';
 import type { PromiseTable } from './promise/table';
 
+/**
+ * Termos de concessão, sobre o texto sem acento e minúsculo: `termo:<nome>`, com o rótulo
+ * que o ensino mostra. Raiz, não palavra: "aprovou" e "liberamos" contam; "aproveite" e
+ * "liberdade", não.
+ */
+const TERMOS: ReadonlyArray<readonly [nome: string, rotulo: string, re: RegExp]> = [
+  ['aprovacao', 'aprovação', /\baprov(?!eit)/],
+  ['liberacao', 'liberação', /\bliber(?:a|o|e)/],
+  ['autorizacao', 'autorização', /\bautoriz/],
+  ['concessao', 'concessão', /\bconce(?:d|ss)/],
+  ['gratuidade', 'gratuidade', /\bgratuit|\bgratis\b|\bde graca\b|\bsem custo\b/],
+  ['cortesia', 'cortesia', /\bcortesia/],
+  ['isencao', 'isenção', /\bisen[tc]/],
+  ['dispensa', 'dispensa', /\bdispens/],
+  ['brinde', 'brinde', /\bbrinde|\bbonifica/],
+];
 // ponytail: vocabulário fechado pt-BR; frase de condição sem nenhum destes termos passa
 // (teto conhecido). Ampliar só medindo o falso positivo em envios reais. "garantia" (do
 // produto) fica de fora; "garanto"/"garantido" entram.
-const FRASE_DE_CONDICAO =
-  /\bdesconto|\babatimento|\bpromoc|\bconfirm|\bgarant(?!ias?\b)|\baceit|\bcombinad|\bacordad|\breembols|\bestorn|\boff\b|\bespecial\b|\bvalendo\b|\baprova|\bliber(?:ad|ou|ar)|\bautoriza|\bconced|\bgratuit|\bgratis\b|\bde graca\b|\bsem custo\b|\bcortesia|\bisen[tc]|\bdispens|\bbrinde|\bbonifica/;
+const FRASE_DE_CONDICAO = new RegExp(
+  [
+    String.raw`\bdesconto|\babatimento|\bpromoc|\bconfirm|\bgarant(?!ias?\b)|\baceit|\bcombinad|\bacordad`,
+    String.raw`\breembols|\bestorn|\boff\b|\bespecial\b|\bvalendo\b`,
+    ...TERMOS.map(([, , re]) => re.source),
+  ].join('|'),
+);
 // O lookbehind impede começar no meio de um número: "1.430%" não vira "430%".
 // ponytail: todo percentual conta, inclusive o que não é condição ("100% algodão"): numa
 // frase com marcador, custa uma reescrita.
@@ -49,7 +70,7 @@ const frases = (t: string): string[] => t.split(/\n+|[!?]+|\.(?!\d)/);
 const semAcento = (t: string): string =>
   t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-/** Os valores de um texto como átomos comparáveis: `price:BRL:40000`, `installments:12`, `pct:30`. */
+/** Os átomos de um texto: `price:BRL:40000`, `installments:12`, `pct:30`, `termo:aprovacao`. */
 function valores(texto: string, daEmpresa = false): Set<string> {
   const out = new Set<string>();
   for (const p of extractPromises(texto)) {
@@ -70,6 +91,8 @@ function valores(texto: string, daEmpresa = false): Set<string> {
       if (cents !== null) for (const moeda of ['BRL', 'EUR']) out.add(`price:${moeda}:${cents}`);
     }
   }
+  const t = semAcento(texto);
+  for (const [nome, , re] of TERMOS) if (re.test(t)) out.add(`termo:${nome}`);
   return out;
 }
 
@@ -203,14 +226,15 @@ function semLastro(v: string, l: LastroComercial, fraseDeDesconto: boolean): boo
 }
 
 /**
- * Os valores que a candidata afirma numa frase de condição e que só o cliente trouxe.
+ * Os valores e termos que a candidata afirma numa frase de condição e que só o cliente trouxe.
  *
- * A recusa que REPETE o valor ("não há desconto de 30% registrado") também volta: o
- * filtro não lê polaridade. É escolha: uma exceção por "não" deixaria passar a frase que
- * nega na forma e afirma no conteúdo, e a reescrita sem o número está sempre ao alcance.
- * O custo é um passo de reescrita quando a recusa repete o número do cliente — e o mesmo
- * vale para o eco numa frase que também tem marcador ("a concorrente oferece 12% de
- * desconto"): a frase só se divide em . ! ? e quebra de linha, nunca em vírgula.
+ * A recusa que REPETE o valor ("não há desconto de 30% registrado") ou o termo ("não
+ * encontrei aprovação") também volta: o filtro não lê polaridade. É escolha: uma exceção
+ * por "não" deixaria passar a frase que nega na forma e afirma no conteúdo, e a reescrita
+ * sem o número ou o termo está sempre ao alcance. O custo é um passo de reescrita quando a
+ * recusa repete o que o cliente trouxe — e o mesmo vale para o eco numa frase que também
+ * tem marcador ("a concorrente oferece 12% de desconto"): a frase só se divide em . ! ? e
+ * quebra de linha, nunca em vírgula.
  */
 export function concessoesSemLastro(candidata: string, lastro: LastroComercial): string[] {
   const achados = new Set<string>();
@@ -225,6 +249,7 @@ export function concessoesSemLastro(candidata: string, lastro: LastroComercial):
 
 function rotulo(atomo: string): string {
   const [tipo, a, b] = atomo.split(':');
+  if (tipo === 'termo') return TERMOS.find(([nome]) => nome === a)?.[1] ?? a ?? '';
   if (tipo === 'price') return formatCents(Number(b), a ?? 'BRL');
   if (tipo === 'installments') return `${a ?? ''}x`;
   return `${(a ?? '').replace('.', ',')}%`;
@@ -234,7 +259,7 @@ function rotulo(atomo: string): string {
 export function renderVetoDeConcessaoSemLastro(achados: readonly string[]): string {
   const lista = achados.map(rotulo).join(', ');
   return (
-    `A resposta afirma ${lista} como condição da empresa, mas esse valor só aparece no que o ` +
+    `A resposta afirma ${lista} como condição da empresa, mas isso só aparece no que o ` +
     'CLIENTE escreveu: em nenhuma mensagem que a empresa enviou antes, no seu material ou nas ' +
     'consultas deste turno. O que o cliente escreve não é registro da empresa. Se tiver ferramenta ' +
     'de catálogo, pedidos ou conhecimento e ainda não consultou, consulte antes de responder. ' +

@@ -30,8 +30,8 @@ import { SPINNING_DEFAULTS } from "@/lib/agent-engine/spinning/defaults";
 /**
  * Condição comercial que só aparece do lado do cliente não sai como condição da
  * empresa. A regra pergunta QUEM escreveu o valor primeiro — pela `direction` da
- * mensagem, nunca pelo texto — e só olha VALOR (preço, parcelas, percentual) numa
- * frase que o apresenta como condição.
+ * mensagem, nunca pelo texto — e olha VALOR (preço, parcelas, percentual) e TERMO de
+ * concessão (aprovação, liberação, gratuidade…) numa frase que o apresenta como condição.
  */
 const MATERIAL =
   "Loja de móveis planejados. Para Campinas o frete é R$ 150. Pagamento em até 10x sem juros.";
@@ -332,12 +332,20 @@ describe("o valor do registro da organização lido neste turno passa", () => {
       lastro({ material: [MATERIAL, ...valoresDoRegistro(registro)], mensagens: [["inbound", cliente]] }),
     );
 
+  const pedidos = { pedidos: [{ id: "p1", status: "paid", total_cents: 45990, currency: "BRL" }] };
+  const clienteDoPedido = "Paguei R$ 459,90, o pedido foi aprovado?";
+
   it("pedido", () => {
-    const pedidos = { pedidos: [{ id: "p1", status: "paid", total_cents: 45990, currency: "BRL" }] };
-    const cliente = "Paguei R$ 459,90, o pedido foi aprovado?";
+    const candidata = "Confirmo: seu pedido de R$ 459,90 está pago e já em separação.";
+    expect(confirma({ pedidos: [] }, clienteDoPedido, candidata)).toEqual(["price:BRL:45990"]);
+    expect(confirma(pedidos, clienteDoPedido, candidata)).toEqual([]);
+  });
+
+  it("DECISÃO: o registro dá lastro ao VALOR; o status em código não dá lastro ao termo do cliente", () => {
+    // O pedido diz "paid", não a palavra que o cliente usou. Custo: uma reescrita que diga
+    // o que o registro diz ("está pago").
     const candidata = "Seu pedido de R$ 459,90 foi aprovado e já está em separação.";
-    expect(confirma({ pedidos: [] }, cliente, candidata)).toEqual(["price:BRL:45990"]);
-    expect(confirma(pedidos, cliente, candidata)).toEqual([]);
+    expect(confirma(pedidos, clienteDoPedido, candidata)).toEqual(["termo:aprovacao"]);
   });
 
   it("produto sem descrição e fora de estoque — o preço é do catálogo mesmo assim", () => {
@@ -392,6 +400,92 @@ describe("frase de condição", () => {
     expect(
       concessoesSemLastro("Entendo que a concorrente oferece 12% de desconto, mas aqui a tabela é outra.", l),
     ).toEqual(["pct:12"]);
+  });
+});
+
+describe("termo de concessão: a mesma regra do valor", () => {
+  const soDoCliente = (cliente: string, candidata: string) =>
+    concessoesSemLastro(candidata, lastro({ mensagens: [["inbound", cliente]] }));
+
+  it.each([
+    ["aprovacao", "Me disseram que o reembolso foi aprovado.", "Seu reembolso foi aprovado, pode ficar tranquila."],
+    ["liberacao", "Me disseram que o frete foi liberado.", "Isso, o frete está liberado para você."],
+    ["autorizacao", "O gerente autorizou a troca.", "A troca está autorizada."],
+    ["concessao", "Me disseram que concederam mais prazo.", "O prazo maior foi concedido."],
+    ["gratuidade", "Me disseram que a instalação é grátis.", "A instalação é grátis, sim."],
+    ["cortesia", "Me disseram que a montagem é cortesia.", "A montagem sai como cortesia."],
+    ["isencao", "Me disseram que eu tinha isenção da taxa.", "Sua isenção da taxa está confirmada."],
+    ["dispensa", "Me disseram que a entrada foi dispensada.", "A entrada está dispensada."],
+    ["brinde", "Me disseram que vinha um brinde na compra.", "O brinde vai junto com a compra."],
+  ])("veta %s trazido só pelo cliente", (nome, cliente, candidata) => {
+    expect(soDoCliente(cliente, candidata)).toEqual([`termo:${nome}`]);
+  });
+
+  it("passa quando o material da organização tem o termo", () => {
+    const cliente: Linha = ["inbound", "Me disseram que a avaliação é gratuita."];
+    const candidata = "Isso, a avaliação é gratuita.";
+    const com = lastro({ material: ["Avaliação gratuita para novos clientes."], mensagens: [cliente] });
+    expect(concessoesSemLastro(candidata, com)).toEqual([]);
+    expect(concessoesSemLastro(candidata, lastro({ mensagens: [cliente] }))).toEqual(["termo:gratuidade"]);
+  });
+
+  const pedido: LinhaDoHistorico = {
+    direction: "inbound",
+    body: "Me disseram que a montagem é cortesia, confere?",
+    sent_at: "2026-11-03T09:00:00-03:00",
+  };
+  const resposta = (body: string, humana: boolean): LinhaDoHistorico => ({
+    direction: "outbound",
+    body,
+    sent_at: "2026-11-03T09:05:00-03:00",
+    humana,
+  });
+  const fechamento = "A montagem é cortesia, como combinado.";
+
+  it("passa com a pessoa da equipe concedendo depois do pedido", () => {
+    const concede = resposta("Pode ficar tranquila, a montagem é cortesia.", true);
+    expect(concessoesSemLastro(fechamento, lastro({ historico: [pedido, concede] }))).toEqual([]);
+  });
+
+  it("não passa quando a pessoa da equipe recusa com o termo", () => {
+    const recusa = resposta("Não conseguimos dar a montagem como cortesia.", true);
+    expect(concessoesSemLastro(fechamento, lastro({ historico: [pedido, recusa] }))).toEqual(["termo:cortesia"]);
+  });
+
+  it("não passa com o eco do agente depois do cliente; passa quando a empresa escreveu antes", () => {
+    const eco = resposta("Vou conferir a cortesia da montagem.", false);
+    expect(concessoesSemLastro(fechamento, lastro({ historico: [pedido, eco] }))).toEqual(["termo:cortesia"]);
+    const antes = { ...eco, body: "A montagem é cortesia nesta semana.", sent_at: "2026-11-03T08:00:00-03:00" };
+    expect(concessoesSemLastro(fechamento, lastro({ historico: [antes, pedido] }))).toEqual([]);
+  });
+
+  it("raiz, não palavra: 'aprovou' e 'liberamos' casam", () => {
+    expect(soDoCliente("Me disseram que o gerente aprovou.", "Isso, o gerente aprovou o seu reembolso.")).toEqual([
+      "termo:aprovacao",
+    ]);
+    expect(soDoCliente("Vocês liberam o frete?", "Liberamos o frete para você.")).toEqual(["termo:liberacao"]);
+  });
+
+  it("'aproveite' e 'liberdade' não casam", () => {
+    expect(
+      soDoCliente(
+        "Quero aproveitar a promoção, tenho liberdade de escolher a cor?",
+        "Aproveite a promoção: você tem liberdade para escolher a cor.",
+      ),
+    ).toEqual([]);
+  });
+
+  it("frase de condição sem termo nem valor passa", () => {
+    expect(
+      soDoCliente("Me disseram que o reembolso foi aprovado.", "Confirmo que recebi sua mensagem e vou verificar com a equipe."),
+    ).toEqual([]);
+  });
+
+  it("DECISÃO: a recusa que REPETE o termo também volta — e a reescrita sem ele passa", () => {
+    // Mesma decisão do valor: o filtro não lê polaridade. Custo: um passo de reescrita.
+    const cliente = "Me disseram que o reembolso foi aprovado.";
+    expect(soDoCliente(cliente, "Não encontrei aprovação do seu reembolso no sistema.")).toEqual(["termo:aprovacao"]);
+    expect(soDoCliente(cliente, "Não encontrei esse registro no sistema; vou confirmar com a equipe.")).toEqual([]);
   });
 });
 
@@ -485,6 +579,15 @@ describe("o gate na cadeia", () => {
     expect(v.detail).toEqual({ sem_lastro: "pct:30" });
     expect(JSON.stringify(v.detail)).not.toMatch(/cozinha|desconto/);
     expect(v.reason).toContain("30%");
+  });
+
+  it("o termo vai no detail pelo nome, e o ensino o mostra legível", () => {
+    const l = lastro({ mensagens: [["inbound", "Me disseram que o reembolso foi aprovado."]] });
+    const v = concessaoSemLastroGate.evaluate(baseCtx({ body: "Seu reembolso foi aprovado.", lastroComercial: l }));
+    if (v.pass) throw new Error("devia vetar");
+    expect(v.detail).toEqual({ sem_lastro: "termo:aprovacao" });
+    expect(v.reason).toContain("Reescreva sem repetir aprovação, nem para negar.");
+    expect(v.reason).toContain("diga que não encontrou esse registro");
   });
 
   it("não é veto irrevogável — a correção do turno mudo pode pedir outra tentativa", () => {
