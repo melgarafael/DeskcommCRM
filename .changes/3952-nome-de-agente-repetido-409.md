@@ -10,9 +10,9 @@ agent". Na tela, a pessoa via um toast genérico no canto, sem saber qual campo
 estava errado nem que o conserto era trocar o nome.
 
 Agora a recusa é **409** com o envelope de `lib/api/wrappers.ts`, código estável
-`agent_name_taken` e frase em pt/es/en — e na tela a frase fica **embaixo do campo
-de nome**, com `aria-describedby`, `aria-invalid` e `role="alert"`, sumindo
-quando a pessoa digita outro nome.
+`agent_name_taken` e frase em pt/es/en — e na tela a frase fica
+**embaixo do campo de nome**, com `aria-describedby`, `aria-invalid` e
+`role="alert"`, sumindo quando a pessoa digita outro nome.
 
 O discriminador é o **nome do índice**, não o código: `23505` é genérico e
 `ai_agents` tem mais de um índice único (além de `ai_agent_versions` na mesma

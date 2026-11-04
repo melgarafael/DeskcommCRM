@@ -73,7 +73,7 @@ const CORPO = {
   },
 };
 
-type ErroDoBanco = { code: string; message: string; details?: string; hint?: string };
+type ErroDoBanco = { code: string; message: string; details?: string; hint?: string | null };
 
 /**
  * Admin falso que emula o índice composto `(organization_id, name)` de
