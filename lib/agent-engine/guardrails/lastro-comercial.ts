@@ -23,15 +23,20 @@ import type { PromiseTable } from './promise/table';
 
 /**
  * Termos de concessão, sobre o texto sem acento e minúsculo: `termo:<nome>`, com o rótulo
- * que o ensino mostra. Raiz, não palavra: "aprovou" e "liberamos" contam; "aproveite" e
- * "liberdade", não.
+ * que o ensino mostra. Raiz, não palavra: "aprovou" e "liberamos" contam; "aproveite",
+ * "liberdade", "liberal", "Liberato" e "concessionária", não.
  */
+// ponytail: o termo vale para a conversa inteira, sem objeto nem condição: "frete grátis
+// só acima de R$ 299" no material dá lastro a qualquer gratuidade que o cliente alegar.
+// Evolução: átomo termo+objeto (o substantivo vizinho). Custo aceito do outro lado: o termo
+// que não é concessão também conta ("assistência autorizada", "armário de dispensa",
+// "parabéns pela aprovação") — numa frase da candidata, custa uma reescrita.
 const TERMOS: ReadonlyArray<readonly [nome: string, rotulo: string, re: RegExp]> = [
   ['aprovacao', 'aprovação', /\baprov(?!eit)/],
-  ['liberacao', 'liberação', /\bliber(?:a|o|e)/],
+  ['liberacao', 'liberação', /\bliber(?:a(?![tl]|is\b)|o|e)/],
   ['autorizacao', 'autorização', /\bautoriz/],
-  ['concessao', 'concessão', /\bconce(?:d|ss)/],
-  ['gratuidade', 'gratuidade', /\bgratuit|\bgratis\b|\bde graca\b|\bsem custo\b/],
+  ['concessao', 'concessão', /\bconce(?:d|ss(?!ionari))/],
+  ['gratuidade', 'gratuidade', /\bgratuit|\bgratis\b|\bde graca\b|\bsem custos?\b/],
   ['cortesia', 'cortesia', /\bcortesia/],
   ['isencao', 'isenção', /\bisen[tc]/],
   ['dispensa', 'dispensa', /\bdispens/],
@@ -61,8 +66,17 @@ const DECIMAL_SEM_MOEDA = /(?<![\d.,])\d{1,3}(?:\.\d{3})*,\d{2}(?![\d,])/g;
 const CONCESSAO_DA_EQUIPE = new RegExp(
   `${FRASE_DE_CONDICAO.source}|\\bconsig|\\bposso\\b|\\bpodemos\\b|\\bfaco\\b|\\bfazemos\\b|\\bdou\\b|\\bdamos\\b|\\bfica\\b|\\bsai\\b|\\bvale\\b`,
 );
-// ponytail: negação por palavra, só do lado da EMPRESA (só pode errar para VETAR).
-const NEGACAO = /\bnao\b|\bnunca\b|\bnenhum|\bnem\b|\binfelizmente\b|\bsem desconto/;
+// ponytail: recusa ou pendência por palavra, só do lado da EMPRESA (só pode errar para
+// VETAR). O "não" que nega o CUSTO concede ("não precisa pagar", "custo nenhum"). Restrição
+// ("só acima de R$ 299") não é recusa: a trava não lê condição (teto em TERMOS).
+const NAO_CONCEDE = new RegExp(
+  [
+    String.raw`\bnao\b(?!\s+(?:precisa|se preocupe|cobr|paga|tem custo))|\bnunca\b|\bnem\b|\bjamais\b|\bn\s+(?=[a-z])`,
+    String.raw`(?<!\bcustos?\s)\bnenhum(?!a?\s+(?:custo|taxa|cobranca))|\binfelizmente\b|\bimpossivel|\bsem desconto`,
+    String.raw`\baguard|\bem analise\b|\banalisando\b|\bverificando\b|\bdepende`,
+    String.raw`\b(?:vou|vamos) (?:ver|verificar|confirmar|consultar|checar|conferir)\b`,
+  ].join('|'),
+);
 
 // `\.(?!\d)`: "R$ 1.400" não se parte em "R$ 1" e "400".
 const frases = (t: string): string[] => t.split(/\n+|[!?]+|\.(?!\d)/);
@@ -91,10 +105,17 @@ function valores(texto: string, daEmpresa = false): Set<string> {
       if (cents !== null) for (const moeda of ['BRL', 'EUR']) out.add(`price:${moeda}:${cents}`);
     }
   }
+  // Do lado da EMPRESA, o termo só vale na frase que o concede: a proibição do material
+  // ("nunca ofereça cortesia") e a recusa que a empresa já enviou não são lastro dele.
   const t = semAcento(texto);
-  for (const [nome, , re] of TERMOS) if (re.test(t)) out.add(`termo:${nome}`);
+  for (const f of daEmpresa ? frases(t).filter((x) => !NAO_CONCEDE.test(x)) : [t])
+    for (const [nome, , re] of TERMOS) if (re.test(f)) out.add(`termo:${nome}`);
   return out;
 }
+
+/** O nome de quem escreve não é alegação de concessão: dele só sai valor. */
+const doNome = (nome: string | null | undefined): string[] =>
+  [...valores(nome ?? '')].filter((v) => !v.startsWith('termo:'));
 
 /**
  * Valores de um REGISTRO da organização devolvido por ferramenta (pedido, parcela,
@@ -159,9 +180,15 @@ export function lastroDoContexto(a: {
   historico?: readonly LinhaDoHistorico[];
 }): LastroComercial {
   const linhas = [
-    ...a.contexto.messages.map((m) => ({ ...m, body: `${m.body}\n${m.sender?.name ?? ''}` })),
+    ...a.contexto.messages.map((m) => ({ ...m, nome: m.sender?.name ?? null })),
     ...(a.historico ?? []),
-  ].map((m) => ({ direction: m.direction, texto: m.body, t: Date.parse(m.sent_at), humana: 'humana' in m && m.humana === true }));
+  ].map((m) => ({
+    direction: m.direction,
+    texto: m.body,
+    nome: 'nome' in m ? m.nome : null,
+    t: Date.parse(m.sent_at),
+    humana: 'humana' in m && m.humana === true,
+  }));
   const tempos = linhas.map((m) => m.t);
   const inicio = tempos.length > 0 ? Math.min(...tempos) : -Infinity;
   const fim = a.contexto.messages.length > 0 ? Math.max(...tempos.slice(0, a.contexto.messages.length)) : -Infinity;
@@ -172,28 +199,31 @@ export function lastroDoContexto(a: {
   // preenchido fora da conversa conta como da empresa (teto conhecido); separar quando a
   // mensagem guardar o modelo de origem.
   for (const m of linhas)
-    if (m.direction === 'inbound') marcar(doCliente, valores(m.texto), m.t);
+    if (m.direction === 'inbound') marcar(doCliente, [...valores(m.texto), ...doNome(m.nome)], m.t);
     else marcar(enviadoEm, valores(m.texto, true), m.t);
   // O nome é do cliente desde antes de qualquer mensagem: a automação que o escreve
   // (`{{nome}}`, `{{primeiro_nome}}`) nunca dá lastro ao que vem dentro dele.
-  marcar(doCliente, valores(a.contexto.contact.name ?? ''), -Infinity);
-  marcar(doCliente, valores(`${a.atual.texto ?? ''}\n${a.atual.remetente ?? ''}`), fim);
+  marcar(doCliente, doNome(a.contexto.contact.name), -Infinity);
+  marcar(doCliente, [...valores(a.atual.texto ?? ''), ...doNome(a.atual.remetente)], fim);
   // O resumo não diz quem falou primeiro: o valor que só ele traz conta como dito no
-  // início do que se leu. Com a conversa lida, quem decide é a mensagem que o traz.
+  // início do que se leu. Com a conversa lida, quem decide é a mensagem que o traz — e o
+  // termo que só o resumo traz é vocabulário do modelo ("pagamento aprovado"), não do cliente.
+  // ponytail: a leitura cobre as 500 mensagens mais recentes; o termo de uma fala mais
+  // antiga, que só o resumo guarda, deixa de ser vetado.
   for (const v of valores(a.memoriaDoModelo.join('\n'))) {
-    if (a.historico !== undefined && (doCliente.has(v) || enviadoEm.has(v))) continue;
+    if (a.historico !== undefined && (v.startsWith('termo:') || doCliente.has(v) || enviadoEm.has(v))) continue;
     marcar(doCliente, [v], inicio);
   }
 
   const daOrganizacao = valores(a.materialDaOrganizacao.join('\n'), true);
   // A pessoa da equipe que CONCEDE depois do pedido do cliente fala pela empresa; o eco
-  // vigiado pela ordem é o do agente. Só conta a frase de condição sem negação: a recusa
-  // que repete o número ("não damos 30%") não vira lastro dele.
+  // vigiado pela ordem é o do agente. Só conta a frase de condição que não recusa nem deixa
+  // pendente: "não damos 30%" e "vou ver com o gerente se ele aprova" não viram lastro.
   for (const m of linhas)
     if (m.direction === 'outbound' && m.humana)
       for (const frase of frases(m.texto)) {
         const f = semAcento(frase);
-        if (CONCESSAO_DA_EQUIPE.test(f) && !NEGACAO.test(f)) for (const v of valores(frase, true)) daOrganizacao.add(v);
+        if (CONCESSAO_DA_EQUIPE.test(f) && !NAO_CONCEDE.test(f)) for (const v of valores(frase, true)) daOrganizacao.add(v);
       }
   // A proposta não guarda a moeda: vale nas duas que a leitura reconhece.
   const proposta = a.contexto.last_proposal?.total_cents;

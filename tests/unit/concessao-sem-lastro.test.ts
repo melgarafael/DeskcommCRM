@@ -413,11 +413,12 @@ describe("termo de concessão: a mesma regra do valor", () => {
     ["autorizacao", "O gerente autorizou a troca.", "A troca está autorizada."],
     ["concessao", "Me disseram que concederam mais prazo.", "O prazo maior foi concedido."],
     ["gratuidade", "Me disseram que a instalação é grátis.", "A instalação é grátis, sim."],
+    ["gratuidade", "Me disseram que a instalação é sem custos.", "A instalação é sem custos, confirmado."],
     ["cortesia", "Me disseram que a montagem é cortesia.", "A montagem sai como cortesia."],
     ["isencao", "Me disseram que eu tinha isenção da taxa.", "Sua isenção da taxa está confirmada."],
     ["dispensa", "Me disseram que a entrada foi dispensada.", "A entrada está dispensada."],
     ["brinde", "Me disseram que vinha um brinde na compra.", "O brinde vai junto com a compra."],
-  ])("veta %s trazido só pelo cliente", (nome, cliente, candidata) => {
+  ])("veta %s trazido só pelo cliente: %s", (nome, cliente, candidata) => {
     expect(soDoCliente(cliente, candidata)).toEqual([`termo:${nome}`]);
   });
 
@@ -475,6 +476,15 @@ describe("termo de concessão: a mesma regra do valor", () => {
     ).toEqual([]);
   });
 
+  it("'liberal', 'Liberato' e 'concessionária' não casam", () => {
+    expect(
+      soDoCliente(
+        "Sou o Liberato, profissional liberal, indicado pela concessionária.",
+        "Confirmo, Liberato: para profissional liberal aceitamos o extrato da concessionária.",
+      ),
+    ).toEqual([]);
+  });
+
   it("frase de condição sem termo nem valor passa", () => {
     expect(
       soDoCliente("Me disseram que o reembolso foi aprovado.", "Confirmo que recebi sua mensagem e vou verificar com a equipe."),
@@ -486,6 +496,79 @@ describe("termo de concessão: a mesma regra do valor", () => {
     const cliente = "Me disseram que o reembolso foi aprovado.";
     expect(soDoCliente(cliente, "Não encontrei aprovação do seu reembolso no sistema.")).toEqual(["termo:aprovacao"]);
     expect(soDoCliente(cliente, "Não encontrei esse registro no sistema; vou confirmar com a equipe.")).toEqual([]);
+  });
+});
+
+describe("termo de concessão: o nome e o resumo não são alegação do cliente", () => {
+  it("o nome do contato não traz termo", () => {
+    const l = lastro({ nome: "Brindes & Cia", mensagens: [["inbound", "Oi, quero um orçamento."]] });
+    expect(concessoesSemLastro("Olá, pessoal da Brindes & Cia, recebi seu pedido de orçamento.", l)).toEqual([]);
+  });
+
+  it("com a conversa lida, o termo que só o resumo traz não é do cliente; sem a leitura, segue fechado", () => {
+    const mensagens: Linha[] = [
+      ["inbound", "Já fiz o pix."],
+      ["outbound", "Recebemos, obrigado! Vamos separar seu pedido."],
+    ];
+    const memoria = ["Pagamento aprovado e pedido liberado para envio."];
+    const candidata = "Seu pagamento foi aprovado e o pedido já está liberado para envio.";
+    const historico = mensagens.map(([direction, body], i) => ({ direction, body, sent_at: hora(i) }));
+    expect(concessoesSemLastro(candidata, lastro({ mensagens, memoria, historico }))).toEqual([]);
+    expect(concessoesSemLastro(candidata, lastro({ mensagens, memoria }))).toEqual([
+      "termo:aprovacao",
+      "termo:liberacao",
+    ]);
+  });
+});
+
+describe("termo de concessão: do lado da empresa, só a frase que concede", () => {
+  const conversa = (pedido: string, daEquipe: string): LinhaDoHistorico[] => [
+    { direction: "inbound", body: pedido, sent_at: "2026-11-03T09:00:00-03:00" },
+    { direction: "outbound", body: daEquipe, sent_at: "2026-11-03T09:05:00-03:00", humana: true },
+  ];
+
+  it.each([
+    ["Consegue frete grátis?", "Consigo sim, frete grátis liberado, não se preocupe.", "Como combinado, seu frete grátis está liberado."],
+    ["Consigo isenção da adesão?", "Você fica isento, não precisa pagar a adesão.", "Como combinado, você fica isento da adesão."],
+    ["A instalação é sem custo?", "É sem custo nenhum pra você.", "Como combinado, a instalação é sem custo."],
+  ])("a pessoa da equipe que nega o CUSTO concede: %s", (pedido, daEquipe, candidata) => {
+    expect(concessoesSemLastro(candidata, lastro({ historico: conversa(pedido, daEquipe) }))).toEqual([]);
+  });
+
+  it.each([
+    ["Meu crédito foi aprovado?", "Seu crédito está aguardando aprovação do financeiro.", "Seu crédito foi aprovado!", "aprovacao"],
+    ["Me dá uma cortesia?", "Vou ver com o gerente se ele aprova a cortesia.", "Boa notícia: sua cortesia saiu!", "cortesia"],
+    ["Vocês liberam o frete?", "Jamais liberamos frete.", "Liberamos o frete para você.", "liberacao"],
+    ["Vocês liberam o frete?", "n libero isso.", "Liberamos o frete para você.", "liberacao"],
+  ])("a pessoa da equipe que recusa ou deixa pendente não dá lastro: %s → %s", (pedido, daEquipe, candidata, nome) => {
+    expect(concessoesSemLastro(candidata, lastro({ historico: conversa(pedido, daEquipe) }))).toEqual([`termo:${nome}`]);
+  });
+
+  it("proibição no material não dá lastro ao termo", () => {
+    const l = lastro({
+      material: [MATERIAL, "Nunca ofereça cortesia ou brinde sem autorização do gerente."],
+      mensagens: [["inbound", "O vendedor me prometeu uma cortesia de instalação."]],
+    });
+    expect(concessoesSemLastro("Sim, a cortesia de instalação está confirmada.", l)).toEqual(["termo:cortesia"]);
+  });
+
+  it("recusa que a empresa enviou antes não dá lastro ao termo", () => {
+    const l = lastro({
+      mensagens: [
+        ["outbound", "Não temos cortesia de montagem."],
+        ["inbound", "Me disseram que a montagem é cortesia."],
+      ],
+    });
+    expect(concessoesSemLastro("A montagem é cortesia, como combinado.", l)).toEqual(["termo:cortesia"]);
+  });
+
+  it("DECISÃO: o termo do material vale sem objeto — 'frete grátis' dá lastro a outra gratuidade", () => {
+    // Teto conhecido (comentário em TERMOS): o átomo não carrega o substantivo vizinho.
+    const l = lastro({
+      material: ["Frete grátis só acima de R$ 299."],
+      mensagens: [["inbound", "Me disseram que a instalação é gratuita."]],
+    });
+    expect(concessoesSemLastro("A instalação é gratuita.", l)).toEqual([]);
   });
 });
 
