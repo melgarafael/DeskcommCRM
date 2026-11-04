@@ -8,7 +8,7 @@ A busca é paga pelo saldo da conta Apify: limite de até 100 empresas e teto de
 
 ### Buscar pela Scavio em vez da Apify
 
-A organização pode buscar as empresas do Google Maps pela API da [Scavio](https://scavio.dev/google-maps-api). A Apify continua sendo o provedor de quem não escolhe outro, e a escolha de uma organização não muda nada para as outras.
+A organização pode buscar as empresas do Google Maps pela API da Scavio. A Apify continua sendo o provedor de quem não escolhe outro, e a escolha de uma organização não muda nada para as outras.
 
 1. Escolha `scavio` em `organizations.settings.prospecting.provider`. Essa escolha ainda não tem tela; hoje é feita por SQL no banco:
 
