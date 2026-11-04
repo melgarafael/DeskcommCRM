@@ -1,3 +1,5 @@
+import { CardDeAgencia } from "@/components/admin/tenants/CardDeAgencia";
+import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { z } from "zod";
 
 import {
@@ -20,9 +22,30 @@ interface TenantDetailPageProps {
 export default async function TenantDetailPage({ params }: TenantDetailPageProps) {
   const { id } = await params;
   const cobranca = await lerCobrancaDoTenant(id);
+  const ctx = await requirePlatformAdmin();
+  const admin = createAdminClient();
+  const [config, clientes] = await Promise.all([
+    admin
+      .from("agencia_configuracoes")
+      .select("habilitada, limite_clientes, clientes_inclusos")
+      .eq("organization_id", id)
+      .maybeSingle(),
+    admin
+      .from("agencia_clientes")
+      .select("organization_id", { count: "exact", head: true })
+      .eq("agencia_id", id),
+  ]);
+  if (config.error || clientes.error)
+    throw new Error("Não foi possível carregar a configuração de agência.");
   return (
     <div className="space-y-6">
       <TenantOverviewClient id={id} cobrancaLigada={cobranca !== null} />
+      <CardDeAgencia
+        organizationId={id}
+        inicial={config.data ?? { habilitada: false, limite_clientes: 0 }}
+        utilizadas={clientes.count ?? 0}
+        podeEditar={ctx.platformAdmin.scope === "full"}
+      />
       {cobranca && <CardDeCobranca orgId={id} {...cobranca} />}
     </div>
   );
@@ -44,27 +67,38 @@ async function lerCobrancaDoTenant(orgId: string) {
     admin.from("cobranca_planos").select("id, nome, arquivado_em").order("nome"),
     admin
       .from("cobranca_assinaturas")
-      .select("plano_id, estado, trial_ate, prazo_extra_ate, provedor, plano_agendado_id, proximo_vencimento, provedor_cliente_id")
+      .select(
+        "plano_id, estado, trial_ate, prazo_extra_ate, provedor, plano_agendado_id, proximo_vencimento, provedor_cliente_id",
+      )
       .eq("organization_id", orgId)
       .maybeSingle(),
-    admin.from("organizations").select("status, suspended_kind, settings, cnpj").eq("id", orgId).maybeSingle(),
+    admin
+      .from("organizations")
+      .select("status, suspended_kind, settings, cnpj")
+      .eq("id", orgId)
+      .maybeSingle(),
     provedorDaInstalacao(),
   ]);
   if (planos.error || assinatura.error || org.error) {
-    throw new Error(`cobrança do tenant: leitura falhou (${planos.error?.code ?? assinatura.error?.code ?? org.error?.code})`);
+    throw new Error(
+      `cobrança do tenant: leitura falhou (${planos.error?.code ?? assinatura.error?.code ?? org.error?.code})`,
+    );
   }
   const rotulo = (org.data?.settings as { plan?: unknown } | null)?.plan;
   // O id do cliente no provedor decide só se o documento é pedido; não vai ao componente de cliente.
-  const { provedor_cliente_id: clienteNoProvedor, ...semIdDoProvedor } = assinatura.data ?? { provedor_cliente_id: null };
+  const { provedor_cliente_id: clienteNoProvedor, ...semIdDoProvedor } = assinatura.data ?? {
+    provedor_cliente_id: null,
+  };
   return {
     planos: (planos.data ?? []) as PlanoDoCard[],
     assinatura: (assinatura.data ? semIdDoProvedor : null) as AssinaturaDoCard | null,
     pedeDocumento: exigeDocumento(
-      ((assinatura.data?.provedor ?? daInstalacao) as ProvedorDeCobranca | null),
+      (assinatura.data?.provedor ?? daInstalacao) as ProvedorDeCobranca | null,
       clienteNoProvedor !== null,
     ),
     documentoDoCadastro: sugestaoDoCadastro(org.data?.cnpj ?? null),
-    suspensaPorCobranca: org.data?.status === "suspended" && org.data?.suspended_kind === "cobranca",
+    suspensaPorCobranca:
+      org.data?.status === "suspended" && org.data?.suspended_kind === "cobranca",
     rotuloAntigo: typeof rotulo === "string" && rotulo !== "" ? rotulo : null,
   };
 }

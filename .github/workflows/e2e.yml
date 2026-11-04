@@ -1338,6 +1338,7 @@ jobs:
       # cron `recover-stuck-messages` abre para a conversa dele. Não depende de
       # WAHA nem de vizinha. PREVISÃO, não medida: ~1 min de caso.
       SPECS_PARTE_5: >-
+          agencias-organizacoes.spec.ts
         extensoes-da-instalacao.spec.ts
         admin-credencial-google.spec.ts
         admin-gestao-de-tenants.spec.ts

@@ -280,7 +280,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const collapsed = store.get("sidebar_collapsed")?.value === "1";
 
   const impersonating = user.support ? {
-    tenantId: user.support.organization_id, tenantName: user.support.name,
+    agencyId: user.support.agency_id, tenantId: user.support.organization_id, tenantName: user.support.name,
     expiresAt: user.support.expires_at, accessMode: user.support.access_mode,
   } : null;
 
