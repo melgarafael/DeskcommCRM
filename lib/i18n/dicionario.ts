@@ -11973,6 +11973,8 @@ export const DICIONARIO: Traducoes = {
   },
   // "mais (N)" e "menos" são os controles de recolher/abrir a barra do Inbox #3282.
   "menos": { es: "menos" },
+  // O painel do grupo na barra do Inbox (#3875) — o `aria-label` do popup.
+  "Respostas do grupo": { es: "Respuestas del grupo" },
   "Recursos": { es: "Recursos" },
   "Insere no campo — você edita e envia": { es: "Inserta en el campo — tú editas y envías" },
   "áudio pendente; você decide quando enviar": {
