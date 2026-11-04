@@ -182,6 +182,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       .from("lead_field_proposals")
       .update({ status: "expired", decided_at: agora.toISOString() })
       .eq("id", p.id)
+      .eq("organization_id", orgId)
       .eq("status", "pending")
       .select("id")
       .maybeSingle();
@@ -224,6 +225,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         motivo_recusa: motivo ?? null,
       })
       .eq("id", p.id)
+      .eq("organization_id", orgId)
       .eq("status", "pending")
       .select("id")
       .maybeSingle();
@@ -318,6 +320,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       decided_by_user_id: userId,
     })
     .eq("id", p.id)
+    .eq("organization_id", orgId)
     .eq("status", "pending")
     .select("id")
     .maybeSingle();
@@ -361,6 +364,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       .from("lead_field_proposals")
       .update({ status: "pending", decided_at: null, decided_by_user_id: null })
       .eq("id", p.id)
+      .eq("organization_id", orgId)
       .eq("status", "accepted");
     if (err instanceof ApiError) {
       return fail(err.code, err.message, err.status, { requestId });

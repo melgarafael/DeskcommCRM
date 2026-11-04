@@ -254,6 +254,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     action: "lead.attachment_uploaded",
     actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
     actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId,
     resourceType: "crm_leads",
     resourceId: leadId,
     metadata: {

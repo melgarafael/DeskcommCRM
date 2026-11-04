@@ -947,7 +947,8 @@ describe("contatos e contact-tags aceitam token", () => {
       const { res, texto, falso } = await comoToken(c, { escopos: [outro] });
 
       expect(res.status, texto).toBe(403);
-      expect(falso.cadeias).toEqual([]);
+      // Leitura da flag de módulo (SEM_ORGANIZACAO) acontece antes da autenticação; não é dado.
+      expect(falso.cadeias.filter((ch) => !SEM_ORGANIZACAO.includes(ch.tabela))).toEqual([]);
       expect(falso.rpcs).toEqual([]);
       expect(audit).not.toHaveBeenCalled();
     });
@@ -959,7 +960,8 @@ describe("contatos e contact-tags aceitam token", () => {
         const { res, texto, falso } = await comoToken(c, { papel: DEGRAU_ABAIXO[c.papelDoToken ?? c.papel] });
 
         expect(res.status, texto).toBe(403);
-        expect(falso.cadeias).toEqual([]);
+        // Leitura da flag de módulo (SEM_ORGANIZACAO) acontece antes da autenticação; não é dado.
+        expect(falso.cadeias.filter((ch) => !SEM_ORGANIZACAO.includes(ch.tabela))).toEqual([]);
         expect(falso.rpcs).toEqual([]);
         expect(audit).not.toHaveBeenCalled();
       });
@@ -971,7 +973,8 @@ describe("contatos e contact-tags aceitam token", () => {
 
       expect(res.status, texto).toBe(429);
       expect(res.headers.get("Retry-After")).toBeTruthy();
-      expect(falso.cadeias).toEqual([]);
+      // Leitura da flag de módulo (SEM_ORGANIZACAO) acontece antes da autenticação; não é dado.
+      expect(falso.cadeias.filter((ch) => !SEM_ORGANIZACAO.includes(ch.tabela))).toEqual([]);
       expect(falso.rpcs).toEqual([]);
       expect(vi.mocked(checkRateLimit).mock.calls[0]?.[0]).toBe(`${c.recursoDoTeto ?? c.recurso}:tok:${TOKEN_A}`);
     });
@@ -1046,7 +1049,9 @@ describe("o ramo do token em contatos e contact-tags", () => {
     expect(res.status, texto).toBe(200);
     const cadeiaDoContato = falso.cadeias.find((c) => c.tabela === "contacts");
     expect(cadeiaDoContato?.filtros).toContainEqual(["organization_id", ORG_A]);
-    expect(falso.cadeias.filter((c) => c.tabela === "contact_phones")).toEqual([]);
+    // A rota lê os telefones extras já filtrados por organização: nenhuma leitura pode sair de A.
+    const cadeiasDeFones = falso.cadeias.filter((c) => c.tabela === "contact_phones");
+    expect(cadeiasForaDaOrganizacao(cadeiasDeFones, ORG_A)).toEqual([]);
   });
 
   it("POST /api/v1/contacts/[id]/proposals/[proposal_id]: decisão grava proposta com actor null", async () => {

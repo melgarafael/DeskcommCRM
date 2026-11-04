@@ -26,7 +26,16 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
-vi.mock("@/lib/mcp/auth", () => ({ validateBearerToken: vi.fn() }));
+vi.mock("@/lib/mcp/auth", () => ({
+  validateBearerToken: vi.fn(),
+  // Mesma lógica pura de lib/mcp/auth.ts: o ramo de token do resolveAuthDual a usa.
+  extractBearer: (authHeader: string | null) => {
+    if (!authHeader) return null;
+    const m = /^Bearer\s+(.+)$/i.exec(authHeader.trim());
+    if (!m) return null;
+    return m[1]!.trim();
+  },
+}));
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";

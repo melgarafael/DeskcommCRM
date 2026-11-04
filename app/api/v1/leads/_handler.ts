@@ -752,6 +752,7 @@ export async function createLeadHandler(
     .from("crm_leads")
     .select("position_in_stage")
     .eq("stage_id", input.stage_id)
+    .eq("organization_id", ctx.organization_id)
     // O segundo argumento EXPLÍCITO (e não o default do supabase-js): os fakes
     // `FakeQuery` das suítes de invariante leem `opts.ascending` sem guarda, e
     // um `.order(col)` de um argumento só os derruba com `Cannot read
@@ -1443,6 +1444,7 @@ export async function moveLeadHandler(
       .from("crm_leads")
       .select("position_in_stage")
       .eq("stage_id", input.to_stage_id)
+      .eq("organization_id", ctx.organization_id)
       .order("position_in_stage", { ascending: mesmaEtapaJa ? false : true })
       .limit(1)
       .maybeSingle();
@@ -1845,6 +1847,7 @@ export async function retomarLeadHandler(
     .from("crm_pipelines")
     .select("settings")
     .eq("id", origemTipada.pipeline_id)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
   if (funilErr) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, funilErr.message);

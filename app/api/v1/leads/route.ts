@@ -11,6 +11,7 @@ import { type NextRequest } from "next/server";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { requireRole } from "@/lib/auth/require-role";
 import { somenteOProprio, type VisibilityMode } from "@/lib/auth/types";
 import {
   AVISO_NEGOCIO_ABERTO_EXISTENTE,
@@ -72,8 +73,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   // Gerente e admin enxergam a organização inteira e criam como sempre. O modo
   // vem da org do cookie validado, nunca do corpo — admin client, como em
   // `app/app/layout.tsx`.
+  // O papel real só existe na sessão (o token não é "o Atendente"): o responsável
+  // padrão é do papel `agent`, como era antes da porta do token.
+  let papelDaSessao: string | null = null;
+  if (authz.via === "session") {
+    const sessao = await requireRole("viewer", { requestId, resource: "crm_leads" });
+    if (sessao.ok) papelDaSessao = sessao.org.role;
+  }
   if (
-    actor.type === "user" &&
+    papelDaSessao === "agent" &&
     input.owner_user_id === undefined &&
     input.owner_agent_id === undefined
   ) {

@@ -1,3 +1,4 @@
+// @vitest-environment node
 /**
  * Token de integração nas rotas de `ai/knowledge` (Spec 33, fatia R1, Task 4).
  *
