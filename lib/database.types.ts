@@ -3,6 +3,140 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type Database = {
   public: {
     Tables: {
+      handoff_delivery_receipts: {
+        Row: {
+          claim_token: string | null;
+          claimed_at: string | null;
+          destination_hash: string;
+          episode_id: string;
+          external_id: string | null;
+          id: string;
+          organization_id: string;
+          status: string;
+          updated_at: string;
+        };
+        Insert: {
+          claim_token?: string | null;
+          claimed_at?: string | null;
+          destination_hash: string;
+          episode_id: string;
+          external_id?: string | null;
+          id?: string;
+          organization_id: string;
+          status?: string;
+          updated_at?: string;
+        };
+        Update: {
+          claim_token?: string | null;
+          claimed_at?: string | null;
+          destination_hash?: string;
+          episode_id?: string;
+          external_id?: string | null;
+          id?: string;
+          organization_id?: string;
+          status?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "handoff_delivery_receipts_organization_id_episode_id_fkey";
+            columns: ["organization_id", "episode_id"];
+            isOneToOne: false;
+            referencedRelation: "handoff_delivery_episodes";
+            referencedColumns: ["organization_id", "id"];
+          },
+        ];
+      };
+      handoff_delivery_episodes: {
+        Row: {
+          attempts: number;
+          config_hash: string;
+          contact_id: string;
+          conversation_id: string;
+          created_at: string;
+          handoff_revision: number;
+          id: string;
+          lead_id: string | null;
+          organization_id: string;
+          owner_user_id: string | null;
+          passage_id: string;
+          reason: string | null;
+          service_revision: number;
+          status: string;
+          updated_at: string;
+        };
+        Insert: {
+          attempts?: number;
+          config_hash: string;
+          contact_id: string;
+          conversation_id: string;
+          created_at?: string;
+          handoff_revision: number;
+          id?: string;
+          lead_id?: string | null;
+          organization_id: string;
+          owner_user_id?: string | null;
+          passage_id: string;
+          reason?: string | null;
+          service_revision: number;
+          status?: string;
+          updated_at?: string;
+        };
+        Update: {
+          attempts?: number;
+          config_hash?: string;
+          contact_id?: string;
+          conversation_id?: string;
+          created_at?: string;
+          handoff_revision?: number;
+          id?: string;
+          lead_id?: string | null;
+          organization_id?: string;
+          owner_user_id?: string | null;
+          passage_id?: string;
+          reason?: string | null;
+          service_revision?: number;
+          status?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "handoff_delivery_episodes_contact_id_fkey";
+            columns: ["contact_id"];
+            isOneToOne: false;
+            referencedRelation: "contacts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "handoff_delivery_episodes_conversation_id_fkey";
+            columns: ["conversation_id"];
+            isOneToOne: false;
+            referencedRelation: "conversations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "handoff_delivery_episodes_lead_id_fkey";
+            columns: ["lead_id"];
+            isOneToOne: false;
+            referencedRelation: "crm_leads";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "handoff_delivery_episodes_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "handoff_delivery_episodes_passage_id_fkey";
+            columns: ["passage_id"];
+            isOneToOne: false;
+            referencedRelation: "passagens_de_atendimento";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       account_plans: {
         Row: {
           created_at: string;
@@ -14847,6 +14981,10 @@ export type Database = {
       };
     };
     Functions: {
+      fn_set_handoff_delivery: {
+        Args: { p_config: Json; p_org: string };
+        Returns: Json;
+      };
       activate_kb_version: {
         Args: { p_agent_id: string; p_version_id: string };
         Returns: undefined;

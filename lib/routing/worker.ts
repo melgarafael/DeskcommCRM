@@ -35,6 +35,7 @@ const DEFAULT_BATCH_SIZE = 100;
 export type RoutingOutcome =
   | "assigned"
   | "skipped_manual"
+  | "skipped_handoff_delivery"
   | "skipped_already_assigned"
   | "skipped_unsupported_mode"
   | "requeued_no_eligible"
@@ -69,6 +70,7 @@ interface EventRow {
 const EMPTY_OUTCOMES = (): Record<RoutingOutcome, number> => ({
   assigned: 0,
   skipped_manual: 0,
+  skipped_handoff_delivery: 0,
   skipped_already_assigned: 0,
   skipped_unsupported_mode: 0,
   requeued_no_eligible: 0,
@@ -161,7 +163,7 @@ export async function runRoutingWorker(opts: RoutingWorkerOptions = {}): Promise
   return summary;
 }
 
-async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome> {
+export async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome> {
   const admin = createAdminClient();
   const payload = event.payload ?? {};
   const orgId = strOrNull(payload.organization_id) ?? event.organization_id;
@@ -179,7 +181,7 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
   const { data: conv, error: convError } = await admin
     .from("conversations")
     .select(
-      "id, organization_id, contact_id, channel_session_id, assigned_to_user_id, status, metadata, last_inbound_at, sector_id",
+      "id, organization_id, contact_id, channel_session_id, assigned_to_user_id, status, metadata, last_inbound_at, sector_id, service_revision, bot_silenced_until",
     )
     .eq("id", conversationId)
     .eq("organization_id", orgId)
@@ -239,7 +241,14 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
     .maybeSingle();
   if (orgError) throw new Error(orgError.message);
   if (!org) throw new Error("routing_organization_missing");
-  const settings = (org?.settings ?? {}) as { routing?: unknown };
+  const settings = (org?.settings ?? {}) as { routing?: unknown; handoff_delivery?: {enabled?:unknown} };
+  if (settings.handoff_delivery?.enabled === true && !conv.assigned_to_user_id && conv.bot_silenced_until === "infinity") {
+    const {data:episodes,error:episodeError}=await admin.from("handoff_delivery_episodes")
+      .select("id").eq("organization_id",orgId).eq("conversation_id",conversationId)
+      .eq("service_revision",conv.service_revision).in("status",["pending","blocked","ambiguous"]).limit(1);
+    if(episodeError) throw new Error("handoff_routing_read_failed");
+    if(episodes?.length){await markDone(event,"skipped_handoff_delivery");return "skipped_handoff_delivery";}
+  }
   const config = routingConfigSchema.parse(settings.routing ?? {});
 
   // Regra POR NÚMERO (#2331): o canal pode ter modo próprio e um atendente de
