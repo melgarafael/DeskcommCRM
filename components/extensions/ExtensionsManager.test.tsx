@@ -72,6 +72,8 @@ function installation(overrides: Partial<InstalledExtensionView> = {}): Installe
     active_organizations: 1,
     removed_at: null,
     deactivated_by_removal_at: null,
+    profile: "declarative",
+    disabled_at: null,
     ...overrides,
   };
 }
@@ -1886,5 +1888,185 @@ describe("ExtensionsManager", () => {
       await vi.advanceTimersByTimeAsync(3_000);
     });
     expect(leituras()).toBeGreaterThan(comAbaOculta);
+  });
+});
+
+describe("interruptor do módulo conectado (spec 33, D8)", () => {
+  const DESLIGADO_EM = "2026-11-04T12:00:00.000Z";
+  const conectado = (overrides: Partial<InstalledExtensionView> = {}) =>
+    installation({
+      profile: "connected",
+      permissions: ["area.contatos.leitura"],
+      installation_revision: 4,
+      ...overrides,
+    });
+
+  it("módulo conectado desligado mostra o aviso e o botão Ligar", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(json({ data: list(ORG_A, { installations: [conectado({ disabled_at: DESLIGADO_EM })] }) })),
+    );
+    renderManager();
+
+    expect(await screen.findByTestId(`extension-switch-off-${INSTALLATION}`)).toHaveTextContent(
+      "Desligado nesta instalação",
+    );
+    expect(screen.getByTestId(`extension-switch-${INSTALLATION}`)).toHaveTextContent("Ligar");
+    expect(screen.queryByText("Desligar")).toBeNull();
+  });
+
+  it("módulo conectado ligado mostra o botão Desligar e nenhum aviso", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(json({ data: list(ORG_A, { installations: [conectado()] }) })),
+    );
+    renderManager();
+
+    expect(await screen.findByTestId(`extension-switch-${INSTALLATION}`)).toHaveTextContent("Desligar");
+    expect(screen.queryByTestId(`extension-switch-off-${INSTALLATION}`)).toBeNull();
+    expect(screen.queryByText("Desligado nesta instalação")).toBeNull();
+  });
+
+  it.each(["declarative", "data"] as const)("módulo %s não mostra o botão nem o aviso", async (profile) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(json({ data: list(ORG_A, { installations: [installation({ profile })] }) })),
+    );
+    renderManager();
+
+    await screen.findByTestId(`extension-platform-${INSTALLATION}`);
+    expect(screen.queryByTestId(`extension-switch-${INSTALLATION}`)).toBeNull();
+    expect(screen.queryByTestId(`extension-switch-off-${INSTALLATION}`)).toBeNull();
+  });
+
+  it("pacote ilegível (sem perfil) não mostra o botão", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(json({ data: list(ORG_A, { installations: [installation({ profile: null })] }) })),
+    );
+    renderManager();
+
+    await screen.findByTestId(`extension-platform-${INSTALLATION}`);
+    expect(screen.queryByTestId(`extension-switch-${INSTALLATION}`)).toBeNull();
+  });
+
+  it("quem não administra a instalação vê o aviso, mas não o botão", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        json({
+          data: list(ORG_A, {
+            can_install: false,
+            installations: [conectado({ disabled_at: DESLIGADO_EM, active_organizations: null })],
+          }),
+        }),
+      ),
+    );
+    renderManager();
+
+    expect(await screen.findByTestId(`extension-switch-off-${INSTALLATION}`)).toBeVisible();
+    expect(screen.queryByTestId(`extension-switch-${INSTALLATION}`)).toBeNull();
+  });
+
+  it("Ligar chama a rota do interruptor com a revisão que a tela viu e o recibo guardado sai do navegador", async () => {
+    const religado = list(ORG_A, { installations: [conectado({ installation_revision: 5 })] });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        json({ data: list(ORG_A, { installations: [conectado({ disabled_at: DESLIGADO_EM })] }) }),
+      )
+      .mockImplementationOnce((_input: RequestInfo | URL, init?: RequestInit) => {
+        const id = new Headers(init?.headers).get("Idempotency-Key")!;
+        return Promise.resolve(json({ data: operation({ id, kind: "switch", extra: { from_revision: 4 } }) }));
+      })
+      .mockResolvedValue(json({ data: religado }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderManager();
+
+    await user.click(await screen.findByTestId(`extension-switch-${INSTALLATION}`));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(String(url)).toBe(`/api/v1/extensions/${INSTALLATION}/switch`);
+    expect((init.method ?? "GET").toUpperCase()).toBe("POST");
+    expect(new Headers(init.headers).get("Idempotency-Key")).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(JSON.parse(String(init.body))).toEqual({ expected_installation_revision: 4, disabled: false });
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Módulo ligado de novo nesta instalação."));
+    expect(readPendingReceipts(window.localStorage, ACTOR, ORG_A)).toEqual([]);
+    // Recarregou com o estado novo: o aviso saiu e o botão passou a oferecer Desligar.
+    await waitFor(() => expect(screen.queryByTestId(`extension-switch-off-${INSTALLATION}`)).toBeNull());
+    expect(screen.getByTestId(`extension-switch-${INSTALLATION}`)).toHaveTextContent("Desligar");
+  });
+
+  it("Desligar manda disabled true", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(json({ data: list(ORG_A, { installations: [conectado()] }) }))
+      .mockImplementationOnce((_input: RequestInfo | URL, init?: RequestInit) => {
+        const id = new Headers(init?.headers).get("Idempotency-Key")!;
+        return Promise.resolve(json({ data: operation({ id, kind: "switch" }) }));
+      })
+      .mockResolvedValue(
+        json({ data: list(ORG_A, { installations: [conectado({ installation_revision: 5, disabled_at: DESLIGADO_EM })] }) }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderManager();
+
+    await user.click(await screen.findByTestId(`extension-switch-${INSTALLATION}`));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ expected_installation_revision: 4, disabled: true });
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Módulo desligado nesta instalação."));
+    expect(await screen.findByTestId(`extension-switch-off-${INSTALLATION}`)).toBeVisible();
+  });
+
+  it("revisão velha avisa que a extensão mudou, recarrega e não anuncia sucesso", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(json({ data: list(ORG_A, { installations: [conectado()] }) }))
+      .mockResolvedValueOnce(
+        json(
+          {
+            error: {
+              code: "extension_version_changed",
+              message: "A extensão mudou em outra sessão. Recarregue antes de continuar.",
+            },
+          },
+          409,
+        ),
+      )
+      .mockResolvedValue(json({ data: list(ORG_A, { installations: [conectado({ installation_revision: 5 })] }) }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderManager();
+
+    await user.click(await screen.findByTestId(`extension-switch-${INSTALLATION}`));
+
+    await waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith(
+        "A extensão mudou em outra sessão. Recarregamos o estado atual; revise antes de repetir.",
+      ),
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(readPendingReceipts(window.localStorage, ACTOR, ORG_A)).toEqual([]);
+  });
+
+  it("o recibo do interruptor aparece na atividade recente com título próprio", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        json({
+          data: list(ORG_A, {
+            operations: [operation({ id: "00000000-0000-4000-8000-000000000031", kind: "switch" })],
+          }),
+        }),
+      ),
+    );
+    renderManager();
+
+    expect(await screen.findByText("Interruptor do módulo")).toBeVisible();
   });
 });
