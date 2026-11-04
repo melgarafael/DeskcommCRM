@@ -76,6 +76,18 @@ function numeroComparavel(bruto: string | null | undefined): string | null {
 }
 
 /**
+ * O canal está em modo de teste, com o estado MEDIDO.
+ *
+ * Existe para a tela não escrever o literal do vocabulário do banco: uma cerca
+ * (`tests/unit/passagem-motivo-em-portugues.test.ts`) reprova código cru do
+ * vocabulário em `app/`, `components/` e `hooks/`, e ela está certa — o código
+ * existe para a constraint recusar lixo, não para alguém ler.
+ */
+export function canalEmModoDeTeste(acesso: AcessoDaAiDoCanal | null): boolean {
+  return acesso !== null && acesso.mode === AI_GATE_PRE_GO_LIVE;
+}
+
+/**
  * A decisão, para um canal (e, quando conhecido, para o número em teste).
  *
  * Ordem importa: o "não medido" vem primeiro porque é o único desfecho que não

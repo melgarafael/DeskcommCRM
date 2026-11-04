@@ -26,7 +26,10 @@ import type { AgentRow } from "@/hooks/ai/useAgent";
 import type { AgentVersionRow } from "@/hooks/ai/useAgentVersions";
 
 import type { SelectableChannel as ChannelSessionLite } from "@/lib/channels/selectable";
-import { decidirAvisoDoModoDeTeste } from "@/lib/ai/elegibilidade/aviso-do-modo-de-teste";
+import {
+  canalEmModoDeTeste,
+  decidirAvisoDoModoDeTeste,
+} from "@/lib/ai/elegibilidade/aviso-do-modo-de-teste";
 import { useAcessoDaAiDoCanal } from "@/hooks/channels/useAcessoDaAiDoCanal";
 
 import { AvisoDoModoDeTeste } from "./AvisoDoModoDeTeste";
@@ -163,9 +166,7 @@ export function TestPanel({ agent, draft, published, readOnly, channelSessions }
     channelSessions?.find((c) => c.id === target?.channel_session_id) ?? null;
   const acessoDoCanal = canalDaVersao?.acessoDaAi ?? null;
   const lerNumeros =
-    !readOnly &&
-    acessoDoCanal?.mode === "pre_go_live" &&
-    (acessoDoCanal?.testNumbersCount ?? 0) > 0;
+    !readOnly && canalEmModoDeTeste(acessoDoCanal) && (acessoDoCanal?.testNumbersCount ?? 0) > 0;
   const listaAutorizada = useAcessoDaAiDoCanal(canalDaVersao?.id, lerNumeros);
   const avisoDoNumero = decidirAvisoDoModoDeTeste({
     acesso: acessoDoCanal,
