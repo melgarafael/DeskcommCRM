@@ -317,11 +317,10 @@ function comCamposDoFunil(row: Record<string, unknown>) {
   return {
     ...lead,
     field_defs: camposPorEscopo(camposDoFunil(settingsDoEmbed(crm_pipelines)), "negocio"),
+    motivos_de_perda: motivosDoFunil(settingsDoEmbed(crm_pipelines)),
     funil_nome: nomeDoEmbed(crm_pipelines),
     etapa_nome: nomeDoEmbed(crm_stages),
     etapas_do_funil: etapasDoEmbed(crm_pipelines),
-    // O painel da conversa não tem o quadro em cache; sem isto a janela de perda cairia no padrão do produto.
-    motivos_de_perda: motivosDoFunil(settingsDoEmbed(crm_pipelines)),
     // OS ATALHOS DO CARD (#3487). Vai o MODELO de link como está no `settings`,
     // não o link montado: quem monta é o navegador de quem clica, com os dados
     // que essa pessoa já vê (`encodeURIComponent` por valor, allowlist de

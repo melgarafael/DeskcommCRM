@@ -61,6 +61,7 @@ export interface Lead {
   /** Duração em meses; `null` = sem prazo (diferente de "12 meses"). */
   recurring_months?: number | null;
   currency: string | null;
+  commercial_owner_user_id?: string | null;
   owner_user_id: string | null;
   /** 0070: quem é dono do negócio — humano, agente de IA, ou ninguém. */
   owner_kind: OwnerKind;

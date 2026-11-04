@@ -1,0 +1,11 @@
+# Episódios derivados — candidato local9110
+
+A decisão A preserva a mutação original quando a captura do aviso falha. Subtransação reverte apenas captura e estado de dedupe; diagnóstico contém classe/SQLSTATE, sem conteúdo ou identificadores. Contenção não espera: também pode perder aviso e é diagnosticada. Cancelamento operacional continua ativo.
+
+Episódios imutáveis ficam em schema privado sem publicação Realtime. Somente administrador da plataforma com MFA exigido satisfeito e sessão nativa ativa lê/ACK via RPC invoker/RLS; recibos são por usuário/episódio. Sinais CDC não carregam detalhes. O consumidor busca não confirmados em páginas20, confirma após apresentar e repete no próximo sinal/polling30s. Limite10páginas por ciclo adia backlog, não apaga. Crash antes do ACK pode repetir, inclusive entre abas concorrentes antes da confirmação; não promete exatamente uma vez.
+
+Regras preservadas: canal legado ban_suspected/disconnected_unexpected/disconnected<24h; LGPD não concluída/falhada com prazo<=agora+96h; orçamento acumulado>=80% em avisar/bloquear; pending>50. FAILED canônico não é interpretado como ban. Trigger observa OLD e NEW, inclusive encerramento. Relógio LGPD usa chamada no watcher já existente,500fontes por tick em rotação; não cria/ativa cron. Backlog pode atrasar múltiplos ticks.
+
+Bootstrap quieto uma vez; reaplicar não apaga ou reconhece episódios. Somente episódios efetivamente persistidos são recuperáveis. Não há backfill de transições anteriores nem promessa de histórico completo. A captura não altera a política financeira mensal. 9110 recupera linhas da Central ainda retidas por recibo de revisão; só a campainha visível apresenta toast autorizado. A lista/contagem/destino e sons atuais permanecem sem mudança. Linha apagada ou revisão histórica sobrescrita não é recuperável.
+
+Antes de distribuir: revisão independente; build e browser integrados; medir custo de contagens por organização e bootstrap/volume/diagnósticos. Não há poda automática: qualquer retenção futura precisa tratamento explícito para pendentes. Rollback antes de instalar: descartar o diff. Se instalado no laboratório: restaurar funções/consumidores anteriores e desativar apenas triggers9110; preservar o journal/recibos até decisão de retenção, sem DROP de dados para reverter.

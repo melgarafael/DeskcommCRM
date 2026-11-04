@@ -1,4 +1,6 @@
 "use client";
+import { useActiveOrg } from "@/hooks/auth/AuthProvider";
+import { useNoticeSignal } from "@/hooks/realtime/useNoticeSignal";
 import { usePermission } from "@/hooks/auth/AuthProvider";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
@@ -36,7 +38,17 @@ export interface AgentInboxData {
  * imprimindo "Nenhum aviso em aberto" para quem não pode ver aviso nenhum.
  */
 export function useAgentInbox(status: "open" | "resolved" = "open") {
+  const org = useActiveOrg();
+  const qc = useQueryClient();
   const podeConsultar = usePermission("ai.inbox.view");
+  useNoticeSignal(
+    "agent_inbox",
+    () => {
+      void qc.invalidateQueries({ queryKey: ["agent-inbox"] });
+    },
+    org?.orgId,
+    podeConsultar && !!org,
+  );
   const consulta = useQuery({
     enabled: podeConsultar,
     queryKey: ["agent-inbox", status],
@@ -70,10 +82,11 @@ export function useUpdateInboxItem() {
 export function useResolveAllInboxItems() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => apiClient.post<{ data: { resolved_count: number } }>(
-      "/api/v1/ai/inbox/resolve-all",
-      {},
-    ),
+    mutationFn: () =>
+      apiClient.post<{ data: { resolved_count: number } }>(
+        "/api/v1/ai/inbox/resolve-all",
+        {},
+      ),
     onSettled: () => qc.invalidateQueries({ queryKey: ["agent-inbox"] }),
   });
 }

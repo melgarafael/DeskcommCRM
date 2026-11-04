@@ -22,6 +22,8 @@ export const dynamic = "force-dynamic";
 
 /** Ordem da fila aberta: a camada de cima sai inteira antes da seguinte. */
 const GRAVIDADES = ["critical", "warn", "info"] as const;
+// Below the existing 10s browser transport budget; a stalled count must fail closed.
+const PRAZO_DA_CONTAGEM_MS = 5_000;
 
 const querySchema = z.object({
   status: z.enum(["open", "ack", "resolved", "all"]).default("open"),
@@ -49,8 +51,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   const { status, limit } = parsed.data;
 
   const admin = createAdminClient();
+  // List and badge inherit the same channel/tenant RLS as retained episode recovery.
+  const reader = await createClient();
   const buscar = (severity?: (typeof GRAVIDADES)[number]) => {
-    let query = admin
+    let query = reader
       .from("agent_inbox_items")
       .select("id, kind, severity, title, body, ref_kind, ref_id, status, created_at")
       .eq("organization_id", org.orgId)
@@ -73,14 +77,24 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
   const data = resultados.flatMap((r) => r.data ?? []).slice(0, limit);
 
-  const { count: openCount } = await admin
-    .from("agent_inbox_items")
-    .select("id", { count: "exact", head: true })
-    .eq("organization_id", org.orgId)
-    .or(visivel)
-    .eq("status", "open");
+  let openCount: number;
+  try {
+    const { count, error } = await reader
+      .from("agent_inbox_items")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", org.orgId)
+      .or(visivel)
+      .eq("status", "open")
+      .abortSignal(AbortSignal.timeout(PRAZO_DA_CONTAGEM_MS));
+    if (error || typeof count !== "number" || !Number.isInteger(count) || count < 0) {
+      return fail("unavailable", t("Falha ao carregar os avisos."), 503, { requestId });
+    }
+    openCount = count;
+  } catch {
+    return fail("unavailable", t("Falha ao carregar os avisos."), 503, { requestId });
+  }
 
-  const comDestino = await resolverDestinosDosAvisos(await createClient(), org.orgId, org.role, data);
+  const comDestino = await resolverDestinosDosAvisos(reader, org.orgId, org.role, data);
   const items = await anexarLinkDePagamento(admin, org.orgId, org.role, comDestino);
-  return ok({ items, open_count: openCount ?? 0 }, { requestId });
+  return ok({ items, open_count: openCount }, { requestId });
 }

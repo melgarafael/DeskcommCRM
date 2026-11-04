@@ -34,6 +34,7 @@ const DEFAULT_BATCH_SIZE = 100;
 
 export type RoutingOutcome =
   | "assigned"
+  | "skipped_commercial_observation"
   | "skipped_manual"
   | "skipped_already_assigned"
   | "skipped_unsupported_mode"
@@ -69,6 +70,7 @@ interface EventRow {
 const EMPTY_OUTCOMES = (): Record<RoutingOutcome, number> => ({
   assigned: 0,
   skipped_manual: 0,
+  skipped_commercial_observation: 0,
   skipped_already_assigned: 0,
   skipped_unsupported_mode: 0,
   requeued_no_eligible: 0,
@@ -161,7 +163,7 @@ export async function runRoutingWorker(opts: RoutingWorkerOptions = {}): Promise
   return summary;
 }
 
-async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome> {
+export async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome> {
   const admin = createAdminClient();
   const payload = event.payload ?? {};
   const orgId = strOrNull(payload.organization_id) ?? event.organization_id;
@@ -240,6 +242,30 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
   if (orgError) throw new Error(orgError.message);
   if (!org) throw new Error("routing_organization_missing");
   const settings = (org?.settings ?? {}) as { routing?: unknown };
+  const { data: commercialRule, error: commercialError } = await admin
+    .from("commercial_routing_rules")
+    .select("channel_id")
+    .eq("organization_id", orgId)
+    .eq("channel_id", conv.channel_session_id)
+    .maybeSingle();
+  if (commercialError) throw new Error("commercial_routing_config_failed");
+  if (commercialRule) {
+    const { data: receipt, error } = await admin.rpc("fn_commercial_ingress", {
+      p_org: orgId,
+      p_conversation: conversationId,
+    });
+    if (error) throw new Error("commercial_ingress_failed");
+    if (String((receipt as { status?: string } | null)?.status).startsWith("pending_")) {
+      const config = routingConfigSchema.parse(settings.routing ?? {});
+      const retry = decideRouting({ mode: "round_robin", alreadyAssigned: false, eligibles: [], config, attempts: event.attempts, now });
+      if (retry.kind !== "requeue") throw new Error("commercial_retry_invalid");
+      if (event.attempts === config.max_retries) await notice(orgId, conversationId, "commercial_pending");
+      await requeueEvent(event, now, retry.attempts, { reason: (receipt as { status: string }).status }, retry.nextAttemptAt);
+      return "requeued_no_eligible";
+    }
+    await markDone(event, "skipped_commercial_observation");
+    return "skipped_commercial_observation";
+  }
   const config = routingConfigSchema.parse(settings.routing ?? {});
 
   // Regra POR NÚMERO (#2331): o canal pode ter modo próprio e um atendente de

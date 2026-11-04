@@ -178,6 +178,7 @@ function teach(code: LeadContextErrorCode, message: string): LeadContextResult {
 }
 
 interface ContactRow {
+  private_context?: boolean;
   name: string | null;
   display_name: string | null;
   email: string | null;
@@ -269,7 +270,7 @@ export async function getLeadContext(
   knobs: LeadContextKnobs,
 ): Promise<LeadContextResult> {
   const { rows: contactRows } = await db.query<ContactRow>(
-    `select name, display_name, email, phone_number, tags, is_blocked, is_personal, source, consent, is_anonymized
+    `select name, display_name, email, phone_number, tags, is_blocked, is_personal, source, consent, is_anonymized, public.fn_contact_context_private(organization_id) as private_context
      from contacts where organization_id = $1 and id = $2`,
     [input.tenantId, input.leadId],
   );
@@ -280,6 +281,12 @@ export async function getLeadContext(
       'não encontrei esse lead nesta organização — confira o lead antes de continuar; se o problema persistir, peça handoff humano.',
     );
   }
+
+  if (contact.private_context && !input.conversationId)
+    return teach(
+      "crm_error",
+      "Esta organização exige a conversa explícita para consultar contexto privado.",
+    );
 
   // Daqui em diante tudo depende só do contato, e nada depende entre si além da
   // conversa (histórico e desfechos precisam do id dela). Cada `await` em série
@@ -321,6 +328,8 @@ export async function getLeadContext(
                      and ((messages.direction='inbound' and messages.service_revision=c.service_revision
                        and messages.demanda_id is not distinct from c.current_demanda_id)
                        or (messages.direction='outbound' and messages.sent_at >= c.service_started_at)))
+                 and exists(select 1 from conversations scope where scope.organization_id=$1 and scope.id=$2 and scope.contact_id=$5
+                   and (not public.fn_contact_context_private($1) or messages.service_revision=scope.service_revision))
                  order by sent_at desc, id desc
                  limit $3)
                 union all
@@ -330,18 +339,21 @@ export async function getLeadContext(
                  where organization_id = $1 and conversation_id = $2
                    and direction = 'outbound' and type = 'template'
                    and sent_at >= now() - make_interval(days => $4::int)
+                 and exists(select 1 from conversations scope where scope.organization_id=$1 and scope.id=$2 and scope.contact_id=$5
+                   and (not public.fn_contact_context_private($1) or messages.service_revision=scope.service_revision))
                  order by sent_at desc, id desc
                  limit 1)
                ) h
                order by sent_at desc, id desc`,
-              [input.tenantId, conversationId, knobs.historyLimit, MODELO_FIXADO_DIAS],
+              [input.tenantId, conversationId, knobs.historyLimit, MODELO_FIXADO_DIAS, input.leadId],
             )
             .then((r) => historicoComOModeloFixado(r.rows))
         : Promise.resolve<HistoryRow[]>([]),
       db.query<{ desfecho: string }>(
         `select distinct d.desfecho from demandas d join demanda_conversas dc on dc.demanda_id=d.id and dc.organization_id=d.organization_id
-         where d.organization_id=$1 and dc.conversation_id=$2 and d.fechada_em is not null limit 5`,
-        [input.tenantId, conversationId]),
+         where d.organization_id=$1 and dc.conversation_id=$2 and d.fechada_em is not null and not public.fn_contact_context_private($1) limit 5`,
+        [input.tenantId, conversationId],
+      ),
     ]);
     return { conversationId, history, previousOutcomes };
   };
@@ -359,10 +371,11 @@ export async function getLeadContext(
        from crm_lead_activities
        where organization_id = $1
          and contact_id = $2
+         and (not public.fn_contact_context_private($1) or lead_id in (select bc.lead_id from public.conversation_business_contexts bc join public.conversations c on c.organization_id=bc.organization_id and c.id=bc.conversation_id and c.service_revision=bc.service_revision where bc.organization_id=$1 and bc.conversation_id=$3::uuid and bc.status='assigned' and c.contact_id=$2))
          and type in ('next_action_approved', 'next_action_dismissed')
        order by performed_at desc, id desc
        limit 1`,
-      [input.tenantId, input.leadId],
+      [input.tenantId, input.leadId, input.conversationId ?? null],
     );
     return decisaoRows[0] ? paraDecisao(decisaoRows[0]) : null;
   };
@@ -379,10 +392,11 @@ export async function getLeadContext(
         `select status, total_cents, decision_reason, numero, ano
            from crm_proposals
           where organization_id = $1 and contact_id = $2
+            and (not public.fn_contact_context_private($1) or lead_id in (select bc.lead_id from public.conversation_business_contexts bc join public.conversations c on c.organization_id=bc.organization_id and c.id=bc.conversation_id and c.service_revision=bc.service_revision where bc.organization_id=$1 and bc.conversation_id=$3::uuid and bc.status='assigned' and c.contact_id=$2))
             and status in ('enviada', 'aceita', 'recusada', 'vencida')
           order by created_at desc
           limit 1`,
-        [input.tenantId, input.leadId],
+        [input.tenantId, input.leadId, input.conversationId ?? null],
       );
       return propostaRows[0] ?? null;
     } catch (err) {

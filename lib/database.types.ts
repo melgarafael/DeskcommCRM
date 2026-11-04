@@ -5837,6 +5837,8 @@ export type Database = {
           updated_at: string;
           valor_anterior: string | null;
           valor_proposto: string;
+
+          service_revision: number | null;
         };
         ComputedFields: never;
         Insert: {
@@ -5857,6 +5859,8 @@ export type Database = {
           updated_at?: string;
           valor_anterior?: string | null;
           valor_proposto: string;
+
+          service_revision?: number | null;
         };
         Update: {
           campo?: string;
@@ -5876,6 +5880,8 @@ export type Database = {
           updated_at?: string;
           valor_anterior?: string | null;
           valor_proposto?: string;
+
+          service_revision?: number | null;
         };
         Relationships: [
           {
@@ -6246,6 +6252,8 @@ export type Database = {
           id: string;
           organization_id: string;
           source: string;
+
+          service_revision: number | null;
         };
         ComputedFields: never;
         Insert: {
@@ -6259,6 +6267,8 @@ export type Database = {
           id?: string;
           organization_id: string;
           source?: string;
+
+          service_revision?: number | null;
         };
         Update: {
           body?: string;
@@ -6271,6 +6281,8 @@ export type Database = {
           id?: string;
           organization_id?: string;
           source?: string;
+
+          service_revision?: number | null;
         };
         Relationships: [
           {
@@ -6308,6 +6320,8 @@ export type Database = {
           media_size_bytes: number | null;
           media_storage_path: string | null;
           organization_id: string;
+
+          service_revision: number | null;
         };
         ComputedFields: never;
         Insert: {
@@ -6321,6 +6335,8 @@ export type Database = {
           media_size_bytes?: number | null;
           media_storage_path?: string | null;
           organization_id: string;
+
+          service_revision?: number | null;
         };
         Update: {
           body?: string;
@@ -6333,6 +6349,8 @@ export type Database = {
           media_size_bytes?: number | null;
           media_storage_path?: string | null;
           organization_id?: string;
+
+          service_revision?: number | null;
         };
         Relationships: [
           {
@@ -6964,6 +6982,8 @@ export type Database = {
           value_cents: number | null;
           webhook_source_id: string | null;
           won_reason: string | null;
+
+          commercial_owner_user_id: string | null;
         };
         ComputedFields: never;
         Insert: {
@@ -7002,6 +7022,8 @@ export type Database = {
           value_cents?: number | null;
           webhook_source_id?: string | null;
           won_reason?: string | null;
+
+          commercial_owner_user_id?: string | null;
         };
         Update: {
           assigned_at?: string | null;
@@ -7039,6 +7061,8 @@ export type Database = {
           value_cents?: number | null;
           webhook_source_id?: string | null;
           won_reason?: string | null;
+
+          commercial_owner_user_id?: string | null;
         };
         Relationships: [
           {
@@ -8874,6 +8898,10 @@ export type Database = {
           timing_plan: Json | null;
           updated_at: string;
           version_id: string;
+
+          answers: Json;
+
+          service_revision: number | null;
         };
         ComputedFields: never;
         Insert: {
@@ -8902,6 +8930,10 @@ export type Database = {
           timing_plan?: Json | null;
           updated_at?: string;
           version_id: string;
+
+          answers?: Json;
+
+          service_revision?: number | null;
         };
         Update: {
           agent_id?: string | null;
@@ -8929,6 +8961,10 @@ export type Database = {
           timing_plan?: Json | null;
           updated_at?: string;
           version_id?: string;
+
+          answers?: Json;
+
+          service_revision?: number | null;
         };
         Relationships: [
           {
@@ -10172,6 +10208,10 @@ export type Database = {
           id: string;
           organization_id: string;
           updated_at: string;
+
+          conversation_id: string | null;
+
+          service_revision: number | null;
         };
         ComputedFields: never;
         Insert: {
@@ -10183,6 +10223,10 @@ export type Database = {
           id?: string;
           organization_id: string;
           updated_at?: string;
+
+          conversation_id?: string | null;
+
+          service_revision?: number | null;
         };
         Update: {
           body?: string;
@@ -10193,6 +10237,10 @@ export type Database = {
           id?: string;
           organization_id?: string;
           updated_at?: string;
+
+          conversation_id?: string | null;
+
+          service_revision?: number | null;
         };
         Relationships: [
           {
@@ -11935,6 +11983,8 @@ export type Database = {
           reconhecido_por: string | null;
           tentativas: NonNullable<Json>;
           title: string | null;
+
+          service_revision: number | null;
         };
         ComputedFields: never;
         Insert: {
@@ -11957,6 +12007,8 @@ export type Database = {
           reconhecido_por?: string | null;
           tentativas?: NonNullable<Json>;
           title?: string | null;
+
+          service_revision?: number | null;
         };
         Update: {
           aviso_motivo_codigo?: string | null;
@@ -11978,6 +12030,8 @@ export type Database = {
           reconhecido_por?: string | null;
           tentativas?: NonNullable<Json>;
           title?: string | null;
+
+          service_revision?: number | null;
         };
         Relationships: [
           {
@@ -14206,6 +14260,389 @@ export type Database = {
           },
         ];
       };
+
+      commercial_owner_events: {
+        Row: {
+          conversation_id: string;
+          created_at: string;
+          id: string;
+          lead_id: string | null;
+          organization_id: string;
+          reason: string;
+          service_revision: number;
+          user_id: string | null;
+        };
+        Insert: {
+          conversation_id: string;
+          created_at?: string;
+          id?: string;
+          lead_id?: string | null;
+          organization_id: string;
+          reason: string;
+          service_revision: number;
+          user_id?: string | null;
+        };
+        Update: {
+          conversation_id?: string;
+          created_at?: string;
+          id?: string;
+          lead_id?: string | null;
+          organization_id?: string;
+          reason?: string;
+          service_revision?: number;
+          user_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "commercial_owner_events_conversation_id_fkey";
+            columns: ["conversation_id"];
+            isOneToOne: false;
+            referencedRelation: "conversations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "commercial_owner_events_lead_id_fkey";
+            columns: ["lead_id"];
+            isOneToOne: false;
+            referencedRelation: "crm_leads";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "commercial_owner_events_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      commercial_routing_rules: {
+        Row: {
+          channel_id: string;
+          cursor_position: number;
+          member_ids: string[];
+          organization_id: string;
+          pipeline_id: string;
+        };
+        Insert: {
+          channel_id: string;
+          cursor_position?: number;
+          member_ids: string[];
+          organization_id: string;
+          pipeline_id: string;
+        };
+        Update: {
+          channel_id?: string;
+          cursor_position?: number;
+          member_ids?: string[];
+          organization_id?: string;
+          pipeline_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "commercial_routing_rules_channel_id_fkey";
+            columns: ["channel_id"];
+            isOneToOne: false;
+            referencedRelation: "channel_sessions";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "commercial_routing_rules_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "commercial_routing_rules_pipeline_id_fkey";
+            columns: ["pipeline_id"];
+            isOneToOne: false;
+            referencedRelation: "crm_pipelines";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      commercial_source_bindings: {
+        Row: {
+          organization_id: string;
+          rule_channel_id: string;
+          source_id: string;
+        };
+        Insert: {
+          organization_id: string;
+          rule_channel_id: string;
+          source_id: string;
+        };
+        Update: {
+          organization_id?: string;
+          rule_channel_id?: string;
+          source_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "commercial_source_bindings_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "commercial_source_bindings_organization_id_rule_channel_id_fkey";
+            columns: ["organization_id", "rule_channel_id"];
+            isOneToOne: false;
+            referencedRelation: "commercial_routing_rules";
+            referencedColumns: ["organization_id", "channel_id"];
+          },
+          {
+            foreignKeyName: "commercial_source_bindings_source_id_fkey";
+            columns: ["source_id"];
+            isOneToOne: false;
+            referencedRelation: "webhook_sources";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      commercial_source_receipts: {
+        Row: {
+          lead_id: string;
+          organization_id: string;
+          source_id: string;
+          status: string;
+          updated_at: string;
+          user_id: string | null;
+        };
+        Insert: {
+          lead_id: string;
+          organization_id: string;
+          source_id: string;
+          status: string;
+          updated_at?: string;
+          user_id?: string | null;
+        };
+        Update: {
+          lead_id?: string;
+          organization_id?: string;
+          source_id?: string;
+          status?: string;
+          updated_at?: string;
+          user_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "commercial_source_receipts_lead_id_fkey";
+            columns: ["lead_id"];
+            isOneToOne: false;
+            referencedRelation: "crm_leads";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "commercial_source_receipts_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "commercial_source_receipts_source_id_fkey";
+            columns: ["source_id"];
+            isOneToOne: false;
+            referencedRelation: "webhook_sources";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      contact_context_quarantine: {
+        Row: {
+          captured_at: string;
+          contact_id: string;
+          content_hash: string;
+          id: string;
+          organization_id: string;
+          payload: Json;
+        };
+        Insert: {
+          captured_at?: string;
+          contact_id: string;
+          content_hash: string;
+          id?: string;
+          organization_id: string;
+          payload: Json;
+        };
+        Update: {
+          captured_at?: string;
+          contact_id?: string;
+          content_hash?: string;
+          id?: string;
+          organization_id?: string;
+          payload?: Json;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "contact_context_quarantine_contact_id_fkey";
+            columns: ["contact_id"];
+            isOneToOne: false;
+            referencedRelation: "contacts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "contact_context_quarantine_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      conversation_business_contexts: {
+        Row: {
+          assigned_at: string | null;
+          conversation_id: string;
+          lead_id: string | null;
+          organization_id: string;
+          service_revision: number;
+          status: string;
+        };
+        Insert: {
+          assigned_at?: string | null;
+          conversation_id: string;
+          lead_id?: string | null;
+          organization_id: string;
+          service_revision: number;
+          status: string;
+        };
+        Update: {
+          assigned_at?: string | null;
+          conversation_id?: string;
+          lead_id?: string | null;
+          organization_id?: string;
+          service_revision?: number;
+          status?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "conversation_business_contexts_conversation_id_fkey";
+            columns: ["conversation_id"];
+            isOneToOne: false;
+            referencedRelation: "conversations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "conversation_business_contexts_lead_id_fkey";
+            columns: ["lead_id"];
+            isOneToOne: false;
+            referencedRelation: "crm_leads";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "conversation_business_contexts_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      member_access_scopes: {
+        Row: {
+          channel_ids: string[] | null;
+          organization_id: string;
+          pipeline_ids: string[] | null;
+          restrict_contacts: boolean;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          channel_ids?: string[] | null;
+          organization_id: string;
+          pipeline_ids?: string[] | null;
+          restrict_contacts?: boolean;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          channel_ids?: string[] | null;
+          organization_id?: string;
+          pipeline_ids?: string[] | null;
+          restrict_contacts?: boolean;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "member_access_scopes_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      organization_data_boundaries: {
+        Row: {
+          basic_field_keys: string[];
+          basic_tags: string[];
+          enabled_at: string;
+          enabled_by: string | null;
+          organization_id: string;
+        };
+        Insert: {
+          basic_field_keys?: string[];
+          basic_tags?: string[];
+          enabled_at?: string;
+          enabled_by?: string | null;
+          organization_id: string;
+        };
+        Update: {
+          basic_field_keys?: string[];
+          basic_tags?: string[];
+          enabled_at?: string;
+          enabled_by?: string | null;
+          organization_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "organization_data_boundaries_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: true;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+
+      realtime_invalidations: {
+        Row: {
+          change_token: string;
+          organization_id: string;
+          table_name: string;
+        };
+        Insert: {
+          change_token?: string;
+          organization_id: string;
+          table_name: string;
+        };
+        Update: {
+          change_token?: string;
+          organization_id?: string;
+          table_name?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "realtime_invalidations_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       ai_provider_credentials_safe: {
@@ -14847,6 +15284,15 @@ export type Database = {
       };
     };
     Functions: {
+      fn_notice_episode_page: {
+        Args: { p_organization_id: string; p_limit?: number };
+        Returns: Json;
+      };
+      fn_notice_episode_ack: { Args: { p_organization_id: string; p_items: Json }; Returns: Json };
+      fn_derived_notice_page: { Args: { p_limit?: number }; Returns: Json };
+      fn_derived_notice_ack: { Args: { p_items: Json }; Returns: Json };
+      fn_notice_observe_clock: { Args: Record<PropertyKey, never>; Returns: Json };
+
       activate_kb_version: {
         Args: { p_agent_id: string; p_version_id: string };
         Returns: undefined;
@@ -16324,6 +16770,172 @@ export type Database = {
           >;
         };
         Returns: string[];
+      };
+
+      fn_acl_channel: {
+        Args: { p_id: string; p_org: string };
+        Returns: boolean;
+      };
+
+      fn_acl_contact: {
+        Args: { p_id: string; p_org: string };
+        Returns: boolean;
+      };
+
+      fn_acl_conversation: {
+        Args: { p_id: string; p_org: string };
+        Returns: boolean;
+      };
+
+      fn_acl_demanda: {
+        Args: { p_id: string; p_org: string };
+        Returns: boolean;
+      };
+
+      fn_acl_lead: { Args: { p_id: string; p_org: string }; Returns: boolean };
+
+      fn_acl_lead_row: {
+        Args: {
+          p_commercial_owner: string;
+          p_id: string;
+          p_org: string;
+          p_owner: string;
+          p_pipeline: string;
+        };
+        Returns: boolean;
+      };
+
+      fn_acl_pipeline: {
+        Args: { p_id: string; p_org: string };
+        Returns: boolean;
+      };
+
+      fn_acl_scoped: { Args: { p_org: string }; Returns: boolean };
+
+      fn_acl_storage: {
+        Args: { p_bucket: string; p_name: string };
+        Returns: boolean;
+      };
+
+      fn_case_record_visible: {
+        Args: { p_conversation: string; p_org: string; p_revision: number };
+        Returns: boolean;
+      };
+
+      fn_commercial_ingress: {
+        Args: { p_conversation: string; p_org: string };
+        Returns: Json;
+      };
+
+      fn_commercial_member_eligible: {
+        Args: {
+          p_channel: string;
+          p_org: string;
+          p_pipeline: string;
+          p_user: string;
+        };
+        Returns: boolean;
+      };
+
+      fn_commercial_observe: {
+        Args: { p_conversation: string; p_org: string };
+        Returns: boolean;
+      };
+
+      fn_commercial_source_ingress: {
+        Args: { p_lead: string; p_org: string };
+        Returns: Json;
+      };
+
+      fn_contact_context_private: { Args: { p_org: string }; Returns: boolean };
+
+      fn_contact_history_ids: {
+        Args: { p_contact: string; p_org: string };
+        Returns: string[];
+      };
+
+      fn_open_conversation_manual: {
+        Args: { p_channel: string; p_contact: string; p_org: string };
+        Returns: Json;
+      };
+
+      fn_realtime_privacy_ready: { Args: never; Returns: boolean };
+
+      fn_reserved_contact_context: {
+        Args: { p_contact: string; p_org: string };
+        Returns: {
+          captured_at: string;
+          contact_id: string;
+          content_hash: string;
+          id: string;
+          organization_id: string;
+          payload: Json;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "contact_context_quarantine";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+
+      fn_set_commercial_rule: {
+        Args: {
+          p_channel: string;
+          p_disabled?: boolean;
+          p_members: string[];
+          p_org: string;
+          p_pipeline: string;
+        };
+        Returns: Json;
+      };
+
+      fn_set_commercial_source: {
+        Args: {
+          p_channel: string;
+          p_disabled?: boolean;
+          p_org: string;
+          p_source: string;
+        };
+        Returns: Json;
+      };
+
+      fn_set_contact_data_boundary: {
+        Args: {
+          p_ack_archive: boolean;
+          p_basic_keys: string[];
+          p_basic_tags: string[];
+          p_org: string;
+        };
+        Returns: Json;
+      };
+
+      fn_set_member_access_scopes: {
+        Args: {
+          p_channels: string[];
+          p_org: string;
+          p_pipelines: string[];
+          p_reset?: boolean;
+          p_restrict_contacts?: boolean;
+          p_user: string;
+        };
+        Returns: Json;
+      };
+
+      fn_store_followup_answer: {
+        Args: {
+          p_contact: string;
+          p_enrollment: string;
+          p_key: string;
+          p_org: string;
+          p_value: string;
+        };
+        Returns: boolean;
+      };
+
+      is_my_conversation: {
+        Args: { c: Database["public"]["Tables"]["conversations"]["Row"] };
+        Returns: boolean;
       };
     };
     Enums: {

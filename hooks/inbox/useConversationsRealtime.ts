@@ -1,16 +1,14 @@
 "use client";
 import { hashKey, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
+import { useNoticeSignal } from "@/hooks/realtime/useNoticeSignal";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
 import { agendarRecargaDasConversas } from "@/hooks/inbox/recargaDasConversas";
 import { aplicarAtualizacaoNaLista } from "@/lib/inbox/atualizacao-da-lista";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import {
-  type ModoDeEtiqueta,
-  marcadoresEscolhidos,
-} from "@/lib/inbox/marcador-da-conversa";
+import { type ModoDeEtiqueta, marcadoresEscolhidos } from "@/lib/inbox/marcador-da-conversa";
 import type { Conversation } from "@/lib/types/messaging";
 import { ehAFila, type ComandoDoBanco } from "@/lib/inbox/comando-da-conversa";
 
@@ -84,13 +82,7 @@ export type ConversationWithContact = Conversation & {
 
 /** O vocabulário de LEITURA (7), que inclui os dois estados que só o motor escreve. */
 export type StatusDeConversa =
-  | "open"
-  | "pending"
-  | "resolved"
-  | "claimed"
-  | "ai_handling"
-  | "closed"
-  | "archived";
+  "open" | "pending" | "resolved" | "claimed" | "ai_handling" | "closed" | "archived";
 
 export interface ConversationsFilters {
   /** Um status ou vários — a aba Fila precisa de dois (open + pending). */
@@ -255,16 +247,11 @@ export function useConversationsRealtime(
     [qc, queryKey, filters],
   );
 
-  // G4-01 (visibility_mode): a subscription postgres_changes HERDA a RLS de
-  // SELECT de `conversations` — o Supabase Realtime avalia as policies do usuário
-  // autenticado antes de entregar cada change (docs: "Realtime respects RLS
-  // policies"; requer a tabela na publication `supabase_realtime` + REPLICA
-  // IDENTITY, já configurados na migration 0025). Como a policy `conversations_select`
-  // (migration 0035) agora aplica fn_can_view_conversation(role + visibility_mode +
-  // assigned_to), um agent NÃO recebe changes de conversa fora do seu escopo, mesmo
-  // com o filtro amplo `organization_id=eq.<org>` abaixo. Prova do filtro em
-  // tests/invariants/gov-5-visibility-scope.test.ts (SELECT sob role agent = 0 rows
-  // para conversa de outro atendente — o mesmo SELECT que o Realtime executa).
+  // INSERT/UPDATE passam pela RLS de SELECT. DELETE não passa: a publicação
+  useNoticeSignal("handoff_pending", () => onChange(undefined), orgId ?? undefined, !!orgId);
+
+  // suprime a linha apagada e useRealtimeChannel entrega apenas invalidação
+  // sem identificador. A lista é sempre recarregada pelo GET autorizado.
   const { status: realtimeStatus, ultimaEntrega } = useRealtimeChannel({
     name: orgId ? `inbox-${orgId}` : "inbox-disabled",
     postgresChanges: orgId

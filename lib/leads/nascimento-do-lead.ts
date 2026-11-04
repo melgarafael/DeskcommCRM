@@ -403,6 +403,27 @@ export async function garantirLeadDaConversa(
     if (ehContatoDaEquipe(tagsDoContato, tagsDaEquipe))
       return { criado: false, motivo: "contato_da_equipe" };
   }
+  // O opt-in comercial resolve negócio+responsável+vínculo da conversa em uma transação.
+  // Não escreve assignee humano nem silencia o agente. Fora do opt-in retorna configured:false.
+  const comercial = await db.rpc("fn_commercial_ingress", {
+    p_org: organizationId,
+    p_conversation: conversationId,
+  });
+  if (comercial.error) throw new Error("commercial_ingress_failed");
+  const receipt = comercial.data as {
+    configured?: boolean;
+    status?: string;
+    created?: boolean;
+    lead_id?: string;
+    pipeline_id?: string;
+    stage_id?: string;
+  } | null;
+  if (receipt?.configured && receipt.created && receipt.lead_id && receipt.pipeline_id && receipt.stage_id)
+    return { criado: true, leadId: receipt.lead_id, pipelineId: receipt.pipeline_id, stageId: receipt.stage_id };
+  if (receipt?.configured)
+    return receipt.lead_id
+      ? { criado: false, motivo: "ja_existe" }
+      : { criado: false, motivo: "sem_funil_de_entrada" };
 
   // 2 · já existe demanda aberta?
   const { data: existente } = await db

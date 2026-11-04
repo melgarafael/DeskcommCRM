@@ -1,40 +1,81 @@
 "use client";
-import { useCallback } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
-import type { AlertKind } from "@/app/api/v1/admin/dashboard/kpis/route";
-
-const KIND_LABELS: Record<AlertKind, string> = {
-  waha_ban: "Alerta WAHA",
-  lgpd_at_risk: "Prazo LGPD",
-  ai_budget: "Budget IA",
-  tenant_pending_overflow: "Overflow de conversas",
-};
-
-interface AlertBroadcast {
-  kind?: AlertKind;
-  message?: string;
-}
-
-export function useAlertsRealtime() {
+import { apiClient } from "@/lib/api/client";
+import { useNoticeSignal } from "@/hooks/realtime/useNoticeSignal";
+import {
+  RetainedEpisodeDrain,
+  EpisodeDrainCancelled,
+  type RetainedPage,
+} from "@/lib/realtime/drain-retained-episodes";
+import { formatDerivedNotice, type DerivedNotice } from "@/lib/realtime/derived-notice";
+export function useAlertsRealtime(actorId: string) {
   const qc = useQueryClient();
-
-  const onChange = useCallback(
-    (payload: unknown) => {
-      const data = (payload as { payload?: AlertBroadcast } | null)?.payload;
-      const kind = data?.kind;
-      const label = kind ? (KIND_LABELS[kind] ?? kind) : "alerta";
-      toast.warning(`Novo ${label}`, { description: data?.message });
-      qc.invalidateQueries({ queryKey: ["admin", "dashboard", "kpis"] });
-    },
-    [qc],
-  );
-
-  // Pelo hook compartilhado, e não por `.channel()` cru: o cookie de sessão é
-  // httpOnly, então o supabase-js do browser não enxerga a sessão e assina como
-  // ANÔNIMO — canal que recebe "ok", loga "subscribed" e nunca entrega evento.
-  // A correção (24b9ec2) mora em `useRealtimeChannel`, que chama `setAuth` antes
-  // do `subscribe`; quem abre canal direto ficou de fora dela.
-  useRealtimeChannel({ name: "alerts-platform", broadcast: { event: "*" }, onChange });
+  const actor = useRef(actorId);
+  useLayoutEffect(() => {
+    actor.current = actorId;
+  }, [actorId]);
+  const request = useRef<() => void>(() => {});
+  const refresh = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: ["admin", "dashboard", "kpis"] });
+    request.current();
+  }, [qc]);
+  useNoticeSignal("platform_alerts", refresh);
+  useEffect(() => {
+    let alive = true,
+      busy = false,
+      again = false;
+    const uid = actorId;
+    const drain = new RetainedEpisodeDrain<DerivedNotice>(
+      {
+        isCurrent: () => alive && actor.current === uid,
+        page: async () =>
+          (
+            await apiClient.get<{ data: RetainedPage<DerivedNotice> }>(
+              "/api/v1/admin/notices/episodes",
+            )
+          ).data,
+        present: async (item) => {
+          const text = formatDerivedNotice(item);
+          toast.warning(`Novo ${text.label}`, { description: text.message });
+        },
+        ack: async (items) => {
+          await apiClient.post("/api/v1/admin/notices/episodes", { items });
+        },
+      },
+      10,
+      "persisted_derived_episodes",
+    );
+    const run = () => {
+      if (!alive) return;
+      if (busy) {
+        again = true;
+        return;
+      }
+      busy = true;
+      void drain
+        .drain()
+        .catch((error) => {
+          if (!(error instanceof EpisodeDrainCancelled) && alive)
+            console.warn("[derived-notice] recovery pending; retry on next authorized refresh");
+        })
+        .finally(() => {
+          busy = false;
+          if (again && alive) {
+            again = false;
+            run();
+          }
+        });
+    };
+    request.current = run;
+    const timer = setInterval(run, 30_000);
+    run();
+    return () => {
+      alive = false;
+      drain.cancel();
+      clearInterval(timer);
+      if (request.current === run) request.current = () => {};
+    };
+  }, [actorId]);
 }

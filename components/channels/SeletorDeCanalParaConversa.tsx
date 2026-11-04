@@ -259,6 +259,10 @@ export function useConversaNovaComEscolhaDeCanal(opts: {
     setAbrindo(true);
     try {
       const lista = await listaDeCanais();
+      if (!lista) {
+        toast.error(t("Não foi possível consultar os números. Tente novamente."));
+        return;
+      }
       const elegiveis = elegiveisParaConversaNova(candidatosParaConversaNova(lista));
       // Só há o que escolher com DOIS ou mais canais elegíveis — com um, a
       // escolha já está feita (critério de aceite: o fluxo segue direto).
@@ -266,7 +270,11 @@ export function useConversaNovaComEscolhaDeCanal(opts: {
         setPendente(alvo);
         return;
       }
-      await executar(alvo, elegiveis[0]?.id);
+      if (!elegiveis.length) {
+        toast.error(t("Nenhum número autorizado está conectado."));
+        return;
+      }
+      await executar(alvo, elegiveis[0]!.id);
     } finally {
       setAbrindo(false);
     }

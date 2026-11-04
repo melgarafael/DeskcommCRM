@@ -24,9 +24,8 @@
  *   • a ficha é reusada porque o painel manda `contact_id` quando o número
  *     digitado já é de alguém da base, em vez de mandar só o telefone e deixar
  *     a rota criar de novo;
- *   • a ATRIBUIÇÃO segue `useContinuarPorOutroNumero` (#2450): `claim` com
- *     `expected_assignee: null` grava o dono E o silêncio do bot na mesma
- *     transação. Abrir conversa por aqui não é abrir conversa para a IA.
+ *   • no perfil restrito, a abertura manual já atribui na transação do servidor.
+ *     O legado mantém o claim oficial separado; não se muda entrada automática.
  *
  * ─── O telefone digitado ────────────────────────────────────────────────────
  *
@@ -334,7 +333,7 @@ export function IniciarConversaDialog({
 
       await qc.invalidateQueries({ queryKey: ["conversations"] });
       onOpenChange(false);
-      router.push(`/app/inbox?id=${conversationId}`);
+      router.push(`/app/inbox?filter=mine&id=${conversationId}`);
     },
   });
 

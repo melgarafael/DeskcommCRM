@@ -193,11 +193,11 @@ export async function GET(req: NextRequest): Promise<Response> {
     // tela não exibe.
     (idsParticipadas.length > 0
       ? countExact(auxiliares.filter(([coluna]) => coluna !== "assigned_to_user_id")).or(
-          `assigned_to_user_id.eq.${user.id},id.in.(${idsParticipadas.join(",")})`,
+          `is_my_conversation.eq.true,id.in.(${idsParticipadas.join(",")})`,
         )
       : countExact(auxiliares.filter(([coluna]) => coluna !== "assigned_to_user_id")).eq(
-          "assigned_to_user_id",
-          user.id,
+          "is_my_conversation",
+          true,
         ))
       .not("status", "in", `(${CONVERSATION_TERMINAL_STATUSES.join(",")})`),
     countExact(),

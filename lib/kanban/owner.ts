@@ -25,9 +25,16 @@ export interface OwnerDisplay {
  * responsável", que mentiria dizendo que o negócio está órfão.
  */
 export function resolveLeadOwner(
-  lead: Pick<Lead, "owner_kind" | "owner_user_id" | "owner_agent_id" | "owner_agent">,
+  lead: Pick<Lead, "owner_kind" | "owner_user_id" | "owner_agent_id" | "owner_agent"| "commercial_owner_user_id"
+  >,
   ownerNames: Map<string, string | null> | undefined,
 ): OwnerDisplay {
+  if (lead.commercial_owner_user_id)
+    return {
+      kind: "user",
+      name: ownerNames?.get(lead.commercial_owner_user_id) ?? null,
+      agentVersion: null,
+    };
   if (lead.owner_kind === "ai" && lead.owner_agent_id) {
     return {
       kind: "ai",

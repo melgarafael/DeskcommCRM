@@ -1,3 +1,4 @@
+import { currentExecutionBoundary } from "@/lib/atendimento/fronteira-server";
 /**
  * OS COMPROMISSOS JÁ MARCADOS DESTE CONTATO, NO RITUAL DE ABERTURA (issue #512).
  *
@@ -64,11 +65,14 @@ export async function compromissosDoContato(
        from calendar_appointments
       where organization_id = $1
         and contact_id = $2
+        and (not public.fn_contact_context_private($1) or conversation_id=$5::uuid)
         and status <> 'cancelled'
         and ends_at >= $3
       order by starts_at
       limit $4`,
-    [organizationId, contactId, agora.toISOString(), MAXIMO_DE_COMPROMISSOS_NO_BLOCO + 1],
+    [organizationId, contactId, agora.toISOString(), MAXIMO_DE_COMPROMISSOS_NO_BLOCO + 1,
+      currentExecutionBoundary()?.conversation_id ?? null,
+    ],
   );
   return rows;
 }

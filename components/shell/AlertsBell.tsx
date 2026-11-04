@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useCentralEpisodeRecovery } from "@/hooks/realtime/useCentralEpisodeRecovery";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { destinosDaInterface } from "@/lib/navigation/interface";
 
@@ -26,16 +27,19 @@ export function AlertsBell() {
 }
 function VisibleAlertsBell() {
   const t = useT();
-  const { data } = useAgentInbox("open");
+  const { data, dataUpdatedAt, isError } = useAgentInbox("open");
+  useCentralEpisodeRecovery(dataUpdatedAt);
   // O som da organização para a etapa que avisa e o pedido de pessoa.
-  useSonsDaCentral(data?.items);
+  useSonsDaCentral(isError ? undefined : data?.items);
   const count = data?.open_count ?? 0;
 
   return (
     <Link
       href="/app/ai/inbox"
       aria-label={
-        count > 0
+        isError
+          ? `${t("Central de avisos")} — ${t("Não foi possível carregar os avisos. Tente novamente.")}`
+          : count > 0
           ? `${t("Central de avisos")} — ${count} ${t("em aberto")}`
           : t("Central de avisos")
       }
@@ -43,7 +47,15 @@ function VisibleAlertsBell() {
       className="relative inline-flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:h-9 lg:w-9"
     >
       <Bell size={18} aria-hidden />
-      {count > 0 ? (
+      {isError ? (
+        <span
+          data-testid="alerts-bell-unavailable"
+          aria-hidden="true"
+          className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] leading-none font-semibold text-destructive-foreground"
+        >
+          ?
+        </span>
+      ) : count > 0 ? (
         <span
           data-testid="alerts-bell-count"
           className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] leading-none font-semibold text-destructive-foreground"

@@ -2,7 +2,7 @@
 import { useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api/client";
-import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
+import { useNoticeSignal } from "@/hooks/realtime/useNoticeSignal";
 import type { TenantHealthResponse } from "@/app/api/v1/admin/tenants/[id]/health/route";
 
 export type { TenantHealthResponse };
@@ -17,7 +17,8 @@ export function useTenantHealth(id: string) {
 
   const query = useQuery({
     queryKey,
-    queryFn: () => apiClient.get<HealthApiResponse>(`/api/v1/admin/tenants/${id}/health`),
+    queryFn: () =>
+      apiClient.get<HealthApiResponse>(`/api/v1/admin/tenants/${id}/health`),
     staleTime: 30_000,
     refetchInterval: 60_000,
     enabled: !!id,
@@ -31,12 +32,7 @@ export function useTenantHealth(id: string) {
   // Pelo hook compartilhado: `.channel()` cru assina como ANÔNIMO (cookie de
   // sessão httpOnly), recebe "ok" e nunca entrega evento. A correção mora em
   // `useRealtimeChannel`, que chama `setAuth` antes do `subscribe`.
-  useRealtimeChannel({
-    name: id ? `tenant-health-${id}` : "tenant-health-disabled",
-    broadcast: { event: "*" },
-    onChange: invalidate,
-    enabled: !!id,
-  });
+  useNoticeSignal("tenant_health", invalidate, id, !!id);
 
   return query;
 }

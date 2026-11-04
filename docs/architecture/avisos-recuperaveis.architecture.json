@@ -1,0 +1,45 @@
+{
+  "nodes": [
+    {
+      "id": "notice-source",
+      "path": "supabase/migrations/20261104170250_9110_sessao_ativa_e_avisos_recuperaveis.sql",
+      "lane": "operation",
+      "col": 0,
+      "type": "service",
+      "label": "Alteração e sessão nativa"
+    },
+    {
+      "id": "notice-route",
+      "path": "app/api/v1/ai/inbox/episodes/route.ts",
+      "lane": "operation",
+      "col": 1,
+      "type": "service",
+      "label": "Leitura autorizada e recibo"
+    },
+    {
+      "id": "notice-consumer",
+      "path": "components/shell/AlertsBell.tsx",
+      "lane": "operation",
+      "col": 2,
+      "type": "service",
+      "label": "Central e recuperação"
+    }
+  ],
+  "edges": [
+    {
+      "from": "notice-source",
+      "to": "notice-route",
+      "label": "Sinal sem detalhe e releitura"
+    },
+    {
+      "from": "notice-route",
+      "to": "notice-consumer",
+      "label": "Episódio autorizado"
+    },
+    {
+      "from": "notice-consumer",
+      "to": "notice-route",
+      "label": "Recibo por usuário"
+    }
+  ]
+}

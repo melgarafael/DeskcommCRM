@@ -16,8 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * 3. Desativado e indisponível: o canal que o operador desligou NEM aparece, e
  *    o que está fora do ar aparece com o estado e desmarcado — os dois
  *    critérios "não podem ser escolhidos", um por porta.
- * 4. Zero elegíveis: sem canal utilizável o fluxo NÃO trava (a lista fica
- *    vazia, o POST sai sem escolha e o servidor decide, como antes).
+ * 4. Zero elegíveis: recusa sem pedir ao servidor que escolha outro número.
  * 5. Rede social: canal sem telefone (Instagram/Messenger) não inicia conversa
  *    com um contato de telefone, então não conta como opção — com ele e um
  *    número conectado, o fluxo segue direto pelo número.
@@ -251,7 +250,7 @@ describe("Seletor de canal ao iniciar conversa nova (#2382)", () => {
     await waitFor(() => expect(aoAbrirMock).toHaveBeenCalledWith("conv-9"));
   });
 
-  it("nenhum canal elegível: o fluxo não trava — segue sem escolha", async () => {
+  it("nenhum canal elegível: recusa sem abrir por outro número", async () => {
     getMock.mockResolvedValue({
       // Com telefone: o que tira este canal da escolha é o ESTADO, não a
       // peneira do telefone — senão o caso deixaria de vigiar a régua de status.
@@ -268,14 +267,10 @@ describe("Seletor de canal ao iniciar conversa nova (#2382)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "iniciar" }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
     expect(screen.queryByRole("dialog")).toBeNull();
-    // Sem escolha, o corpo é o de sempre: o servidor decide o canal.
-    expect(corpoDoPost()).toEqual({
-      contact_id: "contato-1",
-      phone_number: "+5517999998888",
-    });
-    await waitFor(() => expect(aoAbrirMock).toHaveBeenCalledWith("conv-9"));
-    expect(toastError).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(aoAbrirMock).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalledWith("Nenhum número autorizado está conectado.");
   });
 });

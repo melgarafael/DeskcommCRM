@@ -1,5 +1,7 @@
 "use client";
+import { OperationalBoundariesDialog } from "@/components/team/OperationalBoundariesDialog";
 
+import { MemberAccessDialog } from "@/components/team/MemberAccessDialog";
 import { MemberInterfaceDialog } from "@/components/team/MemberInterfaceDialog";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useState } from "react";
@@ -59,6 +61,8 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
   const revoke = useRevokeMember();
   const reativar = useReactivateMember();
 
+  const [boundaryOpen, setBoundaryOpen] = useState(false);
+  const [accessMember, setAccessMember] = useState<TeamMember | null>(null);
   const [interfaceMember, setInterfaceMember] = useState<TeamMember | null>(null);
   const [revokeDialog, setRevokeDialog] = useState<TeamMember | null>(null);
 
@@ -75,6 +79,17 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
 
   return (
     <>
+      {canManage && (
+        <Button variant="outline" className="mb-3" onClick={() => setBoundaryOpen(true)}>
+          {t("Privacidade e responsabilidade comercial")}
+        </Button>
+      )}
+      {boundaryOpen && (
+        <OperationalBoundariesDialog members={members} onClose={() => setBoundaryOpen(false)} />
+      )}
+      {accessMember && (
+        <MemberAccessDialog member={{id:accessMember.user_id,name:accessMember.full_name??accessMember.email??accessMember.user_id,
+          }} onClose={()=>setAccessMember(null)}/>)}
       <div className="rounded-md border">
         <Table className="max-md:block">
           <TableHeader className="max-md:hidden">
@@ -184,6 +199,7 @@ export function TeamMembersClient({ currentUserId, canManage }: Props) {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+{m.role === "agent" && !m.revoked_at && <DropdownMenuItem onClick={()=>setAccessMember(m)}>{t("Acessos de funis e números")}</DropdownMenuItem>}
                           {/*
                             Revogar e reativar são exclusivos: oferecer os dois
                             na mesma linha convidaria ao clique errado. Sem o

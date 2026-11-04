@@ -377,6 +377,7 @@ export interface EnrollmentDeAtendimento {
   contact_id: string;
   current_node_id: string;
   status: string;
+conversation_id?: string | null;
 }
 
 export interface EstadoDeAtendimento {
@@ -567,7 +568,7 @@ async function resolverNegocioDaExecucao(
  */
 export async function carregarEstadoDeAtendimento(
   db: BancoDoRoteiro,
-  args: { organizationId: string; contactId: string },
+  args: { organizationId: string; contactId: string ; conversationId?: string | null },
 ): Promise<EstadoDeAtendimento | null> {
   const { rows } = await db.query<{
     id: string;
@@ -578,21 +579,25 @@ export async function carregarEstadoDeAtendimento(
     status: string;
     nome: string;
     graph: unknown;
+  answers: unknown;
+    private_context: boolean;
+    conversation_id: string | null;
   }>(
     `select e.id, e.pointer_id, e.version_id, e.contact_id, e.current_node_id, e.status,
-            p.name as nome, v.graph
+            p.name as nome, v.graph, e.answers, e.conversation_id, public.fn_contact_context_private(e.organization_id) as private_context
        from followup_enrollments e
        join followup_flow_pointers p on p.id = e.pointer_id and p.organization_id = e.organization_id
        join followup_flow_versions v on v.id = e.version_id and v.organization_id = e.organization_id
       where e.organization_id = $1
         and e.contact_id = $2
+        and (not public.fn_contact_context_private(e.organization_id) or (e.conversation_id=$3::uuid and e.service_revision=(select c.service_revision from public.conversations c where c.organization_id=$1 and c.id=$3::uuid)))
         and e.status = 'coletando'
         and p.surface = 'atendimento'
         -- Roteiro DESATIVADO para de guiar na hora (achado da auditoria do
         -- autor): o enrollment fica parado e volta se o roteiro voltar a 'active'.
         and p.status = 'active'
       limit 1`,
-    [args.organizationId, args.contactId],
+    [args.organizationId, args.contactId, args.conversationId ?? null],
   );
   const row = rows[0];
   if (!row) return null;
@@ -602,7 +607,7 @@ export async function carregarEstadoDeAtendimento(
   const checklist = mapearChecklist(parsed.data);
   if (!checklist.ok) return null;
 
-  const camposDoContato = await lerCamposDoContato(db, args.organizationId, args.contactId);
+  const camposDoContato = row.private_context ? row.answers : await lerCamposDoContato(db, args.organizationId, args.contactId);
   // O NEGÓCIO só é resolvido quando alguma pergunta grava nele (#3363): um
   // roteiro inteiro `contato` — hoje, todo — não paga consulta nenhuma. Quando
   // é o caso, o vínculo vem da TRILHA desta execução (ou é fixado agora, se há
@@ -646,6 +651,7 @@ export async function carregarEstadoDeAtendimento(
     organizationId: args.organizationId,
     contactId: args.contactId,
     enrollmentAtual: row.id,
+  conversationId: args.conversationId,
   });
 
   return {
@@ -656,6 +662,7 @@ export async function carregarEstadoDeAtendimento(
       contact_id: row.contact_id,
       current_node_id: row.current_node_id,
       status: row.status,
+      conversation_id: row.conversation_id,
     },
     nomeDoFluxo: row.nome,
     checklist: checklist.checklist,
@@ -675,21 +682,27 @@ export async function carregarEstadoDeAtendimento(
 /** Resumo, montado dos campos, do último roteiro CONCLUÍDO do contato. */
 async function resumoDoRoteiroAnterior(
   db: BancoDoRoteiro,
-  args: { organizationId: string; contactId: string; enrollmentAtual: string },
+  args: { organizationId: string; contactId: string; enrollmentAtual: string ;
+    conversationId?: string | null;
+  },
 ): Promise<string | null> {
-  const { rows } = await db.query<{ nome: string; graph: unknown }>(
-    `select p.name as nome, v.graph
+  const { rows } = await db.query<{ nome: string; graph: unknown ;
+    answers: unknown;
+    private_context: boolean;
+  }>(
+    `select p.name as nome, v.graph, e.answers, public.fn_contact_context_private(e.organization_id) as private_context
        from followup_enrollments e
        join followup_flow_pointers p on p.id = e.pointer_id and p.organization_id = e.organization_id
        join followup_flow_versions v on v.id = e.version_id and v.organization_id = e.organization_id
       where e.organization_id = $1
         and e.contact_id = $2
         and e.id <> $3
+        and (not public.fn_contact_context_private(e.organization_id) or (e.conversation_id=$4::uuid and e.service_revision=(select c.service_revision from public.conversations c where c.organization_id=$1 and c.id=$4::uuid)))
         and e.status = 'completed'
         and p.surface = 'atendimento'
       order by e.completed_at desc nulls last
       limit 1`,
-    [args.organizationId, args.contactId, args.enrollmentAtual],
+    [args.organizationId, args.contactId, args.enrollmentAtual, args.conversationId ?? null],
   );
   const row = rows[0];
   if (!row) return null;
@@ -699,7 +712,9 @@ async function resumoDoRoteiroAnterior(
   if (!checklist.ok) return null;
   const valores = valoresDoChecklist(
     checklist.checklist,
-    await lerCamposDoContato(db, args.organizationId, args.contactId),
+    row.private_context
+      ? row.answers
+      : await lerCamposDoContato(db, args.organizationId, args.contactId),
   );
   return montarResumoDoRoteiro({ nomeDoFluxo: row.nome, checklist: checklist.checklist, valores });
 }
@@ -711,16 +726,15 @@ async function resumoDoRoteiroAnterior(
  */
 export async function gravarRespostaNoContato(
   db: BancoDoRoteiro,
-  args: { organizationId: string; contactId: string; campo: string; valor: string },
+  args: { organizationId: string; contactId: string; campo: string; valor: string ;
+    enrollmentId?: string;
+  },
 ): Promise<boolean> {
-  const r = await db.query(
-    `update contacts
-        set custom_fields = coalesce(custom_fields, '{}'::jsonb) || jsonb_build_object($3::text, $4::text),
-            updated_at = now()
-      where organization_id = $1 and id = $2 and not coalesce(is_anonymized, false)`,
-    [args.organizationId, args.contactId, args.campo, args.valor],
+  const r = await db.query<{ stored: boolean }>(
+    `select public.fn_store_followup_answer($1,$5::uuid,$2,$3,$4) as stored`,
+    [args.organizationId, args.contactId, args.campo, args.valor, args.enrollmentId ?? null],
   );
-  return (r.rowCount ?? 0) > 0;
+  return r.rows[0]?.stored ?? false;
 }
 
 /**
@@ -772,6 +786,7 @@ async function gravarResposta(
   args: {
     organizationId: string;
     contactId: string;
+    enrollmentId?: string;
     campo: string;
     valor: string;
     destino: DestinoDaResposta;
@@ -1007,6 +1022,7 @@ export async function processarInboundDoFluxo(
       const gravou = await gravarResposta(db, {
         organizationId: args.organizationId,
         contactId,
+        enrollmentId: estado.enrollment.id,
         campo: v.campo,
         valor: v.valor,
         destino: destinoDaResposta(node.config),
@@ -1062,6 +1078,7 @@ export async function processarInboundDoFluxo(
     const gravou = await gravarResposta(db, {
       organizationId: args.organizationId,
       contactId,
+      enrollmentId: estado.enrollment.id,
       campo: primeiro.config.key,
       valor: leitura.captura.valor,
       destino: destinoDaResposta(primeiro.config),
@@ -1123,7 +1140,8 @@ export function montarResumoDoRoteiro(estado: {
 }): string {
   const linhas = estado.checklist.passos
     .filter((p): p is Extract<PassoDeAtendimento, { kind: "collect" }> => p.kind === "collect")
-    .map((p) => `${p.node.config.label}: ${estado.valores[p.node.config.key] ?? "(não respondido)"}`);
+    .map((p) => `${p.node.config.label}: ${estado.valores[p.node.config.key] ?? "(não respondido)"}`,
+    );
   return `Roteiro "${estado.nomeDoFluxo}" — ${linhas.join("; ")}`.slice(0, 2000);
 }
 

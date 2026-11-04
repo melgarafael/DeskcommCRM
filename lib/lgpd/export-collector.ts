@@ -7,6 +7,7 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { listarModulos } from "@/lib/modulos/service";
 import { agenteAtende } from "@/lib/ai/agents/no-ar";
 import {
   art15DoControlador,
@@ -80,6 +81,8 @@ export interface ContactSnapshot {
    * linha o titular pedia acesso e não recebia o que o roteiro coletou.
    */
   custom_fields: Record<string, unknown>;
+  reserved_context?: Array<{ payload: unknown; captured_at: string }>;
+  case_answers?: Array<{ conversation_id: string | null; answers: unknown }>;
   /** Para o PDF: rótulo da pergunta + valor, sem o CPF (ver `campos-personalizados.ts`). */
   campos_legiveis: CampoLegivel[];
   /** Um roteiro guardou o CPF nos campos (texto, não a coluna cifrada). */
@@ -1296,6 +1299,32 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   }
   if (contact && telefonesExtras.length > 0) contact.additional_phones = telefonesExtras;
 
+  // O arquivo reservado nunca entra no DTO público do contato nem no prompt.
+  // A cópia do titular é coletada pelo fluxo LGPD privilegiado existente.
+  if (contact) {
+    const family = await admin.rpc("fn_contact_history_ids", {
+      p_org: organizationId,
+      p_contact: contactId,
+    });
+    if (family.error) throw new Error("contact_history_export_failed");
+    const ids = (family.data ?? []) as string[];
+    const [reserved, answers] = await Promise.all([
+      admin
+        .from("contact_context_quarantine")
+        .select("payload,captured_at")
+        .eq("organization_id", organizationId)
+        .in("contact_id", ids),
+      admin
+        .from("followup_enrollments")
+        .select("conversation_id,answers")
+        .eq("organization_id", organizationId)
+        .in("contact_id", ids),
+    ]);
+    if (reserved.error || answers.error) throw new Error("private_context_export_failed");
+    contact.reserved_context = reserved.data ?? [];
+    contact.case_answers = answers.data ?? [];
+  }
+
   // No `consents` table in current schema; legal basis is in contacts.consent JSONB.
   const consents: ConsentRow[] = [];
   if (contact?.consent && typeof contact.consent === "object") {
@@ -1496,7 +1525,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
   // coletados: o contrato é `lead_id`, não `contact_id` direto.
   //
   // Módulo pode não estar instalado nesta instalação — a tabela então não
-  // existe (42P01 no SQL, PGRST205 no PostgREST) — e o bloco sai vazio, sem falhar o export
+  // existe (42P01 no Postgres, PGRST205 no PostgREST) — e o bloco sai vazio nesse caso, sem falhar o export
   // inteiro por causa de um módulo que a organização nem ligou.
   let honorarios_contratos: HonorariosContratoRow[] = [];
   let honorarios_parcelas: HonorariosParcelaRow[] = [];
@@ -1538,9 +1567,11 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     // novo, em vez de entregar ao titular um export sem o contrato como se fosse
     // completo (ADR-0002 D8 — seção de módulo ilegível nunca sai como completa).
     if (error) {
-      if (error.code !== "42P01" && error.code !== "PGRST205") {
-        throw new Error(`honorarios_contratos_load_failed: ${error.message}`);
-      }
+      const missingTable = error.code === "42P01" || error.code === "PGRST205";
+      // The native registry includes suspended modules and throws on read failure.
+      // A cache miss for an installed module is never a complete export.
+      const absent = missingTable && !(await listarModulos()).instalados.some((m) => m.modulo === "honorarios");
+      if (!absent) throw new Error(`honorarios_contratos_load_failed: ${error.message}`);
     } else if (data) {
       honorarios_contratos = data;
       const contratoIds = data.map((c) => c.id);
@@ -1812,7 +1843,8 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
       .from("import_rows")
       .select("id, batch_id, row_number, status, raw_data, normalized_data, error, created_at")
       .eq("organization_id", organizationId)
-      .or(personId ? `contact_id.eq.${contactId},person_id.eq.${personId}` : `contact_id.eq.${contactId}`)
+      .or(personId ? `contact_id.eq.${contactId},person_id.eq.${personId}` : `contact_id.eq.${contactId}`,
+      )
       .order("created_at", { ascending: false })
       .limit(500);
     if (eL) throw eL;

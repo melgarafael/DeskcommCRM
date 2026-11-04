@@ -7,7 +7,8 @@ import { createClient } from "@/lib/supabase/browser";
 
 /**
  * Platform-wide alerts broadcast channel.
- * Subscribed by useAlertsRealtime to receive cross-tenant alert broadcasts.
+ * Legacy compatibility export; not used for sensitive product notices.
+ * Sensitive product notices use useNoticeSignal plus authorized REST instead.
  */
 export function alertsPlatform() {
   return createClient().channel("alerts-platform");

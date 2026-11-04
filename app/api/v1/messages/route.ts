@@ -233,6 +233,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         actor,
         requestId,
         idioma,
+        manualReplyOrigin: authz.via === "session" && actor.type === "user",
         // Só chega aqui com o escopo e o membership já validados acima; o
         // handler recusa se `on_behalf_of_user_id` vier sem este ctx (#1613).
         ...(onBehalf ? { onBehalfOf: onBehalf } : {}),

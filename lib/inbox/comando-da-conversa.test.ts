@@ -348,13 +348,11 @@ describe("o que entrou quando o banco passou a calcular o mesmo comando", () => 
     expect(r.motivo).toBe("contato_travado");
   });
 
-  it("a fila pede 'aguardando' — e 'automatico' também quando a org não tem robô", () => {
+  it("a fila pede aguardando; a elegibilidade no banco classifica instalações sem robô", () => {
     expect(comandosDaFila(true)).toEqual(["aguardando"]);
     expect(comandosDaFila(undefined)).toEqual(["aguardando"]);
-    // Sem automático de pé, `automatico` não descreve ninguém: essas conversas
-    // estão esperando gente, e deixá-las fora faria a Fila de uma instalação
-    // nova nascer vazia com clientes sem resposta.
-    expect(comandosDaFila(false)).toEqual(["aguardando", "automatico"]);
+    // O campo computado do banco já devolve aguardando quando não há agente elegível.
+    expect(comandosDaFila(false)).toEqual(["aguardando"]);
   });
 
   it("o vocabulário do banco tem QUATRO — 'ninguem' é renomeação de TS, não estado", () => {

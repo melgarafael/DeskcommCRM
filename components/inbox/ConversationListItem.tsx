@@ -209,6 +209,7 @@ export function ConversationListItem({
    * na que o automático atendeu do começo ao fim, que é a maioria.
    */
   const { comando } = comandoDaConversa({
+    comandoDoBanco: conversation.comando_da_conversa,
     status: conversation.status,
     assigned_to_user_id: conversation.assigned_to_user_id,
     assigned_to_user_name: conversation.assigned_to_user_name ?? null,
