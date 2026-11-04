@@ -3930,8 +3930,8 @@ async function executarTurnoDoAgente(
     if (!historicoLido) {
       historicoLido = true;
       historico = await pool
-        .query<{ direction: 'inbound' | 'outbound'; body: string; sent_at: Date | string | null }>(
-          `select direction, body, sent_at from messages
+        .query<{ direction: 'inbound' | 'outbound'; body: string; sent_at: Date | string | null; humana: boolean }>(
+          `select direction, body, sent_at, sent_by_user_id is not null as humana from messages
            where organization_id = $1 and conversation_id = $2 and body is not null
            order by sent_at desc limit 500`,
           [tenantId, input.conversationId],
@@ -3943,6 +3943,7 @@ async function executarTurnoDoAgente(
               body: m.body,
               // Sem data legível, a linha não decide a ordem a favor de ninguém.
               sent_at: m.sent_at instanceof Date ? m.sent_at.toISOString() : String(m.sent_at),
+              humana: m.humana === true,
             })),
           (err: unknown) => {
             runLog.warn('lastro comercial: conversa indisponível — vale a janela', {

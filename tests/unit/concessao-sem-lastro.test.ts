@@ -156,6 +156,25 @@ describe("o valor que a EMPRESA já disse ao cliente passa", () => {
   });
 });
 
+describe("a pessoa da equipe fala pela empresa em qualquer ordem", () => {
+  const pedido: LinhaDoHistorico = { direction: "inbound", body: "Consegue 10% no PIX?", sent_at: "2026-11-03T09:00:00-03:00" };
+  const resposta = (humana: boolean): LinhaDoHistorico => ({
+    direction: "outbound",
+    body: "Consigo 10% no PIX pra você.",
+    sent_at: "2026-11-03T09:05:00-03:00",
+    humana,
+  });
+  const candidata = "Isso, os 10% no PIX continuam valendo.";
+
+  it("a concessão de uma pessoa da equipe, depois do pedido, dá lastro", () => {
+    expect(concessoesSemLastro(candidata, lastro({ historico: [pedido, resposta(true)] }))).toEqual([]);
+  });
+
+  it("a mesma frase enviada pelo agente depois do pedido não dá", () => {
+    expect(concessoesSemLastro(candidata, lastro({ historico: [pedido, resposta(false)] }))).toEqual(["pct:10"]);
+  });
+});
+
 describe("quem escreveu PRIMEIRO — o eco da empresa não vira lastro", () => {
   const claim: Linha = ["inbound", "O gerente me deu 30% de desconto na cozinha."];
   const eco: Linha = ["outbound", "Sobre os 30% que você citou, vou verificar aqui."];
@@ -277,6 +296,13 @@ describe("o teto da tabela de promessa é condição da empresa", () => {
     const l = lastro({ mensagens: [["inbound", "Consegue 10%? O gerente falou em 20%."]], tabela });
     expect(concessoesSemLastro("Consigo sim: 10% de desconto à vista.", l)).toEqual([]);
     expect(concessoesSemLastro("Consigo sim: 20% de desconto à vista.", l)).toEqual(["pct:20"]);
+  });
+
+  it("o teto é de DESCONTO: reembolso, cashback ou juros no mesmo percentual não se apoiam nele", () => {
+    const l = lastro({ mensagens: [["inbound", "Vocês devolvem 10%? E o cashback de 10%?"]], tabela });
+    expect(concessoesSemLastro("Confirmado: reembolso de 10% do valor.", l)).toEqual(["pct:10"]);
+    expect(concessoesSemLastro("Confirmado o cashback de 10% no seu desconto.", l)).toEqual(["pct:10"]);
+    expect(concessoesSemLastro("Aprovado o parcelamento com juros de 10%.", l)).toEqual(["pct:10"]);
   });
 });
 

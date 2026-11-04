@@ -91,7 +91,7 @@ export interface LastroComercial {
   enviadoEm: ReadonlyMap<string, number>;
   /** Átomo → instante (ms) em que o CLIENTE o trouxe primeiro; `-Infinity` = desde sempre. */
   doClienteDesde: ReadonlyMap<string, number>;
-  /** Teto da tabela de promessa: percentual e parcelas até ele já são condição da empresa. */
+  /** Teto da tabela de promessa: parcelas, e percentual de DESCONTO, até ele já são condição da empresa. */
   teto: { pct?: number; installments?: number };
 }
 
@@ -105,6 +105,8 @@ export interface LinhaDoHistorico {
   direction: 'inbound' | 'outbound';
   body: string;
   sent_at: string;
+  /** Enviada por uma PESSOA da equipe (`sent_by_user_id`): é a empresa falando, em qualquer ordem. */
+  humana?: boolean;
 }
 
 export function lastroDoContexto(a: {
@@ -125,7 +127,7 @@ export function lastroDoContexto(a: {
   const linhas = [
     ...a.contexto.messages.map((m) => ({ ...m, body: `${m.body}\n${m.sender?.name ?? ''}` })),
     ...(a.historico ?? []),
-  ].map((m) => ({ direction: m.direction, texto: m.body, t: Date.parse(m.sent_at) }));
+  ].map((m) => ({ direction: m.direction, texto: m.body, t: Date.parse(m.sent_at), humana: 'humana' in m && m.humana === true }));
   const tempos = linhas.map((m) => m.t);
   const inicio = tempos.length > 0 ? Math.min(...tempos) : -Infinity;
   const fim = a.contexto.messages.length > 0 ? Math.max(...tempos.slice(0, a.contexto.messages.length)) : -Infinity;
@@ -150,6 +152,9 @@ export function lastroDoContexto(a: {
   }
 
   const daOrganizacao = valores(a.materialDaOrganizacao.join('\n'), true);
+  // A pessoa da equipe que concede DEPOIS do pedido do cliente fala pela empresa; o eco
+  // vigiado pela ordem é o do agente.
+  for (const m of linhas) if (m.direction === 'outbound' && m.humana) for (const v of valores(m.texto, true)) daOrganizacao.add(v);
   // A proposta não guarda a moeda: vale nas duas que a leitura reconhece.
   const proposta = a.contexto.last_proposal?.total_cents;
   if (proposta !== undefined) for (const moeda of ['BRL', 'EUR']) daOrganizacao.add(`price:${moeda}:${proposta}`);
@@ -165,13 +170,18 @@ export function lastroDoContexto(a: {
   };
 }
 
-function semLastro(v: string, l: LastroComercial): boolean {
+// O teto da tabela é de desconto: percentual de reembolso, estorno, cashback, juros ou multa
+// na mesma frase não se apoia nele.
+const FRASE_DE_DESCONTO = /\bdesconto|\babatimento|\boff\b/;
+const FORA_DO_DESCONTO = /\breembols|\bestorn|\bcashback|\bjuros|\bmulta|\btaxa/;
+
+function semLastro(v: string, l: LastroComercial, fraseDeDesconto: boolean): boolean {
   const doCliente = l.doClienteDesde.get(v);
   if (doCliente === undefined || l.daOrganizacao.has(v)) return false;
   // Quem escreveu PRIMEIRO: o eco que a empresa mandou DEPOIS do cliente não vira lastro.
   if ((l.enviadoEm.get(v) ?? Infinity) < doCliente) return false;
   const [tipo, n] = v.split(':');
-  const teto = tipo === 'pct' ? l.teto.pct : tipo === 'installments' ? l.teto.installments : undefined;
+  const teto = tipo === 'pct' ? (fraseDeDesconto ? l.teto.pct : undefined) : tipo === 'installments' ? l.teto.installments : undefined;
   return !(teto !== undefined && Number(n) <= teto);
 }
 
@@ -189,8 +199,10 @@ export function concessoesSemLastro(candidata: string, lastro: LastroComercial):
   const achados = new Set<string>();
   // `\.(?!\d)`: "R$ 1.400" não se parte em "R$ 1" e "400".
   for (const frase of candidata.split(/\n+|[!?]+|\.(?!\d)/)) {
-    if (!FRASE_DE_CONDICAO.test(semAcento(frase))) continue;
-    for (const v of valores(frase)) if (semLastro(v, lastro)) achados.add(v);
+    const f = semAcento(frase);
+    if (!FRASE_DE_CONDICAO.test(f)) continue;
+    const deDesconto = FRASE_DE_DESCONTO.test(f) && !FORA_DO_DESCONTO.test(f);
+    for (const v of valores(frase)) if (semLastro(v, lastro, deDesconto)) achados.add(v);
   }
   return [...achados];
 }
