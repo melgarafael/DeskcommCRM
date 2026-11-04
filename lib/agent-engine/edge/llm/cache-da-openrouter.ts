@@ -21,7 +21,7 @@ export interface CacheDaChamada {
 
 /**
  * Os pontos de cache dos Claude pela OpenRouter oficial — knob
- * OPENROUTER_PROMPT_CACHE=on (desligado por padrão).
+ * OPENROUTER_PROMPT_CACHE (ligado por padrão; `off` desliga).
  *
  * O `@ai-sdk/openai` no modo chat não converte `providerOptions.anthropic.cacheControl`,
  * então o prefixo estável chegava à OpenRouter sem ponto nenhum e era cobrado a

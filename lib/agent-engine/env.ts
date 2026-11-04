@@ -197,8 +197,8 @@ const envSchema = z.object({
   // 'disabled' injeta o desligamento no corpo das chamadas — e SÓ nas da
   // DeepSeek (a fábrica é dela; ver providers.ts).
   DEEPSEEK_THINKING: z.enum(['provider', 'disabled']).default('provider'),
-  // Pontos de cache e sessão fixa nos Claude pela OpenRouter oficial. Vazio ou
-  // `off` = desligado (a fábrica de sempre); `on` liga. Validado AQUI para a
+  // Pontos de cache e sessão fixa nos Claude pela OpenRouter oficial. Ligado por
+  // padrão: vazio, ausente ou `on` liga; `off` desliga. Validado AQUI para a
   // grafia errada derrubar o boot com o nome da variável; quem lê em runtime é
   // `createDefaultRegistry` (providers.ts), via process.env, como
   // OPENAI_REASONING_EFFORT logo abaixo. A grafia é normalizada como a fábrica
