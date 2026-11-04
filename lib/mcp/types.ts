@@ -79,6 +79,19 @@ export interface McpToolDefinition<TInput extends z.ZodRawShape = z.ZodRawShape>
    */
   redigirParaAuditoria?: (args: Record<string, unknown>) => Record<string, unknown>;
   /**
+   * ESCRITA DELEGADA AO CONTATO (servidores MCP por agente, migration 9095).
+   *
+   * Só uma remota de servidor `oauth_por_contato`, com `escrita_delegada`
+   * ligada no cadastro, marcada `escrita` pelo admin em `tool_ids` E montada com
+   * o token do CONTATO DO TURNO recebe isto (`definirFerramentasDoServidorDoAgente`).
+   * A ponte (`lib/ai/runtime/tools.ts`) então não aplica a recusa
+   * `escrita_sem_escopo_do_turno`: a escrita acontece na conta do terceiro com a
+   * credencial que o próprio contato autorizou, e não alcança registro nenhum do
+   * CRM. Auditoria, papel e escopo continuam valendo. Nenhuma tool compilada
+   * declara isto.
+   */
+  escritaDelegadaAoContato?: true;
+  /**
    * O que a tool DECLARA quando a resposta é um vazio que NÃO é sucesso.
    *
    * Uma busca que não acha nada TERMINOU bem: não houve erro, houve ausência —

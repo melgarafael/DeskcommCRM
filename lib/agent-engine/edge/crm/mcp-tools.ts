@@ -20,6 +20,7 @@ import { claimOfJob } from '@/lib/agent-engine/queue/claim';
 import type { Tool } from 'ai';
 
 import { carregarServidorMcpExternoDoTurno } from '@/lib/mcp/servidor-externo/carregar';
+import { carregarServidoresDoAgenteNoTurno } from '@/lib/mcp/servidor-externo/do-agente/carregar';
 import { pickToolsFromMcp, type RuntimeHandoffSignal } from '@/lib/ai/runtime/tools';
 import { mintEphemeralToken, revokeEphemeralToken } from '@/lib/ai/runtime/mcp_token';
 import { IDS_DO_HARNESS, motivoDoHarness } from '@/lib/mcp/tools/ferramentas-do-harness';
@@ -173,6 +174,19 @@ export async function buildMcpTurnTools(
     },
   );
 
+  // Servidores MCP DO AGENTE (migration 9095) — mesma carga do runtime nativo.
+  const servidoresDoAgente = await carregarServidoresDoAgenteNoTurno(
+    cfg.supabase,
+    ids.organizationId,
+    agentConfig.agentId,
+    allowed,
+    {
+      ...(ids.contactId ? { contatoDoTurno: ids.contactId } : {}),
+      ...(ids.conversationId ? { conversaDoTurno: ids.conversationId } : {}),
+      ...(agentConfig.mcpExternoNoAtendimento === true ? { noAtendimento: true } : {}),
+    },
+  );
+
   const tools = pickToolsFromMcp({
     supabase: cfg.supabase,
     ctx,
@@ -191,6 +205,7 @@ export async function buildMcpTurnTools(
     capacidadesLigadas: await capacidadesDaOrganizacao(cfg.supabase, ids.organizationId),
     ...(ids.contactId ? { contatoDoTurno: ids.contactId } : {}),
     ...(servidorExterno ? { servidorMcpExterno: servidorExterno } : {}),
+    ...(servidoresDoAgente.length > 0 ? { servidoresDoAgente } : {}),
     ...(options?.efeitos ? { efeitos: options.efeitos } : {}),
   });
 
