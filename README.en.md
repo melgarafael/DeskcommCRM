@@ -21,6 +21,8 @@
 
 [**⚡ Install**](#-install-on-your-vps-the-main-path) · [**🔄 Update**](#-updating) · [**🧭 Vision**](VISION.md) · [**🏗️ Architecture**](ARCHITECTURE.md) · [**🤝 Contributing**](CONTRIBUTING.en.md) · [**🗺️ Roadmap**](#%EF%B8%8F-roadmap)
 
+<img src="docs/assets/demo-deskcomm.gif" alt="DeskcommCRM demo: AI agents, sales pipeline and prospecting" width="800">
+
 </div>
 
 ---
