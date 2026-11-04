@@ -4212,6 +4212,10 @@ export const DICIONARIO: Traducoes = {
   "casos esperando você": { es: "casos esperándote" },
   "1 conversa esperando uma pessoa": { es: "1 conversación esperando a una persona" },
   "conversas esperando uma pessoa": { es: "conversaciones esperando a una persona" },
+  // O contador de Tarefas (`components/shell/ContadorDeTarefas.tsx`): as em
+  // aberto do próprio usuário logado.
+  "1 tarefa em aberto": { es: "1 tarea abierta" },
+  "tarefas em aberto": { es: "tareas abiertas" },
   "Virou atendimento humano": { es: "Pasó a atención humana" },
   "Aguardando o cliente responder — a IA avisa você quando tiver a informação.": {
     es: "Esperando la respuesta del cliente. La IA te avisará cuando tenga la información.",

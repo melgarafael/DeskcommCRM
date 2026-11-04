@@ -37,6 +37,13 @@ export interface FiltrosDeTarefa {
 export interface OpcoesDeTarefas {
   /** `false` segura a consulta — o dossiê fechado não precisa das tarefas dele. */
   enabled?: boolean;
+  /**
+   * Recarga periódica, em ms. Ausente = sem intervalo (o default da tela, que
+   * só muda quando alguém desta aba mexe ou a janela volta ao foco). O contador
+   * do menu pede 60 s porque as tarefas nascem de automação, sem gesto nenhum
+   * aqui — mesmo intervalo do contador de Casos.
+   */
+  refetchInterval?: number;
 }
 
 async function leJson<T>(res: Response, oQueFalhou: string): Promise<T> {
@@ -72,6 +79,7 @@ export function useTasks(filtros: FiltrosDeTarefa = {}, opcoes: OpcoesDeTarefas 
     },
     staleTime: 10_000,
     refetchOnWindowFocus: true,
+    refetchInterval: opcoes.refetchInterval,
     enabled: opcoes.enabled ?? true,
   });
 
