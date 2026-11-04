@@ -1,4 +1,5 @@
 "use client";
+import { useTelefoneExemplo } from "@/hooks/contacts/useTelefoneExemplo";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ export function HandoffDeliveryForm({
     Array<{ conversation_id: string; status: string; reason: string | null }>
   >([]);
   const t = useT();
+  const telefoneExemplo = useTelefoneExemplo();
   const [config, setConfig] = useState(() => {
     const activeIds = new Set(members.map((member) => member.id));
     const sellerIds = initial.seller_user_ids.filter((id) => activeIds.has(id));
@@ -139,7 +141,7 @@ export function HandoffDeliveryForm({
             {config.notifications_enabled !== false && config.seller_user_ids.includes(m.id) && (
               <Input
                 aria-label={t("WhatsApp de") + " " + m.name}
-                placeholder="+55…"
+                placeholder={telefoneExemplo}
                 inputMode="tel"
                 value={config.seller_destinations[m.id] ?? ""}
                 onChange={(e) =>
@@ -161,7 +163,7 @@ export function HandoffDeliveryForm({
             disabled={config.notifications_enabled === false}
             value={supervisors}
             onChange={(e) => setSupervisors(e.target.value)}
-            placeholder="+55…"
+            placeholder={telefoneExemplo}
           />
         </label>
         <label className="block space-y-1">

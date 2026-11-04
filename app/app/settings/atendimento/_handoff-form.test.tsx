@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { HandoffDeliveryForm } from "./_handoff-form";
 import { configEntregaSchema } from "@/lib/schemas/handoff-delivery";
+vi.mock("@/hooks/contacts/useTelefoneExemplo", () => ({ useTelefoneExemplo: () => "+351 912 345 678" }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 const a = "aaaaaaaa-0000-4000-8000-000000000001";
 describe("controle da passagem humana", () => {
