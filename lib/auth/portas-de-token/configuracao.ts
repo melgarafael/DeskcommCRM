@@ -95,4 +95,17 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/ai/skills",
   { caminho: "/api/v1/ai/skills/[name]", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
   { caminho: "/api/v1/ai/skills/[name]/versions", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
+
+  // message-templates e message-template-groups. Quem autentica é a própria
+  // rota, por `resolveAuthDual`: token com `config:read` (GET) ou `config:write`
+  // (escrita) e papel admin (`tokenRole`). `[id]` é forma de UUID. `[indice]` da
+  // mídia é número inteiro não negativo (a rota recusa o resto com 404). O PATCH
+  // de `[id]`, o POST de criação, `[id]/midias` e `[id]/ordem` seguem só de
+  // sessão e não entram de carona: o papel deles vem de `org.role`.
+  "/api/v1/message-templates",
+  "/api/v1/message-templates/[id]",
+  { caminho: "/api/v1/message-templates/[id]/midias/[indice]", segmentos: { indice: "[0-9]+" }, amostras: { indice: "0" } },
+  "/api/v1/message-template-groups",
+  "/api/v1/message-template-groups/[id]",
+  "/api/v1/message-template-groups/[id]/ordem",
 ];

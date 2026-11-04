@@ -12,6 +12,7 @@ import { z } from "zod";
 
 import { audit } from "@/lib/audit";
 import { chaveDaRequisicao, comIdempotencia } from "@/lib/api/idempotency";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { roleAtLeast } from "@/lib/auth/types";
@@ -27,24 +28,36 @@ const COLS =
 /** Tag do endpoint no recibo de idempotência. Muda de rota muda de recibo. */
 const ENDPOINT = "/api/v1/message-templates";
 
-export async function GET(_req: NextRequest): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "message_templates" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "message_templates",
+    role: "agent",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const { org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "message_templates.lista", requestId);
+  if (teto) return teto;
 
-  const supabase = await createClient();
-  // RLS já limita a compartilhados + próprios da org ativa.
+  const supabase = authz.supabase;
+  // Na sessão, a RLS limita a lista a compartilhados + próprios da org ativa.
+  // No token, o cliente é o admin (service role), que IGNORA a RLS: quem protege
+  // a lista é o filtro explícito de organização acima e, no ramo do token, o
+  // `owner_user_id` nulo abaixo. Token não tem pessoa, então só o compartilhado.
   //
   // A ordem é a que o OPERADOR escolheu (`ordem`, #3244), não a de edição: era
   // `updated_at desc`, então editar o corpo de uma resposta a empurrava para o
   // topo desta lista e do slash-menu do Inbox. Virou `ordem asc` + dois
   // desempates (a resposta nova nasce ACIMA da primeira, ver o POST; duas que
   // empatem — criadas ao mesmo tempo — saem mais recente primeiro).
-  const { data, error } = await supabase
+  let consulta = supabase
     .from("message_templates")
     .select(COLS)
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", authz.organizationId);
+  if (authz.via === "token") consulta = consulta.is("owner_user_id", null);
+  const { data, error } = await consulta
     .order("ordem", { ascending: true })
     .order("updated_at", { ascending: false })
     .order("id", { ascending: true });
