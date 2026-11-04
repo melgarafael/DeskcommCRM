@@ -202,3 +202,122 @@ describe("9093: o servidor (service role) grava a ligação", () => {
     ).toContain("LINHAS:1");
   });
 });
+
+// ─── 9104: a credencial do número oficial também é do servidor ──────────────
+//
+// `meta_token_encrypted`, `meta_phone_number_id` e `meta_waba_id` dizem com que
+// número e com que token a instalação fala com a Meta pela organização. Quem as
+// grava é a rota do servidor (conexão e exclusão do canal oficial), pelo
+// service role. A linha nasce arquivada para não esbarrar no índice único de
+// número ativo nem no limite de canais do plano, que não são o que se mede.
+
+const CANAL_OFICIAL = "cccccccc-9104-4000-8000-000000000001";
+
+const LINHA_OFICIAL = `
+    insert into public.channel_sessions
+      (id, organization_id, provider, meta_phone_number_id, meta_waba_id, meta_token_encrypted,
+       webhook_path_token, webhook_secret_encrypted, display_name, archived_at)
+    values ('${CANAL_OFICIAL}', '${GOV_ORG}', 'meta_cloud', '9104-pn', '9104-conta', '\\x01'::bytea,
+       'tok-9104-inv', '\\x00'::bytea, 'Oficial 9104', now());`;
+
+function comoAdminNoOficial(dml: string): string {
+  return sql(`
+    begin;
+    ${LINHA_OFICIAL}
+    set local role authenticated;
+    select set_config('request.jwt.claims', '{"sub":"${GOV_ADMIN}","role":"authenticated"}', true) is not null;
+    with w as (${dml} returning 1) select 'LINHAS:' || count(*) from w;
+    rollback;`);
+}
+
+function comoServidorNoOficial(dml: string): string {
+  return sql(`
+    begin;
+    ${LINHA_OFICIAL}
+    set local role service_role;
+    with w as (${dml} returning 1) select 'LINHAS:' || count(*) from w;
+    rollback;`);
+}
+
+/** Uma linha nova, arquivada, com UMA coluna meta_* preenchida (ou nenhuma). */
+function insercaoOficial(coluna: string | null, valor = "null"): string {
+  const extra = coluna ? `, ${coluna}` : "";
+  const v = coluna ? `, ${valor}` : "";
+  const provedor = coluna === "meta_phone_number_id" ? "'meta_cloud'" : "'waha'";
+  const sessao = coluna === "meta_phone_number_id" ? "null" : "'inv-9104-insert'";
+  return `insert into public.channel_sessions
+      (organization_id, provider, waha_session_name, webhook_path_token, webhook_secret_encrypted, archived_at${extra})
+    values ('${GOV_ORG}', ${provedor}, ${sessao}, 'tok-9104-insert', '\\x00'::bytea, now()${v})`;
+}
+
+const COLUNAS_OFICIAIS: Array<[string, string]> = [
+  ["meta_token_encrypted", "'\\x02'::bytea"],
+  ["meta_phone_number_id", "'9104-pn-de-outro'"],
+  ["meta_waba_id", "'9104-conta-de-outro'"],
+];
+
+describe("9104: o admin da organização não grava a credencial do número oficial", () => {
+  it.each(COLUNAS_OFICIAIS)("UPDATE de %s na própria linha: 42501", (coluna, valor) => {
+    const erro = erroDe(() =>
+      comoAdminNoOficial(`update public.channel_sessions set ${coluna} = ${valor} where id = '${CANAL_OFICIAL}'`),
+    );
+    expect(erro, `o admin alterou ${coluna} SEM erro`).not.toBeNull();
+    expect(erro).toContain(RECUSA);
+  });
+
+  it("UPDATE que zera o token: 42501 (a exclusão do canal zera pelo service role)", () => {
+    const erro = erroDe(() =>
+      comoAdminNoOficial(`update public.channel_sessions set meta_token_encrypted = null where id = '${CANAL_OFICIAL}'`),
+    );
+    expect(erro, "o admin zerou o token SEM erro").not.toBeNull();
+    expect(erro).toContain(RECUSA);
+  });
+
+  it.each(COLUNAS_OFICIAIS)("INSERT com %s: 42501", (coluna, valor) => {
+    const erro = erroDe(() => comoAdminNoOficial(insercaoOficial(coluna, valor)));
+    expect(erro, `o admin inseriu ${coluna} SEM erro`).not.toBeNull();
+    expect(erro).toContain(RECUSA);
+  });
+
+  it("CONTROLE: o MESMO admin renomeia a MESMA linha", () => {
+    expect(
+      comoAdminNoOficial(`update public.channel_sessions set display_name = 'Renomeado 9104' where id = '${CANAL_OFICIAL}'`),
+    ).toContain("LINHAS:1");
+  });
+
+  it("CONTROLE: reescrever o MESMO valor não é alteração", () => {
+    expect(
+      comoAdminNoOficial(`
+        update public.channel_sessions
+           set meta_token_encrypted = meta_token_encrypted, meta_phone_number_id = meta_phone_number_id,
+               meta_waba_id = meta_waba_id
+         where id = '${CANAL_OFICIAL}'`),
+    ).toContain("LINHAS:1");
+  });
+
+  it("CONTROLE: o MESMO admin insere uma linha sem as colunas meta_*", () => {
+    expect(comoAdminNoOficial(insercaoOficial(null))).toContain("LINHAS:1");
+  });
+});
+
+describe("9104: o servidor (service role) grava a credencial do número oficial", () => {
+  it("UPDATE das três colunas", () => {
+    expect(
+      comoServidorNoOficial(`
+        update public.channel_sessions
+           set meta_token_encrypted = '\\x02'::bytea, meta_phone_number_id = '9104-pn-novo',
+               meta_waba_id = '9104-conta-nova'
+         where id = '${CANAL_OFICIAL}'`),
+    ).toContain("LINHAS:1");
+  });
+
+  it("UPDATE que zera o token (o que a exclusão do canal faz)", () => {
+    expect(
+      comoServidorNoOficial(`update public.channel_sessions set meta_token_encrypted = null where id = '${CANAL_OFICIAL}'`),
+    ).toContain("LINHAS:1");
+  });
+
+  it.each(COLUNAS_OFICIAIS)("INSERT com %s", (coluna, valor) => {
+    expect(comoServidorNoOficial(insercaoOficial(coluna, valor))).toContain("LINHAS:1");
+  });
+});
