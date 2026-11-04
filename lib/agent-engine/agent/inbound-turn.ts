@@ -124,6 +124,7 @@ import {
   type LeadCheckpointRow,
 } from "./abertura/checkpoint";
 import { buildOpeningMessage, ritualBlocks } from "./abertura/ritual";
+import { snapshotDoCaso } from "./conversa-do-caso/contexto";
 import { lerRemetenteDeGrupo, type RemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
@@ -5232,12 +5233,13 @@ async function executarTurnoDoAgente(
   // Spec 15: snapshot mínimo do contexto disponível pro humano que for atender o
   // caso — campo de CONVENIÊNCIA pra UI, não load-bearing (nada aqui é relido pelo
   // agente). ponytail: snapshot mínimo; enriquecer se a UI precisar de mais.
-  const buildCaseContextSnapshot = (): Record<string, unknown> => ({
-    contact_name: effectiveContext.contact.name,
-    last_messages: effectiveContext.messages
-      .slice(-5)
-      .map((m) => ({ direction: m.direction, body: m.body })),
-  });
+  //
+  // `sent_at` entra junto porque sem ele TODA fala herdava a hora de abertura do
+  // caso (`falasDoSnapshot` cai no `abertoEm`): a tela e o prompt mostravam cinco
+  // mensagens de horas diferentes com o mesmo carimbo. É string ali — vem do
+  // histórico já normalizado (`get-lead-context.ts`, `isoLocalComOffset`).
+  const buildCaseContextSnapshot = (): Record<string, unknown> =>
+    snapshotDoCaso(effectiveContext.contact.name, effectiveContext.messages);
 
   // Spec 15 (Wave 3a): tools de caso humano (open_human_case/provide_case_update) só
   // entram quando a tela habilita (cases_enabled) — mesmo padrão do handoff acima.
