@@ -40,7 +40,7 @@ const consulta = vi.fn();
  * precisa medir, desde o #3935, é o CORPO que a tela manda — e um dublê que só
  * existe dentro do render é uma caixa-preta.
  */
-const salvarRegistrado = vi.fn(async () => undefined);
+const salvarRegistrado = vi.fn(async (_corpo: Record<string, unknown>) => undefined);
 vi.mock("@/hooks/ai/useAvisoDeCaso", () => ({
   CHAVE_DO_AVISO: ["ai-aviso-de-caso"],
   useAvisoDeCaso: () => consulta(),
@@ -494,7 +494,7 @@ describe("o WhatsApp da equipe quando ainda não há configuração salva (#3935
   }
 
   function corpoEnviado() {
-    return salvarRegistrado.mock.calls[0]![0] as {
+    return salvarRegistrado.mock.calls[0]![0] as unknown as {
       responsaveis: Array<{ user_id: string; whatsapp?: string | null }>;
     };
   }

@@ -196,8 +196,8 @@ describe("PUT — salvar a configuração", () => {
       }),
     );
 
-    const params = rpc.mock.calls[0]![1] as unknown as { p_responsaveis: unknown };
-    expect(params.p_responsaveis).toEqual([{ user_id: MEMBRO }]);
+    const params = rpc.mock.calls[0] as unknown as [string, { p_responsaveis: unknown }];
+    expect(params[1].p_responsaveis).toEqual([{ user_id: MEMBRO }]);
     // E o caminho explícito continua explícito: `null` chega como `null`.
     const segundo = clienteDeSessao({});
     await PUT(
@@ -207,8 +207,8 @@ describe("PUT — salvar a configuração", () => {
         responsaveis: [{ user_id: MEMBRO, whatsapp: null }],
       }),
     );
-    const params2 = segundo.rpc.mock.calls[0]![1] as unknown as { p_responsaveis: unknown };
-    expect(params2.p_responsaveis).toEqual([{ user_id: MEMBRO, whatsapp: null }]);
+    const params2 = segundo.rpc.mock.calls[0] as unknown as [string, { p_responsaveis: unknown }];
+    expect(params2[1].p_responsaveis).toEqual([{ user_id: MEMBRO, whatsapp: null }]);
   });
 
   it("a auditoria leva o número MASCARADO, e nunca o telefone inteiro", async () => {
