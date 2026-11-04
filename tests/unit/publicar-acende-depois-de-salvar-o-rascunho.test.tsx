@@ -311,4 +311,18 @@ describe("o estado de salvamento do editor de agente (#3951)", () => {
     expect(c.publicar()).toBeDisabled();
     expect(c.salvar()).toBeEnabled();
   });
+  it("depois de publicar, Publicar apaga e não oferece de novo a versão já publicada", async () => {
+    acoes.publicar.mockResolvedValue({ ok: true, data: { version_id: "v2", previous_version_id: "v1" } });
+    const c = abrir();
+    fireEvent.change(c.prompt(), { target: { value: `${PROMPT} Seja breve.` } });
+    await salvarRascunho(c);
+    await waitFor(() => expect(c.publicar()).toBeEnabled());
+    const gravada = versaoGravada(2);
+    c.rerender({ draft: gravada, base: gravada });
+    // o refresh depois do publish: v2 vira a publicada e não há mais rascunho
+    const publicada = { ...gravada, status: "published", published_at: "2026-01-02T00:00:00Z" };
+    c.rerender({ draft: null, base: publicada, published: publicada, agent: { ...AGENTE_ROW, published_version_id: "v2" } });
+    expect(c.publicar().textContent).toBe("Publicar");
+    expect(c.publicar()).toBeDisabled();
+  });
 });

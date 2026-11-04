@@ -510,12 +510,20 @@ export function AgentForm(props: Props) {
    * gravar (ou de nenhum, antes do refresh chegar). Um rascunho com outro id é
    * de outra sessão/edição, e aí quem manda é o servidor.
    *
+   * Sem rascunho na prop, o recém-salvo só vale enquanto NÃO for ele o publicado:
+   * o refresh depois do publish também chega com `draft=null`, e o formulário não
+   * é remontado — sem essa guarda o botão seguia aceso oferecendo "Publicar vN"
+   * para a versão que acabou de ser publicada.
+   *
    * O rascunho que já existia é PATCHado no lugar (`saveAgentDraftAction`), então
    * `props.draft.id` continua sendo o mesmo depois de salvar — comparar contra a
    * prop velha acusaria alteração pendente sobre o conteúdo de antes.
    */
   const salvoDaqui =
-    salvo && salvo.agentId === idDesteAgente && (props.mode !== "edit" || !props.draft || props.draft.id === salvo.versionId)
+    salvo &&
+    salvo.agentId === idDesteAgente &&
+    (props.mode !== "edit" ||
+      (props.draft ? props.draft.id === salvo.versionId : props.published?.id !== salvo.versionId))
       ? salvo
       : null;
 
