@@ -290,6 +290,15 @@ const schema = z.object({
   // é `canalGraphParceiroLigado()` em `lib/channels/graph-parceiro/credentials.ts`.
   DATAFY_ENABLED: z.string().optional().default(""),
 
+  // ─── Número oficial com um clique (migration 9093) — OPCIONAL ───
+  //
+  // Chave da conta do provedor parceiro DA INSTALAÇÃO. Vazia = a tela de
+  // Conexões oferece só a conexão por chave própria, como antes. É semente: a
+  // tela Painel › Configuração vence este valor. Quem lê é `chaveDaInstalacao()`
+  // em `lib/channels/zernio/credentials.ts`, pelo resolvedor da instalação, a
+  // cada chamada — nunca por `env.`, para a troca na tela valer na hora.
+  ZERNIO_PLATFORM_API_KEY: z.string().optional().default(""),
+
   // Upstash Redis
   UPSTASH_REDIS_REST_URL: required("UPSTASH_REDIS_REST_URL"),
   UPSTASH_REDIS_REST_TOKEN: required("UPSTASH_REDIS_REST_TOKEN"),

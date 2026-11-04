@@ -67730,6 +67730,73 @@ create trigger trg_molde_de_ia_na_org_nova
   after insert on public.organizations
   for each row execute function public.fn_molde_de_ia_na_org_nova();
 
+-- ---- a ligação do canal com o provedor é do servidor (migration 9093) ----
+-- Espelho do gatilho da 9093. Fica ACIMA da VARREDURA anon porque cria função;
+-- as colunas que ele olha nascem no bloco da 9093, mais abaixo. Antes delas
+-- existirem, só o servidor (postgres) escreve na tabela durante o próprio
+-- baseline, e o gatilho sai na primeira linha sem tocar nelas.
+-- ═══ Só o servidor grava a ligação do canal com o provedor ═══
+--
+-- Estas colunas decidem com que chave e por qual conta a instalação fala com o
+-- provedor — e a da instalação alcança todos os números da conta dela. A
+-- tabela tem GRANT ALL para `authenticated`, e as policies deixam o admin da
+-- organização inserir e alterar a própria linha direto pela API do banco: sem
+-- esta trava, a linha diria "use a chave da instalação com a conta X" sem que
+-- o servidor tivesse conectado X. Quem as grava é sempre a rota do servidor,
+-- pelo service role; `anon` e `authenticated` não as escrevem (42501).
+-- Nas linhas da instalação também ficam com o servidor `phone_number` (os
+-- eventos de número do provedor são roteados por ele), `archived_at`,
+-- `provider`, `organization_id` e o DELETE: arquivar, apagar ou trocar o
+-- provedor por fora da rota pularia o passo que desconecta o número da conta
+-- da instalação, e desarquivar devolveria ao roteamento um número que pode já
+-- ser de outra organização. A rota de exclusão grava essas linhas pelo
+-- service role, depois de desfazer no provedor.
+--
+-- Gatilho e não privilégio por coluna: o GRANT ALL de tabela prevalece sobre
+-- um revoke de coluna, e trocá-lo por uma lista de colunas teria de ser
+-- lembrado a cada coluna nova. A função não precisa de EXECUTE para disparar.
+create or replace function public.fn_channel_sessions_ligacao_ao_provedor_e_do_servidor()
+returns trigger language plpgsql set search_path = public, pg_temp as $$
+begin
+  if current_user not in ('authenticated', 'anon') then
+    -- `new` é nulo no DELETE: devolvê-lo cancelaria a exclusão do servidor.
+    return coalesce(new, old);
+  end if;
+  if tg_op = 'DELETE' then
+    if old.zernio_credencial_da_instalacao then
+      raise exception 'canal_ligacao_ao_provedor_e_do_servidor' using errcode = '42501';
+    end if;
+    return old;
+  end if;
+  if tg_op = 'INSERT' then
+    if new.zernio_credencial_da_instalacao
+       or new.zernio_account_id is not null
+       or new.zernio_profile_id is not null
+       or new.zernio_webhook_id is not null then
+      raise exception 'canal_ligacao_ao_provedor_e_do_servidor' using errcode = '42501';
+    end if;
+    return new;
+  end if;
+  if (new.zernio_credencial_da_instalacao, new.zernio_account_id, new.zernio_profile_id, new.zernio_webhook_id)
+       is distinct from
+     (old.zernio_credencial_da_instalacao, old.zernio_account_id, old.zernio_profile_id, old.zernio_webhook_id)
+     or (old.zernio_credencial_da_instalacao and
+         (new.archived_at, new.provider, new.organization_id, new.phone_number)
+           is distinct from
+         (old.archived_at, old.provider, old.organization_id, old.phone_number)) then
+    raise exception 'canal_ligacao_ao_provedor_e_do_servidor' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_channel_sessions_ligacao_ao_provedor_e_do_servidor() from public, anon, authenticated;
+
+drop trigger if exists trg_channel_sessions_ligacao_ao_provedor_e_do_servidor on public.channel_sessions;
+create trigger trg_channel_sessions_ligacao_ao_provedor_e_do_servidor
+  before insert or update or delete on public.channel_sessions
+  for each row execute function public.fn_channel_sessions_ligacao_ao_provedor_e_do_servidor();
+
 -- ---- servidores MCP por agente e OAuth por contato (migration 9095) ----
 -- Espelho idempotente da migration 9095 (o porquê está no cabeçalho dela).
 create table if not exists public.ai_agent_mcp_servers (
@@ -72439,3 +72506,35 @@ comment on column public.platform_settings.molde_de_ia_org_id is
   'Empresa cuja configuração de IA as empresas NOVAS copiam ao nascer (migration 9096): as funções de ai_purpose_bindings sem endpoint próprio e de provedor com chave da instalação (anthropic, openai, openrouter), sempre com credential_id nulo, e o padrão settings.llm (provider, default_model). Nunca credenciais, Jev, agentes nem base de conhecimento. null = cada empresa nasce com o padrão do produto. Quem copia: fn_molde_de_ia_na_org_nova e fn_seed_org_llm_defaults. Escrita por app/actions/settings/updateMoldeDeIa.ts.';
 
 notify pgrst, 'reload schema';
+
+-- ---- o número oficial conectado com um clique, pela conta do provedor da instalação (migration 9093) ----
+-- Espelho da 9093; o porquê inteiro está no cabeçalho da migration. A sessão
+-- conectada por um clique guarda um PONTEIRO para a chave da instalação
+-- (`zernio_credencial_da_instalacao`), nunca uma cópia; o perfil do provedor
+-- criado para a organização (`zernio_profile_id`); e o id da assinatura de
+-- webhook que entrega os eventos (`zernio_webhook_id` — na conexão por um
+-- clique, o webhook ÚNICO da instalação).
+--
+-- Idempotente e auto-curativo: `add column if not exists`, constraint
+-- recriada por nome, `create or replace function` e gatilho recriado por
+-- nome. Toda linha existente nasce com `false` e satisfaz o CHECK, então o
+-- `update.sh` de um clone com dados não tem o que corrigir. O gatilho que
+-- deixa estas colunas só para o servidor cria função, então mora ACIMA da
+-- VARREDURA anon (bloco "a ligação do canal com o provedor é do servidor").
+alter table public.channel_sessions
+  add column if not exists zernio_profile_id text,
+  add column if not exists zernio_webhook_id text,
+  add column if not exists zernio_credencial_da_instalacao boolean not null default false;
+
+alter table public.channel_sessions
+  drop constraint if exists channel_sessions_zernio_credencial_unica;
+alter table public.channel_sessions
+  add constraint channel_sessions_zernio_credencial_unica
+  check (not (zernio_credencial_da_instalacao and zernio_token_encrypted is not null));
+
+comment on column public.channel_sessions.zernio_profile_id is
+  'Perfil do provedor parceiro em que a conta foi conectada. Só a conexão por um clique o grava: é por ele que a volta confere que a conta conectada é desta organização, e é ele que entra no filtro do webhook da instalação. Migration 9093.';
+comment on column public.channel_sessions.zernio_webhook_id is
+  'Assinatura de webhook que entrega os eventos desta conta, registrada pela INSTALAÇÃO. Na conexão por um clique é o webhook ÚNICO da instalação (compartilhado, filtrado aos perfis das conexões ativas; id em platform_config): a remoção do canal tira o perfil do filtro e NÃO apaga a assinatura. Na chave própria é a assinatura do número (filtrada à conta), apagada na remoção. Nulo quando o operador configurou o webhook à mão. Migration 9093.';
+comment on column public.channel_sessions.zernio_credencial_da_instalacao is
+  'true = a sessão fala com o provedor pela chave da INSTALAÇÃO (platform_config), resolvida na hora; zernio_token_encrypted fica nulo. false = chave própria da organização, cifrada em zernio_token_encrypted. Migration 9093.';
