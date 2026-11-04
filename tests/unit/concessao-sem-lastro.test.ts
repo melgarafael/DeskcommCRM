@@ -586,7 +586,8 @@ describe("fiação — só o send_message do inbound_turn arma", () => {
   it("sob suspeita: busca no conhecimento, e a leitura da conversa é do tenant e da conversa e falha fechada", () => {
     const corpo = trecho("const lastroComercialPara", "if (!preview && deps.knobs.goldenCandidates");
     expect(corpo).toContain("await recuperarEvidencias(corpo);");
-    expect(corpo).toContain("select direction, body, sent_at from messages");
+    expect(corpo).toContain("select direction, body, sent_at, sent_by_user_id is not null as humana from messages");
+    expect(corpo).toContain("humana: m.humana === true,");
     expect(corpo).toContain("where organization_id = $1 and conversation_id = $2");
     expect(corpo).toContain("[tenantId, input.conversationId]");
     // A leitura que falhou não é leitura vazia: vazia tiraria o resumo do lado do cliente.
