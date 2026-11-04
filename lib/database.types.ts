@@ -2543,6 +2543,7 @@ export type Database = {
           id: string;
           name: string;
           organization_id: string;
+          schedule: Json;
           updated_at: string;
         };
         ComputedFields: never;
@@ -2552,6 +2553,7 @@ export type Database = {
           id?: string;
           name: string;
           organization_id: string;
+          schedule?: Json;
           updated_at?: string;
         };
         Update: {
@@ -2560,6 +2562,7 @@ export type Database = {
           id?: string;
           name?: string;
           organization_id?: string;
+          schedule?: Json;
           updated_at?: string;
         };
         Relationships: [
@@ -5727,6 +5730,8 @@ export type Database = {
           created_at: string;
           criado_por: string | null;
           destino_jid: string | null;
+          /** `fixo` (default) ou `responsavel` — ver #3803. */
+          destino_modo: string;
           ligado: boolean;
           mensagens_ignoradas: number;
           organization_id: string;
@@ -5743,6 +5748,7 @@ export type Database = {
           created_at?: string;
           criado_por?: string | null;
           destino_jid?: string | null;
+          destino_modo?: string;
           ligado?: boolean;
           mensagens_ignoradas?: number;
           organization_id: string;
@@ -5758,6 +5764,7 @@ export type Database = {
           created_at?: string;
           criado_por?: string | null;
           destino_jid?: string | null;
+          destino_modo?: string;
           ligado?: boolean;
           mensagens_ignoradas?: number;
           organization_id?: string;
@@ -6394,6 +6401,7 @@ export type Database = {
           provider_conversation_id: string | null;
           rag_review_status: string | null;
           reply_context_revision: number;
+          sector_id: string | null;
           service_closed_at: string | null;
           service_revision: number;
           service_started_at: string | null;
@@ -6442,6 +6450,7 @@ export type Database = {
           provider_conversation_id?: string | null;
           rag_review_status?: string | null;
           reply_context_revision?: number;
+          sector_id?: string | null;
           service_closed_at?: string | null;
           service_revision?: number;
           service_started_at?: string | null;
@@ -6487,6 +6496,7 @@ export type Database = {
           provider_conversation_id?: string | null;
           rag_review_status?: string | null;
           reply_context_revision?: number;
+          sector_id?: string | null;
           service_closed_at?: string | null;
           service_revision?: number;
           service_started_at?: string | null;
@@ -13635,6 +13645,8 @@ export type Database = {
           role: string;
           updated_at: string;
           user_id: string;
+          /** WhatsApp PESSOAL do membro, E.164 — destino do aviso no modo `responsavel` (#3803). */
+          whatsapp_e164: string | null;
         };
         ComputedFields: never;
         Insert: {
@@ -13651,6 +13663,7 @@ export type Database = {
           role: string;
           updated_at?: string;
           user_id: string;
+          whatsapp_e164?: string | null;
         };
         Update: {
           accepted_at?: string | null;
@@ -13666,6 +13679,7 @@ export type Database = {
           role?: string;
           updated_at?: string;
           user_id?: string;
+          whatsapp_e164?: string | null;
         };
         Relationships: [
           {
@@ -15260,6 +15274,7 @@ export type Database = {
           provider_conversation_id: string | null;
           rag_review_status: string | null;
           reply_context_revision: number;
+          sector_id: string | null;
           service_closed_at: string | null;
           service_revision: number;
           service_started_at: string | null;
@@ -16101,6 +16116,7 @@ export type Database = {
           provider_conversation_id: string | null;
           rag_review_status: string | null;
           reply_context_revision: number;
+          sector_id: string | null;
           service_closed_at: string | null;
           service_revision: number;
           service_started_at: string | null;

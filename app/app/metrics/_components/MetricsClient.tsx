@@ -181,6 +181,7 @@ export function MetricsClient({ canCompare, currentUserId }: Props) {
         periodo={metasDoMes.data?.data.periodo ?? null}
         metas={metasDoMes.data?.data.metas ?? []}
         podeConfigurar={canCompare}
+        valores={metasDoMes.data?.data.valores_do_periodo ?? null}
       />
 
       <Card>

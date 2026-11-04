@@ -20,6 +20,7 @@ import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { resolverAtributos } from "@/lib/catalogo/atributos";
 import { apagarDoBucket } from "@/lib/catalogo/fotos-no-bucket";
+import { guardarFotosPorUrl } from "@/lib/catalogo/fotos-por-url";
 import { controlaEstoquePadrao, modoDeEstoqueDaOrganizacao } from "@/lib/catalogo/modo-de-estoque";
 import { COLUNAS_DO_PRODUTO, produtoCreateSchema, produtoPatchSchema } from "@/lib/schemas/produtos";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -85,28 +86,73 @@ async function atualizar(
     }
     atributos = r.atributos;
   }
+  // `fotos` é URL de ENTRADA, não coluna: sai do corpo antes do update, igual ao
+  // POST. O que entra na coluna são os caminhos dos arquivos baixados. Ausente
+  // (também no PUT) = não encostar nas fotos.
+  const { fotos, ...campos } = parsed.data;
   // PUT é o estado inteiro: sem `controla_estoque`, vale o mesmo padrão do POST.
   const dados =
     modo === "put"
       ? {
           ...OPCIONAIS_ZERADOS_NO_PUT,
-          ...parsed.data,
+          ...campos,
           controla_estoque:
-            parsed.data.controla_estoque ??
+            campos.controla_estoque ??
             controlaEstoquePadrao(await modoDeEstoqueDaOrganizacao(supabase, organizationId)),
         }
-      : parsed.data;
+      : campos;
   const comAtributos = atributos === undefined ? dados : { ...dados, atributos };
+
+  /**
+   * ─── PATCH com `fotos` SUBSTITUI o conjunto, não acrescenta ───────────────
+   *
+   * É o que quem integra espera ("estas são as fotos deste carro") e é o que a
+   * planilha faz na releitura do arquivo: a lista nova vira a lista da linha, e
+   * o arquivo que saiu do produto sai do bucket (senão o Storage acumula foto
+   * que ninguém referencia, e a capa antiga continua assinável por URL).
+   *
+   * `fotos: []` limpa as fotos — lista vazia é uma instrução, não ausência; o
+   * campo AUSENTE é o que diz "não encoste nas fotos" (é assim que o PATCH de
+   * preço continua não tocando nelas).
+   *
+   * A linha é lida antes do download por duas razões: 404 cedo (sem baixar nem
+   * guardar arquivo de um id que não é desta organização) e a lista ANTIGA, sem
+   * a qual não há como apagar o que foi substituído.
+   */
+  let caminhos: string[] | undefined;
+  let antigas: string[] = [];
+  if (fotos !== undefined) {
+    const { data: atual, error: erroDaLeitura } = await supabase
+      .from("catalog_products")
+      .select("id, fotos")
+      .eq("organization_id", organizationId)
+      .eq("id", id)
+      .maybeSingle();
+    if (erroDaLeitura) return fail("internal_error", "Erro ao salvar o produto.", 500, { requestId });
+    if (!atual) return fail("not_found", t("Produto não encontrado."), 404, { requestId });
+    antigas = ((atual as { fotos: string[] | null }).fotos ?? []).slice();
+
+    const guardadas = await guardarFotosPorUrl({ orgId: organizationId, produtoId: id, urls: fotos, t });
+    if (!guardadas.ok) {
+      return fail("validation_failed", guardadas.motivo, 422, {
+        requestId,
+        details: { fotos: [guardadas.motivo] },
+      });
+    }
+    caminhos = guardadas.caminhos;
+  }
 
   const { data, error } = await supabase
     .from("catalog_products")
-    .update(comAtributos)
+    .update({ ...comAtributos, ...(caminhos ? { fotos: caminhos } : {}) })
     .eq("organization_id", organizationId)
     .eq("id", id)
     .select(COLUNAS_DO_PRODUTO)
     .maybeSingle();
 
   if (error) {
+    // O update falhou depois do upload: os arquivos novos não são de ninguém.
+    if (caminhos?.length) await apagarDoBucket(organizationId, id, caminhos, requestId);
     if (error.code === "23505") {
       return fail("conflict", t("Já existe um produto com esse código."), 409, { requestId });
     }
@@ -116,7 +162,17 @@ async function atualizar(
   }
   // `maybeSingle` devolve null quando a RLS barrou ou o id não é desta org — os
   // dois são "não existe para você", e 404 é a resposta honesta.
-  if (!data) return fail("not_found", t("Produto não encontrado."), 404, { requestId });
+  if (!data) {
+    if (caminhos?.length) await apagarDoBucket(organizationId, id, caminhos, requestId);
+    return fail("not_found", t("Produto não encontrado."), 404, { requestId });
+  }
+
+  // A foto que a lista nova não trouxe sai do bucket — a mesma limpeza que a
+  // reimportação da planilha faz depois de gravar.
+  if (caminhos) {
+    const substituidas = antigas.filter((c) => !caminhos!.includes(c));
+    await apagarDoBucket(organizationId, id, substituidas, requestId);
+  }
 
   await audit({
     organizationId,

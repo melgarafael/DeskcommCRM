@@ -346,7 +346,7 @@ export function KanbanBoard({
   if (data.stages.length === 0) {
     return (
       <Card className="m-4 p-6 text-sm text-text-muted">
-        {t("Nenhum lead nesta pipeline ainda.")}
+        {t("Nenhum negócio neste funil ainda.")}
       </Card>
     );
   }

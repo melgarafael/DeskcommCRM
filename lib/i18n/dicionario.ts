@@ -50,6 +50,11 @@ export const DICIONARIO: Traducoes = {
   "Últimos avisos de casos": { es: "Últimos avisos de casos" },
   "Esta lista registra avisos de casos. O resultado dos avisos de transferência para atendimento humano aparece no respectivo item da Central de alertas.": { es: "Esta lista registra avisos de casos. El resultado de los avisos de transferencia a atención humana aparece en el elemento correspondiente de la Central de alertas." },
   "Ainda não há avisos de casos nesta lista. As tentativas aparecem aqui quando o assistente abre um caso, inclusive se falharem.": { es: "Todavía no hay avisos de casos en esta lista. Los intentos aparecen aquí cuando el asistente abre un caso, incluso si fallan." },
+  // #1418 — o aviso agendado para o futuro é recusado (não há quem o publique
+  // depois nesta fatia). A frase diz o que fazer: publicar agora ou sem data.
+  "O agendamento de aviso ainda não está disponível. Publique agora ou envie sem data de publicação.": {
+    es: "La programación de avisos aún no está disponible. Publica ahora o envía sin fecha de publicación.",
+  },
   "Preencher o nome que o cliente informa no atendimento": { es: "Completar el nombre que el cliente informa durante la atención" },
   "Quando o assistente identifica o próprio nome informado por texto e usa a capacidade Anotar dado que o cliente informou, pode preencher o nome vazio da ficha. O apelido do WhatsApp fica separado. Nomes existentes e e-mail continuam exigindo revisão humana. Confira a ficha se o assistente interpretar a mensagem incorretamente.": { es: "Cuando el asistente identifica el nombre propio informado por texto y usa la capacidad Anotar un dato que el cliente informó, puede completar el nombre vacío de la ficha. El apodo de WhatsApp queda separado. Los nombres existentes y el correo siguen requiriendo revisión humana. Revise la ficha si el asistente interpreta incorrectamente el mensaje." },
   "Ligado para novas mensagens de atendimento.": { es: "Activado para nuevos mensajes de atención." },
@@ -1666,6 +1671,23 @@ export const DICIONARIO: Traducoes = {
   "Não iniciada: o atendimento ou a resposta do cliente mudou.": { es: "No iniciada: cambió la atención o la respuesta del cliente." },
   "Sem contato vinculado. Este compromisso não inicia uma recuperação.": { es: "Sin contacto vinculado. Esta cita no inicia una recuperación." },
   "Recuperação iniciada e interrompida porque o cliente respondeu.": { es: "Recuperación iniciada e interrumpida porque el cliente respondió." },
+  // #3848 — o selo da mensagem que o fluxo mandou PULAR por causa da agenda, na
+  // Inbox. O caso não é falha: a escolha do fluxo é não enviar com compromisso
+  // marcado, e o selo diz isso com o motivo medido pela guarda.
+  "Pulada pela agenda": { es: "Omitida por la agenda" },
+  "O contato tem compromisso marcado na agenda — o fluxo está configurado para não enviar quando isso acontece.": {
+    es: "El contacto tiene una cita agendada — el flujo está configurado para no enviar cuando eso ocurre.",
+  },
+  "O contato está na agenda agora — o fluxo está configurado para não enviar quando isso acontece.": {
+    es: "El contacto está en la cita ahora — el flujo está configurado para no enviar cuando eso ocurre.",
+  },
+  "O compromisso do contato já terminou e a presença ainda não foi confirmada — o fluxo está configurado para não enviar quando isso acontece.": {
+    es: "La cita del contacto ya terminó y la asistencia aún no se ha confirmado — el flujo está configurado para no enviar cuando eso ocurre.",
+  },
+  "Compromisso: {titulo}": { es: "Cita: {titulo}" },
+  "Para mandar mesmo assim, mude a escolha do fluxo ou escreva pelo campo de resposta.": {
+    es: "Para enviar de todos modos, cambia la opción del flujo o escribe desde el campo de respuesta.",
+  },
   "Revise o próximo passo.": { es: "Revisa el siguiente paso." },
   "Revisar acompanhamentos": { es: "Revisar seguimientos" },
   "Mensagem do cliente usada como evidência (opcional)": { es: "Mensaje del cliente usado como evidencia (opcional)" },
@@ -2074,7 +2096,7 @@ export const DICIONARIO: Traducoes = {
   "PEDIDOS RECENTES": { es: "PEDIDOS RECIENTES" },
   ATIVIDADE: { es: "ACTIVIDAD" },
   "Sem tags.": { es: "Sin etiquetas." },
-  "Sem leads.": { es: "Sin leads." },
+  "Sem negócios.": { es: "Sin negocios." },
   "Sem pedidos.": { es: "Sin pedidos." },
   "Sem atividade.": { es: "Sin actividad." },
   "Nova tag…": { es: "Nueva etiqueta…" },
@@ -8490,6 +8512,17 @@ export const DICIONARIO: Traducoes = {
     es: "Solo una etapa puede ser la de pérdida. Marcar esta desmarca",
   },
   "saiu do quadro.": { es: "salió del tablero." },
+  // #3603 — a linha read-only do funil. «Fluxos de follow-up» é o nome que a
+  // tela de Follow-ups usa; «seguimiento» é como o espanhol do produto a chama.
+  "Fluxos de follow-up armados nesta etapa:": {
+    es: "Flujos de seguimiento armados en esta etapa:",
+  },
+  "Nenhum fluxo de follow-up armado nesta etapa.": {
+    es: "Ningún flujo de seguimiento armado en esta etapa.",
+  },
+  "não dispara: nenhum agente com follow-up ligado arma este fluxo": {
+    es: "no se dispara: ningún agente con seguimiento activado arma este flujo",
+  },
   "entrou no fim do funil.": { es: "entró al final del embudo." },
   "Etapas deste funil": { es: "Etapas de este embudo" },
   "Estas são as colunas do seu quadro, na ordem em que o cliente avança. Você pode renomear, criar, reordenar e arquivar.": {
@@ -8680,7 +8713,7 @@ export const DICIONARIO: Traducoes = {
   // ─── Inbox: painel lateral CRM (demandas, leads, pedidos, atividade) ───
   "Nenhuma demanda aberta.": { es: "No hay casos abiertos." },
   "Demandas abertas": { es: "Casos abiertos" },
-  "Leads recentes": { es: "Leads recientes" },
+  "Negócios recentes": { es: "Negocios recientes" },
   "Pedidos recentes": { es: "Pedidos recientes" },
   "O que acontece a seguir?": { es: "¿Qué pasa a continuación?" },
   "Próximo passo desta demanda": { es: "Siguiente paso de este caso" },
@@ -10087,8 +10120,8 @@ export const DICIONARIO: Traducoes = {
   "CPF (opcional)": { es: "CPF (opcional)" },
   "Criar contato": { es: "Crear contacto" },
   "Trocar contato": { es: "Cambiar contacto" },
-  "Sem contato, este lead não recebe WhatsApp nem entra nas automações.": {
-    es: "Sin contacto, este lead no recibe WhatsApp ni entra en las automatizaciones.",
+  "Sem contato, este negócio não recebe WhatsApp nem entra nas automações.": {
+    es: "Sin contacto, este negocio no recibe WhatsApp ni entra en las automatizaciones.",
   },
   "Procure pelo nome ou telefone": { es: "Busca por nombre o teléfono" },
   "Nenhum contato com esse nome ou telefone.": {
@@ -10616,7 +10649,7 @@ export const DICIONARIO: Traducoes = {
   "«{nome}» é o funil de clientes: é para ele que vai o lead que já é cliente. Marque OUTRO funil como funil de clientes antes de arquivar este.": {
     es: "«{nome}» es el embudo de clientes: es hacia él a donde va el lead que ya es cliente. Marca OTRO embudo como embudo de clientes antes de archivar este.",
   },
-  "Novo Lead": { es: "Nuevo Lead" },
+  "Novo negócio": { es: "Nuevo negocio" },
   "Não consegui carregar este funil:": { es: "No pude cargar este embudo:" },
   "sem responsável.": { es: "sin responsable." },
   "atribuído.": { es: "asignado." },
@@ -10665,8 +10698,8 @@ export const DICIONARIO: Traducoes = {
   "Sem valor único": { es: "Sin valor único" },
   // O sufixo da mensalidade colado ao valor ("R$ 500/mês"), nas telas de leitura.
   "/mês": { es: "/mes" },
-  "Lead atualizado": { es: "Lead actualizado" },
-  "Editar lead": { es: "Editar lead" },
+  "Negócio atualizado": { es: "Negocio actualizado" },
+  "Editar negócio": { es: "Editar negocio" },
   "Atualize os campos. Mover de etapa ou marcar ganho/perdido tem opções próprias.": {
     es: "Actualiza los campos. Para mover de etapa o marcar como ganado o perdido hay opciones aparte.",
   },
@@ -10674,8 +10707,8 @@ export const DICIONARIO: Traducoes = {
   "Tag: todas": { es: "Etiqueta: todas" },
   "Buscar por título…": { es: "Buscar por título…" },
   "Falha ao carregar o board.": { es: "No se pudo cargar el tablero." },
-  "Nenhum lead nesta pipeline ainda.": { es: "Todavía no hay leads en este embudo." },
-  "Ações do lead": { es: "Acciones del lead" },
+  "Nenhum negócio neste funil ainda.": { es: "Todavía no hay negocios en este embudo." },
+  "Ações do negócio": { es: "Acciones del negocio" },
   "Marcar como ganho": { es: "Marcar como ganado" },
   "Marcar como perdido": { es: "Marcar como perdido" },
   "Marcar como perdido…": { es: "Marcar como perdido…" },
@@ -10699,6 +10732,7 @@ export const DICIONARIO: Traducoes = {
   "Ex: Cliente desistiu por X motivo": { es: "Ej: El cliente desistió por X motivo" },
   "Confirmar": { es: "Confirmar" },
   "Lead criado": { es: "Lead creado" },
+  "Negócio criado": { es: "Negocio creado" },
   "O fluxo começa quando um negócio nasce: a primeira mensagem que abre o card, um formulário ou o cadastro manual. Negócios importados por planilha não entram. A entrada na fila leva poucos minutos, não é instantânea.":
     {
       es: "El flujo empieza cuando nace un negocio: el primer mensaje que abre la tarjeta, un formulario o el alta manual. Los negocios importados por planilla no entran. La entrada en la fila tarda unos minutos, no es instantánea.",
@@ -10707,11 +10741,11 @@ export const DICIONARIO: Traducoes = {
     {
       es: "Quien escribió puede recibir la respuesta del agente en el mismo instante — sin espera, salen dos mensajes juntos.",
     },
-  "Crie um lead manualmente neste pipeline.": { es: "Crea un lead manualmente en este pipeline." },
+  "Abra um negócio para um contato neste funil.": { es: "Abre un negocio para un contacto en este embudo." },
   "Ex: Pedido Maria — combo presente": { es: "Ej: Pedido María — combo regalo" },
   "Contexto, observações, links…": { es: "Contexto, observaciones, enlaces…" },
   "Selecione a etapa": { es: "Selecciona la etapa" },
-  "Criar lead": { es: "Crear lead" },
+  "Criar negócio": { es: "Crear negocio" },
   "Criar mesmo assim": { es: "Crear de todos modos" },
   "Não criar": { es: "No crear" },
   "Este contato já tem um negócio aberto neste funil.": {
@@ -15333,6 +15367,25 @@ export const DICIONARIO: Traducoes = {
     { es: "Conecta un WhatsApp escaneando el código QR en la pantalla de Conexiones. Por ahí saldrán los avisos." },
   "Conexão que envia os avisos":
     { es: "Conexión que envía los avisos" },
+  // ─── Para quem vai o aviso (#3803) ───────────────────────────────────────
+  "Quem recebe os avisos":
+    { es: "Quién recibe los avisos" },
+  "Sempre o número da empresa":
+    { es: "Siempre el número de la empresa" },
+  "Quem está com o atendimento":
+    { es: "Quien está a cargo de la conversación" },
+  "O aviso vai para quem está com a conversa; se essa pessoa não tiver WhatsApp cadastrado, para quem é dono do negócio; depois, para o dono da carteira do contato. Se ninguém tiver, vai para o número acima.":
+    { es: "El aviso va a quien está a cargo de la conversación; si esa persona no tiene un WhatsApp registrado, a quien es dueño del negocio; luego, al dueño de la cartera del contacto. Si nadie lo tiene, va al número de arriba." },
+  "Todo aviso vai para o número acima, como sempre foi.":
+    { es: "Todos los avisos van al número de arriba, como siempre." },
+  "WhatsApp de cada pessoa da equipe":
+    { es: "WhatsApp de cada persona del equipo" },
+  "É este número que recebe o aviso quando a pessoa é a responsável. Sem número, ela é pulada — o aviso não fica sem destinatário.":
+    { es: "Es este número el que recibe el aviso cuando la persona es la responsable. Sin número, se la saltea: el aviso nunca queda sin destinatario." },
+  "Ainda não há outras pessoas nesta organização.":
+    { es: "Todavía no hay otras personas en esta organización." },
+  "Ninguém da equipe tem WhatsApp cadastrado: os avisos vão continuar saindo para o número acima.":
+    { es: "Nadie del equipo tiene WhatsApp registrado: los avisos van a seguir saliendo al número de arriba." },
   "Enquanto ninguém puder abrir um caso, nenhum aviso vai sair. Ligue a opção de abrir casos na configuração do assistente.":
     { es: "Mientras nadie pueda abrir casos, no se enviará ningún aviso. Activa la opción de abrir casos en la configuración del asistente." },
   "Enviado para":
@@ -18428,13 +18481,13 @@ export const DICIONARIO: Traducoes = {
   // abaixo são exclusivas desta fatia.
   // Novas da F3.
   "contatos por chamada.": { es: "contactos por llamada." },
-  // Textos que as telas escreviam crus, fora de t(), e que por isso saíam iguais em todo idioma. Os rótulos do
-  // vocabulário do funil eram inglês em toda língua (Lead, Deal, Won, Lost): a chave é o próprio inglês, para o
-  // português seguir mostrando o mesmo; o atalho de exemplo das respostas rápidas era « oi »; o título de excluir um
-  // fluxo leva o nome entre as aspas do idioma.
-  Deal: { es: "Negocio" },
-  Won: { es: "Ganado" },
-  Lost: { es: "Perdido" },
+  // Textos que as telas escreviam crus, fora de t(), e que por isso saíam iguais em todo idioma: o atalho de exemplo
+  // das respostas rápidas era « oi »; o título de excluir um fluxo leva o nome entre as aspas do idioma. (Os rótulos
+  // do vocabulário do funil, que eram Lead/Deal/Won/Lost em toda língua, agora são Contato/Negócio/Ganho/Perdido —
+  // chaves que já tinham espanhol.)
+  "Como este funil chama o card nas telas (o Negócio). Ex.: numa loja, o Negócio pode se chamar Pedido.": {
+    es: "Cómo llama este embudo a la tarjeta en las pantallas (el Negocio). Ej.: en una tienda, el Negocio puede llamarse Pedido.",
+  },
   oi: { es: "hola" },
   "Excluir “{nome}”?": { es: "¿Eliminar “{nome}”?" },
   // O editor de sequência e as automações: textos que as telas escreviam crus (o aviso de número desconectado, os
@@ -18523,6 +18576,28 @@ export const DICIONARIO: Traducoes = {
   "O negócio passou para a pessoa escolhida, mas a carteira do cliente não: ela e as conversas que iam junto continuam com o dono anterior. A ficha do contato mostra quem é o dono agora.": { es: "El negocio pasó a la persona elegida, pero la cartera del cliente no: ella y las conversaciones que iban con ella siguen con el dueño anterior. La ficha del contacto muestra quién es el dueño ahora." },
   "O negócio passou para a pessoa escolhida, mas as conversas abertas do cliente que estavam com outra pessoa não foram transferidas: nenhuma mudou de dono. Transfira pela conversa, se precisar.": { es: "El negocio pasó a la persona elegida, pero las conversaciones abiertas del cliente que estaban con otra persona no se transfirieron: ninguna cambió de dueño. Transfiérelas desde la conversación, si hace falta." },
   "Vez de {nome}, posição {posicao} da fila do rodízio.": { es: "Turno de {nome}, posición {posicao} de la fila de la rotación." },
+  // #3804 — o destino dinâmico da ação assign_owner: o responsável do negócio e
+  // o dono da carteira do contato, com o fallback obrigatório.
+  "Responsável do negócio": { es: "Responsable del negocio" },
+  "Dono da carteira do contato": { es: "Dueño de la cartera del contacto" },
+  "Quem está com o negócio hoje — no pós-venda, quem vendeu.": { es: "Quien tiene el negocio hoy — en el posventa, quien vendió." },
+  "Quem cuida do cliente, mesmo quando o negócio está com outra pessoa.": { es: "Quien atiende al cliente, aunque el negocio esté con otra persona." },
+  "Destinos, na ordem em que são tentados": { es: "Destinos, en el orden en que se intentan" },
+  "Quem recebe é o que o negócio já tem: o responsável do negócio e, se ele não houver, o dono da carteira do cliente. Uma regra só para toda a equipe — o pós-venda de quem vendeu.": { es: "Quien recibe es lo que el negocio ya tiene: el responsable del negocio y, si no lo hay, el dueño de la cartera del cliente. Una sola regla para todo el equipo — el posventa de quien vendió." },
+  "Quem não puder receber (saiu da equipe ou é só leitor) é pulado, e a regra segue para o próximo. A Atividade mostra qual destino decidiu.": { es: "Quien no pueda recibir (salió del equipo o solo puede leer) se salta, y la regla pasa al siguiente. La Actividad muestra qué destino decidió." },
+  "Se nenhum destino servir, atribuir a": { es: "Si ningún destino sirve, asignar a" },
+  "O fallback é obrigatório: é o que impede a regra de não atribuir e deixar o negócio sem dono em silêncio.": { es: "El respaldo es obligatorio: es lo que impide que la regla no asigne y deje el negocio sin dueño en silencio." },
+  "Uma pessoa fixa": { es: "Una persona fija" },
+  "Fila do rodízio do fallback": { es: "Fila de la rotación del respaldo" },
+  "Responsável do negócio ou dono da carteira": { es: "Responsable del negocio o dueño de la cartera" },
+  "Cada destino entra uma vez só: a ordem deles é a ordem em que são tentados.": { es: "Cada destino entra una sola vez: su orden es el orden en que se intentan." },
+  "Cada pessoa entra uma vez só na fila do rodízio.": { es: "Cada persona entra una sola vez en la fila de la rotación." },
+  "Escolha pelo menos um destino": { es: "Elige al menos un destino" },
+  "fallback": { es: "respaldo" },
+  "Ficou com {nome}, o responsável do negócio.": { es: "Quedó con {nome}, el responsable del negocio." },
+  "Ficou com {nome}, o dono da carteira do cliente.": { es: "Quedó con {nome}, el dueño de la cartera del cliente." },
+  "Nenhum destino do negócio serviu: ficou com {nome}, a pessoa fixa do fallback.": { es: "Ningún destino del negocio sirvió: quedó con {nome}, la persona fija del respaldo." },
+  "Ninguém pôde receber este negócio: o responsável e a carteira do cliente não existem ou estão fora da equipe, e o fallback também não pôde atender. O negócio ficou sem responsável.": { es: "Nadie pudo recibir este negocio: el responsable y la cartera del cliente no existen o están fuera del equipo, y el respaldo tampoco pudo atender. El negocio quedó sin responsable." },
   // #3006 — "usar como exemplo para a IA": a conversa marcada vira material do
   // agente (opt-in de LGPD). O selo fica curto de propósito: ele divide a faixa
   // com as etiquetas do contato, e o verbo inteiro mora no `title` do controle.
@@ -18808,6 +18883,16 @@ export const DICIONARIO: Traducoes = {
     es: "Define la meta en Configuración › Meta de ventas para ver aquí cuánto se ha hecho ya y cuánto falta.",
   },
   "Definir a meta": { es: "Definir la meta" },
+  // As duas parcelas do período (fatia 2, item 1, da #3602). O sufixo é chave
+  // curta pelo mesmo motivo dos conectivos acima: ele é colado ao valor.
+  "Vendido único": { es: "Vendido único" },
+  "Recorrência nova (mensal)": { es: "Recurrencia nueva (mensual)" },
+  // `/mês` já existe desde o card da fatia 1 (uma chave, um tradutor).
+  "negócio com recorrência": { es: "negocio con recurrencia" },
+  "negócios com recorrência": { es: "negocios con recurrencia" },
+  "Leitura parcial: as parcelas somam o que foi lido no período.": {
+    es: "Lectura parcial: las partes suman lo que se leyó en el período.",
+  },
   "Só quem administra a empresa define a meta.": {
     es: "Solo quien administra la empresa define la meta.",
   },
@@ -18871,7 +18956,7 @@ export const DICIONARIO: Traducoes = {
   "Escolha até {max} campos do negócio para aparecerem em cada compra do contato. Sem escolha, a seção mostra a data do ganho, o título e o valor.": {
     es: "Elige hasta {max} campos del negocio para que aparezcan en cada compra del contacto. Sin elección, la sección muestra la fecha en que se ganó, el título y el valor.",
   },
-  "Salve o lead antes de anexar arquivos.": {
+  "Salve o negócio antes de anexar arquivos.": {
     es: "Guarda el negocio antes de adjuntar archivos.",
   },
   "Falha ao subir arquivo.": {
@@ -19086,9 +19171,16 @@ export const DICIONARIO: Traducoes = {
   "Setor não encontrado.": { es: "Sector no encontrado." },
   // O módulo opcional dos setores (doc 213) em /admin/sistema e em Recursos opcionais.
   "Setores de atendimento": { es: "Sectores de atención" },
-  "Agrupa os atendentes da Equipe por área e filtra a aba Atendimento por setor. Não muda quem recebe as conversas.": { es: "Agrupa a los asesores del Equipo por área y filtra la pestaña Atención por sector. No cambia quién recibe las conversaciones." },
-  "Ligado, cada empresa ganha na Equipe a aba Setores, para agrupar os atendentes por área, e a aba Atendimento passa a mostrar e filtrar o setor de cada um. O setor não muda quem recebe as conversas. Desligado, a aba e a coluna somem; os setores já cadastrados ficam guardados.": { es: "Activado, cada empresa obtiene en Equipo la pestaña Sectores, para agrupar a los asesores por área, y la pestaña Atención pasa a mostrar y filtrar el sector de cada uno. El sector no cambia quién recibe las conversaciones. Desactivado, la pestaña y la columna desaparecen; los sectores ya registrados quedan guardados." },
+  "Agrupa os atendentes da Equipe por área e distribui as conversas que têm setor definido entre quem atende aquela área, dentro do horário do setor. Conversa sem setor continua indo pelo número, como antes.": {
+    es: "Agrupa a los asesores del Equipo por área y distribuye las conversaciones que tienen sector definido entre quienes atienden esa área, dentro del horario del sector. Una conversación sin sector sigue yendo por el número, como antes.",
+  },
+  "Ligado, cada empresa ganha na Equipe a aba Setores, para agrupar os atendentes por área, e a aba Atendimento passa a mostrar e filtrar o setor de cada um. A conversa com setor definido vai só para quem atende aquele setor, dentro do horário dele; conversa sem setor continua indo pelo número. Desligado, a aba e a coluna somem e a distribuição volta a ser a de antes; os setores já cadastrados ficam guardados.": { es: "Activado, cada empresa obtiene en Equipo la pestaña Sectores, para agrupar a los asesores por área, y la pestaña Atención pasa a mostrar y filtrar el sector de cada uno. La conversación con sector definido va solo a quien atiende ese sector, dentro de su horario; la conversación sin sector sigue yendo por el número. Desactivado, la pestaña y la columna desaparecen y la distribución vuelve a ser la de antes; los sectores ya registrados quedan guardados." },
   "Não cria porta no menu do CRM: ele libera uma aba em": { es: "No crea entrada en el menú del CRM: habilita una pestaña en" },
+  // O módulo opcional dos avisos para a equipe (#1418) em /admin/sistema e em Recursos opcionais.
+  "Avisos para a equipe": { es: "Avisos para el equipo" },
+  "O administrador da empresa escreve um aviso e ele chega como notificação nos aparelhos da equipe.": { es: "El administrador de la empresa escribe un aviso y este llega como notificación a los dispositivos del equipo." },
+  "Ligado, o administrador de cada empresa pode escrever um aviso com título e texto, e ele chega como notificação nos aparelhos da equipe que ativaram as notificações. Desligado, ninguém envia avisos; os já enviados ficam guardados.": { es: "Activado, el administrador de cada empresa puede escribir un aviso con título y texto, y este llega como notificación a los dispositivos del equipo que activaron las notificaciones. Desactivado, nadie envía avisos; los ya enviados quedan guardados." },
+  "Não cria porta no menu do CRM: por enquanto o aviso é enviado pela API, em /api/v1/avisos.": { es: "No crea entrada en el menú del CRM: por ahora el aviso se envía por la API, en /api/v1/avisos." },
   'Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.': {
     es: 'Para no depender del dato, pon un texto de respaldo: {{primeiro_nome|"alumno"}}.',
   },
@@ -19273,6 +19365,26 @@ export const DICIONARIO: Traducoes = {
   },
   "O caminho do logo não é aceito. Envie a imagem de novo.": {
     es: "La ruta del logo no es aceptada. Vuelve a subir la imagen.",
+  },
+  // --- filas de atendimento (migration 9062) ---
+  // O horário da FILA, na aba Setores. Mesma régua da jornada do atendente; o
+  // texto diz o que muda e o que NÃO muda ("a conversa não é descartada"), para
+  // ninguém procurar defeito na abertura seguinte.
+  "Horário do setor": { es: "Horario del sector" },
+  "Sem janelas, este setor aceita conversa a qualquer hora. Com janelas, quem chega fora do horário espera a abertura — a conversa não é descartada.":
+    {
+      es: "Sin ventanas, este sector acepta conversaciones a cualquier hora. Con ventanas, quien llega fuera del horario espera la apertura: la conversación no se descarta.",
+    },
+  "Nenhuma janela: este setor atende 24 horas, todos os dias.": {
+    es: "Ninguna ventana: este sector atiende 24 horas, todos los días.",
+  },
+  "Salvar horário": { es: "Guardar horario" },
+  "24 horas, todos os dias": { es: "24 horas, todos los días" },
+  // Coluna "Setor" da aba Atendimento, agora com N filas por pessoa.
+  "Setores de": { es: "Sectores de" },
+  // Escrita do destino numa conversa: a fila tem de ser desta organização.
+  "Setor inexistente nesta organização.": {
+    es: "El sector no existe en esta organización.",
   },
 };
 

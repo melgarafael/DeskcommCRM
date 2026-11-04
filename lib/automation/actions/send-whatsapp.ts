@@ -29,6 +29,7 @@ async function postponeUntil(ctx: ActionCtx, config: Record<string, unknown>): P
     // #3813 — a escolha do passo manda: `enviar`/`nao_enviar` NÃO adiam o evento.
     const decisao = decidirNoEnvio(protection, escolha);
     if (decisao.acao === "adiar") return decisao.reavaliar_em;
+    if (decisao.acao === "pular") ctx.anotarPuloPelaAgenda?.(decisao.appointment_id);
   }
   const sessionId = typeof config.channel_session_id === "string" ? config.channel_session_id : null;
   if (!sessionId) return null; // config inválida falha no execute, não adia
@@ -79,6 +80,15 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
 
   // O espaçamento é COMPARTILHADO com a ação de IA (mesmo número, mesmo
   // contador) — ver lib/automation/throttle.ts.
+  // A agenda já decidiu PULAR na primeira avaliação do evento (outra regra o
+  // adiou): o compromisso pode ter passado, e reler a agenda aqui enviaria.
+  if (ctx.puloCongeladoPelaAgenda) {
+    return {
+      type: "send_whatsapp_message",
+      status: "skipped",
+      detail: { reason: MOTIVO_DO_PULO, appointment_id: ctx.puloCongeladoPelaAgenda.appointment_id },
+    };
+  }
   try {
     await assertAgendaEffectSupabase(ctx.admin, contextoDeEnvio);
     const boundary = await serviceForAutomation(ctx, contact.id, sessionId);

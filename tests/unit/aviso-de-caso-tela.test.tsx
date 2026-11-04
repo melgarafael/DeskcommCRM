@@ -52,7 +52,11 @@ function estado(patch: Partial<EstadoDoAviso> = {}): EstadoDoAviso {
       ligado: true,
       resposta_whatsapp_habilitada: false,
       atualizado_em: "2026-09-18T12:00:00.000Z",
+      destino_modo: "fixo",
     },
+    // A equipe e o WhatsApp de cada um (#3803). Vazia nestes casos, que são
+    // sobre conexão, switch e remoção — no modo `fixo` ninguém é consultado.
+    equipe: [],
     conexoes: [
       { id: CANAL_QR, nome: "Plantão", status: "WORKING", aceitaMensagemLivre: true, atendeClientes: false },
       { id: CANAL_OFICIAL, nome: "Oficial", status: "WORKING", aceitaMensagemLivre: false, atendeClientes: true },
@@ -91,7 +95,9 @@ describe("o seletor de conexão", () => {
         config: null,
       }),
     );
-    expect(screen.getByRole("combobox")).toBeDisabled();
+    // O seletor da CONEXÃO, pelo rótulo: desde o #3803 há um segundo combobox
+    // na tela (o modo do destino), e `getByRole("combobox")` passou a achar dois.
+    expect(screen.getByLabelText("Conexão que envia os avisos")).toBeDisabled();
   });
 });
 
