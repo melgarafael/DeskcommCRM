@@ -18,8 +18,17 @@ Medido em 2026-11-04, a mesma prova contra as duas imagens do app:
 [depois] depois de recarregar, banner visível = false
 ```
 
-`antes-*` = imagem da `main` anterior; `depois-*` = imagem desta branch. Os arquivos
-`-1-tocando`, `-2-depois-do-clique` e `-3-recarregada` são os três momentos.
+Imagem da `main` anterior:
+
+- `antes-1-tocando.png`: o banner da ligação SIP tocando.
+- `antes-2-depois-do-clique.png`: depois de **Recusar chamada** (503); o banner some só da memória.
+- `antes-3-recarregada.png`: a página recarregada; o banner voltou.
+
+Imagem desta branch:
+
+- `depois-1-tocando.png`: o mesmo banner.
+- `depois-2-depois-do-clique.png`: depois de **Recusar chamada** (200).
+- `depois-3-recarregada.png`: a página recarregada; o banner não volta.
 
 Não medido aqui: a metade do worker de voz (o AudioSocket que encontra a linha encerrada e
 desliga sem abrir a IA). O ambiente local não tem Asterisk; essa metade está provada no
