@@ -4268,6 +4268,11 @@ aprovado pela plataforma); o comando RESPONDER/PERGUNTAR por esse número, que s
 escopo; e os avisos de proposta, de agendamento e de passagem para humano, que dividem a conexão
 do aviso de caso e continuam exigindo texto livre.
 
+## Cold Call: ligar para uma lista de leads, um por vez (2026-11-03)
+
+- `[P1]` Fila e sessão de ligações abertas pela tela, com a API simulada por Playwright: `evidence/cold-call/fila-desktop.png`, `evidence/cold-call/sessao-desktop.png` e `evidence/cold-call/sessao-celular.png`. As variáveis do roteiro saem preenchidas com o lead, quem liga e a organização, sem rolagem lateral em 1920 px nem no celular.
+- **Não medido:** banco fresco do `baseline.sql` e ligação real pelo canal de voz.
+
 ## J66 — A empresa nova nasce com a IA do molde escolhido pelo dono do servidor `[P1]` (2026-11-03)
 
 Numa instalação que hospeda várias empresas, toda empresa nova nascia sem escolha de modelo por
