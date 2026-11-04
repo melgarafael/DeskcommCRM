@@ -67,6 +67,7 @@ const SEM_FILTRO: Record<string, string> = {
   "lead-time-triggers": "só emite lead.silent_for/stage_stale; o consumidor (automationRulesHandler) é 'pula'",
   "lgpd-sla-watcher": "LGPD nunca é bloqueada (spec §1.3)",
   "media-retention": "retenção de mídia: apagar é obrigação, não custo",
+  "mcp-oauth-revogacao": "revoga acesso de terceiro do contato (encerramento/LGPD): obrigação, nunca bloqueada",
   "proposal-acceptance-rate": "só calcula a taxa e abre aviso interno; sem custo nem saída",
   "proposal-expiry": "só vence proposta e abre aviso interno; sem custo nem saída",
   "proposal-promised-not-created": "só abre aviso interno de promessa vencida; sem custo nem saída",

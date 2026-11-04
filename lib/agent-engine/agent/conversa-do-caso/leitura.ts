@@ -23,6 +23,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { caseEventLabel } from "@/lib/ai/case-copy";
 import { lerContinuidadeHumana } from "@/lib/escalacao/continuidade";
+import { instanteDoBanco } from "@/lib/tempo/agora";
 
 import { corpoDaMensagem, type CorpoDaMensagemRow } from "../../edge/crm/get-lead-context";
 import type { FalaDaConversa, EventoDoCaso, MemoriaDoAtendimento } from "./contexto";
@@ -203,7 +204,7 @@ export function falasDoSnapshot(
     return [
       {
         de: r.direction === "inbound" ? "cliente" : "nos",
-        quando: typeof r.sent_at === "string" ? r.sent_at : abertoEm,
+        quando: instanteDoBanco(r.sent_at) ?? abertoEm,
         texto,
       },
     ];

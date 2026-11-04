@@ -1,0 +1,91 @@
+{
+  "search_parameters": {
+    "engine": "google_maps",
+    "type": "search",
+    "q": "clínicas odontológicas em Campinas, SP",
+    "google_domain": "google.com",
+    "hl": "pt-br",
+    "gl": "us"
+  },
+  "local_results": [
+    {
+      "position": 1,
+      "title": "Clínica Odontológica | Rede Odonto Campinas",
+      "place_id": "ChIJ_fJkU-bJyJQRkyriqOD0XIA",
+      "data_id": "0x94c8c9e65364f2fd:0x805cf4e0a8e22a93",
+      "data_cid": "9249536980455402131",
+      "provider_id": "/g/11gjp76pp7",
+      "gps_coordinates": {
+        "latitude": -22.9036877,
+        "longitude": -47.060107699999996
+      },
+      "rating": 4.8,
+      "reviews": 882,
+      "type": "Clínica odontológica",
+      "types": ["Clínica odontológica"],
+      "address": "Av. Francisco Glicério, 1246 - 3º andar - Centro, Campinas - SP, 13012-100, Brasil",
+      "open_state": "Aberto · Fecha 12:00",
+      "hours": "Aberto · Fecha 12:00",
+      "phone": "+55 19 3203-1404",
+      "website": "https://www.redeodonto.com.br/rede-odonto-campinas"
+    },
+    {
+      "position": 2,
+      "title": "Oral Clin Campinas",
+      "place_id": "ChIJgVi8prTIyJQRXMjhzp6Fhik",
+      "data_id": "0x94c8c8b4a6bc5881:0x2986859ecee1c85c",
+      "data_cid": "2992225919556503644",
+      "provider_id": "/g/11g9m6638x",
+      "gps_coordinates": {
+        "latitude": -22.904604499999998,
+        "longitude": -47.059026599999996
+      },
+      "rating": 4.6,
+      "reviews": 266,
+      "type": "Clínica odontológica",
+      "types": [
+        "Clínica odontológica",
+        "Periodontia e implantes dentários",
+        "Clínica de implante dentário",
+        "Dentista",
+        "Endodontista",
+        "Cirurgião dentista",
+        "Ortodontista",
+        "Odontopediatra",
+        "Periodontista"
+      ],
+      "address": "Rua Barão de Jaguara, 1147 - Centro, Campinas - SP, 13026-910, Brasil",
+      "open_state": "Aberto · Fecha 12:00",
+      "hours": "Aberto · Fecha 12:00",
+      "phone": "+55 19 2513-4344",
+      "website": "https://www.oralclincampinas.com.br/"
+    },
+    {
+      "position": 3,
+      "title": "Oral Unic",
+      "place_id": "ChIJVyFgsezHyJQRRVr00zK6708",
+      "data_id": "0x94c8c7ecb1602157:0x4fefba32d3f45a45",
+      "data_cid": "5760027175897291333",
+      "provider_id": "/g/11grv68s2m",
+      "gps_coordinates": {
+        "latitude": -22.8889452,
+        "longitude": -47.060925
+      },
+      "rating": 4.9,
+      "reviews": 1664,
+      "type": "Clínica odontológica",
+      "types": [
+        "Clínica odontológica",
+        "Dentista cosmético",
+        "Periodontia e implantes dentários",
+        "Dentista"
+      ],
+      "address": "Av. Barão de Itapura, 1888 - Botafogo, Campinas - SP, 13020-433, Brasil",
+      "open_state": "Aberto · Fecha 12:00",
+      "hours": "Aberto · Fecha 12:00",
+      "phone": "+55 19 3365-6200",
+      "website": "http://www.oralunic.com.br/campinas-sp"
+    }
+  ],
+  "credits_used": 1
+}

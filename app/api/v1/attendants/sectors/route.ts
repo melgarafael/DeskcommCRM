@@ -29,7 +29,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
-const SELECT_COLS = "id, name, description, schedule, created_at, updated_at";
+const SELECT_COLS = "id, name, description, schedule, color, created_at, updated_at";
 
 export async function GET(_req: NextRequest): Promise<Response> {
   const requestId = randomUUID();

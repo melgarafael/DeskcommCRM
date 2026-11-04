@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
 import { rotuloDoStatus, tomDoStatus } from "@/lib/followup/eventos-legiveis";
 
 /**
@@ -60,8 +61,24 @@ const STATUS_DORMENTE = "dormente";
 
 interface Props {
   contactId: string;
-  /** Iniciar/parar são `manager`+ fora do modo suporte: falso esconde as ações de escrita. */
-  podeEscrever: boolean;
+  /**
+   * A conversa em que a seção está montada. Vai no POST de inscrição (#3746):
+   * é o escopo de posse que o servidor confere — o Atendente inscreve o cliente
+   * cuja conversa está com ele. Ausente (seção montada fora de uma conversa),
+   * vale qualquer conversa do contato atribuída a ele.
+   */
+  conversationId?: string | null;
+  /**
+   * Sessão de acompanhamento (suporte), em que NADA é escrito: `requireSupportWrite`
+   * recusa o POST e o cancel. Não é régua de papel — quem decide "posso inscrever
+   * este cliente" é o servidor, no `meta.pode_inscrever` do GET.
+   */
+  somenteLeitura: boolean;
+  /**
+   * Parar continua `manager`+ (o cancel ficou fora do recorte do #3746). A
+   * leitura não depende disto: quem não pode parar ainda vê o que está rodando.
+   */
+  podeParar: boolean;
 }
 
 /**
@@ -87,9 +104,21 @@ function listaDe<T>(valor: unknown): T[] {
  * quando não há enrollment vivo nem fluxo ativo — quem não usa o módulo não vê
  * a tela mudar.
  */
-export function FollowupDoContato({ contactId, podeEscrever }: Props) {
+export function FollowupDoContato({
+  contactId,
+  conversationId = null,
+  somenteLeitura,
+  podeParar,
+}: Props) {
   const t = useT();
   const [doContato, setDoContato] = useState<EnrollmentRow[] | null>(null);
+  /**
+   * A capacidade de INSCREVER, respondida pelo servidor (#3746): a MESMA régua
+   * do POST (`lib/carteira/posse.ts`). Antes, o painel comparava
+   * `role === "manager"` e negava o botão ao Atendente — inclusive ao dono do
+   * cliente, que é justamente quem está atendendo.
+   */
+  const [podeInscrever, setPodeInscrever] = useState(false);
   const [fluxos, setFluxos] = useState<FlowRow[] | null>(null);
   const [erro, setErro] = useState(false);
   const [tentativa, setTentativa] = useState(0);
@@ -105,13 +134,16 @@ export function FollowupDoContato({ contactId, podeEscrever }: Props) {
         // O recorte por contato é do servidor (`?contact_id=`); sem `status`,
         // porque "vivo" aqui é mais de um estado (ver STATUS_QUE_OCUPAM_A_VAGA).
         const [rEnroll, rFluxos] = await Promise.all([
-          apiClient.get<{ data: EnrollmentRow[] }>(
+          apiClient.get<{ data: EnrollmentRow[]; meta?: { pode_inscrever?: boolean } }>(
             `/api/v1/ai/followups/enrollments?contact_id=${encodeURIComponent(contactId)}`,
           ),
           apiClient.get<{ data: FlowRow[] }>("/api/v1/ai/followup-flows"),
         ]);
         if (cancelado) return;
         setDoContato(listaDe<EnrollmentRow>(rEnroll.data).filter((e) => e.contact_id === contactId));
+        // Ausente = não pode: a tela não inventa capacidade que o servidor não
+        // afirmou, e o POST recusaria de qualquer jeito.
+        setPodeInscrever(rEnroll.meta?.pode_inscrever === true);
         setFluxos(listaDe(rFluxos.data));
       } catch {
         if (cancelado) return;
@@ -120,6 +152,7 @@ export function FollowupDoContato({ contactId, podeEscrever }: Props) {
         setErro(true);
         setDoContato(null);
         setFluxos(null);
+        setPodeInscrever(false);
       }
     }
     void carregar();
@@ -144,16 +177,27 @@ export function FollowupDoContato({ contactId, podeEscrever }: Props) {
       await apiClient.post("/api/v1/ai/followups/enrollments", {
         pointer_id: escolhido,
         contact_id: contactId,
+        // A conversa vai junto (#3746): é por ela que o servidor confere se o
+        // cliente está com quem está inscrevendo.
+        ...(conversationId ? { conversation_id: conversationId } : {}),
       });
       toast.success(t("Follow-up iniciado."));
       setEscolhido("");
       recarregar();
-    } catch {
-      toast.error(t("Não foi possível iniciar o follow-up."));
+    } catch (erro) {
+      // #3923 — a instalação não tem número conectado. O servidor manda 409 com
+      // o código estável `service_channel_not_found`; a frase que o leigo
+      // entende é escolhida AQUI, pelo código, e não pela prosa da resposta:
+      // assim ela também sai traduzida no idioma de quem está na tela.
+      toast.error(
+        erro instanceof ApiError && erro.code === "service_channel_not_found"
+          ? t("Conecte um número de WhatsApp antes de iniciar o follow-up.")
+          : t("Não foi possível iniciar o follow-up."),
+      );
     } finally {
       setSalvando(false);
     }
-  }, [escolhido, contactId, t, recarregar]);
+  }, [escolhido, contactId, conversationId, t, recarregar]);
 
   const parar = useCallback(async () => {
     if (!exibido) return;
@@ -173,7 +217,9 @@ export function FollowupDoContato({ contactId, podeEscrever }: Props) {
   const carregando = !erro && (doContato === null || fluxos === null);
   if (carregando) return <Skeleton className="h-14 w-full" data-testid="inbox-followup-carregando" />;
   if (erro) return null;
-  const podeIniciar = !vivo && podeEscrever && fluxosAtivos.length > 0;
+  // Iniciar: a capacidade é do servidor (#3746) e a sessão de suporte não
+  // escreve. Parar: régua própria, dita pelo painel (o cancel continua manager+).
+  const podeIniciar = !vivo && !somenteLeitura && podeInscrever && fluxosAtivos.length > 0;
   // Nada a mostrar e nada a iniciar: a seção não existe (contrato de RoteirosDoContato).
   if (!exibido && !podeIniciar) return null;
 
@@ -189,7 +235,7 @@ export function FollowupDoContato({ contactId, podeEscrever }: Props) {
             <Badge variant={tomDoStatus(exibido.status)}>{rotuloDoStatus(exibido.status, t)}</Badge>
           </div>
           {/* Parar para tudo que a seção mostra: o cancel aceita os vivos e o dormente (#3292). */}
-          {exibido && podeEscrever && (
+          {exibido && podeParar && (
             <Button
               variant="outline"
               size="sm"
@@ -210,7 +256,7 @@ export function FollowupDoContato({ contactId, podeEscrever }: Props) {
           <select
             aria-label={t("Fluxo de follow-up")}
             data-testid="escolher-fluxo-followup"
-            className="w-full rounded-md border bg-background p-2 text-xs"
+            className="h-11 w-full rounded-md border bg-background p-2 text-xs lg:h-auto"
             value={escolhido}
             onChange={(e) => setEscolhido(e.target.value)}
           >

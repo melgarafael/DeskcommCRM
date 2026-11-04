@@ -27,12 +27,20 @@ import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 /** "aberto" não é uma situação do banco: é o filtro que a tela abre por padrão. */
 type FiltroDeSituacao = "aberto" | SituacaoDaTarefa;
 
+/** Um funil do seletor. A lista vem da página (servidor): `GET /api/v1/pipelines` exige manager. */
+export interface FunilDoFiltro {
+  id: string;
+  name: string;
+}
+
 export function TarefasClient({
   podeEditar,
   minhasDeInicio = false,
+  funis = [],
 }: {
   podeEditar: boolean;
   minhasDeInicio?: boolean;
+  funis?: FunilDoFiltro[];
 }) {
   const t = useT();
   const usuario = useUser();
@@ -42,6 +50,8 @@ export function TarefasClient({
   // `/team/assignable` exige agent: o viewer tomaria 403 (e um authz.denied no
   // audit) a cada visita. Ele fica com Todos, Minhas e Sem responsável.
   const { data: membros } = useAssignableMembers(podeEditar);
+  // "todos" = sem filtro (a tela abre assim). Qualquer outro valor é o id de um funil.
+  const [funil, setFunil] = useState<string>("todos");
   const [emEdicao, setEmEdicao] = useState<Tarefa | null>(null);
   const [formAberto, setFormAberto] = useState(false);
   const [prazoSugerido, setPrazoSugerido] = useState<string | undefined>();
@@ -63,6 +73,7 @@ export function TarefasClient({
   } = useTasks({
     ...(situacao === "aberto" ? { aberto: true } : { status: situacao }),
     assigned_to: responsavelDoFiltro(responsavel),
+    pipeline_id: funil === "todos" ? undefined : funil,
   });
 
   function abrirNova(dia?: string) {
@@ -130,6 +141,23 @@ export function TarefasClient({
               <SelectItem value="ninguem">{t("Sem responsável")}</SelectItem>
             </SelectContent>
           </Select>
+
+          {/* Com um funil só não há o que escolher: o seletor aparece quando há dois ou mais. */}
+          {funis.length > 1 && (
+            <Select value={funil} onValueChange={setFunil}>
+              <SelectTrigger aria-label={t("Funil")} className="h-11 w-[168px] text-xs lg:h-9" data-testid="tarefas-filtro-funil">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">{t("Todos os funis")}</SelectItem>
+                {funis.map((f) => (
+                  <SelectItem key={f.id} value={f.id}>
+                    {f.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
 
           {/* O calendário tem 7 colunas: a 390px não cabe, e no celular fica a lista. */}
           <div className="hidden items-center gap-0.5 rounded-md border bg-muted p-0.5 md:flex">

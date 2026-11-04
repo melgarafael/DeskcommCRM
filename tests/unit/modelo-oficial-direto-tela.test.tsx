@@ -28,6 +28,9 @@ const h = vi.hoisted(() => ({
   salvar: vi.fn(),
   toasts: [] as string[],
   localeDaOrg: null as string | null,
+  // O modelo aprovado sincronizado traz o `example` que a revisão recebeu. O
+  // caso "sem example" mede o modelo antigo/importado que não o guardou.
+  semExemplo: false,
 }));
 
 vi.mock("@/hooks/auth/AuthProvider", async (original) => ({
@@ -62,7 +65,15 @@ vi.mock("@/hooks/channels/useTemplates", () => ({
             slots: [],
             previews: [] as unknown[],
             savedValues: {},
-            components: [{ type: "BODY", text: "Olá {{1}}, seu pedido saiu." }],
+            components: [
+              h.semExemplo
+                ? { type: "BODY", text: "Olá {{1}}, seu pedido saiu." }
+                : {
+                    type: "BODY",
+                    text: "Olá {{1}}, seu pedido saiu.",
+                    example: { body_text: [["Ana"]] },
+                  },
+            ],
             daConexao: true,
           },
           {
@@ -98,6 +109,7 @@ import { ApiError } from "@/lib/api/types";
 beforeEach(() => {
   vi.clearAllMocks();
   h.localeDaOrg = null;
+  h.semExemplo = false;
 });
 
 function montar() {
@@ -155,6 +167,8 @@ describe("tela do canal oficial direto — gestão de modelo", () => {
     const corpo = within(form).getByLabelText("Conteúdo") as HTMLTextAreaElement;
     // Nasce do modelo escolhido, não vazio: quem edita uma vírgula não redigita.
     expect(corpo.value).toBe("Olá {{1}}, seu pedido saiu.");
+    // E com a amostra que a revisão já recebeu — senão o Salvar nasce bloqueado.
+    expect((within(form).getByLabelText("Exemplo do valor 1") as HTMLInputElement).value).toBe("Ana");
 
     fireEvent.click(within(form).getByRole("button", { name: "Salvar e enviar para revisão" }));
 
@@ -163,6 +177,28 @@ describe("tela do canal oficial direto — gestão de modelo", () => {
     expect(corpoEnviado).toMatchObject({ acao: "editar", name: "boas_vindas", language: "pt_BR" });
     // Nome e idioma NÃO vão como campo editável: a plataforma não deixa mudá-los.
     expect(corpoEnviado.category).toBeUndefined();
+  });
+
+  it("modelo aprovado SEM example abre a edição avisando qual variável falta, e só salva depois", async () => {
+    // A revisão recusa variável sem amostra. Salvar um modelo assim mandaria
+    // para a fila algo que já se sabe recusado — a tela diz QUAL falta.
+    h.semExemplo = true;
+    h.post.mockResolvedValue({ data: {} });
+    montar();
+
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    const form = document.querySelector('[data-formulario-do-modelo="editar"]') as HTMLElement;
+    const salvar = within(form).getByRole("button", { name: "Salvar e enviar para revisão" });
+
+    expect(within(form).getByText(/A variável 1 do corpo está sem exemplo/)).toBeTruthy();
+    expect((salvar as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(within(form).getByLabelText("Exemplo do valor 1"), { target: { value: "Ana" } });
+    expect(within(form).queryByText(/A variável 1 do corpo está sem exemplo/)).toBeNull();
+    expect((salvar as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(salvar);
+    await waitFor(() => expect(h.post).toHaveBeenCalledTimes(1));
   });
 
   it("⭐ apagar pede confirmação e manda `acao: apagar`", async () => {
