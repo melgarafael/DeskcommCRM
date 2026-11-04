@@ -11,9 +11,8 @@ está certa — sem número não há conversa para abrir —, quem não a traduz
 rota.
 
 Agora a resposta é 409 com o código `service_channel_not_found` e uma frase que
-diz o que fazer: **"Conecte um número de WhatsApp antes de iniciar o
-follow-up."** A tela mostra essa frase em vez do aviso genérico, no idioma de
-quem está usando.
+diz o que fazer: "Conecte um número de WhatsApp antes de iniciar o follow-up." A
+tela mostra essa frase em vez do aviso genérico, no idioma de quem está usando.
 
 O mesmo módulo ganhou o piso de toque da casa nos botões de dia do horário de
 envio do follow-up: eram 26 px de altura no celular e passam a 44 px. No
