@@ -197,8 +197,8 @@ const envSchema = z.object({
   // 'disabled' injeta o desligamento no corpo das chamadas — e SÓ nas da
   // DeepSeek (a fábrica é dela; ver providers.ts).
   DEEPSEEK_THINKING: z.enum(['provider', 'disabled']).default('provider'),
-  // Pontos de cache e sessão fixa nos Claude pela OpenRouter oficial. Vazio ou
-  // `off` = desligado (a fábrica de sempre); `on` liga. Validado AQUI para a
+  // Pontos de cache e sessão fixa nos Claude pela OpenRouter oficial. Ligado por
+  // padrão: vazio, ausente ou `on` liga; `off` desliga. Validado AQUI para a
   // grafia errada derrubar o boot com o nome da variável; quem lê em runtime é
   // `createDefaultRegistry` (providers.ts), via process.env, como
   // OPENAI_REASONING_EFFORT logo abaixo. A grafia é normalizada como a fábrica
@@ -284,9 +284,10 @@ const envSchema = z.object({
   // Loop do agente — teto de steps de tool-calls por run.
   AGENT_MAX_STEPS: z.coerce.number().int().positive().default(8),
   // Parada do laço depois do envio que o modelo declara final (só inbound_turn).
-  // 'off' = comportamento de sempre; 'observe' = expõe o parâmetro e registra a
-  // marca no traço, sem parar; 'on' = para. Ver docs/runbooks/parada-apos-envio.md.
-  AGENT_STOP_AFTER_FINAL_SEND: z.enum(['off', 'observe', 'on']).default('off'),
+  // 'on' (padrão, depois da avaliação do runbook) = para; 'observe' = expõe o
+  // parâmetro e registra a marca no traço, sem parar; 'off' = o laço de sempre.
+  // Ver docs/runbooks/parada-apos-envio.md.
+  AGENT_STOP_AFTER_FINAL_SEND: z.enum(['off', 'observe', 'on']).default('on'),
   // Teto de mensagens FÍSICAS enviadas ao lead por turno (send_message + send_template
   // somados, bolhas incluídas) — nenhum gate de before-send limita CONTAGEM, só ritmo.
   MAX_SENDS_PER_TURN: z.coerce.number().int().positive().default(3),

@@ -6,14 +6,15 @@ outubro (luna, com cache), custa ~21,6 mil tokens de entrada: −50% dos tokens 
 `agent_turn`, ~0,051¢ por turno que para. Num provedor sem cache o mesmo passo
 custa de 1,6¢ a 6,5¢.
 
-O knob `AGENT_STOP_AFTER_FINAL_SEND` faz o laço parar ali — **desligado por
-padrão**, e só ligado depois da avaliação deste runbook.
+O knob `AGENT_STOP_AFTER_FINAL_SEND` faz o laço parar ali — **ligado por
+padrão** desde a avaliação deste runbook (aprovada nos modelos medidos; `off`
+volta ao laço de sempre).
 
 | Valor | O que acontece |
 |---|---|
-| `off` (padrão) | Comportamento de sempre, byte a byte: mesmo schema, mesmo laço. |
+| `off` | Comportamento de sempre, byte a byte: mesmo schema, mesmo laço. |
 | `observe` | O `send_message` ganha o parâmetro `encerra_turno` e a marca vai para o traço do turno (`agent_turn_traces.ferramentas[].encerra_turno`). O laço **não** para. Não é neutro: a descrição do parâmetro pode mudar o comportamento do modelo. Serve à avaliação. |
-| `on` | Como `observe`, e o laço para depois do passo em que o modelo marcou o envio final — se a trava deixar. |
+| `on` (padrão) | Como `observe`, e o laço para depois do passo em que o modelo marcou o envio final — se a trava deixar. |
 
 Vale **só** para resposta a mensagem do cliente (`inbound_turn`). Follow-up,
 resposta de caso, rascunho assistido e o "Testar" ficam idênticos em qualquer
