@@ -1,6 +1,6 @@
 /**
  * PROVA PAGA do cache dos Claude pela OpenRouter — a condição para ligar
- * OPENROUTER_PROMPT_CACHE=on por padrão.
+ * OPENROUTER_PROMPT_CACHE=on por padrão (virou o padrão depois desta prova).
  *
  * O knob nasce DESLIGADO porque a doc da OpenRouter só garante o TTL de 1 h em
  * Anthropic, Bedrock e Vertex, e um Claude dela tem de 8 a 11 provedores de

@@ -319,8 +319,9 @@ export function createDefaultRegistry(opts?: {
    * Knob OPENROUTER_PROMPT_CACHE; ausente = lido do ambiente. Lido de
    * `process.env`, como OPENAI_REASONING_EFFORT, e não por `llmEdgeConfigFromEnv`:
    * o env do app descarta chave que não declara, e as rotas do app também chamam
-   * o seam. Só `on` liga — vazio, ausente ou `off` é a fábrica de sempre, até a
-   * prova paga em cada provedor de origem (scripts/prova-cache-openrouter.ts).
+   * o seam. Ligado por padrão desde a prova paga em cada provedor de origem
+   * (scripts/prova-cache-openrouter.ts): só `off` desliga — vazio e ausente ligam,
+   * porque o `.env.example` sempre trouxe a linha vazia e quem instalou a tem assim.
    */
   openrouterPromptCache?: boolean;
 }): ProviderRegistry {
@@ -328,7 +329,7 @@ export function createDefaultRegistry(opts?: {
   const esforcoOpenAI =
     opts?.openaiReasoningEffort !== undefined ? opts.openaiReasoningEffort : esforcoDeRaciocinioOpenAI();
   const cacheNaOpenRouter =
-    opts?.openrouterPromptCache ?? process.env.OPENROUTER_PROMPT_CACHE?.trim().toLowerCase() === 'on';
+    opts?.openrouterPromptCache ?? process.env.OPENROUTER_PROMPT_CACHE?.trim().toLowerCase() !== 'off';
   const contain = (endpoint: string): typeof fetch => fetchDoProvedor(endpoint, extra);
   return {
     anthropic: (apiKey, modelId) =>

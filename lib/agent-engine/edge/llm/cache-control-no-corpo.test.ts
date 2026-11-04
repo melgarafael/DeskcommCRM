@@ -215,7 +215,7 @@ describe("Claude pela OpenRouter: o cache_control sai no corpo", () => {
     }
   });
 
-  it("T5: o knob — só `on` liga; off, vazio e ausente deixam o corpo do SDK puro", async () => {
+  it("T5: o knob — ligado por padrão; só `off` deixa o corpo do SDK puro", async () => {
     const puro = await corpoQueSaiu(sdkPuro("anthropic/claude-sonnet-5"));
     const corpoCom = async (registry: ReturnType<typeof createDefaultRegistry>) =>
       corpoQueSaiu(
@@ -223,15 +223,16 @@ describe("Claude pela OpenRouter: o cache_control sai no corpo", () => {
       );
 
     expect(await corpoCom(createDefaultRegistry({ openrouterPromptCache: false }))).toEqual(puro);
-    for (const valor of ["off", "", undefined]) {
+    for (const valor of ["off", " OFF "]) {
       vi.stubEnv("OPENROUTER_PROMPT_CACHE", valor);
       expect(await corpoCom(createDefaultRegistry()), `env=${String(valor)}`).toEqual(puro);
     }
-    for (const valor of ["on", " ON "]) {
+    // Vazio e ausente ligam: é a linha que o `.env.example` sempre trouxe.
+    for (const valor of ["on", " ON ", "", undefined]) {
       vi.stubEnv("OPENROUTER_PROMPT_CACHE", valor);
       const corpo = await corpoCom(createDefaultRegistry());
-      expect(corpo.session_id, `env=${valor}`).toBe("a".repeat(32));
-      expect(corpo.cache_control, `env=${valor}`).toEqual({ type: "ephemeral" });
+      expect(corpo.session_id, `env=${String(valor)}`).toBe("a".repeat(32));
+      expect(corpo.cache_control, `env=${String(valor)}`).toEqual({ type: "ephemeral" });
     }
     // A opção explícita vence o ambiente, como no knob da OpenAI.
     vi.stubEnv("OPENROUTER_PROMPT_CACHE", "on");
