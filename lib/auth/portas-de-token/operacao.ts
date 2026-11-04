@@ -108,6 +108,7 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   // ficaram só de sessão nesses caminhos (`excecoes` POST/DELETE, por RLS de
   // autoria) recusam o Bearer com 401 pelo `requireRole`, e a borda do teste da
   // área prova isso.
+  "/api/v1/agenda/aviso",
   "/api/v1/agenda/configuracao",
   "/api/v1/agenda/enderecos",
   "/api/v1/agenda/excecoes",

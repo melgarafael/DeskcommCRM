@@ -121,6 +121,33 @@ async function chamar(caso: Caso, cabecalho?: string): Promise<Response> {
 
 const CASOS: Caso[] = [
   {
+    nome: "GET /api/v1/agenda/aviso",
+    modulo: () => import("@/app/api/v1/agenda/aviso/route") as unknown as Promise<Modulo>,
+    metodo: "GET",
+    url: "/api/v1/agenda/aviso",
+    papel: "admin",
+    escopo: "mcp:read",
+    linhas: {
+      organizations: [
+        { id: ORG_A, timezone: "America/Sao_Paulo" },
+        { id: ORG_B, timezone: "America/Sao_Paulo" },
+      ],
+      config_aviso_de_agendamento: [
+        { organization_id: ORG_A, usa_numero_do_aviso_de_caso: true, channel_session_id: null, telefone_destino: null, grupo_destino: "111111@g.us", ligado: true, updated_at: "2026-11-01T00:00:00Z" },
+        { organization_id: ORG_B, usa_numero_do_aviso_de_caso: true, channel_session_id: null, telefone_destino: null, grupo_destino: "222222@g.us", ligado: true, updated_at: "2026-11-01T00:00:00Z" },
+      ],
+      config_aviso_de_caso: [],
+      channel_sessions: [
+        { id: "9a9a9a9a-9a9a-49a9-89a9-9a9a9a9a9a9a", organization_id: ORG_A, display_name: "Canal da A", status: "connected", phone_number: null, waha_session_name: "a", provider: "waha", archived_at: null, created_at: "2026-01-01T00:00:00Z" },
+        { id: "9b9b9b9b-9b9b-49b9-89b9-9b9b9b9b9b9b", organization_id: ORG_B, display_name: "Canal da B", status: "connected", phone_number: null, waha_session_name: "b", provider: "waha", archived_at: null, created_at: "2026-01-01T00:00:00Z" },
+      ],
+      entregas_de_aviso_de_agendamento: [],
+    },
+    marcaA: "111111@g.us",
+    alcancaB: "lista",
+    statusA: 200,
+  },
+  {
     nome: "GET /api/v1/agenda/configuracao",
     modulo: () => import("@/app/api/v1/agenda/configuracao/route") as unknown as Promise<Modulo>,
     metodo: "GET",
@@ -403,6 +430,8 @@ const FICA_SO_DE_SESSAO: { nome: string; modulo: string; metodo: Metodo; url: st
   { nome: "PATCH /api/v1/agenda/google/calendarios", modulo: "@/app/api/v1/agenda/google/calendarios/route", metodo: "PATCH", url: "/api/v1/agenda/google/calendarios", corpo: { revisions: [], sources: [], destination: AGENDAMENTO } },
   // Conexão do próprio usuário (`user_id = auth.user.id`).
   { nome: "POST /api/v1/agenda/google/calendarios/atualizar", modulo: "@/app/api/v1/agenda/google/calendarios/atualizar/route", metodo: "POST", url: "/api/v1/agenda/google/calendarios/atualizar", corpo: { connection_id: AGENDAMENTO } },
+  // `fn_definir_aviso_de_agendamento` exige `auth.uid()` (papel, MFA e quem escreve).
+  { nome: "PUT /api/v1/agenda/aviso", modulo: "@/app/api/v1/agenda/aviso/route", metodo: "PUT", url: "/api/v1/agenda/aviso", corpo: { usa_numero_do_aviso_de_caso: true, ligado: true } },
   // Autorização pela RLS de escrita (`user_id = auth.uid()` ou manager): sem sessão, o admin contorna.
   { nome: "POST /api/v1/agenda/excecoes", modulo: "@/app/api/v1/agenda/excecoes/route", metodo: "POST", url: "/api/v1/agenda/excecoes", corpo: { exception_date: "2026-11-10" } },
   { nome: "DELETE /api/v1/agenda/excecoes", modulo: "@/app/api/v1/agenda/excecoes/route", metodo: "DELETE", url: "/api/v1/agenda/excecoes", corpo: { id: EXC_A } },
@@ -422,6 +451,8 @@ const CARREGADORES: Record<string, () => Promise<Modulo>> = {
     import("@/app/api/v1/agenda/google/calendarios/atualizar/route") as unknown as Promise<Modulo>,
   "@/app/api/v1/agenda/excecoes/route": () =>
     import("@/app/api/v1/agenda/excecoes/route") as unknown as Promise<Modulo>,
+  "@/app/api/v1/agenda/aviso/route": () =>
+    import("@/app/api/v1/agenda/aviso/route") as unknown as Promise<Modulo>,
 };
 
 describe("métodos que ficam só de sessão (fica só de sessão: 401, banco intocado)", () => {
@@ -449,6 +480,7 @@ describe("métodos que ficam só de sessão (fica só de sessão: 401, banco int
 
 /** Os caminhos que ganharam porta nesta fatia. Nenhum tem `[id]`: a borda é o caminho literal. */
 const CAMINHOS_COM_PORTA = [
+  "/api/v1/agenda/aviso",
   "/api/v1/agenda/configuracao",
   "/api/v1/agenda/enderecos",
   "/api/v1/agenda/excecoes",
@@ -467,6 +499,7 @@ describe("PUBLIC_PATHS da agenda (borda do proxy)", () => {
   it("os irmãos que não ganharam porta seguem de sessão", () => {
     expect(isPublicPath(`/api/v1/agenda/agendamentos/${AGENDAMENTO}`)).toBe(false);
     expect(isPublicPath(`/api/v1/agenda/agendamentos/${AGENDAMENTO}/google/resolver`)).toBe(false);
+    expect(isPublicPath("/api/v1/agenda/aviso/teste")).toBe(false);
     expect(isPublicPath("/api/v1/agenda/google/calendarios")).toBe(false);
     expect(isPublicPath("/api/v1/agenda/google/calendarios/atualizar")).toBe(false);
     expect(isPublicPath("/api/v1/agenda/tipos/reativar/x")).toBe(false);
