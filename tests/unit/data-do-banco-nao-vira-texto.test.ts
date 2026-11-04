@@ -41,7 +41,7 @@
  * e pega o caso novo no commit, não na madrugada em produção.
  */
 import { readdirSync, readFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { join, sep } from "node:path";
 
 import ts from "typescript";
 import { describe, expect, it } from "vitest";

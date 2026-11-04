@@ -24,10 +24,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  falasDoSnapshot,
+  snapshotDoCaso,
   type FalaDaConversa,
-} from "@/lib/agent-engine/agent/conversa-do-caso/leitura";
-import { snapshotDoCaso } from "@/lib/agent-engine/agent/conversa-do-caso/contexto";
+} from "@/lib/agent-engine/agent/conversa-do-caso/contexto";
+import { falasDoSnapshot } from "@/lib/agent-engine/agent/conversa-do-caso/leitura";
 
 const ABERTO_EM = "2026-11-04T12:00:00.000Z";
 

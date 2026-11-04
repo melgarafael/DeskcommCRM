@@ -216,7 +216,7 @@ export interface FalaParaSnapshot {
  * pontos do motor.
  */
 export function snapshotDoCaso(
-  contactName: string,
+  contactName: string | null,
   mensagens: readonly FalaParaSnapshot[],
 ): Record<string, unknown> {
   return {
