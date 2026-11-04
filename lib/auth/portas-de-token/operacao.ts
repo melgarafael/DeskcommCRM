@@ -143,4 +143,21 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/campaigns/[id]/recipients",
   "/api/v1/campaigns/modelos",
   "/api/v1/campaigns/preview",
+
+  // EMPRESAS, PESSOAS, VÍNCULOS E NÚMEROS DE VOZ (R2, tarefa 7). Quem autentica é a
+  // própria rota, por `resolveAuthDual` (sessão OU Bearer `dsk_…`, a organização
+  // vinda da linha do token): `mcp:read` no GET e `mcp:write` na escrita, com o
+  // papel que a sessão já exige. Nenhuma tool MCP faz estas ações, então sem
+  // `tokenRole`. Segmentos `[id]` em forma de UUID; o único irmão literal,
+  // `companies/lookup`, ganhou porta por ser método convertido.
+  "/api/v1/companies",
+  "/api/v1/companies/lookup",
+  "/api/v1/companies/[id]",
+  "/api/v1/companies/[id]/enrich",
+  "/api/v1/company-people",
+  "/api/v1/company-people/[id]",
+  "/api/v1/people",
+  "/api/v1/people/[id]",
+  "/api/v1/phone-numbers",
+  "/api/v1/phone-numbers/[id]",
 ];

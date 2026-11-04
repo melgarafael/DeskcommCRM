@@ -17,6 +17,9 @@ import { requireRole } from "@/lib/auth/require-role";
 import { updatePhoneNumberSchema } from "@/lib/schemas/phone-numbers";
 import { validateRequest } from "@/lib/schemas/_validate";
 import { createClient } from "@/lib/supabase/server";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { autorDe, existeNaOrganizacao } from "@/lib/api/token-operacao";
+import { extractBearer } from "@/lib/mcp/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +29,73 @@ const MUTATION_COLUMNS =
   "id, number, label, routing_mode, default_ai_agent_id, is_active, created_at";
 
 type RouteCtx = { params: Promise<{ id: string }> };
+
+/**
+ * Com Bearer: `mcp:write` e papel `manager`, o da sessão. Mesmo corpo estrito da
+ * sessão (número e troncal ficam de fora); o agente padrão tem de ser desta org.
+ */
+async function atualizarPeloToken(
+  req: NextRequest,
+  requestId: string,
+  params: RouteCtx["params"],
+): Promise<Response> {
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "phone_numbers",
+    role: "manager",
+    scope: "mcp:write",
+  });
+  if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "phone_numbers_update", requestId);
+  if (teto) return teto;
+  const { id } = await params;
+  const organizationId = authz.organizationId;
+
+  let input;
+  try {
+    input = await validateRequest(updatePhoneNumberSchema, req);
+  } catch (err) {
+    if (err instanceof ApiError) {
+      return fail(err.code, err.message, err.status, {
+        details: err.details as Record<string, unknown> | undefined,
+        requestId,
+      });
+    }
+    throw err;
+  }
+
+  if (Object.keys(input).length === 0) {
+    return fail("validation_failed", "Nada para atualizar.", 422, { requestId });
+  }
+  const agenteId = input.default_ai_agent_id;
+  if (agenteId && !(await existeNaOrganizacao(authz.supabase, "ai_agents", organizationId, agenteId))) {
+    return fail("not_found", "Agente não encontrado.", 404, { requestId });
+  }
+
+  const { data: row, error } = await authz.supabase
+    .from("phone_numbers")
+    .update(input)
+    .eq("id", id)
+    .eq("organization_id", organizationId)
+    .select(MUTATION_COLUMNS)
+    .maybeSingle();
+
+  if (error) return fail("internal_error", error.message, 500, { requestId });
+  if (!row) return fail("not_found", "Número não encontrado.", 404, { requestId });
+
+  await audit({
+    action: "phone_number.updated",
+    actorUserId: autorDe(authz),
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId,
+    resourceType: "phone_numbers",
+    resourceId: id,
+    requestId,
+    metadata: input,
+  });
+
+  return ok(row, { requestId });
+}
 
 export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // Guarda de EFEITO do acompanhamento administrativo, ANTES do RBAC e do
@@ -37,6 +107,8 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   if (acompanhamentoNegado) return acompanhamentoNegado;
 
   const requestId = randomUUID();
+  if (extractBearer(req.headers.get("authorization")))
+    return atualizarPeloToken(req, requestId, ctx.params);
   const authz = await requireRole("manager", { requestId, resource: "phone_numbers" });
   if (!authz.ok) return authz.response;
   const { user: authUser, org: activeOrg } = authz;
