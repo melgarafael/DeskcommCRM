@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { ehPermissaoDeArea } from "./areas";
 import {
   EXTENSION_CAPABILITIES,
   EXTENSION_PERMISSIONS,
@@ -56,7 +57,11 @@ export type ObjetoDeclarado = {
 
 export type ExtensionManifest = {
   format_version: 1;
-  profile: "declarative" | "data";
+  /**
+   * `connected`: um serviço externo que lê/altera áreas do CRM (spec 33, F1). Não tem card nem
+   * dados próprios, e só aceita permissão de área. O endereço do serviço não é deste manifesto.
+   */
+  profile: "declarative" | "data" | "connected";
   publisher: string;
   name: string;
   version: string;
@@ -276,7 +281,7 @@ const objetosDeclaradosSchema = z
 const manifestSchema: z.ZodType<ExtensionManifest> = z
   .object({
     format_version: z.literal(1),
-    profile: z.enum(["declarative", "data"]),
+    profile: z.enum(["declarative", "data", "connected"]),
     publisher: slugSchema,
     name: slugSchema,
     version: semverSchema,
@@ -339,6 +344,41 @@ const manifestSchema: z.ZodType<ExtensionManifest> = z
   // instalando um módulo de dados que não guarda nada. É o mesmo par de regras que o banco confere
   // em `fn_extensions_finish_install`, e os dois lados precisam dizer a mesma coisa.
   .superRefine((manifest, context) => {
+    // Permissão de área (spec 33) é do perfil conectado e de mais nenhum: um guia ou um pacote de
+    // dados que a declarasse ganharia uma porta de leitura do CRM que o perfil não justifica.
+    if (manifest.profile === "connected") {
+      if (!manifest.permissions.every(ehPermissaoDeArea)) {
+        context.addIssue({
+          code: "custom",
+          message: "perfil conectado só declara permissão de área",
+        });
+      }
+      if (manifest.data.mode !== "none") {
+        context.addIssue({ code: "custom", message: "perfil conectado não declara dados" });
+      }
+      if ("density" in manifest.configuration) {
+        context.addIssue({
+          code: "custom",
+          message: "perfil conectado não tem configuração de card",
+        });
+      }
+      if (
+        manifest.contributions.crm_cards !== undefined ||
+        manifest.contributions.theme !== undefined
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "perfil conectado não contribui card nem tema",
+        });
+      }
+      return;
+    }
+    if (manifest.permissions.some(ehPermissaoDeArea)) {
+      context.addIssue({
+        code: "custom",
+        message: "permissão de área só existe no perfil conectado",
+      });
+    }
     if (manifest.profile === "declarative") {
       if (manifest.data.mode !== "none") {
         context.addIssue({ code: "custom", message: "perfil declarativo não declara dados" });
@@ -564,7 +604,10 @@ export function checkCompatibility(subject: CompatibilitySubject): Compatibility
   if (subject.format_version !== undefined && subject.format_version !== 1) {
     return incompatible("format_version_unsupported");
   }
-  if (subject.profile !== undefined && !["declarative", "data"].includes(subject.profile)) {
+  if (
+    subject.profile !== undefined &&
+    !["declarative", "data", "connected"].includes(subject.profile)
+  ) {
     return incompatible("profile_unsupported");
   }
   if (subject.host_api.min > HOST_API_VERSION || subject.host_api.max < HOST_API_VERSION) {

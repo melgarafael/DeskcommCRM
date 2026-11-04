@@ -315,6 +315,102 @@ describe("manifesto declarativo", () => {
   });
 });
 
+/**
+ * O perfil CONECTADO (spec 33, F1): um serviço externo que lê e altera áreas do CRM. Sem cards,
+ * sem dados, sem configuração de card, e só permissão de área. O endereço do serviço NÃO está
+ * aqui: mora na entrada do catálogo (`service_origin`), nunca no pacote.
+ */
+const connectedBase = {
+  format_version: 1,
+  profile: "connected",
+  publisher: "acme",
+  name: "servico-externo",
+  version: "1.0.0",
+  license: "MIT",
+  host_api: { min: 2, max: 2 },
+  permissions: ["area.contatos.leitura"],
+  dependencies: [],
+  data: { mode: "none" },
+  display: {
+    title: { "pt-BR": "Serviço externo" },
+    summary: { "pt-BR": "Módulo conectado de teste." },
+    category: "service",
+    icon: "ListChecks",
+  },
+  configuration: {},
+  contributions: {},
+} as unknown as ExtensionManifest;
+
+describe("manifesto conectado (F1)", () => {
+  it("aceita um manifesto conectado com permissão de área", () => {
+    expect(() => parseManifest(manifestBytes(connectedBase))).not.toThrow();
+  });
+
+  it.each([
+    ["navigation.tasks", ["area.contatos.leitura", "navigation.tasks"]],
+    ["theme.apply", ["theme.apply"]],
+    ["dados.proprios", ["dados.proprios"]],
+  ])("recusa perfil conectado que declara %s", (_nome, permissions) => {
+    const valor = { ...connectedBase, permissions };
+    expect(() => parseManifest(manifestBytes(valor))).toThrow(ExtensionError);
+  });
+
+  it("recusa perfil conectado sem nenhuma permissão de área", () => {
+    expect(() => parseManifest(manifestBytes({ ...connectedBase, permissions: [] }))).toThrow(
+      ExtensionError,
+    );
+  });
+
+  it("recusa perfil conectado que contribui card", () => {
+    const valor = { ...connectedBase, contributions: { crm_cards: [] } };
+    expect(() => parseManifest(manifestBytes(valor))).toThrow(ExtensionError);
+  });
+
+  it("recusa perfil conectado com configuração de card", () => {
+    const valor = {
+      ...connectedBase,
+      configuration: { density: "comfortable", show_description: true },
+    };
+    expect(() => parseManifest(manifestBytes(valor))).toThrow(ExtensionError);
+  });
+
+  it("recusa perfil conectado que declara objetos de dados", () => {
+    const valor = {
+      ...connectedBase,
+      data: {
+        mode: "declarado",
+        objetos: [
+          {
+            slug: "ficha",
+            rotulo: { "pt-BR": "Ficha" },
+            campos: [{ slug: "nome", tipo: "texto" }],
+          },
+        ],
+      },
+    };
+    expect(() => parseManifest(manifestBytes(valor))).toThrow(ExtensionError);
+  });
+
+  it("recusa permissão de área no perfil declarativo", () => {
+    const valor = {
+      ...manifest,
+      permissions: ["navigation.tasks", "area.contatos.leitura"],
+    };
+    expect(() => parseManifest(manifestBytes(valor))).toThrow(ExtensionError);
+  });
+
+  it("checkCompatibility aceita o perfil conectado e recusa perfil fora da lista", () => {
+    expect(checkCompatibility(connectedBase)).toEqual({ compatible: true, reason: null });
+    expect(
+      checkCompatibility({
+        host_api: { min: 2, max: 2 },
+        permissions: ["area.contatos.leitura"],
+        profile: "outro" as never,
+      }),
+    ).toEqual({ compatible: false, reason: "profile_unsupported" });
+  });
+});
+
 describe("catálogo e artefato", () => {
   it("faz parse do catálogo com origem exata", () => {
     const bytes = manifestBytes();
