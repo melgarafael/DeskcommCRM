@@ -94,4 +94,35 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/leads/import",
   "/api/v1/leads/proposals",
   "/api/v1/leads/reactivations",
+  // FINANCEIRO E HONORÁRIOS (R2, tarefa 8). Quem autentica é a própria rota, por
+  // `resolveAuthDual` (sessão OU Bearer `dsk_…`, a organização vinda da linha do
+  // token): `mcp:read` na leitura e `mcp:write` na escrita, com o papel que a
+  // sessão já exige (`viewer` lê o catálogo, as comandas e o extrato; `agent`
+  // abre comanda e lança item; `manager` cria contrato de honorário). Não há
+  // `tokenRole`: nenhuma tool MCP faz estas ações com papel maior.
+  //
+  // Só entram os caminhos com ao menos um método convertido. Ficam de sessão,
+  // e recusam o Bearer com 401 pelo `requireRole`: baixar, cancelar, estornar,
+  // finalizar, faturar em lote, mexer em saldo de fidelidade, lançamento e
+  // parcela de cobrança. Os irmãos literais `estornar`, `finalizar`, `faturar-lote`
+  // e `pagar` não ganham porta; a borda do teste da área prova isso.
+  //
+  // `[tipo]` do catálogo não é id: a classe é a mesma que `ehEntidadeDoCatalogo`
+  // aceita na rota (`ENTIDADES_DO_CATALOGO`).
+  "/api/v1/financeiro/comandas",
+  "/api/v1/financeiro/comandas/pendentes",
+  "/api/v1/financeiro/comandas/[id]",
+  "/api/v1/financeiro/comandas/[id]/itens",
+  "/api/v1/financeiro/comandas/[id]/itens/[itemId]",
+  "/api/v1/financeiro/fidelidade",
+  "/api/v1/financeiro/lancamentos",
+  {
+    caminho: "/api/v1/financeiro/catalogo/[tipo]",
+    segmentos: {
+      tipo: "contas|formas_de_pagamento|planos_de_conta|regras_de_comissao|recorrencias",
+    },
+    amostras: { tipo: "contas" },
+  },
+  "/api/v1/honorarios/contratos",
+  "/api/v1/honorarios/contratos/[id]/parcelas",
 ];

@@ -14,15 +14,14 @@ import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { abrirComandaSchema } from "@/lib/financeiro/comanda";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -36,22 +35,31 @@ export async function GET(req: NextRequest): Promise<Response> {
   // mesmo molde da cobrança desligada (falha fechada, dois lados).
   const admin = createAdminClient();
   if (!(await moduloLigado(admin, "financeiro"))) return fail("not_found", "Not found", 404, { requestId });
-  const authz = await requireRole("viewer", { requestId, resource: "financeiro" });
+  // Leitura: sessão OU token `mcp:read`. O papel mínimo é o da sessão.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_comandas_listar", requestId);
+  if (teto) return teto;
 
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
   const limite = Math.min(Number(url.searchParams.get("limit")) || LIMITE_PADRAO, LIMITE_MAXIMO);
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   let q = supabase
     .from("sales")
     // Literal ÚNICO, e não concatenação: o supabase-js infere o tipo do
-    // resultado a partir do TEXTO do select, e um `+` no meio o reduz a `string`
-    // — o embed `sale_items(...)` deixa de existir para o TypeScript.
+    // resultado a partir do TEXTO do select. Sem embed de `sale_items`: no token
+    // o embed traria item de outra organização; os itens vêm abaixo, com a organização.
     .select(
-      "id, number, status, contact_id, attendant_user_id, appointment_id, discount_cents, total_cents, currency, payment_method_id, notes, finalized_at, cancelled_at, reversed_at, created_at, sale_items(id, description, quantity, unit_price_cents, discount_cents, total_cents, commission_percent, attendant_user_id, event_type_id)",
+      "id, number, status, contact_id, attendant_user_id, appointment_id, discount_cents, total_cents, currency, payment_method_id, notes, finalized_at, cancelled_at, reversed_at, created_at",
     )
+    .eq("organization_id", authz.organizationId)
     .order("number", { ascending: false })
     .limit(limite);
 
@@ -62,14 +70,32 @@ export async function GET(req: NextRequest): Promise<Response> {
   const { data, error } = await q;
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
+  const vendas = data ?? [];
+  const { data: itensDaVenda } = vendas.length
+    ? await supabase
+        .from("sale_items")
+        .select(
+          "id, sale_id, description, quantity, unit_price_cents, discount_cents, total_cents, commission_percent, attendant_user_id, event_type_id",
+        )
+        .eq("organization_id", authz.organizationId)
+        .in(
+          "sale_id",
+          vendas.map((v) => v.id),
+        )
+    : { data: [] };
+  const itens = (itensDaVenda ?? []) as Array<{ sale_id: string; total_cents: number }>;
+
   // O total de uma comanda ABERTA é derivado dos itens, sempre. `total_cents` só
   // é gravado na finalização, e ler a coluna antes disso mostraria zero numa
   // comanda com itens — o tipo de número errado que o operador acredita.
-  const comandas = (data ?? []).map((c) => {
-    const itens = (c.sale_items ?? []) as Array<{ total_cents: number }>;
-    const soma = itens.reduce((acc, i) => acc + Number(i.total_cents), 0);
+  const comandas = vendas.map((c) => {
+    const meus = itens
+      .filter((i) => i.sale_id === c.id)
+      .map(({ sale_id: _venda, ...item }) => item);
+    const soma = meus.reduce((acc, i) => acc + Number(i.total_cents), 0);
     return {
       ...c,
+      sale_items: meus,
       total_cents:
         c.status === "open" ? Math.max(soma - Number(c.discount_cents ?? 0), 0) : c.total_cents,
     };
@@ -88,8 +114,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  const authz = await requireRole("agent", { requestId, resource: "financeiro" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_comandas_abrir", requestId);
+  if (teto) return teto;
 
   const lido = abrirComandaSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) {
@@ -98,8 +131,33 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  const supabase = await createClient();
-  const org = authz.org.orgId;
+  const supabase = authz.supabase;
+  const org = authz.organizationId;
+  // Quem é o autor: só a pessoa da sessão. Token não é pessoa: a coluna fica nula.
+  const autor = authz.actor.type === "user" ? authz.actor.id : null;
+
+  // No token, o corpo é a única fonte destes ids: cada um tem de ser desta
+  // organização, senão a comanda nasceria amarrada a contato ou agendamento alheio.
+  if (authz.via === "token") {
+    if (lido.data.contact_id) {
+      const { data: contato } = await supabase
+        .from("contacts")
+        .select("id")
+        .eq("id", lido.data.contact_id)
+        .eq("organization_id", org)
+        .maybeSingle();
+      if (!contato) return fail("validation_failed", "Contato inválido para esta organização.", 422, { requestId });
+    }
+    if (lido.data.appointment_id) {
+      const { data: agenda } = await supabase
+        .from("calendar_appointments")
+        .select("id")
+        .eq("id", lido.data.appointment_id)
+        .eq("organization_id", org)
+        .maybeSingle();
+      if (!agenda) return fail("validation_failed", "Agendamento inválido para esta organização.", 422, { requestId });
+    }
+  }
 
   // IDEMPOTÊNCIA POR AGENDAMENTO, antes de qualquer escrita.
   //
@@ -137,8 +195,8 @@ export async function POST(req: NextRequest): Promise<Response> {
       number: numero as number,
       contact_id: lido.data.contact_id ?? null,
       appointment_id: lido.data.appointment_id ?? null,
-      attendant_user_id: authz.user.id,
-      created_by_user_id: authz.user.id,
+      attendant_user_id: autor,
+      created_by_user_id: autor,
       notes: lido.data.notes ?? null,
       currency: moeda,
     })
@@ -156,6 +214,9 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   await audit({
     action: "comanda.aberta",
+    organizationId: org,
+    actorUserId: autor,
+    actorApiTokenId: authz.apiTokenId ?? null,
     resourceType: "sale",
     resourceId: data.id,
     requestId,

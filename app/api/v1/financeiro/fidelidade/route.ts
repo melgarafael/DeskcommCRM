@@ -20,6 +20,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
@@ -56,18 +57,26 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (!(await moduloLigado(createAdminClient(), "financeiro"))) {
     return fail("not_found", "Not found", 404, { requestId });
   }
-  const authz = await requireRole("viewer", { requestId, resource: "financeiro" });
+  // Leitura do saldo e do extrato: sessão OU token `mcp:read`.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_fidelidade_saldo", requestId);
+  if (teto) return teto;
 
   const contactId = new URL(req.url).searchParams.get("contact_id");
   if (!contactId) {
     return fail("validation_failed", "Informe o contato.", 422, { requestId });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   const { data: saldo, error: erroSaldo } = await supabase.rpc("fn_saldo_de_fidelidade", {
-    p_org: authz.org.orgId,
+    p_org: authz.organizationId,
     p_contact: contactId,
   });
   if (erroSaldo) return fail("internal_error", erroSaldo.message, 500, { requestId });
@@ -76,6 +85,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     .from("loyalty_ledger")
     .select("id, points, reason, sale_id, created_at")
     .eq("contact_id", contactId)
+    .eq("organization_id", authz.organizationId)
     .order("created_at", { ascending: false })
     .limit(LIMITE_DO_EXTRATO);
   if (error) return fail("internal_error", error.message, 500, { requestId });
