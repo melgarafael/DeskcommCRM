@@ -1,6 +1,6 @@
 -- manifest: o WhatsApp da equipe só é apagado quando a tela AFIRMA que não há número (`whatsapp: null`); membro que o corpo não menciona (chave ausente) é preservado, porque era isso que zerava `user_organizations.whatsapp_e164` de quem nunca pediu (#3935).
 --
--- 9101 — "a tela não mostrou" deixa de ser "a pessoa apagou".
+-- 9102 — "a tela não mostrou" deixa de ser "a pessoa apagou".
 --
 -- ─── O defeito, medido ──────────────────────────────────────────────────────
 --

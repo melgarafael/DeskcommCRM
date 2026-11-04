@@ -67366,12 +67366,12 @@ $$;
 revoke execute on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb,uuid) from public, anon;
 grant execute on function public.fn_definir_aviso_de_caso(uuid,uuid,text,text,boolean,boolean,boolean,text,jsonb,uuid) to authenticated;
 
--- ---- o aviso não apaga o WhatsApp da equipe (migration 9101) ----
+-- ---- o aviso não apaga o WhatsApp da equipe (migration 9102) ----
 -- `whatsapp: null` no elemento da lista AFIRMA que a pessoa não tem número e
 -- grava nulo; chave `whatsapp` AUSENTE significa "a tela não falou deste
 -- membro" e não toca na coluna. Era a confusão entre as duas que zerava
 -- `user_organizations.whatsapp_e164` de toda a equipe quando a tela era salva
--- sem carregar os números (#3935). O corpo é o da migration 9101, copiado
+-- sem carregar os números (#3935). O corpo é o da migration 9102, copiado
 -- byte a byte; `create or replace` da MESMA assinatura, idempotente.
 create or replace function public.fn_definir_aviso_de_caso(
   p_org uuid,
