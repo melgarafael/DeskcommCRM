@@ -40,6 +40,15 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Assistente pessoal": { es: "Asistente personal" },
+  "Motor interno · consultas · janela de histórico 90 dias": { es: "Motor interno · consultas · historial de 90 días" },
+  "Configuração de IA": { es: "Configuración de IA" },
+  "Recolher assistente": { es: "Contraer asistente" },
+  "Conversa pessoal restrita. Não envia mensagens nem altera registros.": { es: "Conversación personal restringida. No envía mensajes ni modifica registros." },
+  "Resultado pendente ou incerto. Atualize o histórico; não reenviamos automaticamente. Se continuar incerto, requer recuperação técnica sem repetir o turno.": { es: "Resultado pendiente o incierto. Actualiza el historial; no reenviamos automáticamente. Si sigue incierto, requiere recuperación técnica sin repetir el turno." },
+  "Atualizar histórico": { es: "Actualizar historial" },
+  "Mensagem ao assistente": { es: "Mensaje al asistente" },
+  "Converse com o assistente…": { es: "Conversa con el asistente…" },
   // Servidores MCP por agente e OAuth por contato (migration 9095).
   "O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.": { es: "El enlace de autorización es automático: mientras el cliente no autorice, el agente recibe por sí solo la herramienta que genera el enlace. No hace falta marcarla aquí." },
   "0 = o acesso é revogado assim que a conversa é encerrada.": { es: "0 = el acceso se revoca en cuanto se cierra la conversación." },

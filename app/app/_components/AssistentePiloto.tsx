@@ -1,4 +1,5 @@
 "use client";
+import { useT } from "@/hooks/i18n/useT";
 import { useEffect, useRef, useState } from "react";
 import type { PilotSession } from "@/lib/assistant-pilot/types";
 import { HEADER_ORG_DA_ABA } from "@/lib/auth/org-da-aba";
@@ -12,6 +13,7 @@ export function AssistentePiloto({
   tenantId: string;
   userId: string;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false),
     [text, setText] = useState(""),
     [session, setSession] = useState<PilotSession | null>(null),
@@ -102,15 +104,19 @@ export function AssistentePiloto({
         <section className="flex h-[30rem] max-h-[80vh] w-[22rem] max-w-[90vw] flex-col rounded-xl border border-border bg-background p-4 shadow-xl">
           <header className="flex items-center justify-between gap-3 border-b border-border pb-3">
             <div>
-              <h2 className="text-sm font-semibold">Assistente pessoal</h2>
+              <h2 className="text-sm font-semibold">{t("Assistente pessoal")}</h2>
               <p className="text-xs text-muted-foreground">
-                Motor interno · consultas · janela de histórico 90 dias
+                {t("Motor interno · consultas · janela de histórico 90 dias")}
               </p>
               <a href="/app/ai/providers" className="text-xs underline">
-                Configuração de IA
+                {t("Configuração de IA")}
               </a>
             </div>
-            <button type="button" aria-label="Recolher assistente" onClick={() => setOpen(false)}>
+            <button
+              type="button"
+              aria-label={t("Recolher assistente")}
+              onClick={() => setOpen(false)}
+            >
               ×
             </button>
           </header>
@@ -121,7 +127,7 @@ export function AssistentePiloto({
           >
             {!session?.messages.length ? (
               <p className="text-xs text-muted-foreground">
-                Conversa pessoal restrita. Não envia mensagens nem altera registros.
+                {t("Conversa pessoal restrita. Não envia mensagens nem altera registros.")}
               </p>
             ) : null}
             {session?.messages.map((m) => (
@@ -140,8 +146,9 @@ export function AssistentePiloto({
           {error ? <p className="mb-2 text-xs text-destructive">{error}</p> : null}
           {pending || uncertain ? (
             <p className="text-xs">
-              Resultado pendente ou incerto. Atualize o histórico; não reenviamos automaticamente.
-              Se continuar incerto, requer recuperação técnica sem repetir o turno.
+              {t(
+                "Resultado pendente ou incerto. Atualize o histórico; não reenviamos automaticamente. Se continuar incerto, requer recuperação técnica sem repetir o turno.",
+              )}
             </p>
           ) : null}
           <button
@@ -150,18 +157,18 @@ export function AssistentePiloto({
             onClick={() => void load()}
             className="mb-2 text-xs underline"
           >
-            Atualizar histórico
+            {t("Atualizar histórico")}
           </button>
           <div className="flex gap-2">
             <input
-              aria-label="Mensagem ao assistente"
+              aria-label={t("Mensagem ao assistente")}
               disabled={busy || !!pending || uncertain}
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") void send();
               }}
-              placeholder="Converse com o assistente…"
+              placeholder={t("Converse com o assistente…")}
               className="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm"
             />
             <button
@@ -170,7 +177,7 @@ export function AssistentePiloto({
               onClick={() => void send()}
               className="rounded-md bg-accent px-3 py-2 text-sm text-accent-foreground disabled:opacity-50"
             >
-              {busy ? "…" : "Enviar"}
+              {busy ? "…" : t("Enviar")}
             </button>
           </div>
         </section>
