@@ -26,7 +26,7 @@ type ExtensionConfiguration = {
 };
 type ExtensionManifest = {
   format_version: 1;
-  profile: "declarative";
+  profile: "declarative"; // o host admite também "data" e "connected": grep -n 'profile: z.enum' lib/extensions/manifest.ts
   publisher: string; // slug ASCII minúsculo, 2–64 caracteres
   name: string; // slug ASCII minúsculo, 2–64 caracteres
   version: string; // SemVer estável x.y.z, inteiros sem zeros à esquerda
@@ -131,7 +131,7 @@ Antes da mutação, o navegador precisa confirmar a persistência do UUID de rec
 
 Preparação/conclusão e criação de `system_update_runs` compartilham coordenação transacional no banco. Nova atualização do core é recusada enquanto há preparação de extensão (`install` ou `update`); preparar, concluir e desfazer são recusados durante atualização `dispatched` com menos de 15 minutos, a mesma régua de `RUN_STALE_AFTER_MS`. Um `dispatched` mais velho é, para o próprio app, desfecho desconhecido e não trava a publicação. Remover não consulta a atualização do core: tirar só reduz o que está ativo. Um trigger do framework no INSERT/transição para dispatched do atualizador aplica o mesmo lock. Cancelar/retomar prepara a saída da espera sem desbloquear uma execução antiga capaz de publicar. Esta coordenação cobre o atualizador pelo app; execução externa/manual do kit mantém sua responsabilidade de manutenção e deve ser declarada como limite, sem anunciar exclusão global de processos.
 
-Auditoria registra admissão/instalação/atualização/desfazer/remoção/configuração/desativação/cancelamento com IDs/versão/revisão, sem pacote bruto ou dados de tarefa. O recibo é a prova da operação; auditoria fire-and-forget é complementar. A UI mostra estado, origem, permissões e destino de uso. Ao foco/reconexão e após mutação, reconsulta o servidor; resposta de organização antiga é descartada. A rota direta e a ação verificam estado atual, mesmo com página antiga aberta.
+Auditoria registra admissão/instalação/atualização/desfazer/remoção/configuração/desativação/cancelamento, e ligar/desligar do módulo `connected` (`extension.switched`), com IDs/versão/revisão, sem pacote bruto ou dados de tarefa. O recibo é a prova da operação; auditoria fire-and-forget é complementar. A UI mostra estado, origem, permissões e destino de uso. Ao foco/reconexão e após mutação, reconsulta o servidor; resposta de organização antiga é descartada. A rota direta e a ação verificam estado atual, mesmo com página antiga aberta.
 
 ## Interfaces de integração entre as tarefas
 
