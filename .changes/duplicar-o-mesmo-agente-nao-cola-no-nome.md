@@ -19,7 +19,11 @@ nome e a cópia continua aceita pelo schema.
 Os nomes considerados são só os da própria organização: outra empresa com o
 mesmo nome não empurra a numeração da sua.
 
-Limite conhecido: a escolha do nome é uma leitura antes do INSERT, então duas
-duplicações **simultâneas** do mesmo agente ainda podem escolher o mesmo nome e
-a segunda terminar em 500. O PR #3970, que ainda não está na `main`, transforma
-essa colisão residual em 409 com a frase de nome repetido.
+Duas duplicações **simultâneas** do mesmo agente (o clique duplo) também não
+terminam mais em erro: a que perde a corrida relê os nomes e grava a próxima
+cópia livre.
+
+A mesma régua vale para duplicar um fluxo de follow-up: duplicar
+`"Carrinho (cópia)"` agora dá `"Carrinho (cópia 2)"`, não
+`"Carrinho (cópia) (cópia)"`. E um nome no limite de tamanho que termina em
+emoji não é mais cortado no meio do emoji, o que também fazia a gravação falhar.

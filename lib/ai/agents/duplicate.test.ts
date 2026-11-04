@@ -130,8 +130,14 @@ function makeDb(opts: {
       // A consulta de nomes é a única que NÃO termina em `single`/`maybeSingle`.
       then: (resolve: (v: unknown) => unknown) =>
         resolve({
+          // Sem o filtro de organização, a leitura devolve os nomes de TODAS —
+          // como o service role faria. É o que torna o caso "outra organização"
+          // capaz de reprovar a consulta que esquece o `.eq`.
           data: soNomes
-            ? (nomes[String(state.organization_id)] ?? []).map((name) => ({ name }))
+            ? (state.organization_id === undefined
+                ? Object.values(nomes).flat()
+                : (nomes[String(state.organization_id)] ?? [])
+              ).map((name) => ({ name }))
             : [],
           error: null,
         }),
@@ -196,7 +202,12 @@ describe("duplicateAgentWithVersion", () => {
   });
 
   it("prefere a draft mais recente à published", async () => {
-    const draft = { ...VERSAO_PUBLICADA, id: "version-2", status: "draft", system_prompt: "rascunho novo" };
+    const draft = {
+      ...VERSAO_PUBLICADA,
+      id: "version-2",
+      status: "draft",
+      system_prompt: "rascunho novo",
+    };
     const { db, inserts } = makeDb({ agent: AGENTE_MCP, draft, published: VERSAO_PUBLICADA });
 
     await duplicateAgentWithVersion(db, {
@@ -230,7 +241,10 @@ describe("duplicateAgentWithVersion", () => {
     expect(agente.row.kind).toBe("mcp_agent");
 
     const versao = inserts.find((i) => i.table === "ai_agent_versions");
-    expect(versao, "sem a v1 a cópia é a casca que este módulo existe para não produzir").toBeDefined();
+    expect(
+      versao,
+      "sem a v1 a cópia é a casca que este módulo existe para não produzir",
+    ).toBeDefined();
     expect(versao!.row.status).toBe("draft");
     expect(versao!.row.version_number).toBe(1);
     // A ponte do formato legado: `model` vira provider/modelo e os dois nulos
@@ -277,7 +291,11 @@ describe("duplicateAgentWithVersion", () => {
 });
 
 describe("duplicar com a assinatura do ChatGPT na origem (#2458)", () => {
-  const ORIGEM_ASSINATURA = { ...VERSAO_PUBLICADA, provider: "openai-assinatura", model: "gpt-5.5" };
+  const ORIGEM_ASSINATURA = {
+    ...VERSAO_PUBLICADA,
+    provider: "openai-assinatura",
+    model: "gpt-5.5",
+  };
   const pedido = { orgId: ORG, agentId: "agent-1", actorUserId: ACTOR, requireVersion: true };
 
   it("módulo desligado: recusa com a frase do módulo e não grava nem o agente", async () => {
@@ -389,6 +407,25 @@ describe("duplicar o mesmo agente mais de uma vez (#3978)", () => {
     expect(nome2.endsWith(" (cópia 2)")).toBe(true);
     expect(nome2.length).toBeLessThanOrEqual(120);
     expect(agentMcpCreateSchema.shape.name.safeParse(nome2).success).toBe(true);
+  });
+
+  it("duas duplicações SIMULTÂNEAS: a que perde a corrida tenta o próximo nome, não 500", async () => {
+    const { db, inserts } = makeDb({
+      agent: AGENTE_MCP,
+      published: VERSAO_PUBLICADA,
+      nomes: { [ORG]: ["Suporte"] },
+    });
+
+    // As duas leem a lista antes de qualquer uma gravar: escolhem o mesmo nome.
+    const [a, b] = await Promise.all([
+      duplicateAgentWithVersion(db, pedido),
+      duplicateAgentWithVersion(db, pedido),
+    ]);
+
+    expect(a.ok && b.ok, `${a.ok ? "" : a.message} ${b.ok ? "" : b.message}`).toBe(true);
+    const gravados = inserts.filter((i) => i.table === "ai_agents").map((i) => String(i.row.name));
+    // A colisão aconteceu (3 tentativas para 2 cópias) e foi resolvida.
+    expect(gravados).toEqual(["Suporte (cópia)", "Suporte (cópia)", "Suporte (cópia 2)"]);
   });
 
   it("outra organização com o mesmo nome não ocupa o nome desta", async () => {

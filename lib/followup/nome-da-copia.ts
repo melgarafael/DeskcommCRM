@@ -22,9 +22,18 @@ const SUFIXO_DE_COPIA = / \(cópia(?: \d+)?\)$/;
 export type OpcoesDeNomeDaCopia = {
   /** Teto da coluna `name`. 80 no fluxo de follow-up; 120 no agente. */
   teto?: number;
-  /** Raiz quando o original é vazio: "Fluxo" no follow-up, "Agente" no agente. */
+  /** Raiz quando o original é vazio: "Fluxo" (o padrão, do follow-up); "Agente" no agente. */
   raizVazia?: string;
 };
+
+/**
+ * `slice` corta em unidade UTF-16: no limite, um emoji vira meia letra (um
+ * surrogate sozinho), que o Postgres recusa no INSERT — o mesmo 500 por outra
+ * porta. Corta a metade órfã, e o nome fica uma unidade mais curto.
+ */
+function semMetadeDeEmoji(texto: string): string {
+  return /[\uD800-\uDBFF]$/.test(texto) ? texto.slice(0, -1) : texto;
+}
 
 export function nomeDaCopia(
   original: string,
@@ -33,15 +42,18 @@ export function nomeDaCopia(
 ): string {
   const teto = opcoes.teto ?? MAX_FOLLOWUP_FLOW_NAME;
   const taken = new Set(ocupados);
-  const raiz = original.trim().replace(SUFIXO_DE_COPIA, "").trim() || opcoes.raizVazia || "Cópia";
+  const raiz = original.trim().replace(SUFIXO_DE_COPIA, "").trim() || opcoes.raizVazia || "Fluxo";
   for (let n = 1; n < 1000; n++) {
     const sufixo = n === 1 ? " (cópia)" : ` (cópia ${n})`;
     const nome =
       raiz.length + sufixo.length <= teto
         ? raiz + sufixo
-        : raiz.slice(0, Math.max(0, teto - sufixo.length)) + sufixo;
+        : semMetadeDeEmoji(raiz.slice(0, Math.max(0, teto - sufixo.length))) + sufixo;
     if (!taken.has(nome)) return nome;
   }
   // ponytail: 1000 cópias do mesmo nome é o teto; UUID no sufixo é o upgrade.
-  return `${raiz.slice(0, Math.max(0, teto - 9))} ${crypto.randomUUID().slice(0, 8)}`.slice(0, teto);
+  return `${semMetadeDeEmoji(raiz.slice(0, Math.max(0, teto - 9)))} ${crypto.randomUUID().slice(0, 8)}`.slice(
+    0,
+    teto,
+  );
 }
