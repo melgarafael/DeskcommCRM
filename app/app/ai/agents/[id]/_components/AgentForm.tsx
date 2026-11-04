@@ -421,7 +421,8 @@ function toVersionPayload(s: FormState) {
  * `mesmoRascunho` responde "salvar mudaria alguma coisa?" comparando os dois
  * payloads — mas o servidor NÃO grava o payload cru: `versionShapeSchema` faz
  * `.trim()` no prompt e completa o `trigger_config` com
- * `include_tags`/`exclude_tags`/`include_pipeline_ids`/`exclude_pipeline_ids`
+ * `include_tags`/`exclude_tags`/`include_pipeline_ids`/`exclude_pipeline_ids`/
+ * `include_sources`/`exclude_sources`
  * (`.default([])`). Comparar o formulário com o que está no banco sem passar os
  * dois pela MESMA régua acusava alteração para sempre, e Publicar ficava apagado
  * com "Salve o rascunho antes de publicar" mesmo depois de salvar — o defeito da

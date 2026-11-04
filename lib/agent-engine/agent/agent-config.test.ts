@@ -147,12 +147,14 @@ const CONTATO = 'contato-1';
 /** Pool que responde à seleção e à leitura dos fatos do contato. */
 function poolDaSelecao(
   candidatos: Record<string, unknown>[],
-  fatos: { tags?: string[]; funis?: string[] } | null = { tags: [], funis: [] },
+  fatos: { tags?: string[]; funis?: string[]; source?: string } | null = { tags: [], funis: [] },
 ): pg.Pool {
   return {
     query: vi.fn(async (sql: string) => {
       if (/from contacts c/.test(sql)) {
-        return { rows: fatos === null ? [] : [{ tags: fatos.tags ?? [], funis: fatos.funis ?? [] }] };
+        return {
+          rows: fatos === null ? [] : [{ tags: fatos.tags ?? [], source: fatos.source ?? null, funis: fatos.funis ?? [] }],
+        };
       }
       return { rows: candidatos };
     }),
@@ -369,5 +371,42 @@ describe('público do agente — quem atende no mesmo número (#3722)', () => {
     const pool = poolDaSelecao([VENDAS, SUPORTE], { tags: ['cliente ativo'], funis: [] });
     const cfg = await loadPublishedAgentConfig(pool, 'org1', NUMERO, CONTATO);
     expect(cfg?.agentId).toBe('suporte');
+  });
+});
+
+/**
+ * PÚBLICO POR ORIGEM — o número que prospecta E atende quem chega sozinho.
+ *
+ * O caso de produção que pediu a régua: o agente da prospecção está publicado
+ * no número sem público nenhum (atende todo mundo, e não pode ser tocado), e um
+ * agente de atendimento entra no MESMO número com prioridade maior e
+ * `exclude_sources: [prospecting]`. A resposta a uma abordagem tem de cair no
+ * agente da prospecção por regra, não por um classificador de IA.
+ */
+describe('público por origem — prospecção e atendimento no mesmo número', () => {
+  const ATENDIMENTO = agentRow('atendimento', { filters: { exclude_sources: ['prospecting'] } }, {
+    priority: 20,
+    created_at: '2026-11-04T00:00:00Z',
+  });
+  const PROSPECCAO = agentRow('prospeccao', { events: ['message'], filters: { ignore_groups: true } }, {
+    priority: 0,
+    created_at: '2026-10-26T00:00:00Z',
+  });
+
+  it('quem nasceu da prospecção fica com o agente da prospecção, e o rastro diz por quê', async () => {
+    const pool = poolDaSelecao([ATENDIMENTO, PROSPECCAO], { source: 'prospecting' });
+    const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+    expect(escolha.config?.agentId).toBe('prospeccao');
+    expect(escolha.rastro?.candidatos[0]).toMatchObject({
+      agentId: 'atendimento',
+      decisao: { passa: false, regra: 'barrado_por_origem_excluida', valor: 'prospecting' },
+    });
+  });
+
+  it('quem chegou sozinho pelo WhatsApp é atendido pelo agente de atendimento', async () => {
+    const pool = poolDaSelecao([ATENDIMENTO, PROSPECCAO], { source: 'whatsapp' });
+    const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+    expect(escolha.config?.agentId).toBe('atendimento');
+    expect(escolha.motivo).toBe('publico_liberou');
   });
 });

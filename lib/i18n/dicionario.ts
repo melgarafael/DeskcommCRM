@@ -2942,6 +2942,15 @@ export const DICIONARIO: Traducoes = {
   "Ex.: cliente ativo, contrato": { es: "Ej.: cliente activo, contrato" },
   "Atender só quem está nestes funis": { es: "Atender solo a quien está en estos embudos" },
   "Não atender quem está nestes funis": { es: "No atender a quien está en estos embudos" },
+  "Atender só quem chegou por estas origens": { es: "Atender solo a quien llegó por estos orígenes" },
+  "Não atender quem chegou por estas origens": { es: "No atender a quien llegó por estos orígenes" },
+  "A origem é de onde o contato entrou no CRM e não muda depois. Em branco, qualquer origem serve.": {
+    es: "El origen es por donde el contacto entró al CRM y no cambia después. En blanco, cualquier origen sirve.",
+  },
+  "Ex.: marque Prospecção para que as respostas de uma campanha fiquem com o agente que fez a abordagem.": {
+    es: "Ej.: marque Prospección para que las respuestas de una campaña queden con el agente que hizo el contacto.",
+  },
+  "Chegou pelo WhatsApp": { es: "Llegó por WhatsApp" },
   "Estar no funil é ter um negócio ABERTO nele. Quem ainda não tem card não entra em \"só estes funis\".": {
     es: "Estar en el embudo es tener un negocio ABIERTO en él. Quien todavía no tiene tarjeta no entra en \"solo estos embudos\".",
   },
