@@ -108,4 +108,21 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/agenda/pessoas",
   "/api/v1/agenda/tipos/reativar",
   "/api/v1/agenda/vinculos",
+
+  // PROPOSTAS (fatia R2, ordem R2-05). Quem autentica é a própria rota, por
+  // `resolveAuthDual` (sessão OU Bearer `dsk_…`, a organização vinda da linha do
+  // token): `mcp:read` no GET e `mcp:write` na escrita, com o papel que a sessão
+  // já exige (`viewer` lê, `agent` cria e ajusta, `manager` troca o modelo, edita
+  // o documento, revisa e descarta). Segmento `[id]` em forma de UUID. `send`
+  // (envia ao cliente final), `assistant` e `preencher-com-conversa` (ambos com
+  // o pool do Postgres e a IA) seguem só de sessão: não ganham porta.
+  "/api/v1/proposals",
+  "/api/v1/proposals/[id]",
+  "/api/v1/proposals/[id]/assistant/apply",
+  "/api/v1/proposals/[id]/assistant/disponibilidade",
+  "/api/v1/proposals/[id]/decide",
+  "/api/v1/proposals/[id]/documento",
+  "/api/v1/proposals/[id]/modelo",
+  "/api/v1/proposals/[id]/previa",
+  "/api/v1/proposals/[id]/revise",
 ];
