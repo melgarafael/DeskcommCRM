@@ -1,3 +1,6 @@
+import { AssistentePiloto } from "./_components/AssistentePiloto";
+import { pilotEnabled } from "@/lib/assistant-pilot/gate";
+import { PILOT_ASSISTANT_ID } from "@/lib/assistant-pilot/types";
 import { InterfaceRefresh } from "@/hooks/auth/InterfaceRefresh";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
@@ -27,9 +30,7 @@ import { modulosLigados } from "@/lib/instalacao/modulos";
 import { capacidadesLigadas } from "@/lib/organizacao/capacidades";
 import { telefoniaEmUso } from "@/lib/telefonia/em-uso";
 import { ehOperante } from "@/lib/organizacao/operante";
-import {
-  ImpersonateBanner,
-} from "@/components/app/ImpersonateBanner";
+import { ImpersonateBanner } from "@/components/app/ImpersonateBanner";
 import { ConexaoCaidaBanner } from "@/components/app/ConexaoCaidaBanner";
 import { FaixaDaCobranca } from "@/components/cobranca/FaixaDaCobranca";
 import { FaixasDeCima } from "@/components/shell/FaixasDeCima";
@@ -147,12 +148,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         .maybeSingle(),
       listarConexoesCaidas(daSessao, activeOrg.orgId),
       isMfaEnrolled(),
-      requiresMfa(
-        activeOrg.role,
-        user.is_platform_admin,
-        user.id,
-        activeOrg.orgId,
-      ),
+      requiresMfa(activeOrg.role, user.is_platform_admin, user.id, activeOrg.orgId),
       // Da INSTALAÇÃO: decide se a porta de um módulo opcional entra no menu.
       modulosLigados(admin),
       // Da ORGANIZAÇÃO (#1290): a telefonia não tem chave de instalação que o app
@@ -177,8 +173,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     if (orgRow && !orgRow.onboarded_at && !user.support) redirect("/onboarding");
     // G4-02: expõe visibility_mode ao client (inbox decide visões visíveis).
     // Fonte confiável (admin client, org do cookie validado) — nunca do body.
-    const mode = (orgRow?.settings as { visibility_mode?: VisibilityMode } | null)
-      ?.visibility_mode;
+    const mode = (orgRow?.settings as { visibility_mode?: VisibilityMode } | null)?.visibility_mode;
     activeOrg = {
       ...activeOrg,
       visibility_mode: mode ?? DEFAULT_VISIBILITY_MODE,
@@ -199,7 +194,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     if (modulos.includes("cobranca")) {
       const { data, error } = await admin
         .from("cobranca_assinaturas")
-        .select("estado, trial_ate, vencida_desde, cancela_no_fim, proximo_vencimento, link_de_pagamento, provedor")
+        .select(
+          "estado, trial_ate, vencida_desde, cancela_no_fim, proximo_vencimento, link_de_pagamento, provedor",
+        )
         .eq("organization_id", activeOrg.orgId)
         .maybeSingle();
       if (error) {
@@ -284,10 +281,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const store = await cookies();
   const collapsed = store.get("sidebar_collapsed")?.value === "1";
 
-  const impersonating = user.support ? {
-    tenantId: user.support.organization_id, tenantName: user.support.name,
-    expiresAt: user.support.expires_at, accessMode: user.support.access_mode,
-  } : null;
+  const impersonating = user.support
+    ? {
+        tenantId: user.support.organization_id,
+        tenantName: user.support.name,
+        expiresAt: user.support.expires_at,
+        accessMode: user.support.access_mode,
+      }
+    : null;
 
   // O CONTRATO DE OCUPAÇÃO DO RODAPÉ (issue #1305) envolve a casca E as peças de
   // voz. O `VoiceCallProvider` desenha o painel de chamada DEPOIS dos children,
@@ -312,8 +313,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // pergunta quem está logado. Ver `lib/i18n/IdiomaProvider`: foi o
     // acoplamento com a autenticação que derrubou 32 casos.
     <IdiomaProvider locale={user.idioma}>
-    <AuthProvider user={user} activeOrg={activeOrg}>
-      {/*
+      <AuthProvider user={user} activeOrg={activeOrg}>
+        {/*
         A COR DA ETIQUETA, uma leitura por tela.
 
         O chip aparece em LISTA — uma fila de duzentas conversas desenha quatro
@@ -325,9 +326,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         do `AppShell` porque o gate de MFA substitui a casca: o mapa precisa
         sobreviver ao portão, e não ser relido quando ele sai.
       */}
-      <ProvedorDeCoresDasEtiquetas>
-      <InterfaceRefresh userId={user.id} org={activeOrg} support={!!user.support} />
-      {/*
+        <ProvedorDeCoresDasEtiquetas>
+          <InterfaceRefresh userId={user.id} org={activeOrg} support={!!user.support} />
+          {/*
         O MARCADOR da marca da organização — o elemento cuja existência define o
         escopo `body:has([data-marca-org])` (lib/branding/css.ts).
 
@@ -342,26 +343,40 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         veria a tela de cadastro de MFA — a PRIMEIRA tela dele — com a cor da
         instalação, e depois o resto do produto com a dele.
       */}
-      <div data-marca-org="" className="contents">
-        <EstiloDaMarcaDaOrganizacao css={cssDaOrganizacao} />
-        <EstiloDoTemaDaExtensao css={cssDoTemaDaExtensao} />
-        {/* As faixas medidas: a casca e o Inbox descontam a altura delas. */}
-        <FaixasDeCima>
-          <ImpersonateBanner impersonating={impersonating} />
-          <ConexaoCaidaBanner caidas={conexoesCaidas} />
-          {faixa !== null && <FaixaDaCobranca faixa={faixa} fuso={orgFuso} />}
-        </FaixasDeCima>
-        {needsMfaGate ? (
-          // Gate always mounted for MFA-required roles; it latches the blocking
-          // decision client-side so the enroll Server Action's revalidation
-          // can't tear down the recovery-codes screen mid-flow.
-          <MfaEnrollGate enrolled={enrolled}>{shell}</MfaEnrollGate>
-        ) : (
-          shell
-        )}
-      </div>
-      </ProvedorDeCoresDasEtiquetas>
-    </AuthProvider>
+          <div data-marca-org="" className="contents">
+            <EstiloDaMarcaDaOrganizacao css={cssDaOrganizacao} />
+            <EstiloDoTemaDaExtensao css={cssDoTemaDaExtensao} />
+            {/* As faixas medidas: a casca e o Inbox descontam a altura delas. */}
+            <FaixasDeCima>
+              <ImpersonateBanner impersonating={impersonating} />
+              <ConexaoCaidaBanner caidas={conexoesCaidas} />
+              {faixa !== null && <FaixaDaCobranca faixa={faixa} fuso={orgFuso} />}
+            </FaixasDeCima>
+            {needsMfaGate ? (
+              // Gate always mounted for MFA-required roles; it latches the blocking
+              // decision client-side so the enroll Server Action's revalidation
+              // can't tear down the recovery-codes screen mid-flow.
+              <MfaEnrollGate enrolled={enrolled}>{shell}</MfaEnrollGate>
+            ) : (
+              shell
+            )}
+          </div>
+        </ProvedorDeCoresDasEtiquetas>
+        <AssistentePiloto
+          key={`${activeOrg?.orgId}:${user.id}`}
+          tenantId={activeOrg?.orgId ?? ""}
+          userId={user.id}
+          enabled={Boolean(
+            activeOrg &&
+            !user.support &&
+            pilotEnabled({
+              tenantId: activeOrg.orgId,
+              userId: user.id,
+              assistantId: PILOT_ASSISTANT_ID,
+            }),
+          )}
+        />
+      </AuthProvider>
     </IdiomaProvider>
   );
 }

@@ -1,0 +1,58 @@
+{
+  "nodes": [
+    {
+      "id": "pilot-config",
+      "path": "lib/assistant-pilot/gate.ts",
+      "lane": "configuration",
+      "col": 0,
+      "type": "service",
+      "label": "Permissão explícita do operador"
+    },
+    {
+      "id": "pilot-ui",
+      "path": "app/app/_components/AssistentePiloto.tsx",
+      "lane": "operation",
+      "col": 1,
+      "type": "service",
+      "label": "Pedido e recibo pessoal"
+    },
+    {
+      "id": "pilot-route",
+      "path": "app/api/v1/assistant-pilot/route.ts",
+      "lane": "operation",
+      "col": 2,
+      "type": "service",
+      "label": "Identidade autorizada"
+    },
+    {
+      "id": "pilot-store",
+      "path": "lib/assistant-pilot/internal-store.ts",
+      "lane": "operation",
+      "col": 3,
+      "type": "service",
+      "label": "Reserva e histórico privado"
+    }
+  ],
+  "edges": [
+    {
+      "from": "pilot-config",
+      "to": "pilot-ui",
+      "label": "Default desligado"
+    },
+    {
+      "from": "pilot-ui",
+      "to": "pilot-route",
+      "label": "Turno explícito"
+    },
+    {
+      "from": "pilot-route",
+      "to": "pilot-store",
+      "label": "Reserva antes da inferência"
+    },
+    {
+      "from": "pilot-store",
+      "to": "pilot-ui",
+      "label": "Histórico e estado incerto"
+    }
+  ]
+}
