@@ -18,9 +18,6 @@
 -- o teto mesmo para dado sujo); a constraint abaixo é só a cerca do banco.
 
 alter table public.ai_agent_versions
-  drop constraint if exists ai_agent_versions_reply_min_interval_ms_check;
-
-alter table public.ai_agent_versions
   add column if not exists reply_min_interval_ms integer;
 
 comment on column public.ai_agent_versions.reply_min_interval_ms is
@@ -29,6 +26,9 @@ comment on column public.ai_agent_versions.reply_min_interval_ms is
 -- O `drop … if exists` antes do `add` torna a migration reaplicável: o `update.sh`
 -- re-aplica o apêndice do baseline, e `add constraint` sem guarda quebraria com
 -- 'already exists'. Mesmo par no apêndice do baseline.sql.
+alter table public.ai_agent_versions
+  drop constraint if exists ai_agent_versions_reply_min_interval_ms_check;
+
 alter table public.ai_agent_versions
   add constraint ai_agent_versions_reply_min_interval_ms_check
   check (reply_min_interval_ms is null or (reply_min_interval_ms >= 0 and reply_min_interval_ms <= 600000));
