@@ -6,8 +6,8 @@ titulo: O público do agente também escolhe pela origem do contato, e a prospec
 
 Na tela do agente, em «Público do agente», há duas listas novas: «Atender só
 quem chegou por estas origens» e «Não atender quem chegou por estas origens».
-A origem é de onde o contato entrou no CRM — WhatsApp, Prospecção, site,
-anúncio, importação — e não muda depois.
+A origem é por onde o contato entrou no CRM — WhatsApp, Prospecção, site,
+anúncio, importação.
 
 O caso que motivou a mudança: um número que prospecta e também recebe quem
 chega sozinho. Antes, um segundo agente nesse número ou respondia a todos,

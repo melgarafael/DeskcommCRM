@@ -2944,8 +2944,8 @@ export const DICIONARIO: Traducoes = {
   "Não atender quem está nestes funis": { es: "No atender a quien está en estos embudos" },
   "Atender só quem chegou por estas origens": { es: "Atender solo a quien llegó por estos orígenes" },
   "Não atender quem chegou por estas origens": { es: "No atender a quien llegó por estos orígenes" },
-  "A origem é de onde o contato entrou no CRM e não muda depois. Em branco, qualquer origem serve.": {
-    es: "El origen es por donde el contacto entró al CRM y no cambia después. En blanco, cualquier origen sirve.",
+  "A origem é por onde o contato entrou no CRM. Em branco, qualquer origem serve.": {
+    es: "El origen es por donde el contacto entró al CRM. En blanco, cualquier origen sirve.",
   },
   "Ex.: marque Prospecção para que as respostas de uma campanha fiquem com o agente que fez a abordagem.": {
     es: "Ej.: marque Prospección para que las respuestas de una campaña queden con el agente que hizo el contacto.",

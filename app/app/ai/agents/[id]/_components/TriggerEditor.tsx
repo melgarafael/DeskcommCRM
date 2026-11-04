@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useT } from "@/hooks/i18n/useT";
+import { ORIGEM_AGENDA_DO_CELULAR } from "@/lib/leads/origem-do-contato";
 import { FUSO_PADRAO } from "@/lib/tempo/fusos";
 
 export interface BusinessHoursValue {
@@ -195,7 +196,7 @@ const ORIGENS_OFERECIDAS = [
   "google_ads",
   "manual",
   "import_csv",
-  "whatsapp_agenda",
+  ORIGEM_AGENDA_DO_CELULAR,
   "nuvemshop",
 ] as const;
 
@@ -215,7 +216,7 @@ function rotuloDaOrigem(source: string, t: (texto: string) => string): string {
       return t("Manual");
     case "import_csv":
       return t("Importado (CSV)");
-    case "whatsapp_agenda":
+    case ORIGEM_AGENDA_DO_CELULAR:
       return t("Agenda do celular");
     case "nuvemshop":
       return "Nuvemshop";
@@ -464,7 +465,7 @@ export function TriggerEditor({ value, onChange, disabled, organizationTimezone,
         <ListaDeOrigens
           id="include_sources"
           rotulo={t("Atender só quem chegou por estas origens")}
-          ajuda={t("A origem é de onde o contato entrou no CRM e não muda depois. Em branco, qualquer origem serve.")}
+          ajuda={t("A origem é por onde o contato entrou no CRM. Em branco, qualquer origem serve.")}
           selecionados={value.filters.include_sources ?? []}
           onChange={(origens) => patchFilters({ include_sources: origens })}
           disabled={disabled}

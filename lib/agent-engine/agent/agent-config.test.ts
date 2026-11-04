@@ -415,6 +415,16 @@ describe('público por origem — prospecção e atendimento no mesmo número', 
     expect(escolha.config?.agentId).toBe('atendimento');
   });
 
+  it('quem chega por anúncio é atendido pelo agente de atendimento — sem depender de integração com a plataforma', async () => {
+    // `meta_ads` é o que a atribuição grava quando a mensagem traz o clique; sem
+    // ela, o contato nasce `whatsapp`. As duas origens passam pela mesma exclusão.
+    for (const source of ['meta_ads', 'whatsapp']) {
+      const pool = poolDaSelecao([ATENDIMENTO, PROSPECCAO], { source });
+      const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+      expect(escolha.config?.agentId, source).toBe('atendimento');
+    }
+  });
+
   it('contato cadastrado à mão (origem manual) é atendido pelo agente de atendimento', async () => {
     const pool = poolDaSelecao([ATENDIMENTO, PROSPECCAO], { source: 'manual' });
     const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
