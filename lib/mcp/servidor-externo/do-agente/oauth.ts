@@ -21,6 +21,7 @@
  */
 import { randomBytes } from "node:crypto";
 
+import { checkResourceAllowed } from "@modelcontextprotocol/sdk/shared/auth-utils.js";
 import type { FetchLike } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { z } from "zod";
 
@@ -32,6 +33,7 @@ import type { MetadadosOauth } from "./registro";
 export type CodigoDeErroOauth =
   | "descoberta_falhou"
   | "sem_s256"
+  | "metadados_divergentes"
   | "sem_cliente"
   | "registro_falhou"
   | "invalid_grant"
@@ -154,6 +156,11 @@ function candidatosDeServidorDeAutorizacao(emissor: string): string[] {
   ];
 }
 
+/** Esquema e host em minúsculo (o `URL` já faz) e sem a barra final, como o `iss` em `retorno.ts`. */
+function identificadorNormalizado(u: string): string {
+  return new URL(u).href.replace(/\/+$/, "");
+}
+
 async function primeiroQueResponde<T>(
   urls: readonly string[],
   schema: z.ZodType<T>,
@@ -228,9 +235,26 @@ export async function descobrir(
     opcoes,
   );
   if (!recurso) throw new ErroDeOauth("descoberta_falhou");
+  // RFC 9728 §3.3: a metadata tem de ser DESTE recurso. A régua é a do SDK do
+  // MCP (mesma origem, endpoint dentro do caminho do `resource`), e não a
+  // igualdade: o `.well-known` da raiz, que `candidatosDeRecursoProtegido`
+  // também consulta, descreve legitimamente a ORIGEM.
+  if (
+    recurso.resource &&
+    !checkResourceAllowed({
+      requestedResource: identificadorNormalizado(endpoint),
+      configuredResource: identificadorNormalizado(recurso.resource),
+    })
+  ) {
+    throw new ErroDeOauth("metadados_divergentes");
+  }
   const emissor = recurso.authorization_servers[0]!;
   const as = await primeiroQueResponde(candidatosDeServidorDeAutorizacao(emissor), ServidorDeAutorizacaoSchema, opcoes);
   if (!as) throw new ErroDeOauth("descoberta_falhou");
+  // RFC 8414 §3.3: `issuer` idêntico ao identificador em que o `.well-known` foi inserido.
+  if (as.issuer && identificadorNormalizado(as.issuer) !== identificadorNormalizado(emissor)) {
+    throw new ErroDeOauth("metadados_divergentes");
+  }
   if (!(as.code_challenge_methods_supported ?? []).includes("S256")) throw new ErroDeOauth("sem_s256");
 
   return {

@@ -19,9 +19,12 @@
  *
  * Uma leitura de estoque/agenda é uma consulta indexada do outro lado: p99 na
  * casa de 1–2 s, e o que passa disso é fila ou servidor doente. 8 s dá ~4× de
- * folga sobre o p99 e corta o pior caso de 30 s para 8 s por operação — com três
+ * folga sobre o p99 e corta o pior caso de 30 s para 8 s por passo — com três
  * ferramentas remotas num turno, 24 s em vez de 90 s. Acima disso a resposta
  * certa é "não consegui consultar agora", não fazer o cliente esperar.
+ *
+ * Vale para o servidor da organização (`carregar.ts`, `definirFerramentasRemotas`)
+ * e para os do agente (`do-agente/carregar.ts`, `definirFerramentasDoServidorDoAgente`).
  */
 export const TIMEOUT_DA_DESCOBERTA_NO_TURNO_MS = 8_000;
 

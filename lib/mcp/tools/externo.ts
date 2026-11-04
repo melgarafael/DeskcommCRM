@@ -243,6 +243,7 @@ export function definirFerramentasDoServidorDoAgente(
         const chamar = () =>
           chamarFerramentaRemota(montado.chamavel, ferramenta.name, argumentos, {
             fetch: montado.fetch,
+            timeoutMs: TIMEOUT_DA_CHAMADA_NO_TURNO_MS,
             ...(montado.cabecalhos ? { cabecalhos: montado.cabecalhos } : {}),
             aoRecusar: (status, texto) => {
               desafio = { status, texto };
