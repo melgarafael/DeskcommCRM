@@ -1,9 +1,12 @@
-// Prova pela tela: recusar uma ligação SIP tocando. Uso: node prova-recusa-sip.cjs <repo> <outdir> <rotulo>
-const { execFileSync } = require("node:child_process");
-const fs = require("node:fs");
-const path = require("node:path");
-const [repo, out, rotulo] = process.argv.slice(2);
-const { chromium } = require(require.resolve("@playwright/test", { paths: [repo] }));
+// Prova pela tela: recusar uma ligação SIP tocando.
+// Uso, da raiz do repositório: OWNER_PASSWORD=... node evidence/recusar-ligacao-sip/prova-recusa-sip.mjs <outdir> <rotulo>
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+
+import { chromium } from "@playwright/test";
+
+const [out, rotulo] = process.argv.slice(2);
 const BASE = "http://localhost:3000";
 fs.mkdirSync(out, { recursive: true });
 const psql = (sql) =>
@@ -15,7 +18,7 @@ const psql = (sql) =>
   const org = psql("select id from organizations limit 1");
   const id = psql(`insert into voice_calls (organization_id, provider, direction, status, peer_phone, asterisk_channel_id)
     values ('${org}', 'sip', 'inbound', 'ringing', '+5527988887777', gen_random_uuid()::text) returning id`).split("\n")[0];
-  console.log(`[${rotulo}] ligação SIP tocando:`, id);
+  console.info(`[${rotulo}] ligação SIP tocando:`, id);
 
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1366, height: 800 } });
@@ -34,13 +37,13 @@ const psql = (sql) =>
   await page.getByRole("button", { name: "Recusar chamada" }).click();
   await banner.waitFor({ state: "hidden", timeout: 10_000 });
   await page.waitForTimeout(1500);
-  console.log(`[${rotulo}] resposta do /reject:`, respostas.join(","));
+  console.info(`[${rotulo}] resposta do /reject:`, respostas.join(","));
   await page.screenshot({ path: path.join(out, `${rotulo}-2-depois-do-clique.png`) });
-  console.log(`[${rotulo}] banco:`, psql(`select status||' '||coalesce(end_reason,'-') from voice_calls where id='${id}'`));
+  console.info(`[${rotulo}] banco:`, psql(`select status||' '||coalesce(end_reason,'-') from voice_calls where id='${id}'`));
 
   await page.reload();
   await page.waitForTimeout(8000);
-  console.log(`[${rotulo}] depois de recarregar, banner visível =`, await banner.isVisible());
+  console.info(`[${rotulo}] depois de recarregar, banner visível =`, await banner.isVisible());
   await page.screenshot({ path: path.join(out, `${rotulo}-3-recarregada.png`) });
   await browser.close();
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -3,7 +3,7 @@
 Ambiente: stack local (`ubuntu-local-installer.sh`), banco do `baseline.sql`, **sem WaCalls**
 configurado (instalação só com telefonia SIP). Onboarding marcado como concluído direto no banco.
 
-Roteiro (`prova-recusa-sip.cjs`): insere uma linha SIP recebida `ringing`, entra como dono,
+Roteiro (`prova-recusa-sip.mjs`): insere uma linha SIP recebida `ringing`, entra como dono,
 abre `/app/inbox`, clica em **Recusar chamada** no banner, lê o banco e recarrega a página.
 
 Medido em 2026-11-04, a mesma prova contra as duas imagens do app:
