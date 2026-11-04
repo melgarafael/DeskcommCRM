@@ -95,4 +95,24 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/ai/skills",
   { caminho: "/api/v1/ai/skills/[name]", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
   { caminho: "/api/v1/ai/skills/[name]/versions", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
+
+  // ai (demais). Quem autentica é a própria rota, por `resolveAuthDual`: token com
+  // `config:read` (GET) ou `config:write` (escrita) e papel admin (`tokenRole`),
+  // com o papel de sempre da tabela (manager/agent/admin) como mínimo. Caminhos
+  // literais, sem `[nome]`. Métodos que seguem só de sessão na mesma rota (`pacing`
+  // PUT, `style-adjustments` GET, `guardrail-layers` GET) recusam o token com 401 no
+  // `requireRole`. `jev` e `voz/preview` seguem só de sessão e não entram de carona.
+  "/api/v1/ai/automatico-ativo",
+  "/api/v1/ai/budget",
+  "/api/v1/ai/evolution",
+  "/api/v1/ai/guardrail-layers",
+  "/api/v1/ai/mapas",
+  "/api/v1/ai/mapas/testar",
+  "/api/v1/ai/operator-metrics",
+  "/api/v1/ai/pacing",
+  "/api/v1/ai/runs",
+  "/api/v1/ai/style-adjustments",
+  "/api/v1/ai/turn-traces",
+  "/api/v1/ai/usage",
+  "/api/v1/ai/voz",
 ];

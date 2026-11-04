@@ -30,6 +30,9 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { randomUUID } from "node:crypto";
+
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
@@ -37,6 +40,7 @@ import { roleAtLeast } from "@/lib/auth/types";
 import { CAMADAS_CONFIGURAVEIS, padraoDasCamadasNoAmbiente } from "@/lib/agent-engine/guardrails/camadas-da-org";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -81,10 +85,19 @@ export async function PUT(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  const authz = await requireRole("admin", { resource: "ai_guardrail_layers" });
+  const requestId = randomUUID();
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_guardrail_layers",
+    role: "admin",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_guardrail_layers", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const autor = authz.actor.type === "user" ? authz.actor.id : null;
 
   const parsed = corpoDoPut.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -92,12 +105,12 @@ export async function PUT(req: NextRequest): Promise<Response> {
   }
   const corpo = parsed.data;
 
-  const db = await createClient();
+  const db = authz.supabase;
   const { data: gravado, error } = await db
     .from("org_guardrail_layers")
     .upsert(
       {
-        organization_id: org.orgId,
+        organization_id: authz.organizationId,
         layer: corpo.layer,
         enabled: corpo.enabled,
         updated_at: new Date().toISOString(),
@@ -116,8 +129,9 @@ export async function PUT(req: NextRequest): Promise<Response> {
 
   void audit({
     action: "ai.guardrail_layer_changed",
-    organizationId: org.orgId,
-    actorUserId: user.id,
+    organizationId: authz.organizationId,
+    actorUserId: autor,
+    actorApiTokenId: authz.apiTokenId ?? null,
     resourceType: "org_guardrail_layers",
     // A chave é (organização, camada) — não há uuid a referenciar, e mandar o
     // nome da camada numa coluna uuid é o defeito que já custou duas trilhas de
