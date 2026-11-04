@@ -30,7 +30,7 @@ function fixture() {
     spawnSync(process.execPath, [script, ...args], {
       cwd: root,
       encoding: "utf8",
-      env: { PATH: process.env.PATH, VERCEL: vercel },
+      env: { PATH: process.env.PATH, VERCEL: vercel, NODE_ENV: "test" },
       timeout: 10_000,
     });
   return { root, source, target, put, run };
