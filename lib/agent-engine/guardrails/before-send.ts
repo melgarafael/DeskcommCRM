@@ -523,8 +523,8 @@ export const promiseGate: Gate = {
 };
 
 /**
- * Gate 5.5 — condição comercial sem lastro: valor afirmado como condição que só aparece
- * do lado do cliente (`./lastro-comercial.ts`). Antes do semântico, para que o primeiro
+ * Gate 5.5 — condição comercial sem lastro: valor ou termo de concessão afirmado como
+ * condição que só aparece do lado do cliente (`./lastro-comercial.ts`). Antes do semântico, para que o primeiro
  * erro de ensino seja este, e não um que ensina só a mudar a forma da frase.
  */
 export const concessaoSemLastroGate: Gate = {
@@ -538,7 +538,7 @@ export const concessaoSemLastroGate: Gate = {
           pass: false,
           code: 'concessao_sem_lastro',
           reason: renderVetoDeConcessaoSemLastro(achados),
-          // Só os átomos (tipo, moeda, número), nunca o corpo — sem PII.
+          // Só os átomos (tipo, moeda, número, nome do termo), nunca o corpo — sem PII.
           detail: { sem_lastro: achados.join(',') },
         };
   },
@@ -898,6 +898,16 @@ function semAcento(texto: string): string {
 }
 
 /**
+ * O corpo promete VERIFICAR a agenda ("vou verificar os horários e já te aviso")?
+ * É a metade "enrolação" do `agendaStallGate`, exportada para a trava da parada
+ * do laço (`agent/parada-apos-envio.ts`) não ter uma terceira cópia da regra.
+ */
+export function anunciaVerificacaoDeAgenda(body: string): boolean {
+  const b = semAcento(body);
+  return AGENDA_STALL_PATTERN.test(b) || AGENDA_STALL_VER_PATTERN.test(b);
+}
+
+/**
  * Nomes de ferramenta como o modelo os lê num texto de ensino: "`a`", "`a` ou `b`",
  * "`a`, `b` ou `c`". Usado pelo veto de agenda e pelo bloco residente de agenda
  * (`inbound-turn.ts`), que precisam nomear as MESMAS ferramentas do mesmo jeito.
@@ -933,8 +943,7 @@ export const agendaStallGate: Gate = {
     if (ctx.agenda === undefined || !ctx.agenda.active) return { pass: true };
     if (ctx.agenda.toolCalledThisTurn) return { pass: true };
     const bodySemAcento = semAcento(ctx.body);
-    const stall =
-      AGENDA_STALL_PATTERN.test(bodySemAcento) || AGENDA_STALL_VER_PATTERN.test(bodySemAcento);
+    const stall = anunciaVerificacaoDeAgenda(ctx.body);
     const confirmedSemChecar =
       AGENDA_CONFIRMED_PATTERN.test(bodySemAcento) ||
       AGENDA_CONFIRMADO_INVERTIDO_PATTERN.test(bodySemAcento);
@@ -1289,7 +1298,7 @@ export const factualClaimGate: Gate = {
  *   (3) pacing — janela/throttle/warm-up/caps anti-ban (F2-11);
  *   (4) spinning — template idêntico em massa (F2-12);
  *   (5) promise — validação determinística de preço/desconto/parcelamento (F4-01);
- *   (5.5) concessao_sem_lastro — valor afirmado como condição que só o cliente trouxe;
+ *   (5.5) concessao_sem_lastro — valor ou concessão afirmados como condição que só o cliente trouxe;
  *   (6) semantic_promise — promessa em texto livre que a regex não pega (F4-02);
  *   (6.3) factual_claim — afirmação de FATO da resposta contra a evidência
  *         consultada no turno (#2231); logo após a F4-02, antes do disclosure;

@@ -5,6 +5,10 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { createClient } from "@/lib/supabase/server";
 import type { OrgMemoryState } from "@/hooks/ai/useOrgMemory";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { supportWriteError } from "@/lib/impersonate/support";
+import { dataIsoNoFuso } from "@/lib/propostas/data-no-fuso";
+import { fusoUtilizavel } from "@/lib/tempo/fusos";
+import { limiteDoPesoDaMemoria } from "@/lib/schemas/settings";
 import { OrgMemoryClient } from "./_client";
 
 export const dynamic = "force-dynamic";
@@ -58,6 +62,15 @@ export default async function OrgMemoryPage() {
     .neq("status", "proposed")
     .order("created_at", { ascending: false });
 
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("settings")
+    .eq("id", activeOrg.orgId)
+    .maybeSingle();
+
+  // O critério de `definirLimiteDoPesoDaMemoria`, que cobra de novo.
+  const podeEditarOLimite = activeOrg.role === "admin" && supportWriteError(user.support) === null;
+
   const initialState: OrgMemoryState = {
     document,
     versions: (versionsRaw ?? []) as unknown as OrgMemoryState["versions"],
@@ -75,7 +88,12 @@ export default async function OrgMemoryPage() {
           )}
         </p>
       </header>
-      <OrgMemoryClient initialState={initialState} />
+      <OrgMemoryClient
+        initialState={initialState}
+        hoje={dataIsoNoFuso(new Date(), fusoUtilizavel(activeOrg.timezone))}
+        limiteDoAviso={limiteDoPesoDaMemoria(org?.settings)}
+        podeEditarOLimite={podeEditarOLimite}
+      />
     </div>
   );
 }
