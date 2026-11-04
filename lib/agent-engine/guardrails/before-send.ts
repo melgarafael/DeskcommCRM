@@ -356,9 +356,11 @@ export interface GateContext {
   registro?: { active: boolean; ferramentas: readonly string[]; efeitos: EfeitoDasEscrituras };
   /**
    * Arma o `concessaoSemLastroGate`: quais valores a EMPRESA escreveu e quais só o CLIENTE
-   * trouxe (`./lastro-comercial.ts`). Ausente = DESARMADO, pelas razões do
-   * `internalVocabularyEnforced`: só o `send_message` tem modelo no laço para reescrever, e
-   * no follow-up, template, roteiro ou resposta aprovada o veto seria descarte silencioso.
+   * trouxe (`./lastro-comercial.ts`). Ausente = DESARMADO. Só o `send_message` do
+   * `inbound_turn` arma (e a prévia): é o corpo do modelo com a correção do turno mudo
+   * atrás. O follow-up de IA e o `case_reply_turn` passam pelo MESMO `send_message` e ficam
+   * desarmados — sem essa correção, o veto seria a retomada ou a resposta do caso que não
+   * sai. Template, roteiro, follow-up determinístico e resposta aprovada nem chegam aqui.
    */
   lastroComercial?: LastroComercial;
 }

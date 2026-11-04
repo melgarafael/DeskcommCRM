@@ -157,7 +157,13 @@ import {
 } from './stage-classifier';
 import { classificadoresDoTurno } from './classificadores-do-turno';
 import { loadPlaybook, textoDaOrganizacao } from './playbook';
-import { concessoesSemLastro, lastroDoContexto, type LastroComercial } from '../guardrails/lastro-comercial';
+import {
+  concessoesSemLastro,
+  lastroDoContexto,
+  valoresDoRegistro,
+  type LastroComercial,
+  type LinhaDoHistorico,
+} from '../guardrails/lastro-comercial';
 import { promessasEmAberto } from './declaracao';
 import {
   projetarContexto,
@@ -169,7 +175,7 @@ import {
   capacidadesEntreguesAoOperador,
   catalogoEntregueAoOperador,
 } from './entrega-de-capacidade';
-import { composeSystemPrompt, loadOrgMemory, renderOrgMemory } from './org-memory';
+import { composeSystemPrompt, loadOrgMemory, memoriaEscritaPorPessoas, renderOrgMemory } from './org-memory';
 import { matchesHandoffKeyword, type PublishedAgentConfig } from './agent-config';
 import { garantirPerguntaDoRoteiro, perguntaDoRoteiroPodeSair, prepararRoteiroDoTurno } from './roteiro-no-turno';
 import { validarRespostaDoFluxo } from './flow-validate';
@@ -1297,6 +1303,20 @@ export function blocosDeAgendaResidentes(toolIds: readonly string[]): string[] {
   }
   return blocos;
 }
+
+/**
+ * Leituras de REGISTRO da organização cujo retorno o turno guarda: catálogo e conhecimento
+ * viram evidência do classificador semântico; catálogo, pedidos e honorários dão lastro
+ * aos valores (`guardrails/lastro-comercial.ts`). A ponte MCP já filtra organização e contato.
+ * ponytail: `crm_query_external_data` fica de fora — coluna livre de banco alheio.
+ */
+const LEITURAS_DE_REGISTRO_DA_ORG = new Set([
+  'crm_search_products',
+  'crm_search_knowledge',
+  'crm_list_contact_orders',
+  'crm_list_honorarios_parcelas',
+  'crm_get_honorarios_contrato',
+]);
 
 /**
  * Tools de agenda cuja EXECUÇÃO neste turno arma o `agendaStallGate` (before-send.ts) —
@@ -3874,39 +3894,61 @@ async function executarTurnoDoAgente(
       effectivePrevious?.next_action ?? '',
     ],
   };
-  let enviadasForaDaJanela: string[] | null = null;
+  // Valores dos registros da organização lidos por ferramenta NESTE turno (pedido, parcela,
+  // produto): a lista cresce no invólucro das ferramentas MCP, mais abaixo.
+  const valoresConsultados: string[] = [];
+  // Só o que a ORGANIZAÇÃO escreveu: a skill da plataforma é texto nosso, e a anotação que o
+  // próprio agente gravou na memória não é registro da empresa.
+  const skillsDaOrganizacao = renderMatchedSkillBodies(
+    [...skillMatch.matched, ...skillsDoRoteiro].filter((sk) => sk.daPlataforma !== true),
+  );
+  let historico: LinhaDoHistorico[] | undefined;
+  let historicoLido = false;
   const lastroDoTurno = (): LastroComercial =>
     lastroDoContexto({
       ...fontesDoLastro,
+      tabela: promiseTable,
       materialDaOrganizacao: [
         textoDaOrganizacao(playbook.prompt),
-        renderOrgMemory(orgMemory),
-        matchedSkillsBlock,
+        renderOrgMemory(memoriaEscritaPorPessoas(orgMemory)),
+        skillsDaOrganizacao,
         evidenciasComerciais.contexto(),
+        ...valoresConsultados,
       ],
-      enviadasForaDaJanela: enviadasForaDaJanela ?? [],
+      ...(historico !== undefined ? { historico } : {}),
     });
-  // A janela do contexto só traz o que a empresa enviou no atendimento ATUAL. Só sob
-  // suspeita, UMA leitura por turno do que ela enviou antes. Se a leitura falhar, vale a
-  // janela: a falha fica FECHADA (o veto continua de pé).
-  // ponytail: as 500 enviadas mais recentes; conversa mais longa veta o valor mais antigo.
+  // A janela do contexto não traz a conversa inteira. Só sob suspeita: a busca no
+  // conhecimento que o servidor já faria para a candidata, e UMA leitura por turno da
+  // conversa (as duas direções, com a hora: quem trouxe o valor primeiro). Se a leitura
+  // falhar, vale a janela: a falha fica FECHADA (o veto continua de pé).
+  // ponytail: as 500 mensagens mais recentes DESTA conversa — a mesma pessoa por outro
+  // número é outra conversa, e conversa mais longa veta o valor mais antigo.
   const lastroComercialPara = async (corpo: string): Promise<LastroComercial> => {
-    if (enviadasForaDaJanela === null && concessoesSemLastro(corpo, lastroDoTurno()).length > 0) {
-      enviadasForaDaJanela = await pool
-        .query<{ body: string }>(
-          `select body from messages
-           where organization_id = $1 and conversation_id = $2
-             and direction = 'outbound' and body is not null
+    const semConsulta = lastroDoTurno();
+    if (concessoesSemLastro(corpo, semConsulta).length === 0) return semConsulta;
+    await recuperarEvidencias(corpo);
+    if (!historicoLido) {
+      historicoLido = true;
+      historico = await pool
+        .query<{ direction: 'inbound' | 'outbound'; body: string; sent_at: Date | string | null }>(
+          `select direction, body, sent_at from messages
+           where organization_id = $1 and conversation_id = $2 and body is not null
            order by sent_at desc limit 500`,
           [tenantId, input.conversationId],
         )
         .then(
-          (r) => r.rows.map((m) => m.body),
+          (r) =>
+            r.rows.map((m) => ({
+              direction: m.direction,
+              body: m.body,
+              // Sem data legível, a linha não decide a ordem a favor de ninguém.
+              sent_at: m.sent_at instanceof Date ? m.sent_at.toISOString() : String(m.sent_at),
+            })),
           (err: unknown) => {
-            runLog.warn('lastro comercial: enviadas fora da janela indisponíveis — vale a janela', {
+            runLog.warn('lastro comercial: conversa indisponível — vale a janela', {
               error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
             });
-            return [];
+            return undefined;
           },
         );
     }
@@ -4529,9 +4571,9 @@ async function executarTurnoDoAgente(
             // modelo rodam em passos anteriores do MESMO loop, então o coletor já está certo
             // aqui). `registroDoTurno()` devolve o MESMO `efeitosDoTurno` que a ponte alimenta.
             registro: registroDoTurno(),
-            // Só o `send_message` arma: é o único corpo escrito pelo modelo, com laço para
-            // reescrever. Ver `GateContext.lastroComercial`.
-            lastroComercial: await lastroComercialPara(body),
+            // Só o `send_message` do `inbound_turn` arma: é o único corpo escrito pelo modelo
+            // com a correção do turno mudo atrás. Ver `GateContext.lastroComercial`.
+            ...(job?.kind === 'inbound_turn' ? { lastroComercial: await lastroComercialPara(body) } : {}),
             ...(deps.knobs.disclosureMode !== undefined
               ? { disclosureMode: deps.knobs.disclosureMode }
               : {}),
@@ -5418,7 +5460,7 @@ async function executarTurnoDoAgente(
           for (const [name, mcpTool] of Object.entries(mcp.tools)) {
             if (name in rawTools) continue;
             if (
-              (name === 'crm_search_products' || name === 'crm_search_knowledge') &&
+              LEITURAS_DE_REGISTRO_DA_ORG.has(name) &&
               typeof mcpTool.execute === 'function'
             ) {
               const executeOriginal = mcpTool.execute.bind(mcpTool);
@@ -5429,7 +5471,9 @@ async function executarTurnoDoAgente(
                   // O modelo escolhe a consulta, nunca fornece a autorização.
                   // A ponte MCP já aplica organização, papel e escopo de leitura.
                   if (name === 'crm_search_products') evidenciasComerciais.registrarCatalogo(resultado);
-                  else evidenciasComerciais.registrarConhecimento(resultado);
+                  else if (name === 'crm_search_knowledge') evidenciasComerciais.registrarConhecimento(resultado);
+                  // Lastro comercial: o valor do registro, com ou sem critério de oferta.
+                  if (name !== 'crm_search_knowledge') valoresConsultados.push(...valoresDoRegistro(resultado));
                   return resultado;
                 }) as typeof mcpTool.execute,
               };

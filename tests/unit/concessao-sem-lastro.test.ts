@@ -4,7 +4,9 @@ import path from "node:path";
 import type pg from "pg";
 import { describe, expect, it, vi } from "vitest";
 
+import { loadOrgMemory, memoriaEscritaPorPessoas, renderOrgMemory } from "@/lib/agent-engine/agent/org-memory";
 import { composePlaybook, textoDaOrganizacao } from "@/lib/agent-engine/agent/playbook";
+import { loadSkills } from "@/lib/agent-engine/agent/skills";
 import {
   BEFORE_SEND_GATES,
   VETOS_IRREVOGAVEIS,
@@ -15,8 +17,12 @@ import {
 import {
   concessoesSemLastro,
   lastroDoContexto,
+  renderVetoDeConcessaoSemLastro,
+  valoresDoRegistro,
   type LastroComercial,
+  type LinhaDoHistorico,
 } from "@/lib/agent-engine/guardrails/lastro-comercial";
+import type { PromiseTable } from "@/lib/agent-engine/guardrails/promise/table";
 import type { Logger } from "@/lib/agent-engine/obs/logger";
 import { PACING_DEFAULTS } from "@/lib/agent-engine/pacing/defaults";
 import { SPINNING_DEFAULTS } from "@/lib/agent-engine/spinning/defaults";
@@ -32,27 +38,32 @@ const MATERIAL =
 
 type Linha = ["inbound" | "outbound", string];
 
+/** A janela começa às 10h do dia 3; o histórico lido à parte usa outras horas. */
+const hora = (i: number): string => `2026-11-03T${String(10 + i).padStart(2, "0")}:00:00-03:00`;
+
 function lastro(a: {
   mensagens?: Linha[];
   material?: string[];
   nome?: string | null;
   memoria?: string[];
-  enviadasForaDaJanela?: string[];
+  historico?: LinhaDoHistorico[];
+  tabela?: PromiseTable;
+  proposta?: number;
 }): LastroComercial {
   return lastroDoContexto({
     materialDaOrganizacao: a.material ?? [MATERIAL],
+    ...(a.tabela !== undefined ? { tabela: a.tabela } : {}),
     contexto: {
       contact: { name: a.nome ?? "Marina Souza", phone: null, email: null, tags: [], is_blocked: false },
-      messages: (a.mensagens ?? []).map(([direction, body], i) => ({
-        direction,
-        body,
-        sent_at: `2026-11-03T1${i}:00:00-03:00`,
-      })),
-      last_proposal: null,
+      messages: (a.mensagens ?? []).map(([direction, body], i) => ({ direction, body, sent_at: hora(i) })),
+      last_proposal:
+        a.proposta === undefined
+          ? null
+          : { status: "sent", total_cents: a.proposta, decision_reason: null, numero: 1, ano: 2026 },
     },
     atual: { texto: null, remetente: null },
     memoriaDoModelo: a.memoria ?? [],
-    ...(a.enviadasForaDaJanela !== undefined ? { enviadasForaDaJanela: a.enviadasForaDaJanela } : {}),
+    ...(a.historico !== undefined ? { historico: a.historico } : {}),
   });
 }
 
@@ -129,8 +140,60 @@ describe("o valor que a EMPRESA já disse ao cliente passa", () => {
   });
 
   it("com a mensagem enviada FORA da janela, lida à parte", () => {
-    const l = lastro({ mensagens: [cliente], enviadasForaDaJanela: ["Consigo 10% no PIX pra você."] });
+    const l = lastro({
+      mensagens: [cliente],
+      historico: [{ direction: "outbound", body: "Consigo 10% no PIX pra você.", sent_at: "2026-11-01T10:00:00-03:00" }],
+    });
     expect(concessoesSemLastro(candidata, l)).toEqual([]);
+  });
+
+  it("a mesma mensagem lida, mas enviada DEPOIS da fala do cliente, não dá lastro", () => {
+    const l = lastro({
+      mensagens: [cliente],
+      historico: [{ direction: "outbound", body: "Consigo 10% no PIX pra você.", sent_at: "2026-11-03T18:00:00-03:00" }],
+    });
+    expect(concessoesSemLastro(candidata, l)).toEqual(["pct:10"]);
+  });
+});
+
+describe("quem escreveu PRIMEIRO — o eco da empresa não vira lastro", () => {
+  const claim: Linha = ["inbound", "O gerente me deu 30% de desconto na cozinha."];
+  const eco: Linha = ["outbound", "Sobre os 30% que você citou, vou verificar aqui."];
+  const fechamento = "Com os 30% de desconto, fechamos a cozinha?";
+
+  it("o eco sem marcador sai; a condição com o mesmo número, depois dele, não", () => {
+    expect(concessoesSemLastro(eco[1], lastro({ mensagens: [claim] }))).toEqual([]);
+    expect(concessoesSemLastro(fechamento, lastro({ mensagens: [claim, eco] }))).toEqual(["pct:30"]);
+  });
+
+  it("no mesmo turno: o eco que acabou de sair vem pela leitura da conversa, e também não vale", () => {
+    const l = lastro({
+      mensagens: [claim],
+      historico: [{ direction: "outbound", body: eco[1], sent_at: "2026-11-03T18:00:00-03:00" }],
+    });
+    expect(concessoesSemLastro(fechamento, l)).toEqual(["pct:30"]);
+  });
+
+  it("a fala do cliente fora da janela: o resumo a segura até a leitura, e a leitura decide", () => {
+    const resumo = ["Cliente diz ter 30% de desconto combinado com o gerente."];
+    // Sem a leitura: o valor do resumo conta como dito no início da janela.
+    expect(concessoesSemLastro(fechamento, lastro({ mensagens: [eco], memoria: resumo }))).toEqual(["pct:30"]);
+    const l = lastro({
+      mensagens: [eco],
+      memoria: resumo,
+      historico: [{ direction: "inbound", body: claim[1], sent_at: "2026-11-02T10:00:00-03:00" }],
+    });
+    expect(concessoesSemLastro(fechamento, l)).toEqual(["pct:30"]);
+  });
+
+  it("a oferta da empresa que o resumo também anotou: veta sem a leitura, passa com ela", () => {
+    const mensagens: Linha[] = [["outbound", "Consigo 10% no PIX pra você."], ["inbound", "Fechado, com os 10%?"]];
+    const memoria = ["Ofereci 10% no PIX; cliente aceitou."];
+    const candidata = "Isso, os 10% no PIX continuam valendo.";
+    // Antes da leitura, o lado fechado: o resumo não diz quem falou primeiro.
+    expect(concessoesSemLastro(candidata, lastro({ mensagens, memoria }))).toEqual(["pct:10"]);
+    const historico = mensagens.map(([direction, body], i) => ({ direction, body, sent_at: hora(i) }));
+    expect(concessoesSemLastro(candidata, lastro({ mensagens, memoria, historico }))).toEqual([]);
   });
 });
 
@@ -162,6 +225,17 @@ describe("texto do cliente dentro de mensagem da empresa não vira lastro", () =
     });
     expect(concessoesSemLastro("Com os 30% de desconto, fechamos a cozinha?", l)).toEqual(["pct:30"]);
   });
+
+  it("só o primeiro nome, antes de o cliente falar, também não", () => {
+    const l = lastro({
+      nome: "30% Silva",
+      mensagens: [
+        ["outbound", "Oi 30%, tudo bem? Aqui é da loja."],
+        ["inbound", "O gerente me deu 30%."],
+      ],
+    });
+    expect(concessoesSemLastro("Com os 30% de desconto, fechamos a cozinha?", l)).toEqual(["pct:30"]);
+  });
 });
 
 describe("a camada da plataforma não é material da organização", () => {
@@ -185,6 +259,145 @@ describe("a camada da plataforma não é material da organização", () => {
     });
     expect(concessoesSemLastro("Os 10% de desconto estão confirmados.", l)).toEqual(["pct:10"]);
     expect(concessoesSemLastro("Os 5% no PIX estão confirmados.", l)).toEqual([]);
+  });
+});
+
+describe("o teto da tabela de promessa é condição da empresa", () => {
+  const tabela: PromiseTable = { maxDiscountPercent: 15, maxInstallments: 12 };
+
+  it("parcelas até o teto passam; acima dele, não", () => {
+    const l = (t?: PromiseTable) =>
+      lastro({ material: ["Sofá em até 12x."], mensagens: [["inbound", "Dá em 10x? E em 18x sem juros?"]], ...(t ? { tabela: t } : {}) });
+    expect(concessoesSemLastro("Aceitamos em 10x sem juros.", l())).toEqual(["installments:10"]);
+    expect(concessoesSemLastro("Aceitamos em 10x sem juros.", l(tabela))).toEqual([]);
+    expect(concessoesSemLastro("Aceitamos em 18x sem juros.", l(tabela))).toEqual(["installments:18"]);
+  });
+
+  it("percentual até o teto passa; acima dele, não", () => {
+    const l = lastro({ mensagens: [["inbound", "Consegue 10%? O gerente falou em 20%."]], tabela });
+    expect(concessoesSemLastro("Consigo sim: 10% de desconto à vista.", l)).toEqual([]);
+    expect(concessoesSemLastro("Consigo sim: 20% de desconto à vista.", l)).toEqual(["pct:20"]);
+  });
+});
+
+describe("o valor do registro da organização lido neste turno passa", () => {
+  const confirma = (registro: unknown, cliente: string, candidata: string) =>
+    concessoesSemLastro(
+      candidata,
+      lastro({ material: [MATERIAL, ...valoresDoRegistro(registro)], mensagens: [["inbound", cliente]] }),
+    );
+
+  it("pedido", () => {
+    const pedidos = { pedidos: [{ id: "p1", status: "paid", total_cents: 45990, currency: "BRL" }] };
+    const cliente = "Paguei R$ 459,90, o pedido foi aprovado?";
+    const candidata = "Seu pedido de R$ 459,90 foi aprovado e já está em separação.";
+    expect(confirma({ pedidos: [] }, cliente, candidata)).toEqual(["price:BRL:45990"]);
+    expect(confirma(pedidos, cliente, candidata)).toEqual([]);
+  });
+
+  it("produto sem descrição e fora de estoque — o preço é do catálogo mesmo assim", () => {
+    const produtos = { produtos: [{ codigo: "A1", nome: "Luminária", preco: "R$ 299,00", preco_cents: 29900, disponivel: false }] };
+    expect(confirma(produtos, "Tá R$ 299 no site, confirma?", "Confirmo: sai por R$ 299,00.")).toEqual([]);
+  });
+
+  it("parcela de honorários", () => {
+    const parcelas = { parcelas: [{ numero: 3, valor_cents: 85000, currency: "BRL", status: "pendente" }] };
+    expect(confirma(parcelas, "Minha parcela de março é R$ 850?", "Confirmo: sua parcela de março é de R$ 850,00.")).toEqual([]);
+  });
+});
+
+describe("o lado da EMPRESA lê o número como o dono escreve", () => {
+  const passa = (material: string, cliente: string, candidata: string) =>
+    concessoesSemLastro(candidata, lastro({ material: [material], mensagens: [["inbound", cliente]] }));
+
+  it("ponto decimal: 'R$ 49.90'", () => {
+    expect(passa("Plano mensal R$ 49.90.", "É R$ 49,90, confirma?", "Confirmo: o plano mensal é R$ 49,90.")).toEqual([]);
+  });
+
+  it("'R$ 5 mil'", () => {
+    expect(passa("Pacote por R$ 5 mil.", "O pacote é R$ 5.000?", "Isso, confirmo: o pacote completo é R$ 5.000.")).toEqual([]);
+  });
+
+  it("tabela sem 'R$'", () => {
+    expect(passa("Limpeza;220,00", "A limpeza é R$ 220?", "Confirmo, a limpeza é R$ 220,00.")).toEqual([]);
+  });
+
+  it("'1,50%' e '1,5%' são o mesmo percentual", () => {
+    expect(passa("Juros de 1,50% ao mês.", "Os juros são 1,5%?", "Confirmo: juros de 1,5% ao mês.")).toEqual([]);
+  });
+
+  it("a última proposta vale também em euro", () => {
+    const l = lastro({ material: [], mensagens: [["inbound", "A proposta ficou em 2.800 €?"]], proposta: 280000 });
+    expect(concessoesSemLastro("Confirmo: a proposta é de 2.800 €.", l)).toEqual([]);
+  });
+});
+
+describe("frase de condição", () => {
+  it("'garantia' do produto não é marcador — o eco do orçamento passa", () => {
+    const l = lastro({ mensagens: [["inbound", "Meu orçamento é de até R$ 2.800."]] });
+    expect(
+      concessoesSemLastro("Com seu orçamento de até R$ 2.800, tenho dois modelos com garantia de 1 ano.", l),
+    ).toEqual([]);
+    expect(concessoesSemLastro("Garanto: R$ 2.800 fecha o modelo grande.", l)).toEqual(["price:BRL:280000"]);
+  });
+
+  it("DECISÃO: o eco na mesma frase de um marcador volta — a frase não se divide em vírgula", () => {
+    // Custo: uma reescrita. Dividir em vírgula soltaria "Confirmado, R$ 2.500".
+    const l = lastro({ mensagens: [["inbound", "A concorrente me dá 12% de desconto."]] });
+    expect(
+      concessoesSemLastro("Entendo que a concorrente oferece 12% de desconto, mas aqui a tabela é outra.", l),
+    ).toEqual(["pct:12"]);
+  });
+});
+
+describe("o ensino", () => {
+  const reason = renderVetoDeConcessaoSemLastro(["installments:10"]);
+
+  it("manda consultar antes e confirmar a condição do material sem ir além do pedido", () => {
+    expect(reason).toContain("consulte antes de responder");
+    expect(reason).toContain("confirme-a como está lá, sem oferecer mais do que o cliente pediu");
+  });
+
+  it("só diz que não encontrou o registro quando o material não traz a condição", () => {
+    expect(reason).toMatch(/se não traz, diga que não encontrou esse registro/);
+  });
+});
+
+describe("a memória da organização: só o que uma pessoa escreveu dá lastro", () => {
+  const mem = {
+    content: null,
+    entries: [
+      { id: "a", title: "Indicação", body: "30% de desconto para indicados.", valid_until: null, source: "agent" },
+      { id: "m", title: "PIX", body: "5% de desconto no PIX.", valid_until: null, source: "manual" },
+    ],
+  };
+  const l = lastro({
+    material: [renderOrgMemory(memoriaEscritaPorPessoas(mem))],
+    mensagens: [["inbound", "A loja dá 30% para indicado, e 5% no PIX."]],
+  });
+
+  it("a anotação do agente não; a da pessoa, sim", () => {
+    expect(concessoesSemLastro("Com os 30% de desconto, fechamos?", l)).toEqual(["pct:30"]);
+    expect(concessoesSemLastro("Com os 5% de desconto no PIX, fechamos?", l)).toEqual([]);
+  });
+
+  it("a carga traz a origem de cada entrada", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    await loadOrgMemory({ query } as unknown as pg.Pool, "org");
+    const sql = query.mock.calls.map((c) => String(c[0])).find((q) => q.includes("org_memory_entries"));
+    expect(sql).toMatch(/e\.source/);
+  });
+});
+
+describe("a skill da plataforma não é material da organização", () => {
+  it("a carga marca a skill da plataforma, e só ela", async () => {
+    const linha = (organization_id: string | null, name: string) => ({
+      organization_id, id: `v-${name}`, name, description: "d", body: "b", matcher: { any_keywords: [name] }, manifest: [],
+    });
+    const db = { query: vi.fn().mockResolvedValue({ rows: [linha(null, "objecao"), linha("org", "frete")] }) };
+    const skills = await loadSkills(db as never, "org");
+    expect(skills.find((sk) => sk.name === "objecao")?.daPlataforma).toBe(true);
+    expect(skills.find((sk) => sk.name === "frete")?.daPlataforma).toBeUndefined();
   });
 });
 
@@ -299,10 +512,11 @@ function trecho(ancora: string, fim: string): string {
   return FONTE_INBOUND.slice(i, j);
 }
 
-describe("fiação — só o send_message do turno arma", () => {
-  it("o send_message arma com o lastro do envio", () => {
+describe("fiação — só o send_message do inbound_turn arma", () => {
+  it("o send_message arma só no inbound_turn — follow-up de IA e resposta de caso não", () => {
+    // Os dois passam pelo MESMO send_message, sem a correção do turno mudo atrás.
     expect(trecho("send_message: tool({", "update_lead_state: tool({")).toContain(
-      "lastroComercial: await lastroComercialPara(body)",
+      "...(job?.kind === 'inbound_turn' ? { lastroComercial: await lastroComercialPara(body) } : {})",
     );
   });
 
@@ -317,22 +531,39 @@ describe("fiação — só o send_message do turno arma", () => {
     expect(trecho("send_template: tool({", "search_knowledge: tool({")).not.toContain("lastroComercial");
   });
 
-  it("os outros chamadores da cadeia não armam", () => {
+  it("os chamadores que não passam pelo send_message do turno não armam", () => {
     for (const f of ["followup-turn", "approved-reply", "aviso-de-escalacao", "meet-delivery"])
       expect(ler(`lib/agent-engine/agent/${f}.ts`), f).not.toContain("lastroComercial");
   });
 
-  it("o material é o texto da ORGANIZAÇÃO, não o prompt inteiro", () => {
-    expect(trecho("const lastroDoTurno", "const lastroComercialPara")).toMatch(
-      /materialDaOrganizacao: \[\s*textoDaOrganizacao\(playbook\.prompt\),/,
+  it("o material é o que a ORGANIZAÇÃO escreveu, mais a tabela e os registros lidos", () => {
+    const corpo = trecho("const lastroDoTurno", "const lastroComercialPara");
+    expect(corpo).toMatch(/materialDaOrganizacao: \[\s*textoDaOrganizacao\(playbook\.prompt\),/);
+    expect(corpo).toContain("renderOrgMemory(memoriaEscritaPorPessoas(orgMemory))");
+    expect(corpo).toContain("skillsDaOrganizacao,");
+    expect(corpo).toContain("...valoresConsultados,");
+    expect(corpo).toContain("tabela: promiseTable,");
+    expect(trecho("const skillsDaOrganizacao", "let historico")).toContain(
+      ".filter((sk) => sk.daPlataforma !== true)",
     );
   });
 
-  it("a leitura das enviadas fora da janela é do tenant e da conversa, e falha fechada", () => {
-    const corpo = trecho("const lastroComercialPara", "return lastroDoTurno();");
+  it("o invólucro das leituras de registro guarda os valores de pedido, parcela e produto", () => {
+    expect(trecho("const LEITURAS_DE_REGISTRO_DA_ORG", "]);")).toMatch(
+      /'crm_search_products'[\s\S]*'crm_list_contact_orders'[\s\S]*'crm_list_honorarios_parcelas'/,
+    );
+    expect(trecho("LEITURAS_DE_REGISTRO_DA_ORG.has(name) &&", "continue;")).toContain(
+      "if (name !== 'crm_search_knowledge') valoresConsultados.push(...valoresDoRegistro(resultado));",
+    );
+  });
+
+  it("sob suspeita: busca no conhecimento, e a leitura da conversa é do tenant e da conversa e falha fechada", () => {
+    const corpo = trecho("const lastroComercialPara", "if (!preview && deps.knobs.goldenCandidates");
+    expect(corpo).toContain("await recuperarEvidencias(corpo);");
+    expect(corpo).toContain("select direction, body, sent_at from messages");
     expect(corpo).toContain("where organization_id = $1 and conversation_id = $2");
-    expect(corpo).toContain("direction = 'outbound'");
     expect(corpo).toContain("[tenantId, input.conversationId]");
-    expect(corpo).toMatch(/runLog\.warn\([\s\S]*?return \[\];/);
+    // A leitura que falhou não é leitura vazia: vazia tiraria o resumo do lado do cliente.
+    expect(corpo).toMatch(/runLog\.warn\([\s\S]*?return undefined;/);
   });
 });
