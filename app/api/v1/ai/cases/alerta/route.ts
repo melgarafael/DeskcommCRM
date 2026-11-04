@@ -405,7 +405,11 @@ export async function PUT(req: NextRequest): Promise<Response> {
       // "responsável" numa auditoria. CONTAGEM, nunca os números: telefone de
       // funcionário no `api_audit_log` fica para sempre.
       destino_modo: dados.destino_modo,
-      membros_com_whatsapp: (dados.responsaveis ?? []).filter((r) => r.whatsapp !== null).length,
+      // Só quem RECEBEU número: chave ausente não grava nada (#3935), e `""`
+      // grava nulo — contar os dois diria um número que o banco não tem.
+      membros_com_whatsapp: (dados.responsaveis ?? []).filter(
+        (r) => typeof r.whatsapp === "string" && r.whatsapp !== "",
+      ).length,
     },
   });
 

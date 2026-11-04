@@ -198,6 +198,10 @@ describe("PUT — salvar a configuração", () => {
 
     const params = rpc.mock.calls[0] as unknown as [string, { p_responsaveis: unknown }];
     expect(params[1].p_responsaveis).toEqual([{ user_id: MEMBRO }]);
+    // A auditoria conta quem RECEBEU número nesta gravação: a chave ausente não
+    // gravou nada, e contá-la mentiria num log append-only.
+    const auditado = vi.mocked(audit).mock.calls.at(-1)![0] as { metadata: Record<string, unknown> };
+    expect(auditado.metadata.membros_com_whatsapp).toBe(0);
     // E o caminho explícito continua explícito: `null` chega como `null`.
     const segundo = clienteDeSessao({});
     await PUT(

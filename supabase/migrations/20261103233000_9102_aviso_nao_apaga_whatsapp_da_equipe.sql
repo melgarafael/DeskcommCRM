@@ -24,9 +24,9 @@
 -- · `p_responsaveis` nulo = o corpo nem trouxe a equipe → não toca (como antes).
 -- · lista VAZIA = nenhum membro mencionado → não toca. De propósito NÃO é
 --   "apaga todos": a leitura da equipe é falha ABERTA em
---   `lib/escalacao/tela-do-aviso.ts` (`lerEquipe` devolve lista vazia quando a
---   leitura falha), e uma lista vazia que apagasse transformaria um erro de
---   leitura em perda de dado de toda a equipe.
+--   `lib/escalacao/tela-do-aviso.ts` (quando a leitura falha, a tela recebe a
+--   equipe vazia e `equipe_indisponivel`), e uma lista vazia que apagasse
+--   transformaria um erro de leitura em perda de dado de toda a equipe.
 --
 -- A tela muda junto (mesma fatia): o rascunho sem configuração passa a partir
 -- dos números gravados, e o corpo só manda `whatsapp` de quem foi exibido.

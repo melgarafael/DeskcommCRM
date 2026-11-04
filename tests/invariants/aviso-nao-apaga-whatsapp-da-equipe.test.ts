@@ -26,9 +26,10 @@
  *   "não dá para limpar" em regra;
  * · `p_responsaveis` nulo (o corpo nem trouxe a equipe) → não mexe;
  * · lista VAZIA → não mexe. De propósito NÃO é "apaga todos": a leitura da
- *   equipe é falha ABERTA em `lib/escalacao/tela-do-aviso.ts` (`lerEquipe`
- *   devolve vazio quando o `select` erra), e uma lista vazia que apagasse
- *   transformaria um erro de leitura em perda de dado da equipe inteira.
+ *   equipe é falha ABERTA em `lib/escalacao/tela-do-aviso.ts` (quando o
+ *   `select` erra, a tela recebe a equipe vazia e `equipe_indisponivel`), e
+ *   uma lista vazia que apagasse transformaria um erro de leitura em perda
+ *   de dado da equipe inteira.
  *
  * ─── Sabotagem ─────────────────────────────────────────────────────────────
  *
