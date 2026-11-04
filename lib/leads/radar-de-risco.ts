@@ -512,7 +512,7 @@ export async function carregaRadarDeRisco(
       p.status === "rascunho" &&
       p.lead_id != null &&
       comAvisoAberto.has(p.id as string) &&
-      (!opts.contactId || leadsValidos.has(p.lead_id as string)),
+      leadsValidos.has(p.lead_id as string),
   );
   const nomePorContato = new Map<string, string | null>(nameByContact);
   const contatosFaltando = [

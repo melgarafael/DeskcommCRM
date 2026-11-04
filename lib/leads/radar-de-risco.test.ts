@@ -193,6 +193,12 @@ describe("carregaRadarDeRisco — propostas esperando revisão (C6)", () => {
     ]);
   });
 
+  it("rascunho com aviso não mantém negócio fechado no radar geral", async () => {
+    const { admin } = montarAdmin([RASCUNHO], [], { avisos: [{ ref_id: "prop-1" }] });
+    const radar = await carregaRadarDeRisco(admin, { organizationId: ORG_ID });
+    expect(radar.propostas_esperando_revisao).toEqual([]);
+  });
+
   it("rascunho SEM aviso aberto não entra", async () => {
     const { admin } = montarAdmin([RASCUNHO], undefined, { avisos: [] });
     const radar = await carregaRadarDeRisco(admin, { organizationId: ORG_ID });
