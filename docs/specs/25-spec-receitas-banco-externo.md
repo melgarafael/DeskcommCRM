@@ -434,3 +434,156 @@ existe.
 - Runbook do leigo: é a R6.
 
 Destino: núcleo, dentro do módulo de banco externo, que nasce desligado.
+
+## R4 entregue: `imagem_url` no envio do agente
+
+O `send_message` ganha `imagem_url` (URL https de uma imagem jpg, png ou webp
+que veio de um resultado de ferramenta). Decisão do dono (opção A): o CRM
+baixa a imagem com a própria rede, confere, guarda no Storage da conversa e
+manda ao canal só o `storagePath`, como a foto do catálogo. O gateway de
+mensageria nunca recebe a URL da fonte. Sai pela mesma cadeia `before_send`
+do texto (pacing, LGPD, opt-out, teto de envios do turno).
+
+### O que mudou
+- `lib/agent-engine/agent/baixar-imagem-segura.ts` (novo) — `baixarImagemSegura`:
+  forma e extensão (`formatoDeImagemPorUrl`), guarda textual de saída
+  (`assertSafeOutboundUrl`), DNS resolvido UMA vez e recusa se qualquer endereço
+  for especial (`ipEhEspecial`), conexão SOMENTE ao IP validado pela opção
+  `lookup` do `node:https` (hostname da URL segue sendo o do SNI e do Host),
+  nunca segue redirect (qualquer 3xx é `redirect_recusado`), só status 200,
+  teto de 5 MB lido em pedaços (para ao passar, `imagem_grande_demais`),
+  timeout total de 8 s, content-type igual ao MIME da extensão e bytes mágicos
+  conferidos (`conteudo_nao_e_imagem`). `guardarImagemNaConversa` grava em
+  `whatsapp-media/<tenant>/<conversa>/externa-<hash>.<ext>` (nome pelo conteúdo;
+  409 é sucesso) e recusa caminho fora da conversa (`isMediaPathOwnedBy`).
+- `lib/agent-engine/agent/imagem-por-url.ts` — só `formatoDeImagemPorUrl` (também
+  usado pela prévia) e `descreverSemQuery` (o log leva host + caminho, nunca a query).
+- `lib/agent-engine/agent/inbound-turn.ts` — schema de `send_message` com
+  `imagem_url`; `produto_codigo` + `imagem_url` juntos devolvem
+  `imagem_e_produto_juntos` e liberam a reserva do `dupTrava`; download e guarda
+  rodam antes da cadeia e fora da prévia; qualquer falha deixa a mensagem só com
+  texto e o retorno traz `foto_recusada`; o resultado traz `foto_enviada`.
+  O `tenantId` que vai ao caminho é o do turno.
+- `lib/agent-engine/agent/preview.ts` — na prévia NADA é buscado, baixado nem
+  guardado; só o formato é conferido (sem rede) e o retorno traz `foto_enviada:
+  false` e `foto_prevista`.
+- `lib/agent-engine/agent/fotos-do-produto.ts` — sem mudança (volta ao original).
+- Testes: `lib/agent-engine/agent/baixar-imagem-segura.test.ts`,
+  `lib/agent-engine/agent/imagem-por-url.test.ts`,
+  `lib/agent-engine/agent/preview-imagem-por-url.test.ts`,
+  `tests/unit/send-message-manda-imagem-por-url.test.ts`.
+
+### O que NÃO entra nesta fatia
+- A receita do WordPress ainda não devolve URL de foto. Resolver anexo → URL é
+  fatia à parte; até lá nenhuma receita aciona `imagem_url` sozinha.
+- Foto do catálogo (`produto_codigo`) continua como estava.
+- Nenhuma migration, tela ou variável de ambiente nova.
+
+### NÃO MEDIDO
+- C3: envio real por WhatsApp (tipos, tamanhos e tempos aceitos). Nenhum envio real foi feito.
+- C4: volume de itens por turno com fotos (continua na prova com gente).
+- Que o `lookup` fixado funciona com os CDNs reais (TLS e SNI): só medido por
+  teste com dependências simuladas, sem rede.
+- Se o gateway bloqueia algo que o CRM já baixou: não sabemos, porque o gateway
+  não recebe mais a URL.
+
+### Dívida declarada (não coberta)
+- Proveniência: o modelo pode escolher uma URL pública que ele mesmo inventou. O
+  CRM então baixa essa URL, e um pixel de rastreio revela o IP do servidor da
+  busca. A guarda confere destino e conteúdo, não a origem da URL. Fica como
+  dívida até decidir se a URL precisa aparecer em resultado de ferramenta deste turno.
+
+## R5a entregue: o negócio com a referência do item
+
+`crm_create_lead` ganha `referencia_externa` (`<receita>:<id>`, ex.:
+`wordpress-conteudo:4821`, montada pelo modelo a partir do resultado de
+`crm_consultar_receita`). Esta é a primeira metade da R5 (D6); a segunda é a
+escolha do funil/etapa padrão na instância da receita + aviso na Central.
+
+### O que mudou
+- `lib/leads/referencia-externa.ts` (novo) — a forma fechada da referência
+  (`REFERENCIA_EXTERNA`), a chave em `source_metadata` (`referencia_externa`) e
+  `descricaoComReferencia` (a linha vai no fim da descrição; o teto de 2000 corta
+  o texto do agente, nunca a referência).
+- `lib/mcp/tools/leads.ts` — com `referencia_externa` e `contact_id`, a ferramenta
+  procura antes um negócio ABERTO do mesmo contato, no mesmo funil, com a mesma
+  referência (organização filtrada à mão). Achou: não cria, devolve
+  `{ lead, ja_existia: true }` e deixa uma nota (`note`) na timeline. Não achou:
+  cria com a referência na descrição e em `source_metadata`.
+- Teste: `tests/unit/lead-com-referencia-externa.test.ts`.
+
+### Decisões que divergem da proposta da D6 (para o mantenedor confirmar no PR)
+- **`source` continua `ai_agent`** (não `external`): a origem do negócio segue
+  dizendo QUEM criou; QUAL item foi escolhido vai em `source_metadata`. Trocar a
+  origem mudaria os relatórios por origem de quem já usa.
+- **Dedup por consulta, não pelo índice único** `uniq_crm_leads_org_source_external`:
+  o índice é por organização (dois clientes no mesmo item colidiriam), vale para
+  negócio encerrado (bloquearia um interesse novo depois de perdido) e a violação
+  hoje vira 500 no `createLeadHandler`. A consulta é por contato + funil + aberto.
+  Sem migration.
+
+### NÃO MEDIDO
+- A corrida de dois turnos simultâneos do MESMO cliente no mesmo item: hoje o que
+  protege é a fila de um turno por conversa (`one_per_conversation`), sem trava no
+  banco.
+- O agente de verdade chamando a ferramenta com a referência (só testes com
+  Supabase simulado); fica para o e2e do apartamento, na R5b.
+
+## R5b entregue: o destino do interesse na receita
+
+A instância da receita ganha `destino_do_interesse` (`{ pipeline_id, stage_id }`,
+opcional) — a segunda metade da R5 (D6). A tela da receita mostra "Para onde vai
+o interesse do cliente" (funil e etapa); `crm_consultar_receita` devolve, junto
+das linhas, o bloco `interesse` que ensina o agente.
+
+### O que mudou
+- `lib/external-db/receitas/destino-do-interesse.ts` (novo) — o schema fechado
+  dos dois ids e `orientacaoDeInteresse`: com destino válido entrega ids, nomes e o
+  molde `<receita>:<id do item>` para o `crm_create_lead` (R5a); sem destino, ou
+  com o funil arquivado depois, manda o agente NÃO abrir negócio e chamar
+  `crm_request_human_handoff`.
+- `lib/external-db/receitas/destino-no-banco.ts` (novo) — confere no banco, com a
+  organização de quem chama, que funil e etapa existem, estão ativos, a etapa é do
+  funil e não é de ganho nem de perda.
+- `app/api/v1/external-db/connections/[id]/recipes/route.ts` — o PUT recusa (422)
+  destino inválido antes de gravar.
+- `lib/mcp/tools/receitas-externas.ts` — o resultado do `executar` traz `interesse`.
+- `app/app/integracao-dados/[id]/_components/DestinoDoInteresse.tsx` (novo) e
+  `ReceitasProntas.tsx` — os dois seletores, com o aviso do que acontece sem escolha.
+- Sem migration: a instância mora no `jsonb` `receitas`.
+
+### Decisão: o aviso de "sem funil" é o handoff que já existe
+A D6 pedia "aviso na Central em vez de lead". Um tipo novo de aviso exigiria
+migration + baseline + vocabulário (`agent_inbox_items_kind_check`). Em vez disso o
+agente chama `crm_request_human_handoff`, que já abre o item na Central com o
+resumo da conversa pronto (`buildHandoffSummary`). O laço se fecha sem tipo novo.
+
+### NÃO MEDIDO
+- O funil de destino estar entre os funis liberados AO AGENTE
+  (`lib/leads/escopo-de-funil.ts`): se não estiver, o `crm_create_lead` é recusado
+  com a mensagem do escopo e o modelo a recebe; a tela não avisa isso hoje.
+- O agente de verdade, pelo WhatsApp, seguindo a orientação (pergunta → itens →
+  interesse → negócio com a referência): é o caso de aceite do apartamento, medido
+  no espelho depois deste PR.
+- A pré-visualização da receita não mostra o bloco `interesse`.
+
+### Medido no espelho (22/10/2026): o código do item precisa ir na conversa
+A LIMA consultou o banco e mostrou 3 imóveis reais pelo WhatsApp, mas quando o cliente disse
+"tenho interesse nesse" ela NÃO abriu o negócio (duas tentativas): o resultado da consulta não
+acompanha a conversa, então no turno seguinte ela não tinha o id do item; consultou de novo com
+filtro inventado, desistiu e escreveu "registrei seu interesse" sem registrar. A orientação do
+bloco `interesse` agora manda escrever "cód. <id>" junto de cada item mostrado (a conversa passa a
+carregar o código) e só afirmar o registro depois que `crm_create_lead` responder com sucesso.
+Mesmo assim, numa imobiliária montada do zero no espelho (atendente com prompt próprio, funil
+"Interessados", sem as habilidades do estúdio), o agente mostrou o imóvel com o código, o cliente
+disse "tenho interesse" e ele escreveu "registrei" SEM chamar `crm_create_lead`: no turno do
+interesse faltavam também o funil e a etapa (estavam no resultado da consulta, que não acompanha a
+conversa). Por isso o R5c: `crm_create_lead` aceita só a `referencia_externa` e o SISTEMA acha o
+funil e a etapa na receita da organização (`lib/external-db/receitas/destino-pela-referencia.ts`).
+O escopo de funil do agente continua valendo: ele julga o funil já resolvido. Receita sem destino, ou
+com dois destinos diferentes, recusa e manda passar para a equipe — o sistema não adivinha.
+Com o funil resolvido pelo sistema o agente AINDA escreveu "interesse registrado" sem chamar a ferramenta:
+a orientação mora no resultado da consulta, que não acompanha a conversa. O ensino passou a ser um
+bloco residente do prompt, a cada turno, no molde dos blocos da agenda
+(`blocosDeInteresseExternoResidentes`, só com as duas ferramentas ligadas).
+Medido de novo no espelho com esta mudança: ver o resultado no PR.

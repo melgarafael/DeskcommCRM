@@ -71,4 +71,6 @@ export interface InstanciaDeReceita {
   descricao: string; // 0..300
   fixos: unknown; // validado pelo parametrosFixos da receita escolhida
   ativa: boolean;
+  /** R5b: funil e etapa onde nasce o negócio do interesse. Ausente = sem destino. */
+  destino_do_interesse?: { pipeline_id: string; stage_id: string } | null;
 }
