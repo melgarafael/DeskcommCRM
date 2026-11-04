@@ -71,7 +71,7 @@ const TOKEN_A = "Bearer tok-a";
 const TOKEN_B = "Bearer tok-b";
 
 type Papel = "viewer" | "agent" | "manager" | "admin";
-type Metodo = "GET" | "POST" | "PATCH" | "DELETE";
+type Metodo = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 type Ctx = { params: Promise<Record<string, string>> };
 type Handler = (req: NextRequest, ctx?: Ctx) => Promise<Response>;
 type Modulo = Partial<Record<Metodo, Handler>>;
