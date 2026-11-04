@@ -25,6 +25,8 @@
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 [**⚡ Instalar**](#-instalar-en-tu-vps-el-camino-principal) · [**🔄 Actualizar**](#-actualizar) · [**🧭 Visión**](VISION.md) · [**🏗️ Arquitectura**](ARCHITECTURE.md) · [**🤝 Contribuir**](CONTRIBUTING.md) · [**🗺️ Roadmap**](#%EF%B8%8F-roadmap)
 
+<img src="docs/assets/demo-deskcomm.gif" alt="Demostración de DeskcommCRM: agentes de IA, embudo de ventas y prospección" width="800">
+
 </div>
 
 ---
