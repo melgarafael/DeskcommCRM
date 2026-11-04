@@ -59,7 +59,7 @@ Medição local em 04/11/2026, sem Docker e sem alteração de produção:
 
 `vitest.agencias.config.ts` permite executar apenas essa suíte com `AGENCIA_TEST_DB_URL`; a credencial deve vir do ambiente, nunca de arquivo versionado ou da saída de um comando. Nenhum valor de segredo compõe esta contribuição.
 
-Ainda pendentes para fechar a régua integral do mantenedor: executar a spec E2E no ambiente oficial, gerar os tipos de schema pela ferramenta oficial e conferir colisões contra PRs abertos antes de publicar. A execução oficial dessas duas primeiras etapas exige o ambiente Supabase local que o projeto sobe por Docker; elas não foram substituídas por edição manual. Não há PR publicado. As alterações independentes de Studio visual na árvore principal não integram a contribuição de agências.
+Os tipos de schema foram gerados com o `@supabase/postgres-meta` oficial contra um banco descartável criado pelo baseline final; o arquivo preserva os contratos já presentes na `main` e incorpora somente as tabelas e funções desta entrega. Ainda pendentes para fechar a régua integral do mantenedor: executar a spec E2E no ambiente oficial com Supabase local e conferir colisões contra PRs abertos imediatamente antes de publicar. A jornada equivalente foi provada em navegador real contra o Supabase de teste, mas não substitui o check E2E obrigatório do CI. Não há PR publicado. As alterações independentes de Studio visual na árvore principal não integram a contribuição de agências.
 
 ## Living System Checklist
 
