@@ -26,6 +26,11 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({
 vi.mock("@/hooks/team/useTeamMembers", () => ({ useTeamMembers: () => ({ data: { data: [] } }) }));
 vi.mock("./_guia", () => ({ GuiaDoColdCall: () => null, guiaJaVisto: () => true }));
 vi.mock("@/lib/api/client", () => ({ apiClient: { get: vi.fn(), post: vi.fn(), patch: vi.fn() } }));
+// A sessão de ligação lê o canal de voz; aqui ele não está pareado, e a ligação sai pelo discador.
+vi.mock("@/hooks/voice/useVoiceSessionStatus", () => ({ useVoiceSessionStatus: () => ({ data: undefined, refetch: vi.fn() }) }));
+vi.mock("@/components/voice/VoiceCallContext", () => ({
+  useVoiceCall: () => ({ call: null, startCall: vi.fn(), hangUp: vi.fn(), ultimoFim: null }),
+}));
 // O ImportarLeads de verdade sobe arquivo; aqui ele é só o botão que avisa "importei".
 vi.mock("@/app/app/kanban/_components/ImportarLeads", () => ({
   ImportarLeads: ({ onImportado }: { onImportado?: () => void }) => (
@@ -120,5 +125,40 @@ describe("o resultado de quem não recebe ligação", () => {
     expect(screen.queryByTestId("motivo-sem-resultado")).toBeNull();
     fireEvent.change(seletor, { target: { value: "nao_atendeu" } });
     expect(aoMudar).toHaveBeenCalledWith("nao_atendeu");
+  });
+});
+
+describe("quem não recebe ligação chega sem telefone, e a fila segue funcionando", () => {
+  // Como a rota devolve: nome e motivo, sem telefone, e-mail, endereço nem conversa.
+  const bloqueado = { ...lead(1), nao_ligar: "bloqueado", telefone: null, email: null, endereco: null, conversa_id: null };
+  const dados = { data: { funil: FUNIL, roteiro: "", leads: [bloqueado, lead(2)] } };
+
+  it('a linha diz "Não ligar" e o motivo, nunca "Sem telefone", e a contagem conta os dois', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue(dados);
+    render(comQuery(<ColdCall />));
+    expect(await screen.findByText("Lead 1")).toBeTruthy();
+    expect(screen.getByTestId("nao-ligar").textContent).toBe("Não ligar · Pediu para não ser incomodado");
+    expect(screen.queryByText("Sem telefone")).toBeNull();
+    expect(screen.getByRole("option", { name: "Fila de ligações (2)" })).toBeTruthy();
+  });
+
+  it('"Tirar da fila" tira o lead sem telefone', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue(dados);
+    vi.mocked(apiClient.post).mockResolvedValue({});
+    render(comQuery(<ColdCall />));
+    fireEvent.click(await screen.findByRole("button", { name: "Tirar da fila: Lead 1" }));
+    const confirmar = screen.getAllByRole("button", { name: "Tirar da fila" }).at(-1)!;
+    fireEvent.click(confirmar);
+    await vi.waitFor(() =>
+      expect(apiClient.post).toHaveBeenCalledWith("/api/v1/cold-call/resultado", { lead_id: "lead-1", resultado: "removido" }),
+    );
+  });
+
+  it('"Vamos começar" pula quem não recebe ligação e abre no lead comum', async () => {
+    vi.mocked(apiClient.get).mockResolvedValue(dados);
+    render(comQuery(<ColdCall />));
+    fireEvent.click(await screen.findByTestId("vamos-comecar"));
+    expect((await screen.findAllByText("+55119000002")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Lead 1")).toBeNull();
   });
 });
