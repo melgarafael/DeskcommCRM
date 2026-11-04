@@ -6191,6 +6191,7 @@ export type Database = {
           id: string;
           organization_id: string;
           reason: string;
+          source_job_id: string | null;
           to_user_id: string | null;
         };
         ComputedFields: never;
@@ -6202,6 +6203,7 @@ export type Database = {
           id?: string;
           organization_id: string;
           reason: string;
+          source_job_id?: string | null;
           to_user_id?: string | null;
         };
         Update: {
@@ -6212,6 +6214,7 @@ export type Database = {
           id?: string;
           organization_id?: string;
           reason?: string;
+          source_job_id?: string | null;
           to_user_id?: string | null;
         };
         Relationships: [
@@ -15263,6 +15266,7 @@ export type Database = {
           p_expected_assignee?: string;
           p_organization_id: string;
           p_reason: string;
+          p_source_job_id?: string | null;
           p_to_user_id: string;
         };
         Returns: {
