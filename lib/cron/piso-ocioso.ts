@@ -169,8 +169,17 @@ const TETO_DA_LEITURA_MS = 2_000;
  * - `devolucao_de_handoff`/`devolucao_ao_rodizio`: as mesmas quatro colunas que
  *   as rotas filtram, sem o prazo por organização (que muda por empresa e vive
  *   em `organizations`);
- * - `canal_vigiado`, `fila_de_soneca`, `redacao_de_storage`, `mcp_a_revogar`:
- *   a condição exata da consulta da rodada.
+ * - `canal_vigiado`, `fila_de_soneca`, `redacao_de_storage`: a condição exata
+ *   da consulta da rodada.
+ *
+ * Duas rodadas fazem MAIS do que a consulta principal, e o portão cobre as duas
+ * (medido em `tests/invariants/piso-ocioso-retrato.test.ts`):
+ *
+ * - `mcp_a_revogar`: além da credencial vencida, a poda dos pedidos de
+ *   autorização vencidos há mais de um dia (`revogarVencidas`);
+ * - `lembrete_de_agenda`: além do compromisso futuro, o aviso de remetente
+ *   aberto, que `fn_resolver_avisos_de_lembrete_expirados` resolve quando o
+ *   compromisso já passou — sem ele o aviso ficava aberto na Central.
  */
 const SQL_DO_RETRATO = `
 select
@@ -262,6 +271,8 @@ select
   exists (
     select 1 from contato_mcp_credenciais
      where revogado_em is null and revogar_apos <= now()
+  ) or exists (
+    select 1 from mcp_oauth_pedidos where expira_em < now() - interval '1 day'
   ) as mcp_a_revogar,
   exists (
     select 1 from crm_tasks
@@ -273,6 +284,9 @@ select
     select 1 from calendar_appointments
      where status = 'confirmed' and contact_id is not null
        and starts_at > now() and starts_at <= now() + interval '30 days'
+  ) or exists (
+    select 1 from agent_inbox_items
+     where ref_kind = 'agenda_reminder_sender' and status = 'open'
   ) as lembrete_de_agenda
 `;
 
