@@ -140,14 +140,15 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
   },
   {
     nome: "concessao_sem_lastro",
-    rotulo: "Não confirmar valor que só o cliente citou",
+    rotulo: "Não confirmar condição que só o cliente citou",
     oQueProtege:
-      "Barra a resposta que confirma preço, parcela ou percentual que só aparece no que o cliente " +
-      "escreveu, e em nada que a empresa enviou ou cadastrou. O assistente refaz sem esse número.",
+      "Barra a resposta que confirma preço, parcela, percentual ou concessão (aprovação, gratuidade, " +
+      "cortesia…) que só aparece no que o cliente escreveu, e em nada que a empresa enviou ou cadastrou. " +
+      "O assistente refaz sem repeti-la.",
     escolha: null,
     porQueNaoSeDesliga:
-      "O que o cliente escreve não é registro da sua empresa: confirmar um valor que só ele trouxe " +
-      "obriga o negócio a uma condição que ninguém da equipe deu. Regra fixa, sem custo.",
+      "O que o cliente escreve não é registro da sua empresa: confirmar uma condição que só ele trouxe " +
+      "obriga o negócio a algo que ninguém da equipe deu. Regra fixa, sem custo.",
     camada: null,
   },
   {
