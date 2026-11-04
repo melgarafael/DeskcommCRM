@@ -115,6 +115,13 @@ export type CatalogEntry = Pick<
   repository?: string;
   tags?: string[];
   published_at?: string;
+  /**
+   * Endereço do SERVIÇO de um módulo conectado (spec 33, F1). Mora aqui, na entrada do catálogo
+   * revisado, e nunca no pacote: o pacote não tem URL (ADR-0003, D3). Origem exata: `https`, sem
+   * credencial, caminho, query ou fragmento. A admissão reaplica a regra de download
+   * (`assertServiceOrigin`); o schema só garante a forma.
+   */
+  service_origin?: string;
 };
 
 export type ExtensionCatalog = {
@@ -438,6 +445,7 @@ const catalogEntrySchema: z.ZodType<CatalogEntry> = z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/)
       .optional(),
+    service_origin: z.string().refine(isExactOrigin).optional(),
   })
   .strict();
 

@@ -10,7 +10,7 @@ import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
-import { assertCatalogOrigin, downloadArtifact } from "./download";
+import { assertCatalogOrigin, assertServiceOrigin, downloadArtifact } from "./download";
 import { SQL_ERRORS } from "./erros-do-banco";
 import { causaSegura, ExtensionError } from "./errors";
 import {
@@ -669,10 +669,17 @@ export async function admitExtensionCatalog(
   bytes: Uint8Array,
 ): Promise<ExtensionOperationView> {
   const snapshot = parseCatalog(bytes);
-  assertCatalogOrigin(snapshot.origin, {
+  const politicaDeOrigem = {
     localCatalogOrigin: env.EXTENSIONS_LOCAL_CATALOG_ORIGIN || null,
     appUrl: env.NEXT_PUBLIC_APP_URL,
-  });
+  };
+  assertCatalogOrigin(snapshot.origin, politicaDeOrigem);
+  // O endereço de serviço de módulo conectado (spec 33, F1) é a mesma regra de origem do catálogo.
+  for (const entrada of snapshot.entries) {
+    if (entrada.service_origin !== undefined) {
+      assertServiceOrigin(entrada.service_origin, politicaDeOrigem);
+    }
+  }
   const digest = createHash("sha256").update(bytes).digest("hex");
   const result = await createAdminClient().rpc("fn_extensions_admit_catalog", {
     p_actor: actorId,

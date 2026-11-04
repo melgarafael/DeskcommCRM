@@ -411,6 +411,49 @@ describe("manifesto conectado (F1)", () => {
   });
 });
 
+describe("origem do serviço na entrada do catálogo (F1)", () => {
+  const entradaConectada = (servico: unknown) => ({
+    publisher: "acme",
+    name: "servico-externo",
+    version: "1.0.0",
+    license: "MIT",
+    host_api: { min: 2, max: 2 },
+    display: {
+      title: { "pt-BR": "Serviço externo" },
+      summary: { "pt-BR": "Módulo conectado de teste." },
+      category: "service",
+      icon: "ListChecks",
+    },
+    permissions: ["area.contatos.leitura"],
+    sha256: "c".repeat(64),
+    byte_length: 100,
+    service_origin: servico,
+  });
+  const catalogoCom = (servico: unknown) =>
+    encoder.encode(
+      JSON.stringify({
+        format_version: 1,
+        origin: "https://catalogo.exemplo.com",
+        revision: 1,
+        entries: [entradaConectada(servico)],
+      }),
+    );
+
+  it("aceita a origem exata na entrada de catálogo", () => {
+    const catalogo = parseCatalog(catalogoCom("https://servico.exemplo.com"));
+    expect(catalogo.entries[0]?.service_origin).toBe("https://servico.exemplo.com");
+  });
+
+  it.each([
+    ["barra final", "https://servico.exemplo.com/"],
+    ["caminho", "https://servico.exemplo.com/api"],
+    ["query", "https://servico.exemplo.com?x=1"],
+    ["sem esquema", "servico.exemplo.com"],
+  ])("recusa origem de serviço com %s", (_nome, servico) => {
+    expect(() => parseCatalog(catalogoCom(servico))).toThrow(ExtensionError);
+  });
+});
+
 describe("catálogo e artefato", () => {
   it("faz parse do catálogo com origem exata", () => {
     const bytes = manifestBytes();
