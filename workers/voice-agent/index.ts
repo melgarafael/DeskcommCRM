@@ -361,6 +361,17 @@ export async function handleAudioSocketConnection(socket: net.Socket, uuid: stri
     return;
   }
 
+  // Recusada pela tela enquanto tocava (`lib/voip/recusar-chamada-sip.ts`): a
+  // linha já está `ended`. Fechar o socket devolve o canal ao dialplan, que
+  // desliga (`Hangup()` em [from-trunk-audiosocket]) — sem abrir a sessão de IA,
+  // que é paga por minuto, e sem regravar a linha como `connected`.
+  // SABOTAGEM: remover este bloco = o caso "recusada" de fio-recusada-pela-tela fica vermelho.
+  if (callRow.status === "ended") {
+    console.info(`[audiosocket] chamada ${callRow.id} já encerrada (${callRow.end_reason ?? "sem motivo"}) — desligando`);
+    socket.end();
+    return;
+  }
+
   // Organização parada (suspensa, redigida, arquivada) não atende por voz: a
   // sessão em tempo real é o gasto mais caro por minuto do produto. Falha de
   // leitura também encerra — sem saber o status, não se abre a sessão paga.
