@@ -248,7 +248,7 @@ export function useConversationsRealtime(
   );
 
   // INSERT/UPDATE passam pela RLS de SELECT. DELETE não passa: a publicação
-  useNoticeSignal("handoff_pending", onChange, orgId ?? undefined, !!orgId);
+  useNoticeSignal("handoff_pending", () => onChange(undefined), orgId ?? undefined, !!orgId);
 
   // suprime a linha apagada e useRealtimeChannel entrega apenas invalidação
   // sem identificador. A lista é sempre recarregada pelo GET autorizado.
