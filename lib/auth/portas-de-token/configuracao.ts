@@ -95,4 +95,16 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/ai/skills",
   { caminho: "/api/v1/ai/skills/[name]", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
   { caminho: "/api/v1/ai/skills/[name]/versions", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
+
+  // products e tags. Quem autentica é a própria rota, por `resolveAuthDual`: token
+  // com `config:read` (GET) ou `config:write` (escrita) e papel admin (`tokenRole`).
+  // `[id]` é forma de UUID; `import` é irmão literal de `[id]` e tem entrada
+  // própria, exata. `tags/vocabulario` POST segue só de sessão (a função de escrita
+  // exige `auth.uid()`) e não entra de carona: ali o token leva 401 do `requireRole`.
+  "/api/v1/products",
+  "/api/v1/products/[id]",
+  "/api/v1/products/[id]/fotos",
+  "/api/v1/products/import",
+  "/api/v1/tags/cores",
+  "/api/v1/tags/vocabulario",
 ];

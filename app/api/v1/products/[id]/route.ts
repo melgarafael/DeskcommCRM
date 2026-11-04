@@ -11,12 +11,12 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { apagarDoBucket } from "@/lib/catalogo/fotos-no-bucket";
 import { guardarFotosPorUrl } from "@/lib/catalogo/fotos-por-url";
 import { COLUNAS_DO_PRODUTO, produtoPatchSchema } from "@/lib/schemas/produtos";
-import { createClient } from "@/lib/supabase/server";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -29,9 +29,17 @@ export async function PATCH(
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "catalog_products",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "products.id", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { id } = await params;
 
   const parsed = produtoPatchSchema.safeParse(await req.json().catch(() => null));
@@ -49,7 +57,7 @@ export async function PATCH(
   // POST. O que entra na coluna são os caminhos dos arquivos baixados.
   const { fotos, ...campos } = parsed.data;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   /**
    * ─── PATCH com `fotos` SUBSTITUI o conjunto, não acrescenta ───────────────
@@ -73,14 +81,14 @@ export async function PATCH(
     const { data: atual, error: erroDaLeitura } = await supabase
       .from("catalog_products")
       .select("id, fotos")
-      .eq("organization_id", authz.org.orgId)
+      .eq("organization_id", authz.organizationId)
       .eq("id", id)
       .maybeSingle();
     if (erroDaLeitura) return fail("internal_error", "Erro ao salvar o produto.", 500, { requestId });
     if (!atual) return fail("not_found", t("Produto não encontrado."), 404, { requestId });
     antigas = ((atual as { fotos: string[] | null }).fotos ?? []).slice();
 
-    const guardadas = await guardarFotosPorUrl({ orgId: authz.org.orgId, produtoId: id, urls: fotos, t });
+    const guardadas = await guardarFotosPorUrl({ orgId: authz.organizationId, produtoId: id, urls: fotos, t });
     if (!guardadas.ok) {
       return fail("validation_failed", guardadas.motivo, 422, {
         requestId,
@@ -93,14 +101,14 @@ export async function PATCH(
   const { data, error } = await supabase
     .from("catalog_products")
     .update({ ...campos, ...(caminhos ? { fotos: caminhos } : {}) })
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("id", id)
     .select(COLUNAS_DO_PRODUTO)
     .maybeSingle();
 
   if (error) {
     // O update falhou depois do upload: os arquivos novos não são de ninguém.
-    if (caminhos?.length) await apagarDoBucket(authz.org.orgId, id, caminhos, requestId);
+    if (caminhos?.length) await apagarDoBucket(authz.organizationId, id, caminhos, requestId);
     if (error.code === "23505") {
       return fail("conflict", t("Já existe um produto com esse código."), 409, { requestId });
     }
@@ -109,7 +117,7 @@ export async function PATCH(
   // `maybeSingle` devolve null quando a RLS barrou ou o id não é desta org — os
   // dois são "não existe para você", e 404 é a resposta honesta.
   if (!data) {
-    if (caminhos?.length) await apagarDoBucket(authz.org.orgId, id, caminhos, requestId);
+    if (caminhos?.length) await apagarDoBucket(authz.organizationId, id, caminhos, requestId);
     return fail("not_found", t("Produto não encontrado."), 404, { requestId });
   }
 
@@ -117,12 +125,13 @@ export async function PATCH(
   // reimportação da planilha faz depois de gravar.
   if (caminhos) {
     const substituidas = antigas.filter((c) => !caminhos!.includes(c));
-    await apagarDoBucket(authz.org.orgId, id, substituidas, requestId);
+    await apagarDoBucket(authz.organizationId, id, substituidas, requestId);
   }
 
   await audit({
-    organizationId: authz.org.orgId,
-    actorUserId: authz.user.id,
+    organizationId: authz.organizationId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     action: "catalog_product.updated",
     resourceType: "catalog_products",
     resourceId: id,
@@ -133,23 +142,31 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "catalog_products",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "products.id", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { id } = await params;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase
     .from("catalog_products")
     .delete()
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("id", id)
     .select("id, fotos")
     .maybeSingle();
@@ -157,11 +174,12 @@ export async function DELETE(
   if (error) return fail("internal_error", "Erro ao remover o produto.", 500, { requestId });
   if (!data) return fail("not_found", t("Produto não encontrado."), 404, { requestId });
   // As fotos saem junto: a linha era a única referência a elas.
-  await apagarDoBucket(authz.org.orgId, id, (data as { fotos: string[] | null }).fotos ?? [], requestId);
+  await apagarDoBucket(authz.organizationId, id, (data as { fotos: string[] | null }).fotos ?? [], requestId);
 
   await audit({
-    organizationId: authz.org.orgId,
-    actorUserId: authz.user.id,
+    organizationId: authz.organizationId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     action: "catalog_product.deleted",
     resourceType: "catalog_products",
     resourceId: id,
