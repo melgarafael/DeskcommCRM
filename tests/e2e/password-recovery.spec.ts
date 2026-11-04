@@ -73,7 +73,7 @@ test("recuperar senha: forgot → e-mail → nova senha → login com a nova", a
   await page.goto("/login");
   await page.getByRole("link", { name: /esqueci minha senha|olvid[ée] mi contrase/i }).click();
   await expect(page).toHaveURL(/\/login\/forgot$/);
-  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Correo").fill(email);
   await page.getByRole("button", { name: "Enviar enlace de restablecimiento" }).click();
   await expect(page.getByText("Revisa tu correo")).toBeVisible();
 
@@ -91,7 +91,7 @@ test("recuperar senha: forgot → e-mail → nova senha → login com a nova", a
   await expect(page.getByText("Contraseña restablecida con éxito")).toBeVisible();
 
   // 5a. Senha ANTIGA tem que falhar
-  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Correo").fill(email);
   await page.getByLabel("Contraseña").fill(oldPassword);
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page.getByText("Correo o contraseña incorrectos.")).toBeVisible();

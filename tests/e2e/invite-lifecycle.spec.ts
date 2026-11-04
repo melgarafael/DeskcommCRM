@@ -359,10 +359,10 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await expect(page).toHaveURL(new RegExp(`/signup\\?invite=${encodeURIComponent(valid)}`));
     await page.getByRole("link", { name: "Entrar", exact: true }).click();
     await expect(page).toHaveURL(`/login?next=${encodeURIComponent(`/team/accept-invite/${valid}`)}`);
-    await expect(page.getByLabel("Email")).toHaveValue(inv.invitee_email);
+    await expect(page.getByLabel("Correo")).toHaveValue(inv.invitee_email);
     await page.getByRole("link", { name: "Crear cuenta", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/signup\\?invite=${encodeURIComponent(valid)}`));
-    await expect(page.getByLabel("Email")).toHaveValue(inv.invitee_email);
+    await expect(page.getByLabel("Correo")).toHaveValue(inv.invitee_email);
   });
 
   test("11. o signup com convite não pede empresa, e trava o e-mail", async ({ page }) => {
@@ -379,7 +379,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
 
     await page.goto(`/signup?invite=${encodeURIComponent(valid)}`);
     await expect(page.getByLabel("Nombre de la empresa")).toHaveCount(0);
-    const email = page.getByLabel("Email");
+    const email = page.getByLabel("Correo");
     await expect(email).toHaveValue(inv.invitee_email);
     await expect(email).toHaveAttribute("readonly", /.*/);
   });
@@ -585,19 +585,19 @@ test("convite novo: alternar cadastro/login, confirmar no Mailpit e entrar só n
     const adulterado = `${token.slice(0, -1)}${token.endsWith("A") ? "B" : "A"}`;
     // Query de e-mail não tem autoridade, assinatura adulterada não preenche.
     await page.goto(`/login?next=${encodeURIComponent(`/team/accept-invite/${adulterado}`)}&email=${encodeURIComponent(email)}`);
-    await expect(page.getByLabel("Email")).toHaveValue("");
+    await expect(page.getByLabel("Correo")).toHaveValue("");
 
     await page.goto(`/team/accept-invite/${token}`);
     await page.getByRole("link", { name: "Crear mi cuenta", exact: true }).click();
     await expect(page).toHaveURL((url) => url.pathname === "/signup" && url.searchParams.get("invite") === token);
     await expect(page.getByLabel("Nombre de la empresa")).toHaveCount(0);
-    await expect(page.getByLabel("Email")).toHaveValue(email);
+    await expect(page.getByLabel("Correo")).toHaveValue(email);
     fs.mkdirSync("evidence/lote-bugfixes-01a178b3", { recursive: true });
     await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/convite-01-cadastro.png" });
     await page.getByRole("link", { name: "Entrar", exact: true }).click();
     // O e-mail é igual nas duas telas; só seu valor não espera a navegação.
     await expect(page).toHaveURL((url) => url.pathname === "/login" && url.searchParams.get("next") === `/team/accept-invite/${token}`);
-    await expect(page.getByLabel("Email")).toHaveValue(email);
+    await expect(page.getByLabel("Correo")).toHaveValue(email);
     expect(new URL(page.url()).searchParams.get("next") === `/team/accept-invite/${token}`).toBe(true);
     await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/convite-02-login-preenchido.png" });
     await page.getByRole("link", { name: "Crear cuenta", exact: true }).click();

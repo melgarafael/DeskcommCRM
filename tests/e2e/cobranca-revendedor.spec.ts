@@ -141,7 +141,7 @@ test("[P0] primeira cobrança: conectar, assinar, atrasar, suspender e voltar so
     await pB.goto("/login");
     await pB.getByRole("link", { name: "Crear cuenta" }).click();
     await pB.getByLabel("Nombre de la empresa").fill(EMPRESA);
-    await pB.getByLabel("Email").fill(emailB);
+    await pB.getByLabel("Correo").fill(emailB);
     await pB.getByLabel("Contraseña", { exact: true }).fill(senha);
     await pB.getByLabel("Confirmar contraseña").fill(senha);
     await pB.getByRole("button", { name: "Crear cuenta" }).click();
