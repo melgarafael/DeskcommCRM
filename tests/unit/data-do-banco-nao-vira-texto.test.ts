@@ -59,7 +59,7 @@ const DIRETORIOS = ["lib", "app", "workers", "scripts", "hooks", "components"];
  * `instante`, `nascimento`).
  */
 const NOME_DE_DATA =
-  /(?:^|_)(?:at|on|em|until|after|since|expira|prazo|quando|instante|nascimento|venc)|(?:^|_)(?:created|updated|sent|started|finished|opened|closed|resolved|paused|archived|deleted|scheduled|start|end)(?:_|$)/i;
+  /(?:^|_)(?:at|on|em|ate|until|after|since)(?:_|$)|(?:^|_)(?:expira|prazo|quando|instante|nascimento|venc)|(?:^|_)(?:created|updated|sent|started|finished|opened|closed|resolved|paused|archived|deleted|scheduled|start|end)(?:_|$)/i;
 
 /** Arquivo que fala com o driver por SQL cru — a origem `Date` da classe. */
 const CONSULTA_SQL = /\.query\s*(?:<|\()/;
@@ -157,7 +157,10 @@ export function varrer(arquivo: string, fonte: string): { achados: Achado[]; exc
   /** Nomes que a consulta já normaliza (`x::text`, `to_char(x`, `x::date`). */
   const normalizadosNaConsulta = new Set<string>();
   const normalizador = /\b([a-z_][a-z0-9_]*)\s*::\s*(?:text|date)\b|\bto_char\s*\(\s*([a-z_][a-z0-9_]*)/gi;
-  for (const m of fonte.matchAll(normalizador)) {
+  // Sem comentários: um `// sent_at::text` explicando o passado isentaria a
+  // decisão viva — a sonda contaria o próprio comentário.
+  const semComentarios = ts.createPrinter({ removeComments: true }).printFile(sf);
+  for (const m of semComentarios.matchAll(normalizador)) {
     const nome = m[1] ?? m[2];
     if (nome !== undefined) normalizadosNaConsulta.add(nome.toLowerCase());
   }
@@ -301,5 +304,19 @@ describe("a classe do Date × string: quem lê coluna de data não decide por ti
       const t = Date.parse(rows[0].sent_at);
     `;
     expect(varrer("lib/exemplo.ts", parseado).achados.map((a) => a.forma)).toEqual(["parse"]);
+
+    // O comentário não isenta: só o SQL de verdade (`created_at::text`) normaliza.
+    const comentado = `// a versão antiga lia quando::text\n${antigo}`;
+    expect(varrer("lib/exemplo.ts", comentado).achados.map((a) => a.nome)).toEqual(["quando"]);
+  });
+
+  it("o detector não confunde e-mail, emoji ou `atual` com coluna de data", () => {
+    const legitimo = `
+      const { rows } = await pool.query("select email from contacts");
+      const r = rows[0];
+      if (typeof r.email === "string" && typeof r.emoji === "string" && typeof atual === "string") {}
+      if (typeof ate === "string") {}
+    `;
+    expect(varrer("lib/exemplo.ts", legitimo).achados.map((a) => a.nome)).toEqual(["ate"]);
   });
 });
