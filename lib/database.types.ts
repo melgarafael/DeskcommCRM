@@ -15284,6 +15284,15 @@ export type Database = {
       };
     };
     Functions: {
+      fn_notice_episode_page: {
+        Args: { p_organization_id: string; p_limit?: number };
+        Returns: Json;
+      };
+      fn_notice_episode_ack: { Args: { p_organization_id: string; p_items: Json }; Returns: Json };
+      fn_derived_notice_page: { Args: { p_limit?: number }; Returns: Json };
+      fn_derived_notice_ack: { Args: { p_items: Json }; Returns: Json };
+      fn_notice_observe_clock: { Args: Record<PropertyKey, never>; Returns: Json };
+
       activate_kb_version: {
         Args: { p_agent_id: string; p_version_id: string };
         Returns: undefined;

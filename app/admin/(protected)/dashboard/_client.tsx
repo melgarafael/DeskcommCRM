@@ -35,10 +35,10 @@ function AlertsSkeleton() {
   );
 }
 
-export function DashboardClient() {
+export function DashboardClient({ actorId }: { actorId: string }) {
   const t = useT();
   const { data, isLoading } = useAdminDashboardKPIs();
-  useAlertsRealtime();
+  useAlertsRealtime(actorId);
 
   return (
     <div className="space-y-6">

@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { TenantAgentsResponse } from "@/app/api/v1/admin/tenants/[id]/agents/route";
 import { apiClient } from "@/lib/api/client";
-import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
+import { useNoticeSignal } from "@/hooks/realtime/useNoticeSignal";
 
 export type { TenantAgentsResponse };
 
@@ -18,8 +18,10 @@ export function useTenantAgent(id: string) {
 
   const query = useQuery({
     queryKey,
-    queryFn: () => apiClient.get<AgentsApiResponse>(`/api/v1/admin/tenants/${id}/agents`),
+    queryFn: () =>
+      apiClient.get<AgentsApiResponse>(`/api/v1/admin/tenants/${id}/agents`),
     staleTime: 30_000,
+    refetchInterval: 30_000, // fallback when signals are missed
     enabled: !!id,
   });
 
@@ -28,12 +30,7 @@ export function useTenantAgent(id: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryClient, id]);
 
-  useRealtimeChannel({
-    name: id ? `tenant-agents-${id}` : "tenant-agents-disabled",
-    broadcast: { event: "*" },
-    onChange: invalidate,
-    enabled: !!id,
-  });
+  useNoticeSignal("tenant_agents", invalidate, id, !!id);
 
   return query;
 }

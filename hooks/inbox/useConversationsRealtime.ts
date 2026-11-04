@@ -1,20 +1,14 @@
 "use client";
-import {
-  hashKey,
-  useInfiniteQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { hashKey, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
+import { useNoticeSignal } from "@/hooks/realtime/useNoticeSignal";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { useRefetchDeSeguranca } from "@/hooks/realtime/useRefetchDeSeguranca";
 import { agendarRecargaDasConversas } from "@/hooks/inbox/recargaDasConversas";
 import { aplicarAtualizacaoNaLista } from "@/lib/inbox/atualizacao-da-lista";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import {
-  type ModoDeEtiqueta,
-  marcadoresEscolhidos,
-} from "@/lib/inbox/marcador-da-conversa";
+import { type ModoDeEtiqueta, marcadoresEscolhidos } from "@/lib/inbox/marcador-da-conversa";
 import type { Conversation } from "@/lib/types/messaging";
 import { ehAFila, type ComandoDoBanco } from "@/lib/inbox/comando-da-conversa";
 
@@ -88,13 +82,7 @@ export type ConversationWithContact = Conversation & {
 
 /** O vocabulário de LEITURA (7), que inclui os dois estados que só o motor escreve. */
 export type StatusDeConversa =
-  | "open"
-  | "pending"
-  | "resolved"
-  | "claimed"
-  | "ai_handling"
-  | "closed"
-  | "archived";
+  "open" | "pending" | "resolved" | "claimed" | "ai_handling" | "closed" | "archived";
 
 export interface ConversationsFilters {
   /** Um status ou vários — a aba Fila precisa de dois (open + pending). */
@@ -148,11 +136,7 @@ export function soMudouOAutomaticoDaFila(
 ): boolean {
   const { comando: _comandoAnterior, ...restoAnterior } = anterior;
   const { comando: _comandoAtual, ...restoAtual } = atual;
-  return (
-    ehAFila(anterior) &&
-    ehAFila(atual) &&
-    hashKey([restoAnterior]) === hashKey([restoAtual])
-  );
+  return ehAFila(anterior) && ehAFila(atual) && hashKey([restoAnterior]) === hashKey([restoAtual]);
 }
 
 export function useConversationsRealtime(
@@ -174,10 +158,7 @@ export function useConversationsRealtime(
   habilitada = true,
 ) {
   const qc = useQueryClient();
-  const queryKey = useMemo(
-    () => ["conversations", filters] as const,
-    [filters],
-  );
+  const queryKey = useMemo(() => ["conversations", filters] as const, [filters]);
 
   const query = useInfiniteQuery({
     queryKey,
@@ -188,9 +169,7 @@ export function useConversationsRealtime(
       // Lista vira `open,pending`; valor único continua saindo como antes.
       if (filters.status) {
         const lista: readonly StatusDeConversa[] =
-          typeof filters.status === "string"
-            ? [filters.status]
-            : filters.status;
+          typeof filters.status === "string" ? [filters.status] : filters.status;
         qs.set("status", lista.join(","));
       }
       // O `qs.set` é metade do trabalho, e é a metade que o typecheck NÃO pega:
@@ -203,8 +182,7 @@ export function useConversationsRealtime(
       if (filters.assigned_to) qs.set("assigned_to", filters.assigned_to);
       if (filters.search) qs.set("search", filters.search);
       if (filters.unread) qs.set("unread", "true");
-      if (filters.channel_session_id)
-        qs.set("channel_session_id", filters.channel_session_id);
+      if (filters.channel_session_id) qs.set("channel_session_id", filters.channel_session_id);
       // `append`, e não `set` (#1274): o filtro aceita várias etiquetas e cada
       // uma viaja como um `tag` repetido — que é o que a rota lê com `getAll`.
       for (const marcador of marcadoresEscolhidos(
@@ -214,14 +192,11 @@ export function useConversationsRealtime(
       // O `modo` só sai quando é `ou`: `e` é o padrão e não precisa viajar, e um
       // `&modo=e` colado num link de hoje mudaria a URL sem mudar o sentido.
       if (filters.tagMode === "ou") qs.set("modo", "ou");
-      if (filters.is_group !== undefined)
-        qs.set("is_group", filters.is_group ? "true" : "false");
+      if (filters.is_group !== undefined) qs.set("is_group", filters.is_group ? "true" : "false");
       if (pageParam) qs.set("cursor", pageParam);
       qs.set("limit", "50");
       try {
-        return await apiClient.get<ListResponse>(
-          `/api/v1/conversations?${qs.toString()}`,
-        );
+        return await apiClient.get<ListResponse>(`/api/v1/conversations?${qs.toString()}`);
       } catch (err) {
         showApiError(err);
         throw err;
@@ -248,8 +223,7 @@ export function useConversationsRealtime(
     // anterior, sem aviso, enquanto a nova carregava. Nas outras trocas o
     // `isLoading` volta e o skeleton aparece — ali ele tem o que dizer.
     placeholderData: (anterior, queryAnterior) =>
-      queryAnterior &&
-      soMudouOAutomaticoDaFila(queryAnterior.queryKey[1], filters)
+      queryAnterior && soMudouOAutomaticoDaFila(queryAnterior.queryKey[1], filters)
         ? anterior
         : undefined,
   });
@@ -274,6 +248,8 @@ export function useConversationsRealtime(
   );
 
   // INSERT/UPDATE passam pela RLS de SELECT. DELETE não passa: a publicação
+  useNoticeSignal("handoff_pending", onChange, orgId ?? undefined, !!orgId);
+
   // suprime a linha apagada e useRealtimeChannel entrega apenas invalidação
   // sem identificador. A lista é sempre recarregada pelo GET autorizado.
   const { status: realtimeStatus, ultimaEntrega } = useRealtimeChannel({

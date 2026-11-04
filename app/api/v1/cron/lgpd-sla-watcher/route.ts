@@ -49,7 +49,9 @@ export async function GET(req: NextRequest): Promise<Response> {
   // Auth — Bearer INTERNAL_CRON_SECRET or INTERNAL_SECRET (fail-closed)
   // ────────────────────────────────────────────────────────────────────────
   if (!autorizaCron(req)) {
-    return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
+    return fail("forbidden", "Cron secret missing or invalid.", 403, {
+      requestId,
+    });
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -58,6 +60,14 @@ export async function GET(req: NextRequest): Promise<Response> {
   // MVP: corridos OK; precision via computeDueAt deferred to v2
   // ────────────────────────────────────────────────────────────────────────
   const supabaseAdmin = createAdminClient();
+  // Existing authenticated watcher observes temporal notice conditions; it never blocks SLA work.
+  try {
+    const observation = await supabaseAdmin.rpc("fn_notice_observe_clock");
+    if (observation.error)
+      console.warn("[derived-notice] clock capture failed; SLA work continues");
+  } catch {
+    console.warn("[derived-notice] clock capture failed; SLA work continues");
+  }
 
   const { data: rows, error: queryError } = await supabaseAdmin
     .from("lgpd_requests")
@@ -86,7 +96,9 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   if (queryError) {
     console.error("[lgpd-sla-watcher] query failed", queryError.message);
-    return fail("internal_error", "Failed to query lgpd_requests.", 500, { requestId });
+    return fail("internal_error", "Failed to query lgpd_requests.", 500, {
+      requestId,
+    });
   }
 
   const requests = (rows ?? []) as unknown as RequestWithOrg[];
@@ -164,7 +176,11 @@ export async function GET(req: NextRequest): Promise<Response> {
       }
     } catch (err) {
       errorsCount++;
-      console.error("[lgpd-sla-watcher] triggerSlaAlarm threw for request", row.id, err);
+      console.error(
+        "[lgpd-sla-watcher] triggerSlaAlarm threw for request",
+        row.id,
+        err,
+      );
     }
   }
 
@@ -198,7 +214,12 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
 
   return ok(
-    { scanned, alarmed: alarmedCount, deduped: dedupedCount, errors: errorsCount },
+    {
+      scanned,
+      alarmed: alarmedCount,
+      deduped: dedupedCount,
+      errors: errorsCount,
+    },
     { requestId },
   );
 }
