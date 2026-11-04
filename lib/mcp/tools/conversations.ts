@@ -6,6 +6,7 @@
  * - `crm_get_conversation_history` -> listMessagesHandler (carrega historico)
  */
 import { z } from "zod";
+import { projetarDerivadoNoHistorico } from "@/lib/mcp/media-derived-read";
 
 import {
   listConversationsHandler,
@@ -14,11 +15,7 @@ import {
 import { listMessagesHandler } from "@/app/api/v1/messages/_handler";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
-import {
-  criarRascunho,
-  JANELA_MAXIMA_HORAS,
-  TEXTO_MAXIMO,
-} from "@/lib/inbox/rascunho-sugerido";
+import { criarRascunho, JANELA_MAXIMA_HORAS, TEXTO_MAXIMO } from "@/lib/inbox/rascunho-sugerido";
 import { VALIDADE_DO_LINK_DE_MIDIA_S } from "@/lib/messaging/media/link-temporario";
 import { getQueuePositions } from "@/lib/routing/queue";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -48,9 +45,7 @@ const listInputShape = {
   contact_id: z.string().uuid().optional(),
   // `pending` entra: é o estado da conversa que o próprio agente escalou, e sem
   // ele a IA não conseguia listar o que ela mesma passou para uma pessoa.
-  status: z
-    .enum(["open", "pending", "claimed", "ai_handling", "closed", "archived"])
-    .optional(),
+  status: z.enum(["open", "pending", "claimed", "ai_handling", "closed", "archived"]).optional(),
   limit: z.number().int().min(1).max(50).default(10),
   cursor: z.string().optional(),
 };
@@ -312,7 +307,10 @@ export async function resolverMidiasDoHistorico(
   await Promise.all(
     aAssinar.map(async (m) => {
       try {
-        const { data, error } = await storage.createSignedUrl(m.caminho, VALIDADE_DO_LINK_DE_MIDIA_S);
+        const { data, error } = await storage.createSignedUrl(
+          m.caminho,
+          VALIDADE_DO_LINK_DE_MIDIA_S,
+        );
         out.set(
           m.id,
           error || !data?.signedUrl
@@ -411,7 +409,9 @@ export const crmGetConversationHistory: McpToolDefinition<typeof historyInputSha
     // por 1h para foto ou áudio de cliente, iria para o provedor de IA e para os
     // registros da rodada, e o agente não tem como abri-lo. Tipo e estado ficam.
     // Pela API (sem contato do turno) o link sai normalmente.
-    const media = await resolverMidiasDoHistorico(result.messages, { comLink: !ctx.contatoDoTurno });
+    const media = await resolverMidiasDoHistorico(result.messages, {
+      comLink: !ctx.contatoDoTurno,
+    });
     return {
       messages: result.messages.map((m) => ({
         id: m.id,
@@ -422,6 +422,7 @@ export const crmGetConversationHistory: McpToolDefinition<typeof historyInputSha
         // Mídia utilizável por quem consome pela API: tipo, tamanho e um link
         // temporário do arquivo já guardado (`media_url` é o endereço interno do
         // gateway e não serve fora dele). Ver `resolverMidiasDoHistorico`.
+        ...projetarDerivadoNoHistorico(m, ctx),
         media_mime: m.media_mime ?? null,
         media_size_bytes: m.media_size_bytes ?? null,
         media_status: media.get(m.id)?.status ?? "none",
@@ -458,7 +459,9 @@ const rascunhoInputShape = {
     .min(1)
     .max(64)
     .default("integracao")
-    .describe("De onde veio o texto (ex.: 'erp'). É o que a caixa de entrada mostra no aviso de origem."),
+    .describe(
+      "De onde veio o texto (ex.: 'erp'). É o que a caixa de entrada mostra no aviso de origem.",
+    ),
   expira_em_horas: z
     .number()
     .int()
