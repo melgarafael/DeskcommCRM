@@ -938,3 +938,43 @@ export function avisoDeTransferenciaLigado(settings: unknown): boolean {
     ? (settings as Record<string, unknown>).crm : undefined;
   return crmSettingsSchema.parse(crm ?? {}).avisar_transferencia_no_whatsapp;
 }
+
+/**
+ * `organizations.settings.memoria_da_ia.limite_do_aviso_tokens` — acima deste
+ * peso a tela Memória da IA AVISA que a memória pesa. Só avisa: nada é
+ * bloqueado nem cortado. A memória vai inteira no prompt de TODO agente,
+ * várias leituras por mensagem, e cada empresa escolhe onde quer o aviso.
+ *
+ * Ausente (toda empresa que nunca escolheu) ou torto → o RECOMENDADO, que é o
+ * limiar fixo que a tela tinha antes desta chave existir. Lido pela tela
+ * (`app/app/ai/memory/page.tsx`); gravado só por `definirLimiteDoPesoDaMemoria`.
+ */
+export const LIMITE_RECOMENDADO_DO_PESO_DA_MEMORIA = 1_500;
+/** Abaixo disto uma regra de duas frases já acende o aviso, e ele vira ruído. */
+export const LIMITE_MINIMO_DO_PESO_DA_MEMORIA = 100;
+/**
+ * O documento aceita até 50 mil caracteres (≈14 mil tokens, `postSchema` de
+ * `app/api/v1/ai/memory/route.ts`); 50 mil tokens é um quarto da janela de 200
+ * mil dos modelos comuns. Um limite acima disso não avisa nada que importe.
+ */
+export const LIMITE_MAXIMO_DO_PESO_DA_MEMORIA = 50_000;
+
+export const limiteDoPesoDaMemoriaWriteSchema = z
+  .number()
+  .int()
+  .min(LIMITE_MINIMO_DO_PESO_DA_MEMORIA)
+  .max(LIMITE_MAXIMO_DO_PESO_DA_MEMORIA);
+
+/** O limite do aviso de peso da memória nesta organização. Nunca lança. */
+export function limiteDoPesoDaMemoria(settings: unknown): number {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  const bloco = raiz?.memoria_da_ia;
+  const valor =
+    bloco && typeof bloco === "object" && !Array.isArray(bloco)
+      ? (bloco as Record<string, unknown>).limite_do_aviso_tokens
+      : undefined;
+  return limiteDoPesoDaMemoriaWriteSchema.catch(LIMITE_RECOMENDADO_DO_PESO_DA_MEMORIA).parse(valor);
+}

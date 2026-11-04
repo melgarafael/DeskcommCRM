@@ -1113,6 +1113,7 @@ export type Database = {
           history_message_window: number;
           history_token_window: number;
           id: string;
+          image_vision_enabled: boolean;
           inbound_debounce_ms: number | null;
           reply_min_interval_ms: number | null;
           knowledge_source_ids: string[];
@@ -1128,6 +1129,7 @@ export type Database = {
           provider: string;
           provisioning_origin: string | null;
           published_at: string | null;
+          skill_names: string[] | null;
           split_max_chars: number;
           split_messages: boolean;
           status: string;
@@ -1155,6 +1157,7 @@ export type Database = {
           history_message_window?: number;
           history_token_window?: number;
           id?: string;
+          image_vision_enabled?: boolean;
           inbound_debounce_ms?: number | null;
           reply_min_interval_ms?: number | null;
           knowledge_source_ids?: string[];
@@ -1170,6 +1173,7 @@ export type Database = {
           provider: string;
           provisioning_origin?: string | null;
           published_at?: string | null;
+          skill_names?: string[] | null;
           split_max_chars?: number;
           split_messages?: boolean;
           status?: string;
@@ -1196,6 +1200,7 @@ export type Database = {
           history_message_window?: number;
           history_token_window?: number;
           id?: string;
+          image_vision_enabled?: boolean;
           inbound_debounce_ms?: number | null;
           reply_min_interval_ms?: number | null;
           knowledge_source_ids?: string[];
@@ -1211,6 +1216,7 @@ export type Database = {
           provider?: string;
           provisioning_origin?: string | null;
           published_at?: string | null;
+          skill_names?: string[] | null;
           split_max_chars?: number;
           split_messages?: boolean;
           status?: string;
@@ -10586,9 +10592,13 @@ export type Database = {
           agent_id: string | null;
           cache_read_tokens: number;
           cache_write_tokens: number;
+          chars_ferramentas: number | null;
+          chars_mensagens: number | null;
+          chars_sistema: number | null;
           contact_id: string | null;
           cost_cents: number | null;
           created_at: string;
+          entrada_do_primeiro_passo: number | null;
           error_code: string | null;
           error_message: string | null;
           http_status: number | null;
@@ -10601,6 +10611,9 @@ export type Database = {
           organization_id: string;
           origem_da_escolha: string | null;
           output_tokens: number;
+          partes_de_midia: number | null;
+          passos: number | null;
+          prefixo_hash: string | null;
           provider: string;
           purpose: string;
           status: string;
@@ -10611,9 +10624,13 @@ export type Database = {
           agent_id?: string | null;
           cache_read_tokens?: number;
           cache_write_tokens?: number;
+          chars_ferramentas?: number | null;
+          chars_mensagens?: number | null;
+          chars_sistema?: number | null;
           contact_id?: string | null;
           cost_cents?: number | null;
           created_at?: string;
+          entrada_do_primeiro_passo?: number | null;
           error_code?: string | null;
           error_message?: string | null;
           http_status?: number | null;
@@ -10626,6 +10643,9 @@ export type Database = {
           organization_id: string;
           origem_da_escolha?: string | null;
           output_tokens?: number;
+          partes_de_midia?: number | null;
+          passos?: number | null;
+          prefixo_hash?: string | null;
           provider: string;
           purpose?: string;
           status?: string;
@@ -10635,9 +10655,13 @@ export type Database = {
           agent_id?: string | null;
           cache_read_tokens?: number;
           cache_write_tokens?: number;
+          chars_ferramentas?: number | null;
+          chars_mensagens?: number | null;
+          chars_sistema?: number | null;
           contact_id?: string | null;
           cost_cents?: number | null;
           created_at?: string;
+          entrada_do_primeiro_passo?: number | null;
           error_code?: string | null;
           error_message?: string | null;
           http_status?: number | null;
@@ -10650,6 +10674,9 @@ export type Database = {
           organization_id?: string;
           origem_da_escolha?: string | null;
           output_tokens?: number;
+          partes_de_midia?: number | null;
+          passos?: number | null;
+          prefixo_hash?: string | null;
           provider?: string;
           purpose?: string;
           status?: string;

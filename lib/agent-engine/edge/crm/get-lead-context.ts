@@ -18,17 +18,11 @@ import { isoLocalComOffset } from '@/lib/tempo/agora';
 import { logger } from '@/lib/logger';
 import { nomeDoContato } from '@/lib/contacts/rotulo-do-contato';
 import { lerRemetenteDeGrupo } from '@/lib/messaging/remetente-de-grupo';
-import { frameMediaBody, INICIO_DA_MOLDURA_DE_MIDIA } from './moldura-de-midia';
+import { frameMediaBody, INICIO_DA_MOLDURA_DE_MIDIA, MARCADOR_IMAGEM_NAO_VISTA } from './moldura-de-midia';
 
-/**
- * Heurística conservadora de contagem: ~3,5 chars/token para pt-br (BPE real fica
- * entre 3,5 e 4; dividir por menos SUPERESTIMA tokens — erra pro lado seguro).
- */
-export const CHARS_PER_TOKEN = 3.5;
-
-export function countPayloadTokens(serialized: string): number {
-  return Math.ceil(serialized.length / CHARS_PER_TOKEN);
-}
+// A régua mora num módulo folha para a tela usar a mesma conta (ver o cabeçalho de lá).
+import { countPayloadTokens } from '@/lib/ai/estimativa-de-tokens';
+export { CHARS_PER_TOKEN, countPayloadTokens } from '@/lib/ai/estimativa-de-tokens';
 
 /** Knobs do payload (env LEAD_CONTEXT_*; defaults documentados no .env.example). */
 export interface LeadContextKnobs {
@@ -36,6 +30,13 @@ export interface LeadContextKnobs {
   historyLimit: number;
   /** Teto do payload serializado, contado por countPayloadTokens (default 1000). */
   maxTokens: number;
+  /**
+   * O agente que vai ler vê imagens (`image_vision_enabled`, 9108)? `false` troca
+   * toda foto do histórico por `MARCADOR_IMAGEM_NAO_VISTA` — mesmo quando a
+   * descrição existe porque outro agente da empresa a pediu. Ausente = vê (quem
+   * lê sem agente: follow-up, classificador).
+   */
+  verImagens?: boolean;
 }
 
 /** Uma mensagem do histórico, já curada. */
@@ -438,6 +439,7 @@ export async function getLeadContext(
     history,
     knobs.maxTokens,
     input.fuso,
+    knobs.verImagens ?? true,
   );
   return { ok: true, context, tokenCount: countPayloadTokens(JSON.stringify(context)), lgpd };
 }
@@ -449,6 +451,8 @@ export interface CorpoDaMensagemRow {
   media_url: string | null;
   media_storage_path: string | null;
   media_derived_text: string | null;
+  /** Ausente = recebida (a linha do job só lê inbound). Decide o aviso de imagem não vista. */
+  direction?: string;
 }
 
 /**
@@ -470,7 +474,16 @@ export interface CorpoDaMensagemRow {
  * `@internal` só na intenção de não espalhar a receita: quem lê uma linha de
  * `messages` para o prompt passa por aqui, senão a composição volta a divergir.
  */
-export function corpoDaMensagem(m: CorpoDaMensagemRow): string {
+export function corpoDaMensagem(m: CorpoDaMensagemRow, verImagens = true): string {
+  // Agente que não vê imagens (9108): o aviso, nunca a descrição nem o `[image]`
+  // cru. Com `[documento]` o agente já inventou o conteúdo de um PDF que nunca
+  // leu (17/09, ver `MARCADOR_NAO_LIDA`); o aviso diz que chegou e que ele não viu.
+  // Só na foto que o CLIENTE mandou: na que nós mandamos, a legenda é nossa, e
+  // rotulá-la "do cliente" atribuiria a ele o que dissemos.
+  if (!verImagens && m.type === 'image' && m.direction !== 'outbound') {
+    const legenda = (m.body ?? '').trim();
+    return legenda === '' ? MARCADOR_IMAGEM_NAO_VISTA : `${MARCADOR_IMAGEM_NAO_VISTA}\nLegenda do cliente: ${legenda}`;
+  }
   const hasMedia = Boolean(m.media_storage_path || m.media_url);
   const derived = m.media_derived_text;
   // Onda 3: legenda e derivado (transcrição/visão/pdf) COEXISTEM, e o derivado
@@ -493,13 +506,14 @@ function fitToBudget(
   history: HistoryRow[],
   maxTokens: number,
   fuso: string,
+  verImagens = true,
 ): LeadContext {
   let messages: LeadContextMessage[] = history.map((m) => {
     const hasMedia = Boolean(m.media_storage_path || m.media_url);
     // A composição do corpo é UMA só, exportada logo acima: a linha canônica do
     // job passa pela mesma função. Duas receitas para a mesma linha foi o defeito
     // da #617 — o histórico mostrava o texto do áudio e a abertura dizia vazio.
-    const body = corpoDaMensagem(m);
+    const body = corpoDaMensagem(m, verImagens);
     // #2729 — quem falou, quando há mais de uma pessoa na conversa. Só o
     // recebido de grupo traz `group_sender` (o ingest grava só nesse sentido);
     // nas demais linhas o campo fica AUSENTE, e o prompt não ganha ruído.
@@ -533,10 +547,11 @@ function fitToBudget(
   return build(messages);
 }
 
+
 // A moldura e o seu desembrulho moram juntos em `moldura-de-midia.ts` (o cartão
 // da passagem precisa ler a mesma moldura de volta). Reexportado aqui porque é
 // por este módulo que o motor e os testes sempre a importaram.
-export { frameMediaBody };
+export { frameMediaBody, MARCADOR_IMAGEM_NAO_VISTA };
 
 /**
  * O que o CLIENTE digitou na última mensagem dele, e nada que o sistema compôs
