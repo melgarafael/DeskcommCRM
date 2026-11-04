@@ -10,28 +10,36 @@ import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { criarTemplateSchema } from "@/lib/campanhas/schemas";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 const COLUNAS = "id, name, body, created_at, updated_at, created_by";
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaign_templates" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "campaign_templates",
+    role: "manager",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "campaign_templates_lista", requestId);
+  if (teto) return teto;
+  const org = { orgId: authz.organizationId };
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase
     .from("campaign_templates")
     .select(COLUNAS)
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", org.orgId)
     .order("name", { ascending: true })
     .limit(200);
   if (error) return fail("internal_error", error.message, 500, { requestId });
@@ -44,9 +52,18 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (negado) return negado;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaign_templates" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "campaign_templates",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "campaign_templates_criar", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
+  const autor = authz.actor.type === "user" ? authz.actor.id : null;
 
   const parsed = criarTemplateSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -60,11 +77,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { data, error } = await admin
     .from("campaign_templates")
     .insert({
-      organization_id: authz.org.orgId,
+      organization_id: org.orgId,
       name: parsed.data.name,
       body: parsed.data.body,
-      created_by: authz.user.id,
-      updated_by: authz.user.id,
+      created_by: autor,
+      updated_by: autor,
     })
     .select(COLUNAS)
     .single();
