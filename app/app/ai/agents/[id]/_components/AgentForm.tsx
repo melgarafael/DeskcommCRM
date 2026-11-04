@@ -401,6 +401,35 @@ function toVersionPayload(s: FormState) {
   };
 }
 
+/**
+ * O que o payload da tela vira DEPOIS que o servidor o aceita.
+ *
+ * `mesmoRascunho` responde "salvar mudaria alguma coisa?" comparando os dois
+ * payloads — mas o servidor NÃO grava o payload cru: `versionShapeSchema` faz
+ * `.trim()` no prompt e completa o `trigger_config` com
+ * `include_tags`/`exclude_tags`/`include_pipeline_ids`/`exclude_pipeline_ids`
+ * (`.default([])`). Comparar o formulário com o que está no banco sem passar os
+ * dois pela MESMA régua acusava alteração para sempre, e Publicar ficava apagado
+ * com "Salve o rascunho antes de publicar" mesmo depois de salvar — o defeito da
+ * #3951, que só "sumia" ao recarregar a página porque aí o formulário passava a
+ * ser hidratado do que estava gravado, e os dois lados ficavam iguais por
+ * construção.
+ *
+ * `safeParse` e não `parse`: o formulário no meio da digitação é inválido de
+ * propósito (nome vazio, modelo ainda não escolhido), e derrubar o render por
+ * isso seria trocar um defeito por outro. Sem parse, compara-se o cru — que é o
+ * que a tela sempre fez.
+ */
+function payloadQueSeraGravado(s: FormState) {
+  const cru = { cadastro: toCadastroPayload(s), versao: toVersionPayload(s) };
+  const versao = versionCreateSchema.safeParse(cru.versao);
+  const cadastro = agentMcpPatchSchema.safeParse(cru.cadastro);
+  return {
+    cadastro: cadastro.success ? cadastro.data : cru.cadastro,
+    versao: versao.success ? versao.data : cru.versao,
+  };
+}
+
 export function AgentForm(props: Props) {
   const t = useT();
   const funis = props.funis ?? [];
@@ -444,10 +473,62 @@ export function AgentForm(props: Props) {
    * para sempre, e o botão "Publicar" cinza com "Salve o rascunho antes de
    * publicar" — medido numa instalação em produção, com o agente preso na versão
    * anterior até alguém publicar por fora da tela.
+   *
+   * ⚠️ Os DOIS lados passam por `payloadQueSeraGravado`: comparar o formulário
+   * com o que está gravado sem a mesma normalização é o que mantinha o botão
+   * apagado depois de salvar (#3951).
    */
+  const referenciaDoServidor = React.useMemo(
+    () => payloadQueSeraGravado(baseline),
+    [baseline],
+  );
+
+  /**
+   * O rascunho que ESTA sessão acabou de gravar.
+   *
+   * `props.draft` é uma prop do server component: ela só muda quando a página é
+   * buscada de novo. Logo depois do salvamento — e ANTES de o refresh chegar —
+   * a tela não tinha rascunho nenhum para publicar, e o botão ficava apagado com
+   * "Sem rascunho para publicar" mesmo com a versão já gravada no banco. A ação
+   * devolve `version_id`/`version_number`, então a tela não precisa esperar: ela
+   * sabe o que acabou de salvar.
+   *
+   * Este estado só é preenchido com `res.ok` — falha no salvamento não pode
+   * acender Publicar nem limpar a marca de alteração pendente.
+   */
+  const [salvo, setSalvo] = React.useState<{
+    agentId: string;
+    versionId: string;
+    versionNumber: number;
+    formulario: FormState;
+    payload: ReturnType<typeof payloadQueSeraGravado>;
+  } | null>(null);
+
+  const idDesteAgente = props.mode === "edit" ? props.agent.id : "";
+  /**
+   * Vale enquanto a prop do servidor fala do MESMO rascunho que acabamos de
+   * gravar (ou de nenhum, antes do refresh chegar). Um rascunho com outro id é
+   * de outra sessão/edição, e aí quem manda é o servidor.
+   *
+   * O rascunho que já existia é PATCHado no lugar (`saveAgentDraftAction`), então
+   * `props.draft.id` continua sendo o mesmo depois de salvar — comparar contra a
+   * prop velha acusaria alteração pendente sobre o conteúdo de antes.
+   */
+  const salvoDaqui =
+    salvo && salvo.agentId === idDesteAgente && (props.mode !== "edit" || !props.draft || props.draft.id === salvo.versionId)
+      ? salvo
+      : null;
+
+  /** O rascunho que o botão Publicar publica: o do servidor ou o recém-salvo. */
+  const rascunhoParaPublicar =
+    (props.mode === "edit" ? props.draft : null) ??
+    (salvoDaqui
+      ? { id: salvoDaqui.versionId, version_number: salvoDaqui.versionNumber }
+      : null);
+
   const dirty = !mesmoRascunho(
-    { cadastro: toCadastroPayload(form), versao: toVersionPayload(form) },
-    { cadastro: toCadastroPayload(baseline), versao: toVersionPayload(baseline) },
+    payloadQueSeraGravado(form),
+    salvoDaqui?.payload ?? referenciaDoServidor,
   );
 
   function patch(p: Partial<FormState>) {
@@ -542,7 +623,7 @@ export function AgentForm(props: Props) {
   const publishBlockReason = React.useMemo(() => {
     if (!isEdit) return t("Salve o agente antes de publicar.");
     const motivo = bloqueioDePublicacao({
-      temRascunhoVigente: !!props.draft,
+      temRascunhoVigente: !!rascunhoParaPublicar,
       formularioValido: isValid,
       alteracoesNaoSalvas: dirty,
       provedor: form.provider,
@@ -579,7 +660,7 @@ export function AgentForm(props: Props) {
       case "numero_desconectado":
         return `${t("Número WhatsApp não está conectado (status:")} ${motivo.estado}).`;
     }
-  }, [isEdit, props, isValid, dirty, credSt, form.provider, form.credential_id, channelSession, t]);
+  }, [isEdit, props, isValid, dirty, credSt, form.provider, form.credential_id, channelSession, rascunhoParaPublicar, t]);
 
   // ---------------------------------------------------------------------
   // Handlers
@@ -613,6 +694,16 @@ export function AgentForm(props: Props) {
           toast.error(res.message ?? `${t("Erro")}: ${res.error}`);
           return;
         }
+        // A tela passa a saber, sem esperar o refresh, que o rascunho está
+        // salvo: Publicar acende e Salvar apaga agora (#3951). Só chega aqui com
+        // `res.ok` — falha não acende nada.
+        setSalvo({
+          agentId: props.agent.id,
+          versionId: res.data!.version_id,
+          versionNumber: res.data!.version_number,
+          formulario: form,
+          payload: payloadQueSeraGravado(form),
+        });
         toast.success(`${t("Rascunho")} v${res.data!.version_number} ${t("salvo.")}`);
         router.refresh();
       } else {
@@ -641,15 +732,16 @@ export function AgentForm(props: Props) {
   }
 
   async function handlePublish() {
-    if (!isEdit || !props.draft) return;
+    if (!isEdit || !rascunhoParaPublicar) return;
+    const alvo = rascunhoParaPublicar;
     setPublishing(true);
     try {
-      const res = await publishAgentAction(props.agent.id, props.draft.id);
+      const res = await publishAgentAction(props.agent.id, alvo.id);
       if (!res.ok) {
         toast.error(`${t("Falha ao publicar:")} ${res.error}`);
         return;
       }
-      toast.success(`v${props.draft.version_number} ${t("publicada e ativa.")}`);
+      toast.success(`v${alvo.version_number} ${t("publicada e ativa.")}`);
       setConfirmOpen(false);
       router.refresh();
     } finally {
@@ -658,7 +750,10 @@ export function AgentForm(props: Props) {
   }
 
   function handleReset() {
-    setForm(baseline);
+    // "Descartar" volta para o que está SALVO — que, logo depois de um
+    // salvamento e antes do refresh, é o rascunho desta sessão e não a prop
+    // antiga do servidor.
+    setForm(salvoDaqui?.formulario ?? baseline);
   }
 
   const disabled = readOnly || saving || publishing;
@@ -747,8 +842,8 @@ export function AgentForm(props: Props) {
               >
                 {publishing
                   ? t("Publicando…")
-                  : props.draft
-                    ? `${t("Publicar v")}${props.draft.version_number}`
+                  : rascunhoParaPublicar
+                    ? `${t("Publicar v")}${rascunhoParaPublicar.version_number}`
                     : t("Publicar")}
               </Button>
             </span>
