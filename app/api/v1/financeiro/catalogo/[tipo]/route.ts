@@ -15,6 +15,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
@@ -64,17 +65,25 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const e = await entidade(ctx, requestId);
   if (!e.ok) return e.response;
 
-  const authz = await requireRole("viewer", { requestId, resource: "financeiro" });
+  // Leitura do catálogo: sessão OU token `mcp:read`. O papel mínimo é o da sessão.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_catalogo", requestId);
+  if (teto) return teto;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   // `inativos=1` para quem precisa ver o que saiu de uso — a tela normal não
   // mostra, mas o histórico existe e alguém vai perguntar por ele.
   const incluirInativos = new URL(req.url).searchParams.get("inativos") === "1";
   let q = supabase
     .from(e.tabela)
     .select(COLUNAS_POR_ENTIDADE[e.tipo])
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .order("name", { ascending: true })
     .limit(500);
   if (!incluirInativos) q = q.eq("is_active", true);

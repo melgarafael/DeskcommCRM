@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
@@ -34,17 +35,26 @@ const criarSchema = z.object({
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "honorarios_parcelas" });
+  // Leitura do calendário: sessão OU token `mcp:read`. O papel mínimo é o da sessão.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "honorarios_parcelas",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "honorarios_parcelas_listar", requestId);
+  if (teto) return teto;
   const { id: contratoId } = await ctx.params;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase
     .from("honorarios_parcelas")
     .select("id, contrato_id, numero, vencimento, valor_cents, currency, financial_entry_id, status")
     .eq("contrato_id", contratoId)
+    .eq("organization_id", authz.organizationId)
     .order("numero", { ascending: true });
 
   if (error) {
