@@ -206,7 +206,7 @@ describe("derivados MCP por permissão explícita", () => {
     media_derived_text: "texto sintético",
     media_derived_status: "ready",
   });
-  async function history(context: McpContext, message = derived) {
+  async function history(context: McpContext, message: Record<string, unknown> = derived) {
     mockedList.mockResolvedValue({ messages: [message], cursor: null, has_more: false } as never);
     return (await crmGetConversationHistory.handler(
       { conversation_id: CONVERSATION_ID, limit: 20 } as never,
