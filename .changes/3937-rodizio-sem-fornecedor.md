@@ -11,10 +11,11 @@ carga e a capacidade dos vendedores, que recebiam dezenas de conversas que não
 são atendimento.
 
 Agora a conversa de um contato do tipo Fornecedor não é distribuída: ela fica
-sem dono no Inbox, visível para todos, e o pedido de rodízio fecha com o motivo
-próprio em vez de voltar a cada minuto. O que sai é só a distribuição
-automática; a conversa continua na caixa, com histórico, envio e atribuição
-manual como antes.
+sem dono no Inbox, e o pedido de rodízio fecha com o motivo próprio em vez de
+voltar a cada minuto. Quem já vê conversas sem dono a encontra ali e atribui à
+mão — no padrão, toda a equipe; no modo de visibilidade "Só os seus", gerentes
+e administradores. O que sai é só a distribuição automática; a conversa
+continua na caixa, com histórico, envio e atribuição manual como antes.
 
 Contato do tipo Cliente — e todo contato que nunca teve o tipo alterado, já que
 o padrão é Cliente — continua entrando no rodízio sem nenhuma mudança.
@@ -23,4 +24,5 @@ o padrão é Cliente — continua entrando no rodízio sem nenhuma mudança.
 
 Quem usa o tipo Fornecedor para um contato que é atendimento de verdade passa a
 não recebê-lo pelo rodízio: a conversa fica sem dono até alguém atribuí-la à
-mão. Nada muda para quem nunca marcou o tipo — o padrão do contato é Cliente.
+mão. No modo "Só os seus", o atendente não a vê enquanto ela estiver sem dono.
+Nada muda para quem nunca marcou o tipo — o padrão do contato é Cliente.
