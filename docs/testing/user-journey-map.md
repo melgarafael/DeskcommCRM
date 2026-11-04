@@ -523,6 +523,34 @@ diálogo e é asserida na spec.
 
 ---
 
+## J58 — Conectar o número oficial com um clique, sem conta no provedor `[P0]` (2026-10-20)
+
+Primeira impressão de quem compra de um revendedor: a empresa não tem — e não deve ter —
+acesso à conta do provedor parceiro da instalação. Com a chave dessa conta em Painel ›
+Configuração (`ZERNIO_PLATFORM_API_KEY`), Conexões › Provedor parceiro mostra «Conectar meu
+WhatsApp»: página de cadastro do provedor → volta por outro site (cookie Strict não vem,
+ponte same-origin) → a tela conclui. Spec: `tests/e2e/numero-oficial-um-clique.spec.ts`,
+contra um dublê HTTP do provedor (porta 3996) que guarda perfis, contas e assinaturas. No
+CI ela se declara pulada (sem dublê), como a J52.4.
+
+Os eventos de TODAS as conexões de um clique chegam por um webhook ÚNICO da instalação
+(`/api/v1/webhooks/canal-da-instalacao`), filtrado aos perfis delas: o provedor limita as
+assinaturas por conta. A spec conecta a empresa pela tela com uma SEGUNDA empresa já
+conectada, e prova o roteamento pela conta do evento.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J58.1 | Instalação com a chave, empresa sem conexão | o botão de um clique, com a escolha «já usa o app WhatsApp Business» / «número novo»; o campo de chave própria só a pedido | **PASS pela tela (local, 2026-10-21)** — `evidence/numero-oficial-um-clique/01-botao-de-um-clique.png` |
+| J58.2 | Clicar, concluir no provedor e voltar | «Conectado» com o número; webhook «configurado automaticamente»; a sessão aponta para a chave da instalação (nenhuma cópia dela); UMA assinatura no provedor, na entrada da instalação, filtrada aos perfis das duas empresas; o perfil termina com o começo do id da organização (e leva a marca da instalação na frente, quando há marca própria) | **PASS pela tela (local, 2026-10-21)** — mesma spec; a segunda captura da spec (a tela já conectada) se regrava na próxima rodada local |
+| J58.3 | Mensagem de cada conta, assinada com o segredo do webhook da instalação | cai na organização DELA e em nenhuma outra; conta de ninguém → 200 sem gravar; segredo errado → 401 | **PASS (local, 2026-10-21)** — mesma spec; **PASS (unit)** — `app/api/v1/webhooks/canal-da-instalacao/route.test.ts`, `lib/channels/entrada-da-instalacao.test.ts` |
+| J58.4 | Excluir a conexão | desconecta o número da conta da instalação; a assinatura NÃO é apagada — o filtro fica só com a outra empresa, que segue recebendo | **PASS (local, 2026-10-21)** — mesma spec; **PASS (unit)** — `lib/channels/connect-credencial-e-webhook.test.ts` |
+| J58.5 | Volta forjada, vencida, de outra organização, ou conta fora do perfil | nada é gravado | **PASS (unit)** — `lib/channels/conexao-um-clique.test.ts`, `tests/unit/parceiro-volta-da-conexao.test.ts` |
+| J58.6 | Plano sem vaga de número | recusa ANTES de abrir a página da Meta (o número não entra na fatura da instalação para o CRM recusar no fim) | **PASS (unit)** — `lib/channels/conexao-um-clique.test.ts` |
+| J58.7 | Mais de 50 empresas conectadas por um clique | o webhook da instalação fica SEM filtro (o provedor aceita no máximo 50 perfis), em vez de recusar a conexão nova; a entrada descarta com 200 o evento que não é de uma conexão ativa | **PASS (unit)** — `lib/channels/zernio/webhook-da-instalacao.test.ts` |
+
+Não provado pela tela: a janela real da Meta (QR da coexistência, código do número) — só
+com um número de verdade, e é a prova manual que fecha esta jornada.
+
 ## J52 — Campanha pelo número oficial, com modelo aprovado `[P1]` (2026-10-15)
 
 Contexto: issue #1330, fatia 4. Número oficial só aceita texto livre dentro das
@@ -2190,6 +2218,31 @@ fresca ponta a ponta com a marca de um revendedor — `install.sh` numa VPS, res
 quem compra funciona inteira. Os defeitos de marca que mais custam caro moram exatamente aí,
 porque são vistos primeiro por um terceiro. **A receita para fechá-la está em J10, abaixo.**
 
+## J63 — A espera do follow-up só termina em horário comercial `[P1]` (2026-11-03)
+
+Medido numa instalação real: o fluxo "boas-vindas → 24 h → lembrete → 48 h → último toque"
+mandava o lembrete à mesma hora do formulário (2h da manhã para quem se cadastrou às 2h). A
+janela do número seguraria também a boas-vindas, que precisa sair na hora, e a faixa do agente
+vale para a inscrição inteira. A caixa Aguardar (tempo fixo) ganhou "Só terminar a espera em
+horário comercial" (`wait.ate_o_horario`, regra em `lib/followup/espera-no-horario.ts`, sobre as
+mesmas funções de calendário do horário de atendimento do agente). Spec:
+`tests/e2e/followup-builder.spec.ts` (bloco "espera só termina em horário comercial").
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J63.1 | Ligar o horário no painel da espera | início, fim e dias aparecem (padrão seg–sex 09–18); o card diz "só em horário comercial" | spec acima — a medir (CI) |
+| J63.2 | Salvar e recarregar | o painel volta com o horário gravado, não com o padrão | spec acima — a medir (CI) |
+| J63.3 | Mudar a duração com o horário ligado | o rascunho guarda a duração nova E o horário inteiro (prova pela API) | spec acima — a medir (CI); o conserto do formulário também em `WaitForm.test.tsx` |
+| J63.4 | A espera vence de noite ou no fim de semana | o motor grava a próxima abertura, no fuso da organização; na saída fora do horário, espera de novo | **PASS (unit)** — `lib/followup/espera-no-horario.test.ts` |
+| J63.5 | O cliente responde no meio da noite | a resposta corta a espera na hora (o horário segura o toque proativo, não a resposta) | **PASS (unit)** |
+| J63.6 | Horário torto (fim antes do início, nenhum dia) | o rascunho aceita; o publish recusa com `horario_da_espera_invalido` | **PASS (unit)** |
+
+Evidência de tela: nenhuma captura versionada neste PR — a prova pela tela é a spec e2e do
+editor de follow-up, que roda no CI.
+
+Não provado: um envio real atravessando a madrugada num worker (o relógio do motor é medido em
+unit e no teste do motor com banco dublê).
+
 ## J57 — Vendas e dinheiro no celular `[P1]` (2026-10-23)
 
 ADR-0006, fase F4. Telas do gestor que, a 390px, deixavam ação fora da tela ou
@@ -2209,6 +2262,21 @@ só o que aparece sem canal conectado de verdade.
 | J57.6 | Meta Ads sem conta a 390px | o `<main>` não rola para o lado (o `-m-6` acompanha o `p-4` do `<main>`) | a medir (CI) |
 | J57.7 | Faturamento a 390px e a 1280px | a linha do lançamento vira cartão; «Pagar» e «×» com ≥ 44×44px, dentro da tela, sem um cobrir o outro; a 1280px a linha volta a `table-row` e «Pagar» volta a texto | classe conferida (unit) `tests/unit/pagar-e-remover-sao-alvos-separados.test.tsx`; geometria a medir (CI) |
 | J57.8 | Nome da campanha no Meta Ads | a 1ª coluna e o nome dentro dela param em 9rem abaixo de `md` e voltam a 22rem acima | classe conferida (unit) `tests/unit/meta-ads-connect-rate-na-tela.test.tsx`; geometria a medir (CI) — a spec de hoje não chega à tabela: sem conta Meta no CI ela não aparece |
+
+## J62 — Escolher o modelo que escreve o follow-up `[P2]` (2026-11-03)
+
+Em Agente de IA › Provedores, grupo "Atender o cliente", o ponto **"Escrever o follow-up"**
+(`followup_turn`) mostra o modelo da versão publicada do agente enquanto ninguém escolheu outro, e
+aceita um modelo próprio (com ferramentas). Escolhido, só os follow-ups (passos de IA dos fluxos de
+silêncio e retornos combinados pelo agente) passam a usá-lo; a resposta ao cliente continua no
+modelo do agente. Quem escolhe o ponto no motor é o `kind` do job, em `executarTurnoDoAgente`; a
+prova de que o follow-up sai como `followup_turn` e a resposta como `agent_turn`, lida em
+`llm_calls`, é `tests/invariants/follow-up-usa-o-proprio-ponto.test.ts`.
+
+| # | Caso | Esperado | Estado |
+|---|---|---|---|
+| J62.1 | Abrir Provedores e o grupo "Atender o cliente" | o ponto aparece com o nome, a exigência de ferramentas e o sintoma de falha | spec `prova-painel-provedores.spec.ts` ("o follow-up tem modelo próprio…"); evidência em `evidence/modelo-do-follow-up/` quando roda |
+| J62.2 | Escolher outro modelo no ponto, gravar e recarregar | a escolha volta do banco com origem "Escolhido por você"; `agent_turn` não muda de origem | mesma spec |
 
 ## J10 — Instalação fresca com a marca do revendedor `[P0]` (receita manual)
 
@@ -3905,6 +3973,24 @@ partir da lápide, com o 500 que não diz "nada foi apagado": medida por unidade
 `lib/tenants/exclusao.test.ts` e `…/delete/route.test.ts`, e o inventário da lápide em
 `tests/invariants/gestao-de-tenants.test.ts`.
 
+## J60 — A mensagem que saiu por modelo diz qual e mostra as opções `[P1]` (2026-11-03)
+
+Contexto: com a janela de 24 h fechada, só sai modelo aprovado. A conversa
+mostrava o corpo como um texto qualquer — quem lia não sabia que tinha saído por
+modelo nem quais botões o cliente recebeu, e a resposta dele («Quero mudar
+algo») ficava solta. O envio passa a gravar os textos dos botões, lidos do
+espelho da definição, em `messages.metadata.template_buttons`
+(`app/api/v1/messages/_handler.ts`, `lib/messaging/botoes-do-modelo.ts`), e a
+rota de mensagens passa a devolver `template_name`/`template_language`.
+
+Spec: `tests/e2e/inbox-mensagem-por-modelo.spec.ts`.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J60.1 | Abrir uma conversa com uma mensagem por modelo e uma de texto | o balão do modelo tem o selo «Modelo do WhatsApp · <nome>» e a lista «Opções enviadas ao cliente» com os botões na ordem; o de texto, nenhum dos dois; as opções cabem no balão (`boundingBox`) | **Spec escrita, não rodada localmente** — a prova pela tela fica com o CI (`SPECS_PARTE_7`); a captura sai em `evidence/inbox-mensagem-por-modelo/` |
+| J60.2 | Enviar modelo com botões / sem espelho / texto comum com botões forjados no `metadata` | grava os botões da definição, na ordem / não grava nada e envia / não grava nada (o `metadata` de entrada não fala pelos botões) | **PASS (unit)** — `tests/unit/messages-handler-canal-intermediado.test.ts` |
+| J60.3 | Mensagem por modelo enviada antes desta versão (sem botões gravados) | só o selo, sem lista | **PASS (unit)** — `components/inbox/MessageBubble.test.tsx` |
+
 ## J50 — Reenviar uma mensagem que falhou `[P0]` (2026-10-21)
 
 Contexto: ADR-0006, fase F2 ("Atende pelo celular"), PR C. Antes, a bolha que
@@ -4157,3 +4243,54 @@ reprova, depois da tentativa de limpeza. Trace e vídeo ficam desligados apenas
 nesta spec para não arquivar URLs assinadas. A limpeza é limitada aos UUIDs
 sintéticos desta execução. A coleta `--list` não é prova de UX; a aceitação
 depende do CI do candidato e da inspeção das capturas produzidas.
+
+## J59 — Avisar a equipe pelo número oficial, com modelo aprovado `[P1]` (2026-11-03)
+
+Quem só tem o número oficial estável não conseguia avisar a equipe: fora da janela de 24 h ele
+só manda modelo aprovado, e a tela Aviso no WhatsApp (Agente de IA › Acompanhar o agente) só oferecia número de texto livre —
+o aviso de caso era condenado (`canal_nao_aceita_aviso_livre`) e a ação "Mensagem para a equipe"
+pulava em todo disparo. Desde a 9094 a configuração guarda o modelo aprovado
+(`config_aviso_de_caso.modelo_id`), com UMA variável no corpo, e o texto do aviso entra nela numa
+linha só. Regra única em `lib/escalacao/modelo-do-aviso.ts`. Spec:
+`tests/e2e/aviso-pelo-numero-oficial.spec.ts` (sem rede: o teste é recusado antes do provedor).
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J59.1 | Número oficial com um modelo aprovado de uma variável | aparece no seletor marcado «só modelo aprovado»; a tela pede o modelo, já escolhido quando é o único, com a prévia do texto e o aviso de que cada mensagem é cobrada; o de duas variáveis não é oferecido | spec escrita; **não executada nesta entrega** (sem Docker na bancada) — fica com o `e2e` do CI, parte 7 |
+| J59.2 | Salvar | o banco guarda o modelo DESTA conexão; recarregar mostra o mesmo modelo | idem |
+| J59.3 | Enviar aviso de teste | passa da barreira do canal: a recusa que sobra é a do endereço público da bancada, não «só envia mensagens aprovadas» | idem |
+| J59.4 | O modelo volta para revisão na plataforma | bloqueio «Escolha o modelo aprovado que leva o aviso», switch travado; a conexão salva segue no seletor e diz que não tem modelo; em 390px sem rolagem lateral | idem |
+| J59.5 | Modelo de outra organização ou de outro número | a FK composta recusa o de outra organização; o RPC recusa os dois (`aviso_de_caso_modelo_invalido`); a linha sem conexão da conta oficial serve só ao número dela | `tests/invariants/aviso-por-modelo-aprovado.test.ts` (test:db) |
+| J59.6 | Aviso de caso e "Mensagem para a equipe" pelo número oficial | saem DENTRO do modelo, conferido no envio; sem modelo que sirva, o mesmo motivo de antes | **PASS (unit)** — `tests/unit/aviso-de-caso-decide.test.ts`, `tests/unit/aviso-por-modelo-acao-equipe.test.ts` |
+
+Não provado: a entrega real no celular por um número oficial de verdade (precisa de um modelo
+aprovado pela plataforma); o comando RESPONDER/PERGUNTAR por esse número, que segue fora do
+escopo; e os avisos de proposta, de agendamento e de passagem para humano, que dividem a conexão
+do aviso de caso e continuam exigindo texto livre.
+
+## Cold Call: ligar para uma lista de leads, um por vez (2026-11-03)
+
+- `[P1]` Fila e sessão de ligações abertas pela tela, com a API simulada por Playwright: `evidence/cold-call/fila-desktop.png`, `evidence/cold-call/sessao-desktop.png` e `evidence/cold-call/sessao-celular.png`. As variáveis do roteiro saem preenchidas com o lead, quem liga e a organização, sem rolagem lateral em 1920 px nem no celular.
+- **Não medido:** banco fresco do `baseline.sql` e ligação real pelo canal de voz.
+
+## J66 — A empresa nova nasce com a IA do molde escolhido pelo dono do servidor `[P1]` (2026-11-03)
+
+Numa instalação que hospeda várias empresas, toda empresa nova nascia sem escolha de modelo por
+função e com o padrão do produto, e o dono do servidor copiava a configuração de IA de uma
+empresa de referência à mão, função por função. Desde a 9096, Recursos opcionais › "IA das
+empresas novas" escolhe uma empresa ativa como molde
+(`platform_settings.molde_de_ia_org_id`), e o gatilho `fn_molde_de_ia_na_org_nova` copia as
+funções copiáveis com `credential_id` nulo — regra única em `lib/ai/molde-de-ia.ts`. Spec:
+`tests/e2e/molde-de-ia-empresas-novas.spec.ts`.
+
+| # | Caso | Expectativa | Resultado |
+|---|------|-------------|-----------|
+| J66.1 | Sem molde (o padrão) | a tela diz que cada empresa nova começa com o padrão do produto; a empresa nasce sem funções | **não medido pela tela localmente** — CI `e2e` parte 7; banco: `tests/invariants/molde-de-ia-empresas-novas.test.ts` (CI `invariants`) |
+| J66.2 | Escolher o molde | a tela mostra quantas funções e quais modelos vão ser copiados, o padrão e o que fica de fora; recarregar mostra a escolha salva | **não medido pela tela localmente** — CI `e2e` parte 7 |
+| J66.3 | Criar a empresa em Empresas › Nova | o formulário avisa de que empresa vem a IA; a página da nova mostra "IA copiada do molde" | **não medido pela tela localmente** — CI `e2e` parte 7 |
+| J66.4 | Agente de IA › Provedores da empresa nova | as funções copiadas com o modelo do molde; a de endereço próprio não veio e herda o padrão do molde | **não medido pela tela localmente** — CI `e2e` parte 7 |
+| J66.5 | Assinatura, Jev, Google, DeepSeek, endereço próprio; molde excluído; RPC de criação; outras organizações | nada disso é copiado; credencial do molde nunca vai junto; molde excluído zera a coluna e criar empresa não falha; a RPC também copia; nenhuma outra organização muda | **CI `invariants`** — `tests/invariants/molde-de-ia-empresas-novas.test.ts` |
+| J66.6 | A lista de provedores que a tela promete = a que o banco copia | `PROVEDORES_DO_MOLDE` = provedores com chave da instalação = literais do gatilho | **PASS (unit)** — `tests/unit/molde-de-ia.test.ts` |
+
+Não provado: que a primeira chamada de IA da empresa nova sai com a chave da instalação (o
+painel mostra modelo e origem, não faz chamada paga).

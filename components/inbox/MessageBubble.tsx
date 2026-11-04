@@ -3,7 +3,7 @@
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
+import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, FileText, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,7 @@ import { MediaUnavailable } from "@/components/inbox/media/MediaUnavailable";
 import { ContactCard } from "@/components/inbox/media/ContactCard";
 import { LocationCard } from "@/components/inbox/media/LocationCard";
 import { localizacaoDaMensagem } from "@/lib/messaging/localizacao";
+import { lerBotoesDoModelo } from "@/lib/messaging/botoes-do-modelo";
 import { reenvioDaMensagem } from "@/lib/messaging/reenvio";
 import { ApiError } from "@/lib/api/types";
 import { resolveSharedContact } from "@/lib/messaging/contact-card";
@@ -174,6 +175,10 @@ export function MessageBubble({
   const isContact = message.type === "contact";
   // Pino com coordenadas: o cartão substitui o corpo, que é só o mesmo link em texto.
   const localizacao = localizacaoDaMensagem(message);
+  // Saiu por MODELO aprovado: o balão diz qual e mostra as opções que o cliente
+  // recebeu — sem isso, a resposta dele ("Quero mudar algo") ficava solta.
+  const porModelo = message.type === "template";
+  const botoesDoModelo = porModelo ? lerBotoesDoModelo(message.metadata) : [];
   // Figurinha sem caption: sem moldura de bolha (padrão WhatsApp).
   const isBareSticker = hasMedia && message.type === "sticker" && !message.body;
   // Apagada pelo autor ("apagar para todos"). A linha continua no histórico —
@@ -556,8 +561,40 @@ export function MessageBubble({
 
             {localizacao && <LocationCard localizacao={localizacao} />}
 
+            {porModelo && (
+              <div
+                data-testid="selo-do-modelo"
+                className="mb-1 inline-flex max-w-full items-center gap-1 rounded-sm bg-current/10 px-1.5 py-0.5 text-[10px] font-medium"
+              >
+                <FileText size={11} weight="bold" aria-hidden />
+                <span className="truncate">
+                  {t("Modelo do WhatsApp")}
+                  {message.template_name ? ` · ${message.template_name}` : ""}
+                </span>
+              </div>
+            )}
+
             {message.body && !isContact && !localizacao && (
               <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{corpo}</p>
+            )}
+
+            {botoesDoModelo.length > 0 && (
+              // As opções como o cliente as vê: abaixo do texto, uma por linha.
+              // Não são clicáveis aqui — quem responde é o cliente, no WhatsApp.
+              <ul
+                aria-label={t("Opções enviadas ao cliente")}
+                className="mt-2 flex flex-col gap-1 border-t border-current/20 pt-2"
+              >
+                {botoesDoModelo.map((botao, i) => (
+                  <li
+                    key={`${i}-${botao}`}
+                    className="flex items-center justify-center gap-1 rounded-md bg-current/10 px-2 py-1 text-xs font-medium"
+                  >
+                    <ArrowBendUpLeft size={12} aria-hidden />
+                    <span className="wrap-anywhere">{botao}</span>
+                  </li>
+                ))}
+              </ul>
             )}
           </>
         )}

@@ -405,6 +405,8 @@ export async function handleAudioSocketConnection(socket: net.Socket, uuid: stri
     apiKey: agent.apiKey,
     onTranscriptTurn: (turn) => appendAudioSocketTranscriptTurn(uuid, turn),
     onCallEnded: () => finalizeAudioSocketCall(uuid),
+    // Recebida: quem atende fala primeiro. Feita por nós: quem atende diz "alô".
+    falaPrimeiro: callRow.direction === "inbound",
     knowledgeSourceIdsPromise,
     searchKnowledge: async (pergunta: string) => {
       const knowledgeSourceIds = await knowledgeSourceIdsPromise;

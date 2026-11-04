@@ -228,6 +228,12 @@ const versionShapeSchema = z
      * ninguém travar o atendimento sem querer (#1856).
      */
     inbound_debounce_ms: z.number().int().min(0).max(60000).nullable().optional(),
+    /**
+     * Intervalo mínimo, em ms, entre uma resposta da IA e a próxima à MESMA
+     * conversa. `null`/ausente/0 = sem intervalo (comportamento de sempre).
+     * Teto de 10 min, para ninguém deixar o atendimento mudo sem querer.
+     */
+    reply_min_interval_ms: z.number().int().min(0).max(600000).nullable().optional(),
     followup: followupConfigSchema,
     // ── Papel OPERADOR (spec 16 §3.2) ───────────────────────────────────────
     // Todos com `.default(...)`, e é o que mantém retrocompatível: agent e

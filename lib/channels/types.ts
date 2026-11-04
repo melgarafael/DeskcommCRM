@@ -357,6 +357,24 @@ export interface ChannelAdapter {
   ): Promise<string | null>;
 
   /**
+   * O telefone TEM conta nesta plataforma? Pergunta sem enviar nada — a
+   * prospecção a faz antes de abordar uma empresa (`lib/prospecting/whatsapp.ts`).
+   *
+   * TRÊS respostas, e a terceira é a que importa: `true`/`false` é o que a
+   * plataforma disse; `null` é "não deu para saber" (transporte fora, sessão
+   * caindo). Quem chama NUNCA lê `null` como "não tem" — descartaria uma empresa
+   * porque o servidor piscou. É por isso que não reaproveita
+   * `resolveRegisteredPhone`, que devolve `null` também para "não existe" e para
+   * quem só tem identidade opaca (que TEM conta).
+   *
+   * OPCIONAL: só implementa quem consegue perguntar à plataforma; quem chama
+   * testa a presença (ou usa `provedoresQueConferemNumero`), nunca o nome.
+   */
+  numeroTemConta?(
+    input: ChannelTenantScope & { sessionRef: string; phone: string },
+  ): Promise<boolean | null>;
+
+  /**
    * Gestão das definições aprovadas — criar, editar, apagar.
    *
    * OPCIONAL pelo mesmo motivo dos dois métodos acima: nem todo canal expõe

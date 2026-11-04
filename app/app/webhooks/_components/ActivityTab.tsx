@@ -155,6 +155,9 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
     "O roteiro de atendimento não começou: o módulo Fluxos de atendimento está desligado nesta instalação.",
   roteiro_nao_iniciado:
     "O roteiro de atendimento não começou para este contato: o fluxo pode não estar publicado, o contato já pode ter um roteiro em andamento, ou já ter concluído este sem poder recomeçar.",
+  same_flow: "O contato já está neste mesmo fluxo — a automação não o recomeça.",
+  live_enrollment_paused:
+    "O contato está em outro fluxo pausado por uma pessoa da equipe, e a automação não passa por cima dessa decisão.",
   consent_declined: "O contato não autorizou o recebimento de mensagens de marketing.",
   fora_do_pre_go_live:
     "O número deste canal ainda não entrou no pré-go-live, então a mensagem escrita pela IA não sai por ele.",

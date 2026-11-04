@@ -191,7 +191,12 @@ describe("GET /auth/callback", () => {
 
     const res = await GET(requisicao("code=abc"));
 
-    expect(vi.mocked(ensureTenantForUser)).toHaveBeenCalledWith(USUARIO, { source: "signup" });
+    // As pistas da empresa nova (idioma da tela, fuso) viajam na URL de volta;
+    // sem elas na URL, vão nulas — e o `Accept-Language` do pedido junto.
+    expect(vi.mocked(ensureTenantForUser)).toHaveBeenCalledWith(USUARIO, {
+      source: "signup",
+      pistas: { idioma: null, fuso: null, acceptLanguage: null },
+    });
     expect(await destino(res)).toBe("/onboarding/welcome");
   });
 
