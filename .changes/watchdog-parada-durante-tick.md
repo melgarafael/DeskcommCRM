@@ -1,5 +1,5 @@
 ---
-impacto: correcao
+impacto: nada_mudou
 secao: corrigido
 titulo: O watchdog respeita a parada durante a reconciliação
 ---
