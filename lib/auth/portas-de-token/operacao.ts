@@ -65,6 +65,11 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/conversations/[id]",
   "/api/v1/conversations/[id]/messages",
   "/api/v1/conversations/[id]/notes",
+  // Leituras que ganharam o token depois (o resto dessas rotas segue só de
+  // sessão: transferir, convidar e remover participante, apagar nota).
+  "/api/v1/conversations/[id]/notes/[noteId]/media",
+  "/api/v1/conversations/[id]/participants",
+  "/api/v1/conversations/[id]/transfer",
   "/api/v1/conversations/[id]/passagens",
   "/api/v1/conversations/[id]/retention",
   "/api/v1/conversations/[id]/sector",

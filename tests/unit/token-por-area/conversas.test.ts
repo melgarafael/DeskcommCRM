@@ -79,6 +79,13 @@ const CONTATO_A = "a6666666-6666-4666-8666-666666666666";
 const CONTATO_B = "b6666666-6666-4666-8666-666666666666";
 const NOTA_A = "a7777777-7777-4777-8777-777777777777";
 const NOTA_B = "b7777777-7777-4777-8777-777777777777";
+const PARTICIPANTE_A = "a8888888-8888-4888-8888-888888888888";
+const PARTICIPANTE_B = "b8888888-8888-4888-8888-888888888888";
+const PESSOA_PARTICIPANTE_A = "a9999999-9999-4999-8999-999999999999";
+const PESSOA_PARTICIPANTE_B = "b9999999-9999-4999-8999-999999999999";
+const NUMERO_A = "aaaaaaaa-1111-4111-8111-111111111111";
+const NUMERO_B = "bbbbbbbb-1111-4111-8111-111111111111";
+const CAMINHO_DO_ANEXO_A = `${ORG_A}/${CONVERSA_A}/anexo.png`;
 
 const SEM_ORGANIZACAO = [] as const;
 
@@ -229,8 +236,33 @@ const LINHAS_BASE: Linhas = {
   user_organizations: [],
 };
 
-const SO_DA_A = [CONVERSA_A, CONTATO_A, NOTA_A, ORG_A];
-const SO_DA_B = [CONVERSA_B, CONTATO_B, NOTA_B, ORG_B];
+const PARTICIPANTES: Linha[] = [
+  {
+    id: PARTICIPANTE_A,
+    organization_id: ORG_A,
+    conversation_id: CONVERSA_A,
+    user_id: PESSOA_PARTICIPANTE_A,
+    invited_by: null,
+    joined_at: "2026-11-01T10:00:00.000Z",
+    left_at: null,
+  },
+  {
+    id: PARTICIPANTE_B,
+    organization_id: ORG_B,
+    conversation_id: CONVERSA_B,
+    user_id: PESSOA_PARTICIPANTE_B,
+    invited_by: null,
+    joined_at: "2026-11-01T10:00:00.000Z",
+    left_at: null,
+  },
+];
+const NUMEROS: Linha[] = [
+  { id: NUMERO_A, organization_id: ORG_A, display_name: "Número da A", phone_number: "+5511900000001" },
+  { id: NUMERO_B, organization_id: ORG_B, display_name: "Número da B", phone_number: "+5511900000002" },
+];
+
+const SO_DA_A = [CONVERSA_A, CONTATO_A, NOTA_A, ORG_A, PARTICIPANTE_A, PESSOA_PARTICIPANTE_A, NUMERO_A];
+const SO_DA_B = [CONVERSA_B, CONTATO_B, NOTA_B, ORG_B, PARTICIPANTE_B, PESSOA_PARTICIPANTE_B, NUMERO_B];
 
 type Metodo = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 type Papel = "viewer" | "agent" | "manager" | "admin";
@@ -381,6 +413,53 @@ const NOTES_POST: Caso = {
   audita: true,
 };
 
+const NOTA_COM_ANEXO_GET: Caso = {
+  rota: "conversations/[id]/notes/[noteId]/media",
+  metodo: "GET",
+  caminho: `/api/v1/conversations/${CONVERSA_A}/notes/${NOTA_A}/media`,
+  params: { id: CONVERSA_A, noteId: NOTA_A },
+  linhas: {
+    ...LINHAS_BASE,
+    conversation_notes: (LINHAS_BASE.conversation_notes ?? []).map((n) =>
+      n.id === NOTA_A ? { ...n, media_storage_path: CAMINHO_DO_ANEXO_A } : n,
+    ),
+  },
+  papel: "agent",
+  escopo: "mcp:read",
+  recurso: "conversation_notes",
+  status: 302,
+  audita: false,
+};
+
+const PARTICIPANTES_GET: Caso = {
+  rota: "conversations/[id]/participants",
+  metodo: "GET",
+  caminho: `/api/v1/conversations/${CONVERSA_A}/participants`,
+  params: { id: CONVERSA_A },
+  linhas: { ...LINHAS_BASE, conversation_participants: PARTICIPANTES },
+  papel: "viewer",
+  escopo: "mcp:read",
+  papelDoToken: "agent",
+  recurso: "conversations",
+  status: 200,
+  audita: false,
+  receitaB: true,
+};
+
+const TRANSFERENCIA_PREVIA_GET: Caso = {
+  rota: "conversations/[id]/transfer",
+  metodo: "GET",
+  caminho: `/api/v1/conversations/${CONVERSA_A}/transfer?to_user_id=${PESSOA_DA_SESSAO}`,
+  params: { id: CONVERSA_A },
+  linhas: { ...LINHAS_BASE, channel_sessions: NUMEROS },
+  rpc: { fn_numero_da_transferencia: NUMERO_A },
+  papel: "agent",
+  escopo: "mcp:read",
+  recurso: "conversations",
+  status: 200,
+  audita: false,
+};
+
 const PASSAGENS_GET: Caso = {
   rota: "conversations/[id]/passagens",
   metodo: "GET",
@@ -483,6 +562,9 @@ const CASOS: readonly Caso[] = [
   MESSAGES_GET,
   NOTES_GET,
   NOTES_POST,
+  NOTA_COM_ANEXO_GET,
+  PARTICIPANTES_GET,
+  TRANSFERENCIA_PREVIA_GET,
   PASSAGENS_GET,
   RETENTION_GET,
   SECTOR_PUT,
@@ -536,11 +618,23 @@ const SO_DE_SESSAO: readonly CasoDeSessao[] = [
     caminho: `/api/v1/conversations/${CONVERSA_A}/notes/${NOTA_A}`,
     params: { id: CONVERSA_A, noteId: NOTA_A },
   },
+  // draft-reply GET e POST usam o pool do Postgres da requisição (e o POST, a
+  // IA); aviso-de-mensagem pergunta "avisar ESTA pessoa", e reactivate-bot
+  // decide pelo dono da conversa: nenhum tem sentido sem uma pessoa na sessão.
   {
-    rota: "conversations/[id]/notes/[noteId]/media",
+    rota: "conversations/[id]/draft-reply",
     metodo: "GET",
-    caminho: `/api/v1/conversations/${CONVERSA_A}/notes/${NOTA_A}/media`,
-    params: { id: CONVERSA_A, noteId: NOTA_A },
+    caminho: `/api/v1/conversations/${CONVERSA_A}/draft-reply`,
+    params: { id: CONVERSA_A },
+  },
+  // GET de participants e de transfer aceitam token; convidar, remover e
+  // transferir seguem só de sessão (`fn_conversation_assign`, vínculo forjável).
+  {
+    rota: "conversations/[id]/participants",
+    metodo: "DELETE",
+    caminho: `/api/v1/conversations/${CONVERSA_A}/participants`,
+    params: { id: CONVERSA_A },
+    corpo: { user_id: PESSOA_DA_SESSAO },
   },
   {
     rota: "conversations/[id]/participants",
@@ -911,6 +1005,62 @@ describe("o ramo do token em conversas e conversation-tags", () => {
       expect.objectContaining({ organizationId: ORG_A, actorUserId: null, actorApiTokenId: TOKEN_A }),
     );
   });
+
+  it("GET /api/v1/conversations/[id]/participants: lista só quem participa na organização do token", async () => {
+    const { res, texto, falso } = await comoToken(PARTICIPANTES_GET);
+    expect(res.status, texto).toBe(200);
+    expect(texto).toContain(PARTICIPANTE_A);
+    expect(texto).not.toContain(PARTICIPANTE_B);
+    const leituras = falso.cadeias.filter((c) => c.tabela === "conversation_participants");
+    expect(leituras.length).toBeGreaterThan(0);
+    for (const leitura of leituras) expect(leitura.filtros).toContainEqual(["organization_id", ORG_A]);
+  });
+
+  it("GET /api/v1/conversations/[id]/participants: token de B pedindo a conversa de A não lê a lista", async () => {
+    const { res, falso } = await comoToken(PARTICIPANTES_GET, { org: ORG_B });
+    expect(res.status).toBe(404);
+    expect(falso.cadeias.some((c) => c.tabela === "conversation_participants")).toBe(false);
+  });
+
+  it("GET /api/v1/conversations/[id]/transfer: a RPC e o número levam a organização do token", async () => {
+    const { res, texto, falso } = await comoToken(TRANSFERENCIA_PREVIA_GET);
+    expect(res.status, texto).toBe(200);
+    expect(texto).toContain("Número da A");
+    expect(texto).not.toContain("Número da B");
+    const chamada = falso.rpcs.find((r) => r.nome === "fn_numero_da_transferencia");
+    expect(chamada?.args.p_organization_id).toBe(ORG_A);
+    const sessoes = falso.cadeias.filter((c) => c.tabela === "channel_sessions");
+    expect(sessoes.length).toBeGreaterThan(0);
+    for (const s of sessoes) expect(s.filtros).toContainEqual(["organization_id", ORG_A]);
+  });
+
+  it("GET /api/v1/conversations/[id]/transfer: token de B não chega à RPC", async () => {
+    const { res, falso } = await comoToken(TRANSFERENCIA_PREVIA_GET, { org: ORG_B });
+    expect(res.status).toBe(404);
+    expect(falso.rpcs.find((r) => r.nome === "fn_numero_da_transferencia")).toBeUndefined();
+  });
+
+  it("GET /api/v1/conversations/[id]/transfer: sem to_user_id válido → 400, sem tocar no banco", async () => {
+    const c: Caso = { ...TRANSFERENCIA_PREVIA_GET, caminho: `/api/v1/conversations/${CONVERSA_A}/transfer` };
+    const { res, falso } = await comoToken(c);
+    expect(res.status).toBe(400);
+    expect(falso.cadeias).toEqual([]);
+    expect(falso.rpcs).toEqual([]);
+  });
+
+  it("GET /api/v1/conversations/[id]/notes/[noteId]/media: assina o anexo da organização do token", async () => {
+    const { res, falso } = await comoToken(NOTA_COM_ANEXO_GET);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toContain(CAMINHO_DO_ANEXO_A);
+    expect(falso.uploads).toEqual([{ bucket: "internal-media", caminho: CAMINHO_DO_ANEXO_A, operacao: "createSignedUrl" }]);
+    expect(res.headers.get("cache-control")).toContain("no-store");
+  });
+
+  it("GET /api/v1/conversations/[id]/notes/[noteId]/media: token de B não assina nada da A", async () => {
+    const { res, falso } = await comoToken(NOTA_COM_ANEXO_GET, { org: ORG_B });
+    expect(res.status).toBe(404);
+    expect(falso.uploads).toEqual([]);
+  });
 });
 
 // ─── A borda que nenhum teste de handler alcança: o proxy ───────────────────
@@ -922,10 +1072,10 @@ describe("o ramo do token em conversas e conversation-tags", () => {
  *
  * Irmãos literais de `[id]` (ls app/api/v1/conversations/[id]/) que NÃO ganharam
  * porta nesta fatia: aviso-de-mensagem, claim, close, draft-reply, export,
- * mark-read, participants, pause-ai, reactivate-bot, release, transfer.
+ * mark-read, pause-ai, reactivate-bot, release.
  * Irmãos de nível raiz sem porta: bulk, counts.
  * Fora deste teste, porque já tinham porta antes da R2 (`[^/]+` ou UUID):
- * drafts, media, open-with-contact, notes/media.
+ * drafts, media, open-with-contact.
  */
 describe("PUBLIC_PATHS — as portas de conversas e conversation-tags", () => {
   const UUID = "00000000-0000-4000-8000-000000000000";
@@ -936,10 +1086,13 @@ describe("PUBLIC_PATHS — as portas de conversas e conversation-tags", () => {
     `/api/v1/conversations/${UUID}`,
     `/api/v1/conversations/${UUID}/messages`,
     `/api/v1/conversations/${UUID}/notes`,
+    `/api/v1/conversations/${UUID}/notes/${UUID}/media`,
+    `/api/v1/conversations/${UUID}/participants`,
     `/api/v1/conversations/${UUID}/passagens`,
     `/api/v1/conversations/${UUID}/retention`,
     `/api/v1/conversations/${UUID}/sector`,
     `/api/v1/conversations/${UUID}/snooze`,
+    `/api/v1/conversations/${UUID}/transfer`,
     `/api/v1/conversations/${UUID}/usable-for-rag`,
   ])("libera %s para Bearer", (caminho) => {
     expect(isPublicPath(caminho)).toBe(true);
@@ -954,7 +1107,7 @@ describe("PUBLIC_PATHS — as portas de conversas e conversation-tags", () => {
     `/api/v1/conversations/${UUID}/x`,
     `/api/v1/conversations/${UUID}/notes/x`,
     `/api/v1/conversations/${UUID}/notes/${UUID}`,
-    `/api/v1/conversations/${UUID}/notes/${UUID}/media`,
+    `/api/v1/conversations/${UUID}/notes/${UUID}/media/x`,
     // irmão literal do mesmo nível que NÃO ganhou porta
     `/api/v1/conversations/${UUID}/aviso-de-mensagem`,
     `/api/v1/conversations/${UUID}/claim`,
@@ -962,11 +1115,9 @@ describe("PUBLIC_PATHS — as portas de conversas e conversation-tags", () => {
     `/api/v1/conversations/${UUID}/draft-reply`,
     `/api/v1/conversations/${UUID}/export`,
     `/api/v1/conversations/${UUID}/mark-read`,
-    `/api/v1/conversations/${UUID}/participants`,
     `/api/v1/conversations/${UUID}/pause-ai`,
     `/api/v1/conversations/${UUID}/reactivate-bot`,
     `/api/v1/conversations/${UUID}/release`,
-    `/api/v1/conversations/${UUID}/transfer`,
     // irmão literal da raiz que NÃO ganhou porta
     "/api/v1/conversations/bulk",
     "/api/v1/conversations/counts",
