@@ -17,6 +17,7 @@ import {
   MENSAGEM_PROVEDOR_DESLIGADO,
   provedorDesligadoNaInstalacao,
 } from "@/lib/ai/pontos/provedores-oferecidos";
+import { nomeDaCopia } from "@/lib/followup/nome-da-copia";
 
 import { mcpAgentDraftRecords } from "./create-draft";
 import { corpoLegadoComoCorpoDeCriacao } from "./legado-para-versao";
@@ -143,6 +144,25 @@ export async function pickSourceVersion(
   return (published as Record<string, unknown> | null) ?? null;
 }
 
+/** Teto de `ai_agents.name` — o mesmo de `agentMcpCreateSchema` (`validation.ts`). */
+const TETO_NOME_DO_AGENTE = 120;
+
+/**
+ * Nome da cópia, LIVRE na organização. `ai_agents` tem
+ * `unique (organization_id, name)`: duplicar o mesmo agente duas vezes com o
+ * nome fixo " (cópia)" fazia o segundo INSERT bater no índice, e a rota
+ * devolvia 500. A segunda cópia vira "X (cópia 2)", a terceira "X (cópia 3)".
+ *
+ * A régua é a de `lib/followup/nome-da-copia` (o mesmo problema em
+ * `followup_flow_pointers`): primeiro sufixo livre, e nome que já é cópia
+ * continua a mesma linhagem. Aqui só muda o teto — 120 do schema do agente,
+ * não os 80 do fluxo — e o nome do agente NUNCA é reusado, porque a lista
+ * `ocupados` chega com o original e com todas as cópias anteriores.
+ */
+export function nomeLivreDoAgente(original: string, ocupados: Iterable<string>): string {
+  return nomeDaCopia(original, ocupados, { teto: TETO_NOME_DO_AGENTE, raizVazia: "Agente" });
+}
+
 export async function duplicateAgentWithVersion(
   admin: SupabaseClient,
   input: { orgId: string; agentId: string; actorUserId: string; requireVersion: boolean },
@@ -178,7 +198,23 @@ export async function duplicateAgentWithVersion(
     return { ok: false, error: "no_version_to_duplicate" };
   }
 
-  const nomeDaCopia = `${String(src.name)} (cópia)`.slice(0, 120);
+  // Nomes já usados NESTA organização: o índice é `unique (organization_id,
+  // name)`, então outra organização com o mesmo nome não concorre. Sem esta
+  // lista a segunda duplicação do mesmo agente tentava "X (cópia)" de novo.
+  // Leitura que falha não inventa nome livre: cai na lista vazia e o INSERT
+  // decide — é o comportamento de antes, sem esconder erro de banco atrás de
+  // um sufixo. Quem transforma essa colisão residual em 409 é o #3970, que não
+  // está aqui; enquanto ele não entra, a corrida (duas duplicações simultâneas
+  // escolhendo o mesmo nome) ainda pode terminar em 500.
+  const { data: nomesOcupados } = await admin
+    .from("ai_agents")
+    .select("name")
+    .eq("organization_id", orgId);
+  const nome = nomeLivreDoAgente(
+    String(src.name),
+    (nomesOcupados ?? []).map((linha) => String((linha as { name: unknown }).name)),
+  );
+
 
   // Para a origem legada a RECEITA é a da criação canônica (`mcpAgentDraftRecords`),
   // não uma reimplementação: os defaults de budgets/handoff/follow-up/operador
@@ -192,7 +228,7 @@ export async function duplicateAgentWithVersion(
         corpoLegadoComoCorpoDeCriacao({
           system_prompt: (src.system_prompt as string | null) ?? null,
           model: (src.model as string | null) ?? null,
-          name: nomeDaCopia,
+          name: nome,
           description: (src.description as string | null) ?? null,
           priority: (src.priority as number | null) ?? 0,
         }),
@@ -219,7 +255,10 @@ export async function duplicateAgentWithVersion(
     .from("ai_agents")
     .insert({
       organization_id: orgId,
-      name: receitaLegada ? receitaLegada.agent.name : nomeDaCopia,
+      // `receitaLegada.agent.name` é o MESMO `nome` que a receita recebeu
+      // (`mcpAgentDraftRecords` grava `input.name` sem tocar); o literal aqui
+      // garante o nome livre que a lista acima mediu, sem depender disso.
+      name: nome,
       description: receitaLegada ? receitaLegada.agent.description : src.description,
       model: receitaLegada ? receitaLegada.agent.model : src.model,
       system_prompt: receitaLegada ? receitaLegada.agent.system_prompt : src.system_prompt,

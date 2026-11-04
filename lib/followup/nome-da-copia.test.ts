@@ -26,6 +26,25 @@ describe("nomeDaCopia", () => {
     expect(nome.endsWith(" (cópia)")).toBe(true);
   });
 
+  it("nome que já é cópia continua a linhagem — não empilha sufixo", () => {
+    expect(
+      nomeDaCopia("Carrinho abandonado (cópia)", [
+        "Carrinho abandonado",
+        "Carrinho abandonado (cópia)",
+      ]),
+    ).toBe("Carrinho abandonado (cópia 2)");
+  });
+
+  it("teto configurável: a mesma régua serve o agente, cujo nome vai até 120", () => {
+    const longo = "x".repeat(120);
+    const nome = nomeDaCopia(longo, [], { teto: 120 });
+    expect(nome.length).toBe(120);
+    expect(nome.endsWith(" (cópia)")).toBe(true);
+    const segunda = nomeDaCopia(nome, [nome], { teto: 120 });
+    expect(segunda.length).toBe(120);
+    expect(segunda.endsWith(" (cópia 2)")).toBe(true);
+  });
+
   it("cópia numerada de nome longo também cabe na coluna", () => {
     const longo = "y".repeat(MAX_FOLLOWUP_FLOW_NAME);
     const primeira = nomeDaCopia(longo, []);
