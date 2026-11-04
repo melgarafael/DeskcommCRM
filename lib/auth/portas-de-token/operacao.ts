@@ -61,6 +61,8 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   // além dos que não ganharam porta (`claim`, `mark-read`, `release`, `export`,
   // `drafts`, e as rotas que ficaram só de sessão: ver o plano R2), listados na borda do teste da área.
   "/api/v1/conversation-tags",
+  "/api/v1/conversations",
+  "/api/v1/conversations/[id]",
   "/api/v1/conversations/[id]/messages",
   "/api/v1/conversations/[id]/notes",
   "/api/v1/conversations/[id]/passagens",

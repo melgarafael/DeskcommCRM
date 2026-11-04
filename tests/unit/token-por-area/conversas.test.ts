@@ -324,6 +324,36 @@ const MESSAGES_GET: Caso = {
   semDadosDeB: true,
 };
 
+const LISTA_GET: Caso = {
+  rota: "conversations",
+  metodo: "GET",
+  caminho: "/api/v1/conversations",
+  linhas: LINHAS_BASE,
+  papel: "viewer",
+  escopo: "mcp:read",
+  papelDoToken: "agent",
+  recurso: "conversations",
+  status: 200,
+  audita: false,
+  receitaB: true,
+  semDadosDeB: true,
+};
+
+const CONVERSA_GET: Caso = {
+  rota: "conversations/[id]",
+  metodo: "GET",
+  caminho: `/api/v1/conversations/${CONVERSA_A}`,
+  params: { id: CONVERSA_A },
+  linhas: LINHAS_BASE,
+  papel: "viewer",
+  escopo: "mcp:read",
+  papelDoToken: "agent",
+  recurso: "conversations",
+  status: 200,
+  audita: false,
+  receitaB: true,
+};
+
 const NOTES_GET: Caso = {
   rota: "conversations/[id]/notes",
   metodo: "GET",
@@ -448,6 +478,8 @@ const USABLE_FOR_RAG_POST: Caso = {
 
 const CASOS: readonly Caso[] = [
   LISTA_TAGS,
+  LISTA_GET,
+  CONVERSA_GET,
   MESSAGES_GET,
   NOTES_GET,
   NOTES_POST,
@@ -468,8 +500,16 @@ const CASOS: readonly Caso[] = [
  * tocar no cliente admin.
  */
 const SO_DE_SESSAO: readonly CasoDeSessao[] = [
-  { rota: "conversations", metodo: "GET", caminho: "/api/v1/conversations" },
-  { rota: "conversations/[id]", metodo: "GET", caminho: `/api/v1/conversations/${CONVERSA_A}`, params: { id: CONVERSA_A } },
+  // O GET de `[id]` aceita token; o PATCH da mesma rota segue só de sessão
+  // (`fn_conversation_assign` roda com o cliente de sessão). A porta do caminho
+  // vale para os dois métodos, e o PATCH recusa o Bearer sem cookie com 401.
+  {
+    rota: "conversations/[id]",
+    metodo: "PATCH",
+    caminho: `/api/v1/conversations/${CONVERSA_A}`,
+    params: { id: CONVERSA_A },
+    corpo: { status: "open" },
+  },
   {
     rota: "conversations/[id]/aviso-de-mensagem",
     metodo: "GET",
@@ -892,6 +932,8 @@ describe("PUBLIC_PATHS — as portas de conversas e conversation-tags", () => {
 
   it.each([
     "/api/v1/conversation-tags",
+    "/api/v1/conversations",
+    `/api/v1/conversations/${UUID}`,
     `/api/v1/conversations/${UUID}/messages`,
     `/api/v1/conversations/${UUID}/notes`,
     `/api/v1/conversations/${UUID}/passagens`,
@@ -925,9 +967,7 @@ describe("PUBLIC_PATHS — as portas de conversas e conversation-tags", () => {
     `/api/v1/conversations/${UUID}/reactivate-bot`,
     `/api/v1/conversations/${UUID}/release`,
     `/api/v1/conversations/${UUID}/transfer`,
-    // raiz sem porta
-    `/api/v1/conversations/${UUID}`,
-    "/api/v1/conversations",
+    // irmão literal da raiz que NÃO ganhou porta
     "/api/v1/conversations/bulk",
     "/api/v1/conversations/counts",
   ])("não libera %s", (caminho) => {
