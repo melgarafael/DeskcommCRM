@@ -19,7 +19,7 @@ revisão do PR em que ela aparece. Nenhuma fatia espera resposta para começar.
 | 2 | **R1**: configuração, 111 rotas (158 métodos), 12 PRs | `2026-11-03-modulo-conectado-p2-r1-configuracao.md` ✅ escrito | 1 | não | não |
 | 3 | **R2**: operação, 122 rotas (171 métodos), 9 PRs | `2026-11-03-modulo-conectado-p3-r2-operacao.md` ✅ escrito | 1 | não | não |
 | 4 | **R3**: leitura e análise, 28 rotas (31 métodos), 4 PRs | `2026-11-03-modulo-conectado-p4-r3-leitura-e-analise.md` ✅ escrito | 1 | não | não |
-| 5 | **F1**: perfil `connected`, origem do serviço no catálogo, interruptor da instalação | a escrever | — | sim | sim (`/admin/extensoes`) |
+| 5 | **F1**: perfil `connected`, origem do serviço no catálogo, interruptor da instalação | `2026-11-03-modulo-conectado-p5-f1-perfil-connected.md` ✅ escrito (não sobe `HOST_API_VERSION`: ver a decisão no plano) | — | sim | sim (`/admin/extensoes`) |
 | 6 | **F2**: segredo da instalação, token do módulo, revogação, ator `module` | escrito quando a F1 estiver provada | 5 | sim | sim (tela de tokens) |
 | 7 | **F3**: consentimento por área, papel efetivo, JWT do host | escrito quando a F2 estiver provada | 6 | sim | sim (ativação) |
 | 8 | **F4**: `/app/m/[modulo]`, grupo "Módulos", painel, `postMessage` | escrito quando a F3 estiver provada | 7 | não | sim |
