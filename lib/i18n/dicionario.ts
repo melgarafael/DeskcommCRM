@@ -8997,6 +8997,12 @@ export const DICIONARIO: Traducoes = {
   "Conversa encerrada. A IA não voltou neste contato: a conversa é de outro atendente, e só um gerente pode devolvê-la ao automático.": {
     es: "Conversación cerrada. La IA no volvió en este contacto: la conversación es de otro atendente, y solo un gerente puede devolverla al automático.",
   },
+  // A recusa do botão "Devolver ao automático" (#3436). Ela é escrita na ROTA,
+  // e o guarda de espanhol varre o AST das TELAS — sem esta linha, quem usa a
+  // interface em espanhol lê a recusa em português.
+  "Esta conversa é de outro atendente. Peça a um gerente ou assuma a conversa.": {
+    es: "Esta conversación es de otro atendente. Pídele a un gerente o asume la conversación.",
+  },
   "Arquivar encerra este atendimento e guarda a conversa no histórico. Se o cliente escrever de novo, ela volta.": {
     es: "Archivar cierra esta atención y guarda la conversación en el historial. Si el cliente vuelve a escribir, ella vuelve.",
   },
