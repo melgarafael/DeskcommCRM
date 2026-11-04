@@ -16,6 +16,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import {
   configDoFunil,
   ETAPAS_DO_COLD_CALL,
+  MOTIVOS_DE_PERDA_DO_COLD_CALL,
   motivoParaNaoLigar,
   roteiroPadrao,
   roteiroSchema,
@@ -219,7 +220,10 @@ export async function POST(): Promise<Response> {
         slug: slugDeFunil(nome, funis.map((f) => f.slug)),
         position: posicaoEntre(funis[funis.length - 1]?.position ?? null, null),
         is_default: false,
-        settings: { cold_call: { ativo: true, roteiro: roteiroPadrao(authz.user.idioma) } },
+        settings: {
+          cold_call: { ativo: true, roteiro: roteiroPadrao(authz.user.idioma) },
+          lost_reasons: [...MOTIVOS_DE_PERDA_DO_COLD_CALL],
+        },
       })
       .select("id")
       .single();

@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 
 import { moveLeadHandler } from "@/app/api/v1/leads/_handler";
 import { requireRole } from "@/lib/auth/require-role";
+import { MOTIVOS_DE_PERDA_DO_COLD_CALL } from "@/lib/cold-call/regras";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { encerraDemanda } from "@/lib/leads/encerramento";
@@ -37,7 +38,7 @@ function banco(contato: Record<string, boolean>) {
       pipeline_id: "funil",
       stage_id: "etapa-fila",
       contact_id: "contato",
-      crm_pipelines: { settings: { cold_call: { ativo: true, roteiro: "" } } },
+      crm_pipelines: { settings: { cold_call: { ativo: true, roteiro: "" }, lost_reasons: [...MOTIVOS_DE_PERDA_DO_COLD_CALL] } },
     },
     contacts: { is_blocked: false, is_personal: false, is_anonymized: false, ...contato },
     crm_stages: { id: "etapa-nao-atendeu" },
