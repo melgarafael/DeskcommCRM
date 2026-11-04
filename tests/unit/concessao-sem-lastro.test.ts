@@ -173,6 +173,21 @@ describe("a pessoa da equipe fala pela empresa em qualquer ordem", () => {
   it("a mesma frase enviada pelo agente depois do pedido não dá", () => {
     expect(concessoesSemLastro(candidata, lastro({ historico: [pedido, resposta(false)] }))).toEqual(["pct:10"]);
   });
+
+  it("a pessoa que RECUSA repetindo o número não dá lastro a ele", () => {
+    const recusa: LinhaDoHistorico = { ...resposta(true), body: "Não conseguimos 10% de desconto, só 5% no PIX." };
+    expect(concessoesSemLastro(candidata, lastro({ historico: [pedido, recusa] }))).toEqual(["pct:10"]);
+  });
+
+  it("'sem juros' não é negação: a pessoa que parcela em 12x sem juros dá lastro às 12x", () => {
+    const parcela: LinhaDoHistorico = { ...resposta(true), body: "Fazemos em 12x sem juros pra você." };
+    expect(concessoesSemLastro("Confirmado: 12x sem juros.", lastro({ historico: [pedido, parcela] }))).toEqual([]);
+  });
+
+  it("número da pessoa fora de frase de concessão não dá lastro", () => {
+    const solto: LinhaDoHistorico = { ...resposta(true), body: "Vi aqui os 10% que você comentou, um instante." };
+    expect(concessoesSemLastro(candidata, lastro({ historico: [pedido, solto] }))).toEqual(["pct:10"]);
+  });
 });
 
 describe("quem escreveu PRIMEIRO — o eco da empresa não vira lastro", () => {

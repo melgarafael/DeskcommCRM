@@ -35,6 +35,17 @@ const PERCENTUAL = /(?<![\d.,])(\d{1,3}(?:,\d+)?)\s*(?:%|por\s*cento)/gi;
 const PRECO_SOLTO = /(R\$|€)\s*(\d[\d.,]*\d|\d)(\s*(?:mil|k)\b)?/gi;
 const DECIMAL_SEM_MOEDA = /(?<![\d.,])\d{1,3}(?:\.\d{3})*,\d{2}(?![\d,])/g;
 
+// A pessoa da equipe concede com verbo de venda ("consigo 10%", "fazemos em 12x"), não só
+// com o vocabulário da frase de condição.
+const CONCESSAO_DA_EQUIPE = new RegExp(
+  `${FRASE_DE_CONDICAO.source}|\\bconsig|\\bposso\\b|\\bpodemos\\b|\\bfaco\\b|\\bfazemos\\b|\\bdou\\b|\\bdamos\\b|\\bfica\\b|\\bsai\\b|\\bvale\\b`,
+);
+// ponytail: negação por palavra, só do lado da EMPRESA (só pode errar para VETAR).
+const NEGACAO = /\bnao\b|\bnunca\b|\bnenhum|\bnem\b|\binfelizmente\b|\bsem desconto/;
+
+// `\.(?!\d)`: "R$ 1.400" não se parte em "R$ 1" e "400".
+const frases = (t: string): string[] => t.split(/\n+|[!?]+|\.(?!\d)/);
+
 const semAcento = (t: string): string =>
   t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
@@ -152,9 +163,15 @@ export function lastroDoContexto(a: {
   }
 
   const daOrganizacao = valores(a.materialDaOrganizacao.join('\n'), true);
-  // A pessoa da equipe que concede DEPOIS do pedido do cliente fala pela empresa; o eco
-  // vigiado pela ordem é o do agente.
-  for (const m of linhas) if (m.direction === 'outbound' && m.humana) for (const v of valores(m.texto, true)) daOrganizacao.add(v);
+  // A pessoa da equipe que CONCEDE depois do pedido do cliente fala pela empresa; o eco
+  // vigiado pela ordem é o do agente. Só conta a frase de condição sem negação: a recusa
+  // que repete o número ("não damos 30%") não vira lastro dele.
+  for (const m of linhas)
+    if (m.direction === 'outbound' && m.humana)
+      for (const frase of frases(m.texto)) {
+        const f = semAcento(frase);
+        if (CONCESSAO_DA_EQUIPE.test(f) && !NEGACAO.test(f)) for (const v of valores(frase, true)) daOrganizacao.add(v);
+      }
   // A proposta não guarda a moeda: vale nas duas que a leitura reconhece.
   const proposta = a.contexto.last_proposal?.total_cents;
   if (proposta !== undefined) for (const moeda of ['BRL', 'EUR']) daOrganizacao.add(`price:${moeda}:${proposta}`);
@@ -197,8 +214,7 @@ function semLastro(v: string, l: LastroComercial, fraseDeDesconto: boolean): boo
  */
 export function concessoesSemLastro(candidata: string, lastro: LastroComercial): string[] {
   const achados = new Set<string>();
-  // `\.(?!\d)`: "R$ 1.400" não se parte em "R$ 1" e "400".
-  for (const frase of candidata.split(/\n+|[!?]+|\.(?!\d)/)) {
+  for (const frase of frases(candidata)) {
     const f = semAcento(frase);
     if (!FRASE_DE_CONDICAO.test(f)) continue;
     const deDesconto = FRASE_DE_DESCONTO.test(f) && !FORA_DO_DESCONTO.test(f);
