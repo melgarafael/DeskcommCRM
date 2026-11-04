@@ -38,6 +38,7 @@ import {
 } from "@/lib/mcp/servidor-externo/escolha-do-editor";
 import { escolhasDoServidor, type MarcaRemota } from "@/lib/mcp/servidor-externo/ids";
 import { TETO_TOOLS_POR_AGENTE } from "@/lib/mcp/tools/selecao-por-pacote";
+import { randomId } from "@/lib/random-id";
 
 type Modo = "nenhuma" | "chave_estatica" | "oauth_por_contato";
 
@@ -159,7 +160,7 @@ export function ServidoresMcpDoAgente({ agentId, toolIds, onChangeToolIds, disab
   function abrir(s: ServidorNaTela | null) {
     setDescoberta(null);
     setErro(null);
-    setEditando({ id: s?.id ?? null, idNovo: crypto.randomUUID(), form: s ? doServidor(s) : VAZIO });
+    setEditando({ id: s?.id ?? null, idNovo: randomId(), form: s ? doServidor(s) : VAZIO });
   }
 
   function mudar(p: Partial<Formulario>) {
