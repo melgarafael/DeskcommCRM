@@ -195,8 +195,8 @@ describe("gatilho de caso — abertura", () => {
   it("#3852: caso na conversa do número B pina o agente publicado no B, não o do A", async () => {
     const reg = registro();
     const gate = fakeGate([
-      { agentId: AGENTE_DO_A, pointerIds: [POINTER], channelSessionId: NUMERO_A },
-      { agentId: AGENTE_DO_B, pointerIds: [POINTER], channelSessionId: NUMERO_B },
+      { agentId: AGENTE_DO_A, pointerIds: [POINTER], channelSessionIds: [NUMERO_A] },
+      { agentId: AGENTE_DO_B, pointerIds: [POINTER], channelSessionIds: [NUMERO_B] },
     ]);
     const s = await aplicaGatilhoDeCaso(deps(fakeDb({ reg, canal: NUMERO_B }), gate), evento());
     expect(s.enrolled).toBe(1);
@@ -206,7 +206,7 @@ describe("gatilho de caso — abertura", () => {
 
   it("#3852: conversa num número sem agente armando o fluxo é BARRADA (não cai no agente do outro)", async () => {
     const reg = registro();
-    const gate = fakeGate([{ agentId: AGENTE_DO_A, pointerIds: [POINTER], channelSessionId: NUMERO_A }]);
+    const gate = fakeGate([{ agentId: AGENTE_DO_A, pointerIds: [POINTER], channelSessionIds: [NUMERO_A] }]);
     const s = await aplicaGatilhoDeCaso(deps(fakeDb({ reg, canal: NUMERO_B }), gate), evento());
     expect(s.pointers_barrados_pelo_gate).toBe(1);
     expect(reg.enrollments).toHaveLength(0);

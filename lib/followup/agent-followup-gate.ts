@@ -25,9 +25,27 @@
  * lead que conversou no número do OUTRO agente e escrevia com a persona
  * errada. `decidirAgenteDoEnrollmentAutomatico` aceita, como ÚLTIMO parâmetro
  * OPCIONAL, o canal da conversa (`conversations.channel_session_id`); quando
- * ele vem, os candidatos são só os agentes armando o ponteiro E publicados
- * naquele número (`ai_agent_versions.channel_session_id` — a mesma coluna que
- * o roteamento de entrada lê, `lib/ai/agents/quem-atende-a-sessao.ts`).
+ * ele vem, os candidatos são só os agentes que armam o ponteiro E atendem
+ * naquele número (`channelSessionIds`).
+ *
+ * ─── Os NÚMEROS em que um agente atende (#3928) ───────────────────────────
+ *
+ * "O número do agente" não é só o da própria versão publicada. Desde a
+ * migration 0749 (#3284) um ESPECIALISTA de roteador de intenções pode ser
+ * publicado SEM número próprio (`ai_agent_versions.channel_session_id` nulo) e
+ * atende pelo número do ROTEADOR — é o que o portão do dreno conta
+ * (`lib/ai/agents/quem-atende-a-sessao.ts`: membros e fallback do roteador
+ * ATIVO naquele número). Ler esse nulo como "canal desconhecido" fazia um
+ * fluxo de IA armado só por especialistas nunca inscrever numa organização com
+ * roteador — o defeito que o #3852 veio consertar, de volta pela porta dos
+ * fundos.
+ *
+ * Por isso o adapter devolve a LISTA de números em que o agente atende: o da
+ * versão publicada mais o dos roteadores ATIVOS da organização em que ele é
+ * membro ou fallback. A régua é a MESMA do portão do dreno, na direção
+ * inversa (de agente para números), e não uma segunda: mesmas tabelas
+ * (`ai_routers`, `ai_router_members`), mesmas colunas (`channel_session_id`,
+ * `fallback_agent_id`, `is_active`), mesmo recorte por `organization_id`.
  *
  * Sem o parâmetro, a decisão é EXATAMENTE a de antes: todos os agentes que
  * armam o ponteiro, menor uuid vence. É o que mantém compatível a tela de
@@ -135,15 +153,20 @@ export interface EnabledFollowupAgent {
   agentId: string;
   pointerIds: string[];
   /**
-   * Número em que esta versão foi publicada (`ai_agent_versions.channel_session_id`,
-   * migration 0665 — `channel_session_id` segue como número principal da versão).
+   * Os NÚMEROS em que este agente atende (`channel_session_id`).
+   *
+   * É uma LISTA desde o #3928: o número da própria versão publicada mais o dos
+   * roteadores ATIVOS em que ele é membro ou fallback (migration 0749/#3284 —
+   * especialista de roteador pode ser publicado sem número próprio e atende
+   * pelo número do roteador). Duas versões publicadas em números diferentes
+   * somam as duas entradas em vez de virar "canal desconhecido".
    *
    * OPCIONAL de propósito: os dublês dos testes montam só `{agentId, pointerIds}`
-   * e o contrato antigo continua valendo. Ausente/nulo = canal DESCONHECIDO, e
-   * agente de canal desconhecido só compete quando a chamada não pede canal —
+   * e o contrato antigo continua valendo. Ausente/vazia = NENHUM número
+   * conhecido, e agente sem número só compete quando a chamada não pede canal —
    * nunca é escolhido "por eliminação" para um número que não é o dele.
    */
-  channelSessionId?: string | null;
+  channelSessionIds?: readonly string[];
 }
 
 /** Interface estreita de DB — mesma doutrina de `AdminClient`/`ReactivityAdminClient`
@@ -153,7 +176,7 @@ export interface FollowupGateDb {
   loadEnabledPublishedFollowupAgents(orgId: string): Promise<EnabledFollowupAgent[]>;
 }
 
-/** Puro: agent_ids que armam este pointer — e, com `canalConversa`, que também estão publicados nele —, em ordem determinística (menor uuid primeiro). */
+/** Puro: agent_ids que armam este pointer — e, com `canalConversa`, que também atendem nele —, em ordem determinística (menor uuid primeiro). */
 function agentsEnablingPointer(
   agents: EnabledFollowupAgent[],
   pointerId: string,
@@ -162,9 +185,11 @@ function agentsEnablingPointer(
   const canal = canalConversa ?? null;
   return agents
     .filter((a) => a.pointerIds.includes(pointerId))
-    // Agente de canal desconhecido não é candidato a um canal CONCRETO: escolher
-    // "quem sobrou" é exatamente o defeito do #3852 (persona do número errado).
-    .filter((a) => canal === null || a.channelSessionId === canal)
+    // Agente que não atende neste número não é candidato a um canal CONCRETO:
+    // escolher "quem sobrou" é exatamente o defeito do #3852 (persona do número
+    // errado). "Atende" é a LISTA — número próprio + roteadores ativos de que é
+    // membro ou fallback (#3928); sem canal, a lista não filtra nada.
+    .filter((a) => canal === null || (a.channelSessionIds ?? []).includes(canal))
     .map((a) => a.agentId)
     .sort();
 }
@@ -186,9 +211,10 @@ export async function isPointerEnabledForAutomaticTrigger(
  * mesma condição em que `isPointerEnabledForAutomaticTrigger` retorna false.
  *
  * Com `canalConversa`, o universo encolhe para os agentes que armam o pointer E
- * estão publicados NAQUELE número: `null` passa a significar "nenhum agente
- * deste número arma este fluxo", e o consumidor barra o fluxo de IA em vez de
- * escrever com a persona do outro número (#3852).
+ * ATENDEM naquele número (`channelSessionIds`: o número próprio e os dos
+ * roteadores ativos de que é membro ou fallback, #3928): `null` passa a
+ * significar "nenhum agente deste número arma este fluxo", e o consumidor barra
+ * o fluxo de IA em vez de escrever com a persona do outro número (#3852).
  */
 export async function resolveAgentForAutomaticTrigger(
   db: FollowupGateDb,
@@ -233,7 +259,78 @@ export async function canalDaConversaSupabase(
   return typeof canal === "string" && canal.length > 0 ? canal : null;
 }
 
-/** Production adapter: lê `ai_agent_versions.{agent_id,followup,channel_session_id}` via o client service-role real. */
+/**
+ * Os números que os ROTEADORES ATIVOS da organização dão a cada agente — o
+ * INVERSO de `palavrasDeQuemPodeAtender`
+ * (`lib/ai/agents/quem-atende-a-sessao.ts:136`), que vai do número para quem
+ * atende. Mesmas tabelas, mesmas colunas, mesmo `is_active` do portão do dreno:
+ * `ai_routers` (com `channel_session_id`, `fallback_agent_id`) recortado por
+ * `organization_id` e `is_active`, e `ai_router_members` (o par
+ * `router_id`/`agent_id`) recortado por `organization_id`.
+ *
+ * O outro lado do predicado do dreno — "membro/fallback que PODE EXECUTAR",
+ * isto é, com versão publicada — já vale por construção aqui: esta lista só é
+ * montada para agentes que vieram de uma versão publicada com follow-up
+ * ligado. Arquivamento e pausa do agente são outra frente e não passam por
+ * aqui.
+ *
+ * Roteador ativo sem número (`channel_session_id` nulo) não empresta número
+ * nenhum — não existe "canal vazio" para casar com conversa.
+ */
+async function numerosDosRoteadores(
+  admin: SupabaseClient,
+  orgId: string,
+  agentIds: readonly string[],
+): Promise<Map<string, string[]>> {
+  const porAgente = new Map<string, string[]>();
+  const alvos = new Set(agentIds);
+  const anota = (agentId: string | null, canal: string | null): void => {
+    if (agentId === null || canal === null || !alvos.has(agentId)) return;
+    const lista = porAgente.get(agentId) ?? [];
+    if (!lista.includes(canal)) lista.push(canal);
+    porAgente.set(agentId, lista);
+  };
+
+  const { data: roteadores, error: erroRoteadores } = await admin
+    .from("ai_routers")
+    .select("id, channel_session_id, fallback_agent_id")
+    .eq("organization_id", orgId)
+    .eq("is_active", true);
+  if (erroRoteadores) throw new Error(`followup_gate_query_failed: ${erroRoteadores.message}`);
+
+  const canalDoRoteador = new Map<string, string>();
+  for (const r of (roteadores ?? []) as Array<{
+    id: string;
+    channel_session_id: string | null;
+    fallback_agent_id: string | null;
+  }>) {
+    const canal = typeof r.channel_session_id === "string" && r.channel_session_id.length > 0 ? r.channel_session_id : null;
+    if (canal === null) continue;
+    canalDoRoteador.set(r.id, canal);
+    anota(r.fallback_agent_id, canal);
+  }
+  const routerIds = [...canalDoRoteador.keys()];
+  if (routerIds.length === 0) return porAgente;
+
+  const { data: membros, error: erroMembros } = await admin
+    .from("ai_router_members")
+    .select("router_id, agent_id")
+    .eq("organization_id", orgId)
+    .in("router_id", routerIds);
+  if (erroMembros) throw new Error(`followup_gate_query_failed: ${erroMembros.message}`);
+
+  for (const m of (membros ?? []) as Array<{ router_id: string; agent_id: string }>) {
+    anota(m.agent_id, canalDoRoteador.get(m.router_id) ?? null);
+  }
+  return porAgente;
+}
+
+/**
+ * Production adapter: lê `ai_agent_versions.{agent_id,followup,channel_session_id}`
+ * via o client service-role real e completa cada agente com os números dos
+ * roteadores ativos em que ele atende (`numerosDosRoteadores`). Sem agente
+ * habilitado não há o que completar: nenhuma consulta a mais.
+ */
 export function createSupabaseFollowupGateDb(admin: SupabaseClient): FollowupGateDb {
   return {
     async loadEnabledPublishedFollowupAgents(orgId) {
@@ -248,8 +345,10 @@ export function createSupabaseFollowupGateDb(admin: SupabaseClient): FollowupGat
       // agent_id (defensivo) unindo os pointers habilitados.
       const byAgent = new Map<string, Set<string>>();
       // O número de cada agente vem da MESMA linha — nenhuma ida a mais ao banco.
-      const canalDoAgente = new Map<string, string>();
-      const canalAmbiguo = new Set<string>();
+      // Duas versões publicadas em números DIFERENTES somam as duas entradas:
+      // com a lista, "ambíguo" deixou de ser um estado (era o que virava "canal
+      // desconhecido" e tirava o agente de qualquer decisão com canal).
+      const canais = new Map<string, string[]>();
       for (const row of (data ?? []) as Array<{
         agent_id: string;
         followup: FollowupColumnShape | null;
@@ -257,13 +356,10 @@ export function createSupabaseFollowupGateDb(admin: SupabaseClient): FollowupGat
       }>) {
         const f = row.followup;
         if (!f || f.enabled !== true || !Array.isArray(f.flow_pointer_ids)) continue;
-        if (typeof row.channel_session_id === "string") {
-          const anterior = canalDoAgente.get(row.agent_id);
-          // Duas versões publicadas em números DIFERENTES: não há um canal para
-          // dizer "este é o agente do número X" — fica desconhecido, e ele só
-          // concorre em decisões sem canal.
-          if (anterior !== undefined && anterior !== row.channel_session_id) canalAmbiguo.add(row.agent_id);
-          else canalDoAgente.set(row.agent_id, row.channel_session_id);
+        if (typeof row.channel_session_id === "string" && row.channel_session_id.length > 0) {
+          const doAgente = canais.get(row.agent_id) ?? [];
+          if (!doAgente.includes(row.channel_session_id)) doAgente.push(row.channel_session_id);
+          canais.set(row.agent_id, doAgente);
         }
         const set = byAgent.get(row.agent_id) ?? new Set<string>();
         for (const id of f.flow_pointer_ids) {
@@ -271,10 +367,13 @@ export function createSupabaseFollowupGateDb(admin: SupabaseClient): FollowupGat
         }
         if (set.size > 0) byAgent.set(row.agent_id, set);
       }
+      if (byAgent.size === 0) return [];
+
+      const dosRoteadores = await numerosDosRoteadores(admin, orgId, [...byAgent.keys()]);
       return [...byAgent].map(([agentId, ids]) => ({
         agentId,
         pointerIds: [...ids],
-        channelSessionId: canalAmbiguo.has(agentId) ? null : (canalDoAgente.get(agentId) ?? null),
+        channelSessionIds: [...new Set([...(canais.get(agentId) ?? []), ...(dosRoteadores.get(agentId) ?? [])])],
       }));
     },
   };

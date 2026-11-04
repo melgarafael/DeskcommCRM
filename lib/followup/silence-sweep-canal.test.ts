@@ -55,8 +55,8 @@ function fakeDb({ comCanal }: FakeOpts): { db: SilenceSweepDb; insert: ReturnTyp
 /** Cada fluxo é armado só pelo agente do SEU número. */
 const GATE = {
   loadEnabledPublishedFollowupAgents: async () => [
-    { agentId: AGENTE_A, pointerIds: ["fluxo-a"], channelSessionId: NUMERO_A },
-    { agentId: AGENTE_B, pointerIds: ["fluxo-b"], channelSessionId: NUMERO_B },
+    { agentId: AGENTE_A, pointerIds: ["fluxo-a"], channelSessionIds: [NUMERO_A] },
+    { agentId: AGENTE_B, pointerIds: ["fluxo-b"], channelSessionIds: [NUMERO_B] },
   ],
 };
 
@@ -110,7 +110,7 @@ describe("#3852 — varredura de silêncio escolhe o agente pelo canal da conver
     // O único agente armando os DOIS fluxos está publicado no número A.
     const gateSoNoA = {
       loadEnabledPublishedFollowupAgents: async () => [
-        { agentId: AGENTE_A, pointerIds: ["fluxo-a", "fluxo-b"], channelSessionId: NUMERO_A },
+        { agentId: AGENTE_A, pointerIds: ["fluxo-a", "fluxo-b"], channelSessionIds: [NUMERO_A] },
       ],
     };
 

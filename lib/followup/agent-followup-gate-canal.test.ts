@@ -37,8 +37,8 @@ function fakeDb(agentes: EnabledFollowupAgent[]): FollowupGateDb {
 }
 
 const DOIS_NUMEROS = fakeDb([
-  { agentId: AGENT_A, pointerIds: [POINTER], channelSessionId: NUMERO_A },
-  { agentId: AGENT_B, pointerIds: [POINTER], channelSessionId: NUMERO_B },
+  { agentId: AGENT_A, pointerIds: [POINTER], channelSessionIds: [NUMERO_A] },
+  { agentId: AGENT_B, pointerIds: [POINTER], channelSessionIds: [NUMERO_B] },
 ]);
 
 describe("#3852 — o agente do canal B não pode atender a conversa do canal A", () => {
@@ -83,7 +83,7 @@ describe("#3852 — o default continua sendo o de antes", () => {
 });
 
 describe("#3852 — canal conhecido sem nenhum agente publicado nele", () => {
-  const soAB = fakeDb([{ agentId: AGENT_B, pointerIds: [POINTER], channelSessionId: NUMERO_B }]);
+  const soAB = fakeDb([{ agentId: AGENT_B, pointerIds: [POINTER], channelSessionIds: [NUMERO_B] }]);
 
   it("fluxo que pede IA é BARRADO — não cai no agente do outro número", async () => {
     await expect(decidirAgenteDoEnrollmentAutomatico(soAB, ORG, POINTER, true, NUMERO_A)).resolves.toEqual({
@@ -100,7 +100,7 @@ describe("#3852 — canal conhecido sem nenhum agente publicado nele", () => {
   });
 
   it("agente de canal DESCONHECIDO não é candidato a um canal concreto", async () => {
-    const desconhecido = fakeDb([{ agentId: AGENT_A, pointerIds: [POINTER], channelSessionId: null }]);
+    const desconhecido = fakeDb([{ agentId: AGENT_A, pointerIds: [POINTER], channelSessionIds: [] }]);
     await expect(resolveAgentForAutomaticTrigger(desconhecido, ORG, POINTER, NUMERO_A)).resolves.toBeNull();
     // e continua concorrendo quando a chamada não pede canal
     await expect(resolveAgentForAutomaticTrigger(desconhecido, ORG, POINTER)).resolves.toBe(AGENT_A);

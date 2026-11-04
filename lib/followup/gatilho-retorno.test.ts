@@ -275,8 +275,8 @@ describe("#3852 — o retorno é de UM número, e a persona vem dele", () => {
       {
         db: fakeDb({ pointers: [pointerArmado], canal: NUMERO_B, registro: reg }),
         gateDb: fakeGate([
-          { agentId: AGENTE_DO_A, pointerIds: [POINTER], channelSessionId: NUMERO_A },
-          { agentId: AGENTE_DO_B, pointerIds: [POINTER], channelSessionId: NUMERO_B },
+          { agentId: AGENTE_DO_A, pointerIds: [POINTER], channelSessionIds: [NUMERO_A] },
+          { agentId: AGENTE_DO_B, pointerIds: [POINTER], channelSessionIds: [NUMERO_B] },
         ]),
         clock: CLOCK,
       },
@@ -291,7 +291,7 @@ describe("#3852 — o retorno é de UM número, e a persona vem dele", () => {
     const s = await aplicaGatilhoDeRetorno(
       {
         db: fakeDb({ pointers: [pointerArmado], canal: NUMERO_B, registro: reg }),
-        gateDb: fakeGate([{ agentId: AGENTE_DO_A, pointerIds: [POINTER], channelSessionId: NUMERO_A }]),
+        gateDb: fakeGate([{ agentId: AGENTE_DO_A, pointerIds: [POINTER], channelSessionIds: [NUMERO_A] }]),
         clock: CLOCK,
       },
       evento(),
