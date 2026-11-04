@@ -151,10 +151,14 @@ export async function GET(): Promise<Response> {
         roteiro: achado.config.roteiro,
         leads: (leads ?? []).map((l) => {
           const contato = l.contact_id ? contatoPorId.get(l.contact_id) : undefined;
+          const naoLigar = motivoParaNaoLigar(contato);
+          // Quem não pode receber ligação não precisa ter telefone, e-mail, endereço nem conversa
+          // na fila: a tela só mostra o nome e o motivo, e o dado não vai para o navegador.
+          const contatoLigavel = naoLigar ? undefined : contato;
           const feito = historico.get(l.id) ?? [];
           const ultima = feito[feito.length - 1];
-          const rua = contato ? [contato.street, contato.number].filter(Boolean).join(", ") : "";
-          const cidade = contato ? [contato.city, contato.state].filter(Boolean).join(" - ") : "";
+          const rua = contatoLigavel ? [contatoLigavel.street, contatoLigavel.number].filter(Boolean).join(", ") : "";
+          const cidade = contatoLigavel ? [contatoLigavel.city, contatoLigavel.state].filter(Boolean).join(" - ") : "";
           return {
             id: l.id,
             titulo: l.title,
@@ -163,11 +167,11 @@ export async function GET(): Promise<Response> {
             contato_id: l.contact_id,
             contato_nome: nomeDoContato(contato),
             tem_foto: Boolean(contato?.avatar_storage_path && !contato.is_anonymized),
-            nao_ligar: motivoParaNaoLigar(contato),
-            telefone: contato?.phone_number ?? null,
-            email: contato?.email ?? null,
-            endereco: [rua, contato?.district, cidade].filter(Boolean).join(" - ") || null,
-            conversa_id: l.contact_id ? (conversaPorContato.get(l.contact_id) ?? null) : null,
+            nao_ligar: naoLigar,
+            telefone: contatoLigavel?.phone_number ?? null,
+            email: contatoLigavel?.email ?? null,
+            endereco: [rua, contatoLigavel?.district, cidade].filter(Boolean).join(" - ") || null,
+            conversa_id: l.contact_id && !naoLigar ? (conversaPorContato.get(l.contact_id) ?? null) : null,
             responsavel_id: l.owner_user_id,
             etapa: etapaPorId.get(l.stage_id)?.slug ?? "",
             etapa_nome: etapaPorId.get(l.stage_id)?.name ?? "",
