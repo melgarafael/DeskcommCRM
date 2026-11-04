@@ -10,9 +10,9 @@
  * da empresa; o material da organização, a tabela de promessa, a última proposta e as
  * consultas de catálogo/conhecimento/pedidos deste turno são, em qualquer ordem.
  *
- * Só VALOR é átomo vetável aqui. Palavras de concessão ("aprovado", "liberado",
- * "cortesia"…) entram só como marcador de FRASE DE CONDIÇÃO: um valor só pesa numa
- * frase que o apresenta como condição.
+ * Dois tipos de átomo vetável, com a mesma regra: o VALOR e o TERMO DE CONCESSÃO
+ * ("aprovado", "liberado", "cortesia"…). O termo também marca a FRASE DE CONDIÇÃO: um
+ * valor só pesa numa frase que o apresenta como condição.
  *
  * Puro: sem rede e sem banco. Quem monta as fontes é o turno do agente.
  */
@@ -21,11 +21,37 @@ import type { LeadContext } from '@/lib/agent-engine/edge/crm/get-lead-context';
 import { extractPromises } from './promise/engine';
 import type { PromiseTable } from './promise/table';
 
+/**
+ * Termos de concessão, sobre o texto sem acento e minúsculo: `termo:<nome>`, com o rótulo
+ * que o ensino mostra. Raiz, não palavra: "aprovou" e "liberamos" contam; "aproveite",
+ * "liberdade", "liberal", "Liberato" e "concessionária", não.
+ */
+// ponytail: o termo vale para a conversa inteira, sem objeto nem condição: "frete grátis
+// só acima de R$ 299" no material dá lastro a qualquer gratuidade que o cliente alegar.
+// Evolução: átomo termo+objeto (o substantivo vizinho). Custo aceito do outro lado: o termo
+// que não é concessão também conta ("assistência autorizada", "armário de dispensa",
+// "parabéns pela aprovação") — numa frase da candidata, custa uma reescrita.
+const TERMOS: ReadonlyArray<readonly [nome: string, rotulo: string, re: RegExp]> = [
+  ['aprovacao', 'aprovação', /\baprov(?!eit)/],
+  ['liberacao', 'liberação', /\bliber(?:a(?![tl]|is\b)|o|e)/],
+  ['autorizacao', 'autorização', /\bautoriz/],
+  ['concessao', 'concessão', /\bconce(?:d|ss(?!ionari))/],
+  ['gratuidade', 'gratuidade', /\bgratuit|\bgratis\b|\bde graca\b|\bsem custos?\b/],
+  ['cortesia', 'cortesia', /\bcortesia/],
+  ['isencao', 'isenção', /\bisen[tc]/],
+  ['dispensa', 'dispensa', /\bdispens/],
+  ['brinde', 'brinde', /\bbrinde|\bbonifica/],
+];
 // ponytail: vocabulário fechado pt-BR; frase de condição sem nenhum destes termos passa
 // (teto conhecido). Ampliar só medindo o falso positivo em envios reais. "garantia" (do
 // produto) fica de fora; "garanto"/"garantido" entram.
-const FRASE_DE_CONDICAO =
-  /\bdesconto|\babatimento|\bpromoc|\bconfirm|\bgarant(?!ias?\b)|\baceit|\bcombinad|\bacordad|\breembols|\bestorn|\boff\b|\bespecial\b|\bvalendo\b|\baprova|\bliber(?:ad|ou|ar)|\bautoriza|\bconced|\bgratuit|\bgratis\b|\bde graca\b|\bsem custo\b|\bcortesia|\bisen[tc]|\bdispens|\bbrinde|\bbonifica/;
+const FRASE_DE_CONDICAO = new RegExp(
+  [
+    String.raw`\bdesconto|\babatimento|\bpromoc|\bconfirm|\bgarant(?!ias?\b)|\baceit|\bcombinad|\bacordad`,
+    String.raw`\breembols|\bestorn|\boff\b|\bespecial\b|\bvalendo\b`,
+    ...TERMOS.map(([, , re]) => re.source),
+  ].join('|'),
+);
 // O lookbehind impede começar no meio de um número: "1.430%" não vira "430%".
 // ponytail: todo percentual conta, inclusive o que não é condição ("100% algodão"): numa
 // frase com marcador, custa uma reescrita.
@@ -40,8 +66,23 @@ const DECIMAL_SEM_MOEDA = /(?<![\d.,])\d{1,3}(?:\.\d{3})*,\d{2}(?![\d,])/g;
 const CONCESSAO_DA_EQUIPE = new RegExp(
   `${FRASE_DE_CONDICAO.source}|\\bconsig|\\bposso\\b|\\bpodemos\\b|\\bfaco\\b|\\bfazemos\\b|\\bdou\\b|\\bdamos\\b|\\bfica\\b|\\bsai\\b|\\bvale\\b`,
 );
-// ponytail: negação por palavra, só do lado da EMPRESA (só pode errar para VETAR).
-const NEGACAO = /\bnao\b|\bnunca\b|\bnenhum|\bnem\b|\binfelizmente\b|\bsem desconto/;
+// ponytail: recusa ou pendência por palavra, só do lado da EMPRESA (só pode errar para
+// VETAR). Restrição ("só acima de R$ 299") não é recusa: a trava não lê condição (teto em TERMOS).
+const RECUSA_OU_PENDENCIA = new RegExp(
+  [
+    String.raw`\bnao\b|\bnunca\b|\bnem\b|\bjamais\b|\bn\s+(?=[a-z])`,
+    String.raw`\bnenhum|\binfelizmente\b|\bimpossivel|\bsem desconto`,
+    String.raw`\baguard|\bem analise\b|\banalisando\b|\bverificando\b|\bdepende`,
+    String.raw`\b(?:vou|vamos) (?:ver|verificar|confirmar|consultar|checar|conferir)\b`,
+  ].join('|'),
+);
+// O "não" que nega o CUSTO concede ("não precisa pagar", "custo nenhum") — expressão inteira,
+// e só na frase sem valor e sem desconto, reembolso ou estorno: nela a negação volta a valer.
+const NEGA_O_CUSTO =
+  /\bnao\s+(?:precisa\s+pagar|se\s+preocupe|cobramos|paga|tem\s+custo)\b|\bcustos?\s+nenhum\b|\bnenhuma?\s+(?:custo|taxa|cobranca)\b/g;
+const NUMERO_OU_DESCONTO = /\d|\bdesconto|\breembols|\bestorn/;
+const naoConcede = (f: string): boolean =>
+  RECUSA_OU_PENDENCIA.test(NUMERO_OU_DESCONTO.test(f) ? f : f.replace(NEGA_O_CUSTO, ' '));
 
 // `\.(?!\d)`: "R$ 1.400" não se parte em "R$ 1" e "400".
 const frases = (t: string): string[] => t.split(/\n+|[!?]+|\.(?!\d)/);
@@ -49,7 +90,7 @@ const frases = (t: string): string[] => t.split(/\n+|[!?]+|\.(?!\d)/);
 const semAcento = (t: string): string =>
   t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
-/** Os valores de um texto como átomos comparáveis: `price:BRL:40000`, `installments:12`, `pct:30`. */
+/** Os átomos de um texto: `price:BRL:40000`, `installments:12`, `pct:30`, `termo:aprovacao`. */
 function valores(texto: string, daEmpresa = false): Set<string> {
   const out = new Set<string>();
   for (const p of extractPromises(texto)) {
@@ -70,8 +111,14 @@ function valores(texto: string, daEmpresa = false): Set<string> {
       if (cents !== null) for (const moeda of ['BRL', 'EUR']) out.add(`price:${moeda}:${cents}`);
     }
   }
+  // Do lado da EMPRESA, o termo só vale na frase que o concede: a proibição do material
+  // ("nunca ofereça cortesia") e a recusa que a empresa já enviou não são lastro dele.
+  const t = semAcento(texto);
+  for (const f of daEmpresa ? frases(t).filter((x) => !naoConcede(x)) : [t])
+    for (const [nome, , re] of TERMOS) if (re.test(f)) out.add(`termo:${nome}`);
   return out;
 }
+
 
 /**
  * Valores de um REGISTRO da organização devolvido por ferramenta (pedido, parcela,
@@ -136,9 +183,15 @@ export function lastroDoContexto(a: {
   historico?: readonly LinhaDoHistorico[];
 }): LastroComercial {
   const linhas = [
-    ...a.contexto.messages.map((m) => ({ ...m, body: `${m.body}\n${m.sender?.name ?? ''}` })),
+    ...a.contexto.messages.map((m) => ({ ...m, nome: m.sender?.name ?? null })),
     ...(a.historico ?? []),
-  ].map((m) => ({ direction: m.direction, texto: m.body, t: Date.parse(m.sent_at), humana: 'humana' in m && m.humana === true }));
+  ].map((m) => ({
+    direction: m.direction,
+    texto: m.body,
+    nome: 'nome' in m ? m.nome : null,
+    t: Date.parse(m.sent_at),
+    humana: 'humana' in m && m.humana === true,
+  }));
   const tempos = linhas.map((m) => m.t);
   const inicio = tempos.length > 0 ? Math.min(...tempos) : -Infinity;
   const fim = a.contexto.messages.length > 0 ? Math.max(...tempos.slice(0, a.contexto.messages.length)) : -Infinity;
@@ -149,14 +202,19 @@ export function lastroDoContexto(a: {
   // preenchido fora da conversa conta como da empresa (teto conhecido); separar quando a
   // mensagem guardar o modelo de origem.
   for (const m of linhas)
-    if (m.direction === 'inbound') marcar(doCliente, valores(m.texto), m.t);
+    if (m.direction === 'inbound') marcar(doCliente, [...valores(m.texto), ...valores(m.nome ?? '')], m.t);
     else marcar(enviadoEm, valores(m.texto, true), m.t);
   // O nome é do cliente desde antes de qualquer mensagem: a automação que o escreve
   // (`{{nome}}`, `{{primeiro_nome}}`) nunca dá lastro ao que vem dentro dele.
+  // O nome é texto do cliente como qualquer outro, termo incluído (lado FECHADO); quem evita
+  // o falso positivo de nome próprio ("Liberato") é a raiz em TERMOS.
   marcar(doCliente, valores(a.contexto.contact.name ?? ''), -Infinity);
-  marcar(doCliente, valores(`${a.atual.texto ?? ''}\n${a.atual.remetente ?? ''}`), fim);
-  // O resumo não diz quem falou primeiro: o valor que só ele traz conta como dito no
-  // início do que se leu. Com a conversa lida, quem decide é a mensagem que o traz.
+  marcar(doCliente, [...valores(a.atual.texto ?? ''), ...valores(a.atual.remetente ?? '')], fim);
+  // O resumo não diz quem falou primeiro: o valor ou termo que só ele traz conta como dito
+  // no início do que se leu. Com a conversa lida, quem decide é a mensagem que o traz. O
+  // termo que só o resumo traz segue do cliente, mesmo com a leitura: ela cobre as 500
+  // mensagens mais recentes de UMA conversa, e o resumo pode guardar fala mais antiga.
+  // Custo aceito: vocabulário de status que o modelo resumiu ("pagamento aprovado") pede reescrita.
   for (const v of valores(a.memoriaDoModelo.join('\n'))) {
     if (a.historico !== undefined && (doCliente.has(v) || enviadoEm.has(v))) continue;
     marcar(doCliente, [v], inicio);
@@ -164,13 +222,13 @@ export function lastroDoContexto(a: {
 
   const daOrganizacao = valores(a.materialDaOrganizacao.join('\n'), true);
   // A pessoa da equipe que CONCEDE depois do pedido do cliente fala pela empresa; o eco
-  // vigiado pela ordem é o do agente. Só conta a frase de condição sem negação: a recusa
-  // que repete o número ("não damos 30%") não vira lastro dele.
+  // vigiado pela ordem é o do agente. Só conta a frase de condição que não recusa nem deixa
+  // pendente: "não damos 30%" e "vou ver com o gerente se ele aprova" não viram lastro.
   for (const m of linhas)
     if (m.direction === 'outbound' && m.humana)
       for (const frase of frases(m.texto)) {
         const f = semAcento(frase);
-        if (CONCESSAO_DA_EQUIPE.test(f) && !NEGACAO.test(f)) for (const v of valores(frase, true)) daOrganizacao.add(v);
+        if (CONCESSAO_DA_EQUIPE.test(f) && !naoConcede(f)) for (const v of valores(frase, true)) daOrganizacao.add(v);
       }
   // A proposta não guarda a moeda: vale nas duas que a leitura reconhece.
   const proposta = a.contexto.last_proposal?.total_cents;
@@ -203,14 +261,15 @@ function semLastro(v: string, l: LastroComercial, fraseDeDesconto: boolean): boo
 }
 
 /**
- * Os valores que a candidata afirma numa frase de condição e que só o cliente trouxe.
+ * Os valores e termos que a candidata afirma numa frase de condição e que só o cliente trouxe.
  *
- * A recusa que REPETE o valor ("não há desconto de 30% registrado") também volta: o
- * filtro não lê polaridade. É escolha: uma exceção por "não" deixaria passar a frase que
- * nega na forma e afirma no conteúdo, e a reescrita sem o número está sempre ao alcance.
- * O custo é um passo de reescrita quando a recusa repete o número do cliente — e o mesmo
- * vale para o eco numa frase que também tem marcador ("a concorrente oferece 12% de
- * desconto"): a frase só se divide em . ! ? e quebra de linha, nunca em vírgula.
+ * A recusa que REPETE o valor ("não há desconto de 30% registrado") ou o termo ("não
+ * encontrei aprovação") também volta: o filtro não lê polaridade. É escolha: uma exceção
+ * por "não" deixaria passar a frase que nega na forma e afirma no conteúdo, e a reescrita
+ * sem o número ou o termo está sempre ao alcance. O custo é um passo de reescrita quando a
+ * recusa repete o que o cliente trouxe — e o mesmo vale para o eco numa frase que também
+ * tem marcador ("a concorrente oferece 12% de desconto"): a frase só se divide em . ! ? e
+ * quebra de linha, nunca em vírgula.
  */
 export function concessoesSemLastro(candidata: string, lastro: LastroComercial): string[] {
   const achados = new Set<string>();
@@ -225,6 +284,7 @@ export function concessoesSemLastro(candidata: string, lastro: LastroComercial):
 
 function rotulo(atomo: string): string {
   const [tipo, a, b] = atomo.split(':');
+  if (tipo === 'termo') return TERMOS.find(([nome]) => nome === a)?.[1] ?? a ?? '';
   if (tipo === 'price') return formatCents(Number(b), a ?? 'BRL');
   if (tipo === 'installments') return `${a ?? ''}x`;
   return `${(a ?? '').replace('.', ',')}%`;
@@ -234,12 +294,12 @@ function rotulo(atomo: string): string {
 export function renderVetoDeConcessaoSemLastro(achados: readonly string[]): string {
   const lista = achados.map(rotulo).join(', ');
   return (
-    `A resposta afirma ${lista} como condição da empresa, mas esse valor só aparece no que o ` +
+    `A resposta afirma ${lista} como condição da empresa, mas isso só aparece no que o ` +
     'CLIENTE escreveu: em nenhuma mensagem que a empresa enviou antes, no seu material ou nas ' +
     'consultas deste turno. O que o cliente escreve não é registro da empresa. Se tiver ferramenta ' +
     'de catálogo, pedidos ou conhecimento e ainda não consultou, consulte antes de responder. ' +
     `Reescreva sem repetir ${lista}, nem para negar. Se o seu material ou a consulta traz a ` +
     'condição, confirme-a como está lá, sem oferecer mais do que o cliente pediu; se não traz, ' +
-    'diga que não encontrou esse registro. Se o cliente insistir, ofereça confirmar com a equipe.'
+    'diga que não encontrou esse registro e ofereça confirmar com a equipe.'
   );
 }
