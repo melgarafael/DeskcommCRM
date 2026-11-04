@@ -79,7 +79,15 @@ const FRASE_EXTRA_DO_TESTE = {
 } as const;
 
 const RASCUNHO_VAZIO = {
-  canal: "", telefone: "", rotulo: "", ligado: false, respostaWhatsappHabilitada: false,
+  canal: "",
+  telefone: "",
+  rotulo: "",
+  ligado: false,
+  respostaWhatsappHabilitada: false,
+  /** COMO escolher quem recebe (#3803). `fixo` é o que a instalação já fazia. */
+  destinoModo: "fixo" as "fixo" | "responsavel",
+  /** `user_id` → WhatsApp do rascunho. Ausente = "não mexi". */
+  whatsapps: {} as Record<string, string>,
 };
 type Rascunho = typeof RASCUNHO_VAZIO;
 
@@ -91,7 +99,22 @@ function rascunhoDoEstado(estado: EstadoDoAviso | undefined): Rascunho {
     rotulo: estado.config.rotulo ?? "",
     ligado: estado.config.ligado,
     respostaWhatsappHabilitada: estado.config.resposta_whatsapp_habilitada,
+    destinoModo: estado.config.destino_modo ?? "fixo",
+    whatsapps: whatsappsDoRascunho(estado),
   };
+}
+
+/**
+ * O rascunho dos números da equipe: o que está GRAVADO, e não o que veio da
+ * tela — quem não cadastrou aparece com campo vazio, e salvar sem digitar nada
+ * não apaga o número de ninguém.
+ */
+function whatsappsDoRascunho(estado: EstadoDoAviso): Record<string, string> {
+  const mapa: Record<string, string> = {};
+  // `?? []`: um estado em cache de antes desta versão não tem `equipe`, e a tela
+  // não pode quebrar por causa de um pacote de JS antigo no navegador de alguém.
+  for (const membro of estado.equipe ?? []) mapa[membro.user_id] = membro.whatsapp ?? "";
+  return mapa;
 }
 
 export function AvisoNoWhatsApp() {
@@ -176,7 +199,17 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
 
   const oferecidas = estado.conexoes.filter((c) => c.aceitaMensagemLivre);
   const telefoneOk = telefoneDeAvisoValido(rascunho.telefone);
-  const podeSalvar = rascunho.canal !== "" && telefoneOk && !salvar.isPending;
+  /**
+   * Os números da equipe: vazio é ACEITO (a pessoa não cadastrou, e o elo cai
+   * para o próximo); preenchido e incompleto NÃO é — salvar um número torto faria
+   * o aviso falhar no transporte, longe daqui.
+   */
+  const numerosDaEquipeOk = Object.values(rascunho.whatsapps).every(
+    (n) => n.trim() === "" || telefoneDeAvisoValido(n),
+  );
+  const equipe = estado.equipe ?? [];
+  const comNumero = equipe.filter((m) => (rascunho.whatsapps[m.user_id] ?? "").trim() !== "").length;
+  const podeSalvar = rascunho.canal !== "" && telefoneOk && numerosDaEquipeOk && !salvar.isPending;
   /**
    * O switch, e por que ele NÃO é `estado.pode_ligar` sozinho nem um `||` com o
    * rascunho.
@@ -204,6 +237,17 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
         rotulo: rascunho.rotulo.trim() === "" ? null : rascunho.rotulo.trim(),
         ligado: rascunho.ligado,
         resposta_whatsapp_habilitada: rascunho.respostaWhatsappHabilitada,
+        destino_modo: rascunho.destinoModo,
+        // Todos os membros vão SEMPRE, com `null` para quem está sem número: é
+        // assim que "apague o meu" chega ao banco. Mandar só quem tem número
+        // deixaria o número antigo vivo depois de a pessoa apagá-lo na tela.
+        responsaveis: equipe.map((m) => {
+          const bruto = (rascunho.whatsapps[m.user_id] ?? "").trim();
+          return {
+            user_id: m.user_id,
+            whatsapp: bruto === "" ? null : normalizarTelefoneDeAviso(bruto),
+          };
+        }),
         ...(confirma ? { confirma_contato: true } : {}),
       });
       setConfirmarContato(null);
@@ -307,6 +351,95 @@ function FormularioDoAviso({ estado }: { estado: EstadoDoAviso }) {
           </p>
         ) : null}
       </div>
+
+      {/* ── PARA QUEM VAI O AVISO (#3803) ────────────────────────────────
+          O modo vem ANTES do switch porque ele muda o significado do número
+          acima: em `fixo` ele é o destinatário; em `responsavel` ele é o último
+          recurso. Ler o número sem saber disso é ler a tela errado. */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="destino-modo">{t("Quem recebe os avisos")}</Label>
+        <Select
+          value={rascunho.destinoModo}
+          onValueChange={(v) =>
+            setRascunho((r) => ({ ...r, destinoModo: v as Rascunho["destinoModo"] }))
+          }
+        >
+          <SelectTrigger id="destino-modo" className="w-full sm:w-96">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="fixo">{t("Sempre o número da empresa")}</SelectItem>
+            <SelectItem value="responsavel">{t("Quem está com o atendimento")}</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          {rascunho.destinoModo === "responsavel"
+            ? t(
+                "O aviso vai para quem está com a conversa; se essa pessoa não tiver WhatsApp cadastrado, para quem é dono do negócio; depois, para o dono da carteira do contato. Se ninguém tiver, vai para o número acima.",
+              )
+            : t("Todo aviso vai para o número acima, como sempre foi.")}
+        </p>
+      </div>
+
+      {rascunho.destinoModo === "responsavel" ? (
+        <div className="flex flex-col gap-2 rounded-lg border p-3" data-testid="whatsapp-da-equipe">
+          <p className="text-sm font-medium">{t("WhatsApp de cada pessoa da equipe")}</p>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "É este número que recebe o aviso quando a pessoa é a responsável. Sem número, ela é pulada — o aviso não fica sem destinatário.",
+            )}
+          </p>
+          {equipe.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {t("Ainda não há outras pessoas nesta organização.")}
+            </p>
+          ) : (
+            equipe.map((membro) => {
+              const valor = rascunho.whatsapps[membro.user_id] ?? "";
+              const ok = valor.trim() === "" || telefoneDeAvisoValido(valor);
+              return (
+                <div
+                  key={membro.user_id}
+                  className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3"
+                >
+                  <span className="w-full truncate text-sm sm:w-44">
+                    {membro.nome ?? t("Sem nome")}
+                  </span>
+                  <Input
+                    inputMode="tel"
+                    className="w-full sm:w-64"
+                    placeholder={telefoneExemplo}
+                    value={valor}
+                    onChange={(e) =>
+                      setRascunho((r) => ({
+                        ...r,
+                        whatsapps: {
+                          ...r.whatsapps,
+                          [membro.user_id]: normalizarTelefoneDeAviso(e.target.value),
+                        },
+                      }))
+                    }
+                    aria-invalid={!ok}
+                    aria-label={membro.nome ?? membro.user_id}
+                  />
+                  {ok ? null : (
+                    <span className="text-xs text-destructive">
+                      {t("Esse número ainda não está completo.")}
+                    </span>
+                  )}
+                </div>
+              );
+            })
+          )}
+          {comNumero === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Ninguém da equipe tem WhatsApp cadastrado: os avisos vão continuar saindo para o número acima.",
+              )}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="flex items-start gap-3 rounded-lg border p-3">
         <Switch

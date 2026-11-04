@@ -4,6 +4,11 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *      servidor; `?pagina=N` (opcional) devolve 50 por página com `meta.total`.
  * POST /api/v1/products — cadastra um produto.
  *
+ * `fotos` (lista de URLs, até 5, na ordem da capa) é aceita no corpo: o
+ * servidor BAIXA cada uma e guarda o arquivo, e a URL deixa de ser a fonte —
+ * o mesmo caminho da planilha (`lib/catalogo/fotos-por-url.ts`). O campo não é
+ * coluna: sai do corpo antes do insert e entra como caminhos do bucket.
+ *
  * Escrita exige `manager`: preço de venda não se altera com papel de leitura, e
  * é o motivo de este catálogo não morar na tabela da Nuvemshop, cuja policy é
  * org-flat sem checagem de papel.
@@ -34,6 +39,8 @@ import {
 } from "@/lib/catalogo/busca-da-tela";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { resolverAtributos } from "@/lib/catalogo/atributos";
+import { guardarFotosPorUrl } from "@/lib/catalogo/fotos-por-url";
+import { apagarDoBucket } from "@/lib/catalogo/fotos-no-bucket";
 import { controlaEstoquePadrao, modoDeEstoqueDaOrganizacao, produtoDisponivel } from "@/lib/catalogo/modo-de-estoque";
 import { COLUNAS_DO_PRODUTO, produtoCreateSchema, type Produto } from "@/lib/schemas/produtos";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -150,14 +157,52 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
   // A moeda vem da organização, nunca do corpo — ver `moedaDaOrganizacao()`.
   const moeda = await moedaDaOrganizacao(supabase, organizationId);
+
+  // `fotos` é URL de ENTRADA e NÃO é coluna: sai do corpo antes do insert, como
+  // a moeda sai antes de qualquer decisão. Ver o comentário do campo em
+  // `lib/schemas/produtos.ts`.
+  const { fotos, ...campos } = parsed.data;
+  const urls = fotos ?? [];
   const controla_estoque =
-    parsed.data.controla_estoque ?? controlaEstoquePadrao(await modoDeEstoqueDaOrganizacao(supabase, organizationId));
+    campos.controla_estoque ?? controlaEstoquePadrao(await modoDeEstoqueDaOrganizacao(supabase, organizationId));
+
+  /**
+   * ─── A foto é baixada ANTES de o produto existir na tabela ────────────────
+   *
+   * O caminho no bucket é `<org>/<produto>/<uuid>.<ext>`, então o id precisa
+   * existir antes do download — daí o `id` gerado aqui e enviado no insert.
+   * É o mesmo desenho da planilha (`import/route.ts`, grupo `novo+foto`), e
+   * pelo mesmo motivo: gravar primeiro e baixar depois produziria o pior
+   * desfecho, um 201 para um produto que ENTROU sem a foto que quem chamou
+   * pediu. Baixar antes faz a recusa ser inteira.
+   *
+   * O downloader é o MESMO da planilha (teto por item, assinatura dos bytes,
+   * guarda anti-SSRF, limpeza do que já subiu quando uma falha): um segundo
+   * baixador aqui divergiria do primeiro na primeira correção de segurança.
+   */
+  const produtoId = urls.length > 0 ? randomUUID() : undefined;
+  let caminhos: string[] | undefined;
+  if (produtoId) {
+    const guardadas = await guardarFotosPorUrl({ orgId: organizationId, produtoId, urls, t });
+    if (!guardadas.ok) {
+      // 422 e não 500: o corpo é que está errado (link morto, arquivo que não é
+      // foto, acima de 5 MB), e quem lê é quem integrou.
+      return fail("validation_failed", guardadas.motivo, 422, {
+        requestId,
+        details: { fotos: [guardadas.motivo] },
+      });
+    }
+    caminhos = guardadas.caminhos;
+  }
+
   const { data, error } = await supabase
     .from("catalog_products")
     .insert({
-      ...parsed.data,
+      ...campos,
       atributos: attrs.atributos,
       controla_estoque,
+      ...(produtoId ? { id: produtoId } : {}),
+      ...(caminhos ? { fotos: caminhos } : {}),
       moeda,
       organization_id: organizationId,
       origem: "manual",
@@ -166,6 +211,11 @@ export async function POST(req: NextRequest): Promise<Response> {
     .single();
 
   if (error) {
+    // Os arquivos já subiram e a linha não existe: sem esta limpeza, um código
+    // repetido deixaria fotos órfãs no bucket pagas por ninguém.
+    if (produtoId && caminhos?.length) {
+      await apagarDoBucket(organizationId, produtoId, caminhos, requestId);
+    }
     // 23505 = já existe produto com este código nesta organização. A recusa
     // nomeia o campo porque quem lê é quem digitou.
     if (error.code === "23505") {

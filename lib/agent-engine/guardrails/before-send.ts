@@ -551,6 +551,43 @@ export const semanticPromiseGate: Gate = {
 export const casePromiseGate: Gate = {
   name: 'case_promise',
   evaluate: (ctx) => {
+    const lexicoHumano = detectHumanPromise(ctx.body, ctx.humanPromiseExtraTargets);
+    // ── (A) Retorno do PRÓPRIO assistente — vale com casos LIGADOS ou DESLIGADOS ──
+    // (#2916, resíduo) A guarda de casos abaixo existe porque promessa de HUMANO
+    // precisa de caso aberto como destino. A promessa de retorno não: o destino dela
+    // é `schedule_followup`. Com os casos desligados — o padrão de um agente novo —
+    // a guarda liberava tudo na primeira linha e "Combinado, retomamos daqui a duas
+    // horas" saía sem nada agendado, deixando o cliente esperando. Aqui o ramo roda
+    // ANTES da guarda e o `!lexicoHumano` impede que ele roube a promessa de humano
+    // (que, sem casos, segue liberada de propósito: não há caso para abrir).
+    // `followup` ausente = caminho de envio que não informa o retorno (texto
+    // determinístico, template). Sem essa informação não dá para distinguir
+    // "agendado em outro lugar" de "esquecido", e um veto falso ali calaria um texto
+    // que não é do modelo — então não veta.
+    if (ctx.followup !== undefined) {
+      const retornoDoAssistente =
+        !lexicoHumano &&
+        (detectarPromessaDeRetornoDoAssistente(ctx.body) ||
+          ctx.semanticPromise?.retornoSoDoAssistente === true);
+      if (retornoDoAssistente) {
+        if (ctx.followup.agendadoNesteTurno === true) return { pass: true };
+        // Casos ligados continuam no caminho de baixo (código e fail-safe de caso
+        // aberto intactos); só o caminho sem casos usa o veto próprio.
+        if (!ctx.casesEnabled) {
+          return {
+            pass: false,
+            code: 'followup_promise_without_followup',
+            reason:
+              ctx.followup.disponivel === true
+                ? 'Você prometeu voltar a falar com o cliente, mas não deixou o retorno marcado. ' +
+                  'Chame a tool schedule_followup (agendando o retorno) antes de confirmar — ' +
+                  'ou reformule a mensagem sem prometer retorno.'
+                : 'Você prometeu voltar a falar com o cliente, mas este agente não tem a ' +
+                  'ferramenta de retorno. Reformule a mensagem sem prometer voltar.',
+          };
+        }
+      }
+    }
     if (!ctx.casesEnabled) return { pass: true };
     if (ctx.hasOpenCase || ctx.openedCaseThisTurn) return { pass: true };
     // Lê TRÊS sinais, em OU — e o OU é o ponto. Exigir todos faria o conserto
@@ -563,7 +600,7 @@ export const casePromiseGate: Gate = {
     // semântico não marca de forma confiável (é modelo — varia entre execuções). O
     // `?.` é obrigatório: o fixture de `tests/invariants/case-guardrail.test.ts`
     // passa `semanticPromise: null`.
-    const lexico = detectHumanPromise(ctx.body, ctx.humanPromiseExtraTargets);
+    const lexico = lexicoHumano;
     const semantico = ctx.semanticPromise?.prometeuRetornoHumano === true;
     const retornoLexico = detectarPromessaDeRetornoDoAssistente(ctx.body);
     if (!lexico && !semantico && !retornoLexico) return { pass: true };

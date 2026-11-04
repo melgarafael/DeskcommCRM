@@ -8,6 +8,170 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.99.0] — 2026-11-02
+
+### Adicionado
+
+- **O turno registra por que cada agente do número atendeu ou não o contato (público do agente, rastro da decisão)** Desde o público do agente, dois agentes publicados no mesmo número se dividem por funil e etiqueta — mas o turno só dizia "nenhum agente atendeu" ou dava a resposta sem dizer quem foi considerado. Agora a resolução do turno carrega o rastro da decisão e o escreve uma vez no log: a fila de agentes do número na ordem de precedência, a posição de cada um, e a regra que o liberou ou o barrou, com o item declarado na configuração que decidiu (por exemplo, a etiqueta excluída que barrou o agente de vendas para um cliente com contrato). Quem veio depois de quem ganhou aparece como não avaliado, e agente que não declarou público aparece como tal — não como barrado. Número onde nenhum agente declara público não ganha linha nova de log. Sem migração e sem mudança de comportamento: é rastro. Contribuição de @webtecnica (#3722).
+
+- **O aviso de caso no WhatsApp pode ir para o responsável do atendimento, não só para o número da empresa** Hoje o aviso de caso e o de proposta saem para um único número, o da empresa. Agora o destino pode ser o **responsável**, resolvido na hora do envio: responsável da conversa, depois dono do negócio aberto, depois dono da carteira do contato e, se nenhum tiver WhatsApp cadastrado, o número da empresa. O telefone de cada pessoa é cadastrado na própria tela de configuração dos avisos. Quem já usa o número fixo não precisa mudar nada — é o padrão, e não há migração de dados. Os comandos RESPONDER e PERGUNTAR continuam valendo só no número da empresa: o aviso que vai para o celular de alguém da equipe diz para abrir o link do caso. Contribuição de @webtecnica (#3803).
+
+- **Automação "Atribuir a um atendente" pode mandar o negócio para o responsável dele ou para o dono da carteira do cliente** A ação de atribuir só sabia escolher entre uma pessoa fixa e um rodízio de nomes:
+  quem fazia pós-venda precisava de uma automação por vendedor, e quem usava rodízio
+  via todo negócio cair na mesma fila, mesmo quando o cliente já tinha dono.
+
+  O modo novo **Destino dinâmico** entrega o negócio a quem já está com ele: o
+  **responsável do negócio** e, se não houver, o **dono da carteira do cliente**.
+  Quem recebe depende do negócio que disparou a regra, não de um nome escrito nela.
+  Quem não pode receber (saiu da equipe ou só tem acesso de leitura) é pulado, e a
+  regra segue a lista.
+
+  Sem ninguém do negócio disponível, a atribuição cai no **fallback**, que é
+  obrigatório: uma pessoa fixa ou o rodízio de sempre. A Atividade passa a dizer
+  qual destino decidiu, em vez de deixar o negócio sem responsável em silêncio.
+
+  As opções de **passar também o contato (carteira)** e **as conversas abertas**
+  valem para os destinos novos do mesmo jeito que valem para a pessoa fixa.
+
+  Contribuição de @webtecnica (#3804).
+
+- **Aviso escrito pelo admin vira push para a equipe** O administrador da empresa agora escreve um aviso com título e corpo e o aviso chega como push para os aparelhos da organização, com um toque que abre a caixa de entrada. É um módulo opcional da instalação, **desligado por padrão**: quem administra o servidor liga no painel do administrador, em Recursos opcionais › Módulos opcionais (“Avisos para a equipe”). Desligado, a rota responde 404. Cada aviso criado fica no registro de auditoria (`aviso.created`), com a janela de publicação e sem o texto.
+
+  O aviso respeita a janela: `publicar_em` no passado ou ausente publica na hora (ausente grava o relógio do servidor), e `expira_em` no passado é gravado sem tocar em ninguém. O título vai até 120 caracteres e o corpo até 2.000; no push, o corpo sai truncado.
+
+  Não há agendamento nesta fatia: nada publica o aviso depois da criação, então um `publicar_em` no futuro é recusado com 400 e a mensagem diz o que fazer — publicar agora ou enviar sem data. Alguns segundos de relógio adiantado no navegador são absorvidos como "agora", e o valor gravado nunca fica à frente do relógio do servidor. A tela de escrever o aviso entra na fatia seguinte; por enquanto a porta é a API (`POST /api/v1/avisos`).
+
+  Contribuição de @webtecnica (#1418, fatia 1).
+
+- **Instalação e atualização passam a ser conferidas contra a cadeia de migrations** O esquema do produto vive em dois artefatos: os arquivos de `supabase/migrations/` (o caminho de quem usa o Supabase CLI) e o `supabase/baseline.sql`, que é o único que o instalador do self-host aplica. Nenhum teste aplicava os dois e comparava o resultado, então uma mudança que chegasse só na migration deixava a instalação com um banco diferente do que o repositório diz entregar — em silêncio, com a suíte inteira verde.
+
+  A conferência nova monta dois bancos no Postgres do harness: um com o baseline aplicado, outro com o baseline mais a cadeia inteira em ordem. Compara objeto por objeto — coluna, constraint, índice, policy, função, gatilho, tipo e permissão — e, quando algo diverge, diz o nome do objeto e a migration que o declara, nunca um "esquema diferente" genérico.
+
+  A primeira vez que ela rodou apontou cinco índices das métricas de atrito que existiam só na cadeia: quem instalava do zero ficava com o painel de atrito varrendo cinco tabelas quentes. Apontou também três divergências de permissão: as três funções passaram a ter, nos dois caminhos, as permissões que as migrations declaram. Quem atualiza só precisa rodar a atualização de sempre.
+
+  Contribuição de @webtecnica (#3842).
+
+- **Desempenho separa "vendido único" de "recorrência nova (mensal)" no período, sem somar os dois** Quem vende setup + mensalidade (agência, clínica, escola, software) via o contrato pela metade no Desempenho: a tela somava só o valor único do negócio e a mensalidade não aparecia em número nenhum. Com o valor recorrente preenchido no negócio, o painel da meta do mês passa a mostrar as duas parcelas lado a lado — "Vendido único" e "Recorrência nova (mensal)" — com a contagem de negócios que têm recorrência.
+
+  As duas parcelas nunca são somadas num número só, de propósito: o valor único é o que entrou de uma vez no período (implantação, matrícula, avaliação) e a recorrência é o que passa a entrar todo mês. Somar os dois faria o período parecer maior do que ele é e esconderia justamente a mensalidade. Cada moeda aparece na sua linha, pelo mesmo motivo: real com dólar não somam.
+
+  O bloco aparece só quando há recorrência preenchida em algum negócio ganho no período. Quem não usa o campo continua vendo exatamente o painel de antes, e nenhuma resposta antiga muda de nome ou de valor.
+
+  Contribuição de @webtecnica (#3859)
+
+- **A etapa do funil mostra quais fluxos de follow-up disparam ao entrar nela** O gatilho “entrar nesta etapa” já existia e já armava o follow-up, mas só quem configurou o fluxo sabia disso: na tela de etapas do funil, uma coluna com sequência automática era idêntica a uma coluna sem nada. Quem suspeitava de mensagem automática não tinha onde conferir.
+
+  Agora cada etapa mostra, em texto e sem editor, os fluxos de follow-up armados nela: os ativos, publicados e com início no desenho, fora os roteiros de atendimento. O fluxo que usa IA e que nenhum agente com follow-up ligado arma também aparece, mas marcado com «não dispara»: o motor o barra, e a tela diz isso em vez de prometê-lo. Etapa sem fluxo diz isso com todas as letras; se a leitura dos fluxos falhar, a tela não afirma nem “tem” nem “não tem”, em vez de tranquilizar por engano.
+
+  Nada muda para quem não usa o gatilho por etapa: a lista sai vazia e o comportamento do funil é o mesmo. Configurar o fluxo continua sendo no editor de follow-up. Contribuição de @webtecnica (#3860).
+
+- **A API de produto aceita fotos por URL — o servidor baixa, guarda e a URL deixa de ser a fonte** Quem integra o catálogo por fora (n8n, script, sistema de estoque da loja) podia mandar
+  nome, preço e código do produto, mas não a foto: o campo era descartado em silêncio e o
+  cadastro voltava com sucesso, sem imagem. A foto só entrava uma a uma pela tela — num
+  estoque de revenda, centenas de envios manuais.
+
+  Agora `POST /api/v1/products` e `PATCH /api/v1/products/:id` aceitam `fotos`, uma lista de
+  até 5 endereços `http(s)` na ordem em que devem aparecer, sendo a primeira a capa. O
+  servidor baixa cada arquivo, confere que é mesmo JPG ou PNG pelo conteúdo, guarda no
+  armazenamento do sistema e grava o produto apontando para o arquivo. O endereço de origem
+  deixa de ser necessário: se o site da loja sair do ar ou o anúncio for vendido, a foto
+  continua no catálogo e o agente continua conseguindo enviá-la na conversa.
+
+  Se algo na lista não puder ser usado — mais de 5 fotos, um endereço que não é `http(s)`,
+  um link que não abre, um arquivo acima de 5 MB ou que não é JPG/PNG — o cadastro inteiro é
+  recusado com a explicação do item, em vez de entrar pela metade com a capa errada. No
+  PATCH, a lista enviada **substitui** as fotos do produto (as que saíram deixam de existir),
+  enquanto um PATCH que não menciona `fotos` continua sem tocar nelas.
+
+  Não há nada a fazer em quem já usa o sistema: o campo é opcional, nenhuma migração é
+  necessária e o cadastro pela tela continua igual.
+
+  Contribuição de @webtecnica (#3858).
+
+- **A mensagem que o fluxo pulou por causa da agenda tem selo próprio na Inbox** Quando a regra ou o fluxo está configurado para não enviar a quem tem horário marcado, a mensagem agora aparece na conversa com o selo “Pulada pela agenda”, e não mais como “Falhou”. O aviso traz o motivo medido — horário marcado, atendimento acontecendo agora ou presença ainda não confirmada —, o nome do compromisso que barrou o envio e o atalho “Abrir compromisso”.
+
+  O botão “Tentar de novo” não aparece nesse caso: o reenvio não consulta a agenda e mandaria a mensagem mesmo assim, contra a escolha feita no fluxo. Para mandar de qualquer forma, mude a escolha do fluxo ou escreva pelo campo de resposta — a própria bolha diz isso. Mensagens que falharam de verdade continuam com o selo de falha e o botão de reenvio, como antes.
+
+  Contribuição de @webtecnica (#3850).
+
+- **Supabase próprio no mesmo servidor sobrevive às atualizações** Quem roda o Supabase no mesmo servidor do CRM, em outro compose, perdia a conexão com o banco a cada atualização: os contêineres eram recriados fora da rede do Supabase e o worker caía, o que podia até desfazer a atualização. Agora basta declarar `SUPABASE_DOCKER_NETWORK` (por exemplo `supabase_default`) no `.env` e o kit liga o CRM a essa rede em toda subida e atualização, inclusive o agente de voz (opcional) e o backup e a atualização do banco feitos pelo próprio kit, sem precisar declarar `PSQL_DOCKER_NETWORK` também. Se a chave está no `.env` e a rede não existe no servidor, a atualização avisa em vez de seguir calada. Sem a variável, nada muda.
+
+  Contribuição de @kristhianlumai-lgtm (#3796).
+
+- **Setor de atendimento vira destino: a conversa ganha setor e o setor ganha horário** O setor de atendimento agrupava os atendentes e não mudava quem recebia as conversas. Agora ele é destino: uma conversa pode pertencer a um setor, e a distribuição automática passa a respeitar quem atende aquele setor e o horário dele — e não apenas o número por onde o cliente chegou. Fora do horário do setor a conversa não se perde: ela espera a abertura, na Fila. Um atendente pode atender mais de um setor (é o caso da recepção, que cobre comercial e financeiro). Sem setor definido, tudo continua exatamente como antes, e o módulo de setores segue desligado por padrão. Contribuição de @webtecnica (#3817).
+
+- **O tempo que o agente de voz espera antes de responder passa a ser configurável** Nas ligações, o agente de voz espera ter certeza de que o cliente terminou de falar antes de responder. Esse cuidado evita que ele fale por cima por causa de ruído na linha, mas deixa uma pausa que pode passar de alguns segundos — e, ao telefone, isso soa como demora para responder.
+
+  A nova variável `VOICE_VAD_EAGERNESS` no `.env` ajusta essa espera: `low` (padrão, o comportamento de hoje), `auto` ou `medium` (meio-termo) e `high` (responde mais rápido). Valor em branco ou desconhecido mantém `low`.
+
+  Você não precisa mudar nada. Se as ligações soam lentas e a linha é limpa, use `VOICE_VAD_EAGERNESS=auto` e reinicie o serviço de voz.
+
+  Contribuição de @lzandonadi (#3843).
+
+### Corrigido
+
+- **A promessa de retorno do assistente passa a ser verificada também com os casos humanos desligados** O gate de promessa de caso liberava tudo na primeira linha quando os casos humanos estavam desligados, que é o padrão de um agente novo. Mas a frase em que o assistente se compromete a retomar a conversa ("combinado, retomamos daqui a duas horas") não depende de caso: o destino dela é o `schedule_followup`, e sem ele o cliente fica esperando uma mensagem que não vem. Agora o retorno do próprio assistente é verificado antes da guarda de casos, com código próprio (`followup_promise_without_followup`) para não se confundir com o veto que abre caso. A promessa de humano continua como estava; com os casos ligados, o comportamento é o mesmo de antes, inclusive o fail-safe que abre o caso. Contribuição de @webtecnica (#3856).
+
+- **O card do funil passa a se chamar "negócio" em toda a tela** O mesmo card tinha dois nomes. O formulário de criar dizia "Novo Lead" e "Criar lead", mas o aviso dentro dele já dizia "Este contato já tem um negócio aberto". E "lead", em vendas, é a pessoa, não a venda.
+
+  Agora o card se chama "negócio" em tudo: "Novo negócio", "Criar negócio", "Negócio criado", "Editar negócio", "Ações do negócio", o quadro vazio ("Nenhum negócio neste funil ainda.") e a lateral da conversa ("Negócios recentes"). Esses textos também dizem "funil" onde diziam "pipeline". A barra de seleção em lote passa a usar o nome que o funil dá à venda, e não mais o nome da pessoa: num funil que chama a venda de "Pedido" (Configurações › Funis), ela diz "1 Pedido selecionado", e não "1 Cliente selecionado".
+
+  Nada muda no banco, nas rotas nem nas automações. O gatilho de follow-up "Lead criado" continua com o mesmo nome.
+
+  Você não precisa mudar nada.
+
+  Contribuição de @webtecnica (#3820, #3811).
+
+- **O fluxo de follow-up respeita "Quando o contato tiver horário marcado" e registra o pulo com o motivo** A configuração publicada do follow-up aceita a escolha "Quando o contato tiver horário marcado" (`quando_ha_compromisso`), com "esperar", "enviar mesmo assim" e "não enviar". Por enquanto ela é gravada pela API e ainda não tem controle na tela. Ela valia nas automações e no caminho de texto fixo, mas o worker que roda os fluxos de follow-up (o que trabalha 24 horas) continuava sempre esperando: quem publicava "enviar mesmo assim" não via a mensagem sair, e quem publicava "não enviar" não via o pulo registrado — a mensagem simplesmente esperava o horário marcado e, no fim, saía.
+
+  Agora as duas escolhas valem também nesse caminho. Em "enviar mesmo assim", a mensagem do fluxo sai com o horário marcado. Em "não enviar", o passo é encerrado como pulado, com o motivo "contato com horário marcado" no histórico do acompanhamento, e sem gerar texto pela IA — o mesmo registro que os outros pulos do follow-up já usavam.
+
+  Quem não configurou nada continua exatamente como antes: o padrão é esperar, e o acompanhamento é retomado no horário, como sempre foi.
+
+  Você não precisa fazer nada.
+
+  Contribuição de @webtecnica (#3840).
+
+- **O agente deixa de dizer que não conseguiu ouvir o áudio que chegou durante a resposta** Quando o cliente mandava um áudio logo depois de outra mensagem, o agente podia responder "recebi o seu áudio, mas não consegui ouvir o conteúdo" — e a transcrição do áudio ficar pronta dois segundos depois. O cliente ouvia que não tinha sido ouvido e precisava escrever tudo de novo.
+
+  A espera pela transcrição existia, mas valia só para a mídia que já estava na conversa quando a resposta começava a ser preparada. O áudio que chegava **durante** esse preparo entrava na conversa sem texto, e o agente respondia sobre ele como se não pudesse ouvi-lo.
+
+  Agora a resposta espera a transcrição também nesse caso: antes de montar o que vai ser dito ao agente, o sistema reconfere a conversa e espera a mídia que ainda está sendo transcrita, dentro do mesmo teto de tempo de antes. Se a transcrição não ficar pronta dentro desse teto — a derivação travou, por exemplo —, a resposta segue sem o texto, e o registro diz que a espera foi encerrada pelo teto, em vez de a demora aparecer como falha de leitura do áudio.
+
+  A consequência prática é que a primeira resposta pode demorar até esse teto a mais em conversas com áudio recém-chegado; passado o teto, nada muda. Você não precisa mudar nada.
+
+  Contribuição de @webtecnica (#3841).
+
+- **A espera pela transcrição do áudio também cobre o áudio que chega no instante em que a resposta é registrada** Complemento da correção do áudio que chega durante a resposta (#3836). A conferência que pergunta se a mídia ainda está virando texto passa a ler a hora de chegada no formato em que o banco a entrega; sem isso ela respondia "nada pendente", e nem a espera pelo áudio do meio da resposta nem a que segura o início da resposta chegavam a esperar. Junto vem o ajuste do registro de "até aqui eu li": ele cobre só o que a resposta leu com texto, então o áudio que chega no instante entre a última conferência e esse registro mantém a própria resposta, e a resposta desatualizada é descartada em vez de sair. Nenhuma configuração muda. Contribuição de @webtecnica (#3845).
+
+- **A cerca do e2e do alvo de toque mede a caixa do alvo, e não um ponto a 1px da borda dela** O e2e do celular provava o alvo de toque do link «Ver conversa» cravando um ponto a 21px do centro de uma área declarada de ±22px — 1px antes da borda. Duas execuções do mesmo tree deram resultados opostos: numa delas o container do caso estava rolado, o topo do link ficava recortado pela área que rola e o ponto a 21px acima do centro deixava de existir para o dedo, enquanto a altura declarada do alvo continuava 44px (recorte não é layout). A cerca passou a medir a geometria do alvo — os 44px do `::before` —, a conferir que a caixa está inteira dentro da área visível e a tocar 4px dentro da borda declarada, com controle 4px fora. Nada muda no produto: o alvo continua o mesmo 44px. Contribuição de @webtecnica (#3844).
+
+- **Quatro crons de minuto deixam de fazer consultas vazias quando não há trabalho** Numa instalação sem webhook a reprocessar, sem follow-up, sem janela de pausa e sem proposta em envio, quatro rotas de cron faziam seis consultas de minuto em minuto para voltar sempre vazias. Agora elas consultam o piso ocioso (#3731), que já fazia isso para as campanhas, a prospecção, o histórico e a Google Agenda. O piso responde de uma leitura só, pelo banco direto e sem gastar requisição do PostgREST, válida por 30 segundos e dividida por todas as rotas.
+
+  Quem tem trabalho não sente diferença. O que nasce dentro do próprio app é visto já na batida seguinte, sem esperar a janela: uma inscrição feita num fluxo de follow-up, ou um contato que a varredura de silêncio inscreveu. Nada muda para quem opera a VPS: não há função nova no banco nem arquivo para editar. Crédito: @webtecnica.
+
+- **Dois testes de tela deixam de reprovar por acaso** Nada muda para quem usa. Dois testes automáticos reprovavam às vezes, sem defeito no produto: um lia o aviso de conexão caída no lugar da lista de canais, e o outro não esperava o painel da agenda terminar de carregar. Crédito: @paulolimajr77.
+
+- **O limite de tentativas do código de verificação em duas etapas vale também na troca de senha** Errar o código de seis dígitos da verificação em duas etapas três vezes seguidas pausa novas tentativas por um minuto, e quinze erros no mesmo dia pausam por até 24 horas. O mesmo limite passou a valer também na troca de senha com verificação em duas etapas, e as duas telas contam juntas, por usuário. Quem está bloqueado na troca de senha vê o aviso de tentar novamente mais tarde. Nenhuma configuração muda. Contribuição de @thinhnx128 (#3853).
+
+- **A regra marcada "não enviar" deixa de enviar quando outra regra do mesmo gatilho espera o horário marcado** Na mensagem de WhatsApp de uma automação (texto fixo ou escrito pela IA), a opção "Quando o contato tiver horário marcado" pode ser "esperar", "enviar mesmo assim" ou "não enviar". Com duas automações no mesmo gatilho, uma em "não enviar" e outra em "esperar", a segunda segurava as duas: a "não enviar" só era conferida quando o horário já tinha passado (ou alguém o marcava como concluído na Agenda) e, como o contato já não tinha mais horário marcado, ela enviava a mensagem. Sozinha, ela já pulava o envio, como devia.
+
+  Agora a decisão de "não enviar" é tomada na hora em que o gatilho acontece e fica guardada: quando a automação que esperava chega à vez dela, a "não enviar" pula o envio e registra o motivo na aba Atividade, mesmo que o horário já tenha passado. As automações do mesmo gatilho continuam esperando juntas, como antes.
+
+  Com uma automação só, nada muda.
+
+  Você não precisa fazer nada.
+
+- **O Inbox para de dar erro de hidratação quando a contagem das abas chega durante o carregamento** O número ao lado do nome das abas do Inbox é buscado no servidor de dados e só existe no navegador. Quando essa resposta chegava enquanto a página ainda estava sendo montada, o contador aparecia numa etapa em que a tela ainda era a do servidor — e o React acusava a divergência (o erro `#418`), com a página recarregando a árvore. Agora o contador só entra depois que a página terminou de montar, e a contagem continua aparecendo normalmente. Medido em build de produção: 543 cargas, 3 erros antes do conserto; o caso virou teste — HTML do servidor e hidratação de verdade. Contribuição de @webtecnica (#3736).
+
+- **Instalação nova deixa de chamar o card de "Pedido", e a tela de funis passa a mostrar os nomes em português** Todo funil novo nascia com os nomes de uma loja: o card era "Pedido", a pessoa era "Cliente", o ganho era "Pago". Numa clínica recém-instalada, o quadro de agendamentos dizia "1 Pedido selecionado" e "Excluir 1 Pedido?". E em Configurações › Funis os nomes de cada coisa apareciam em inglês: "Lead", "Deal", "Won", "Lost".
+
+  Agora o funil novo nasce com nomes neutros — "Contato", "Negócio", "Ganho" e "Perdido" —, o quadro diz "1 Negócio selecionado", e a tela de funis mostra esses rótulos em português, com uma frase explicando que o nome do Negócio é o que o card mostra nas telas (numa loja, ele pode se chamar Pedido). Com a tela em espanhol, o quadro diz "1 Negocio seleccionado".
+
+  Quem já instalou continua com os nomes que tem: nada é trocado nos funis existentes. Para mudar, edite os nomes em Configurações › Funis.
+
+  Você não precisa mudar nada.
+
 ## [1.98.0] — 2026-11-01
 
 ### ⚠️ Requer atenção
@@ -13830,7 +13994,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.98.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.99.0...HEAD
+[1.99.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.98.0...v1.99.0
 [1.98.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.97.0...v1.98.0
 [1.97.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.96.0...v1.97.0
 [1.96.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.95.0...v1.96.0
