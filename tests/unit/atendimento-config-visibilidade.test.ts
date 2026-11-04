@@ -26,6 +26,7 @@ import {
   mesclarSettingsDeAtendimento,
   routingConfigSchema,
 } from "@/lib/schemas/routing";
+import { PRAZO_MAX_MINUTOS_DEVOLUCAO, PRAZO_MIN_MINUTOS } from "@/lib/escalacao/devolucao-automatica";
 import { DEFAULT_VISIBILITY_MODE, type VisibilityMode } from "@/lib/auth/types";
 
 /**
@@ -153,11 +154,39 @@ describe("config de atendimento — routing + visibilidade na mesma porta", () =
       handoff_return_after_minutes: null,
     });
     expect((proximo.routing as { handoff_return_after_minutes: unknown }).handoff_return_after_minutes).toBeNull();
+    for (const fora of [4, PRAZO_MIN_MINUTOS - 1, PRAZO_MAX_MINUTOS_DEVOLUCAO + 1, 7.5]) {
+      expect(() =>
+        atendimentoConfigPatchSchema.parse({ mode: "manual", max_retries: 5, backoff_seconds: 60, handoff_return_after_minutes: fora }),
+      ).toThrow();
+    }
+  });
+
+  /**
+   * O TETO DE 24 HORAS DO PRAZO DE DEVOLUÇÃO CAIU (#3313, item 3).
+   *
+   * Este arquivo prendia `1441 → recusa`, e a recusa era o defeito: quem
+   * administra uma agência de viagens não conseguia salvar os 5.000 minutos de
+   * uma cotação com fornecedor (mais de três dias). O teto agora é de 30 dias
+   * (`PRAZO_MAX_MINUTOS_DEVOLUCAO`), e o valor do meio continua recusado.
+   *
+   * ─── SABOTAGEM ────────────────────────────────────────────────────────────
+   *   - voltar `.max(PRAZO_MAX_MINUTOS)`: o caso do 5.000 acusa (a tela salvaria
+   *     menos do que a operação pediu, e o cron descartaria o que passasse).
+   */
+  it("handoff_return_after_minutes aceita 5.000 minutos (dias) — e o teto de 30 dias continua valendo", () => {
+    const base = { mode: "manual", max_retries: 5, backoff_seconds: 60 } as const;
+    expect(
+      atendimentoConfigPatchSchema.parse({ ...base, handoff_return_after_minutes: 5000 }),
+      "5.000 minutos são ~3,5 dias: é o caso medido na issue",
+    ).toMatchObject({ handoff_return_after_minutes: 5000 });
+    expect(PRAZO_MAX_MINUTOS_DEVOLUCAO).toBe(30 * 24 * 60);
+    expect(
+      atendimentoConfigPatchSchema.parse({ ...base, handoff_return_after_minutes: PRAZO_MAX_MINUTOS_DEVOLUCAO }),
+    ).toMatchObject({ handoff_return_after_minutes: PRAZO_MAX_MINUTOS_DEVOLUCAO });
+    // O teto do SILÊNCIO do celular continua de 24 h: os dois knobs deixaram de
+    // compartilhar a mesma constante de propósito.
     expect(() =>
-      atendimentoConfigPatchSchema.parse({ mode: "manual", max_retries: 5, backoff_seconds: 60, handoff_return_after_minutes: 2 }),
-    ).toThrow();
-    expect(() =>
-      atendimentoConfigPatchSchema.parse({ mode: "manual", max_retries: 5, backoff_seconds: 60, handoff_return_after_minutes: 1441 }),
+      atendimentoConfigPatchSchema.parse({ ...base, manual_reply_silence_minutes: PRAZO_MAX_MINUTOS_DEVOLUCAO }),
     ).toThrow();
   });
 

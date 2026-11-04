@@ -29,6 +29,14 @@ export interface Contact {
   display_name: string | null;
   /** Nome salvo na agenda do celular. SÓ A EQUIPE vê (`rotuloParaAEquipe`); nunca vai em mensagem. */
   address_book_name?: string | null;
+  // Endereço da pessoa física (issue 3494), espelhando `companies`.
+  zip_code?: string | null;
+  street?: string | null;
+  number?: string | null;
+  complement?: string | null;
+  district?: string | null;
+  city?: string | null;
+  state?: string | null;
   email: string | null;
   email_normalized: string | null;
   phone_number: string | null;

@@ -12,6 +12,9 @@
  *     (`agent_turn`, `operator_turn`). A escolha ali já tem tela própria, e
  *     duas telas mandando na mesma coisa é como se cria a configuração que
  *     mente. O painel mostra esses dois como leitura, com link para o agente.
+ *     A exceção é o agente escrevendo SOZINHO (`followup_turn`): ali o binding
+ *     do painel vem primeiro e, sem ele, vale a versão publicada inteira — ver
+ *     `PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL`.
  *  2. **Binding do ponto** — a escolha explícita feita no painel de provedores.
  *     É a superfície nova e é ela que o operador enxerga.
  *  3. **Variável de ambiente** — os sete knobs herdados (`COMPACTION_MODEL`,
@@ -196,6 +199,86 @@ export const PONTOS_DO_AGENTE_PUBLICADO: ReadonlySet<string> = new Set([
   "agent_preview",
   "operator_turn",
 ]);
+
+/**
+ * Os pontos que SÃO o agente — mesmo turno, mesma versão publicada, mesmas
+ * ferramentas — mas cujo modelo o painel PODE trocar.
+ *
+ * Hoje é um só: `followup_turn`, o agente escrevendo sozinho para quem parou
+ * de responder. A ordem é a inversa de `PONTOS_DO_AGENTE_PUBLICADO`: o binding
+ * habilitado do ponto vem primeiro; sem ele, vale a versão publicada INTEIRA
+ * (provider, modelo e credencial juntos), com a mesma origem
+ * `agente_publicado` de antes deste ponto existir. Sem escolha no painel, nada
+ * muda — nem o modelo, nem o que `llm_calls.origem_da_escolha` registra.
+ *
+ * Por que não é um `PONTOS_QUE_HERDAM_DO_AGENTE`: o resultado em runtime seria
+ * o mesmo, mas a origem viria como `herdado_de_quem_chamou` ("herdado de quem
+ * disparou a chamada") — e aqui não há outro chamador: o turno É o agente. A
+ * tela diria uma coisa falsa sobre o ponto mais caro depois da resposta.
+ *
+ * Por que existe (o custo medido) está no cabeçalho do ponto, em `registro.ts`.
+ */
+export const PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL: ReadonlySet<string> = new Set([
+  "followup_turn",
+]);
+
+/**
+ * A versão publicada, INTEIRA — os três campos juntos, ou o padrão da org
+ * inteiro quando a versão não tem modelo. Um só lugar para os dois conjuntos
+ * de pontos do agente: duplicar este ramo é como o cruzamento do PR #151
+ * volta por um deles só.
+ */
+function daVersaoPublicada(
+  agente: AgentePublicado,
+  padrao: PadraoDaOrganizacao,
+  avisos: string[],
+): DecisaoDeBinding {
+  // Versão publicada SEM modelo: o padrão da organização vale INTEIRO. O
+  // `agente.model ?? padrao.defaultModel` que morava aqui juntava o provider
+  // do agente ao modelo da org — o cruzamento do PR #151 escrito à mão, num
+  // ramo que existe justamente para impedi-lo.
+  if (agente.model === undefined) {
+    return {
+      provider: padrao.provider,
+      modelId: padrao.defaultModel,
+      credentialId: null,
+      baseUrl: null,
+      origem: "padrao_da_organizacao",
+      avisos,
+    };
+  }
+  return {
+    provider: agente.provider,
+    modelId: agente.model,
+    credentialId: agente.credentialId,
+    baseUrl: null,
+    origem: "agente_publicado",
+    avisos,
+  };
+}
+
+/** O binding habilitado, com os avisos que a leitura sabe dar. */
+function doBinding(
+  binding: LinhaDeBinding,
+  ponto: PontoDeIa | undefined,
+  modeloDeAmbiente: string | undefined,
+  avisos: string[],
+): DecisaoDeBinding {
+  if (modeloDeAmbiente !== undefined) {
+    avisos.push(
+      `A variável de ambiente deste ponto está definida como "${modeloDeAmbiente}", mas a escolha do painel tem prioridade.`,
+    );
+  }
+  avisos.push(...avisosDeCapacidade(ponto, binding.model_id));
+  return {
+    provider: binding.provider,
+    modelId: binding.model_id,
+    credentialId: binding.credential_id,
+    baseUrl: binding.base_url,
+    origem: "binding",
+    avisos,
+  };
+}
 
 /**
  * Modelo e credencial vêm sempre do MESMO lugar.
@@ -415,6 +498,33 @@ export function decidirBinding(entrada: EntradaDaDecisao): DecisaoDeBinding {
   }
 
   if (ponto?.fixo?.usa) {
+    // 0.1 · Dentro do fixo, um MENU pode existir (ver o tipo em registro.ts).
+    // A escolha do operador entre os itens do menu AINDA vence aqui — não no
+    // degrau 2 — porque este ponto não tem capacidade (`exige.tools`,
+    // `exige.imagem`) para `avisosDeCapacidade` avaliar, e passar por ali
+    // emitiria um aviso sobre ferramentas para um ponto que não as usa.
+    if (ponto.fixo.opcoes && entrada.binding !== null && entrada.binding.is_enabled) {
+      const escolhida = ponto.fixo.opcoes.find(
+        (o) => o.provider === entrada.binding!.provider && o.modelId === entrada.binding!.model_id,
+      );
+      if (escolhida) {
+        return {
+          provider: escolhida.provider,
+          modelId: escolhida.modelId,
+          credentialId: entrada.binding.credential_id,
+          baseUrl: entrada.binding.base_url,
+          origem: "binding",
+          avisos,
+        };
+      }
+      // A linha salva não é mais uma das opções do menu (o produto removeu uma
+      // opção, ou alguém gravou direto pela API). Cair calado no padrão faria
+      // o operador ler "usando X" na tela e o sistema chamar Y — avisar é o
+      // que mantém a leitura e o comportamento no mesmo lugar.
+      avisos.push(
+        `A escolha salva para "${ponto.rotulo}" não é mais uma das opções oferecidas; usando o padrão do produto.`,
+      );
+    }
     return {
       provider: ponto.fixo.usa.provider,
       modelId: ponto.fixo.usa.modelId,
@@ -432,47 +542,30 @@ export function decidirBinding(entrada: EntradaDaDecisao): DecisaoDeBinding {
         "Este ponto usa o modelo definido na versão publicada do agente; a escolha do painel não se aplica.",
       );
     }
-    const agente = entrada.agentePublicado;
-    // Versão publicada SEM modelo: o padrão da organização vale INTEIRO. O
-    // `agente.model ?? padrao.defaultModel` que morava aqui juntava o provider
-    // do agente ao modelo da org — o cruzamento do PR #151 escrito à mão, num
-    // ramo que existe justamente para impedi-lo.
-    if (agente.model === undefined) {
-      return {
-        provider: entrada.padraoDaOrganizacao.provider,
-        modelId: entrada.padraoDaOrganizacao.defaultModel,
-        credentialId: null,
-        baseUrl: null,
-        origem: "padrao_da_organizacao",
-        avisos,
-      };
+    return daVersaoPublicada(entrada.agentePublicado, entrada.padraoDaOrganizacao, avisos);
+  }
+
+  // 1b · O agente escrevendo SOZINHO (`followup_turn`): a escolha do painel
+  // vem primeiro; sem ela, a versão publicada inteira — o comportamento de
+  // antes de o ponto existir, com a mesma origem.
+  //
+  // Antes do degrau 3 (ambiente) de propósito: o knob de ambiente nunca valeu
+  // para o turno do agente — com o override presente, `decidirParaOSeam` nem o
+  // repassa —, e um ramo que o consultasse aqui deixaria a TELA (que não tem o
+  // override) e o motor discordarem sobre o mesmo ponto.
+  if (
+    PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL.has(entrada.pontoId) &&
+    entrada.agentePublicado !== null
+  ) {
+    if (entrada.binding !== null && entrada.binding.is_enabled) {
+      return doBinding(entrada.binding, ponto, undefined, avisos);
     }
-    return {
-      provider: agente.provider,
-      modelId: agente.model,
-      credentialId: agente.credentialId,
-      baseUrl: null,
-      origem: "agente_publicado",
-      avisos,
-    };
+    return daVersaoPublicada(entrada.agentePublicado, entrada.padraoDaOrganizacao, avisos);
   }
 
   // 2 · A escolha explícita do painel.
   if (entrada.binding !== null && entrada.binding.is_enabled) {
-    if (entrada.modeloDeAmbiente !== undefined) {
-      avisos.push(
-        `A variável de ambiente deste ponto está definida como "${entrada.modeloDeAmbiente}", mas a escolha do painel tem prioridade.`,
-      );
-    }
-    avisos.push(...avisosDeCapacidade(ponto, entrada.binding.model_id));
-    return {
-      provider: entrada.binding.provider,
-      modelId: entrada.binding.model_id,
-      credentialId: entrada.binding.credential_id,
-      baseUrl: entrada.binding.base_url,
-      origem: "binding",
-      avisos,
-    };
+    return doBinding(entrada.binding, ponto, entrada.modeloDeAmbiente, avisos);
   }
 
   // 3 · O knob de ambiente. Herda provider/credencial do padrão da org, que é

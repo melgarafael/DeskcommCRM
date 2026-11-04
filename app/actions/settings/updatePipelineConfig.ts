@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
 import { audit } from "@/lib/audit";
+import { respostaParaOperador } from "@/lib/erros/para-operador";
 import {
   pipelineConfigPatchSchema,
   type PipelineConfigPatch,
@@ -52,7 +53,13 @@ export async function updatePipelineConfig(
     .select("vocabulary, settings, organization_id")
     .eq("id", pipelineId)
     .maybeSingle();
-  if (readErr) return { ok: false, error: readErr.message };
+  if (readErr) {
+    return respostaParaOperador(readErr, {
+      contexto: "[pipeline.config] falha ao ler o pipeline",
+      idioma: authUser.idioma,
+      campos: { pipeline_id: pipelineId },
+    });
+  }
   if (!row) return { ok: false, error: "not_found" };
   if (row.organization_id !== activeOrg.orgId) {
     return { ok: false, error: "forbidden_tenant" };
@@ -120,7 +127,14 @@ export async function updatePipelineConfig(
     .from("crm_pipelines")
     .update({ vocabulary: nextVocabulary, settings: nextSettings })
     .eq("id", pipelineId);
-  if (error) return { ok: false, error: error.message };
+  // #3747: a frase da tela vem do mapeador; o texto do Postgres fica no log.
+  if (error) {
+    return respostaParaOperador(error, {
+      contexto: "[pipeline.config] falha ao gravar a configuração do pipeline",
+      idioma: authUser.idioma,
+      campos: { pipeline_id: pipelineId },
+    });
+  }
 
   await audit({
     action: "pipeline.config_updated",

@@ -35,6 +35,17 @@ export interface TriggerValue {
     ignore_self: boolean;
     keyword_regex: string | null;
     business_hours: BusinessHoursValue | null;
+    /**
+     * PÚBLICO do agente (#3722). `include_` = só atende quem cumpre;
+     * `exclude_` = não atende quem cumpre, e a exclusão vence. Opcionais na
+     * INTERFACE porque draft salvo antes desta entrega não tem as chaves — a
+     * tela lê com `?? []` e quem grava é o Zod (`lib/ai/agents/validation.ts`),
+     * que preenche as quatro.
+     */
+    include_tags?: string[];
+    exclude_tags?: string[];
+    include_pipeline_ids?: string[];
+    exclude_pipeline_ids?: string[];
   };
   concurrency: "one_per_conversation" | "one_per_contact";
 }
@@ -44,6 +55,126 @@ interface Props {
   onChange: (v: TriggerValue) => void;
   disabled?: boolean;
   organizationTimezone?: string;
+  /**
+   * Os funis da organização, para o público escolher por FUNIL. Vem por prop
+   * pelo mesmo motivo da marcação de escopo (já é server component na página):
+   * lista vazia no primeiro render diria "nenhum funil" por engano.
+   */
+  funis?: readonly { id: string; name: string }[];
+}
+
+/** Etiquetas digitadas como lista: separa por vírgula, tira vazio e repetida. */
+function listaDeEtiquetas(texto: string): string[] {
+  const vistas = new Set<string>();
+  const saida: string[] = [];
+  for (const crua of texto.split(",")) {
+    const nome = crua.trim();
+    if (nome === "") continue;
+    const chave = nome.toLowerCase();
+    if (vistas.has(chave)) continue;
+    vistas.add(chave);
+    saida.push(nome);
+  }
+  return saida;
+}
+
+/**
+ * Campo de etiquetas separadas por vírgula. O TEXTO digitado mora aqui, e a
+ * lista sai para o pai a cada tecla: se o campo exibisse a lista já limpa, a
+ * vírgula e o espaço do fim sumiriam no meio da digitação e "cliente ativo,
+ * contrato" viraria "clienteativocontrato".
+ */
+function CampoDeEtiquetas({
+  id,
+  valor,
+  onChange,
+  placeholder,
+  disabled,
+}: {
+  id: string;
+  valor: readonly string[];
+  onChange: (lista: string[]) => void;
+  placeholder: string;
+  disabled?: boolean;
+}) {
+  const [texto, setTexto] = React.useState(() => valor.join(", "));
+  // O pai pode trocar a lista por fora (o "Descartar alterações" volta ao
+  // salvo): se o texto já não descreve `valor`, a tela mostra `valor`, senão
+  // ela exibiria o digitado enquanto o salvar grava outra coisa.
+  const exibido =
+    JSON.stringify(listaDeEtiquetas(texto)) === JSON.stringify(valor)
+      ? texto
+      : valor.join(", ");
+  return (
+    <Input
+      id={id}
+      value={exibido}
+      onChange={(e) => {
+        setTexto(e.target.value);
+        onChange(listaDeEtiquetas(e.target.value));
+      }}
+      placeholder={placeholder}
+      disabled={disabled}
+      spellCheck={false}
+    />
+  );
+}
+
+/**
+ * Lista de funis com caixa de seleção — o "só estes" / "não estes" do público
+ * (#3722). Sem `t()` aqui de propósito: os rótulos chegam já traduzidos de quem
+ * chama, e o nome do funil é DADO do operador (não se traduz).
+ */
+function ListaDeFunis({
+  id,
+  rotulo,
+  ajuda,
+  funis,
+  selecionados,
+  onChange,
+  disabled,
+}: {
+  id: string;
+  rotulo: string;
+  ajuda: string;
+  funis?: readonly { id: string; name: string }[];
+  selecionados: readonly string[];
+  onChange: (ids: string[]) => void;
+  disabled?: boolean;
+}) {
+  if (!funis || funis.length === 0) return null;
+  const marcados = new Set(selecionados);
+  return (
+    <div className="space-y-1" id={id}>
+      <Label>{rotulo}</Label>
+      <div className="flex flex-wrap gap-2">
+        {funis.map((f) => {
+          const marcado = marcados.has(f.id);
+          return (
+            <label
+              key={f.id}
+              className="flex cursor-pointer items-center gap-2 rounded-md border border-border/60 px-2 py-1 text-xs"
+            >
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 accent-primary"
+                checked={marcado}
+                disabled={disabled}
+                aria-label={f.name}
+                onChange={() =>
+                  onChange(
+                    marcado ? selecionados.filter((x) => x !== f.id) : [...selecionados, f.id],
+                  )
+                }
+              />
+              {f.name}
+            </label>
+          );
+        })}
+      </div>
+      <p className="text-xs text-muted-foreground">{ajuda}</p>
+    </div>
+  );
 }
 
 const WEEKDAYS = [
@@ -56,7 +187,7 @@ const WEEKDAYS = [
   { id: 6, label: "Sáb" },
 ];
 
-export function TriggerEditor({ value, onChange, disabled, organizationTimezone }: Props) {
+export function TriggerEditor({ value, onChange, disabled, organizationTimezone, funis }: Props) {
   const t = useT();
   const defaultTimezone = organizationTimezone ?? FUSO_PADRAO;
 
@@ -162,6 +293,69 @@ export function TriggerEditor({ value, onChange, disabled, organizationTimezone 
         <p className="text-xs text-muted-foreground">
           {t(
             "Deixe em branco para o agente responder a tudo. Se preencher, ele só entra quando a mensagem contiver uma dessas palavras — separe por barra vertical (|). Aceita expressão regular, para quem já conhece.",
+          )}
+        </p>
+      </div>
+
+      {/* PÚBLICO DO AGENTE (#3722) — quem este agente atende, no MESMO número
+          em que outro atende o resto. Ao lado do filtro de palavra-chave
+          porque é a mesma família: uma régua de ENTRADA. A diferença é que ela
+          olha o CONTATO (etiquetas e funis dos negócios abertos), não o texto
+          da mensagem — é o que permite um agente de vendas e um de clientes
+          dividirem o número. */}
+      <div className="space-y-3 rounded-md border border-border/60 p-3">
+        <div>
+          <Label>{t("Público do agente")}</Label>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Em branco, ele atende todo mundo. Preenchido, ele só atende quem cumpre TODOS os critérios — e quem tem um item de \"não atender\" fica de fora mesmo que cumpra os de \"atender\".",
+            )}
+          </p>
+        </div>
+
+        <div className="space-y-1">
+          <Label htmlFor="include_tags">{t("Atender só quem tem estas etiquetas")}</Label>
+          <CampoDeEtiquetas
+            id="include_tags"
+            valor={value.filters.include_tags ?? []}
+            onChange={(lista) => patchFilters({ include_tags: lista })}
+            placeholder={t("Ex.: cliente ativo, contrato")}
+            disabled={disabled}
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="exclude_tags">{t("Não atender quem tem estas etiquetas")}</Label>
+          <CampoDeEtiquetas
+            id="exclude_tags"
+            valor={value.filters.exclude_tags ?? []}
+            onChange={(lista) => patchFilters({ exclude_tags: lista })}
+            placeholder={t("Ex.: cliente ativo, contrato")}
+            disabled={disabled}
+          />
+        </div>
+
+        <ListaDeFunis
+          id="include_pipeline_ids"
+          rotulo={t("Atender só quem está nestes funis")}
+          ajuda={t("Estar no funil é ter um negócio ABERTO nele. Quem ainda não tem card não entra em \"só estes funis\".")}
+          funis={funis}
+          selecionados={value.filters.include_pipeline_ids ?? []}
+          onChange={(ids) => patchFilters({ include_pipeline_ids: ids })}
+          disabled={disabled}
+        />
+        <ListaDeFunis
+          id="exclude_pipeline_ids"
+          rotulo={t("Não atender quem está nestes funis")}
+          ajuda={t("Estar no funil é ter um negócio ABERTO nele. Quem ainda não tem card NÃO é barrado por esta lista.")}
+          funis={funis}
+          selecionados={value.filters.exclude_pipeline_ids ?? []}
+          onChange={(ids) => patchFilters({ exclude_pipeline_ids: ids })}
+          disabled={disabled}
+        />
+
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Com dois agentes neste número, atende o primeiro na ordem de prioridade que aceita o contato. Se nenhum aceitar, o sistema não responde: a mensagem fica na caixa de entrada para uma pessoa.",
           )}
         </p>
       </div>

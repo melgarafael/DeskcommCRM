@@ -59,6 +59,7 @@ import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
 import { ComandosDoCelular } from "./ComandosDoCelular";
 import { ServidorExternoNoAtendimento } from "./ServidorExternoNoAtendimento";
+import { ServidoresMcpDoAgente } from "./ServidoresMcpDoAgente";
 import {
   saveAgentDraftAction,
   publishAgentAction,
@@ -126,6 +127,11 @@ interface BaseProps {
   routerMembership?: { routerId: string; routerName: string; channelSessionId: string; channelStatus: string | null } | null;
   readOnly?: boolean;
   organizationTimezone?: string;
+  /**
+   * O módulo opcional `mcp_por_agente` (doc 252) está ligado nesta instalação.
+   * Ausente = desligado (falha fechada): a seção Servidores MCP não aparece.
+   */
+  mcpPorAgente?: boolean;
 }
 
 interface EditProps extends BaseProps {
@@ -200,7 +206,10 @@ interface FormState {
   split_max_chars: number;
   /** Janela de rajada (ms) do agente. `null` = usa a env da instalação. */
   inbound_debounce_ms: number | null;
+  reply_min_interval_ms: number | null;
   followup: FollowupValue;
+  voz_enabled: boolean;
+  voz_quando: "nunca" | "espelhar" | "sempre";
   // Papel OPERADOR (spec 16 §3.2) — o que mexe no sistema depois da conversa.
   operator_enabled: boolean;
   /** "" = herda o modelo do Conversador (vira null no payload). */
@@ -310,6 +319,7 @@ export function buildState(args: {
     split_messages: version?.split_messages ?? false,
     split_max_chars: version?.split_max_chars ?? 600,
     inbound_debounce_ms: version?.inbound_debounce_ms ?? null,
+    reply_min_interval_ms: version?.reply_min_interval_ms ?? null,
     followup: version?.followup
       ? {
           ...DEFAULT_FOLLOWUP,
@@ -317,6 +327,8 @@ export function buildState(args: {
           callback_enabled: callbacksHabilitados(version.followup),
         }
       : DEFAULT_FOLLOWUP,
+    voz_enabled: version?.voz_enabled ?? false,
+    voz_quando: version?.voz_quando ?? "espelhar",
     operator_enabled: version?.operator_enabled ?? false,
     // O form usa "" onde o banco usa null — Select controlado não aceita null.
     // A conversão de volta acontece em `toVersionPayload`, num ponto só.
@@ -375,7 +387,10 @@ function toVersionPayload(s: FormState) {
     split_messages: s.split_messages,
     split_max_chars: s.split_max_chars,
     inbound_debounce_ms: s.inbound_debounce_ms,
+    reply_min_interval_ms: s.reply_min_interval_ms,
     followup: s.followup,
+    voz_enabled: s.voz_enabled,
+    voz_quando: s.voz_quando,
     operator_enabled: s.operator_enabled,
     // "" (não escolheu) → null (herda o do Conversador). São o mesmo conceito em
     // camadas diferentes, e o mapeamento vive AQUI para não se espalhar.
@@ -383,6 +398,35 @@ function toVersionPayload(s: FormState) {
     operator_tool_ids: s.operator_tool_ids,
     pipeline_ids: s.pipeline_ids,
     knowledge_source_ids: s.knowledge_source_ids,
+  };
+}
+
+/**
+ * O que o payload da tela vira DEPOIS que o servidor o aceita.
+ *
+ * `mesmoRascunho` responde "salvar mudaria alguma coisa?" comparando os dois
+ * payloads — mas o servidor NÃO grava o payload cru: `versionShapeSchema` faz
+ * `.trim()` no prompt e completa o `trigger_config` com
+ * `include_tags`/`exclude_tags`/`include_pipeline_ids`/`exclude_pipeline_ids`
+ * (`.default([])`). Comparar o formulário com o que está no banco sem passar os
+ * dois pela MESMA régua acusava alteração para sempre, e Publicar ficava apagado
+ * com "Salve o rascunho antes de publicar" mesmo depois de salvar — o defeito da
+ * #3951, que só "sumia" ao recarregar a página porque aí o formulário passava a
+ * ser hidratado do que estava gravado, e os dois lados ficavam iguais por
+ * construção.
+ *
+ * `safeParse` e não `parse`: o formulário no meio da digitação é inválido de
+ * propósito (nome vazio, modelo ainda não escolhido), e derrubar o render por
+ * isso seria trocar um defeito por outro. Sem parse, compara-se o cru — que é o
+ * que a tela sempre fez.
+ */
+function payloadQueSeraGravado(s: FormState) {
+  const cru = { cadastro: toCadastroPayload(s), versao: toVersionPayload(s) };
+  const versao = versionCreateSchema.safeParse(cru.versao);
+  const cadastro = agentMcpPatchSchema.safeParse(cru.cadastro);
+  return {
+    cadastro: cadastro.success ? cadastro.data : cru.cadastro,
+    versao: versao.success ? versao.data : cru.versao,
   };
 }
 
@@ -429,10 +473,70 @@ export function AgentForm(props: Props) {
    * para sempre, e o botão "Publicar" cinza com "Salve o rascunho antes de
    * publicar" — medido numa instalação em produção, com o agente preso na versão
    * anterior até alguém publicar por fora da tela.
+   *
+   * ⚠️ Os DOIS lados passam por `payloadQueSeraGravado`: comparar o formulário
+   * com o que está gravado sem a mesma normalização é o que mantinha o botão
+   * apagado depois de salvar (#3951).
    */
+  const referenciaDoServidor = React.useMemo(
+    () => payloadQueSeraGravado(baseline),
+    [baseline],
+  );
+
+  /**
+   * O rascunho que ESTA sessão acabou de gravar.
+   *
+   * `props.draft` é uma prop do server component: ela só muda quando a página é
+   * buscada de novo. Logo depois do salvamento — e ANTES de o refresh chegar —
+   * a tela não tinha rascunho nenhum para publicar, e o botão ficava apagado com
+   * "Sem rascunho para publicar" mesmo com a versão já gravada no banco. A ação
+   * devolve `version_id`/`version_number`, então a tela não precisa esperar: ela
+   * sabe o que acabou de salvar.
+   *
+   * Este estado só é preenchido com `res.ok` — falha no salvamento não pode
+   * acender Publicar nem limpar a marca de alteração pendente.
+   */
+  const [salvo, setSalvo] = React.useState<{
+    agentId: string;
+    versionId: string;
+    versionNumber: number;
+    formulario: FormState;
+    payload: ReturnType<typeof payloadQueSeraGravado>;
+  } | null>(null);
+
+  const idDesteAgente = props.mode === "edit" ? props.agent.id : "";
+  /**
+   * Vale enquanto a prop do servidor fala do MESMO rascunho que acabamos de
+   * gravar (ou de nenhum, antes do refresh chegar). Um rascunho com outro id é
+   * de outra sessão/edição, e aí quem manda é o servidor.
+   *
+   * Sem rascunho na prop, o recém-salvo só vale enquanto NÃO for ele o publicado:
+   * o refresh depois do publish também chega com `draft=null`, e o formulário não
+   * é remontado — sem essa guarda o botão seguia aceso oferecendo "Publicar vN"
+   * para a versão que acabou de ser publicada.
+   *
+   * O rascunho que já existia é PATCHado no lugar (`saveAgentDraftAction`), então
+   * `props.draft.id` continua sendo o mesmo depois de salvar — comparar contra a
+   * prop velha acusaria alteração pendente sobre o conteúdo de antes.
+   */
+  const salvoDaqui =
+    salvo &&
+    salvo.agentId === idDesteAgente &&
+    (props.mode !== "edit" ||
+      (props.draft ? props.draft.id === salvo.versionId : props.published?.id !== salvo.versionId))
+      ? salvo
+      : null;
+
+  /** O rascunho que o botão Publicar publica: o do servidor ou o recém-salvo. */
+  const rascunhoParaPublicar =
+    (props.mode === "edit" ? props.draft : null) ??
+    (salvoDaqui
+      ? { id: salvoDaqui.versionId, version_number: salvoDaqui.versionNumber }
+      : null);
+
   const dirty = !mesmoRascunho(
-    { cadastro: toCadastroPayload(form), versao: toVersionPayload(form) },
-    { cadastro: toCadastroPayload(baseline), versao: toVersionPayload(baseline) },
+    payloadQueSeraGravado(form),
+    salvoDaqui?.payload ?? referenciaDoServidor,
   );
 
   function patch(p: Partial<FormState>) {
@@ -527,7 +631,7 @@ export function AgentForm(props: Props) {
   const publishBlockReason = React.useMemo(() => {
     if (!isEdit) return t("Salve o agente antes de publicar.");
     const motivo = bloqueioDePublicacao({
-      temRascunhoVigente: !!props.draft,
+      temRascunhoVigente: !!rascunhoParaPublicar,
       formularioValido: isValid,
       alteracoesNaoSalvas: dirty,
       provedor: form.provider,
@@ -564,7 +668,7 @@ export function AgentForm(props: Props) {
       case "numero_desconectado":
         return `${t("Número WhatsApp não está conectado (status:")} ${motivo.estado}).`;
     }
-  }, [isEdit, props, isValid, dirty, credSt, form.provider, form.credential_id, channelSession, t]);
+  }, [isEdit, props, isValid, dirty, credSt, form.provider, form.credential_id, channelSession, rascunhoParaPublicar, t]);
 
   // ---------------------------------------------------------------------
   // Handlers
@@ -598,6 +702,16 @@ export function AgentForm(props: Props) {
           toast.error(res.message ?? `${t("Erro")}: ${res.error}`);
           return;
         }
+        // A tela passa a saber, sem esperar o refresh, que o rascunho está
+        // salvo: Publicar acende e Salvar apaga agora (#3951). Só chega aqui com
+        // `res.ok` — falha não acende nada.
+        setSalvo({
+          agentId: props.agent.id,
+          versionId: res.data!.version_id,
+          versionNumber: res.data!.version_number,
+          formulario: form,
+          payload: payloadQueSeraGravado(form),
+        });
         toast.success(`${t("Rascunho")} v${res.data!.version_number} ${t("salvo.")}`);
         router.refresh();
       } else {
@@ -626,15 +740,16 @@ export function AgentForm(props: Props) {
   }
 
   async function handlePublish() {
-    if (!isEdit || !props.draft) return;
+    if (!isEdit || !rascunhoParaPublicar) return;
+    const alvo = rascunhoParaPublicar;
     setPublishing(true);
     try {
-      const res = await publishAgentAction(props.agent.id, props.draft.id);
+      const res = await publishAgentAction(props.agent.id, alvo.id);
       if (!res.ok) {
         toast.error(`${t("Falha ao publicar:")} ${res.error}`);
         return;
       }
-      toast.success(`v${props.draft.version_number} ${t("publicada e ativa.")}`);
+      toast.success(`v${alvo.version_number} ${t("publicada e ativa.")}`);
       setConfirmOpen(false);
       router.refresh();
     } finally {
@@ -643,7 +758,10 @@ export function AgentForm(props: Props) {
   }
 
   function handleReset() {
-    setForm(baseline);
+    // "Descartar" volta para o que está SALVO — que, logo depois de um
+    // salvamento e antes do refresh, é o rascunho desta sessão e não a prop
+    // antiga do servidor.
+    setForm(salvoDaqui?.formulario ?? baseline);
   }
 
   const disabled = readOnly || saving || publishing;
@@ -732,8 +850,8 @@ export function AgentForm(props: Props) {
               >
                 {publishing
                   ? t("Publicando…")
-                  : props.draft
-                    ? `${t("Publicar v")}${props.draft.version_number}`
+                  : rascunhoParaPublicar
+                    ? `${t("Publicar v")}${rascunhoParaPublicar.version_number}`
                     : t("Publicar")}
               </Button>
             </span>
@@ -1141,6 +1259,42 @@ export function AgentForm(props: Props) {
                   )}
                 </p>
               </div>
+              <div className="col-span-2 space-y-1">
+                <Label htmlFor="reply_min_interval_ms">
+                  {t("Pausa entre uma resposta e a próxima (segundos)")}
+                </Label>
+                <Input
+                  id="reply_min_interval_ms"
+                  type="number"
+                  min={0}
+                  max={600}
+                  step={1}
+                  placeholder={t("Vazio = sem pausa")}
+                  value={
+                    form.reply_min_interval_ms === null
+                      ? ""
+                      : String(Math.round(form.reply_min_interval_ms / 1000))
+                  }
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    // Vazio = sem pausa (campo null). A UI fala em SEGUNDOS; o
+                    // banco e o worker falam em ms (conversão aqui, num ponto só).
+                    // Teto de 600s no campo espelha o da validação e do worker.
+                    patch({
+                      reply_min_interval_ms:
+                        raw === ""
+                          ? null
+                          : Math.round(Math.max(0, Math.min(600, Number(raw))) * 1000),
+                    });
+                  }}
+                  disabled={disabled}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "Depois que a IA responde uma conversa, ela só responde de novo depois desse tempo. O que o cliente escrever nesse meio-tempo é respondido junto. Vazio ou 0 = sem pausa (máximo 600 segundos).",
+                  )}
+                </p>
+              </div>
             </div>
           </Card>
         </div>
@@ -1240,6 +1394,48 @@ export function AgentForm(props: Props) {
             ) : null}
           </Card>
 
+          {/* Voz (plano de voz, Fase 7) */}
+          <Card className="space-y-3 p-4">
+            <h3 className="text-sm font-medium">{t("Responder falando")}</h3>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="voz_enabled"
+                checked={form.voz_enabled}
+                onCheckedChange={(v) => patch({ voz_enabled: v })}
+                disabled={disabled}
+              />
+              <Label htmlFor="voz_enabled">{t("Enviar nota de voz, não só texto")}</Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Precisa de uma credencial do ElevenLabs cadastrada e de uma voz escolhida em Agente de IA → Provedores. Sem os dois, o agente continua respondendo em texto — ligar aqui não quebra nada.",
+              )}
+            </p>
+            {form.voz_enabled ? (
+              <div className="space-y-1">
+                <Label htmlFor="voz_quando">{t("Quando falar")}</Label>
+                <Select
+                  value={form.voz_quando}
+                  onValueChange={(v) => patch({ voz_quando: v as FormState["voz_quando"] })}
+                  disabled={disabled}
+                >
+                  <SelectTrigger id="voz_quando">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="espelhar">
+                      {t("Só quando o cliente mandar áudio")}
+                    </SelectItem>
+                    <SelectItem value="sempre">{t("Sempre")}</SelectItem>
+                    <SelectItem value="nunca">
+                      {t("Nunca (desligado, sem apagar a configuração)")}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+          </Card>
+
           {/* Capacidades */}
           <Card className="space-y-2 p-4">
             <h3 className="text-sm font-medium">{t("O que o agente pode fazer")}</h3>
@@ -1274,6 +1470,7 @@ export function AgentForm(props: Props) {
               onChange={(v) => patch({ trigger_config: v })}
               disabled={disabled}
               organizationTimezone={props.organizationTimezone}
+              funis={props.funis}
             />
           </Card>
 
@@ -1456,6 +1653,20 @@ export function AgentForm(props: Props) {
             <ServidorExternoNoAtendimento
               agentId={props.agent.id}
               inicial={(props.agent.config ?? {}).mcp_externo_no_atendimento}
+              toolIds={form.tool_ids}
+              onChangeToolIds={(ids) => patch({ tool_ids: ids })}
+              disabled={disabled}
+            />
+          )}
+
+          {/* Servidores MCP DO AGENTE (migration 9095): N servidores, cada um
+              com o seu modo de autenticação — inclusive OAuth em que cada
+              cliente autoriza a própria conta. A escolha das ferramentas vai
+              para o `tool_ids` da versão, pelo mesmo salvar do formulário.
+              Módulo opcional desligado de fábrica (doc 252). */}
+          {isEdit && !readOnly && props.mcpPorAgente === true && (
+            <ServidoresMcpDoAgente
+              agentId={props.agent.id}
               toolIds={form.tool_ids}
               onChangeToolIds={(ids) => patch({ tool_ids: ids })}
               disabled={disabled}

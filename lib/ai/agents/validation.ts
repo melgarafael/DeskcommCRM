@@ -9,8 +9,10 @@
  */
 import { z } from "zod";
 import { ehToolIdRemoto } from "@/lib/mcp/servidor-externo/ids";
+import { ESCOLHAS_NO_ENVIO } from "@/lib/agenda/escolha-no-envio";
 import { VALID_TOOL_IDS } from "@/lib/mcp/tools/catalog";
 import { TETO_TOOLS_POR_AGENTE } from "@/lib/mcp/tools/selecao-por-pacote";
+import { TETO_DO_PUBLICO } from "@/lib/agent-engine/agent/publico-do-gatilho";
 import { IDS_DE_PROVEDOR } from "@/lib/ai/pontos/provedores";
 
 /**
@@ -46,8 +48,28 @@ const triggerConfigSchema = z
           .nullable()
           .optional()
           .default(null),
+        // PÚBLICO DO AGENTE (#3722). Quatro listas opcionais, no jsonb da
+        // versão — sem coluna nova, sem migration. Sem estas linhas o schema
+        // `.strict()` RECUSA o payload da tela (o campo chegaria como chave
+        // desconhecida) e o operador não conseguiria salvar o público.
+        // `include_` = só atende quem cumpre; `exclude_` = não atende quem
+        // cumpre, e a exclusão vence. A régua de decisão mora em
+        // `lib/agent-engine/agent/publico-do-gatilho.ts`.
+        include_tags: z.array(z.string().trim().min(1).max(60)).max(TETO_DO_PUBLICO).default([]),
+        exclude_tags: z.array(z.string().trim().min(1).max(60)).max(TETO_DO_PUBLICO).default([]),
+        include_pipeline_ids: z.array(UUID).max(TETO_DO_PUBLICO).default([]),
+        exclude_pipeline_ids: z.array(UUID).max(TETO_DO_PUBLICO).default([]),
       })
-      .default({ ignore_groups: true, ignore_self: true, keyword_regex: null, business_hours: null }),
+      .default({
+        ignore_groups: true,
+        ignore_self: true,
+        keyword_regex: null,
+        business_hours: null,
+        include_tags: [],
+        exclude_tags: [],
+        include_pipeline_ids: [],
+        exclude_pipeline_ids: [],
+      }),
     concurrency: z.enum(["one_per_conversation", "one_per_contact"]).default("one_per_conversation"),
   })
   .strict();
@@ -88,6 +110,17 @@ const followupConfigObjectSchema = z
     flow_pointer_ids: z.array(UUID).max(20).default([]),
     send_window: followupSendWindowSchema.nullable().optional().default(null),
     callback_enabled: z.boolean().optional(),
+    /**
+     * #3813 — "Quando o contato tiver horário marcado", por FLUXO de follow-up:
+     * `adiar` (padrão), `enviar` ou `nao_enviar` (pulo registrado com o motivo
+     * `compromisso_na_agenda`).
+     *
+     * Opcional de propósito: os agentes/versões já gravados não têm a chave, e
+     * ausente é o padrão — a MESMA tolerância de `send_window`. O schema é
+     * `.strict()`, então sem esta linha a tela receberia "campo desconhecido" e
+     * não conseguiria salvar o follow-up de quem usa a escolha.
+     */
+    quando_ha_compromisso: z.enum(ESCOLHAS_NO_ENVIO).optional(),
   })
   .strict();
 
@@ -195,11 +228,23 @@ const versionShapeSchema = z
      * ninguém travar o atendimento sem querer (#1856).
      */
     inbound_debounce_ms: z.number().int().min(0).max(60000).nullable().optional(),
+    /**
+     * Intervalo mínimo, em ms, entre uma resposta da IA e a próxima à MESMA
+     * conversa. `null`/ausente/0 = sem intervalo (comportamento de sempre).
+     * Teto de 10 min, para ninguém deixar o atendimento mudo sem querer.
+     */
+    reply_min_interval_ms: z.number().int().min(0).max(600000).nullable().optional(),
     followup: followupConfigSchema,
     // ── Papel OPERADOR (spec 16 §3.2) ───────────────────────────────────────
     // Todos com `.default(...)`, e é o que mantém retrocompatível: agent e
     // version que já existem, e qualquer payload que não conheça o papel,
     // seguem válidos e leem o papel como DESLIGADO.
+    // ── Voz (Fase 6b/7 do plano de voz) ─────────────────────────────────────
+    // Default FALSE/'espelhar' preserva toda versão existente — a mesma
+    // doutrina de `operator_enabled` logo abaixo: feature que gasta dinheiro
+    // não se liga por acidente.
+    voz_enabled: z.boolean().default(false),
+    voz_quando: z.enum(["nunca", "espelhar", "sempre"]).default("espelhar"),
     operator_enabled: z.boolean().default(false),
     // `.nullable()` e não opcional: null é o valor que SIGNIFICA "herda o modelo
     // do Conversador". Omitir seria indistinguível de "ainda não decidi".
@@ -278,6 +323,8 @@ export const versionPatchSchema = versionShapeSchema
     operator_tool_ids: versionShapeSchema.shape.operator_tool_ids.removeDefault(),
     pipeline_ids: versionShapeSchema.shape.pipeline_ids.removeDefault(),
     knowledge_source_ids: versionShapeSchema.shape.knowledge_source_ids.removeDefault(),
+    voz_enabled: versionShapeSchema.shape.voz_enabled.removeDefault(),
+    voz_quando: versionShapeSchema.shape.voz_quando.removeDefault(),
   })
   .partial();
 

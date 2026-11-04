@@ -17,6 +17,10 @@ const downloadMock = vi.fn();
 const llmCallsInsertMock = vi.fn();
 const factoryMock = vi.fn(() => "modelo-de-mentira");
 const transcribeDoSvcMock = vi.fn(async () => "transcrição de mentira");
+const transcribeMedindoDoSvcMock = vi.fn(async () => ({
+  texto: "transcrição de mentira", uso: null, custoCents: 0.0508,
+}));
+const atualizacoesDaMensagem = vi.fn();
 
 const dns = vi.hoisted(() => ({ resposta: [] as Array<{ address: string; family: number }> }));
 vi.mock("node:dns/promises", () => {
@@ -53,7 +57,15 @@ vi.mock("@/lib/supabase/admin", () => ({
           if (tabela === "llm_calls") llmCallsInsertMock(row);
           return { error: null };
         },
-        update: () => ({ eq: () => ({ eq: async () => ({ error: null }) }) }),
+        update: (patch: Record<string, unknown>) => {
+          if (tabela === "messages") atualizacoesDaMensagem(patch);
+          return credencial.limiteConhecido
+            ? { eq: () => ({ eq: () => ({ filter: async () => {
+                if (credencial.rejeitaUpdate) throw new Error("rejeição sintética de UPDATE");
+                return { error: credencial.falhaUpdate ? { message: "falha sintética de UPDATE" } : null };
+              } }) }) }
+            : { eq: () => ({ eq: async () => ({ error: null }) }) };
+        },
       };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const chain: any = new Proxy(terminais, {
@@ -74,18 +86,22 @@ const credencial = vi.hoisted(() => ({
   /**
    * `null` = a conversa é a Anthropic de sempre e há chave OpenAI (degrau 2).
    * Preenchido = a conversa é este modelo Google, que declara `audio`, e não há
-   * chave OpenAI nenhuma — a escada desce ao degrau 3.
+   * chave OpenAI nenhuma — a escada desce ao degrau 4.
    */
   conversaGoogle: null as string | null,
+  conversaOpenRouter: false,
+  limiteConhecido: false,
+  falhaUpdate: false,
+  rejeitaUpdate: false,
 }));
 vi.mock("@/lib/agent-engine/edge/llm/credentials", () => ({
   resolveOrgLlmConfig: vi.fn(async (_db: unknown, _cfg: unknown, _org: string, override?: { provider?: string }) => {
-    if (credencial.conversaGoogle && override?.provider === "openai") throw new Error("sem credencial openai");
+    if ((credencial.conversaGoogle || credencial.conversaOpenRouter) && override?.provider === "openai") throw new Error("sem credencial openai");
     return {
-      provider: credencial.conversaGoogle ? "google" : "anthropic",
+      provider: credencial.conversaOpenRouter ? "openrouter" : credencial.conversaGoogle ? "google" : "anthropic",
       apiKey: "chave-do-binding",
       origemDaChave: credencial.origemDaChave,
-      defaultModel: credencial.conversaGoogle ?? "claude-haiku-4-5",
+      defaultModel: credencial.conversaOpenRouter ? "mistralai/modelo-controle" : credencial.conversaGoogle ?? "claude-haiku-4-5",
       params: {},
       enabledModels: [],
       orcamento: { modo: "off", tetoCents: 0, efetivoEm: null, limiarPct: 80 },
@@ -101,6 +117,11 @@ vi.mock("@/lib/agent-engine/edge/llm/providers", () => ({
     openrouter: factoryMock,
     google: factoryMock,
   }),
+  // A escada lê estes dois para o degrau OpenRouter (#3382); o mock tem de
+  // exportá-los, senão o import do worker morre antes de qualquer caso.
+  OPENROUTER_ENDPOINT: "https://openrouter.ai/api/v1",
+  cabecalhosDeAtribuicaoOpenRouter: () => undefined,
+  fetchDoProvedor: () => globalThis.fetch,
 }));
 
 vi.mock("@/lib/ai/pontos/capacidade-em-vigor", () => ({
@@ -120,7 +141,10 @@ vi.mock("ai", () => ({
 
 vi.mock("@/lib/messaging/media/transcription", async (importOriginal) => ({
   ...(await importOriginal<typeof ModuloDeTranscricao>()),
-  apiTranscriptionProvider: () => ({ transcribe: transcribeDoSvcMock }),
+  apiTranscriptionProvider: () => ({
+    transcribe: transcribeDoSvcMock,
+    ...(credencial.conversaOpenRouter ? { transcribeMedindo: transcribeMedindoDoSvcMock } : {}),
+  }),
 }));
 
 const transcricaoDoEnv = vi.hoisted(() => ({ apiKey: "", baseUrl: "" }));
@@ -147,6 +171,7 @@ import { esquecerDestinosInternos } from "@/lib/automation/destinos-internos-aut
 import { PONTO_TRANSCRICAO_DE_AUDIO, PONTO_VISAO_DE_IMAGEM } from "@/lib/ai/pontos/registro";
 import { deriveMediaText, type DeriveDeps } from "@/lib/messaging/media/derive";
 import type { Env } from "@/lib/env";
+import { TranscriptionTooLargeError } from "@/lib/messaging/media/transcription";
 
 function eventRow() {
   return {
@@ -178,6 +203,10 @@ beforeEach(() => {
   dns.resposta = [{ address: "93.184.216.34", family: 4 }];
   credencial.origemDaChave = "credencial_da_organizacao";
   credencial.conversaGoogle = null;
+  credencial.conversaOpenRouter = false;
+  credencial.limiteConhecido = false;
+  credencial.falhaUpdate = false;
+  credencial.rejeitaUpdate = false;
   bindingDaVez = BINDING;
   transcricaoDoEnv.apiKey = "";
   transcricaoDoEnv.baseUrl = "";
@@ -264,7 +293,65 @@ describe("worker de mídia: chamada paga grava em llm_calls", () => {
     expect(llmCallsInsertMock.mock.calls[0]![0]).toMatchObject({ origem_da_escolha: "padrao_openai_compativel" });
   });
 
-  it("transcrição pelo modelo da organização (degrau 3) grava tokens e o custo da tabela de preços", async () => {
+  it("persiste o custo medido pelo serviço OpenRouter sem estimar preço por tokens", async () => {
+    comAudio();
+    credencial.conversaOpenRouter = true;
+    bindingDaVez = null;
+
+    await deriveMessageMedia(eventRow());
+    await depsDaChamada().transcriber.transcribe(Buffer.from("controle"), "audio/ogg");
+
+    expect(transcribeMedindoDoSvcMock).toHaveBeenCalledTimes(1);
+    expect(llmCallsInsertMock).toHaveBeenCalledTimes(1);
+    expect(llmCallsInsertMock.mock.calls[0]![0]).toMatchObject({
+      organization_id: "org1",
+      provider: "openrouter",
+      origem_da_escolha: "padrao_openrouter",
+      input_tokens: 0,
+      output_tokens: 0,
+      cost_cents: 0.0508,
+    });
+  });
+
+  it("o limite conhecido termina em failed já na primeira tentativa, sem chamada de custo", async () => {
+    comAudio();
+    credencial.conversaOpenRouter = true;
+    credencial.limiteConhecido = true;
+    bindingDaVez = null;
+    // O tamanho/zero fetch são medidos no contrato do provider. Aqui o dublê
+    // devolve a recusa tipada para medir o tratamento pelo worker real.
+    transcribeMedindoDoSvcMock.mockRejectedValueOnce(new TranscriptionTooLargeError(25_000_000));
+    vi.mocked(deriveMediaText).mockImplementationOnce(async (_tipo, audio, mime, deps) =>
+      deps.transcriber.transcribe(audio, mime));
+
+    const resultado = await deriveMessageMedia(eventRow());
+
+    expect(resultado).toMatchObject({ status: "skipped", detail: "transcription_audio_too_large" });
+    expect(atualizacoesDaMensagem).toHaveBeenCalledWith(expect.objectContaining({
+      media_derived_status: "failed",
+      metadata: expect.objectContaining({ media_derived_motivo: expect.stringContaining("25 MB") }),
+    }));
+    expect(llmCallsInsertMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["erro", "rejeicao"])("não declara o limite terminado quando o UPDATE de failed devolve %s", async (modo) => {
+    comAudio();
+    credencial.conversaOpenRouter = true;
+    credencial.limiteConhecido = true;
+    credencial.falhaUpdate = true;
+    credencial.rejeitaUpdate = modo === "rejeicao";
+    bindingDaVez = null;
+    transcribeMedindoDoSvcMock.mockRejectedValueOnce(new TranscriptionTooLargeError(25_000_000));
+    vi.mocked(deriveMediaText).mockImplementationOnce(async (_tipo, audio, mime, deps) =>
+      deps.transcriber.transcribe(audio, mime));
+
+    const resultado = await deriveMessageMedia(eventRow());
+
+    expect(resultado.status).toBe("error");
+    expect(llmCallsInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("transcrição pelo modelo da organização (degrau 4) grava tokens e o custo da tabela de preços", async () => {
     comAudio();
     credencial.conversaGoogle = "gemini-2.5-flash";
     bindingDaVez = null;
@@ -291,7 +378,7 @@ describe("worker de mídia: chamada paga grava em llm_calls", () => {
     expect(linha.cost_cents).toBeCloseTo(((1200 * 0.3 + 40 * 2.5) / 1_000_000) * 100, 10);
   });
 
-  it("degrau 3 com modelo fora da tabela de preços grava os tokens e custo null — nunca 0", async () => {
+  it("degrau 4 com modelo fora da tabela de preços grava os tokens e custo null — nunca 0", async () => {
     comAudio();
     credencial.conversaGoogle = "gemini-modelo-que-ninguem-precificou";
     bindingDaVez = null;

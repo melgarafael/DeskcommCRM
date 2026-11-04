@@ -43,6 +43,17 @@ export interface ContactSnapshot {
    * Brasil o arquivo fica guardado sem ser enviado, e o PDF não lê este campo.
    */
   address_book_name: string | null;
+  /**
+   * Endereço da pessoa física (issue #3494). A anonimização o apaga
+   * (`trg_contato_anonimizado_esquece_o_endereco`), então o titular o recebe.
+   */
+  zip_code: string | null;
+  street: string | null;
+  number: string | null;
+  complement: string | null;
+  district: string | null;
+  city: string | null;
+  state: string | null;
   email: string | null;
   phone_number: string | null;
   cpf_present: boolean;
@@ -184,6 +195,22 @@ export interface LeadFieldProposalRow {
  * compromissos e a próxima ação são texto que o modelo escreveu SOBRE a pessoa,
  * e o que se apaga a pedido do titular é o que se entrega a pedido dele.
  */
+/**
+ * Os acessos que o titular deu a servidores MCP externos (OAuth por contato,
+ * migration 9095): os pedidos de autorização (apagados na anonimização) e as
+ * credenciais. Entra o QUE ele autorizou, a quem e quando — nunca o token, o
+ * `code_verifier` nem o `state`, que são segredo e não dado dele.
+ */
+export interface AcessoMcpRow {
+  servidor_id: string;
+  escopos: string[];
+  criado_em: string | null;
+  expira_em?: string | null;
+  usado_em?: string | null;
+  ultimo_uso_em?: string | null;
+  revogado_em?: string | null;
+}
+
 export interface CheckpointRow {
   id: string;
   rolling_summary: string;
@@ -718,6 +745,9 @@ export interface ExportPayload {
   orders: OrderRow[];
   activities: ActivityRow[];
   checkpoints: CheckpointRow[];
+  /** Opcionais: payload gerado antes da 9095 não os tem. */
+  mcp_pedidos_de_acesso?: AcessoMcpRow[];
+  mcp_acessos?: AcessoMcpRow[];
   appointments: AppointmentRow[];
   sales: SaleRow[];
   proposals: ProposalRow[];
@@ -1155,7 +1185,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     const { data, error } = await admin
       .from("contacts")
       .select(
-        "id, name, display_name, address_book_name, email, phone_number, wa_lid, cpf_encrypted, birthdate, is_blocked, is_anonymized, consent, tags, source, source_metadata, custom_fields, created_at, last_activity_at, first_service_at",
+        "id, name, display_name, address_book_name, zip_code, street, number, complement, district, city, state, email, phone_number, wa_lid, cpf_encrypted, birthdate, is_blocked, is_anonymized, consent, tags, source, source_metadata, custom_fields, created_at, last_activity_at, first_service_at",
       )
       .eq("organization_id", organizationId)
       .eq("id", contactId)
@@ -1210,6 +1240,13 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
         name: data.name ?? null,
         display_name: data.display_name ?? null,
         address_book_name: data.address_book_name ?? null,
+        zip_code: data.zip_code ?? null,
+        street: data.street ?? null,
+        number: data.number ?? null,
+        complement: data.complement ?? null,
+        district: data.district ?? null,
+        city: data.city ?? null,
+        state: data.state ?? null,
         email: data.email ?? null,
         phone_number: data.phone_number ?? null,
         cpf_present: Boolean(data.cpf_encrypted),
@@ -1598,6 +1635,51 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     } else if (data) {
       conferirTeto("checkpoints", data, 500);
       checkpoints = data;
+    }
+  }
+
+  // Acessos a servidores MCP externos (OAuth por contato, 9095). A anonimização
+  // APAGA os pedidos e revoga as credenciais: o que se apaga a pedido dele é o
+  // que se entrega a pedido dele. Só metadado — nenhuma coluna cifrada.
+  let mcpPedidos: AcessoMcpRow[] = [];
+  let mcpAcessos: AcessoMcpRow[] = [];
+  if (contactId) {
+    const pedidos = await admin
+      .from("mcp_oauth_pedidos")
+      .select("servidor_id, escopos, created_at, expira_em, usado_em")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (pedidos.error) {
+      logger.warn("[lgpd-export-worker] mcp_oauth_pedidos load failed", { request_id: requestId, error: pedidos.error.message });
+    } else if (pedidos.data) {
+      conferirTeto("mcp_pedidos_de_acesso", pedidos.data, 500);
+      mcpPedidos = (pedidos.data as Array<Record<string, unknown>>).map((l) => ({
+        servidor_id: String(l.servidor_id),
+        escopos: (l.escopos as string[]) ?? [],
+        criado_em: (l.created_at as string) ?? null,
+        expira_em: (l.expira_em as string) ?? null,
+        usado_em: (l.usado_em as string) ?? null,
+      }));
+    }
+    const acessos = await admin
+      .from("contato_mcp_credenciais")
+      .select("servidor_id, escopos, criado_em, ultimo_uso_em, revogado_em")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .limit(500);
+    if (acessos.error) {
+      logger.warn("[lgpd-export-worker] contato_mcp_credenciais load failed", { request_id: requestId, error: acessos.error.message });
+    } else if (acessos.data) {
+      conferirTeto("mcp_acessos", acessos.data, 500);
+      mcpAcessos = (acessos.data as Array<Record<string, unknown>>).map((l) => ({
+        servidor_id: String(l.servidor_id),
+        escopos: (l.escopos as string[]) ?? [],
+        criado_em: (l.criado_em as string) ?? null,
+        ultimo_uso_em: (l.ultimo_uso_em as string) ?? null,
+        revogado_em: (l.revogado_em as string) ?? null,
+      }));
     }
   }
 
@@ -2457,6 +2539,8 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     orders,
     activities,
     checkpoints,
+    mcp_pedidos_de_acesso: mcpPedidos,
+    mcp_acessos: mcpAcessos,
     appointments,
     sales,
     proposals,
@@ -2654,6 +2738,8 @@ function emptyPayload(
     orders: [],
     activities: [],
     checkpoints: [],
+    mcp_pedidos_de_acesso: [],
+    mcp_acessos: [],
     appointments: [],
     sales: [],
     proposals: [],

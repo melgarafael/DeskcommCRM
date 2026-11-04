@@ -19,6 +19,7 @@
 import { revalidatePath } from "next/cache";
 
 import { audit } from "@/lib/audit";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { loadAuthUser } from "@/lib/auth/server";
 import { supportWriteError } from "@/lib/impersonate/support";
 import {
@@ -62,6 +63,8 @@ export async function salvarModulosDaLateral(
   const { error } = await supabase.auth.updateUser({
     data: { [CHAVE_DOS_MODULOS]: modulos },
   });
+  // #3696: o `getUser` vai para o cache curto; outra sessão da pessoa leria o metadata velho.
+  invalidarUsuario(authUser.id);
   if (error) {
     logger.error("[inbox-modulos] updateUser falhou", {
       user_id: authUser.id,

@@ -134,6 +134,18 @@ export async function reconcileSessions(
       }
     }
 
+    // ZERO LINHAS PARA ESCREVER NÃO É UMA ESCRITA (#3695). O `where` abaixo já
+    // traz `status is distinct from $2`, então o banco devolvia 0 linhas — mas a
+    // INSTRUÇÃO era emitida assim mesmo a cada tick de ~30 s (274 vezes em 2h19
+    // medidas na issue), com parse, plano e varredura para não mudar nada. A
+    // leitura acima já responde a mesma pergunta: `nossas` é EXATAMENTE o
+    // conjunto que o `where` alcança (mesmo `waha_session_name`, mesmo
+    // `archived_at is null`). O `is distinct from` continua no `where` como
+    // trava de corrida: outra instância pode ter mudado a linha entre o select
+    // e o update.
+
+    if (nossas.every((nossa) => nossa.status === nextStatus)) continue;
+
     const { rows } = await pool.query<{ id: string; status: string }>(
       `update channel_sessions
           set status = $2, updated_at = now()

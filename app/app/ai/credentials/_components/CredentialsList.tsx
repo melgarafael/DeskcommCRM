@@ -10,7 +10,13 @@ import {
   PROVEDORES_COM_CHAVE,
   type ProvedorComChave,
 } from "@/lib/ai/pontos/provedores";
-import { credentialStatus, useCredentialsList, type CredentialRow } from "@/hooks/ai/useCredentials";
+import { PROVEDORES_DE_SERVICO } from "@/lib/ai/pontos/provedores-de-servico";
+import {
+  credentialStatus,
+  useCredentialsList,
+  type CredentialRow,
+  type ServiceProvider,
+} from "@/hooks/ai/useCredentials";
 import { credencialEmUsoPeloJev } from "@/lib/ai/decisao/credencial";
 import type { OrigemDoJev } from "@/lib/ai/decisao/origem";
 import { avisoAoExcluirAChaveDoJev } from "@/lib/ai/decisao/textos";
@@ -37,11 +43,21 @@ interface Props {
 // Rótulo e ordem saem das listas — provedor novo aparece na tela sem que
 // alguém precise lembrar de acrescentá-lo em três lugares. A UNIÃO, porque a
 // chave do Jev (que só decide) também mora aqui.
-const PROVIDER_LABELS: Record<string, string> = Object.fromEntries(
-  PROVEDORES_COM_CHAVE.map((p) => [p.id, p.rotulo]),
-);
+//
+// `PROVEDORES_DE_SERVICO` entra na MESMA ordem — a credencial do ElevenLabs é
+// uma linha igual às outras aqui; sem isto o `grouped[c.provider]?.push(c)`
+// abaixo encontraria `undefined`, o `?.` engoliria o push, e a credencial de
+// voz desapareceria da tela calada — a MESMA classe de bug que este arquivo já
+// teve com a OpenRouter, só que no eixo novo.
+const PROVIDER_LABELS: Record<string, string> = Object.fromEntries([
+  ...PROVEDORES_COM_CHAVE.map((p) => [p.id, p.rotulo]),
+  ...PROVEDORES_DE_SERVICO.map((p) => [p.id, p.rotulo]),
+]);
 
-const PROVIDER_ORDER: ProvedorComChave[] = PROVEDORES_COM_CHAVE.map((p) => p.id);
+const PROVIDER_ORDER: (ProvedorComChave | ServiceProvider)[] = [
+  ...PROVEDORES_COM_CHAVE.map((p) => p.id),
+  ...PROVEDORES_DE_SERVICO.map((p) => p.id),
+];
 
 export function CredentialsList({
   initialData,
@@ -59,8 +75,8 @@ export function CredentialsList({
   // Construído a partir da lista única: escrito à mão, o dia em que um
   // provedor novo entra é o dia em que as credenciais dele somem da tela sem
   // ninguém ver (aconteceu com a OpenRouter).
-  const grouped: Partial<Record<ProvedorComChave, CredentialRow[]>> = Object.fromEntries(
-    PROVEDORES_COM_CHAVE.map((p) => [p.id, [] as CredentialRow[]]),
+  const grouped: Partial<Record<ProvedorComChave | ServiceProvider, CredentialRow[]>> = Object.fromEntries(
+    PROVIDER_ORDER.map((p) => [p, [] as CredentialRow[]]),
   );
   for (const c of credentials) {
     grouped[c.provider]?.push(c);

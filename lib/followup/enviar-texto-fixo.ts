@@ -2,6 +2,8 @@ import {sendWithLedger,supabaseSendLedger} from "@/lib/agent-engine/edge/crm/sen
 import { randomUUID } from "node:crypto";
 import { assertAgendaEffectSupabase } from "@/lib/agenda/efeito";
 import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
+import { AgendaPuladoError, MOTIVO_DO_PULO } from "@/lib/agenda/escolha-no-envio";
+import { escolhaDoFluxo } from "@/lib/agenda/escolha-no-envio-leitura";
 import { parseServiceBoundary, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -289,7 +291,28 @@ export async function enviarTextoFixoPendente(
       }
 
       const proactiveContext={organizationId:job.organization_id as string,contactId,enrollmentId,nodeId,jobId:job.id,jobClaim};
-      await assertAgendaEffectSupabase(admin,proactiveContext);
+      // #3813 — "Quando o contato tiver horário marcado" é escolha do FLUXO,
+      // lida da configuração publicada do follow-up (`ai_agent_versions.followup`,
+      // ao lado de `send_window`). Ausente = `adiar`, o comportamento de sempre.
+      const escolhaDaAgenda = await escolhaDoFluxo(admin, job.organization_id as string, enrollmentId);
+      try {
+        await assertAgendaEffectSupabase(admin, {...proactiveContext, escolhaNoEnvio: escolhaDaAgenda});
+      } catch (err) {
+        // Escolha `nao_enviar`: o pulo tem MOTIVO e volta para o enrollment como
+        // `skipped` — o mesmo canal dos outros pulos deste arquivo (mídia
+        // recusada), e não como falha que o dead-man leria como worker morto.
+        if (!(err instanceof AgendaPuladoError)) throw err;
+        logger.info("[followup] texto fixo pulado — contato com horário marcado", {
+          organization_id: job.organization_id,
+          conversation_id: conversationId,
+          enrollment_id: enrollmentId,
+          motivo: MOTIVO_DO_PULO,
+          appointment_id: err.protection.appointment_id,
+        });
+        await completeTurnForEnrollment(ponte, job.organization_id, enrollmentId, nodeId, { kind: "skipped", reason: MOTIVO_DO_PULO }, undefined, job.id, jobClaim);
+        await settle(job.organization_id, job.id, jobClaim.acquired_at, true, MOTIVO_DO_PULO);
+        continue;
+      }
       // #2734 — CANAL OFICIAL, JANELA FECHADA: a mídia não pode sair (mensagem
       // livre fora da janela é o 131047), e o texto NÃO sai sozinho no lugar dela —
       // o cliente receberia uma legenda de imagem nenhuma. Recusa explícita, com o

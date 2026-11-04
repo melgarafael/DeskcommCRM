@@ -46,6 +46,7 @@ import { devolverAtendimentoAoAgente } from "@/lib/escalacao/retomada";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 
 export const dynamic = "force-dynamic";
 
@@ -208,12 +209,35 @@ export async function devolverHandoffsVencidos(
   return { organizacoes: prazoPorOrg.size, examinadas: conversas.length, devolvidas, falhas };
 }
 
+/**
+ * O QUE RODA DEPOIS DO PORTÃO DO PISO OCIOSO (#3773), na ordem do arquivo.
+ *
+ * O portão abaixo é saída antecipada da ROTA INTEIRA: em instalação ociosa a
+ * rota sai antes de tudo isto. `tests/unit/cron-passa-pelo-portao.test.ts` lê o
+ * AST deste arquivo e reprova quando o que está de fato abaixo do portão diverge
+ * desta lista — passo novo que não roda na instalação parada não pode nascer
+ * sem alguém ver.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "let resultado",
+  "try",
+  "if (resultado.devolvidas > 0 || resultado.falhas > 0)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
+
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
   if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
+
+  // O PISO OCIOSO (#3731): Sem conversa em atendimento humano não há handoff para devolver.
+  // A saída vem antes de qualquer consulta da rodada, e o portão responde de um
+  // retrato em memória (`lib/cron/piso-ocioso.ts`): esta rota ia ao PostgREST a
+  // cada batida só para descobrir que a fila está vazia.
+  if (await recursoOcioso("devolucao_de_handoff")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   let resultado: DevolucaoResultado;
   try {

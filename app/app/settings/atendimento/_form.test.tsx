@@ -2,6 +2,10 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AtendimentoForm, type AtendimentoConfig } from "./_form";
+import {
+  PRAZO_MAX_MINUTOS,
+  PRAZO_MAX_MINUTOS_DEVOLUCAO,
+} from "@/lib/escalacao/devolucao-automatica";
 
 /**
  * A DEVOLUÇÃO AUTOMÁTICA TEM SUPERFÍCIE — e a superfície manda o que diz.
@@ -73,6 +77,45 @@ describe("Distribuição de atendimento — devolver ao agente sozinho", () => {
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
     expect(corpoDoPatch()).toMatchObject({ handoff_return_after_minutes: null });
+  });
+
+  /**
+   * PRAZO LIVRE (#3313, item 3): o teto de 24 h caiu para ESTE campo.
+   *
+   * O defeito era o campo RECUSAR (e o cron descartar em silêncio) o prazo de
+   * uma cotação com fornecedor: 5.000 minutos são três dias e meio, e a agência
+   * de viagens da issue precisava exatamente disso. O teto do silêncio depois de
+   * resposta pelo celular continua de 24 h — os dois campos deixaram de
+   * compartilhar a mesma constante.
+   *
+   * ─── SABOTAGEM ────────────────────────────────────────────────────────────
+   *   - voltar `max={PRAZO_MAX_MINUTOS}`: o primeiro caso acusa (o corpo salvo
+   *     sairia truncado pelo navegador, e o campo anunciaria 24 h).
+   */
+  it("aceita 5.000 minutos: salva 5.000 no corpo e o campo anuncia o teto de 30 dias", async () => {
+    render(<AtendimentoForm initial={inicial} />);
+    fireEvent.click(screen.getByTestId("devolver-sozinho"));
+
+    const minutos = screen.getByLabelText("Minutos sem resposta da equipe");
+    expect(minutos).toHaveAttribute("max", String(PRAZO_MAX_MINUTOS_DEVOLUCAO));
+    fireEvent.change(minutos, { target: { value: "5000" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    expect(corpoDoPatch()).toMatchObject({ handoff_return_after_minutes: 5000 });
+  });
+
+  it("empresa com 5.000 minutos salvos vê 5.000 no campo ao recarregar", () => {
+    render(<AtendimentoForm initial={{ ...inicial, handoff_return_after_minutes: 5000 }} />);
+    expect(screen.getByLabelText("Minutos sem resposta da equipe")).toHaveValue(5000);
+  });
+
+  it("controle do outro knob: o silêncio do celular continua com teto de 24 h", () => {
+    render(<AtendimentoForm initial={inicial} />);
+    expect(screen.getByLabelText("Minutos de silêncio da IA depois de uma resposta pelo celular")).toHaveAttribute(
+      "max",
+      String(PRAZO_MAX_MINUTOS),
+    );
   });
 });
 

@@ -271,7 +271,7 @@
         {
           "id": "p4",
           "titulo": "Corrigir as falhas",
-          "texto": "Desmarque \"Só conflitos\" para ver tudo de novo. \"CNPJ inválido.\" é um CNPJ digitado errado: os números não fecham. \"Telefone inválido.\" é um número curto demais ou sem DDD. Corrija essas linhas na planilha e envie um arquivo só com elas.",
+          "texto": "Desmarque \"Só conflitos\" para ver tudo de novo. \"CNPJ inválido: confira as 12 posições…\" é um CNPJ digitado errado: os dígitos verificadores não fecham. \"Telefone inválido.\" é um número curto demais ou sem DDD. Corrija essas linhas na planilha e envie um arquivo só com elas.",
           "dica": "Não mande a planilha inteira de novo: a empresa com o mesmo CNPJ é reaproveitada, mas cada pessoa é criada outra vez, e o telefone dela vira conflito, porque já tem dono.",
           "antes": [
             {
@@ -286,7 +286,7 @@
               "acao": "aguardar",
               "alvo": {
                 "role": "cell",
-                "nome": "CNPJ inválido.",
+                "nome": "CNPJ inválido: confira as 12 posições (dígitos ou letras) e os 2 dígitos verificadores.",
                 "exato": true,
                 "literal": true
               }
@@ -296,7 +296,7 @@
             {
               "alvo": {
                 "role": "cell",
-                "nome": "CNPJ inválido.",
+                "nome": "CNPJ inválido: confira as 12 posições (dígitos ou letras) e os 2 dígitos verificadores.",
                 "exato": true,
                 "literal": true
               },

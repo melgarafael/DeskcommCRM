@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FUSO_PADRAO, FUSOS_DO_ONBOARDING } from "@/lib/tempo/fusos";
+import { fusoDoNavegador } from "@/lib/tempo/fuso-do-navegador";
 
 
 export function WelcomeForm({
@@ -29,6 +30,19 @@ export function WelcomeForm({
   const [displayName, setDisplayName] = useState(defaultOrgName);
   const [oQueFaz, setOQueFaz] = useState("");
   const [timezone, setTimezone] = useState(FUSO_PADRAO);
+
+  // O fuso do NAVEGADOR (se for um oferecido) vem marcado no lugar de São
+  // Paulo: é o mesmo com que a empresa nasceu (`lib/auth/perfil-da-empresa-nova.ts`),
+  // e este passo regrava o fuso da empresa com o que estiver marcado. Num
+  // efeito, e não no estado inicial, porque o servidor não sabe o fuso do
+  // navegador — e a hidratação divergiria.
+  useEffect(() => {
+    const doNavegador = fusoDoNavegador();
+    // Uma leitura só, depois da hidratação, de um valor que só o navegador
+    // tem: não há prop nem estado anterior de onde derivar no render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (doNavegador && FUSOS_DO_ONBOARDING.some((f) => f.id === doNavegador)) setTimezone(doNavegador);
+  }, []);
   const [accepted, setAccepted] = useState(false);
   const [pending, startTransition] = useTransition();
 

@@ -3,6 +3,8 @@ import { assertApprovedReplyPg, type ApprovedReplyContext } from '@/lib/ai/repli
 import { assertMeetingDeliveryPg, type MeetingDeliveryContext } from '@/lib/agenda/meet-delivery';
 import type { JobClaim } from '../../queue/claim';
 import { assertAgendaEffectPg } from '@/lib/agenda/efeito';
+import { AgendaPuladoError } from '@/lib/agenda/escolha-no-envio';
+import { escolhaDoFluxoPg } from '@/lib/agenda/escolha-no-envio-leitura';
 import { AgendaDeferredError } from '@/lib/agenda/protecao-followup';
 import { StaleServiceBoundaryError } from '@/lib/atendimento/fronteira';
 import { requireCurrentAutonomousTurn, requireCurrentServiceBoundary } from '@/lib/atendimento/fronteira-server';
@@ -26,6 +28,9 @@ import { parseServiceBoundary } from '@/lib/atendimento/fronteira';
  *      rotaciona o id (tentativa lógica nova).
  */
 import { sendWithLedger, pgSendLedger, type SendOutcome } from './send-ledger';
+import { registrarCustoDeVoz, resolverCaminhoDeVoz, VozLedgerTerminalError } from './send-voice';
+import type { FormatoDaVoz } from '@/lib/ai/voz/formato';
+import { logger } from '@/lib/logger';
 export type { SendOutcome, SendLedgerStatus } from './send-ledger';
 
 import { ApiError } from '@/lib/api/types';
@@ -64,6 +69,37 @@ export interface SendMessageInput {
    */
   template?: { name: string; language: string; values: Record<string, string> };
   /**
+   * Presente = esta mensagem sai como NOTA DE VOZ (Fase 6a do plano de voz,
+   * `docs/superpowers/plans/2026-10-29-voz-elevenlabs.md`), não texto.
+   *
+   * `body` SEGUE sendo o texto FALADO (não o original escrito pelo agente) —
+   * é ele que entra no hash de idempotência do ledger, pela mesma razão do
+   * `template` acima: o retry precisa achar a MESMA linha, e a linha é
+   * identificada pelo que de fato foi sintetizado. `textoOriginal` é só para
+   * a thread não ficar cega (`media_derived_text` — plano §4.4); não participa
+   * de hash nem de guardrail.
+   *
+   * ⚠️ Ausente = comportamento desta função IDÊNTICO a antes desta Fase —
+   * nada aqui muda um envio de texto existente.
+   */
+  voz?: {
+    textoOriginal: string;
+    apiKey: string;
+    voiceId: string;
+    modelId?: string;
+    /** mp3 ou ogg/opus — o que o canal da conversa entrega como nota de voz (`lib/ai/voz/formato.ts`). */
+    formato?: FormatoDaVoz;
+    /**
+     * Grava os bytes no Storage e devolve o path — ver `send-voice.ts`.
+     *
+     * ⚠️ O path PRECISA começar com `${organizationId}/${conversationId}/`:
+     * `isMediaPathOwnedBy` (`lib/messaging/media/upload-validation.ts`) recusa
+     * qualquer outro prefixo com `invalid_media_path`, e `sendMessageHandler`
+     * aplica essa checagem para TODO `media_storage_path`, agente incluso.
+     */
+    upload: (audio: Buffer, mimeType: string) => Promise<string>;
+  };
+  /**
    * Presente = o envio sai como MÍDIA e o `body` é a LEGENDA.
    *
    * Duas procedências, um caminho só (o handler de envio): `storagePath` é a imagem
@@ -85,10 +121,14 @@ export interface SendMessageInput {
 export function corpoDoEnvio(
   input: SendMessageInput,
   idempotencyKey: string,
+  /** A nota de voz já sintetizada (`input.voz` resolvido); ausente = texto/template/mídia. */
+  voz?: { mediaStoragePath: string; mimeType: string },
 ): Parameters<typeof sendMessageHandler>[2] {
   return {
     conversation_id: input.conversationId,
-    ...(input.template
+    ...(voz
+      ? { type: 'audio' as const, media_storage_path: voz.mediaStoragePath, media_mime: voz.mimeType }
+      : input.template
       ? {
           type: 'template' as const,
           template_name: input.template.name,
@@ -150,6 +190,15 @@ export async function sendTurnMessage(
     locked_by: input.jobClaim?.worker_id ?? null,
     claim_acquired_at: input.jobClaim?.acquired_at,
   });
+  // #3813 — a escolha do FLUXO ("Quando o contato tiver horário marcado") vale
+  // também aqui: este é o único ponto de envio do worker `pg`, e sem a escolha
+  // no contexto a guarda abaixo leria o padrão (`adiar`) e desfaria o que o
+  // fluxo publicou — um fluxo em `enviar` seguiria sendo segurado, e um em
+  // `nao_enviar` seguiria adiando em vez de registrar o pulo.
+  const enrollmentDoJob =
+    typeof sourceJobs[0]?.payload.followup_enrollment_id === 'string'
+      ? sourceJobs[0].payload.followup_enrollment_id
+      : undefined;
   const proactiveContext =
     sourceJobs[0]?.kind === 'followup_turn' && input.leadId
       ? {
@@ -157,14 +206,14 @@ export async function sendTurnMessage(
           contactId: input.leadId,
           jobId: input.jobId,
           jobClaim: input.jobClaim,
-          enrollmentId:
-            typeof sourceJobs[0].payload.followup_enrollment_id === 'string'
-              ? sourceJobs[0].payload.followup_enrollment_id
-              : undefined,
+          enrollmentId: enrollmentDoJob,
           nodeId:
             typeof sourceJobs[0].payload.node_id === 'string'
               ? sourceJobs[0].payload.node_id
               : undefined,
+          ...(enrollmentDoJob
+            ? { escolhaNoEnvio: await escolhaDoFluxoPg(db, input.tenantId, enrollmentDoJob) }
+            : {}),
         }
       : undefined;
   if (proactiveContext) await assertAgendaEffectPg(db, proactiveContext);
@@ -190,6 +239,68 @@ export async function sendTurnMessage(
     if (policy.body !== input.body || policy.conversation_id !== input.conversationId)
       throw new StaleServiceBoundaryError();
   }
+  // ─── Voz (Fase 6a): resolve o ÁUDIO antes do ledger decidir o que fazer ───
+  //
+  // Precisa acontecer ANTES de `sendWithLedger` porque a síntese é cara e
+  // idempotente pela MESMA identidade (job_id, seq) que o ledger usa — ver o
+  // cabeçalho de `send-voice.ts`. `undefined` quando `input.voz` não existe:
+  // nenhum envio de texto passa por aqui, e o resto desta função continua
+  // byte a byte igual ao de antes desta Fase.
+  let vozResolvida: { mediaStoragePath: string; mimeType: string } | undefined;
+  if (input.voz) {
+    try {
+      const r = await resolverCaminhoDeVoz({
+        store: pgSendLedger(db),
+        identidade: { tenantId: input.tenantId, leadId: input.leadId, jobId: input.jobId, seq: input.seq },
+        textoFalado: input.body,
+        voz: {
+          apiKey: input.voz.apiKey,
+          voiceId: input.voz.voiceId,
+          modelId: input.voz.modelId,
+          ...(input.voz.formato ? { formato: input.voz.formato } : {}),
+        },
+        upload: input.voz.upload,
+      });
+      vozResolvida = { mediaStoragePath: r.mediaStoragePath, mimeType: r.mimeType };
+      // Custo entra no orçamento SÓ quando a síntese de fato ACONTECEU agora
+      // — um retry que reusou o path de uma tentativa anterior não pagou o
+      // ElevenLabs de novo, e registrar de novo contaria um gasto que não
+      // existiu, inflando o orçamento da organização por retry.
+      if (r.sintetizouAgora) {
+        registrarCustoDeVoz({
+          supabase: cfg.supabase,
+          organizationId: input.tenantId,
+          jobId: input.jobId,
+          caracteres: r.caracteres,
+          modelId: input.voz.modelId ?? 'eleven_multilingual_v2',
+        });
+      }
+    } catch (err) {
+      // A linha já tinha desfecho TERMINAL antes de chegarmos aqui — não há
+      // síntese a fazer nem envio a tentar; o resultado É esse desfecho.
+      if (err instanceof VozLedgerTerminalError) {
+        return err.kind === 'already_sent'
+          ? { kind: 'already_sent', idempotencyKey: err.key, crmMessageId: err.crmMessageId }
+          : { kind: 'blocked', idempotencyKey: err.key };
+      }
+      // ⚠️ ACHADO NA REVISÃO, ANTES DA FASE 7: isto já foi `throw err` — e
+      // derrubava o TURNO INTEIRO (o cliente não recebia resposta nenhuma)
+      // quando a falha era do ElevenLabs/Storage (rede, 503, bucket fora),
+      // não do ledger. Contradizia a própria doutrina deste módulo ("voz é
+      // um EXTRA sobre um caminho que já funciona" — ver o cabeçalho de
+      // `voz-do-turno.ts`), que só valia na resolução de CREDENCIAL, antes
+      // de chegar aqui. `vozResolvida` fica `undefined` e o fluxo abaixo
+      // segue como se `input.voz` nunca tivesse existido — `input.body` (o
+      // texto FALADO, já limpo) sai como mensagem de TEXTO normal. O
+      // cliente recebe uma resposta; só não é a voz que seria.
+      logger.warn('[send-message] síntese de voz falhou — respondendo em texto', {
+        organization_id: input.tenantId,
+        job_id: input.jobId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   return sendWithLedger(pgSendLedger(db), input, async (idempotencyKey, messageId) => {
     let message: Message;
     try {
@@ -205,11 +316,23 @@ export async function sendTurnMessage(
           approvedReply,
           agentOperation: input.agentOperation,
           internalMessageId: messageId,
+          // Nunca vem do corpo de uma requisição pública (ver o comentário de
+          // `aiVoiceDerivedText` em `HandlerCtx`) — só este seam a preenche.
+          ...(input.voz && vozResolvida ? { aiVoiceDerivedText: input.voz.textoOriginal } : {}),
         },
-        corpoDoEnvio(input, idempotencyKey),
+        corpoDoEnvio(input, idempotencyKey, vozResolvida),
       );
     } catch (err) {
-      if (err instanceof AgendaDeferredError || err instanceof StaleServiceBoundaryError) throw err;
+      // #3813 — o PULO por compromisso não é falha de transporte: quem chama
+      // registra `skipped` com o motivo. Convertê-lo em `CrmTransportError`
+      // ("handler indisponível") mentiria sobre a causa e mandaria o turno
+      // re-tentar um envio que o fluxo decidiu não fazer.
+      if (
+        err instanceof AgendaPuladoError ||
+        err instanceof AgendaDeferredError ||
+        err instanceof StaleServiceBoundaryError
+      )
+        throw err;
       if (err instanceof ApiError && err.status === 403) {
         throw err;
       }

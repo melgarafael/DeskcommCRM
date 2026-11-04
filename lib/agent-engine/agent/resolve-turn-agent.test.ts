@@ -27,6 +27,7 @@ function fakeConfig(agentId: string): PublishedAgentConfig {
     splitMessages: false,
     splitMaxChars: 900,
     inboundDebounceMs: null,
+    replyMinIntervalMs: null,
     multimodalInput: false,
     casesEnabled: false,
     toolIds: [],
@@ -40,6 +41,8 @@ function fakeConfig(agentId: string): PublishedAgentConfig {
   operatorModel: null,
   operatorToolIds: [], pipelineIds: [],
   agentCreatedBy: null,
+  vozEnabled: false,
+  vozQuando: 'espelhar',
   };
 }
 

@@ -31,6 +31,7 @@
  * confirmou). Quem as aplica é `decidirConviteDoSignup`.
  */
 import { safeNext } from "@/lib/auth/safe-next";
+import { pistasParaGuardar } from "@/lib/auth/perfil-da-empresa-nova";
 
 /** Onde o GoTrue devolve o navegador. Tem de estar em PUBLIC_PATHS. */
 export const CAMINHO_DO_RETORNO_DO_GOOGLE = "/auth/callback";
@@ -38,6 +39,13 @@ export const CAMINHO_DO_RETORNO_DO_GOOGLE = "/auth/callback";
 export interface DestinoDoRetornoDoGoogle {
   next?: string | null;
   convite?: string | null;
+  /**
+   * Idioma da tela e fuso do navegador de quem clicou — as pistas com que a
+   * empresa NASCE quando a volta é um primeiro acesso
+   * (`lib/auth/perfil-da-empresa-nova.ts`). Saneadas aqui e de novo na volta.
+   */
+  idioma?: string | null;
+  fuso?: string | null;
 }
 
 /**
@@ -65,6 +73,10 @@ export function urlDeRetornoDoGoogle(
 
   const convite = destino.convite?.trim();
   if (convite) url.searchParams.set("convite", convite);
+
+  const pistas = pistasParaGuardar({ idioma: destino.idioma, fuso: destino.fuso });
+  if (pistas.idioma) url.searchParams.set("idioma", pistas.idioma);
+  if (pistas.fuso) url.searchParams.set("fuso", pistas.fuso);
 
   return url.toString();
 }

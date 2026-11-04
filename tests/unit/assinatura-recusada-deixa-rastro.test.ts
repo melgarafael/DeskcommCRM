@@ -35,7 +35,10 @@ import path from "node:path";
  * e é isso que este arquivo trava.
  */
 
-const ROTA = path.resolve(__dirname, "../../app/api/v1/webhooks/channel/[token]/route.ts");
+// Desde o webhook único da instalação (migration 9093), o que vem depois de saber a sessão
+// mora em `_entrada-do-canal.ts`, chamado pelas DUAS entradas de canal — é ali
+// que esta cerca lê. Que as rotas delegam a ele, o último caso confere.
+const ROTA = path.resolve(__dirname, "../../app/api/v1/webhooks/_entrada-do-canal.ts");
 
 function fonte(): string {
   return fs.readFileSync(ROTA, "utf8");
@@ -98,7 +101,7 @@ describe("o outro lado: assinatura BOA não pode ser marcada como inválida", ()
     // existe — e é o erro que o comentário do arquivador já avisava.
     const s = fonte();
     const bloco = s.slice(
-      onde(s, "if (!await inboundPayloadBelongsToSession("),
+      onde(s, "await inboundPayloadBelongsToSession("),
       onde(s, 'reason: "evento_de_outra_conta" }, { requestId })'),
     );
     expect(bloco).toMatch(/validSignature:\s*true/);
@@ -118,4 +121,20 @@ describe("o outro lado: assinatura BOA não pode ser marcada como inválida", ()
       `${saidas} saídas depois do arquivo e só ${fechamentos} fechamentos: alguma linha fica 'received' para sempre`,
     ).toBe(saidas);
   });
+});
+
+describe("as duas entradas de canal passam pelo MESMO caminho", () => {
+  it.each([
+    "../../app/api/v1/webhooks/channel/[token]/route.ts",
+    "../../app/api/v1/webhooks/canal-da-instalacao/route.ts",
+  ])(
+    "%s entrega a processarEntradaDoCanal, sem conferir assinatura por conta própria no meio",
+    (rel) => {
+      const fonte = fs.readFileSync(path.resolve(__dirname, rel), "utf8");
+      expect(fonte).toMatch(/return processarEntradaDoCanal\(admin,/);
+      expect(fonte).not.toMatch(
+        /\b(handleInboundWebhook|abrirArquivoDoWebhook|verifyInboundWebhookSignature)\(/,
+      );
+    },
+  );
 });
