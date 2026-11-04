@@ -146,7 +146,7 @@ test("[P0] primeira cobrança: conectar, assinar, atrasar, suspender e voltar so
     await pB.getByLabel("Confirmar contraseña").fill(senha);
     await pB.getByRole("button", { name: "Crear cuenta" }).click();
     await expect(pB.getByText("Confirma tu correo")).toBeVisible();
-    const confirmacao = extractAuthConfirmLink(await waitForEmail(emailB, "Confirma tu correo"), test.info().project.use.baseURL!);
+    const confirmacao = extractAuthConfirmLink(await waitForEmail(emailB, "Confirme seu e-mail"), test.info().project.use.baseURL!);
     // Abrir o link não gasta o token (protege do verificador de links do e-mail): a pessoa aperta "Continuar".
     await seguirLinkDeAcesso(pB, confirmacao);
     await pB.waitForURL(/\/onboarding\//);

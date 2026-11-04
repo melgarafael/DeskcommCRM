@@ -37,7 +37,7 @@ test("criar conta: signup → e-mail de confirmação → onboarding → re-logi
   await expect(page.getByText("Confirma tu correo")).toBeVisible();
 
   // 3. Abre o e-mail real no Mailpit e segue o link
-  const html = await waitForEmail(email, "Confirma tu correo");
+  const html = await waitForEmail(email, "Confirme seu e-mail");
   const link = extractAuthConfirmLink(html, baseURL!);
   await seguirLinkDeAcesso(page, link);
 

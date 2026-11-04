@@ -610,7 +610,7 @@ test("convite novo: alternar cadastro/login, confirmar no Mailpit e entrar só n
     await expect(page.getByText("Confirma tu correo")).toBeVisible();
     await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/convite-03-confirmar-email.png" });
 
-    const html = await waitForEmail(email, "Confirma tu correo");
+    const html = await waitForEmail(email, "Confirme seu e-mail");
     const link = extractAuthConfirmLink(html, baseURL!);
     // Confirmação usa o token_hash real entregue ao endereço do convite.
     expect(Boolean(new URL(link).searchParams.get("token_hash"))).toBe(true);
