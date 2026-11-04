@@ -94,4 +94,21 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/leads/import",
   "/api/v1/leads/proposals",
   "/api/v1/leads/reactivations",
+  // CAMPANHAS, MODELOS DE TEXTO E EXCLUSÕES (tarefa 6 da R2). Quem autentica é a
+  // própria rota, por `resolveAuthDual` (sessão OU Bearer `dsk_…`, a organização
+  // vinda da linha do token): `mcp:read` no GET e `mcp:write` na escrita e no
+  // POST de prévia, com o papel `manager` que a sessão já exige. Nenhuma tool do
+  // catálogo MCP faz ação de campanha, então não há `tokenRole`.
+  // Segmento `[id]` em forma de UUID. FICA SÓ DE SESSÃO: `campaigns/[id]/[acao]`
+  // (inicia, retoma e testa envio a cliente final) — sem porta aqui.
+  "/api/v1/campaign-suppressions",
+  "/api/v1/campaign-suppressions/[id]",
+  "/api/v1/campaign-templates",
+  "/api/v1/campaign-templates/[id]",
+  "/api/v1/campaigns",
+  "/api/v1/campaigns/[id]",
+  "/api/v1/campaigns/[id]/metrics",
+  "/api/v1/campaigns/[id]/recipients",
+  "/api/v1/campaigns/modelos",
+  "/api/v1/campaigns/preview",
 ];
