@@ -116,7 +116,7 @@ describe("alcance da OPENROUTER_API_KEY", () => {
       supports_vision: false,
       conhecido: true,
     };
-    for (const ponto of ["agent_turn", "operator_turn"]) {
+    for (const ponto of ["agent_turn", "operator_turn", "followup_turn"]) {
       const r = validarBinding({ pontoId: ponto, provider: "openrouter", modelo: semFerramentas });
       expect(r.ok, `${ponto} aceitou modelo sem ferramentas`).toBe(false);
       if (!r.ok) expect(r.codigo).toBe("modelo_sem_ferramentas");

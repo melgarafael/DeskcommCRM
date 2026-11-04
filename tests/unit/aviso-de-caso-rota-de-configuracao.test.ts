@@ -197,6 +197,27 @@ describe("PUT — salvar a configuração", () => {
     expect(JSON.stringify(entrada.metadata)).not.toContain("998966398");
   });
 
+  it("a auditoria diz QUAL regra autorizou o destino (#3900)", async () => {
+    // `api_audit_log` é append-only: "a pessoa confirmou" e "o número é da
+    // equipe, então não vira interno" precisam ser distinguíveis anos depois,
+    // senão ninguém entende por que uma atendente continuou chegando ao CRM.
+    const ler = () =>
+      (vi.mocked(audit).mock.calls[0]![0] as { metadata: Record<string, unknown> }).metadata;
+
+    clienteDeSessao({
+      rpc: { data: { trocou_numero: true, antes_ligado: true, destino_e_de_membro: true }, error: null },
+    });
+    await PUT(put(CORPO_OK));
+    expect(ler().autorizacao_do_destino).toBe("membro_da_equipe");
+
+    vi.mocked(audit).mockClear();
+    clienteDeSessao({
+      rpc: { data: { trocou_numero: true, antes_ligado: true, destino_e_de_membro: false }, error: null },
+    });
+    await PUT(put({ ...CORPO_OK, confirma_contato: true }));
+    expect(ler().autorizacao_do_destino).toBe("confirmacao_explicita");
+  });
+
   it("o número que já é de um cliente vira PERGUNTA, com código próprio", async () => {
     clienteDeSessao({ rpc: { error: { message: "aviso_de_caso_numero_de_cliente" } } });
     const r = await PUT(put(CORPO_OK));

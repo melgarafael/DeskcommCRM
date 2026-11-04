@@ -99,7 +99,7 @@ const CANAL_VALIDO = /^[a-z_]{1,32}$/;
  * ela não resolve — ele é contexto, não identidade, e por isso a falha dele
  * não fecha a carga.
  */
-async function cabecalhosDoContato(
+export async function cabecalhosDoContato(
   supabase: SupabaseClient,
   organizationId: string,
   contatoId: string,
