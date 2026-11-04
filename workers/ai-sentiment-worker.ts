@@ -37,7 +37,10 @@ import { avisarAEquipe, TAREFAS_DOS_PEDIDOS, type PedidosObservados } from "@/li
 import { estadoEfetivoDaTarefa, TAREFA_DO_CLIMA } from "@/lib/ai/decisao/tarefas";
 import { codigoDoErroDoJev } from "@/lib/ai/decisao/textos";
 import { decidirElegibilidadeDaConversaViaSupabase } from "@/lib/ai/elegibilidade/consulta-supabase";
-import { ttlDaAutorizacaoMs, type DecisaoDeElegibilidade } from "@/lib/ai/elegibilidade/gate";
+import {
+  ttlDaAutorizacaoMs,
+  type DecisaoDaConversa,
+} from "@/lib/ai/elegibilidade/gate";
 import { DEFAULT_CLASSIFIER_MODEL } from "@/lib/ai/gateway";
 import { resolverModeloDoPonto } from "@/lib/ai/gateway-binding";
 import { logInvocation, type LogInvocationInput } from "@/lib/ai/log-invocation";
@@ -146,7 +149,7 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
     // ninguém consome — conversa com uma pessoa, silenciada, contato passado a
     // humano, trava da lista. Fail-closed: erro de leitura → pula.
     const convIdParaGate = conversationId ?? (message.conversation_id as string | null);
-    let elegib: DecisaoDeElegibilidade | null = null;
+    let elegib: DecisaoDaConversa | null = null;
     if (convIdParaGate) {
       try {
         elegib = await decidirElegibilidadeDaConversaViaSupabase(admin, {
@@ -162,6 +165,20 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
         return { skipped: true, reason: "elegibilidade_indeterminada" };
       }
     }
+
+    // ── Guard: contato da EQUIPE (#3534) ──────────────────────────────────
+    //
+    // A régua de equipe (`settings.crm.team_contact_tags`) significa
+    // "atende, mas não repassa sozinho". Ela NÃO entra no `!permite` acima: o
+    // contato é elegível de propósito (o agente fala com o sócio como colega, e
+    // isso já é o comportamento do turno). O que este worker não pode fazer
+    // para ele é ABRIR PASSAGEM — `ai.sentiment_alert` vira
+    // `triggerHandoff('low_sentiment')`, que silencia a conversa em
+    // `bot_silenced_until='infinity'` e manda "já acionei o time" para quem É o
+    // time. Medir e registrar continua valendo: a nota entra em
+    // `messages.metadata` como para qualquer conversa, e o cartão do clima
+    // segue medindo. Só o repasse automático não sai.
+    const contatoDaEquipe = elegib?.contatoDaEquipe === true;
 
     // ── Qual agente atende ESTA conversa? ─────────────────────────────────
     //
@@ -571,7 +588,10 @@ export async function processSentiment(event: EventRow): Promise<SentimentResult
       }
 
       // ── Emit alert if below threshold ────────────────────────────────────
-      if (decisao.score < threshold) {
+      // #3534: o contato da equipe é medido e registrado, mas o alerta não sai
+      // — é ele que dispara o handoff e o silêncio. O limiar não muda; o que
+      // muda é que, para este contato, ninguém é "acionado".
+      if (decisao.score < threshold && !contatoDaEquipe) {
         const { error: emitErr } = await admin.rpc(
           "emit_event" as never,
           {

@@ -41,8 +41,9 @@ import {
   numeroPodeTestar,
 } from "./pre-go-live";
 import { ehContatoInterno } from "@/lib/contacts/tags-internas";
+import { ehContatoDaEquipe } from "@/lib/contacts/tags-da-equipe";
 import { ehOperante } from "@/lib/organizacao/operante";
-import { tagsInternasDaOrg } from "@/lib/schemas/settings";
+import { tagsDaEquipeDaOrg, tagsInternasDaOrg } from "@/lib/schemas/settings";
 
 /** Valores aceitos em `channel_sessions.metadata.ai_gate`. */
 export const AI_GATE_MODES = ["open", "allowlist"] as const;
@@ -82,6 +83,14 @@ export interface EstadoDeElegibilidade {
    */
   contatoInterno: boolean;
   /**
+   * `contacts.tags` cruza com `organizations.settings.crm.team_contact_tags`
+   * (#3534): contato da EQUIPE que continua sendo atendido. Não é veto — é
+   * AUTORIZAÇÃO positiva (o turno atende) e, ao mesmo tempo, o que impede o
+   * repasse automático por clima de silenciar a conversa. Ver
+   * `lib/contacts/tags-da-equipe.ts`.
+   */
+  contatoDaEquipe: boolean;
+  /**
    * `contacts.ai_opt_out` — a marca PERMANENTE "sempre atendimento humano"
    * (migration 0624 / issue 2379). Convive com `force_human` de propósito: a
    * devolução limpa `force_human`, e esta coluna é o que ela não alcança. Vetado
@@ -113,6 +122,7 @@ export type MotivoDeElegibilidade =
   | "conversa_silenciada"
   | "conversa_de_humano"
   | "contato_interno"
+  | "contato_da_equipe"
   | "fora_da_lista_de_teste"
   | "numero_de_teste"
   | "sem_autorizacao"
@@ -129,6 +139,17 @@ export interface DecisaoDeElegibilidade {
    */
   bloqueioPorAllowlist: boolean;
 }
+
+/**
+ * A decisão + o fato que a régua da equipe precisa carregar (#3534).
+ *
+ * `decidirElegibilidade` continua devolvendo só `{permite, motivo, bloqueio}`
+ * — é a regra pura, e mudar o formato dela obrigaria todo consumidor a saber de
+ * equipe. Quem lê do BANCO (os dois transportes) já montou o estado, e devolve
+ * junto `contatoDaEquipe`: o medidor de clima precisa saber que a conversa é
+ * atendida (permite) E que não pode ser passada por `low_sentiment`.
+ */
+export type DecisaoDaConversa = DecisaoDeElegibilidade & { contatoDaEquipe: boolean };
 
 function silenciadoAgora(until: Date | number | null, agora: Date): boolean {
   if (until === null) return false;
@@ -171,6 +192,16 @@ export function decidirElegibilidade(e: EstadoDeElegibilidade): DecisaoDeElegibi
   // robô no número não quer que ele responda a equipe, sócio ou família.
   if (e.contatoInterno) {
     return { permite: false, motivo: "contato_interno", bloqueioPorAllowlist: false };
+  }
+
+  // #3534: contato da EQUIPE (sócio que testa o agente, pessoa que pede
+  // informação a qualquer hora) é o oposto do interno: a IA ATENDE. E é
+  // autorização positiva, não veto — fica antes do modo do canal de propósito,
+  // porque canal em `allowlist`/pré-go-live não pode calar a própria equipe. Os
+  // vetos acima continuam vencendo (conversa silenciada, dono humano, opt-out):
+  // "atendido" nunca significa "por cima de uma pessoa".
+  if (e.contatoDaEquipe) {
+    return { permite: true, motivo: "contato_da_equipe", bloqueioPorAllowlist: false };
   }
 
   if (e.modo === "open") {
@@ -266,6 +297,7 @@ export function montarEstadoDeElegibilidade(raw: {
     modo,
     forceHuman: raw.forceHuman === true,
     contatoInterno: ehContatoInterno(raw.contactTags, tagsInternasDaOrg(raw.orgSettings)),
+    contatoDaEquipe: ehContatoDaEquipe(raw.contactTags, tagsDaEquipeDaOrg(raw.orgSettings)),
     aiOptOut: raw.aiOptOut === true,
     botSilencedUntil: normalizarInstante(raw.botSilencedUntil),
     assigneeKind: raw.assigneeKind,
