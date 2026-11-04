@@ -36,10 +36,14 @@
  * - A busca vai inteira no texto (`"<nicho> em <local>"`), como no
  *   `local-http`. Sem `gl` de propósito: com `gl` e sem centro de mapa, a
  *   busca puxa para a capital do país e mistura cidades.
+ * - O idioma da organização (`opcoes.idioma`, `idioma.ts`) vira o `hl` e o
+ *   conectivo da busca ("em"/"en"), como a Apify recebe `language`. Id sem
+ *   idioma (busca iniciada antes desta mudança) segue em português.
  */
+import { IDIOMA_PADRAO, IDIOMAS, type Idioma } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 
-import { ProspectingError } from "./provider";
+import { ProspectingError, type OpcoesDaBusca } from "./provider";
 import type { DadosDaExecucao, ProvedorDeBusca } from "./provedor";
 import type { SearchInput } from "./schema";
 
@@ -50,17 +54,29 @@ const TIMEOUT_MS = 25_000;
 export const POR_PAGINA = 20;
 const MARCA = "scavio:";
 
+/**
+ * O conectivo entre nicho e local, no idioma da busca. `Record<Idioma, …>`:
+ * idioma novo no registro sem entrada aqui não compila.
+ */
+const CONECTIVO: Record<Idioma, string> = {
+  "pt-BR": "em",
+  es: "en",
+};
+
 interface BuscaCodificada {
   niche: string;
   location: string;
   limit: number;
+  /** Ausente nos ids anteriores ao idioma da organização: português. */
+  idioma?: Idioma;
 }
 
-function codificar(input: SearchInput): string {
+function codificar(input: SearchInput, idioma: Idioma): string {
   const carga: BuscaCodificada = {
     niche: input.niche,
     location: input.location,
     limit: input.limit,
+    idioma,
   };
   return MARCA + Buffer.from(JSON.stringify(carga), "utf8").toString("base64url");
 }
@@ -77,7 +93,8 @@ function decodificar(id: string): BuscaCodificada {
       if (
         typeof carga?.niche === "string" &&
         typeof carga?.location === "string" &&
-        typeof carga?.limit === "number"
+        typeof carga?.limit === "number" &&
+        (carga.idioma === undefined || IDIOMAS.includes(carga.idioma))
       )
         return carga as BuscaCodificada;
     } catch {
@@ -186,13 +203,14 @@ function lugaresDaPagina(corpo: unknown): Record<string, unknown>[] {
  * tela já avisa que a quantidade encontrada pode ser menor que o limite.
  */
 async function buscar(chave: string, carga: BuscaCodificada): Promise<Record<string, unknown>[]> {
-  const query = `${carga.niche} em ${carga.location}`;
+  const idioma = carga.idioma ?? IDIOMA_PADRAO;
+  const query = `${carga.niche} ${CONECTIVO[idioma]} ${carga.location}`;
   const vistos = new Set<string>();
   const itens: Record<string, unknown>[] = [];
   for (let start = 0; itens.length < carga.limit; start += POR_PAGINA) {
     let corpo: unknown;
     try {
-      corpo = await pedir(chave, "/api/v2/google/maps/search", { query, hl: "pt-BR", start });
+      corpo = await pedir(chave, "/api/v2/google/maps/search", { query, hl: idioma, start });
     } catch (error) {
       if (start === 0) throw error;
       logger.warn("[prospecting] página da Scavio falhou; a busca fica com o que já veio", {
@@ -216,10 +234,14 @@ async function buscar(chave: string, carga: BuscaCodificada): Promise<Record<str
 }
 
 export const provedorScavio: ProvedorDeBusca = {
-  async startSearch(_chave, input: SearchInput): Promise<DadosDaExecucao> {
+  async startSearch(
+    _chave,
+    input: SearchInput,
+    opcoes: OpcoesDaBusca = {},
+  ): Promise<DadosDaExecucao> {
     // Sem rede: a busca é síncrona e roda em `readResults`. A campanha guarda a
     // MESMA forma de execução de sempre e segue com `search_status='running'`.
-    const id = codificar(input);
+    const id = codificar(input, opcoes.idioma ?? IDIOMA_PADRAO);
     return { id, status: "RUNNING", defaultDatasetId: id };
   },
   async readSearch(_chave, id: string): Promise<DadosDaExecucao> {

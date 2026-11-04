@@ -276,6 +276,32 @@ describe("#1758 provedor scavio (Google Maps pela API da Scavio)", () => {
     expect(ids.at(-1)).toBe("ChIJ-lugar-24");
   });
 
+  it("organização em espanhol busca em espanhol; id de antes do idioma segue em português", async () => {
+    const { id } = await provedorScavio.startSearch(
+      "",
+      { ...BUSCA, niche: "clínicas dentales", location: "Montevideo, Uruguay", limit: 5 },
+      { idioma: "es" },
+    );
+    fetch.mockResolvedValueOnce(resposta(pagina(5, 0)));
+    await provedorScavio.readResults("sk_x", id, 5);
+    expect(corpos()).toEqual([
+      { query: "clínicas dentales en Montevideo, Uruguay", hl: "es", start: 0 },
+    ]);
+
+    fetch.mockClear();
+    fetch.mockResolvedValueOnce(resposta(pagina(5, 0)));
+    const antigo =
+      "scavio:" +
+      Buffer.from(
+        JSON.stringify({ niche: BUSCA.niche, location: BUSCA.location, limit: 5 }),
+        "utf8",
+      ).toString("base64url");
+    await provedorScavio.readResults("sk_x", antigo, 5);
+    expect(corpos()).toEqual([
+      { query: "clínicas odontológicas em Campinas, SP", hl: "pt-BR", start: 0 },
+    ]);
+  });
+
   it("falha na PRIMEIRA página é ProspectingError; numa página seguinte fica com o que já veio", async () => {
     const { id } = await provedorScavio.startSearch("", { ...BUSCA, limit: 60 });
 
