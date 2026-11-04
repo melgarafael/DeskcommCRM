@@ -26,6 +26,12 @@ export const PUBLIC_PATHS: RegExp[] = [
   // Retorno de OAuth social: documento público sem efeitos que reconecta a
   // navegação interna para manter os cookies de sessão sob SameSite=Strict.
   /^\/auth\/social-return$/,
+  // Volta da página de cadastro do provedor parceiro (conexão do número por um
+  // clique): mesma natureza da linha acima — documento sem efeito que só repassa
+  // à tela autenticada. O segmento é o estado assinado, no formato exato de
+  // `FORMATO_DO_ESTADO` (lib/channels/estado-da-volta.ts): nenhum outro sub-path
+  // nasce público de carona.
+  /^\/auth\/partner-return\/[A-Za-z0-9_-]{20,600}\.[0-9a-f]{64}$/,
   // Volta do provedor de pagamento (checkout, portal): mesma natureza da linha
   // acima — vem de outro site, o cookie Strict não viaja, e a rota é só a ponte
   // para um destino FIXO (`app/cobranca/volta/route.ts`), sem efeito.

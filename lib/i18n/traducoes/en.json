@@ -8188,6 +8188,7 @@
   "Escolha um número conectado": "Choose a connected number",
   "Escolha um número da equipe para receber uma mensagem toda vez que o assistente travar e precisar de uma pessoa.": "Choose a team number to receive a message every time the assistant gets stuck and needs a person.",
   "Escolher outro número": "Choose another number",
+  "A pessoa pode ser cliente da própria empresa — a equipe que viaja pela própria agência, por exemplo. Nesse caso o número ainda recebe o aviso e continua entrando no CRM: diferente de um número interno, que deixa de virar atendimento.": "The person may be a customer of the company itself — the team that travels through the agency, for example. In that case the number still receives the alert and keeps coming into the CRM: unlike an internal number, which stops turning into a conversation.",
   "Esse número ainda não está completo.": "This number isn't complete yet.",
   "Esse número passa a ser só da equipe: o que ele mandar deixa de virar atendimento.": "This number becomes team-only: whatever it sends will no longer turn into a conversation.",
   "Este número ainda está em aquecimento": "This number is still warming up",
@@ -9569,5 +9570,13 @@
   "O modelo precisa ter uma variável só, no texto — é nela que o aviso entra.": "The template needs exactly one variable, in its text — that's where the alert goes.",
   "Seus números atuais só enviam mensagem para quem falou com você nas últimas 24 horas, e nenhum tem um modelo aprovado com uma variável para levar o aviso. Crie esse modelo na aba de modelos do número, em Conexões, ou conecte um número pelo QR code.": "Your current numbers only message people who talked to you in the last 24 hours, and none has an approved one-variable template to carry the alert. Create that template in the number's templates tab, under Connections, or connect a number by QR code.",
   "só modelo aprovado": "approved templates only",
-  "Esta conexão não tem nenhum modelo aprovado com uma variável. Crie um na aba de modelos do número, em Conexões, ou escolha outra conexão.": "This connection has no approved template with one variable. Create one in the number's templates tab, under Connections, or choose another connection."
+  "Esta conexão não tem nenhum modelo aprovado com uma variável. Crie um na aba de modelos do número, em Conexões, ou escolha outra conexão.": "This connection has no approved template with one variable. Create one in the number's templates tab, under Connections, or choose another connection.",
+  "Não ligar": "Do not call",
+  "Pediu para não ser incomodado": "Asked not to be contacted",
+  "Contato pessoal": "Personal contact",
+  "Contato anonimizado não pode ser chamado.": "An anonymized contact can't be called.",
+  "Cold Call (fila de ligações)": "Cold Call (call queue)",
+  "Leads para ligar, um por um.": "Leads to call, one by one.",
+  "Ligado, cada empresa ganha no CRM a tela Cold Call: um funil próprio, a importação da lista e a ligação para um lead por vez, pelo canal de voz quando ele está pareado ou pelo discador do aparelho. Quem pediu para não ser incomodado, contato pessoal e contato anonimizado não recebem ligação. Desligado, a tela e o menu somem.": "When on, each company gets the Cold Call screen in the CRM: its own pipeline, list import and calling one lead at a time, through the voice channel when it's paired or through the device's dialer. Contacts who asked not to be contacted, personal contacts and anonymized contacts don't get calls. When off, the screen and the menu entry disappear.",
+  "Uma fila para ligar para uma lista de leads, um por vez, com roteiro e o resultado de cada ligação movendo o lead no funil.": "A queue to call a list of leads, one at a time, with a script and each call's outcome moving the lead in the pipeline."
 }

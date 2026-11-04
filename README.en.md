@@ -338,6 +338,14 @@ docker compose up -d        # local WAHA (optional in dev without WhatsApp)
 # The real schema lives in baseline.sql, the same one install.sh applies on the VPS.
 # `supabase db push` "succeeds" and leaves you with an empty database.
 supabase link --project-ref <your-ref>
+
+# On a NEW Supabase project, first enable the extensions the schema uses —
+# without them the baseline stops at `type public.vector does not exist`.
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c \
+  'create extension if not exists vector with schema public;
+   create extension if not exists citext with schema public;
+   create extension if not exists pg_trgm with schema public;'
+
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/baseline.sql
 
 pnpm dev
