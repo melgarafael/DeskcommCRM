@@ -18,6 +18,9 @@ const base: EstadoDeElegibilidade = {
   modo: "open",
   forceHuman: false,
   contatoInterno: false,
+  // #3534: a régua da equipe é o oposto da interna — autoriza em vez de vetar.
+  // `false` aqui é o contato comum, que segue a régua do canal.
+  contatoDaEquipe: false,
   aiOptOut: false,
   botSilencedUntil: null,
   assigneeKind: "ai",

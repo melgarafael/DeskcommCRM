@@ -947,6 +947,10 @@ export const AUDIT_ACTIONS = [
   // configuração da organização que muda o que vira card no funil e o que a IA
   // responde: "desde quando a equipe parou de virar lead?" só tem resposta aqui.
   "crm.tags_internas_alteradas",
+  // A lista de etiquetas de contato da EQUIPE (#3534) mudou. Contato marcado
+  // continua sendo atendido e deixa de ser passado a humano por clima — "desde
+  // quando o sócio parou de ser repassado?" só tem resposta aqui.
+  "crm.tags_da_equipe_alteradas",
   // A etiqueta da ORGANIZAÇÃO renomeada, juntada ou excluída na tela de Tags
   // (issue #852, fatia S4). É um código só porque a linha já carrega
   // `metadata.acao` (renomear/juntar/excluir) e o alcance da operação (contatos,
