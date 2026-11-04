@@ -20,6 +20,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { nomeDoCanal } from "@/lib/channels/estado";
+import { lerModoDeAcessoDaIa, lerNumerosDeTeste } from "@/lib/ai/elegibilidade/pre-go-live";
+import type { AcessoDaAiDoCanal } from "@/lib/ai/elegibilidade/aviso-do-modo-de-teste";
 
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "./archived";
 import { PROVIDERS_DE_MENSAGEM, capabilitiesOf, transportaMensagem } from "./capabilities";
@@ -46,11 +48,26 @@ export interface SelectableChannel {
    * quem já consumia `SelectableChannel` não muda uma linha.
    */
   aceitaMensagemLivre: boolean;
+  /**
+   * Como o acesso da IA está NESTE canal — modo e quantos números de teste estão
+   * autorizados. Sem isto, a tela do agente não tinha como saber que o número
+   * escolhido está em modo de teste com a lista vazia, que é o estado de fábrica
+   * de todo canal: a IA não responde ninguém e a tela dizia que estava tudo
+   * certo (#3976).
+   *
+   * Contagem, nunca a lista: os telefones autorizados são PII e exigem
+   * administrador (`/api/v1/channel-sessions/[id]/ai-access`). Quem decide a
+   * frase é `decidirAvisoDoModoDeTeste` — a tela não reescreve a regra.
+   */
+  acessoDaAi: AcessoDaAiDoCanal;
 }
 
 // `provider` entra no `select` por causa de `aceitaMensagemLivre`. Ele é lido
 // aqui e MORRE aqui: o DTO leva a capacidade, nunca o nome do provedor.
-const COLUNAS = "id, display_name, status, phone_number, waha_session_name, provider";
+//
+// `metadata` entra SÓ para derivar `acessoDaAi` (modo e contagem). O DTO leva o
+// resumo, nunca a metadata crua — é ela que carrega os telefones de teste.
+const COLUNAS = "id, display_name, status, phone_number, waha_session_name, provider, metadata";
 
 interface LinhaCanal {
   id: string;
@@ -59,6 +76,7 @@ interface LinhaCanal {
   phone_number: string | null;
   waha_session_name: string | null;
   provider: string | null;
+  metadata: Record<string, unknown> | null;
 }
 
 /**
@@ -123,5 +141,12 @@ export async function listSelectableChannels(
     status: c.status,
     phone_number: c.phone_number ?? null,
     aceitaMensagemLivre: aceitaMensagemLivre(c.provider),
+    acessoDaAi: {
+      // O MESMO leitor do runtime (`gate.ts` → `lerModoDeAcessoDaIa`): a tela
+      // não pode chamar de "modo de teste" um canal que o motor trata de outro
+      // jeito, nem o contrário.
+      mode: lerModoDeAcessoDaIa(c.metadata),
+      testNumbersCount: lerNumerosDeTeste(c.metadata).length,
+    },
   }));
 }

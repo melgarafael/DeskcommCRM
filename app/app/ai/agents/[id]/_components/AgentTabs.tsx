@@ -97,6 +97,7 @@ export function AgentTabs(props: Props) {
           draft={props.draft}
           published={props.published}
           readOnly={props.readOnly}
+          channelSessions={props.channelSessions}
         />
       </TabsContent>
 

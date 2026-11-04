@@ -41,6 +41,8 @@ import { PROVEDOR_POR_ASSINATURA, PROVEDORES } from "@/lib/ai/pontos/provedores"
 import { ModelPicker, useModelMeta } from "./ModelPicker";
 import { CHAVE_DA_INSTALACAO, CredentialPicker, STATUS_LABEL, findCredential } from "./CredentialPicker";
 import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
+import { decidirAvisoDoModoDeTeste } from "@/lib/ai/elegibilidade/aviso-do-modo-de-teste";
+import { AvisoDoModoDeTeste } from "./AvisoDoModoDeTeste";
 import { bloqueioDePublicacao } from "@/lib/ai/agents/bloqueio-de-publicacao";
 import { mesmoRascunho } from "@/lib/ai/agents/mesmo-rascunho";
 import { ToolPicker } from "./ToolPicker";
@@ -551,6 +553,17 @@ export function AgentForm(props: Props) {
   const cred = findCredential(props.credentials, form.credential_id);
   const credSt = cred ? credentialStatus(cred) : null;
   const channelSession = props.channelSessions.find((c) => c.id === form.channel_session_id);
+  /**
+   * O canal escolhido está em modo de teste e não responde ninguém? A tela dizia
+   * só o nome, o telefone e o estado da conexão; o canal nasce com a lista de
+   * teste vazia e a IA ficava muda sem ninguém entender por quê (#3976).
+   *
+   * O aviso é do CANAL ESCOLHIDO, não do agente: ele desaparece ao trocar para um
+   * número aberto, e volta se o número voltar. `readOnly` é o mesmo papel que
+   * trava a edição — quem não é administrador recebe o motivo sem o link que
+   * levaria a um 403 no painel de acesso.
+   */
+  const avisoDoCanal = decidirAvisoDoModoDeTeste({ acesso: channelSession?.acessoDaAi ?? null });
   const modelMeta = useModelMeta(form.provider, form.model);
 
   // ---------------------------------------------------------------------
@@ -1126,6 +1139,7 @@ export function AgentForm(props: Props) {
                   ) : null}
                 </SelectContent>
               </Select>
+              <AvisoDoModoDeTeste aviso={avisoDoCanal} podeConfigurar={!readOnly} />
               {/*
                 NÃO é erro: é o estado normal de quem ainda não pareou o aparelho.
                 Antes, esta linha era vermelha e vinha de `validation`, que também
