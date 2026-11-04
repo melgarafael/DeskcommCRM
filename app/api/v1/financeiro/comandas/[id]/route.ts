@@ -112,6 +112,12 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     });
   }
 
+  // Cancelar é só de sessão (fragmento `financeiro-aceita-token`): o token não cancela
+  // comanda. A recusa vem antes de qualquer leitura ou escrita.
+  if (authz.via === "token" && lido.data.cancel === true) {
+    return fail("forbidden", "Cancelar a comanda é só pela sessão.", 403, { requestId });
+  }
+
   const { id } = await ctx.params;
   const supabase = authz.supabase;
 

@@ -796,6 +796,33 @@ describe("o que segue só de sessão em financeiro e honorários", () => {
   }
 });
 
+// ─── Cancelar comanda segue só de sessão, também no PATCH ───────────────────
+
+describe("cancelar comanda segue só de sessão", () => {
+  it("token de A com {cancel:true} na própria comanda → 403, a comanda segue aberta e nada é escrito", async () => {
+    const c: Caso = {
+      rota: "financeiro/comandas/[id]",
+      metodo: "PATCH",
+      caminho: `/api/v1/financeiro/comandas/${SALE_A}`,
+      params: { id: SALE_A },
+      corpo: { cancel: true },
+      linhas: { ...MODULOS, ...ORGS, sales: [VENDA_A, VENDA_B] },
+      papel: "agent",
+      escopo: "mcp:write",
+      recurso: "financeiro",
+      status: 403,
+    };
+    const { res, texto, falso } = await comoToken(c);
+
+    expect(res.status, texto).toBe(403);
+    expect(json<{ error: { code: string } }>(texto).error.code).toBe("forbidden");
+    expect(texto).toContain("Cancelar a comanda é só pela sessão.");
+    expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
+    expect(linhasDaTabela(falso, "sales").find((l) => l.id === SALE_A)?.status).toBe("open");
+    expect(audit).not.toHaveBeenCalled();
+  });
+});
+
 // ─── PUBLIC_PATHS: as portas de financeiro e honorários ─────────────────────
 
 describe("PUBLIC_PATHS — as portas de financeiro e honorários", () => {

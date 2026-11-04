@@ -90,10 +90,10 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   const admin = createAdminClient();
-  // No ramo do token o contato do corpo é conferido na organização ANTES de
-  // gravar: a service role não passa pela RLS, e a chave estrangeira simples
-  // não confere organização. Na sessão a conferência não roda (igual a antes).
-  if (authz.via === "token" && contact_id) {
+  // O contato do corpo é conferido na organização ANTES de gravar, na sessão e no
+  // token: o cliente admin não passa pela RLS, e a chave estrangeira simples não
+  // confere organização. Sem isto, a supressão nasceria amarrada a contato alheio.
+  if (contact_id) {
     const { data: contato, error: erroContato } = await admin
       .from("contacts")
       .select("id")

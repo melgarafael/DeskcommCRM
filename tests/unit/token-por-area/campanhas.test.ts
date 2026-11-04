@@ -95,6 +95,12 @@ const CONTATO_B = "45454545-4545-4454-8454-454545454545";
 /** Escopos do token que cobrem os dois métodos da R2. */
 const TODOS_OS_ESCOPOS = ["mcp:read", "mcp:write"];
 const MENSAGEM_DO_CLIENTE_DE_SESSAO = "cliente de sessão usado no ramo do token";
+/**
+ * Recorte válido para a prévia: o `refine` do filtro exige ao menos um critério, e
+ * `{}` sai com 422. `limite: 1` faz a leitura de contatos parar na primeira página:
+ * a segunda pede o cursor com `or`, que o dublê registra mas não aplica.
+ */
+const PUBLICO_DA_PREVIA = { incluir_contatos: [CONTATO_A], limite: 1 };
 
 const CAMPANHA_A = {
   id: CAMP_A,
@@ -511,6 +517,16 @@ describe("POST /campaign-suppressions — põe um número na lista", () => {
     expect(audit).not.toHaveBeenCalled();
   });
 
+  it("sessão de A com o contato de B no corpo → 404, sem inserir nada (a conferência vale na sessão também)", async () => {
+    sessaoDeA();
+    const antes = linhasDaTabela(falso, "campaign_suppressions").length;
+    const res = await rotaSupressoes.POST(reqJson({ address: "+5511999990005", contact_id: CONTATO_B }));
+    expect(res.status).toBe(404);
+    expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
+    expect(linhasDaTabela(falso, "campaign_suppressions").length).toBe(antes);
+    expect(audit).not.toHaveBeenCalled();
+  });
+
   casosDeNegacao({
     chamar: (t) => rotaSupressoes.POST(reqJson({ address: "+5511999990004" }, t)),
     escopoOutro: "mcp:read",
@@ -741,24 +757,34 @@ describe("GET /campaigns/modelos — o que o número pode mandar", () => {
 describe("POST /campaigns/preview — prévia do público, sem gravar", () => {
   it("token de A vê o público de A e não o nome de um contato de B", async () => {
     tokenDe(ORG_A, TOKEN_A, "manager");
-    const res = await rotaPrevia.POST(reqJson({ audience_filter: {}, message_body: "Olá" }, TOKEN_A));
+    const res = await rotaPrevia.POST(reqJson({ audience_filter: PUBLICO_DA_PREVIA, message_body: "Olá" }, TOKEN_A));
     expect(res.status).toBe(200);
-    expect(JSON.stringify(await corpoDe<unknown>(res))).not.toContain("Contato de B");
+    const corpo = await corpoDe<{ data: { total: number; amostra: Array<{ nome: string | null }> } }>(res);
+    // Prova que a prévia chegou à leitura de contatos (não parou no 422 nem no 404).
+    expect(corpo.data.total).toBe(1);
+    expect(corpo.data.amostra.map((a) => a.nome)).toEqual(["Contato de A"]);
+    expect(JSON.stringify(corpo)).not.toContain("Contato de B");
     expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
     expect(rpcsForaDaOrganizacao(falso.rpcs, ORG_A)).toEqual([]);
     expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
   });
 
-  it("token de B vê só o público de B (não o nome de um contato de A)", async () => {
+  it("token de B com o contato de A em incluir_contatos não vê esse contato na prévia", async () => {
     tokenDe(ORG_B, TOKEN_B, "manager");
-    const res = await rotaPrevia.POST(reqJson({ audience_filter: {}, message_body: "Olá" }, TOKEN_B));
+    const res = await rotaPrevia.POST(
+      reqJson({ audience_filter: { incluir_contatos: [CONTATO_A], limite: 1 }, message_body: "Olá" }, TOKEN_B),
+    );
     expect(res.status).toBe(200);
-    expect(JSON.stringify(await corpoDe<unknown>(res))).not.toContain("Contato de A");
+    const corpo = await corpoDe<{ data: { total: number; amostra: Array<{ nome: string | null }> } }>(res);
+    // O incluído à mão é buscado com `organization_id` de B: o de A não entra.
+    expect(corpo.data.amostra.map((a) => a.nome)).toEqual(["Contato de B"]);
+    expect(corpo.data.total).toBe(1);
+    expect(JSON.stringify(corpo)).not.toContain("Contato de A");
     expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
   });
 
   casosDeNegacao({
-    chamar: (t) => rotaPrevia.POST(reqJson({ audience_filter: {}, message_body: "x" }, t)),
+    chamar: (t) => rotaPrevia.POST(reqJson({ audience_filter: PUBLICO_DA_PREVIA, message_body: "x" }, t)),
     escopoOutro: "mcp:read",
     resource: "campaigns",
   });

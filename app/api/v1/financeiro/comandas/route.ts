@@ -27,6 +27,10 @@ export const dynamic = "force-dynamic";
 
 const LIMITE_PADRAO = 50;
 const LIMITE_MAXIMO = 200;
+/** Quantas comandas entram em cada consulta de itens: o `.in` não cresce sem teto. */
+const COMANDAS_POR_LOTE = 50;
+/** Teto de linhas por resposta do PostgREST (`max_rows`): o tamanho da página dos itens. */
+const PAGINA_DE_ITENS = 1000;
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -71,19 +75,32 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
   const vendas = data ?? [];
-  const { data: itensDaVenda } = vendas.length
-    ? await supabase
+  // Os itens vêm em lotes de comandas, e cada lote pagina por `range`: o PostgREST
+  // corta toda resposta em `max_rows` (1000 linhas), e um `.in` sem paginação
+  // perdia itens em silêncio, o que deixava o total da comanda aberta menor.
+  // A página avança pelo que VEIO, não pelo tamanho pedido, porque o `max_rows` da
+  // instalação pode ser menor. Só a página vazia encerra o lote.
+  const itens: Array<{ sale_id: string; total_cents: number }> = [];
+  for (let i = 0; i < vendas.length; i += COMANDAS_POR_LOTE) {
+    const lote = vendas.slice(i, i + COMANDAS_POR_LOTE).map((v) => v.id);
+    let de = 0;
+    for (;;) {
+      const { data: pagina, error: erroItens } = await supabase
         .from("sale_items")
         .select(
           "id, sale_id, description, quantity, unit_price_cents, discount_cents, total_cents, commission_percent, attendant_user_id, event_type_id",
         )
         .eq("organization_id", authz.organizationId)
-        .in(
-          "sale_id",
-          vendas.map((v) => v.id),
-        )
-    : { data: [] };
-  const itens = (itensDaVenda ?? []) as Array<{ sale_id: string; total_cents: number }>;
+        .in("sale_id", lote)
+        .order("id", { ascending: true })
+        .range(de, de + PAGINA_DE_ITENS - 1);
+      if (erroItens) return fail("internal_error", erroItens.message, 500, { requestId });
+      const lidas = (pagina ?? []) as Array<{ sale_id: string; total_cents: number }>;
+      if (lidas.length === 0) break;
+      itens.push(...lidas);
+      de += lidas.length;
+    }
+  }
 
   // O total de uma comanda ABERTA é derivado dos itens, sempre. `total_cents` só
   // é gravado na finalização, e ler a coluna antes disso mostraria zero numa
