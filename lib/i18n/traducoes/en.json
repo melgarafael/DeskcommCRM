@@ -9569,6 +9569,7 @@
   "OAuth — cada cliente autoriza com o login dele": "OAuth — each customer authorizes with their own login",
   "Revogando…": "Revoking…",
   "O servidor de autorização não aceita PKCE S256 — o cadastro foi recusado.": "The authorization server does not accept PKCE S256 — registration was refused.",
+  "Os dados de autorização devolvidos são de outro endereço, não do servidor informado — o cadastro foi recusado.": "The returned authorization data belongs to another address, not the server you entered — registration was refused.",
   "Não foi possível revogar o acesso.": "Could not revoke the access.",
   "Hosts que este servidor alcança": "Hosts this server reaches",
   "Manter o acesso depois que a conversa encerra (horas)": "Keep access after the conversation ends (hours)",

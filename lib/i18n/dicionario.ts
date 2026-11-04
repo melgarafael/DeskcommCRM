@@ -78,6 +78,7 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível revogar o acesso.": { es: "No se pudo revocar el acceso." },
   "O registro automático do cliente foi recusado pelo servidor.": { es: "El servidor rechazó el registro automático del cliente." },
   "O servidor de autorização não aceita PKCE S256 — o cadastro foi recusado.": { es: "El servidor de autorización no acepta PKCE S256: el registro fue rechazado." },
+  "Os dados de autorização devolvidos são de outro endereço, não do servidor informado — o cadastro foi recusado.": { es: "Los datos de autorización devueltos son de otra dirección, no del servidor indicado: el registro fue rechazado." },
   "O servidor não informou como autorizar (descoberta OAuth falhou).": { es: "El servidor no informó cómo autorizar (falló el descubrimiento OAuth)." },
   "O servidor recusou a autorização.": { es: "El servidor rechazó la autorización." },
   "O servidor recusou o pedido.": { es: "El servidor rechazó la solicitud." },
