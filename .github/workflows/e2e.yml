@@ -1494,6 +1494,12 @@ jobs:
       # passo (ex.: o catálogo da OpenRouter que `seed-e2e-catalogo-openrouter`
       # semeia em toda parte comum), e nenhuma cita WAHA, Graph ou webhook.
       #
+      # `fotos-skills-e-peso-da-memoria-pela-tela` entrou em 2026-11-01: as
+      # chaves de custo do editor do agente (fotos 9108, skills 9107) e o limite
+      # do aviso de peso da Memória da IA. Semeia o que usa
+      # (`seed-e2e-elegibilidade` se faltar, agente pela API arquivado no fim) e
+      # devolve o limite da empresa a 1500. PREVISÃO, não medida no CI: ~3 min.
+      #
       # `inbox-mensagem-por-modelo` entrou em 2026-11-03. Semeia contato,
       # conversa e duas mensagens pelo service role (reaproveita um canal da
       # organização, ou grava uma linha de canal sem transporte nenhum no ar) e
@@ -1506,6 +1512,7 @@ jobs:
       SPECS_PARTE_7: >-
         celular-toque-nos-controles.spec.ts
         agente-novo-e-uso.spec.ts
+        fotos-skills-e-peso-da-memoria-pela-tela.spec.ts
         capacidades-do-agente.spec.ts
         equipe-no-celular.spec.ts
         extensoes-versao.spec.ts

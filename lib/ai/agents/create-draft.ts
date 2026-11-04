@@ -64,6 +64,15 @@ export async function createMcpAgentDraft(
   );
   if (new Set(sources.rows.map((r) => r.id)).size !== new Set(v.knowledge_source_ids).size)
     throw new Error("knowledge_scope_invalid");
+  // Skills por agente (9107): `null` = todas e `[]` = nenhuma não têm nome a
+  // conferir. A de plataforma (`organization_id is null`) vale sem instalar.
+  if (v.skill_names !== null && v.skill_names.length > 0) {
+    const skills = await db.query(
+      "select distinct name from skill_pointers where (organization_id=$1 or organization_id is null) and name=any($2::text[])",
+      [context.orgId, v.skill_names],
+    );
+    if (skills.rows.length !== new Set(v.skill_names).size) throw new Error("skill_scope_invalid");
+  }
   const agentId = records.agent.id;
   const versionId = records.version.id;
   const { rows: agents } = await db.query(

@@ -55,6 +55,8 @@ import {
 import { PainelDoOperador } from "./PainelDoOperador";
 import { PainelDeSeguranca } from "./PainelDeSeguranca";
 import { BasesDoAgente, type MaterialDoAcervo } from "./BasesDoAgente";
+import { SkillsDoAgente } from "./SkillsDoAgente";
+import type { SkillDisponivel } from "@/lib/ai/skills/skills-do-agente";
 import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
 import { ComandosDoCelular } from "./ComandosDoCelular";
@@ -174,6 +176,8 @@ type Props = (EditProps | CreateProps) & {
    * algo importante.
    */
   materiais?: MaterialDoAcervo[];
+  /** As skills que a organização tem (dela e de plataforma), para a escolha por agente (9107). */
+  skills?: SkillDisponivel[];
 };
 
 interface FormState {
@@ -200,6 +204,8 @@ interface FormState {
    * jurídica". Padrão LIGADO (`?? true` abaixo), como a coluna na versão.
    */
   handoff_legal_enabled: boolean;
+  /** Ver as fotos que o cliente envia (9108). Padrão LIGADO, como a coluna. */
+  image_vision_enabled: boolean;
   proposal_ai_draft_enabled: boolean;
   cases_enabled: boolean;
   split_messages: boolean;
@@ -217,6 +223,8 @@ interface FormState {
   operator_tool_ids: string[];
   pipeline_ids: string[];
   knowledge_source_ids: string[];
+  /** `null` = todas as skills (o padrão); `[]` = nenhuma. */
+  skill_names: string[] | null;
 }
 
 interface FollowupValue {
@@ -314,6 +322,8 @@ export function buildState(args: {
     ],
     handoff_tool_enabled: version?.handoff_tool_enabled ?? true,
     handoff_legal_enabled: version?.handoff_legal_enabled ?? true,
+    // `?? true`: a versão de antes da 9108 via as fotos, e continua vendo.
+    image_vision_enabled: version?.image_vision_enabled ?? true,
     proposal_ai_draft_enabled: version?.proposal_ai_draft_enabled ?? true,
     cases_enabled: version?.cases_enabled ?? false,
     split_messages: version?.split_messages ?? false,
@@ -338,6 +348,8 @@ export function buildState(args: {
     pipeline_ids: version?.pipeline_ids ?? [],
     // `?? []` = nenhum material. Mesma direção segura: agir de menos.
     knowledge_source_ids: version?.knowledge_source_ids ?? [],
+    // `?? null` = todas: a versão de antes da 9107 não escolheu, e o runtime lhe dá todas.
+    skill_names: version?.skill_names ?? null,
   };
 }
 
@@ -382,6 +394,7 @@ function toVersionPayload(s: FormState) {
     handoff_keywords: s.handoff_keywords,
     handoff_tool_enabled: s.handoff_tool_enabled,
     handoff_legal_enabled: s.handoff_legal_enabled,
+    image_vision_enabled: s.image_vision_enabled,
     proposal_ai_draft_enabled: s.proposal_ai_draft_enabled,
     cases_enabled: s.cases_enabled,
     split_messages: s.split_messages,
@@ -398,6 +411,7 @@ function toVersionPayload(s: FormState) {
     operator_tool_ids: s.operator_tool_ids,
     pipeline_ids: s.pipeline_ids,
     knowledge_source_ids: s.knowledge_source_ids,
+    skill_names: s.skill_names,
   };
 }
 
@@ -434,6 +448,7 @@ export function AgentForm(props: Props) {
   const t = useT();
   const funis = props.funis ?? [];
   const materiais = props.materiais ?? [];
+  const skills = props.skills ?? [];
   const router = useRouter();
   const isEdit = props.mode === "edit";
   const readOnly = props.readOnly ?? false;
@@ -1462,6 +1477,14 @@ export function AgentForm(props: Props) {
             disabled={disabled}
           />
 
+          {/* As skills que este assistente usa (9107) */}
+          <SkillsDoAgente
+            skills={skills}
+            value={form.skill_names}
+            onChange={(nomes) => patch({ skill_names: nomes })}
+            disabled={disabled}
+          />
+
           {/* Triggers */}
           <Card className="space-y-2 p-4">
             <h3 className="text-sm font-medium">{t("Quando ele entra em ação")}</h3>
@@ -1472,6 +1495,26 @@ export function AgentForm(props: Props) {
               organizationTimezone={props.organizationTimezone}
               funis={props.funis}
             />
+          </Card>
+
+          {/* Ver as fotos que o cliente envia (9108). O custo vai escrito ao lado
+              porque é ele que decide: cada foto descrita é uma chamada paga. */}
+          <Card className="space-y-2 p-4">
+            <h3 className="text-sm font-medium">{t("Fotos que o cliente envia")}</h3>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="image_vision_enabled"
+                checked={form.image_vision_enabled}
+                onCheckedChange={(v) => patch({ image_vision_enabled: v })}
+                disabled={disabled}
+              />
+              <Label htmlFor="image_vision_enabled">{t("Ver as fotos que o cliente envia")}</Label>
+            </div>
+            <p className="text-xs text-muted-foreground" data-testid="visao-de-foto-ajuda">
+              {t(
+                "Ligado, o agente entende o que a foto mostra: cada foto descrita é uma chamada paga a um modelo de IA com visão. Desligado, ele sabe que chegou uma foto, mas não vê o que ela mostra, e pode pedir ao cliente que conte. PDF não muda com esta opção: o texto do PDF é tirado no próprio servidor, sem chamada a modelo.",
+              )}
+            </p>
           </Card>
 
           {/* Handoff */}
