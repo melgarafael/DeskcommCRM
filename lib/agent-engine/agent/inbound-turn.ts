@@ -156,7 +156,8 @@ import {
   type StageClassifierKnobs,
 } from './stage-classifier';
 import { classificadoresDoTurno } from './classificadores-do-turno';
-import { loadPlaybook } from './playbook';
+import { loadPlaybook, textoDaOrganizacao } from './playbook';
+import { concessoesSemLastro, lastroDoContexto, type LastroComercial } from '../guardrails/lastro-comercial';
 import { promessasEmAberto } from './declaracao';
 import {
   projetarContexto,
@@ -3862,6 +3863,55 @@ async function executarTurnoDoAgente(
     .filter((sk): sk is (typeof skills)[number] => sk !== undefined)
     .filter((sk) => !skillMatch.matched.some((m) => m.name === sk.name));
   const matchedSkillsBlock = renderMatchedSkillBodies([...skillMatch.matched, ...skillsDoRoteiro]);
+  // Lastro comercial (gate `concessao_sem_lastro`): o que a EMPRESA escreveu e o que só o
+  // CLIENTE trouxe, pela `direction` do banco. As consultas do turno entram na hora do envio.
+  const fontesDoLastro = {
+    contexto: openingContext.context,
+    atual: { texto: currentInboundText, remetente: currentInboundSender?.name ?? null },
+    memoriaDoModelo: [
+      effectivePrevious?.rolling_summary ?? '',
+      ...(effectivePrevious?.commitments ?? []),
+      effectivePrevious?.next_action ?? '',
+    ],
+  };
+  let enviadasForaDaJanela: string[] | null = null;
+  const lastroDoTurno = (): LastroComercial =>
+    lastroDoContexto({
+      ...fontesDoLastro,
+      materialDaOrganizacao: [
+        textoDaOrganizacao(playbook.prompt),
+        renderOrgMemory(orgMemory),
+        matchedSkillsBlock,
+        evidenciasComerciais.contexto(),
+      ],
+      enviadasForaDaJanela: enviadasForaDaJanela ?? [],
+    });
+  // A janela do contexto só traz o que a empresa enviou no atendimento ATUAL. Só sob
+  // suspeita, UMA leitura por turno do que ela enviou antes. Se a leitura falhar, vale a
+  // janela: a falha fica FECHADA (o veto continua de pé).
+  // ponytail: as 500 enviadas mais recentes; conversa mais longa veta o valor mais antigo.
+  const lastroComercialPara = async (corpo: string): Promise<LastroComercial> => {
+    if (enviadasForaDaJanela === null && concessoesSemLastro(corpo, lastroDoTurno()).length > 0) {
+      enviadasForaDaJanela = await pool
+        .query<{ body: string }>(
+          `select body from messages
+           where organization_id = $1 and conversation_id = $2
+             and direction = 'outbound' and body is not null
+           order by sent_at desc limit 500`,
+          [tenantId, input.conversationId],
+        )
+        .then(
+          (r) => r.rows.map((m) => m.body),
+          (err: unknown) => {
+            runLog.warn('lastro comercial: enviadas fora da janela indisponíveis — vale a janela', {
+              error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+            });
+            return [];
+          },
+        );
+    }
+    return lastroDoTurno();
+  };
   if (!preview && deps.knobs.goldenCandidates === true) {
     await recordSkillMissCandidates(
       pool,
@@ -4479,6 +4529,9 @@ async function executarTurnoDoAgente(
             // modelo rodam em passos anteriores do MESMO loop, então o coletor já está certo
             // aqui). `registroDoTurno()` devolve o MESMO `efeitosDoTurno` que a ponte alimenta.
             registro: registroDoTurno(),
+            // Só o `send_message` arma: é o único corpo escrito pelo modelo, com laço para
+            // reescrever. Ver `GateContext.lastroComercial`.
+            lastroComercial: await lastroComercialPara(body),
             ...(deps.knobs.disclosureMode !== undefined
               ? { disclosureMode: deps.knobs.disclosureMode }
               : {}),
@@ -5493,6 +5546,9 @@ async function executarTurnoDoAgente(
                 toolCalledThisTurn: agendaToolCalledThisTurn,
               },
               horariosDaAgenda: horariosDaAgenda(),
+              // Síncrono: sem a leitura das enviadas fora da janela — o Testar pode mostrar
+              // um veto que a produção resolveria com elas.
+              lastroComercial: lastroDoTurno(),
             }),
             // #2490 — a MESMA `prepararFotosDoProduto` do caminho de produção,
             // com a MESMA cópia por service role e a MESMA query no catálogo:

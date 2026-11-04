@@ -91,6 +91,7 @@ import { renderVetoDeAfirmacao, type ConferenciaDeFato } from './factual-claim';
 // barra o texto FIXO do worker e o modelo aprovado.
 import { sqlContatoInterno } from '@/lib/contacts/tags-internas';
 import { avaliarHorarios, type HorariosDaAgenda } from './horario-da-agenda';
+import { concessoesSemLastro, renderVetoDeConcessaoSemLastro, type LastroComercial } from './lastro-comercial';
 
 /** O que os gates enxergam — carregado UMA vez sob o lock, por tentativa de envio. */
 export interface GateContext {
@@ -353,6 +354,13 @@ export interface GateContext {
    * meio deixa o registro sem existir, e é exatamente esse turno que precisa mudar a fala.
    */
   registro?: { active: boolean; ferramentas: readonly string[]; efeitos: EfeitoDasEscrituras };
+  /**
+   * Arma o `concessaoSemLastroGate`: quais valores a EMPRESA escreveu e quais só o CLIENTE
+   * trouxe (`./lastro-comercial.ts`). Ausente = DESARMADO, pelas razões do
+   * `internalVocabularyEnforced`: só o `send_message` tem modelo no laço para reescrever, e
+   * no follow-up, template, roteiro ou resposta aprovada o veto seria descarte silencioso.
+   */
+  lastroComercial?: LastroComercial;
 }
 
 /**
@@ -513,12 +521,34 @@ export const promiseGate: Gate = {
 };
 
 /**
+ * Gate 5.5 — condição comercial sem lastro: valor afirmado como condição que só aparece
+ * do lado do cliente (`./lastro-comercial.ts`). Antes do semântico, para que o primeiro
+ * erro de ensino seja este, e não um que ensina só a mudar a forma da frase.
+ */
+export const concessaoSemLastroGate: Gate = {
+  name: 'concessao_sem_lastro',
+  evaluate: (ctx) => {
+    if (ctx.lastroComercial === undefined) return { pass: true };
+    const achados = concessoesSemLastro(ctx.body, ctx.lastroComercial);
+    return achados.length === 0
+      ? { pass: true }
+      : {
+          pass: false,
+          code: 'concessao_sem_lastro',
+          reason: renderVetoDeConcessaoSemLastro(achados),
+          // Só os átomos (tipo, moeda, número), nunca o corpo — sem PII.
+          detail: { sem_lastro: achados.join(',') },
+        };
+  },
+};
+
+/**
  * Gate semântico de promessa (F4-02) — lê o veredito do classificador binário barato
  * (rodado async na carga do ctx, DEPOIS da camada determinística `promiseGate`) e veta
  * promessa em texto livre que a regex não pega ("faço de graça", "garanto entrega amanhã").
  * Sem classificação (camada off) ou sem promessa = no-op. O veto devolve ao modelo a frase
- * suspeita destacada (erro de ensino). Posição 5 de `BEFORE_SEND_GATES` (F4-08), logo após
- * a camada determinística `promiseGate`.
+ * suspeita destacada (erro de ensino). Posição 5 de `BEFORE_SEND_GATES` (F4-08), depois
+ * da camada determinística `promiseGate` e do `concessaoSemLastroGate`.
  */
 export const semanticPromiseGate: Gate = {
   name: 'semantic_promise',
@@ -1213,7 +1243,9 @@ const spinningGate: Gate = {
 // PRODUZIDO EFEITO no turno (gate `registro_sem_efeito`, lendo o predicado único do efeito).
 // v12 (#3596): insere `horarioDaAgendaGate` entre `agenda_stall` e `registro_sem_efeito` —
 // dia+horário escrito ao cliente só sai se uma ferramenta de agenda o devolveu neste turno.
-export const BEFORE_SEND_CHAIN_VERSION = 12;
+// v13: insere `concessaoSemLastroGate` entre `promise` e `semantic_promise` — valor afirmado
+// como condição da empresa que só aparece do lado do cliente. Desarmado por default.
+export const BEFORE_SEND_CHAIN_VERSION = 13;
 
 /**
  * Gate 6.3 — CONFERÊNCIA DE FATO (#2231): a afirmação de FATO da resposta
@@ -1255,6 +1287,7 @@ export const factualClaimGate: Gate = {
  *   (3) pacing — janela/throttle/warm-up/caps anti-ban (F2-11);
  *   (4) spinning — template idêntico em massa (F2-12);
  *   (5) promise — validação determinística de preço/desconto/parcelamento (F4-01);
+ *   (5.5) concessao_sem_lastro — valor afirmado como condição que só o cliente trouxe;
  *   (6) semantic_promise — promessa em texto livre que a regex não pega (F4-02);
  *   (6.3) factual_claim — afirmação de FATO da resposta contra a evidência
  *         consultada no turno (#2231); logo após a F4-02, antes do disclosure;
@@ -1278,6 +1311,7 @@ export const BEFORE_SEND_GATES: readonly Gate[] = [
   messagingWindowGate,
   spinningGate,
   promiseGate,
+  concessaoSemLastroGate,
   semanticPromiseGate,
   factualClaimGate,
   casePromiseGate,
@@ -1444,6 +1478,8 @@ export interface RunBeforeSendArgs {
   followup?: GateContext['followup'];
   /** Coletor do mesmo turno: sem efeito confirmado, não afirmar registro. */
   registro?: GateContext['registro'];
+  /** Ver `GateContext.lastroComercial`. Ausente = gate no-op. */
+  lastroComercial?: GateContext['lastroComercial'];
   /**
    * Pausa humana do turno, paga ANTES de o guardrail tomar conexão/transação
    * (issue #654) — o porquê está no corpo de `runBeforeSend`. Ausente (default)
@@ -1781,6 +1817,7 @@ export async function runBeforeSend(args: RunBeforeSendArgs): Promise<BeforeSend
       ...(args.horariosDaAgenda !== undefined ? { horariosDaAgenda: args.horariosDaAgenda } : {}),
       ...(args.followup !== undefined ? { followup: args.followup } : {}),
       ...(args.registro !== undefined ? { registro: args.registro } : {}),
+      ...(args.lastroComercial !== undefined ? { lastroComercial: args.lastroComercial } : {}),
     };
 
     const { body: evaluatedBody, trace: traceDaCadeia, veto, throttleWaitMs } = evaluateBeforeSend(ctx, gates);
