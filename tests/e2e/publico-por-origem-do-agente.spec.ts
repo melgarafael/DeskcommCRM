@@ -63,6 +63,21 @@ async function abrirAgente(): Promise<void> {
 const naoAtender = () => pagina.locator("#exclude_sources");
 const atenderSo = () => pagina.locator("#include_sources");
 
+/** Fotografa só a região das duas listas (medida, não a olho), com folga para os rótulos. */
+async function fotografarListas(caminho: string): Promise<void> {
+  await atenderSo().scrollIntoViewIfNeeded();
+  const a = await atenderSo().boundingBox();
+  const b = await naoAtender().boundingBox();
+  if (a === null || b === null) throw new Error("listas de origem sem caixa medida");
+  // `boundingBox` mede na janela; o `clip` com `fullPage` mede na página inteira.
+  const rolagem = await pagina.evaluate(() => window.scrollY);
+  const x = Math.max(0, Math.min(a.x, b.x) - 24);
+  const y = Math.max(0, Math.min(a.y, b.y) + rolagem - 80);
+  const largura = Math.max(a.x + a.width, b.x + b.width) - x + 24;
+  const altura = Math.max(a.y + a.height, b.y + b.height) + rolagem - y + 60;
+  await pagina.screenshot({ path: caminho, fullPage: true, clip: { x, y, width: largura, height: altura } });
+}
+
 async function salvarRascunho(): Promise<void> {
   await pagina.getByRole("button", { name: /salvar rascunho/i }).first().click();
   // Espera o SUCESSO, não o botão desabilitar (ver o vizinho escopo-de-funil).
@@ -82,8 +97,7 @@ test.describe("público do agente por origem", () => {
     // Controle: o seed nunca marcou origem — o caso seguinte mede a marcação, não um resto.
     await expect(prospeccao).not.toBeChecked();
 
-    await naoAtender().scrollIntoViewIfNeeded();
-    await pagina.screenshot({ path: "evidence/publico-por-origem/listas-de-origem.png", fullPage: true });
+    await fotografarListas("evidence/publico-por-origem/listas-de-origem.png");
   });
 
   test("marcar Prospecção em Não atender SOBREVIVE ao salvar e recarregar", async () => {
@@ -103,8 +117,7 @@ test.describe("público do agente por origem", () => {
       "a exclusão vazou para a lista de inclusão",
     ).not.toBeChecked();
 
-    await naoAtender().scrollIntoViewIfNeeded();
-    await pagina.screenshot({ path: "evidence/publico-por-origem/prospeccao-sobrevive-ao-reload.png", fullPage: true });
+    await fotografarListas("evidence/publico-por-origem/prospeccao-sobrevive-ao-reload.png");
 
     // Devolve o seed compartilhado ao estado de antes.
     await naoAtender().getByRole("checkbox", { name: "Prospecção" }).uncheck();
