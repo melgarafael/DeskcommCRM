@@ -42,7 +42,7 @@ Preço, porcentagem e repasse são negociados separadamente nesta etapa. O recur
 
 ## Self-host e migrations
 
-As migrations de agências têm cabeçalho `-- manifest:` e apêndices no baseline. Na contribuição separada, elas foram renumeradas para 9105–9110 porque a `main` atual passou a ocupar números anteriores. A numeração não colide com a `main` medida em `0f55b591f`; PRs abertos ainda precisam ser conferidos antes de publicar. As migrations já aplicadas no Supabase de teste permaneceram intactas na árvore principal. Não houve alteração na VPS nem uso de Docker.
+As migrations de agências têm cabeçalho `-- manifest:` e apêndices no baseline. Na contribuição separada, elas foram renumeradas para 9109–9114 porque a `main` atual passou a ocupar 9105–9108. A numeração não colide com a `main` medida em `7321fb9ba`; PRs abertos ainda precisam ser conferidos antes de publicar. As migrations já aplicadas no Supabase de teste permaneceram intactas na árvore principal. Não houve alteração na VPS nem uso de Docker.
 
 ## Provas e pendências
 
