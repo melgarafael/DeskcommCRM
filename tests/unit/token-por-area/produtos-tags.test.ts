@@ -39,6 +39,7 @@ import {
   cadeiasDeEscrita,
   cadeiasForaDaOrganizacao,
   criarClienteAdminFalso,
+  linhasDaTabela,
   rpcsForaDaOrganizacao,
 } from "@/tests/unit/helpers/cliente-admin-falso";
 
@@ -345,9 +346,9 @@ describe("POST /api/v1/products — cadastro de produto", () => {
     tokenDe(ORG_B, TOKEN_B, "admin");
     const res = await rotaProdutos.POST(pedidoJson("POST", CAMINHO_PRODUTOS, CORPO, TOKEN_B));
     expect(res.status).toBe(201);
-    const criado = falso.linhas.catalog_products.find((p) => p.codigo === "P-NOVO");
+    const criado = linhasDaTabela(falso, "catalog_products").find((p) => p.codigo === "P-NOVO");
     expect(criado?.organization_id).toBe(ORG_B);
-    expect(falso.linhas.catalog_products.find((p) => p.id === PROD_A)).toMatchObject({
+    expect(linhasDaTabela(falso, "catalog_products").find((p) => p.id === PROD_A)).toMatchObject({
       organization_id: ORG_A,
       preco_cents: 1000,
     });
@@ -381,7 +382,7 @@ describe("PATCH /api/v1/products/[id] — preço e dados do produto", () => {
       paramsDe(PROD_A),
     );
     expect(res.status).toBe(200);
-    expect(falso.linhas.catalog_products.find((p) => p.id === PROD_A)?.preco_cents).toBe(2000);
+    expect(linhasDaTabela(falso, "catalog_products").find((p) => p.id === PROD_A)?.preco_cents).toBe(2000);
     expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ actorUserId: null, actorApiTokenId: TOKEN_A }));
   });
@@ -393,7 +394,7 @@ describe("PATCH /api/v1/products/[id] — preço e dados do produto", () => {
       paramsDe(PROD_A),
     );
     expect(res.status).toBe(404);
-    expect(falso.linhas.catalog_products.find((p) => p.id === PROD_A)?.preco_cents).toBe(1000);
+    expect(linhasDaTabela(falso, "catalog_products").find((p) => p.id === PROD_A)?.preco_cents).toBe(1000);
     expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
     expect(audit).not.toHaveBeenCalled();
   });
@@ -414,7 +415,7 @@ describe("DELETE /api/v1/products/[id] — remoção do produto", () => {
     tokenDe(ORG_A, TOKEN_A, "admin");
     const res = await rotaProduto.DELETE(pedido("DELETE", caminhoProduto(PROD_A), TOKEN_A), paramsDe(PROD_A));
     expect(res.status).toBe(200);
-    expect(falso.linhas.catalog_products.some((p) => p.id === PROD_A)).toBe(false);
+    expect(linhasDaTabela(falso, "catalog_products").some((p) => p.id === PROD_A)).toBe(false);
     expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ actorApiTokenId: TOKEN_A }));
     // A foto do produto sai do Storage, e só com caminho do prefixo de A.
@@ -427,7 +428,7 @@ describe("DELETE /api/v1/products/[id] — remoção do produto", () => {
     tokenDe(ORG_B, TOKEN_B, "admin");
     const res = await rotaProduto.DELETE(pedido("DELETE", caminhoProduto(PROD_A), TOKEN_B), paramsDe(PROD_A));
     expect(res.status).toBe(404);
-    expect(falso.linhas.catalog_products.some((p) => p.id === PROD_A)).toBe(true);
+    expect(linhasDaTabela(falso, "catalog_products").some((p) => p.id === PROD_A)).toBe(true);
     expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
     expect(audit).not.toHaveBeenCalled();
   });
@@ -503,7 +504,7 @@ describe("PUT /api/v1/products/[id]/fotos — reordena e remove fotos", () => {
     tokenDe(ORG_A, TOKEN_A, "admin");
     const res = await rotaFotos.PUT(pedidoJson("PUT", caminhoFotos(PROD_A), { fotos: [] }, TOKEN_A), paramsDe(PROD_A));
     expect(res.status).toBe(200);
-    expect(falso.linhas.catalog_products.find((p) => p.id === PROD_A)?.fotos).toEqual([]);
+    expect(linhasDaTabela(falso, "catalog_products").find((p) => p.id === PROD_A)?.fotos).toEqual([]);
     const removidos = falso.uploads.filter((u) => u.operacao === "remove").map((u) => u.caminho);
     expect(removidos).toEqual([FOTO_A]);
     expect(removidos.every((c) => c.startsWith(`${ORG_A}/${PROD_A}/`))).toBe(true);
@@ -519,7 +520,7 @@ describe("PUT /api/v1/products/[id]/fotos — reordena e remove fotos", () => {
     expect(res.status).toBe(409);
     expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
     expect(falso.uploads).toEqual([]);
-    expect(falso.linhas.catalog_products.find((p) => p.id === PROD_B)?.fotos).toEqual([]);
+    expect(linhasDaTabela(falso, "catalog_products").find((p) => p.id === PROD_B)?.fotos).toEqual([]);
     expect(audit).not.toHaveBeenCalled();
   });
 
@@ -571,7 +572,7 @@ describe("POST /api/v1/products/import — importação da planilha", () => {
     tokenDe(ORG_A, TOKEN_A, "admin");
     const res = await rotaImportar.POST(pedido("POST", CAMINHO_IMPORTAR, TOKEN_A, planilha()));
     expect(res.status).toBe(200);
-    expect(falso.linhas.catalog_products.some((p) => p.codigo === "P-NOVO" && p.organization_id === ORG_A)).toBe(true);
+    expect(linhasDaTabela(falso, "catalog_products").some((p) => p.codigo === "P-NOVO" && p.organization_id === ORG_A)).toBe(true);
     expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ actorApiTokenId: TOKEN_A }));
   });
@@ -580,8 +581,8 @@ describe("POST /api/v1/products/import — importação da planilha", () => {
     tokenDe(ORG_B, TOKEN_B, "admin");
     const res = await rotaImportar.POST(pedido("POST", CAMINHO_IMPORTAR, TOKEN_B, planilha()));
     expect(res.status).toBe(200);
-    expect(falso.linhas.catalog_products.some((p) => p.codigo === "P-NOVO" && p.organization_id === ORG_B)).toBe(true);
-    expect(falso.linhas.catalog_products.find((p) => p.id === PROD_A)).toMatchObject({ preco_cents: 1000 });
+    expect(linhasDaTabela(falso, "catalog_products").some((p) => p.codigo === "P-NOVO" && p.organization_id === ORG_B)).toBe(true);
+    expect(linhasDaTabela(falso, "catalog_products").find((p) => p.id === PROD_A)).toMatchObject({ preco_cents: 1000 });
     expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
   });
 
@@ -592,9 +593,9 @@ describe("POST /api/v1/products/import — importação da planilha", () => {
       pedido("POST", CAMINHO_IMPORTAR, TOKEN_B, formulario(new File([csv], "catalogo.csv", { type: "text/csv" }))),
     );
     expect(res.status).toBe(200);
-    const linhasComCodigo = falso.linhas.catalog_products.filter((p) => p.codigo === "P-A");
+    const linhasComCodigo = linhasDaTabela(falso, "catalog_products").filter((p) => p.codigo === "P-A");
     expect(linhasComCodigo.map((p) => p.organization_id).sort()).toEqual([ORG_A, ORG_B].sort());
-    expect(falso.linhas.catalog_products.find((p) => p.id === PROD_A)).toMatchObject({
+    expect(linhasDaTabela(falso, "catalog_products").find((p) => p.id === PROD_A)).toMatchObject({
       organization_id: ORG_A,
       nome: "Produto de A",
       preco_cents: 1000,

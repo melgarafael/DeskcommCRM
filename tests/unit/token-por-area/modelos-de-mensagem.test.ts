@@ -36,6 +36,7 @@ import {
   cadeiasDeEscrita,
   cadeiasForaDaOrganizacao,
   criarClienteAdminFalso,
+  linhasDaTabela,
   rpcsForaDaOrganizacao,
 } from "@/tests/unit/helpers/cliente-admin-falso";
 
@@ -467,7 +468,7 @@ suiteDoCaso({
   verificaA: async (r, falso) => {
     const corpo = (await r.json()) as { data: { organization_id: string } };
     expect(corpo.data.organization_id).toBe(ORG_A);
-    expect(falso.linhas.message_template_groups.some((l) => l.name === "Negociação" && l.organization_id === ORG_A)).toBe(
+    expect(linhasDaTabela(falso, "message_template_groups").some((l) => l.name === "Negociação" && l.organization_id === ORG_A)).toBe(
       true,
     );
     expect(vi.mocked(audit)).toHaveBeenCalledWith(
@@ -482,7 +483,7 @@ suiteDoCaso({
   verificaB: async (r, falso) => {
     const corpo = (await r.json()) as { data: { organization_id: string } };
     expect(corpo.data.organization_id).toBe(ORG_B);
-    expect(falso.linhas.message_template_groups.filter((l) => l.organization_id === ORG_A)).toHaveLength(2);
+    expect(linhasDaTabela(falso, "message_template_groups").filter((l) => l.organization_id === ORG_A)).toHaveLength(2);
   },
 });
 

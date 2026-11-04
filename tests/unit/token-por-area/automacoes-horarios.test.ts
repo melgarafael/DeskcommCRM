@@ -35,6 +35,7 @@ import {
   cadeiasDeEscrita,
   cadeiasForaDaOrganizacao,
   criarClienteAdminFalso,
+  linhasDaTabela,
   rpcsForaDaOrganizacao,
 } from "@/tests/unit/helpers/cliente-admin-falso";
 
@@ -528,7 +529,7 @@ caso("DELETE /api/v1/channel-schedules/[id] (cancelar janela)", {
   },
   naoAlcanca: async (res) => {
     expect(res.status).toBe(404);
-    expect(falso.linhas.channel_schedules.find((l) => l.id === JANELA_A)?.status).toBe("scheduled");
+    expect(linhasDaTabela(falso, "channel_schedules").find((l) => l.id === JANELA_A)?.status).toBe("scheduled");
     expect(audit).not.toHaveBeenCalled();
   },
 });
