@@ -30,6 +30,7 @@ const ORDEM_ESPERADA = [
   "messaging_window",
   "spinning",
   "promise",
+  "concessao_sem_lastro",
   "semantic_promise",
   "factual_claim",
   "case_promise",
@@ -70,8 +71,8 @@ describe("forma da cadeia before_send", () => {
     // O par (tamanho, versão) é o que amarra os dois. Acrescentar um gate sem
     // bumpar deixa o trace de auditoria mentindo sobre qual cadeia rodou — e o
     // trace é justamente a prova que as Fases 0–2 usam para dizer "não regrediu".
-    expect(BEFORE_SEND_GATES).toHaveLength(16);
-    expect(BEFORE_SEND_CHAIN_VERSION).toBe(12);
+    expect(BEFORE_SEND_GATES).toHaveLength(17);
+    expect(BEFORE_SEND_CHAIN_VERSION).toBe(13);
   });
 
   it("internal_vocabulary roda ANTES do disclosure — inspeciona o texto do modelo, não o emendado", () => {
@@ -109,6 +110,14 @@ describe("forma da cadeia before_send", () => {
     const nomes = BEFORE_SEND_GATES.map((g) => g.name);
     expect(nomes.indexOf("registro_sem_efeito")).toBeGreaterThan(nomes.indexOf("agenda_stall"));
     expect(nomes.indexOf("registro_sem_efeito")).toBeLessThan(nomes.indexOf("disclosure"));
+  });
+
+  it("concessao_sem_lastro fica logo depois de promise e antes de semantic_promise", () => {
+    // O primeiro erro de ensino sobre um valor que só o cliente trouxe tem de ser este:
+    // o do semântico ensina só a mudar a forma da frase, e o valor continuaria nela.
+    const nomes = BEFORE_SEND_GATES.map((g) => g.name);
+    expect(nomes.indexOf("concessao_sem_lastro")).toBe(nomes.indexOf("promise") + 1);
+    expect(nomes.indexOf("semantic_promise")).toBe(nomes.indexOf("concessao_sem_lastro") + 1);
   });
 
   it("horario_da_agenda fica logo depois de agenda_stall — a família da agenda junta, antes do disclosure", () => {

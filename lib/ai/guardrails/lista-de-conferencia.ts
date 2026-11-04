@@ -139,6 +139,18 @@ export const CONFERENCIAS_DE_SAIDA: readonly ConferenciaDeSaida[] = [
      camada: null,
   },
   {
+    nome: "concessao_sem_lastro",
+    rotulo: "Não confirmar valor que só o cliente citou",
+    oQueProtege:
+      "Barra a resposta que confirma preço, parcela ou percentual que só aparece no que o cliente " +
+      "escreveu, e em nada que a empresa enviou ou cadastrou. O assistente refaz sem esse número.",
+    escolha: null,
+    porQueNaoSeDesliga:
+      "O que o cliente escreve não é registro da sua empresa: confirmar um valor que só ele trouxe " +
+      "obriga o negócio a uma condição que ninguém da equipe deu. Regra fixa, sem custo.",
+    camada: null,
+  },
+  {
     nome: "semantic_promise",
     rotulo: "Conferir promessas em texto livre",
     oQueProtege:
