@@ -57,6 +57,8 @@ function fakeConfig(agentId: string): PublishedAgentConfig {
     agentCreatedBy: null,
     vozEnabled: false,
     vozQuando: 'espelhar',
+    maxSendsPerTurn: null,
+    handoffTargetUserId: null,
   };
 }
 
