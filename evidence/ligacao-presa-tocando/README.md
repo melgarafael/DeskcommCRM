@@ -4,7 +4,7 @@ Ambiente: stack local (`ubuntu-local-installer.sh`), banco do `baseline.sql`, se
 `organizations.onboarded_at` foi marcado direto no banco para pular o onboarding,
 que não é o que está em prova.
 
-Roteiro (`prova-ligacao-presa.cjs`): insere em `voice_calls` uma linha SIP recebida
+Roteiro (`prova-ligacao-presa.mjs`): insere em `voice_calls` uma linha SIP recebida
 `ringing` criada há 10 min (o estado em que a VPS ficava), entra como dono e abre
 `/app/inbox`, chama `POST /api/v1/cron/recover-stuck-calls` e confere a tela.
 
