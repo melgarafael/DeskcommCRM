@@ -95,4 +95,12 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/ai/skills",
   { caminho: "/api/v1/ai/skills/[name]", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
   { caminho: "/api/v1/ai/skills/[name]/versions", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
+
+  // attendants/availability e team/assignable (só GET, leitura). Quem autentica é a
+  // própria rota, por `resolveAuthDual`: token com `config:read` e papel admin
+  // (`tokenRole`). Caminhos literais, sem segmento dinâmico, então nenhum irmão entra
+  // de carona: `availability/[user_id]` (PATCH de pessoa), `sector`, `sectors` e
+  // `presence` seguem só de sessão, e `team` (lista com e-mail de login) também.
+  "/api/v1/attendants/availability",
+  "/api/v1/team/assignable",
 ];
