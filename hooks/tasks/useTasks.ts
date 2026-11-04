@@ -32,6 +32,8 @@ export interface FiltrosDeTarefa {
   aberto?: boolean;
   /** De quem é: `me` (a rota resolve quem é), `ninguem` (sem responsável) ou o id de um membro. Ausente = de todos. */
   assigned_to?: string;
+  /** Só as tarefas de negócios deste funil. Ausente = de todos os funis (e as tarefas soltas também). */
+  pipeline_id?: string;
 }
 
 export interface OpcoesDeTarefas {
@@ -69,6 +71,7 @@ export function useTasks(filtros: FiltrosDeTarefa = {}, opcoes: OpcoesDeTarefas 
   if (filtros.demanda_id) params.set("demanda_id", filtros.demanda_id);
   if (filtros.aberto) params.set("aberto", "true");
   if (filtros.assigned_to) params.set("assigned_to", filtros.assigned_to);
+  if (filtros.pipeline_id) params.set("pipeline_id", filtros.pipeline_id);
   const qs = params.toString();
 
   const query = useQuery({
