@@ -36,7 +36,12 @@ import { createClient } from "@/lib/supabase/server";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
 import { conferirDemanda } from "@/lib/tarefas/demanda";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
-import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA, type Tarefa } from "@/lib/tarefas/tipos";
+import {
+  PRIORIDADES_DA_TAREFA,
+  SITUACOES_ABERTAS_DA_TAREFA,
+  SITUACOES_DA_TAREFA,
+  type Tarefa,
+} from "@/lib/tarefas/tipos";
 
 export const dynamic = "force-dynamic";
 
@@ -116,7 +121,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (filtros.demanda_id) query = query.eq("demanda_id", filtros.demanda_id);
   if (filtros.due_from) query = query.gte("due_date", filtros.due_from);
   if (filtros.due_to) query = query.lte("due_date", filtros.due_to);
-  if (filtros.aberto === "true") query = query.in("status", ["pending", "in_progress"]);
+  if (filtros.aberto === "true") query = query.in("status", [...SITUACOES_ABERTAS_DA_TAREFA]);
   if (filtros.assigned_to === "me") query = query.eq("assigned_to", authz.user.id);
   else if (filtros.assigned_to === "ninguem") query = query.is("assigned_to", null);
   else if (filtros.assigned_to) query = query.eq("assigned_to", filtros.assigned_to);
