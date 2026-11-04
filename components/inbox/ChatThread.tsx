@@ -47,6 +47,8 @@ interface Props {
    */
   dono?: { userId: string | null; nome: string | null } | null;
   contatoId?: string | null;
+  /** O fio mora numa página que rola: acompanhar o fim não pode arrastar a página. */
+  soNaCaixa?: boolean;
 }
 
 /**
@@ -93,6 +95,7 @@ export function ChatThread({
   dono,
   contatoId,
   searchTerm = "",
+  soNaCaixa = false,
 }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
@@ -178,7 +181,7 @@ export function ChatThread({
       && (latest.sent_by_user_id === currentUser.id || latest.metadata?._optimistic === true),
     pages: q.data?.pages.length ?? 0,
     searching: !!termo,
-  });
+  }, soNaCaixa);
   const { scrollerRef, contentRef, bottomRef } = scroll;
 
   // Só o TERMO leva à ocorrência. Depender do conjunto de resultados faria cada

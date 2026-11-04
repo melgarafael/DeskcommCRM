@@ -3,7 +3,10 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import { toast } from "sonner";
+
 import { CRMSidePanel } from "@/components/inbox/CRMSidePanel";
+import { ApiError } from "@/lib/api/types";
 
 /**
  * A PORTA DE FOLLOW-UP no painel da conversa (#3178).
@@ -140,6 +143,10 @@ beforeEach(() => {
   post.mockReset();
   patch.mockReset();
   post.mockResolvedValue({ data: { id: "e-novo" } });
+  // O aviso é por chamada: sem limpar, o caso da frase de canal veria o toast
+  // que o caso anterior disparou.
+  vi.mocked(toast.error).mockClear();
+  vi.mocked(toast.success).mockClear();
 });
 
 describe("painel do inbox — seção de follow-up", () => {
@@ -325,5 +332,45 @@ describe("painel do inbox — seção de follow-up", () => {
     await waitFor(() => expect(get).toHaveBeenCalled());
     expect(screen.queryByTestId("inbox-followup")).toBeNull();
     expect(screen.queryByTestId("iniciar-followup")).toBeNull();
+  });
+
+  it("#3923 — sem número conectado, a recusa vira a frase de CONECTAR NÚMERO, não a genérica", async () => {
+    servirApi({ flows: [FLUXO] });
+    // O que o servidor devolve depois da correção: 409 com o código estável.
+    post.mockRejectedValue(
+      new ApiError(
+        409,
+        "service_channel_not_found",
+        undefined,
+        "req-3923",
+        "Conecte um número de WhatsApp antes de iniciar o follow-up.",
+      ),
+    );
+    renderPainel();
+
+    await screen.findByTestId("inbox-followup");
+    await userEvent.selectOptions(screen.getByLabelText("Fluxo de follow-up"), FLUXO.id);
+    await userEvent.click(screen.getByTestId("iniciar-followup"));
+
+    // A frase diz o que FAZER — é o pedido da issue ("uma frase que o leigo
+    // entenda"). O "não foi possível" continua reservado ao resto.
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Conecte um número de WhatsApp antes de iniciar o follow-up."),
+    );
+    expect(toast.error).not.toHaveBeenCalledWith("Não foi possível iniciar o follow-up.");
+  });
+
+  it("CONTROLE: falha de outro tipo continua na frase genérica", async () => {
+    servirApi({ flows: [FLUXO] });
+    post.mockRejectedValue(new ApiError(500, "internal_error", undefined, "req-2", "boom"));
+    renderPainel();
+
+    await screen.findByTestId("inbox-followup");
+    await userEvent.selectOptions(screen.getByLabelText("Fluxo de follow-up"), FLUXO.id);
+    await userEvent.click(screen.getByTestId("iniciar-followup"));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Não foi possível iniciar o follow-up."),
+    );
   });
 });

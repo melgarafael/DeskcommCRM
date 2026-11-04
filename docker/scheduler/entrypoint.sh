@@ -70,6 +70,9 @@ CRONS="
 # (channel_knobs + pacing_ledger) só sabem torná-la mais lenta.
 * * * * *|45|api/v1/cron/campaign-worker
 */5 * * * *|60|api/v1/cron/webhook-log-retention
+# OAuth por contato dos servidores MCP do agente (migration 9095): revoga no
+# terceiro o acesso cuja conversa encerrou (ou cujo contato foi anonimizado).
+*/5 * * * *|60|api/v1/cron/mcp-oauth-revogacao
 */5 * * * *|45|api/v1/cron/channel-health
 # A JANELA DE MANUTENÇÃO (#2388). Minuto a minuto porque o que ela decide é a
 # borda de um horário ESCOLHIDO POR UMA PESSOA: perder a abertura ou a retomada

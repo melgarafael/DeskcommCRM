@@ -245,11 +245,13 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "(app/actions/settings/updateProfile.ts, updateTenant.ts).",
   },
   {
-    fn: "fn_conversation_assign(uuid,uuid,uuid,text,uuid,boolean)",
+    fn: "fn_conversation_assign(uuid,uuid,uuid,text,uuid,boolean,uuid)",
     razao:
       "Rotas de claim/release/transfer chamam com a sessão do usuário " +
       "(app/api/v1/conversations/[id]/*). A função faz a própria checagem de " +
-      "membership e papel.",
+      "membership e papel. O 7º argumento (p_source_job_id) é o da origem do " +
+      "turno autônomo: só chega pelo client de service role, e o corpo recusa " +
+      "(source_job_requires_runtime_caller) quando o chamador não é o runtime.",
   },
   {
     fn: "fn_mesclar_contatos(uuid,uuid,uuid[])",

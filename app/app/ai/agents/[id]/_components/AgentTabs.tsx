@@ -41,6 +41,8 @@ interface Props {
   routerMembership?: { routerId: string; routerName: string; channelSessionId: string; channelStatus: string | null } | null;
   readOnly?: boolean;
   organizationTimezone?: string;
+  /** Módulo opcional `mcp_por_agente` ligado — ver `AgentForm`. */
+  mcpPorAgente?: boolean;
 }
 
 export function AgentTabs(props: Props) {
@@ -85,6 +87,7 @@ export function AgentTabs(props: Props) {
           routerMembership={props.routerMembership}
           readOnly={props.readOnly}
           organizationTimezone={props.organizationTimezone}
+          mcpPorAgente={props.mcpPorAgente}
         />
       </TabsContent>
 

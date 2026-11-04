@@ -90,6 +90,13 @@ export interface EstadoDaTelaDeAviso {
    * antes de alguém escolher o modo `responsavel`, e avisa quem está sem número.
    */
   equipe: MembroDoAvisoNaTela[];
+  /**
+   * `true` = a leitura dos números da equipe FALHOU (`equipe` vem vazia por
+   * isso, não porque a organização não tem gente). A tela precisa dizer isso em
+   * vez de "ainda não há outras pessoas" — e não pode oferecer o modo
+   * `responsavel` como se soubesse quem tem número (#3935).
+   */
+  equipe_indisponivel: boolean;
   conexoes: ConexaoParaAviso[];
   avisos: AvisoDaTela[];
   pode_ligar: boolean;
@@ -190,7 +197,8 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
           destino_modo: modoDoDestinoDoAviso({ destino_modo: config.destino_modo }),
         }
       : null,
-    equipe,
+    equipe: equipe ?? [],
+    equipe_indisponivel: equipe === null,
     conexoes,
     avisos: avisosDaTela(fatos),
     pode_ligar: podeLigarOAviso(fatos),
@@ -213,10 +221,15 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
  * policy a `manager` seria uma decisão de privacidade que ninguém tomou.
  * `organization_id` filtrado À MÃO (o admin bypassa a RLS).
  *
- * Falha ABERTA (lista vazia): a tela perde a lista de números, não o resto. O
- * log é quem distingue "não há equipe" de "não deu para ler".
+ * Falha ABERTA (lista vazia) para a TELA não cair, mas DECLARADA: o erro vira
+ * `null`, que a resposta entrega como `equipe_indisponivel`. A diferença entre
+ * "não há equipe" e "não deu para ler" é a diferença entre uma frase honesta e
+ * um `null` gravado por cima do WhatsApp de todo mundo (#3935).
  */
-async function lerEquipe(admin: SupabaseClient, orgId: string): Promise<MembroDoAvisoNaTela[]> {
+async function lerEquipe(
+  admin: SupabaseClient,
+  orgId: string,
+): Promise<MembroDoAvisoNaTela[] | null> {
   const { data, error } = await admin
     .from("user_organizations")
     .select("user_id, whatsapp_e164")
@@ -226,7 +239,7 @@ async function lerEquipe(admin: SupabaseClient, orgId: string): Promise<MembroDo
     .limit(200);
   if (error) {
     logger.warn("[aviso-de-caso] equipe não lida", { organizationId: orgId, causa: error.message });
-    return [];
+    return null;
   }
   const linhas = (data ?? []) as Array<{ user_id: string; whatsapp_e164: string | null }>;
   if (linhas.length === 0) return [];
