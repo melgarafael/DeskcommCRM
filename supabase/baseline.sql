@@ -68752,7 +68752,7 @@ create trigger trg_interromper_turnos_ao_assumir
 
 notify pgrst, 'reload schema';
 
--- 20261104140000_9109_organizacoes_agencias.sql
+-- 20261104140000_9200_organizacoes_agencias.sql
 -- manifest: Configuração protegida de agências e vínculo exclusivo de clientes, com autorização atual e bloqueio de hierarquia e exclusão da agência com clientes.
 -- Número provisório: conferir colisão com PRs abertos antes de publicar.
 create table if not exists public.agencia_configuracoes (
@@ -68838,7 +68838,7 @@ drop trigger if exists agencia_cliente_hierarquia on public.agencia_clientes;
 create trigger agencia_cliente_hierarquia before insert or update on public.agencia_clientes
   for each row execute function public.fn_agencia_validar_hierarquia();
 
--- 20261104150000_9110_agencias_criacao_e_sessoes.sql
+-- 20261104150000_9201_agencias_criacao_e_sessoes.sql
 -- manifest: Criação atômica e sessões delegadas de agência com revalidação de autoridade, separadas da administração global.
 create table if not exists public.agencia_sessoes (
  id uuid primary key default gen_random_uuid(),
@@ -69009,7 +69009,7 @@ end; $$;
 revoke all on function public.fn_agencia_criar_cliente(uuid,uuid,text,text) from public,anon;
 grant execute on function public.fn_agencia_criar_cliente(uuid,uuid,text,text) to authenticated;
 
--- 20261104160000_9111_agencias_criacao_global_e_callbacks.sql
+-- 20261104160000_9202_agencias_criacao_global_e_callbacks.sql
 -- manifest: Habilitação de agência na criação global na mesma transação e revalidação da delegação em callbacks externos.
 create or replace function public.fn_platform_create_tenant_with_owner(
   p_actor uuid, p_key uuid, p_request jsonb, p_hash text
@@ -69137,7 +69137,7 @@ $$;
 revoke all on function public.fn_support_callback_write_allowed(uuid,uuid,uuid) from public,anon,authenticated;
 grant execute on function public.fn_support_callback_write_allowed(uuid,uuid,uuid) to service_role;
 
--- 20261104170000_9112_agencias_clientes_inclusos.sql
+-- 20261104170000_9203_agencias_clientes_inclusos.sql
 -- manifest: Permitir à plataforma incluir clientes no acordo comercial da agência sem gerar assinaturas individuais ou cobranças automáticas.
 alter table public.agencia_configuracoes add column if not exists clientes_inclusos boolean not null default false;
 create or replace function public.fn_agencia_criar_cliente(p_agencia uuid,p_chave uuid,p_nome text,p_slug text)
@@ -69187,7 +69187,7 @@ end; $$;
 revoke all on function public.fn_create_tenant_with_owner(uuid,uuid,jsonb,text) from public,anon,authenticated;
 grant execute on function public.fn_create_tenant_with_owner(uuid,uuid,jsonb,text) to service_role;
 
--- 20261104180000_9113_agencias_callbacks_vinculo_direto.sql
+-- 20261104180000_9204_agencias_callbacks_vinculo_direto.sql
 -- manifest: Revalidar callbacks pela delegação mais recente, preservando vínculo direto legítimo após sair da agência.
 create or replace function public.fn_support_callback_write_allowed(p_org uuid,p_actor uuid default null,p_session uuid default null)
 returns boolean language sql stable security definer set search_path=public,pg_temp as $$
@@ -69212,7 +69212,7 @@ $$;
 revoke all on function public.fn_support_callback_write_allowed(uuid,uuid,uuid) from public,anon,authenticated;
 grant execute on function public.fn_support_callback_write_allowed(uuid,uuid,uuid) to service_role;
 
--- 20261104190000_9114_agencias_criacao_sessao_valida.sql
+-- 20261104190000_9205_agencias_criacao_sessao_valida.sql
 -- manifest: Revalidar a sessão Auth na criação delegada para impedir provisionamento por sessão encerrada ou expirada.
 create or replace function public.fn_agencia_criar_cliente(p_agencia uuid,p_chave uuid,p_nome text,p_slug text)
 returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$

@@ -42,7 +42,7 @@ Preço, porcentagem e repasse são negociados separadamente nesta etapa. O recur
 
 ## Self-host e migrations
 
-As migrations de agências têm cabeçalho `-- manifest:` e apêndices no baseline. Na contribuição separada, elas foram renumeradas para 9109–9114 porque a `main` atual passou a ocupar 9105–9108. A numeração não colide com a `main` medida em `7321fb9ba`; PRs abertos ainda precisam ser conferidos antes de publicar. As migrations já aplicadas no Supabase de teste permaneceram intactas na árvore principal. Não houve alteração na VPS nem uso de Docker.
+As migrations de agências têm cabeçalho `-- manifest:` e apêndices no baseline. Na contribuição separada, elas foram renumeradas para 9200–9205: a `main` ocupa 9105–9108 e a consulta pública dos PRs abertos encontrou 9109–9114 em uso. A numeração não colide com a `main` medida em `7321fb9ba`; como a API pública do GitHub atingiu o limite durante a varredura completa, os PRs abertos precisam ser conferidos novamente imediatamente antes de publicar. As migrations já aplicadas no Supabase de teste permaneceram intactas na árvore principal. Não houve alteração na VPS nem uso de Docker.
 
 ## Provas e pendências
 
