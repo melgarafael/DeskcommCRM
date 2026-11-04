@@ -1,5 +1,5 @@
 ---
-impacto: correcao
+impacto: nada_mudou
 secao: corrigido
 titulo: A imagem conserva os bindings instalados do canvas no standalone
 ---
