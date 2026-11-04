@@ -327,9 +327,7 @@ export async function listContactsHandler(
     }
     const op = asc ? "gt" : "lt";
     if (c.sort) {
-      query = query.or(
-        `${sortCol}.${op}.${c.sort},and(${sortCol}.eq.${c.sort},id.${op}.${c.id})`,
-      );
+      query = query.or(`${sortCol}.${op}.${c.sort},and(${sortCol}.eq.${c.sort},id.${op}.${c.id})`);
     } else {
       // Página na região de sort NULL (nulls last): pagina só por id.
       query = query.is(sortCol, null);
@@ -490,9 +488,11 @@ export async function getContactHandler(
     }
   }
 
-  const { contacts: enriched, error: convErr } = await withConversas(supabase, ctx.organization_id, [
-    contact,
-  ]);
+  const { contacts: enriched, error: convErr } = await withConversas(
+    supabase,
+    ctx.organization_id,
+    [contact],
+  );
   if (convErr) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, convErr);
   }
@@ -613,6 +613,7 @@ export async function createContactHandler(
   supabase: SB,
   ctx: HandlerCtx,
   input: ContactCreate,
+  linkedLeadId?: string,
 ): Promise<CreateContactResult> {
   // ── O PADRÃO (#2730) — a MESMA régua do formulário, aqui no SERVIDOR ──────
   //
@@ -668,13 +669,25 @@ export async function createContactHandler(
     Object.assign(insertRow, await camposCpfParaGravar(supabase, input.cpf));
   }
 
-  const { data: created, error: insErr } = await supabase
-    .from("contacts")
-    .insert(insertRow)
-    .select(SELECT_COLS)
-    .single();
+  const { data: created, error: insErr } = linkedLeadId
+    ? await supabase.rpc("fn_create_contact_for_lead", {
+        p_organization_id: ctx.organization_id,
+        p_lead_id: linkedLeadId,
+        p_contact: insertRow,
+      })
+    : await supabase.from("contacts").insert(insertRow).select(SELECT_COLS).single();
 
   if (insErr) {
+    if (insErr.code === "PT404") throw new ApiError(404, "not_found", undefined, ctx.requestId);
+    if (insErr.code === "PT409")
+      throw new ApiError(
+        409,
+        "conflict",
+        undefined,
+        ctx.requestId,
+        traduzir("Este negócio já tem contato vinculado. Atualize a ficha.", ctx.idioma ?? "pt-BR"),
+      );
+    if (insErr.code === "42501") throw new ApiError(403, "forbidden", undefined, ctx.requestId);
     // 409 quando o dado já pertence a um contato vivo desta organização (#3084).
     //
     // O índice parcial `uniq_contacts_org_phone` (organization_id, phone_number)
@@ -698,31 +711,33 @@ export async function createContactHandler(
   // uma sessão torta não pode derrubar o cadastro. O que ela NÃO faz mais é
   // falhar calada — o erro sai em `logger.warn` lá dentro, com org, contato e
   // porta.
-  await abrirConversaDoContatoNovo(supabase, {
-    porta: "manual",
-    organizationId: ctx.organization_id,
-    contactId: contact.id,
-    phoneNumber: contact.phone_number,
-    requestId: ctx.requestId,
-  });
-
-  await supabase
-    .rpc("emit_event", {
-      p_event_type: "contact.created",
-      p_entity_kind: "contact",
-      p_entity_id: contact.id,
-      p_payload: {
-        source: contact.source,
-        has_email: !!contact.email,
-        has_phone: !!contact.phone_number,
-        has_cpf: !!contact.cpf_hash,
-      },
-      p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
-      p_organization_id: contact.organization_id,
-    })
-    .then(({ error }) => {
-      if (error) console.error("[contacts.create] emit_event failed", error.message);
+  if (!linkedLeadId)
+    await abrirConversaDoContatoNovo(supabase, {
+      porta: "manual",
+      organizationId: ctx.organization_id,
+      contactId: contact.id,
+      phoneNumber: contact.phone_number,
+      requestId: ctx.requestId,
     });
+
+  if (!linkedLeadId)
+    await supabase
+      .rpc("emit_event", {
+        p_event_type: "contact.created",
+        p_entity_kind: "contact",
+        p_entity_id: contact.id,
+        p_payload: {
+          source: contact.source,
+          has_email: !!contact.email,
+          has_phone: !!contact.phone_number,
+          has_cpf: !!contact.cpf_hash,
+        },
+        p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
+        p_organization_id: contact.organization_id,
+      })
+      .then(({ error }) => {
+        if (error) console.error("[contacts.create] emit_event failed", error.message);
+      });
 
   await audit({
     action: "contact.created",
@@ -734,6 +749,16 @@ export async function createContactHandler(
     metadata: { ...a.metadataActor, source: contact.source },
   });
 
+  if (linkedLeadId)
+    await audit({
+      action: "lead.updated",
+      actorUserId: a.actorUserId,
+      organizationId: ctx.organization_id,
+      resourceType: "lead",
+      resourceId: linkedLeadId,
+      requestId: ctx.requestId,
+      metadata: { ...a.metadataActor, from: { contact_id: null }, to: { contact_id: contact.id } },
+    });
   return { contact, action: "created" };
 }
 
@@ -829,7 +854,9 @@ export async function patchContactHandler(
   // O banco deriva a coluna sozinho — era só não escrever nela.
   if (input.email !== undefined) patch.email = input.email;
   if (input.phone_number !== undefined) {
-    patch.phone_number = input.phone_number ? canonicalPhoneBR(input.phone_number) : input.phone_number;
+    patch.phone_number = input.phone_number
+      ? canonicalPhoneBR(input.phone_number)
+      : input.phone_number;
   }
   if (input.birthdate !== undefined) patch.birthdate = input.birthdate;
   // O TIPO DO CONTATO (issue 3005): o PATCH troca cliente ↔ fornecedor. Ausente
@@ -879,9 +906,10 @@ export async function patchContactHandler(
     );
   }
 
-  const tagServiceOrigin = input.tags !== undefined
-    ? await observeServiceOrigin(createAdminClient(), ctx.organization_id, contactId)
-    : null;
+  const tagServiceOrigin =
+    input.tags !== undefined
+      ? await observeServiceOrigin(createAdminClient(), ctx.organization_id, contactId)
+      : null;
   patch.updated_at = new Date().toISOString();
 
   const { data: updated, error: updErr } = await supabase
@@ -1075,11 +1103,7 @@ const VINCULOS_RESTRICT_NAO_APAGADOS: ReadonlyArray<{ tabela: string; rotulo: st
  * por organização, um id alheio responderia "sem vínculos" e a tela diria que é
  * seguro excluir algo que quem chamou nem enxerga.
  */
-async function contatoExistente(
-  supabase: SB,
-  ctx: HandlerCtx,
-  contactId: string,
-): Promise<void> {
+async function contatoExistente(supabase: SB, ctx: HandlerCtx, contactId: string): Promise<void> {
   const { data: existing, error: selErr } = await supabase
     .from("contacts")
     .select("id, organization_id")
@@ -1187,7 +1211,10 @@ export async function deleteContactHandler(
       "state_conflict",
       { vinculos, por_tabela },
       ctx.requestId,
-      traduzir("Não foi possível excluir: o contato ainda tem registros vinculados.", ctx.idioma ?? "pt-BR"),
+      traduzir(
+        "Não foi possível excluir: o contato ainda tem registros vinculados.",
+        ctx.idioma ?? "pt-BR",
+      ),
     );
   }
 
@@ -1210,12 +1237,14 @@ export async function deleteContactHandler(
   // terceiro (RFC 7009) — então revoga primeiro. A tabela é server-side only
   // (service role), filtrada pela organização do ctx. Melhor esforço: falha
   // do terceiro não barra a exclusão.
-  await revogarAcessosDoContato(createAdminClient(), ctx.organization_id, contactId).catch((err: unknown) => {
-    logger.warn("revogacao dos acessos MCP do contato falhou antes da exclusao", {
-      organization_id: ctx.organization_id,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  });
+  await revogarAcessosDoContato(createAdminClient(), ctx.organization_id, contactId).catch(
+    (err: unknown) => {
+      logger.warn("revogacao dos acessos MCP do contato falhou antes da exclusao", {
+        organization_id: ctx.organization_id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    },
+  );
   let apagou = false;
   try {
     const { data, error: rpcErr } = await supabase.rpc("fn_apagar_contato_com_historico", {

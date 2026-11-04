@@ -143,7 +143,9 @@ export function LeadDossier({
   const user = useUser();
   const activeOrg = useActiveOrg();
   const podeCriarProposta =
-    user.is_platform_admin || (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager) || false;
+    user.is_platform_admin ||
+    (activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager) ||
+    false;
   // A MESMA régua do arrasto e do "Mover para…" do card (`KanbanCardActions`).
   const podeMoverCard = usePermission("pipeline.move_card");
   // Tarefas são `agent`+, a mesma régua da tela de Tarefas e da rota — e o
@@ -194,7 +196,7 @@ export function LeadDossier({
 
         {/* ① cabeçalho vivo */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border pb-3 text-xs">
-          <span className="font-medium tabular-nums text-text">
+          <span className="font-medium text-text tabular-nums">
             {formatValor(lead.value_cents, lead.currency)}
           </span>
           {etapas && onMudarEtapa ? (
@@ -257,11 +259,7 @@ export function LeadDossier({
             card: um botão que exige rolar até o fim é o mesmo que copiar o
             telefone e colar no softphone. Sem atalho configurado, nada é
             desenhado — nem separador, nem faixa vazia. */}
-        <AtalhosDoNegocio
-          atalhos={atalhosDoCard}
-          lead={lead}
-          contactId={lead.contact_id}
-        />
+        <AtalhosDoNegocio atalhos={atalhosDoCard} lead={lead} contactId={lead.contact_id} />
 
         <ConversaNoDossie
           conversa={lead.conversa}
@@ -279,6 +277,7 @@ export function LeadDossier({
           aoAlternar={alternar}
         >
           <ContatoDoNegocio
+            lead={lead}
             contactId={lead.contact_id}
             pipelineId={pipelineId}
             leadId={lead.id}
@@ -304,7 +303,12 @@ export function LeadDossier({
               podeDecidir={podeConfirmarDoDocumento}
               aoDecidir={(confirmado) => formulario.current?.confirmarCampo(confirmado)}
             />
-            <LeadFieldsForm lead={lead} pipelineId={pipelineId} fieldDefs={fieldDefs} controle={formulario} />
+            <LeadFieldsForm
+              lead={lead}
+              pipelineId={pipelineId}
+              fieldDefs={fieldDefs}
+              controle={formulario}
+            />
           </div>
         </SecaoDoDossie>
 

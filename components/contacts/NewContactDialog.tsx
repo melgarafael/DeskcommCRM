@@ -47,6 +47,9 @@ interface Props {
    * trocar o termo com o diálogo já montado remonta com `key`.
    */
   nomeInicial?: string;
+  dadosIniciais?: { email?: string; phone_number?: string; tags?: string[] };
+  leadId?: string;
+  referenciaDoCard?: string | null;
   /**
    * Recebe o contato recém-criado. Existe para quem abriu o diálogo NO MEIO de
    * outro fluxo (marcar um horário, por exemplo) poder seguir com ele já
@@ -64,13 +67,16 @@ export function NewContactDialog({
   open,
   onOpenChange,
   nomeInicial,
+  dadosIniciais,
+  leadId,
+  referenciaDoCard,
   onCriado,
   permitirIniciarConversa = true,
 }: Props) {
   const t = useT();
   const org = useActiveOrg();
   const perfil = perfilDoPais(org?.country);
-  const create = useCreateContact();
+  const create = useCreateContact(leadId);
   /**
    * A CONVERSA A ABRIR DEPOIS DE SALVAR (#3483) — `null` = nada pendente.
    *
@@ -87,10 +93,7 @@ export function NewContactDialog({
   // com ele (issue #3144): a leitura com `?busca=` alcança o vocabulário curado
   // inteiro, que a lista "em uso" (teto de 200, só contatos) não vê.
   const [buscaDeEtiqueta, setBuscaDeEtiqueta] = useState("");
-  const buscaNoVocabulario = useContactTagVocabulary(
-    org?.orgId ?? null,
-    buscaDeEtiqueta.trim(),
-  );
+  const buscaNoVocabulario = useContactTagVocabulary(org?.orgId ?? null, buscaDeEtiqueta.trim());
   const { definirCor } = useDefinirCorDaEtiqueta();
   // A cor da etiqueta é VOCABULÁRIO e a rota exige manager + MFA: para os outros
   // papéis a paleta nem chega ao campo, como na ficha e no editor do Inbox.
@@ -119,10 +122,10 @@ export function NewContactDialog({
     mode: "onTouched",
     defaultValues: {
       name: nomeInicial ?? "",
-      email: "",
-      phone_number: "",
+      email: dadosIniciais?.email ?? "",
+      phone_number: dadosIniciais?.phone_number ?? "",
       cpf: "",
-      tags: [],
+      tags: dadosIniciais?.tags ?? [],
     },
   });
 
@@ -235,6 +238,12 @@ export function NewContactDialog({
             {t("Preencha pelo menos um identificador (email ou telefone).")}
           </DialogDescription>
         </DialogHeader>
+        {referenciaDoCard && (
+          <details className="text-xs text-text-muted">
+            <summary>{t("Dados do negócio para conferência")}</summary>
+            <p className="max-h-36 overflow-auto whitespace-pre-wrap">{referenciaDoCard}</p>
+          </details>
+        )}
         <form
           onSubmit={(event) => {
             // O portal mantém a árvore React: o submit deste subcadastro não
@@ -254,9 +263,7 @@ export function NewContactDialog({
           </div>
           <div className="space-y-2">
             <Label htmlFor="phone_number">
-              {perfil.codigo === PAIS_PADRAO
-                ? t("Telefone (DDD + número)")
-                : t("Telefone (E.164)")}
+              {perfil.codigo === PAIS_PADRAO ? t("Telefone (DDD + número)") : t("Telefone (E.164)")}
             </Label>
             <Input
               id="phone_number"
@@ -308,17 +315,13 @@ export function NewContactDialog({
               vocabulario={vocabulario.data}
               disabled={create.isPending}
               onPendente={setEtiquetaPendente}
-              onDefinirCor={
-                podeDefinirCor ? (tag, cor) => void definirCor(tag, cor) : undefined
-              }
+              onDefinirCor={podeDefinirCor ? (tag, cor) => void definirCor(tag, cor) : undefined}
               encontradas={buscaNoVocabulario.data}
               onDigitar={setBuscaDeEtiqueta}
               erroNoVocabulario={vocabulario.isError || buscaNoVocabulario.isError}
             />
           </div>
-          {serverError && (
-            <p className="text-sm text-error-fg">{serverError}</p>
-          )}
+          {serverError && <p className="text-sm text-error-fg">{serverError}</p>}
           <DialogFooter>
             <Button
               type="button"
