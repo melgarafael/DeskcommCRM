@@ -205,8 +205,8 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
       .toBe(true);
     // Vamos direto ao accept_url (fluxo real do link do email).
     await page.goto(tokenPath(acceptUrl));
-    await expect(page.getByRole("heading", { name: /Aceitar convite/i })).toBeVisible();
-    await page.getByRole("button", { name: /Aceitar convite/i }).click();
+    await expect(page.getByRole("heading", { name: /Ace(i|p)tar (convite|invitaci[oó]n)/i })).toBeVisible();
+    await page.getByRole("button", { name: /Ace(i|p)tar (convite|invitaci[oó]n)/i }).click();
     await page.waitForURL(/\/app\/inbox/);
 
     // depois do aceite: membership agent criada
@@ -256,11 +256,11 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await login(page, inv.invitee_email); // já é membro → cai no /app
     // 1º aceite (reaplica)
     await page.goto(`/team/accept-invite/${token}`);
-    await page.getByRole("button", { name: /Aceitar convite/i }).click();
+    await page.getByRole("button", { name: /Ace(i|p)tar (convite|invitaci[oó]n)/i }).click();
     await page.waitForURL(/\/app\/inbox/);
     // 2º aceite do MESMO token
     await page.goto(`/team/accept-invite/${token}`);
-    await page.getByRole("button", { name: /Aceitar convite/i }).click();
+    await page.getByRole("button", { name: /Ace(i|p)tar (convite|invitaci[oó]n)/i }).click();
     await page.waitForURL(/\/app\/inbox/);
     // sem duplicar membership
     expect(await membershipCount()).toBe(1);
@@ -360,7 +360,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
     await page.getByRole("link", { name: "Entrar", exact: true }).click();
     await expect(page).toHaveURL(`/login?next=${encodeURIComponent(`/team/accept-invite/${valid}`)}`);
     await expect(page.getByLabel("Email")).toHaveValue(inv.invitee_email);
-    await page.getByRole("link", { name: "Criar conta", exact: true }).click();
+    await page.getByRole("link", { name: "Crear cuenta", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/signup\\?invite=${encodeURIComponent(valid)}`));
     await expect(page.getByLabel("Email")).toHaveValue(inv.invitee_email);
   });
@@ -513,7 +513,7 @@ test.describe("ciclo de vida do convite (ponta a ponta + adversarial)", () => {
       )
       .toBe(true);
     await ip.goto(new URL(linkAntes).pathname);
-    await ip.getByRole("button", { name: /Aceitar convite/i }).click();
+    await ip.getByRole("button", { name: /Ace(i|p)tar (convite|invitaci[oó]n)/i }).click();
 
     // ⚠️ ALERTA, não HEADING — e a diferença não é de estilo, é de QUEM recusa.
     //
@@ -600,13 +600,13 @@ test("convite novo: alternar cadastro/login, confirmar no Mailpit e entrar só n
     await expect(page.getByLabel("Email")).toHaveValue(email);
     expect(new URL(page.url()).searchParams.get("next") === `/team/accept-invite/${token}`).toBe(true);
     await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/convite-02-login-preenchido.png" });
-    await page.getByRole("link", { name: "Criar conta", exact: true }).click();
+    await page.getByRole("link", { name: "Crear cuenta", exact: true }).click();
     await expect(page).toHaveURL((url) => url.pathname === "/signup" && url.searchParams.get("invite") === token);
     expect(new URL(page.url()).searchParams.get("invite") === token).toBe(true);
     await page.getByLabel("Seu nome").fill("Pessoa convidada sintética");
     await page.getByLabel("Senha", { exact: true }).fill(senha);
     await page.getByLabel("Confirmar senha").fill(senha);
-    await page.getByRole("button", { name: "Criar conta", exact: true }).click();
+    await page.getByRole("button", { name: "Crear cuenta", exact: true }).click();
     await expect(page.getByText("Confirme seu e-mail")).toBeVisible();
     await page.screenshot({ path: "evidence/lote-bugfixes-01a178b3/convite-03-confirmar-email.png" });
 

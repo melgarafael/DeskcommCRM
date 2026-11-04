@@ -64,7 +64,7 @@ test("reset de senha com MFA pede o código TOTP e conclui", async ({ page }) =>
   const temp = "TempReset!2026x";
   await page.locator("#password").fill(temp);
   await page.locator("#password_confirm").fill(temp);
-  await page.getByRole("button", { name: /definir nova senha/i }).click();
+  await page.getByRole("button", { name: /definir nueva contrase|definir nova senha/i }).click();
 
   // Sem AAL2, o app revela o campo de código MFA em vez de falhar.
   await expect(page.locator("#mfa_code")).toBeVisible();
@@ -73,7 +73,7 @@ test("reset de senha com MFA pede o código TOTP e conclui", async ({ page }) =>
     await page.waitForTimeout(msUntilNextTotpWindow() + 300);
   }
   await page.locator("#mfa_code").fill(generateTotp(creds.admin_totp!.secret));
-  await page.getByRole("button", { name: /definir nova senha/i }).click();
+  await page.getByRole("button", { name: /definir nueva contrase|definir nova senha/i }).click();
 
   await page.waitForURL(/\/login\?reset=success/);
   await expect(page.getByText(/redefinida com sucesso/i)).toBeVisible();

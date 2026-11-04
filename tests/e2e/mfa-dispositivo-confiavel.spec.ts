@@ -107,7 +107,7 @@ test.describe.configure({ mode: "serial", timeout: 120_000 });
 test("marcar 'confiar', sair e voltar: entra sem o código, e o banco aceita a sessão", async ({ page }) => {
   await entrarComSenha(page);
   await page.waitForURL(/\/login\/mfa/, { timeout: 30_000 });
-  await page.getByLabel("Confiar neste dispositivo por 30 dias").check();
+  await page.getByLabel("Confiar en este dispositivo por 30 días").check();
   await page.screenshot({ path: path.join(EVIDENCIA, "1-codigo-com-confiar.png") });
   await digitarCodigo(page);
   await page.waitForURL(/\/app\//, { timeout: 30_000 });
@@ -131,7 +131,7 @@ test("marcar 'confiar', sair e voltar: entra sem o código, e o banco aceita a s
 test("Segurança mostra o dispositivo; esquecer faz o código voltar", async ({ page }) => {
   await entrarComSenha(page);
   await page.waitForURL(/\/login\/mfa/, { timeout: 30_000 });
-  await page.getByLabel("Confiar neste dispositivo por 30 dias").check();
+  await page.getByLabel("Confiar en este dispositivo por 30 días").check();
   await digitarCodigo(page);
   await page.waitForURL(/\/app\//, { timeout: 30_000 });
 

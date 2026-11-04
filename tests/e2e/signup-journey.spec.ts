@@ -25,7 +25,7 @@ test("criar conta: signup → e-mail de confirmação → onboarding → re-logi
 
   // 1. Login → botão "Criar conta"
   await page.goto("/login");
-  await page.getByRole("link", { name: "Criar conta" }).click();
+  await page.getByRole("link", { name: "Crear cuenta" }).click();
   await expect(page).toHaveURL(/\/signup$/);
 
   // 2. Formulário de signup
@@ -33,7 +33,7 @@ test("criar conta: signup → e-mail de confirmação → onboarding → re-logi
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Senha", { exact: true }).fill(password);
   await page.getByLabel("Confirmar senha").fill(password);
-  await page.getByRole("button", { name: "Criar conta" }).click();
+  await page.getByRole("button", { name: "Crear cuenta" }).click();
   await expect(page.getByText("Confirme seu e-mail")).toBeVisible();
 
   // 3. Abre o e-mail real no Mailpit e segue o link

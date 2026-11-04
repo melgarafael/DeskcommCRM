@@ -71,7 +71,7 @@ test("recuperar senha: forgot → e-mail → nova senha → login com a nova", a
 
   // 2. Login → link "Esqueci minha senha"
   await page.goto("/login");
-  await page.getByRole("link", { name: "Esqueci minha senha" }).click();
+  await page.getByRole("link", { name: /esqueci minha senha|olvid[ée] mi contrase/i }).click();
   await expect(page).toHaveURL(/\/login\/forgot$/);
   await page.getByLabel("Email").fill(email);
   await page.getByRole("button", { name: "Enviar link de redefinição" }).click();

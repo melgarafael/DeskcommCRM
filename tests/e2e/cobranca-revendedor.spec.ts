@@ -139,12 +139,12 @@ test("[P0] primeira cobrança: conectar, assinar, atrasar, suspender e voltar so
     pB.setDefaultTimeout(20_000);
     const emailB = uniqueEmail("cobranca");
     await pB.goto("/login");
-    await pB.getByRole("link", { name: "Criar conta" }).click();
+    await pB.getByRole("link", { name: "Crear cuenta" }).click();
     await pB.getByLabel("Nome da empresa").fill(EMPRESA);
     await pB.getByLabel("Email").fill(emailB);
     await pB.getByLabel("Senha", { exact: true }).fill(senha);
     await pB.getByLabel("Confirmar senha").fill(senha);
-    await pB.getByRole("button", { name: "Criar conta" }).click();
+    await pB.getByRole("button", { name: "Crear cuenta" }).click();
     await expect(pB.getByText("Confirme seu e-mail")).toBeVisible();
     const confirmacao = extractAuthConfirmLink(await waitForEmail(emailB, "Confirme seu e-mail"), test.info().project.use.baseURL!);
     // Abrir o link não gasta o token (protege do verificador de links do e-mail): a pessoa aperta "Continuar".

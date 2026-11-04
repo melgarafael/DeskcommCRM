@@ -40,14 +40,14 @@ test.describe("documentos legais", () => {
     expect(res?.status()).toBe(200);
     // E não é o login disfarçado: o proxy manda anônimo para /login?next=...
     expect(new URL(page.url()).pathname).toBe("/legal/terms");
-    await expect(page.getByRole("heading", { name: /termos de uso/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /t(e|é)rminos de uso/i })).toBeVisible();
   });
 
   test("/legal/privacy abre SEM sessão e nomeia o responsável", async ({ page }) => {
     const res = await page.goto("/legal/privacy");
     expect(res?.status()).toBe(200);
     expect(new URL(page.url()).pathname).toBe("/legal/privacy");
-    await expect(page.getByRole("heading", { name: /política de privacidade/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /pol[ií]tica de privacidad/i })).toBeVisible();
     // Sem sessão não dá para saber a razão social, mas o documento não pode
     // fingir que quem responde pelos dados é o projeto de software.
     await expect(page.getByText(/operador desta instalação/i).first()).toBeVisible();

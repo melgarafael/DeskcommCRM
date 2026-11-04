@@ -145,7 +145,9 @@ test.describe("J1 — onboarding do dono numa instalação fresca", () => {
 
   test("J1.2 senha errada → mensagem clara, sem stack", async ({ page }) => {
     await login(page, "senha-errada-123");
-    await expect(page.getByText(/email ou senha incorretos/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/email ou senha incorretos|correo o contrase.a incorrectos/i)).toBeVisible({
+      timeout: 10_000,
+    });
     const body = await page.locator("body").innerText();
     expect(body).not.toMatch(/error:|stack|exception/i);
     await snap(page, "j1.2-senha-errada");
