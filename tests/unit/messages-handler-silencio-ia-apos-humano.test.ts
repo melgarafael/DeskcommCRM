@@ -84,7 +84,7 @@ function dubleDo(botSilencedUntil: string | null, snapshot?: () => Record<string
     conversation: conversationRow(botSilencedUntil),
     rpcData: snapshot ?? RPC_PADRAO,
   });
-  return { supabase, patches: capturas.patches.conversations! };
+  return { supabase, patches: capturas.patches.conversations!, inserts: capturas.inserts.messages! };
 }
 
 const input = { conversation_id: CONV, type: 'text', body: 'oi' } as SendMessageInput;
@@ -118,13 +118,14 @@ describe('sendMessageHandler — silêncio da IA de 5min após resposta manual h
     expect(silencedUntil).toBeLessThanOrEqual(after + 5 * 60 * 1000 + 1000);
   });
 
-  it('IA envia mensagem (ai_agent) → NÃO mexe em bot_silenced_until', async () => {
+  it.each([1, 7])('IA conserva revisão %i e NÃO mexe em bot_silenced_until', async (revision) => {
     wahaConfigured();
-    const ctx: HandlerCtx = { organization_id: ORG, actor: { type: 'ai_agent', id: AGENT_RUN, role: 'agent' }, requestId: 'req-2', serviceBoundary: { organization_id: ORG, contact_id: CONTACT, conversation_id: CONV, service_revision: 1, demanda_id: null, demanda_revision: null } };
-    const { supabase, patches } = dubleDo(null);
+    const ctx: HandlerCtx = { organization_id: ORG, actor: { type: 'ai_agent', id: AGENT_RUN, role: 'agent' }, requestId: 'req-2', serviceBoundary: { organization_id: ORG, contact_id: CONTACT, conversation_id: CONV, service_revision: revision, demanda_id: null, demanda_revision: null } };
+    const { supabase, patches, inserts } = dubleDo(null, () => ({ ...RPC_PADRAO, service_revision: revision }));
 
     await sendMessageHandler(supabase, ctx, input);
 
+    expect(inserts[0]).toMatchObject({ service_revision: revision, demanda_id: null, demanda_revision: null });
     const convPatch = patches[patches.length - 1]!;
     expect(convPatch.bot_silenced_until, 'a IA silenciou a si mesma ao responder').toBeUndefined();
   });

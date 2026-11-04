@@ -1,3 +1,4 @@
+import { currentExecutionBoundary } from "@/lib/atendimento/fronteira-server";
 /**
  * Recall híbrido das notas do lead (F3-06; blueprint 1.6 / órgão 2). Combina, POR
  * NOTA do lead:
@@ -121,8 +122,11 @@ export async function recallLeadNotes(
               websearch_to_tsquery('simple', $3)
             ) as bm25
        from lead_notes
-      where organization_id = $1 and contact_id = $2`,
-    [ids.tenantId, ids.leadId, query],
+      where organization_id = $1 and contact_id = $2 and (not public.fn_contact_context_private($1) or (conversation_id=$4::uuid and service_revision=$5::bigint))`,
+    [ids.tenantId, ids.leadId, query,
+      currentExecutionBoundary()?.conversation_id ?? null,
+      currentExecutionBoundary()?.service_revision ?? null,
+    ],
   );
   if (rows.length === 0) {
     return [];

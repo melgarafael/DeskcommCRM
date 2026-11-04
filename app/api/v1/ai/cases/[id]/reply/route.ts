@@ -276,7 +276,7 @@ async function checkpointDaConversa(
     const { rows } = await pool.query(
       `select commitments, objections, next_action, rolling_summary, declaracao
          from lead_checkpoints
-        where organization_id = $1 and contact_id = $2
+        where organization_id = $1 and contact_id = $2 and not public.fn_contact_context_private($1)
         order by seq desc limit 1`,
       [organizationId, contactId],
     );

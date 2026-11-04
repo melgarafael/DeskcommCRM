@@ -218,7 +218,7 @@ export async function getLeadState(
   leadId: string,
 ): Promise<LeadStateRow | null> {
   const { rows } = await db.query<LeadStateRow>(
-    'select * from lead_state where organization_id = $1 and contact_id = $2',
+    "select * from lead_state where organization_id = $1 and contact_id = $2 and not public.fn_contact_context_private($1)",
     [tenantId, leadId],
   );
   return rows[0] ?? null;
@@ -248,6 +248,14 @@ export async function applyLeadStateUpdate(
   }
   const input = parsed.data;
 
+  const { rows: privacy } = await db.query<{ private_context: boolean }>(
+    "select public.fn_contact_context_private($1) as private_context",
+    [ids.tenantId],
+  );
+  if (privacy[0]?.private_context)
+    return teachInvalidPayload(
+      "Nesta organização, qualificação e próximos passos pertencem ao negócio do atendimento; use a ferramenta do negócio, não o estado global do contato.",
+    );
   // A frase que não diz nada não é gravada — o resto da chamada vale (a mesma
   // chamada pode marcar avanço de estágio) e o modelo recebe o aviso na resposta
   // da ferramenta. Não gravar é também o que impede `next_action_seq` de andar:

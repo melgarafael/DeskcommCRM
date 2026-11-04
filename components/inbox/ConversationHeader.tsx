@@ -184,6 +184,7 @@ export function ConversationHeader({
    * espelhando os gates que o MOTOR lê, e esta tela só a consome.
    */
   const fatosDoComando = {
+    comandoDoBanco: conversation.comando_da_conversa,
     status,
     assigned_to_user_id: conversation.assigned_to_user_id,
     assigned_to_user_name: conversation.assigned_to_user_name ?? null,

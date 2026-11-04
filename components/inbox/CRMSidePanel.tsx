@@ -1,4 +1,5 @@
 "use client";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { CartaoDaCarteira } from "@/components/contacts/CartaoDaCarteira";
 import { RoteirosDoContato } from "@/components/contacts/RoteirosDoContato";
@@ -565,12 +566,18 @@ function InboxLeadEditor({
 function EtapaDoNegocio({ lead, onMovido }: { lead: LeadRow; onMovido: () => void }) {
   const t = useT();
   const mover = useBulkAction(lead.pipeline_id);
+  const qc = useQueryClient();
+  const { user, activeOrg } = useAuth();
+  const podeMover = user.support?.access_mode !== "support_readonly" && ((user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "agent"));
   const [perdendo, setPerdendo] = useState(false);
+  useEffect(() => {
+    if (!podeMover || lead.status !== "open") setPerdendo(false);
+  }, [podeMover, lead.status]);
   const etapas = lead.etapas_do_funil ?? [];
   if (!lead.stage_id || etapas.length === 0) return null;
 
   async function escolher(stageId: string) {
-    if (stageId === lead.stage_id) return;
+    if (stageId === lead.stage_id || !podeMover || lead.status !== "open") return;
     if (etapas.find((e) => e.id === stageId)?.is_lost) {
       setPerdendo(true);
       return;
@@ -589,7 +596,7 @@ function EtapaDoNegocio({ lead, onMovido }: { lead: LeadRow; onMovido: () => voi
       <label className="block text-xs font-medium text-text" htmlFor={`etapa-${lead.id}`}>
         {t("Etapa do funil")}
       </label>
-      <Select value={lead.stage_id} onValueChange={(v) => void escolher(v)} disabled={mover.isPending}>
+      <Select value={lead.stage_id} onValueChange={(v) => void escolher(v)} disabled={mover.isPending || !podeMover || lead.status !== "open"}>
         <SelectTrigger id={`etapa-${lead.id}`} className="h-8 w-full text-xs" data-testid="inbox-etapa-select">
           <SelectValue />
         </SelectTrigger>
@@ -601,14 +608,19 @@ function EtapaDoNegocio({ lead, onMovido }: { lead: LeadRow; onMovido: () => voi
           ))}
         </SelectContent>
       </Select>
-      <LoseLeadDialog
+      {perdendo && podeMover && lead.status === "open" && <LoseLeadDialog
+        key={lead.id}
         open={perdendo}
         onOpenChange={setPerdendo}
         leadId={lead.id}
         pipelineId={lead.pipeline_id}
-        onPerdido={onMovido}
+        leadLabel={lead.title}
+        onPerdido={() => {
+          void qc.invalidateQueries({ queryKey: ["leads-at-risk"] });
+          onMovido();
+        }}
         motivos={lead.motivos_de_perda}
-      />
+      />}
     </div>
   );
 }

@@ -11,8 +11,8 @@ import { AgendaDeferredError } from "@/lib/agenda/protecao-followup";
 import { AgendaPuladoError, MOTIVO_DO_PULO } from "@/lib/agenda/escolha-no-envio";
 import { assertAgendaEffectSupabase, guardAgendaEffect } from "@/lib/agenda/efeito";
 import { CHAVE_DO_PULO, retratoDoPulo } from "@/lib/inbox/pulo-da-agenda";
-import { mesmaFronteira, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
-import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
+import { assertCurrentServiceBoundary, mesmaFronteira, StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
+import { assertServiceBoundarySupabase, readServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import {
   currentExecutionAgentOperation,
   currentExecutionBoundary,
@@ -75,6 +75,7 @@ import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { enderecoDaUltimaRecebida } from "@/lib/channels/endereco-da-ultima-recebida";
 import type { Message } from "@/lib/types/messaging";
+
 
 type SB = SupabaseClient;
 
@@ -455,13 +456,14 @@ export async function sendMessageHandler(
   if (ctx.proactiveContext) await assertAgendaEffectSupabase(supabase, ctx.proactiveContext);
   await guardAgendaEffect();
   ctx = { ...ctx, serviceBoundary: ctx.serviceBoundary ?? currentExecutionBoundary() };
+  let serviceBoundaryClient = supabase;
   if (ctx.serviceBoundary) {
     if (
       ctx.serviceBoundary.organization_id !== ctx.organization_id ||
       ctx.serviceBoundary.conversation_id !== input.conversation_id
     )
       throw new StaleServiceBoundaryError();
-    await assertServiceBoundarySupabase(supabase, ctx.serviceBoundary);
+    await assertServiceBoundarySupabase(serviceBoundaryClient, ctx.serviceBoundary);
   }
   // `archived_at` entra pelo helper tolerante porque este é O caminho de saída do
   // sistema inteiro (UI, automação, MCP e o agente passam por aqui): num clone que
@@ -543,6 +545,18 @@ export async function sendMessageHandler(
     channel_sessions: (ChannelSessionRef & { status: string; metadata?: Record<string, unknown> | null; archived_at?: string | null }) | null;
   };
   const c = conv as unknown as Joined;
+  // Só a submissão humana autenticada é uma origem nova. Primeiro a consulta
+  // acima confirma acesso via RLS + organização; só depois lemos a fronteira
+  // pela RPC interna (não concedida a authenticated). Escritas seguem sob RLS.
+  // Jobs/IA/retries nunca recompõem uma fronteira antiga com o estado atual.
+  if (ctx.manualReplyOrigin && ctx.actor.type === "user" && !ctx.serviceBoundary) {
+    serviceBoundaryClient = createAdminClient();
+    const boundary = await readServiceBoundarySupabase(
+      serviceBoundaryClient, ctx.organization_id, c.id,
+    );
+    assertCurrentServiceBoundary(boundary, boundary);
+    ctx = { ...ctx, serviceBoundary: boundary };
+  }
 
   if (c.contacts?.is_blocked) {
     throw new ApiError(
@@ -979,6 +993,13 @@ export async function sendMessageHandler(
     contact_id: c.contact_id,
     type: input.type,
     direction: "outbound" as const,
+    // A origem já foi validada acima; persistir a mesma revisão mantém a
+    // leitura privada sem inferir contexto pelo estado atual da conversa.
+    ...(ctx.serviceBoundary ? {
+      service_revision: ctx.serviceBoundary.service_revision,
+      demanda_id: ctx.serviceBoundary.demanda_id,
+      demanda_revision: ctx.serviceBoundary.demanda_revision,
+    } : {}),
     status: "queued",
     body: input.body ?? null,
     media_url: input.media_url ?? null,
@@ -1185,7 +1206,7 @@ export async function sendMessageHandler(
         if (ctx.meetingDelivery) await assertMeetingDeliverySupabase(supabase, ctx.meetingDelivery);
         if (ctx.proactiveContext) await assertAgendaEffectSupabase(supabase, ctx.proactiveContext);
         if (ctx.serviceBoundary && !fronteiraJaConferida)
-          await assertServiceBoundarySupabase(supabase, ctx.serviceBoundary);
+          await assertServiceBoundarySupabase(serviceBoundaryClient, ctx.serviceBoundary);
         if (ctx.approvedReply) await prepareApprovedReplySupabase(supabase, ctx.approvedReply);
         if (ctx.agentOperation && !operacaoJaConferida)
           await assertAgentOperationSupabase(supabase, ctx.agentOperation);
@@ -1358,7 +1379,7 @@ export async function sendMessageHandler(
       // changed after the final beforeSend cut; recognition is not another send.
       if (ctx.meetingDelivery) {
         await assertMeetingDeliverySupabase(supabase, ctx.meetingDelivery);
-        if (ctx.serviceBoundary) await assertServiceBoundarySupabase(supabase, ctx.serviceBoundary);
+        if (ctx.serviceBoundary) await assertServiceBoundarySupabase(serviceBoundaryClient, ctx.serviceBoundary);
       }
       if (ctx.approvedReply) {
         message=await recordApprovedReplyReceiptSupabase(supabase,ctx.approvedReply,message.id,externalId,

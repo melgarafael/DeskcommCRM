@@ -23,7 +23,7 @@ export async function assumirConversaComEfeitos(
     requestId: string;
     expectedAssignee?: string | null;
   },
-): Promise<{ conversation: Conversation | null; error: { message: string } | null }> {
+): Promise<{ conversation: Conversation | null; error: { message: string; code?: string } | null }> {
   // Optimistic lock (spec 04 §9.2): expected null/omitido = só assume se livre;
   // expected uuid = takeover consciente. UPDATE + evento na mesma transação.
   const { data, error } = await supabase.rpc("fn_conversation_assign", {

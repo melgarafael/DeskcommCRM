@@ -49,6 +49,8 @@
 /** As colunas de que esta função precisa — nada além. */
 export interface FatosDoComando {
   status: string;
+  /** Resultado por conversa: inclui gate e agente/canal. Sem duplicar o gate na UI. */
+  comandoDoBanco?: string | null;
   /**
    * A ORG tem atendimento automático de pé?
    *
@@ -232,6 +234,10 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
   const bloqueado = fatos.is_blocked === true;
   const encerrada = STATUS_ENCERRADOS.has(fatos.status);
   const grupo = fatos.is_group === true;
+  const comandoLido = fatos.comandoDoBanco;
+  const automaticoDisponivel = comandoLido != null
+    ? comandoLido === "automatico"
+    : fatos.automaticoDaOrg !== false;
 
   const comando: Comando = fatos.assigned_to_user_id
     ? {
@@ -244,10 +250,10 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
       : // Sem dono: quem manda depende do automático estar de pé. Calado e sem
         // dono é a conversa que o automático escalou e ninguém pegou — a fila.
         // Grupo entra junto: o automático nunca o atende, é sempre de humano.
-        grupo || silencio.vigente || travado || bloqueado
+        grupo || silencio.vigente || travado || bloqueado || fatos.assignee_kind === "user"
         ? { quem: "aguardando" }
-        : fatos.automaticoDaOrg === false
-          ? { quem: "ninguem" }
+        : !automaticoDisponivel
+          ? { quem: comandoLido != null ? "aguardando" : "ninguem" }
           : { quem: "automatico" };
 
   /**
@@ -261,7 +267,12 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
    */
   const comandoFinal: Comando = comando;
 
-  const automaticoAtivo = !grupo && !encerrada && !travado && !bloqueado && !silencio.vigente;
+  // Atribuição por rodízio pode conservar assignee_kind=ai: não mudar essa
+  // capacidade nativa nem esconder o botão de pausa do dono. O comando humano
+  // continua prioritário; sem dono, vale a elegibilidade lida do banco.
+  const automaticoAtivo = !grupo && !encerrada && !travado && !bloqueado
+    && !silencio.vigente && fatos.assignee_kind !== "user"
+    && (automaticoDisponivel || fatos.assigned_to_user_id != null);
 
   const motivo: MotivoDoSilencio | null = automaticoAtivo
     ? null
@@ -286,7 +297,11 @@ export function comandoDaConversa(fatos: FatosDoComando, agora: Date = new Date(
               : fatos.last_handoff_reason === MOTIVO_ATENDIMENTO_MANUAL
                 ? "atendimento_pelo_celular"
                 : "pausado"
-            : "resposta_humana_recente";
+            : silencio.vigente
+              ? "resposta_humana_recente"
+              : fatos.assigned_to_user_id || fatos.assignee_kind === "user"
+                ? "atendente_no_comando"
+                : null;
 
   return {
     comando: comandoFinal,
@@ -327,38 +342,15 @@ export const ROTULO_DO_MOTIVO: Record<MotivoDoSilencio, string> = {
   contato_descadastrado: "Cliente pediu para não receber mensagens",
 };
 
-/**
- * O VOCABULÁRIO QUE O BANCO FALA — quatro, não cinco.
- *
- * `fn_comando_da_conversa` (migration 0202) devolve estes quatro. `ninguem` fica
- * de fora de propósito: ele não é um estado diferente, é o mesmo balde do
- * `automatico` renomeado quando a ORG não tem nenhum agente no ar — e "a org tem
- * automático?" é um fato org-wide que o SQL só saberia reproduzindo
- * `agenteAtende` inteiro dentro do banco. Seria a regra duplicada de novo, agora
- * numa terceira encarnação.
- *
- * Quem sabe o fato da org é o servidor, e ele o aplica escolhendo o CONJUNTO de
- * comandos que a aba pede — ver `comandosDaFila`.
- */
+/** Vocabulário do computed field: a disponibilidade é por conversa, não pela org. */
 export const COMANDOS_DO_BANCO = ["humano", "automatico", "aguardando", "encerrada"] as const;
 export type ComandoDoBanco = (typeof COMANDOS_DO_BANCO)[number];
 
-/**
- * O QUE A ABA "FILA" PEDE, e é aqui que o fato org-wide entra.
- *
- * Numa org COM automático de pé, "precisa de uma pessoa agora" é `aguardando`: o
- * resto o robô atende. Numa org SEM automático nenhum, `automatico` não descreve
- * ninguém — não há robô — e essas conversas também estão esperando gente; deixá-las
- * fora faria a Fila de uma instalação recém-instalada nascer VAZIA com dezenas de
- * clientes sem resposta, que é o pior estado possível na primeira impressão.
- *
- * `undefined` ("não sei", leitura em andamento ou que falhou) segue a mesma
- * convenção do resto do arquivo: assume que HÁ automático. Errar para o lado de
- * mostrar menos na fila é recuperável em ~200ms; errar para o outro pinta 83
- * linhas de trabalho humano que não existe.
- */
-export function comandosDaFila(automaticoDaOrg?: boolean): ComandoDoBanco[] {
-  return automaticoDaOrg === false ? ["aguardando", "automatico"] : ["aguardando"];
+/** Fila contém somente conversas sem automático elegível e sem dono humano. */
+export function comandosDaFila(_automaticoDaOrg?: boolean): ComandoDoBanco[] {
+  // O banco agora calcula disponibilidade POR CONVERSA. Nunca incluir Automático
+  // na Fila por um agregado de organização (que também pode estar em cache).
+  return ["aguardando"];
 }
 
 /**

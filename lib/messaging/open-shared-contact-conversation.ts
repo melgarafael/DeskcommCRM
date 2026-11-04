@@ -6,7 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ensureConversation, sessaoProntaParaEnvio } from "@/lib/automation/start-conversation";
 import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone";
-import { phoneLookupVariants, canonicalPhoneBR } from "@/lib/channels/phone-variants";
+import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { parseDialablePhone } from "@/lib/messaging/contact-card";
 
 type Admin = SupabaseClient;
@@ -82,7 +82,13 @@ export async function openSharedContactConversation(
   admin: Admin,
   organizationId: string,
   input: OpenSharedContactInput,
+  operator?: { client: SupabaseClient; userId: string },
 ): Promise<OpenSharedContactResult> {
+  if (operator) {
+    const { data: scoped, error } = await operator.client.rpc("fn_acl_scoped", { p_org: organizationId });
+    if (error) throw new Error("access_scope_unavailable");
+    if (scoped === true) return openManualContactConversation(admin, operator, organizationId, input);
+  }
   const sessionId = input.channel_session_id ?? (await sessaoProntaParaEnvio(admin, organizationId));
   if (!sessionId) throw new Error("session_not_found");
   const { data: session, error: sessErr } = await admin
@@ -116,4 +122,48 @@ export async function openSharedContactConversation(
     sessionId,
   );
   return { conversation_id: conversationId, contact_id: contactId };
+}
+
+/** Human-only preflight: the session client enforces access; the RPC owns the atomic open. */
+async function openManualContactConversation(
+  admin: Admin,
+  operator: { client: SupabaseClient; userId: string },
+  org: string,
+  input: OpenSharedContactInput,
+): Promise<OpenSharedContactResult> {
+  let channels = operator.client.from("channel_sessions").select("id")
+    .eq("organization_id", org).eq("status", "WORKING").is("archived_at", null);
+  if (input.channel_session_id) channels = channels.eq("id", input.channel_session_id);
+  const { data: available, error: channelError } = await channels.limit(2);
+  if (channelError) throw new Error("channel_lookup_failed");
+  if (!available?.length) throw new Error("channel_forbidden");
+  if (available.length !== 1) throw new Error("channel_selection_required");
+  let contactId = input.contact_id;
+  if (!contactId) {
+    const phone = input.phone_number ? parseDialablePhone(input.phone_number) : null;
+    if (!phone) throw new Error("invalid_phone");
+    const canonical = canonicalPhoneBR(phone);
+    // Existing hidden contact must be refused rather than duplicated/claimed.
+    const existing = await findContactByPhoneVariants(admin, org, canonical);
+    if (existing) contactId = existing.id;
+    else {
+      const { data, error } = await operator.client.from("contacts").insert({
+        organization_id: org, phone_number: canonical, name: input.name?.trim() || null,
+        created_by_user_id: operator.userId, source: "manual",
+      }).select("id").single();
+      if (error || !data) throw new Error("contact_create_failed");
+      contactId = data.id as string;
+    }
+  }
+  const { data: visible, error: contactError } = await operator.client.from("contacts").select("id")
+    .eq("organization_id", org).eq("id", contactId).maybeSingle();
+  if (contactError || !visible) throw new Error("contact_not_found");
+  const { data, error } = await operator.client.rpc("fn_open_conversation_manual", {
+    p_org: org, p_contact: contactId, p_channel: available[0]!.id,
+  });
+  if (error) {
+    if (error.code === "42501") throw new Error("manual_open_forbidden");
+    throw new Error("manual_open_failed");
+  }
+  return data as OpenSharedContactResult;
 }

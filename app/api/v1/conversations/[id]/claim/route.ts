@@ -65,6 +65,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     requestId,
     expectedAssignee: input.expected_assignee,
   });
+  if (error?.code === "42501") return fail("forbidden", t("Esta conversa não está disponível para este atendimento."), 403, { requestId });
   if (error) return fail("internal_error", error.message, 500, { requestId });
   if (!conv) return fail("state_conflict", t("Outro atendente já assumiu."), 409, { requestId });
 
