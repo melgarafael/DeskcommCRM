@@ -1,3 +1,5 @@
+import { HandoffDeliveryForm } from "./_handoff-form";
+import { configEntregaSchema } from "@/lib/schemas/handoff-delivery";
 /**
  * Configurações → Distribuição de atendimento (issue #144).
  *
@@ -53,6 +55,7 @@ export default async function AtendimentoSettingsPage() {
 
   const settings = ((data?.settings as Record<string, unknown> | null) ?? {}) as {
     routing?: unknown;
+    handoff_delivery?: unknown;
     visibility_mode?: VisibilityMode;
     crm?: unknown;
   };
@@ -95,6 +98,7 @@ export default async function AtendimentoSettingsPage() {
         initial={{ ...routing, visibility_mode: settings.visibility_mode ?? DEFAULT_VISIBILITY_MODE }}
       />
       <ChannelRoutingForm initial={channels} />
+      <HandoffDeliveryForm initial={configEntregaSchema.catch(configEntregaSchema.parse({})).parse(settings.handoff_delivery ?? {})} members={channels.members} />
       <AssinaturaForm initial={assinaturaInicial} />
       <NomeInformado ligada={nomeInformadoLigado({ crm: settings.crm })} idioma={idioma} podeMudar={podeAdministrarEmpresa(user, activeOrg)} />
       <TelefoneDeFichaVazia

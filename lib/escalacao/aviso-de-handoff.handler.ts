@@ -17,6 +17,10 @@ export const avisoDeHandoffHandler: EventHandler = {
   async handle(row) {
     try {
       const admin = createAdminClient();
+      const {data:org,error:orgError}=await admin.from("organizations").select("settings").eq("id",row.organization_id).maybeSingle();
+      if(orgError) throw orgError;
+      const settings=org?.settings as {handoff_delivery?:{enabled?:unknown}}|null;
+      if(settings?.handoff_delivery?.enabled===true) return {consumer_key:HANDLER_AVISO_HANDOFF,status:"skipped",detail:"handoff_delivery_owns_notice"};
       return await aplicaAvisoHandoff({
         ...criarPersistenciaAvisoHandoff(admin),
         db: createSupabaseAvisoDb(admin),

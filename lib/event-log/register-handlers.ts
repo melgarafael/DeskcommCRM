@@ -1,3 +1,4 @@
+import { entregaHumanaHandler } from "@/lib/escalacao/entrega/handler";
 import { followupGatilhoPresencaHandler } from "@/lib/followup/gatilho-presenca.handler";
 import { followupGatilhoRetornoHandler } from "@/lib/followup/gatilho-retorno.handler";
 /**
@@ -104,6 +105,7 @@ export function ensureHandlersRegistered(): void {
   // adia a si mesmo quando o dreno está rodando dentro de uma requisição.
   registerHandler(avisoDeCasoAoSuporteHandler);
   registerHandler(avisoDeHandoffHandler);
+  registerHandler(entregaHumanaHandler);
   // Mesmo critério do de cima: sai por rede de terceiro, depois de quem só
   // escreve no banco. Consome o MESMO evento que a notificação do navegador.
   registerHandler(avisoDePropostaNoWhatsAppHandler);

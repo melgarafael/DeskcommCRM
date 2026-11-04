@@ -1,3 +1,4 @@
+import { entregaHumanaHandler } from "@/lib/escalacao/entrega/handler";
 /**
  * ORGANIZAÇÃO PARADA NÃO GASTA NEM FALA — pelo barramento de eventos.
  *
@@ -78,6 +79,7 @@ const RODA: EventHandler[] = [
 ];
 
 const PULA: EventHandler[] = [
+  entregaHumanaHandler,
   aiResponseHandler,
   aiSentimentHandler,
   aiHandoffFromSentimentHandler,
