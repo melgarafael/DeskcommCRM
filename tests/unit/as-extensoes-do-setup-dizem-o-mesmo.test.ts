@@ -60,28 +60,22 @@ const EXIGIDAS = ["vector", "citext", "pg_trgm"];
 /**
  * DÍVIDA CONGELADA — defeito novo reprovado, dívida velha com prazo e cobrador.
  *
- * `README.en.md` ainda não tem o bloco. Ele chega pelo PR #3930, do mantenedor, e
- * traz exatamente as oito linhas que faltam. Exigir igualdade crua hoje deixaria
- * a cerca vermelha no estado atual — e uma cerca que nasce vermelha é desligada
- * na primeira semana. A saída é a da casa (mesmo padrão de
- * `MIGRATIONS_QUE_NAO_RODAM`): uma lista de exceções EXPLÍCITA, com dono.
+ * Vazia hoje, e a história importa: ela nasceu com UMA entrada — `README.en.md`,
+ * que não tinha o bloco de extensões — apontando para o PR #3930. O #3930 foi
+ * mergeado em 2026-11-03T20:19Z e o último teste deste arquivo reprovou na hora,
+ * exigindo que a entrada saísse. A dívida foi paga no mesmo dia em que foi
+ * contraída, e é assim que esta lista deve se comportar: entrada aqui é estado
+ * transitório, nunca moradia.
  *
- * O que impede esta lista de virar cemitério é o último teste do arquivo: quando o
- * arquivo DEIXA de divergir, a entrada passa a reprovar. Quem mergear o #3930 é
- * obrigado a apagar a linha — a dívida se cobra sozinha, e não existe estado em
- * que a exceção sobreviva ao defeito.
+ * O mecanismo fica de pé (e provado) porque a próxima divergência transitória vai
+ * precisar dele: a saída é a da casa, o mesmo padrão de `MIGRATIONS_QUE_NAO_RODAM`
+ * — lista EXPLÍCITA, com dono, e o último teste cobrando a remoção quando o
+ * defeito deixar de existir.
  *
  * Escrever aqui o PR não é burocracia: é o que permite a quem revisar saber, sem
  * `git log`, se a entrada ainda tem motivo para existir.
  */
-const DIVERGENCIAS_CONGELADAS: ReadonlyArray<{ arquivo: string; motivo: string }> = [
-  {
-    arquivo: "README.en.md",
-    motivo:
-      "PR #3930 (branch `docs/readme-en-extensoes-antes-do-baseline`, +8/-0) acrescenta o bloco. " +
-      "Medido OPEN em 2026-11-03; enquanto não mergear, o doc inglês promete o passo e não o entrega.",
-  },
-];
+const DIVERGENCIAS_CONGELADAS: ReadonlyArray<{ arquivo: string; motivo: string }> = [];
 
 /**
  * `create extension [if not exists] <nome> [with schema <schema>]`.
@@ -244,32 +238,44 @@ describe("o bloco de `create extension` do setup diz o mesmo nos três documento
     ).toEqual([]);
   });
 
-  it("⭐ extensão que o baseline cria sozinha não entra no passo manual (o caso pgcrypto)", () => {
+  it("⭐ extensão que o baseline cria em OUTRO schema não entra no passo manual (o caso pgcrypto)", () => {
     // O doc mente de dois jeitos: esquecendo o passo que existe e ANUNCIANDO um passo
-    // que ninguém precisa. O baseline cria `pgcrypto with schema extensions` na
+    // que ninguém precisa. O baseline cria `pgcrypto WITH SCHEMA extensions` na
     // primeira linha de DDL dele — pedir que a pessoa crie antes é ensinar trabalho
     // inútil, e pior: se um dia ele mudar de schema, sobra uma linha no doc criando
     // a extensão no lugar errado, que é o que faz o baseline falhar depois.
     //
+    // O recorte é `fora do public` de propósito, e ele foi MEDIDO, não escolhido no
+    // gosto: em 2026-11-03, horas depois desta cerca nascer, o `#3936` passou a criar
+    // `pg_trgm with schema public` no próprio baseline (o índice trigram da busca sem
+    // acento). A versão anterior desta asserção reprovava os três documentos por
+    // citarem `pg_trgm` — e era falso positivo: as linhas do doc continuam VERDADEIRAS
+    // (com `if not exists`, criar em `public` quando já existe em `public` é no-op, e
+    // criar quando não existe é exatamente o que o índice precisa). O que o doc não
+    // pode fazer é anunciar como passo manual uma extensão que o baseline instala num
+    // schema que o doc não menciona — aí a instrução manda a pessoa para o lugar errado.
+    //
     // A lista é CALCULADA do baseline, não escrita à mão: a próxima extensão que ele
-    // passar a criar entra nesta regra sozinha.
-    const criadasPeloBaseline = extensoesDeclaradas("supabase/baseline.sql").map((d) => d.nome);
-    expect(criadasPeloBaseline, "o baseline não cria mais `pgcrypto` — a régua desta cerca mudou").toContain(
+    // criar fora de `public` entra nesta regra sozinha.
+    const criadasForaDoPublic = extensoesDeclaradas("supabase/baseline.sql")
+      .filter((d) => d.schema !== null && d.schema !== "public")
+      .map((d) => d.nome);
+    expect(criadasForaDoPublic, "o baseline não cria mais `pgcrypto` fora de `public` — a régua desta cerca mudou").toContain(
       "pgcrypto",
     );
 
     const anunciadas: string[] = [];
     for (const doc of DOCUMENTOS) {
       for (const d of extensoesDeclaradas(doc)) {
-        if (criadasPeloBaseline.includes(d.nome)) {
-          anunciadas.push(`${doc} → \`${d.nome}\` (o baseline já a cria)`);
+        if (criadasForaDoPublic.includes(d.nome)) {
+          anunciadas.push(`${doc} → \`${d.nome}\` (o baseline já a cria, e fora de \`public\`)`);
         }
       }
     }
 
     expect(
       anunciadas,
-      `passo manual para extensão que o baseline habilita sozinho:\n${anunciadas.join("\n")}\n` +
+      `passo manual para extensão que o baseline habilita sozinho em outro schema:\n${anunciadas.join("\n")}\n` +
         "Remova a linha do doc; `pgcrypto` fica de fora do bloco de propósito.",
     ).toEqual([]);
   });
