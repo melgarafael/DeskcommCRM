@@ -221,7 +221,9 @@ describe("(c) o Atendente lê a lista de pessoas da agenda", () => {
   it("a rota da lista usa o papel mínimo e seleciona só o que a barra usa", () => {
     const rota = fonte("app/api/v1/agenda/pessoas/route.ts");
 
-    expect(rota).toContain("requireRole(PAPEL_MINIMO_DA_LISTA");
+    // Spec 33 (R2): a rota passou a aceitar token; o papel continua o mínimo da lista.
+    expect(rota).toContain("resolveAuthDual(req");
+    expect(rota).toContain("role: PAPEL_MINIMO_DA_LISTA");
     expect(rota).toContain('.select("user_id, role")');
     expect(rota).not.toContain("selectedEmail");
     expect(rota).not.toContain('select("user_id, role, email');
