@@ -40,6 +40,12 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Configuração de fotos salva.": { es: "Configuración de fotos guardada." },
+  "Fotos adicionais do catálogo": { es: "Fotos adicionales del catálogo" },
+  "Permitir que a IA escolha fotos ainda não enviadas nesta conversa": { es: "Permitir que la IA elija fotos aún no enviadas en esta conversación" },
+  "Desligado por padrão. Quando ligado, o agente pode pedir fotos inéditas do produto selecionado: uma por padrão, até três por pedido. Não altera os limites de envio nem o atendimento das outras empresas.": { es: "Desactivado por defecto. Al activarlo, el agente puede solicitar fotos nuevas del producto seleccionado: una por defecto y hasta tres por solicitud. No cambia los límites de envío ni la atención de otras empresas." },
+  "Não consegui ler a configuração de fotos. Recarregue a página.": { es: "No pude leer la configuración de fotos. Recarga la página." },
+  "Salvar configuração de fotos": { es: "Guardar configuración de fotos" },
   // Servidores MCP por agente e OAuth por contato (migration 9095).
   "O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.": { es: "El enlace de autorización es automático: mientras el cliente no autorice, el agente recibe por sí solo la herramienta que genera el enlace. No hace falta marcarla aquí." },
   "0 = o acesso é revogado assim que a conversa é encerrada.": { es: "0 = el acceso se revoca en cuanto se cierra la conversación." },

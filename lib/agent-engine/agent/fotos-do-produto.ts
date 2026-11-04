@@ -14,16 +14,16 @@
  * mesma conversa, ou o replay de um job que caiu depois da cópia, reaproveita o
  * arquivo em vez de encher a cota de Storage do cliente com duplicatas.
  */
-import { BUCKET_DAS_FOTOS, fotoPertenceAoProduto, mimeDaFoto } from '@/lib/catalogo/fotos';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { BUCKET_DAS_FOTOS, fotoPertenceAoProduto, mimeDaFoto } from "@/lib/catalogo/fotos";
+import { createAdminClient } from "@/lib/supabase/admin";
 
-import type { Queryable } from '../queue/queue';
-import { OK_KINDS, type BubbleOutcome } from './split-message';
+import type { Queryable } from "../queue/queue";
+import { OK_KINDS, type BubbleOutcome } from "./split-message";
 
 /** Teto de legenda de imagem do WhatsApp. Texto maior sai como texto, antes das fotos. */
 export const LIMITE_DA_LEGENDA = 1024;
 
-const BUCKET_DA_CONVERSA = 'whatsapp-media';
+const BUCKET_DA_CONVERSA = "whatsapp-media";
 
 /**
  * A pasta em que o DRY-RUN deixa as fotos preparadas (#2490).
@@ -80,17 +80,22 @@ export function copiarFotoNoStorage(log: Log): CopiarFoto {
       .copy(origem, destino, { destinationBucket: BUCKET_DA_CONVERSA });
     if (!error) return true;
     // Já copiada antes para esta conversa: o arquivo que precisamos está lá.
-    if (/already exists/i.test(error.message) || (error as { statusCode?: string }).statusCode === '409') {
+    if (
+      /already exists/i.test(error.message) ||
+      (error as { statusCode?: string }).statusCode === "409"
+    ) {
       return true;
     }
-    log.warn('foto do catálogo não copiada para a conversa', { detalhe: error.message.slice(0, 120) });
+    log.warn("foto do catálogo não copiada para a conversa", {
+      detalhe: error.message.slice(0, 120),
+    });
     return false;
   };
 }
 
 export type FotosPreparadas =
   | { ok: true; fotos: FotoParaEnvio[]; tinha: number }
-  | { ok: false; code: 'produto_nao_encontrado'; message: string };
+  | { ok: false; code: "produto_nao_encontrado"; message: string };
 
 /**
  * Acha o produto pelo código e deixa as fotos dele prontas na pasta da conversa.
@@ -106,17 +111,17 @@ export async function prepararFotosDoProduto(
   input: { tenantId: string; conversationId: string; codigo: string },
 ): Promise<FotosPreparadas> {
   const { rows } = await db.query<{ id: string; fotos: string[] | null }>(
-    'select id, fotos from catalog_products where organization_id = $1 and codigo = $2 and ativo',
+    "select id, fotos from catalog_products where organization_id = $1 and codigo = $2 and ativo",
     [input.tenantId, input.codigo.trim()],
   );
   const produto = rows[0];
   if (!produto) {
     return {
       ok: false,
-      code: 'produto_nao_encontrado',
+      code: "produto_nao_encontrado",
       message:
         `não há produto ativo com o código ${JSON.stringify(input.codigo)} no catálogo. Use o ` +
-        '`codigo` que crm_search_products devolveu, ou envie sem produto_codigo.',
+        "`codigo` que crm_search_products devolveu, ou envie sem produto_codigo.",
     };
   }
   // Só caminho que é DESTE produto: a linha é gravável pelo PostgREST e a cópia
@@ -126,8 +131,9 @@ export async function prepararFotosDoProduto(
   );
   const fotos: FotoParaEnvio[] = [];
   for (const origem of deste) {
-    const destino = `${input.tenantId}/${input.conversationId}/catalogo-${origem.split('/').pop()}`;
-    if (await copiar(origem, destino)) fotos.push({ storagePath: destino, mime: mimeDaFoto(origem) });
+    const destino = `${input.tenantId}/${input.conversationId}/catalogo-${origem.split("/").pop()}`;
+    if (await copiar(origem, destino))
+      fotos.push({ storagePath: destino, mime: mimeDaFoto(origem) });
   }
   return { ok: true, fotos, tinha: deste.length };
 }
@@ -154,18 +160,44 @@ export async function enviarComFotos<T extends BubbleOutcome>(
     sleep: (ms: number) => Promise<void>;
     jitter: () => number;
     restantes?: () => number;
+    /** Opt-in progressivo: queued não é entrega; aguarde o replay antes da próxima foto. */
+    pararEmQueued?: boolean;
+    /** Opt-in: reservar um envio para texto separado após as fotos. */
+    textoAposFotos?: boolean;
   },
 ): Promise<T> {
   const cabeMaisUma = () => (opts.restantes?.() ?? Number.POSITIVE_INFINITY) > 0;
   const [capa, ...demais] = fotos;
   if (!capa || !cabeMaisUma()) return opts.enviarTexto(body);
+  if (opts.textoAposFotos) {
+    // Não antecipar texto de conclusão se qualquer foto ficou ambígua/queued.
+    // Mantém seq das fotos (plano/ledger) e reserva o último envio para texto.
+    if ((opts.restantes?.() ?? Infinity) < 2) return opts.enviarTexto(body);
+    let ultimo = await opts.enviarFoto(capa, "");
+    for (const foto of demais) {
+      if (!OK_KINDS.has(ultimo.kind) || (opts.pararEmQueued && ultimo.kind === "queued"))
+        return ultimo;
+      if ((opts.restantes?.() ?? Infinity) <= 1) break;
+      await opts.sleep(opts.jitter());
+      ultimo = await opts.enviarFoto(foto, "");
+    }
+    if (
+      !OK_KINDS.has(ultimo.kind) ||
+      (opts.pararEmQueued && ultimo.kind === "queued") ||
+      !cabeMaisUma()
+    )
+      return ultimo;
+    await opts.sleep(opts.jitter());
+    return opts.enviarTexto(body);
+  }
   const legendaCabe = body.length <= LIMITE_DA_LEGENDA;
   let ultimo = legendaCabe ? await opts.enviarFoto(capa, body) : await opts.enviarTexto(body);
   for (const foto of legendaCabe ? demais : fotos) {
-    if (!OK_KINDS.has(ultimo.kind)) return ultimo;
+    if (!OK_KINDS.has(ultimo.kind) || (opts.pararEmQueued && ultimo.kind === "queued"))
+      return ultimo;
     if (!cabeMaisUma()) return ultimo;
     await opts.sleep(opts.jitter());
-    ultimo = await opts.enviarFoto(foto, '');
+    ultimo = await opts.enviarFoto(foto, "");
   }
   return ultimo;
 }
