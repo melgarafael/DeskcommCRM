@@ -32,11 +32,20 @@ export interface FiltrosDeTarefa {
   aberto?: boolean;
   /** De quem é: `me` (a rota resolve quem é), `ninguem` (sem responsável) ou o id de um membro. Ausente = de todos. */
   assigned_to?: string;
+  /** Só as tarefas de negócios deste funil. Ausente = de todos os funis (e as tarefas soltas também). */
+  pipeline_id?: string;
 }
 
 export interface OpcoesDeTarefas {
   /** `false` segura a consulta — o dossiê fechado não precisa das tarefas dele. */
   enabled?: boolean;
+  /**
+   * Recarga periódica, em ms. Ausente = sem intervalo (o default da tela, que
+   * só muda quando alguém desta aba mexe ou a janela volta ao foco). O contador
+   * do menu pede 60 s porque as tarefas nascem de automação, sem gesto nenhum
+   * aqui — mesmo intervalo do contador de Casos.
+   */
+  refetchInterval?: number;
 }
 
 async function leJson<T>(res: Response, oQueFalhou: string): Promise<T> {
@@ -62,6 +71,7 @@ export function useTasks(filtros: FiltrosDeTarefa = {}, opcoes: OpcoesDeTarefas 
   if (filtros.demanda_id) params.set("demanda_id", filtros.demanda_id);
   if (filtros.aberto) params.set("aberto", "true");
   if (filtros.assigned_to) params.set("assigned_to", filtros.assigned_to);
+  if (filtros.pipeline_id) params.set("pipeline_id", filtros.pipeline_id);
   const qs = params.toString();
 
   const query = useQuery({
@@ -72,6 +82,7 @@ export function useTasks(filtros: FiltrosDeTarefa = {}, opcoes: OpcoesDeTarefas 
     },
     staleTime: 10_000,
     refetchOnWindowFocus: true,
+    refetchInterval: opcoes.refetchInterval,
     enabled: opcoes.enabled ?? true,
   });
 

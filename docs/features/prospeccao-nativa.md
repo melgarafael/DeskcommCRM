@@ -6,6 +6,26 @@ Em **CRM → Prospecção**, um administrador configura a chave Apify, pesquisa 
 
 A busca é paga pelo saldo da conta Apify: limite de até 100 empresas e teto de US$ 0,50 a US$ 10 por execução. A quantidade pode ser menor. O enriquecimento consulta e-mails comerciais e redes do site, sem buscar pessoas físicas ou decisores. Chave cifrada por `fn_encrypt_oauth`, indisponível aos papéis do navegador. Não existe chave obrigatória no `.env`.
 
+### Buscar pela Scavio em vez da Apify
+
+A organização pode buscar as empresas do Google Maps pela API da Scavio. A Apify continua sendo o provedor de quem não escolhe outro, e a escolha de uma organização não muda nada para as outras.
+
+1. Escolha `scavio` em `organizations.settings.prospecting.provider`. Essa escolha ainda não tem tela; hoje é feita por SQL no banco:
+
+   ```sql
+   update organizations
+      set settings = coalesce(settings, '{}'::jsonb)
+        || jsonb_build_object('prospecting',
+             coalesce(settings->'prospecting', '{}'::jsonb) || '{"provider": "scavio"}'::jsonb)
+    where id = '<id da organização>';
+   ```
+
+2. Em **CRM → Prospecção**, salve a chave da Scavio no campo de chave (o rótulo ainda diz "Chave da Apify"). A chave é conferida em `GET /api/v1/usage`, que não gasta crédito, e fica cifrada como a da Apify.
+
+A busca usa o mesmo segmento e local do formulário e devolve até 20 empresas por página; cada página consome um crédito da conta Scavio, então uma busca de 100 empresas usa no máximo 5. Ela roda no tick seguinte do scheduler, sem execução para acompanhar. O teto em US$ e a opção "Enriquecer com e-mails comerciais e redes" são da Apify e não se aplicam aqui; a avaliação do site e a prévia seguem iguais. Se uma página depois da primeira falhar, a busca fica com o que já veio.
+
+Ao trocar de provedor, salve de novo a chave do provedor novo. A Scavio recusa, sem chamar a rede, uma chave que não é dela (as chaves da Scavio começam com `sk_`), e uma busca iniciada pela Apify antes da troca para com um aviso em vez de ser lida pela Scavio.
+
 ### Lista própria (planilha)
 
 Se você já tem a lista de empresas (de uma feira, de uma associação, de uma planilha antiga), não precisa pagar uma busca: em **CRM → Prospecção**, no cartão "1. Encontrar empresas", abra a aba **Usar minha planilha**. Essa aba não depende da chave Apify nem de qualquer provedor de busca.

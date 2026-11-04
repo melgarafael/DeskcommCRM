@@ -57,13 +57,26 @@ import {
   conferirNegocioEContato,
 } from "@/lib/tarefas/negocio-da-tarefa";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
-import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA, type Tarefa } from "@/lib/tarefas/tipos";
+import {
+  PRIORIDADES_DA_TAREFA,
+  SITUACOES_ABERTAS_DA_TAREFA,
+  SITUACOES_DA_TAREFA,
+  type Tarefa,
+} from "@/lib/tarefas/tipos";
 
 export const dynamic = "force-dynamic";
 
 /** As colunas que a tela lê. Explícitas para o `select *` não vazar coluna nova. */
 const COLUNAS =
   "id, organization_id, title, description, due_date, priority, status, lead_id, contact_id, demanda_id, assigned_to, created_by, created_at, updated_at, lead:crm_leads(id, title)";
+
+/**
+ * Com o filtro de funil o `lead` vira INNER JOIN: o PostgREST só filtra pela coluna de um
+ * recurso embutido se o embutido for obrigatório; com o join comum a tarefa de outro funil
+ * continuaria na lista, só que com `lead: null`. Sem o filtro a consulta é a de sempre — o
+ * join obrigatório esconderia as tarefas soltas (sem negócio), que são caso real.
+ */
+const COLUNAS_NO_FUNIL = COLUNAS.replace("lead:crm_leads(", "lead:crm_leads!inner(");
 
 const criacaoSchema = z.object({
   title: z.string().trim().min(1).max(255),
@@ -101,6 +114,13 @@ const listaSchema = z.object({
    * `me` só existe para quem é uma pessoa: o token recebe 422.
    */
   assigned_to: z.union([z.literal("me"), z.literal("ninguem"), z.string().uuid()]).optional(),
+  /**
+   * Só as tarefas de negócios DESTE funil (`crm_leads.pipeline_id`). A tarefa não tem funil
+   * próprio: ela herda o do negócio a que está presa, então tarefa solta fica de fora quando
+   * o filtro está ligado. Um id de outra organização não devolve nada — o `organization_id`
+   * da consulta e a RLS continuam valendo.
+   */
+  pipeline_id: z.string().uuid().optional(),
 });
 
 export async function GET(req: NextRequest): Promise<Response> {
@@ -143,10 +163,26 @@ export async function GET(req: NextRequest): Promise<Response> {
     responsavel = authz.actor.id;
   }
 
+  // O filtro de funil só existe com o negócio EMBUTIDO (`lead:crm_leads!inner`),
+  // e o embed é exatamente o que o ramo do token não usa: com a service role ele
+  // não passa pela RLS de `crm_leads` e devolveria negócio de outra organização.
+  // Em vez de reabrir o embed, o token recebe 422 — quem precisa do funil filtra
+  // pelos negócios (`GET /api/v1/pipelines/[id]/leads`) e cruza por `lead_id`.
+  if (doToken && filtros.pipeline_id) {
+    return fail("validation_failed", t("Parâmetros inválidos."), 422, {
+      requestId,
+      details: { pipeline_id: ["Este filtro só vale para quem entrou pela tela; use `lead_id`."] },
+    });
+  }
+
   const supabase = authz.supabase;
   // No ramo do token o negócio NÃO vem por embed (service role não passa pela RLS
   // de `crm_leads`): ele é juntado abaixo, em consulta filtrada pela organização.
-  const colunas: string = doToken ? COLUNAS_DA_TAREFA : COLUNAS;
+  const colunas: string = doToken
+    ? COLUNAS_DA_TAREFA
+    : filtros.pipeline_id
+      ? COLUNAS_NO_FUNIL
+      : COLUNAS;
   // ⚠️ `organization_id` à mão mesmo com RLS ligada: é a regra do CLAUDE.md, e
   // no ramo do token (admin client, que bypassa RLS) é a ÚNICA barreira.
   let query = supabase
@@ -164,9 +200,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (filtros.demanda_id) query = query.eq("demanda_id", filtros.demanda_id);
   if (filtros.due_from) query = query.gte("due_date", filtros.due_from);
   if (filtros.due_to) query = query.lte("due_date", filtros.due_to);
-  if (filtros.aberto === "true") query = query.in("status", ["pending", "in_progress"]);
+  if (filtros.aberto === "true") query = query.in("status", [...SITUACOES_ABERTAS_DA_TAREFA]);
   if (responsavel === "ninguem") query = query.is("assigned_to", null);
   else if (responsavel) query = query.eq("assigned_to", responsavel);
+  if (filtros.pipeline_id) query = query.eq("lead.pipeline_id", filtros.pipeline_id);
 
   const { data, error } = await query;
   if (error) {

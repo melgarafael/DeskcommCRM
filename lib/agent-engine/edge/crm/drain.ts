@@ -22,6 +22,11 @@ import type { Logger } from '../../obs/logger';
 import { enqueueJob } from '../../queue/queue';
 import { janelaDeRespostaAberta, soltarAdiadoPelaJanela } from '../../pacing/adiados-da-janela';
 import { decidirRajada, debounceEfetivo } from './debounce';
+import {
+  intervaloEfetivo,
+  runAfterComIntervalo,
+  ultimaRespostaDaIa,
+} from './intervalo-entre-respostas';
 import { avisoDeEventoMorto, IA_QUE_NAO_RESPONDEU } from '@/lib/event-log/aviso-de-evento-morto';
 import { acordarLacoDeEventLog } from '@/lib/event-log/sinal-de-trabalho';
 import { canalDesativado } from '@/lib/channels/desativado';
@@ -222,13 +227,13 @@ type DesfechoEvento = 'processado' | 'adiar';
  * Falha da consulta NÃO derruba o evento: degrada para a env, como a checagem
  * de elegibilidade acima. A janela é afinação, não motivo para retry.
  */
-async function debounceDoEvento(
+async function ajustesDoAgenteDoEvento(
   pool: pg.Pool,
   event: EventRow,
   p: { conversation_id: string; channel_session_id: string },
   padraoInstalacao: number,
   log: Logger,
-): Promise<number> {
+): Promise<{ debounceMs: number; intervaloEntreRespostasMs: number }> {
   try {
     const agentConfig = await loadConversationAgentConfig(
       pool,
@@ -236,13 +241,17 @@ async function debounceDoEvento(
       p.conversation_id,
       p.channel_session_id,
     );
-    return debounceEfetivo(agentConfig?.inboundDebounceMs ?? null, padraoInstalacao);
+    return {
+      debounceMs: debounceEfetivo(agentConfig?.inboundDebounceMs ?? null, padraoInstalacao),
+      // O intervalo entre respostas vem da MESMA versão do agente (mesma consulta).
+      intervaloEntreRespostasMs: intervaloEfetivo(agentConfig?.replyMinIntervalMs ?? null),
+    };
   } catch (err) {
-    log.warn('drain: janela de rajada do agente não resolveu — usando a da instalação', {
+    log.warn('drain: ajustes do agente não resolveram — usando a janela da instalação, sem intervalo', {
       event_id: event.id,
       error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
     });
-    return padraoInstalacao;
+    return { debounceMs: padraoInstalacao, intervaloEntreRespostasMs: 0 };
   }
 }
 
@@ -531,10 +540,11 @@ async function processEvent(
   //
   // A janela e a exclusão do job em HOLD (`held_run_after` no payload — a lição
   // do #830) moram em ./debounce.ts, com teste próprio.
+  const ajustes = await ajustesDoAgenteDoEvento(pool, event, p, knobs.debounceMs, log);
   const rajada = await decidirRajada(
     pool,
     { organizationId: event.organization_id, contactId: p.contact_id },
-    await debounceDoEvento(pool, event, p, knobs.debounceMs, log),
+    ajustes.debounceMs,
     Date.now(),
     // Só é chamada quando o candidato à carona está adiado pela janela (#3383),
     // uma consulta por mensagem nesse caso — nenhum custo no caminho comum.
@@ -579,7 +589,25 @@ async function processEvent(
     });
   }
 
-  const runAfter = rajada.runAfter;
+  // Intervalo mínimo entre respostas da IA (por agente): o turno só nasce
+  // depois de `última resposta da IA + intervalo`. Falha da consulta NÃO derruba
+  // o evento — o intervalo é afinação, e o cliente que espera resposta não paga
+  // por ela: degrada para o `run_after` da rajada.
+  let runAfter = rajada.runAfter;
+  if (ajustes.intervaloEntreRespostasMs > 0) {
+    try {
+      const ultima = await ultimaRespostaDaIa(pool, {
+        organizationId: event.organization_id,
+        conversationId: p.conversation_id,
+      });
+      runAfter = runAfterComIntervalo(runAfter, ultima, ajustes.intervaloEntreRespostasMs);
+    } catch (err) {
+      log.warn('drain: não consegui medir o intervalo entre respostas — turno sem espera extra', {
+        event_id: event.id,
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+      });
+    }
+  }
   const { job, deduped } = await enqueueJob(pool, event.organization_id, {
     kind: 'inbound_turn',
     leadId: p.contact_id,

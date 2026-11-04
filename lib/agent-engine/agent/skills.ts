@@ -78,6 +78,8 @@ export interface LoadedSkill {
    * para validar que um ref_path pedido pelo modelo é conhecido ANTES de tocar storage.
    */
   manifest: unknown[];
+  /** Skill da PLATAFORMA (`organization_id` nulo): texto nosso, não da organização. */
+  daPlataforma?: true;
 }
 
 function countLines(content: string): number {
@@ -205,6 +207,7 @@ export async function loadSkills(db: Queryable, tenantId: string): Promise<Loade
         body: r.body,
         matcher: r.matcher,
         manifest: r.manifest ?? [],
+        ...(r.organization_id === null ? { daPlataforma: true as const } : {}),
       });
     }
   }
