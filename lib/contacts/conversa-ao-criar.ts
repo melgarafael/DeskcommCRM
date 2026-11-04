@@ -58,6 +58,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ensureConversation, sessaoProntaParaEnvio } from "@/lib/automation/start-conversation";
+import { mensagemDoErro } from "@/lib/atendimento/erro-de-canal";
 import { logger } from "@/lib/logger";
 
 /**
@@ -101,18 +102,6 @@ export interface ContatoRecemCriado {
 export type DesfechoDaConversa =
   | { aberta: true; conversationId: string }
   | { aberta: false; motivo: "porta_nao_abre" | "sem_telefone" | "sem_sessao" | "falhou" };
-
-function mensagemDoErro(erro: unknown): string {
-  // O PostgREST devolve o erro como objeto simples (`{ code, message }`), não
-  // como `Error` — `String(erro)` viraria "[object Object]" e o log não diria
-  // nada, que é exatamente o defeito que este PR conserta.
-  if (erro instanceof Error) return erro.message;
-  if (erro && typeof erro === "object") {
-    const { message } = erro as { message?: unknown };
-    if (typeof message === "string" && message.length > 0) return message;
-  }
-  return String(erro);
-}
 
 /**
  * Abre (ou reabre) a conversa de um contato recém-criado — SE a regra da porta

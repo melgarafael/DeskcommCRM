@@ -98,6 +98,11 @@ import {
 } from './fotos-do-produto';
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
 import {
+  intervaloEfetivo,
+  runAfterComIntervalo,
+  ultimaRespostaDaIa,
+} from '../edge/crm/intervalo-entre-respostas';
+import {
   applyLeadStateUpdate,
   getLeadState,
   type LeadStage,
@@ -119,6 +124,7 @@ import {
   type LeadCheckpointRow,
 } from "./abertura/checkpoint";
 import { buildOpeningMessage, ritualBlocks } from "./abertura/ritual";
+import { snapshotDoCaso } from "./conversa-do-caso/contexto";
 import { lerRemetenteDeGrupo, type RemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
@@ -3426,6 +3432,44 @@ async function executarTurnoDoAgente(
     }
   }
 
+  // INTERVALO MÍNIMO ENTRE RESPOSTAS (#3940). O drain já adia o job pela pausa,
+  // mas mede contra a resposta que existia QUANDO a mensagem chegou: a que chega
+  // durante um turno em curso não pega carona (só há carona em job pending) e
+  // nasce medida contra a resposta ANTERIOR. Aqui a régua é a mesma do drain
+  // (`ultimaRespostaDaIa` + `runAfterComIntervalo`), medida de novo no turno,
+  // depois das detecções determinísticas — um opt-out na pausa é tratado agora.
+  // Adia como a janela acima: `rescheduleJob`, sem gastar tentativa, e o job
+  // segue pending para as próximas mensagens entrarem de carona. Campo vazio ou
+  // 0: nenhuma consulta. Falha da consulta degrada para "sem espera", como no drain.
+  const intervaloMs = intervaloEfetivo(agentConfig?.replyMinIntervalMs ?? null);
+  if (!preview && liveJob().kind === 'inbound_turn' && intervaloMs > 0) {
+    let liberaEm: Date | undefined;
+    try {
+      const ultima = await ultimaRespostaDaIa(pool, {
+        organizationId: tenantId,
+        conversationId: input.conversationId,
+      });
+      liberaEm = runAfterComIntervalo(undefined, ultima, intervaloMs, clock().getTime());
+    } catch (err) {
+      runLog.warn('não consegui medir o intervalo entre respostas — turno sem espera extra', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+      });
+    }
+    if (liberaEm !== undefined) {
+      const esperaMs = liberaEm.getTime() - clock().getTime();
+      await rescheduleJob(pool, liveJob().id, ctx.workerId, {
+        acquiredAt: claimOfJob(liveJob())?.acquired_at,
+        delayMs: esperaMs,
+        reason: 'intervalo mínimo entre respostas do agente — turno adiado',
+      });
+      runLog.info('turno adiado — intervalo mínimo entre respostas da versão publicada', {
+        agent_id: agentConfig?.agentId,
+        espera_ms: esperaMs,
+      });
+      throw new JobSettledError('intervalo mínimo entre respostas — job reagendado');
+    }
+  }
+
   // ROTEIRO DE ATENDIMENTO (módulo opcional `fluxos_atendimento`, #1130). Entra
   // AQUI, depois de tudo que silencia o turno — handoff humano, pausa, pedido de
   // humano, opt-out ambíguo — e nunca para contato bloqueado. Na prova prática,
@@ -5285,12 +5329,13 @@ async function executarTurnoDoAgente(
   // Spec 15: snapshot mínimo do contexto disponível pro humano que for atender o
   // caso — campo de CONVENIÊNCIA pra UI, não load-bearing (nada aqui é relido pelo
   // agente). ponytail: snapshot mínimo; enriquecer se a UI precisar de mais.
-  const buildCaseContextSnapshot = (): Record<string, unknown> => ({
-    contact_name: effectiveContext.contact.name,
-    last_messages: effectiveContext.messages
-      .slice(-5)
-      .map((m) => ({ direction: m.direction, body: m.body })),
-  });
+  //
+  // `sent_at` entra junto porque sem ele TODA fala herdava a hora de abertura do
+  // caso (`falasDoSnapshot` cai no `abertoEm`): a tela e o prompt mostravam cinco
+  // mensagens de horas diferentes com o mesmo carimbo. É string ali — vem do
+  // histórico já normalizado (`get-lead-context.ts`, `isoLocalComOffset`).
+  const buildCaseContextSnapshot = (): Record<string, unknown> =>
+    snapshotDoCaso(effectiveContext.contact.name, effectiveContext.messages);
 
   // Spec 15 (Wave 3a): tools de caso humano (open_human_case/provide_case_update) só
   // entram quando a tela habilita (cases_enabled) — mesmo padrão do handoff acima.

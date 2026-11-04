@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useT } from "@/hooks/i18n/useT";
 import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
 import { rotuloDoStatus, tomDoStatus } from "@/lib/followup/eventos-legiveis";
 
 /**
@@ -183,8 +184,16 @@ export function FollowupDoContato({
       toast.success(t("Follow-up iniciado."));
       setEscolhido("");
       recarregar();
-    } catch {
-      toast.error(t("Não foi possível iniciar o follow-up."));
+    } catch (erro) {
+      // #3923 — a instalação não tem número conectado. O servidor manda 409 com
+      // o código estável `service_channel_not_found`; a frase que o leigo
+      // entende é escolhida AQUI, pelo código, e não pela prosa da resposta:
+      // assim ela também sai traduzida no idioma de quem está na tela.
+      toast.error(
+        erro instanceof ApiError && erro.code === "service_channel_not_found"
+          ? t("Conecte um número de WhatsApp antes de iniciar o follow-up.")
+          : t("Não foi possível iniciar o follow-up."),
+      );
     } finally {
       setSalvando(false);
     }

@@ -35,6 +35,7 @@ export interface AgentVersionRow {
   split_messages: boolean;
   split_max_chars: number;
   inbound_debounce_ms: number | null;
+  reply_min_interval_ms: number | null;
   followup: {
     enabled: boolean;
     flow_pointer_ids: string[];

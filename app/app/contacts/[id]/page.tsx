@@ -1,6 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { paineisDaEntidade } from "@/lib/modulos/dados/paineis";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { ContactDetailClient } from "./_client";
 
@@ -32,5 +34,8 @@ export default async function ContactDetailPage({
   // A organização vem da SESSÃO (`resolveActiveOrg`, acima), nunca da URL: é ela que decide se
   // esta empresa chega a saber que o módulo existe. Ver o cabeçalho de `paineisDaEntidade`.
   const paineisDeModulo = await paineisDaEntidade("contato", activeOrg.orgId);
-  return <ContactDetailClient contactId={id} paineisDeModulo={paineisDeModulo} />;
+  // Módulo opcional `mcp_por_agente` (doc 252): desligado, a lista de acessos do
+  // contato a servidores MCP externos não aparece na aba LGPD.
+  const acessosMcp = await moduloLigado(createAdminClient(), "mcp_por_agente");
+  return <ContactDetailClient contactId={id} paineisDeModulo={paineisDeModulo} acessosMcp={acessosMcp} />;
 }

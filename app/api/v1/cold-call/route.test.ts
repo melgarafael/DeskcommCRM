@@ -166,4 +166,43 @@ describe("quem não recebe ligação chega marcado", () => {
     const { corpo } = await lerFila();
     expect(corpo.data!.leads.map((l) => l.nao_ligar)).toEqual(["bloqueado", "pessoal", "anonimizado", null]);
   });
+
+  it("e chega sem telefone, e-mail, endereço nem conversa; o lead comum chega com tudo", async () => {
+    const estados: Linha[] = [{ is_blocked: true }, { is_personal: true }, { is_anonymized: true }, {}];
+    const base = fila(4, (i) => ({
+      email: `pessoa${i}@exemplo.com`,
+      street: "Rua A",
+      number: "10",
+      district: "Centro",
+      city: "Recife",
+      state: "PE",
+      ...estados[i],
+    }));
+    const tabelas = {
+      ...base,
+      conversations: base.contacts.map((c, i) => ({
+        id: `conversa-${i}`,
+        organization_id: ORG,
+        contact_id: c.id,
+        last_message_at: "2026-11-02T09:00:00Z",
+      })),
+    };
+    vi.mocked(createClient).mockResolvedValue(bancoFalso(tabelas) as never);
+    const { corpo } = await lerFila();
+    const leads = corpo.data!.leads;
+    const contato = (l: Linha) => ({ telefone: l.telefone, email: l.email, endereco: l.endereco, conversa_id: l.conversa_id });
+
+    for (const l of leads.slice(0, 3)) {
+      expect(contato(l)).toEqual({ telefone: null, email: null, endereco: null, conversa_id: null });
+      // O nome e o motivo ficam: é o que a tela mostra em "Não ligar · motivo".
+      expect(l.titulo).toBeTruthy();
+      expect(l.nao_ligar).not.toBeNull();
+    }
+    expect(contato(leads[3]!)).toEqual({
+      telefone: "+5511900000003",
+      email: "pessoa3@exemplo.com",
+      endereco: "Rua A, 10 - Centro - Recife - PE",
+      conversa_id: "conversa-3",
+    });
+  });
 });

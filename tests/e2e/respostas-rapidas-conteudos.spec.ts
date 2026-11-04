@@ -474,6 +474,18 @@ test("sete combinações e edição de áudio no teto5 conservam bytes e snapsho
     await expect(barra).toBeVisible();
     const mais = barra.getByRole("button", { name: /^mais \(/ });
     if (await mais.count()) await mais.click();
+    // #3875 — a barra é UMA linha, inclusive ABERTA (o pior caso): sem quebra de
+    // linha (`flex-wrap: nowrap`) e sem crescer com o número de respostas. Antes
+    // dela, cada resposta a mais era mais uma linha acima do campo de digitação,
+    // e a seção comia a altura da conversa. O teto de 40px é folga para a fonte
+    // do runner sobre os 26px medidos no Chromium desta VPS; uma pílula de
+    // resposta não passa de ~26px, então 40px não cabe uma segunda linha.
+    const geometria = await barra.evaluate((el) => ({
+      quebra: getComputedStyle(el).flexWrap,
+      altura: Math.round(el.getBoundingClientRect().height),
+    }));
+    expect(geometria.quebra).toBe("nowrap");
+    expect(geometria.altura).toBeLessThan(40);
     const esperados: Array<{ tipo: string; texto: string }> = [];
     for (const [i, c] of COMBINACOES.entries()) {
       const modelo = cadastrados[i]!;

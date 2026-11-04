@@ -162,6 +162,7 @@ describe("ondeOModuloAparece: a tela pode dizer o que ligar vai mudar", () => {
       "setores",
       "avisos",
       "conferir_whatsapp",
+      "mcp_por_agente",
     ]);
   });
 });

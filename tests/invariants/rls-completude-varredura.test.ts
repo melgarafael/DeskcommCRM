@@ -254,6 +254,27 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "orçamento, criativo e performance de quem anuncia.",
   },
   {
+    tabela: "ai_agent_mcp_servers",
+    razao:
+      "tests/invariants/servidores-mcp-por-agente-server-side.test.ts — privilégio " +
+      "NENHUM para anon e authenticated, `permission denied` sob `set role` com JWT " +
+      "de admin da própria organização E de outra, RLS ligada, zero policies. Guarda chave e client_secret cifrados dos servidores MCP do agente (9095).",
+  },
+  {
+    tabela: "mcp_oauth_pedidos",
+    razao:
+      "tests/invariants/servidores-mcp-por-agente-server-side.test.ts — privilégio " +
+      "NENHUM para anon e authenticated, `permission denied` sob `set role` com JWT " +
+      "de admin da própria organização E de outra, RLS ligada, zero policies. Guarda o state de uso único e o code_verifier cifrado do OAuth por contato (9095).",
+  },
+  {
+    tabela: "contato_mcp_credenciais",
+    razao:
+      "tests/invariants/servidores-mcp-por-agente-server-side.test.ts — privilégio " +
+      "NENHUM para anon e authenticated, `permission denied` sob `set role` com JWT " +
+      "de admin da própria organização E de outra, RLS ligada, zero policies. Guarda o access e o refresh token cifrados do CONTATO num terceiro (9095).",
+  },
+  {
     tabela: "map_provider_credentials",
     razao:
       "tests/invariants/credencial-de-mapas-e-server-side.test.ts — privilégio " +

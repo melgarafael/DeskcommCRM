@@ -40,6 +40,72 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  // Servidores MCP por agente e OAuth por contato (migration 9095).
+  "O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.": { es: "El enlace de autorización es automático: mientras el cliente no autorice, el agente recibe por sí solo la herramienta que genera el enlace. No hace falta marcarla aquí." },
+  "0 = o acesso é revogado assim que a conversa é encerrada.": { es: "0 = el acceso se revoca en cuanto se cierra la conversación." },
+  "Acesso apagado daqui. O sistema externo não confirmou a revogação.": { es: "Acceso borrado de aquí. El sistema externo no confirmó la revocación." },
+  "Acesso revogado no sistema externo e apagado daqui.": { es: "Acceso revocado en el sistema externo y borrado de aquí." },
+  "Acessos a sistemas externos": { es: "Accesos a sistemas externos" },
+  "Adicionar ferramenta": { es: "Agregar herramienta" },
+  "Adicionar servidor": { es: "Agregar servidor" },
+  "Chave fixa (Bearer)": { es: "Clave fija (Bearer)" },
+  "Cliente OAuth manual (opcional)": { es: "Cliente OAuth manual (opcional)" },
+  "Confira os campos: algum valor não foi aceito.": { es: "Revisa los campos: algún valor no fue aceptado." },
+  "Confirmar remoção": { es: "Confirmar eliminación" },
+  "Contas de outros sistemas que este cliente autorizou o agente a acessar pela conversa.": { es: "Cuentas de otros sistemas a las que este cliente autorizó al agente a acceder por la conversación." },
+  "Endereço de retorno para cadastrar no servidor de autorização": { es: "Dirección de retorno para registrar en el servidor de autorización" },
+  "Clique em Testar conexão para ver o endereço de retorno deste servidor.": { es: "Haz clic en Probar conexión para ver la dirección de retorno de este servidor." },
+  "Endereço do servidor (Streamable HTTP)": { es: "Dirección del servidor (Streamable HTTP)" },
+  "Endereço recusado: use https, sem senha, sem parâmetros e sem endereço interno.": { es: "Dirección rechazada: usa https, sin contraseña, sin parámetros y sin dirección interna." },
+  "Escopos pedidos ao cliente": { es: "Alcances solicitados al cliente" },
+  "Este agente já tem o máximo de servidores MCP.": { es: "Este agente ya tiene el máximo de servidores MCP." },
+  "Este agente não foi encontrado.": { es: "No se encontró este agente." },
+  "Este servidor não aceita registro automático: informe o client_id.": { es: "Este servidor no acepta registro automático: informa el client_id." },
+  "Este servidor não existe mais.": { es: "Este servidor ya no existe." },
+  "Este servidor só lista as ferramentas com o acesso de um cliente. A lista abaixo é o que já apareceu em conversas; você também pode escrever o nome de uma ferramenta.": { es: "Este servidor solo lista sus herramientas con el acceso de un cliente. La lista de abajo es lo que ya apareció en conversaciones; también puedes escribir el nombre de una herramienta." },
+  "Ferramentas": { es: "Herramientas" },
+  "Hosts que este servidor alcança": { es: "Hosts que este servidor alcanza" },
+  "Leitura só vale quando o servidor também declara a ferramenta como leitura. Escrita não roda durante a conversa com o cliente.": { es: "Lectura solo vale cuando el servidor también declara la herramienta como de lectura. Escritura no se ejecuta durante la conversación con el cliente." },
+  "Leitura só vale quando o servidor também declara a ferramenta como leitura. Escrita roda na conversa com o acesso do cliente.": { es: "Lectura solo vale cuando el servidor también declara la herramienta como de lectura. Escritura se ejecuta en la conversación con el acceso del cliente." },
+  "Ligado, as ferramentas que você marcar como Escrita podem agir na conta do cliente (ligar um aparelho, alterar um pedido) durante a conversa, com o acesso que ele mesmo autorizou. O agente pode errar: ligue só para ações que o cliente pediria a um atendente, e confira a auditoria.": { es: "Activado, las herramientas que marques como Escritura pueden actuar en la cuenta del cliente (encender un aparato, cambiar un pedido) durante la conversación, con el acceso que él mismo autorizó. El agente puede equivocarse: actívalo solo para acciones que el cliente le pediría a un agente humano y revisa la auditoría." },
+  "Manter o acesso depois que a conversa encerra (horas)": { es: "Mantener el acceso después de que termine la conversación (horas)" },
+  "Nenhum acesso ativo.": { es: "Ningún acceso activo." },
+  "Nenhum servidor MCP cadastrado neste agente.": { es: "No hay ningún servidor MCP registrado en este agente." },
+  "Nenhuma ferramenta vista ainda.": { es: "Todavía no se vio ninguna herramienta." },
+  "Nome da ferramenta": { es: "Nombre de la herramienta" },
+  "Não foi possível gravar. Tente de novo.": { es: "No se pudo guardar. Inténtalo de nuevo." },
+  "Quem administra o servidor desligou as ferramentas externas por agente.": { es: "Quien administra el servidor desactivó las herramientas externas por agente." },
+  "Não foi possível revogar o acesso.": { es: "No se pudo revocar el acceso." },
+  "O registro automático do cliente foi recusado pelo servidor.": { es: "El servidor rechazó el registro automático del cliente." },
+  "O servidor de autorização não aceita PKCE S256 — o cadastro foi recusado.": { es: "El servidor de autorización no acepta PKCE S256: el registro fue rechazado." },
+  "Os dados de autorização devolvidos são de outro endereço, não do servidor informado — o cadastro foi recusado.": { es: "Los datos de autorización devueltos son de otra dirección, no del servidor indicado: el registro fue rechazado." },
+  "O servidor não informou como autorizar (descoberta OAuth falhou).": { es: "El servidor no informó cómo autorizar (falló el descubrimiento OAuth)." },
+  "O servidor recusou a autorização.": { es: "El servidor rechazó la autorización." },
+  "O servidor recusou o pedido.": { es: "El servidor rechazó la solicitud." },
+  "OAuth — cada cliente autoriza com o login dele": { es: "OAuth — cada cliente autoriza con su propio inicio de sesión" },
+  "Permitir ações (escrita) durante a conversa": { es: "Permitir acciones (escritura) durante la conversación" },
+  "Registro automático do cliente": { es: "Registro automático del cliente" },
+  "Revogando…": { es: "Revocando…" },
+  "Revogação de acesso": { es: "Revocación de acceso" },
+  "Salvar servidor": { es: "Guardar servidor" },
+  "Sem autenticação": { es: "Sin autenticación" },
+  "Servidor MCP removido. Os acessos dos clientes a ele foram revogados.": { es: "Servidor MCP eliminado. Se revocaron los accesos de los clientes a él." },
+  "Servidor MCP salvo.": { es: "Servidor MCP guardado." },
+  "Servidor ativo": { es: "Servidor activo" },
+  "Servidor de autorização": { es: "Servidor de autorización" },
+  "Servidores MCP do agente": { es: "Servidores MCP del agente" },
+  "Sistemas externos que este agente consulta. No modo OAuth, cada cliente autoriza o acesso à própria conta pelo link que o agente envia na conversa.": { es: "Sistemas externos que este agente consulta. En el modo OAuth, cada cliente autoriza el acceso a su propia cuenta mediante el enlace que el agente envía en la conversación." },
+  "Só administradores gerenciam os servidores MCP do agente.": { es: "Solo los administradores gestionan los servidores MCP del agente." },
+  "Valida a descoberta OAuth (RFC 9728 e 8414) e se o servidor aceita PKCE S256.": { es: "Valida el descubrimiento OAuth (RFC 9728 y 8414) y si el servidor acepta PKCE S256." },
+  "ações permitidas na conversa": { es: "acciones permitidas en la conversación" },
+  "deixe em branco para manter": { es: "déjalo en blanco para mantener" },
+  "ferramentas marcadas": { es: "herramientas marcadas" },
+  "nome_da_ferramenta": { es: "nombre_de_la_herramienta" },
+  "não — informe o client_id": { es: "no — informa el client_id" },
+  "não — o acesso é apagado só do lado de cá": { es: "no — el acceso solo se borra de este lado" },
+  "revogação agendada": { es: "revocación programada" },
+  "sim": { es: "sí" },
+  "último uso": { es: "último uso" },
   "Não consegui confirmar o canal de voz. Tente ligar de novo.": { es: "No pude confirmar el canal de voz. Intenta llamar de nuevo." },
   "Ligue para uma lista de leads, um por vez, com roteiro e resultado de cada ligação.": { es: "Llama a una lista de leads, uno por vez, con guion y resultado de cada llamada." },
   "A ligação pelo CRM ainda não está ligada. Por enquanto, o botão abre o discador do seu aparelho.": { es: "La llamada por el CRM aún no está activa. Por ahora, el botón abre el marcador de tu dispositivo." },
@@ -253,6 +319,14 @@ export const DICIONARIO: Traducoes = {
   ...TEXTOS_AGENDA_SERVICOS,
   ...TEXTOS_AGENDA_CONFIGURACAO,
   "Etiquetas de contato interno": { es: "Etiquetas de contacto interno" },
+  "Etiquetas de contato da equipe": { es: "Etiquetas de contacto del equipo" },
+  "Contato marcado com uma destas etiquetas continua sendo atendido pela IA, é medido pelo clima e não é passado a uma pessoa nem silenciado por isso — o sócio que testa o agente e pede informação a qualquer hora. Também não vira card no funil. Uma etiqueta por linha.":
+    {
+      es: "Un contacto marcado con una de estas etiquetas sigue siendo atendido por la IA, se mide su clima y no se pasa a una persona ni se silencia por eso — el socio que prueba el agente y pide información a cualquier hora. Tampoco genera una tarjeta en el embudo. Una etiqueta por línea.",
+    },
+  "Deixe em branco para nenhum contato ser da equipe — o comportamento de antes.": {
+    es: "Déjelo en blanco para que ningún contacto sea del equipo — el comportamiento anterior.",
+  },
   "Contato marcado com uma destas etiquetas não vira card no funil e não recebe resposta da IA — equipe, sócio, família, fornecedor. A conversa continua normal na Inbox, inclusive para envio manual. Uma etiqueta por linha.": {
     es: "Contacto marcado con una de estas etiquetas no se convierte en tarjeta en el embudo y no recibe respuesta de la IA — equipo, socio, familia, proveedor. La conversación sigue normal en la Bandeja de entrada, incluso para el envío manual. Una etiqueta por línea.",
   },
@@ -2655,6 +2729,11 @@ export const DICIONARIO: Traducoes = {
   "Custo máximo por atendimento (centavos)": { es: "Costo máximo por atención (centavos)" },
   "Mensagens anteriores que ele lê": { es: "Mensajes anteriores que lee" },
   "Esperar antes de responder (segundos)": { es: "Esperar antes de responder (segundos)" },
+  "Pausa entre uma resposta e a próxima (segundos)": { es: "Pausa entre una respuesta y la siguiente (segundos)" },
+  "Vazio = sem pausa": { es: "Vacío = sin pausa" },
+  "Depois que a IA responde uma conversa, ela só responde de novo depois desse tempo. O que o cliente escrever nesse meio-tempo é respondido junto. Vazio ou 0 = sem pausa (máximo 600 segundos).": {
+    es: "Después de que la IA responde una conversación, solo vuelve a responder pasado este tiempo. Lo que el cliente escriba mientras tanto se responde junto. Vacío o 0 = sin pausa (máximo 600 segundos).",
+  },
   "Mensagens do mesmo contato dentro desse tempo viram uma resposta só. Vazio usa a janela padrão da instalação (máximo 60 segundos).": {
     es: "Los mensajes del mismo contacto dentro de este tiempo se convierten en una sola respuesta. Vacío usa la ventana predeterminada de la instalación (máximo 60 segundos).",
   },
@@ -4147,6 +4226,10 @@ export const DICIONARIO: Traducoes = {
   "casos esperando você": { es: "casos esperándote" },
   "1 conversa esperando uma pessoa": { es: "1 conversación esperando a una persona" },
   "conversas esperando uma pessoa": { es: "conversaciones esperando a una persona" },
+  // O contador de Tarefas (`components/shell/ContadorDeTarefas.tsx`): as em
+  // aberto do próprio usuário logado.
+  "1 tarefa em aberto": { es: "1 tarea abierta" },
+  "tarefas em aberto": { es: "tareas abiertas" },
   "Virou atendimento humano": { es: "Pasó a atención humana" },
   "Aguardando o cliente responder — a IA avisa você quando tiver a informação.": {
     es: "Esperando la respuesta del cliente. La IA te avisará cuando tenga la información.",
@@ -6857,6 +6940,12 @@ export const DICIONARIO: Traducoes = {
   "Escolha o fluxo": { es: "Elige el flujo" },
   "Follow-up iniciado.": { es: "Seguimiento iniciado." },
   "Não foi possível iniciar o follow-up.": { es: "No se pudo iniciar el seguimiento." },
+  // #3923: a instalação não tem número conectado — `fn_service_begin` recusa
+  // com `service_channel_not_found` e a rota devolve 409. A frase diz o que
+  // fazer, não só que falhou.
+  "Conecte um número de WhatsApp antes de iniciar o follow-up.": {
+    es: "Conecta un número de WhatsApp antes de iniciar el seguimiento.",
+  },
   "Follow-up encerrado.": { es: "Seguimiento cerrado." },
   "Não foi possível encerrar o follow-up.": { es: "No se pudo cerrar el seguimiento." },
   "Tarefa interna": { es: "Tarea interna" },
@@ -11893,6 +11982,8 @@ export const DICIONARIO: Traducoes = {
   },
   // "mais (N)" e "menos" são os controles de recolher/abrir a barra do Inbox #3282.
   "menos": { es: "menos" },
+  // O painel do grupo na barra do Inbox (#3875) — o `aria-label` do popup.
+  "Respostas do grupo": { es: "Respuestas del grupo" },
   "Recursos": { es: "Recursos" },
   "Insere no campo — você edita e envia": { es: "Inserta en el campo — tú editas y envías" },
   "áudio pendente; você decide quando enviar": {
@@ -15517,6 +15608,8 @@ export const DICIONARIO: Traducoes = {
     { es: "Todavía no hay otras personas en esta organización." },
   "Ninguém da equipe tem WhatsApp cadastrado: os avisos vão continuar saindo para o número acima.":
     { es: "Nadie del equipo tiene WhatsApp registrado: los avisos van a seguir saliendo al número de arriba." },
+  "Não foi possível ler os números da equipe agora. Atualize a página antes de salvar: sem eles a tela não sabe para quem os avisos vão.":
+    { es: "No fue posible leer los números del equipo ahora. Actualiza la página antes de guardar: sin ellos la pantalla no sabe a quién van los avisos." },
   "Enquanto ninguém puder abrir um caso, nenhum aviso vai sair. Ligue a opção de abrir casos na configuração do assistente.":
     { es: "Mientras nadie pueda abrir casos, no se enviará ningún aviso. Activa la opción de abrir casos en la configuración del asistente." },
   "Enviado para":
@@ -19292,6 +19385,11 @@ export const DICIONARIO: Traducoes = {
   "O administrador da empresa escreve um aviso e ele chega como notificação nos aparelhos da equipe.": { es: "El administrador de la empresa escribe un aviso y este llega como notificación a los dispositivos del equipo." },
   "Ligado, o administrador de cada empresa pode escrever um aviso com título e texto, e ele chega como notificação nos aparelhos da equipe que ativaram as notificações. Desligado, ninguém envia avisos; os já enviados ficam guardados.": { es: "Activado, el administrador de cada empresa puede escribir un aviso con título y texto, y este llega como notificación a los dispositivos del equipo que activaron las notificaciones. Desactivado, nadie envía avisos; los ya enviados quedan guardados." },
   "Não cria porta no menu do CRM: por enquanto o aviso é enviado pela API, em /api/v1/avisos.": { es: "No crea entrada en el menú del CRM: por ahora el aviso se envía por la API, en /api/v1/avisos." },
+  // O módulo opcional dos servidores MCP por agente (#3857, doc 252) em /admin/sistema e em Recursos opcionais.
+  "Ferramentas externas por agente": { es: "Herramientas externas por agente" },
+  "Cada agente conecta os próprios servidores de ferramentas externas, e o cliente pode autorizar, pela conversa, o acesso à conta dele num sistema de terceiro.": { es: "Cada agente conecta sus propios servidores de herramientas externas, y el cliente puede autorizar, por la conversación, el acceso a su cuenta en un sistema de terceros." },
+  "Ligado, a tela de cada agente ganha a seção Servidores MCP, para conectar sistemas de terceiros com chave fixa ou com o login de cada cliente, que autoriza a própria conta por um link na conversa. Desligado, a seção some, o agente deixa de usar esses servidores e os links de autorização param de abrir; o que já foi cadastrado fica guardado.": { es: "Activado, la pantalla de cada agente gana la sección Servidores MCP, para conectar sistemas de terceros con clave fija o con el inicio de sesión de cada cliente, que autoriza su propia cuenta por un enlace en la conversación. Desactivado, la sección desaparece, el agente deja de usar esos servidores y los enlaces de autorización dejan de abrirse; lo que ya fue registrado queda guardado." },
+  "Não cria porta no menu do CRM: ele libera uma seção na tela de cada agente, em": { es: "No crea entrada en el menú del CRM: habilita una sección en la pantalla de cada agente, en" },
   // O módulo opcional da conferência de WhatsApp na prospecção (#3887) em /admin/sistema e em Recursos opcionais.
   "Conferir WhatsApp na prospecção": { es: "Verificar WhatsApp en la prospección" },
   "Ligado, a prospecção pergunta ao WhatsApp, pela conexão por QR da empresa, se cada telefone achado numa busca tem conta, e quem não tem sai da abordagem. A pergunta sai do número da empresa, para todo telefone achado, a qualquer hora; consulta em massa assim pode chamar a atenção do WhatsApp e arriscar o número. Desligado, nada é consultado e a abordagem segue como antes.": { es: "Activado, la prospección le pregunta a WhatsApp, por la conexión por QR de la empresa, si cada teléfono encontrado en una búsqueda tiene cuenta, y quien no tiene sale del abordaje. La pregunta sale del número de la empresa, para todo teléfono encontrado, a cualquier hora; una consulta masiva así puede llamar la atención de WhatsApp y poner en riesgo el número. Desactivado, no se consulta nada y el abordaje sigue como antes." },

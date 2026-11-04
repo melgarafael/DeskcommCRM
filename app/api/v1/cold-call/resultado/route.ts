@@ -13,14 +13,52 @@ import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { configDoFunil, motivoParaNaoLigar, RESULTADOS, resultadoSchema } from "@/lib/cold-call/regras";
+import {
+  comMotivosDoColdCall,
+  configDoFunil,
+  motivoParaNaoLigar,
+  RESULTADOS,
+  resultadoSchema,
+} from "@/lib/cold-call/regras";
 import { seColdCallDesligado } from "@/lib/cold-call/modulo";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { encerraDemanda } from "@/lib/leads/encerramento";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Funil criado antes de nascer com os motivos do Cold Call recusava todo encerramento com 422
+ * `lost_reason_invalid` (#3941). Aqui eles entram antes de encerrar, uma vez só. Admin client
+ * porque quem liga é `agent` e a RLS de `crm_pipelines` só deixa `manager` escrever; o alcance é
+ * este funil desta organização, conferido de novo como cold call, e só a lista fixa do módulo.
+ * Devolve se acrescentou; erro de banco sobe.
+ */
+async function garanteMotivosDoColdCall(orgId: string, pipelineId: string, lidos: unknown): Promise<boolean> {
+  if (!comMotivosDoColdCall(lidos)) return false;
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("crm_pipelines")
+    .select("settings")
+    .eq("id", pipelineId)
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  const settings = (data as { settings?: unknown } | null)?.settings;
+  const novos = configDoFunil(settings) ? comMotivosDoColdCall(settings) : null;
+  if (!novos) return false;
+  // ponytail: ler e regravar `settings`; um salvar de Configurações no mesmo instante pode ser
+  // sobrescrito. Merge atômico por RPC se isso aparecer.
+  const { error: erroGravar } = await admin
+    .from("crm_pipelines")
+    .update({ settings: novos })
+    .eq("id", pipelineId)
+    .eq("organization_id", orgId);
+  if (erroGravar) throw new Error(erroGravar.message);
+  return true;
+}
 
 export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
@@ -75,6 +113,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const ctx = { organization_id: orgId, actor: { type: "user" as const, id: authz.user.id }, requestId };
   const actor = ctx.actor;
+  let motivosAcrescentados = false;
 
   try {
     if ("etapa" in regra) {
@@ -91,6 +130,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       }
       if (etapa.id !== lead.stage_id) await moveLeadHandler(supabase, ctx, leadId, { to_stage_id: etapa.id });
     } else {
+      motivosAcrescentados = await garanteMotivosDoColdCall(orgId, lead.pipeline_id, funil?.settings);
       await encerraDemanda(supabase, ctx, { leadId, desfecho: "lost", motivo: regra.rotulo });
     }
   } catch (err) {
@@ -116,7 +156,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     resourceType: "crm_leads",
     resourceId: leadId,
     requestId,
-    metadata: { resultado, historico_gravado: gravada.ok },
+    metadata: { resultado, historico_gravado: gravada.ok, motivos_acrescentados_ao_funil: motivosAcrescentados },
   });
   return ok({ resultado, historico_gravado: gravada.ok }, { requestId });
 }
