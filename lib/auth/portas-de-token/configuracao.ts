@@ -94,5 +94,5 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   // carona na porta do `[name]` por engano.
   "/api/v1/ai/skills",
   { caminho: "/api/v1/ai/skills/[name]", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
-  "/api/v1/ai/skills/[name]/versions",
+  { caminho: "/api/v1/ai/skills/[name]/versions", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
 ];

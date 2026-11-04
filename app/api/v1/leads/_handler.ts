@@ -1347,6 +1347,7 @@ export async function moveLeadHandler(
     .from("crm_leads")
     .select("*")
     .eq("id", leadId)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
 
   if (selErr) {
@@ -1780,6 +1781,7 @@ export async function retomarLeadHandler(
     .from("crm_leads")
     .select("*")
     .eq("id", leadId)
+    .eq("organization_id", ctx.organization_id)
     .maybeSingle();
   if (selErr) {
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, selErr.message);

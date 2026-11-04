@@ -50,7 +50,6 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/contacts/bulk",
   "/api/v1/contacts/compare",
   "/api/v1/contacts/duplicates",
-  "/api/v1/contacts/duplicates/dismiss",
   "/api/v1/contacts/import/agenda",
   "/api/v1/contacts/import",
   "/api/v1/contacts/merge",

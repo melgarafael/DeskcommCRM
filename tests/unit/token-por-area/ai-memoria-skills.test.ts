@@ -29,6 +29,7 @@ import {
   cadeiasDeEscrita,
   cadeiasForaDaOrganizacao,
   criarClienteAdminFalso,
+  type CadeiaRegistrada,
 } from "@/tests/unit/helpers/cliente-admin-falso";
 
 import * as rotaMemory from "@/app/api/v1/ai/memory/route";
@@ -148,6 +149,40 @@ function novoFalso() {
 
 let falso: ReturnType<typeof novoFalso>;
 
+/** O catálogo de plataforma: skills com `organization_id` NULL, lidas por todas as orgs. */
+const TABELAS_DO_CATALOGO = ["skill_pointers", "skill_versions"];
+
+/**
+ * Leitura do catálogo de plataforma que a rota faz de propósito: `organization_id
+ * IS NULL` (o global) ou `organization_id = org OR organization_id IS NULL` (o
+ * da própria org mais o global). Nunca escrita.
+ */
+function leituraDoCatalogo(c: CadeiaRegistrada, org: string): boolean {
+  if (c.operacao !== "select" || !TABELAS_DO_CATALOGO.includes(c.tabela)) return false;
+  const soGlobal = c.filtros.some(([coluna, valor]) => coluna === "organization_id" && valor === null);
+  const orgOuGlobal = c.filtros.some(
+    ([coluna, valor]) =>
+      coluna === "or" &&
+      typeof valor === "string" &&
+      valor.includes(`organization_id.eq.${org}`) &&
+      valor.includes("organization_id.is.null"),
+  );
+  return soGlobal || orgOuGlobal;
+}
+
+/** Cadeias que escaparam da organização, sem contar a leitura legítima do catálogo. */
+function vazamentosDe(cadeias: CadeiaRegistrada[], org: string): CadeiaRegistrada[] {
+  return cadeiasForaDaOrganizacao(cadeias, org).filter((c) => !leituraDoCatalogo(c, org));
+}
+
+/**
+ * Escritas que a rota fez com o token de `org`: todas filtradas pela própria
+ * organização (ou que não acertam linha nenhuma). Escrita sem o filtro é vazamento.
+ */
+function escritasForaDe(cadeias: CadeiaRegistrada[], org: string): CadeiaRegistrada[] {
+  return cadeiasForaDaOrganizacao(cadeiasDeEscrita(cadeias), org);
+}
+
 function tokenDe(org: string, token: string, role: Role, scopes: string[] = TODOS_OS_ESCOPOS): void {
   vi.mocked(validateBearerToken).mockResolvedValue({
     organizationId: org,
@@ -254,7 +289,7 @@ describe("GET /ai/memory — memória da org", () => {
     expect(res.status).toBe(200);
     const corpo = (await res.json()) as { data: { entries: unknown[]; versions: unknown[] } };
     expect(corpo.data.entries.map((e) => (e as { organization_id: string }).organization_id)).toEqual([ORG_A]);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(vazamentosDe(falso.cadeias, ORG_A)).toEqual([]);
     expect(requireRole).not.toHaveBeenCalled();
     expect(audit).not.toHaveBeenCalled();
   });
@@ -265,7 +300,7 @@ describe("GET /ai/memory — memória da org", () => {
     expect(res.status).toBe(200);
     const corpo = (await res.json()) as { data: { entries: unknown[]; versions: unknown[] } };
     expect(corpo.data.entries.map((e) => (e as { organization_id: string }).organization_id)).toEqual([ORG_B]);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
+    expect(vazamentosDe(falso.cadeias, ORG_B)).toEqual([]);
   });
 
   it("token sem config:read (só config:write) é recusado (403)", async () => {
@@ -311,7 +346,7 @@ describe("POST /ai/memory — publica memória", () => {
     tokenDe(ORG_A, TOKEN_A, "admin");
     const res = await rotaMemory.POST(reqJson({ content: "novo conteúdo A" }, TOKEN_A));
     expect(res.status).toBe(200);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(vazamentosDe(falso.cadeias, ORG_A)).toEqual([]);
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({ actorUserId: null, actorApiTokenId: TOKEN_A, organizationId: ORG_A }),
     );
@@ -321,7 +356,7 @@ describe("POST /ai/memory — publica memória", () => {
     tokenDe(ORG_B, TOKEN_B, "admin");
     const res = await rotaMemory.POST(reqJson({ content: "novo conteúdo B" }, TOKEN_B));
     expect(res.status).toBe(200);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
+    expect(vazamentosDe(falso.cadeias, ORG_B)).toEqual([]);
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({ actorUserId: null, actorApiTokenId: TOKEN_B, organizationId: ORG_B }),
     );
@@ -345,7 +380,7 @@ describe("POST /ai/memory/entries — cria entrada", () => {
       reqJson({ title: "Nova entrada A", body: "corpo da entrada A" }, TOKEN_A),
     );
     expect(res.status).toBe(200);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(vazamentosDe(falso.cadeias, ORG_A)).toEqual([]);
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({ actorUserId: null, actorApiTokenId: TOKEN_A, organizationId: ORG_A }),
     );
@@ -357,7 +392,7 @@ describe("POST /ai/memory/entries — cria entrada", () => {
       reqJson({ title: "Nova entrada B", body: "corpo da entrada B" }, TOKEN_B),
     );
     expect(res.status).toBe(200);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
+    expect(vazamentosDe(falso.cadeias, ORG_B)).toEqual([]);
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({ actorUserId: null, actorApiTokenId: TOKEN_B, organizationId: ORG_B }),
     );
@@ -382,7 +417,7 @@ describe("PATCH /ai/memory/entries/[id] — atualiza entrada", () => {
       paramsDeId(ID_ENTRY_A),
     );
     expect(res.status).toBe(200);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(vazamentosDe(falso.cadeias, ORG_A)).toEqual([]);
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({ actorUserId: null, actorApiTokenId: TOKEN_A, organizationId: ORG_A }),
     );
@@ -395,7 +430,9 @@ describe("PATCH /ai/memory/entries/[id] — atualiza entrada", () => {
       paramsDeId(ID_ENTRY_A),
     );
     expect(res.status).toBe(404);
-    expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
+    // A escrita que a rota tenta sai filtrada pela org de B e não acerta a de A.
+    expect(escritasForaDe(falso.cadeias, ORG_B)).toEqual([]);
+    expect(falso.linhas.org_memory_entries).toEqual(LINHAS.org_memory_entries);
     expect(audit).not.toHaveBeenCalled();
   });
 
@@ -417,14 +454,14 @@ describe("GET /ai/memory/versions/[id] — versão específica", () => {
     expect(res.status).toBe(200);
     const corpo = (await res.json()) as { data: { id: string } };
     expect(corpo.data.id).toBe(ID_A);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(vazamentosDe(falso.cadeias, ORG_A)).toEqual([]);
   });
 
   it("token de B não alcança a versão de A (404)", async () => {
     tokenDe(ORG_B, TOKEN_B, "admin");
     const res = await rotaMemoryVersion.GET(reqVazio(TOKEN_B, "GET"), paramsDeId(ID_A));
     expect(res.status).toBe(404);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
+    expect(vazamentosDe(falso.cadeias, ORG_B)).toEqual([]);
   });
 
   it("token sem config:read é recusado (403)", async () => {
@@ -472,7 +509,7 @@ describe("GET /ai/skills — lista de skills", () => {
     expect(res.status).toBe(200);
     const corpo = (await res.json()) as { data: { installed: unknown[] } };
     expect(corpo.data.installed.map((i) => (i as { name: string }).name)).toEqual([NOME_SKILL_A]);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(vazamentosDe(falso.cadeias, ORG_A)).toEqual([]);
     expect(requireRole).not.toHaveBeenCalled();
     expect(audit).not.toHaveBeenCalled();
   });
@@ -483,7 +520,7 @@ describe("GET /ai/skills — lista de skills", () => {
     expect(res.status).toBe(200);
     const corpo = (await res.json()) as { data: { installed: unknown[] } };
     expect(corpo.data.installed.map((i) => (i as { name: string }).name)).toEqual([NOME_SKILL_B]);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
+    expect(vazamentosDe(falso.cadeias, ORG_B)).toEqual([]);
   });
 
   it("token sem config:read (só config:write) é recusado (403)", async () => {
@@ -531,14 +568,14 @@ describe("GET /ai/skills/[name] — lê uma skill", () => {
     expect(res.status).toBe(200);
     const corpo = (await res.json()) as { data: { name: string } };
     expect(corpo.data.name).toBe(NOME_SKILL_A);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(vazamentosDe(falso.cadeias, ORG_A)).toEqual([]);
   });
 
   it("token de B não alcança a skill de A (404)", async () => {
     tokenDe(ORG_B, TOKEN_B, "admin");
     const res = await rotaSkill.GET(reqVazio(TOKEN_B, "GET"), paramsDeName(NOME_SKILL_A));
     expect(res.status).toBe(404);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
+    expect(vazamentosDe(falso.cadeias, ORG_B)).toEqual([]);
   });
 
   it("token sem config:read é recusado (403)", async () => {
@@ -584,7 +621,7 @@ describe("DELETE /ai/skills/[name] — desinstala skill", () => {
     tokenDe(ORG_A, TOKEN_A, "admin");
     const res = await rotaSkill.DELETE(reqVazio(TOKEN_A, "DELETE"), paramsDeName(NOME_SKILL_A));
     expect(res.status).toBe(200);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(vazamentosDe(falso.cadeias, ORG_A)).toEqual([]);
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({ actorUserId: null, actorApiTokenId: TOKEN_A, organizationId: ORG_A }),
     );
@@ -594,7 +631,8 @@ describe("DELETE /ai/skills/[name] — desinstala skill", () => {
     tokenDe(ORG_B, TOKEN_B, "admin");
     const res = await rotaSkill.DELETE(reqVazio(TOKEN_B, "DELETE"), paramsDeName(NOME_SKILL_A));
     expect(res.status).toBe(404);
-    expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
+    expect(escritasForaDe(falso.cadeias, ORG_B)).toEqual([]);
+    expect(falso.linhas.skill_pointers).toEqual(LINHAS.skill_pointers);
     expect(audit).not.toHaveBeenCalled();
   });
 
@@ -616,7 +654,7 @@ describe("GET /ai/skills/[name]/versions — histórico de versões", () => {
     expect(res.status).toBe(200);
     const corpo = (await res.json()) as { data: { versions: unknown[] } };
     expect(corpo.data.versions.map((v) => (v as { id: string }).id)).toEqual([ID_VER_SKILL_A]);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_A)).toEqual([]);
+    expect(vazamentosDe(falso.cadeias, ORG_A)).toEqual([]);
   });
 
   // ===========================================================================
@@ -633,7 +671,7 @@ describe("GET /ai/skills/[name]/versions — histórico de versões", () => {
       expect(corpo.data.installed.map((i) => (i as { name: string }).name)).toEqual([NOME_SKILL_B]);
       // O catálogo expõe a skill global (que B não instalou).
       expect(corpo.data.catalog.map((c) => (c as { name: string }).name)).toContain(NOME_SKILL_GLOBAL);
-      expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
+      expect(vazamentosDe(falso.cadeias, ORG_B)).toEqual([]);
     });
   });
 
@@ -642,19 +680,41 @@ describe("GET /ai/skills/[name]/versions — histórico de versões", () => {
       tokenDe(ORG_B, TOKEN_B, "admin");
       const res = await rotaSkill.DELETE(reqVazio(TOKEN_B, "DELETE"), paramsDeName(NOME_SKILL_GLOBAL));
       expect(res.status).toBe(404);
-      expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
+      expect(escritasForaDe(falso.cadeias, ORG_B)).toEqual([]);
+      expect(falso.linhas.skill_pointers).toEqual(LINHAS.skill_pointers);
       expect(audit).not.toHaveBeenCalled();
     });
   });
 
   describe("GET /ai/skills/[name] — skill global não vaza ponteiro de A", () => {
-    it("token de B lê a skill global e não vê o ponteiro/versão de A", async () => {
+    // A rota lê o ponteiro DA ORGANIZAÇÃO: a skill global só se lê por nome depois
+    // de instalada (ponteiro da org B apontando para a versão global). Sem isso, 404.
+    it("token de B, sem ter instalado a global, não a lê por nome (404)", async () => {
+      tokenDe(ORG_B, TOKEN_B, "admin");
+      const res = await rotaSkill.GET(reqVazio(TOKEN_B, "GET"), paramsDeName(NOME_SKILL_GLOBAL));
+      expect(res.status).toBe(404);
+      expect(vazamentosDe(falso.cadeias, ORG_B)).toEqual([]);
+    });
+
+    it("token de B com a global instalada lê a versão global, sem o ponteiro/versão de A", async () => {
+      const POINTER_B_GLOBAL = {
+        organization_id: ORG_B,
+        name: NOME_SKILL_GLOBAL,
+        version_id: ID_VER_SKILL_GLOBAL,
+        updated_at: "2026-08-01T10:00:00Z",
+      };
+      const instalado = criarClienteAdminFalso({
+        orgDona: ORG_A,
+        linhas: { ...LINHAS, skill_pointers: [...LINHAS.skill_pointers, POINTER_B_GLOBAL] },
+        tabelasSemOrganizacao: ["skill_versions", "skill_pointers"],
+      });
+      vi.mocked(createAdminClient).mockReturnValue(instalado.cliente as never);
       tokenDe(ORG_B, TOKEN_B, "admin");
       const res = await rotaSkill.GET(reqVazio(TOKEN_B, "GET"), paramsDeName(NOME_SKILL_GLOBAL));
       expect(res.status).toBe(200);
       const corpo = (await res.json()) as { data: { version_id: string } };
       expect(corpo.data.version_id).toBe(ID_VER_SKILL_GLOBAL);
-      expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
+      expect(vazamentosDe(instalado.cadeias, ORG_B)).toEqual([]);
     });
   });
 
@@ -664,7 +724,7 @@ describe("GET /ai/skills/[name]/versions — histórico de versões", () => {
     expect(res.status).toBe(200);
     const corpo = (await res.json()) as { data: { versions: unknown[] } };
     expect(corpo.data.versions).toEqual([]);
-    expect(cadeiasForaDaOrganizacao(falso.cadeias, ORG_B)).toEqual([]);
+    expect(vazamentosDe(falso.cadeias, ORG_B)).toEqual([]);
   });
 
   it("token sem config:read é recusado (403)", async () => {
@@ -733,18 +793,21 @@ describe("PUBLIC_PATHS — borda do proxy", () => {
     expect(isPublicPath("/api/v1/ai/skills/")).toBe(false);
   });
 
-  it("não libera sub-path /x em nenhum caminho da lista", () => {
-    for (const c of [...COM_ID, ...COM_NAME, ...LITERAIS]) expect(isPublicPath(`${c}/x`)).toBe(false);
+  it("não libera sub-path em nenhum caminho da lista (/x e /x/y)", () => {
+    // `/api/v1/ai/skills/x` NÃO é sub-path: é a skill chamada "x" (o [name]),
+    // então o literal `/api/v1/ai/skills` fica de fora do `/x` de um segmento.
+    for (const c of [...COM_ID, ...COM_NAME, ...LITERAIS.filter((l) => l !== "/api/v1/ai/skills")]) {
+      expect(isPublicPath(`${c}/x`)).toBe(false);
+    }
+    for (const c of [...COM_ID, ...COM_NAME, ...LITERAIS]) expect(isPublicPath(`${c}/x/y`)).toBe(false);
   });
 
-  it("irmãos só de sessão (import, install, restore) são LIBERADOS pelo proxy (classe [^/]{1,120} casa o literal)", () => {
-    // O proxy não distingue método nem irmão literal: [^/]{1,120} casa "import",
-    // "install", "restore" e o próprio [name]. O proxy libera; a ROTA é que
-    // recusa o token (401) — provado nos casos de "só sessão" abaixo.
-    expect(isPublicPath("/api/v1/ai/skills/import")).toBe(true);
-    expect(isPublicPath(`/api/v1/ai/skills/${NOME_SKILL_A}/import`)).toBe(true);
-    expect(isPublicPath(`/api/v1/ai/skills/${NOME_SKILL_A}/install`)).toBe(true);
-    expect(isPublicPath(`/api/v1/ai/skills/${NOME_SKILL_A}/restore`)).toBe(true);
+  it("irmãos de sessão (import, install, restore) sob uma skill NÃO entram de carona na porta do [name]", () => {
+    // Quem recusa o token nesses irmãos é a rota (401, provado no bloco "Só sessão");
+    // o proxy nem os deixa passar: a classe do [name] não aceita sub-path.
+    expect(isPublicPath(`/api/v1/ai/skills/${NOME_SKILL_A}/import`)).toBe(false);
+    expect(isPublicPath(`/api/v1/ai/skills/${NOME_SKILL_A}/install`)).toBe(false);
+    expect(isPublicPath(`/api/v1/ai/skills/${NOME_SKILL_A}/restore`)).toBe(false);
   });
 });
 
@@ -810,7 +873,7 @@ describe("Isolamento de escrita: token de B não move ponteiro nem recurso de A"
     const res = await rotaMemory.POST(reqJson({ content: "novo conteúdo B" }, TOKEN_B));
     expect(res.status).toBe(200);
     // O ponteiro de A não foi movido (continua apontando pra ID_A).
-    const ptrA = falsoB.linhas.org_memory_pointers.find((p) => p.organization_id === ORG_A);
+    const ptrA = (falsoB.linhas.org_memory_pointers ?? []).find((p) => p.organization_id === ORG_A);
     expect(ptrA?.version_id).toBe(ID_A);
     // Nada de A foi lido ou escrito.
     expect(cadeiasForaDaOrganizacao(falsoB.cadeias, ORG_B)).toEqual([]);
@@ -831,11 +894,11 @@ describe("Isolamento de escrita: token de B não move ponteiro nem recurso de A"
       reqJson({ title: "Nova entrada B", body: "corpo B" }, TOKEN_B),
     );
     expect(res.status).toBe(200);
-    // A entrada de A continua intocada (não há linha de A alterada).
-    expect(falsoB.linhas.org_memory_entries.some((e) => e.organization_id === ORG_A)).toBe(false);
-    // ou a linha de A segue com o título original
-    const entradaA = falsoB.linhas.org_memory_entries.find((e) => e.id === ID_ENTRY_A);
-    expect(entradaA?.title).toBe("Entrada A");
+    // As entradas de A continuam exatamente as da fixture: nenhuma criada, nenhuma
+    // alterada (a fixture já traz a entrada de A; o que não pode é a rota tocá-la).
+    const entradasDeA = (falsoB.linhas.org_memory_entries ?? []).filter((e) => e.organization_id === ORG_A);
+    expect(entradasDeA).toEqual(LINHAS.org_memory_entries.filter((e) => e.organization_id === ORG_A));
+    expect(entradasDeA.find((e) => e.id === ID_ENTRY_A)?.title).toBe("Entrada A");
     expect(cadeiasForaDaOrganizacao(falsoB.cadeias, ORG_B)).toEqual([]);
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({ actorUserId: null, actorApiTokenId: TOKEN_B, organizationId: ORG_B }),

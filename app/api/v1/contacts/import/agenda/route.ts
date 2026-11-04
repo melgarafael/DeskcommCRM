@@ -145,6 +145,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         organizationId: authz.organizationId,
         session: sessionRef,
         actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+        actorApiTokenId: authz.apiTokenId ?? null,
         requestId,
         // O cursor do clique anterior: a rota só repassa, quem lê é o serviço.
         offset: corpo.data.offset,

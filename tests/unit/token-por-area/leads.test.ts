@@ -22,7 +22,7 @@ import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { audit } from "@/lib/audit";
 import { isPublicPath } from "@/lib/auth/public-paths";
 import { requireRole, orgAtivaDaApi } from "@/lib/auth/require-role";
-import { loadAuthUser } from "@/lib/auth/server";
+import { loadAuthUser, requireAuth } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -42,6 +42,9 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/auth/server", () => ({
   loadAuthUser: vi.fn(async () => {
     throw new Error("cliente de sessão usado no ramo do token");
+  }),
+  requireAuth: vi.fn(async () => {
+    throw new Error("requireAuth chamado no ramo do token");
   }),
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
@@ -71,8 +74,12 @@ const CONTATO_A = "a2222222-2222-4222-8222-222222222222";
 const CONTATO_B = "b2222222-2222-4222-8222-bbbbbbbbbbbb";
 const PIPELINE_A = "a3333333-3333-4333-8333-aaaaaaaaaaaa";
 const PIPELINE_B = "b3333333-3333-4333-8333-bbbbbbbbbbbb";
+/** Um SEGUNDO funil da organização A: destino do clone (o da B não serve a A). */
+const PIPELINE_A_DESTINO = "a3333333-3333-4333-8333-aaaaaaaaaac2";
 const ETAPA_A = "a4444444-4444-4444-8444-aaaaaaaaaaaa";
 const ETAPA_B = "b4444444-4444-4444-8444-bbbbbbbbbbbb";
+const ETAPA_A_DESTINO = "a4444444-4444-4444-8444-aaaaaaaaaac3";
+const CONTATO_A_SEGUNDO = "a2222222-2222-4222-8222-aaaaaaaaaaa2";
 const ANEXO_A = "a5555555-5555-4555-8555-aaaaaaaaaaaa";
 const PROPOSTA_A = "a6666666-6666-4666-8666-aaaaaaaaaaaa";
 const LINK_A = "a7777777-7777-4777-8777-aaaaaaaaaaaa";
@@ -169,6 +176,30 @@ const CONTATOS: Linha[] = [
     force_human: false,
   },
   {
+    id: CONTATO_A_SEGUNDO,
+    organization_id: ORG_A,
+    name: "Segundo contato da A",
+    email: null,
+    phone_number: null,
+    cpf_hash: null,
+    birthdate: null,
+    is_blocked: false,
+    blocked_reason: null,
+    is_anonymized: false,
+    anonymized_at: null,
+    is_merged_into: null,
+    merged_at: null,
+    consent: {},
+    tags: [],
+    source: "manual",
+    source_metadata: {},
+    custom_fields: {},
+    created_at: "2026-11-01T10:00:00.000Z",
+    updated_at: "2026-11-01T10:00:00.000Z",
+    last_activity_at: null,
+    force_human: false,
+  },
+  {
     id: CONTATO_B,
     organization_id: ORG_B,
     name: "Cliente da B",
@@ -193,15 +224,33 @@ const CONTATOS: Linha[] = [
     force_human: false,
   },
 ];
+/**
+ * Funil da A com o campo que as rotas de proposta e de anexo consultam em
+ * `settings.fields` (escopo padrão = negócio): `nome` (texto, da proposta) e
+ * `contrato` (arquivo, do anexo). Sem eles a régua do funil recusa com
+ * `campo_fora_do_funil` / "não tem um campo de arquivo com essa chave".
+ */
 const PIPELINES: Linha[] = [
-  { id: PIPELINE_A, organization_id: ORG_A, name: "Funil da A", settings: {} },
+  {
+    id: PIPELINE_A,
+    organization_id: ORG_A,
+    name: "Funil da A",
+    settings: {
+      fields: [
+        { key: "nome", label: "Nome", type: "text" },
+        { key: "contrato", label: "Contrato", type: "file" },
+      ],
+    },
+  },
+  { id: PIPELINE_A_DESTINO, organization_id: ORG_A, name: "Funil de destino da A", settings: {} },
   { id: PIPELINE_B, organization_id: ORG_B, name: "Funil secreto da B", settings: {} },
 ];
 const ETAPAS: Linha[] = [
-  { id: ETAPA_A, pipeline_id: PIPELINE_A, name: "Etapa da A", is_won: false, is_lost: false, is_archived: false, position: 1 },
-  { id: "a4444444-4444-4444-8444-aaaaaaaaaab1", pipeline_id: PIPELINE_A, name: "Ganho da A", is_won: true, is_lost: false, is_archived: false, position: 2 },
-  { id: "a4444444-4444-4444-8444-aaaaaaaaaab2", pipeline_id: PIPELINE_A, name: "Perda da A", is_won: false, is_lost: true, is_archived: false, position: 3 },
-  { id: ETAPA_B, pipeline_id: PIPELINE_B, name: "Etapa da B", is_won: false, is_lost: false, is_archived: false, position: 1 },
+  { id: ETAPA_A, organization_id: ORG_A, pipeline_id: PIPELINE_A, name: "Etapa da A", is_won: false, is_lost: false, is_archived: false, position: 1 },
+  { id: "a4444444-4444-4444-8444-aaaaaaaaaab1", organization_id: ORG_A, pipeline_id: PIPELINE_A, name: "Ganho da A", is_won: true, is_lost: false, is_archived: false, position: 2 },
+  { id: "a4444444-4444-4444-8444-aaaaaaaaaab2", organization_id: ORG_A, pipeline_id: PIPELINE_A, name: "Perda da A", is_won: false, is_lost: true, is_archived: false, position: 3 },
+  { id: ETAPA_A_DESTINO, organization_id: ORG_A, pipeline_id: PIPELINE_A_DESTINO, name: "Etapa de destino da A", is_won: false, is_lost: false, is_archived: false, position: 1 },
+  { id: ETAPA_B, organization_id: ORG_B, pipeline_id: PIPELINE_B, name: "Etapa da B", is_won: false, is_lost: false, is_archived: false, position: 1 },
 ];
 const ORGS: Linha[] = [
   { id: ORG_A, name: "Org A", settings: {}, created_at: "2026-11-01T10:00:00.000Z", updated_at: "2026-11-01T10:00:00.000Z" },
@@ -243,6 +292,12 @@ const LINHAS_BASE: Linhas = {
   cron_jobs: CRON_JOBS,
 };
 
+/** Retomar só vale para negócio ENCERRADO (a rota recusa o aberto com 422): a origem da retomada é perdida. */
+const LINHAS_RETOMADA: Linhas = {
+  ...LINHAS_BASE,
+  crm_leads: LEADS.map((l) => (l.id === LEAD_A ? { ...l, status: "lost", lost_reason: "price" } : l)),
+};
+
 const SO_DA_A = [LEAD_A, CONTATO_A, PIPELINE_A, ETAPA_A, ORG_A, ANEXO_A, PROPOSTA_A, LINK_A];
 const SO_DA_B = [LEAD_B, CONTATO_B, PIPELINE_B, ETAPA_B, ORG_B];
 
@@ -265,7 +320,13 @@ type Caso = {
   rpc?: Record<string, unknown>;
   rotulo?: string;
   status: number;
+  /** Status que o token de B recebe quando a rota responde "não achei" (padrão 404). */
+  statusDeB?: number;
   colecao?: { daA: string; daB: string };
+  /** Resposta igual para toda organização (modelo de planilha): B recebe 200 e nada de A. */
+  publico?: boolean;
+  /** Coleção escopada pela organização: B recebe 200 com as listas VAZIAS (a fixture de B não tem a coleção). */
+  listaDaOrganizacao?: boolean;
   audita?: boolean;
   cria?: boolean;
 };
@@ -335,6 +396,7 @@ const CASOS: readonly Caso[] = [
     audita: true,
   },
   // GET /api/v1/leads/import — planilha modelo (agent+).
+  // GET /api/v1/leads/import — planilha modelo: o mesmo texto para toda org (agent+).
   {
     rota: "leads/import",
     metodo: "GET",
@@ -346,14 +408,16 @@ const CASOS: readonly Caso[] = [
     recurso: "crm_leads",
     recursoDoTeto: "leads_import",
     status: 200,
+    publico: true,
     audita: false,
   },
-  // POST /api/v1/leads/import — importação de planilha (agent+).
+  // POST /api/v1/leads/import — importação de planilha (agent+). Multipart: `file` + `pipeline_id`.
+  // Para o token de B o funil de A não tem etapa aberta VISÍVEL: a rota responde 422
+  // ("Este funil não tem etapas abertas.") antes de qualquer escrita.
   {
     rota: "leads/import",
     metodo: "POST",
     caminho: "/api/v1/leads/import",
-    corpo: { pipeline_id: PIPELINE_A },
     linhas: LINHAS_BASE,
     papel: "agent",
     escopo: "mcp:write",
@@ -361,10 +425,26 @@ const CASOS: readonly Caso[] = [
     recurso: "crm_leads",
     recursoDoTeto: "leads_import",
     status: 200,
+    statusDeB: 422,
     cria: true,
     audita: true,
+    formData: () => {
+      const fd = new FormData();
+      const planilha = new File(
+        [
+          "nome,nome do contato,telefone,email,valor,origem,tags,observacao\n" +
+            'Reforma do apartamento 402,Ana Souza,11988887777,ana@exemplo.com,"12.500,00",indicacao,"quente;retorno",Pediu orcamento para junho\n',
+        ],
+        "leads.csv",
+        { type: "text/csv" },
+      );
+      fd.set("file", planilha);
+      fd.set("pipeline_id", PIPELINE_A);
+      return fd;
+    },
   },
-  // GET /api/v1/leads/proposals — próximas ações da IA (membro/viewer).
+  // GET /api/v1/leads/proposals — próximas ações da IA (membro/viewer). A lista é da
+  // organização: a fixture de B não tem negócio com próxima ação, então a lista é vazia.
   {
     rota: "leads/proposals",
     metodo: "GET",
@@ -376,9 +456,10 @@ const CASOS: readonly Caso[] = [
     recurso: "crm_leads",
     recursoDoTeto: "leads_proposals",
     status: 200,
+    listaDaOrganizacao: true,
     audita: false,
   },
-  // GET /api/v1/leads/reactivations — propostas de retomada vivas (viewer+).
+  // GET /api/v1/leads/reactivations — propostas de retomada vivas (viewer+). Lista da organização.
   {
     rota: "leads/reactivations",
     metodo: "GET",
@@ -390,6 +471,7 @@ const CASOS: readonly Caso[] = [
     recurso: "crm_leads",
     recursoDoTeto: "leads_reactivations",
     status: 200,
+    listaDaOrganizacao: true,
     audita: false,
   },
   // ─── itens [id] ───
@@ -464,7 +546,7 @@ const CASOS: readonly Caso[] = [
     metodo: "POST",
     caminho: `/api/v1/leads/${LEAD_A}/clone`,
     params: { id: LEAD_A },
-    corpo: { pipeline_id: PIPELINE_B },
+    corpo: { pipeline_id: PIPELINE_A_DESTINO },
     linhas: LINHAS_BASE,
     papel: "agent",
     escopo: "mcp:write",
@@ -497,7 +579,7 @@ const CASOS: readonly Caso[] = [
     caminho: `/api/v1/leads/${LEAD_A}/retomar`,
     params: { id: LEAD_A },
     corpo: { stage_id: ETAPA_A },
-    linhas: LINHAS_BASE,
+    linhas: LINHAS_RETOMADA,
     papel: "agent",
     escopo: "mcp:write",
     papelDoToken: undefined,
@@ -521,7 +603,7 @@ const CASOS: readonly Caso[] = [
     recurso: "crm_leads",
     recursoDoTeto: "leads_reactivation",
     status: 200,
-    audita: true,
+    audita: false, // a rota grava na linha do tempo do lead (emitLeadActivity); nunca chamou audit()
   },
   // POST /api/v1/leads/[id]/next-action — aprovar/descartar próxima ação (agent+).
   {
@@ -590,7 +672,7 @@ const CASOS: readonly Caso[] = [
     metodo: "POST",
     caminho: `/api/v1/leads/${LEAD_A}/contatos-relacionados`,
     params: { id: LEAD_A },
-    corpo: { contact_id: CONTATO_A, papel: "responsável" },
+    corpo: { contact_id: CONTATO_A_SEGUNDO, papel: "responsável" },
     linhas: LINHAS_BASE,
     papel: "agent",
     escopo: "mcp:write",
@@ -601,11 +683,11 @@ const CASOS: readonly Caso[] = [
     cria: true,
     audita: true,
   },
-  // DELETE /api/v1/leads/[id]/contatos-relacionados — remover vínculo (agent+).
+  // DELETE /api/v1/leads/[id]/contatos-relacionados — remover vínculo (agent+). O contato vai na QUERY.
   {
     rota: "leads/[id]/contatos-relacionados",
     metodo: "DELETE",
-    caminho: `/api/v1/leads/${LEAD_A}/contatos-relacionados`,
+    caminho: `/api/v1/leads/${LEAD_A}/contatos-relacionados?contact_id=${CONTATO_A}`,
     params: { id: LEAD_A },
     linhas: LINHAS_BASE,
     papel: "agent",
@@ -681,7 +763,8 @@ const CASOS: readonly Caso[] = [
     papelDoToken: undefined,
     recurso: "crm_leads",
     recursoDoTeto: "leads_media",
-    status: 200,
+    // 302 para a URL assinada do Storage (a rota não devolve o arquivo, redireciona).
+    status: 302,
     audita: false,
   },
   // GET /api/v1/leads/[id]/field-proposals — fila de revisão (viewer+).
@@ -740,8 +823,9 @@ function nome(c: Caso): string {
 function requisicao(c: Caso, cabecalhos: Record<string, string> = {}): NextRequest {
   const h = new Headers(cabecalhos);
   if (c.formData) {
+    // Sem `content-type` manual: o runtime põe o boundary que serializou o corpo.
+    // Um boundary inventado aqui não bate com o corpo e o `formData()` recusa.
     const fd = c.formData();
-    h.set("content-type", `multipart/form-data; boundary=----WebKitFormBoundary${Math.random().toString(36).slice(2)}`);
     return new NextRequest(`http://localhost${c.caminho}`, {
       method: c.metodo,
       headers: h,
@@ -799,11 +883,16 @@ async function comoToken(c: Caso, o: OpcoesDoToken = {}) {
 
 /** Chama o método SEM Authorization: o caminho de sessão segue seu portão. */
 async function comoSessao(c: Caso) {
+  // Na sessão quem filtra por organização é a RLS do banco, que o dublê não
+  // simula: as tabelas ficam sem a exigência de `organization_id` (as cadeias
+  // continuam filtradas por tudo que a rota escreveu). Este teste confere o
+  // PORTÃO da sessão (status, papel, auditoria), não o isolamento de tenant —
+  // esse é o de `comoToken`.
   const falso = criarClienteAdminFalso({
     orgDona: ORG_A,
     linhas: c.linhas,
     rpc: c.rpc,
-    tabelasSemOrganizacao: SEM_ORGANIZACAO,
+    tabelasSemOrganizacao: Object.keys(c.linhas),
   });
   vi.mocked(createClient).mockResolvedValue({
     ...(falso.cliente as object),
@@ -821,6 +910,10 @@ async function comoSessao(c: Caso) {
     org: { orgId: ORG_A, name: "Org", role: c.papel },
   } as never);
   vi.mocked(loadAuthUser).mockResolvedValue({
+    id: PESSOA_DA_SESSAO,
+    idioma: "pt-BR",
+  } as never);
+  vi.mocked(requireAuth).mockResolvedValue({
     id: PESSOA_DA_SESSAO,
     idioma: "pt-BR",
   } as never);
@@ -894,12 +987,21 @@ describe("leads e lead-captures aceitam token", () => {
         for (const deA of SO_DA_A) expect(texto).not.toContain(deA);
         expect(texto).toContain(c.colecao.daB);
         expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
+      } else if (c.publico || c.listaDaOrganizacao) {
+        // Leitura: 200 para B, sem um byte de A; a lista de B é vazia nesta fixture.
+        expect(res.status, texto).toBe(200);
+        for (const deA of SO_DA_A) expect(texto).not.toContain(deA);
+        if (c.listaDaOrganizacao) {
+          const corpo = json<{ data: Record<string, unknown[]> }>(texto);
+          for (const lista of Object.values(corpo.data)) expect(lista).toEqual([]);
+        }
+        expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
       } else if (c.cria) {
-        expect(res.status, texto).toBe(404);
+        expect(res.status, texto).toBe(c.statusDeB ?? 404);
         expect(audit).not.toHaveBeenCalled();
         expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
       } else {
-        expect(res.status, texto).toBe(404);
+        expect(res.status, texto).toBe(c.statusDeB ?? 404);
         expect(audit).not.toHaveBeenCalled();
       }
 
@@ -1005,7 +1107,7 @@ describe("o ramo do token em leads e lead-captures", () => {
     };
     const { res, texto } = await comoToken(c);
     expect(res.status, texto).toBe(200);
-    const relatorio = json<{ updated_count: number; lead_ids: string[] }>(texto);
+    const relatorio = json<{ data: { updated_count: number; lead_ids: string[] } }>(texto).data;
     expect(relatorio.updated_count).toBe(1);
     expect(relatorio.lead_ids).toEqual([LEAD_A]);
   });
@@ -1035,7 +1137,7 @@ describe("o ramo do token em leads e lead-captures", () => {
     };
     const { res, texto } = await comoToken(c);
     expect(res.status, texto).toBe(200);
-    const relatorio = json<{ updated_count: number; lead_ids: string[] }>(texto);
+    const relatorio = json<{ data: { updated_count: number; lead_ids: string[] } }>(texto).data;
     expect(relatorio.updated_count).toBe(1);
     expect(relatorio.lead_ids).toEqual([LEAD_A]);
   });
@@ -1069,7 +1171,10 @@ describe("o que segue só de sessão", () => {
     );
 
     expect(res.status).toBe(401);
-    expect(requireRole).toHaveBeenCalledWith("admin", expect.objectContaining({ resource: "crm_leads" }));
+    expect(requireRole).toHaveBeenCalledWith(
+      "admin",
+      expect.objectContaining({ resource: "ad_conversion_dispatches" }),
+    );
     expect(validateBearerToken).not.toHaveBeenCalled();
     expect(createAdminClient).not.toHaveBeenCalled();
   });

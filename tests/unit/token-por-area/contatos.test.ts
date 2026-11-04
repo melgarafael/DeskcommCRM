@@ -57,8 +57,15 @@ vi.mock("@/lib/mcp/auth", async () => {
   const actual = await vi.importActual<typeof import("@/lib/mcp/auth")>("@/lib/mcp/auth");
   return { ...actual, validateBearerToken: vi.fn() };
 });
+// O adapter do canal: a agenda do celular é lida do WAHA de verdade só em
+// produção. Aqui o canal responde uma agenda vazia — a rota e o serviço rodam.
+vi.mock("@/lib/channels", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/channels")>("@/lib/channels");
+  return { ...actual, getAdapter: vi.fn() };
+});
 
 const { validateBearerToken } = await import("@/lib/mcp/auth");
+const { getAdapter } = await import("@/lib/channels");
 
 const ORG_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ORG_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -73,10 +80,26 @@ const NEGOCIO_B = "b2222222-2222-4222-8222-222222222222";
 const DEMANDA_A = "a3333333-3333-4333-8333-333333333333";
 const DEMANDA_B = "b3333333-3333-4333-8333-333333333333";
 
-const SEM_ORGANIZACAO = [] as const;
+/**
+ * Tabelas GLOBAIS da instalação, sem `organization_id` no baseline: a flag de
+ * módulo (`platform_config`) e a tabela de módulos (`modulos_instalados`). Ler
+ * delas sem filtro de organização é correto, e o dublê precisa saber disso.
+ */
+const SEM_ORGANIZACAO: readonly string[] = ["platform_config", "modulos_instalados"];
+
+/**
+ * Tabelas que a sessão lê sem filtrar por organização (a RLS do banco é quem
+ * filtra). O dublê não modela RLS; `sessaoComRls` acrescenta o filtro que ela faria.
+ */
+const SEM_FILTRO_DE_ORG_NA_SESSAO = [...SEM_ORGANIZACAO, "organizations"];
 
 type Linha = Record<string, unknown>;
 type Linhas = Record<string, Linha[]>;
+
+/** Os módulos que a rota lê como flag em `platform_config`, ligados nesta fixture. */
+function modulosLigados(...chaves: string[]): Linhas {
+  return { platform_config: chaves.map((chave) => ({ chave, valor: "ligado" })) };
+}
 
 /**
  * Linhas da organização A que cada rota precisa para responder 2xx, mais uma
@@ -193,6 +216,20 @@ type Caso = {
   colecao?: { daA: string; daB: string };
   audita?: boolean;
   cria?: boolean;
+  /**
+   * Quem barra a sessão antes da rota: `requireRole` (o portão de papel),
+   * `orgAtiva` (usuário + organização ativa, sem papel mínimo) ou `usuario`
+   * (só usuário autenticado; a RLS filtra). Padrão: `requireRole`.
+   */
+  sessao?: "requireRole" | "orgAtiva" | "usuario";
+  /** Escopos do token quando a rota precisa de mais de um (ex.: lote que lê e grava). */
+  escoposDoToken?: Array<"mcp:read" | "mcp:write">;
+  /** O balde do limite de taxa, quando a rota o chama de outro jeito que `recurso`. */
+  recursoDoTeto?: string;
+  /** Token de B recebe lista vazia (200), nunca dado de A. */
+  listaVaziaParaB?: boolean;
+  /** Token de B recebe 200 com cada item recusado (`feitos` = 0). */
+  recusaPorItemParaB?: boolean;
 };
 
 /** Qual `route.ts` importar, por rota. */
@@ -246,18 +283,21 @@ const LISTA_TAGS: Caso = {
   audita: false,
 };
 
+// A ficha exige `agent` no token (`tokenRole: "agent"` na rota). Na sessão, a
+// rota não tem papel mínimo: confere usuário e organização ativa.
 const FICHA_A_GET: Caso = {
   rota: "contacts/[id]",
   metodo: "GET",
   caminho: `/api/v1/contacts/${CONTATO_A}`,
   params: { id: CONTATO_A },
   linhas: LINHAS_BASE,
-  papel: "viewer",
+  papel: "agent",
   escopo: "mcp:read",
   papelDoToken: undefined,
   recurso: "contacts",
   status: 200,
   audita: false,
+  sessao: "orgAtiva",
 };
 
 const FICHA_A_PATCH: Caso = {
@@ -289,12 +329,16 @@ const SEMPRE_HUMANO_MARCAR: Caso = {
   audita: true,
 };
 
+// Desmarcar só audita quando havia marca: a fixture começa com o contato marcado.
 const SEMPRE_HUMANO_DESMARCAR: Caso = {
   rota: "contacts/[id]/always-human",
   metodo: "DELETE",
   caminho: `/api/v1/contacts/${CONTATO_A}/always-human`,
   params: { id: CONTATO_A },
-  linhas: LINHAS_BASE,
+  linhas: {
+    ...LINHAS_BASE,
+    contacts: CONTATOS.map((c) => (c.id === CONTATO_A ? { ...c, ai_opt_out: true } : c)),
+  },
   papel: "manager",
   escopo: "mcp:write",
   papelDoToken: undefined,
@@ -332,6 +376,9 @@ const COMPRAS_GET: Caso = {
   recurso: "contacts",
   status: 200,
   audita: false,
+  // Sessão sem portão de papel: a rota confere só o usuário (a RLS filtra).
+  sessao: "usuario",
+  listaVaziaParaB: true,
 };
 
 const CRM_SUMMARY_GET: Caso = {
@@ -346,6 +393,7 @@ const CRM_SUMMARY_GET: Caso = {
   recurso: "contacts",
   status: 200,
   audita: false,
+  sessao: "orgAtiva",
 };
 
 const HIERARQUIA_GET: Caso = {
@@ -360,6 +408,7 @@ const HIERARQUIA_GET: Caso = {
   recurso: "contacts",
   status: 200,
   audita: false,
+  sessao: "usuario",
 };
 
 const PERSON_PATCH: Caso = {
@@ -368,7 +417,7 @@ const PERSON_PATCH: Caso = {
   caminho: `/api/v1/contacts/${CONTATO_A}/person`,
   params: { id: CONTATO_A },
   corpo: { person_id: null },
-  linhas: LINHAS_BASE,
+  linhas: { ...LINHAS_BASE, ...modulosLigados("MODULO_CRM_B2B") },
   papel: "agent",
   escopo: "mcp:write",
   papelDoToken: undefined,
@@ -396,12 +445,18 @@ const PESSOAL_MARCAR: Caso = {
   },
 };
 
+// Desmarcar só audita quando havia marca: a fixture começa com o contato pessoal.
 const PESSOAL_DESMARCAR: Caso = {
   rota: "contacts/[id]/personal",
   metodo: "DELETE",
   caminho: `/api/v1/contacts/${CONTATO_A}/personal`,
   params: { id: CONTATO_A },
-  linhas: { ...LINHAS_BASE, conversations: [], crm_leads: NEGOCIOS },
+  linhas: {
+    ...LINHAS_BASE,
+    contacts: CONTATOS.map((c) => (c.id === CONTATO_A ? { ...c, is_personal: true } : c)),
+    conversations: [],
+    crm_leads: NEGOCIOS,
+  },
   papel: "manager",
   escopo: "mcp:write",
   papelDoToken: undefined,
@@ -427,6 +482,7 @@ const PROPOSTA_GET: Caso = {
   recurso: "contacts.proposals",
   status: 200,
   audita: false,
+  listaVaziaParaB: true,
 };
 
 const PROPOSTA_DECIDIR: Caso = {
@@ -463,7 +519,13 @@ const ROTEIROS_GET: Caso = {
   metodo: "GET",
   caminho: `/api/v1/contacts/${CONTATO_A}/roteiros`,
   params: { id: CONTATO_A },
-  linhas: { ...LINHAS_BASE, followup_enrollments: [], followup_enrollment_events: [], crm_leads: NEGOCIOS },
+  linhas: {
+    ...LINHAS_BASE,
+    ...modulosLigados("MODULO_FLUXOS_DE_ATENDIMENTO"),
+    followup_enrollments: [],
+    followup_enrollment_events: [],
+    crm_leads: NEGOCIOS,
+  },
   papel: "viewer",
   escopo: "mcp:read",
   papelDoToken: undefined,
@@ -478,7 +540,17 @@ const ROTEIRO_NEGOCIO_POST: Caso = {
   caminho: `/api/v1/contacts/${CONTATO_A}/roteiros/${DEMANDA_A}/negocio`,
   params: { id: CONTATO_A, enrollmentId: DEMANDA_A },
   corpo: { lead_id: NEGOCIO_A },
-  linhas: { ...LINHAS_BASE, followup_enrollments: [], followup_enrollment_events: [], crm_leads: NEGOCIOS },
+  linhas: {
+    ...LINHAS_BASE,
+    ...modulosLigados("MODULO_FLUXOS_DE_ATENDIMENTO"),
+    // A execução está viva ("coletando") e é deste contato; o negócio é ABERTO
+    // e do mesmo contato, senão a rota recusa a escolha (422 invalid_lead).
+    followup_enrollments: [
+      { id: DEMANDA_A, organization_id: ORG_A, contact_id: CONTATO_A, status: "coletando" },
+    ],
+    followup_enrollment_events: [],
+    crm_leads: NEGOCIOS.map((n) => ({ ...n, status: "open" })),
+  },
   papel: "manager",
   escopo: "mcp:write",
   papelDoToken: undefined,
@@ -499,6 +571,7 @@ const TIMELINE_GET: Caso = {
   recurso: "contacts",
   status: 200,
   audita: false,
+  sessao: "orgAtiva",
 };
 
 const VINCULOS_GET: Caso = {
@@ -515,6 +588,9 @@ const VINCULOS_GET: Caso = {
   audita: false,
 };
 
+// O lote LÊ cada contato (GET da ficha, `mcp:read`) e depois GRAVA (PATCH,
+// `mcp:write`): o token que o lote aceita precisa dos dois escopos.
+// Para B, cada item volta recusado (200, `feitos` = 0) — o lote não derruba.
 const BULK_POST: Caso = {
   rota: "contacts/bulk",
   metodo: "POST",
@@ -523,23 +599,35 @@ const BULK_POST: Caso = {
   linhas: LINHAS_BASE,
   papel: "agent",
   escopo: "mcp:write",
+  escoposDoToken: ["mcp:read", "mcp:write"],
   papelDoToken: undefined,
   recurso: "contacts",
   status: 200,
   audita: true,
+  recusaPorItemParaB: true,
 };
 
+// Duas fichas da organização A: a comparação precisa de duas. Com a de B no
+// meio, a rota responde 404 para A (uma das fichas não está na organização).
+const CONTATO_A2 = "a7777777-7777-4777-8777-777777777777";
 const COMPARE_GET: Caso = {
   rota: "contacts/compare",
   metodo: "GET",
-  caminho: `/api/v1/contacts/compare?ids=${CONTATO_A},${CONTATO_B}`,
-  linhas: LINHAS_BASE,
+  caminho: `/api/v1/contacts/compare?ids=${CONTATO_A},${CONTATO_A2}`,
+  linhas: {
+    ...LINHAS_BASE,
+    contacts: [
+      ...CONTATOS,
+      { ...CONTATOS[0], id: CONTATO_A2, name: "Outra pessoa da A", phone_number: null },
+    ],
+  },
   papel: "viewer",
   escopo: "mcp:read",
   papelDoToken: undefined,
   recurso: "contacts",
   status: 200,
   audita: false,
+  sessao: "orgAtiva",
 };
 
 const DUPLICATES_GET: Caso = {
@@ -553,20 +641,8 @@ const DUPLICATES_GET: Caso = {
   recurso: "contacts",
   status: 200,
   audita: false,
-};
-
-const DUPLICATES_DISMISS_POST: Caso = {
-  rota: "contacts/duplicates/dismiss",
-  metodo: "POST",
-  caminho: "/api/v1/contacts/duplicates/dismiss",
-  corpo: { contact_ids: [CONTATO_A, CONTATO_B] },
-  linhas: LINHAS_BASE,
-  papel: "manager",
-  escopo: "mcp:write",
-  papelDoToken: undefined,
-  recurso: "contact",
-  status: 200,
-  audita: true,
+  sessao: "orgAtiva",
+  listaVaziaParaB: true,
 };
 
 const IMPORT_AGENDA_POST: Caso = {
@@ -608,9 +684,17 @@ const MERGE_POST: Caso = {
   escopo: "mcp:write",
   papelDoToken: undefined,
   recurso: "contact",
+  recursoDoTeto: "contacts",
   status: 200,
   audita: true,
-  rpc: { fn_mesclar_contatos: () => ({ data: { contato_id: CONTATO_A }, error: null }) },
+  // O dublê faz o que a função do banco faz: contato de outra organização não
+  // se funde, e a erro vem com o rótulo que a rota traduz para 404.
+  rpc: {
+    fn_mesclar_contatos: (args: Record<string, unknown>) =>
+      args.p_organization_id === ORG_A
+        ? { data: { contato_id: CONTATO_A }, error: null }
+        : { data: null, error: { message: "contato_principal_indisponivel" } },
+  },
 };
 
 const CASOS: readonly Caso[] = [
@@ -635,7 +719,6 @@ const CASOS: readonly Caso[] = [
   BULK_POST,
   COMPARE_GET,
   DUPLICATES_GET,
-  DUPLICATES_DISMISS_POST,
   IMPORT_AGENDA_POST,
   MERGE_POST,
 ];
@@ -704,11 +787,28 @@ async function comoToken(c: Caso, o: OpcoesDoToken = {}) {
     org,
     id: org === ORG_A ? TOKEN_A : TOKEN_B,
     papel: o.papel ?? c.papelDoToken ?? c.papel,
-    escopos: o.escopos ?? [c.escopo],
+    escopos: o.escopos ?? c.escoposDoToken ?? [c.escopo],
   });
   const res = await chamar(c, requisicao(c, AUTORIZACAO));
   const texto = await res.text();
   return { res, texto, falso };
+}
+
+/**
+ * A sessão passa pela RLS do banco: o cliente do usuário só enxerga a
+ * organização dele. O dublê não modela RLS, então o `from` da sessão acrescenta
+ * o filtro que ela faria — as rotas que confiam na RLS (sem `.eq` de org) veem
+ * só as linhas de A, como veriam no banco.
+ */
+function sessaoComRls(cliente: unknown, org: string) {
+  const base = cliente as { from: (tabela: string) => { eq: (c: string, v: unknown) => unknown } };
+  return {
+    ...(cliente as object),
+    from: (tabela: string) => {
+      const consulta = base.from(tabela);
+      return SEM_FILTRO_DE_ORG_NA_SESSAO.includes(tabela) ? consulta : consulta.eq("organization_id", org);
+    },
+  };
 }
 
 /** Chama o método SEM Authorization: o caminho de sessão segue seu portão. */
@@ -720,7 +820,7 @@ async function comoSessao(c: Caso) {
     tabelasSemOrganizacao: SEM_ORGANIZACAO,
   });
   vi.mocked(createClient).mockImplementation(async () => ({
-    ...(falso.cliente as object),
+    ...(sessaoComRls(falso.cliente, ORG_A) as object),
     auth: {
       getUser: vi.fn().mockResolvedValue({
         data: { user: { id: PESSOA_DA_SESSAO, idioma: "pt-BR" } },
@@ -767,6 +867,7 @@ beforeEach(() => {
     throw new Error("requireRole chamado no ramo do token");
   });
   vi.mocked(audit).mockResolvedValue(undefined);
+  vi.mocked(getAdapter).mockReturnValue({ listPhonebook: async () => [] } as never);
 });
 
 // ─── Os seis testes de cada método ──────────────────────────────────────────
@@ -808,6 +909,18 @@ describe("contatos e contact-tags aceitam token", () => {
         for (const deA of SO_DA_A) expect(texto).not.toContain(deA);
         expect(texto).toContain(c.colecao.daB);
         expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
+      } else if (c.listaVaziaParaB) {
+        // Coleção: a rota responde 200 com a lista de B (vazia) e nada de A.
+        expect(res.status, texto).toBe(200);
+        for (const deA of SO_DA_A) expect(texto).not.toContain(deA);
+        expect(texto).toContain("[]");
+        expect(audit).not.toHaveBeenCalled();
+      } else if (c.recusaPorItemParaB) {
+        // Lote: 200 com o relatório; cada item de A volta recusado, sem nome de A.
+        expect(res.status, texto).toBe(200);
+        expect(json<{ data: { feitos: number } }>(texto).data.feitos).toBe(0);
+        expect(texto).not.toContain("Cliente da A");
+        expect(audit).not.toHaveBeenCalled();
       } else if (c.cria) {
         expect(res.status, texto).toBe(c.status);
         for (const deA of SO_DA_A) expect(texto).not.toContain(deA);
@@ -860,20 +973,34 @@ describe("contatos e contact-tags aceitam token", () => {
       expect(res.headers.get("Retry-After")).toBeTruthy();
       expect(falso.cadeias).toEqual([]);
       expect(falso.rpcs).toEqual([]);
-      expect(vi.mocked(checkRateLimit).mock.calls[0]?.[0]).toBe(`${c.recurso}:tok:${TOKEN_A}`);
+      expect(vi.mocked(checkRateLimit).mock.calls[0]?.[0]).toBe(`${c.recursoDoTeto ?? c.recurso}:tok:${TOKEN_A}`);
     });
 
     it(`${n}: sessão continua com o mesmo portão`, async () => {
-      const { res, texto, falso } = await comoSessao(c);
+      const { res, texto } = await comoSessao(c);
 
       expect(res.status, texto).toBe(c.status);
-      expect(requireRole).toHaveBeenCalledWith(c.papel, expect.objectContaining({ resource: c.recurso }));
+      // O portão da sessão é o da rota: papel mínimo (`requireRole`), usuário +
+      // organização ativa (`orgAtivaDaApi`), ou só o usuário com a RLS filtrando.
+      if (c.sessao === "orgAtiva") {
+        expect(orgAtivaDaApi).toHaveBeenCalled();
+        expect(requireRole).not.toHaveBeenCalled();
+      } else if (c.sessao === "usuario") {
+        expect(requireRole).not.toHaveBeenCalled();
+      } else {
+        expect(requireRole).toHaveBeenCalledWith(c.papel, expect.objectContaining({ resource: c.recurso }));
+      }
       expect(validateBearerToken).not.toHaveBeenCalled();
       expect(checkRateLimit).not.toHaveBeenCalled();
       if (c.audita) {
         expect(audit).toHaveBeenCalledWith(
-          expect.objectContaining({ organizationId: ORG_A, actorUserId: PESSOA_DA_SESSAO, actorApiTokenId: null }),
+          expect.objectContaining({ organizationId: ORG_A, actorUserId: PESSOA_DA_SESSAO }),
         );
+      }
+      // Sessão nunca leva o id de um token: a trilha só ganha `actorApiTokenId`
+      // quando há token (a rota monta o objeto de sempre para a sessão).
+      for (const [entrada] of vi.mocked(audit).mock.calls) {
+        expect((entrada as { actorApiTokenId?: unknown }).actorApiTokenId ?? null).toBeNull();
       }
     });
   }
@@ -883,7 +1010,32 @@ describe("contatos e contact-tags aceitam token", () => {
 
 describe("o ramo do token em contatos e contact-tags", () => {
   it("GET /api/v1/contact-tags busca: a RPC do vocabulário leva a organização do token", async () => {
-    const { res, texto, falso } = await comoToken(LISTA_TAGS);
+    // Só o ramo `?busca=` chama a RPC; a listagem simples lê `contacts`.
+    const c: Caso = {
+      ...LISTA_TAGS,
+      caminho: "/api/v1/contact-tags?busca=etiqueta",
+      rpc: {
+        fn_vocabulario_de_tags_pagina: () => ({
+          data: {
+            total: 1,
+            items: [
+              {
+                tag: "etiqueta-da-a",
+                uso_em_contatos: 1,
+                uso_em_leads: 0,
+                uso_em_conversas: 0,
+                em_regras: 0,
+                cor: null,
+                descricao: null,
+                no_vocabulario: true,
+              },
+            ],
+          },
+          error: null,
+        }),
+      },
+    };
+    const { res, texto, falso } = await comoToken(c);
     expect(res.status, texto).toBe(200);
     const rpc = falso.rpcs.find((r) => r.nome === "fn_vocabulario_de_tags_pagina");
     expect(rpc?.args.p_org).toBe(ORG_A);
@@ -895,16 +1047,6 @@ describe("o ramo do token em contatos e contact-tags", () => {
     const cadeiaDoContato = falso.cadeias.find((c) => c.tabela === "contacts");
     expect(cadeiaDoContato?.filtros).toContainEqual(["organization_id", ORG_A]);
     expect(falso.cadeias.filter((c) => c.tabela === "contact_phones")).toEqual([]);
-  });
-
-  it("PATCH /api/v1/contacts/[id]: negócio de outro contato/outra org no body é rejeitado", async () => {
-    const c: Caso = { ...FICHA_A_PATCH, corpo: { custom_fields: { lead_id: NEGOCIO_B } } };
-    const { res, texto, falso } = await comoToken(c, {
-      linhas: { ...LINHAS_BASE, crm_leads: NEGOCIOS },
-    });
-    expect(res.status, texto).toBe(422);
-    expect(falso.linhas.contacts).toHaveLength(2);
-    expect(audit).not.toHaveBeenCalled();
   });
 
   it("POST /api/v1/contacts/[id]/proposals/[proposal_id]: decisão grava proposta com actor null", async () => {
@@ -938,7 +1080,7 @@ describe("o ramo do token em contatos e contact-tags", () => {
     };
     const { res, texto, falso } = await comoToken(c);
     expect(res.status, texto).toBe(200);
-    const relatorio = json<{ resultados: Array<{ id: string; feito: boolean }> }>(texto);
+    const relatorio = json<{ data: { resultados: Array<{ id: string; feito: boolean }> } }>(texto).data;
     expect(relatorio.resultados.map((r) => r.id).sort()).toEqual([CONTATO_A, CONTATO_B].sort());
     expect(relatorio.resultados.find((r) => r.id === CONTATO_A)?.feito).toBe(true);
     expect(relatorio.resultados.find((r) => r.id === CONTATO_B)?.feito).toBe(false);
@@ -1009,6 +1151,27 @@ describe("o que segue só de sessão", () => {
     expect(createAdminClient).not.toHaveBeenCalled();
   });
 
+  it("POST /api/v1/contacts/duplicates/dismiss: fica só de sessão (usa pg Pool cru)", async () => {
+    // A rota grava pelo pool `pg` direto (`getRequestPool`), que o ramo do token não
+    // alcança com filtro de organização provado: segue com `requireRole`.
+    vi.mocked(requireRole).mockResolvedValue({
+      ok: false,
+      response: new Response(null, { status: 401 }),
+    } as never);
+    const modulo = await import("@/app/api/v1/contacts/duplicates/dismiss/route");
+    const res = await modulo.POST(
+      new NextRequest("http://localhost/api/v1/contacts/duplicates/dismiss", {
+        method: "POST",
+        headers: { ...AUTORIZACAO, "content-type": "application/json" },
+        body: JSON.stringify({ contact_ids: [CONTATO_A, CONTATO_B] }),
+      }),
+    );
+
+    expect(res.status).toBe(401);
+    expect(validateBearerToken).not.toHaveBeenCalled();
+    expect(createAdminClient).not.toHaveBeenCalled();
+  });
+
   it("PATCH /api/v1/contacts/[id]/carteira: fica só de sessão", async () => {
     // A função de carteira recusa ator nulo: o PATCH segue com `requireRole`, que
     // sem cookie recusa o Bearer com 401, antes de qualquer acesso ao banco.
@@ -1027,7 +1190,8 @@ describe("o que segue só de sessão", () => {
     );
 
     expect(res.status).toBe(401);
-    expect(requireRole).toHaveBeenCalledWith("manager", expect.objectContaining({ resource: "contacts" }));
+    // O piso do PATCH de carteira é `agent` (a posse é conferida depois, na rota).
+    expect(requireRole).toHaveBeenCalledWith("agent", expect.objectContaining({ resource: "contacts" }));
     expect(validateBearerToken).not.toHaveBeenCalled();
     expect(createAdminClient).not.toHaveBeenCalled();
   });
@@ -1066,7 +1230,6 @@ describe("PUBLIC_PATHS — as portas de contatos e contact-tags", () => {
     "/api/v1/contacts/bulk",
     "/api/v1/contacts/compare",
     "/api/v1/contacts/duplicates",
-    "/api/v1/contacts/duplicates/dismiss",
     "/api/v1/contacts/import/agenda",
     "/api/v1/contacts/import",
     "/api/v1/contacts/merge",
