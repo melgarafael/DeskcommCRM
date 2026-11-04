@@ -12,7 +12,7 @@ código, e a busca por conteúdo da conversa não encontrava o nome mencionado.
 
 Agora a prévia da lista usa a mesma regra da bolha: cada `@<identificador>` cujo
 contato está no CRM aparece com o nome dele. Quem não está no CRM continua com o
-número, como hoje — nada é apagado nem vira texto vazio —, e mensagem sem menção
-sai exatamente igual.
+identificador (não é o telefone), como hoje — nada é apagado nem vira texto
+vazio —, e mensagem sem menção sai exatamente igual.
 
 Contribuição de @webtecnica (#3566).
