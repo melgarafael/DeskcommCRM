@@ -180,8 +180,12 @@ describe("a pessoa da equipe fala pela empresa em qualquer ordem", () => {
   });
 
   it("'sem juros' não é negação: a pessoa que parcela em 12x sem juros dá lastro às 12x", () => {
-    const parcela: LinhaDoHistorico = { ...resposta(true), body: "Fazemos em 12x sem juros pra você." };
-    expect(concessoesSemLastro("Confirmado: 12x sem juros.", lastro({ historico: [pedido, parcela] }))).toEqual([]);
+    const pede12: LinhaDoHistorico = { ...pedido, body: "Dá em 12x sem juros?" };
+    const parcela = (humana: boolean): LinhaDoHistorico => ({ ...resposta(humana), body: "Fazemos em 12x sem juros pra você." });
+    expect(concessoesSemLastro("Confirmado: 12x sem juros.", lastro({ historico: [pede12, parcela(true)] }))).toEqual([]);
+    expect(concessoesSemLastro("Confirmado: 12x sem juros.", lastro({ historico: [pede12, parcela(false)] }))).toEqual([
+      "installments:12",
+    ]);
   });
 
   it("número da pessoa fora de frase de concessão não dá lastro", () => {
