@@ -300,6 +300,6 @@ export function renderVetoDeConcessaoSemLastro(achados: readonly string[]): stri
     'de catálogo, pedidos ou conhecimento e ainda não consultou, consulte antes de responder. ' +
     `Reescreva sem repetir ${lista}, nem para negar. Se o seu material ou a consulta traz a ` +
     'condição, confirme-a como está lá, sem oferecer mais do que o cliente pediu; se não traz, ' +
-    'diga que não encontrou esse registro. Se o cliente insistir, ofereça confirmar com a equipe.'
+    'diga que não encontrou esse registro e ofereça confirmar com a equipe.'
   );
 }

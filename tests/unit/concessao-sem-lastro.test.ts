@@ -594,6 +594,11 @@ describe("o ensino", () => {
   it("só diz que não encontrou o registro quando o material não traz a condição", () => {
     expect(reason).toMatch(/se não traz, diga que não encontrou esse registro/);
   });
+
+  it("quando não encontrou, oferece confirmar com a equipe já na primeira resposta", () => {
+    expect(reason).toContain("diga que não encontrou esse registro e ofereça confirmar com a equipe.");
+    expect(reason).not.toContain("Se o cliente insistir");
+  });
 });
 
 describe("a memória da organização: só o que uma pessoa escreveu dá lastro", () => {
