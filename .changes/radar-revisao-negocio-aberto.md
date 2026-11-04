@@ -1,5 +1,5 @@
 ---
-impacto: correcao
+impacto: nada_mudou
 secao: corrigido
 titulo: O Radar tira da revisão as propostas de negócios encerrados
 ---
