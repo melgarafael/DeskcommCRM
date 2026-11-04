@@ -16,9 +16,11 @@
  *      conversa NÃO é tocada (nem status, nem silêncio, nem aviso ao lead);
  *   2. o CONTROLE: o mesmo `low_sentiment`, num contato sem a etiqueta, segue
  *      passando e silenciando como hoje;
- *   3. o turno continua atendendo: `decidirElegibilidade` devolve
- *      `contato_da_equipe` (autorização positiva) — inclusive em canal
- *      `allowlist` sem autorização, onde o cliente comum é barrado.
+ *   3. a etiqueta da equipe NÃO abre o canal: `decidirElegibilidade` trata o
+ *      contato da equipe como qualquer contato. Em canal `allowlist` sem
+ *      autorização, ou no pré-go-live fora da lista de teste, ele é barrado
+ *      como o cliente comum — no pré-go-live só a lista do canal autoriza, e
+ *      quem testa põe o número nela. Os vetos duros continuam vencendo.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
@@ -78,13 +80,13 @@ vi.mock("@/lib/audit", () => ({ audit: vi.fn(), isServiceRoleConfigured: () => f
 
 import { triggerHandoff } from "@/lib/ai/handoff/orchestrator";
 
-/** Estado base: canal `allowlist` SEM autorização — o caso em que o cliente
- *  comum é barrado e o contato da equipe, não. */
+/** Estado base: canal ABERTO, sem veto — o contato é atendido. Cada caso
+ *  muda só o que mede (modo do canal, pré-go-live, um veto). */
 function estado(extra: Partial<EstadoDeElegibilidade> = {}): EstadoDeElegibilidade {
   return {
     orgStatus: "active",
     canalDesativado: false,
-    modo: "allowlist",
+    modo: "open",
     forceHuman: false,
     contatoInterno: false,
     contatoDaEquipe: false,
@@ -109,7 +111,7 @@ describe("#3534 · contato da equipe não é passado nem silenciado pelo clima",
   it("triggerHandoff('low_sentiment') para contato da equipe → NÃO dispara e NÃO toca a conversa", async () => {
     decidir.mockResolvedValue({
       permite: true,
-      motivo: "contato_da_equipe",
+      motivo: "gate_aberto",
       bloqueioPorAllowlist: false,
       contatoDaEquipe: true,
     });
@@ -156,7 +158,7 @@ describe("#3534 · contato da equipe não é passado nem silenciado pelo clima",
   it("outros motivos (não o clima) seguem o caminho de sempre para o contato da equipe", async () => {
     decidir.mockResolvedValue({
       permite: true,
-      motivo: "contato_da_equipe",
+      motivo: "gate_aberto",
       bloqueioPorAllowlist: false,
       contatoDaEquipe: true,
     });
@@ -171,15 +173,43 @@ describe("#3534 · contato da equipe não é passado nem silenciado pelo clima",
     expect(r.triggered).toBe(true);
   });
 
-  it("TURNO: contato da equipe é atendido em canal allowlist, onde o cliente comum é barrado", () => {
-    const daEquipe = decidirElegibilidade(estado({ contatoDaEquipe: true }));
-    expect(daEquipe).toMatchObject({ permite: true, motivo: "contato_da_equipe" });
+  it("TURNO: contato da equipe segue a régua do canal — allowlist sem autorização barra", () => {
+    const allowlist = { modo: "allowlist" } satisfies Partial<EstadoDeElegibilidade>;
+    const daEquipe = decidirElegibilidade(estado({ ...allowlist, contatoDaEquipe: true }));
+    expect(daEquipe).toMatchObject({ permite: false, motivo: "sem_autorizacao" });
 
-    const cliente = decidirElegibilidade(estado());
-    expect(cliente).toMatchObject({ permite: false, motivo: "sem_autorizacao" });
+    // Igual ao cliente comum: a etiqueta não muda a resposta do canal.
+    expect(decidirElegibilidade(estado(allowlist))).toEqual(daEquipe);
+  });
+
+  it("TURNO: no pré-go-live só a lista de teste autoriza — a etiqueta da equipe não", () => {
+    const preGoLive = {
+      modo: "allowlist",
+      preGoLiveAtivo: true,
+      numeroDeTesteAutorizado: false,
+      // Nem o carimbo global do contato fura o pré-go-live; a etiqueta também não.
+      aiAuthorizedAt: new Date("2026-10-19T12:00:00Z"),
+    } satisfies Partial<EstadoDeElegibilidade>;
+    expect(decidirElegibilidade(estado({ ...preGoLive, contatoDaEquipe: true }))).toMatchObject({
+      permite: false,
+      motivo: "fora_da_lista_de_teste",
+    });
+
+    // O caminho que já existe para o sócio testar: o número dele na lista de teste.
+    expect(
+      decidirElegibilidade(
+        estado({ ...preGoLive, numeroDeTesteAutorizado: true, contatoDaEquipe: true }),
+      ),
+    ).toMatchObject({ permite: true, motivo: "numero_de_teste" });
   });
 
   it("TURNO: os vetos duros continuam vencendo a equipe (ninguém atropela uma pessoa)", () => {
+    // Controle: sem veto, no canal aberto, o contato da equipe é atendido — senão
+    // o laço abaixo passaria por falta de autorização, e não pelo veto.
+    expect(decidirElegibilidade(estado({ contatoDaEquipe: true }))).toMatchObject({
+      permite: true,
+      motivo: "gate_aberto",
+    });
     for (const extra of [
       { botSilencedUntil: Number.POSITIVE_INFINITY },
       { assigneeKind: "user" },
@@ -230,7 +260,7 @@ describe("#3534 · a régua da equipe", () => {
     expect(gate).toMatch(
       /contatoDaEquipe:\s*ehContatoDaEquipe\(raw\.contactTags,\s*tagsDaEquipeDaOrg\(raw\.orgSettings\)\)/,
     );
-    expect(gate).toMatch(/if \(e\.contatoDaEquipe\)/);
-    expect(gate).toMatch(/motivo:\s*"contato_da_equipe"/);
+    // A etiqueta é só fato: nenhum ramo de `decidirElegibilidade` a lê.
+    expect(gate).not.toMatch(/if \(e\.contatoDaEquipe\)/);
   });
 });

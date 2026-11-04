@@ -84,9 +84,11 @@ export interface EstadoDeElegibilidade {
   contatoInterno: boolean;
   /**
    * `contacts.tags` cruza com `organizations.settings.crm.team_contact_tags`
-   * (#3534): contato da EQUIPE que continua sendo atendido. Não é veto — é
-   * AUTORIZAÇÃO positiva (o turno atende) e, ao mesmo tempo, o que impede o
-   * repasse automático por clima de silenciar a conversa. Ver
+   * (#3534): contato da EQUIPE que continua sendo atendido. É só um FATO,
+   * não entra em `decidirElegibilidade`: não veta e não autoriza — o contato
+   * segue a régua do canal como qualquer outro (no pré-go-live, quem autoriza
+   * é a lista de teste). Quem o lê é o medidor de clima e o handoff (sem
+   * repasse por `low_sentiment`) e o nascimento do lead. Ver
    * `lib/contacts/tags-da-equipe.ts`.
    */
   contatoDaEquipe: boolean;
@@ -122,7 +124,6 @@ export type MotivoDeElegibilidade =
   | "conversa_silenciada"
   | "conversa_de_humano"
   | "contato_interno"
-  | "contato_da_equipe"
   | "fora_da_lista_de_teste"
   | "numero_de_teste"
   | "sem_autorizacao"
@@ -192,16 +193,6 @@ export function decidirElegibilidade(e: EstadoDeElegibilidade): DecisaoDeElegibi
   // robô no número não quer que ele responda a equipe, sócio ou família.
   if (e.contatoInterno) {
     return { permite: false, motivo: "contato_interno", bloqueioPorAllowlist: false };
-  }
-
-  // #3534: contato da EQUIPE (sócio que testa o agente, pessoa que pede
-  // informação a qualquer hora) é o oposto do interno: a IA ATENDE. E é
-  // autorização positiva, não veto — fica antes do modo do canal de propósito,
-  // porque canal em `allowlist`/pré-go-live não pode calar a própria equipe. Os
-  // vetos acima continuam vencendo (conversa silenciada, dono humano, opt-out):
-  // "atendido" nunca significa "por cima de uma pessoa".
-  if (e.contatoDaEquipe) {
-    return { permite: true, motivo: "contato_da_equipe", bloqueioPorAllowlist: false };
   }
 
   if (e.modo === "open") {

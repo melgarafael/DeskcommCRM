@@ -14,9 +14,12 @@ o limiar tirava a proteção de todo cliente irritado de verdade.
 
 Agora existe a lista **Equipe**, em Configurações › Tags, ao lado dos contatos
 internos: `organizations.settings.crm.team_contact_tags`. Contato marcado com
-uma dessas etiquetas continua sendo atendido pela IA — inclusive em canal em
-modo de teste, onde um cliente comum ainda é barrado —, continua sendo medido e
-registrado pelo clima, e não é passado a humano por clima nem silenciado. O
+uma dessas etiquetas continua sendo atendido pela IA como qualquer contato — a
+etiqueta não abre canal em modo de teste: ali, quem autoriza continua sendo a
+lista de teste do canal —, continua sendo medido e registrado pelo clima, e não
+é passado a humano por clima nem silenciado. Os pedidos de cliente que o medidor
+lê nas mensagens de texto («quero falar com uma pessoa», «pare de me mandar
+mensagem») também não abrem aviso na Central para ele. O
 repasse por clima também é recusado no próprio orquestrador de handoff, para
 que nenhum alerta antigo na fila cale a conversa. Como o contato interno, ele
 não vira card no funil — o sócio que testa o agente não é oportunidade de

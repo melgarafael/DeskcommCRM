@@ -14,8 +14,9 @@
  * automático não acontece**. Concretamente, contato com uma etiqueta de
  * `organizations.settings.crm.team_contact_tags`:
  *
- *   1. é atendido pela IA normalmente (o turno segue; o gate de elegibilidade
- *      o trata como autorização positiva, não como veto);
+ *   1. é atendido pela IA como qualquer contato: segue a régua do canal (em
+ *      `allowlist`/pré-go-live, só a lista de teste autoriza — a etiqueta da
+ *      equipe não abre o canal), e a etiqueta não é veto;
  *   2. é medido e registrado pelo medidor de clima, como qualquer conversa;
  *   3. NÃO é passado a humano por clima (`low_sentiment`) — e, por não ser
  *      passado, não é silenciado (`bot_silenced_until = 'infinity'`).

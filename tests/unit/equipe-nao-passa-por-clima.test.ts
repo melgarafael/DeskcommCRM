@@ -25,8 +25,9 @@
  *   - `processSentiment`  → mede e registra, NÃO emite alerta (não paga handoff);
  *   - `triggerHandoff`    → recusa `low_sentiment`, então NÃO silencia a conversa
  *                           (é o dano que dói mais: `bot_silenced_until`);
- *   - `decidirElegibilidade` → o turno continua atendendo, inclusive em canal
- *                           `allowlist` sem autorização positiva.
+ *   - `decidirElegibilidade` → a etiqueta não veta nem autoriza: o contato da
+ *                           equipe segue a régua do canal (preso em
+ *                           `equipe-nao-e-silenciada-pelo-clima.test.ts`).
  *
  * O CONTROLE está em todos os três: o MESMO texto, na MESMA organização, num
  * telefone sem a etiqueta, continua sendo medido, passado e silenciado. Sem ele,
