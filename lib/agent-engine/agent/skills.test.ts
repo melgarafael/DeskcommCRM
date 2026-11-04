@@ -1,5 +1,15 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { loadSkills, matchSkills, recentInboundSignal, skillMatcherSchema, type LoadedSkill } from './skills';
+import {
+  loadSkills,
+  matchSkills,
+  recentInboundSignal,
+  skillMatcherSchema,
+  skillsDoAgente,
+  skillsPuxadasPeloRoteiro,
+  type LoadedSkill,
+} from './skills';
 
 const skill = (name: string, matcher: LoadedSkill['matcher']): LoadedSkill => ({
   versionId: `v-${name}`,
@@ -108,5 +118,68 @@ describe('skillMatcherSchema — any_tags', () => {
 
   it('continua exigindo any_keywords: skill só com etiqueta não passa', () => {
     expect(skillMatcherSchema.safeParse({ any_tags: ['odonto'] }).success).toBe(false);
+  });
+});
+
+describe('skillsDoAgente (skills por agente, 9107)', () => {
+  const todas = [
+    skill('agendamento', { any_keywords: ['horário'] }),
+    skill('objecao-preco', { any_keywords: ['caro'] }),
+    skill('visita', { any_keywords: ['visita'] }),
+  ];
+
+  it('null = todas, na mesma ordem (o comportamento de antes)', () => {
+    expect(skillsDoAgente(todas, null).map((s) => s.name)).toEqual([
+      'agendamento',
+      'objecao-preco',
+      'visita',
+    ]);
+  });
+
+  it('lista = só as marcadas, sem reordenar', () => {
+    expect(skillsDoAgente(todas, ['visita', 'agendamento']).map((s) => s.name)).toEqual([
+      'agendamento',
+      'visita',
+    ]);
+  });
+
+  it('[] = nenhuma', () => {
+    expect(skillsDoAgente(todas, [])).toEqual([]);
+  });
+
+  it('nome que não existe não lança e não traz nada', () => {
+    expect(skillsDoAgente(todas, ['nao-existe'])).toEqual([]);
+  });
+
+  it('o matcher sobre a lista filtrada não injeta skill de fora dela', () => {
+    const doAgente = skillsDoAgente(todas, ['visita']);
+    expect(matchSkills(doAgente, 'achei caro, mas quero uma visita').matched.map((s) => s.name)).toEqual([
+      'visita',
+    ]);
+  });
+
+  // O nó `skill` do roteiro de atendimento é a exceção declarada na tela do agente:
+  // a skill que ele nomeia chega mesmo fora da lista. Sem isto, restringir a lista
+  // calaria em silêncio o passo do roteiro que depende dela.
+  it('roteiro puxa skill de FORA da lista do agente', () => {
+    const doAgente = skillsDoAgente(todas, ['visita']);
+    const casadas = matchSkills(doAgente, 'quero uma visita').matched;
+    expect(skillsPuxadasPeloRoteiro(todas, ['objecao-preco'], casadas).map((s) => s.name)).toEqual([
+      'objecao-preco',
+    ]);
+  });
+
+  it('roteiro com lista vazia no agente ainda puxa a skill que nomeia', () => {
+    expect(skillsPuxadasPeloRoteiro(todas, ['agendamento'], []).map((s) => s.name)).toEqual(['agendamento']);
+  });
+
+  it('roteiro: nome inexistente some e a já casada não repete', () => {
+    const casadas = matchSkills(todas, 'quero uma visita').matched;
+    expect(skillsPuxadasPeloRoteiro(todas, ['visita', 'nao-existe'], casadas)).toEqual([]);
+  });
+
+  it('o turno resolve o roteiro sobre as skills da organização, não sobre as do agente', () => {
+    const fonte = readFileSync(join(process.cwd(), 'lib/agent-engine/agent/inbound-turn.ts'), 'utf8');
+    expect(fonte).toMatch(/skillsPuxadasPeloRoteiro\(skills, roteiro\?\.skills \?\? \[\], skillMatch\.matched\)/);
   });
 });

@@ -221,7 +221,7 @@ const HANDOFF_TOOL_NAME = "crm_request_human_handoff";
 const DRAFT_PROPOSAL_TOOL_NAME = "crm_draft_proposal";
 const PREPARAR_PROPOSTA_TOOL_NAME = "crm_preparar_proposta";
 
-function shapeToZodObject(shape: Record<string, z.ZodTypeAny>): z.ZodTypeAny {
+export function shapeToZodObject(shape: Record<string, z.ZodTypeAny>): z.ZodTypeAny {
   // The MCP tool inputSchema is a Zod *raw shape* (object of zod types).
   //
   // Shape VAZIO vira registro livre, e não `z.object({})`: um servidor MCP

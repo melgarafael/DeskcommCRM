@@ -898,6 +898,16 @@ function semAcento(texto: string): string {
 }
 
 /**
+ * O corpo promete VERIFICAR a agenda ("vou verificar os horários e já te aviso")?
+ * É a metade "enrolação" do `agendaStallGate`, exportada para a trava da parada
+ * do laço (`agent/parada-apos-envio.ts`) não ter uma terceira cópia da regra.
+ */
+export function anunciaVerificacaoDeAgenda(body: string): boolean {
+  const b = semAcento(body);
+  return AGENDA_STALL_PATTERN.test(b) || AGENDA_STALL_VER_PATTERN.test(b);
+}
+
+/**
  * Nomes de ferramenta como o modelo os lê num texto de ensino: "`a`", "`a` ou `b`",
  * "`a`, `b` ou `c`". Usado pelo veto de agenda e pelo bloco residente de agenda
  * (`inbound-turn.ts`), que precisam nomear as MESMAS ferramentas do mesmo jeito.
@@ -933,8 +943,7 @@ export const agendaStallGate: Gate = {
     if (ctx.agenda === undefined || !ctx.agenda.active) return { pass: true };
     if (ctx.agenda.toolCalledThisTurn) return { pass: true };
     const bodySemAcento = semAcento(ctx.body);
-    const stall =
-      AGENDA_STALL_PATTERN.test(bodySemAcento) || AGENDA_STALL_VER_PATTERN.test(bodySemAcento);
+    const stall = anunciaVerificacaoDeAgenda(ctx.body);
     const confirmedSemChecar =
       AGENDA_CONFIRMED_PATTERN.test(bodySemAcento) ||
       AGENDA_CONFIRMADO_INVERTIDO_PATTERN.test(bodySemAcento);
