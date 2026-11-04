@@ -39,7 +39,16 @@ import {
   hostOf,
 } from "@/lib/agent-engine/edge/egress";
 
-import type { ServidorMcpExterno } from "./registro";
+/**
+ * O que a chamada precisa saber do servidor: o endereço e, quando há, a
+ * credencial Bearer. `chave` ausente/`null` = modo `nenhuma` (sem cabeçalho de
+ * autenticação). Num servidor `oauth_por_contato`, a "chave" é o access token
+ * DO CONTATO do turno, lido do banco por `credencial.ts` — nunca de argumento.
+ */
+export interface ServidorChamavel {
+  endpoint: string;
+  chave?: string | null;
+}
 
 /** Uma ferramenta como o servidor a anuncia (`tools/list`). */
 export interface FerramentaRemota {
@@ -84,6 +93,12 @@ export interface OpcoesDeChamada {
    * `tools/call`, e por isso não sobrescreve, remove nem acrescenta cabeçalho.
    */
   cabecalhos?: Readonly<Record<string, string>>;
+  /**
+   * Recebe toda resposta 401/403 do servidor ANTES de o SDK transformá-la em
+   * erro — é daqui que sai o `WWW-Authenticate` (`insufficient_scope`, o
+   * `resource_metadata` da descoberta). O SDK não o expõe no erro.
+   */
+  aoRecusar?: (status: number, desafio: string | null) => void;
 }
 
 /**
@@ -98,6 +113,9 @@ export const CABECALHOS_DO_CONTATO = {
 } as const;
 
 const TIMEOUT_PADRAO_MS = 15_000;
+
+/** O `clientInfo.name` que o cliente MCP declara no `initialize` (identificador técnico). */
+export const NOME_DO_CLIENTE_MCP = "deskcomm-crm";
 
 /**
  * O que a saída do processo confere antes de sair byte — injetável para o
@@ -133,8 +151,10 @@ export interface GuardaDeSaida {
  * `endpoint` nunca sai daqui para log: o guard trabalha com a URL da chamada e
  * o host só aparece em evento de segurança, que loga host e nunca querystring.
  */
-export function fetchDeSaida(endpoint: string, guarda?: GuardaDeSaida): FetchLike {
-  const allowlist = buildAllowlist([endpoint]);
+export function fetchDeSaida(endpoint: string | readonly string[], guarda?: GuardaDeSaida): FetchLike {
+  // Uma lista quando o OAuth entra: o host do endpoint MCP E os hosts do
+  // authorization server descobertos — nunca um host que a descoberta não viu.
+  const allowlist = buildAllowlist(typeof endpoint === "string" ? [endpoint] : [...endpoint]);
   const conferirUrl = guarda?.conferirUrl ?? assertSafeOutboundUrl;
   const conferirIp = guarda?.conferirIp ?? assertDestinoResolvidoSeguro;
 
@@ -160,29 +180,47 @@ function nomeValido(nome: unknown): nome is string {
   return typeof nome === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(nome);
 }
 
+/** Embrulha o `fetch` para entregar 401/403 a `aoRecusar` sem alterar a resposta. */
+function observandoRecusas(
+  base: FetchLike,
+  aoRecusar?: (status: number, desafio: string | null) => void,
+): FetchLike {
+  if (!aoRecusar) return base;
+  return async (input, init) => {
+    const resposta = await base(input, init);
+    if (resposta.status === 401 || resposta.status === 403) {
+      aoRecusar(resposta.status, resposta.headers.get("www-authenticate"));
+    }
+    return resposta;
+  };
+}
+
 async function comOCliente<T>(
-  servidor: ServidorMcpExterno,
+  servidor: ServidorChamavel,
   timeoutMs: number,
   oQueFazer: (cliente: Client) => Promise<T>,
   fetch?: FetchLike,
   cabecalhos?: Readonly<Record<string, string>>,
+  aoRecusar?: (status: number, desafio: string | null) => void,
 ): Promise<T> {
-  // Concatenação em vez de interpolação: o cabeçalho é montado num lugar só,
-  // e a chave não aparece literal em nenhuma template string deste arquivo.
-  const cabecalho = "Bearer" + " " + servidor.chave;
   // O nome do cabeçalho em constante: o valor é montado uma vez só, e nenhum
   // dos dois aparece colado numa string literal de cabeçalho.
   const nomeDoCabecalho = "Authorization";
+  // Concatenação em vez de interpolação: o cabeçalho é montado num lugar só,
+  // e a chave não aparece literal em nenhuma template string deste arquivo.
+  const autenticacao: Record<string, string> = servidor.chave
+    ? { [nomeDoCabecalho]: "Bearer" + " " + servidor.chave }
+    : {};
   const transporte = new StreamableHTTPClientTransport(new URL(servidor.endpoint), {
     // Identidade do contato antes, autenticação por último: nada do executor troca a chave.
     // ponytail: sem HMAC extra — a chave Bearer do cadastro já autentica o Deskcomm perante o servidor.
-    requestInit: { headers: { ...cabecalhos, [nomeDoCabecalho]: cabecalho } },
+    requestInit: { headers: { ...cabecalhos, ...autenticacao } },
     // O guard anti-SSRF entra POR AQUI (item 4): o SDK aceita `fetch` próprio e
     // é por ele que toda requisição deste transporte passa. Sem opção nenhuma o
     // default é `fetchDeSaida` — protegido, e não o fetch global.
-    fetch: fetch ?? fetchDeSaida(servidor.endpoint),
+    fetch: observandoRecusas(fetch ?? fetchDeSaida(servidor.endpoint), aoRecusar),
   });
-  const cliente = new Client({ name: "deskcomm-crm", version: "0.1.0" });
+  const cliente = new Client({ name: NOME_DO_CLIENTE_MCP, version: "0.1.0" });
   try {
     await cliente.connect(transporte, { timeout: timeoutMs });
     return await oQueFazer(cliente);
@@ -198,7 +236,7 @@ async function comOCliente<T>(
  * não sobreviveria ao montador de ferramentas do runtime.
  */
 export async function listarFerramentasDoServidor(
-  servidor: ServidorMcpExterno,
+  servidor: ServidorChamavel,
   opcoes?: OpcoesDeChamada,
 ): Promise<FerramentaRemota[]> {
   const timeoutMs = opcoes?.timeoutMs ?? TIMEOUT_PADRAO_MS;
@@ -208,6 +246,7 @@ export async function listarFerramentasDoServidor(
     (cliente) => cliente.listTools(undefined, { timeout: timeoutMs }),
     opcoes?.fetch,
     opcoes?.cabecalhos,
+    opcoes?.aoRecusar,
   );
   const ferramentas = Array.isArray(resposta?.tools) ? resposta.tools : [];
   return ferramentas
@@ -234,7 +273,7 @@ export async function listarFerramentasDoServidor(
  * tentamos replicá-la aqui, que é justamente o que a issue pede.
  */
 export async function chamarFerramentaRemota(
-  servidor: ServidorMcpExterno,
+  servidor: ServidorChamavel,
   nome: string,
   argumentos: Record<string, unknown>,
   opcoes?: OpcoesDeChamada,
@@ -246,6 +285,7 @@ export async function chamarFerramentaRemota(
     (cliente) => cliente.callTool({ name: nome, arguments: argumentos }, undefined, { timeout: timeoutMs }),
     opcoes?.fetch,
     opcoes?.cabecalhos,
+    opcoes?.aoRecusar,
   )) as {
     content?: Array<{ type?: string; text?: unknown }>;
     isError?: boolean;

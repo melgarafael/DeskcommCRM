@@ -81,6 +81,7 @@ import {
 } from '../edge/llm/run-model-call';
 import type { ProviderRegistry } from '../edge/llm/providers';
 import { HANDOFF_REASON_ORCAMENTO } from '../edge/llm/orcamento';
+import { bindingOuNulo } from '../edge/llm/binding-do-ponto';
 import { abreAvisoDoEspelhoRecusado, mirrorLeadStageToCrm } from '../edge/crm/move-lead-stage';
 import { insertInboxItem } from '../db/repository';
 import { criarConferidorDeAfirmacoes } from '@/lib/ai/decisao/afirmacao-de-fato';
@@ -96,6 +97,11 @@ import {
   type FotoParaEnvio,
 } from './fotos-do-produto';
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
+import {
+  intervaloEfetivo,
+  runAfterComIntervalo,
+  ultimaRespostaDaIa,
+} from '../edge/crm/intervalo-entre-respostas';
 import {
   applyLeadStateUpdate,
   getLeadState,
@@ -118,6 +124,7 @@ import {
   type LeadCheckpointRow,
 } from "./abertura/checkpoint";
 import { buildOpeningMessage, ritualBlocks } from "./abertura/ritual";
+import { snapshotDoCaso } from "./conversa-do-caso/contexto";
 import { lerRemetenteDeGrupo, type RemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
 import { applySaveLeadNote, buildNotesIndexBlock, getLeadNoteBody } from './lead-notes';
 import { buildCompromissosBlock } from './compromissos-do-contato';
@@ -1738,7 +1745,9 @@ export interface AgentTurnInput {
  * Núcleo do run do agente, compartilhado por inbound_turn (F2-09) e followup_turn
  * (F3-03): ritual de abertura, loop de tools, fechamento com checkpoint e veto. Não
  * guarda NADA entre invocações — sessão fresca por job (todo estado no closure). O
- * que varia entre os dois tipos de turno vem em `input` (AgentTurnInput).
+ * que varia entre os dois tipos de turno vem em `input` (AgentTurnInput) — menos o
+ * ponto de IA da chamada principal, que sai do `kind` do job: `followup_turn` no
+ * follow-up (modelo escolhível no painel), `agent_turn` no resto.
  */
 /**
  * O aviso de que o agente atendeu SEM as capacidades configuradas.
@@ -3399,6 +3408,44 @@ async function executarTurnoDoAgente(
       throw new JobSettledError(
         'fora do horário de funcionamento — job reagendado para a abertura da janela',
       );
+    }
+  }
+
+  // INTERVALO MÍNIMO ENTRE RESPOSTAS (#3940). O drain já adia o job pela pausa,
+  // mas mede contra a resposta que existia QUANDO a mensagem chegou: a que chega
+  // durante um turno em curso não pega carona (só há carona em job pending) e
+  // nasce medida contra a resposta ANTERIOR. Aqui a régua é a mesma do drain
+  // (`ultimaRespostaDaIa` + `runAfterComIntervalo`), medida de novo no turno,
+  // depois das detecções determinísticas — um opt-out na pausa é tratado agora.
+  // Adia como a janela acima: `rescheduleJob`, sem gastar tentativa, e o job
+  // segue pending para as próximas mensagens entrarem de carona. Campo vazio ou
+  // 0: nenhuma consulta. Falha da consulta degrada para "sem espera", como no drain.
+  const intervaloMs = intervaloEfetivo(agentConfig?.replyMinIntervalMs ?? null);
+  if (!preview && liveJob().kind === 'inbound_turn' && intervaloMs > 0) {
+    let liberaEm: Date | undefined;
+    try {
+      const ultima = await ultimaRespostaDaIa(pool, {
+        organizationId: tenantId,
+        conversationId: input.conversationId,
+      });
+      liberaEm = runAfterComIntervalo(undefined, ultima, intervaloMs, clock().getTime());
+    } catch (err) {
+      runLog.warn('não consegui medir o intervalo entre respostas — turno sem espera extra', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+      });
+    }
+    if (liberaEm !== undefined) {
+      const esperaMs = liberaEm.getTime() - clock().getTime();
+      await rescheduleJob(pool, liveJob().id, ctx.workerId, {
+        acquiredAt: claimOfJob(liveJob())?.acquired_at,
+        delayMs: esperaMs,
+        reason: 'intervalo mínimo entre respostas do agente — turno adiado',
+      });
+      runLog.info('turno adiado — intervalo mínimo entre respostas da versão publicada', {
+        agent_id: agentConfig?.agentId,
+        espera_ms: esperaMs,
+      });
+      throw new JobSettledError('intervalo mínimo entre respostas — job reagendado');
     }
   }
 
@@ -5186,12 +5233,13 @@ async function executarTurnoDoAgente(
   // Spec 15: snapshot mínimo do contexto disponível pro humano que for atender o
   // caso — campo de CONVENIÊNCIA pra UI, não load-bearing (nada aqui é relido pelo
   // agente). ponytail: snapshot mínimo; enriquecer se a UI precisar de mais.
-  const buildCaseContextSnapshot = (): Record<string, unknown> => ({
-    contact_name: effectiveContext.contact.name,
-    last_messages: effectiveContext.messages
-      .slice(-5)
-      .map((m) => ({ direction: m.direction, body: m.body })),
-  });
+  //
+  // `sent_at` entra junto porque sem ele TODA fala herdava a hora de abertura do
+  // caso (`falasDoSnapshot` cai no `abertoEm`): a tela e o prompt mostravam cinco
+  // mensagens de horas diferentes com o mesmo carimbo. É string ali — vem do
+  // histórico já normalizado (`get-lead-context.ts`, `isoLocalComOffset`).
+  const buildCaseContextSnapshot = (): Record<string, unknown> =>
+    snapshotDoCaso(effectiveContext.contact.name, effectiveContext.messages);
 
   // Spec 15 (Wave 3a): tools de caso humano (open_human_case/provide_case_update) só
   // entram quando a tela habilita (cases_enabled) — mesmo padrão do handoff acima.
@@ -5753,6 +5801,20 @@ async function executarTurnoDoAgente(
       openingSuffixes.length === 0
         ? openingBase
         : `${openingBase}\n\n${openingSuffixes.join('\n\n')}`;
+    // O agente escrevendo SOZINHO para quem parou de responder. É o mesmo turno,
+    // com outro ponto de IA (`followup_turn`): o modelo pode ser o do painel, e o
+    // custo fica registrado à parte em `llm_calls`. Ver o cabeçalho do ponto em
+    // `lib/ai/pontos/registro.ts`. `inbound_turn` e `case_reply_turn` seguem em
+    // `agent_turn`; a prévia, em `agent_preview`.
+    const escreveFollowup = !preview && job !== null && job.kind === 'followup_turn';
+    // QUEM vai receber a mídia nativa. No follow-up com escolha no painel, é o
+    // modelo do painel — montar a parte para o do agente mandaria a foto a um
+    // modelo que talvez não a enxergue, e o provedor recusaria o follow-up
+    // inteiro. Sem escolha (ou sem mídia ligada), é o agente, como sempre foi.
+    const escolhaDoFollowup =
+      escreveFollowup && agentConfig?.multimodalInput === true
+        ? await bindingOuNulo(pool, tenantId, 'followup_turn', runLog)
+        : null;
     // Onda 3 (aprimoramento): mídia inbound recente vira part nativa (image/file) SÓ para
     // provider+modelo capazes (T2 modelCapabilities) — modelo incapaz/desconhecido → [] e o
     // derivado textual (já embutido em openingText via LeadContextMessage) cobre sozinho.
@@ -5761,8 +5823,8 @@ async function executarTurnoDoAgente(
         ? []
         : await buildNativeMediaParts({
             messages: effectiveContext.messages,
-            provider: agentConfig?.provider ?? 'anthropic',
-            model: agentConfig?.model ?? '',
+            provider: escolhaDoFollowup?.provider ?? agentConfig?.provider ?? 'anthropic',
+            model: escolhaDoFollowup?.model_id ?? agentConfig?.model ?? '',
             multimodalInput: agentConfig?.multimodalInput ?? false,
             admin: deps.crmCfg.supabase,
           });
@@ -5823,7 +5885,11 @@ async function executarTurnoDoAgente(
         // lia `ai_agent_runs`, tabela que motor nenhum vivo escreve, e dizia
         // "Nenhuma execução ainda" com o agente respondendo no WhatsApp.
         agentId: agentConfig?.agentId ?? null,
-        purpose: preview ? 'agent_preview' : 'agent_turn',
+        // O follow-up é o mesmo turno com o próprio ponto — e por isso com o
+        // próprio binding (o seam o lê por `purpose`) e a própria linha de custo.
+        // Literais no próprio `purpose:`, de propósito: é aqui que a cerca de
+        // completude do registro procura quem emite cada ponto.
+        purpose: preview ? 'agent_preview' : escreveFollowup ? 'followup_turn' : 'agent_turn',
         system,
         messages: openingMessages,
         tools,

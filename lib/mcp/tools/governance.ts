@@ -60,7 +60,8 @@ export const crmAssignConversation: McpToolDefinition<typeof assignInputShape> =
     "Atribui/transfere uma conversa a um atendente (reason='transfer', to_user_id preenchido) " +
     "ou libera de volta à fila (reason='release', to_user_id null). Grava assignment event " +
     "auditado. Recusa destino de outra org (guard de membership). Idempotente: se a conversa " +
-    "já está no estado alvo, retorna sucesso sem duplicar evento.",
+    "já está no estado alvo, retorna sucesso sem duplicar evento. Atribuir não interrompe o seu " +
+    "próprio turno: pode ser chamada junto com a passagem para uma pessoa, em qualquer ordem.",
   inputSchema: assignInputShape,
   category: "write",
   requiresRole: "agent",
@@ -98,6 +99,14 @@ export const crmAssignConversation: McpToolDefinition<typeof assignInputShape> =
     // true com o dono que ACABAMOS de ler ⇒ optimistic lock: sob CORRIDA (dois
     // assigns idênticos leem o mesmo dono antigo), o 1º vence (1 evento) e o 2º
     // vê o dono já mudado (v_from ≠ expected) ⇒ 0 rows, SEM evento duplicado.
+    //
+    // `p_source_job_id` (#3926): o turno DIZ que foi ele quem atribuiu, e o
+    // gatilho de assumir poupa esse job em vez de revogá-lo. Vem de
+    // `ctx.sourceJobId` — campo que o runtime injeta e o modelo NÃO escreve —,
+    // então é nulo em toda chamada de fora do turno (rota MCP, Inbox, automação)
+    // e o comportamento delas não muda. Sem isso, o próprio turno era marcado
+    // `failed`/`conversation_command_taken` e a passagem e a mudança de etapa
+    // que vinham depois morriam na guarda de fronteira.
     const { data: rows, error: assignErr } = await ctx.supabase.rpc("fn_conversation_assign", {
       p_organization_id: ctx.organizationId,
       p_conversation_id: parsed.conversation_id,
@@ -105,6 +114,7 @@ export const crmAssignConversation: McpToolDefinition<typeof assignInputShape> =
       p_reason: parsed.reason,
       p_expected_assignee: currentOwner,
       p_enforce_expected: true,
+      p_source_job_id: ctx.sourceJobId ?? null,
     });
     if (assignErr) throw new Error(assignErr.message);
     if (!Array.isArray(rows) || rows.length === 0) {

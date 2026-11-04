@@ -43,6 +43,8 @@ export type RoutingOutcome =
   | "skipped_conv_missing"
   | "skipped_invalid_payload"
   | "skipped_contato_pessoal"
+  /** #3937: contato do tipo `fornecedor` não entra na distribuição automática. */
+  | "skipped_contato_fornecedor"
   /** #3717: o caso mais recente da conversa não pede uma pessoa agora. */
   | "skipped_caso_sem_humano"
   | "assign_lost_race"
@@ -75,6 +77,7 @@ const EMPTY_OUTCOMES = (): Record<RoutingOutcome, number> => ({
   skipped_conv_missing: 0,
   skipped_invalid_payload: 0,
   skipped_contato_pessoal: 0,
+  skipped_contato_fornecedor: 0,
   skipped_caso_sem_humano: 0,
   assign_lost_race: 0,
   error: 0,
@@ -190,15 +193,33 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
 
   // Contato pessoal não distribui (spec 21, caminho 9): depois da leitura da
   // conversa — o pulo precisa do contato, que só ela tem.
+  //
+  // #3937: a MESMA leitura, na MESMA ordem, decide o contato FORNECEDOR
+  // (`contacts.contact_type`, issue #3005) — promoção de operadora, comunicado
+  // de companhia aérea e recado de grupo comercial chegam pelo mesmo número do
+  // cliente e ocupavam carga e capacidade do rodízio. Um contato, uma query,
+  // duas réguas: pessoal primeiro porque a dele é a mais forte (tira a conversa
+  // da operação inteira); fornecedor depois, e só ele sai da DISTRIBUIÇÃO — a
+  // conversa continua no Inbox, sem dono, como hoje.
   const { data: contato } = await admin
     .from("contacts")
-    .select("is_personal")
+    .select("is_personal, contact_type")
     .eq("id", conv.contact_id)
     .eq("organization_id", orgId)
     .maybeSingle();
-  if ((contato as { is_personal?: boolean } | null)?.is_personal === true) {
+  const contatoDaConversa = contato as
+    | { is_personal?: boolean; contact_type?: string | null }
+    | null;
+  if (contatoDaConversa?.is_personal === true) {
     await markDone(event, "skipped_contato_pessoal");
     return "skipped_contato_pessoal";
+  }
+  // Fornecedor: `contact_type` nasce 'cliente' no banco (migration 0763), então
+  // quem nunca falou de tipo continua distribuindo. Fornecedor E pessoal já saiu
+  // acima — a precedência é a de hoje e não há filtro duplo divergente.
+  if (contatoDaConversa?.contact_type === "fornecedor") {
+    await markDone(event, "skipped_contato_fornecedor");
+    return "skipped_contato_fornecedor";
   }
 
   // O CASO DA CONVERSA (#3717): a pergunta que a fila nunca fazia. Fica AQUI —
