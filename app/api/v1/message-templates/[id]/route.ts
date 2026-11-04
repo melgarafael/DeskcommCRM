@@ -37,8 +37,10 @@ import { isDeepStrictEqual } from "node:util";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok, noContent } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { snapshotDeMidiasSchema, updateTemplateSchema } from "@/lib/schemas/templates";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -175,29 +177,42 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
   return ok(data, { requestId });
 }
 
-export async function DELETE(_req: NextRequest, { params }: RouteParams): Promise<Response> {
+export async function DELETE(req: NextRequest, { params }: RouteParams): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "message_templates" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "message_templates",
+    role: "agent",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "message_templates.item", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId, apiTokenId } = authz;
+  // Autor só quando quem chama é uma pessoa; token não tem usuário, então NULL.
+  const autor = authz.actor.type === "user" ? authz.actor.id : null;
   const { id } = await params;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   // .select() confirma que a linha existia E era visível/apagável pela RLS.
   // Sem isso, um DELETE barrado pela RLS afeta 0 linhas mas ainda retornaria
   // 204 + audit falso (mutação que não ocorreu). Espelha a semântica do PATCH.
   // `midias` vem junto porque é a ÚLTIMA chance de ler os caminhos: depois do
   // delete a linha não existe mais, e a imagem dela ficaria órfã para sempre
   // (critério de aceite da #2526).
-  const { data: deleted, error } = await supabase
+  let apagar = supabase
     .from("message_templates")
     .delete()
     .eq("id", id)
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", organizationId);
+  // No token não há pessoa: só o compartilhado (`owner_user_id` nulo) é alcançável.
+  if (authz.via === "token") apagar = apagar.is("owner_user_id", null);
+  const { data: deleted, error } = await apagar
     .select("id, midias")
     .maybeSingle();
   if (error) return fail("internal_error", "Erro ao excluir template.", 500, { requestId });
@@ -207,13 +222,14 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams): Promis
     .map((m) => m.storage_path)
     // A conferência é a mesma do PATCH: a leitura é por service role e o
     // apagado é irreversível, então só o que é DESTE template sai daqui.
-    .filter((caminho) => midiaPertenceAoTemplate(caminho, org.orgId, id));
+    .filter((caminho) => midiaPertenceAoTemplate(caminho, organizationId, id));
   await apagarMidiasDoTemplate(caminhos, requestId);
 
   void audit({
     action: "template.deleted",
-    actorUserId: user.id,
-    organizationId: org.orgId,
+    actorUserId: autor,
+    actorApiTokenId: apiTokenId ?? null,
+    organizationId,
     resourceType: "message_template",
     resourceId: deleted.id,
     requestId,

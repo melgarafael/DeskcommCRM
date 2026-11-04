@@ -161,4 +161,17 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/settings/routing",
   "/api/v1/settings/sons",
   "/api/v1/settings/task-plans",
+
+  // message-templates e message-template-groups. Quem autentica é a própria
+  // rota, por `resolveAuthDual`: token com `config:read` (GET) ou `config:write`
+  // (escrita) e papel admin (`tokenRole`). `[id]` é forma de UUID. `[indice]` da
+  // mídia é número inteiro não negativo (a rota recusa o resto com 404). O PATCH
+  // de `[id]`, o POST de criação, `[id]/midias` e `[id]/ordem` seguem só de
+  // sessão e não entram de carona: o papel deles vem de `org.role`.
+  "/api/v1/message-templates",
+  "/api/v1/message-templates/[id]",
+  { caminho: "/api/v1/message-templates/[id]/midias/[indice]", segmentos: { indice: "[0-9]+" }, amostras: { indice: "0" } },
+  "/api/v1/message-template-groups",
+  "/api/v1/message-template-groups/[id]",
+  "/api/v1/message-template-groups/[id]/ordem",
 ];
