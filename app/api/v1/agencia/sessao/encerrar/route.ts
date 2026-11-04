@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { invalidarSessao, invalidarUsuario, sessaoDosCookies } from "@/lib/auth/cache-curto";
 /** Encerrar depende da posse da sessão, inclusive depois da revogação. */
 export async function POST() {
   const requestId = randomUUID();
@@ -17,8 +18,15 @@ export async function POST() {
     return fail("upstream_unavailable", "Não foi possível encerrar o acesso ao cliente.", 503, {
       requestId,
     });
+  const store = await cookies();
+  // O contexto positivo também precisa cair antes da volta à agência. A
+  // invalidação por usuário atravessa os runtimes da rota e da página; a chave
+  // da sessão fecha a entrada específica quando ela estiver disponível.
+  invalidarUsuario(user.id);
+  const sessaoAtual = sessaoDosCookies(store.getAll());
+  if (sessaoAtual) invalidarSessao(sessaoAtual.chave);
   if (data?.id) {
-    (await cookies()).set("active_org", data.agencia_id, {
+    store.set("active_org", data.agencia_id, {
       httpOnly: true,
       secure: cookieSecure(),
       sameSite: "strict",

@@ -5,6 +5,7 @@ import { requireAgencia } from "@/lib/agencias/require-agencia";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const requestId = randomUUID();
   const id = z
@@ -28,6 +29,10 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       403,
       { requestId },
     );
+  // A página da agência acabou de guardar a ausência de acompanhamento no
+  // cache curto. Derrube-a antes da navegação para o cliente: a próxima
+  // requisição precisa enxergar a sessão que a RPC acabou de criar.
+  invalidarUsuario(auth.user.id);
   await audit({
     action: "agency.session_started",
     actorUserId: auth.user.id,
