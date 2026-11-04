@@ -130,4 +130,16 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/pipelines/[id]/leads",
   "/api/v1/pipelines/[id]/stages",
   "/api/v1/pipelines/[id]/stages/win-rates",
+
+  // products e tags. Quem autentica é a própria rota, por `resolveAuthDual`: token
+  // com `config:read` (GET) ou `config:write` (escrita) e papel admin (`tokenRole`).
+  // `[id]` é forma de UUID; `import` é irmão literal de `[id]` e tem entrada
+  // própria, exata. `tags/vocabulario` POST segue só de sessão (a função de escrita
+  // exige `auth.uid()`) e não entra de carona: ali o token leva 401 do `requireRole`.
+  "/api/v1/products",
+  "/api/v1/products/[id]",
+  "/api/v1/products/[id]/fotos",
+  "/api/v1/products/import",
+  "/api/v1/tags/cores",
+  "/api/v1/tags/vocabulario",
 ];

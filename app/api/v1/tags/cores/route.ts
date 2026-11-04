@@ -31,24 +31,34 @@
  * não tem relação nenhuma com ela.
  */
 import { randomUUID } from "node:crypto";
+import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
 import { etiquetasComCor } from "@/lib/tags/cor-da-etiqueta";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const auth = await requireRole("viewer", { requestId, resource: "settings_tags" });
+  const auth = await resolveAuthDual(req, {
+    requestId,
+    resource: "settings_tags",
+    role: "viewer",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!auth.ok) return auth.response;
+  const teto = await tetoDeEscritaDoToken(auth, "tags.cores", requestId);
+  if (teto) return teto;
 
-  const db = await createClient();
+  // No ramo do token o cliente é o admin (sem RLS): o `.eq("id", …)` abaixo, com
+  // a organização vinda da linha do token, é o que isola a linha da organização.
+  const db = auth.supabase;
   const { data, error } = await db
     .from("organizations")
     .select("settings")
-    .eq("id", auth.org.orgId)
+    .eq("id", auth.organizationId)
     .maybeSingle();
   if (error) return fail("internal_error", "Não foi possível carregar as cores.", 500, { requestId });
 
