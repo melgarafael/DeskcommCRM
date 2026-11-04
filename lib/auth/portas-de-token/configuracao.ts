@@ -142,4 +142,23 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/products/import",
   "/api/v1/tags/cores",
   "/api/v1/tags/vocabulario",
+
+  // settings. Quem autentica é a própria rota, por `resolveAuthDual`: token com
+  // `config:read` (GET) ou `config:write` (escrita) e papel admin (`tokenRole`).
+  // `routing/channels` (GET e PATCH) e `proposal-templates/importar` (POST)
+  // seguem só de sessão e não entram de carona: o GET de `routing/channels` usa
+  // `allowPlatformAdmin` e `mfaEmDivida` (sessão), o PATCH chama
+  // `fn_set_channel_routing` (exige `auth.uid()`), e `importar` usa `getSkillsPool`
+  // (pg Pool cru). `[slug]` é a classe do regex da rota (`[a-z0-9_]{1,100}`): o
+  // irmão literal `importar` cai nessa classe, e a rota responde 401 pelo
+  // `requireRole` de sessão.
+  "/api/v1/settings/agenda-apresentacao",
+  "/api/v1/settings/campanhas",
+  { caminho: "/api/v1/settings/proposal-templates/[slug]", segmentos: { slug: "[a-z0-9_]{1,100}" }, amostras: { slug: "empresa_minha_proposta" } },
+  "/api/v1/settings/proposal-templates",
+  "/api/v1/settings/proposals",
+  "/api/v1/settings/prospeccao",
+  "/api/v1/settings/routing",
+  "/api/v1/settings/sons",
+  "/api/v1/settings/task-plans",
 ];

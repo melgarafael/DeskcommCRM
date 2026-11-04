@@ -4,10 +4,10 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireSupportWrite } from "@/lib/impersonate/support";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 
@@ -34,14 +34,16 @@ async function seModuloDesligado(requestId: string): Promise<Response | null> {
   return fail("not_found", "Not found.", 404, { requestId });
 }
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "organizations" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "organizations", role: "viewer", scope: "config:read", tokenRole: "admin" });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "settings.proposals", requestId);
+  if (teto) return teto;
   const desligado = await seModuloDesligado(requestId);
   if (desligado) return desligado;
-  const supabase = await createClient();
-  const { data } = await supabase.from("organizations").select("settings").eq("id", authz.org.orgId).single();
+  const supabase = authz.supabase;
+  const { data } = await supabase.from("organizations").select("settings").eq("id", authz.organizationId).single();
   const propostasGravadas = (data?.settings as Record<string, unknown> | null)?.proposals as Record<string, unknown> | null;
   // N2 — o default de `followup_dias` vale também para organização que gravou
   // o objeto ANTES do knob existir (o `??` abaixo só cobriria `proposals`
@@ -59,11 +61,13 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "organizations" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "organizations", role: "manager", scope: "config:write", tokenRole: "admin" });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "settings.proposals", requestId);
+  if (teto) return teto;
   const desligado = await seModuloDesligado(requestId);
   if (desligado) return desligado;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return fail("validation_failed", t("Campos inválidos."), 422, { requestId });
 
@@ -72,7 +76,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   // (issue #144, ver settings/routing/route.ts). O gate de papel acima
   // continua sendo a protecao real.
   const supabase = createAdminClient();
-  const { data: atual } = await supabase.from("organizations").select("settings").eq("id", authz.org.orgId).single();
+  const { data: atual } = await supabase.from("organizations").select("settings").eq("id", authz.organizationId).single();
   const settingsAtual = (atual?.settings as Record<string, unknown> | null) ?? {};
   // N2 — merge raso sobre o `proposals` já gravado (não substituição cega):
   // a tela antiga manda só os 3 campos de sempre; sem isto, cada salvar dela
@@ -80,12 +84,12 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   const proposalsAtual = (settingsAtual.proposals as Record<string, unknown> | null) ?? {};
   const settingsMesclado = { ...settingsAtual, proposals: { ...proposalsAtual, ...parsed.data } };
 
-  const { error } = await supabase.from("organizations").update({ settings: settingsMesclado }).eq("id", authz.org.orgId);
+  const { error } = await supabase.from("organizations").update({ settings: settingsMesclado }).eq("id", authz.organizationId);
   if (error) return fail("internal_error", t("Falha ao salvar."), 500, { requestId });
 
   void audit({
-    action: "proposals.config_changed", actorUserId: authz.user.id, organizationId: authz.org.orgId,
-    resourceType: "organization", resourceId: authz.org.orgId, requestId,
+    action: "proposals.config_changed", actorUserId: authz.actor.type === "user" ? authz.actor.id : null, actorApiTokenId: authz.apiTokenId ?? null, organizationId: authz.organizationId,
+    resourceType: "organization", resourceId: authz.organizationId, requestId,
     metadata: { proposals: parsed.data },
   });
 
