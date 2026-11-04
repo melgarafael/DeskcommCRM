@@ -60,7 +60,6 @@ vi.mock("next/navigation", () => ({
 
 import type { ChannelSession } from "@/hooks/channels/useChannelSessions";
 import { BotaoIniciarConversa } from "@/components/inbox/PainelIniciarConversa";
-import { ApiError } from "@/lib/api/types";
 
 const fetchMock = vi.fn();
 
@@ -102,6 +101,7 @@ function lerCanaisE(canais: ChannelSession[], contatos: ReturnType<typeof contat
     if (caminho.startsWith("/api/v1/channel-sessions")) return { data: canais };
     if (caminho.startsWith("/api/v1/contacts")) return { data: contatos, meta: {} };
     if (caminho.startsWith("/api/v1/message-templates")) return { data: [] };
+    if (caminho === "/api/v1/conversations/conv-9") return { data: { assigned_to_user_id: "eu" } };
     return { data: [] };
   });
 }
@@ -171,7 +171,7 @@ describe("Painel Iniciar conversa no Inbox (#2813)", () => {
       phone_number: "+5511999990001",
       channel_session_id: "canal-numero",
     });
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/app/inbox?id=conv-9"));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/app/inbox?filter=mine&id=conv-9"));
     expect(toastError).not.toHaveBeenCalled();
   });
 
@@ -193,7 +193,7 @@ describe("Painel Iniciar conversa no Inbox (#2813)", () => {
       contact_id: "contato-ana",
       channel_session_id: "canal-numero",
     });
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/app/inbox?id=conv-9"));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/app/inbox?filter=mine&id=conv-9"));
   });
 
   it("passo 3: dois números conectados pedem a escolha, e o canal social não é opção", async () => {
@@ -225,7 +225,7 @@ describe("Painel Iniciar conversa no Inbox (#2813)", () => {
       phone_number: "+5511999990001",
       channel_session_id: "canal-vendas",
     });
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/app/inbox?id=conv-9"));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/app/inbox?filter=mine&id=conv-9"));
   });
 
   it("passo 4: a IA não assume — a conversa é atribuída a quem iniciou antes de a mensagem sair", async () => {
@@ -239,64 +239,38 @@ describe("Painel Iniciar conversa no Inbox (#2813)", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
-    // Primeiro o dono (e o silêncio do bot, na mesma transação do servidor)...
-    await waitFor(() =>
-      expect(cliquesDoPost()[0]).toEqual([
-        "/api/v1/conversations/conv-9/claim",
-        { expected_assignee: null },
-      ]),
-    );
-    // ...e só então a mensagem escrita por quem iniciou.
-    await waitFor(() =>
-      expect(cliquesDoPost()[1]).toEqual([
-        "/api/v1/messages",
-        { conversation_id: "conv-9", body: "Bom dia! Podemos falar?" },
-      ]),
-    );
-    expect(cliquesDoPost()).toHaveLength(2);
-    expect(pushMock).toHaveBeenCalledWith("/app/inbox?id=conv-9");
+    await waitFor(() => expect(cliquesDoPost()).toEqual([
+      ["/api/v1/messages", { conversation_id: "conv-9", body: "Bom dia! Podemos falar?" }],
+    ]));
+    expect(pushMock).toHaveBeenCalledWith("/app/inbox?filter=mine&id=conv-9");
   });
 
-  it("claim recusado por outro motivo que não 409: a primeira mensagem NÃO sai e o erro aparece", async () => {
-    lerCanaisE([canal({ id: "canal-numero", display_name: "Peças", phone_number: "+5511999990001" })], []);
-    const recusa = new ApiError(500, "internal_error", undefined, "req-1");
-    postMock.mockImplementation(async (caminho: string) => {
-      if (caminho.endsWith("/claim")) throw recusa;
-      return { data: {} };
+  it("falha na verificação de responsabilidade não envia nem navega", async () => {
+    lerCanaisE([canal({ id: "canal-numero", phone_number: "+5511999990001" })], []);
+    const original = getMock.getMockImplementation();
+    getMock.mockImplementation(async (path: string) => {
+      if (path === "/api/v1/conversations/conv-9") throw new Error("Falha de leitura");
+      return original?.(path);
     });
-
     await abrirComTelefone("(11) 99999-0001");
     fireEvent.change(screen.getByLabelText("Primeira mensagem"), { target: { value: "Oi" } });
     fireEvent.click(screen.getByRole("button", { name: "Criar conversa" }));
-
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/app/inbox?id=conv-9"));
-    expect(showApiErrorMock).toHaveBeenCalledWith(recusa);
-    expect(cliquesDoPost().map(([caminho]) => caminho)).toEqual(["/api/v1/conversations/conv-9/claim"]);
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(postMock).not.toHaveBeenCalled(); expect(pushMock).not.toHaveBeenCalled();
   });
 
-  it("409 com a conversa de OUTRO atendente: a primeira mensagem não sai e o dono é nomeado", async () => {
-    lerCanaisE([canal({ id: "canal-numero", display_name: "Peças", phone_number: "+5511999990001" })], []);
-    const conflito = new ApiError(409, "state_conflict", undefined, "req-2");
-    postMock.mockImplementation(async (caminho: string) => {
-      if (caminho.endsWith("/claim")) throw conflito;
-      return { data: {} };
+  it("conversa de outro atendente nunca envia nem navega", async () => {
+    lerCanaisE([canal({ id: "canal-numero", phone_number: "+5511999990001" })], []);
+    const original = getMock.getMockImplementation();
+    getMock.mockImplementation(async (path: string) => {
+      if (path === "/api/v1/conversations/conv-9") return {data:{assigned_to_user_id:"outra"}};
+      return original?.(path);
     });
-    const leituraDeCanais = getMock.getMockImplementation();
-    getMock.mockImplementation(async (caminho: string) => {
-      if (caminho === "/api/v1/conversations/conv-9") {
-        return { data: { assigned_to_user_id: "outra", assigned_to_user_name: "Ana" } };
-      }
-      return leituraDeCanais?.(caminho);
-    });
-
     await abrirComTelefone("(11) 99999-0001");
     fireEvent.change(screen.getByLabelText("Primeira mensagem"), { target: { value: "Oi" } });
     fireEvent.click(screen.getByRole("button", { name: "Criar conversa" }));
-
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/app/inbox?id=conv-9"));
-    expect(toastInfo).toHaveBeenCalledWith("A conversa neste número está com Ana.");
-    expect(showApiErrorMock).not.toHaveBeenCalled();
-    expect(cliquesDoPost().map(([caminho]) => caminho)).toEqual(["/api/v1/conversations/conv-9/claim"]);
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(postMock).not.toHaveBeenCalled(); expect(pushMock).not.toHaveBeenCalled();
   });
 
   it("o seletor de modelo nasce mostrando o que ele faz, e não uma caixa vazia", async () => {
@@ -326,4 +300,12 @@ describe("Painel Iniciar conversa no Inbox (#2813)", () => {
 
     expect(screen.queryByRole("button", { name: "Iniciar conversa" })).toBeNull();
   });
+  it("sem primeira mensagem: abre e assume, mas não chama envio", async () => {
+    lerCanaisE([canal({ id: "canal-cida-ficticio", phone_number: "+5511999990001" })], []);
+    await abrirComTelefone("(11) 99999-0001");
+    fireEvent.click(screen.getByRole("button", { name: "Criar conversa" }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/app/inbox?filter=mine&id=conv-9"));
+    expect(cliquesDoPost()).toEqual([]);
+  });
+
 });

@@ -236,7 +236,9 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
           force_human: l.fh,
           is_blocked: l.ib,
           is_group: l.grupo === true,
-          automaticoDaOrg: true,
+          // Fixture sem agente publicado/gate elegível: deve ficar na fila.
+          automaticoDaOrg: false,
+          comandoDoBanco: "aguardando",
         },
         // O wrapper usa `now()` do banco; estas linhas não ficam na fronteira do
         // relógio de propósito (só `infinity`/`null`), então a comparação é estável.

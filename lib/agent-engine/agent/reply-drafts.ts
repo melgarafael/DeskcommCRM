@@ -1,3 +1,4 @@
+import { currentExecutionBoundary } from "@/lib/atendimento/fronteira-server";
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { z } from "zod";
@@ -81,8 +82,11 @@ export async function generateReplyDraft(
       if (!context.ok || context.context.contact.is_blocked || context.lgpd.isAnonymized)
         throw new Error("reply_context_unavailable");
       const { rows: notes } = await pool.query<{ headline: string; body: string }>(
-        "select headline,body from lead_notes where organization_id=$1 and contact_id=$2",
-        [input.organizationId, input.contactId],
+        "select headline,body from lead_notes where organization_id=$1 and contact_id=$2 and (not public.fn_contact_context_private($1) or (conversation_id=$3::uuid and service_revision=$4::bigint))",
+        [input.organizationId, input.contactId,
+          input.conversationId,
+          currentExecutionBoundary()?.service_revision ?? null,
+        ],
       );
       const { rows: feedback } = await pool.query<{ feedback: unknown }>(
         "select feedback from ai_reply_drafts where organization_id=$1 and conversation_id=$2 and service_boundary=$3 and feedback is not null order by updated_at desc limit 3",

@@ -17,7 +17,6 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { conversasVisiveisDosCasos, lerChamado } from "@/lib/escalacao/chamados";
 import { logger } from "@/lib/logger";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -44,7 +43,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
     const visiveisPara = await conversasVisiveisDosCasos(await createClient(), org.orgId, {
       caseId: id,
     });
-    chamado = await lerChamado(createAdminClient(), org.orgId, id, { visiveisPara });
+    chamado = await lerChamado(await createClient(), org.orgId, id, { visiveisPara });
   } catch (erro) {
     // Mesma correção da lista (ver o `catch` de `app/api/v1/ai/cases/route.ts`):
     // um 500 sem causa registrada deixa a tela vazia e o log mudo, e quem

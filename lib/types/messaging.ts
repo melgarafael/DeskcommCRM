@@ -86,6 +86,8 @@ export interface Conversation {
 export type SentVia = "user" | "ai" | "system" | "external_device" | "automation" | "crm";
 
 export interface Message {
+  /** Capacidade de leitura do derivado calculada no servidor para esta conversa. */
+  media_derived_authorized?: boolean;
   id: string;
   organization_id: string;
   conversation_id: string;

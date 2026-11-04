@@ -1569,7 +1569,7 @@ export async function latestCheckpoint(
   const boundary = currentExecutionBoundary();
   const { rows } = await db.query<LeadCheckpointRow>(
     `select * from lead_checkpoints where organization_id=$1 and contact_id=$2
-      ${boundary ? 'and conversation_id=$3 and service_revision=$4 and demanda_id is not distinct from $5::uuid and demanda_revision is not distinct from $6::bigint' : ''}
+      ${boundary ? 'and conversation_id=$3 and service_revision=$4 and demanda_id is not distinct from $5::uuid and demanda_revision is not distinct from $6::bigint' : "and not public.fn_contact_context_private($1)"}
       order by seq desc limit 1`,
     boundary
       ? [
@@ -3608,8 +3608,8 @@ async function executarTurnoDoAgente(
       ? null
       : pool
           .query<{ id: string }>(
-            'select id from lead_notes where organization_id = $1 and contact_id = $2 order by created_at',
-            [tenantId, leadId],
+            'select id from lead_notes where organization_id = $1 and contact_id = $2 and (not public.fn_contact_context_private($1) or (conversation_id=$3::uuid and service_revision=$4::bigint)) order by created_at',
+            [tenantId, leadId, currentExecutionBoundary()?.conversation_id ?? null, currentExecutionBoundary()?.service_revision ?? null],
           )
           .then((r) => r.rows),
   ]);

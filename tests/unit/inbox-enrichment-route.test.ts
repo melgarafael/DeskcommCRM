@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
     is_anonymized: boolean;
   } | null,
   error: null as unknown,
+  leads: [] as unknown[],
   candidate: null as unknown,
   filters: [] as unknown[][],
   admin: vi.fn(),
@@ -21,7 +22,7 @@ vi.mock("@/lib/supabase/server", () => ({
       for (const name of ["select", "eq", "order", "limit", "is", "not"]) q[name] = () => q;
       q.maybeSingle = async () => ({ data: state.contact, error: null });
       q.then = (resolve: (v: unknown) => unknown) =>
-        Promise.resolve({ data: table === "contacts" ? state.contact : [], error: null }).then(
+        Promise.resolve({ data: table === "contacts" ? state.contact : table === "crm_leads" ? state.leads : [], error: null }).then(
           resolve,
         );
       return q;
@@ -59,6 +60,7 @@ const run = () =>
     params: Promise.resolve({ id: "contact-a" }),
   });
 beforeEach(() => {
+  state.leads = [];
   state.user = true;
   state.contact = { organization_id: "org-a", is_anonymized: false };
   state.candidate = {
@@ -85,6 +87,15 @@ describe("enriquecimento autorizado no resumo CRM", () => {
     state.contact = null;
     expect((await run()).status).toBe(404);
     expect(state.admin).not.toHaveBeenCalled();
+  });
+  it("devolve motivos do funil de cada card mesmo sem cache no navegador", async () => {
+    state.leads = [
+      { id: "deal-a", crm_pipelines: { settings: { lost_reasons: ["Sem perfil financeiro"] } } },
+      { id: "deal-b", crm_pipelines: { settings: { lost_reasons: ["Prazo incompatível"] } } },
+    ];
+    const body = await (await run()).json();
+    expect(body.data.leads[0].motivos_de_perda).toEqual(["Sem perfil financeiro"]);
+    expect(body.data.leads[1].motivos_de_perda).toEqual(["Prazo incompatível"]);
   });
   it("requer autenticação", async () => {
     state.user = false;

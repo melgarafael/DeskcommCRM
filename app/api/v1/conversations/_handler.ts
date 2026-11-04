@@ -336,10 +336,10 @@ export async function listConversationsHandler(
       // `or=` fica longo; aí o conserto é subquery via RPC — e nunca corte
       // silencioso: um corte escondido manda a convidada voltar a não achar.
       query = query.or(
-        `assigned_to_user_id.eq.${ctx.actor.id},id.in.(${idsParticipadas.join(",")})`,
+        `is_my_conversation.eq.true,id.in.(${idsParticipadas.join(",")})`,
       );
     } else {
-      query = query.eq("assigned_to_user_id", ctx.actor.id);
+      query = query.eq("is_my_conversation", true);
     }
   } else if (q.assigned_to === "unassigned") {
     query = query.is("assigned_to_user_id", null);
@@ -499,8 +499,7 @@ export async function listConversationsHandler(
     ]);
     if (ids.length > 0) {
       query = query.or(
-        `last_message_preview.ilike.*${s}*,contact_id.in.(${ids.join(",")})`,
-      );
+        `last_message_preview.ilike.*${s}*,contact_id.in.(${ids.join(",")})`);
     } else {
       // Sem ids casados, um `contact_id.in.()` vazio é SQL inválido no
       // PostgREST — a busca por conteúdo segue sozinha, como antes.
@@ -522,8 +521,7 @@ export async function listConversationsHandler(
     const op = asc ? "gt" : "lt";
     if (c.sort) {
       query = query.or(
-        `${sortCol}.${op}.${c.sort},and(${sortCol}.eq.${c.sort},id.${op}.${c.id})`,
-      );
+        `${sortCol}.${op}.${c.sort},and(${sortCol}.eq.${c.sort},id.${op}.${c.id})`);
     } else {
       // Página já na região de sort NULL (nulls last): pagina só por id.
       query = query.is(sortCol, null);

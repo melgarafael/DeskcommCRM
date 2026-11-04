@@ -86,6 +86,8 @@ export interface HandlerCtx {
   proactiveContext?: ProactiveContext;
   /** Trusted origin captured by the runtime, never request-body metadata. */
   serviceBoundary?: ServiceBoundary | null;
+  /** Somente POST humano autenticado; nunca vem do corpo, token ou job. */
+  manualReplyOrigin?: boolean;
   /** Origem de evento derivado; não é campo de input público. */
   serviceOrigin?: ServiceOrigin;
   /**

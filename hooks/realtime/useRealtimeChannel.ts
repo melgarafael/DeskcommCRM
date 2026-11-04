@@ -3,12 +3,7 @@ import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import { createClient, prepareRealtimeAuthentication } from "@/lib/supabase/browser";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
-export type RealtimeStatus =
-  | "connecting"
-  | "subscribed"
-  | "channel_error"
-  | "timed_out"
-  | "closed";
+export type RealtimeStatus = "connecting" | "subscribed" | "channel_error" | "timed_out" | "closed";
 
 export interface UseRealtimeChannelOpts {
   name: string;
@@ -179,6 +174,50 @@ export function useRealtimeChannel(opts: UseRealtimeChannelOpts): {
           },
           handler,
         );
+        // DELETE não passa pela RLS do Postgres Changes. A publicação não
+        // transporta a linha apagada; um sinal transacional sem seu ID manda
+        // a tela refazer o GET, onde a autorização continua sendo aplicada.
+        if (
+          (postgresChanges.schema ?? "public") === "public" &&
+          (postgresChanges.event === "*" || postgresChanges.event === "DELETE")
+        ) {
+          novo = novo.on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "realtime_invalidations",
+              filter: `table_name=eq.${postgresChanges.table}`,
+            },
+            (payload) => {
+              if (
+                payload.new &&
+                "table_name" in payload.new &&
+                payload.new.table_name === postgresChanges.table
+              ) {
+                handler({ tipo: "invalidado", tabela: postgresChanges.table });
+              }
+            },
+          );
+        }
+      }
+      if (postgresChanges) {
+        // SUBSCRIBED confirma o join, antes de o servidor concluir o CDC.
+        // Releia sob RLS quando a replicação estiver pronta para cobrir o
+        // intervalo entre a carga inicial e a assinatura efetiva, uma vez.
+        let cdcPronto = false;
+        novo = novo.on("system", {}, (payload) => {
+          if (
+            cancelado ||
+            active !== novo ||
+            cdcPronto ||
+            payload.extension !== "postgres_changes" ||
+            payload.status !== "ok"
+          )
+            return;
+          cdcPronto = true;
+          handler({ tipo: "cdc_pronto" });
+        });
       }
       if (broadcast) novo = novo.on("broadcast", { event: broadcast.event }, handler);
       active = novo;
@@ -234,7 +273,16 @@ export function useRealtimeChannel(opts: UseRealtimeChannelOpts): {
     };
     // intentionally omit onChange (ref); only re-subscribe when channel topology changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, enabled, instanceId, postgresChanges?.event, postgresChanges?.table, postgresChanges?.filter, postgresChanges?.schema, broadcast?.event]);
+  }, [
+    name,
+    enabled,
+    instanceId,
+    postgresChanges?.event,
+    postgresChanges?.table,
+    postgresChanges?.filter,
+    postgresChanges?.schema,
+    broadcast?.event,
+  ]);
 
   return { status, ultimaEntrega };
 }

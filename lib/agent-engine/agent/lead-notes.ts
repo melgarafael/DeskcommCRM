@@ -1,3 +1,4 @@
+import { currentExecutionBoundary } from "@/lib/atendimento/fronteira-server";
 /**
  * lead_notes — memória durável por lead (F3-05; migration 0015; blueprint órgão 2, a
  * inversão 1:N). O modelo escreve notas via a tool `save_lead_note`; o ÍNDICE (só as
@@ -62,7 +63,8 @@ const PAYLOAD_TEACHING =
 function teachInvalidPayload(issues: string): SaveLeadNoteResult {
   return {
     ok: false,
-    error: { code: 'invalid_payload', message: `payload inválido em save_lead_note (${issues}). ${PAYLOAD_TEACHING}` },
+    error: { code: 'invalid_payload', message: `payload inválido em save_lead_note (${issues}). ${PAYLOAD_TEACHING}` ,
+    },
   };
 }
 
@@ -91,8 +93,12 @@ export async function getLeadNotesIndex(
   const { rows } = await db.query<LeadNoteIndexEntry>(
     `select id, headline from lead_notes
      where organization_id = $1 and contact_id = $2
+       and (not public.fn_contact_context_private($1) or (conversation_id=$3::uuid and service_revision=$4::bigint))
      order by created_at, id`,
-    [tenantId, leadId],
+    [tenantId, leadId,
+      currentExecutionBoundary()?.conversation_id ?? null,
+      currentExecutionBoundary()?.service_revision ?? null,
+    ],
   );
   return rows;
 }
@@ -107,8 +113,11 @@ export async function getLeadNoteBody(
   // id::text = $3 (não $3::uuid): um note_id forjado/não-uuid vira MISS limpo (null),
   // nunca erro de cast 22P02 que derrubaria o job. Filtra por (tenant, lead) primeiro.
   const { rows } = await db.query<{ body: string }>(
-    'select body from lead_notes where organization_id = $1 and contact_id = $2 and id::text = $3',
-    [tenantId, leadId, noteId],
+    "select body from lead_notes where organization_id = $1 and contact_id = $2 and id::text = $3 and (not public.fn_contact_context_private($1) or (conversation_id=$4::uuid and service_revision=$5::bigint))",
+    [tenantId, leadId, noteId,
+      currentExecutionBoundary()?.conversation_id ?? null,
+      currentExecutionBoundary()?.service_revision ?? null,
+    ],
   );
   return rows[0]?.body ?? null;
 }
@@ -197,12 +206,14 @@ export async function applySaveLeadNote(
        returning id
      ),
      inserted as (
-       insert into lead_notes (organization_id, contact_id, headline, body)
-       values ($1, $2, $4, $5)
+       insert into lead_notes (organization_id, contact_id, headline, body, conversation_id)
+       values ($1, $2, $4, $5, $6::uuid)
        returning id
      )
      select inserted.id, (select count(*) from removed)::text as superseded from inserted`,
-    [ids.tenantId, ids.leadId, toDelete, input.headline, input.body],
+    [ids.tenantId, ids.leadId, toDelete, input.headline, input.body,
+      currentExecutionBoundary()?.conversation_id ?? null,
+    ],
   );
   const row = rows[0]!;
   const supersededCount = Number(row.superseded);

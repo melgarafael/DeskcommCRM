@@ -396,7 +396,8 @@ export async function listLeadsHandler(
   if (q.pipeline_id) query = query.eq("pipeline_id", q.pipeline_id);
   if (q.stage_id) query = query.eq("stage_id", q.stage_id);
   if (q.status) query = query.eq("status", q.status);
-  if (q.owner_user_id) query = query.eq("owner_user_id", q.owner_user_id);
+  if (q.owner_user_id) query = query.or(`owner_user_id.eq.${q.owner_user_id},commercial_owner_user_id.eq.${q.owner_user_id}`,
+    );
   if (q.contact_id) query = query.eq("contact_id", q.contact_id);
   // Negócio de pessoal não é listado (spec 21, etapa 12 — leitura exclui):
   // a MESMA primitiva de ids da lista do inbox (`conversations/_handler.ts`),

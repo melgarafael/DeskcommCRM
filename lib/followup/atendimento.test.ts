@@ -240,7 +240,7 @@ function poolFake(opts: { proximoGrafo?: FlowGraph; contatoAnonimizado?: boolean
       }
       return { rows: [], rowCount: 1 };
     }
-    if (/update contacts/.test(sql)) return { rows: [], rowCount: opts.contatoAnonimizado ? 0 : 1 };
+    if (/fn_store_followup_answer/.test(sql)) return { rows: [{ stored: !opts.contatoAnonimizado }], rowCount: 1 };
     if (/update followup_enrollments/.test(sql)) return { rows: [], rowCount: 1 };
     if (/select p\.active_version_id, v\.graph/.test(sql) && opts.proximoGrafo) {
       return { rows: [{ active_version_id: "ver-B", graph: opts.proximoGrafo }], rowCount: 1 };
@@ -283,7 +283,7 @@ describe("valoresDoChecklist (a resposta mora em custom_fields)", () => {
 });
 
 describe("processarInboundDoFluxo — gravação e trilha", () => {
-  it("resposta do validador vai para custom_fields do contato, filtrada pela organização", async () => {
+  it("resposta do validador vai ao armazenamento nativo com organização e execução explícitas", async () => {
     const { pool, sqls, params } = poolFake();
     await processarInboundDoFluxo(pool, {
       organizationId: ORG,
@@ -292,11 +292,9 @@ describe("processarInboundDoFluxo — gravação e trilha", () => {
       messageId: "m1",
       validacoes: [{ campo: "cidade", valor: "Campinas" }],
     });
-    const i = sqls.findIndex((s) => /update contacts/.test(s));
+    const i = sqls.findIndex((s) => /fn_store_followup_answer/.test(s));
     expect(i).toBeGreaterThanOrEqual(0);
-    expect(sqls[i]).toMatch(/custom_fields = coalesce\(custom_fields, '\{\}'::jsonb\) \|\|/);
-    expect(sqls[i]).toMatch(/where organization_id = \$1 and id = \$2/);
-    expect(params[i]).toEqual([ORG, "ct", "cidade", "Campinas"]);
+    expect(params[i]).toEqual([ORG, "ct", "cidade", "Campinas", "enr-A"]);
   });
 
   it("a TRILHA nunca carrega o valor respondido", async () => {
@@ -402,9 +400,9 @@ describe("processarInboundDoFluxo — gravação e trilha", () => {
       validacoes: [{ campo: "cidade", valor: "Campinas" }],
     });
 
-    const i = sqls.findIndex((s) => /update contacts/.test(s));
+    const i = sqls.findIndex((s) => /fn_store_followup_answer/.test(s));
     expect(i, "o valor tardio precisa ser gravado no contato").toBeGreaterThanOrEqual(0);
-    expect(params[i]).toEqual([ORG, "ct", "cidade", "Campinas"]);
+    expect(params[i]).toEqual([ORG, "ct", "cidade", "Campinas", "enr-A"]);
     expect(eventos().map((e) => e.tipo)).toContain("roteiro_resposta");
   });
 
@@ -417,7 +415,7 @@ describe("processarInboundDoFluxo — gravação e trilha", () => {
       messageId: "m1",
       validacoes: [{ campo: "cpf", valor: "52998224725" }],
     });
-    expect(sqls.some((s) => /update contacts/.test(s))).toBe(false);
+    expect(sqls.some((s) => /fn_store_followup_answer/.test(s))).toBe(false);
   });
 
   it("tudo respondido fecha como converted, não 'Esgotado'", async () => {
@@ -516,14 +514,15 @@ describe("pergunta que não foi feita (revisão adversarial do PR 2)", () => {
       messageId: "m1",
     });
     expect(r.concluiu).toBe(false);
-    expect(sqls.some((q) => /update contacts/.test(q))).toBe(false);
+    expect(sqls.some((q) => /fn_store_followup_answer/.test(q))).toBe(false);
     expect(eventos().map((e) => e.tipo)).toEqual(["roteiro_mensagem"]);
   });
 
   it('com a pergunta feita, o mesmo "sim" responde', async () => {
     const { pool, sqls } = poolFake();
-    await processarInboundDoFluxo(pool, { organizationId: ORG, estado: estadoCom(cnh()), texto: "sim", messageId: "m1" });
-    expect(sqls.some((q) => /update contacts/.test(q))).toBe(true);
+    await processarInboundDoFluxo(pool, { organizationId: ORG, estado: estadoCom(cnh()), texto: "sim", messageId: "m1" ,
+    });
+    expect(sqls.some((q) => /fn_store_followup_answer/.test(q))).toBe(true);
   });
 });
 

@@ -1,3 +1,4 @@
+import { privateCaseClient } from "./private-case-client";
 /**
  * In-process MCP-tool bridge for the agent runtime (S-13.08).
  *
@@ -475,10 +476,19 @@ function wrapMcpTool(
             // O comando pode ter sido perdido enquanto esta escrita esperava na fila.
             // A guarda anterior à chamada não autoriza começar um handler depois disso.
             if (def.category === "write") await guardServiceEffect();
-            return def.handler(
-              argsRecord as never,
-              input.contatoDoTurno ? { ...input.ctx, contatoDoTurno: input.contatoDoTurno } : input.ctx,
-            );
+            const toolContext = input.contatoDoTurno
+              ? {
+                  ...input.ctx,
+                  contatoDoTurno: input.contatoDoTurno,
+                  supabase: await privateCaseClient(
+                    input.ctx.supabase,
+                    input.ctx.organizationId,
+                    input.contatoDoTurno,
+                    { name: def.name, args: argsRecord },
+                  ),
+                }
+              : input.ctx;
+            return def.handler(argsRecord as never, toolContext);
           },
         );
 

@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { audit } from "@/lib/audit";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { openSharedContactConversation } from "@/lib/messaging/open-shared-contact-conversation";
@@ -124,7 +125,9 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   try {
     const admin = createAdminClient();
-    const result = await openSharedContactConversation(admin, authz.organizationId, input);
+    const result = await openSharedContactConversation(admin, authz.organizationId, input,
+      authz.via === "session" && authz.actor.type === "user"
+        ? { client: authz.supabase, userId: authz.actor.id } : undefined);
     // #3479: a conversa que o clique abriu nasce de quem clicou. Sem isto, em
     // "Só os seus" o Atendente abre uma conversa que ele não enxerga (dona:
     // ninguém) — ver o bloco de `assumirConversaSeLivre`.
@@ -141,6 +144,12 @@ export async function POST(req: NextRequest): Promise<Response> {
     return ok(result, { requestId });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "open_failed";
+    if (["channel_forbidden", "manual_open_forbidden"].includes(msg)) {
+      return fail("forbidden", t("Canal ou contato indisponível para este atendimento."), 403, { requestId });
+    }
+    if (msg === "channel_selection_required") {
+      return fail("validation_error", t("Selecione o número para iniciar a conversa."), 422, { requestId });
+    }
     if (msg === "contact_not_found") {
       return fail("not_found", t("Contato não encontrado."), 404, { requestId });
     }

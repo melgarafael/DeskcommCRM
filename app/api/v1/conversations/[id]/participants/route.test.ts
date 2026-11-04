@@ -60,6 +60,7 @@ type Linha = Record<string, unknown>;
 
 let conversas: Linha[] = [];
 let membros: Linha[] = [];
+let escopos: Linha[] = [];
 let participantes: Linha[] = [];
 /** O que a RLS de `conversations` deixa ESTA sessão ver (via cliente de sessão). */
 let visiveis: Set<string>;
@@ -67,7 +68,13 @@ let atualizacoesDeConversa: number;
 let idSeq: number;
 
 const tabelaDe = (t: string): Linha[] =>
-  t === "conversations" ? conversas : t === "user_organizations" ? membros : participantes;
+  t === "conversations"
+    ? conversas
+    : t === "user_organizations"
+      ? membros
+      : t === "member_access_scopes"
+        ? escopos
+        : participantes;
 
 /** O duplê do service role: filtros encadeáveis + `maybeSingle`/`then`. SEM RLS. */
 function clienteFake() {
@@ -113,11 +120,17 @@ function clienteFake() {
               Object.assign(existente, payload);
               return { data: { id: existente["id"], ...payload }, error: null };
             }
-            const nova = { id: `00000000-0000-4000-8000-${String(idSeq++).padStart(12, "0")}`, ...payload };
+            const nova = {
+              id: `00000000-0000-4000-8000-${String(idSeq++).padStart(12, "0")}`,
+              ...payload,
+            };
             tabelaDe(tabela).push(nova);
             return { data: nova, error: null };
           }
-          const nova = { id: `00000000-0000-4000-8000-${String(idSeq++).padStart(12, "0")}`, ...payload };
+          const nova = {
+            id: `00000000-0000-4000-8000-${String(idSeq++).padStart(12, "0")}`,
+            ...payload,
+          };
           tabelaDe(tabela).push(nova);
           return { data: nova, error: null };
         }
@@ -226,6 +239,7 @@ function autoriza(papelEfetivo: Role = "manager", chamador = DONO) {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  escopos = [];
   conversas = [{ id: CONV_A, organization_id: ORG_A, assigned_to_user_id: DONO }];
   membros = [{ user_id: COLEGA, organization_id: ORG_A, role: "agent", revoked_at: null }];
   participantes = [];
@@ -247,7 +261,12 @@ beforeEach(async () => {
 describe("leitura e efeito são autoridades distintas", () => {
   it("id externo inválido responde como ausente, sem consultar UUID inválido no banco", async () => {
     for (const metodo of [GET, POST, DELETE]) {
-      const resposta = await metodo(req("/api/v1/conversations/undefined/participants", metodo === GET ? "GET" : "POST", { user_id: COLEGA }), contexto("undefined"));
+      const resposta = await metodo(
+        req("/api/v1/conversations/undefined/participants", metodo === GET ? "GET" : "POST", {
+          user_id: COLEGA,
+        }),
+        contexto("undefined"),
+      );
       expect(resposta.status).toBe(404);
     }
     expect(participantes).toEqual([]);
@@ -256,7 +275,12 @@ describe("leitura e efeito são autoridades distintas", () => {
   it("conversa pessoal segue ausente também na porta de participantes", async () => {
     conversas[0]!["contacts"] = { is_personal: true };
     for (const metodo of [GET, POST, DELETE]) {
-      const resposta = await metodo(req(`/api/v1/conversations/${CONV_A}/participants`, metodo === GET ? "GET" : "POST", { user_id: COLEGA }), contexto());
+      const resposta = await metodo(
+        req(`/api/v1/conversations/${CONV_A}/participants`, metodo === GET ? "GET" : "POST", {
+          user_id: COLEGA,
+        }),
+        contexto(),
+      );
       expect(resposta.status).toBe(404);
     }
     expect(participantes).toEqual([]);
@@ -264,7 +288,10 @@ describe("leitura e efeito são autoridades distintas", () => {
   });
   it("suporte somente leitura continua lendo a lista que a RLS admite", async () => {
     vi.mocked(requireSupportWrite).mockResolvedValue(fail("forbidden", "somente leitura", 403));
-    const resposta = await GET(req(`/api/v1/conversations/${CONV_A}/participants`, "GET"), contexto());
+    const resposta = await GET(
+      req(`/api/v1/conversations/${CONV_A}/participants`, "GET"),
+      contexto(),
+    );
     expect(resposta.status).toBe(200);
     expect(requireSupportWrite).not.toHaveBeenCalled();
   });
@@ -272,7 +299,10 @@ describe("leitura e efeito são autoridades distintas", () => {
   it("o mesmo suporte não convida nem remove e não grava auditoria de efeito", async () => {
     vi.mocked(requireSupportWrite).mockResolvedValue(fail("forbidden", "somente leitura", 403));
     for (const metodo of [POST, DELETE]) {
-      const resposta = await metodo(req(`/api/v1/conversations/${CONV_A}/participants`, "POST", { user_id: COLEGA }), contexto());
+      const resposta = await metodo(
+        req(`/api/v1/conversations/${CONV_A}/participants`, "POST", { user_id: COLEGA }),
+        contexto(),
+      );
       expect(resposta.status).toBe(403);
     }
     expect(participantes).toEqual([]);
@@ -298,6 +328,28 @@ describe("POST /api/v1/conversations/[id]/participants — convidar", () => {
     // O CASO DA ISSUE: entrar não é assumir. Nada escreveu a conversa.
     expect(atualizacoesDeConversa).toBe(0);
     expect(conversas[0]?.["assigned_to_user_id"]).toBe(DONO);
+  });
+
+  it("recusa destinatário opt-in sem gravar vínculo nem sucesso auditado", async () => {
+    escopos = [{ organization_id: ORG_A, user_id: COLEGA }];
+    const resposta = await POST(
+      req(`/api/v1/conversations/${CONV_A}/participants`, "POST", { user_id: COLEGA }),
+      contexto(),
+    );
+    expect(resposta.status).toBe(422);
+    expect(participantes).toHaveLength(0);
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("convidante fora da RLS recebe404 mesmo sendo dono na leitura admin", async () => {
+    visiveis = new Set();
+    const resposta = await POST(
+      req(`/api/v1/conversations/${CONV_A}/participants`, "POST", { user_id: COLEGA }),
+      contexto(),
+    );
+    expect(resposta.status).toBe(404);
+    expect(participantes).toHaveLength(0);
+    expect(audit).not.toHaveBeenCalled();
   });
 
   it("um agent que NÃO é o dono e NÃO é gestor recebe 403 e nada é convidado", async () => {
@@ -356,7 +408,13 @@ describe("POST /api/v1/conversations/[id]/participants — convidar", () => {
 describe("DELETE /api/v1/conversations/[id]/participants — remover / sair", () => {
   it("o DONO remove o participante: 200, left_at preenchido e o dono intacto", async () => {
     participantes = [
-      { id: "00000000-0000-4000-8000-0000000000aa", conversation_id: CONV_A, user_id: COLEGA, organization_id: ORG_A, left_at: null },
+      {
+        id: "00000000-0000-4000-8000-0000000000aa",
+        conversation_id: CONV_A,
+        user_id: COLEGA,
+        organization_id: ORG_A,
+        left_at: null,
+      },
     ];
     const resposta = await DELETE(
       req(`/api/v1/conversations/${CONV_A}/participants`, "DELETE", { user_id: COLEGA }),
@@ -377,7 +435,13 @@ describe("DELETE /api/v1/conversations/[id]/participants — remover / sair", ()
   it("um participante pode SAIR sem ser dono nem gestor", async () => {
     // `user_id` do corpo igual ao do chamador: o caso "sair da conversa".
     participantes = [
-      { id: "00000000-0000-4000-8000-0000000000bb", conversation_id: CONV_A, user_id: DONO, organization_id: ORG_A, left_at: null },
+      {
+        id: "00000000-0000-4000-8000-0000000000bb",
+        conversation_id: CONV_A,
+        user_id: DONO,
+        organization_id: ORG_A,
+        left_at: null,
+      },
     ];
     autoriza("agent");
     const resposta = await DELETE(
@@ -394,7 +458,15 @@ describe("GET /api/v1/conversations/[id]/participants — listar", () => {
   it("o DONO lê a lista de participantes ativos", async () => {
     autoriza("agent");
     participantes = [
-      { id: "00000000-0000-4000-8000-0000000000cc", conversation_id: CONV_A, user_id: COLEGA, organization_id: ORG_A, invited_by: DONO, joined_at: "2026-10-14T00:00:00Z", left_at: null },
+      {
+        id: "00000000-0000-4000-8000-0000000000cc",
+        conversation_id: CONV_A,
+        user_id: COLEGA,
+        organization_id: ORG_A,
+        invited_by: DONO,
+        joined_at: "2026-10-14T00:00:00Z",
+        left_at: null,
+      },
     ];
     const resposta = await GET(
       req(`/api/v1/conversations/${CONV_A}/participants`, "GET", {}),
@@ -402,7 +474,9 @@ describe("GET /api/v1/conversations/[id]/participants — listar", () => {
     );
 
     expect(resposta.status).toBe(200);
-    const corpo = (await resposta.json()) as { data: { participantes: Array<{ user_id: string }> } };
+    const corpo = (await resposta.json()) as {
+      data: { participantes: Array<{ user_id: string }> };
+    };
     expect(corpo.data.participantes).toHaveLength(1);
     expect(corpo.data.participantes[0]?.user_id).toBe(COLEGA);
   });
@@ -415,7 +489,15 @@ describe("GET /api/v1/conversations/[id]/participants — listar", () => {
     // Nem dono, nem gestor: se a porta auditada voltar ao caminho, ela NEGA.
     autoriza("agent");
     participantes = [
-      { id: "00000000-0000-4000-8000-0000000000dd", conversation_id: CONV_A, user_id: VIEWER, organization_id: ORG_A, invited_by: DONO, joined_at: "2026-10-14T00:00:00Z", left_at: null },
+      {
+        id: "00000000-0000-4000-8000-0000000000dd",
+        conversation_id: CONV_A,
+        user_id: VIEWER,
+        organization_id: ORG_A,
+        invited_by: DONO,
+        joined_at: "2026-10-14T00:00:00Z",
+        left_at: null,
+      },
     ];
     const resposta = await GET(
       req(`/api/v1/conversations/${CONV_A}/participants`, "GET", {}),
@@ -450,7 +532,15 @@ describe("GET /api/v1/conversations/[id]/participants — listar", () => {
     sessao(COLEGA);
     autoriza("agent", COLEGA);
     participantes = [
-      { id: "00000000-0000-4000-8000-0000000000ee", conversation_id: CONV_A, user_id: COLEGA, organization_id: ORG_A, invited_by: DONO, joined_at: "2026-10-14T00:00:00Z", left_at: null },
+      {
+        id: "00000000-0000-4000-8000-0000000000ee",
+        conversation_id: CONV_A,
+        user_id: COLEGA,
+        organization_id: ORG_A,
+        invited_by: DONO,
+        joined_at: "2026-10-14T00:00:00Z",
+        left_at: null,
+      },
     ];
     const resposta = await GET(
       req(`/api/v1/conversations/${CONV_A}/participants`, "GET", {}),
@@ -458,7 +548,9 @@ describe("GET /api/v1/conversations/[id]/participants — listar", () => {
     );
 
     expect(resposta.status).toBe(200);
-    const corpo = (await resposta.json()) as { data: { participantes: Array<{ user_id: string }> } };
+    const corpo = (await resposta.json()) as {
+      data: { participantes: Array<{ user_id: string }> };
+    };
     expect(corpo.data.participantes).toHaveLength(1);
     expect(corpo.data.participantes[0]?.user_id).toBe(COLEGA);
     expect(audit).not.toHaveBeenCalled();

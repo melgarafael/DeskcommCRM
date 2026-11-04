@@ -152,6 +152,7 @@ function banco(
       const linhas = opts.lote ?? (mensagem === null ? [] : [{ id: 'msg-1', ...mensagem }]);
       return { rows: linhas, rowCount: linhas.length };
     }
+    if (/fn_store_followup_answer/.test(sql)) return { rows: [{ stored: true }], rowCount: 1 };
     // #2630: a etapa do card do contato, que a entrada por etapa lê — com a
     // ENTRADA nela (#3253): o carimbo da 0071, e o `created_at` de reserva.
     if (/from crm_leads/.test(sql)) {
@@ -226,7 +227,7 @@ describe('prepararRoteiroDoTurno', () => {
     expect(r?.iniciadoNesteTurno).toBe(true);
     expect(r?.estado.situacao.pendentes.map((n) => n.config.key)).toEqual(['nome_completo']);
     expect(r?.bloco).toContain('Roteiro de atendimento ativo — Cadastro');
-    expect(b.sqls.some((s) => /update contacts/.test(s))).toBe(false);
+    expect(b.sqls.some((s) => /fn_store_followup_answer/.test(s))).toBe(false);
   });
 
   it('no turno de início, a captura determinística não roda: "sim, quero financiar" não responde a CNH', async () => {
@@ -236,7 +237,7 @@ describe('prepararRoteiroDoTurno', () => {
       { ...turno, texto: 'sim, quero financiar' },
     );
     expect(r?.iniciadoNesteTurno).toBe(true);
-    expect(b.sqls.some((s) => /update contacts/.test(s))).toBe(false);
+    expect(b.sqls.some((s) => /fn_store_followup_answer/.test(s))).toBe(false);
     expect(r?.estado.situacao.pendentes.map((n) => n.config.key)).toEqual(['tem_cnh']);
   });
 
@@ -251,7 +252,7 @@ describe('prepararRoteiroDoTurno', () => {
       },
       turno,
     );
-    expect(b.sqls.some((s) => /update contacts/.test(s))).toBe(true);
+    expect(b.sqls.some((s) => /fn_store_followup_answer/.test(s))).toBe(true);
     expect(r?.estado.situacao.pendentes).toHaveLength(0);
   });
 
@@ -520,7 +521,7 @@ describe('revisão adversarial do PR 2 — dado inventado', () => {
     );
     // Nenhuma pergunta foi feita: não há "pergunta atual" para o validador.
     expect(validar).toHaveBeenCalledWith(expect.objectContaining({ perguntaAtual: null }));
-    expect(b.sqls.some((s) => /update contacts/.test(s))).toBe(false);
+    expect(b.sqls.some((s) => /fn_store_followup_answer/.test(s))).toBe(false);
     expect(r?.estado.situacao.pendentes.map((n) => n.config.key)).toEqual(['tem_cnh']);
   });
 
@@ -587,7 +588,7 @@ describe('revisão adversarial do PR 2 — dado inventado', () => {
     const args = validar.mock.calls[0]![0];
     expect(args.perguntas.map((p) => p.key)).toEqual(['tem_cnh']);
     expect(args.esgotados?.map((p) => p.key)).toEqual(['cidade']);
-    const gravacao = b.query.mock.calls.find(([sql]) => /update contacts/.test(sql));
+    const gravacao = b.query.mock.calls.find(([sql]) => /fn_store_followup_answer/.test(sql));
     expect(gravacao, 'a resposta tardia precisa chegar ao contato').toBeDefined();
     expect(gravacao![1]).toEqual(expect.arrayContaining(['cidade', 'Campinas']));
   });

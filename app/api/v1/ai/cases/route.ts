@@ -1,6 +1,6 @@
 /**
  * GET /api/v1/ai/cases — lista os casos humanos da org (spec 15 §7, Wave 5).
- * Read-only via PostgREST (`createAdminClient`) — a escrita de estado do caso
+ * Read-only via PostgREST (cliente de sessão com RLS) — a escrita de estado do caso
  * mora em POST /api/v1/ai/cases/[id]/reply (pg.Pool do engine, ver ADR ali).
  *
  * A consulta em si vive em `lib/escalacao/chamados.ts`: a capacidade "ver os
@@ -21,7 +21,6 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { conversasVisiveisDosCasos, listarChamados } from "@/lib/escalacao/chamados";
 import { logger } from "@/lib/logger";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -50,11 +49,11 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   try {
     // A ordem importa: o recorte é resolvido pelo cliente de SESSÃO (RLS
-    // aplicada) ANTES da leitura privilegiada. Manager e admin seguem vendo
+    // aplicada) ANTES da leitura dos casos, também pela sessão. Manager e admin seguem vendo
     // tudo porque é `fn_can_view_conversation` que decide — eles são org-wide
     // por desenho, e não há regra de papel repetida aqui para desatualizar.
     const visiveisPara = await conversasVisiveisDosCasos(await createClient(), org.orgId);
-    const { chamados, abertos } = await listarChamados(createAdminClient(), org.orgId, {
+    const { chamados, abertos } = await listarChamados(await createClient(), org.orgId, {
       estado: parsed.data.status === "open" ? "abertos" : "fechados",
       visiveisPara,
     });

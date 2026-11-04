@@ -1,0 +1,203 @@
+{
+  "status": "candidato local - nao publicado",
+  "nodes": [
+    {
+      "id": "source-commercial",
+      "path": "supabase/migrations/20261016194000_0902_ingresso_comercial_por_fonte.sql",
+      "lane": "operation",
+      "col": 7,
+      "type": "service",
+      "label": "Fonte comercial explícita",
+      "sublabel": "Sem conversa; pendência recuperável"
+    },
+    {
+      "id": "admin",
+      "path": "components/team/MemberAccessDialog.tsx",
+      "lane": "configuration",
+      "col": 0,
+      "type": "service",
+      "label": "admin",
+      "sublabel": "components/team/MemberAccessDialog.tsx"
+    },
+    {
+      "id": "api",
+      "path": "app/api/v1/team/access-scopes/route.ts",
+      "lane": "configuration",
+      "col": 1,
+      "type": "service",
+      "label": "api",
+      "sublabel": "app/api/v1/team/access-scopes/route.ts"
+    },
+    {
+      "id": "scope",
+      "path": "supabase/migrations/20261016005520_0668_escopos_de_atendimento_e_abertura_manual.sql",
+      "lane": "configuration",
+      "col": 2,
+      "type": "service",
+      "label": "scope",
+      "sublabel": "supabase/migrations/20261016005520_0668_escopos_de_atendimento_e_abertura_manual.sql"
+    },
+    {
+      "id": "manual",
+      "path": "lib/messaging/open-shared-contact-conversation.ts",
+      "lane": "operation",
+      "col": 3,
+      "type": "service",
+      "label": "manual",
+      "sublabel": "lib/messaging/open-shared-contact-conversation.ts"
+    },
+    {
+      "id": "inbox",
+      "path": "components/inbox/PainelIniciarConversa.tsx",
+      "lane": "operation",
+      "col": 4,
+      "type": "service",
+      "label": "inbox",
+      "sublabel": "components/inbox/PainelIniciarConversa.tsx"
+    },
+    {
+      "id": "private",
+      "path": "supabase/migrations/20261016025402_0669_privacidade_contextual_e_responsavel_comercial.sql",
+      "lane": "configuration",
+      "col": 3,
+      "type": "service",
+      "label": "Contexto e dono comercial",
+      "sublabel": "Opt-in explícito, sem ativação"
+    },
+    {
+      "id": "runtime",
+      "path": "lib/ai/runtime/private-case-client.ts",
+      "lane": "operation",
+      "col": 5,
+      "type": "service",
+      "label": "Contexto da IA",
+      "sublabel": "Atendimento e revisão"
+    },
+    {
+      "id": "ingress",
+      "path": "lib/leads/nascimento-do-lead.ts",
+      "lane": "operation",
+      "col": 6,
+      "type": "service",
+      "label": "Entrada comercial",
+      "sublabel": "Dono comercial sem assumir atendimento"
+    },
+    {
+      "id": "safe-delete",
+      "path": "supabase/migrations/20261019182155_0904_realtime_sem_identificadores_de_exclusao.sql",
+      "lane": "operation",
+      "col": 8,
+      "type": "service",
+      "label": "Exclusão sem identificador",
+      "sublabel": "Sinal limitado por tenant; transporte global"
+    },
+    {
+      "id": "safe-refetch",
+      "path": "hooks/realtime/useRealtimeChannel.ts",
+      "lane": "operation",
+      "col": 9,
+      "type": "service",
+      "label": "Reconsulta autorizada",
+      "sublabel": "Kanban e Inbox invalidam sem ID"
+    }
+  ],
+  "edges": [
+    {
+      "id": "source-0",
+      "from": "private",
+      "to": "source-commercial",
+      "label": "regra e opt-in explícitos"
+    },
+    {
+      "id": "source-1",
+      "from": "source-commercial",
+      "to": "admin",
+      "label": "recibo pendente e reavaliação"
+    },
+    {
+      "from": "admin",
+      "to": "api",
+      "id": "access-0",
+      "label": "autoriza"
+    },
+    {
+      "from": "api",
+      "to": "scope",
+      "id": "access-1",
+      "label": "autoriza"
+    },
+    {
+      "from": "scope",
+      "to": "manual",
+      "id": "access-2",
+      "label": "autoriza"
+    },
+    {
+      "from": "manual",
+      "to": "inbox",
+      "id": "access-3",
+      "label": "autoriza"
+    },
+    {
+      "id": "private-0",
+      "from": "api",
+      "to": "private",
+      "label": "requer revisão"
+    },
+    {
+      "id": "private-1",
+      "from": "private",
+      "to": "runtime",
+      "label": "delimita"
+    },
+    {
+      "id": "private-2",
+      "from": "private",
+      "to": "ingress",
+      "label": "distribui"
+    },
+    {
+      "id": "safe-delete-0",
+      "from": "private",
+      "to": "safe-delete",
+      "label": "protege observação"
+    },
+    {
+      "id": "safe-delete-1",
+      "from": "safe-delete",
+      "to": "safe-refetch",
+      "label": "sinal sem dados da entidade"
+    },
+    {
+      "id": "safe-delete-2",
+      "from": "safe-refetch",
+      "to": "inbox",
+      "label": "refaz GET sob RLS"
+    }
+  ],
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Escopos opt-in de atendimento",
+    "subtitle": "Candidato local não publicado",
+    "output": "escopos-atendimento.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "configuration",
+      "label": "Administração e política"
+    },
+    {
+      "id": "operation",
+      "label": "Operação autorizada"
+    }
+  ],
+  "mainPath": [
+    "admin",
+    "api",
+    "scope",
+    "manual",
+    "inbox"
+  ]
+}

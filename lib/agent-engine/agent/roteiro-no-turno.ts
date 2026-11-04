@@ -163,6 +163,7 @@ export async function prepararRoteiroDoTurno(
     estado = await carregarEstadoDeAtendimento(deps.pool, {
       organizationId: t.organizationId,
       contactId: t.contactId,
+    conversationId: t.conversationId,
     });
     if (estado === null) {
       // AS ENTRADAS DO TURNO, em ordem de precedência declarada:
@@ -203,6 +204,7 @@ export async function prepararRoteiroDoTurno(
         estado = await carregarEstadoDeAtendimento(deps.pool, {
           organizationId: t.organizationId,
           contactId: t.contactId,
+          conversationId: t.conversationId,
         });
         iniciado = estado !== null;
       }
@@ -325,6 +327,7 @@ export async function prepararRoteiroDoTurno(
     const seguinte = await carregarEstadoDeAtendimento(deps.pool, {
       organizationId: t.organizationId,
       contactId: t.contactId,
+    conversationId: t.conversationId,
     });
     if (seguinte !== null && seguinte.enrollment.id !== r.estado.enrollment.id) {
       return montar(seguinte, true);
