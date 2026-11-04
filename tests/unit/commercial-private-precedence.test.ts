@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const consolidated = readFileSync("supabase/migrations/20261104162935_9106_contexto_privado_e_escopos_optativos.sql", "utf8");
+const consolidated = readFileSync("supabase/migrations/20261104165257_9109_contexto_privado_e_escopos_optativos.sql", "utf8");
 const migration = consolidated.split("-- contrato preservado: 0903\n")[1]?.split("-- contrato preservado:")[0] ?? "";
 const baseline = readFileSync("supabase/baseline.sql", "utf8");
 
