@@ -136,7 +136,9 @@ export async function lerLiberacaoDeCasos(
   return {
     estado: "desligada",
     rascunhoLigado,
-    agenteUnicoId: vivos.length === 1 ? vivos[0].id : null,
+    // `vivos[0]` é `indefinido` para o TS sob `noUncheckedIndexedAccess`, mesmo
+    // com o `length === 1` ao lado: a checagem de tamanho não estreita o índice.
+    agenteUnicoId: vivos.length === 1 ? (vivos[0]?.id ?? null) : null,
     agentes: vivos.length,
   };
 }
