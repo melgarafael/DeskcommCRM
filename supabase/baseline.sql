@@ -68110,6 +68110,57 @@ create trigger trg_channel_sessions_ligacao_ao_provedor_e_do_servidor
   before insert or update or delete on public.channel_sessions
   for each row execute function public.fn_channel_sessions_ligacao_ao_provedor_e_do_servidor();
 
+-- ---- a credencial do número oficial é do servidor (migration 9104) ----
+-- Espelho da 9104: o corpo da 9093 inteiro, mais as colunas meta_* (o porquê
+-- está no cabeçalho da migration). Fica DEPOIS do bloco da 9093, para ser a
+-- última definição da função, e ACIMA da VARREDURA anon porque cria função.
+-- As colunas meta_* nascem no bloco da 0087, muito acima; as zernio_* nascem
+-- mais abaixo, como explica o bloco da 9093. O gatilho é o da 9093.
+create or replace function public.fn_channel_sessions_ligacao_ao_provedor_e_do_servidor()
+returns trigger language plpgsql set search_path = public, pg_temp as $$
+begin
+  if current_user not in ('authenticated', 'anon') then
+    -- `new` é nulo no DELETE: devolvê-lo cancelaria a exclusão do servidor.
+    return coalesce(new, old);
+  end if;
+  if tg_op = 'DELETE' then
+    if old.zernio_credencial_da_instalacao then
+      raise exception 'canal_ligacao_ao_provedor_e_do_servidor' using errcode = '42501';
+    end if;
+    return old;
+  end if;
+  if tg_op = 'INSERT' then
+    if new.zernio_credencial_da_instalacao
+       or new.zernio_account_id is not null
+       or new.zernio_profile_id is not null
+       or new.zernio_webhook_id is not null
+       -- 9104: a credencial do número oficial também é do servidor.
+       or new.meta_token_encrypted is not null
+       or new.meta_phone_number_id is not null
+       or new.meta_waba_id is not null then
+      raise exception 'canal_ligacao_ao_provedor_e_do_servidor' using errcode = '42501';
+    end if;
+    return new;
+  end if;
+  if (new.zernio_credencial_da_instalacao, new.zernio_account_id, new.zernio_profile_id, new.zernio_webhook_id)
+       is distinct from
+     (old.zernio_credencial_da_instalacao, old.zernio_account_id, old.zernio_profile_id, old.zernio_webhook_id)
+     -- 9104: a credencial do número oficial também é do servidor.
+     or (new.meta_token_encrypted, new.meta_phone_number_id, new.meta_waba_id)
+       is distinct from
+     (old.meta_token_encrypted, old.meta_phone_number_id, old.meta_waba_id)
+     or (old.zernio_credencial_da_instalacao and
+         (new.archived_at, new.provider, new.organization_id, new.phone_number)
+           is distinct from
+         (old.archived_at, old.provider, old.organization_id, old.phone_number)) then
+    raise exception 'canal_ligacao_ao_provedor_e_do_servidor' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+revoke execute on function public.fn_channel_sessions_ligacao_ao_provedor_e_do_servidor() from public, anon, authenticated;
+
 -- ---- servidores MCP por agente e OAuth por contato (migration 9095) ----
 -- Espelho idempotente da migration 9095 (o porquê está no cabeçalho dela).
 create table if not exists public.ai_agent_mcp_servers (
