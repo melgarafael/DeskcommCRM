@@ -34,6 +34,19 @@ import { createClient } from "@/lib/supabase/server";
  */
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+// A sessão do crm-summary passa por `resolveAuthDual`, que lê o cookie da organização
+// ativa e o usuário: aqui só o banco falso importa, então os dois portões ficam fixos.
+vi.mock("@/lib/auth/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/server")>()),
+  loadAuthUser: vi.fn(async () => ({ id: "u-1", idioma: "pt-BR", organizations: [] })),
+}));
+vi.mock("@/lib/auth/require-role", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/require-role")>()),
+  orgAtivaDaApi: vi.fn(async () => ({
+    ok: true,
+    org: { orgId: "org-1", name: "Org", role: "agent" },
+  })),
+}));
 vi.mock("@/lib/users/nome-do-atendente", () => ({ nomesDosAtendentes: async () => new Map() }));
 
 const ORG = "org-1";

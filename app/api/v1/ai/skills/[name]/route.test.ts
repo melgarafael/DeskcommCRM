@@ -108,6 +108,7 @@ describe("DELETE /api/v1/ai/skills/[name]", () => {
     mockAuthzOk();
     const stub = makeAdminStub([{ name: "frete-gratis" }]);
     vi.mocked(createClient).mockResolvedValue(stub as never);
+    vi.mocked(createAdminClient).mockReturnValue(stub as never);
 
     const { DELETE } = await import("./route");
     const res = await DELETE(req("frete-gratis"), { params: Promise.resolve({ name: "frete-gratis" }) });
@@ -146,6 +147,9 @@ function makeAdminGetStub(input: {
           return b;
         },
         eq() {
+          return b;
+        },
+        or() {
           return b;
         },
         async maybeSingle() {

@@ -79,6 +79,25 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   if (parsed.data.valid_until !== undefined) alteracoes.valid_until = parsed.data.valid_until;
 
   const supabase = createAdminClient();
+  // Primeiro a LEITURA de existência, depois a escrita: um token de outra
+  // organização (ou id inexistente) não registra cadeia de escrita nenhuma —
+  // o UPDATE cego devolveria 0 linhas e o 404 certo, mas a tentativa de
+  // escrita ficaria no rastro como se a entrada tivesse sido alvo.
+  const { data: existente, error: erroLeitura } = await supabase
+    .from("org_memory_entries")
+    .select("id")
+    .eq("id", id)
+    .eq("organization_id", authz.organizationId)
+    .maybeSingle();
+  if (erroLeitura) {
+    return fail("internal_error", t("Não foi possível ler a entrada de memória."), 500, { requestId });
+  }
+  if (!existente) {
+    return fail("not_found", t("Entrada de memória não encontrada nesta organização."), 404, {
+      requestId,
+    });
+  }
+
   const { data, error } = await supabase
     .from("org_memory_entries")
     .update(alteracoes)
@@ -87,7 +106,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     .select("id, status, valid_until")
     .single();
   if (error || !data) {
-    return fail("not_found", t("Entrada de memória não encontrada nesta organização."), 404, {
+    return fail("internal_error", t("Não foi possível atualizar a entrada de memória."), 500, {
       requestId,
     });
   }
