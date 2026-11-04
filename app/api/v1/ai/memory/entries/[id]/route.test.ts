@@ -58,6 +58,11 @@ function makeAdminStub(
         select() {
           return b;
         },
+        // Leitura de existência da rota (select("id").eq().eq().maybeSingle()):
+        // a entrada existe nesta organização.
+        maybeSingle() {
+          return Promise.resolve({ data: { id: ENTRY_ID }, error: null });
+        },
         single() {
           return Promise.resolve({ data: updateResult, error: updateResult ? null : new Error("boom") });
         },

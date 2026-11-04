@@ -687,16 +687,19 @@ describe("GET /ai/skills/[name]/versions — histórico de versões", () => {
   });
 
   describe("GET /ai/skills/[name] — skill global não vaza ponteiro de A", () => {
-    // A rota lê o ponteiro DA ORGANIZAÇÃO: a skill global só se lê por nome depois
-    // de instalada (ponteiro da org B apontando para a versão global). Sem isso, 404.
-    it("token de B, sem ter instalado a global, não a lê por nome (404)", async () => {
+    // A rota lê só a skill INSTALADA na organização (ponteiro da própria org). Sem
+    // ponteiro, 404: a skill de plataforma só é lida depois de instalada. O que
+    // nunca pode é ler o ponteiro/versão de A.
+    it("token de B, sem ter instalado a global, recebe 404 (só lê depois de instalar)", async () => {
       tokenDe(ORG_B, TOKEN_B, "admin");
       const res = await rotaSkill.GET(reqVazio(TOKEN_B, "GET"), paramsDeName(NOME_SKILL_GLOBAL));
       expect(res.status).toBe(404);
+      const corpo = (await res.json()) as { data?: { version_id?: string } };
+      expect(corpo.data?.version_id).toBeUndefined();
       expect(vazamentosDe(falso.cadeias, ORG_B)).toEqual([]);
     });
 
-    it("token de B com a global instalada lê a versão global, sem o ponteiro/versão de A", async () => {
+    it("token de B com a global instalada (ponteiro de B) lê a versão global, sem o ponteiro/versão de A", async () => {
       const POINTER_B_GLOBAL = {
         organization_id: ORG_B,
         name: NOME_SKILL_GLOBAL,

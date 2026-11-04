@@ -92,32 +92,19 @@ export async function GET(
   if (ptrErr) {
     return fail("internal_error", "Erro ao carregar a skill.", 500, { requestId });
   }
-  // Skill de PLATAFORMA (organization_id null): a org pode LER o catálogo global
-  // mesmo sem instalá-la — a leitura é legítima para toda organização, a escrita
-  // nunca. Sem ponteiro da org, cai para o ponteiro global; o 404 só fecha
-  // quando nem a org nem a plataforma têm a skill.
-  let ponteiro = pointer;
-  if (!ponteiro) {
-    const { data: global, error: globalErr } = await supabase
-      .from("skill_pointers")
-      .select("version_id, updated_at")
-      .is("organization_id", null)
-      .eq("name", name)
-      .maybeSingle();
-    if (globalErr) {
-      return fail("internal_error", "Erro ao carregar a skill.", 500, { requestId });
-    }
-    ponteiro = global;
-  }
-  if (!ponteiro) {
+  // Só lê a skill INSTALADA nesta organização (ponteiro da própria org). Sem
+  // ponteiro da org, 404: a skill de plataforma só é lida depois de instalada.
+  if (!pointer) {
     return fail("not_found", t("Skill não está instalada nesta organização."), 404, { requestId });
   }
 
+  // A versão pode ser do catálogo global (organization_id null) — é por esta via
+  // (ponteiro da própria org) que o catálogo global é lido.
   const { data: version, error: verErr } = await supabase
     .from("skill_versions")
     .select("id, name, description, body, matcher, manifest")
     .or(`organization_id.eq.${authz.organizationId},organization_id.is.null`)
-    .eq("id", ponteiro.version_id)
+    .eq("id", pointer.version_id)
     .maybeSingle();
   if (verErr) {
     return fail("internal_error", "Erro ao carregar o corpo da skill.", 500, { requestId });
