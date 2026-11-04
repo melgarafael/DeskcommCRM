@@ -76,5 +76,5 @@ test("reset de senha com MFA pede o código TOTP e conclui", async ({ page }) =>
   await page.getByRole("button", { name: /definir nueva contrase|definir nova senha/i }).click();
 
   await page.waitForURL(/\/login\?reset=success/);
-  await expect(page.getByText(/redefinida com sucesso/i)).toBeVisible();
+  await expect(page.getByText(/redefinida com sucesso|restablecida con éxito/i)).toBeVisible();
 });
