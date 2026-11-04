@@ -10,8 +10,8 @@ primeiro **livre** da organização — `"Suporte (cópia)"`, `"Suporte (cópia 
 `"Suporte (cópia 3)"` —, e o nome do original nunca é reusado.
 
 A numeração não pula: se `"Suporte (cópia 2)"` existe e `"Suporte (cópia)"` não,
-a próxima cópia é `"Suporte (cópia)"`. Duplicar um agente cujo nome **já é
-cópia** continua a mesma linhagem: `"Suporte (cópia)"` duplicado vira
+a próxima cópia é `"Suporte (cópia)"`. Duplicar um agente cujo nome **já é cópia**
+continua a mesma linhagem: `"Suporte (cópia)"` duplicado vira
 `"Suporte (cópia 2)"`, não `"Suporte (cópia) (cópia)"`. O teto de 120 caracteres
 do nome continua valendo — com o original no limite, o sufixo come o fim do
 nome e a cópia continua aceita pelo schema.
