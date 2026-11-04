@@ -65,6 +65,21 @@ function mockAuthzOk() {
 
 function makeAdminStub(deletedRows: Array<{ name: string }> | null, error: unknown = null) {
   const eqCalls: Array<[string, unknown]> = [];
+  // O `.select()` serve às duas pontas do DELETE: a leitura de existência
+  // (`.select().eq().eq().maybeSingle()`) e a escrita (`.delete().eq().eq().select()`,
+  // awaited direto). Por isso o objeto aceita `.eq`, `.maybeSingle` e é thenable.
+  const filtro = {
+    eq(col: string, val: unknown) {
+      eqCalls.push([col, val]);
+      return filtro;
+    },
+    maybeSingle() {
+      return Promise.resolve({ data: deletedRows?.[0] ?? null, error });
+    },
+    then(onOk: (v: unknown) => unknown, onErr?: (e: unknown) => unknown) {
+      return Promise.resolve({ data: deletedRows, error }).then(onOk, onErr);
+    },
+  };
   return {
     from() {
       const b = {
@@ -76,7 +91,7 @@ function makeAdminStub(deletedRows: Array<{ name: string }> | null, error: unkno
           return b;
         },
         select() {
-          return Promise.resolve({ data: deletedRows, error });
+          return filtro;
         },
       };
       return b;
@@ -126,7 +141,7 @@ describe("DELETE /api/v1/ai/skills/[name]", () => {
 
   it("pointer não existe na org → 404, sem audit", async () => {
     mockAuthzOk();
-    vi.mocked(createClient).mockResolvedValue(makeAdminStub([]) as never);
+    vi.mocked(createAdminClient).mockReturnValue(makeAdminStub([]) as never);
 
     const { DELETE } = await import("./route");
     const res = await DELETE(req("nao-instalada"), { params: Promise.resolve({ name: "nao-instalada" }) });
@@ -183,7 +198,7 @@ const BODY_VALIDO = {
 describe("GET /api/v1/ai/skills/[name]", () => {
   it("skill instalada → devolve corpo e matcher", async () => {
     mockAuthzOk();
-    vi.mocked(createClient).mockResolvedValue(
+    vi.mocked(createAdminClient).mockReturnValue(
       makeAdminGetStub({
         pointer: { version_id: "v1", updated_at: "2026-09-19T00:00:00Z" },
         version: { id: "v1", name: "catalogo", description: "d", body: "b", matcher: { any_keywords: ["moto"] } },
@@ -199,7 +214,7 @@ describe("GET /api/v1/ai/skills/[name]", () => {
 
   it("skill não instalada → 404", async () => {
     mockAuthzOk();
-    vi.mocked(createClient).mockResolvedValue(makeAdminGetStub({ pointer: null }) as never);
+    vi.mocked(createAdminClient).mockReturnValue(makeAdminGetStub({ pointer: null }) as never);
     const { GET } = await import("./route");
     const res = await GET(reqGet("nao-instalada"), { params: Promise.resolve({ name: "nao-instalada" }) });
     expect(res.status).toBe(404);
