@@ -15,7 +15,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 - **Contato do tipo Fornecedor não entra mais no rodízio automático** Quem usa o tipo Fornecedor para um contato que é atendimento de verdade passa a
   não recebê-lo pelo rodízio: a conversa fica sem dono até alguém atribuí-la à
   mão. No modo "Só os seus", o atendente não a vê enquanto ela estiver sem dono.
-  Nada muda para quem nunca marcou o tipo — o padrão do contato é Cliente.
+  Nada muda para quem nunca marcou o tipo — o padrão do contato é Cliente. Crédito: @webtecnica (#3942).
 
 ### Adicionado
 
@@ -23,7 +23,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   ficha do contato (o de sempre — e o padrão, inclusive para todo roteiro já
   publicado) ou card do negócio. Com o card, o valor entra em
   `crm_leads.custom_fields`, que é o que o card da tela, os campos obrigatórios da
-  etapa do funil e as automações por data leem.
+  etapa do funil e as automações por data leem. Crédito: @webtecnica (#3492).
 
   O card do roteiro é escolhido UMA vez, no começo da execução, e vale até ela
   terminar: fica gravado na trilha da própria execução, então editar outro negócio
@@ -47,7 +47,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   mas a tela recebia `aviso_numero_de_cliente` e pedia confirmação: confirmar
   transformava o número em **interno**, e a partir daí tudo o que a atendente
   mandava deixava de virar contato, conversa e atendimento. Quando ela mesma
-  viajava e escrevia como cliente, a mensagem não chegava.
+  viajava e escrevia como cliente, a mensagem não chegava. Crédito: @webtecnica (#3932).
 
   Agora, quando o destino é o WhatsApp de um membro **ativo** da equipe, o aviso
   sai sem confirmação e o número **não** vira interno: as mensagens dele continuam
@@ -107,7 +107,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Contribuição de @webtecnica (#3824, issue #3746 de @aerosuiteapp).
 
-- **A busca do inbox acha o contato mesmo quando o acento não foi digitado** Quem atende digita rápido, e no Brasil o mesmo nome aparece escrito com e sem acento. Até agora a busca do inbox comparava as letras uma a uma: "Andreia" não encontrava "Andréia", e "Andréia" não encontrava quem foi cadastrado sem acento. O cliente parecia não existir no CRM — e o atendente não tinha como saber que existia.
+- **A busca do inbox acha o contato mesmo quando o acento não foi digitado** Quem atende digita rápido, e no Brasil o mesmo nome aparece escrito com e sem acento. Até agora a busca do inbox comparava as letras uma a uma: "Andreia" não encontrava "Andréia", e "Andréia" não encontrava quem foi cadastrado sem acento. O cliente parecia não existir no CRM — e o atendente não tinha como saber que existia. Crédito: @webtecnica (#3924).
 
   A busca do inbox passa a ignorar acento no nome do contato, no nome de exibição e no nome da agenda do celular. "Andreia" acha "Andréia", "Leticia" acha "Letícia", "Joao" acha "João", "Conceicao" acha "Conceição", nos dois sentidos. Acentos dentro do nome continuam funcionando como antes, e a busca por telefone não muda.
 
@@ -155,7 +155,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   pela tela, pelo agente ou por campanha. Os botões ficam gravados na própria mensagem, como estavam
   na hora do envio; mensagens de antes desta versão mostram só o selo. Crédito: @jmpo.
 
-- **A tabela de campanhas do Meta Ads abre pela campanha mais recente** Na aba Anúncios › Meta Ads, as campanhas apareciam na ordem em que a plataforma devolve — das mais antigas para as mais novas —, então a campanha que está rodando agora ficava no fim da lista, e quem abria a aba tinha de rolar a tabela inteira para encontrá-la. Agora a tabela abre pela campanha mais recente, e há um seletor acima dela para ver as mais antigas primeiro ou as que estão entregando no topo. A escolha vale para a aba aberta; ela não fica guardada entre sessões. Nada muda na leitura da plataforma: nenhuma chamada nova, nenhuma métrica nova.
+- **A tabela de campanhas do Meta Ads abre pela campanha mais recente** Na aba Anúncios › Meta Ads, as campanhas apareciam na ordem em que a plataforma devolve — das mais antigas para as mais novas —, então a campanha que está rodando agora ficava no fim da lista, e quem abria a aba tinha de rolar a tabela inteira para encontrá-la. Agora a tabela abre pela campanha mais recente, e há um seletor acima dela para ver as mais antigas primeiro ou as que estão entregando no topo. A escolha vale para a aba aberta; ela não fica guardada entre sessões. Nada muda na leitura da plataforma: nenhuma chamada nova, nenhuma métrica nova. Crédito: @webtecnica (#3921).
 
 - **Opção para deduzir a origem do site quando o cliente apaga o código** Quem clica num link rastreável e apaga o código `[ref:]` ao editar a mensagem
   deixava de ter origem: o contato parecia ter chegado sozinho. Agora há uma
@@ -312,7 +312,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   comercial chegam pelo mesmo número do cliente. Marcado como Fornecedor, esse
   contato era distribuído no rodízio exatamente como um cliente — ocupando a
   carga e a capacidade dos vendedores, que recebiam dezenas de conversas que não
-  são atendimento.
+  são atendimento. Crédito: @webtecnica (#3942).
 
   Agora a conversa de um contato do tipo Fornecedor não é distribuída: ela fica
   sem dono no Inbox, e o pedido de rodízio fecha com o motivo próprio em vez de
@@ -330,7 +330,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   Agora a atualização procura a extensão onde ela estiver e se ajusta a ela, sem movê-la. Quem já tinha recebido a versão anterior volta ao normal ao atualizar, sem nenhuma ação manual.
 
-- **Confirmação de consulta concluída chega à revisão da resposta** A revisão de promessas passa a receber o comprovante da reserva confirmada neste atendimento, conferido na agenda para a mesma pessoa e horário. Assim pode distinguir o relato da confirmação de uma promessa sem respaldo, mantendo a análise de descontos, cortesias e garantias adicionais. Reservas pendentes, falhas ou comprovantes desatualizados não autorizam confirmação. Não exige configuração nova na VPS.
+- **Confirmação de consulta concluída chega à revisão da resposta** A revisão de promessas passa a receber o comprovante da reserva confirmada neste atendimento, conferido na agenda para a mesma pessoa e horário. Assim pode distinguir o relato da confirmação de uma promessa sem respaldo, mantendo a análise de descontos, cortesias e garantias adicionais. Reservas pendentes, falhas ou comprovantes desatualizados não autorizam confirmação. Não exige configuração nova na VPS. Crédito: @SerusoNakamoto (#3885).
 
 - **A credencial reserva do canal oficial no .env vale só para o número dela** O canal oficial do WhatsApp procura primeiro a credencial salva na própria
   conexão. Quando não achava um token legível ali, usava o par
