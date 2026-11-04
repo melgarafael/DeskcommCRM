@@ -87,6 +87,18 @@ export interface VoiceCallRow {
   created_by?: string | null;
 }
 
+/**
+ * Como a última ligação desta tela terminou. A linha da chamada some assim que ela acaba,
+ * então é por aqui que a tela sabe o desfecho. `porMim`: desligada por quem está vendo.
+ */
+export interface FimDaChamada {
+  id: string;
+  contact_id: string | null;
+  end_reason: string | null;
+  atendida: boolean;
+  porMim: boolean;
+}
+
 interface VoiceCallsListResponse {
   data: VoiceCallRow[];
 }
@@ -267,6 +279,7 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
   /** Trava de clique repetido em "Encerrar" — o botão não tinha, e saíram dois DELETE. */
   const encerrandoRef = useRef(false);
   const [encerrando, setEncerrando] = useState(false);
+  const [ultimoFim, setUltimoFim] = useState<FimDaChamada | null>(null);
   /** O canal `pcm` chegou a abrir nesta tentativa? Separa `caiu` de `sem_rota`. */
   const canalAbriuRef = useRef(false);
   /**
@@ -407,7 +420,16 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
       );
       const noServidor = res.data.find((r) => r.id === atual.id);
       if (!noServidor) return;
-      if (noServidor.status === "ended") encerradasRef.current.add(noServidor.id);
+      if (noServidor.status === "ended" && !encerradasRef.current.has(noServidor.id)) {
+        encerradasRef.current.add(noServidor.id);
+        setUltimoFim({
+          id: noServidor.id,
+          contact_id: noServidor.contact_id,
+          end_reason: noServidor.end_reason,
+          atendida: !!noServidor.answered_at,
+          porMim: encerrandoRef.current,
+        });
+      }
       setCall((agora) => {
         if (!agora || agora.id !== noServidor.id) return agora;
         if (ORDEM_DO_STATUS[noServidor.status] <= ORDEM_DO_STATUS[agora.status]) return agora;
@@ -428,8 +450,19 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
     }
     const row = (payload as { new?: VoiceCallRow } | null)?.new;
     if (!row?.id) return;
-    if (row.status === "ended") encerradasRef.current.add(row.id);
-    else if (encerradasRef.current.has(row.id)) return;
+    if (row.status === "ended") {
+      const atual = callRef.current;
+      if (atual?.id === row.id && !encerradasRef.current.has(row.id)) {
+        setUltimoFim({
+          id: row.id,
+          contact_id: row.contact_id ?? atual.contact_id,
+          end_reason: row.end_reason,
+          atendida: !!(row.answered_at ?? atual.answered_at),
+          porMim: encerrandoRef.current,
+        });
+      }
+      encerradasRef.current.add(row.id);
+    } else if (encerradasRef.current.has(row.id)) return;
     setCall((atual) => {
       // Só substitui se for a MESMA chamada (atualização) ou se não há
       // nenhuma em andamento (nova chamada chegando) — evita uma chamada de
@@ -767,6 +800,15 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
     } catch (err) {
       showApiError(err);
     } finally {
+      if (!encerradasRef.current.has(atual.id)) {
+        setUltimoFim({
+          id: atual.id,
+          contact_id: atual.contact_id,
+          end_reason: atual.end_reason,
+          atendida: !!atual.answered_at,
+          porMim: true,
+        });
+      }
       encerradasRef.current.add(atual.id);
       encerrandoRef.current = false;
       setEncerrando(false);
@@ -796,6 +838,7 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
     midiaEmOutraAba,
     /** Encerrar em voo — o botão fica desabilitado para não sair outro DELETE. */
     encerrando,
+    ultimoFim,
     startCall,
     acceptCall,
     rejectCall,
