@@ -15588,6 +15588,8 @@ export const DICIONARIO: Traducoes = {
     { es: "Todavía no hay otras personas en esta organización." },
   "Ninguém da equipe tem WhatsApp cadastrado: os avisos vão continuar saindo para o número acima.":
     { es: "Nadie del equipo tiene WhatsApp registrado: los avisos van a seguir saliendo al número de arriba." },
+  "Não foi possível ler os números da equipe agora. Atualize a página antes de salvar: sem eles a tela não sabe para quem os avisos vão.":
+    { es: "No fue posible leer los números del equipo ahora. Actualiza la página antes de guardar: sin ellos la pantalla no sabe a quién van los avisos." },
   "Enquanto ninguém puder abrir um caso, nenhum aviso vai sair. Ligue a opção de abrir casos na configuração do assistente.":
     { es: "Mientras nadie pueda abrir casos, no se enviará ningún aviso. Activa la opción de abrir casos en la configuración del asistente." },
   "Enviado para":
