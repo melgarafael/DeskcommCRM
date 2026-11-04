@@ -38,6 +38,7 @@ describe("pedido humano: uma recuperação só para silêncio inicial sem oferta
     "promise_out_of_table",
     "promise_semantic",
     "case_promise_without_case",
+    "followup_promise_without_followup",
     "clinical_claim",
     "internal_vocabulary_leak",
     "lgpd_anonymized",

@@ -195,6 +195,22 @@ export interface LeadFieldProposalRow {
  * compromissos e a próxima ação são texto que o modelo escreveu SOBRE a pessoa,
  * e o que se apaga a pedido do titular é o que se entrega a pedido dele.
  */
+/**
+ * Os acessos que o titular deu a servidores MCP externos (OAuth por contato,
+ * migration 9095): os pedidos de autorização (apagados na anonimização) e as
+ * credenciais. Entra o QUE ele autorizou, a quem e quando — nunca o token, o
+ * `code_verifier` nem o `state`, que são segredo e não dado dele.
+ */
+export interface AcessoMcpRow {
+  servidor_id: string;
+  escopos: string[];
+  criado_em: string | null;
+  expira_em?: string | null;
+  usado_em?: string | null;
+  ultimo_uso_em?: string | null;
+  revogado_em?: string | null;
+}
+
 export interface CheckpointRow {
   id: string;
   rolling_summary: string;
@@ -729,6 +745,9 @@ export interface ExportPayload {
   orders: OrderRow[];
   activities: ActivityRow[];
   checkpoints: CheckpointRow[];
+  /** Opcionais: payload gerado antes da 9095 não os tem. */
+  mcp_pedidos_de_acesso?: AcessoMcpRow[];
+  mcp_acessos?: AcessoMcpRow[];
   appointments: AppointmentRow[];
   sales: SaleRow[];
   proposals: ProposalRow[];
@@ -1619,6 +1638,51 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Acessos a servidores MCP externos (OAuth por contato, 9095). A anonimização
+  // APAGA os pedidos e revoga as credenciais: o que se apaga a pedido dele é o
+  // que se entrega a pedido dele. Só metadado — nenhuma coluna cifrada.
+  let mcpPedidos: AcessoMcpRow[] = [];
+  let mcpAcessos: AcessoMcpRow[] = [];
+  if (contactId) {
+    const pedidos = await admin
+      .from("mcp_oauth_pedidos")
+      .select("servidor_id, escopos, created_at, expira_em, usado_em")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (pedidos.error) {
+      logger.warn("[lgpd-export-worker] mcp_oauth_pedidos load failed", { request_id: requestId, error: pedidos.error.message });
+    } else if (pedidos.data) {
+      conferirTeto("mcp_pedidos_de_acesso", pedidos.data, 500);
+      mcpPedidos = (pedidos.data as Array<Record<string, unknown>>).map((l) => ({
+        servidor_id: String(l.servidor_id),
+        escopos: (l.escopos as string[]) ?? [],
+        criado_em: (l.created_at as string) ?? null,
+        expira_em: (l.expira_em as string) ?? null,
+        usado_em: (l.usado_em as string) ?? null,
+      }));
+    }
+    const acessos = await admin
+      .from("contato_mcp_credenciais")
+      .select("servidor_id, escopos, criado_em, ultimo_uso_em, revogado_em")
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .limit(500);
+    if (acessos.error) {
+      logger.warn("[lgpd-export-worker] contato_mcp_credenciais load failed", { request_id: requestId, error: acessos.error.message });
+    } else if (acessos.data) {
+      conferirTeto("mcp_acessos", acessos.data, 500);
+      mcpAcessos = (acessos.data as Array<Record<string, unknown>>).map((l) => ({
+        servidor_id: String(l.servidor_id),
+        escopos: (l.escopos as string[]) ?? [],
+        criado_em: (l.criado_em as string) ?? null,
+        ultimo_uso_em: (l.ultimo_uso_em as string) ?? null,
+        revogado_em: (l.revogado_em as string) ?? null,
+      }));
+    }
+  }
+
   // Agenda — contact_id direto em calendar_appointments.
   //
   // ⚠️ ESTA METADE FALTAVA, e a outra tinha gate. A migration 0184 declarou esta
@@ -2475,6 +2539,8 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     orders,
     activities,
     checkpoints,
+    mcp_pedidos_de_acesso: mcpPedidos,
+    mcp_acessos: mcpAcessos,
     appointments,
     sales,
     proposals,
@@ -2672,6 +2738,8 @@ function emptyPayload(
     orders: [],
     activities: [],
     checkpoints: [],
+    mcp_pedidos_de_acesso: [],
+    mcp_acessos: [],
     appointments: [],
     sales: [],
     proposals: [],

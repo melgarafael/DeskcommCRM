@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { LeadStage } from "@/lib/agent-engine/agent/lead-state";
 import { apiClient } from "@/lib/api/client";
+import type { FluxoDeEtapa } from "@/lib/followup/fluxos-da-etapa";
 
 /**
  * Leitura e escrita do mapeamento passo-do-agente → etapa-do-funil.
@@ -40,6 +41,17 @@ export interface EtapaDoFunil {
   /** Quem mexeu nesta etapa por último (migration 0101). `null` antes dela. */
   last_change_actor_kind?: string | null;
   last_change_at?: string | null;
+  /**
+   * #3603 — os fluxos de follow-up cujo gatilho é «entrar nesta etapa»
+   * (`trigger_config.kind='stage_change'`) que passam nas portas do motor que
+   * não dependem do negócio (`lib/followup/fluxos-da-etapa.ts`). O que pede IA
+   * sem agente que o arme vem com `sem_agente: true`.
+   *
+   * `undefined` (leitura antiga em cache, ou a consulta dos fluxos falhou) é
+   * DIFERENTE de `[]` (nenhum fluxo armado): a tela só afirma «nenhum» no
+   * segundo caso, e no primeiro omite a linha.
+   */
+  fluxos?: FluxoDeEtapa[];
 }
 
 /** Os sete passos sempre presentes; `null` = "não mover o card". */

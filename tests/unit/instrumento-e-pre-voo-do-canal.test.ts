@@ -154,7 +154,9 @@ describe("o arquivo do corpo cru", () => {
 });
 
 describe("a rota chama o arquivo nos dois lados", () => {
-  const ROTA = readFileSync("app/api/v1/webhooks/channel/[token]/route.ts", "utf8");
+  // As duas entradas de canal delegam a `_entrada-do-canal.ts` depois de saber a
+  // sessão: é ali que o arquivo abre e fecha.
+  const ROTA = readFileSync("app/api/v1/webhooks/_entrada-do-canal.ts", "utf8");
 
   it("abre ANTES de processar", () => {
     // Se o processo morrer no meio, o corpo cru precisa já estar gravado — que é

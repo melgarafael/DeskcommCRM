@@ -15,6 +15,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
+import type { ValoresDoPeriodo } from "@/lib/metrics/valores-do-periodo";
 
 export interface MetaDoMes {
   id: string;
@@ -33,6 +34,12 @@ export interface MetasDoMes {
   periodo: string;
   indicador: string;
   metas: MetaDoMes[];
+  /**
+   * As DUAS parcelas do período (fatia 2, item 1, da #3602): vendido único ×
+   * recorrência nova mensal. Vem sempre — inclusive sem meta cadastrada — e
+   * nunca traz um total somado: somar as duas é o defeito que a issue descreve.
+   */
+  valores_do_periodo: ValoresDoPeriodo;
   motivo: "sem_meta" | null;
   explicacao: string | null;
 }

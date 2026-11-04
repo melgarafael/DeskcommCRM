@@ -161,8 +161,14 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   //
   // Sem versão publicada, `ai_agents.system_prompt` É a fonte legítima (é o que
   // `workers/ai-response-worker.ts` lê), e continua editável. (issue #456)
+  //
+  // Voz fica fora da regra pelo mesmo critério: `getActiveVoiceAgent` lê
+  // `ai_agents.system_prompt` e ignora a versão, e o editor do ramo de voz em
+  // `page.tsx` grava nesta coluna. Sem a exceção, o agente de voz publicado não
+  // tinha caminho nenhum para mudar o prompt, e a mensagem abaixo apontava uma
+  // versão que o motor de voz nunca executa.
   const CONTEUDO_DA_VERSAO = ["system_prompt", "model"] as const;
-  if (existing.published_version_id != null) {
+  if (existing.published_version_id != null && existing.channel !== "voice") {
     const barrados = CONTEUDO_DA_VERSAO.filter((c) => patch[c] !== undefined);
     if (barrados.length > 0) {
       return fail(

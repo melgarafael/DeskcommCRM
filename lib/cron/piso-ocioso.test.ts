@@ -9,11 +9,15 @@
  * 3. Leitura que falha = "tem trabalho" (a rota segue), e a falha também fica em
  *    cache: um banco quebrado não pode transformar o portão em enxurrada.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   type BancoDoPortao,
   esquecerRetrato,
+  invalidarRetrato,
   RECURSOS_DO_CRON,
   recursoOcioso,
   recursoTemTrabalho,
@@ -61,12 +65,12 @@ describe("portão do piso ocioso", () => {
     expect(sql).toContain("kind in ('recuperacao_da_queda', 'cliente_sem_resposta_na_queda')");
   });
 
-  it("uma consulta responde pelos cinco recursos", async () => {
+  it("uma consulta responde por todos os recursos", async () => {
     const db = banco(TUDO_VAZIO);
     const respostas = await Promise.all(
       RECURSOS_DO_CRON.map((recurso) => recursoTemTrabalho(recurso, 1_000, db.portao)),
     );
-    expect(respostas).toEqual([false, false, false, false, false]);
+    expect(respostas).toEqual(RECURSOS_DO_CRON.map(() => false));
     expect(db.query).toHaveBeenCalledOnce();
   });
 
@@ -136,5 +140,59 @@ describe("portão do piso ocioso", () => {
     const comCampanha = banco({ ...TUDO_VAZIO, campanhas: true });
     expect(await recursoOcioso("campanhas", 60_000, comCampanha.portao)).toBe(false);
     expect(comCampanha.query).toHaveBeenCalledOnce();
+  });
+
+  it("cada recurso tem a sua coluna na consulta (sem coluna, o recurso viveria desligado)", async () => {
+    const db = banco(TUDO_VAZIO);
+    await recursoTemTrabalho("followup", 1_000, db.portao);
+    for (const recurso of RECURSOS_DO_CRON) {
+      expect(db.consultas[0], `coluna '${recurso}' ausente do retrato`).toMatch(new RegExp(`\\) as ${recurso}\\b`));
+    }
+  });
+
+  it("⭐ invalidar faz a batida seguinte reler, dentro da mesma janela (#3694)", async () => {
+    const vazio = banco(TUDO_VAZIO);
+    expect(await recursoTemTrabalho("followup", 1_000, vazio.portao)).toBe(false);
+
+    invalidarRetrato();
+    const comInscricao = banco({ ...TUDO_VAZIO, followup: true });
+    expect(await recursoTemTrabalho("followup", 1_001, comInscricao.portao)).toBe(true);
+    expect(comInscricao.query).toHaveBeenCalledOnce();
+  });
+
+  it("a leitura que estava em voo quando alguém invalidou não grava o retrato velho", async () => {
+    let soltar: (v: { rows: unknown[]; rowCount: number }) => void = () => {};
+    const lenta = { query: () => new Promise((r) => (soltar = r)) } as unknown as BancoDoPortao;
+    const emVoo = recursoTemTrabalho("followup", 1_000, lenta);
+
+    invalidarRetrato();
+    soltar({ rows: [TUDO_VAZIO], rowCount: 1 });
+    expect(await emVoo).toBe(false);
+
+    const comInscricao = banco({ ...TUDO_VAZIO, followup: true });
+    expect(await recursoTemTrabalho("followup", 1_001, comInscricao.portao)).toBe(true);
+  });
+
+  it("o sinal do follow-up anda junto com o claim que ele poupa (sinal mais estreito cala o motor)", async () => {
+    // Mais LARGO é inofensivo: só paga a consulta que já se pagava. Mais ESTREITO
+    // para de reclamar inscrição vencida sem erro nenhum — a rota devolve 200.
+    const db = banco(TUDO_VAZIO);
+    await recursoTemTrabalho("followup", 1_000, db.portao);
+    const sql = db.consultas[0] ?? "";
+    const sinal = sql.slice(sql.indexOf("from followup_enrollments"), sql.indexOf(") as followup,"));
+
+    const baseline = readFileSync(join(__dirname, "..", "..", "supabase", "baseline.sql"), "utf8");
+    const inicio = baseline.lastIndexOf("create or replace function fn_claim_due_followup_enrollments");
+    expect(inicio).toBeGreaterThan(0);
+    const claim = baseline.slice(inicio, baseline.indexOf("$$;", inicio));
+
+    expect(/organizations/.test(sinal), "sinal e claim discordam sobre a organização operante").toBe(
+      /organizations/.test(claim),
+    );
+    const semEspaco = (texto: string) => texto.replace(/\s+/g, "");
+    for (const condicao of ["'active','waiting_reply','dormente'", "next_eval_at<=now()", "claimed_until"]) {
+      expect(semEspaco(claim)).toContain(condicao);
+      expect(semEspaco(sinal)).toContain(condicao);
+    }
   });
 });
