@@ -9658,5 +9658,6 @@
   "Leads para ligar, um por um.": "Leads to call, one by one.",
   "Ligado, cada empresa ganha no CRM a tela Cold Call: um funil próprio, a importação da lista e a ligação para um lead por vez, pelo canal de voz quando ele está pareado ou pelo discador do aparelho. Quem pediu para não ser incomodado, contato pessoal e contato anonimizado não recebem ligação. Desligado, a tela e o menu somem.": "When on, each company gets the Cold Call screen in the CRM: its own pipeline, list import and calling one lead at a time, through the voice channel when it's paired or through the device's dialer. Contacts who asked not to be contacted, personal contacts and anonymized contacts don't get calls. When off, the screen and the menu entry disappear.",
   "Uma fila para ligar para uma lista de leads, um por vez, com roteiro e o resultado de cada ligação movendo o lead no funil.": "A queue to call a list of leads, one at a time, with a script and each call's outcome moving the lead in the pipeline.",
-  "Já existe um agente com esse nome.": "An agent with this name already exists."
+  "Já existe um agente com esse nome.": "An agent with this name already exists.",
+  "O rascunho foi salvo; o nome do agente não mudou.": "The draft was saved; the agent's name did not change."
 }

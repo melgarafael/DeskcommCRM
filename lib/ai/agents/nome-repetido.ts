@@ -65,6 +65,13 @@ export const CODIGO_NOME_DE_AGENTE_EM_USO = "agent_name_taken";
 /** A frase em português — a CHAVE do dicionário. `traduzir`/`t` resolvem o resto. */
 export const NOME_DE_AGENTE_EM_USO = "Já existe um agente com esse nome.";
 
+/**
+ * O complemento do "Salvar rascunho": o rascunho entrou, o nome do cadastro não.
+ * Também é CHAVE do dicionário — o formulário traduz; o servidor só a devolve
+ * em `message` para quem consome a Action sem tela.
+ */
+export const RASCUNHO_SALVO_NOME_NAO_MUDOU = "O rascunho foi salvo; o nome do agente não mudou.";
+
 type ErroDoBanco = {
   code?: unknown;
   message?: unknown;

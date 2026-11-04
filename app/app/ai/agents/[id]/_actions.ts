@@ -27,6 +27,7 @@ import { codigoDoEscopo, mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/a
 import {
   CODIGO_NOME_DE_AGENTE_EM_USO,
   NOME_DE_AGENTE_EM_USO,
+  RASCUNHO_SALVO_NOME_NAO_MUDOU,
   ehNomeDeAgenteRepetido,
 } from "@/lib/ai/agents/nome-repetido";
 import {
@@ -277,7 +278,7 @@ export async function saveAgentDraftAction(
           return {
             ok: false,
             error: CODIGO_NOME_DE_AGENTE_EM_USO,
-            message: `${NOME_DE_AGENTE_EM_USO} O rascunho foi salvo; o nome do agente não mudou.`,
+            message: `${NOME_DE_AGENTE_EM_USO} ${RASCUNHO_SALVO_NOME_NAO_MUDOU}`,
           };
         }
         return {
@@ -377,7 +378,7 @@ export async function saveAgentDraftAction(
             return {
               ok: false,
               error: CODIGO_NOME_DE_AGENTE_EM_USO,
-              message: `${NOME_DE_AGENTE_EM_USO} O rascunho foi salvo; o nome do agente não mudou.`,
+              message: `${NOME_DE_AGENTE_EM_USO} ${RASCUNHO_SALVO_NOME_NAO_MUDOU}`,
             };
           }
           return {

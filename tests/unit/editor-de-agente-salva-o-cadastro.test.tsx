@@ -80,6 +80,7 @@ vi.mock("@/lib/ai/agents/escopo", () => ({
 }));
 
 import { AgentForm } from "@/app/app/ai/agents/[id]/_components/AgentForm";
+import { IdiomaProvider } from "@/lib/i18n/IdiomaProvider";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
@@ -148,9 +149,10 @@ const VERSAO = {
   created_by: null,
 };
 
-function abrirEditor() {
+function abrirEditor(locale?: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const { container } = render(
+    <IdiomaProvider locale={locale}>
     <QueryClientProvider client={qc}>
       <AgentForm
         mode="edit"
@@ -162,7 +164,8 @@ function abrirEditor() {
         base={VERSAO as never}
         draftObsoleto={null}
       />
-    </QueryClientProvider>,
+    </QueryClientProvider>
+    </IdiomaProvider>,
   );
   const campo = (id: string) => {
     const el = container.querySelector(`#${id}`);
@@ -194,6 +197,22 @@ describe("editor de agente — a tela", () => {
       "o envio não levou o cadastro: a pessoa digita o nome, vê 'Rascunho salvo.' e o nome continua o antigo",
     ).toBeDefined();
     expect(cadastro).toHaveProperty("name", "Vitória da Recepção");
+  });
+
+  it("nome repetido no Salvar rascunho: a frase vai ao campo no idioma de quem usa (#3952)", async () => {
+    // A `message` da Action é pt; a tela monta a frase com `t()`.
+    acoes.salvar.mockResolvedValue({
+      ok: false,
+      error: "agent_name_taken",
+      message: "Já existe um agente com esse nome. O rascunho foi salvo; o nome do agente não mudou.",
+    });
+    const { campo } = abrirEditor("es");
+    fireEvent.change(campo("name"), { target: { value: "Recepción" } });
+    fireEvent.click(screen.getByRole("button", { name: /guardar borrador/i }));
+    await waitFor(() => expect(acoes.salvar).toHaveBeenCalled());
+    expect(await screen.findByTestId("erro-do-nome")).toHaveTextContent(
+      "Ya existe un agente con este nombre. El borrador se guardó; el nombre del agente no cambió.",
+    );
   });
 
   it("leva também a descrição e a ordem de preferência", async () => {

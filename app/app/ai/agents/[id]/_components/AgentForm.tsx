@@ -46,6 +46,7 @@ import { mesmoRascunho } from "@/lib/ai/agents/mesmo-rascunho";
 import {
   CODIGO_NOME_DE_AGENTE_EM_USO,
   NOME_DE_AGENTE_EM_USO,
+  RASCUNHO_SALVO_NOME_NAO_MUDOU,
 } from "@/lib/ai/agents/nome-repetido";
 import { ToolPicker } from "./ToolPicker";
 import { TriggerEditor, type TriggerValue } from "./TriggerEditor";
@@ -638,8 +639,10 @@ export function AgentForm(props: Props) {
           // Nome repetido na organização (#3952): a frase vai para o CAMPO de
           // nome, que é onde a pessoa olha e onde o conserto acontece — o toast
           // do canto some sozinho e não diz qual campo mudar.
+          // A frase é montada AQUI, com `t()`: a `message` da Action é pt e
+          // quem usa es/en leria português no campo.
           if (res.error === CODIGO_NOME_DE_AGENTE_EM_USO) {
-            setErroDoServidorNoNome(res.message ?? t(NOME_DE_AGENTE_EM_USO));
+            setErroDoServidorNoNome(`${t(NOME_DE_AGENTE_EM_USO)} ${t(RASCUNHO_SALVO_NOME_NAO_MUDOU)}`);
             return;
           }
           toast.error(res.message ?? `${t("Erro")}: ${res.error}`);
@@ -663,7 +666,7 @@ export function AgentForm(props: Props) {
         if (!res.ok) {
           // Mesmo tratamento do salvar: recusa de nome mora no campo (#3952).
           if (res.error === CODIGO_NOME_DE_AGENTE_EM_USO) {
-            setErroDoServidorNoNome(res.message ?? t(NOME_DE_AGENTE_EM_USO));
+            setErroDoServidorNoNome(t(NOME_DE_AGENTE_EM_USO));
             return;
           }
           toast.error(res.message ?? `${t("Erro")}: ${res.error}`);
