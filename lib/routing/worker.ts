@@ -70,6 +70,7 @@ interface EventRow {
 const EMPTY_OUTCOMES = (): Record<RoutingOutcome, number> => ({
   assigned: 0,
   skipped_manual: 0,
+  skipped_commercial_observation: 0,
   skipped_already_assigned: 0,
   skipped_unsupported_mode: 0,
   requeued_no_eligible: 0,

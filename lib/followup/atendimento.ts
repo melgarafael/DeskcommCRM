@@ -786,6 +786,7 @@ async function gravarResposta(
   args: {
     organizationId: string;
     contactId: string;
+    enrollmentId?: string;
     campo: string;
     valor: string;
     destino: DestinoDaResposta;

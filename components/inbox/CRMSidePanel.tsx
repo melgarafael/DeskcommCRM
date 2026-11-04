@@ -614,7 +614,6 @@ function EtapaDoNegocio({ lead, onMovido }: { lead: LeadRow; onMovido: () => voi
         onOpenChange={setPerdendo}
         leadId={lead.id}
         pipelineId={lead.pipeline_id}
-        leadLabel={lead.title}
         onPerdido={() => {
           void qc.invalidateQueries({ queryKey: ["leads-at-risk"] });
           onMovido();
