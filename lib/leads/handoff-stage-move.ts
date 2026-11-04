@@ -66,6 +66,7 @@ export async function moverLeadParaEtapaDeHandoff(
     /** `HandoffReason` de `lib/ai/handoff/orchestrator.ts` — string aqui para não acoplar os dois módulos. */
     reason: string;
     serviceBoundary?: ServiceBoundary;
+    expectedOwnerId?: string;
   },
 ): Promise<ResultadoDoMovimentoDeHandoff> {
   const { data: lead, error: erroLead } = await admin
@@ -199,14 +200,18 @@ export async function moverLeadParaEtapaDeHandoff(
     ? { kind: "continuation" as const, boundary: input.serviceBoundary }
     : await observeServiceOrigin(admin, input.organizationId, leadRow.contact_id);
   const posicao = await lerPosicaoDeEntrada(admin, input.organizationId, etapaRow.id);
-  const { data: atualizadas, error: erroUpdate } = await admin
+  let updateQuery = admin
     .from("crm_leads")
     .update({ stage_id: etapaRow.id, ...(posicao === null ? {} : { position_in_stage: posicao }) })
     .eq("id", leadRow.id)
+    .eq("organization_id", input.organizationId)
     // Trava otimista pelo estágio de ORIGEM: se um humano moveu o card entre a
     // leitura e a escrita, a decisão dele vence.
-    .eq("stage_id", leadRow.stage_id)
-    .select("id");
+    .eq("stage_id", leadRow.stage_id);
+  if (input.expectedOwnerId) {
+    updateQuery = updateQuery.eq("owner_user_id", input.expectedOwnerId);
+  }
+  const { data: atualizadas, error: erroUpdate } = await updateQuery.select("id");
   if (erroUpdate) {
     logger.warn("[handoff-stage-move] update de stage_id falhou", {
       lead_id: leadRow.id,

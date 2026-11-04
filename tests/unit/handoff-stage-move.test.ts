@@ -26,6 +26,7 @@ interface Resposta {
 interface Cenario {
   /** Os `update` em `crm_leads`, na ordem (#3461: a posição de entrada). */
   escritas?: unknown[];
+  filtrosEscrita?: Array<[string, unknown]>;
   /** O primeiro card da etapa de destino, lido para pôr o que chega no topo. */
   topo?: Resposta;
   lead: Resposta;
@@ -87,6 +88,7 @@ function fakeAdmin(c: Cenario, rpcs: ChamadaRpc[] = []) {
         limit: () => b,
         eq: (key: string, val?: unknown) => {
           b._eqKeys.push(key);
+          if (b._update && tabela === "crm_leads") c.filtrosEscrita?.push([key, val]);
           if (key === "slug" && typeof val === "string") b._slugVal = val;
           return b;
         },
@@ -131,6 +133,16 @@ async function moverObservando(c: Cenario) {
 
 describe("moverLeadParaEtapaDeHandoff", () => {
   beforeEach(() => vi.mocked(emitLeadActivity).mockClear());
+
+  it("condiciona a escrita à organização e ao dono esperado sem perder a trava de estágio", async () => {
+    const filtrosEscrita: Array<[string, unknown]> = [];
+    await moverLeadParaEtapaDeHandoff(fakeAdmin(cenario({ filtrosEscrita })), {
+      organizationId: ORG, leadId: LEAD.id, reason: "handoff_delivery", expectedOwnerId: "owner-1",
+    });
+    expect(filtrosEscrita).toEqual(expect.arrayContaining([
+      ["organization_id", ORG], ["owner_user_id", "owner-1"], ["stage_id", LEAD.stage_id],
+    ]));
+  });
 
   it("o card CHEGA no topo da etapa de destino (#3461)", async () => {
     const escritas: unknown[] = [];
