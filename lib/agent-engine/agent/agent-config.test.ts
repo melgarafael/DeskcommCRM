@@ -403,6 +403,32 @@ describe('público por origem — prospecção e atendimento no mesmo número', 
     });
   });
 
+  it('contato ANTIGO que chegou sozinho e volta por conta própria é atendido pelo agente de atendimento', async () => {
+    // Já tem etiqueta e negócio aberto em outro funil: nada disso o prende ao
+    // agente da prospecção — o que decide é de onde ele ENTROU.
+    const pool = poolDaSelecao([ATENDIMENTO, PROSPECCAO], {
+      source: 'whatsapp',
+      tags: ['cliente antigo'],
+      funis: ['funil-sites'],
+    });
+    const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+    expect(escolha.config?.agentId).toBe('atendimento');
+  });
+
+  it('contato cadastrado à mão (origem manual) é atendido pelo agente de atendimento', async () => {
+    const pool = poolDaSelecao([ATENDIMENTO, PROSPECCAO], { source: 'manual' });
+    const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+    expect(escolha.config?.agentId).toBe('atendimento');
+  });
+
+  it('contato com origem comprovada na prospecção que volta sozinho continua com o agente da prospecção', async () => {
+    // A régua é por origem, não por campanha ativa: a proteção vale mesmo
+    // sem campanha rodando, e mesmo que ele volte perguntando de outro assunto.
+    const pool = poolDaSelecao([ATENDIMENTO, PROSPECCAO], { source: 'prospecting', tags: ['interessado'] });
+    const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
+    expect(escolha.config?.agentId).toBe('prospeccao');
+  });
+
   it('quem chegou sozinho pelo WhatsApp é atendido pelo agente de atendimento', async () => {
     const pool = poolDaSelecao([ATENDIMENTO, PROSPECCAO], { source: 'whatsapp' });
     const escolha = await escolherAgenteDoNumero(pool, 'org1', NUMERO, CONTATO);
