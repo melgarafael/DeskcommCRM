@@ -18,8 +18,10 @@ uma dessas etiquetas continua sendo atendido pela IA — inclusive em canal em
 modo de teste, onde um cliente comum ainda é barrado —, continua sendo medido e
 registrado pelo clima, e não é passado a humano por clima nem silenciado. O
 repasse por clima também é recusado no próprio orquestrador de handoff, para
-que nenhum alerta antigo na fila cale a conversa. Cliente comum com o mesmo
-texto continua sendo passado e silenciado como antes.
+que nenhum alerta antigo na fila cale a conversa. Como o contato interno, ele
+não vira card no funil — o sócio que testa o agente não é oportunidade de
+captação. Cliente comum com o mesmo texto continua sendo passado e silenciado
+como antes.
 
 Nenhuma migration: a lista mora no mesmo `settings.crm` das etiquetas internas,
 e quem não configurar nada mantém exatamente o comportamento anterior.
