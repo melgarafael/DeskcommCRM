@@ -684,9 +684,7 @@ function CartaoDoPonto({
         modelo/origem na linha de baixo, alinhados à esquerda. De `md` para cima
         as duas colunas voltam a dividir a linha, como antes.
       */}
-      <div
-        className="grid gap-x-3 gap-y-2 md:grid-cols-[minmax(0,1fr)_auto]"
-      >
+      <div className="grid gap-x-3 gap-y-2 md:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0">
           {/* `flex-wrap`: selo que não cabe desce para a linha de baixo em vez
               de espremer o título. */}

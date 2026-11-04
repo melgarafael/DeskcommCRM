@@ -308,20 +308,23 @@ describe("PainelDeProvedores — o cabeçalho do cartão no celular (issue #3929
    * sem breakpoint, que empilharia também no desktop, nem `sm:` no meio, que
    * mudaria o desenho em 640 px sem ninguém pedir.
    */
-  it.each(PONTOS_DO_RELATO)("%s: acima de md o cabeçalho continua em linha (duas colunas)", async (id) => {
-    montarQuatro();
-    fireEvent.click(await screen.findByTestId("avancado-conversar"));
+  it.each(PONTOS_DO_RELATO)(
+    "%s: acima de md o cabeçalho continua em linha (duas colunas)",
+    async (id) => {
+      montarQuatro();
+      fireEvent.click(await screen.findByTestId("avancado-conversar"));
 
-    const { cabecalho, blocoDoModelo } = cabecalhoDo(id);
-    expect(classes(cabecalho)).toContain("md:grid-cols-[minmax(0,1fr)_auto]");
-    expect(classes(cabecalho)).not.toContain("flex-col");
-    expect(classes(cabecalho).filter((c) => /^(grid-cols-1|grid-rows-)/.test(c))).toEqual([]);
-    expect(classes(cabecalho).filter((c) => /^sm:/.test(c))).toEqual([]);
-    // Na mesma linha do texto, e à direita: o desenho de sempre, de md para cima.
-    expect(classes(blocoDoModelo)).toContain("md:row-start-1");
-    expect(classes(blocoDoModelo)).toContain("md:text-right");
-    expect(classes(blocoDoModelo)).toContain("md:col-start-2");
-  });
+      const { cabecalho, blocoDoModelo } = cabecalhoDo(id);
+      expect(classes(cabecalho)).toContain("md:grid-cols-[minmax(0,1fr)_auto]");
+      expect(classes(cabecalho)).not.toContain("flex-col");
+      expect(classes(cabecalho).filter((c) => /^(grid-cols-1|grid-rows-)/.test(c))).toEqual([]);
+      expect(classes(cabecalho).filter((c) => /^sm:/.test(c))).toEqual([]);
+      // Na mesma linha do texto, e à direita: o desenho de sempre, de md para cima.
+      expect(classes(blocoDoModelo)).toContain("md:row-start-1");
+      expect(classes(blocoDoModelo)).toContain("md:text-right");
+      expect(classes(blocoDoModelo)).toContain("md:col-start-2");
+    },
+  );
 });
 
 describe("PainelDeProvedores — ponto com menu fechado", () => {
