@@ -24,7 +24,7 @@
 import { createHash } from "node:crypto";
 
 /** Prefixo fixo: o mesmo `channel.id` sempre dá o mesmo UUID. */
-const ESPACO = "deskcomm/voice-agent/audiosocket-de-entrada:";
+const ESPACO = "voice-agent/audiosocket-de-entrada:";
 
 /** UUID (formato v5: SHA-1 + versão/variante) do AudioSocket de uma ligação recebida. */
 export function uuidDoAudioSocketDeEntrada(channelId: string): string {

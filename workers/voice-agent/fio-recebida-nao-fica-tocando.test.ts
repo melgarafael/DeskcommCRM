@@ -147,6 +147,24 @@ describe("fio: a recebida que cai antes da IA não fica tocando", () => {
     expect(fakes.tabela[0]).toMatchObject({ status: "ended", end_reason: "timeout" });
   });
 
+  it("a recebida que a IA atendeu (connected) não vira 'timeout' quando o canal some", async () => {
+    await handleStasisStart({
+      type: "StasisStart",
+      channel: {
+        id: CANAL_NATIVO,
+        dialplan: { exten: "552731912377" },
+        caller: { number: "27992759009" },
+      },
+    } as never);
+    fakes.tabela[0]!.status = "connected";
+    await handleChannelDestroyed({
+      type: "ChannelDestroyed",
+      channel: { id: CANAL_NATIVO },
+    } as never);
+    expect(fakes.tabela[0]).toMatchObject({ status: "connected" });
+    expect(fakes.tabela[0]!.end_reason).toBeUndefined();
+  });
+
   it("o canal de OUTRA ligação não encerra esta", async () => {
     await handleStasisStart({
       type: "StasisStart",
