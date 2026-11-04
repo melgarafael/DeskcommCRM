@@ -8197,6 +8197,7 @@
   "Escolha um número conectado": "Choose a connected number",
   "Escolha um número da equipe para receber uma mensagem toda vez que o assistente travar e precisar de uma pessoa.": "Choose a team number to receive a message every time the assistant gets stuck and needs a person.",
   "Escolher outro número": "Choose another number",
+  "A pessoa pode ser cliente da própria empresa — a equipe que viaja pela própria agência, por exemplo. Nesse caso o número ainda recebe o aviso e continua entrando no CRM: diferente de um número interno, que deixa de virar atendimento.": "The person may be a customer of the company itself — the team that travels through the agency, for example. In that case the number still receives the alert and keeps coming into the CRM: unlike an internal number, which stops turning into a conversation.",
   "Esse número ainda não está completo.": "This number isn't complete yet.",
   "Esse número passa a ser só da equipe: o que ele mandar deixa de virar atendimento.": "This number becomes team-only: whatever it sends will no longer turn into a conversation.",
   "Este número ainda está em aquecimento": "This number is still warming up",
