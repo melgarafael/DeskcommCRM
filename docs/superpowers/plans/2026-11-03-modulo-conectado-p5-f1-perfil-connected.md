@@ -18,6 +18,10 @@
 - Zero módulos continua sendo um estado completo (não-negociável 1): nada aqui aparece sem um módulo `connected` instalado.
 - Schema sai em tripla: migration em `supabase/migrations/`, apêndice idempotente em `supabase/baseline.sql`, linha `-- manifest:` no cabeçalho. Número da migration por `pnpm checar:colisao-de-migration`, nunca pelo último arquivo.
 - Todo `t("literal")` novo entra no dicionário (`lib/i18n/dicionario.ts` e `traducoes/*.json`); o gate `tests/unit/i18n-espanhol-cobre-a-tela.test.ts` reprova o literal sem tradução.
+- Função nova em `public` (a do interruptor) termina com `revoke execute ... from public, anon, authenticated;` e `grant execute ... to service_role;`, igual a `fn_extensions_remove_installation` (baseline linhas 28702 e 28711). `create or replace` das três funções existentes mantém os grants. Vigia: `tests/invariants/hardening-definer-varredura.test.ts` (CLAUDE.md, Migrations, item 9).
+- Apêndice do baseline em bloco rotulado `-- ---- <coisa> (migration NNNN) ----`, idempotente e auto-curativo; constraint nova só depois de corrigir os dados (item 6 e 8). Antes de empurrar, validar `install` e `update` do baseline num Postgres descartável: isso roda no CI (`invariants`), não aqui.
+- Mutação nova (o interruptor) grava auditoria: a ação `extension.switched` entra na lista de `lib/audit/actions.ts`, ao lado de `extension.removed` (linha 933).
+- Definition of Done (CLAUDE.md): itens 13 (checklist do Sistema Vivo), 16 (afirmações de estado) e 18 (destino) estão na Task 6, não são opcionais.
 - Nada roda nesta máquina: o veredito de cada tarefa é o CI do fork.
 
 ## Decisão registrada: a F1 NÃO sobe `HOST_API_VERSION`
@@ -103,7 +107,7 @@ A spec diz "a versão da API do host sobe". Medido em `main`: `HOST_API_VERSION 
 
 **Files:**
 - Create: `supabase/migrations/<timestamp>_<NNNN>_modulo_conectado_interruptor.sql`, `app/api/v1/extensions/[id]/switch/route.ts`, `tests/invariants/extensoes-interruptor.test.ts`
-- Modify: `supabase/baseline.sql` (apêndice), `lib/database.types.ts` (assinatura nova, na forma de `fn_extensions_remove_installation`, linha 15600), `lib/extensions/service.ts` (nova `switchExtension`, ao lado de `removeExtension`, linha 946), `lib/extensions/requests.ts` (schema do corpo), `lib/extensions/view.ts` (campo `disabled_at`), `app/admin/(protected)/extensoes/page.tsx` (selecionar `disabled_at`), `components/extensions/ExtensionsManager.tsx` (botão e aviso), dicionário de i18n
+- Modify: `supabase/baseline.sql` (apêndice), `lib/database.types.ts` (assinatura nova, na forma de `fn_extensions_remove_installation`, linha 15600), `lib/extensions/service.ts` (nova `switchExtension`, ao lado de `removeExtension`, linha 946), `lib/extensions/requests.ts` (schema do corpo), `lib/extensions/view.ts` (campo `disabled_at`), `lib/audit/actions.ts` (ação `extension.switched`), `app/admin/(protected)/extensoes/page.tsx` (selecionar `disabled_at`), `components/extensions/ExtensionsManager.tsx` e `components/extensions/InstalledExtensionCard.tsx` (botão e aviso; o cartão é onde `extension.removed` já aparece), dicionário de i18n
 - Test: `lib/extensions/service.test.ts`, `components/extensions/ExtensionsManager.test.tsx`
 
 **Interfaces:**
@@ -112,7 +116,7 @@ A spec diz "a versão da API do host sobe". Medido em `main`: `HOST_API_VERSION 
 
 - [ ] **Step 1: Write the failing tests.** Invariante: desligar um `connected` grava `disabled_at`, incrementa a revisão e devolve `applied_now: true`; repetir o mesmo recibo devolve `applied_now: false` sem mexer na revisão; recibo igual com corpo diferente dá `extension_idempotency_conflict`; revisão velha dá `extension_version_changed`; instalação `declarative` dá `extension_switch_not_applicable`; instalação removida dá `extension_removed`; ligar de novo zera `disabled_at`. `service.test.ts`: `switchExtension` chama a RPC com os quatro parâmetros e audita só quando `applied_now`. Componente: a linha de um módulo `connected` desligado mostra o aviso "Desligado nesta instalação" e o botão "Ligar"; módulo declarativo não mostra o botão.
 - [ ] **Step 2: Sabotagem prevista:** trocar `extension_switch_not_applicable` por aceitar qualquer perfil e ver o caso do `declarative` ficar vermelho; remover o incremento da revisão e ver o caso da revisão velha ficar vermelho.
-- [ ] **Step 3: Implement** a migration (tripla), a RPC, o serviço, a rota, o schema de corpo em `requests.ts` e a UI, no molde de `remove`. Esta tarefa NÃO faz token, grupo nem `/app/m`: ela guarda e mostra o estado. A F2 e a F4 leem `disabled_at`.
+- [ ] **Step 3: Implement** a migration (tripla; a RPC termina com o `revoke ... from public, anon, authenticated` e o `grant ... to service_role` da Global Constraints; teste: a função aparece sem `anon` nem `public` nas permissões de execução), a RPC, o serviço, a rota, o schema de corpo em `requests.ts` e a UI, no molde de `remove`. Esta tarefa NÃO faz token, grupo nem `/app/m`: ela guarda e mostra o estado. A F2 e a F4 leem `disabled_at`.
 - [ ] **Step 4: Run no CI** — Expected: `verify`, `invariants` e `e2e` (este só roda em PR contra `main`; usar o PR ao upstream como portão) verdes.
 - [ ] **Step 5: Commit** `feat(extensoes): interruptor local do modulo conectado`.
 
@@ -123,6 +127,23 @@ A spec diz "a versão da API do host sobe". Medido em `main`: `HOST_API_VERSION 
 - Create: `.changes/<fragmento>.md` com `capacidade_nova`; `evidence/modulo-conectado-f1/` com a saída do CI e as sabotagens
 
 **Interfaces:** nenhuma nova.
+
+- [ ] **Step 0: Declarações do Definition of Done** (vão no corpo do PR e em `evidence/modulo-conectado-f1/declaracoes.md`):
+  - **Destino (item 18): infraestrutura da plataforma de extensões.** Pergunta-raiz: sem nenhum módulo `connected` instalado, a operação comum continua inteira, porque o perfil, o campo `service_origin` e o botão só existem com um módulo conectado. Se o mantenedor classificar como "ambos", pede o consumidor real do ponto novo do núcleo; o consumidor é o primeiro módulo conectado, que a spec 33 descreve, e o PR não nomeia o privado (índice, passo 9).
+  - **Tela nova (item 14): nenhuma.** O aviso e o botão entram em `/admin/extensoes`, que já tem porta em `lib/navigation/catalogo.ts`; conferir isso com `grep` no catálogo e registrar a saída.
+  - **Env nova (item 9): nenhuma.**
+  - **Living System Checklist (item 13)**, cada resposta nomeando o artefato:
+    1. Quem me alimenta: a entrada do catálogo admitido por `fn_extensions_admit_catalog` e o pacote lido por `parseManifest`.
+    2. Quem eu alimento: `fn_extensions_finish_install` (instala o perfil) e, depois, F2 e F4, que leem `disabled_at`. Declarar F2/F4 como consumidores futuros nomeados na spec 33, não como aresta presente.
+    3. Registro que emito: `extension_operations` (recibo) e `api_audit_log` com `extension.switched`.
+    4. Onde apareço: `InstalledExtensionCard` em `/admin/extensoes`.
+    5. Porta: `/admin/extensoes` já no `NAV_CATALOG`.
+    6. Anti-morte: nenhum, justificado: é estado de configuração, não demanda de pessoa.
+    7. Onde se configura: o botão Ligar/Desligar da mesma tela; falha mostra o código da operação.
+    8. Continuidade IA↔humano: não se aplica (nenhum agente passa por aqui).
+    9. Laço de retorno: instalação `connected` desligada fica visível com data e responsável (`disabled_at`, `disabled_by`); o que muda no sistema é F2 recusar o token, e isso só vale depois da F2. Declarar como dívida da F2.
+    10. Mapa: `docs/architecture/extensoes-declarativas.architecture.json` ganha o nó do perfil e do interruptor com ≥2 arestas.
+  - **Afirmações de estado (item 16):** conferir, só sobre o que a F1 muda, `docs/specs/extensoes-declarativas-v1.md`, `docs/doctrine/extensoes.md` e a skill `.agents/skills/deskcomm-extensao` (a tabela "o que ela não faz" e o texto "o pacote é JSON declarativo"). Onde disserem que existem só os perfis `declarative` e `data`, trocar por um comando que mostre a lista (`grep -n 'profile: z.enum' lib/extensions/manifest.ts`). Se a skill mudar, rodar `pnpm skills:sync` e avisar no PR que a página de guias da LP acompanha.
 
 - [ ] **Step 1: Escrever a jornada** (tela, banco fresco do `baseline.sql`, envs opcionais ausentes): admitir um catálogo de laboratório com uma entrada `connected`, instalar, ver a instalação em `/admin/extensoes` com o aviso de módulo conectado, desligar, ver "Desligado nesta instalação", ligar de novo; sem módulo conectado, a tela de extensões é a de hoje.
 - [ ] **Step 2: Fragmento `.changes/`** com `capacidade_nova` e a frase do que muda para quem usa; nada de seção no CHANGELOG.
