@@ -556,13 +556,17 @@ async function chamar(caso: Caso, token: string | undefined): Promise<Response> 
   return handler(requisicao(caso, token), { params: Promise.resolve(caso.params) });
 }
 
-/** As linhas de uma organização, copiadas, para comparar antes e depois. */
+/**
+ * As linhas de uma organização, copiadas, para comparar antes e depois.
+ * Tabela sem nenhuma linha da organização não entra: o cliente falso cria a
+ * chave vazia quando a rota só CONSULTA a tabela, e isso não é escrita. Quem
+ * escreveu linha de outra organização na lista de A continua vermelho.
+ */
 function fotografia(linhas: Record<string, Record<string, unknown>[]>, org: string): unknown {
   const filtradas = Object.fromEntries(
-    Object.entries(linhas).map(([tabela, lista]) => [
-      tabela,
-      lista.filter((l) => l.organization_id === org),
-    ]),
+    Object.entries(linhas)
+      .map(([tabela, lista]) => [tabela, lista.filter((l) => l.organization_id === org)] as const)
+      .filter(([, lista]) => lista.length > 0),
   );
   return JSON.parse(JSON.stringify(filtradas)) as unknown;
 }
@@ -795,9 +799,15 @@ describe("GET board — token lê só a própria organização, sem escrever", (
   it("controle pela SESSÃO com a mesma ambiguidade: o aviso é gravado (o 'sem escrita' do token não é vazio por acaso)", async () => {
     const caso = quadroDe(PIPE_A);
     preparar(caso.linhas);
-    const cliente = falso.cliente as unknown as { from: (tabela: string) => unknown };
+    const cliente = falso.cliente as unknown as {
+      from: (tabela: string) => { eq: (coluna: string, valor: unknown) => unknown };
+    };
+    // Cliente de SESSÃO: o RLS da sessão deixa ver só a organização do usuário
+    // (usuario-a é de ORG_A). O dublê não simula RLS, então o filtro entra aqui,
+    // no lugar do RLS: a consulta do funil por `id` sem `organization_id` (a rota
+    // confia no RLS na sessão) acharia zero linhas e daria 404.
     vi.mocked(createClient).mockResolvedValueOnce({
-      from: (tabela: string) => cliente.from(tabela),
+      from: (tabela: string) => cliente.from(tabela).eq("organization_id", ORG_A),
       auth: { getUser: async () => ({ data: { user: { id: "usuario-a" } }, error: null }) },
     } as never);
     vi.mocked(loadAuthUser).mockResolvedValueOnce(null);
