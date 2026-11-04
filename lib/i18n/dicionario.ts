@@ -40,6 +40,8 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Custo AI / dia (US$)": { es: "Costo de IA / día (US$)" },
+  "chamadas sem preço": { es: "llamadas sin precio" },
   // Servidores MCP por agente e OAuth por contato (migration 9095).
   "O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.": { es: "El enlace de autorización es automático: mientras el cliente no autorice, el agente recibe por sí solo la herramienta que genera el enlace. No hace falta marcarla aquí." },
   "0 = o acesso é revogado assim que a conversa é encerrada.": { es: "0 = el acceso se revoca en cuanto se cierra la conversación." },
