@@ -6922,6 +6922,12 @@ export const DICIONARIO: Traducoes = {
   "Escolha o fluxo": { es: "Elige el flujo" },
   "Follow-up iniciado.": { es: "Seguimiento iniciado." },
   "Não foi possível iniciar o follow-up.": { es: "No se pudo iniciar el seguimiento." },
+  // #3923: a instalação não tem número conectado — `fn_service_begin` recusa
+  // com `service_channel_not_found` e a rota devolve 409. A frase diz o que
+  // fazer, não só que falhou.
+  "Conecte um número de WhatsApp antes de iniciar o follow-up.": {
+    es: "Conecta un número de WhatsApp antes de iniciar el seguimiento.",
+  },
   "Follow-up encerrado.": { es: "Seguimiento cerrado." },
   "Não foi possível encerrar o follow-up.": { es: "No se pudo cerrar el seguimiento." },
   "Tarefa interna": { es: "Tarea interna" },
