@@ -95,4 +95,20 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/ai/skills",
   { caminho: "/api/v1/ai/skills/[name]", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
   { caminho: "/api/v1/ai/skills/[name]/versions", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
+
+  // automation-rules (R1). Quem autentica é a própria rota, por `resolveAuthDual`:
+  // token com `config:read` (GET) ou `config:write` (DELETE) e papel admin
+  // (`tokenRole`). `[id]` é forma de UUID. O POST de `automation-rules` e o PATCH
+  // de `[id]` seguem só de sessão (ids de ação sem conferência; `authz.org.role`
+  // na autoria) e não entram de carona: o `[id]` ganha porta pelo DELETE.
+  "/api/v1/automation-rules",
+  "/api/v1/automation-rules/[id]",
+  "/api/v1/automation-rules/[id]/runs",
+  "/api/v1/automation-rules/runs",
+
+  // channel-schedules (R1). Quem autentica é a própria rota, por `resolveAuthDual`:
+  // token com `config:read` (GET) ou `config:write` (escrita) e papel admin
+  // (`tokenRole`). `[id]` é forma de UUID.
+  "/api/v1/channel-schedules",
+  "/api/v1/channel-schedules/[id]",
 ];
