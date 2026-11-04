@@ -28,6 +28,14 @@
  * decide é o banco. Os dois braços do `or` têm caso próprio: consertar um e deixar
  * o outro passaria num teste que só cobrisse o primeiro.
  *
+ * ## ATUALIZAÇÃO — Operador Silencioso (atendimento humano)
+ *
+ * O desenho original fazia o Operador SAIR (pulado) em handoff. Decisão posterior: em handoff
+ * ele ORGANIZA o card (etapa, tags, campos, nota — só as ferramentas dele, nunca `send_message`),
+ * mas continua SEM apurar promessa e SEM abrir aviso na Central. O que ficou congelado aqui é a
+ * metade que importa para quem assumiu — a Central não recebe alarme redundante —, e o que
+ * mudou é só o "pula o turno". Os dois braços do `or` de `isLeadInHandoff` seguem cobertos.
+ *
  * ## A guarda de vacuidade é o primeiro caso, de propósito
  *
  * Se a fixture não chegasse a produzir o aviso, os casos de handoff passariam por
@@ -279,23 +287,25 @@ describe("o Operador respeita o humano que assumiu", () => {
     expect(log.entries.some((e) => e.msg.includes("operador rodou"))).toBe(true);
   });
 
-  it("com force_human no contato, não escreve nada e diz por quê", async () => {
+  it("com force_human no contato, o Operador RODA e organiza o card, mas não apura promessa nem abre aviso", async () => {
     await pool.query(`update contacts set force_human = true where id = $1`, [CONTACT]);
 
     const log = await rodarOperador();
 
-    expect(await avisosAbertos(), "o Operador escreveu na Central depois de um humano assumir").toBe(0);
-    // `desfecho` (o tipo) e `porque` (o motivo) são campos separados desde que o
-    // desfecho passou a ser persistido — o tipo do union tem os dois, e colá-los
-    // numa string só era o que impedia contar "quantos turnos pularam por X".
-    const pulou = log.entries.find((e) => e.fields?.porque === "handoff_humano");
-    expect(pulou, "pulou sem registrar o motivo — return mudo").toBeTruthy();
-    expect(pulou?.fields?.desfecho).toBe("pulado");
-    // Não basta não agir: o caminho não pode nem ter chegado a rodar o papel.
-    expect(log.entries.some((e) => e.msg.includes("operador rodou"))).toBe(false);
+    // O que NÃO mudou: quem assumiu está com a conversa aberta, então a Central não recebe aviso.
+    expect(await avisosAbertos(), "o Operador abriu aviso na Central depois de um humano assumir").toBe(0);
+    // O que mudou (Operador Silencioso): handoff NÃO pula mais o turno. Antes este caso exigia
+    // `desfecho: pulado` + `porque: handoff_humano` e a ausência de "operador rodou".
+    expect(log.entries.some((e) => e.msg.includes("operador rodou")), "o handoff voltou a pular o Operador").toBe(true);
+    expect(log.entries.some((e) => e.fields?.porque === "handoff_humano"), "o desfecho ainda diz 'pulado por handoff'").toBe(false);
+    const desfecho = log.entries.find((e) => e.msg === "operador — desfecho do turno");
+    expect(desfecho?.fields?.desfecho).toBe("agiu");
+    // Sem apurar promessa: nem "assumida por" nem "sem dono" — o handoff dispensa a apuração inteira.
+    expect(desfecho?.fields?.promessa_assumida_por).toBeNull();
+    expect(desfecho?.fields?.promessa_sem_dono_porque).toBeNull();
   });
 
-  it("com a conversa silenciada (bot_silenced_until no futuro), também não escreve", async () => {
+  it("com a conversa silenciada (bot_silenced_until no futuro), também roda e também não abre aviso", async () => {
     // O outro braço do `or` de isLeadInHandoff. Cobrir só o force_human deixaria
     // passar um conserto que checasse uma fonte e esquecesse a outra.
     await pool.query(
@@ -306,7 +316,8 @@ describe("o Operador respeita o humano que assumiu", () => {
     const log = await rodarOperador();
 
     expect(await avisosAbertos()).toBe(0);
-    expect(log.entries.some((e) => e.fields?.porque === "handoff_humano")).toBe(true);
+    expect(log.entries.some((e) => e.msg.includes("operador rodou"))).toBe(true);
+    expect(log.entries.some((e) => e.fields?.porque === "handoff_humano")).toBe(false);
   });
 
   it("silêncio VENCIDO não é handoff — o papel volta a operar sozinho", async () => {
