@@ -182,6 +182,9 @@ export const AUDIT_ACTIONS = [
   // Uma rodada do cron `recover-stuck-messages` que de fato marcou mensagem
   // como falha (rodada vazia não vira linha — varredura não é mutação).
   "message.recover_stuck_run",
+  // Uma rodada do cron `recover-stuck-calls` que de fato encerrou ligação presa
+  // em toque (rodada vazia não vira linha).
+  "voice.recover_stuck_run",
   "contact.blocked",
   "phone_number.created",
   "phone_number.updated",
