@@ -499,13 +499,18 @@ describe("termo de concessão: a mesma regra do valor", () => {
   });
 });
 
-describe("termo de concessão: o nome e o resumo não são alegação do cliente", () => {
-  it("o nome do contato não traz termo", () => {
-    const l = lastro({ nome: "Brindes & Cia", mensagens: [["inbound", "Oi, quero um orçamento."]] });
-    expect(concessoesSemLastro("Olá, pessoal da Brindes & Cia, recebi seu pedido de orçamento.", l)).toEqual([]);
+describe("termo de concessão: o nome e o resumo são do cliente (lado fechado)", () => {
+  it("o termo no nome do contato é do cliente: a condição com ele, sem lastro, volta", () => {
+    const l = lastro({ nome: "Ana Desconto Aprovado", mensagens: [["inbound", "E aquele desconto?"]] });
+    expect(concessoesSemLastro("Seu desconto está aprovado.", l)).toEqual(["termo:aprovacao"]);
   });
 
-  it("com a conversa lida, o termo que só o resumo traz não é do cliente; sem a leitura, segue fechado", () => {
+  it("o nome próprio que lembra a raiz não é termo: 'Oi, Liberato!' passa", () => {
+    const l = lastro({ nome: "Liberato Souza", mensagens: [["inbound", "Oi, quero um orçamento."]] });
+    expect(concessoesSemLastro("Oi, Liberato! Confirmo que recebi seu pedido de orçamento.", l)).toEqual([]);
+  });
+
+  it("DECISÃO: o termo que só o resumo traz segue do cliente, com ou sem a leitura (custa uma reescrita no status)", () => {
     const mensagens: Linha[] = [
       ["inbound", "Já fiz o pix."],
       ["outbound", "Recebemos, obrigado! Vamos separar seu pedido."],
@@ -513,7 +518,10 @@ describe("termo de concessão: o nome e o resumo não são alegação do cliente
     const memoria = ["Pagamento aprovado e pedido liberado para envio."];
     const candidata = "Seu pagamento foi aprovado e o pedido já está liberado para envio.";
     const historico = mensagens.map(([direction, body], i) => ({ direction, body, sent_at: hora(i) }));
-    expect(concessoesSemLastro(candidata, lastro({ mensagens, memoria, historico }))).toEqual([]);
+    expect(concessoesSemLastro(candidata, lastro({ mensagens, memoria, historico }))).toEqual([
+      "termo:aprovacao",
+      "termo:liberacao",
+    ]);
     expect(concessoesSemLastro(candidata, lastro({ mensagens, memoria }))).toEqual([
       "termo:aprovacao",
       "termo:liberacao",
@@ -540,6 +548,9 @@ describe("termo de concessão: do lado da empresa, só a frase que concede", () 
     ["Me dá uma cortesia?", "Vou ver com o gerente se ele aprova a cortesia.", "Boa notícia: sua cortesia saiu!", "cortesia"],
     ["Vocês liberam o frete?", "Jamais liberamos frete.", "Liberamos o frete para você.", "liberacao"],
     ["Vocês liberam o frete?", "n libero isso.", "Liberamos o frete para você.", "liberacao"],
+    ["Vocês cobrem o frete grátis?", "Não cobrimos frete grátis.", "Como combinado, o frete é grátis.", "gratuidade"],
+    ["A taxa é isenta?", "Não pagamos isenção de taxa.", "Como combinado, você está isento da taxa.", "isencao"],
+    ["Tem desconto de cortesia?", "Nenhuma taxa de desconto de cortesia.", "Como combinado, a cortesia está garantida.", "cortesia"],
   ])("a pessoa da equipe que recusa ou deixa pendente não dá lastro: %s → %s", (pedido, daEquipe, candidata, nome) => {
     expect(concessoesSemLastro(candidata, lastro({ historico: conversa(pedido, daEquipe) }))).toEqual([`termo:${nome}`]);
   });
