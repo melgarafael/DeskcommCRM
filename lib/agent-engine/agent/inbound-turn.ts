@@ -98,6 +98,11 @@ import {
 } from './fotos-do-produto';
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
 import {
+  intervaloEfetivo,
+  runAfterComIntervalo,
+  ultimaRespostaDaIa,
+} from '../edge/crm/intervalo-entre-respostas';
+import {
   applyLeadStateUpdate,
   getLeadState,
   type LeadStage,
@@ -3402,6 +3407,44 @@ async function executarTurnoDoAgente(
       throw new JobSettledError(
         'fora do horário de funcionamento — job reagendado para a abertura da janela',
       );
+    }
+  }
+
+  // INTERVALO MÍNIMO ENTRE RESPOSTAS (#3940). O drain já adia o job pela pausa,
+  // mas mede contra a resposta que existia QUANDO a mensagem chegou: a que chega
+  // durante um turno em curso não pega carona (só há carona em job pending) e
+  // nasce medida contra a resposta ANTERIOR. Aqui a régua é a mesma do drain
+  // (`ultimaRespostaDaIa` + `runAfterComIntervalo`), medida de novo no turno,
+  // depois das detecções determinísticas — um opt-out na pausa é tratado agora.
+  // Adia como a janela acima: `rescheduleJob`, sem gastar tentativa, e o job
+  // segue pending para as próximas mensagens entrarem de carona. Campo vazio ou
+  // 0: nenhuma consulta. Falha da consulta degrada para "sem espera", como no drain.
+  const intervaloMs = intervaloEfetivo(agentConfig?.replyMinIntervalMs ?? null);
+  if (!preview && liveJob().kind === 'inbound_turn' && intervaloMs > 0) {
+    let liberaEm: Date | undefined;
+    try {
+      const ultima = await ultimaRespostaDaIa(pool, {
+        organizationId: tenantId,
+        conversationId: input.conversationId,
+      });
+      liberaEm = runAfterComIntervalo(undefined, ultima, intervaloMs, clock().getTime());
+    } catch (err) {
+      runLog.warn('não consegui medir o intervalo entre respostas — turno sem espera extra', {
+        error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+      });
+    }
+    if (liberaEm !== undefined) {
+      const esperaMs = liberaEm.getTime() - clock().getTime();
+      await rescheduleJob(pool, liveJob().id, ctx.workerId, {
+        acquiredAt: claimOfJob(liveJob())?.acquired_at,
+        delayMs: esperaMs,
+        reason: 'intervalo mínimo entre respostas do agente — turno adiado',
+      });
+      runLog.info('turno adiado — intervalo mínimo entre respostas da versão publicada', {
+        agent_id: agentConfig?.agentId,
+        espera_ms: esperaMs,
+      });
+      throw new JobSettledError('intervalo mínimo entre respostas — job reagendado');
     }
   }
 
