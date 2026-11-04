@@ -130,6 +130,13 @@ export const ApiErrorCodes = {
   next_action_absent: "next_action_absent", // decisão sobre proposta que não existe (mais) [wave 4]
   next_action_changed: "next_action_changed", // o agente reescreveu a proposta entre o render e o clique
   channel_archived: "channel_archived", // ação sobre canal que o usuário excluiu (a linha só sobrevive como âncora das FKs)
+  // POST /api/v1/ai/followups/enrollments numa instalação SEM número conectado
+  // (#3923): `fn_service_begin` levanta `service_channel_not_found` e o banco
+  // está certo — sem canal não há conversa para abrir. Era 500 sem corpo; agora
+  // é 409 com esta código estável, e a tela troca a frase genérica por "conecte
+  // um número". 409 e não 422: o corpo do pedido está correto, quem não está
+  // pronto é o estado da instalação.
+  service_channel_not_found: "service_channel_not_found",
   knowledge_source_type_in_use: "knowledge_source_type_in_use", // fonte ATIVA do mesmo tipo no agente — era o índice ai_knowledge_sources_unique_per_agent, que a 0181 derrubou; nenhuma rota emite mais este código
   voice_already_paired: "voice_already_paired", // POST /voice/sessions/pair com aparelho já vinculado — a saída é DELETE /voice/sessions, nunca re-parear por cima (ver a rota)
 
@@ -364,6 +371,7 @@ export const ApiErrorCodes = {
   internal_error: "internal_error",
   upstream_unavailable: "upstream_unavailable",
   unavailable: "unavailable", // 503: dependência de config ausente (ex.: pool do engine sem SUPABASE_DB_URL)
+  base_publica_nao_configurada: "base_publica_nao_configurada", // 503: NEXT_PUBLIC_APP_URL ausente, placeholder ou da própria máquina — o webhook único da instalação não é registrado
   waha_error: "waha_error",
   channel_unavailable: "channel_unavailable", // 502: o transporte do canal não respondeu (ex.: listar grupos com a sessão fora de WORKING)
   wacalls_error: "wacalls_error", // 502: o serviço de chamada de voz recusou ou não respondeu

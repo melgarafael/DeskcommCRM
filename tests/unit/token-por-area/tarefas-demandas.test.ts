@@ -661,6 +661,33 @@ describe("o ramo do token em tarefas, demandas e chamadas", () => {
     expect(falso.cadeias[0]?.filtros).toContainEqual(["assigned_to", PESSOA_DA_SESSAO]);
   });
 
+  it("GET /api/v1/tasks?pipeline_id=: o filtro de funil exige o embed do negócio, então o token recebe 422 sem tocar o banco", async () => {
+    // O filtro `lead.pipeline_id` só funciona com `lead:crm_leads!inner(...)`, e o
+    // embed é o que o ramo do token não usa (service role não passa pela RLS).
+    const c: Caso = {
+      ...LISTA_DE_TAREFAS,
+      caminho: "/api/v1/tasks?pipeline_id=11111111-1111-4111-8111-111111111111",
+    };
+    const { res, texto, falso } = await comoToken(c);
+
+    expect(res.status, texto).toBe(422);
+    expect(falso.cadeias).toEqual([]);
+  });
+
+  it("GET /api/v1/tasks?pipeline_id=: a sessão segue filtrando pelo funil do negócio", async () => {
+    const c: Caso = {
+      ...LISTA_DE_TAREFAS,
+      caminho: "/api/v1/tasks?pipeline_id=11111111-1111-4111-8111-111111111111",
+    };
+    const { res, texto, falso } = await comoSessao(c);
+
+    expect(res.status, texto).toBe(200);
+    expect(falso.cadeias[0]?.filtros).toContainEqual([
+      "lead.pipeline_id",
+      "11111111-1111-4111-8111-111111111111",
+    ]);
+  });
+
   it("GET /api/v1/tasks?assigned_to=ninguem: o token lista as sem responsável", async () => {
     const c: Caso = { ...LISTA_DE_TAREFAS, caminho: "/api/v1/tasks?assigned_to=ninguem" };
     const { res, texto, falso } = await comoToken(c);

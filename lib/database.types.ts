@@ -973,6 +973,7 @@ export type Database = {
           history_token_window: number;
           id: string;
           inbound_debounce_ms: number | null;
+          reply_min_interval_ms: number | null;
           knowledge_source_ids: string[];
           max_steps: number;
           model: string;
@@ -1014,6 +1015,7 @@ export type Database = {
           history_token_window?: number;
           id?: string;
           inbound_debounce_ms?: number | null;
+          reply_min_interval_ms?: number | null;
           knowledge_source_ids?: string[];
           max_steps?: number;
           model: string;
@@ -1054,6 +1056,7 @@ export type Database = {
           history_token_window?: number;
           id?: string;
           inbound_debounce_ms?: number | null;
+          reply_min_interval_ms?: number | null;
           knowledge_source_ids?: string[];
           max_steps?: number;
           model?: string;
@@ -5215,7 +5218,10 @@ export type Database = {
           webhook_path_token: string;
           webhook_secret_encrypted: string;
           zernio_account_id: string | null;
+          zernio_credencial_da_instalacao: boolean;
+          zernio_profile_id: string | null;
           zernio_token_encrypted: string | null;
+          zernio_webhook_id: string | null;
         };
         ComputedFields: never;
         Insert: {
@@ -5255,7 +5261,10 @@ export type Database = {
           webhook_path_token?: string;
           webhook_secret_encrypted: string;
           zernio_account_id?: string | null;
+          zernio_credencial_da_instalacao?: boolean;
+          zernio_profile_id?: string | null;
           zernio_token_encrypted?: string | null;
+          zernio_webhook_id?: string | null;
         };
         Update: {
           archived_at?: string | null;
@@ -5294,7 +5303,10 @@ export type Database = {
           webhook_path_token?: string;
           webhook_secret_encrypted?: string;
           zernio_account_id?: string | null;
+          zernio_credencial_da_instalacao?: boolean;
+          zernio_profile_id?: string | null;
           zernio_token_encrypted?: string | null;
+          zernio_webhook_id?: string | null;
         };
         Relationships: [
           {
@@ -6179,6 +6191,7 @@ export type Database = {
           id: string;
           organization_id: string;
           reason: string;
+          source_job_id: string | null;
           to_user_id: string | null;
         };
         ComputedFields: never;
@@ -6190,6 +6203,7 @@ export type Database = {
           id?: string;
           organization_id: string;
           reason: string;
+          source_job_id?: string | null;
           to_user_id?: string | null;
         };
         Update: {
@@ -6200,6 +6214,7 @@ export type Database = {
           id?: string;
           organization_id?: string;
           reason?: string;
+          source_job_id?: string | null;
           to_user_id?: string | null;
         };
         Relationships: [
@@ -15251,6 +15266,7 @@ export type Database = {
           p_expected_assignee?: string;
           p_organization_id: string;
           p_reason: string;
+          p_source_job_id?: string | null;
           p_to_user_id: string;
         };
         Returns: {

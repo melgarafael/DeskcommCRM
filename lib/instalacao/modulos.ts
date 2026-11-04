@@ -41,7 +41,7 @@ import type pg from "pg";
 import { logger } from "@/lib/logger";
 
 /**
- * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos` e `conferir_whatsapp` ligam/desligam por uma linha em `platform_config`
+ * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente` e `cold_call` ligam/desligam por uma linha em `platform_config`
  * (ver o resto deste arquivo). `honorarios` e `financeiro` são MÓDULOS DE TABELA (ADR-0002): a fonte da
  * verdade é `modulos_instalados`, escrita só por `fn_modulo_instalar` (`lib/modulos/service.ts`),
  * nunca por esta tela. Os dois mecanismos convivem na mesma lista porque é isso que
@@ -65,6 +65,8 @@ export const MODULOS_OPCIONAIS = [
   "setores",
   "avisos",
   "conferir_whatsapp",
+  "mcp_por_agente",
+  "cold_call",
 ] as const;
 export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
@@ -89,6 +91,8 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
   "setores",
   "avisos",
   "conferir_whatsapp",
+  "mcp_por_agente",
+  "cold_call",
 ] as const satisfies readonly ModuloOpcional[];
 
 /** A linha de cada módulo por FLAG em `platform_config`. O formato é o da CHECK da 0341.
@@ -130,6 +134,15 @@ export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number]
   // ninguém mediu contra banimento. Quem aceita o risco liga; desligado, nada é
   // consultado e a prospecção segue como antes (`lib/prospecting/whatsapp.ts`).
   conferir_whatsapp: "MODULO_CONFERIR_WHATSAPP",
+  // Doc 252 (A): os servidores MCP POR AGENTE do #3857, com OAuth em que cada
+  // cliente autoriza a própria conta. Serve a quem vende produto conectado, não
+  // à maioria. Desligado, a seção do agente e a lista da ficha somem, as duas
+  // rotas públicas respondem 404 e o turno não monta servidor do agente.
+  mcp_por_agente: "MODULO_MCP_POR_AGENTE",
+  // #3933: a fila de ligações ativas (cold call). Discagem ativa é coisa de nicho
+  // (régua do núcleo enxuto): quem não prospecta por telefone não carrega a tela
+  // nem as rotas. Desligado, a porta some, a tela e as rotas respondem 404.
+  cold_call: "MODULO_COLD_CALL",
 };
 
 const LIGADO = "ligado";

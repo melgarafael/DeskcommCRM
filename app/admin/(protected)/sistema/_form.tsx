@@ -344,6 +344,22 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     foraDoMenu: "Não cria porta no menu do CRM: a conferência aparece na lista de empresas em",
     painelEm: "/app/prospecting",
   },
+  {
+    modulo: "mcp_por_agente",
+    id: "modulo-mcp-por-agente",
+    rotulo: "Ferramentas externas por agente",
+    descricao:
+      "Ligado, a tela de cada agente ganha a seção Servidores MCP, para conectar sistemas de terceiros com chave fixa ou com o login de cada cliente, que autoriza a própria conta por um link na conversa. Desligado, a seção some, o agente deixa de usar esses servidores e os links de autorização param de abrir; o que já foi cadastrado fica guardado.",
+    foraDoMenu: "Não cria porta no menu do CRM: ele libera uma seção na tela de cada agente, em",
+    painelEm: "/app/ai/agents",
+  },
+  {
+    modulo: "cold_call",
+    id: "modulo-cold-call",
+    rotulo: "Cold Call (fila de ligações)",
+    descricao:
+      "Ligado, cada empresa ganha no CRM a tela Cold Call: um funil próprio, a importação da lista e a ligação para um lead por vez, pelo canal de voz quando ele está pareado ou pelo discador do aparelho. Quem pediu para não ser incomodado, contato pessoal e contato anonimizado não recebem ligação. Desligado, a tela e o menu somem.",
+  },
 ];
 
 /**
