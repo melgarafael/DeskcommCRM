@@ -75342,7 +75342,7 @@ create table if not exists crm_notice_derived.config(singleton boolean primary k
 insert into crm_notice_derived.config(singleton)values(true)on conflict do nothing;
 create table if not exists crm_notice_derived.episodes(
  id uuid primary key default gen_random_uuid(),organization_id uuid not null references public.organizations(id)on delete cascade,
- kind text not null check(kind in('waha_ban','lgpd_at_risk','ai_budget','tenant_pending_overflow')),
+ kind text not null check(kind in('channel_unavailable','lgpd_at_risk','ai_budget','tenant_pending_overflow')),
  source_key text not null,snapshot jsonb not null,created_at timestamptz not null default clock_timestamp());
 create index if not exists derived_episode_order on crm_notice_derived.episodes(created_at,id);
 create table if not exists crm_notice_derived.state(
@@ -75415,7 +75415,7 @@ declare org uuid:=(p_row->>'organization_id')::uuid;key text;kind text;active bo
 begin
  case p_table
  when 'channel_sessions'then
-  kind:='waha_ban';key:=p_row->>'id';active:=(p_row->>'status')in('ban_suspected','disconnected_unexpected')or((p_row->>'status')='disconnected'and(p_row->>'updated_at')::timestamptz>p_at-interval '24 hours');
+  kind:='channel_unavailable';key:=p_row->>'id';active:=(p_row->>'status')in('ban_suspected','disconnected_unexpected')or((p_row->>'status')='disconnected'and(p_row->>'updated_at')::timestamptz>p_at-interval '24 hours');
   data:=jsonb_build_object('status',p_row->>'status','status_reason',p_row->>'status_reason');
  when 'lgpd_requests'then
   kind:='lgpd_at_risk';key:=p_row->>'id';
@@ -75436,7 +75436,7 @@ begin
  -- Observe OLD at closure too: a temporal window can start without an UPDATE.
  if tg_op<>'INSERT'then perform crm_notice_derived.observe(tg_table_name,to_jsonb(old),clock_timestamp());end if;
  if tg_op<>'DELETE'then perform crm_notice_derived.observe(tg_table_name,to_jsonb(new),clock_timestamp());
- else perform crm_notice_derived.record(old.organization_id,case tg_table_name when 'channel_sessions'then 'waha_ban'when 'lgpd_requests'then 'lgpd_at_risk'else 'ai_budget'end,case when tg_table_name='ai_budgets'then old.organization_id::text else(to_jsonb(old)->>'id')end,false,'{}');end if;
+ else perform crm_notice_derived.record(old.organization_id,case tg_table_name when 'channel_sessions'then 'channel_unavailable'when 'lgpd_requests'then 'lgpd_at_risk'else 'ai_budget'end,case when tg_table_name='ai_budgets'then old.organization_id::text else(to_jsonb(old)->>'id')end,false,'{}');end if;
  return null;
 exception when others then raise warning 'crm_notice_capture_failed source=% sqlstate=%; business_continues',tg_table_name,sqlstate;return null;
 end$$;

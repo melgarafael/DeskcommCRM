@@ -2,7 +2,7 @@ import { prazoEmBr } from "@/lib/lgpd/sla";
 import type { RetainedEpisode } from "@/lib/realtime/drain-retained-episodes";
 export interface DerivedNotice extends RetainedEpisode {
   organization_id: string;
-  kind: "waha_ban" | "lgpd_at_risk" | "ai_budget" | "tenant_pending_overflow";
+  kind: "channel_unavailable" | "lgpd_at_risk" | "ai_budget" | "tenant_pending_overflow";
   snapshot: Record<string, unknown>;
   created_at: string;
 }
@@ -13,7 +13,7 @@ export function formatDerivedNotice(item: DerivedNotice): {
   const s = item.snapshot;
   if (!s || typeof s !== "object") throw new Error("invalid notice snapshot");
   switch (item.kind) {
-    case "waha_ban":
+    case "channel_unavailable":
       if (
         !["ban_suspected", "disconnected_unexpected", "disconnected"].includes(
           String(s.status),
@@ -22,10 +22,10 @@ export function formatDerivedNotice(item: DerivedNotice): {
       )
         throw new Error("invalid channel notice");
       return {
-        label: "Alerta WAHA",
+        label: "Alerta de conexão",
         message:
           s.status === "ban_suspected"
-            ? "Sessão WAHA com suspeita de banimento"
+            ? "Conexão com suspeita de bloqueio"
             : `Sessão desconectada inesperadamente${s.status_reason ? `: ${s.status_reason}` : ""}`,
       };
     case "lgpd_at_risk": {

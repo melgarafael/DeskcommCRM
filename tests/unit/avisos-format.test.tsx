@@ -10,9 +10,9 @@ const notice = (kind: any, snapshot: Record<string, unknown>) => ({
 });
 test("formats the four retained snapshots without relabelling business rules", () => {
   expect(
-    formatDerivedNotice(notice("waha_ban", { status: "ban_suspected", status_reason: null }))
+    formatDerivedNotice(notice("channel_unavailable", { status: "ban_suspected", status_reason: null }))
       .message,
-  ).toBe("Sessão WAHA com suspeita de banimento");
+  ).toBe("Conexão com suspeita de bloqueio");
   expect(
     formatDerivedNotice(notice("lgpd_at_risk", { due_at: "2026-11-03T00:00:00Z", overdue: false }))
       .message,
@@ -26,7 +26,7 @@ test("formats the four retained snapshots without relabelling business rules", (
 });
 test("rejects canonical FAILED and values outside retained notice thresholds", () => {
   for (const x of [
-    notice("waha_ban", { status: "FAILED", status_reason: null }),
+    notice("channel_unavailable", { status: "FAILED", status_reason: null }),
     notice("ai_budget", { percent: 79, mode: "avisar" }),
     notice("tenant_pending_overflow", { count: 50 }),
   ])
