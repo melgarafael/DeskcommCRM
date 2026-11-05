@@ -45,6 +45,7 @@ import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { createClient } from "@/lib/supabase/server";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
 
@@ -221,9 +222,20 @@ export async function DELETE(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "agenda" });
+  // Sessão OU token `mcp:write`. O token precisa de `manager`: a RLS da sessão
+  // deixa o atendente apagar só os bloqueios da própria agenda, e o token não é
+  // pessoa, então não há "própria agenda" para ele. Apagar o de qualquer pessoa
+  // da organização é papel de gerente, o mesmo que a RLS dá ao `manager`.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "agenda",
+    role: "agent",
+    scope: "mcp:write",
+    tokenRole: "manager",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "agenda_excecoes_apagar", requestId); if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const lido = apagarSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) return fail("validation_failed", t("id inválido."), 422, { requestId });
@@ -232,12 +244,12 @@ export async function DELETE(req: NextRequest): Promise<Response> {
   // CLAUDE.md. Um bloqueio não é fato histórico: é uma regra que vale enquanto
   // está lá. Guardá-lo desativado só criaria a pergunta "este feriado valeu ou
   // não?" para sempre — e o audit log acima já registra que existiu e por quem.
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase
     .from("calendar_availability_exceptions")
     .delete()
     .eq("id", lido.data.id)
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .select("id, exception_date")
     .maybeSingle();
 
@@ -248,8 +260,9 @@ export async function DELETE(req: NextRequest): Promise<Response> {
 
   void audit({
     action: "agenda.bloqueio_removido",
-    actorUserId: authz.user.id,
-    organizationId: authz.org.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "calendar_availability_exception",
     resourceId: data.id,
     requestId,
