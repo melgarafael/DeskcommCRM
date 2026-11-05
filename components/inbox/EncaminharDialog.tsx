@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import type { ConversationWithContact } from "@/hooks/inbox/useConversationsRealtime";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
-import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
+import { filtrarDestinos } from "@/lib/inbox/filtrar-destinos";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,42 +25,6 @@ interface Props {
   conversationIdAtual: string | null;
   enviando: boolean;
   onEscolher: (conversationId: string) => void;
-}
-
-/**
- * Os DESTINOS que a janela oferece para a busca digitada — puro, testável.
- *
- * A conversa atual sai da lista (encaminhar para ela mesma não faz sentido) e o
- * rótulo vem da decisão central (`rotuloDoContato`): nome de gente, depois
- * telefone, depois "Sem nome". É a MESMA régua da lista; uma cadeia montada à
- * mão aqui viraria a sétima cópia.
- *
- * A comparação é do TEXTO DIGITADO contra o RÓTULO, e é ela que mora fora do
- * `useMemo` para ter onde ser presa por teste — a tela não tem como provar a
- * regra sozinha. Ordem e limite são os da lista que chegou: o filtro não
- * reordena, não corta e não inventa destino.
- */
-export function destinosDoEncaminhamento(
-  conversas: readonly ConversationWithContact[],
-  conversationIdAtual: string | null,
-  busca: string,
-  t: (texto: string) => string,
-): Array<{ id: string; rotulo: string }> {
-  // `joao` tem de achar "João": `includes` trata acento como OUTRA letra, e
-  // `toLowerCase` só resolve caixa. A conta é a do repo — `termoSemAcento`
-  // (`lib/inbox/termo-de-busca`), a mesma da busca do Inbox.
-  //
-  // ⚠️ Os DOIS LADOS: normalizar só o rótulo deixaria quem digita `João` sem
-  // achar o contato cadastrado como "Joao". O `rotulo` devolvido continua o do
-  // cadastro — ele é o texto do botão, com acento.
-  const termo = termoSemAcento(busca.trim());
-  return conversas
-    .filter((c) => c.id !== conversationIdAtual)
-    .map((c) => ({
-      id: c.id,
-      rotulo: rotuloDoContato(c.contacts, t),
-    }))
-    .filter((c) => (termo ? termoSemAcento(c.rotulo).includes(termo) : true));
 }
 
 /**
@@ -85,10 +49,19 @@ export function EncaminharDialog({
   const t = useT();
   const [busca, setBusca] = useState("");
 
-  const destinos = useMemo(
-    () => destinosDoEncaminhamento(conversas, conversationIdAtual, busca, t),
-    [conversas, conversationIdAtual, busca, t],
-  );
+  const destinos = useMemo(() => {
+    const todos = conversas
+      .filter((c) => c.id !== conversationIdAtual)
+      .map((c) => ({
+        id: c.id,
+        // O rótulo vem da decisão central (`rotuloDoContato`) — nome de gente,
+        // depois telefone, depois "Sem nome". É a MESMA régua da lista; uma
+        // cadeia montada à mão aqui viraria a sétima cópia.
+        rotulo: rotuloDoContato(c.contacts, t),
+      }));
+    // A busca ignora caixa E acento (#4072): `joao` acha "João".
+    return filtrarDestinos(todos, busca);
+  }, [conversas, conversationIdAtual, busca, t]);
 
   return (
     <Dialog
