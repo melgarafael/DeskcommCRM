@@ -86,6 +86,13 @@ async function handle(req: NextRequest): Promise<Response> {
       ? await enviarOcorrencia(admin, ag, previstaPara)
       : { desfecho: "pulada_desconectado" };
 
+    // Org parada no meio do envio: não grava desfecho nem avança a agenda. A ocorrência
+    // fica como estava e a rota volta a ela quando a org for operante de novo.
+    if (desfecho.desfecho === "org_parada") {
+      await admin.from("mensagens_agendadas").update({ claimed_until: null }).eq("id", ag.id);
+      continue;
+    }
+
     await admin.from("mensagens_agendadas_envios").insert({
       organization_id: ag.organization_id,
       agendamento_id: ag.id,

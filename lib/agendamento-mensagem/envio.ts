@@ -9,6 +9,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
+import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 
 export interface AgendamentoParaEnvio {
   id: string;
@@ -21,7 +22,9 @@ export interface AgendamentoParaEnvio {
 export type DesfechoDoEnvio =
   | { desfecho: "enviada"; message_id: string }
   | { desfecho: "falhou"; erro: string }
-  | { desfecho: "pulada_desconectado" };
+  | { desfecho: "pulada_desconectado" }
+  /** Org suspensa, redigida ou arquivada no meio do envio: nada é gravado; a ocorrência espera. */
+  | { desfecho: "org_parada" };
 
 export async function sessaoEstaConectada(admin: SupabaseClient, organizationId: string, sessionId: string): Promise<boolean> {
   const { data } = await admin
@@ -64,6 +67,7 @@ export async function enviarOcorrencia(
     if (estado === "failed") return { desfecho: "falhou", erro: "envio_recusado" };
     return { desfecho: "enviada", message_id: (message as unknown as { id: string }).id };
   } catch (err) {
+    if (err instanceof OrgNaoOperanteError) return { desfecho: "org_parada" };
     const erro = err instanceof Error ? err.message : "erro_desconhecido";
     return { desfecho: "falhou", erro: erro.slice(0, 200) };
   }
