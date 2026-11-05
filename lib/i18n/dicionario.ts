@@ -4175,6 +4175,8 @@ export const DICIONARIO: Traducoes = {
   "Excluir credencial": { es: "Eliminar credencial" },
   Modelos: { es: "Modelos" },
   "Em uso por": { es: "En uso por" },
+  "Este número já está em outra campanha em andamento.": { es: "Este número ya está en otra campaña en curso." },
+  "Abrir essa campanha": { es: "Abrir esa campaña" },
   publicado: { es: "publicado" },
   "Revalidar credencial": { es: "Revalidar credencial" },
   "Remover credencial": { es: "Eliminar credencial" },

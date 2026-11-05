@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
 import { useT } from "@/hooks/i18n/useT";
 import { rodapeDeSaida } from "@/lib/prospecting/rodape-de-saida";
 import {
@@ -277,6 +278,10 @@ export function ProspectingClient() {
   const searchAttempt = useRef<{ fingerprint: string; id: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A campanha que ocupa o número (409 `prospecting_channel_busy`, #3896). Só
+  // aparece enquanto o aviso na tela for o DELA — `aviso` amarra os dois, e
+  // qualquer outro `setError` a esconde sem precisar limpá-la em cada caminho.
+  const [ocupante, setOcupante] = useState<{ id: string; aviso: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [key, setKey] = useState("");
   const [settings, setSettings] = useState(false);
@@ -389,11 +394,31 @@ export function ProspectingClient() {
       setNotice(typeof message === "function" ? message(resposta) : message);
       return true;
     } catch (e) {
+      if (e instanceof ApiError && e.code === "prospecting_channel_busy") {
+        const quem = e.details as { campaign_id?: unknown; campaign_name?: unknown } | undefined;
+        const nome = typeof quem?.campaign_name === "string" ? quem.campaign_name : null;
+        const aviso = nome
+          ? `${t("Este número já está em outra campanha em andamento.")} ${t("Em uso por")} "${nome}".`
+          : t("Este número já está em outra campanha em andamento.");
+        setError(aviso);
+        if (typeof quem?.campaign_id === "string") setOcupante({ id: quem.campaign_id, aviso });
+        return false;
+      }
       setError(e instanceof Error ? e.message : t("Não foi possível concluir a operação."));
       return false;
     } finally {
       setBusy(false);
     }
+  }
+  function abrirCampanha(id: string) {
+    setSelected(id);
+    setNotice(null);
+    // O aviso geral não pertence a uma campanha: trocar de
+    // campanha limpa o que era da anterior.
+    setError(null);
+    // A confirmação de exclusão vale para UMA campanha: ao trocar, ela some.
+    setConfirmandoExclusao(false);
+    setMostrarDesmarcadas(false);
   }
   const update = <K extends keyof CampaignConfig>(field: K, value: CampaignConfig[K]) =>
     setConfig((c) => ({ ...c, [field]: value }));
@@ -717,6 +742,13 @@ export function ProspectingClient() {
             (query.error instanceof Error
               ? query.error.message
               : t("Falha ao carregar a prospecção."))}
+          {error && ocupante?.aviso === error && (
+            <div className="mt-2">
+              <Button variant="outline" size="sm" onClick={() => abrirCampanha(ocupante.id)}>
+                {t("Abrir essa campanha")}
+              </Button>
+            </div>
+          )}
         </div>
       )}
       {notice && (
@@ -1153,16 +1185,7 @@ export function ProspectingClient() {
                 <button
                   key={c.id}
                   type="button"
-                  onClick={() => {
-                    setSelected(c.id);
-                    setNotice(null);
-                    // O aviso geral não pertence a uma campanha: trocar de
-                    // campanha limpa o que era da anterior.
-                    setError(null);
-                    // A confirmação de exclusão vale para UMA campanha: ao trocar, ela some.
-                    setConfirmandoExclusao(false);
-                    setMostrarDesmarcadas(false);
-                  }}
+                  onClick={() => abrirCampanha(c.id)}
                   className={`w-full rounded-lg border p-3 text-left ${campaign?.id === c.id ? "border-primary bg-primary/5" : "bg-card"}`}
                 >
                   <span className="block text-sm font-medium">{c.name}</span>
@@ -1204,8 +1227,11 @@ export function ProspectingClient() {
                         // número, "Em andamento" sozinho não diz por onde ela
                         // fala — e é a conexão que o operador escolhe na
                         // próxima.
-                        const canal = data?.channels.find((c) => c.id === campaign.channel_session_id);
-                        return canal ? ` · ${canal.display_name ?? canal.phone_number ?? canal.id}` : "";
+                        if (!campaign.channel_session_id) return "";
+                        const c = data?.channels.find((x) => x.id === campaign.channel_session_id);
+                        return c
+                          ? ` · ${c.display_name ?? c.phone_number ?? c.id}`
+                          : ` · ${t("Conexão removida.")}`;
                       })()}
                     </p>
                   </div>
