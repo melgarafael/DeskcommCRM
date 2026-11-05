@@ -240,6 +240,42 @@ describe("reserva de lugar com capacidade por período", () => {
     expect(await ocupacaoDoLugar(org, mesa)).toMatchObject({ reservas: 0, pessoas: 0 });
   });
 
+  it("a ocupação do lugar é o MÁXIMO simultâneo: reservas em pontas opostas do período não se somam", async () => {
+    // Duas horas por reserva, com início de hora em hora: 14h–16h, 16h–18h e, no meio, 15h–17h.
+    const org = tenants[0].org, tipo = await servico(org, 40, 840, 900, 960);
+    await pool.query("update calendar_event_types set duration_minutes=120 where organization_id=$1 and id=$2", [org, tipo]);
+    const mesa = await lugar(org, "Mesa 6", 4);
+    await oferecer(org, tipo, mesa);
+    await reservar(org, tipo, await contato(org), { space_id: mesa, party_size: 2 });
+    await reservar(org, tipo, await contato(org), { starts_at: em("19:00:00Z"), space_id: mesa, party_size: 2 });
+
+    // 15h–17h encosta nas duas, mas nunca há mais de 2 + 2 pessoas ao mesmo tempo: pela soma seriam 6.
+    const meio = await reservar(org, tipo, await contato(org), { starts_at: depois, space_id: mesa, party_size: 2 });
+    expect(meio.service_facts).toMatchObject({ space_occupied: 2, space_capacity: 4 });
+    // Outro lado: agora 15h–16h e 16h–17h têm 4 pessoas cada, e uma a mais não cabe.
+    await expect(reservar(org, tipo, await contato(org), { starts_at: depois, space_id: mesa, party_size: 1 }))
+      .rejects.toMatchObject({ message: "space_capacity_reached" });
+    expect(await ocupacaoDoLugar(org, mesa)).toMatchObject({ reservas: 3, pessoas: 6 });
+  });
+
+  it("a mesma chave de operação com outro lugar ou outro grupo é conflito, não a reserva antiga devolvida", async () => {
+    const org = tenants[0].org, tipo = await servico(org, 40);
+    const mesa = await lugar(org, "Mesa 7", 4), outra = await lugar(org, "Mesa 8", 4);
+    await oferecer(org, tipo, mesa, outra);
+    const pessoa = await contato(org), chave = randomUUID();
+    const primeira = await reservar(org, tipo, pessoa, { operation_key: chave, space_id: mesa, party_size: 2 });
+
+    // Repetir o MESMO pedido devolve a mesma reserva (retry legítimo).
+    expect(await reservar(org, tipo, pessoa, { operation_key: chave, space_id: mesa, party_size: 2 }))
+      .toMatchObject({ id: primeira.id, deduplicated: true });
+    // Mudar a mesa ou o grupo com a mesma chave não pode virar "já reservado" na mesa errada.
+    await expect(reservar(org, tipo, pessoa, { operation_key: chave, space_id: outra, party_size: 2 }))
+      .rejects.toMatchObject({ message: "service_idempotency_conflict" });
+    await expect(reservar(org, tipo, pessoa, { operation_key: chave, space_id: mesa, party_size: 3 }))
+      .rejects.toMatchObject({ message: "service_idempotency_conflict" });
+    expect(await ocupacaoDoLugar(org, mesa)).toMatchObject({ reservas: 1, pessoas: 2 });
+  });
+
   it("serviço sem lugar continua reservando como antes, e o recurso exigido segue sendo exigência", async () => {
     const org = tenants[0].org, tipo = await servico(org, 2);
     const projetor = randomUUID();

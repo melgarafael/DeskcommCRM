@@ -133,6 +133,7 @@ const marcarSchema = z.object({
    * O LUGAR reservado e quantas pessoas vêm (issue #4029). Ausentes, o serviço
    * sem lugar continua reservando como antes; num serviço COM lugares a recusa
    * vem nomeada (`space_required`), nunca uma vaga escolhida em silêncio.
+   * `party_size` presente conta em pessoas na capacidade do serviço também.
    */
   space_id: z.string().uuid().optional(),
   party_size: z.number().int().min(1).max(100000).optional(),

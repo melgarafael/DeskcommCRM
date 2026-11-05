@@ -69307,10 +69307,15 @@ begin
       return jsonb_build_object('available',false,'reason','party_exceeds_space_capacity','space_id',chosen_space,'space_name',space_name,
         'capacity_limit',space_capacity,'party_size',party);
     end if;
-    -- A mesa é uma só: conta toda reserva que se sobrepõe, de qualquer serviço que ofereça o mesmo lugar.
-    select coalesce(sum(a.service_party_size),0)::integer into space_occupied from public.calendar_appointments a
-      where a.organization_id=p_org and a.service_space_id=chosen_space and a.id is distinct from p_ignore
-        and not a.service_block and a.status in ('pending','confirmed') and a.starts_at<end_at and a.ends_at>p_start;
+    -- A mesa é uma só: conta reservas de qualquer serviço que ofereça o mesmo lugar, pelo MÁXIMO simultâneo
+    -- (a mesma régua da capacidade do serviço, abaixo): reservas em pontas opostas do período não se somam.
+    with intervals as (
+      select greatest(a.starts_at,p_start) s,least(a.ends_at,end_at) e,a.service_party_size n from public.calendar_appointments a
+        where a.organization_id=p_org and a.service_space_id=chosen_space and a.id is distinct from p_ignore
+          and not a.service_block and a.status in ('pending','confirmed') and a.starts_at<end_at and a.ends_at>p_start
+    ),changes as (select i.s at,i.n delta from intervals i union all select i.e at,-i.n delta from intervals i),totals as (select at,sum(delta) delta from changes group by at),running as (
+      select sum(delta) over(order by at rows unbounded preceding) count from totals)
+    select coalesce(max(count),0)::integer into space_occupied from running;
     if space_occupied+party>space_capacity then
       return jsonb_build_object('available',false,'reason','space_capacity_reached','space_id',chosen_space,'space_name',space_name,
         'occupied',space_occupied,'capacity_limit',space_capacity,'party_size',party);
@@ -69421,6 +69426,7 @@ begin
   select * into a from public.calendar_appointments where organization_id=p_org and service_operation_key=command_key;
   if found then
     if a.service_operation_request is distinct from jsonb_build_object('event_type_id',type_id,'contact_id',contact,'starts_at',start_at,'participant_key',participant)
+      ||jsonb_strip_nulls(jsonb_build_object('space_id',(p_input->>'space_id')::uuid,'party_size',nullif(coalesce((p_input->>'party_size')::integer,1),1)))
       then raise exception 'service_idempotency_conflict' using errcode='PT409';end if;
     return to_jsonb(a)||jsonb_build_object('deduplicated',true);
   end if;
@@ -69452,7 +69458,8 @@ begin
       case when p_actor->>'type'='user' then (p_actor->>'id')::uuid else null end,
       case when p_actor->>'type'='user' then 'ui' else 'mcp' end,occurrence,participant,participant_name,
       t.booking_mode,fact->>'capacity_rule',(fact->>'capacity_limit')::integer,t.service_revision,(fact->>'destination_calendar_id')::uuid,t.service_publication_mode,t.requires_confirmation,command_key,
-      jsonb_build_object('event_type_id',type_id,'contact_id',contact,'starts_at',start_at,'participant_key',participant),
+      jsonb_build_object('event_type_id',type_id,'contact_id',contact,'starts_at',start_at,'participant_key',participant)
+      ||jsonb_strip_nulls(jsonb_build_object('space_id',(p_input->>'space_id')::uuid,'party_size',nullif(coalesce((p_input->>'party_size')::integer,1),1))),
       (fact->>'space_id')::uuid,coalesce((fact->>'party_size')::integer,1))
     returning * into a;
   return to_jsonb(a)||jsonb_build_object('deduplicated',false,'service_facts',fact);
@@ -69514,7 +69521,9 @@ begin
     if new.conversation_id is not null and not exists(select 1 from public.conversations where organization_id=new.organization_id and id=new.conversation_id and contact_id=new.contact_id and not is_group)
       then raise exception 'service_conversation_not_found' using errcode='P0002';end if;
     new.participant_key:=new.contact_id::text||':'||coalesce(lower(regexp_replace(nullif(trim(new.participant_name),''),'\s+',' ','g')),'primary');
-    new.service_operation_request:=jsonb_build_object('event_type_id',new.event_type_id,'contact_id',new.contact_id,'starts_at',new.starts_at,'participant_key',new.participant_key);
+    -- O lugar e as pessoas entram no pedido: a mesma chave com outra mesa é conflito, não a reserva antiga devolvida.
+    new.service_operation_request:=jsonb_build_object('event_type_id',new.event_type_id,'contact_id',new.contact_id,'starts_at',new.starts_at,'participant_key',new.participant_key)
+      ||jsonb_strip_nulls(jsonb_build_object('space_id',new.service_space_id,'party_size',nullif(new.service_party_size,1)));
   end if;
   if new.status not in ('pending','confirmed') or new.service_block then return new;end if;
   checked:=new.service_occurrence_id is not null;
