@@ -67,7 +67,7 @@ export async function carregarContextoDoNegocio(
     const [{ data: lead }, contato] = await Promise.all([
       db
         .from("crm_leads")
-        .select("id,title,stage_id,crm_stages(name)")
+        .select("id,title,stage_id,crm_stages!crm_leads_stage_id_fkey(name)")
         .eq("organization_id", org)
         .eq("id", leadId)
         .maybeSingle(),

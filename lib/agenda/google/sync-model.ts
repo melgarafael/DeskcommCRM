@@ -168,7 +168,11 @@ export function remoteProjection(
     if (p.organizer) return false;
     const email = p.email?.trim().toLowerCase() ?? "";
     if (!email) return false;
-    return lista.size ? lista.has(email) : managed.has(hash(email));
+    // SOMA, nunca troca: o hash do checkpoint é o que reconhece o convidado
+    // ÚNICO de uma escrita histórica (B aceito com CAS perdido, e a lista atual
+    // já em C) e o convidado de antes que precisa sair. Trocar pela lista atual
+    // cegava essas duas leituras (invariante I2 de agenda-google-recovery).
+    return lista.has(email) || managed.has(hash(email));
   });
   return {
     shared:
