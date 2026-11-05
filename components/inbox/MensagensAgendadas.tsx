@@ -2,10 +2,9 @@
 
 /**
  * MENSAGENS AGENDADAS — botão ao lado do Enviar e popup com três visões:
- *  - as agendadas do contato (padrão);
- *  - "Exibir Todos": as agendadas de todos os contatos da organização;
- *  - "Relatório": os últimos envios do contato (enviados, falhados, pulados).
- * Cada agendamento pode ser editado (lápis) ou cancelado (lixeira).
+ *  - as agendadas do contato, pendentes (padrão), com editar e cancelar;
+ *  - "Relatório": os envios já feitos para o contato;
+ *  - "Exibir Todos": os envios já feitos para todos os clientes da organização.
  */
 import { useState } from "react";
 import { CalendarClock, Eye, EyeOff, History, Plus, X } from "lucide-react";
@@ -53,7 +52,11 @@ interface AgendamentoLinha {
   termino_local: string | null;
   scheduled_at: string;
   se_desconectado: "esperar" | "cancelar";
-  contacts?: { display_name: string | null; name: string | null } | null;
+}
+
+interface ContatoNoEnvio {
+  display_name: string | null;
+  name: string | null;
 }
 
 interface EnvioLinha {
@@ -68,6 +71,7 @@ interface EnvioLinha {
     recorrencia: string;
     intervalo_dias: number | null;
     contact_id: string;
+    contacts?: ContatoNoEnvio | null;
   } | null;
 }
 
@@ -90,14 +94,14 @@ function formatarQuando(iso: string): string {
   return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
-function nomeDoContato(a: AgendamentoLinha): string {
-  return a.contacts?.display_name || a.contacts?.name || "Sem nome";
+function nomeDoContato(contato: ContatoNoEnvio | null | undefined): string {
+  return contato?.display_name || contato?.name || "Sem nome";
 }
 
-/** Chave da lista de agendamentos de um contato: o badge e o popup dividem o mesmo cache. */
+/** Chave da lista de agendamentos pendentes de um contato: o badge e o popup dividem o mesmo cache. */
 const chaveDaLista = (contactId: string) => [CHAVE_RAIZ, contactId] as const;
-const CHAVE_TODAS = [CHAVE_RAIZ, "todas"] as const;
 const chaveDosEnvios = (contactId: string) => [CHAVE_RAIZ, "envios", contactId] as const;
+const CHAVE_ENVIOS_TODOS = [CHAVE_RAIZ, "envios-todos"] as const;
 
 function buscarAgendamentos(contactId: string) {
   return apiClient.get<{ data: AgendamentoLinha[] }>(
@@ -105,14 +109,14 @@ function buscarAgendamentos(contactId: string) {
   );
 }
 
-function buscarTodas() {
-  return apiClient.get<{ data: AgendamentoLinha[] }>("/api/v1/mensagens-agendadas");
-}
-
 function buscarEnvios(contactId: string) {
   return apiClient.get<{ data: EnvioLinha[] }>(
     `/api/v1/mensagens-agendadas/envios?contact_id=${encodeURIComponent(contactId)}`,
   );
+}
+
+function buscarEnviosDeTodos() {
+  return apiClient.get<{ data: EnvioLinha[] }>("/api/v1/mensagens-agendadas/envios");
 }
 
 /**
@@ -169,7 +173,6 @@ export function MensagensAgendadasDialog({
   onOpenChange,
   contactId,
   channelSessionId,
-  contactName,
   textoInicial,
 }: Props & { open: boolean; onOpenChange: (v: boolean) => void }) {
   const t = useT();
@@ -179,14 +182,6 @@ export function MensagensAgendadasDialog({
   const qc = useQueryClient();
 
   const consulta = useQuery(opcoesDaLista(contactId));
-  const todas = useQuery({
-    queryKey: CHAVE_TODAS,
-    queryFn: buscarTodas,
-    enabled: modo === "todas",
-    staleTime: 0,
-    retry: 3,
-    refetchOnWindowFocus: true,
-  });
   const envios = useQuery({
     queryKey: chaveDosEnvios(contactId),
     queryFn: () => buscarEnvios(contactId),
@@ -194,13 +189,20 @@ export function MensagensAgendadasDialog({
     retry: 3,
     refetchOnWindowFocus: true,
   });
+  const enviosDeTodos = useQuery({
+    queryKey: CHAVE_ENVIOS_TODOS,
+    queryFn: buscarEnviosDeTodos,
+    enabled: modo === "todas",
+    staleTime: 0,
+    retry: 3,
+    refetchOnWindowFocus: true,
+  });
 
-  const consultaAtiva = modo === "todas" ? todas : consulta;
-  const lista = consultaAtiva.data?.data ?? [];
+  const lista = consulta.data?.data ?? [];
   const totalEnvios = envios.data?.data.length ?? 0;
   const formularioAberto = criando || editando !== null;
 
-  // Criar, editar ou cancelar mexe nas três visões: invalida o prefixo inteiro.
+  // Criar, editar ou cancelar mexe nas visões de agendados e de envios: invalida o prefixo inteiro.
   const atualizarTudo = () => qc.invalidateQueries({ queryKey: [CHAVE_RAIZ] });
 
   function alternar(alvo: Exclude<Modo, "contato">) {
@@ -231,8 +233,8 @@ export function MensagensAgendadasDialog({
     : modo === "relatorio"
       ? "Relatório"
       : modo === "todas"
-        ? "Todas as mensagens agendadas"
-        : `Mensagens agendadas${contactName ? ` — ${contactName}` : ""}`;
+        ? "Mensagens enviadas — todos os clientes"
+        : "Mensagens agendadas";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -292,42 +294,22 @@ export function MensagensAgendadasDialog({
             }}
           />
         ) : modo === "relatorio" ? (
-          <div className="space-y-3">
-            {envios.isPending ? (
-              <p className="text-sm text-muted-foreground">Carregando…</p>
-            ) : totalEnvios === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhum envio realizado para este contato ainda.</p>
-            ) : (
-              <ul className="divide-y rounded-md border">
-                {envios.data?.data.map((e) => (
-                  <li key={e.id} className="flex items-center gap-3 p-3 text-sm">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium">{e.agendamento?.title || e.agendamento?.body || "Mensagem"}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatarQuando(e.prevista_para)}
-                        {e.agendamento ? ` · ${rotuloRecorrencia(e.agendamento)}` : ""}
-                        {e.erro ? ` · ${e.erro}` : ""}
-                      </p>
-                    </div>
-                    <span
-                      className={
-                        e.desfecho === "enviada"
-                          ? "rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800"
-                          : e.desfecho === "falhou"
-                            ? "rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-800"
-                            : "rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
-                      }
-                    >
-                      {DESFECHOS[e.desfecho]}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          <ListaDeEnvios
+            envios={envios.data?.data}
+            carregando={envios.isPending}
+            mostrarCliente={false}
+            vazio="Nenhum envio realizado para este contato ainda."
+          />
+        ) : modo === "todas" ? (
+          <ListaDeEnvios
+            envios={enviosDeTodos.data?.data}
+            carregando={enviosDeTodos.isPending}
+            mostrarCliente
+            vazio="Nenhum envio realizado para os clientes ainda."
+          />
         ) : (
           <div className="space-y-3">
-            {consultaAtiva.isPending ? (
+            {consulta.isPending ? (
               <p className="text-sm text-muted-foreground">Carregando…</p>
             ) : lista.length === 0 ? (
               <p className="text-sm text-muted-foreground">{t("Nenhuma mensagem agendada para este contato.")}</p>
@@ -338,7 +320,6 @@ export function MensagensAgendadasDialog({
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{a.title || a.body}</p>
                       <p className="text-xs text-muted-foreground">
-                        {modo === "todas" ? `${nomeDoContato(a)} · ` : ""}
                         {formatarQuando(a.scheduled_at)} · {rotuloRecorrencia(a)}
                         {a.se_desconectado === "cancelar" ? " · cancela se desconectado" : ""}
                       </p>
@@ -376,6 +357,50 @@ export function MensagensAgendadasDialog({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Lista de envios já feitos (relatório do contato ou de todos os clientes). */
+function ListaDeEnvios({
+  envios,
+  carregando,
+  mostrarCliente,
+  vazio,
+}: {
+  envios: EnvioLinha[] | undefined;
+  carregando: boolean;
+  mostrarCliente: boolean;
+  vazio: string;
+}) {
+  if (carregando) return <p className="text-sm text-muted-foreground">Carregando…</p>;
+  if (!envios || envios.length === 0) return <p className="text-sm text-muted-foreground">{vazio}</p>;
+  return (
+    <ul className="divide-y rounded-md border">
+      {envios.map((e) => (
+        <li key={e.id} className="flex items-center gap-3 p-3 text-sm">
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-medium">{e.agendamento?.title || e.agendamento?.body || "Mensagem"}</p>
+            <p className="text-xs text-muted-foreground">
+              {mostrarCliente && e.agendamento ? `${nomeDoContato(e.agendamento.contacts)} · ` : ""}
+              {formatarQuando(e.prevista_para)}
+              {e.agendamento ? ` · ${rotuloRecorrencia(e.agendamento)}` : ""}
+              {e.erro ? ` · ${e.erro}` : ""}
+            </p>
+          </div>
+          <span
+            className={
+              e.desfecho === "enviada"
+                ? "rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800"
+                : e.desfecho === "falhou"
+                  ? "rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-800"
+                  : "rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+            }
+          >
+            {DESFECHOS[e.desfecho]}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
