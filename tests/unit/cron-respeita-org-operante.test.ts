@@ -66,6 +66,7 @@ const SEM_FILTRO: Record<string, string> = {
   "lead-date-field-due": "só emite lead.date_field_due; o consumidor (automationRulesHandler) é 'pula'",
   "lead-time-triggers": "só emite lead.silent_for/stage_stale; o consumidor (automationRulesHandler) é 'pula'",
   "lgpd-sla-watcher": "LGPD nunca é bloqueada (spec §1.3)",
+  "ligacao-presa": "só encerra linha presa em toque; escrita interna, sem custo nem saída",
   "media-retention": "retenção de mídia: apagar é obrigação, não custo",
   "mcp-oauth-revogacao": "revoga acesso de terceiro do contato (encerramento/LGPD): obrigação, nunca bloqueada",
   "proposal-acceptance-rate": "só calcula a taxa e abre aviso interno; sem custo nem saída",

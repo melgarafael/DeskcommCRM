@@ -17,6 +17,9 @@ describe('motivo da chamada em português', () => {
     ['do_not_disturb', /não perturbe/i],
     ['busy', /ocupada/i],
     ['declined', /recusada/i],
+    // O motivo que o NOSSO cron grava (#3977) também tem frase própria: ele não
+    // vem do upstream, e cair no "não sabemos traduzir" seria mentira nossa.
+    ['encerrada_por_prazo_sem_evento', /encerrou a ligação por prazo/i],
   ])('%s vira frase de gente e não carrega o token', (cru, esperado) => {
     const frase = motivoDaChamadaEmPortugues(cru);
     expect(frase).toMatch(esperado);

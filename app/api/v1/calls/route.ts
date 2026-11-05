@@ -26,6 +26,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { MOTIVO_PRAZO_SEM_EVENTO } from "@/lib/voice/ligacao-presa";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
@@ -67,6 +68,13 @@ export function mapStatusParaApi(status: string, endReason: string | null): stri
     // SABOTAGEM: remover este case = recusada volta a "completed" (vermelho).
     case "contact_blocked":
       return "canceled";
+    // A ligação que o CRM encerrou por prazo porque o aviso de queda nunca
+    // chegou (#3977). Sem este case ela cairia em `completed` — "concluída",
+    // a única leitura que é FALSA: ninguém atendeu. `no_answer` é o rótulo que
+    // a lista já tem para "tocou e acabou sem alguém atender", e o motivo
+    // detalhado segue no `end_reason` que a tela não expõe.
+    case MOTIVO_PRAZO_SEM_EVENTO:
+      return "no_answer";
     default:
       return "completed";
   }

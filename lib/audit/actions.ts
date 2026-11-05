@@ -1457,6 +1457,11 @@ export const AUDIT_ACTIONS = [
   // 9096), na organização NOVA, com o id do molde e as contagens no metadata;
   // quem lê é Painel › Empresas › [empresa] ("IA copiada do molde").
   "ai.molde_de_ia_aplicado",
+  // A varredura que encerra por prazo a ligação presa em `ringing`/`starting`
+  // quando o evento de queda se perdeu (#3977). Só auditada quando encerrou
+  // alguma linha: sem isso, seriam 288 linhas/dia numa instalação saudável. O
+  // metadata leva quantas linhas, quantas organizações e o prazo efetivo.
+  "voice.recover_stuck_run",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -27,6 +27,12 @@ const MOTIVOS: Record<string, string> = {
   failed: 'A chamada falhou antes de completar.',
   do_not_disturb: 'O aparelho estava no modo "não perturbe".',
   unknown: 'A chamada terminou sem que o WhatsApp informasse o motivo.',
+  // Não vem do upstream: é o motivo que o NOSSO cron grava quando o evento de
+  // queda se perdeu e a linha ficou presa em toque (#3977). Sem esta entrada, o
+  // aviso sairia com o token cru dentro de "não sabemos traduzir" — e aqui nós
+  // sabemos perfeitamente o que aconteceu.
+  encerrada_por_prazo_sem_evento:
+    'O CRM encerrou a ligação por prazo: o aviso de que ela caiu não chegou.',
 };
 
 /** Frase em português para o `end_reason` cru do upstream. */

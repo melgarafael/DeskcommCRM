@@ -1,0 +1,17 @@
+Voz: ligacao presa em toque sai por prazo, com motivo (#3977)
+
+A linha de voice_calls so saia de starting/ringing com o evento de fim de
+canal ou com atendimento/recusa pela tela. Quando o evento se perde (worker
+de voz reiniciando, deploy, queda), a ligacao ficava tocando para sempre e
+nada a destravava.
+
+- cron `ligacao-presa` (5 em 5 minutos) encerra as linhas em
+  starting/ringing mais velhas que o prazo, gravando
+  end_reason=encerrada_por_prazo_sem_evento e ended_at;
+- prazo de VOICE_CALL_STUCK_AFTER_MIN (default 15 min, teto 1440);
+- a primeira rodada destrava as linhas que ja estavam presas;
+- connected/atendida nunca e tocada; o UPDATE carrega status como claim;
+- lista de Chamadas (SIP) mapeia o motivo novo para no_answer, e o aviso da
+  Central ganha frase propria para ele.
+
+Closes #3977

@@ -59,6 +59,12 @@ CRONS="
 * * * * *|45|api/v1/cron/event-log-drain
 * * * * *|25|api/v1/cron/routing-worker
 */5 * * * *|25|api/v1/cron/recover-stuck-messages
+# A LIGAÇÃO PRESA EM TOQUE (#3977). De 5 em 5 minutos, a mesma cadência do
+# `recover-stuck-messages` e pelo mesmo motivo: o prazo é de 15 min por padrão
+# (VOICE_CALL_STUCK_AFTER_MIN), então uma varredura mais frequente só gastaria
+# consulta para achar o mesmo nada. Barata: quem está saudável não tem linha em
+# `starting`/`ringing` velha, e rodada vazia não audita.
+*/5 * * * *|45|api/v1/cron/ligacao-presa
 * * * * *|25|api/v1/cron/proposta-travada
 * * * * *|45|api/v1/cron/webhook-replay
 */5 * * * *|25|api/v1/cron/storage-redaction?limit=50
