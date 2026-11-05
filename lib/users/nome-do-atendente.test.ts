@@ -18,21 +18,47 @@ import { nomesDosAtendentes } from "./nome-do-atendente";
 const ORG = "org-a";
 const OUTRA_ORG = "org-b";
 
+type Vinculo = { organization_id: string; user_id: string; revoked_at: string | null };
+
+/**
+ * Builder fiel ao supabase-js no que importa aqui: devolve a LINHA inteira
+ * (com `revoked_at`) projetada pelas colunas do `select`, e aplica `.eq`, `.in`
+ * e `.is` como filtros reais. Assim um filtro de revogação acrescentado ao
+ * código — por `.is`, ou por `select` + filtro em memória — tira a Bia de fato,
+ * em vez de lançar por método ausente e reprovar pelo motivo errado.
+ */
 function clienteDeServico() {
   return {
     from(tabela: string) {
       const consulta = { tabela, eq: {} as Record<string, unknown>, in: [] as unknown[] };
       m.consultas.push(consulta);
+      let colunas: Array<keyof Vinculo> = ["organization_id", "user_id", "revoked_at"];
+      const filtros: Array<(v: Vinculo) => boolean> = [];
       const q = {
-        select: () => q,
-        eq: (col: string, v: unknown) => ((consulta.eq[col] = v), q),
-        in: (col: string, vs: unknown[]) => {
+        select: (cols: string) => {
+          colunas = cols.split(",").map((c) => c.trim() as keyof Vinculo);
+          return q;
+        },
+        eq: (col: keyof Vinculo, val: unknown) => {
+          consulta.eq[col] = val;
+          filtros.push((v) => v[col] === val);
+          return q;
+        },
+        in: (col: keyof Vinculo, vs: unknown[]) => {
           consulta.in = vs;
-          if (m.erroVinculos) return Promise.resolve({ data: null, error: m.erroVinculos });
+          filtros.push((v) => vs.includes(v[col]));
+          return q;
+        },
+        is: (col: keyof Vinculo, val: null) => {
+          filtros.push((v) => v[col] === val);
+          return q;
+        },
+        then<R>(resolve: (r: { data: unknown; error: unknown }) => R) {
+          if (m.erroVinculos) return Promise.resolve({ data: null, error: m.erroVinculos }).then(resolve);
           const data = m.vinculos
-            .filter((v) => v.organization_id === consulta.eq.organization_id && vs.includes(v.user_id))
-            .map((v) => ({ user_id: v.user_id }));
-          return Promise.resolve({ data, error: null });
+            .filter((v) => filtros.every((f) => f(v)))
+            .map((v) => Object.fromEntries(colunas.map((c) => [c, v[c]])));
+          return Promise.resolve({ data, error: null }).then(resolve);
         },
       };
       return q;
