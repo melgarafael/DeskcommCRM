@@ -147,6 +147,18 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (msg === "session_not_found") {
       return fail("not_found", t("Sessão de canal não encontrada."), 404, { requestId });
     }
+    // #3483: o canal que a tela escolheu existe, mas não serve para abrir —
+    // desligado pelo operador ou fora do ar. Recusa ANTES de criar, com o motivo
+    // dito: criar a conversa num canal que não envia é a conversa vazia que a
+    // issue manda não existir.
+    if (msg === "session_unavailable") {
+      return fail(
+        "state_conflict",
+        t("Este canal está desligado ou fora do ar. Reative a conexão ou escolha outro canal."),
+        409,
+        { requestId },
+      );
+    }
     if (msg === "invalid_phone") {
       return fail("validation_error", t("Telefone inválido."), 422, { requestId });
     }
