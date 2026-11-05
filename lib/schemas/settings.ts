@@ -12,6 +12,7 @@ import { ehHexValido } from "@/lib/branding/rampa";
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { IDIOMAS } from "@/lib/i18n/idiomas";
 import { DIAS_MAXIMO_DO_RECORTE } from "@/lib/kanban/recorte-de-encerrados";
+import { DIAS_MAXIMO_PARA_REABRIR } from "@/lib/leads/janela-do-perdido";
 import {
   ICONES_DE_ATALHO,
   MAX_ATALHOS,
@@ -326,11 +327,26 @@ export const MAX_CAMPOS_DO_NEGOCIO = 50;
 export const MENSAGEM_DO_TETO_DE_CAMPOS_DO_NEGOCIO = `O funil aceita no máximo ${MAX_CAMPOS_DO_NEGOCIO} campos do negócio. Os campos do contato não entram nesta conta.`;
 
 /**
+ * A recusa da chave repetida (#4043), legível — e com a chave dentro.
+ *
+ * A ordem do funil É a do array, e `crm_leads.custom_fields` é um objeto lido
+ * POR CHAVE: dois campos com a mesma chave disputam a mesma posição na tela e a
+ * mesma gaveta do negócio. Enquanto só existia adicionar/remover, isso passava
+ * calado; com reordenar, "qual dos dois vem primeiro" deixa de ter resposta.
+ */
+export const MENSAGEM_DE_CHAVE_REPETIDA = (chave: string) =>
+  `A chave "${chave}" aparece mais de uma vez nos campos deste funil. Cada campo precisa de uma chave própria.`;
+
+/**
  * `fields` do PATCH: a cota conta só os campos do NEGÓCIO.
  *
  * O array segue sendo `customFieldSchema[]` (a forma de cada campo não mudou) —
  * o que mudou é O QUE a cota conta. Quem escreve a mensagem é esta régua, para
  * a tela do funil e a captação dizerem a mesma frase.
+ *
+ * A CHAVE REPETIDA (#4043) é recusada aqui, e não campo a campo: `customFieldSchema`
+ * julga um item, e o defeito só existe na lista. Repetir a chave não é "ordem
+ * estranha" — é a lista deixando de descrever uma ordem possível.
  */
 export const camposDoFunilPatchSchema = z
   .array(customFieldSchema)
@@ -341,6 +357,15 @@ export const camposDoFunilPatchSchema = z
         code: "custom",
         message: `${MENSAGEM_DO_TETO_DE_CAMPOS_DO_NEGOCIO} Recebidos ${doNegocio}.`,
       });
+    }
+    // Uma issue só: cinco repetições da mesma chave não são cinco consertos.
+    const vistas = new Set<string>();
+    for (const campo of campos) {
+      if (vistas.has(campo.key)) {
+        ctx.addIssue({ code: "custom", message: MENSAGEM_DE_CHAVE_REPETIDA(campo.key) });
+        return;
+      }
+      vistas.add(campo.key);
     }
   });
 
@@ -463,6 +488,19 @@ export const pipelineConfigPatchSchema = z.object({
    * válido: um número escrito aqui e outro lá divergiriam no primeiro ajuste.
    */
   ocultar_encerrados_dias: z.number().int().min(0).max(DIAS_MAXIMO_DO_RECORTE).optional(),
+  /**
+   * A JANELA DO NEGÓCIO PERDIDO QUE VOLTA (#4076): quantos dias depois da
+   * perda a mensagem do contato ainda REABRE o mesmo card em vez de abrir um
+   * negócio novo. `0` (e a chave ausente, que é o estado de todo funil de hoje)
+   * é DESLIGADO — o comportamento de antes da opção existir.
+   *
+   * O teto vem do domínio (`lib/leads/janela-do-perdido`), que é quem decide o
+   * que é uma janela válida: um número escrito aqui e outro lá divergiriam no
+   * primeiro ajuste, e a tela mostraria um valor que o motor ignora. `min(0)` e
+   * não `min(1)`: o zero é uma DECISÃO (desliguei), e recusá-lo deixaria a
+   * janela antiga gravada quando alguém desmarcasse a opção.
+   */
+  reabrir_perdido_dias: z.number().int().min(0).max(DIAS_MAXIMO_PARA_REABRIR).optional(),
   /**
    * OS ATALHOS DO CARD (issue #3487) — os botões que abrem outro sistema com o
    * dado do cliente: `tel:` para o softphone do PABX, `https://…?cliente={{erp_id}}`

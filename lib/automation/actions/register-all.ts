@@ -5,6 +5,7 @@ import "@/lib/automation/actions/notify-team";
 import "@/lib/automation/actions/apply-task-plan";
 import "@/lib/automation/actions/set-lead-date-field";
 import "@/lib/automation/actions/assign-owner";
+import "@/lib/automation/actions/define-sector";
 import "@/lib/automation/actions/create-or-move-lead";
 import "@/lib/automation/actions/create-task";
 import "@/lib/automation/actions/call-webhook";

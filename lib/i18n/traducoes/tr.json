@@ -2555,7 +2555,8 @@
   "Custo": "Maliyet",
   "Custo (cents)": "Maliyet (sent)",
   "Custo AI": "AI maliyeti",
-  "Custo AI / dia (R$)": "AI maliyeti / gün (R$)",
+  "Custo AI / dia (US$)": "AI maliyeti / gün (US$)",
+  "chamadas sem preço": "fiyatsız çağrı",
   "Custo conhecido": "Bilinen maliyet",
   "Custo da IA no período": "Dönemdeki AI maliyeti",
   "Custo humano": "İnsan maliyeti",
@@ -4899,6 +4900,7 @@
   "Ler contatos": "Kişileri oku",
   "Ler leads": "Potansiyel müşterileri oku",
   "Ler mensagens": "Mesajları oku",
+  "Ler transcrições de áudios e textos extraídos de mídia no histórico MCP (pode conter dados pessoais)": "MCP geçmişinde ses dökümlerini ve medyadan çıkarılan metinleri oku (kişisel veri içerebilir)",
   "Ler o histórico da conversa": "Konuşma geçmişini oku",
   "Ler o log de auditoria": "Denetim kaydını oku",
   "Ler o material": "Materyali oku",
@@ -11440,5 +11442,7 @@
   "O servidor não anunciou nenhuma ferramenta.": "Sunucu hiçbir araç duyurmadı.",
   "Escrita": "Yazma",
   "Leitura": "Okuma",
-  "O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.": "Yetkilendirme bağlantısı otomatiktir: müşteri yetkilendirene kadar ajan, bağlantıyı üreten aracı kendiliğinden alır. Burada seçmeniz gerekmez."
+  "O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.": "Yetkilendirme bağlantısı otomatiktir: müşteri yetkilendirene kadar ajan, bağlantıyı üreten aracı kendiliğinden alır. Burada seçmeniz gerekmez.",
+  "Este número já está em outra campanha em andamento.": "Bu numara zaten devam eden başka bir kampanyada kullanılıyor.",
+  "Abrir essa campanha": "O kampanyayı aç"
 }
