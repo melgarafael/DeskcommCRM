@@ -80,7 +80,7 @@ function chega(data: unknown, opcoes: { origin?: string; source?: Window | null 
 }
 
 function enviadas(postar: ReturnType<typeof vi.spyOn>) {
-  return postar.mock.calls.map((c) => ({
+  return postar.mock.calls.map((c: unknown[]) => ({
     mensagem: JSON.parse(String(c[0])) as Record<string, unknown>,
     alvo: c[1],
   }));
@@ -216,7 +216,7 @@ describe("module:request-jwt", () => {
     chega({ type: "module:request-jwt" }, { source: janela });
     await act(async () => {});
     expect(fetchFalso).toHaveBeenCalledTimes(1);
-    expect(enviadas(postar).map((e) => e.mensagem)).toEqual([
+    expect(enviadas(postar).map((e: { mensagem: unknown }) => e.mensagem)).toEqual([
       { type: "host:jwt", jwt: "jwt-de-teste", expires_at: "2026-11-05T12:05:00.000Z" },
       { type: "host:error", code: "rate_limited" },
     ]);
@@ -240,7 +240,7 @@ describe("module:request-jwt", () => {
     const { janela, postar } = montar();
     chega({ type: "module:request-jwt" }, { source: janela });
     await act(async () => {});
-    expect(enviadas(postar).map((e) => e.mensagem)).toEqual([{ type: "host:error", code: codigo }]);
+    expect(enviadas(postar).map((e: { mensagem: unknown }) => e.mensagem)).toEqual([{ type: "host:error", code: codigo }]);
   });
 
   it("falha de rede também vira host:error, sem lançar", async () => {
@@ -253,7 +253,7 @@ describe("module:request-jwt", () => {
     const { janela, postar } = montar();
     chega({ type: "module:request-jwt" }, { source: janela });
     await act(async () => {});
-    expect(enviadas(postar).map((e) => e.mensagem)).toEqual([
+    expect(enviadas(postar).map((e: { mensagem: unknown }) => e.mensagem)).toEqual([
       { type: "host:error", code: "jwt_unavailable" },
     ]);
   });
@@ -332,7 +332,7 @@ describe("contexto que muda", () => {
     rerender(novo("pt-BR"));
     rerender(novo("es"));
 
-    const mensagens = enviadas(postar).map((e) => e.mensagem);
+    const mensagens = enviadas(postar).map((e: { mensagem: unknown }) => e.mensagem);
     expect(mensagens.length).toBeGreaterThanOrEqual(4);
     expect(mensagens.at(-1)).toMatchObject({
       type: "host:context",
@@ -340,6 +340,6 @@ describe("contexto que muda", () => {
       locale: "es",
       theme: "light",
     });
-    expect(enviadas(postar).every((e) => e.alvo === ORIGEM)).toBe(true);
+    expect(enviadas(postar).every((e: { alvo: unknown }) => e.alvo === ORIGEM)).toBe(true);
   });
 });

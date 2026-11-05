@@ -9776,5 +9776,9 @@
   "{n} aviso(s) por ler": "{n} notice(s) left to read",
   "Atrasado": "Behind",
   "Este módulo ainda não apagou os dados de {n} contato(s) anonimizado(s).": "This module has not yet erased the data of {n} anonymized contact(s).",
-  "Faz mais de 24 horas que o módulo não busca os avisos, e a LGPD manda apagar esses dados.": "The module has not fetched notices for over 24 hours, and the LGPD requires this data to be erased."
+  "Faz mais de 24 horas que o módulo não busca os avisos, e a LGPD manda apagar esses dados.": "The module has not fetched notices for over 24 hours, and the LGPD requires this data to be erased.",
+  "Enviar mesmo com a conversa atribuída a uma pessoa": "Send even when the conversation is assigned to a person",
+  "Enviar com a conversa atribuída": "Send with an assigned conversation",
+  "Os passos de texto deste fluxo saem mesmo quando um atendente é o dono da conversa. A IA continua calada nessa conversa, e contatos com opt-out, bloqueados ou fora da janela de envio não recebem.": "Text steps in this flow still go out when an agent owns the conversation. The AI stays silent in that conversation, and contacts who opted out, are blocked, or are outside the sending window receive nothing.",
+  "Opção de envio com a conversa atribuída atualizada.": "Assigned-conversation sending option updated."
 }

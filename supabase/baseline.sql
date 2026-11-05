@@ -74766,4 +74766,14 @@ do $conversations_select$ begin
 end $conversations_select$;
 
 
+-- ---- followup send_when_assigned (migration 9213) ----
+-- #3974: envia o passo de TEXTO do follow-up mesmo com a conversa atribuída a uma
+-- pessoa. Fica no apêndice, e não no create table do bloco 0054, porque o
+-- update.sh pula aquele create em toda instalação que já tem a tabela.
+alter table public.followup_flow_pointers
+  add column if not exists send_when_assigned boolean not null default false;
+
+comment on column public.followup_flow_pointers.send_when_assigned is
+  'Envia o passo do follow-up mesmo com a conversa atribuída a uma pessoa (dono). Não vence force_human, ai_opt_out, contato interno, contato bloqueado nem as janelas de horário — e não acorda a IA.';
+
 notify pgrst, 'reload schema';
