@@ -70,62 +70,134 @@ it("recusa etapa de outro funil e organização sem corrigir dados silenciosamen
 });
 
 // O update.sh reaplica o baseline SEM parar em erro, e trata todo ERROR como banco
-// incompleto. Um clone com legado inconsistente não pode receber esse aviso a cada
-// atualização: as chaves entram NOT VALID (valem para gravação nova) e só o legado
-// fica sem validar.
-it("clone com legado inconsistente atualiza sem erro e já recusa gravação nova", async () => {
-  const c = await pool.connect();
-  const [org, p1, p2, s1, s2, sujo, novo] = Array.from({ length: 7 }, () => randomUUID());
-  const bloco = readFileSync(
-    "supabase/migrations/20261104171703_9111_integridade_organizacao_funil_etapa.sql",
-    "utf8",
+// incompleto. Um clone com legado inconsistente atualiza sem erro e mantém as chaves
+// antigas de uma coluna: a composta não casaria com as linhas legadas, e trocá-las
+// deixaria apagar a etapa/funil a que elas apontam.
+const BLOCO = readFileSync(
+  "supabase/migrations/20261104171703_9111_integridade_organizacao_funil_etapa.sql",
+  "utf8",
+);
+const CHAVES = [
+  ["crm_stages", "crm_stages_pipeline_id_fkey"],
+  ["crm_leads", "crm_leads_pipeline_id_fkey"],
+  ["crm_leads", "crm_leads_stage_id_fkey"],
+] as const;
+
+async function voltaAoEstadoDeAntesDa9111(c: pg.PoolClient) {
+  for (const [tabela, nome] of CHAVES)
+    await c.query(`alter table ${tabela} drop constraint ${nome}`);
+  await c.query(
+    "alter table crm_stages add constraint crm_stages_pipeline_id_fkey foreign key(pipeline_id) references crm_pipelines(id) on delete cascade",
   );
+  await c.query(
+    "alter table crm_leads add constraint crm_leads_pipeline_id_fkey foreign key(pipeline_id) references crm_pipelines(id) on delete restrict",
+  );
+  await c.query(
+    "alter table crm_leads add constraint crm_leads_stage_id_fkey foreign key(stage_id) references crm_stages(id) on delete restrict",
+  );
+}
+
+async function chaves(c: pg.PoolClient) {
+  const { rows } = await c.query(
+    `select conname, array_length(conkey,1) as colunas, convalidated, obj_description(oid,'pg_constraint') as marker
+       from pg_constraint where conname = any($1) order by conname`,
+    [CHAVES.map(([, nome]) => nome)],
+  );
+  return rows;
+}
+
+async function semeiaLegadoInconsistente(c: pg.PoolClient) {
+  const [org, p1, p2, s1, s2, sujo] = Array.from({ length: 6 }, () => randomUUID());
+  await c.query(
+    "insert into organizations(id,slug,legal_name,display_name) values($1,$2,'Synthetic','Synthetic')",
+    [org, org],
+  );
+  for (const id of [p1, p2])
+    await c.query(
+      "insert into crm_pipelines(id,organization_id,name,slug) values($1,$2,'Synthetic',$3)",
+      [id, org, id],
+    );
+  for (const [id, p] of [
+    [s1, p1],
+    [s2, p2],
+  ])
+    await c.query(
+      "insert into crm_stages(id,organization_id,pipeline_id,name,slug,position) values($1,$2,$3,'Synthetic',$4,1)",
+      [id, org, p, id],
+    );
+  // negócio no funil p1 com a etapa s2, que é do funil p2
+  await c.query(
+    "insert into crm_leads(id,organization_id,pipeline_id,stage_id,title) values($1,$2,$3,$4,'Synthetic')",
+    [sujo, org, p1, s2],
+  );
+  return { p1, s1, s2, sujo };
+}
+
+it("clone com legado inconsistente atualiza sem erro e mantém as chaves antigas", async () => {
+  const c = await pool.connect();
   try {
     await c.query("begin");
-    // O estado de antes da 9111: a chave da etapa conferia só o id.
-    await c.query("alter table crm_leads drop constraint crm_leads_stage_id_fkey");
-    await c.query(
-      "alter table crm_leads add constraint crm_leads_stage_id_fkey foreign key(stage_id) references crm_stages(id) on delete restrict",
-    );
-    await c.query(
-      "insert into organizations(id,slug,legal_name,display_name) values($1,$2,'Synthetic','Synthetic')",
-      [org, org],
-    );
-    for (const id of [p1, p2])
-      await c.query(
-        "insert into crm_pipelines(id,organization_id,name,slug) values($1,$2,'Synthetic',$3)",
-        [id, org, id],
-      );
-    for (const [id, p] of [
-      [s1, p1],
-      [s2, p2],
-    ])
-      await c.query(
-        "insert into crm_stages(id,organization_id,pipeline_id,name,slug,position) values($1,$2,$3,'Synthetic',$4,1)",
-        [id, org, p, id],
-      );
-    await c.query(
-      "insert into crm_leads(id,organization_id,pipeline_id,stage_id,title) values($1,$2,$3,$4,'Synthetic')",
-      [sujo, org, p1, s2],
-    );
+    await voltaAoEstadoDeAntesDa9111(c);
+    const { p1, s2, sujo } = await semeiaLegadoInconsistente(c);
 
-    await c.query(bloco);
+    await c.query(BLOCO);
+    await c.query(BLOCO); // o update.sh reaplica
 
-    const { rows } = await c.query(
-      "select convalidated, obj_description(oid,'pg_constraint') as marker from pg_constraint where conrelid='public.crm_leads'::regclass and conname='crm_leads_stage_id_fkey'",
-    );
-    expect(rows).toEqual([{ convalidated: false, marker: "crm-integridade-funil-etapa-v1" }]);
-    await c.query("savepoint nova");
-    await expect(
-      c.query(
-        "insert into crm_leads(id,organization_id,pipeline_id,stage_id,title) values($1,$2,$3,$4,'Synthetic')",
-        [novo, org, p1, s2],
-      ),
-    ).rejects.toMatchObject({ code: "23503" });
-    await c.query("rollback to savepoint nova");
+    expect(await chaves(c)).toEqual([
+      { conname: "crm_leads_pipeline_id_fkey", colunas: 1, convalidated: true, marker: null },
+      { conname: "crm_leads_stage_id_fkey", colunas: 1, convalidated: true, marker: null },
+      { conname: "crm_stages_pipeline_id_fkey", colunas: 1, convalidated: true, marker: null },
+    ]);
+    // apagar a etapa ou o funil a que o negócio legado aponta continua barrado
+    for (const [sql, id] of [
+      ["delete from crm_stages where id=$1", s2],
+      ["delete from crm_pipelines where id=$1", p1],
+    ] as const) {
+      await c.query("savepoint apaga");
+      await expect(c.query(sql, [id])).rejects.toMatchObject({ code: "23503" });
+      await c.query("rollback to savepoint apaga");
+    }
     expect(
       (await c.query("select 1 from crm_leads where id=$1 and stage_id=$2", [sujo, s2])).rowCount,
     ).toBe(1);
+  } finally {
+    await c.query("rollback");
+    c.release();
+  }
+});
+
+it("com o legado revisto, a reaplicação troca pelas chaves compostas já validadas", async () => {
+  const c = await pool.connect();
+  try {
+    await c.query("begin");
+    await voltaAoEstadoDeAntesDa9111(c);
+    const { s1, sujo } = await semeiaLegadoInconsistente(c);
+    await c.query(BLOCO);
+    await c.query("update crm_leads set stage_id=$1 where id=$2", [s1, sujo]);
+
+    await c.query(BLOCO);
+    await c.query(BLOCO);
+
+    expect(await chaves(c)).toEqual([
+      {
+        conname: "crm_leads_pipeline_id_fkey",
+        colunas: 2,
+        convalidated: true,
+        marker: "crm-integridade-funil-etapa-v1",
+      },
+      {
+        conname: "crm_leads_stage_id_fkey",
+        colunas: 3,
+        convalidated: true,
+        marker: "crm-integridade-funil-etapa-v1",
+      },
+      {
+        conname: "crm_stages_pipeline_id_fkey",
+        colunas: 2,
+        convalidated: true,
+        marker: "crm-integridade-funil-etapa-v1",
+      },
+    ]);
   } finally {
     await c.query("rollback");
     c.release();
