@@ -153,7 +153,11 @@ describe("papel efetivo do módulo com JWT de contexto", () => {
     pacote("manager");
     const r = await resolveAuthDual(req("GET", "/api/v1/contacts", await jwt()), { ...LEITURA, role: "manager" });
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.pessoaDoModulo).toBe(PESSOA);
+    if (r.ok) {
+      expect(r.pessoaDoModulo).toBe(PESSOA);
+      // A pessoa também viaja no ator, para o audit gravar `metadata.person_id` sem tocar as rotas.
+      expect(r.actor).toMatchObject({ type: "module", pessoaId: PESSOA });
+    }
   });
 
   it("pessoa admin vira manager: rota que pede admin recusa (admin NUNCA)", async () => {

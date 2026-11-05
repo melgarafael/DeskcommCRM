@@ -4464,3 +4464,47 @@ quem administra a organização ativa o módulo de novo, de propósito.
 assinar e buscar; a concorrência entre buscas só é provada pelos invariantes de banco, nunca por uma
 jornada em tela; e que a autoridade do token seja limitada por área (isso é da F3, e o token da F2 só
 tem `mcp:read`).
+
+## J69 — Módulo conectado: consentimento por área e ator com pessoa `[P0]` (2026-11-05)
+
+Specs: esta jornada é **especificação**. Nenhuma execução foi feita; o laboratório local ainda não
+admite o perfil `connected` (ver J67.1), então nenhum caso abaixo roda nele. Quando J67.1 passar, os
+casos viram execução; até lá, cada linha descreve o que a tela e o banco devem fazer.
+
+Cobertura hoje, só por escrita (não executada): `tests/invariants/extensoes-consentimento.test.ts`
+(banco, `pnpm test:db`, CI `invariants`); `app/api/v1/extensions/[id]/consentimento/route.test.ts`,
+`app/api/v1/extensions/[id]/contexto/route.test.ts`, `lib/auth/modulo-autorizado.test.ts`,
+`lib/auth/portas-de-token/areas.test.ts`, `lib/api/auth-dual-modulo.test.ts`,
+`lib/api/auth-dual-contexto.test.ts`, `lib/audit/ator-modulo.test.ts` (rota e lib, `pnpm test:unit`, CI
+`verify`); `components/extensions/ConsentimentoPorArea.test.tsx`. Nenhuma delas abre `/admin/extensoes`
+num navegador.
+
+Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do PR interno.
+
+Ambiente previsto: o mesmo de J68, mais `MODULE_JWT_PRIVATE_KEY` definida para os casos com pessoa, um
+módulo de laboratório que declara áreas de leitura e de escrita, uma pessoa `viewer`, uma `manager` e uma
+`admin`, e duas organizações para provar o isolamento.
+
+| Caso | Prioridade | Prova prevista | Resultado |
+|---|---|---|---|
+| J69.1 | Ver as áreas declaradas ao ativar | P0 | A ativação lista, em frases legíveis, só as áreas que o pacote declarou, cada uma com caixa de seleção, nenhuma marcada de início | **NÃO EXECUTADO** (depende de J67.1) |
+| J69.2 | Consentir uma área | P0 | O admin marca e salva; o cartão mostra a área consentida; `api_audit_log` com `extension.consent_changed` e a lista de áreas, sem dado pessoal | **NÃO EXECUTADO** |
+| J69.3 | Manager e agent não alteram | P0 | Quem não é admin vê o consentimento atual, com o motivo de não poder mudar; a rota responde 403 | **CI** (rota) escrito; **NÃO EXECUTADO** |
+| J69.4 | Área não declarada | P1 | Consentir uma área que o pacote não declarou recusa com 409 e nada é gravado | **CI** (rota e banco) escritos; **NÃO EXECUTADO** |
+| J69.5 | Módulo sem consentimento | P0 | Chamada do módulo a uma área não consentida recusa com 403; o consentimento é lido do banco a cada chamada | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J69.6 | Modo da porta | P0 | Área consentida só para leitura aceita GET e recusa POST na mesma área | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J69.7 | Retirar o consentimento | P0 | O admin desmarca e salva; a chamada seguinte do mesmo token recusa, sem esperar o token expirar | **NÃO EXECUTADO** |
+| J69.8 | Pessoa limita o papel | P0 | Com JWT de contexto de pessoa `viewer`, uma rota que pede `manager` recusa mesmo que o token do módulo permita; o papel efetivo é o menor dos dois | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J69.9 | Pessoa admin vira manager | P1 | Com pessoa `admin`, uma rota que pede `admin` recusa: o módulo nunca age como admin | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J69.10 | Pessoa rebaixada entre duas chamadas | P1 | Rebaixar a pessoa muda o papel efetivo na chamada seguinte, com o mesmo JWT ainda válido | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J69.11 | Atribuição no audit | P0 | Mutação feita pelo módulo com JWT de pessoa grava `actor_api_token_id` e `metadata.module` como antes, mais `metadata.person_id`; `actor_user_id` continua nulo | **CI** (unit, `ator-modulo.test.ts`) escrito; **NÃO EXECUTADO** |
+| J69.12 | Isolamento entre organizações | P0 | Consentimento da organização A não vale na B; JWT de contexto de uma organização não abre a outra | **CI** (banco e rota) escrito; **NÃO EXECUTADO** |
+
+**Comportamento declarado.** Declarado pelo pacote e consentido pela organização, os dois, no modo certo:
+sem um deles, a chamada recusa. Quem consente é só o admin da organização. A pessoa do JWT só limita
+(nunca amplia) e só atribui no audit; ela não vira dono do registro criado.
+
+**Não provado.** Nenhum caso acima foi executado num navegador; que o módulo real consiga assinar o JWT
+de contexto e que a tela dele o repasse; que as mutações de todas as rotas gravem `person_id` (só o
+mecanismo comum, `metadataDoModulo`, foi coberto, e as rotas que não o usam não levam a pessoa); e o
+comportamento de quem já tem consentimento em edição ao mesmo tempo em duas abas.

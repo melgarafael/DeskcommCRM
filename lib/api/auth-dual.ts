@@ -209,7 +209,10 @@ export async function resolveAuthDual(
     return {
       ok: true,
       organizationId: auth.organizationId,
-      actor: auth.actor,
+      actor:
+        auth.actor.type === "module" && pessoaDoModulo
+          ? { ...auth.actor, pessoaId: pessoaDoModulo }
+          : auth.actor,
       supabase: createAdminClient(),
       via: "token",
       scopes: auth.scopes,
