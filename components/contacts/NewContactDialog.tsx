@@ -25,9 +25,13 @@ import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabular
 import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
 import { AbrirConversaAposSalvar } from "@/components/channels/AbrirConversaAposSalvar";
 import type { AlvoDeConversa } from "@/components/channels/SeletorDeCanalParaConversa";
+import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
+import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
+import { CustomFieldsEditor } from "@/components/contacts/CustomFieldsEditor";
 import { EtiquetasDoContato } from "@/components/contacts/EtiquetasDoContato";
 
 interface FormShape {
+  custom_fields?: Record<string, unknown>;
   name?: string;
   email?: string;
   phone_number?: string;
@@ -71,6 +75,9 @@ export function NewContactDialog({
   const org = useActiveOrg();
   const perfil = perfilDoPais(org?.country);
   const create = useCreateContact();
+  // Mesma definição da ficha: campos do contato no funil padrão, sem defaults de nicho.
+  const pipeline = useDefaultPipeline(open && Boolean(org));
+  const campos = camposPorEscopo(camposDoFunil(pipeline.data?.pipeline?.settings), "contato");
   /**
    * A CONVERSA A ABRIR DEPOIS DE SALVAR (#3483) — `null` = nada pendente.
    *
@@ -123,9 +130,11 @@ export function NewContactDialog({
       phone_number: "",
       cpf: "",
       tags: [],
+      custom_fields: {},
     },
   });
 
+  const customFields = useWatch({ control: form.control, name: "custom_fields" }) ?? {};
   const cpfError = form.formState.errors.cpf;
   // ENQUANTO O DOCUMENTO ESTIVER INVÁLIDO, O ENVIO FICA IMPEDIDO (#3496).
   // Avisar no campo e deixar o clique seguir faria o aviso virar decoração: o
@@ -187,6 +196,7 @@ export function NewContactDialog({
     if (values.phone_number?.trim()) payload.phone_number = values.phone_number.trim();
     if (values.cpf?.trim()) payload.cpf = values.cpf.trim();
     if (tags.length) payload.tags = tags;
+    if (Object.keys(values.custom_fields ?? {}).length) payload.custom_fields = values.custom_fields;
 
     // A MESMA régua do servidor: a tela que mostra 'Bilhete' não pode
     // recusá-lo como CPF antes de chegar lá.
@@ -316,6 +326,17 @@ export function NewContactDialog({
               erroNoVocabulario={vocabulario.isError || buscaNoVocabulario.isError}
             />
           </div>
+          {campos.length > 0 && (
+            <div className="space-y-3 rounded-md border border-border p-3">
+              <h3 className="text-sm font-medium">{t("Campos personalizados")}</h3>
+              <CustomFieldsEditor
+                fields={campos}
+                mode="contact"
+                value={customFields}
+                onChange={(next) => form.setValue("custom_fields", next, { shouldDirty: true })}
+              />
+            </div>
+          )}
           {serverError && (
             <p className="text-sm text-error-fg">{serverError}</p>
           )}
