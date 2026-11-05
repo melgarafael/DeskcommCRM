@@ -194,7 +194,11 @@ export async function resolveAuthDual(
     }
 
     try {
-      ensureScope(auth.scopes, scope);
+      // Token de MÓDULO não carrega escopo de rota (`mcp:write`, `config:*`): a fonte do poder é a
+      // decisão de ÁREA e MODO acima (declarado ∩ consentido, lido do banco agora, leitura ou
+      // escrita pelo método). Exigir também o escopo deixaria o módulo só leitor em `mcp:read`.
+      // O papel segue valendo em qualquer caso.
+      if (auth.actor.type !== "module") ensureScope(auth.scopes, scope);
       ensureRole(papelDoBearer, tokenRole ?? role);
     } catch (err) {
       if (err instanceof McpAuthError) {
