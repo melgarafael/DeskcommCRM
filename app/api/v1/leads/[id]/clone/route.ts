@@ -34,8 +34,9 @@ import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import {
   FUNIL_DE_DESTINO_NAO_ENCONTRADO,
   ORIGEM_SEM_ETAPA_DE_PERDA,
@@ -54,7 +55,6 @@ import {
   recusaDeMotivoForaDoVocabulario,
 } from "@/lib/leads/motivo-da-perda";
 import { cloneLeadSchema, validateRequest } from "@/lib/schemas";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -103,29 +103,36 @@ type EtapaNaResposta = Omit<EtapaDeDestino, "pipeline_id">;
  * Uma chamada por abertura do diálogo, não uma por funil escolhido.
  */
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const requestId = randomUUID();
   const { id: leadId } = await ctx.params;
 
-  const supabase = await createClient();
-  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "agent",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "leads_clone_view", requestId);
+  if (teto) return teto;
+  const { supabase, organizationId, actor, idioma } = authz;
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
 
   const { data: origem, error: selErr } = await supabase
     .from("crm_leads")
     .select("id, pipeline_id")
     .eq("id", leadId)
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
   if (selErr) return fail("internal_error", selErr.message, 500, { requestId });
   if (!origem) return fail("not_found", t("Lead não encontrado."), 404, { requestId });
 
   const { pipelines } = await listPipelinesHandler(supabase, {
-    organization_id: authz.org.orgId,
-    actor: { type: "user", id: authz.user.id },
+    organization_id: organizationId,
+    actor,
     requestId,
   });
 
@@ -141,7 +148,7 @@ export async function GET(
       : await supabase
           .from("crm_stages")
           .select("id, pipeline_id, name, position, is_won, is_lost")
-          .eq("organization_id", authz.org.orgId)
+          .eq("organization_id", organizationId)
           .in("pipeline_id", idsDosDestinos)
           .eq("is_archived", false)
           .order("position", { ascending: true });
@@ -178,17 +185,25 @@ export async function POST(
   const requestId = randomUUID();
   const { id: leadId } = await ctx.params;
 
-  const supabase = await createClient();
   // spec 13 §4: escrita é agent+ (viewer é read-only).
-  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "leads_clone", requestId);
+  if (teto) return teto;
+  const supabase = authz.supabase;
+  const { organizationId, actor, idioma } = authz;
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
 
   const handlerCtx: HandlerCtx = {
-    organization_id: authz.org.orgId,
-    actor: { type: "user", id: authz.user.id },
+    organization_id: organizationId,
+    actor,
     requestId,
-    idioma: authz.user.idioma,
+    idioma,
   };
 
   try {
@@ -265,7 +280,7 @@ export async function POST(
     const motivoRecusado = recusaDeMotivoForaDoVocabulario({
       motivo: input.lost_reason,
       settingsDoFunil: (pipelineOrigem as { settings?: unknown } | null)?.settings ?? null,
-      idioma: authz.user.idioma,
+      idioma,
     });
     if (motivoRecusado) {
       return fail(motivoRecusado.codigo, motivoRecusado.mensagem, 422, { requestId });
@@ -316,7 +331,7 @@ export async function POST(
     // etapa que exige documento respondia 422 para sempre, e o clone nunca
     // acontecia. A cobrança volta no próximo move, no lote ou no fechamento —
     // lá `camposComAnexo` é lido do banco.
-    const settingsDoDestino = await settingsDoFunil(supabase, destino.etapa.pipeline_id);
+    const settingsDoDestino = await settingsDoFunil(supabase, destino.etapa.pipeline_id, organizationId);
     const vereditoDeCampos = validaCamposExigidos({
       lead: { custom_fields: (origem as OrigemParaClonar).custom_fields ?? {} },
       settingsDoFunil: settingsDoDestino,
@@ -327,7 +342,7 @@ export async function POST(
     if (vereditoDeCampos.faltando.length > 0) {
       const recusaDeCampos = recusaDeCamposObrigatorios(
         vereditoDeCampos.faltando,
-        authz.user.idioma,
+        idioma,
       );
       return fail(recusaDeCampos.codigo, recusaDeCampos.mensagem, 422, {
         details: { faltando: vereditoDeCampos.faltando },
@@ -472,7 +487,8 @@ export async function POST(
 
     await audit({
       action: "lead.moved_to_pipeline",
-      actorUserId: authz.user.id,
+      actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+      actorApiTokenId: authz.apiTokenId ?? null,
       organizationId: handlerCtx.organization_id,
       resourceType: "crm_lead",
       resourceId: leadId,

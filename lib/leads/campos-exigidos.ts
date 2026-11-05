@@ -69,6 +69,7 @@ import type { CustomFieldDef } from "@/lib/schemas/settings";
 export async function settingsDoFunil(
   supabase: SupabaseClient,
   pipelineId: string | null | undefined,
+  organizationId: string,
 ): Promise<unknown> {
   if (!pipelineId) return null;
   try {
@@ -76,6 +77,7 @@ export async function settingsDoFunil(
       .from("crm_pipelines")
       .select("settings")
       .eq("id", pipelineId)
+      .eq("organization_id", organizationId)
       .maybeSingle();
     if (error) return null;
     return (data as { settings?: unknown } | null)?.settings ?? null;

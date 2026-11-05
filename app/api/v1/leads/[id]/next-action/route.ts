@@ -18,10 +18,10 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
-import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -50,12 +50,18 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   // Mesmo piso do move: quem não pode mexer no negócio não decide por ele.
   // `viewer` lê o board e vê a proposta, mas não aprova nem descarta.
-  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user } = authz;
-
-  const supabase = await createClient();
+  const teto = await tetoDeEscritaDoToken(authz, "leads_next_action", requestId);
+  if (teto) return teto;
+  const { supabase, organizationId, actor, idioma } = authz;
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
+  const userId = actor.type === "user" ? actor.id : null;
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -71,6 +77,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     .from("crm_leads")
     .select("id, organization_id, contact_id, status")
     .eq("id", leadId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
   if (leadErr) return fail("internal_error", leadErr.message, 500, { requestId });
   if (!lead) return fail("not_found", t("Lead não encontrado."), 404, { requestId });
@@ -124,7 +131,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     type: decision === "approve" ? "next_action_approved" : "next_action_dismissed",
     sourceModule: "crm",
     sourceId: row.id,
-    actor: { type: "user", id: user.id },
+    actor: authz.actor,
     reason: decision === "approve" ? `Aprovou: ${atual}` : `Descartou: ${atual}`,
     payload: { next_action: atual, decision },
   });

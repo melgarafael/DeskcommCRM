@@ -54,9 +54,10 @@ import { NextRequest } from "next/server";
 
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { normalizarTag, normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { bulkContactActionSchema, validateRequest } from "@/lib/schemas";
 import type { BulkContactActionInput } from "@/lib/schemas";
@@ -122,12 +123,14 @@ function requestDoItem(
   metodo: "GET" | "POST" | "PATCH",
   caminho: string,
   corpo?: Record<string, unknown>,
+  cabecalhos?: Record<string, string>,
 ): NextRequest {
+  const headers: Record<string, string> = { ...cabecalhos };
+  if (corpo !== undefined) headers["content-type"] = "application/json";
   return new NextRequest(`http://localhost/api/v1/contacts/${id}${caminho}`, {
     method: metodo,
-    ...(corpo !== undefined
-      ? { headers: { "content-type": "application/json" }, body: JSON.stringify(corpo) }
-      : {}),
+    headers,
+    ...(corpo !== undefined ? { body: JSON.stringify(corpo) } : {}),
   });
 }
 
@@ -144,8 +147,9 @@ const ctxDoItem = (id: string) => ({ params: Promise.resolve({ id }) });
  */
 async function lerContatoDoItem(
   id: string,
+  cabecalhos?: Record<string, string>,
 ): Promise<{ ok: true; tags: string[]; custom_fields: Record<string, unknown> } | { ok: false; res: Response }> {
-  const res = await lerUmContato(requestDoItem(id, "GET", ""), ctxDoItem(id));
+  const res = await lerUmContato(requestDoItem(id, "GET", "", undefined, cabecalhos), ctxDoItem(id));
   if (!res.ok) return { ok: false, res };
   const corpo = (await res.json().catch(() => ({}))) as {
     data?: { tags?: string[] | null; custom_fields?: Record<string, unknown> | null };
@@ -169,10 +173,11 @@ async function lerContatoDoItem(
 async function executarNoItem(
   input: BulkContactActionInput,
   id: string,
+  cabecalhos?: Record<string, string>,
 ): Promise<Response> {
   switch (input.action) {
     case "tag": {
-      const lido = await lerContatoDoItem(id);
+      const lido = await lerContatoDoItem(id, cabecalhos);
       if (!lido.ok) return lido.res;
       const marcador = normalizarTag(input.tag);
       const novos =
@@ -182,10 +187,10 @@ async function executarNoItem(
       // O MESMO PATCH da edição da ficha: ele audita `contact.updated` por
       // contato, emite `contact.tag_added` quando a etiqueta é nova, e a
       // policy da tabela continua sendo quem isola a escrita.
-      return atualizarUmContato(requestDoItem(id, "PATCH", "", { tags: novos }), ctxDoItem(id));
+      return atualizarUmContato(requestDoItem(id, "PATCH", "", { tags: novos }, cabecalhos), ctxDoItem(id));
     }
     case "custom-field": {
-      const lido = await lerContatoDoItem(id);
+      const lido = await lerContatoDoItem(id, cabecalhos);
       if (!lido.ok) return lido.res;
       // MERGE da UMA chave pedida. O PATCH substitui `custom_fields` por
       // inteiro (é assim que a tela apaga campo), então mandar só a chave nova
@@ -197,7 +202,7 @@ async function executarNoItem(
             )
           : { ...lido.custom_fields, [input.chave]: input.valor };
       return atualizarUmContato(
-        requestDoItem(id, "PATCH", "", { custom_fields: novos }),
+        requestDoItem(id, "PATCH", "", { custom_fields: novos }, cabecalhos),
         ctxDoItem(id),
       );
     }
@@ -209,7 +214,7 @@ async function executarNoItem(
         requestDoItem(id, "PATCH", "/carteira", {
           dono_user_id: input.dono_user_id,
           ...(input.origem ? { origem: input.origem } : {}),
-        }),
+        }, cabecalhos),
         ctxDoItem(id),
       );
   }
@@ -224,9 +229,23 @@ export async function POST(req: NextRequest): Promise<Response> {
   // O portão da CHAMADA. Os handlers por item revalidam role e org — este
   // cheque existe para o `viewer` não receber N itens recusados no lugar de um
   // 403, e para nenhuma subchamada ser feita antes de saber quem está chamando.
-  const authz = await requireRole("agent", { requestId, resource: "contacts" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "contacts",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+
+  // Repassa o cabeçalho de autorização (Bearer ou cookie) para que as
+  // subchamadas às rotas irmãs (`[id]/route`, `carteira/route`) resolvam a
+  // mesma identidade em vez de reautenticar do zero.
+  const cabecalhos: Record<string, string> = {};
+  const authHeader = req.headers.get("authorization");
+  if (authHeader) cabecalhos["authorization"] = authHeader;
 
   let input: BulkContactActionInput;
   try {
@@ -254,9 +273,20 @@ export async function POST(req: NextRequest): Promise<Response> {
   // request_id da própria subchamada, e a ordem do relatório é a ordem dos ids.
   // Nada de lote transacional: cada item acontece ou recusa sozinho.
   const resultados: ResultadoDoItem[] = [];
+  // A carteira é SÓ DE SESSÃO (o PATCH de carteira usa `requireRole`, que recusa
+  // o Bearer). Com token, cada item volta recusado com o motivo, em vez de cair no
+  // 401 genérico da subchamada.
+  const carteiraDoToken = input.action === "carteira" && authz.via === "token";
   for (const id of input.ids) {
     try {
-      const res = await executarNoItem(input, id);
+      const res = carteiraDoToken
+        ? fail(
+            "carteira_so_pela_sessao",
+            t("A carteira do cliente só muda pela sessão de um gerente, não por token."),
+            403,
+            { requestId },
+          )
+        : await executarNoItem(input, id, cabecalhos);
       resultados.push(await classificar(res, id));
     } catch (err) {
       // Defesa em último nível: um handler que ESTOURO em vez de responder

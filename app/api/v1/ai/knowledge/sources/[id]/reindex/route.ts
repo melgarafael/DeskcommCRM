@@ -8,19 +8,19 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * client-side via mutation.isPending; o worker eventualmente atualiza
  * `last_indexed_at` / `chunks_count` / `last_index_status`.
  *
- * Auth: cookie session, role >= manager.
- * organization_id é resolvido do JWT — nunca do body/path.
+ * Auth: sessão por cookie OU token de servidor (`resolveAuthDual`), role >= manager.
+ * organization_id é resolvido da sessão ou da linha do token — nunca do body/path.
  */
 
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -41,10 +41,18 @@ export async function POST(
   const requestId = randomUUID();
   const { id } = await params;
 
-  const authz = await requireRole("manager", { requestId, resource: "ai_knowledge" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_knowledge",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_knowledge", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const activeOrg = { orgId: authz.organizationId };
 
   // Body é opcional; se vier, valida.
   if (req.headers.get("content-length") && req.headers.get("content-length") !== "0") {
@@ -65,13 +73,14 @@ export async function POST(
     }
   }
 
-  // Valida ownership via cliente user-scoped (RLS).
-  const supabase = await createClient();
+  // Valida ownership: o cliente do token é admin (sem RLS); quem protege é o
+  // `.eq("organization_id", …)` abaixo, com a organização da linha do token.
+  const supabase = authz.supabase;
   const { data: existing, error: fetchErr } = await supabase
     .from("ai_knowledge_sources")
     .select("id, agent_id, source_type")
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", authz.organizationId)
     .maybeSingle();
 
   if (fetchErr) {
@@ -92,7 +101,7 @@ export async function POST(
     .from("ai_knowledge_sources")
     .update({ last_index_error: null })
     .eq("id", id)
-    .eq("organization_id", activeOrg.orgId);
+    .eq("organization_id", authz.organizationId);
 
   if (clearErr) {
     console.warn("[ai-knowledge-reindex] clear last_index_error failed (non-blocking):", clearErr.message);
@@ -109,7 +118,7 @@ export async function POST(
       source_type: ksRow.source_type,
       triggered_by: "manual_reindex",
     },
-    p_organization_id: activeOrg.orgId,
+    p_organization_id: authz.organizationId,
   } as never);
 
   if (emitErr) {
@@ -119,8 +128,9 @@ export async function POST(
   // Reindexar não muda o conteúdo, mas muda quando o agente passa a saber dele.
   void audit({
     action: "ai.knowledge_source_reindexed",
-    actorUserId: authz.user.id,
-    organizationId: activeOrg.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "ai_knowledge_source",
     resourceId: id,
     requestId,

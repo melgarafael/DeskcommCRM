@@ -10,8 +10,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isServiceRoleConfigured } from "@/lib/audit";
 
@@ -23,16 +22,24 @@ interface AssignableMember {
   full_name: string | null;
 }
 
-export async function GET(_req: NextRequest): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "team" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "team",
+    role: "agent",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const orgId = authz.org.orgId; // fonte confiável (cookie validado)
+  const teto = await tetoDeEscritaDoToken(authz, "team_assignable", requestId);
+  if (teto) return teto;
+  const orgId = authz.organizationId; // fonte confiável (token ou cookie validado)
 
   // A RLS de user_organizations só mostra o próprio membership a um agent —
   // admin client filtrado manualmente pela org resolvida acima (doutrina:
   // service role + filtro explícito de organization_id de fonte confiável).
-  const client = isServiceRoleConfigured() ? createAdminClient() : await createClient();
+  const client = isServiceRoleConfigured() ? createAdminClient() : authz.supabase;
   const { data: rows, error } = await client
     .from("user_organizations")
     .select("user_id, role")

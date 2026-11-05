@@ -23,10 +23,12 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireRole } from "@/lib/auth/require-role";
 import { validateRequest } from "@/lib/schemas/_validate";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -44,11 +46,44 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
+  const authHeader = req.headers.get("authorization");
+  if (authHeader && /^Bearer\s+/i.test(authHeader.trim())) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "conversations",
+      role: "agent",
+      scope: "mcp:write",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "conversations", requestId);
+    if (teto) return teto;
+    const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+    const { organizationId } = authz;
+    const supabase = authz.supabase;
+    const actorId = authz.actor.type === "user" ? authz.actor.id : null;
+    const actorApiTokenId = authz.apiTokenId ?? null;
+    return responderRag(supabase, organizationId, id, req, requestId, t, actorId, actorApiTokenId);
+  }
+
+  // Caminho de sessão: byte a byte igual.
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { user: authUser, org: activeOrg } = authz;
+  const supabase = await createClient();
+  return responderRag(supabase, activeOrg.orgId, id, req, requestId, t, authUser.id, null);
+}
 
+async function responderRag(
+  supabase: SupabaseClient,
+  organizationId: string,
+  conversationId: string,
+  req: NextRequest,
+  requestId: string,
+  t: (texto: string) => string,
+  actorId: string | null,
+  actorApiTokenId: string | null,
+): Promise<Response> {
   let input;
   try {
     input = await validateRequest(bodySchema, req);
@@ -62,14 +97,12 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     throw err;
   }
 
-  const supabase = await createClient();
-
   // Read prev value first to put it in the audit payload (best-effort).
   const { data: prevRow } = await supabase
     .from("conversations")
     .select("usable_for_rag")
-    .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("id", conversationId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
 
   const prev = (prevRow as { usable_for_rag: boolean } | null)?.usable_for_rag ?? null;
@@ -79,7 +112,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     ? {
         usable_for_rag: true,
         usable_for_rag_marked_at: nowIso,
-        usable_for_rag_marked_by: authUser.id,
+        usable_for_rag_marked_by: actorId,
         rag_review_status: null,
       }
     : {
@@ -92,8 +125,8 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const { data, error } = await supabase
     .from("conversations")
     .update(update)
-    .eq("id", id)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("id", conversationId)
+    .eq("organization_id", organizationId)
     .select("id, usable_for_rag")
     .maybeSingle();
 
@@ -104,13 +137,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
   }
 
-  // O org vem da sessão (requireRole), nunca do corpo; a função confere que a
+  // O org vem da sessão/token, nunca do corpo; a função confere que a
   // conversa é dele antes de apagar.
   let trechosRemovidos: number | undefined;
   if (!input.enabled) {
     const { data: removidos, error: trechosErro } = await createAdminClient().rpc(
       "fn_conversa_remove_trechos_do_rag",
-      { p_org: activeOrg.orgId, p_conversation: id },
+      { p_org: organizationId, p_conversation: conversationId },
     );
     if (trechosErro) {
       return fail("internal_error", trechosErro.message, 500, { requestId });
@@ -120,12 +153,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   await audit({
     action: "conversation.usable_for_rag_toggled",
-    actorUserId: authUser.id,
-    organizationId: activeOrg.orgId,
+    actorUserId: actorId,
+    actorApiTokenId,
+    organizationId,
     resourceType: "conversation",
-    resourceId: id,
+    resourceId: conversationId,
     metadata: {
-      conversation_id: id,
+      conversation_id: conversationId,
       enabled: input.enabled,
       prev,
       ...(trechosRemovidos === undefined ? {} : { trechos_removidos: trechosRemovidos }),

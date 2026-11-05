@@ -39,10 +39,14 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * sessão diria que alguém participa de uma conversa que nunca foi convidado.
  */
 import { randomUUID } from "node:crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { audit, isServiceRoleConfigured } from "@/lib/audit";
+import type { Idioma } from "@/lib/i18n/idiomas";
+import { extractBearer } from "@/lib/mcp/auth";
 import { ok, fail } from "@/lib/api/wrappers";
 import { ApiError } from "@/lib/api/types";
 import { requireRole, orgAtivaDaApi } from "@/lib/auth/require-role";
@@ -78,6 +82,22 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
+  // Token de integração (Spec 33, R2): a lista só lê dados da organização da
+  // linha do token. O caminho de sessão fica como estava, logo abaixo.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "conversations",
+      role: "viewer",
+      scope: "mcp:read",
+      tokenRole: "agent",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "conversations", requestId);
+    if (teto) return teto;
+    return responderParticipantes(authz.supabase, authz.organizationId, authz.idioma, id, requestId);
+  }
+
   // SEM `requireRole` aqui: ele audita a negação, e a leitura da lista não é
   // decisão de papel — quem decide é a RLS de `conversations` (cabeçalho).
   const user = await loadAuthUser();
@@ -91,6 +111,17 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (!orgId) {
     return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
+  return responderParticipantes(await createClient(), orgId, user.idioma, id, requestId);
+}
+
+async function responderParticipantes(
+  supabase: SupabaseClient,
+  orgId: string,
+  idioma: Idioma | undefined,
+  id: string,
+  requestId: string,
+): Promise<Response> {
+  const t = (texto: string) => traduzir(texto, idioma ?? "pt-BR");
   if (!z.uuid().safeParse(id).success) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
   if (!isServiceRoleConfigured()) {
@@ -98,11 +129,12 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   }
   const admin = createAdminClient();
 
-  // "Quem vê a conversa vê quem participa": a conversa é lida pelo cliente de
-  // SESSÃO — a MESMA RLS do `GET /conversations/[id]` (`fn_can_view_conversation`
-  // + o ramo do participante da migration 0661). Sem visibilidade a RLS devolve
-  // nada e a resposta é o mesmo 404 do inexistente: não revela que ela existe.
-  const supabase = await createClient();
+  // "Quem vê a conversa vê quem participa": na sessão a conversa é lida pelo
+  // cliente de SESSÃO — a MESMA RLS do `GET /conversations/[id]`
+  // (`fn_can_view_conversation` + o ramo do participante da migration 0661). Sem
+  // visibilidade a RLS devolve nada e a resposta é o mesmo 404 do inexistente:
+  // não revela que ela existe. No token o cliente é o de serviço e o filtro de
+  // `organization_id` abaixo é quem isola a organização.
   const { data: conv, error: convErr } = await supabase
     .from("conversations")
     .select(COLUNAS_DA_CONVERSA)

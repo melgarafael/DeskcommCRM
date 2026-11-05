@@ -23,10 +23,10 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { moverGrupoSchema } from "@/lib/schemas/templates";
-import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
 import { ordemDaRenumeracao, posicaoEntre } from "@/lib/templates/ordem";
@@ -48,10 +48,20 @@ export async function PUT(req: NextRequest, { params }: RouteParams): Promise<Re
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "message_templates" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "message_templates",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "message_template_groups.ordem", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId, apiTokenId } = authz;
+  // Autor só quando quem chama é uma pessoa; token não tem usuário, então NULL.
+  const autor = authz.actor.type === "user" ? authz.actor.id : null;
   const { id } = await params;
 
   const parsed = moverGrupoSchema.safeParse(await req.json().catch(() => null));
@@ -63,11 +73,11 @@ export async function PUT(req: NextRequest, { params }: RouteParams): Promise<Re
   }
   const { depois_de } = parsed.data;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data: lista, error: erroLista } = await supabase
     .from("message_template_groups")
     .select("id, ordem")
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", organizationId)
     .order("ordem", { ascending: true })
     .order("name", { ascending: true })
     .order("id", { ascending: true });
@@ -114,7 +124,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams): Promise<Re
       .from("message_template_groups")
       .update({ ordem: nova })
       .eq("id", id)
-      .eq("organization_id", org.orgId)
+      .eq("organization_id", organizationId)
       .select(COLS)
       .maybeSingle();
     if (error || !data) {
@@ -138,7 +148,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams): Promise<Re
       .from("message_template_groups")
       .update({ ordem: ordemDaRenumeracao(i) })
       .eq("id", ids[i]!)
-      .eq("organization_id", org.orgId)
+      .eq("organization_id", organizationId)
       .select(COLS)
       .maybeSingle();
     if (error || !data) {
@@ -157,8 +167,9 @@ export async function PUT(req: NextRequest, { params }: RouteParams): Promise<Re
   function finalizar(grupo: Record<string, unknown>, renumerada: boolean): Response {
     void audit({
       action: "template_group.reordered",
-      actorUserId: user.id,
-      organizationId: org.orgId,
+      actorUserId: autor,
+      actorApiTokenId: apiTokenId ?? null,
+      organizationId,
       resourceType: "message_template_group",
       resourceId: id,
       requestId,

@@ -4,7 +4,9 @@ import { NextRequest } from "next/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import type { AuthUser } from "@/lib/auth/types";
+import { validateBearerToken } from "@/lib/mcp/auth";
 
 /**
  * Épico Operação Visível (F1, review T4) — PATCH /api/v1/ai/memory/entries/[id]:
@@ -12,11 +14,21 @@ import type { AuthUser } from "@/lib/auth/types";
  *    created_by, mesmo se o body tentar mandar);
  *  - filtra por id E organization_id;
  *  - status fora do enum → 422 validation_failed.
+ *
+ * O handler agora resolve auth por `resolveAuthDual` (sessão OU token).
+ * Na sessão, `createClient()` é usado; no token, `createAdminClient()` e
+ * `validateBearerToken()`. Os testes de sessão mantêm `requireRole` e ganham
+ * `createClient` mockado com o mesmo dublê que `createAdminClient`.
  */
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+vi.mock("@/lib/mcp/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/mcp/auth")>()),
+  validateBearerToken: vi.fn(),
+}));
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -46,6 +58,11 @@ function makeAdminStub(
         select() {
           return b;
         },
+        // Leitura de existência da rota (select("id").eq().eq().maybeSingle()):
+        // a entrada existe nesta organização.
+        maybeSingle() {
+          return Promise.resolve({ data: { id: ENTRY_ID }, error: null });
+        },
         single() {
           return Promise.resolve({ data: updateResult, error: updateResult ? null : new Error("boom") });
         },
@@ -70,6 +87,10 @@ function mockAuthzOk() {
     user,
     org: { orgId: ORG_ID, name: "Org", role: "manager" },
   });
+  vi.mocked(createClient).mockResolvedValue(
+    makeAdminStub({ id: ENTRY_ID, status: "archived" }, { payload: null, eqCalls: [] }) as never,
+  );
+  vi.mocked(validateBearerToken).mockResolvedValue(null as never);
 }
 
 function patchReq(body: unknown) {

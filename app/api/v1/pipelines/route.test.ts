@@ -201,7 +201,7 @@ describe("GET /api/v1/pipelines — org ativa", () => {
       ],
     });
     const { GET } = await import("./route");
-    const res = await GET();
+    const res = await GET(new NextRequest("http://localhost/api/v1/pipelines"));
 
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: Array<{ id: string; organization_id: string }> };

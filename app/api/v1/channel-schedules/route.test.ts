@@ -28,6 +28,12 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+// O ramo de sessão desta rota não usa o cliente de sessão (o de token é o admin).
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: vi.fn(async () => {
+    throw new Error("cliente de sessão usado no ramo do token");
+  }),
+}));
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const AUTORA = "99999999-9999-4999-8999-999999999999";

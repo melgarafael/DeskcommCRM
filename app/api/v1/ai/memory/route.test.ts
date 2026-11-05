@@ -4,8 +4,10 @@ import { NextRequest } from "next/server";
 import { requireRole } from "@/lib/auth/require-role";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { fail } from "@/lib/api/wrappers";
 import type { AuthUser } from "@/lib/auth/types";
+import { validateBearerToken } from "@/lib/mcp/auth";
 
 /**
  * Épico Operação Visível (F1, Task 4) — memória geral da org:
@@ -13,11 +15,27 @@ import type { AuthUser } from "@/lib/auth/types";
  *  - GET com org vazia retorna document null + versions/entries [];
  *  - POST publica versão incrementada + upsert do pointer + audit;
  *  - POST body inválido (content vazio) → 422 validation_failed.
+ *
+ * O handler agora resolve auth por `resolveAuthDual` (sessão OU token).
+ * Na sessão, `createClient()` é usado; no token, `createAdminClient()` e
+ * `validateBearerToken()`. Os testes de sessão mantêm `requireRole` e ganham
+ * `createClient` mockado com o mesmo dublê que `createAdminClient`.
  */
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+vi.mock("@/lib/mcp/auth", () => ({
+  validateBearerToken: vi.fn(),
+  // Mesma lógica pura de lib/mcp/auth.ts: o ramo de token do resolveAuthDual a usa.
+  extractBearer: (authHeader: string | null) => {
+    if (!authHeader) return null;
+    const m = /^Bearer\s+(.+)$/i.exec(authHeader.trim());
+    if (!m) return null;
+    return m[1]!.trim();
+  },
+}));
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -159,6 +177,11 @@ function mockAuthzOk(role: "agent" | "admin") {
     user,
     org: { orgId: ORG_ID, name: "Org", role },
   });
+  // `resolveAuthDual` na sessão chama `createClient()`: devolve um dublê vazio
+  // (o handler escreve via `createAdminClient()`, mockado separadamente nos
+  // testes de POST/PATCH).
+  vi.mocked(createClient).mockResolvedValue({} as never);
+  vi.mocked(validateBearerToken).mockResolvedValue(null as never);
 }
 
 function getReq() {
