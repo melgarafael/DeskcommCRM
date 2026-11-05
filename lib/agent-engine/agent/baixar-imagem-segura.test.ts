@@ -2,6 +2,29 @@ import { createHash } from "node:crypto";
 
 import { describe, expect, it, vi } from "vitest";
 
+const rede = vi.hoisted(() => ({ opcoes: [] as Array<{ agent?: unknown }> }));
+
+vi.mock("node:dns/promises", () => {
+  const lookup = async () => [{ address: "93.184.216.34", family: 4 }];
+  return { lookup, default: { lookup } };
+});
+// A requisição real (só neste mock): guarda as opções e falha, sem abrir conexão.
+vi.mock("node:https", () => {
+  const request = (_url: URL, opcoes: { agent?: unknown }) => {
+    rede.opcoes.push(opcoes);
+    const req = {
+      on(evento: string, ouvir: (erro: Error) => void) {
+        if (evento === "error") queueMicrotask(() => ouvir(new Error("sem rede no teste")));
+        return req;
+      },
+      end() {},
+      destroy() {},
+    };
+    return req;
+  };
+  return { request, default: { request } };
+});
+
 import {
   baixarImagemSegura,
   guardarImagemNaConversa,
@@ -12,7 +35,7 @@ import {
 } from "./baixar-imagem-segura";
 
 // Nenhum teste deste arquivo abre conexão nem consulta DNS de verdade: as dependências
-// de rede entram por `deps`. A versão real de `resolver`/`requisitar` não roda aqui.
+// de rede entram por `deps`, e a versão real roda só sobre os mocks acima.
 
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 1)]);
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 1)]);
@@ -72,12 +95,27 @@ describe("baixarImagemSegura — o IP validado é o IP da conexão (sem rebindin
   });
 });
 
+describe("baixarImagemSegura — a requisição real", () => {
+  it("não usa o pool global: a conexão presa ao IP validado não serve a outra requisição", async () => {
+    rede.opcoes.length = 0;
+    const r = await baixarImagemSegura("https://exemplo.test/x.jpg");
+    expect(r).toEqual({ ok: false, motivo: "download_falhou" });
+    expect(rede.opcoes).toHaveLength(1);
+    expect(rede.opcoes[0]!.agent).toBe(false);
+  });
+});
+
 describe("baixarImagemSegura — destino interno é recusado antes de conectar", () => {
   it.each([
     ["metadado de nuvem (literal)", "http://169.254.169.254/x.jpg"],
     ["localhost", "http://localhost/x.png"],
     ["IP privado literal", "https://10.0.0.5/x.webp"],
     ["IPv6 literal", "https://[::1]/x.jpg"],
+    // Faixas que só a conferência do IP literal pega: a guarda textual não as conhece.
+    ["faixa compartilhada (literal)", "https://100.64.0.1/x.jpg"],
+    ["metadado em faixa compartilhada (literal)", "https://100.100.100.200/x.jpg"],
+    ["faixa de benchmark (literal)", "https://198.18.0.1/x.jpg"],
+    ["multicast (literal)", "https://224.0.0.1/x.jpg"],
   ])("recusa %s sem resolver nem conectar", async (_nome, url) => {
     const { resp } = resposta([JPEG]);
     const { deps: d, requisitar, resolver } = deps(resp);

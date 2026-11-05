@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { descreverSemQuery, formatoDeImagemPorUrl } from "./imagem-por-url";
+import { criarProcedenciaDeImagens, descreverSemQuery, formatoDeImagemPorUrl } from "./imagem-por-url";
 
 describe("formatoDeImagemPorUrl — só o formato, sem rede", () => {
   it.each([
@@ -42,5 +42,45 @@ describe("descreverSemQuery — o que vai ao log não tem query (pode ter token)
   });
   it("URL inválida vira marcador, nunca o texto cru", () => {
     expect(descreverSemQuery("não é url token=segredo")).toBe("(url inválida)");
+  });
+});
+
+describe("criarProcedenciaDeImagens — só vale endereço que a ferramenta trouxe no turno", () => {
+  const URL_DA_FOTO = "https://exemplo.test/casas/1.jpg";
+
+  it("acha o endereço no resultado, em qualquer profundidade e dentro de texto JSON", () => {
+    const procedencia = criarProcedenciaDeImagens();
+    procedencia.registrar({ linhas: [{ foto: URL_DA_FOTO }] }, {});
+    procedencia.registrar(
+      { content: [{ type: "text", text: JSON.stringify({ foto: "https://exemplo.test/casas/2.jpg?v=1" }) }] },
+      {},
+    );
+    expect(procedencia.viu(URL_DA_FOTO)).toBe(true);
+    expect(procedencia.viu("https://exemplo.test/casas/2.jpg?v=1")).toBe(true);
+  });
+
+  it("recusa o que nenhuma ferramenta devolveu, inclusive parecido", () => {
+    const procedencia = criarProcedenciaDeImagens();
+    expect(procedencia.viu(URL_DA_FOTO)).toBe(false);
+    procedencia.registrar({ foto: URL_DA_FOTO }, {});
+    expect(procedencia.viu("https://exemplo.test/casas/1.png")).toBe(false);
+    expect(procedencia.viu("https://exemplo.test/casas/1.jpg?x=1")).toBe(false);
+  });
+
+  it("a pontuação de texto corrido não entra no endereço", () => {
+    const procedencia = criarProcedenciaDeImagens();
+    procedencia.registrar(`A foto está em ${URL_DA_FOTO}.`, {});
+    expect(procedencia.viu(URL_DA_FOTO)).toBe(true);
+  });
+
+  it("o endereço que estava nos argumentos da chamada não conta como trazido pela ferramenta", () => {
+    const procedencia = criarProcedenciaDeImagens();
+    procedencia.registrar({ filtros: [{ valor: URL_DA_FOTO }], linhas: [] }, { filtros: [{ valor: URL_DA_FOTO }] });
+    expect(procedencia.viu(URL_DA_FOTO)).toBe(false);
+  });
+
+  it("cada turno começa vazio", () => {
+    criarProcedenciaDeImagens().registrar({ foto: URL_DA_FOTO }, {});
+    expect(criarProcedenciaDeImagens().viu(URL_DA_FOTO)).toBe(false);
   });
 });

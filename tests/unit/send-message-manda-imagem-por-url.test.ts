@@ -33,9 +33,10 @@ describe("send_message aceita imagem_url", () => {
     expect(schema.safeParse({ body: "oi", imagem_url: "não é url" }).success).toBe(false);
   });
 
-  it("a descrição proíbe inventar URL e a combinação com produto_codigo", () => {
+  it("a descrição diz de onde a URL vem, o que acontece com outra e proíbe a combinação com produto_codigo", () => {
     const descricao = AGENT_TOOL_DEFS.send_message.inputSchema.shape.imagem_url.description ?? "";
-    expect(descricao).toContain("Nunca invente URL");
+    expect(descricao).toContain("deste turno");
+    expect(descricao).toContain("outra URL não é buscada");
     expect(descricao).toContain("produto_codigo");
   });
 });
@@ -55,6 +56,19 @@ describe("validação e guarda da foto por URL — antes da cadeia e nunca na pr
     expect(cadeia).toBeGreaterThan(-1);
     expect(baixa).toBeLessThan(cadeia);
     expect(corpoDoSend.slice(0, baixa)).toContain("temImagemPorUrl && !preview");
+  });
+
+  it("só busca URL que uma ferramenta de dados devolveu neste turno; a outra nem chega à rede", () => {
+    expect(corpoDoSend).toContain("const baixada = procedenciaDeImagens.viu(url)\n              ? await baixarImagemSegura(url)");
+    expect(corpoDoSend).toContain("motivo: 'url_fora_dos_resultados'");
+  });
+
+  it("o resultado das ferramentas de dados alimenta a procedência, com os argumentos da chamada", () => {
+    const envolve = FONTE.indexOf("for (const nome of FERRAMENTAS_QUE_TRAZEM_IMAGEM)");
+    expect(envolve).toBeGreaterThan(FONTE.indexOf("rawTools[name] = mcpTool;"));
+    expect(envolve).toBeLessThan(FONTE.indexOf("applyPreviewPolicy("));
+    expect(FONTE.slice(envolve, envolve + 600)).toContain("procedenciaDeImagens.registrar(resultado, args[0]);");
+    expect(FONTE).toContain("procedenciaDeImagens.viu,\n          )\n        : rawTools;");
   });
 
   it("a foto é guardada na conversa com o tenant do turno antes de sair", () => {

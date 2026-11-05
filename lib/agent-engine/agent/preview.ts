@@ -350,6 +350,8 @@ export function applyPreviewPolicy(
    * com a afirmação de fato sem conferência e sem observação para calibrar.
    */
   conferirAfirmacoes?: (candidata: string) => Promise<ConferenciaDeFato>,
+  /** A procedência da `imagem_url` no turno (`criarProcedenciaDeImagens().viu`), a mesma do envio real. */
+  imagemVistaNoTurno?: (url: string) => boolean,
 ): ToolSet {
   return Object.fromEntries(
     Object.entries(tools).map(([name, definition]) => {
@@ -438,7 +440,14 @@ export function applyPreviewPolicy(
               let imagemPrevista: string | undefined;
               if (imagemUrl !== '') {
                 const formato = formatoDeImagemPorUrl(imagemUrl);
-                if (formato.ok) {
+                if (formato.ok && imagemVistaNoTurno && !imagemVistaNoTurno(imagemUrl)) {
+                  imagemPrevista = 'recusada: url_fora_dos_resultados';
+                  p.result.warnings.push({
+                    code: 'imagem_recusada',
+                    message:
+                      'A imagem desta resposta seria recusada (url_fora_dos_resultados): o texto sairia sem foto.',
+                  });
+                } else if (formato.ok) {
                   imagemPrevista = 'formato_aceito';
                 } else {
                   imagemPrevista = `recusada_pelo_formato: ${formato.motivo}`;

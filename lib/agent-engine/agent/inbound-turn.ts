@@ -103,7 +103,11 @@ import {
   PASTA_DE_TESTE_DE_MIDIA,
   type FotoParaEnvio,
 } from './fotos-do-produto';
-import { descreverSemQuery } from './imagem-por-url';
+import {
+  criarProcedenciaDeImagens,
+  descreverSemQuery,
+  FERRAMENTAS_QUE_TRAZEM_IMAGEM,
+} from './imagem-por-url';
 import { baixarImagemSegura, guardarImagemNaConversa } from './baixar-imagem-segura';
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
 import {
@@ -430,9 +434,8 @@ export const AGENT_TOOL_DEFS = {
         .url()
         .optional()
         .describe(
-          'URL https de UMA imagem (jpg, png ou webp) que veio de um resultado de ferramenta (ex.: uma ' +
-            'receita do banco externo). Vai como foto, e o texto vira a legenda. Nunca invente URL. ' +
-            'Não use junto com produto_codigo.',
+          'URL de imagem (jpg, png, webp) copiada de um resultado de dados deste turno; outra URL não é ' +
+            'buscada. O texto vira a legenda. Não use com produto_codigo.',
         ),
     }),
   },
@@ -3793,6 +3796,8 @@ async function executarTurnoDoAgente(
     return [];
   });
   const evidenciasComerciais = criarEvidenciasComerciaisDoTurno(fontesQueProvamOferta);
+  // `imagem_url` só vale para endereço que uma ferramenta de dados devolveu neste turno.
+  const procedenciaDeImagens = criarProcedenciaDeImagens();
   const efeitosDoTurno = criarEfeitoDasEscrituras();
   let evidenciasDeAgendamento: EvidenciaDeAgendamento[] = [];
   const recuperarEvidencias = criarRecuperadorDeEvidencias(pool, {
@@ -4621,7 +4626,9 @@ async function executarTurnoDoAgente(
           if (temImagemPorUrl && !preview) {
             const url = (imagem_url ?? '').trim();
             let motivo: string | null = null;
-            const baixada = await baixarImagemSegura(url);
+            const baixada = procedenciaDeImagens.viu(url)
+              ? await baixarImagemSegura(url)
+              : ({ ok: false, motivo: 'url_fora_dos_resultados' } as const);
             if (!baixada.ok) {
               motivo = baixada.motivo;
             } else {
@@ -5819,6 +5826,20 @@ async function executarTurnoDoAgente(
         execute: async (args: unknown) =>
           lerNotaDaPrevia(preview.notes ?? [], notasDaPrevia?.inline !== false, args),
       };
+    // Registra os endereços que as ferramentas de dados devolvem (a procedência da `imagem_url`).
+    for (const nome of FERRAMENTAS_QUE_TRAZEM_IMAGEM) {
+      const ferramenta = rawTools[nome];
+      if (typeof ferramenta?.execute !== 'function') continue;
+      const executeOriginal = ferramenta.execute.bind(ferramenta);
+      rawTools[nome] = {
+        ...ferramenta,
+        execute: (async (...args: Parameters<typeof executeOriginal>) => {
+          const resultado = await executeOriginal(...args);
+          procedenciaDeImagens.registrar(resultado, args[0]);
+          return resultado;
+        }) as typeof ferramenta.execute,
+      };
+    }
     const previewContext = preview
       ? {
           ...(await previewGateContext(pool, preview, runLog, clock())),
@@ -5878,6 +5899,7 @@ async function executarTurnoDoAgente(
             // `contradiz`/`nao_esta_na_base` aparecer para quem revisa o rascunho
             // (impedimento no assistido, aviso no Teste) em vez de sair calado.
             conferirAfirmacoes,
+            procedenciaDeImagens.viu,
           )
         : rawTools;
     const tools = envolverFerramentasComTraco(
