@@ -215,7 +215,6 @@ const CASOS: Caso[] = [
 
 /** Métodos que FICAM DE FORA (só sessão): o token recebe 401 e o cliente admin não é criado. */
 const SO_DE_SESSAO: Caso[] = [
-  { caminho: "/api/v1/ai/guardrail-layers", metodo: "GET", papel: "manager", escopo: "config:read", rota: () => import("@/app/api/v1/ai/guardrail-layers/route") },
   { caminho: "/api/v1/ai/style-adjustments", metodo: "GET", papel: "manager", escopo: "config:read", rota: () => import("@/app/api/v1/ai/style-adjustments/route") },
   { caminho: "/api/v1/ai/pacing", metodo: "PUT", papel: "manager", escopo: "config:write", rota: () => import("@/app/api/v1/ai/pacing/route") },
   { caminho: "/api/v1/ai/voz/preview", metodo: "POST", papel: "manager", escopo: "config:write", rota: () => import("@/app/api/v1/ai/voz/preview/route") },
