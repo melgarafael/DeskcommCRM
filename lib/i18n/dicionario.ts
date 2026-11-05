@@ -6393,7 +6393,6 @@ export const DICIONARIO: Traducoes = {
     es: "Error al cargar los datos de uso. Intenta recargar.",
   },
   "Mensagens / dia": { es: "Mensajes / día" },
-  "Custo AI / dia (R$)": { es: "Costo IA / día (R$)" },
   "AI Tokens / dia": { es: "Tokens de IA / día" },
   "Não há dados de uso no período selecionado.": {
     es: "No hay datos de uso en el período seleccionado.",
