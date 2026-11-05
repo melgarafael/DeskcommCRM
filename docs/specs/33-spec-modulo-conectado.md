@@ -196,7 +196,9 @@ O módulo pode gravar **rascunho** por `conversations/[id]/drafts`; quem envia �
 
 **Papel efetivo.** É o **menor** entre o teto do token e o papel **atual** da pessoa, lido do banco na
 própria requisição. Acima de `agent`, só com um JWT válido de pessoa real. Sem JWT, o teto é `agent`
-(D4).
+(D4). O token de módulo nasce só com `mcp:read`, `role:viewer` e o ator: **não carrega escopo de rota**
+(`mcp:write`, `config:*`). Para ele, o escopo exigido pela rota é atendido pela decisão de área e modo
+(declarado ∩ consentido, lido do banco agora); o papel continua valendo.
 
 **JWT de contexto.**
 

@@ -170,6 +170,23 @@ describe("resolveAuthDual — token de módulo", () => {
     if (!r.ok) expect(await codigoDe(r.response)).toBe("forbidden_role");
   });
 
+  it("token REAL de módulo (só mcp:read) passa em rota que pede config:read/mcp:write: o escopo vem da área consentida", async () => {
+    moduloAutenticado(["mcp:read", "role:viewer", "actor:module:acme/comanda"]);
+    pacote(["area.funis.leitura", "area.contatos.escrita"]);
+    const leitura = await resolveAuthDual(req("GET", "/api/v1/pipelines"), { ...OPCOES, scope: "config:read" });
+    expect(leitura.ok).toBe(true);
+    const escrita = await resolveAuthDual(req("POST", "/api/v1/contacts"), { ...OPCOES, scope: "mcp:write" });
+    expect(escrita.ok).toBe(true);
+  });
+
+  it("sem a área, o escopo ausente não é desculpa nem brecha: recusa por área", async () => {
+    moduloAutenticado(["mcp:read", "role:viewer", "actor:module:acme/comanda"]);
+    pacote(["area.contatos.leitura"]);
+    const r = await resolveAuthDual(req("GET", "/api/v1/pipelines"), { ...OPCOES, scope: "config:read" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(await codigoDe(r.response)).toBe("module_area_not_granted");
+  });
+
   it("módulo desligado dá 403 module_disabled", async () => {
     moduloAutenticado();
     pacote(["area.contatos.leitura"]);
