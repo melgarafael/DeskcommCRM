@@ -119,6 +119,22 @@ describe("exportação", () => {
     expect(arquivo.references).toBeUndefined();
   });
 
+  it("a opção 'enviar com a conversa atribuída' (#3974) viaja ligada, e o arquivo antigo sem ela volta desligado", () => {
+    const g = grafo([
+      { id: "a1", type: "action", label: "Mensagem", position: pos, config: { mode: "text", body: "Oi!" } },
+    ]);
+    const ligado = montarArquivoDeFluxo(
+      { name: "Etapa", surface: "followup", handoff_policy: "pause", send_when_assigned: true, trigger_config: { kind: "manual" }, graph: g },
+      nomesVazios(),
+      new Date("2026-10-17T12:00:00Z"),
+    );
+    expect(idaEVolta(ligado).flow.send_when_assigned).toBe(true);
+
+    const antigo = JSON.parse(JSON.stringify(exportar(g))) as { flow: Record<string, unknown> };
+    delete antigo.flow.send_when_assigned;
+    expect(idaEVolta(antigo).flow.send_when_assigned).toBe(false);
+  });
+
   it("leva o NOME de cada etapa/modelo/fluxo citado, para a importação achar em outra conta", () => {
     const g = grafo([
       {

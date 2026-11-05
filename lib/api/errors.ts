@@ -80,6 +80,13 @@ export const ApiErrorCodes = {
   // retentar depois resolve, enquanto conflito manda trocar a chave.
   idempotency_in_progress: "idempotency_in_progress",
   state_conflict: "state_conflict",
+  // POST /api/v1/prospecting (`start` e `resume`): a CONEXÃO escolhida já tem
+  // uma campanha de prospecção em andamento (#3896). Uma campanha ativa por
+  // NÚMERO, não por organização — a recusa é do número, e `details` traz
+  // `campaign_id`/`campaign_name` de quem o ocupa para a tela oferecer
+  // "abrir essa campanha". Irmão do `channel_archived`: mesma classe (o canal é
+  // o recurso escasso), outro motivo.
+  prospecting_channel_busy: "prospecting_channel_busy",
   // Escrita vinda de uma aba que ficou numa organização diferente da do cookie
   // `active_org` (#2335). O header `X-Org-Da-Aba` só serve para RECUSAR: a org
   // efetiva continua sendo a do cookie (`lib/auth/require-role.ts`).
@@ -383,6 +390,14 @@ export const ApiErrorCodes = {
   wacalls_error: "wacalls_error", // 502: o serviço de chamada de voz recusou ou não respondeu
   wacalls_not_connected: "wacalls_not_connected", // 503 + Retry-After: sessão pareada cujo socket com o WhatsApp caiu por um instante (ver `wacallsSemConexao`)
   ai_provider_error: "ai_provider_error",
+  // 502: o teste do agente (#4020) não chegou a rodar porque o BANCO não
+  // atendeu — `Query read timeout`, `statement timeout`, socket derrubado ou o
+  // pool do engine sem `SUPABASE_DB_URL`. Código próprio, e não `preview_failed`,
+  // porque a tela e quem depura precisam distinguir "a configuração do agente
+  // está errada" (422, `preview_failed`) de "a dependência não respondeu"
+  // (502, este — não 503, que o cliente repete) — a primeira manda conferir
+  // modelo/credencial, a segunda manda esperar e tentar de novo.
+  preview_banco_indisponivel: "preview_banco_indisponivel",
   nuvemshop_error: "nuvemshop_error",
 } as const;
 
