@@ -1531,6 +1531,19 @@ export const DICIONARIO: Traducoes = {
   "IA aberta ao público": { es: "IA abierta al público" },
   "IA restrita por origem": { es: "IA restringida por origen" },
   "Configurar acesso da IA": { es: "Configurar acceso de la IA" },
+  "Este número está em modo de teste": { es: "Este número está en modo de prueba" },
+  "Nenhum número autorizado neste canal: a IA não responde ninguém. Cadastre o número de quem vai testar para receber as respostas automáticas.": {
+    es: "Ningún número autorizado en este canal: la IA no responde a nadie. Registra el número de quien va a probar para recibir las respuestas automáticas.",
+  },
+  "O número {numero} não está na lista de teste deste canal: a IA não responde a ele. Cadastre-o para receber as respostas automáticas.": {
+    es: "El número {numero} no está en la lista de prueba de este canal: la IA no le responde. Regístralo para recibir las respuestas automáticas.",
+  },
+  "O teste aqui não passa pelo canal: no WhatsApp real, a IA não responderia a este número.": {
+    es: "La prueba de aquí no pasa por el canal: en WhatsApp real, la IA no respondería a este número.",
+  },
+  "Peça a um administrador para cadastrar o número de teste no cartão deste canal em Conexões.": {
+    es: "Pide a un administrador que registre el número de prueba en la tarjeta de este canal en Conexiones.",
+  },
   "Acesso da IA no WhatsApp": { es: "Acceso de la IA en WhatsApp" },
   "Teste com pessoas de confiança antes de liberar o atendimento automático.": { es: "Prueba con personas de confianza antes de habilitar la atención automática." },
   "Não foi possível carregar o acesso da IA.": { es: "No se pudo cargar el acceso de la IA." },
