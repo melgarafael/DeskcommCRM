@@ -352,7 +352,7 @@ async function nomeDeUsuario(
  * `{kind, id, name?}`: `kind` é o `owner_kind` GRAVADO no lead (`user`/`ai`),
  * sem tradução — é o vocabulário do banco, e inventar outro faria o integrador
  * casar um valor que o próprio sistema não produz. SEM email: a doutrina do
- * repo (cabeçalho de `lib/mcp/tools/_users.ts`) é expor só o nome do usuário,
+ * repo (cabeçalho de `lib/users/nome-do-atendente.ts`) é expor só o nome do usuário,
  * nunca o email — quem integra mapeia pelo id, como já faz no compromisso.
  * Nome vem melhor esforço: `full_name` do `auth.users` para dono humano,
  * `ai_agents.name` para dono IA; sem lookup o corpo sai com `kind` + `id` em

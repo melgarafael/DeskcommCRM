@@ -8,10 +8,10 @@
  * atendendo o cliente e a tela não.** Por isso nenhuma linha do inbox conseguia
  * dizer com quem a pessoa está falando.
  *
- * ## Por que não dá para reusar `resolveUserNames` direto na rota
+ * ## Por que o nome não sai do client do request
  *
- * Ele funciona no MCP porque o `ctx.supabase` de lá é `createAdminClient()`. A
- * rota de conversas usa o client do REQUEST (anon key + JWT do usuário), e
+ * No MCP o `ctx.supabase` já é `createAdminClient()` (por isso existe
+ * `nomesDosAtendentesCom`, que recebe o client). A rota de conversas usa o client do REQUEST (anon key + JWT do usuário), e
  * `supabase.auth.admin.getUserById` fala com o endpoint admin do GoTrue, que
  * responde **403 `not_admin`** para esse token. Medido: o supabase-js **não
  * lança** nesse caso — devolve `{ data: { user: null }, error }` —, então o
@@ -48,6 +48,8 @@
  * LGPD: expõe SÓ `full_name`. Nunca e-mail, telefone, `user_metadata` inteiro ou
  * qualquer outro dado do usuário — o mesmo mínimo que `team/assignable` expõe.
  */
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { isServiceRoleConfigured } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -76,7 +78,21 @@ export async function nomesDosAtendentes(
     return new Map();
   }
 
-  const admin = createAdminClient();
+  return nomesDosAtendentesCom(createAdminClient(), orgId, unicos);
+}
+
+/**
+ * O mesmo, com o admin client de quem chama — o MCP já recebe um no contexto
+ * (`ctx.supabase`). A regra de vínculo é a mesma: não há segundo caminho para
+ * o nome de uma pessoa.
+ */
+export async function nomesDosAtendentesCom(
+  admin: SupabaseClient,
+  orgId: string,
+  userIds: Array<string | null | undefined>,
+): Promise<Map<string, string | null>> {
+  const unicos = [...new Set(userIds.filter((id): id is string => Boolean(id)))];
+  if (unicos.length === 0) return new Map();
   const membros = await membrosDaOrganizacao(admin, orgId, unicos);
 
   const pares = await Promise.all(
@@ -106,7 +122,7 @@ export async function nomesDosAtendentes(
 
 /** Quais destes ids têm vínculo com a organização. Falha → conjunto vazio (ninguém ganha nome). */
 async function membrosDaOrganizacao(
-  admin: ReturnType<typeof createAdminClient>,
+  admin: SupabaseClient,
   orgId: string,
   ids: string[],
 ): Promise<Set<string>> {
