@@ -156,7 +156,9 @@ function atribui(p: {
     p.esperado === undefined || p.esperado === null ? "null" : `'${p.esperado}'`,
     p.trava ? "true" : "false",
   ];
-  if (p.soSemDono !== undefined) args.push(p.soSemDono ? "true" : "false");
+  // O 8º argumento mora DEPOIS do `p_source_job_id` (7º) — o slot do turno
+  // autônomo, que aqui é sempre nulo.
+  if (p.soSemDono !== undefined) args.push("null", p.soSemDono ? "true" : "false");
 
   const sessao =
     p.como === null
@@ -435,8 +437,10 @@ describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
   it("lado oposto (c): outra organização não é tocada", () => {
     expect(donoDoNegocio(NEG.outraOrganizacao)).toBe(FORA);
 
-    // Nem por uma chamada de servidor com a conversa da organização da vez.
-    atribui({ como: null, organizacao: OUTRA_ORG, conversa: CONV.atendenteTransfere, para: A });
+    // Nem por uma chamada de servidor que pede a OUTRA organização para uma
+    // conversa desta: o destino é membro de lá, a conversa não é de lá, zero
+    // linhas e nada é escrito em nenhum dos dois lados.
+    atribui({ como: null, organizacao: OUTRA_ORG, conversa: CONV.atendenteTransfere, para: FORA });
 
     expect(donoDoNegocio(NEG.outraOrganizacao)).toBe(FORA);
     expect(donoDaConversa(CONV.atendenteTransfere)).toBe(B);

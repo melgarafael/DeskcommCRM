@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
 import { createAdminClient } from "@/lib/supabase/admin";

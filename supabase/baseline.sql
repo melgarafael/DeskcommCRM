@@ -68879,9 +68879,9 @@ $fn$;
 
 notify pgrst, 'reload schema';
 
--- ---- #4019: o negócio aberto do contato acompanha o dono da conversa (migration 9109) ----
+-- ---- #4019: o negócio aberto do contato acompanha o dono da conversa (migration 9208) ----
 --
--- Espelho idêntico ao da 9109. Mesma história: o #3177 levou a regra para as
+-- Espelho idêntico ao da 9208. Mesma história: o #3177 levou a regra para as
 -- TELAS (transferir e assumir), e três caminhos ficaram de fora — o Atendente
 -- transferindo, que batia na RLS de crm_leads (#2556) e desistia; a
 -- transferência fora da tela (MCP `crm_assign_conversation` e chamadas diretas
@@ -68895,7 +68895,9 @@ notify pgrst, 'reload schema';
 -- nenhuma escrita (o gatilho de crm_leads emitiria um `lead.assigned` falso).
 -- `p_negocio_so_sem_dono` é o "Iniciar conversa": só card sem responsável.
 -- Com sessão, o card só sai do lugar se o chamador já enxerga o dono ATUAL
--- (fn_can_view_lead); o dono NOVO passa a enxergá-lo por ser o dono.
+-- (fn_can_view_lead) — guarda da conversa que TINHA dono; no Assumir de
+-- conversa sem dono não há atendimento de colega sendo tomado. O dono NOVO
+-- passa a enxergá-lo por ser o dono.
 --
 -- Cria função: mora ACIMA da VARREDURA anon. Assinatura nova (8º argumento com
 -- default) exige o drop da de 7 argumentos, senão as chamadas de 6/7 viram
@@ -69129,7 +69131,14 @@ begin
          and v_negocio.owner_user_id is distinct from p_to_user_id
          and (not p_negocio_so_sem_dono
               or (v_negocio.owner_user_id is null and v_negocio.owner_agent_id is null))
+         -- A guarda do #2556 vale para quem ENTREGA o atendimento de outra
+         -- pessoa: se a conversa já tinha dono (v_from), o card só sai do
+         -- lugar se o chamador já enxerga o dono ATUAL dele. No Assumir de
+         -- conversa SEM dono (v_from nulo) não há conversa de colega sendo
+         -- tomada — é "quem pega o atendimento leva o card", e é o caminho 3
+         -- da issue.
          and (auth.uid() is null
+              or v_from is null
               or public.fn_can_view_lead(p_organization_id, v_negocio.owner_user_id))
       then
         -- O trio dono/kind é o da migration 0070: owner_user_id sozinho produz

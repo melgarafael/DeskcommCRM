@@ -113,7 +113,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
 
   // #4019: o negócio ABERTO do contato já acompanhou o dono novo DENTRO da
   // `fn_conversation_assign`, na mesma transação da troca da conversa (migration
-  // 9109) — inclusive quando quem transfere é Atendente. A régua não mora mais
+  // 9208) — inclusive quando quem transfere é Atendente. A régua não mora mais
   // nesta rota: se ela vivesse aqui, MCP, automação e chamada direta da RPC não
   // a teriam, e o Atendente bateria na RLS de crm_leads (#2556) e desistiria.
   await audit({

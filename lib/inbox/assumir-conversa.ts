@@ -8,7 +8,7 @@
  *
  * #4019 — o negócio ABERTO do contato acompanha o dono novo dentro da própria
  * `fn_conversation_assign`, que é a porta única da atribuição, na MESMA
- * transação (ver a migration 9109). Aqui mora só a exceção, e ela vem do
+ * transação (ver a migration 9208). Aqui mora só a exceção, e ela vem do
  * #3216: "Iniciar conversa" passa `soSemResponsavel` e o card só ganha dono se
  * estiver SEM responsável — tomar o card de um colega seria efeito de um
  * clique que não pede atendimento para ninguém. O Assumir do Inbox não passa a
