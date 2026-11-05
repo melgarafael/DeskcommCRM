@@ -97,6 +97,7 @@ export function eixoDoDossie(leadId: string, contactId: string | null): string |
 /** Anexa o nome do agente e da pessoa que agiram, para a linha não dizer só "Agente". */
 export async function comNomeDoAtor(
   supabase: Awaited<ReturnType<typeof createClient>>,
+  orgId: string,
   rows: TimelineItem[],
 ): Promise<TimelineItemView[]> {
   const agentIds = [...new Set(rows.map((r) => r.actor_agent_id).filter((v): v is string => !!v))];
@@ -128,17 +129,9 @@ export async function comNomeDoAtor(
     //
     // Os imports ficam onde as funções são de fato USADAS. Quem importa a
     // função pura não paga por dependência que ela não tem.
-    const { isServiceRoleConfigured } = await import("@/lib/audit");
-    if (isServiceRoleConfigured()) {
-      const { createAdminClient } = await import("@/lib/supabase/admin");
-      const admin = createAdminClient();
-      await Promise.all(
-        userIds.map(async (id) => {
-          const { data } = await admin.auth.admin.getUserById(id);
-          const nome = data?.user?.user_metadata?.full_name;
-          if (typeof nome === "string" && nome.trim() !== "") nomeUsuario.set(id, nome);
-        }),
-      );
+    const { nomesDosAtendentes } = await import("@/lib/users/nome-do-atendente");
+    for (const [id, nome] of await nomesDosAtendentes(orgId, userIds)) {
+      if (typeof nome === "string" && nome.trim() !== "") nomeUsuario.set(id, nome);
     }
   }
 

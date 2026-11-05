@@ -19,6 +19,7 @@ import type { ReacaoNoBalao } from "@/lib/inbox/reacoes-no-fio";
 import { lerMencoesDeGrupo, textoComMencoesResolvidas } from "@/lib/messaging/mencoes-de-grupo";
 import { lerRemetenteDeGrupo, rotuloDoRemetente } from "@/lib/messaging/remetente-de-grupo";
 import { motivoDaFalhaDaMensagem } from "@/lib/inbox/motivo-da-falha";
+import { primeiroNomeDeQuemEnviou } from "@/lib/inbox/nome-no-balao";
 import { hrefDoCompromisso, puloDaAgendaDaMensagem } from "@/lib/inbox/pulo-da-agenda";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
@@ -287,9 +288,17 @@ export function MessageBubble({
       // qualquer uma, o rótulo cai para "Atendente" — que continua dizendo o
       // que `sent_via` de fato garante (um humano, pelo CRM) sem afirmar uma
       // identidade que o dado não sustenta.
-      return viewerUserId != null && message.sent_by_user_id === viewerUserId
-        ? "Você"
-        : "Atendente";
+      if (viewerUserId != null && message.sent_by_user_id === viewerUserId) return "Você";
+      // #4031: com o nome no PAYLOAD (resolvido uma vez por página na rota, que
+      // é quem tem service role), o balão diz QUAL pessoa da equipe falou —
+      // "Atendente · Andreia", no mesmo formato de "IA · Clara". Sem nome
+      // (linha antiga, lookup caído, self-host sem service role), "Atendente":
+      // o id continua sendo a verdade, o nome é a cortesia. O nome NUNCA é
+      // lido de `metadata` — ali é entrada do cliente, como no #3649.
+      const nome = message.sent_by_user_id
+        ? primeiroNomeDeQuemEnviou(message.sent_by_user_name)
+        : null;
+      return nome ? `${t("Atendente")} · ${nome}` : "Atendente";
     }
     return null;
   })();
@@ -488,11 +497,17 @@ export function MessageBubble({
           </p>
         )}
         {senderLabel && (
-          <div className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold opacity-80">
+          <div className="mb-0.5 flex min-w-0 max-w-full items-center gap-1 text-[11px] font-semibold opacity-80">
             {message.sent_via === "ai" ? (
               <Robot size={10} weight="duotone" aria-hidden />
             ) : null}
-            {senderLabel && t(senderLabel)}
+            {/*
+              `truncate` + `min-w-0` no pai: o rótulo pode ganhar um NOME
+              (#4031, "Atendente · Andreia") e o nome vem do cadastro de quem
+              usa o sistema, fora do nosso controle. Num fio estreito — a
+              gaveta do inbox no celular — o corte é do TEXTO, nunca do balão.
+            */}
+            <span className="truncate">{senderLabel && t(senderLabel)}</span>
           </div>
         )}
 

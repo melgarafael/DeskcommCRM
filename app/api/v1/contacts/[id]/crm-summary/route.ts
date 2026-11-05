@@ -253,7 +253,10 @@ export async function GET(
     performed_by_user_id?: string | null;
     [k: string]: unknown;
   }>;
-  const nomes = await nomesDosAtendentes(linhas.map((a) => a.performed_by_user_id ?? null));
+  const nomes = await nomesDosAtendentes(
+    contactScope.organization_id,
+    linhas.map((a) => a.performed_by_user_id ?? null),
+  );
 
   return ok(
     {
