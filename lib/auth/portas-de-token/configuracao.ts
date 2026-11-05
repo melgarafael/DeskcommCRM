@@ -197,8 +197,13 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   // attendants/availability e team/assignable (só GET, leitura). Quem autentica é a
   // própria rota, por `resolveAuthDual`: token com `config:read` e papel admin
   // (`tokenRole`). Caminhos literais, sem segmento dinâmico, então nenhum irmão entra
-  // de carona: `availability/[user_id]` (PATCH de pessoa), `sector`, `sectors` e
-  // `presence` seguem só de sessão, e `team` (lista com e-mail de login) também.
+  // de carona: `availability/[user_id]` (PATCH de pessoa) e `presence` seguem só de
+  // sessão, e `team` (lista com e-mail de login) também.
   "/api/v1/attendants/availability",
   "/api/v1/team/assignable",
+
+  // attendants/sector (R1). Quem autentica é a própria rota, por `resolveAuthDual`:
+  // token com `config:write` e papel admin (`tokenRole`). `[user_id]` é forma de
+  // UUID (a rota recusa o resto com 404).
+  "/api/v1/attendants/sector/[user_id]",
 ];
