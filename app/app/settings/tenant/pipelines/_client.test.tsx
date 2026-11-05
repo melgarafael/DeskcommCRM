@@ -615,6 +615,71 @@ describe("escreveMostrarQuando — o item 'ainda não escolhi' não vira valor",
   });
 });
 
+describe("mais de uma condição no 'mostrar quando' (#4041)", () => {
+  // O terceiro lugar da régua: o EDITOR. Ele monta a lista, e o que ele grava
+  // tem de ser exatamente o que `campoVisivel` e `validaCamposExigidos` leem —
+  // por isso os dois lados usam `mostrarQuandoSchema`, e o formato de uma
+  // condição só continua sendo o JSON antigo.
+  const AEREO = { campo: "tipo_servico", operador: "contem" as const, valor: "Passagem aérea" };
+  const PACOTE = { campo: "tipo_servico", operador: "contem" as const, valor: "Pacote" };
+
+  it("'+ condição' acrescenta a linha em branco e o seletor de campo a preenche", async () => {
+    const { adicionaCondicao, escreveCondicaoNoIndice } = await import("./_client");
+
+    const duas = adicionaCondicao(AEREO);
+    expect(duas).toEqual({ modo: "qualquer", condicoes: [AEREO, { campo: "" }] });
+
+    const comCampo = escreveCondicaoNoIndice(duas, 1, { campo: "tipo_servico", operador: "contem" });
+    expect(comCampo).toEqual({
+      modo: "qualquer",
+      condicoes: [AEREO, { campo: "tipo_servico", operador: "contem" }],
+    });
+
+    const completa = escreveCondicaoNoIndice(comCampo, 1, { valor: "Pacote" });
+    expect(completa).toEqual({ modo: "qualquer", condicoes: [AEREO, PACOTE] });
+  });
+
+  it("o modo escolhido sobrevive à edição de uma linha", async () => {
+    const { escreveCondicaoNoIndice, escreveModoMostrarQuando } = await import("./_client");
+    const lista = { modo: "qualquer" as const, condicoes: [AEREO, PACOTE] };
+    const todas = escreveModoMostrarQuando(lista, "todas");
+    expect(todas).toEqual({ modo: "todas", condicoes: [AEREO, PACOTE] });
+    expect(escreveCondicaoNoIndice(todas, 0, { valor: "Pacote" })).toEqual({
+      modo: "todas",
+      condicoes: [{ ...AEREO, valor: "Pacote" }, PACOTE],
+    });
+  });
+
+  it("remover a segunda linha volta ao formato de condição ÚNICA (o JSON de sempre)", async () => {
+    const { removeCondicaoNoIndice } = await import("./_client");
+    expect(removeCondicaoNoIndice({ modo: "qualquer", condicoes: [AEREO, PACOTE] }, 1)).toEqual(AEREO);
+    // Remover a última apaga a condição: o campo volta a ser sempre visível.
+    expect(removeCondicaoNoIndice(AEREO, 0)).toBeUndefined();
+  });
+
+  it("salvar: a linha meio montada sai, as completas ficam, e a condição única volta intacta", async () => {
+    const { normalizaMostrarQuando } = await import("./_client");
+
+    // (a) o JSON antigo volta BYTE A BYTE — é o que impede o save de todo funil
+    // já configurado de reescrever a condição que estava lá.
+    const antiga = { campo: "tipo_servico", contem: "Outro" };
+    expect(normalizaMostrarQuando(antiga)).toBe(antiga);
+
+    // A linha em branco do "+ condição" não derruba as outras duas.
+    const comBranco = {
+      modo: "qualquer" as const,
+      condicoes: [AEREO, { campo: "" }, PACOTE],
+    };
+    expect(normalizaMostrarQuando(comBranco)).toEqual({ modo: "qualquer", condicoes: [AEREO, PACOTE] });
+
+    // Sobrando uma condição, o que grava é a condição única — não uma lista de um.
+    expect(normalizaMostrarQuando({ modo: "todas", condicoes: [AEREO, { campo: "" }] })).toEqual(AEREO);
+
+    // Sobrando nenhuma, a chave some (o campo volta a ser sempre visível).
+    expect(normalizaMostrarQuando({ modo: "qualquer", condicoes: [{ campo: "" }] })).toBeUndefined();
+  });
+});
+
 describe("'Este campo pertence a' só no funil padrão (#2791)", () => {
   // A ficha do contato lê as definições SÓ do funil padrão (/api/v1/pipelines/default).
   // Marcar "Contato" num funil secundário tiraria o campo do card sem levá-lo à
