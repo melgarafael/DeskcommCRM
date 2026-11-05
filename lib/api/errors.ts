@@ -124,6 +124,12 @@ export const ApiErrorCodes = {
   // POST/PATCH /api/v1/attendants/sectors com nome que já existe na organização
   // (índice attendant_sectors_org_name_unique, migration 0801).
   sector_name_taken: "sector_name_taken",
+  // POST /api/v1/ai/agents e PATCH .../agents/[id] com nome que a organização já
+  // usa (índice ai_agents_name_unique, composto `(organization_id, name)` —
+  // baseline.sql:1963). Era 500 "Erro ao criar agent."; #3952. A régua que separa
+  // ESTE `23505` dos outros índices mora em `lib/ai/agents/nome-repetido.ts`.
+  // Irmão do `sector_name_taken`: mesma classe, outro cadastro.
+  agent_name_taken: "agent_name_taken",
   duplicate_external_id: "duplicate_external_id",
   event_gone: "event_gone", // resend de run cujo event_log original foi apagado (on delete set null)
   no_actions_to_resend: "no_actions_to_resend", // resend de regra que não tem mais nenhuma ação de webhook — reenviar nada não é sucesso
