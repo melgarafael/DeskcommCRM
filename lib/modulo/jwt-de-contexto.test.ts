@@ -2,7 +2,7 @@
  * JWT de contexto do módulo (Spec 33, F3, tarefa 4): assinatura verificável, expiração curta, sem
  * segredo no payload, e recusa de tudo que não é exatamente o que o host emitiu.
  */
-import { generateKeyPairSync, randomUUID } from "node:crypto";
+import { createSecretKey, generateKeyPairSync, randomUUID } from "node:crypto";
 
 import { decodeJwt, decodeProtectedHeader, SignJWT } from "jose";
 import { describe, expect, it } from "vitest";
@@ -129,7 +129,7 @@ describe("verificarJwtDeContexto", () => {
       .setAudience(JWT_AUDIENCE)
       .setIssuedAt(Math.floor(AGORA.getTime() / 1000))
       .setExpirationTime(Math.floor(AGORA.getTime() / 1000) + 60)
-      .sign(new TextEncoder().encode(PEM));
+      .sign(createSecretKey(Buffer.from(PEM)));
     expect((await verificarJwtDeContexto(hs, esperado)).ok).toBe(false);
   });
 
