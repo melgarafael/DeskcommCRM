@@ -27,6 +27,13 @@ import {
 } from "./vocabulario";
 import { ExtensionServiceError, requireExtensionPlatformFor } from "./http";
 import {
+  cifrarSegredo,
+  CODIGO_CHAVE_DE_CIFRA_AUSENTE,
+  ehChaveDeCifraAusente,
+  garantirChaveDeCifra,
+  gerarSegredo,
+} from "./segredo-do-modulo";
+import {
   checkCompatibility,
   configurationSchema,
   parseCatalog,
@@ -131,6 +138,48 @@ function dbFailure(error: { code?: string; message?: string } | null): void {
     "Não foi possível confirmar o resultado. Consulte o histórico antes de repetir o pedido.",
     503,
   );
+}
+
+/**
+ * Módulo `connected` sem chave de cifra: a instalação não grava nada. Não está em `SQL_ERRORS`
+ * porque nenhuma função do banco levanta este código (o teste de `erros-do-banco` vigia o par).
+ */
+function erroDeChaveDeCifraAusente(error: Error): ExtensionServiceError {
+  return new ExtensionServiceError(CODIGO_CHAVE_DE_CIFRA_AUSENTE, error.message, 503);
+}
+
+/**
+ * Gera, cifra e guarda o segredo da instalação (`extension_installation_secrets`, admin client,
+ * `installation_id` explícito). Devolve `false` quando não conseguiu guardar.
+ *
+ * `ignoreDuplicates` (ON CONFLICT DO NOTHING): atualizar uma versão, ou repetir o mesmo recibo, não
+ * troca um segredo que já existe nem desfaz uma rotação. O segredo em claro nasce e morre aqui: não
+ * vai a log, a auditoria, ao recibo nem ao retorno. A exibição única é da rota de girar (tarefa 4).
+ */
+async function guardarSegredoDaInstalacao(
+  admin: ReturnType<typeof createAdminClient>,
+  installationId: string,
+): Promise<boolean> {
+  try {
+    const gravado = await admin
+      .from("extension_installation_secrets")
+      .upsert(
+        { installation_id: installationId, ciphertext: cifrarSegredo(gerarSegredo()) },
+        { onConflict: "installation_id", ignoreDuplicates: true },
+      );
+    if (gravado.error) {
+      logger.warn("[extensions] segredo do módulo não gravado", {
+        installation_id: installationId,
+        db_code: gravado.error.code ?? null,
+      });
+      return false;
+    }
+    return true;
+  } catch {
+    // Só o id da instalação: o texto do erro pode vir de quem manipulou o segredo.
+    logger.warn("[extensions] segredo do módulo não gerado", { installation_id: installationId });
+    return false;
+  }
 }
 
 function serviceError(code: keyof typeof SQL_ERRORS): ExtensionServiceError {
@@ -810,6 +859,17 @@ export async function installExtension(
     }
     return falha;
   }
+  // Módulo `connected` guarda um segredo cifrado: sem chave de cifra a instalação NÃO é gravada.
+  // Falha aqui, antes de `fn_extensions_finish_install`: o recibo fica em preparação, quem pediu
+  // configura `AI_CRED_AES_KEY` e repete o mesmo pedido para retomá-lo.
+  if (manifest.profile === "connected") {
+    try {
+      garantirChaveDeCifra();
+    } catch (error) {
+      if (ehChaveDeCifraAusente(error)) throw erroDeChaveDeCifraAusente(error);
+      throw error;
+    }
+  }
   // Só esta transação publica. Falha de conexão daqui em diante deixa resultado
   // a reconciliar; não transforma uma confirmação possivelmente consumada em failed.
   const finished = await admin.rpc("fn_extensions_finish_install", {
@@ -822,6 +882,13 @@ export async function installExtension(
   });
   dbFailure(finished.error);
   const operation = operationView(finished.data);
+  // O segredo nasce DEPOIS de a instalação existir (precisa do `installation_id`). Se a gravação
+  // falhar, a instalação continua válida e o resultado diz `secret_pending`: a rota de girar o
+  // segredo (tarefa 4) gera o primeiro. A repetição do pedido também tenta de novo.
+  const segredoPendente =
+    manifest.profile === "connected" && operation.status === "completed" && operation.installation_id
+      ? !(await guardarSegredoDaInstalacao(admin, operation.installation_id))
+      : false;
   if (appliedSchema.parse(finished.data).applied_now) {
     await audit(
       operation.kind === "update"
@@ -849,7 +916,7 @@ export async function installExtension(
           },
     );
   }
-  return operation;
+  return segredoPendente ? { ...operation, secret_pending: true } : operation;
 }
 
 export async function cancelExtensionInstall(
