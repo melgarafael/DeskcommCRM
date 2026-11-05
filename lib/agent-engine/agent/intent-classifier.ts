@@ -19,6 +19,7 @@ import { contextoDoClassificador, type ClassifierContextMessage } from '@/lib/ai
 
 import type { Logger } from '../obs/logger';
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
+import { formatarFatosDoCrm, type FatosDoCrm } from './fatos-do-crm-do-contato';
 import type { LoadedRouter, RouterMember } from './router-config';
 
 export interface IntentVerdict {
@@ -54,6 +55,12 @@ export function buildClassifierPrompt(
   members: RouterMember[],
   signal: string,
   recentMessages: ClassifierContextMessage[] = [],
+  /**
+   * Fatos do CRM do contato (#3917): funis/etapas com negócio ABERTO e
+   * etiquetas. Opcional — ausente ou vazio, o prompt é byte a byte o de antes,
+   * e o classificador segue decidindo pelo texto como sempre fez.
+   */
+  fatosDoCrm?: FatosDoCrm | null,
 ): string {
   const list = members
     .map((m) => {
@@ -69,12 +76,25 @@ export function buildClassifierPrompt(
           ...contextoDoClassificador(recentMessages, 16).map((m) => `${m.direction === 'inbound' ? 'Lead' : 'Agente'}: ${m.body}`),
         ]
       : [];
+  // Entre o histórico e a mensagem: são fatos do CONTATO (quem ele é), não do
+  // turno. O cabeçalho diz em voz alta que não é o que se classifica, senão o
+  // modelo passa a responder sobre o funil em vez de escolher a intenção.
+  const textoDosFatos = formatarFatosDoCrm(fatosDoCrm);
+  const fatos =
+    textoDosFatos === ''
+      ? []
+      : [
+          '',
+          'Fatos do CRM deste contato (negócio ABERTO e etiquetas — contexto para decidir a intenção, NÃO é o que classificar):',
+          textoDosFatos,
+        ];
   return [
     'Você é um classificador auxiliar de intenção (NÃO responde ao lead).',
     'Intenções possíveis:',
     list,
     '- none: nenhuma das intenções acima se aplica.',
     ...contexto,
+    ...fatos,
     '',
     'Mensagem do lead a classificar:',
     signal,
@@ -128,6 +148,12 @@ export async function classifyIntent(
     signal: string;
     /** Últimas mensagens ANTERIORES ao signal, mais antiga → mais recente. Default []. */
     recentMessages?: ClassifierContextMessage[];
+    /**
+     * Fatos do CRM do contato (#3917). Quem lê o banco é o CHAMADOR
+     * (`resolve-turn-agent.ts`), não este módulo: a classificação de teste na UI
+     * pode não ter contato, e quem sabe se vale a consulta é o turno.
+     */
+    fatosDoCrm?: FatosDoCrm | null;
   },
   deps: ClassifyIntentDeps,
 ): Promise<IntentVerdict | null> {
@@ -153,7 +179,7 @@ export async function classifyIntent(
         messages: [
           {
             role: 'user',
-            content: buildClassifierPrompt(input.router.members, input.signal, input.recentMessages ?? []),
+            content: buildClassifierPrompt(input.router.members, input.signal, input.recentMessages ?? [], input.fatosDoCrm ?? null),
           },
         ],
       },
