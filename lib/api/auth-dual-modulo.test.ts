@@ -19,6 +19,7 @@ import { resolveAuthDual } from "./auth-dual";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn(async () => ({ session: true })) }));
+vi.mock("@/lib/impersonate/support", () => ({ supportCallbackWriteAllowed: vi.fn(async () => true) }));
 
 const banco = vi.hoisted(() => ({
   linhas: {} as Record<string, Record<string, unknown> | null>,
