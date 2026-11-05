@@ -31,6 +31,10 @@
  * sem vê-lo (e card de colega que o chamador não enxerga não se move); e
  * A→B→C termina em C sem `lead.assigned` a mais.
  *
+ * E as duas portas que passam conversas com `'transfer'` sem sessão — a troca
+ * de carteira e a passagem de conversas do contato — não levam negócio que já
+ * tem dono (#2591).
+ *
  * O caminho 4 da issue (contato com MAIS DE UM negócio aberto) NÃO é consertado
  * aqui: é decisão de produto. O caso existe para provar que, com dois abertos,
  * nada é tocado — e que ninguém escolhe por adivinhação.
@@ -75,6 +79,8 @@ const CT = {
   transfereSemDono: "dddddddd-3333-4000-8000-000000000010",
   continua: "dddddddd-3333-4000-8000-000000000011",
   daIa: "dddddddd-3333-4000-8000-000000000012",
+  carteira: "dddddddd-3333-4000-8000-000000000013",
+  passagem: "dddddddd-3333-4000-8000-000000000014",
 } as const;
 
 const CONV = {
@@ -99,6 +105,8 @@ const CONV = {
   /** A conversa do MESMO contato que já existe no número de B (#3732). */
   continuaNoNumeroDeB: "dddddddd-4444-4000-8000-000000000012",
   daIa: "dddddddd-4444-4000-8000-000000000013",
+  carteira: "dddddddd-4444-4000-8000-000000000014",
+  passagem: "dddddddd-4444-4000-8000-000000000015",
 } as const;
 
 const NEG = {
@@ -120,6 +128,8 @@ const NEG = {
   transfereSemDono: "dddddddd-6666-4000-8000-000000000010",
   continua: "dddddddd-6666-4000-8000-000000000011",
   daIa: "dddddddd-6666-4000-8000-000000000012",
+  carteira: "dddddddd-6666-4000-8000-000000000013",
+  passagem: "dddddddd-6666-4000-8000-000000000014",
 } as const;
 
 /** Agente de IA dono de um card: "sem responsável" exige também owner_agent_id nulo. */
@@ -311,7 +321,9 @@ beforeAll(() => {
       ('${CT.filaLivre}', '${ORG}', 'Contato Fila Livre'),
       ('${CT.transfereSemDono}', '${ORG}', 'Contato Transfere Sem Dono'),
       ('${CT.continua}', '${ORG}', 'Contato Continua'),
-      ('${CT.daIa}', '${ORG}', 'Contato Da IA')
+      ('${CT.daIa}', '${ORG}', 'Contato Da IA'),
+      ('${CT.carteira}', '${ORG}', 'Contato Carteira'),
+      ('${CT.passagem}', '${ORG}', 'Contato Passagem')
     on conflict (id) do nothing;
 
     insert into public.ai_agents (id, organization_id, name, system_prompt) values
@@ -421,6 +433,17 @@ beforeAll(() => {
     values ('${NEG.daIa}', '${ORG}', '${PIPELINE}', '${ETAPA}', 'Negócio da IA', '${CT.daIa}', 'open',
             '${AGENTE_IA}', 'ai');
   `);
+
+  // A carteira de A, com a conversa e o negócio de A: a troca de carteira
+  // para C passa a conversa (porta única, 'transfer', sem sessão).
+  conversaNova(CONV.carteira, CT.carteira, A);
+  negocioNovo({ id: NEG.carteira, contato: CT.carteira, dono: A });
+  sql(`set role service_role;
+    select public.fn_definir_carteira_do_cliente('${ORG}', null, '${CT.carteira}', '${A}', 'automacao');`);
+
+  // A passagem de conversas: a conversa e o negócio são de B.
+  conversaNova(CONV.passagem, CT.passagem, B);
+  negocioNovo({ id: NEG.passagem, contato: CT.passagem, dono: B });
 
   // A escada A→B→C.
   conversaNova(CONV.escada, CT.escada, A);
@@ -606,6 +629,27 @@ describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
     atribui({ como: null, conversa: CONV.escada, para: C });
     expect(eventosDeAtribuicao(NEG.escada)).toBe(eventos);
     expect(donoDoNegocio(NEG.escada)).toBe(C);
+  });
+
+  it("a troca de carteira passa a conversa e NÃO leva o negócio que já tem dono (#2591)", () => {
+    expect(donoDaConversa(CONV.carteira)).toBe(A);
+
+    sql(`set role service_role;
+      select public.fn_definir_carteira_do_cliente('${ORG}', null, '${CT.carteira}', '${C}', 'automacao');`);
+
+    expect(donoDaConversa(CONV.carteira)).toBe(C);
+    expect(donoDoNegocio(NEG.carteira)).toBe(A);
+  });
+
+  it("a passagem das conversas do contato NÃO leva o negócio que já tem dono", () => {
+    const movidas = lastLine(
+      sql(`set role service_role;
+        select public.fn_passar_conversas_do_contato('${ORG}', '${CT.passagem}', '${C}');`),
+    );
+
+    expect(movidas).toBe("1");
+    expect(donoDaConversa(CONV.passagem)).toBe(C);
+    expect(donoDoNegocio(NEG.passagem)).toBe(B);
   });
 
   it("caminho 4 (decisão de produto): com DOIS negócios abertos, nada é tocado", () => {
