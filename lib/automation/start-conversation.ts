@@ -56,9 +56,9 @@ export interface PreferenciaDeSessao {
  * quem não passa a opção continua escolhendo exatamente como antes. O `create`
  * de contato já passa (`lib/contacts/conversa-ao-criar.ts`). A conversa
  * compartilhada só cai neste fallback quando chega sem `channel_session_id`
- * (`POST /api/v1/conversations/open-with-contact`), e ali ainda chama sem a
- * opção (continuação do #3358). O MCP exige a sessão de quem chama e nunca
- * chega ao fallback.
+ * (`POST /api/v1/conversations/open-with-contact`), e ali passa
+ * `preferirTelefone` quando o pedido traz telefone (#3483). O MCP exige a
+ * sessão de quem chama e nunca chega ao fallback.
  */
 export async function sessaoProntaParaEnvio(
   supabase: SupabaseClient,

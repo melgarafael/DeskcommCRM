@@ -17,3 +17,12 @@ abertura de um contato **com telefone** passa a preferir o canal que disca o
 número, e não a sessão mais antiga da empresa — que numa organização que pareou
 Instagram antes do WhatsApp é a social, e não alcança telefone nenhum. O
 cadastro salvo deixava de ter para onde mandar a primeira mensagem.
+
+Se a sua integração chama `POST /api/v1/conversations/open-with-contact` com
+`channel_session_id`, ela passa a receber também `409` com
+`error.code = "state_conflict"` quando o canal está desligado ou fora do ar.
+Antes, a conversa era criada mesmo assim. A ferramenta MCP
+`start_conversation_and_send` segue a mesma regra: com um canal escolhido
+desligado ou que não está conectado, ela agora responde com o erro
+`session_unavailable` em vez de abrir a conversa e deixar a mensagem na fila
+(ou falhar no canal desligado).
