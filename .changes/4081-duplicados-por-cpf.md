@@ -16,3 +16,5 @@ com os outros motivos — A e B pelo CPF, B e C pelo telefone dá **um grupo só
 e conta como motivo forte, então "Não são a mesma empresa" recusa dispensar um
 par ligado por CPF. O hash é lido para comparar e não é devolvido na resposta da
 tela. A sugestão pelo nome ("Parecidos — confira") segue como estava.
+
+Crédito: @webtecnica (#4104, issue #4081 de @hudson-souza-mkt).
