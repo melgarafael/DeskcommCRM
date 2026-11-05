@@ -3,17 +3,20 @@
  * da organização ativa. Usado pelo discador (§5.1 da spec) pra decidir se
  * mostra o botão "Ligar".
  */
-import { randomUUID } from "node:crypto";
+import type { NextRequest } from "next/server";
 
 import { ok } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
+import { idDaRequisicao, rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
-  const requestId = randomUUID();
+export const GET = rotaComIdDaRequisicao(rotaGET);
+
+async function rotaGET(req: NextRequest): Promise<Response> {
+  const requestId = idDaRequisicao(req);
 
   const user = await loadAuthUser();
   if (!user) return new Response(null, { status: 401 });

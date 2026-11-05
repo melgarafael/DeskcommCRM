@@ -26,7 +26,6 @@
  * e a falha é um 401 calado que ninguém liga a configuração. A precedência, o TTL
  * e esse motivo estão escritos em `lib/channels/meta/app.ts`.
  */
-import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { fail } from "@/lib/api/wrappers";
@@ -40,6 +39,7 @@ import {
   ingestMetaInbound,
   ingestMetaReaction,
 } from "@/lib/channels/meta/ingest";
+import { idDaRequisicao, rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 import { metaSessionByWebhookToken } from "@/lib/channels/meta/session";
 import { logger } from "@/lib/logger";
 import {
@@ -76,8 +76,10 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<NextResponse
   });
 }
 
-export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
-  const requestId = randomUUID();
+export const POST = rotaComIdDaRequisicao(rotaPOST);
+
+async function rotaPOST(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
+  const requestId = idDaRequisicao(req);
   const { token } = await ctx.params;
 
   const session = await metaSessionByWebhookToken(token);

@@ -5,6 +5,7 @@ import { env } from "@/lib/env";
 import { fetchDoServidor } from "@/lib/supabase/fetch-do-servidor";
 import { urlDoSupabaseNoServidor } from "@/lib/supabase/url-do-servidor";
 import { isPublicPath } from "@/lib/auth/public-paths";
+import { idDaRequisicao } from "@/lib/api/id-da-requisicao";
 import { CABECALHO_SEM_CSS, PARAMETRO_SEM_CSS } from "@/lib/branding/sem-css-personalizado";
 import {
   verifyImpersonateCookieEdge,
@@ -25,11 +26,24 @@ export async function proxy(request: NextRequest) {
   // O caminho atual, para os Server Components (o `next` do desafio de MFA em
   // `exigirProvaDeMfa`). Mesma regra: antes do `next`, e sempre gravado.
   request.headers.set("x-pathname", request.nextUrl.pathname);
+  // O id entra na requisição ANTES do `next`, pela mesma razão do `x-pathname`:
+  // o `NextResponse.next` copia os cabeçalhos do momento em que é criado, e o
+  // que for gravado depois não chega à rota.
+  const requestId = idDaRequisicao(request);
   const response = NextResponse.next({ request: { headers: request.headers } });
 
-  // Inject X-Request-Id for downstream correlation (audit log, error wrappers).
-  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
-  response.headers.set("x-request-id", requestId);
+  // Um id por requisição, cunhado (ou aceito, se vier em UUID válido) aqui e
+  // entregue à rota pelo cabeçalho da REQUISIÇÃO.
+  //
+  // A RESPOSTA só é carimbada fora de `/api/`. Sob `/api/` quem carimba é quem
+  // monta a resposta: o id que o cliente precisa ver é o mesmo que a rota grava
+  // na auditoria, e este `proxy` não o conhece — ele roda antes. Carimbar aqui
+  // sobrescrevia o `X-Request-Id` da rota (o Next aplica os cabeçalhos do
+  // middleware por cima dos da resposta), então a resposta saía com um id que
+  // não existia em log nenhum. Ver `lib/api/id-da-requisicao.ts`.
+  if (!request.nextUrl.pathname.startsWith("/api/")) {
+    response.headers.set("x-request-id", requestId);
+  }
 
   const { pathname, search } = request.nextUrl;
   // Recupera retornos de OAuth social já emitidos antes da landing pública existir.

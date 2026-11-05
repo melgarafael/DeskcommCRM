@@ -162,3 +162,36 @@ describe("GET /api/v1/health — corpo cortado no meio não vira timeout", () =>
     expect(supabase.reason).toBe("resposta_inesperada");
   });
 });
+
+describe("GET /api/v1/health — a resposta leva o id da requisição (#4107)", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    // Os três checks desta rota vão à rede; aqui só interessa o cabeçalho.
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response("[]", { status: 200 })));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const ID = "11111111-1111-4111-8111-111111111111";
+
+  it("o X-Request-Id é o MESMO id que veio na requisição — e o corpo do kit não muda", async () => {
+    const { GET } = await import("./route");
+    const res = await GET(pedido("", { "x-request-id": ID }));
+
+    expect(res.headers.get("X-Request-Id")).toBe(ID);
+
+    // O `hostgator-setup-kit/healthcheck.sh` lê `status` do corpo: o formato
+    // continua o mesmo, e nada de campo novo por causa do cabeçalho.
+    const { data } = await res.json();
+    expect(Object.keys(data).sort()).toEqual(["checks", "status", "timestamp", "version"]);
+  });
+
+  it("sem cabeçalho de entrada, cunha um id e não deixa a resposta sem ele", async () => {
+    const { GET } = await import("./route");
+    const res = await GET(pedido());
+    const id = res.headers.get("X-Request-Id");
+
+    // A resposta não pode sair sem o cabeçalho — é o caso desta rota hoje.
+    expect(id).toBeTruthy();
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+  });
+});

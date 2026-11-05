@@ -6,7 +6,6 @@
  * ação síncrona além de criar o lead (motor de regras consome lead.created
  * via event_log). Aceita JSON e form-urlencoded na mesma URL.
  */
-import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -33,6 +32,7 @@ import {
   respondiLeadTitle,
   type RespondiMapped,
 } from "@/lib/webhooks/respondi";
+import { idDaRequisicao, rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 import {
   isRdStationPayload,
   mapRdStationPayload,
@@ -163,8 +163,10 @@ async function etapaAlvoDoEnvio(
   return alvo.id;
 }
 
-export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
-  const requestId = randomUUID();
+export const POST = rotaComIdDaRequisicao(rotaPOST);
+
+async function rotaPOST(req: NextRequest, ctx: RouteCtx): Promise<NextResponse> {
+  const requestId = idDaRequisicao(req);
   const { token } = await ctx.params;
   if (!token || token.length < 8) {
     return fail("not_found", "unknown webhook token", 404, { requestId });

@@ -4,9 +4,12 @@ import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { clientIp, paginaDeSaida } from "@/lib/plataformas-de-anuncio/pagina-de-captura";
 import { destinoDoLink, type LinkRastreavel } from "@/lib/plataformas-de-anuncio/rastreio/links";
+import { rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 
 export const dynamic = "force-dynamic";
-export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export const GET = rotaComIdDaRequisicao(rotaGET);
+
+async function rotaGET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const id = z.uuid().safeParse((await ctx.params).id);
   if (!id.success) return paginaDeSaida(null);
   const ip = clientIp(req);

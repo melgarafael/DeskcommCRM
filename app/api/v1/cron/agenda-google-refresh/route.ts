@@ -40,6 +40,7 @@ import { classificarErroDoGoogle, estadoDaConexaoApos } from "@/lib/agenda/googl
 import { fundirTokens, precisaRenovar, type TokenDoGoogle } from "@/lib/agenda/google/oauth";
 import { renovarToken } from "@/lib/agenda/google/token";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 
 export const dynamic = "force-dynamic";
 
@@ -216,10 +217,14 @@ async function executar(req: NextRequest): Promise<Response> {
   return NextResponse.json({ data: resumo });
 }
 
-export async function GET(req: NextRequest): Promise<Response> {
+export const GET = rotaComIdDaRequisicao(rotaGET);
+
+async function rotaGET(req: NextRequest): Promise<Response> {
   return executar(req);
 }
 
-export async function POST(req: NextRequest): Promise<Response> {
+export const POST = rotaComIdDaRequisicao(rotaPOST);
+
+async function rotaPOST(req: NextRequest): Promise<Response> {
   return executar(req);
 }

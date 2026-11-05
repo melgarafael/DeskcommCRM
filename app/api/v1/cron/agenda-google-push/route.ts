@@ -7,6 +7,7 @@ import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { recursoOcioso } from "@/lib/cron/piso-ocioso";
+import { rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 export const dynamic = "force-dynamic";
 
 /**
@@ -81,5 +82,5 @@ async function executar(req: NextRequest) {
   }
   return NextResponse.json({ data: { candidatos: data?.length ?? 0, organizacoes: effects.size } });
 }
-export const GET = executar;
-export const POST = executar;
+export const GET = rotaComIdDaRequisicao(executar);
+export const POST = rotaComIdDaRequisicao(executar);

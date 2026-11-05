@@ -3,7 +3,7 @@ import { falhaDaEscritaDePlatformAdmin, requirePlatformAdmin } from "@/lib/auth/
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { randomUUID } from "node:crypto";
+import { idDaRequisicao, rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 
 // ---------------------------------------------------------------------------
 // T-04 (Spec 01 §3.4): platform_admins is managed exclusively by DBA via SQL.
@@ -17,8 +17,10 @@ const T04_MESSAGE =
 // GET /api/v1/admin/platform-admins
 // ---------------------------------------------------------------------------
 
-export async function GET(_req: NextRequest) {
-  const requestId = randomUUID();
+export const GET = rotaComIdDaRequisicao(rotaGET);
+
+async function rotaGET(_req: NextRequest) {
+  const requestId = idDaRequisicao(_req);
 
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try {
@@ -192,17 +194,23 @@ function methodNotAllowed() {
   );
 }
 
-export function POST() {
+export const POST = rotaComIdDaRequisicao(rotaPOST);
+
+function rotaPOST() {
 
   return methodNotAllowed();
 }
 
-export function PATCH() {
+export const PATCH = rotaComIdDaRequisicao(rotaPATCH);
+
+function rotaPATCH() {
 
   return methodNotAllowed();
 }
 
-export function DELETE() {
+export const DELETE = rotaComIdDaRequisicao(rotaDELETE);
+
+function rotaDELETE() {
 
   return methodNotAllowed();
 }

@@ -50,6 +50,7 @@ import {
   textoSemRef,
   whatsAppUrl,
 } from "@/lib/plataformas-de-anuncio/pagina-de-captura";
+import { rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -62,7 +63,9 @@ interface RouteContext {
 const TETO_POR_IP = 30;
 const JANELA_SEGUNDOS = 60;
 
-export async function GET(req: NextRequest, ctx: RouteContext): Promise<Response> {
+export const GET = rotaComIdDaRequisicao(rotaGET);
+
+async function rotaGET(req: NextRequest, ctx: RouteContext): Promise<Response> {
   const { org } = await ctx.params;
 
   const ip = clientIp(req);
