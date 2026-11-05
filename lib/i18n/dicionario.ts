@@ -10205,6 +10205,7 @@ export const DICIONARIO: Traducoes = {
   "Agrupados por": { es: "Agrupados por" },
   "mesmo telefone": { es: "mismo teléfono" },
   "mesmo e-mail": { es: "mismo correo" },
+  "mesmo CPF": { es: "mismo CPF" },
   "telefone que o WhatsApp deixou em conflito": {
     es: "teléfono que WhatsApp dejó en conflicto",
   },

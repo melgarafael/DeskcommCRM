@@ -82,10 +82,12 @@ const NOME_PRINCIPAL = `Duplicado Fica ${SUFIXO}`;
 const NOME_ABSORVIDO = `Duplicado Absorvido ${SUFIXO}`;
 
 /*
- * O PAR PARECIDO (spec 31, PR A): dois nomes que dividem palavras raras, sem
- * nenhum telefone ou e-mail em comum. Não entra no grupo forte; aparece em
- * "Parecidos — confira". Os nomes são os do caso da spec, sem sufixo: a limpeza
- * acha a fixture pelo nome exato.
+ * O PAR DE NOME (spec 31, PR A): dois nomes que dividem palavras raras, sem
+ * telefone, e-mail ou CPF em comum. Era o caso de "Parecidos — confira" e, desde
+ * a #4081, NÃO aparece em Duplicados — a varredura deixou de sugerir por nome.
+ * Continua na fixture porque a fusão pela ficha ("juntar com outra ficha") ainda
+ * tem de funcionar sem depender da lista. Os nomes são os do caso da spec, sem
+ * sufixo: a limpeza acha a fixture pelo nome exato.
  */
 const NOME_SORRISO_A = "Clínica Exemplo Sorriso";
 const NOME_SORRISO_B = "Exemplo Sorriso Clínica Dental";
@@ -498,78 +500,52 @@ test.describe("Contatos duplicados — juntar pela tela", () => {
     ).toBeNull();
   });
 
-  test("'Não são a mesma empresa' tira o par da seção, e ele não volta ao reabrir", async ({
+  test("nome igual com dados diferentes NÃO aparece mais — a sugestão por nome saiu (#4081)", async ({
     page,
   }) => {
-    // Roda ANTES do teste de juntar: a fusão tira o par da lista, e este teste
-    // precisa do par vivo. Ao fim, a dispensa é apagada para não vazar.
+    // O par da fixture divide duas palavras raras ("Clínica", "Sorriso") e tem
+    // telefone, e-mail e CPF diferentes: era o caso de "Parecidos — confira". A
+    // #4081 tirou a sugestão por nome da varredura (em base de pessoa física o
+    // nome repete muito e a fusão não se desfaz com um clique), então este par não
+    // pode aparecer — nem na seção, nem em grupo nenhum.
     await login(page, creds.users.manager!.email, creds.password);
     await page.goto("/app/contacts");
-    await page.getByRole("button", { name: /duplicados/i }).click();
-    const dialogo = page.getByRole("dialog");
-    await expect(dialogo.getByText("Parecidos — confira")).toBeVisible({ timeout: 20_000 });
-    await expect(dialogo.getByText(NOME_SORRISO_A, { exact: true }).first()).toBeVisible();
-    await expect(dialogo.getByText(NOME_SORRISO_B, { exact: true }).first()).toBeVisible();
-
-    const cartao = dialogo
-      .locator("div")
-      .filter({ hasText: NOME_SORRISO_A })
-      .filter({ has: page.getByRole("button", { name: "Não são a mesma empresa" }) })
-      .last();
-    await cartao.getByRole("button", { name: "Não são a mesma empresa" }).click();
-    await expect(page.getByText("Sugestão dispensada.")).toBeVisible({ timeout: 10_000 });
-    await expect(dialogo.getByText(NOME_SORRISO_A, { exact: true })).toHaveCount(0);
-
-    // No banco: a dispensa é UMA linha, descartada, com o par.
-    const { data: filas } = await admin
-      .from("merge_queue")
-      .select("status, reason")
-      .eq("organization_id", creds.org_id)
-      .overlaps("candidates", [idSorrisoA, idSorrisoB]);
-    expect(filas ?? []).toHaveLength(1);
-    expect((filas ?? [])[0]).toMatchObject({ status: "discarded", reason: "nao_sao_a_mesma" });
-
-    // Recarrega a PÁGINA e reabre: a tela guarda a lista em cache, então só fechar e
-    // reabrir a janela não pede nada ao servidor. Com o recarregamento, o par fora
-    // prova que a dispensa ficou gravada, e não que a tela lembrou dela.
-    // A espera pela resposta vem ANTES do clique: depois do recarregamento não há
-    // cache, então o GET sai de verdade — e conferir "nenhum nome" antes de ele
-    // chegar passaria sem medir nada (a lista ainda carregando também tem zero).
-    await page.reload();
-    const listaRelida = page.waitForResponse(
+    // A espera pela resposta vem ANTES de afirmar ausência: a lista ainda
+    // carregando também tem zero nomes, e o teste passaria sem medir nada.
+    const lista = page.waitForResponse(
       (r) => r.url().includes("/api/v1/contacts/duplicates") && r.request().method() === "GET",
       { timeout: 30_000 },
     );
     await page.getByRole("button", { name: /duplicados/i }).click();
-    expect((await listaRelida).ok()).toBe(true);
+    expect((await lista).ok()).toBe(true);
+    const dialogo = page.getByRole("dialog");
     await expect(dialogo).toBeVisible({ timeout: 20_000 });
+    await expect(dialogo.getByText("Parecidos — confira")).toHaveCount(0);
     await expect(dialogo.getByText(NOME_SORRISO_A, { exact: true })).toHaveCount(0);
-    await captura(page, "07-parecido-dispensado");
-
-    // Limpa a dispensa: o teste de juntar precisa do par de volta.
-    await admin
-      .from("merge_queue")
-      .delete()
-      .eq("organization_id", creds.org_id)
-      .overlaps("candidates", [idSorrisoA, idSorrisoB]);
+    await expect(dialogo.getByText(NOME_SORRISO_B, { exact: true })).toHaveCount(0);
+    await captura(page, "07-nome-nao-sugere");
+    await page.keyboard.press("Escape");
   });
 
-  test("juntar com outra ficha: o par parecido se junta pela ficha, e as duas conversas ficam com quem ficou", async ({
+  test("juntar com outra ficha: a ficha absorve a outra, e as duas conversas ficam com quem ficou", async ({
     page,
   }) => {
     expect(await contarPor("conversations", "contact_id", idSorrisoA), "fixture: A tem 1 conversa").toBe(1);
     expect(await contarPor("conversations", "contact_id", idSorrisoB), "fixture: B tem 1 conversa").toBe(1);
 
-    // Contatos → Duplicados: a seção "Parecidos — confira" com os dois nomes.
+    // Contatos → Duplicados: o par da fixture NÃO está mais lá (#4081 — nome
+    // sozinho não sugere). A fusão abaixo é a da FICHA, que continua existindo.
     await login(page, creds.users.manager!.email, creds.password);
     await page.goto("/app/contacts");
+    const lista = page.waitForResponse(
+      (r) => r.url().includes("/api/v1/contacts/duplicates") && r.request().method() === "GET",
+      { timeout: 30_000 },
+    );
     await page.getByRole("button", { name: /duplicados/i }).click();
+    expect((await lista).ok()).toBe(true);
     const dialogo = page.getByRole("dialog");
-    await expect(dialogo.getByText("Parecidos — confira")).toBeVisible({ timeout: 20_000 });
-    await expect(dialogo.getByText(NOME_SORRISO_A, { exact: true }).first()).toBeVisible();
-    await expect(dialogo.getByText(NOME_SORRISO_B, { exact: true }).first()).toBeVisible();
-    await captura(page, "08-parecidos-confira");
-    await page.keyboard.press("Escape");
+    await expect(dialogo).toBeVisible({ timeout: 20_000 });
+    await expect(dialogo.getByText(NOME_SORRISO_A, { exact: true })).toHaveCount(0);
 
     // A ficha do primeiro: "Juntar com outra ficha", busca "Sorriso", escolhe o outro.
     // A ficha é aberta pela rota direta (o id já é conhecido pela fixture).

@@ -21,24 +21,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
-import { parDeContatos } from "@/lib/contacts/duplicados";
 import { createClient } from "@/lib/supabase/server";
-
-/**
- * As dispensas ("não são a mesma empresa") são lidas pelo cliente administrador. O
- * teste da ROTA prova que a lista as respeita; a sabotagem de QUEM as lê (o cliente
- * do usuário, que a policy de `merge_queue` esvazia para quem não é gestor) fica na
- * suíte de invariantes, onde há banco de verdade.
- */
-const dispensa = vi.hoisted(() => ({ pares: new Set<string>() }));
 
 vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn() }));
 vi.mock("@/lib/auth/require-role", () => ({ orgAtivaDaApi: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
-vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
-vi.mock("@/lib/contacts/dispensar-par", () => ({
-  lerParesDispensados: async () => new Set(dispensa.pares),
-}));
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -51,6 +38,7 @@ type Linha = Record<string, unknown>;
 
 interface Consulta {
   tabela: string;
+  colunas: string;
   filtros: Array<[string, unknown]>;
   ordens: string[];
   faixas: Array<[number, number]>;
@@ -60,13 +48,17 @@ interface Consulta {
 /**
  * Dublê com o teto do servidor aplicado na resposta: `range` e `limit` são
  * recortados em `maxRows`. Filtros `eq`/`is` são APLICADOS de verdade.
+ *
+ * A lista de COLUNAS é registrada (não aplicada): é por ela que se prova que a
+ * rota pediu `cpf_hash` — o defeito da #4081 era exatamente uma coluna ausente da
+ * leitura, e um dublê que devolve a linha inteira esconde isso.
  */
 function fakeSupabase(dados: Record<string, Linha[]>, maxRows = MAX_ROWS) {
   const consultas: Consulta[] = [];
 
   const client = {
     from(tabela: string) {
-      const registro: Consulta = { tabela, filtros: [], ordens: [], faixas: [], contou: false };
+      const registro: Consulta = { tabela, colunas: "", filtros: [], ordens: [], faixas: [], contou: false };
       consultas.push(registro);
 
       const filtros: Array<(linha: Linha) => boolean> = [];
@@ -83,7 +75,8 @@ function fakeSupabase(dados: Record<string, Linha[]>, maxRows = MAX_ROWS) {
       };
 
       const builder: Record<string, unknown> = {};
-      builder.select = (_colunas: string, opcoes?: { count?: string }) => {
+      builder.select = (colunas: string, opcoes?: { count?: string }) => {
+        registro.colunas = colunas;
         pediuCount = opcoes?.count === "exact";
         registro.contou = pediuCount;
         return builder;
@@ -127,6 +120,7 @@ function contato(i: number, parcial: Linha = {}): Linha {
     email: null,
     email_normalized: null,
     phone_number: `+553198${String(1000000 + i)}`, // 8 dígitos iniciando em 1: sem nono dígito
+    cpf_hash: null,
     is_merged_into: null,
     is_anonymized: false,
     source_metadata: null,
@@ -150,7 +144,6 @@ function corpo(res: Response): Promise<{ data: unknown; meta: Record<string, unk
 }
 
 beforeEach(() => {
-  dispensa.pares.clear();
   vi.mocked(loadAuthUser).mockResolvedValue({
     id: USER_ID,
     email: "a@example.com",
@@ -244,9 +237,81 @@ describe("a varredura de duplicados responde ao que foi LIDO", () => {
   });
 });
 
-describe("o repetido pelo nome: sugestão depois dos fortes, e dispensa que vale para a lista", () => {
-  /** Um grupo forte (o mesmo celular, com e sem o nono dígito) e um par só pelo nome. */
-  function cenario(): Linha[] {
+/**
+ * ─── O CPF e o fim da sugestão por nome (#4081) ──────────────────────────────
+ *
+ * Duas mudanças de contrato desta rota:
+ *
+ *  1. `cpf_hash` passa a ser LIDO (é comparação de igualdade, e o índice único
+ *     dele nasce com `if not exists`) e continua NÃO sendo devolvido: hash de
+ *     documento é PII derivada, e a tela não tem uso para ela.
+ *  2. O nome sozinho deixa de sugerir. A varredura não chama mais
+ *     `encontrarParecidosPorNome` — em base de pessoa física, "Maria Souza"
+ *     aparece duas vezes sem ser a mesma pessoa, e a fusão não se desfaz com um
+ *     clique. A função continua em `lib/contacts/duplicados.ts` (com teste
+ *     próprio) para o dia em que ela voltar atrás de uma opção da organização.
+ */
+describe("CPF na varredura, e o nome que não sugere mais", () => {
+  const CPF_A = "1111111111111111111111111111111111111111111111111111111111111111";
+
+  function comCpf(linhas: Linha[]): Linha[] {
+    // Dois contatos com o MESMO CPF, nomes diferentes e telefones diferentes —
+    // o caso real que a tela não achava.
+    linhas[4] = contato(5, { name: "Maria Souza Lima", cpf_hash: CPF_A });
+    linhas[149] = contato(150, { name: "M. S. Lima", cpf_hash: CPF_A });
+    return linhas;
+  }
+
+  it("⭐ CPF igual une o par com o motivo `cpf` — e a rota PEDE a coluna", async () => {
+    const { consultas, client } = fakeSupabase({ contacts: comCpf(base(300)) });
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const json = await corpo(await chamar());
+    const grupos = json.data as Array<{ motivos: string[]; contatos: Array<{ id: string }> }>;
+
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0]!.motivos).toEqual(["cpf"]);
+    expect(grupos[0]!.contatos.map((c) => c.id).sort()).toEqual(["contato-0005", "contato-0150"]);
+
+    // Sabotagem: tirar `cpf_hash` de `COLUNAS_DO_CONTATO` deixa esta asserção
+    // vermelha — e, no banco, o par nunca mais é encontrado.
+    const leitura = consultas.find((c) => c.tabela === "contacts")!;
+    expect(leitura.colunas).toContain("cpf_hash");
+  });
+
+  it("o `cpf_hash` NÃO sai no JSON — nem no detalhe do grupo", async () => {
+    const { client } = fakeSupabase({ contacts: comCpf(base(300)) });
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const res = await chamar();
+    const texto = await res.clone().text();
+
+    expect(texto).not.toContain("cpf_hash");
+    expect(texto).not.toContain(CPF_A);
+    // Controle positivo: o grupo está lá (um payload vazio também não teria o hash).
+    const json = (await res.json()) as { data: unknown[] };
+    expect(json.data).toHaveLength(1);
+  });
+
+  it("nomes idênticos com dados diferentes: NENHUM grupo", async () => {
+    // O que a issue chama de ruído: duas "Ana Paula Silva" que não são a mesma
+    // pessoa (telefones, e-mails e CPFs diferentes). Antes, o par entrava em
+    // "Parecidos — confira"; agora não entra em lugar nenhum.
+    const linhas = base(20);
+    linhas[4] = contato(5, { name: "Ana Paula Silva" });
+    linhas[9] = contato(10, { name: "Ana Paula Silva" });
+    const { client } = fakeSupabase({ contacts: linhas });
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const json = await corpo(await chamar());
+
+    expect(json.data).toEqual([]);
+    expect(JSON.stringify(json.data)).not.toContain("nome_parecido");
+  });
+
+  it("o grupo forte continua vindo — o nome deixa de sugerir, o telefone não", async () => {
+    // Guarda contra o conserto largo demais: tirar a varredura inteira (ou o
+    // `encontrarContatosDuplicados`) deixaria este caso vermelho.
     const linhas = base(60);
     linhas[4] = contato(5, { phone_number: "+553198966398" });
     linhas[5] = contato(6, { phone_number: "+5531998966398" });
@@ -255,12 +320,7 @@ describe("o repetido pelo nome: sugestão depois dos fortes, e dispensa que vale
       name: "Santos Odontologia Clínica Avançada",
       phone_number: "+553191110020",
     });
-    return linhas;
-  }
-
-  it("o par por nome vem com motivos nome_parecido, DEPOIS do grupo forte", async () => {
-    // Sabotagem: concatenar os parecidos ANTES dos fortes deixa a ordem vermelha.
-    const { client } = fakeSupabase({ contacts: cenario() });
+    const { client } = fakeSupabase({ contacts: linhas });
     vi.mocked(createClient).mockResolvedValue(client as never);
 
     const grupos = (await corpo(await chamar())).data as Array<{
@@ -268,29 +328,21 @@ describe("o repetido pelo nome: sugestão depois dos fortes, e dispensa que vale
       contatos: Array<{ id: string; address_book_name: unknown }>;
     }>;
 
-    expect(grupos.map((g) => g.motivos)).toEqual([["telefone"], ["nome_parecido"]]);
-    expect(grupos[1]!.contatos.map((c) => c.id)).toEqual(["contato-0010", "contato-0020"]);
-    // O campo novo chega à tela, mesmo quando é nulo.
-    expect(grupos[1]!.contatos[0]!.address_book_name).toBeNull();
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0]!.motivos).toEqual(["telefone"]);
+    expect(grupos[0]!.contatos.map((c) => c.id).sort()).toEqual(["contato-0005", "contato-0006"]);
+    // O campo da agenda continua chegando à tela, mesmo nulo.
+    expect(grupos[0]!.contatos[0]!.address_book_name).toBeNull();
   });
 
-  it("par dispensado (com a ordem invertida) não aparece, e o papel de quem olha não muda isso", async () => {
-    // Sabotagem: ignorar `lerParesDispensados` deixa o par de nome na lista.
-    dispensa.pares.add(parDeContatos("contato-0020", "contato-0010"));
-    vi.mocked(loadAuthUser).mockResolvedValue({
-      id: USER_ID,
-      email: "a@example.com",
-      full_name: null,
-      avatar_url: null,
-      is_platform_admin: false,
-      idioma: "pt-BR",
-      organizations: [{ organization_id: ORG_ID, organization_name: "Org", role: "viewer" }],
-    } as never);
-    const { client } = fakeSupabase({ contacts: cenario() });
+  it("o `eq(organization_id)` continua preso na leitura — outra organização não entra", async () => {
+    // Sabotagem: tirar o `.eq("organization_id", …)` deixa esta asserção vermelha.
+    const { consultas, client } = fakeSupabase({ contacts: comCpf(base(300)) });
     vi.mocked(createClient).mockResolvedValue(client as never);
 
-    const grupos = (await corpo(await chamar())).data as Array<{ motivos: string[] }>;
+    await chamar();
 
-    expect(grupos.map((g) => g.motivos)).toEqual([["telefone"]]);
+    const leitura = consultas.find((c) => c.tabela === "contacts")!;
+    expect(leitura.filtros).toContainEqual(["organization_id", ORG_ID]);
   });
 });

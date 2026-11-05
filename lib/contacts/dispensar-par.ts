@@ -47,6 +47,12 @@ interface LinhaDeContato {
   phone_number: string | null;
   email: string | null;
   email_normalized: string | null;
+  /**
+   * Lido porque `ligadosPorMotivoForte` compara CPF (#4081). Sem esta coluna os
+   * dois lados chegam `undefined` e a régua não vê par forte nenhum — a dispensa
+   * passaria a aceitar o par que é a mesma pessoa.
+   */
+  cpf_hash: string | null;
   source_metadata: Record<string, unknown> | null;
 }
 
@@ -76,7 +82,7 @@ export async function dispensarParDeContatos(
     ]);
 
     const { rows } = await db.query<LinhaDeContato>(
-      `select id, phone_number, email, email_normalized, source_metadata
+      `select id, phone_number, email, email_normalized, cpf_hash, source_metadata
          from public.contacts
         where organization_id = $1
           and id = any($2::uuid[])
@@ -153,6 +159,13 @@ export function fichaVivaDe(id: string, mapa: ReadonlyMap<string, string | null>
  * Lido com o cliente administrador e filtrado pela organização da sessão: a policy
  * de `merge_queue` só deixa gestor ler, e o par dispensado precisa sumir para todo
  * papel que vê a lista.
+ *
+ * ⚠️ Hoje nenhuma rota chama esta leitura (#4081): a dispensa existia para filtrar
+ * a sugestão por NOME, e a varredura de duplicados deixou de sugerir por nome. A
+ * gravação (`dispensarParDeContatos`) e esta leitura ficam de pé porque o par
+ * dispensado continua no banco e é esta função que o dia em que a sugestão voltar
+ * atrás de uma opção da organização vai consultar. Remover as duas é decisão do
+ * mantenedor, não efeito colateral deste conserto.
  */
 export async function lerParesDispensados(
   admin: SupabaseClient,
