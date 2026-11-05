@@ -294,6 +294,34 @@
       "col": 23,
       "type": "service",
       "label": "JWT de contexto (assinatura assimétrica) · a pessoa por quem a tela do módulo age"
+    },
+    {
+      "id": "module_frame",
+      "lane": "human",
+      "col": 24,
+      "type": "ui",
+      "label": "Quadro do módulo · iframe de outra origem com sandbox fechado, na rota /app/m/[modulo]"
+    },
+    {
+      "id": "module_bridge",
+      "lane": "app",
+      "col": 24,
+      "type": "service",
+      "label": "Ponte postMessage · 6 mensagens fechadas, origem e janela conferidas nos dois lados"
+    },
+    {
+      "id": "module_nav_group",
+      "lane": "human",
+      "col": 25,
+      "type": "ui",
+      "label": "Grupo Módulos no menu e item no Ctrl+K · gerado a partir dos módulos conectados ativos"
+    },
+    {
+      "id": "module_panel",
+      "lane": "human",
+      "col": 25,
+      "type": "ui",
+      "label": "Painel lateral do módulo · mesmo quadro, pedido pela Server Action moduloParaOPainel"
     }
   ],
   "edges": [
@@ -621,6 +649,51 @@
       "from": "authority_gate",
       "to": "consent_ui",
       "label": "a recusa por área aparece na tela com o motivo"
+    },
+    {
+      "from": "module_nav_group",
+      "to": "module_frame",
+      "label": "o item do menu ou do Ctrl+K abre a rota do módulo"
+    },
+    {
+      "from": "module_panel",
+      "to": "module_frame",
+      "label": "o painel desenha o mesmo quadro, sem caminho de segurança próprio"
+    },
+    {
+      "from": "module_frame",
+      "to": "module_bridge",
+      "label": "o quadro só fala com o módulo pela ponte"
+    },
+    {
+      "from": "module_bridge",
+      "to": "context_route",
+      "label": "module:request-jwt pede o JWT de contexto, no máximo um a cada 30 s"
+    },
+    {
+      "from": "context_jwt",
+      "to": "module_bridge",
+      "label": "o JWT volta ao módulo só por host:jwt, para a origem conferida"
+    },
+    {
+      "from": "module_bridge",
+      "to": "module_frame",
+      "label": "host:error e o aviso de serviço fora do ar aparecem para a pessoa"
+    },
+    {
+      "from": "installation_flag",
+      "to": "module_nav_group",
+      "label": "só módulo ativo, não removido e compatível entra no menu"
+    },
+    {
+      "from": "connected_profile",
+      "to": "module_panel",
+      "label": "o service_origin vem do catálogo e só sai pelo servidor, nunca pelo navegador"
+    },
+    {
+      "from": "module_frame",
+      "to": "module",
+      "label": "o iframe carrega /embed do serviço do módulo, em outra origem"
     }
   ],
   "contracts": {
