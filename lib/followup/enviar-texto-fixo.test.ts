@@ -353,6 +353,26 @@ describe("enviarTextoFixoPendente · janela de disparo (#2658)", () => {
     expect(statusUpdates).not.toContain("done");
   });
 
+  // #3974 — a opção libera a POSSE da conversa, não o relógio: liberado o veto
+  // do dono, o passo ainda passa pela janela do canal.
+  it("opção 'enviar com a conversa atribuída' ligada + conversa com dono + 03h → adia para a abertura, não envia", async () => {
+    configurarJanelaReal();
+    decidir.mockResolvedValue({ permite: false, motivo: "conversa_de_humano", bloqueioPorAllowlist: false });
+    CONFIG.opcaoComDono.ligada = true;
+    CONFIG.opcaoComDono.contato = { force_human: false, ai_opt_out: false, is_blocked: false, tags: [] };
+    CONFIG.opcaoComDono.conversas = [{ assigned_to_user_id: "user-1", bot_silenced_until: "infinity", status: "open" }];
+
+    const enviados = await comRelogoEm("2026-10-08T04:00:00Z", () => enviarTextoFixoPendente(admin()));
+
+    expect(enviados).toBe(0);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+    expect(completeTurnForEnrollment.mock.calls[0]![4]).toEqual({
+      kind: "deferred",
+      until: new Date("2026-10-08T11:00:00Z"),
+      reason: "outside_window",
+    });
+  });
+
   it("canal aberto mas SÁBADO (faixa seg–sex) → adia para segunda, motivo da faixa", async () => {
     configurarJanelaReal();
     decidir.mockResolvedValue({ permite: true, motivo: "autorizado" });
@@ -428,6 +448,21 @@ describe("enviarTextoFixoPendente · ritmo do canal", () => {
     // sozinho na liberação.
     expect(settleCalls.at(-1)!.p_done).toBe(false);
     expect(statusUpdates).toContain("pending");
+    expect(ledgerInserts).toHaveLength(0);
+  });
+
+  it("opção 'enviar com a conversa atribuída' ligada + conversa com dono: o ritmo continua valendo (#3974)", async () => {
+    decidir.mockResolvedValue({ permite: false, motivo: "conversa_de_humano", bloqueioPorAllowlist: false });
+    CONFIG.opcaoComDono.ligada = true;
+    CONFIG.opcaoComDono.contato = { force_human: false, ai_opt_out: false, is_blocked: false, tags: [] };
+    CONFIG.opcaoComDono.conversas = [{ assigned_to_user_id: "user-1", bot_silenced_until: "infinity", status: "open" }];
+    CONFIG.ritmo.ultimoEnvioIso = "2026-10-15T15:00:00.000Z";
+
+    const enviados = await comRelogoEm("2026-10-15T15:00:00.200Z", () => enviarTextoFixoPendente(admin()));
+
+    expect(enviados).toBe(0);
+    expect(sendMessageHandler).not.toHaveBeenCalled();
+    expect(completeTurnForEnrollment.mock.calls[0]![4]).toMatchObject({ kind: "deferred", reason: "pacing_throttle" });
     expect(ledgerInserts).toHaveLength(0);
   });
 
