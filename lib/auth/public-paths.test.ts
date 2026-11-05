@@ -149,4 +149,12 @@ describe("isPublicPath", () => {
     expect(isPublicPath("/api/v1/extensions")).toBe(false);
     expect(isPublicPath("/api/v1/extensions/11111111-1111-4111-8111-111111111111/segredo")).toBe(false);
   });
+
+  it("libera a leitura de eventos do módulo, e só o caminho exato", () => {
+    expect(isPublicPath("/api/v1/extensions/events")).toBe(true);
+    expect(isPublicPath("/api/v1/extensions/events/x")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/events/")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/event")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/eventsx")).toBe(false);
+  });
 });
