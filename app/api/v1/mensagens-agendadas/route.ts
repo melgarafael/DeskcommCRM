@@ -25,7 +25,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
   let q = createAdminClient()
     .from("mensagens_agendadas")
-    .select("id, contact_id, channel_session_id, title, body, recorrencia, intervalo_dias, inicio_local, termino_local, tz, scheduled_at, status, se_desconectado, ultimo_erro, created_at")
+    .select("id, contact_id, channel_session_id, title, body, recorrencia, intervalo_dias, inicio_local, termino_local, tz, scheduled_at, status, se_desconectado, ultimo_erro, created_at, contacts(display_name, name)")
     .eq("organization_id", auth.org.orgId)
     .eq("status", "agendada")
     .order("scheduled_at", { ascending: true })

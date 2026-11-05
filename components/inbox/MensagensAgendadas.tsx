@@ -1,11 +1,13 @@
 "use client";
 
 /**
- * MENSAGENS AGENDADAS — botão ao lado do Enviar, popup com as agendadas do contato,
- * criação de mensagem de texto e cancelamento.
+ * MENSAGENS AGENDADAS — botão ao lado do Enviar e popup com três visões:
+ *  - as agendadas do contato (padrão);
+ *  - "Exibir Todos": as agendadas de todos os contatos da organização;
+ *  - "Relatório": os últimos envios do contato (enviados, falhados, pulados).
  */
 import { useState } from "react";
-import { CalendarClock, Plus, Trash2, X } from "lucide-react";
+import { CalendarClock, Eye, EyeOff, History, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -16,6 +18,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { apiClient } from "@/lib/api/client";
 import { useT } from "@/hooks/i18n/useT";
+
+const CHAVE_RAIZ = "mensagens-agendadas";
 
 const RECORRENCIAS: { valor: string; rotulo: string }[] = [
   { valor: "nenhuma", rotulo: "Nenhuma (envio único)" },
@@ -29,15 +33,41 @@ const RECORRENCIAS: { valor: string; rotulo: string }[] = [
   { valor: "a_cada_n_dias", rotulo: "A cada N dias" },
 ];
 
+const DESFECHOS: Record<EnvioLinha["desfecho"], string> = {
+  enviada: "Enviado",
+  falhou: "Falhou",
+  pulada_desconectado: "Pulado (desconectado)",
+};
+
 interface AgendamentoLinha {
   id: string;
+  contact_id: string;
+  channel_session_id: string;
   title: string | null;
   body: string;
   recorrencia: string;
   intervalo_dias: number | null;
   scheduled_at: string;
   se_desconectado: "esperar" | "cancelar";
+  contacts?: { display_name: string | null; name: string | null } | null;
 }
+
+interface EnvioLinha {
+  id: string;
+  prevista_para: string;
+  desfecho: "enviada" | "falhou" | "pulada_desconectado";
+  erro: string | null;
+  agendamento: {
+    id: string;
+    title: string | null;
+    body: string;
+    recorrencia: string;
+    intervalo_dias: number | null;
+    contact_id: string;
+  } | null;
+}
+
+type Modo = "contato" | "todas" | "relatorio";
 
 interface Props {
   contactId: string;
@@ -47,7 +77,7 @@ interface Props {
   textoInicial?: string;
 }
 
-function rotuloRecorrencia(a: AgendamentoLinha): string {
+function rotuloRecorrencia(a: { recorrencia: string; intervalo_dias: number | null }): string {
   if (a.recorrencia === "a_cada_n_dias") return `A cada ${a.intervalo_dias ?? "?"} dias`;
   return RECORRENCIAS.find((r) => r.valor === a.recorrencia)?.rotulo ?? a.recorrencia;
 }
@@ -56,12 +86,28 @@ function formatarQuando(iso: string): string {
   return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
+function nomeDoContato(a: AgendamentoLinha): string {
+  return a.contacts?.display_name || a.contacts?.name || "Sem nome";
+}
+
 /** Chave da lista de agendamentos de um contato: o badge e o popup dividem o mesmo cache. */
-const chaveDaLista = (contactId: string) => ["mensagens-agendadas", contactId] as const;
+const chaveDaLista = (contactId: string) => [CHAVE_RAIZ, contactId] as const;
+const CHAVE_TODAS = [CHAVE_RAIZ, "todas"] as const;
+const chaveDosEnvios = (contactId: string) => [CHAVE_RAIZ, "envios", contactId] as const;
 
 function buscarAgendamentos(contactId: string) {
   return apiClient.get<{ data: AgendamentoLinha[] }>(
     `/api/v1/mensagens-agendadas?contact_id=${encodeURIComponent(contactId)}`,
+  );
+}
+
+function buscarTodas() {
+  return apiClient.get<{ data: AgendamentoLinha[] }>("/api/v1/mensagens-agendadas");
+}
+
+function buscarEnvios(contactId: string) {
+  return apiClient.get<{ data: EnvioLinha[] }>(
+    `/api/v1/mensagens-agendadas/envios?contact_id=${encodeURIComponent(contactId)}`,
   );
 }
 
@@ -123,29 +169,99 @@ export function MensagensAgendadasDialog({
   textoInicial,
 }: Props & { open: boolean; onOpenChange: (v: boolean) => void }) {
   const t = useT();
+  const [modo, setModo] = useState<Modo>("contato");
   const [criando, setCriando] = useState(false);
   const qc = useQueryClient();
+
   const consulta = useQuery(opcoesDaLista(contactId));
-  const lista = consulta.data?.data ?? [];
-  const carregando = consulta.isPending;
-  const atualizarContagem = () => qc.invalidateQueries({ queryKey: chaveDaLista(contactId) });
+  const todas = useQuery({
+    queryKey: CHAVE_TODAS,
+    queryFn: buscarTodas,
+    enabled: modo === "todas",
+    staleTime: 0,
+    retry: 3,
+    refetchOnWindowFocus: true,
+  });
+  const envios = useQuery({
+    queryKey: chaveDosEnvios(contactId),
+    queryFn: () => buscarEnvios(contactId),
+    staleTime: 0,
+    retry: 3,
+    refetchOnWindowFocus: true,
+  });
+
+  const consultaAtiva = modo === "todas" ? todas : consulta;
+  const lista = consultaAtiva.data?.data ?? [];
+  const totalEnvios = envios.data?.data.length ?? 0;
+
+  // Criar, editar ou cancelar mexe nas três visões: invalida o prefixo inteiro.
+  const atualizarTudo = () => qc.invalidateQueries({ queryKey: [CHAVE_RAIZ] });
+
+  function alternar(alvo: Exclude<Modo, "contato">) {
+    setCriando(false);
+    setModo((atual) => (atual === alvo ? "contato" : alvo));
+  }
 
   async function cancelar(id: string) {
     try {
       await apiClient.delete(`/api/v1/mensagens-agendadas/${id}`);
       toast.success("Agendamento cancelado.");
-      await atualizarContagem();
+      await atualizarTudo();
     } catch {
       toast.error("Não consegui cancelar o agendamento.");
     }
   }
 
+  const titulo =
+    modo === "relatorio"
+      ? "Relatório"
+      : modo === "todas"
+        ? "Todas as mensagens agendadas"
+        : `Mensagens agendadas${contactName ? ` — ${contactName}` : ""}`;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Mensagens agendadas{contactName ? ` — ${contactName}` : ""}</DialogTitle>
+          <DialogTitle>{titulo}</DialogTitle>
         </DialogHeader>
+
+        {!criando && (
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant={modo === "relatorio" ? "secondary" : "outline"}
+              size="sm"
+              aria-pressed={modo === "relatorio"}
+              onClick={() => alternar("relatorio")}
+            >
+              <History className="mr-1 size-4" aria-hidden />
+              {modo === "relatorio" ? "Ocultar" : "Relatório"}
+              {modo !== "relatorio" && totalEnvios > 0 ? (
+                <span className="ml-1 rounded-full bg-primary px-1.5 text-[10px] leading-4 text-primary-foreground">
+                  {totalEnvios}
+                </span>
+              ) : null}
+            </Button>
+            <Button
+              type="button"
+              variant={modo === "todas" ? "secondary" : "outline"}
+              size="sm"
+              aria-pressed={modo === "todas"}
+              onClick={() => alternar("todas")}
+            >
+              {modo === "todas" ? (
+                <>
+                  <EyeOff className="mr-1 size-4" aria-hidden /> Ocultar
+                </>
+              ) : (
+                <>
+                  <Eye className="mr-1 size-4" aria-hidden /> Exibir Todos
+                </>
+              )}
+            </Button>
+          </div>
+        )}
 
         {criando ? (
           <CriarAgendamento
@@ -155,12 +271,46 @@ export function MensagensAgendadasDialog({
             onCancelar={() => setCriando(false)}
             onCriado={async () => {
               setCriando(false);
-              await atualizarContagem();
+              await atualizarTudo();
             }}
           />
+        ) : modo === "relatorio" ? (
+          <div className="space-y-3">
+            {envios.isPending ? (
+              <p className="text-sm text-muted-foreground">Carregando…</p>
+            ) : totalEnvios === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum envio realizado para este contato ainda.</p>
+            ) : (
+              <ul className="divide-y rounded-md border">
+                {envios.data?.data.map((e) => (
+                  <li key={e.id} className="flex items-center gap-3 p-3 text-sm">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{e.agendamento?.title || e.agendamento?.body || "Mensagem"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatarQuando(e.prevista_para)}
+                        {e.agendamento ? ` · ${rotuloRecorrencia(e.agendamento)}` : ""}
+                        {e.erro ? ` · ${e.erro}` : ""}
+                      </p>
+                    </div>
+                    <span
+                      className={
+                        e.desfecho === "enviada"
+                          ? "rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800"
+                          : e.desfecho === "falhou"
+                            ? "rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-800"
+                            : "rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground"
+                      }
+                    >
+                      {DESFECHOS[e.desfecho]}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         ) : (
           <div className="space-y-3">
-            {carregando ? (
+            {consultaAtiva.isPending ? (
               <p className="text-sm text-muted-foreground">Carregando…</p>
             ) : lista.length === 0 ? (
               <p className="text-sm text-muted-foreground">{t("Nenhuma mensagem agendada para este contato.")}</p>
@@ -171,6 +321,7 @@ export function MensagensAgendadasDialog({
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{a.title || a.body}</p>
                       <p className="text-xs text-muted-foreground">
+                        {modo === "todas" ? `${nomeDoContato(a)} · ` : ""}
                         {formatarQuando(a.scheduled_at)} · {rotuloRecorrencia(a)}
                         {a.se_desconectado === "cancelar" ? " · cancela se desconectado" : ""}
                       </p>
