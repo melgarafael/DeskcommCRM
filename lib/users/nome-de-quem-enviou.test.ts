@@ -103,7 +103,8 @@ describe("#4031 — nome de quem enviou, no payload da página", () => {
 
     expect(nomeados).toHaveBeenCalledOnce();
     // Uma chamada, com os ids DISTINTOS que passaram pela conferência de membros.
-    expect(nomeados.mock.calls[0]![0]).toEqual(["u-andreia", "u-thamyres"]);
+    expect(nomeados.mock.calls[0]![0]).toBe("org-1");
+    expect(nomeados.mock.calls[0]![1]).toEqual(["u-andreia", "u-thamyres"]);
     expect(filtrosDeOrg).toEqual(["org-1"]);
   });
 
@@ -159,7 +160,7 @@ describe("#4031 — nome de quem enviou, no payload da página", () => {
 
     expect(filtrosDeOrg).toEqual(["org-1"]);
     expect(nomeados).toHaveBeenCalledOnce();
-    expect(nomeados.mock.calls[0]![0]).toEqual(["u-andreia"]);
+    expect(nomeados.mock.calls[0]![1]).toEqual(["u-andreia"]);
     expect(pagina.map((m) => [m.id, m.sent_by_user_name])).toEqual([
       ["m1", "Andreia Cristina de Souza"],
       ["m2", null],
