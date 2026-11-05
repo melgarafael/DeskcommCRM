@@ -937,6 +937,7 @@ jobs:
         distribuicao-atendimento.spec.ts
         cobranca-revendedor.spec.ts
         escopo-de-funil-do-agente.spec.ts
+        publico-por-origem-do-agente.spec.ts
         followup-tempo-adaptativo.spec.ts
         gatilho-de-etapa.spec.ts
         etapa-avisa-na-central.spec.ts
