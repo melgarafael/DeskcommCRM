@@ -36,8 +36,8 @@ describe("grupo Módulos gerado: sem módulo, nada muda", () => {
 
     it(`searchable idêntico com lista vazia ou ausente (${role ?? "plataforma"})`, () => {
       const sem = searchable(platform, role);
-      expect(searchable(platform, role, undefined, [], [], [])).toEqual(sem);
-      expect(searchable(platform, role, undefined, [], [], undefined)).toEqual(sem);
+      expect(searchable(platform, role, undefined, undefined, undefined, [])).toEqual(sem);
+      expect(searchable(platform, role, undefined, undefined, undefined, undefined)).toEqual(sem);
       expect(sem.some((d) => d.group === "modulos")).toBe(false);
     });
   }
@@ -69,7 +69,7 @@ describe("grupo Módulos gerado: com módulos", () => {
 
   it("entra no ⌘K, depois dos destinos de sempre", () => {
     const base = searchable(false, "agent");
-    const com = searchable(false, "agent", undefined, [], [], DOIS);
+    const com = searchable(false, "agent", undefined, undefined, undefined, DOIS);
     expect(com.slice(0, base.length)).toEqual(base);
     expect(com.slice(base.length).map((d) => d.href)).toEqual([
       "/app/m/acme-comanda",
