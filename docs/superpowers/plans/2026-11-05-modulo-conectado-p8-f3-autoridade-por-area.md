@@ -12,7 +12,7 @@
 |---|---|---|
 | Só 3 arquivos chamam `validateBearerToken`: `lib/api/auth-dual.ts`, `app/api/v1/contacts/route.ts`, `app/api/mcp/route.ts` | grep | **Risco que a spec não vê:** o servidor MCP e `contacts/route.ts` aceitam qualquer `dsk_` e leem pelos escopos do token; um token de módulo (`mcp:read`) leria tudo por ali, **sem passar pela área**. A Tarefa 3 fecha as duas entradas para ator `module` e uma cerca varre que nenhuma outra apareça. |
 | O token de módulo da F2 nasce com `mcp:read`, `role:viewer`, `actor:module:<slug>` e **não carrega áreas** | migration 9118 | As áreas efetivas NÃO podem morar no token: consentimento mudado tem de valer na hora. `resolveAuthDual` lê o vínculo a cada requisição. |
-| Permissões `area.<área>.<leitura\|escrita>` já existem no manifesto `connected` (26 permissões) | F1: `lib/extensions/areas.ts`, `capacidades.ts` | "Declarado" = as `area.*` do manifesto do artefato da instalação. |
+| Permissões `area.<área>.<leitura\|escrita>` já existem no manifesto `connected` (18 de área, dentre 26 no total) | F1: `lib/extensions/areas.ts`, `capacidades.ts` | "Declarado" = as `area.*` do manifesto do artefato da instalação. |
 | `organization_extensions.configuration` é fechada (só `density`, `show_description`) por CHECK | baseline ~28040 | O consentimento NÃO entra em `configuration`; ganha **coluna própria** `consented_areas text[]`. |
 | Portas de token por modelo e método: `lib/auth/portas-de-token/{configuracao,operacao,leitura}.ts` | R | O mapa de área é uma tabela única por modelo de porta, e um teste exige que **toda** porta tenha área ou esteja na lista "nunca há área". |
 | `fn_extensions_configure` tem limite de 8 ativas e revisão otimista | baseline | O consentimento é função separada (`fn_extensions_set_consent`), com a mesma revisão. |
@@ -62,7 +62,7 @@ Papel mínimo: `configuracao` e `agentes_ia` exigem que o **consentimento** seja
 
 **Arquivos:** migration `…_NNNN_modulo_conectado_consentimento.sql` (+ apêndice), `tests/invariants/extensoes-consentimento.test.ts`.
 
-- `alter table public.organization_extensions add column if not exists consented_areas text[] not null default '{}'` + CHECK `consented_areas <@ array[<26 permissões area.*>]` (lista copiada de `lib/extensions/areas.ts`, e um teste de invariante garante igualdade com o TypeScript).
+- `alter table public.organization_extensions add column if not exists consented_areas text[] not null default '{}'` + CHECK `consented_areas <@ array[<as 18 permissões area.*: 9 áreas × leitura/escrita>]` (lista copiada de `lib/extensions/areas.ts`, e um teste de invariante garante igualdade com o TypeScript).
 - `fn_extensions_set_consent(p_actor uuid, p_organization uuid, p_installation uuid, p_expected_revision integer, p_areas text[]) returns jsonb`: ator precisa administrar a organização (`fn_extensions_assert_actor`); instalação `connected` e não removida; `p_areas` ⊆ `area.*` **declaradas** no manifesto do artefato (`PT409`/`extension_area_not_declared` se não); `configuracao.*` e `agentes_ia.*` só se o ator for `admin`/`owner` da organização; revisão otimista como `configure`; grava, incrementa `revision`. Retirar uma área vale imediatamente.
 - Invariantes: viewer/agent/manager não consentem `configuracao`; área não declarada recusa; revisão velha recusa; org A não consente instalação ativada só na B; a função não é executável por `authenticated`.
 
@@ -98,7 +98,7 @@ Papel mínimo: `configuracao` e `agentes_ia` exigem que o **consentimento** seja
 
 **Arquivos:** `components/extensions/*` (ativação), rota `app/api/v1/extensions/[id]/consentimento/route.ts` (+ teste), `lib/extensions/portas-legiveis.ts`, i18n `es`, `en`, `tr`.
 
-- Na ativação de um `connected`, lista as áreas **declaradas** em frases legíveis (as de `portas-legiveis.ts`), cada uma com caixa de seleção; `configuracao` e `agentes_ia` aparecem desabilitadas para quem não administra a organização, com o motivo. Salvar chama a rota, que chama `fn_extensions_set_consent` (revisão esperada; recibo/`Idempotency-Key` como a rota de configurar).
+- Na ativação de um `connected`, lista as áreas **declaradas** em frases legíveis (as de `portas-legiveis.ts`), cada uma com caixa de seleção; Quem consente é só o ADMIN da organização (medido na Tarefa 1: `fn_extensions_assert_actor` já exige `admin` para ativar/configurar, e não existe papel `owner`); manager e agent veem o consentimento atual sem poder alterá-lo, com o motivo. Salvar chama a rota, que chama `fn_extensions_set_consent` (revisão esperada; recibo/`Idempotency-Key` como a rota de configurar).
 - Audit `extension.consent_changed` com as áreas (lista fechada, sem dado pessoal).
 - Testes de componente e de rota (403 para quem não administra a organização; consentir área não declarada ⇒ 409).
 
@@ -114,3 +114,4 @@ Eventos (F5), tela do módulo (F4), financeiro como área, token só-leitura de 
 ## Ordem e executores
 
 1 (Sonnet) → 2 (Haiku, tabela mecânica; eu confiro a lista de portas sem área) → 3 (Sonnet, segurança) → 4 (Sonnet, segurança) → 5 (Sonnet) → 6 (Haiku). Um commit por tarefa; nada roda local; o CI do PR interno julga.
+
