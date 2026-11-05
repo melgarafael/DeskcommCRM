@@ -42,8 +42,16 @@ import {
   validateBearerToken,
 } from "@/lib/mcp/auth";
 import { JANELA_SEGUNDOS, TETO_DE_ESCRITA, TETO_POR_ORGANIZACAO } from "@/lib/mcp/rate-limit";
+import { supportCallbackWriteAllowed } from "@/lib/impersonate/support";
+import { CABECALHO_DE_CONTEXTO, verificarJwtDeContexto } from "@/lib/modulo/jwt-de-contexto";
+import { lerPapelAtualDaPessoa, papelEfetivoDoModulo } from "@/lib/modulo/papel-efetivo";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+
+const METODOS_SEGUROS = new Set(["GET", "HEAD", "OPTIONS"]);
+const MENSAGEM_DO_CONTEXTO_INVALIDO =
+  "O contexto da pessoa enviado pelo módulo não vale (vencido, de outra organização ou pessoa sem acesso).";
+const MENSAGEM_DE_SUPORTE = "Há um acompanhamento administrativo restrito nesta organização: o módulo só lê.";
 
 export type AuthDual =
   | {
@@ -66,6 +74,8 @@ export type AuthDual =
       scopes?: string[];
       /** Id da linha do token (`api_tokens.id`) — o `actor_api_token_id` do audit. */
       apiTokenId?: string;
+      /** Só token de módulo com JWT de contexto válido: a pessoa (`sub`) de quem a tela agiu. */
+      pessoaDoModulo?: string;
     }
   | { ok: false; response: Response };
 
@@ -123,6 +133,8 @@ export async function resolveAuthDual(
     // TOKEN DE MÓDULO (spec 33, F3): a área vem ANTES do papel e do escopo. Nada de módulo passa
     // sem que o pacote tenha declarado e a organização consentido a área desta porta, no modo
     // certo (declarado ∩ consentido, lido do banco agora). Sem porta conhecida, recusa.
+    let papelDoBearer: Role = auth.role;
+    let pessoaDoModulo: string | undefined;
     if (auth.actor.type === "module") {
       const decisao = await autorizarModulo({
         organizationId: auth.organizationId,
@@ -139,11 +151,50 @@ export async function resolveAuthDual(
           }),
         };
       }
+
+      // PAPEL EFETIVO (F3, tarefa 4): com JWT de contexto válido, min(teto manager, papel ATUAL da
+      // pessoa, lido do banco agora); sem JWT, min(papel do token, teto agent). `admin` nunca.
+      const contexto = req.headers.get(CABECALHO_DE_CONTEXTO);
+      let papelDaPessoa: Role | null = null;
+      if (contexto !== null) {
+        const jwt = await verificarJwtDeContexto(contexto.trim(), {
+          organizationId: auth.organizationId,
+          installationId: decisao.installationId,
+        });
+        if (jwt.ok) {
+          papelDaPessoa = await lerPapelAtualDaPessoa(
+            createAdminClient(),
+            auth.organizationId,
+            jwt.pessoaId,
+          );
+        }
+        if (!jwt.ok || !papelDaPessoa) {
+          return {
+            ok: false,
+            response: fail("module_context_invalid", MENSAGEM_DO_CONTEXTO_INVALIDO, 403, {
+              requestId,
+            }),
+          };
+        }
+        pessoaDoModulo = jwt.pessoaId;
+      }
+      papelDoBearer = papelEfetivoDoModulo({ papelDoToken: auth.role, papelDaPessoa });
+
+      // Acompanhamento de suporte restrito na organização: escrita de módulo recusa, lido no servidor.
+      if (!METODOS_SEGUROS.has(req.method.toUpperCase())) {
+        const permitida = await supportCallbackWriteAllowed(auth.organizationId, pessoaDoModulo);
+        if (!permitida) {
+          return {
+            ok: false,
+            response: fail("forbidden", MENSAGEM_DE_SUPORTE, 403, { requestId }),
+          };
+        }
+      }
     }
 
     try {
       ensureScope(auth.scopes, scope);
-      ensureRole(auth.role, tokenRole ?? role);
+      ensureRole(papelDoBearer, tokenRole ?? role);
     } catch (err) {
       if (err instanceof McpAuthError) {
         return {
@@ -163,6 +214,7 @@ export async function resolveAuthDual(
       via: "token",
       scopes: auth.scopes,
       apiTokenId: auth.apiTokenId,
+      ...(pessoaDoModulo ? { pessoaDoModulo } : {}),
     };
   }
 
