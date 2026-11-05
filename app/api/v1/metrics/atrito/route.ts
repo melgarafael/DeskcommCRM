@@ -7,10 +7,15 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * até aqui não tinha número nenhum: `/metrics/attendants` devolve won, lost,
  * conversas e 1ª resposta — atividade e conversão.
  *
- * Escopo = a PRÓPRIA RLS, igual à rota irmã: `fn_atrito_metrics` é SECURITY
- * INVOKER e roda com o client user-scoped (cookie session), então as seis
- * tabelas lidas já filtram por `fn_user_org_ids()`. A org vem do cookie
+ * Escopo na sessão = a PRÓPRIA RLS, igual à rota irmã: `fn_atrito_metrics` é
+ * SECURITY INVOKER e roda com o client user-scoped (cookie session), então as
+ * seis tabelas lidas já filtram por `fn_user_org_ids()`. A org vem do cookie
  * validado, NUNCA do body/query. Read-only ⇒ sem audit.
+ *
+ * Sessão OU token de servidor `dsk_…` com `mcp:read` (Spec 33, R3). Pelo token
+ * não há pessoa nem RLS: o cliente é o de serviço, a organização vem da LINHA do
+ * token e `p_org` é o único recorte. Como o token vê a organização inteira e a
+ * sessão de um atendente (agent) não vê tudo, o token exige papel `manager`.
  *
  * A RÉGUA DO ABANDONO (Fase 2) vem de `organizations.settings->'atrito'->
  * 'abandono_horas'` (default 72) e volta no payload, para a tela exibi-la junto
@@ -29,7 +34,6 @@ import { z } from "zod";
 
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import {
   ABANDONO_HORAS_DEFAULT,
   lerAbandonoHoras,
@@ -38,8 +42,7 @@ import {
 } from "@/lib/metrics/atrito";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
-import { IDIOMA_PADRAO, normalizarIdioma } from "@/lib/i18n/idiomas";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -97,11 +100,18 @@ const VAZIO: Omit<AtritoRaw, "escopo"> = {
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const authz = await requireRole("agent", { requestId, resource: "metrics" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "metrics",
+    role: "agent",
+    scope: "mcp:read",
+    tokenRole: "manager",
+  });
   if (!authz.ok) return authz.response;
-  const { org: activeOrg, user } = authz;
-  const idioma = normalizarIdioma(user.locale);
-  const t = (texto: string) => traduzir(texto, idioma);
+  // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.
+  const teto = await tetoDeEscritaDoToken(authz, "metrics", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const url = new URL(req.url);
   const parsed = querySchema.safeParse({
@@ -125,23 +135,26 @@ export async function GET(req: NextRequest): Promise<Response> {
     });
   }
 
-  const supabase = await createClient();
+  // Sessão: o cliente do cookie (a RLS recorta). Token: o de serviço, e o
+  // `p_org` abaixo — da sessão ou da linha do token, nunca da query — é o
+  // único recorte de organização.
+  const supabase = authz.supabase;
 
   // A RÉGUA é lida pelo ADMIN client com filtro explícito de organization_id
   // (mesmo padrão de /api/v1/settings/routing): `organizations` só aceita
   // escrita de platform admin e a leitura por sessão pode casar 0 linhas — o
   // que faria a régua cair no default em SILÊNCIO, com cara de configuração.
-  // A RPC abaixo continua no client de SESSÃO, para herdar a RLS.
+  // A RPC abaixo roda no cliente do portão: o de SESSÃO herda a RLS.
   const admin = createAdminClient();
   const { data: orgRow } = await admin
     .from("organizations")
     .select("settings")
-    .eq("id", activeOrg.orgId)
+    .eq("id", authz.organizationId)
     .maybeSingle();
   const abandonoHoras = lerAbandonoHoras(orgRow?.settings);
 
   const { data, error } = await supabase.rpc("fn_atrito_metrics", {
-    p_org: activeOrg.orgId,
+    p_org: authz.organizationId,
     p_from: from.toISOString(),
     p_to: to.toISOString(),
     p_abandono_horas: abandonoHoras,
@@ -201,8 +214,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
 
   const requestId = randomUUID();
 
-  // Sessão OU token `dsk_…` (`mcp:write`, manager+; Spec 33, R3). O GET segue só
-  // de sessão: ele lê `user.locale`, que `resolveAuthDual` não devolve.
+  // Sessão OU token `dsk_…` (`mcp:write`, manager+; Spec 33, R3).
   const authz = await resolveAuthDual(req, {
     requestId,
     resource: "metrics",
