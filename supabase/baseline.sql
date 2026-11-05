@@ -61343,46 +61343,10 @@ notify pgrst, 'reload schema';
 -- ---- atendimento conjunto: controle e atualização da tela (migration 9016) ----
 -- A 0661 precede a 0726 na cadeia. Esta forward-fix reinstala a policy atual
 -- COM participação depois dela, sem editar nenhuma migration já publicada.
-do $conversations_select$ begin
-  -- O ramo de PARTICIPANTE (conversa atendida em conjunto) fica, e a forma da
-  -- main também: escopo resolvido em conjunto por fn_conversation_scope(), ANTES
-  -- do scan. A forma antiga do PR (fn_can_view_conversation por linha) fazia o
-  -- planner voltar a chamar a função por candidata — reprovado por
-  -- tests/invariants/escopo-da-conversa-avaliado-uma-vez.test.ts (#2848 sobre o
-  -- conserto #3090). A política abaixo é a da main (58213) + o ramo participante.
-  drop policy if exists "conversations_select" on public.conversations;
-  create policy "conversations_select" on public.conversations
-    for select using (
-      (select public.fn_is_platform_admin())
-      or organization_id in (
-           select s.organization_id from public.fn_conversation_scope() s where s.org_wide_read
-         )
-      or (
-           assigned_to_user_id = auth.uid()
-           and organization_id in (select s.organization_id from public.fn_conversation_scope() s)
-         )
-      or (
-           assigned_to_user_id is null
-           and organization_id in (
-                select s.organization_id from public.fn_conversation_scope() s where s.sees_unassigned
-              )
-         )
-      or exists (
-           select 1
-             from public.conversation_participants cp
-            where cp.conversation_id = conversations.id
-              and cp.organization_id = conversations.organization_id
-              and cp.user_id = auth.uid()
-              and cp.left_at is null
-              and not exists (
-                select 1 from public.contacts pc
-                 where pc.id=conversations.contact_id
-                   and pc.organization_id=conversations.organization_id
-                   and pc.is_personal
-              )
-         )
-    );
-end $conversations_select$;
+-- A policy desta forward-fix foi para o FIM do arquivo (bloco da migration 9214):
+-- a versão final referencia `conversations.sector_id`, que só nasce no apêndice
+-- da 9062. Reinstalá-la aqui também seria definição intermediária a cada update
+-- (tests/unit/baseline-nao-constroi-o-que-derruba.test.ts).
 
 -- O convite não amplia UPDATE/DELETE. Mantém o escopo anterior de quem já
 -- escrevia: owner, gestor e o modo de visibilidade configurado no banco.
@@ -69101,6 +69065,41 @@ select c.*,obj_description(c.oid,'pg_constraint') marker into actual from pg_con
 end;
 $integridade_funil_etapa$;
 
+-- ---- a conversa do SETOR: visibility_mode = own_and_sector (migration 9214, #4022) ----
+-- Espelho da 9214, PRIMEIRA metade. Cria FUNÇÃO, então entra ANTES da VARREDURA
+-- anon. O corpo é plpgsql porque `attendant_sector_members` só nasce no apêndice
+-- da 0801/9062, mais abaixo: corpo `sql` seria resolvido na criação e reprovaria
+-- toda instalação nova. A SEGUNDA metade (a policy, que usa
+-- `conversations.sector_id`) está no fim do arquivo.
+-- O quarto modo de visibilidade: o papel restrito (agent/ai_operator) vê a
+-- conversa cujo sector_id é de um setor em que está vinculado, inclusive a que
+-- está com um colega do setor; os outros setores continuam fora, e
+-- viewer/manager/admin seguem org-wide. Nenhuma cláusula da policy anterior
+-- mudou — a disjunção do setor é ADITIVA.
+create or replace function public.fn_conversation_sector_scope()
+returns table (organization_id uuid, sector_id uuid)
+language plpgsql stable security definer
+set search_path = public
+as $$
+begin
+  return query
+    select m.organization_id, m.sector_id
+      from public.attendant_sector_members m
+     where m.user_id = auth.uid()
+       and public.fn_user_role_in_org(m.organization_id) is not null
+       and public.fn_user_role_in_org(m.organization_id) not in ('viewer','manager','admin')
+       and coalesce((select z.settings->>'visibility_mode'
+                       from public.organizations z
+                      where z.id = m.organization_id), 'own_and_unassigned') = 'own_and_sector';
+end;
+$$;
+
+revoke all on function public.fn_conversation_sector_scope() from public, anon;
+grant execute on function public.fn_conversation_sector_scope() to authenticated, service_role;
+
+comment on function public.fn_conversation_sector_scope() is
+  'Setores do chamador nas organizações em visibility_mode = own_and_sector (migration 9214). Uma linha por (organização, setor); zero linhas nos outros modos e para viewer/manager/admin. Lida por conversations_select; não concede leitura de nada por si.';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
@@ -73653,5 +73652,61 @@ comment on column public.llm_calls.prefixo_hash is
 create index if not exists idx_messages_derivacao_adiada
   on public.messages (organization_id, conversation_id, created_at desc)
   where (metadata ? 'derivacao_adiada') and media_storage_path is not null;
+
+notify pgrst, 'reload schema';
+
+-- ---- a conversa do SETOR: a disjunção na policy (migration 9214, #4022) ----
+-- A SEGUNDA metade do espelho da 9214. A função ficou na primeira (antes da
+-- VARREDURA anon, que proíbe create function depois dela); ESTA metade fica no
+-- fim porque referencia `conversations.sector_id`, coluna que só nasce no
+-- apêndice da 9062, mais abaixo. Não cria função: pode ficar aqui.
+do $conversations_select$ begin
+  drop policy if exists "conversations_select" on public.conversations;
+  create policy "conversations_select" on public.conversations
+    for select using (
+      (select public.fn_is_platform_admin())
+      or organization_id in (
+           select s.organization_id from public.fn_conversation_scope() s where s.org_wide_read
+         )
+      or (
+           assigned_to_user_id = auth.uid()
+           and organization_id in (select s.organization_id from public.fn_conversation_scope() s)
+         )
+      or (
+           assigned_to_user_id is null
+           and organization_id in (
+                select s.organization_id from public.fn_conversation_scope() s where s.sees_unassigned
+              )
+         )
+      or exists (
+           select 1
+             from public.conversation_participants cp
+            where cp.conversation_id = conversations.id
+              and cp.organization_id = conversations.organization_id
+              and cp.user_id = auth.uid()
+              and cp.left_at is null
+              and not exists (
+                select 1 from public.contacts pc
+                 where pc.id=conversations.contact_id
+                   and pc.organization_id=conversations.organization_id
+                   and pc.is_personal
+              )
+         )
+      or (
+           sector_id is not null
+           and (organization_id, sector_id) in (
+                select s.organization_id, s.sector_id
+                  from public.fn_conversation_sector_scope() s
+              )
+           and not exists (
+                select 1 from public.contacts pc
+                 where pc.id=conversations.contact_id
+                   and pc.organization_id=conversations.organization_id
+                   and pc.is_personal
+              )
+         )
+    );
+end $conversations_select$;
+
 
 notify pgrst, 'reload schema';
