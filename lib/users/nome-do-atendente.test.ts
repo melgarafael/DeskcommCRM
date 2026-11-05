@@ -13,6 +13,7 @@ const m = vi.hoisted(() => ({
 vi.mock("@/lib/audit", () => ({ isServiceRoleConfigured: () => m.servico }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: m.createAdminClient }));
 
+import { comNomeDoAtendente } from "./com-nome-do-atendente";
 import { nomesDosAtendentes } from "./nome-do-atendente";
 
 const ORG = "org-a";
@@ -122,5 +123,23 @@ describe("nomesDosAtendentes — só membros da organização ganham nome", () =
     const nomes = await nomesDosAtendentes(ORG, ["u-ana"]);
     expect(nomes.size).toBe(0);
     expect(m.createAdminClient).not.toHaveBeenCalled();
+  });
+});
+
+describe("comNomeDoAtendente — a coluna da conversa segue a mesma regra", () => {
+  it("o nome gravado na linha só sai para membro e ex-membro da organização", async () => {
+    const conversas = await comNomeDoAtendente(ORG, [
+      { assigned_to_user_id: "u-ana", assigned_to_user_name: "Ana" },
+      { assigned_to_user_id: "u-bia", assigned_to_user_name: "Bia" },
+      { assigned_to_user_id: "u-caio", assigned_to_user_name: "Caio" },
+      { assigned_to_user_id: null, assigned_to_user_name: "Caio" },
+    ]);
+    expect(conversas.map((c) => c.assigned_to_user_name)).toEqual(["Ana", "Bia", null, null]);
+  });
+
+  it("vínculo que não pôde ser lido: nenhuma linha sai com nome", async () => {
+    m.erroVinculos = { message: "fora do ar" };
+    const conversas = await comNomeDoAtendente(ORG, [{ assigned_to_user_id: "u-ana", assigned_to_user_name: "Ana" }]);
+    expect(conversas.map((c) => c.assigned_to_user_name)).toEqual([null]);
   });
 });

@@ -37,11 +37,8 @@
  *
  * ## Só membros da organização ganham nome
  *
- * O admin client lê QUALQUER usuário da instalação, e os ids chegam de linhas
- * de dados (autor de atividade, remetente de mensagem, quem reconheceu um
- * aviso). Por isso o nome só se resolve para quem tem vínculo em
- * `user_organizations` com a `orgId` do chamador — uma consulta só, para todos
- * os ids. Sem filtro de `revoked_at` de propósito: quem saiu da equipe segue
+ * O nome só se resolve para quem tem ou teve vínculo em `user_organizations`
+ * com a `orgId` do chamador — uma consulta só, para todos os ids. Sem filtro de `revoked_at` de propósito: quem saiu da equipe segue
  * com o nome no histórico que escreveu. Id sem vínculo, ou vínculo que não pôde
  * ser lido, fica sem nome (o chamador já trata a ausência).
  *

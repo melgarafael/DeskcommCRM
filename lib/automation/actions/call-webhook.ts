@@ -307,10 +307,10 @@ function localDoCompromisso(appointment: unknown): Record<string, unknown> | und
  *
  * O id vem do COMPROMISSO já hidratado pelo motor (`context.appointment`) —
  * nenhuma consulta nova no caminho padrão. O NOME é que não viaja no payload:
- * ele mora em `auth.users.user_metadata`, então só é buscado aqui, dentro de
- * `try` — sem service role (ou num teste sem rede) o corpo sai com o id, que
- * já responde "de quem era", em vez da entrega inteira falhar por causa de um
- * apelido.
+ * ele mora em `auth.users.user_metadata`, então só é buscado aqui, por
+ * `nomeDeUsuario`, que nunca lança e só nomeia quem tem ou teve vínculo com a
+ * organização da regra. Sem nome, o corpo sai com o id, que já responde "de
+ * quem era", em vez da entrega inteira falhar por causa de um apelido.
  */
 async function responsavelPublico(
   ctx: ActionCtx,
@@ -337,7 +337,7 @@ async function nomeDeUsuario(
   ownerId: string,
 ): Promise<{ name: string } | Record<string, never>> {
   const nome = (await nomesDosAtendentesCom(ctx.admin, ctx.organizationId, [ownerId])).get(ownerId);
-  return nome ? { name: nome } : {};
+  return typeof nome === "string" && nome ? { name: nome } : {};
 }
 
 /**
