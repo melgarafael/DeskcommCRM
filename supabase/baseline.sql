@@ -68879,6 +68879,40 @@ $fn$;
 
 notify pgrst, 'reload schema';
 
+-- ---- a campanha de entrada declara quem atende o PRIMEIRO turno (migration 9213) ----
+-- Espelho idempotente da 9213 (issue #4024). NÃO cria função nem gatilho: fica
+-- acima da VARREDURA anon por precaução, não por necessidade — a varredura só
+-- cura o que veio antes dela, e nenhum `create function` mora aqui.
+--
+-- `campaign_entry_agent_id`: o agente que a campanha de ENTRADA (frase do
+-- anúncio) declarou para o contato que ela trouxe. `campaign_entry_agent_claimed_at`:
+-- o carimbo de uso único do primeiro turno — depois dele o degrau não vale mais,
+-- e o id fica como rastro de por que aquele atendimento começou com ele.
+--
+-- A FK é COMPOSTA (organização, agente) para que agente de OUTRA organização não
+-- possa nem ser gravado; `on delete set null (campaign_entry_agent_id)` com a
+-- lista de colunas porque o SET NULL sem ela tentaria anular `organization_id`,
+-- que é NOT NULL, e o delete do agente explodiria em produção.
+alter table public.conversations
+  add column if not exists campaign_entry_agent_id uuid,
+  add column if not exists campaign_entry_agent_claimed_at timestamptz;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'conversations_campaign_entry_agent_org_fk') then
+    alter table public.conversations
+      add constraint conversations_campaign_entry_agent_org_fk
+      foreign key (organization_id, campaign_entry_agent_id)
+      references public.ai_agents (organization_id, id)
+      on delete set null (campaign_entry_agent_id);
+  end if;
+end $$;
+
+comment on column public.conversations.campaign_entry_agent_id is
+  'Agente declarado pela campanha de ENTRADA (frase do anúncio) cujo match trouxe este contato. Lido por resolve-turn-agent num degrau acima do roteador, e só enquanto campaign_entry_agent_claimed_at é nulo. Nulo = conversa não veio de campanha de entrada. Migration 9213.';
+comment on column public.conversations.campaign_entry_agent_claimed_at is
+  'Quando o primeiro turno usou o agente da campanha de entrada (update … returning, uso único). Carimbado = o degrau não vale mais nesta conversa; o campaign_entry_agent_id fica como rastro. Migration 9213.';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria

@@ -35,13 +35,18 @@ export const campanhaWhatsappSchema = z.object({
     valor: z.string().min(3).max(400),
   }),
   /**
-   * RESERVADO — ainda NÃO roteado. O match de campanha só torna o contato
-   * elegível (`ai_authorized_reason = campanha:<id>`); quem assume o turno é
-   * sempre o roteador / agente publicado da sessão (`resolve-turn-agent.ts`).
-   * Encaminhar por campanha exige levar o `agent_id` no payload do
-   * `ai_agent.dispatch_requested` e o `resolve-turn-agent` respeitá-lo — não
-   * feito nesta entrega. Aceito no schema para a config não quebrar quando a
-   * rota existir. Ver J20 (dívida declarada) no user-journey-map.
+   * Quem atende o PRIMEIRO turno do contato que chegou por esta campanha (#4024).
+   *
+   * A ingestão grava este `agent_id` na CONVERSA
+   * (`conversations.campaign_entry_agent_id`, migration 9213) quando a frase
+   * casa; o `resolve-turn-agent` o lê num degrau acima do roteador e carimba o
+   * uso único (`campaign_entry_agent_claimed_at`) no primeiro turno. Da segunda
+   * resposta em diante a conversa volta à régua do número — dono humano,
+   * roteador, agente publicado da sessão.
+   *
+   * Sem `agent_id` (ou com ele apontando para agente arquivado/sem versão
+   * publicada/de outra organização) nada muda: o contato continua elegível e
+   * quem responde é o agente do número. Ver J20 no user-journey-map.
    */
   agent_id: z.string().uuid().optional(),
   /** segmento/nicho, só para contexto e exibição (mesma pendência de tela do `label`). */
