@@ -98,6 +98,13 @@ async function login(page: Page): Promise<void> {
  */
 async function escolherNaTela(page: Page, nomeDaEtapa: string): Promise<void> {
   await page.goto(`${APP}/app/settings/tenant/pipelines`);
+  // #4083: cada funil nasce recolhido quando a empresa tem mais de um. O
+  // cabeçalho é o que abre — e só clica se estiver fechado, porque com um funil
+  // só ele já vem aberto e o clique cego o fecharia.
+  const cabecalhoDoFunil = page.getByTestId(`abrir-funil-${CLINICA}`);
+  if ((await cabecalhoDoFunil.getAttribute("aria-expanded")) === "false") {
+    await cabecalhoDoFunil.click();
+  }
   const secao = page.locator(`[data-testid="mapeamento-${CLINICA}"]`);
   await secao.locator(`[data-testid="etapa-${PASSO}"]`).waitFor({ state: "visible" });
   await secao.locator(`[data-testid="etapa-${PASSO}"]`).click();
