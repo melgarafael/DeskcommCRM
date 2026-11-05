@@ -7274,17 +7274,11 @@ create table if not exists followup_flow_pointers (
   active_version_id uuid references followup_flow_versions(id),
   draft_graph jsonb,
   handoff_policy text not null default 'pause' check (handoff_policy in ('pause','cancel','allow')),
-  -- #3974 (migration 9211): envia o passo do follow-up mesmo com a conversa
-  -- atribuída a uma pessoa. Desligada, o comportamento é o de antes.
-  send_when_assigned boolean not null default false,
   trigger_config jsonb not null default '{"kind":"manual"}',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (organization_id, name)
 );
-
-comment on column public.followup_flow_pointers.send_when_assigned is
-  'Envia o passo do follow-up mesmo com a conversa atribuída a uma pessoa (dono). Não vence force_human, ai_opt_out, contato interno, contato bloqueado nem as janelas de horário — e não acorda a IA.';
 
 create table if not exists followup_enrollments (
   id uuid primary key default gen_random_uuid(),
@@ -73437,5 +73431,15 @@ comment on column public.llm_calls.prefixo_hash is
 create index if not exists idx_messages_derivacao_adiada
   on public.messages (organization_id, conversation_id, created_at desc)
   where (metadata ? 'derivacao_adiada') and media_storage_path is not null;
+
+-- ---- followup send_when_assigned (migration 9213) ----
+-- #3974: envia o passo de TEXTO do follow-up mesmo com a conversa atribuída a uma
+-- pessoa. Fica no apêndice, e não no create table do bloco 0054, porque o
+-- update.sh pula aquele create em toda instalação que já tem a tabela.
+alter table public.followup_flow_pointers
+  add column if not exists send_when_assigned boolean not null default false;
+
+comment on column public.followup_flow_pointers.send_when_assigned is
+  'Envia o passo do follow-up mesmo com a conversa atribuída a uma pessoa (dono). Não vence force_human, ai_opt_out, contato interno, contato bloqueado nem as janelas de horário — e não acorda a IA.';
 
 notify pgrst, 'reload schema';

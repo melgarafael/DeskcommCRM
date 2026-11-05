@@ -1,6 +1,6 @@
 -- manifest: `followup_flow_pointers.send_when_assigned` (default false) — a opção por fluxo "enviar mesmo com a conversa atribuída a uma pessoa" (#3974). Desligada, o follow-up de etapa continua cancelado/adiado por `pessoa_no_comando`; ligada, o passo de texto sai e a IA continua calada.
 --
--- 9211 — o follow-up de etapa que quase nunca chega (#3974).
+-- 9213 — o follow-up de etapa que quase nunca chega (#3974).
 --
 -- ─── O que foi medido ───────────────────────────────────────────────────────
 --
