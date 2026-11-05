@@ -1,6 +1,6 @@
 -- manifest: **Encerrar a conversa passa a existir como fato no `event_log`.** `fn_service_status(…, 'closed')` mudava o status e gravava só a auditoria `conversation.closed`, que não é evento: nenhuma automação podia reagir ao fim do atendimento — e sem esse fato não existe pesquisa de satisfação nem qualquer fluxo pós-atendimento (#4023). Um gatilho `after update of status` em `conversations` emite `conversation.closed` (entidade `conversation`, organização de `new.organization_id`) quando a conversa ENTRA em `closed`, e só então: fechar de novo, conversa já encerrada ou status inalterado não geram linha, e o lote gera um fato por conversa. O emissor é gatilho porque o fechamento tem três escritores (rota de fechamento — reusada pelo lote —, `PATCH` de status e a marcação de contato pessoal) e o próximo caminho nasceria mudo. Falha ao emitir não derruba o fechamento: vira `WARNING` no log do banco. O tipo entra na lista de registro de `fn_event_log_e_registro` (ninguém o consome ainda, então a linha nasce `done` em vez de ficar `pending` para sempre) e na reserva de `emit_event` (sessão de usuário não forja encerramento). Sem tabela, coluna nem dado novo. Idempotente.
 
--- ---- o fechamento da conversa vira fato no `event_log` (migration 9211) ----
+-- ---- o fechamento da conversa vira fato no `event_log` (migration 9212) ----
 --
 -- `fn_service_status(…, 'closed')` mudava o status e o encerramento NÃO virava
 -- fato no barramento: a rota gravava só a auditoria `conversation.closed`, e
@@ -156,7 +156,7 @@ begin
   -- só o cron `lead-date-field-due` (sem sessão), e a partir dela ele alcança a
   -- origem e manda WhatsApp.
   -- Revogação do turno é fato da tomada nativa, nunca um pedido do login.
-  -- `conversation.closed` entra pela 9211: quem o emite é o gatilho do
+  -- `conversation.closed` entra pela 9212: quem o emite é o gatilho do
   -- encerramento (o servidor), e a partir dele uma automação reage ao
   -- atendimento encerrado e manda mensagem ao cliente — forjado por login,
   -- seria mensagem em nome de um encerramento que ninguém fez.

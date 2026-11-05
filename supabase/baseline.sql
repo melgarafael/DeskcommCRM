@@ -73433,7 +73433,7 @@ create index if not exists idx_messages_derivacao_adiada
   on public.messages (organization_id, conversation_id, created_at desc)
   where (metadata ? 'derivacao_adiada') and media_storage_path is not null;
 
--- ---- o fechamento da conversa vira fato no `event_log` (migration 9211) ----
+-- ---- o fechamento da conversa vira fato no `event_log` (migration 9212) ----
 --
 -- `fn_service_status(…, 'closed')` mudava o status e o encerramento NÃO virava
 -- fato no barramento: a rota gravava só a auditoria `conversation.closed`, e
@@ -73531,7 +73531,7 @@ begin
   -- só o cron `lead-date-field-due` (sem sessão), e a partir dela ele alcança a
   -- origem e manda WhatsApp.
   -- Revogação do turno é fato da tomada nativa, nunca um pedido do login.
-  -- `conversation.closed` entra pela 9211: quem o emite é o gatilho do
+  -- `conversation.closed` entra pela 9212: quem o emite é o gatilho do
   -- encerramento (o servidor), e a partir dele uma automação reage ao
   -- atendimento encerrado e manda mensagem ao cliente — forjado por login,
   -- seria mensagem em nome de um encerramento que ninguém fez.
