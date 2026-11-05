@@ -221,7 +221,7 @@ const MAPA: readonly (readonly [string, ExtensionArea])[] = [
 function segmentos(modelo: string): string[] | null {
   const m = /^\/api\/v1\/(.+?)\/?$/.exec(modelo.trim());
   if (!m) return null;
-  return m[1].split("/").filter((s) => s.length > 0);
+  return (m[1] ?? "").split("/").filter((s) => s.length > 0);
 }
 
 function ehParametro(segmento: string): boolean {
@@ -233,7 +233,7 @@ function casa(padrao: string, partes: string[], exato: boolean): boolean {
   if (partes.length < ps.length) return false;
   if (exato && partes.length !== ps.length) return false;
   // `[x]` do padrão só casa segmento dinâmico do modelo: `team/[id]` NÃO casa `team/assignable`.
-  return ps.every((p, i) => (ehParametro(p) ? ehParametro(partes[i]) : p === partes[i]));
+  return ps.every((p, i) => (ehParametro(p) ? ehParametro(partes[i] ?? "") : p === partes[i]));
 }
 
 function metodoNormalizado(metodo: string): string {
