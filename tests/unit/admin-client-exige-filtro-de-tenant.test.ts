@@ -179,13 +179,6 @@ const ESTEIRAS: readonly { caminho: string; motivo: string }[] = [
  */
 const CHAVE_SEM_TENANT_LIBERADA: readonly { arquivo: string; tabela: string; motivo: string }[] = [
   {
-    arquivo: "app/api/v1/ai/skills/[name]/route.ts",
-    tabela: "skill_versions",
-    motivo:
-      "Versão de plataforma tem organization_id nulo. O id vem de skill_pointers, " +
-      "lido com filtro de organização logo acima.",
-  },
-  {
     arquivo: "app/app/ai/skills/page.tsx",
     tabela: "skill_versions",
     motivo:

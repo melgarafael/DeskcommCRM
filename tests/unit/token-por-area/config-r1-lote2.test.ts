@@ -738,7 +738,7 @@ describe("POST /message-templates com token", () => {
   });
 
   it("respeita requireSupportWrite (suporte bloqueia antes de qualquer coisa)", async () => {
-    vi.mocked(requireSupportWrite).mockResolvedValue(new Response(null, { status: 423 }));
+    vi.mocked(requireSupportWrite).mockResolvedValue(new Response(null, { status: 423 }) as never);
     tokenDe(ORG_A, TOKEN_A, "admin");
     const res = await rotaModelos.POST(
       reqDe("POST", "/api/v1/message-templates", TOKEN_A, { title: "x", body: "x", shared: true }),

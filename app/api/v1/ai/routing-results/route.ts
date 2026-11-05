@@ -42,7 +42,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       requestId, resource: 'jev_router_decisions', role: 'manager', scope: 'config:read', tokenRole: 'admin',
     });
     if (!authz.ok) return authz.response;
-    const teto = await tetoDeEscritaDoToken(authz, 'jev_router_decisions', requestId);
+    const teto = await tetoDeEscritaDoToken(authz, "jev_router_decisions", requestId);
     if (teto) return teto;
     organizationId = authz.organizationId;
     podeRevisar = true;

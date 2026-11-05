@@ -751,7 +751,7 @@ describe("o que a matriz não mede", () => {
   });
 
   it("PUT com token respeita requireSupportWrite (suporte bloqueia antes de qualquer coisa)", async () => {
-    vi.mocked(requireSupportWrite).mockResolvedValue(new Response(null, { status: 423 }));
+    vi.mocked(requireSupportWrite).mockResolvedValue(new Response(null, { status: 423 }) as never);
     tokenDe(ORG_A, TOKEN_A, "admin");
     const res = await rotaSkill.PUT(
       reqDe("PUT", `/api/v1/ai/skills/${NOME_SKILL_A}`, TOKEN_A, {
