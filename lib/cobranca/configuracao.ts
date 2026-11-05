@@ -39,10 +39,14 @@ export async function provedorDaInstalacao(): Promise<ProvedorDeCobranca | null>
  * `painel-nao-promete-o-que-nao-cumpre` procura `valorDaInstalacao("<CHAVE>")`.
  */
 export async function chaveDoProvedor(id: ProvedorDeCobranca): Promise<string | null> {
-  return doBanco(id === "stripe" ? await valorDaInstalacao("STRIPE_SECRET_KEY") : await valorDaInstalacao("ASAAS_API_KEY"));
+  if (id === "stripe") return doBanco(await valorDaInstalacao("STRIPE_SECRET_KEY"));
+  if (id === "efi") return doBanco(await valorDaInstalacao("EFI_CLIENT"));
+  return doBanco(await valorDaInstalacao("ASAAS_API_KEY"));
 }
 
 /** O segredo com que o aviso do provedor é conferido: o `whsec_` da Stripe, o token do Asaas. */
 export async function segredoDoWebhook(id: ProvedorDeCobranca): Promise<string | null> {
-  return doBanco(id === "stripe" ? await valorDaInstalacao("STRIPE_WEBHOOK_SECRET") : await valorDaInstalacao("ASAAS_WEBHOOK_TOKEN"));
+  if (id === "stripe") return doBanco(await valorDaInstalacao("STRIPE_WEBHOOK_SECRET"));
+  if (id === "efi") return doBanco(await valorDaInstalacao("EFI_WEBHOOK_TOKEN"));
+  return doBanco(await valorDaInstalacao("ASAAS_WEBHOOK_TOKEN"));
 }

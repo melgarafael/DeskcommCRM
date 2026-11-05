@@ -139,8 +139,15 @@ export interface AdaptadorDeCobranca {
    * Asaas `GET /customers/{id}`).
    */
   clienteExiste(clienteRef: string): Promise<boolean>;
-  /** null = inválido. Corpo CRU. Tempo constante. Nunca lança. */
-  verificarWebhook(corpoCru: string, headers: Headers, segredo: string, agora: Date): SinalDoWebhook | null;
+  /**
+   * null = inválido. Corpo CRU. Tempo constante. Nunca lança.
+   *
+   * `url` é a URL do aviso COMO CHEGOU. Stripe e Asaas autenticam no cabeçalho e
+   * a ignoram; o Efi não assina o callback (manda só `notification=<token>`), e
+   * a única coisa que ele ecoa é a URL que registramos na cobrança — é dela que
+   * saem o token e a empresa dona. Sem ela, um aviso do Efi é recusado.
+   */
+  verificarWebhook(corpoCru: string, headers: Headers, segredo: string, agora: Date, url?: URL): SinalDoWebhook | null;
   garantirCliente(org: { id: string; nome: string; email: string; documento: string | null }): Promise<string>;
   iniciarAssinatura(p: {
     clienteRef: string;
@@ -152,7 +159,13 @@ export interface AdaptadorDeCobranca {
   }): Promise<{ url: string; expiraEm: Date | null; assinaturaRef: string | null; sessaoId: string | null }>;
   iniciarAjusteProporcional(p: { clienteRef: string; orgId: string; plano: PlanoParaProvedor; valorCents: number; chaveIdempotencia: string; urlDeVolta: string }): Promise<{ pagamentoRef: string; url: string }>;
   lerPagamentoProporcional(pagamentoRef: string): Promise<"pendente" | "pago" | "encerrado">;
-  lerSituacao(p: { clienteRef: string }): Promise<Situacao>;
+  /**
+   * `assinaturaRef` é a assinatura que quem chama JÁ tem na linha. O Efi não tem
+   * cliente nem lista assinaturas por cliente: com a referência, a leitura é a
+   * dela (`GET /v1/subscription/:id`); sem ela, o adaptador cai na lista de
+   * cobranças da empresa. Stripe e Asaas ignoram o campo.
+   */
+  lerSituacao(p: { clienteRef: string; assinaturaRef?: string | null }): Promise<Situacao>;
   /** Atualiza o preço recorrente sem mudar a data de renovação. Pode recusar com ErroDoProvedor não transitório. */
   trocarPlano(p: { assinaturaRef: string; plano: PlanoParaProvedor }): Promise<void>;
   /**

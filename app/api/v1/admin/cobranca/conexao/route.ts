@@ -37,6 +37,7 @@ import { avisarTrocaDeChave } from "@/lib/cobranca/emails";
 import { adaptador, modoDoProvedor } from "@/lib/cobranca/provedores";
 import { baseDeTesteDaCobranca } from "@/lib/cobranca/provedores/base-de-teste";
 import { ErroDoProvedor } from "@/lib/cobranca/provedores/contrato";
+import { credencialDaChave } from "@/lib/cobranca/provedores/efi";
 import { aplicarRegua } from "@/lib/cobranca/sincronizar";
 import { urlDoWebhookDaCobranca } from "@/lib/cobranca/url";
 import { PROVEDORES_DE_COBRANCA, type ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
@@ -60,6 +61,7 @@ const corpoSchema = z.strictObject({
 const CREDENCIAIS: Record<ProvedorDeCobranca, { chave: string; segredo: string }> = {
   stripe: { chave: "STRIPE_SECRET_KEY", segredo: "STRIPE_WEBHOOK_SECRET" },
   asaas: { chave: "ASAAS_API_KEY", segredo: "ASAAS_WEBHOOK_TOKEN" },
+  efi: { chave: "EFI_CLIENT", segredo: "EFI_WEBHOOK_TOKEN" },
 };
 
 type MotivoDaRecusa = "chave_invalida" | "sem_permissao" | "provedor_fora" | "modo_divergente";
@@ -76,6 +78,12 @@ const MOTIVO_DA_RECUSA: Record<ProvedorDeCobranca, Record<MotivoDaRecusa, string
     sem_permissao: "Esta chave do Asaas não tem permissão para cobrar. Gere uma chave nova no Asaas, em Integrações › Chaves de API.",
     provedor_fora: "O Asaas não respondeu. Tente de novo em alguns minutos.",
     modo_divergente: "Com o endereço de teste ligado, só vale a chave do sandbox do Asaas ($aact_hmlg_).",
+  },
+  efi: {
+    chave_invalida: "O Efi não aceitou esta credencial. Confira o Client-Id e o Client-Secret da aplicação (Produção e Homologação são pares DIFERENTES) e cole no formato ambiente:client_id:client_secret.",
+    sem_permissao: "Esta aplicação do Efi não tem a API de Cobranças habilitada. No painel do Efi, edite a aplicação e ative a API de Cobranças.",
+    provedor_fora: "O Efi não respondeu. Tente de novo em alguns minutos.",
+    modo_divergente: "Com o endereço de teste ligado, só vale a credencial de homologação (comece com teste:).",
   },
 };
 
@@ -103,6 +111,14 @@ export async function POST(req: NextRequest) {
   // Chave antiga do Asaas, ainda válida, mas sem a marca do ambiente: não dá para
   // saber se é sandbox ou produção. "Confira se copiou inteira" seria mentira para
   // quem copiou certo; a frase diz o que fazer.
+  if (provedor === "efi" && credencialDaChave(chave) === null) {
+    return fail(
+      "chave_recusada",
+      "A credencial do Efi vai no formato ambiente:client_id:client_secret — por exemplo teste:1a2b3c4d5e6f:9f8e7d6c5b4a. O ambiente é teste (homologação) ou producao.",
+      422,
+      { requestId, details: { motivo: "chave_formato_invalido" } },
+    );
+  }
   if (provedor === "asaas" && /^\$aact_(?!prod_|hmlg_)/.test(chave)) {
     return fail(
       "chave_recusada",

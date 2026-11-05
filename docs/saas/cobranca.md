@@ -1,6 +1,6 @@
 # Cobrar os seus clientes
 
-Com a **Stripe** ou o **Asaas** conectados, o próprio DeskcommCRM cobra cada empresa-cliente,
+Com a **Stripe**, o **Asaas** ou o **Efi Bank** conectados, o próprio DeskcommCRM cobra cada empresa-cliente,
 avisa quem atrasou, suspende quem não paga e libera quem pagou. A cobrança vem **desligada**
 em toda instalação: quem não revende nunca a vê.
 
@@ -11,7 +11,7 @@ O desenho e as decisões estão na spec
 [`../superpowers/specs/2026-09-29-cobranca-do-revendedor-design.md`](../superpowers/specs/2026-09-29-cobranca-do-revendedor-design.md)
 e na [ADR-0004](../adr/0004-cobranca-do-revendedor.md).
 
-## Stripe ou Asaas
+## Stripe, Asaas ou Efi Bank
 
 | | Stripe (conta Brasil) | Asaas |
 |---|---|---|
@@ -22,7 +22,16 @@ e na [ADR-0004](../adr/0004-cobranca-do-revendedor.md).
 | Nota fiscal | O DeskcommCRM não emite | O DeskcommCRM não emite; a emissão, se você quiser, é no painel do Asaas |
 | Preço mínimo do plano | R$ 5,00 | R$ 5,00 |
 
-Vende para pequena empresa brasileira que paga no Pix ou no boleto? **Asaas.** Cliente que
+**Efi Bank.** Boleto **recorrente** com link de pagamento do próprio Efi, que também aceita Pix e
+cartão na página dele. O cliente paga cada fatura; não é débito automático. Diferenças que
+importam: o Efi **não tem cadastro de cliente** (o pagador é informado na página dele, a cada
+fatura), **não tem portal** (gerenciar é abrir a fatura aberta) e **não aplica troca de plano** na
+assinatura — a troca passa a valer no próximo ciclo assistido, e a tela diz isso. O aviso de
+pagamento **não é cadastrado no painel do Efi**: a URL e o token viajam em cada cobrança criada
+por esta instalação, então não há passo manual e não há o que colar no painel dele.
+
+Vende para pequena empresa brasileira que paga no Pix ou no boleto? **Asaas** (fatura avulsa) ou
+**Efi Bank** (boleto recorrente). Cliente que
 prefere cartão no automático? **Stripe.** Uma instalação trabalha com um provedor por vez.
 Trocar de provedor só é possível enquanto nenhuma empresa paga de verdade pelo provedor atual:
 depois disso a tela recusa, para não deixar essas assinaturas sem leitura.
@@ -74,6 +83,22 @@ cria o produto do plano na Stripe.
    aviso** e o **Token de autenticação**, marque os eventos listados e clique em **Pronto, já
    cadastrei**. O token aparece **uma vez só**: se sair da tela sem copiá-lo, conecte de novo.
 
+### Efi Bank
+
+1. No painel do Efi, em **Aplicações**, abra (ou crie) a aplicação e habilite a **API de Cobranças**.
+   Homologação e produção são **pares diferentes** de Client-Id/Client-Secret: a credencial de
+   homologação só vale no ambiente de teste, e vice-versa.
+2. Monte a credencial no formato `ambiente:client_id:client_secret` — por exemplo
+   `teste:1a2b3c4d5e6f:9f8e7d6c5b4a` — e cole em **Credencial do Efi**.
+3. Clique em **Testar e conectar**. O sistema autentica em `/v1/authorize` (OAuth2) e mostra o selo
+   **MODO DE TESTE** com só os 4 últimos caracteres do segredo.
+4. Aparece o quadro **"O aviso de pagamento no Efi"** com a URL e o token: **não há nada a cadastrar
+   no painel do Efi**. Eles são levados em cada cobrança criada por esta instalação, e o token fica
+   guardado para conferir quem chamou.
+
+Se a credencial estiver errada, o Efi responde 401 e a tela diz para conferir o par
+(Client-Id/Client-Secret) daquele ambiente — os outros provedores seguem intactos.
+
 Quem avisa o pagador é a régua do sistema, e ele pede ao Asaas que não mande os avisos dele.
 Mesmo assim, quem paga pode receber também o aviso padrão do Asaas: na conta de testes, a
 configuração de avisos do cliente continuou ligada (8 de 8 avisos com algum canal, em
@@ -121,10 +146,13 @@ Aba **Planos**:
      desligado), clique em **Assinar** e depois em **Abrir a fatura**. Confirme o pagamento de
      teste pelo sandbox, volte e clique em **Já paguei**: Pix confirma em minutos, boleto em
      até 1 dia útil.
+   - **Efi Bank:** clique em **Assinar**, escolha **boleto** (ou cartão) na página do Efi e pague
+     no ambiente de homologação; volte e clique em **Já paguei**. O boleto de homologação não é
+     liquidado automaticamente, então use o simulador do próprio Efi ou o cartão de teste dele.
 3. Em **Cobrança › Visão geral**, a lista "Primeira cobrança: o que falta" mostra o que ainda
    falta.
-4. Deu certo? Volte à **Conexão** e troque pela chave de produção (`sk_live_`/`rk_live_` ou
-   `$aact_prod_`). Até lá, clientes reais **não conseguem pagar**, e uma faixa avisa disso. Se
+4. Deu certo? Volte à **Conexão** e troque pela credencial de produção (`sk_live_`/`rk_live_`,
+   `$aact_prod_` ou `producao:client_id:client_secret`). Até lá, clientes reais **não conseguem pagar**, e uma faixa avisa disso. Se
    alguma empresa assinou em teste, a tela avisa que ela volta para o teste grátis; confirme em
    **Publicar mesmo assim**.
 
@@ -175,6 +203,9 @@ você (Tenants › empresa › card Cobrança › **Trocar plano**). As regras:
 - **Você (o dono) trocando o plano depois do teste**, para cima ou para baixo, também fica
   agendado: plano negociado não paga diferença.
 - **Em atraso**, ou com o teste vencido sem assinatura, a troca é recusada: regularize antes.
+- **No Efi Bank**, a troca **não é aplicada na assinatura** (o Efi só edita assinatura de cartão, e
+  aqui o checkout é link): o preço novo passa a valer no próximo ciclo assistido pela régua, e a
+  Visão geral registra `preco_no_provedor: recusado` na auditoria do ciclo.
 - **No Asaas**, com a mensalidade do período ainda em aberto, a troca é recusada até o pagamento
   ser confirmado.
 - **Só entre planos com o mesmo intervalo.** Mensal para anual (ou o contrário) é recusado:
