@@ -967,6 +967,10 @@ export const AUDIT_ACTIONS = [
   // desinstalar. `metadata.disabled` diz o sentido. Uma linha só, da instância: não há vínculo por
   // organização a desligar.
   "extension.switched",
+  // O segredo do módulo `connected` foi gerado de novo (spec 33, F2, tarefa 4): o módulo atual deixa de
+  // funcionar até receber o novo e os tokens vivos da instalação foram revogados. `metadata` leva só a
+  // contagem de organizações; o segredo, em claro ou cifrado, NUNCA entra na linha.
+  "extension.secret_rotated",
   // Nome próprio, e não `extension.deactivated`: na auditoria da organização, "nós desligamos" e
   // "o responsável pela instalação removeu" precisam ser distinguíveis sem abrir os metadados.
   "extension.deactivated_by_removal",
