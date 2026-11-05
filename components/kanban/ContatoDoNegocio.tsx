@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { NewContactDialog } from "@/components/contacts/NewContactDialog";
-import { usePermission } from "@/hooks/auth/AuthProvider";
 import { dadosDoCardParaContato } from "@/lib/leads/dados-do-card-para-contato";
 import type { Lead } from "@/lib/types/leads";
 import { useState, type FormEvent } from "react";
@@ -53,6 +52,12 @@ interface Props {
    */
   leadId?: string | null;
   lead?: Lead;
+  /**
+   * Vem do pai (`LeadDossier`, que já lê `usePermission`) em vez de ser lida
+   * aqui: assim o componente segue renderizando sem `AuthProvider`, como os
+   * testes do dossiê o montam. Ausente = sem o botão "Criar contato".
+   */
+  podeCriarContato?: boolean;
 }
 
 /**
@@ -95,9 +100,14 @@ interface Props {
  * desvinculado por esta tela. É o que permite desfazer sem inventar estado no
  * pai.
  */
-export function ContatoDoNegocio({ contactId, pipelineId, leadId, lead }: Props) {
+export function ContatoDoNegocio({
+  contactId,
+  pipelineId,
+  leadId,
+  lead,
+  podeCriarContato = false,
+}: Props) {
   const t = useT();
-  const podeCriar = usePermission("contact.create");
   const qc = useQueryClient();
   const [criando, setCriando] = useState(false);
   const [vinculo, setVinculo] = useState<string | null | undefined>(undefined);
@@ -118,7 +128,7 @@ export function ContatoDoNegocio({ contactId, pipelineId, leadId, lead }: Props)
           onVinculado={(id) => setVinculo(id)}
         />
       )}
-      {!efetivo && lead && leadId === lead.id && podeCriar && (
+      {!efetivo && lead && leadId === lead.id && podeCriarContato && (
         <>
           <Button type="button" size="sm" variant="outline" onClick={() => setCriando(true)}>
             {t("Criar contato")}

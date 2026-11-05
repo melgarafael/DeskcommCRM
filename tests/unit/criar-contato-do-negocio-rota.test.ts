@@ -29,8 +29,9 @@ beforeEach(() => {
 });
 it("usa a empresa autorizada pelo guard e o ID do negócio da rota", async () => {
   expect((await POST(req(), { params: Promise.resolve({ id: lead }) })).status).toBe(201);
-  expect(m.handler.mock.calls[0][1].organization_id).toBe("synthetic-trusted-org");
-  expect(m.handler.mock.calls[0][3]).toBe(lead);
+  const [, ctx, , leadId] = m.handler.mock.calls[0]!;
+  expect(ctx.organization_id).toBe("synthetic-trusted-org");
+  expect(leadId).toBe(lead);
 });
 it("não chama o handler com usuário sem escrita ou ID inválido", async () => {
   m.allowed = false;

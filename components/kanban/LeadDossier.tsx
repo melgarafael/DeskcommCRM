@@ -148,6 +148,7 @@ export function LeadDossier({
     false;
   // A MESMA régua do arrasto e do "Mover para…" do card (`KanbanCardActions`).
   const podeMoverCard = usePermission("pipeline.move_card");
+  const podeCriarContato = usePermission("contact.create");
   // Tarefas são `agent`+, a mesma régua da tela de Tarefas e da rota — e o
   // suporte temporário só lê, como lá (`requireSupportWrite`).
   const podeEditarTarefas =
@@ -277,10 +278,11 @@ export function LeadDossier({
           aoAlternar={alternar}
         >
           <ContatoDoNegocio
-            lead={lead}
             contactId={lead.contact_id}
             pipelineId={pipelineId}
             leadId={lead.id}
+            lead={lead}
+            podeCriarContato={podeCriarContato}
           />
         </SecaoDoDossie>
 
