@@ -211,4 +211,9 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   // `resolveAuthDual`: token com `config:write` e papel admin (`tokenRole`)
   // no PATCH e no DELETE. `[id]` é forma de UUID (a rota recusa o resto com 404).
   "/api/v1/attendants/sectors/[id]",
+
+  // attendants/sectors (R1). Quem autentica é a própria rota, por `resolveAuthDual`:
+  // token com `config:read` (GET) ou `config:write` (POST) e papel admin
+  // (`tokenRole`). Caminho literal, sem segmento dinâmico.
+  "/api/v1/attendants/sectors",
 ];
