@@ -135,4 +135,18 @@ describe("isPublicPath", () => {
   it("e não libera nenhum sub-path dela de carona", () => {
     expect(isPublicPath("/account-suspended/qualquer")).toBe(false);
   });
+
+  /**
+   * A busca do token do módulo `connected` (spec 33, F2) é chamada pelo servidor do módulo, sem cookie.
+   * Entra SÓ o caminho exato: `/api/v1/extensions/` tem irmãos de sessão (girar segredo, instalar,
+   * operações) que não podem nascer públicos de carona.
+   */
+  it("libera a busca do token do módulo, e só o caminho exato", () => {
+    expect(isPublicPath("/api/v1/extensions/token")).toBe(true);
+    expect(isPublicPath("/api/v1/extensions/token/x")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/token/")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/tokens")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/11111111-1111-4111-8111-111111111111/segredo")).toBe(false);
+  });
 });

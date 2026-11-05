@@ -971,6 +971,10 @@ export const AUDIT_ACTIONS = [
   // funcionar até receber o novo e os tokens vivos da instalação foram revogados. `metadata` leva só a
   // contagem de organizações; o segredo, em claro ou cifrado, NUNCA entra na linha.
   "extension.secret_rotated",
+  // O módulo `connected` buscou um token curto (spec 33, F2, tarefa 5). Uma linha por busca bem-sucedida,
+  // na organização do par. `metadata` leva só o id da instalação e o slug do módulo; o texto do token e o
+  // hash NUNCA entram na linha.
+  "extension.token_issued",
   // Nome próprio, e não `extension.deactivated`: na auditoria da organização, "nós desligamos" e
   // "o responsável pela instalação removeu" precisam ser distinguíveis sem abrir os metadados.
   "extension.deactivated_by_removal",
