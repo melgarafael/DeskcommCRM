@@ -56,7 +56,6 @@ function formatarQuando(iso: string): string {
   return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
-/** Botão ao lado do Enviar, com o número de mensagens agendadas do contato. */
 /** Chave da lista de agendamentos de um contato: o badge e o popup dividem o mesmo cache. */
 const chaveDaLista = (contactId: string) => ["mensagens-agendadas", contactId] as const;
 
@@ -66,17 +65,29 @@ function buscarAgendamentos(contactId: string) {
   );
 }
 
+/**
+ * Consulta compartilhada pelo badge e pelo popup. Se a primeira busca falhar
+ * (timeout com o servidor ocupado, rede oscilando), o badge fica em branco até
+ * alguém recarregar: por isso tenta de novo e busca de novo ao voltar à aba.
+ */
+function opcoesDaLista(contactId: string) {
+  return {
+    queryKey: chaveDaLista(contactId),
+    queryFn: () => buscarAgendamentos(contactId),
+    staleTime: 0,
+    retry: 3,
+    refetchOnWindowFocus: true,
+  };
+}
+
+/** Botão ao lado do Enviar, com o número de mensagens agendadas do contato. */
 export function MensagensAgendadasBotao(props: Props) {
   const [aberto, setAberto] = useState(false);
   const { contactId } = props;
 
   // Mesma consulta do popup: sempre que o botão monta, busca de novo, e o popup
   // invalida esta chave ao criar ou cancelar, então o número nunca fica para trás.
-  const consulta = useQuery({
-    queryKey: chaveDaLista(contactId),
-    queryFn: () => buscarAgendamentos(contactId),
-    staleTime: 0,
-  });
+  const consulta = useQuery(opcoesDaLista(contactId));
   const total = consulta.data?.data.length ?? 0;
 
   return (
@@ -114,11 +125,7 @@ export function MensagensAgendadasDialog({
   const t = useT();
   const [criando, setCriando] = useState(false);
   const qc = useQueryClient();
-  const consulta = useQuery({
-    queryKey: chaveDaLista(contactId),
-    queryFn: () => buscarAgendamentos(contactId),
-    staleTime: 0,
-  });
+  const consulta = useQuery(opcoesDaLista(contactId));
   const lista = consulta.data?.data ?? [];
   const carregando = consulta.isPending;
   const atualizarContagem = () => qc.invalidateQueries({ queryKey: chaveDaLista(contactId) });
