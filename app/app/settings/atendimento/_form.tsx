@@ -136,7 +136,14 @@ function Escolha({
   );
 }
 
-export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
+export function AtendimentoForm({
+  initial,
+  setoresLigado = false,
+}: {
+  initial: AtendimentoConfig;
+  /** Módulo opcional `setores` (doc 213): desligado, o modo do setor não é oferecido. */
+  setoresLigado?: boolean;
+}) {
   const t = useT();
   const [form, setForm] = useState<AtendimentoConfig>(initial);
   const [salvo, setSalvo] = useState<AtendimentoConfig>(initial);
@@ -240,7 +247,9 @@ export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
           </p>
         </div>
         <div className="space-y-2">
-          {VISIBILITY_MODES.map((v) => (
+          {VISIBILITY_MODES.filter(
+            (v) => v !== "own_and_sector" || setoresLigado || initial.visibility_mode === v,
+          ).map((v) => (
             <Escolha
               key={v}
               nome="visibilidade"

@@ -5,7 +5,7 @@ titulo: O atendente vê as conversas do próprio setor, inclusive as que estão 
 ---
 
 Em Configurações → Distribuição de atendimento, «O que cada atendente enxerga»
-ganhou um quarto modo: **«Os seus e os do seu setor»**. Com ele, o atendente vê a
+ganhou um quarto modo quando os setores de atendimento estão ligados: **«Os seus e os do seu setor»**. Com ele, o atendente vê a
 própria carteira e as conversas que estão no setor dele — inclusive as que estão
 com um colega do mesmo setor — e continua sem ver as conversas dos outros
 setores. É o modo para cobrir férias e ausências sem abrir o Inbox inteiro.

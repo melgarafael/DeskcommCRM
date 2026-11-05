@@ -99,7 +99,7 @@ export function rotuloDoPapel(papel: string): string {
  * `own_and_sector` (#4022) é o único que olha para o SETOR: o atendente vê as
  * conversas cujo `sector_id` é de um setor em que ele está vinculado, inclusive
  * as que estão com um colega do setor. Quem o aplica é `conversations_select`
- * (via `fn_conversation_sector_scope`, migration 9213); nos LEADS o mesmo valor
+ * (via `fn_conversation_sector_scope`, migration 9214); nos LEADS o mesmo valor
  * cai no `else` de `fn_can_view_lead`, isto é, negócio continua só os seus.
  */
 export const VISIBILITY_MODES = ["all", "own_and_unassigned", "own", "own_and_sector"] as const;
