@@ -151,11 +151,11 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
 
   // settings. Quem autentica é a própria rota, por `resolveAuthDual`: token com
   // `config:read` (GET) ou `config:write` (escrita) e papel admin (`tokenRole`).
-  // `routing/channels` (GET e PATCH) e `proposal-templates/importar` (POST)
-  // seguem só de sessão e não entram de carona: o GET de `routing/channels` usa
-  // `allowPlatformAdmin` e `mfaEmDivida` (sessão), o PATCH chama
-  // `fn_set_channel_routing` (exige `auth.uid()`), e `importar` usa `getSkillsPool`
-  // (pg Pool cru). `[slug]` é a classe do regex da rota (`[a-z0-9_]{1,100}`): o
+  // `routing/channels` aceita token só no GET (a sessão mantém `allowPlatformAdmin`
+  // e `mfaEmDivida`; o ramo do token é à parte). O PATCH segue só de sessão
+  // (`fn_set_channel_routing` exige `auth.uid()`) e recusa o token com 401 no
+  // `requireRole`. `proposal-templates/importar` (POST) segue só de sessão
+  // (`getSkillsPool`, pg Pool cru). `[slug]` é a classe do regex da rota (`[a-z0-9_]{1,100}`): o
   // irmão literal `importar` cai nessa classe, e a rota responde 401 pelo
   // `requireRole` de sessão.
   "/api/v1/settings/agenda-apresentacao",
@@ -165,6 +165,7 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/settings/proposals",
   "/api/v1/settings/prospeccao",
   "/api/v1/settings/routing",
+  "/api/v1/settings/routing/channels",
   "/api/v1/settings/sons",
   "/api/v1/settings/task-plans",
 
