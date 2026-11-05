@@ -150,12 +150,22 @@ describe("os dois lugares que abriam a tela continuam perguntando ao rascunho", 
     ).toMatch(/\n\s*draft_graph,/);
   });
 
-  it("a página do construtor resolve o rascunho pela regra", async () => {
+  it("a página do construtor lê pelo carregador compartilhado", async () => {
     const fonte = await ler("app/app/ai/followups/[id]/page.tsx");
-    expect(fonte, "a página parou de importar a regra").toMatch(
-      /import \{ rascunhoDoFluxo \} from "@\/lib\/followup\/rascunho"/,
+    expect(fonte, "a página voltou a montar a leitura por conta própria").toMatch(
+      /const flow = await carregarFluxoParaEdicao\(/,
     );
-    expect(fonte, "o call site da página sumiu — o canvas volta a abrir em branco").toMatch(
+    expect(fonte, "o resultado do carregador deixou de chegar ao construtor").toMatch(
+      /initialData=\{flow\}/,
+    );
+  });
+
+  it("o carregador do construtor resolve o rascunho pela regra", async () => {
+    const fonte = await ler("lib/followup/editar.ts");
+    expect(fonte, "o carregador parou de importar a regra").toMatch(
+      /import \{ rascunhoDoFluxo \} from "\.\/rascunho"/,
+    );
+    expect(fonte, "o call site do carregador sumiu — o canvas volta a abrir em branco").toMatch(
       /const draft_graph = await rascunhoDoFluxo\(/,
     );
     expect(
