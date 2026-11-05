@@ -13,7 +13,9 @@
  * - recusado duas vezes: sobe o mesmo erro de antes, e a fila re-tenta como sempre;
  * - falha do fornecedor não é recusa: sobe na hora, sem 2ª chamada;
  * - a correção nomeia os campos que não existem e lista os certos, tirados do schema;
- * - o `.strict()` da declaração continua valendo — a correção não apaga campo.
+ * - o `.strict()` da declaração continua valendo — a correção não apaga campo;
+ * - a reserva de formato: recusado duas vezes num modelo que não é o do agente, a 3ª
+ *   chamada vai ao modelo do agente, com o mesmo ajuste — e só nesse caso.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -27,6 +29,7 @@ import {
   fecharOTurno,
   FechamentoRecusado,
   parseCheckpointText,
+  tirarLinkDaReuniao,
 } from "@/lib/agent-engine/agent/abertura/checkpoint";
 import { declaracaoDoTurnoSchema } from "@/lib/agent-engine/agent/declaracao";
 
@@ -149,4 +152,90 @@ describe("o fechamento do turno corrige antes de repetir o turno", () => {
     expect(r.content.declaracao?.promessas).toEqual(corrigido.declaracao.promessas);
   });
 
+});
+
+/**
+ * A RESERVA DE FORMATO: com um modelo de checkpoint diferente do modelo do agente
+ * (binding no painel), a 2ª recusa vira uma 3ª chamada no modelo do agente — nunca
+ * o turno inteiro repetido pela fila. Sem reserva, sem `model` ou com o próprio
+ * modelo do agente recusando, o caminho é o de antes, byte a byte.
+ */
+describe("a reserva de formato do fechamento", () => {
+  function noModelo(model: string | undefined, ...respostas: string[]) {
+    const m = modelo(...respostas);
+    const pedir = vi.fn(async (extra: Extra) => ({ ...(await m.pedir(extra)), ...(model ? { model } : {}) }));
+    return { pedir, chamadas: m.chamadas };
+  }
+
+  it("⭐ duas recusas no modelo do ponto: a 3ª chamada vai ao modelo do agente, sem as respostas recusadas, e o conteúdo dela vale", async () => {
+    const ponto = noModelo("barato", COM_CHAVE_A_MAIS, COM_CHAVE_A_MAIS);
+    const reservaPedir = vi.fn(async () => ({ text: VALIDO, callId: "call-3", model: "agente" }));
+    const log = { warn: vi.fn() };
+    const r = await fecharOTurno({ pedir: ponto.pedir, reserva: { modelo: "agente", pedir: reservaPedir }, log });
+
+    expect(ponto.pedir).toHaveBeenCalledTimes(2);
+    expect(reservaPedir).toHaveBeenCalledTimes(1);
+    expect(reservaPedir).toHaveBeenCalledWith();
+    expect(r.corrigido).toBe(true);
+    expect(r.resposta.callId).toBe("call-3");
+    expect(r.content.next_action).toBe("confirmar a entrega");
+    // O log diz quem recusou e o problema — nunca o texto do modelo.
+    expect(log.warn).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(log.warn.mock.calls[1])).toContain("barato");
+    expect(JSON.stringify(log.warn.mock.calls[1])).not.toContain("resumo");
+  });
+
+  it("o ajuste (link da reunião) vale também na reserva", async () => {
+    const comLink = JSON.stringify({ ...JSON.parse(VALIDO), rolling_summary: "Reunião em https://meet.google.com/abc-defg-hij" });
+    const ponto = noModelo("barato", COM_CHAVE_A_MAIS, COM_CHAVE_A_MAIS);
+    const r = await fecharOTurno({
+      pedir: ponto.pedir,
+      reserva: { modelo: "agente", pedir: async () => ({ text: comLink, callId: "call-3", model: "agente" }) },
+      ajustar: tirarLinkDaReuniao,
+    });
+    expect(r.content.rolling_summary).not.toContain("meet.google.com");
+    expect(r.content.rolling_summary).toContain("[link da reunião disponível na Agenda]");
+  });
+
+  it("cerca: quem recusou JÁ é o modelo do agente — nenhuma 3ª chamada, o erro sobe como antes", async () => {
+    const ponto = noModelo("agente", COM_CHAVE_A_MAIS, COM_CHAVE_A_MAIS);
+    const reservaPedir = vi.fn(async () => ({ text: VALIDO, callId: "call-3", model: "agente" }));
+    await expect(fecharOTurno({ pedir: ponto.pedir, reserva: { modelo: "agente", pedir: reservaPedir } })).rejects.toThrow(
+      FechamentoRecusado,
+    );
+    expect(reservaPedir).not.toHaveBeenCalled();
+  });
+
+  it("cerca: a reserva também recusada sobe o FechamentoRecusado dela", async () => {
+    const ponto = noModelo("barato", COM_CHAVE_A_MAIS, COM_CHAVE_A_MAIS);
+    await expect(
+      fecharOTurno({ pedir: ponto.pedir, reserva: { modelo: "agente", pedir: async () => ({ text: "sem json nenhum", callId: "call-3", model: "agente" }) } }),
+    ).rejects.toThrow("fechamento do turno sem JSON de checkpoint — run re-tentado pela fila");
+  });
+
+  it("cerca: falha do fornecedor na 1ª chamada sobe na hora, sem correção nem reserva", async () => {
+    const pedir = vi.fn(async (): Promise<{ text: string; callId: string; model: string }> => {
+      throw new Error("provider 503");
+    });
+    const reservaPedir = vi.fn(async () => ({ text: VALIDO, callId: "call-3", model: "agente" }));
+    await expect(fecharOTurno({ pedir, reserva: { modelo: "agente", pedir: reservaPedir } })).rejects.toThrow("provider 503");
+    expect(pedir).toHaveBeenCalledTimes(1);
+    expect(reservaPedir).not.toHaveBeenCalled();
+  });
+
+  it("cerca: resposta sem `model` — o comportamento de hoje, o erro sobe", async () => {
+    const ponto = noModelo(undefined, COM_CHAVE_A_MAIS, COM_CHAVE_A_MAIS);
+    const reservaPedir = vi.fn(async () => ({ text: VALIDO, callId: "call-3", model: "agente" }));
+    await expect(fecharOTurno({ pedir: ponto.pedir, reserva: { modelo: "agente", pedir: reservaPedir } })).rejects.toThrow(
+      FechamentoRecusado,
+    );
+    expect(reservaPedir).not.toHaveBeenCalled();
+  });
+
+  it("o turno passa a reserva com o modelo do agente e a chamada marcada como reserva de formato", () => {
+    const fonte = readFileSync(join(process.cwd(), "lib/agent-engine/agent/inbound-turn.ts"), "utf8");
+    expect(fonte).toMatch(/reserva:\s*agentConfig !== null\s*\?\s*\{ modelo: agentConfig\.model, pedir: \(\) => pedirOFechamento\(\[\], true\) \}/);
+    expect(fonte).toContain("...(reservaDeFormato ? { reservaDeFormato } : {}),");
+    expect(fonte).toContain("ajustar: tirarLinkDaReuniao,");
+  });
 });

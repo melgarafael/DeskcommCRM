@@ -9,11 +9,13 @@ export function turnKnobsFromEnv(env: Env): InboundTurnKnobs {
   return {
     historyLimit: env.LEAD_CONTEXT_HISTORY_LIMIT,
     maxContextTokens: env.LEAD_CONTEXT_MAX_TOKENS,
+    historyFormat: env.LEAD_CONTEXT_HISTORY_FORMAT,
     notesIndexMaxTokens: env.LEAD_NOTES_INDEX_MAX_TOKENS,
     maxSteps: env.AGENT_MAX_STEPS,
     maxSendsPerTurn: env.MAX_SENDS_PER_TURN,
     queuedRetryDelayMs: env.SEND_QUEUED_RETRY_MS,
     respostaObsoletaTetoMs: env.RESPOSTA_OBSOLETA_TETO_MS,
+    paradaAposEnvioFinal: env.AGENT_STOP_AFTER_FINAL_SEND,
     breaker: {
       exactFailureWarn: env.TOOL_BREAKER_EXACT_WARN,
       exactFailureBlock: env.TOOL_BREAKER_EXACT_BLOCK,

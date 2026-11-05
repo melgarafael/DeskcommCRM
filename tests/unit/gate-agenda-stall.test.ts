@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   agendaStallGate,
+  anunciaVerificacaoDeAgenda,
   BEFORE_SEND_GATES,
   type GateContext,
 } from "@/lib/agent-engine/guardrails/before-send";
@@ -526,5 +527,32 @@ describe("teste 10 do aceite — 'Confirmado: dia/hora' abrindo a frase é afirm
       baseCtx({ agenda: armado, body: "Confirmado: te ligo às 14h com a resposta." }),
     );
     expect(v.pass).toBe(true);
+  });
+});
+
+/**
+ * A metade "enrolação" do gate, exportada para a trava da parada do laço
+ * (`agent/parada-apos-envio.ts`). É a MESMA regra, não uma cópia: as frases de
+ * controle do gate respondem igual aqui, e a confirmação categórica fica de fora
+ * (ela é veto do gate, não anúncio de ação seguinte).
+ */
+describe("anunciaVerificacaoDeAgenda — a regra do gate, sem o estado do turno", () => {
+  it.each([
+    FRASE_MEDIDA_1,
+    FRASE_MEDIDA_2,
+    "Vou chamar a responsável pra ver os horários.",
+    "Vou verificar os horários de quinta e já te aviso.",
+  ])("anuncia: %s",
+    (body) => {
+      expect(anunciaVerificacaoDeAgenda(body)).toBe(true);
+    },
+  );
+
+  it.each([
+    "Amanhã, a oficina abre às 9h. Posso agendar a avaliação para esse horário.",
+    "Vou verificar o seu endereço de entrega e já te retorno.",
+    "Seu horário está confirmado para quinta às 10h.",
+  ])("não anuncia: %s", (body) => {
+    expect(anunciaVerificacaoDeAgenda(body)).toBe(false);
   });
 });
