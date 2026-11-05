@@ -18,7 +18,7 @@
  *
  * ═══ E O LEMBRETE AO DONO, NA MESMA RODADA ═══
  *
- * Quem ligou `lembrar_antes` (migration 9222) recebe, pelo mesmo número, um
+ * Quem ligou `lembrar_antes` (migration 9228) recebe, pelo mesmo número, um
  * lembrete antes de cada horário, nos degraus do tipo de atendimento e com o
  * link da reunião (`lib/agenda/lembrete-ao-dono.ts`). Dez minutos é a
  * resolução: o aviso de 1 hora chega entre 60 e 50 minutos antes.
@@ -71,7 +71,7 @@ async function handle(req: NextRequest): Promise<Response> {
   // Organização parada (suspensa, redigida, arquivada) não gasta nem fala.
   const paradas = new Set(await idsDeOrgsParadas(admin));
   const deps = await criarDepsDoAvisoDeAgendamento();
-  // O LEMBRETE AO DONO (migration 9222) roda na MESMA rodada e pelo MESMO
+  // O LEMBRETE AO DONO (migration 9228) roda na MESMA rodada e pelo MESMO
   // caminho de envio: quem não ligou `lembrar_antes` sai no primeiro passo.
   const dbDoLembrete = createSupabaseLembreteAoDonoDb(admin);
 

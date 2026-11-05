@@ -1,6 +1,6 @@
 -- manifest: **Lembrete ao dono antes de cada horário, com o link da reunião:** `config_aviso_de_agendamento.lembrar_antes` (nasce desligado), entrega `tipo='lembrete'` em `entregas_de_aviso_de_agendamento` com `degrau_minutos` e `inicio_lembrado` e chave única por (organização, compromisso, destino, degrau, início) — idempotência e remarcação; porta de escrita `fn_definir_lembrete_do_aviso_de_agendamento` (admin + suporte + MFA, revogada de anon/public). Espelho no fim do apêndice do `supabase/baseline.sql`.
 -- ============================================================================
--- 9222 — O DONO É LEMBRADO ANTES DE CADA HORÁRIO, E O LINK VAI JUNTO.
+-- 9228 — O DONO É LEMBRADO ANTES DE CADA HORÁRIO, E O LINK VAI JUNTO.
 --
 -- O aviso de agendamento contava ao dono que um horário foi MARCADO, e o
 -- resumo das 7h contava o dia. Nada o lembrava 1 hora antes de uma reunião

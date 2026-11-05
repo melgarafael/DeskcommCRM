@@ -1,5 +1,5 @@
 /**
- * O LEMBRETE AO DONO NO BANCO — migration 9222.
+ * O LEMBRETE AO DONO NO BANCO — migration 9228.
  *
  * Três perguntas que só um Postgres de verdade responde:
  *
@@ -21,13 +21,13 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import { motivoDoErro, sql } from "./psql-transporte";
 
-const ORG_A = "92220000-0000-4000-8000-000000000001";
-const ORG_B = "92220000-0000-4000-8000-000000000002";
-const ADMIN_A = "92220000-1111-4000-8000-000000000001";
-const ATENDENTE_A = "92220000-1111-4000-8000-000000000002";
-const ADMIN_B = "92220000-1111-4000-8000-000000000003";
-const SESSAO_A = "92220000-2222-4000-8000-000000000001";
-const AG = "92220000-3333-4000-8000-000000000001";
+const ORG_A = "92280000-0000-4000-8000-000000000001";
+const ORG_B = "92280000-0000-4000-8000-000000000002";
+const ADMIN_A = "92280000-1111-4000-8000-000000000001";
+const ATENDENTE_A = "92280000-1111-4000-8000-000000000002";
+const ADMIN_B = "92280000-1111-4000-8000-000000000003";
+const SESSAO_A = "92280000-2222-4000-8000-000000000001";
+const AG = "92280000-3333-4000-8000-000000000001";
 const INICIO = "2026-11-10T17:00:00Z";
 
 function comoMembro(userId: string): string {
@@ -56,14 +56,14 @@ const lembrete = (degrau: number, inicio: string) =>
 beforeAll(() => {
   sql(`
     insert into auth.users (id, email) values
-      ('${ADMIN_A}',     'lembrete-9222-admin-a@invariant.test'),
-      ('${ATENDENTE_A}', 'lembrete-9222-agent-a@invariant.test'),
-      ('${ADMIN_B}',     'lembrete-9222-admin-b@invariant.test')
+      ('${ADMIN_A}',     'lembrete-9228-admin-a@invariant.test'),
+      ('${ATENDENTE_A}', 'lembrete-9228-agent-a@invariant.test'),
+      ('${ADMIN_B}',     'lembrete-9228-admin-b@invariant.test')
       on conflict do nothing;
 
     insert into public.organizations (id, slug, legal_name, display_name) values
-      ('${ORG_A}', 'lembrete-9222-a', 'Lembrete 9222 A', 'Lembrete 9222 A'),
-      ('${ORG_B}', 'lembrete-9222-b', 'Lembrete 9222 B', 'Lembrete 9222 B')
+      ('${ORG_A}', 'lembrete-9228-a', 'Lembrete 9228 A', 'Lembrete 9228 A'),
+      ('${ORG_B}', 'lembrete-9228-b', 'Lembrete 9228 B', 'Lembrete 9228 B')
       on conflict do nothing;
 
     insert into public.user_organizations (user_id, organization_id, role, accepted_at) values
@@ -74,7 +74,7 @@ beforeAll(() => {
 
     do $seed$ begin
       insert into public.channel_sessions (id, organization_id, waha_session_name, webhook_secret_encrypted)
-        values ('${SESSAO_A}', '${ORG_A}', 'lembrete-9222-a', '\\x00'::bytea);
+        values ('${SESSAO_A}', '${ORG_A}', 'lembrete-9228-a', '\\x00'::bytea);
     exception when unique_violation then null; end $seed$;
 
     insert into public.config_aviso_de_caso (organization_id, channel_session_id, telefone_destino, ligado)
@@ -85,12 +85,12 @@ beforeAll(() => {
       on conflict (organization_id) do nothing;
 
     insert into public.calendar_appointments (id, organization_id, title, starts_at, ends_at, status)
-      values ('${AG}', '${ORG_A}', 'Reunião comercial 9222', '${INICIO}', '${INICIO}'::timestamptz + interval '30 min', 'confirmed')
+      values ('${AG}', '${ORG_A}', 'Reunião comercial 9228', '${INICIO}', '${INICIO}'::timestamptz + interval '30 min', 'confirmed')
       on conflict (id) do nothing;
   `);
 });
 
-describe("9222 — a escolha nasce desligada", () => {
+describe("9228 — a escolha nasce desligada", () => {
   it("configuração existente ganha `lembrar_antes = false`", () => {
     expect(valor(`select lembrar_antes from public.config_aviso_de_agendamento where organization_id = '${ORG_A}'`)).toMatch(
       /^(f|false)$/,
@@ -98,7 +98,7 @@ describe("9222 — a escolha nasce desligada", () => {
   });
 });
 
-describe("9222 — a forma da entrega", () => {
+describe("9228 — a forma da entrega", () => {
   it("CONTROLE POSITIVO: o lembrete completo é aceito", () => {
     expect(erroDe(lembrete(1440, INICIO))).toBe("");
   });
@@ -130,7 +130,7 @@ describe("9222 — a forma da entrega", () => {
   });
 });
 
-describe("9222 — sem aviso em dobro, com remarcação", () => {
+describe("9228 — sem aviso em dobro, com remarcação", () => {
   it("o mesmo degrau do mesmo início é recusado pela chave única", () => {
     sql(lembrete(60, INICIO));
     expect(erroDe(lembrete(60, INICIO))).toMatch(/lembrete_unico|duplicate key/i);
@@ -141,7 +141,7 @@ describe("9222 — sem aviso em dobro, com remarcação", () => {
   });
 });
 
-describe("9222 — a porta de escrita da escolha", () => {
+describe("9228 — a porta de escrita da escolha", () => {
   const definir = (org: string, v: boolean) =>
     `select public.fn_definir_lembrete_do_aviso_de_agendamento('${org}', ${v});`;
 

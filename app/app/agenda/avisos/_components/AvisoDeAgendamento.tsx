@@ -64,7 +64,7 @@ const TITULO_DO_EVENTO: Record<string, string> = {
   "appointment.cancelled": "Cancelado",
 };
 
-/** O título de uma entrega na lista — o lembrete antes do horário (9222) não tem evento. */
+/** O título de uma entrega na lista — o lembrete antes do horário (9228) não tem evento. */
 function tituloDaEntrega(tipo: string, evento: string | null): string {
   if (tipo === "resumo") return "Resumo do dia";
   if (tipo === "lembrete") return "Lembrete antes do horário";

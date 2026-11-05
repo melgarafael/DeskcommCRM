@@ -63,7 +63,7 @@ const corpo = z
       .optional(),
     ligado: z.boolean(),
     /**
-     * Também lembrar antes de cada horário (migration 9222). Ausente = não
+     * Também lembrar antes de cada horário (migration 9228). Ausente = não
      * mexe na escolha salva — o formulário antigo continua valendo.
      */
     lembrar_antes: z.boolean().optional(),
@@ -219,7 +219,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
   limparCacheDoNumeroInterno();
   const resultado = (data ?? {}) as { trocou_numero?: boolean; antes_ligado?: boolean };
 
-  // O lembrete antes do horário é uma segunda porta (9222), depois da primeira:
+  // O lembrete antes do horário é uma segunda porta (9228), depois da primeira:
   // a linha de configuração já existe aqui. Se ela recusar, o resto já foi
   // salvo — a resposta diz o que faltou, e a tela relê o estado.
   let antesLembrava: boolean | null = null;

@@ -19,7 +19,7 @@ export interface RascunhoDoAvisoDeAgendamento {
   /** `SEM_GRUPO` = nenhum grupo. */
   grupo: string;
   ligado: boolean;
-  /** Também lembrar antes de cada horário (migration 9222). Opcional: ausente = desligado. */
+  /** Também lembrar antes de cada horário (migration 9228). Opcional: ausente = desligado. */
   lembrarAntes?: boolean;
 }
 

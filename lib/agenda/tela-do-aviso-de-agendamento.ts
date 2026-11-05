@@ -44,7 +44,7 @@ export interface ConfigDoAvisoDeAgendamentoNaTela {
   /** O `chatId` do grupo que também recebe os avisos (migration 9060). */
   grupo: string | null;
   ligado: boolean;
-  /** Também lembra antes de cada horário (migration 9222). Opcional para dublês antigos: ausente = desligado. */
+  /** Também lembra antes de cada horário (migration 9228). Opcional para dublês antigos: ausente = desligado. */
   lembrar_antes?: boolean;
   atualizado_em: string;
 }

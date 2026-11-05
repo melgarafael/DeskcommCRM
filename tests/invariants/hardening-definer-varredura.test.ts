@@ -295,7 +295,7 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
   {
     fn: "fn_definir_lembrete_do_aviso_de_agendamento(uuid,boolean)",
     razao:
-      "A porta de escrita de `config_aviso_de_agendamento.lembrar_antes` (migration 9222). " +
+      "A porta de escrita de `config_aviso_de_agendamento.lembrar_antes` (migration 9228). " +
       "PUT app/api/v1/agenda/aviso/route.ts chama com createClient da sessão, logo depois de " +
       "fn_definir_aviso_de_agendamento. Mesmas guardas da irmã: auth.uid(), " +
       "fn_role_at_least(p_org,'admin'), fn_support_write_allowed(p_org) e " +

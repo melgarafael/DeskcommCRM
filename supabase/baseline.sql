@@ -60331,11 +60331,11 @@ create table if not exists public.entregas_de_aviso_de_agendamento (
   updated_at          timestamptz not null default now()
 );
 
--- A `tipo_check` mora no bloco da migration 9222, com o vocabulário final
+-- A `tipo_check` mora no bloco da migration 9228, com o vocabulário final
 -- (`lembrete`). Reconstruí-la aqui com o vocabulário antigo falharia no
 -- update.sh de um banco que já tem lembrete.
 
--- A `forma_check` mora no bloco da migration 9222, com o vocabulário final
+-- A `forma_check` mora no bloco da migration 9228, com o vocabulário final
 -- (`lembrete`). Reconstruí-la aqui com o vocabulário antigo falharia no
 -- update.sh de um banco que já tem lembrete.
 
@@ -69106,8 +69106,8 @@ grant execute on function public.fn_conversation_sector_scope() to authenticated
 comment on function public.fn_conversation_sector_scope() is
   'Setores do chamador nas organizações em visibility_mode = own_and_sector (migration 9214). Uma linha por (organização, setor); zero linhas nos outros modos e para viewer/manager/admin. Lida por conversations_select; não concede leitura de nada por si.';
 
--- ---- lembrete ao dono e link da reunião (migration 9222) ----
--- Espelho idempotente da 9222 (ver o cabeçalho dela).
+-- ---- lembrete ao dono e link da reunião (migration 9228) ----
+-- Espelho idempotente da 9228 (ver o cabeçalho dela).
 -- 1. A ESCOLHA DO DONO. Nasce desligada: quem já recebe o aviso de "marcado"
 --    não passa a receber lembretes sem pedir (a mesma régua da 0194 para o
 --    lembrete do cliente).

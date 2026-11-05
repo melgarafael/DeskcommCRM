@@ -109,7 +109,7 @@ export interface ConfigDoAvisoDeAgendamento {
   grupo_destino: string | null;
   ligado: boolean;
   /**
-   * Também lembrar o dono ANTES de cada horário (migration 9222), nos degraus
+   * Também lembrar o dono ANTES de cada horário (migration 9228), nos degraus
    * do tipo de atendimento. Opcional no tipo para os dublês antigos: ausente é
    * desligado. Motor em `lib/agenda/lembrete-ao-dono.ts`.
    */
