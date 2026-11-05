@@ -19841,6 +19841,8 @@ export const DICIONARIO: Traducoes = {
   "A Meta não concluiu a conexão. Tente de novo.": { es: "Meta no completó la conexión. Inténtalo de nuevo." },
   "Chave da conta da instalação no provedor parceiro": { es: "Clave de la cuenta de la instalación en el proveedor asociado" },
   "Com ela, cada empresa conecta o número oficial do WhatsApp com um clique, sem ter conta no provedor. Os números ficam na conta da instalação e entram na fatura dela.": { es: "Con ella, cada empresa conecta el número oficial de WhatsApp con un clic, sin tener cuenta en el proveedor. Los números quedan en la cuenta de la instalación y entran en su factura." },
+  // Abrir a conversa pelo canal escolhido quando ele não serve (#3483).
+  "Este canal está desligado ou fora do ar. Reative a conexão ou escolha outro canal.": { es: "Este canal está desactivado o fuera de línea. Reactiva la conexión o elige otro canal." },
 };
 
 /**
