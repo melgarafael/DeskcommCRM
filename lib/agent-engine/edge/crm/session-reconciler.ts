@@ -150,7 +150,9 @@ export async function reconcileSessions(
 
     if (nossas.every((nossa) => nossa.status === nextStatus)) continue;
 
-    if (signal?.aborted) break;
+    // Sem guarda de parada aqui: o start acima pode já ter religado a sessão, e
+    // parar agora deixaria o transporte STARTING com o espelho ainda STOPPED.
+    // O desligamento espera este laço antes de fechar o pool.
     const { rows } = await pool.query<{ id: string; status: string }>(
       `update channel_sessions
           set status = $2, updated_at = now()

@@ -278,4 +278,15 @@ describe("reconciliação durante a parada", () => {
     expect(await reconcileSessions({ query } as unknown as pg.Pool, cfg, createLogger(), c.signal)).toBe(0);
     expect(transport).toHaveBeenCalledTimes(1); expect(query).toHaveBeenCalledTimes(1);
   });
+  it("parada durante o start ainda grava o espelho da sessão já religada", async () => {
+    const c = new AbortController();
+    const transport = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ name: "synthetic", status: "STOPPED" }])))
+      .mockImplementationOnce(async () => { c.abort(); return new Response("{}", { status: 201 }); });
+    const query = vi.fn(async (sql: string) => sql.includes("update")
+      ? { rows: [{ id: "synthetic-channel", status: "STARTING" }] }
+      : { rows: [{ id: "synthetic-channel", status: "STOPPED" }] });
+    expect(await reconcileSessions({ query } as unknown as pg.Pool, cfg, createLogger(), c.signal)).toBe(1);
+    expect(transport).toHaveBeenCalledTimes(2); expect(query).toHaveBeenCalledTimes(2);
+  });
 });
