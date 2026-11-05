@@ -29,9 +29,8 @@
  * `supabase/baseline.sql`.
  *
  * `metrics/atrito` GET, `metrics/funil` GET, `metrics/metas` GET,
- * `metrics/channels` GET e `reports/activities` GET ficam de fora (ver o
- * relatório da ordem): `atrito` ganha a porta pelo PATCH e o GET dele tem o caso
- * "fica só de sessão".
+ * `metrics/channels` GET e `reports/activities` GET são cobertos em
+ * `analise.test.ts` (R3, conversão dos GET de análise).
  */
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -727,29 +726,6 @@ for (const c of CASOS) {
   });
 }
 
-// ───────────────────── o método que fica de fora da rota com porta ─────────────────────
-
-describe("GET /api/v1/metrics/atrito: fica só de sessão", () => {
-  it("GET /api/v1/metrics/atrito: fica só de sessão", async () => {
-    // A rota ganhou porta pelo PATCH; o GET lê `user.locale`, que o portão do
-    // token não devolve, e segue pelo `requireRole`: token sem cookie → 401.
-    vi.mocked(requireRole).mockResolvedValue({
-      ok: false,
-      response: new Response(null, { status: 401 }),
-    } as never);
-    emitirTokens({ scopes: ["mcp:read"], role: "admin" });
-
-    const { GET } = await import("@/app/api/v1/metrics/atrito/route");
-    const res = await GET(
-      new NextRequest("http://localhost/api/v1/metrics/atrito", { headers: comToken("A") }),
-    );
-
-    expect(res.status).toBe(401);
-    expect(createAdminClient).not.toHaveBeenCalled();
-    expect(validateBearerToken).not.toHaveBeenCalled();
-  });
-});
-
 // ───────────────────────────── a borda do proxy ─────────────────────────────
 
 /**
@@ -757,10 +733,9 @@ describe("GET /api/v1/metrics/atrito: fica só de sessão", () => {
  * a porta em `PUBLIC_PATHS` o Bearer nem chega à rota. A porta é estreita:
  * `$` no fim e nenhum irmão literal de carona.
  *
- * Os irmãos vêm do `ls` das pastas: `metrics/` (atrito, attendants, lost, serie
- * ganharam porta; `channels`, `funil` e `metas` seguem só de sessão) e
- * `reports/` (financeiro e tags ganharam porta; `activities` segue só de
- * sessão). Nenhuma das seis rotas tem segmento dinâmico.
+ * Os irmãos vêm do `ls` das pastas: `metrics/` e `reports/`. Nenhuma das seis
+ * rotas tem segmento dinâmico. As portas de `channels`, `funil`, `metas` e
+ * `activities` são conferidas em `analise.test.ts`.
  */
 describe("PUBLIC_PATHS — as portas de metrics e reports (borda do proxy)", () => {
   const PORTAS = [
@@ -780,11 +755,9 @@ describe("PUBLIC_PATHS — as portas de metrics e reports (borda do proxy)", () 
     // sub-path de cada porta
     ...PORTAS.map((p) => `${p}/x`),
     ...PORTAS.map((p) => `${p}/00000000-0000-4000-8000-000000000000`),
-    // irmãos literais que não ganharam porta
-    "/api/v1/metrics/channels",
-    "/api/v1/metrics/funil",
-    "/api/v1/metrics/metas",
-    "/api/v1/reports/activities",
+    // irmão literal que não ganhou porta
+    "/api/v1/metrics/nao-existe",
+    "/api/v1/reports/nao-existe",
     // os pais
     "/api/v1/metrics",
     "/api/v1/reports",

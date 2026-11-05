@@ -24,18 +24,23 @@ export const MODELOS_DA_LEITURA: readonly ModeloDePorta[] = [
   "/api/v1/imports",
   "/api/v1/imports/[id]",
 
-  // metrics, reports (R3, tarefa 1). Quem autentica é a própria rota, por
-  // `resolveAuthDual` (a organização sai da linha do token). Escopo `mcp:read`
-  // nos GET e `mcp:write` no PATCH de `metrics/atrito`; papel do token = papel da
-  // sessão (agent em `attendants` e `serie`, manager em `lost` e no PATCH de
-  // `atrito`, viewer em `reports/*`), sem `tokenRole` porque nenhuma tool MCP faz
-  // estas ações. O GET de `metrics/atrito` segue só de sessão (401 sem cookie);
-  // `metrics/channels`, `metrics/funil`, `metrics/metas` e `reports/activities`
-  // não entram.
+  // metrics, reports (R3, tarefa 1 e conversão dos GET de análise). Quem autentica
+  // é a própria rota, por `resolveAuthDual` (a organização sai da linha do token).
+  // Escopo `mcp:read` nos GET e `mcp:write` no PATCH de `metrics/atrito`. Papel da
+  // sessão: agent em `attendants`, `serie`, `atrito` GET, `channels`, `funil` e
+  // `metas` GET; manager em `lost` e no PATCH de `atrito`; viewer em `reports/*`. Papel
+  // do TOKEN: igual ao da sessão, exceto `atrito` GET, `channels`, `funil`,
+  // `metas` e `reports/activities`, que exigem `manager` (`tokenRole`): o token lê a
+  // organização inteira, e na sessão um agent só vê as conversas dele. Nenhuma
+  // tool MCP faz estas ações, então não há `tokenRole` por causa de tool.
   "/api/v1/metrics/atrito",
   "/api/v1/metrics/attendants",
+  "/api/v1/metrics/channels",
+  "/api/v1/metrics/funil",
   "/api/v1/metrics/lost",
+  "/api/v1/metrics/metas",
   "/api/v1/metrics/serie",
+  "/api/v1/reports/activities",
   "/api/v1/reports/financeiro",
   "/api/v1/reports/tags",
 
