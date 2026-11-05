@@ -433,12 +433,18 @@ export function criarAdaptadorEfi(dep: DependenciasDoEfi): AdaptadorDeCobranca {
    * ramo é sempre `manual`: a tela mostra a URL e o segredo, e quem cria a
    * cobrança (esta instalação) já os leva no corpo. `confirmar`/`desfazer` não
    * têm o que tocar no provedor.
+   *
+   * O segredo é REUSADO se já houver um: no Efi ele viaja na URL de cada
+   * cobrança já criada, então sortear um novo a cada "Testar e conectar"
+   * deixaria as faturas abertas avisando com um token que não vale mais (todo
+   * aviso delas viraria 401). Para rotacionar, limpe `EFI_WEBHOOK_TOKEN` e
+   * conecte de novo.
    */
   async function prepararWebhook(
     url: string,
     _emailDoDono: string,
   ): Promise<WebhookPreparado | { manual: { url: string; segredo: string; eventos: string[] } }> {
-    const segredo = randomBytes(32).toString("base64url");
+    const segredo = (await dep.lerSegredo?.()) ?? randomBytes(32).toString("base64url");
     const base = url.split("?")[0] ?? url;
     return { manual: { url: base, segredo, eventos: [...EVENTOS_DO_WEBHOOK_EFI] } };
   }

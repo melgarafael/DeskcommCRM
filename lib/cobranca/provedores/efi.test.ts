@@ -534,6 +534,24 @@ describe("o aviso do Efi", () => {
   const URL_DO_AVISO = () => new URL(`https://crm.example.com/api/v1/webhooks/cobranca/efi?org=${encodeURIComponent(REF)}&token=${SEGREDO_DO_AVISO}`);
   const corpo = `notification=09027955-5e06-4ff0-a9c7-46b47b8f1b27`;
 
+  it("⭐ reusar a conexão NÃO troca o token: as faturas já abertas continuam avisando", async () => {
+    const { adaptador } = montar({});
+    const preparo = await adaptador.prepararWebhook("https://crm.example.com/api/v1/webhooks/cobranca/efi", "dono@example.com");
+    expect("manual" in preparo).toBe(true);
+    if (!("manual" in preparo)) throw new Error("o Efi não tem cadastro de aviso: é sempre manual");
+    expect(preparo.manual.segredo).toBe(SEGREDO_DO_AVISO);
+    expect(preparo.manual.url).toBe("https://crm.example.com/api/v1/webhooks/cobranca/efi");
+    expect(preparo.manual.eventos).toEqual(["notification"]);
+  });
+
+  it("sem token guardado, sorteia um (e não cadastra nada no provedor)", async () => {
+    const { adaptador, chamadas } = montar({}, { lerSegredo: async () => null });
+    const preparo = await adaptador.prepararWebhook("https://crm.example.com/api/v1/webhooks/cobranca/efi", "dono@example.com");
+    if (!("manual" in preparo)) throw new Error("esperava manual");
+    expect(preparo.manual.segredo).toHaveLength(43);
+    expect(chamadas).toEqual([]);
+  });
+
   it("⭐ form-urlencoded com o token da URL autentica e devolve a empresa", () => {
     const sinal = verificarWebhookEfi(corpo, new Headers(), SEGREDO_DO_AVISO, AGORA, URL_DO_AVISO());
     expect(sinal).toEqual({
