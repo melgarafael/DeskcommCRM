@@ -5171,6 +5171,15 @@ export const DICIONARIO: Traducoes = {
   "Sugerir resposta ao atendente": {
     es: "Sugerir respuesta al asesor humano",
   },
+  "Conversar com o assistente da empresa": {
+    es: "Conversar con el asistente de la empresa",
+  },
+  "Responde, por texto, a conversa que o administrador tem com o módulo Assistente. Só conversa: não altera nada no CRM por esta chamada.": {
+    es: "Responde, por texto, la conversación que el administrador tiene con el módulo Asistente. Solo conversa: no modifica nada en el CRM con esta llamada.",
+  },
+  "A conversa do módulo Assistente mostra um aviso (modelo indisponível ou teto de gasto atingido) e a pessoa não recebe resposta; o resto do CRM segue normal.": {
+    es: "La conversación del módulo Asistente muestra un aviso (modelo no disponible o tope de gasto alcanzado) y la persona no recibe respuesta; el resto del CRM sigue normal.",
+  },
   "Ajustar proposta por instrução": {
     es: "Ajustar propuesta por instrucción",
   },
