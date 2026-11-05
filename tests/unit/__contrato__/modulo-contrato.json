@@ -127,6 +127,7 @@
       "POST /api/v1/ai/agents/[id]/reconcile",
       "POST /api/v1/ai/agents/[id]/versions",
       "POST /api/v1/ai/agents/[id]/versions/[id]/test",
+      "POST /api/v1/ai/assistente/conversa",
       "POST /api/v1/ai/cases/[id]/chat",
       "POST /api/v1/ai/cases/[id]/close",
       "POST /api/v1/ai/followup-flows",

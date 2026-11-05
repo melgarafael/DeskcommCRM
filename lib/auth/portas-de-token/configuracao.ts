@@ -18,6 +18,9 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   // `UUID_RX`/`z.uuid()`), então nenhum irmão literal de `[id]` entra de
   // carona; `assignable` é um desses irmãos e tem a entrada própria, exata.
   "/api/v1/ai/agents/assignable",
+  // ai/assistente/conversa: um turno de conversa com o modelo da organização, para o módulo
+  // conectado do assistente. `resolveAuthDual` na rota; papel admin; sem `[id]`.
+  "/api/v1/ai/assistente/conversa",
   "/api/v1/ai/agents/[id]/duplicate",
   "/api/v1/ai/agents/[id]/pause",
   "/api/v1/ai/agents/[id]/proposals",
