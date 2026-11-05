@@ -50,7 +50,20 @@ const ORDEM: readonly {
   },
   { grupo: "banco", titulo: "Banco de dados", resumo: "Onde ficam todos os seus dados." },
   { grupo: "fila", titulo: "Fila de tarefas", resumo: "Controla o ritmo dos envios." },
-  { grupo: "ia", titulo: "Inteligência artificial", resumo: "Como o atendimento automático opera." },
+  {
+    grupo: "ia",
+    titulo: "Inteligência artificial",
+    resumo: "Como o atendimento automático opera.",
+    // A IA com que as empresas NOVAS nascem (migration 9096) é uma coluna de
+    // `platform_settings`, e quem a grava é Recursos opcionais — mas é aqui,
+    // na tela que se chama "Configuração da instalação", que quem procura
+    // "configurar a IA das empresas" chega primeiro. Mesmo motivo do ponteiro
+    // do e-mail, logo acima.
+    ponteiro: {
+      href: "/admin/sistema#molde-de-ia",
+      texto: "A IA com que as empresas novas nascem se escolhe em Recursos opcionais →",
+    },
+  },
 ];
 
 export interface LinhaDaTela {

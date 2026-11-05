@@ -48,7 +48,7 @@ const triggerConfigSchema = z
           .nullable()
           .optional()
           .default(null),
-        // PÚBLICO DO AGENTE (#3722). Quatro listas opcionais, no jsonb da
+        // PÚBLICO DO AGENTE (#3722). Seis listas opcionais, no jsonb da
         // versão — sem coluna nova, sem migration. Sem estas linhas o schema
         // `.strict()` RECUSA o payload da tela (o campo chegaria como chave
         // desconhecida) e o operador não conseguiria salvar o público.
@@ -59,6 +59,11 @@ const triggerConfigSchema = z
         exclude_tags: z.array(z.string().trim().min(1).max(60)).max(TETO_DO_PUBLICO).default([]),
         include_pipeline_ids: z.array(UUID).max(TETO_DO_PUBLICO).default([]),
         exclude_pipeline_ids: z.array(UUID).max(TETO_DO_PUBLICO).default([]),
+        // Origem do contato (`contacts.source`). Vocabulário ABERTO, como a
+        // coluna: a tela oferece as origens conhecidas, e a API aceita qualquer
+        // valor que um integrador grave em `source`.
+        include_sources: z.array(z.string().trim().min(1).max(60)).max(TETO_DO_PUBLICO).default([]),
+        exclude_sources: z.array(z.string().trim().min(1).max(60)).max(TETO_DO_PUBLICO).default([]),
       })
       .default({
         ignore_groups: true,
@@ -69,6 +74,8 @@ const triggerConfigSchema = z
         exclude_tags: [],
         include_pipeline_ids: [],
         exclude_pipeline_ids: [],
+        include_sources: [],
+        exclude_sources: [],
       }),
     concurrency: z.enum(["one_per_conversation", "one_per_contact"]).default("one_per_conversation"),
   })
@@ -213,6 +220,10 @@ const versionShapeSchema = z
     // `true` porque quem não mexer tem de ficar com o resultado de hoje; o
     // efeito da chave (trocar a descrição da ferramenta) mora no turno.
     handoff_legal_enabled: z.boolean().default(true),
+    // Ver as fotos que o cliente envia (migration 9108) — mesmo molde: ligado por
+    // padrão, porque quem não mexer fica com o que tem hoje. O efeito mora no
+    // turno (aviso no lugar da foto) e em `haLeitorDaDescricao` (quem paga a visão).
+    image_vision_enabled: z.boolean().default(true),
     proposal_ai_draft_enabled: z.boolean().default(true),
     cases_enabled: z.boolean().default(false),
     // Onda 4 — quebra a resposta em bolhas curtas (splitIntoBubbles) espaçadas
@@ -228,6 +239,12 @@ const versionShapeSchema = z
      * ninguém travar o atendimento sem querer (#1856).
      */
     inbound_debounce_ms: z.number().int().min(0).max(60000).nullable().optional(),
+    /**
+     * Intervalo mínimo, em ms, entre uma resposta da IA e a próxima à MESMA
+     * conversa. `null`/ausente/0 = sem intervalo (comportamento de sempre).
+     * Teto de 10 min, para ninguém deixar o atendimento mudo sem querer.
+     */
+    reply_min_interval_ms: z.number().int().min(0).max(600000).nullable().optional(),
     followup: followupConfigSchema,
     // ── Papel OPERADOR (spec 16 §3.2) ───────────────────────────────────────
     // Todos com `.default(...)`, e é o que mantém retrocompatível: agent e
@@ -288,6 +305,19 @@ const versionShapeSchema = z
      * organização é o servidor.
      */
     knowledge_source_ids: z.array(z.string().uuid()).default([]),
+    /**
+     * Skills que este agente usa (migration 9107). `null` = TODAS as da
+     * organização e da plataforma — o comportamento de antes, e o default;
+     * `[]` = nenhuma. Sem `.refine()` de existência pelo mesmo motivo dos dois
+     * campos acima: quem confere que a skill existe é o servidor
+     * (`validarEscopoDaVersao`). Repetidos viram um só.
+     */
+    skill_names: z
+      .array(z.string().trim().min(1).max(120))
+      .max(100)
+      .transform((nomes) => [...new Set(nomes)])
+      .nullable()
+      .default(null),
   })
   .strict();
 
@@ -307,6 +337,7 @@ export const versionPatchSchema = versionShapeSchema
     handoff_keywords: versionShapeSchema.shape.handoff_keywords.removeDefault(),
     handoff_tool_enabled: versionShapeSchema.shape.handoff_tool_enabled.removeDefault(),
     handoff_legal_enabled: versionShapeSchema.shape.handoff_legal_enabled.removeDefault(),
+    image_vision_enabled: versionShapeSchema.shape.image_vision_enabled.removeDefault(),
     proposal_ai_draft_enabled: versionShapeSchema.shape.proposal_ai_draft_enabled.removeDefault(),
     cases_enabled: versionShapeSchema.shape.cases_enabled.removeDefault(),
     split_messages: versionShapeSchema.shape.split_messages.removeDefault(),
@@ -317,6 +348,7 @@ export const versionPatchSchema = versionShapeSchema
     operator_tool_ids: versionShapeSchema.shape.operator_tool_ids.removeDefault(),
     pipeline_ids: versionShapeSchema.shape.pipeline_ids.removeDefault(),
     knowledge_source_ids: versionShapeSchema.shape.knowledge_source_ids.removeDefault(),
+    skill_names: versionShapeSchema.shape.skill_names.removeDefault(),
     voz_enabled: versionShapeSchema.shape.voz_enabled.removeDefault(),
     voz_quando: versionShapeSchema.shape.voz_quando.removeDefault(),
   })

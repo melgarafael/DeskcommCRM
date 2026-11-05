@@ -29,6 +29,8 @@
  * `tests/unit/audit-lista-do-painel-e-derivada.test.tsx` reprova quem tentar.
  */
 export const AUDIT_ACTIONS = [
+  "cold_call.result",
+  "cold_call.script_updated",
   "settings.agenda_presentation_updated",
   "ad_tracking_link.saved",
   "auth.login_success",
@@ -180,6 +182,12 @@ export const AUDIT_ACTIONS = [
   // Uma rodada do cron `recover-stuck-messages` que de fato marcou mensagem
   // como falha (rodada vazia não vira linha — varredura não é mutação).
   "message.recover_stuck_run",
+  // Uma rodada do cron `recover-stuck-calls` que de fato encerrou ligação presa
+  // em toque (rodada vazia não vira linha).
+  "voice.recover_stuck_run",
+  // Uma rodada do cron `media-leitura-adiada` que reabriu foto guardada sem
+  // descrição (empresa que ganhou leitor, ou knob de volta em `always`).
+  "media.deferred_reading_run",
   "contact.blocked",
   "phone_number.created",
   "phone_number.updated",
@@ -945,6 +953,10 @@ export const AUDIT_ACTIONS = [
   // configuração da organização que muda o que vira card no funil e o que a IA
   // responde: "desde quando a equipe parou de virar lead?" só tem resposta aqui.
   "crm.tags_internas_alteradas",
+  // A lista de etiquetas de contato da EQUIPE (#3534) mudou. Contato marcado
+  // continua sendo atendido e deixa de ser passado a humano por clima — "desde
+  // quando o sócio parou de ser repassado?" só tem resposta aqui.
+  "crm.tags_da_equipe_alteradas",
   // A etiqueta da ORGANIZAÇÃO renomeada, juntada ou excluída na tela de Tags
   // (issue #852, fatia S4). É um código só porque a linha já carrega
   // `metadata.acao` (renomear/juntar/excluir) e o alcance da operação (contatos,
@@ -1151,6 +1163,9 @@ export const AUDIT_ACTIONS = [
   // "Enviar vendas pelo canal da conversa" (doc 76, PR #1819): ligar faz o
   // valor da venda e o telefone do cliente saírem para o provedor do canal.
   "conversions.report_via_channel_updated",
+  // "Deduzir a origem do site pelo horário do clique" (doc 259, PR #3906):
+  // ligar faz a Origem passar a aceitar palpite, além de prova.
+  "conversions.site_origin_by_click_time_updated",
 
   // CRM B2B fase 1 — companies / people / import (migration 0239)
   "companies.created",
@@ -1217,6 +1232,16 @@ export const AUDIT_ACTIONS = [
   // por isso vai com `organization_id` e `resource_id` = uuid da org. A CHAVE
   // do servidor nunca entra aqui: o metadata traz endpoint e forma.
   "org.mcp_externo_registrado",
+  // Servidores MCP POR AGENTE (migration 9095). Cadastro, edição e remoção na
+  // tela do agente (metadata: servidor, modo, host — nunca chave, segredo nem
+  // token); a autorização de um contato pelo callback público (metadata:
+  // servidor, escopos); a revogação (manual pela ficha, no encerramento da
+  // conversa, por LGPD ou porque o servidor saiu), com o motivo.
+  "agent.mcp_servidor_salvo",
+  "agent.mcp_servidor_removido",
+  "contact.mcp_acesso_autorizado",
+  "contact.mcp_acesso_recusado",
+  "contact.mcp_acesso_revogado",
   // #1639, fatia do login: o código colado em /admin/sistema virou tokens e foi
   // guardado cifrado. Sem esta linha, "quem conectou a assinatura, e quando"
   // ficaria sem rastro — e é a conta que passa a pagar as chamadas.
@@ -1412,9 +1437,29 @@ export const AUDIT_ACTIONS = [
   // sugestão, e quando". A fila guarda o usuário, mas a trilha é o rastro que a
   // organização consulta, e só ela tem o mesmo formato das outras ações de contato.
   "contact.duplicate_dismissed",
+  // O admin mudou o limite em tokens acima do qual a tela Memória da IA avisa
+  // que a memória pesa (`settings.memoria_da_ia`); metadata com o anterior e o novo.
+  "ai.org_memory_weight_limit_updated",
   // Aviso escrito pelo admin da empresa e empurrado para a equipe (#1418). O
   // metadata leva só a janela de publicação; título e corpo ficam em `avisos`.
   "aviso.created",
+  // A prospecção perguntou ao WhatsApp (`numeroTemConta` do canal) se os telefones de
+  // uma campanha têm WhatsApp, e tirou da seleção quem não tem
+  // (`lib/prospecting/whatsapp.ts`). UMA linha por campanha por rodada e só com
+  // efeito; metadata só com contagens — nunca o telefone. `resource_id` = a campanha.
+  "prospecting.whatsapp_checked",
+  // O MOLDE DE IA da instalação trocado em `/admin/sistema`
+  // (`platform_settings.molde_de_ia_org_id`, migration 9096) — mutação de
+  // plataforma, sem `organization_id`. metadata com o molde anterior e o novo e
+  // quantas funções ele copia: "desde quando as empresas novas nascem com a IA
+  // da empresa X?" só tem resposta aqui, porque a coluna guarda o estado e não
+  // o histórico.
+  "platform.molde_de_ia_updated",
+  // O EFEITO do molde: a empresa nova nasceu com as funções e o padrão de IA
+  // do molde. Quem grava é o gatilho `fn_molde_de_ia_na_org_nova` (migration
+  // 9096), na organização NOVA, com o id do molde e as contagens no metadata;
+  // quem lê é Painel › Empresas › [empresa] ("IA copiada do molde").
+  "ai.molde_de_ia_aplicado",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

@@ -18,6 +18,9 @@ const base: EstadoDeElegibilidade = {
   modo: "open",
   forceHuman: false,
   contatoInterno: false,
+  // #3534: a régua da equipe é o oposto da interna — autoriza em vez de vetar.
+  // `false` aqui é o contato comum, que segue a régua do canal.
+  contatoDaEquipe: false,
   aiOptOut: false,
   botSilencedUntil: null,
   assigneeKind: "ai",
@@ -383,5 +386,31 @@ describe("#2353 · contato interno não é atendido pela IA", () => {
       ttlMs: DIA,
     });
     expect(semLista.contatoInterno).toBe(false);
+  });
+});
+
+/**
+ * #3974 — A OPÇÃO DO FLUXO NÃO ACORDA A IA.
+ *
+ * O follow-up de etapa ganhou, por fluxo, a opção de sair mesmo com a conversa
+ * atribuída a uma pessoa. Ela vale para o follow-up PROGRAMADO; o turno da IA
+ * responde pela MESMA régua de antes. Estes casos são a trava disso: com dono
+ * (e calado ou não), a elegibilidade continua negando.
+ */
+describe("#3974 — conversa com dono: a IA continua barrada", () => {
+  it("dono + silêncio infinito (assumir/atribuir) → conversa_silenciada", () => {
+    const d = decidirElegibilidade({
+      ...base,
+      assigneeKind: "user",
+      botSilencedUntil: Infinity,
+    });
+    expect(d.permite).toBe(false);
+    expect(d.motivo).toBe("conversa_silenciada");
+  });
+
+  it("dono sem silêncio (atribuição de rodízio) → conversa_de_humano", () => {
+    const d = decidirElegibilidade({ ...base, assigneeKind: "user", botSilencedUntil: null });
+    expect(d.permite).toBe(false);
+    expect(d.motivo).toBe("conversa_de_humano");
   });
 });

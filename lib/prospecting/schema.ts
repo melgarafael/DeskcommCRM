@@ -195,6 +195,15 @@ export const RAZAO_NAO_SELECIONADA = "Não selecionada pelo operador.";
 export function razaoDeAbordarSelecionado(selected: boolean): string | null {
   return selected ? null : RAZAO_NAO_SELECIONADA;
 }
+/**
+ * O que fica gravado em `prospecting_candidates.data.whatsapp` (`lib/prospecting/whatsapp.ts`).
+ * Mora AQUI, e não lá, de propósito: a tela importa este arquivo, e trazer o módulo da
+ * consulta para o grafo dela puxaria o seam inteiro de canais para o bundle do navegador.
+ */
+export interface VereditoWhatsapp {
+  existe: boolean;
+  verificado_em: string;
+}
 export interface Prospect {
   key: string;
   name: string;
@@ -215,6 +224,12 @@ export interface Prospect {
    * vencida, o envio escreve do zero.
    */
   previa?: PreviaSalva | null;
+  /**
+   * O telefone tem WhatsApp? Resposta do canal (`numeroTemConta`, via
+   * `lib/prospecting/whatsapp.ts`). Ausente = ainda não conferido (ou não há
+   * conexão capaz de conferir); `existe: false` tira a empresa da abordagem.
+   */
+  whatsapp?: VereditoWhatsapp | null;
 }
 
 /**
