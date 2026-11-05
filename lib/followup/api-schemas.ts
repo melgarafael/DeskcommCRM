@@ -129,6 +129,13 @@ export const patchFollowupFlowSchema = z.strictObject({
   name: z.string().trim().min(1).max(80).optional(),
   draft_graph: flowGraphSchema.optional(),
   handoff_policy: z.enum(["pause", "cancel", "allow"]).optional(),
+  /**
+   * #3974 — "enviar mesmo com a conversa atribuída a uma pessoa". Por fluxo, e
+   * o default é `false` (comportamento de sempre). Lida pelo motor em
+   * `lib/followup/envio-com-o-dono.ts`, não pela política de handoff: são duas
+   * réguas diferentes, e a de handoff continua valendo para a IA responder.
+   */
+  send_when_assigned: z.boolean().optional(),
   trigger_config: triggerConfigSchema.optional(),
 });
 
@@ -143,4 +150,10 @@ export const createFollowupEnrollmentSchema = z.strictObject({
   // ausente, resolve-se do próprio pointer (agentes que o armam). Validado
   // contra a org antes de gravar.
   agent_id: z.string().uuid().optional(),
+  // #3746: a conversa de onde a inscrição nasceu. Opcional porque a fila de
+  // follow-ups inscreve sem ter uma conversa aberta, e porque um cliente antigo
+  // que não manda o campo não pode parar de funcionar. Quando vem, é a conversa
+  // que a régua de posse confere (o Atendente inscreve o cliente que ele
+  // atende); sem ela, vale qualquer conversa do contato atribuída a ele.
+  conversation_id: z.string().uuid().optional(),
 });

@@ -80,6 +80,13 @@ export const ApiErrorCodes = {
   // retentar depois resolve, enquanto conflito manda trocar a chave.
   idempotency_in_progress: "idempotency_in_progress",
   state_conflict: "state_conflict",
+  // POST /api/v1/prospecting (`start` e `resume`): a CONEXÃO escolhida já tem
+  // uma campanha de prospecção em andamento (#3896). Uma campanha ativa por
+  // NÚMERO, não por organização — a recusa é do número, e `details` traz
+  // `campaign_id`/`campaign_name` de quem o ocupa para a tela oferecer
+  // "abrir essa campanha". Irmão do `channel_archived`: mesma classe (o canal é
+  // o recurso escasso), outro motivo.
+  prospecting_channel_busy: "prospecting_channel_busy",
   // Escrita vinda de uma aba que ficou numa organização diferente da do cookie
   // `active_org` (#2335). O header `X-Org-Da-Aba` só serve para RECUSAR: a org
   // efetiva continua sendo a do cookie (`lib/auth/require-role.ts`).
@@ -124,12 +131,25 @@ export const ApiErrorCodes = {
   // POST/PATCH /api/v1/attendants/sectors com nome que já existe na organização
   // (índice attendant_sectors_org_name_unique, migration 0801).
   sector_name_taken: "sector_name_taken",
+  // POST /api/v1/ai/agents e PATCH .../agents/[id] com nome que a organização já
+  // usa (índice ai_agents_name_unique, composto `(organization_id, name)` —
+  // baseline.sql:1963). Era 500 "Erro ao criar agent."; #3952. A régua que separa
+  // ESTE `23505` dos outros índices mora em `lib/ai/agents/nome-repetido.ts`.
+  // Irmão do `sector_name_taken`: mesma classe, outro cadastro.
+  agent_name_taken: "agent_name_taken",
   duplicate_external_id: "duplicate_external_id",
   event_gone: "event_gone", // resend de run cujo event_log original foi apagado (on delete set null)
   no_actions_to_resend: "no_actions_to_resend", // resend de regra que não tem mais nenhuma ação de webhook — reenviar nada não é sucesso
   next_action_absent: "next_action_absent", // decisão sobre proposta que não existe (mais) [wave 4]
   next_action_changed: "next_action_changed", // o agente reescreveu a proposta entre o render e o clique
   channel_archived: "channel_archived", // ação sobre canal que o usuário excluiu (a linha só sobrevive como âncora das FKs)
+  // POST /api/v1/ai/followups/enrollments numa instalação SEM número conectado
+  // (#3923): `fn_service_begin` levanta `service_channel_not_found` e o banco
+  // está certo — sem canal não há conversa para abrir. Era 500 sem corpo; agora
+  // é 409 com esta código estável, e a tela troca a frase genérica por "conecte
+  // um número". 409 e não 422: o corpo do pedido está correto, quem não está
+  // pronto é o estado da instalação.
+  service_channel_not_found: "service_channel_not_found",
   knowledge_source_type_in_use: "knowledge_source_type_in_use", // fonte ATIVA do mesmo tipo no agente — era o índice ai_knowledge_sources_unique_per_agent, que a 0181 derrubou; nenhuma rota emite mais este código
   voice_already_paired: "voice_already_paired", // POST /voice/sessions/pair com aparelho já vinculado — a saída é DELETE /voice/sessions, nunca re-parear por cima (ver a rota)
 
@@ -364,11 +384,20 @@ export const ApiErrorCodes = {
   internal_error: "internal_error",
   upstream_unavailable: "upstream_unavailable",
   unavailable: "unavailable", // 503: dependência de config ausente (ex.: pool do engine sem SUPABASE_DB_URL)
+  base_publica_nao_configurada: "base_publica_nao_configurada", // 503: NEXT_PUBLIC_APP_URL ausente, placeholder ou da própria máquina — o webhook único da instalação não é registrado
   waha_error: "waha_error",
   channel_unavailable: "channel_unavailable", // 502: o transporte do canal não respondeu (ex.: listar grupos com a sessão fora de WORKING)
   wacalls_error: "wacalls_error", // 502: o serviço de chamada de voz recusou ou não respondeu
   wacalls_not_connected: "wacalls_not_connected", // 503 + Retry-After: sessão pareada cujo socket com o WhatsApp caiu por um instante (ver `wacallsSemConexao`)
   ai_provider_error: "ai_provider_error",
+  // 502: o teste do agente (#4020) não chegou a rodar porque o BANCO não
+  // atendeu — `Query read timeout`, `statement timeout`, socket derrubado ou o
+  // pool do engine sem `SUPABASE_DB_URL`. Código próprio, e não `preview_failed`,
+  // porque a tela e quem depura precisam distinguir "a configuração do agente
+  // está errada" (422, `preview_failed`) de "a dependência não respondeu"
+  // (502, este — não 503, que o cliente repete) — a primeira manda conferir
+  // modelo/credencial, a segunda manda esperar e tentar de novo.
+  preview_banco_indisponivel: "preview_banco_indisponivel",
   nuvemshop_error: "nuvemshop_error",
 } as const;
 

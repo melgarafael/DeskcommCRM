@@ -673,3 +673,43 @@ describe("H: recarrega sozinha enquanto há o que preparar, e para quando zera",
     expect(api.get).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("WhatsApp conferido antes da abordagem (lib/prospecting/whatsapp.ts)", () => {
+  function comWhatsapp() {
+    const f = fixture();
+    const com = { ...empresa("Tem zap", "https://z.test/", SITE_OK), whatsapp: { existe: true, verificado_em: "2026-11-02T12:00:00Z" } };
+    const sem = { ...empresa("Fixo sem zap", "https://f2.test/", SITE_OK), whatsapp: { existe: false, verificado_em: "2026-11-02T12:00:00Z" } };
+    f.candidates.push(candidato("c7", COMPLETA, com), candidato("c8", COMPLETA, sem, false));
+    return f;
+  }
+
+  it("o contador diz quantos foram conferidos e quantos ficaram fora por não ter WhatsApp", async () => {
+    api.get.mockImplementation(async () => ({ data: comWhatsapp() }));
+    openPage();
+    // 7 empresas com telefone na campanha (c1–c5, c7, c8); 2 conferidas, 1 sem WhatsApp.
+    expect(
+      await screen.findByText(/WhatsApp verificado: 2 de 7/),
+    ).toHaveTextContent("(1 sem WhatsApp, fora da abordagem)");
+    expect(within(screen.getByRole("row", { name: /Tem zap/ })).getByText("Tem WhatsApp")).toBeVisible();
+  });
+
+  it("sem nenhum veredito (módulo desligado ou sem conexão por QR), o contador do WhatsApp não aparece", async () => {
+    api.get.mockImplementation(async () => ({ data: fixture() }));
+    openPage();
+    await screen.findByText(/Sites verificados:/);
+    expect(screen.queryByText(/WhatsApp verificado:/)).toBeNull();
+  });
+
+  it("quem não tem WhatsApp aparece só nas desmarcadas, com o motivo, e sem caixa para marcar de volta", async () => {
+    api.get.mockImplementation(async () => ({ data: comWhatsapp() }));
+    openPage();
+    await screen.findByText(/WhatsApp verificado:/);
+    expect(screen.queryByRole("row", { name: /Fixo sem zap/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Mostrar desmarcadas/ }));
+    const linha = await screen.findByRole("row", { name: /Fixo sem zap/ });
+    expect(within(linha).getByText("Sem WhatsApp")).toBeVisible();
+    expect(within(linha).queryByRole("checkbox")).toBeNull();
+    // A desmarcada pelo operador (c5) continua marcável: a trava é só de quem não tem WhatsApp.
+    expect(within(screen.getByRole("row", { name: /Desmarcada/ })).getByRole("checkbox")).toBeVisible();
+  });
+});

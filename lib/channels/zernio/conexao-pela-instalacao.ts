@@ -66,9 +66,12 @@ export const EVENTOS_DO_WEBHOOK = [
 export const ID_DO_PROVEDOR = /^[a-f0-9]{24}$/;
 
 /**
- * Nome do perfil: a marca da INSTALAÇÃO, o nome da organização e o começo do id
- * — único no time (o provedor recusa nome repetido com 409) mesmo com duas
- * organizações chamadas "Loja".
+ * Nome do perfil: a marca da INSTALAÇÃO, o nome da organização e o id dela —
+ * único no time (o provedor recusa nome repetido com 409) mesmo com duas
+ * organizações chamadas "Loja". O id vai INTEIRO e no fim: é a parte que não
+ * muda quando a organização é renomeada ou a marca troca, e é por ela que
+ * `garantirPerfil` reacha o perfil (um prefixo curto poderia casar com o de
+ * outra organização).
  *
  * A marca vem na frente porque a conta do provedor pode ser compartilhada com
  * outros sistemas do mesmo dono, que também criam um perfil por cliente; sem
@@ -78,7 +81,7 @@ export const ID_DO_PROVEDOR = /^[a-f0-9]{24}$/;
 export function nomeDoPerfil(org: { id: string; nome: string; marca?: string | null }): string {
   const nome = org.nome.trim().replace(/\s+/g, " ").slice(0, 40) || "Organização";
   const marca = (org.marca ?? "").trim().replace(/\s+/g, " ").slice(0, 30);
-  return marca ? `${marca} · ${nome} · ${org.id.slice(0, 8)}` : `${nome} · ${org.id.slice(0, 8)}`;
+  return marca ? `${marca} · ${nome} · ${org.id}` : `${nome} · ${org.id}`;
 }
 
 const perfisSchema = z.object({
@@ -88,9 +91,12 @@ const perfisSchema = z.object({
 /**
  * O perfil desta organização no provedor: o já gravado, ou um novo.
  *
- * Idempotente pelo NOME: uma primeira tentativa que criou o perfil e morreu
- * antes de a tela receber a resposta faz a segunda receber 409, e aí o perfil
- * é achado na lista em vez de nascer outro.
+ * Idempotente pelo id da organização no fim do nome: uma primeira tentativa
+ * que criou o perfil e morreu antes de a tela receber a resposta faz a segunda
+ * receber 409, e aí o perfil é achado na lista em vez de nascer outro. Achar
+ * pelo id, e não pelo nome inteiro, é o que faz renomear a organização (ou
+ * trocar a marca) reaproveitar o perfil em vez de criar outro na conta da
+ * instalação a cada clique.
  */
 export async function garantirPerfil(
   chave: string,
@@ -100,7 +106,8 @@ export async function garantirPerfil(
   if (org.perfilGravado && perfis.some((p) => p._id === org.perfilGravado))
     return org.perfilGravado;
   const nome = nomeDoPerfil(org);
-  const existente = perfis.find((p) => p.name === nome);
+  const daOrganizacao = (p: { name: string }) => p.name.endsWith(` · ${org.id}`);
+  const existente = perfis.find(daOrganizacao);
   if (existente) return existente._id;
   try {
     const criado = z
@@ -111,7 +118,7 @@ export async function garantirPerfil(
     if (!(erro instanceof ErroDoProvedor && erro.upstreamStatus === 409)) throw erro;
     const achado = perfisSchema
       .parse(await pedirAoProvedor(chave, "profiles"))
-      .profiles.find((p) => p.name === nome);
+      .profiles.find(daOrganizacao);
     if (!achado) throw erro;
     return achado._id;
   }
@@ -196,17 +203,35 @@ export interface ContaConectada {
 
 type ContaDoProvedor = z.infer<typeof contasSchema>["accounts"][number];
 
-/** As contas de WhatsApp ativas DESTE perfil — o filtro do provedor é conferido de novo aqui. */
-async function whatsappsDoPerfil(chave: string, profileId: string): Promise<ContaDoProvedor[]> {
+/** As contas DESTE perfil, ativas ou não — o filtro do provedor é conferido de novo aqui. */
+async function contasDoPerfil(chave: string, profileId: string): Promise<ContaDoProvedor[]> {
   const { accounts } = contasSchema.parse(
     await pedirAoProvedor(chave, `accounts?profileId=${encodeURIComponent(profileId)}`),
   );
   return accounts.filter(
-    (a) =>
-      (typeof a.profileId === "string" ? a.profileId : a.profileId._id) === profileId &&
-      a.platform === "whatsapp" &&
-      a.isActive,
+    (a) => (typeof a.profileId === "string" ? a.profileId : a.profileId._id) === profileId,
   );
+}
+
+/** As contas de WhatsApp ativas DESTE perfil. */
+async function whatsappsDoPerfil(chave: string, profileId: string): Promise<ContaDoProvedor[]> {
+  return (await contasDoPerfil(chave, profileId)).filter(
+    (a) => a.platform === "whatsapp" && a.isActive,
+  );
+}
+
+/**
+ * A conta está NESTE perfil, ativa ou não? É o que a exclusão confere antes de
+ * desconectar com a chave da instalação: essa chave alcança todos os números da
+ * conta do provedor, e só o que o provedor confirma no perfil da organização é
+ * dela para desconectar.
+ */
+export async function contaEstaNoPerfil(
+  chave: string,
+  profileId: string,
+  accountId: string,
+): Promise<boolean> {
+  return (await contasDoPerfil(chave, profileId)).some((a) => a._id === accountId);
 }
 
 function paraContaConectada(conta: ContaDoProvedor): ContaConectada {

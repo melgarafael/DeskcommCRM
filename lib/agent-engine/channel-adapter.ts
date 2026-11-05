@@ -1,3 +1,4 @@
+import type { FormatoDaVoz } from '@/lib/ai/voz/formato';
 import type { AgentOperationContext } from '@/lib/ai/agents/operation';
 import type { JobClaim } from './queue/claim';
 // Tipo SÓ (erased no build): o vocabulário de mídia do passo automático vem da
@@ -57,6 +58,8 @@ export interface ChannelSendInput {
     apiKey: string;
     voiceId: string;
     modelId?: string;
+    /** mp3 (canal que converte) ou ogg/opus (canal oficial) — `lib/ai/voz/formato.ts`. */
+    formato?: FormatoDaVoz;
     upload: (audio: Buffer, mimeType: string) => Promise<string>;
   };
   /**

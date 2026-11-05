@@ -44,6 +44,14 @@ vi.mock("@/lib/leads/nascimento-do-lead", () => ({
 vi.mock("@/lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
+// A inferência pelo horário tem o próprio arquivo de teste
+// (`tests/unit/origem-por-horario.test.ts`); aqui só importa QUANDO ela é chamada.
+const casarOrigemPorHorario = vi.fn(async (..._a: unknown[]) => {
+  sequencia.push("origem:horario");
+});
+vi.mock("@/lib/leads/origem-por-horario", () => ({
+  casarOrigemPorHorario: (...a: unknown[]) => casarOrigemPorHorario(...a),
+}));
 vi.mock("@/lib/dev/kick-local-pipeline", () => ({
   acelerarFollowupDoInbound: vi.fn(async () => {}),
   drenarEventosDoInbound: vi.fn(async () => {}),
@@ -239,6 +247,7 @@ beforeEach(() => {
   encerraDemanda.mockReset();
   encerraDemanda.mockResolvedValue({ lead: {}, jaEstava: false } as never);
   audit.mockClear();
+  casarOrigemPorHorario.mockClear();
   garantirLeadDaConversa.mockClear();
   garantirLeadDaConversa.mockResolvedValue({ criado: true, leadId: "lead-1" } as never);
   vi.mocked(acelerarFollowupDoInbound).mockReset();
@@ -964,5 +973,43 @@ describe("o ref curto da página que veio no texto", () => {
 
     expect(sequencia).not.toContain("update:meta_ads_click_refs");
     expect(nomesDeRpc()).toContain("fn_estampar_atribuicao_de_anuncio");
+  });
+});
+
+describe("sem código no texto, a origem pode vir do horário do clique", () => {
+  const REF = "[ref:K7M2P9]";
+  const DK1 = `[dk1:${Buffer.from(JSON.stringify({ utm_campaign: "x" }), "utf8").toString("base64url")}]`;
+
+  it("tenta a inferência com a entrada desta mensagem", async () => {
+    await rodar({ texto: "oi, quero saber do produto" });
+
+    expect(casarOrigemPorHorario).toHaveBeenCalledTimes(1);
+    expect(casarOrigemPorHorario.mock.calls[0]?.[1]).toMatchObject({
+      organizationId: "org-1",
+      contactId: "contato-1",
+      messageId: "msg-1",
+      channelSessionId: "sessao-1",
+    });
+  });
+
+  it("e a tenta ANTES de o card nascer", async () => {
+    garantirLeadDaConversa.mockImplementationOnce(async () => {
+      sequencia.push("lead:nascimento");
+      return { criado: true, leadId: "lead-1" } as never;
+    });
+    await rodar({ texto: "oi" });
+
+    expect(sequencia.indexOf("origem:horario")).toBeGreaterThanOrEqual(0);
+    expect(sequencia.indexOf("lead:nascimento")).toBeGreaterThan(sequencia.indexOf("origem:horario"));
+  });
+
+  it("com o `[ref:]` no texto, a prova manda e a inferência nem roda", async () => {
+    await rodar({ texto: `oi ${REF}` });
+    expect(casarOrigemPorHorario).not.toHaveBeenCalled();
+  });
+
+  it("com o `[dk1:]` no texto, também não", async () => {
+    await rodar({ texto: `oi ${DK1}` });
+    expect(casarOrigemPorHorario).not.toHaveBeenCalled();
   });
 });

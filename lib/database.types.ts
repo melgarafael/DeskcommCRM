@@ -972,7 +972,9 @@ export type Database = {
           history_message_window: number;
           history_token_window: number;
           id: string;
+          image_vision_enabled: boolean;
           inbound_debounce_ms: number | null;
+          reply_min_interval_ms: number | null;
           knowledge_source_ids: string[];
           max_steps: number;
           model: string;
@@ -986,6 +988,7 @@ export type Database = {
           provider: string;
           provisioning_origin: string | null;
           published_at: string | null;
+          skill_names: string[] | null;
           split_max_chars: number;
           split_messages: boolean;
           status: string;
@@ -1013,7 +1016,9 @@ export type Database = {
           history_message_window?: number;
           history_token_window?: number;
           id?: string;
+          image_vision_enabled?: boolean;
           inbound_debounce_ms?: number | null;
+          reply_min_interval_ms?: number | null;
           knowledge_source_ids?: string[];
           max_steps?: number;
           model: string;
@@ -1027,6 +1032,7 @@ export type Database = {
           provider: string;
           provisioning_origin?: string | null;
           published_at?: string | null;
+          skill_names?: string[] | null;
           split_max_chars?: number;
           split_messages?: boolean;
           status?: string;
@@ -1053,7 +1059,9 @@ export type Database = {
           history_message_window?: number;
           history_token_window?: number;
           id?: string;
+          image_vision_enabled?: boolean;
           inbound_debounce_ms?: number | null;
+          reply_min_interval_ms?: number | null;
           knowledge_source_ids?: string[];
           max_steps?: number;
           model?: string;
@@ -1067,6 +1075,7 @@ export type Database = {
           provider?: string;
           provisioning_origin?: string | null;
           published_at?: string | null;
+          skill_names?: string[] | null;
           split_max_chars?: number;
           split_messages?: boolean;
           status?: string;
@@ -3459,6 +3468,7 @@ export type Database = {
           reminder_channel_session_id: string | null;
           reminder_enabled: boolean;
           reminder_extra_offsets_minutes: number[];
+          reminder_meta_template_id: string | null;
           reminder_minutes_before: number;
           reminder_template_name: string | null;
           requires_confirmation: boolean;
@@ -3497,6 +3507,7 @@ export type Database = {
           reminder_channel_session_id?: string | null;
           reminder_enabled?: boolean;
           reminder_extra_offsets_minutes?: number[];
+          reminder_meta_template_id?: string | null;
           reminder_minutes_before?: number;
           reminder_template_name?: string | null;
           requires_confirmation?: boolean;
@@ -3534,6 +3545,7 @@ export type Database = {
           reminder_channel_session_id?: string | null;
           reminder_enabled?: boolean;
           reminder_extra_offsets_minutes?: number[];
+          reminder_meta_template_id?: string | null;
           reminder_minutes_before?: number;
           reminder_template_name?: string | null;
           requires_confirmation?: boolean;
@@ -3559,6 +3571,13 @@ export type Database = {
             columns: ["organization_id", "reminder_channel_session_id"];
             isOneToOne: false;
             referencedRelation: "channel_sessions";
+            referencedColumns: ["organization_id", "id"];
+          },
+          {
+            foreignKeyName: "calendar_event_types_reminder_template_org_fkey";
+            columns: ["organization_id", "reminder_meta_template_id"];
+            isOneToOne: false;
+            referencedRelation: "meta_templates";
             referencedColumns: ["organization_id", "id"];
           },
           {
@@ -5737,6 +5756,8 @@ export type Database = {
           destino_modo: string;
           ligado: boolean;
           mensagens_ignoradas: number;
+          /** Modelo aprovado que leva o aviso pela conexão que só manda modelo (9094). */
+          modelo_id: string | null;
           organization_id: string;
           resposta_whatsapp_habilitada: boolean;
           rotulo: string | null;
@@ -5754,6 +5775,7 @@ export type Database = {
           destino_modo?: string;
           ligado?: boolean;
           mensagens_ignoradas?: number;
+          modelo_id?: string | null;
           organization_id: string;
           resposta_whatsapp_habilitada?: boolean;
           rotulo?: string | null;
@@ -5770,6 +5792,7 @@ export type Database = {
           destino_modo?: string;
           ligado?: boolean;
           mensagens_ignoradas?: number;
+          modelo_id?: string | null;
           organization_id?: string;
           resposta_whatsapp_habilitada?: boolean;
           rotulo?: string | null;
@@ -5784,6 +5807,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "channel_sessions";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "config_aviso_de_caso_modelo_org_fkey";
+            columns: ["organization_id", "modelo_id"];
+            isOneToOne: false;
+            referencedRelation: "meta_templates";
+            referencedColumns: ["organization_id", "id"];
           },
           {
             foreignKeyName: "config_aviso_de_caso_organization_id_fkey";
@@ -6167,6 +6197,7 @@ export type Database = {
           id: string;
           organization_id: string;
           reason: string;
+          source_job_id: string | null;
           to_user_id: string | null;
         };
         ComputedFields: never;
@@ -6178,6 +6209,7 @@ export type Database = {
           id?: string;
           organization_id: string;
           reason: string;
+          source_job_id?: string | null;
           to_user_id?: string | null;
         };
         Update: {
@@ -6188,6 +6220,7 @@ export type Database = {
           id?: string;
           organization_id?: string;
           reason?: string;
+          source_job_id?: string | null;
           to_user_id?: string | null;
         };
         Relationships: [
@@ -8978,6 +9011,7 @@ export type Database = {
           id: string;
           name: string;
           organization_id: string;
+          send_when_assigned: boolean;
           status: string;
           surface: string;
           trigger_config: NonNullable<Json>;
@@ -8992,6 +9026,7 @@ export type Database = {
           id?: string;
           name: string;
           organization_id: string;
+          send_when_assigned?: boolean;
           status?: string;
           surface?: string;
           trigger_config?: NonNullable<Json>;
@@ -9005,6 +9040,7 @@ export type Database = {
           id?: string;
           name?: string;
           organization_id?: string;
+          send_when_assigned?: boolean;
           status?: string;
           surface?: string;
           trigger_config?: NonNullable<Json>;
@@ -10418,9 +10454,13 @@ export type Database = {
           agent_id: string | null;
           cache_read_tokens: number;
           cache_write_tokens: number;
+          chars_ferramentas: number | null;
+          chars_mensagens: number | null;
+          chars_sistema: number | null;
           contact_id: string | null;
           cost_cents: number | null;
           created_at: string;
+          entrada_do_primeiro_passo: number | null;
           error_code: string | null;
           error_message: string | null;
           http_status: number | null;
@@ -10433,6 +10473,9 @@ export type Database = {
           organization_id: string;
           origem_da_escolha: string | null;
           output_tokens: number;
+          partes_de_midia: number | null;
+          passos: number | null;
+          prefixo_hash: string | null;
           provider: string;
           purpose: string;
           status: string;
@@ -10443,9 +10486,13 @@ export type Database = {
           agent_id?: string | null;
           cache_read_tokens?: number;
           cache_write_tokens?: number;
+          chars_ferramentas?: number | null;
+          chars_mensagens?: number | null;
+          chars_sistema?: number | null;
           contact_id?: string | null;
           cost_cents?: number | null;
           created_at?: string;
+          entrada_do_primeiro_passo?: number | null;
           error_code?: string | null;
           error_message?: string | null;
           http_status?: number | null;
@@ -10458,6 +10505,9 @@ export type Database = {
           organization_id: string;
           origem_da_escolha?: string | null;
           output_tokens?: number;
+          partes_de_midia?: number | null;
+          passos?: number | null;
+          prefixo_hash?: string | null;
           provider: string;
           purpose?: string;
           status?: string;
@@ -10467,9 +10517,13 @@ export type Database = {
           agent_id?: string | null;
           cache_read_tokens?: number;
           cache_write_tokens?: number;
+          chars_ferramentas?: number | null;
+          chars_mensagens?: number | null;
+          chars_sistema?: number | null;
           contact_id?: string | null;
           cost_cents?: number | null;
           created_at?: string;
+          entrada_do_primeiro_passo?: number | null;
           error_code?: string | null;
           error_message?: string | null;
           http_status?: number | null;
@@ -10482,6 +10536,9 @@ export type Database = {
           organization_id?: string;
           origem_da_escolha?: string | null;
           output_tokens?: number;
+          partes_de_midia?: number | null;
+          passos?: number | null;
+          prefixo_hash?: string | null;
           provider?: string;
           purpose?: string;
           status?: string;
@@ -12639,6 +12696,7 @@ export type Database = {
           agent_setup: NonNullable<Json>;
           agent_setup_revision: number;
           channel_down_since: string | null;
+          channel_session_id: string | null;
           config: Json | null;
           cost_usd: number | null;
           created_at: string;
@@ -12662,6 +12720,7 @@ export type Database = {
           agent_setup?: NonNullable<Json>;
           agent_setup_revision?: number;
           channel_down_since?: string | null;
+          channel_session_id?: string | null;
           config?: Json | null;
           cost_usd?: number | null;
           created_at?: string;
@@ -12684,6 +12743,7 @@ export type Database = {
           agent_setup?: NonNullable<Json>;
           agent_setup_revision?: number;
           channel_down_since?: string | null;
+          channel_session_id?: string | null;
           config?: Json | null;
           cost_usd?: number | null;
           created_at?: string;
@@ -15239,6 +15299,7 @@ export type Database = {
           p_expected_assignee?: string;
           p_organization_id: string;
           p_reason: string;
+          p_source_job_id?: string | null;
           p_to_user_id: string;
         };
         Returns: {
@@ -15323,8 +15384,11 @@ export type Database = {
         Args: {
           p_channel: string;
           p_confirma_contato?: boolean;
+          p_destino_modo?: string;
           p_ligado: boolean;
+          p_modelo?: string | null;
           p_org: string;
+          p_responsaveis?: Json | null;
           p_resposta_whatsapp_habilitada?: boolean;
           p_rotulo: string;
           p_telefone: string;
