@@ -93,7 +93,10 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
     // O que a bandeja do sistema pode mostrar é decidido aqui, no servidor,
     // pela mesma opção que o funil do push aplica.
     const { modo } = await lerTelaBloqueada(createAdminClient(), org.orgId);
-    return ok({ avisar, conteudo: modo, canal: channelBrand(conversa.channel_sessions) }, { requestId });
+    // O tipo vê o embed como lista; pela FK ele chega como objeto único.
+    const sessao = conversa.channel_sessions;
+    const canal = channelBrand(Array.isArray(sessao) ? sessao[0] : sessao);
+    return ok({ avisar, conteudo: modo, canal }, { requestId });
   } catch (err) {
     logger.error("[aviso-de-mensagem] leitura falhou", {
       conversation_id: id,
