@@ -11515,5 +11515,6 @@
   "Leitura": "Okuma",
   "O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.": "Yetkilendirme bağlantısı otomatiktir: müşteri yetkilendirene kadar ajan, bağlantıyı üreten aracı kendiliğinden alır. Burada seçmeniz gerekmez.",
   "O serviço deste módulo não respondeu": "Bu modülün hizmeti yanıt vermedi",
-  "O resto do CRM continua funcionando. Tente de novo em instantes.": "CRM'in geri kalanı çalışmaya devam ediyor. Birazdan tekrar deneyin."
+  "O resto do CRM continua funcionando. Tente de novo em instantes.": "CRM'in geri kalanı çalışmaya devam ediyor. Birazdan tekrar deneyin.",
+  "Módulo conectado": "Bağlı modül"
 }

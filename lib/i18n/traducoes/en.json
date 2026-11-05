@@ -9793,5 +9793,6 @@
   "Já existe um agente com esse nome.": "An agent with this name already exists.",
   "O rascunho foi salvo; o nome do agente não mudou.": "The draft was saved; the agent's name did not change.",
   "O serviço deste módulo não respondeu": "This module's service did not respond",
-  "O resto do CRM continua funcionando. Tente de novo em instantes.": "The rest of the CRM keeps working. Try again in a moment."
+  "O resto do CRM continua funcionando. Tente de novo em instantes.": "The rest of the CRM keeps working. Try again in a moment.",
+  "Módulo conectado": "Connected module"
 }

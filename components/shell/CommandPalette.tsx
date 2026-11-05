@@ -3,7 +3,7 @@ import { useMemo } from "react";
 
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
-import { NAV_GROUPS, searchable } from "@/lib/navigation/registry";
+import { GRUPO_DOS_MODULOS, NAV_GROUPS, searchable } from "@/lib/navigation/registry";
 import { PaletaDeDestinos } from "@/components/shell/PaletaDeDestinos";
 
 /**
@@ -35,6 +35,7 @@ export function CommandPalette({
         activeOrg?.interface_settings,
         activeOrg?.modulos_ligados ?? [],
         activeOrg?.capacidades_ligadas ?? [],
+        activeOrg?.modulos_conectados ?? [],
       ),
     [
       user.is_platform_admin,
@@ -43,15 +44,19 @@ export function CommandPalette({
       activeOrg?.interface_settings,
       activeOrg?.modulos_ligados,
       activeOrg?.capacidades_ligadas,
+      activeOrg?.modulos_conectados,
     ],
   );
+
+  // O grupo "Módulos" é gerado: entra no fim da lista de categorias e só aparece com destino nele.
+  const grupos = useMemo(() => [...NAV_GROUPS, GRUPO_DOS_MODULOS], []);
 
   return (
     <PaletaDeDestinos
       open={open}
       onOpenChange={onOpenChange}
       destinos={visiveis}
-      grupos={NAV_GROUPS}
+      grupos={grupos}
       titulo={t("Buscar telas")}
       rotuloLista={t("Telas")}
       placeholder={t(
