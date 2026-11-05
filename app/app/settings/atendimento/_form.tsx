@@ -36,6 +36,10 @@ export interface AtendimentoConfig {
   conversation_stays_with_attendant: boolean;
   /** Minutos de silêncio da IA após resposta pelo celular. `null` = o padrão de 60. */
   manual_reply_silence_minutes: number | null;
+  /** #3966 — a distribuição espera a IA qualificar (padrão: não espera). */
+  distribute_only_after_qualification: boolean;
+  /** #3966 — o limite da espera, em minutos, contado do início da conversa. */
+  qualification_wait_minutes: number;
 }
 
 /**
@@ -383,6 +387,70 @@ export function AtendimentoForm({ initial }: { initial: AtendimentoConfig }) {
             </span>
           </span>
         </label>
+      </Card>
+
+      {/* #3966 — a ordem entre a IA e a pessoa. O padrão é o de sempre
+          (distribui no nascimento); ligado, a conversa fica COM a IA até a
+          qualificação terminar, e é isso que impede o roteamento de calar, no
+          primeiro minuto, o agente que deveria qualificar o lead. */}
+      <Card className="space-y-4 p-4" data-testid="distribuir-depois-de-qualificar">
+        <div>
+          <h2 className="text-sm font-semibold">
+            {t("Distribuir para uma pessoa só depois que a IA qualificar?")}
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Desligado, vale a regra de sempre: a conversa nova ganha um atendente no primeiro minuto, e a IA para de responder nela. Ligado, a conversa fica com a IA enquanto ela qualifica o cliente, e só entra na distribuição quando a IA termina — passando para uma pessoa, abrindo um caso para a equipe ou avançando o lead no funil.",
+            )}
+          </p>
+        </div>
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            data-testid="espera-a-qualificacao"
+            checked={form.distribute_only_after_qualification}
+            disabled={isPending}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, distribute_only_after_qualification: e.target.checked }))
+            }
+            className="mt-1 h-4 w-4 shrink-0 accent-primary"
+          />
+          <span className="space-y-1">
+            <span className="block text-sm font-medium">
+              {t("Esperar a IA qualificar antes de distribuir")}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {t(
+                "Só vale onde há um agente de IA atendendo o número. Sem agente, com a IA pausada, com o contato marcado como sempre humano ou com a IA silenciada, a conversa é distribuída na hora, como hoje.",
+              )}
+            </span>
+          </span>
+        </label>
+        {form.distribute_only_after_qualification ? (
+          <div className="grid gap-4 border-t pt-4 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="qualification_wait_minutes">
+                {t("Depois de quantos minutos distribuir de qualquer jeito?")}
+              </Label>
+              <Input
+                id="qualification_wait_minutes"
+                type="number"
+                min={15}
+                max={10080}
+                value={form.qualification_wait_minutes}
+                disabled={isPending}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, qualification_wait_minutes: Number(e.target.value) }))
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Entre 15 minutos e 7 dias, contados do início da conversa. O padrão é 1440 (um dia). O prazo existe porque a IA pode nunca sinalizar o fim da qualificação — um agente sem as ferramentas de caso, ou um cliente que para de responder. Passado o prazo, a conversa entra na distribuição mesmo sem sinal.",
+                )}
+              </p>
+            </div>
+          </div>
+        ) : null}
       </Card>
 
       <div className="flex items-center gap-3">

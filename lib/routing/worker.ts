@@ -23,9 +23,18 @@ import {
   resolverRoteamentoPorNumero,
   type RegraDoNumero,
 } from "@/lib/routing/decide";
-import { motivoParaNaoRotear, type MotivoDoCaso } from "@/lib/routing/caso-da-conversa";
+import { agenteAtende } from "@/lib/ai/agents/no-ar";
+import { resolverAgenteDaConversa, type CandidatoDeAgente } from "@/lib/ai/agents/agente-da-conversa";
+import { casoPedePessoa, motivoParaNaoRotear, type MotivoDoCaso } from "@/lib/routing/caso-da-conversa";
+import {
+  decidirEsperaPelaQualificacao,
+  esperaDaLigada,
+  leadJaQualificado,
+  lerEsperaDoCanal,
+  type EsperaDecidida,
+} from "@/lib/routing/qualificacao";
 import { loadEligibleAttendants, InvalidRoutingChannel, InvalidRoutingSector } from "@/lib/routing/eligibles";
-import { routingConfigSchema } from "@/lib/schemas/routing";
+import { routingConfigSchema, type RoutingConfig } from "@/lib/schemas/routing";
 
 export const ROUTING_WORKER_KEY = "worker.routing.v1";
 export const ROUTING_EVENT_TYPE = "conversation.routing_requested";
@@ -47,6 +56,8 @@ export type RoutingOutcome =
   | "skipped_contato_fornecedor"
   /** #3717: o caso mais recente da conversa não pede uma pessoa agora. */
   | "skipped_caso_sem_humano"
+  /** #3966: a IA está qualificando — a distribuição espera o sinal de fim. */
+  | "waiting_qualification"
   | "assign_lost_race"
   | "error";
 
@@ -79,9 +90,36 @@ const EMPTY_OUTCOMES = (): Record<RoutingOutcome, number> => ({
   skipped_contato_pessoal: 0,
   skipped_contato_fornecedor: 0,
   skipped_caso_sem_humano: 0,
+  waiting_qualification: 0,
   assign_lost_race: 0,
   error: 0,
 });
+
+/**
+ * O que a leitura da espera precisa da conversa e do contato (#3966). Um tipo só,
+ * com as colunas que o worker já traz no SELECT de `processEvent` — nada de
+ * segunda leitura da mesma linha.
+ */
+export interface ParametrosDaEspera {
+  config: RoutingConfig;
+  conversa: {
+    channel_session_id: string | null;
+    contact_id?: string | null;
+    active_ai_agent_id?: string | null;
+    created_at?: string | null;
+    bot_silenced_until?: string | null;
+  };
+  contato:
+    | {
+        force_human?: boolean | null;
+        ai_opt_out?: boolean | null;
+        is_blocked?: boolean | null;
+      }
+    | null;
+  /** Do caso mais recente — `casoPedePessoa(caso.status)`. */
+  casoPedePessoa: boolean;
+  agora: Date;
+}
 
 export interface RoutingWorkerOptions {
   batchSize?: number;
@@ -179,7 +217,7 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
   const { data: conv, error: convError } = await admin
     .from("conversations")
     .select(
-      "id, organization_id, contact_id, channel_session_id, assigned_to_user_id, status, metadata, last_inbound_at, sector_id",
+      "id, organization_id, contact_id, channel_session_id, assigned_to_user_id, status, metadata, last_inbound_at, sector_id, created_at, bot_silenced_until, active_ai_agent_id",
     )
     .eq("id", conversationId)
     .eq("organization_id", orgId)
@@ -201,14 +239,23 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
   // duas réguas: pessoal primeiro porque a dele é a mais forte (tira a conversa
   // da operação inteira); fornecedor depois, e só ele sai da DISTRIBUIÇÃO — a
   // conversa continua no Inbox, sem dono, como hoje.
+  // #3966: a MESMA leitura traz as três travas que decidem se a IA está calada
+  // nesta conversa. Uma query, três perguntas — e só quando a opção está ligada
+  // elas são lidas (ver `esperaDaQualificacao` logo abaixo).
   const { data: contato } = await admin
     .from("contacts")
-    .select("is_personal, contact_type")
+    .select("is_personal, contact_type, force_human, ai_opt_out, is_blocked")
     .eq("id", conv.contact_id)
     .eq("organization_id", orgId)
     .maybeSingle();
   const contatoDaConversa = contato as
-    | { is_personal?: boolean; contact_type?: string | null }
+    | {
+        is_personal?: boolean;
+        contact_type?: string | null;
+        force_human?: boolean | null;
+        ai_opt_out?: boolean | null;
+        is_blocked?: boolean | null;
+      }
     | null;
   if (contatoDaConversa?.is_personal === true) {
     await markDone(event, "skipped_contato_pessoal");
@@ -226,10 +273,11 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
   // depois de a conversa existir no pool e de não ser contato pessoal (não
   // gastar query em quem já saiu) —, e antes de qualquer leitura de config ou
   // de candidatos: o caso barra a conversa ANTES de o rodízio montar a lista.
-  const motivoDoCaso = await motivoDoCasoParaRoteamento(admin, orgId, {
+  const caso = await lerCasoDaConversa(admin, orgId, {
     id: conversationId,
     last_inbound_at: (conv as { last_inbound_at?: string | null }).last_inbound_at ?? null,
   });
+  const motivoDoCaso = caso.motivo;
 
   // organizations.settings.routing → Zod (default manual; knobs = config, não hardcode).
   const { data: org, error: orgError } = await admin
@@ -272,9 +320,24 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
    */
   const viaDestinoPadrao = !alreadyAssigned && Boolean(efetivo.defaultAssigneeUserId)
     && (!sectorId || await ehMembroDaFila(admin, orgId, sectorId, efetivo.defaultAssigneeUserId as string));
+
+  // A DISTRIBUIÇÃO ESPERA A IA QUALIFICAR (#3966). Lida AQUI — depois do caso,
+  // da config e da regra do número, e antes de montar a lista de elegíveis — por
+  // dois motivos: a decisão depende da config (que acabou de ser lida) e, quando
+  // a resposta é "espera", a lista de candidatos não é montada (a conversa não
+  // vai ser sorteada neste tick; carregar elegíveis seria query jogada fora).
+  const espera = await esperaDaQualificacao(admin, orgId, {
+    config,
+    conversa: conv as ParametrosDaEspera["conversa"],
+    contato: contatoDaConversa,
+    casoPedePessoa: caso.pedePessoa,
+    agora: now,
+  });
+
   let eligibles: Awaited<ReturnType<typeof loadEligibleAttendants>> = [];
   if (
     !alreadyAssigned &&
+    !espera.espera &&
     !viaDestinoPadrao &&
     (efetivo.mode === "round_robin" || efetivo.mode === "load")
   ) {
@@ -321,6 +384,11 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
     attempts: event.attempts,
     now,
     motivoDoCaso,
+    // `espera` já é a decisão pronta (regra pura em `lib/routing/qualificacao.ts`):
+    // aqui só o que o `decideRouting` precisa para agendar o próximo olhar.
+    esperaPelaQualificacao: espera.espera
+      ? { motivo: espera.motivo, limiteEm: espera.limiteEm }
+      : null,
   });
 
   switch (action.kind) {
@@ -399,6 +467,14 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
         outcome === "skipped_caso_sem_humano" ? { motivo_do_caso: action.reason } : {},
       );
       return outcome;
+    }
+    case "wait": {
+      // #3966: o evento continua PENDENTE (não fecha, não conta tentativa) e o
+      // próximo olhar é agendado para o backoff — ou para o limite, quando ele
+      // chega antes. `notice` NÃO sai aqui: avisar "ninguém disponível" numa
+      // conversa que está com a IA seria mentira, e o aviso é único por conversa.
+      await requeueEvent(event, now, event.attempts, { reason: action.reason }, action.nextAttemptAt);
+      return "waiting_qualification";
     }
     case "requeue": {
       if (action.attempts >= config.max_retries) await notice(orgId, conversationId, "no_eligible");
@@ -554,6 +630,160 @@ export async function carregarRegraDoNumero(
 }
 
 /**
+ * A ESPERA PELA QUALIFICAÇÃO, lida do banco (#3966).
+ *
+ * A REGRA é pura e mora em `lib/routing/qualificacao.ts`; aqui só existe a
+ * pergunta "quais são os fatos?". Três leituras, e cada uma só acontece se a
+ * anterior deixou a espera de pé — quem desligou a opção paga ZERO query nova
+ * neste caminho, e quem não tem agente no número paga uma.
+ *
+ * ## Por que a opção vem antes de tudo
+ *
+ * Ela é a única fonte que o dono do negócio controla. Ler agente, contato e
+ * estágio de quem nunca ligou a opção seria custo em todo evento de roteamento
+ * de toda instalação — e o worker roda um evento por conversa nova, mais um por
+ * minuto enquanto alguma espera.
+ *
+ * ## Falha de leitura distribui (falha ABERTA)
+ *
+ * Se a leitura do canal, do agente ou do lead estourar, a resposta é "não
+ * espera" — o mesmo princípio de `motivoDoCasoParaRoteamento` e do
+ * `operator-turn.ts:686` ("na dúvida o aviso sai, que é o erro barato"). Subir a
+ * exceção deixaria a conversa sem dono por causa de um SELECT que falhou, e o
+ * evento em retry eterno.
+ */
+export async function esperaDaQualificacao(
+  admin: Pick<SupabaseClient, "from">,
+  orgId: string,
+  p: ParametrosDaEspera,
+): Promise<EsperaDecidida> {
+  const doNumero = await lerEsperaDoNumero(admin, orgId, p.conversa.channel_session_id);
+  const ligada = esperaDaLigada(p.config.distribute_only_after_qualification, doNumero);
+  if (!ligada) return { espera: false, motivo: "opcao_desligada", limiteEm: null };
+
+  const iaAtende = await agenteAtendeOCanal(admin, orgId, p.conversa);
+  const stage = iaAtende ? await stageDoContato(admin, orgId, p.conversa.contact_id ?? null) : null;
+
+  return decidirEsperaPelaQualificacao({
+    ligada,
+    iaAtende,
+    forceHuman: p.contato?.force_human === true,
+    aiOptOut: p.contato?.ai_opt_out === true,
+    contatoBloqueado: p.contato?.is_blocked === true,
+    botSilencedUntil: p.conversa.bot_silenced_until ?? null,
+    casoPedePessoa: p.casoPedePessoa,
+    leadQualificado: leadJaQualificado(stage),
+    nasceuEm: p.conversa.created_at ?? null,
+    agora: p.agora,
+    limiteMinutos: p.config.qualification_wait_minutes,
+  });
+}
+
+/**
+ * A opção do NÚMERO, de `channel_sessions.metadata` — o mesmo jsonb em que mora
+ * `ai_gate` (#573). `null` = o número não decidiu, herda a organização; é também
+ * o que uma leitura que falhou devolve (falha aberta, como o resto do caminho).
+ */
+export async function lerEsperaDoNumero(
+  admin: Pick<SupabaseClient, "from">,
+  orgId: string,
+  channelSessionId: string | null | undefined,
+): Promise<boolean | null> {
+  if (!channelSessionId) return null;
+  const { data, error } = await admin
+    .from("channel_sessions")
+    .select("metadata")
+    .eq("organization_id", orgId)
+    .eq("id", channelSessionId)
+    .maybeSingle();
+  if (error) {
+    logger.warn("[routing-worker] não consegui ler a opção do número — herdando a organização", {
+      organization_id: orgId,
+      channel_session_id: channelSessionId,
+      error: error.message,
+    });
+    return null;
+  }
+  return lerEsperaDoCanal((data as { metadata?: unknown } | null)?.metadata);
+}
+
+/**
+ * Há agente de IA NO AR atendendo o número desta conversa?
+ *
+ * A pergunta NÃO é nova: `resolverAgenteDaConversa` (`lib/ai/agents/
+ * agente-da-conversa.ts`) já responde "qual agente atende esta conversa", com a
+ * ordem do motor (stickiness da conversa → versão publicada na sessão → agente
+ * único da organização). Aqui ela é usada como o motor a usa, e a única escolha
+ * própria é o filtro: só conta quem está `no_ar` (`agenteAtende` — publicado, não
+ * pausado, não arquivado). O `rag_bot` legado sem versão publicada fica FORA de
+ * propósito: `precisaRecuperarLegado` é elegibilidade de recuperação e triagem,
+ * nunca permissão para responder — e uma IA que não responde não qualifica
+ * ninguém, então não há o que esperar dela.
+ *
+ * Dois agentes e nenhum vínculo com o número devolve `null` (indefinido) — e
+ * indefinido responde `false`: sem saber que há IA aqui, distribuir é o
+ * comportamento de hoje.
+ */
+export async function agenteAtendeOCanal(
+  admin: Pick<SupabaseClient, "from">,
+  orgId: string,
+  conversa: ParametrosDaEspera["conversa"],
+): Promise<boolean> {
+  try {
+    const { data, error } = await admin
+      .from("ai_agents")
+      .select("id, kind, is_active, paused_at, published_version_id, archived_at, priority, created_at")
+      .eq("organization_id", orgId)
+      .is("archived_at", null);
+    if (error) throw new Error(error.message);
+    const atendem = ((data ?? []) as unknown as CandidatoDeAgente[]).filter(agenteAtende);
+    if (atendem.length === 0) return false;
+
+    let versoes: string[] = [];
+    if (conversa.channel_session_id) {
+      const publicadas = await admin
+        .from("ai_agent_versions")
+        .select("id")
+        .eq("organization_id", orgId)
+        .eq("channel_session_id", conversa.channel_session_id)
+        .eq("status", "published");
+      if (publicadas.error) throw new Error(publicadas.error.message);
+      versoes = ((publicadas.data ?? []) as { id: string }[]).map((v) => v.id);
+    }
+
+    const { agente } = resolverAgenteDaConversa(atendem, {
+      active_ai_agent_id: conversa.active_ai_agent_id ?? null,
+      versoesPublicadasNaSessao: versoes,
+    });
+    return agente !== null;
+  } catch (err) {
+    logger.warn("[routing-worker] não consegui saber se há agente no número — distribuindo", {
+      organization_id: orgId,
+      channel_session_id: conversa.channel_session_id ?? null,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+/** `lead_state.stage` do contato (unique por org+contato). Falha aberta: `null`. */
+async function stageDoContato(
+  admin: Pick<SupabaseClient, "from">,
+  orgId: string,
+  contactId: string | null,
+): Promise<string | null> {
+  if (!contactId) return null;
+  const { data, error } = await admin
+    .from("lead_state")
+    .select("stage")
+    .eq("organization_id", orgId)
+    .eq("contact_id", contactId)
+    .maybeSingle();
+  if (error) return null;
+  return (data as { stage?: string | null } | null)?.stage ?? null;
+}
+
+/**
  * Lê o caso MAIS RECENTE da conversa e responde se ele tira a conversa da fila
  * (issue #3717). `null` = a fila pode distribuir.
  *
@@ -577,6 +807,26 @@ export async function motivoDoCasoParaRoteamento(
   orgId: string,
   conversa: { id: string; last_inbound_at?: string | null },
 ): Promise<MotivoDoCaso | null> {
+  return (await lerCasoDaConversa(admin, orgId, conversa)).motivo;
+}
+
+/**
+ * O caso mais recente em DUAS respostas (#3966): o motivo de recusa que já
+ * existia (`null` = a fila pode seguir) **e** se ele está pedindo uma pessoa.
+ *
+ * A distinção importa para a espera pela qualificação: `motivo === null` cobre
+ * dois mundos opostos — "não há caso, a IA ainda está trabalhando" e "o caso
+ * pede a equipe, a qualificação acabou". Achatar os dois em `null` faria a
+ * conversa esperar exatamente no instante em que o humano é chamado.
+ *
+ * O `motivoDoCasoParaRoteamento` acima continua existindo porque é o contrato
+ * que os testes do #3717 fixam; ele delega para cá, uma leitura só.
+ */
+export async function lerCasoDaConversa(
+  admin: Pick<SupabaseClient, "from">,
+  orgId: string,
+  conversa: { id: string; last_inbound_at?: string | null },
+): Promise<{ motivo: MotivoDoCaso | null; pedePessoa: boolean }> {
   const { data, error } = await admin
     .from("agent_cases")
     .select("status, closed_at, updated_at")
@@ -595,23 +845,26 @@ export async function motivoDoCasoParaRoteamento(
       conversation_id: conversa.id,
       error: error.message,
     });
-    return null;
+    return { motivo: null, pedePessoa: false };
   }
   const caso = data as {
     status: string;
     closed_at: string | null;
     updated_at: string | null;
   } | null;
-  return motivoParaNaoRotear(
-    caso
-      ? {
-          status: caso.status,
-          encerradoEm: caso.closed_at ?? null,
-          atualizadoEm: caso.updated_at ?? null,
-        }
-      : null,
-    conversa.last_inbound_at ?? null,
-  );
+  return {
+    motivo: motivoParaNaoRotear(
+      caso
+        ? {
+            status: caso.status,
+            encerradoEm: caso.closed_at ?? null,
+            atualizadoEm: caso.updated_at ?? null,
+          }
+        : null,
+      conversa.last_inbound_at ?? null,
+    ),
+    pedePessoa: casoPedePessoa(caso?.status),
+  };
 }
 
 /**

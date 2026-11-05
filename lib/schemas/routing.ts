@@ -10,6 +10,11 @@
 import { z } from "zod";
 
 import { VISIBILITY_MODES as MODOS_DE_VISIBILIDADE } from "@/lib/auth/types";
+import {
+  ESPERA_MAXIMA_MINUTOS,
+  ESPERA_MINIMA_MINUTOS,
+  ESPERA_PADRAO_MINUTOS,
+} from "@/lib/routing/qualificacao";
 import { PRAZO_MAX_MINUTOS, PRAZO_MAX_MINUTOS_DEVOLUCAO, PRAZO_MIN_MINUTOS } from "@/lib/escalacao/devolucao-automatica";
 import { fusoValido } from "@/lib/tempo/fusos";
 
@@ -104,6 +109,44 @@ export const routingConfigSchema = z.object({
    * No TypeScript, quem lê é `conversaFicaComQuemAtendeu()`, com a mesma régua.
    */
   conversation_stays_with_attendant: z.boolean().default(false),
+  /**
+   * "Com agente de IA no número, distribuir só na passagem para humano"
+   * (issue #3966). Desligado = o comportamento de sempre: a conversa nasce e o
+   * worker a distribui no primeiro tick. Ligado, a conversa fica COM a IA e sem
+   * dono enquanto ela qualifica — o worker pula, como no modo manual — e entra
+   * na distribuição quando o sinal de fim da qualificação aparece.
+   *
+   * Por que existe: a atribuição grava `assignee_kind = 'user'`, e o gate da IA
+   * (`lib/ai/elegibilidade/gate.ts`, motivo `conversa_de_humano`) cala o agente.
+   * Com rodízio/carga, o próprio roteamento desligava quem deveria qualificar —
+   * o lead recebia a primeira resposta da IA e ganhava um dono humano (que
+   * talvez só fosse abrir a conversa de manhã) em menos de um minuto.
+   *
+   * Quem lê é `decidirEsperaPelaQualificacao` (`lib/routing/qualificacao.ts`),
+   * e a decisão final é de `decideRouting` (`lib/routing/decide.ts`). O número
+   * pode sobrescrever em `channel_sessions.metadata.routing`
+   * (`.distribute_only_after_qualification`), o mesmo caminho do `ai_gate`.
+   */
+  distribute_only_after_qualification: z.boolean().default(false),
+  /**
+   * O limite da espera acima, em minutos — e ele NÃO é um detalhe: as fontes do
+   * fim da qualificação são todas ferramentas do modelo (passagem para humano,
+   * caso pedindo pessoa, estágio do lead). Um agente sem essas ferramentas, ou
+   * um lead que para de responder, não produzem sinal nenhum — e sem limite a
+   * conversa ficaria sem dono para sempre. Passado o limite, a distribuição
+   * acontece mesmo sem sinal (o "distribui de qualquer jeito" da issue).
+   *
+   * Contado a partir do NASCIMENTO da conversa: reiniciar a cada mensagem
+   * deixaria o lead que conversa muito, e nunca se qualifica, sem nenhum humano
+   * para sempre. Default = um dia (ver `ESPERA_PADRAO_MINUTOS` no módulo da
+   * regra).
+   */
+  qualification_wait_minutes: z
+    .number()
+    .int()
+    .min(ESPERA_MINIMA_MINUTOS)
+    .max(ESPERA_MAXIMA_MINUTOS)
+    .default(ESPERA_PADRAO_MINUTOS),
 });
 export type RoutingConfig = z.infer<typeof routingConfigSchema>;
 
@@ -184,6 +227,19 @@ export const atendimentoConfigPatchSchema = routingConfigSchema.extend({
     .max(PRAZO_MAX_MINUTOS)
     .nullable()
     .optional(),
+  /**
+   * Opcional pela MESMA razão das outras: um cliente antigo, que só conhece o
+   * modo de roteamento, não pode LIGAR (nem desligar) a espera pela
+   * qualificação por omissão. Omitido preserva o que já valia.
+   */
+  distribute_only_after_qualification: z.boolean().optional(),
+  /** Idem: omitido preserva o limite em vigor; o default só vale para quem nunca gravou. */
+  qualification_wait_minutes: z
+    .number()
+    .int()
+    .min(ESPERA_MINIMA_MINUTOS)
+    .max(ESPERA_MAXIMA_MINUTOS)
+    .optional(),
 });
 export type AtendimentoConfigPatch = z.infer<typeof atendimentoConfigPatchSchema>;
 
@@ -209,6 +265,8 @@ export function mesclarSettingsDeAtendimento(
     conversation_stays_with_attendant,
     manual_reply_silence_minutes,
     unanswered_return_minutes,
+    distribute_only_after_qualification,
+    qualification_wait_minutes,
     ...routingInput
   } = input;
   const routingAtual = routingConfigSchema
@@ -230,6 +288,17 @@ export function mesclarSettingsDeAtendimento(
       unanswered_return_minutes !== undefined
         ? unanswered_return_minutes
         : routingAtual.unanswered_return_minutes,
+    // #3966: a mesma guarda. Uma tela antiga (ou um cliente de API que só manda
+    // `mode`) não pode desligar a espera pela qualificação nem zerar o limite
+    // por omissão — o efeito seria a IA voltar a ser calada no nascimento.
+    distribute_only_after_qualification:
+      distribute_only_after_qualification !== undefined
+        ? distribute_only_after_qualification
+        : routingAtual.distribute_only_after_qualification,
+    qualification_wait_minutes:
+      qualification_wait_minutes !== undefined
+        ? qualification_wait_minutes
+        : routingAtual.qualification_wait_minutes,
   };
   const settings: Record<string, unknown> = { ...atual, routing };
   if (visibility_mode !== undefined) settings.visibility_mode = visibility_mode;

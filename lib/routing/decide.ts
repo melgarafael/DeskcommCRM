@@ -31,7 +31,15 @@ export type RoutingAction =
   /** Marca o evento consumido sem atribuir (já tem dono, modo manual, modo não suportado). */
   | { kind: "skip"; reason: string }
   /** Sem elegível: reenfileira com backoff (fica na fila até haver quem atenda). */
-  | { kind: "requeue"; nextAttemptAt: string; attempts: number };
+  | { kind: "requeue"; nextAttemptAt: string; attempts: number }
+  /**
+   * A IA ainda está qualificando (#3966): reenfileira SEM atribuir e SEM gastar
+   * tentativa. É diferente de `requeue`, que conta tentativa e vira backoff
+   * longo no teto: aqui a espera tem prazo próprio (`limiteEm`), e consumir o
+   * orçamento de `max_retries` faria a conversa cair no backoff de 15 min
+   * enquanto a espera ainda vale.
+   */
+  | { kind: "wait"; reason: string; nextAttemptAt: string };
 
 export interface DecideRoutingInput {
   mode: RoutingMode | string;
@@ -61,6 +69,17 @@ export interface DecideRoutingInput {
    * módulo da regra — onde o vocabulário de `agent_cases.status` é lido.
    */
   motivoDoCaso?: MotivoDoCaso | null;
+  /**
+   * A DISTRIBUIÇÃO ESPERA A IA QUALIFICAR? (#3966) — `null`/ausente = não, e o
+   * resto da decisão é o de sempre, byte a byte.
+   *
+   * Vem pronto de `decidirEsperaPelaQualificacao`
+   * (`lib/routing/qualificacao.ts`), como `motivoDoCaso`: a regra continua sem
+   * banco e a leitura das cinco fontes mora no worker. `limiteEm` é o instante
+   * em que a espera acaba sozinha — a última espera é agendada PARA ele, e não
+   * um backoff depois dele.
+   */
+  esperaPelaQualificacao?: { motivo: string; limiteEm: string | null } | null;
 }
 
 /**
@@ -106,6 +125,39 @@ export function decideRouting(input: DecideRoutingInput): RoutingAction {
   // só porque o número entrega tudo a uma pessoa específica.
   if (input.motivoDoCaso) return { kind: "skip", reason: input.motivoDoCaso };
 
+  const distribuiPeloModo = input.mode === "round_robin" || input.mode === "load";
+
+  // A ESPERA PELA QUALIFICAÇÃO (#3966) vem ANTES de tudo que atribui, e DEPOIS
+  // do que recusa por outro motivo — nesta ordem:
+  //
+  //   * depois da idempotência e do caso: uma conversa que já tem dono, ou cujo
+  //     caso não pede pessoa agora, não é assunto da espera;
+  //   * depois do modo: esperar num canal que NUNCA distribui (modo manual sem
+  //     destino padrão por número) seria só um evento girando por um dia para
+  //     terminar em `skipped_manual`;
+  //   * antes do destino padrão do número (#2331) de propósito: aquele é a
+  //     forma mais forte de distribuir, e um canal que entrega tudo a uma pessoa
+  //     específica é exatamente onde calar a IA no nascimento dói mais. Quem não
+  //     quiser a espera NAQUELE número desliga a opção nele.
+  if (input.esperaPelaQualificacao && (distribuiPeloModo || input.defaultAssigneeUserId)) {
+    // O intervalo é o do backoff, com piso de um minuto: o worker roda uma vez
+    // por minuto, então reenfileirar mais rápido que isso não antecipa nada —
+    // só enche o lote de eventos pendentes. E a última espera é agendada PARA o
+    // limite, nunca depois dele: com o backoff de 60s e o limite em 90s, um
+    // reenfileiramento cego em 60s gastaria mais um minuto além do prazo.
+    const intervalo = Math.max(input.config.backoff_seconds, 60) * 1000;
+    const alvo = input.now.getTime() + intervalo;
+    const limite = input.esperaPelaQualificacao.limiteEm
+      ? Date.parse(input.esperaPelaQualificacao.limiteEm)
+      : Number.NaN;
+    const quando = Number.isNaN(limite) ? alvo : Math.min(alvo, Math.max(limite, input.now.getTime() + 1000));
+    return {
+      kind: "wait",
+      reason: input.esperaPelaQualificacao.motivo,
+      nextAttemptAt: new Date(quando).toISOString(),
+    };
+  }
+
   // Destino padrão do NÚMERO (#2331): vence o modo. O canal que entrega tudo a
   // uma pessoa específica recebe mesmo quando o modo da organização é manual (o
   // caso "sem IA, direto para o fulano") ou rodízio.
@@ -116,7 +168,7 @@ export function decideRouting(input: DecideRoutingInput): RoutingAction {
 
   // Fora da lista de ROUTING_MODES (defensivo): roteia só o que a tela deixa
   // escolher. 'load' deixou de ser no-op e passou a rotear pela issue #1539.
-  if (input.mode !== "round_robin" && input.mode !== "load") {
+  if (!distribuiPeloModo) {
     return { kind: "skip", reason: `unsupported_mode:${input.mode}` };
   }
 

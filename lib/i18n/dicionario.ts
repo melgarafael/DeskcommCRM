@@ -8110,6 +8110,24 @@ export const DICIONARIO: Traducoes = {
   "Responder pelo Inbox numa conversa sem dono passa a assumi-la, e a IA fica calada até alguém devolver. Quando o cliente escreve numa conversa encerrada, ela volta direto para o último atendente, sem passar pela distribuição, se ele ainda faz parte da equipe.": {
     es: "Responder desde el Inbox en una conversación sin responsable la asigna a quien responde, y la IA queda en silencio hasta que alguien la devuelva. Cuando el cliente escribe en una conversación cerrada, vuelve directo al último asesor, sin pasar por la distribución, si todavía forma parte del equipo.",
   },
+  "Distribuir para uma pessoa só depois que a IA qualificar?": {
+    es: "¿Distribuir a una persona solo después de que la IA califique?",
+  },
+  "Desligado, vale a regra de sempre: a conversa nova ganha um atendente no primeiro minuto, e a IA para de responder nela. Ligado, a conversa fica com a IA enquanto ela qualifica o cliente, e só entra na distribuição quando a IA termina — passando para uma pessoa, abrindo um caso para a equipe ou avançando o lead no funil.": {
+    es: "Desactivado, rige la regla de siempre: la conversación nueva recibe un asesor en el primer minuto y la IA deja de responder en ella. Activado, la conversación queda con la IA mientras califica al cliente y solo entra en la distribución cuando la IA termina: pasando a una persona, abriendo un caso para el equipo o avanzando el lead en el embudo.",
+  },
+  "Esperar a IA qualificar antes de distribuir": {
+    es: "Esperar a que la IA califique antes de distribuir",
+  },
+  "Só vale onde há um agente de IA atendendo o número. Sem agente, com a IA pausada, com o contato marcado como sempre humano ou com a IA silenciada, a conversa é distribuída na hora, como hoje.": {
+    es: "Solo aplica donde hay un agente de IA atendiendo el número. Sin agente, con la IA en pausa, con el contacto marcado como siempre humano o con la IA silenciada, la conversación se distribuye en el acto, como hoy.",
+  },
+  "Depois de quantos minutos distribuir de qualquer jeito?": {
+    es: "¿Después de cuántos minutos distribuir de todas formas?",
+  },
+  "Entre 15 minutos e 7 dias, contados do início da conversa. O padrão é 1440 (um dia). O prazo existe porque a IA pode nunca sinalizar o fim da qualificação — um agente sem as ferramentas de caso, ou um cliente que para de responder. Passado o prazo, a conversa entra na distribuição mesmo sem sinal.": {
+    es: "Entre 15 minutos y 7 días, contados desde el inicio de la conversación. El valor predeterminado es 1440 (un día). El plazo existe porque la IA puede no señalar nunca el fin de la calificación: un agente sin las herramientas de caso, o un cliente que deja de responder. Pasado el plazo, la conversación entra en la distribución aunque no haya señal.",
+  },
   "Entre 5 minutos e 24 horas. Sessenta minutos é a ordem de grandeza de um atendimento humano.": {
     es: "Entre 5 minutos y 24 horas. Sesenta minutos es el orden de magnitud de una atención humana.",
   },
