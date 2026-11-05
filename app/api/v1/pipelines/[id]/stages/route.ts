@@ -13,9 +13,11 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * caminhos diferentes fariam o sistema mentir para uma das duas.
  *
  * Auth: sessão por cookie, papel manager+ (é configuração do funil, não trabalho
- * de card). `organization_id` sai do JWT — nunca do body. O client é o do
- * usuário, então a RLS vale; o filtro explícito é a convenção do repo e a rede
- * que sobra se a policy mudar.
+ * de card), OU Bearer `dsk_…` com `config:write` e papel admin (`tokenRole`).
+ * `organization_id` sai do JWT ou da linha do token — nunca do body. Na sessão o
+ * client é o do usuário, então a RLS vale; no token é o admin (sem RLS) e o
+ * filtro de organização das libs (`lerFunil` confere o funil ANTES de escrever)
+ * é a única barreira. Funil de outra organização responde 404.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -23,11 +25,9 @@ import { z } from "zod";
 
 import { respostaDeRecusa } from "@/lib/api/recusa";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { criarEtapa } from "@/lib/leads/stage-operations";
 import { anexaFluxos, carregaFluxosPorEtapa } from "@/lib/followup/fluxos-da-etapa";
-import { createClient } from "@/lib/supabase/server";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -116,9 +116,17 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "crm_stages" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_stages",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "pipelines.stages", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const { id: pipelineId } = await ctx.params;
 
@@ -137,13 +145,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     });
   }
 
-  const supabase = await createClient();
   try {
     const { funil } = await criarEtapa(
       {
-        supabase,
-        organizationId: authz.org.orgId,
-        actor: { type: "user", id: authz.user.id, role: authz.org.role },
+        supabase: authz.supabase,
+        organizationId: authz.organizationId,
+        actor: authz.actor,
+        actorApiTokenId: authz.apiTokenId ?? null,
         requestId,
       },
       {
