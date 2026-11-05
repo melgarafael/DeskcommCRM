@@ -34,6 +34,7 @@ import { trocarCodigoPorToken } from "@/lib/plataformas-de-anuncio/google/token"
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cookieSecure } from "@/lib/supabase/cookie-secure";
 import { encryptWebhookSecret } from "@/lib/webhooks/secrets";
+import { rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +53,9 @@ function voltar(base: string, params: Record<string, string>): NextResponse {
   return resposta;
 }
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
+export const GET = rotaComIdDaRequisicao(rotaGET);
+
+async function rotaGET(req: NextRequest): Promise<NextResponse> {
   const base = env.NEXT_PUBLIC_APP_URL;
   const url = new URL(req.url);
 

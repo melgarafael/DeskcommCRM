@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
+import { rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 
 /**
  * Proxy WAHA's QR endpoint so the browser can <img src="..." /> without
@@ -10,7 +11,9 @@ import { orgAtivaDaApi } from "@/lib/auth/require-role";
  *
  * WAHA exposes: GET /api/{session}/auth/qr?format=image → image/png bytes.
  */
-export async function GET() {
+export const GET = rotaComIdDaRequisicao(rotaGET);
+
+async function rotaGET() {
   const user = await loadAuthUser();
   if (!user) return new NextResponse(null, { status: 401 });
   const ativa = await orgAtivaDaApi(user);

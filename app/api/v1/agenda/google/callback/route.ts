@@ -59,6 +59,7 @@ import { trocarCodigoPorToken } from "@/lib/agenda/google/token";
 import { contaDaAgendaPrimaria } from "@/lib/agenda/google/calendarios";
 import { classificarErroDoGoogle } from "@/lib/agenda/google/erros";
 import { env } from "@/lib/env";
+import { rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 
 export const dynamic = "force-dynamic";
 
@@ -134,7 +135,9 @@ function voltar(parametro: string): NextResponse {
   return resposta;
 }
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
+export const GET = rotaComIdDaRequisicao(rotaGET);
+
+async function rotaGET(req: NextRequest): Promise<NextResponse> {
   const url = new URL(req.url);
   const recusa = url.searchParams.get("error");
   const code = url.searchParams.get("code");

@@ -14,7 +14,6 @@
  * visível — e o caminho é conferido contra o prefixo do template, porque a
  * coluna é gravável pelo PostgREST.
  */
-import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { fail } from "@/lib/api/wrappers";
@@ -28,6 +27,7 @@ import {
   midiaPertenceAoTemplate,
   type MidiaDeTemplate,
 } from "@/lib/templates/midias";
+import { idDaRequisicao, rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 
 export const dynamic = "force-dynamic";
 
@@ -35,8 +35,10 @@ interface RouteParams {
   params: Promise<{ id: string; indice: string }>;
 }
 
-export async function GET(_req: NextRequest, { params }: RouteParams): Promise<Response> {
-  const requestId = randomUUID();
+export const GET = rotaComIdDaRequisicao(rotaGET);
+
+async function rotaGET(_req: NextRequest, { params }: RouteParams): Promise<Response> {
+  const requestId = idDaRequisicao(_req);
   const authz = await requireRole("agent", { requestId, resource: "message_templates" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);

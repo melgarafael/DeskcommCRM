@@ -7,6 +7,7 @@ import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { recursoOcioso } from "@/lib/cron/piso-ocioso";
+import { rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 export const dynamic = "force-dynamic";
 /** O mesmo prazo que a RPC dá à agenda que falhou (`sync_next_attempt_at` + 15 min). */
 const RECUO_DO_CATALOGO_MS = 15 * 60_000;
@@ -233,5 +234,5 @@ async function executar(req: NextRequest) {
   }
   return NextResponse.json({ data: { conexoes: connections.length, organizacoes: effects.size } });
 }
-export const GET = executar;
-export const POST = executar;
+export const GET = rotaComIdDaRequisicao(executar);
+export const POST = rotaComIdDaRequisicao(executar);

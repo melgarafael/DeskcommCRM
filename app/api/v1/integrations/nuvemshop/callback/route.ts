@@ -9,7 +9,7 @@ import { supportCallbackWriteAllowed } from "@/lib/impersonate/support";
  * audited either way.
  */
 
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
 import { audit } from "@/lib/audit";
@@ -18,6 +18,7 @@ import { getConfig, SUBSCRIBED_EVENTS, eventToSlug } from "@/lib/nuvemshop/confi
 import { exchangeCodeForToken } from "@/lib/nuvemshop/oauth";
 import { NuvemshopApiClient } from "@/lib/nuvemshop/api-client";
 import { verifyState } from "@/lib/nuvemshop/state";
+import { idDaRequisicao, rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,9 @@ function redirectTo(path: string): NextResponse {
   return NextResponse.redirect(new URL(path, base));
 }
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
+export const GET = rotaComIdDaRequisicao(rotaGET);
+
+async function rotaGET(req: NextRequest): Promise<NextResponse> {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const stateParam = url.searchParams.get("state");
@@ -199,7 +202,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     organizationId: state.orgId,
     resourceType: "tenant_integration",
     resourceId: integration?.id,
-    requestId: randomUUID(),
+    requestId: idDaRequisicao(req),
     metadata: {
       store_id: storeId,
       scopes,

@@ -18,6 +18,7 @@ import { moduloLigado } from "@/lib/instalacao/modulos";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { iniciarAutorizacao, paginaDoDesfecho } from "@/lib/mcp/servidor-externo/do-agente/retorno";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,9 @@ function pagina(status: number, desfecho: Parameters<typeof paginaDoDesfecho>[0]
   });
 }
 
-export async function GET(req: NextRequest, contexto: { params: Promise<{ state: string }> }): Promise<NextResponse> {
+export const GET = rotaComIdDaRequisicao(rotaGET);
+
+async function rotaGET(req: NextRequest, contexto: { params: Promise<{ state: string }> }): Promise<NextResponse> {
   const ip = ipDoCliente(req.headers) ?? "sem-ip";
   const limite = await checkRateLimit(`mcp-oauth-iniciar:${ip}`, TETO_POR_IP, JANELA_SEGUNDOS);
   if (!limite.allowed) {

@@ -164,3 +164,32 @@ describe("GET /api/v1/admin/platform-admins", () => {
     expect(body.data[0]?.granted_by_email).toBeNull();
   });
 });
+
+describe("GET /api/v1/admin/platform-admins — o id da resposta é o do registro (#4107)", () => {
+  it("o X-Request-Id da resposta é o MESMO que a auditoria gravou", async () => {
+    const { stub } = makeAdminStub({
+      rows: [paRow(ADMIN_ID, GRANTER_ID)],
+      auth: {
+        [ADMIN_ID]: { email: "admin@example.com" },
+        [GRANTER_ID]: { email: "granter@example.com" },
+      },
+    });
+    vi.mocked(createAdminClient).mockReturnValue(stub as never);
+
+    const ID = "11111111-1111-4111-8111-111111111111";
+    const { GET } = await import("./route");
+    const { NextRequest } = await import("next/server");
+    const { audit } = await import("@/lib/audit");
+
+    const res = await GET(
+      new NextRequest("http://localhost/api/v1/admin/platform-admins", {
+        headers: { "x-request-id": ID },
+      }),
+    );
+
+    // A correlação é o ponto: o id que o cliente recebe é o que está na linha
+    // de auditoria — não um segundo UUID cunhado só para o cabeçalho.
+    expect(res.headers.get("X-Request-Id")).toBe(ID);
+    expect(vi.mocked(audit)).toHaveBeenCalledWith(expect.objectContaining({ requestId: ID }));
+  });
+});

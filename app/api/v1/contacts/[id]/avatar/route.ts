@@ -32,7 +32,6 @@
  * recebe 401 do proxy antes de chegar aqui e a porta (b) é inalcançável.
  * "Público" ali quer dizer "o proxy não decide", nunca "sem autenticação".
  */
-import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
@@ -42,6 +41,7 @@ import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { extractBearer } from "@/lib/mcp/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { idDaRequisicao, rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 
 export const dynamic = "force-dynamic";
 
@@ -68,11 +68,13 @@ const SIGNED_TTL_SECONDS = 300;
  */
 const BROWSER_CACHE_SECONDS = 240;
 
-export async function GET(
+export const GET = rotaComIdDaRequisicao(rotaGET);
+
+async function rotaGET(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
-  const requestId = randomUUID();
+  const requestId = idDaRequisicao(req);
   const { id } = await ctx.params;
 
   // Porta (b) — servidor. Entra só quem mandou um Bearer no `authorization`:

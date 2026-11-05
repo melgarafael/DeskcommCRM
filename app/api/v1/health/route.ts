@@ -38,6 +38,7 @@ import { env } from "@/lib/env";
 import { alvoDe, classificarFalhaDeAlcance, type FalhaDeAlcance } from "@/lib/net/alcance";
 import { validarConfigRedisRest } from "@/lib/redis-config";
 import { urlDoSupabaseNoServidor } from "@/lib/supabase/url-do-servidor";
+import { rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -408,7 +409,9 @@ function semAlvo(check: Check): Check {
   return error === undefined ? resto : { ...resto, error: "erro_ao_consultar" };
 }
 
-export async function GET(req: NextRequest) {
+export const GET = rotaComIdDaRequisicao(rotaGET);
+
+async function rotaGET(req: NextRequest) {
   const [supabase, redis, waha] = await Promise.all([
     checkSupabase(),
     checkRedis(),

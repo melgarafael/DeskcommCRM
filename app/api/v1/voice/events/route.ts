@@ -25,9 +25,8 @@
  * stream" no instante certo. O id do banco, quando existe, continua valendo —
  * as duas fontes SOMAM, nenhuma substitui a outra.
  */
-import { randomUUID } from "node:crypto";
-
 import QRCode from "qrcode";
+import type { NextRequest } from "next/server";
 
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
@@ -35,6 +34,7 @@ import { resolveWacallsSession } from "@/lib/wacalls/session";
 import { getWacallsClient } from "@/lib/wacalls/client";
 import { nomeDaSessaoDeVoz } from "@/lib/wacalls/nome-da-sessao";
 import { env } from "@/lib/env";
+import { idDaRequisicao, rotaComIdDaRequisicao } from "@/lib/api/id-da-requisicao";
 
 export const dynamic = "force-dynamic";
 
@@ -42,8 +42,10 @@ function sseLine(data: unknown): string {
   return `data: ${JSON.stringify(data)}\n\n`;
 }
 
-export async function GET(): Promise<Response> {
-  const requestId = randomUUID();
+export const GET = rotaComIdDaRequisicao(rotaGET);
+
+async function rotaGET(req: NextRequest): Promise<Response> {
+  const requestId = idDaRequisicao(req);
 
   const authz = await requireRole("admin", {
     requestId,
