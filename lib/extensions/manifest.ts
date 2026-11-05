@@ -147,7 +147,7 @@ export interface CompatibilityResult {
 type CompatibilitySubject = Pick<ExtensionManifest, "host_api" | "permissions"> &
   Partial<Pick<ExtensionManifest, "format_version" | "profile" | "dependencies" | "contributions">>;
 
-const HOST_API_VERSION = 2;
+export const HOST_API_VERSION = 2;
 const FORBIDDEN_SNAPSHOT_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 const slugSchema = z
   .string()

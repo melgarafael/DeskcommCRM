@@ -11,6 +11,10 @@
  * então consentimento retirado, módulo desligado ou instalação removida valem na requisição
  * seguinte.
  *
+ * Fora da faixa `host_api` deste CRM (spec 33, F6) o token recusa com `module_incompatible`. A LEITURA DE
+ * EVENTOS (`eventos-do-modulo.ts`) NÃO passa por aqui e não é bloqueada por incompatibilidade: a LGPD não
+ * pode ficar presa a uma atualização do CRM (decisão D2 do plano p10).
+ *
  * LADO SEGURO: qualquer dúvida recusa. Porta sem área, caminho que não se reconhece, linha que
  * não existe, erro de leitura, perfil que não é `connected`: tudo `{ ok: false }`. O módulo
  * nunca ganha poder por omissão.
@@ -22,11 +26,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { areaDaPorta, SEGMENTOS_LITERAIS_CONHECIDOS } from "@/lib/auth/portas-de-token/areas";
 import { permissaoDaArea } from "@/lib/extensions/areas";
+import { checkCompatibility } from "@/lib/extensions/manifest";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type CodigoDeRecusaDoModulo =
   | "module_area_not_granted"
   | "module_disabled"
+  | "module_incompatible"
   | "module_authorization_unavailable";
 
 /** Código de `/api/mcp` e de `contacts/route.ts`, que não aceitam token de módulo de jeito nenhum. */
@@ -43,6 +49,8 @@ export const MENSAGEM_DA_RECUSA_DO_MODULO: Record<
 > = {
   module_area_not_granted: "Este módulo não tem permissão para esta área da organização.",
   module_disabled: "Este módulo está desligado, removido ou sem token ativo nesta organização.",
+  module_incompatible:
+    "Este módulo não é compatível com a versão atual do CRM e está suspenso. Peça ao responsável pela instalação para atualizar o módulo.",
   module_authorization_unavailable:
     "Não foi possível conferir a permissão do módulo agora. Nada foi feito.",
   module_token_not_allowed_here: "Token de módulo não é aceito nesta entrada.",
@@ -50,6 +58,7 @@ export const MENSAGEM_DA_RECUSA_DO_MODULO: Record<
 
 const NEGADO_AREA: ResultadoDoModulo = { ok: false, codigo: "module_area_not_granted" };
 const NEGADO_DESLIGADO: ResultadoDoModulo = { ok: false, codigo: "module_disabled" };
+const NEGADO_INCOMPATIVEL: ResultadoDoModulo = { ok: false, codigo: "module_incompatible" };
 const NEGADO_INDISPONIVEL: ResultadoDoModulo = {
   ok: false,
   codigo: "module_authorization_unavailable",
@@ -112,6 +121,27 @@ function permissoesDeAreaDoManifesto(manifesto: unknown): { connected: boolean; 
   };
 }
 
+/**
+ * A faixa `host_api` do pacote contra a versão DESTE CRM (spec 33, F6). Relida a cada chamada, sem cache:
+ * quando o CRM sobe de `host_api`, o token do módulo deixa de valer na requisição seguinte, mesmo que o
+ * token continue vivo. Manifesto que não se consegue ler (sem faixa numérica, sem lista de permissões)
+ * é `ilegivel`, e quem chama recusa: a dúvida nunca dá poder.
+ */
+function compatibilidadeDoManifesto(manifesto: unknown): "compativel" | "incompativel" | "ilegivel" {
+  if (typeof manifesto !== "object" || manifesto === null) return "ilegivel";
+  const m = manifesto as { host_api?: { min?: unknown; max?: unknown }; permissions?: unknown };
+  const min = m.host_api?.min;
+  const max = m.host_api?.max;
+  if (typeof min !== "number" || typeof max !== "number") return "ilegivel";
+  if (!Array.isArray(m.permissions)) return "ilegivel";
+  const r = checkCompatibility({
+    host_api: { min, max },
+    permissions: m.permissions as never,
+    profile: "connected",
+  });
+  return r.compatible ? "compativel" : "incompativel";
+}
+
 export async function autorizarModulo(p: AutorizarModuloParams): Promise<ResultadoDoModulo> {
   try {
     // 1. A porta. Sem modelo ou sem área ⇒ recusa, antes de tocar o banco.
@@ -161,6 +191,10 @@ export async function autorizarModulo(p: AutorizarModuloParams): Promise<Resulta
     const artefato = um(inst.data.extension_artifacts as { manifest?: unknown } | null);
     const { connected, areas: declaradas } = permissoesDeAreaDoManifesto(artefato?.manifest);
     if (!connected) return NEGADO_AREA;
+    // Fora da faixa `host_api` deste CRM o módulo está suspenso: código próprio, antes de olhar áreas.
+    const compat = compatibilidadeDoManifesto(artefato?.manifest);
+    if (compat === "incompativel") return NEGADO_INCOMPATIVEL;
+    if (compat === "ilegivel") return NEGADO_INDISPONIVEL;
     const consentidas: unknown = vinculo.data.consented_areas;
     if (!Array.isArray(consentidas)) return NEGADO_AREA;
 
