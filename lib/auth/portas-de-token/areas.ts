@@ -124,6 +124,13 @@ const SEM_AREA: readonly EntradaSemArea[] = [
   e("financeiro", "escrita"),
   e("honorarios", "escrita"),
 
+  // --- 5b. Escritas que gastam dinheiro da organização ou não se desfazem: lado seguro (decisão
+  //         do engenheiro, 05/11). Afrouxar depois é fácil; apertar depois de um módulo usar, não.
+  e("ai/budget", "escrita"), // teto de gasto de IA
+  e("ai/voz", "escrita"), // custo de voz
+  e("ai/knowledge/reindex-all", "escrita"), // reindexação inteira gasta IA
+  e("contacts/merge", "escrita"), // fusão de contatos não se desfaz
+
   // --- 6. Leitura-apenas por decisão do mapa: regras de automação só têm área na leitura.
   e("automation-rules", "escrita"),
 
