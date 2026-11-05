@@ -64,7 +64,9 @@ vi.mock("@/lib/supabase/server", () => ({
       };
       cadeia.then = (resolve: (r: unknown) => unknown) => {
         const linhas = h.regras.filter((r) =>
-          h.filtrosDasRegras.every(([coluna, valor]) => (r as Record<string, unknown>)[coluna] === valor),
+          h.filtrosDasRegras.every(
+            ([coluna, valor]) => (r as Record<string, unknown>)[coluna] === valor,
+          ),
         );
         return Promise.resolve({ data: linhas, error: null }).then(resolve);
       };
@@ -144,14 +146,18 @@ describe("updatePipelineConfig — campo que vira Contato e o gatilho por data",
       }),
     ];
 
-    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_CONTATO] })).toEqual({ ok: true });
+    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_CONTATO] })).toEqual({
+      ok: true,
+    });
     expect(h.gravou).not.toBeNull();
   });
 
   it("aceita marcar como Contato um campo que nenhuma regra lê", async () => {
     h.regras = [regra("Entrega", "entrega")];
 
-    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_CONTATO] })).toEqual({ ok: true });
+    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_CONTATO] })).toEqual({
+      ok: true,
+    });
     expect(h.gravou).not.toBeNull();
   });
 
@@ -160,7 +166,9 @@ describe("updatePipelineConfig — campo que vira Contato e o gatilho por data",
     // vocabulário. Recusar aqui travaria a tela de Funis de toda org com regra.
     h.regras = [regra("Parabéns", "nascimento")];
 
-    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_NEGOCIO] })).toEqual({ ok: true });
+    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_NEGOCIO] })).toEqual({
+      ok: true,
+    });
     expect(h.gravou).not.toBeNull();
   });
 
@@ -168,7 +176,9 @@ describe("updatePipelineConfig — campo que vira Contato e o gatilho por data",
     h.settings = { fields: [NASCIMENTO_CONTATO] };
     h.regras = [regra("Parabéns", "nascimento")];
 
-    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_NEGOCIO] })).toEqual({ ok: true });
+    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_NEGOCIO] })).toEqual({
+      ok: true,
+    });
     expect(h.gravou).not.toBeNull();
   });
 
@@ -268,7 +278,9 @@ describe("updatePipelineConfig — entrada do Inbox por funil (#3011)", () => {
  */
 describe("updatePipelineConfig — o recorte de encerrados antigos do quadro (#2995)", () => {
   it("grava os dias no settings do funil, preservando o que já estava lá", async () => {
-    expect(await updatePipelineConfig(FUNIL, { ocultar_encerrados_dias: 15 })).toEqual({ ok: true });
+    expect(await updatePipelineConfig(FUNIL, { ocultar_encerrados_dias: 15 })).toEqual({
+      ok: true,
+    });
 
     expect(h.gravou).toMatchObject({
       settings: { ...h.settings, ocultar_encerrados_dias: 15 },
@@ -337,7 +349,11 @@ describe("updatePipelineConfig — atalhos do card (#3487)", () => {
   it("grava os três esquemas permitidos no settings do funil", async () => {
     const atalhos = [
       LIGAR,
-      { rotulo: "Tirar pedido", icone: "carrinho" as const, url: "https://pedidos.exemplo.com/?cliente={{erp_id}}" },
+      {
+        rotulo: "Tirar pedido",
+        icone: "carrinho" as const,
+        url: "https://pedidos.exemplo.com/?cliente={{erp_id}}",
+      },
       { rotulo: "Central", icone: "link" as const, url: "http://intranet.exemplo.com/" },
     ];
     expect(await updatePipelineConfig(FUNIL, { atalhos })).toEqual({ ok: true });
@@ -372,6 +388,53 @@ describe("updatePipelineConfig — atalhos do card (#3487)", () => {
         atalhos: [{ rotulo: "Abrir", icone: "foguete" as never, url: "https://x.exemplo.com/" }],
       }),
     ).toMatchObject({ ok: false, error: "validation_failed" });
+    expect(h.gravou).toBeNull();
+  });
+});
+
+/**
+ * A JANELA DO NEGÓCIO PERDIDO QUE VOLTA (#4076) — a GRAVAÇÃO.
+ *
+ * O motor já sabe reabrir o card (medido em
+ * `tests/invariants/negocio-perdido-reabre.test.ts`); o que se prova aqui é que
+ * a escolha da tela CHEGA ao `settings` do funil. Sem esta ponte, a opção seria
+ * ligada, a tela diria "ligado", e a mensagem do contato continuaria abrindo um
+ * negócio novo vazio — o defeito da issue, com um botão a mais.
+ *
+ * O `0` é o caso que mais importa: DESLIGAR tem de gravar o zero, e não sumir do
+ * patch. Omitir a chave manteria a janela antiga na linha, e quem desmarcasse a
+ * opção continuaria reabrindo card sem entender por quê.
+ */
+describe("updatePipelineConfig — a janela do negócio perdido que volta (#4076)", () => {
+  it("grava os dias no settings do funil, preservando o que já estava lá", async () => {
+    expect(await updatePipelineConfig(FUNIL, { reabrir_perdido_dias: 30 })).toEqual({ ok: true });
+
+    expect(h.gravou).toMatchObject({
+      settings: { ...h.settings, reabrir_perdido_dias: 30 },
+    });
+  });
+
+  it("desligar grava 0 — não pode deixar a janela antiga na linha", async () => {
+    h.settings = { fields: [NASCIMENTO_NEGOCIO], reabrir_perdido_dias: 30 };
+
+    expect(await updatePipelineConfig(FUNIL, { reabrir_perdido_dias: 0 })).toEqual({ ok: true });
+
+    expect(h.gravou).toMatchObject({ settings: { reabrir_perdido_dias: 0 } });
+  });
+
+  it("janela fora da faixa é recusada pelo schema, sem gravar nada", async () => {
+    expect(await updatePipelineConfig(FUNIL, { reabrir_perdido_dias: -1 })).toMatchObject({
+      ok: false,
+      error: "validation_failed",
+    });
+    // O teto do domínio: dez anos. Acima disso é linha editada à mão, não tela —
+    // e janela sem teto reabriria card de outra década como se a conversa
+    // tivesse continuado.
+    expect(await updatePipelineConfig(FUNIL, { reabrir_perdido_dias: 3651 })).toMatchObject({
+      ok: false,
+      error: "validation_failed",
+    });
+
     expect(h.gravou).toBeNull();
   });
 });

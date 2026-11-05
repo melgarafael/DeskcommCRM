@@ -9017,6 +9017,7 @@ export type Database = {
           id: string;
           name: string;
           organization_id: string;
+          send_when_assigned: boolean;
           status: string;
           surface: string;
           trigger_config: NonNullable<Json>;
@@ -9031,6 +9032,7 @@ export type Database = {
           id?: string;
           name: string;
           organization_id: string;
+          send_when_assigned?: boolean;
           status?: string;
           surface?: string;
           trigger_config?: NonNullable<Json>;
@@ -9044,6 +9046,7 @@ export type Database = {
           id?: string;
           name?: string;
           organization_id?: string;
+          send_when_assigned?: boolean;
           status?: string;
           surface?: string;
           trigger_config?: NonNullable<Json>;
