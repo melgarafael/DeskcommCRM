@@ -235,11 +235,21 @@ export function correcaoDoFechamento(problemas: string): string {
  * recusada e o problema. Só se ela também vier fora do contrato o erro sobe como
  * antes, e a fila re-tenta o turno. Falha do fornecedor (rede, 5xx, teto) não é
  * recusa: sobe na hora, sem segunda chamada, como sempre subiu.
+ *
+ * A RESERVA DE FORMATO é o pré-requisito para um modelo mais barato neste ponto:
+ * saída ruim vira uma 3ª chamada, nunca um turno repetido. Quando quem recusou
+ * duas vezes NÃO é o modelo do agente (binding do ponto no painel), a 3ª chamada
+ * vai ao modelo do agente, com o pedido de base — sem as respostas recusadas — e
+ * o MESMO `ajustar`. Sem `reserva`, sem `model` na resposta ou com o próprio
+ * modelo do agente recusando, o erro sobe como antes; e se a reserva também
+ * recusar, sobe o erro dela. Não existe modo de falha novo.
  */
-export async function fecharOTurno<R extends { text: string; callId?: string | null }>(opcoes: {
+export async function fecharOTurno<R extends { text: string; callId?: string | null; model?: string }>(opcoes: {
   pedir: (extra: Array<{ role: 'assistant' | 'user'; content: string }>) => Promise<R>;
   /** Ajuste do texto antes do parse (hoje: tirar o link da reunião). */
   ajustar?: (text: string) => string;
+  /** O modelo do agente e o pedido de base nele (`runModelCall` com `reservaDeFormato`). */
+  reserva?: { modelo: string; pedir: () => Promise<R> };
   log?: { warn(msg: string, fields?: Record<string, unknown>): void };
 }): Promise<{ content: CheckpointContent; resposta: R; corrigido: boolean }> {
   const ajustar = opcoes.ajustar ?? ((t: string) => t);
@@ -255,6 +265,24 @@ export async function fecharOTurno<R extends { text: string; callId?: string | n
       { role: 'assistant', content: primeira.text },
       { role: 'user', content: correcaoDoFechamento(err.paraOModelo) },
     ]);
-    return { content: parseCheckpointText(ajustar(segunda.text)), resposta: segunda, corrigido: true };
+    try {
+      return { content: parseCheckpointText(ajustar(segunda.text)), resposta: segunda, corrigido: true };
+    } catch (err2) {
+      const reserva = opcoes.reserva;
+      if (!(err2 instanceof FechamentoRecusado) || reserva === undefined || segunda.model === undefined || segunda.model === reserva.modelo) {
+        throw err2;
+      }
+      opcoes.log?.warn('fechamento recusado duas vezes no modelo do ponto — repetindo no modelo do agente', {
+        problemas: err2.problemas,
+        modelo_recusado: segunda.model,
+      });
+      const terceira = await reserva.pedir();
+      return { content: parseCheckpointText(ajustar(terceira.text)), resposta: terceira, corrigido: true };
+    }
   }
+}
+
+/** O link cru da reunião não vai para a memória do lead: a Agenda é quem o mostra. */
+export function tirarLinkDaReuniao(text: string): string {
+  return text.replace(/https:\/\/meet\.google\.com\/[a-zA-Z0-9-]+/g, '[link da reunião disponível na Agenda]');
 }

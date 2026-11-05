@@ -5372,6 +5372,9 @@ export const DICIONARIO: Traducoes = {
   "O modelo econômico não respondeu; a chamada foi repetida no modelo de antes, e o resultado dessa repetição aparece numa linha própria.": {
     es: "El modelo económico no respondió; la llamada se repitió con el modelo anterior, y el resultado de esa repetición aparece en una línea propia.",
   },
+  "O modelo escolhido para este ponto devolveu o resultado fora do formato duas vezes; a chamada foi repetida no modelo do agente.": {
+    es: "El modelo elegido para este punto devolvió el resultado fuera del formato dos veces; la llamada se repitió con el modelo del agente.",
+  },
   "Usando o padrão da organização.": {
     es: "Usando el valor predeterminado de la organización.",
   },
@@ -14336,6 +14339,13 @@ export const DICIONARIO: Traducoes = {
   "Só foi usada nos seus testes. Nenhum atendimento real precisou dela ainda.": {
     es: "Solo se usó en tus pruebas. Ninguna atención real la ha necesitado aún.",
   },
+  // A capacidade que a ferramenta interna cobre (COBERTA_PELA_NATIVA) — uma frase por capacidade.
+  "No atendimento, quando o agente tem material de consulta publicado, a busca é feita pela ferramenta interna do agente, e esse uso não entra nesta contagem: aqui, \"nunca usada\" não quer dizer que o agente nunca consultou o acervo. Sem material publicado, é esta que faz a busca.": {
+    es: "En la atención, cuando el agente tiene material de consulta publicado, la búsqueda la hace la herramienta interna del agente, y ese uso no entra en este conteo: aquí, \"nunca usada\" no quiere decir que el agente nunca consultó el acervo. Sin material publicado, es esta la que hace la búsqueda.",
+  },
+  "No atendimento, quando o retorno automático está ligado, o retorno é agendado pela ferramenta interna do agente, e esse uso não entra nesta contagem: aqui, \"nunca usada\" não quer dizer que o agente nunca agendou um retorno. Manter esta ligada é o que deixa a ferramenta interna escolher em qual negócio do cliente o retorno é anotado e lembrar o agente de que retorno não é compromisso marcado.": {
+    es: "En la atención, cuando el seguimiento automático está activado, el seguimiento lo agenda la herramienta interna del agente, y ese uso no entra en este conteo: aquí, \"nunca usada\" no quiere decir que el agente nunca agendó un seguimiento. Mantener esta activada es lo que permite a la herramienta interna elegir en qué negocio del cliente se anota el seguimiento y recordarle al agente que un seguimiento no es una cita agendada.",
+  },
 
   // ─── lib/ai/guardrails/lista-de-conferencia.ts (Painel de Segurança) ───
   "Não prometer checar a agenda sem checar de verdade": {
@@ -17180,7 +17190,6 @@ export const DICIONARIO: Traducoes = {
   "A descrição é obrigatória.": { es: "La descripción es obligatoria." },
   "O corpo da skill não pode ficar vazio.": { es: "El cuerpo de la skill no puede quedar vacío." },
   "Linhas no corpo": { es: "Líneas en el cuerpo" },
-  "atualizada — já vale para os agentes.": { es: "actualizada: ya vale para los agentes." },
   "Editar skill": { es: "Editar skill" },
   "Salvar cria uma versão nova (a antiga fica no histórico). O corpo só entra na conversa quando uma das palavras-chave aparece na mensagem do cliente, ou quando a conversa ou o contato tem uma das etiquetas de ativação.": {
     es: "Guardar crea una versión nueva (la anterior queda en el historial). El cuerpo solo entra en la conversación cuando una de las palabras clave aparece en el mensaje del cliente, o cuando la conversación o el contacto tiene una de las etiquetas de activación.",
@@ -19579,6 +19588,75 @@ export const DICIONARIO: Traducoes = {
   },
   "O caminho do logo não é aceito. Envie a imagem de novo.": {
     es: "La ruta del logo no es aceptada. Vuelve a subir la imagen.",
+  },
+  "Quais skills ele usa": {
+    es: "Qué skills usa",
+  },
+  "Skills são roteiros para situações específicas, como objeção de preço ou agendamento. Ele só carrega uma skill quando a conversa pede.": {
+    es: "Las skills son guiones para situaciones específicas, como una objeción de precio o una cita. Solo carga una skill cuando la conversación lo pide.",
+  },
+  "Usar todas as skills da organização (padrão)": {
+    es: "Usar todas las skills de la organización (predeterminado)",
+  },
+  "Toda skill instalada, inclusive as que você instalar depois, vale para este agente.": {
+    es: "Toda skill instalada, incluidas las que instales después, vale para este agente.",
+  },
+  "Esta organização ainda não tem skill nenhuma.": {
+    es: "Esta organización todavía no tiene ninguna skill.",
+  },
+  "Ver as skills": {
+    es: "Ver las skills",
+  },
+  "marcada, mas não existe mais — desmarque para voltar a salvar": {
+    es: "marcada, pero ya no existe — desmárcala para volver a guardar",
+  },
+  "Nenhuma skill marcada: este agente não carrega skill nenhuma, nem as de plataforma. Só a que um roteiro de atendimento puxar continua valendo.": {
+    es: "Ninguna skill marcada: este agente no carga ninguna skill, ni siquiera las de la plataforma. Solo la que un guion de atención incluya sigue valiendo.",
+  },
+  "Uma skill instalada depois NÃO chega a este agente: marque aqui quando instalar. A que um roteiro de atendimento puxar vale mesmo fora desta lista.": {
+    es: "Una skill instalada después NO llega a este agente: márcala aquí cuando la instales. La que un guion de atención incluya vale incluso fuera de esta lista.",
+  },
+  "lista própria": {
+    es: "lista propia",
+  },
+  "Este texto vai inteiro em toda resposta de todo agente, várias leituras por mensagem. Regra que vale para um agente só rende mais no prompt dele; o que tem prazo pode virar aprendizado com validade.": {
+    es: "Este texto va entero en cada respuesta de cada agente, varias lecturas por mensaje. Una regla que vale para un solo agente rinde más en el prompt de ese agente; lo que tiene plazo puede convertirse en un aprendizaje con vigencia.",
+  },
+  "instalada — vale para os agentes que usam todas as skills. Não chega a estes, que têm lista própria (marque na tela de cada um):": {
+    es: "instalada — vale para los agentes que usan todas las skills. No llega a estos, que tienen lista propia (márcala en la pantalla de cada uno):",
+  },
+  "atualizada — já vale para os agentes que usam esta skill.": {
+    es: "actualizada: ya vale para los agentes que usan esta skill.",
+  },
+  "Erro ao carregar os agentes com lista própria de skills.": {
+    es: "Error al cargar los agentes con lista propia de skills.",
+  },
+  "Fotos que o cliente envia": {
+    es: "Fotos que envía el cliente",
+  },
+  "Ver as fotos que o cliente envia": {
+    es: "Ver las fotos que envía el cliente",
+  },
+  "Ligado, o agente entende o que a foto mostra: cada foto descrita é uma chamada paga a um modelo de IA com visão. Desligado, ele sabe que chegou uma foto, mas não vê o que ela mostra, e pode pedir ao cliente que conte. PDF não muda com esta opção: o texto do PDF é tirado no próprio servidor, sem chamada a modelo.": {
+    es: "Activado, el agente entiende lo que muestra la foto: cada foto descrita es una llamada pagada a un modelo de IA con visión. Desactivado, sabe que llegó una foto, pero no ve lo que muestra, y puede pedirle al cliente que la cuente. El PDF no cambia con esta opción: el texto del PDF se extrae en el propio servidor, sin llamada a un modelo.",
+  },
+  "Mostrar o aviso de peso acima de": {
+    es: "Mostrar el aviso de peso por encima de",
+  },
+  "Recomendado:": {
+    es: "Recomendado:",
+  },
+  "A memória vai inteira em toda resposta de todo agente; o aviso só informa, nada é cortado.": {
+    es: "La memoria va entera en cada respuesta de cada agente; el aviso solo informa, nada se recorta.",
+  },
+  "Vale para toda a empresa. Só administradores podem mudar.": {
+    es: "Vale para toda la empresa. Solo los administradores pueden cambiarlo.",
+  },
+  "Use um número inteiro de tokens dentro da faixa do campo.": {
+    es: "Usa un número entero de tokens dentro del rango del campo.",
+  },
+  "Só um administrador pode mudar esse limite.": {
+    es: "Solo un administrador puede cambiar este límite.",
   },
   // --- filas de atendimento (migration 9062) ---
   // O horário da FILA, na aba Setores. Mesma régua da jornada do atendente; o
