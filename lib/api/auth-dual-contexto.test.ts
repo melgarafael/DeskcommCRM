@@ -2,7 +2,7 @@
  * `resolveAuthDual` com TOKEN DE MÓDULO + JWT de contexto (Spec 33, F3, tarefa 4).
  *
  * Prova, com o JWT REAL (ES256) e só o banco substituído:
- *  - papel efetivo = min(teto `manager`, papel ATUAL da pessoa); `admin` nunca;
+ *  - papel efetivo = min(teto `admin`, papel ATUAL da pessoa); as áreas consentidas continuam valendo;
  *  - sem JWT: teto `agent` e nunca acima do papel do token;
  *  - pessoa rebaixada entre duas chamadas perde o poder na seguinte (nada em cache);
  *  - pessoa removida da organização, JWT de outra organização/instalação, vencido, de outra chave,
@@ -160,24 +160,25 @@ describe("papel efetivo do módulo com JWT de contexto", () => {
     }
   });
 
-  it("pessoa admin vira manager: rota que pede admin recusa (admin NUNCA)", async () => {
+  it("pessoa admin passa em rota que pede admin; pessoa manager NÃO passa", async () => {
     moduloAutenticado();
     pacote("admin");
-    const manager = await resolveAuthDual(req("GET", "/api/v1/contacts", await jwt()), { ...LEITURA, role: "manager" });
-    expect(manager.ok).toBe(true);
     const admin = await resolveAuthDual(req("GET", "/api/v1/contacts", await jwt()), { ...LEITURA, role: "admin" });
-    await recusa(admin, "forbidden_role");
+    expect(admin.ok).toBe(true);
+    pacote("manager");
+    const manager = await resolveAuthDual(req("GET", "/api/v1/contacts", await jwt()), { ...LEITURA, role: "admin" });
+    await recusa(manager, "forbidden_role");
   });
 
-  it("teto manager vale também para o `tokenRole` da rota", async () => {
+  it("o `tokenRole` da rota vale com o papel da pessoa: admin passa, manager recusa, sem JWT recusa", async () => {
     moduloAutenticado();
     pacote("admin");
-    const r = await resolveAuthDual(req("GET", "/api/v1/contacts", await jwt()), {
-      ...LEITURA,
-      role: "viewer",
-      tokenRole: "admin",
-    });
-    await recusa(r, "forbidden_role");
+    const opcoes = { ...LEITURA, role: "viewer" as const, tokenRole: "admin" as const };
+    const comAdmin = await resolveAuthDual(req("GET", "/api/v1/contacts", await jwt()), opcoes);
+    expect(comAdmin.ok).toBe(true);
+    pacote("manager");
+    await recusa(await resolveAuthDual(req("GET", "/api/v1/contacts", await jwt()), opcoes), "forbidden_role");
+    await recusa(await resolveAuthDual(req("GET", "/api/v1/contacts"), opcoes), "forbidden_role");
   });
 
   it("pessoa agent: passa onde pede agent e recusa onde pede manager", async () => {

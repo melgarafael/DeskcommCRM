@@ -4495,7 +4495,7 @@ módulo de laboratório que declara áreas de leitura e de escrita, uma pessoa `
 | J69.6 | Modo da porta | P0 | Área consentida só para leitura aceita GET e recusa POST na mesma área | **CI** (unit) escrito; **NÃO EXECUTADO** |
 | J69.7 | Retirar o consentimento | P0 | O admin desmarca e salva; a chamada seguinte do mesmo token recusa, sem esperar o token expirar | **NÃO EXECUTADO** |
 | J69.8 | Pessoa limita o papel | P0 | Com JWT de contexto de pessoa `viewer`, uma rota que pede `manager` recusa mesmo que o token do módulo permita; o papel efetivo é o menor dos dois | **CI** (unit) escrito; **NÃO EXECUTADO** |
-| J69.9 | Pessoa admin vira manager | P1 | Com pessoa `admin`, uma rota que pede `admin` recusa: o módulo nunca age como admin | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J69.9 | Pessoa admin passa, manager não | P1 | Com pessoa `admin`, uma rota que pede `admin` passa; com pessoa `manager`, recusa; sem JWT, recusa (ADR-0005 D4: o limite é o papel de quem clica; equipe, credencial e envio seguem sem área) | **CI** (unit) escrito; **NÃO EXECUTADO** |
 | J69.10 | Pessoa rebaixada entre duas chamadas | P1 | Rebaixar a pessoa muda o papel efetivo na chamada seguinte, com o mesmo JWT ainda válido | **CI** (unit) escrito; **NÃO EXECUTADO** |
 | J69.11 | Atribuição no audit | P0 | Mutação feita pelo módulo com JWT de pessoa grava `actor_api_token_id` e `metadata.module` como antes, mais `metadata.person_id`; `actor_user_id` continua nulo | **CI** (unit, `ator-modulo.test.ts`) escrito; **NÃO EXECUTADO** |
 | J69.12 | Isolamento entre organizações | P0 | Consentimento da organização A não vale na B; JWT de contexto de uma organização não abre a outra | **CI** (banco e rota) escrito; **NÃO EXECUTADO** |
