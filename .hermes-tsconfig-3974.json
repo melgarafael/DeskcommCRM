@@ -1,0 +1,26 @@
+{
+  "extends": "./tsconfig.typecheck.json",
+  "include": [
+    "next-env.d.ts",
+    "types/**/*.d.ts",
+    "tests/setup/vitest.setup.ts",
+    "lib/followup/envio-com-o-dono.ts",
+    "lib/followup/envio-com-o-dono.test.ts",
+    "lib/followup/pessoa-no-comando-no-turno.ts",
+    "lib/followup/enviar-texto-fixo.ts",
+    "lib/followup/enviar-texto-fixo.test.ts",
+    "lib/followup/api-schemas.ts",
+    "lib/followup/portabilidade.ts",
+    "lib/followup/editar.ts",
+    "lib/ai/elegibilidade/gate.test.ts",
+    "lib/agent-engine/agent/followup-turn.ts",
+    "hooks/followup/useFollowupFlow.ts",
+    "app/app/ai/followups/[id]/_components/PublishBar.tsx",
+    "app/app/ai/followups/[id]/_components/PublishBar.test.tsx",
+    "app/api/v1/ai/followup-flows/[id]/route.ts",
+    "app/api/v1/ai/followup-flows/[id]/duplicate/route.ts",
+    "app/api/v1/ai/followup-flows/[id]/export/route.ts",
+    "app/api/v1/ai/followup-flows/import/route.ts",
+    "tests/invariants/followup-pessoa-no-comando-no-turno.test.ts"
+  ]
+}
