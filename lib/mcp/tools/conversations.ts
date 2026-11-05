@@ -19,7 +19,7 @@ import { criarRascunho, JANELA_MAXIMA_HORAS, TEXTO_MAXIMO } from "@/lib/inbox/ra
 import { VALIDADE_DO_LINK_DE_MIDIA_S } from "@/lib/messaging/media/link-temporario";
 import { getQueuePositions } from "@/lib/routing/queue";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { resolveUserNames } from "./_users";
+import { nomesDosAtendentesCom } from "@/lib/users/nome-do-atendente";
 import type { McpToolDefinition } from "../types";
 
 /**
@@ -126,8 +126,9 @@ export const crmListConversations: McpToolDefinition<typeof listInputShape> = {
     // organização — com `last_message_preview` junto, que é texto do lado de
     // lá indo para o WhatsApp do cliente A, encaminhável, sem volta.
     // Nomes (dedupe) e posições de fila (1 query cada) — sem N+1 na listagem.
-    const names = await resolveUserNames(
+    const names = await nomesDosAtendentesCom(
       ctx.supabase,
+      ctx.organizationId,
       conversations.map((c) => c.assigned_to_user_id),
     );
     const queueMap = conversations.some(isInQueue)
@@ -221,7 +222,7 @@ export const crmGetConversation: McpToolDefinition<typeof getInputShape> = {
           "conversa não é sua para ler; siga a conversa com quem está falando.",
       };
     }
-    const names = await resolveUserNames(ctx.supabase, [conv.assigned_to_user_id]);
+    const names = await nomesDosAtendentesCom(ctx.supabase, ctx.organizationId, [conv.assigned_to_user_id]);
     const queue_position = isInQueue(conv)
       ? ((await getQueuePositions(ctx.supabase, ctx.organizationId)).get(conv.id) ?? null)
       : null;
