@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.typecheck.json",
+  "include": ["next-env.d.ts","types/**/*.d.ts","lib/atendimento/**/*.ts","lib/automation/**/*.ts","lib/mcp/**/*.ts","lib/schemas/webhooks.ts","app/api/v1/conversations/[id]/sector/route.ts","app/app/webhooks/**/*.tsx"]
+}
