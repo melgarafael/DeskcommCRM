@@ -121,15 +121,15 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
 
   // pipelines. Quem autentica é a própria rota, por `resolveAuthDual`: token com
   // `config:read` (GET) ou `config:write` (escrita) e papel admin (`tokenRole`).
-  // `[id]` é forma de UUID. `pipelines/[id]/forecast` (previsão, que é por
-  // usuário) e `pipelines/[id]/stages/[stageId]` (etapa, que ainda recebe o papel
-  // da sessão) seguem só de sessão e não entram de carona; o POST de `stages`
-  // também segue só de sessão.
+  // `[id]` é forma de UUID. `forecast` aceita token também (no token a previsão
+  // é da organização inteira, sem o recorte por pessoa da sessão). `stages/[stageId]`
+  // (etapa) segue só de sessão e não entra de carona; o POST de `stages` também.
   "/api/v1/pipelines",
   "/api/v1/pipelines/default",
   "/api/v1/pipelines/[id]",
   "/api/v1/pipelines/[id]/agent-mapping",
   "/api/v1/pipelines/[id]/board",
+  "/api/v1/pipelines/[id]/forecast",
   "/api/v1/pipelines/[id]/leads",
   "/api/v1/pipelines/[id]/stages",
   "/api/v1/pipelines/[id]/stages/win-rates",
