@@ -170,11 +170,12 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   // (escrita) e papel admin (`tokenRole`). `[id]` é forma de UUID. `[indice]` da
   // mídia é número inteiro não negativo (a rota recusa o resto com 404). O token
   // só alcança a resposta COMPARTILHADA (`owner_user_id` nulo): o POST de criação
-  // recusa `shared: false`, e o PATCH e o DELETE de `[id]` filtram o compartilhado.
-  // `[id]/midias` e `[id]/ordem` seguem só de sessão e não entram de carona: o
-  // papel deles vem de `org.role`.
+  // recusa `shared: false`, e o PATCH e o DELETE de `[id]` e o POST de `[id]/midias`
+  // filtram o compartilhado. `[id]/ordem` segue só de sessão e não entra de carona:
+  // o papel dele vem de `org.role`.
   "/api/v1/message-templates",
   "/api/v1/message-templates/[id]",
+  "/api/v1/message-templates/[id]/midias",
   { caminho: "/api/v1/message-templates/[id]/midias/[indice]", segmentos: { indice: "[0-9]+" }, amostras: { indice: "0" } },
   "/api/v1/message-template-groups",
   "/api/v1/message-template-groups/[id]",
