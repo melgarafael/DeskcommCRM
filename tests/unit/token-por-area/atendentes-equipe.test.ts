@@ -9,10 +9,10 @@
  *
  * Fora da porta, por decisão da ordem (pessoas e papéis): `team` GET (lista com e-mail
  * de login e último acesso), `attendants/availability/[user_id]` PATCH (muda a
- * disponibilidade de uma pessoa e compara com o `auth.uid()` da sessão), `attendants/sector/
- * [user_id]` PUT (filas de uma pessoa), `attendants/sectors` GET/POST e `sectors/[id]`
- * PATCH/DELETE (estrutura de equipe, fora da lista permitida), `attendants/presence` POST,
- * e todo convite, troca de papel, revogação e reativação em `team/*`.
+ * disponibilidade de uma pessoa e compara com o `auth.uid()` da sessão), `attendants/presence`
+ * POST, e todo convite, troca de papel, revogação e reativação em `team/*`.
+ * (`attendants/sector/[user_id]` PUT, `attendants/sectors` GET/POST e `sectors/[id]`
+ * PATCH/DELETE passaram a aceitar token na R1 lote 2: ver `config-r1-lote2.test.ts`.)
  *
  * Por caso (token de A alcança, token de B não alcança, escopo, papel, teto, sessão,
  * ramo sem service role) e um bloco de borda para as duas entradas de `PUBLIC_PATHS`.
@@ -439,8 +439,6 @@ describe("entradas de PUBLIC_PATHS da área (bloco de borda)", () => {
     expect(isPublicPath("/api/v1/attendants/availability/x")).toBe(false);
     expect(isPublicPath(`/api/v1/attendants/availability/${ANA_A}`)).toBe(false);
     expect(isPublicPath("/api/v1/attendants/presence")).toBe(false);
-    expect(isPublicPath("/api/v1/attendants/sectors")).toBe(false);
-    expect(isPublicPath(`/api/v1/attendants/sector/${ANA_A}`)).toBe(false);
   });
 
   it("team/assignable: exata; team, invite e [user_id] irmãos seguem só de sessão", () => {

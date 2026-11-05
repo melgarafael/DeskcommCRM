@@ -5,13 +5,9 @@
  * Convertidos, por método: GET /message-templates; DELETE /message-templates/[id];
  * GET /message-templates/[id]/midias/[indice]; GET e POST /message-template-groups;
  * PATCH e DELETE /message-template-groups/[id]; PUT /message-template-groups/[id]/ordem.
- *
- * Ficam só de sessão (PAREI, sem porta de token para o método):
- *  - POST /message-templates: decide o compartilhado por `org.role`.
- *  - PATCH /message-templates/[id]: o `.eq("midias", JSON)` de precondição não é
- *    reproduzido pelo dublê, então o 2xx não se prova com o falso.
- *  - POST /message-templates/[id]/midias e PUT /message-templates/[id]/ordem: decidem
- *    poder por `org.role` (e a posse pelo id da sessão).
+ * (POST /message-templates, PATCH /message-templates/[id], POST /message-templates/[id]/midias
+ * e PUT /message-templates/[id]/ordem passaram a aceitar token na R1 lote 2: ver
+ * `config-r1-lote2.test.ts`.)
  *
  * O token enxerga e altera só o compartilhado da organização (`owner_user_id` nulo):
  * o token não tem pessoa, e as respostas pessoais são de cada atendente.
@@ -191,13 +187,6 @@ function sessaoDe(papel: Role): void {
     ok: true,
     user: { id: USER_DONO, idioma: "pt-BR" },
     org: { orgId: ORG_A, name: "Org", role: papel },
-  } as never);
-}
-
-function sessaoSemCookie(): void {
-  vi.mocked(requireRole).mockResolvedValue({
-    ok: false,
-    response: new Response(null, { status: 401 }),
   } as never);
 }
 
@@ -563,39 +552,6 @@ suiteDoCaso({
 });
 
 // ---------------------------------------------------------------------------
-// Métodos que FICAM DE FORA numa rota que ganha porta
-// ---------------------------------------------------------------------------
-
-describe("métodos que ficam só de sessão", () => {
-  it("POST /api/v1/message-templates: fica só de sessão → 401, sem cliente admin", async () => {
-    sessaoSemCookie();
-    const { POST } = await import("@/app/api/v1/message-templates/route");
-    const r = await POST(
-      pedido("POST", "/api/v1/message-templates", { title: "Oi", body: "x", shared: false }, {
-        authorization: `Bearer ${TOKEN_A}`,
-      }),
-    );
-    expect(r.status).toBe(401);
-    expect(vi.mocked(createAdminClient)).not.toHaveBeenCalled();
-    expect(vi.mocked(createClient)).not.toHaveBeenCalled();
-  });
-
-  it(`PATCH /api/v1/message-templates/${TPL_A}: fica só de sessão → 401, sem cliente admin`, async () => {
-    sessaoSemCookie();
-    const { PATCH } = await import("@/app/api/v1/message-templates/[id]/route");
-    const r = await PATCH(
-      pedido("PATCH", `/api/v1/message-templates/${TPL_A}`, { title: "Oi", body: "x", shortcut: null }, {
-        authorization: `Bearer ${TOKEN_A}`,
-      }),
-      { params: Promise.resolve({ id: TPL_A }) },
-    );
-    expect(r.status).toBe(401);
-    expect(vi.mocked(createAdminClient)).not.toHaveBeenCalled();
-    expect(vi.mocked(createClient)).not.toHaveBeenCalled();
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Borda do token: modelo pessoal de A, id de A pedido por B, teto da organização
 // ---------------------------------------------------------------------------
 
@@ -673,13 +629,15 @@ describe("teto por organização (segundo contador do token)", () => {
 // ---------------------------------------------------------------------------
 
 describe("isPublicPath: portas das rotas de modelos", () => {
-  it("message-templates: [id] só com forma de UUID; sub-path e irmãos que não ganharam porta ficam de fora", () => {
+  it("message-templates: [id] só com forma de UUID; sub-path fica de fora", () => {
     expect(isPublicPath("/api/v1/message-templates")).toBe(true);
     expect(isPublicPath(`/api/v1/message-templates/${TPL_A}`)).toBe(true);
     expect(isPublicPath("/api/v1/message-templates/abc")).toBe(false);
     expect(isPublicPath(`/api/v1/message-templates/${TPL_A}/x`)).toBe(false);
-    expect(isPublicPath(`/api/v1/message-templates/${TPL_A}/midias`)).toBe(false);
-    expect(isPublicPath(`/api/v1/message-templates/${TPL_A}/ordem`)).toBe(false);
+    expect(isPublicPath(`/api/v1/message-templates/${TPL_A}/midias`)).toBe(true);
+    expect(isPublicPath(`/api/v1/message-templates/${TPL_A}/ordem`)).toBe(true);
+    expect(isPublicPath(`/api/v1/message-templates/${TPL_A}/midias/x`)).toBe(false);
+    expect(isPublicPath(`/api/v1/message-templates/${TPL_A}/ordem/x`)).toBe(false);
   });
 
   it("midias/[indice]: índice numérico entra; o resto não", () => {
