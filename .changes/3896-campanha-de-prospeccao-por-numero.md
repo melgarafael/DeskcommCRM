@@ -4,18 +4,19 @@ secao: adicionado
 titulo: Prospecção com uma campanha em andamento por número de WhatsApp
 ---
 
-Uma organização com três conexões conectadas deixa de ficar limitada a **uma
-campanha de prospecção por vez**: cada número pode ter a sua, com agente,
+Uma organização com três conexões conectadas deixa de ficar limitada a
+**uma campanha de prospecção por vez**: cada número pode ter a sua, com agente,
 região e aquecimento próprios. A segunda campanha em outro número é aceita e o
 worker envia pelas duas na mesma rodada; a que estava bloqueada respondia
 "Pause a campanha atual antes de iniciar outra".
 
-O que continua igual, e de propósito: **duas campanhas no MESMO número seguem
-bloqueadas**. O aquecimento é do número, não da campanha — duas listas no mesmo
-número dobrariam as primeiras abordagens dele, que é o comportamento que a
-plataforma pune com banimento. A recusa agora diz qual campanha ocupa a
-conexão, com o código `prospecting_channel_busy` e o nome de quem está lá; basta
-pausar essa campanha para liberar o número.
+O que continua igual, e de propósito:
+**duas campanhas no MESMO número seguem bloqueadas**. O aquecimento é do
+número, não da campanha — duas listas no mesmo número dobrariam as primeiras
+abordagens dele, que é o comportamento que a plataforma pune com banimento. A
+recusa agora diz qual campanha ocupa a conexão, com o código
+`prospecting_channel_busy` e o nome de quem está lá; basta pausar essa
+campanha para liberar o número.
 
 O teto de 50 tentativas em 24 horas, o teto de aquecimento e o intervalo mínimo
 passam a ser contados **por número**. Antes eram da organização inteira: com
