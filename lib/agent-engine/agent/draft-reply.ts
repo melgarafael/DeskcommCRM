@@ -50,7 +50,11 @@ export async function generateDraftReply(
     // knobs reais da versão publicada — mesmos usados pelo turno completo
     // (inbound-turn.ts), sem número mágico: historyMessageWindow/historyTokenWindow
     // já são exatamente os campos que LeadContextKnobs espera.
-    { historyLimit: agent.historyMessageWindow, maxTokens: agent.historyTokenWindow },
+    {
+      historyLimit: agent.historyMessageWindow,
+      maxTokens: agent.historyTokenWindow,
+      verImagens: agent.imageVisionEnabled ?? true,
+    },
   );
   // Erro de leitura do CRM (lead_not_found/crm_error/crm_unavailable) é falha
   // técnica → "error" (vira 500 na rota), NÃO "blocked" (que diria ao vendedor

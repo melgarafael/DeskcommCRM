@@ -78,7 +78,10 @@ export function SourcesTab() {
           <Plus /> {t("Nova fonte")}
         </Button>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {/* `grid-cols-1` (minmax(0,1fr)) e não a trilha `auto` implícita: com `auto`
+          o cartão cresce até caber o nome inteiro numa linha, o `truncate` do
+          título nunca age e, no celular, a página rola para o lado. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {sources.map((s) => (
           <Card
             key={s.id}
