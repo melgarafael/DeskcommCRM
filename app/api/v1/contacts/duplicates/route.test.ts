@@ -21,11 +21,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
+import { parDeContatos } from "@/lib/contacts/duplicados";
 import { createClient } from "@/lib/supabase/server";
+
+/**
+ * As dispensas ("não são a mesma empresa") são lidas pelo cliente administrador. O
+ * teste da ROTA prova que a lista as respeita; a sabotagem de QUEM as lê (o cliente
+ * do usuário, que a policy de `merge_queue` esvazia para quem não é gestor) fica na
+ * suíte de invariantes, onde há banco de verdade.
+ */
+const dispensa = vi.hoisted(() => ({ pares: new Set<string>() }));
 
 vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn() }));
 vi.mock("@/lib/auth/require-role", () => ({ orgAtivaDaApi: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
+vi.mock("@/lib/contacts/dispensar-par", () => ({
+  lerParesDispensados: async () => new Set(dispensa.pares),
+}));
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -144,6 +157,7 @@ function corpo(res: Response): Promise<{ data: unknown; meta: Record<string, unk
 }
 
 beforeEach(() => {
+  dispensa.pares.clear();
   vi.mocked(loadAuthUser).mockResolvedValue({
     id: USER_ID,
     email: "a@example.com",
@@ -237,21 +251,65 @@ describe("a varredura de duplicados responde ao que foi LIDO", () => {
   });
 });
 
+describe("o repetido pelo nome: sugestão depois dos fortes, e dispensa que vale para a lista", () => {
+  /** Um grupo forte (o mesmo celular, com e sem o nono dígito) e um par só pelo nome. */
+  function cenario(): Linha[] {
+    const linhas = base(60);
+    linhas[4] = contato(5, { phone_number: "+553198966398" });
+    linhas[5] = contato(6, { phone_number: "+5531998966398" });
+    linhas[9] = contato(10, { name: "Clínica Santos Odontologia", phone_number: "+553191110010" });
+    linhas[19] = contato(20, {
+      name: "Santos Odontologia Clínica Avançada",
+      phone_number: "+553191110020",
+    });
+    return linhas;
+  }
+
+  it("o par por nome vem com motivos nome_parecido, DEPOIS do grupo forte", async () => {
+    // Sabotagem: concatenar os parecidos ANTES dos fortes deixa a ordem vermelha.
+    const { client } = fakeSupabase({ contacts: cenario() });
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const grupos = (await corpo(await chamar())).data as Array<{
+      motivos: string[];
+      contatos: Array<{ id: string; address_book_name: unknown }>;
+    }>;
+
+    expect(grupos.map((g) => g.motivos)).toEqual([["telefone"], ["nome_parecido"]]);
+    expect(grupos[1]!.contatos.map((c) => c.id)).toEqual(["contato-0010", "contato-0020"]);
+    // O campo novo chega à tela, mesmo quando é nulo.
+    expect(grupos[1]!.contatos[0]!.address_book_name).toBeNull();
+  });
+
+  it("par dispensado (com a ordem invertida) não aparece, e o papel de quem olha não muda isso", async () => {
+    // Sabotagem: ignorar `lerParesDispensados` deixa o par de nome na lista.
+    dispensa.pares.add(parDeContatos("contato-0020", "contato-0010"));
+    vi.mocked(loadAuthUser).mockResolvedValue({
+      id: USER_ID,
+      email: "a@example.com",
+      full_name: null,
+      avatar_url: null,
+      is_platform_admin: false,
+      idioma: "pt-BR",
+      organizations: [{ organization_id: ORG_ID, organization_name: "Org", role: "viewer" }],
+    } as never);
+    const { client } = fakeSupabase({ contacts: cenario() });
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const grupos = (await corpo(await chamar())).data as Array<{ motivos: string[] }>;
+
+    expect(grupos.map((g) => g.motivos)).toEqual([["telefone"]]);
+  });
+});
+
 /**
- * ─── O CPF e o fim da sugestão por nome (#4081) ──────────────────────────────
+ * ─── O CPF na varredura (#4081) ───────────────────────────────────────────────
  *
- * Duas mudanças de contrato desta rota:
- *
- *  1. `cpf_hash` passa a ser LIDO (é comparação de igualdade, e o índice único
- *     dele nasce com `if not exists`) e continua NÃO sendo devolvido: hash de
- *     documento é PII derivada, e a tela não tem uso para ela.
- *  2. O nome sozinho deixa de sugerir. A varredura não chama mais
- *     `encontrarParecidosPorNome` — em base de pessoa física, "Maria Souza"
- *     aparece duas vezes sem ser a mesma pessoa, e a fusão não se desfaz com um
- *     clique. A função continua em `lib/contacts/duplicados.ts` (com teste
- *     próprio) para o dia em que ela voltar atrás de uma opção da organização.
+ * `cpf_hash` passa a ser LIDO (é comparação de igualdade, e o índice único
+ * dele nasce com `if not exists`) e continua NÃO sendo devolvido: hash de
+ * documento é PII derivada, e a tela não tem uso para ela.
  */
-describe("CPF na varredura, e o nome que não sugere mais", () => {
+describe("CPF na varredura", () => {
   const CPF_A = "1111111111111111111111111111111111111111111111111111111111111111";
 
   function comCpf(linhas: Linha[]): Linha[] {
@@ -291,48 +349,6 @@ describe("CPF na varredura, e o nome que não sugere mais", () => {
     // Controle positivo: o grupo está lá (um payload vazio também não teria o hash).
     const json = (await res.json()) as { data: unknown[] };
     expect(json.data).toHaveLength(1);
-  });
-
-  it("nomes idênticos com dados diferentes: NENHUM grupo", async () => {
-    // O que a issue chama de ruído: duas "Ana Paula Silva" que não são a mesma
-    // pessoa (telefones, e-mails e CPFs diferentes). Antes, o par entrava em
-    // "Parecidos — confira"; agora não entra em lugar nenhum.
-    const linhas = base(20);
-    linhas[4] = contato(5, { name: "Ana Paula Silva" });
-    linhas[9] = contato(10, { name: "Ana Paula Silva" });
-    const { client } = fakeSupabase({ contacts: linhas });
-    vi.mocked(createClient).mockResolvedValue(client as never);
-
-    const json = await corpo(await chamar());
-
-    expect(json.data).toEqual([]);
-    expect(JSON.stringify(json.data)).not.toContain("nome_parecido");
-  });
-
-  it("o grupo forte continua vindo — o nome deixa de sugerir, o telefone não", async () => {
-    // Guarda contra o conserto largo demais: tirar a varredura inteira (ou o
-    // `encontrarContatosDuplicados`) deixaria este caso vermelho.
-    const linhas = base(60);
-    linhas[4] = contato(5, { phone_number: "+553198966398" });
-    linhas[5] = contato(6, { phone_number: "+5531998966398" });
-    linhas[9] = contato(10, { name: "Clínica Santos Odontologia", phone_number: "+553191110010" });
-    linhas[19] = contato(20, {
-      name: "Santos Odontologia Clínica Avançada",
-      phone_number: "+553191110020",
-    });
-    const { client } = fakeSupabase({ contacts: linhas });
-    vi.mocked(createClient).mockResolvedValue(client as never);
-
-    const grupos = (await corpo(await chamar())).data as Array<{
-      motivos: string[];
-      contatos: Array<{ id: string; address_book_name: unknown }>;
-    }>;
-
-    expect(grupos).toHaveLength(1);
-    expect(grupos[0]!.motivos).toEqual(["telefone"]);
-    expect(grupos[0]!.contatos.map((c) => c.id).sort()).toEqual(["contato-0005", "contato-0006"]);
-    // O campo da agenda continua chegando à tela, mesmo nulo.
-    expect(grupos[0]!.contatos[0]!.address_book_name).toBeNull();
   });
 
   it("o `eq(organization_id)` continua preso na leitura — outra organização não entra", async () => {

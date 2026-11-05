@@ -9,12 +9,6 @@
  * Só par de nome se dispensa. Mesmo telefone, mesmo e-mail ou mesmo CPF é
  * `par_forte` (422): a sugestão forte não some por clique — junta-se as fichas.
  *
- * ⚠️ Desde a #4081 a varredura não sugere mais por nome, então nada nesta lista
- * produz um par dispensável: esta rota fica sem consumidor visível até a decisão do
- * mantenedor sobre voltar a sugestão atrás de uma opção da organização. Ela
- * continua aqui porque a recusa é o que impede o atendente de "resolver" um par de
- * telefone/e-mail/CPF por clique — e essa recusa é testada.
- *
  * Esta rota é a porta: autoriza, valida, chama, audita. Mesmo papel da fusão
  * (`manager`), mesmo `requireSupportWrite` antes do efeito. A organização é a da
  * SESSÃO: um `organization_id` no corpo não tem campo no schema e é descartado.

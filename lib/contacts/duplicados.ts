@@ -40,10 +40,8 @@ import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
  * Por que estes dois registros caíram no mesmo grupo.
  *
  * `nome_parecido` é o único que NÃO é igualdade: o nome sugere, não prova (Spec 31,
- * B6/B7). `encontrarParecidosPorNome` o entrega em pares separados, e a tela o
- * mostra em "Parecidos — confira", depois dos motivos fortes — mas a varredura de
- * duplicados deixou de chamar essa função (#4081), então hoje este motivo não sai
- * da rota.
+ * B6/B7). Por isso a varredura o entrega em grupos separados, e a tela o mostra em
+ * "Parecidos — confira", depois dos motivos fortes.
  *
  * `cpf` é igualdade de hash — o mesmo documento, já normalizado em sha256 pela
  * ingestão. Não é "CPF parecido": é o mesmo CPF.
@@ -352,13 +350,6 @@ export function ligadosPorMotivoForte(
  * separada — NÃO é union-find: A~B e B~C são duas sugestões, e a pessoa decide
  * cada uma. Quem já está no mesmo grupo forte (telefone, e-mail, CPF, conflito) não
  * entra aqui: ele já aparece no grupo forte.
- *
- * ⚠️ A ROTA DE DUPLICADOS NÃO CHAMA MAIS ESTA FUNÇÃO (#4081). Em base de pessoa
- * física o nome repete muito — duas "Ana Paula Silva" não são a mesma pessoa — e a
- * fusão não se desfaz com um clique, então a varredura deixou de sugerir por nome.
- * A função e a régua da Spec 31 ficam aqui, com teste próprio, para o dia em que a
- * sugestão voltar atrás de uma opção da organização (opção (b) da issue): reativar
- * é uma linha em `app/api/v1/contacts/duplicates/route.ts`, não uma reescrita.
  *
  * Um par entra quando:
  *  (a) divide DUAS OU MAIS palavras raras (até `TETO_DA_PALAVRA_RARA` fichas); ou
