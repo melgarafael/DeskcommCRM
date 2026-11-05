@@ -275,5 +275,16 @@ export function areaDaPorta(modelo: string, metodo: string): AreaDaPorta | null 
   return melhor ? { area: melhor.area, modo } : null;
 }
 
+/**
+ * Todo segmento LITERAL (não `[x]`) que aparece em algum padrão do mapa ou da lista sem área.
+ * Quem recebe um caminho REAL (`autorizarModulo`) usa isto para separar "palavra da rota" de
+ * "valor dinâmico" quando o valor não é um UUID. Segmento que não está aqui vira `[id]`.
+ */
+export const SEGMENTOS_LITERAIS_CONHECIDOS: ReadonlySet<string> = new Set(
+  [...SEM_AREA.map((x) => x.modelo), ...MAPA.map(([prefixo]) => prefixo)]
+    .flatMap((modelo) => modelo.split("/"))
+    .filter((s) => !ehParametro(s)),
+);
+
 /** Só para o teste de consistência: o mapa cru, sem a lista sem área. */
 export const PREFIXOS_DO_MAPA: readonly (readonly [string, ExtensionArea])[] = MAPA;
