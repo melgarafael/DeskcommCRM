@@ -17528,12 +17528,19 @@ comment on column public.conversations.assigned_to_user_name is
   'Cópia do nome de quem atende (auth.users.raw_user_meta_data->>''full_name''), escrita por fn_conversation_assign no mesmo UPDATE que grava assigned_to_user_id, e zerada junto quando a atribuição é removida. Existe para evitar 1 chamada HTTP ao GoTrue Admin API por atendente único na listagem do Inbox — ver lib/users/nome-do-atendente.ts. NULL quando a conversa não está atribuída, ou quando o atendente não tem full_name em user_metadata.';
 
 -- Backfill: só linhas já atribuídas, e só quando o nome ainda não está
--- presente — não sobrescreve dado que uma reaplicação já preencheu.
+-- presente — não sobrescreve dado que uma reaplicação já preencheu. O nome só
+-- se resolve para quem tem ou teve vínculo com a organização da conversa
+-- (migration 9219); sem filtro de revoked_at, como em lib/users/nome-do-atendente.ts.
 update public.conversations c
    set assigned_to_user_name = u.raw_user_meta_data ->> 'full_name'
   from auth.users u
  where c.assigned_to_user_id = u.id
-   and c.assigned_to_user_name is null;
+   and c.assigned_to_user_name is null
+   and exists (
+     select 1 from public.user_organizations uo
+      where uo.user_id = c.assigned_to_user_id
+        and uo.organization_id = c.organization_id
+   );
 
 create or replace function public.fn_conversation_assign(
   p_organization_id uuid,
@@ -61343,46 +61350,10 @@ notify pgrst, 'reload schema';
 -- ---- atendimento conjunto: controle e atualização da tela (migration 9016) ----
 -- A 0661 precede a 0726 na cadeia. Esta forward-fix reinstala a policy atual
 -- COM participação depois dela, sem editar nenhuma migration já publicada.
-do $conversations_select$ begin
-  -- O ramo de PARTICIPANTE (conversa atendida em conjunto) fica, e a forma da
-  -- main também: escopo resolvido em conjunto por fn_conversation_scope(), ANTES
-  -- do scan. A forma antiga do PR (fn_can_view_conversation por linha) fazia o
-  -- planner voltar a chamar a função por candidata — reprovado por
-  -- tests/invariants/escopo-da-conversa-avaliado-uma-vez.test.ts (#2848 sobre o
-  -- conserto #3090). A política abaixo é a da main (58213) + o ramo participante.
-  drop policy if exists "conversations_select" on public.conversations;
-  create policy "conversations_select" on public.conversations
-    for select using (
-      (select public.fn_is_platform_admin())
-      or organization_id in (
-           select s.organization_id from public.fn_conversation_scope() s where s.org_wide_read
-         )
-      or (
-           assigned_to_user_id = auth.uid()
-           and organization_id in (select s.organization_id from public.fn_conversation_scope() s)
-         )
-      or (
-           assigned_to_user_id is null
-           and organization_id in (
-                select s.organization_id from public.fn_conversation_scope() s where s.sees_unassigned
-              )
-         )
-      or exists (
-           select 1
-             from public.conversation_participants cp
-            where cp.conversation_id = conversations.id
-              and cp.organization_id = conversations.organization_id
-              and cp.user_id = auth.uid()
-              and cp.left_at is null
-              and not exists (
-                select 1 from public.contacts pc
-                 where pc.id=conversations.contact_id
-                   and pc.organization_id=conversations.organization_id
-                   and pc.is_personal
-              )
-         )
-    );
-end $conversations_select$;
+-- A policy desta forward-fix foi para o FIM do arquivo (bloco da migration 9214):
+-- a versão final referencia `conversations.sector_id`, que só nasce no apêndice
+-- da 9062. Reinstalá-la aqui também seria definição intermediária a cada update
+-- (tests/unit/baseline-nao-constroi-o-que-derruba.test.ts).
 
 -- O convite não amplia UPDATE/DELETE. Mantém o escopo anterior de quem já
 -- escrevia: owner, gestor e o modo de visibilidade configurado no banco.
@@ -69023,6 +68994,119 @@ $fn$;
 
 notify pgrst, 'reload schema';
 
+-- Integridade de organização, funil e etapa (9111)
+-- manifest: Exige a mesma organização/funil/etapa em todo caminho SQL, sem reparar legado automaticamente.
+-- Operator controls statement/lock timeout; applying/validating takes locks and needs a reviewed target window.
+do $integridade_funil_etapa$
+declare actual record;expected smallint[];ref_expected smallint[];legado_invalido boolean;
+begin
+ lock table public.crm_pipelines,public.crm_stages,public.crm_leads in share row exclusive mode;
+legado_invalido:=exists(select 1 from public.crm_stages s left join public.crm_pipelines p on p.id=s.pipeline_id where p.id is null or p.organization_id is distinct from s.organization_id)
+ or exists(select 1 from public.crm_leads l left join public.crm_pipelines p on p.id=l.pipeline_id left join public.crm_stages s on s.id=l.stage_id where p.id is null or s.id is null or p.organization_id is distinct from l.organization_id or s.organization_id is distinct from l.organization_id or s.pipeline_id is distinct from l.pipeline_id);
+-- Legado inconsistente não é reparado nem derruba a atualização. As chaves antigas de uma
+-- coluna FICAM: a composta não casaria com as linhas legadas, e trocá-las deixaria apagar a
+-- etapa/funil a que elas apontam. Lado a lado também não: duas chaves entre as mesmas tabelas
+-- tornam ambíguo o join embutido do PostgREST (PGRST201). A troca, validada, acontece no
+-- update.sh seguinte ao legado revisto.
+if legado_invalido then raise warning 'crm_integrity_legacy_invalid_no_automatic_repair: chaves antigas mantidas; a troca pelas chaves compostas espera o legado ser revisto';end if;
+expected:=array[(select attnum from pg_attribute where attrelid='public.crm_pipelines'::regclass and attname='organization_id'and not attisdropped),(select attnum from pg_attribute where attrelid='public.crm_pipelines'::regclass and attname='id'and not attisdropped)]::smallint[];
+ if to_regclass('public.crm_integridade_pipelines_org_id_uq')is null then
+  create unique index crm_integridade_pipelines_org_id_uq on public.crm_pipelines(organization_id,id);
+  comment on index public.crm_integridade_pipelines_org_id_uq is 'crm-integridade-funil-etapa-v1';
+ else
+  select i.*,obj_description(i.indexrelid,'pg_class')marker into actual from pg_index i where i.indexrelid=to_regclass('public.crm_integridade_pipelines_org_id_uq');
+  if not found or actual.indrelid<>'public.crm_pipelines'::regclass or not actual.indisunique or not actual.indisvalid or not actual.indisready or actual.indpred is not null or actual.indexprs is not null or actual.indnatts<>cardinality(expected)or actual.indnkeyatts<>cardinality(expected)or actual.indkey::text<>array_to_string(expected,' ')or actual.marker is distinct from 'crm-integridade-funil-etapa-v1'then
+   raise exception 'crm_integrity_index_name_conflict'using errcode='23514';end if;
+ end if;
+expected:=array[(select attnum from pg_attribute where attrelid='public.crm_stages'::regclass and attname='organization_id'and not attisdropped),(select attnum from pg_attribute where attrelid='public.crm_stages'::regclass and attname='pipeline_id'and not attisdropped),(select attnum from pg_attribute where attrelid='public.crm_stages'::regclass and attname='id'and not attisdropped)]::smallint[];
+ if to_regclass('public.crm_integridade_stages_org_pipeline_id_uq')is null then
+  create unique index crm_integridade_stages_org_pipeline_id_uq on public.crm_stages(organization_id,pipeline_id,id);
+  comment on index public.crm_integridade_stages_org_pipeline_id_uq is 'crm-integridade-funil-etapa-v1';
+ else
+  select i.*,obj_description(i.indexrelid,'pg_class')marker into actual from pg_index i where i.indexrelid=to_regclass('public.crm_integridade_stages_org_pipeline_id_uq');
+  if not found or actual.indrelid<>'public.crm_stages'::regclass or not actual.indisunique or not actual.indisvalid or not actual.indisready or actual.indpred is not null or actual.indexprs is not null or actual.indnatts<>cardinality(expected)or actual.indnkeyatts<>cardinality(expected)or actual.indkey::text<>array_to_string(expected,' ')or actual.marker is distinct from 'crm-integridade-funil-etapa-v1'then
+   raise exception 'crm_integrity_index_name_conflict'using errcode='23514';end if;
+ end if;
+select c.*,obj_description(c.oid,'pg_constraint') marker into actual from pg_constraint c where c.conrelid='public.crm_stages'::regclass and c.conname='crm_stages_pipeline_id_fkey';
+ if not found then raise exception 'crm_integrity_required_base_fk_missing' using errcode='23514';end if;
+ if actual.contype<>'f' or actual.confrelid<>'public.crm_pipelines'::regclass or actual.confdeltype<>'c' or actual.confupdtype<>'a' or actual.confmatchtype<>'s' or actual.condeferrable or actual.condeferred then raise exception 'crm_integrity_base_fk_conflict' using errcode='23514';end if;
+ expected:=array[(select attnum from pg_attribute where attrelid='public.crm_stages'::regclass and attname='organization_id' and not attisdropped),(select attnum from pg_attribute where attrelid='public.crm_stages'::regclass and attname='pipeline_id' and not attisdropped)]::smallint[];ref_expected:=array[(select attnum from pg_attribute where attrelid='public.crm_pipelines'::regclass and attname='organization_id' and not attisdropped),(select attnum from pg_attribute where attrelid='public.crm_pipelines'::regclass and attname='id' and not attisdropped)]::smallint[];
+ if actual.conkey=expected and actual.confkey=ref_expected and actual.marker='crm-integridade-funil-etapa-v1' then
+  null;
+ elsif actual.conkey=array[(select attnum from pg_attribute where attrelid='public.crm_stages'::regclass and attname='pipeline_id' and not attisdropped)]::smallint[] and actual.confkey=array[(select attnum from pg_attribute where attrelid='public.crm_pipelines'::regclass and attname='id' and not attisdropped)]::smallint[] and actual.marker is null and actual.convalidated then
+  if not legado_invalido then
+   alter table public.crm_stages drop constraint crm_stages_pipeline_id_fkey;
+   alter table public.crm_stages add constraint crm_stages_pipeline_id_fkey foreign key(organization_id,pipeline_id) references public.crm_pipelines(organization_id,id) on delete cascade not valid;
+   comment on constraint crm_stages_pipeline_id_fkey on public.crm_stages is 'crm-integridade-funil-etapa-v1';
+  end if;
+ else raise exception 'crm_integrity_base_fk_conflict' using errcode='23514';end if;
+ if not legado_invalido then alter table public.crm_stages validate constraint crm_stages_pipeline_id_fkey;end if;
+select c.*,obj_description(c.oid,'pg_constraint') marker into actual from pg_constraint c where c.conrelid='public.crm_leads'::regclass and c.conname='crm_leads_pipeline_id_fkey';
+ if not found then raise exception 'crm_integrity_required_base_fk_missing' using errcode='23514';end if;
+ if actual.contype<>'f' or actual.confrelid<>'public.crm_pipelines'::regclass or actual.confdeltype<>'r' or actual.confupdtype<>'a' or actual.confmatchtype<>'s' or actual.condeferrable or actual.condeferred then raise exception 'crm_integrity_base_fk_conflict' using errcode='23514';end if;
+ expected:=array[(select attnum from pg_attribute where attrelid='public.crm_leads'::regclass and attname='organization_id' and not attisdropped),(select attnum from pg_attribute where attrelid='public.crm_leads'::regclass and attname='pipeline_id' and not attisdropped)]::smallint[];ref_expected:=array[(select attnum from pg_attribute where attrelid='public.crm_pipelines'::regclass and attname='organization_id' and not attisdropped),(select attnum from pg_attribute where attrelid='public.crm_pipelines'::regclass and attname='id' and not attisdropped)]::smallint[];
+ if actual.conkey=expected and actual.confkey=ref_expected and actual.marker='crm-integridade-funil-etapa-v1' then
+  null;
+ elsif actual.conkey=array[(select attnum from pg_attribute where attrelid='public.crm_leads'::regclass and attname='pipeline_id' and not attisdropped)]::smallint[] and actual.confkey=array[(select attnum from pg_attribute where attrelid='public.crm_pipelines'::regclass and attname='id' and not attisdropped)]::smallint[] and actual.marker is null and actual.convalidated then
+  if not legado_invalido then
+   alter table public.crm_leads drop constraint crm_leads_pipeline_id_fkey;
+   alter table public.crm_leads add constraint crm_leads_pipeline_id_fkey foreign key(organization_id,pipeline_id) references public.crm_pipelines(organization_id,id) on delete restrict not valid;
+   comment on constraint crm_leads_pipeline_id_fkey on public.crm_leads is 'crm-integridade-funil-etapa-v1';
+  end if;
+ else raise exception 'crm_integrity_base_fk_conflict' using errcode='23514';end if;
+ if not legado_invalido then alter table public.crm_leads validate constraint crm_leads_pipeline_id_fkey;end if;
+select c.*,obj_description(c.oid,'pg_constraint') marker into actual from pg_constraint c where c.conrelid='public.crm_leads'::regclass and c.conname='crm_leads_stage_id_fkey';
+ if not found then raise exception 'crm_integrity_required_base_fk_missing' using errcode='23514';end if;
+ if actual.contype<>'f' or actual.confrelid<>'public.crm_stages'::regclass or actual.confdeltype<>'r' or actual.confupdtype<>'a' or actual.confmatchtype<>'s' or actual.condeferrable or actual.condeferred then raise exception 'crm_integrity_base_fk_conflict' using errcode='23514';end if;
+ expected:=array[(select attnum from pg_attribute where attrelid='public.crm_leads'::regclass and attname='organization_id' and not attisdropped),(select attnum from pg_attribute where attrelid='public.crm_leads'::regclass and attname='pipeline_id' and not attisdropped),(select attnum from pg_attribute where attrelid='public.crm_leads'::regclass and attname='stage_id' and not attisdropped)]::smallint[];ref_expected:=array[(select attnum from pg_attribute where attrelid='public.crm_stages'::regclass and attname='organization_id' and not attisdropped),(select attnum from pg_attribute where attrelid='public.crm_stages'::regclass and attname='pipeline_id' and not attisdropped),(select attnum from pg_attribute where attrelid='public.crm_stages'::regclass and attname='id' and not attisdropped)]::smallint[];
+ if actual.conkey=expected and actual.confkey=ref_expected and actual.marker='crm-integridade-funil-etapa-v1' then
+  null;
+ elsif actual.conkey=array[(select attnum from pg_attribute where attrelid='public.crm_leads'::regclass and attname='stage_id' and not attisdropped)]::smallint[] and actual.confkey=array[(select attnum from pg_attribute where attrelid='public.crm_stages'::regclass and attname='id' and not attisdropped)]::smallint[] and actual.marker is null and actual.convalidated then
+  if not legado_invalido then
+   alter table public.crm_leads drop constraint crm_leads_stage_id_fkey;
+   alter table public.crm_leads add constraint crm_leads_stage_id_fkey foreign key(organization_id,pipeline_id,stage_id) references public.crm_stages(organization_id,pipeline_id,id) on delete restrict not valid;
+   comment on constraint crm_leads_stage_id_fkey on public.crm_leads is 'crm-integridade-funil-etapa-v1';
+  end if;
+ else raise exception 'crm_integrity_base_fk_conflict' using errcode='23514';end if;
+ if not legado_invalido then alter table public.crm_leads validate constraint crm_leads_stage_id_fkey;end if;
+end;
+$integridade_funil_etapa$;
+
+-- ---- a conversa do SETOR: visibility_mode = own_and_sector (migration 9214, #4022) ----
+-- Espelho da 9214, PRIMEIRA metade. Cria FUNÇÃO, então entra ANTES da VARREDURA
+-- anon. O corpo é plpgsql porque `attendant_sector_members` só nasce no apêndice
+-- da 0801/9062, mais abaixo: corpo `sql` seria resolvido na criação e reprovaria
+-- toda instalação nova. A SEGUNDA metade (a policy, que usa
+-- `conversations.sector_id`) está no fim do arquivo.
+-- O quarto modo de visibilidade: o papel restrito (agent/ai_operator) vê a
+-- conversa cujo sector_id é de um setor em que está vinculado, inclusive a que
+-- está com um colega do setor; os outros setores continuam fora, e
+-- viewer/manager/admin seguem org-wide. Nenhuma cláusula da policy anterior
+-- mudou — a disjunção do setor é ADITIVA.
+create or replace function public.fn_conversation_sector_scope()
+returns table (organization_id uuid, sector_id uuid)
+language plpgsql stable security definer
+set search_path = public
+as $$
+begin
+  return query
+    select m.organization_id, m.sector_id
+      from public.attendant_sector_members m
+     where m.user_id = auth.uid()
+       and public.fn_user_role_in_org(m.organization_id) is not null
+       and public.fn_user_role_in_org(m.organization_id) not in ('viewer','manager','admin')
+       and coalesce((select z.settings->>'visibility_mode'
+                       from public.organizations z
+                      where z.id = m.organization_id), 'own_and_unassigned') = 'own_and_sector';
+end;
+$$;
+
+revoke all on function public.fn_conversation_sector_scope() from public, anon;
+grant execute on function public.fn_conversation_sector_scope() to authenticated, service_role;
+
+comment on function public.fn_conversation_sector_scope() is
+  'Setores do chamador nas organizações em visibility_mode = own_and_sector (migration 9214). Uma linha por (organização, setor); zero linhas nos outros modos e para viewer/manager/admin. Lida por conversations_select; não concede leitura de nada por si.';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
@@ -73575,5 +73659,78 @@ comment on column public.llm_calls.prefixo_hash is
 create index if not exists idx_messages_derivacao_adiada
   on public.messages (organization_id, conversation_id, created_at desc)
   where (metadata ? 'derivacao_adiada') and media_storage_path is not null;
+
+-- ---- nome de atendente só para quem tem vínculo com a organização (migration 9219) ----
+-- assigned_to_user_name só guarda o nome de quem tem ou teve vínculo
+-- (user_organizations, sem filtro de revoked_at) com a organização da conversa.
+-- Zera o nome das linhas fora da regra. Idempotente: a segunda passada não acha
+-- linha. Linha sem assigned_to_user_id também não tem vínculo, e perde o nome.
+do $$
+begin
+  update public.conversations c
+     set assigned_to_user_name = null
+   where c.assigned_to_user_name is not null
+     and not exists (
+       select 1 from public.user_organizations uo
+        where uo.user_id = c.assigned_to_user_id
+          and uo.organization_id = c.organization_id
+     );
+end $$;
+
+notify pgrst, 'reload schema';
+
+-- ---- a conversa do SETOR: a disjunção na policy (migration 9214, #4022) ----
+-- A SEGUNDA metade do espelho da 9214. A função ficou na primeira (antes da
+-- VARREDURA anon, que proíbe create function depois dela); ESTA metade fica no
+-- fim porque referencia `conversations.sector_id`, coluna que só nasce no
+-- apêndice da 9062, mais abaixo. Não cria função: pode ficar aqui.
+do $conversations_select$ begin
+  drop policy if exists "conversations_select" on public.conversations;
+  create policy "conversations_select" on public.conversations
+    for select using (
+      (select public.fn_is_platform_admin())
+      or organization_id in (
+           select s.organization_id from public.fn_conversation_scope() s where s.org_wide_read
+         )
+      or (
+           assigned_to_user_id = auth.uid()
+           and organization_id in (select s.organization_id from public.fn_conversation_scope() s)
+         )
+      or (
+           assigned_to_user_id is null
+           and organization_id in (
+                select s.organization_id from public.fn_conversation_scope() s where s.sees_unassigned
+              )
+         )
+      or exists (
+           select 1
+             from public.conversation_participants cp
+            where cp.conversation_id = conversations.id
+              and cp.organization_id = conversations.organization_id
+              and cp.user_id = auth.uid()
+              and cp.left_at is null
+              and not exists (
+                select 1 from public.contacts pc
+                 where pc.id=conversations.contact_id
+                   and pc.organization_id=conversations.organization_id
+                   and pc.is_personal
+              )
+         )
+      or (
+           sector_id is not null
+           and (organization_id, sector_id) in (
+                select s.organization_id, s.sector_id
+                  from public.fn_conversation_sector_scope() s
+              )
+           and not exists (
+                select 1 from public.contacts pc
+                 where pc.id=conversations.contact_id
+                   and pc.organization_id=conversations.organization_id
+                   and pc.is_personal
+              )
+         )
+    );
+end $conversations_select$;
+
 
 notify pgrst, 'reload schema';

@@ -33,9 +33,11 @@
  * `lib/users/nome-do-atendente.ts`. A tela nunca deve traduzir esse `null` para
  * "sem responsável": o dono é o `assigned_to_user_id`.
  */
+import { isServiceRoleConfigured } from "@/lib/audit";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { Conversation } from "@/lib/types/messaging";
 
-import { nomesDosAtendentes } from "./nome-do-atendente";
+import { membrosDaOrganizacao, nomesDosAtendentes } from "./nome-do-atendente";
 
 export type ConversationComAtendente = Conversation & {
   assigned_to_user_name?: string | null;
@@ -43,18 +45,28 @@ export type ConversationComAtendente = Conversation & {
 
 export async function comNomeDoAtendente<
   T extends { assigned_to_user_id: string | null; assigned_to_user_name?: string | null },
->(conversas: T[]): Promise<Array<T & { assigned_to_user_name: string | null }>> {
+>(orgId: string, conversas: T[]): Promise<Array<T & { assigned_to_user_name: string | null }>> {
+  // A coluna só sai para quem tem ou teve vínculo com a organização — a mesma
+  // regra de `nomesDosAtendentes`, numa consulta só para a página inteira.
+  // Vínculo que não pôde ser lido (ou sem service role) = ninguém ganha nome.
+  const ids = [...new Set(conversas.map((c) => c.assigned_to_user_id).filter((id): id is string => Boolean(id)))];
+  const membros =
+    ids.length > 0 && isServiceRoleConfigured()
+      ? await membrosDaOrganizacao(createAdminClient(), orgId, ids)
+      : new Set<string>();
+
   // Só os casos inconsistentes (id sem nome) pagam o lookup — nunca a página inteira.
   const inconsistentes = conversas
-    .filter((c) => c.assigned_to_user_id && !c.assigned_to_user_name)
+    .filter((c) => c.assigned_to_user_id && membros.has(c.assigned_to_user_id) && !c.assigned_to_user_name)
     .map((c) => c.assigned_to_user_id);
   const nomesDeFallback =
-    inconsistentes.length > 0 ? await nomesDosAtendentes(inconsistentes) : new Map<string, string | null>();
+    inconsistentes.length > 0 ? await nomesDosAtendentes(orgId, inconsistentes) : new Map<string, string | null>();
 
   return conversas.map((c) => ({
     ...c,
     assigned_to_user_name:
-      c.assigned_to_user_name ??
-      (c.assigned_to_user_id ? (nomesDeFallback.get(c.assigned_to_user_id) ?? null) : null),
+      c.assigned_to_user_id && membros.has(c.assigned_to_user_id)
+        ? (c.assigned_to_user_name ?? nomesDeFallback.get(c.assigned_to_user_id) ?? null)
+        : null,
   }));
 }
