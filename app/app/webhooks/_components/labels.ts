@@ -3,6 +3,7 @@
  * de atividade (UI-T4) importa os mesmos mapas, nunca redeclara os textos.
  */
 import type { TRIGGER_EVENTS } from "@/lib/schemas/webhooks";
+import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 
 export type TriggerEvent = (typeof TRIGGER_EVENTS)[number];
 export type ActionType =
@@ -99,3 +100,16 @@ export const ACTION_LABELS: Record<ActionType, string> = {
   // distribuída para quem atende aquele setor) e não fala em "sector_id".
   define_sector: "Definir o setor da conversa",
 };
+
+/**
+ * #3881 — ação que só existe com um módulo opcional ligado. O seletor
+ * "Adicionar ação" e a paleta do canvas não a oferecem com o módulo desligado
+ * (o padrão de toda instalação); uma regra que JÁ a grava continua mostrando a
+ * caixa, porque o que está salvo não some da tela.
+ */
+const MODULO_DA_ACAO: Partial<Record<ActionType, ModuloOpcional>> = { define_sector: "setores" };
+
+export function acaoOferecida(tipo: ActionType, modulosLigados: readonly string[] | undefined): boolean {
+  const modulo = MODULO_DA_ACAO[tipo];
+  return !modulo || (modulosLigados ?? []).includes(modulo);
+}
