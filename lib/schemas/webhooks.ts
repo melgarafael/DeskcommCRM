@@ -889,7 +889,10 @@ function exigirConfigDoGatilhoDeData(
  * porta é o único desfecho honesto, como nos irmãos de data e de tempo.
  */
 function exigirConfigDoComentario(
-  regra: { trigger_event: string; trigger_config?: Record<string, unknown> },
+  // `trigger_event` OPCIONAL: no PATCH parcial o campo pode faltar, e exigir o
+  // tipo obrigatório aqui fazia o `.superRefine` do update não casar com o
+  // schema (TS2345) — o irmão de tempo sobrevive a um cast, este não precisa.
+  regra: { trigger_event?: string; trigger_config?: Record<string, unknown> },
   ctx: z.RefinementCtx,
 ): void {
   if (regra.trigger_event !== GATILHO_COMENTARIO) return;
