@@ -124,6 +124,12 @@ export const ApiErrorCodes = {
   // POST/PATCH /api/v1/attendants/sectors com nome que já existe na organização
   // (índice attendant_sectors_org_name_unique, migration 0801).
   sector_name_taken: "sector_name_taken",
+  // POST /api/v1/ai/agents e PATCH .../agents/[id] com nome que a organização já
+  // usa (índice ai_agents_name_unique, composto `(organization_id, name)` —
+  // baseline.sql:1963). Era 500 "Erro ao criar agent."; #3952. A régua que separa
+  // ESTE `23505` dos outros índices mora em `lib/ai/agents/nome-repetido.ts`.
+  // Irmão do `sector_name_taken`: mesma classe, outro cadastro.
+  agent_name_taken: "agent_name_taken",
   duplicate_external_id: "duplicate_external_id",
   event_gone: "event_gone", // resend de run cujo event_log original foi apagado (on delete set null)
   no_actions_to_resend: "no_actions_to_resend", // resend de regra que não tem mais nenhuma ação de webhook — reenviar nada não é sucesso
@@ -377,6 +383,14 @@ export const ApiErrorCodes = {
   wacalls_error: "wacalls_error", // 502: o serviço de chamada de voz recusou ou não respondeu
   wacalls_not_connected: "wacalls_not_connected", // 503 + Retry-After: sessão pareada cujo socket com o WhatsApp caiu por um instante (ver `wacallsSemConexao`)
   ai_provider_error: "ai_provider_error",
+  // 502: o teste do agente (#4020) não chegou a rodar porque o BANCO não
+  // atendeu — `Query read timeout`, `statement timeout`, socket derrubado ou o
+  // pool do engine sem `SUPABASE_DB_URL`. Código próprio, e não `preview_failed`,
+  // porque a tela e quem depura precisam distinguir "a configuração do agente
+  // está errada" (422, `preview_failed`) de "a dependência não respondeu"
+  // (502, este — não 503, que o cliente repete) — a primeira manda conferir
+  // modelo/credencial, a segunda manda esperar e tentar de novo.
+  preview_banco_indisponivel: "preview_banco_indisponivel",
   nuvemshop_error: "nuvemshop_error",
 } as const;
 
