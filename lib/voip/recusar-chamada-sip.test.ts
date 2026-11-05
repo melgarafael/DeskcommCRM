@@ -54,6 +54,7 @@ const linha = (id: string, extra: Linha = {}): Linha => ({
   id,
   organization_id: ORG,
   provider: "sip",
+  direction: "inbound",
   status: "ringing",
   end_reason: null,
   ended_at: null,
@@ -92,6 +93,12 @@ describe("recusar ligação SIP pela tela", () => {
     tabela = [linha("c1", { organization_id: "org-b" })];
     expect(await recusarChamadaSip(supabaseDeBrinquedo(), ORG, "c1", AGORA)).toBe("nao_encontrada");
     expect(tabela[0]).toMatchObject({ status: "ringing" });
+  });
+
+  it("ligação FEITA (outbound) não é recusável por este caminho", async () => {
+    tabela = [linha("c1", { direction: "outbound", status: "starting" })];
+    expect(await recusarChamadaSip(supabaseDeBrinquedo(), ORG, "c1", AGORA)).toBe("nao_encontrada");
+    expect(tabela[0]).toMatchObject({ status: "starting" });
   });
 
   it("linha do WaCalls não é encerrada por este caminho", async () => {

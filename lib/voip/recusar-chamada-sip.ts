@@ -38,6 +38,7 @@ export async function recusarChamadaSip(
     .eq("organization_id", organizationId)
     .eq("id", voiceCallId)
     .eq("provider", "sip")
+    .eq("direction", "inbound")
     .in("status", [...TOCANDO])
     .select("id");
   if (error) throw new Error(`recusa_falhou: ${error.message}`);
@@ -50,6 +51,7 @@ export async function recusarChamadaSip(
     .eq("organization_id", organizationId)
     .eq("id", voiceCallId)
     .eq("provider", "sip")
+    .eq("direction", "inbound")
     .maybeSingle();
   if (leituraErr) throw new Error(`recusa_falhou: ${leituraErr.message}`);
   if (!linha) return "nao_encontrada";
