@@ -41,6 +41,11 @@ export interface DestinoDaPaleta {
   /** Id do grupo; a ordem e o rótulo vêm de `grupos`. */
   group: string;
   icon: PhosphorIcon;
+  /**
+   * Ação no lugar de navegar (ex.: "Abrir ao lado" do módulo conectado). Sem ela, escolher o
+   * destino faz `router.push(href)`; com ela, o `href` só serve de identidade única na lista.
+   */
+  acao?: () => void;
 }
 
 export interface GrupoDaPaleta {
@@ -184,6 +189,10 @@ function Resultados({
 
   function navegar(destino: DestinoDaPaleta) {
     aoEscolher();
+    if (destino.acao) {
+      destino.acao();
+      return;
+    }
     router.push(destino.href);
   }
 

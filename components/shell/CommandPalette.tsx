@@ -4,7 +4,9 @@ import { useMemo } from "react";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
 import { GRUPO_DOS_MODULOS, NAV_GROUPS, searchable } from "@/lib/navigation/registry";
-import { PaletaDeDestinos } from "@/components/shell/PaletaDeDestinos";
+import { PaletaDeDestinos, type DestinoDaPaleta } from "@/components/shell/PaletaDeDestinos";
+import { usePainelDoModulo } from "@/components/modulo/PainelDoModulo";
+import { PuzzlePiece } from "@/lib/ui/icons";
 
 /**
  * Paleta de navegação (⌘K) do APP DO TENANT.
@@ -48,6 +50,25 @@ export function CommandPalette({
     ],
   );
 
+  // "Abrir ao lado: <módulo>": um item por módulo conectado, no grupo gerado. Escolher abre o painel
+  // lateral (em tela estreita o painel leva à rota do módulo). O `href` é só identidade na lista.
+  const { modulos, abrir } = usePainelDoModulo();
+  const rotuloAoLado = t("Abrir ao lado");
+  const destinos = useMemo<DestinoDaPaleta[]>(
+    () => [
+      ...visiveis,
+      ...modulos.map((m) => ({
+        href: `painel-do-modulo:${m.slug}`,
+        label: `${rotuloAoLado}: ${m.titulo}`,
+        description: "Módulo conectado",
+        group: GRUPO_DOS_MODULOS.id,
+        icon: PuzzlePiece,
+        acao: () => abrir(m.slug),
+      })),
+    ],
+    [visiveis, modulos, abrir, rotuloAoLado],
+  );
+
   // O grupo "Módulos" é gerado: entra no fim da lista de categorias e só aparece com destino nele.
   const grupos = useMemo(() => [...NAV_GROUPS, GRUPO_DOS_MODULOS], []);
 
@@ -55,7 +76,7 @@ export function CommandPalette({
     <PaletaDeDestinos
       open={open}
       onOpenChange={onOpenChange}
-      destinos={visiveis}
+      destinos={destinos}
       grupos={grupos}
       titulo={t("Buscar telas")}
       rotuloLista={t("Telas")}
