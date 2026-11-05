@@ -89,15 +89,15 @@ async function decide(b: Banco, metodo: string, caminho: string, extra: object =
 
 describe("autorizarModulo — declarado ∩ consentido", () => {
   it("área declarada e consentida, modo certo: passa", async () => {
-    expect(await decide(banco(), "GET", "/api/v1/contacts")).toEqual({ ok: true });
-    expect(await decide(banco(), "POST", "/api/v1/contacts")).toEqual({ ok: true });
-    expect(await decide(banco(), "PATCH", `/api/v1/contacts/${ID}`)).toEqual({ ok: true });
+    expect(await decide(banco(), "GET", "/api/v1/contacts")).toMatchObject({ ok: true });
+    expect(await decide(banco(), "POST", "/api/v1/contacts")).toMatchObject({ ok: true });
+    expect(await decide(banco(), "PATCH", `/api/v1/contacts/${ID}`)).toMatchObject({ ok: true });
   });
 
   it("consentiu só leitura: GET passa, POST e PATCH recusam (escrita sem permissão de escrita)", async () => {
     const b = banco();
     b.vinculo = { enabled: true, consented_areas: ["area.contatos.leitura"] };
-    expect(await decide(b, "GET", "/api/v1/contacts")).toEqual({ ok: true });
+    expect(await decide(b, "GET", "/api/v1/contacts")).toMatchObject({ ok: true });
     for (const metodo of ["POST", "PUT", "PATCH", "DELETE"]) {
       expect(await decide(b, metodo, `/api/v1/contacts/${ID}`)).toEqual({
         ok: false,
@@ -232,7 +232,7 @@ describe("autorizarModulo — porta", () => {
     const b = banco();
     expect(
       await decide(b, "GET", "/api/v1/leads", { modeloDaPorta: "/api/v1/contacts" }),
-    ).toEqual({ ok: true });
+    ).toMatchObject({ ok: true });
     expect(
       await decide(b, "GET", "/api/v1/contacts", { modeloDaPorta: "/api/v1/messages" }),
     ).toMatchObject({ ok: false });
@@ -305,7 +305,7 @@ describe("autorizarModulo — estado do módulo (sempre lido agora)", () => {
 
   it("consentimento retirado entre duas chamadas: a segunda recusa (sem cache)", async () => {
     const b = banco();
-    expect(await decide(b, "GET", "/api/v1/contacts")).toEqual({ ok: true });
+    expect(await decide(b, "GET", "/api/v1/contacts")).toMatchObject({ ok: true });
     b.vinculo = { enabled: true, consented_areas: [] };
     expect(await decide(b, "GET", "/api/v1/contacts")).toEqual({
       ok: false,
@@ -322,7 +322,7 @@ describe("autorizarModulo — estado do módulo (sempre lido agora)", () => {
       caminho: "/api/v1/contacts",
       supabase: f.cliente,
     });
-    expect(r).toEqual({ ok: true });
+    expect(r).toMatchObject({ ok: true });
     expect(f.filtros.api_tokens).toEqual([
       ["organization_id", ORG],
       ["id", TOKEN],

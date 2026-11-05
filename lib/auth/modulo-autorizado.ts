@@ -32,7 +32,10 @@ export type CodigoDeRecusaDoModulo =
 /** Código de `/api/mcp` e de `contacts/route.ts`, que não aceitam token de módulo de jeito nenhum. */
 export const MODULO_NAO_ENTRA_AQUI = "module_token_not_allowed_here";
 
-export type ResultadoDoModulo = { ok: true } | { ok: false; codigo: CodigoDeRecusaDoModulo };
+/** `installationId` sai da LINHA DO TOKEN; o JWT de contexto (F3, tarefa 4) é conferido contra ele. */
+export type ResultadoDoModulo =
+  | { ok: true; installationId: string }
+  | { ok: false; codigo: CodigoDeRecusaDoModulo };
 
 export const MENSAGEM_DA_RECUSA_DO_MODULO: Record<
   CodigoDeRecusaDoModulo | typeof MODULO_NAO_ENTRA_AQUI,
@@ -162,7 +165,9 @@ export async function autorizarModulo(p: AutorizarModuloParams): Promise<Resulta
     if (!Array.isArray(consentidas)) return NEGADO_AREA;
 
     // 4. declarado ∩ consentido, no modo da porta.
-    if (declaradas.includes(exigida) && consentidas.includes(exigida)) return { ok: true };
+    if (declaradas.includes(exigida) && consentidas.includes(exigida)) {
+      return { ok: true, installationId };
+    }
     return NEGADO_AREA;
   } catch {
     return NEGADO_INDISPONIVEL;
