@@ -3,7 +3,7 @@
  *
  * O rótulo é `Atendente · Andreia`, no mesmo formato de `IA · Clara`. Por que o
  * primeiro nome e não o nome inteiro: o balão tem a largura de uma mensagem de
- * WhatsApp, e o rótulo divide essa linha com hora e confirmação de leitura. Numa
+ * conversa, e o rótulo divide essa linha com hora e confirmação de leitura. Numa
  * equipe de duas consultoras — o caso que abriu a issue — "Andreia" e "Thamyres"
  * distinguem o que "Andreia Cristina de Souza Lima" só faria esticar.
  *
