@@ -43,6 +43,11 @@ import { CHAVE_DA_INSTALACAO, CredentialPicker, STATUS_LABEL, findCredential } f
 import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
 import { bloqueioDePublicacao } from "@/lib/ai/agents/bloqueio-de-publicacao";
 import { mesmoRascunho } from "@/lib/ai/agents/mesmo-rascunho";
+import {
+  CODIGO_NOME_DE_AGENTE_EM_USO,
+  NOME_DE_AGENTE_EM_USO,
+  RASCUNHO_SALVO_NOME_NAO_MUDOU,
+} from "@/lib/ai/agents/nome-repetido";
 import { ToolPicker } from "./ToolPicker";
 import { TriggerEditor, type TriggerValue } from "./TriggerEditor";
 import { HandoffKeywordsInput } from "./HandoffKeywordsInput";
@@ -55,6 +60,8 @@ import {
 import { PainelDoOperador } from "./PainelDoOperador";
 import { PainelDeSeguranca } from "./PainelDeSeguranca";
 import { BasesDoAgente, type MaterialDoAcervo } from "./BasesDoAgente";
+import { SkillsDoAgente } from "./SkillsDoAgente";
+import type { SkillDisponivel } from "@/lib/ai/skills/skills-do-agente";
 import { FunisDoAgente, type CoberturaPorFunil } from "./FunisDoAgente";
 import { PublishConfirmDialog } from "./PublishConfirmDialog";
 import { ComandosDoCelular } from "./ComandosDoCelular";
@@ -97,6 +104,13 @@ export type { ChannelSessionLite };
  * ouve o motivo junto do rótulo, sem depender de hover.
  */
 const ID_DO_MOTIVO_DO_PUBLICAR = "motivo-do-publicar";
+
+/**
+ * O id que liga o CAMPO de nome à frase que o servidor devolveu quando o nome já
+ * existia na organização (#3952). O `aria-describedby` do input aponta para cá:
+ * quem chega pelo leitor de tela ouve o motivo junto do campo.
+ */
+const ID_DO_ERRO_DO_NOME = "erro-do-nome";
 
 interface BaseProps {
   credentials: CredentialRow[];
@@ -174,6 +188,8 @@ type Props = (EditProps | CreateProps) & {
    * algo importante.
    */
   materiais?: MaterialDoAcervo[];
+  /** As skills que a organização tem (dela e de plataforma), para a escolha por agente (9107). */
+  skills?: SkillDisponivel[];
 };
 
 interface FormState {
@@ -200,6 +216,8 @@ interface FormState {
    * jurídica". Padrão LIGADO (`?? true` abaixo), como a coluna na versão.
    */
   handoff_legal_enabled: boolean;
+  /** Ver as fotos que o cliente envia (9108). Padrão LIGADO, como a coluna. */
+  image_vision_enabled: boolean;
   proposal_ai_draft_enabled: boolean;
   cases_enabled: boolean;
   split_messages: boolean;
@@ -217,6 +235,8 @@ interface FormState {
   operator_tool_ids: string[];
   pipeline_ids: string[];
   knowledge_source_ids: string[];
+  /** `null` = todas as skills (o padrão); `[]` = nenhuma. */
+  skill_names: string[] | null;
 }
 
 interface FollowupValue {
@@ -314,6 +334,8 @@ export function buildState(args: {
     ],
     handoff_tool_enabled: version?.handoff_tool_enabled ?? true,
     handoff_legal_enabled: version?.handoff_legal_enabled ?? true,
+    // `?? true`: a versão de antes da 9108 via as fotos, e continua vendo.
+    image_vision_enabled: version?.image_vision_enabled ?? true,
     proposal_ai_draft_enabled: version?.proposal_ai_draft_enabled ?? true,
     cases_enabled: version?.cases_enabled ?? false,
     split_messages: version?.split_messages ?? false,
@@ -338,6 +360,8 @@ export function buildState(args: {
     pipeline_ids: version?.pipeline_ids ?? [],
     // `?? []` = nenhum material. Mesma direção segura: agir de menos.
     knowledge_source_ids: version?.knowledge_source_ids ?? [],
+    // `?? null` = todas: a versão de antes da 9107 não escolheu, e o runtime lhe dá todas.
+    skill_names: version?.skill_names ?? null,
   };
 }
 
@@ -382,6 +406,7 @@ function toVersionPayload(s: FormState) {
     handoff_keywords: s.handoff_keywords,
     handoff_tool_enabled: s.handoff_tool_enabled,
     handoff_legal_enabled: s.handoff_legal_enabled,
+    image_vision_enabled: s.image_vision_enabled,
     proposal_ai_draft_enabled: s.proposal_ai_draft_enabled,
     cases_enabled: s.cases_enabled,
     split_messages: s.split_messages,
@@ -398,6 +423,7 @@ function toVersionPayload(s: FormState) {
     operator_tool_ids: s.operator_tool_ids,
     pipeline_ids: s.pipeline_ids,
     knowledge_source_ids: s.knowledge_source_ids,
+    skill_names: s.skill_names,
   };
 }
 
@@ -407,7 +433,8 @@ function toVersionPayload(s: FormState) {
  * `mesmoRascunho` responde "salvar mudaria alguma coisa?" comparando os dois
  * payloads — mas o servidor NÃO grava o payload cru: `versionShapeSchema` faz
  * `.trim()` no prompt e completa o `trigger_config` com
- * `include_tags`/`exclude_tags`/`include_pipeline_ids`/`exclude_pipeline_ids`
+ * `include_tags`/`exclude_tags`/`include_pipeline_ids`/`exclude_pipeline_ids`/
+ * `include_sources`/`exclude_sources`
  * (`.default([])`). Comparar o formulário com o que está no banco sem passar os
  * dois pela MESMA régua acusava alteração para sempre, e Publicar ficava apagado
  * com "Salve o rascunho antes de publicar" mesmo depois de salvar — o defeito da
@@ -434,6 +461,7 @@ export function AgentForm(props: Props) {
   const t = useT();
   const funis = props.funis ?? [];
   const materiais = props.materiais ?? [];
+  const skills = props.skills ?? [];
   const router = useRouter();
   const isEdit = props.mode === "edit";
   const readOnly = props.readOnly ?? false;
@@ -464,6 +492,20 @@ export function AgentForm(props: Props) {
    * que salvou um e não o outro.
    */
   const [papel, setPapel] = React.useState<"conversa" | "operacao" | "seguranca">("conversa");
+
+  /**
+   * A recusa do SERVIDOR que mora num CAMPO — hoje, só "esse nome já existe"
+   * (#3952).
+   *
+   * Fica fora de `validation` de propósito: aquela é a régua do cliente, que
+   * roda a cada tecla e descreve o que a pessoa ainda precisa preencher. Esta é
+   * a resposta de quem foi ao banco, e um toast no canto não serve — o erro é do
+   * campo de nome, e é ali que a pessoa olha. Some assim que ela digita (o
+   * primeiro caractere muda o nome que o banco recusou) e NÃO sobrevive a um
+   * reload: recarregar já mostra o formulário limpo, sem prometer um conflito
+   * que talvez não exista mais.
+   */
+  const [erroDoServidorNoNome, setErroDoServidorNoNome] = React.useState<string | null>(null);
 
   /**
    * A pergunta é "salvar mudaria alguma coisa?", e não "os dois objetos são
@@ -699,6 +741,15 @@ export function AgentForm(props: Props) {
           cadastro.data,
         );
         if (!res.ok) {
+          // Nome repetido na organização (#3952): a frase vai para o CAMPO de
+          // nome, que é onde a pessoa olha e onde o conserto acontece — o toast
+          // do canto some sozinho e não diz qual campo mudar.
+          // A frase é montada AQUI, com `t()`: a `message` da Action é pt e
+          // quem usa es/en leria português no campo.
+          if (res.error === CODIGO_NOME_DE_AGENTE_EM_USO) {
+            setErroDoServidorNoNome(`${t(NOME_DE_AGENTE_EM_USO)} ${t(RASCUNHO_SALVO_NOME_NAO_MUDOU)}`);
+            return;
+          }
           toast.error(res.message ?? `${t("Erro")}: ${res.error}`);
           return;
         }
@@ -728,6 +779,11 @@ export function AgentForm(props: Props) {
         }
         const res = await createMcpAgentAction(validated.data);
         if (!res.ok) {
+          // Mesmo tratamento do salvar: recusa de nome mora no campo (#3952).
+          if (res.error === CODIGO_NOME_DE_AGENTE_EM_USO) {
+            setErroDoServidorNoNome(t(NOME_DE_AGENTE_EM_USO));
+            return;
+          }
           toast.error(res.message ?? `${t("Erro")}: ${res.error}`);
           return;
         }
@@ -961,13 +1017,35 @@ export function AgentForm(props: Props) {
               <Input
                 id="name"
                 value={form.name}
-                onChange={(e) => patch({ name: e.target.value })}
+                onChange={(e) => {
+                  // Digitar é a resposta à recusa: o nome mudou, então a frase
+                  // "já existe" deixou de valer para o que está no campo.
+                  if (erroDoServidorNoNome) setErroDoServidorNoNome(null);
+                  patch({ name: e.target.value });
+                }}
                 disabled={disabled}
                 maxLength={120}
-                aria-invalid={!!validation.name}
+                aria-invalid={!!validation.name || !!erroDoServidorNoNome}
+                aria-describedby={erroDoServidorNoNome ? ID_DO_ERRO_DO_NOME : undefined}
               />
               {validation.name ? (
                 <p className="text-xs text-destructive">{validation.name}</p>
+              ) : null}
+              {/*
+                A recusa do SERVIDOR, embaixo do campo que a causou — e não no
+                toast do canto (#3952). `role="alert"` porque a frase aparece
+                depois de um envio: quem usa leitor de tela precisa ouvi-la sem
+                procurar na página.
+              */}
+              {erroDoServidorNoNome ? (
+                <p
+                  id={ID_DO_ERRO_DO_NOME}
+                  data-testid="erro-do-nome"
+                  role="alert"
+                  className="text-xs text-destructive"
+                >
+                  {erroDoServidorNoNome}
+                </p>
               ) : null}
             </div>
             <div className="space-y-1">
@@ -1462,6 +1540,14 @@ export function AgentForm(props: Props) {
             disabled={disabled}
           />
 
+          {/* As skills que este assistente usa (9107) */}
+          <SkillsDoAgente
+            skills={skills}
+            value={form.skill_names}
+            onChange={(nomes) => patch({ skill_names: nomes })}
+            disabled={disabled}
+          />
+
           {/* Triggers */}
           <Card className="space-y-2 p-4">
             <h3 className="text-sm font-medium">{t("Quando ele entra em ação")}</h3>
@@ -1472,6 +1558,26 @@ export function AgentForm(props: Props) {
               organizationTimezone={props.organizationTimezone}
               funis={props.funis}
             />
+          </Card>
+
+          {/* Ver as fotos que o cliente envia (9108). O custo vai escrito ao lado
+              porque é ele que decide: cada foto descrita é uma chamada paga. */}
+          <Card className="space-y-2 p-4">
+            <h3 className="text-sm font-medium">{t("Fotos que o cliente envia")}</h3>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="image_vision_enabled"
+                checked={form.image_vision_enabled}
+                onCheckedChange={(v) => patch({ image_vision_enabled: v })}
+                disabled={disabled}
+              />
+              <Label htmlFor="image_vision_enabled">{t("Ver as fotos que o cliente envia")}</Label>
+            </div>
+            <p className="text-xs text-muted-foreground" data-testid="visao-de-foto-ajuda">
+              {t(
+                "Ligado, o agente entende o que a foto mostra: cada foto descrita é uma chamada paga a um modelo de IA com visão. Desligado, ele sabe que chegou uma foto, mas não vê o que ela mostra, e pode pedir ao cliente que conte. PDF não muda com esta opção: o texto do PDF é tirado no próprio servidor, sem chamada a modelo.",
+              )}
+            </p>
           </Card>
 
           {/* Handoff */}

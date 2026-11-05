@@ -253,3 +253,85 @@ describe("montarTracoDoTurno", () => {
     expect(linha.agent_id).toBeNull();
   });
 });
+
+/**
+ * A MARCA `encerra_turno` (knob AGENT_STOP_AFTER_FINAL_SEND ≠ off) é a régua da
+ * avaliação da parada do laço: ela precisa chegar à linha quando o modelo marcou,
+ * e a linha precisa ficar IDÊNTICA à de antes quando ele não marcou.
+ */
+describe("marca encerra_turno no traço", () => {
+  type Executavel = { execute: (input: unknown, options: unknown) => unknown };
+
+  it("o envio marcado registra `encerra_turno: true`", async () => {
+    const tools = {
+      send_message: ferramenta(() => ({ ok: true, status: "enviada" })),
+    } as unknown as ToolSet;
+    const coletor = criarColetorDeFerramentas();
+    const envolvidas = envolverFerramentasComTraco(tools, coletor, relogioDeMentira());
+
+    await (envolvidas.send_message as Executavel).execute({ body: "oi", encerra_turno: true }, {});
+
+    expect(coletor.listar()).toEqual([
+      { nome: "send_message", estado: "ok", erro: null, duracao_ms: 5, encerra_turno: true },
+    ]);
+  });
+
+  it("sem a marca (ou com false) a entrada não ganha a chave", async () => {
+    const tools = {
+      send_message: ferramenta(() => ({ ok: true, status: "enviada" })),
+    } as unknown as ToolSet;
+    const coletor = criarColetorDeFerramentas();
+    const envolvidas = envolverFerramentasComTraco(tools, coletor, relogioDeMentira());
+
+    await (envolvidas.send_message as Executavel).execute({ body: "oi" }, {});
+    await (envolvidas.send_message as Executavel).execute({ body: "oi", encerra_turno: false }, {});
+
+    for (const entrada of coletor.listar()) expect(entrada).not.toHaveProperty("encerra_turno");
+  });
+
+  it("a exceção de um envio marcado também leva a marca", async () => {
+    const tools = {
+      send_message: ferramenta(() => {
+        throw new Error("canal caiu");
+      }),
+    } as unknown as ToolSet;
+    const coletor = criarColetorDeFerramentas();
+    const envolvidas = envolverFerramentasComTraco(tools, coletor, relogioDeMentira());
+
+    await expect(
+      (envolvidas.send_message as Executavel).execute({ body: "oi", encerra_turno: true }, {}),
+    ).rejects.toThrow("canal caiu");
+    expect(coletor.listar()[0]).toMatchObject({ estado: "falhou", encerra_turno: true });
+  });
+
+  it("montarTracoDoTurno preserva a chave e não a inventa", () => {
+    const linha = montarTracoDoTurno({
+      organizationId: "org-1",
+      jobId: "job-1",
+      previewRunId: null,
+      conversationId: "conv-1",
+      contactId: "lead-1",
+      agentId: null,
+      agentVersionId: null,
+      isDryRun: false,
+      status: "completed",
+      abortReason: null,
+      errorCode: null,
+      errorMessage: null,
+      provider: null,
+      model: null,
+      messagesSent: 1,
+      historicoMensagens: null,
+      knowledgeSourceIds: [],
+      ferramentas: [
+        { nome: "send_message", estado: "ok", erro: null, duracao_ms: 3, encerra_turno: true },
+        { nome: "update_lead_state", estado: "ok", erro: null, duracao_ms: 4 },
+      ],
+    });
+
+    expect(linha.ferramentas).toEqual([
+      { nome: "send_message", estado: "ok", erro: null, duracao_ms: 3, encerra_turno: true },
+      { nome: "update_lead_state", estado: "ok", erro: null, duracao_ms: 4 },
+    ]);
+  });
+});
