@@ -328,6 +328,7 @@ function wrapMcpTool(
               success: false,
               errorMessage: `destino_do_interesse:${String(completo.resposta.erro)}`,
             });
+            anotarEfeito("falhou");
             return completo.resposta;
           }
         }
