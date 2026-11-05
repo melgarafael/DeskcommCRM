@@ -95,6 +95,7 @@ const CODIGOS_DAS_ACOES = new Set([
   "sem_rodizio",
   "setor_inexistente",
   "setor_manual_preservado",
+  "setores_desligados",
   "telefone_da_equipe_invalido",
   "texto_vazio",
   "titulo_vazio",

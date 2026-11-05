@@ -112,12 +112,13 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
   if (!resultado.ok) {
     // Recusa NOMEADA, com o motivo no run e na Atividade: setor inexistente,
     // conversa encerrada e setor definido à mão são coisas diferentes, e o
-    // operador precisa saber qual delas a regra bateu.
+    // operador precisa saber qual delas a regra bateu. Sem `explicacao` aqui: ela
+    // venceria o mapa MOTIVO_DA_PARADA da Atividade, e a frase da régua não é
+    // traduzida — quem lê em espanhol leria português.
     const detalhe: Record<string, unknown> = {
       conversa_id: conversaId,
       conversa_de: doEvento ? "evento" : "contato",
       motivo: resultado.motivo,
-      explicacao: resultado.mensagem,
     };
     const statusDaRecusa = resultado.motivo === "conversa_nao_encontrada" ? "skipped" : "failed";
     return {

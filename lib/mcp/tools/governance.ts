@@ -328,7 +328,7 @@ const RECUSA_DO_SETOR_MCP: Record<RecusaDoSetor, string> = {
   conversa_encerrada: "conversation_closed",
   setor_manual_preservado: "sector_set_manually",
   limpeza_nao_permitida: "sector_required",
-  modulo_desligado: "sectors_module_off",
+  setores_desligados: "sectors_module_off",
   falha_ao_gravar: "sector_write_failed",
 };
 

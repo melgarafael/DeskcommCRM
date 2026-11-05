@@ -124,7 +124,7 @@ export async function PUT(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       case "falha_ao_gravar":
         return fail("internal_error", resultado.mensagem, 500, { requestId });
       default:
-        // `setor_manual_preservado`, `limpeza_nao_permitida` e `modulo_desligado`
+        // `setor_manual_preservado`, `limpeza_nao_permitida` e `setores_desligados`
         // não são alcançáveis daqui: origem `manual` e módulo já conferido.
         return fail("internal_error", resultado.mensagem, 500, { requestId });
     }

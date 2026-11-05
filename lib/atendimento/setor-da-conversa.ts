@@ -72,7 +72,9 @@ export type RecusaDoSetor =
   | "setor_manual_preservado"
   /** Só a rota humana limpa a fila; IA e automação não gravam nulo. */
   | "limpeza_nao_permitida"
-  | "modulo_desligado"
+  /** Não `modulo_desligado`: esse código já é do módulo Fluxos de atendimento
+   *  no mapa da aba Atividade, e a frase dele falaria do módulo errado. */
+  | "setores_desligados"
   | "falha_ao_gravar";
 
 export type ResultadoDoSetor =
@@ -206,7 +208,7 @@ export async function definirSetorDaConversa(entrada: EntradaDoSetor): Promise<R
     // nem para ler, nem para escrever. A IA e a automação recusam aqui, e não
     // tentam gravar uma coluna que ninguém usa.
     if (!(await moduloLigado(admin, "setores"))) {
-      return { ok: false, motivo: "modulo_desligado", mensagem: "Setores estão desligados nesta instalação." };
+      return { ok: false, motivo: "setores_desligados", mensagem: "Setores estão desligados nesta instalação." };
     }
   }
 

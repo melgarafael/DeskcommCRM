@@ -113,8 +113,8 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
     "A automação foi alterada e não tem mais o rodízio que disparou esta ação. Nada foi atribuído.",
   /* #3881 — a ação `define_sector`. `setor_id_ausente` nasce no executor da
      ação; `sem_conversa` também (negócio sem contato ou contato sem conversa
-     aberta). As recusas da régua chegam como `detail.motivo` e a frase delas é
-     a `explicacao` que a própria régua escreve. */
+     aberta). As recusas da régua chegam pelo `error` e a frase delas é a
+     deste mapa — o detalhe não leva `explicacao`, que venceria a tradução. */
   sector_id_ausente:
     "A ação Definir o setor está sem setor escolhido. Abra a automação e escolha o setor da conversa.",
   sem_conversa:
@@ -132,6 +132,7 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
     "A conversa já foi classificada por uma pessoa e a regra não sobrescreve essa escolha. Nada mudou.",
   limpeza_nao_permitida:
     "A ação precisa de um setor de destino: só uma pessoa pode deixar a conversa sem setor.",
+  setores_desligados: "Os setores de atendimento estão desligados nesta instalação. Nada mudou.",
   falha_ao_gravar:
     "Não foi possível gravar o setor da conversa. Tente de novo; se persistir, veja o log da automação.",
   lead_nao_encontrado: "O lead deste evento não foi encontrado nesta organização, então ninguém foi atribuído.",

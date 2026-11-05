@@ -394,7 +394,7 @@ describe("a régua do setor: o que ela grava e o que ela recusa", () => {
       origem: "ia",
       ator: atorDaIA,
     });
-    expect(r).toMatchObject({ ok: false, motivo: "modulo_desligado" });
+    expect(r).toMatchObject({ ok: false, motivo: "setores_desligados" });
     expect(fake.tabelasTocadas).toEqual([]);
   });
 
@@ -649,13 +649,15 @@ describe("ação de automação: define_sector", () => {
     expect(fake.updates).toEqual([]);
   });
 
-  it("setor inexistente e conversa encerrada chegam como recusa nomeada com frase", async () => {
+  it("setor inexistente e conversa encerrada chegam como recusa nomeada, e a frase é a do mapa traduzido", async () => {
     const semSetor = clienteFake({ conversations: [conversa()], attendant_sectors: setores() });
     const r1 = await getAction("define_sector")!.execute(ctxDaAcao(semSetor, { conversationId: CONVERSA }), {
       sector_id: "99999999-9999-4999-8999-999999999999",
     });
     expect(r1).toMatchObject({ status: "failed", error: "setor_inexistente" });
-    expect(typeof (r1.detail as { explicacao?: unknown }).explicacao).toBe("string");
+    // Sem `explicacao`: na Atividade ela venceria MOTIVO_DA_PARADA, e a frase da
+    // régua não tem tradução — a tela em espanhol mostraria português.
+    expect((r1.detail as { explicacao?: unknown }).explicacao).toBeUndefined();
 
     const encerrada = clienteFake({
       conversations: [conversa({ status: "closed" })],
