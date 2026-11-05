@@ -9794,5 +9794,9 @@
   "O rascunho foi salvo; o nome do agente não mudou.": "The draft was saved; the agent's name did not change.",
   "O serviço deste módulo não respondeu": "This module's service did not respond",
   "O resto do CRM continua funcionando. Tente de novo em instantes.": "The rest of the CRM keeps working. Try again in a moment.",
-  "Módulo conectado": "Connected module"
+  "Módulo conectado": "Connected module",
+  "Abrir ao lado": "Open in side panel",
+  "Escolha um módulo": "Choose a module",
+  "Abrindo o módulo...": "Opening the module...",
+  "Não foi possível abrir este módulo.": "This module could not be opened."
 }
