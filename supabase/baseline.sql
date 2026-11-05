@@ -17528,12 +17528,19 @@ comment on column public.conversations.assigned_to_user_name is
   'Cópia do nome de quem atende (auth.users.raw_user_meta_data->>''full_name''), escrita por fn_conversation_assign no mesmo UPDATE que grava assigned_to_user_id, e zerada junto quando a atribuição é removida. Existe para evitar 1 chamada HTTP ao GoTrue Admin API por atendente único na listagem do Inbox — ver lib/users/nome-do-atendente.ts. NULL quando a conversa não está atribuída, ou quando o atendente não tem full_name em user_metadata.';
 
 -- Backfill: só linhas já atribuídas, e só quando o nome ainda não está
--- presente — não sobrescreve dado que uma reaplicação já preencheu.
+-- presente — não sobrescreve dado que uma reaplicação já preencheu. O nome só
+-- se resolve para quem tem ou teve vínculo com a organização da conversa
+-- (migration 9219); sem filtro de revoked_at, como em lib/users/nome-do-atendente.ts.
 update public.conversations c
    set assigned_to_user_name = u.raw_user_meta_data ->> 'full_name'
   from auth.users u
  where c.assigned_to_user_id = u.id
-   and c.assigned_to_user_name is null;
+   and c.assigned_to_user_name is null
+   and exists (
+     select 1 from public.user_organizations uo
+      where uo.user_id = c.assigned_to_user_id
+        and uo.organization_id = c.organization_id
+   );
 
 create or replace function public.fn_conversation_assign(
   p_organization_id uuid,
@@ -74429,6 +74436,23 @@ comment on column public.llm_calls.prefixo_hash is
 create index if not exists idx_messages_derivacao_adiada
   on public.messages (organization_id, conversation_id, created_at desc)
   where (metadata ? 'derivacao_adiada') and media_storage_path is not null;
+
+-- ---- nome de atendente só para quem tem vínculo com a organização (migration 9219) ----
+-- assigned_to_user_name só guarda o nome de quem tem ou teve vínculo
+-- (user_organizations, sem filtro de revoked_at) com a organização da conversa.
+-- Zera o nome das linhas fora da regra. Idempotente: a segunda passada não acha
+-- linha. Linha sem assigned_to_user_id também não tem vínculo, e perde o nome.
+do $$
+begin
+  update public.conversations c
+     set assigned_to_user_name = null
+   where c.assigned_to_user_name is not null
+     and not exists (
+       select 1 from public.user_organizations uo
+        where uo.user_id = c.assigned_to_user_id
+          and uo.organization_id = c.organization_id
+     );
+end $$;
 
 notify pgrst, 'reload schema';
 

@@ -780,7 +780,7 @@ export async function sendMessageHandler(
     if (coberta) {
       let nomeDoAtendente: string | null = null;
       if (origemDoEmissor === "user" && ctx.actor.type === "user") {
-        nomeDoAtendente = (await nomesDosAtendentes([ctx.actor.id])).get(ctx.actor.id) ?? null;
+        nomeDoAtendente = (await nomesDosAtendentes(ctx.organization_id, [ctx.actor.id])).get(ctx.actor.id) ?? null;
       }
       // #3310: com `por_agente` ligado, a IA assina com o nome do AGENTE QUE
       // ENVIOU (`ai_agents.name`) — com dois agentes no mesmo número, o cliente

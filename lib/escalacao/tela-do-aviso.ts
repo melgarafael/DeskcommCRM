@@ -243,7 +243,7 @@ async function lerEquipe(
   }
   const linhas = (data ?? []) as Array<{ user_id: string; whatsapp_e164: string | null }>;
   if (linhas.length === 0) return [];
-  const nomes = await nomesDosAtendentes(linhas.map((l) => l.user_id));
+  const nomes = await nomesDosAtendentes(orgId, linhas.map((l) => l.user_id));
   return linhas.map((l) => ({
     user_id: l.user_id,
     nome: nomes.get(l.user_id) ?? null,
