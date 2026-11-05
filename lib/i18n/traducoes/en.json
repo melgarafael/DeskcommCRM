@@ -3936,6 +3936,7 @@
   "Ler leads": "Read leads",
   "Criar e editar leads": "Create and edit leads",
   "Ler mensagens": "Read messages",
+  "Ler transcrições de áudios e textos extraídos de mídia no histórico MCP (pode conter dados pessoais)": "Read audio transcriptions and text extracted from media in the MCP history (may contain personal data)",
   "Enviar mensagens": "Send messages",
   "Integração pode enviar em nome de um atendente": "Integration can send on behalf of an agent",
   "Ler o log de auditoria": "Read the audit log",
