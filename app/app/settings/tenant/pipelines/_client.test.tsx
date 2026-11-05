@@ -650,6 +650,41 @@ describe("mais de uma condição no 'mostrar quando' (#4041)", () => {
     });
   });
 
+  it("o 'todas' escolhido com uma linha ainda incompleta não volta a ser 'qualquer'", async () => {
+    // A linha em branco do "+ condição" deixa a lista ilegível para a LEITURA
+    // (`leituraDe`), e o modo não pode depender dela: senão o seletor volta
+    // para "qualquer" e o save grava um OU onde a pessoa escolheu E.
+    const {
+      adicionaCondicao,
+      escreveCondicaoNoIndice,
+      escreveModoMostrarQuando,
+      normalizaMostrarQuando,
+      removeCondicaoNoIndice,
+    } = await import("./_client");
+    const { modoDeclarado } = await import("@/lib/schemas/mostrar-quando");
+
+    const comBranco = escreveModoMostrarQuando(adicionaCondicao(AEREO), "todas");
+    expect(modoDeclarado(comBranco)).toBe("todas");
+
+    const preenchida = escreveCondicaoNoIndice(comBranco, 1, {
+      campo: "tipo_servico",
+      operador: "contem",
+    });
+    expect(modoDeclarado(preenchida)).toBe("todas");
+    const completa = escreveCondicaoNoIndice(preenchida, 1, { valor: "Pacote" });
+    expect(completa).toEqual({ modo: "todas", condicoes: [AEREO, PACOTE] });
+
+    // Terceira linha depois do "todas", e o save com ela incompleta.
+    const tres = adicionaCondicao(completa);
+    expect(modoDeclarado(tres)).toBe("todas");
+    expect(normalizaMostrarQuando(tres)).toEqual({ modo: "todas", condicoes: [AEREO, PACOTE] });
+    // Remover uma linha COMPLETA enquanto a em branco segue na tela.
+    expect(removeCondicaoNoIndice(tres, 0)).toEqual({
+      modo: "todas",
+      condicoes: [PACOTE, { campo: "", operador: "igual" }],
+    });
+  });
+
   it("remover a segunda linha volta ao formato de condição ÚNICA (o JSON de sempre)", async () => {
     const { removeCondicaoNoIndice } = await import("./_client");
     expect(removeCondicaoNoIndice({ modo: "qualquer", condicoes: [AEREO, PACOTE] }, 1)).toEqual(AEREO);

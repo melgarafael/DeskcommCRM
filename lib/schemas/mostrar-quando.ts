@@ -394,9 +394,17 @@ export function condicoesDeclaradas(bruta: unknown): CondicaoDeMostra[] {
   return linhas;
 }
 
-/** O modo declarado — `todas` só quando está escrito; o resto é `qualquer`. */
+/**
+ * O modo declarado — `todas` só quando está escrito; o resto é `qualquer`.
+ *
+ * TOLERANTE como `condicoesDeclaradas`, e não por `leituraDe`: a linha em
+ * branco do "+ condição" deixa a lista ilegível para a leitura, e o modo lido
+ * por ali voltava a `qualquer` — o seletor desfazia o "todas" e o save gravava
+ * um OU onde a pessoa escolheu E.
+ */
 export function modoDeclarado(bruta: unknown): ModoDeCondicao {
-  return leituraDe(bruta)?.modo ?? "qualquer";
+  if (!bruta || typeof bruta !== "object" || Array.isArray(bruta)) return "qualquer";
+  return (bruta as Record<string, unknown>).modo === "todas" ? "todas" : "qualquer";
 }
 
 /**
