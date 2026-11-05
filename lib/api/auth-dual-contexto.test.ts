@@ -125,7 +125,7 @@ function pacote(papelDaPessoa: string | null) {
   };
 }
 
-const LEITURA = { requestId: "r", resource: "contacts", scope: "mcp:read" } as const;
+const LEITURA = { requestId: "r", resource: "contacts", scope: "mcp:read", role: "viewer" } as const;
 
 async function codigoDe(res: Response): Promise<string> {
   return ((await res.json()) as { error: { code: string } }).error.code;

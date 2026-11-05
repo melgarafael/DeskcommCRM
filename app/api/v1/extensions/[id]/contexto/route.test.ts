@@ -45,7 +45,7 @@ function pem(): string {
   return privateKey.export({ type: "pkcs8", format: "pem" }).toString();
 }
 
-async function chamar(id = INST) {
+async function chamar(id: string = INST) {
   const { POST } = await import("./route");
   const res = await POST(new Request(`http://localhost/api/v1/extensions/${id}/contexto`, { method: "POST" }), {
     params: Promise.resolve({ id }),
