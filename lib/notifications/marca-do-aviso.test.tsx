@@ -12,21 +12,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("sonner", () => ({ toast: vi.fn() }));
 vi.mock("./emit", () => ({ emitNotification: vi.fn() }));
-/**
- * A tradução transporte → rede é de `channelBrand` e é testada onde ela mora
- * (`lib/channels/marca-do-canal.test.ts`). Aqui o que interessa é que os dois
- * campos da sessão do canal CHEGUEM nela — por isso o dublê.
- */
-const brand = vi.hoisted(() =>
-  vi.fn((sessao: { provider?: string | null; social_platform?: string | null }) =>
-    sessao.provider === "transporte-qualquer" ? "whatsapp" : "unknown",
-  ),
-);
-vi.mock("@/lib/channels/presentation", () => ({ channelBrand: brand }));
 
 import { toast } from "sonner";
 
-import { canalDaConversa } from "./canal-da-conversa";
 import { entregarAviso } from "./deliver";
 import { MarcaDoCanal, aderecosDoAviso } from "./marca-do-aviso";
 
@@ -130,45 +118,5 @@ describe("MarcaDoCanal", () => {
     expect(html).toContain("Canal: Instagram");
     expect(html).toMatch(/sr-only[^>]*>Canal: Instagram</);
     expect(html).toContain('aria-hidden="true"');
-  });
-});
-
-describe("canalDaConversa", () => {
-  afterEach(() => vi.unstubAllGlobals());
-
-  function responda(corpo: unknown, status = 200): void {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(corpo), { status })));
-  }
-
-  it("pergunta à rota da conversa e entrega a sessão do canal a quem traduz", async () => {
-    const fetchFalso = vi.fn(
-      async () =>
-        new Response(
-          JSON.stringify({
-            data: {
-              channel_sessions: { provider: "transporte-qualquer", social_platform: null },
-            },
-          }),
-          { status: 200 },
-        ),
-    );
-    vi.stubGlobal("fetch", fetchFalso);
-
-    await expect(canalDaConversa("conv-1")).resolves.toBe("whatsapp");
-    expect(fetchFalso).toHaveBeenCalledWith("/api/v1/conversations/conv-1", expect.anything());
-    expect(brand).toHaveBeenCalledWith({ provider: "transporte-qualquer", social_platform: null });
-  });
-
-  it("sem conversa, sem resposta ou com erro: 'unknown', nunca exceção", async () => {
-    await expect(canalDaConversa(null)).resolves.toBe("unknown");
-
-    responda({ data: null });
-    await expect(canalDaConversa("conv-1")).resolves.toBe("unknown");
-
-    responda({ error: { code: "not_found" } }, 404);
-    await expect(canalDaConversa("conv-1")).resolves.toBe("unknown");
-
-    vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new Error("rede caiu"))));
-    await expect(canalDaConversa("conv-1")).resolves.toBe("unknown");
   });
 });

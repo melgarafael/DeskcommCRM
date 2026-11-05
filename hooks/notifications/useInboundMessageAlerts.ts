@@ -7,7 +7,6 @@ import { getOpenConversationId } from "@/hooks/notifications/OpenConversationCon
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { avatarUrlServivel } from "@/lib/notifications/avatar_url";
-import { canalDaConversa } from "@/lib/notifications/canal-da-conversa";
 import { entregarAviso } from "@/lib/notifications/deliver";
 import { shouldNotifyInbound } from "@/lib/notifications/policy";
 import { corpoDoAvisoDeMensagem } from "@/lib/notifications/push_payload";
@@ -128,21 +127,28 @@ async function contactIdFromRow(
  *
  * Só `avisar === false` cala. Rota fora do ar, 403, resposta sem o campo:
  * avisa, como antes da regra existir — um aviso a mais incomoda, um a menos
- * deixa cliente sem resposta. Já o conteúdo, sem resposta válida, fica oculto.
+ * deixa cliente sem resposta. Já o conteúdo, sem resposta válida, fica oculto,
+ * e o canal fica `unknown`: o aviso sai com a marca neutra.
  */
 async function decisaoDoAviso(
   conversationId: string | null,
-): Promise<{ avisar: boolean; conteudo: ConteudoNaTelaBloqueada }> {
-  const semResposta = { avisar: true, conteudo: "oculto" as const };
+): Promise<{ avisar: boolean; conteudo: ConteudoNaTelaBloqueada; canal: string }> {
+  const semResposta = { avisar: true, conteudo: "oculto" as const, canal: "unknown" };
   if (!conversationId) return semResposta;
   try {
     const r = await fetch(`/api/v1/conversations/${conversationId}/aviso-de-mensagem`, {
       credentials: "include",
     });
     if (!r.ok) return semResposta;
-    const json = (await r.json()) as { data?: { avisar?: unknown; conteudo?: unknown } | null };
+    const json = (await r.json()) as {
+      data?: { avisar?: unknown; conteudo?: unknown; canal?: unknown } | null;
+    };
     const conteudo = conteudoNaTelaBloqueadaWriteSchema.safeParse(json.data?.conteudo);
-    return { avisar: json.data?.avisar !== false, conteudo: conteudo.success ? conteudo.data : "oculto" };
+    return {
+      avisar: json.data?.avisar !== false,
+      conteudo: conteudo.success ? conteudo.data : "oculto",
+      canal: typeof json.data?.canal === "string" ? json.data.canal : "unknown",
+    };
   } catch {
     return semResposta;
   }
@@ -178,7 +184,7 @@ export function useInboundMessageAlerts(): void {
       return;
     }
     void (async () => {
-      const { avisar, conteudo } = await decisaoDoAviso(conversationId);
+      const { avisar, conteudo, canal } = await decisaoDoAviso(conversationId);
       if (!avisar) return;
       const contactId = await contactIdFromRow(row, conversationId);
       const bits = contactId
@@ -191,10 +197,6 @@ export function useInboundMessageAlerts(): void {
         typeof row.type === "string" ? row.type : "text",
         typeof row.body === "string" ? row.body : null,
       );
-      // De qual rede veio: a linha do realtime traz só `channel_session_id`, e
-      // quem sabe o transporte é a sessão do canal (rota da conversa). O aviso
-      // usa isso para se identificar sem a pessoa ler (#4094).
-      const canal = await canalDaConversa(conversationId);
       entregarAviso({
         category: "message",
         kind: "message_inbound",
