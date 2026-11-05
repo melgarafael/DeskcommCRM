@@ -79,6 +79,7 @@ function pacote(consentidas: string[]) {
       extension_artifacts: {
         manifest: {
           profile: "connected",
+          host_api: { min: 2, max: 2 },
           permissions: ["area.contatos.leitura", "area.contatos.escrita", "area.funis.leitura"],
         },
       },
