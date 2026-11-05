@@ -677,7 +677,7 @@ beforeAll(() => {
              api_key_last4, webhook_secret_encrypted, webhook_secret_iv, webhook_secret_tag,
              webhook_secret_last4)
           values
-            (v_org, 'stripe', 'teste', '\x00'::bytea, '\x00'::bytea, '\x00'::bytea,
+            (v_org, 'stripe', 'teste', '\\x00'::bytea, '\\x00'::bytea, '\\x00'::bytea,
              '0000', null, null, null, null);
         end if;
       end loop;
