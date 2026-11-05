@@ -3,6 +3,7 @@
 import { useT } from "@/hooks/i18n/useT";
 import Link from "next/link";
 import { useState, useTransition } from "react";
+import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ import { EditorDeAtalhos } from "./_atalhos-do-card";
 import { useMoedaDaOrgAtiva } from "@/hooks/auth/AuthProvider";
 import { MOEDA_PADRAO } from "@/lib/money";
 import {
+  camposDoFunilPatchSchema,
   customFieldSchema,
   MAX_CAMPOS_DO_NEGOCIO,
   type CustomFieldDef,
@@ -60,7 +62,7 @@ import {
   type OperadorDeMostra,
 } from "@/lib/schemas/mostrar-quando";
 import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
-import { CaretDown, Plus, Trash } from "@/lib/ui/icons";
+import { CaretDown, CaretUp, DragHandle, Plus, Trash } from "@/lib/ui/icons";
 import { entradaDoInboxDeclarada } from "@/lib/leads/entrada-do-inbox";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
 import { StagesSection, ancoraDasEtapas } from "./_stages";
@@ -99,6 +101,35 @@ export const TIPOS_DE_CAMPO = customFieldSchema.shape.type.options;
 /** Tipos cujo valor sai de uma lista fechada — são os que mostram o campo de opções. */
 export function tipoTemOpcoes(tipo: CustomFieldDef["type"]): boolean {
   return tipo === "select" || tipo === "multiselect" || tipo === "searchable_select";
+}
+
+/**
+ * MOVE UM CAMPO DE LUGAR (#4043) — a única conta que o arrasto e as setas fazem.
+ *
+ * A ordem dos campos É a ordem do array `settings.fields`: o card, o dossiê e o
+ * formulário de novo negócio desenham nessa sequência, e `handleSave` regrava a
+ * lista inteira. Por isso reordenar não encosta em chave, rótulo nem em valor
+ * gravado — `crm_leads.custom_fields` é lido POR CHAVE (issue #4043, item 3).
+ *
+ * Índice fora da lista devolve a MESMA lista, não uma cópia nem um recorte: o
+ * `slice`/`splice` de uma posição inválida apagaria justamente o campo que a
+ * pessoa está tentando mover, e o save seguiria adiante com o array truncado.
+ * Uma função pura com essa guarda é o que os dois caminhos (arrastar e os
+ * botões de teclado) compartilham — régua escrita duas vezes divergiria.
+ */
+export function moverCampo(
+  campos: CustomFieldDef[],
+  de: number,
+  para: number,
+): CustomFieldDef[] {
+  if (de === para) return campos;
+  if (de < 0 || de >= campos.length) return campos;
+  if (para < 0 || para >= campos.length) return campos;
+  const next = [...campos];
+  const [movido] = next.splice(de, 1);
+  if (!movido) return campos;
+  next.splice(para, 0, movido);
+  return next;
 }
 
 /**
@@ -868,6 +899,19 @@ function PipelineEditor({
   const [atalhos, setAtalhos] = useState<AtalhoDoCard[]>(atalhosIniciais);
   const [isPending, startTransition] = useTransition();
 
+  /**
+   * O SOLTAR DO ARRASTO (#4043) — traduz o `DropResult` para a MESMA conta das
+   * setas (`moverCampo`). `destination` nulo é soltar fora da lista; cair na
+   * mesma posição é gesto cancelado. Nada além disso: a lista nova vira estado e
+   * o save regrava `fields` inteiro pela `updatePipelineConfig`, que é a única
+   * porta de escrita do `settings`.
+   */
+  function aoSoltarCampo(resultado: DropResult) {
+    const { source, destination } = resultado;
+    if (!destination || destination.index === source.index) return;
+    setFields((atuais) => moverCampo(atuais, source.index, destination.index));
+  }
+
   function handleSave() {
     const ok: CustomFieldDef[] = [];
     for (const f of fields) {
@@ -913,6 +957,16 @@ function PipelineEditor({
         return;
       }
       ok.push(parsed.data);
+    }
+    // A ORDEM É O PRÓPRIO ARRAY (#4043): a lista inteira vai no `fields` do
+    // patch, na ordem da tela. A régua da LISTA (e não só a de cada campo) roda
+    // aqui para a recusa ter nome: chave repetida faz dois campos disputarem a
+    // mesma posição e a mesma gaveta do `custom_fields`, e a action responderia
+    // só `validation_failed` — que não diz a ninguém o que consertar.
+    const lista = camposDoFunilPatchSchema.safeParse(ok);
+    if (!lista.success) {
+      toast.error(lista.error.issues[0]?.message ?? t("Campo inválido."));
+      return;
     }
     const reasons = reasonsText
       .split(",")
@@ -1375,11 +1429,38 @@ function PipelineEditor({
         <p className="text-xs text-muted-foreground">
           {t("Aparecem no dossiê do negócio. No follow-up, você escolhe em qual campo gravar a resposta.")}
         </p>
+        {/* ─── A ORDEM DOS CAMPOS (#4043) ──────────────────────────────────
+            A ordem que o card, o dossiê e o formulário de novo negócio mostram É
+            a ordem deste array, e `handleSave` regrava a lista inteira: mudar a
+            ordem aqui não encosta em chave nem em valor já gravado, porque
+            `crm_leads.custom_fields` é lido POR CHAVE.
+
+            O arrasto é o mesmo desenho das respostas rápidas (#3244, com
+            `@hello-pangea/dnd`, que já é dependência) e as setas existem porque
+            arrastar sozinho exclui quem usa teclado. Os dois caminhos chamam a
+            MESMA `moverCampo` — o `DropResult` só diz de qual índice para qual.
+
+            Agrupar os campos em SEÇÕES recolhíveis (item 2 da issue) fica para
+            outra fatia: muda o formato de `settings.fields` e é lido no card, no
+            dossiê e no follow-up. */}
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Arraste pela alça, ou use as setas, para mudar a ordem em que os campos aparecem no card.",
+          )}
+        </p>
         {/* `lg:` e não `md:` (#3099): com a barra lateral aberta, a 768px sobram ~380px
             para a linha, e a coluna de 13rem deixava Chave e Rótulo com 46px. Abaixo de
             1024px os campos empilham, como no celular. Os `col-span-4` dos blocos de
             dentro seguem o MESMO corte: um `md:col-span-4` sozinho cria quatro colunas
-            implícitas e devolve a linha espremida, mesmo sem o template. */}
+            implícitas e devolve a linha espremida, mesmo sem o template.
+
+            Os invólucros do arrasto ficam alinhados com a LINHA, sem reindentar as
+            ~400 linhas de dentro: este arquivo é compartilhado com outras frentes e
+            um diff de formatação aqui já queimou uma PR. */}
+        <DragDropContext onDragEnd={aoSoltarCampo}>
+          <Droppable droppableId="campos-do-funil">
+            {(lista) => (
+        <div ref={lista.innerRef} {...lista.droppableProps} className="space-y-2">
         {fields.map((f, i) => {
           // As condições DESTE campo como linhas de tela (#4041): o JSON antigo
           // (uma condição) vira uma linha só, e o campo sem condição ganha a
@@ -1388,7 +1469,51 @@ function PipelineEditor({
           const linhas: CondicaoDeMostra[] =
             condicoesDoCampo.length > 0 ? condicoesDoCampo : [{ campo: "" }];
           return (
-          <div key={`${f.key}-${i}`} className="grid gap-2 rounded-md border border-border p-2 lg:grid-cols-[1fr_1fr_13rem_auto]">
+          <Draggable key={`${f.key}-${i}`} draggableId={`campo-${i}`} index={i}>
+          {(arrastavel, instantaneo) => (
+          <div
+            ref={arrastavel.innerRef}
+            {...arrastavel.draggableProps}
+            className={`grid gap-2 rounded-md border border-border p-2 lg:grid-cols-[1fr_1fr_13rem_auto]${
+              instantaneo.isDragging ? " shadow-md ring-1 ring-accent/40" : ""
+            }`}
+            data-testid={`campo-${i + 1}`}
+          >
+            {/* A alça e as duas setas. A ordem de leitura importa: a alça é o
+                primeiro alvo, e os botões dizem em VOZ ALTA para onde o campo
+                vai — quem usa leitor de tela não arrasta. */}
+            <div className="flex items-center gap-1 lg:col-span-4">
+              <span
+                {...arrastavel.dragHandleProps}
+                aria-label={`${t("Arrastar para reordenar")} ${f.label || f.key || i + 1}`}
+                data-testid={`arrastar-campo-${i + 1}`}
+                className="shrink-0 cursor-grab text-muted-foreground"
+              >
+                <DragHandle />
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={`${t("Mover para cima")} «${f.label || f.key || i + 1}»`}
+                data-testid={`subir-campo-${i + 1}`}
+                disabled={i === 0}
+                onClick={() => setFields(moverCampo(fields, i, i - 1))}
+              >
+                <CaretUp size={14} aria-hidden />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={`${t("Mover para baixo")} «${f.label || f.key || i + 1}»`}
+                data-testid={`descer-campo-${i + 1}`}
+                disabled={i === fields.length - 1}
+                onClick={() => setFields(moverCampo(fields, i, i + 1))}
+              >
+                <CaretDown size={14} aria-hidden />
+              </Button>
+            </div>
             <Input
               aria-label={`${t("Chave do campo")} ${i + 1}`}
               placeholder={t("chave (endereco)")}
@@ -1805,8 +1930,15 @@ function PipelineEditor({
               </div>
             )}
           </div>
+          )}
+          </Draggable>
           );
         })}
+        {lista.placeholder}
+        </div>
+            )}
+          </Droppable>
+        </DragDropContext>
         {/* A cota é do NEGÓCIO (issue #3111): o campo do contato não esconde o botão. */}
         {fields.filter((f) => escopoDoCampo(f) === "negocio").length < MAX_CAMPOS_DO_NEGOCIO && (
           <Button

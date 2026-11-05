@@ -3,13 +3,20 @@
 O CRM guarda tudo num projeto Supabase (Postgres gerenciado). O plano **grátis** serve para
 começar; o instalador precisa de quatro coisas dele — ou de um token que faz as quatro sozinho.
 
+**A região do projeto é a mais próxima da VPS onde o CRM roda**, não a mais próxima do cliente:
+cada tela, cada mensagem e cada turno do agente fazem várias consultas ao banco, e a distância
+entre app e banco entra em cada ida e volta. VPS no Brasil → São Paulo; nos EUA ou na Europa →
+`us-east-1`, `eu-central-1`. **A região não se troca depois de criado o projeto**: mudar exige
+criar outro e migrar os dados.
+
 ## Caminho 1 (recomendado): o token de acesso
 
 1. A pessoa cria a conta em supabase.com (login com GitHub ou e-mail).
 2. Em supabase.com/dashboard/account/tokens → *Generate new token* → dá um nome → copia.
 3. Na VPS: `export SUPABASE_ACCESS_TOKEN=sbp_...` e `bash hostgator-setup-kit/install.sh`.
 
-O instalador cria o projeto (região `sa-east-1`, São Paulo), espera o banco ficar saudável (projeto
+O instalador cria o projeto na região **mais próxima da VPS** — `sa-east-1` (São Paulo) é o padrão,
+e `SUPABASE_REGION=us-east-1` escolhe outra; espera o banco ficar saudável (projeto
 novo não nasce pronto), pega as chaves, **descobre a connection string testando conexão de
 verdade**, e configura Site URL e Redirect URLs — o que faz "esqueci minha senha", confirmação de
 cadastro e aceite de convite chegarem com o link certo.
@@ -20,8 +27,8 @@ O token **é uma chave mestra da conta** (cria e apaga projetos). Ele não é gr
 
 ## Caminho 2: criar o projeto à mão e copiar quatro campos
 
-1. supabase.com → *New project* → nome, senha do banco (**guarde**), região South America (São
-   Paulo).
+1. supabase.com → *New project* → nome, senha do banco (**guarde**), região **mais próxima da VPS**
+   (ver acima: VPS no Brasil → `sa-east-1`; nos EUA ou na Europa → `us-east-1`, `eu-central-1`).
 2. *Settings › API*: **Project URL**, **anon key**, **service_role key** (secreta — nunca no chat).
 3. *Settings › Database › Connection string*: escolha **Session pooler**, modo **URI**, e troque
    `[YOUR-PASSWORD]` pela senha do passo 1.
