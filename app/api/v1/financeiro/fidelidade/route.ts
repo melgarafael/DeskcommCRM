@@ -23,11 +23,9 @@ import { z } from "zod";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -103,8 +101,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  const authz = await requireRole("agent", { requestId, resource: "financeiro" });
+  // Sessão OU token `mcp:write`. O token mexe no saldo como a sessão do atendente
+  // (`agent`): o ledger continua append-only, e o motivo fica só no ledger.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_fidelidade_movimento", requestId);
+  if (teto) return teto;
 
   const lido = movimentoSchema.safeParse(await req.json().catch(() => ({})));
   if (!lido.success) {
@@ -113,15 +120,31 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
+  const atorUserId = authz.actor.type === "user" ? authz.actor.id : null;
+
+  // Com a service role, a FK de `contact_id` aceitaria o contato de OUTRA
+  // organização e o ponto cairia no saldo dele. Só o token precisa disto: a
+  // sessão passa pela RLS do banco.
+  if (authz.via === "token") {
+    const { data: contato } = await supabase
+      .from("contacts")
+      .select("id")
+      .eq("organization_id", authz.organizationId)
+      .eq("id", lido.data.contact_id)
+      .maybeSingle();
+    if (!contato) return fail("validation_failed", "Contato inválido.", 422, { requestId });
+  }
+
   const { data, error } = await supabase
     .from("loyalty_ledger")
     .insert({
-      organization_id: authz.org.orgId,
+      organization_id: authz.organizationId,
       contact_id: lido.data.contact_id,
       points: lido.data.points,
       reason: lido.data.reason,
-      created_by_user_id: authz.user.id,
+      // Token não é pessoa: `created_by_user_id` só recebe id de `auth.users`.
+      created_by_user_id: atorUserId,
     })
     .select("id, points, reason, created_at")
     .single();
@@ -142,6 +165,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   // LGPD chega; o audit guarda só quantos pontos e que houve justificativa.
   await audit({
     action: lido.data.points > 0 ? "fidelidade.ponto_dado" : "fidelidade.ponto_resgatado",
+    actorUserId: atorUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "contact",
     resourceId: lido.data.contact_id,
     requestId,
