@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { STATUS_OPERANTE } from "@/lib/organizacao/operante";
 import { decidirElegibilidade, montarEstadoDeElegibilidade, ttlDaAutorizacaoMs } from "@/lib/ai/elegibilidade/gate";
+import { CHAVE_DA_IA_COM_DONO } from "@/lib/ai/elegibilidade/ia-com-dono";
 import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
 import type { JobClaim } from "@/lib/agent-engine/queue/claim";
 import type { Queryable } from "@/lib/agent-engine/queue/queue";
@@ -23,6 +24,13 @@ const policySchema = z.discriminatedUnion("current", [
     // é recusado — nunca lido como "marca desligada".
     force_human: z.boolean().nullable(), ai_opt_out: z.boolean(), ai_gate: z.string().nullable(),
     ai_authorized_at: z.string().nullable(), assignee_kind: z.string().nullable(), bot_silenced_until: z.string().nullable(),
+    /**
+     * O modo "IA com o dono" (#3967). OPCIONAL porque a política de hoje
+     * (`fn_meet_delivery_current`) ainda não o devolve: ausente = não ligado,
+     * que é o comportamento de hoje (dono humano bloqueia a entrega de agenda).
+     * Quando a função passar a carregar o campo, este lado já o honra.
+     */
+    ai_com_dono: z.boolean().optional(),
   }),
 ]);
 function requireCurrentPolicy(raw: unknown) {
@@ -46,6 +54,7 @@ function requirePolicy(raw: unknown): { humanCommand: boolean; contactId: string
     // deduzido de `force_human`: outro escritor que zere `force_human` não pode
     // liberar para a IA um contato marcado "sempre atendimento humano".
     aiOptOut: p.ai_opt_out, assigneeKind: p.assignee_kind ?? null,
+    metadataDaConversa: { [CHAVE_DA_IA_COM_DONO]: p.ai_com_dono === true },
     botSilencedUntil: p.bot_silenced_until, aiAuthorizedAt: p.ai_authorized_at,
     agora: new Date(), ttlMs: ttlDaAutorizacaoMs(process.env),
   }));

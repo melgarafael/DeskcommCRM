@@ -32,6 +32,7 @@ import {
 } from "@/hooks/inbox/useCloseConversation";
 import { useResumeAiAttendance } from "@/hooks/inbox/useResumeAiAttendance";
 import { usePauseAiAttendance } from "@/hooks/inbox/usePauseAiAttendance";
+import { useIaComDono } from "@/hooks/inbox/useIaComDono";
 import { useAutomaticoAtivo } from "@/hooks/ai/useAutomaticoAtivo";
 import { OwnerBadge } from "@/components/kanban/OwnerBadge";
 import { FaixaDaCarteira } from "@/components/inbox/FaixaDaCarteira";
@@ -104,6 +105,7 @@ export function ConversationHeader({
   const arquivar = useArchiveConversation();
   const retomar = useResumeAiAttendance();
   const pausar = usePauseAiAttendance();
+  const iaComDono = useIaComDono();
   // "Existe automático nesta org?" — sem isto o selo afirmava que o robô estava
   // atendendo em instalação que nunca configurou agente nenhum.
   const automaticoDaOrg = useAutomaticoAtivo();
@@ -249,6 +251,28 @@ export function ConversationHeader({
    */
   const podePausar =
     automaticoAtivo && !encerrada && conversation.assigned_to_user_id !== null;
+
+  /**
+   * O INTERRUPTOR DO MODO "IA COM O DONO" (#3967).
+   *
+   * Aparece quando a pergunta faz sentido: a conversa TEM dono humano e não está
+   * encerrada. É o único estado em que ligar o modo muda alguma coisa — sem dono
+   * não há dono a preservar, e a rota recusa (o automático já responde ali).
+   *
+   * Aparece TAMBÉM com o automático parado: "voltar com a IA sem soltar o dono"
+   * é literalmente o caso de uso da issue (a conversa foi pausada, o atendente
+   * quer a IA de apoio e não quer sair da carteira). Ligar limpa o silêncio —
+   * está no cabeçalho da rota, e é o que o botão promete.
+   *
+   * Escondido quando o CONTATO está travado/bloqueado: ali o modo não pode
+   * valer (a rota devolve 409) e um botão que só leva a erro é pior que nenhum.
+   */
+  const modoLigado = conversation.metadata?.ai_com_dono === true;
+  const podeModoIaComDono =
+    !encerrada &&
+    conversation.assigned_to_user_id !== null &&
+    fatosDoComando.force_human !== true &&
+    fatosDoComando.is_blocked !== true;
 
   if (user.support?.access_mode === "support_readonly") return <header className="flex items-center justify-between border-b p-4">
     <strong>{displayName}</strong><span className="text-sm text-muted-foreground">{STATUS_LABEL[status] ?? status} · Somente leitura</span>
@@ -513,6 +537,31 @@ export function ConversationHeader({
             onClick={() => pausar.mutate({ conversation_id: conversation.id })}
           >
             {pausar.isPending ? t("Pausando...") : t("Pausar o automático")}
+          </Button>
+        )}
+        {/* #3967 — "IA com o dono": um interruptor, um rótulo, dois estados.
+            A conversa ganha a IA de APOIO sem perder o dono: nada de `release`,
+            nada de rodízio, nada de fila. É o par visual do "Pausar o
+            automático" (que cala sem devolver) e existe porque, com dono
+            humano, a IA ficava calada por definição — e o único caminho de
+            volta soltava a conversa de quem a estava acompanhando. */}
+        {podeModoIaComDono && (
+          <Button
+            size="sm"
+            variant={modoLigado ? "default" : "outline"}
+            aria-pressed={modoLigado}
+            disabled={iaComDono.isPending}
+            data-testid="ia-com-o-dono"
+            title={
+              modoLigado
+                ? t("Desliga a IA nesta conversa. Ela volta a ficar calada e continua sua.")
+                : t("A IA responde esta conversa sem tirar o dono de você. Se ela passar para uma pessoa, a conversa continua com o mesmo atendente.")
+            }
+            onClick={() =>
+              iaComDono.mutate({ conversation_id: conversation.id, ligado: !modoLigado })
+            }
+          >
+            {iaComDono.isPending ? t("Salvando...") : t("IA com o dono")}
           </Button>
         )}
         {!encerrada && (

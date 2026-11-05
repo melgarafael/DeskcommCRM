@@ -176,6 +176,14 @@ describe("decidirElegibilidadeDaConversaViaSupabase", () => {
     expect(d?.motivo).toBe("org_nao_operante");
   });
 
+  it("dono humano + modo 'IA com o dono' ligado: o transporte também permite (#3967)", async () => {
+    const d = await decidirElegibilidadeDaConversaViaSupabase(
+      adminStub({ data: linha({ assignee_kind: "user", metadata: { ai_com_dono: true } }), error: null }),
+      { organizationId: ORG, conversationId: CONV, agora: AGORA, ttlMs: TTL },
+    );
+    expect(d).toMatchObject({ permite: true, motivo: "gate_aberto" });
+  });
+
   it("conversa inexistente → null", async () => {
     const d = await decidirElegibilidadeDaConversaViaSupabase(adminStub({ data: null, error: null }), {
       organizationId: ORG,
