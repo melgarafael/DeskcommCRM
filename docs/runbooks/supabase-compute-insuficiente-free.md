@@ -99,6 +99,16 @@ projeto já cresceu além disso, o compute mínimo suportado não é o do free.
    instalação medida (29/10), quem devolveu o serviço foi o *Restart project*.
    Também não está medido que a Nano falhe assim em toda instalação; o plano
    grátis continua sendo o caminho documentado de instalação.
+   **Micro só existe em plano pago:** no plano grátis o compute é o Nano, e no
+   pago não se cria Nano — só Micro ou maior —, então este passo exige assinar
+   um plano pago. A ordem de grandeza é a do próprio plano: o pago inclui
+   US$ 10/mês em créditos de compute, que costumam cobrir um projeto inteiro no
+   Micro, e o que sobra na fatura costuma ser o preço do plano. **Exemplo lido na
+   doc oficial em 05/11/2026**, não orçamento: Pro US$ 25/mês + Micro ~US$ 10/mês
+   − US$ 10 de crédito ≈ **US$ 25/mês** por projeto. Preço e crédito mudam;
+   confira os valores e o que o crédito cobre em
+   <https://supabase.com/docs/guides/platform/manage-your-usage/compute> antes de
+   trocar o compute.
 4. Se o projeto estava pausado por inatividade (free pausa após 1 semana), use
    **Restore project** em vez de Restart.
 

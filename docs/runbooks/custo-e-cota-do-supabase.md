@@ -206,6 +206,14 @@ na instalação medida (29/10), quem devolveu o serviço foi o *Restart project*
 replay do gateway: `postgrest-replay-do-gateway.md` (seção "Outro ramo: falta de memória/IO") e
 `supabase-compute-insuficiente-free.md`.
 
+**Micro só existe em plano pago.** No plano grátis o compute é o Nano; no pago não se cria Nano — só
+Micro ou maior —, então testar o Micro exige assinar um plano pago. A ordem de grandeza é a do próprio
+plano: o pago inclui US$ 10/mês em créditos de compute, que costumam cobrir um projeto inteiro no
+Micro, e o que sobra na fatura costuma ser o preço do plano. **Exemplo lido na doc oficial em
+05/11/2026**, não orçamento: Pro US$ 25/mês + Micro US$ 0,01344/h (~US$ 10/mês) − US$ 10 de crédito
+≈ **US$ 25/mês** por projeto. Preço e crédito mudam; confira os valores e o que o crédito cobre em
+<https://supabase.com/docs/guides/platform/manage-your-usage/compute> antes de trocar o compute.
+
 ## 6. Se ainda não fechar
 
 Abra uma issue com: a saída dos três comandos da seção 1, a janela de tempo que
