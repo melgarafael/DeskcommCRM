@@ -61199,46 +61199,10 @@ notify pgrst, 'reload schema';
 -- ---- atendimento conjunto: controle e atualização da tela (migration 9016) ----
 -- A 0661 precede a 0726 na cadeia. Esta forward-fix reinstala a policy atual
 -- COM participação depois dela, sem editar nenhuma migration já publicada.
-do $conversations_select$ begin
-  -- O ramo de PARTICIPANTE (conversa atendida em conjunto) fica, e a forma da
-  -- main também: escopo resolvido em conjunto por fn_conversation_scope(), ANTES
-  -- do scan. A forma antiga do PR (fn_can_view_conversation por linha) fazia o
-  -- planner voltar a chamar a função por candidata — reprovado por
-  -- tests/invariants/escopo-da-conversa-avaliado-uma-vez.test.ts (#2848 sobre o
-  -- conserto #3090). A política abaixo é a da main (58213) + o ramo participante.
-  drop policy if exists "conversations_select" on public.conversations;
-  create policy "conversations_select" on public.conversations
-    for select using (
-      (select public.fn_is_platform_admin())
-      or organization_id in (
-           select s.organization_id from public.fn_conversation_scope() s where s.org_wide_read
-         )
-      or (
-           assigned_to_user_id = auth.uid()
-           and organization_id in (select s.organization_id from public.fn_conversation_scope() s)
-         )
-      or (
-           assigned_to_user_id is null
-           and organization_id in (
-                select s.organization_id from public.fn_conversation_scope() s where s.sees_unassigned
-              )
-         )
-      or exists (
-           select 1
-             from public.conversation_participants cp
-            where cp.conversation_id = conversations.id
-              and cp.organization_id = conversations.organization_id
-              and cp.user_id = auth.uid()
-              and cp.left_at is null
-              and not exists (
-                select 1 from public.contacts pc
-                 where pc.id=conversations.contact_id
-                   and pc.organization_id=conversations.organization_id
-                   and pc.is_personal
-              )
-         )
-    );
-end $conversations_select$;
+-- A policy desta forward-fix foi para o FIM do arquivo (bloco da migration 9214):
+-- a versão final referencia `conversations.sector_id`, que só nasce no apêndice
+-- da 9062. Reinstalá-la aqui também seria definição intermediária a cada update
+-- (tests/unit/baseline-nao-constroi-o-que-derruba.test.ts).
 
 -- O convite não amplia UPDATE/DELETE. Mantém o escopo anterior de quem já
 -- escrevia: owner, gestor e o modo de visibilidade configurado no banco.
@@ -73474,7 +73438,7 @@ notify pgrst, 'reload schema';
 -- VARREDURA anon, que proíbe create function depois dela); ESTA metade fica no
 -- fim porque referencia `conversations.sector_id`, coluna que só nasce no
 -- apêndice da 9062, mais abaixo. Não cria função: pode ficar aqui.
-do $conversations_select_setor$ begin
+do $conversations_select$ begin
   drop policy if exists "conversations_select" on public.conversations;
   create policy "conversations_select" on public.conversations
     for select using (
@@ -73514,7 +73478,7 @@ do $conversations_select_setor$ begin
               )
          )
     );
-end $conversations_select_setor$;
+end $conversations_select$;
 
 
 notify pgrst, 'reload schema';
