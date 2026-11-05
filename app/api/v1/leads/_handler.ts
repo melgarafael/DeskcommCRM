@@ -13,6 +13,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { metadataDoModulo } from "@/lib/audit/ator-modulo";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { resolveOwnerPatch, type OwnerPatch, type OwnerPatchInput } from "@/lib/leads/owner-patch";
 import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitter";
@@ -317,6 +318,12 @@ function actorAuditPayload(actor: Actor): {
     return {
       actorUserId: null,
       metadataActor: { actor_type: "api_token", actor_api_token_id: actor.id },
+    };
+  }
+  if (actor.type === "module") {
+    return {
+      actorUserId: null,
+      metadataActor: { actor_type: "module", actor_id: actor.id, ...metadataDoModulo(actor) },
     };
   }
   return {

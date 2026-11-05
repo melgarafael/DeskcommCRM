@@ -13,6 +13,9 @@ export interface ApiTokenRow {
   expires_at: string | null;
   revoked_at: string | null;
   created_at: string;
+  /** Preenchidos só no token de um módulo conectado (spec 33, F2). */
+  extension_installation_id?: string | null;
+  module_slug?: string | null;
 }
 
 export interface CreatedApiToken extends ApiTokenRow {
@@ -45,7 +48,14 @@ export function useRevokeApiToken() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) =>
-      apiClient.post<{ data: { id: string; revoked_at?: string; already_revoked?: boolean } }>(
+      apiClient.post<{
+        data: {
+          id: string;
+          revoked_at?: string;
+          already_revoked?: boolean;
+          module_deactivated?: boolean;
+        };
+      }>(
         `/api/v1/settings/api-tokens/${id}/revoke`,
         {},
       ),

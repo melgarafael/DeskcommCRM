@@ -148,7 +148,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     // nome que o balão tivesse de buscar seria um nome que ele não mostra.
     // São enfeite — se a leitura falhar, a autoria continua na coluna.
     const tokenId =
-      actor.type === "api_token"
+      actor.type === "api_token" || actor.type === "module"
         ? actor.id
         : actor.type === "ai_agent"
           ? (actor.api_token_id ?? actor.id)

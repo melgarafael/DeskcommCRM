@@ -74,7 +74,16 @@ export type Actor =
    * a REGRA que disparou, e a assinatura `por_agente` (#3310) precisa do nome
    * de quem escreveu, não do nome de quem mandou disparar.
    */
-  | { type: "webhook_source"; id: string; textoEscritoPelaIA?: true; agent_id?: string };
+  | { type: "webhook_source"; id: string; textoEscritoPelaIA?: true; agent_id?: string }
+  /**
+   * MÓDULO CONECTADO (spec 33, F2) — o token curto que um módulo `connected` busca com o segredo da
+   * instalação. Não é pessoa, nem agente, nem integração do cliente: é o módulo.
+   *
+   * `id` é o id do TOKEN (`api_tokens.id`) e `slug` é `<publisher>/<name>` da instalação. O `id` NUNCA
+   * pode ir para coluna de pessoa (`…_by_user_id`, `owner_user_id`): o audit grava o token em
+   * `actor_api_token_id` e o módulo em `metadata.module`. Quem decide pessoa compara com `"user"`.
+   */
+  | { type: "module"; id: string; slug: string };
 
 export interface HandlerCtx {
   prospectingDelivery?: ProspectingDelivery;

@@ -12,6 +12,7 @@
  *   `agent_run:<uuid>` -> vincula tool_call ao run (Spec 10)
  *   `mcp:read`         -> habilita read tools desta wave
  *   `mcp:write`        -> habilita write tools (S-13.04)
+ *   `actor:module:<publisher>/<name>` -> token de módulo conectado (spec 33, F2)
  */
 import { createHash } from "node:crypto";
 
@@ -83,12 +84,25 @@ function scopesRole(scopes: string[]): Role {
   return papel ?? "agent";
 }
 
+const PREFIXO_DE_MODULO = "actor:module:";
+const SLUG_DE_MODULO = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]\/[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/;
+
+/** O `<publisher>/<name>` do escopo `actor:module:…`; escopo malformado não é módulo (`null`). */
+function moduloDosEscopos(scopes: string[]): string | null {
+  const escopo = scopes.find((s) => s.startsWith(PREFIXO_DE_MODULO));
+  if (!escopo) return null;
+  const slug = escopo.slice(PREFIXO_DE_MODULO.length);
+  return SLUG_DE_MODULO.test(slug) ? slug : null;
+}
+
 /**
  * Exportada para teste: é a função que decide se quem chamou é uma pessoa, um
  * agente ou uma integração — e essa decisão vira coluna com FK e vira gate de
  * canal. Uma regressão aqui não aparece como erro de tipo em lugar nenhum.
  */
 export function deriveActor(scopes: string[], tokenId: string): Actor {
+  const slugDoModulo = moduloDosEscopos(scopes);
+  if (slugDoModulo) return { type: "module", id: tokenId, slug: slugDoModulo };
   const isAiAgent = scopes.includes("actor:ai_agent");
   const role = scopesRole(scopes);
   if (isAiAgent) {
@@ -125,8 +139,11 @@ export interface ResolvedApiToken {
   id: string;
   organizationId: string;
   scopes: string[];
-  /** `api_tokens.created_by` — quem provisionou o token. `uuid not null` no schema. */
-  createdBy: string;
+  /**
+   * `api_tokens.created_by` — quem provisionou o token. Nulo no token de módulo (o dono é a instalação;
+   * a CHECK `api_tokens_dono_check` garante pessoa OU instalação). Nenhum consumidor pode assumir não-nulo.
+   */
+  createdBy: string | null;
   /** Ver `McpAuthResult.orgSuspensa`. Só aparece com `permiteOrgSuspensa`. */
   orgSuspensa?: true;
 }
@@ -200,7 +217,7 @@ export async function resolveApiToken(
     id: data.id,
     organizationId: data.organization_id,
     scopes: parseScopes(data.scopes),
-    createdBy: data.created_by,
+    createdBy: data.created_by ?? null,
     ...(orgSuspensa ? { orgSuspensa: true as const } : {}),
   };
 }
