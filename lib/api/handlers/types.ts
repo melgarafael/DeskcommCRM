@@ -83,7 +83,16 @@ export type Actor =
    * pode ir para coluna de pessoa (`…_by_user_id`, `owner_user_id`): o audit grava o token em
    * `actor_api_token_id` e o módulo em `metadata.module`. Quem decide pessoa compara com `"user"`.
    */
-  | { type: "module"; id: string; slug: string };
+  | {
+      type: "module";
+      id: string;
+      slug: string;
+      /**
+       * A pessoa (`auth.users.id`) de quem a tela do módulo agiu, vinda do JWT de contexto (F3). Só
+       * vai para `metadata.person_id` do audit; NUNCA para coluna de pessoa com FK nem para decidir dono.
+       */
+      pessoaId?: string;
+    };
 
 export interface HandlerCtx {
   prospectingDelivery?: ProspectingDelivery;

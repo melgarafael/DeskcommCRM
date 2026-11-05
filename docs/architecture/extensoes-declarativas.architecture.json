@@ -252,6 +252,48 @@
       "col": 21,
       "type": "ui",
       "label": "Tela de tokens · linha Módulo <slug>, sem copiar, com Revogar"
+    },
+    {
+      "id": "consent_ui",
+      "lane": "human",
+      "col": 22,
+      "type": "ui",
+      "label": "Cartão da extensão · caixas de consentimento por área, só o admin salva"
+    },
+    {
+      "id": "consent_route",
+      "lane": "app",
+      "col": 22,
+      "type": "service",
+      "label": "PUT /api/v1/extensions/[id]/consentimento · grava o consentimento com revisão esperada"
+    },
+    {
+      "id": "consent_db",
+      "lane": "db",
+      "col": 22,
+      "type": "database",
+      "label": "organization_extensions · áreas consentidas (fn_extensions_set_consent)"
+    },
+    {
+      "id": "authority_gate",
+      "lane": "app",
+      "col": 23,
+      "type": "service",
+      "label": "Portão de autoridade · declarado ∩ consentido, lido do banco a cada chamada"
+    },
+    {
+      "id": "context_route",
+      "lane": "app",
+      "col": 23,
+      "type": "service",
+      "label": "POST /api/v1/extensions/[id]/contexto · emite o JWT de contexto da pessoa"
+    },
+    {
+      "id": "context_jwt",
+      "lane": "module",
+      "col": 23,
+      "type": "service",
+      "label": "JWT de contexto (assinatura assimétrica) · a pessoa por quem a tela do módulo age"
     }
   ],
   "edges": [
@@ -539,6 +581,46 @@
       "from": "revoke_route",
       "to": "module_token",
       "label": "revoga o token e desativa a ativação daquela organização na mesma transação"
+    },
+    {
+      "from": "consent_ui",
+      "to": "consent_route",
+      "label": "salvar pede a rota de consentimento"
+    },
+    {
+      "from": "consent_route",
+      "to": "consent_db",
+      "label": "grava só áreas que o pacote declarou"
+    },
+    {
+      "from": "consent_db",
+      "to": "authority_gate",
+      "label": "o portão lê o consentimento vigente"
+    },
+    {
+      "from": "module_token",
+      "to": "authority_gate",
+      "label": "o token do módulo chega ao portão com o modo da porta"
+    },
+    {
+      "from": "authority_gate",
+      "to": "module",
+      "label": "deixa passar ou recusa por área e modo"
+    },
+    {
+      "from": "context_route",
+      "to": "context_jwt",
+      "label": "emite o JWT com a pessoa e a organização"
+    },
+    {
+      "from": "context_jwt",
+      "to": "authority_gate",
+      "label": "o portão limita o papel ao menor entre token e pessoa"
+    },
+    {
+      "from": "authority_gate",
+      "to": "consent_ui",
+      "label": "a recusa por área aparece na tela com o motivo"
     }
   ],
   "contracts": {

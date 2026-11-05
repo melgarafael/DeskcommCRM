@@ -43,6 +43,29 @@ describe("auditDoModulo", () => {
   });
 });
 
+describe("metadataDoModulo com a pessoa do JWT de contexto (F3)", () => {
+  const PESSOA = "bbbbbbbb-2222-4222-8222-222222222222";
+
+  it("leva person_id na metadata quando o ator traz a pessoa", () => {
+    expect(metadataDoModulo({ type: "module", id: TOKEN_ID, slug: SLUG, pessoaId: PESSOA })).toEqual({
+      actor_api_token_id: TOKEN_ID,
+      module: SLUG,
+      person_id: PESSOA,
+    });
+  });
+
+  it("sem pessoa, não traz person_id", () => {
+    expect(metadataDoModulo({ type: "module", id: TOKEN_ID, slug: SLUG })).not.toHaveProperty("person_id");
+  });
+
+  it("a pessoa nunca vira campo de pessoa do audit", () => {
+    expect(auditDoModulo({ type: "module", id: TOKEN_ID, slug: SLUG, pessoaId: PESSOA })).toEqual({
+      actor_api_token_id: TOKEN_ID,
+      module: SLUG,
+    });
+  });
+});
+
 describe("auditMcpToolCall com ator módulo", () => {
   beforeEach(() => auditSpy.mockClear());
 
