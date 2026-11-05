@@ -34,6 +34,8 @@ const inicial: AtendimentoConfig = {
   handoff_return_after_minutes: null,
   conversation_stays_with_attendant: false,
   manual_reply_silence_minutes: null,
+  distribute_only_after_qualification: false,
+  qualification_wait_minutes: 1440,
 };
 
 function corpoDoPatch(): Record<string, unknown> {
@@ -166,5 +168,52 @@ describe("Distribuição de atendimento — silêncio da IA depois de resposta p
   it("empresa com 15 min salvos vê 15 no campo", () => {
     render(<AtendimentoForm initial={{ ...inicial, manual_reply_silence_minutes: 15 }} />);
     expect(screen.getByLabelText(ROTULO)).toHaveValue(15);
+  });
+});
+
+describe("Distribuição de atendimento — distribuir só depois de qualificar (#3966)", () => {
+  it("desligado por padrão: sem campo de minutos, e o corpo salvo leva false", async () => {
+    render(<AtendimentoForm initial={{ ...inicial, mode: "round_robin" }} />);
+    expect(screen.getByTestId("espera-a-qualificacao")).not.toBeChecked();
+    expect(
+      screen.queryByLabelText("Depois de quantos minutos distribuir de qualquer jeito?"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("opcao-modo-manual"));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    expect(corpoDoPatch()).toMatchObject({
+      distribute_only_after_qualification: false,
+      qualification_wait_minutes: 1440,
+    });
+  });
+
+  it("ligar revela o limite e manda o valor digitado", async () => {
+    render(<AtendimentoForm initial={inicial} />);
+    fireEvent.click(screen.getByTestId("espera-a-qualificacao"));
+    const limite = screen.getByLabelText("Depois de quantos minutos distribuir de qualquer jeito?");
+    expect(limite).toHaveValue(1440);
+    // A faixa é a do schema: um dia é o padrão, sete é o teto.
+    expect(limite).toHaveAttribute("min", "15");
+    expect(limite).toHaveAttribute("max", "10080");
+    fireEvent.change(limite, { target: { value: "90" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+    expect(corpoDoPatch()).toMatchObject({
+      distribute_only_after_qualification: true,
+      qualification_wait_minutes: 90,
+    });
+  });
+
+  it("empresa com o ajuste ligado vê a caixa marcada e o limite gravado", () => {
+    render(
+      <AtendimentoForm
+        initial={{ ...inicial, distribute_only_after_qualification: true, qualification_wait_minutes: 120 }}
+      />,
+    );
+    expect(screen.getByTestId("espera-a-qualificacao")).toBeChecked();
+    expect(
+      screen.getByLabelText("Depois de quantos minutos distribuir de qualquer jeito?"),
+    ).toHaveValue(120);
   });
 });

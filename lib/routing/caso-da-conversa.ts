@@ -105,6 +105,20 @@ export type MotivoDoCaso = "caso_aguardando_cliente" | "caso_encerrado";
 
 /** A pergunta está com a EQUIPE. */
 const PEDE_PESSOA = new Set(["awaiting_human", "escalated"]);
+
+/**
+ * O caso pede uma pessoa AGORA? (#3966)
+ *
+ * É a MESMA pergunta que `motivoParaNaoRotear` faz para liberar a fila — aqui
+ * ela vem sozinha porque a espera pela qualificação precisa distinguir dois
+ * casos que aquele retorno achata em `null`: "não há caso" (a IA ainda está
+ * trabalhando) e "o caso pede a equipe" (a qualificação acabou). Status fora do
+ * vocabulário respondem `false` (não afirmam): quem não sabe não distribui por
+ * causa disso.
+ */
+export function casoPedePessoa(status: string | null | undefined): boolean {
+  return typeof status === "string" && PEDE_PESSOA.has(status);
+}
 /** A pergunta está com o CLIENTE: um humano já perguntou algo e espera. */
 const AGUARDANDO_CLIENTE = new Set(["awaiting_lead"]);
 /** Terminais: não é dono de nada. */

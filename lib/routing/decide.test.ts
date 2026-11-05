@@ -274,3 +274,109 @@ describe("regras por número (#2331) — resolverRoteamentoPorNumero", () => {
     expect(action).toEqual({ kind: "skip", reason: "already_assigned" });
   });
 });
+
+describe("a distribuição ESPERA a IA qualificar (#3966)", () => {
+  const esperando = { motivo: "ia_qualificando", limiteEm: "2026-11-06T11:59:00.000Z" };
+
+  it("com a espera de pé, o worker NÃO atribui: devolve `wait` com o próximo olhar", () => {
+    const action = decideRouting({
+      mode: "round_robin",
+      alreadyAssigned: false,
+      eligibles: [cand("ana", null)],
+      config,
+      attempts: 0,
+      now: NOW,
+      esperaPelaQualificacao: esperando,
+    });
+    expect(action.kind).toBe("wait");
+    if (action.kind === "wait") {
+      expect(action.reason).toBe("ia_qualificando");
+      // backoff de 60s: o próximo olhar é daqui a um minuto, não no limite.
+      expect(action.nextAttemptAt).toBe(new Date(NOW.getTime() + 60_000).toISOString());
+    }
+  });
+
+  it("nenhum elegível na espera NÃO vira `requeue` (não gasta tentativa do backoff)", () => {
+    const action = decideRouting({
+      mode: "load",
+      alreadyAssigned: false,
+      eligibles: [],
+      config,
+      attempts: 5, // no teto: `requeue` cairia nos 15 min
+      now: NOW,
+      esperaPelaQualificacao: esperando,
+    });
+    expect(action.kind).toBe("wait");
+  });
+
+  it("a última espera é agendada PARA o limite, nunca depois dele", () => {
+    const action = decideRouting({
+      mode: "round_robin",
+      alreadyAssigned: false,
+      eligibles: [cand("ana", null)],
+      config: routingConfigSchema.parse({ mode: "round_robin", backoff_seconds: 3600 }),
+      attempts: 0,
+      now: NOW,
+      esperaPelaQualificacao: { motivo: "ia_qualificando", limiteEm: "2026-07-13T17:05:00.000Z" },
+    });
+    expect(action.kind).toBe("wait");
+    if (action.kind === "wait") {
+      expect(action.nextAttemptAt).toBe("2026-07-13T17:05:00.000Z");
+    }
+  });
+
+  it("a espera vence o destino padrão do número (é onde calar a IA dói mais)", () => {
+    const action = decideRouting({
+      mode: "manual",
+      alreadyAssigned: false,
+      eligibles: [],
+      config: routingConfigSchema.parse({ mode: "manual" }),
+      defaultAssigneeUserId: "bruno",
+      attempts: 0,
+      now: NOW,
+      esperaPelaQualificacao: esperando,
+    });
+    expect(action.kind).toBe("wait");
+  });
+
+  it("modo manual SEM destino padrão não espera: esse canal nunca distribui", () => {
+    const action = decideRouting({
+      mode: "manual",
+      alreadyAssigned: false,
+      eligibles: [],
+      config: routingConfigSchema.parse({ mode: "manual" }),
+      attempts: 0,
+      now: NOW,
+      esperaPelaQualificacao: esperando,
+    });
+    expect(action).toEqual({ kind: "skip", reason: "manual_mode" });
+  });
+
+  it("idempotência e caso vencem a espera (nada de evento girando por conversa já resolvida)", () => {
+    expect(
+      decideRouting({
+        mode: "round_robin", alreadyAssigned: true, eligibles: [], config,
+        attempts: 0, now: NOW, esperaPelaQualificacao: esperando,
+      }),
+    ).toEqual({ kind: "skip", reason: "already_assigned" });
+
+    expect(
+      decideRouting({
+        mode: "round_robin", alreadyAssigned: false, eligibles: [cand("ana", null)], config,
+        attempts: 0, now: NOW, esperaPelaQualificacao: esperando,
+        motivoDoCaso: "caso_encerrado",
+      }),
+    ).toEqual({ kind: "skip", reason: "caso_encerrado" });
+  });
+
+  it("sem espera (null/ausente) a decisão é a de HOJE, byte a byte", () => {
+    const base = {
+      mode: "round_robin" as const, alreadyAssigned: false,
+      eligibles: [cand("ana", null)], config, attempts: 0, now: NOW,
+    };
+    const semCampo = decideRouting(base);
+    const comNull = decideRouting({ ...base, esperaPelaQualificacao: null });
+    expect(comNull).toEqual(semCampo);
+    expect(semCampo).toEqual({ kind: "assign", userId: "ana" });
+  });
+});
