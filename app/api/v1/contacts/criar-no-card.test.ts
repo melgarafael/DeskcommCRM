@@ -25,25 +25,51 @@ const input = {
 };
 beforeEach(() => vi.clearAllMocks());
 describe("criar contato no card", () => {
-  it("usa uma operação atômica e não abre conversa nem emite evento de automação", async () => {
+  it("cria e vincula numa operação só e segue a regra da ficha manual", async () => {
     const contact = {
       id: "contact-a",
       organization_id: "org-a",
       phone_number: input.phone_number,
       source: "manual",
     };
-    const rpc = vi.fn().mockResolvedValue({ data: contact, error: null });
-    const from = vi.fn();
+    vi.mocked(sessaoProntaParaEnvio).mockResolvedValue("session-a" as never);
+    vi.mocked(ensureConversation).mockResolvedValue("conversation-a" as never);
+    const rpc = vi.fn(async (nome: string) =>
+      nome === "fn_create_contact_for_lead"
+        ? { data: contact, error: null }
+        : { data: null, error: null },
+    );
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    const from = vi.fn(() => ({ insert }));
     const result = await createContactHandler({ rpc, from } as never, ctx, input, "lead-a");
     expect(result.contact.id).toBe("contact-a");
-    expect(rpc).toHaveBeenCalledTimes(1);
     expect(rpc).toHaveBeenCalledWith(
       "fn_create_contact_for_lead",
       expect.objectContaining({ p_organization_id: "org-a", p_lead_id: "lead-a" }),
     );
-    expect(from).not.toHaveBeenCalled();
-    expect(sessaoProntaParaEnvio).not.toHaveBeenCalled();
-    expect(ensureConversation).not.toHaveBeenCalled();
+    // O contato NÃO é inserido fora da RPC: a única escrita por `from` é a timeline.
+    expect(from).toHaveBeenCalledTimes(1);
+    expect(from).toHaveBeenCalledWith("crm_lead_activities");
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lead_id: "lead-a",
+        contact_id: "contact-a",
+        type: "lead_edited",
+        reason: "Alterou o contato",
+        payload: { fields: ["contact_id"] },
+      }),
+    );
+    // A regra única de `lib/contacts/conversa-ao-criar.ts`: ficha manual abre conversa.
+    expect(ensureConversation).toHaveBeenCalledWith(
+      expect.anything(),
+      "org-a",
+      "contact-a",
+      "session-a",
+    );
+    expect(rpc).toHaveBeenCalledWith(
+      "emit_event",
+      expect.objectContaining({ p_event_type: "contact.created", p_entity_id: "contact-a" }),
+    );
     expect(audit).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "lead.updated",

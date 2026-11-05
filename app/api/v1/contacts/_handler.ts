@@ -30,6 +30,9 @@ import {
 import { camposCpfParaGravar, hashCpf } from "@/lib/contacts/cpf";
 import type { Contact } from "@/lib/types/contacts";
 import { abrirConversaDoContatoNovo } from "@/lib/contacts/conversa-ao-criar";
+import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import { listaLegivel } from "@/lib/leads/activity-vocabulary";
+import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import type {
   ContactCreate,
   ContactPatch,
@@ -711,33 +714,34 @@ export async function createContactHandler(
   // uma sessão torta não pode derrubar o cadastro. O que ela NÃO faz mais é
   // falhar calada — o erro sai em `logger.warn` lá dentro, com org, contato e
   // porta.
-  if (!linkedLeadId)
-    await abrirConversaDoContatoNovo(supabase, {
-      porta: "manual",
-      organizationId: ctx.organization_id,
-      contactId: contact.id,
-      phoneNumber: contact.phone_number,
-      requestId: ctx.requestId,
-    });
+  // Criar pelo negócio é a MESMA ficha manual, uma por vez: a regra de abrir
+  // conversa é a da porta `manual` (`lib/contacts/conversa-ao-criar.ts`), e o
+  // `contact.created` sai igual ao das outras portas que criam contato.
+  await abrirConversaDoContatoNovo(supabase, {
+    porta: "manual",
+    organizationId: ctx.organization_id,
+    contactId: contact.id,
+    phoneNumber: contact.phone_number,
+    requestId: ctx.requestId,
+  });
 
-  if (!linkedLeadId)
-    await supabase
-      .rpc("emit_event", {
-        p_event_type: "contact.created",
-        p_entity_kind: "contact",
-        p_entity_id: contact.id,
-        p_payload: {
-          source: contact.source,
-          has_email: !!contact.email,
-          has_phone: !!contact.phone_number,
-          has_cpf: !!contact.cpf_hash,
-        },
-        p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
-        p_organization_id: contact.organization_id,
-      })
-      .then(({ error }) => {
-        if (error) console.error("[contacts.create] emit_event failed", error.message);
-      });
+  await supabase
+    .rpc("emit_event", {
+      p_event_type: "contact.created",
+      p_entity_kind: "contact",
+      p_entity_id: contact.id,
+      p_payload: {
+        source: contact.source,
+        has_email: !!contact.email,
+        has_phone: !!contact.phone_number,
+        has_cpf: !!contact.cpf_hash,
+      },
+      p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
+      p_organization_id: contact.organization_id,
+    })
+    .then(({ error }) => {
+      if (error) console.error("[contacts.create] emit_event failed", error.message);
+    });
 
   await audit({
     action: "contact.created",
@@ -749,7 +753,30 @@ export async function createContactHandler(
     metadata: { ...a.metadataActor, source: contact.source },
   });
 
-  if (linkedLeadId)
+  if (linkedLeadId) {
+    // O vínculo entra na timeline do negócio como o PATCH de `contact_id` já
+    // faz (`leads/_handler.updateLeadHandler`): nome do campo, nunca o valor.
+    const atividade = await emitLeadActivity(supabase, {
+      organizationId: ctx.organization_id,
+      leadId: linkedLeadId,
+      contactId: contact.id,
+      type: "lead_edited",
+      sourceModule: "crm",
+      sourceId: linkedLeadId,
+      actor: ctx.actor,
+      reason: `Alterou ${listaLegivel(["contact_id"])}`,
+      payload: { fields: ["contact_id"] },
+    });
+    if (!atividade.ok) {
+      await registraFalhaDeAtividade(supabase, {
+        organizationId: ctx.organization_id,
+        leadId: linkedLeadId,
+        tipo: "lead_edited",
+        origem: "contacts/_handler.createContactHandler",
+        erro: atividade.error,
+        requestId: ctx.requestId,
+      });
+    }
     await audit({
       action: "lead.updated",
       actorUserId: a.actorUserId,
@@ -759,6 +786,7 @@ export async function createContactHandler(
       requestId: ctx.requestId,
       metadata: { ...a.metadataActor, from: { contact_id: null }, to: { contact_id: contact.id } },
     });
+  }
   return { contact, action: "created" };
 }
 
