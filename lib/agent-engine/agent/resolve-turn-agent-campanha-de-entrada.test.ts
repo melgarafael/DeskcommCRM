@@ -267,12 +267,17 @@ describe('degral 0b: o primeiro turno do contato que veio pela frase do anúncio
   });
 
   it('erro no degrau da campanha de entrada não derruba o turno', async () => {
+    // O degrau real já engole o erro (`comTeto`); o dublê devolve uma promessa
+    // REJEITADA para provar que nem o pior caso derruba o turno.
     const d = deps({ router: null, doNumero: fakeConfig('agent-do-numero') });
-    d.deps.agenteDaCampanhaDeEntrada = vi.fn(async () => {
-      throw new Error('db timeout');
-    }) as never;
+    const comFalha = {
+      ...(d.deps as unknown as Record<string, unknown>),
+      agenteDaCampanhaDeEntrada: vi.fn(async () => {
+        throw new Error('db timeout');
+      }),
+    };
 
-    const out = await resolveTurnAgent({} as never, {} as never, { ...baseInput, signal: 'oi' }, d.deps);
+    const out = await resolveTurnAgent({} as never, {} as never, { ...baseInput, signal: 'oi' }, comFalha as never);
 
     expect(out.config?.agentId).toBe('agent-do-numero');
   });
