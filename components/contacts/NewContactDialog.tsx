@@ -77,7 +77,7 @@ export function NewContactDialog({
   const create = useCreateContact();
   // Mesma definição da ficha: campos do contato no funil padrão, sem defaults de nicho.
   const pipeline = useDefaultPipeline(open && Boolean(org));
-  const campos = camposPorEscopo(camposDoFunil(pipeline.data?.pipeline.settings), "contato");
+  const campos = camposPorEscopo(camposDoFunil(pipeline.data?.pipeline?.settings), "contato");
   /**
    * A CONVERSA A ABRIR DEPOIS DE SALVAR (#3483) — `null` = nada pendente.
    *
