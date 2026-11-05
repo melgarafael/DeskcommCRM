@@ -3,6 +3,7 @@
 import { channelBrand } from "@/lib/channels/presentation";
 import { marcaDoCanal } from "@/lib/channels/marca-do-canal";
 import { useT } from "@/hooks/i18n/useT";
+import { ChatCircle } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import type { ChannelSummary } from "@/hooks/inbox/useConversationsRealtime";
 
@@ -22,8 +23,10 @@ export function ChannelLogo({ channel, size = 18, className }: {
   const t = useT();
   const marca = marcaDoCanal(channelBrand(channel));
   const name = t(marca.rotulo);
-  const Icon = marca.Icone;
+  // Sem rede conhecida, o balão genérico: este logo fica sobre o avatar, e sem
+  // ícone sobraria um disco vazio. Só o aviso sai sem logo.
+  const Icon = marca.Icone ?? ChatCircle;
   return <span role="img" aria-label={name} title={name} style={{ color: marca.cor }} className={cn("inline-flex shrink-0 items-center justify-center", className)}>
-    {Icon ? <Icon size={size} weight="fill" aria-hidden /> : null}
+    <Icon size={size} weight="fill" aria-hidden />
   </span>;
 }
