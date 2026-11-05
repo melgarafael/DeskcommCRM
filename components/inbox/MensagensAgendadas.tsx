@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { apiClient } from "@/lib/api/client";
+import { useT } from "@/hooks/i18n/useT";
 
 const RECORRENCIAS: { valor: string; rotulo: string }[] = [
   { valor: "nenhuma", rotulo: "Nenhuma (envio único)" },
@@ -107,6 +108,7 @@ export function MensagensAgendadasDialog({
   contactName,
   textoInicial,
 }: Props & { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const t = useT();
   const [lista, setLista] = useState<AgendamentoLinha[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [criando, setCriando] = useState(false);
@@ -162,7 +164,7 @@ export function MensagensAgendadasDialog({
             {carregando ? (
               <p className="text-sm text-muted-foreground">Carregando…</p>
             ) : lista.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhuma mensagem agendada para este contato.</p>
+              <p className="text-sm text-muted-foreground">{t("Nenhuma mensagem agendada para este contato.")}</p>
             ) : (
               <ul className="divide-y rounded-md border">
                 {lista.map((a) => (
@@ -206,6 +208,7 @@ function CriarAgendamento({
   onCancelar: () => void;
   onCriado: () => Promise<void>;
 }) {
+  const t = useT();
   const [titulo, setTitulo] = useState("");
   const [texto, setTexto] = useState(textoInicial);
   const [data, setData] = useState("");
@@ -248,12 +251,12 @@ function CriarAgendamento({
   return (
     <div className="space-y-4">
       <div className="space-y-1">
-        <Label htmlFor="ag-titulo">Título (opcional)</Label>
-        <Input id="ag-titulo" value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Insira aqui o título" />
+        <Label htmlFor="ag-titulo">{t("Título (opcional)")}</Label>
+        <Input id="ag-titulo" value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder={t("Insira aqui o título")} />
       </div>
       <div className="space-y-1">
         <Label htmlFor="ag-texto">Mensagem</Label>
-        <Textarea id="ag-texto" value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Insira sua mensagem" rows={4} />
+        <Textarea id="ag-texto" value={texto} onChange={(e) => setTexto(e.target.value)} placeholder={t("Insira sua mensagem")} rows={4} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
@@ -266,7 +269,7 @@ function CriarAgendamento({
         </div>
       </div>
       <div className="space-y-1">
-        <Label htmlFor="ag-recorrencia">Recorrência</Label>
+        <Label htmlFor="ag-recorrencia">{t("Recorrência")}</Label>
         <select
           id="ag-recorrencia"
           className="h-9 w-full rounded-md border bg-background px-2 text-sm"
@@ -294,7 +297,7 @@ function CriarAgendamento({
         <div className="space-y-2">
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={temTermino} onChange={(e) => setTemTermino(e.target.checked)} />
-            Definir data de término
+            {t("Definir data de término")}
           </label>
           {temTermino && <Input type="date" value={termino} onChange={(e) => setTermino(e.target.value)} />}
         </div>
@@ -308,7 +311,7 @@ function CriarAgendamento({
           onChange={(e) => setSeDesconectado(e.target.value as "esperar" | "cancelar")}
         >
           <option value="esperar">Esperar reconectar e enviar</option>
-          <option value="cancelar">Cancelar este envio</option>
+          <option value="cancelar">{t("Cancelar este envio")}</option>
         </select>
       </div>
       <div className="flex justify-end gap-2">
