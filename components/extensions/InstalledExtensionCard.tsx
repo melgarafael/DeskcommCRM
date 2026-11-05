@@ -16,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -25,7 +26,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
+
 import { useT } from "@/hooks/i18n/useT";
+import { copyToClipboard } from "@/lib/clipboard";
 import { useIdioma } from "@/lib/i18n/IdiomaProvider";
 import { configuracaoAoSalvar } from "@/lib/extensions/configuracao-da-tela";
 import {
@@ -82,6 +86,7 @@ export function InstalledExtensionCard({
   onRevert,
   onRemove,
   onSwitch,
+  onRotateSecret,
 }: {
   extension: InstalledExtensionView;
   canManage: boolean;
@@ -111,6 +116,11 @@ export function InstalledExtensionCard({
   onRemove?: (extension: InstalledExtensionView) => Promise<void>;
   /** O interruptor do módulo `connected`: `disabled` é o sentido pedido (true = desligar). */
   onSwitch?: (extension: InstalledExtensionView, disabled: boolean) => Promise<void>;
+  /**
+   * Gera (ou gira) o segredo do módulo `connected`. Devolve o segredo em claro, que a tela mostra UMA
+   * vez, ou `null` quando o pedido falhou (a mensagem já foi dada por quem chama).
+   */
+  onRotateSecret?: (extension: InstalledExtensionView) => Promise<string | null>;
 }) {
   const t = useT();
   const locale = useIdioma();
@@ -454,6 +464,7 @@ export function InstalledExtensionCard({
           onRevert={onRevert}
           onRemove={onRemove}
           onSwitch={onSwitch}
+          onRotateSecret={onRotateSecret}
         />
       ) : null}
     </Card>
@@ -475,6 +486,7 @@ function PlatformBlock({
   onRevert,
   onRemove,
   onSwitch,
+  onRotateSecret,
 }: {
   extension: InstalledExtensionView;
   title: string;
@@ -485,13 +497,19 @@ function PlatformBlock({
   onRevert: (extension: InstalledExtensionView) => Promise<void>;
   onRemove: (extension: InstalledExtensionView) => Promise<void>;
   onSwitch?: (extension: InstalledExtensionView, disabled: boolean) => Promise<void>;
+  onRotateSecret?: (extension: InstalledExtensionView) => Promise<string | null>;
 }) {
   const t = useT();
-  const [dialog, setDialog] = useState<"revert" | "remove" | null>(null);
+  const [dialog, setDialog] = useState<"revert" | "remove" | "secret" | null>(null);
+  // O segredo em claro vive SÓ aqui, enquanto a caixa está aberta: fechar apaga o valor do estado.
+  const [segredo, setSegredo] = useState<string | null>(null);
+  const [girando, setGirando] = useState(false);
   const previous = extension.previous;
   const active = extension.active_organizations ?? 0;
   const busy = busyAction !== null;
   const blocked = busy || actionsDisabled || preparationInProgress;
+  const podeGirarSegredo = extension.profile === "connected" && Boolean(onRotateSecret);
+  const semSegredo = extension.secret_pending === true;
   // Um botão de confirmar desabilitado dentro de um diálogo modal fica mudo: o motivo que existe
   // fora dele some atrás do overlay, e quem opera só descobre desistindo. O diálogo carrega o seu.
   const motivoDoBloqueio = preparationInProgress
@@ -501,6 +519,24 @@ function PlatformBlock({
     : actionsDisabled
       ? (blockedReason ?? t("Atualize o estado das extensões antes de enviar um novo pedido."))
       : null;
+  async function gerarSegredo() {
+    if (!onRotateSecret || girando) return;
+    setGirando(true);
+    try {
+      const novo = await onRotateSecret(extension);
+      if (novo) setSegredo(novo);
+    } finally {
+      setGirando(false);
+    }
+  }
+
+  async function copiarSegredo() {
+    if (segredo === null) return;
+    // O helper também funciona em http://IP (self-host sem HTTPS), onde a API de cópia não existe.
+    if (await copyToClipboard(segredo)) toast.success(t("Segredo copiado."));
+    else toast.error(t("Não consegui copiar — selecione e copie o segredo manualmente."));
+  }
+
   return (
     <section
       className="mt-4 space-y-3 rounded-md border border-border bg-surface-elevated/40 p-3"
@@ -537,6 +573,18 @@ function PlatformBlock({
             {extension.disabled_at ? t("Ligar") : t("Desligar")}
           </Button>
         ) : null}
+        {podeGirarSegredo ? (
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid={`extension-secret-${extension.id}`}
+            disabled={blocked || girando}
+            onClick={() => setDialog("secret")}
+          >
+            {girando ? <CircleNotch className="animate-spin" aria-hidden /> : null}
+            {semSegredo ? t("Gerar segredo") : t("Gerar novo segredo")}
+          </Button>
+        ) : null}
         <Button
           variant="outline"
           size="sm"
@@ -570,6 +618,71 @@ function PlatformBlock({
         </p>
       ) : null}
       {blockedReason ? <p className="text-xs text-muted-foreground">{blockedReason}</p> : null}
+
+      <AlertDialog open={dialog === "secret"} onOpenChange={(open) => !open && setDialog(null)}>
+        <AlertDialogContent data-testid={`extension-secret-dialog-${extension.id}`}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {(semSegredo
+                ? t("Gerar um segredo para {titulo}?")
+                : t("Gerar um novo segredo para {titulo}?")
+              ).replace("{titulo}", title)}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {semSegredo
+                ? t("Esta instalação ainda não tem segredo. Ele aparece uma única vez, logo depois de gerado.")
+                : t(
+                    "O módulo atual deixará de funcionar até receber o novo segredo. Os acessos que ele tem agora são revogados.",
+                  )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("Cancelar")}</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid={`extension-secret-confirm-${extension.id}`}
+              disabled={blocked || girando}
+              onClick={() => void gerarSegredo()}
+            >
+              {t("Gerar")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={segredo !== null} onOpenChange={(open) => !open && setSegredo(null)}>
+        <AlertDialogContent data-testid={`extension-secret-reveal-${extension.id}`}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Segredo do módulo")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("Copie agora: este segredo não será mostrado de novo.")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex items-center gap-2">
+            <Input
+              readOnly
+              value={segredo ?? ""}
+              aria-label={t("Segredo do módulo")}
+              className="font-mono text-xs"
+              data-testid={`extension-secret-value-${extension.id}`}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid={`extension-secret-copy-${extension.id}`}
+              onClick={() => void copiarSegredo()}
+            >
+              {t("Copiar")}
+            </Button>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid={`extension-secret-close-${extension.id}`}>
+              {t("Fechar")}
+            </AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={dialog === "revert"} onOpenChange={(open) => !open && setDialog(null)}>
         <AlertDialogContent data-testid={`extension-revert-dialog-${extension.id}`}>

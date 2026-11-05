@@ -639,6 +639,34 @@ export function ExtensionsManager({
     [runMutation, staleInstallation, t],
   );
 
+  /**
+   * Gera (ou gira) o segredo do módulo `connected` e devolve o texto em claro para a tela mostrá-lo
+   * UMA vez. Fica fora de `runMutation` de propósito (emenda 3): não há recibo nem `Idempotency-Key`,
+   * porque um recibo guardado no navegador ou no banco reproduziria o segredo. O botão fica
+   * desabilitado enquanto o pedido está em curso (o estado `girando` do cartão); repetir o pedido
+   * gera OUTRO segredo. O valor volta por aqui e não é guardado em nenhum estado deste gestor.
+   */
+  const rotateSecret = useCallback(
+    async (extension: InstalledExtensionView): Promise<string | null> => {
+      if (!snapshotFresh) {
+        toast.error(t("Atualize o estado das extensões antes de enviar um novo pedido."));
+        return null;
+      }
+      const result = await requestExtensionApi<{ secret: string; rotated_at: string }>(
+        `/api/v1/extensions/${encodeURIComponent(extension.id)}/segredo`,
+        { method: "POST" },
+      );
+      if (!result.ok) {
+        if (!(await staleInstallation(result.error))) toast.error(t(result.error.message));
+        return null;
+      }
+      // O estado "sem segredo" some do cartão depois do primeiro segredo.
+      void carregar(true);
+      return result.data.secret;
+    },
+    [carregar, snapshotFresh, staleInstallation, t],
+  );
+
   const configure = useCallback(
     async (
       extension: InstalledExtensionView,
@@ -1117,6 +1145,7 @@ export function ExtensionsManager({
                       onRevert={(alvo) => changeInstallation(alvo, "revert")}
                       onRemove={(alvo) => changeInstallation(alvo, "remove")}
                       onSwitch={switchInstallation}
+                      onRotateSecret={rotateSecret}
                     />
                   ))}
                 </div>

@@ -82,6 +82,11 @@ export interface InstalledExtensionView {
    * Só significa algo para o perfil `connected`; a F1 guarda e mostra, a F2/F4 leem para negar acesso.
    */
   disabled_at: string | null;
+  /**
+   * Só para quem administra a instalação e só no perfil `connected`: `true` quando a instalação
+   * ainda não tem segredo. O botão de segredo vira "Gerar segredo". Ausente = não se sabe.
+   */
+  secret_pending?: boolean;
 }
 
 export interface RemovedInstallationView {

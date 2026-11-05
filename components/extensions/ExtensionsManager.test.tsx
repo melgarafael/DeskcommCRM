@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,6 +19,8 @@ const { router, toast } = vi.hoisted(() => ({
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 vi.mock("sonner", () => ({ toast }));
+const { copiar } = vi.hoisted(() => ({ copiar: vi.fn() }));
+vi.mock("@/lib/clipboard", () => ({ copyToClipboard: copiar }));
 
 // A convenção da casa, espelhada de hooks/realtime/useRefetchDeSeguranca.test.tsx
 // (PR #2821): quem pula o trabalho de rede com a aba oculta precisa de um teste
@@ -2068,5 +2070,195 @@ describe("interruptor do módulo conectado (spec 33, D8)", () => {
     renderManager();
 
     expect(await screen.findByText("Interruptor do módulo")).toBeVisible();
+  });
+});
+
+describe("segredo do módulo conectado (spec 33, F2, tarefa 4)", () => {
+  const SEGREDO = "S3gredo_Unico-de-teste_0123456789abcdefghijklm";
+  const conectado = (overrides: Partial<InstalledExtensionView> = {}) =>
+    installation({
+      profile: "connected",
+      permissions: ["area.contatos.leitura"],
+      installation_revision: 4,
+      ...overrides,
+    });
+
+  /** A lista responde sempre; o POST do segredo fica na mão do teste (`resolver`). */
+  function fetchComSegredo(lista: ExtensionListView) {
+    let resolver: (resposta: Response) => void = () => undefined;
+    const pendente = new Promise<Response>((resolve) => {
+      resolver = resolve;
+    });
+    const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) =>
+      String(input).endsWith("/segredo") ? pendente : Promise.resolve(json({ data: lista })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const chamadasDoSegredo = () =>
+      fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/segredo"));
+    return { fetchMock, resolver: (r: Response) => resolver(r), chamadasDoSegredo };
+  }
+
+  beforeEach(() => {
+    copiar.mockReset();
+    copiar.mockResolvedValue(true);
+  });
+
+  it("só o módulo conectado, para quem administra a instalação, tem o botão", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(json({ data: list(ORG_A, { installations: [conectado()] }) })),
+      ),
+    );
+    renderManager();
+    expect(await screen.findByTestId(`extension-secret-${INSTALLATION}`)).toHaveTextContent("Gerar novo segredo");
+    cleanup();
+
+    for (const profile of ["declarative", "data", null] as const) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation(() =>
+          Promise.resolve(json({ data: list(ORG_A, { installations: [installation({ profile })] }) })),
+        ),
+      );
+      renderManager();
+      await screen.findByTestId(`extension-platform-${INSTALLATION}`);
+      expect(screen.queryByTestId(`extension-secret-${INSTALLATION}`)).toBeNull();
+      cleanup();
+    }
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          json({
+            data: list(ORG_A, {
+              can_install: false,
+              installations: [conectado({ active_organizations: null })],
+            }),
+          }),
+        ),
+      ),
+    );
+    renderManager();
+    await screen.findByTestId(`extension-installed-${INSTALLATION}`);
+    expect(screen.queryByTestId(`extension-secret-${INSTALLATION}`)).toBeNull();
+  });
+
+  it("instalação sem segredo (secret_pending) mostra o botão como Gerar segredo", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(json({ data: list(ORG_A, { installations: [conectado({ secret_pending: true })] }) })),
+      ),
+    );
+    renderManager();
+    expect(await screen.findByTestId(`extension-secret-${INSTALLATION}`)).toHaveTextContent("Gerar segredo");
+    expect(screen.queryByText("Gerar novo segredo")).toBeNull();
+  });
+
+  it("pede confirmação antes de gerar; cancelar não envia nada", async () => {
+    const { fetchMock, chamadasDoSegredo } = fetchComSegredo(list(ORG_A, { installations: [conectado()] }));
+    const user = userEvent.setup();
+    renderManager();
+
+    await user.click(await screen.findByTestId(`extension-secret-${INSTALLATION}`));
+
+    const dialogo = await screen.findByTestId(`extension-secret-dialog-${INSTALLATION}`);
+    expect(dialogo).toHaveTextContent("O módulo atual deixará de funcionar até receber o novo segredo");
+    expect(chamadasDoSegredo()).toHaveLength(0);
+
+    await user.click(within(dialogo).getByRole("button", { name: "Cancelar" }));
+    await waitFor(() => expect(screen.queryByTestId(`extension-secret-dialog-${INSTALLATION}`)).toBeNull());
+    expect(chamadasDoSegredo()).toHaveLength(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("confirmar envia o pedido sem Idempotency-Key, desabilita o botão durante o pedido e mostra o segredo uma vez", async () => {
+    const { resolver, chamadasDoSegredo } = fetchComSegredo(list(ORG_A, { installations: [conectado()] }));
+    const user = userEvent.setup();
+    renderManager();
+
+    await user.click(await screen.findByTestId(`extension-secret-${INSTALLATION}`));
+    await user.click(await screen.findByTestId(`extension-secret-confirm-${INSTALLATION}`));
+
+    await waitFor(() => expect(chamadasDoSegredo()).toHaveLength(1));
+    const [url, init] = chamadasDoSegredo()[0] as [string, RequestInit];
+    expect(String(url)).toBe(`/api/v1/extensions/${INSTALLATION}/segredo`);
+    expect((init.method ?? "GET").toUpperCase()).toBe("POST");
+    expect(new Headers(init.headers).get("Idempotency-Key")).toBeNull();
+    // Sem recibo no navegador: o segredo não pode ser reproduzido por uma repetição.
+    expect(readPendingReceipts(window.localStorage, ACTOR, ORG_A)).toEqual([]);
+
+    // Durante o pedido o botão fica desabilitado: um segundo clique não gera outro segredo.
+    expect(screen.getByTestId(`extension-secret-${INSTALLATION}`)).toBeDisabled();
+    expect(screen.queryByTestId(`extension-secret-reveal-${INSTALLATION}`)).toBeNull();
+
+    await act(async () => {
+      resolver(json({ data: { secret: SEGREDO, rotated_at: "2026-11-05T12:00:00.000Z" } }));
+    });
+
+    const caixa = await screen.findByTestId(`extension-secret-reveal-${INSTALLATION}`);
+    expect(caixa).toHaveTextContent("Copie agora: este segredo não será mostrado de novo.");
+    expect(screen.getByTestId(`extension-secret-value-${INSTALLATION}`)).toHaveValue(SEGREDO);
+    await waitFor(() => expect(screen.getByTestId(`extension-secret-${INSTALLATION}`)).toBeEnabled());
+    expect(chamadasDoSegredo()).toHaveLength(1);
+
+    await user.click(screen.getByTestId(`extension-secret-copy-${INSTALLATION}`));
+    expect(copiar).toHaveBeenCalledWith(SEGREDO);
+    expect(toast.success).toHaveBeenCalledWith("Segredo copiado.");
+  });
+
+  it("ao fechar, o segredo some da tela e não volta", async () => {
+    const { resolver } = fetchComSegredo(list(ORG_A, { installations: [conectado()] }));
+    const user = userEvent.setup();
+    renderManager();
+
+    await user.click(await screen.findByTestId(`extension-secret-${INSTALLATION}`));
+    await user.click(await screen.findByTestId(`extension-secret-confirm-${INSTALLATION}`));
+    await act(async () => {
+      resolver(json({ data: { secret: SEGREDO, rotated_at: "2026-11-05T12:00:00.000Z" } }));
+    });
+    expect(await screen.findByDisplayValue(SEGREDO)).toBeVisible();
+
+    await user.click(screen.getByTestId(`extension-secret-close-${INSTALLATION}`));
+
+    await waitFor(() => expect(screen.queryByTestId(`extension-secret-reveal-${INSTALLATION}`)).toBeNull());
+    expect(screen.queryByDisplayValue(SEGREDO)).toBeNull();
+    expect(document.body.textContent).not.toContain(SEGREDO);
+    // Abrir de novo a confirmação não traz o valor antigo de volta.
+    await user.click(screen.getByTestId(`extension-secret-${INSTALLATION}`));
+    await screen.findByTestId(`extension-secret-dialog-${INSTALLATION}`);
+    expect(document.body.textContent).not.toContain(SEGREDO);
+  });
+
+  it("pedido recusado: avisa com a frase do servidor e não abre a caixa do segredo", async () => {
+    const { resolver } = fetchComSegredo(list(ORG_A, { installations: [conectado()] }));
+    const user = userEvent.setup();
+    renderManager();
+
+    await user.click(await screen.findByTestId(`extension-secret-${INSTALLATION}`));
+    await user.click(await screen.findByTestId(`extension-secret-confirm-${INSTALLATION}`));
+    await act(async () => {
+      resolver(
+        json(
+          {
+            error: {
+              code: "extension_secret_key_missing",
+              message: "Falta configurar a chave de cifra do servidor (AI_CRED_AES_KEY). Configure-a e repita o pedido.",
+            },
+          },
+          503,
+        ),
+      );
+    });
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Falta configurar a chave de cifra do servidor (AI_CRED_AES_KEY). Configure-a e repita o pedido.",
+      ),
+    );
+    expect(screen.queryByTestId(`extension-secret-reveal-${INSTALLATION}`)).toBeNull();
+    await waitFor(() => expect(screen.getByTestId(`extension-secret-${INSTALLATION}`)).toBeEnabled());
   });
 });
