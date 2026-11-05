@@ -50,6 +50,12 @@ type Campaign = {
   skipped_count: number;
   cost_usd: string | null;
   next_send_at: string;
+  /**
+   * O NÚMERO desta campanha (#3896). Duas campanhas em conexões diferentes
+   * rodam juntas, então a conexão deixa de ser dedutível: sem ela no cartão,
+   * duas campanhas "Em andamento" parecem a mesma coisa repetida.
+   */
+  channel_session_id: string | null;
 };
 type Candidate = {
   id: string;
@@ -1193,6 +1199,14 @@ export function ProspectingClient() {
                       {campaign.cost_usd !== null
                         ? ` · US$ ${Number(campaign.cost_usd).toFixed(2)}`
                         : ""}
+                      {(() => {
+                        // A CONEXÃO no cartão (#3896): com uma campanha por
+                        // número, "Em andamento" sozinho não diz por onde ela
+                        // fala — e é a conexão que o operador escolhe na
+                        // próxima.
+                        const canal = data?.channels.find((c) => c.id === campaign.channel_session_id);
+                        return canal ? ` · ${canal.display_name ?? canal.phone_number ?? canal.id}` : "";
+                      })()}
                     </p>
                   </div>
                   <Badge variant="outline">{t(labels[campaign.status] ?? campaign.status)}</Badge>

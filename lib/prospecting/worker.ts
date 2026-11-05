@@ -38,6 +38,7 @@ import { prepararCandidatos } from "./preparo";
 import { provedoresQueConferemNumero } from "@/lib/channels";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { CanalReconectandoError, ProspectingError } from "./provider";
+import { canalDaCampanha } from "./canal-da-campanha";
 // O carimbo do pedido da prospecção: `prospecting:` — nunca `rule:` (#3072).
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
 import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
@@ -111,6 +112,20 @@ export async function sendNextCandidate(
     new Promise((resolve) => setTimeout(resolve, ms)),
 ) {
   const cfg = campaignConfigSchema.parse(c.config);
+  // O NÚMERO da campanha: coluna (fonte da verdade desde a 9221) e `config`
+  // têm de dizer o MESMO número. Divergência é estado impossível de propósito
+  // (o `start` e o `resume` gravam os dois juntos): seguir com um dos dois
+  // mandaria por um número e contaria o teto em outro — a conta do aquecimento
+  // sai do número que ENVIA, e nesse estado ninguém sabe qual é.
+  const canal = canalDaCampanha(c);
+  if (!canal)
+    throw new ProspectingError(
+      "A campanha não tem conexão de WhatsApp definida. Pause e inicie de novo escolhendo uma conexão.",
+    );
+  if (c.channel_session_id && c.channel_session_id !== cfg.channel_session_id)
+    throw new ProspectingError(
+      "A conexão gravada na campanha diverge da configuração dela. Pause e inicie de novo escolhendo uma conexão.",
+    );
   await validateConfig(db, c.organization_id, cfg);
   // O CANAL ESTÁ `WORKING` — a validação passou, e a espera da reconexão acabou.
   // Limpa a marca do adiamento para a PRÓXIMA espera começar a contar do zero
@@ -123,11 +138,7 @@ export async function sendNextCandidate(
       [c.organization_id, c.id],
     );
   if (new Date(c.next_send_at).getTime() > Date.now()) return;
-  const { knobs, numberActivatedAt } = await loadChannelKnobs(
-    db,
-    c.organization_id,
-    cfg.channel_session_id,
-  );
+  const { knobs, numberActivatedAt } = await loadChannelKnobs(db, c.organization_id, canal);
   const now = new Date();
   // O PORTÃO DA PROSPECÇÃO: dias próprios (`prospeccao_dias`, 0642) + horas de
   // disparo — e NÃO o domingo compartilhado. Fora dele, o envio fica agendado
@@ -143,15 +154,15 @@ export async function sendNextCandidate(
     );
     return;
   }
-  const pacingState = await loadPacingState(db, c.organization_id, cfg.channel_session_id, {
+  const pacingState = await loadPacingState(db, c.organization_id, canal, {
     now,
     timezone: knobs.timezone,
     numberActivatedAt,
   });
   const channel = (
     await db.query(
-      "select daily_message_limit from channel_sessions where organization_id=$1 and id=$2",
-      [c.organization_id, cfg.channel_session_id],
+      "select daily_message_limit from channel_sessions where organization_id=$1 and id=$2 and archived_at is null",
+      [c.organization_id, canal],
     )
   ).rows[0];
   if (!channel) throw new ProspectingError("Conexão de saída indisponível.");
@@ -173,15 +184,23 @@ export async function sendNextCandidate(
     );
     return;
   }
-  // Count attempts, including failures/unknown delivery: a timeout must not release quota.
+  // TETO, INTERVALO E AQUECIMENTO SÃO DESTE NÚMERO (issue #3896).
+  //
+  // Antes a contagem era da ORGANIZAÇÃO inteira: com duas campanhas em números
+  // diferentes rodando, as duas dividiam as mesmas 50 abordagens do dia e o
+  // MESMO intervalo mínimo — dois números valendo o de um só, que é
+  // exatamente a queixa do pedido. Agora a chave é o `channel_session_id` da
+  // campanha do candidato, e não a campanha: uma campanha PAUSADA no mesmo
+  // número já queimou tentativas daquele número nas últimas 24 h, e essas
+  // contam para o aquecimento dele.
   const { rows: counts } = await db.query<{
     campaign: number;
     total: number;
     retry_at: Date | null;
     last_attempt: Date | null;
   }>(
-    "select count(*) filter(where campaign_id=$2)::int as campaign,count(*)::int as total,max(attempted_at) as last_attempt,min(attempted_at)+interval '24 hours' as retry_at from prospecting_candidates where organization_id=$1 and attempted_at>now()-interval '24 hours'",
-    [c.organization_id, c.id],
+    "select count(*) filter(where p.campaign_id=$2)::int as campaign,count(*)::int as total,max(p.attempted_at) as last_attempt,min(p.attempted_at)+interval '24 hours' as retry_at from prospecting_candidates p join prospecting_campaigns pc on pc.organization_id=p.organization_id and pc.id=p.campaign_id where p.organization_id=$1 and pc.channel_session_id=$3 and p.attempted_at>now()-interval '24 hours'",
+    [c.organization_id, c.id, canal],
   );
   const count = counts[0]!;
   // O TETO DO WARM-UP DESTA ESTEIRA. Os degraus da casa (20 no primeiro dia)
@@ -235,7 +254,7 @@ export async function sendNextCandidate(
   // negócio nem conversa para trás — que é exatamente o que o modo `on_send` quer evitar.
   const preflight = await decidirPreGoLiveDoCanalViaSupabase(admin, {
     organizationId: c.organization_id,
-    channelSessionId: cfg.channel_session_id,
+    channelSessionId: canal,
     contactPhoneNumber: queued.phone ?? "",
   });
   if (!preflight.permite)
@@ -287,7 +306,7 @@ export async function sendNextCandidate(
       ],
     );
     // Reserve the shared channel budget before the external effect, including uncertain attempts.
-    await recordSend(db, c.organization_id, cfg.channel_session_id, now);
+    await recordSend(db, c.organization_id, canal, now);
     await db.query("commit");
   } catch (error) {
     await db.query("rollback");
@@ -593,7 +612,7 @@ export async function sendNextCandidate(
         contact_id: p.contact_id,
         conversation_id: p.conversation_id,
         agent_id: cfg.agent_id,
-        channel_session_id: cfg.channel_session_id,
+        channel_session_id: canal,
         sent,
         // Bolhas FÍSICAS confirmadas / bolhas em que o texto foi fatiado.
         bubbles_sent: entregues,
@@ -741,112 +760,129 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requ
         }
         // (Nada de fetch de site aqui dentro: a verificação e a prévia são do
         // `prepararCandidatos`, depois deste bloco e fora do bloqueio.)
-        const c = (
+        // TODAS as campanhas `running` da organização, em ordem determinística
+        // (#3896). Antes era `.rows[0]` SEM `order by`: com duas campanhas em
+        // números diferentes, só UMA enviava por rodada — e qual delas não era
+        // determinístico. O volume do segundo número ficava parado sem ninguém
+        // ver, e a escolha mudava de rodada para rodada.
+        const rodando = (
           await db.query<Campaign>(
-            "select * from prospecting_campaigns where organization_id=$1 and status='running'",
+            "select * from prospecting_campaigns where organization_id=$1 and status='running' order by next_send_at,id",
             [org],
           )
-        ).rows[0];
-        if (c) {
+        ).rows;
+        for (const escolhida of rodando) {
+          // RELÊ A CAMPANHA ANTES DE ENVIAR. Entre a seleção e a vez dela, o
+          // operador pode ter pausado — e enviar com a linha velha seria o
+          // envio que ninguém pediu. O claim do candidato (`status='sending'`
+          // dentro da transação) continua sendo a garantia contra duplicar
+          // depois de um restart; esta leitura cobre o intervalo ANTERIOR.
+          const c = (
+            await db.query<Campaign>(
+              "select * from prospecting_campaigns where organization_id=$1 and status='running' and id=$2",
+              [org, escolhida.id],
+            )
+          ).rows[0];
+          if (!c) continue;
           try {
             await sendNextCandidate(pool, db, admin, c);
           } catch (error) {
-            // Organização parada entre a escolha do tick e o envio (a porta de
-            // saída lança `OrgNaoOperanteError`): não é falha da campanha nem do
-            // candidato. Pausar deixaria a lista parada DEPOIS da reativação,
-            // esperando alguém retomar à mão. Ela segue `running`; o filtro do
-            // tick (`idsDeOrgsParadas`) a deixa de fora até a org voltar. O
-            // `return` pula o carimbo de `updated_at` e a contagem: nesta rodada
-            // a org não devia nem estar aqui.
-            if (error instanceof OrgNaoOperanteError) {
-              logger.info("[prospecting] organização parada no envio; a campanha segue", {
-                organization_id: org,
-                campaign_id: c.id,
-              });
-              return;
-            }
-            // DE QUEM É A FALHA decide se a fila para.
-            //
-            // Antes, QUALQUER exceção pausava a campanha inteira: um número
-            // inválido numa lista de mil, um contato que virou bloqueado entre a
-            // busca e o envio, uma instabilidade de um segundo no provedor — e a
-            // lista só voltava se alguém abrisse a tela e retomasse à mão. É o
-            // oposto do que a casa faz em todo lugar: item ruim marca o ITEM.
-            const doCandidato =
-              error instanceof ProspectingError && error.escopo === "candidato";
-            const motivo =
-              error instanceof ProspectingError
-                ? error.message
-                : "Falha inesperada no envio. Confira o histórico antes de retomar.";
-
-            // TERCEIRO CASO, e o único dos três que NÃO é falha: a conexão saiu
-            // de `WORKING` por instantes (reconexão). Antes ele caía no MESMO
-            // `else` da pausa, e a campanha ia para `paused` no instante exato
-            // da queda — a sessão voltava a `WORKING` em segundos e a lista
-            // seguia parada esperando alguém retomar à mão (issue #3073).
-            //
-            // Aqui a fila ESPERA, pelo mesmo mecanismo que ela já usa para
-            // janela fechada, teto diário e ritmo: `next_send_at`. Nenhum
-            // candidato foi tentado (a checagem do canal vem antes de
-            // `attempted_at`), então não há quota queimada, nem candidato a
-            // marcar, nem erro a gravar na campanha — a lista não perdeu nada.
-            if (error instanceof CanalReconectandoError) {
-              // O TETO (issue #3073): esperar o canal voltar TEM LIMITE. Passado
-              // `TETO_DO_ADIAMENTO_MS` desde o primeiro adiamento desta espera
-              // (`c.channel_down_since`), a "reconexão" já não é um
-              // soluço: a campanha PAUSA com a recusa de canal DESCONECTADO — a
-              // mesma frase do `FAILED` —, em vez de seguir "Ativa" sem enviar e
-              // sem aviso para sempre. Pausar deixa o motivo no cartão e volta
-              // num clique; seguir ativa não diz nada a ninguém.
-              const desde = c.channel_down_since
-                ? new Date(c.channel_down_since).getTime()
-                : null;
-              if (desde !== null && Date.now() - desde >= TETO_DO_ADIAMENTO_MS) {
-                await db.query(
-                  "update prospecting_campaigns set status='paused',error=$3,channel_down_since=null,updated_at=now() where organization_id=$1 and id=$2",
-                  [org, c.id, MSG_CANAL_DESCONECTADO],
-                );
-                logger.warn("[prospecting] reconexão além do teto; a campanha foi pausada", {
+              // Organização parada entre a escolha do tick e o envio (a porta de
+              // saída lança `OrgNaoOperanteError`): não é falha da campanha nem do
+              // candidato. Pausar deixaria a lista parada DEPOIS da reativação,
+              // esperando alguém retomar à mão. Ela segue `running`; o filtro do
+              // tick (`idsDeOrgsParadas`) a deixa de fora até a org voltar. O
+              // `return` pula o carimbo de `updated_at` e a contagem: nesta rodada
+              // a org não devia nem estar aqui.
+              if (error instanceof OrgNaoOperanteError) {
+                logger.info("[prospecting] organização parada no envio; a campanha segue", {
                   organization_id: org,
                   campaign_id: c.id,
-                  esperando_desde: c.channel_down_since,
-                  teto_ms: TETO_DO_ADIAMENTO_MS,
+                });
+                return;
+              }
+              // DE QUEM É A FALHA decide se a fila para.
+              //
+              // Antes, QUALQUER exceção pausava a campanha inteira: um número
+              // inválido numa lista de mil, um contato que virou bloqueado entre a
+              // busca e o envio, uma instabilidade de um segundo no provedor — e a
+              // lista só voltava se alguém abrisse a tela e retomasse à mão. É o
+              // oposto do que a casa faz em todo lugar: item ruim marca o ITEM.
+              const doCandidato =
+                error instanceof ProspectingError && error.escopo === "candidato";
+              const motivo =
+                error instanceof ProspectingError
+                  ? error.message
+                  : "Falha inesperada no envio. Confira o histórico antes de retomar.";
+
+              // TERCEIRO CASO, e o único dos três que NÃO é falha: a conexão saiu
+              // de `WORKING` por instantes (reconexão). Antes ele caía no MESMO
+              // `else` da pausa, e a campanha ia para `paused` no instante exato
+              // da queda — a sessão voltava a `WORKING` em segundos e a lista
+              // seguia parada esperando alguém retomar à mão (issue #3073).
+              //
+              // Aqui a fila ESPERA, pelo mesmo mecanismo que ela já usa para
+              // janela fechada, teto diário e ritmo: `next_send_at`. Nenhum
+              // candidato foi tentado (a checagem do canal vem antes de
+              // `attempted_at`), então não há quota queimada, nem candidato a
+              // marcar, nem erro a gravar na campanha — a lista não perdeu nada.
+              if (error instanceof CanalReconectandoError) {
+                // O TETO (issue #3073): esperar o canal voltar TEM LIMITE. Passado
+                // `TETO_DO_ADIAMENTO_MS` desde o primeiro adiamento desta espera
+                // (`c.channel_down_since`), a "reconexão" já não é um
+                // soluço: a campanha PAUSA com a recusa de canal DESCONECTADO — a
+                // mesma frase do `FAILED` —, em vez de seguir "Ativa" sem enviar e
+                // sem aviso para sempre. Pausar deixa o motivo no cartão e volta
+                // num clique; seguir ativa não diz nada a ninguém.
+                const desde = c.channel_down_since
+                  ? new Date(c.channel_down_since).getTime()
+                  : null;
+                if (desde !== null && Date.now() - desde >= TETO_DO_ADIAMENTO_MS) {
+                  await db.query(
+                    "update prospecting_campaigns set status='paused',error=$3,channel_down_since=null,updated_at=now() where organization_id=$1 and id=$2",
+                    [org, c.id, MSG_CANAL_DESCONECTADO],
+                  );
+                  logger.warn("[prospecting] reconexão além do teto; a campanha foi pausada", {
+                    organization_id: org,
+                    campaign_id: c.id,
+                    esperando_desde: c.channel_down_since,
+                    teto_ms: TETO_DO_ADIAMENTO_MS,
+                  });
+                } else {
+                  await db.query(
+                    // `greatest`, como a retomada: a vaga já agendada (com o jitter da
+                    // esteira fria) não é ANTECIPADA para o passo curto do adiamento.
+                    "update prospecting_campaigns set next_send_at=greatest(next_send_at,$3),channel_down_since=coalesce(channel_down_since,now()),updated_at=now() where organization_id=$1 and id=$2",
+                    [org, c.id, new Date(Date.now() + error.retomarEmMs)],
+                  );
+                  logger.info("[prospecting] conexão reconectando; o envio foi adiado e a campanha segue", {
+                    organization_id: org,
+                    campaign_id: c.id,
+                    error: error.message,
+                    retomar_em_ms: error.retomarEmMs,
+                  });
+                }
+              } else if (doCandidato) {
+                // Marca o candidato e SEGUE: a próxima rodada pega o próximo.
+                // `attempted_at` já foi gravado antes do envio, então ele não
+                // volta para a fila sozinho.
+                await db.query(
+                  "update prospecting_candidates set status='failed',error=$3,updated_at=now() where organization_id=$1 and campaign_id=$2 and status='sending'",
+                  [org, c.id, motivo],
+                );
+                logger.warn("[prospecting] candidato falhou; a campanha segue", {
+                  organization_id: org,
+                  campaign_id: c.id,
+                  error: motivo,
                 });
               } else {
+                // Vale para todos: pausar é o certo, e o erro fica na campanha
+                // para a tela explicar a quem for retomar.
                 await db.query(
-                  // `greatest`, como a retomada: a vaga já agendada (com o jitter da
-                  // esteira fria) não é ANTECIPADA para o passo curto do adiamento.
-                  "update prospecting_campaigns set next_send_at=greatest(next_send_at,$3),channel_down_since=coalesce(channel_down_since,now()),updated_at=now() where organization_id=$1 and id=$2",
-                  [org, c.id, new Date(Date.now() + error.retomarEmMs)],
+                  "update prospecting_campaigns set status='paused',error=$3,updated_at=now() where organization_id=$1 and id=$2",
+                  [org, c.id, motivo],
                 );
-                logger.info("[prospecting] conexão reconectando; o envio foi adiado e a campanha segue", {
-                  organization_id: org,
-                  campaign_id: c.id,
-                  error: error.message,
-                  retomar_em_ms: error.retomarEmMs,
-                });
               }
-            } else if (doCandidato) {
-              // Marca o candidato e SEGUE: a próxima rodada pega o próximo.
-              // `attempted_at` já foi gravado antes do envio, então ele não
-              // volta para a fila sozinho.
-              await db.query(
-                "update prospecting_candidates set status='failed',error=$3,updated_at=now() where organization_id=$1 and campaign_id=$2 and status='sending'",
-                [org, c.id, motivo],
-              );
-              logger.warn("[prospecting] candidato falhou; a campanha segue", {
-                organization_id: org,
-                campaign_id: c.id,
-                error: motivo,
-              });
-            } else {
-              // Vale para todos: pausar é o certo, e o erro fica na campanha
-              // para a tela explicar a quem for retomar.
-              await db.query(
-                "update prospecting_campaigns set status='paused',error=$3,updated_at=now() where organization_id=$1 and id=$2",
-                [org, c.id, motivo],
-              );
-            }
           }
         }
         await db.query(
