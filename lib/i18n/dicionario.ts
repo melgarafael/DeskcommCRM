@@ -868,6 +868,18 @@ export const DICIONARIO: Traducoes = {
   "Desligado, arrastar um negócio perdido ou ganho para uma etapa aberta reabre o mesmo negócio. Ligado, o encerrado fica como está e o quadro oferece criar uma nova tentativa com o mesmo contato.": {
     es: "Desactivado, arrastrar un negocio perdido o ganado a una etapa abierta reabre el mismo negocio. Activado, el cerrado queda como está y el tablero ofrece crear un nuevo intento con el mismo contacto.",
   },
+  "Negócio perdido reaberto": { es: "Negocio perdido reabierto" },
+  "Reabrir o negócio perdido quando o contato volta a escrever": {
+    es: "Reabrir el negocio perdido cuando el contacto vuelve a escribir",
+  },
+  "Reabrir o negócio perdido há menos de": { es: "Reabrir el negocio perdido hace menos de" },
+  "Dias para reabrir o negócio perdido": { es: "Días para reabrir el negocio perdido" },
+  "Escolha de 1 a 3650 dias para reabrir o negócio perdido quando o contato volta a escrever.": {
+    es: "Elige de 1 a 3650 días para reabrir el negocio perdido cuando el contacto vuelve a escribir.",
+  },
+  "Ligado, a mensagem de quem tem um negócio perdido dentro dessa janela reabre o MESMO card, com descrição, campos e motivo da perda intactos — nada é copiado nem fundido. Fora da janela, ou desligado, a conversa abre um negócio novo como hoje.": {
+    es: "Activado, el mensaje de quien tiene un negocio perdido dentro de esa ventana reabre el MISMO negocio, con descripción, campos y motivo de la pérdida intactos — nada se copia ni se fusiona. Fuera de la ventana, o desactivado, la conversación abre un negocio nuevo como hoy.",
+  },
   "Abrir comanda ao ganhar um negócio neste funil": {
     es: "Abrir orden de servicio al ganar un negocio en este embudo",
   },
