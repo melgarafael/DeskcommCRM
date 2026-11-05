@@ -30,6 +30,8 @@ vi.mock("@/hooks/i18n/useT", () => ({
 
 afterEach(cleanup);
 
+const ETAPA_FECHAMENTO = "77777777-7777-4777-8777-777777777777";
+
 const CAMPOS: CustomFieldDef[] = [
   { key: "tipo_servico", label: "Tipo de serviço", type: "text" },
   {
@@ -98,6 +100,83 @@ describe("CustomFieldsEditor — campos com mostrar_quando", () => {
       />,
     );
     expect(screen.getByLabelText("Segmento")).toBeTruthy();
+  });
+});
+
+describe("CustomFieldsEditor — o campo escondido que a ETAPA exige (#3036)", () => {
+  /**
+   * A composição das duas réguas na TELA: a condição manda esconder, a etapa
+   * manda cobrar. Nenhuma das duas some, e a pessoa não pode levar um 422 por
+   * um campo que não vê — por isso o campo aparece com a frase que explica.
+   */
+  const CAMPOS_COM_ETAPA: CustomFieldDef[] = [
+    { key: "tipo_cliente", label: "Tipo de cliente", type: "text" },
+    {
+      key: "condicao_pagamento",
+      label: "Condição de pagamento",
+      type: "text",
+      mostrar_quando: { campo: "tipo_cliente", operador: "igual", valor: "PJ" },
+      obrigatorio_em: { etapas: [ETAPA_FECHAMENTO] },
+    },
+  ];
+
+  it("sem a lista do destino, o campo escondido continua fora da tela (comportamento de hoje)", () => {
+    render(
+      <CustomFieldsEditor
+        fields={CAMPOS_COM_ETAPA}
+        value={{ tipo_cliente: "PF" }}
+        onChange={vi.fn()}
+        mode="lead"
+      />,
+    );
+
+    expect(screen.queryByLabelText("Condição de pagamento")).toBeNull();
+  });
+
+  it("escondido pela condição e exigido pela etapa: aparece COM a explicação", () => {
+    render(
+      <CustomFieldsEditor
+        fields={CAMPOS_COM_ETAPA}
+        value={{ tipo_cliente: "PF" }}
+        onChange={vi.fn()}
+        mode="lead"
+        exigidosNoDestino={new Set(["condicao_pagamento"])}
+      />,
+    );
+
+    expect(screen.getByLabelText("Condição de pagamento")).toBeTruthy();
+    expect(
+      screen.getByText("Esta etapa exige o campo, mesmo que a condição de exibição o esconda."),
+    ).toBeTruthy();
+  });
+
+  it("trocar o campo de origem tira a explicação na hora — a condição passou a valer", () => {
+    function Wrapper() {
+      const [valor, setValor] = useState<Record<string, unknown>>({ tipo_cliente: "PF" });
+      return (
+        <CustomFieldsEditor
+          fields={CAMPOS_COM_ETAPA}
+          value={valor}
+          onChange={setValor}
+          mode="lead"
+          exigidosNoDestino={new Set(["condicao_pagamento"])}
+        />
+      );
+    }
+    render(<Wrapper />);
+
+    // PF: a frase está lá porque a etapa venceu a condição.
+    expect(
+      screen.getByText("Esta etapa exige o campo, mesmo que a condição de exibição o esconda."),
+    ).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Tipo de cliente"), { target: { value: "PJ" } });
+
+    // PJ: o campo aparece pela condição, e a frase sai — não há mais conflito.
+    expect(screen.getByLabelText("Condição de pagamento")).toBeTruthy();
+    expect(
+      screen.queryByText("Esta etapa exige o campo, mesmo que a condição de exibição o esconda."),
+    ).toBeNull();
   });
 });
 

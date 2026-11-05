@@ -30,6 +30,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { buscarOpcoes, valorCanonico } from "@/lib/leads/campos-pesquisaveis";
 import { cn } from "@/lib/utils";
 import { camposVisiveis, type MostrarQuando } from "@/lib/schemas/mostrar-quando";
+import type { CustomFieldDef as DefinicaoDoFunil } from "@/lib/schemas/settings";
 import { mensagemDoCampo } from "@/lib/leads/padrao-do-campo";
 
 import { FileUploadCustomField } from "@/components/kanban/FileUploadCustomField";
@@ -64,6 +65,13 @@ export interface CustomFieldDef {
    * e viaja no save — esconder não é limpar.
    */
   mostrar_quando?: MostrarQuando;
+  /**
+   * A exigência por ETAPA (#1536), que o dossiê lê para a composição da #3036:
+   * um campo escondido pela condição e exigido pela etapa continua na tela, com
+   * a frase que explica. Aqui a definição vem do schema do funil — o editor não
+   * reimplementa a regra, só carrega o que ela declarou.
+   */
+  obrigatorio_em?: DefinicaoDoFunil["obrigatorio_em"];
   /** O FORMATO do valor (#2730) — ver `lib/leads/padrao-do-campo`. */
   padrao?: string;
   /** A frase do dono para quem digitar fora do formato (#2730). */
@@ -88,9 +96,29 @@ interface Props {
   disabled?: boolean;
   className?: string;
   leadId?: string;
+  /**
+   * As chaves que o DESTINO desta ficha exige (issue #3036) — a etapa em que o
+   * negócio está, ou nada quando não há etapa (ficha do contato, criação).
+   *
+   * Serve a um caso só, e é o que impede "esconder" de virar "travar": campo
+   * que a condição esconde E a etapa exige continua na tela, com a frase que
+   * diz por quê. Fora desse caso esta lista não muda nada — quem não a passa
+   * (todos os chamadores de hoje, menos o dossiê do negócio) vê exatamente a
+   * mesma tela.
+   */
+  exigidosNoDestino?: ReadonlySet<string>;
 }
 
-export function CustomFieldsEditor({ fields, value, onChange, mode, disabled, className, leadId }: Props) {
+export function CustomFieldsEditor({
+  fields,
+  value,
+  onChange,
+  mode,
+  disabled,
+  className,
+  leadId,
+  exigidosNoDestino,
+}: Props) {
   const t = useT();
   const [rascunhosDeMoeda, setRascunhosDeMoeda] = useState<Record<string, string>>({});
   // O rascunho do `searchable_select`: enquanto a pessoa digita, o input mostra
@@ -158,11 +186,30 @@ export function CustomFieldsEditor({ fields, value, onChange, mode, disabled, cl
    */
   const visiveis = camposVisiveis(fields, value);
 
+  /**
+   * A OUTRA metade da composição (#3036): campo que a CONDIÇÃO esconde e o
+   * DESTINO exige.
+   *
+   * A etapa vence — o servidor cobra o valor mesmo com o campo escondido — e
+   * por isso ele precisa estar na tela, com a frase que explica por que está
+   * ali. Deixá-lo fora faria a pessoa levar um 422 por um campo que ela não vê:
+   * exatamente o "travar sem explicação" que a régua evita.
+   *
+   * `value` continua intocado: quem entrar nesta lista só ganha um input a
+   * mais; nada é gravado nem apagado por aparecer.
+   */
+  const chavesVisiveis = new Set(visiveis.map((campo) => campo.key));
+  const naTela = fields.filter(
+    (campo) => chavesVisiveis.has(campo.key) || (exigidosNoDestino?.has(campo.key) ?? false),
+  );
+
   return (
     <div className={cn("grid grid-cols-1 gap-4 md:grid-cols-2", className)}>
-      {visiveis.map((f) => {
+      {naTela.map((f) => {
         const v = value[f.key];
         const id = `cf-${f.key}`;
+        /** Escondido pela condição, exigido pelo destino: a tela explica. */
+        const exigidoComCondicao = !chavesVisiveis.has(f.key);
 
         // ── O PADRÃO DO CAMPO (#2730) ──────────────────────────────────────
         //
@@ -188,6 +235,11 @@ export function CustomFieldsEditor({ fields, value, onChange, mode, disabled, cl
               {f.label}
               {f.required && <span className="ml-1 text-error-fg">*</span>}
             </Label>
+            {exigidoComCondicao && (
+              <p className="text-xs text-muted-foreground" data-exigido-pela-etapa="true">
+                {t("Esta etapa exige o campo, mesmo que a condição de exibição o esconda.")}
+              </p>
+            )}
             {textoDoErro && (
               <p id={`${id}-erro`} role="alert" className="text-sm text-error-fg">
                 {textoDoErro}

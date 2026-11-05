@@ -21,7 +21,7 @@
  * é por isso que trocar o gatilho não destrói dado, e reverter o gatilho
  * traz o valor de volta à tela.
  *
- * ─── Os três operadores, os mesmos que a issue pede ───────────────────────
+ * ─── Os operadores ────────────────────────────────────────────────────────
  *
  *   - `igual`     → o valor gravado é o esperado (caixa e acento não mudam
  *                   nada, e número casa com número);
@@ -29,7 +29,8 @@
  *                   multiselect traz o item;
  *   - `maior_que` → número maior; `0` e `false` são RESPOSTA, não ausência —
  *                   a mesma régua de `valorPreenchido` em
- *                   `lib/leads/campos-exigidos.ts`.
+ *                   `lib/leads/campos-exigidos.ts`;
+ *   - `em`        → o valor gravado está no CONJUNTO declarado (#3036).
  *
  * Sem valor no campo que manda, a condição ainda não aconteceu: o condicional
  * fica escondido.
@@ -44,8 +45,16 @@
  */
 import { z } from "zod";
 
-/** Os operadores da issue #2728 — e o único vocabulário que o editor oferece. */
-export const OPERADORES_DE_MOSTRA = ["igual", "contem", "maior_que"] as const;
+/**
+ * Os operadores da condição — e o único vocabulário que o editor oferece.
+ *
+ * Os três primeiros vêm da #2728. `em` nasceu na #3036: a pergunta "o tipo de
+ * cliente é PJ **ou** MEI?" é um CONJUNTO de valores, e montá-la como duas
+ * condições no mesmo campo não é possível — cada campo declara uma só. Sem
+ * ele, o dono do funil repetiria o campo (ou aceitaria uma condição que casa
+ * só com metade dos casos).
+ */
+export const OPERADORES_DE_MOSTRA = ["igual", "contem", "maior_que", "em"] as const;
 export type OperadorDeMostra = (typeof OPERADORES_DE_MOSTRA)[number];
 
 /**
@@ -78,11 +87,22 @@ export const mostrarQuandoSchema = z
     campo: z.string().min(1).max(80),
     /** Forma par (a que o editor escreve). */
     operador: z.enum(OPERADORES_DE_MOSTRA).optional(),
-    valor: valorDaCondicao.optional(),
+    /**
+     * O valor — e, no operador `em`, o CONJUNTO deles (#3036). A lista vive
+     * aqui (e não só na chave `em`) porque o editor grava sempre na forma par;
+     * `condicaoDe` lê as duas.
+     */
+    valor: z.union([valorDaCondicao, z.array(valorDaCondicao).min(1).max(50)]).optional(),
     /** Forma da issue: o operador é a chave. */
     igual: valorDaCondicao.optional(),
     contem: valorDaCondicao.optional(),
     maior_que: valorDaCondicao.optional(),
+    /**
+     * O CONJUNTO de valores aceitos (#3036): casa quando o valor gravado é
+     * qualquer um da lista. Lista vazia não é valor — é a condição meio
+     * montada, e `presente()` já a trata como ausência.
+     */
+    em: z.array(valorDaCondicao).min(1).max(50).optional(),
   })
   .superRefine((condicao, ctx) => {
     const emChave = OPERADORES_DE_MOSTRA.filter((op) => condicao[op] !== undefined);
@@ -174,6 +194,17 @@ function condicaoDe(bruta: unknown): CondicaoLida | null {
 function testa(condicao: CondicaoLida, gravado: unknown): boolean {
   const { operador, valor } = condicao;
 
+  if (operador === "em") {
+    // O CONJUNTO (#3036): o gravado é um dos valores da lista. Multiselect
+    // responde "algum item da lista está no conjunto?" — a mesma leitura do
+    // `contem`, que é o que a pessoa quer dizer ao marcar dois tipos.
+    const alvos = (Array.isArray(valor) ? valor : [valor]).map(normalizar);
+    if (Array.isArray(gravado)) {
+      return gravado.some((item) => alvos.includes(normalizar(item)));
+    }
+    return alvos.includes(normalizar(gravado));
+  }
+
   if (operador === "maior_que") {
     const a = numeroSePossivel(gravado);
     const b = numeroSePossivel(valor);
@@ -201,20 +232,36 @@ function testa(condicao: CondicaoLida, gravado: unknown): boolean {
 }
 
 /**
+ * A CONDIÇÃO CASOU com os valores gravados? — a pergunta da OBRIGATORIEDADE
+ * condicional (#3036), e a diferença que a separa de `campoVisivel`.
+ *
+ * `campoVisivel` responde "mostrar?" e por isso devolve `true` quando não há
+ * condição nenhuma (fail-open). Aqui a ausência de condição é o contrário:
+ * `false` — um campo sem `exigir_quando` não é exigido por condição nenhuma, e
+ * responder `true` obrigaria TODO campo do funil.
+ *
+ * Condição ilegível também devolve `false`: exigir por lixo no banco travaria
+ * a escrita por uma regra que ninguém consegue ler — a visibilidade é que é
+ * fail-open, porque esconder dado é pior do que mostrar um campo a mais.
+ */
+export function condicaoCasa(bruta: unknown, valores: Valores): boolean {
+  const condicao = condicaoDe(bruta);
+  if (!condicao) return false;
+  const gravado = (valores ?? {})[condicao.campo];
+  if (!presente(gravado)) return false;
+  return testa(condicao, gravado);
+}
+
+/**
  * O campo aparece? — a pergunta única de quem renderiza.
  *
  * `bruta` é `unknown` de propósito: a condição vem de jsonb, e a borda que
  * garante o formato é o `mostrarQuandoSchema` na gravação, não esta leitura.
  */
 export function campoVisivel(bruta: unknown, valores: Valores): boolean {
-  const condicao = condicaoDe(bruta);
   // Sem condição (ou condição ilegível) = mostrar: o funil de sempre, byte a byte.
-  if (!condicao) return true;
-
-  const gravado = (valores ?? {})[condicao.campo];
-  if (!presente(gravado)) return false;
-
-  return testa(condicao, gravado);
+  if (!condicaoDe(bruta)) return true;
+  return condicaoCasa(bruta, valores);
 }
 
 /**

@@ -40,6 +40,12 @@ function bancoFalso(
   stageExtra: Record<string, unknown> = {},
   /** `status` do lead (issue #1538); o padrão é aberto. */
   statusDoLead = "open",
+  /**
+   * Os valores já gravados no negócio (issue #3036): é o que a condição de
+   * obrigatoriedade lê para decidir se cobra. Padrão vazio — o caminho de todos
+   * os casos que não falam de condição.
+   */
+  camposDoLead: Record<string, unknown> = {},
 ) {
   const banco = { updatedAt: CARREGADO, stageId: STAGE_A, ultimoPatch: null as Record<string, unknown> | null };
   vi.mocked(emitLeadActivity).mockImplementation(async () => {
@@ -55,7 +61,7 @@ function bancoFalso(
     contact_id: null,
     status: statusDoLead,
     updated_at: banco.updatedAt,
-    custom_fields: {} as Record<string, unknown>,
+    custom_fields: camposDoLead,
     won_reason: null,
   });
 
@@ -367,6 +373,79 @@ describe("POST /move num funil que retoma como novo negócio", () => {
 
     expect(response.status).toBe(200);
     expect(falso.banco.stageId).toBe(STAGE_B);
+  });
+});
+
+// ── OBRIGATORIEDADE POR VALOR (issue #3036) ──────────────────────────────────
+//
+// A prova pela PORTA DA API do caso real da issue: o funil exige a condição de
+// pagamento quando "Tipo de cliente" = PJ. PJ sem o valor é 422 (e nada é
+// gravado); PF passa direto — mesmo destino, mesmo funil, só o valor do campo
+// de origem muda.
+describe("POST /api/v1/leads/[id]/move — exigir_quando (#3036)", () => {
+  const FUNIL_POR_TIPO = {
+    fields: [
+      {
+        key: "tipo_cliente",
+        label: "Tipo de cliente",
+        type: "select",
+        options: [
+          { value: "PJ", label: "Pessoa jurídica" },
+          { value: "PF", label: "Pessoa física" },
+        ],
+      },
+      {
+        key: "condicao_pagamento",
+        label: "Condição de pagamento",
+        type: "text",
+        obrigatorio_em: { etapas: [STAGE_B] },
+        exigir_quando: { campo: "tipo_cliente", operador: "igual", valor: "PJ" },
+      },
+    ],
+  };
+
+  const mover = async (falso: ReturnType<typeof bancoFalso>) => {
+    vi.mocked(createClient).mockResolvedValue(falso as never);
+    const { POST } = await import("./route");
+    return POST(
+      request({ stage_id: STAGE_B, position_in_stage: 1500, expected_updated_at: CARREGADO }),
+      { params: Promise.resolve({ id: LEAD_ID }) },
+    );
+  };
+
+  it("PJ sem a condição de pagamento: 422 com faltando, e a etapa NÃO muda", async () => {
+    const falso = bancoFalso(FUNIL_POR_TIPO, {}, "open", { tipo_cliente: "PJ" });
+    const response = await mover(falso);
+
+    expect(response.status).toBe(422);
+    const corpo = (await response.json()) as {
+      error?: { code?: string; details?: { faltando?: { chave: string }[] } };
+    };
+    expect(corpo.error?.code).toBe("required_fields_missing");
+    expect(corpo.error?.details?.faltando?.map((c) => c.chave)).toEqual(["condicao_pagamento"]);
+    expect(falso.banco.stageId).toBe(STAGE_A);
+    expect(falso.banco.ultimoPatch).toBeNull();
+  });
+
+  it("PF no MESMO destino: move sem pedir nada", async () => {
+    const falso = bancoFalso(FUNIL_POR_TIPO, {}, "open", { tipo_cliente: "PF" });
+    const response = await mover(falso);
+
+    expect(response.status).toBe(200);
+    expect(falso.banco.stageId).toBe(STAGE_B);
+  });
+
+  it("PJ com o valor já gravado: move, e o valor continua no registro", async () => {
+    const campos = { tipo_cliente: "PJ", condicao_pagamento: "30/60/90" };
+    const falso = bancoFalso(FUNIL_POR_TIPO, {}, "open", campos);
+    const response = await mover(falso);
+
+    expect(response.status).toBe(200);
+    expect(falso.banco.stageId).toBe(STAGE_B);
+    // O move não reescreve `custom_fields`: quem apaga valor de campo escondido
+    // não é o arrasto.
+    expect(falso.banco.ultimoPatch).not.toHaveProperty("custom_fields");
+    expect(campos).toEqual({ tipo_cliente: "PJ", condicao_pagamento: "30/60/90" });
   });
 });
 
