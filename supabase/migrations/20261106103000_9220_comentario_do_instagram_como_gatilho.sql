@@ -74,3 +74,12 @@ create policy channel_comments_select
     public.fn_is_platform_admin_full()
     or organization_id in (select public.fn_user_org_ids())
   );
+
+-- As travas do modo somente leitura do suporte (migration 0274) são um `do` que
+-- enumera o catálogo — alcançam só as tabelas que existiam no instante em que
+-- rodaram. Esta tabela nasceu depois, então a instalação nova e a atualização
+-- só chegam ao MESMO catálogo se a função for chamada de novo aqui. Sem isto o
+-- `baseline-e-cadeia-chegam-ao-mesmo-schema` acusa as três `support_write_*`
+-- de um lado só (divergência real, não cosmética): a instalação nova ficaria
+-- sem a trava que impede o suporte somente-leitura de ESCREVER no comentário.
+do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;

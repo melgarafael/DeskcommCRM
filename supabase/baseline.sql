@@ -73776,5 +73776,10 @@ create policy channel_comments_select
     or organization_id in (select public.fn_user_org_ids())
   );
 
+-- As travas de suporte (0274) enumeram o catálogo: esta tabela nasceu depois da
+-- chamada que fecha o baseline, então precisa da função de novo aqui — senão a
+-- instalação nova fica sem as `support_write_*` que a atualização tem.
+do $f$ begin perform public.fn_aplicar_travas_de_suporte(); end $f$;
+
 
 notify pgrst, 'reload schema';
