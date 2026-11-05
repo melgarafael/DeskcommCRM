@@ -69217,6 +69217,50 @@ grant execute on function public.fn_extensions_set_switch(uuid,uuid,uuid,boolean
 
 notify pgrst, 'reload schema';
 
+-- ---- modulo conectado: schema do token do módulo (migration 9117) ----
+-- Espelho idempotente da 9117 (racional completo no arquivo da migration): `api_tokens` ganha
+-- `extension_installation_id` e `module_slug`, `created_by` aceita nulo (CHECK de dono + índice único
+-- parcial: um token vivo de módulo por organização e instalação), e duas tabelas só de servidor, sem
+-- policy: `extension_installation_secrets` (segredo cifrado) e `extension_token_nonces` (anti-repetição).
+
+alter table public.api_tokens
+  add column if not exists extension_installation_id uuid references public.extension_installations(id),
+  add column if not exists module_slug text;
+
+alter table public.api_tokens alter column created_by drop not null;
+
+alter table public.api_tokens drop constraint if exists api_tokens_dono_check;
+alter table public.api_tokens add constraint api_tokens_dono_check
+  check (created_by is not null or extension_installation_id is not null);
+
+create unique index if not exists api_tokens_modulo_vivo_idx
+  on public.api_tokens (organization_id, extension_installation_id)
+  where revoked_at is null and extension_installation_id is not null;
+
+create table if not exists public.extension_installation_secrets (
+  installation_id uuid primary key references public.extension_installations(id) on delete cascade,
+  ciphertext text not null,
+  rotated_at timestamptz not null default now(),
+  rotated_by uuid references auth.users(id) on delete set null
+);
+
+create table if not exists public.extension_token_nonces (
+  installation_id uuid not null references public.extension_installations(id) on delete cascade,
+  nonce text not null,
+  seen_at timestamptz not null default now(),
+  primary key (installation_id, nonce)
+);
+create index if not exists extension_token_nonces_seen_at on public.extension_token_nonces(seen_at);
+
+alter table public.extension_installation_secrets enable row level security;
+alter table public.extension_token_nonces enable row level security;
+revoke all on public.extension_installation_secrets, public.extension_token_nonces
+  from public, anon, authenticated, service_role;
+grant select, insert, update, delete on public.extension_installation_secrets, public.extension_token_nonces
+  to service_role;
+
+notify pgrst, 'reload schema';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
