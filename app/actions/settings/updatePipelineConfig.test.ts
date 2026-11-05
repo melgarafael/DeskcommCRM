@@ -20,6 +20,9 @@ const h = vi.hoisted(() => ({
   filtrosDasRegras: [] as Array<[string, unknown]>,
   gravou: null as unknown,
   idioma: "pt-BR",
+  /** A organização da LINHA e o papel de quem salva — o caso de recusa os varia. */
+  orgDaFila: "22222222-2222-4222-8222-222222222222",
+  papel: "admin" as "admin" | "manager" | "agent" | "viewer",
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -34,7 +37,7 @@ vi.mock("@/lib/auth/server", () => ({
     support: null,
     idioma: h.idioma,
   }),
-  resolveActiveOrg: async () => ({ orgId: ORG, role: "admin" }),
+  resolveActiveOrg: async () => ({ orgId: ORG, role: h.papel }),
   mfaEmDivida: async () => false,
 }));
 vi.mock("@/lib/supabase/server", () => ({
@@ -45,7 +48,7 @@ vi.mock("@/lib/supabase/server", () => ({
         cadeia.select = () => cadeia;
         cadeia.eq = () => cadeia;
         cadeia.maybeSingle = async () => ({
-          data: { vocabulary: {}, settings: h.settings, organization_id: ORG },
+          data: { vocabulary: {}, settings: h.settings, organization_id: h.orgDaFila },
           error: null,
         });
         cadeia.update = (payload: unknown) => {
@@ -97,6 +100,8 @@ beforeEach(() => {
   h.filtrosDasRegras = [];
   h.gravou = null;
   h.idioma = "pt-BR";
+  h.orgDaFila = ORG;
+  h.papel = "admin";
 });
 
 describe("updatePipelineConfig — campo que vira Contato e o gatilho por data", () => {
@@ -433,6 +438,71 @@ describe("updatePipelineConfig — a janela do negócio perdido que volta (#4076
     expect(await updatePipelineConfig(FUNIL, { reabrir_perdido_dias: 3651 })).toMatchObject({
       ok: false,
       error: "validation_failed",
+    });
+
+    expect(h.gravou).toBeNull();
+  });
+});
+
+/**
+ * A ORDEM DOS CAMPOS PERSONALIZADOS (#4043).
+ *
+ * A ordem que o card, o dossiê e o formulário de novo negócio mostram É a ordem
+ * do array `settings.fields`, e é esta action — a ÚNICA porta de escrita do
+ * `settings` — que a grava: a tela manda a lista inteira, já reordenada. A
+ * alternativa (uma chave `field_order` ao lado de `fields`) poria a ordem em
+ * dois lugares que divergem na primeira mudança, e o editor já mandava a lista
+ * inteira antes desta issue.
+ *
+ * O que se prova: a ordem RECEBIDA é a gravada (nada reordena por conta
+ * própria), a lista sai inteira (nada truncado), chave repetida é recusada, e as
+ * duas recusas de sempre — outra organização e papel sem permissão — continuam
+ * valendo para esta escrita. Reordenar não toca em dado do negócio porque
+ * `crm_leads.custom_fields` é lido POR CHAVE, não por posição.
+ */
+describe("updatePipelineConfig — a ordem dos campos do funil (#4043)", () => {
+  const AEREO = { key: "aereo", label: "Aéreo", type: "text" as const };
+  const SEGURO = { key: "seguro", label: "Seguro", type: "text" as const };
+
+  it("grava a lista na ordem recebida, sem normalizar nem truncar", async () => {
+    h.settings = { fields: [NASCIMENTO_NEGOCIO], lost_reasons: ["Preço"] };
+
+    expect(await updatePipelineConfig(FUNIL, { fields: [SEGURO, AEREO] })).toEqual({ ok: true });
+
+    // As outras chaves do settings seguem intactas: reordenar manda só `fields`.
+    expect(h.gravou).toMatchObject({
+      settings: { fields: [SEGURO, AEREO], lost_reasons: ["Preço"] },
+    });
+    const gravado = (h.gravou as { settings: { fields: Array<{ key: string }> } }).settings.fields;
+    expect(gravado.map((c) => c.key)).toEqual(["seguro", "aereo"]);
+  });
+
+  it("recusa chave repetida — a lista deixaria de descrever uma ordem", async () => {
+    expect(await updatePipelineConfig(FUNIL, { fields: [AEREO, SEGURO, AEREO] })).toMatchObject({
+      ok: false,
+      error: "validation_failed",
+    });
+
+    expect(h.gravou).toBeNull();
+  });
+
+  it("outra organização continua intacta: a recusa vem antes de qualquer escrita", async () => {
+    h.orgDaFila = "99999999-9999-4999-8999-999999999999";
+
+    expect(await updatePipelineConfig(FUNIL, { fields: [SEGURO, AEREO] })).toEqual({
+      ok: false,
+      error: "forbidden_tenant",
+    });
+
+    expect(h.gravou).toBeNull();
+  });
+
+  it("papel sem permissão de editar o funil recebe recusa NOMEADA", async () => {
+    h.papel = "agent";
+
+    expect(await updatePipelineConfig(FUNIL, { fields: [SEGURO, AEREO] })).toEqual({
+      ok: false,
+      error: "forbidden_role",
     });
 
     expect(h.gravou).toBeNull();
