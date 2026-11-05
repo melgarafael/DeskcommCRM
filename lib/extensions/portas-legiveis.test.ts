@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { EXTENSION_PERMISSIONS } from "./capacidades";
-import { nomeDaPorta, portasLegiveis } from "./portas-legiveis";
+import {
+  ehAreaSensivel,
+  fraseDaPermissaoDeArea,
+  nomeDaPorta,
+  portasLegiveis,
+  type PermissaoDeArea,
+} from "./portas-legiveis";
 
 /**
  * A LISTA DE PORTAS É A ÚNICA COISA QUE A PESSOA TEM PARA DECIDIR — E ELA PRECISA ESTAR INTEIRA.
@@ -88,5 +94,33 @@ describe("as portas que a tela mostra", () => {
 
   it("lista vazia é dita como vazia, sem inventar alcance", () => {
     expect(portasLegiveis([])).toContain("Não abre nenhuma tela");
+  });
+});
+
+describe("frases do consentimento por área (módulo conectado, F3)", () => {
+  const permissoesDeArea = EXTENSION_PERMISSIONS.filter((p): p is PermissaoDeArea =>
+    p.startsWith("area."),
+  );
+
+  it("as 18 permissões de área têm frase própria, não vazia e diferente entre si", () => {
+    expect(permissoesDeArea).toHaveLength(18);
+    const frases = permissoesDeArea.map((p) => fraseDaPermissaoDeArea(p));
+    expect(frases.every((frase) => frase.length > 10)).toBe(true);
+    expect(new Set(frases).size).toBe(18);
+  });
+
+  it("só configuração e agentes de IA são sensíveis", () => {
+    const sensiveis = permissoesDeArea.filter(ehAreaSensivel).sort();
+    expect(sensiveis).toEqual([
+      "area.agentes_ia.escrita",
+      "area.agentes_ia.leitura",
+      "area.configuracao.escrita",
+      "area.configuracao.leitura",
+    ]);
+  });
+
+  it("traduz cada frase pelo tradutor recebido (literais cobertos pelo dicionário)", () => {
+    const marcada = fraseDaPermissaoDeArea("area.agenda.leitura", (texto) => `[${texto}]`);
+    expect(marcada).toBe("[Ver a agenda e os agendamentos.]");
   });
 });

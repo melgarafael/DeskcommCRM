@@ -86,6 +86,8 @@ const bindingRowSchema = z.object({
   configuration: configurationSchema,
   revision: z.number().int(),
   deactivated_by_removal_at: z.string().nullable(),
+  // Coluna da migration 9119. `default([])`: uma linha sem a coluna (leitura antiga) é "nada consentido".
+  consented_areas: z.array(z.string()).default([]),
 });
 const countRowSchema = z.object({
   installation_id: uuid,
@@ -263,7 +265,7 @@ const INSTALL_COLS =
   "id,catalog_id,artifact_id,previous_artifact_id,publisher,name,version,revision,removed_at,disabled_at";
 const ARTIFACT_COLS = "id,sha256,byte_length,manifest,document";
 const BINDING_COLS =
-  "organization_id,installation_id,enabled,configuration,revision,deactivated_by_removal_at";
+  "organization_id,installation_id,enabled,configuration,revision,deactivated_by_removal_at,consented_areas";
 
 /**
  * Leitura por lista de ids em lotes. O filtro `in` vai na URL do PostgREST; 256 uuids passam de

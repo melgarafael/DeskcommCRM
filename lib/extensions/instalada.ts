@@ -108,6 +108,7 @@ export function montarInstalada({
         revision: number;
         configuration: ExtensionConfiguration;
         deactivated_by_removal_at: string | null;
+        consented_areas?: string[];
       }
     | undefined;
   previous?: PreviousVersionView | null;
@@ -132,6 +133,7 @@ export function montarInstalada({
     removed_at: item.removed_at,
     deactivated_by_removal_at: binding?.deactivated_by_removal_at ?? null,
     disabled_at: item.disabled_at ?? null,
+    consented_areas: binding?.consented_areas ?? [],
   };
   if (!leitura?.ok) {
     const identidade = `${item.publisher}/${item.name}`;
