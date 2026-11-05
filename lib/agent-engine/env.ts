@@ -197,6 +197,21 @@ const envSchema = z.object({
   // 'disabled' injeta o desligamento no corpo das chamadas — e SÓ nas da
   // DeepSeek (a fábrica é dela; ver providers.ts).
   DEEPSEEK_THINKING: z.enum(['provider', 'disabled']).default('provider'),
+  // Pontos de cache e sessão fixa nos Claude pela OpenRouter oficial. Ligado por
+  // padrão: vazio, ausente ou `on` liga; `off` desliga. Validado AQUI para a
+  // grafia errada derrubar o boot com o nome da variável; quem lê em runtime é
+  // `createDefaultRegistry` (providers.ts), via process.env, como
+  // OPENAI_REASONING_EFFORT logo abaixo. A grafia é normalizada como a fábrica
+  // normaliza (trim + minúsculas): ` ON ` liga lá e tem de passar aqui.
+  OPENROUTER_PROMPT_CACHE: z.preprocess(
+    (v) => (typeof v === 'string' ? v.trim().toLowerCase() || undefined : v),
+    z.enum(['on', 'off']).optional(),
+  ),
+  // Esquema das ferramentas no fio: 'on' tira o `pattern` que só repete o
+  // `format` (o regex que o zod gera para uuid/data/e-mail). SEM `.default`: o
+  // default é a constante ESQUEMA_SEM_PADRAO_PADRAO (edge/llm/stable-prefix.ts),
+  // e dois defaults é como um deles fica para trás. Ausente = o de hoje.
+  LLM_TOOL_SCHEMA_SEM_PADRAO: z.enum(['on', 'off']).optional(),
   // Esforço de raciocínio das chamadas diretas à OpenAI (só modelos o*, gpt-5*,
   // gpt-6*). Opcional; validado AQUI, pela mesma função que o lê em runtime, para
   // um erro de grafia derrubar o boot com o nome da variável — e não cada turno
@@ -221,6 +236,12 @@ const envSchema = z.object({
   // Payload curado da tool get_lead_context.
   LEAD_CONTEXT_HISTORY_LIMIT: z.coerce.number().int().positive().default(20),
   LEAD_CONTEXT_MAX_TOKENS: z.coerce.number().int().positive().default(1_000),
+  // Formato do histórico na abertura do turno: `json` (o de sempre) ou `linhas`
+  // (uma linha por mensagem, ~25% menos tokens no histórico). DESLIGADO até a
+  // avaliação A/B — muda o texto que o modelo lê (ver abertura/ritual.ts). Vale
+  // para o inbound_turn e a prévia; follow-up e case_reply_turn seguem em json
+  // (cada chamador de `ritualBlocks` decide, como os blocos de compromissos e origem).
+  LEAD_CONTEXT_HISTORY_FORMAT: z.enum(['json', 'linhas']).default('json'),
   // Memória durável por contato — orçamento fixo do índice de notas.
   LEAD_NOTES_INDEX_MAX_TOKENS: z.coerce.number().int().positive().default(500),
   // Recall híbrido das notas (BM25 × vetorial × decay × MMR).
@@ -262,6 +283,11 @@ const envSchema = z.object({
   FOLLOWUP_AI_MODEL: z.string().min(1).optional(),
   // Loop do agente — teto de steps de tool-calls por run.
   AGENT_MAX_STEPS: z.coerce.number().int().positive().default(8),
+  // Parada do laço depois do envio que o modelo declara final (só inbound_turn).
+  // 'on' (padrão, depois da avaliação do runbook) = para; 'observe' = expõe o
+  // parâmetro e registra a marca no traço, sem parar; 'off' = o laço de sempre.
+  // Ver docs/runbooks/parada-apos-envio.md.
+  AGENT_STOP_AFTER_FINAL_SEND: z.enum(['off', 'observe', 'on']).default('on'),
   // Teto de mensagens FÍSICAS enviadas ao lead por turno (send_message + send_template
   // somados, bolhas incluídas) — nenhum gate de before-send limita CONTAGEM, só ritmo.
   MAX_SENDS_PER_TURN: z.coerce.number().int().positive().default(3),
