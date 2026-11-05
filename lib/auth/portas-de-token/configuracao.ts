@@ -187,10 +187,10 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   "/api/v1/message-template-groups/[id]/ordem",
 
   // automation-rules (R1). Quem autentica é a própria rota, por `resolveAuthDual`:
-  // token com `config:read` (GET) ou `config:write` (DELETE) e papel admin
-  // (`tokenRole`). `[id]` é forma de UUID. O POST de `automation-rules` e o PATCH
-  // de `[id]` seguem só de sessão (ids de ação sem conferência; `authz.org.role`
-  // na autoria) e não entram de carona: o `[id]` ganha porta pelo DELETE.
+  // token com `config:read` (GET) ou `config:write` (POST e DELETE) e papel admin
+  // (`tokenRole`). `[id]` é forma de UUID. O POST com token confere, antes de gravar, cada id que a
+  // regra carrega (`lib/automation/validar-ids-das-acoes.ts`). O PATCH de `[id]` segue só de sessão
+  // (`authz.org.role` na autoria) e não entra de carona: o `[id]` ganha porta pelo DELETE.
   "/api/v1/automation-rules",
   "/api/v1/automation-rules/[id]",
   "/api/v1/automation-rules/[id]/runs",

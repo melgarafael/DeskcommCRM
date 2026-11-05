@@ -11,8 +11,10 @@
  *    (admin; a sessão segue o portão de sempre, com `allowPlatformAdmin`, que
  *    `resolveAuthDual` não repassa).
  *
- * Ficam só de sessão (token recebe 401 do `requireRole`, sem cliente admin):
- *  - automation-rules POST: ações carregam ids de outras tabelas sem conferência.
+ *  - automation-rules POST: receita A (manager; config:write; tokenRole admin). Só o ramo do
+ *    token confere os ids que a regra carrega (`lib/automation/validar-ids-das-acoes.ts`).
+ *
+ * Fica só de sessão (token recebe 401 do `requireRole`, sem cliente admin):
  *  - automation-rules/[id] PATCH: a autoria usa `authz.org.role`.
  *
  * Por caso, sete testes: token de A alcança; token de B não alcança; sem o
@@ -81,6 +83,8 @@ const JANELA_A = "55555555-5555-4555-8555-555555555555";
 const JANELA_B = "66666666-6666-4666-8666-666666666666";
 const CANAL_A = "77777777-7777-4777-8777-777777777777";
 const CANAL_B = "88888888-8888-4888-8888-888888888888";
+const FUNIL_A = "a7a7a7a7-a7a7-4a7a-8a7a-a7a7a7a7a7a7";
+const ETAPA_A = "a8a8a8a8-a8a8-4a8a-8a8a-a8a8a8a8a8a8";
 
 /**
  * Todas as tabelas desta área têm `organization_id` no baseline
@@ -154,6 +158,8 @@ const LINHAS = {
     { id: CANAL_A, organization_id: ORG_A, archived_at: null },
     { id: CANAL_B, organization_id: ORG_B, archived_at: null },
   ],
+  crm_pipelines: [{ id: FUNIL_A, organization_id: ORG_A, settings: {} }],
+  crm_stages: [{ id: ETAPA_A, organization_id: ORG_A, pipeline_id: FUNIL_A }],
   organizations: [
     { id: ORG_A, timezone: "America/Sao_Paulo" },
     { id: ORG_B, timezone: "Europe/London" },
@@ -362,6 +368,47 @@ caso("DELETE /api/v1/automation-rules/[id]", {
   },
 });
 
+caso("POST /api/v1/automation-rules", {
+  metodo: "POST",
+  recurso: "automation_rules",
+  papel: "manager",
+  escopo: "config:write",
+  recursoDoTeto: "automation_rules",
+  chamar: (token, de) =>
+    rotaRegras.POST(
+      req("POST", "/api/v1/automation-rules", token, {
+        name: "Regra nova",
+        trigger_event: "lead.created",
+        actions: [
+          {
+            type: "send_whatsapp_message",
+            config: { channel_session_id: de === "A" ? CANAL_A : CANAL_B, template: "Oi" },
+          },
+        ],
+      }),
+    ),
+  alcanca: async (res) => {
+    expect(res.status).toBe(201);
+    const criada = linhasDaTabela(falso, "automation_rules").find((l) => l.name === "Regra nova");
+    expect(criada?.organization_id).toBe(ORG_A);
+    expect(criada?.created_by_user_id).toBeNull();
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "automation.rule_created",
+        organizationId: ORG_A,
+        actorUserId: null,
+        actorApiTokenId: TOKEN_A,
+      }),
+    );
+  },
+  // Token de B apontando para o canal de A: o validador recusa e nada é gravado.
+  naoAlcanca: async (res) => {
+    expect(res.status).toBe(422);
+    expect(linhasDaTabela(falso, "automation_rules").some((l) => l.name === "Regra nova")).toBe(false);
+    expect(audit).not.toHaveBeenCalled();
+  },
+});
+
 caso("GET /api/v1/automation-rules/[id]/runs", {
   metodo: "GET",
   recurso: "automation_rules",
@@ -538,20 +585,72 @@ caso("DELETE /api/v1/channel-schedules/[id] (cancelar janela)", {
 // Métodos que ficam só de sessão
 // ---------------------------------------------------------------------------
 
-describe("fica só de sessão: o token recebe 401 e o cliente admin nunca é montado", () => {
-  it("POST /api/v1/automation-rules: sem cookie, o requireRole responde 401 ao token", async () => {
-    vi.mocked(requireRole).mockResolvedValueOnce({
-      ok: false,
-      response: new Response(null, { status: 401 }),
-    } as never);
-    tokenDe(ORG_A, TOKEN_A, "admin");
-    const res = await rotaRegras.POST(req("POST", "/api/v1/automation-rules", TOKEN_A, { name: "Regra" }));
-    expect(res.status).toBe(401);
-    expect(requireRole).toHaveBeenCalledWith("manager", expect.objectContaining({ resource: "automation_rules" }));
-    expect(createAdminClient).not.toHaveBeenCalled();
-    expect(falso.cadeias).toEqual([]);
+describe("POST /api/v1/automation-rules: ids que a regra carrega, só no ramo do token", () => {
+  const corpoComEtapa = (pipeline: string, etapa: string) => ({
+    name: "Regra nova",
+    trigger_event: "lead.created",
+    actions: [{ type: "create_or_move_lead", config: { pipeline_id: pipeline, stage_id: etapa } }],
+  });
+  const corpoComIa = (canal: string) => ({
+    name: "Regra com IA",
+    trigger_event: "lead.created",
+    actions: [
+      {
+        type: "ai_decide",
+        config: {
+          custo_de_token: true,
+          instrucao: "Escolha uma opção",
+          opcoes: [
+            { id: "a", rotulo: "Avisar", acao: { type: "notify_team", config: { canal: "whatsapp" } } },
+            { id: "b", rotulo: "Enviar", acao: { type: "send_whatsapp_message", config: { channel_session_id: canal, template: "Oi" } } },
+          ],
+        },
+      },
+    ],
   });
 
+  it("ação aninhada em ai_decide com canal de OUTRA organização → 422, e nada é gravado", async () => {
+    tokenDe(ORG_B, TOKEN_B, "admin");
+    const res = await rotaRegras.POST(req("POST", "/api/v1/automation-rules", TOKEN_B, corpoComIa(CANAL_A)));
+    expect(res.status).toBe(422);
+    expect(await res.text()).toContain("opcoes[1].acao.config.channel_session_id");
+    expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("ação aninhada em ai_decide com canal da PRÓPRIA organização → 201", async () => {
+    tokenDe(ORG_A, TOKEN_A, "admin");
+    const res = await rotaRegras.POST(req("POST", "/api/v1/automation-rules", TOKEN_A, corpoComIa(CANAL_A)));
+    expect(res.status).toBe(201);
+  });
+
+  it("funil e etapa de OUTRA organização → 422", async () => {
+    tokenDe(ORG_B, TOKEN_B, "admin");
+    const res = await rotaRegras.POST(
+      req("POST", "/api/v1/automation-rules", TOKEN_B, corpoComEtapa(FUNIL_A, ETAPA_A)),
+    );
+    expect(res.status).toBe(422);
+    expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
+  });
+
+  it("a sessão não passa pelo validador: o ramo do token é o único que o chama", async () => {
+    vi.mocked(requireRole).mockResolvedValueOnce({
+      ok: true,
+      user: { id: "c0000000-0000-4000-8000-000000000001", idioma: "pt-BR" },
+      org: { orgId: ORG_B, name: "B", role: "manager" },
+    } as never);
+    vi.mocked(createClient).mockResolvedValueOnce(falso.cliente as never);
+    // Funil e etapa de A, numa sessão de B: a sessão confia na RLS e na tela (o dublê não modela
+    // a RLS), então o validador NÃO roda e a regra é gravada. É o contrato: a sessão não muda.
+    const res = await rotaRegras.POST(
+      req("POST", "/api/v1/automation-rules", undefined, corpoComEtapa(FUNIL_A, ETAPA_A)),
+    );
+    expect(res.status).toBe(201);
+    expect(validateBearerToken).not.toHaveBeenCalled();
+  });
+});
+
+describe("fica só de sessão: o token recebe 401 e o cliente admin nunca é montado", () => {
   it("PATCH /api/v1/automation-rules/[id]: sem cookie, o requireRole responde 401 ao token", async () => {
     vi.mocked(requireRole).mockResolvedValueOnce({
       ok: false,
