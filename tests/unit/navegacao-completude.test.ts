@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { NAV_DESTINATIONS, NAV_GROUPS } from "@/lib/navigation/registry";
+import { NAV_DESTINATIONS, NAV_GROUPS, searchable } from "@/lib/navigation/registry";
 
 /**
  * O teste que impede a bagunça de voltar.
@@ -48,6 +48,21 @@ const NAV_ALLOWLIST: Record<string, string> = {
     "porta é o rodapé de versão (VersionFooter), que aparece justamente quando há versão nova — melhor que um card fixo. Além disso é só do dono do servidor (is_platform_admin), papel que o registro não modela",
   "/app/proposals/novo":
     "sub-fluxo de criação de proposta, alcançado pelo botão 'Nova proposta' em /app/proposals",
+};
+
+/**
+ * Rotas DINÂMICAS que têm porta, apesar de `rotasNoDisco` pular todo segmento `[...]`.
+ *
+ * Não é exceção genérica: cada entrada nomeia a rota, e o teste ao fim confere que o arquivo
+ * existe e que o registro de fato gera a porta. Uma rota dinâmica nova sem entrada aqui continua
+ * sem porta declarada, e quem a criou tem de escrever o motivo.
+ */
+const ROTAS_GERADAS: Record<string, { arquivo: string; porque: string }> = {
+  "/app/m/[modulo]": {
+    arquivo: path.join("m", "[modulo]", "page.tsx"),
+    porque:
+      "rota gerada, uma porta por módulo conectado ativo da organização: o grupo Módulos do menu e o ⌘K nascem de `modulosNaTela` em tempo de execução (`destinosDosModulosConectados`, lib/navigation/registry.ts). Não há entrada estática possível, porque o slug é do pacote e não do produto; sem módulo ativo a rota dá 404 e a porta não existe",
+  },
 };
 
 /** Deriva as rotas estáticas a partir dos arquivos de página que existem. */
@@ -117,5 +132,20 @@ describe("completude da navegação", () => {
       .filter(([, motivo]) => motivo.trim().length < 20)
       .map(([rota]) => rota);
     expect(semJustificativa).toEqual([]);
+  });
+
+  it("toda rota dinâmica com porta gerada existe, tem motivo e o registro gera a porta", () => {
+    for (const [rota, { arquivo, porque }] of Object.entries(ROTAS_GERADAS)) {
+      expect(fs.existsSync(path.join(BASE, arquivo)), `rota gerada sem arquivo: ${rota}`).toBe(true);
+      expect(porque.trim().length, `rota gerada sem justificativa: ${rota}`).toBeGreaterThanOrEqual(
+        20,
+      );
+    }
+    const itens = searchable(false, "viewer", undefined, [], [], [{ slug: "acme-x", titulo: "X" }]);
+    expect(itens.map((d) => d.href)).toContain("/app/m/acme-x");
+  });
+
+  it("a rota gerada não vira entrada estática do catálogo", () => {
+    expect([...NO_REGISTRO].filter((h) => h.startsWith("/app/m/"))).toEqual([]);
   });
 });

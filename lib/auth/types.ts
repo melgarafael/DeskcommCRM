@@ -303,6 +303,12 @@ export interface ActiveOrg {
    */
   capacidades_ligadas?: readonly CapacidadeDaOrganizacao[];
   /**
+   * Módulos CONECTADOS que esta organização pode abrir agora (Spec 33, F4): só slug e título, o
+   * que o menu e o ⌘K precisam. Só o layout de `/app` preenche (`modulosNaTela`, uma vez por
+   * requisição); ausente vale como nenhum e o grupo "Módulos" não aparece.
+   */
+  modulos_conectados?: readonly { slug: string; titulo: string }[];
+  /**
    * O que ESTA organização definiu para si — CAMPO A CAMPO, e só o que ela
    * mesma definiu.
    *
