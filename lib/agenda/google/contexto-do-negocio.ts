@@ -170,9 +170,11 @@ function instante(p: { sent_at: string | null; created_at: string | null }): num
  * encerrado.
  *
  * O interruptor por tipo (`calendar_event_types.levar_dados_do_negocio`) é
- * ligado de fábrica e existe porque o cliente TAMBÉM é convidado quando a ficha
- * tem e-mail: quem escreve assunto interno no nome do negócio desliga, e os
- * compromissos futuros já publicados voltam a levar só o texto da pessoa.
+ * DESLIGADO de fábrica (doc 272 = B) porque o cliente TAMBÉM é convidado quando
+ * a ficha tem e-mail: atualizar o sistema não pode mandar nome, telefone e etapa
+ * do funil para fora sem alguém decidir. Quem quer liga na tela do tipo; quem
+ * desliga depois faz os compromissos futuros já publicados voltarem a levar só
+ * o texto da pessoa.
  */
 export async function blocoDoNegocioDoEvento(
   db: SupabaseClient,
@@ -194,17 +196,18 @@ export async function blocoDoNegocioDoEvento(
 }
 
 /**
- * O interruptor do tipo, com o default do banco (ligado).
+ * O interruptor do tipo, com o default do banco (desligado).
  *
- * Tipo ausente (compromisso antigo, bloqueio do Google) não tem onde guardar a
- * decisão e mantém o comportamento de fábrica: leva o bloco.
+ * Só `true` lido do banco leva o bloco. Tipo ausente (compromisso antigo,
+ * bloqueio do Google), linha não achada e erro de leitura não têm decisão de
+ * ninguém a respeitar e ficam no padrão de fábrica: dado do cliente não sai.
  */
 async function levarDadosDoNegocio(
   db: SupabaseClient,
   org: string,
   eventTypeId: string | null,
 ): Promise<boolean> {
-  if (!eventTypeId) return true;
+  if (!eventTypeId) return false;
   try {
     const { data } = await db
       .from("calendar_event_types")
@@ -212,9 +215,8 @@ async function levarDadosDoNegocio(
       .eq("organization_id", org)
       .eq("id", eventTypeId)
       .maybeSingle();
-    if (!data) return true;
-    return data.levar_dados_do_negocio !== false;
+    return data?.levar_dados_do_negocio === true;
   } catch {
-    return true;
+    return false;
   }
 }

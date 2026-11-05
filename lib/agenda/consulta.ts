@@ -1167,6 +1167,8 @@ export interface TipoDeAtendimento {
    * controle decorativo, invertido.
    */
   lembreteLigado: boolean;
+  /** true = a descrição do evento no Google leva o bloco do negócio (migration 9209). Desligado de fábrica. */
+  levarDadosDoNegocio: boolean;
   lembreteCanalId?: string | null;
   /** Modelo aprovado para quando a janela de 24 h do cliente fechou (`lib/agenda/lembrete-por-modelo.ts`). */
   lembreteModeloId?: string | null;
@@ -1209,7 +1211,7 @@ export async function listaTiposDeAtendimento(
   let q = supabase
     .from("calendar_event_types")
     .select(
-        "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity, service_revision, service_publication_mode",
+        "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, levar_dados_do_negocio, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity, service_revision, service_publication_mode",
     )
     // Service role bypassa a RLS: este filtro é a única proteção no caminho da
     // ferramenta MCP (ver o cabeçalho do arquivo).
@@ -1246,6 +1248,7 @@ export async function listaTiposDeAtendimento(
       antecedenciaMinimaMin: Number(t.minimum_notice_minutes),
       janelaDeAgendamentoDias: Number(t.booking_window_days),
       lembreteLigado: Boolean(t.reminder_enabled),
+      levarDadosDoNegocio: t.levar_dados_do_negocio === true,
       lembreteCanalId: t.reminder_channel_session_id ?? null,
       lembreteModeloId: t.reminder_meta_template_id ?? null,
       lembreteAntecedenciaMin: Number(t.reminder_minutes_before),

@@ -106,6 +106,15 @@ const camposDoTipo = {
    * mensagem para o telefone de um cliente é irreversível.
    */
   reminder_enabled: z.boolean().optional(),
+  /**
+   * O BLOCO DO NEGÓCIO na descrição do evento do Google (#4006, doc 272 = B).
+   *
+   * Nasce desligado (default da coluna, migration 9209) e não tem `.default()`
+   * aqui: no Google todo convidado lê a descrição, inclusive o cliente com
+   * e-mail na ficha, e atualizar o sistema não pode mandar o nome, o telefone e
+   * a etapa do funil para fora sem alguém decidir.
+   */
+  levar_dados_do_negocio: z.boolean().optional(),
   reminder_channel_session_id: z.string().uuid().nullish(),
   /**
    * O modelo aprovado que sai quando a janela de 24 h do cliente fechou
@@ -350,6 +359,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       // ligado — só como pedir que ligue. Um PATCH cego sobre um estado que a
       // leitura não conta é o mesmo controle decorativo, do outro lado.
       reminder_enabled: t.lembreteLigado,
+      levar_dados_do_negocio: t.levarDadosDoNegocio,
       reminder_channel_session_id: t.lembreteCanalId ?? null,
       reminder_meta_template_id: t.lembreteModeloId ?? null,
       reminder_minutes_before: t.lembreteAntecedenciaMin,

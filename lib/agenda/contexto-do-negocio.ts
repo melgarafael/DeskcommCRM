@@ -23,8 +23,8 @@
  *    como HTML; `<` e `&` são escapados.
  * 3. **O cliente também vê.** A ficha com e-mail é convidada do evento, e no
  *    Google todo convidado lê a descrição. É por isso que o interruptor
- *    (`calendar_event_types.levar_dados_do_negocio`) existe: quem escreve
- *    coisa interna no nome do negócio desliga.
+ *    (`calendar_event_types.levar_dados_do_negocio`) existe e nasce DESLIGADO:
+ *    o bloco só sai do CRM quando alguém liga na tela do tipo.
  */
 
 /** Uma linha da proposta do negócio (`crm_proposal_items`). */

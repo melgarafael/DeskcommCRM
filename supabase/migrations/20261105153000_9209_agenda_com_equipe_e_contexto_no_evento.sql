@@ -1,4 +1,4 @@
--- manifest: **A agenda aceita convidados da equipe e leva o contexto do negócio ao evento do Google (#4006).** `calendar_appointments.team_guest_user_ids` (uuid[], default vazio) guarda as pessoas da ORGANIZAÇÃO convidadas além do responsável e do `guest_email`; `fn_google_projection_stamp` passa a tratá-la como campo publicável, então incluir ou tirar convidado empurra o compromisso para o worker do Google sem um segundo mecanismo de gatilho. `calendar_event_types.levar_dados_do_negocio` (boolean, default true) é o interruptor do bloco do negócio na descrição. Aditiva e sem perda: compromisso antigo carrega com a lista vazia e com o interruptor ligado, e toda linha existente já satisfaz o default.
+-- manifest: **A agenda aceita convidados da equipe e leva o contexto do negócio ao evento do Google (#4006).** `calendar_appointments.team_guest_user_ids` (uuid[], default vazio) guarda as pessoas da ORGANIZAÇÃO convidadas além do responsável e do `guest_email`; `fn_google_projection_stamp` passa a tratá-la como campo publicável, então incluir ou tirar convidado empurra o compromisso para o worker do Google sem um segundo mecanismo de gatilho. `calendar_event_types.levar_dados_do_negocio` (boolean, default FALSE — doc 272 = B) é o interruptor do bloco do negócio na descrição, ligado na tela do tipo. Aditiva e sem perda: compromisso antigo carrega com a lista vazia e todo tipo existente nasce com o interruptor desligado, então quem atualiza não passa a mandar dado do cliente ao Google sem decidir.
 --
 -- ─── POR QUE ARRAY NA PRÓPRIA LINHA, E NÃO TABELA DE CONVIDADOS ─────────────
 --
@@ -25,10 +25,10 @@ comment on column public.calendar_appointments.team_guest_user_ids is
   'Pessoas da ORGANIZAÇÃO convidadas para o compromisso, além do responsável (owner_user_id) e do e-mail digitado (guest_email). O convidado NÃO vira dono: carteira, distribuição e métricas continuam no owner_user_id. O worker resolve cada id no e-mail da conta Google conectada (a saudável primeiro) ou, sem conta, no e-mail de login, e entra em attendees com responseStatus=needsAction (migration 9209).';
 
 alter table public.calendar_event_types
-  add column if not exists levar_dados_do_negocio boolean not null default true;
+  add column if not exists levar_dados_do_negocio boolean not null default false;
 
 comment on column public.calendar_event_types.levar_dados_do_negocio is
-  'true = a descrição do evento no Google leva, DEPOIS do texto do compromisso, o bloco do negócio (negócio, etapa, produtos da proposta vigente, cliente, telefone e link do CRM). Ligado de fábrica; desligue quando o nome do negócio for assunto interno — com e-mail na ficha, o próprio cliente é convidado e lê a descrição. Só compromissos futuros recebem o bloco (migration 9209).';
+  'true = a descrição do evento no Google leva, DEPOIS do texto do compromisso, o bloco do negócio (negócio, etapa, produtos da proposta vigente, cliente, telefone e link do CRM). DESLIGADO de fábrica (doc 272 = B): com e-mail na ficha, o próprio cliente é convidado e lê a descrição, e atualizar o sistema não pode mandar esses dados para fora sem alguém decidir. Liga-se na tela do tipo. Só compromissos futuros recebem o bloco (migration 9209).';
 
 -- A coluna nova é campo PUBLICÁVEL: sem ela nas duas comparações abaixo, mudar
 -- quem participa não incrementaria `google_local_revision` e a alteração nunca

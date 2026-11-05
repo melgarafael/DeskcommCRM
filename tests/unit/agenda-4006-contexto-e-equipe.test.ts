@@ -313,6 +313,25 @@ describe("#4006 · o contexto lido do CRM", () => {
     await expect(blocoDoNegocioDoEvento(db, ORG, agendamento, futuro)).resolves.toBe("");
   });
 
+  // Doc 272 = B: o bloco nasce DESLIGADO. Só `true` lido do banco leva o
+  // dado do cliente para o Google; sem decisão de ninguém, nada sai.
+  it("tipo sem a chave gravada (padrão de fábrica) não leva o bloco", async () => {
+    const db = dbFalso({ ...dados, calendar_event_types: [{ id: TIPO, organization_id: ORG }] });
+    await expect(blocoDoNegocioDoEvento(db, ORG, agendamento, futuro)).resolves.toBe("");
+  });
+
+  it("compromisso sem tipo, ou com tipo de outra organização, não leva o bloco", async () => {
+    const db = dbFalso(dados);
+    await expect(
+      blocoDoNegocioDoEvento(db, ORG, { ...agendamento, event_type_id: null }, futuro),
+    ).resolves.toBe("");
+    const outra = dbFalso({
+      ...dados,
+      calendar_event_types: [{ id: TIPO, organization_id: "outra-org", levar_dados_do_negocio: true }],
+    });
+    await expect(blocoDoNegocioDoEvento(outra, ORG, agendamento, futuro)).resolves.toBe("");
+  });
+
   it("contato anonimizado (LGPD) não leva nome nem telefone ao convite", async () => {
     const db = dbFalso({
       ...dados,

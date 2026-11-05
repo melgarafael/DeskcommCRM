@@ -13531,6 +13531,11 @@ export const DICIONARIO: Traducoes = {
   "O convite cabe em até 20 pessoas da equipe.": {
     es: "La invitación admite hasta 20 personas del equipo.",
   },
+  // A chave do tipo que leva o negócio ao evento do Google (#4006, doc 272).
+  "Levar os dados do negócio para o Google": { es: "Llevar los datos del negocio a Google" },
+  "Negócio, etapa, produtos, cliente e telefone entram na descrição do evento. Todo convidado lê, inclusive o cliente.": {
+    es: "Negocio, etapa, productos, cliente y teléfono entran en la descripción del evento. Todo invitado la lee, incluido el cliente.",
+  },
   "cliente@empresa.com": { es: "cliente@empresa.com" },
   "Endereço inválido — confira antes de marcar.":
     { es: "Dirección de correo no válida. Revísala antes de programar la cita." },
