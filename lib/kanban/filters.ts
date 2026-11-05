@@ -175,10 +175,9 @@ export function applyFilters(
   // isso que faz a simetria — termo com acento acha nome sem acento e vice-versa.
   //
   // O custo é uma normalização NFD por card a cada tecla. A lista do funil é a
-  // do quadro (milhares, não milhões) e o filtro já rodava por card; medido no
-  // pior caso do repo (3.900 negócios) o NFD de uma linha curta não aparece em
-  // perfil. Se um dia aparecer, o lugar de consertar é pré-computar o texto do
-  // card, não voltar a comparar com acento.
+  // do quadro (milhares, não milhões) e o filtro já rodava por card; o pior caso
+  // conhecido do repo é ~3.900 negócios. Se um dia pesar em perfil, o lugar de
+  // consertar é pré-computar o texto do card, não voltar a comparar com acento.
   const search = termoSemAcento(f.search?.trim() ?? "");
   // "(11) 99999-8888" tem de achar o "+5511999998888" gravado: busca feita só de
   // dígitos e pontuação de telefone compara por dígitos. Texto com letra não
