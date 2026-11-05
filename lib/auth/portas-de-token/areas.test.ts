@@ -199,9 +199,9 @@ function modelosDe(texto: string): string[] {
   const achados: string[] = [];
   for (const linha of texto.split("\n")) {
     const a = /^\s*"(\/api\/v1\/[^"]+)",?\s*$/.exec(linha);
-    if (a) achados.push(a[1]);
+    if (a) achados.push(a[1] as string);
     const b = /^\s*caminho:\s*"(\/api\/v1\/[^"]+)"/.exec(linha);
-    if (b) achados.push(b[1]);
+    if (b) achados.push(b[1] as string);
   }
   return achados;
 }
