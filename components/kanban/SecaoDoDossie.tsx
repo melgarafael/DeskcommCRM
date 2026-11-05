@@ -39,7 +39,7 @@ import { cn } from "@/lib/utils";
 export const CHAVE_DAS_SECOES_RECOLHIDAS = "dossie:secoes-recolhidas";
 
 /** As três seções que o autor citou. `Tarefas` e `Propostas` ficam de fora. */
-export type IdDeSecao = "contato" | "dados-do-negocio" | "linha-do-tempo";
+export type IdDeSecao = "contato" | "numeros-do-negocio" | "dados-do-negocio" | "linha-do-tempo";
 
 function gravar(fechadas: Set<string>): void {
   try {
