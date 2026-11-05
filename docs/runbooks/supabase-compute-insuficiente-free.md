@@ -5,8 +5,8 @@
 > (rollbacks por segundo, `fn_followup_patch` em loop, `sb-request-id` repetido),
 > **este NÃO é o seu caso** — use
 > [`docs/runbooks/postgrest-replay-do-gateway.md`](./postgrest-replay-do-gateway.md).
-> Aquele tem o banco saudável (`psql` responde em ms) e a VPS não é a origem.
-> Aqui o banco/projeto **está** indisponível por falta de compute.
+> Aquele tem o banco saudável (responde em ms a um `select 1`) e a VPS não é a
+> origem. Aqui o banco/projeto **está** indisponível por falta de compute.
 
 ## Quando usar
 
