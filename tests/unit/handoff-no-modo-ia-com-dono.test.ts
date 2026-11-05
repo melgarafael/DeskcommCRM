@@ -81,7 +81,11 @@ const disparar = () =>
   triggerHandoff({ conversationId: CONV, organizationId: ORG, reason: "requested_human", origem: "legado_pedido" });
 
 /** O primeiro UPDATE da linha da conversa — o do Step 1 do orchestrator. */
-const updateDaConversa = () => updates[0];
+const updateDaConversa = () => {
+  const u = updates[0];
+  if (!u) throw new Error("o handoff não escreveu na conversa");
+  return u;
+};
 
 describe("triggerHandoff · modo 'IA com o dono'", () => {
   it("modo ligado + dono: a conversa NÃO vai para `pending` e o dono não é escrito", async () => {

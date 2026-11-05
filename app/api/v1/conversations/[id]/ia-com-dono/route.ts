@@ -42,7 +42,8 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * Auth: cookie session, agent+ (spec 13 §4: escrita é agent+, viewer é
  * read-only), e `requireSupportWrite()` antes: sessão de suporte por
- * impersonação não escreve.
+ * impersonação não escreve. LIGAR exige ser o dono da conversa ou manager+,
+ * a régua do `reactivate-bot`; desligar segue a do `pause-ai`.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -51,6 +52,7 @@ import { z } from "zod";
 import { audit } from "@/lib/audit";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { roleAtLeast } from "@/lib/auth/types";
 import {
   CHAVE_DA_IA_COM_DONO,
   metadataComModoIaComDono,
@@ -137,6 +139,20 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         "state_conflict",
         t("Esta conversa não tem atendente — assuma a conversa antes de ligar a IA com o dono."),
         409,
+        { requestId },
+      );
+    }
+    // A mesma régua de dono do `reactivate-bot` (#3436): pôr a IA para falar
+    // numa conversa de outro atendente é decisão dele ou de um gerente para cima.
+    // Desligar fica livre, como o `pause-ai`: é o caminho de calar, não de falar.
+    if (
+      conv.assigned_to_user_id !== user.id &&
+      !roleAtLeast(org.role, "manager")
+    ) {
+      return fail(
+        "forbidden",
+        t("Esta conversa é de outro atendente. Peça a um gerente ou assuma a conversa."),
+        403,
         { requestId },
       );
     }

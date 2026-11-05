@@ -19,6 +19,7 @@
  *   "ligar limpa o silêncio" acusa (e é o que faria o gate calar a IA).
  * - Remover a recusa de conversa sem dono: o caso 409 acusa.
  * - Remover a recusa de contato travado: os três casos de trava acusam.
+ * - Remover a régua de dono do ligar: "agent que NÃO é o dono" acusa.
  */
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,6 +37,7 @@ vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const EU = "22222222-2222-4222-8222-222222222222";
+const OUTRO = "33333333-3333-4333-8333-333333333333";
 const CONVERSA = "44444444-4444-4444-8444-444444444444";
 
 interface Linha {
@@ -246,6 +248,35 @@ describe("ia-com-dono: permissões da casa", () => {
     expect(res.status).toBe(403);
     expect(requireRole).not.toHaveBeenCalled();
     expect(estado.payload).toBeNull();
+  });
+
+  it("agent que NÃO é o dono não liga a IA na conversa do colega: 403 e nada é escrito", async () => {
+    const estado = duble(comDono({ assigned_to_user_id: OUTRO }));
+    const res = await chamar({ ligado: true });
+    const corpo = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(corpo.error.code).toBe("forbidden");
+    expect(estado.payload).toBeNull();
+  });
+
+  it.each(["manager", "admin"])("%s liga a IA na conversa de outro atendente (o dono fica)", async (role) => {
+    sessao(role);
+    const estado = duble(comDono({ assigned_to_user_id: OUTRO }));
+    const res = await chamar({ ligado: true });
+    const corpo = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(corpo.data.dono_preservado).toBe(OUTRO);
+    expect(estado.payload!.bot_silenced_until).toBeNull();
+  });
+
+  it("agent que não é o dono DESLIGA (como o pausar): 200", async () => {
+    const estado = duble(comDono({ assigned_to_user_id: OUTRO, metadata: { ai_com_dono: true } }));
+    const res = await chamar({ ligado: false });
+
+    expect(res.status).toBe(200);
+    expect(estado.payload!.bot_silenced_until).toBe("infinity");
   });
 
   it("viewer não escreve (requireRole 'agent' recusa)", async () => {

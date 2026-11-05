@@ -158,8 +158,9 @@ function estado(
     aiOptOut: r.ai_opt_out === true,
     assigneeKind: (r.assignee_kind as string | null) ?? null,
     // O modo "IA com o dono" (#3967) entra no preflight pela coluna que as
-    // consultas abaixo já trazem (`cv.metadata->>'ai_com_dono'`): simular sem
-    // ele diria "não responde" sobre uma conversa que o motor atende.
+    // consultas abaixo já trazem como BOOLEANO (`(cv.metadata->'ai_com_dono') =
+    // 'true'::jsonb`): `->>` devolveria texto, e `=== true` nunca casaria.
+    // Simular sem ele diria "não responde" sobre uma conversa que o motor atende.
     metadataDaConversa: { [CHAVE_DA_IA_COM_DONO]: r.ai_com_dono === true },
     botSilencedUntil: r.bot_silenced_until as string | null,
     aiAuthorizedAt: r.ai_authorized_at as string | null,
@@ -260,7 +261,7 @@ export async function checkQueryElegibilidade(ctx: CtxAtivacao): Promise<Resulta
   }
   const { rows: real } = await ctx.pool.query(
     `select cv.id, cs.metadata->>'ai_gate' as ai_gate, cs.metadata->>'ai_gate_mode' as ai_gate_mode,
-            ct.force_human, cv.assignee_kind, cv.metadata->>'ai_com_dono' as ai_com_dono,
+            ct.force_human, cv.assignee_kind, (cv.metadata->'ai_com_dono') = 'true'::jsonb as ai_com_dono,
             cv.bot_silenced_until, ct.ai_authorized_at
        from conversations cv
        join contacts ct on ct.id = cv.contact_id and ct.organization_id = cv.organization_id
@@ -372,7 +373,7 @@ export async function checkImpactoConversas(ctx: CtxAtivacao): Promise<Resultado
   const CAP = 50000;
   const { rows } = await ctx.pool.query(
     `select cv.id as conversation_id, cv.status, cv.last_inbound_at, cv.bot_silenced_until, cv.assignee_kind,
-            cv.metadata->>'ai_com_dono' as ai_com_dono,
+            (cv.metadata->'ai_com_dono') = 'true'::jsonb as ai_com_dono,
             coalesce(ct.name, ct.display_name) as name, ct.phone_number, ct.force_human, ct.ai_authorized_at
        from conversations cv
        join contacts ct on ct.id = cv.contact_id and ct.organization_id = cv.organization_id

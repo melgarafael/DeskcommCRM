@@ -17,6 +17,7 @@ const closeMutate = vi.hoisted(() => vi.fn());
 const arquivarMutate = vi.hoisted(() => vi.fn());
 const startCall = vi.hoisted(() => vi.fn());
 const claimMutate = vi.hoisted(() => vi.fn());
+const iaComDonoMutate = vi.hoisted(() => vi.fn());
 
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({ user: { id: "u1", support: null } }),
@@ -37,6 +38,10 @@ vi.mock("@/hooks/inbox/useResumeAiAttendance", () => ({
 }));
 vi.mock("@/hooks/inbox/usePauseAiAttendance", () => ({
   usePauseAiAttendance: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+// "IA com o dono" (#3967) usa `useMutation`: sem o mock, exigiria QueryClientProvider.
+vi.mock("@/hooks/inbox/useIaComDono", () => ({
+  useIaComDono: () => ({ mutate: iaComDonoMutate, isPending: false }),
 }));
 // Spec 21, etapa 15: o cabeçalho chama os hooks de pessoal em toda
 // renderização (antes dos early returns) — sem este mock, o `useMutation` real
@@ -102,6 +107,46 @@ beforeEach(() => {
   arquivarMutate.mockReset();
   startCall.mockReset();
   claimMutate.mockReset();
+  iaComDonoMutate.mockReset();
+});
+
+describe("ConversationHeader — 'IA com o dono' (#3967)", () => {
+  it("conversa SEM dono não mostra o interruptor (não há dono a preservar)", () => {
+    render(<ConversationHeader conversation={conversa("open")} />);
+    expect(screen.queryByTestId("ia-com-o-dono")).toBeNull();
+  });
+
+  it("conversa com dono: desligado, liga com um clique", async () => {
+    const user = userEvent.setup();
+    const atual = conversa("claimed");
+    atual.assigned_to_user_id = "u1";
+    render(<ConversationHeader conversation={atual} />);
+
+    const botao = screen.getByTestId("ia-com-o-dono");
+    expect(botao).toHaveAttribute("aria-pressed", "false");
+    await user.click(botao);
+    expect(iaComDonoMutate).toHaveBeenCalledWith({ conversation_id: "conv-1", ligado: true });
+  });
+
+  it("modo ligado: aria-pressed e o clique desliga", async () => {
+    const user = userEvent.setup();
+    const atual = conversa("claimed");
+    atual.assigned_to_user_id = "u1";
+    (atual as { metadata: unknown }).metadata = { ai_com_dono: true };
+    render(<ConversationHeader conversation={atual} />);
+
+    const botao = screen.getByTestId("ia-com-o-dono");
+    expect(botao).toHaveAttribute("aria-pressed", "true");
+    await user.click(botao);
+    expect(iaComDonoMutate).toHaveBeenCalledWith({ conversation_id: "conv-1", ligado: false });
+  });
+
+  it("conversa encerrada não mostra o interruptor", () => {
+    const atual = conversa("closed");
+    atual.assigned_to_user_id = "u1";
+    render(<ConversationHeader conversation={atual} />);
+    expect(screen.queryByTestId("ia-com-o-dono")).toBeNull();
+  });
 });
 
 /**
