@@ -235,6 +235,7 @@ type Caso = {
 /** Qual `route.ts` importar, por rota. */
 const CARREGA: Record<string, () => Promise<Record<string, unknown>>> = {
   "contact-tags": () => import("@/app/api/v1/contact-tags/route"),
+  contacts: () => import("@/app/api/v1/contacts/route"),
   "contacts/[id]": () => import("@/app/api/v1/contacts/[id]/route"),
   "contacts/[id]/always-human": () =>
     import("@/app/api/v1/contacts/[id]/always-human/route"),
@@ -313,6 +314,23 @@ const FICHA_A_PATCH: Caso = {
   recurso: "contacts",
   status: 200,
   audita: true,
+};
+
+// Criar contato (POST da coleção). `agent` na sessão e no token, o mesmo do PATCH da ficha. O
+// token grava `created_by_user_id` nulo (o ator não é pessoa) e o audit leva `actorApiTokenId`.
+const CONTATO_POST: Caso = {
+  rota: "contacts",
+  metodo: "POST",
+  caminho: "/api/v1/contacts",
+  corpo: { name: "Cliente novo" },
+  linhas: LINHAS_BASE,
+  papel: "agent",
+  escopo: "mcp:write",
+  papelDoToken: undefined,
+  recurso: "contacts",
+  status: 201,
+  audita: true,
+  cria: true,
 };
 
 const SEMPRE_HUMANO_MARCAR: Caso = {
@@ -701,6 +719,7 @@ const CASOS: readonly Caso[] = [
   LISTA_TAGS,
   FICHA_A_GET,
   FICHA_A_PATCH,
+  CONTATO_POST,
   SEMPRE_HUMANO_MARCAR,
   SEMPRE_HUMANO_DESMARCAR,
   CARTEIRA_GET,

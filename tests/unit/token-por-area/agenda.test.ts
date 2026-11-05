@@ -101,6 +101,8 @@ type Caso = {
   alcancaB: "lista" | "cria" | "nao_acha";
   statusA: number;
   semOrganizacao?: readonly string[];
+  /** Resposta das RPCs do cliente falso, por nome (o `data` devolvido). */
+  rpc?: Record<string, unknown>;
   /** Asserção extra: `"A"` ou `"B"` diz de qual token é a chamada. */
   extra?: (quem: "A" | "B") => void;
 };
@@ -158,6 +160,64 @@ const CASOS: Caso[] = [
     alcancaB: "lista",
     statusA: 200,
     // viewer: não há degrau abaixo; o caso "abaixo do papel" não existe para este método.
+  },
+  {
+    // Leitura da grade. O token é `manager` (a sessão de atendente pode ver só a própria agenda;
+    // o token lê a organização inteira). `donosDaAgenda` e a ocupação do Google também ficam na
+    // organização do token: a RPC da ocupação recebe `p_org` e o dono SÓ da organização.
+    nome: "GET /api/v1/agenda/agendamentos",
+    modulo: () => import("@/app/api/v1/agenda/agendamentos/route") as unknown as Promise<Modulo>,
+    metodo: "GET",
+    url: "/api/v1/agenda/agendamentos?de=2026-11-10T00:00:00Z&ate=2026-11-11T00:00:00Z",
+    papel: "viewer",
+    papelDoToken: "manager",
+    escopo: "mcp:read",
+    linhas: {
+      calendar_appointments: [
+        { id: AGENDAMENTO, organization_id: ORG_A, title: "Consulta da A", starts_at: "2026-11-10T13:00:00Z", ends_at: "2026-11-10T14:00:00Z", time_zone: "America/Sao_Paulo", status: "confirmed", revision: 1, meeting_state: null, meeting_url: null, owner_user_id: USER_A, contact_id: null, location_kind: null, location_details: null, service_block: false, service_occurrence_id: null },
+        { id: "c4c4c4c4-c4c4-4c4c-8c4c-c4c4c4c4c4c4", organization_id: ORG_B, title: "Consulta da B", starts_at: "2026-11-10T13:00:00Z", ends_at: "2026-11-10T14:00:00Z", time_zone: "America/Sao_Paulo", status: "confirmed", revision: 1, meeting_state: null, meeting_url: null, owner_user_id: USER_B, contact_id: null, location_kind: null, location_details: null, service_block: false, service_occurrence_id: null },
+      ],
+      user_organizations: [
+        { user_id: USER_A, organization_id: ORG_A, role: "agent", revoked_at: null },
+        { user_id: USER_B, organization_id: ORG_B, role: "agent", revoked_at: null },
+      ],
+    },
+    rpc: { fn_agenda_ocupacao_google_do_dono: [] },
+    marcaA: "Consulta da A",
+    alcancaB: "lista",
+    statusA: 200,
+    extra: () => {
+      // Todo dono perguntado à ocupação do Google pertence à organização do token.
+      for (const r of falso.rpcs.filter((x) => x.nome === "fn_agenda_ocupacao_google_do_dono")) {
+        expect([USER_A, USER_B]).toContain(r.args.p_owner);
+      }
+    },
+  },
+  {
+    nome: "GET /api/v1/agenda/servicos",
+    modulo: () => import("@/app/api/v1/agenda/servicos/route") as unknown as Promise<Modulo>,
+    metodo: "GET",
+    url: "/api/v1/agenda/servicos",
+    papel: "viewer",
+    papelDoToken: "manager",
+    escopo: "mcp:read",
+    linhas: {
+      calendar_resources: [
+        { id: "a8a8a8a8-a8a8-4a8a-8a8a-a8a8a8a8a8a8", organization_id: ORG_A, name: "Sala da A", capacity: 1, is_active: true, revision: 1 },
+        { id: "b8b8b8b8-b8b8-4b8b-8b8b-b8b8b8b8b8b8", organization_id: ORG_B, name: "Sala da B", capacity: 1, is_active: true, revision: 1 },
+      ],
+      calendar_service_blocks: [],
+    },
+    rpc: { fn_calendar_service_catalog: [] },
+    marcaA: "Sala da A",
+    alcancaB: "lista",
+    statusA: 200,
+    extra: (quem) => {
+      // A RPC do catálogo recebe a organização do token, nunca outra.
+      const catalogo = falso.rpcs.filter((r) => r.nome === "fn_calendar_service_catalog");
+      expect(catalogo.length).toBeGreaterThan(0);
+      expect(catalogo.every((r) => r.args.p_org === (quem === "A" ? ORG_A : ORG_B))).toBe(true);
+    },
   },
   {
     nome: "GET /api/v1/agenda/enderecos",
@@ -318,6 +378,7 @@ function preparar(caso: Caso): void {
   falso = criarClienteAdminFalso({
     orgDona: ORG_A,
     linhas: caso.linhas,
+    ...(caso.rpc ? { rpc: caso.rpc } : {}),
     tabelasSemOrganizacao: caso.semOrganizacao,
   });
   deps.admin.mockReturnValue(falso.cliente as never);
@@ -489,6 +550,16 @@ const CAMINHOS_COM_PORTA = [
   "/api/v1/agenda/tipos/reativar",
   "/api/v1/agenda/vinculos",
 ];
+
+describe("PUBLIC_PATHS da agenda — rotas que já tinham porta e ganharam o GET com token", () => {
+  it.each(["/api/v1/agenda/agendamentos", "/api/v1/agenda/servicos"])(
+    "libera %s e não libera o sub-path nem o irmão literal",
+    (caminho) => {
+      expect(isPublicPath(caminho)).toBe(true);
+      expect(isPublicPath(`${caminho}/x`)).toBe(false);
+    },
+  );
+});
 
 describe("PUBLIC_PATHS da agenda (borda do proxy)", () => {
   it.each(CAMINHOS_COM_PORTA)("libera %s e não libera o sub-path", (caminho) => {

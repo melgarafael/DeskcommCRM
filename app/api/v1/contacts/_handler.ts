@@ -821,6 +821,8 @@ export async function createContactHandler(
   await audit({
     action: "contact.created",
     actorUserId: a.actorUserId,
+    // Só quando há token: a sessão segue com o objeto de sempre.
+    ...(a.actorApiTokenId ? { actorApiTokenId: a.actorApiTokenId } : {}),
     organizationId: contact.organization_id,
     resourceType: "contact",
     resourceId: contact.id,
