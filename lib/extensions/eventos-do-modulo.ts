@@ -200,3 +200,86 @@ export async function lerEventosDoModulo(
   }
   return { ok: true, events: corpo.events, next_cursor: proximo, has_more: corpo.has_more === true };
 }
+
+// ── O atraso do módulo, para `/admin/extensoes` (F5 T3) ─────────────────────
+//
+// Só números e datas: a função do banco conta POR ORGANIZAÇÃO (eventos da mesma organização do cursor, com
+// `id` maior que `last_event_id`; `module_disabled` só do par) e NÃO devolve qual organização é. Nada aqui
+// identifica empresa: a tela do dono do servidor mostra o estado de cada vínculo, não o nome do cliente.
+
+export const JANELA_DO_ATRASO_MS = 24 * 60 * 60 * 1000;
+
+export interface AtrasoPorVinculo {
+  /** Último evento lido; `null` se este vínculo nunca leu. */
+  ultimoCursor: number | null;
+  /** Quando leu pela última vez; `null` se nunca leu. */
+  lidoEm: string | null;
+  /** Quantos eventos faltam ler. */
+  atraso: number;
+  /** Destes, quantos são contatos anonimizados que o módulo ainda não apagou. */
+  contatosPendentes: number;
+  /** O mais antigo ainda não lido; `null` se em dia. */
+  maisAntigoEm: string | null;
+  /** Atraso e sem leitura há mais de 24 h (ou nunca leu e há evento com mais de 24 h). */
+  atrasado: boolean;
+}
+
+function inteiro(v: unknown): number {
+  const n = Number(v);
+  return Number.isSafeInteger(n) && n >= 0 ? n : 0;
+}
+
+function dataOuNula(v: unknown): string | null {
+  return typeof v === "string" && Number.isFinite(Date.parse(v)) ? v : null;
+}
+
+/** Regra do selo "atrasado" (pura, para o teste fixar o relógio). */
+export function estaAtrasado(
+  v: { atraso: number; lidoEm: string | null; maisAntigoEm: string | null },
+  agoraMs: number,
+): boolean {
+  if (v.atraso <= 0) return false;
+  if (v.lidoEm !== null) return agoraMs - Date.parse(v.lidoEm) > JANELA_DO_ATRASO_MS;
+  return v.maisAntigoEm !== null && agoraMs - Date.parse(v.maisAntigoEm) > JANELA_DO_ATRASO_MS;
+}
+
+/** Normaliza o jsonb do banco. Nunca lança por forma inesperada: linha ilegível é descartada. */
+export function interpretarAtraso(bruto: unknown, agoraMs: number): AtrasoPorVinculo[] {
+  if (!Array.isArray(bruto)) return [];
+  const saida: AtrasoPorVinculo[] = [];
+  for (const item of bruto) {
+    if (typeof item !== "object" || item === null) continue;
+    const r = item as Record<string, unknown>;
+    const lidoEm = dataOuNula(r.last_read_at);
+    const base = {
+      ultimoCursor: lidoEm === null ? null : inteiro(r.last_event_id),
+      lidoEm,
+      atraso: inteiro(r.lag),
+      contatosPendentes: inteiro(r.contacts_pending),
+      maisAntigoEm: dataOuNula(r.oldest_unread_at),
+    };
+    saida.push({ ...base, atrasado: estaAtrasado(base, agoraMs) });
+  }
+  return saida;
+}
+
+/**
+ * O atraso de uma instalação `connected`, um item por vínculo. Falha de leitura devolve `null` (a tela não
+ * mostra número inventado); nunca lança.
+ */
+export async function lerAtrasoDoModulo(
+  installationId: string,
+  agoraMs: number = Date.now(),
+): Promise<AtrasoPorVinculo[] | null> {
+  const { data, error } = await createAdminClient().rpc("fn_extensions_events_lag", {
+    p_installation: installationId,
+  });
+  if (error) {
+    logger.warn("[extensions] atraso do módulo não lido", {
+      installation_id: installationId,
+      db_code: error.code ?? null,
+    });
+    return null;
+  }
+  return interpretarAtraso(data, agoraMs);
+}
