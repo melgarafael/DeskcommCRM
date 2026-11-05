@@ -33,6 +33,7 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   // e `reply` seguem só de sessão.
   "/api/v1/ai/cases",
   "/api/v1/ai/cases/[id]",
+  "/api/v1/ai/routing-results",
   "/api/v1/ai/routing-results/[id]",
 
   // ai/followup-flows. Quem autentica é a própria rota, por `resolveAuthDual`:
