@@ -680,6 +680,83 @@ describe("mais de uma condição no 'mostrar quando' (#4041)", () => {
   });
 });
 
+describe("editor: duas condições de mostrar no mesmo campo (#4041)", () => {
+  // O mock é compartilhado com os outros blocos deste arquivo: sem limpar, o
+  // "chamado uma vez" mede o arquivo inteiro, e não este save.
+  beforeEach(() => vi.mocked(updatePipelineConfig).mockClear());
+
+  // O caso real da issue: os campos de voo aparecem quando o Tipo de serviço é
+  // "Passagem aérea" OU "Pacote". A tela tem de abrir com AS DUAS linhas e o
+  // seletor de modo, e o save tem de levar a lista inteira — sem uma das duas
+  // condições virar uma segunda definição do campo.
+  const CONDICOES = [
+    { campo: "tipo_servico", operador: "contem" as const, valor: "Passagem aérea" },
+    { campo: "tipo_servico", operador: "contem" as const, valor: "Pacote" },
+  ];
+  const MOSTRAR = { modo: "qualquer" as const, condicoes: CONDICOES };
+
+  const COM_OU: PipelineRow = {
+    id: "77777777-7777-4777-8777-777777777777",
+    name: "Viagens",
+    slug: "viagens",
+    vocabulary: null,
+    settings: {
+      fields: [
+        {
+          key: "tipo_servico",
+          label: "Tipo de serviço",
+          type: "select",
+          options: [
+            { value: "aereo", label: "Passagem aérea" },
+            { value: "pacote", label: "Pacote" },
+            { value: "hospedagem", label: "Hospedagem" },
+          ],
+        },
+        {
+          key: "localizador",
+          label: "Localizador do voo",
+          type: "text",
+          mostrar_quando: {
+            modo: "qualquer",
+            condicoes: [
+              { campo: "tipo_servico", operador: "contem", valor: "Passagem aérea" },
+              { campo: "tipo_servico", operador: "contem", valor: "Pacote" },
+            ],
+          },
+        },
+      ],
+    },
+  };
+
+  it("abre com as duas linhas e o modo, e '+ condição' acrescenta a terceira", () => {
+    render(<PipelinesClient pipelines={[COM_OU]} etapas={{}} podeEditarConfig />);
+    abrirEditores();
+
+    expect(screen.getByLabelText("Campo da condição Localizador do voo 1")).toBeDefined();
+    expect(screen.getByLabelText("Campo da condição Localizador do voo 2")).toBeDefined();
+    expect(screen.getByLabelText("Modo da condição Localizador do voo")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: /\+ condição/i }));
+
+    expect(screen.getByLabelText("Campo da condição Localizador do voo 3")).toBeDefined();
+  });
+
+  it("salvar grava a lista como veio, e não uma condição por campo", async () => {
+    render(<PipelinesClient pipelines={[COM_OU]} etapas={{}} podeEditarConfig />);
+    abrirEditores();
+    fireEvent.click(screen.getByRole("button", { name: /Salvar vocabulário e campos/i }));
+
+    await vi.waitFor(() => expect(updatePipelineConfig).toHaveBeenCalled());
+    await vi.waitFor(() => expect(updatePipelineConfig).toHaveBeenCalledTimes(1));
+
+    const patch = vi.mocked(updatePipelineConfig).mock.calls[0]?.[1] as {
+      fields?: Array<{ mostrar_quando?: unknown }>;
+    };
+    // A lista inteira, com o modo, e não uma condição por campo.
+    expect(patch.fields?.[1]?.mostrar_quando).toEqual(MOSTRAR);
+  });
+});
+
 describe("'Este campo pertence a' só no funil padrão (#2791)", () => {
   // A ficha do contato lê as definições SÓ do funil padrão (/api/v1/pipelines/default).
   // Marcar "Contato" num funil secundário tiraria o campo do card sem levá-lo à

@@ -364,6 +364,7 @@ export function condicoesDeclaradas(bruta: unknown): CondicaoDeMostra[] {
   if (!bruta || typeof bruta !== "object" || Array.isArray(bruta)) return [];
   const crua = bruta as Record<string, unknown>;
   const itens = Array.isArray(crua.condicoes) ? crua.condicoes : [bruta];
+  const deLista = Array.isArray(crua.condicoes);
   const linhas: CondicaoDeMostra[] = [];
 
   for (const item of itens) {
@@ -372,8 +373,11 @@ export function condicoesDeclaradas(bruta: unknown): CondicaoDeMostra[] {
     const campo = typeof declarada.campo === "string" ? declarada.campo.trim() : "";
     const emChave = OPERADORES_DE_MOSTRA.find((op) => declarada[op] !== undefined);
     // `{}` (ou um objeto sem campo e sem operador) não é condição nenhuma: é o
-    // resto de uma condição apagada, e não vira linha na tela.
-    if (campo.length === 0 && !emChave && declarada.operador === undefined) continue;
+    // resto de uma condição apagada, e não vira linha na tela. Dentro de uma
+    // LISTA é diferente: a linha vazia é o que o "+ condição" acabou de criar e
+    // TEM de aparecer — e só toda linha da lista virando uma linha de tela é
+    // que a posição que a tela usa (remover/editar) casa com o item do JSON.
+    if (!deLista && campo.length === 0 && !emChave && declarada.operador === undefined) continue;
     const operador: OperadorDeMostra = (OPERADORES_DE_MOSTRA as readonly string[]).includes(
       String(declarada.operador),
     )

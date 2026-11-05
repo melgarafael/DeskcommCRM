@@ -26,7 +26,12 @@ import { describe, expect, it } from "vitest";
 
 import { camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { validaCamposExigidos } from "@/lib/leads/campos-exigidos";
-import { campoVisivel, camposVisiveis, mostrarQuandoSchema } from "@/lib/schemas/mostrar-quando";
+import {
+  campoVisivel,
+  camposVisiveis,
+  condicoesDeclaradas,
+  mostrarQuandoSchema,
+} from "@/lib/schemas/mostrar-quando";
 import { customFieldSchema, pipelineConfigPatchSchema } from "@/lib/schemas/settings";
 
 const TIPO = "tipo_servico";
@@ -198,6 +203,23 @@ describe("camposVisiveis com lista — a régua que a tela e o servidor comparti
       { key: "c", label: "C", type: "text" as const },
     ];
     expect(camposVisiveis(laco, {}).map((c) => c.key)).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("as linhas da tela x os itens do JSON (#4041)", () => {
+  it("a linha em branco do '+ condição' CONTINUA na tela — some só no save", () => {
+    // O editor monta uma linha por item da lista; se a leitura descartasse a
+    // linha vazia, o botão "+ condição" não acrescentaria nada e o índice de
+    // "remover"/"editar linha" passaria a apontar para a condição vizinha.
+    const comBranco = { modo: "qualquer" as const, condicoes: [PRIMEIRA, { campo: "" }] };
+    expect(condicoesDeclaradas(comBranco)).toHaveLength(2);
+    expect(condicoesDeclaradas(comBranco)[1]).toEqual({ campo: "", operador: "igual" });
+    // A condição única (`{}` solto) continua sem virar linha: não há linha a
+    // acrescentar, o objeto é resto de uma condição apagada.
+    expect(condicoesDeclaradas({})).toEqual([]);
+    // E a posição é a posição: com a linha vazia no meio, o item 2 é o Pacote.
+    const noMeio = { modo: "qualquer" as const, condicoes: [PRIMEIRA, { campo: "" }, SEGUNDA] };
+    expect(condicoesDeclaradas(noMeio).map((c) => c.campo)).toEqual([TIPO, "", TIPO]);
   });
 });
 
