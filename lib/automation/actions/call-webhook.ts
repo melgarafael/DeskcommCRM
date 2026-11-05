@@ -28,6 +28,7 @@ import { assertDestinoResolvidoSeguro } from "@/lib/automation/outbound-ip";
 import { assertSafeOutboundUrl } from "@/lib/automation/outbound-url";
 import { mensagemDeErro } from "@/lib/automation/actions/erro-legivel";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
+import { nomesDosAtendentesCom } from "@/lib/users/nome-do-atendente";
 
 const TIMEOUT_MS = 10_000;
 const RETRY_DELAYS_MS = [1_000, 5_000]; // total 3 tentativas
@@ -326,20 +327,17 @@ async function responsavelPublico(
   return responsavelDoNegocio(ctx);
 }
 
-/** O nome do usuário, melhor esforço — nunca é motivo para a entrega falhar. */
+/**
+ * O nome do usuário, melhor esforço — nunca é motivo para a entrega falhar.
+ * Só sai para quem tem ou teve vínculo com a organização da regra (a mesma
+ * regra de `nomesDosAtendentes`, que nunca lança).
+ */
 async function nomeDeUsuario(
   ctx: ActionCtx,
   ownerId: string,
 ): Promise<{ name: string } | Record<string, never>> {
-  try {
-    const { data } = await ctx.admin.auth.admin.getUserById(ownerId);
-    const metadata = data?.user?.user_metadata as { full_name?: unknown } | undefined;
-    const nome =
-      typeof metadata?.full_name === "string" && metadata.full_name ? metadata.full_name : null;
-    return nome ? { name: nome } : {};
-  } catch {
-    return {};
-  }
+  const nome = (await nomesDosAtendentesCom(ctx.admin, ctx.organizationId, [ownerId])).get(ownerId);
+  return nome ? { name: nome } : {};
 }
 
 /**

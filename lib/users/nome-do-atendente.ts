@@ -120,8 +120,12 @@ export async function nomesDosAtendentesCom(
   return new Map(pares);
 }
 
-/** Quais destes ids têm vínculo com a organização. Falha → conjunto vazio (ninguém ganha nome). */
-async function membrosDaOrganizacao(
+/**
+ * Quais destes ids têm (ou tiveram) vínculo com a organização. Falha → conjunto
+ * vazio (ninguém ganha nome). Exportada para o leitor que expõe mais que o nome
+ * (métricas por atendente devolvem também o e-mail): a regra de vínculo é esta.
+ */
+export async function membrosDaOrganizacao(
   admin: SupabaseClient,
   orgId: string,
   ids: string[],
