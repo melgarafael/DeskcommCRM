@@ -29,12 +29,37 @@ const corpoDoPut = z
   })
   .strict();
 
-export async function GET(): Promise<Response> {
-  const authz = await requireRole("manager", { resource: "ai_style_adjustments" });
-  if (!authz.ok) return authz.response;
-  const { org } = authz;
+export async function GET(req: NextRequest): Promise<Response> {
+  // Quem chama, pelo portão que o trouxe. Sem Bearer, a sessão segue como era
+  // (client de sessão, RLS, `podeEditar` pelo papel). Com Bearer, o cliente é o
+  // admin e o filtro de organização abaixo, vindo da linha do token, é a barreira.
+  let org: { orgId: string };
+  let podeEditar: boolean;
+  let db: SupabaseClient;
+  if (extractBearer(req.headers.get("authorization"))) {
+    const requestId = randomUUID();
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "ai_style_adjustments",
+      role: "manager",
+      scope: "config:read",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "ai_style_adjustments", requestId);
+    if (teto) return teto;
+    org = { orgId: authz.organizationId };
+    // O token só entra com papel admin (`tokenRole`): pode editar.
+    podeEditar = true;
+    db = authz.supabase;
+  } else {
+    const authz = await requireRole("manager", { resource: "ai_style_adjustments" });
+    if (!authz.ok) return authz.response;
+    org = { orgId: authz.org.orgId };
+    podeEditar = roleAtLeast(authz.org.role, "admin");
+    db = await createClient();
+  }
 
-  const db = await createClient();
   const layers = AJUSTES_DE_ESTILO.map(chavePersistidaDoAjuste);
   const { data, error } = await db
     .from("org_guardrail_layers")
@@ -56,7 +81,7 @@ export async function GET(): Promise<Response> {
       ajuste,
       enabled: escolhas.get(ajuste) ?? false,
     })),
-    podeEditar: roleAtLeast(org.role, "admin"),
+    podeEditar,
   });
 }
 
