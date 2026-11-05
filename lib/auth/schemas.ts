@@ -74,14 +74,24 @@ export const forgotPasswordSchema = z.object({
 
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 
+/**
+ * A régua de senha do produto — UMA, usada por quem escolhe a própria senha e
+ * por quem administra definindo a senha de outra pessoa (#3876).
+ *
+ * Duas cópias divergiriam na primeira mudança: um admin criaria usuários com
+ * uma senha que a recuperação recusaria, ou o contrário. Quem cria usuário
+ * importa daqui, não reescreve as regras.
+ */
+export const senhaForteSchema = z
+  .string()
+  .min(8, "Senha deve ter pelo menos 8 caracteres")
+  .regex(/[A-Za-zÀ-ÿ]/, "Senha deve ter pelo menos uma letra")
+  .regex(/[0-9]/, "Senha deve ter pelo menos um número")
+  .regex(/[^A-Za-zÀ-ÿ0-9\s]/, "Senha deve ter pelo menos um símbolo");
+
 export const resetPasswordSchema = z
   .object({
-    password: z
-      .string()
-      .min(8, "Senha deve ter pelo menos 8 caracteres")
-      .regex(/[A-Za-zÀ-ÿ]/, "Senha deve ter pelo menos uma letra")
-      .regex(/[0-9]/, "Senha deve ter pelo menos um número")
-      .regex(/[^A-Za-zÀ-ÿ0-9\s]/, "Senha deve ter pelo menos um símbolo"),
+    password: senhaForteSchema,
     password_confirm: z.string(),
     // Código TOTP: só exigido quando a conta tem MFA (a sessão de recovery é
     // AAL1 e o GoTrue pede AAL2 para trocar a senha). Opcional no schema; a
