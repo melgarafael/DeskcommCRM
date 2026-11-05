@@ -50,6 +50,9 @@ export async function GET(req: NextRequest): Promise<Response> {
       resource: "leads_at_risk",
       role: "agent",
       scope: "mcp:read",
+      // Sem `humanRole` o radar devolve a organização inteira; na sessão o agent
+      // só vê o que a RLS libera. O token lê tudo, então exige `manager`.
+      tokenRole: "manager",
     });
     if (!dual.ok) return dual.response;
     const teto = await tetoDeEscritaDoToken(dual, "leads_at_risk", requestId);

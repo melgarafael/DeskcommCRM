@@ -425,7 +425,7 @@ const CASOS: readonly Caso[] = [
       crm_proposals: [],
       agent_inbox_items: [],
     },
-    papel: "agent",
+    papel: "manager",
     escopo: "mcp:read",
     recurso: "leads_at_risk",
     recursoDoTeto: "leads_at_risk",
