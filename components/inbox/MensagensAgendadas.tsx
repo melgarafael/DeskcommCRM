@@ -4,7 +4,7 @@
  * MENSAGENS AGENDADAS — botão ao lado do Enviar, popup com as agendadas do contato,
  * criação de mensagem de texto e cancelamento.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { CalendarClock, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -60,17 +60,22 @@ function formatarQuando(iso: string): string {
 /** Chave da lista de agendamentos de um contato: o badge e o popup dividem o mesmo cache. */
 const chaveDaLista = (contactId: string) => ["mensagens-agendadas", contactId] as const;
 
+function buscarAgendamentos(contactId: string) {
+  return apiClient.get<{ data: AgendamentoLinha[] }>(
+    `/api/v1/mensagens-agendadas?contact_id=${encodeURIComponent(contactId)}`,
+  );
+}
+
 export function MensagensAgendadasBotao(props: Props) {
   const [aberto, setAberto] = useState(false);
   const { contactId } = props;
 
-  // Cache do React Query: remontagens do botão reaproveitam a contagem em vez de
-  // refazer a busca e cancelá-la antes da resposta.
+  // Mesma consulta do popup: sempre que o botão monta, busca de novo, e o popup
+  // invalida esta chave ao criar ou cancelar, então o número nunca fica para trás.
   const consulta = useQuery({
     queryKey: chaveDaLista(contactId),
-    queryFn: () =>
-      apiClient.get<{ data: AgendamentoLinha[] }>(`/api/v1/mensagens-agendadas?contact_id=${encodeURIComponent(contactId)}`),
-    staleTime: 15_000,
+    queryFn: () => buscarAgendamentos(contactId),
+    staleTime: 0,
   });
   const total = consulta.data?.data.length ?? 0;
 
@@ -107,36 +112,22 @@ export function MensagensAgendadasDialog({
   textoInicial,
 }: Props & { open: boolean; onOpenChange: (v: boolean) => void }) {
   const t = useT();
-  const [lista, setLista] = useState<AgendamentoLinha[]>([]);
-  const [carregando, setCarregando] = useState(true);
   const [criando, setCriando] = useState(false);
   const qc = useQueryClient();
+  const consulta = useQuery({
+    queryKey: chaveDaLista(contactId),
+    queryFn: () => buscarAgendamentos(contactId),
+    staleTime: 0,
+  });
+  const lista = consulta.data?.data ?? [];
+  const carregando = consulta.isPending;
   const atualizarContagem = () => qc.invalidateQueries({ queryKey: chaveDaLista(contactId) });
-
-  const carregar = useCallback(async () => {
-    setCarregando(true);
-    try {
-      const res = await apiClient.get<{ data: AgendamentoLinha[] }>(
-        `/api/v1/mensagens-agendadas?contact_id=${encodeURIComponent(contactId)}`,
-      );
-      setLista(res.data);
-    } catch {
-      toast.error("Não consegui carregar as mensagens agendadas.");
-    } finally {
-      setCarregando(false);
-    }
-  }, [contactId]);
-
-  useEffect(() => {
-    void carregar();
-  }, [carregar]);
 
   async function cancelar(id: string) {
     try {
       await apiClient.delete(`/api/v1/mensagens-agendadas/${id}`);
       toast.success("Agendamento cancelado.");
       await atualizarContagem();
-      await carregar();
     } catch {
       toast.error("Não consegui cancelar o agendamento.");
     }
@@ -158,7 +149,6 @@ export function MensagensAgendadasDialog({
             onCriado={async () => {
               setCriando(false);
               await atualizarContagem();
-              await carregar();
             }}
           />
         ) : (
