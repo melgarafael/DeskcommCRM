@@ -155,6 +155,10 @@ begin
   -- `lead.date_field_due` entra pela 0743, como o aniversário: quem o emite é
   -- só o cron `lead-date-field-due` (sem sessão), e a partir dela ele alcança a
   -- origem e manda WhatsApp.
+  -- `lead.stage_stale` entra pela 9206, pela mesma razão do gatilho de data do
+  -- funil: quem o emite é só a varredura `lead-time-triggers` (sem sessão), e
+  -- a partir dela ele alcança a origem e manda WhatsApp — forjado por login,
+  -- seria envio em nome de uma etapa que ninguém parou.
   -- Revogação do turno é fato da tomada nativa, nunca um pedido do login.
   -- `conversation.closed` entra pela 9212: quem o emite é o gatilho do
   -- encerramento (o servidor), e a partir dele uma automação reage ao
@@ -163,7 +167,8 @@ begin
   if auth.uid() is not null and p_event_type in (
     'message.received','appointment.outcome_confirmed',
     'ai.case_opened','ai.case_closed','contact.birthday','contact.phone_added',
-    'lead.date_field_due','conversation.autonomous_turn_revoked','conversation.closed'
+    'lead.date_field_due','lead.stage_stale','conversation.autonomous_turn_revoked',
+    'conversation.closed'
   ) then
     raise exception 'reserved_message_received' using errcode='42501';
   end if;
