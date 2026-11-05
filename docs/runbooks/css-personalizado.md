@@ -21,15 +21,16 @@ lê; ver `lib/branding/sem-css-personalizado.ts`).
 
 ## Saída pelo servidor
 
-Sem acesso à tela. Rode **na VPS, de dentro da pasta da instalação**, com a
-connection string carregada e o `psql` do contêiner (a VPS do kit não tem
-cliente de Postgres no host) — os três passos estão em
+Sem acesso à tela. Rode **na VPS, de dentro da pasta da instalação**, com o
+`psql` do contêiner, pelo mesmo caminho do kit (a VPS instalada por ele não tem
+cliente de Postgres no host). O porquê de cada linha está em
 [`rodar-sql-na-vps.md`](./rodar-sql-na-vps.md):
 
 ```bash
-cd "$(dirname "$(find /root /opt /home /var/www -maxdepth 4 -name docker-compose.prod.yml 2>/dev/null | head -1)")"
-export SUPABASE_DB_URL="$(grep -m1 '^SUPABASE_DB_URL=' .env | cut -d= -f2- | tr -d "\"'" )"
-docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -c "delete from public.platform_config where chave = 'APP_CUSTOM_CSS';"
+P="$(find /root /opt /home /var/www -maxdepth 4 -name docker-compose.prod.yml 2>/dev/null | head -1)"
+if [ -n "$P" ]; then cd "$(dirname "$P")" && pwd; else echo "instalação não encontrada"; fi
+psql_vps() { bash -c 'source hostgator-setup-kit/_common.sh && load_env .env && psql_run "$@"' _ "$@"; }
+psql_vps -c "delete from public.platform_config where chave = 'APP_CUSTOM_CSS';"
 ```
 
 O app guarda a folha em memória por até 30 segundos; depois disso ela some de

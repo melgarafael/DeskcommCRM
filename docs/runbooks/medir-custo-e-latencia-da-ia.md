@@ -7,13 +7,13 @@ lentidão de verdade.
 
 Tudo aqui é **só leitura**. Rode **na VPS, de dentro da pasta da instalação**, e
 o `psql` é o do contêiner: a VPS instalada pelo kit não traz cliente de Postgres
-no host, e `$SUPABASE_DB_URL` não está no seu shell (ela mora no `.env`). Os três
-passos estão em [`rodar-sql-na-vps.md`](./rodar-sql-na-vps.md).
+no host, e a connection string mora no `.env`, não no seu shell. O porquê de cada
+linha está em [`rodar-sql-na-vps.md`](./rodar-sql-na-vps.md).
 
 ```bash
-cd "$(dirname "$(find /root /opt /home /var/www -maxdepth 4 -name docker-compose.prod.yml 2>/dev/null | head -1)")"
-export SUPABASE_DB_URL="$(grep -m1 '^SUPABASE_DB_URL=' .env | cut -d= -f2- | tr -d "\"'" )"
-docker run --rm -it postgres:17-alpine psql "$SUPABASE_DB_URL"   # sessão interativa
+P="$(find /root /opt /home /var/www -maxdepth 4 -name docker-compose.prod.yml 2>/dev/null | head -1)"
+if [ -n "$P" ]; then cd "$(dirname "$P")" && pwd; else echo "instalação não encontrada"; fi
+bash -c 'source hostgator-setup-kit/_common.sh && load_env .env && pg_container -it postgres:17-alpine psql "$(url_do_schema)"'   # sessão interativa
 ```
 
 e, dentro dele, escolha a organização uma vez (o id está em

@@ -19,9 +19,10 @@ copiando e colando. O porquê de cada linha está em
 [`rodar-sql-na-vps.md`](./rodar-sql-na-vps.md).
 
 ```bash
-cd "$(dirname "$(find /root /opt /home /var/www -maxdepth 4 -name docker-compose.prod.yml 2>/dev/null | head -1)")"
-export SUPABASE_DB_URL="$(grep -m1 '^SUPABASE_DB_URL=' .env | cut -d= -f2- | tr -d "\"'" )"
-docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -c 'select 1'   # tem de responder 1
+P="$(find /root /opt /home /var/www -maxdepth 4 -name docker-compose.prod.yml 2>/dev/null | head -1)"
+if [ -n "$P" ]; then cd "$(dirname "$P")" && pwd; else echo "instalação não encontrada"; fi
+psql_vps() { bash -c 'source hostgator-setup-kit/_common.sh && load_env .env && psql_run "$@"' _ "$@"; }
+psql_vps -c 'select 1'   # tem de responder 1
 ```
 
 ## Diagnóstico (cada linha é comando, não afirmação)
@@ -29,15 +30,15 @@ docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -c 'select 1'   # 
 Rollbacks por segundo — a assinatura do replay é "milhares por segundo com o app ocioso":
 
 ```bash
-docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -Atc "select xact_rollback, xact_commit from pg_stat_database where datname=current_database()"
+psql_vps -Atc "select xact_rollback, xact_commit from pg_stat_database where datname=current_database()"
 sleep 10
-docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -Atc "select xact_rollback from pg_stat_database where datname=current_database()"
+psql_vps -Atc "select xact_rollback from pg_stat_database where datname=current_database()"
 ```
 
 Quem está abortando (medido: só `fn_followup_patch` e `fn_google_appointment`, ambas terminando em `40001`):
 
 ```bash
-docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -Atc "select state, left(query,120) from pg_stat_activity where usename='authenticator' and state<>'idle'"
+psql_vps -Atc "select state, left(query,120) from pg_stat_activity where usename='authenticator' and state<>'idle'"
 ```
 
 Prova de que a VPS NÃO é a origem (57 pacotes na porta 443 em 14 s contra 31.839 rollbacks):
@@ -71,8 +72,8 @@ O hook `pgrst.db_pre_request = public.fn_pgrst_recusar_replay_do_gateway` respon
 cujo `sb-request-id` tem mais de 5 minutos. 4xx não é reexecutado. Conferir que está registrado:
 
 ```bash
-docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -Atc "select rolconfig from pg_roles where rolname='authenticator'"   # contém pgrst.db_pre_request=...
-docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -Atc "select sum(calls) from pg_stat_statements s join pg_roles r on r.oid=s.userid where r.rolname='authenticator' and query ilike '%fn_pgrst_recusar_replay_do_gateway%'"  # cresce a cada requisição
+psql_vps -Atc "select rolconfig from pg_roles where rolname='authenticator'"   # contém pgrst.db_pre_request=...
+psql_vps -Atc "select sum(calls) from pg_stat_statements s join pg_roles r on r.oid=s.userid where r.rolname='authenticator' and query ilike '%fn_pgrst_recusar_replay_do_gateway%'"  # cresce a cada requisição
 ```
 
 **Instalar o hook NO MEIO da tempestade não basta:** o `NOTIFY pgrst, 'reload config'` também precisa de uma conexão do
@@ -117,7 +118,7 @@ PostgREST tenta de novo, a introspecção estoura de novo — e fica nesse laço
 2. **O hook do replay está mesmo registrado?** Se está, este NÃO é o ramo do replay:
 
    ```bash
-   docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -Atc "select rolconfig from pg_roles where rolname='authenticator'"
+   psql_vps -Atc "select rolconfig from pg_roles where rolname='authenticator'"
    ```
 
 3. **O disco está no limite?** No painel: **Project Settings → Infrastructure → Disk IO Budget**.

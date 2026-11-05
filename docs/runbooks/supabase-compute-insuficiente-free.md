@@ -27,9 +27,10 @@ copiando e colando. O porquê de cada linha está em
 [`rodar-sql-na-vps.md`](./rodar-sql-na-vps.md).
 
 ```bash
-cd "$(dirname "$(find /root /opt /home /var/www -maxdepth 4 -name docker-compose.prod.yml 2>/dev/null | head -1)")"
-export SUPABASE_DB_URL="$(grep -m1 '^SUPABASE_DB_URL=' .env | cut -d= -f2- | tr -d "\"'" )"
-docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -c 'select 1'   # tem de responder 1
+P="$(find /root /opt /home /var/www -maxdepth 4 -name docker-compose.prod.yml 2>/dev/null | head -1)"
+if [ -n "$P" ]; then cd "$(dirname "$P")" && pwd; else echo "instalação não encontrada"; fi
+psql_vps() { bash -c 'source hostgator-setup-kit/_common.sh && load_env .env && psql_run "$@"' _ "$@"; }
+psql_vps -c 'select 1'   # tem de responder 1
 ```
 
 ## Sintoma
@@ -57,7 +58,7 @@ Se CPU/memória ficam saturados sem carga de usuário, é compute insuficiente.
 ### 2. `pg_stat_activity` — quem está consumindo
 
 ```bash
-docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -c \
+psql_vps -c \
   "select count(*) as total,
           count(*) filter (where state = 'active') as ativos,
           count(*) filter (where state = 'idle in transaction') as idle_em_tx
@@ -68,7 +69,7 @@ docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -c \
 E quem são:
 
 ```bash
-docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -c \
+psql_vps -c \
   "select usename, state, count(*) as n, left(query, 80) as consulta
      from pg_stat_activity
     where datname = current_database()
@@ -82,7 +83,7 @@ replay/loop — o problema é a capacidade, não a tempestade.
 ### 3. `pg_settings` — limites do plano
 
 ```bash
-docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -c \
+psql_vps -c \
   "select name, setting, unit
      from pg_settings
     where name in ('max_connections', 'shared_buffers', 'work_mem',
