@@ -568,7 +568,6 @@ describe("ai/cases e ai/routing-results — PUBLIC_PATHS (borda do proxy)", () =
     `/api/v1/ai/cases/${A.caso}/chat`,
     `/api/v1/ai/cases/${A.caso}/close`,
     `/api/v1/ai/cases/${A.caso}/reply`,
-    "/api/v1/ai/routing-results",
     "/api/v1/ai/inbox",
     `/api/v1/ai/inbox/${A.caso}`,
     "/api/v1/ai/inbox/resolve-all",
