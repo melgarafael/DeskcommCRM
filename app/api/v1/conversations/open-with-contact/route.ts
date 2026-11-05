@@ -72,6 +72,10 @@ async function assumirConversaSeLivre(p: {
       conversationId: p.conversationId,
       actor: { type: "user", id: p.userId, role: p.role },
       requestId: p.requestId,
+      // #4019 + decisão do #3216: "Iniciar conversa" NÃO toma o card de um
+      // colega. O negócio aberto do contato só ganha dono se ainda não tiver
+      // nenhum; o Assumir do Inbox, esse sim, leva o card junto.
+      soSemResponsavel: true,
     });
     if (error) throw error;
     // Zero linhas = a conversa já tinha dono. É o caminho normal de quem abre

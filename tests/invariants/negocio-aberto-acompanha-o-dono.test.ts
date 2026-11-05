@@ -1,0 +1,473 @@
+/**
+ * #4019 — O NEGÓCIO ABERTO DO CONTATO ACOMPANHA O DONO DA CONVERSA, POR TODOS OS
+ * CAMINHOS QUE ATRIBUEM.
+ *
+ * ─── O defeito, medido ──────────────────────────────────────────────────────
+ *
+ * O #3177 (PR #3216) levou o negócio aberto ao transferir/assumir PELA TELA: a
+ * régua `sincronizarNegocioAbertoDoContato` rodava nas rotas, com o cliente da
+ * sessão (RLS ligada). Levantamento do relator: 14 de 46 conversas com dono
+ * tinham negócio aberto com responsável DIFERENTE do dono da conversa (ou sem
+ * responsável). Três caminhos escapavam:
+ *
+ *   1. Atendente (`agent`) transferindo com `visibility_mode =
+ *      own_and_unassigned`: a escrita no negócio é recusada pelo WITH CHECK de
+ *      `crm_leads_update` (#2556) e só a conversa mudava;
+ *   2. transferência FORA da tela: `crm_assign_conversation` (MCP) e chamadas
+ *      diretas de `fn_conversation_assign` não passavam por régua nenhuma;
+ *   3. Assumir do Inbox, que só preenchia negócio SEM responsável — régua certa
+ *      para "Iniciar conversa", errada ali.
+ *
+ * ─── O que este arquivo prova (Postgres real, `pnpm test:db`) ───────────────
+ *
+ * Os três caminhos, com o `select` LITERAL dos dois donos (conversa e negócio);
+ * e os seis lados opostos que a mudança não pode quebrar: contato sem negócio
+ * aberto não ganha card criado; negócio ganho e perdido não são tocados; outra
+ * organização não é tocada; "Iniciar conversa" continua só preenchendo card SEM
+ * responsável; quem recebe a conversa passa a ver o card e o terceiro continua
+ * sem vê-lo (e card de colega que o chamador não enxerga não se move); e
+ * A→B→C termina em C sem `lead.assigned` a mais.
+ *
+ * O caminho 4 da issue (contato com MAIS DE UM negócio aberto) NÃO é consertado
+ * aqui: é decisão de produto. O caso existe para provar que, com dois abertos,
+ * nada é tocado — e que ninguém escolhe por adivinhação.
+ */
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { lastLine, sql } from "./gov-helpers";
+
+const ORG = "dddddddd-0000-4000-8000-000000000001";
+const OUTRA_ORG = "dddddddd-0000-4000-8000-000000000002";
+
+const A = "dddddddd-1111-4000-8000-000000000001"; // atendente que transfere
+const B = "dddddddd-1111-4000-8000-000000000002"; // atendente que recebe
+const C = "dddddddd-1111-4000-8000-000000000003"; // terceiro (não enxerga card de A)
+const GESTOR = "dddddddd-1111-4000-8000-000000000004";
+const FORA = "dddddddd-1111-4000-8000-000000000005"; // membro da OUTRA organização
+
+const SESSAO = "dddddddd-2222-4000-8000-000000000001";
+const SESSAO_OUTRA = "dddddddd-2222-4000-8000-000000000002";
+const PIPELINE = "dddddddd-5555-4000-8000-000000000001";
+const ETAPA = "dddddddd-5555-4000-8000-000000000002";
+const PIPELINE_OUTRA = "dddddddd-5555-4000-8000-000000000003";
+const ETAPA_OUTRA = "dddddddd-5555-4000-8000-000000000004";
+
+/** Um contato por caso: um caso não contamina o outro (1 conversa por par). */
+const CT = {
+  atendenteTransfere: "dddddddd-3333-4000-8000-000000000001",
+  foraDaTela: "dddddddd-3333-4000-8000-000000000002",
+  assumir: "dddddddd-3333-4000-8000-000000000003",
+  semNegocio: "dddddddd-3333-4000-8000-000000000004",
+  ganho: "dddddddd-3333-4000-8000-000000000005",
+  perdido: "dddddddd-3333-4000-8000-000000000006",
+  iniciarComDono: "dddddddd-3333-4000-8000-000000000007",
+  iniciarLivre: "dddddddd-3333-4000-8000-000000000008",
+  escada: "dddddddd-3333-4000-8000-000000000009",
+  cardInvisivel: "dddddddd-3333-4000-8000-00000000000a",
+  doisAbertos: "dddddddd-3333-4000-8000-00000000000b",
+  outraOrganizacao: "dddddddd-3333-4000-8000-00000000000c",
+} as const;
+
+const CONV = {
+  atendenteTransfere: "dddddddd-4444-4000-8000-000000000001",
+  foraDaTela: "dddddddd-4444-4000-8000-000000000002",
+  assumir: "dddddddd-4444-4000-8000-000000000003",
+  semNegocio: "dddddddd-4444-4000-8000-000000000004",
+  ganho: "dddddddd-4444-4000-8000-000000000005",
+  perdido: "dddddddd-4444-4000-8000-000000000006",
+  iniciarComDono: "dddddddd-4444-4000-8000-000000000007",
+  iniciarLivre: "dddddddd-4444-4000-8000-000000000008",
+  escada: "dddddddd-4444-4000-8000-000000000009",
+  cardInvisivel: "dddddddd-4444-4000-8000-00000000000a",
+  doisAbertos: "dddddddd-4444-4000-8000-00000000000b",
+  outraOrganizacao: "dddddddd-4444-4000-8000-00000000000c",
+} as const;
+
+const NEG = {
+  atendenteTransfere: "dddddddd-6666-4000-8000-000000000001",
+  foraDaTela: "dddddddd-6666-4000-8000-000000000002",
+  assumir: "dddddddd-6666-4000-8000-000000000003",
+  ganho: "dddddddd-6666-4000-8000-000000000004",
+  perdido: "dddddddd-6666-4000-8000-000000000005",
+  presoNoDono: "dddddddd-6666-4000-8000-000000000006",
+  livre: "dddddddd-6666-4000-8000-000000000007",
+  escada: "dddddddd-6666-4000-8000-000000000008",
+  doColega: "dddddddd-6666-4000-8000-000000000009",
+  doisAbertosA: "dddddddd-6666-4000-8000-00000000000a",
+  doisAbertosB: "dddddddd-6666-4000-8000-00000000000b",
+  outraOrganizacao: "dddddddd-6666-4000-8000-00000000000c",
+} as const;
+
+/** Os dois donos, literais: conversa e negócio. */
+function donoDaConversa(conversa: string): string {
+  return lastLine(
+    sql(`select coalesce(assigned_to_user_id::text, 'SEM_DONO') from public.conversations where id = '${conversa}';`),
+  );
+}
+
+function donoDoNegocio(negocio: string): string {
+  return lastLine(
+    sql(`select coalesce(owner_user_id::text, 'SEM_DONO') from public.crm_leads where id = '${negocio}';`),
+  );
+}
+
+function quantosNegocios(contato: string): number {
+  return Number(
+    lastLine(
+      sql(`select count(*) from public.crm_leads where organization_id = '${ORG}' and contact_id = '${contato}';`),
+    ),
+  );
+}
+
+/** Quantos cards o usuário ENXERGA pela RLS de crm_leads (a visibilidade real). */
+function quantosEnxerga(usuario: string, negocio: string): number {
+  return Number(
+    lastLine(
+      sql(`
+        set role authenticated;
+        select set_config('request.jwt.claims', '{"sub":"${usuario}"}', false);
+        select count(*) from public.crm_leads where id = '${negocio}';
+      `),
+    ),
+  );
+}
+
+/**
+ * A chamada como as rotas fazem: sessão de pessoa (auth.uid()) ou runtime /
+ * servidor (service role, auth.uid() nulo — é o client do MCP). Sem o 8º
+ * argumento por padrão, de propósito: é a assinatura que TODO chamador de hoje
+ * usa, e é ela que o defeito habita.
+ */
+function atribui(p: {
+  como: string | null; // null = service role (MCP / automação)
+  organizacao?: string;
+  conversa: string;
+  para: string | null;
+  motivo?: string;
+  esperado?: string | null;
+  trava?: boolean;
+  soSemDono?: boolean;
+}): void {
+  const args = [
+    `'${p.organizacao ?? ORG}'`,
+    `'${p.conversa}'`,
+    p.para ? `'${p.para}'` : "null",
+    `'${p.motivo ?? "transfer"}'`,
+    p.esperado === undefined || p.esperado === null ? "null" : `'${p.esperado}'`,
+    p.trava ? "true" : "false",
+  ];
+  if (p.soSemDono !== undefined) args.push(p.soSemDono ? "true" : "false");
+
+  const sessao =
+    p.como === null
+      ? "set role service_role;"
+      : `set role authenticated;\n select set_config('request.jwt.claims', '{"sub":"${p.como}"}', false);`;
+  sql(`${sessao}
+    select public.fn_conversation_assign(${args.join(", ")});`);
+}
+
+function eventosDeAtribuicao(negocio: string): number {
+  return Number(
+    lastLine(
+      sql(`select count(*) from public.event_log
+            where organization_id = '${ORG}' and event_type = 'lead.assigned'
+              and payload ->> 'lead_id' = '${negocio}';`),
+    ),
+  );
+}
+
+function conversaNova(id: string, contato: string, dono: string | null): void {
+  sql(`
+    insert into public.conversations
+      (id, organization_id, contact_id, channel_session_id, status, assigned_to_user_id, assigned_at)
+    values ('${id}', '${ORG}', '${contato}', '${SESSAO}', '${dono ? "claimed" : "open"}',
+            ${dono ? `'${dono}'` : "null"}, ${dono ? "now()" : "null"});
+  `);
+}
+
+function negocioNovo(p: {
+  id: string;
+  contato: string;
+  dono: string | null;
+  status?: string;
+  motivoDaPerda?: string;
+  organizacao?: string;
+  pipeline?: string;
+  etapa?: string;
+}): void {
+  const status = p.status ?? "open";
+  sql(`
+    insert into public.crm_leads
+      (id, organization_id, pipeline_id, stage_id, title, contact_id, status, lost_reason,
+       closed_at, owner_user_id, owner_kind)
+    values ('${p.id}', '${p.organizacao ?? ORG}', '${p.pipeline ?? PIPELINE}', '${p.etapa ?? ETAPA}',
+            'Negócio do caso', '${p.contato}', '${status}',
+            ${p.motivoDaPerda ? `'${p.motivoDaPerda}'` : "null"},
+            ${status === "open" ? "null" : "now()"},
+            ${p.dono ? `'${p.dono}'` : "null"}, ${p.dono ? "'user'" : "null"});
+  `);
+}
+
+beforeAll(() => {
+  sql(`
+    insert into auth.users (id, email) values
+      ('${A}', 'acompanha-a@invariant.test'),
+      ('${B}', 'acompanha-b@invariant.test'),
+      ('${C}', 'acompanha-c@invariant.test'),
+      ('${GESTOR}', 'acompanha-gestor@invariant.test'),
+      ('${FORA}', 'acompanha-fora@invariant.test')
+    on conflict (id) do nothing;
+
+    insert into public.organizations (id, slug, legal_name, display_name, settings) values
+      ('${ORG}', 'acompanha-o-dono-inv', 'Acompanha Invariant Org', 'Acompanha Inv',
+       '{"visibility_mode":"own_and_unassigned"}'::jsonb),
+      ('${OUTRA_ORG}', 'acompanha-o-dono-outra', 'Acompanha Outra Org', 'Acompanha Outra',
+       '{"visibility_mode":"own_and_unassigned"}'::jsonb)
+    on conflict (id) do nothing;
+
+    update public.organizations
+       set settings = coalesce(settings, '{}'::jsonb) || '{"visibility_mode":"own_and_unassigned"}'::jsonb
+     where id in ('${ORG}', '${OUTRA_ORG}');
+
+    insert into public.user_organizations (user_id, organization_id, role, accepted_at) values
+      ('${A}', '${ORG}', 'agent', now()),
+      ('${B}', '${ORG}', 'agent', now()),
+      ('${C}', '${ORG}', 'agent', now()),
+      ('${GESTOR}', '${ORG}', 'manager', now()),
+      ('${FORA}', '${OUTRA_ORG}', 'agent', now())
+    on conflict (user_id, organization_id) do update
+      set role = excluded.role, revoked_at = null, accepted_at = now();
+
+    do $org$ begin
+      insert into public.channel_sessions (id, organization_id, waha_session_name, webhook_secret_encrypted)
+        values ('${SESSAO}', '${ORG}', 'acompanha-o-dono-inv', '\\x00'::bytea);
+    exception when unique_violation then null; end $org$;
+
+    do $org$ begin
+      insert into public.channel_sessions (id, organization_id, waha_session_name, webhook_secret_encrypted)
+        values ('${SESSAO_OUTRA}', '${OUTRA_ORG}', 'acompanha-o-dono-outra', '\\x00'::bytea);
+    exception when unique_violation then null; end $org$;
+
+    insert into public.crm_pipelines (id, organization_id, name, slug) values
+      ('${PIPELINE}', '${ORG}', 'Acompanha Invariant', 'acompanha-o-dono-inv'),
+      ('${PIPELINE_OUTRA}', '${OUTRA_ORG}', 'Acompanha Outra', 'acompanha-o-dono-outra')
+    on conflict (id) do nothing;
+
+    insert into public.crm_stages (id, organization_id, pipeline_id, name, slug, position) values
+      ('${ETAPA}', '${ORG}', '${PIPELINE}', 'Novo', 'novo-acompanha', 1000),
+      ('${ETAPA_OUTRA}', '${OUTRA_ORG}', '${PIPELINE_OUTRA}', 'Novo', 'novo-acompanha-outra', 1000)
+    on conflict (id) do nothing;
+
+    insert into public.contacts (id, organization_id, display_name) values
+      ('${CT.atendenteTransfere}', '${ORG}', 'Contato Atendente Transfere'),
+      ('${CT.foraDaTela}', '${ORG}', 'Contato Fora Da Tela'),
+      ('${CT.assumir}', '${ORG}', 'Contato Assumir'),
+      ('${CT.semNegocio}', '${ORG}', 'Contato Sem Negocio'),
+      ('${CT.ganho}', '${ORG}', 'Contato Ganho'),
+      ('${CT.perdido}', '${ORG}', 'Contato Perdido'),
+      ('${CT.iniciarComDono}', '${ORG}', 'Contato Iniciar Com Dono'),
+      ('${CT.iniciarLivre}', '${ORG}', 'Contato Iniciar Livre'),
+      ('${CT.escada}', '${ORG}', 'Contato Escada'),
+      ('${CT.cardInvisivel}', '${ORG}', 'Contato Card Invisivel'),
+      ('${CT.doisAbertos}', '${ORG}', 'Contato Dois Abertos'),
+      ('${CT.outraOrganizacao}', '${OUTRA_ORG}', 'Contato Outra Organizacao')
+    on conflict (id) do nothing;
+  `);
+
+  // Caminho 1 — Atendente transfere com `own_and_unassigned`.
+  conversaNova(CONV.atendenteTransfere, CT.atendenteTransfere, A);
+  negocioNovo({ id: NEG.atendenteTransfere, contato: CT.atendenteTransfere, dono: A });
+
+  // Caminho 2 — transferência fora da tela (MCP / chamada direta).
+  conversaNova(CONV.foraDaTela, CT.foraDaTela, A);
+  negocioNovo({ id: NEG.foraDaTela, contato: CT.foraDaTela, dono: A });
+
+  // Caminho 3 — Assumir do Inbox: conversa livre, card com quem não atende mais.
+  conversaNova(CONV.assumir, CT.assumir, null);
+  negocioNovo({ id: NEG.assumir, contato: CT.assumir, dono: A });
+
+  // Lado oposto (a) — contato sem negócio aberto: conversa, e nada de card.
+  conversaNova(CONV.semNegocio, CT.semNegocio, A);
+
+  // Lado oposto (b) — negócio GANHO e negócio PERDIDO não são tocados.
+  conversaNova(CONV.ganho, CT.ganho, A);
+  negocioNovo({ id: NEG.ganho, contato: CT.ganho, dono: A, status: "won" });
+  conversaNova(CONV.perdido, CT.perdido, A);
+  negocioNovo({
+    id: NEG.perdido,
+    contato: CT.perdido,
+    dono: A,
+    status: "lost",
+    motivoDaPerda: "requested_by_customer",
+  });
+
+  // Lado oposto (d) — "Iniciar conversa": um card com dono e um sem dono.
+  conversaNova(CONV.iniciarComDono, CT.iniciarComDono, null);
+  negocioNovo({ id: NEG.presoNoDono, contato: CT.iniciarComDono, dono: A });
+  conversaNova(CONV.iniciarLivre, CT.iniciarLivre, null);
+  negocioNovo({ id: NEG.livre, contato: CT.iniciarLivre, dono: null });
+
+  // Lado oposto (e) — o card é do C, e A (own_and_unassigned) não o enxerga.
+  conversaNova(CONV.cardInvisivel, CT.cardInvisivel, A);
+  negocioNovo({ id: NEG.doColega, contato: CT.cardInvisivel, dono: C });
+
+  // Caminho 4 da issue (decisão de produto) — dois abertos: nada é tocado.
+  conversaNova(CONV.doisAbertos, CT.doisAbertos, A);
+  negocioNovo({ id: NEG.doisAbertosA, contato: CT.doisAbertos, dono: A });
+  negocioNovo({ id: NEG.doisAbertosB, contato: CT.doisAbertos, dono: null });
+
+  // Lado oposto (c) — a outra organização, com o MESMO cenário.
+  sql(`
+    insert into public.conversations
+      (id, organization_id, contact_id, channel_session_id, status, assigned_to_user_id, assigned_at)
+    values ('${CONV.outraOrganizacao}', '${OUTRA_ORG}', '${CT.outraOrganizacao}', '${SESSAO_OUTRA}',
+            'claimed', '${FORA}', now());
+
+    insert into public.crm_leads
+      (id, organization_id, pipeline_id, stage_id, title, contact_id, status, owner_user_id, owner_kind)
+    values ('${NEG.outraOrganizacao}', '${OUTRA_ORG}', '${PIPELINE_OUTRA}', '${ETAPA_OUTRA}',
+            'Negócio da outra organização', '${CT.outraOrganizacao}', 'open', '${FORA}', 'user');
+  `);
+
+  // A escada A→B→C.
+  conversaNova(CONV.escada, CT.escada, A);
+  negocioNovo({ id: NEG.escada, contato: CT.escada, dono: A });
+});
+
+afterAll(() => {
+  sql(`
+    delete from public.event_log where organization_id in ('${ORG}', '${OUTRA_ORG}');
+    delete from public.conversation_assignment_events where organization_id in ('${ORG}', '${OUTRA_ORG}');
+    delete from public.conversations where organization_id in ('${ORG}', '${OUTRA_ORG}');
+    delete from public.crm_leads where organization_id in ('${ORG}', '${OUTRA_ORG}');
+    delete from public.channel_sessions where organization_id in ('${ORG}', '${OUTRA_ORG}');
+    delete from public.crm_stages where organization_id in ('${ORG}', '${OUTRA_ORG}');
+    delete from public.crm_pipelines where organization_id in ('${ORG}', '${OUTRA_ORG}');
+    delete from public.contacts where organization_id in ('${ORG}', '${OUTRA_ORG}');
+    delete from public.user_organizations where organization_id in ('${ORG}', '${OUTRA_ORG}');
+    delete from public.organizations where id in ('${ORG}', '${OUTRA_ORG}');
+    delete from auth.users where id in ('${A}', '${B}', '${C}', '${GESTOR}', '${FORA}');
+  `);
+});
+
+describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
+  it("caminho 1: atendente transfere em own_and_unassigned e o card vai junto", () => {
+    expect(donoDaConversa(CONV.atendenteTransfere)).toBe(A);
+    expect(donoDoNegocio(NEG.atendenteTransfere)).toBe(A);
+
+    atribui({ como: A, conversa: CONV.atendenteTransfere, para: B });
+
+    const evento = lastLine(
+      sql(`select from_user_id::text || '>' || to_user_id::text
+             from public.conversation_assignment_events
+            where conversation_id = '${CONV.atendenteTransfere}' and reason = 'transfer'
+            order by created_at desc limit 1;`),
+    );
+    expect(evento).toBe(`${A}>${B}`);
+    expect(donoDaConversa(CONV.atendenteTransfere)).toBe(B);
+    expect(donoDoNegocio(NEG.atendenteTransfere)).toBe(B);
+  });
+
+  it("caminho 2: transferência fora da tela (service role, como o MCP) leva o card", () => {
+    expect(donoDoNegocio(NEG.foraDaTela)).toBe(A);
+
+    atribui({ como: null, conversa: CONV.foraDaTela, para: B });
+
+    expect(donoDaConversa(CONV.foraDaTela)).toBe(B);
+    expect(donoDoNegocio(NEG.foraDaTela)).toBe(B);
+  });
+
+  it("caminho 3: Assumir do Inbox leva o card de quem não atende mais", () => {
+    expect(donoDaConversa(CONV.assumir)).toBe("SEM_DONO");
+    expect(donoDoNegocio(NEG.assumir)).toBe(A);
+
+    atribui({ como: B, conversa: CONV.assumir, para: B, motivo: "claim", esperado: null, trava: true });
+
+    expect(donoDaConversa(CONV.assumir)).toBe(B);
+    expect(donoDoNegocio(NEG.assumir)).toBe(B);
+  });
+
+  it("lado oposto (a): contato sem negócio aberto não ganha card criado", () => {
+    atribui({ como: A, conversa: CONV.semNegocio, para: B });
+
+    expect(donoDaConversa(CONV.semNegocio)).toBe(B);
+    expect(quantosNegocios(CT.semNegocio)).toBe(0);
+  });
+
+  it("lado oposto (b): negócio GANHO e PERDIDO não são tocados", () => {
+    atribui({ como: A, conversa: CONV.ganho, para: B });
+    atribui({ como: A, conversa: CONV.perdido, para: B });
+
+    expect(donoDaConversa(CONV.ganho)).toBe(B);
+    expect(donoDaConversa(CONV.perdido)).toBe(B);
+    expect(donoDoNegocio(NEG.ganho)).toBe(A);
+    expect(donoDoNegocio(NEG.perdido)).toBe(A);
+    expect(lastLine(sql(`select status from public.crm_leads where id = '${NEG.ganho}';`))).toBe("won");
+    expect(lastLine(sql(`select status from public.crm_leads where id = '${NEG.perdido}';`))).toBe("lost");
+  });
+
+  it("lado oposto (d): Iniciar conversa só preenche card SEM responsável", () => {
+    // Um único negócio aberto, COM dono: nada é escrito.
+    atribui({ como: B, conversa: CONV.iniciarComDono, para: B, motivo: "claim", esperado: null, trava: true, soSemDono: true });
+    expect(donoDaConversa(CONV.iniciarComDono)).toBe(B);
+    expect(donoDoNegocio(NEG.presoNoDono)).toBe(A);
+
+    // Um único negócio aberto, SEM dono: o dono é preenchido.
+    atribui({ como: B, conversa: CONV.iniciarLivre, para: B, motivo: "claim", esperado: null, trava: true, soSemDono: true });
+    expect(donoDaConversa(CONV.iniciarLivre)).toBe(B);
+    expect(donoDoNegocio(NEG.livre)).toBe(B);
+  });
+
+  it("lado oposto (e): quem recebe passa a ver o card; o terceiro continua sem vê-lo", () => {
+    // Depois do caminho 1 (B é o dono): B enxerga, C não.
+    expect(donoDaConversa(CONV.atendenteTransfere)).toBe(B);
+    expect(quantosEnxerga(B, NEG.atendenteTransfere)).toBe(1);
+    expect(quantosEnxerga(C, NEG.atendenteTransfere)).toBe(0);
+
+    // E o card de um COLEGA que o chamador não enxerga não se move de passagem.
+    expect(quantosEnxerga(A, NEG.doColega)).toBe(0);
+    atribui({ como: A, conversa: CONV.cardInvisivel, para: B });
+
+    expect(donoDaConversa(CONV.cardInvisivel)).toBe(B);
+    expect(donoDoNegocio(NEG.doColega)).toBe(C);
+  });
+
+  it("lado oposto (c): outra organização não é tocada", () => {
+    expect(donoDoNegocio(NEG.outraOrganizacao)).toBe(FORA);
+
+    // Nem por uma chamada de servidor com a conversa da organização da vez.
+    atribui({ como: null, organizacao: OUTRA_ORG, conversa: CONV.atendenteTransfere, para: A });
+
+    expect(donoDoNegocio(NEG.outraOrganizacao)).toBe(FORA);
+    expect(donoDaConversa(CONV.atendenteTransfere)).toBe(B);
+    expect(
+      Number(lastLine(sql(`select count(*) from public.conversation_assignment_events where organization_id = '${OUTRA_ORG}';`))),
+    ).toBe(0);
+  });
+
+  it("A→B→C: o card termina em C, sozinho, e sem lead.assigned a mais", () => {
+    atribui({ como: null, conversa: CONV.escada, para: B });
+    expect(donoDoNegocio(NEG.escada)).toBe(B);
+
+    atribui({ como: null, conversa: CONV.escada, para: C });
+    expect(donoDoNegocio(NEG.escada)).toBe(C);
+    expect(donoDaConversa(CONV.escada)).toBe(C);
+    expect(quantosNegocios(CT.escada)).toBe(1);
+
+    const eventos = eventosDeAtribuicao(NEG.escada);
+    expect(eventos).toBe(2); // A→B e B→C
+
+    // Repetir o dono atual não escreve no card: nenhum fato novo.
+    atribui({ como: null, conversa: CONV.escada, para: C });
+    expect(eventosDeAtribuicao(NEG.escada)).toBe(eventos);
+    expect(donoDoNegocio(NEG.escada)).toBe(C);
+  });
+
+  it("caminho 4 (decisão de produto): com DOIS negócios abertos, nada é tocado", () => {
+    atribui({ como: A, conversa: CONV.doisAbertos, para: B });
+
+    expect(donoDaConversa(CONV.doisAbertos)).toBe(B);
+    expect(donoDoNegocio(NEG.doisAbertosA)).toBe(A);
+    expect(donoDoNegocio(NEG.doisAbertosB)).toBe("SEM_DONO");
+  });
+});
