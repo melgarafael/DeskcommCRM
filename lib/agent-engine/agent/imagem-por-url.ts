@@ -7,7 +7,8 @@
  * (`guardarImagemNaConversa`) e manda ao canal só o `storagePath`, exatamente
  * como a foto do catálogo. O gateway de mensageria nunca recebe a URL da fonte.
  *
- * Aqui fica só o que a prévia e a extensão precisam: o formato da URL, sem rede.
+ * Aqui fica só o que a prévia e a extensão precisam: o formato da URL, sem rede,
+ * e a procedência da URL dentro do turno.
  */
 
 /**
@@ -57,4 +58,37 @@ export function descreverSemQuery(bruta: string): string {
   } catch {
     return '(url inválida)';
   }
+}
+
+/**
+ * Ferramentas cujo resultado pode trazer o endereço de uma foto: o banco externo e o
+ * catálogo. O resultado de outras (conversa, contato, notas) pode repetir o que o
+ * contato escreveu, então não conta.
+ */
+export const FERRAMENTAS_QUE_TRAZEM_IMAGEM: ReadonlySet<string> = new Set([
+  'crm_consultar_receita',
+  'crm_query_external_data',
+  'crm_search_products',
+]);
+
+/** Termina fora de pontuação: em texto corrido, o ponto final não faz parte do endereço. */
+const URL_NO_TEXTO = /https?:\/\/[^\s"'<>\\]*[^\s"'<>\\.,;:!?)\]}]/gi;
+
+const urlsEm = (valor: unknown): string[] => JSON.stringify(valor ?? null).match(URL_NO_TEXTO) ?? [];
+
+/**
+ * Os endereços que as ferramentas de dados devolveram NESTE turno. O `send_message`
+ * só busca uma `imagem_url` que esteja aqui, igual, letra por letra. Endereço que
+ * também estava nos argumentos da chamada não conta: é o pedido voltando na resposta,
+ * não um dado que a ferramenta trouxe.
+ */
+export function criarProcedenciaDeImagens() {
+  const vistas = new Set<string>();
+  return {
+    registrar(resultado: unknown, argumentos: unknown) {
+      const pedidas = new Set(urlsEm(argumentos));
+      for (const url of urlsEm(resultado)) if (!pedidas.has(url)) vistas.add(url);
+    },
+    viu: (url: string) => vistas.has(url),
+  };
 }

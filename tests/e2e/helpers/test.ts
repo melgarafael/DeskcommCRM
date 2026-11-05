@@ -111,8 +111,12 @@ const comEspera = new WeakSet<Page>();
  * o teste unit os prova. A #884 nasceu de um método de fora da cobertura:
  * `goBack`. Não embrulhe método à mão aqui: a cerca de
  * `tests/unit/revelacao-cobre-a-navegacao-inteira.test.ts` reprova.
+ *
+ * Exportada para a spec que cria o próprio contexto (`browser.newContext()`):
+ * ele escapa das fixtures abaixo, e o `goto` volta com a cópia do servidor
+ * ainda na caixa `S:` escondida — o mesmo test id 2x, e o modo estrito reprova.
  */
-function esperarARevelacaoNasCargas(page: Page): void {
+export function esperarARevelacaoNasCargas(page: Page): void {
   if (comEspera.has(page)) return;
   comEspera.add(page);
   embrulharANavegacao(page, () => esperarARevelacao(page));

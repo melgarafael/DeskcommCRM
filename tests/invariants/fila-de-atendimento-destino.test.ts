@@ -199,6 +199,9 @@ describe("fila de atendimento: o destino e o horário (9062)", () => {
       await query("alter table attendant_sector_members add primary key (organization_id, user_id)");
       await query("alter table attendant_sectors drop column if exists schedule");
       await query("alter table conversations drop constraint if exists conversations_sector_fk");
+      // A `conversations_select` da 9214 lê `sector_id`; antes da 9062 ela não lia.
+      // Sem tirá-la, o Postgres recusa o drop da coluna (2BP01). O rollback abaixo a devolve.
+      await query('drop policy if exists "conversations_select" on conversations');
       await query("alter table conversations drop column if exists sector_id");
 
       await query(arquivo);

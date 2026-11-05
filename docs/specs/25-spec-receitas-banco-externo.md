@@ -438,7 +438,7 @@ Destino: núcleo, dentro do módulo de banco externo, que nasce desligado.
 ## R4 entregue: `imagem_url` no envio do agente
 
 O `send_message` ganha `imagem_url` (URL https de uma imagem jpg, png ou webp
-que veio de um resultado de ferramenta). Decisão do dono (opção A): o CRM
+que uma ferramenta de dados devolveu no mesmo turno). Decisão do dono (opção A): o CRM
 baixa a imagem com a própria rede, confere, guarda no Storage da conversa e
 manda ao canal só o `storagePath`, como a foto do catálogo. O gateway de
 mensageria nunca recebe a URL da fonte. Sai pela mesma cadeia `before_send`
@@ -456,8 +456,9 @@ do texto (pacing, LGPD, opt-out, teto de envios do turno).
   conferidos (`conteudo_nao_e_imagem`). `guardarImagemNaConversa` grava em
   `whatsapp-media/<tenant>/<conversa>/externa-<hash>.<ext>` (nome pelo conteúdo;
   409 é sucesso) e recusa caminho fora da conversa (`isMediaPathOwnedBy`).
-- `lib/agent-engine/agent/imagem-por-url.ts` — só `formatoDeImagemPorUrl` (também
-  usado pela prévia) e `descreverSemQuery` (o log leva host + caminho, nunca a query).
+- `lib/agent-engine/agent/imagem-por-url.ts` — `formatoDeImagemPorUrl` (também
+  usado pela prévia), `descreverSemQuery` (o log leva host + caminho, nunca a
+  query) e `criarProcedenciaDeImagens` (ver "Procedência da URL").
 - `lib/agent-engine/agent/inbound-turn.ts` — schema de `send_message` com
   `imagem_url`; `produto_codigo` + `imagem_url` juntos devolvem
   `imagem_e_produto_juntos` e liberam a reserva do `dupTrava`; download e guarda
@@ -465,8 +466,8 @@ do texto (pacing, LGPD, opt-out, teto de envios do turno).
   texto e o retorno traz `foto_recusada`; o resultado traz `foto_enviada`.
   O `tenantId` que vai ao caminho é o do turno.
 - `lib/agent-engine/agent/preview.ts` — na prévia NADA é buscado, baixado nem
-  guardado; só o formato é conferido (sem rede) e o retorno traz `foto_enviada:
-  false` e `foto_prevista`.
+  guardado; só o formato e a procedência são conferidos (sem rede) e o retorno traz
+  `foto_enviada: false` e `foto_prevista`.
 - `lib/agent-engine/agent/fotos-do-produto.ts` — sem mudança (volta ao original).
 - Testes: `lib/agent-engine/agent/baixar-imagem-segura.test.ts`,
   `lib/agent-engine/agent/imagem-por-url.test.ts`,
@@ -480,18 +481,27 @@ do texto (pacing, LGPD, opt-out, teto de envios do turno).
 - Nenhuma migration, tela ou variável de ambiente nova.
 
 ### NÃO MEDIDO
-- C3: envio real por WhatsApp (tipos, tamanhos e tempos aceitos). Nenhum envio real foi feito.
+- C3: tipos, tamanhos e tempos aceitos no envio real por WhatsApp. O autor mediu um
+  envio real, um jpg de `gstatic.com`, recebido no celular; o resto da matriz não.
 - C4: volume de itens por turno com fotos (continua na prova com gente).
-- Que o `lookup` fixado funciona com os CDNs reais (TLS e SNI): só medido por
-  teste com dependências simuladas, sem rede.
+- Que o `lookup` fixado funciona com outros CDNs (TLS e SNI): medido só contra
+  `www.gstatic.com`, em download real, sem pool (`agent: false`).
 - Se o gateway bloqueia algo que o CRM já baixou: não sabemos, porque o gateway
   não recebe mais a URL.
 
-### Dívida declarada (não coberta)
-- Proveniência: o modelo pode escolher uma URL pública que ele mesmo inventou. O
-  CRM então baixa essa URL, e um pixel de rastreio revela o IP do servidor da
-  busca. A guarda confere destino e conteúdo, não a origem da URL. Fica como
-  dívida até decidir se a URL precisa aparecer em resultado de ferramenta deste turno.
+### Procedência da URL
+O `send_message` só busca uma `imagem_url` que tenha aparecido, igual, no resultado
+de `crm_consultar_receita`, `crm_query_external_data` ou `crm_search_products` do
+mesmo turno. Fora disso nada é baixado: a mensagem sai só com o texto e o retorno
+traz `foto_recusada: url_fora_dos_resultados`. A prévia confere a mesma regra e avisa
+(`imagem_recusada`). Resultado de outra ferramenta não conta, porque pode repetir o
+que o contato escreveu, e endereço que já estava nos argumentos da chamada também não.
+Sem padrão novo para ninguém: o campo nasce com a guarda, e nenhuma instalação
+usava `imagem_url` antes dela.
+
+A guarda confere de onde o endereço veio; destino e conteúdo seguem conferidos pelo
+download. O que uma tabela externa ou o catálogo guardam é dado da organização, e
+ela responde por ele.
 
 ## R5a entregue: o negócio com a referência do item
 
