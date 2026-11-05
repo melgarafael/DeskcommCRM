@@ -4556,3 +4556,46 @@ existe CSP no CRM, então nada foi medido contra uma); o painel em celular; e qu
 do iframe não chega ao CRM, porque o navegador entrega a tecla ao iframe: o painel fecha pelo botão ou
 com o foco fora do quadro. A coluna de CI foi montada a partir dos nomes e da intenção dos testes das
 tarefas anteriores; cada teste não foi relido caso a caso nesta tarefa.
+
+## J71 — Módulo conectado: os eventos que o módulo busca e o atraso em `/admin/extensoes` `[P0]` (2026-11-05)
+
+Specs: esta jornada é **especificação**. Nenhuma execução foi feita; ainda não existe módulo real com
+serviço de verdade, e o laboratório local não admite o perfil `connected` (ver J67.1). Quando houver um
+módulo real, os casos viram execução; até lá, cada linha descreve o que o módulo e a tela devem fazer.
+
+Cobertura hoje, só por escrita (não executada): `tests/invariants/extensoes-eventos.test.ts` (banco real,
+`pnpm test:db`, CI `invariants`), `app/api/v1/extensions/events/route.test.ts`,
+`lib/extensions/eventos-do-modulo.test.ts`, `lib/extensions/token-do-modulo.test.ts`,
+`app/admin/(protected)/extensoes/page.test.tsx` (`pnpm test:unit`, CI `verify`) e a cerca
+`tests/unit/eventos-do-modulo-so-por-prova.test.ts`. Nenhuma delas fala com um módulo de verdade.
+
+Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do PR interno.
+
+Ambiente previsto: o mesmo de J69, mais um módulo de laboratório que assine as buscas com o segredo da
+instalação e guarde o cursor, duas organizações com o mesmo módulo ligado, um contato em cada uma, uma
+pessoa `admin` da organização e o dono do servidor.
+
+| Caso | Nome | Prioridade | Prova prevista | Resultado |
+|---|---|---|---|---|
+| J71.1 | Leitura por cursor, só da organização | P0 | Com o mesmo módulo ligado nas organizações A e B, o módulo que assina como A lê só os eventos de A; nenhum identificador de B aparece, nem em páginas seguintes | **CI** (invariante e unit) escrito; **NÃO EXECUTADO** |
+| J71.2 | Anonimização chega em uma leitura | P0 | A organização A anonimiza um contato; na próxima busca do módulo vem um `contact_anonymized` com o id do contato, e anonimizar o mesmo contato de novo não cria um segundo evento | **CI** (invariante) escrito; **NÃO EXECUTADO** |
+| J71.3 | Módulo atrasado 40 dias que volta | P0 | O módulo lê tudo desde o último cursor, em ordem, sem perder nem repetir evento | **CI** (invariante e unit) escrito; **NÃO EXECUTADO** |
+| J71.4 | Instalação desligada não prende a LGPD por 30 dias (D2) | P0 | Depois de desligar o módulo ou a organização, ele ainda lê por 30 dias, e o evento de desativação chega; com 31 dias a leitura é recusada com a mesma resposta genérica; ligar de novo volta a permitir | **CI** (invariante) escrito; **NÃO EXECUTADO** |
+| J71.5 | Organização suspensa | P0 | Suspender (ou anonimizar a organização) gera `organization_suspended` e o módulo continua lendo para recebê-lo | **CI** (invariante) escrito; **NÃO EXECUTADO** |
+| J71.6 | Cursor que não é do módulo | P0 | Cursor adulterado, de outra organização ou de outra instalação: `400 invalid_cursor`, e o módulo nunca lê de uma posição escolhida por ele | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J71.7 | Assinatura ruim, carimbo velho, nonce repetido, sem vínculo | P0 | Todas as recusas devolvem a mesma resposta genérica 401; erro nosso é 503 | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J71.8 | Selo "atrasado" em `/admin/extensoes` | P0 | Com atraso e última leitura há mais de 24 h (ou nunca leu e há evento com mais de 24 h), a linha da instalação mostra "Atrasado" e "Este módulo ainda não apagou os dados de N contato(s) anonimizado(s)."; em dia, sem selo | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J71.9 | O atraso não mistura organizações | P0 | Duas organizações com atrasos diferentes mostram cada uma o seu número; a tela não diz qual empresa é qual | **CI** (invariante e unit) escrito; **NÃO EXECUTADO** |
+| J71.10 | Sem módulo conectado, a tela é a de antes | P0 | Sem nenhum módulo `connected`: nenhuma leitura de atraso, nenhum bloco novo em `/admin/extensoes` | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J71.11 | Quem pode ler as tabelas | P0 | `anon` e `authenticated` não executam as funções nem leem as tabelas de eventos e de cursor | **CI** (invariante) escrito; **NÃO EXECUTADO** |
+
+**Comportamento declarado.** O CRM não empurra nada ao módulo: gatilhos de banco escrevem uma linha e o
+módulo busca por cursor, com a mesma assinatura da busca de token. O cursor recebido reconhece o
+anterior, então o selo "atrasado" mede de verdade quanto o módulo ainda não leu. A tela do dono do
+servidor mostra números e datas, nunca o nome da empresa.
+
+**Não provado.** Nenhum caso acima foi executado com um módulo real nem num navegador; que um módulo
+real apague os dados ao receber `contact_anonymized` (isso é do módulo, fora do CRM); o tempo real entre
+a anonimização e a leitura (o plano promete "na próxima busca", não um prazo); o volume da tabela de
+eventos (não há expurgo nesta fase, D5); e a coluna de CI foi montada a partir dos nomes e da intenção
+dos testes das tarefas anteriores, sem reler cada teste caso a caso nesta tarefa.
