@@ -5,8 +5,8 @@ titulo: O aviso de mensagem nova mostra de qual canal a mensagem veio
 ---
 
 Quando a mensagem chegava, o aviso da esquina era sempre o mesmo bloco neutro:
-para saber se o cliente escreveu pelo WhatsApp ou pelo Telegram era preciso
-abrir a conversa. Agora o aviso leva a **marca do canal** — o logo da rede e uma
+para saber se o cliente escreveu pelo WhatsApp, pelo Instagram ou pelo Messenger
+era preciso abrir a conversa. Agora o aviso leva a **marca do canal** — o logo da rede e uma
 faixa de 3px na borda esquerda, na cor daquele canal — para que a origem se
 reconheça de relance.
 
