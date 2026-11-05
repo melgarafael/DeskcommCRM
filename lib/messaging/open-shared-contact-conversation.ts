@@ -4,7 +4,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { ensureConversation, sessaoProntaParaEnvio } from "@/lib/automation/start-conversation";
+import { ensureConversation, escolherSessaoParaEnvio } from "@/lib/automation/start-conversation";
 import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone";
 import { canalDesativado } from "@/lib/channels/desativado";
 import { lerEstadoDoCanal } from "@/lib/channels/estado";
@@ -105,18 +105,27 @@ export async function openSharedContactConversation(
    * declarada do dono do número, não saúde passageira.
    */
   const escolhidaPeloChamador = Boolean(input.channel_session_id);
-  const sessionId =
-    input.channel_session_id ??
-    (await sessaoProntaParaEnvio(admin, organizationId, {
-      // O pedido traz TELEFONE: a abertura é por telefone, e a sessão mais
-      // antiga da organização pode ser a social (Instagram/Facebook), que não
-      // disca número nenhum. Sem a preferência, a conversa de um contato com
-      // telefone nascia no canal errado e a primeira mensagem era recusada —
-      // a mesma pendência que o #3358 fechou na criação de contato
-      // (`lib/contacts/conversa-ao-criar.ts`) e que faltava nesta porta.
-      preferirTelefone: Boolean(input.phone_number),
-    }));
-  if (!sessionId) throw new Error("session_not_found");
+  const semCanalEscolhido = escolhidaPeloChamador
+    ? null
+    : await escolherSessaoParaEnvio(admin, organizationId, {
+        // O pedido traz TELEFONE: a abertura é por telefone, e a sessão mais
+        // antiga da organização pode ser a social (Instagram/Facebook), que não
+        // disca número nenhum. Sem a preferência, a conversa de um contato com
+        // telefone nascia no canal errado e a primeira mensagem era recusada —
+        // a mesma pendência que o #3358 fechou na criação de contato
+        // (`lib/contacts/conversa-ao-criar.ts`) e que faltava nesta porta.
+        preferirTelefone: Boolean(input.phone_number),
+      });
+  const sessionId = input.channel_session_id ?? semCanalEscolhido?.id ?? null;
+  if (!sessionId) {
+    // Nenhum canal pode enviar. "Todos desligados" é a recusa de antes —
+    // `session_unavailable`, 409 —, e não "sessão não encontrada": o operador
+    // desligou os canais e precisa ler isso (`route.ts:154`). 404 só quando a
+    // organização não tem canal de mensagem nenhum.
+    throw new Error(
+      semCanalEscolhido?.todosDesligados ? "session_unavailable" : "session_not_found",
+    );
+  }
   const { data: session, error: sessErr } = await admin
     .from("channel_sessions")
     .select("id, provider, status, metadata")
