@@ -6,9 +6,10 @@
  * responder "nada a dizer", então um turno que termina em silêncio mesmo com a
  * correção rodada NÃO é defeito — e era exatamente isso que um caso humano
  * falso-positive marcava para o time. O desfecho terminal passou a exigir um
- * sinal de falha: a saída truncada (length) ou a correção que TAMBÉM terminou
- * truncada. Erro da chamada de correção propaga e o job falha na fila
- * (retry/dead-letter) — caminho alto que já existia.
+ * sinal de falha: a saída truncada (length), a correção que TAMBÉM terminou
+ * truncada, a correção que TENTOU enviar e nada saiu, ou a correção que gastou
+ * o teto de passos sem responder. Erro da chamada de correção propaga e o job
+ * falha na fila (retry/dead-letter) — caminho alto que já existia.
  *
  * Cenários, na ordem em que o código os garante:
  *
@@ -17,10 +18,12 @@
  *  2. Decisão DEPOIS da correção: o desfecho terminal é avaliado com os flags
  *     e `outcomes` re-avaliados depois dela — correção que recuperou (mensagens
  *     saíram) nunca vira caso humano.
- *  3. Silêncio sem razão legítima: nada despachado, nada tentado, primeira passada.
+ *  3. Silêncio sem razão legítima: nada despachado, primeira passada, e nenhum
+ *     veto IRREVOGÁVEL — veto de ensino não entregou nada e não isenta.
  *  4. Isenção de silêncio legítimo: descartado, handoff da equipe, teto de
  *     pacing e preview ficam de fora — mesma régua do truncamento.
- *  5. Escala só com falha: truncamento não recuperado OU correção truncada —
+ *  5. Escala só com falha: truncamento não recuperado, correção truncada,
+ *     correção que tentou enviar sem sucesso, ou correção no teto de passos —
  *     `correcaoDoTurnoMudoPedida` sozinho NÃO escala.
  *  6. Caso humano com `kind` de TIPOS_DE_CASO ('problema'), copy em português
  *     simples e gate `agentConfig.casesEnabled` — mesma régua dos outros
@@ -172,19 +175,31 @@ describe("decisão terminal: DEPOIS da correção, com os flags re-avaliados", (
     expect(idxCorrecaoExec).toBeLessThan(idxSilencio);
   });
 
-  it("o sinal de falha da correção é o finishReason dela: truncada (length)", () => {
+  it("os sinais de falha da correção: truncada (length), tentou enviar, teto de passos", () => {
     const bloco = blocoCorrecao();
     expect(bloco).toContain("correcaoTruncou = correcao.result.finishReason === 'length';");
+    // "Tentou" é medido SÓ dentro da correção: as tentativas da primeira chamada
+    // já pediram a correção, e contá-las de novo escalaria o silêncio escolhido.
+    const antes = bloco.indexOf("const tentativasAntesDaCorrecao = tentativasDeEnvio;");
+    const chamada = bloco.indexOf("await runModelCall(");
+    const depois = bloco.indexOf("correcaoTentouEnviar = tentativasDeEnvio > tentativasAntesDaCorrecao;");
+    expect(antes).toBeGreaterThan(-1);
+    expect(antes).toBeLessThan(chamada);
+    expect(depois).toBeGreaterThan(chamada);
+    expect(bloco).toContain("tetoNaCorrecao = tetoDePassosAtingido({");
   });
 
-  it("silêncio sem razão legítima: nada despachado, nada tentado, primeira passada", () => {
+  it("silêncio sem razão legítima: nada despachado, primeira passada, sem veto irrevogável", () => {
     const bloco = blocoTerminal();
-    // Proteção por mensagem existente: quem já despachou (ou tentou e levou
-    // veto — o veto é a razão e já ensinou) não escala a caso humano.
     expect(bloco).toContain("outcomes.length === 0");
-    expect(bloco).toContain("tentativasDeEnvio === 0");
     expect(bloco).toContain("seq === 0");
     expect(bloco).toContain("!preview");
+    // O veto que manda PARAR (opt-out, contato interno, LGPD) é decisão. O veto
+    // de ENSINO não é: não entregou nada ao cliente. A régua antiga
+    // (`tentativasDeEnvio === 0`, "o veto já ensinou") calava o turno em que a
+    // cadeia barrou a resposta na primeira chamada e de novo na correção.
+    expect(bloco).toContain("!vetoIrrevogavel");
+    expect(bloco).not.toContain("tentativasDeEnvio === 0");
   });
 
   it("isenta silêncio legítimo: descartado, handoff da equipe e teto de pacing", () => {
@@ -194,10 +209,10 @@ describe("decisão terminal: DEPOIS da correção, com os flags re-avaliados", (
     expect(bloco).toContain("!capDeEnvioAtingido()");
   });
 
-  it("só escala com sinal de FALHA: truncamento OU correção truncada — nunca por ter corrigido", () => {
+  it("só escala com sinal de FALHA — nunca por ter corrigido", () => {
     const bloco = blocoTerminal();
     expect(bloco).toContain(
-      "if (silencioSemRazaoLegitima && (saidaTruncada || correcaoTruncou)) {",
+      "if (silencioSemRazaoLegitima && (saidaTruncada || correcaoTruncou || correcaoTentouEnviar || tetoNaCorrecao)) {",
     );
     // O gatilho antigo — correção apenas PEDIDA — é exatamente o regresso que
     // fazia silêncio deliberado abrir caso à toa.
@@ -212,12 +227,19 @@ describe("desfecho distinto, caso humano único, nunca duplica", () => {
     const bloco = blocoTerminal();
     expect(bloco).toContain("const desfechoTerminal = saidaTruncada");
     expect(bloco).toContain("? 'output_truncated_recovered_failed'");
-    expect(bloco).toContain(": 'correction_truncated_failed';");
+    expect(bloco).toContain("? 'correction_truncated_failed'");
+    expect(bloco).toContain("? 'correction_send_blocked_failed'");
+    expect(bloco).toContain(": 'correction_step_cap_failed';");
+    // Cada causa tem o seu "Por que a IA travou" na tela do time.
+    for (const c of ["output_truncated_recovered_failed", "correction_truncated_failed", "correction_send_blocked_failed", "correction_step_cap_failed"]) {
+      expect(bloco).toContain(`${c}:\n`);
+    }
     // O mesmo mecanismo suportado de caso humano, com a causa no snapshot.
     expect(bloco).toContain("openCase(");
     expect(bloco).toContain("source: 'guardrail_autofallback'");
     expect(bloco).toContain("correcao_limitada_rodou: correcaoDoTurnoMudoPedida");
     expect(bloco).toContain("correcao_truncou: correcaoTruncou");
+    expect(bloco).toContain("correcao_tentou_enviar: correcaoTentouEnviar");
   });
 
   it("caso com `kind` de TIPOS_DE_CASO e copy em português simples (sem código de máquina)", () => {
