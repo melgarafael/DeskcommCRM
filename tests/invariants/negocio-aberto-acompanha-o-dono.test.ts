@@ -74,6 +74,7 @@ const CT = {
   filaLivre: "dddddddd-3333-4000-8000-00000000000f",
   transfereSemDono: "dddddddd-3333-4000-8000-000000000010",
   continua: "dddddddd-3333-4000-8000-000000000011",
+  daIa: "dddddddd-3333-4000-8000-000000000012",
 } as const;
 
 const CONV = {
@@ -97,6 +98,7 @@ const CONV = {
   continuaNoNumeroDeA: "dddddddd-4444-4000-8000-000000000011",
   /** A conversa do MESMO contato que já existe no número de B (#3732). */
   continuaNoNumeroDeB: "dddddddd-4444-4000-8000-000000000012",
+  daIa: "dddddddd-4444-4000-8000-000000000013",
 } as const;
 
 const NEG = {
@@ -117,7 +119,11 @@ const NEG = {
   filaLivre: "dddddddd-6666-4000-8000-00000000000f",
   transfereSemDono: "dddddddd-6666-4000-8000-000000000010",
   continua: "dddddddd-6666-4000-8000-000000000011",
+  daIa: "dddddddd-6666-4000-8000-000000000012",
 } as const;
+
+/** Agente de IA dono de um card: "sem responsável" exige também owner_agent_id nulo. */
+const AGENTE_IA = "dddddddd-8888-4000-8000-000000000001";
 
 /** Dois números com dono (política de roteamento), para a conversa que continua. */
 const SESSAO_DE_A = "dddddddd-2222-4000-8000-000000000003";
@@ -304,7 +310,12 @@ beforeAll(() => {
       ('${CT.filaComDono}', '${ORG}', 'Contato Fila Com Dono'),
       ('${CT.filaLivre}', '${ORG}', 'Contato Fila Livre'),
       ('${CT.transfereSemDono}', '${ORG}', 'Contato Transfere Sem Dono'),
-      ('${CT.continua}', '${ORG}', 'Contato Continua')
+      ('${CT.continua}', '${ORG}', 'Contato Continua'),
+      ('${CT.daIa}', '${ORG}', 'Contato Da IA')
+    on conflict (id) do nothing;
+
+    insert into public.ai_agents (id, organization_id, name, system_prompt) values
+      ('${AGENTE_IA}', '${ORG}', 'Agente Acompanha O Dono Inv', 'invariante')
     on conflict (id) do nothing;
 
     insert into public.channel_sessions
@@ -402,6 +413,15 @@ beforeAll(() => {
         where id = '${CONV.continuaNoNumeroDeB}';`);
   negocioNovo({ id: NEG.continua, contato: CT.continua, dono: A });
 
+  // O card de um agente de IA: tem responsável, ainda que não seja pessoa.
+  conversaNova(CONV.daIa, CT.daIa, null);
+  sql(`
+    insert into public.crm_leads
+      (id, organization_id, pipeline_id, stage_id, title, contact_id, status, owner_agent_id, owner_kind)
+    values ('${NEG.daIa}', '${ORG}', '${PIPELINE}', '${ETAPA}', 'Negócio da IA', '${CT.daIa}', 'open',
+            '${AGENTE_IA}', 'ai');
+  `);
+
   // A escada A→B→C.
   conversaNova(CONV.escada, CT.escada, A);
   negocioNovo({ id: NEG.escada, contato: CT.escada, dono: A });
@@ -413,6 +433,7 @@ afterAll(() => {
     delete from public.conversation_assignment_events where organization_id in ('${ORG}', '${OUTRA_ORG}');
     delete from public.conversations where organization_id in ('${ORG}', '${OUTRA_ORG}');
     delete from public.crm_leads where organization_id in ('${ORG}', '${OUTRA_ORG}');
+    delete from public.ai_agents where organization_id = '${ORG}';
     delete from public.channel_routing_responsibles where organization_id = '${ORG}';
     delete from public.channel_routing_policies where organization_id = '${ORG}';
     delete from public.channel_sessions where organization_id in ('${ORG}', '${OUTRA_ORG}');
@@ -482,6 +503,14 @@ describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
     expect(donoDoNegocio(NEG.filaComDono)).toBe(A);
     expect(donoDaConversa(CONV.filaLivre)).toBe(B);
     expect(donoDoNegocio(NEG.filaLivre)).toBe(B);
+
+    // Card de agente de IA também tem responsável: a fila não o toma.
+    atribui({ como: null, conversa: CONV.daIa, para: B, motivo: "routing" });
+    expect(donoDaConversa(CONV.daIa)).toBe(B);
+    expect(
+      lastLine(sql(`select coalesce(owner_agent_id::text, 'SEM_DONO') || '|' || coalesce(owner_user_id::text, 'SEM_DONO')
+                      from public.crm_leads where id = '${NEG.daIa}';`)),
+    ).toBe(`${AGENTE_IA}|SEM_DONO`);
   });
 
   it("a conversa que continua no número do dono novo não leva o card que a fila não levaria", () => {
