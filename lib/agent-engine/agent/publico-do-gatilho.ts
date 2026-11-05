@@ -20,10 +20,11 @@
  *
  * ## O contrato (jsonb, sem migration)
  *
- * Quatro listas opcionais em `ai_agent_versions.trigger_config.filters`:
+ * Seis listas opcionais em `ai_agent_versions.trigger_config.filters`:
  * `include_tags`, `exclude_tags`, `include_pipeline_ids`,
- * `exclude_pipeline_ids`. Mora no jsonb da versão, como `keyword_regex` e
- * `business_hours`: nenhuma coluna nova, nenhuma migration.
+ * `exclude_pipeline_ids`, `include_sources`, `exclude_sources`. Mora no jsonb
+ * da versão, como `keyword_regex` e `business_hours`: nenhuma coluna nova,
+ * nenhuma migration.
  *
  * A régua é curta de propósito:
  *
@@ -36,7 +37,13 @@
  *    cliente antigo com card fechado voltaria a ser "do funil de vendas";
  *  - contato SEM negócio aberto não entra em "só estes funis" e NÃO é atingido
  *    por "não estes funis": o número novo, que ainda não tem card, passa por
- *    uma exclusão. É a direção que não cala quem chega.
+ *    uma exclusão. É a direção que não cala quem chega;
+ *  - origem é a coluna `contacts.source` (de onde o contato ENTROU: `whatsapp`,
+ *    `prospecting`, `site`, `import_csv`…), sem diferença de maiúscula. É a
+ *    única das três réguas que não depende de alguém ter etiquetado ou aberto
+ *    card: quem nasce da prospecção já nasce `prospecting`, e é isso que deixa
+ *    um agente de atendimento dividir o número com o da prospecção sem que um
+ *    classificador de IA decida quem responde a resposta de uma abordagem.
  *
  * ## Falha ABERTA para configuração, FECHADA para leitura de dados
  *
@@ -74,6 +81,10 @@ export interface PublicoDoAgente {
   incluirFunis: readonly string[];
   /** Funis em que o contato NÃO pode ter negócio aberto. Vence a inclusão. */
   excluirFunis: readonly string[];
+  /** Origens (`contacts.source`) de que o contato PRECISA ter vindo — uma basta. */
+  incluirOrigens: readonly string[];
+  /** Origens de que o contato NÃO pode ter vindo. Vence qualquer inclusão. */
+  excluirOrigens: readonly string[];
 }
 
 /** Os fatos do contato que a régua lê. Só o que ela usa. */
@@ -82,6 +93,12 @@ export interface FatosDoContato {
   etiquetas: readonly string[];
   /** `crm_leads.pipeline_id` dos negócios ABERTOS do contato. */
   funisAbertos: readonly string[];
+  /**
+   * `contacts.source`. Opcional porque nasce depois dos fixtures que montam
+   * este tipo à mão; ausente vale como "origem desconhecida": não entra em
+   * "só estas origens" e não é atingido por "não estas origens".
+   */
+  origem?: string | null;
 }
 
 /** Teto de cada lista — o mesmo tamanho de `pipeline_ids`/`tool_ids` na tela. */
@@ -124,12 +141,16 @@ export function lerPublicoDoGatilho(triggerConfig: unknown): PublicoDoAgente | n
     excluirEtiquetas: listaDeTexto(f.exclude_tags),
     incluirFunis: listaDeTexto(f.include_pipeline_ids),
     excluirFunis: listaDeTexto(f.exclude_pipeline_ids),
+    incluirOrigens: listaDeTexto(f.include_sources),
+    excluirOrigens: listaDeTexto(f.exclude_sources),
   };
   const vazio =
     publico.incluirEtiquetas.length === 0 &&
     publico.excluirEtiquetas.length === 0 &&
     publico.incluirFunis.length === 0 &&
-    publico.excluirFunis.length === 0;
+    publico.excluirFunis.length === 0 &&
+    publico.incluirOrigens.length === 0 &&
+    publico.excluirOrigens.length === 0;
   return vazio ? null : publico;
 }
 
@@ -149,8 +170,10 @@ export type RegraDoPublico =
   | 'passou'
   | 'barrado_por_etiqueta_excluida'
   | 'barrado_por_funil_excluido'
+  | 'barrado_por_origem_excluida'
   | 'barrado_por_etiqueta_exigida'
-  | 'barrado_por_funil_exigido';
+  | 'barrado_por_funil_exigido'
+  | 'barrado_por_origem_exigida';
 
 /** A decisão de UM público sobre UM contato, com o motivo. */
 export interface DecisaoDoPublico {
@@ -178,6 +201,7 @@ export interface DecisaoDoPublico {
 export function avaliarPublico(publico: PublicoDoAgente, fatos: FatosDoContato): DecisaoDoPublico {
   const temEtiqueta = new Set(fatos.etiquetas.map(chave));
   const abertos = new Set(fatos.funisAbertos);
+  const origem = typeof fatos.origem === 'string' && fatos.origem.trim() !== '' ? chave(fatos.origem) : null;
 
   // 1. A EXCLUSÃO VENCE — nem a inclusão reabre.
   for (const tag of publico.excluirEtiquetas) {
@@ -190,6 +214,11 @@ export function avaliarPublico(publico: PublicoDoAgente, fatos: FatosDoContato):
       return { passa: false, regra: 'barrado_por_funil_excluido', valor: funil };
     }
   }
+  for (const fonte of publico.excluirOrigens) {
+    if (origem !== null && origem === chave(fonte)) {
+      return { passa: false, regra: 'barrado_por_origem_excluida', valor: fonte };
+    }
+  }
 
   // 2. Depois, TODAS as inclusões configuradas (E entre as listas, OU dentro).
   if (publico.incluirEtiquetas.length > 0) {
@@ -199,6 +228,10 @@ export function avaliarPublico(publico: PublicoDoAgente, fatos: FatosDoContato):
   if (publico.incluirFunis.length > 0) {
     const algum = publico.incluirFunis.some((funil) => abertos.has(funil));
     if (!algum) return { passa: false, regra: 'barrado_por_funil_exigido', valor: null };
+  }
+  if (publico.incluirOrigens.length > 0) {
+    const alguma = origem !== null && publico.incluirOrigens.some((fonte) => chave(fonte) === origem);
+    if (!alguma) return { passa: false, regra: 'barrado_por_origem_exigida', valor: null };
   }
   return { passa: true, regra: 'passou', valor: null };
 }
@@ -214,7 +247,7 @@ export function passaNoPublico(publico: PublicoDoAgente, fatos: FatosDoContato):
 }
 
 /**
- * Os fatos do contato: etiquetas da ficha + funis dos negócios ABERTOS.
+ * Os fatos do contato: etiquetas e origem da ficha + funis dos negócios ABERTOS.
  *
  * Uma consulta, não duas: a seleção do agente roda em todo turno e o público é
  * opcional — quem paga é só quem configurou.
@@ -229,8 +262,9 @@ export async function carregarFatosDoContato(
   organizationId: string,
   contactId: string,
 ): Promise<FatosDoContato> {
-  const { rows } = await db.query<{ tags: string[] | null; funis: string[] | null }>(
+  const { rows } = await db.query<{ tags: string[] | null; source: string | null; funis: string[] | null }>(
     `select c.tags,
+            c.source,
             (select array_agg(distinct l.pipeline_id::text)
                from crm_leads l
               where l.organization_id = $1
@@ -241,9 +275,10 @@ export async function carregarFatosDoContato(
     [organizationId, contactId],
   );
   const r = rows[0];
-  if (r === undefined) return { etiquetas: [], funisAbertos: [] };
+  if (r === undefined) return { etiquetas: [], funisAbertos: [], origem: null };
   return {
     etiquetas: (r.tags ?? []).filter((t): t is string => typeof t === 'string'),
     funisAbertos: (r.funis ?? []).filter((f): f is string => typeof f === 'string'),
+    origem: typeof r.source === 'string' ? r.source : null,
   };
 }

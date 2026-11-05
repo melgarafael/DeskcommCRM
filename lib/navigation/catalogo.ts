@@ -50,9 +50,11 @@ export interface NavMetadata {
    * Contador de pendências ao lado do rótulo. `casos`: casos em que a IA espera
    * uma pessoa (`awaiting_human`) — quem desenha é `ContadorDeCasos`. `fila`:
    * conversas que esperam uma pessoa (a aba Fila do Inbox) — `ContadorDaFila`.
+   * `tarefas`: tarefas em aberto do PRÓPRIO usuário (`pending` + `in_progress`,
+   * responsável = ele) — `ContadorDeTarefas`.
    * Zero não desenha nada: número que nunca some ensina a ignorar o número.
    */
-  contador?: "casos" | "fila";
+  contador?: "casos" | "fila" | "tarefas";
   /**
    * A porta de um MÓDULO OPCIONAL da instalação (`lib/instalacao/modulos.ts`).
    * Com o módulo desligado ela some do menu, do hub e do ⌘K — para todo papel.
@@ -297,6 +299,11 @@ export const NAV_CATALOG = [
     group: "crm",
     section: "O dia a dia da venda",
     sidebar: true,
+    // As tarefas em aberto DE QUEM ESTÁ LOGADO. Automação, follow-up e aviso de
+    // carteira criam tarefa para cada atendente; sem número no menu, a tarefa
+    // atrasada só existia para quem abrisse a tela por conta própria (#3938).
+    // Gerente e admin contam só as suas — a visão da equipe é a tela.
+    contador: "tarefas",
   },
   {
     // A porta dos planos de tarefa (#1752): montar a sequência UMA vez e o
@@ -360,6 +367,20 @@ export const NAV_CATALOG = [
     section: "O dia a dia da venda",
     minRole: "manager",
     capacidade: "telefonia",
+  },
+  {
+    // Fila de ligações sobre um funil próprio. A régua está em lib/cold-call/regras.ts.
+    href: "/app/cold-call",
+    label: "Cold Call",
+    description: "Ligue para uma lista de leads, um por vez, com roteiro e resultado de cada ligação.",
+    icon: "Phone",
+    // No CRM, e não em Atendimento: porta de módulo mora em grupo com hub ("Ver tudo em CRM"),
+    // que é o que dá a ela um caminho sem depender de quem personalizou o menu.
+    group: "crm",
+    section: "O dia a dia da venda",
+    minRole: "agent",
+    // Módulo opcional da instalação, desligado por padrão (#3933).
+    modulo: "cold_call",
   },
   {
     // ⚠️ Esta tela nasceu porque a FERRAMENTA já existia sem ela. O agente de IA

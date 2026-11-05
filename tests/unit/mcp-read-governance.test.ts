@@ -36,6 +36,10 @@ const USER_B = "33333333-3333-4333-8333-333333333333"; // Bob
 const STAGE_1 = "55555555-5555-4555-8555-555555555551";
 
 const USER_NAMES: Record<string, string> = { [USER_A]: "Alice", [USER_B]: "Bob" };
+// Tem nome na instalação, mas NÃO é membro de ORG: o nome não pode sair.
+const USER_FORA = "44444444-4444-4444-8444-444444444444";
+const NOMES_NA_INSTALACAO: Record<string, string> = { ...USER_NAMES, [USER_FORA]: "Carol" };
+const MEMBROS_DE_ORG = [USER_A, USER_B];
 
 // Fila: 3 conversas com tempos de espera conhecidos (oldest = pos 1).
 const CONV_OLD = "aaaaaaaa-0000-4000-8000-000000000001";
@@ -84,13 +88,22 @@ type Resolver = (q: Q) => { data?: unknown; error?: unknown };
 function makeSupabase(resolve: Resolver) {
   const from = (table: string) => {
     const q: Q = { table, select: null, terminal: "then" };
+    let orgFiltrada: unknown = null;
+    // Vínculos de verdade: só quem é membro da org filtrada.
+    const vinculos = () => ({
+      data: orgFiltrada === ORG ? MEMBROS_DE_ORG.map((user_id) => ({ user_id })) : [],
+      error: null,
+    });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const chain: any = {
       select: (cols: string) => {
         q.select = cols;
         return chain;
       },
-      eq: () => chain,
+      eq: (col: string, v: unknown) => {
+        if (col === "organization_id") orgFiltrada = v;
+        return chain;
+      },
       is: () => chain,
       in: () => chain,
       not: () => chain,
@@ -101,7 +114,9 @@ function makeSupabase(resolve: Resolver) {
       limit: () => chain,
       maybeSingle: () => Promise.resolve(resolve({ ...q, terminal: "maybeSingle" })),
       then: (res: (v: unknown) => unknown) =>
-        Promise.resolve(resolve({ ...q, terminal: "then" })).then(res),
+        Promise.resolve(
+          table === "user_organizations" ? vinculos() : resolve({ ...q, terminal: "then" }),
+        ).then(res),
     };
     return chain;
   };
@@ -111,7 +126,10 @@ function makeSupabase(resolve: Resolver) {
       admin: {
         getUserById: (id: string) =>
           Promise.resolve({
-            data: id in USER_NAMES ? { user: { user_metadata: { full_name: USER_NAMES[id] } } } : { user: null },
+            data:
+              id in NOMES_NA_INSTALACAO
+                ? { user: { user_metadata: { full_name: NOMES_NA_INSTALACAO[id] } } }
+                : { user: null },
             error: null,
           }),
       },
@@ -236,6 +254,23 @@ describe("crm_get_conversation — governança + shape", () => {
     expect(res.status).toBe("claimed");
     expect(res.contact_id).toBeDefined();
     expect(res.channel).toBe("whatsapp");
+  });
+
+  it("o nome do atendente só sai para membro da organização do token", async () => {
+    const row = convRow({
+      id: CONV_OLD,
+      status: "claimed",
+      assigned_to_user_id: USER_FORA,
+      assignee_kind: "user",
+      assigned_at: new Date(now).toISOString(),
+    });
+    const res = (await crmGetConversation.handler(
+      { conversation_id: CONV_OLD },
+      makeCtx(convResolver(row)),
+    )) as Record<string, unknown>;
+
+    expect(res.assigned_to_user_id).toBe(USER_FORA);
+    expect(res.assigned_to_user_name).toBeNull();
   });
 
   it("NA FILA: assignee_kind=null, sem nome, queue_position preenchida", async () => {

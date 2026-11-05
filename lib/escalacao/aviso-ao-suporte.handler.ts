@@ -157,7 +157,7 @@ export async function criarTransporteDoAviso(
       });
     },
 
-    async envia(organizationId, canal, to, body) {
+    async envia(organizationId, canal, to, body, opcoes) {
       const ref = await refDoCanal(organizationId, canal.id);
       if (!ref) throw new Error("canal_sem_referencia_de_transporte");
       // TRANSPORTE DIRETO, fora do `sendMessageHandler`: o aviso NÃO nasce como
@@ -165,6 +165,28 @@ export async function criarTransporteDoAviso(
       // conversa, não tem contato, não entra na timeline de ninguém — e gravá-lo
       // ali criaria uma conversa com o número da própria equipe, que é
       // exatamente o que o corte da ingestão existe para impedir.
+      //
+      // Com modelo (migration 9094), o MESMO texto vai dentro da variável única
+      // do modelo aprovado, numa linha só — a plataforma recusa valor com
+      // quebra de linha. Continua fora de `messages`: quem escolhe o transporte
+      // de modelo é `lib/channels/`, e ele não grava conversa.
+      const modelo = opcoes?.modelo;
+      if (modelo) {
+        const [{ enviarModeloDireto }, { umaLinhaParaOModelo }] = await Promise.all([
+          import("@/lib/channels/modelo-direto"),
+          import("@/lib/escalacao/modelo-do-aviso"),
+        ]);
+        return enviarModeloDireto(admin, {
+          organizationId,
+          channelSessionId: canal.id,
+          provider: ref.provider,
+          sessionRef: ref.sessionRef,
+          to,
+          name: modelo.name,
+          language: modelo.language,
+          values: { [modelo.chave]: umaLinhaParaOModelo(body) },
+        });
+      }
       return getAdapter(ref.provider as never).send({
         organizationId,
         sessionRef: ref.sessionRef,

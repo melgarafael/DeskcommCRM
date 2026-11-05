@@ -17,6 +17,7 @@ import { resolverItensDaProposta } from "@/lib/propostas/itens";
 import { listarModelosAtivos } from "@/lib/propostas/modelos/catalogo-da-organizacao";
 import { resolverModelo } from "@/lib/propostas/modelos/resolver";
 import { capacidadesDaOrganizacao } from "@/lib/organizacao/capacidades";
+import { DERIVACAO_TERMINADA, TIPOS_DERIVAVEIS } from "@/lib/messaging/media/derivable";
 import type { Actor } from "@/lib/api/handlers/types";
 import type { McpContext, McpToolDefinition } from "@/lib/mcp/types";
 
@@ -131,8 +132,10 @@ function prazoEmDiasUteisDoBriefing(briefing: unknown): number | null {
 interface MensagemDoLote {
   direction: string;
   sent_via: string;
+  type: string;
   body: string | null;
   media_derived_text: string | null;
+  media_derived_status: string | null;
   created_at: string;
 }
 
@@ -149,7 +152,7 @@ async function loteDoTurnoAtual(
 ): Promise<{ pendente: boolean; textos: string[] }> {
   const { data } = await ctx.supabase
     .from("messages")
-    .select("direction, sent_via, body, media_derived_text, created_at")
+    .select("direction, sent_via, type, body, media_derived_text, media_derived_status, created_at")
     .eq("organization_id", ctx.organizationId)
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: true });
@@ -162,7 +165,18 @@ async function loteDoTurnoAtual(
   const corte = cortes.length > 0 ? cortes.reduce((a, b) => (a > b ? a : b)) : null;
   const lote = corte === null ? recebidas : recebidas.filter((m) => m.created_at > corte);
   const textos = lote.map((m) => (m.body?.trim() ? m.body : (m.media_derived_text ?? "")));
-  return { pendente: textos.some((t) => t.trim().length === 0), textos };
+  // Pendente é só a mídia cuja leitura AINDA não terminou. A foto que terminou
+  // sem texto (adiada por falta de leitor, contato pessoal, vídeo desligado) e
+  // a figurinha deixavam o lote "pendente" para sempre, e a ferramenta mentia
+  // "ainda está sendo transcrita". A frase de confirmação continua conferida
+  // nos textos abaixo (`fraseConfere`).
+  const pendente = lote.some(
+    (m) =>
+      !(m.body?.trim() || m.media_derived_text?.trim()) &&
+      TIPOS_DERIVAVEIS.has(m.type) &&
+      !DERIVACAO_TERMINADA.has(m.media_derived_status ?? ""),
+  );
+  return { pendente, textos };
 }
 
 export const crmDraftProposal: McpToolDefinition<typeof draftProposalInputShape> = {

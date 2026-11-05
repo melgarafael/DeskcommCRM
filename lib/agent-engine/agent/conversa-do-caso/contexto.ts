@@ -196,3 +196,33 @@ export function montarSystem(input: {
   partes.push(INSTRUCAO_DA_CONSULTA_INTERNA);
   return partes.join("\n\n");
 }
+
+/** O recorte do histórico de que o snapshot do caso precisa — só o que a tela lê. */
+export interface FalaParaSnapshot {
+  direction: string;
+  body: string;
+  sent_at: string;
+}
+
+/**
+ * O SNAPSHOT QUE O TURNO CONGELA quando abre caso humano (Spec 15) — puro, para
+ * que a ESCRITA e a LEITURA (`falasDoSnapshot`) sejam testadas no mesmo arquivo.
+ *
+ * `sent_at` entrou porque faltava: sem ele, `falasDoSnapshot` caía sempre no
+ * `abertoEm` e as cinco falas congeladas apareciam com a hora de ABERTURA do caso,
+ * todas iguais — na tela e no prompt. A data é lida de volta de um `jsonb`, então
+ * é string por construção; quem a lê aceita as duas formas do mesmo carimbo
+ * (`instanteDoBanco`), porque a mesma pergunta é feita sobre linha crua em outros
+ * pontos do motor.
+ */
+export function snapshotDoCaso(
+  contactName: string | null,
+  mensagens: readonly FalaParaSnapshot[],
+): Record<string, unknown> {
+  return {
+    contact_name: contactName,
+    last_messages: mensagens
+      .slice(-5)
+      .map((m) => ({ direction: m.direction, body: m.body, sent_at: m.sent_at })),
+  };
+}
