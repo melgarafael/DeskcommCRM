@@ -31,6 +31,12 @@ import {
   importarOpcoesCsv,
 } from "@/lib/leads/campos-pesquisaveis";
 import { atalhosDoFunil, motivoDaRecusaDoModelo, type AtalhoDoCard } from "@/lib/leads/atalhos-do-card";
+import {
+  DIAS_MAXIMO_PARA_REABRIR,
+  DIAS_MINIMO_PARA_REABRIR,
+  DIAS_PADRAO_PARA_REABRIR,
+  diasParaReabrirPerdido,
+} from "@/lib/leads/janela-do-perdido";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
 import { CATEGORIAS_DE_PERDA } from "@/lib/schemas/leads";
 import { rotuloDoTipo } from "@/lib/schemas/rotulos-do-campo";
@@ -805,6 +811,22 @@ function PipelineEditor({
   const [retomaComoNovo, setRetomaComoNovo] = useState(
     modoDeReabertura(pipeline.settings) === "novo_negocio",
   );
+  /**
+   * REABRIR O NEGÓCIO PERDIDO RECENTE (#4076) — opção POR FUNIL, desligada por
+   * padrão. O número relido é o que está gravado (`null` = desligado) e é ele
+   * que preenche o campo de dias, para ligar/desligar não exigir digitação; o
+   * campo nasce com a sugestão, que NÃO é gravada enquanto ninguém ligar a
+   * opção. A régua do schema e a do leitor são a MESMA função
+   * (`diasParaReabrirPerdido`), para a tela não mostrar um número que o motor
+   * ignora.
+   */
+  const diasParaReabrirRelidos = diasParaReabrirPerdido(pipeline.settings);
+  const [reabrePerdido, setReabrePerdido] = useState(diasParaReabrirRelidos !== null);
+  const [diasParaReabrir, setDiasParaReabrir] = useState(
+    diasParaReabrirRelidos !== null
+      ? String(diasParaReabrirRelidos)
+      : String(DIAS_PADRAO_PARA_REABRIR),
+  );
   // O recorte de encerrados antigos do quadro (#2995): opção POR FUNIL em
   // `settings.ocultar_encerrados_dias`, desligada por padrão. O número relido é
   // o que está gravado (`null` = desligado) e é ele que preenche o campo de
@@ -929,6 +951,27 @@ function PipelineEditor({
       return;
     }
 
+    // #4076 — a JANELA do negócio perdido que volta a ser o mesmo card. A
+    // mesma técnica do recorte acima: número fora da faixa faria o schema
+    // recusar o save inteiro com a mensagem genérica de validação, e barrar
+    // aqui diz o que está errado. O `0` é o DESLIGADO e vai explícito no
+    // patch: omitir a chave deixaria a janela antiga gravada e desligar a
+    // opção não desligaria nada.
+    const diasDaReabertura = Number(diasParaReabrir.trim());
+    if (
+      reabrePerdido &&
+      (!Number.isInteger(diasDaReabertura) ||
+        diasDaReabertura < DIAS_MINIMO_PARA_REABRIR ||
+        diasDaReabertura > DIAS_MAXIMO_PARA_REABRIR)
+    ) {
+      toast.error(
+        t(
+          "Escolha de 1 a 3650 dias para reabrir o negócio perdido quando o contato volta a escrever.",
+        ),
+      );
+      return;
+    }
+
     // OS ATALHOS DO CARD (#3487). A régua é a MESMA da gravação
     // (`modeloAceito`, via `motivoDaRecusaDoModelo`) e é aplicada aqui por dois
     // motivos: a linha já mostra o motivo enquanto se digita (no editor), e o
@@ -974,6 +1017,9 @@ function PipelineEditor({
           }
         : {}),
       ocultar_encerrados_dias: ocultarEncerrados ? diasDigitados : 0,
+      // A REABERTURA DO PERDIDO RECENTE (#4076) pela MESMA porta de escrita do
+      // settings. `0` é o desligado, e é o padrão de quem nunca configurou.
+      reabrir_perdido_dias: reabrePerdido ? diasDaReabertura : 0,
       // OS ATALHOS DO CARD (#3487) vão no MESMO patch, pela MESMA porta de
       // escrita do settings. A chave só entra quando há o que dizer — um funil
       // que nunca declarou atalho continua idêntico ao de antes —, mas quem JÁ
@@ -1121,6 +1167,56 @@ function PipelineEditor({
           )}
         </p>
       </div>
+
+      {/* ─── A REABERTURA DO PERDIDO RECENTE (#4076) ───────────────────────
+          Quando o contato volta a escrever e o último negócio dele foi perdido
+          MINUTOS antes, o nascimento do card criava um negócio novo vazio e o
+          histórico comercial (descrição, campos, motivo da perda) ficava no
+          card perdido. O autor da issue mediu 5 de 7 perdas virando card
+          vazio em até 85 minutos, quase sempre por uma despedida.
+
+          A opção é POR FUNIL e vem DESLIGADA: quem não ligar continua com o
+          card novo de hoje. Dentro da janela, a conversa REABRE O MESMO card
+          (mesmo id, status de volta a aberto, histórico intacto) — nada é
+          copiado, nada é fundido. Fora da janela, segue como hoje: reabrir um
+          perdido de meses atrás esconderia a rotatividade do funil.
+
+          SÓ NO FUNIL QUE O MOTOR LÊ: a mensagem nasce no funil de entrada
+          (`funilDeEntrada`), então num funil secundário a escolha seria salva e
+          nunca usada — o mesmo motivo do bloco de `entrada_do_inbox` abaixo. A
+          escolha de retomada (`novo_negocio`) vence esta: ela é a decisão do
+          funil sobre "encerrado que volta", e as duas não podem valer juntas. */}
+      {(pipeline.is_default === true || pipeline.is_client_pipeline === true) && (
+        <div className="space-y-1">
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={reabrePerdido}
+              onChange={(e) => setReabrePerdido(e.target.checked)}
+            />
+            {t("Reabrir o negócio perdido quando o contato volta a escrever")}
+          </label>
+          <label className="flex flex-wrap items-center gap-2 text-xs">
+            {t("Reabrir o negócio perdido há menos de")}
+            <Input
+              type="number"
+              min={DIAS_MINIMO_PARA_REABRIR}
+              max={DIAS_MAXIMO_PARA_REABRIR}
+              aria-label={t("Dias para reabrir o negócio perdido")}
+              className="h-8 w-20 text-xs"
+              disabled={!reabrePerdido}
+              value={diasParaReabrir}
+              onChange={(e) => setDiasParaReabrir(e.target.value)}
+            />
+            {t("dias")}
+          </label>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Ligado, a mensagem de quem tem um negócio perdido dentro dessa janela reabre o MESMO card, com descrição, campos e motivo da perda intactos — nada é copiado nem fundido. Fora da janela, ou desligado, a conversa abre um negócio novo como hoje.",
+            )}
+          </p>
+        </div>
+      )}
 
       {/* ─── A ENTRADA DAS CONVERSAS DO INBOX (#3011) ─────────────────────
           O ajuste existia só no BANCO: a etapa declarada já valia, o fallback
