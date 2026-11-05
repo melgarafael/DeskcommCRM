@@ -348,18 +348,29 @@ describe("o que entrou quando o banco passou a calcular o mesmo comando", () => 
     expect(r.motivo).toBe("contato_travado");
   });
 
-  it("a fila pede 'aguardando' — e 'automatico' também quando a org não tem robô", () => {
-    expect(comandosDaFila(true)).toEqual(["aguardando"]);
-    expect(comandosDaFila(undefined)).toEqual(["aguardando"]);
-    // Sem automático de pé, `automatico` não descreve ninguém: essas conversas
-    // estão esperando gente, e deixá-las fora faria a Fila de uma instalação
-    // nova nascer vazia com clientes sem resposta.
-    expect(comandosDaFila(false)).toEqual(["aguardando", "automatico"]);
+  it("a fila pede 'aguardando' E 'ninguem' — e 'automatico' só na janela do deploy", () => {
+    // `ninguem` é conversa que espera gente em QUALQUER organização: o banco só a
+    // nomeia assim quando não há agente no ar (issue #4012), e ela não pode sumir
+    // da Fila — trocar a mentira por um sumiço é pior que a mentira.
+    expect(comandosDaFila(true)).toEqual(["aguardando", "ninguem"]);
+    expect(comandosDaFila(undefined)).toEqual(["aguardando", "ninguem"]);
+    // `automatico` sobrevive à virada por um motivo com prazo: entre o deploy deste
+    // código e a migration aplicada, o banco ainda devolve `automatico` para essas
+    // conversas, e sem o valor extra a Fila de uma instalação sem IA nasceria vazia.
+    expect(comandosDaFila(false)).toEqual(["aguardando", "ninguem", "automatico"]);
   });
 
-  it("o vocabulário do banco tem QUATRO — 'ninguem' é renomeação de TS, não estado", () => {
-    expect([...COMANDOS_DO_BANCO]).toEqual(["humano", "automatico", "aguardando", "encerrada"]);
-    expect(COMANDOS_DO_BANCO as readonly string[]).not.toContain("ninguem");
+  it("o vocabulário do banco tem CINCO — 'ninguem' passou a ser resposta do SQL (#4012)", () => {
+    expect([...COMANDOS_DO_BANCO]).toEqual([
+      "humano",
+      "automatico",
+      "aguardando",
+      "encerrada",
+      "ninguem",
+    ]);
+    // E ele continua sendo o MESMO estado do TS: o rótulo da tela existe desde
+    // antes, e é o que o banco agora pode pedir.
+    expect(ROTULO_DO_COMANDO.ninguem).toBe("Sem atendente");
   });
 });
 

@@ -198,6 +198,20 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
         values ('${ORG}', 'espelho-comando', 'Espelho LTDA', 'Espelho');
       insert into channel_sessions (id, organization_id, webhook_secret_encrypted, waha_session_name)
         values ('${ORG}', '${ORG}', '\\x00', 'espelho-sess');
+      -- A organização deste bloco TEM agente publicado, e isso passou a ser
+      -- medição, não suposição: desde a issue #4012 o wrapper devolve ninguém
+      -- (e não automático) para conversa sem dono numa org SEM agente, e o
+      -- automaticoDaOrg: true que este bloco passa ao TS só é honesto se o
+      -- banco disser o mesmo. Sem estas linhas o bloco mediria a divergência
+      -- nova em vez do que veio medir (o bit do contato, o grupo, o dono).
+      -- A ordem é agente -> versão -> ponteiro: as duas FKs se cruzam.
+      insert into ai_agents (id, organization_id, name, system_prompt)
+        values ('aaaaaaaa-0000-4000-8000-00000000ba01', '${ORG}', 'Espelho', 'prompt');
+      insert into ai_agent_versions (id, organization_id, agent_id, version_number, system_prompt, provider, model, channel_session_id, status, published_at)
+        values ('aaaaaaaa-0000-4000-8000-00000000ba02', '${ORG}', 'aaaaaaaa-0000-4000-8000-00000000ba01',
+                1, 'prompt', 'anthropic', 'claude-sonnet-4-6', '${ORG}', 'published', now());
+      update ai_agents set published_version_id = 'aaaaaaaa-0000-4000-8000-00000000ba02'
+       where id = 'aaaaaaaa-0000-4000-8000-00000000ba01';
       ${linhas
         .map(
           (l) => `
