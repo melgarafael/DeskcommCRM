@@ -23,18 +23,14 @@ import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-import {
-  carimboDentroDaJanela,
-  decifrarSegredo,
-  verificarAssinatura,
-} from "./segredo-do-modulo";
+import { provarModulo, RETENCAO_DOS_NONCES_MS, type CabecalhosDaBusca } from "./prova-do-modulo";
 
 /** A única mensagem de recusa de autenticação. Não varia com o motivo. */
 export const MENSAGEM_DE_RECUSA = "Não foi possível autenticar o módulo.";
 
 export const VALIDADE_DO_TOKEN_MS = 60 * 60 * 1000;
-/** Nonces mais velhos que isto são apagados na própria busca (a janela do carimbo é de 5 min). */
-export const RETENCAO_DOS_NONCES_MS = 10 * 60 * 1000;
+export { RETENCAO_DOS_NONCES_MS };
+export type { CabecalhosDaBusca };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -49,14 +45,6 @@ const cabecalhosSchema = z.object({
   nonce: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/),
   signature: z.string().regex(/^[0-9a-fA-F]{64}$/),
 });
-
-export interface CabecalhosDaBusca {
-  installationId: string;
-  organizationId: string;
-  timestamp: string;
-  nonce: string;
-  signature: string;
-}
 
 /** `null` quando qualquer cabeçalho falta ou tem formato errado. */
 export function lerCabecalhosDaBusca(headers: Headers): CabecalhosDaBusca | null {
@@ -119,58 +107,15 @@ export async function emitirTokenDoModulo(
 ): Promise<ResultadoDaBusca> {
   const { installationId, organizationId } = entrada;
 
-  // 3. carimbo dentro da janela (borda inclusiva).
-  if (!carimboDentroDaJanela(Number(entrada.timestamp), agoraMs)) {
-    return recusado("carimbo_fora_da_janela", installationId);
+  // 3 a 6. carimbo → segredo → assinatura → nonce (a prova é a mesma da leitura de eventos).
+  const prova = await provarModulo(entrada, agoraMs);
+  if (!prova.ok) {
+    return prova.motivo === "recusado"
+      ? recusado(prova.detalhe, installationId)
+      : indisponivel(prova.detalhe, installationId, prova.dbCode);
   }
 
   const admin = createAdminClient();
-
-  // 4. o segredo cifrado da instalação.
-  const lido = await admin
-    .from("extension_installation_secrets")
-    .select("ciphertext")
-    .eq("installation_id", installationId)
-    .maybeSingle();
-  if (lido.error) return indisponivel("segredo_nao_lido", installationId, lido.error.code);
-  const cifrado = (lido.data as { ciphertext: string } | null)?.ciphertext;
-  if (!cifrado) return recusado("sem_segredo", installationId);
-
-  let segredo: string;
-  try {
-    segredo = decifrarSegredo(cifrado);
-  } catch {
-    // Chave ausente ou valor ilegível: falha nossa, não do módulo.
-    return indisponivel("segredo_nao_aberto", installationId);
-  }
-
-  // 5. assinatura.
-  const assinaturaOk = verificarAssinatura(
-    segredo,
-    { organizationId, timestamp: entrada.timestamp, nonce: entrada.nonce },
-    entrada.signature,
-  );
-  if (!assinaturaOk) return recusado("assinatura_invalida", installationId);
-
-  // 6. nonce: repetição é recusa; a limpeza dos velhos é oportunista e não falha a busca.
-  const gravado = await admin
-    .from("extension_token_nonces")
-    .insert({ installation_id: installationId, nonce: entrada.nonce });
-  if (gravado.error) {
-    if (gravado.error.code === "23505") return recusado("nonce_repetido", installationId);
-    return indisponivel("nonce_nao_gravado", installationId, gravado.error.code);
-  }
-  const limpeza = await admin
-    .from("extension_token_nonces")
-    .delete()
-    .eq("installation_id", installationId)
-    .lt("seen_at", new Date(agoraMs - RETENCAO_DOS_NONCES_MS).toISOString());
-  if (limpeza.error) {
-    logger.warn("[extensions] nonces velhos não apagados", {
-      installation_id: installationId,
-      db_code: limpeza.error.code ?? null,
-    });
-  }
 
   // 7. token novo; o banco troca o hash da vaga do par.
   const novo = gerarTokenDoModulo();
