@@ -12,6 +12,7 @@ import { ehHexValido } from "@/lib/branding/rampa";
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import { IDIOMAS } from "@/lib/i18n/idiomas";
 import { DIAS_MAXIMO_DO_RECORTE } from "@/lib/kanban/recorte-de-encerrados";
+import { DIAS_MAXIMO_PARA_REABRIR } from "@/lib/leads/janela-do-perdido";
 import {
   ICONES_DE_ATALHO,
   MAX_ATALHOS,
@@ -463,6 +464,19 @@ export const pipelineConfigPatchSchema = z.object({
    * válido: um número escrito aqui e outro lá divergiriam no primeiro ajuste.
    */
   ocultar_encerrados_dias: z.number().int().min(0).max(DIAS_MAXIMO_DO_RECORTE).optional(),
+  /**
+   * A JANELA DO NEGÓCIO PERDIDO QUE VOLTA (#4076): quantos dias depois da
+   * perda a mensagem do contato ainda REABRE o mesmo card em vez de abrir um
+   * negócio novo. `0` (e a chave ausente, que é o estado de todo funil de hoje)
+   * é DESLIGADO — o comportamento de antes da opção existir.
+   *
+   * O teto vem do domínio (`lib/leads/janela-do-perdido`), que é quem decide o
+   * que é uma janela válida: um número escrito aqui e outro lá divergiriam no
+   * primeiro ajuste, e a tela mostraria um valor que o motor ignora. `min(0)` e
+   * não `min(1)`: o zero é uma DECISÃO (desliguei), e recusá-lo deixaria a
+   * janela antiga gravada quando alguém desmarcasse a opção.
+   */
+  reabrir_perdido_dias: z.number().int().min(0).max(DIAS_MAXIMO_PARA_REABRIR).optional(),
   /**
    * OS ATALHOS DO CARD (issue #3487) — os botões que abrem outro sistema com o
    * dado do cliente: `tel:` para o softphone do PABX, `https://…?cliente={{erp_id}}`
