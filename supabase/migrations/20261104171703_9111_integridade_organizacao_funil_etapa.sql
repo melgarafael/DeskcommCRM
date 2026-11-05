@@ -1,12 +1,14 @@
 -- manifest: Exige a mesma organização/funil/etapa em todo caminho SQL, sem reparar legado automaticamente.
 -- Operator controls statement/lock timeout; applying/validating takes locks and needs a reviewed target window.
 do $integridade_funil_etapa$
-declare actual record;expected smallint[];ref_expected smallint[];
+declare actual record;expected smallint[];ref_expected smallint[];legado_invalido boolean;
 begin
  lock table public.crm_pipelines,public.crm_stages,public.crm_leads in share row exclusive mode;
-if exists(select 1 from public.crm_stages s left join public.crm_pipelines p on p.id=s.pipeline_id where p.id is null or p.organization_id is distinct from s.organization_id)
- or exists(select 1 from public.crm_leads l left join public.crm_pipelines p on p.id=l.pipeline_id left join public.crm_stages s on s.id=l.stage_id where p.id is null or s.id is null or p.organization_id is distinct from l.organization_id or s.organization_id is distinct from l.organization_id or s.pipeline_id is distinct from l.pipeline_id)then
- raise exception 'crm_integrity_legacy_invalid_no_automatic_repair'using errcode='23514';end if;
+legado_invalido:=exists(select 1 from public.crm_stages s left join public.crm_pipelines p on p.id=s.pipeline_id where p.id is null or p.organization_id is distinct from s.organization_id)
+ or exists(select 1 from public.crm_leads l left join public.crm_pipelines p on p.id=l.pipeline_id left join public.crm_stages s on s.id=l.stage_id where p.id is null or s.id is null or p.organization_id is distinct from l.organization_id or s.organization_id is distinct from l.organization_id or s.pipeline_id is distinct from l.pipeline_id);
+-- Legado inconsistente não é reparado nem derruba a atualização: as chaves entram NOT VALID
+-- (valem para toda gravação nova) e a validação dos registros antigos espera eles serem revistos.
+if legado_invalido then raise warning 'crm_integrity_legacy_invalid_no_automatic_repair: chaves instaladas sem validar o legado';end if;
 expected:=array[(select attnum from pg_attribute where attrelid='public.crm_pipelines'::regclass and attname='organization_id'and not attisdropped),(select attnum from pg_attribute where attrelid='public.crm_pipelines'::regclass and attname='id'and not attisdropped)]::smallint[];
  if to_regclass('public.crm_integridade_pipelines_org_id_uq')is null then
   create unique index crm_integridade_pipelines_org_id_uq on public.crm_pipelines(organization_id,id);
@@ -36,7 +38,7 @@ select c.*,obj_description(c.oid,'pg_constraint') marker into actual from pg_con
   alter table public.crm_stages add constraint crm_stages_pipeline_id_fkey foreign key(organization_id,pipeline_id) references public.crm_pipelines(organization_id,id) on delete cascade not valid;
   comment on constraint crm_stages_pipeline_id_fkey on public.crm_stages is 'crm-integridade-funil-etapa-v1';
  else raise exception 'crm_integrity_base_fk_conflict' using errcode='23514';end if;
- alter table public.crm_stages validate constraint crm_stages_pipeline_id_fkey;
+ if not legado_invalido then alter table public.crm_stages validate constraint crm_stages_pipeline_id_fkey;end if;
 select c.*,obj_description(c.oid,'pg_constraint') marker into actual from pg_constraint c where c.conrelid='public.crm_leads'::regclass and c.conname='crm_leads_pipeline_id_fkey';
  if not found then raise exception 'crm_integrity_required_base_fk_missing' using errcode='23514';end if;
  if actual.contype<>'f' or actual.confrelid<>'public.crm_pipelines'::regclass or actual.confdeltype<>'r' or actual.confupdtype<>'a' or actual.confmatchtype<>'s' or actual.condeferrable or actual.condeferred then raise exception 'crm_integrity_base_fk_conflict' using errcode='23514';end if;
@@ -48,7 +50,7 @@ select c.*,obj_description(c.oid,'pg_constraint') marker into actual from pg_con
   alter table public.crm_leads add constraint crm_leads_pipeline_id_fkey foreign key(organization_id,pipeline_id) references public.crm_pipelines(organization_id,id) on delete restrict not valid;
   comment on constraint crm_leads_pipeline_id_fkey on public.crm_leads is 'crm-integridade-funil-etapa-v1';
  else raise exception 'crm_integrity_base_fk_conflict' using errcode='23514';end if;
- alter table public.crm_leads validate constraint crm_leads_pipeline_id_fkey;
+ if not legado_invalido then alter table public.crm_leads validate constraint crm_leads_pipeline_id_fkey;end if;
 select c.*,obj_description(c.oid,'pg_constraint') marker into actual from pg_constraint c where c.conrelid='public.crm_leads'::regclass and c.conname='crm_leads_stage_id_fkey';
  if not found then raise exception 'crm_integrity_required_base_fk_missing' using errcode='23514';end if;
  if actual.contype<>'f' or actual.confrelid<>'public.crm_stages'::regclass or actual.confdeltype<>'r' or actual.confupdtype<>'a' or actual.confmatchtype<>'s' or actual.condeferrable or actual.condeferred then raise exception 'crm_integrity_base_fk_conflict' using errcode='23514';end if;
@@ -60,6 +62,6 @@ select c.*,obj_description(c.oid,'pg_constraint') marker into actual from pg_con
   alter table public.crm_leads add constraint crm_leads_stage_id_fkey foreign key(organization_id,pipeline_id,stage_id) references public.crm_stages(organization_id,pipeline_id,id) on delete restrict not valid;
   comment on constraint crm_leads_stage_id_fkey on public.crm_leads is 'crm-integridade-funil-etapa-v1';
  else raise exception 'crm_integrity_base_fk_conflict' using errcode='23514';end if;
- alter table public.crm_leads validate constraint crm_leads_stage_id_fkey;
+ if not legado_invalido then alter table public.crm_leads validate constraint crm_leads_stage_id_fkey;end if;
 end;
 $integridade_funil_etapa$;
