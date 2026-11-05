@@ -8,6 +8,200 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+## [1.102.0] — 2026-11-05
+
+### Adicionado
+
+- **O atendente vê as conversas do próprio setor, inclusive as que estão com um colega, sem ver as dos outros setores** Em Configurações → Distribuição de atendimento, «O que cada atendente enxerga»
+  ganhou um quarto modo quando os setores de atendimento estão ligados: **«Os seus e os do seu setor»**. Com ele, o atendente vê a
+  própria carteira e as conversas que estão no setor dele — inclusive as que estão
+  com um colega do mesmo setor — e continua sem ver as conversas dos outros
+  setores. É o modo para cobrir férias e ausências sem abrir o Inbox inteiro.
+
+  Quem não está em nenhum setor vê só as conversas que são dele; quem atende dois
+  setores vê os dois. Gestor, administrador e quem só acompanha continuam vendo a
+  organização inteira. **A conversa continua entregue ao responsável**: quem cobre o
+  colega lê a conversa e o histórico, e trocar o dono segue sendo de quem é o dono ou
+  de gestor para cima. As notas internas do colega não aparecem.
+
+  O modo vale para as conversas e para os contadores do Inbox. No funil, os negócios
+  seguem a regra «só os seus», como nos outros modos restritos. Quem não ligar o
+  modo não vê diferença nenhuma. Crédito: @webtecnica (#4060, issue #4022).
+
+- **Integrações autorizadas leem a transcrição já disponível no histórico** Um novo escopo optativo permite receber o texto derivado de áudios e documentos no histórico MCP. Tokens existentes não ganham essa leitura automaticamente. O texto só sai quando está pronto, respeitando a conversa consultada e a retenção; não dispara transcrição nem gera novo custo. Crédito: @vagnerrm122 (#3996, issue #3980).
+
+- **Campo do funil pode aparecer com mais de uma condição (OU)** No editor de campos do funil, **Mostrar só quando:** passou a aceitar mais de
+  uma condição. O botão **+ condição** acrescenta uma linha, e com duas ou mais
+  a tela oferece o modo **qualquer uma das condições** (OU, o padrão) ou
+  **todas as condições** (E). É o caso da agência de viagens: os campos de voo
+  aparecem quando o **Tipo de serviço** é **Passagem aérea** ou **Pacote**, e
+  somem de hospedagem, seguro e passeio.
+
+  A régua é uma só, para o editor, para o card e para a validação do servidor: o
+  campo escondido continua sem ser cobrado como obrigatório, e o valor já gravado
+  não é apagado. A condição única que o funil já tinha continua valendo como
+  está — nada precisa ser reconfigurado.
+
+  Crédito: @webtecnica (#4049, issue #4041 de @aerosuiteapp).
+
+- **O público do agente também escolhe pela origem do contato, e a prospecção divide o número com o atendimento** Na tela do agente, em «Público do agente», há duas listas novas: «Atender só
+  quem chegou por estas origens» e «Não atender quem chegou por estas origens».
+  A origem é por onde o contato entrou no CRM — WhatsApp, Prospecção, site,
+  anúncio, importação.
+
+  O caso que motivou a mudança: um número que prospecta e também recebe quem
+  chega sozinho. Antes, um segundo agente nesse número ou respondia a todos,
+  inclusive a quem estava respondendo a uma abordagem, ou não respondia a
+  ninguém. Agora o agente de atendimento entra com prioridade maior e marca
+  «Prospecção» em «Não atender»: a resposta a uma campanha continua com o agente
+  que fez a abordagem, por regra e sem classificação de IA, e o agente da
+  prospecção não precisa ser alterado.
+
+  As regras são as mesmas das etiquetas e dos funis: basta uma origem da lista,
+  a exclusão vence e não há diferença de maiúscula. Nada muda para quem não
+  marcar nenhuma origem, e não há migration. Crédito: @ricagui (#4035).
+
+### Alterado
+
+- **O balão da conversa mostra o nome de quem da equipe enviou** A mensagem enviada por uma pessoa da equipe passa a sair como **Atendente · Andreia** em vez de só "Atendente" — o mesmo formato que a IA já usava ("IA · Clara"). O primeiro nome basta, e quem escreveu continua vendo "Você": com duas consultoras na mesma conversa, o gestor agora sabe quem prometeu o quê. O nome é resolvido na leitura do histórico, uma vez por página, a partir do `sent_by_user_id` que já era gravado; sem nome resolvido (usuário removido, instalação sem service role, mensagem antiga) a tela continua dizendo "Atendente", sem quebrar. Mensagem recebida do cliente e envio pelo celular não ganham esse rótulo. Crédito: @webtecnica (#4045, issue #4031 de @aerosuiteapp).
+
+- **A confirmação de perda identifica o negócio** Ao marcar um negócio como perdido pelo funil ou Inbox, a janela mostra o título dele antes de pedir o motivo. O cancelamento e os motivos configurados permanecem iguais; a operação em lote conserva seu fluxo. Crédito: @vagnerrm122 (#3997).
+
+### Corrigido
+
+- **A recusa de devolver ao automático a conversa de outro atendente chega traduzida em espanhol** O botão **Devolver ao automático** recusa, para um atendente, a conversa que tem
+  dono e é de outra pessoa: só um gerente devolve. A recusa já era essa, mas a
+  frase viajava escrita na rota — e o guarda de espanhol deste repositório varre o
+  AST das telas, não o das rotas. Na interface em espanhol, o atendente barrado
+  lia a recusa em português.
+
+  Agora a frase tem entrada em `lib/i18n/dicionario.ts` e chega em espanhol a quem
+  usa a interface nesse idioma: «Esta conversación es de otro atendente. Pídele a
+  un gerente o asume la conversación.» O caminho de quem pode continua igual — o
+  dono da conversa, um gerente, e a conversa sem dono seguem devolvendo ao
+  automático. Crédito: @webtecnica (#4008, issue #3436 de @hudson-souza-mkt).
+
+- **Nome de agente repetido vira 409 com a frase no campo, não 500** Criar (ou renomear) um agente com um nome que a organização já usa furava
+  `ai_agents_name_unique` e o erro cru do banco virava **500** — "Erro ao criar
+  agent". Na tela, a pessoa via um toast genérico no canto, sem saber qual campo
+  estava errado nem que o conserto era trocar o nome.
+
+  Agora a recusa é **409** com o envelope de `lib/api/wrappers.ts`, código estável
+  `agent_name_taken` e frase em pt/es/en — e na tela a frase fica
+  **embaixo do campo de nome**, com `aria-describedby`, `aria-invalid` e
+  `role="alert"`, sumindo quando a pessoa digita outro nome.
+
+  O discriminador é o **nome do índice**, não o código: `23505` é genérico e
+  `ai_agents` tem mais de um índice único (além de `ai_agent_versions` na mesma
+  transação). Traduzir todo `23505` para "nome repetido" trocaria um 500 honesto
+  por um 409 que mente — e quem tem o nome livre iria embora achando que o defeito
+  era dele. Mesmo nome em **outra organização** continua criando normalmente. Crédito: @webtecnica (#3970, issue #3952).
+
+- **O convite feito no onboarding aparece na aba Membros e pode ser revogado** O passo 6 do onboarding ("Quem trabalha com ele") mostrava o link de aceite para
+  **Copiar link**, mas o convite não existia na aba **Membros** da tela de Equipe:
+  nada era gravado em `team_invites` e a seção dizia "Nenhum convite enviado". Quem
+  fechasse a aba sem copiar o link não tinha onde recuperá-lo, reenviar ou revogar.
+
+  Agora o onboarding usa o mesmo caminho do convite de `/app/team/invite`: o
+  convite vira linha em `team_invites` e aparece na aba **Membros** como Pendente,
+  com o e-mail, o papel e o botão **Copiar link**. Revogar e aceitar funcionam
+  igual, e reconvidar o mesmo e-mail renova a linha em vez de duplicá-la. Crédito: @webtecnica (#4061, issue #4055).
+
+- **A tela do agente diz quando o número está em modo de teste** Todo canal nasce em modo de teste com a lista de números autorizados vazia, e nesse estado a IA não responde ninguém. O editor do agente passa a dizer isso logo abaixo do número conectado, com o motivo (nenhum número autorizado, ou o número informado fora da lista) e o caminho para cadastrar quem vai testar no cartão do canal em Conexões. A aba Teste também avisa quando o telefone informado não está na lista: aquele teste não passa pelo canal, então ele funcionava para um número que o WhatsApp real descartaria. O modo de fábrica não muda: o canal continua nascendo fechado ao público, e o aviso some quando o canal está aberto, quando o número já está autorizado ou quando a leitura do canal falha. Crédito: @webtecnica (#4014, issue #3976).
+
+- **A foto do contato respeita o acesso da sessão humana** Antes de assinar a foto de um contato para o navegador, o servidor confere se a sessão consegue ler esse contato pelas regras do banco. O caminho de integração com token mantém o escopo e a organização já validados. Crédito: @vagnerrm122 (#3990).
+
+- **Duplicar o mesmo agente duas vezes não colide mais no nome** Duplicar o mesmo agente duas vezes tentava gravar o mesmo nome as duas vezes,
+  `"Suporte (cópia)"`: a segunda batia no índice `ai_agents_name_unique`
+  (organização + nome) e a tela devolvia **500**. Agora o nome da cópia é o
+  primeiro **livre** da organização — `"Suporte (cópia)"`, `"Suporte (cópia 2)"`,
+  `"Suporte (cópia 3)"` —, e o nome do original nunca é reusado.
+
+  A numeração não pula: se `"Suporte (cópia 2)"` existe e `"Suporte (cópia)"` não,
+  a próxima cópia é `"Suporte (cópia)"`. Duplicar um agente cujo nome **já é cópia**
+  continua a mesma linhagem: `"Suporte (cópia)"` duplicado vira
+  `"Suporte (cópia 2)"`, não `"Suporte (cópia) (cópia)"`. O teto de 120 caracteres
+  do nome continua valendo — com o original no limite, o sufixo come o fim do
+  nome e a cópia continua aceita pelo schema.
+
+  Os nomes considerados são só os da própria organização: outra empresa com o
+  mesmo nome não empurra a numeração da sua.
+
+  Duas duplicações **simultâneas** do mesmo agente (o clique duplo) também não
+  terminam mais em erro: a que perde a corrida relê os nomes e grava a próxima
+  cópia livre.
+
+  A mesma régua vale para duplicar um fluxo de follow-up: duplicar
+  `"Carrinho (cópia)"` agora dá `"Carrinho (cópia 2)"`, não
+  `"Carrinho (cópia) (cópia)"`. E um nome no limite de tamanho que termina em
+  emoji não é mais cortado no meio do emoji, o que também fazia a gravação falhar. Crédito: @webtecnica (#3986, issue #3978).
+
+- **Regra de "lead parado N dias na mesma etapa" volta a enviar WhatsApp** A regra que usa o gatilho "Quando um lead ficar N dias na mesma etapa" com a ação de enviar WhatsApp parava no meio: o envio aparecia na Atividade como falha por fronteira de atendimento desatualizada, e a mensagem nunca saía. A causa é a mesma que já tinha sido corrigida para o gatilho de data do funil — o evento não era reconhecido como pertencente a um contato, e por isso a automação não conseguia provar em nome de quem estava enviando.
+
+  Agora o evento dessa regra é reconhecido como os demais do funil, e a mensagem é enviada. Nada muda para as regras que já funcionavam, e os gatilhos que nunca fizeram parte desse reconhecimento continuam recusados como antes.
+
+  Nada a fazer na sua instalação: a atualização aplica a correção e as regras existentes passam a enviar. Crédito: @webtecnica (#4039, issue #4018 de @nemyasalmeida).
+
+- **O banco recusa negócio em etapa de outro funil ou de outra empresa** As chaves que ligam negócio, funil e etapa passam a conferir também a organização e o funil. As telas e a API já recusavam essa troca; agora o próprio banco recusa, em qualquer caminho de gravação. Se a instalação já tem registros antigos nesse estado, eles não são corrigidos sozinhos nem travam a atualização: as chaves antigas continuam valendo, e a conferência nova entra na primeira atualização depois que esses registros forem revistos. Crédito: @vagnerrm122 (#4011).
+
+- **Ligação que ficou "tocando" sem ninguém ligar é encerrada sozinha** Quando o fim de uma ligação se perdia (a ligação caía antes de ser atendida e o
+  aviso de encerramento não chegava), ela ficava registrada como "tocando" para
+  sempre, e o painel de voz mostrava o banner de ligação chegando a quem abria o
+  CRM, sem ninguém do outro lado. Agora uma rotina a cada 5 minutos encerra toda
+  ligação que está tocando há mais de 5 minutos. Ligações em andamento não são
+  tocadas. Crédito: @lzandonadi (#3985).
+
+- **Nome de atendente: só membros da organização** O nome de quem atendeu (na lista e no detalhe das conversas, na exportação da conversa, nas passagens, no resumo do contato, no aviso de caso, na assinatura das mensagens, na distribuição por número, no histórico do contato e do negócio, nas decisões de próxima ação, no relatório de atividades, no histórico do follow-up, nas métricas por atendente (nome e e-mail), no responsável enviado pelo webhook de saída e nas respostas das ferramentas da IA sobre conversas, negócios, agenda e equipe) só aparece para quem tem ou teve vínculo com a organização. Quem saiu da equipe continua com o nome no histórico; qualquer outro identificador fica sem nome, com o rótulo genérico que a tela já usava. No relatório de atividades e no histórico do follow-up, quem não tem nome cadastrado passa a aparecer com o rótulo genérico, e não mais pelo e-mail.
+
+- **Boas-vindas exige a empresa indicada na própria aba** O formulário de boas-vindas recusa um destino ausente ou inválido, em vez de aproveitar a empresa ativa em outra aba. Os campos digitados permanecem na tela e a pessoa é orientada a recarregar. O fuso sugerido pelo navegador é preservado. Crédito: @vagnerrm122 (#3989).
+
+- **O Radar tira da revisão as propostas de negócios encerrados** Uma proposta em rascunho com aviso aberto deixa de aparecer no Radar geral quando seu negócio já saiu do conjunto de negócios abertos e de funis ativos. A consulta por contato conserva a mesma regra. Crédito: @vagnerrm122 (#4001).
+
+- **Recusar uma ligação de telefone (SIP) pela tela agora funciona** O botão de recusar do aviso de ligação chegando só funcionava em ligações pelo
+  WhatsApp. Numa ligação de telefone, a recusa falhava sem mensagem e o aviso
+  voltava no próximo carregamento da página. Agora a ligação de telefone recusada
+  é encerrada de verdade: ela sai do histórico como recusada e a IA não atende.
+  Se a recusa falhar, a tela mostra o motivo. A recusa que chega no mesmo
+  instante em que a IA ia atender também vale: a ligação não é atendida.
+  Crédito: @lzandonadi (#3988).
+
+- **Quando a resposta da IA é barrada de novo na correção automática, a equipe recebe um caso em vez de o cliente ficar sem resposta** Quando o turno termina sem nenhuma mensagem ao cliente, o agente recebe uma
+  correção automática. Se as regras de segurança barravam a resposta e barravam
+  de novo a que a correção tentou mandar, o turno acabava calado: nenhuma
+  mensagem saía e nada aparecia para a equipe, porque o aviso final tratava
+  qualquer tentativa barrada como «o veto já ensinou».
+
+  Agora, com casos humanos ligados no agente, o turno abre um caso para a equipe
+  quando a correção tentou responder e nada saiu, ou quando ela gastou todas as
+  etapas em consultas sem chegar a responder. O caso diz o motivo em português na
+  tela da equipe e o lead vai para a etapa de atendimento humano, como nos outros
+  avisos automáticos.
+
+  Continua sem caso o silêncio que o próprio agente escolhe na correção, e o
+  silêncio pedido pelo contato (descadastro, contato interno, conversa com a
+  equipe, LGPD). Com casos desligados, a falha segue registrada no log do turno.
+
+- **A imagem conserva os bindings instalados do canvas no standalone** A cópia do pdfjs passa a conservar também os alvos dos links pnpm do canvas e dos seus bindings opcionais instalados no estágio Linux. Evita um pacote visível pelo nome mas quebrado ao resolver a dependência nativa. Não altera arquitetura, lockfile ou toolchain. Crédito: @vagnerrm122 (#4002).
+
+- **Teste do agente diz quando quem falhou foi o banco, em vez de mandar conferir credencial** Quem testava um agente recém-instalado e recebia "Não foi possível executar o teste. Confira modelo, credencial e materiais do agente" ia conferir exatamente isso — e refazia credencial, agente e artigos da base sem resolver nada, porque a causa era outra: o banco não respondia a tempo (`Query read timeout`).
+
+  Agora a falha é classificada antes de virar frase na tela. Quando o banco é que não atendeu, a resposta é **502 `preview_banco_indisponivel`** e o texto diz que o banco não respondeu, que **modelo e credencial não têm relação com a falha** e que o motivo exato está no log do app, no marcador `[ai.test]`. Nada de credencial é pedido nesse caso.
+
+  Quando a falha é do provedor — chave recusada, modelo fora da lista da empresa, cota, endereço próprio sem chave —, a mensagem continua a de antes, porque aí a orientação está certa. E quando não dá para provar de onde veio o erro, a frase também é a de antes: o sistema não inventa causa para o que não sabe. O erro cru continua indo para o log e para a linha do teste em `ai_agent_runs`, como sempre foi; o que mudou é a tradução para a tela.
+
+  Você não precisa mudar nada. Se o teste do agente falhar por instabilidade do banco, a mensagem agora diz isso. Crédito: @webtecnica (#4037, issue #4020).
+
+- **O painel de IA identifica dólar e chamadas sem preço** O gráfico e o CSV identificam o custo em dólar, sem rotulá-lo como reais. A tabela e a exportação informam quantas chamadas ainda não têm preço registrado; o total continua somando apenas valores conhecidos, sem inventar uma conversão ou tratar preço ausente como gratuidade. Crédito: @vagnerrm122 (#3994).
+
+  No CSV, a coluna custo_reais passa a se chamar custo_usd (o valor sempre foi em dólar) e entra a coluna chamadas_sem_preco.
+
+- **O watchdog respeita a parada durante a reconciliação** O sinal de desligamento chega também à reconciliação de sessões e é conferido depois das leituras, antes de iniciar outro efeito. Preserva a conclusão dos efeitos já iniciados e as regras atuais de retomada, telefone adicional e supressão de escritas sem mudança. Crédito: @vagnerrm122 (#4003).
+
+- **Webhooks no celular não rola mais para o lado com fonte de nome longo** Na aba Receber dados de Webhooks, uma fonte com nome longo empurrava o cartão
+  para além da largura da tela do celular: a página inteira rolava para o lado e
+  o selo "Ativa"/"Pausada" ficava cortado na borda. Agora o nome é encurtado com
+  reticências dentro do cartão e a tela cabe na largura do aparelho.
+
 ## [1.101.0] — 2026-11-05
 
 ### Adicionado
@@ -14213,7 +14407,8 @@ Primeira versão marcada do DeskcommCRM. O projeto vinha sendo desenvolvido publ
 
 - **Node 22 é obrigatório para desenvolvimento.** A suíte de invariantes instancia o cliente do Supabase, que exige o `WebSocket` global — nativo apenas a partir do Node 22. Isso não afeta quem apenas hospeda: a VPS roda a imagem pronta.
 
-[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.101.0...HEAD
+[Não lançado]: https://github.com/melgarafael/DeskcommCRM/compare/v1.102.0...HEAD
+[1.102.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.101.0...v1.102.0
 [1.101.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.100.0...v1.101.0
 [1.100.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.99.0...v1.100.0
 [1.99.0]: https://github.com/melgarafael/DeskcommCRM/compare/v1.98.0...v1.99.0
