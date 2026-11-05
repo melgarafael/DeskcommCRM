@@ -127,7 +127,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     const admin = createAdminClient();
     const membros = await membrosDaOrganizacao(
       admin,
-      activeOrg.orgId,
+      authz.organizationId,
       metrics.attendants.map((a) => a.user_id),
     );
     await Promise.all(

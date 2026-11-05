@@ -87,7 +87,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         },
         id,
       );
-      const [comNome] = await comNomeDoAtendente([conv]);
+      const [comNome] = await comNomeDoAtendente(authz.organizationId, [conv]);
       return ok(comNome ?? conv, { requestId });
     } catch (err) {
       if (err instanceof ApiError) {
