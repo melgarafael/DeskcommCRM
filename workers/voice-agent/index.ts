@@ -409,6 +409,24 @@ export async function handleAudioSocketConnection(socket: net.Socket, uuid: stri
     return [] as string[];
   });
 
+  // O `connected` é um claim: só vale sobre linha que ainda toca. Sem o filtro
+  // de status, a recusa pela tela que chega entre a leitura acima e esta escrita
+  // era sobrescrita, e a IA atendia a ligação recusada. Antes do bridge, para a
+  // sessão paga nem abrir quando o claim perde.
+  const answeredAt = new Date().toISOString();
+  const { data: atendida, error: claimErr } = await supabaseAdmin
+    .from("voice_calls")
+    .update({ status: "connected", answered_at: answeredAt, handled_by: "ai" })
+    .eq("id", callRow.id)
+    .in("status", ["starting", "ringing"])
+    .select("id");
+  if (!atendida || atendida.length === 0) {
+    if (claimErr) console.error(`[audiosocket] falha ao marcar chamada ${callRow.id} como atendida:`, claimErr.message);
+    else console.info(`[audiosocket] chamada ${callRow.id} deixou de tocar antes do atendimento — desligando`);
+    socket.end();
+    return;
+  }
+
   const bridge = new AudioSocketCallBridge(socket, {
     callId: callRow.id,
     organizationId: callRow.organization_id,
@@ -436,7 +454,6 @@ export async function handleAudioSocketConnection(socket: net.Socket, uuid: stri
     },
   });
 
-  const answeredAt = new Date().toISOString();
   activeAudioSocketCalls.set(uuid, {
     bridge,
     callRowId: callRow.id,
@@ -446,11 +463,6 @@ export async function handleAudioSocketConnection(socket: net.Socket, uuid: stri
     answeredAt,
     transcript: [],
   });
-
-  await supabaseAdmin
-    .from("voice_calls")
-    .update({ status: "connected", answered_at: answeredAt, handled_by: "ai" })
-    .eq("id", callRow.id);
 
   // Se algum byte de áudio já chegou GRUDADO no mesmo pacote TCP do frame de
   // UUID (TCP é stream contínuo, não datagramas), reinjeta no socket depois

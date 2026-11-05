@@ -8,4 +8,6 @@ O botão de recusar do aviso de ligação chegando só funcionava em ligações 
 WhatsApp. Numa ligação de telefone, a recusa falhava sem mensagem e o aviso
 voltava no próximo carregamento da página. Agora a ligação de telefone recusada
 é encerrada de verdade: ela sai do histórico como recusada e a IA não atende.
-Se a recusa falhar, a tela mostra o motivo. Crédito: @lzandonadi.
+Se a recusa falhar, a tela mostra o motivo. A recusa que chega no mesmo
+instante em que a IA ia atender também vale: a ligação não é atendida.
+Crédito: @lzandonadi.

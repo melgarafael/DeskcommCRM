@@ -44,6 +44,7 @@ vi.mock("@/lib/supabase/admin", () => ({
           return consulta;
         },
         eq: () => consulta,
+        in: () => consulta,
         single: async () => ({
           data: {
             id: "chamada-1",
@@ -56,7 +57,7 @@ vi.mock("@/lib/supabase/admin", () => ({
           error: null,
         }),
         maybeSingle: async () => ({ data: { status: "active" }, error: null }),
-        then: (ok: (r: unknown) => unknown) => Promise.resolve({ data: null, error: null }).then(ok),
+        then: (ok: (r: unknown) => unknown) => Promise.resolve({ data: [{ id: "chamada-1" }], error: null }).then(ok),
       };
       return consulta;
     },
