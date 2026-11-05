@@ -16,7 +16,7 @@
 import { z } from 'zod';
 import type pg from 'pg';
 
-import { loadConversationAgentConfig } from '../../agent/agent-config';
+import { loadConversationAgentConfig, type PublishedAgentConfig } from '../../agent/agent-config';
 import { insertInboxItem } from '../../db/repository';
 import type { Logger } from '../../obs/logger';
 import { enqueueJob } from '../../queue/queue';
@@ -31,6 +31,11 @@ import { avisoDeEventoMorto, IA_QUE_NAO_RESPONDEU } from '@/lib/event-log/aviso-
 import { acordarLacoDeEventLog } from '@/lib/event-log/sinal-de-trabalho';
 import { canalDesativado } from '@/lib/channels/desativado';
 import { TETO_DA_ESPERA_DA_DERIVACAO_MS } from '@/lib/messaging/media/derivable';
+import {
+  haLeitorDaDescricao,
+  LOTE_DE_REABERTURA,
+  reabrirLeituraAdiada,
+} from '@/lib/messaging/media/leitura-adiada';
 import { midiaDerivavelPendente } from './midia-derivavel';
 import { haQuemAtendaASessao } from '@/lib/ai/agents/quem-atende-a-sessao';
 import { decidirElegibilidadeDaConversa } from '@/lib/ai/elegibilidade/consulta-pg';
@@ -213,45 +218,36 @@ const ESPERA_DERIVACAO_MS = 4_000;
 type DesfechoEvento = 'processado' | 'adiar';
 
 /**
- * Janela de rajada EFETIVA para o evento: a configurada na versão do agente
- * desta conversa (#1856), com o `INBOUND_DEBOUNCE_MS` da instalação como
- * default e clamp no teto de 60s (`debounceEfetivo`).
+ * O agente desta conversa, para as afinações do dreno: a janela de rajada
+ * (#1856), o intervalo mínimo entre respostas e a foto (9108: se ele vê
+ * imagens, e quantas mensagens ele lê).
  *
  * A resolução é a de `loadConversationAgentConfig` — o `active_ai_agent_id` da
  * conversa quando há dono explícito, senão o agente publicado da sessão. NÃO é
  * a resolução completa do turno (`resolveTurnAgent`: router, classificador,
  * campanha): numa conversa que o turno entregaria a outro agente sem torná-lo
- * dono, vale a janela do agente da sessão (ou a env). Com o campo vazio
- * (default de toda instalação) o valor vira o da env — regressão zero.
+ * dono, vale a janela do agente da sessão. Por isso a foto só usa esta
+ * resolução para o SIM ("ele vê"); o NÃO, ou o `null`, cai na régua da empresa
+ * (`haLeitorDaDescricao`), e a espera da foto não depende do agente. Sem agente
+ * resolvido, a janela é a da env e não há intervalo.
  *
- * Falha da consulta NÃO derruba o evento: degrada para a env, como a checagem
- * de elegibilidade acima. A janela é afinação, não motivo para retry.
+ * Falha da consulta NÃO derruba o evento: devolve `null`, como a checagem de
+ * elegibilidade acima. Afinação não é motivo para retry.
  */
-async function ajustesDoAgenteDoEvento(
+async function agenteDoEvento(
   pool: pg.Pool,
   event: EventRow,
   p: { conversation_id: string; channel_session_id: string },
-  padraoInstalacao: number,
   log: Logger,
-): Promise<{ debounceMs: number; intervaloEntreRespostasMs: number }> {
+): Promise<PublishedAgentConfig | null> {
   try {
-    const agentConfig = await loadConversationAgentConfig(
-      pool,
-      event.organization_id,
-      p.conversation_id,
-      p.channel_session_id,
-    );
-    return {
-      debounceMs: debounceEfetivo(agentConfig?.inboundDebounceMs ?? null, padraoInstalacao),
-      // O intervalo entre respostas vem da MESMA versão do agente (mesma consulta).
-      intervaloEntreRespostasMs: intervaloEfetivo(agentConfig?.replyMinIntervalMs ?? null),
-    };
+    return await loadConversationAgentConfig(pool, event.organization_id, p.conversation_id, p.channel_session_id);
   } catch (err) {
-    log.warn('drain: ajustes do agente não resolveram — usando a janela da instalação, sem intervalo', {
+    log.warn('drain: agente da conversa não resolveu — janela da instalação, sem intervalo, e foto pela régua da empresa', {
       event_id: event.id,
       error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
     });
-    return { debounceMs: padraoInstalacao, intervaloEntreRespostasMs: 0 };
+    return null;
   }
 }
 
@@ -471,6 +467,45 @@ async function processEvent(
     });
   }
 
+  // O agente da conversa: a janela de rajada (lá embaixo) e a foto (aqui).
+  const agentConfig = await agenteDoEvento(pool, event, p, log);
+  // Ele vê as fotos (9108)? Só decide sozinho quando a resposta é SIM: quem
+  // responde o turno é escolhido depois, por `resolveTurnAgent` (roteador,
+  // campanha), e pode ser outro agente, que vê.
+  const agenteVe = agentConfig !== null && agentConfig.imageVisionEnabled !== false;
+
+  // FOTO ADIADA POR FALTA DE LEITOR (`MEDIA_VISION_WITHOUT_READER=defer`): este
+  // é o ponto em que se SABE que um agente vai ler a conversa — depois do portão
+  // de quem atende e da elegibilidade. Reabrir aqui pede a descrição, e a espera
+  // logo abaixo segura o primeiro turno até ela chegar (âncora no pedido). Falha
+  // não segura o cliente: o turno segue com `[image]`, como no teto de hoje, e o
+  // cron `media-leitura-adiada` reabre na rodada seguinte.
+  //
+  // Quem vê: o agente da conversa, se ele vê. Se ele não vê (ou não resolveu,
+  // como no número só com roteador), a régua é a mesma que adiou a foto,
+  // `haLeitorDaDescricao`: a empresa tem um agente que vê, ou outro leitor. Sem
+  // ninguém, a foto fica adiada e o turno não espera por ela (`skipped` é final).
+  //
+  // Quantas: as que o agente LÊ. O turno lê as últimas `historyMessageWindow`
+  // mensagens (até 200), e as N fotos mais novas contêm toda foto entre as N
+  // mensagens mais novas; reabrir além disso pagava visão de foto que o turno
+  // não alcança. Quando quem vê pode ser outro agente, o lote de sempre. Idade
+  // não entra: foto antiga numa conversa que voltou é lida agora.
+  try {
+    if (agenteVe || (await haLeitorDaDescricao(pool, event.organization_id))) {
+      const n = await reabrirLeituraAdiada(pool, event.organization_id, {
+        conversationId: p.conversation_id,
+        limite: agenteVe ? agentConfig.historyMessageWindow : LOTE_DE_REABERTURA,
+      });
+      if (n > 0) log.info('drain: leitura de mídia adiada pedida antes do turno', { event_id: event.id, reabertas: n });
+    }
+  } catch (err) {
+    log.warn('drain: não consegui pedir a leitura adiada — turno segue', {
+      event_id: event.id,
+      error: (err instanceof Error ? err.message : String(err)).slice(0, 160),
+    });
+  }
+
   // Mídia ainda virando texto: ESPERAR. Sem isto o turno era despachado no mesmo
   // instante em que a mensagem chegava, enquanto o áudio ainda estava sendo
   // baixado e transcrito — e o cliente recebia "recebi seu áudio, mas não
@@ -497,7 +532,8 @@ async function processEvent(
   // discordar. O que fica aqui é a POLÍTICA do despacho: a âncora do teto é a
   // hora DA MÍDIA (`created_at`, quando ela chegou a nós — nunca `sent_at`, o
   // relógio do aparelho, que faria uma foto entregue com atraso nascer "além do
-  // teto"), e mídia velha e travada não segura o turno para sempre.
+  // teto"; a foto reaberta acima conta do PEDIDO da leitura, também lá), e mídia
+  // velha e travada não segura o turno para sempre.
   const midia = await midiaDerivavelPendente(pool, {
     organizationId: event.organization_id,
     conversationId: p.conversation_id,
@@ -540,7 +576,13 @@ async function processEvent(
   //
   // A janela e a exclusão do job em HOLD (`held_run_after` no payload — a lição
   // do #830) moram em ./debounce.ts, com teste próprio.
-  const ajustes = await ajustesDoAgenteDoEvento(pool, event, p, knobs.debounceMs, log);
+  // O agente já resolvido lá em cima (uma consulta só): sem ele, a janela da
+  // instalação e nenhum intervalo.
+  const ajustes = {
+    debounceMs: debounceEfetivo(agentConfig?.inboundDebounceMs ?? null, knobs.debounceMs),
+    // O intervalo entre respostas vem da MESMA versão do agente (mesma consulta).
+    intervaloEntreRespostasMs: intervaloEfetivo(agentConfig?.replyMinIntervalMs ?? null),
+  };
   const rajada = await decidirRajada(
     pool,
     { organizationId: event.organization_id, contactId: p.contact_id },
