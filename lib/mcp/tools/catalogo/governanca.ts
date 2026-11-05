@@ -46,6 +46,19 @@ export const TOOLS_GOVERNANCA = declararTools([
     pacotes: ["organizar", "atender"],
   },
   {
+    name: "crm_set_conversation_sector",
+    category: "write",
+    rotulo: "Colocar a conversa no setor",
+    explicacao:
+      "Classifica a conversa num setor de atendimento (financeiro, viagens internacionais, recepção), para ela ser distribuída a quem atende aquele setor. Não troca o responsável e não sobrescreve o setor que uma pessoa escolheu.",
+    oQueToca: "Setores de atendimento",
+    risco: "atencao",
+    pacotes: ["atender", "escalar"],
+    // Módulo opcional (doc 213): sem setores na instalação, a capacidade não é
+    // oferecida a ninguém — nem ao agente, nem a um cliente MCP externo.
+    modulo: "setores",
+  },
+  {
     name: "crm_request_human_handoff",
     category: "handoff",
     rotulo: "Chamar um atendente humano",
