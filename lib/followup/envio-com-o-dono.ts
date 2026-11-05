@@ -53,6 +53,7 @@ import type pg from "pg";
 
 import { ehContatoInterno, sqlContatoInterno } from "@/lib/contacts/tags-internas";
 import { tagsInternasDaOrg } from "@/lib/schemas/settings";
+import { instanteDoBanco } from "@/lib/tempo/agora";
 
 /** O que a régua da posse precisa saber do contato e das conversas dele. */
 export interface EstadoDoComando {
@@ -218,8 +219,10 @@ export async function lerEstadoDoComandoViaSupabase(
     if (conversa.assigned_to_user_id !== null) conversaComDono = true;
     const ate = conversa.bot_silenced_until;
     if (ate === null || conversa.assigned_to_user_id !== null) continue;
-    // O Postgres devolve `'infinity'` como string; `Date.parse` não a entende.
-    if (ate === "infinity" || Date.parse(ate) > agora) conversaSilenciadaSemDono = true;
+    // O Postgres devolve `'infinity'` como string, e `instanteDoBanco` a lê como
+    // ilegível (`null`); por isso ela é conferida antes.
+    const fim = instanteDoBanco(ate);
+    if (ate === "infinity" || (fim !== null && new Date(fim).getTime() > agora)) conversaSilenciadaSemDono = true;
   }
 
   return {
