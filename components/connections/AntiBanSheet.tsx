@@ -49,6 +49,8 @@ interface FormState {
   atraso_maximo_ms: string;
   daily_message_limit: string;
   allow_sunday: boolean;
+  /** Teto do dia só na abordagem (#3851). Default desligado = régua de sempre. */
+  teto_so_abordagem: boolean;
   /** Dias da prospecção (0642, 0=dom … 6=sáb). Sempre explícito: sem "herdar". */
   prospeccao_dias: number[];
   timezone: string;
@@ -75,6 +77,7 @@ function fromItem(item: PacingKnobsItem): FormState {
         ? String(item.channel_session.daily_message_limit)
         : "",
     allow_sunday: o?.allow_sunday ?? item.defaults.allowSunday,
+    teto_so_abordagem: o?.teto_so_abordagem ?? item.defaults.tetoSoAbordagem,
     // Dias nascem do EFETIVO (banco normalizado ou default todos os dias): a
     // ficha mostra o que o motor aplica, e salvar sem tocar aqui preserva o
     // comportamento — nunca congela nem solta dia por acidente.
@@ -199,6 +202,13 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
         // escolha permanente — foi assim que uma instalação ficou muda todo
         // domingo. Ver `valorDeOverride`.
         allow_sunday: valorDeOverride(form.allow_sunday, item.defaults.allowSunday),
+        // Mesma regra do domingo: só grava override quando o Switch DIVERGE do
+        // default. Salvar a ficha por outro motivo não pode congelar a régua de
+        // hoje como escolha permanente de amanhã.
+        teto_so_abordagem: valorDeOverride(
+          form.teto_so_abordagem,
+          item.defaults.tetoSoAbordagem,
+        ),
         // Dias sempre explícitos (coluna NOT NULL): o que está marcado é o que
         // grava — sem modo "herdar", sem surpresa para quem só mexeu no throttle.
         prospeccao_dias: [...form.prospeccao_dias].sort((a, b) => a - b),
@@ -400,6 +410,23 @@ export function AntiBanSheet({ item, canWrite, onClose }: Props) {
               id="allow-sunday"
               checked={form.allow_sunday}
               onCheckedChange={(v) => set({ allow_sunday: v })}
+              disabled={!canWrite}
+            />
+          </fieldset>
+
+          <fieldset className="flex items-center justify-between gap-4">
+            <div>
+              <Label htmlFor="teto-so-abordagem">{t("Teto do dia só na abordagem")}</Label>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Ligado: o teto diário conta apenas a primeira mensagem a uma pessoa nova. Responder quem escreveu e retomar quem já foi abordado continua respeitando o intervalo e a janela, mas não gasta nem espera o teto.",
+                )}
+              </p>
+            </div>
+            <Switch
+              id="teto-so-abordagem"
+              checked={form.teto_so_abordagem}
+              onCheckedChange={(v) => set({ teto_so_abordagem: v })}
               disabled={!canWrite}
             />
           </fieldset>
