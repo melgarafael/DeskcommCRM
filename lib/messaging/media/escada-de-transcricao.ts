@@ -190,6 +190,15 @@ function promptDeTranscricao(languages: readonly string[]): string {
   return `Transcreva o áudio anexado. Devolva somente o que foi falado, sem comentários, sem rótulos e sem aspas.${idioma}`;
 }
 
+/**
+ * Teto de saída da transcrição pelo modelo da organização. Sem teto, a
+ * OpenRouter reserva o máximo do modelo contra o saldo da chave e recusa com
+ * crédito baixo. 8192, não 4096: o texto guardado vai a 8000 caracteres
+ * (~2,7k tokens, `derive.ts`) e, em modelo de raciocínio, o raciocínio conta no
+ * teto — 4096 poderia cortar um áudio longo antes disso.
+ */
+export const TETO_DE_SAIDA_DA_TRANSCRICAO = 8192;
+
 export function transcricaoPeloModelo(modelo: {
   provider: string;
   modelId: string;
@@ -218,6 +227,7 @@ export function transcricaoPeloModelo(modelo: {
           ],
         },
       ],
+      maxOutputTokens: TETO_DE_SAIDA_DA_TRANSCRICAO,
     });
     return {
       texto: (res.text ?? "").trim(),

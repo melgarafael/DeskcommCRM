@@ -122,7 +122,8 @@ export async function mensagensDoClienteSemResposta(
   );
   return rows
     .reverse()
-    .map(corpoDaMensagem)
+    // Seta, não `.map(corpoDaMensagem)`: o índice do map cairia no 2º parâmetro (`verImagens`).
+    .map((m) => corpoDaMensagem(m))
     .filter((corpo) => corpo.trim() !== "");
 }
 
