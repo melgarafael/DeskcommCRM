@@ -30,6 +30,7 @@ import { type NextRequest } from "next/server";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import type { Actor } from "@/lib/api/handlers/types";
 import { fail } from "@/lib/api/wrappers";
+import { autorizarModulo, MENSAGEM_DA_RECUSA_DO_MODULO } from "@/lib/auth/modulo-autorizado";
 import { requireRole } from "@/lib/auth/require-role";
 import type { Role } from "@/lib/auth/types";
 import type { Idioma } from "@/lib/i18n/idiomas";
@@ -83,6 +84,11 @@ export interface AuthDualOptions {
    * passa pela rota, porque as duas chamam o mesmo handler.
    */
   tokenRole?: Role;
+  /**
+   * Modelo de porta da rota (`/api/v1/leads/[id]`), para o token de MÓDULO. Opcional: sem ele o
+   * modelo é deduzido do caminho real (`modeloDoCaminho`). Só o token de módulo lê este campo.
+   */
+  portaModelo?: string;
 }
 
 /**
@@ -91,7 +97,7 @@ export interface AuthDualOptions {
  */
 export async function resolveAuthDual(
   req: NextRequest,
-  { requestId, resource, role, scope, tokenRole }: AuthDualOptions,
+  { requestId, resource, role, scope, tokenRole, portaModelo }: AuthDualOptions,
 ): Promise<AuthDual> {
   const authHeader = req.headers.get("authorization");
 
@@ -112,6 +118,27 @@ export async function resolveAuthDual(
         };
       }
       throw err;
+    }
+
+    // TOKEN DE MÓDULO (spec 33, F3): a área vem ANTES do papel e do escopo. Nada de módulo passa
+    // sem que o pacote tenha declarado e a organização consentido a área desta porta, no modo
+    // certo (declarado ∩ consentido, lido do banco agora). Sem porta conhecida, recusa.
+    if (auth.actor.type === "module") {
+      const decisao = await autorizarModulo({
+        organizationId: auth.organizationId,
+        tokenId: auth.apiTokenId,
+        metodo: req.method,
+        modeloDaPorta: portaModelo,
+        caminho: req.nextUrl.pathname,
+      });
+      if (!decisao.ok) {
+        return {
+          ok: false,
+          response: fail(decisao.codigo, MENSAGEM_DA_RECUSA_DO_MODULO[decisao.codigo], 403, {
+            requestId,
+          }),
+        };
+      }
     }
 
     try {

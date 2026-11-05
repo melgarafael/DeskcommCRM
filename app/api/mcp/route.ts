@@ -13,6 +13,7 @@ import type { NextRequest } from "next/server";
 
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 
+import { MENSAGEM_DA_RECUSA_DO_MODULO, MODULO_NAO_ENTRA_AQUI } from "@/lib/auth/modulo-autorizado";
 import { createMcpServer } from "@/lib/mcp/server";
 import { McpAuthError, validateBearerToken } from "@/lib/mcp/auth";
 import { modulosLigados } from "@/lib/instalacao/modulos";
@@ -53,6 +54,12 @@ async function handle(req: NextRequest): Promise<Response> {
     }
     const msg = err instanceof Error ? err.message : "auth_failed";
     return jsonRpcError(-32603, msg, 500, requestId);
+  }
+
+  // Token de MÓDULO não entra no servidor MCP (spec 33, F3): ele lê pelos escopos do token e não
+  // passa pela área consentida. Recusa antes de qualquer ferramenta.
+  if (auth.actor.type === "module") {
+    return jsonRpcError(-32002, MENSAGEM_DA_RECUSA_DO_MODULO[MODULO_NAO_ENTRA_AQUI], 403);
   }
 
   const idempotencyKey = chaveDaRequisicao(req);
