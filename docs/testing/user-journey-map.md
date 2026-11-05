@@ -4508,3 +4508,51 @@ sem um deles, a chamada recusa. Quem consente é só o admin da organização. A
 de contexto e que a tela dele o repasse; que as mutações de todas as rotas gravem `person_id` (só o
 mecanismo comum, `metadataDoModulo`, foi coberto, e as rotas que não o usam não levam a pessoa); e o
 comportamento de quem já tem consentimento em edição ao mesmo tempo em duas abas.
+
+## J70 — Módulo conectado: o lugar na tela, a ponte e o painel lateral `[P0]` (2026-11-05)
+
+Specs: esta jornada é **especificação**. Nenhuma execução foi feita; ainda não existe módulo real com
+serviço de verdade, e o laboratório local não admite o perfil `connected` (ver J67.1). Quando houver um
+módulo real, os casos viram execução; até lá, cada linha descreve o que a tela deve fazer.
+
+Cobertura hoje, só por escrita (não executada): `lib/extensions/modulos-na-tela.test.ts`,
+`lib/modulo/ponte.test.ts`, `components/modulo/QuadroDoModulo.test.tsx`,
+`components/modulo/PainelDoModulo.test.tsx`, `app/app/m/[modulo]/page.test.tsx`,
+`app/actions/modulo/moduloParaOPainel.test.ts`, `tests/unit/navegacao-modulos.test.ts`,
+`components/shell/CommandPalette.modulo.test.tsx` (`pnpm test:unit`, CI `verify`) e a cerca
+`tests/unit/modulo-quadro-so-pela-ponte.test.ts`. Nenhuma delas abre a tela do CRM num navegador.
+
+Estado: **não executada.** Esta entrega escreve a jornada; nada foi rodado nesta máquina, e o veredito é o CI do PR interno.
+
+Ambiente previsto: o mesmo de J69, mais um módulo de laboratório com `service_origin` de outra origem que
+sirva `/embed`, uma pessoa `viewer`, uma `admin`, e duas organizações.
+
+| Caso | Nome | Prioridade | Prova prevista | Resultado |
+|---|---|---|---|---|
+| J70.1 | Mensagem de outra origem | P0 | Uma mensagem vinda de origem diferente da do serviço é ignorada em silêncio: nada responde, nada navega, nenhum erro na tela | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J70.2 | Mensagem de outra janela, mesma origem | P0 | Uma mensagem da mesma origem do serviço, mas de outra janela (outra aba ou outro iframe), é ignorada | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J70.3 | `module:navigate` com id que não existe | P0 | O módulo pede uma tela inexistente: a tela não muda | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J70.4 | `module:navigate` para tela que a pessoa não vê | P0 | Um `viewer` que o módulo manda para uma tela de administração: a tela não muda | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J70.5 | `module:navigate` com endereço no lugar de id | P0 | O módulo manda um `href` ou endereço externo em vez do id: ignorado | **CI** (unit, `ponte.test.ts`) escrito; **NÃO EXECUTADO** |
+| J70.6 | Módulo que nunca manda `module:ready` | P0 | Em 10 s aparece "O serviço deste módulo não respondeu"; menu, topo e o resto do CRM seguem funcionando | **CI** (unit, relógio simulado) escrito; **NÃO EXECUTADO** |
+| J70.7 | Módulo desativado, removido, fora da faixa `host_api` ou sem `service_origin` | P0 | Não aparece no menu nem no ⌘K, e `/app/m/<slug>` responde 404 | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J70.8 | Pessoa sai da organização ou troca de organização com a tela aberta | P0 | O pedido de JWT novo é recusado (F3) e o iframe recebe `host:error`; a tela do módulo não ganha poder novo | **CI** (unit do Quadro e da rota de contexto) escrito; **NÃO EXECUTADO** |
+| J70.9 | Sem módulo, o CRM é o de antes | P0 | Sem nenhum módulo conectado: nenhum grupo "Módulos", nenhum item no ⌘K, nenhum botão no topo | **CI** (unit, comparação com a saída sem o parâmetro) escrito; **NÃO EXECUTADO** |
+| J70.10 | Pedidos de JWT em sequência | P1 | Dois `module:request-jwt` em menos de 30 s: o segundo recebe `host:error` com `rate_limited` | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J70.11 | Nada com poder na URL do iframe | P0 | O endereço do iframe leva só `organization` e `installation`; nenhum JWT, token ou segredo | **CI** (unit e cerca) escritos; **NÃO EXECUTADO** |
+| J70.12 | Painel lateral | P1 | O botão no topo abre o painel com o mesmo quadro; um módulo por vez; `Esc` fecha; com um só módulo o botão abre direto; com vários abre a escolha; sem módulo o botão não existe | **CI** (unit) escrito; **NÃO EXECUTADO** |
+| J70.13 | Painel em tela estreita | P2 | Abaixo de 768 px abrir leva à página `/app/m/<slug>`, sem painel | **CI** (unit, consulta de largura simulada) escrito; **NÃO EXECUTADO** |
+| J70.14 | Módulo que o painel não conhece | P1 | A ação `moduloParaOPainel` com slug de outra organização ou inexistente devolve nada; o painel mostra o aviso | **CI** (unit) escrito; **NÃO EXECUTADO** |
+
+**Comportamento declarado.** O CRM é dono da moldura; o módulo é dono do conteúdo, numa origem diferente
+da do CRM. Só passam seis mensagens combinadas, e só da origem e da janela certas. O painel lateral não
+abre o CRM dentro do CRM: pede o módulo pelo slug a uma Server Action (`moduloParaOPainel`), que confere
+sessão, organização e papel e devolve só aquele módulo, e desenha o mesmo quadro da página. Nenhum header
+de segurança do CRM foi alterado.
+
+**Não provado.** Nenhum caso acima foi executado num navegador; que o módulo real fale a ponte (`/embed`,
+`JSON.parse` do que recebe); que o iframe de outra origem carregue de fato com o sandbox escolhido (não
+existe CSP no CRM, então nada foi medido contra uma); o painel em celular; e que `Esc` com o foco dentro
+do iframe não chega ao CRM, porque o navegador entrega a tecla ao iframe: o painel fecha pelo botão ou
+com o foco fora do quadro. A coluna de CI foi montada a partir dos nomes e da intenção dos testes das
+tarefas anteriores; cada teste não foi relido caso a caso nesta tarefa.
