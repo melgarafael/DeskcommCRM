@@ -75,6 +75,7 @@ const MARIA: AgendamentoListado = {
   donoId: "u-ana",
   contatoId: "c-maria",
   contatoNome: "Maria Ferraz",
+  convidadosDaEquipe: ["u-bia"],
 };
 
 /** O corpo EXATO do wire: `ok()` é o mesmo wrapper que a rota chama no `return`. */
@@ -138,6 +139,10 @@ describe("o compromisso atravessa a rota até a grade", () => {
       "é o responsável que decide a COR e a coluna do bloco — sem ele todos " +
         "os compromissos do dia caem na mesma trilha e a agenda da equipe vira uma pilha",
     ).toBe("u-ana");
+    expect(
+      bloco.convidadosDaEquipe,
+      "sem a lista, 'ver só a agenda de' esconde o compromisso de quem foi convidado",
+    ).toEqual(["u-bia"]);
     expect(
       bloco.comeca,
       "sem início o bloco não tem onde pousar na grade e o horário some da tela",

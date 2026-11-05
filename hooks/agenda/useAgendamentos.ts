@@ -26,6 +26,7 @@ interface AgendamentoListado {
   donoId: string | null;
   contatoId: string | null;
   contatoNome: string | null;
+  convidadosDaEquipe?: string[];
 }
 
 export interface RecorteDaGrade {
@@ -81,6 +82,7 @@ export function useAgendamentos(recorte: RecorteDaGrade | null) {
           revision:a.revision,
           titulo: a.titulo,
           responsavelId: a.donoId ?? "",
+          convidadosDaEquipe: a.convidadosDaEquipe,
           comeca: a.iniciaEm,
           termina: a.terminaEm,
           // A origem vem da ROTA, e não é mais carimbada aqui.

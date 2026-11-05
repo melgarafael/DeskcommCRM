@@ -1194,6 +1194,14 @@ export type ResultadoDosTipos =
     };
 
 /**
+ * As colunas do tipo de agendamento, numa lista só: a da tela de configuração e a
+ * da rota. Eram duas, e a coluna que entrou em uma e não na outra fazia o
+ * formulário reabrir sem o valor gravado e, ao salvar, apagá-lo.
+ */
+export const COLUNAS_DO_TIPO_DE_AGENDAMENTO =
+  "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, levar_dados_do_negocio, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity, service_revision, service_publication_mode";
+
+/**
  * Os tipos de atendimento da organização.
  *
  * ⚠️ Erro de leitura NUNCA vira lista vazia. As duas leituras são
@@ -1210,9 +1218,7 @@ export async function listaTiposDeAtendimento(
 
   let q = supabase
     .from("calendar_event_types")
-    .select(
-        "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, levar_dados_do_negocio, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity, service_revision, service_publication_mode",
-    )
+    .select(COLUNAS_DO_TIPO_DE_AGENDAMENTO)
     // Service role bypassa a RLS: este filtro é a única proteção no caminho da
     // ferramenta MCP (ver o cabeçalho do arquivo).
     .eq("organization_id", organizationId);

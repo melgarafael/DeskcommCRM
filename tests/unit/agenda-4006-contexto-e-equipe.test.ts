@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   MAXIMO_DE_CONVIDADOS_DA_EQUIPE,
+  estaNaAgendaDe,
   normalizarConvidadosDaEquipe,
   separarConvidadosDaEquipe,
 } from "@/lib/agenda/convidados-da-equipe";
@@ -174,6 +175,21 @@ describe("#4006 · quem pode ser convidado da equipe", () => {
     );
     expect(aceitos).toEqual(["da-casa"]);
     expect(recusados).toEqual(["de-fora"]);
+  });
+});
+
+describe("#4006 · de quem é a agenda em que o compromisso aparece", () => {
+  const compromisso = { responsavelId: "dono", convidadosDaEquipe: ["bruna"] };
+
+  it("o responsável e o convidado veem; quem ficou de fora, não", () => {
+    expect(estaNaAgendaDe(compromisso, "dono")).toBe(true);
+    expect(estaNaAgendaDe(compromisso, "bruna")).toBe(true);
+    expect(estaNaAgendaDe(compromisso, "eva")).toBe(false);
+  });
+
+  it("bloco sem a lista (ocupação do Google, servidor antigo) cai só no responsável", () => {
+    expect(estaNaAgendaDe({ responsavelId: "dono" }, "dono")).toBe(true);
+    expect(estaNaAgendaDe({ responsavelId: "dono" }, "bruna")).toBe(false);
   });
 });
 

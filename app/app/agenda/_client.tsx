@@ -22,7 +22,7 @@ import { HistoricoDaAgenda } from "@/components/agenda/HistoricoDaAgenda";
 import type { Agendamento, HorarioLivre, VisaoDaAgenda } from "@/components/agenda/tipos";
 import { EmptyAgenda } from "@/components/empty";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
-import { MAXIMO_DE_CONVIDADOS_DA_EQUIPE } from "@/lib/agenda/convidados-da-equipe";
+import { MAXIMO_DE_CONVIDADOS_DA_EQUIPE, estaNaAgendaDe } from "@/lib/agenda/convidados-da-equipe";
 import { duracaoEscolhidaValida } from "@/lib/agenda/duracao-escolhida";
 import { ancoraAoFecharPainel } from "@/lib/agenda/ancora-depois-de-marcar";
 import { ancoraLocalDoDia } from "@/lib/agenda/semana-semente";
@@ -445,7 +445,7 @@ export function AgendaClient({
     agendamentosVivos ?? (naJanelaDoServidor ? agendamentosIniciais : []);
 
   const agendamentos = React.useMemo(
-    () => (isolada === null ? todos : todos.filter((a) => a.responsavelId === isolada)),
+    () => (isolada === null ? todos : todos.filter((a) => estaNaAgendaDe(a, isolada))),
     [isolada, todos],
   );
 
@@ -1002,7 +1002,7 @@ export function AgendaClient({
                       <label
                         key={pessoa.id}
                         className={cn(
-                          "cursor-pointer rounded-full border px-3 py-1 text-xs",
+                          "inline-flex min-h-11 cursor-pointer items-center rounded-full border px-3 py-1 text-xs lg:min-h-0",
                           marcada
                             ? "border-border-strong bg-surface-elevated"
                             : "border-border bg-surface",
