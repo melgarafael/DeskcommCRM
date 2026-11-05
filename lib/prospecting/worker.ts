@@ -772,6 +772,10 @@ export async function tickProspecting(pool: pg.Pool, admin: SupabaseClient, requ
           )
         ).rows;
         for (const escolhida of rodando) {
+          // O PRAZO DO TICK vale dentro da organização também: com N campanhas
+          // (uma por número), o laço de fora só confere entre organizações, e
+          // uma org com muitos números estouraria os 180 s sozinha.
+          if (Date.now() >= deadline) break;
           // RELÊ A CAMPANHA ANTES DE ENVIAR. Entre a seleção e a vez dela, o
           // operador pode ter pausado — e enviar com a linha velha seria o
           // envio que ninguém pediu. O claim do candidato (`status='sending'`

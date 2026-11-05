@@ -243,6 +243,25 @@ describe("tick da prospecção: uma campanha por NÚMERO (#3896)", () => {
     await montarTick(banco({ rodando: [campanha(CAMPANHA_A, CANAL_A)], canalSumiu: true }));
     expect(mocks.send).not.toHaveBeenCalled();
   });
+
+  it("o prazo de 180 s do tick vale ENTRE as campanhas da mesma organização, não só entre organizações", async () => {
+    // Uma org com muitos números roda N campanhas sob o MESMO bloqueio; sem a
+    // conferência dentro do laço, ela sozinha estoura o prazo do tick.
+    let agora = 1_000_000_000_000;
+    const relogio = vi.spyOn(Date, "now").mockImplementation(() => agora);
+    mocks.send.mockImplementation(async () => {
+      agora += 181_000;
+      return { status: "sent" };
+    });
+    try {
+      await montarTick(
+        banco({ rodando: [campanha(CAMPANHA_A, CANAL_A), campanha(CAMPANHA_B, CANAL_B)] }),
+      );
+    } finally {
+      relogio.mockRestore();
+    }
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("teto e intervalos são POR NÚMERO (#3896)", () => {
