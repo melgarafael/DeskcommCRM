@@ -369,10 +369,11 @@ export type ComandoDoBanco = (typeof COMANDOS_DO_BANCO)[number];
  */
 export function comandosDaFila(automaticoDaOrg?: boolean): ComandoDoBanco[] {
   // `ninguem` está SEMPRE: desde a #4012 o banco é quem diz que a conversa sem dono
-  // não tem robô por trás, e essa conversa espera uma pessoa em qualquer
-  // organização — inclusive na que TEM agente, onde o agente simplesmente não é
-  // deste número. Deixá-la fora seria trocar a mentira ("Automático atendendo") por
-  // um sumiço, que é pior: a tela ficaria vazia com o cliente sem resposta.
+  // não tem robô por trás (a organização não tem agente no ar), e essa conversa
+  // espera uma pessoa. Pedir o valor independe do fato org-wide que a TELA conhece,
+  // que pode estar carregando ou ter falhado. O banco responde pela ORGANIZAÇÃO,
+  // não pelo número: a conversa de um número sem agente, numa organização que tem
+  // agente em outro, ainda sai `automatico` — é a parte 2 da #4012, aberta.
   //
   // `automatico` continua aqui quando o fato diz que NÃO há automático, e agora por
   // um motivo com prazo: entre o deploy deste código e a migration 9207 aplicada, o
