@@ -83,7 +83,7 @@ export async function comNomeDeQuemEnviou<
 
   const membros = ids.length > 0 ? await membrosDaOrganizacao(orgId, ids) : [];
   const nomes =
-    membros.length > 0 ? await nomesDosAtendentes(membros) : new Map<string, string | null>();
+    membros.length > 0 ? await nomesDosAtendentes(orgId, membros) : new Map<string, string | null>();
 
   return mensagens.map((m) => ({
     ...m,
