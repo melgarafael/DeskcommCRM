@@ -31,6 +31,11 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * O apagado sai do bucket SÓ DEPOIS do update dar certo — arquivo órfão se
  * recupera, linha apontando para arquivo sumido é tela quebrada.
+ *
+ * PATCH e DELETE aceitam sessão de navegador OU Bearer `dsk_…` (`config:write`,
+ * papel admin via `tokenRole`). No token o cliente é o admin (sem RLS): a leitura
+ * e o update filtram a organização à mão e só alcançam a resposta COMPARTILHADA
+ * (`owner_user_id` nulo) — a pessoal é de uma pessoa, e token não tem pessoa.
  */
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -39,10 +44,8 @@ import { type NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok, noContent } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { snapshotDeMidiasSchema, updateTemplateSchema } from "@/lib/schemas/templates";
-import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
 import { grupoDaOrganizacao } from "@/lib/templates/grupo-da-resposta";
@@ -69,10 +72,20 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "message_templates" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "message_templates",
+    role: "agent",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "message_templates.item", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const orgId = authz.organizationId;
+  // Autor só quando quem chama é uma pessoa; token não tem usuário, então NULL.
+  const autor = authz.actor.type === "user" ? authz.actor.id : null;
   const { id } = await params;
 
   const raw = await req.json().catch(() => null);
@@ -84,13 +97,13 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
     });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   // O GRUPO (#3245): `undefined` não mexe no vínculo; `null` DESVINCULA (volta
   // à lista plana); um id só vale se for de grupo da organização ativa.
   if (parsed.data.grupo_id !== undefined) {
     try {
-      if (!(await grupoDaOrganizacao(supabase, org.orgId, parsed.data.grupo_id))) {
+      if (!(await grupoDaOrganizacao(supabase, orgId, parsed.data.grupo_id))) {
         return fail("validation_failed", t("Dados inválidos."), 422, {
           requestId,
           details: { grupo_id: [t("Grupo que não pertence a esta organização.")] },
@@ -103,12 +116,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
 
   // A lista ATUAL vem antes do update: é dela que sai o diff. Sem esta leitura
   // um PATCH que só remove apagaria o arquivo errado — ou nenhum.
-  const { data: linha, error: erroLeitura } = await supabase
+  let leitura = supabase
     .from("message_templates")
     .select("midias")
     .eq("id", id)
-    .eq("organization_id", org.orgId)
-    .maybeSingle();
+    .eq("organization_id", orgId);
+  // No token só o compartilhado (`owner_user_id` nulo) é alcançável.
+  if (authz.via === "token") leitura = leitura.is("owner_user_id", null);
+  const { data: linha, error: erroLeitura } = await leitura.maybeSingle();
   if (erroLeitura) {
     logger.error("[message-templates] falha ao ler midias", { detalhe: erroLeitura.message, requestId });
     return fail("internal_error", "Erro ao atualizar template.", 500, { requestId });
@@ -124,7 +139,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
   let removidas: string[] = [];
   let mantidas: MidiaDeTemplate[] | undefined;
   if (novas !== undefined) {
-    if (novas.some((m) => !midiaPertenceAoTemplate(m.storage_path, org.orgId, id))) {
+    if (novas.some((m) => !midiaPertenceAoTemplate(m.storage_path, orgId, id))) {
       return fail("validation_failed", t("Dados inválidos."), 422, {
         requestId,
         details: { midias: ["Imagem que não pertence a este template."] },
@@ -139,7 +154,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
     mantidas = conferida.mantidas;
   }
 
-  const { data, error, count } = await Promise.resolve(supabase
+  let atualizar = supabase
     .from("message_templates")
     // `midias` sai da LINHA conferida, nunca do corpo: o mime e o tamanho de
     // cada imagem são do upload que conferiu os bytes.
@@ -149,10 +164,12 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
       updated_at: new Date().toISOString(),
     }, { count: "exact" })
     .eq("id", id)
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", orgId)
     // Todos os escritores da lista usam a mesma precondição, inclusive o PATCH
     // legado sem snapshot esperado. O valor bruto é JSONB, não objeto implícito.
-    .eq("midias", JSON.stringify(atuais))
+    .eq("midias", JSON.stringify(atuais));
+  if (authz.via === "token") atualizar = atualizar.is("owner_user_id", null);
+  const { data, error, count } = await Promise.resolve(atualizar
     .select(COLS)
     .maybeSingle()).catch(() => ({ data: null, error: { message: "write_failed" }, count: null }));
   if (error || (!data && count !== 0)) {
@@ -162,13 +179,14 @@ export async function PATCH(req: NextRequest, { params }: RouteParams): Promise<
 
   // Só depois da linha gravada, e nunca derruba o PATCH: o pedido do operador
   // (remover a imagem) já foi atendido, o log é o que falta para a limpeza.
-  const apagaveis = removidas.filter((caminho) => midiaPertenceAoTemplate(caminho, org.orgId, id));
+  const apagaveis = removidas.filter((caminho) => midiaPertenceAoTemplate(caminho, orgId, id));
   if (apagaveis.length) await apagarMidiasDoTemplate(apagaveis, requestId);
 
   void audit({
     action: "template.updated",
-    actorUserId: user.id,
-    organizationId: org.orgId,
+    actorUserId: autor,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: orgId,
     resourceType: "message_template",
     resourceId: data.id,
     requestId,
