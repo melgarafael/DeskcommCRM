@@ -21,7 +21,7 @@
  * de uso, ao funil da evolução, ao agente pedido em `operator-metrics` e à chave
  * de mapas de A (com e sem `api_key` no corpo).
  *
- * Os 6 métodos que FICAM DE FORA (só sessão) recusam o token com 401 e não
+ * Os 4 métodos que FICAM DE FORA (só sessão) recusam o token com 401 e não
  * chegam ao `createAdminClient`.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
