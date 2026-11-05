@@ -3,25 +3,28 @@
  * (spec da cobrança do revendedor §7c, §2.4).
  *
  * O aviso só ACORDA a leitura: a rota confere a assinatura no corpo CRU, grava
- * um ponteiro (`{id,type}`, org nula, sem cabeçalhos — invisível ao tenant pela
- * própria policy) e emite `cobranca.sinal` para a empresa dona do cliente. Quem
- * decide é `sincronizar`, que relê na API. Duplicado `processed` → 200 sem
- * reemitir; linha que ficou `received`/`error` → segue de novo (reemitir é
- * inofensivo: o consumidor relê). Cliente desconhecido → `error` e 200: a
- * reconciliação cura. Falha no emit → 503, e o provedor reentrega.
+ * o aviso COMO CHEGOU (`raw_body` = os bytes recebidos, `#3870`) e emite
+ * `cobranca.sinal` para a empresa dona do cliente. Quem decide é `sincronizar`,
+ * que relê na API. Duplicado `processed` → 200 sem reemitir; linha que ficou
+ * `received`/`error` → segue de novo (reemitir é inofensivo: o consumidor relê).
+ * Cliente desconhecido → `error` e 200: a reconciliação cura. Falha no emit →
+ * 503, e o provedor reentrega — a linha com o corpo cru fica na tabela.
+ *
+ * O corpo é gravado em TODO caminho que decide algo, inclusive na recusa: era
+ * justamente ali que se perguntava "o que chegou?" e a linha respondia `"{}"`.
  */
 import { randomUUID } from "node:crypto";
 
-import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { fail, ok } from "@/lib/api/wrappers";
+import { registrarAviso } from "@/lib/cobranca/aviso-cru";
 import { segredoDoWebhook } from "@/lib/cobranca/configuracao";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { adaptador } from "@/lib/cobranca/provedores";
 import type { SinalDoWebhook } from "@/lib/cobranca/provedores/contrato";
-import { PROVEDORES_DE_COBRANCA, type ProvedorDeCobranca } from "@/lib/cobranca/vocabulario";
+import { PROVEDORES_DE_COBRANCA } from "@/lib/cobranca/vocabulario";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -59,6 +62,24 @@ export async function POST(req: NextRequest, { params }: Rota) {
     return fail("payload_too_large", "Aviso grande demais.", 413, { requestId });
   }
 
+  /**
+   * O único ponto que grava o aviso. `sinal === null` = a origem não se
+   * autenticou: o corpo vai inteiro, mas cabeçalho e assinatura não, porque ali
+   * eles são texto livre de quem chamou (e o token do Asaas mora num deles).
+   */
+  const gravar = (sinal: SinalDoWebhook | null, status: "received" | "error", erro: string | null = null) =>
+    registrarAviso(admin, {
+      provedor,
+      corpo,
+      valida: sinal !== null,
+      headers: req.headers,
+      assinatura: sinal === null ? null : assinatura,
+      externalId: sinal?.eventoId ?? null,
+      eventType: sinal?.tipo ?? null,
+      status,
+      erro,
+    });
+
   const sinal = adaptador(provedor).verificarWebhook(corpo, req.headers, segredo, new Date());
   if (!sinal) {
     // Só RECUSAS contam no limite: aviso válido nunca leva 429, porque é ele que
@@ -74,34 +95,39 @@ export async function POST(req: NextRequest, { params }: Rota) {
     logger.warn("cobranca.webhook_recusado", { provedor, motivo: "assinatura_invalida" });
     // Recusa de segurança deixa rastro que o dono VÊ: a Visão geral conta estas
     // linhas (Task 38). Um segredo trocado à mão faria todo aviso voltar 401 em
-    // silêncio, e a Stripe desativaria o endpoint em 3 dias. Sem org, sem id e
-    // sem cabeçalhos — nem o de assinatura, que aqui é texto livre de quem não se
+    // silêncio, e a Stripe desativaria o endpoint em 3 dias. O corpo vai COMO
+    // CHEGOU — é o único caso em que "o que chegou?" não tem outra fonte —, mas
+    // sem cabeçalhos nem assinatura, que aqui são texto livre de quem não se
     // autenticou; a retenção de 90 dias poda.
-    await admin.from("webhook_events_log").insert({
-      organization_id: null,
-      provider: provedor,
-      raw_body: "{}",
-      headers: null,
-      signature_header: null,
-      valid_signature: false,
-      external_id: null,
-      status: "error",
-      error_message: "assinatura_invalida",
-    });
+    const recusa = await gravar(null, "error", motivoDaRecusa(corpo));
+    if (recusa === "erro") logger.error("cobranca.recusa_nao_gravada", { provedor });
     return fail("unauthorized", "Assinatura inválida.", 401, { requestId });
   }
 
   const agora = new Date().toISOString();
-  const { data: dona, error: erroDaDona } = sinal.clienteRef
-    ? await admin
-        .from("cobranca_assinaturas")
-        .select("organization_id")
-        .eq("provedor", provedor)
-        .eq("provedor_cliente_id", sinal.clienteRef)
-        .maybeSingle()
-    : { data: null, error: null };
-  if (erroDaDona) return fail("internal_error", "Não foi possível identificar a empresa.", 500, { requestId });
-  const org = (dona as { organization_id: string } | null)?.organization_id ?? null;
+  // A leitura da empresa não decide nada sobre o aviso: ela só diz para quem
+  // emitir. Se ela estourar, o corpo cru tem de estar gravado mesmo assim —
+  // senão o 500 leva o aviso embora sem deixar rastro.
+  let dona: { organization_id: string } | null = null;
+  try {
+    const consulta = sinal.clienteRef
+      ? await admin
+          .from("cobranca_assinaturas")
+          .select("organization_id")
+          .eq("provedor", provedor)
+          .eq("provedor_cliente_id", sinal.clienteRef)
+          .maybeSingle()
+      : { data: null, error: null };
+    if (consulta.error) {
+      await gravar(sinal, "error", "falha_ao_identificar_empresa");
+      return fail("internal_error", "Não foi possível identificar a empresa.", 500, { requestId });
+    }
+    dona = consulta.data as { organization_id: string } | null;
+  } catch (erro) {
+    await gravar(sinal, "error", "falha_ao_identificar_empresa");
+    throw erro;
+  }
+  const org = dona?.organization_id ?? null;
   if (!org && provedor === "asaas") {
     // O token do Asaas é estático: vazado, ele assina avisos de clientes que não
     // existem, e cada um viraria uma linha nova. Acima do balde, 200 SEM gravar:
@@ -115,8 +141,11 @@ export async function POST(req: NextRequest, { params }: Rota) {
     if (!taxa.allowed) return ok({ ignorado: "limite_de_desconhecidos" }, { requestId });
   }
 
-  const linha = await gravarPonteiro(admin, provedor, sinal, assinatura);
-  if (linha === "erro") return fail("internal_error", "Não foi possível registrar o aviso.", 500, { requestId });
+  const linha = await gravar(sinal, "received");
+  if (linha === "erro") {
+    logger.error("cobranca.aviso_nao_gravado", { provedor });
+    return fail("internal_error", "Não foi possível registrar o aviso.", 500, { requestId });
+  }
   if (linha.status === "processed") return ok({ duplicado: true }, { requestId });
   if (!org) {
     await admin
@@ -147,40 +176,20 @@ export async function POST(req: NextRequest, { params }: Rota) {
   return ok({ recebido: true }, { requestId });
 }
 
-/** Grava o ponteiro, ou devolve a linha que já existia (o 23505 do índice de cobrança). */
-async function gravarPonteiro(
-  admin: SupabaseClient,
-  provedor: ProvedorDeCobranca,
-  sinal: SinalDoWebhook,
-  assinatura: string | null,
-): Promise<{ id: string; status: string } | "erro"> {
-  const { data, error } = await admin
-    .from("webhook_events_log")
-    .insert({
-      organization_id: null,
-      provider: provedor,
-      raw_body: JSON.stringify({ id: sinal.eventoId, type: sinal.tipo }),
-      headers: null,
-      signature_header: assinatura,
-      valid_signature: true,
-      external_id: sinal.eventoId,
-      event_type: sinal.tipo,
-      status: "received",
-    })
-    .select("id, status")
-    .single();
-  if (!error && data) return data as { id: string; status: string };
-  if (error?.code !== "23505") {
-    logger.error("cobranca.ponteiro_nao_gravado", { provedor, codigo: error?.code ?? null });
-    return "erro";
+/**
+ * O motivo da recusa que a linha pode afirmar SEM mentir: o corpo vazio, o
+ * corpo que não é JSON — e, com JSON na mão, a assinatura (que é o que o
+ * adaptador conferiu para dizer não).
+ *
+ * Um corpo que não é JSON nunca vira 500 mudo: a Stripe não manda isso, então a
+ * recusa é a leitura segura, com o corpo cru na tabela para quem for investigar.
+ */
+function motivoDaRecusa(corpo: string): string {
+  if (corpo.trim() === "") return "corpo_vazio";
+  try {
+    JSON.parse(corpo);
+  } catch {
+    return "corpo_malformado";
   }
-  const { data: existente, error: erroDaLeitura } = await admin
-    .from("webhook_events_log")
-    .select("id, status")
-    .eq("provider", provedor)
-    .eq("external_id", sinal.eventoId)
-    .is("organization_id", null)
-    .maybeSingle();
-  if (erroDaLeitura || !existente) return "erro";
-  return existente as { id: string; status: string };
+  return "assinatura_invalida";
 }
