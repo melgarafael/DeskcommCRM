@@ -684,6 +684,8 @@ beforeAll(() => {
  * cabeçalho do caso de `contact_field_proposals` abaixo.
  */
 export const TABLES = [
+  "mensagens_agendadas",
+  "mensagens_agendadas_envios",
   "conversations",
   "messages",
   "contacts",

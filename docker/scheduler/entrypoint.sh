@@ -74,6 +74,7 @@ CRONS="
 # número: é o cron que dá a cadência base, e o ritmo da campanha e do canal
 # (channel_knobs + pacing_ledger) só sabem torná-la mais lenta.
 * * * * *|45|api/v1/cron/campaign-worker
+* * * * *|50|api/v1/cron/mensagens-agendadas
 */5 * * * *|60|api/v1/cron/webhook-log-retention
 # OAuth por contato dos servidores MCP do agente (migration 9095): revoga no
 # terceiro o acesso cuja conversa encerrou (ou cujo contato foi anonimizado).
