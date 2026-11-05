@@ -828,24 +828,6 @@ describe("Só sessão — token é recusado com 401, createAdminClient nunca cha
       ...(corpo !== undefined ? { body: JSON.stringify(corpo) } : {}),
     });
 
-  it("PUT /ai/skills/[name] com token → 401, createAdminClient não chamado", async () => {
-    vi.mocked(requireRole).mockResolvedValueOnce({
-      ok: false,
-      response: new Response(null, { status: 401 }),
-    } as never);
-    const res = await rotaSkill.PUT(
-      reqComToken("PUT", `/api/v1/ai/skills/${NOME_SKILL_A}`, {
-        description: "d",
-        body: "b",
-        matcher: { any_keywords: ["x"] },
-      }),
-      paramsDeName(NOME_SKILL_A),
-    );
-    expect(res.status).toBe(401);
-    expect(createAdminClient).not.toHaveBeenCalled();
-    expect(validateBearerToken).not.toHaveBeenCalled();
-  });
-
   it("POST /ai/skills/import com token → 401, createAdminClient não chamado", async () => {
     vi.mocked(requireRole).mockResolvedValueOnce({
       ok: false,

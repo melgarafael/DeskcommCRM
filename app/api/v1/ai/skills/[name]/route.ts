@@ -18,9 +18,10 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * são copiados pro prefixo dela (lib/ai/skills/package-files.ts) ANTES do ponteiro
  * mover — falha na cópia = 500 e nada muda na tela do agente.
  *
- * PUT segue só de sessão (usa `getSkillsPool`, pg Pool cru — não é alcançável por token).
- * GET e DELETE aceitam sessão de navegador OU Bearer `dsk_…` com escopo
- * `config:read`/`config:write` e papel admin (`tokenRole`).
+ * GET, PUT e DELETE aceitam sessão de navegador OU Bearer `dsk_…` com escopo
+ * `config:read`/`config:write` e papel admin (`tokenRole`). O PUT usa `getSkillsPool` (pg Pool
+ * cru), mas a organização entra como parâmetro (`tenantId`), vinda da linha do token — a
+ * mesma fonte do restante da rota.
  * A organização vem da linha do token, nunca de query/body.
  */
 import { randomUUID } from "node:crypto";
@@ -30,7 +31,6 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
-import { requireRole } from "@/lib/auth/require-role";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import {
   insertSkillVersion,
@@ -143,10 +143,19 @@ export async function PUT(
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "ai_skills" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_skills",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user: authUser, org } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const orgId = authz.organizationId;
+  const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_skills", requestId);
+  if (teto) return teto;
 
   const { name: rawName } = await ctx.params;
   const nameParsed = nameSchema.safeParse(decodeURIComponent(rawName));
@@ -175,7 +184,7 @@ export async function PUT(
   const { data: pointer, error: ptrErr } = await admin
     .from("skill_pointers")
     .select("version_id")
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", orgId)
     .eq("name", name)
     .maybeSingle();
   if (ptrErr) {
@@ -191,6 +200,9 @@ export async function PUT(
   const { data: atual, error: verErr } = await admin
     .from("skill_versions")
     .select("manifest, forked_from_version_id")
+    // A versão do ponteiro é da própria organização ou do catálogo de plataforma
+    // (cópia ainda não editada): nenhuma outra organização entra nesta leitura.
+    .or(`organization_id.eq.${orgId},organization_id.is.null`)
     .eq("id", pointer.version_id)
     .maybeSingle();
   if (verErr) {
@@ -219,7 +231,7 @@ export async function PUT(
   let versionId: string;
   try {
     const version = await insertSkillVersion(pool, {
-      tenantId: org.orgId,
+      tenantId: orgId,
       name,
       description: parsed.data.description,
       body: parsed.data.body,
@@ -236,7 +248,7 @@ export async function PUT(
         await copiarArquivosDoPacote(
           { admin },
           {
-            organizationId: org.orgId,
+            organizationId: orgId,
             name,
             deVersionId: pointer.version_id,
             paraVersionId: version.id,
@@ -261,7 +273,7 @@ export async function PUT(
         );
       }
     }
-    await setSkillPointer(pool, { tenantId: org.orgId, name, versionId: version.id });
+    await setSkillPointer(pool, { tenantId: orgId, name, versionId: version.id });
     versionId = version.id;
   } catch (err) {
     logger.error("ai.skills.put: falha ao gravar a versão", {
@@ -273,8 +285,9 @@ export async function PUT(
 
   await audit({
     action: "ai.skill_saved",
-    actorUserId: authUser.id,
-    organizationId: org.orgId,
+    actorUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: orgId,
     resourceType: "skill_versions",
     // `resource_id` é UUID: aqui a versão TEM id, então vai.
     resourceId: versionId,
