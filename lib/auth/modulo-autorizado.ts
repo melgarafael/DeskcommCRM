@@ -140,7 +140,7 @@ export async function autorizarModulo(p: AutorizarModuloParams): Promise<Resulta
     const [inst, vinculo] = await Promise.all([
       supabase
         .from("extension_installations")
-        .select("publisher, name, disabled_at, removed_at, extension_artifacts(manifest)")
+        .select("publisher, name, disabled_at, removed_at, extension_artifacts!extension_installations_artifact_id_fkey(manifest)")
         .eq("id", installationId)
         .maybeSingle(),
       supabase
