@@ -87,6 +87,11 @@ export interface InstalledExtensionView {
    * ainda não tem segredo. O botão de segredo vira "Gerar segredo". Ausente = não se sabe.
    */
   secret_pending?: boolean;
+  /**
+   * As permissões `area.*` que ESTA organização consentiu para o módulo `connected` (spec 33, F3).
+   * Ausente ou vazio = nenhuma área consentida. Só as declaradas no pacote podem estar aqui.
+   */
+  consented_areas?: string[];
 }
 
 export interface RemovedInstallationView {

@@ -971,6 +971,10 @@ export const AUDIT_ACTIONS = [
   // funcionar até receber o novo e os tokens vivos da instalação foram revogados. `metadata` leva só a
   // contagem de organizações; o segredo, em claro ou cifrado, NUNCA entra na linha.
   "extension.secret_rotated",
+  // A organização mudou as áreas do CRM que um módulo `connected` pode alcançar (spec 33, F3, tarefa 5).
+  // `metadata` leva a lista fechada de permissões `area.*` consentidas depois da mudança e a revisão do
+  // vínculo; nenhum dado pessoal, segredo ou token.
+  "extension.consent_changed",
   // O módulo `connected` buscou um token curto (spec 33, F2, tarefa 5). Uma linha por busca bem-sucedida,
   // na organização do par. `metadata` leva só o id da instalação e o slug do módulo; o texto do token e o
   // hash NUNCA entram na linha.
