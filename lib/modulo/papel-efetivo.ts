@@ -1,11 +1,15 @@
 /**
  * PAPEL EFETIVO DE UM TOKEN DE MÓDULO (Spec 33, F3, tarefa 4).
  *
- *   com pessoa (JWT de contexto válido):  min(teto `manager`, papel ATUAL da pessoa, lido do banco)
+ *   com pessoa (JWT de contexto válido):  min(teto `admin`, papel ATUAL da pessoa, lido do banco)
  *   sem pessoa:                           min(papel do token, teto `agent`)
  *
- * `admin` NUNCA: o teto com pessoa é `manager` (mais restritivo que a spec; `admin` mexe em equipe e
- * segredo). Sem pessoa o módulo jamais passa de `agent`, e também nunca passa do papel do próprio
+ * O teto com pessoa é `admin` (ADR-0005 D4: "papel de quem clica"; Spec 33, "Papel efetivo"): quem
+ * limita o módulo é o menor entre o papel ATUAL da pessoa e as áreas consentidas. Equipe, papéis,
+ * token, provedor/chave de IA, credencial, LGPD, webhook e envio NÃO têm área (`areas.ts`,
+ * `SEM_AREA`), então o módulo é recusado ali qualquer que seja o papel. Antes era `manager`, uma
+ * cerca a mais que travava funis, agentes e configuração, que são o trabalho do assistente.
+ * Sem pessoa o módulo jamais passa de `agent`, e também nunca passa do papel do próprio
  * token (que a F2 emite como `viewer`): omissão não dá poder.
  *
  * O papel da pessoa é lido AGORA de `user_organizations` (admin client, filtro explícito de
@@ -16,7 +20,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ROLE_RANK, type Role } from "@/lib/auth/types";
 
-export const TETO_DO_MODULO_COM_PESSOA: Role = "manager";
+export const TETO_DO_MODULO_COM_PESSOA: Role = "admin";
 export const TETO_DO_MODULO_SEM_PESSOA: Role = "agent";
 
 function ehPapel(valor: unknown): valor is Role {

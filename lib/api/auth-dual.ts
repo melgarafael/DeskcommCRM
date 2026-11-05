@@ -152,8 +152,9 @@ export async function resolveAuthDual(
         };
       }
 
-      // PAPEL EFETIVO (F3, tarefa 4): com JWT de contexto válido, min(teto manager, papel ATUAL da
-      // pessoa, lido do banco agora); sem JWT, min(papel do token, teto agent). `admin` nunca.
+      // PAPEL EFETIVO (F3, tarefa 4): com JWT de contexto válido, min(teto admin, papel ATUAL da
+      // pessoa, lido do banco agora); sem JWT, min(papel do token, teto agent). As áreas consentidas
+      // e a lista "sem área" (equipe, credencial, envio) continuam valendo.
       const contexto = req.headers.get(CABECALHO_DE_CONTEXTO);
       let papelDaPessoa: Role | null = null;
       if (contexto !== null) {

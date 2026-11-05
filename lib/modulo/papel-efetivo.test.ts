@@ -8,8 +8,8 @@ import type { Role } from "@/lib/auth/types";
 import { lerPapelAtualDaPessoa, menorPapel, papelEfetivoDoModulo } from "./papel-efetivo";
 
 describe("papelEfetivoDoModulo", () => {
-  it("com pessoa: admin vira manager (teto), nunca admin", () => {
-    expect(papelEfetivoDoModulo({ papelDoToken: "viewer", papelDaPessoa: "admin" })).toBe("manager");
+  it("com pessoa: admin vale admin (o limite é o papel de quem clica, ADR-0005 D4)", () => {
+    expect(papelEfetivoDoModulo({ papelDoToken: "viewer", papelDaPessoa: "admin" })).toBe("admin");
   });
 
   it("com pessoa: manager fica manager; agent e viewer ficam como são (rebaixada vira menos)", () => {
