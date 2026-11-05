@@ -87,11 +87,13 @@ export function QuadroDeTarefas({
    * gesto pareceria não ter funcionado.
    *
    * A sobreposição VALE ENQUANTO a tarefa carregada ainda mostra a situação de
-   * onde ela saiu (`de`). Não há efeito de limpeza porque não precisa haver:
-   * quando a resposta chega, o dado carregado passa a dizer `para` — ou outra
-   * coisa, se outra aba escreveu no meio — e a regra deixa de casar sozinha.
-   * Isso é o que impede a tela desta aba de mascarar uma mudança feita em
-   * outra: quem manda é sempre o dado que veio do servidor.
+   * onde ela saiu (`de`), e SAI quando a escrita termina — com sucesso ou
+   * falha. No sucesso, o `editarTarefa` só resolve depois do refetch, então o
+   * dado carregado já diz `para` (ou outra coisa, se outra aba escreveu no
+   * meio) quando a sobreposição sai. Se ela ficasse, a tarefa que depois
+   * VOLTASSE a `de` — pelo formulário ou por outra aba — seguiria presa em
+   * `para`, porque a regra casaria de novo. Quem manda é sempre o dado que
+   * veio do servidor.
    */
   const [movidas, setMovidas] = useState<
     Record<string, { de: SituacaoDaTarefa; para: SituacaoDaTarefa }>
@@ -122,15 +124,18 @@ export function QuadroDeTarefas({
     const de = tarefas.find((c) => c.id === id)?.status;
     if (!de) return;
 
-    setMovidas((atual) => ({ ...atual, [id]: { de, para } }));
-    void editarTarefa(id, { status: para }).catch((erro) => {
-      // A escrita falhou: o cartão VOLTA para onde estava, e o motivo aparece.
-      // Deixá-lo na coluna nova seria a tela mentindo sobre o que está gravado.
+    const soltarSobreposicao = () =>
       setMovidas((atual) => {
         const proximo = { ...atual };
         delete proximo[id];
         return proximo;
       });
+    setMovidas((atual) => ({ ...atual, [id]: { de, para } }));
+    // Deu certo: a sobreposição sai (o porquê está no cabeçalho de `movidas`).
+    void editarTarefa(id, { status: para }).then(soltarSobreposicao, (erro) => {
+      // A escrita falhou: o cartão VOLTA para onde estava, e o motivo aparece.
+      // Deixá-lo na coluna nova seria a tela mentindo sobre o que está gravado.
+      soltarSobreposicao();
       showApiError(erro);
     });
   }

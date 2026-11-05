@@ -414,3 +414,25 @@ describe("Tarefas — Lista e Calendário continuam como estavam", () => {
     expect(screen.getByTestId("tarefas-lista").className).toContain("md:hidden");
   });
 });
+describe("Tarefas — o quadro segue o servidor depois de mover", () => {
+  it("a tarefa que VOLTA para a situação de origem não fica presa na coluna antiga", async () => {
+    doQuadro = [tarefa({ id: "t-1", status: "pending" }), tarefa({ id: "t-2", status: "pending" })];
+    await abrirQuadro();
+
+    await arrastar("pending", "done", "t-1");
+    await waitFor(() =>
+      expect(within(screen.getByTestId("tarefas-coluna-done")).getByTestId("tarefa-no-quadro-t-1")).toBeTruthy(),
+    );
+
+    // Pelo formulário (ou outra aba), a t-1 volta a "pending" no servidor.
+    doQuadro = doQuadro.map((t) => (t.id === "t-1" ? { ...t, status: "pending" } : t));
+    // Qualquer escrita refaz a busca: arrasta a t-2.
+    await arrastar("pending", "in_progress", "t-2");
+    await waitFor(() =>
+      expect(within(screen.getByTestId("tarefas-coluna-in_progress")).getByTestId("tarefa-no-quadro-t-2")).toBeTruthy(),
+    );
+    await waitFor(() => expect(fetchEspiao.mock.calls.filter(([u, i]) => !i && String(u).includes("limite=200")).length).toBeGreaterThanOrEqual(3));
+
+    expect(within(screen.getByTestId("tarefas-coluna-pending")).queryByTestId("tarefa-no-quadro-t-1")).not.toBeNull();
+  });
+});
