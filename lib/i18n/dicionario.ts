@@ -588,6 +588,11 @@ export const DICIONARIO: Traducoes = {
     es: "No pude leer el historial de clics. Actualiza la página en unos momentos.",
   },
   "Enviar nascimento de leads de anúncio à Meta": { es: "Enviar a Meta el nacimiento de leads de anuncios" },
+  // #3974 — opção por fluxo: o follow-up de etapa sai mesmo com a conversa atribuída.
+  "Enviar mesmo com a conversa atribuída a uma pessoa": { es: "Enviar también cuando la conversación está asignada a una persona" },
+  "Enviar com a conversa atribuída": { es: "Enviar con la conversación asignada" },
+  "Os passos de texto deste fluxo saem mesmo quando um atendente é o dono da conversa. A IA continua calada nessa conversa, e contatos com opt-out, bloqueados ou fora da janela de envio não recebem.": { es: "Los pasos de texto de este flujo salen también cuando un agente es el dueño de la conversación. La IA sigue en silencio en esa conversación, y los contactos con opt-out, bloqueados o fuera de la ventana de envío no reciben nada." },
+  "Opção de envio com a conversa atribuída atualizada.": { es: "Opción de envío con la conversación asignada actualizada." },
   "Desligado por padrão. Ao ligar, apenas leads novos vindos de um clique em anúncio Click-to-WhatsApp poderão gerar LeadSubmitted. Desligar não pausa compras nem eventos de etapa.": { es: "Desactivado por defecto. Al activarlo, solo los leads nuevos procedentes de un clic en un anuncio Click-to-WhatsApp podrán generar LeadSubmitted. Desactivarlo no pausa las compras ni los eventos de etapa." },
   "Não foi possível ler a ativação do nascimento de leads. Atualize a página para tentar novamente.": { es: "No se pudo leer la activación del nacimiento de leads. Actualiza la página e inténtalo de nuevo." },
   // Conversão causal de nascimento CTWA e fato distinto de entrada na etapa.
@@ -867,6 +872,18 @@ export const DICIONARIO: Traducoes = {
   },
   "Desligado, arrastar um negócio perdido ou ganho para uma etapa aberta reabre o mesmo negócio. Ligado, o encerrado fica como está e o quadro oferece criar uma nova tentativa com o mesmo contato.": {
     es: "Desactivado, arrastrar un negocio perdido o ganado a una etapa abierta reabre el mismo negocio. Activado, el cerrado queda como está y el tablero ofrece crear un nuevo intento con el mismo contacto.",
+  },
+  "Negócio perdido reaberto": { es: "Negocio perdido reabierto" },
+  "Reabrir o negócio perdido quando o contato volta a escrever": {
+    es: "Reabrir el negocio perdido cuando el contacto vuelve a escribir",
+  },
+  "Reabrir o negócio perdido há menos de": { es: "Reabrir el negocio perdido hace menos de" },
+  "Dias para reabrir o negócio perdido": { es: "Días para reabrir el negocio perdido" },
+  "Escolha de 1 a 3650 dias para reabrir o negócio perdido quando o contato volta a escrever.": {
+    es: "Elige de 1 a 3650 días para reabrir el negocio perdido cuando el contacto vuelve a escribir.",
+  },
+  "Ligado, a mensagem de quem tem um negócio perdido dentro dessa janela reabre o MESMO card, com descrição, campos e motivo da perda intactos — nada é copiado nem fundido. Fora da janela, ou desligado, a conversa abre um negócio novo como hoje.": {
+    es: "Activado, el mensaje de quien tiene un negocio perdido dentro de esa ventana reabre el MISMO negocio, con descripción, campos y motivo de la pérdida intactos — nada se copia ni se fusiona. Fuera de la ventana, o desactivado, la conversación abre un negocio nuevo como hoy.",
   },
   "Abrir comanda ao ganhar um negócio neste funil": {
     es: "Abrir orden de servicio al ganar un negocio en este embudo",
@@ -4158,6 +4175,8 @@ export const DICIONARIO: Traducoes = {
   "Excluir credencial": { es: "Eliminar credencial" },
   Modelos: { es: "Modelos" },
   "Em uso por": { es: "En uso por" },
+  "Este número já está em outra campanha em andamento.": { es: "Este número ya está en otra campaña en curso." },
+  "Abrir essa campanha": { es: "Abrir esa campaña" },
   publicado: { es: "publicado" },
   "Revalidar credencial": { es: "Revalidar credencial" },
   "Remover credencial": { es: "Eliminar credencial" },
@@ -13583,6 +13602,11 @@ export const DICIONARIO: Traducoes = {
   "Prazo": { es: "Plazo" },
   "Situação": { es: "Estado" },
   "Em andamento": { es: "En curso" },
+  // ─── Visão em QUADRO (#4028) ───
+  "Sem situação": { es: "Sin estado" },
+  "Só as primeiras tarefas aparecem aqui — use os filtros para ver as demais.": {
+    es: "Solo aparecen las primeras tareas — usa los filtros para ver las demás.",
+  },
   "Escreva um título para a tarefa.": { es: "Escribe un título para la tarea." },
   "Não foi possível salvar a tarefa.": { es: "No se pudo guardar la tarea." },
 
@@ -16110,6 +16134,9 @@ export const DICIONARIO: Traducoes = {
   "Ajustar altura da linha": { es: "Ajustar alto de la fila" },
   "Arraste para ajustar a altura": { es: "Arrastra para ajustar el alto" },
   "Arrastar para reordenar": { es: "Arrastrar para reordenar" },
+  "Arraste pela alça, ou use as setas, para mudar a ordem em que os campos aparecem no card.": {
+    es: "Arrastra desde el asa, o usa las flechas, para cambiar el orden en que los campos aparecen en la tarjeta.",
+  },
   "Vizinho que não pertence a esta organização.": { es: "Vecino que no pertenece a esta organización." },
   "Não foi possível reordenar a lista inteira. Recarregue a página.": {
     es: "No fue posible reordenar la lista completa. Recarga la página.",
@@ -18936,6 +18963,30 @@ export const DICIONARIO: Traducoes = {
   "Ficou com {nome}, o dono da carteira do cliente.": { es: "Quedó con {nome}, el dueño de la cartera del cliente." },
   "Nenhum destino do negócio serviu: ficou com {nome}, a pessoa fixa do fallback.": { es: "Ningún destino del negocio sirvió: quedó con {nome}, la persona fija del respaldo." },
   "Ninguém pôde receber este negócio: o responsável e a carteira do cliente não existem ou estão fora da equipe, e o fallback também não pôde atender. O negócio ficou sem responsável.": { es: "Nadie pudo recibir este negocio: el responsable y la cartera del cliente no existen o están fuera del equipo, y el respaldo tampoco pudo atender. El negocio quedó sin responsable." },
+  // #3881 — a ação `define_sector` e o seletor da automação: a conversa vai
+  // para um SETOR de atendimento. A frase da paleta diz o efeito (o setor da
+  // conversa), e a caixa de sobrescrita diz a precedência do trabalho manual.
+  "Definir o setor da conversa": { es: "Definir el sector de la conversación" },
+  "Setor da conversa": { es: "Sector de la conversación" },
+  "Escolha o setor": { es: "Elige el sector" },
+  "Os setores de atendimento não estão disponíveis nesta instalação.": { es: "Los sectores de atención no están disponibles en esta instalación." },
+  "A conversa passa a ser distribuída para quem atende este setor. Se ela já tiver dono, continua com ele.": { es: "La conversación pasa a distribuirse a quien atiende este sector. Si ya tiene responsable, continúa con él." },
+  "Sobrescrever o setor escolhido por uma pessoa": { es: "Sobrescribir el sector elegido por una persona" },
+  "Desligado, a regra só classifica conversa sem setor ou que ela mesma classificou antes.": { es: "Desactivado, la regla solo clasifica la conversación sin sector o la que ella misma clasificó antes." },
+  // #3881 — os motivos de parada da ação `define_sector` (aba Atividade).
+  "A ação Definir o setor está sem setor escolhido. Abra a automação e escolha o setor da conversa.": { es: "La acción Definir el sector no tiene sector elegido. Abre la automatización y elige el sector de la conversación." },
+  "Não há conversa aberta para classificar: o contato deste evento não tem conversa em andamento. Nada mudou.": { es: "No hay conversación abierta para clasificar: el contacto de este evento no tiene conversación en curso. Nada cambió." },
+  "A conversa não existe mais nesta organização — nada foi alterado.": { es: "La conversación ya no existe en esta organización — nada se modificó." },
+  "A conversa está encerrada: não aceita mais ser classificada em um setor.": { es: "La conversación está cerrada: ya no acepta ser clasificada en un sector." },
+  "O setor escolhido na regra não existe nesta organização. Abra a automação e escolha um setor da lista.": { es: "El sector elegido en la regla no existe en esta organización. Abre la automatización y elige un sector de la lista." },
+  "A conversa já foi classificada por uma pessoa e a regra não sobrescreve essa escolha. Nada mudou.": { es: "La conversación ya fue clasificada por una persona y la regla no sobrescribe esa elección. Nada cambió." },
+  "A ação precisa de um setor de destino: só uma pessoa pode deixar a conversa sem setor.": { es: "La acción necesita un sector de destino: solo una persona puede dejar la conversación sin sector." },
+  "Não foi possível gravar o setor da conversa. Tente de novo; se persistir, veja o log da automação.": { es: "No fue posible guardar el sector de la conversación. Inténtalo de nuevo; si persiste, revisa el log de la automatización." },
+  "Os setores de atendimento estão desligados nesta instalação. Nada mudou.": { es: "Los sectores de atención están desactivados en esta instalación. Nada cambió." },
+  // #3881 — o desfecho da ação na Atividade (`detail.explicacao`) e o 409 da rota.
+  "A conversa foi classificada no setor da regra.": { es: "La conversación fue clasificada en el sector de la regla." },
+  "A conversa já estava neste setor — nada mudou.": { es: "La conversación ya estaba en este sector — nada cambió." },
+  "A conversa está encerrada e não aceita mais setor.": { es: "La conversación está cerrada y ya no acepta sector." },
   // #3006 — "usar como exemplo para a IA": a conversa marcada vira material do
   // agente (opt-in de LGPD). O selo fica curto de propósito: ele divide a faixa
   // com as etiquetas do contato, e o verbo inteiro mora no `title` do controle.
@@ -19800,6 +19851,8 @@ export const DICIONARIO: Traducoes = {
   "A Meta não concluiu a conexão. Tente de novo.": { es: "Meta no completó la conexión. Inténtalo de nuevo." },
   "Chave da conta da instalação no provedor parceiro": { es: "Clave de la cuenta de la instalación en el proveedor asociado" },
   "Com ela, cada empresa conecta o número oficial do WhatsApp com um clique, sem ter conta no provedor. Os números ficam na conta da instalação e entram na fatura dela.": { es: "Con ella, cada empresa conecta el número oficial de WhatsApp con un clic, sin tener cuenta en el proveedor. Los números quedan en la cuenta de la instalación y entran en su factura." },
+  // Abrir a conversa pelo canal escolhido quando ele não serve (#3483).
+  "Este canal está desligado ou fora do ar. Reative a conexão ou escolha outro canal.": { es: "Este canal está desactivado o fuera de línea. Reactiva la conexión o elige otro canal." },
 };
 
 /**

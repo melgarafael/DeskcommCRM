@@ -35611,7 +35611,13 @@ create table if not exists public.prospecting_campaigns (
   unique (organization_id, id),
   unique (organization_id, request_id)
 );
-create unique index if not exists prospecting_one_running_org on public.prospecting_campaigns(organization_id) where status='running';
+-- A TRAVA DA PROSPECÇÃO É POR NÚMERO (issue #3896), e por isso o índice único
+-- NÃO nasce aqui: a coluna `channel_session_id` e o índice
+-- `prospecting_one_running_canal` são criados no apêndice (bloco da migration
+-- 9221), onde o `alter table` que acrescenta a coluna já rodou. Criar o índice
+-- deste ponto exigiria a coluna antes de ela existir.
+-- (O antigo `prospecting_one_running_org(organization_id) where status='running'`
+-- é derrubado pelo mesmo bloco do apêndice — num banco que já existe, ele está lá.)
 create table if not exists public.prospecting_candidates (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -72716,6 +72722,59 @@ comment on column public.webhook_sources.reuse_open_lead_on_capture is
 alter table public.prospecting_campaigns
   add column if not exists channel_down_since timestamptz;
 
+-- ---- campanha de prospecção por número (migration 9221, issue #3896) ----
+-- Espelho idempotente da 9221. Duas coisas moram aqui, e não no create table
+-- lá em cima: a coluna `channel_session_id` (que não existe no dump) e o índice
+-- único por número, que não pode ser criado antes da coluna.
+do $$
+declare
+  pausadas integer;
+begin
+  alter table public.prospecting_campaigns
+    add column if not exists channel_session_id uuid;
+
+  update public.prospecting_campaigns
+     set channel_session_id = trim(config->>'channel_session_id')::uuid
+   where channel_session_id is null
+     and config is not null
+     and trim(config->>'channel_session_id') ~*
+         '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+
+  update public.prospecting_campaigns pc
+     set status = 'paused',
+         error = 'Pausada ao migrar: esta campanha não tinha uma conexão de WhatsApp válida nesta organização. Escolha uma conexão e inicie de novo.',
+         channel_down_since = null,
+         updated_at = now()
+   where pc.status = 'running'
+     and (pc.channel_session_id is null
+          or not exists (select 1
+                           from public.channel_sessions s
+                          where s.organization_id = pc.organization_id
+                            and s.id = pc.channel_session_id
+                            and s.archived_at is null));
+  get diagnostics pausadas = row_count;
+
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'prospecting_campaigns_running_tem_canal'
+       and conrelid = 'public.prospecting_campaigns'::regclass
+  ) then
+    alter table public.prospecting_campaigns
+      add constraint prospecting_campaigns_running_tem_canal
+      check (status <> 'running' or channel_session_id is not null) not valid;
+    alter table public.prospecting_campaigns
+      validate constraint prospecting_campaigns_running_tem_canal;
+  end if;
+
+  drop index if exists public.prospecting_one_running_org;
+  create unique index if not exists prospecting_one_running_canal
+    on public.prospecting_campaigns(organization_id, channel_session_id)
+    where status = 'running';
+end $$;
+
+comment on column public.prospecting_campaigns.channel_session_id is
+  'Número de WhatsApp (channel_sessions.id) por onde esta campanha dispara. Chave da trava "uma campanha running por número" (índice prospecting_one_running_canal, #3896). Nulo só em rascunho nunca iniciado; quem inicia grava junto com config.channel_session_id.';
+
 -- ---- 0763: tipo de contato — cliente ou fornecedor (issue 3005, fatia 1) ----
 -- Espelho idempotente da migration 0763. É este apêndice que chega a todo
 -- self-host: o install.sh aplica o baseline num banco novo e o update.sh o
@@ -73925,5 +73984,16 @@ do $conversations_select$ begin
          )
     );
 end $conversations_select$;
+
+
+-- ---- followup send_when_assigned (migration 9213) ----
+-- #3974: envia o passo de TEXTO do follow-up mesmo com a conversa atribuída a uma
+-- pessoa. Fica no apêndice, e não no create table do bloco 0054, porque o
+-- update.sh pula aquele create em toda instalação que já tem a tabela.
+alter table public.followup_flow_pointers
+  add column if not exists send_when_assigned boolean not null default false;
+
+comment on column public.followup_flow_pointers.send_when_assigned is
+  'Envia o passo do follow-up mesmo com a conversa atribuída a uma pessoa (dono). Não vence force_human, ai_opt_out, contato interno, contato bloqueado nem as janelas de horário — e não acorda a IA.';
 
 notify pgrst, 'reload schema';
