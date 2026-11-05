@@ -144,6 +144,12 @@ do $conversations_select_setor$ begin
                 select s.organization_id, s.sector_id
                   from public.fn_conversation_sector_scope() s
               )
+           and not exists (
+                select 1 from public.contacts pc
+                 where pc.id=conversations.contact_id
+                   and pc.organization_id=conversations.organization_id
+                   and pc.is_personal
+              )
          )
     );
 end $conversations_select_setor$;

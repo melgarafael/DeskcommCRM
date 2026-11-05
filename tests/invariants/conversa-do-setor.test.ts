@@ -359,3 +359,40 @@ describe("#4022 — o atendente vê as conversas do próprio setor", () => {
     }
   });
 });
+
+// Duas bordas a mais: o contato pessoal segue a mesma regra do ramo de participante
+// (fora do alcance de quem não é o responsável), e o vínculo de setor de quem saiu
+// da organização não dá leitura nenhuma.
+describe("#4022 — bordas do escopo do setor", () => {
+  const PESSOAL = "40224022-c0a0-4000-8000-0000000000f1";
+  const REVOGADO = "40224022-1111-4000-8000-0000000000f2";
+  beforeAll(() => {
+    sql(`
+      insert into public.contacts (id, organization_id, display_name, is_personal) values
+        ('40224022-c001-4000-8000-0000000000f1', '${ORG_A}', 'Contato pessoal da colega', true)
+      on conflict (id) do nothing;
+      insert into public.conversations
+        (id, organization_id, contact_id, channel_session_id, status, assigned_to_user_id, assigned_at, sector_id)
+      values ('${PESSOAL}', '${ORG_A}', '40224022-c001-4000-8000-0000000000f1',
+              '40224022-c2a0-4000-8000-000000000001', 'claimed', '${NATALIA}', now(), '${ATACADO}')
+      on conflict (id) do nothing;
+      insert into auth.users (id, email) values ('${REVOGADO}', 'revogado@4022.test') on conflict (id) do nothing;
+      insert into public.user_organizations (user_id, organization_id, role, accepted_at, revoked_at)
+        values ('${REVOGADO}', '${ORG_A}', 'agent', now(), now()) on conflict do nothing;
+      insert into public.attendant_sector_members (organization_id, user_id, sector_id)
+        values ('${ORG_A}', '${REVOGADO}', '${ATACADO}') on conflict do nothing;
+    `);
+  });
+  it("conversa de contato PESSOAL de colega do setor continua fora do alcance", () => {
+    expect(abrirPeloId(ANA, PESSOAL)).toBe(0);
+  });
+  it("controle: no modo padrão a mesma conversa também não é alcançável", () => {
+    sql(`update public.organizations set settings = jsonb_set(settings, '{visibility_mode}', '"own_and_unassigned"'::jsonb) where id = '${ORG_A}';`);
+    try { expect(abrirPeloId(ANA, PESSOAL)).toBe(0); }
+    finally { sql(`update public.organizations set settings = jsonb_set(settings, '{visibility_mode}', '"own_and_sector"'::jsonb) where id = '${ORG_A}';`); }
+  });
+  it("membro REVOGADO com vínculo de setor vê nada", () => {
+    expect(visiveis(REVOGADO)).toEqual([]);
+    expect(setoresDoEscopo(REVOGADO)).toBe(0);
+  });
+});
