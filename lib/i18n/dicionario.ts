@@ -12378,6 +12378,10 @@ export const DICIONARIO: Traducoes = {
   "Funil não encontrado.": { es: "Embudo no encontrado." },
   "Informe o novo horário.": { es: "Indica el nuevo horario." },
   "Já existe um fluxo com este nome.": { es: "Ya existe un flujo con este nombre." },
+  // Criar/renomear agente com nome que a organização já usa (#3952). `409
+  // agent_name_taken`; a mesma frase é a do campo de nome na tela.
+  "Já existe um agente com esse nome.": { es: "Ya existe un agente con este nombre." },
+  "O rascunho foi salvo; o nome do agente não mudou.": { es: "El borrador se guardó; el nombre del agente no cambió." },
   "Já existe um contato com este CPF.": { es: "Ya existe un contacto con este CPF." },
   "Já existe um contato com este e-mail.": { es: "Ya existe un contacto con este correo electrónico." },
   "Já existe um contato com este telefone.": { es: "Ya existe un contacto con este teléfono." },

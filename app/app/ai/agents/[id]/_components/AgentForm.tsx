@@ -43,6 +43,11 @@ import { CHAVE_DA_INSTALACAO, CredentialPicker, STATUS_LABEL, findCredential } f
 import { rotuloDoEstadoDoCanal } from "@/lib/channels/estado";
 import { bloqueioDePublicacao } from "@/lib/ai/agents/bloqueio-de-publicacao";
 import { mesmoRascunho } from "@/lib/ai/agents/mesmo-rascunho";
+import {
+  CODIGO_NOME_DE_AGENTE_EM_USO,
+  NOME_DE_AGENTE_EM_USO,
+  RASCUNHO_SALVO_NOME_NAO_MUDOU,
+} from "@/lib/ai/agents/nome-repetido";
 import { ToolPicker } from "./ToolPicker";
 import { TriggerEditor, type TriggerValue } from "./TriggerEditor";
 import { HandoffKeywordsInput } from "./HandoffKeywordsInput";
@@ -99,6 +104,13 @@ export type { ChannelSessionLite };
  * ouve o motivo junto do rótulo, sem depender de hover.
  */
 const ID_DO_MOTIVO_DO_PUBLICAR = "motivo-do-publicar";
+
+/**
+ * O id que liga o CAMPO de nome à frase que o servidor devolveu quando o nome já
+ * existia na organização (#3952). O `aria-describedby` do input aponta para cá:
+ * quem chega pelo leitor de tela ouve o motivo junto do campo.
+ */
+const ID_DO_ERRO_DO_NOME = "erro-do-nome";
 
 interface BaseProps {
   credentials: CredentialRow[];
@@ -481,6 +493,20 @@ export function AgentForm(props: Props) {
   const [papel, setPapel] = React.useState<"conversa" | "operacao" | "seguranca">("conversa");
 
   /**
+   * A recusa do SERVIDOR que mora num CAMPO — hoje, só "esse nome já existe"
+   * (#3952).
+   *
+   * Fica fora de `validation` de propósito: aquela é a régua do cliente, que
+   * roda a cada tecla e descreve o que a pessoa ainda precisa preencher. Esta é
+   * a resposta de quem foi ao banco, e um toast no canto não serve — o erro é do
+   * campo de nome, e é ali que a pessoa olha. Some assim que ela digita (o
+   * primeiro caractere muda o nome que o banco recusou) e NÃO sobrevive a um
+   * reload: recarregar já mostra o formulário limpo, sem prometer um conflito
+   * que talvez não exista mais.
+   */
+  const [erroDoServidorNoNome, setErroDoServidorNoNome] = React.useState<string | null>(null);
+
+  /**
    * A pergunta é "salvar mudaria alguma coisa?", e não "os dois objetos são
    * idênticos". Por isso a comparação é feita sobre o que SERIA GRAVADO, de
    * forma canônica (ver `lib/ai/agents/mesmo-rascunho.ts`): campo que o servidor
@@ -714,6 +740,15 @@ export function AgentForm(props: Props) {
           cadastro.data,
         );
         if (!res.ok) {
+          // Nome repetido na organização (#3952): a frase vai para o CAMPO de
+          // nome, que é onde a pessoa olha e onde o conserto acontece — o toast
+          // do canto some sozinho e não diz qual campo mudar.
+          // A frase é montada AQUI, com `t()`: a `message` da Action é pt e
+          // quem usa es/en leria português no campo.
+          if (res.error === CODIGO_NOME_DE_AGENTE_EM_USO) {
+            setErroDoServidorNoNome(`${t(NOME_DE_AGENTE_EM_USO)} ${t(RASCUNHO_SALVO_NOME_NAO_MUDOU)}`);
+            return;
+          }
           toast.error(res.message ?? `${t("Erro")}: ${res.error}`);
           return;
         }
@@ -743,6 +778,11 @@ export function AgentForm(props: Props) {
         }
         const res = await createMcpAgentAction(validated.data);
         if (!res.ok) {
+          // Mesmo tratamento do salvar: recusa de nome mora no campo (#3952).
+          if (res.error === CODIGO_NOME_DE_AGENTE_EM_USO) {
+            setErroDoServidorNoNome(t(NOME_DE_AGENTE_EM_USO));
+            return;
+          }
           toast.error(res.message ?? `${t("Erro")}: ${res.error}`);
           return;
         }
@@ -976,13 +1016,35 @@ export function AgentForm(props: Props) {
               <Input
                 id="name"
                 value={form.name}
-                onChange={(e) => patch({ name: e.target.value })}
+                onChange={(e) => {
+                  // Digitar é a resposta à recusa: o nome mudou, então a frase
+                  // "já existe" deixou de valer para o que está no campo.
+                  if (erroDoServidorNoNome) setErroDoServidorNoNome(null);
+                  patch({ name: e.target.value });
+                }}
                 disabled={disabled}
                 maxLength={120}
-                aria-invalid={!!validation.name}
+                aria-invalid={!!validation.name || !!erroDoServidorNoNome}
+                aria-describedby={erroDoServidorNoNome ? ID_DO_ERRO_DO_NOME : undefined}
               />
               {validation.name ? (
                 <p className="text-xs text-destructive">{validation.name}</p>
+              ) : null}
+              {/*
+                A recusa do SERVIDOR, embaixo do campo que a causou — e não no
+                toast do canto (#3952). `role="alert"` porque a frase aparece
+                depois de um envio: quem usa leitor de tela precisa ouvi-la sem
+                procurar na página.
+              */}
+              {erroDoServidorNoNome ? (
+                <p
+                  id={ID_DO_ERRO_DO_NOME}
+                  data-testid="erro-do-nome"
+                  role="alert"
+                  className="text-xs text-destructive"
+                >
+                  {erroDoServidorNoNome}
+                </p>
               ) : null}
             </div>
             <div className="space-y-1">
