@@ -67,6 +67,10 @@ export const TRIGGER_LABELS: Record<TriggerEvent, string> = {
   // funil) ficam embaixo, na configuração da regra.
   "lead.silent_for": "Quando ficar N dias sem mensagem",
   "lead.stage_stale": "Quando um lead ficar N dias na mesma etapa",
+  // #4075 — o fato novo vem de FORA do CRM (comentário num post do Instagram):
+  // a frase diz o canal e o ato, e o post/palavra ficam na configuração logo
+  // abaixo. "Palavra-chave" é o termo que quem compra o produto usa.
+  "instagram.comment": "Quando alguém comentar uma palavra-chave num post do Instagram",
 };
 
 export const ACTION_LABELS: Record<ActionType, string> = {

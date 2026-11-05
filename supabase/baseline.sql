@@ -73732,5 +73732,49 @@ do $conversations_select$ begin
     );
 end $conversations_select$;
 
+-- ---- o comentário do Instagram: fato e gatilho (migration 9220, #4075) ----
+-- Espelho da 9220. Cria tabela, então fica no fim: a chamada de
+-- fn_proteger_tabelas_de_organizacao() já passou lá em cima, e é por isso que a
+-- RLS e o `revoke ... from anon` vêm ESCRITOS aqui — quem aplica só o baseline
+-- não conta com a varredura depois deste ponto.
+--
+-- A chave única é a trava da reentrega do provedor: o mesmo comentário enviado
+-- duas vezes não vira duas linhas, dois eventos e duas ações.
+create table if not exists public.channel_comments (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations (id) on delete cascade,
+  channel_session_id uuid not null references public.channel_sessions (id) on delete cascade,
+  provider text not null,
+  platform text not null,
+  external_id text not null,
+  post_id text not null,
+  author_id text not null,
+  author_username text,
+  author_name text,
+  text text,
+  contact_id uuid references public.contacts (id) on delete set null,
+  comment_created_at timestamptz,
+  created_at timestamptz not null default now(),
+  constraint channel_comments_entrega_unica unique (organization_id, provider, external_id)
+);
+
+create index if not exists channel_comments_por_post_idx
+  on public.channel_comments (organization_id, post_id, comment_created_at desc);
+
+create index if not exists channel_comments_por_contato_idx
+  on public.channel_comments (organization_id, contact_id);
+
+alter table public.channel_comments enable row level security;
+revoke all on public.channel_comments from anon;
+
+drop policy if exists channel_comments_select on public.channel_comments;
+create policy channel_comments_select
+  on public.channel_comments
+  for select
+  using (
+    public.fn_is_platform_admin_full()
+    or organization_id in (select public.fn_user_org_ids())
+  );
+
 
 notify pgrst, 'reload schema';
