@@ -1459,6 +1459,7 @@ export const AUDIT_ACTIONS = [
   "ai.molde_de_ia_aplicado",
   "scheduled_message.created",
   "scheduled_message.cancelled",
+  "scheduled_message.updated",
   "scheduled_message.sent",
   "scheduled_message.failed",
   "scheduled_message.skipped",
