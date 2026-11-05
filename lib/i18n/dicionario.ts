@@ -8040,6 +8040,9 @@ export const DICIONARIO: Traducoes = {
   "Ler leads": { es: "Leer leads" },
   "Criar e editar leads": { es: "Crear y editar leads" },
   "Ler mensagens": { es: "Leer mensajes" },
+  "Ler transcrições de áudios e textos extraídos de mídia no histórico MCP (pode conter dados pessoais)": {
+    es: "Leer transcripciones de audios y textos extraídos de archivos multimedia en el historial MCP (puede contener datos personales)",
+  },
   "Enviar mensagens": { es: "Enviar mensajes" },
   "Integração pode enviar em nome de um atendente": {
     es: "La integración puede enviar en nombre de un asesor",
