@@ -15,7 +15,7 @@ import {
 
 /**
  * O push da ETAPA QUE AVISA leva o valor a quem PODE VER o negócio — e a mais
- * ninguém (migration 9109, issue #3981).
+ * ninguém (migration 9210, issue #3981).
  *
  * A régua é a da RLS de `crm_leads` (`fn_can_view_lead`), não uma cópia: os
  * casos abaixo são os mesmos de `gov-5c-lead-scope.test.ts`, agora do lado do

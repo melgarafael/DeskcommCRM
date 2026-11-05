@@ -1,7 +1,7 @@
 ---
 impacto: capacidade_nova
 secao: corrigido
-titulo: Quem gerencia volta a receber o aviso de venda com o valor no celular, mesmo com a visibilidade fechada
+titulo: Quem gerencia passa a receber o aviso de venda com o valor no celular, mesmo com a visibilidade fechada
 ---
 
 Numa empresa de carteira fechada — a que deixa cada atendente ver só os próprios negócios —, o aviso de negócio que entra numa etapa que avisa chegava ao celular sem o valor, e o aviso de **Lead ganho** ia só para o dono do negócio. O valor só aparecia quando a empresa escolhia «Todos veem tudo», e abrir isso para todo atendente não era uma opção. Resultado: quem gerenciava nunca via uma venda com valor.

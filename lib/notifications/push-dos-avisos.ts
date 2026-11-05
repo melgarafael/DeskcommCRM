@@ -139,10 +139,14 @@ export async function pushDoAvisoDaCentral(
   if (!item) return null;
   const montagem = await montarPush(admin, orgId, item);
   if (!montagem) return null;
-  // Aviso com destinatário (`para_user_id`) vai a UMA pessoa: não há o que
-  // dividir por visibilidade — ela recebe o texto que a tela dela mostra.
+  // Aviso com destinatário (`para_user_id`) vai a UMA pessoa, por fora da régua
+  // de quem vê o negócio: na etapa ele sai sem valor, para nunca levar número
+  // que a tela dela não mostra. Hoje nenhum aviso de etapa grava destinatário.
   if (item.para_user_id) {
-    return { payload: montagem.payload, para: { papelMinimo: PAPEL_MINIMO_DA_CENTRAL, soUsuario: item.para_user_id } };
+    return {
+      payload: montagem.etapa?.semValor ?? montagem.payload,
+      para: { papelMinimo: PAPEL_MINIMO_DA_CENTRAL, soUsuario: item.para_user_id },
+    };
   }
   return { ...montagem, para: { papelMinimo: PAPEL_MINIMO_DA_CENTRAL } };
 }
