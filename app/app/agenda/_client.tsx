@@ -1004,7 +1004,7 @@ export function AgendaClient({
                         className={cn(
                           "cursor-pointer rounded-full border px-3 py-1 text-xs",
                           marcada
-                            ? "border-border-strong bg-surface-strong"
+                            ? "border-border-strong bg-surface-elevated"
                             : "border-border bg-surface",
                           cheio && "cursor-not-allowed opacity-50",
                         )}
