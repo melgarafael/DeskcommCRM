@@ -152,7 +152,7 @@ describe("#4031 — o histórico entrega o nome de quem enviou", () => {
 
     expect(body.data).toHaveLength(50);
     expect(vi.mocked(nomesDosAtendentes)).toHaveBeenCalledOnce();
-    expect(vi.mocked(nomesDosAtendentes).mock.calls[0]![0]).toEqual(["u-andreia", "u-thamyres"]);
+    expect(vi.mocked(nomesDosAtendentes).mock.calls[0]![1]).toEqual(["u-andreia", "u-thamyres"]);
     // A conferência de membros usa a org ATIVA resolvida pela rota, uma vez.
     expect(ultimasOrgsConferidas).toEqual(["org-1"]);
   });
