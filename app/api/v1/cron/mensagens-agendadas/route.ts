@@ -17,6 +17,7 @@ import type { NextRequest } from "next/server";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { idsDeOrgsParadas } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { proximaOcorrenciaDepois, type RegraDeRecorrencia } from "@/lib/agendamento-mensagem/recorrencia";
 import { enviarOcorrencia, sessaoEstaConectada, type AgendamentoParaEnvio, type DesfechoDoEnvio } from "@/lib/agendamento-mensagem/envio";
@@ -53,9 +54,11 @@ async function handle(req: NextRequest): Promise<Response> {
     .limit(LOTE);
   if (error) return fail("internal_error", "Erro ao ler as mensagens devidas.", 500, { requestId });
 
+  const paradas = new Set(await idsDeOrgsParadas(admin));
   const resumo = { processadas: 0, enviadas: 0, falhas: 0, puladas: 0, esperando: 0 };
 
   for (const candidata of (candidatas ?? []) as LinhaDevida[]) {
+    if (paradas.has(candidata.organization_id)) continue;
     // 1. CLAIM: só processa quem conseguir marcar a trava agora.
     const trava = new Date(agora.getTime() + TRAVA_S * 1000).toISOString();
     const { data: reservada } = await admin
