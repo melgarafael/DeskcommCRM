@@ -4,7 +4,7 @@
 
 **Meta:** o módulo conectado ganha lugar na tela do CRM: uma rota `/app/m/[modulo]` com a tela dele em iframe de outra origem, um grupo "Módulos" gerado no menu, um painel lateral opcional e uma conversa fechada por `postMessage`.
 
-**Arquitetura:** o host é dono da moldura e o módulo é dono do conteúdo. O host nunca dá ao iframe cookie, token ou endereço livre. O iframe recebe contexto (caminho, idioma, tema, marca) e, quando pede, um JWT de contexto de 5 min (F3 T4). Tudo que o módulo pede ao host passa por uma lista fechada de 5 mensagens com origem conferida.
+**Arquitetura:** o host é dono da moldura e o módulo é dono do conteúdo. O host nunca dá ao iframe cookie, token ou endereço livre. O iframe recebe contexto (caminho, idioma, tema, marca) e, quando pede, um JWT de contexto de 5 min (F3 T4). Tudo que o módulo pede ao host passa por uma lista fechada de 6 mensagens com origem conferida.
 
 **Stack:** Next.js 16 App Router, React 19, TS estrito, Zod, `lib/navigation/*`, `lib/extensions/*`.
 
@@ -63,7 +63,7 @@
 **Files:** Create `lib/modulo/ponte.ts` e `.test.ts`.
 
 **Interfaces:**
-- Produces: `MENSAGENS_DO_MODULO` (5 no total, fechadas):
+- Produces: `MENSAGENS_DO_MODULO` (6 no total, fechadas):
   - módulo → host: `module:ready`, `module:request-jwt`, `module:navigate` `{ destination: string }`;
   - host → módulo: `host:context` `{ path, locale, theme, brand }`, `host:jwt` `{ jwt, expires_at }`, `host:error` `{ code }`.
 - `lerMensagemDoModulo(evento: { origin: string; source: unknown; data: unknown }, esperado: { origin: string; janela: unknown }): MensagemDoModulo | null` — `null` para tudo que não passa.
@@ -115,4 +115,4 @@
 ## Autoverificação do plano
 
 - Cobertura da spec F4: rota (T3), grupo gerado e sumindo sem módulo (T4), painel e ⌘K (T5), ponte com origem conferida nos dois lados e lista fechada (T2, T3), serviço fora do ar (T3), microfone fora (medido, sem código).
-- Fora de escopo, declarado: CSP no CRM; eventos (F5); contrato congelado (F6); `host:resize` e qualquer outra mensagem fora da lista de 5.
+- Fora de escopo, declarado: CSP no CRM; eventos (F5); contrato congelado (F6); `host:resize` e qualquer outra mensagem fora da lista de 6.
