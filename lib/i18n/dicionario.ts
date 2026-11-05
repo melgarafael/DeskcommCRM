@@ -13602,6 +13602,11 @@ export const DICIONARIO: Traducoes = {
   "Prazo": { es: "Plazo" },
   "Situação": { es: "Estado" },
   "Em andamento": { es: "En curso" },
+  // ─── Visão em QUADRO (#4028) ───
+  "Sem situação": { es: "Sin estado" },
+  "Só as primeiras tarefas aparecem aqui — use os filtros para ver as demais.": {
+    es: "Solo aparecen las primeras tareas — usa los filtros para ver las demás.",
+  },
   "Escreva um título para a tarefa.": { es: "Escribe un título para la tarea." },
   "Não foi possível salvar a tarefa.": { es: "No se pudo guardar la tarea." },
 
