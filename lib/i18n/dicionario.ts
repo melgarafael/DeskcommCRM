@@ -18591,6 +18591,11 @@ export const DICIONARIO: Traducoes = {
   "Escondido, o campo não aparece no formulário nem é validado como obrigatório, e o valor já gravado continua no registro.": {
     es: "Oculto, el campo no aparece en el formulario ni se valida como obligatorio, y el valor ya guardado sigue en el registro.",
   },
+  // #4041 — a LISTA de condições do "mostrar quando" (OU/E).
+  "+ condição": { es: "+ condición" },
+  "Modo da condição": { es: "Modo de la condición" },
+  "qualquer uma das condições": { es: "cualquiera de las condiciones" },
+  "todas as condições": { es: "todas las condiciones" },
   // #2730 — validação de formato em campo de texto: a frase do CAMPO na tela,
   // na API e no erro de ensino da IA. `padrao`/`mensagem_padrao` são dado do
   // dono do funil; estas duas abaixo são as da CASA, para quando ele não deu a
