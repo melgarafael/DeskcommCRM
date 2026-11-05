@@ -13480,6 +13480,14 @@ export const DICIONARIO: Traducoes = {
   // Convidado do compromisso (agenda)
   "E-mail do convidado": { es: "Correo del invitado" },
   "opcional": { es: "opcional" },
+  // Convidados da equipe no compromisso (#4006).
+  "Equipe no compromisso": { es: "Equipo en el compromiso" },
+  "O responsável já recebe o convite. Marque quem mais precisa participar: cada pessoa vê o compromisso na própria agenda.": {
+    es: "El responsable ya recibe la invitación. Marca a quién más debe participar: cada persona ve el compromiso en su propia agenda.",
+  },
+  "O convite cabe em até 20 pessoas da equipe.": {
+    es: "La invitación admite hasta 20 personas del equipo.",
+  },
   "cliente@empresa.com": { es: "cliente@empresa.com" },
   "Endereço inválido — confira antes de marcar.":
     { es: "Dirección de correo no válida. Revísala antes de programar la cita." },

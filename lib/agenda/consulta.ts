@@ -578,6 +578,13 @@ export interface AgendamentoListado {
    * vínculo e não paga o preço de quem publica. (issue #1744)
    */
   leadIds?: string[];
+  /**
+   * Pessoas da equipe convidadas além do responsável (#4006).
+   *
+   * É o que deixa a tela mostrar quem mais está no compromisso — e o que
+   * explica por que ele aparece na agenda de quem não é o dono.
+   */
+  convidadosDaEquipe?: string[];
   servico?: { occurrence_id: string; participant_name: string | null; booking_mode: string; capacity_limit: number | null; google_publication: string };
 }
 
@@ -897,7 +904,7 @@ export async function listaAgendamentos(
   let q = supabase
     .from("calendar_appointments")
     .select(
-      "id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error",
+      "id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error, team_guest_user_ids",
     )
     .eq("organization_id", organizationId)
     .order("starts_at", { ascending: true })
@@ -912,7 +919,23 @@ export async function listaAgendamentos(
   if (idsPorLead) q = q.in("id", idsPorLead);
   if (params.contactId) q = q.eq("contact_id", params.contactId);
   if (params.somenteColetivas) q = q.in("service_booking_mode", ["collective_limited", "collective_unlimited"]);
-  if (params.ownerUserId) q = q.eq("owner_user_id", params.ownerUserId);
+  if (params.ownerUserId) {
+    /**
+     * A AGENDA DE QUEM FOI CONVIDADO TAMBÉM É DELE (#4006).
+     *
+     * O recorte por dono existia porque o compromisso tinha um responsável e só
+     * ele participava. Com convidados da equipe, "minha agenda" precisa mostrar
+     * o que eu vou ATENDER (sou o dono) e o que eu fui CHAMADO a participar —
+     * sem isso, a SDR marca com o closer, o closer abre a própria agenda e não
+     * vê nada, que é metade do relato da issue.
+     *
+     * `cs` é "contém" de array no PostgREST, e o id é uuid validado a montante:
+     * não há vírgula nem chave para escapar na expressão `or`.
+     */
+    q = q.or(
+      `owner_user_id.eq.${params.ownerUserId},team_guest_user_ids.cs.{${params.ownerUserId}}`,
+    );
+  }
   if (params.situacao) q = q.eq("status", params.situacao);
   if (params.depoisDe) {
     const cursor = decodificarCursorDaLista(params.depoisDe);
@@ -1048,6 +1071,9 @@ export async function listaAgendamentos(
         tipo: tipo ? { slug: texto(tipo.slug) ?? "", nome: texto(tipo.name) ?? "" } : null,
         local: { tipo: texto(l.location_kind), descricao: texto(l.location_details) },
         leadIds: vinculosPorAlvo?.get(String(l.id)) ?? [],
+        convidadosDaEquipe: Array.isArray(l.team_guest_user_ids)
+          ? (l.team_guest_user_ids as unknown[]).map(String)
+          : [],
         ...(l.service_occurrence_id ? { servico: { occurrence_id: String(l.service_occurrence_id), participant_name: texto(l.participant_name),
           booking_mode: String(l.service_booking_mode), capacity_limit: l.service_capacity_limit == null ? null : Number(l.service_capacity_limit),
           google_publication: l.service_publication_mode === "none" ? "not_configured" : l.google_conflict ? "conflict" : l.google_sync_error ? "failed"

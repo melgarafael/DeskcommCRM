@@ -2967,6 +2967,7 @@ export type Database = {
           starts_at: string;
           starts_at_marked_at: string | null;
           status: string;
+          team_guest_user_ids: string[];
           time_zone: string;
           title: string;
           updated_at: string;
@@ -3049,6 +3050,7 @@ export type Database = {
           starts_at: string;
           starts_at_marked_at?: string | null;
           status?: string;
+          team_guest_user_ids?: string[];
           time_zone?: string;
           title: string;
           updated_at?: string;
@@ -3130,6 +3132,7 @@ export type Database = {
           starts_at?: string;
           starts_at_marked_at?: string | null;
           status?: string;
+          team_guest_user_ids?: string[];
           time_zone?: string;
           title?: string;
           updated_at?: string;
@@ -3458,6 +3461,7 @@ export type Database = {
           id: string;
           is_active: boolean;
           location_details: string | null;
+          levar_dados_do_negocio: boolean;
           location_kind: string;
           minimum_notice_minutes: number;
           name: string;
@@ -3497,6 +3501,7 @@ export type Database = {
           id?: string;
           is_active?: boolean;
           location_details?: string | null;
+          levar_dados_do_negocio?: boolean;
           location_kind?: string;
           minimum_notice_minutes?: number;
           name: string;
@@ -3535,6 +3540,7 @@ export type Database = {
           id?: string;
           is_active?: boolean;
           location_details?: string | null;
+          levar_dados_do_negocio?: boolean;
           location_kind?: string;
           minimum_notice_minutes?: number;
           name?: string;

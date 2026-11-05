@@ -724,6 +724,23 @@ const marcarShape = {
     .max(320)
     .optional()
     .describe(DESCRICAO_DO_CONVIDADO),
+  /**
+   * QUEM MAIS DA EQUIPE PARTICIPA (#4006) — ids, não e-mails.
+   *
+   * Existe SEPARADO de `guest_email` porque a régua é outra: aqui só entra gente
+   * desta organização, e o e-mail do convite é resolvido depois (conta Google
+   * conectada, ou o de login). O modelo não tem uuid de pessoa; ele os obtém em
+   * `crm_list_team`/na lista de pessoas da agenda.
+   */
+  team_guest_user_ids: z
+    .array(z.string().uuid())
+    .max(20)
+    .optional()
+    .describe(
+      "ids de pessoas da equipe que também participam do compromisso, além do responsável. " +
+        "Cada uma recebe o convite no Google e passa a ver o compromisso na própria agenda. " +
+        "Use os ids que vieram de uma listagem da equipe — não invente.",
+    ),
 };
 
 export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
@@ -790,6 +807,9 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
             ? { location_details: input.location_details }
             : {}),
           ...(input.guest_email !== undefined ? { guest_email: input.guest_email } : {}),
+          ...(input.team_guest_user_ids !== undefined
+            ? { team_guest_user_ids: input.team_guest_user_ids }
+            : {}),
           ...(input.participant_name !== undefined ? { participant_name: input.participant_name } : {}),
           ...(input.participants !== undefined ? { participants: input.participants } : {}),
           ...(input.expected_service_revision !== undefined ? { expected_service_revision: input.expected_service_revision } : {}),
