@@ -282,9 +282,9 @@ describe("POST /api/v1/contacts/import/agenda", () => {
       new FalhaDaAgendaDoAparelho("acervo_desligado", "transporte_recusou_a_agenda"),
     );
     await POST(requisicao({ channel_session_id: CANAL }));
-    const registro = vi.mocked(logger.warn).mock.calls.find(([msg]) =>
-      String(msg).includes("leitura da agenda falhou"),
-    );
+    const registro = vi
+      .mocked(logger.warn)
+      .mock.calls.find(([msg]) => String(msg).includes("leitura da agenda falhou"));
     expect(registro?.[1]).toMatchObject({
       causa: "transporte_recusou_a_agenda",
       motivo: "acervo_desligado",

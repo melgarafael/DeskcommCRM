@@ -75,7 +75,8 @@ export class FalhaDaAgendaDoAparelho extends Error {
 const STATUS_NO_ERRO = /^waha_(?:[a-z_]+_)?(\d{3})\b/;
 
 /** Falhas de rede/relógio que não são HTTP nenhum. */
-const SEM_RESPOSTA = /^(waha_timeout\b|fetch failed$)|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|socket hang up|aborted/i;
+const SEM_RESPOSTA =
+  /^(waha_timeout\b|fetch failed$)|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|socket hang up|aborted/i;
 
 /**
  * Classifica o erro da leitura da agenda.
@@ -99,7 +100,8 @@ export function classificarFalhaDaAgenda(err: unknown): FalhaDaAgendaDoAparelho 
     // Nossos parâmetros são fixos (sessão, limit, offset, sortBy, sortOrder),
     // então um 400 aqui não é "pedido malformado" nosso.
     if (codigo === 400) return new FalhaDaAgendaDoAparelho("acervo_desligado", causa);
-    if (codigo === 401 || codigo === 403) return new FalhaDaAgendaDoAparelho("sessao_recusada", causa);
+    if (codigo === 401 || codigo === 403)
+      return new FalhaDaAgendaDoAparelho("sessao_recusada", causa);
     if (codigo >= 500) return new FalhaDaAgendaDoAparelho("servidor", causa);
   }
   return new FalhaDaAgendaDoAparelho("indisponivel", causa);
