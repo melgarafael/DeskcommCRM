@@ -1414,6 +1414,11 @@ export const AUDIT_ACTIONS = [
   // Aviso escrito pelo admin da empresa e empurrado para a equipe (#1418). O
   // metadata leva só a janela de publicação; título e corpo ficam em `avisos`.
   "aviso.created",
+  "scheduled_message.created",
+  "scheduled_message.cancelled",
+  "scheduled_message.sent",
+  "scheduled_message.failed",
+  "scheduled_message.skipped",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
