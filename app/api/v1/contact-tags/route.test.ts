@@ -59,11 +59,11 @@ describe("contact-tags: rota que já loga não ganha segunda linha", () => {
     expect(id).toMatch(/^[0-9a-f-]{36}$/);
 
     const linhas = errorSpy.mock.calls
-      .map((c) => JSON.parse(String(c[0])) as Linha)
-      .filter((l) => l.requestId === id);
+      .map((c: unknown[]) => JSON.parse(String(c[0])) as Linha)
+      .filter((l: Linha) => l.requestId === id);
 
     expect(linhas).toHaveLength(1);
-    expect(linhas[0].msg).toBe("contact-tags: leitura das tags do contato falhou");
-    expect(linhas[0].level).toBe("error");
+    expect(linhas[0]?.msg).toBe("contact-tags: leitura das tags do contato falhou");
+    expect(linhas[0]?.level).toBe("error");
   });
 });

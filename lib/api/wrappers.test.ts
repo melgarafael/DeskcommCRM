@@ -63,7 +63,7 @@ describe("fail() e o X-Request-Id", () => {
     const doId = linhasDoId(id!);
     expect(doId).toHaveLength(1);
     expect(doId[0]).toMatchObject({ level: "error", code: "internal_error", status: 500 });
-    expect(String(id)).toBe(doId[0].requestId); // literal, não "parece"
+    expect(String(id)).toBe(doId[0]?.requestId); // literal, não "parece"
   });
 
   it("⭐ 500 com requestId do chamador: loga exatamente esse ID, uma vez", () => {
@@ -93,7 +93,7 @@ describe("fail() e o X-Request-Id", () => {
     expect(res.headers.get("X-Request-Id")).toBe(id);
     const doId = linhasDoId(id);
     expect(doId).toHaveLength(1);
-    expect(doId[0].msg).toBe("contact-tags: leitura das tags do contato falhou");
+    expect(doId[0]?.msg).toBe("contact-tags: leitura das tags do contato falhou");
   });
 
   it("sucesso não ganha log de erro", async () => {
