@@ -23,11 +23,12 @@ import { getSkillsPool } from "@/lib/ai/skills/db";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { nomeDeSkillValido } from "@/lib/skills/nome-de-skill";
 
 export const dynamic = "force-dynamic";
 
 // Mesma classe da porta do proxy (`[name]` em portas-de-token/configuracao.ts): kebab-case.
-const nameSchema = z.string().min(1).max(120).regex(/^[a-z0-9][a-z0-9-]{0,119}$/);
+const nameSchema = z.string().min(1).max(120);
 const bodySchema = z.object({ version_id: z.string().uuid() }).strict();
 
 export async function POST(
@@ -54,7 +55,7 @@ export async function POST(
 
   const { name: rawName } = await ctx.params;
   const nameParsed = nameSchema.safeParse(decodeURIComponent(rawName));
-  if (!nameParsed.success) {
+  if (!nameParsed.success || !nomeDeSkillValido(nameParsed.data)) {
     return fail("validation_failed", t("Nome de skill inválido."), 422, { requestId });
   }
   const name = nameParsed.data;
