@@ -7,6 +7,7 @@ import { getOpenConversationId } from "@/hooks/notifications/OpenConversationCon
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { avatarUrlServivel } from "@/lib/notifications/avatar_url";
+import { canalDaConversa } from "@/lib/notifications/canal-da-conversa";
 import { entregarAviso } from "@/lib/notifications/deliver";
 import { shouldNotifyInbound } from "@/lib/notifications/policy";
 import { corpoDoAvisoDeMensagem } from "@/lib/notifications/push_payload";
@@ -190,6 +191,10 @@ export function useInboundMessageAlerts(): void {
         typeof row.type === "string" ? row.type : "text",
         typeof row.body === "string" ? row.body : null,
       );
+      // De qual rede veio: a linha do realtime traz só `channel_session_id`, e
+      // quem sabe o transporte é a sessão do canal (rota da conversa). O aviso
+      // usa isso para se identificar sem a pessoa ler (#4094).
+      const canal = await canalDaConversa(conversationId);
       entregarAviso({
         category: "message",
         kind: "message_inbound",
@@ -199,6 +204,7 @@ export function useInboundMessageAlerts(): void {
         href: conversationId ? `/app/inbox?id=${conversationId}` : undefined,
         icon: bits.icon,
         corpoSemPrevia,
+        canal,
         conteudo,
       });
     })();
