@@ -46,7 +46,11 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_propose_contact_field": { tokens: 438, motivo: BASE },
   "crm_list_conversations": { tokens: 283, motivo: BASE },
   "crm_get_conversation": { tokens: 228, motivo: BASE },
-  "crm_get_conversation_history": { tokens: 203, motivo: BASE },
+  "crm_get_conversation_history": {
+    tokens: 240,
+    motivo:
+      "#4077: a descrição passou a dizer que cada mensagem traz o AUTOR (sent_by_user_id e sent_by_user_name) — sem isso a integração não sabia que o campo existia e atribuía a fala ao 'sistema'",
+  },
   "crm_get_queue_status": { tokens: 83, motivo: BASE },
   "crm_list_leads": { tokens: 500, motivo: BASE },
   "crm_get_lead": { tokens: 202, motivo: BASE },
@@ -133,7 +137,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "schedule_followup (com negócio)": { tokens: 314, motivo: BASE },
 };
 
-const TETO_TOTAL = 29952;
+const TETO_TOTAL = 29989;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
