@@ -137,7 +137,7 @@ async function responderPassagens(
   }
 
   const linhas = data ?? [];
-  const nomes = await nomesDosAtendentes(organizationId, linhas.map((l) => l.reconhecido_por));
+  const nomes = await nomesDosAtendentes(organizationId,linhas.map((l) => l.reconhecido_por));
 
   return ok(
     // `reconhecido_por` continua na linha mesmo sem nome: o dono é a VERDADE, o

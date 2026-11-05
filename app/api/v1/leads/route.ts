@@ -133,7 +133,9 @@ export async function POST(req: NextRequest): Promise<Response> {
           requestId,
         });
       }
-      input = { ...input, owner_user_id: actor.id };
+      // Este bloco só roda com sessão (papelDaSessao); o guarda de pessoa fica explícito
+      // para o token e o módulo nunca virarem responsável (cerca `ator-modulo-nao-vira-pessoa`).
+      if (actor.type === "user") input = { ...input, owner_user_id: actor.id };
     }
   }
 

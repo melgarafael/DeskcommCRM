@@ -471,7 +471,7 @@ beforeEach(() => {
   vi.mocked(requireSupportWrite).mockResolvedValue(null);
   vi.mocked(checkRateLimit).mockResolvedValue({ allowed: true, count: 1, limit: 30 } as never);
   vi.mocked(nomesDosAtendentes).mockImplementation(
-    async (_orgId, ids) => new Map((ids as string[]).map((id) => [id, `Nome ${id.slice(-1)}`])),
+    async (_orgId, ids) => new Map(ids.map((id) => [id, `Nome ${id.slice(-1)}`])),
   );
 });
 
