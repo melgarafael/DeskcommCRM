@@ -76,6 +76,8 @@ export const DICIONARIO: Traducoes = {
   "Não foi possível gravar. Tente de novo.": { es: "No se pudo guardar. Inténtalo de nuevo." },
   "Quem administra o servidor desligou as ferramentas externas por agente.": { es: "Quien administra el servidor desactivó las herramientas externas por agente." },
   "Não foi possível revogar o acesso.": { es: "No se pudo revocar el acceso." },
+  "Não foi possível executar o teste. Confira modelo, credencial e materiais do agente.": { es: "No fue posible ejecutar la prueba. Revisa el modelo, la credencial y los materiales del agente." },
+  "Não foi possível executar o teste: o banco de dados não respondeu (indisponibilidade ou tempo esgotado). Modelo e credencial do agente não têm relação com esta falha — tente de novo em instantes. O motivo exato fica no log do app, em [ai.test].": { es: "No fue posible ejecutar la prueba: la base de datos no respondió (indisponibilidad o tiempo agotado). El modelo y la credencial del agente no tienen relación con esta falla — inténtalo de nuevo en unos instantes. El motivo exacto está en el log de la app, en [ai.test]." },
   "O registro automático do cliente foi recusado pelo servidor.": { es: "El servidor rechazó el registro automático del cliente." },
   "O servidor de autorização não aceita PKCE S256 — o cadastro foi recusado.": { es: "El servidor de autorización no acepta PKCE S256: el registro fue rechazado." },
   "Os dados de autorização devolvidos são de outro endereço, não do servidor informado — o cadastro foi recusado.": { es: "Los datos de autorización devueltos son de otra dirección, no del servidor indicado: el registro fue rechazado." },
