@@ -627,6 +627,11 @@
   "IA aberta ao público": "AI open to the public",
   "IA restrita por origem": "AI restricted by source",
   "Configurar acesso da IA": "Configure AI access",
+  "Este número está em modo de teste": "This number is in test mode",
+  "Nenhum número autorizado neste canal: a IA não responde ninguém. Cadastre o número de quem vai testar para receber as respostas automáticas.": "No number authorized on this channel: the AI doesn't answer anyone. Add the number of whoever will test so it receives the automatic replies.",
+  "O número {numero} não está na lista de teste deste canal: a IA não responde a ele. Cadastre-o para receber as respostas automáticas.": "The number {numero} isn't on this channel's test list: the AI doesn't answer it. Add it to receive the automatic replies.",
+  "O teste aqui não passa pelo canal: no WhatsApp real, a IA não responderia a este número.": "The test here doesn't go through the channel: on real WhatsApp, the AI wouldn't answer this number.",
+  "Peça a um administrador para cadastrar o número de teste no cartão deste canal em Conexões.": "Ask an administrator to add the test number on this channel's card in Connections.",
   "Acesso da IA no WhatsApp": "AI access on WhatsApp",
   "Teste com pessoas de confiança antes de liberar o atendimento automático.": "Test with people you trust before enabling automatic support.",
   "Não foi possível carregar o acesso da IA.": "Couldn't load AI access.",
@@ -9682,5 +9687,7 @@
   "Cold Call (fila de ligações)": "Cold Call (call queue)",
   "Leads para ligar, um por um.": "Leads to call, one by one.",
   "Ligado, cada empresa ganha no CRM a tela Cold Call: um funil próprio, a importação da lista e a ligação para um lead por vez, pelo canal de voz quando ele está pareado ou pelo discador do aparelho. Quem pediu para não ser incomodado, contato pessoal e contato anonimizado não recebem ligação. Desligado, a tela e o menu somem.": "When on, each company gets the Cold Call screen in the CRM: its own pipeline, list import and calling one lead at a time, through the voice channel when it's paired or through the device's dialer. Contacts who asked not to be contacted, personal contacts and anonymized contacts don't get calls. When off, the screen and the menu entry disappear.",
-  "Uma fila para ligar para uma lista de leads, um por vez, com roteiro e o resultado de cada ligação movendo o lead no funil.": "A queue to call a list of leads, one at a time, with a script and each call's outcome moving the lead in the pipeline."
+  "Uma fila para ligar para uma lista de leads, um por vez, com roteiro e o resultado de cada ligação movendo o lead no funil.": "A queue to call a list of leads, one at a time, with a script and each call's outcome moving the lead in the pipeline.",
+  "Já existe um agente com esse nome.": "An agent with this name already exists.",
+  "O rascunho foi salvo; o nome do agente não mudou.": "The draft was saved; the agent's name did not change."
 }
