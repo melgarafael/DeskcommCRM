@@ -20550,6 +20550,15 @@ export const DICIONARIO: Traducoes = {
   "Com ela, cada empresa conecta o número oficial do WhatsApp com um clique, sem ter conta no provedor. Os números ficam na conta da instalação e entram na fatura dela.": { es: "Con ella, cada empresa conecta el número oficial de WhatsApp con un clic, sin tener cuenta en el proveedor. Los números quedan en la cuenta de la instalación y entran en su factura." },
   "O serviço deste módulo não respondeu": { es: "El servicio de este módulo no respondió" },
   "O resto do CRM continua funcionando. Tente de novo em instantes.": { es: "El resto del CRM sigue funcionando. Inténtalo de nuevo en unos instantes." },
+  "Leitura dos avisos pelo módulo": { es: "Lectura de los avisos por el módulo" },
+  "Empresa {n}": { es: "Empresa {n}" },
+  "ainda não leu nenhum aviso": { es: "aún no ha leído ningún aviso" },
+  "último aviso lido": { es: "último aviso leído" },
+  "em dia": { es: "al día" },
+  "{n} aviso(s) por ler": { es: "{n} aviso(s) por leer" },
+  "Atrasado": { es: "Atrasado" },
+  "Este módulo ainda não apagou os dados de {n} contato(s) anonimizado(s).": { es: "Este módulo aún no ha borrado los datos de {n} contacto(s) anonimizado(s)." },
+  "Faz mais de 24 horas que o módulo não busca os avisos, e a LGPD manda apagar esses dados.": { es: "Hace más de 24 horas que el módulo no busca los avisos, y la LGPD exige borrar esos datos." },
 };
 
 

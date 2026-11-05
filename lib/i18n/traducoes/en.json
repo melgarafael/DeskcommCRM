@@ -9798,5 +9798,14 @@
   "Abrir ao lado": "Open in side panel",
   "Escolha um módulo": "Choose a module",
   "Abrindo o módulo...": "Opening the module...",
-  "Não foi possível abrir este módulo.": "This module could not be opened."
+  "Não foi possível abrir este módulo.": "This module could not be opened.",
+  "Leitura dos avisos pelo módulo": "Module notice reading",
+  "Empresa {n}": "Company {n}",
+  "ainda não leu nenhum aviso": "has not read any notice yet",
+  "último aviso lido": "last notice read",
+  "em dia": "up to date",
+  "{n} aviso(s) por ler": "{n} notice(s) left to read",
+  "Atrasado": "Behind",
+  "Este módulo ainda não apagou os dados de {n} contato(s) anonimizado(s).": "This module has not yet erased the data of {n} anonymized contact(s).",
+  "Faz mais de 24 horas que o módulo não busca os avisos, e a LGPD manda apagar esses dados.": "The module has not fetched notices for over 24 hours, and the LGPD requires this data to be erased."
 }

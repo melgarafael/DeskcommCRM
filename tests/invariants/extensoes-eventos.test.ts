@@ -708,6 +708,58 @@ describe("a leitura: só a organização, só o par", () => {
   });
 });
 
+describe("o atraso mostrado em /admin/extensoes (9121)", () => {
+  const atraso = (inst: string) => rpc("events_lag", [inst]) as Promise<
+    { last_event_id: number | null; last_read_at: string | null; lag: number; contacts_pending: number; oldest_unread_at: string | null }[]
+  >;
+
+  it("a contagem é por organização e nunca mistura organizações (mesmo módulo nas duas)", async () => {
+    const inst = await instalarConectado();
+    await ativar(orgA, inst);
+    await ativar(orgB, inst);
+    for (let i = 0; i < 2; i++) await anonimizar(await novoContato(orgA));
+    for (let i = 0; i < 5; i++) await anonimizar(await novoContato(orgB));
+    const idsA = (await eventos(orgA)).map((e) => Number(e.id));
+    await reconhecer(orgA, inst, idsA[0]!);
+
+    const linhas = await atraso(inst);
+
+    expect(linhas).toHaveLength(2);
+    expect(linhas.map((l) => l.lag).sort()).toEqual([1, 5]);
+    const deA = linhas.find((l) => l.lag === 1)!;
+    expect(deA.last_event_id).toBe(idsA[0]);
+    expect(deA.contacts_pending).toBe(1);
+    const deB = linhas.find((l) => l.lag === 5)!;
+    expect(deB.last_event_id).toBeNull();
+    expect(deB.last_read_at).toBeNull();
+    expect(deB.oldest_unread_at).not.toBeNull();
+    // Nada que identifique a organização sai da função.
+    expect(JSON.stringify(linhas)).not.toContain(orgA);
+    expect(JSON.stringify(linhas)).not.toContain(orgB);
+  });
+
+  it("module_disabled de outro módulo não entra no atraso deste; módulo sem vínculo nem cursor não aparece", async () => {
+    const a = await instalarConectado("servico-a");
+    const b = await instalarConectado("servico-b");
+    await ativar(orgA, a);
+    await ativar(orgA, b);
+    await desativar(orgA, b);
+    expect((await atraso(a)).map((l) => l.lag)).toEqual([0]);
+    expect(await atraso(await instalarConectado("servico-c"))).toEqual([]);
+  });
+
+  it("lê só como service_role: anon e authenticated não executam", async () => {
+    const inst = await instalarConectado();
+    const r = await query(
+      `select has_function_privilege('anon', 'public.fn_extensions_events_lag(uuid)', 'execute') anon,
+              has_function_privilege('authenticated', 'public.fn_extensions_events_lag(uuid)', 'execute') auth,
+              has_function_privilege('service_role', 'public.fn_extensions_events_lag(uuid)', 'execute') servico`,
+    );
+    expect(r.rows[0]).toEqual({ anon: false, auth: false, servico: true });
+    expect(inst).toBeTruthy();
+  });
+});
+
 describe("o cursor", () => {
   it("nunca regride e nunca passa do último evento visível ao par", async () => {
     const inst = await instalarConectado();

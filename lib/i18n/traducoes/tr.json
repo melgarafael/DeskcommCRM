@@ -11520,5 +11520,14 @@
   "Abrir ao lado": "Yan panelde aç",
   "Escolha um módulo": "Bir modül seçin",
   "Abrindo o módulo...": "Modül açılıyor...",
-  "Não foi possível abrir este módulo.": "Bu modül açılamadı."
+  "Não foi possível abrir este módulo.": "Bu modül açılamadı.",
+  "Leitura dos avisos pelo módulo": "Modülün bildirim okuması",
+  "Empresa {n}": "Şirket {n}",
+  "ainda não leu nenhum aviso": "henüz hiçbir bildirimi okumadı",
+  "último aviso lido": "okunan son bildirim",
+  "em dia": "güncel",
+  "{n} aviso(s) por ler": "okunacak {n} bildirim",
+  "Atrasado": "Gecikmiş",
+  "Este módulo ainda não apagou os dados de {n} contato(s) anonimizado(s).": "Bu modül, anonimleştirilen {n} kişinin verilerini henüz silmedi.",
+  "Faz mais de 24 horas que o módulo não busca os avisos, e a LGPD manda apagar esses dados.": "Modül 24 saatten uzun süredir bildirimleri almadı ve LGPD bu verilerin silinmesini gerektiriyor."
 }
