@@ -284,10 +284,11 @@ class FakeQuery implements PromiseLike<QResult> {
  * produto que não existe.
  */
 const ERRCODE_DA_RESOLUCAO: Record<string, string> = {
-  // PT409 é o código das recusas permanentes desta casa (0540); `40001` é o do
-  // `service_stale` de serialização, que o cliente pode retentar.
+  // Na definição vigente de `fn_service_event_origin`, `service_stale` e
+  // `service_origin_cycle` também saem com PT409 (0540); `serviceForEvent`
+  // ainda aceita `40001`, o código antigo, e trata os dois do mesmo jeito.
   service_event_origin_unsupported: "PT409",
-  service_origin_cycle: "40001",
+  service_origin_cycle: "PT409",
   service_stale: "PT409",
   service_event_not_found: "P0002",
   service_scope_mismatch: "23503",
