@@ -266,8 +266,9 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       // depois; antes era sempre `preview_failed`, o que fazia um timeout de
       // banco parecer problema de configuração de agente também na tabela.
       error_code: falhaDoBanco ? "preview_banco_indisponivel" : "preview_failed",
-      // Guardado na linha para quem for diagnosticar depois; a resposta ao
-      // operador segue genérica, porque o texto do erro é técnico.
+      // Guardado na linha para quem for diagnosticar depois. A tela NUNCA lê
+      // este texto: ela recebe a frase da causa (a de banco ou a genérica),
+      // porque `message` de driver pode carregar host, usuário e SQL.
       error_message: mensagem.slice(0, 2000),
     });
     if (err instanceof LlmConteudoBloqueadoError) {
