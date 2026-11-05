@@ -979,6 +979,16 @@
       ],
       "resposta": []
     },
+    "/api/v1/attendants/sector/[id]": {
+      "corpo": [
+        {
+          "nome": "idSchema",
+          "origem": "local",
+          "hash": "bdd56948bd84109a"
+        }
+      ],
+      "resposta": []
+    },
     "/api/v1/attendants/sectors/[id]": {
       "corpo": [
         {
