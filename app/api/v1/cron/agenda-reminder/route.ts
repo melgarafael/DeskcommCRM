@@ -153,6 +153,13 @@ import {
 } from "@/lib/agenda/lembrete-por-modelo";
 import { atualizarAvisoDeRemetente } from "@/lib/agenda/aviso-de-remetente";
 import { moldeDoDegrau } from "@/lib/agenda/lembretes";
+import {
+  esperaPeloLink,
+  estaNaHora,
+  linkDaReuniao,
+  vencidoNaMarcacao,
+  type LinkDaReuniao,
+} from "@/lib/agenda/degraus-do-lembrete";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import {
@@ -161,6 +168,10 @@ import {
   ehOperante,
   statusDaOrgEmbutida,
 } from "@/lib/organizacao/operante";
+
+// As réguas moraram aqui até o lembrete do dono nascer; quem as importava
+// desta rota continua importando (ver `lib/agenda/degraus-do-lembrete.ts`).
+export { estaNaHora, vencidoNaMarcacao };
 
 export const dynamic = "force-dynamic";
 
@@ -200,6 +211,10 @@ interface CompromissoAVencer {
    */
   starts_at_marked_at: string | null;
   location_details: string | null;
+  /** Onde acontece — `google_meet` é o que tem link a esperar (`lib/agenda/degraus-do-lembrete.ts`). */
+  location_kind?: string | null;
+  meeting_state?: string | null;
+  meeting_url?: string | null;
   reminder_sent_offsets_minutes: number[] | null;
   /**
    * `reminder_sent_at` — instante do ÚLTIMO carimbo de envio (#2243): a
@@ -226,7 +241,7 @@ function tipoDe(linha: CompromissoAVencer): TipoDoCompromisso | null {
  *
  * Sem molde, sai a frase abaixo — o quê, quando e onde. Com molde, as
  * variáveis `{{nome}}`, `{{primeiro_nome}}`, `{{titulo}}`, `{{tipo}}`,
- * `{{dia}}`, `{{hora}}`, `{{endereco}}` e `{{quando}}` são preenchidas com
+ * `{{dia}}`, `{{hora}}`, `{{endereco}}`, `{{quando}}` e `{{link}}` são preenchidas com
  * os mesmos dados; chave desconhecida fica no texto, para quem digitou
  * `{{foo}}` ver o erro em vez de uma mensagem manca.
  *
@@ -254,6 +269,8 @@ export function pecasDoLembrete(input: {
   local: string | null;
   idioma?: Idioma;
   tipoNome?: string | null;
+  /** O link da reunião, só quando PRONTO (`linkDaReuniao`). */
+  link?: string | null;
 }): Record<string, string> {
   const idioma = input.idioma ?? IDIOMA_PADRAO;
   const t = (texto: string) => traduzir(texto, idioma);
@@ -282,6 +299,7 @@ export function pecasDoLembrete(input: {
     hora,
     endereco: input.local?.trim() ?? "",
     quando: `${dia} ${t("às")} ${hora}`,
+    link: input.link?.trim() ?? "",
   };
 }
 
@@ -316,14 +334,32 @@ export function montarLembrete(input: {
   molde?: string | null;
   /** Nome do tipo de atendimento, para `{{tipo}}`. Cai no título se faltar. */
   tipoNome?: string | null;
+  /**
+   * O estado do link da reunião (`linkDaReuniao`). Com link pronto ele SEMPRE
+   * vai na mensagem — inclusive com texto próprio que não usou `{{link}}`:
+   * quem escreveu o texto antes de o tipo virar Google Meet não pode fazer o
+   * cliente receber um lembrete de reunião online sem como entrar nela. Com o
+   * link ainda a caminho, a mensagem diz que ele chega pela conversa.
+   */
+  linkDaReuniao?: LinkDaReuniao | null;
 }): string {
   const idioma = input.idioma ?? IDIOMA_PADRAO;
   const t = (texto: string) => traduzir(texto, idioma);
-  const pecas = pecasDoLembrete(input);
+  const link = input.linkDaReuniao ?? null;
+  const pecas = pecasDoLembrete({ ...input, link: link?.url ?? null });
   const { nome = "", dia = "", hora = "" } = pecas;
+  const linhaDoLink = link?.url
+    ? `${t("Link da reunião:")} ${link.url}`
+    : link?.estado === "pendente"
+      ? t("O link da reunião chega por aqui assim que estiver pronto.")
+      : "";
 
   const molde = input.molde?.trim();
-  if (molde) return aplicarMoldeDoLembrete(molde, pecas);
+  if (molde) {
+    const texto = aplicarMoldeDoLembrete(molde, pecas);
+    const usouOLink = /\{\{\s*link\s*\}\}/i.test(molde);
+    return linhaDoLink && !(usouOLink && link?.url) ? `${texto}\n${linhaDoLink}` : texto;
+  }
 
   // Cada `t()` cobre só a parte FIXA da frase: nome, título, data e endereço
   // são dado do tenant e nunca passam por tradução.
@@ -333,58 +369,13 @@ export function montarLembrete(input: {
   // i18n existe para impedir.
   const saudacao = nome ? `${t("Oi,")} ${nome}!` : t("Oi!");
   const onde = pecas.endereco ? ` ${t("Endereço")}: ${pecas.endereco}.` : "";
-  return (
+  const frase =
     `${saudacao} ${t("Passando pra lembrar do seu compromisso:")} ` +
-    `${input.titulo}, ${dia} ${t("às")} ${hora}.${onde}`
-  );
+    `${input.titulo}, ${dia} ${t("às")} ${hora}.${onde}`;
+  return linhaDoLink ? `${frase}\n${linhaDoLink}` : frase;
 }
 
-/**
- * Está na hora de lembrar?
- *
- * Pura, e exportada, porque é a regra que o teste precisa exercitar sem banco:
- * cedo demais não manda, tarde demais (já começou) também não.
- */
-export function estaNaHora(agora: Date, comeca: Date, antecedenciaMin: number): boolean {
-  if (comeca.getTime() <= agora.getTime()) return false;
-  return comeca.getTime() - antecedenciaMin * 60_000 <= agora.getTime();
-}
 
-/**
- * A hora deste degrau já tinha passado quando a reunião foi marcada?
- *
- * Issue #2223: reunião marcada às 18:30 para as 16h do dia seguinte tem o degrau
- * de 1440 min às 16:00 de hoje — INSTANTE ANTERIOR À EXISTÊNCIA DA PRÓPRIA LINHA.
- * `estaNaHora` só olha `agora`, e ele respondia `true` na primeira varredura:
- * o lembrete de véspera saía um minuto depois de o agente confirmar a reunião,
- * e a cada nova tentativa (o carimbo que não saía) saía outra vez.
- *
- * A régua é o instante da MARCAÇÃO DESTA DATA, e não `updated_at`: o link do
- * Meet e cada revisão reescrevem a linha, e usar `updated_at` descartaria
- * degraus ARMADOS quando o link ficasse pronto dentro da última hora antes da
- * reunião — sumindo com o lembrete em silêncio, que é o defeito simétrico ao
- * deste fix. É a mesma razão pela qual a régua não é `revision_started_at`
- * (#2230): ele vira também com `status` e `conversation_id`, e confirmar um
- * compromisso já dentro de 24h reposicionaria a régua para DEPOIS da hora da
- * véspera.
- *
- * Quem ESCOLHE o instante é `degrausPendentes`: `starts_at_marked_at` quando a
- * linha já foi remarcada, `created_at` quando nunca foi (#2230). Esta função
- * continua perguntando só "a hora passou antes de quem marcou marcar?".
- *
- * Sem `marcadoEm` a guarda fica fora do caminho (linha que não sabe quando foi
- * marcada não é punida). `<=`, e não `<`: marcado no MESMO instante da hora do
- * degrau também é descartado — lembrete que sai no segundo em que a reunião é
- * marcada é exatamente o que a issue reporta.
- */
-export function vencidoNaMarcacao(
-  comeca: Date,
-  degrauMin: number,
-  marcadoEm: Date | null | undefined,
-): boolean {
-  if (!marcadoEm) return false;
-  return comeca.getTime() - degrauMin * 60_000 <= marcadoEm.getTime();
-}
 
 /**
  * Véspera que cairia no MESMO DIA da marcação, no fuso da organização.
@@ -607,7 +598,7 @@ async function handle(req: NextRequest): Promise<Response> {
   const { data, error } = await admin
     .from("calendar_appointments")
     .select(
-      "id, organization_id, contact_id, conversation_id, title, starts_at, created_at, starts_at_marked_at, location_details, reminder_sent_offsets_minutes, reminder_sent_at, " +
+      "id, organization_id, contact_id, conversation_id, title, starts_at, created_at, starts_at_marked_at, location_details, location_kind, meeting_state, meeting_url, reminder_sent_offsets_minutes, reminder_sent_at, " +
         "calendar_event_types!inner(name, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_template_name, reminder_body, reminder_bodies, location_details), organizations:organization_id!inner(status)",
     )
     .eq("status", "confirmed")
@@ -690,6 +681,16 @@ async function handle(req: NextRequest): Promise<Response> {
     });
     if (pendentes.length === 0) {
       pular("ainda_nao");
+      continue;
+    }
+
+    // O LINK DO MEET AINDA A CAMINHO: o degrau espera, SEM carimbar — a rodada
+    // seguinte o encontra pendente de novo. A 15 min do início ele sai mesmo
+    // sem link (`esperaPeloLink`), para o aviso curto não sumir numa reunião
+    // cujo link travou.
+    const link = linkDaReuniao(linha);
+    if (esperaPeloLink(link, new Date(linha.starts_at), agora)) {
+      pular("link_da_reuniao_pendente");
       continue;
     }
 
@@ -803,7 +804,7 @@ async function handle(req: NextRequest): Promise<Response> {
       if (modeloDeTexto?.body) molde = modeloDeTexto.body;
     }
 
-    const corpo = montarLembrete({ ...dadosDoLembrete, molde });
+    const corpo = montarLembrete({ ...dadosDoLembrete, molde, linkDaReuniao: link });
 
     // ─── O CARIMBO ANTES DO ENVIO (issue #2223) ────────────────────────────
     //
