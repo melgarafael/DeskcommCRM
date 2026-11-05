@@ -9767,5 +9767,9 @@
   "Abrir ao lado": "Open in side panel",
   "Escolha um módulo": "Choose a module",
   "Abrindo o módulo...": "Opening the module...",
-  "Não foi possível abrir este módulo.": "This module could not be opened."
+  "Não foi possível abrir este módulo.": "This module could not be opened.",
+  "Enviar mesmo com a conversa atribuída a uma pessoa": "Send even when the conversation is assigned to a person",
+  "Enviar com a conversa atribuída": "Send with an assigned conversation",
+  "Os passos de texto deste fluxo saem mesmo quando um atendente é o dono da conversa. A IA continua calada nessa conversa, e contatos com opt-out, bloqueados ou fora da janela de envio não recebem.": "Text steps in this flow still go out when an agent owns the conversation. The AI stays silent in that conversation, and contacts who opted out, are blocked, or are outside the sending window receive nothing.",
+  "Opção de envio com a conversa atribuída atualizada.": "Assigned-conversation sending option updated."
 }
