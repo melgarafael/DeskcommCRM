@@ -112,10 +112,14 @@ describe("loadEnv — teto do recuo ocioso do event_log (#3693)", () => {
   });
 });
 
-describe("AGENT_STOP_AFTER_FINAL_SEND — a parada do laço nasce desligada", () => {
-  it("ausente ou vazia = 'off': um .env antigo não muda de comportamento", () => {
-    expect(loadEnv(REQUIRED).AGENT_STOP_AFTER_FINAL_SEND).toBe("off");
-    expect(loadEnv({ ...REQUIRED, AGENT_STOP_AFTER_FINAL_SEND: "" }).AGENT_STOP_AFTER_FINAL_SEND).toBe("off");
+describe("AGENT_STOP_AFTER_FINAL_SEND — a parada do laço vem ligada", () => {
+  it("ausente ou vazia = 'on': a parada vale para quem não mexeu no .env", () => {
+    expect(loadEnv(REQUIRED).AGENT_STOP_AFTER_FINAL_SEND).toBe("on");
+    expect(loadEnv({ ...REQUIRED, AGENT_STOP_AFTER_FINAL_SEND: "" }).AGENT_STOP_AFTER_FINAL_SEND).toBe("on");
+  });
+
+  it("'off' volta ao laço de sempre", () => {
+    expect(loadEnv({ ...REQUIRED, AGENT_STOP_AFTER_FINAL_SEND: "off" }).AGENT_STOP_AFTER_FINAL_SEND).toBe("off");
   });
 
   it("aceita 'observe' e 'on', e recusa o resto nomeando a variável", () => {

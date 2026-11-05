@@ -326,7 +326,7 @@ const schema = z.object({
   // e NUNCA `z.enum` (motivo mais abaixo, em AGENT_DISPATCH_CONSUMER): quem valida
   // a grafia é o boot do worker, em `lib/agent-engine/env.ts`.
   OPENAI_REASONING_EFFORT: z.string().optional().default(""),
-  // Cache de prompt nos Claude pela OpenRouter (`on` liga; vazio = desligado).
+  // Cache de prompt nos Claude pela OpenRouter (ligado por padrão; `off` desliga).
   // `z.string()` pelo mesmo motivo do knob acima: quem valida a grafia é o boot
   // do worker, e quem lê em runtime é `createDefaultRegistry`, via process.env.
   OPENROUTER_PROMPT_CACHE: z.string().optional().default(""),
