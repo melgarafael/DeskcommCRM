@@ -131,20 +131,26 @@ async function criar() {
  *
  * Respondida com listas vazias, a tela não tem falha de rede nenhuma para
  * avisar, e o seletor de modelo abre como campo livre (lista vazia).
- * URL fora destas três reprova alto: consulta nova na tela entra aqui de
- * propósito, não por acaso.
+ * URL fora destas três reprova alto no afterEach: consulta nova na tela entra
+ * aqui de propósito, não por acaso. Ela é anotada e respondida com 404 em vez
+ * de lançar — um throw no fetch vira "erro de rede" no apiClient, que repete
+ * com espera sorteada e engole a mensagem, trazendo de volta a corrida.
  */
 const RESPOSTAS: Record<string, unknown> = {
   "/api/v1/ai/providers/anthropic/models": { data: { models: [] } },
   "/api/v1/mcp/tools": { data: { tools: [] } },
   "/api/v1/ai/followup-flows": { data: [] },
 };
+const naoPrevistas: string[] = [];
 
 beforeEach(() => {
   vi.clearAllMocks();
   acoes.criar.mockResolvedValue({ ok: false, error: "agent_name_taken" });
   vi.stubGlobal("fetch", async (url: string) => {
-    if (!(url in RESPOSTAS)) throw new Error(`consulta não prevista no teste: ${url}`);
+    if (!(url in RESPOSTAS)) {
+      naoPrevistas.push(url);
+      return new Response("{}", { status: 404, headers: { "content-type": "application/json" } });
+    }
     return new Response(JSON.stringify(RESPOSTAS[url]), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -153,7 +159,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  const fora = naoPrevistas.splice(0);
   vi.unstubAllGlobals();
+  expect(fora, "consulta não prevista no teste").toEqual([]);
 });
 
 describe("criar agente com nome que já existe na organização", () => {
