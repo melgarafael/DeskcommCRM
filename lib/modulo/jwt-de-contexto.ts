@@ -21,8 +21,8 @@ import { createPrivateKey, createPublicKey, randomUUID, type KeyObject } from "n
 
 import { jwtVerify, SignJWT } from "jose";
 
-export const JWT_ISSUER = "deskcomm-host";
-export const JWT_AUDIENCE = "deskcomm-module";
+export const JWT_ISSUER = "crm-host";
+export const JWT_AUDIENCE = "crm-module";
 export const JWT_VALIDADE_SEGUNDOS = 300;
 export const CABECALHO_DE_CONTEXTO = "x-module-context";
 
