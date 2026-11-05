@@ -23,7 +23,7 @@ const commandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("block"), input: bloquearServicoSchema }),
   z.object({ action: z.literal("block_preview"), input: bloquearServicoSchema }),
   z.object({ action: z.literal("unblock"), input: z.object({ archive_id: z.uuid(), expected_revision: z.number().int().positive() }) }),
-  z.object({ action: z.literal("resource"), input: z.object({ id: z.uuid().optional(), expected_revision: z.number().int().positive().optional(), name: z.string().trim().min(2).max(100), capacity: z.number().int().min(1).max(100000), is_active: z.boolean().optional() }) }),
+  z.object({ action: z.literal("resource"), input: z.object({ id: z.uuid().optional(), expected_revision: z.number().int().positive().optional(), name: z.string().trim().min(2).max(100), capacity: z.number().int().min(1).max(100000), is_active: z.boolean().optional(), kind: z.enum(["resource", "space"]).optional(), sector: z.string().trim().min(1).max(40).optional() }) }),
   z.object({ action: z.literal("refresh"), event_type_id: z.uuid() }),
 ]);
 
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const db = await createClient();
   const org = auth.org.orgId;
   try {
-    const { data: resources, error } = await db.from("calendar_resources").select("id,name,capacity,is_active,revision").eq("organization_id", org).order("name");
+    const { data: resources, error } = await db.from("calendar_resources").select("id,name,capacity,is_active,revision,kind,sector").eq("organization_id", org).order("name");
     if (error) throw error;
     const { data: blocks, error: blockError } = await db.from("calendar_service_blocks")
       .select("id,scope_kind,event_type_id,owner_user_id,resource_id,starts_at,ends_at,reason,revision,publication_appointment_id")
