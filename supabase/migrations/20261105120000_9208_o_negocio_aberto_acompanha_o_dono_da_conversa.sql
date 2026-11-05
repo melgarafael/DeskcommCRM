@@ -301,12 +301,16 @@ begin
        and l.status = 'open';
 
     if v_negocios = 1 then
+      -- Sem `for update`: o UPDATE abaixo repete `status = 'open'`, então uma
+      -- corrida que feche o card entre a leitura e a escrita não é vencida por
+      -- engano. Travar a linha aqui só acrescentaria, no caminho mais quente da
+      -- atribuição, um lock de crm_leads DEPOIS do lock de conversations — a
+      -- ordem inversa da automação que cria card e mexe na conversa.
       select * into v_negocio
         from public.crm_leads l
        where l.organization_id = p_organization_id
          and l.contact_id = v_conv.contact_id
-         and l.status = 'open'
-       for update;
+         and l.status = 'open';
 
       if found
          and v_negocio.owner_user_id is distinct from p_to_user_id
