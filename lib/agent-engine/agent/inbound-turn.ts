@@ -6277,6 +6277,9 @@ async function executarTurnoDoAgente(
     // A correção também pode gastar o teto dela (PASSOS_DA_CORRECAO) só em consultas: na
     // prévia isso é a mesma falha do teto da primeira chamada, não decisão.
     let tetoNaCorrecao = false;
+    // A correção chamou send_message/send_template e, mesmo assim, nada saiu (veto de novo,
+    // argumento recusado): o modelo QUIS responder — isso é falha, não silêncio escolhido.
+    let correcaoTentouEnviar = false;
     // #3281 — só o primeiro silêncio sem oferta nem impedimento recebe o
     // pedido humano. Ele ocupa a MESMA recuperação abaixo: nunca há terceira
     // chamada depois de uma correção que também decidiu ficar em silêncio.
@@ -6325,6 +6328,7 @@ async function executarTurnoDoAgente(
         role: 'user',
         content: pedidoHumano ? INSTRUCAO_DO_PEDIDO_HUMANO : CORRECAO_DO_TURNO_MUDO,
       };
+      const tentativasAntesDaCorrecao = tentativasDeEnvio;
       const correcao = await runModelCall(
         pool,
         deps.llmCfg,
@@ -6361,6 +6365,7 @@ async function executarTurnoDoAgente(
         maxSteps: Math.min(maxSteps, PASSOS_DA_CORRECAO),
         finishReason: correcao.result.finishReason,
       });
+      correcaoTentouEnviar = tentativasDeEnvio > tentativasAntesDaCorrecao;
       mensagensDoTurno = [...mensagensDoTurno, pedidoDeCorrecao, ...correcao.result.responseMessages];
       if (runError !== null) throw runError;
       if (outcomes.some((o) => o.kind === 'failed')) {
@@ -6371,15 +6376,21 @@ async function executarTurnoDoAgente(
 
     // FALHA TERMINAL VISÍVEL — só com sinal de FALHA, nunca por silêncio
     // deliberado (#2938): o CORRECAO_DO_TURNO_MUDO autoriza o modelo a responder
-    // "nada a dizer", então silêncio que persiste com a correção NÃO é defeito.
-    // Duas causas, um único bloco (um caso humano por turno, nunca duplicado):
+    // "nada a dizer", então a correção que encerra SEM CHAMAR NADA não é defeito.
+    // As causas, um único bloco (um caso humano por turno, nunca duplicado):
     //  - saída TRUNCADA (finish_reason=length): o modelo cortou no teto de tokens;
     //  - a correção limitada do turno mudo (UMA, `correcaoDoTurnoMudoPedida`
-    //    acima) TAMBÉM terminou truncada (`correcaoTruncou`) — sinal de falha.
+    //    acima) TAMBÉM terminou truncada (`correcaoTruncou`);
+    //  - a correção TENTOU enviar e nada saiu (`correcaoTentouEnviar`) — o modelo
+    //    quis responder e a cadeia barrou de novo;
+    //  - a correção gastou o teto de passos dela sem responder (`tetoNaCorrecao`),
+    //    o mesmo sinal que a prévia já trata como falha.
     // As condições isentam toda razão LEGÍTIMA de silêncio — turno descartado
     // (obsoleto), passagem para a equipe (handoff do cliente), teto de pacing, e
-    // `tentativasDeEnvio === 0` (o modelo nunca chegou a chamar `send_message`;
-    // se chamou e levou veto, o veto é a razão e já ensinou o modelo). Os flags
+    // o veto IRREVOGÁVEL (opt-out, contato interno, LGPD: o silêncio é a decisão).
+    // Veto de ENSINO não isenta: ele não entregou nada ao cliente, e a regra antiga
+    // (`tentativasDeEnvio === 0`, "o veto já ensinou") é a que `turno-mudo.ts`
+    // registra como derrubada em 2026-10-25. Os flags
     // são re-avaliados DEPOIS da correção: se nela nasceu handoff/teto/descarte,
     // aquilo é a razão e não há caso. O caso humano abre só com `casesEnabled`
     // ligado (mesma régua dos fail-safes clínico e de promessa; `openCase`
@@ -6393,20 +6404,26 @@ async function executarTurnoDoAgente(
       eTurnoDeResposta(liveJob()) &&
       outcomes.length === 0 &&
       seq === 0 &&
-      tentativasDeEnvio === 0 &&
+      !vetoIrrevogavel &&
       !turnoDescartado &&
       !passouParaAEquipe &&
       !capDeEnvioAtingido();
-    if (silencioSemRazaoLegitima && (saidaTruncada || correcaoTruncou)) {
+    if (silencioSemRazaoLegitima && (saidaTruncada || correcaoTruncou || correcaoTentouEnviar || tetoNaCorrecao)) {
       const desfechoTerminal = saidaTruncada
         ? 'output_truncated_recovered_failed'
-        : 'correction_truncated_failed';
+        : correcaoTruncou
+          ? 'correction_truncated_failed'
+          : correcaoTentouEnviar
+            ? 'correction_send_blocked_failed'
+            : 'correction_step_cap_failed';
       runLog.error(`${desfechoTerminal} — sem nenhuma mensagem entregue`, {
         job_id: job?.id ?? null,
         kind: liveJob().kind,
         finish_reason: turn.result.finishReason,
         correcao_limitada_rodou: correcaoDoTurnoMudoPedida,
         correcao_truncou: correcaoTruncou,
+        correcao_tentou_enviar: correcaoTentouEnviar,
+        teto_na_correcao: tetoNaCorrecao,
       });
       // Cases vêm desligados por padrão (`ai_agent_versions.cases_enabled`) — a
       // mesma régua dos fail-safes clínico e de promessa de caso. Com a feature
@@ -6428,10 +6445,19 @@ async function executarTurnoDoAgente(
               summary:
                 'O cliente ficou sem resposta neste turno: a IA não entregou mensagem nenhuma e a ' +
                 'correção automática não recuperou. Atendente precisa retomar a conversa e responder o cliente.',
-              blocker: saidaTruncada
-                ? 'A resposta da IA veio cortada no limite de tamanho, e mensagem cortada não é enviada ao cliente.'
-                : 'O turno terminou sem mensagem para o cliente e a correção automática da IA também veio ' +
+              blocker: {
+                output_truncated_recovered_failed:
+                  'A resposta da IA veio cortada no limite de tamanho, e mensagem cortada não é enviada ao cliente.',
+                correction_truncated_failed:
+                  'O turno terminou sem mensagem para o cliente e a correção automática da IA também veio ' +
                   'cortada no limite de tamanho.',
+                correction_send_blocked_failed:
+                  'A IA tentou responder, as regras de segurança barraram a mensagem, e a resposta da ' +
+                  'correção automática também foi barrada.',
+                correction_step_cap_failed:
+                  'O turno terminou sem mensagem para o cliente e a correção automática da IA gastou todas ' +
+                  'as etapas em consultas, sem chegar a responder.',
+              }[desfechoTerminal],
               kind: 'problema',
               source: 'guardrail_autofallback',
               contextSnapshot: buildCaseContextSnapshot(),
