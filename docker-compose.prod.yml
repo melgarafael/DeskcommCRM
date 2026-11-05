@@ -122,12 +122,7 @@ services:
     # VPS maior, suba-o lá — nunca aqui: este arquivo é do clone, e uma edição à
     # mão faz o `git checkout` do update.sh recusar a versão nova que também o
     # mudou.
-    #
-    # Padrão 2048m em vez de 512m (fork da Astra, 19/10/2026): com 512m o Node
-    # deriva um heap de ~259 MB e o worker caiu 14 vezes em 3 h por `JavaScript
-    # heap out of memory` na v1.85 (transcrição de áudio e turnos do agente),
-    # perdendo o turno em andamento. Com 2048m o heap fica em ~1 GB.
-    mem_limit: ${WORKER_MEM_LIMIT:-2048m}
+    mem_limit: ${WORKER_MEM_LIMIT:-512m}
     # Imagem publicada — e não mais `build:` sozinho. O motivo é o modo de falha
     # que isso escondia: serviço build-only é PULADO por `docker compose pull`
     # ("Skipped - No image to be pulled") e imune a `up -d` sem `--build`. Ele era
