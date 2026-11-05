@@ -12,318 +12,106 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ### Adicionado
 
-- **O menu mostra quantas tarefas em aberto são suas** O item Tarefas do menu lateral passou a trazer um número: quantas tarefas em
-  aberto são do usuário logado. Contam as que ainda pedem ação (pendente e em
-  andamento) e cujo responsável é ele. Concluídas e canceladas não entram, e a
-  tarefa de um colega também não — gerente e administrador continuam vendo só as
-  próprias no menu; a visão da equipe segue na tela de Tarefas, sem mudança.
+- **O menu mostra quantas tarefas em aberto são suas** O item Tarefas do menu lateral traz quantas tarefas pendentes ou em andamento são do usuário logado. Concluídas, canceladas e as de colegas não entram: gerente e administrador também veem só as próprias no menu, e a visão da equipe segue na tela de Tarefas. O número se atualiza a cada minuto, sem recarregar a página, para a tarefa que uma automação ou um follow-up acabou de criar. Sem nada em aberto, nada aparece; com o menu recolhido, vira um ponto, como em Casos e Inbox. Crédito: @webtecnica (#3948).
 
-  O número se atualiza sozinho a cada minuto, para a tarefa que uma automação ou um
-  follow-up acabou de criar aparecer sem precisar recarregar a página. Sem nada em
-  aberto, nada é desenhado ao lado do item. Com o menu recolhido, o contador vira
-  um ponto, como os de Casos e Inbox.
+- **Pausa entre uma resposta da IA e a próxima** Na tela de cada agente, em "Limites do atendimento", o campo "Pausa entre uma resposta e a próxima (segundos)" define quanto tempo a IA espera antes de responder de novo à mesma conversa, de 1 a 600 segundos. O que o cliente escrever nesse meio-tempo é respondido junto, numa resposta só. Vazio ou 0 mantém o comportamento de sempre. A coluna nova é aplicada pelo `update.sh`, sem edição manual. Crédito: @vinicoretecnologia-svg (#3940).
 
-- **Pausa entre uma resposta da IA e a próxima** Na tela de cada agente, em "Limites do atendimento", o campo "Pausa entre uma resposta e a próxima (segundos)" define quanto tempo a IA espera antes de responder de novo à mesma conversa, de 1 a 600 segundos. O que o cliente escrever nesse meio-tempo é respondido junto, numa resposta só. Vazio ou 0 mantém o comportamento de sempre: nada muda para quem não preencher.
+- **Cada empresa escolhe a partir de quantos tokens a Memória da IA avisa que pesa** A tela Memória da IA mostra, ao lado do peso em tokens, o limite do aviso e a recomendação: 1.500 tokens, porque a memória vai inteira em toda resposta de todo agente. Um administrador da empresa troca o número ali, entre 100 e 50.000; os demais veem o limite sem editar, e a troca fica na auditoria. Quem não escolher continua com 1.500. O aviso só informa: não bloqueia nem corta a memória.
 
-  A atualização acrescenta a coluna `reply_min_interval_ms` em `ai_agent_versions`, aplicada pelo `update.sh` sem edição manual.
+- **Cada chamada de IA passa a registrar quantos passos teve e de que é feito o pedido** Você não precisa fazer nada. Cada chamada de IA do atendimento grava também quantos passos teve, os tokens de entrada do primeiro passo e o tamanho, em caracteres, do texto do sistema, das ferramentas e das mensagens, mais quantas partes de mídia foram junto. Só tamanhos são guardados, nunca o conteúdo; um código (hash) do trecho fixo mostra se o cache de prompt está sendo reaproveitado. O registro do turno diz quantas mensagens do histórico entraram. Chamadas anteriores à atualização ficam com esses campos vazios, e uma falha na medição não afeta a resposta ao cliente.
 
-- **Cada empresa escolhe a partir de quantos tokens a Memória da IA avisa que pesa** A tela Memória da IA mostra, ao lado do peso em tokens, o limite do aviso e a recomendação: 1.500 tokens, porque a memória vai inteira em toda resposta de todo agente. Um administrador da empresa troca o número ali mesmo, entre 100 e 50.000; quem não é administrador vê o limite em vigor, sem editar. A troca fica registrada na auditoria.
-
-  Toda empresa que não escolher continua com os 1.500 de antes, então nada muda para quem não mexer. O aviso continua só informando: o limite não bloqueia nem corta a memória.
-
-- **Cada chamada de IA passa a registrar quantos passos teve e de que é feito o pedido** Você não precisa fazer nada. A partir desta versão, cada chamada de IA do atendimento grava, além dos totais de tokens e do custo, quantos passos ela teve, quantos tokens de entrada o primeiro passo usou (como o provedor informou) e quanto pesam o texto do sistema, as ferramentas e as mensagens, em caracteres, mais quantas partes de mídia foram junto. Só tamanhos são guardados, nunca o conteúdo: o pedido é identificado por um código (hash) do trecho fixo, que serve para saber se o cache de prompt está sendo reaproveitado. O registro de cada turno do agente passa também a dizer quantas mensagens do histórico entraram na resposta.
-
-  Chamadas feitas antes da atualização ficam com esses campos vazios, e uma falha na medição deixa o campo vazio sem afetar a resposta ao cliente.
-
-  Para ver de que é feito o pedido de um agente, rode na VPS (só leitura; imprime nomes e números, nunca o texto do prompt):
+  Para ver de que é feito o pedido de um agente, rode na VPS (só leitura; imprime nomes e números, nunca o texto do prompt; sobe um contêiner à parte e o apaga ao terminar, sem dividir a memória com o worker):
 
   ```bash
   docker compose -f docker-compose.prod.yml run --rm --no-deps worker \
     node --import tsx scripts/ops-count-prefix.ts --org <id-da-organização> --agent <id-do-agente> --dias 7
   ```
 
-  O comando sobe um contêiner à parte e o apaga ao terminar, sem dividir a memória com o worker que está atendendo.
+- **O agente encerra o atendimento logo após a última mensagem, sem a chamada extra ao modelo** Depois de responder, o agente chamava o modelo mais uma vez só para encerrar o turno, uma chamada que não produz nada e, no turno medido, pesou perto de 38% dos tokens do turno. Com `AGENT_STOP_AFTER_FINAL_SEND`, ele pula essa chamada quando o modelo declara que a mensagem enviada é a última, nunca se ela anuncia algo ainda não feito (passar para a equipe, agendar retorno, verificar a agenda). O padrão é `on`, avaliado nos modelos medidos sem perda nas situações de risco; `off` volta ao laço de sempre; `observe` só registra no traço do turno se o modelo marcaria a mensagem como final, para avaliar outro modelo antes de ligar. Vale só para resposta a mensagem do cliente: follow-up, resposta de caso, rascunho assistido e "Testar" não mudam. Para mudar o valor, edite o `.env` e reinicie o worker.
 
-- **O agente encerra o atendimento logo após a última mensagem, sem a chamada extra ao modelo** Depois de responder ao cliente, o agente chama o modelo mais uma vez só para encerrar o turno. Essa chamada não produz nada e, no turno medido, gasta cerca de metade dos tokens de entrada da chamada principal do agente (perto de 38% dos tokens do turno inteiro). A variável `AGENT_STOP_AFTER_FINAL_SEND` permite pular essa chamada quando o próprio modelo declara que a mensagem enviada é a última. O agente não pula a chamada se a mensagem anuncia algo que ainda não foi feito, como passar para a equipe, agendar um retorno ou verificar a agenda.
+- **A prospecção pode buscar empresas do Google Maps pela API da Scavio** Quem tem conta na Scavio pode apontar a busca da prospecção para ela, sem depender da Apify: a organização escolhe `scavio` em `organizations.settings.prospecting.provider` (ainda por SQL, sem tela) e salva a chave no mesmo campo de chave da tela de prospecção. A chave é conferida sem gastar crédito e fica cifrada como a da Apify. A busca traz até 20 empresas por página, que entram na campanha pelo caminho de sempre, com avaliação de site e prévia. Passo a passo em `docs/features/prospeccao-nativa.md`. Nada muda para quem não escolheu: a Apify segue como padrão, sem variável nova na VPS. Crédito: @scavio-ai (#3960).
 
-  O padrão é `on`: a parada foi avaliada pelo caminho de produção nos modelos medidos, com zero perda nas situações de risco (`docs/runbooks/parada-apos-envio.md`). `off` volta ao laço de sempre. `observe` só registra no traço do turno se o modelo marcaria a mensagem como final, sem mudar o laço, e serve para avaliar outro modelo antes de ligar. A opção vale só para resposta a mensagem do cliente. Follow-up, resposta de caso, rascunho assistido e o "Testar" não mudam. Para mudar o valor, edite o `.env` e reinicie o worker.
+- **Cada agente pode escolher as próprias skills, e a Memória da IA mostra quanto pesa no prompt** Até aqui toda skill da organização, e toda skill de plataforma mesmo sem instalar, entrava em todo agente. A tela do agente ganhou «Quais skills ele usa»; o padrão, que todo agente existente tem, é «Usar todas as skills da organização», então nada muda para quem não mexer. Ao desmarcar, a lista começa toda marcada. A skill que um roteiro puxa vale mesmo fora da lista, a que deixou de existir aparece sinalizada, e o histórico de versões mostra a troca. Ao instalar uma skill, o aviso diz quais agentes têm lista própria e não a recebem. A coluna nova das versões de agente fica vazia nas existentes, e vazia quer dizer «todas».
 
-- **A prospecção pode buscar empresas do Google Maps pela API da Scavio** Quem tem conta na Scavio agora pode apontar a busca da prospecção para ela, sem depender da Apify. São dois passos: a organização escolhe `scavio` em `organizations.settings.prospecting.provider` (ainda por SQL, sem tela) e salva a chave da Scavio no mesmo campo de chave da tela de prospecção. A chave é conferida sem gastar crédito e fica cifrada como a da Apify. A busca devolve até 20 empresas por página e as empresas entram na campanha pelo mesmo caminho de sempre, com avaliação de site e prévia. O passo a passo está em `docs/features/prospeccao-nativa.md`.
+  A Memória da IA mostra também o peso aproximado em tokens, pela mesma conta do agente (aprendizado arquivado ou vencido não entra), com um aviso acima de 1.500 tokens ou do limite da empresa. Publicar continua igual.
 
-  Nada muda para quem não escolheu: a Apify continua sendo o provedor padrão, e nenhuma variável nova é necessária na VPS.
+  No teste do agente e no rascunho do modo assistido, só um contato com notas muito longas (mais de uns 14 mil caracteres somados) passa a ver o índice das notas, como no atendimento automático. E a variável experimental `LEAD_CONTEXT_HISTORY_FORMAT=linhas` manda o histórico num formato mais curto na resposta ao cliente, no teste e no rascunho assistido; follow-up e caso interno seguem como sempre. Vem desligada (`json`, o formato de sempre).
 
-- **Cada agente pode escolher as próprias skills, e a Memória da IA mostra quanto pesa no prompt** Até aqui toda skill da organização, e toda skill de plataforma mesmo sem instalar, entrava em todo agente. A tela do agente ganhou a seção «Quais skills ele usa». O padrão continua «Usar todas as skills da organização», e é o que todo agente que já existe tem, então nada muda para quem não mexer. Ao desmarcar, a lista começa com todas marcadas, e você desmarca as que não servem àquele agente. A skill que um roteiro de atendimento puxa continua valendo mesmo fora da lista. Uma skill marcada que deixou de existir aparece sinalizada, para você desmarcar. O histórico de versões mostra a troca. Ao instalar uma skill, o aviso diz quais agentes têm lista própria e por isso não a recebem.
+- **A tela de Tarefas ganha o filtro por funil** Ao lado de situação e responsável, o seletor "Funil" mostra só as tarefas dos negócios daquele funil, na lista e no calendário; "Todos os funis" é como a tela abre. O filtro roda na consulta (`GET /api/v1/tasks?pipeline_id=`), vale com mais de 500 tarefas e combina com o de responsável. Tarefa sem negócio só aparece em "Todos os funis". O seletor só aparece com dois ou mais funis. Crédito: @flaviosiq (#3963).
 
-  A tela Memória da IA passou a mostrar, ao lado dos caracteres, o peso aproximado em tokens. A conta é a mesma que o agente usa: aprendizado arquivado ou vencido não entra. Acima de 1.500 tokens (o recomendado; cada empresa pode escolher outro limite) aparece um aviso de que o texto vai inteiro em toda resposta de todo agente. O aviso só informa: publicar continua igual.
+- **Cada agente escolhe se vê as fotos que o cliente envia, e a foto só passa pela visão da IA quando alguém vai ler a descrição** Toda foto recebida passava pela visão da IA, uma chamada paga, mesmo em empresa onde ninguém lia a descrição.
 
-  A atualização acrescenta uma coluna às versões de agente. Ela fica vazia em toda versão existente, e vazia quer dizer «todas as skills».
+  A tela do agente ganhou «Ver as fotos que o cliente envia», ligada em todo agente existente, então nada muda para quem não mexer. Desligada, o agente sabe que chegou uma foto, mas não o que ela mostra, e pode pedir ao cliente que conte; a descrição não entra nas respostas dele nem quando outro agente a pediu, inclusive quando a equipe pergunta sobre um caso dele. As etapas internas do follow-up ainda leem a descrição quando outro leitor a pediu. Fotos enviadas pela empresa e PDFs não mudam. O histórico de versões mostra a troca.
 
-  No teste do agente e no rascunho do modo assistido, as notas do contato seguem inteiras no prompt como antes. Só um contato com notas muito longas (mais de cerca de 14 mil caracteres somados) passa a ver o índice das notas, como no atendimento automático.
+  A foto só é descrita quando a empresa tem quem a leia: agente com a opção ligada, token de API, conexão de anúncio, modo externo, venda pelo canal, inscrição de follow-up sem agente ou caso aberto cujo agente saiu do ar. Sem nenhum, ela é guardada sem descrição, e o PDF da conversa mostra `[image]` para foto sem legenda. Quando aparece um leitor, o agente que vai responder espera a descrição antes do primeiro turno (também quando um roteador entrega a conversa a um agente que vê), e uma varredura a cada 5 minutos descreve as fotos dos últimos 7 dias.
 
-  O histórico da conversa também pode ir ao agente em linhas, um formato mais curto, pela variável `LEAD_CONTEXT_HISTORY_FORMAT=linhas`. Ela vale para a resposta a uma mensagem do cliente, o teste do agente e o rascunho do modo assistido; o follow-up e a resposta a um caso interno seguem no formato de sempre. É experimental e vem desligada (`json`, o formato de sempre).
-
-- **A tela de Tarefas ganha o filtro por funil** A tela de Tarefas ganha, ao lado de situação e responsável, o seletor "Funil": "Todos os funis" (como a tela abre) ou um funil da organização, e só as tarefas dos negócios daquele funil aparecem, na lista e no calendário. O filtro é aplicado na consulta (`GET /api/v1/tasks?pipeline_id=`), então vale mesmo com mais de 500 tarefas, e combina com o de responsável. A tarefa herda o funil do negócio a que está presa: tarefa solta, sem negócio, só aparece com "Todos os funis". O seletor só aparece quando a organização tem dois ou mais funis. Crédito: @flaviosiq.
-
-- **Cada agente escolhe se vê as fotos que o cliente envia, e a foto só passa pela visão da IA quando alguém vai ler a descrição** Toda foto recebida passava pela visão da IA, que escreve uma descrição para os agentes e as integrações. Cada descrição é uma chamada paga a um modelo com visão, e numa empresa sem nenhuma IA nem integração ninguém a lia: o atendente vê a própria foto na conversa.
-
-  A tela do agente ganhou a opção «Ver as fotos que o cliente envia». Ela vem ligada, e é o que todo agente que já existe tem, então nada muda para quem não mexer. Desligada, o agente sabe que chegou uma foto do cliente, mas não vê o que ela mostra, e pode pedir ao cliente que conte; nas respostas que ele escreve, a descrição não entra nem quando outro agente da empresa a pediu, e isso vale também quando a equipe pergunta sobre um caso dele. As etapas internas do follow-up (classificar o contato, escolher a hora, conferir as respostas do roteiro) ainda leem a descrição quando outro leitor a pediu. As fotos que a empresa envia continuam aparecendo para ele como antes. O PDF não muda: o texto dele continua sendo tirado no próprio servidor, sem chamada a modelo. O histórico de versões mostra a troca.
-
-  A foto agora só é descrita quando a empresa tem quem queira ler: um agente com a opção ligada, um token de API, uma conexão de anúncio, o modo externo, a venda pelo canal, uma inscrição de follow-up sem agente ou um caso aberto cujo agente saiu do ar (a pergunta da equipe sobre o caso é respondida pela IA padrão da empresa, que vê as fotos). Sem nenhum deles, a foto é guardada sem descrição. Quando aparece quem a leia, ela é descrita: o agente que vai responder a conversa espera a descrição antes do primeiro turno (também quando um roteador entrega a conversa a um agente que vê, mesmo que o agente do número esteja com a opção desligada), e uma varredura de 5 em 5 minutos descreve as fotos dos últimos 7 dias para quem lê fora da conversa. Nessas empresas, o PDF da conversa mostra `[image]` para foto sem legenda.
-
-  Isso vale pela variável `MEDIA_VISION_WITHOUT_READER`, que vem em `defer`. Para voltar a descrever toda foto, como antes, use `always`; com ela, a varredura também descreve as fotos que ficaram para trás, de qualquer data.
-
-  A atualização acrescenta uma coluna às versões de agente, ligada em toda versão existente.
+  Isso vale pela variável `MEDIA_VISION_WITHOUT_READER`, que vem em `defer`. Para voltar a descrever toda foto, use `always`; aí a varredura também descreve as fotos que ficaram para trás, de qualquer data. A coluna nova das versões de agente nasce ligada em toda versão existente.
 
 ### Alterado
 
-- **O cron das filas vazias para de consultar o banco — instalação ociosa gasta menos cota** Numa instalação parada, nove rotas de cron batiam no PostgREST a cada 5 minutos
-  só para descobrir que a fila estava vazia: soneca vencida, mensagem presa, fila
-  de redação de objeto, devolução de handoff, devolução ao rodízio, saúde de
-  canal, revogação de acesso MCP vencido, lembrete de tarefa e lembrete de
-  agenda. Juntas eram 15 consultas por batida — 2,4 requisições por minuto
-  (144/h) que consumiam a cota do banco sem ninguém usando o produto, e no
-  plano grátis do Supabase isso é o caminho para a instalação cair em `PGRST002`.
+- **O cron das filas vazias para de consultar o banco — instalação ociosa gasta menos cota** Numa instalação parada, nove rotas de cron (soneca, mensagem presa, redação, devolução de handoff e de rodízio, saúde de canal, revogação de acesso MCP, lembretes de tarefa e de agenda) consultavam o banco a cada 5 minutos só para achar a fila vazia: 144 requisições por hora sem ninguém usando o produto, e no plano grátis do Supabase esse é o caminho para cair em `PGRST002`. Agora elas consultam antes um retrato compartilhado, que não gasta a cota do PostgREST, e saem na hora quando não há trabalho. Nada muda para quem usa o recurso: com trabalho, a rota roda na batida seguinte, e se o retrato falhar ela roda igual. Medido com o banco vazio: as rotas de fila caem de 3,0 para 0,6 req/min, e o crontab inteiro, fora o `event_log`, de 7,7 para 5,3. Crédito: @webtecnica (#3955, issue #3731).
 
-  Agora cada uma dessas rotas consulta o retrato em memória do piso ocioso
-  (`lib/cron/piso-ocioso.ts`) antes de qualquer outra coisa e sai na hora quando a
-  fila está vazia. O retrato é uma consulta só, compartilhada pelas rotas, e vai
-  pelo pool do Postgres — não gasta requisição do PostgREST, que é a cota que
-  estoura. Nada muda para quem usa o recurso: a rodada roda igual, e o recurso
-  que passa a ter trabalho volta na batida seguinte. Se a leitura do retrato
-  falhar, a rota roda — o portão economiza cota, não decide se um recurso
-  funciona.
+- **Respostas rápidas do Inbox em uma linha, com os grupos em popup** A barra de respostas rápidas quebrava linha, e cada grupo despejava todas as respostas na mesma área: com 3 grupos de 4 respostas, ela ocupava 176 px de altura no celular. Agora é uma linha só, com rolagem lateral, e cada grupo vira um botão que abre as respostas num painel flutuante; a barra fica com 26 px em qualquer largura, e o espaço volta para a conversa. Resposta sem grupo segue a um clique; grupo vazio não vira botão. Sem grupos, os botões são os mesmos, na mesma ordem. Crédito: @webtecnica (#3958, issue #3875 de @tec7alex).
 
-  Medido no crontab inteiro, com o banco vazio e as mesmas rotas: o piso das
-  rotas de fila cai de 3,0 para 0,6 req/min (as 0,6 são da poda de log de webhook,
-  que fica para outra fatia). A soma do crontab, fora o `event_log`, cai de 7,7
-  para 5,3 req/min.
+- **O custo das chamadas pela OpenRouter passa a ser o que a OpenRouter cobrou, e o cache de prompt dos Claude fica ligado** Nas chamadas pela OpenRouter, a tela de Uso e o teto de gasto contam o valor que a própria OpenRouter cobrou em cada resposta, e não mais a estimativa pela nossa tabela, que não reconhecia alguns nomes de modelo Claude e cobraria toda gravação de cache pela tarifa mais cara. Sem o valor informado, ou com gateway próprio, a conta segue pela tabela.
 
-  Refs #3731.
+  O cache de prompt nos modelos Claude pela OpenRouter oficial fica ligado por padrão: a parte fixa da conversa do agente fica guardada e cada resposta custa menos. Os demais provedores e modelos não mudam. Para desligar, ponha `OPENROUTER_PROMPT_CACHE=off` no `.env` e reinicie o worker — faça isso se a OpenRouter recusar pedidos com erro 400 citando `cache_control`. Nada a fazer para atualizar.
 
-- **Respostas rápidas do Inbox em uma linha, com os grupos em popup** A barra de respostas rápidas do Inbox empilhava: ela quebrava linha, então cada
-  resposta a mais virava mais uma linha acima do campo de digitação — e cada grupo
-  despejava TODAS as suas respostas na mesma área, com um rótulo em cima. Numa
-  agência com dezenas de respostas e três grupos, a seção comia a altura da
-  conversa. Medido no Chromium desta VPS, com 3 grupos de 4 respostas: 176px de
-  altura em 375px de tela, 86px em 768px e 56px em 1280px.
+- **O fechamento do turno recusado duas vezes no modelo escolhido para o ponto é refeito no modelo do agente, sem repetir o turno** Quem escolheu em IA › Provedores um modelo próprio para o fechamento do turno (o resumo gravado depois de responder) podia ver o turno inteiro se repetir, inclusive a chamada principal, que é a cara, quando esse modelo devolvia o resultado fora do formato duas vezes. Agora uma terceira chamada, só do fechamento, vai ao modelo do agente; se ela também falhar, o turno se repete como antes. Sem modelo próprio para esse ponto, nada muda. Em IA › Execuções, essa chamada aparece com o porquê, e integrações que leem `origem_da_escolha` em `GET /api/v1/ai/runs` passam a ver o valor `reserva_de_formato`.
 
-  Agora a barra é uma linha só, com rolagem lateral quando não couber, e o grupo
-  virou um botão com o nome dele: as respostas do grupo abrem num painel flutuante,
-  o mesmo popup que o compositor já usa. A mesma medição dá 26px nas três larguras
-  — uma linha —, e o espaço recuperado é da conversa. Resposta sem grupo continua a
-  um clique, sem popup no caminho; grupo vazio não vira botão.
+- **Busca e retorno do atendimento passam pelas ferramentas internas do agente, e o esquema das ferramentas ficou mais enxuto** O agente com a busca no acervo e o agendamento de retorno ligados como capacidades recebia duas ferramentas para cada coisa: a interna (`search_knowledge`, `schedule_followup`) e a do catálogo (`crm_search_knowledge`, `crm_schedule_followup`). Agora, quando a interna está no turno, a do catálogo fica de fora; sem material de consulta publicado, ou com o retorno automático desligado, a do catálogo continua. No Operador e pelo MCP nada muda. Prompt ou skill que chama a do catálogo pelo nome continua funcionando: a chamada vai direto para a interna, e não há nada a editar.
 
-  Quem nunca criou grupo não vê diferença de conteúdo na barra: os mesmos botões,
-  na mesma ordem, um pouco mais largos porque não quebram mais linha.
+  A busca interna cita as fontes, registra a consulta e usa o limiar e a quantidade de trechos do agente; o agente não escolhe mais quantos trechos quer, nem recebe a nota do trecho mais próximo quando nenhum passa do limiar (ela segue registrada na consulta). O retorno interno ganhou a escolha do negócio em que é anotado, entre os principais do cliente nos funis do agente, e a orientação que separa retorno de compromisso com hora marcada. O painel de uso das capacidades explica que esse uso não entra na contagem e não recomenda mais desligá-las por "nunca usada".
 
-  Contribuição de @webtecnica (#3875).
-
-- **O custo das chamadas pela OpenRouter passa a ser o que a OpenRouter cobrou, e o cache de prompt dos Claude fica ligado** Nas chamadas de IA pela OpenRouter, a tela de Uso e o teto de gasto passam a contar o valor que a própria OpenRouter cobrou em cada resposta, e não mais uma estimativa pela nossa tabela de preços. A tabela não reconhecia alguns nomes de modelo Claude da OpenRouter. Com o cache ligado, ela também cobraria toda gravação de cache pela tarifa mais cara. Quando a OpenRouter não informa o valor, ou quando o endereço configurado é um gateway próprio, a conta segue pela tabela, como antes.
-
-  O cache de prompt nos modelos Claude pela OpenRouter fica ligado por padrão: a parte fixa da conversa do agente fica guardada na OpenRouter e cada resposta custa menos. Ele só age nos modelos Claude pela OpenRouter oficial; os demais provedores e modelos não mudam. Para desligar, ponha `OPENROUTER_PROMPT_CACHE=off` no `.env` e reinicie o worker — faça isso se a OpenRouter recusar pedidos com erro 400 citando `cache_control`.
-
-  Você não precisa fazer nada para atualizar.
-
-- **O fechamento do turno recusado duas vezes no modelo escolhido para o ponto é refeito no modelo do agente, sem repetir o turno** Quem escolheu em IA › Provedores um modelo próprio para o ponto do fechamento do turno (o resumo que o agente grava depois de responder) podia ver o turno inteiro se repetir quando esse modelo devolvia o resultado fora do formato duas vezes seguidas. A resposta ao cliente já tinha saído, mas a fila refazia tudo, inclusive a chamada principal do agente, que é a cara. Agora, nesse caso, uma terceira chamada só do fechamento vai ao modelo do agente. Se ela também falhar, o turno é repetido como antes.
-
-  Quem não escolheu modelo para esse ponto não vê diferença: o fechamento já roda no modelo do agente e nada muda.
-
-  Em IA › Execuções, essa terceira chamada aparece com o porquê «O modelo escolhido para este ponto devolveu o resultado fora do formato duas vezes; a chamada foi repetida no modelo do agente.». Se a sua integração lê o campo `origem_da_escolha` das execuções (`GET /api/v1/ai/runs`), ela passa a ver também o valor `reserva_de_formato`.
-
-- **Busca e retorno do atendimento passam pelas ferramentas internas do agente, e o esquema das ferramentas ficou mais enxuto** No atendimento, o agente que tinha a busca no acervo e o agendamento de retorno ligados como capacidades recebia duas ferramentas para a mesma coisa em cada passo: a interna (`search_knowledge`, `schedule_followup`) e a do catálogo (`crm_search_knowledge`, `crm_schedule_followup`). Agora, quando a interna está no turno, a do catálogo fica de fora. A capacidade só sai do turno quando a interna está nele; sem material de consulta publicado, ou com o retorno automático desligado, a do catálogo continua. No Operador e para quem integra pelo MCP, nada muda.
-
-  A busca interna cita as fontes na resposta, registra a consulta e usa o limiar e a quantidade de trechos configurados no agente. Ela não faz duas coisas que a do catálogo fazia: o agente não escolhe mais quantos trechos quer, e, quando nenhum trecho passa do limiar, ele não recebe a nota do trecho mais próximo (essa nota continua registrada na consulta, para quem administra). O retorno interno recebeu o que só o do catálogo tinha: a escolha do negócio do cliente em que o retorno é anotado, limitada aos negócios principais dele nos funis do agente, e a orientação que separa retorno de compromisso com hora marcada.
-
-  O painel de uso das capacidades explica, na linha de cada uma, que esse uso não entra na contagem, e não recomenda mais desligá-las por "nunca usada".
-
-  O esquema de cada ferramenta deixou de levar a anotação `$schema`, que não muda nada no que o modelo gera. Há também uma chave nova no `.env`, `LLM_TOOL_SCHEMA_SEM_PADRAO`, desligada por padrão. Ligada (`on`), ela tira do esquema enviado ao modelo o padrão de texto que só repete o formato do campo (id, data, e-mail). A validação dos argumentos não muda. Ela fica desligada até ser avaliada; quem ligar reinicia o app e o worker.
-
-  Prompt ou skill que manda chamar `crm_search_knowledge` ou `crm_schedule_followup` pelo nome continua funcionando: no atendimento, quando a ferramenta interna está no turno, a chamada pelo nome do catálogo vai direto para ela, sem passo perdido. Você não precisa editar nada para atualizar.
+  O esquema das ferramentas deixou de levar `$schema`, sem efeito no que o modelo gera. A chave nova `LLM_TOOL_SCHEMA_SEM_PADRAO`, desligada por padrão, tira do esquema (com `on`) o padrão de texto que só repete o formato do campo (id, data, e-mail); a validação não muda, e quem ligar reinicia o app e o worker.
 
 ### Corrigido
 
-- **Contato da equipe continua sendo atendido e não é mais passado a humano nem silenciado pelo medidor de clima** O medidor de clima roda antes do turno do agente e passava para uma pessoa
-  qualquer conversa medida como irritada — inclusive a do sócio que testa o
-  agente pelo próprio número. O sócio cobrava uma resposta por texto, a nota saía
-  baixa, a conversa ia para `pending` com `bot_silenced_until = infinity` e o dono
-  da empresa recebia «já acionei o time», sendo ele o time. Marcar o contato como
-  interno resolvia o repasse ao custo de o agente parar de falar com ele, e baixar
-  o limiar tirava a proteção de todo cliente irritado de verdade.
+- **Contato da equipe continua sendo atendido e não é mais passado a humano nem silenciado pelo medidor de clima** O medidor de clima passava para uma pessoa qualquer conversa medida como irritada, inclusive a do sócio que testa o agente pelo próprio número: a conversa era silenciada e o dono recebia «já acionei o time», sendo ele o time. Marcar o contato como interno calava o agente, e baixar o limiar tirava a proteção do cliente irritado de verdade.
 
-  Agora existe a lista **Equipe**, em Configurações › Tags, ao lado dos contatos
-  internos: `organizations.settings.crm.team_contact_tags`. Contato marcado com
-  uma dessas etiquetas continua sendo atendido pela IA como qualquer contato — a
-  etiqueta não abre canal em modo de teste: ali, quem autoriza continua sendo a
-  lista de teste do canal —, continua sendo medido e registrado pelo clima, e não
-  é passado a humano por clima nem silenciado. Os pedidos de cliente que o medidor
-  lê nas mensagens de texto («quero falar com uma pessoa», «pare de me mandar
-  mensagem») também não abrem aviso na Central para ele. O
-  repasse por clima também é recusado no próprio orquestrador de handoff, para
-  que nenhum alerta antigo na fila cale a conversa. Como o contato interno, ele
-  não vira card no funil — o sócio que testa o agente não é oportunidade de
-  captação. Cliente comum com o mesmo texto continua sendo passado e silenciado
-  como antes.
+  Agora há a lista **Equipe**, em Configurações › Tags, ao lado dos contatos internos. Contato com uma dessas etiquetas continua atendido pela IA e medido pelo clima, mas não é passado a humano por clima nem silenciado, e os pedidos que o medidor lê no texto («quero falar com uma pessoa», «pare de me mandar mensagem») não abrem aviso na Central para ele. A etiqueta não abre canal em modo de teste (ali vale a lista de teste do canal) e, como o contato interno, não vira card no funil. Cliente comum com o mesmo texto continua sendo passado e silenciado. Sem migração; quem não configurar nada fica como antes. Crédito: @webtecnica (#3954, issue #3534 de @ZvisionAutomations).
 
-  Nenhuma migration: a lista mora no mesmo `settings.crm` das etiquetas internas,
-  e quem não configurar nada mantém exatamente o comportamento anterior.
+- **A menção em grupo mostra o nome do contato também na lista da Inbox** Em grupo, a linha da lista da Inbox mostrava o identificador de privacidade do WhatsApp (`@75235009282237`) no lugar do nome do mencionado, e a busca por conteúdo não achava o nome. Agora a prévia usa a mesma regra da bolha da conversa: quem está no CRM aparece pelo nome; quem não está continua com o identificador (não é o telefone). Mensagem sem menção sai igual. Crédito: @webtecnica (#3950, issue #3566 de @DIOGRO83).
 
-- **A menção em grupo mostra o nome do contato também na lista da Inbox** Em conversa de grupo, o texto da mensagem chegava com o identificador de
-  privacidade do WhatsApp (`@75235009282237`) no lugar do nome de quem foi
-  mencionado. A bolha da conversa já resolvia isso desde que a lista de menções
-  passou a ser guardada — mas a linha da LISTA da Inbox continuava mostrando o
-  código, e a busca por conteúdo da conversa não encontrava o nome mencionado.
+- **A hora de cada mensagem no caso humano** Quando a equipe conversava com a IA sobre um caso aberto, as mensagens que deram origem ao caso chegavam à IA todas com o horário da abertura do caso, em vez do horário de cada uma. Agora a IA lê a hora de cada mensagem, no fuso da organização. Nada a fazer na atualização. Crédito: @webtecnica (#3959).
 
-  Agora a prévia da lista usa a mesma regra da bolha: cada `@<identificador>` cujo
-  contato está no CRM aparece com o nome dele. Quem não está no CRM continua com o
-  identificador (não é o telefone), como hoje — nada é apagado nem vira texto
-  vazio —, e mensagem sem menção sai exatamente igual.
+- **A lista de produtos cabe no celular — o nome do produto e o botão Desativar aparecem** No celular, a linha de cada produto em Produtos era mais larga que a tela: o nome do produto sumia e o botão «Desativar» saía cortado pela borda. Agora, em tela pequena, a linha quebra em duas: nome e preço em cima, ações embaixo, à direita; nome longo termina em reticências. No computador nada muda. Crédito: @webtecnica (#3949).
 
-  Contribuição de @webtecnica (#3566).
+- **Atribuir a conversa não derruba mais o turno que atribuiu** Quando o agente passava a conversa para uma pessoa e, no mesmo turno, registrava a passagem e movia o card de etapa, só a atribuição acontecia: o cartão "Por que a IA passou para você" não nascia e a etapa não mudava, porque a atribuição do próprio turno cancelava o turno. Agora o banco poupa exatamente esse turno, e a ordem das ações deixou de importar. Uma pessoa assumindo pela tela continua interrompendo o agente na hora, como antes. Crédito: @webtecnica (#3953, issue #3926 de @mbiero).
 
-- **A hora de cada mensagem no caso humano** Quando a equipe conversava com a IA sobre um caso aberto, as mensagens que deram origem ao caso chegavam à IA todas com o mesmo horário — o da abertura do caso — em vez do horário em que cada uma foi trocada. O carimbo de cada mensagem passou a ser guardado com o caso e a ser lido de volta aceitando as duas formas que o banco entrega uma data (texto e data nativa), então a IA volta a ler a hora de cada mensagem, no fuso da organização.
+- **No celular, o cabeçalho dos cartões de Provedores de IA usa a largura toda e o título não quebra mais palavra por palavra** Em Provedores de IA, a 375 px, o título e a descrição de cada ponto de IA ficavam espremidos numa coluna estreita, e o título quebrava palavra por palavra. Agora, em tela pequena, eles ocupam a largura do cartão, e o modelo, a origem e os selos descem para a linha de baixo. Vale para todos os pontos; no computador nada muda. Crédito: @webtecnica (#3947).
 
-  Nada a fazer na atualização.
+- **Salvar o aviso de caso sem configuração salva não apaga mais o WhatsApp da equipe** Em Casos › Avisos › "Avisar no WhatsApp", sem configuração salva, a tela abria com os números da equipe em branco, e salvar apagava do banco o número gravado de cada pessoa, sem aviso (o caso mais comum: remover o destinatário e configurar de novo). Agora a tela parte dos números já gravados, e salvar só apaga o número de quem ela mostrou; se a leitura dos números da equipe falhar, a tela diz isso em vez de sugerir que ninguém tem número. Limpar o campo de propósito continua apagando o número daquela pessoa. Crédito: @webtecnica (#3944).
 
-- **A lista de produtos cabe no celular — o nome do produto e o botão Desativar aparecem** No celular, a linha de cada produto em Produtos era mais larga que a tela: o
-  preço e os três botões de ação não encolhem, e a coluna do nome — a única que
-  podia ceder — encolhia até zero. O nome do produto não aparecia e o botão
-  «Desativar» saía cortado pela borda, sem que a página rolasse para o lado (quem
-  transbordava era a linha, não a tela).
-
-  Agora, abaixo de `md` a linha quebra em duas: nome e preço em cima, as ações
-  embaixo, alinhadas à direita e com quebra própria se ainda faltar espaço. O
-  nome volta a aparecer, encurtado com reticências quando é longo. No computador
-  nada muda: o conserto inteiro está sob `max-md:`, e a lista de lá para cima é
-  exatamente a mesma de antes.
-
-  Contribuição de @webtecnica (#3922).
-
-- **Atribuir a conversa não derruba mais o turno que atribuiu** Quando o agente passava a conversa para uma pessoa e, no mesmo turno, registrava
-  a passagem e movia o card de etapa, só a atribuição aparecia: o cartão "Por que
-  a IA passou para você" não nascia e a etapa não mudava. A atribuição feita pelo
-  próprio turno era lida pelo banco como "uma pessoa assumiu" e cancelava o turno
-  no meio, e todo efeito seguinte era recusado sem aviso.
-
-  Agora a ferramenta de atribuir informa ao banco qual turno pediu a mudança, e o
-  banco poupa exatamente esse turno — os outros turnos da conversa continuam sendo
-  cancelados. A ordem das ações no mesmo turno deixou de importar.
-
-  Uma pessoa assumindo pela tela continua interrompendo o agente na hora, como
-  antes: a proteção não foi afrouxada, e a atribuição de uma pessoa não tem como
-  se declarar "turno" — o banco recusa.
-
-- **No celular, o cabeçalho dos cartões de Provedores de IA usa a largura toda e o título não quebra mais palavra por palavra** Em Provedores de IA, com a tela a 375 px, o título e a descrição de cada ponto de
-  IA ficavam espremidos numa coluna estreita — o título quebrava palavra por
-  palavra, e a descrição virava uma tira de texto. A tela não rolava para o lado,
-  então não parecia um defeito de largura: o culpado era o cabeçalho do cartão, que
-  reservava a linha inteira para o modelo e a origem e deixava o resto para o
-  texto.
-
-  Agora, abaixo de `md`, o título e a descrição ocupam a largura do cartão e o
-  modelo, a origem e os selos descem para a linha de baixo, alinhados à esquerda.
-  No computador nada muda: as duas colunas continuam dividindo a linha, como antes.
-  Vale para todos os pontos, incluindo os do turno do agente, do operador e os de
-  proposta. O seletor de modelo não foi tocado.
-
-- **Salvar o aviso de caso sem configuração salva não apaga mais o WhatsApp da equipe** Em Casos › Avisos › "Avisar no WhatsApp", quando ainda não havia configuração
-  salva, a tela abria com os campos dos números da equipe em branco e o salvamento
-  mandava esses campos vazios como "esta pessoa não tem número" — e o número
-  gravado de cada pessoa era apagado do banco. Quem tinha cadastrado o próprio
-  WhatsApp precisava cadastrar de novo, sem aviso nenhum. O caso mais comum era
-  remover o destinatário e configurar de novo.
-
-  Agora o rascunho da tela parte sempre dos números já gravados, mesmo sem
-  configuração salva, então a pessoa vê o que está salvando. E o salvamento só
-  apaga o número de quem a tela efetivamente mostrou: membro que a tela não exibiu
-  (por exemplo quando a leitura dos números da equipe falha) fica intacto, e a tela
-  diz que não conseguiu ler em vez de sugerir que ninguém tem número. Limpar o
-  campo de propósito continua apagando o número daquela pessoa.
-
-- **Publicar acende logo depois de Salvar rascunho, sem recarregar a página** Depois de **Salvar rascunho** na tela do agente, o botão Publicar continuava
-  apagado com "Salve o rascunho antes de publicar" — e Salvar seguia aceso — até
-  alguém recarregar a página. Acontecia também ao editar a descrição e o
-  `inbound_debounce`. Quem não sabe recarregar não consegue publicar o agente, que
-  é o primeiro passo do produto.
-
-  Duas causas, as duas de comparação:
-
-  1. **Réguas diferentes.** A tela respondia "salvar mudaria alguma coisa?"
-     comparando o formulário com o que está gravado — mas o servidor não grava o
-     payload cru: `versionShapeSchema` faz `.trim()` no prompt e completa
-     `trigger_config` com `include_tags`/`exclude_tags`/`include_pipeline_ids`/
-     `exclude_pipeline_ids` (`.default([])`). Comparar sem passar os dois lados
-     pela mesma régua acusava alteração para sempre. Ao recarregar, o formulário
-     passava a ser hidratado do que estava gravado e os lados ficavam iguais por
-     construção — daí o defeito "sumir" no reload.
-  2. **O que a sessão acabou de gravar.** `props.draft` vem do server component e
-     só muda quando a página é buscada de novo. Entre o salvamento e o refresh, a
-     tela não tinha rascunho nenhum para publicar. A ação devolve
-     `version_id`/`version_number`, então a tela passa a saber o que gravou — e
-     isso só vale com `res.ok`: falha no salvamento não acende Publicar nem limpa
-     a marca de alteração pendente.
-
-  Provado por componente (`tests/unit/publicar-acende-depois-de-salvar-o-rascunho.test.tsx`),
-  com os três lados: salvar acende Publicar e apaga Salvar; editar de novo inverte;
-  falha no salvamento não mente; recarregar com rascunho gravado já nasce com
-  Publicar habilitado.
+- **Publicar acende logo depois de Salvar rascunho, sem recarregar a página** Depois de **Salvar rascunho** na tela do agente (também ao editar a descrição e o `inbound_debounce`), Publicar continuava apagado com "Salve o rascunho antes de publicar", e Salvar seguia aceso, até alguém recarregar a página — e quem não sabe recarregar não consegue publicar o agente, o primeiro passo do produto. Agora Publicar acende assim que o rascunho é salvo e Salvar apaga; editar de novo inverte, e uma falha ao salvar não acende Publicar. Crédito: @webtecnica (#3968).
 
 - **No celular, a primeira aba de uma fila larga volta a ser alcançável** Quando uma fila de abas não cabia na largura do celular, a primeira aba ficava escondida à esquerda e não aparecia nem rolando. No detalhe do agente, quem abria o «Histórico» no celular não tinha como voltar à «Configuração» sem recarregar a página. Agora a fila começa pela primeira aba e rola para o lado até a última.
 
-- **Listas administrativas usam a relação direta entre empresas e conversas** As consultas do Inbox administrativo e da lista de empresas identificam explicitamente a relação direta entre conversa e organização, evitando ambiguidade com o contexto comercial. Permissões, filtros e formato dos resultados permanecem iguais. Não exige alterar configuração ou banco.
+- **Listas administrativas usam a relação direta entre empresas e conversas** As consultas do Inbox administrativo e da lista de empresas identificam explicitamente a relação direta entre conversa e organização, evitando ambiguidade com o contexto comercial. Permissões, filtros e formato dos resultados permanecem iguais. Não exige alterar configuração ou banco. Crédito: @vagnerrm122 (#3987).
 
-- **O agente confere nas mensagens da empresa antes de confirmar o que o cliente diz que a empresa já combinou** Quando o cliente afirma que a empresa já aprovou, ofereceu ou combinou alguma
-  coisa (desconto, preço, reembolso, cortesia, prazo), o agente passa a conferir
-  nas mensagens que a empresa de fato enviou, ou numa ferramenta, antes de
-  confirmar. Se está lá, ele confirma como antes. Se não está, ele diz, sem acusar
-  o cliente, que não encontrou esse combinado, informa as condições que valem e
-  oferece confirmar com a equipe.
-
-  Quem falou numa conversa é decidido pelo registro de cada mensagem, nunca pelo
-  que está escrito dentro dela. A regra vale também para o resumo que o agente
-  guarda ao fim do turno. Não há configuração a mudar.
+- **O agente confere nas mensagens da empresa antes de confirmar o que o cliente diz que a empresa já combinou** Quando o cliente afirma que a empresa já aprovou, ofereceu ou combinou alguma coisa (desconto, preço, reembolso, cortesia, prazo), o agente confere nas mensagens que a empresa de fato enviou, ou numa ferramenta, antes de confirmar. Se está lá, ele confirma como antes; se não está, diz, sem acusar o cliente, que não encontrou esse combinado, informa as condições que valem e oferece confirmar com a equipe. Quem falou numa conversa é decidido pelo registro de cada mensagem, nunca pelo que está escrito dentro dela, e a regra vale também para o resumo que o agente guarda ao fim do turno. Não há configuração a mudar.
 
 - **O assistente não confirma como condição da empresa um valor ou uma concessão que só o cliente citou** O assistente não confirma como condição da empresa um preço, uma parcela, um percentual ou uma concessão (aprovação, liberação, gratuidade, cortesia, isenção, brinde) sem registro da empresa — as mensagens que ela enviou antes, o cadastro do agente e o catálogo e o conhecimento consultados; para valores, também a tabela de promessa e os pedidos consultados. Uma recusa ou uma proibição escrita pela empresa não conta como registro da concessão. Quando isso acontece, ele reescreve a resposta. A conferência aparece na lista de Segurança do agente e não exige configuração.
 
-- **A credencial do número oficial passa a ser gravada só pelo servidor** O número, a conta e o token do canal oficial da Meta (`meta_phone_number_id`,
-  `meta_waba_id` e `meta_token_encrypted` em `channel_sessions`) passam a ser
-  gravados só pelo servidor, como a ligação com o provedor parceiro desde a
-  migration 9093. Conectar e excluir o canal oficial pela tela continua igual: as
-  duas rotas já gravavam pelo servidor, e a exclusão passa a zerar o token pelo
-  mesmo caminho. Renomear a conexão continua liberado para o admin.
+- **A credencial do número oficial passa a ser gravada só pelo servidor** O número, a conta e o token do canal oficial da Meta passam a ser gravados só pelo servidor, como a ligação com o provedor parceiro. Conectar e excluir o canal oficial pela tela continua igual (a exclusão passa a zerar o token pelo mesmo caminho), e renomear a conexão continua liberado para o admin. A migration 9104 é aplicada pelo `update.sh` como as demais. Nada a fazer.
 
-  Migration 9104, aplicada pelo `update.sh` como as demais. Nada a fazer.
+- **A transcrição de áudio pela OpenAI e a leitura de mídia por modelo do catálogo passam a contar no gasto de IA** Você não precisa fazer nada. Esse custo passa a aparecer em Uso e orçamento e a contar para o limite mensal de IA e para a cota do plano; se a sua organização está perto do limite, ele será atingido um pouco antes, pelo valor real.
 
-- **A transcrição de áudio pela OpenAI e a leitura de mídia por modelo do catálogo passam a contar no gasto de IA** Você não precisa fazer nada. A partir desta versão, esse custo aparece em Uso e orçamento e conta para o limite mensal de IA e para a cota do plano. Se a sua organização está perto do limite, ele será atingido um pouco antes, pelo valor real.
+  - **Áudio transcrito pela OpenAI (`whisper-1`):** o custo, antes vazio, é a duração que a própria OpenAI informa ter cobrado vezes US$ 0,006 por minuto. Só quando o pedido foi à OpenAI: um serviço compatível com o mesmo nome de modelo (Groq, servidor próprio) e o ElevenLabs Scribe continuam sem custo registrado.
+  - **Leitura de imagem e transcrição pelo modelo de conversa** fora da tabela de preços (provedor personalizado, modelo do catálogo): o custo sai do catálogo da instalação, como no atendimento. A resposta ao cliente não espera por isso.
+  - **Modelo sem preço em lugar nenhum:** respostas e análises de sentimento gravavam custo 0, lido como "grátis"; agora gravam custo desconhecido, e o aviso de gasto incompleto aparece. O total do mês não muda. Modelo gratuito do catálogo (os `:free` da OpenRouter) continua custando 0, sem aviso.
 
-  O que mudou:
+- **Ligação recebida que cai antes de a IA atender não fica mais "tocando" na tela** Quando uma ligação pelo número de telefone (SIP) caía antes de o agente de voz atender — quem ligou desistiu, ou o serviço de voz estava fora do ar naquele instante —, ela ficava registrada como "tocando" para sempre, e o CRM mostrava o aviso de ligação chegando a cada vez que a tela carregava, mesmo dias depois. Agora essas ligações são encerradas assim que o canal some. Crédito: @lzandonadi (#3972).
 
-  - **Áudio transcrito pela OpenAI (`whisper-1`).** A linha de custo ficava vazia, enquanto o mesmo áudio transcrito pela OpenRouter já contava. Agora o custo é a duração que a própria OpenAI informa que cobrou, vezes o preço publicado por minuto (US$ 0,006). Vale só quando o pedido foi à OpenAI: um serviço compatível que aceite o mesmo nome de modelo (Groq, servidor próprio) continua sem custo, porque o preço dele é outro. O ElevenLabs Scribe continua sem custo registrado.
-  - **Leitura de imagem e transcrição pelo modelo de conversa**, quando o modelo não está na tabela de preços do sistema (provedor personalizado, modelo do catálogo): o custo passa a sair do catálogo da instalação, como já acontecia no atendimento. A resposta ao cliente não espera por isso.
-  - **Respostas e análises de sentimento com modelo sem preço em lugar nenhum** gravavam custo 0, o que a tela lia como "grátis". Agora gravam custo desconhecido, e o aviso de gasto incompleto aparece. O total do mês não muda. Modelo gratuito do catálogo (os `:free` da OpenRouter) continua custando 0 e não acende o aviso.
+- **Servidores MCP por agente conferem os dados de autorização e respeitam o tempo do atendimento** Vale só para quem ligou o módulo opcional de servidores MCP por agente. Ao cadastrar ou testar um servidor com OAuth, a descoberta confere que os dados de autorização devolvidos são do servidor informado e do emissor que ele indicou; quando não são, o cadastro é recusado com uma mensagem na tela de "Testar conexão". No atendimento, esses servidores passam a ter o limite que o servidor MCP da organização já tinha: 8 segundos para listar as ferramentas e 8 por chamada; sem resposta, o agente segue a conversa sem aquela ferramenta. Você não precisa mudar nada.
 
-- **Ligação recebida que cai antes de a IA atender não fica mais "tocando" na tela** Quando uma ligação pelo número de telefone (SIP) caía antes de o agente de voz atender — quem ligou desistiu, ou o serviço de voz estava fora do ar naquele instante —, ela ficava registrada como "tocando" para sempre, e o CRM mostrava o aviso de ligação chegando a cada vez que a tela carregava, mesmo dias depois e sem ninguém ligando. Agora essas ligações são encerradas assim que o canal some. Crédito: @lzandonadi.
+- **O quadro mantém o prazo da releitura mesmo quando a tela redesenha** A releitura periódica de segurança do quadro mantém seu prazo entre redesenhos da mesma tela. Antes, cada redesenho podia reiniciar a espera e adiar indefinidamente a consulta que atualiza o acesso aos negócios. Trocar de funil continua iniciando a verificação do novo quadro. Não muda regras de acesso nem exige configuração. Crédito: @vagnerrm122 (#3982).
 
-- **Servidores MCP por agente conferem os dados de autorização e respeitam o tempo do atendimento** Vale só para quem ligou o módulo opcional de servidores MCP por agente.
+- **Descrição de foto e transcrição pelo modelo da organização não são mais recusadas por crédito baixo na OpenRouter** A descrição de foto e a transcrição de áudio pelo modelo da organização passam a pedir um teto de resposta: a descrição usa o mesmo das respostas do agente (o configurado ou, sem configuração, 4096 tokens), e a transcrição, 8192. Sem esse teto, uma chave da OpenRouter com pouco crédito recusava a chamada. E o rascunho de proposta (`crm_draft_proposal`) deixa de responder "a mensagem ainda está sendo transcrita" para foto ou figurinha cuja leitura já terminou sem texto.
 
-  Ao cadastrar ou testar a conexão de um servidor com OAuth, a descoberta agora confere que os dados de autorização devolvidos são do servidor informado e do emissor que ele indicou. Quando não são, o cadastro é recusado com uma mensagem na própria tela de "Testar conexão".
+- **O atendimento deixa de esperar até 30 segundos por um servidor MCP externo que não responde** Quando o servidor MCP externo da organização (o sistema da loja, da clínica, do prontuário) parava de responder, o turno esperava até 15 segundos para conectar e mais 15 por chamada, com o cliente esperando no WhatsApp; com várias ferramentas remotas no mesmo turno, passava de um minuto. Agora o turno tem 8 segundos para descobrir as ferramentas e 8 por chamada; estourou, ele segue com as ferramentas do CRM e responde ao cliente, sem erro técnico na conversa. A tela de cadastro (Configurações › Servidor MCP externo) e o cartão do agente mantêm o tempo maior de antes. Você não precisa mudar nada. Crédito: @webtecnica (#3956, issue #3586 de @aleflores35).
 
-  No atendimento, esses servidores passam a ter o mesmo limite de tempo que o servidor MCP da organização já tinha: 8 segundos para listar as ferramentas e 8 segundos por chamada. Se o servidor não responder, o agente segue a conversa sem aquela ferramenta.
-
-  Você não precisa mudar nada.
-
-- **O quadro mantém o prazo da releitura mesmo quando a tela redesenha** A releitura periódica de segurança do quadro mantém seu prazo entre redesenhos da mesma tela. Antes, cada redesenho podia reiniciar a espera e adiar indefinidamente a consulta que atualiza o acesso aos negócios. Trocar de funil continua iniciando a verificação do novo quadro. Não muda regras de acesso nem exige configuração. Crédito: @vagnerrm122.
-
-- **Descrição de foto e transcrição pelo modelo da organização não são mais recusadas por crédito baixo na OpenRouter** A descrição de foto e a transcrição de áudio pelo modelo da organização passam a pedir um teto de resposta. A descrição usa o mesmo teto das respostas do agente: o que a organização configurou ou, sem configuração, 4096 tokens. A transcrição usa 8192 tokens. Sem esse teto, uma chave da OpenRouter com pouco crédito recusava a chamada.
-
-  A ferramenta de rascunho de proposta (`crm_draft_proposal`) deixa de responder "a mensagem ainda está sendo transcrita" para foto ou figurinha cuja leitura já terminou sem texto.
-
-- **O atendimento deixa de esperar até 30 segundos por um servidor MCP externo que não responde** Quando a organização tem um servidor MCP externo (o sistema da loja, da clínica, do prontuário) e ele para de responder — firewall, deploy travado, DNS errado —, o turno do atendimento esperava o tempo padrão do cliente MCP em cada passo da conversa com o servidor: até 15 segundos para abrir a conexão e mais 15 para listar ou chamar a ferramenta. Com o cliente esperando no WhatsApp, isso é tempo que o agente passa calado antes de começar a responder; com mais de uma ferramenta remota no mesmo turno, o pior caso passava de um minuto.
-
-  Agora o turno tem orçamento próprio, curto: 8 segundos para descobrir as ferramentas e 8 segundos por chamada. Estourou, o turno segue com as ferramentas do CRM e responde ao cliente — o mesmo comportamento de quando o servidor está fora do ar, sem erro técnico na conversa. A tela de cadastro (Configurações › Servidor MCP externo) e o cartão do agente continuam com o tempo maior de antes: ali quem espera é quem está administrando, e um servidor lento merece o benefício da dúvida.
-
-  Você não precisa mudar nada.
-
-- **O painel de uso soma o período inteiro, sem cortar nos primeiros registros** O painel de Uso e Custo passa a percorrer todas as páginas de mensagens, conversas e chamadas de IA do período. A tabela e os gráficos usam os mesmos dias UTC, incluindo hoje, e a mesma seleção de organização e mensagens pessoais. Se uma página falhar, a tela recebe erro em vez de apresentar um total parcial como completo. Não muda a cobrança do provedor nem o modelo de IA. Crédito: @vagnerrm122.
+- **O painel de uso soma o período inteiro, sem cortar nos primeiros registros** O painel de Uso e Custo passa a percorrer todas as páginas de mensagens, conversas e chamadas de IA do período. A tabela e os gráficos usam os mesmos dias UTC, incluindo hoje, e a mesma seleção de organização e mensagens pessoais. Se uma página falhar, a tela recebe erro em vez de apresentar um total parcial como completo. Não muda a cobrança do provedor nem o modelo de IA. Crédito: @vagnerrm122 (#3979).
 
 ## [1.100.0] — 2026-11-04
 
