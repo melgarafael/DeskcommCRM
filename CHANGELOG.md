@@ -28,7 +28,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
   seguem a regra «só os seus», como nos outros modos restritos. Quem não ligar o
   modo não vê diferença nenhuma. Crédito: @webtecnica (#4060, issue #4022).
 
-- **Integrações autorizadas leem a transcrição já disponível no histórico** Um novo escopo optativo permite receber o texto derivado de áudios e documentos no histórico MCP. Tokens existentes não ganham essa leitura automaticamente. O texto só sai quando está pronto, respeitando a conversa consultada e a retenção; não dispara transcrição nem gera novo custo. Crédito: @vagnerrm122 (#3996).
+- **Integrações autorizadas leem a transcrição já disponível no histórico** Um novo escopo optativo permite receber o texto derivado de áudios e documentos no histórico MCP. Tokens existentes não ganham essa leitura automaticamente. O texto só sai quando está pronto, respeitando a conversa consultada e a retenção; não dispara transcrição nem gera novo custo. Crédito: @vagnerrm122 (#3996, issue #3980).
 
 - **Campo do funil pode aparecer com mais de uma condição (OU)** No editor de campos do funil, **Mostrar só quando:** passou a aceitar mais de
   uma condição. O botão **+ condição** acrescenta uma linha, e com duas ou mais
