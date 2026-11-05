@@ -213,4 +213,49 @@ describe("#4006 · editar o compromisso mexe em attendees sem estragar o resto",
     expect(patch.extendedProperties?.private?.deskcomm_org).toBe(ORG);
     expect(patch.extendedProperties?.private?.deskcomm_appointment).toBe(AGENDAMENTO);
   });
+
+  /**
+   * A FORMA REAL do evento: todo evento que publicamos volta do Google com as
+   * chaves privadas de identidade. A fixture acima não as traz, e por isso
+   * `delta` passou verde enquanto lançava `ReferenceError` em produção (o
+   * prefixo das chaves não estava importado em `sync-model.ts`).
+   */
+  const eventoPublicado = (privadas: Record<string, string>) =>
+    ({
+      ...evento,
+      extendedProperties: {
+        private: { deskcomm_org: ORG, deskcomm_appointment: AGENDAMENTO, ...privadas },
+      },
+    }) as unknown as EventoDoGoogle;
+
+  const semEquipe = (): AgendamentoParaGoogle =>
+    agendamento({
+      contact_email: null,
+      contact_nome: null,
+      guest_email: "acompanhante@clinica.test",
+    } as Partial<AgendamentoParaGoogle>);
+
+  it("evento já publicado e compromisso sem equipe: troca o convidado sem lançar", () => {
+    const patch = delta(semEquipe() as never, eventoPublicado({}), null, ["guest"], false, {
+      convidadosAnteriores: [],
+    }) as { attendees?: Array<{ email: string }>; extendedProperties?: unknown };
+
+    expect(patch.attendees?.map((p) => p.email)).toContain("acompanhante@clinica.test");
+    // Sem lista nossa a registrar nem a apagar, o PATCH segue o de antes.
+    expect(patch.extendedProperties).toBeUndefined();
+  });
+
+  it("evento com lista publicada e equipe esvaziada: apaga a lista no Google", () => {
+    const patch = delta(
+      semEquipe() as never,
+      eventoPublicado({ deskcomm_guests: SDR }),
+      null,
+      ["guest"],
+      false,
+      { convidadosAnteriores: ["sdr@deskcomm.test"] },
+    ) as { extendedProperties?: { private?: Record<string, string | null> } };
+
+    expect(patch.extendedProperties?.private?.deskcomm_guests).toBeNull();
+    expect(patch.extendedProperties?.private?.deskcomm_org).toBe(ORG);
+  });
 });

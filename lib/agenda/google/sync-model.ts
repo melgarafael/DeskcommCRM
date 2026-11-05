@@ -5,6 +5,7 @@ import {
   doEventoDoGoogle,
   paraEventoDoGoogle,
   participantesDoAgendamento,
+  PREFIXO_PROPRIEDADE,
   propriedadesPrivadas,
   type AgendamentoParaGoogle,
   type EventoDoGoogle,
