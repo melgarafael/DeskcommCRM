@@ -43,13 +43,13 @@ export type ConversationComAtendente = Conversation & {
 
 export async function comNomeDoAtendente<
   T extends { assigned_to_user_id: string | null; assigned_to_user_name?: string | null },
->(conversas: T[]): Promise<Array<T & { assigned_to_user_name: string | null }>> {
+>(orgId: string, conversas: T[]): Promise<Array<T & { assigned_to_user_name: string | null }>> {
   // Só os casos inconsistentes (id sem nome) pagam o lookup — nunca a página inteira.
   const inconsistentes = conversas
     .filter((c) => c.assigned_to_user_id && !c.assigned_to_user_name)
     .map((c) => c.assigned_to_user_id);
   const nomesDeFallback =
-    inconsistentes.length > 0 ? await nomesDosAtendentes(inconsistentes) : new Map<string, string | null>();
+    inconsistentes.length > 0 ? await nomesDosAtendentes(orgId, inconsistentes) : new Map<string, string | null>();
 
   return conversas.map((c) => ({
     ...c,

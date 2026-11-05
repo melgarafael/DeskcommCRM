@@ -35,6 +35,16 @@
  * continua dizendo que há um responsável — o `assigned_to_user_id` é a verdade; o
  * nome é a cortesia.
  *
+ * ## Só membros da organização ganham nome
+ *
+ * O admin client lê QUALQUER usuário da instalação, e os ids chegam de linhas
+ * de dados (autor de atividade, remetente de mensagem, quem reconheceu um
+ * aviso). Por isso o nome só se resolve para quem tem vínculo em
+ * `user_organizations` com a `orgId` do chamador — uma consulta só, para todos
+ * os ids. Sem filtro de `revoked_at` de propósito: quem saiu da equipe segue
+ * com o nome no histórico que escreveu. Id sem vínculo, ou vínculo que não pôde
+ * ser lido, fica sem nome (o chamador já trata a ausência).
+ *
  * LGPD: expõe SÓ `full_name`. Nunca e-mail, telefone, `user_metadata` inteiro ou
  * qualquer outro dado do usuário — o mesmo mínimo que `team/assignable` expõe.
  */
@@ -50,6 +60,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * faz isso em `conversation_notes.created_by_name`), não aumentar o paralelismo.
  */
 export async function nomesDosAtendentes(
+  orgId: string,
   userIds: Array<string | null | undefined>,
 ): Promise<Map<string, string | null>> {
   const unicos = [...new Set(userIds.filter((id): id is string => Boolean(id)))];
@@ -66,8 +77,11 @@ export async function nomesDosAtendentes(
   }
 
   const admin = createAdminClient();
+  const membros = await membrosDaOrganizacao(admin, orgId, unicos);
+
   const pares = await Promise.all(
     unicos.map(async (id): Promise<readonly [string, string | null]> => {
+      if (!membros.has(id)) return [id, null] as const;
       try {
         const { data, error } = await admin.auth.admin.getUserById(id);
         if (error) {
@@ -88,4 +102,28 @@ export async function nomesDosAtendentes(
     }),
   );
   return new Map(pares);
+}
+
+/** Quais destes ids têm vínculo com a organização. Falha → conjunto vazio (ninguém ganha nome). */
+async function membrosDaOrganizacao(
+  admin: ReturnType<typeof createAdminClient>,
+  orgId: string,
+  ids: string[],
+): Promise<Set<string>> {
+  try {
+    // `organization_id` filtrado À MÃO: o admin bypassa a RLS.
+    const { data, error } = await admin
+      .from("user_organizations")
+      .select("user_id")
+      .eq("organization_id", orgId)
+      .in("user_id", ids);
+    if (error) throw new Error(error.message);
+    return new Set((data ?? []).map((v) => String(v.user_id)));
+  } catch (err) {
+    logger.warn("[nome-do-atendente] vínculos não lidos: nenhum nome resolvido", {
+      organizationId: orgId,
+      erro: err instanceof Error ? err.message : String(err),
+    });
+    return new Set();
+  }
 }
