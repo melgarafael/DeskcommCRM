@@ -2041,7 +2041,7 @@ relatar_saude_do_app() {
     *)
       c_red "⛔ não deu para saber a saúde do app (status geral: ${status:-vazio})."
       if [ -n "$corpo" ]; then
-        c_dim "  resposta: $(printf '%s' "$corpo" | head -c 200 || true)"
+        c_dim "  resposta: ${corpo:0:200}"
       fi
       return 1 ;;
   esac
