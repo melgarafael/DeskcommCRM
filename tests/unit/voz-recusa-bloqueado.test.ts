@@ -63,6 +63,13 @@ describe("mapStatusParaApi", () => {
     expect(mapStatusParaApi("ended", "contact_blocked")).toBe("canceled");
   });
 
+  // A ligação que o cron encerrou por prazo porque o aviso de queda não chegou
+  // (#3977) também não pode sair como "Concluída": ninguém atendeu. `no_answer`
+  // é o rótulo existente para "tocou e acabou sem atendimento".
+  it("caso 1b — encerrada por prazo sem evento vira no_answer, não completed", () => {
+    expect(mapStatusParaApi("ended", "encerrada_por_prazo_sem_evento")).toBe("no_answer");
+  });
+
   it("caso 2 — controle: os demais mapeamentos não mudam", () => {
     expect(mapStatusParaApi("ended", null)).toBe("completed");
     expect(mapStatusParaApi("ended", "timeout")).toBe("no_answer");
