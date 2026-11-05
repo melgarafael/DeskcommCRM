@@ -433,6 +433,7 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
             enrollmentId: payload.followup_enrollment_id,
             nodeId: payload.node_id,
             contactId: leadId,
+            passoDeTexto: payload.fixed_body !== undefined || payload.template_id !== undefined,
           },
           agora,
         );

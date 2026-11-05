@@ -39,6 +39,13 @@ export async function aplicarPessoaNoComandoAoTurno(
     enrollmentId: string;
     nodeId: string;
     contactId: string;
+    /**
+     * O passo manda texto pronto (`fixed_body` ou modelo). Só ele aproveita a
+     * opção `send_when_assigned`: o passo de IA seguiria para um turno que o
+     * próprio silêncio veta, e o fluxo concluiria como `skipped` e avançaria em
+     * vez de esperar.
+     */
+    passoDeTexto: boolean;
   },
   agora: Date,
 ): Promise<DesfechoDaPessoaNoComando> {
@@ -82,7 +89,7 @@ export async function aplicarPessoaNoComandoAoTurno(
   // posse: `lerEstadoDoComando` exige conversa aberta COM dono (a régua de
   // `comando_da_conversa`) e nenhuma conversa calada SEM dono, então esses dois
   // casos continuam adiando/cancelando como hoje.
-  if (linha.send_when_assigned === true) {
+  if (linha.send_when_assigned === true && alvo.passoDeTexto) {
     const estado = await lerEstadoDoComando(pool, alvo);
     if (opcaoLiberaEnvio(true, estado)) return null;
   }

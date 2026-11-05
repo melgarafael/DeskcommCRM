@@ -143,8 +143,12 @@ async function eventos(id: string) {
 
 const UMA_HORA = 60 * 60 * 1000;
 
-const aplicar = (s: { inscricao: string; contato: string }, agora = new Date(), no = NO) =>
-  aplicarPessoaNoComandoAoTurno(pool, { organizationId: ORG, enrollmentId: s.inscricao, nodeId: no, contactId: s.contato }, agora);
+const aplicar = (s: { inscricao: string; contato: string }, agora = new Date(), no = NO, passoDeTexto = true) =>
+  aplicarPessoaNoComandoAoTurno(
+    pool,
+    { organizationId: ORG, enrollmentId: s.inscricao, nodeId: no, contactId: s.contato, passoDeTexto },
+    agora,
+  );
 
 async function semRastro(s: { inscricao: string }) {
   expect((await inscricao(s.inscricao)).status).toBe("active");
@@ -304,6 +308,22 @@ describe("#3974 — a opção por fluxo 'enviar mesmo com a conversa atribuída'
     const s = await cenario("cancel", "assumida", true);
     expect(await aplicar(s, new Date(), "outro-no")).toBeNull();
     await semRastro(s);
+  });
+
+  // O passo de IA não aproveita a opção: liberado, ele seguiria para um turno
+  // que o silêncio do dono veta (`runAgentTurn` sai sem enviar), o desfecho seria
+  // `skipped` e o fluxo avançaria. Sem a liberação, vale a política de sempre.
+  it("opção ligada + passo de IA + pause: adia, como sem a opção — não pula o passo", async () => {
+    const s = await cenario("pause", "assumida", true);
+    const agora = new Date();
+    expect(await aplicar(s, agora, NO, false)).toEqual({ kind: "adiada", ate: new Date(agora.getTime() + UMA_HORA) });
+    await semRastro(s);
+  });
+
+  it("opção ligada + passo de IA + cancel: cancela por pessoa_no_comando, como sem a opção", async () => {
+    const s = await cenario("cancel", "assumida", true);
+    expect(await aplicar(s, new Date(), NO, false)).toEqual({ kind: "cancelada" });
+    expect(await inscricao(s.inscricao)).toMatchObject({ status: "cancelled", cancel_reason: "pessoa_no_comando" });
   });
 
   it("opção ligada + a pessoa devolveu (Liberar): segue, sem precisar da opção", async () => {
