@@ -220,7 +220,11 @@ describe("POST .../versions/:vid/test — core compartilhado", () => {
 
     const { status, error } = await chamarTeste();
 
-    expect(status).toBe(503);
+    expect(status).toBe(502);
+    // O status NÃO pode ser um dos que `lib/api/client.ts` repete sozinho
+    // (RETRYABLE_STATUSES): a rota não é idempotente, e cada repetição criaria
+    // um run e rodaria o turno inteiro do agente de novo.
+    expect([429, 503]).not.toContain(status);
     expect(error?.code).toBe("preview_banco_indisponivel");
     expect(error?.message).toContain("banco de dados não respondeu");
     expect(error?.message).toContain("não têm relação com esta falha");
@@ -244,7 +248,7 @@ describe("POST .../versions/:vid/test — core compartilhado", () => {
 
     const { status, error } = await chamarTeste();
 
-    expect(status).toBe(503);
+    expect(status).toBe(502);
     expect(error?.code).toBe("preview_banco_indisponivel");
     expect(atualizacoes).toContainEqual(expect.objectContaining({
       error_code: "preview_banco_indisponivel",
@@ -314,7 +318,7 @@ describe("POST .../versions/:vid/test — core compartilhado", () => {
 
     const { status, error } = await chamarTeste();
 
-    expect(status).toBe(503);
+    expect(status).toBe(502);
     expect(error?.message).not.toContain("db.interno");
     expect(error?.message).not.toContain("segredo");
     expect(error?.message).not.toContain("select * from ai_agents");

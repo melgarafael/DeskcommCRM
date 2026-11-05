@@ -277,9 +277,14 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       return fail("preview_failed", err.message, 422, { requestId });
     }
     if (falhaDoBanco) {
-      // 503, não 422: não há nada para a pessoa corrigir na configuração do
-      // agente — a dependência é que não atendeu, e tentar de novo é a saída.
-      return fail(MENSAGEM_BANCO_CODIGO, t(MENSAGEM_BANCO), 503, { requestId });
+      // 502, não 422: não há nada para a pessoa corrigir na configuração do
+      // agente — a dependência é que não atendeu. E 502, não 503:
+      // `lib/api/client.ts` repete sozinho todo POST que recebe 503
+      // (RETRYABLE_STATUSES), e esta rota não é idempotente — cada repetição
+      // cria um run e roda o turno inteiro, inclusive o modelo pago (#783).
+      // 502 é o mesmo "a dependência não respondeu" de `channel_unavailable`
+      // e `wacalls_error`, e o cliente não o repete.
+      return fail(MENSAGEM_BANCO_CODIGO, t(MENSAGEM_BANCO), 502, { requestId });
     }
     return fail("preview_failed", t(MENSAGEM_GENERICA), 422, { requestId });
   }
