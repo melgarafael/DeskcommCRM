@@ -48,7 +48,7 @@ function LeituraDosEventos({
             {v.atrasado ? (
               <span
                 data-testid={`selo-atrasado-${chave}-${i}`}
-                className="ml-2 rounded bg-warning-bg px-1.5 py-0.5 font-medium text-warning-fg"
+                className="ml-2 rounded-md bg-warning-bg px-1.5 py-0.5 font-medium text-warning-fg"
               >
                 {t("Atrasado")}
               </span>
