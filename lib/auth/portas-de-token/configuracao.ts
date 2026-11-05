@@ -171,11 +171,12 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   // mídia é número inteiro não negativo (a rota recusa o resto com 404). O token
   // só alcança a resposta COMPARTILHADA (`owner_user_id` nulo): o POST de criação
   // recusa `shared: false`, e o PATCH e o DELETE de `[id]` e o POST de `[id]/midias`
-  // filtram o compartilhado. `[id]/ordem` segue só de sessão e não entra de carona:
-  // o papel dele vem de `org.role`.
+  // e o PUT de `[id]/ordem` (renumeração só entre as compartilhadas) filtram o
+  // compartilhado.
   "/api/v1/message-templates",
   "/api/v1/message-templates/[id]",
   "/api/v1/message-templates/[id]/midias",
+  "/api/v1/message-templates/[id]/ordem",
   { caminho: "/api/v1/message-templates/[id]/midias/[indice]", segmentos: { indice: "[0-9]+" }, amostras: { indice: "0" } },
   "/api/v1/message-template-groups",
   "/api/v1/message-template-groups/[id]",
