@@ -60,6 +60,7 @@ import { ORIGEM_DO_WHATSAPP } from "@/lib/channels/origem-do-negocio";
 
 import { lerRegrasDeCliente } from "@/lib/contacts/regras-de-cliente";
 import { ehContatoInterno, lerTagsInternas } from "@/lib/contacts/tags-internas";
+import { ehContatoDaEquipe, lerTagsDaEquipe } from "@/lib/contacts/tags-da-equipe";
 import { ehIdentificadorTecnico, rotuloDoContato, SEM_NOME } from "@/lib/contacts/rotulo-do-contato";
 
 import { decidirPelaVenda, lerVendaAnterior } from "./cliente-pela-venda";
@@ -113,6 +114,7 @@ export type MotivoSemLead =
   | "contato_bloqueado" // pediu para sair; criar oportunidade seria desrespeito registrado
   | "contato_pessoal" // marcado como pessoal (spec 21): não é oportunidade, nunca nasce
   | "contato_interno" // #2353: equipe/sócio/família/fornecedor — tag interna, não é negócio
+  | "contato_da_equipe" // #3534: equipe que CONTINUA sendo atendida — não é captação
   | "sem_funil_de_entrada" // a organização não tem funil padrão — falha de configuração, visível
   | "sem_etapa" // o funil existe e não tem etapa utilizável
   | "pos_venda" // #3644: comprou dentro da janela de pós-venda — a conversa não é demanda
@@ -391,6 +393,15 @@ export async function garantirLeadDaConversa(
     const tagsInternas = await lerTagsInternas(db, organizationId);
     if (ehContatoInterno(tagsDoContato, tagsInternas))
       return { criado: false, motivo: "contato_interno" };
+    // 1c · #3534 · contato da EQUIPE (lista separada: `team_contact_tags`)
+    // também não vira card — o sócio que testa o agente não é oportunidade de
+    // captação. A DIFERENÇA para o interno é o que acontece depois: aqui a IA
+    // atende e a conversa segue o turno normal; lá a IA é vetada. Mesma leitura
+    // condicional do bloco acima (só quem tem etiqueta paga a consulta) e o
+    // mesmo fail-open: falha de leitura → lista vazia → o card nasce.
+    const tagsDaEquipe = await lerTagsDaEquipe(db, organizationId);
+    if (ehContatoDaEquipe(tagsDoContato, tagsDaEquipe))
+      return { criado: false, motivo: "contato_da_equipe" };
   }
 
   // 2 · já existe demanda aberta?

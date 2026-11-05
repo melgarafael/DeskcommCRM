@@ -79,6 +79,16 @@ export const RECURSOS_DO_CRON = [
   "fila_followup",
   "pausa_de_canal",
   "propostas",
+  "fila_de_soneca",
+  "mensagem_presa",
+  "ligacao_presa",
+  "redacao_de_storage",
+  "devolucao_de_handoff",
+  "devolucao_ao_rodizio",
+  "canal_vigiado",
+  "mcp_a_revogar",
+  "lembrete_de_tarefa",
+  "lembrete_de_agenda",
 ] as const;
 export type RecursoDoCron = (typeof RECURSOS_DO_CRON)[number];
 
@@ -137,6 +147,42 @@ const TETO_DA_LEITURA_MS = 2_000;
  *   `pending` (o dreno de texto fixo); janela `scheduled`/`running` já começada
  *   (`aplicarAgendas` não lê a que ainda vai começar); proposta `enviando` (o
  *   corte de 5 min continua sendo da rodada).
+ *
+ * ─── AS FILAS (segunda fatia do #3731) ─────────────────────────────────────
+ *
+ * Depois do #3753/#3707 o que sobrou de piso ocioso no crontab eram as rotas de
+ * FILA: soneca vencida, mensagem presa, fila de redação de objeto, devolução de
+ * handoff e ao rodízio, saúde de canal, revogação de MCP, lembrete de tarefa e
+ * de agenda. Medido numa instalação parada: 15 `from()`/`rpc()` por batida de 5
+ * min = **2,4 req/min (144/h)** — mais da metade do crontab que restava. As
+ * nove linhas novas seguem a mesma regra das anteriores, e cada uma é
+ * DELIBERADAMENTE mais larga que o predicado da rota, porque fechar o portão
+ * com trabalho na fila é o defeito que este arquivo existe para não ter:
+ *
+ * - `mensagem_presa`: `sending` acima de 3 min, contra o corte de 5 min da rota
+ *   (`STUCK_AFTER_MS`) — a folga cobre o relógio do portão e o da rodada;
+ * - `ligacao_presa`: `starting`/`ringing` acima de 3 min, contra o corte de 5 min
+ *   da rota (`STUCK_CALL_AFTER_MS`), pela mesma folga da `mensagem_presa`;
+ * - `lembrete_de_tarefa`: a janela de ±1 dia de `janelaDaVarredura`, sem o
+ *   filtro de organização parada, que a rodada aplica depois;
+ * - `lembrete_de_agenda`: compromisso confirmado e futuro em 30 dias — a maior
+ *   antecedência configurável (`MAIOR_ANTECEDENCIA_MS`), SEM o join do tipo de
+ *   evento: tipo com lembrete desligado só mantém a rota acordada, que é o lado
+ *   seguro;
+ * - `devolucao_de_handoff`/`devolucao_ao_rodizio`: as mesmas quatro colunas que
+ *   as rotas filtram, sem o prazo por organização (que muda por empresa e vive
+ *   em `organizations`);
+ * - `canal_vigiado`, `fila_de_soneca`, `redacao_de_storage`: a condição exata
+ *   da consulta da rodada.
+ *
+ * Duas rodadas fazem MAIS do que a consulta principal, e o portão cobre as duas
+ * (medido em `tests/invariants/piso-ocioso-retrato.test.ts`):
+ *
+ * - `mcp_a_revogar`: além da credencial vencida, a poda dos pedidos de
+ *   autorização vencidos há mais de um dia (`revogarVencidas`);
+ * - `lembrete_de_agenda`: além do compromisso futuro, o aviso de remetente
+ *   aberto, que `fn_resolver_avisos_de_lembrete_expirados` resolve quando o
+ *   compromisso já passou — sem ele o aviso ficava aberto na Central.
  */
 const SQL_DO_RETRATO = `
 select
@@ -197,7 +243,59 @@ select
   ) as pausa_de_canal,
   exists (
     select 1 from crm_proposals where status = 'enviando'
-  ) as propostas
+  ) as propostas,
+  exists (
+    select 1 from conversations
+     where snooze_until is not null and snooze_until <= now()
+  ) as fila_de_soneca,
+  exists (
+    select 1 from messages
+     where direction = 'outbound' and status = 'sending'
+       and created_at < now() - interval '3 minutes'
+  ) as mensagem_presa,
+  exists (
+    select 1 from voice_calls
+     where status in ('starting', 'ringing')
+       and created_at < now() - interval '3 minutes'
+  ) as ligacao_presa,
+  exists (
+    select 1 from storage_redaction_queue where status = 'pending'
+  ) as redacao_de_storage,
+  exists (
+    select 1 from conversations
+     where is_group = false
+       and status in ('open', 'pending', 'claimed', 'ai_handling')
+       and (bot_silenced_until is not null or assignee_kind = 'user' or assigned_to_user_id is not null)
+  ) as devolucao_de_handoff,
+  exists (
+    select 1 from conversations
+     where is_group = false
+       and status in ('open', 'pending', 'claimed', 'ai_handling')
+       and assigned_to_user_id is not null
+  ) as devolucao_ao_rodizio,
+  exists (
+    select 1 from channel_sessions where archived_at is null
+  ) as canal_vigiado,
+  exists (
+    select 1 from contato_mcp_credenciais
+     where revogado_em is null and revogar_apos <= now()
+  ) or exists (
+    select 1 from mcp_oauth_pedidos where expira_em < now() - interval '1 day'
+  ) as mcp_a_revogar,
+  exists (
+    select 1 from crm_tasks
+     where status in ('pending', 'in_progress')
+       and assigned_to is not null and due_date is not null
+       and due_date between now() - interval '1 day' and now() + interval '1 day'
+  ) as lembrete_de_tarefa,
+  exists (
+    select 1 from calendar_appointments
+     where status = 'confirmed' and contact_id is not null
+       and starts_at > now() and starts_at <= now() + interval '30 days'
+  ) or exists (
+    select 1 from agent_inbox_items
+     where ref_kind = 'agenda_reminder_sender' and status = 'open'
+  ) as lembrete_de_agenda
 `;
 
 type Retrato = { emUso: Record<RecursoDoCron, boolean>; ate: number };

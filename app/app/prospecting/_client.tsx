@@ -612,6 +612,9 @@ export function ProspectingClient() {
   const criaSoNoEnvio = campaign?.config?.funnel_entry === "on_send";
   /** Linha que a caixa pode alterar agora. Espelha as regras do servidor (`selecionarNaFila`). */
   const marcavel = (c: Candidate) => {
+    // Sem WhatsApp (`lib/prospecting/whatsapp.ts`): quem tirou foi o produto, não o
+    // operador — a caixa não a devolve, e o servidor a recusaria ao iniciar.
+    if (c.data.whatsapp?.existe === false) return false;
     if (noRascunho) return true;
     if (c.status === "queued") return true;
     return (
@@ -642,6 +645,13 @@ export function ProspectingClient() {
   const marcadas = candidates.filter((c) => c.selected !== false);
   const opcoes = opcoesDoPreparo(campaign?.search);
   const sitesVerificados = marcadas.length - pendentesDeSite;
+  // WhatsApp (`lib/prospecting/whatsapp.ts`): sobre TODAS as que têm telefone — quem não
+  // tem WhatsApp sai da seleção, e é justamente ela que a conta precisa mostrar. Só
+  // aparece com algum veredito: sem conexão capaz, ou com o módulo `conferir_whatsapp`
+  // desligado (o padrão), "0 de N" ficaria parado para sempre.
+  const comTelefone = candidates.filter((c) => !!c.data.phone);
+  const whatsappVerificados = comTelefone.filter((c) => c.data.whatsapp != null).length;
+  const semWhatsapp = comTelefone.filter((c) => c.data.whatsapp?.existe === false).length;
   const previasProntas = marcadas.filter((c) => previaValida(c.data)).length;
   /**
    * O que o botão "Excluir desmarcadas" realmente apaga. Espelha o `where` do servidor: sem
@@ -1796,6 +1806,20 @@ export function ProspectingClient() {
                               {t("Prévias:")} {previasProntas} {t("de")} {marcadas.length}
                             </>
                           )}
+                          {whatsappVerificados > 0 && (
+                            <>
+                              {" · "}
+                              {t("WhatsApp verificado:")} {whatsappVerificados} {t("de")}{" "}
+                              {comTelefone.length}
+                              {semWhatsapp > 0 && (
+                                <>
+                                  {" ("}
+                                  {semWhatsapp} {t("sem WhatsApp, fora da abordagem")}
+                                  {")"}
+                                </>
+                              )}
+                            </>
+                          )}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -2000,6 +2024,14 @@ export function ProspectingClient() {
                                 {c.data.category}
                               </p>
                               <p className="mt-1 text-xs">{c.data.phone ?? t("Sem telefone")}</p>
+                              {c.data.phone && c.data.whatsapp?.existe === true && (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {t("Tem WhatsApp")}
+                                </p>
+                              )}
+                              {c.data.phone && c.data.whatsapp?.existe === false && (
+                                <p className="mt-1 text-xs font-medium">{t("Sem WhatsApp")}</p>
+                              )}
                             </td>
                             <td className="max-w-64 p-4 align-top">
                               <p className="text-xs text-muted-foreground">{c.data.address}</p>
@@ -2025,7 +2057,7 @@ export function ProspectingClient() {
                             <td className="max-w-64 p-4 align-top">
                               <Badge variant="outline">{t(labels[c.progress] ?? c.progress)}</Badge>
                               {c.error && (
-                                <p className="mt-2 text-xs text-muted-foreground">{c.error}</p>
+                                <p className="mt-2 text-xs text-muted-foreground">{t(c.error)}</p>
                               )}
                               {c.message_status && (
                                 <p className="mt-1 text-xs text-muted-foreground">

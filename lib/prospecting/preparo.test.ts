@@ -303,7 +303,7 @@ describe("B) quem recebe prévia", () => {
   it("devolve as contagens de sites e de prévias", async () => {
     mocks.enriquecer.mockResolvedValue({ enriquecidos: 4, classes: { "site-ok": 4 } });
     const { pool } = montar({ candidatos: { [C1]: [cand("a"), cand("b")] } });
-    expect(await rodar(pool)).toEqual({ sites: 4, previas: 2, pulou: false });
+    expect(await rodar(pool)).toEqual({ whatsapp: 0, sites: 4, previas: 2, pulou: false });
   });
 });
 
@@ -402,7 +402,7 @@ describe("D) bloqueio próprio, nunca o da organização", () => {
   it("não conseguiu o bloqueio: pulou, sem consulta de trabalho e sem chamar o modelo", async () => {
     const { pool, client } = montar({ trava: false, candidatos: { [C1]: [cand("a")] } });
     const r = await rodar(pool);
-    expect(r).toEqual({ sites: 0, previas: 0, pulou: true });
+    expect(r).toEqual({ whatsapp: 0, sites: 0, previas: 0, pulou: true });
     expect(client.query).toHaveBeenCalledTimes(1);
     expect(String(client.query.mock.calls[0]![0])).toContain("pg_try_advisory_lock");
     expect(mocks.gerar).not.toHaveBeenCalled();
@@ -552,5 +552,56 @@ describe("F) auditoria prospecting.previews_generated", () => {
     const { pool } = montar({ trava: false });
     await rodar(pool);
     expect(mocks.audit).not.toHaveBeenCalled();
+  });
+});
+
+describe("Passo 0 — o WhatsApp vem antes do site e da prévia (whatsapp.ts)", () => {
+  const rodarCom = (pool: unknown, consultaWhatsapp: unknown, ligado = true) =>
+    prepararCandidatos(pool as never, {} as never, ORG, "req-1", Date.now() + 60_000, {
+      conferirWhatsapp: async () => ligado,
+      consultaWhatsapp: consultaWhatsapp as never,
+      dormir: async () => {},
+    });
+
+  it("módulo conferir_whatsapp desligado (o padrão): nenhuma consulta sai, e o preparo segue igual", async () => {
+    const { pool, sqls } = montar({ candidatos: { [C1]: [cand("w1", { phone: "+5511987650001" })] } });
+    const consulta = vi.fn(async () => async () => true);
+    const r = await rodarCom(pool, consulta, false);
+    expect(consulta).not.toHaveBeenCalled();
+    expect(r.whatsapp).toBe(0);
+    expect(sqls.some((s) => s.sql.includes("'whatsapp'"))).toBe(false);
+    expect(r.previas).toBe(1);
+  });
+
+  it("confere pela conexão DA CAMPANHA, grava o veredito e só depois verifica sites", async () => {
+    const { pool, sqls } = montar({
+      candidatos: { [C1]: [cand("w1", { phone: "+5511987650001" }), cand("w2", { phone: "+551130000002" })] },
+    });
+    const ordem: string[] = [];
+    const consulta = vi.fn(async (_db: unknown, _org: string, canal: string | null) => {
+      ordem.push(`consulta:${canal}`);
+      return async (tel: string) => tel.startsWith("+55119");
+    });
+    mocks.enriquecer.mockImplementation(async () => {
+      ordem.push("sites");
+      return { enriquecidos: 0, classes: {} };
+    });
+    const r = await rodarCom(pool, consulta);
+    expect(r.whatsapp).toBe(2);
+    expect(ordem[0]).toBe(`consulta:${CONFIG.channel_session_id}`);
+    expect(ordem.indexOf("sites")).toBeGreaterThan(0);
+    const wa = sqls.filter((s) => s.sql.startsWith("update prospecting_candidates") && s.sql.includes("'whatsapp'"));
+    expect(wa.map((s) => [s.params[1], s.params[3]])).toEqual([
+      ["w1", true],
+      ["w2", false],
+    ]);
+  });
+
+  it("sem conexão capaz de conferir (consulta nula), nada é conferido e o preparo segue igual", async () => {
+    const { pool, sqls } = montar({ candidatos: { [C1]: [cand("w1", { phone: "+5511987650001" })] } });
+    const r = await rodarCom(pool, async () => null);
+    expect(r.whatsapp).toBe(0);
+    expect(sqls.some((s) => s.sql.includes("'whatsapp'"))).toBe(false);
+    expect(r.previas).toBe(1);
   });
 });

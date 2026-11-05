@@ -648,10 +648,27 @@ export const agendaSettingsSchema = agendaSettingsWriteSchema.catch({confirmatio
  */
 export const internalContactTagsSchema = z.array(z.string()).catch([]);
 
+/**
+ * `team_contact_tags` (#3534): a lista de etiquetas que marcam um contato da
+ * EQUIPE QUE CONTINUA SENDO ATENDIDA — sócio que testa o agente, pessoa que
+ * pede informação a qualquer hora. A diferença para `internal_contact_tags` é
+ * toda a razão de a chave existir:
+ *
+ *   - `internal_contact_tags` → o contato NÃO é atendido pela IA (veto
+ *     `contato_interno`) e não vira card;
+ *   - `team_contact_tags`     → o contato É atendido (o turno segue normal),
+ *     é medido e registrado, mas nenhum repasse AUTOMÁTICO o silencia.
+ *
+ * Mesma forma de leitura (`catch([])`), mesmo bolso jsonb, nenhuma migration:
+ * quem nunca configurar a lista mantém exatamente o comportamento de antes.
+ */
+export const teamContactTagsSchema = z.array(z.string()).catch([]);
+
 export const crmSettingsSchema = z
   .object({
     cliente_pela_agenda: z.boolean().catch(false),
     internal_contact_tags: internalContactTagsSchema,
+    team_contact_tags: teamContactTagsSchema,
     /**
      * `telefone_de_ficha_vazia` (issue #2593): o telefone que o cliente diz
      * numa conversa entra SOZINHO na ficha SEM número — sem passar pela fila de
@@ -712,6 +729,7 @@ export const crmSettingsSchema = z
   .catch({
     cliente_pela_agenda: false,
     internal_contact_tags: [],
+    team_contact_tags: [],
     telefone_de_ficha_vazia: false,
     nome_informado_no_atendimento: false,
     avisar_transferencia_no_whatsapp: true,
@@ -771,6 +789,21 @@ export function tagsInternasDaOrg(settings: unknown): string[] {
       ? (settings as Record<string, unknown>).crm
       : undefined;
   return normalizarTags(crmSettingsSchema.parse(crm ?? {}).internal_contact_tags);
+}
+
+/**
+ * Lê `organizations.settings.crm.team_contact_tags` (#3534) já normalizada —
+ * minúscula, aparada, sem repetição —, a MESMA forma que `tagsInternasDaOrg`.
+ *
+ * Ausente, jsonb torto ou lista com lixo → lista vazia: nenhum contato é da
+ * equipe, e o produto se comporta exatamente como antes da chave existir.
+ */
+export function tagsDaEquipeDaOrg(settings: unknown): string[] {
+  const crm =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>).crm
+      : undefined;
+  return normalizarTags(crmSettingsSchema.parse(crm ?? {}).team_contact_tags);
 }
 
 /**
@@ -904,4 +937,44 @@ export function avisoDeTransferenciaLigado(settings: unknown): boolean {
   const crm = settings && typeof settings === 'object' && !Array.isArray(settings)
     ? (settings as Record<string, unknown>).crm : undefined;
   return crmSettingsSchema.parse(crm ?? {}).avisar_transferencia_no_whatsapp;
+}
+
+/**
+ * `organizations.settings.memoria_da_ia.limite_do_aviso_tokens` — acima deste
+ * peso a tela Memória da IA AVISA que a memória pesa. Só avisa: nada é
+ * bloqueado nem cortado. A memória vai inteira no prompt de TODO agente,
+ * várias leituras por mensagem, e cada empresa escolhe onde quer o aviso.
+ *
+ * Ausente (toda empresa que nunca escolheu) ou torto → o RECOMENDADO, que é o
+ * limiar fixo que a tela tinha antes desta chave existir. Lido pela tela
+ * (`app/app/ai/memory/page.tsx`); gravado só por `definirLimiteDoPesoDaMemoria`.
+ */
+export const LIMITE_RECOMENDADO_DO_PESO_DA_MEMORIA = 1_500;
+/** Abaixo disto uma regra de duas frases já acende o aviso, e ele vira ruído. */
+export const LIMITE_MINIMO_DO_PESO_DA_MEMORIA = 100;
+/**
+ * O documento aceita até 50 mil caracteres (≈14 mil tokens, `postSchema` de
+ * `app/api/v1/ai/memory/route.ts`); 50 mil tokens é um quarto da janela de 200
+ * mil dos modelos comuns. Um limite acima disso não avisa nada que importe.
+ */
+export const LIMITE_MAXIMO_DO_PESO_DA_MEMORIA = 50_000;
+
+export const limiteDoPesoDaMemoriaWriteSchema = z
+  .number()
+  .int()
+  .min(LIMITE_MINIMO_DO_PESO_DA_MEMORIA)
+  .max(LIMITE_MAXIMO_DO_PESO_DA_MEMORIA);
+
+/** O limite do aviso de peso da memória nesta organização. Nunca lança. */
+export function limiteDoPesoDaMemoria(settings: unknown): number {
+  const raiz =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? (settings as Record<string, unknown>)
+      : undefined;
+  const bloco = raiz?.memoria_da_ia;
+  const valor =
+    bloco && typeof bloco === "object" && !Array.isArray(bloco)
+      ? (bloco as Record<string, unknown>).limite_do_aviso_tokens
+      : undefined;
+  return limiteDoPesoDaMemoriaWriteSchema.catch(LIMITE_RECOMENDADO_DO_PESO_DA_MEMORIA).parse(valor);
 }

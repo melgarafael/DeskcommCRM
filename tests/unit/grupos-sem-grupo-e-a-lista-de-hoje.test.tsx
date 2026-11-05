@@ -45,6 +45,19 @@ function normalizar(html: string): string {
   return html.replace(/_r_[a-z0-9]+_/g, "_r_X_").trim();
 }
 
+/**
+ * A ÚNICA classe que o #3875 acrescenta a cada item da barra: `shrink-0`.
+ *
+ * A barra deixou de quebrar linha (`flex-wrap` → `flex-nowrap` + rolagem
+ * lateral), e num contêiner que não quebra quem manda no tamanho é o
+ * `shrink-0` — sem ele o navegador espreme as pílulas em vez de rolar. Fora
+ * essa classe, o resto do conteúdo (ordem, rótulo, `title`, `data-recurso-*`,
+ * texto) continua comparado byte a byte contra a fixture.
+ */
+function semShrink(html: string): string {
+  return html.replace(/ class="shrink-0 /g, ' class="');
+}
+
 const TEMPLATES = [
   { id: "1", title: "Meu Pessoal", body: "Oi {{primeiro_nome}}", shortcut: "oi", owner_user_id: "u1" },
   { id: "2", title: "Política da Equipe", body: "Política de troca", shortcut: null, owner_user_id: null },
@@ -119,12 +132,27 @@ describe("#3245 — sem grupo, a lista é a de HOJE (byte a byte)", () => {
     );
   });
 
-  it("a barra do Inbox, com `grupos=[]`, é exatamente a anterior à mudança", () => {
+  it("a barra do Inbox, com `grupos=[]`, mantém o CONTEÚDO anterior à mudança", () => {
     const { container } = render(
       <BarraDeRecursos recursos={RECURSOS as never} grupos={[]} onEscolher={() => {}} />,
     );
-    expect(normalizar(container.querySelector('[data-testid="barra-de-recursos"]')!.outerHTML)).toBe(
-      referencia("respostas-rapidas-barra-plana-antes-dos-grupos.html"),
+    const barra = container.querySelector('[data-testid="barra-de-recursos"]')!;
+    // O CONTEÚDO (ordem, rótulo, `title`, `data-recurso-*`) é o de antes, byte a
+    // byte. O que o #3875 mudou de propósito foi a CLASSE do contêiner: ele
+    // deixou de quebrar linha (`flex-wrap`) para virar uma linha com rolagem
+    // lateral, e a fixture guarda o `outerHTML` inteiro do contêiner antigo —
+    // congelar a classe dela aqui seria congelar justamente o defeito que a
+    // issue manda consertar. A classe nova é prendida em
+    // `barra-de-respostas-em-uma-linha.test.tsx`.
+    const referencia = new DOMParser().parseFromString(
+      readFileSync(
+        join(process.cwd(), "tests/fixtures", "respostas-rapidas-barra-plana-antes-dos-grupos.html"),
+        "utf8",
+      ),
+      "text/html",
+    ).body.firstElementChild!;
+    expect(semShrink(normalizar(barra.innerHTML))).toBe(
+      semShrink(normalizar(referencia.innerHTML)),
     );
   });
 

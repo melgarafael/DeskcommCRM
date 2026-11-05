@@ -1,4 +1,5 @@
 import type { ServiceBoundary } from "@/lib/atendimento/fronteira";
+import { ERRO_SEM_CANAL, ehSemCanalDeAtendimento } from "@/lib/atendimento/erro-de-canal";
 import { assertServiceBoundarySupabase } from "@/lib/atendimento/origem";
 import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 /**
@@ -16,6 +17,17 @@ import {
   resolveAgentForAutomaticTrigger,
 } from "@/lib/followup/agent-followup-gate";
 import { flowGraphSchema } from "@/lib/followup/graph-schema";
+
+/**
+ * A frase da recusa por falta de canal — a mesma que a tela mostra (#3923).
+ *
+ * Ela diz o que FAZER, não só o que falhou: quem recebe é quem acabou de tentar
+ * inscrever um cliente e não tem número pareado na instalação. A tela tem a
+ * própria chave de i18n (`FollowupDoContato`, frase idêntica): o texto da tela
+ * muda com o idioma da sessão lá, e este aqui é o que o consumidor da API lê.
+ */
+export const MENSAGEM_SEM_NUMERO_CONECTADO =
+  "Conecte um número de WhatsApp antes de iniciar o follow-up.";
 
 export const ENROLLMENT_LIST_COLUMNS =
   "id, pointer_id, version_id, contact_id, status, current_node_id, next_eval_at, outcome, started_at, completed_at, updated_at";
@@ -123,8 +135,32 @@ export async function enrollFollowupFlow(
     );
   }
 
-  const boundary = input.resolveServiceBoundary ? await input.resolveServiceBoundary() : await beginServiceAtOrigin(supabase, organizationId, contactId);
-  if (input.resolveServiceBoundary) await assertServiceBoundarySupabase(supabase, boundary);
+  // #3923 — SEM CANAL CONECTADO, ISSO NÃO É UM BUG: É UM ESTADO.
+  //
+  // `beginServiceAtOrigin` faz `throw error` com o erro do PostgREST, e sem
+  // tratamento ele saía da rota como 500 SEM CORPO (o defeito medido na issue).
+  // A recusa do banco está certa — sem sessão de canal não há conversa para
+  // nascer —, então o que muda é só o reconhecimento: a mesma régua de
+  // `lib/contacts/conversa-ao-criar.ts` (mensagem `service_channel_not_found`),
+  // devolvida como erro tratado para a rota montar o envelope e a tela dizer o
+  // que fazer. Qualquer OUTRO erro segue propagando: não é desta fatia decidir
+  // que 500 virou 4xx.
+  let boundary: ServiceBoundary;
+  try {
+    boundary = input.resolveServiceBoundary
+      ? await input.resolveServiceBoundary()
+      : await beginServiceAtOrigin(supabase, organizationId, contactId);
+    if (input.resolveServiceBoundary) await assertServiceBoundarySupabase(supabase, boundary);
+  } catch (erro) {
+    if (!ehSemCanalDeAtendimento(erro)) throw erro;
+    return {
+      ok: false,
+      code: ERRO_SEM_CANAL,
+      message: MENSAGEM_SEM_NUMERO_CONECTADO,
+      status: 409,
+    };
+  }
+
   const { data: created, error: insErr } = await supabase
     .from("followup_enrollments")
     .insert({
