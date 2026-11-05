@@ -74294,6 +74294,52 @@ drop trigger if exists trg_routing_assignment_changed on public.conversations;
 create trigger trg_routing_assignment_changed after update of assigned_to_user_id,status on public.conversations
  for each row execute function public.fn_routing_assignment_changed();
 
+-- ---- mensagem nova do cliente acorda o roteamento da conversa sem dono (migration 9225) ----
+-- Espelho da 9225. Fica ACIMA da VARREDURA anon porque cria função, e DEPOIS de
+-- tudo que ele lê (`messages`, `conversations`, `event_log`,
+-- `channel_routing_policies`, todos criados muito acima). O porquê inteiro está
+-- no cabeçalho da migration: o pedido `conversation.routing_requested` só nascia
+-- no INSERT de `conversations`, então uma conversa que já existia e continuava
+-- sem dono não voltava à distribuição pela mensagem do cliente — só pelo laço de
+-- retentativa do worker, que a reagenda para sempre.
+create or replace function public.fn_pedir_roteamento_na_mensagem()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+  -- SECURITY DEFINER é o que permite o INSERT em `event_log` acontecer também
+  -- quando quem grava a mensagem é um membro da organização pela API: um
+  -- gatilho com os privilégios do invocador faria o INSERT da mensagem falhar
+  -- na RLS do barramento, e a mensagem se perderia por causa do aviso.
+  insert into public.event_log(organization_id,event_type,entity_kind,entity_id,payload)
+  select c.organization_id,'conversation.routing_requested','conversation',c.id,
+    jsonb_build_object('organization_id',c.organization_id,'conversation_id',c.id,
+      'channel_session_id',c.channel_session_id)
+    from public.conversations c
+   where c.organization_id=new.organization_id
+     and c.id=new.conversation_id
+     and c.assigned_to_user_id is null
+     and c.is_group=false
+     and c.status in('open','pending','claimed','ai_handling')
+     and not exists (select 1 from public.channel_routing_policies p
+                      where p.organization_id=c.organization_id
+                        and p.channel_session_id=c.channel_session_id
+                        and p.distribution_mode='manual'
+                        and p.default_assignee_user_id is null)
+  on conflict(organization_id,entity_id) where event_type='conversation.routing_requested' and status in('pending','processing')
+  do update set next_attempt_at=case when event_log.status='pending' then now() else event_log.next_attempt_at end;
+  return null;
+end;
+$$;
+revoke all on function public.fn_pedir_roteamento_na_mensagem() from public,anon,authenticated;
+
+drop trigger if exists trg_routing_nova_mensagem_do_cliente on public.messages;
+create trigger trg_routing_nova_mensagem_do_cliente
+  after insert on public.messages
+  for each row
+  when (new.direction='inbound'
+        and new.type <> 'reaction'
+        and coalesce(new.metadata->>'historico_importado','') <> 'true')
+  execute function public.fn_pedir_roteamento_na_mensagem();
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
