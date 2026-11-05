@@ -68956,10 +68956,11 @@ comment on function public.fn_org_tem_automatico(uuid)
 
 -- O campo calculado: mesma assinatura, mesmo definer, parâmetro sem nome e o
 -- MESMO bit de trava do contato da 0645 — o que muda é só o rebaixamento de
--- `automatico` para `ninguem`.
-drop function if exists public.comando_da_conversa(public.conversations);
-
-create function public.comando_da_conversa(public.conversations)
+-- `automatico` para `ninguem`. `create or replace`, e não `drop` + `create`: a
+-- assinatura e o parâmetro sem nome já são os da 0645, e o `update.sh` roda sem
+-- ON_ERROR_STOP — um `create` que falhasse depois do `drop` deixaria a Inbox
+-- sem o campo calculado. O replace também preserva a ACL (reafirmada abaixo).
+create or replace function public.comando_da_conversa(public.conversations)
 returns text
 language sql
 stable
