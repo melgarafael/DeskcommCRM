@@ -337,10 +337,29 @@ export function delta(
         final.push(entrada);
       }
       patch.attendees = final;
-      // Os ids publicados são o que torna a remoção possível na próxima
-      // passada; vão junto do PATCH que mexe em convidado, com as MESMAS
-      // chaves do POST (sem elas o evento deixaria de ser reconhecido).
-      patch.extendedProperties = { private: propriedadesPrivadas(a) };
+      /**
+       * Os ids publicados são o que torna a remoção possível na próxima
+       * passada. Vão junto do PATCH que mexe em convidado, com as MESMAS chaves
+       * do POST (sem elas o evento deixaria de ser reconhecido) — e SÓ quando
+       * há lista nossa para registrar ou para apagar.
+       *
+       * Compromisso sem equipe continua com o PATCH de antes, byte por byte:
+       * mandar `extendedProperties` em toda edição de convidado só aumentaria
+       * a chance de conflito com quem edita o evento no Google.
+       */
+      const tinhaListaPublicada = Boolean(
+        e.extendedProperties?.private?.[`${PREFIXO_PROPRIEDADE}_guests`],
+      );
+      if (a.convidados_equipe_ids?.length || tinhaListaPublicada) {
+        const privadas: Record<string, string | null> = propriedadesPrivadas(a);
+        // Chave privada com valor `null` é como o Google APAGA a propriedade:
+        // sem isto, os ids de quem já saiu ficariam no evento para sempre e a
+        // próxima passada tentaria desconvidar gente que não está mais lá.
+        if (!a.convidados_equipe_ids?.length) {
+          privadas[`${PREFIXO_PROPRIEDADE}_guests`] = null;
+        }
+        patch.extendedProperties = { private: privadas };
+      }
     }
   }
   return patch;
