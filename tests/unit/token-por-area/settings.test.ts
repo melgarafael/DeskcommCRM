@@ -11,9 +11,10 @@
  *  - acima do teto do token → 429 com Retry-After, sem tocar no banco;
  *  - sessão continua com o mesmo portão (`requireRole` com o papel da tabela).
  *
- * Duas rotas ficam SÓ DE SESSÃO (PAREI, com motivo no código): `routing/channels`
- * (GET e PATCH) e `proposal-templates/importar` (POST). Para elas, o caso é 401 e
- * o cliente do banco nunca é aberto.
+ * Dois métodos ficam SÓ DE SESSÃO (PAREI, com motivo no código): o PATCH de
+ * `routing/channels` e o POST de `proposal-templates/importar`. Para eles, o caso
+ * é 401 e o cliente do banco nunca é aberto. O GET de `routing/channels` aceita
+ * token desde o lote 3 (bateria em `config-r1-lote3.test.ts`).
  *
  * O banco é `criarClienteAdminFalso`: guarda linhas das duas organizações e acusa
  * cadeia sem `organization_id` (ou RPC/arquivo de outra organização). O ramo de
@@ -754,20 +755,6 @@ describe("fica só de sessão (PAREI, sem porta)", () => {
     expect(createClient).not.toHaveBeenCalled();
   });
 
-  it("GET /api/v1/settings/routing/channels: token recebe 401; sem cliente do banco", async () => {
-    // Gate com `allowPlatformAdmin` e `mfaEmDivida` (sessão): fica de fora.
-    sessaoAusente();
-    const res = await rotaRoutingCanais.GET();
-    expect(res.status).toBe(401);
-    expect(requireRole).toHaveBeenCalledWith(
-      "manager",
-      expect.objectContaining({ resource: "settings_routing", allowPlatformAdmin: "leitura" }),
-    );
-    expect(validateBearerToken).not.toHaveBeenCalled();
-    expect(createAdminClient).not.toHaveBeenCalled();
-    expect(createClient).not.toHaveBeenCalled();
-  });
-
   it("PATCH /api/v1/settings/routing/channels: token recebe 401; fn_set_channel_routing exige auth.uid()", async () => {
     sessaoAusente();
     const res = await rotaRoutingCanais.PATCH(
@@ -934,8 +921,9 @@ describe("portas de settings: bloco de borda", () => {
     expect(isPublicPath(`/api/v1/settings/proposal-templates/${UUID}`)).toBe(false);
   });
 
-  it("irmãos que não ganharam porta seguem fora (routing/channels, art15, api-tokens, assinatura)", () => {
-    expect(isPublicPath("/api/v1/settings/routing/channels")).toBe(false);
+  it("irmãos que não ganharam porta seguem fora (art15, api-tokens, assinatura); routing/channels entrou no lote 3", () => {
+    expect(isPublicPath("/api/v1/settings/routing/channels")).toBe(true);
+    expect(isPublicPath("/api/v1/settings/routing/channels/x")).toBe(false);
     expect(isPublicPath("/api/v1/settings/art15")).toBe(false);
     expect(isPublicPath("/api/v1/settings/api-tokens")).toBe(false);
     expect(isPublicPath("/api/v1/settings/assinatura")).toBe(false);

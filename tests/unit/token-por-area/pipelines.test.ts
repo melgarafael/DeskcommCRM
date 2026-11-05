@@ -4,9 +4,9 @@
  *
  * Guiado por tabela (`CASOS`): um caso por método convertido, com seis testes
  * cada — token de A alcança, token de B não alcança, sem escopo, abaixo do
- * papel, acima do teto e sessão com o mesmo portão. Os métodos que FICAM só de
- * sessão (previsão, criar etapa, editar etapa) têm um teste próprio: com token,
- * 401, e o cliente admin nunca chamado.
+ * papel, acima do teto e sessão com o mesmo portão. Previsão, criar etapa,
+ * editar e arquivar etapa foram convertidas no lote 3 e têm a bateria própria em
+ * `config-r1-lote3.test.ts`.
  *
  * O banco é `criarClienteAdminFalso`: guarda as linhas das duas organizações e
  * acusa cadeia sem `organization_id` (ou RPC de outra organização). No ramo de
@@ -448,72 +448,6 @@ const CASOS: Caso[] = [
   },
 ];
 
-/**
- * Métodos que FICAM só de sessão (ver `receita`, "Quando parar"): a previsão é
- * por usuário (`visibility_mode`), a criação de etapa e a edição de etapa ainda
- * passam `authz.org.role` ao lib. Com token, o portão de sessão recusa com 401.
- */
-const SO_SESSAO: Caso[] = [
-  {
-    nome: "GET /api/v1/pipelines/[id]/forecast",
-    modulo: () => import("@/app/api/v1/pipelines/[id]/forecast/route"),
-    metodo: "GET",
-    caminho: `/api/v1/pipelines/${PIPE_A}/forecast`,
-    params: { id: PIPE_A },
-    papel: "agent",
-    escopo: "config:read",
-    sucessoStatus: 200,
-    escrita: false,
-    bDe: "404",
-    idsDeA: [PIPE_A],
-    linhas: { crm_pipelines: [PIPE_A_ROW] },
-  },
-  {
-    nome: "POST /api/v1/pipelines/[id]/stages",
-    modulo: () => import("@/app/api/v1/pipelines/[id]/stages/route"),
-    metodo: "POST",
-    caminho: `/api/v1/pipelines/${PIPE_A}/stages`,
-    params: { id: PIPE_A },
-    corpo: { name: "Retorno" },
-    papel: "manager",
-    escopo: "config:write",
-    sucessoStatus: 201,
-    escrita: true,
-    bDe: "404",
-    idsDeA: [PIPE_A],
-    linhas: { crm_pipelines: [PIPE_A_ROW], crm_stages: [ETAPA_A1] },
-  },
-  {
-    nome: "PATCH /api/v1/pipelines/[id]/stages/[stageId]",
-    modulo: () => import("@/app/api/v1/pipelines/[id]/stages/[stageId]/route"),
-    metodo: "PATCH",
-    caminho: `/api/v1/pipelines/${PIPE_A}/stages/${STAGE_A1}`,
-    params: { id: PIPE_A, stageId: STAGE_A1 },
-    corpo: { name: "Novo nome" },
-    papel: "manager",
-    escopo: "config:write",
-    sucessoStatus: 200,
-    escrita: true,
-    bDe: "404",
-    idsDeA: [STAGE_A1],
-    linhas: { crm_pipelines: [PIPE_A_ROW], crm_stages: [ETAPA_A1] },
-  },
-  {
-    nome: "DELETE /api/v1/pipelines/[id]/stages/[stageId]",
-    modulo: () => import("@/app/api/v1/pipelines/[id]/stages/[stageId]/route"),
-    metodo: "DELETE",
-    caminho: `/api/v1/pipelines/${PIPE_A}/stages/${STAGE_A1}`,
-    params: { id: PIPE_A, stageId: STAGE_A1 },
-    papel: "manager",
-    escopo: "config:write",
-    sucessoStatus: 200,
-    escrita: true,
-    bDe: "404",
-    idsDeA: [STAGE_A1],
-    linhas: { crm_pipelines: [PIPE_A_ROW], crm_stages: [ETAPA_A1] },
-  },
-];
-
 // ---------------------------------------------------------------------------
 // Auxiliares
 // ---------------------------------------------------------------------------
@@ -684,24 +618,6 @@ describe.each(CASOS)("$nome — token por área", (caso) => {
 });
 
 // ===========================================================================
-// Métodos que ficam só de sessão: com token, 401 e nenhum cliente admin
-// ===========================================================================
-describe.each(SO_SESSAO)("$nome — fica só de sessão", (caso) => {
-  it("com token e sem cookie → 401, e o cliente admin nunca é chamado", async () => {
-    preparar(caso.linhas);
-    tokenDe(ORG_A, TOKEN_A, "admin");
-    vi.mocked(requireRole).mockResolvedValueOnce({
-      ok: false,
-      response: new Response(null, { status: 401 }),
-    } as never);
-    const res = await chamar(caso, TOKEN_A);
-    expect(res.status).toBe(401);
-    expect(createAdminClient).not.toHaveBeenCalled();
-    expect(falso.cadeias).toEqual([]);
-  });
-});
-
-// ===========================================================================
 // Borda do proxy: cada porta nova libera o caminho com UUID e nada além dele
 // ===========================================================================
 describe("PUBLIC_PATHS — borda das portas de pipelines", () => {
@@ -728,10 +644,15 @@ describe("PUBLIC_PATHS — borda das portas de pipelines", () => {
     for (const c of [...COM_ID, ...LITERAIS]) expect(isPublicPath(`${c}/x`)).toBe(false);
   });
 
-  it("irmãos que ficam só de sessão seguem fora", () => {
-    expect(isPublicPath(`/api/v1/pipelines/${PIPE_A}/forecast`)).toBe(false);
-    expect(isPublicPath(`/api/v1/pipelines/${PIPE_A}/stages/${STAGE_A1}`)).toBe(false);
+  it("irmãos fora da forma seguem fora (barra final, id da etapa fora da forma de UUID)", () => {
     expect(isPublicPath(`/api/v1/pipelines/${PIPE_A}/stages/`)).toBe(false);
+    expect(isPublicPath(`/api/v1/pipelines/${PIPE_A}/stages/abc`)).toBe(false);
+    expect(isPublicPath(`/api/v1/pipelines/${PIPE_A}/stages/${STAGE_A1}/x`)).toBe(false);
+  });
+
+  it("forecast e stages/[stageId] ganharam porta no lote 3 (a bateria própria está em config-r1-lote3.test.ts)", () => {
+    expect(isPublicPath(`/api/v1/pipelines/${PIPE_A}/forecast`)).toBe(true);
+    expect(isPublicPath(`/api/v1/pipelines/${PIPE_A}/stages/${STAGE_A1}`)).toBe(true);
   });
 
   it("o literal default não entra por [id]: é só o próprio caminho", () => {
