@@ -5,9 +5,10 @@
  *  - as agendadas do contato (padrão);
  *  - "Exibir Todos": as agendadas de todos os contatos da organização;
  *  - "Relatório": os últimos envios do contato (enviados, falhados, pulados).
+ * Cada agendamento pode ser editado (lápis) ou cancelado (lixeira).
  */
 import { useState } from "react";
-import { CalendarClock, Eye, EyeOff, History, Plus, Trash2, X } from "lucide-react";
+import { CalendarClock, Eye, EyeOff, History, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -17,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { apiClient } from "@/lib/api/client";
+import { PencilSimple, Trash } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
 
 const CHAVE_RAIZ = "mensagens-agendadas";
@@ -47,6 +49,8 @@ interface AgendamentoLinha {
   body: string;
   recorrencia: string;
   intervalo_dias: number | null;
+  inicio_local: string;
+  termino_local: string | null;
   scheduled_at: string;
   se_desconectado: "esperar" | "cancelar";
   contacts?: { display_name: string | null; name: string | null } | null;
@@ -132,7 +136,7 @@ export function MensagensAgendadasBotao(props: Props) {
   const { contactId } = props;
 
   // Mesma consulta do popup: sempre que o botão monta, busca de novo, e o popup
-  // invalida esta chave ao criar ou cancelar, então o número nunca fica para trás.
+  // invalida esta chave ao criar, editar ou cancelar, então o número nunca fica para trás.
   const consulta = useQuery(opcoesDaLista(contactId));
   const total = consulta.data?.data.length ?? 0;
 
@@ -171,6 +175,7 @@ export function MensagensAgendadasDialog({
   const t = useT();
   const [modo, setModo] = useState<Modo>("contato");
   const [criando, setCriando] = useState(false);
+  const [editando, setEditando] = useState<AgendamentoLinha | null>(null);
   const qc = useQueryClient();
 
   const consulta = useQuery(opcoesDaLista(contactId));
@@ -193,13 +198,20 @@ export function MensagensAgendadasDialog({
   const consultaAtiva = modo === "todas" ? todas : consulta;
   const lista = consultaAtiva.data?.data ?? [];
   const totalEnvios = envios.data?.data.length ?? 0;
+  const formularioAberto = criando || editando !== null;
 
   // Criar, editar ou cancelar mexe nas três visões: invalida o prefixo inteiro.
   const atualizarTudo = () => qc.invalidateQueries({ queryKey: [CHAVE_RAIZ] });
 
   function alternar(alvo: Exclude<Modo, "contato">) {
     setCriando(false);
+    setEditando(null);
     setModo((atual) => (atual === alvo ? "contato" : alvo));
+  }
+
+  function fecharFormulario() {
+    setCriando(false);
+    setEditando(null);
   }
 
   async function cancelar(id: string) {
@@ -212,8 +224,11 @@ export function MensagensAgendadasDialog({
     }
   }
 
-  const titulo =
-    modo === "relatorio"
+  const titulo = formularioAberto
+    ? editando
+      ? "Editar agendamento"
+      : "Criar agendamento"
+    : modo === "relatorio"
       ? "Relatório"
       : modo === "todas"
         ? "Todas as mensagens agendadas"
@@ -226,7 +241,7 @@ export function MensagensAgendadasDialog({
           <DialogTitle>{titulo}</DialogTitle>
         </DialogHeader>
 
-        {!criando && (
+        {!formularioAberto && (
           <div className="flex flex-wrap justify-end gap-2">
             <Button
               type="button"
@@ -263,14 +278,16 @@ export function MensagensAgendadasDialog({
           </div>
         )}
 
-        {criando ? (
+        {formularioAberto ? (
           <CriarAgendamento
-            contactId={contactId}
-            channelSessionId={channelSessionId}
+            key={editando?.id ?? "novo"}
+            inicial={editando ?? undefined}
+            contactId={editando?.contact_id ?? contactId}
+            channelSessionId={editando?.channel_session_id ?? channelSessionId}
             textoInicial={textoInicial ?? ""}
-            onCancelar={() => setCriando(false)}
+            onCancelar={fecharFormulario}
             onCriado={async () => {
-              setCriando(false);
+              fecharFormulario();
               await atualizarTudo();
             }}
           />
@@ -326,8 +343,25 @@ export function MensagensAgendadasDialog({
                         {a.se_desconectado === "cancelar" ? " · cancela se desconectado" : ""}
                       </p>
                     </div>
-                    <Button type="button" size="icon" variant="ghost" aria-label="Cancelar agendamento" onClick={() => void cancelar(a.id)}>
-                      <Trash2 className="size-4" aria-hidden />
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      aria-label="Editar agendamento"
+                      title="Editar agendamento"
+                      onClick={() => setEditando(a)}
+                    >
+                      <PencilSimple size={16} weight="regular" aria-hidden />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      aria-label="Cancelar agendamento"
+                      title="Cancelar agendamento"
+                      onClick={() => void cancelar(a.id)}
+                    >
+                      <Trash size={16} weight="regular" aria-hidden />
                     </Button>
                   </li>
                 ))}
@@ -345,13 +379,16 @@ export function MensagensAgendadasDialog({
   );
 }
 
+/** Formulário de criação ou, quando recebe `inicial`, de edição (PATCH). */
 function CriarAgendamento({
+  inicial,
   textoInicial,
   contactId,
   channelSessionId,
   onCancelar,
   onCriado,
 }: {
+  inicial?: AgendamentoLinha;
   textoInicial: string;
   contactId: string;
   channelSessionId: string;
@@ -359,15 +396,15 @@ function CriarAgendamento({
   onCriado: () => Promise<void>;
 }) {
   const t = useT();
-  const [titulo, setTitulo] = useState("");
-  const [texto, setTexto] = useState(textoInicial);
-  const [data, setData] = useState("");
-  const [hora, setHora] = useState("");
-  const [recorrencia, setRecorrencia] = useState("nenhuma");
-  const [intervaloDias, setIntervaloDias] = useState("");
-  const [temTermino, setTemTermino] = useState(false);
-  const [termino, setTermino] = useState("");
-  const [seDesconectado, setSeDesconectado] = useState<"esperar" | "cancelar">("esperar");
+  const [titulo, setTitulo] = useState(inicial?.title ?? "");
+  const [texto, setTexto] = useState(inicial ? inicial.body : textoInicial);
+  const [data, setData] = useState(inicial ? inicial.inicio_local.slice(0, 10) : "");
+  const [hora, setHora] = useState(inicial ? inicial.inicio_local.slice(11, 16) : "");
+  const [recorrencia, setRecorrencia] = useState(inicial?.recorrencia ?? "nenhuma");
+  const [intervaloDias, setIntervaloDias] = useState(inicial?.intervalo_dias ? String(inicial.intervalo_dias) : "");
+  const [temTermino, setTemTermino] = useState(Boolean(inicial?.termino_local));
+  const [termino, setTermino] = useState(inicial?.termino_local ? inicial.termino_local.slice(0, 10) : "");
+  const [seDesconectado, setSeDesconectado] = useState<"esperar" | "cancelar">(inicial?.se_desconectado ?? "esperar");
   const [salvando, setSalvando] = useState(false);
 
   async function salvar() {
@@ -376,23 +413,33 @@ function CriarAgendamento({
     if (recorrencia === "a_cada_n_dias" && !intervaloDias) return toast.error("Informe de quantos em quantos dias.");
 
     setSalvando(true);
+    const corpo = {
+      contact_id: contactId,
+      channel_session_id: channelSessionId,
+      title: titulo.trim() || null,
+      body: texto,
+      recorrencia,
+      intervalo_dias: recorrencia === "a_cada_n_dias" ? Number(intervaloDias) : null,
+      inicio_local: `${data}T${hora}`,
+      termino_local: temTermino && termino ? `${termino}T23:59` : null,
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      se_desconectado: seDesconectado,
+    };
     try {
-      await apiClient.post("/api/v1/mensagens-agendadas", {
-        contact_id: contactId,
-        channel_session_id: channelSessionId,
-        title: titulo.trim() || null,
-        body: texto,
-        recorrencia,
-        intervalo_dias: recorrencia === "a_cada_n_dias" ? Number(intervaloDias) : null,
-        inicio_local: `${data}T${hora}`,
-        termino_local: temTermino && termino ? `${termino}T23:59` : null,
-        tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-        se_desconectado: seDesconectado,
-      });
-      toast.success("Agendamento criado.");
+      if (inicial) {
+        await apiClient.patch(`/api/v1/mensagens-agendadas/${inicial.id}`, corpo);
+        toast.success("Agendamento atualizado.");
+      } else {
+        await apiClient.post("/api/v1/mensagens-agendadas", corpo);
+        toast.success("Agendamento criado.");
+      }
       await onCriado();
     } catch {
-      toast.error("Não consegui criar o agendamento. Confira os campos.");
+      toast.error(
+        inicial
+          ? "Não consegui salvar a edição. Confira os campos."
+          : "Não consegui criar o agendamento. Confira os campos.",
+      );
     } finally {
       setSalvando(false);
     }
@@ -469,7 +516,7 @@ function CriarAgendamento({
           <X className="mr-1 size-4" aria-hidden /> Cancelar
         </Button>
         <Button type="button" onClick={() => void salvar()} disabled={salvando}>
-          {salvando ? "Criando…" : "Criar"}
+          {salvando ? "Salvando…" : inicial ? "Salvar" : "Criar"}
         </Button>
       </div>
     </div>
