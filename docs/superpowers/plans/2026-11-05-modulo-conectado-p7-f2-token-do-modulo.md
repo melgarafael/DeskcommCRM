@@ -85,7 +85,9 @@
 
 **Arquivos:** `app/api/v1/extensions/[id]/segredo/route.ts` (+ teste), `lib/extensions/requests.ts`, `lib/audit/actions.ts` (`extension.secret_rotated`), `ExtensionOperations`/`InstalledExtensionCard` (botão "Gerar novo segredo" só para `connected`), recibo `rotate_secret` em `vocabulario.ts`/CHECK de `kind` (tripla: coluna `kind` já tem CHECK editado em 9116, ver como o `switch` entrou).
 
-**Faz:** `POST` mesmo portão da rota `switch` (sessão de quem administra a instalação, `requireSupportWrite`, `operationKey` idempotente, plataforma). Gera, cifra, grava em `extension_installation_secrets` (upsert), responde **uma vez** com o segredo em claro; o recibo e o audit **não** levam o segredo. Girar revoga os tokens vivos da instalação (chama `revoke` por organização) — o módulo busca de novo com o novo segredo.
+**Emenda 3 (05/11):** sem recibo `rotate_secret` e sem `Idempotency-Key`. Um recibo (ou o corpo guardado de uma chave de idempotência) reproduziria o segredo em claro numa repetição, e o segredo só pode viver cifrado em `extension_installation_secrets`. Girar não é repetível: quem repete o pedido gera outro segredo; a tela desabilita o botão durante o pedido e mostra o segredo uma vez. Logo, esta tarefa não tem migration e não mexe no CHECK de `kind`.
+
+**Faz:** `POST` mesmo portão da rota `switch` (menos o `operationKey`) (sessão de quem administra a instalação, `requireSupportWrite`, `operationKey` idempotente, plataforma). Gera, cifra, grava em `extension_installation_secrets` (upsert), responde **uma vez** com o segredo em claro; o recibo e o audit **não** levam o segredo. Girar revoga os tokens vivos da instalação (chama `revoke` por organização) — o módulo busca de novo com o novo segredo.
 
 **Testes:** o corpo de resposta traz o segredo uma vez; o audit e o `extension_operations.result` não contêm o texto (teste procura o valor em toda linha gravada); girar invalida assinatura antiga; viewer/manager recebem 403; módulo `declarative` recebe 409.
 
