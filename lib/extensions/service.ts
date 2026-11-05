@@ -538,6 +538,33 @@ export async function listExtensions(user: AuthUser, org: ActiveOrg): Promise<Ex
     }
     return view;
   });
+  // Quem administra a instalação precisa saber se um módulo `connected` ainda não tem segredo
+  // (instalação com `secret_pending`): o botão vira "Gerar segredo". Só existência da linha; o
+  // texto, cifrado ou não, nunca sai daqui. Falha na leitura não derruba a lista.
+  if (canInstall) {
+    const conectadas = views.filter((view) => view.profile === "connected" && !view.removed_at);
+    if (conectadas.length > 0) {
+      try {
+        const segredos = await admin
+          .from("extension_installation_secrets")
+          .select("installation_id")
+          .in(
+            "installation_id",
+            conectadas.map((view) => view.id),
+          );
+        if (!segredos.error) {
+          const com = new Set(
+            ((segredos.data ?? []) as Array<{ installation_id: string }>).map(
+              (linha) => linha.installation_id,
+            ),
+          );
+          for (const view of conectadas) view.secret_pending = !com.has(view.id);
+        }
+      } catch {
+        // Sem a informação o botão aparece como "Gerar novo segredo", que também serve.
+      }
+    }
+  }
   return {
     organization_id: org.orgId,
     can_manage: org.role === "admin" && !user.support,
