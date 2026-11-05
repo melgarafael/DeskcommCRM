@@ -5,10 +5,15 @@ gasta, quantos atendimentos ela fez, e quanto o cliente espera entre mandar a
 mensagem e receber a primeira resposta — com as esperas deliberadas separadas da
 lentidão de verdade.
 
-Tudo aqui é **só leitura**. Rode com o `psql` contra o banco da instalação:
+Tudo aqui é **só leitura**. Rode **na VPS, de dentro da pasta da instalação**, e
+o `psql` é o do contêiner: a VPS instalada pelo kit não traz cliente de Postgres
+no host, e `$SUPABASE_DB_URL` não está no seu shell (ela mora no `.env`). Os três
+passos estão em [`rodar-sql-na-vps.md`](./rodar-sql-na-vps.md).
 
 ```bash
-psql "$SUPABASE_DB_URL"
+cd "$(dirname "$(find /root /opt /home /var/www -maxdepth 4 -name docker-compose.prod.yml 2>/dev/null | head -1)")"
+export SUPABASE_DB_URL="$(grep -m1 '^SUPABASE_DB_URL=' .env | cut -d= -f2- | tr -d "\"'" )"
+docker run --rm -it postgres:17-alpine psql "$SUPABASE_DB_URL"   # sessão interativa
 ```
 
 e, dentro dele, escolha a organização uma vez (o id está em

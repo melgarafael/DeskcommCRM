@@ -18,13 +18,28 @@
   Retrying.").
 - Sem ninguém usando o sistema, por horas.
 
+## Antes de rodar — a pasta e o `psql`
+
+Tudo abaixo roda **na VPS, por SSH**, de dentro da pasta da instalação, e o
+`psql` é o do contêiner: a VPS instalada pelo kit não traz cliente de Postgres
+no host. Rode este bloco uma vez na sessão e os comandos seguintes funcionam
+copiando e colando. O porquê de cada linha está em
+[`rodar-sql-na-vps.md`](./rodar-sql-na-vps.md).
+
+```bash
+cd "$(dirname "$(find /root /opt /home /var/www -maxdepth 4 -name docker-compose.prod.yml 2>/dev/null | head -1)")"
+export SUPABASE_DB_URL="$(grep -m1 '^SUPABASE_DB_URL=' .env | cut -d= -f2- | tr -d "\"'" )"
+docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -c 'select 1'   # tem de responder 1
+```
+
 ## Sintoma
 
 - 100% das chamadas `/rest/v1` retornam 522 por longos períodos (medido: ~6 h).
 - O app responde "Algo deu errado" em todas as telas.
 - Só volta com **Restart project** manual no painel do Supabase.
 - `psql` pelo pooler pode estar lento ou não responder — diferente do caso de
-  replay, em que o banco responde em ms.
+  replay, em que o banco responde em ms (o teste é o `select 1` do bloco
+  [*Antes de rodar*](#antes-de-rodar--a-pasta-e-o-psql)).
 
 ## Como confirmar
 
@@ -42,7 +57,7 @@ Se CPU/memória ficam saturados sem carga de usuário, é compute insuficiente.
 ### 2. `pg_stat_activity` — quem está consumindo
 
 ```bash
-psql "$SUPABASE_DB_URL" -c \
+docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -c \
   "select count(*) as total,
           count(*) filter (where state = 'active') as ativos,
           count(*) filter (where state = 'idle in transaction') as idle_em_tx
@@ -53,7 +68,7 @@ psql "$SUPABASE_DB_URL" -c \
 E quem são:
 
 ```bash
-psql "$SUPABASE_DB_URL" -c \
+docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -c \
   "select usename, state, count(*) as n, left(query, 80) as consulta
      from pg_stat_activity
     where datname = current_database()
@@ -67,7 +82,7 @@ replay/loop — o problema é a capacidade, não a tempestade.
 ### 3. `pg_settings` — limites do plano
 
 ```bash
-psql "$SUPABASE_DB_URL" -c \
+docker run --rm -i postgres:17-alpine psql "$SUPABASE_DB_URL" -c \
   "select name, setting, unit
      from pg_settings
     where name in ('max_connections', 'shared_buffers', 'work_mem',
@@ -76,6 +91,11 @@ psql "$SUPABASE_DB_URL" -c \
 
 Confirme que os valores correspondem ao compute do plano free (Nano). Se o
 projeto já cresceu além disso, o compute mínimo suportado não é o do free.
+
+Os valores de referência por compute são os da doc do Supabase
+([*Compute and Disk*](https://supabase.com/docs/guides/platform/compute-and-disk),
+tabela **Database Max Connections**): é lá que se confere o número, porque ele
+muda com o plano — este runbook não os repete de memória.
 
 ### 4. Diferença para o replay do gateway
 
