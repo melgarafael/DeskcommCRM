@@ -2,7 +2,7 @@
  * JWT de contexto do módulo (Spec 33, F3, tarefa 4): assinatura verificável, expiração curta, sem
  * segredo no payload, e recusa de tudo que não é exatamente o que o host emitiu.
  */
-import { createSecretKey, generateKeyPairSync, randomUUID } from "node:crypto";
+import { createHmac, generateKeyPairSync, randomUUID } from "node:crypto";
 
 import { decodeJwt, decodeProtectedHeader, SignJWT } from "jose";
 import { describe, expect, it } from "vitest";
@@ -122,14 +122,21 @@ describe("verificarJwtDeContexto", () => {
     const semAssinatura = `${Buffer.from('{"alg":"none","typ":"JWT"}').toString("base64url")}.${p}.`;
     expect((await verificarJwtDeContexto(semAssinatura, esperado)).ok).toBe(false);
 
-    const hs = await new SignJWT({ org: ORG, inst: INST })
-      .setProtectedHeader({ alg: "HS256" })
-      .setSubject(PESSOA)
-      .setIssuer(JWT_ISSUER)
-      .setAudience(JWT_AUDIENCE)
-      .setIssuedAt(Math.floor(AGORA.getTime() / 1000))
-      .setExpirationTime(Math.floor(AGORA.getTime() / 1000) + 60)
-      .sign(createSecretKey(Buffer.from(PEM)));
+    // HS256 montado à mão (HMAC do PEM como segredo): o verificador só aceita ES256.
+    const cab = Buffer.from('{"alg":"HS256","typ":"JWT"}').toString("base64url");
+    const corpo = Buffer.from(
+      JSON.stringify({
+        org: ORG,
+        inst: INST,
+        sub: PESSOA,
+        iss: JWT_ISSUER,
+        aud: JWT_AUDIENCE,
+        iat: Math.floor(AGORA.getTime() / 1000),
+        exp: Math.floor(AGORA.getTime() / 1000) + 60,
+      }),
+    ).toString("base64url");
+    const assinatura = createHmac("sha256", PEM).update(`${cab}.${corpo}`).digest("base64url");
+    const hs = `${cab}.${corpo}.${assinatura}`;
     expect((await verificarJwtDeContexto(hs, esperado)).ok).toBe(false);
   });
 
