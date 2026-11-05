@@ -37,7 +37,6 @@ import * as rotaMemoryEntries from "@/app/api/v1/ai/memory/entries/route";
 import * as rotaMemoryEntry from "@/app/api/v1/ai/memory/entries/[id]/route";
 import * as rotaMemoryVersion from "@/app/api/v1/ai/memory/versions/[id]/route";
 import * as rotaSkills from "@/app/api/v1/ai/skills/route";
-import * as rotaSkillsImport from "@/app/api/v1/ai/skills/import/route";
 import * as rotaSkill from "@/app/api/v1/ai/skills/[name]/route";
 import * as rotaSkillVersions from "@/app/api/v1/ai/skills/[name]/versions/route";
 
@@ -805,38 +804,12 @@ describe("PUBLIC_PATHS — borda do proxy", () => {
     for (const c of [...COM_ID, ...COM_NAME, ...LITERAIS]) expect(isPublicPath(`${c}/x/y`)).toBe(false);
   });
 
-  it("irmãos de sessão (import, install, restore) sob uma skill NÃO entram de carona na porta do [name]", () => {
-    // Quem recusa o token nesses irmãos é a rota (401, provado no bloco "Só sessão");
-    // o proxy nem os deixa passar: a classe do [name] não aceita sub-path.
+  it("install e restore têm porta própria; sub-path inventado sob uma skill NÃO entra de carona", () => {
+    expect(isPublicPath(`/api/v1/ai/skills/${NOME_SKILL_A}/install`)).toBe(true);
+    expect(isPublicPath(`/api/v1/ai/skills/${NOME_SKILL_A}/restore`)).toBe(true);
     expect(isPublicPath(`/api/v1/ai/skills/${NOME_SKILL_A}/import`)).toBe(false);
-    expect(isPublicPath(`/api/v1/ai/skills/${NOME_SKILL_A}/install`)).toBe(false);
-    expect(isPublicPath(`/api/v1/ai/skills/${NOME_SKILL_A}/restore`)).toBe(false);
-  });
-});
-
-// ============================================================================
-// Métodos que ficaram SÓ de sessão: PUT [name], POST import
-// (install e restore não existem como arquivos de rota nesta fatia).
-// O proxy libera o caminho, mas a rota recusa o Bearer com 401 e nunca
-// toca createAdminClient.
-// ============================================================================
-describe("Só sessão — token é recusado com 401, createAdminClient nunca chamado", () => {
-  const reqComToken = (metodo: string, caminho: string, corpo?: unknown) =>
-    new NextRequest(`http://localhost${caminho}`, {
-      method: metodo,
-      headers: { authorization: `Bearer ${TOKEN_A}` },
-      ...(corpo !== undefined ? { body: JSON.stringify(corpo) } : {}),
-    });
-
-  it("POST /ai/skills/import com token → 401, createAdminClient não chamado", async () => {
-    vi.mocked(requireRole).mockResolvedValueOnce({
-      ok: false,
-      response: new Response(null, { status: 401 }),
-    } as never);
-    const res = await rotaSkillsImport.POST(reqComToken("POST", "/api/v1/ai/skills/import"));
-    expect(res.status).toBe(401);
-    expect(createAdminClient).not.toHaveBeenCalled();
-    expect(validateBearerToken).not.toHaveBeenCalled();
+    expect(isPublicPath(`/api/v1/ai/skills/${NOME_SKILL_A}/install/x`)).toBe(false);
+    expect(isPublicPath(`/api/v1/ai/skills/${NOME_SKILL_A}/restore/x`)).toBe(false);
   });
 });
 

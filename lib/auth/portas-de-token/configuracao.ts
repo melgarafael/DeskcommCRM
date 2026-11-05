@@ -84,9 +84,9 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   // com `config:read` (GET) ou `config:write` (escrita) e papel admin
   // (`tokenRole`). `[name]` é o nome da skill (kebab-case `[a-z0-9][a-z0-9-]{0,119}`
   // — os nomes do catálogo seguem `objecao-preco`/`agendamento` no baseline) — não é
-  // UUID, então declara classe e amostra. `import`, `install`, `restore` e o
-  // PUT de `[name]` seguem só de sessão (usam `getSkillsPool`, pg Pool cru) e
-  // não entram de carona.
+  // UUID, então declara classe e amostra. `import`, `[name]/install`,
+  // `[name]/restore` e o PUT de `[name]` aceitam token também (usam `getSkillsPool`,
+  // pg Pool cru, mas a organização entra como parâmetro, vinda da linha do token).
   //
   // DECISAO: a classe do segmento e o Zod da rota (`nameSchema`) são apertados para
   // `[a-z0-9][a-z0-9-]{0,119}` porque todos os nomes de skill no baseline e na
@@ -94,15 +94,17 @@ export const MODELOS_DA_CONFIGURACAO: readonly ModeloDePorta[] = [
   // irmãos literais como `import`, `install`, `restore` e `upload` não caem de
   // carona na porta do `[name]` por engano.
   "/api/v1/ai/skills",
+  "/api/v1/ai/skills/import",
   { caminho: "/api/v1/ai/skills/[name]", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
+  { caminho: "/api/v1/ai/skills/[name]/install", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
+  { caminho: "/api/v1/ai/skills/[name]/restore", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
   { caminho: "/api/v1/ai/skills/[name]/versions", segmentos: { name: "[a-z0-9][a-z0-9-]{0,119}" }, amostras: { name: "minha-skill" } },
 
   // ai (demais). Quem autentica é a própria rota, por `resolveAuthDual`: token com
   // `config:read` (GET) ou `config:write` (escrita) e papel admin (`tokenRole`),
   // com o papel de sempre da tabela (manager/agent/admin) como mínimo. Caminhos
   // literais, sem `[nome]`. Métodos que seguem só de sessão na mesma rota (`pacing`
-  // PUT, `style-adjustments` GET, `guardrail-layers` GET) recusam o token com 401 no
-  // `requireRole`. `jev` e `voz/preview` seguem só de sessão e não entram de carona.
+  // PUT) recusam o token com 401 no `requireRole`. `jev` e `voz/preview` seguem só de sessão e não entram de carona.
   "/api/v1/ai/automatico-ativo",
   "/api/v1/ai/budget",
   "/api/v1/ai/evolution",
