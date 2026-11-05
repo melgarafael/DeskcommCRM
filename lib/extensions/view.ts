@@ -25,6 +25,11 @@ export interface ExtensionOperationView {
   organizations_affected: number | null;
   created_at: string;
   updated_at: string;
+  /**
+   * Só na resposta de instalar um módulo `connected`: `true` quando a instalação foi gravada mas o
+   * segredo ainda não existe (a gravação falhou). Quem administra gera o primeiro ao girar o segredo.
+   */
+  secret_pending?: boolean;
 }
 
 /** A versão para a qual "Desfazer a última troca" volta. Só quem administra a instalação a vê. */
