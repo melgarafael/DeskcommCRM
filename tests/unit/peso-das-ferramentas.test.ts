@@ -99,6 +99,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_send_whatsapp_message": { tokens: 281, motivo: BASE },
   "crm_start_conversation_and_send": { tokens: 593, motivo: BASE },
   "crm_create_conversation_draft": { tokens: 411, motivo: BASE },
+  "crm_set_conversation_sector": { tokens: 383, motivo: "capacidade nova (#3881): a triagem da IA escolhe a FILA da conversa; a descrição precisa nomear os setores de exemplo e as recusas, senão o modelo tenta resolver fila com crm_assign_conversation (que é dono, não setor)" },
   "crm_assign_conversation": { tokens: 380, motivo: "+26 da frase que diz ao modelo que atribuir não interrompe o próprio turno e pode ir junto com a passagem (#3926, veio da main)" },
   "crm_manage_tags": { tokens: 229, motivo: BASE },
   "crm_create_stage": { tokens: 212, motivo: BASE },
@@ -132,7 +133,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "schedule_followup (com negócio)": { tokens: 314, motivo: BASE },
 };
 
-const TETO_TOTAL = 29569;
+const TETO_TOTAL = 29952;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

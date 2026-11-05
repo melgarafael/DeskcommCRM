@@ -29,6 +29,11 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { mcpAgentDraftRecords } from "@/lib/ai/agents/create-draft";
+import {
+  CODIGO_NOME_DE_AGENTE_EM_USO,
+  NOME_DE_AGENTE_EM_USO,
+  ehNomeDeAgenteRepetido,
+} from "@/lib/ai/agents/nome-repetido";
 import { codigoDoEscopo, mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
 import { agentCreateSchema } from "@/lib/ai/guardrails-schema";
 import { corpoLegadoComoCorpoDeCriacao } from "@/lib/ai/agents/legado-para-versao";
@@ -275,8 +280,16 @@ export async function POST(req: NextRequest): Promise<Response> {
     .insert({ ...records.agent, created_by: authUserId })
     .select(AGENT_COLUMNS)
     .single();
-  if (agentError || !agentRow)
+  if (agentError || !agentRow) {
+    // Nome repetido na organização (#3952): o índice `ai_agents_name_unique` é
+    // `(organization_id, name)` e o `23505` dele era 500. A recusa é do CORPO do
+    // pedido, não do servidor — 409 com código estável, e a régua que distingue
+    // este índice dos outros `23505` mora em `lib/ai/agents/nome-repetido.ts`.
+    if (ehNomeDeAgenteRepetido(agentError)) {
+      return fail(CODIGO_NOME_DE_AGENTE_EM_USO, t(NOME_DE_AGENTE_EM_USO), 409, { requestId });
+    }
     return fail("internal_error", "Erro ao criar agent.", 500, { requestId });
+  }
   const { data: versionRow, error: versionError } = await admin
     .from("ai_agent_versions")
     .insert({ ...records.version, created_by: authUserId })
