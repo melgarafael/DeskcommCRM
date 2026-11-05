@@ -40,6 +40,8 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  "Custo AI / dia (US$)": { es: "Costo IA / día (US$)" },
+  "chamadas sem preço": { es: "llamadas sin precio" },
   "A empresa ativa mudou. Recarregue a página antes de continuar.": { es: "La empresa activa cambió. Recarga la página antes de continuar." },
   // Servidores MCP por agente e OAuth por contato (migration 9095).
   "O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.": { es: "El enlace de autorización es automático: mientras el cliente no autorice, el agente recibe por sí solo la herramienta que genera el enlace. No hace falta marcarla aquí." },
@@ -6419,7 +6421,6 @@ export const DICIONARIO: Traducoes = {
     es: "Error al cargar los datos de uso. Intenta recargar.",
   },
   "Mensagens / dia": { es: "Mensajes / día" },
-  "Custo AI / dia (R$)": { es: "Costo IA / día (R$)" },
   "AI Tokens / dia": { es: "Tokens de IA / día" },
   "Não há dados de uso no período selecionado.": {
     es: "No hay datos de uso en el período seleccionado.",
