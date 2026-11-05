@@ -9,11 +9,11 @@
  * CADA cadeia é a única barreira entre a organização do token e as demais. O
  * cliente falso (`../helpers/cliente-admin-falso`) vê isso.
  *
- * FICAM DE FORA, só de sessão (dinheiro: baixar, cancelar, estornar, cobrar,
- * mexer em saldo ou conta): catálogo POST/PATCH/DELETE, fidelidade POST,
- * lançamentos POST/PATCH/DELETE, parcelas de honorários POST, honorários
- * `pagar`, comandas `estornar`/`finalizar`, `faturar-lote`. Eles têm caso
- * próprio: o token é recusado com 401 e nada é escrito.
+ * FICAM DE FORA, só de sessão (funções do banco que exigem `auth.uid()`):
+ * honorários `pagar`, comandas `estornar`/`finalizar`, `faturar-lote`. Eles têm
+ * caso próprio: o token é recusado com 401 e nada é escrito. Catálogo
+ * POST/PATCH/DELETE, fidelidade POST, lançamentos POST/PATCH/DELETE e parcelas
+ * POST aceitam token desde a R2 (lote 2): ver `operacao-r2.test.ts`.
  *
  * Seis testes por método convertido (receita R2), mais o 429 do teto por
  * organização e os casos de borda do proxy.
@@ -446,23 +446,12 @@ const CASOS: readonly Caso[] = [
  * de vazar para dinheiro por engano.
  */
 const SO_SESSAO: readonly Caso[] = [
-  // Catálogo: contas, formas de pagamento, plano de contas, comissão e recorrência.
-  { rota: "financeiro/catalogo/[tipo]", metodo: "POST", caminho: "/api/v1/financeiro/catalogo/contas", params: { tipo: "contas" }, corpo: { name: "Conta nova", kind: "cash" }, linhas: { ...MODULOS, ...ORGS, financial_accounts: [] }, papel: "manager", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: true, rotulo: "conta nova" },
-  { rota: "financeiro/catalogo/[tipo]", metodo: "PATCH", caminho: "/api/v1/financeiro/catalogo/contas", params: { tipo: "contas" }, corpo: { id: CONTA_A, name: "Conta renomeada" }, linhas: { ...MODULOS, ...ORGS, financial_accounts: [{ id: CONTA_A, organization_id: ORG_A, name: "Conta da A", is_active: true }] }, papel: "manager", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: true, rotulo: "conta" },
-  { rota: "financeiro/catalogo/[tipo]", metodo: "DELETE", caminho: "/api/v1/financeiro/catalogo/contas", params: { tipo: "contas" }, corpo: { id: CONTA_A }, linhas: { ...MODULOS, ...ORGS, financial_accounts: [{ id: CONTA_A, organization_id: ORG_A, name: "Conta da A", is_active: true }] }, papel: "manager", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: true, rotulo: "inativar conta" },
-  // Fidelidade: mexe no saldo de pontos.
-  { rota: "financeiro/fidelidade", metodo: "POST", caminho: "/api/v1/financeiro/fidelidade", corpo: { contact_id: CONTATO_A, points: 5, reason: "compra da A" }, linhas: { ...MODULOS, ...ORGS, loyalty_ledger: [] }, papel: "agent", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: false },
-  // Lançamentos: criar, pagar e apagar mexem em saldo.
-  { rota: "financeiro/lancamentos", metodo: "POST", caminho: "/api/v1/financeiro/lancamentos", corpo: { account_id: CONTA_A, direction: "in", amount_cents: 100, description: "x", entry_date: "2026-11-01" }, linhas: { ...ORGS, financial_entries: [] }, papel: "agent", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: true },
-  { rota: "financeiro/lancamentos/[id]", metodo: "PATCH", caminho: `/api/v1/financeiro/lancamentos/${LANC_A}`, params: { id: LANC_A }, corpo: { pay: true }, linhas: { ...ORGS, financial_entries: [{ id: LANC_A, organization_id: ORG_A, status: "pending", origin: "manual", amount_cents: 100, direction: "in" }] }, papel: "agent", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: true, rotulo: "baixa" },
-  { rota: "financeiro/lancamentos/[id]", metodo: "DELETE", caminho: `/api/v1/financeiro/lancamentos/${LANC_A}`, params: { id: LANC_A }, linhas: { ...ORGS, financial_entries: [{ id: LANC_A, organization_id: ORG_A, status: "pending", origin: "manual", amount_cents: 100 }] }, papel: "agent", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: true, rotulo: "cancelar" },
   // Comandas: finalizar, estornar e faturar em lote movem dinheiro.
   { rota: "financeiro/comandas/[id]/estornar", metodo: "POST", caminho: `/api/v1/financeiro/comandas/${SALE_A}/estornar`, params: { id: SALE_A }, corpo: { reason: "erro de lançamento" }, linhas: { ...MODULOS, ...ORGS, sales: [VENDA_A] }, papel: "manager", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: false },
   { rota: "financeiro/comandas/[id]/finalizar", metodo: "POST", caminho: `/api/v1/financeiro/comandas/${SALE_A}/finalizar`, params: { id: SALE_A }, corpo: { payment_method_id: "a1212121-1212-4121-8121-121212121212", loyalty_points: 0 }, linhas: { ...MODULOS, ...ORGS, sales: [VENDA_A] }, papel: "agent", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: false },
   { rota: "financeiro/comandas/faturar-lote", metodo: "POST", caminho: "/api/v1/financeiro/comandas/faturar-lote", corpo: {}, linhas: { ...MODULOS, ...ORGS, sales: [] }, papel: "agent", escopo: "mcp:write", recurso: "financeiro", status: 401, adminNaoChamado: false },
   // Honorários: pagar uma parcela e gerar parcela de cobrança.
   { rota: "honorarios/parcelas/[id]/pagar", metodo: "POST", caminho: `/api/v1/honorarios/parcelas/${PARCELA_A}/pagar`, params: { id: PARCELA_A }, corpo: {}, linhas: { ...ORGS, honorarios_parcelas: [{ id: PARCELA_A, organization_id: ORG_A, status: "pendente" }] }, papel: "manager", escopo: "mcp:write", recurso: "honorarios_parcelas", status: 401, adminNaoChamado: true },
-  { rota: "honorarios/contratos/[id]/parcelas", metodo: "POST", caminho: `/api/v1/honorarios/contratos/${CONTRATO_A}/parcelas`, params: { id: CONTRATO_A }, corpo: { numero: 2, vencimento: "2027-01-01", valor_cents: 100 }, linhas: { ...ORGS, honorarios_parcelas: [] }, papel: "manager", escopo: "mcp:write", recurso: "honorarios_parcelas", status: 401, adminNaoChamado: true },
 ];
 
 const CARREGA: Record<string, () => Promise<Record<string, unknown>>> = {
@@ -841,6 +830,7 @@ describe("PUBLIC_PATHS — as portas de financeiro e honorários", () => {
     `/api/v1/financeiro/comandas/${UUID}/itens/${UUID}`,
     "/api/v1/financeiro/fidelidade",
     "/api/v1/financeiro/lancamentos",
+    `/api/v1/financeiro/lancamentos/${UUID}`,
     "/api/v1/honorarios/contratos",
     `/api/v1/honorarios/contratos/${UUID}/parcelas`,
   ])("libera %s para Bearer", (caminho) => {
@@ -859,8 +849,9 @@ describe("PUBLIC_PATHS — as portas de financeiro e honorários", () => {
     `/api/v1/financeiro/comandas/${UUID}/finalizar`,
     "/api/v1/financeiro/comandas/faturar-lote",
     `/api/v1/financeiro/comandas/${UUID}/itens/abc`,
-    // lançamento por id: nenhum método dele aceita token
-    `/api/v1/financeiro/lancamentos/${UUID}`,
+    // lançamento por id aceita token (R2 lote 2), mas só com id em forma de UUID
+    "/api/v1/financeiro/lancamentos/abc",
+    `/api/v1/financeiro/lancamentos/${UUID}/x`,
     `/api/v1/financeiro/fidelidade/${UUID}`,
     // honorários: contrato por id, pagar e parcela de cobrança (fica de sessão)
     `/api/v1/honorarios/contratos/${UUID}`,

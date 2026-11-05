@@ -50,6 +50,9 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/contacts/bulk",
   "/api/v1/contacts/compare",
   "/api/v1/contacts/duplicates",
+  // `duplicates/dismiss` (POST, `mcp:write`, `manager`): literal irmão de `duplicates`,
+  // com porta própria e a mesma regra do pool `pg` filtrado por organização.
+  "/api/v1/contacts/duplicates/dismiss",
   "/api/v1/contacts/import/agenda",
   "/api/v1/contacts/import",
   "/api/v1/contacts/merge",
@@ -99,15 +102,19 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/leads/[id]/win",
   "/api/v1/leads/bulk",
   "/api/v1/leads/import",
+  // `at-risk` (GET, `mcp:read`, `agent`): o radar de risco da organização, pela mesma
+  // montagem da tool MCP. Receita B: a sessão segue com `requireRole`.
+  "/api/v1/leads/at-risk",
   "/api/v1/leads/proposals",
   "/api/v1/leads/reactivations",
   // AGENDA (tarefa 4 da R2). Quem autentica é a própria rota, por `resolveAuthDual`
   // (sessão OU Bearer `dsk_…`, a organização vinda da linha do token): `mcp:read`
   // no GET e `mcp:write` na escrita, com o papel que a sessão já exige. Nenhum
-  // destes caminhos tem `[id]` nem irmão literal que dê carona. Os métodos que
-  // ficaram só de sessão nesses caminhos (`excecoes` POST/DELETE, por RLS de
-  // autoria) recusam o Bearer com 401 pelo `requireRole`, e a borda do teste da
-  // área prova isso.
+  // destes caminhos tem `[id]` nem irmão literal que dê carona. O método que
+  // ficou só de sessão nesses caminhos (`excecoes` POST: a pessoa da sessão é a
+  // dona da agenda) recusa o Bearer com 401 pelo `requireRole`, e a borda do
+  // teste da área prova isso. `excecoes` DELETE aceita token (`mcp:write`, com
+  // `tokenRole` `manager`).
   "/api/v1/agenda/aviso",
   "/api/v1/agenda/configuracao",
   "/api/v1/agenda/enderecos",
@@ -177,10 +184,13 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   // `tokenRole`: nenhuma tool MCP faz estas ações com papel maior.
   //
   // Só entram os caminhos com ao menos um método convertido. Ficam de sessão,
-  // e recusam o Bearer com 401 pelo `requireRole`: baixar, cancelar, estornar,
-  // finalizar, faturar em lote, mexer em saldo de fidelidade, lançamento e
-  // parcela de cobrança. Os irmãos literais `estornar`, `finalizar`, `faturar-lote`
-  // e `pagar` não ganham porta; a borda do teste da área prova isso.
+  // e recusam o Bearer com 401 pelo `requireRole`: cancelar comanda, estornar,
+  // finalizar e faturar em lote (funções do banco que exigem `auth.uid()`) e
+  // pagar parcela de honorário. Os irmãos literais `estornar`, `finalizar`,
+  // `faturar-lote` e `pagar` não ganham porta; a borda do teste da área prova isso.
+  // R2 lote 2: catálogo POST/PATCH/DELETE (`manager`), fidelidade POST, lançamentos
+  // POST e `[id]` PATCH/DELETE (`agent`) e parcelas POST (`manager`) também aceitam
+  // token (`mcp:write`), com o filtro de organização e as referências conferidas.
   //
   // `[tipo]` do catálogo não é id: a classe é a mesma que `ehEntidadeDoCatalogo`
   // aceita na rota (`ENTIDADES_DO_CATALOGO`).
@@ -191,6 +201,9 @@ export const MODELOS_DA_OPERACAO: readonly ModeloDePorta[] = [
   "/api/v1/financeiro/comandas/[id]/itens/[itemId]",
   "/api/v1/financeiro/fidelidade",
   "/api/v1/financeiro/lancamentos",
+  // Lançamento por id (R2, lote 2): PATCH (pagar) e DELETE, `mcp:write`, `agent`. `[id]` em
+  // forma de UUID; filtro de organização na leitura, no update e no delete.
+  "/api/v1/financeiro/lancamentos/[id]",
   {
     caminho: "/api/v1/financeiro/catalogo/[tipo]",
     segmentos: {

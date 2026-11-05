@@ -1156,26 +1156,8 @@ describe("o que segue só de sessão", () => {
     expect(createAdminClient).not.toHaveBeenCalled();
   });
 
-  it("POST /api/v1/contacts/duplicates/dismiss: fica só de sessão (usa pg Pool cru)", async () => {
-    // A rota grava pelo pool `pg` direto (`getRequestPool`), que o ramo do token não
-    // alcança com filtro de organização provado: segue com `requireRole`.
-    vi.mocked(requireRole).mockResolvedValue({
-      ok: false,
-      response: new Response(null, { status: 401 }),
-    } as never);
-    const modulo = await import("@/app/api/v1/contacts/duplicates/dismiss/route");
-    const res = await modulo.POST(
-      new NextRequest("http://localhost/api/v1/contacts/duplicates/dismiss", {
-        method: "POST",
-        headers: { ...AUTORIZACAO, "content-type": "application/json" },
-        body: JSON.stringify({ contact_ids: [CONTATO_A, CONTATO_B] }),
-      }),
-    );
-
-    expect(res.status).toBe(401);
-    expect(validateBearerToken).not.toHaveBeenCalled();
-    expect(createAdminClient).not.toHaveBeenCalled();
-  });
+  // POST /api/v1/contacts/duplicates/dismiss aceita token desde a R2 (pool `pg` com filtro
+  // de organização no SQL): ver `operacao-r2.test.ts`.
 
   it("PATCH /api/v1/contacts/[id]/carteira: fica só de sessão", async () => {
     // A função de carteira recusa ator nulo: o PATCH segue com `requireRole`, que

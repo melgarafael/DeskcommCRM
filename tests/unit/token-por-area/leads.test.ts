@@ -1179,29 +1179,7 @@ describe("o que segue só de sessão", () => {
     expect(createAdminClient).not.toHaveBeenCalled();
   });
 
-  it("GET /api/v1/leads/at-risk: fica só de sessão", async () => {
-    // A rota não converteu GET: continua com `requireRole("agent")`, que sem
-    // cookie recusa o Bearer com 401, antes de qualquer acesso ao banco.
-    vi.mocked(requireRole).mockResolvedValue({
-      ok: false,
-      response: new Response(null, { status: 401 }),
-    } as never);
-    const modulo = await import("@/app/api/v1/leads/at-risk/route");
-    const res = await modulo.GET(
-      new NextRequest(`http://localhost/api/v1/leads/at-risk`, {
-        method: "GET",
-        headers: { ...AUTORIZACAO },
-      }),
-    );
-
-    expect(res.status).toBe(401);
-    expect(requireRole).toHaveBeenCalledWith(
-      "agent",
-      expect.objectContaining({ resource: "leads_at_risk" }),
-    );
-    expect(validateBearerToken).not.toHaveBeenCalled();
-    expect(createAdminClient).not.toHaveBeenCalled();
-  });
+  // GET /api/v1/leads/at-risk aceita token desde a R2 (receita B): ver `operacao-r2.test.ts`.
 
   it("GET /api/v1/lead-captures: fica só de sessão", async () => {
     // A rota não converteu GET: continua com `requireRole("manager")`, que sem
@@ -1240,7 +1218,7 @@ describe("o que segue só de sessão", () => {
  * reactivation, retomar, timeline, win — todos ganharam porta. conversion/retry
  * é um irmão literal de [id]/* que NÃO ganhou porta. Os irmãos literais de
  * leads/ (bulk, import, proposals, reactivations) também ganharam porta.
- * at-risk e lead-captures ficaram só de sessão.
+ * lead-captures ficou só de sessão (at-risk ganhou porta na R2: `operacao-r2.test.ts`).
  */
 describe("PUBLIC_PATHS — as portas de leads e lead-captures", () => {
   const UUID = "00000000-0000-4000-8000-000000000000";
@@ -1266,6 +1244,7 @@ describe("PUBLIC_PATHS — as portas de leads e lead-captures", () => {
     "/api/v1/leads/import",
     "/api/v1/leads/proposals",
     "/api/v1/leads/reactivations",
+    "/api/v1/leads/at-risk",
   ])("libera %s para Bearer", (caminho) => {
     expect(isPublicPath(caminho)).toBe(true);
   });
@@ -1279,8 +1258,7 @@ describe("PUBLIC_PATHS — as portas de leads e lead-captures", () => {
     `/api/v1/leads/${UUID}/x`,
     // irmão literal de [id]/* que NÃO ganhou porta
     `/api/v1/leads/${UUID}/conversion/retry`,
-    // irmãos literais de leads/ que NÃO ganharam porta (ficaram só de sessão)
-    "/api/v1/leads/at-risk",
+    // at-risk ganhou porta só no caminho exato; irmãos literais que seguem só de sessão
     "/api/v1/leads/at-risk/x",
     "/api/v1/lead-captures",
     "/api/v1/lead-captures/x",

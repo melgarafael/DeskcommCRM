@@ -432,9 +432,9 @@ const FICA_SO_DE_SESSAO: { nome: string; modulo: string; metodo: Metodo; url: st
   { nome: "POST /api/v1/agenda/google/calendarios/atualizar", modulo: "@/app/api/v1/agenda/google/calendarios/atualizar/route", metodo: "POST", url: "/api/v1/agenda/google/calendarios/atualizar", corpo: { connection_id: AGENDAMENTO } },
   // `fn_definir_aviso_de_agendamento` exige `auth.uid()` (papel, MFA e quem escreve).
   { nome: "PUT /api/v1/agenda/aviso", modulo: "@/app/api/v1/agenda/aviso/route", metodo: "PUT", url: "/api/v1/agenda/aviso", corpo: { usa_numero_do_aviso_de_caso: true, ligado: true } },
-  // Autorização pela RLS de escrita (`user_id = auth.uid()` ou manager): sem sessão, o admin contorna.
+  // A pessoa da sessão é a dona da agenda por padrão (`user_id = auth.uid()`): sem sessão, não há dona.
+  // O DELETE aceita token desde a R2 (`operacao-r2.test.ts`); o POST segue só de sessão.
   { nome: "POST /api/v1/agenda/excecoes", modulo: "@/app/api/v1/agenda/excecoes/route", metodo: "POST", url: "/api/v1/agenda/excecoes", corpo: { exception_date: "2026-11-10" } },
-  { nome: "DELETE /api/v1/agenda/excecoes", modulo: "@/app/api/v1/agenda/excecoes/route", metodo: "DELETE", url: "/api/v1/agenda/excecoes", corpo: { id: EXC_A } },
 ];
 
 /** Carregadores estáticos: o alias `@/` só resolve em import com caminho literal. */

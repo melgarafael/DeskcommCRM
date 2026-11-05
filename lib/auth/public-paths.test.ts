@@ -67,8 +67,9 @@ describe("isPublicPath", () => {
     expect(isPublicPath("/api/v1/leads/reactivations")).toBe(true);
   });
 
-  it("o irmão literal at-risk não ganhou porta (fica só de sessão)", () => {
-    expect(isPublicPath("/api/v1/leads/at-risk")).toBe(false);
+  it("o irmão literal at-risk ganhou porta (Spec 33, R2), só o caminho exato", () => {
+    expect(isPublicPath("/api/v1/leads/at-risk")).toBe(true);
+    expect(isPublicPath("/api/v1/leads/at-risk/x")).toBe(false);
   });
 
   it("sub-paths de lead que ganharam porta (clone, …)", () => {
