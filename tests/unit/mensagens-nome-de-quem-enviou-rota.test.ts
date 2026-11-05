@@ -17,6 +17,7 @@ import { NextRequest } from "next/server";
 
 import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 import { listMessagesHandler } from "@/app/api/v1/messages/_handler";
@@ -28,6 +29,8 @@ vi.mock("@/lib/auth/require-role", () => ({ orgAtivaDaApi: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/users/nome-do-atendente", () => ({ nomesDosAtendentes: vi.fn() }));
 vi.mock("@/app/api/v1/messages/_handler", () => ({ listMessagesHandler: vi.fn() }));
+vi.mock("@/lib/audit", () => ({ isServiceRoleConfigured: () => true }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 
 const CONVERSA = "11111111-1111-4111-8111-111111111111";
 
@@ -64,6 +67,8 @@ function mensagem(over: Partial<Message>): Message {
   };
 }
 
+let ultimasOrgsConferidas: string[] = [];
+
 const rodar = () =>
   GET(new NextRequest(`https://crm.example/api/v1/conversations/${CONVERSA}/messages?limit=50`), {
     params: Promise.resolve({ id: CONVERSA }),
@@ -77,6 +82,24 @@ beforeEach(() => {
   } as never);
   vi.mocked(loadAuthUser).mockResolvedValue({ id: "u-eu", idioma: "pt-BR" } as never);
   vi.mocked(orgAtivaDaApi).mockResolvedValue({ ok: true, org: { orgId: "org-1" } } as never);
+  // `user_organizations` da org ativa: as duas consultoras são membros.
+  const orgsConferidas: string[] = [];
+  vi.mocked(createAdminClient).mockReturnValue({
+    from: () => ({
+      select: () => ({
+        eq: (_c: string, orgId: string) => {
+          orgsConferidas.push(orgId);
+          return {
+            in: async (_c2: string, ids: string[]) => ({
+              data: orgId === "org-1" ? ids.map((user_id) => ({ user_id })) : [],
+              error: null,
+            }),
+          };
+        },
+      }),
+    }),
+  } as never);
+  ultimasOrgsConferidas = orgsConferidas;
   vi.mocked(nomesDosAtendentes).mockResolvedValue(
     new Map([
       ["u-andreia", "Andreia Cristina de Souza"],
@@ -129,8 +152,9 @@ describe("#4031 — o histórico entrega o nome de quem enviou", () => {
 
     expect(body.data).toHaveLength(50);
     expect(vi.mocked(nomesDosAtendentes)).toHaveBeenCalledOnce();
-    expect(vi.mocked(nomesDosAtendentes).mock.calls[0]![0]).toHaveLength(50);
-    expect(new Set(vi.mocked(nomesDosAtendentes).mock.calls[0]![0]).size).toBe(2);
+    expect(vi.mocked(nomesDosAtendentes).mock.calls[0]![0]).toEqual(["u-andreia", "u-thamyres"]);
+    // A conferência de membros usa a org ATIVA resolvida pela rota, uma vez.
+    expect(ultimasOrgsConferidas).toEqual(["org-1"]);
   });
 
   it("página sem mensagem de pessoa não consulta o GoTrue", async () => {

@@ -79,8 +79,9 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     // Só os ids de mensagens que o leitor JÁ recebeu alimentam o lookup — a RLS
     // de `messages` decidiu o que está na página antes de qualquer nome ser
     // resolvido, e o que sai é apenas `full_name` (mesmo mínimo do export em
-    // PDF e de `team/assignable`).
-    const mensagensComNome = await comNomeDeQuemEnviou(messages);
+    // PDF e de `team/assignable`). E só para quem é membro da org ativa: o
+    // helper confere `user_organizations` antes de ler o nome.
+    const mensagensComNome = await comNomeDeQuemEnviou(messages, activeOrg.orgId);
     return ok(mensagensComNome, { requestId, meta: { cursor, has_more } });
   } catch (err) {
     if (err instanceof ApiError) {

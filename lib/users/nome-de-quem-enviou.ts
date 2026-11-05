@@ -39,6 +39,9 @@
  * Enriquecer dentro do handler pagaria o lookup duas vezes em toda chamada do
  * agente. O mesmo motivo já está escrito em `lib/users/com-nome-do-atendente.ts`.
  */
+import { isServiceRoleConfigured } from "@/lib/audit";
+import { logger } from "@/lib/logger";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { Message } from "@/lib/types/messaging";
 
 import { nomesDosAtendentes } from "./nome-do-atendente";
@@ -70,7 +73,7 @@ export type MensagemComNomeDeQuemEnviou = Message & {
  */
 export async function comNomeDeQuemEnviou<
   T extends Pick<Message, "sent_via" | "sent_by_user_id" | "direction">,
->(mensagens: T[]): Promise<Array<T & { sent_by_user_name: string | null }>> {
+>(mensagens: T[], orgId: string): Promise<Array<T & { sent_by_user_name: string | null }>> {
   const mereceNome = (m: T) =>
     m.direction === "outbound" &&
     ROTULADAS_COMO_PESSOA.has(m.sent_via) &&
@@ -78,11 +81,43 @@ export async function comNomeDeQuemEnviou<
 
   const ids = mensagens.filter(mereceNome).map((m) => m.sent_by_user_id);
 
-  const nomes = ids.length > 0 ? await nomesDosAtendentes(ids) : new Map<string, string | null>();
+  const membros = ids.length > 0 ? await membrosDaOrganizacao(orgId, ids) : [];
+  const nomes =
+    membros.length > 0 ? await nomesDosAtendentes(membros) : new Map<string, string | null>();
 
   return mensagens.map((m) => ({
     ...m,
     sent_by_user_name:
       mereceNome(m) && m.sent_by_user_id ? (nomes.get(m.sent_by_user_id) ?? null) : null,
   }));
+}
+
+/**
+ * Dos ids recebidos, só os que são (ou foram) membros de `orgId`.
+ *
+ * O nome sai de `auth.users`, que não tem organização: sem esta conferência, o
+ * nome resolvido seria o de qualquer id que estivesse na linha. `orgId` vem de
+ * fonte confiável (a org ativa resolvida pela rota). `revoked_at` NÃO filtra: o
+ * ex-membro continua nomeado no histórico que ele escreveu.
+ *
+ * Sem service role não há nome a resolver (`nomesDosAtendentes` devolveria mapa
+ * vazio), então não há leitura. Falha da consulta = ninguém aprovado: o rótulo
+ * cai em "Atendente", e a página não cai.
+ */
+async function membrosDaOrganizacao(
+  orgId: string,
+  ids: Array<string | null>,
+): Promise<string[]> {
+  if (!isServiceRoleConfigured()) return [];
+  const unicos = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+  const { data, error } = await createAdminClient()
+    .from("user_organizations")
+    .select("user_id")
+    .eq("organization_id", orgId)
+    .in("user_id", unicos);
+  if (error) {
+    logger.warn("[nome-de-quem-enviou] conferência de membros falhou", { erro: error.message });
+    return [];
+  }
+  return [...new Set((data ?? []).map((r: { user_id: string }) => r.user_id))];
 }
