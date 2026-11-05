@@ -147,9 +147,9 @@ function ehVazio(valor: unknown): boolean {
  *
  * `NFD` separa a letra do sinal e a faixa `\u0300-\u036f` (Marcas Diacríticas
  * Combinantes) tira só o acento. NÃO use `\p{M}` às cegas: ele comeria o
- * `U+FE0F` (variation selector) que fecha emoji como o coração, e a regra
- * deixaria de casar o que o próprio cadastro tem — armadilha já medida em
- * `lib/contacts/busca-regex.ts`.
+ * `U+FE0F` (variation selector) que fecha emoji como o coração — armadilha
+ * medida na busca de contatos da #1835 (o módulo de regex que a tratava foi
+ * aposentado na #3918, fatia 2; a lição fica).
  *
  * A pontuação vira ESPAÇO (`\p{P}`), e os espaços se juntam — decisão do dono
  * do produto (16/10, doc 161, opção D). Assim "Olá! Vi o anúncio" casa "ola, vi

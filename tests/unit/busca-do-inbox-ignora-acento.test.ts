@@ -16,9 +16,10 @@ import { listConversationsHandler } from "@/app/api/v1/conversations/_handler";
  * conclui que o cliente não está no CRM. No Brasil a mesma pessoa aparece escrita
  * das duas formas, e é o atendente quem digita rápido, sem acento.
  *
- * A régua do repo já conhecia esse buraco: `lib/contacts/busca-regex.ts` (#1835)
- * resolve acento no lado do TERMO para a listagem de contatos. A do inbox ficou
- * de fora, e é esta fatia.
+ * A régua própria da listagem de contatos (`lib/contacts/busca-regex.ts`, #1835)
+ * cobria o lado do TERMO para aquelas quatro colunas. A #3918 (fatia 2) aposentou
+ * essa régua: Contatos, seletor e a ferramenta do agente passaram a usar esta
+ * mesma coluna gerada, e agora existe UMA regra de acento no repo.
  *
  * ─── O que este arquivo mede, e o que ele NÃO mede ───────────────────────────
  * Mede a FORMA do filtro que sai do handler: a coluna alvo é a normalizada
