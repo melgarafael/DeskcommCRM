@@ -6,13 +6,10 @@
  * continua sendo no-op; a rota /claim decide se responde 409. Não muda seu
  * contrato nem reexecuta efeitos para o dono atual.
  *
- * #4019 — o negócio ABERTO do contato acompanha o dono novo dentro da própria
- * `fn_conversation_assign`, que é a porta única da atribuição, na MESMA
- * transação (ver a migration 9208). Aqui mora só a exceção, e ela vem do
- * #3216: "Iniciar conversa" passa `soSemResponsavel` e o card só ganha dono se
- * estiver SEM responsável — tomar o card de um colega seria efeito de um
- * clique que não pede atendimento para ninguém. O Assumir do Inbox não passa a
- * flag: ali o card vai junto, inclusive de quem não atende mais.
+ * #4019 — o negócio ABERTO do contato é decidido dentro da própria
+ * `fn_conversation_assign`, na MESMA transação (migration 9208). Num `claim`
+ * (Assumir e Iniciar conversa) ela só dá dono a negócio SEM responsável: nunca
+ * tira o card de um colega (decisão do #3216, reafirmada no doc 267).
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -29,12 +26,6 @@ export async function assumirConversaComEfeitos(
     actor: Extract<Actor, { type: "user" }>;
     requestId: string;
     expectedAssignee?: string | null;
-    /**
-     * `true` no "Iniciar conversa": o negócio aberto do contato só recebe dono
-     * se ainda não tiver nenhum. Omitido (Assumir do Inbox), o card acompanha
-     * o atendimento mesmo quando estava com outra pessoa — é o #4019.
-     */
-    soSemResponsavel?: boolean;
   },
 ): Promise<{ conversation: Conversation | null; error: { message: string } | null }> {
   // Optimistic lock (spec 04 §9.2): expected null/omitido = só assume se livre;
@@ -46,7 +37,6 @@ export async function assumirConversaComEfeitos(
     p_reason: "claim",
     ...(p.expectedAssignee ? { p_expected_assignee: p.expectedAssignee } : {}),
     p_enforce_expected: true,
-    ...(p.soSemResponsavel ? { p_negocio_so_sem_dono: true } : {}),
   });
 
   if (error) {

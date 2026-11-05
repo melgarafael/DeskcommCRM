@@ -8,19 +8,22 @@
  * régua `sincronizarNegocioAbertoDoContato` rodava nas rotas, com o cliente da
  * sessão (RLS ligada). Levantamento do relator: 14 de 46 conversas com dono
  * tinham negócio aberto com responsável DIFERENTE do dono da conversa (ou sem
- * responsável). Três caminhos escapavam:
+ * responsável). A transferência FORA da tela — `crm_assign_conversation`
+ * (MCP), automação e chamadas diretas de `fn_conversation_assign` — não
+ * passava por régua nenhuma.
  *
- *   1. Atendente (`agent`) transferindo com `visibility_mode =
- *      own_and_unassigned`: a escrita no negócio é recusada pelo WITH CHECK de
- *      `crm_leads_update` (#2556) e só a conversa mudava;
- *   2. transferência FORA da tela: `crm_assign_conversation` (MCP) e chamadas
- *      diretas de `fn_conversation_assign` não passavam por régua nenhuma;
- *   3. Assumir do Inbox, que só preenchia negócio SEM responsável — régua certa
- *      para "Iniciar conversa", errada ali.
+ * ─── A regra (doc 178, letra B; reafirmada no doc 267, letra A) ────────────
+ *
+ *   · TRANSFERIR leva o negócio aberto do contato, dentro da permissão de quem
+ *     clicou (a mesma de `crm_leads_update`): na visibilidade padrão, o
+ *     Atendente que transfere para uma colega NÃO leva o negócio (caminho 1);
+ *     gestor leva; o servidor (MCP, automação) leva (caminho 2);
+ *   · Assumir, Iniciar conversa, a fila automática e a passagem só dão dono a
+ *     negócio SEM responsável — nunca tiram de um colega (caminho 3, fila).
  *
  * ─── O que este arquivo prova (Postgres real, `pnpm test:db`) ───────────────
  *
- * Os três caminhos, com o `select` LITERAL dos dois donos (conversa e negócio);
+ * Os caminhos, com o `select` LITERAL dos dois donos (conversa e negócio);
  * e os seis lados opostos que a mudança não pode quebrar: contato sem negócio
  * aberto não ganha card criado; negócio ganho e perdido não são tocados; outra
  * organização não é tocada; "Iniciar conversa" continua só preenchendo card SEM
@@ -66,6 +69,11 @@ const CT = {
   cardInvisivel: "dddddddd-3333-4000-8000-00000000000a",
   doisAbertos: "dddddddd-3333-4000-8000-00000000000b",
   outraOrganizacao: "dddddddd-3333-4000-8000-00000000000c",
+  gestorTransfere: "dddddddd-3333-4000-8000-00000000000d",
+  filaComDono: "dddddddd-3333-4000-8000-00000000000e",
+  filaLivre: "dddddddd-3333-4000-8000-00000000000f",
+  transfereSemDono: "dddddddd-3333-4000-8000-000000000010",
+  continua: "dddddddd-3333-4000-8000-000000000011",
 } as const;
 
 const CONV = {
@@ -81,6 +89,14 @@ const CONV = {
   cardInvisivel: "dddddddd-4444-4000-8000-00000000000a",
   doisAbertos: "dddddddd-4444-4000-8000-00000000000b",
   outraOrganizacao: "dddddddd-4444-4000-8000-00000000000c",
+  gestorTransfere: "dddddddd-4444-4000-8000-00000000000d",
+  filaComDono: "dddddddd-4444-4000-8000-00000000000e",
+  filaLivre: "dddddddd-4444-4000-8000-00000000000f",
+  transfereSemDono: "dddddddd-4444-4000-8000-000000000010",
+  /** A conversa que entra na fila, no número de A. */
+  continuaNoNumeroDeA: "dddddddd-4444-4000-8000-000000000011",
+  /** A conversa do MESMO contato que já existe no número de B (#3732). */
+  continuaNoNumeroDeB: "dddddddd-4444-4000-8000-000000000012",
 } as const;
 
 const NEG = {
@@ -96,7 +112,18 @@ const NEG = {
   doisAbertosA: "dddddddd-6666-4000-8000-00000000000a",
   doisAbertosB: "dddddddd-6666-4000-8000-00000000000b",
   outraOrganizacao: "dddddddd-6666-4000-8000-00000000000c",
+  gestorTransfere: "dddddddd-6666-4000-8000-00000000000d",
+  filaComDono: "dddddddd-6666-4000-8000-00000000000e",
+  filaLivre: "dddddddd-6666-4000-8000-00000000000f",
+  transfereSemDono: "dddddddd-6666-4000-8000-000000000010",
+  continua: "dddddddd-6666-4000-8000-000000000011",
 } as const;
+
+/** Dois números com dono (política de roteamento), para a conversa que continua. */
+const SESSAO_DE_A = "dddddddd-2222-4000-8000-000000000003";
+const SESSAO_DE_B = "dddddddd-2222-4000-8000-000000000004";
+const POLITICA_DE_A = "dddddddd-7777-4000-8000-000000000001";
+const POLITICA_DE_B = "dddddddd-7777-4000-8000-000000000002";
 
 /** Os dois donos, literais: conversa e negócio. */
 function donoDaConversa(conversa: string): string {
@@ -178,11 +205,11 @@ function eventosDeAtribuicao(negocio: string): number {
   );
 }
 
-function conversaNova(id: string, contato: string, dono: string | null): void {
+function conversaNova(id: string, contato: string, dono: string | null, sessao: string = SESSAO): void {
   sql(`
     insert into public.conversations
       (id, organization_id, contact_id, channel_session_id, status, assigned_to_user_id, assigned_at)
-    values ('${id}', '${ORG}', '${contato}', '${SESSAO}', '${dono ? "claimed" : "open"}',
+    values ('${id}', '${ORG}', '${contato}', '${sessao}', '${dono ? "claimed" : "open"}',
             ${dono ? `'${dono}'` : "null"}, ${dono ? "now()" : "null"});
   `);
 }
@@ -272,8 +299,30 @@ beforeAll(() => {
       ('${CT.escada}', '${ORG}', 'Contato Escada'),
       ('${CT.cardInvisivel}', '${ORG}', 'Contato Card Invisivel'),
       ('${CT.doisAbertos}', '${ORG}', 'Contato Dois Abertos'),
-      ('${CT.outraOrganizacao}', '${OUTRA_ORG}', 'Contato Outra Organizacao')
+      ('${CT.outraOrganizacao}', '${OUTRA_ORG}', 'Contato Outra Organizacao'),
+      ('${CT.gestorTransfere}', '${ORG}', 'Contato Gestor Transfere'),
+      ('${CT.filaComDono}', '${ORG}', 'Contato Fila Com Dono'),
+      ('${CT.filaLivre}', '${ORG}', 'Contato Fila Livre'),
+      ('${CT.transfereSemDono}', '${ORG}', 'Contato Transfere Sem Dono'),
+      ('${CT.continua}', '${ORG}', 'Contato Continua')
     on conflict (id) do nothing;
+
+    insert into public.channel_sessions
+      (id, organization_id, provider, waha_session_name, webhook_secret_encrypted, status)
+    values
+      ('${SESSAO_DE_A}', '${ORG}', 'waha', 'acompanha-o-dono-numero-a', '\\x00'::bytea, 'WORKING'),
+      ('${SESSAO_DE_B}', '${ORG}', 'waha', 'acompanha-o-dono-numero-b', '\\x00'::bytea, 'WORKING')
+    on conflict (id) do update set status = 'WORKING', archived_at = null, metadata = '{}'::jsonb;
+
+    insert into public.channel_routing_policies (id, organization_id, channel_session_id) values
+      ('${POLITICA_DE_A}', '${ORG}', '${SESSAO_DE_A}'),
+      ('${POLITICA_DE_B}', '${ORG}', '${SESSAO_DE_B}')
+    on conflict (id) do nothing;
+
+    insert into public.channel_routing_responsibles (organization_id, policy_id, user_id) values
+      ('${ORG}', '${POLITICA_DE_A}', '${A}'),
+      ('${ORG}', '${POLITICA_DE_B}', '${B}')
+    on conflict do nothing;
   `);
 
   // Caminho 1 — Atendente transfere com `own_and_unassigned`.
@@ -331,6 +380,28 @@ beforeAll(() => {
             'Negócio da outra organização', '${CT.outraOrganizacao}', 'open', '${FORA}', 'user');
   `);
 
+  // Gestor transfere: o card de A vai para B.
+  conversaNova(CONV.gestorTransfere, CT.gestorTransfere, A);
+  negocioNovo({ id: NEG.gestorTransfere, contato: CT.gestorTransfere, dono: A });
+
+  // Fila automática: um card com dono e um sem dono.
+  conversaNova(CONV.filaComDono, CT.filaComDono, null);
+  negocioNovo({ id: NEG.filaComDono, contato: CT.filaComDono, dono: A });
+  conversaNova(CONV.filaLivre, CT.filaLivre, null);
+  negocioNovo({ id: NEG.filaLivre, contato: CT.filaLivre, dono: null });
+
+  // Transferir conversa SEM dono: o card do C, que A não enxerga, fica.
+  conversaNova(CONV.transfereSemDono, CT.transfereSemDono, null);
+  negocioNovo({ id: NEG.transfereSemDono, contato: CT.transfereSemDono, dono: C });
+
+  // A conversa que continua (#3732): o contato está no número de A e já tem
+  // conversa no número de B, parada (IA silenciada, para ser adotada).
+  conversaNova(CONV.continuaNoNumeroDeA, CT.continua, null, SESSAO_DE_A);
+  conversaNova(CONV.continuaNoNumeroDeB, CT.continua, null, SESSAO_DE_B);
+  sql(`update public.conversations set bot_silenced_until = now() + interval '1 day'
+        where id = '${CONV.continuaNoNumeroDeB}';`);
+  negocioNovo({ id: NEG.continua, contato: CT.continua, dono: A });
+
   // A escada A→B→C.
   conversaNova(CONV.escada, CT.escada, A);
   negocioNovo({ id: NEG.escada, contato: CT.escada, dono: A });
@@ -342,6 +413,8 @@ afterAll(() => {
     delete from public.conversation_assignment_events where organization_id in ('${ORG}', '${OUTRA_ORG}');
     delete from public.conversations where organization_id in ('${ORG}', '${OUTRA_ORG}');
     delete from public.crm_leads where organization_id in ('${ORG}', '${OUTRA_ORG}');
+    delete from public.channel_routing_responsibles where organization_id = '${ORG}';
+    delete from public.channel_routing_policies where organization_id = '${ORG}';
     delete from public.channel_sessions where organization_id in ('${ORG}', '${OUTRA_ORG}');
     delete from public.crm_stages where organization_id in ('${ORG}', '${OUTRA_ORG}');
     delete from public.crm_pipelines where organization_id in ('${ORG}', '${OUTRA_ORG}');
@@ -353,7 +426,7 @@ afterAll(() => {
 });
 
 describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
-  it("caminho 1: atendente transfere em own_and_unassigned e o card vai junto", () => {
+  it("caminho 1: atendente transfere em own_and_unassigned; a conversa vai e o card fica (permissão de quem clicou)", () => {
     expect(donoDaConversa(CONV.atendenteTransfere)).toBe(A);
     expect(donoDoNegocio(NEG.atendenteTransfere)).toBe(A);
 
@@ -367,7 +440,18 @@ describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
     );
     expect(evento).toBe(`${A}>${B}`);
     expect(donoDaConversa(CONV.atendenteTransfere)).toBe(B);
-    expect(donoDoNegocio(NEG.atendenteTransfere)).toBe(B);
+    // Doc 267 (A): na visibilidade padrão, o Atendente não entrega o negócio a
+    // uma colega — é o que crm_leads_update já recusaria a ele (#2556).
+    expect(donoDoNegocio(NEG.atendenteTransfere)).toBe(A);
+  });
+
+  it("caminho 1, gestor: quem pode entregar o card transfere e o card vai junto", () => {
+    expect(donoDoNegocio(NEG.gestorTransfere)).toBe(A);
+
+    atribui({ como: GESTOR, conversa: CONV.gestorTransfere, para: B });
+
+    expect(donoDaConversa(CONV.gestorTransfere)).toBe(B);
+    expect(donoDoNegocio(NEG.gestorTransfere)).toBe(B);
   });
 
   it("caminho 2: transferência fora da tela (service role, como o MCP) leva o card", () => {
@@ -379,14 +463,35 @@ describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
     expect(donoDoNegocio(NEG.foraDaTela)).toBe(B);
   });
 
-  it("caminho 3: Assumir do Inbox leva o card de quem não atende mais", () => {
+  it("caminho 3: Assumir do Inbox não tira o card de um colega", () => {
     expect(donoDaConversa(CONV.assumir)).toBe("SEM_DONO");
     expect(donoDoNegocio(NEG.assumir)).toBe(A);
 
     atribui({ como: B, conversa: CONV.assumir, para: B, motivo: "claim", esperado: null, trava: true });
 
     expect(donoDaConversa(CONV.assumir)).toBe(B);
-    expect(donoDoNegocio(NEG.assumir)).toBe(B);
+    // Doc 178 (B): Assumir só dá dono a negócio SEM responsável.
+    expect(donoDoNegocio(NEG.assumir)).toBe(A);
+  });
+
+  it("fila automática (servidor, 'routing'): só preenche card sem dono, nunca tira de colega", () => {
+    atribui({ como: null, conversa: CONV.filaComDono, para: B, motivo: "routing" });
+    atribui({ como: null, conversa: CONV.filaLivre, para: B, motivo: "routing" });
+
+    expect(donoDaConversa(CONV.filaComDono)).toBe(B);
+    expect(donoDoNegocio(NEG.filaComDono)).toBe(A);
+    expect(donoDaConversa(CONV.filaLivre)).toBe(B);
+    expect(donoDoNegocio(NEG.filaLivre)).toBe(B);
+  });
+
+  it("a conversa que continua no número do dono novo não leva o card que a fila não levaria", () => {
+    atribui({ como: null, conversa: CONV.continuaNoNumeroDeA, para: B, motivo: "routing" });
+
+    // A conversa do número de B foi adotada pela chamada interna ('transfer')…
+    expect(donoDaConversa(CONV.continuaNoNumeroDeB)).toBe(B);
+    expect(donoDaConversa(CONV.continuaNoNumeroDeA)).toBe(B);
+    // …e o card do colega ficou: a chamada interna herda a régua da de fora.
+    expect(donoDoNegocio(NEG.continua)).toBe(A);
   });
 
   it("lado oposto (a): contato sem negócio aberto não ganha card criado", () => {
@@ -421,10 +526,10 @@ describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
   });
 
   it("lado oposto (e): quem recebe passa a ver o card; o terceiro continua sem vê-lo", () => {
-    // Depois do caminho 1 (B é o dono): B enxerga, C não.
-    expect(donoDaConversa(CONV.atendenteTransfere)).toBe(B);
-    expect(quantosEnxerga(B, NEG.atendenteTransfere)).toBe(1);
-    expect(quantosEnxerga(C, NEG.atendenteTransfere)).toBe(0);
+    // Depois do caminho 1 do gestor (B é o dono): B enxerga, C não.
+    expect(donoDoNegocio(NEG.gestorTransfere)).toBe(B);
+    expect(quantosEnxerga(B, NEG.gestorTransfere)).toBe(1);
+    expect(quantosEnxerga(C, NEG.gestorTransfere)).toBe(0);
 
     // E o card de um COLEGA que o chamador não enxerga não se move de passagem.
     expect(quantosEnxerga(A, NEG.doColega)).toBe(0);
@@ -432,6 +537,13 @@ describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
 
     expect(donoDaConversa(CONV.cardInvisivel)).toBe(B);
     expect(donoDoNegocio(NEG.doColega)).toBe(C);
+
+    // A mesma conta vale para a conversa que estava SEM dono.
+    expect(quantosEnxerga(A, NEG.transfereSemDono)).toBe(0);
+    atribui({ como: A, conversa: CONV.transfereSemDono, para: B });
+
+    expect(donoDaConversa(CONV.transfereSemDono)).toBe(B);
+    expect(donoDoNegocio(NEG.transfereSemDono)).toBe(C);
   });
 
   it("lado oposto (c): outra organização não é tocada", () => {

@@ -133,9 +133,9 @@ describe("#3479 — abrir a conversa assume a conversa SEM dono", () => {
     expect(rpcs[1]?.nome).toBe("emit_event");
     expect(audit).toHaveBeenCalledOnce();
     expect(registrarTrocaDeComando).toHaveBeenCalledOnce();
-    // #4019 + #3216: "Iniciar conversa" só preenche card SEM responsável —
-    // a régua do negócio mora no banco, e o pedido vai explícito no RPC.
-    expect(rpcs[0]?.params).toMatchObject({ p_negocio_so_sem_dono: true });
+    // #4019 + #3216: "Iniciar conversa" só preenche card SEM responsável. Quem
+    // decide é o banco, pelo motivo `claim` — o pedido não leva o 8º argumento.
+    expect(rpcs[0]?.params).not.toHaveProperty("p_negocio_so_sem_dono");
   });
 
   it("o cliente é o da SESSÃO, nunca o admin que abriu a conversa", async () => {

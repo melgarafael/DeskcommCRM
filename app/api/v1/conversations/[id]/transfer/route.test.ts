@@ -14,15 +14,15 @@ import { GET, POST } from "./route";
  * POST /api/v1/conversations/[id]/transfer — e o negócio ABERTO do contato?
  *
  * A resposta mudou de lugar no #4019. Até então a ROTA chamava
- * `sincronizarNegocioAbertoDoContato` com o cliente da SESSÃO; era por isso que
- * três caminhos ficavam para trás (MCP/`crm_assign_conversation`, chamada
- * direta de `fn_conversation_assign`, e o Atendente, que batia no WITH CHECK de
- * `crm_leads_update` e desistia com `recusado_pelo_banco`). A régua desceu para
- * a `fn_conversation_assign`, na MESMA transação da troca de dono.
+ * `sincronizarNegocioAbertoDoContato` com o cliente da SESSÃO; por isso a
+ * transferência fora da tela (MCP/`crm_assign_conversation`, automação,
+ * chamada direta de `fn_conversation_assign`) ficava sem régua. A régua desceu
+ * para a `fn_conversation_assign`, na MESMA transação da troca de dono, e com
+ * sessão continua dentro da permissão de quem clicou.
  *
  * Este arquivo mede, então, o CONTRÁRIO do que media antes: a rota não toca no
  * funil, não depende dele, e manda o pedido de atribuição sem o 8º argumento
- * (o default `false` = o card acompanha o atendimento). Quem prova que o card
+ * (`'transfer'` é o motivo que leva o card). Quem prova que o card
  * efetivamente muda de dono é Postgres de verdade:
  * `tests/invariants/negocio-aberto-acompanha-o-dono.test.ts`.
  */

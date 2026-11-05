@@ -39,8 +39,8 @@ describe("assumir compartilha os efeitos canônicos", () => {
     ]);
     expect((await assumirConversaComEfeitos(cliente, entrada)).conversation).toEqual(conversa);
     expect((await assumirConversaComEfeitos(cliente, entrada)).conversation).toBeNull();
-    // #4019: o negócio aberto acompanha o dono DENTRO da fn_conversation_assign.
-    // O Assumir do Inbox não passa a trava do "só sem responsável".
+    // #4019: o negócio aberto é decidido DENTRO da fn_conversation_assign. No
+    // `claim` ela só preenche negócio sem responsável; o pedido é o de sempre.
     expect(rpc).toHaveBeenCalledWith("fn_conversation_assign", {
       p_organization_id: "org-a",
       p_conversation_id: "conversa-a",
@@ -84,15 +84,6 @@ describe("assumir compartilha os efeitos canônicos", () => {
     expect(audit).not.toHaveBeenCalled();
     expect(registrarTrocaDeComando).not.toHaveBeenCalled();
     expect(rpc).toHaveBeenCalledOnce();
-  });
-
-  it("#4019: Iniciar conversa pede ao banco o negócio SÓ sem responsável", async () => {
-    const { cliente, rpc } = banco([{ data: [conversa], error: null }]);
-    await assumirConversaComEfeitos(cliente, { ...entrada, soSemResponsavel: true });
-    expect(rpc).toHaveBeenCalledWith(
-      "fn_conversation_assign",
-      expect.objectContaining({ p_negocio_so_sem_dono: true }),
-    );
   });
 
   it("takeover consciente conserva expected e CAS da rota canônica", async () => {

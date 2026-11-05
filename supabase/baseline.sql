@@ -69109,27 +69109,18 @@ comment on function public.fn_conversation_sector_scope() is
 
 -- ---- #4019: o negócio aberto do contato acompanha o dono da conversa (migration 9208) ----
 --
--- Espelho idêntico ao da 9208. Mesma história: o #3177 levou a regra para as
--- TELAS (transferir e assumir), e três caminhos ficaram de fora — o Atendente
--- transferindo, que batia na RLS de crm_leads (#2556) e desistia; a
--- transferência fora da tela (MCP `crm_assign_conversation` e chamadas diretas
--- de fn_conversation_assign); e o Assumir do Inbox, que só preenchia card sem
--- responsável (régua certa do "Iniciar conversa", errada ali). Medido na issue:
--- 14 de 46 conversas com dono tinham negócio aberto com outro responsável.
---
--- A régua desce para a PORTA ÚNICA da atribuição e roda na mesma transação:
--- só negócio ABERTO do contato da conversa; zero aberto = nada criado; mais de
--- um = nada tocado (decisão de produto, caminho 4 da issue); já é o dono novo =
--- nenhuma escrita (o gatilho de crm_leads emitiria um `lead.assigned` falso).
--- `p_negocio_so_sem_dono` é o "Iniciar conversa": só card sem responsável.
--- Com sessão, o card só sai do lugar se o chamador já enxerga o dono ATUAL
--- (fn_can_view_lead) — guarda da conversa que TINHA dono; no Assumir de
--- conversa sem dono não há atendimento de colega sendo tomado. O dono NOVO
--- passa a enxergá-lo por ser o dono.
+-- Espelho idêntico ao corpo da 9208 (PR #4046 de @webtecnica; decisão do
+-- mantenedor: B do doc 178, reafirmada no doc 267). A régua do negócio aberto
+-- sai das telas e mora na porta única da atribuição, na mesma transação:
+-- TRANSFERIR leva o negócio aberto do contato; Assumir, fila automática,
+-- passagem para humano e os demais motivos só dão dono a negócio SEM
+-- responsável. Com sessão, a escrita fica dentro do que crm_leads_update já
+-- permite a quem clicou (fn_can_view_lead sobre o responsável atual e o novo).
+-- Um aberto é tocado; zero não cria card; mais de um não é tocado.
 --
 -- Cria função: mora ACIMA da VARREDURA anon. Assinatura nova (8º argumento com
 -- default) exige o drop da de 7 argumentos, senão as chamadas de 6/7 viram
--- "function ... is not unique".
+-- "function ... is not unique". Idempotente: drop if exists + create or replace.
 drop function if exists public.fn_conversation_assign(uuid, uuid, uuid, text, uuid, boolean, uuid);
 
 create or replace function public.fn_conversation_assign(
@@ -69140,9 +69131,8 @@ create or replace function public.fn_conversation_assign(
   p_expected_assignee uuid default null,
   p_enforce_expected boolean default false,
   p_source_job_id uuid default null,
-  -- #4019: com `true`, o negócio aberto só ganha dono se estiver SEM dono. É o
-  -- "Iniciar conversa" (abrir a conversa pelo contato), onde tomar o card de um
-  -- colega seria efeito de um clique que não pede atendimento para ninguém.
+  -- #4019: com `true`, o negócio aberto só ganha dono se estiver SEM dono,
+  -- qualquer que seja o motivo. Fora de `'transfer'` essa já é a régua.
   p_negocio_so_sem_dono boolean default false
 )
  RETURNS SETOF conversations
@@ -69159,6 +69149,8 @@ declare
   -- #4019 — o negócio ABERTO do contato que acompanha o dono novo.
   v_negocios integer;
   v_negocio public.crm_leads%rowtype;
+  -- Doc 178 (B) / doc 267 (A): só a transferência tira o negócio de alguém.
+  v_so_sem_dono boolean := p_negocio_so_sem_dono or p_reason is distinct from 'transfer';
 begin
   if not public.fn_support_write_allowed(p_organization_id) then raise exception 'support_readonly' using errcode='42501'; end if;
   -- #3926 — `p_source_job_id` é do RUNTIME (o turno que está executando),
@@ -69306,40 +69298,22 @@ begin
   -- evento da conversa transferida, para a linha do tempo contar na ordem).
   if v_continua is not null then
     perform public.fn_conversation_assign(
-      p_organization_id, v_continua, p_to_user_id, 'transfer', null, false, p_source_job_id);
+      p_organization_id, v_continua, p_to_user_id, 'transfer', null, false, p_source_job_id,
+      v_so_sem_dono);
   end if;
 
   -- ─── #4019: o NEGÓCIO ABERTO do contato acompanha o dono novo ──────────────
   --
-  -- A regra mora AQUI porque esta é a porta ÚNICA da atribuição: Transferir (um
-  -- e em lote), Assumir, MCP (`crm_assign_conversation`), automação e passagem
-  -- de carteira entram todos por esta função. Enquanto ela vivia nas telas,
-  -- todo caminho que não passava pela tela deixava o card com quem não atende
-  -- mais, e o Atendente transferindo batia na RLS de crm_leads (#2556) e
-  -- desistia — medido no relatório da issue #4019: 14 de 46 conversas com dono
-  -- tinham negócio aberto com responsável diferente (ou sem responsável).
-  --
-  -- A régua é a do #3177, agora do lado do banco:
-  --   · só status = 'open' — ganho, perdido e encerrado são desfecho de quem
-  --     trabalhou, não de quem passa a atender;
-  --   · ZERO negócio aberto: nada é criado. O Inbox não inventa card;
-  --   · MAIS DE UM aberto: nada é tocado. Qual levar é pergunta de gente — é o
-  --     caminho 4 da issue, decisão de produto, fora deste conserto;
+  -- Porta única: Transferir (um e em lote), Assumir, MCP, automação, fila e
+  -- carteira entram todos por aqui. A régua:
+  --   · só status = 'open'; zero aberto = nada criado; mais de um = nada tocado
+  --     (caminho 4 da issue, decisão de produto);
   --   · já é o dono novo: não escreve (o gatilho de crm_leads emite
-  --     `lead.assigned` a cada UPDATE, e um fato que não aconteceu mentiria na
-  --     linha do tempo e nas automações);
-  --   · p_negocio_so_sem_dono: só card SEM responsável (Iniciar conversa).
-  --
-  -- Visibilidade de quem transfere: com sessão, o card só sai do lugar se o
-  -- chamador JÁ enxerga o dono atual (fn_can_view_lead). É o que impede um
-  -- Atendente de puxar, de passagem, o card de um colega que ele não vê.
-  --
-  -- O que a operação deliberadamente NÃO repete é o WITH CHECK de
-  -- crm_leads_update sobre o dono NOVO: ali um Atendente nunca poderia entregar
-  -- o card a um colega (#2556) e era exatamente esse o defeito da issue — a
-  -- decisão é da ORGANIZAÇÃO, tomada na transferência do atendimento, não do
-  -- papel de quem clicou. Quem recebe passa a ser o dono, e dono enxerga o
-  -- próprio card por fn_can_view_lead: a visibilidade dele nasce da posse.
+  --     `lead.assigned` a cada UPDATE);
+  --   · v_so_sem_dono (todo motivo que não é 'transfer'): só card SEM
+  --     responsável — nunca tira o card de um colega;
+  --   · com sessão, a escrita é a que a RLS de crm_leads_update já daria a quem
+  --     clicou: enxergar o responsável atual E o novo (fn_can_view_lead).
   if p_to_user_id is not null then
     select count(*) into v_negocios
       from public.crm_leads l
@@ -69361,17 +69335,13 @@ begin
 
       if found
          and v_negocio.owner_user_id is distinct from p_to_user_id
-         and (not p_negocio_so_sem_dono
+         and (not v_so_sem_dono
               or (v_negocio.owner_user_id is null and v_negocio.owner_agent_id is null))
-         -- A guarda do #2556 vale para quem ENTREGA o atendimento de outra
-         -- pessoa: se a conversa já tinha dono (v_from), o card só sai do
-         -- lugar se o chamador já enxerga o dono ATUAL dele. No Assumir de
-         -- conversa SEM dono (v_from nulo) não há conversa de colega sendo
-         -- tomada — é "quem pega o atendimento leva o card", e é o caminho 3
-         -- da issue.
+         -- A permissão é a de quem clicou: a mesma conta de crm_leads_update
+         -- (USING sobre o responsável atual, WITH CHECK sobre o novo).
          and (auth.uid() is null
-              or v_from is null
-              or public.fn_can_view_lead(p_organization_id, v_negocio.owner_user_id))
+              or (public.fn_can_view_lead(p_organization_id, v_negocio.owner_user_id)
+                  and public.fn_can_view_lead(p_organization_id, p_to_user_id)))
       then
         -- O trio dono/kind é o da migration 0070: owner_user_id sozinho produz
         -- card com dono e sem kind, que some do filtro e das métricas sem erro.
@@ -69382,7 +69352,11 @@ begin
                assigned_at = now()
          where id = v_negocio.id
            and organization_id = p_organization_id
-           and status = 'open';
+           and status = 'open'
+           -- Sem lock na leitura: o responsável lido é a condição da escrita.
+           -- Se alguém trocou o card no meio, a escrita não acontece.
+           and owner_user_id is not distinct from v_negocio.owner_user_id
+           and owner_agent_id is not distinct from v_negocio.owner_agent_id;
       end if;
     end if;
   end if;

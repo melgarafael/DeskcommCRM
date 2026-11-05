@@ -252,9 +252,11 @@ const AUTHENTICATED_PERMITIDO: readonly Excecao[] = [
       "membership e papel. O 7º argumento (p_source_job_id) é o da origem do " +
       "turno autônomo: só chega pelo client de service role, e o corpo recusa " +
       "(source_job_requires_runtime_caller) quando o chamador não é o runtime. " +
-      "O 8º (p_negocio_so_sem_dono, #4019) é o do negócio aberto: o corpo só " +
-      "escreve em crm_leads quando o chamador JÁ enxerga o dono atual " +
-      "(fn_can_view_lead) — o grant não acrescenta alcance nenhum à sessão.",
+      "O 8º (p_negocio_so_sem_dono, #4019) é o do negócio aberto: com sessão, o " +
+      "corpo só escreve em crm_leads o que crm_leads_update já permitiria ao " +
+      "chamador (fn_can_view_lead sobre o responsável atual E o novo), e fora de " +
+      "'transfer' só preenche negócio sem responsável — o grant não acrescenta " +
+      "alcance nenhum à sessão.",
   },
   {
     fn: "fn_mesclar_contatos(uuid,uuid,uuid[])",
