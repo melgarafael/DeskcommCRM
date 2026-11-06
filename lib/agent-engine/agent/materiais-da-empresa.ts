@@ -37,6 +37,7 @@ import {
   type TipoDeMaterial,
 } from '@/lib/materiais/materiais';
 import type { CopiarMaterial } from '@/lib/materiais/copiar-no-storage';
+import { instanteDoBanco } from '@/lib/tempo/agora';
 
 /** Quantos materiais a descrição da ferramenta lista. Acima disso, o prompt paga. */
 export const MAXIMO_DE_MATERIAIS_NA_DESCRICAO = 20;
@@ -204,14 +205,13 @@ export async function historicoDoMaterial(
     [input.tenantId, input.conversationId, input.materialId],
   );
   const linha = rows[0];
-  const ultimo = linha?.ultimo == null
-    ? null
-    : linha.ultimo instanceof Date
-      ? linha.ultimo
-      : new Date(String(linha.ultimo));
+  // Duas formas na entrada (`Date` do driver `pg`, string do PostgREST), uma na
+  // saída: quem normaliza a fronteira é `instanteDoBanco`, a borda canônica —
+  // não uma segunda ramificação local por `instanceof Date`.
+  const ultimoIso = instanteDoBanco(linha?.ultimo ?? null);
   return {
     nasUltimas24h: Number(linha?.nas_ultimas_24h ?? 0),
-    ultimo: ultimo !== null && !Number.isNaN(ultimo.getTime()) ? ultimo : null,
+    ultimo: ultimoIso === null ? null : new Date(ultimoIso),
   };
 }
 
