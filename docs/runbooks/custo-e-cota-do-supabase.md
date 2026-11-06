@@ -4,6 +4,21 @@ Para quem roda o DeskcommCRM numa VPS com Supabase (em especial o **plano free**
 cuja cota de egress é de 5 GB/mês) e recebeu aviso de consumo, throttling ou
 cobrança. Também serve para quem só quer saber **quanto o sistema parado custa**.
 
+## Antes de rodar — a pasta e o `psql`
+
+Tudo abaixo roda **na VPS, por SSH**, de dentro da pasta da instalação, e o
+`psql` é o do contêiner: a VPS instalada pelo kit não traz cliente de Postgres
+no host. Rode este bloco uma vez na sessão e os comandos seguintes funcionam
+copiando e colando. O porquê de cada linha está em
+[`rodar-sql-na-vps.md`](./rodar-sql-na-vps.md).
+
+```bash
+P="$(find /root /opt /home /var/www -maxdepth 4 -name docker-compose.prod.yml 2>/dev/null | head -1)"
+if [ -n "$P" ]; then cd "$(dirname "$P")" && pwd; else echo "instalação não encontrada"; fi
+psql_vps() { bash -c 'source hostgator-setup-kit/_common.sh && load_env .env && psql_run "$@"' _ "$@"; }
+psql_vps -c 'select 1'   # tem de responder 1
+```
+
 ## 1. Meça antes de mexer
 
 Nenhum número deste runbook substitui a medição da sua instalação — a sua rede, o
@@ -14,7 +29,7 @@ seu volume e os seus ajustes mudam a conta. Rode isto, não confie na memória:
 docker compose -f docker-compose.prod.yml logs worker | grep 'agent-engine pronto' | tail -1
 
 # Quem mais fala com o banco, ordenado por número de chamadas:
-psql "$SUPABASE_DB_URL" -c \
+psql_vps -c \
   "select calls, rows, left(query, 70) as consulta
      from pg_stat_statements order by calls desc limit 10;"
 
@@ -82,7 +97,7 @@ nelas de propósito. Se o seu aperto for de espaço e não de tráfego, comece
 medindo — o ranking abaixo diz qual delas (se alguma) é o seu problema:
 
 ```bash
-psql "$SUPABASE_DB_URL" -c \
+psql_vps -c \
   "select relname, pg_size_pretty(pg_total_relation_size(c.oid)) as tamanho
      from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relkind = 'r'
@@ -96,7 +111,7 @@ e apaga **em lotes** — nunca num DELETE só, que travaria a tabela pelo tempo
 inteiro da varredura. O que ele apagou na última rodada:
 
 ```bash
-psql "$SUPABASE_DB_URL" -c \
+psql_vps -c \
   "select created_at, metadata from api_audit_log
     where action = 'retention.sweep_run' order by created_at desc limit 5;"
 ```
@@ -175,13 +190,13 @@ daquela tabela, rode para cada tabela que o ranking de §4 apontou (por exemplo
 cada vez:
 
 ```bash
-psql "$SUPABASE_DB_URL" -c "vacuum (full, analyze) public.<tabela>;"
+psql_vps -c "vacuum (full, analyze) public.<tabela>;"
 ```
 
 Quanto está morto e ainda não foi reaproveitado, antes de decidir:
 
 ```bash
-psql "$SUPABASE_DB_URL" -c \
+psql_vps -c \
   "select relname, n_live_tup, n_dead_tup, last_autovacuum
      from pg_stat_user_tables
     where relname in ('job_queue','api_audit_log','send_ledger','before_send_traces');"
@@ -205,6 +220,18 @@ em toda instalação: o plano grátis continua sendo o caminho documentado de in
 na instalação medida (29/10), quem devolveu o serviço foi o *Restart project*. Antes de trocar, confirme que é este ramo e não o
 replay do gateway: `postgrest-replay-do-gateway.md` (seção "Outro ramo: falta de memória/IO") e
 `supabase-compute-insuficiente-free.md`.
+
+**Micro só existe em plano pago, e assinar não troca o compute.** O plano grátis roda o Nano e o Micro é dos planos
+pagos, então este passo são dois atos: assinar um plano pago e depois trocar o compute do projeto. O projeto que veio
+do grátis pode continuar no Nano (0,5 GB) dentro do plano pago, cobrado pelo preço do Micro, até você trocar. O
+Supabase não troca sozinho porque a troca causa uma queda, em geral de menos de 2 minutos segundo a doc
+([*Compute and Disk*](https://supabase.com/docs/guides/platform/compute-and-disk)).
+
+O plano e os US$ 10/mês em créditos de compute são da organização, não de cada projeto: o crédito cobre um projeto no
+Micro, e cada projeto a mais soma o compute dele. **Exemplo lido na doc oficial em 05/11/2026**, não orçamento: Pro
+US$ 25/mês + Micro US$ 0,01344/h (~US$ 10/mês) − US$ 10 de crédito ≈ **US$ 25/mês** com um projeto; com dois projetos
+no Micro, ≈ **US$ 35/mês**. Preço e crédito mudam; confira os valores e o que o crédito cobre em
+<https://supabase.com/docs/guides/platform/manage-your-usage/compute> antes de trocar o compute.
 
 ## 6. Se ainda não fechar
 
