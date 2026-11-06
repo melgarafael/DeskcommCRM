@@ -8,6 +8,7 @@ import type { FetchedMedia } from "@/lib/messaging/media/types";
 import type { OutboundMedia } from "@/lib/waha/media-send";
 import type { TemplateContract } from "@/lib/channels/meta/template-contract";
 import type { ContatoDoAparelho } from "@/lib/waha/client";
+import type { DefeitoDoNumero } from "./defeito-do-numero";
 
 // O tipo do contato do aparelho ATRAVESSA o seam como tipo só (o import some na
 // compilação), do mesmo jeito do `OutboundMedia` acima: quem fora daqui precisa
@@ -589,6 +590,11 @@ export interface ChannelHealth {
   status: string | null;
   /** Detalhe do erro, para o corpo do aviso. Nunca credencial. */
   detail: string | null;
+  /**
+   * Defeitos do número de pé que esta sonda não mediu (campo ausente ou `null`):
+   * não abrem aviso, e também não fecham o que está aberto.
+   */
+  defeitosSemMedida?: DefeitoDoNumero["tipo"][];
 }
 
 /** Definição aprovada, na forma NEUTRA — sem o vocabulário de nenhum provider. */

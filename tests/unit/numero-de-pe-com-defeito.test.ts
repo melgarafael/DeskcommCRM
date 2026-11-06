@@ -106,7 +106,20 @@ describe("a sonda lê os dois campos", () => {
       ...MEDIDA,
       platformConnection: { ...MEDIDA.platformConnection, inboundWebhookSubscribed: null },
     });
-    expect((await saude()).detail).toBeNull();
+    const r = await saude();
+    expect(r.detail).toBeNull();
+    expect(r.defeitosSemMedida, "`null` não pode contar como recebimento medido").toEqual(["nao_recebe"]);
+  });
+
+  it("chave de restrição ausente não é restrição limpa; `null` é", async () => {
+    const { messagingRestriction: _fora, ...semAChave } = MEDIDA;
+    globalThis.fetch = respondeCom(semAChave);
+    expect((await saude()).defeitosSemMedida).toEqual(["envio_restrito"]);
+  });
+
+  it("corpo ilegível não mede nada", async () => {
+    globalThis.fetch = vi.fn(async () => new Response("<html>", { status: 200 })) as never;
+    expect((await saude()).defeitosSemMedida).toEqual(["nao_recebe", "envio_restrito"]);
   });
 
   it.each([131042, 131031, 368])(
@@ -149,6 +162,8 @@ describe("a sonda lê os dois campos", () => {
 const NAO_RECEBE = { reachable: true, status: "WORKING", detail: DETALHE_NAO_RECEBE };
 const RESTRITO = { reachable: true, status: "WORKING", detail: `${PREFIXO_ENVIO_RESTRITO}131042` };
 const INTEIRO = { reachable: true, status: "WORKING", detail: null };
+/** De pé, sem defeito à vista, e a sonda não informou o recebimento. */
+const SEM_MEDIDA = { ...INTEIRO, defeitosSemMedida: ["nao_recebe" as const] };
 
 describe("o vocabulário do defeito", () => {
   it("o vocabulário do defeito é fechado: código fora do formato vira `desconhecido`", () => {
@@ -257,6 +272,25 @@ describe("uma vez por episódio, e fecha quando a sonda volta limpa", () => {
     expect(await sincronizarSaudeDaConexao(admin, sessao, INTEIRO, "Vendas")).toBe("resolvido");
     expect(ops.find((o) => o.tabela === "agent_inbox_items" && o.op === "update")?.payload).toMatchObject({ status: "resolved" });
   });
+
+  it("⭐ a sonda não informou o recebimento: o crítico de quem não recebe continua aberto", async () => {
+    escalado = "NAO_RECEBE";
+    const aberta = { ...sessao, status_reason: DETALHE_NAO_RECEBE };
+    expect(await sincronizarSaudeDaConexao(admin, aberta, SEM_MEDIDA, "Vendas")).toBe("sem_mudanca");
+    expect(ops.some((o) => o.op === "update" || o.op === "upsert"), "fechou sem medir").toBe(false);
+  });
+
+  it("um soluço da sonda no meio não muda isso: o motivo gravado é quem diz o que segue aberto", async () => {
+    escalado = "UNREACHABLE";
+    const aberta = { ...sessao, status_reason: DETALHE_NAO_RECEBE };
+    expect(await sincronizarSaudeDaConexao(admin, aberta, SEM_MEDIDA, "Vendas")).toBe("sem_mudanca");
+  });
+
+  it("não informar o recebimento não prende a restrição, que foi medida limpa", async () => {
+    escalado = "ENVIO_RESTRITO_131042";
+    const aberta = { ...sessao, status_reason: `${PREFIXO_ENVIO_RESTRITO}131042` };
+    expect(await sincronizarSaudeDaConexao(admin, aberta, SEM_MEDIDA, "Vendas")).toBe("resolvido");
+  });
 });
 
 describe("o motivo que a tela de Conexões mostra (`status_reason`)", () => {
@@ -271,6 +305,12 @@ describe("o motivo que a tela de Conexões mostra (`status_reason`)", () => {
 
   it("⭐ limpa o defeito que ela mesma gravou quando a sonda volta limpa", () => {
     expect(motivoParaGravar(INTEIRO, DETALHE_NAO_RECEBE)).toBeNull();
+  });
+
+  it("⭐ sem medida, o motivo fica: o cartão não volta a «Conectado» por falta de informação", () => {
+    expect(motivoParaGravar(SEM_MEDIDA, DETALHE_NAO_RECEBE)).toBeUndefined();
+    // O que foi medido limpo fecha mesmo com o outro lado sem medida.
+    expect(motivoParaGravar(SEM_MEDIDA, `${PREFIXO_ENVIO_RESTRITO}131042`)).toBeNull();
   });
 
   it("não toca no motivo de outro dono, nem quando não deu para perguntar ou o número caiu", () => {

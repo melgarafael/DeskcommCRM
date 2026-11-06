@@ -230,7 +230,7 @@ async function handle(req: NextRequest): Promise<Response> {
       const apelido = s.display_name ?? s.phone_number ?? "sem nome";
       const desfecho = await sincronizarSaudeDaConexao(
         admin,
-        { id: s.id, organization_id: s.organization_id, status: statusFinal },
+        { id: s.id, organization_id: s.organization_id, status: statusFinal, status_reason: s.status_reason },
         saude,
         apelido,
         "varredura",

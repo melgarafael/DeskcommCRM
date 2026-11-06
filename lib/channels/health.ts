@@ -121,6 +121,7 @@ export function motivoParaGravar(
   if (!saude.reachable || (saude.status ?? "").toUpperCase() !== STATUS_SAUDAVEL) return undefined;
   const defeito = defeitoDoNumero(saude.detail) ? saude.detail : null;
   if (defeito) return defeito === motivoAtual ? undefined : defeito;
+  if (defeitoSegueSemMedida(saude, motivoAtual)) return undefined;
   return defeitoDoNumero(motivoAtual) ? null : undefined;
 }
 
@@ -184,6 +185,17 @@ export interface SaudeObservada {
   reachable: boolean;
   status: string | null;
   detail: string | null;
+  defeitosSemMedida?: DefeitoDoNumero["tipo"][];
+}
+
+/**
+ * O defeito gravado segue valendo porque a sonda não mediu o que o fecharia?
+ * Sem isto, "não informado" contava como cura: o cartão voltava a «Conectado» e
+ * a Central fechava o crítico com o defeito de pé.
+ */
+function defeitoSegueSemMedida(saude: SaudeObservada, motivoAtual: string | null | undefined): boolean {
+  const aberto = defeitoDoNumero(motivoAtual);
+  return aberto !== null && (saude.defeitosSemMedida ?? []).includes(aberto.tipo);
 }
 
 /**
@@ -349,6 +361,8 @@ interface SessaoParaVigiar {
   id: string;
   organization_id: string;
   status: string | null;
+  /** O motivo gravado, quando quem chamou o leu: é onde mora o defeito do número aberto. */
+  status_reason?: string | null;
   /**
    * O NÚMERO da conexão, quando quem chamou leu a linha.
    *
@@ -438,6 +452,7 @@ export async function sincronizarSaudeDaConexao(
     if (origem === "varredura" && jaEscalado.startsWith(PREFIXO_EMPURRAO)) {
       return "sem_mudanca";
     }
+    if (defeitoSegueSemMedida(saude, sessao.status_reason)) return "sem_mudanca";
     await admin
       .from("agent_inbox_items")
       .update({ status: "resolved" })
