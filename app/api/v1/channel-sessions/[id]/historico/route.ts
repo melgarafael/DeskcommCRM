@@ -73,6 +73,7 @@ const corpo = z.discriminatedUnion("acao", [
   z.object({ acao: z.literal("importar"), importacaoId: z.uuid() }),
   z.object({ acao: z.literal("cancelar"), importacaoId: z.uuid() }),
   z.object({ acao: z.literal("retomar"), importacaoId: z.uuid() }),
+  z.object({ acao: z.literal("analisar"), importacaoId: z.uuid() }),
 ]);
 
 /**
@@ -144,8 +145,17 @@ export async function GET(_req: NextRequest, { params }: Context): Promise<Respo
     .limit(1)
     .maybeSingle();
   if (erroDaQueda) return fail("internal_error", "Não foi possível ler a importação.", 500, { requestId });
+  let analise: Record<string, number> | null = null;
+  if (data && (data as { status?: string }).status === "concluida") {
+    const { data: resumo, error: erroDoResumo } = await admin.rpc("fn_resumo_historico_analise", {
+      p_org: auth.org.orgId,
+      p_importacao: (data as { id: string }).id,
+    });
+    if (erroDoResumo) return fail("internal_error", "Não foi possível ler a análise.", 500, { requestId });
+    analise = (resumo ?? null) as Record<string, number> | null;
+  }
   return ok(
-    { guardar_historico: sessao.guardarHistorico, importacao: data ?? null, recuperacao_da_queda: daQueda ?? null },
+    { guardar_historico: sessao.guardarHistorico, importacao: data ?? null, recuperacao_da_queda: daQueda ?? null, analise },
     { requestId },
   );
 }
@@ -209,6 +219,31 @@ export async function POST(req: NextRequest, { params }: Context): Promise<Respo
     const importacao = data as { id: string };
     auditar("channel.historico_previa", { importacao_id: importacao.id, dias: pedido.dias, previa });
     return ok({ importacao }, { requestId });
+  }
+
+  if (pedido.acao === "analisar") {
+    const { data: importacao, error: erroDaImportacao } = await admin
+      .from(TABELA)
+      .select("id, status, origem")
+      .eq("id", pedido.importacaoId)
+      .eq("organization_id", orgId)
+      .eq("channel_session_id", id)
+      .maybeSingle();
+    if (erroDaImportacao) return fail("internal_error", "Não foi possível ler a importação.", 500, { requestId });
+    if (!importacao) return fail("not_found", "Importação não encontrada.", 404, { requestId });
+    if (importacao.status !== "concluida" || importacao.origem !== "manual") {
+      return fail("invalid_state_transition", "Somente uma importação manual concluída pode ser analisada.", 409, { requestId });
+    }
+    const { data: enfileiradas, error } = await admin.rpc("fn_enqueue_historico_analise", {
+      p_org: orgId,
+      p_importacao: pedido.importacaoId,
+    });
+    if (error) return fail("internal_error", "Não foi possível iniciar a análise.", 500, { requestId });
+    auditar("channel.historico_analysis_started", {
+      importacao_id: pedido.importacaoId,
+      tarefas_novas: Number(enfileiradas ?? 0),
+    });
+    return ok({ importacao, tarefas_novas: Number(enfileiradas ?? 0) }, { requestId });
   }
 
   const t = TRANSICOES[pedido.acao];

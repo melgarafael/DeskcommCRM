@@ -14874,6 +14874,14 @@ export type Database = {
       };
     };
     Functions: {
+      fn_enqueue_historico_analise: {
+        Args: { p_importacao: string; p_org: string };
+        Returns: number;
+      };
+      fn_resumo_historico_analise: {
+        Args: { p_importacao: string; p_org: string };
+        Returns: Json;
+      };
       activate_kb_version: {
         Args: { p_agent_id: string; p_version_id: string };
         Returns: undefined;
