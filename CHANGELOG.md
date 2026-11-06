@@ -58,13 +58,13 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ### Alterado
 
-- **A barra da conversa no Inbox mostra só as ações do dia a dia; o resto vai para o menu ⋯** A barra do cabeçalho da conversa oferecia doze controles ao mesmo tempo. Agora ela guarda as ações de todo atendimento: responder (assumir ou liberar a conversa), transferir e encerrar ou reabrir. Todo o resto está no menu ⋯, com ícone e nome: ver contato, chamar pelo navegador, reservar serviço na agenda, videochamada, convidar colega para atender junto, pausar o atendimento automático, adiar com lembrete, arquivar e marcar ou desmarcar o contato como pessoal.
+- **A barra da conversa no Inbox mostra só as ações do dia a dia; o resto vai para o menu ⋯** A barra do cabeçalho da conversa oferecia doze controles ao mesmo tempo. Agora ela guarda as ações de todo atendimento: responder (assumir ou liberar a conversa), transferir e encerrar ou reabrir; quando o atendimento automático está travado nela, também devolver ao automático. Todo o resto está no menu ⋯, com ícone e nome: ver contato, chamar pelo navegador, reservar serviço na agenda, videochamada, convidar colega para atender junto, pausar o atendimento automático, adiar com lembrete, arquivar e marcar ou desmarcar o contato como pessoal.
 
   Cada uma continua com uma guia de uma linha dizendo o EFEITO do clique, em português e em espanhol. "Assumir" deixou de aparecer para quem já é o dono da conversa, onde era um clique que não mudava nada. Permissões, nomes de botão e atalhos continuam os mesmos. Crédito: @webtecnica (#3835, issue #3003 de @aerosuiteapp).
 
 - **Os guias escolhem a região do Supabase pela distância até a VPS** Os guias de instalação mandavam criar o projeto Supabase em **São Paulo** sem dizer por quê. Quem hospeda o CRM numa VPS nos EUA ou na Europa ficava com cada consulta atravessando o continente, em toda tela e em toda resposta do agente, porque um projeto Supabase não se muda de região depois de criado.
 
-  Agora os quatro guias pedem a região **mais próxima da VPS**, avisam que a escolha é definitiva e mostram como fazê-la pelo kit (`SUPABASE_REGION` ou o segundo argumento do `supabase-provision.sh`, como em `bash supabase-provision.sh "Nome" us-east-1`). Nada muda no produto: só a documentação de instalação. Crédito: @webtecnica (#4085, issue #4073, pedido de celsotuzzolo no YouTube).
+  Agora os quatro guias pedem a região **mais próxima da VPS**, avisam que a escolha é definitiva e mostram como fazê-la pelo kit (`SUPABASE_REGION` ou o segundo argumento do `supabase-provision.sh`, como em `bash hostgator-setup-kit/supabase-provision.sh "Nome" us-east-1`). Nada muda no produto: só a documentação de instalação. Crédito: @webtecnica (#4085, issue #4073, pedido de celsotuzzolo no YouTube).
 
 - **Os runbooks de Supabase dizem que o Micro exige plano pago** Os dois runbooks de Supabase mandavam subir o compute para o **Micro (1 GB)** quando a Nano do plano grátis não dava conta do banco, sem dizer que esse compute só existe nos planos pagos.
 
@@ -72,11 +72,11 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **Encerrar a conversa agora publica um evento no log do sistema** Encerrar um atendimento mudava o status e gravava a auditoria, mas nenhum evento ia para o log do sistema. Agora o encerramento publica o evento `conversation.closed`, com a conversa, o contato, o número e o instante do fechamento. É a base para reagir ao fim do atendimento: nenhuma automação da tela usa esse evento ainda.
 
-  Sai um evento por encerramento: encerrar de novo não repete, e o fechamento em lote gera um por conversa. Se a publicação falhar, o encerramento acontece do mesmo jeito, e a falha fica no log do banco com o id da conversa. Crédito: @webtecnica (#4054, issue #4023, da discussão #742 de @mvanhorn).
+  Sai um evento por encerramento: encerrar uma conversa já encerrada não repete, reabrir e encerrar de novo gera outro, e o fechamento em lote gera um por conversa. Se a publicação falhar, o encerramento acontece do mesmo jeito, e a falha fica no log do banco com o id da conversa. Crédito: @webtecnica (#4054, issue #4023, da discussão #742 de @mvanhorn).
 
 ### Corrigido
 
-- **O ID que o aviso de erro mostra sempre existe no log do servidor** Quando uma chamada à API falhava, a tela mostrava `ID: <uuid>` e mandava procurar esse ID no log, mas ele quase nunca estava lá. Agora o ID da tela é o mesmo do log: todo erro **5xx** das respostas padrão da API grava uma linha com esse ID, o código e o status. Recusas **4xx** continuam sem log, porque são esperadas. O aviso genérico «Erro inesperado. Tente novamente.» também passou a mostrar o `ID:` quando o erro traz um.
+- **O ID que o aviso de erro 5xx mostra sempre existe no log do servidor** Quando uma chamada à API falhava, a tela mostrava `ID: <uuid>` e mandava procurar esse ID no log, mas ele quase nunca estava lá. Agora o ID da tela é o mesmo do log: todo erro **5xx** das respostas padrão da API grava uma linha com esse ID, o código e o status. Recusas **4xx** continuam sem log, porque são esperadas. O aviso genérico «Erro inesperado. Tente novamente.» também passou a mostrar o `ID:` quando o erro traz um.
 
   Para quem integra: sob `/api/`, o `X-Request-Id` da resposta agora é o que fica no log e na auditoria, e só sai nas respostas padrão da API; as poucas respostas montadas à parte, como a verificação de saúde, os webhooks de entrada e os retornos de login de integrações, ficam sem ele por enquanto. O `X-Request-Id` que você manda só volta quando é um UUID e aquela chamada usa esse id; nos outros casos volta o id que ela usou, que é o que está no log. O corpo das respostas não mudou, e nada precisa ser feito na instalação. Crédito: @webtecnica (#3991, issue #3971).
 
@@ -92,7 +92,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
   O `healthcheck.sh` passa a sair com código **1** quando o app não está saudável, `degraded` inclusive: na instalação isso é tolerado (serviço opcional ainda não configurado), mas num diagnóstico chamado à mão não é "saudável". Crédito: @webtecnica (#4101, issue #4087).
 
-- **Abrir a conversa de quem acabou de ser cadastrado só acontece no canal que pode enviar** O botão **Salvar e iniciar conversa** do cadastro de contato e de negócio criava uma conversa vazia quando o canal escolhido estava **desligado** pelo operador ou **fora do ar**. Agora a recusa acontece antes de criar, com o motivo dito na tela.
+- **Abrir a conversa de quem acabou de ser cadastrado respeita o canal escolhido: desligado ou fora do ar é recusado** O botão **Salvar e iniciar conversa** do cadastro de contato e de negócio criava uma conversa vazia quando o canal escolhido estava **desligado** pelo operador ou **fora do ar**. Agora a recusa acontece antes de criar, com o motivo dito na tela.
 
   Quando a lista de canais ainda não chegou e nenhum canal foi escolhido, a abertura de um contato **com telefone** prefere o canal que disca o número, e não a conexão mais antiga da empresa, que numa organização que pareou Instagram antes do WhatsApp não alcança telefone nenhum.
 
@@ -102,7 +102,7 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 - **Abrir conversa pula o canal desligado em vez de recusar a abertura** Abrir uma conversa sem escolher canal (o "salvar e iniciar conversa" do cadastro, o lembrete de tarefa e a ferramenta de início de conversa do agente) pegava o canal conectado mais antigo da organização sem olhar se o operador o tinha desligado. Com o número velho desligado e um novo conectado depois, a abertura era recusada mesmo havendo outro canal pronto para enviar.
 
-  Agora os canais desligados são pulados e entra o próximo que pode enviar. A ordem de sempre continua valendo: **conectado antes de fora do ar, telefone antes de rede social**, e no empate o mais antigo. A recusa só acontece quando nenhum canal pode enviar; quando todos estão desligados, ela convida a reativar a conexão. Crédito: @webtecnica (#4100, issue #4092).
+  Agora os canais desligados são pulados e entra o próximo que pode enviar. A ordem continua a de sempre. Contato com telefone: **primeiro os canais de telefone**, conectado antes de fora do ar, e só depois os demais. Sem telefone: **conectado antes de fora do ar**. No empate, o mais antigo. Canal fora do ar não causa recusa aqui: ela só acontece quando não há canal ou quando todos estão desligados, e nesse último caso convida a reativar a conexão. Crédito: @webtecnica (#4100, issue #4092).
 
 - **A tela de Casos vazia diz quem abre caso e para onde vai o repasse** A aba Abertos da tela de Casos, quando vazia, dizia apenas "Quando a IA precisar de você, aparece aqui.", e quem a via esperava encontrar ali as conversas passadas para uma pessoa. O texto agora diz que o caso só aparece quando um agente publicado, com "Deixar o agente pedir uma tarefa a alguém e seguir conversando" ligado, pede algo à equipe, e que a conversa passada para uma pessoa vai para o Inbox. Em português, espanhol, inglês, turco e chinês. Nada a fazer na atualização.
 
