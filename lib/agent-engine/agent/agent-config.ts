@@ -130,6 +130,14 @@ export interface PublishedAgentConfig {
    */
   avisoForaDoHorario?: string | null;
   /**
+   * Texto do aviso quando HOJE é feriado nacional (#3877), lido de
+   * `filters.business_hours.notice_feriado`. `null` = sem texto próprio: o
+   * aviso é o de sempre, e o calendário nem é consultado — é a prova de
+   * retrocompatibilidade que a issue exige. Opcional pelo mesmo motivo da
+   * linha acima.
+   */
+  avisoForaDoHorarioFeriado?: string | null;
+  /**
    * `ai_agents.config.mcp_externo_no_atendimento` (#2147): o servidor MCP
    * externo também carrega em turno com contato, com a identidade dele em
    * cabeçalho. Opcional porque nasce depois das fixtures; ausente = desligado.
@@ -299,6 +307,9 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // `null` (sem janela ⇒ atende sempre), nunca uma mordaça acidental.
     janelaDeAtendimento: lerJanelaDeAtendimento(r.trigger_config),
     avisoForaDoHorario: lerTextoDoAvisoForaDoHorario(r.trigger_config),
+    // #3877 — mesma leitura, outra chave: o texto de feriado nacional. Sem a
+    // chave, `null`, e o aviso é o de sempre (nem calendário é lido).
+    avisoForaDoHorarioFeriado: lerTextoDoAvisoForaDoHorario(r.trigger_config, 'notice_feriado'),
     // `=== true`: jsonb ausente ou com outro tipo é DESLIGADO, o lado seguro.
     mcpExternoNoAtendimento: cfg.mcp_externo_no_atendimento === true,
     // Mesma leitura defensiva da linha acima: regex torta/valor vazio ⇒ `null`

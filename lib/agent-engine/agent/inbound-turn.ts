@@ -3355,6 +3355,10 @@ async function executarTurnoDoAgente(
             contactId: leadId,
             channelSessionId: input.channelSessionId,
             texto: agentConfig.avisoForaDoHorario ?? null,
+            // #3877 — o texto de feriado nacional, quando configurado. É o
+            // aviso que decide (e só então lê o calendário): sem esta chave o
+            // texto enviado e o caminho são exatamente os de antes.
+            textoDeFeriado: agentConfig.avisoForaDoHorarioFeriado ?? null,
             janela: agentConfig.janelaDeAtendimento,
             agora: clock(),
           },

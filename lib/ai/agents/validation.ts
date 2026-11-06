@@ -45,6 +45,11 @@ const triggerConfigSchema = z
             // campo ao salvar e o aviso nunca liga pela tela. O teto é o mesmo
             // de TAMANHO_MAXIMO_DO_TEXTO em aviso-fora-do-horario.ts.
             notice: z.string().max(1000).nullable().optional(),
+            // Texto do aviso quando hoje é FERIADO NACIONAL (#3877). Opcional:
+            // ausente = o aviso continua sendo o `notice`, byte a byte, e o
+            // calendário nem é consultado. Mesmo teto do `notice` — é o mesmo
+            // balão, o mesmo leitor e o mesmo campo de tela ao lado.
+            notice_feriado: z.string().max(1000).nullable().optional(),
           })
           .nullable()
           .optional()
