@@ -13,7 +13,18 @@ type Filtro = [string, unknown];
  * implementa o mínimo que `comIdempotencia` usa — unicidade por
  * (endpoint, chave), filtro de janela e recibo terminal na mesma linha.
  */
-export function bancoFalso(opcoes: { sessao?: Linha | null; idem?: Map<string, Linha> } = {}) {
+export function bancoFalso(
+  opcoes: {
+    sessao?: Linha | null;
+    idem?: Map<string, Linha>;
+    /** Linhas de `contacts`: `{ phone_number, is_blocked, is_anonymized }`. */
+    contatos?: Linha[];
+    /** Linhas de `contact_phones`, com a ficha embutida em `contacts`, como o PostgREST devolve. */
+    telefonesExtras?: Linha[];
+    /** Erro de leitura em `contacts`, para medir a falha fechada. */
+    erroEmContatos?: { message: string };
+  } = {},
+) {
   const idem = opcoes.idem ?? new Map<string, Linha>();
   const contagem = { escritasEmCanais: 0 };
 
@@ -106,19 +117,48 @@ export function bancoFalso(opcoes: { sessao?: Linha | null; idem?: Map<string, L
     };
   };
 
+  const leituraDeContatos = (linhas: Linha[], erro: { message: string } | null) => () => {
+    let grafias: unknown[] = [];
+    let bloqueados = false;
+    const b: Record<string, unknown> = {
+      eq: () => b,
+      in: (_coluna: string, valores: unknown[]) => {
+        grafias = valores;
+        return b;
+      },
+      or: () => {
+        bloqueados = true;
+        return b;
+      },
+      then: (r?: (v: unknown) => unknown) => {
+        const data = linhas.filter(
+          (l) => grafias.includes(l.phone_number) && (!bloqueados || l.is_blocked || l.is_anonymized),
+        );
+        return Promise.resolve(erro ? { data: null, error: erro } : { data, error: null }).then(
+          r ?? ((v: unknown) => v),
+        );
+      },
+    };
+    return b;
+  };
+
   const db = {
     from: (tabela: string) =>
-      tabela === "idempotency_keys"
-        ? {
-            select: () => selecaoIdem(),
-            insert: (linha: Linha) => insercaoIdem(linha),
-            update: (patch: Linha) => atualizacaoIdem(patch),
-          }
-        : {
-            select: () => selecaoSessao(),
-            insert: escritaProibida,
-            update: escritaProibida,
-          },
+      tabela === "contacts"
+        ? { select: leituraDeContatos(opcoes.contatos ?? [], opcoes.erroEmContatos ?? null) }
+        : tabela === "contact_phones"
+          ? { select: leituraDeContatos(opcoes.telefonesExtras ?? [], null) }
+          : tabela === "idempotency_keys"
+            ? {
+                select: () => selecaoIdem(),
+                insert: (linha: Linha) => insercaoIdem(linha),
+                update: (patch: Linha) => atualizacaoIdem(patch),
+              }
+            : {
+                select: () => selecaoSessao(),
+                insert: escritaProibida,
+                update: escritaProibida,
+              },
   };
 
   return { db: db as unknown as SupabaseClient, contagem, idem };

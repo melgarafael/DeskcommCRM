@@ -58,11 +58,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 import { comIdempotencia } from "@/lib/api/idempotency";
+import { lotesDeIds } from "@/lib/kanban/selecao";
 
 import { lerGuardarHistorico } from "./acervo-do-historico";
 import { capabilitiesOf } from "./capabilities";
 import { canalDesativado } from "./desativado";
 import { getAdapter } from "./index";
+import { phoneLookupVariants } from "./phone-variants";
 import {
   CHANNEL_SESSION_REF_COLUMNS,
   resolveSessionRef,
@@ -131,6 +133,52 @@ export function lerPublico(contatos: readonly string[] | undefined): PublicoDoSt
   return { tipo: "contatos", numeros };
 }
 
+/**
+ * Tira da lista quem não pode ser alcançado: contato bloqueado (pediu para sair)
+ * ou anonimizado, pelas duas grafias do número (nono dígito) e também pelos
+ * telefones extras da ficha. A lista vem de fora, e o opt-out vale para qualquer
+ * saída do número. Em `todos` não há lista a filtrar: quem vê é decidido pelo
+ * WhatsApp, e o interruptor do módulo diz isso.
+ *
+ * Falha fechada: sem saber quem saiu, nada é publicado.
+ */
+async function semQuemSaiu(
+  db: SupabaseClient,
+  organizationId: string,
+  numeros: readonly string[],
+): Promise<string[]> {
+  const fora = new Set<string>();
+  for (const lote of lotesDeIds(numeros)) {
+    const grafias = lote.flatMap((numero) => phoneLookupVariants(numero));
+    const [principais, extras] = await Promise.all([
+      db
+        .from("contacts")
+        .select("phone_number")
+        .eq("organization_id", organizationId)
+        .in("phone_number", grafias)
+        .or("is_blocked.eq.true,is_anonymized.eq.true"),
+      db
+        .from("contact_phones")
+        .select("phone_number, contacts:contact_id(is_blocked, is_anonymized)")
+        .eq("organization_id", organizationId)
+        .in("phone_number", grafias),
+    ]);
+    const erro = principais.error ?? extras.error;
+    if (erro) throw new Error(`opt_out_ilegivel: ${erro.message}`);
+    for (const { phone_number } of (principais.data ?? []) as Array<{ phone_number: string }>) {
+      fora.add(phone_number);
+    }
+    const linhas = (extras.data ?? []) as unknown as Array<{
+      phone_number: string;
+      contacts: { is_blocked: boolean; is_anonymized: boolean } | null;
+    }>;
+    for (const { phone_number, contacts } of linhas) {
+      if (contacts?.is_blocked || contacts?.is_anonymized) fora.add(phone_number);
+    }
+  }
+  return numeros.filter((numero) => !phoneLookupVariants(numero).some((grafia) => fora.has(grafia)));
+}
+
 export interface PublicacaoDeStatusInput {
   db: SupabaseClient;
   organizationId: string;
@@ -158,8 +206,10 @@ export interface PublicacaoDeStatusFeita {
   publicado: boolean;
   /** Id que o canal deu à publicação; `null` quando ele não devolve id. */
   statusId: string | null;
-  /** `"todos"` ou `"N contato(s)"` — o que o chamador pediu, dito de volta. */
+  /** `"todos"` ou `"N contato(s)"` — quem a publicação alcançou, dito de volta. */
   publico: string;
+  /** Quantos saíram da lista por opt-out ou anonimização. */
+  excluidos: number;
   /** `true` quando a resposta veio do recibo da primeira publicação. */
   deduplicado: boolean;
 }
@@ -242,20 +292,38 @@ export async function publicarStatusDoWhatsapp(
 
   // ── O efeito ───────────────────────────────────────────────────────────────
   const publicar = async (): Promise<{ resposta: PublicacaoDeStatusFeita; status: number }> => {
+    // Aqui, e não antes da chave: o replay devolve o recibo sem reler, e quem saiu
+    // da lista depois da publicação não vira conflito de chave.
+    const destino: PublicoDoStatus =
+      publico.tipo === "todos"
+        ? publico
+        : {
+            tipo: "contatos",
+            numeros: await semQuemSaiu(input.db, input.organizationId, publico.numeros),
+          };
+    if (destino.tipo === "contatos" && destino.numeros.length === 0) {
+      throw new Error(
+        "publico_vazio: todos os contatos da lista pediram para não ser incomodados ou foram anonimizados. Nada foi publicado.",
+      );
+    }
     await input.freio?.segurar();
     const { externalId, incerto } = await publicarStatus({
       organizationId: input.organizationId,
       sessionRef,
       imagem: input.imagem,
       legenda,
-      publico,
+      publico: destino,
     });
     await input.freio?.registrar();
     return {
       resposta: {
         publicado: !incerto,
         statusId: externalId,
-        publico: publico.tipo === "todos" ? "todos" : `${publico.numeros.length} contato(s)`,
+        publico: destino.tipo === "todos" ? "todos" : `${destino.numeros.length} contato(s)`,
+        excluidos:
+          publico.tipo === "contatos" && destino.tipo === "contatos"
+            ? publico.numeros.length - destino.numeros.length
+            : 0,
         deduplicado: false,
       },
       status: incerto ? STATUS_INCERTO : 200,

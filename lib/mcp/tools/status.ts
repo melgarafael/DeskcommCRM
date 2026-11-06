@@ -43,7 +43,7 @@ const inputShape = {
     .array(z.string().min(8).max(20))
     .max(500)
     .optional()
-    .describe("Telefones que verão o Status (com DDI; a máscara é ignorada)."),
+    .describe("Telefones que verão o Status (com DDI; a máscara é ignorada). Quem pediu para sair fica de fora, e `excluded_opt_out` diz quantos."),
   all_contacts: z
     .boolean()
     .optional()
@@ -101,6 +101,7 @@ export const crmPublishWhatsappStatus: McpToolDefinition<typeof inputShape> = {
       published: true,
       status_id: publicacao.statusId,
       audience: publicacao.publico,
+      excluded_opt_out: publicacao.excluidos,
       deduplicated: publicacao.deduplicado,
     };
   },
