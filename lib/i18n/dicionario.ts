@@ -9024,6 +9024,9 @@ export const DICIONARIO: Traducoes = {
   "Progresso do áudio": { es: "Progreso del audio" },
   "Velocidade de reprodução": { es: "Velocidad de reproducción" },
   "Ampliar imagem": { es: "Ampliar imagen" },
+  // O segundo clique no lightbox desfaz o zoom (#4149) — o rótulo diz a AÇÃO
+  // seguinte, não o estado atual, para quem navega por leitor de tela.
+  "Reduzir imagem": { es: "Reducir imagen" },
   "Imagem recebida": { es: "Imagen recibida" },
   // Transcrição do áudio no balão (#2133): rótulo e estado de carregamento.
   Transcrição: { es: "Transcripción" },
