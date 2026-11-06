@@ -102,7 +102,9 @@ function abrir(qc: QueryClient) {
 
 /** Pelas VALUES, não pelos rótulos: o valor é o contrato com o servidor. */
 const valuesDosMotivos = () =>
-  Array.from(document.querySelectorAll<HTMLInputElement>('input[name="lost-reason"]')).map((r) => r.value);
+  Array.from(document.querySelectorAll<HTMLInputElement>('input[name="lost-reason"]')).map(
+    (r) => r.value,
+  );
 
 const radio = (valor: string) =>
   document.querySelector<HTMLInputElement>(`input[name="lost-reason"][value="${valor}"]`)!;
@@ -249,7 +251,9 @@ describe("motivosDoFunil (a régua da leitura)", () => {
     // um rótulo que o banco recusa com 22023 — a classe de defeito que este
     // arquivo fecha. O dedupe segue ignorando espaço nas pontas.
     expect(
-      motivosDoFunil({ lost_reasons: ["  Sem orçamento  ", "Sem orçamento", "", "Fora do perfil"] }),
+      motivosDoFunil({
+        lost_reasons: ["  Sem orçamento  ", "Sem orçamento", "", "Fora do perfil"],
+      }),
     ).toEqual(["  Sem orçamento  ", "Fora do perfil"]);
   });
 
@@ -273,7 +277,7 @@ describe("motivosDoFunil (a régua da leitura)", () => {
     // a literal antiga no próprio texto do caso, e cobrá-la aqui seria o teste
     // reprovando a si mesmo.
     const hook = readFileSync(join(raiz, "hooks/kanban/useMotivosDePerdaDoFunil.ts"), "utf8");
-    expect(hook.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")).not.toContain("\"board\"");
+    expect(hook.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")).not.toContain('"board"');
   });
 
   it("lixo no settings vira lista vazia, não motivo na tela", () => {
@@ -281,4 +285,25 @@ describe("motivosDoFunil (a régua da leitura)", () => {
     expect(motivosDoFunil({})).toEqual([]);
     expect(motivosDoFunil({ lost_reasons: "Sem orçamento" })).toEqual([]);
   });
+});
+
+it("identifica o negócio sem alterar o motivo selecionado ou o cancelamento", () => {
+  const qc = comFunil({ lost_reasons: ["Sem orçamento"] });
+  const close = vi.fn();
+  render(
+    <QueryClientProvider client={qc}>
+      <LoseLeadDialog
+        open
+        onOpenChange={close}
+        leadId={LEAD}
+        pipelineId={PIL}
+        leadLabel="Negócio de teste"
+      />
+    </QueryClientProvider>,
+  );
+  expect(screen.getByText("Negócio de teste")).toBeInTheDocument();
+  expect(valuesDosMotivos()).toEqual(["Sem orçamento", "other"]);
+  fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+  expect(close).toHaveBeenCalledWith(false);
+  expect(apiPost).not.toHaveBeenCalled();
 });

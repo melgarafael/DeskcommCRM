@@ -25,6 +25,12 @@ import { ROLE_RANK } from "@/lib/auth/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { codigoDoEscopo, mensagemDoEscopo, validarEscopoDaVersao } from "@/lib/ai/agents/escopo";
 import {
+  CODIGO_NOME_DE_AGENTE_EM_USO,
+  NOME_DE_AGENTE_EM_USO,
+  RASCUNHO_SALVO_NOME_NAO_MUDOU,
+  ehNomeDeAgenteRepetido,
+} from "@/lib/ai/agents/nome-repetido";
+import {
   agentMcpCreateSchema,
   agentMcpPatchSchema,
   PUBLISH_ERROR_CODES,
@@ -77,7 +83,7 @@ async function gravarCadastroDoAgente(
     atual: { name?: unknown; description?: unknown; priority?: unknown };
     pedido: { name?: string; description?: string | null; priority?: number };
   },
-): Promise<{ erro: string } | { mudou: string[] }> {
+): Promise<{ erro: string; doBanco: unknown } | { mudou: string[] }> {
   const patch: Record<string, unknown> = {};
   for (const campo of ["name", "description", "priority"] as const) {
     const novo = args.pedido[campo];
@@ -93,7 +99,7 @@ async function gravarCadastroDoAgente(
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", args.agentId)
     .eq("organization_id", args.orgId);
-  if (error) return { erro: error.message };
+  if (error) return { erro: error.message, doBanco: error };
 
   void audit({
     action: "ai_agent.updated",
@@ -265,6 +271,17 @@ export async function saveAgentDraftAction(
       // As duas escritas não são atômicas. O desfecho tem de dizer o que
       // gravou: um toast verde genérico aqui reproduz o defeito com outra cara.
       if ("erro" in r) {
+        if (ehNomeDeAgenteRepetido(r.doBanco)) {
+          // O rascunho FOI salvo — o que não entrou foi o nome do cadastro. Dizer
+          // só "já existe um agente com esse nome" faria a pessoa achar que
+          // perdeu o trabalho; dizer só "o cadastro não" mandaria procurar
+          // defeito onde há um nome para trocar.
+          return {
+            ok: false,
+            error: CODIGO_NOME_DE_AGENTE_EM_USO,
+            message: `${NOME_DE_AGENTE_EM_USO} ${RASCUNHO_SALVO_NOME_NAO_MUDOU}`,
+          };
+        }
         return {
           ok: false,
           error: "internal_error",
@@ -359,6 +376,14 @@ export async function saveAgentDraftAction(
           pedido: cadastroParsed.data,
         });
         if ("erro" in r) {
+          if (ehNomeDeAgenteRepetido(r.doBanco)) {
+            // Mesmo desfecho do ramo de cima: rascunho salvo, nome não.
+            return {
+              ok: false,
+              error: CODIGO_NOME_DE_AGENTE_EM_USO,
+              message: `${NOME_DE_AGENTE_EM_USO} ${RASCUNHO_SALVO_NOME_NAO_MUDOU}`,
+            };
+          }
           return {
             ok: false,
             error: "internal_error",
@@ -766,6 +791,14 @@ export async function createMcpAgentAction(
     .single();
 
   if (agentErr || !agentRow) {
+    // Nome repetido na organização (#3952): o índice `ai_agents_name_unique` é
+    // `(organization_id, name)`. A tela marca o campo de nome com a frase, então
+    // a Action devolve o CÓDIGO e não a mensagem: quem traduz é o cliente, que
+    // sabe o idioma de quem está logado (`useT`), e o toast genérico não é o
+    // lugar de um erro que mora num campo.
+    if (ehNomeDeAgenteRepetido(agentErr)) {
+      return { ok: false, error: CODIGO_NOME_DE_AGENTE_EM_USO };
+    }
     return { ok: false, error: "internal_error", message: agentErr?.message };
   }
 
