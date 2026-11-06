@@ -31,6 +31,7 @@ import { falhaDeExecucaoParaRecibo, resultadosParaRecibo } from "@/lib/automatio
 import type { ActionResultDetail } from "@/lib/automation/types";
 import { audit } from "@/lib/audit";
 import { regraDoEvento } from "@/lib/automation/gatilho-de-data-do-funil";
+import { horasDoIntervalo, intervaloConfigurado } from "@/lib/automation/intervalo-por-contato";
 import {
   acoesQueFechamLaco,
   ENTIDADE_ESPERADA_POR_GATILHO,
@@ -338,6 +339,71 @@ async function regraJaRodouParaOCntato(
   return Array.isArray(data) && data.length > 0;
 }
 
+/** As duas réguas por contato — o motivo gravado é sempre UMA delas (#2974). */
+type MotivoDoLimite = "uma_vez_por_contato" | "intervalo_por_contato";
+
+/**
+ * O INTERVALO: esta regra rodou para este contato nas últimas N horas? (#2974)
+ *
+ * Mesma tabela da opção de uma vez (`automation_rule_runs`), mesma pergunta ao
+ * BANCO e pelo mesmo motivo — é o estado persistido que faz a janela sobreviver
+ * a reinício do worker. A diferença é o recorte: aqui a pergunta tem DATA.
+ *
+ * ═══ POR QUE "NÃO-FALHA", E NÃO "QUALQUER LINHA" ═══
+ *
+ * A tentação é contar qualquer linha da regra para o contato, como a opção de
+ * uma vez faz. Seria um defeito com data marcada: o bloqueio por limite TAMBÉM
+ * grava linha (`status: failed`, todas as ações `skipped`), e cada evento
+ * barrado empurraria a janela para frente. Uma regra de 24 h com eventos
+ * diários nunca mais rodaria para aquele contato — "não repetir por 24 h"
+ * viraria "nunca mais", e as duas fatias da issue ficariam idênticas.
+ *
+ * Então a janela só conta a passagem em que algo SAIU: `success` e `partial`.
+ * Fora dela ficam `failed` — a linha do bloqueio e o run em que tudo falhou — e
+ * `adiado`, e os dois por motivo próprio:
+ *
+ *   - `failed`: nada foi entregue, e travar a próxima tentativa por N horas por
+ *     um erro de rede é o oposto do fail-open que o resto do motor pratica;
+ *   - `adiado`: a mensagem NÃO foi enviada, está esperando a janela de envio
+ *     abrir (pacing/teto diário). O evento volta como `retry` e é ESSA entrega
+ *     que o motor vai tentar — barrá-la aqui mataria a sequência, porque a
+ *     linha do adiamento fica dentro da janela de qualquer intervalo maior que
+ *     o tempo de espera.
+ *
+ * FAIL-OPEN na leitura, como as duas irmãs: consulta que falha devolve `false`
+ * (a regra roda) e o log diz que a conferência não pôde ser feita.
+ */
+async function regraRodouNasUltimasHoras(
+  admin: SupabaseClient,
+  organizationId: string,
+  ruleId: string,
+  contactId: string,
+  horas: number,
+): Promise<boolean> {
+  const desde = new Date(Date.now() - horas * 60 * 60 * 1000).toISOString();
+  const { data, error } = await admin
+    .from("automation_rule_runs")
+    .select("id")
+    // `limit(1)` + lista pelo mesmo motivo da irmã: várias linhas por contato e
+    // `maybeSingle()` responderia ERRO no PostgREST, erro que o fail-open
+    // converteria em "pode rodar" — o contrário do que a janela pede.
+    .eq("organization_id", organizationId)
+    .eq("rule_id", ruleId)
+    .eq("contact_id", contactId)
+    .neq("status", "failed")
+    .neq("status", "adiado")
+    .gte("created_at", desde)
+    .limit(1);
+  if (error) {
+    logger.warn(
+      "[automation.engine] não foi possível conferir o intervalo por contato — a regra segue (fail-open)",
+      { rule_id: ruleId, organization_id: organizationId, horas, error: error.message },
+    );
+    return false;
+  }
+  return Array.isArray(data) && data.length > 0;
+}
+
 /**
  * A RESERVA NO BANCO — a chave (regra, contato) tomada ANTES de executar (#2974).
  *
@@ -400,8 +466,9 @@ async function reservarExecucaoPorContato(
  *
  * Mesmo desenho de `registrarAdiamento`: um run que registra o que aconteceu em
  * vez de o evento sumir sem deixar linha. Aqui nada foi tentado e nada vai
- * chegar — por isso as ações saem como `skipped` com `error:
- * uma_vez_por_contato`, e o agregador (`statusDoRun`, o MESMO do run normal)
+ * chegar — por isso as ações saem como `skipped` com o `error` da RÉGUA que
+ * barrou (`uma_vez_por_contato` ou `intervalo_por_contato`), e o agregador
+ * (`statusDoRun`, o MESMO do run normal)
  * fecha o estado como `failed`: a doutrina do motor é que `skipped` conta junto
  * de `failed`, porque as duas significam "não saiu, e a fila não resolve
  * sozinha". Sem esta linha, "não apareceu nada na Atividade" e "a regra não
@@ -410,17 +477,23 @@ async function reservarExecucaoPorContato(
  *
  * Não mexe em `run_count`/`last_run_at`: a regra NÃO rodou, e o contador
  * informativo não pode dizer que sim.
+ *
+ * O MOTIVO é parâmetro (#2974, fatia 2): com o intervalo ligado, "uma vez por
+ * contato" deixaria de ser a verdade da linha — a regra vai rodar de novo
+ * quando a janela fechar, e quem lê a Atividade precisa saber qual das duas
+ * réguas decidiu.
  */
 async function registrarBloqueioPorLimite(
   admin: SupabaseClient,
   row: EventRow,
   rule: RuleRow,
   contactId: string,
+  motivo: MotivoDoLimite,
 ): Promise<void> {
   const results: ActionResultDetail[] = (rule.actions ?? []).map((action) => ({
     type: action.type,
     status: "skipped" as const,
-    error: "uma_vez_por_contato",
+    error: motivo,
   }));
   const { error } = await admin.from("automation_rule_runs").insert({
     organization_id: row.organization_id,
@@ -586,16 +659,52 @@ export async function runAutomationForEvent(
 
   // A pergunta ao banco é feita UMA vez por regra, antes do filtro (o filtro é
   // síncrono e não pode esperar): quem já rodou para este contato está aqui.
-  const jaRodouParaOCntato = new Map<string, boolean>();
+  //
+  // DUAS RÉGUAS, UM LUGAR (#2974): a de uma vez ("já rodou alguma vez?") e a de
+  // intervalo ("rodou nas últimas N horas?"). As duas respondem à MESMA
+  // pergunta e param a regra no MESMO ponto, então a decisão fica num mapa só,
+  // com o motivo junto — é ele que a linha de bloqueio grava.
+  //
+  // Quando as duas estão ligadas, o INTERVALO vence e a de uma vez nem é
+  // consultada: o intervalo é a opção mais permissiva das duas (a regra volta a
+  // rodar quando a janela fecha), e é o que a tela só deixa configurar com o
+  // "uma vez por contato" desligado. Deixar as duas decidirem juntas faria a
+  // mais restritiva calar a mais permissiva sem que ninguém tivesse escolhido
+  // isso — o contato nunca mais receberia a regra.
+  const bloqueioPorLimite = new Map<string, MotivoDoLimite>();
   for (const rule of matched) {
-    if (!regraRodaUmaVezPorContato(rule) || !contatoIdDoEvento) continue;
-    jaRodouParaOCntato.set(
-      rule.id,
-      await regraJaRodouParaOCntato(admin, row.organization_id, rule.id, contatoIdDoEvento),
+    if (!contatoIdDoEvento) continue;
+    const horas = horasDoIntervalo(rule);
+    if (horas !== null) {
+      if (await regraRodouNasUltimasHoras(admin, row.organization_id, rule.id, contatoIdDoEvento, horas)) {
+        bloqueioPorLimite.set(rule.id, "intervalo_por_contato");
+      }
+      continue;
+    }
+    if (!intervaloConfigurado(rule)) {
+      // Nenhum intervalo configurado: o caminho da fatia 1, intacto.
+      if (regraRodaUmaVezPorContato(rule) && (await regraJaRodouParaOCntato(admin, row.organization_id, rule.id, contatoIdDoEvento))) {
+        bloqueioPorLimite.set(rule.id, "uma_vez_por_contato");
+      }
+      continue;
+    }
+    // A chave está lá e não é um inteiro de 1 a 720: FAIL-OPEN. O log é o
+    // único rastro de que a configuração está torta — sem ele, quem gravou
+    // "24h" pela API acharia que a janela está valendo.
+    logger.warn(
+      "[automation.engine] `repetir_apos_horas` fora de 1..720 (ou não inteiro) — o intervalo é ignorado nesta regra (fail-open)",
+      {
+        rule_id: rule.id,
+        organization_id: row.organization_id,
+        valor: rule.trigger_config?.repetir_apos_horas,
+      },
     );
+    if (regraRodaUmaVezPorContato(rule) && (await regraJaRodouParaOCntato(admin, row.organization_id, rule.id, contatoIdDoEvento))) {
+      bloqueioPorLimite.set(rule.id, "uma_vez_por_contato");
+    }
   }
 
-  const barradasPeloLimite: RuleRow[] = [];
+  const barradasPeloLimite: Array<{ rule: RuleRow; motivo: MotivoDoLimite }> = [];
   const applicable = matched.filter((rule) => {
     const configuredSourceId = rule.trigger_config?.webhook_source_id;
     if (
@@ -606,41 +715,43 @@ export async function runAutomationForEvent(
       return false;
     }
     if (!evaluateConditions(rule.conditions ?? [], context, fatosDoContato)) return false;
-    if (regraRodaUmaVezPorContato(rule)) {
-      if (!contatoIdDoEvento) {
-        // FAIL-OPEN: sem contato resolvível a regra segue como hoje e o run
-        // grava `contact_id` nulo — que é o rastro de que a conferência não
-        // pôde ser feita.
-        logger.warn(
-          "[automation.engine] regra 'uma vez por contato' sem contato resolvível — segue como sempre (fail-open)",
-          {
-            rule_id: rule.id,
-            organization_id: row.organization_id,
-            event_id: row.id,
-            event_type: row.event_type,
-          },
-        );
-        return true;
-      }
-      if (jaRodouParaOCntato.get(rule.id) === true) {
-        barradasPeloLimite.push(rule);
-        return false;
-      }
+    const limite = bloqueioPorLimite.get(rule.id);
+    if (limite) {
+      barradasPeloLimite.push({ rule, motivo: limite });
+      return false;
+    }
+    if (!contatoIdDoEvento && (regraRodaUmaVezPorContato(rule) || intervaloConfigurado(rule))) {
+      // FAIL-OPEN: sem contato resolvível a regra segue como hoje e o run grava
+      // `contact_id` nulo — que é o rastro de que a conferência não pôde ser
+      // feita.
+      logger.warn(
+        "[automation.engine] regra com limite por contato sem contato resolvível — segue como sempre (fail-open)",
+        {
+          rule_id: rule.id,
+          organization_id: row.organization_id,
+          event_id: row.id,
+          event_type: row.event_type,
+        },
+      );
     }
     return true;
   });
 
   // A decisão fica REGISTRADA, ainda que nada tenha rodado: quem montou a regra
   // precisa ver na aba Atividade que ela pulou este contato de propósito.
-  for (const rule of barradasPeloLimite) {
-    if (contatoIdDoEvento) await registrarBloqueioPorLimite(admin, row, rule, contatoIdDoEvento);
+  for (const { rule, motivo } of barradasPeloLimite) {
+    if (contatoIdDoEvento) await registrarBloqueioPorLimite(admin, row, rule, contatoIdDoEvento, motivo);
   }
 
   if (!applicable.length) {
     return {
       consumer_key: AUTOMATION_CONSUMER_KEY,
       status: "ok",
-      detail: barradasPeloLimite.length ? "uma_vez_por_contato" : "no_match",
+      // O motivo da PRIMEIRA regra barrada. Com réguas diferentes no mesmo
+      // evento (uma regra de uma vez e outra de intervalo), este campo resume o
+      // evento e a verdade por regra está nas linhas da Atividade — inventar um
+      // terceiro código ("limite_por_contato") só esconderia as duas.
+      detail: barradasPeloLimite[0]?.motivo ?? "no_match",
     };
   }
 
@@ -715,7 +826,10 @@ export async function runAutomationForEvent(
       }
     }
     for (const rule of barradasPelaReserva) {
-      await registrarBloqueioPorLimite(admin, row, rule, contatoIdDoEvento);
+      // A reserva só existe para a régua de UMA VEZ (#2974): o intervalo é uma
+      // janela de tempo, que não se reserva com chave única — o motivo aqui é
+      // sempre o mesmo, e é ele que a linha grava.
+      await registrarBloqueioPorLimite(admin, row, rule, contatoIdDoEvento, "uma_vez_por_contato");
     }
   }
 

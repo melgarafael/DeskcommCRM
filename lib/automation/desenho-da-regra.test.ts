@@ -530,3 +530,76 @@ describe("o limite de uma vez por contato sobrevive ao desenho (#2974)", () => {
     expect(corpoDoDesenho({ nome: "x", desenho: desenhoDaRegra(regra), regraGravada: regra }).trigger_config).toEqual({});
   });
 });
+
+/**
+ * #2974 (fatia 2) — O INTERVALO MÍNIMO VOLTA PELO DESENHO.
+ *
+ * A chave `repetir_apos_horas` é o par numérico do "uma vez por contato": mesma
+ * caixa, mesma rota (tela → `trigger_config`). Três coisas precisam fechar:
+ *
+ *   - o número gravado volta para o campo ao abrir e ATRAVESSA o salvar;
+ *   - regra sem a chave NÃO ganha a chave ao salvar — o campo vazio não pode
+ *     inventar `0`/`null`, que a régua leria como "sem intervalo" numa regra
+ *     que ninguém configurou (e sujaria o diff de todo mundo);
+ *   - limpar o campo REMOVE a chave gravada: com o merge do
+ *     `configAoSalvarDaTela`, omitir deixaria o número antigo valendo e a
+ *     pessoa não conseguiria desligar o intervalo.
+ */
+describe("o intervalo mínimo por contato sobrevive ao desenho (#2974, fatia 2)", () => {
+  const regraComIntervalo = (trigger_config: Record<string, unknown>): RegraGravada => ({
+    trigger_event: "lead.created",
+    trigger_config,
+    conditions: [],
+    actions: [ACOES_FIXAS[2]!],
+  });
+
+  const telaDoGatilho = (desenho: Desenho) => {
+    const caixa = desenho.caixas[0]!;
+    if (caixa.data.kind !== "gatilho") throw new Error("a primeira caixa é o gatilho");
+    return caixa.data.tela;
+  };
+
+  it("⭐ abrir mostra as 24 h no campo e salvar sem mexer mantém o número", () => {
+    const regra = regraComIntervalo({ repetir_apos_horas: 24 });
+    const desenho = desenhoDaRegra(regra);
+    expect(telaDoGatilho(desenho).repetirAposHoras, "o desenho não mostrou o intervalo").toBe("24");
+
+    expect(corpoDoDesenho({ nome: "x", desenho, regraGravada: regra }).trigger_config).toEqual({
+      webhook_source_id: null,
+      uma_vez_por_contato: false,
+      repetir_apos_horas: 24,
+    });
+    expect(validarDesenho({ nome: "x", desenho, regraGravada: regra }).ok).toBe(true);
+  });
+
+  it("⭐ regra SEM a chave não ganha a chave ao salvar (campo vazio não inventa número)", () => {
+    const regra = regraComIntervalo({ uma_vez_por_contato: true });
+    const desenho = desenhoDaRegra(regra);
+    expect(telaDoGatilho(desenho).repetirAposHoras).toBe("");
+
+    const corpo = corpoDoDesenho({ nome: "x", desenho, regraGravada: regra }).trigger_config;
+    expect(corpo).toEqual({ webhook_source_id: null, uma_vez_por_contato: true });
+    expect(Object.hasOwn(corpo, "repetir_apos_horas")).toBe(false);
+  });
+
+  it("limpar o campo REMOVE a chave gravada — é assim que o intervalo é desligado", () => {
+    const regra = regraComIntervalo({ repetir_apos_horas: 24 });
+    const desenho = desenhoDaRegra(regra);
+    telaDoGatilho(desenho).repetirAposHoras = "";
+
+    const corpo = corpoDoDesenho({ nome: "x", desenho, regraGravada: regra }).trigger_config;
+    expect(Object.hasOwn(corpo, "repetir_apos_horas")).toBe(false);
+  });
+
+  it("gravar um número novo substitui o antigo (não soma, não duplica)", () => {
+    const regra = regraComIntervalo({ repetir_apos_horas: 24 });
+    const desenho = desenhoDaRegra(regra);
+    telaDoGatilho(desenho).repetirAposHoras = "72";
+
+    expect(corpoDoDesenho({ nome: "x", desenho, regraGravada: regra }).trigger_config).toEqual({
+      webhook_source_id: null,
+      uma_vez_por_contato: false,
+      repetir_apos_horas: 72,
+    });
+  });
+});

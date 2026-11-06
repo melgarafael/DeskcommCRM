@@ -20,6 +20,7 @@
  * posição dele na fila e o devolve byte a byte, sem editar.
  */
 import { configAoSalvarDaTela } from "@/lib/automation/config-ao-salvar";
+import { aplicarIntervaloNoConfig, horasDoIntervalo } from "@/lib/automation/intervalo-por-contato";
 import {
   GATILHO_DE_DATA_DO_FUNIL,
   configDoGatilhoDeData,
@@ -116,6 +117,19 @@ export type TelaDoGatilho = {
    * DESLIGAR a opção.
    */
   umaVezPorContato: boolean;
+  /**
+   * O INTERVALO MÍNIMO por contato (#2974, fatia 2), em HORAS e como TEXTO.
+   *
+   * Texto pelo mesmo motivo dos outros N da tela: o campo vazio precisa ser
+   * distinguível de `0`, e é o vazio que diz "sem intervalo" — `0` seria um
+   * número que a régua do motor ignora, e a tela estaria mostrando uma barreira
+   * que não existe.
+   *
+   * `""` = a regra não pede intervalo. Nesse caso a chave NÃO vai para o
+   * `trigger_config` (nem como `null`): o salvar não inventa configuração em
+   * regra que ninguém configurou.
+   */
+  repetirAposHoras: string;
   data: { pipeline_id: string; campo: string; dias: string };
   tempo: { dias: string; direcao: DirecaoDoSilencio; proteger_pela_agenda: boolean };
 };
@@ -236,17 +250,20 @@ export function telaDoGatilho(config: unknown): TelaDoGatilho {
   const data = configDoGatilhoDeData(config);
   const silencio = configDoSilencio(config);
   const tempo = silencio ?? configDaEtapaParada(config);
-  const fonte =
+  const configDoGatilho =
     config && typeof config === "object" && !Array.isArray(config)
-      ? (config as Record<string, unknown>).webhook_source_id
-      : undefined;
-  const limite =
-    config && typeof config === "object" && !Array.isArray(config)
-      ? (config as Record<string, unknown>).uma_vez_por_contato
-      : undefined;
+      ? (config as Record<string, unknown>)
+      : null;
+  const fonte = configDoGatilho?.webhook_source_id;
+  const limite = configDoGatilho?.uma_vez_por_contato;
+  // O MESMO leitor que o motor usa (#2974, fatia 2): a tela mostra o número que
+  // a barreira vai respeitar, e campo vazio quando o motor não reconhece nada —
+  // em vez de exibir um "24" que ele ignora.
+  const horas = horasDoIntervalo({ trigger_config: configDoGatilho });
   return {
     fonte: typeof fonte === "string" ? fonte : null,
     umaVezPorContato: limite === true,
+    repetirAposHoras: horas === null ? "" : String(horas),
     data: data
       ? { pipeline_id: data.pipeline_id, campo: data.campo, dias: String(data.dias) }
       : { pipeline_id: "", campo: "", dias: DIAS_PADRAO },
@@ -293,7 +310,7 @@ export function triggerConfigDaTela(
     });
   }
   if (evento === "lead.created") {
-    return configAoSalvarDaTela({
+    const config = configAoSalvarDaTela({
       ...base,
       configDaTela: {
         webhook_source_id: tela.fonte,
@@ -304,6 +321,14 @@ export function triggerConfigDaTela(
         uma_vez_por_contato: tela.umaVezPorContato,
       },
     });
+    // O INTERVALO (#2974, fatia 2) é a chave que PODE não existir: campo vazio =
+    // sem intervalo, e aí ela é APAGADA do que veio guardado — não gravada como
+    // `null`. Duas razões, na ordem: (1) `null` faria o merge deixar um número
+    // antigo sobrevivendo disfarçado, e a pessoa não conseguiria desligar o
+    // intervalo; (2) chave nenhuma é o que a leitura do motor chama de "sem
+    // intervalo", e inventá-la faria toda regra de contato novo ganhar uma
+    // chave que ninguém configurou.
+    return aplicarIntervaloNoConfig(config, tela.repetirAposHoras);
   }
   // Gatilho sem configuração própria: nada é inventado aqui, mas o que a tela
   // NÃO desenha não pode sumir no salvar — `configAoSalvarDaTela` com

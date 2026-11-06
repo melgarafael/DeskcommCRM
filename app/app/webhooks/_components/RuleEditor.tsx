@@ -41,6 +41,11 @@ import {
 } from "@/lib/automation/aniversario-do-contato";
 import { configAoSalvarDaTela } from "@/lib/automation/config-ao-salvar";
 import {
+  HORAS_MAXIMAS_DO_INTERVALO,
+  aplicarIntervaloNoConfig,
+  horasDoIntervalo,
+} from "@/lib/automation/intervalo-por-contato";
+import {
   CONDICOES_DO_CONTATO,
   OPERADORES_SEM_VALOR,
   valorPadraoDoCampo,
@@ -323,6 +328,14 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
    * sobreviver, e o operador não conseguiria desligar.
    */
   const [umaVezPorContato, setUmaVezPorContato] = React.useState(false);
+  /**
+   * O INTERVALO MÍNIMO por contato (#2974, fatia 2), em horas, como TEXTO.
+   *
+   * Texto porque o campo vazio ("sem intervalo") precisa ser distinguível de
+   * `0`, e é o vazio que APAGA a chave ao salvar. Ver
+   * `aplicarIntervaloNoConfig`.
+   */
+  const [repetirAposHoras, setRepetirAposHoras] = React.useState("");
 
   const create = useCreateAutomationRule();
   const update = useUpdateAutomationRule();
@@ -356,6 +369,11 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
     const sourceId = rule?.trigger_config?.webhook_source_id;
     setWebhookSourceId(typeof sourceId === "string" ? sourceId : QUALQUER_FONTE);
     setUmaVezPorContato(rule?.trigger_config?.uma_vez_por_contato === true);
+    // O intervalo (#2974, fatia 2) abre pelo MESMO leitor do motor: regra com a
+    // chave torta abre com o campo vazio, em vez de mostrar uma janela que a
+    // barreira ignora.
+    const horasGravadas = horasDoIntervalo(rule ?? {});
+    setRepetirAposHoras(horasGravadas === null ? "" : String(horasGravadas));
     // #3726 — o leitor é o MESMO da varredura. Regra antiga (sem a chave) abre
     // com 0, que é o comportamento que ela já tem no banco.
     setAntecedenciaDoAniversario(
@@ -496,18 +514,26 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
               },
             })
           : ehGatilhoDeNovoContato
-            ? configAoSalvarDaTela({
-                gatilhoDaRegra: rule?.trigger_event,
-                configDaRegra: rule?.trigger_config,
-                gatilhoDaTela: triggerEvent,
-                configDaTela: {
-                  webhook_source_id: webhookSourceId === QUALQUER_FONTE ? null : webhookSourceId,
-                  // Ligado OU desligado, sempre gravado (#2974): omitir o
-                  // `false` faria o merge abaixo manter um `true` guardado e a
-                  // opção não poderia ser desligada pela tela.
-                  uma_vez_por_contato: umaVezPorContato,
-                },
-              })
+            ? aplicarIntervaloNoConfig(
+                configAoSalvarDaTela({
+                  gatilhoDaRegra: rule?.trigger_event,
+                  configDaRegra: rule?.trigger_config,
+                  gatilhoDaTela: triggerEvent,
+                  configDaTela: {
+                    webhook_source_id: webhookSourceId === QUALQUER_FONTE ? null : webhookSourceId,
+                    // Ligado OU desligado, sempre gravado (#2974): omitir o
+                    // `false` faria o merge abaixo manter um `true` guardado e
+                    // a opção não poderia ser desligada pela tela.
+                    uma_vez_por_contato: umaVezPorContato,
+                  },
+                }),
+                // O intervalo mínimo (#2974, fatia 2): vazio APAGA a chave, em
+                // vez de gravar `null` — o merge acima manteria um número
+                // guardado, e a tela não teria como desligar o intervalo. A
+                // mesma função do desenho novo, para os dois escritores não
+                // divergirem.
+                repetirAposHoras,
+              )
             : ehGatilhoDoAniversario
               ? configAoSalvarDaTela({
                   gatilhoDaRegra: rule?.trigger_event,
@@ -625,19 +651,49 @@ export function RuleEditor({ open, onOpenChange, rule }: Props) {
                 <p className="text-xs text-muted-foreground">
                   {t("Escolha uma fonte para limitar esta automação a um formulário. Qualquer fonte mantém o comportamento geral.")}
                 </p>
-                {/* #2974 — o limite por contato. Fica no gatilho de contato novo,
-                    que é o caso relatado (o lead volta pelo mesmo anúncio e
-                    recebia a sequência inteira outra vez). */}
-                <label className="mt-3 flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={umaVezPorContato}
-                    onChange={(e) => setUmaVezPorContato(e.target.checked)}
-                  />
-                  {t("Rodar no máximo uma vez por contato")}
-                </label>
+                {/* #2974 — os limites por contato. Ficam no gatilho de contato
+                    novo, que é o caso relatado (o lead volta pelo mesmo anúncio
+                    e recebia a sequência inteira outra vez). As duas opções são
+                    EXCLUDENTES na tela: ligar "uma vez por contato" limpa o
+                    intervalo, e o campo fica desabilitado enquanto a caixa
+                    estiver marcada — a régua errada nunca vai para o banco pela
+                    tela. (O motor decide pelo intervalo se as duas chegarem
+                    juntas por outra porta; a Atividade diz qual falou.) */}
+                <div className="mt-3 flex flex-wrap items-end gap-x-6 gap-y-3">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={umaVezPorContato}
+                      onChange={(e) => {
+                        setUmaVezPorContato(e.target.checked);
+                        // Uma régua só: o intervalo perde o valor ao ligar a
+                        // opção de uma vez, em vez de ficar guardado e vencer
+                        // no motor por trás de um campo desabilitado.
+                        if (e.target.checked) setRepetirAposHoras("");
+                      }}
+                    />
+                    {t("Rodar no máximo uma vez por contato")}
+                  </label>
+                  <div className="w-40 space-y-1">
+                    <Label htmlFor="repetir-apos-horas">{t("Ou não repetir por (horas)")}</Label>
+                    <Input
+                      id="repetir-apos-horas"
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      max={HORAS_MAXIMAS_DO_INTERVALO}
+                      value={repetirAposHoras}
+                      disabled={umaVezPorContato}
+                      placeholder={t("sem intervalo")}
+                      onChange={(e) => setRepetirAposHoras(e.target.value)}
+                    />
+                  </div>
+                </div>
                 <p className="text-xs text-muted-foreground">
                   {t("Ligado, esta automação roda uma única vez para cada contato: se ele voltar pelo mesmo anúncio, a sequência não repete. A execução fica registrada na aba Atividade, e a próxima entrada deste contato só registra que a regra foi pulada.")}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t("O intervalo é a versão com prazo: o mesmo contato não recebe esta automação de novo antes de passarem as horas escolhidas (1 a 720, até 30 dias). Deixe vazio para não limitar.")}
                 </p>
               </div>
             ) : null}

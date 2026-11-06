@@ -47,6 +47,11 @@ const CODIGOS_DAS_ACOES = new Set([
   "fora_do_pre_go_live",
   "ia_indisponivel",
   "internal_error",
+  // #2974 (fatia 2) — o intervalo mínimo por contato: nasce no MOTOR, como o
+  // `uma_vez_por_contato`. Sem esta linha o recibo o trocaria por
+  // `internal_error` e a Atividade diria que a regra quebrou, quando ela só
+  // decidiu esperar a janela fechar.
+  "intervalo_por_contato",
   "invalid_owner",
   "lead_already_transferred_in_event",
   "lead_nao_encontrado",

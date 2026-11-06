@@ -33,7 +33,7 @@
  *     pnpm vitest run lib/automation/limite-por-contato-no-motor.test.ts
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 
@@ -129,15 +129,36 @@ function bancoFalso(tabelas: Record<string, Linha[]>) {
      */
     let chaveUnica: string[] | null = null;
     let ignorarDuplicada = false;
+    /**
+     * O `gte` do PostgREST, que é como o motor pergunta "houve run nas últimas N
+     * horas?" (#2974, fatia 2).
+     *
+     * Comparação de TEXTO sobre ISO-8601 em UTC, e é o que basta: o formato é
+     * ordenável byte a byte (`toISOString()` é sempre `YYYY-MM-DDTHH:mm:ss.sssZ`),
+     * que é a mesma razão pela qual a coluna é `timestamptz`. Linha sem a coluna
+     * NÃO casa — no banco ela é `not null default now()` e nunca falta; aqui é a
+     * linha semeada à mão sem horário, que não pode fingir estar dentro da janela.
+     */
+    const minimos: Array<[string, string]> = [];
+    /** O `neq` do PostgREST: "a coluna é diferente de" — o recorte por status. */
+    const diferentes: Array<[string, unknown]> = [];
     const guardadas = () => tabelas[tabela] ?? [];
-    const casadas = () => guardadas().filter((l) => filtros.every(([c, v]) => l[c] === v));
+    const casadas = () =>
+      guardadas().filter(
+        (l) =>
+          filtros.every(([c, v]) => l[c] === v) &&
+          diferentes.every(([c, v]) => l[c] !== v) &&
+          minimos.every(([c, v]) => typeof l[c] === "string" && (l[c] as string) >= v),
+      );
     async function executar() {
       if (inserindo) {
         const jaExiste =
           chaveUnica !== null &&
           guardadas().some((l) => chaveUnica!.every((c) => l[c] === inserindo![c]));
         if (jaExiste && ignorarDuplicada) return { data: [], error: null };
-        const linha = { id: `run-${guardadas().length + 1}`, ...inserindo };
+        // `created_at` primeiro: é o `default now()` da tabela, e o que a linha
+        // inserida explicitamente já traz vence o padrão.
+        const linha = { id: `run-${guardadas().length + 1}`, created_at: new Date().toISOString(), ...inserindo };
         (tabelas[tabela] ??= []).push(linha);
         return { data: [linha], error: null };
       }
@@ -173,6 +194,14 @@ function bancoFalso(tabelas: Record<string, Linha[]>) {
       },
       eq: (c: string, v: unknown) => {
         filtros.push([c, v]);
+        return q;
+      },
+      gte: (c: string, v: string) => {
+        minimos.push([c, v]);
+        return q;
+      },
+      neq: (c: string, v: unknown) => {
+        diferentes.push([c, v]);
         return q;
       },
       maybeSingle: async () => {
@@ -516,5 +545,212 @@ describe("contraprova sintética de texto pessoal no recibo", () => {
     const linha = linhasDeExecucao(tabelas).at(-1);
     expect(linha?.status).toBe("failed");
     expect(JSON.stringify(linha?.actions_result)).not.toContain("pessoa.sintetica@example.test");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// O INTERVALO MÍNIMO POR CONTATO (#2974, fatia 2) — "não repetir para o mesmo
+// contato por N horas".
+//
+// A opção da fatia 1 ("no máximo uma vez") é binária: o contato que voltou não
+// roda NUNCA mais. O intervalo é a mesma barreira com uma JANELA: o contato que
+// voltou 2 h depois de uma regra de 24 h não roda; 25 h depois, roda.
+//
+// O que este bloco mede, e o que ele NÃO mede:
+//
+//   - o RELÓGIO É INJETADO (`vi.setSystemTime`), então "2 h atrás" e "25 h
+//     atrás" são distâncias exatas, não o que o escalonador do teste deixou;
+//   - a prova é do MOTOR contra a tabela `automation_rule_runs`, com dublê. O
+//     efeito do intervalo no volume real de envios de uma instalação não foi
+//     medido — é o que o PR declara em "não medido".
+//
+// Os casos 2 e 3 (fora da janela, e outro contato) são CONTRA-PROVAS: eles
+// afirmam o comportamento de sempre e nascem verdes — o que os derruba é uma
+// janela mal medida (bloquear quem já saiu da janela, ou bloquear o contato
+// alheio). O caso 1 é o que a entrega acrescenta, e é ele que fica VERMELHO sem
+// o conserto.
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("o INTERVALO MÍNIMO por contato (#2974, fatia 2)", () => {
+  /** O instante de referência do bloco: tudo é medido a partir dele. */
+  const AGORA = new Date("2026-11-06T12:00:00.000Z");
+  const UMA_HORA = 60 * 60 * 1000;
+
+  beforeEach(() => {
+    // Só `Date`: os `await` do motor continuam no relógio de verdade (promessas
+    // não são timers), e é o que impede o teste de pendurar.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(AGORA);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
+   * A LINHA QUE EXISTE ANTES: um run desta regra para este contato, há N horas.
+   *
+   * É a MESMA tabela que a fatia 1 já usa, com a coluna `created_at` que a
+   * migration 0038 criou (`not null default now()`): o intervalo não pediu
+   * migration nenhuma.
+   */
+  function runAnterior(
+    tabelas: Record<string, Linha[]>,
+    contactId: string,
+    horasAtras: number,
+  ): Linha {
+    const linha: Linha = {
+      organization_id: ORG,
+      rule_id: REGRA,
+      contact_id: contactId,
+      status: "success",
+      actions_result: [{ type: "call_webhook", status: "success" }],
+      created_at: new Date(AGORA.getTime() - horasAtras * UMA_HORA).toISOString(),
+    };
+    (tabelas.automation_rule_runs ??= []).push(linha);
+    return linha;
+  }
+
+  /** A linha do BLOQUEIO: a que o motor grava quando decide não rodar. */
+  function linhaDeBloqueio(tabelas: Record<string, Linha[]>, contactId: string): Linha | undefined {
+    return linhasDeExecucao(tabelas, contactId)
+      .filter((l) => l.status === "failed")
+      .at(-1);
+  }
+
+  it("⭐ run do mesmo contato há 2 h com `repetir_apos_horas: 24` ⇒ nada executa, e a linha diz `intervalo_por_contato`", async () => {
+    const { cliente, tabelas } = mundo({ repetir_apos_horas: 24 }, true);
+    runAnterior(tabelas, CONTATO_A, 2);
+
+    const resultado = await runAutomationForEvent(cliente, leadCreated(LEAD_A));
+
+    // A AÇÃO NÃO RODOU — é o defeito da issue: o contato que voltou recebia a
+    // sequência inteira outra vez.
+    expect(regrasQueRodaram, "a regra rodou dentro da janela do intervalo").toEqual([]);
+    expect(resultado.status).toBe("ok");
+    expect(resultado.detail).toBe("intervalo_por_contato");
+
+    // A DECISÃO FICOU REGISTRADA, com a razão: sem esta linha, "não apareceu
+    // nada na Atividade" e "a regra não rodou" voltariam a ser a mesma tela.
+    const bloqueio = linhaDeBloqueio(tabelas, CONTATO_A);
+    expect(bloqueio, "nenhuma linha de bloqueio foi gravada").toBeDefined();
+    expect(bloqueio!.rule_id).toBe(REGRA);
+    expect(bloqueio!.organization_id).toBe(ORG);
+    expect(bloqueio!.actions_result).toEqual([
+      { type: "call_webhook", status: "skipped", error: "intervalo_por_contato" },
+    ]);
+  });
+
+  it("run do mesmo contato há 25 h com `repetir_apos_horas: 24` ⇒ executa normal (a janela fecha)", async () => {
+    const { cliente, tabelas } = mundo({ repetir_apos_horas: 24 }, true);
+    runAnterior(tabelas, CONTATO_A, 25);
+
+    const resultado = await runAutomationForEvent(cliente, leadCreated(LEAD_A));
+
+    expect(regrasQueRodaram, "a janela de 24 h já tinha fechado").toEqual([REGRA]);
+    expect(resultado.status).toBe("ok");
+    expect(resultado.detail).toBeUndefined();
+    const ultima = linhasDeExecucao(tabelas, CONTATO_A).at(-1)!;
+    expect(ultima.status).toBe("success");
+    expect(ultima.actions_result).toEqual([{ type: "call_webhook", status: "success" }]);
+  });
+
+  it("um contato DIFERENTE, 2 h depois do run do primeiro, executa — o contador é POR CONTATO", async () => {
+    const { cliente, tabelas } = mundo({ repetir_apos_horas: 24 }, true);
+    // O run recente é do CONTATO_A; o evento é do CONTATO_B.
+    runAnterior(tabelas, CONTATO_A, 2);
+
+    await runAutomationForEvent(cliente, leadCreated(LEAD_B));
+
+    expect(regrasQueRodaram, "a janela de um contato calou a regra para o outro").toEqual([REGRA]);
+    expect(linhasDeExecucao(tabelas, CONTATO_B).at(-1)!.status).toBe("success");
+  });
+
+  it("⭐ o BLOQUEIO não rearma a janela: um run de verdade há 30 h + um bloqueio há 2 h ⇒ executa", async () => {
+    // A armadilha da implementação óbvia: contar QUALQUER linha da regra para o
+    // contato, como a opção de uma vez faz. O bloqueio também grava linha — e aí
+    // cada evento barrado empurraria a janela para frente, e "não repetir por
+    // 24 h" viraria "nunca mais" numa regra com eventos frequentes.
+    const { cliente, tabelas } = mundo({ repetir_apos_horas: 24 }, true);
+    runAnterior(tabelas, CONTATO_A, 30);
+    (tabelas.automation_rule_runs ??= []).push({
+      organization_id: ORG,
+      rule_id: REGRA,
+      contact_id: CONTATO_A,
+      status: "failed",
+      actions_result: [{ type: "call_webhook", status: "skipped", error: "intervalo_por_contato" }],
+      created_at: new Date(AGORA.getTime() - 2 * UMA_HORA).toISOString(),
+    });
+
+    await runAutomationForEvent(cliente, leadCreated(LEAD_A));
+
+    expect(regrasQueRodaram, "a linha do bloqueio rearmou a janela e a regra nunca mais rodaria").toEqual([
+      REGRA,
+    ]);
+  });
+
+  it("⭐ um run ADIADO (mensagem esperando a janela) não conta: o retry não pode ser barrado pelo próprio adiamento", async () => {
+    // O adiamento grava linha com `status: adiado` e volta como `retry` na hora
+    // marcada. Se essa linha contasse, todo envio que passou pelo pacing se
+    // barraria a si mesmo na volta — a sequência morreria em silêncio.
+    const { cliente, tabelas } = mundo({ repetir_apos_horas: 24 }, true);
+    (tabelas.automation_rule_runs ??= []).push({
+      organization_id: ORG,
+      rule_id: REGRA,
+      contact_id: CONTATO_A,
+      status: "adiado",
+      actions_result: [{ type: "call_webhook", status: "postponed" }],
+      created_at: new Date(AGORA.getTime() - 1 * UMA_HORA).toISOString(),
+    });
+
+    await runAutomationForEvent(cliente, leadCreated(LEAD_A));
+
+    expect(regrasQueRodaram, "o adiamento se auto-barrou na volta").toEqual([REGRA]);
+  });
+
+  it("⭐ as duas réguas ligadas (`24` + `uma_vez_por_contato`) ⇒ o INTERVALO vence, e o detalhe diz qual barrou", async () => {
+    const { cliente, tabelas } = mundo(
+      { repetir_apos_horas: 24, uma_vez_por_contato: true },
+      true,
+    );
+    runAnterior(tabelas, CONTATO_A, 2);
+
+    const resultado = await runAutomationForEvent(cliente, leadCreated(LEAD_A));
+
+    expect(regrasQueRodaram).toEqual([]);
+    // Qual régua falou: o intervalo. Sem isto, as duas configurações empatadas
+    // deixariam a Atividade dizendo "uma vez por contato" para uma regra que
+    // roda de novo amanhã — mentira sobre o comportamento da regra.
+    expect(resultado.detail).toBe("intervalo_por_contato");
+    expect(linhaDeBloqueio(tabelas, CONTATO_A)!.actions_result).toEqual([
+      { type: "call_webhook", status: "skipped", error: "intervalo_por_contato" },
+    ]);
+  });
+
+  it("`repetir_apos_horas` TORTO (`\"sim\"`, `0`, `-5`) ⇒ a régua falha ABERTA: a regra executa", async () => {
+    // Configuração quebrada não cala a regra: negar por valor ilegível seria a
+    // pior das saídas — a automação sumiria sem ninguém saber por quê. O caso é
+    // o da chave gravada por SQL/import, que não passa pela tela.
+    for (const torto of ["sim", 0, -5]) {
+      regrasQueRodaram.length = 0;
+      const { cliente, tabelas } = mundo({ repetir_apos_horas: torto }, true);
+      runAnterior(tabelas, CONTATO_A, 2);
+
+      const resultado = await runAutomationForEvent(cliente, leadCreated(LEAD_A));
+
+      expect(regrasQueRodaram, `o valor ${JSON.stringify(torto)} calou a regra`).toEqual([REGRA]);
+      expect(resultado.status).toBe("ok");
+      expect(linhasDeExecucao(tabelas, CONTATO_A).at(-1)!.status).toBe("success");
+    }
+  });
+
+  it("sem a chave (ou `null`) o intervalo não existe e a de uma-vez continua valendo sozinha", async () => {
+    const { cliente, tabelas } = mundo({ repetir_apos_horas: null }, true);
+
+    await runAutomationForEvent(cliente, leadCreated(LEAD_A));
+    await runAutomationForEvent(cliente, leadCreated(LEAD_A));
+
+    // Sem intervalo configurado, nada é lido em `created_at`: as duas passagens
+    // executam, como antes desta fatia.
+    expect(regrasQueRodaram).toEqual([REGRA, REGRA]);
   });
 });
