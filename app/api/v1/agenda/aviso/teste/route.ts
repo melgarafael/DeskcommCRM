@@ -14,11 +14,16 @@
  *
  * Recusa devolve 200 com o motivo, como no aviso de caso: "o teste rodou e não
  * saiu, porque…" é a resposta que o botão pediu.
+ *
+ * Com um grupo salvo, o teste vai também ao grupo
+ * (`lib/agenda/teste-do-aviso-de-agendamento.ts`), e a resposta traz o
+ * desfecho dele em `grupo`, separado do número.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { createSupabaseAvisoDeAgendamentoDb } from "@/lib/agenda/aviso-de-agendamento";
+import { enviarTesteDoAvisoDeAgendamento } from "@/lib/agenda/teste-do-aviso-de-agendamento";
 import { montarTesteDoAvisoDeAgendamento } from "@/lib/agenda/texto-do-aviso-de-agendamento";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { ok, fail } from "@/lib/api/wrappers";
@@ -28,7 +33,6 @@ import { criarPacingDoCanal } from "@/lib/agent-engine/pacing/ledger-supabase";
 import { env } from "@/lib/env";
 import { createSupabaseAvisoDb, mascara } from "@/lib/escalacao/aviso-ao-suporte";
 import { criarTransporteDoAviso } from "@/lib/escalacao/aviso-ao-suporte.handler";
-import { enviarAvisoDeTeste } from "@/lib/escalacao/aviso-de-teste";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -87,7 +91,7 @@ export async function POST(_req: NextRequest): Promise<Response> {
     );
   }
 
-  const resultado = await enviarAvisoDeTeste(
+  const resultado = await enviarTesteDoAvisoDeAgendamento(
     {
       db: avisoDb,
       transporte: await criarTransporteDoAviso(admin),
@@ -99,6 +103,7 @@ export async function POST(_req: NextRequest): Promise<Response> {
       organizationId: orgId,
       channelSessionId: cfg.channel_session_id,
       telefone: cfg.telefone_destino,
+      grupo: cfg.grupo_destino,
       corpo: (marca) => montarTesteDoAvisoDeAgendamento({ marca: marca.nome, idioma: marca.idioma }),
     },
   );
@@ -115,6 +120,12 @@ export async function POST(_req: NextRequest): Promise<Response> {
       canal: cfg.channel_session_id,
       enviado: resultado.enviado,
       ...(resultado.enviado ? {} : { motivo: resultado.codigo }),
+      ...(resultado.grupo
+        ? {
+            grupo_enviado: resultado.grupo.enviado,
+            ...(resultado.grupo.enviado ? {} : { motivo_do_grupo: resultado.grupo.codigo }),
+          }
+        : {}),
     },
   });
 

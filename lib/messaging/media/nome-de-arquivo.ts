@@ -19,3 +19,20 @@ export function nomeDeArquivoLimpo(bruto: unknown): string | null {
     .trim();
   return nome ? nome : null;
 }
+
+/** A chave de `messages.metadata` onde a ingestão guarda o nome (#2613). */
+export const CHAVE_DO_NOME_NA_METADATA = "media_filename" as const;
+
+/**
+ * O nome original que a ingestão guardou em `metadata.media_filename`, lido por
+ * VALOR — a mesma guarda de `nomeDeArquivoLimpo`, porque o JSONB é entrada de
+ * fora. `null` quando não há nome: é ele que separa "mostre o nome" de "mostre
+ * o fallback", e inventar um nome aqui contaminaria as duas pontas (o rótulo e
+ * o `Content-Disposition` do download).
+ */
+export function nomeOriginalDaMensagem(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== "object") return null;
+  return nomeDeArquivoLimpo(
+    (metadata as Record<string, unknown>)[CHAVE_DO_NOME_NA_METADATA],
+  );
+}

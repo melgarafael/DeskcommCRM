@@ -122,6 +122,10 @@ function adminFalso(): SupabaseClient {
     throw new Error(`tabela inesperada: ${table}`);
   };
   const rpc = async (name: string, args: Record<string, unknown>) => {
+    // A pergunta do titular apagado tem teste próprio
+    // (`meta-coexistencia-titular-apagado`) e fica FORA de `estado.rpcs`: os
+    // casos abaixo contam as RPCs do caminho do contato.
+    if (name === "fn_titular_apagado_a_pedido") return { data: false, error: null };
     estado.rpcs.push({ name, args });
     if (name === "fn_upsert_wa_contact") {
       return estado.erroContato

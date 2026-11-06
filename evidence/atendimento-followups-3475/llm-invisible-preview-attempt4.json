@@ -1,0 +1,171 @@
+[
+  {
+    "id": "chatcmpl_8af6166f-f48d-41dd-a9b0-7afbde3cb413",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [],
+    "invisible": true,
+    "corpo_vazio_observado": false,
+    "tool_body_codepoints": null,
+    "tool_result_content": [],
+    "tool_schemas": [],
+    "tool_result_codes": [],
+    "request_sha256": "56ba093a3311ba06279f6fe3009f2a76a54d07a02f592d01a259ed903d2ad6ac",
+    "at": "2026-10-26T19:13:09.319Z"
+  },
+  {
+    "id": "chatcmpl_f83b7c1a-749f-499d-becf-ccf7066fcfbf",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [],
+    "invisible": true,
+    "corpo_vazio_observado": false,
+    "tool_body_codepoints": null,
+    "tool_result_content": [],
+    "tool_schemas": [],
+    "tool_result_codes": [],
+    "request_sha256": "bfa9121bf9a5d0000f70a9754decef95319b9d01fa8b557fe5f24d7ce37b02ef",
+    "at": "2026-10-26T19:13:09.323Z"
+  },
+  {
+    "id": "chatcmpl_6c095e98-df32-4cd4-b5fe-45e00fa56ca5",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [
+      "crm_move_lead_stage",
+      "get_lead_context",
+      "get_lead_note",
+      "request_human_handoff",
+      "save_lead_note",
+      "schedule_followup",
+      "send_message",
+      "update_lead_state"
+    ],
+    "invisible": true,
+    "corpo_vazio_observado": false,
+    "tool_body_codepoints": [
+      8206
+    ],
+    "tool_result_content": [],
+    "tool_schemas": [
+      {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "description": "corpo da mensagem, no idioma da conversa com o lead, pronto para envio"
+          },
+          "produto_codigo": {
+            "description": "código de um produto do catálogo (o `codigo` de crm_search_products) que tem `fotos`: as fotos dele vão junto, e o texto vira a legenda da primeira",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    ],
+    "tool_result_codes": [],
+    "request_sha256": "3616e0cc5a2d41d5a06bfeeb01c5adedf9a948e18ff260bb0218b27902f67829",
+    "at": "2026-10-26T19:13:09.340Z"
+  },
+  {
+    "id": "chatcmpl_3b9814a0-b198-48ce-bbed-2e10b8a62477",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [],
+    "invisible": false,
+    "corpo_vazio_observado": false,
+    "tool_body_codepoints": null,
+    "tool_result_content": [],
+    "tool_schemas": [],
+    "tool_result_codes": [],
+    "request_sha256": "82fb936485da2bfcf09da7e6b5bfd7d39b248f51cb617420f6b63cd6d8a89032",
+    "at": "2026-10-26T19:13:09.344Z"
+  },
+  {
+    "id": "chatcmpl_f4f57759-938c-43e1-aa7b-16b8c5604088",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [
+      "crm_move_lead_stage",
+      "get_lead_context",
+      "get_lead_note",
+      "request_human_handoff",
+      "save_lead_note",
+      "schedule_followup",
+      "send_message",
+      "update_lead_state"
+    ],
+    "invisible": true,
+    "corpo_vazio_observado": false,
+    "tool_body_codepoints": null,
+    "tool_result_content": [
+      "{\"ok\":true,\"status\":\"simulated\",\"message\":\"Resposta proposta. Nenhuma mensagem enviada. Encerre o turno.\"}"
+    ],
+    "tool_schemas": [
+      {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "description": "corpo da mensagem, no idioma da conversa com o lead, pronto para envio"
+          },
+          "produto_codigo": {
+            "description": "código de um produto do catálogo (o `codigo` de crm_search_products) que tem `fotos`: as fotos dele vão junto, e o texto vira a legenda da primeira",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    ],
+    "tool_result_codes": [
+      "outro"
+    ],
+    "request_sha256": "258e6d594f4baf6cf95b7a628ee9d0eb3d7c489fdb288d805f4e3e0c4b08a8a4",
+    "at": "2026-10-26T19:13:09.352Z"
+  },
+  {
+    "id": "chatcmpl_b3f2f4f1-c060-48ab-af05-4132c4eaa78b",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [],
+    "invisible": true,
+    "corpo_vazio_observado": false,
+    "tool_body_codepoints": null,
+    "tool_result_content": [],
+    "tool_schemas": [],
+    "tool_result_codes": [],
+    "request_sha256": "31561b28002390a9d3d43d24fe4fd8003e2d1463eeaeadc46e01d291f5b724c0",
+    "at": "2026-10-26T19:13:09.360Z"
+  },
+  {
+    "id": "chatcmpl_b6e1bfec-cf78-4ecc-95b8-f8aa7917e99c",
+    "path": "/v1/chat/completions",
+    "model": "openai/gpt-4o-mini",
+    "stream": false,
+    "tools": [],
+    "invisible": true,
+    "corpo_vazio_observado": false,
+    "tool_body_codepoints": null,
+    "tool_result_content": [],
+    "tool_schemas": [],
+    "tool_result_codes": [],
+    "request_sha256": "09b452b0ea9ff01e2cb112869dc248b589b32d5e6e91d6dc769801ae3b91d081",
+    "at": "2026-10-26T19:13:09.365Z"
+  }
+]

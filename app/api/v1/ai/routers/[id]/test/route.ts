@@ -117,6 +117,10 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     );
   }
 
+  if (Array.isArray(loaded.senderRoutes) && loaded.senderRoutes.length > 0) {
+    return fail("state_conflict", "Este roteador escolhe pelo remetente. Teste enviando do número autorizado pelo WhatsApp; uma frase digitada aqui não informa a origem.", 409, { requestId });
+  }
+
   const llmCfg = llmEdgeConfigFromEnv(env);
   const log = createLogger();
 

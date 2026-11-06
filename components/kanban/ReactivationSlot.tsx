@@ -91,7 +91,7 @@ export function ReactivationSlot({
           aria-label={t("Encerrar: não retomar este negócio")}
           className={cn(
             "rounded-md px-1.5 py-0.5 text-[11px] transition-colors",
-            "text-text-muted hover:bg-surface-muted hover:text-text",
+            "text-text-muted hover:bg-surface-elevated hover:text-text",
             "disabled:opacity-50",
           )}
         >

@@ -30,7 +30,8 @@ import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
-import { phoneLookupVariants } from "@/lib/channels/phone-variants";
+import { contatosDonosDosExtras } from "@/lib/channels/contato-por-telefone";
+import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { CSV_MAX_BYTES, CSV_MAX_DATA_ROWS, decodificarCsv } from "@/lib/contacts/csv";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { lerPlanilhaDeLeads, type ErroDaLinha } from "@/lib/leads/planilha";
@@ -210,8 +211,18 @@ export async function POST(req: NextRequest): Promise<Response> {
             .limit(1)
             .maybeSingle();
 
+          // Sem principal com o número, a ficha que o tem como EXTRA é o contato:
+          // o negócio entra nela, e não se tenta um insert que o banco recusaria.
+          const donaDoExtra = existente
+            ? null
+            : ((await contatosDonosDosExtras(supabase, orgId, [linha.telefone])).get(
+                canonicalPhoneBR(linha.telefone),
+              ) ?? null);
+
           if (existente) {
             contactId = (existente as { id: string }).id;
+          } else if (donaDoExtra) {
+            contactId = donaDoExtra;
           } else {
             const { data: criado, error: erroContato } = await supabase
               .from("contacts")

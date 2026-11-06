@@ -86,7 +86,7 @@ export function SeletorDeIdioma() {
           variant="ghost"
           size="icon"
           disabled={salvando}
-          aria-label={`${t("Idioma")}: ${emVigor.nomeNativo}`}
+          aria-label={`${t("Idioma")}: ${emVigor.rotuloCurto} — ${emVigor.nomeNativo}`}
           data-testid="seletor-de-idioma"
         >
           <span className="text-xs font-semibold tabular-nums">

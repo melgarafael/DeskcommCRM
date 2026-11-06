@@ -1,0 +1,215 @@
+{
+  "id": "contabilidade",
+  "titulo": "Contabilidade",
+  "resumo": "Documentos, conferências e atendimento de empresas com análise fiscal reservada aos profissionais.",
+  "jornadas": [
+    {
+      "id": "contabilidade-documentos-mensais",
+      "titulo": "Fechamento com pendência visível",
+      "empresa": "Conta Clara (fictícia)",
+      "contexto": "Mara pergunta se os documentos enviados para a contabilidade estão completos.",
+      "resultado": "Conferência administrativa registrada em tarefa com responsável.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado.",
+      "dependencias": "Rotina documental e canal de envio definidos pelo escritório, tarefas e equipe disponíveis. Não fixa calendário fiscal, garante entrega de obrigação ou afirma que documentos recebidos estão corretos.",
+      "montagem": [
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "nota-interna",
+          "porque": "Guardar contexto visível somente para a equipe."
+        },
+        {
+          "modulo": "tarefas",
+          "licao": "tarefas-criar-uma-tarefa",
+          "porque": "Criar um próximo passo explícito para a equipe."
+        },
+        {
+          "modulo": "tarefas",
+          "licao": "tarefas-concluir-editar-apagar",
+          "porque": "Concluir ou atualizar a tarefa após a ação real."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "Material enviado",
+          "cliente": "Mara quer saber se faltou algum documento da empresa.",
+          "operacao": "O atendimento identifica qual período ela está perguntando e qual rotina está em andamento.",
+          "valor": "A pergunta deixa de ser uma pendência vaga.",
+          "captura": "demo-contabilidade-documentos-mensais--historia--chegada"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "O que precisa conferir",
+          "cliente": "Mara lista os tipos de arquivo enviados pelo canal combinado.",
+          "operacao": "A equipe registra uma nota administrativa sobre a solicitação, sem copiar dados financeiros no chat desnecessariamente.",
+          "valor": "A pessoa que confere recebe o contexto necessário.",
+          "captura": "demo-contabilidade-documentos-mensais--historia--qualificacao"
+        },
+        {
+          "id": "acao",
+          "titulo": "Conferência com dono",
+          "cliente": "Mara pede uma checagem do material.",
+          "operacao": "A equipe cria tarefa para o responsável comparar o recebido com a rotina acordada para aquela empresa.",
+          "valor": "Existe uma ação visível sem prazo fiscal presumido.",
+          "captura": "demo-contabilidade-documentos-mensais--historia--acao"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "A checagem terminou",
+          "cliente": "Mara recebe a relação de pendências verificada.",
+          "operacao": "O responsável conclui a tarefa de conferência e registra o que ainda depende da cliente, sem declarar obrigação fiscal entregue.",
+          "valor": "O histórico distingue conferir documentos e cumprir obrigações.",
+          "captura": "demo-contabilidade-documentos-mensais--historia--continuidade"
+        }
+      ]
+    },
+    {
+      "id": "contabilidade-situacao-guia",
+      "titulo": "Consultar registro de uma guia com fonte definida",
+      "empresa": "Escritório Soma (fictícia)",
+      "contexto": "Nilo quer saber qual situação consta para uma guia no cadastro do escritório.",
+      "resultado": "Leitura do registro disponível ou encaminhamento para conferência profissional.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado. A tela de Dados externos ilustra preparação; a conferência da origem fica com a equipe.",
+      "dependencias": "Conexão externa ativa com campos liberados, identificação da empresa e do solicitante verificada pela equipe e capacidade de leitura habilitada. Não consulta universalmente portais fiscais nem confirma quitação legal, prazo ou compensação.",
+      "montagem": [
+        {
+          "modulo": "agentes",
+          "licao": "instrucoes-e-capacidades",
+          "porque": "Configurar e publicar somente as capacidades necessárias ao agente do roteiro."
+        },
+        {
+          "modulo": "dados-externos",
+          "licao": "cadastrar-conexao",
+          "porque": "Cadastrar a fonte externa com credenciais de leitura e testar o acesso antes do atendimento."
+        },
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "dados-externos",
+          "licao": "o-que-o-assistente-ve",
+          "porque": "Entender a leitura externa e o recorte autorizado."
+        },
+        {
+          "modulo": "dados-externos",
+          "licao": "testar-editar-remover",
+          "porque": "Testar a conexão e reconhecer indisponibilidade."
+        },
+        {
+          "modulo": "tarefas",
+          "licao": "tarefas-criar-uma-tarefa",
+          "porque": "Criar um próximo passo explícito para a equipe."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "Uma guia específica",
+          "cliente": "Nilo pergunta sobre uma guia de sua empresa.",
+          "operacao": "A equipe identifica a empresa e o documento antes de consultar qualquer registro.",
+          "valor": "Evita devolver informação de outro cliente.",
+          "captura": "demo-contabilidade-situacao-guia--historia--chegada"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "Preparar a fonte autorizada",
+          "cliente": "Nilo pede a situação que o escritório tem registrada.",
+          "operacao": "A tela mostra a preparação de uma conexão de leitura. Nesta história, a equipe confere manualmente o registro no sistema de origem; não há consulta automatizada demonstrada.",
+          "valor": "Expõe a dependência da fonte e evita apresentar uma informação não conferida como resposta do agente.",
+          "captura": "demo-contabilidade-situacao-guia--historia--qualificacao"
+        },
+        {
+          "id": "acao",
+          "titulo": "Conferência atribuída à equipe",
+          "cliente": "Nilo pergunta se a consulta pode ser confirmada mesmo assim.",
+          "operacao": "A equipe registra uma tarefa para conferir a guia no sistema de origem autorizado. A conexão mostrada na cena anterior ainda era preparação, sem consulta automatizada demonstrada.",
+          "valor": "Há um responsável pelo próximo passo, sem afirmar situação fiscal que não foi conferida.",
+          "captura": "demo-contabilidade-situacao-guia--historia--acao"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "Conferência complementar",
+          "cliente": "Nilo precisa esclarecer uma divergência com seu comprovante.",
+          "operacao": "A equipe abre tarefa para o contador verificar nos canais adequados e devolver a situação apurada.",
+          "valor": "A divergência ganha responsável sem afirmar quitação.",
+          "captura": "demo-contabilidade-situacao-guia--historia--continuidade"
+        }
+      ]
+    },
+    {
+      "id": "contabilidade-nova-empresa",
+      "titulo": "Nova empresa com conversa de enquadramento",
+      "empresa": "Balanço Vivo (fictícia)",
+      "contexto": "Íris quer contratar apoio para uma empresa que está organizando.",
+      "resultado": "Oportunidade preparada para reunião de avaliação profissional.",
+      "tipo": "roteiro-demonstrativo",
+      "nota": "Roteiro demonstrativo com empresas, pessoas e mensagens fictícias. As fotos são telas reais com estados semeados para esta história; a sequência não comprova execução do motor de IA. O transporte de mensagens é simulado.",
+      "dependencias": "Funil, agenda e profissional disponíveis. O roteiro não escolhe regime tributário, calcula economia, emite parecer ou garante prazo de abertura de empresa.",
+      "montagem": [
+        {
+          "modulo": "inbox",
+          "licao": "conhecendo-a-tela",
+          "porque": "Reconhecer a conversa e a ficha do contato."
+        },
+        {
+          "modulo": "funis",
+          "licao": "novo-negocio",
+          "porque": "Criar uma oportunidade ligada ao contato."
+        },
+        {
+          "modulo": "agenda",
+          "licao": "novo-agendamento",
+          "porque": "Registrar o compromisso com o contato e quem atende."
+        },
+        {
+          "modulo": "funis",
+          "licao": "ficha-do-negocio",
+          "porque": "Reunir contexto e tarefas na ficha do negócio."
+        }
+      ],
+      "cenas": [
+        {
+          "id": "chegada",
+          "titulo": "Uma empresa em planejamento",
+          "cliente": "Íris pergunta qual plano contábil deve contratar.",
+          "operacao": "O atendimento pergunta a atividade pretendida e o tipo de apoio que ela busca, sem indicar regime tributário.",
+          "valor": "A equipe identifica o objetivo da conversa.",
+          "captura": "demo-contabilidade-nova-empresa--historia--chegada"
+        },
+        {
+          "id": "qualificacao",
+          "titulo": "Uma oportunidade de serviço",
+          "cliente": "Íris explica que ainda está estruturando a operação.",
+          "operacao": "A equipe registra o interesse e as perguntas na oportunidade, sem tratar abertura como concluída.",
+          "valor": "O funil conserva o estágio real da decisão.",
+          "captura": "demo-contabilidade-nova-empresa--historia--qualificacao"
+        },
+        {
+          "id": "acao",
+          "titulo": "Avaliação com o contador",
+          "cliente": "Íris quer conversar sobre as particularidades da atividade.",
+          "operacao": "O atendente confere disponibilidade e marca uma reunião com o profissional.",
+          "valor": "Questões de enquadramento chegam a quem pode analisá-las.",
+          "captura": "demo-contabilidade-nova-empresa--historia--acao"
+        },
+        {
+          "id": "continuidade",
+          "titulo": "Contexto para a reunião",
+          "cliente": "Íris pede para incluir uma dúvida sobre contratação de pessoas.",
+          "operacao": "A equipe registra a pergunta na ficha do negócio para revisão do contador, sem antecipar orientação trabalhista ou fiscal.",
+          "valor": "A reunião aproveita o contexto já compartilhado.",
+          "captura": "demo-contabilidade-nova-empresa--historia--continuidade"
+        }
+      ]
+    }
+  ]
+}

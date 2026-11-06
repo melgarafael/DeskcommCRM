@@ -50,6 +50,12 @@ export interface FerramentaNoTraco {
   /** Mensagem do erro, truncada. `null` quando a chamada deu certo. */
   erro: string | null;
   duracao_ms: number;
+  /**
+   * O modelo marcou este `send_message` como a última ação do turno (knob
+   * AGENT_STOP_AFTER_FINAL_SEND ≠ off). Ausente quando não marcou: a linha fica
+   * idêntica à de antes do knob. É a régua da avaliação da parada do laço.
+   */
+  encerra_turno?: true;
 }
 
 /**
@@ -78,6 +84,8 @@ export interface DesfechoDoTurno {
   abortReason?: string | null;
   /** O agente que o turno RESOLVEU (follow-up e caso não o recebem do chamador). */
   config?: TurnAgentResolution["config"] | null;
+  /** Mensagens do histórico que de fato entraram na abertura, já depois da compactação. */
+  historicoMensagens?: number;
 }
 
 export interface EntradaDoTraco {
@@ -167,6 +175,7 @@ export function criarColetorDeFerramentas(opcoes: OpcoesDoColetor = {}): Coletor
         estado: chamada.estado,
         erro: chamada.erro === null ? null : chamada.erro.slice(0, limiteDoErro),
         duracao_ms: Math.max(0, Math.round(chamada.duracao_ms)),
+        ...(chamada.encerra_turno === true ? { encerra_turno: true } : {}),
       });
     },
     listar(): FerramentaNoTraco[] {
@@ -233,6 +242,10 @@ export function envolverFerramentasComTraco(
   const envolver = (nome: string, execute: AnyExecute): AnyExecute => {
     return async (input: unknown, options: unknown): Promise<unknown> => {
       const inicio = agora();
+      const marca =
+        typeof input === "object" && input !== null && (input as { encerra_turno?: unknown }).encerra_turno === true
+          ? ({ encerra_turno: true } as const)
+          : {};
       try {
         const resultado = await execute(input, options);
         const estado: EstadoDaFerramenta = ehBloqueioDoBreaker(resultado)
@@ -245,6 +258,7 @@ export function envolverFerramentasComTraco(
           estado,
           erro: estado === "ok" ? null : mensagemDoResultado(resultado),
           duracao_ms: agora() - inicio,
+          ...marca,
         });
         return resultado;
       } catch (erro) {
@@ -253,6 +267,7 @@ export function envolverFerramentasComTraco(
           estado: "falhou",
           erro: erro instanceof Error ? erro.message : String(erro),
           duracao_ms: agora() - inicio,
+          ...marca,
         });
         // Relança o MESMO erro: observar não pode engolir a falha do turno.
         throw erro;
@@ -307,6 +322,7 @@ export function montarTracoDoTurno(entrada: EntradaDoTraco): TracoDoTurno {
       estado: f.estado,
       erro: f.erro === null ? null : f.erro.slice(0, limiteDoErro),
       duracao_ms: Math.max(0, Math.round(f.duracao_ms)),
+      ...(f.encerra_turno === true ? { encerra_turno: true as const } : {}),
     })),
     ferramentas_truncadas:
       entrada.ferramentasTruncadas === true || entrada.ferramentas.length > LIMITE_DE_FERRAMENTAS,

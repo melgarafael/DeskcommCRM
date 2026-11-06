@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "synthetic": true,
+  "build": {
+    "sha": "20f335eaede5c423a0fcc902d79eaabb103ea342",
+    "id": "cyznjcUkNaQa9Fn5H6iU4"
+  },
+  "core_complete": true,
+  "complete": false,
+  "scenarios": [
+    {
+      "scenario": "dossie",
+      "state": "passed",
+      "checks": [
+        "viewer sem escrita; outra organização recebe 404",
+        "dormente: clique pela fila, estado/timeline imediatos, PG e reload, tick sem despertar",
+        "coletando: clique pela fila, estado/timeline imediatos, PG e reload, tick sem despertar"
+      ],
+      "source": "run-basico/relatorio.json"
+    },
+    {
+      "scenario": "inbox",
+      "state": "passed",
+      "checks": [
+        "Parar no Inbox: cancelled/evento persistidos; reload e tick não devolvem a espera"
+      ],
+      "source": "run-basico/relatorio.json"
+    },
+    {
+      "scenario": "pausa",
+      "state": "passed",
+      "checks": [
+        "transporte real e banco: em nome de pausa por cinco minutos, token puro não pausa, sem escopo recusa",
+        "prazo real expirou e a tela voltou ao automático sem alterar o carimbo"
+      ],
+      "source": "run-basico/relatorio.json"
+    },
+    {
+      "scenario": "assinatura",
+      "state": "passed",
+      "checks": [
+        "automacao: produtor real, mensagem persistida, assinatura exata no receiver e corpo visível no Inbox",
+        "prospeccao: produtor real, mensagem persistida, assinatura exata no receiver e corpo visível no Inbox"
+      ],
+      "source": "run-assinatura-admin/relatorio.json"
+    },
+    {
+      "scenario": "avisos",
+      "state": "passed",
+      "checks": [
+        "recusada: realtime/toast, decisão autenticada e branch do consumidor Web Push concordam; transporte registrado em subprova separada",
+        "aceita: realtime/toast, decisão autenticada e branch do consumidor Web Push concordam; transporte registrado em subprova separada",
+        "midia_sem_texto: realtime/toast, decisão autenticada e branch do consumidor Web Push concordam; transporte registrado em subprova separada",
+        "ja_engajado: realtime/toast, decisão autenticada e branch do consumidor Web Push concordam; transporte registrado em subprova separada"
+      ],
+      "source": "run-diagnostico-3/relatorio.json"
+    },
+    {
+      "scenario": "ack",
+      "state": "passed",
+      "checks": [
+        "envio real UI/receiver; HMAC inválido recusa; read→ACK2/1/-1 preserva estado e horas em PG/Inbox/reload",
+        "sent→erro→ACK1 continua failed; ACK2 confirma entrega/leitura, erro atrasado não rebaixa, Inbox/reload concordam",
+        "sent→erro→ACK1 continua failed; ACK3 confirma entrega/leitura, erro atrasado não rebaixa, Inbox/reload concordam",
+        "ACK autenticado da org A para id externo existente só na org B não altera a outra organização",
+        "Bolha invisível não medida: subprova invisibleAgentTool permanece not_run; ACKs não implicam aceite dessa guarda."
+      ],
+      "source": "run-basico/relatorio.json"
+    }
+  ],
+  "subproofs": {
+    "invisibleAgentTool": {
+      "state": "passed",
+      "source": "real-engine/relatorio.json",
+      "limit": "HTTP400 controlado encerra a tentativa após observar corpo_vazio; não prova reescrita autônoma."
+    },
+    "pushTransport": {
+      "state": "not_run",
+      "reason": "Nenhum envelope Web Push criptográfico foi recebido/decifrado. UI, decisão e job passaram separadamente."
+    }
+  },
+  "limits": [
+    "Receivers HTTP controlados para LLM e WAHA; não é modelo externo, WhatsApp nem aceitação FCM.",
+    "Sessões GoTrue, Realtime, app de produção e Postgres próprios reais.",
+    "Baseline install e update ON_ERROR_STOP=1 no Supabase PG15; CI tem invariantes PG17; nenhuma mudança de schema.",
+    "Tentativas anteriores preservadas; não são reapresentadas como execução integral verde.",
+    "Avisos não mede os quatro despachos completos da IA; âncora anterior é fixture histórica persistida."
+  ]
+}

@@ -1,3 +1,4 @@
+import { MAXIMO_DE_FOTOS } from "@/lib/catalogo/fotos";
 import { parseCsv } from "@/lib/contacts/csv";
 import { precoParaCentavos } from "@/lib/schemas/produtos";
 
@@ -34,6 +35,27 @@ const COLUNAS: Record<string, readonly string[]> = {
   marca: ["marca", "fabricante"],
   categoria: ["categoria", "tipo", "departamento"],
   quantidade: ["quantidade", "estoque", "qtd", "qtde", "qty", "cantidad", "existencias", "stock"],
+  /**
+   * A FOTO POR URL (#3587). Uma coluna só, com um link — ou até 5 separados por
+   * `|`, na ordem em que o agente deve mandá-los (o primeiro é a capa).
+   *
+   * Uma coluna por foto (`foto 1`, `foto 2`…) seria a segunda verdade sobre a
+   * ORDEM: a planilha não diz qual coluna manda. E a vírgula não serve de
+   * separador porque o CSV do Excel em português já usa `;` e o de outras
+   * regiões usa `,` — `|` é o único que não colide com o arquivo.
+   */
+  fotos: [
+    "foto",
+    "fotos",
+    "imagem",
+    "imagens",
+    "url da foto",
+    "url da imagem",
+    "urls das fotos",
+    "foto url",
+    "imagen",
+    "imagenes",
+  ],
 };
 
 function normalizarCabecalho(texto: string): string {
@@ -44,6 +66,9 @@ function normalizarCabecalho(texto: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+/** Os cabeçalhos que DESCREVEM o produto — e que só nomeiam quando estão sozinhos. */
+const DESCREVEM = new Set(["descricao", "descrição", "descripcion", "descripción"].map(normalizarCabecalho));
 
 /** Qual campo do produto esta coluna da planilha representa? */
 function campoDaColuna(cabecalho: string): string | null {
@@ -117,6 +142,61 @@ function quantidadeDaPlanilha(texto: string): number | null {
   return Number.isInteger(quantidade) && quantidade <= 2_147_483_647 ? quantidade : null;
 }
 
+/** Os esquemas que apontam para um arquivo que o servidor pode buscar. */
+const ESQUEMAS_DE_FOTO = new Set(["http:", "https:"]);
+
+/**
+ * A célula de foto: vazia (não fala nada sobre as fotos do produto) ou uma
+ * lista de links separada por `|`, na ordem da capa.
+ *
+ * A recusa é da LINHA, como a do preço: guardar 3 das 5 fotos deixaria a capa
+ * errada sem ninguém perceber, e o produto com uma foto que ninguém escolheu é
+ * pior que a linha esperando a correção do arquivo.
+ */
+function fotosDaLinha(
+  texto: string,
+  t: (texto: string) => string,
+): { fotos: string[] | null } | { motivo: string } {
+  if (texto === "") return { fotos: null };
+
+  const invalida = (url: string): { motivo: string } => ({
+    motivo: t(
+      'foto não reconhecida ("{url}") — use o endereço completo, começando com http:// ou https://',
+    ).replace("{url}", () => url),
+  });
+
+  const urls = texto
+    .split("|")
+    .map((u) => u.trim())
+    .filter((u) => u !== "");
+
+  if (urls.length > MAXIMO_DE_FOTOS) {
+    return {
+      motivo: t(
+        "a linha traz {quantidade} fotos — o produto aceita até {limite}. Deixe as {limite} primeiras na coluna.",
+      )
+        .replace("{quantidade}", String(urls.length))
+        .replaceAll("{limite}", String(MAXIMO_DE_FOTOS)),
+    };
+  }
+
+  for (const url of urls) {
+    // `new URL` é a régua do que o `fetch` do servidor consegue abrir; esquema
+    // `data:`/`file:`/`ftp:` passaria como string e morreria depois, longe da
+    // linha que o escreveu.
+    let parsed: URL | null = null;
+    try {
+      parsed = new URL(url);
+    } catch {
+      parsed = null;
+    }
+    if (!parsed || !ESQUEMAS_DE_FOTO.has(parsed.protocol) || parsed.hostname === "") {
+      return invalida(url);
+    }
+  }
+  return { fotos: urls };
+}
+
 export interface LinhaImportada {
   /** A linha como a pessoa a vê na planilha: 1 é o cabeçalho. */
   linha: number;
@@ -128,6 +208,19 @@ export interface LinhaImportada {
   categoria?: string;
   quantidade: number;
   controla_estoque: boolean;
+  /**
+   * O texto da coluna de descrição, quando a planilha traz uma AO LADO da de
+   * nome (ver "quem nomeia ganha de quem descreve" em `lerPlanilha`). Ausente =
+   * a planilha não falou de descrição, ou a célula veio vazia: a descrição já
+   * gravada fica — a rota só escreve onde há texto.
+   */
+  descricao?: string;
+  /**
+   * As URLs das fotos, na ordem da planilha — o que a rota BAIXA e guarda em
+   * `catalog-photos`. Ausente quando a planilha não fala de foto: é o que
+   * mantém intacta a foto que a tela gravou.
+   */
+  fotos?: string[];
 }
 
 export interface ErroDaLinha {
@@ -159,6 +252,31 @@ export function lerPlanilha(
     if (campo) mapa.set(i, campo);
     else if (titulo.trim() !== "") colunasIgnoradas.push(titulo.trim());
   });
+
+  // ─── QUEM NOMEIA GANHA DE QUEM DESCREVE, EM QUALQUER ORDEM ────────────────
+  //
+  // `descricao`/`descripcion` caem em `nome` de propósito: a planilha que traz
+  // só essa coluna tem de entrar, e recusá-la seria pior. Mas a planilha que
+  // traz as DUAS — `nome` E `descricao` (ou `nombre` E `descripcion`) — tinha
+  // duas colunas no posto de nome, e o vencedor era o acaso da ordem:
+  //
+  //   nome;descricao;preco  → nome = "Massageador"                       ✔
+  //   descricao;nome;preco  → nome = "Com calor infravermelho e 3 vel…"  ✘
+  //
+  // O segundo é o catálogo inteiro com o título errado, sem erro nenhum na
+  // tela — e o texto da descrição, que é o que o atendente de IA conta ao
+  // cliente, não entrava em lugar nenhum. A coluna que descreve, quando há
+  // outra que nomeia, vira o que ela é: a DESCRIÇÃO do produto.
+  //
+  // Só age com um vencedor claro: com duas colunas que nomeiam (ou duas que
+  // descrevem), não há regra a aplicar e a primeira segue valendo.
+  const indicesDeNome = [...mapa.entries()].filter(([, campo]) => campo === "nome").map(([i]) => i);
+  if (indicesDeNome.length > 1) {
+    const descreve = (i: number) => DESCREVEM.has(normalizarCabecalho(cabecalho[i] ?? ""));
+    if (indicesDeNome.some((i) => !descreve(i))) {
+      for (const i of indicesDeNome) if (descreve(i)) mapa.set(i, "descricao");
+    }
+  }
 
   const campos = new Set(mapa.values());
   // Sem nome ou sem preço não há catálogo — e dizer isso ANTES de processar 300
@@ -236,11 +354,22 @@ export function lerPlanilha(
       continue;
     }
 
+    // Célula vazia não declara nada sobre a foto: reimportar a lista de preços
+    // não pode apagar a foto que a pessoa subiu pela tela (mesmo cuidado que
+    // `descricao` e `ativo` têm na rota). Quem traz link, manda na foto.
+    const fotos = fotosDaLinha(valor("fotos"), _t);
+    if ("motivo" in fotos) {
+      erros.push({ linha: numeroNaPlanilha, motivo: fotos.motivo });
+      continue;
+    }
+
     // Sem código na planilha, o nome vira a identidade. É o que permite reimportar
     // a mesma planilha atualizando em vez de duplicar — que é o gesto real da
     // loja quando o preço muda. O corte em 60 caracteres fica em
     // `codigoDoProduto`: cortar AQUI, antes de colapsar os espaços, fazia dois
     // nomes longos chegarem ao banco com o mesmo código.
+    // 2000 é o teto de `descricao` no schema do produto (`lib/schemas/produtos.ts`).
+    const descricao = valor("descricao").slice(0, 2000).trim();
     const codigo = codigoDoProduto(valor("codigo") || nome);
     const anterior = codigosVistos.get(chaveDoCodigo(codigo));
     if (anterior) {
@@ -279,6 +408,8 @@ export function lerPlanilha(
       ...(valor("categoria") ? { categoria: valor("categoria") } : {}),
       quantidade,
       controla_estoque: temColunaEstoque,
+      ...(descricao ? { descricao } : {}),
+      ...(fotos.fotos ? { fotos: fotos.fotos } : {}),
     });
   }
 

@@ -1,0 +1,249 @@
+{
+  "id": "admin-destinos-internos",
+  "titulo": "Destinos internos (Admin)",
+  "tela": "/admin/destinos-internos",
+  "resumo": "Onde quem cuida do servidor libera, um por um, os endereços da rede interna da própria máquina que o sistema pode chamar, como um serviço que você mesmo instalou ao lado dele.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo os destinos internos",
+      "objetivo": "Entender por que o sistema recusa endereços da rede interna, o que esta lista libera e o que ela não libera.",
+      "papel": "admin",
+      "busca": [
+        "destinos internos",
+        "liberar endereço da rede interna",
+        "endereço 10.0.0 recusado",
+        "serviço rodando no próprio servidor",
+        "rede local do servidor",
+        "ip interno bloqueado",
+        "admin"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "texto": "No Admin, o item \"Destinos internos\" do menu abre esta tela. Por proteção, o sistema não fala com endereços da rede interna do próprio servidor, como 10.0.0.5 ou 192.168.1.20: ele recusa antes de qualquer dado ou chave sair daqui. Aqui você abre exceções, endereço por endereço. Ela vale para o servidor inteiro, por isso só quem administra a instalação vê esta tela.",
+          "rota": "/admin/destinos-internos",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Destinos internos",
+                "exato": true
+              },
+              "rotulo": "Destinos internos no menu do Admin",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Endereços da rede deste servidor que a instalação pode alcançar."
+              },
+              "rotulo": "Vale para o servidor inteiro",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O que a lista libera, e só isso",
+          "texto": "O quadro \"Endereços liberados\" explica o alcance da lista. Um endereço que está nela deixa de ser recusado só por ser da rede interna, e o resto das regras continua valendo. No servidor de verdade, o endereço ainda precisa começar com https e ter certificado válido: um serviço que só responde em http continua recusado, mesmo estando na lista. A lista também só vale para serviços que quem instalou o servidor apontou no arquivo de configuração, como o buscador de empresas da tela \"Prospecção\" ou o serviço que transcreve áudios. Esses serviços são instalados à parte, e a lista sozinha não liga nenhum deles. O endereço que uma empresa escolhe no painel dela, como o de um provedor de IA, continua sem poder apontar para dentro, esteja aqui ou não.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Endereços liberados",
+                "exato": true
+              },
+              "rotulo": "Endereços liberados",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Por padrão esta instalação não fala com a própria rede"
+              },
+              "rotulo": "O que muda e o que não muda",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Como escrever um endereço",
+          "texto": "No campo \"Um endereço por linha\", cada linha é uma exceção. Vale um endereço exato, como 10.1.2.7, ou uma faixa, como 10.1.0.0/16, que libera todos os endereços que começam com 10.1. O texto clarinho no campo vazio é só um exemplo. Nome de máquina não entra: o sistema confere o endereço para o qual o nome aponta na hora da chamada, e não o nome.",
+          "dica": "Se quem instalou o servidor já tinha escrito endereços no arquivo de configuração, eles aparecem aqui com um aviso. Ao salvar por esta tela, passa a valer o que está nela, e o arquivo deixa de ser consultado.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "destinos-internos"
+              },
+              "rotulo": "Um endereço por linha",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Aceita um IP (10.1.2.7) ou uma faixa (10.1.0.0/16)"
+              },
+              "rotulo": "Endereço exato ou faixa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Libere só o necessário",
+          "texto": "O aviso amarelo, no pé do quadro, é o conselho mais importante da tela. Cada endereço da lista é uma porta que o servidor passa a poder abrir para dentro da própria rede, levando junto a chave da instalação. Libere só o endereço exato do serviço que você mesmo colocou lá. Nunca libere uma faixa inteira só para não ter trabalho.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Cada endereço aqui é uma porta"
+              },
+              "rotulo": "Cada endereço é uma porta aberta",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "liberar-um-endereco",
+      "titulo": "Liberar um endereço",
+      "objetivo": "Escrever um endereço na lista, entender a recusa de uma linha errada, salvar e conferir o registro da mudança.",
+      "papel": "admin",
+      "busca": [
+        "liberar endereço interno",
+        "adicionar ip na lista",
+        "não entendi estas linhas",
+        "salvar destinos internos",
+        "buscador de empresas no próprio servidor",
+        "quem liberou o endereço"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Uma linha com erro",
+          "texto": "Digamos que o buscador de empresas roda numa máquina da rede do servidor, no endereço 10.1.2.7, e que alguém escreveu também o nome dessa máquina, \"servidor-de-busca\". Ao clicar em \"Salvar\", nada é gravado: a tela mostra em vermelho \"Não entendi estas linhas:\" seguido da linha recusada. Assim você acha o erro sem conferir a lista inteira.",
+          "rota": "/admin/destinos-internos",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "destinos-internos"
+              },
+              "valor": "10.1.2.7\nservidor-de-busca"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "salvar-destinos"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Não entendi estas linhas:"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "destinos-internos"
+              },
+              "rotulo": "Um endereço e um nome",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Não entendi estas linhas:"
+              },
+              "rotulo": "A linha recusada",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Salvar a lista certa",
+          "texto": "Apague a linha com o nome, deixe só 10.1.2.7 e clique em \"Salvar\". Ao lado do botão aparece \"Lista salva.\". Em até meio minuto, esse endereço deixa de ser recusado para os serviços que o arquivo de configuração do servidor aponta para ele, desde que o endereço use https. Se você repetir uma linha, ela é gravada uma vez só.",
+          "dica": "Para fechar todas as exceções, apague tudo do campo e salve: com a lista vazia, nenhum endereço interno é liberado.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "destinos-internos"
+              },
+              "valor": "10.1.2.7"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "salvar-destinos"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Lista salva.",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "destinos-internos"
+              },
+              "rotulo": "Só o endereço exato",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "salvar-destinos"
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Lista salva.",
+                "exato": true
+              },
+              "rotulo": "Gravado",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "A mudança fica registrada",
+          "texto": "Cada \"Salvar\" que dá certo vira uma linha no registro do servidor, a tela \"Audit\" do menu do Admin. A linha aparece como \"platform.internal_destinations_updated\" e mostra quando a mudança foi feita. O botão \"Ver\", no fim da linha, abre os detalhes. Em \"Metadata\", \"de\" é a lista de antes e \"para\" é a de depois. \"vinha_do_env\" verdadeiro quer dizer que, até ali, valia o que estava no arquivo de configuração. No quadro \"Actor\" aparece o e-mail de quem mudou, com parte escondida. Assim, se um dia alguém perguntar desde quando o servidor fala com a rede interna, a resposta está aqui.",
+          "rota": "/admin/audit",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "platform.internal_destinations_updated",
+                "exato": true,
+                "n": 0
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "platform.internal_destinations_updated",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "A lista mudou",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

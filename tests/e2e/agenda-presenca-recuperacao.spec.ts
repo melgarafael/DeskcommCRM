@@ -63,12 +63,22 @@ async function fixture() {
   // envio seria ADIADO e os `expect(...).toBe(1)` deste arquivo cairiam. O
   // fixture declara o que ele é — um número de teste que dispara a qualquer
   // hora — e a suíte mede o que veio medir.
+  //
+  // O mesmo vale para o RITMO anti-ban (1,2 s + até 0,8 s de jitter): o drain
+  // inline conta cada envio no `pacing_ledger`, e o drain seguinte do mesmo
+  // número cai dentro do intervalo quando a tela responde rápido — é adiado com
+  // `pacing_throttle` e a corrida da :715 nunca arma. Antes do cache curto da
+  // autorização (#3712) as telas entre um drain e outro levavam mais que isso
+  // por acaso; depois dele, medido no CI, o drain da corrida passou a cair a
+  // ~0,7 s da liberação. Nenhum caso daqui mede o ritmo.
   const knobs = await db.from("channel_knobs").insert({
     organization_id: org,
     channel_session_id: session,
     window_start_hour: 0,
     window_end_hour: 24,
     allow_sunday: true,
+    throttle_ms: 0,
+    jitter_max_ms: 0,
   });
   if (knobs.error) throw knobs.error;
   const type = await insert("calendar_event_types", {

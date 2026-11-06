@@ -72,7 +72,7 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
 - **API key NUNCA em query string** (vaza em logs Vercel/CF). Sempre header
 - Plaintext de bearer token mostrado **uma vez** na criação; depois apenas hash SHA256 no DB
 - Rate limit headers: `X-RateLimit-*` + `Retry-After` em 429
-- `X-Request-Id` em toda response (correlaciona com audit log)
+- Toda resposta de `ok()`/`fail()` leva o `X-Request-Id`, e é o mesmo do registro e da auditoria; as rotas que montam resposta à mão estão sendo migradas (issue #4107)
 
 ### Auth & RBAC
 - Sempre `getUser()` (valida JWT no backend). NUNCA `getSession()` (confia no cookie local)
@@ -695,6 +695,7 @@ naquele clone — no Claude Code a skill GLOBAL vence a do projeto com o mesmo n
 
 - `deskcomm-instalar` — instalar, atualizar ou consertar a instalação numa VPS
 - `deskcomm-operacao` — usar o CRM no dia a dia, encontrar telas, fluxos e configurações pela interface
+- `deskcomm-curso` — atualizar aulas, traduções e capturas do curso a partir das mudanças do produto
 - `deskcomm-cliente-novo` — configurar o CRM para um cliente ou nicho (agentes, roteadores, follow-ups, conhecimento)
 - `deskcomm-saas` — revender o CRM como SaaS: planos, cobrança pela Stripe ou pelo Asaas, régua, contrato
 - `deskcomm-metricas` — desempenho, conversão, custo de IA, funil, relatório

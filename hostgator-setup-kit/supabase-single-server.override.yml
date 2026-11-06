@@ -92,6 +92,19 @@ services:
       GOTRUE_MAILER_SUBJECTS_CONFIRMATION: "${GOTRUE_MAILER_SUBJECTS_CONFIRMATION:-}"
       GOTRUE_MAILER_SUBJECTS_RECOVERY: "${GOTRUE_MAILER_SUBJECTS_RECOVERY:-}"
 
+      # Pool de conexões do Auth com o Postgres. O GoTrue do SUPABASE_REF pinado
+      # (v2.196.0) abre uma conexão NOVA a cada consulta quando
+      # `GOTRUE_DB_MAX_IDLE_POOL_SIZE` não está definido (supabase/auth#2831,
+      # correção em supabase/auth#2836 ainda aberta), e o compose oficial não o
+      # define. Medido numa instalação single-server: ~280 conexões novas a cada
+      # 30 s, cada uma custando 8–9 ms de conexão + SCRAM para uma consulta de
+      # 0,1 ms; `GET /auth/v1/user` (2 a 3 vezes por tela) com mediana de 74–185 ms
+      # e p95 de até 1,6 s. Com o pool: mediana 4,2 ms, p95 14 ms. Sem teto de
+      # conexões abertas (`MAX_POOL_SIZE` segue 0, o padrão); só as ociosas são
+      # guardadas, e por 5 min. Pode sair quando o SUPABASE_REF trouxer a #2836.
+      GOTRUE_DB_MAX_IDLE_POOL_SIZE: "${GOTRUE_DB_MAX_IDLE_POOL_SIZE:-10}"
+      GOTRUE_DB_CONN_MAX_IDLE_TIME: "${GOTRUE_DB_CONN_MAX_IDLE_TIME:-5m}"
+
     # O Auth busca os modelos no app. No modo single-server, o app está na
     # rede privada `deskcomm_private`; sem esta ligação, a URL pública pode
     # dar timeout quando a VPS usa Traefik externo (hairpin inexistente).

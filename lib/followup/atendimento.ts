@@ -26,11 +26,19 @@ import type pg from "pg";
 
 import {
   flowGraphSchema,
+  type DestinoDaResposta,
   type EndFinish,
   type FlowGraph,
   type FlowNode,
 } from "./graph-schema";
 import { classificarInbound, type CampoPendenteParaCaptura } from "./captura-do-fluxo";
+import {
+  fixarNegocioDoRoteiro,
+  lerCandidatosAoNegocio,
+  lerNegocioFixado,
+  resolverVinculoDoNegocio,
+  type VinculoDoNegocio,
+} from "./negocio-do-roteiro";
 
 export type PassoDeAtendimento =
   | { kind: "collect"; node: Extract<FlowNode, { type: "collect" }> }
@@ -220,6 +228,11 @@ export function melhorFluxoPorGatilho(
 //   * a RESPOSTA vai para `contacts.custom_fields[chave]` — um só lugar para o
 //     dado do contato, já exportado ao titular e já zerado pela anonimização nos
 //     dois caminhos. Um campo que o contato JÁ tem não é perguntado;
+//   * EXCETO quando a pergunta declara `destino: 'negocio'` (#3363): aí a
+//     resposta vai para `crm_leads.custom_fields` do card ABERTO do contato e a
+//     régua "já respondido" lê o card, não o histórico do contato — cada
+//     negócio responde por si. O default continua `contato` (ausência da chave
+//     no grafo = o comportamento de sempre, byte a byte);
 //   * a EXECUÇÃO é uma linha de `followup_enrollments` com status 'coletando'
 //     (0394) — fora, por construção, de tudo que o relógio do follow-up lê;
 //   * a TRILHA vai para `followup_enrollment_events` (`roteiro_*`), e o payload
@@ -242,6 +255,10 @@ export const EVENTOS_DO_ROTEIRO = [
   "roteiro_cancelado",
   // Emitido pelo banco (`fn_encerrar_roteiros_vencidos`, 0397): o prazo venceu.
   "roteiro_expirado",
+  // O VÍNCULO da execução com um card do negócio (#3363), gravado uma vez no
+  // início: payload só com `lead_id` e chave de idempotência fixa, então o
+  // primeiro vence e o destino não troca até a execução terminar.
+  "roteiro_negocio",
 ] as const;
 export type EventoDoRoteiro = (typeof EVENTOS_DO_ROTEIRO)[number];
 
@@ -269,6 +286,36 @@ export interface PayloadDoEvento {
   proximo_fluxo?: string;
   proximo_enrollment_id?: string;
   motivo?: string;
+}
+
+/**
+ * O que a IA precisa saber sobre o NEGÓCIO desta execução (#3363), quando
+ * alguma pergunta do roteiro grava no card.
+ *
+ * Ambíguo ou sem card, o recado é de BLOQUEIO explícito: não é para o modelo
+ * "dar um jeito" — nem pedindo ao cliente que escolha (ele não conhece o funil
+ * da empresa), nem gravando no contato. Quem escolhe é uma pessoa da equipe, na
+ * ficha do contato, e o teste nomeia cada uma dessas frases.
+ */
+function linhasDoNegocio(negocio: VinculoDoNegocio | undefined): string[] {
+  if (negocio === undefined) return [];
+  if (negocio.tipo === "fixado") {
+    const nome = negocio.titulo === null ? "desta execução" : `"${negocio.titulo}"`;
+    return [
+      `As respostas das perguntas de negócio vão para o card ${nome} — o vínculo desta execução. Não grave em outro negócio nem peça ao cliente para confirmar qual é.`,
+    ];
+  }
+  if (negocio.tipo === "ambiguo") {
+    const titulos = negocio.candidatos
+      .map((c) => (c.titulo === null || c.titulo.trim() === "" ? "sem título" : c.titulo))
+      .join(", ");
+    return [
+      `Este contato tem ${negocio.candidatos.length} negócios abertos (${titulos}) e esta execução ainda não está ligada a um: não pergunte nem registre as respostas de negócio — uma pessoa da equipe escolhe o negócio na ficha do contato.`,
+    ];
+  }
+  return [
+    "Este contato não tem negócio aberto: as perguntas de negócio não têm onde ser gravadas. Não grave esses dados no cadastro do contato e não invente um negócio — a pergunta fica pendente até abrir um.",
+  ];
 }
 
 /**
@@ -310,6 +357,7 @@ export function renderBlocoDeAtendimento(
     "Este roteiro foi acionado e precisa ser concluído. Atenda o cliente PRIMEIRO; encaixe no máximo UMA pergunta por resposta, quando houver abertura.",
     "O sistema registra sozinho o que o cliente responde. Não repergunte o que ele já disse e não peça para ele confirmar.",
     `Pergunta sem resposta pode ser repetida no máximo ${estado.maxTentativas} vez(es); depois disso, pare de perguntá-la.`,
+    ...linhasDoNegocio(estado.negocio),
     "Perguntas pendentes, na ordem:",
     ...linhas,
   ].join("\n");
@@ -335,8 +383,20 @@ export interface EstadoDeAtendimento {
   enrollment: EnrollmentDeAtendimento;
   nomeDoFluxo: string;
   checklist: ChecklistDeAtendimento;
-  /** Valor atual de cada chave do checklist em `contacts.custom_fields`. */
+  /**
+   * Valor atual de cada chave do checklist — lido na FONTE da própria pergunta:
+   * `contacts.custom_fields` para `destino: 'contato'` (o de sempre) e
+   * `crm_leads.custom_fields` do card aberto para `destino: 'negocio'` (#3363).
+   */
   valores: Record<string, string>;
+  /**
+   * O NEGÓCIO desta execução (#3363) — só existe quando alguma pergunta grava
+   * no card. `fixado` = há vínculo (o card do INÍCIO da execução, nunca o último
+   * editado); `ambiguo` = 2+ cards abertos e a escolha é de uma pessoa;
+   * `nenhum` = o contato não tem negócio aberto. Ausente em todo roteiro que
+   * grava só no contato, que nem paga a consulta.
+   */
+  negocio?: VinculoDoNegocio;
   tentativas: Record<string, number>;
   /**
    * Chaves das perguntas que JÁ FORAM FEITAS ao cliente nesta execução (evento
@@ -362,19 +422,61 @@ function comoTexto(v: unknown): string | null {
   return null;
 }
 
-/** Os valores das chaves do checklist, lidos de `custom_fields`. Puro. */
+/** Um `custom_fields` que veio torto (null, array, string) vira objeto vazio. */
+function comoObjeto(v: unknown): Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : {};
+}
+
+/**
+ * PARA ONDE A RESPOSTA DESTA PERGUNTA VAI (#3363).
+ *
+ * `contato` é `contacts.custom_fields` — o caminho de sempre, e o de TODO grafo
+ * que já existe, porque a chave `destino` é opcional no schema e a ausência lê
+ * como `contato`. `negocio` é `crm_leads.custom_fields` do card ABERTO do
+ * contato: o que o card da tela, os campos obrigatórios da etapa do funil e as
+ * automações por data do funil leem (a mesma fonte que `persistir-resposta.ts`
+ * já usa no follow-up, `save_to.kind: 'lead_custom'`).
+ *
+ * Invertido de propósito em relação ao `escopo` dos campos do funil (#2791,
+ * cuja ausência é `negocio`): aqui o legado é o contato, e inverter o default
+ * mudaria o destino de toda pergunta instalada.
+ */
+export type { DestinoDaResposta };
+
+/** A ausência da chave é `contato` — o comportamento de antes, sem exceção. */
+export function destinoDaResposta(
+  config: Extract<FlowNode, { type: "collect" }>["config"],
+): DestinoDaResposta {
+  return config.destino === "negocio" ? "negocio" : "contato";
+}
+
+/** Alguma pergunta desta lista grava no NEGÓCIO? Só aí o card é lido (custo). */
+function temPerguntaNoNegocio(checklist: ChecklistDeAtendimento): boolean {
+  return checklist.passos.some(
+    (p) => p.kind === "collect" && destinoDaResposta(p.node.config) === "negocio",
+  );
+}
+
+/**
+ * Os valores das chaves do checklist. Cada pergunta lê na SUA fonte: `contato`
+ * no primeiro `custom_fields`, `negocio` no segundo (o do card). O terceiro
+ * argumento é opcional e, ausente, nenhuma chave de negócio é lida — que é o
+ * comportamento de sempre para todo grafo que não declara `destino`. Puro.
+ */
 export function valoresDoChecklist(
   checklist: ChecklistDeAtendimento,
   customFields: unknown,
+  customFieldsDoNegocio: unknown = {},
 ): Record<string, string> {
-  const cf =
-    customFields !== null && typeof customFields === "object" && !Array.isArray(customFields)
-      ? (customFields as Record<string, unknown>)
-      : {};
+  const cf = comoObjeto(customFields);
+  const cfNegocio = comoObjeto(customFieldsDoNegocio);
   const valores: Record<string, string> = {};
   for (const passo of checklist.passos) {
     if (passo.kind !== "collect") continue;
-    const texto = comoTexto(cf[passo.node.config.key]);
+    const fonte = destinoDaResposta(passo.node.config) === "negocio" ? cfNegocio : cf;
+    const texto = comoTexto(fonte[passo.node.config.key]);
     if (texto !== null) valores[passo.node.config.key] = texto;
   }
   return valores;
@@ -390,6 +492,73 @@ async function lerCamposDoContato(
     [organizationId, contactId],
   );
   return rows[0]?.custom_fields ?? {};
+}
+
+/**
+ * O CARD DO VÍNCULO — `custom_fields` do negócio que a execução fixou (#3363).
+ *
+ * Lido PELO ID (`crm_leads.id = $2`), nunca por `order by updated_at desc`:
+ * editar outro card do contato não muda o que esta execução lê. Card fechado no
+ * meio do caminho não é lido (`status = 'open'`), e a escrita também o recusa —
+ * quem fecha um negócio não quer dado novo nele.
+ */
+async function lerCamposDoNegocio(
+  db: BancoDoRoteiro,
+  args: { organizationId: string; leadId: string },
+): Promise<unknown> {
+  const { rows } = await db.query<{ custom_fields: unknown }>(
+    `select custom_fields
+       from crm_leads
+      where organization_id = $1 and id = $2 and status = 'open'`,
+    [args.organizationId, args.leadId],
+  );
+  return rows[0]?.custom_fields ?? {};
+}
+
+/**
+ * Resolve — e FIXA — o negócio DESTA execução (#3363).
+ *
+ * Três casos, e só estes:
+ *
+ *   - já fixado (trilha, `roteiro_negocio`): é ele, e nada o reescreve. Editar
+ *     outro card depois não muda nada, porque a leitura e a escrita vão pelo id;
+ *   - exatamente UM card aberto e nada fixado: ele é o candidato, fixa-se agora
+ *     e a tela não pergunta (`resolverVinculoDoNegocio`);
+ *   - 2+ cards abertos: `ambiguo`, e NADA é fixado — a escolha é de uma pessoa,
+ *     e o roteiro não grava em card nenhum até ela acontecer.
+ *
+ * A fixação acontece aqui (primeira leitura da execução) e também no início
+ * (`iniciarFluxoDeAtendimento`): `fixarNegocioDoRoteiro` é idempotente e o
+ * primeiro vínculo vence, então as duas portas convergem para o mesmo card.
+ */
+async function resolverNegocioDaExecucao(
+  db: BancoDoRoteiro,
+  args: { organizationId: string; contactId: string; enrollmentId: string },
+): Promise<VinculoDoNegocio> {
+  const candidatos = await lerCandidatosAoNegocio(db, args);
+  const fixado = await lerNegocioFixado(db, {
+    organizationId: args.organizationId,
+    enrollmentId: args.enrollmentId,
+  });
+  if (fixado !== null) {
+    return {
+      tipo: "fixado",
+      leadId: fixado,
+      titulo: candidatos.find((c) => c.id === fixado)?.titulo ?? null,
+    };
+  }
+  const resolvido = resolverVinculoDoNegocio(candidatos);
+  if (resolvido.tipo !== "fixado") return resolvido;
+  const vencedor = await fixarNegocioDoRoteiro(db, {
+    organizationId: args.organizationId,
+    enrollmentId: args.enrollmentId,
+    leadId: resolvido.leadId,
+  });
+  return {
+    tipo: "fixado",
+    leadId: vencedor,
+    titulo: candidatos.find((c) => c.id === vencedor)?.titulo ?? null,
+  };
 }
 
 /**
@@ -433,10 +602,28 @@ export async function carregarEstadoDeAtendimento(
   const checklist = mapearChecklist(parsed.data);
   if (!checklist.ok) return null;
 
-  const valores = valoresDoChecklist(
-    checklist.checklist,
-    await lerCamposDoContato(db, args.organizationId, args.contactId),
-  );
+  const camposDoContato = await lerCamposDoContato(db, args.organizationId, args.contactId);
+  // O NEGÓCIO só é resolvido quando alguma pergunta grava nele (#3363): um
+  // roteiro inteiro `contato` — hoje, todo — não paga consulta nenhuma. Quando
+  // é o caso, o vínculo vem da TRILHA desta execução (ou é fixado agora, se há
+  // um único card); nunca de `updated_at`, porque editar outro card do contato
+  // não pode redirecionar a resposta.
+  let negocio: VinculoDoNegocio | undefined;
+  let camposDoNegocio: unknown = {};
+  if (temPerguntaNoNegocio(checklist.checklist)) {
+    negocio = await resolverNegocioDaExecucao(db, {
+      organizationId: args.organizationId,
+      contactId: args.contactId,
+      enrollmentId: row.id,
+    });
+    if (negocio.tipo === "fixado") {
+      camposDoNegocio = await lerCamposDoNegocio(db, {
+        organizationId: args.organizationId,
+        leadId: negocio.leadId,
+      });
+    }
+  }
+  const valores = valoresDoChecklist(checklist.checklist, camposDoContato, camposDoNegocio);
 
   const { rows: contagem } = await db.query<{ tipo: string; campo: string | null; n: number }>(
     `select event_type as tipo, payload->>'campo' as campo, count(*)::int as n
@@ -473,6 +660,7 @@ export async function carregarEstadoDeAtendimento(
     nomeDoFluxo: row.nome,
     checklist: checklist.checklist,
     valores,
+    ...(negocio !== undefined ? { negocio } : {}),
     tentativas,
     perguntasFeitas,
     maxTentativas,
@@ -533,6 +721,66 @@ export async function gravarRespostaNoContato(
     [args.organizationId, args.contactId, args.campo, args.valor],
   );
   return (r.rowCount ?? 0) > 0;
+}
+
+/**
+ * Grava a resposta NO CARD DO VÍNCULO (`crm_leads.custom_fields`) — o que o card
+ * da tela, os campos obrigatórios da etapa do funil e as automações por data do
+ * funil leem (#3363).
+ *
+ * O alvo é o `lead_id` EXPLÍCITO da execução (`id = $5`), e não uma subconsulta
+ * por `updated_at`: o destino foi decidido no início do roteiro e não muda
+ * porque alguém editou outro card do mesmo contato no meio. A régua é a MESMA
+ * de `gravarRespostaNoContato`: sem vínculo, card fechado, contato de outra
+ * organização, contato sumiu ou anonimizado ⇒ `false`, nada gravado — e
+ * `false` quando o contato não tem negócio aberto, porque não há onde gravar.
+ *
+ * Depois do esquecimento o roteiro não regrava dado pessoal — e a anonimização
+ * em cascata também zera `crm_leads.custom_fields` (0019), então o card não
+ * vira a porta de trás do LGPD.
+ */
+export async function gravarRespostaNoNegocio(
+  db: BancoDoRoteiro,
+  args: { organizationId: string; contactId: string; leadId: string; campo: string; valor: string },
+): Promise<boolean> {
+  const r = await db.query(
+    `update crm_leads
+        set custom_fields = coalesce(custom_fields, '{}'::jsonb) || jsonb_build_object($3::text, $4::text),
+            updated_at = now()
+      where organization_id = $1
+        and contact_id = $2
+        and id = $5
+        and status = 'open'
+        and exists (select 1 from contacts c
+                     where c.organization_id = $1 and c.id = $2
+                       and not coalesce(c.is_anonymized, false))`,
+    [args.organizationId, args.contactId, args.campo, args.valor, args.leadId],
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
+/**
+ * A gravação no destino que a PERGUNTA declara (#3363). `contato` é a chamada
+ * de sempre, byte a byte; `negocio` só existe para quem marcou a chave no nó — e
+ * só grava quando a execução tem vínculo `fixado` com um card. Sem vínculo (2+
+ * cards abertos, ou nenhum), a resposta NÃO cai no contato como prêmio de
+ * consolação: o dado do cliente não muda de lugar porque o destino estava
+ * indefinido — a pergunta continua pendente até alguém escolher o negócio.
+ */
+async function gravarResposta(
+  db: BancoDoRoteiro,
+  args: {
+    organizationId: string;
+    contactId: string;
+    campo: string;
+    valor: string;
+    destino: DestinoDaResposta;
+    negocio: VinculoDoNegocio | undefined;
+  },
+): Promise<boolean> {
+  if (args.destino !== "negocio") return gravarRespostaNoContato(db, args);
+  if (args.negocio?.tipo !== "fixado") return false;
+  return gravarRespostaNoNegocio(db, { ...args, leadId: args.negocio.leadId });
 }
 
 /**
@@ -756,11 +1004,13 @@ export async function processarInboundDoFluxo(
       if (!ehPendente && !ehCorrecao && !ehEsgotada) continue;
       // NO-OP: o valor não mudou — não é resposta nova.
       if (v.valor === "" || v.valor === (valoresNovos[v.campo] ?? "")) continue;
-      const gravou = await gravarRespostaNoContato(db, {
+      const gravou = await gravarResposta(db, {
         organizationId: args.organizationId,
         contactId,
         campo: v.campo,
         valor: v.valor,
+        destino: destinoDaResposta(node.config),
+        negocio: estado.negocio,
       });
       if (!gravou) continue;
       await registrarEventoDoRoteiro(db, {
@@ -809,11 +1059,13 @@ export async function processarInboundDoFluxo(
   }
 
   if (leitura.resultado === "respondeu") {
-    const gravou = await gravarRespostaNoContato(db, {
+    const gravou = await gravarResposta(db, {
       organizationId: args.organizationId,
       contactId,
       campo: primeiro.config.key,
       valor: leitura.captura.valor,
+      destino: destinoDaResposta(primeiro.config),
+      negocio: estado.negocio,
     });
     if (!gravou) return { estado, concluiu: false };
     await registrarEventoDoRoteiro(db, {
@@ -1293,6 +1545,24 @@ export async function iniciarFluxoDeAtendimento(
     throw err;
   }
   if (enrollmentId !== null) {
+    // O VÍNCULO com o card do negócio é resolvido AQUI — no início da execução
+    // (#3363). Com um card aberto, ele fica gravado na trilha e o resto do
+    // roteiro lê o vínculo, nunca `updated_at`; com 2+, nada é fixado e a
+    // escolha é pedida à equipe. A falha não derruba o começo do roteiro: a
+    // primeira leitura do turno (`carregarEstadoDeAtendimento`) repete a
+    // resolução, e as duas portas convergem pelo "primeiro vence".
+    if (temPerguntaNoNegocio(checklist.checklist)) {
+      try {
+        await resolverNegocioDaExecucao(db, {
+          organizationId: args.organizationId,
+          contactId: args.contactId,
+          enrollmentId,
+        });
+      } catch {
+        // Sem log aqui de propósito: o chamador registra a falha do turno, e a
+        // marcação é idempotente na leitura seguinte.
+      }
+    }
     await registrarEventoDoRoteiro(db, {
       organizationId: args.organizationId,
       enrollmentId,

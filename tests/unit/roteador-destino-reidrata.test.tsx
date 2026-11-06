@@ -31,7 +31,7 @@ const { getMock, putMock, authMock, flowsMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
-vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: () => authMock(), usePermission: () => true }));
+vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: () => authMock(), usePermission: () => true, usePaisDaOrgAtiva: () => "BR" }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("@/hooks/followup/useFollowupFlows", () => ({ useFollowupFlows: flowsMock }));
 // A API é dublada, mas o HOOK `useRouter` é o de produção: é ele que decide se

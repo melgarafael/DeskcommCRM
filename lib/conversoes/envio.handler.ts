@@ -93,7 +93,9 @@ export async function processarConversao(
   if (
     !qualificacao &&
     row.event_type === "ad_conversion.retry_requested" &&
-    (ehEventoDeEtapa(row.payload.event_name) || ehEventoDeEtapaMeta(row.payload.event_name))
+    (ehEventoDeEtapa(row.payload.event_name) ||
+      ehEventoDeEtapaMeta(row.payload.event_name) ||
+      row.payload.event_name === "LeadSubmitted")
   )
     return ok("skipped", "outro_evento");
   if (!row.entity_id) return ok("skipped", "sem_entidade");

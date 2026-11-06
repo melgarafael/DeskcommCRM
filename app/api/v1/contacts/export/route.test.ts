@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import type { AuthUser } from "@/lib/auth/types";
+import { mapHeader, mapLinha, parseCsv } from "@/lib/contacts/csv";
 import { createClient } from "@/lib/supabase/server";
 import type { Contact } from "@/lib/types/contacts";
 
@@ -110,6 +111,26 @@ beforeEach(() => {
 });
 
 describe("o CSV de contatos", () => {
+  it("leva o nascimento da ficha até o CSV que a importação lê", async () => {
+    devolvePaginas([
+      contato(1, { birthdate: "1990-05-23" }),
+      contato(2, { birthdate: null }),
+    ]);
+
+    const res = await chamar();
+    const linhas = parseCsv(await res.text());
+    const { indices } = mapHeader(linhas[0]!);
+
+    expect(res.status).toBe(200);
+    expect(mapLinha(linhas[1]!, indices)).toMatchObject({
+      contato: { birthdate: "1990-05-23" },
+      motivo: null,
+    });
+    const semNascimento = mapLinha(linhas[2]!, indices);
+    expect(semNascimento.motivo).toBeNull();
+    expect(semNascimento.contato.birthdate).toBeUndefined();
+  });
+
   it("⭐ sai com o envelope do export que já existe: Content-Type próprio + attachment datado", async () => {
     devolvePaginas([contato(1), contato(2)]);
 
@@ -130,7 +151,7 @@ describe("o CSV de contatos", () => {
     expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xef, 0xbb, 0xbf]);
 
     const linhas = new TextDecoder().decode(bytes).replace(/^\uFEFF/, "").split("\n");
-    expect(linhas[0]).toBe("name,display_name,email,phone_number,cpf,tags");
+    expect(linhas[0]).toBe("name,display_name,email,phone_number,cpf,birthdate,tags");
     expect(linhas).toHaveLength(4); // cabeçalho + 2 dados + quebra final
     expect(linhas[1]).toContain("Contato 000001");
   });
