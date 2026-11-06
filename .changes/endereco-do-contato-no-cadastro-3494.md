@@ -16,6 +16,10 @@ sair do campo CEP consulta a BrasilAPI e preenche logradouro, bairro, cidade e
 UF. Número e complemento nunca são sobrescritos (são do imóvel, não do CEP), e
 um CEP que a consulta não conhece não apaga o que já estava digitado.
 
+A consulta só vale para organização no Brasil, e só roda quando o CEP mudou:
+passar pelo campo sem alterá-lo não reescreve o endereço. Resposta que chega
+depois de a pessoa trocar o CEP ou fechar o diálogo é descartada.
+
 A consulta acontece para qualquer pessoa com papel **agent** ou acima — o mesmo
 piso de criar e editar contato. CEP curto, com letra ou fora do ar é aviso ao
 lado do campo e **não impede salvar**: pessoa física sem CEP continua sendo

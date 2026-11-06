@@ -12,7 +12,7 @@
  *     erro de cadastro.
  */
 import { useState } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -20,7 +20,7 @@ import { EditContactDialog } from "@/components/contacts/EditContactDialog";
 import type { Contact } from "@/lib/types/contacts";
 
 vi.mock("@/hooks/auth/AuthProvider", () => ({
-  useActiveOrg: () => ({ country: null }),
+  useActiveOrg: () => ({ country: orgPais.valor }),
 }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("@/hooks/contacts/useUpdateContact", () => ({ useUpdateContact: () => useUpdate }));
@@ -31,7 +31,8 @@ vi.mock("@/hooks/contacts/useContactTagVocabulary", () => ({
   useContactTagVocabulary: () => ({ data: [], isError: false }),
 }));
 
-const { mutateAsync, useUpdate } = vi.hoisted(() => ({
+const { mutateAsync, orgPais, useUpdate } = vi.hoisted(() => ({
+  orgPais: { valor: null as string | null },
   mutateAsync: vi.fn(),
   useUpdate: { mutateAsync: vi.fn(), isPending: false },
 }));
@@ -93,6 +94,7 @@ function responderCep(status: number, corpo: unknown): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  orgPais.valor = null;
   useUpdate.mutateAsync = mutateAsync;
   mutateAsync.mockResolvedValue({});
 });
@@ -179,5 +181,40 @@ describe("CEP preenchendo a ficha", () => {
     expect(await screen.findByText("CEP não encontrado.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Salvar" }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+  });
+
+  it("passar pelo CEP sem mudar nada não consulta nem reescreve o que foi digitado", async () => {
+    responderCep(200, { data: CEP_OK });
+    const user = userEvent.setup();
+    pintar({
+      ...SEM_ENDERECO,
+      zip_code: "80000-000",
+      street: "Rua XV de Novembro, bloco B",
+      district: "Centro Histórico",
+      city: "Curitiba",
+      state: "PR",
+    });
+
+    await user.click(screen.getByLabelText("CEP"));
+    await user.tab();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Logradouro")).toHaveValue("Rua XV de Novembro, bloco B");
+    expect(screen.getByLabelText("Bairro")).toHaveValue("Centro Histórico");
+  });
+
+  it("organização fora do Brasil: o código postal não consulta nem ganha aviso de CEP", async () => {
+    orgPais.valor = "PT";
+    responderCep(200, { data: CEP_OK });
+    const user = userEvent.setup();
+    pintar(SEM_ENDERECO);
+
+    await user.type(screen.getByLabelText("CEP"), "1000-001");
+    await user.tab();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    expect(screen.queryByText("CEP deve ter 8 dígitos.")).not.toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

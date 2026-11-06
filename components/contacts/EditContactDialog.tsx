@@ -321,6 +321,7 @@ export function EditContactDialog({
             idPrefix="ec"
             valores={endereco}
             onCampo={(campo, valor) => form.setValue(campo, valor, { shouldDirty: true })}
+            consultarCep={perfil.codigo === PAIS_PADRAO}
             disabled={update.isPending}
           />
           {/*

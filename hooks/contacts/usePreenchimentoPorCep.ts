@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiClient } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/types";
@@ -26,14 +26,34 @@ export type EstadoDaConsultaDeCep =
  * Devolve `null` em qualquer desfecho que não seja uma resposta útil, e o estado
  * para a tela dizer o motivo. Nunca lança: falha de CEP não pode derrubar o
  * formulário que está sendo preenchido.
+ *
+ * Só a consulta vigente responde. A resposta leva até 8s, e nesse tempo a pessoa
+ * pode ter trocado o CEP ou fechado o diálogo — o cadastro segue montado entre
+ * aberturas, e o endereço do contato abandonado cairia no próximo.
  */
 export function usePreenchimentoPorCep(): {
   estado: EstadoDaConsultaDeCep;
   buscar: (cepBruto: string) => Promise<CepConsultado | null>;
+  cancelar: () => void;
 } {
   const [estado, setEstado] = useState<EstadoDaConsultaDeCep>("parado");
+  const consultaVigente = useRef(0);
+
+  useEffect(
+    () => () => {
+      consultaVigente.current += 1;
+    },
+    [],
+  );
+
+  const cancelar = useCallback(() => {
+    consultaVigente.current += 1;
+    setEstado("parado");
+  }, []);
 
   const buscar = useCallback(async (cepBruto: string): Promise<CepConsultado | null> => {
+    consultaVigente.current += 1;
+    const estaConsulta = consultaVigente.current;
     const cep = normalizarCep(cepBruto);
     if (!cep) {
       setEstado("invalido");
@@ -45,9 +65,11 @@ export function usePreenchimentoPorCep(): {
       const resposta = await apiClient.get<{ data: CepConsultado }>(
         `/api/v1/contacts/cep?cep=${cep}`,
       );
+      if (estaConsulta !== consultaVigente.current) return null;
       setEstado("preenchido");
       return resposta.data;
     } catch (err) {
+      if (estaConsulta !== consultaVigente.current) return null;
       if (err instanceof ApiError) {
         if (err.code === "cep_nao_encontrado") {
           setEstado("nao_encontrado");
@@ -63,5 +85,5 @@ export function usePreenchimentoPorCep(): {
     }
   }, []);
 
-  return { estado, buscar };
+  return { estado, buscar, cancelar };
 }

@@ -1,4 +1,6 @@
 "use client";
+import { useRef } from "react";
+
 import { useT } from "@/hooks/i18n/useT";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +22,12 @@ interface Props {
   valores: EnderecoDoContato;
   /** Grava um campo no formulário dono — RHF na ficha, estado local no cadastro. */
   onCampo: (campo: CampoDoEndereco, valor: string) => void;
+  /**
+   * A consulta de CEP é coisa do Brasil: a BrasilAPI não conhece código postal
+   * de outro país, e o aviso de 8 dígitos seria falso. `false` deixa o campo como
+   * texto livre.
+   */
+  consultarCep: boolean;
   disabled?: boolean;
 }
 
@@ -45,12 +53,28 @@ interface Props {
  * Campo vazio, 7 dígitos ou letra só NÃO consultam: nada aqui bloqueia o
  * botão de salvar nem valida o campo. O produto atende fora do Brasil e a
  * coluna é texto livre — CEP é erro de preenchimento, não de cadastro.
+ *
+ * ─── Só o CEP que MUDOU consulta ───────────────────────────────────────────
+ *
+ * A resposta sobrescreve logradouro, bairro, cidade e UF. Na ficha, só passar
+ * pelo campo (clicar e Tab) consultava o CEP já gravado e trocava o que alguém
+ * digitou à mão, marcando o formulário como alterado. Sair com o mesmo valor com
+ * que se entrou não faz nada — nem depois de falha: "preencha à mão" é o que a
+ * tela acabou de pedir, e uma nova consulta apagaria esse preenchimento.
  */
-export function CamposDeEndereco({ idPrefix, valores, onCampo, disabled = false }: Props) {
+export function CamposDeEndereco({
+  idPrefix,
+  valores,
+  onCampo,
+  consultarCep,
+  disabled = false,
+}: Props) {
   const t = useT();
-  const { estado, buscar } = usePreenchimentoPorCep();
+  const { estado, buscar, cancelar } = usePreenchimentoPorCep();
+  const cepAoEntrar = useRef("");
 
   async function aoSairDoCep(): Promise<void> {
+    if (!consultarCep || valores.zip_code === cepAoEntrar.current) return;
     // Sem nada digitado não há o que consultar nem o que avisar: só quem digitou
     // um CEP incompleto recebe a dica.
     if (!valores.zip_code.trim()) return;
@@ -86,7 +110,13 @@ export function CamposDeEndereco({ idPrefix, valores, onCampo, disabled = false 
             autoComplete="postal-code"
             disabled={disabled}
             value={valores.zip_code}
-            onChange={(e) => onCampo("zip_code", e.target.value)}
+            onChange={(e) => {
+              cancelar();
+              onCampo("zip_code", e.target.value);
+            }}
+            onFocus={() => {
+              cepAoEntrar.current = valores.zip_code;
+            }}
             onBlur={() => void aoSairDoCep()}
           />
         </div>

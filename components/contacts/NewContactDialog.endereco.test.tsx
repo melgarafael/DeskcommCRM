@@ -11,10 +11,10 @@
  *     endereço aparece no corpo;
  *   • CEP malformado não impede o cadastro: ele é gravado como foi digitado.
  */
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CreateContactResult } from "@/app/api/v1/contacts/_handler";
@@ -22,8 +22,10 @@ import type { ApiSuccess } from "@/lib/api/wrappers";
 import type { Contact } from "@/lib/types/contacts";
 import { NewContactDialog } from "@/components/contacts/NewContactDialog";
 
+const { orgPais } = vi.hoisted(() => ({ orgPais: { valor: null as string | null } }));
+
 vi.mock("@/hooks/auth/AuthProvider", () => ({
-  useActiveOrg: () => ({ currency: "BRL", country: null }),
+  useActiveOrg: () => ({ currency: "BRL", country: orgPais.valor }),
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
@@ -72,6 +74,29 @@ const CEP_OK = {
 
 let corpoDoPost: Record<string, unknown> | null = null;
 let chamadasDeCep = 0;
+/** Enquanto existir, a resposta do CEP espera — é a consulta "em voo". */
+let cepSegurado: Promise<void> | null = null;
+
+/** O diálogo como a tela de contatos o usa: montado entre aberturas. */
+function JanelaDoCadastro() {
+  const [aberto, setAberto] = useState(true);
+  return (
+    <>
+      <button type="button" onClick={() => setAberto(true)}>
+        Abrir de novo
+      </button>
+      <NewContactDialog open={aberto} onOpenChange={setAberto} />
+    </>
+  );
+}
+
+function segurarCep(): () => void {
+  let soltar = () => {};
+  cepSegurado = new Promise<void>((resolve) => {
+    soltar = resolve;
+  });
+  return soltar;
+}
 
 function envolver(ui: ReactNode) {
   const qc = new QueryClient({
@@ -83,6 +108,8 @@ function envolver(ui: ReactNode) {
 beforeEach(() => {
   corpoDoPost = null;
   chamadasDeCep = 0;
+  cepSegurado = null;
+  orgPais.valor = null;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: unknown, init?: RequestInit) => {
@@ -95,6 +122,7 @@ beforeEach(() => {
       }
       if (alvo.includes("/api/v1/contacts/cep")) {
         chamadasDeCep += 1;
+        if (cepSegurado) await cepSegurado;
         return new Response(JSON.stringify({ data: CEP_OK }), {
           status: 200,
           headers: { "content-type": "application/json" },
@@ -191,5 +219,58 @@ describe("cadastro com endereço", () => {
     await user.click(screen.getByRole("button", { name: /Criar contato/i }));
     await waitFor(() => expect(corpoDoPost).not.toBeNull());
     expect(corpoDoPost).toMatchObject({ zip_code: "8000000" });
+  });
+
+  it("organização fora do Brasil: código de 8 dígitos não vai à consulta e é gravado como veio", async () => {
+    orgPais.valor = "PT";
+    const user = userEvent.setup();
+    envolver(<NewContactDialog open onOpenChange={vi.fn()} nomeInicial="Joana Prado" />);
+
+    await user.type(screen.getByLabelText("CEP"), "12345678");
+    await user.tab();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    expect(chamadasDeCep).toBe(0);
+    await user.click(screen.getByRole("button", { name: /Criar contato/i }));
+    await waitFor(() => expect(corpoDoPost).not.toBeNull());
+    expect(corpoDoPost).toMatchObject({ zip_code: "12345678" });
+  });
+
+  it("resposta que chega depois de Cancelar não cai no próximo cadastro", async () => {
+    const soltarCep = segurarCep();
+    const user = userEvent.setup();
+    envolver(<JanelaDoCadastro />);
+
+    await user.type(screen.getByLabelText("CEP"), "80000-000");
+    await user.tab();
+    await waitFor(() => expect(chamadasDeCep).toBe(1));
+    await user.click(screen.getByRole("button", { name: "Cancelar" }));
+    await waitFor(() => expect(screen.queryByLabelText("CEP")).not.toBeInTheDocument());
+
+    soltarCep();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    await user.click(screen.getByRole("button", { name: "Abrir de novo" }));
+
+    expect(await screen.findByLabelText("CEP")).toHaveValue("");
+    expect(screen.getByLabelText("Logradouro")).toHaveValue("");
+    expect(screen.getByLabelText("Cidade")).toHaveValue("");
+  });
+
+  it("resposta de um CEP que a pessoa já trocou não sobrescreve o que ela digita", async () => {
+    const soltarCep = segurarCep();
+    const user = userEvent.setup();
+    envolver(<NewContactDialog open onOpenChange={vi.fn()} nomeInicial="Joana Prado" />);
+
+    await user.type(screen.getByLabelText("CEP"), "80000-000");
+    await user.tab();
+    await waitFor(() => expect(chamadasDeCep).toBe(1));
+    await user.clear(screen.getByLabelText("CEP"));
+    await user.type(screen.getByLabelText("CEP"), "80100");
+
+    soltarCep();
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    expect(screen.getByLabelText("CEP")).toHaveValue("80100");
+    expect(screen.getByLabelText("Logradouro")).toHaveValue("");
   });
 });

@@ -336,6 +336,7 @@ export function NewContactDialog({
               onCampo={(campo, valor) =>
                 setEndereco((atual) => ({ ...atual, [campo]: valor }))
               }
+              consultarCep={perfil.codigo === PAIS_PADRAO}
               disabled={create.isPending}
             />
           </div>
