@@ -275,13 +275,13 @@ export interface SkillMissCandidate {
 
 /**
  * Por onde a skill entrou no turno (spec 27, fatia 4): pela palavra da mensagem (`any_keywords`)
- * ou pela etiqueta da conversa/contato/negócio (`any_tags`). Quando os dois casam, vale `etiqueta`.
+ * ou pela etiqueta da conversa ou do contato (`any_tags`). Quando os dois casam, vale `etiqueta`.
  */
 export type MotivoDoMatch = 'palavra' | 'etiqueta';
 
 /**
  * O valor que `skill_activations.trigger` grava para um match: `tag` quando entrou pela etiqueta
- * (CHECK da migration 0794), `hard` quando entrou pela palavra — como sempre. Sem motivo (skill
+ * (CHECK da migration 9230), `hard` quando entrou pela palavra — como sempre. Sem motivo (skill
  * que não casou) cai em `hard`, que é o valor de antes.
  */
 export function gatilhoDaAtivacao(motivo: MotivoDoMatch | undefined): 'hard' | 'tag' {

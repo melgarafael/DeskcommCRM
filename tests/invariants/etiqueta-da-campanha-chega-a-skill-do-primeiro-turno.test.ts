@@ -20,7 +20,7 @@
  *
  * SABOTAGEM que este arquivo sabe pegar: troque o JOIN do contato em `etiquetas-do-matcher.ts`
  * (`c.id = cv.contact_id`) por outro, ou volte a leitura para só a conversa, e o primeiro caso
- * fica VERMELHO; tire o `l.status = 'open'` do lateral e o terceiro fica vermelho.
+ * fica VERMELHO; some as etiquetas de `crm_leads` à consulta e o caso do negócio fica vermelho.
  *
  * Roda só no CI e em `pnpm test:db` (precisa de Postgres).
  */
@@ -60,6 +60,15 @@ function logQueAnota() {
   };
 }
 
+const skillDaAdvocacia: LoadedSkill = {
+  versionId: randomUUID(),
+  name: "abordagem-advocacia",
+  description: "abordagem para escritórios",
+  body: "corpo",
+  matcher: { any_keywords: ["processo"], any_tags: ["advocacia"] },
+  manifest: [],
+};
+
 const skillDaEstetica: LoadedSkill = {
   versionId: randomUUID(),
   name: "abordagem-estetica",
@@ -88,19 +97,11 @@ async function conversa(contactId: string): Promise<string> {
   return id;
 }
 
-async function negocio(
-  contactId: string,
-  status: "open" | "won" | "lost",
-  tags: string[],
-  criadoEm: string,
-): Promise<void> {
+async function negocio(contactId: string, tags: string[]): Promise<void> {
   await pool.query(
-    `insert into crm_leads(id, organization_id, pipeline_id, stage_id, title, contact_id, status, tags,
-                           created_at, closed_at, lost_reason)
-     values ($1, $2, $3, $4, 'Negócio', $5, $6::text, $7, $8,
-             case when $6::text = 'open' then null else $8::timestamptz end,
-             case when $6::text = 'lost' then 'other' else null end)`,
-    [randomUUID(), ORG, FUNIL, ETAPA, contactId, status, tags, criadoEm],
+    `insert into crm_leads(id, organization_id, pipeline_id, stage_id, title, contact_id, status, tags)
+     values ($1, $2, $3, $4, 'Negócio', $5, 'open', $6)`,
+    [randomUUID(), ORG, FUNIL, ETAPA, contactId, tags],
   );
 }
 
@@ -199,28 +200,36 @@ describe("a etiqueta da campanha chega à skill do primeiro turno", () => {
     ).toHaveLength(0);
   });
 
-  it("a etiqueta do negócio ABERTO entra; a do negócio fechado mais recente não", async () => {
+  it("com duas skills, entra só a da etiqueta da campanha", async () => {
     const id = await contato();
     const conv = await conversa(id);
-    await negocio(id, "open", ["do-aberto"], "2030-01-01T10:00:00Z");
-    await negocio(id, "lost", ["do-fechado"], "2030-02-01T10:00:00Z");
+    await campanhaMarca(id, ["advocacia"]);
 
-    const { tags, avisos } = await lerEtiquetas(ORG, conv);
-    expect(avisos).toEqual([]);
-    expect(tags).toContain("do-aberto");
-    expect(tags).not.toContain("do-fechado");
+    const { tags } = await lerEtiquetas(ORG, conv);
+    const { matched } = matchSkills([skillDaEstetica, skillDaAdvocacia], "Olá", tags);
+    expect(matched.map((s) => s.name)).toEqual(["abordagem-advocacia"]);
   });
 
-  it("sem negócio aberto, vale a etiqueta do mais recente", async () => {
+  it("a etiqueta do negócio não ativa skill: a seleção por negócio não tem regra aprovada", async () => {
     const id = await contato();
     const conv = await conversa(id);
-    await negocio(id, "lost", ["antigo"], "2030-01-01T10:00:00Z");
-    await negocio(id, "won", ["recente"], "2030-02-01T10:00:00Z");
+    await negocio(id, ["estetica"]);
 
     const { tags, avisos } = await lerEtiquetas(ORG, conv);
     expect(avisos).toEqual([]);
-    expect(tags).toContain("recente");
-    expect(tags).not.toContain("antigo");
+    expect(tags).toEqual([]);
+  });
+
+  it("a campanha de uma organização não etiqueta o contato de outra", async () => {
+    const id = await contato();
+    await pool.query(`select public.fn_contato_adicionar_etiquetas($1, $2, $3)`, [
+      OUTRA_ORG,
+      id,
+      ["estetica"],
+    ]);
+
+    const { rows } = await pool.query(`select tags from contacts where id = $1`, [id]);
+    expect(rows[0].tags).toEqual([]);
   });
 
   it("a conversa de uma organização não é lida com o id de outra", async () => {

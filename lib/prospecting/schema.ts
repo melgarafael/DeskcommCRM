@@ -35,6 +35,17 @@ const contactTagsSchema = z
   .max(CONTACT_TAGS_MAXIMO)
   .transform((tags) => normalizarTags(tags));
 
+/**
+ * Por que o texto do campo de etiquetas não pode ser gravado; `null` quando pode. Existe para a
+ * tela AVISAR em vez de cortar: `normalizarTags` corta em 40 caracteres, e a etiqueta cortada
+ * nunca casaria com a da skill; a sexta, se a tela a descartasse, sumiria sem ninguém saber.
+ */
+export function problemaNasEtiquetas(texto: string): "demais" | "longa" | null {
+  const partes = texto.split(",").map((parte) => parte.trim());
+  if (partes.some((parte) => parte.length > TAMANHO_MAXIMO_DA_TAG)) return "longa";
+  return normalizarTags(partes).length > CONTACT_TAGS_MAXIMO ? "demais" : null;
+}
+
 export const campaignConfigSchema = z
   .object({
     agent_id: z.string().uuid(),

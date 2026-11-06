@@ -33,7 +33,11 @@ vi.mock("@/lib/logger", () => ({
   logger: { warn: m.aviso, info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { campaignConfigSchema, prospectingInputSchema } from "@/lib/prospecting/schema";
+import {
+  campaignConfigSchema,
+  problemaNasEtiquetas,
+  prospectingInputSchema,
+} from "@/lib/prospecting/schema";
 import {
   AJUSTE_DE_ETIQUETAS_SQL,
   adjustTags,
@@ -147,6 +151,23 @@ describe("a configuração aceita as etiquetas sem mudar a campanha de quem já 
   });
 });
 
+describe("o campo de etiquetas avisa em vez de cortar", () => {
+  it("até 5 etiquetas, e repetida não conta", () => {
+    expect(problemaNasEtiquetas("a, b, c, d, e")).toBeNull();
+    expect(problemaNasEtiquetas("a, b, c, d, e, A")).toBeNull();
+    expect(problemaNasEtiquetas("")).toBeNull();
+  });
+
+  it("a sexta é recusada, não descartada", () => {
+    expect(problemaNasEtiquetas("a, b, c, d, e, f")).toBe("demais");
+  });
+
+  it("etiqueta com mais de 40 caracteres é recusada, não encurtada", () => {
+    expect(problemaNasEtiquetas("x".repeat(40))).toBeNull();
+    expect(problemaNasEtiquetas(`a, ${"x".repeat(41)}`)).toBe("longa");
+  });
+});
+
 describe("criarPegadaDoCandidato põe as etiquetas no contato antes do envio", () => {
   const JUNCAO = "fn_contato_adicionar_etiquetas";
 
@@ -160,6 +181,9 @@ describe("criarPegadaDoCandidato põe as etiquetas no contato antes do envio", (
     await criarPegadaDoCandidato(db, admin, ORG, campanha, comEtiquetas(["estetica"]), candidato(), null);
     const juncao = chamadas.find((c) => c.nome === JUNCAO);
     expect(juncao?.args).toEqual({ p_org: ORG, p_contato: CONTATO_NOVO, p_etiquetas: ["estetica"] });
+    // Antes de a conversa existir: é o que garante a etiqueta na primeira resposta.
+    const juncaoEm = (admin as unknown as { rpc: ReturnType<typeof vi.fn> }).rpc.mock.invocationCallOrder[0]!;
+    expect(juncaoEm).toBeLessThan(m.fronteira.mock.invocationCallOrder[0]!);
   });
 
   it("contato REAPROVEITADO (criado por esta campanha antes): a junção roda nele, sem criar outro", async () => {

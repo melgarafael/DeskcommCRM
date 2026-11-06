@@ -1,6 +1,7 @@
 # Spec 27 — A skill pela etiqueta, completa: a etiqueta chega antes da resposta
 
-Status: **PROPOSTA**. Continuação do PR #3230 (`feat(skills): a skill também
+Status: **ENTREGUE SEM A FATIA 2** (decisão do mantenedor no #3468: a seleção por negócio
+fica para proposta futura; a skill segue lendo a conversa e o contato). Continuação do PR #3230 (`feat(skills): a skill também
 entra pela etiqueta da conversa ou do contato`, mergeado em 23/10/2026, na
 1.89.0). O #3230 entregou o gatilho; esta spec fecha os buracos que impedem o
 gatilho de disparar na prática.
@@ -85,7 +86,11 @@ Onde está cada causa no código:
 Isto resolve, na prospecção, o limite 3 (a etiqueta já existe no primeiro
 turno) e os lembretes (a etiqueta está no contato quando o lembrete roda).
 
-### 2. A skill lê também a etiqueta do negócio
+### 2. A skill lê também a etiqueta do negócio (NÃO entregue)
+
+Fora do #3468: a mesma pessoa com negócios em dois nichos ativaria as skills dos dois na
+mesma conversa, e uma compra antiga poderia ativar skill. Vale como proposta, à espera de
+regra explícita de seleção.
 
 - `etiquetasParaOMatcher` passa a juntar as etiquetas dos negócios do contato do
   turno: os abertos (`crm_leads.status = 'open'`); sem negócio aberto, o mais
@@ -114,8 +119,7 @@ etiqueta.
 - `matchSkills` passa a devolver o motivo de cada match (`palavra` ou
   `etiqueta`); quando os dois casam, vale `etiqueta`.
 - `skill_activations.trigger` aceita `tag`. Migration nova
-  `<timestamp>_<NNNN>_skill_activations_trigger_tag.sql` (NNNN por
-  `pnpm checar:colisao-de-migration`), troca a CHECK para
+  `20261106103005_9230_skill_activations_trigger_tag.sql`, troca a CHECK para
   `('hard','probe','tag')`, idempotente, com `-- manifest:` no cabeçalho e
   apêndice no `supabase/baseline.sql`.
 - O traço do turno (`traco-do-turno.ts`) já agrega `trigger` por skill, então o `tag` chega ao dado do traço. **Mostrar "entrou pela etiqueta" numa tela fica fora desta spec**: hoje nenhuma tela exibe o campo `gatilho` do traço (medido por busca em `app/` e `lib/`).
@@ -136,8 +140,7 @@ etiqueta.
 
 1. `feat(prospeccao): a campanha grava as etiquetas do contato antes de abordar`
    — schema, `criarPegadaDoCandidato`, `adjust_tags`, tela, testes.
-2. `feat(skills): a etiqueta do negócio também ativa a skill` — matcher e teste
-   de isolamento.
+2. (fora do #3468) `feat(skills): a etiqueta do negócio também ativa a skill`.
 3. `feat(skills): o Testar aceita etiquetas simuladas` — schema da prévia,
    `TurnPreview`, painel.
 4. `feat(skills): a ativação registra que entrou pela etiqueta` — migration
@@ -150,8 +153,7 @@ etiqueta.
     o contato novo e com o reaproveitado; sem `contact_tags`, não chama.
   - `campaignConfigSchema` sem `contact_tags` = mesma saída de hoje.
   - `adjust_tags` recusa campanha em execução e audita `previous`/`next`.
-  - `etiquetasParaOMatcher` devolve a etiqueta do negócio aberto; não lê negócio
-    de outra organização (dois tenants).
+  - `etiquetasParaOMatcher` não lê conversa de outra organização (dois tenants).
   - Prévia com `sample_tags: ['estetica']` casa a skill de `any_tags: ['estetica']`.
   - Match por etiqueta grava `trigger='tag'`.
 - **Invariantes:** a migration passa nas duas majors do Postgres do CI.

@@ -1223,6 +1223,8 @@ export const DICIONARIO: Traducoes = {
   "Ex.: estetica, vip": { es: "Ej.: estetica, vip" },
   "Separe por vírgula. As skills com estas etiquetas entram neste teste, como entrariam numa conversa com elas.": { es: "Sepáralas con coma. Las skills con estas etiquetas entran en esta prueba, como entrarían en una conversación con ellas." },
   "Ex.: estetica, clinicas": { es: "Ej.: estetica, clinicas" },
+  "São no máximo 5 etiquetas. Apague as que sobraram para iniciar.": { es: "Son como máximo 5 etiquetas. Borra las que sobran para iniciar." },
+  "Cada etiqueta tem até 40 caracteres. Encurte a mais longa para iniciar.": { es: "Cada etiqueta tiene hasta 40 caracteres. Acorta la más larga para iniciar." },
   "As skills com estas etiquetas entram desde a primeira resposta. Separe por vírgula, até 5. Vem preenchida com o nicho da busca; pode trocar.": { es: "Las skills con estas etiquetas se activan desde la primera respuesta. Sepáralas con coma, hasta 5. Viene completada con el nicho de la búsqueda; puedes cambiarla." },
   "Ex.: confirmou a necessidade, participa da decisão e deseja conversar sobre a solução.": { es: "Ej.: confirmó la necesidad, participa en la decisión y desea conversar sobre la solución." },
   "Máximo em 24 horas": { es: "Máximo en 24 horas" },

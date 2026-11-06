@@ -14,9 +14,9 @@ import { ApiError } from "@/lib/api/types";
 import { useT } from "@/hooks/i18n/useT";
 import { rodapeDeSaida } from "@/lib/prospecting/rodape-de-saida";
 import {
-  CONTACT_TAGS_MAXIMO,
   RAZAO_NAO_SELECIONADA,
   campaignConfigSchema,
+  problemaNasEtiquetas,
   safePublicLink,
   type CampaignConfig,
   type Prospect,
@@ -346,9 +346,14 @@ export function ProspectingClient() {
     campaign && !campaign.config && configGuardada.contact_tags === undefined
       ? {
           ...configGuardada,
-          contact_tags: normalizarTags([campaign.search?.niche ?? ""]),
+          contact_tags: normalizarTags((campaign.search?.niche ?? "").split(",")),
         }
       : configGuardada;
+  const textoDasEtiquetas =
+    tagsDigitadas && tagsDigitadas.campaignId === campaign?.id
+      ? tagsDigitadas.texto
+      : (config.contact_tags ?? []).join(", ");
+  const etiquetasComProblema = problemaNasEtiquetas(textoDasEtiquetas);
   // "Configurada" é a campanha que TEM agente escolhido. Config parcial salva
   // pelo meio (instrução/qualificação sem agente) NÃO trava a etapa 2: medido na
   // VPS, 3 rascunhos assim ficavam sem como ser iniciados.
@@ -1651,24 +1656,15 @@ export function ProspectingClient() {
                                 </Label>
                                 <Input
                                   id="prospecting-contact-tags"
-                                  value={
-                                    tagsDigitadas?.campaignId === campaign?.id
-                                      ? tagsDigitadas.texto
-                                      : (config.contact_tags ?? []).join(", ")
-                                  }
+                                  value={textoDasEtiquetas}
+                                  aria-invalid={etiquetasComProblema !== null}
                                   onChange={(e) => {
                                     if (!campaign) return;
                                     setTagsDigitadas({
                                       campaignId: campaign.id,
                                       texto: e.target.value,
                                     });
-                                    update(
-                                      "contact_tags",
-                                      normalizarTags(e.target.value.split(",")).slice(
-                                        0,
-                                        CONTACT_TAGS_MAXIMO,
-                                      ),
-                                    );
+                                    update("contact_tags", normalizarTags(e.target.value.split(",")));
                                   }}
                                   className="mt-1"
                                   placeholder={t("Ex.: estetica, clinicas")}
@@ -1678,6 +1674,13 @@ export function ProspectingClient() {
                                     "As skills com estas etiquetas entram desde a primeira resposta. Separe por vírgula, até 5. Vem preenchida com o nicho da busca; pode trocar.",
                                   )}
                                 </p>
+                                {etiquetasComProblema && (
+                                  <p className="mt-1 text-xs text-destructive" role="alert">
+                                    {etiquetasComProblema === "demais"
+                                      ? t("São no máximo 5 etiquetas. Apague as que sobraram para iniciar.")
+                                      : t("Cada etiqueta tem até 40 caracteres. Encurte a mais longa para iniciar.")}
+                                  </p>
+                                )}
                               </div>
                               <fieldset className="space-y-2">
                                 <legend className="text-sm font-medium">
@@ -1864,7 +1867,8 @@ export function ProspectingClient() {
                           disabled={
                             busy ||
                             !agents.length ||
-                            !data?.channels.some((c) => c.status === "WORKING")
+                            !data?.channels.some((c) => c.status === "WORKING") ||
+                            etiquetasComProblema !== null
                           }
                         >
                           {t("Iniciar abordagens com IA")}
