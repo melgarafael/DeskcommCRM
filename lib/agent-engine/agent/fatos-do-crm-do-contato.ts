@@ -47,9 +47,10 @@
  *
  * O bloco entra no prompt do classificador, que roda em TODO turno com
  * mensagem inbound — o custo é por mensagem. Um contato com 20 etiquetas e 15
- * cards abertos pagaria tudo isso em cada "bom dia". Os tetos cortam e DIZEM
- * que cortaram: truncar em silêncio faria o modelo afirmar que o cliente só
- * tem aqueles funis.
+ * cards abertos pagaria tudo isso em cada "bom dia". Os tetos de funil e de
+ * etiqueta cortam e DIZEM que cortaram: truncar em silêncio faria o modelo
+ * afirmar que o cliente só tem aqueles funis. O teto de etapas corta calado: o
+ * funil continua listado, que é o que a decisão mais precisa.
  */
 import type pg from 'pg';
 

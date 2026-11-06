@@ -12,8 +12,9 @@ foi para o pós-venda — duas despedidas diferentes na mesma conversa.
 
 O classificador passa a receber os **funis e etapas com negócio aberto** e as
 **etiquetas** do contato, sempre restritos à organização da conversa. Contato
-sem negócio aberto não recebe bloco nenhum: o prompt continua idêntico ao de
-antes, e a decisão continua sendo do modelo, com o mesmo JSON de saída.
-A lista é limitada (até 3 funis, 2 etapas por funil e 8 etiquetas) e diz
-quando truncou. Se a leitura do CRM falhar, o turno classifica como antes e
-registra o motivo — o atendimento não para.
+sem nenhum desses fatos gera o prompt igual ao de antes, e a decisão continua
+sendo do modelo, com o mesmo JSON de saída. A lista é limitada (até 3 funis,
+2 etapas por funil e 8 etiquetas) e diz quando deixou funil ou etiqueta de
+fora; etapa além do teto é cortada sem aviso, e o funil continua listado. Se
+a leitura do CRM falhar, o turno classifica como antes e registra o motivo —
+o atendimento não para.

@@ -73,6 +73,14 @@ describe('montarFatosDoCrm', () => {
     expect(fatos.funisOmitidos).toBe(2);
   });
 
+  it('etapa além do teto sai calada: o funil fica, e nada é contado nem anunciado', () => {
+    const negocios = Array.from({ length: MAX_ETAPAS_POR_FUNIL + 1 }, (_, i) => ({ funil: 'Vendas', etapa: `Etapa ${i}` }));
+    const fatos = montarFatosDoCrm(negocios, []);
+    expect(fatos.funis).toEqual([{ funil: 'Vendas', etapas: ['Etapa 0', 'Etapa 1'] }]);
+    expect(fatos.funisOmitidos).toBe(0);
+    expect(formatarFatosDoCrm(fatos)).toBe('- Funil "Vendas", etapa "Etapa 0" / "Etapa 1": negócio ABERTO');
+  });
+
   it('20 etiquetas: só 8 entram e o resto é CONTADO', () => {
     const vinte = Array.from({ length: 20 }, (_, i) => `etiqueta-${String(i + 1).padStart(2, '0')}`);
     const fatos = montarFatosDoCrm([], vinte);
