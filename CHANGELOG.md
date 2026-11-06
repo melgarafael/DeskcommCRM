@@ -12,297 +12,109 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ### Adicionado
 
-- **A IA e as automações escolhem o setor da conversa** O setor da conversa — a fila que decide para quem ela é distribuída — só podia
-  ser escolhido à mão, uma conversa por vez. A triagem que sabe dizer "isto é um
-  boleto, é do Financeiro" morria no prompt: **não havia por onde gravar**.
+- **A IA e as automações escolhem o setor da conversa** O setor da conversa, a fila que decide para quem ela é distribuída, só podia ser escolhido à mão, uma conversa por vez. Agora o agente de IA tem a ferramenta `crm_set_conversation_sector` e a regra de automação tem a ação "Definir o setor da conversa". As recusas são as mesmas da tela: setor inexistente ou de outra organização, conversa encerrada e conversa que uma pessoa classificou. A auditoria diz quem mudou, de qual setor para qual.
 
-  Agora o agente de IA tem a ferramenta `crm_set_conversation_sector` e a regra de
-  automação tem a ação "Definir o setor da conversa". As duas entram pela MESMA
-  porta da tela (`definirSetorDaConversa`), com as mesmas recusas: setor
-  inexistente ou de outra organização, conversa encerrada e conversa que uma
-  pessoa classificou. Nenhuma policy foi afrouxada — a tela continua escrevendo
-  com a sessão de quem atende, e a IA e a automação passam por conferência
-  explícita de organização, conversa e setor, com auditoria
-  (`conversation.sector_changed`) dizendo **quem mudou, de qual setor para qual**.
+  **A escolha de uma pessoa vence a IA.** O setor gravado à mão só é trocado por IA ou automação com a opção explícita ligada (desligada por padrão). Conversa que já tinha setor antes desta versão conta como escolha manual: prefere-se preservar uma classificação a apagá-la em silêncio. A IA também não tira a conversa da fila: deixá-la sem setor continua sendo gesto de gente, na tela. Crédito: @webtecnica (#4084, issue #3881 de @aerosuiteapp).
 
-  **A escolha de uma pessoa vence a IA.** O setor gravado à mão fica marcado em
-  `conversations.metadata.setor_origem` e só é sobrescrito por IA ou automação com
-  a opção explícita ligada (desligada por padrão). Conversa que já tinha setor mas
-  nasceu antes desta marca conta como manual: prefere-se preservar uma
-  classificação a apagá-la em silêncio. A IA também não limpa a fila — deixar a
-  conversa sem setor continua sendo gesto de gente na tela.
+- **Prospecção com uma campanha em andamento por número de WhatsApp** Uma organização com três conexões conectadas deixa de ficar limitada a **uma campanha de prospecção por vez**: cada número pode ter a sua, com agente, região e aquecimento próprios, e as campanhas de números diferentes enviam na mesma rodada.
 
-- **Prospecção com uma campanha em andamento por número de WhatsApp** Uma organização com três conexões conectadas deixa de ficar limitada a
-  **uma campanha de prospecção por vez**: cada número pode ter a sua, com agente,
-  região e aquecimento próprios. A segunda campanha em outro número é aceita e o
-  worker envia pelas duas na mesma rodada; a que estava bloqueada respondia
-  "Pause a campanha atual antes de iniciar outra".
+  **Duas campanhas no MESMO número seguem bloqueadas**, de propósito: o aquecimento é do número, e duas listas nele dobrariam as primeiras abordagens, que é o que a plataforma pune com banimento. A recusa agora diz qual campanha ocupa a conexão (código `prospecting_channel_busy`, para quem integra); basta pausar essa campanha para liberar o número.
 
-  O que continua igual, e de propósito:
-  **duas campanhas no MESMO número seguem bloqueadas**. O aquecimento é do
-  número, não da campanha — duas listas no mesmo número dobrariam as primeiras
-  abordagens dele, que é o comportamento que a plataforma pune com banimento. A
-  recusa agora diz qual campanha ocupa a conexão, com o código
-  `prospecting_channel_busy` e o nome de quem está lá; basta pausar essa
-  campanha para liberar o número.
+  O teto de 50 tentativas em 24 horas, o teto de aquecimento e o intervalo mínimo passam a ser contados **por número**, e não mais pela organização inteira. A tentativa de um número não consome nem segura a cota do outro, e a soma dos números é a soma das cotas.
 
-  O teto de 50 tentativas em 24 horas, o teto de aquecimento e o intervalo mínimo
-  passam a ser contados **por número**. Antes eram da organização inteira: com
-  duas campanhas rodando, os dois números dividiam as mesmas 50 abordagens do dia
-  e o mesmo intervalo — o volume de um número só. Agora a tentativa de um número
-  não consome nem segura a cota do outro, e a soma dos números é a soma das cotas.
+  Na atualização, uma campanha em andamento que tenha ficado sem conexão válida é pausada, com o motivo no cartão. Crédito: @webtecnica (#4090, issue #3896).
 
-  Em banco: `prospecting_campaigns.channel_session_id` vira coluna (com backfill
-  de `config->>'channel_session_id'`), o índice único parcial
-  `prospecting_one_running_org` dá lugar a `prospecting_one_running_canal`
-  em `(organization_id, channel_session_id)`, e uma campanha `running` que tenha
-  ficado sem conexão válida é pausada pela migration com o motivo no cartão.
+- **Roteador de intenção decide sabendo o que o contato já tem no CRM** O roteador escolhia o agente só pelo texto da mensagem e pelas últimas mensagens da conversa. Numa agência de viagens com vendas e pós-venda no mesmo número, a cliente que já tinha viagem fechada escreveu "Bom dia! Tudo bem?" e foi para o vendas; na mensagem seguinte, "Agradeço", foi para o pós-venda.
 
-- **Roteador de intenção decide sabendo o que o contato já tem no CRM** O classificador do roteador escolhia o agente só pelo texto da mensagem e
-  pelas últimas mensagens da conversa. Numa agência de viagens com vendas e
-  pós-venda no mesmo número, a cliente que já tinha viagem fechada escreveu
-  "Bom dia! Tudo bem?" e foi para o vendas; na mensagem seguinte, "Agradeço",
-  foi para o pós-venda — duas despedidas diferentes na mesma conversa.
+  Agora ele recebe também os **funis e etapas com negócio aberto** e as **etiquetas** do contato, sempre da organização da conversa. Contato sem nenhum desses dados é classificado como antes, e a decisão continua sendo do modelo. A lista é limitada (até 3 funis, 2 etapas por funil e 8 etiquetas) e diz quando deixou funil ou etiqueta de fora; etapa além do teto é cortada sem aviso, e o funil continua listado. Se a leitura do CRM falhar, a mensagem é classificada como antes e o motivo fica registrado: o atendimento não para. Crédito: @webtecnica (#4110, issue #3917 de @aerosuiteapp).
 
-  O classificador passa a receber os **funis e etapas com negócio aberto** e as
-  **etiquetas** do contato, sempre restritos à organização da conversa. Contato
-  sem nenhum desses fatos gera o prompt igual ao de antes, e a decisão continua
-  sendo do modelo, com o mesmo JSON de saída. A lista é limitada (até 3 funis,
-  2 etapas por funil e 8 etiquetas) e diz quando deixou funil ou etiqueta de
-  fora; etapa além do teto é cortada sem aviso, e o funil continua listado. Se
-  a leitura do CRM falhar, o turno classifica como antes e registra o motivo —
-  o atendimento não para.
+- **Tarefas ganham a visão em quadro, com o cartão arrastado entre as situações** Ao lado de **Lista** e **Calendário**, a tela de Tarefas ganha o **Quadro**: uma coluna por situação (Pendente, Em andamento, Concluída, Cancelada) e o cartão arrastado de uma para a outra. A mudança fica registrada na auditoria, com **quem moveu e de qual situação para qual**.
 
-- **Tarefas ganham a visão em quadro, com o cartão arrastado entre as situações** Ao lado de **Lista** e **Calendário**, a tela de Tarefas ganha o **Quadro**: uma
-  coluna por situação (Pendente, Em andamento, Concluída, Cancelada) e o cartão
-  arrastado de uma para a outra. Soltar o cartão grava a situação nova pelo mesmo
-  caminho de escrita do formulário, e a movimentação fica registrada no log de
-  auditoria com **quem moveu e de qual situação para qual**.
+  O quadro busca até 200 tarefas (a lista, 500) e, quando bate no teto, **diz** que está mostrando só as primeiras. Tarefa com situação que a tela não conhece não desaparece: cai numa coluna própria, "Sem situação". Quem só tem leitura vê o quadro e não arrasta. Lista e Calendário continuam exatamente como estavam. Crédito: @webtecnica (#4097, issue #4028, da discussão #2165 de @aerosuiteapp).
 
-  A busca do quadro é limitada (200 tarefas, contra as 500 da lista) e, quando
-  bate no teto, a tela **diz** que está mostrando só as primeiras — em vez de
-  esconder que há mais. Tarefa com situação que a tela não conhece não
-  desaparece: cai numa coluna própria, "Sem situação". Quem só tem leitura vê o
-  quadro e não arrasta; a rota recusa com o mesmo `forbidden_role` de sempre.
+- **Editor do funil reordena os campos personalizados: arraste ou use as setas** No editor do funil, cada campo personalizado ganhou uma **alça de arrasto** e os botões de subir e descer. A ordem salva é a que o card, o dossiê e o formulário de novo negócio mostram, e campo novo continua entrando no fim. Reordenar não mexe nos valores já gravados. Agrupar os campos em seções recolhíveis fica para uma entrega seguinte. Crédito: @webtecnica (#4091, issue #4043 de @aerosuiteapp).
 
-  Lista e Calendário continuam exatamente como estavam.
+- **O negócio perdido de minutos atrás pode voltar a ser o mesmo card** Cada funil ganha, na tela de Funis, a opção de reabrir o negócio perdido quando o contato volta a escrever, com uma janela em dias. Ligada, a mensagem de quem tem um negócio perdido dentro dessa janela **reabre o mesmo card**: status de volta a aberto, descrição, campos e motivo da perda intactos, em vez de abrir um negócio novo vazio. A reabertura fica registrada na timeline do dossiê.
 
-- **Editor do funil reordena os campos personalizados: arraste ou use as setas** No editor do funil, cada campo personalizado ganhou uma **alça de arrasto** e os
-  botões de subir e descer. A ordem salva é a que o card, o dossiê e o formulário
-  de novo negócio mostram, e campo novo continua entrando no fim.
+  Desligada, que é o padrão e o comportamento de todo funil que já existe, nada muda: a conversa abre um negócio novo. Fora da janela também continua assim, de propósito: reabrir um perdido de meses atrás faria o card voltar com a idade da primeira tentativa e apagaria a leitura de quantas tentativas até fechar.
 
-  Reordenar não mexe no que já está gravado: o valor do negócio é lido pela chave
-  do campo, não pela posição dele na lista. Agrupar os campos em seções recolhíveis
-  fica para uma entrega seguinte.
+  Quem já escolheu **nova tentativa** na retomada de negócios encerrados continua com ela: a escolha explícita do funil vence a janela. Crédito: @webtecnica (#4080, issue #4076 de @NeroSued).
 
-- **O negócio perdido de minutos atrás pode voltar a ser o mesmo card** Cada funil ganha, na tela de Funis, a opção de reabrir o negócio perdido quando o
-  contato volta a escrever, com uma janela em dias. Ligada, a mensagem de quem tem
-  um negócio perdido dentro dessa janela **reabre o mesmo card**: mesmo negócio,
-  status de volta a aberto, descrição, campos e motivo da perda intactos, em vez de
-  abrir um negócio novo vazio. Nada é copiado nem fundido, e a reabertura fica
-  registrada na timeline de quem lê o dossiê.
+- **O aviso de mensagem nova mostra de qual canal a mensagem veio** O aviso da esquina era sempre o mesmo bloco neutro: para saber se o cliente escreveu pelo WhatsApp, pelo Instagram ou pelo Messenger era preciso abrir a conversa. Agora ele leva a **marca do canal**: o logo da rede e uma faixa na borda esquerda, na cor daquele canal, nos temas claro e escuro. O fundo continua o do tema, então o texto não perde contraste e dez avisos seguidos não viram dez blocos coloridos.
 
-  Desligada — o padrão, e o comportamento de todo funil que já existe — nada muda:
-  a conversa abre um negócio novo, como hoje.
+  O leitor de tela anuncia "Canal: WhatsApp" (ou o nome da rede que veio) junto com o título da mensagem. Canal que o produto ainda não sabe desenhar sai com a faixa neutra e o rótulo genérico, e os demais avisos do sistema (lead, menção, exportação) continuam como eram. Crédito: @webtecnica (#4111, issue #4094).
 
-  Fora da janela também continua como hoje, e isso é de propósito: reabrir um
-  perdido de meses atrás faria o card voltar com a idade da primeira tentativa e
-  apagaria a leitura de quantas tentativas até fechar. Perdido recente é "o cliente
-  respondeu à despedida"; perdido antigo é demanda nova, com a perda contada no
-  lugar dela.
+- **Preencha os campos personalizados ao criar um contato** O cadastro de contato passa a oferecer os campos de contato definidos no funil padrão, com o mesmo editor usado na ficha. Sem configuração, o formulário continua simples. Nenhum campo ou valor de uma empresa é imposto às demais. Crédito: @vagnerrm122 (#4025).
 
-  Quem já escolheu **nova tentativa** na retomada de negócios encerrados continua
-  com ela: as duas opções respondem à mesma pergunta, e a escolha explícita do funil
-  vence a janela.
+- **Contato pessoa física: endereço já no cadastro, com o CEP preenchendo os campos** O contato pessoa física já guardava endereço, mas só a **ficha** tinha esses campos: quem cadastrava precisava salvar o contato e abrir a ficha depois para informar o endereço que a entrega e a cobrança leem. E em nenhuma das duas telas o CEP preenchia nada: bairro e cidade eram digitados à mão, que é onde o frete erra.
 
-- **O aviso de mensagem nova mostra de qual canal a mensagem veio** Quando a mensagem chegava, o aviso da esquina era sempre o mesmo bloco neutro:
-  para saber se o cliente escreveu pelo WhatsApp, pelo Instagram ou pelo Messenger
-  era preciso abrir a conversa. Agora o aviso leva a **marca do canal** — o logo da rede e uma
-  faixa de 3px na borda esquerda, na cor daquele canal — para que a origem se
-  reconheça de relance.
+  Agora o cadastro tem a seção **Endereço** com os mesmos sete campos da ficha, e sair do campo CEP consulta a BrasilAPI e preenche logradouro, bairro, cidade e UF. Número e complemento nunca são sobrescritos, e um CEP que a consulta não conhece não apaga o que já estava digitado.
 
-  A faixa é uma marca, não um fundo pintado: o toast continua com o fundo do tema,
-  então o texto não perde contraste no modo escuro e dez avisos seguidos não viram
-  dez blocos coloridos. As cores de cada rede são tokens do produto, desenhados
-  separadamente para o tema claro e o escuro, e todos passam no piso de contraste
-  para elementos de interface.
+  A consulta só vale para organização no Brasil, só roda quando o CEP mudou e está disponível para o papel **agent** ou acima, o mesmo piso de criar e editar contato. CEP curto, com letra ou consulta fora do ar geram um aviso ao lado do campo e **não impedem salvar**: pessoa física sem CEP continua sendo cadastro válido, e o que foi digitado é gravado como está. Crédito: @webtecnica (#4109, issue #3494).
 
-  Para quem não enxerga cor, o canal também vai em texto: o leitor de tela anuncia
-  "Canal: WhatsApp" (ou o nome da rede que veio) junto com o título da mensagem.
-  Canal que o produto ainda não sabe desenhar não inventa logo: o aviso sai com a
-  faixa neutra e o rótulo genérico, e os demais avisos do sistema (lead, menção,
-  exportação) continuam exatamente como eram.
+- **Follow-up de etapa pode sair mesmo com a conversa atribuída a uma pessoa** O follow-up de etapa parava de chegar quando a conversa já estava com um vendedor: assumir, atribuir ou transferir cala a IA, e o fluxo tratava isso como "alguém está no comando". Numa instalação real, **de 28 inscrições só 2 clientes receberam algo e 7 foram canceladas** com o motivo `pessoa_no_comando` já na primeira mensagem.
 
-- **Preencha os campos personalizados ao criar um contato** O cadastro de contato passa a oferecer os campos de contato definidos no funil padrão, com o mesmo editor usado na ficha. Sem configuração, o formulário continua simples. Nenhum campo ou valor de uma empresa é imposto às demais. Crédito: @vagnerrm122.
-
-- **Contato pessoa física: endereço já no cadastro, com o CEP preenchendo os campos** O contato pessoa física já guardava CEP, logradouro, número, complemento,
-  bairro, cidade e UF desde a entrega das colunas, mas só a **ficha** tinha esses
-  campos: quem cadastrava precisava salvar o contato e abrir a ficha depois para
-  informar o endereço que a entrega e a cobrança leem. E em nenhuma das duas telas
-  o CEP preenchia nada — bairro e cidade eram digitados à mão, que é onde o frete
-  erra.
-
-  Agora o cadastro tem a seção **Endereço** com os mesmos sete campos da ficha, e
-  sair do campo CEP consulta a BrasilAPI e preenche logradouro, bairro, cidade e
-  UF. Número e complemento nunca são sobrescritos (são do imóvel, não do CEP), e
-  um CEP que a consulta não conhece não apaga o que já estava digitado.
-
-  A consulta só vale para organização no Brasil, e só roda quando o CEP mudou:
-  passar pelo campo sem alterá-lo não reescreve o endereço. Resposta que chega
-  depois de a pessoa trocar o CEP ou fechar o diálogo é descartada.
-
-  A consulta acontece para qualquer pessoa com papel **agent** ou acima — o mesmo
-  piso de criar e editar contato. CEP curto, com letra ou fora do ar é aviso ao
-  lado do campo e **não impede salvar**: pessoa física sem CEP continua sendo
-  cadastro válido, e o que foi digitado é gravado como está.
-
-- **Follow-up de etapa pode sair mesmo com a conversa atribuída a uma pessoa** O follow-up de etapa parava de chegar quando a conversa já estava com um
-  vendedor: assumir, atribuir ou transferir cala a IA na conversa, e a política de
-  handoff do fluxo tratava isso como "alguém está no comando" — numa instalação
-  real, **de 28 inscrições só 2 clientes receberam algo e 7 foram canceladas** com
-  o motivo `pessoa_no_comando` já na primeira mensagem.
-
-  Cada fluxo de follow-up ganhou a opção "enviar mesmo com a conversa atribuída a
-  uma pessoa", desligada por padrão. Ligada, os passos de texto do fluxo saem
-  quando a única barreira é a posse da conversa. Ela **não** vence o handoff
-  pedido pela IA ou pelo cliente, o "sempre atendimento humano", etiqueta de
-  contato interno, contato bloqueado, opt-out nem as janelas de horário — e não
-  acorda a IA: a resposta automática na conversa com dono continua barrada.
+  Cada fluxo de follow-up ganhou a opção "enviar mesmo com a conversa atribuída a uma pessoa", desligada por padrão. Ligada, os passos de texto do fluxo saem quando a única barreira é a posse da conversa. Ela **não** vence o handoff pedido pela IA ou pelo cliente, o "sempre atendimento humano", etiqueta de contato interno, contato bloqueado, opt-out nem as janelas de horário, e não acorda a IA: a resposta automática na conversa com dono continua barrada. Crédito: @webtecnica (#4053, issue #3974 de @aerosuiteapp).
 
 ### Alterado
 
-- **A barra da conversa no Inbox mostra só as ações do dia a dia; o resto vai para o menu ⋯** A barra do cabeçalho da conversa oferecia doze controles ao mesmo tempo, e a pergunta mais comum de quem está começando — "o que acontece se eu clicar aqui?" — não tinha resposta na tela. Agora a barra guarda as ações de todo atendimento: responder (assumir ou liberar a conversa), transferir e encerrar ou reabrir. Todo o resto mudou de lugar e está no menu ⋯, com ícone e nome: ver contato, chamar pelo navegador, reservar serviço na agenda, videochamada, convidar colega para atender junto, pausar o atendimento automático, adiar com lembrete, arquivar e marcar ou desmarcar o contato como pessoal.
+- **A barra da conversa no Inbox mostra só as ações do dia a dia; o resto vai para o menu ⋯** A barra do cabeçalho da conversa oferecia doze controles ao mesmo tempo. Agora ela guarda as ações de todo atendimento: responder (assumir ou liberar a conversa), transferir e encerrar ou reabrir. Todo o resto está no menu ⋯, com ícone e nome: ver contato, chamar pelo navegador, reservar serviço na agenda, videochamada, convidar colega para atender junto, pausar o atendimento automático, adiar com lembrete, arquivar e marcar ou desmarcar o contato como pessoal.
 
-  Cada uma delas continua com uma guia de uma linha dizendo o EFEITO do clique, e não o nome repetido — "Tira a conversa da fila até o horário escolhido; depois ela volta sozinha", por exemplo. Nenhuma ação saiu do cabeçalho: o que não está à vista está no menu, e a tela mostra a mesma coisa em português e em espanhol. "Assumir" deixou de aparecer para quem já é o dono da conversa, onde ele era um clique que não mudava nada. Permissões, nomes de botão e atalhos continuam os mesmos. Contribuição de @webtecnica (#3003).
+  Cada uma continua com uma guia de uma linha dizendo o EFEITO do clique, em português e em espanhol. "Assumir" deixou de aparecer para quem já é o dono da conversa, onde era um clique que não mudava nada. Permissões, nomes de botão e atalhos continuam os mesmos. Crédito: @webtecnica (#3835, issue #3003 de @aerosuiteapp).
 
-- **Os guias escolhem a região do Supabase pela distância até a VPS** Os guias de instalação mandavam criar o projeto Supabase em **São Paulo** sem
-  dizer por quê. Quem hospeda o CRM numa VPS nos EUA ou na Europa seguia a
-  orientação e ficava com cada consulta atravessando o continente — em toda tela e
-  em todo turno do agente, porque um projeto Supabase não se muda de região depois
-  de criado.
+- **Os guias escolhem a região do Supabase pela distância até a VPS** Os guias de instalação mandavam criar o projeto Supabase em **São Paulo** sem dizer por quê. Quem hospeda o CRM numa VPS nos EUA ou na Europa ficava com cada consulta atravessando o continente, em toda tela e em toda resposta do agente, porque um projeto Supabase não se muda de região depois de criado.
 
-  Agora os quatro guias pedem a região **mais próxima da VPS**, avisam que a
-  escolha é definitiva e mostram como fazê-la pelo kit (`SUPABASE_REGION` ou o
-  segundo argumento do `supabase-provision.sh`, como em
-  `bash supabase-provision.sh "Nome" us-east-1`).
+  Agora os quatro guias pedem a região **mais próxima da VPS**, avisam que a escolha é definitiva e mostram como fazê-la pelo kit (`SUPABASE_REGION` ou o segundo argumento do `supabase-provision.sh`, como em `bash supabase-provision.sh "Nome" us-east-1`). Nada muda no produto: só a documentação de instalação. Crédito: @webtecnica (#4085, issue #4073, pedido de celsotuzzolo no YouTube).
 
-  Nada muda no produto: só a documentação de instalação.
+- **Os runbooks de Supabase dizem que o Micro exige plano pago** Os dois runbooks de Supabase mandavam subir o compute para o **Micro (1 GB)** quando a Nano do plano grátis não dava conta do banco, sem dizer que esse compute só existe nos planos pagos.
 
-- **Os runbooks de Supabase dizem que o Micro exige plano pago** Os dois runbooks de Supabase mandavam subir o compute para o **Micro (1 GB)** quando a Nano do plano grátis não segurava o schema, sem dizer que esse compute só existe nos planos pagos. Quem seguia a orientação travava na decisão: precisa assinar o Pro **e** pagar o Micro por hora?
+  Agora as duas seções dizem que o Micro exige plano pago, que assinar não troca o compute (o projeto que veio do grátis pode seguir no Nano, cobrado como Micro, até a troca, e a troca causa uma queda) e qual é a ordem de grandeza: plano e crédito de US$ 10/mês são da organização, o que dá cerca de US$ 25/mês com um projeto no Micro e US$ 35/mês com dois. O valor aparece marcado como exemplo lido na doc oficial em 05/11/2026, com link para a página de compute do Supabase. Nada muda no produto: só a documentação. Crédito: @webtecnica (#4112, issue #4098).
 
-  Agora as duas seções dizem que o Micro exige plano pago, que assinar não troca o compute (o projeto que veio do grátis pode seguir no Nano, cobrado como Micro, até a troca, e a troca causa uma queda) e qual é a ordem de grandeza: plano e crédito de US$ 10/mês são da organização, o que dá cerca de US$ 25/mês com um projeto no Micro e US$ 35/mês com dois. O valor aparece marcado como exemplo lido na doc oficial em 05/11/2026, com link para a página de compute do Supabase: preço muda, e quem ler depois precisa saber onde conferir.
+- **Encerrar a conversa agora publica um evento no log do sistema** Encerrar um atendimento mudava o status e gravava a auditoria, mas nenhum evento ia para o log do sistema. Agora o encerramento publica o evento `conversation.closed`, com a conversa, o contato, o número e o instante do fechamento. É a base para reagir ao fim do atendimento: nenhuma automação da tela usa esse evento ainda.
 
-  Nada muda no produto: só a documentação.
-
-- **Encerrar a conversa agora publica um evento no log do sistema** Encerrar um atendimento mudava o status e gravava a auditoria, mas nenhum evento
-  ia para o log do sistema — então nada automático podia reagir ao fim do
-  atendimento. Agora o encerramento publica o evento `conversation.closed` com a
-  conversa, o contato, o número e o instante do fechamento, uma única vez por
-  encerramento.
-
-  Encerrar de novo a mesma conversa, ou encerrar uma que já estava encerrada, não
-  gera evento repetido, e o fechamento em lote gera um evento por conversa. Se a
-  publicação do evento falhar, o encerramento acontece do mesmo jeito — a falha
-  fica no log do banco, com o id da conversa.
+  Sai um evento por encerramento: encerrar de novo não repete, e o fechamento em lote gera um por conversa. Se a publicação falhar, o encerramento acontece do mesmo jeito, e a falha fica no log do banco com o id da conversa. Crédito: @webtecnica (#4054, issue #4023, da discussão #742 de @mvanhorn).
 
 ### Corrigido
 
-- **O ID que o aviso de erro mostra sempre existe no log do servidor** Quando uma chamada à API falhava, a tela mostrava `ID: <uuid>` e a orientação era procurar esse ID no log. Na prática ele quase nunca estava lá: só cerca de 1 em cada 5 rotas gravava o próprio `requestId`, e quando a rota não passava um, o `fail()` gerava um UUID novo só para o cabeçalho — um ID que não existia em lugar nenhum.
+- **O ID que o aviso de erro mostra sempre existe no log do servidor** Quando uma chamada à API falhava, a tela mostrava `ID: <uuid>` e mandava procurar esse ID no log, mas ele quase nunca estava lá. Agora o ID da tela é o mesmo do log: todo erro **5xx** das respostas padrão da API grava uma linha com esse ID, o código e o status. Recusas **4xx** continuam sem log, porque são esperadas. O aviso genérico «Erro inesperado. Tente novamente.» também passou a mostrar o `ID:` quando o erro traz um.
 
-  Agora o ID é resolvido uma vez e é o mesmo nos dois lugares: toda resposta de erro **5xx** que passa pelo `fail()` grava uma linha de log com esse ID, o código e o status. As rotas que já registravam o próprio erro antes de responder continuam com uma linha só — a delas, que traz a causa e a organização; a linha genérica do `fail()` não é duplicada. Recusas **4xx** continuam sem log, porque são esperadas e encheriam o log justamente onde ele precisa ser lido.
+  Para quem integra: sob `/api/`, o `X-Request-Id` da resposta agora é o que fica no log e na auditoria, e só sai nas respostas padrão da API; as poucas respostas montadas à parte, como a verificação de saúde, os webhooks de entrada e os retornos de login de integrações, ficam sem ele por enquanto. O `X-Request-Id` que você manda só volta quando é um UUID e aquela chamada usa esse id; nos outros casos volta o id que ela usou, que é o que está no log. O corpo das respostas não mudou, e nada precisa ser feito na instalação. Crédito: @webtecnica (#3991, issue #3971).
 
-  Havia uma segunda causa, achada na prova pela tela: o filtro que roda antes de toda requisição gravava o próprio ID na resposta, e esse valor vencia o da rota. Sob `/api/`, o `X-Request-Id` da resposta agora é o que a rota grava no log e na auditoria; nas demais páginas ele continua saindo como antes. Por isso, sob `/api/`, só as respostas que passam pelo `ok()`/`fail()` levam o `X-Request-Id` (as poucas rotas que montam a resposta à mão, como a verificação de saúde, os webhooks de entrada e os retornos de login de integrações, ficam sem ele até serem migradas), e o `X-Request-Id` que um integrador manda só volta quando é um UUID e a rota usa esse id; nas demais, volta o id que a rota usou, que é o que está no log.
+- **Quem gerencia passa a receber o aviso de venda com o valor no celular, mesmo com a visibilidade fechada** Numa empresa de carteira fechada, a que deixa cada atendente ver só os próprios negócios, o aviso de negócio que entra numa etapa que avisa chegava ao celular sem o valor, e o aviso de **Lead ganho** ia só para o dono do negócio. O valor só aparecia com «Todos veem tudo», e abrir isso para todo atendente não era opção.
 
-  O aviso genérico «Erro inesperado. Tente novamente.» também passou a mostrar o `ID:` quando o erro traz um. O corpo das respostas não mudou, e nada precisa ser feito na instalação. Crédito: @webtecnica (#3991).
+  Agora o valor e a soma do dia seguem **quem pode ver aquele negócio**: gerentes e administradores recebem o aviso de qualquer negócio com o valor e quantos entraram hoje na etapa, e o **Lead ganho** de qualquer negócio também chega a eles, com a soma dos ganhos do dia. O dono continua recebendo o aviso do dele, com o valor, e quem **não** vê o negócio recebe o mesmo aviso de antes, **sem valor nenhum**. A visibilidade dos negócios continua sendo escolha da empresa. Crédito: @webtecnica (#4051, issue #3981 de @aerosuiteapp). Construído sobre o aviso com valor de @jmpo (#3909).
 
-- **Quem gerencia passa a receber o aviso de venda com o valor no celular, mesmo com a visibilidade fechada** Numa empresa de carteira fechada — a que deixa cada atendente ver só os próprios negócios —, o aviso de negócio que entra numa etapa que avisa chegava ao celular sem o valor, e o aviso de **Lead ganho** ia só para o dono do negócio. O valor só aparecia quando a empresa escolhia «Todos veem tudo», e abrir isso para todo atendente não era uma opção. Resultado: quem gerenciava nunca via uma venda com valor.
+- **A busca da janela Encaminhar acha o contato digitado sem acento** Na janela **Encaminhar**, digitar `joao` não achava "João", e o atendente rolava a lista inteira atrás do contato. Agora `joao` acha "João" e `conceicao` acha "Conceição", com a mesma regra da busca do Inbox, que também cobre letras como ñ, ü, ø e ß. Crédito: @bfs2021 (#4078, issue #4072).
 
-  Agora o valor e a soma do dia seguem **quem pode ver aquele negócio**, e não o modo de visibilidade da empresa: gerentes e administradores recebem o aviso de qualquer negócio com o valor e quantos entraram hoje na etapa, e o **Lead ganho** de qualquer negócio também chega a eles, com a soma dos ganhos do dia. O dono do negócio continua recebendo o aviso do dele, com o valor, e quem **não** vê o negócio continua recebendo o mesmo aviso no texto de antes, **sem valor nenhum** — a carteira de outra pessoa não aparece no bolso de ninguém. A visibilidade dos negócios não mudou: continua sendo escolha da empresa.
+- **O healthcheck só diz "app saudável" quando o app está saudável** O diagnóstico do kit (`hostgator-setup-kit/healthcheck.sh`) mostrava `✓ app saudável` com o **banco fora** e o Redis de pé, e ainda saía com código 0, então nem cron nem monitor podiam usá-lo como alarme.
 
-- **A busca da janela Encaminhar acha o contato digitado sem acento** Na janela **Encaminhar**, a busca ignorava maiúsculas, mas não acento: digitar
-  `joao` não achava "João", e o atendente rolava a lista inteira atrás do
-  contato. Agora `joao` acha "João" e `conceicao` acha "Conceição", com a mesma
-  regra da busca do Inbox — que também cobre letras como ñ, ü, ø e ß.
+  Agora ele decide pela mesma verificação que o `install.sh` e o `update.sh` já usavam. `✓ app saudável` só aparece com o status geral `healthy`; `degraded` sai em amarelo e `unhealthy` em vermelho, com o JSON acima dizendo qual serviço caiu. Resposta vazia, ilegível ou app mudo também reprovam.
 
-  Contribuição de @bfs2021 (#4078, issue #4072).
+  O `healthcheck.sh` passa a sair com código **1** quando o app não está saudável, `degraded` inclusive: na instalação isso é tolerado (serviço opcional ainda não configurado), mas num diagnóstico chamado à mão não é "saudável". Crédito: @webtecnica (#4101, issue #4087).
 
-- **O healthcheck só diz "app saudável" quando o app está saudável** O diagnóstico do kit (`hostgator-setup-kit/healthcheck.sh`) decidia a saúde do app com um `grep` pelo
-  status `ok` no JSON do `/api/v1/health`. `ok` é o vocabulário dos **checks individuais**, não o do
-  status GERAL (`healthy` | `degraded` | `unhealthy`): com o **banco fora** e o Redis de pé,
-  `checks.redis.status` casava e a linha `✓ app saudável` aparecia — e o script ainda saía 0, então nem
-  cron nem monitor podiam usá-lo como alarme.
+- **Abrir a conversa de quem acabou de ser cadastrado só acontece no canal que pode enviar** O botão **Salvar e iniciar conversa** do cadastro de contato e de negócio criava uma conversa vazia quando o canal escolhido estava **desligado** pelo operador ou **fora do ar**. Agora a recusa acontece antes de criar, com o motivo dito na tela.
 
-  Agora quem decide é a sonda do próprio kit, `app_health_probe` de `_common.sh` — a mesma que o
-  `install.sh` e o `update.sh` já usavam. `✓ app saudável` só com o status geral `healthy`; `degraded`
-  sai em amarelo e `unhealthy` em vermelho, com o JSON acima dizendo qual check caiu. Corpo vazio, JSON
-  ilegível e app mudo também reprovam: **falha fechada**, nunca aberta.
+  Quando a lista de canais ainda não chegou e nenhum canal foi escolhido, a abertura de um contato **com telefone** prefere o canal que disca o número, e não a conexão mais antiga da empresa, que numa organização que pareou Instagram antes do WhatsApp não alcança telefone nenhum.
 
-  O `healthcheck.sh` passa a sair **1** quando o app não está saudável — `degraded` inclusive, que na
-  instalação é tolerado (serviço opcional ainda não configurado) mas num diagnóstico chamado à mão não
-  é "saudável".
+  Se a sua integração chama `POST /api/v1/conversations/open-with-contact` com `channel_session_id`, ela passa a receber `409` com `error.code = "state_conflict"` quando o canal está desligado ou fora do ar. Antes, a conversa era criada mesmo assim. A ferramenta MCP `start_conversation_and_send` segue a mesma regra e responde com o erro `session_unavailable` em vez de abrir a conversa. Crédito: @webtecnica (#4089, issue #3483 de @amexgestao).
 
-- **Abrir a conversa de quem acabou de ser cadastrado só acontece no canal que pode enviar** O botão **Salvar e iniciar conversa** do cadastro de contato e de negócio abre a
-  conversa pela mesma porta do Inbox (`open-with-contact`), que é o caminho único
-  de criação. Faltava o servidor honrar o canal que a tela escolheu: um
-  `channel_session_id` de canal **desligado** pelo operador ou **fora do ar**
-  passava pela checagem e criava a conversa vazia num número que não envia —
-  exatamente a conversa que o pedido manda não existir. Agora a recusa acontece
-  antes de criar, com o motivo dito na tela.
+- **A busca das respostas rápidas e da menção passa a achar o nome mesmo quando o acento está só de um lado** No campo de mensagem da Inbox, `/orcamento` não achava a resposta "Orçamento" e `@andreia` não achava a colega "Andréia". As duas buscas passam a ignorar acento nos dois lados: **quem digita com acento também acha o nome cadastrado sem acento**. O texto exibido não muda, e é o nome cadastrado que vai gravado na nota. Maiúsculas, busca vazia, ordem dos itens e o atalho das respostas rápidas (`/preco`, `/orcamento`) continuam como antes. Crédito: @webtecnica (#4079, issues #4070 e #4071).
 
-  Quando a lista de canais ainda não chegou e o corpo vai sem canal escolhido, a
-  abertura de um contato **com telefone** passa a preferir o canal que disca o
-  número, e não a sessão mais antiga da empresa — que numa organização que pareou
-  Instagram antes do WhatsApp é a social, e não alcança telefone nenhum. O
-  cadastro salvo deixava de ter para onde mandar a primeira mensagem.
+- **Abrir conversa pula o canal desligado em vez de recusar a abertura** Abrir uma conversa sem escolher canal (o "salvar e iniciar conversa" do cadastro, o lembrete de tarefa e a ferramenta de início de conversa do agente) pegava o canal conectado mais antigo da organização sem olhar se o operador o tinha desligado. Com o número velho desligado e um novo conectado depois, a abertura era recusada mesmo havendo outro canal pronto para enviar.
 
-  Se a sua integração chama `POST /api/v1/conversations/open-with-contact` com
-  `channel_session_id`, ela passa a receber também `409` com
-  `error.code = "state_conflict"` quando o canal está desligado ou fora do ar.
-  Antes, a conversa era criada mesmo assim. A ferramenta MCP
-  `start_conversation_and_send` segue a mesma regra: com um canal escolhido
-  desligado ou que não está conectado, ela agora responde com o erro
-  `session_unavailable` em vez de abrir a conversa e deixar a mensagem na fila
-  (ou falhar no canal desligado).
+  Agora os canais desligados são pulados e entra o próximo que pode enviar. A ordem de sempre continua valendo: **conectado antes de fora do ar, telefone antes de rede social**, e no empate o mais antigo. A recusa só acontece quando nenhum canal pode enviar; quando todos estão desligados, ela convida a reativar a conexão. Crédito: @webtecnica (#4100, issue #4092).
 
-- **A busca das respostas rápidas e da menção passa a achar o nome mesmo quando o acento está só de um lado** Duas buscas do campo de mensagem da Inbox comparavam o texto digitado com `includes`, e acento é outra letra para ele: quem digitava `/orcamento` não achava a resposta "Orçamento", e `@andreia` não achava a colega "Andréia". As duas passam a usar a mesma régua de acento da busca da Inbox e da janela Encaminhar (`termoSemAcento`), e a comparação normaliza os dois lados: **quem digita com acento também acha o nome cadastrado sem acento**. O texto exibido não muda — os títulos das respostas e os nomes da equipe continuam como estão cadastrados, com acento, e é esse nome que vai gravado na nota. Caixa (maiúscula e minúscula), busca vazia (mostra a lista inteira), termo sem resultado (lista vazia) e a ordem dos itens continuam como antes, e o atalho das respostas rápidas (`/preco`, `/orcamento`) segue funcionando. Nenhuma configuração muda. Contribuição de @webtecnica (#4070, #4071).
+- **A tela de Casos vazia diz quem abre caso e para onde vai o repasse** A aba Abertos da tela de Casos, quando vazia, dizia apenas "Quando a IA precisar de você, aparece aqui.", e quem a via esperava encontrar ali as conversas passadas para uma pessoa. O texto agora diz que o caso só aparece quando um agente publicado, com "Deixar o agente pedir uma tarefa a alguém e seguir conversando" ligado, pede algo à equipe, e que a conversa passada para uma pessoa vai para o Inbox. Em português, espanhol, inglês, turco e chinês. Nada a fazer na atualização.
 
-- **Abrir conversa pula o canal desligado em vez de recusar a abertura** Abrir uma conversa sem escolher canal — o "salvar e iniciar conversa" do
-  cadastro, o lembrete de tarefa e a ferramenta de início de conversa do agente —
-  pegava o canal conectado mais antigo da organização sem olhar se o operador o
-  tinha desligado. Com o número velho desligado e um novo conectado depois, a
-  abertura era recusada com "este canal está desligado ou fora do ar" mesmo
-  havendo outro canal pronto para enviar.
+- **Confirmação de reserva feita em conversa anterior deixa de ser vetada** Quando o cliente perguntava se uma consulta marcada antes seguia de pé e o agente tinha material comercial sobre o assunto, o revisor de mensagens vetava a confirmação fiel, porque só aceitava comprovante de reserva feita na mesma conversa. Agora ele recebe as reservas confirmadas e futuras daquele contato, lidas na agenda. Reserva pendente continua sem comprovar, e a reserva não libera gratuidade, desconto nem promessa de resultado. O bloco de compromissos que o agente lê passa a mostrar também o local. Não há nada para configurar. Crédito: @tatarevick (#3205).
 
-  A escolha agora pula os canais desligados em todos os degraus e usa o próximo
-  que pode enviar. A ordem de sempre continua valendo:
-  **conectado antes de fora do ar, telefone antes de rede social**. Entre os que
-  podem enviar, o desempate segue o mais antigo. A recusa só acontece quando
-  nenhum canal pode enviar — e, quando todos estão desligados, ela continua sendo
-  a mesma, com o convite a reativar a conexão.
+- **Transferir a conversa leva o negócio aberto do cliente também fora da tela** Transferir uma conversa levava o negócio aberto do cliente para o novo responsável só quando a transferência era feita pela tela. Pela integração com IAs (MCP) ou por chamada direta, a conversa mudava de dono e o negócio ficava com quem não atende mais. Agora a regra vale nos dois caminhos.
 
-- **A tela de Casos vazia diz quem abre caso e para onde vai o repasse** A aba Abertos da tela de Casos, quando vazia, dizia apenas "Quando a IA precisar de você, aparece aqui.", e quem a via esperava encontrar ali as conversas passadas para uma pessoa. O texto agora diz que o caso só aparece quando um agente publicado, com "Deixar o agente pedir uma tarefa a alguém e seguir conversando" ligado, pede algo à equipe, e que a conversa passada para uma pessoa vai para o Inbox. Em português, espanhol, inglês, turco e chinês.
+  O que não muda, de propósito: só a **transferência** tira o negócio de outra pessoa. Assumir a conversa, iniciar conversa, a distribuição automática da fila e a passagem para um humano só dão dono a um negócio que estava **sem responsável**. O mesmo vale para trocar a carteira do cliente e para passar as conversas do contato a outra pessoa: a conversa muda de dono, e o negócio que já tem responsável fica onde está. Quem transfere pela tela continua dentro da própria permissão: com a visibilidade padrão, o Atendente que transfere para uma colega não leva o negócio junto. Só um negócio aberto é levado; cliente sem negócio aberto não ganha card novo, e com mais de um aberto nada é tocado. Nenhuma configuração a fazer. Crédito: @webtecnica (#4046, issue #4019 de @aerosuiteapp).
 
-  Nada a fazer na atualização.
+- **Runbooks de banco passam a mostrar o comando que funciona na VPS** Os guias de diagnóstico do Supabase (compute insuficiente, cota/egress e replay do gateway) mandavam rodar `psql "$SUPABASE_DB_URL"` direto na VPS. A instalação do kit não instala cliente de Postgres, então o comando morria em `psql: command not found`, e `docker compose -f docker-compose.prod.yml` rodado fora da pasta da instalação morria em `no such file or directory`. Quem estava com o sistema fora do ar ficava sem o diagnóstico que o guia prometia.
 
-- **Confirmação de reserva feita em conversa anterior deixa de ser vetada** Quando o cliente perguntava se uma consulta marcada antes seguia de pé e o agente
-  tinha material comercial sobre o assunto, o revisor de mensagens vetava a
-  confirmação fiel, porque só aceitava comprovante de reserva feita na mesma
-  conversa. Agora ele recebe as reservas confirmadas e futuras daquele contato,
-  lidas na agenda. Reserva pendente continua sem comprovar, e a reserva não libera
-  gratuidade, desconto nem promessa de resultado. O bloco de compromissos que o
-  agente lê passa a mostrar também o local. Não há nada para configurar.
-
-  Achado e primeira versão de @tatarevick, no #3205.
-
-- **Transferir a conversa leva o negócio aberto do cliente também fora da tela** Transferir uma conversa já levava o negócio aberto do cliente para o novo responsável, mas só quando a transferência era feita pela tela. Pela integração com IAs (MCP) ou por chamada direta, a conversa mudava de dono e o negócio ficava com quem não atende mais. Agora a regra mora no banco, na mesma operação da troca de dono. Contribuição de @webtecnica (issue #4019).
-
-  O que não muda, de propósito: só a **transferência** tira o negócio de outra pessoa. Assumir a conversa, iniciar conversa, a distribuição automática da fila e a passagem para um humano só dão dono a um negócio que estava **sem responsável** — nunca tiram o negócio de um colega. O mesmo vale para trocar a carteira do cliente e para passar as conversas do contato a outra pessoa: a conversa muda de dono, e o negócio que já tem responsável fica onde está. Quem transfere pela tela continua dentro da própria permissão: com a visibilidade padrão, o Atendente que transfere para uma colega não leva o negócio junto. Só um negócio aberto é levado; cliente sem negócio aberto não ganha card novo, e com mais de um aberto nada é tocado. Nenhuma configuração a fazer.
-
-- **Runbooks de banco passam a mostrar o comando que funciona na VPS** Os guias de diagnóstico do Supabase (compute insuficiente, cota/egress e replay do gateway) mandavam rodar `psql "$SUPABASE_DB_URL"` direto na VPS. A instalação do kit não instala cliente de Postgres, então o comando morria em `psql: command not found` — e `docker compose -f docker-compose.prod.yml` rodado fora da pasta da instalação morria em `no such file or directory`. Quem estava com o sistema fora do ar ficava sem o diagnóstico que o guia prometia.
-
-  Agora esses runbooks (e mais dois que pediam o mesmo) abrem com um bloco curto que se copia e cola: acha a pasta da instalação e roda as consultas pelo mesmo `psql` em contêiner que o instalador já usa, com o `.env` lido pelo próprio kit (senha com caractere especial e instalação single-server incluídas). O passo de diagnóstico é o mesmo — mudou o **como**, não o **que** olhar. Quem prefere o painel tem o caminho pelo SQL Editor, e quem tem `psql` na máquina continua podendo usá-lo.
-
-  Você não precisa mudar nada.
+  Agora esses runbooks (e mais dois que pediam o mesmo) abrem com um bloco curto de copiar e colar: acha a pasta da instalação e roda as consultas pelo mesmo `psql` em contêiner que o instalador já usa, com o `.env` lido pelo próprio kit (senha com caractere especial e instalação single-server incluídas). Quem prefere o painel tem o caminho pelo SQL Editor, e quem tem `psql` na máquina continua podendo usá-lo. Você não precisa mudar nada. Crédito: @webtecnica (#4106, issue #4096).
 
 ## [1.102.0] — 2026-11-05
 
