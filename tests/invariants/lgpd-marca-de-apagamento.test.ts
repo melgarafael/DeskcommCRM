@@ -133,7 +133,7 @@ describe("marca de quem foi apagado a pedido", () => {
   });
 });
 
-describe("a marca cobre todos os telefones da ficha (migration 9239)", () => {
+describe("a marca cobre todos os telefones da ficha (migration 9241)", () => {
   beforeAll(() => {
     sql(`
       insert into public.organizations (id, slug, legal_name, display_name) values
