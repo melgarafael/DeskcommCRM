@@ -8,6 +8,7 @@ import type { FetchedMedia } from "@/lib/messaging/media/types";
 import type { OutboundMedia } from "@/lib/waha/media-send";
 import type { TemplateContract } from "@/lib/channels/meta/template-contract";
 import type { ContatoDoAparelho } from "@/lib/waha/client";
+import type { DefeitoDoNumero } from "./defeito-do-numero";
 
 // O tipo do contato do aparelho ATRAVESSA o seam como tipo só (o import some na
 // compilação), do mesmo jeito do `OutboundMedia` acima: quem fora daqui precisa
@@ -370,6 +371,24 @@ export interface ChannelAdapter {
   ): Promise<string | null>;
 
   /**
+   * O telefone TEM conta nesta plataforma? Pergunta sem enviar nada — a
+   * prospecção a faz antes de abordar uma empresa (`lib/prospecting/whatsapp.ts`).
+   *
+   * TRÊS respostas, e a terceira é a que importa: `true`/`false` é o que a
+   * plataforma disse; `null` é "não deu para saber" (transporte fora, sessão
+   * caindo). Quem chama NUNCA lê `null` como "não tem" — descartaria uma empresa
+   * porque o servidor piscou. É por isso que não reaproveita
+   * `resolveRegisteredPhone`, que devolve `null` também para "não existe" e para
+   * quem só tem identidade opaca (que TEM conta).
+   *
+   * OPCIONAL: só implementa quem consegue perguntar à plataforma; quem chama
+   * testa a presença (ou usa `provedoresQueConferemNumero`), nunca o nome.
+   */
+  numeroTemConta?(
+    input: ChannelTenantScope & { sessionRef: string; phone: string },
+  ): Promise<boolean | null>;
+
+  /**
    * Gestão das definições aprovadas — criar, editar, apagar.
    *
    * OPCIONAL pelo mesmo motivo dos dois métodos acima: nem todo canal expõe
@@ -571,6 +590,11 @@ export interface ChannelHealth {
   status: string | null;
   /** Detalhe do erro, para o corpo do aviso. Nunca credencial. */
   detail: string | null;
+  /**
+   * Defeitos do número de pé que esta sonda não mediu (campo ausente ou `null`):
+   * não abrem aviso, e também não fecham o que está aberto.
+   */
+  defeitosSemMedida?: DefeitoDoNumero["tipo"][];
 }
 
 /** Definição aprovada, na forma NEUTRA — sem o vocabulário de nenhum provider. */

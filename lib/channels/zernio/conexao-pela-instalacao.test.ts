@@ -20,6 +20,7 @@ import {
   EVENTOS_DO_WEBHOOK,
   apagarWebhook,
   contaConectadaNoPerfil,
+  contaEstaNoPerfil,
   desconectarConta,
   garantirPerfil,
   garantirWebhook,
@@ -98,14 +99,42 @@ describe("garantirPerfil", () => {
     expect(chamadas.filter((c) => c.metodo === "POST")).toHaveLength(0);
   });
 
-  it("cria com o nome da organização e o começo do id", async () => {
+  it("organização renomeada (ou marca trocada) reaproveita o perfil pelo id, sem criar outro", async () => {
+    responder((c) =>
+      c.metodo === "GET"
+        ? {
+            status: 200,
+            body: { profiles: [{ _id: PERFIL, name: `Marca Velha · Nome Antigo · ${ORG.id}` }] },
+          }
+        : undefined,
+    );
+    expect(await garantirPerfil("k", { ...ORG, marca: "Marca Nova", perfilGravado: null })).toBe(
+      PERFIL,
+    );
+    expect(chamadas.filter((c) => c.metodo === "POST")).toHaveLength(0);
+  });
+
+  it("perfil de OUTRA organização com o mesmo começo de id não é reaproveitado", async () => {
+    const vizinha = `${ORG.id.slice(0, 8)}-ffff-ffff-ffff-000000000009`;
+    responder((c) =>
+      c.metodo === "GET"
+        ? { status: 200, body: { profiles: [{ _id: "c".repeat(24), name: `Loja da Ana · ${vizinha}` }] } }
+        : undefined,
+    );
+    responder((c) =>
+      c.metodo === "POST" ? { status: 201, body: { profile: { _id: PERFIL } } } : undefined,
+    );
+    expect(await garantirPerfil("k", { ...ORG, perfilGravado: null })).toBe(PERFIL);
+  });
+
+  it("cria com o nome da organização e o id inteiro dela no fim", async () => {
     responder((c) => (c.metodo === "GET" ? { status: 200, body: { profiles: [] } } : undefined));
     responder((c) =>
       c.metodo === "POST" ? { status: 201, body: { profile: { _id: PERFIL } } } : undefined,
     );
     expect(await garantirPerfil("k", { ...ORG, perfilGravado: null })).toBe(PERFIL);
     expect(chamadas.find((c) => c.metodo === "POST")?.corpo).toEqual({
-      name: "Loja da Ana · 0f1e2d3c",
+      name: `Loja da Ana · ${ORG.id}`,
     });
   });
 
@@ -116,15 +145,15 @@ describe("garantirPerfil", () => {
     );
     await garantirPerfil("k", { ...ORG, marca: "  Marca   Exemplo ", perfilGravado: null });
     expect(chamadas.find((c) => c.metodo === "POST")?.corpo).toEqual({
-      name: "Marca Exemplo · Loja da Ana · 0f1e2d3c",
+      name: `Marca Exemplo · Loja da Ana · ${ORG.id}`,
     });
   });
 
   it("marca e nome longos são cortados; sem marca, o formato sem prefixo", () => {
     const nome = nomeDoPerfil({ id: ORG.id, nome: "N".repeat(80), marca: "M".repeat(80) });
-    expect(nome).toBe(`${"M".repeat(30)} · ${"N".repeat(40)} · 0f1e2d3c`);
-    expect(nomeDoPerfil({ ...ORG, marca: null })).toBe("Loja da Ana · 0f1e2d3c");
-    expect(nomeDoPerfil({ ...ORG, marca: "   " })).toBe("Loja da Ana · 0f1e2d3c");
+    expect(nome).toBe(`${"M".repeat(30)} · ${"N".repeat(40)} · ${ORG.id}`);
+    expect(nomeDoPerfil({ ...ORG, marca: null })).toBe(`Loja da Ana · ${ORG.id}`);
+    expect(nomeDoPerfil({ ...ORG, marca: "   " })).toBe(`Loja da Ana · ${ORG.id}`);
   });
 
   it("409 na criação converge para o perfil que já existe", async () => {
@@ -251,6 +280,23 @@ describe("contaConectadaNoPerfil", () => {
   ])("conta %s não vale", async (_nome, troca) => {
     responder(() => ({ status: 200, body: { accounts: [{ ...conta, ...troca }] } }));
     expect(await contaConectadaNoPerfil("k", PERFIL, CONTA)).toBeNull();
+  });
+});
+
+describe("contaEstaNoPerfil", () => {
+  it("só vale a conta que o provedor lista NESTE perfil — ativa ou não", async () => {
+    responder(() => ({
+      status: 200,
+      body: {
+        accounts: [
+          { _id: CONTA, platform: "whatsapp", isActive: false, profileId: PERFIL },
+          { _id: "d".repeat(24), platform: "whatsapp", isActive: true, profileId: "e".repeat(24) },
+        ],
+      },
+    }));
+    expect(await contaEstaNoPerfil("k", PERFIL, CONTA)).toBe(true);
+    expect(chamada(0).caminho).toBe(`accounts?profileId=${PERFIL}`);
+    expect(await contaEstaNoPerfil("k", PERFIL, "d".repeat(24))).toBe(false);
   });
 });
 

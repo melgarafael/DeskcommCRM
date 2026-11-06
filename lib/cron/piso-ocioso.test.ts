@@ -82,7 +82,9 @@ describe("portão do piso ocioso", () => {
     const sql = String(parametros[0] ?? "").replace(/\s+/g, " ");
     expect(sql).toContain("status = 'error' and error_message like 'transitoria:%'");
     expect(sql).toContain("status = 'received' and valid_signature and provider = any($1::text[])");
-    expect(sql).toContain("received_at > now() - interval '6 hours'");
+    // Sem corte de idade: a linha que passou da janela de reprocessamento ainda
+    // precisa acordar o cron, que é quem a marca `dead` e avisa.
+    expect(sql).not.toContain("interval '6 hours'");
     // O filtro de canal vem por parâmetro (o nome não sai de lib/channels/): sem
     // ele, a captação por webhook, que grava `received` com assinatura válida e
     // nunca fecha a linha, manteria o replay rodando a cada minuto.

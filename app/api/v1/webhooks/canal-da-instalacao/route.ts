@@ -51,9 +51,13 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     entrada = await resolverEntradaDaInstalacao(admin, rawBody, req.headers);
   } catch (err) {
-    return fail("internal_error", err instanceof Error ? err.message : "lookup_failed", 500, {
-      requestId,
+    // A rota é pública (quem autentica é a assinatura): o detalhe do erro fica
+    // no log, e quem chamou recebe só que falhou.
+    logger.error("[webhook-da-instalacao] busca da conexão falhou", {
+      request_id: requestId,
+      detail: err instanceof Error ? err.message : String(err),
     });
+    return fail("internal_error", "lookup_failed", 500, { requestId });
   }
 
   if (entrada.tipo === "recusa") {

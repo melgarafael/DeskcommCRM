@@ -87,9 +87,16 @@ function formatarPreco(cents: number, idioma: string): string {
 
 export function NewTenantForm({
   cobranca,
+  moldeDeIa = null,
 }: {
   /** Spec da cobrança §9: ligada, o plano de cobrança substitui o rótulo antigo (D-2). */
   cobranca: { ligada: boolean; planos: readonly PlanoParaEscolher[] };
+  /**
+   * O molde de IA da instalação (migration 9096), quando há um: a empresa que
+   * nascer deste formulário recebe a IA dele. Dito AQUI, no momento de criar,
+   * e não só em Recursos opcionais — é aqui que a pessoa decide criar.
+   */
+  moldeDeIa?: { nome: string } | null;
 }) {
   const t = useT();
   const idioma = useIdioma();
@@ -374,6 +381,13 @@ export function NewTenantForm({
               role="admin"
               disabled={isSubmitting}
             />
+            {moldeDeIa && (
+              <p className="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground" data-testid="aviso-molde-de-ia">
+                {t(
+                  "A IA desta empresa vai nascer copiada de {empresa}, o molde escolhido em Recursos opcionais: o modelo de cada função e o modelo padrão, com a chave de IA desta instalação.",
+                ).replace("{empresa}", moldeDeIa.nome)}
+              </p>
+            )}
             {/* Actions */}
             <div className="flex items-center gap-3 pt-2">
               <Button

@@ -127,6 +127,18 @@ describe("o vigia e o motivo do número de pé", () => {
     expect(motivosGravados()).toEqual([null]);
   });
 
+  it("⭐ a sonda não informa o recebimento: o motivo fica, e a regra do aviso recebe o que está aberto", async () => {
+    linhas = [sessao({ status_reason: "numero_nao_recebe_mensagens" })];
+    vi.stubGlobal("fetch", sonda({ status: "connected", phoneStatus: "CONNECTED", metaError: null, inboundWebhookSubscribed: null }));
+
+    await rodar();
+
+    expect(motivosGravados()).toEqual([]);
+    const args = sincronizou.mock.calls[0]!;
+    expect(args[1]).toMatchObject({ status_reason: "numero_nao_recebe_mensagens" });
+    expect(args[2]).toMatchObject({ defeitosSemMedida: ["nao_recebe"] });
+  });
+
   it("controle: número inteiro sem motivo gravado — nenhuma escrita de motivo", async () => {
     linhas = [sessao()];
     vi.stubGlobal("fetch", sonda({ status: "connected", phoneStatus: "CONNECTED", metaError: null, inboundWebhookSubscribed: true }));

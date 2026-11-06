@@ -5,7 +5,7 @@
  * ligado na frente dele.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PainelDeProvedores } from "./PainelDeProvedores";
@@ -173,6 +173,158 @@ describe("PainelDeProvedores — o Jev no painel", () => {
     expect(screen.getByTestId("ponto-sentiment_classify")).toBeInTheDocument();
     expect(screen.queryByTestId("jev-no-ponto-sentiment_classify")).toBeNull();
   });
+});
+
+describe("PainelDeProvedores — o cabeçalho do cartão no celular (issue #3929)", () => {
+  /**
+   * Os quatro pontos que o relato mediu. Todos passam pelo MESMO `CartaoDoPonto`
+   * — por isso o teste roda com os quatro: se um deles deixar de usar o cartão
+   * comum, a garantia some sem ninguém notar.
+   */
+  const PONTOS_DO_RELATO = [
+    "agent_turn",
+    "operator_turn",
+    "proposal_assistant",
+    "proposal_fill_from_conversation",
+  ];
+
+  const ponto = (id: string) => ({
+    ...PROVEDORES.pontos[0]!,
+    id,
+    rotulo: `Ponto ${id}`,
+    oQueFaz: "Responde cada mensagem que o cliente manda, com a personalidade da versão publicada.",
+    papel: "conversar",
+    exige: { tools: true },
+  });
+
+  function montarQuatro() {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const data =
+          url === "/api/v1/ai/jev"
+            ? jev(false)
+            : url === "/api/v1/ai/voz"
+              ? { voiceId: null, vozesDisponiveis: [], temCredencial: false }
+              : {
+                  ...PROVEDORES,
+                  papeis: { conversar: { rotulo: "Conversar", explicacao: "" } },
+                  pontos: PONTOS_DO_RELATO.map((id) => ponto(id)),
+                  modelos: [
+                    {
+                      provider: "anthropic",
+                      model_id: "claude-haiku-4-5",
+                      display_name: "Claude Haiku 4.5",
+                      supports_tools: true,
+                      supports_vision: false,
+                      input_price_per_million_cents: 100,
+                    },
+                  ],
+                  podeEditar: true,
+                };
+        return new Response(JSON.stringify({ data }), { status: 200 });
+      }),
+    );
+    montar();
+  }
+
+  /**
+   * As peças do cabeçalho, pelo DOM de hoje: cartão › cabeçalho › bloco de texto
+   * › linha do título › h3. O bloco do modelo/origem é o pai do `origem-<id>`,
+   * que já existe. Nada de testid novo só para o teste.
+   */
+  function cabecalhoDo(id: string) {
+    const cartao = screen.getByTestId(`ponto-${id}`);
+    const titulo = within(cartao).getByRole("heading", { name: `Ponto ${id}` });
+    const linhaDoTitulo = titulo.parentElement as HTMLElement;
+    const blocoDeTexto = linhaDoTitulo.parentElement as HTMLElement;
+    const cabecalho = blocoDeTexto.parentElement as HTMLElement;
+    const blocoDoModelo = screen.getByTestId(`origem-${id}`).parentElement as HTMLElement;
+    return { cartao, titulo, linhaDoTitulo, blocoDeTexto, cabecalho, blocoDoModelo };
+  }
+
+  const classes = (el: HTMLElement) => el.className.split(/\s+/);
+
+  /**
+   * jsdom não calcula layout (todo `getBoundingClientRect` volta 0), então o que
+   * se prende aqui é a ESTRUTURA e a CLASSE que decidem o layout. Foi essa
+   * classe que espremeu o texto a 375 px: `flex-1` dentro de um `flex-wrap` tem
+   * base ZERO, a linha nunca quebra e o bloco do modelo fica com a largura que
+   * pedir; o `min-w-0` do texto então o encolhe até o min-content — o título
+   * quebra palavra por palavra. Abaixo de `md` são duas linhas: texto na
+   * largura do cartão, modelo/origem embaixo.
+   */
+  it.each(PONTOS_DO_RELATO)("%s: o texto não é mais espremido por `flex-1`", async (id) => {
+    montarQuatro();
+    fireEvent.click(await screen.findByTestId("avancado-conversar"));
+
+    const { titulo, linhaDoTitulo, blocoDeTexto, cabecalho } = cabecalhoDo(id);
+    // O bloco que carrega título e descrição não pede base zero.
+    expect(classes(blocoDeTexto)).not.toContain("flex-1");
+    expect(classes(blocoDeTexto)).toContain("min-w-0");
+    // O cabeçalho não é uma linha flex (era ela que deixava o texto ceder).
+    expect(classes(cabecalho)).toContain("grid");
+    expect(classes(cabecalho)).not.toContain("flex");
+    expect(classes(cabecalho)).not.toContain("flex-wrap");
+    // Uma coluna abaixo de md: o template de duas colunas só existe a partir de md.
+    expect(classes(cabecalho).filter((c) => /^grid-cols-/.test(c))).toEqual([]);
+    expect(classes(cabecalho).filter((c) => /grid-cols-/.test(c))).toEqual([
+      "md:grid-cols-[minmax(0,1fr)_auto]",
+    ]);
+    // Quem cede é a linha dos selos, não o título: ela quebra e ele fica inteiro.
+    expect(classes(linhaDoTitulo)).toContain("flex-wrap");
+    expect(classes(linhaDoTitulo)).toContain("items-center");
+    expect(classes(linhaDoTitulo)).not.toContain("items-start");
+    expect(classes(titulo)).not.toContain("break-all");
+    expect(classes(titulo)).not.toContain("truncate");
+  });
+
+  it.each(PONTOS_DO_RELATO)(
+    "%s: o seletor do ponto continua lá, e o modelo/origem desce para a linha de baixo",
+    async (id) => {
+      montarQuatro();
+      fireEvent.click(await screen.findByTestId("avancado-conversar"));
+
+      // O seletor (medido certo pelo relato: 44 px de altura, 57–318 de largura)
+      // não foi tocado — segue no cartão, com o mesmo testid de sempre.
+      expect(screen.getByTestId(`modelo-${id}`)).toBeInTheDocument();
+      expect(screen.getByTestId(`provider-${id}`)).toBeInTheDocument();
+
+      const { blocoDoModelo } = cabecalhoDo(id);
+      // Abaixo de md: linha própria, alinhado à esquerda — não à direita do texto.
+      expect(classes(blocoDoModelo)).toContain("text-left");
+      expect(classes(blocoDoModelo)).not.toContain("text-right");
+      // De md para cima: volta para a coluna 2, na primeira linha, à direita.
+      expect(classes(blocoDoModelo)).toContain("md:col-start-2");
+      expect(classes(blocoDoModelo)).toContain("md:row-start-1");
+      expect(classes(blocoDoModelo)).toContain("md:text-right");
+    },
+  );
+
+  /**
+   * O lado oposto: o conserto não pode virar cartão empilhado no desktop. O
+   * template de duas colunas existe SÓ a partir de `md`, e é aí que o bloco do
+   * modelo volta para a primeira linha — não há `flex-col` nem `grid-cols-1`
+   * sem breakpoint, que empilharia também no desktop, nem `sm:` no meio, que
+   * mudaria o desenho em 640 px sem ninguém pedir.
+   */
+  it.each(PONTOS_DO_RELATO)(
+    "%s: acima de md o cabeçalho continua em linha (duas colunas)",
+    async (id) => {
+      montarQuatro();
+      fireEvent.click(await screen.findByTestId("avancado-conversar"));
+
+      const { cabecalho, blocoDoModelo } = cabecalhoDo(id);
+      expect(classes(cabecalho)).toContain("md:grid-cols-[minmax(0,1fr)_auto]");
+      expect(classes(cabecalho)).not.toContain("flex-col");
+      expect(classes(cabecalho).filter((c) => /^(grid-cols-1|grid-rows-)/.test(c))).toEqual([]);
+      expect(classes(cabecalho).filter((c) => /^sm:/.test(c))).toEqual([]);
+      // Na mesma linha do texto, e à direita: o desenho de sempre, de md para cima.
+      expect(classes(blocoDoModelo)).toContain("md:row-start-1");
+      expect(classes(blocoDoModelo)).toContain("md:text-right");
+      expect(classes(blocoDoModelo)).toContain("md:col-start-2");
+    },
+  );
 });
 
 describe("PainelDeProvedores — ponto com menu fechado", () => {

@@ -21,6 +21,7 @@ const h = vi.hoisted(() => ({
   garantirWebhook: vi.fn(),
   apagarWebhook: vi.fn(),
   desconectarConta: vi.fn(),
+  contaEstaNoPerfil: vi.fn(),
   chave: vi.fn(),
   sincronizar: vi.fn(),
   idCompartilhado: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock("./zernio/conexao-pela-instalacao", () => ({
   garantirWebhook: h.garantirWebhook,
   apagarWebhook: h.apagarWebhook,
   desconectarConta: h.desconectarConta,
+  contaEstaNoPerfil: h.contaEstaNoPerfil,
 }));
 vi.mock("./zernio/credentials", () => ({
   chaveDaInstalacao: h.chave,
@@ -91,6 +93,7 @@ beforeEach(() => {
   h.apagarWebhook.mockResolvedValue(undefined);
   h.idCompartilhado.mockResolvedValue("w-instalacao");
   h.sincronizar.mockResolvedValue("w-instalacao");
+  h.contaEstaNoPerfil.mockResolvedValue(true);
 });
 
 describe("savePartnerSession pela instalação", () => {
@@ -184,6 +187,7 @@ describe("desfazerNoProvedor", () => {
     zernio_token_encrypted: null,
     zernio_credencial_da_instalacao: false,
     zernio_webhook_id: null,
+    zernio_profile_id: null,
   };
 
   it("um clique: tira o perfil do webhook da instalação, SEM apagá-lo, e desconecta o número", async () => {
@@ -192,8 +196,10 @@ describe("desfazerNoProvedor", () => {
       ...base,
       zernio_credencial_da_instalacao: true,
       zernio_webhook_id: "w-instalacao",
+      zernio_profile_id: "perfil-1",
     });
     expect(await desfazerNoProvedor(db, ORG, "sessao-1")).toBe("desfeito");
+    expect(h.contaEstaNoPerfil).toHaveBeenCalledWith("chave-da-instalacao", "perfil-1", "conta-1");
     expect(h.apagarWebhook).not.toHaveBeenCalled();
     expect(h.desconectarConta).toHaveBeenCalledWith("chave-da-instalacao", "conta-1");
     expect(h.sincronizar).toHaveBeenCalledWith(db, "chave-da-instalacao", {
@@ -208,11 +214,38 @@ describe("desfazerNoProvedor", () => {
       ...base,
       zernio_credencial_da_instalacao: true,
       zernio_webhook_id: "w-do-numero",
+      zernio_profile_id: "perfil-1",
     });
     expect(await desfazerNoProvedor(db, ORG, "sessao-1")).toBe("desfeito");
     expect(h.apagarWebhook).toHaveBeenCalledWith("chave-da-instalacao", "w-do-numero");
     expect(h.apagarWebhook).not.toHaveBeenCalledWith("chave-da-instalacao", "w-instalacao");
     expect(h.sincronizar).toHaveBeenCalledTimes(1);
+  });
+
+  it("um clique com conta que o provedor NÃO mostra no perfil da organização: nada é desconectado nem apagado", async () => {
+    h.chave.mockResolvedValue("chave-da-instalacao");
+    h.contaEstaNoPerfil.mockResolvedValue(false);
+    const { db } = dbFalso({
+      ...base,
+      zernio_account_id: "conta-de-outro",
+      zernio_credencial_da_instalacao: true,
+      zernio_webhook_id: "w-de-outro",
+      zernio_profile_id: "perfil-1",
+    });
+    expect(await desfazerNoProvedor(db, ORG, "sessao-1")).toBe("desfeito");
+    expect(h.contaEstaNoPerfil).toHaveBeenCalledWith("chave-da-instalacao", "perfil-1", "conta-de-outro");
+    expect(h.desconectarConta).not.toHaveBeenCalled();
+    expect(h.apagarWebhook).not.toHaveBeenCalled();
+    // o filtro do webhook único segue recalculado da base
+    expect(h.sincronizar).toHaveBeenCalledTimes(1);
+  });
+
+  it("um clique sem perfil gravado: não há como provar de quem é a conta, nada é desconectado", async () => {
+    h.chave.mockResolvedValue("chave-da-instalacao");
+    const { db } = dbFalso({ ...base, zernio_credencial_da_instalacao: true });
+    expect(await desfazerNoProvedor(db, ORG, "sessao-1")).toBe("desfeito");
+    expect(h.contaEstaNoPerfil).not.toHaveBeenCalled();
+    expect(h.desconectarConta).not.toHaveBeenCalled();
   });
 
   it("chave própria com webhook da rota: apaga só o webhook, o número fica na conta da organização", async () => {
