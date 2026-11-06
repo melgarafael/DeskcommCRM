@@ -166,13 +166,28 @@ describe("GET /api/v1/pipelines/[id]/forecast — visibilidade", () => {
 
     const body = (await res.json()) as {
       data: {
-        totais: Array<{ moeda: string; bruto_cents: number; ponderado_cents: number; n: number }>;
+        totais: Array<{
+          moeda: string;
+          bruto_cents: number;
+          ponderado_cents: number;
+          n: number;
+          unico: { bruto_cents: number; ponderado_cents: number };
+          recorrente_mensal: { bruto_cents: number; ponderado_cents: number };
+        }>;
       };
     };
 
-    // Só o negócio do atendente: R$ 1.000,00 a 50% → R$ 500,00.
+    // Só o negócio do atendente: R$ 1.000,00 a 50% → R$ 500,00. As duas
+    // parcelas viajam juntas (issue #3602); sem recorrência, a segunda é zero.
     expect(body.data.totais).toEqual([
-      { moeda: "BRL", bruto_cents: 100_000, ponderado_cents: 50_000, n: 1 },
+      {
+        moeda: "BRL",
+        bruto_cents: 100_000,
+        ponderado_cents: 50_000,
+        n: 1,
+        unico: { bruto_cents: 100_000, ponderado_cents: 50_000 },
+        recorrente_mensal: { bruto_cents: 0, ponderado_cents: 0 },
+      },
     ]);
 
     // O client admin (service-role, bypassa RLS) nem é cogitado.
