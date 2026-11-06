@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { LOCAIS_DE_AGENDAMENTO } from "@/lib/agenda/tipos";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
+import type { Queryable } from "@/lib/agent-engine/queue/queue";
 
 /** Mutações que tornam qualquer comprovante anterior do turno insuficiente. */
 export const ESCRITAS_DE_AGENDAMENTO: ReadonlySet<string> = new Set([
@@ -81,6 +82,8 @@ const linhaSchema = reciboSchema.and(
   }),
 );
 
+type LinhaDeAgendamento = z.infer<typeof linhaSchema>;
+
 export interface EvidenciaDeAgendamento extends ReciboDeAgendamento {
   organization_id: string;
   contact_id: string;
@@ -91,6 +94,43 @@ export interface EvidenciaDeAgendamento extends ReciboDeAgendamento {
   beneficiario: string | null;
 }
 
+interface EscopoDoContato {
+  organizationId: string;
+  contactId: string | null;
+}
+
+/** A linha é desta organização e deste contato, e nenhuma aprovação humana está pendente. */
+function comprovaReserva(row: LinhaDeAgendamento, escopo: EscopoDoContato): boolean {
+  return (
+    row.organization_id === escopo.organizationId &&
+    row.contact_id === escopo.contactId &&
+    row.calendar_event_types.organization_id === escopo.organizationId &&
+    row.calendar_event_types.id === row.event_type_id &&
+    !(
+      row.service_requires_confirmation === true &&
+      (!row.service_confirmed_by_user_id || !row.service_confirmed_at)
+    )
+  );
+}
+
+/** Projeção explícita: não transporta notas, nome do contato responsável, link ou estado Google. */
+function projetarEvidencia(row: LinhaDeAgendamento): EvidenciaDeAgendamento {
+  return {
+    id: row.id,
+    status: row.status,
+    starts_at: row.starts_at,
+    ends_at: row.ends_at,
+    revision: row.revision,
+    organization_id: row.organization_id,
+    contact_id: row.contact_id,
+    event_type_id: row.event_type_id,
+    tipo: row.calendar_event_types.name,
+    local: rotuloDoLocal(row.location_kind, row.location_details)!,
+    time_zone: row.time_zone,
+    beneficiario: row.participant_name,
+  };
+}
+
 /**
  * Confere o recibo atual antes da revisão (inclusive replay de idempotência).
  * A leitura usa service role: filtra organização/contato E o tipo relacionado.
@@ -98,7 +138,7 @@ export interface EvidenciaDeAgendamento extends ReciboDeAgendamento {
  */
 export async function conferirRecibosDeAgendamento(
   db: SupabaseClient,
-  escopo: { organizationId: string; contactId: string | null },
+  escopo: EscopoDoContato,
   recibos: readonly ReciboDeAgendamento[],
 ): Promise<EvidenciaDeAgendamento[]> {
   if (!escopo.contactId || recibos.length === 0) return [];
@@ -123,32 +163,93 @@ export async function conferirRecibosDeAgendamento(
     if (!parsed.success) return [];
     const row = parsed.data;
     if (
-      row.organization_id !== escopo.organizationId ||
-      row.contact_id !== escopo.contactId ||
-      row.calendar_event_types.organization_id !== escopo.organizationId ||
-      row.calendar_event_types.id !== row.event_type_id ||
+      !comprovaReserva(row, escopo) ||
       row.revision !== recibo.revision ||
       Date.parse(row.starts_at) !== Date.parse(recibo.starts_at) ||
-      Date.parse(row.ends_at) !== Date.parse(recibo.ends_at) ||
-      (row.service_requires_confirmation === true &&
-        (!row.service_confirmed_by_user_id || !row.service_confirmed_at))
+      Date.parse(row.ends_at) !== Date.parse(recibo.ends_at)
     )
       return [];
-    // Projeção explícita: não transporta notas, nome do contato responsável, link ou estado Google.
-    evidencias.push({
-      id: row.id,
-      status: row.status,
-      starts_at: row.starts_at,
-      ends_at: row.ends_at,
-      revision: row.revision,
-      organization_id: row.organization_id,
-      contact_id: row.contact_id,
-      event_type_id: row.event_type_id,
-      tipo: row.calendar_event_types.name,
-      local: rotuloDoLocal(row.location_kind, row.location_details)!,
-      time_zone: row.time_zone,
-      beneficiario: row.participant_name,
-    });
+    evidencias.push(projetarEvidencia(row));
   }
   return evidencias;
+}
+
+/** Teto da lista que vai ao revisor. É o mesmo do recibo de grupo. */
+export const MAXIMO_DE_RESERVAS_NA_REVISAO = 20;
+
+export interface AgendaDaRevisao {
+  evidencias: EvidenciaDeAgendamento[];
+  /** Há reservas além do teto. Avisa o revisor; não comprova nenhuma delas. */
+  parcial: boolean;
+}
+
+/**
+ * Reserva feita em turno anterior não deixa recibo neste turno. Com evidência
+ * comercial na revisão, a confirmação fiel dela era vetada (21 de 24 no #3205).
+ *
+ * O motor lê pelo `pool`, que ignora RLS: os filtros de organização e contato
+ * deste SQL são a guarda, e `comprovaReserva` os confere de novo em cada linha.
+ * Datas saem como JSON para ter a mesma forma de texto que `linhaSchema` valida.
+ */
+export async function lerReservasConfirmadasDoContato(
+  db: Queryable,
+  escopo: EscopoDoContato,
+  agora: Date,
+): Promise<AgendaDaRevisao> {
+  if (!escopo.contactId) return { evidencias: [], parcial: false };
+  const { rows } = await db.query(
+    `select a.id, a.organization_id, a.contact_id, a.event_type_id, a.status, a.revision,
+            a.time_zone, a.location_kind, a.location_details, a.participant_name,
+            a.service_requires_confirmation, a.service_confirmed_by_user_id,
+            to_json(a.service_confirmed_at) #>> '{}' as service_confirmed_at,
+            to_json(a.starts_at) #>> '{}' as starts_at,
+            to_json(a.ends_at) #>> '{}' as ends_at,
+            json_build_object('id', t.id, 'organization_id', t.organization_id, 'name', t.name)
+              as calendar_event_types
+       from calendar_appointments a
+       join calendar_event_types t
+         on t.id = a.event_type_id and t.organization_id = a.organization_id
+      where a.organization_id = $1
+        and a.contact_id = $2
+        and a.service_block = false
+        and a.status = 'confirmed'
+        and a.ends_at >= $3
+      order by a.starts_at
+      limit $4`,
+    [escopo.organizationId, escopo.contactId, agora.toISOString(), MAXIMO_DE_RESERVAS_NA_REVISAO + 1],
+  );
+  const evidencias = rows.slice(0, MAXIMO_DE_RESERVAS_NA_REVISAO).flatMap((bruta) => {
+    const linha = linhaSchema.safeParse(bruta);
+    return linha.success && comprovaReserva(linha.data, escopo) ? [projetarEvidencia(linha.data)] : [];
+  });
+  return { evidencias, parcial: rows.length > MAXIMO_DE_RESERVAS_NA_REVISAO };
+}
+
+/**
+ * Uma fonte por revisão, nunca as duas.
+ *
+ * O turno que tocou na agenda fica só com o recibo: a mutação começa antes de
+ * aparecer no banco, e uma leitura em voo comprovaria a reserva que está sendo
+ * cancelada. Sem evidência comercial o prompt padrão não veta a confirmação
+ * (0 de 6 no #3205), e levar a agenda trocaria o prompt de toda conversa de quem
+ * tem reserva.
+ */
+export async function lerAgendaDaRevisao(
+  admin: SupabaseClient,
+  db: Queryable,
+  escopo: EscopoDoContato,
+  turno: {
+    recibos: readonly ReciboDeAgendamento[];
+    geracaoDaAgenda: number;
+    temEvidenciaComercial: boolean;
+    agora: Date;
+  },
+): Promise<AgendaDaRevisao> {
+  if (turno.geracaoDaAgenda === 0 && turno.temEvidenciaComercial) {
+    return lerReservasConfirmadasDoContato(db, escopo, turno.agora);
+  }
+  return {
+    evidencias: await conferirRecibosDeAgendamento(admin, escopo, turno.recibos),
+    parcial: false,
+  };
 }
