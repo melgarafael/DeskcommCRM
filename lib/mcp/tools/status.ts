@@ -2,8 +2,8 @@
  * MCP write tool — crm_publish_whatsapp_status (#3397).
  *
  * Publica uma IMAGEM no Status de UM número do CRM, a pedido de um sistema
- * externo (hoje Marketing/Piloto, depois da aprovação do dono). Nada de envio
- * novo: o caminho é a sessão que o CRM já gerencia (QR, saúde, reconexão).
+ * externo, depois da aprovação do dono. Nada de envio novo: o caminho é a sessão
+ * que o CRM já gerencia (QR, saúde, reconexão).
  *
  * ─── O que este arquivo NÃO faz ─────────────────────────────────────────────
  *
@@ -22,7 +22,12 @@
 import { z } from "zod";
 
 import { publicarStatusDoWhatsapp } from "@/lib/channels/publicacao-de-status";
-import { depsDoRitmo, registrarEnvioPorToken, segurarEnvioPorToken } from "@/lib/messaging/ritmo-do-envio-por-token";
+import {
+  depsDoRitmo,
+  registrarEnvioPorToken,
+  segurarEnvioPorToken,
+  type EnvioSegurado,
+} from "@/lib/messaging/ritmo-do-envio-por-token";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { McpToolDefinition } from "../types";
 
@@ -58,7 +63,7 @@ export const crmPublishWhatsappStatus: McpToolDefinition<typeof inputShape> = {
   requiresScope: "mcp:write",
   // Lista do que FICA, e não do que sai: campo novo não entra na auditoria sem
   // alguém decidir. Telefone e legenda são dado de terceiro, e `api_audit_log` é
-  // append-only (5 anos): o que entra lá não sai por pedido de LGPD.
+  // append-only: o que entra lá não sai por pedido de LGPD.
   redigirParaAuditoria: (args) => ({
     channel_session_id: args.channel_session_id,
     audience: args.all_contacts === true ? "todos" : "contatos",
@@ -69,11 +74,7 @@ export const crmPublishWhatsappStatus: McpToolDefinition<typeof inputShape> = {
     // Freio anti-ban do número: o MCP é sempre token, e o teto de chamadas do
     // token não sabe de warm-up nem de teto diário do número.
     const ritmo = await depsDoRitmo(createAdminClient());
-    const segurado = await segurarEnvioPorToken(ritmo, {
-      organizationId: ctx.organizationId,
-      channelSessionId: input.channel_session_id,
-      requestId: ctx.requestId,
-    });
+    let segurado: EnvioSegurado = null;
 
     const publicacao = await publicarStatusDoWhatsapp({
       db: ctx.supabase,
@@ -84,8 +85,17 @@ export const crmPublishWhatsappStatus: McpToolDefinition<typeof inputShape> = {
       contatos: input.contacts,
       todos: input.all_contacts,
       idempotencyKey: input.idempotency_key,
+      freio: {
+        segurar: async () => {
+          segurado = await segurarEnvioPorToken(ritmo, {
+            organizationId: ctx.organizationId,
+            channelSessionId: input.channel_session_id,
+            requestId: ctx.requestId,
+          });
+        },
+        registrar: () => registrarEnvioPorToken(ritmo, ctx.organizationId, segurado, "sent"),
+      },
     });
-    await registrarEnvioPorToken(ritmo, ctx.organizationId, segurado, "sent");
 
     return {
       published: true,

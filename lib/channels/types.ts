@@ -521,8 +521,13 @@ export interface ChannelAdapter {
    * LANÇA quando o transporte recusa: aqui não há mensagem de cliente para
    * salvar, então falha silenciosa seria pior — o operador acharia que a peça
    * foi ao ar.
+   *
+   * `incerto: true` é o terceiro desfecho, e não cabe em "saiu" nem em "recusou":
+   * o transporte não deu resposta legível, e a publicação pode estar em curso do
+   * outro lado. Lançar aqui liberaria a chave de idempotência, e o retry
+   * publicaria em dobro.
    */
-  publishStatus?(input: PublishStatusInput): Promise<{ externalId: string | null }>;
+  publishStatus?(input: PublishStatusInput): Promise<{ externalId: string | null; incerto?: true }>;
 
   /**
    * A conexão está de pé AGORA? Pergunta feita ao transporte, não ao banco.

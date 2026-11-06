@@ -327,8 +327,14 @@ export const wahaAdapter: ChannelAdapter = {
    * conhece o transporte. Com `todos`, 400 e 422 são o mesmo fato: não há lista
    * de contatos para o provedor usar, por acervo desligado (400) ou ainda vazio
    * (422, `No participants to send status`).
+   *
+   * Sem HTTP legível, ou com 5xx, ninguém sabe se saiu: o teto de mídia pode
+   * vencer com o provedor ainda publicando, lote a lote. Daí `incerto`, e não
+   * erro (ver o contrato em `../types`).
    */
-  async publishStatus(input: PublishStatusInput): Promise<{ externalId: string | null }> {
+  async publishStatus(
+    input: PublishStatusInput,
+  ): Promise<{ externalId: string | null; incerto?: true }> {
     const client = getWahaClient();
     if (!client) throw new Error("waha_not_configured");
     try {
@@ -343,17 +349,15 @@ export const wahaAdapter: ChannelAdapter = {
       return { externalId: parseWahaMessageId(res) };
     } catch (erro) {
       const http = statusHttpDoErroWaha(erro instanceof Error ? erro.message : "");
+      if (http === null || http >= 500) return { externalId: null, incerto: true };
       if (input.publico.tipo === "todos" && (http === 400 || http === 422)) {
         throw new Error(
           "publico_indisponivel: o WhatsApp não tem a lista de contatos deste número. Confira se \"Guardar histórico\" está ligado na Central de Conexões. Se o número foi pareado antes disso, a lista pode ainda não existir: informe os contatos um a um.",
         );
       }
-      if (http !== null && http >= 400 && http < 500) {
-        throw new Error(
-          `publicacao_recusada: o WhatsApp recusou esta publicação (HTTP ${http}). Confira a imagem e a conexão do número.`,
-        );
-      }
-      throw erro;
+      throw new Error(
+        `publicacao_recusada: o WhatsApp recusou esta publicação (HTTP ${http}). Confira a imagem e a conexão do número.`,
+      );
     }
   },
 

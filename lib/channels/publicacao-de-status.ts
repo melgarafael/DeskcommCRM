@@ -82,6 +82,13 @@ export const ENDPOINT_DA_PUBLICACAO_DE_STATUS = "mcp:crm_publish_whatsapp_status
 export const LEGENDA_MAXIMA = 1000;
 
 /**
+ * O código gravado no recibo da publicação sem resposta do canal. Recibo, e não
+ * erro: é a linha terminal em `idempotency_keys` que faz o retry com a mesma
+ * chave saber que pode já ter saído, em vez de publicar de novo.
+ */
+const STATUS_INCERTO = 504;
+
+/**
  * Um telefone em dígitos: 8 a 15 (E.164 é até 15; 8 cobre fixo local com DDI).
  *
  * A validação roda sobre a string JÁ normalizada — é o que permite aceitar
@@ -137,10 +144,18 @@ export interface PublicacaoDeStatusInput {
   todos?: boolean;
   /** Chave de deduplicação (24h). Sem ela, cada chamada publica. */
   idempotencyKey?: string;
+  /**
+   * O freio de quem chama, por DENTRO do efeito: depois das validações, e fora
+   * do alcance do replay. Quem repete uma publicação pronta recebe o recibo sem
+   * esperar vaga e sem contar outro envio, e o 429 de `segurar` libera a chave.
+   * `registrar` vale também para o desfecho incerto, porque pode ter saído.
+   */
+  freio?: { segurar(): Promise<void>; registrar(): Promise<void> };
 }
 
 export interface PublicacaoDeStatusFeita {
-  publicado: true;
+  /** `false` só no recibo incerto, que nunca sai de `publicarStatusDoWhatsapp`. */
+  publicado: boolean;
   /** Id que o canal deu à publicação; `null` quando ele não devolve id. */
   statusId: string | null;
   /** `"todos"` ou `"N contato(s)"` — o que o chamador pediu, dito de volta. */
@@ -227,26 +242,40 @@ export async function publicarStatusDoWhatsapp(
 
   // ── O efeito ───────────────────────────────────────────────────────────────
   const publicar = async (): Promise<{ resposta: PublicacaoDeStatusFeita; status: number }> => {
-    const { externalId } = await publicarStatus({
+    await input.freio?.segurar();
+    const { externalId, incerto } = await publicarStatus({
       organizationId: input.organizationId,
       sessionRef,
       imagem: input.imagem,
       legenda,
       publico,
     });
+    await input.freio?.registrar();
     return {
       resposta: {
-        publicado: true,
+        publicado: !incerto,
         statusId: externalId,
         publico: publico.tipo === "todos" ? "todos" : `${publico.numeros.length} contato(s)`,
         deduplicado: false,
       },
-      status: 200,
+      status: incerto ? STATUS_INCERTO : 200,
     };
   };
 
+  const concluir = (
+    efeito: { resposta: PublicacaoDeStatusFeita; status: number },
+    deduplicado: boolean,
+  ): PublicacaoDeStatusFeita => {
+    if (efeito.status === STATUS_INCERTO) {
+      throw new Error(
+        "publicacao_incerta: o WhatsApp não respondeu, e a imagem pode ter saído. Confira o Status no celular do número antes de repetir. Se não saiu, publique com uma chave nova.",
+      );
+    }
+    return { ...efeito.resposta, deduplicado };
+  };
+
   if (!input.idempotencyKey) {
-    return (await publicar()).resposta;
+    return concluir(await publicar(), false);
   }
 
   // O hash cobre o que IDENTIFICA a publicação: o número, o público, a legenda e
@@ -270,10 +299,10 @@ export async function publicarStatusDoWhatsapp(
 
   switch (desfecho.tipo) {
     case "executou":
-      return desfecho.resposta;
+      return concluir(desfecho, false);
     case "replay":
       // A primeira publicação vale como resposta: NÃO publica de novo.
-      return { ...desfecho.resposta, deduplicado: true };
+      return concluir(desfecho, true);
     case "conflito":
       throw new Error(
         "idempotency_conflict: esta chave já foi usada para outra publicação (número, público, legenda ou imagem diferentes). Use uma chave nova.",
