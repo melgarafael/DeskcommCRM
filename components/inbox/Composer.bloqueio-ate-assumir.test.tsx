@@ -19,7 +19,7 @@
  * mesmo lugar que o da conversa sem dono.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { composerBloqueadoAteAssumir } from "@/lib/inbox/bloqueio-ate-assumir";
@@ -113,6 +113,25 @@ import { Composer } from "./Composer";
 const ATENDENTE = "u1";
 const OUTRO = "u2";
 
+/** A peça, montada como o InboxLayout monta: a decisão REAL alimenta a prop. */
+function comDono(entrada: {
+  ligada: boolean | undefined;
+  donoDaConversa: string | null;
+}) {
+  const aguardandoAssumir = composerBloqueadoAteAssumir({
+    ligada: entrada.ligada,
+    donoDaConversa: entrada.donoDaConversa,
+    atendenteId: ATENDENTE,
+  });
+  return (
+    <Composer
+      conversationId="conv-1"
+      contactName="Rafael Melgaço"
+      aguardandoAssumir={aguardandoAssumir}
+    />
+  );
+}
+
 /** O compositor com a decisão REAL do InboxLayout: a regra pura alimenta a prop. */
 function renderComposer(entrada: {
   ligada: boolean | undefined;
@@ -123,13 +142,7 @@ function renderComposer(entrada: {
     donoDaConversa: entrada.donoDaConversa,
     atendenteId: ATENDENTE,
   });
-  const vista = render(
-    <Composer
-      conversationId="conv-1"
-      contactName="Rafael Melgaço"
-      aguardandoAssumir={aguardandoAssumir}
-    />,
-  );
+  const vista = render(comDono(entrada));
   return { ...vista, aguardandoAssumir };
 }
 
@@ -275,5 +288,64 @@ describe("CONTROLE: opção DESLIGADA — hoje, nos dois estados", () => {
     await userEvent.click(screen.getByLabelText("Enviar"));
 
     expect(sendMutate).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * DEPOIS DO ENVIO O CAMPO VOLTA A FICAR EM FOCO (#4148).
+ *
+ * O CENÁRIO DA ISSUE, medido antes do conserto: conversa na FILA (sem dono), o
+ * campo livre (a organização não usa o bloqueio até assumir), a primeira
+ * mensagem sai pelo botão Enviar — e, no mesmo gesto, o servidor ASSUME a
+ * conversa em nome de quem respondeu (`assumirConversaAposEnvio`, #2835), então
+ * o compositor re-renderiza com a conversa já com dono.
+ *
+ * O QUE TIRAVA O FOCO (medido em 06/11/2026, com `document.activeElement`
+ * impresso a cada passo): o clique no "Enviar" focava o BOTÃO; o `setText("")`
+ * do envio esvazia o campo, e o botão só existe com texto no campo
+ * (`text.trim() || mode === "note"`, no render logo abaixo do textarea). O nó
+ * focado saía do DOM e o foco caía no `<body>` — ANTES de a assunção chegar.
+ * O re-render da assunção, sozinho, não tirava foco nenhum; pelo Enter o campo
+ * também nunca perdeu. Por isso o refoco entra no `handleSubmit` (o envio), e
+ * não num efeito que observa o dono da conversa.
+ *
+ * O caso cobra os DOIS lados: o foco volta depois do envio E continua no campo
+ * quando a assunção chega e o compositor re-renderiza — no MESMO nó do
+ * textarea, não numa cópia que só parece igual.
+ */
+describe("o campo volta a ficar em foco depois do envio (#4148)", () => {
+  it("primeira mensagem da fila: envia, a conversa passa a ter dono e o campo continua em foco", async () => {
+    const { rerender } = renderComposer({ ligada: false, donoDaConversa: null });
+    const campo = screen.getByLabelText("Mensagem") as HTMLTextAreaElement;
+    campo.focus();
+    expect(campo).toHaveFocus();
+
+    await userEvent.type(campo, "primeira mensagem da fila");
+    await userEvent.click(screen.getByLabelText("Enviar"));
+    expect(sendMutate).toHaveBeenCalledTimes(1);
+    expect(sendMutate.mock.calls[0]![0]).toMatchObject({ body: "primeira mensagem da fila" });
+
+    // A assunção chega depois do envio: a conversa que estava na fila passa a
+    // ter dono, e o compositor re-renderiza com a decisão recalculada sobre ela.
+    rerender(comDono({ ligada: false, donoDaConversa: ATENDENTE }));
+
+    await waitFor(() => expect(screen.getByLabelText("Mensagem")).toHaveFocus());
+    expect(screen.getByLabelText("Mensagem")).toBe(campo);
+    // E o campo está limpo e pronto para a segunda mensagem — que é o que a
+    // issue pede: digitar sem clicar de novo.
+    expect(campo.value).toBe("");
+    await userEvent.type(campo, "segunda mensagem");
+    expect(campo.value).toBe("segunda mensagem");
+  });
+
+  it("envio pelo Enter também deixa o campo em foco", async () => {
+    renderComposer({ ligada: false, donoDaConversa: null });
+    const campo = screen.getByLabelText("Mensagem") as HTMLTextAreaElement;
+
+    await userEvent.type(campo, "primeira mensagem da fila{Enter}");
+    expect(sendMutate).toHaveBeenCalledTimes(1);
+
+    await waitFor(() => expect(campo).toHaveFocus());
+    expect(campo.value).toBe("");
   });
 });

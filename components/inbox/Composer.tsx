@@ -497,7 +497,30 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
       mode === "note" ? embutirMencoes(legivel, mencoes) : interpolateTemplate(legivel, contato);
 
     setText("");
-    requestAnimationFrame(() => autoresize());
+    /**
+     * O FOCO VOLTA PARA O CAMPO DEPOIS DO ENVIO (#4148).
+     *
+     * Quem envia pelo BOTÃO perde o foco junto com ele: o clique foca o
+     * "Enviar", e este `setText("")` esvazia o campo — o botão só existe com
+     * texto (`text.trim() || mode === "note"`, no render logo abaixo do
+     * textarea), então o nó focado sai do DOM e o foco cai no `<body>`. A
+     * segunda mensagem não tem onde ser digitada sem um clique no campo.
+     *
+     * A causa foi MEDIDA antes do conserto, imprimindo `document.activeElement`
+     * a cada passo do envio: logo depois do clique em Enviar ele já é `BODY`,
+     * isto é, a perda vem DESTE envio — não do re-render da assunção que a
+     * mensagem provoca na conversa da fila (#2835), que chega depois e não tira
+     * foco nenhum. Pelo Enter o campo nunca perdeu o foco, e refocar um campo
+     * já focado é inofensivo: um caminho só para os dois gestos.
+     *
+     * O `requestAnimationFrame` é o mesmo padrão dos outros refocos daqui (a
+     * menção, o emoji, o recurso da barra): o nó que sai só some depois do
+     * commit, e o `focus()` precisa rodar com o DOM já atualizado.
+     */
+    requestAnimationFrame(() => {
+      taRef.current?.focus();
+      autoresize();
+    });
 
     // Se a pessoa já começou a próxima resposta, preserve os dois textos.
     const restaurar = (current: string) => (current ? `${legivel}\n${current}` : legivel);
