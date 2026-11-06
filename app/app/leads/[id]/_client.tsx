@@ -39,7 +39,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { formatValorDoNegocio, MOEDA_PADRAO } from "@/lib/money";
-import { ArrowLeft } from "@/lib/ui/icons";
+import { CaretLeft } from "@/lib/ui/icons";
 import type { Lead } from "@/lib/types/leads";
 import type { CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
 import { ContatoDoNegocio } from "@/components/kanban/ContatoDoNegocio";
@@ -85,7 +85,7 @@ export function NegocioEmPagina({ lead, pipelineId, stageName, fieldDefs, voltar
         href={voltar}
         className="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-text-muted underline-offset-2 hover:text-text hover:underline"
       >
-        <ArrowLeft size={14} aria-hidden />
+        <CaretLeft size={14} aria-hidden />
         {t("Voltar ao quadro")}
       </Link>
 
