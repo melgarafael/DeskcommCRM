@@ -151,6 +151,7 @@ export const produtoCreateSchema = z.object({
   descricao: z.string().trim().max(2000).optional(),
   marca: z.string().trim().max(80).optional(),
   categoria: z.string().trim().max(80).optional(),
+  capacidade: z.string().trim().max(60).optional(),
   preco_cents: z.number().int().min(0, "preço não pode ser negativo"),
   // ⚠️ `moeda` NÃO entra aqui de propósito, e a ausência é a regra.
   //
@@ -174,8 +175,19 @@ export const produtoCreateSchema = z.object({
   fotos: fotos.optional(),
 });
 
-/** Tudo opcional: o PATCH muda o que veio e não encosta no resto. */
-export const produtoPatchSchema = produtoCreateSchema.partial();
+/**
+ * Tudo opcional: o PATCH muda o que veio e não encosta no resto.
+ *
+ * ⚠️ `.partial()` sozinho NÃO basta: o Zod 4 mantém o `.default()` do campo, e
+ * um PATCH só de preço saía com `quantidade: 0`, `controla_estoque: true` e
+ * `ativo: true`, zerando o estoque e reativando o produto. Os campos com default
+ * são redeclarados aqui, sem ele.
+ */
+export const produtoPatchSchema = produtoCreateSchema.partial().extend({
+  controla_estoque: z.boolean().optional(),
+  quantidade: z.number().int().min(0).optional(),
+  ativo: z.boolean().optional(),
+});
 
 export type ProdutoCreate = z.infer<typeof produtoCreateSchema>;
 export type ProdutoPatch = z.infer<typeof produtoPatchSchema>;
@@ -187,6 +199,7 @@ export interface Produto {
   descricao: string | null;
   marca: string | null;
   categoria: string | null;
+  capacidade: string | null;
   preco_cents: number;
   moeda: string;
   custo_cents: number | null;
@@ -202,5 +215,5 @@ export interface Produto {
 
 /** As colunas que a tela e a rota leem — uma lista, não duas. */
 export const COLUNAS_DO_PRODUTO =
-  "id, codigo, nome, descricao, marca, categoria, preco_cents, moeda, custo_cents, " +
+  "id, codigo, nome, descricao, marca, categoria, capacidade, preco_cents, moeda, custo_cents, " +
   "controla_estoque, quantidade, ativo, origem, imagem_url, fotos, updated_at";

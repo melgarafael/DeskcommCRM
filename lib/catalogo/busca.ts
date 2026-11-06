@@ -94,6 +94,8 @@ export interface ProdutoBuscavel {
   codigo: string;
   marca?: string | null;
   categoria?: string | null;
+  /** Quem pede "256GB" acha o produto cujo nome não repete a capacidade. */
+  capacidade?: string | null;
 }
 
 /**
@@ -105,7 +107,13 @@ export interface ProdutoBuscavel {
  */
 export function pontuar(produto: ProdutoBuscavel, tokens: TokensDaBusca): number | null {
   const alvo = normalizar(
-    [produto.nome, produto.marca ?? "", produto.categoria ?? "", produto.codigo].join(" "),
+    [
+      produto.nome,
+      produto.marca ?? "",
+      produto.categoria ?? "",
+      produto.capacidade ?? "",
+      produto.codigo,
+    ].join(" "),
   );
 
   // ── O FILTRO DURO ──────────────────────────────────────────────────────────
@@ -240,7 +248,13 @@ function numerosQueOCatalogoConhece<T extends ProdutoBuscavel>(
 
   for (const produto of produtos) {
     const alvo = normalizar(
-      [produto.nome, produto.marca ?? "", produto.categoria ?? "", produto.codigo].join(" "),
+      [
+        produto.nome,
+        produto.marca ?? "",
+        produto.categoria ?? "",
+        produto.capacidade ?? "",
+        produto.codigo,
+      ].join(" "),
     );
     for (const n of numeros) {
       if (!conhecidos.has(n) && temONumero(alvo, n)) conhecidos.add(n);

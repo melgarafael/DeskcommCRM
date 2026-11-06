@@ -31,7 +31,15 @@ import type { Produto } from "@/lib/schemas/produtos";
  * sincronização sobrescreveria. Fotos seguem livres pelo botão de sempre: a
  * integração não mexe nelas.
  */
-export function EdicaoDoProduto({ produto, aoFechar }: { produto: Produto; aoFechar: () => void }) {
+export function EdicaoDoProduto({
+  produto,
+  capacidadeLigada = false,
+  aoFechar,
+}: {
+  produto: Produto;
+  capacidadeLigada?: boolean;
+  aoFechar: () => void;
+}) {
   const t = useT();
   const router = useRouter();
   const [rascunho, setRascunho] = React.useState<RascunhoDaEdicao>(() => rascunhoDaEdicao(produto));
@@ -127,6 +135,20 @@ export function EdicaoDoProduto({ produto, aoFechar }: { produto: Produto; aoFec
             data-testid="edicao-categoria"
           />
         </label>
+        {capacidadeLigada ? (
+          <label className="text-sm">
+            {t("Capacidade")}
+            <input
+              value={rascunho.capacidade}
+              onChange={(e) => setRascunho({ ...rascunho, capacidade: e.target.value })}
+              placeholder={t("Ex.: 128GB")}
+              maxLength={60}
+              className="mt-1 h-9 w-full rounded-md border px-3"
+              disabled={desabilitado}
+              data-testid="edicao-capacidade"
+            />
+          </label>
+        ) : null}
         <label className="text-sm">
           {t("Preço de venda")}
           <input

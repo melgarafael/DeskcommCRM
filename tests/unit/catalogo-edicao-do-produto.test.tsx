@@ -39,6 +39,7 @@ const TEXTOS = { titulo: "Produtos", subtitulo: "", vazio: "vazio", vazioDica: "
 
 function produto(over: Partial<Produto> = {}): Produto {
   return {
+    capacidade: null,
     id: "11111111-1111-4111-8111-111111111111",
     codigo: "IP15",
     nome: "iPhone 15",
@@ -59,7 +60,7 @@ function produto(over: Partial<Produto> = {}): Produto {
   };
 }
 
-function tela(produtos: Produto[], podeEditar = true) {
+function tela(produtos: Produto[], podeEditar = true, capacidadeLigada = false) {
   return render(
     <ProdutosClient
       inicial={produtos}
@@ -69,6 +70,7 @@ function tela(produtos: Produto[], podeEditar = true) {
       buscaInicial=""
       urlsDasFotos={{}}
       podeEditar={podeEditar}
+      capacidadeLigada={capacidadeLigada}
       textos={TEXTOS}
     />,
   );
@@ -104,6 +106,24 @@ describe("o corpo do PATCH leva só o que mudou", () => {
     const p = produto({ categoria: "Celular" });
     const rascunho = { ...rascunhoDaEdicao(p), categoria: "" };
     expect(corpoDaEdicao(rascunho, p, semIdioma)).toEqual({ corpo: { categoria: "" } });
+  });
+});
+
+describe("o campo Capacidade obedece à chave da empresa", () => {
+  const p = produto({ capacidade: "256GB" });
+
+  it("desligada: nem a lista nem a edição mostram o valor guardado", async () => {
+    tela([p]);
+    expect(screen.queryByText(/256GB/)).toBeNull();
+    fireEvent.click(screen.getByTestId("editar-IP15"));
+    expect(screen.queryByTestId("edicao-capacidade")).toBeNull();
+  });
+
+  it("ligada: a lista mostra e a edição abre preenchida", async () => {
+    tela([p], true, true);
+    expect(screen.getByText(/256GB/)).toBeTruthy();
+    fireEvent.click(screen.getByTestId("editar-IP15"));
+    expect((screen.getByTestId("edicao-capacidade") as HTMLInputElement).value).toBe("256GB");
   });
 });
 
