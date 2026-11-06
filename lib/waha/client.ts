@@ -1029,6 +1029,16 @@ export class WahaClient {
     if (!res.ok) throw new Error(`waha_${res.status}`);
   }
 
+  /** A API WAHA recebe o id completo, sem chatId separado. */
+  async sendReaction(session: string, messageId: string, reaction: string): Promise<void> {
+    const res = await this.fetchComTeto(`${this.baseUrl}/api/reaction`, {
+      method: "PUT",
+      headers: { "X-Api-Key": this.apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ session, messageId, reaction }),
+    });
+    if (!res.ok) throw new Error(`waha_${res.status}`);
+  }
+
   /** Sem `forMe`: para mensagem enviada, WAHA revoga para todos. */
   async deleteMessage(session: string, chatId: string, messageId: string): Promise<void> {
     const path = `/api/${encodeURIComponent(session)}/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}`;

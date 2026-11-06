@@ -4,10 +4,12 @@ import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
 import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, FileText, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -39,6 +41,33 @@ import {
   isAiGeneratedMessage,
 } from "@/lib/ai/citations/types";
 
+const PickerDeReacao = lazy(() => import("@emoji-mart/react"));
+const REACOES_INICIAIS = ["👍", "❤️", "😂", "😮", "🙏"];
+const REACOES_STORAGE = "deskcomm:reacoes-frequentes:v1";
+
+function lerContagens(): Record<string, number> {
+  try {
+    const data: unknown = JSON.parse(localStorage.getItem(REACOES_STORAGE) ?? "{}");
+    if (!data || typeof data !== "object" || Array.isArray(data)) return {};
+    return Object.fromEntries(Object.entries(data).filter(([emoji, n]) =>
+      emoji.length > 0 && emoji.length <= 64 && typeof n === "number" && Number.isFinite(n) && n > 0,
+    ));
+  } catch { return {}; }
+}
+
+function cincoMaisUsados(contagens: Record<string, number>): string[] {
+  const usados = Object.entries(contagens).sort((a, b) => b[1] - a[1]).map(([emoji]) => emoji);
+  return [...new Set([...usados, ...REACOES_INICIAIS])].slice(0, 5);
+}
+
+/** Quem não tem histórico recebe cinco opções; as escolhas confirmadas sobem para o início. */
+function registrarReacao(emoji: string): string[] {
+  const contagens = lerContagens();
+  contagens[emoji] = (contagens[emoji] ?? 0) + 1;
+  try { localStorage.setItem(REACOES_STORAGE, JSON.stringify(contagens)); } catch { /* Sem armazenamento, o menu ainda funciona. */ }
+  return cincoMaisUsados(contagens);
+}
+
 interface Props {
   message: Message;
   searchMatch?: boolean;
@@ -54,6 +83,7 @@ interface Props {
   citada?: Message | null;
   /** As reações a ESTA mensagem — marca no canto do balão, nunca balão próprio. */
   reacoes?: ReacaoNoBalao[];
+  onReagir?: (emoji: string) => Promise<void>;
   /**
    * QUEM está lendo a conversa. É o que separa "Você" de "Atendente": a coluna
    * `sent_via='user'` só diz *"um humano digitou no CRM"*, nunca QUAL humano.
@@ -122,6 +152,7 @@ export function MessageBubble({
   onEncaminhar,
   citada,
   reacoes,
+  onReagir,
   viewerUserId,
   onEditar,
   onApagar,
@@ -136,6 +167,19 @@ export function MessageBubble({
   const [ocultando, setOcultando] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const [confirmandoReenvio, setConfirmandoReenvio] = useState(false);
+  const [seletorDeReacaoAberto, setSeletorDeReacaoAberto] = useState(false);
+  const [reacoesFrequentes, setReacoesFrequentes] = useState(REACOES_INICIAIS);
+  const reacaoPendente = useRef(false);
+  const enviarReacao = async (emoji: string) => {
+    if (!onReagir || reacaoPendente.current) return;
+    reacaoPendente.current = true;
+    try {
+      await onReagir(emoji);
+      setReacoesFrequentes(registrarReacao(emoji));
+    } finally {
+      reacaoPendente.current = false;
+    }
+  };
   const salvandoEdicao = useRef(false);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const abrindoEdicao = useRef(false);
@@ -200,7 +244,8 @@ export function MessageBubble({
   // Encaminhar vale para qualquer mensagem com conteúdo — recebida ou enviada.
   // Só não se encaminha o que foi apagado: o conteúdo saiu do ar de propósito.
   const podeEncaminhar = Boolean(onEncaminhar) && !apagada;
-  const temMenu = Boolean(onResponder || podeEncaminhar || (podeEditar && onEditar) || podeApagar || podeOcultar);
+  const podeReagir = Boolean(onReagir) && !apagada && !ocultaNoCrm;
+  const temMenu = Boolean(onResponder || podeEncaminhar || (podeEditar && onEditar) || podeApagar || podeOcultar || podeReagir);
   const cartaoDeDocumentoVisivel = hasMedia && message.type === "document"
     && !editando && !apagada && !ocultaNoCrm;
   const reenvio = onReenviar
@@ -389,7 +434,7 @@ export function MessageBubble({
         )}
       >
         {temMenu && (
-          <DropdownMenu>
+          <DropdownMenu onOpenChange={(open) => { if (open) setReacoesFrequentes(cincoMaisUsados(lerContagens())); }}>
             <DropdownMenuTrigger asChild>
               <button type="button" aria-label={t("Opções da mensagem")} disabled={ocupado}
                 className={cn(
@@ -416,6 +461,16 @@ export function MessageBubble({
               {onResponder && (
                 <DropdownMenuItem onSelect={() => onResponder(message)}>
                   <ArrowBendUpLeft size={16} aria-hidden />{t("Responder a esta mensagem")}
+                </DropdownMenuItem>
+              )}
+              {podeReagir && reacoesFrequentes.map((emoji) => (
+                <DropdownMenuItem key={emoji} aria-label={t("Reagir com {emoji}").replace("{emoji}", emoji)} onSelect={() => void enviarReacao(emoji).catch(() => undefined)}>
+                  {emoji}
+                </DropdownMenuItem>
+              ))}
+              {podeReagir && (
+                <DropdownMenuItem onSelect={() => setSeletorDeReacaoAberto(true)}>
+                  {t("Mais emojis")}
                 </DropdownMenuItem>
               )}
               {podeEncaminhar && (
@@ -718,6 +773,26 @@ export function MessageBubble({
           </span>
         ) : null}
       </div>
+      <Dialog open={seletorDeReacaoAberto} onOpenChange={setSeletorDeReacaoAberto}>
+        <DialogContent className="w-fit max-w-[calc(100vw-2rem)] p-3 sm:max-w-fit">
+          <DialogHeader>
+            <DialogTitle>{t("Escolha uma reação")}</DialogTitle>
+          </DialogHeader>
+          {seletorDeReacaoAberto && (
+            <Suspense fallback={<Skeleton className="h-[420px] w-[min(352px,calc(100vw-4rem))]" />}>
+              <PickerDeReacao
+                data={async () => (await import("@emoji-mart/data")).default}
+                locale="pt"
+                previewPosition="none"
+                onEmojiSelect={(e: { native: string }) => {
+                  setSeletorDeReacaoAberto(false);
+                  void enviarReacao(e.native).catch(() => undefined);
+                }}
+              />
+            </Suspense>
+          )}
+        </DialogContent>
+      </Dialog>
       <AlertDialog open={apagando} onOpenChange={setApagando}>
         <AlertDialogContent>
           <AlertDialogHeader>
