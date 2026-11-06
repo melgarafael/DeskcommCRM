@@ -8744,7 +8744,6 @@ export const DICIONARIO: Traducoes = {
   },
   "Ir para as etapas do funil": { es: "Ir a las etapas del embudo" },
   "Etapa para": { es: "Etapa para" },
-  "Não mover o card": { es: "No mover la tarjeta" },
   "As escolhas voltaram para o que está gravado agora — confira e escolha de novo.": {
     es: "La selección volvió a lo que está guardado ahora. Revísala y elige de nuevo.",
   },

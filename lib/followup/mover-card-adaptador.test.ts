@@ -138,7 +138,8 @@ describe("quem se move quando o cliente responde (#3974)", () => {
     const tabelas = {
       crm_leads: NEGOCIOS.filter((l) => l.id === "lead-na-etapa").map((l) => ({ ...l })),
     };
-    moveLeadHandler.mockImplementationOnce(async (_sb: unknown, _ctx: unknown, leadId: string) => {
+    moveLeadHandler.mockImplementationOnce(async (...args: unknown[]) => {
+      const leadId = String(args[2]);
       const linha = tabelas.crm_leads.find((l) => l.id === leadId);
       if (linha) linha.stage_id = ETAPA_NEGOCIACAO; // o movimento, refletido no banco
       return {};
