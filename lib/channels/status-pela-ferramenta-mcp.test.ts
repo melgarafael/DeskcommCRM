@@ -6,16 +6,18 @@
  * o retry de uma publicação pronta no teto diário levava 429 em vez do recibo.
  * Só o transporte e o ledger são dublês; `segurarEnvioPorToken`,
  * `comIdempotencia` e o adapter são os de produção.
+ *
+ * Mora em `lib/channels/`, e não ao lado da ferramenta, porque o adapter de
+ * verdade exige um transporte dublê, e só aqui a cerca de canal aceita o nome.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api/types";
-import type { DepsDoRitmo } from "@/lib/messaging/ritmo-do-envio-por-token";
+import { deModuloDesligado } from "@/lib/mcp/tools/catalog";
+import { crmPublishWhatsappStatus as tool } from "@/lib/mcp/tools/status";
+import type { McpContext } from "@/lib/mcp/types";
+import type * as Ritmo from "@/lib/messaging/ritmo-do-envio-por-token";
 import { bancoFalso, type Linha } from "@/tests/helpers/banco-falso-do-status";
-
-import { deModuloDesligado } from "./catalog";
-import { crmPublishWhatsappStatus as tool } from "./status";
-import type { McpContext } from "../types";
 
 const h = vi.hoisted(() => ({
   sendStatusImage: vi.fn(),
@@ -28,8 +30,8 @@ vi.mock("@/lib/waha/client", () => ({
 }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
 vi.mock("@/lib/messaging/ritmo-do-envio-por-token", async (original) => {
-  const real = await original<typeof import("@/lib/messaging/ritmo-do-envio-por-token")>();
-  const deps: DepsDoRitmo = {
+  const real = await original<typeof Ritmo>();
+  const deps: Ritmo.DepsDoRitmo = {
     lerCanalDaConversa: async () => null,
     lerCanalDaSessao: async (_org, id) => ({ channelSessionId: id, provider: "waha" }),
     pacing: { decide: h.decide, registraEnvio: h.registraEnvio },
@@ -151,6 +153,16 @@ describe("crm_publish_whatsapp_status: o freio do número mora dentro do efeito"
 
     expect(h.sendStatusImage).toHaveBeenCalledTimes(1);
     expect(h.registraEnvio).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("crm_publish_whatsapp_status: é módulo opcional da instalação", () => {
+  it("desligado de fábrica: nenhum módulo ligado, nenhuma ferramenta", () => {
+    expect(deModuloDesligado("crm_publish_whatsapp_status", [])).toBe(true);
+  });
+
+  it("ligar o módulo oferece a ferramenta", () => {
+    expect(deModuloDesligado("crm_publish_whatsapp_status", ["status_whatsapp"])).toBe(false);
   });
 });
 

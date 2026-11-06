@@ -19,6 +19,7 @@ export const TOOLS_MARKETING = declararTools([
       "contatos escolhidos. A peça sai de verdade, no celular de quem vê, e some em 24 horas — não dá para apagar antes.",
     oQueToca: "Status do WhatsApp",
     risco: "critico",
+    modulo: "status_whatsapp",
     // "vender", não "atender": Status é peça de divulgação, não de conversa.
     pacotes: ["vender"],
     // Quem publica é uma pessoa que aprovou a arte. O agente conversacional não

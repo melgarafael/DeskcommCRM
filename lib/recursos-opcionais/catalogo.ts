@@ -162,6 +162,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Cold Call (fila de ligações)",
     oQueFaz: "Uma fila para ligar para uma lista de leads, um por vez, com roteiro e o resultado de cada ligação movendo o lead no funil.",
   },
+  status_whatsapp: {
+    nome: "Status do WhatsApp por integração",
+    oQueFaz: "Publica uma imagem no Status de um número conectado por QR Code, a pedido de um sistema conectado ao servidor MCP, para uma lista de contatos ou para todos.",
+  },
 };
 
 /**
