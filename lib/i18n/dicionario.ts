@@ -10839,7 +10839,7 @@ export const DICIONARIO: Traducoes = {
   "Catálogo salvo.": { es: "Catálogo guardado." },
   "Usar o campo Capacidade nos produtos": { es: "Usar el campo Capacidad en los productos" },
   "Mostra o campo em Produtos e na planilha, para 128GB, 1TB ou 500ml, e o atendente de IA passa a procurar por ele. Desligar esconde o campo, mas não apaga o que já foi cadastrado.": { es: "Muestra el campo en Productos y en la planilla, para 128GB, 1TB o 500ml, y el agente de IA pasa a buscar por él. Desactivarlo oculta el campo, pero no borra lo ya registrado." },
-  "Salvar catálogo": { es: "Guardar catálogo" },
+  "Aplicar ajustes do catálogo": { es: "Aplicar ajustes del catálogo" },
   "Falha ao salvar.": { es: "No se pudo guardar." },
   "A configuração mudou. Recarregue a página e tente novamente.": { es: "La configuración cambió. Recargue la página e inténtelo de nuevo." },
   "Um campo a mais no catálogo para 128GB, 1TB ou 500ml. O atendente de IA passa a achar o produto por ele, mesmo quando o nome não repete a capacidade.": { es: "Un campo más en el catálogo para 128GB, 1TB o 500ml. El agente de IA pasa a encontrar el producto por él, aunque el nombre no repita la capacidad." },

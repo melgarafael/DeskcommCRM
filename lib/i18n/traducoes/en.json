@@ -9709,7 +9709,7 @@
   "Catálogo salvo.": "Catalog saved.",
   "Usar o campo Capacidade nos produtos": "Use the Capacity field on products",
   "Mostra o campo em Produtos e na planilha, para 128GB, 1TB ou 500ml, e o atendente de IA passa a procurar por ele. Desligar esconde o campo, mas não apaga o que já foi cadastrado.": "Shows the field in Products and in the spreadsheet, for 128GB, 1TB or 500ml, and the AI agent starts searching by it. Turning it off hides the field but does not erase what was already saved.",
-  "Salvar catálogo": "Save catalog",
+  "Aplicar ajustes do catálogo": "Apply catalog settings",
   "Falha ao salvar.": "Could not save.",
   "A configuração mudou. Recarregue a página e tente novamente.": "The settings changed. Reload the page and try again.",
   "Um campo a mais no catálogo para 128GB, 1TB ou 500ml. O atendente de IA passa a achar o produto por ele, mesmo quando o nome não repete a capacidade.": "An extra catalog field for 128GB, 1TB or 500ml. The AI agent starts finding the product by it, even when the name does not repeat the capacity."

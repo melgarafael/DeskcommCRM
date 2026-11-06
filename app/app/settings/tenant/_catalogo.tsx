@@ -50,7 +50,7 @@ export function CatalogoDaEmpresaForm({ inicial }: { inicial: boolean }) {
         </span>
       </label>
       <Button type="button" size="sm" disabled={isPending} onClick={salvar} data-testid="catalogo-salvar">
-        {t("Salvar catálogo")}
+        {t("Aplicar ajustes do catálogo")}
       </Button>
     </Card>
   );

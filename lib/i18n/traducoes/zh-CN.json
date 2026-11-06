@@ -6022,7 +6022,7 @@
   "Catálogo salvo.": "目录已保存。",
   "Usar o campo Capacidade nos produtos": "在产品中使用容量字段",
   "Mostra o campo em Produtos e na planilha, para 128GB, 1TB ou 500ml, e o atendente de IA passa a procurar por ele. Desligar esconde o campo, mas não apaga o que já foi cadastrado.": "在“产品”和表格中显示该字段（如 128GB、1TB 或 500ml），AI 客服也会按它搜索。关闭后字段会隐藏，但不会删除已保存的内容。",
-  "Salvar catálogo": "保存目录",
+  "Aplicar ajustes do catálogo": "应用目录设置",
   "Falha ao salvar.": "保存失败。",
   "A configuração mudou. Recarregue a página e tente novamente.": "配置已更改。请刷新页面后重试。",
   "Um campo a mais no catálogo para 128GB, 1TB ou 500ml. O atendente de IA passa a achar o produto por ele, mesmo quando o nome não repete a capacidade.": "目录中多一个字段，用于 128GB、1TB 或 500ml。即使名称中没有容量，AI 客服也能据此找到产品。"
