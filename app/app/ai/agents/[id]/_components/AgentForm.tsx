@@ -1572,7 +1572,7 @@ export function AgentForm(props: Props) {
               onChange={(quando_ha_compromisso) =>
                 patch({ followup: { ...form.followup, quando_ha_compromisso } })
               }
-              ajudaExtra="Vale para todos os fluxos de follow-up deste agente."
+              alcanceDoAgente
               disabled={disabled || !form.followup.enabled}
             />
             <FollowupFlowPicker

@@ -65,13 +65,18 @@ export function EscolhaQuandoHaCompromisso({
   escolha,
   onChange,
   disabled = false,
-  ajudaExtra,
+  alcanceDoAgente = false,
 }: {
   escolha: EscolhaNoEnvio;
   onChange: (escolha: EscolhaNoEnvio) => void;
   disabled?: boolean;
-  /** Frase curta do contexto de quem usa (ex.: o alcance no follow-up). */
-  ajudaExtra?: string;
+  /**
+   * No follow-up a escolha vale para TODOS os fluxos do agente. É booleano, e
+   * não uma frase por prop, de propósito: o gate de i18n (`t()` não recebe
+   * parâmetro livre) trata texto vindo de prop como dado do operador, e dado do
+   * operador não é chave de dicionário.
+   */
+  alcanceDoAgente?: boolean;
 }) {
   const t = useT();
   const grupo = React.useId();
@@ -86,7 +91,11 @@ export function EscolhaQuandoHaCompromisso({
           "Em qualquer das três continuam valendo o descadastro do contato, a janela de envio do número e o limite diário.",
         )}
       </p>
-      {ajudaExtra ? <p className="text-xs text-muted-foreground">{t(ajudaExtra)}</p> : null}
+      {alcanceDoAgente ? (
+        <p className="text-xs text-muted-foreground">
+          {t("Vale para todos os fluxos de follow-up deste agente.")}
+        </p>
+      ) : null}
       <div role="radiogroup" aria-labelledby={`${grupo}-rotulo`} className="space-y-1">
         {ESCOLHAS_DA_AGENDA.map((opcao) => (
           <label

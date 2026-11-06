@@ -104,7 +104,16 @@ function versao(followup: Record<string, unknown>): AgentVersionRow {
     model: "claude-sonnet-4",
     credential_id: null,
     tool_ids: [],
-    trigger_config: { events: ["message"] },
+    trigger_config: {
+      events: ["message"],
+      filters: {
+        ignore_groups: true,
+        ignore_self: true,
+        keyword_regex: null,
+        business_hours: null,
+      },
+      concurrency: "one_per_conversation",
+    },
     channel_session_id: null,
     max_steps: 5,
     token_budget: 2000,
