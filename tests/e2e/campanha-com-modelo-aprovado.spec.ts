@@ -557,6 +557,10 @@ test.describe("Campanhas — número oficial manda modelo aprovado", () => {
     await expect(page.getByTestId("broadcast-teto")).toContainText("teto diário do número");
     await expect(page.getByTestId("broadcast-parar")).toContainText("cancelando a campanha inteira");
     await page.screenshot({ path: path.join(EVIDENCIA, "09-broadcast-escolhido-texto-fixo.png"), fullPage: true });
+    await page.setViewportSize({ width: 375, height: 800 });
+    const noCelular = await page.evaluate(() => ({ rolavel: document.documentElement.scrollWidth, tela: document.documentElement.clientWidth }));
+    expect(noCelular.rolavel).toBeLessThanOrEqual(noCelular.tela);
+    await page.screenshot({ path: path.join(EVIDENCIA, "09-broadcast-escolhido-375px.png"), fullPage: true });
   });
 
   test("⭐ broadcast: a lista vai ao provedor numa chamada e o relatório volta à campanha", async ({ page }) => {
@@ -706,6 +710,8 @@ test.describe("Campanhas — número oficial manda modelo aprovado", () => {
     expect(await daCampanha()).toMatchObject({ status: "paused", failure_code: "transmissao_acima_do_teto" });
     await page.reload();
     await expect(page.getByText(/Último problema: A lista inteira não cabe no teto diário deste número/)).toBeVisible({ timeout: 30_000 });
+    const opcaoBroadcast = page.getByTestId("velocidade-da-campanha").getByRole("radio", { name: "Broadcast" });
+    await expect(opcaoBroadcast).toBeChecked({ timeout: 30_000 });
     await page.screenshot({ path: path.join(EVIDENCIA, "11-broadcast-acima-do-teto.png"), fullPage: true });
 
     // Com o teto ajustado, os telefones sobem e o envio é recusado: pausa com o rascunho cheio.
@@ -742,6 +748,8 @@ test.describe("Campanhas — número oficial manda modelo aprovado", () => {
     // Com a lista entregue, a tela trava a velocidade.
     await page.reload();
     await expect(page.getByTestId("broadcast-entregue")).toBeVisible({ timeout: 30_000 });
+    await expect(opcaoBroadcast).toBeChecked({ timeout: 30_000 });
+    await expect(opcaoBroadcast).toBeDisabled();
 
     // 3ª rodada: o relatório conclui; a pessoa que saiu segue fora.
     await rodada();
@@ -760,7 +768,7 @@ test.describe("Campanhas — número oficial manda modelo aprovado", () => {
     await page.screenshot({ path: path.join(EVIDENCIA, "12-broadcast-retomada-sem-quem-saiu.png"), fullPage: true });
     await page.setViewportSize({ width: 375, height: 800 });
     await page.reload();
-    await expect(page.getByText("Entregues", { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("Entregues", { exact: true }).locator("xpath=following-sibling::p[1]")).toHaveText("2", { timeout: 30_000 });
     const larguras = await page.evaluate(() => ({ rolavel: document.documentElement.scrollWidth, tela: document.documentElement.clientWidth }));
     expect(larguras.rolavel).toBeLessThanOrEqual(larguras.tela);
     await page.screenshot({ path: path.join(EVIDENCIA, "13-broadcast-retomada-375px.png"), fullPage: true });

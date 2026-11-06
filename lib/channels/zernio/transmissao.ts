@@ -205,8 +205,8 @@ export async function transmissaoDoParceiro(
       } catch (err) {
         if (err instanceof ErroDaTransmissao) {
           if (err.status === 404) return true;
-          // A especificação diz "only drafts can be deleted" sem dizer com que
-          // status recusa. Lido como o `cancelar` lê o 400; outro status lança, e a
+          // A especificação (1.507.1, lida em 06/11/2026) diz "only drafts can be
+          // deleted" sem dizer com que status recusa. Lido como o `cancelar` lê o 400; outro status lança, e a
           // campanha pausa sem esquecer o id.
           if (err.status === 400 || err.status === 409) return false;
         }
