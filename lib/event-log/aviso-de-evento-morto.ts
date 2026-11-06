@@ -79,6 +79,8 @@ export interface EventoMorto {
   efeito?: { titulo: string; consequencia: string; rearme: string };
 }
 
+export type EfeitoDoEvento = NonNullable<EventoMorto["efeito"]>;
+
 /**
  * O despacho da IA que morreu — a família que nenhum outro aviso pode esconder.
  * O `titulo` é a chave do dedupe dos DOIS drenos: o do agent-engine deduplica
@@ -137,13 +139,28 @@ export const MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU = {
     "depois de conferir, marque-o como resolvido para voltar a ser avisado.",
 } as const;
 
-/** O aviso da quarta família: o que aconteceu e o que fazer primeiro, o técnico no fim. */
-export function avisoDaMensagemDoNumeroOficial(evento: {
-  eventType: string;
-  tentativas: number;
-  motivo: string;
-}): { title: string; body: string } {
-  return avisoDeEventoMorto({ ...evento, efeito: MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU });
+/**
+ * A mensagem do NÚMERO OFICIAL que entrou, mas cuja ingestão parou no meio e passou
+ * da janela de retomada: a quinta família. O reprocessamento roda os efeitos sem a
+ * IA, então o texto da quarta seria falso: a mensagem ESTÁ no Inbox. Título próprio
+ * pela mesma razão das outras: o dreno de handlers o exclui do seu dedupe.
+ */
+export const MENSAGEM_DO_NUMERO_OFICIAL_SEM_ATENDIMENTO = {
+  titulo: "Uma mensagem do número oficial ficou sem atendimento",
+  consequencia:
+    "Um cliente escreveu para o número oficial e a mensagem está no Inbox, mas o processamento dela parou no meio e o prazo para retomá-lo passou. " +
+    "Um pedido de sair da lista foi respeitado, mas a IA não vai responder essa mensagem e nenhum negócio nasce dela: confira as conversas desse horário e responda por lá.",
+  rearme:
+    "Enquanto este aviso estiver aberto, outras mensagens na mesma situação não abrem aviso novo: " +
+    "depois de conferir, marque-o como resolvido para voltar a ser avisado.",
+} as const;
+
+/** O aviso da quarta ou da quinta família: o que aconteceu e o que fazer primeiro, o técnico no fim. */
+export function avisoDaMensagemDoNumeroOficial(
+  evento: { eventType: string; tentativas: number; motivo: string },
+  efeito: EfeitoDoEvento = MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU,
+): { title: string; body: string } {
+  return avisoDeEventoMorto({ ...evento, efeito });
 }
 
 export const TITULO_GENERICO = "Uma tarefa automática parou de tentar";

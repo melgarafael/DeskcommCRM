@@ -379,17 +379,7 @@ async function retomarEfeitosDaEntrada(
   } | null;
   if (gravada?.direction !== "inbound") return false;
 
-  const { data: pedido, error: erroDoPedido } = await admin
-    .from("event_log")
-    .select("id")
-    .eq("organization_id", input.organizationId)
-    .eq("entity_kind", "message")
-    .eq("entity_id", gravada.id)
-    .eq("event_type", "ai_agent.dispatch_requested")
-    .limit(1)
-    .maybeSingle();
-  if (erroDoPedido) throw new Error(`zernio_retomada_failed: ${erroDoPedido.message}`);
-  if (pedido) return false;
+  if (await despachoJaPedido(admin, input.organizationId, gravada.id)) return false;
 
   const { data: conversa, error: erroDaConversa } = await admin
     .from("conversations")
@@ -411,6 +401,53 @@ async function retomarEfeitosDaEntrada(
   }
   await efeitosDaEntrada(admin, input, msg, gravada.contact_id, gravada.conversation_id, gravada.id);
   return true;
+}
+
+/**
+ * O marco de `retomarEfeitosDaEntrada`: esta mensagem já pediu o despacho do
+ * agente? O reprocessamento usa a mesma régua na linha que passou da janela.
+ * Lança se a leitura falhar.
+ */
+export async function despachoJaPedido(
+  admin: SupabaseClient,
+  organizationId: string,
+  messageId: string,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("event_log")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("entity_kind", "message")
+    .eq("entity_id", messageId)
+    .eq("event_type", "ai_agent.dispatch_requested")
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`zernio_retomada_failed: ${error.message}`);
+  return data !== null;
+}
+
+/**
+ * O contato já cadastrado desta mensagem, sem criar nada: pela thread, depois
+ * pelo telefone. `null` = ninguém no CRM para esta pessoa. Lança se a leitura da
+ * thread falhar.
+ *
+ * ponytail: sem busca por `wa_lid`. A âncora opaca nasce neste canal, então quem
+ * a tem já tem a thread; contato só com âncora em OUTRA thread e sem telefone fica de fora.
+ */
+export async function contatoConhecidoDaEntrada(
+  admin: SupabaseClient,
+  organizationId: string,
+  channelSessionId: string | null,
+  msg: ZernioInboundMessage,
+): Promise<{ contactId: string; conversationId: string | null } | null> {
+  const conversa = channelSessionId
+    ? await conversaPelaThread(admin, organizationId, msg.conversationId, channelSessionId)
+    : null;
+  if (conversa) return { contactId: conversa.contact_id, conversationId: conversa.id };
+  const contato = msg.identity.phone
+    ? await encontrarContatoPorTelefone(admin, organizationId, msg.identity.phone)
+    : null;
+  return contato ? { contactId: contato.id, conversationId: null } : null;
 }
 
 /**

@@ -10,6 +10,7 @@ import {
   avisoDeEventoMorto,
   IA_QUE_NAO_RESPONDEU,
   MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU,
+  MENSAGEM_DO_NUMERO_OFICIAL_SEM_ATENDIMENTO,
   MENSAGEM_QUE_NAO_ENTROU,
 } from "@/lib/event-log/aviso-de-evento-morto";
 import { dispatchEvent, getRegisteredHandlers, type EventRow } from "@/lib/event-log/dispatcher";
@@ -98,6 +99,7 @@ export async function avisarEventoMorto(
       .neq("title", IA_QUE_NAO_RESPONDEU.titulo)
       .neq("title", MENSAGEM_QUE_NAO_ENTROU.titulo)
       .neq("title", MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU.titulo)
+      .neq("title", MENSAGEM_DO_NUMERO_OFICIAL_SEM_ATENDIMENTO.titulo)
       .limit(1)
       .maybeSingle();
     if (jaAberto) return;
