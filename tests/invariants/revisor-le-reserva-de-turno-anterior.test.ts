@@ -102,7 +102,7 @@ describe("a leitura das reservas, com linhas de verdade", () => {
     const tipoDaB = await tipoDeAtendimento(b.org);
     const vale = await reserva(a.org, a.contact, tipo);
     await reserva(a.org, a.contact, tipo, { status: "pending" });
-    await reserva(a.org, a.contact, tipo, { status: "cancelled" });
+    await reserva(a.org, a.contact, tipo, { status: "cancelled", cancelled_at: "2029-12-20T12:00:00+00:00" });
     await reserva(a.org, a.contact, tipo, {
       starts_at: "2029-12-10T13:00:00+00:00",
       ends_at: "2029-12-10T13:30:00+00:00",

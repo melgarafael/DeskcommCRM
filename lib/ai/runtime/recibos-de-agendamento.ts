@@ -189,7 +189,8 @@ export interface AgendaDaRevisao {
  *
  * O motor lê pelo `pool`, que ignora RLS: os filtros de organização e contato
  * deste SQL são a guarda, e `comprovaReserva` os confere de novo em cada linha.
- * Datas saem como JSON para ter a mesma forma de texto que `linhaSchema` valida.
+ * Revisão e datas saem como JSON: o driver devolveria bigint como texto e
+ * timestamptz como Date, e `linhaSchema` descartaria toda linha em silêncio.
  */
 export async function lerReservasConfirmadasDoContato(
   db: Queryable,
@@ -198,12 +199,13 @@ export async function lerReservasConfirmadasDoContato(
 ): Promise<AgendaDaRevisao> {
   if (!escopo.contactId) return { evidencias: [], parcial: false };
   const { rows } = await db.query(
-    `select a.id, a.organization_id, a.contact_id, a.event_type_id, a.status, a.revision,
+    `select a.id, a.organization_id, a.contact_id, a.event_type_id, a.status,
             a.time_zone, a.location_kind, a.location_details, a.participant_name,
             a.service_requires_confirmation, a.service_confirmed_by_user_id,
-            to_json(a.service_confirmed_at) #>> '{}' as service_confirmed_at,
-            to_json(a.starts_at) #>> '{}' as starts_at,
-            to_json(a.ends_at) #>> '{}' as ends_at,
+            to_json(a.revision) as revision,
+            to_json(a.service_confirmed_at) as service_confirmed_at,
+            to_json(a.starts_at) as starts_at,
+            to_json(a.ends_at) as ends_at,
             json_build_object('id', t.id, 'organization_id', t.organization_id, 'name', t.name)
               as calendar_event_types
        from calendar_appointments a
