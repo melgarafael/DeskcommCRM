@@ -5,7 +5,8 @@
  * Só TRÊS arquivos de produção podem chamá-los:
  *
  *  - `lib/api/auth-dual.ts`: confere a ÁREA do módulo (`autorizarModulo`) antes do papel;
- *  - `app/api/mcp/route.ts` e `app/api/v1/contacts/route.ts`: recusam o ator `module`.
+ *  - `app/api/mcp/route.ts`: recusa o ator `module`;
+ *  - `app/api/v1/contacts/route.ts`: entrega o ator `module` a `resolveAuthDual` (área `contatos`).
  *
  * Um quarto chamador seria uma entrada que aceita o token de módulo (`mcp:read`) e lê pelos
  * escopos, sem passar pela área consentida. Esta cerca varre o repositório e quebra quando
@@ -85,17 +86,27 @@ describe("token de módulo só entra pelo portão", () => {
     expect(area).toBeLessThan(escopo);
   });
 
-  it.each(["app/api/mcp/route.ts", "app/api/v1/contacts/route.ts"])(
-    "%s recusa o ator `module` logo depois de validar o token",
-    (rel) => {
-      const texto = readFileSync(join(RAIZ, rel), "utf8");
-      const validar = texto.search(/await validateBearerToken\(/);
-      const recusa = texto.search(/actor\.type === "module"/);
-      expect(validar).toBeGreaterThan(-1);
-      expect(recusa).toBeGreaterThan(validar);
-      expect(texto).toContain("MODULO_NAO_ENTRA_AQUI");
-    },
-  );
+  it("app/api/mcp/route.ts recusa o ator `module` logo depois de validar o token", () => {
+    const texto = readFileSync(join(RAIZ, "app/api/mcp/route.ts"), "utf8");
+    const validar = texto.search(/await validateBearerToken\(/);
+    const recusa = texto.search(/actor\.type === "module"/);
+    expect(validar).toBeGreaterThan(-1);
+    expect(recusa).toBeGreaterThan(validar);
+    expect(texto).toContain("MODULO_NAO_ENTRA_AQUI");
+  });
+
+  it("app/api/v1/contacts/route.ts entrega o ator `module` ao portão (resolveAuthDual) logo depois de validar o token", () => {
+    const texto = readFileSync(join(RAIZ, "app/api/v1/contacts/route.ts"), "utf8");
+    const validar = texto.search(/await validateBearerToken\(/);
+    const ramo = texto.search(/actor\.type === "module"/);
+    const portao = texto.indexOf("await resolveAuthDual(", ramo);
+    // O ramo do módulo vem antes de qualquer `ensureScope`/`ensureRole` por escopo de rota.
+    const escopo = texto.indexOf("ensureScope(auth.scopes", ramo);
+    expect(validar).toBeGreaterThan(-1);
+    expect(ramo).toBeGreaterThan(validar);
+    expect(portao).toBeGreaterThan(ramo);
+    expect(portao).toBeLessThan(escopo);
+  });
 
   it("o próprio varredor enxerga um chamador novo (a cerca não é cega)", () => {
     expect(CHAMA.test(codigoSemComentarios("await validateBearerToken(h);"))).toBe(true);
