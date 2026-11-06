@@ -350,7 +350,7 @@ export async function carregaRadarDeRisco(
   // paridade sem necessidade; acrescentar não arrisca nada.
   let consultaDeDemandas = admin
     .from("demandas")
-    .select("id, lead_id, contact_id, aberta_em, origem, contacts(name, display_name), crm_leads(nao_comercial_em)")
+    .select("id, lead_id, contact_id, aberta_em, origem, contacts(name, display_name), crm_leads!lead_id(nao_comercial_em)")
     .eq("organization_id", organizationId)
     .is("fechada_em", null)
     .is("proximo_passo", null);

@@ -46,11 +46,13 @@ import type pg from "pg";
 
 import type { IntentVerdict } from "@/lib/agent-engine/agent/intent-classifier";
 import type { RouterMember } from "@/lib/agent-engine/agent/router-config";
+// Do módulo PURO, nunca de `lib/agent-engine/agent/**`: a cerca do Jev proíbe
+// que o caminho dele alcance quem envia mensagem (ver o cabeçalho daqui).
 import {
   CABECALHO_DOS_FATOS_NO_PROMPT,
   formatarFatosDoCrm,
   type FatosDoCrm,
-} from "@/lib/agent-engine/agent/fatos-do-crm-do-contato";
+} from "@/lib/leads/fatos-do-crm-no-prompt";
 import { costCents } from "@/lib/agent-engine/edge/llm/pricing";
 import { logger } from "@/lib/logger";
 import { scrubMessage } from "@/lib/sentry/scrub";
