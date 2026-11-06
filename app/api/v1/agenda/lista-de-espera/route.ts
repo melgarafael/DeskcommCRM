@@ -129,7 +129,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     actorUserId: authz.user.id,
     requestId,
     resourceType: "organization",
-    resourceId: org,
+    resourceId: authz.org.orgId,
     metadata: parsed.data,
   });
   return ok(parsed.data, { requestId });

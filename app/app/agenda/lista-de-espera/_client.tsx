@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { useT } from "@/hooks/i18n/useT";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { apiClient } from "@/lib/api/client";
+import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 
 type Config = {
   ativa: boolean;
@@ -149,7 +150,7 @@ function NovaInscricao() {
             <option value="">{t("Escolha o contato")}</option>
             {(contatos ?? []).map((c) => (
               <option key={c.id} value={c.id}>
-                {c.display_name ?? c.name ?? c.phone_number ?? c.id}
+                {nomeDoContato(c) ?? c.phone_number ?? t("Contato")}
               </option>
             ))}
           </select>
