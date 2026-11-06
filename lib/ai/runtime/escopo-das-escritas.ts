@@ -68,6 +68,11 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
   crm_set_conversation_sector: { conversation_id: "conversa", sector_id: "configuracao" },
   crm_manage_tags: { target_id: "alvo_de_tag" },
   crm_send_whatsapp_message: { conversation_id: "conversa" },
+  // #4129 — irmã de `crm_send_whatsapp_message`: a conversa vem do turno e o
+  // material é CATÁLOGO da organização, não registro de cliente. Quem confere
+  // que o material é da organização é o preparo
+  // (`materialPertenceAOrganizacao`), com a linha lida por service role.
+  crm_send_material: { conversation_id: "conversa", material_id: "configuracao" },
   crm_request_human_handoff: { conversation_id: "conversa", target_user_id: "configuracao" },
   crm_resume_ai_attendance: { conversation_id: "conversa" },
 

@@ -186,7 +186,13 @@ describe("fiação — a espera humana é paga UMA vez por turno", () => {
     expect(doSendMessage).toBeGreaterThan(-1);
     const i = FONTE_INBOUND.indexOf("send: (finalBody: string) =>", doSendMessage);
     expect(i).toBeGreaterThan(-1);
-    const janela = FONTE_INBOUND.slice(i, i + 2400);
+    // #4129 — a cadeia deste callback ganhou o ramo do material da empresa
+    // (`enviarComFotos` com `anexoDoMaterial`), e o call site das bolhas andou
+    // ~500 caracteres para baixo: a janela fixa de 2400 passou a cortar antes
+    // dele. O teto novo mantém a janela em volta do MESMO callback, e a
+    // asserção `: tool({` abaixo reprova se ela atravessar para outra tool.
+    const janela = FONTE_INBOUND.slice(i, i + 3600);
+    expect(janela).not.toContain(": tool({");
     // Os dois convivem: o jitter é throttle anti-ban entre mensagens físicas, o
     // atraso humano é a pausa do turno. Perder o primeiro é afrouxar o anti-ban.
     // Desde a 0499 o jitter LÊ os knobs da conexão (throttleMs + jitterMaxMs,

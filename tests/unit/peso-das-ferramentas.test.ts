@@ -97,6 +97,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_retomar_lead": { tokens: 394, motivo: BASE },
   "crm_propose_lead_fields_from_document": { tokens: 583, motivo: BASE },
   "crm_send_whatsapp_message": { tokens: 281, motivo: BASE },
+  // #4129 — capacidade de WIRE que envia o material da empresa como documento.
+  // O peso é quase todo a descrição: é ela que ensina o integrador que o
+  // arquivo NÃO é lido nem resumido. Medido na criação (2026-11-06), sem gordura.
+  "crm_send_material": { tokens: 407, motivo: "material da empresa no caminho de mídia (#4129), medida na criação (2026-11-06)" },
   "crm_start_conversation_and_send": { tokens: 593, motivo: BASE },
   "crm_create_conversation_draft": { tokens: 411, motivo: BASE },
   "crm_set_conversation_sector": { tokens: 383, motivo: "capacidade nova (#3881): a triagem da IA escolhe a FILA da conversa; a descrição precisa nomear os setores de exemplo e as recusas, senão o modelo tenta resolver fila com crm_assign_conversation (que é dono, não setor)" },
@@ -119,7 +123,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_draft_proposal": { tokens: 1059, motivo: BASE },
   "crm_request_human_handoff": { tokens: 583, motivo: BASE },
   "get_lead_context": { tokens: 46, motivo: BASE },
-  "send_message": { tokens: 137, motivo: BASE },
+  "send_message": { tokens: 368, motivo: "#4129 — o `material_id` (e o `.describe` que explica o anexo da empresa) entra no envio nativo; era 137 na linha de base, e o teto novo é a medição do PR, sem folga" },
   "update_lead_state": { tokens: 240, motivo: BASE },
   "schedule_followup": { tokens: 200, motivo: BASE },
   "save_lead_note": { tokens: 229, motivo: BASE },
@@ -139,7 +143,10 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
 
 // 29952 até 2026-11-05; +142 com `ler_documento` (#4133), que só é montada no
 // modo `leitura_direta` — nunca junto de `search_knowledge`.
-const TETO_TOTAL = 30094;
+// +638 com o material da empresa (#4129): 231 do `send_message` (o `material_id`
+// e a sua descrição) e 407 da capacidade de wire `crm_send_material`, que entra
+// no catálogo lido pelo integrador. Medido no merge com a main de 53bf3cad2d.
+const TETO_TOTAL = 30732;
 
 const VARIANTE = "schedule_followup (com negócio)";
 

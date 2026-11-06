@@ -42,7 +42,7 @@ interface LinhaDoBanco {
  */
 function banco(
   material: LinhaDoBanco | null,
-  historico: { nas_ultimas_24h: number; ultimo: Date | string | null } = {
+  historico: { nas_ultimas_24h: number | string; ultimo: Date | string | null } = {
     nas_ultimas_24h: 0,
     ultimo: null,
   },
@@ -68,7 +68,7 @@ const MATERIAL_PRONTO: LinhaDoBanco = {
 function preparar(
   material: LinhaDoBanco | null,
   opcoes: {
-    historico?: { nas_ultimas_24h: number; ultimo: Date | string | null };
+    historico?: { nas_ultimas_24h: number | string; ultimo: Date | string | null };
     copiar?: () => Promise<boolean>;
     canal?: string | null;
     clientePediu?: boolean;
