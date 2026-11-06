@@ -23,6 +23,7 @@ import {
   LlmProviderUnknownError,
   runModelCall,
 } from "@/lib/agent-engine/edge/llm/run-model-call";
+import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 import { getSkillsPool } from "@/lib/ai/skills/db";
 import { requireSupportWrite } from "@/lib/impersonate/support";
@@ -73,6 +74,19 @@ export async function POST(req: NextRequest): Promise<Response> {
       ...(corpo.sistema ? { system: corpo.sistema } : {}),
       messages: corpo.mensagens,
       maxOutputTokens: 2000,
+    });
+    // Gastou a IA da organização: auditoria (fire-and-forget), só com efeito e sem o texto da conversa.
+    void audit({
+      organizationId: authz.organizationId,
+      actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+      actorApiTokenId: authz.apiTokenId ?? null,
+      action: "ai.assistente_conversa",
+      resourceType: "ai_assistente",
+      requestId,
+      metadata: {
+        mensagens: corpo.mensagens.length,
+        ...(authz.pessoaDoModulo ? { pessoa_id: authz.pessoaDoModulo } : {}),
+      },
     });
     return ok({ disponivel: true, motivo: null, texto: result.text }, { requestId });
   } catch (err) {
