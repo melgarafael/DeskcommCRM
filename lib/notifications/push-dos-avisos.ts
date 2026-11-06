@@ -12,7 +12,8 @@
  *     (`lib/propostas/aviso-de-revisao.ts`);
  *   - um negócio entrou numa etapa que avisa (migration 0440) — com o valor
  *     do negócio no título e quantos entraram hoje no corpo
- *     (`./push-de-venda.ts`), só quando todo atendente vê todo negócio.
+ *     (`./push-de-venda.ts`), para quem PODE VER aquele negócio: a gestão vê
+ *     todos, o atendente vê a própria carteira (#3981).
  *
  * São os MESMOS que têm som próprio: a regra de quais avisos pedem gente é uma
  * só (`somDoAviso`). Todos chegam pelo barramento como `central.aviso_criado`
@@ -56,8 +57,10 @@ const CENTRAL = "/app/ai/inbox";
 
 /**
  * Idioma, fuso e visibilidade da organização: o push sai sem ninguém logado, o
- * fuso diz onde começa o "hoje" da soma do dia, e o `visibility_mode` diz que
- * número de negócio cada papel pode ler (`./push-de-venda.ts`).
+ * fuso diz onde começa o "hoje" da soma do dia, e o `visibility_mode` decide,
+ * em `./push-de-venda.ts`, o que a GESTÃO vê — quem vê apenas a própria
+ * carteira tem o escopo próprio (`escopoDoPapel`). No push da etapa que avisa,
+ * é essa régua que separa os textos (#3981).
  */
 export async function organizacaoDoPush(
   admin: SupabaseClient,
@@ -86,6 +89,19 @@ type Aviso = {
   para_user_id: string | null;
 };
 
+/**
+ * O push de um aviso e para quem ele vai. `etapa` só existe na etapa que avisa
+ * (#3981): lá o texto não é um só para a organização inteira — o valor e a soma
+ * do dia seguem a régua de quem VÊ o negócio (`./web_push.ts`).
+ */
+export type PushDoAviso = {
+  payload: PushPayload;
+  para: DestinoDoPush;
+  etapa?: { leadId: string; daCarteira: PushPayload; semValor: PushPayload };
+};
+
+type Montagem = { payload: PushPayload; etapa?: PushDoAviso["etapa"] };
+
 function destinoDaPassagem(item: Aviso): string {
   if (!item.ref_id) return CENTRAL;
   if (item.ref_kind === "conversation") return REFERENCIAS_DE_AVISO.conversation.href(item.ref_id);
@@ -108,7 +124,7 @@ export async function pushDoAvisoDaCentral(
   admin: SupabaseClient,
   orgId: string,
   itemId: string,
-): Promise<{ payload: PushPayload; para: DestinoDoPush } | null> {
+): Promise<PushDoAviso | null> {
   // ⚠️ Organização junto do id: o client é service-role e ignora RLS.
   const { data, error } = await admin
     .from("agent_inbox_items")
@@ -121,15 +137,21 @@ export async function pushDoAvisoDaCentral(
   if (error) throw new Error(`Não foi possível ler o aviso da Central: ${error.message}`);
   const item = data as Aviso | null;
   if (!item) return null;
-  const payload = await montarPush(admin, orgId, item);
-  if (!payload) return null;
-  const para: DestinoDoPush = item.para_user_id
-    ? { papelMinimo: PAPEL_MINIMO_DA_CENTRAL, soUsuario: item.para_user_id }
-    : { papelMinimo: PAPEL_MINIMO_DA_CENTRAL };
-  return { payload, para };
+  const montagem = await montarPush(admin, orgId, item);
+  if (!montagem) return null;
+  // Aviso com destinatário (`para_user_id`) vai a UMA pessoa, por fora da régua
+  // de quem vê o negócio: na etapa ele sai sem valor, para nunca levar número
+  // que a tela dela não mostra. Hoje nenhum aviso de etapa grava destinatário.
+  if (item.para_user_id) {
+    return {
+      payload: montagem.etapa?.semValor ?? montagem.payload,
+      para: { papelMinimo: PAPEL_MINIMO_DA_CENTRAL, soUsuario: item.para_user_id },
+    };
+  }
+  return { ...montagem, para: { papelMinimo: PAPEL_MINIMO_DA_CENTRAL } };
 }
 
-async function montarPush(admin: SupabaseClient, orgId: string, item: Aviso): Promise<PushPayload | null> {
+async function montarPush(admin: SupabaseClient, orgId: string, item: Aviso): Promise<Montagem | null> {
   const som = somDoAviso(item);
   if (som === null) return null;
   const { idioma, fuso, visibilidade } = await organizacaoDoPush(admin, orgId);
@@ -140,11 +162,13 @@ async function montarPush(admin: SupabaseClient, orgId: string, item: Aviso): Pr
   if (item.kind === "other" && item.ref_kind === "ai_provider_credential") {
     const body = traduzir("Recarregue o saldo na conta do provedor: as respostas saem sozinhas quando ele voltar.", idioma);
     return {
-      title: truncar(item.title),
-      body,
-      corpoSemPrevia: body,
-      tag,
-      href: REFERENCIAS_DE_AVISO.ai_provider_credential.href(),
+      payload: {
+        title: truncar(item.title),
+        body,
+        corpoSemPrevia: body,
+        tag,
+        href: REFERENCIAS_DE_AVISO.ai_provider_credential.href(),
+      },
     };
   }
 
@@ -163,22 +187,26 @@ async function montarPush(admin: SupabaseClient, orgId: string, item: Aviso): Pr
   if (item.kind === "proposta_pronta_para_revisao") {
     const body = traduzir("A IA preparou uma proposta. Confira antes de enviar.", idioma);
     return {
-      title: truncar(item.title),
-      body,
-      corpoSemPrevia: body,
-      tag,
-      href: destinoDaPassagem(item),
+      payload: {
+        title: truncar(item.title),
+        body,
+        corpoSemPrevia: body,
+        tag,
+        href: destinoDaPassagem(item),
+      },
     };
   }
 
   if (som === "pessoa") {
     const body = traduzir("Abra a conversa para responder o cliente.", idioma);
     return {
-      title: traduzir("A IA passou uma conversa para a equipe", idioma),
-      body,
-      corpoSemPrevia: body,
-      tag,
-      href: destinoDaPassagem(item),
+      payload: {
+        title: traduzir("A IA passou uma conversa para a equipe", idioma),
+        body,
+        corpoSemPrevia: body,
+        tag,
+        href: destinoDaPassagem(item),
+      },
     };
   }
 
@@ -188,10 +216,21 @@ async function montarPush(admin: SupabaseClient, orgId: string, item: Aviso): Pr
   //
   // O VALOR do negócio vai depois do título, e o corpo vira quantos negócios
   // entraram hoje nesta etapa, com a soma na mesma moeda (`./push-de-venda.ts`).
-  // Só com `visibility_mode = 'all'`: o aviso vai a todo atendente (não tem
-  // destinatário), e nos outros modos um atendente leria o valor de negócio
-  // que a tela não lhe mostra. O corpo sem prévia segue a frase fixa, sem
-  // número. Sem resumo do dia, o corpo também fica a frase fixa.
+  //
+  // O aviso não tem destinatário: vai a todo membro ativo que alcança o papel
+  // mínimo. Por isso o texto NÃO é um só — quem decide é quem VÊ o negócio
+  // (`fn_can_view_lead`, aplicada por `./web_push.ts`), não o `visibility_mode`
+  // da organização (#3981):
+  //
+  //   - a GESTÃO vê a organização inteira: recebe o valor e a soma do dia;
+  //   - o DONO fora do «Todos veem tudo» vê a própria carteira: recebe o valor,
+  //     mas não a soma do dia — esse número é da organização e ele não o veria
+  //     na tela (o mesmo cuidado do #3909);
+  //   - quem NÃO vê o negócio recebe a frase fixa de antes, sem valor nenhum.
+  //
+  // Com `visibility_mode = 'all'` todos veem tudo, e os dois primeiros textos
+  // coincidem: o que chega ao celular é exatamente o que chegava antes. O corpo
+  // sem prévia segue a frase fixa, sem número, nos três casos.
   let href = CENTRAL;
   let valor: ReturnType<typeof valorDoNegocio> = null;
   if (item.ref_kind === "lead" && item.ref_id) {
@@ -203,18 +242,24 @@ async function montarPush(admin: SupabaseClient, orgId: string, item: Aviso): Pr
       .maybeSingle();
     const linha = lead as { pipeline_id?: string | null; value_cents?: number | null; currency?: string | null } | null;
     if (linha?.pipeline_id) href = REFERENCIAS_DE_AVISO.lead.href(item.ref_id, linha.pipeline_id);
-    if (visibilidade === "all") valor = valorDoNegocio(linha);
+    valor = valorDoNegocio(linha);
   }
   const fixo = truncar(item.body ?? "");
-  if (visibilidade !== "all") return { title: truncar(item.title), body: fixo, corpoSemPrevia: fixo, tag, href };
+  const semValor: PushPayload = { title: truncar(item.title), body: fixo, corpoSemPrevia: fixo, tag, href };
+  // Etapa sem negócio ligado (não deveria acontecer: `aviso-de-etapa` sempre
+  // grava `ref_kind = 'lead'`) ou sem id: nada a dividir, sai o texto de antes.
+  if (item.ref_kind !== "lead" || !item.ref_id) return { payload: semValor };
   const moeda = valor?.moeda ?? null;
   const hoje = await entradasDeHoje(admin, orgId, item.title, moeda, inicioDoDia(new Date(), fuso));
   const dia = linhaDoDia(traduzir("Hoje nesta etapa: {quantidade}", idioma), hoje, moeda);
-  return {
+  const ampla: PushPayload = {
     title: truncar(tituloComValor(item.title, valor)),
     body: dia ? truncar(dia) : fixo,
     corpoSemPrevia: fixo,
     tag,
     href,
   };
+  // Em 'all' o dono vê a organização inteira: o texto dele é o mesmo da gestão.
+  const daCarteira: PushPayload = visibilidade === "all" ? ampla : { ...ampla, body: fixo };
+  return { payload: ampla, etapa: { leadId: item.ref_id, daCarteira, semValor } };
 }

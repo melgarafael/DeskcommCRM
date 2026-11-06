@@ -221,6 +221,18 @@ na instalação medida (29/10), quem devolveu o serviço foi o *Restart project*
 replay do gateway: `postgrest-replay-do-gateway.md` (seção "Outro ramo: falta de memória/IO") e
 `supabase-compute-insuficiente-free.md`.
 
+**Micro só existe em plano pago, e assinar não troca o compute.** O plano grátis roda o Nano e o Micro é dos planos
+pagos, então este passo são dois atos: assinar um plano pago e depois trocar o compute do projeto. O projeto que veio
+do grátis pode continuar no Nano (0,5 GB) dentro do plano pago, cobrado pelo preço do Micro, até você trocar. O
+Supabase não troca sozinho porque a troca causa uma queda, em geral de menos de 2 minutos segundo a doc
+([*Compute and Disk*](https://supabase.com/docs/guides/platform/compute-and-disk)).
+
+O plano e os US$ 10/mês em créditos de compute são da organização, não de cada projeto: o crédito cobre um projeto no
+Micro, e cada projeto a mais soma o compute dele. **Exemplo lido na doc oficial em 05/11/2026**, não orçamento: Pro
+US$ 25/mês + Micro US$ 0,01344/h (~US$ 10/mês) − US$ 10 de crédito ≈ **US$ 25/mês** com um projeto; com dois projetos
+no Micro, ≈ **US$ 35/mês**. Preço e crédito mudam; confira os valores e o que o crédito cobre em
+<https://supabase.com/docs/guides/platform/manage-your-usage/compute> antes de trocar o compute.
+
 ## 6. Se ainda não fechar
 
 Abra uma issue com: a saída dos três comandos da seção 1, a janela de tempo que
