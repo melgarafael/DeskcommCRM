@@ -431,8 +431,8 @@ export function applyPreviewPolicy(
                   });
               }
               // Foto por URL (Spec 25 R4): na prévia NADA é buscado nem enviado, e a guarda de
-              // rede (C6) não roda aqui — só o FORMATO é conferido, sem rede. Quem decide a
-              // foto de verdade é o envio real. O retorno diz o que sairia.
+              // rede (C6) não roda aqui — só o formato e a procedência são conferidos, sem rede.
+              // Quem decide a foto de verdade é o envio real. O retorno diz o que sairia.
               const imagemUrl =
                 args && typeof args === 'object' && 'imagem_url' in args && typeof args.imagem_url === 'string'
                   ? args.imagem_url.trim()

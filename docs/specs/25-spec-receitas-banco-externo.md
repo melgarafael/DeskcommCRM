@@ -49,7 +49,7 @@ caminho único e vira o modo avançado; o padrão passa a ser a receita pronta
 | D4 | Execução | Template + parâmetros validados (Zod) → placeholders ligados, nunca concatenação. Validador SELECT-only + tabelas permitidas antes de rodar. As tabelas do JOIN da receita passam pela mesma lista de fontes liberadas da Spec 23 D7, no mesmo ponto único de aplicação (`tabelaLiberada`/`colunasLiberadas`/`aplicarAoCatalogo` em `lib/external-db/fontes.ts`, aplicados em `criarDialetoPostgres`, `lib/external-db/dialeto.ts`): tabela fora da lista → `fonte_nao_liberada`; a receita nunca furta a lista. Execução na armadura do dialeto: transação só-leitura + timeouts (`lib/external-db/conexao.ts:127-147`, CONFIRMADO) e tetos (`max_rows`/`max_filters`/`max_response_bytes` em `lib/external-db/credenciais.ts`, truncagem de célula em `lib/external-db/leitura.ts:23`, teto de bytes da tool — CONFIRMADO). Nada da origem é persistido como entidade: o resultado volta ao turno e o que fica é o rastro da execução sob as regras da D8; auditoria sem valores (padrão de `dados-externos.ts:17-22`, CONFIRMADO). |
 | D5 | ACF vs. JetEngine | Receitas separadas por família; o sistema **sugere** pela heurística (tabelas existentes + amostra de `meta_key`), a palavra final é do admin na tela. A heurística roda só no caminho de preview do admin (só-leitura); em empate (ambos presentes, restos de `meta_key` legados), sugere as duas e o admin escolhe. Nenhuma receita é liberada sem o C1 verde naquela família/versão. |
 | D6 | Fluxo WhatsApp → funil | Até o teto do C4 (proposta inicial: **2** — o teto de envios por turno é 3, `DEFAULT_MAX_SENDS_PER_TURN` em `lib/agent-engine/agent/inbound-turn.ts`, CONFIRMADO, e cada item consome um envio; 4 itens exigem mudar o knob, fora da v1), um item por mensagem `send_message` (foto + legenda; diverge do padrão interno de N fotos numa mensagem em `lib/agent-engine/agent/fotos-do-produto.ts:100-111` — aqui um item = um interesse mapeável; o atrito com o anti-ban entra na prova). Interesse explícito → `crm_create_lead` (`lib/mcp/tools/leads.ts:236-260`, CONFIRMADO: `pipeline_id` + `stage_id` obrigatórios). Contrato PROPOSTO (decisão do mantenedor): `source: "external"`, referência em formato único `<familia>:<id>` (ex.: `acf:4821`) na `description` + nota no lead; funil/etapa de destino = padrão configurado na instância da receita (sem padrão, aviso na Central em vez de lead — item 4 do checklist); interesse repetido no mesmo item atualiza em vez de duplicar (regra de dedup por contato+referência, a desenhar na R5). |
-| D7 | Foto por URL | Guarda canônica de fetch externo: `assertUrlDeMidiaSegura` (`lib/messaging/media/url-de-midia-externa.ts:34`, CONFIRMADO — textual + destino resolvido, com exceção do Storage assinado) + teto de tamanho + timeout do C3; C6 é o gate. Sem igualdade de host (banco `localhost`/contêiner vs. fotos no domínio/CDN — igualdade mataria o caso do leigo); sem a guarda canônica, sem envio. Falha de mídia nunca derruba o texto (manda sem foto e registra). Legenda herda `LIMITE_DA_LEGENDA = 1024` (`lib/agent-engine/agent/fotos-do-produto.ts:23-24`, CONFIRMADO): estouro sai como texto antes da foto. WhatsApp não tem "card": foto com legenda é o formato. |
+| D7 | Foto por URL | Guarda canônica de fetch externo: `assertUrlDeMidiaSegura` (`lib/messaging/media/url-de-midia-externa.ts:34`, CONFIRMADO — textual + destino resolvido, com exceção do Storage assinado) + teto de tamanho + timeout do C3; C6 é o gate. Sem igualdade de host (banco `localhost`/contêiner vs. fotos no domínio/CDN — igualdade mataria o caso do leigo); sem a guarda canônica, sem envio. Falha de mídia nunca derruba o texto (manda sem foto e registra). Legenda herda `LIMITE_DA_LEGENDA = 1024` (`lib/agent-engine/agent/fotos-do-produto.ts:23-24`, CONFIRMADO): estouro sai como texto antes da foto. WhatsApp não tem "card": foto com legenda é o formato. Revisada na R4: ver "Revisões à D7 e ao fora de escopo". |
 | D8 | LGPD/rastro | O resultado da receita passa pelo rastro da execução (`ai_agent_runs.tool_calls`, redação por chave + corte — ponto levantado na triagem da #2527). A spec fixa: o que é redigido, o corte por campo e a retenção — explícitos antes da primeira fatia. |
 
 ## Regra de escopo da D8 (escrita na R1)
@@ -106,7 +106,7 @@ Spec 23:
 ## Fora de escopo
 
 - Escrita no banco externo; SQL livre digitado pelo admin (futuro, com revisão e allowlist de tabelas).
-- Sync contínuo para entidades do CRM; cópia de mídia para o nosso Storage.
+- Sync contínuo para entidades do CRM; cópia de mídia em lote para o nosso Storage. A foto de um envio é guardada na conversa desde a R4 (ver "Revisões à D7 e ao fora de escopo").
 - MariaDB; WP-REST/senha de aplicação (família HTTP futura, como na 23).
 - Sistema artesanal com relacionamento próprio (modo avançado cobre).
 
@@ -438,11 +438,30 @@ Destino: núcleo, dentro do módulo de banco externo, que nasce desligado.
 ## R4 entregue: `imagem_url` no envio do agente
 
 O `send_message` ganha `imagem_url` (URL https de uma imagem jpg, png ou webp
-que uma ferramenta de dados devolveu no mesmo turno). Decisão do dono (opção A): o CRM
+que uma ferramenta de dados devolveu no mesmo turno). O CRM
 baixa a imagem com a própria rede, confere, guarda no Storage da conversa e
 manda ao canal só o `storagePath`, como a foto do catálogo. O gateway de
 mensageria nunca recebe a URL da fonte. Sai pela mesma cadeia `before_send`
 do texto (pacing, LGPD, opt-out, teto de envios do turno).
+
+### Revisões à D7 e ao fora de escopo (aceitas na triagem em 22/10/2026)
+
+Três, explícitas, lidas na triagem do PR #3276 e confirmadas na de 06/11/2026.
+Não há decisão do dono sobre elas; o que este texto atribuía a ele não tinha rastro.
+
+1. **Cópia da foto para o Storage.** O fora de escopo excluía "cópia de mídia para o
+   nosso Storage". A R4 guarda a foto de um envio na conversa e manda ao canal só o
+   `storagePath`, para a URL da fonte não chegar ao gateway. Sincronizar ou copiar
+   mídia em lote segue fora de escopo.
+2. **A guarda do fetch.** A D7 cita `assertUrlDeMidiaSegura`, e a R4 não a chama: usa
+   as duas peças por baixo dela, `assertSafeOutboundUrl` e `ipEhEspecial`. Aquela
+   função valida o destino e não devolve o IP, e o download precisa conectar ao IP que
+   validou. A exceção do Storage assinado não se aplica aqui.
+3. **"Falha de mídia nunca derruba o texto" vale até a guarda.** Falha no download, na
+   conferência ou na guarda deixa a mensagem só com texto. Com a foto guardada, o corpo
+   vira legenda (`enviarComFotos`) e não há recuo para texto: se o canal recusar, o
+   desfecho é `failed`, o retorno traz `envio_falhou` e o texto não sai naquele envio.
+   A foto do catálogo se comporta igual. É esse caminho que o C3 mede.
 
 ### O que mudou
 - `lib/agent-engine/agent/baixar-imagem-segura.ts` (novo) — `baixarImagemSegura`:
@@ -462,8 +481,8 @@ do texto (pacing, LGPD, opt-out, teto de envios do turno).
 - `lib/agent-engine/agent/inbound-turn.ts` — schema de `send_message` com
   `imagem_url`; `produto_codigo` + `imagem_url` juntos devolvem
   `imagem_e_produto_juntos` e liberam a reserva do `dupTrava`; download e guarda
-  rodam antes da cadeia e fora da prévia; qualquer falha deixa a mensagem só com
-  texto e o retorno traz `foto_recusada`; o resultado traz `foto_enviada`.
+  rodam antes da cadeia e fora da prévia; falha em qualquer um dos dois deixa a
+  mensagem só com texto e o retorno traz `foto_recusada`; o resultado traz `foto_enviada`.
   O `tenantId` que vai ao caminho é o do turno.
 - `lib/agent-engine/agent/preview.ts` — na prévia NADA é buscado, baixado nem
   guardado; só o formato e a procedência são conferidos (sem rede) e o retorno traz
@@ -481,11 +500,17 @@ do texto (pacing, LGPD, opt-out, teto de envios do turno).
 - Célula com vários endereços (galeria separada por vírgula ou `|`) não autoriza
   nenhum deles: a foto é recusada. Separar a lista é da mesma fatia.
 - Foto do catálogo (`produto_codigo`) continua como estava.
+- Modo assistido: o rascunho guarda só o texto, então a foto não vai junto. A do
+  catálogo também não; `foto_prevista` diz o que o envio real faria.
+- Rastro: `ai_agent_runs.tool_calls` guarda `imagem_url` inteira, com a query.
+  `descreverSemQuery` cobre só o log, e essa tabela não tem expurgo por tempo.
 - Nenhuma migration, tela ou variável de ambiente nova.
 
 ### NÃO MEDIDO
 - C3: tipos, tamanhos e tempos aceitos no envio real por WhatsApp. O autor mediu um
-  envio real, um jpg de `gstatic.com`, recebido no celular; o resto da matriz não.
+  envio real, um jpg de `gstatic.com`, recebido no celular, antes da regra de
+  procedência; o resto da matriz não. Png, webp, tamanhos perto do teto e o tempo de
+  cada um seguem abertos, e a ordem de entrega exige o C3 verde para a R4.
 - C4: volume de itens por turno com fotos (continua na prova com gente).
 - Que o `lookup` fixado funciona com outros CDNs (TLS e SNI): medido só contra
   `www.gstatic.com`, em download real, sem pool (`agent: false`).

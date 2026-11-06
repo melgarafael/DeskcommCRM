@@ -2,8 +2,8 @@
  * `send_message` com `imagem_url`: a foto que veio de um RESULTADO DE FERRAMENTA
  * (ex.: uma receita do banco externo, Spec 25 R4).
  *
- * Opção A (decisão do dono): o CRM baixa a imagem com a própria rede
- * (`baixar-imagem-segura.ts`), confere o conteúdo, guarda no Storage da conversa
+ * Revisão à D7 aceita na triagem (Spec 25): o CRM baixa a imagem com a própria
+ * rede (`baixar-imagem-segura.ts`), confere o conteúdo, guarda no Storage da conversa
  * (`guardarImagemNaConversa`) e manda ao canal só o `storagePath`, exatamente
  * como a foto do catálogo. O gateway de mensageria nunca recebe a URL da fonte.
  *

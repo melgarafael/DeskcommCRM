@@ -4616,7 +4616,7 @@ async function executarTurnoDoAgente(
             };
           }
           // Duas fotos na mesma mensagem não existem: `produto_codigo` (catálogo, copiado
-          // para a conversa) e `imagem_url` (resultado de ferramenta, sem cópia). Erro de
+          // para a conversa) e `imagem_url` (baixada e guardada na conversa). Erro de
           // ENSINO — nada sai; a reserva é liberada como nos outros retornos antes da cadeia.
           const temFotoDoCatalogo = produto_codigo !== undefined && produto_codigo.trim() !== '';
           if (temFotoDoCatalogo && temImagemPorUrl) {
@@ -4630,10 +4630,10 @@ async function executarTurnoDoAgente(
               },
             };
           }
-          // Foto por URL (Spec 25 R4, opção A): mesma regra de fora do lock, só fora da
+          // Foto por URL (Spec 25 R4): mesma regra de fora do lock, só fora da
           // prévia. O CRM baixa a imagem com a própria rede (IP validado, sem redirect,
           // teto de 5 MB, conteúdo conferido), guarda no Storage da conversa e manda ao
-          // canal só o storagePath. Qualquer falha: a mensagem segue só com texto (D7) e o
+          // canal só o storagePath. Falha nesses passos: a mensagem segue só com texto (D7) e o
           // motivo volta ao modelo; o log leva host + caminho, nunca a query.
           if (temImagemPorUrl && !preview) {
             const url = (imagem_url ?? '').trim();
