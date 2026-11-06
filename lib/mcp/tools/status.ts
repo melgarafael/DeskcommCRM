@@ -56,8 +56,15 @@ export const crmPublishWhatsappStatus: McpToolDefinition<typeof inputShape> = {
   category: "write",
   requiresRole: "manager",
   requiresScope: "mcp:write",
-  // A imagem em base64 não pode ir para o log de auditoria.
-  redigirParaAuditoria: (args) => ({ ...args, image_base64: "[imagem omitida]" }),
+  // Lista do que FICA, e não do que sai: campo novo não entra na auditoria sem
+  // alguém decidir. Telefone e legenda são dado de terceiro, e `api_audit_log` é
+  // append-only (5 anos): o que entra lá não sai por pedido de LGPD.
+  redigirParaAuditoria: (args) => ({
+    channel_session_id: args.channel_session_id,
+    audience: args.all_contacts === true ? "todos" : "contatos",
+    contacts_count: Array.isArray(args.contacts) ? args.contacts.length : 0,
+    caption_present: typeof args.caption === "string" && args.caption.trim().length > 0,
+  }),
   handler: async (input, ctx) => {
     // Freio anti-ban do número: o MCP é sempre token, e o teto de chamadas do
     // token não sabe de warm-up nem de teto diário do número.

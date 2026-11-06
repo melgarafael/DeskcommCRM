@@ -355,8 +355,12 @@ describe("lerPublico — a régua é o dígito, não a máscara", () => {
   });
 
   it("recusa o que não é telefone, dizendo QUAL entrada errou", () => {
-    expect(() => lerPublico(["abc"])).toThrow(/contato_invalido/);
-    expect(() => lerPublico(["1234"])).toThrow(/contato_invalido/);
+    expect(() => lerPublico(["abc"])).toThrow(/contato_invalido: a entrada 1 /);
+    expect(() => lerPublico(["5515999999999", "1234"])).toThrow(/contato_invalido: a entrada 2 /);
+  });
+
+  it("a recusa diz a posição e NÃO repete a entrada: a mensagem vai para a auditoria", () => {
+    expect(() => lerPublico(["joao 123"])).toThrow(/^(?!.*joao)(?!.*123)/);
   });
 
   it("não repete o mesmo número (mandar duas vezes é ruído, não público)", () => {

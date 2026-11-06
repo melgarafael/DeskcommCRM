@@ -100,8 +100,10 @@ export function digitosDoTelefone(valor: string): string {
  * recebida e sem repetição (mandar o mesmo número duas vezes é ruído, não
  * público).
  *
- * Recusa com mensagem que diz QUAL entrada está errada: quem chama é uma
- * ferramenta usada por outro sistema, e "lista inválida" não dá o que consertar.
+ * Recusa dizendo QUAL entrada está errada pela POSIÇÃO, nunca pelo valor: quem
+ * chama é outro sistema, e "lista inválida" não dá o que consertar, mas esta
+ * mensagem vai para `metadata.error` da auditoria, e o valor recusado pode ser
+ * um telefone com um dígito a menos ou o nome de alguém.
  */
 export function lerPublico(contatos: readonly string[] | undefined): PublicoDoStatus {
   if (!contatos || contatos.length === 0) {
@@ -110,11 +112,11 @@ export function lerPublico(contatos: readonly string[] | undefined): PublicoDoSt
     );
   }
   const numeros: string[] = [];
-  for (const bruto of contatos) {
+  for (const [posicao, bruto] of contatos.entries()) {
     const lido = Telefone.safeParse(digitosDoTelefone(bruto));
     if (!lido.success) {
       throw new Error(
-        `contato_invalido: "${bruto}" não é um telefone em dígitos (8 a 15, com DDI).`,
+        `contato_invalido: a entrada ${posicao + 1} da lista não é um telefone em dígitos (8 a 15, com DDI).`,
       );
     }
     if (!numeros.includes(lido.data)) numeros.push(lido.data);
