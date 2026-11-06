@@ -239,6 +239,9 @@ function depsDoTurno(over: {
     observar: vi.fn(),
   };
   const consultarJev = vi.fn(() => jev);
+  // A gravação da decisão é o que cria o caso/leva o turno para o agente: ela é
+  // o espião de "nenhum caso criado" quando o público barra todo mundo.
+  const registrarDecisao = vi.fn().mockResolvedValue(undefined);
   const deps = {
     log,
     loadActiveRouter: vi.fn().mockResolvedValue(over.router),
@@ -249,10 +252,10 @@ function depsDoTurno(over: {
     classifyIntent: over.classifyIntent ?? vi.fn().mockResolvedValue({ intentName: null, confidence: 0 }),
     consultarJev,
     // A gravação da decisão usaria o `query` do banco e sujaria a contagem.
-    registrarDecisao: vi.fn().mockResolvedValue(undefined),
+    registrarDecisao,
     ...(over.escolhaDoNumero ? { escolherAgenteDoNumero: over.escolhaDoNumero } : {}),
   } as never;
-  return { deps, log, consultarJev };
+  return { deps, log, consultarJev, registrarDecisao };
 }
 
 const turno = (extra: Record<string, unknown> = {}) => ({ ...input, ...extra });
@@ -303,7 +306,7 @@ describe('público do agente no roteador (#3722, fatia 2)', () => {
     const classifyIntent = vi.fn();
     const escolhaDoNumero = vi.fn().mockResolvedValue({ config: null, motivo: 'publico_barrou' });
     const { db, query } = bancoCom(['cliente ativo']);
-    const { deps, log, consultarJev } = depsDoTurno({
+    const { deps, log, consultarJev, registrarDecisao } = depsDoTurno({
       router: routerCom(members),
       classifyIntent,
       escolhaDoNumero,
@@ -315,6 +318,8 @@ describe('público do agente no roteador (#3722, fatia 2)', () => {
     // ZERO chamadas de modelo: nem a IA de sempre, nem o Jev.
     expect(classifyIntent).not.toHaveBeenCalled();
     expect(consultarJev).not.toHaveBeenCalled();
+    // E nenhum caso criado: sem agente escolhido não há decisão a gravar.
+    expect(registrarDecisao).not.toHaveBeenCalled();
     // Conversa sem dono, turno silencioso — sem aviso na Central (nenhum warn).
     expect(out.config).toBeNull();
     expect(out.silencioPeloPublico).toBe(true);
