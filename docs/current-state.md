@@ -103,6 +103,10 @@ correspondentes localizados no repo):
   encerramento e por LGPD. **Incompleto:** o callback não reabre o turno (a próxima mensagem do
   cliente já encontra o acesso); o servidor da organização segue ao lado, como compartilhado.
   Guia: `docs/integracao/mcp-oauth-por-contato.md`.
+- **Status do WhatsApp por integração** — módulo opcional `status_whatsapp`, desligado de fábrica
+  (liga em `/admin/sistema`). A ferramenta MCP `crm_publish_whatsapp_status` publica imagem por
+  `publishStatus` do canal. **Incompleto:** nenhuma publicação real foi medida; a regra do acervo
+  (`todos` exige "Guardar histórico", a lista não) foi lida na fonte da tag do kit.
 - **LGPD** — export e redact via workers, anonimização em cascata, consentimento auditado.
 - **Self-host** — `hostgator-setup-kit`, `baseline.sql` auto-curativo, runbook de produção.
 - **Webhooks & automação** — captação + regras QUANDO/SE/ENTÃO + gatilhos externos.
