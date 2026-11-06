@@ -620,9 +620,10 @@ export async function motivoDoCasoParaRoteamento(
  *
  * ## Por que isto existe
  *
- * `fn_conversation_assign` grava `conversations.assigned_to_user_id` e não toca
- * em `crm_leads.owner_user_id` (medido: a função inteira só faz `update
- * public.conversations`). Enquanto `visibility_mode` era `all` ou
+ * `fn_conversation_assign` grava `conversations.assigned_to_user_id` e, desde a
+ * 9208, adota o negócio quando o contato tem UM aberto sem dono. Esta função
+ * cobre o contato com mais de um, que a 9208 não toca (por isso
+ * `leads_adotados` conta só esses). Enquanto `visibility_mode` era `all` ou
  * `own_and_unassigned`, ninguém notava: o lead sem dono aparecia para todo
  * mundo. No modo `own` — exatamente o que a issue #144 pede — lead sem dono não
  * aparece para NINGUÉM. O atendente receberia a conversa e o funil dele ficaria

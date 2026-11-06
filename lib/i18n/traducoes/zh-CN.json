@@ -1234,7 +1234,7 @@
   "Concluídos": "已完成",
   "Nenhum caso aberto": "没有未解决的案例",
   "Nenhum caso concluído": "没有已完成的案例",
-  "Quando a IA precisar de você, aparece aqui.": "当 AI 需要你时，会显示在这里。",
+  "Os casos aparecem aqui quando um agente publicado, com \"Deixar o agente pedir uma tarefa a alguém e seguir conversando\" ligado, pede algo a você. Conversa passada para uma pessoa vai para o Inbox.": "当已发布且开启了\"允许 AI 智能体向他人请求任务并继续对话\"的智能体向你请求某件事时，案例会显示在这里。转交给人工的对话会进入 Inbox。",
   "Casos concluídos, cancelados ou repassados ficam aqui.": "已完成、已取消或已转交的案例会显示在这里。",
   "Contato sem nome": "未命名联系人",
   "Selecione um caso à esquerda": "在左侧选择一个案例",
@@ -6017,5 +6017,8 @@
   "Análise concluída para {total} clientes.": "已完成 {total} 位客户的分析。",
   "Ver oportunidades": "查看商机",
   "{falhas} clientes não puderam ser analisados.": "有 {falhas} 位客户无法完成分析。",
-  "A análise atualiza o CRM e nunca envia mensagens ao cliente.": "分析只会更新 CRM，绝不会向客户发送消息。"
+  "A análise atualiza o CRM e nunca envia mensagens ao cliente.": "分析只会更新 CRM，绝不会向客户发送消息。",
+  "Este número já está em outra campanha em andamento.": "此号码已被另一个进行中的活动占用。",
+  "Abrir essa campanha": "打开该活动",
+  "Conexão removida.": "连接已移除。"
 }

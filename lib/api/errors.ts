@@ -80,6 +80,13 @@ export const ApiErrorCodes = {
   // retentar depois resolve, enquanto conflito manda trocar a chave.
   idempotency_in_progress: "idempotency_in_progress",
   state_conflict: "state_conflict",
+  // POST /api/v1/prospecting (`start` e `resume`): a CONEXÃO escolhida já tem
+  // uma campanha de prospecção em andamento (#3896). Uma campanha ativa por
+  // NÚMERO, não por organização — a recusa é do número, e `details` traz
+  // `campaign_id`/`campaign_name` de quem o ocupa para a tela oferecer
+  // "abrir essa campanha". Irmão do `channel_archived`: mesma classe (o canal é
+  // o recurso escasso), outro motivo.
+  prospecting_channel_busy: "prospecting_channel_busy",
   // Escrita vinda de uma aba que ficou numa organização diferente da do cookie
   // `active_org` (#2335). O header `X-Org-Da-Aba` só serve para RECUSAR: a org
   // efetiva continua sendo a do cookie (`lib/auth/require-role.ts`).
@@ -377,6 +384,16 @@ export const ApiErrorCodes = {
   internal_error: "internal_error",
   upstream_unavailable: "upstream_unavailable",
   unavailable: "unavailable", // 503: dependência de config ausente (ex.: pool do engine sem SUPABASE_DB_URL)
+
+  // ─── CEP DO CONTATO (issue #3494, fatia 2) ───
+  //
+  // 404 próprio, e não `not_found` genérico: a tela do cadastro precisa dizer
+  // "este CEP não existe" ao lado do campo, sem confundir com "contato não
+  // encontrado" — mesmo motivo de `campanha_nao_encontrada`. A falha do serviço
+  // de terceiro continua `upstream_unavailable` (502), que é o código que o
+  // cliente já trata como "tente de novo".
+  cep_nao_encontrado: "cep_nao_encontrado",
+
   base_publica_nao_configurada: "base_publica_nao_configurada", // 503: NEXT_PUBLIC_APP_URL ausente, placeholder ou da própria máquina — o webhook único da instalação não é registrado
   waha_error: "waha_error",
   channel_unavailable: "channel_unavailable", // 502: o transporte do canal não respondeu (ex.: listar grupos com a sessão fora de WORKING)

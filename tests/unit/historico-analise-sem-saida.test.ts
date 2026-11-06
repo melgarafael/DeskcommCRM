@@ -19,7 +19,7 @@ describe("análise do histórico não tem caminho de saída", () => {
 
   it("migration e baseline mantêm o kind com contato obrigatório", () => {
     for (const arquivo of [
-      "supabase/migrations/20261106073628_9221_historico_analisa_perfis_e_oportunidades.sql",
+      "supabase/migrations/20261106152607_9236_historico_analisa_perfis_e_oportunidades.sql",
       "supabase/baseline.sql",
     ]) {
       const sql = ler(arquivo);
