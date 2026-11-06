@@ -119,7 +119,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "crm_draft_proposal": { tokens: 1059, motivo: BASE },
   "crm_request_human_handoff": { tokens: 583, motivo: BASE },
   "get_lead_context": { tokens: 46, motivo: BASE },
-  "send_message": { tokens: 137, motivo: BASE },
+  "send_message": { tokens: 191, motivo: "imagem_url (Spec 25 R4): a foto por endereço, com a regra de procedência na descrição" },
   "update_lead_state": { tokens: 240, motivo: BASE },
   "schedule_followup": { tokens: 200, motivo: BASE },
   "save_lead_note": { tokens: 229, motivo: BASE },
@@ -133,7 +133,7 @@ const TETO: Readonly<Record<string, { tokens: number; motivo: string }>> = {
   "schedule_followup (com negócio)": { tokens: 314, motivo: BASE },
 };
 
-const TETO_TOTAL = 29952;
+const TETO_TOTAL = 30006;
 
 const VARIANTE = "schedule_followup (com negócio)";
 
