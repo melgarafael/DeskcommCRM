@@ -3,6 +3,7 @@ import type pg from "pg";
 import { buildLeadActivityRow, type ActivityEvidence } from "@/lib/leads/activity-emitter";
 import { resolveActiveLeadForContact, type LeadCandidate } from "@/lib/leads/active-lead";
 import type { ActivityType } from "@/lib/leads/activity-vocabulary";
+import { podeOperarNoFunil } from "@/lib/leads/escopo-de-funil";
 
 export interface AgentActivityInput {
   pool: pg.Pool;
@@ -30,6 +31,20 @@ export interface AgentActivityInput {
    * `agentId` na decisão: quando os dois vierem, quem agiu foi a pessoa.
    */
   usuarioId?: string | null;
+  /**
+   * Negócio apontado pelo modelo no retorno nativo (`lead_id`). Só vale se for
+   * negócio PRINCIPAL deste contato — a lista abaixo já vem filtrada pela
+   * organização e pelo contato — E num funil de `escopoDoNegocioEscolhido`;
+   * senão roteia como sempre.
+   */
+  negocioEscolhido?: string | null;
+  /**
+   * Os funis do agente (`pipelineIds`). A escolha explícita passa pelo mesmo
+   * `podeOperarNoFunil` que trava `crm_schedule_followup` na ponte: sem ele, o
+   * modelo gravaria "Retorno agendado" no card de um funil que não é dele.
+   * Ausente ou vazio = NENHUM funil, e o `lead_id` é ignorado (roteamento de hoje).
+   */
+  escopoDoNegocioEscolhido?: readonly string[] | null;
   payload?: Record<string, unknown>;
 }
 
@@ -81,7 +96,20 @@ export async function emitAgentActivityForContact(
     [organizationId],
   );
 
-  const alvo = resolveActiveLeadForContact(rows, { defaultPipelineId: defaults[0]?.id ?? null });
+  const escolhido = input.negocioEscolhido
+    ? rows.find(
+        (r) =>
+          r.id === input.negocioEscolhido &&
+          r.via !== "relacionado" &&
+          // A consulta já filtra; a conferência fica como em `assertMesmaOrg`, que
+          // este atalho não chama.
+          r.organization_id === organizationId &&
+          podeOperarNoFunil(input.escopoDoNegocioEscolhido, r.pipeline_id).permitido,
+      )
+    : undefined;
+  const alvo = escolhido
+    ? ({ routed: true, leadId: escolhido.id } as const)
+    : resolveActiveLeadForContact(rows, { defaultPipelineId: defaults[0]?.id ?? null });
 
   if (!alvo.routed) {
     await pool.query(

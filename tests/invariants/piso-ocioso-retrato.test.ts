@@ -37,6 +37,7 @@ beforeEach(() => esquecerRetrato());
 const FILAS: RecursoDoCron[] = [
   "fila_de_soneca",
   "mensagem_presa",
+  "ligacao_presa",
   "redacao_de_storage",
   "devolucao_de_handoff",
   "devolucao_ao_rodizio",
@@ -85,6 +86,29 @@ describe("retrato do piso ocioso contra o baseline", () => {
       expect(await leitura("lembrete_de_agenda")).toBe(false);
     } finally {
       await pool.query("delete from agent_inbox_items where id = $1", [aviso]);
+    }
+  });
+
+  it("ligação em toque há mais de 3 min mantém o recover-stuck-calls acordado; a recente e a encerrada não", async () => {
+    const presa = randomUUID();
+    const recente = randomUUID();
+    const org = randomUUID();
+    const inserir = (id: string, status: string, idade: string) =>
+      semFk(
+        `insert into voice_calls (id, organization_id, channel_session_id, wacalls_call_id, direction, peer_phone, status, created_at)
+         values ($1, $2, $3, $4, 'inbound', '5511999990000', $5, now() - $6::interval)`,
+        [id, org, randomUUID(), id, status, idade],
+      );
+    try {
+      await inserir(recente, "ringing", "1 minute");
+      expect(await leitura("ligacao_presa")).toBe(false);
+      await inserir(presa, "ringing", "4 minutes");
+      expect(await leitura("ligacao_presa")).toBe(true);
+      // controle: é o estado de toque que acorda o cron, não a linha velha
+      await pool.query("update voice_calls set status = 'ended' where id = $1", [presa]);
+      expect(await leitura("ligacao_presa")).toBe(false);
+    } finally {
+      await pool.query("delete from voice_calls where id = any($1::uuid[])", [[presa, recente]]);
     }
   });
 

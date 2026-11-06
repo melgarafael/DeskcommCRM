@@ -1,5 +1,6 @@
 "use client";
 import { useT } from "@/hooks/i18n/useT";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import { rotuloDoMembro, type Tradutor } from "@/lib/users/rotulo-do-atendente";
 import { cn } from "@/lib/utils";
 
@@ -68,13 +69,21 @@ export function opcoesDeMencao(
   query: string,
   t: Tradutor,
 ): OpcaoDeMencao[] {
-  const q = query.trim().toLowerCase();
+  // `@andreia` tem de achar "Andréia": `includes` trata acento como OUTRA
+  // letra, e `toLowerCase` só resolve caixa. A conta é a do repo —
+  // `termoSemAcento` (`lib/inbox/termo-de-busca`), a mesma da busca do Inbox.
+  //
+  // ⚠️ Os DOIS LADOS: normalizar só o rótulo deixaria `@Andréia` sem achar a
+  // colega cadastrada como "Andreia". O `rotulo` devolvido continua sendo o do
+  // cadastro — ele é o que a tela mostra E o que vai gravado no corpo da nota,
+  // então a normalização não pode escapar da comparação.
+  const q = termoSemAcento(query.trim());
   return membros
     .map((membro) => ({
       membro,
       rotulo: rotuloDoMembro(membro, t),
     }))
-    .filter((opcao) => opcao.rotulo.toLowerCase().includes(q));
+    .filter((opcao) => termoSemAcento(opcao.rotulo).includes(q));
 }
 
 interface Props {

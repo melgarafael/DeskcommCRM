@@ -8,6 +8,8 @@
  * teste. Testar os três estados separados não prova qual vence — por isso os
  * casos abaixo ligam as condições de propósito.
  */
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -16,6 +18,8 @@ import {
   type CapacidadeConhecida,
   type LinhaDeUso,
 } from "@/lib/ai/agents/uso-de-capacidades";
+import { DICIONARIO } from "@/lib/i18n/dicionario";
+import { COBERTA_PELA_NATIVA } from "@/lib/mcp/tools/ferramentas-do-harness";
 
 const CATALOGO: ReadonlyArray<CapacidadeConhecida> = [
   { name: "crm_ler", rotulo: "Ler a conversa", o_que_toca: "Atendimento", risco: "seguro" },
@@ -231,5 +235,79 @@ describe("configuração recém-feita não pede decisão nenhuma", () => {
       agora: AGORA,
     });
     expect(linhas.map((l) => l.sinal)).toEqual(["so_falha", "recem_ligada"]);
+  });
+});
+
+describe("capacidade que a ferramenta interna cobre no atendimento", () => {
+  // `crm_search_knowledge` sai do atendimento quando a busca interna está lá
+  // (COBERTA_PELA_NATIVA), e o uso da interna não entra nesta contagem. Mandar
+  // "considere desligar por concorrer com as outras" seria falso — e esconder a
+  // linha também: sem material de consulta publicado, é ela que conta.
+  const CATALOGO_COM_COBERTA: ReadonlyArray<CapacidadeConhecida> = [
+    ...CATALOGO,
+    { name: "crm_search_knowledge", rotulo: "Consultar o acervo", o_que_toca: "Atendimento", risco: "seguro" },
+    { name: "crm_schedule_followup", rotulo: "Agendar retorno", o_que_toca: "Atendimento", risco: "atencao" },
+    { name: "crm_list_tags", rotulo: "Ver etiquetas", o_que_toca: "Funil", risco: "seguro" },
+  ];
+  const montarComCoberta = (linhas: LinhaDeUso[]) =>
+    montarUsoDeCapacidades({
+      ligadas: ["crm_search_knowledge", "crm_schedule_followup", "crm_list_tags"],
+      catalogo: CATALOGO_COM_COBERTA,
+      linhas,
+      janelaEmDias: 30,
+      configuradaEm: new Date(AGORA - 60 * 86_400_000).toISOString(),
+      agora: AGORA,
+    });
+
+  it("⭐ a linha continua, e a recomendação diz a verdade em vez de mandar desligar", () => {
+    const linha = montarComCoberta([]).find((l) => l.name === "crm_search_knowledge");
+    expect(linha).toBeDefined();
+    expect(linha!.sinal).toBe("nunca_usada");
+    expect(linha!.recomendacao).toContain("ferramenta interna");
+    expect(linha!.recomendacao).toContain("material de consulta publicado");
+    expect(linha!.recomendacao).not.toMatch(/considere desligar/);
+  });
+
+  // A tela NÃO pode prometer que desligar é neutro: desligar a do retorno tira da
+  // ferramenta interna a escolha do negócio e a frase de compromisso
+  // (`defDoRetornoNativo`), e desligar a última do catálogo arma a projeção do
+  // contexto. O leigo obedece ao sinal — prometer neutralidade o empurra a mudar o
+  // agente achando que não mudou nada.
+  it("⭐ nenhuma das duas promete que ligar ou desligar não muda o atendimento", () => {
+    for (const nome of ["crm_search_knowledge", "crm_schedule_followup"]) {
+      const r = montarComCoberta([]).find((l) => l.name === nome)!.recomendacao;
+      expect(r, nome).toContain("não entra nesta contagem");
+      expect(r, nome).not.toMatch(/não muda/);
+    }
+  });
+
+  it("⭐ a do retorno diz o que mantê-la ligada dá à ferramenta interna", () => {
+    const r = montarComCoberta([]).find((l) => l.name === "crm_schedule_followup")!.recomendacao;
+    expect(r).toContain("escolher em qual negócio do cliente");
+    expect(r).toContain("retorno não é compromisso marcado");
+  });
+
+  it("a frase de cada coberta tem tradução nas 4 línguas (é chave de i18n)", () => {
+    for (const { nota } of Object.values(COBERTA_PELA_NATIVA)) {
+      expect(DICIONARIO[nota]?.es, nota).toBeTruthy();
+      for (const codigo of ["en", "tr", "zh-CN"]) {
+        const lingua = JSON.parse(
+          readFileSync(`lib/i18n/traducoes/${codigo}.json`, "utf8"),
+        ) as Record<string, string>;
+        expect(lingua[nota], `${codigo}: ${nota}`).toBeTruthy();
+      }
+    }
+  });
+
+  it("controle: a que não é coberta mantém o 'considere desligar'", () => {
+    const linha = montarComCoberta([]).find((l) => l.name === "crm_list_tags");
+    expect(linha!.recomendacao).toMatch(/considere desligar/);
+  });
+
+  it("com uso registrado, a coberta é 'saudável' como qualquer outra", () => {
+    const linha = montarComCoberta([uso({ tool_name: "crm_search_knowledge", total: 1 })]).find(
+      (l) => l.name === "crm_search_knowledge",
+    );
+    expect(linha!.sinal).toBe("saudavel");
   });
 });

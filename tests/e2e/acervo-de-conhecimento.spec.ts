@@ -51,7 +51,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { expect, test, type BrowserContext, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, expect, test, type BrowserContext, type Page } from "./helpers/test";
 
 import { lerCreds, loginComoAdmin, type CredsE2E } from "./helpers/login-admin";
 
@@ -150,6 +150,9 @@ test.describe("acervo de conhecimento", () => {
 
   test.beforeAll(async ({ browser }) => {
     contexto = await browser.newContext();
+    // Contexto próprio escapa da espera pela revelação das fixtures (#1374):
+    // sem isto, o `goto` volta antes de a caixa `S:0` sumir e o test id aparece 2x.
+    contexto.on("page", esperarARevelacaoNasCargas);
     page = await contexto.newPage();
     // O helper re-semeia quando o fator TOTP foi rotacionado por outra frente
     // no mesmo Supabase local — sem isso, "MFA falhou" acusa a tela de MFA.

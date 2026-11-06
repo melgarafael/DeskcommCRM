@@ -182,6 +182,12 @@ export const AUDIT_ACTIONS = [
   // Uma rodada do cron `recover-stuck-messages` que de fato marcou mensagem
   // como falha (rodada vazia não vira linha — varredura não é mutação).
   "message.recover_stuck_run",
+  // Uma rodada do cron `recover-stuck-calls` que de fato encerrou ligação presa
+  // em toque (rodada vazia não vira linha).
+  "voice.recover_stuck_run",
+  // Uma rodada do cron `media-leitura-adiada` que reabriu foto guardada sem
+  // descrição (empresa que ganhou leitor, ou knob de volta em `always`).
+  "media.deferred_reading_run",
   "contact.blocked",
   "phone_number.created",
   "phone_number.updated",
@@ -1431,6 +1437,9 @@ export const AUDIT_ACTIONS = [
   // sugestão, e quando". A fila guarda o usuário, mas a trilha é o rastro que a
   // organização consulta, e só ela tem o mesmo formato das outras ações de contato.
   "contact.duplicate_dismissed",
+  // O admin mudou o limite em tokens acima do qual a tela Memória da IA avisa
+  // que a memória pesa (`settings.memoria_da_ia`); metadata com o anterior e o novo.
+  "ai.org_memory_weight_limit_updated",
   // Aviso escrito pelo admin da empresa e empurrado para a equipe (#1418). O
   // metadata leva só a janela de publicação; título e corpo ficam em `avisos`.
   "aviso.created",

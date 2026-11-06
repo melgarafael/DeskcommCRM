@@ -20,9 +20,11 @@
  * Duas condições encerram a espera, e as duas terminam em desfecho NOMEADO (o
  * valor devolvido e a linha de log, nunca em silêncio):
  *
- *  - `TETO_DA_ESPERA_DA_DERIVACAO_MS` desde a CHEGADA da mídia: mídia travada há
- *    minutos (retry de falha transitória) não é deste turno — segurá-la seria
- *    fazer o cliente esperar por um problema que não é da mensagem dele.
+ *  - `TETO_DA_ESPERA_DA_DERIVACAO_MS` desde a âncora da mídia (a chegada, ou o
+ *    pedido da leitura reaberta — ver `../edge/crm/midia-derivavel.ts`): mídia
+ *    travada há minutos (retry de falha transitória) não é deste turno —
+ *    segurá-la seria fazer o cliente esperar por um problema que não é da
+ *    mensagem dele.
  *  - o PRAZO do turno (`prazoMs`, absoluto): a abertura e a releitura do
  *    contexto no meio do turno dividem UM orçamento, não um cada. Sem isso, um
  *    turno que já esperou poderia esperar de novo, dobrando o tempo até a
@@ -131,10 +133,10 @@ export async function esperarMidiaDerivavel(
     tipo = pendente.type;
     const idadeMs = agora() - new Date(pendente.quando).getTime();
 
-    // Mídia que já passou do teto NA CHEGADA: a derivação dela está travada, e
-    // não é este turno que a destrava.
+    // Mídia que já passou do teto desde a âncora (a chegada, ou o pedido da
+    // leitura reaberta): a derivação dela está travada, e não é este turno que a destrava.
     if (idadeMs >= TETO_DA_ESPERA_DA_DERIVACAO_MS) {
-      input.log.warn('turno: mídia derivável além do teto da espera já na chegada — seguindo sem o texto', {
+      input.log.warn('turno: mídia derivável além do teto da espera desde a âncora — seguindo sem o texto', {
         tipo,
         idade_ms: idadeMs,
         teto_ms: TETO_DA_ESPERA_DA_DERIVACAO_MS,

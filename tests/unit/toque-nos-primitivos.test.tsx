@@ -134,6 +134,21 @@ describe("primitivos com alvo de dedo", () => {
     expect(classes(screen.getByRole("tablist"))).toEqual(expect.arrayContaining(["h-9", "max-lg:h-auto"]));
   });
 
+  it("a fila que transborda começa pela primeira aba: centraliza só quando cabe", () => {
+    render(
+      <Tabs defaultValue="a">
+        <TabsList>
+          <TabsTrigger value="a">Configuração</TabsTrigger>
+        </TabsList>
+      </Tabs>,
+    );
+    // `justify-center` com `overflow-x-auto` joga a primeira aba para fora da
+    // rolagem; a geometria é medida em tests/e2e/fotos-skills-e-peso-da-memoria-pela-tela.spec.ts.
+    const c = classes(screen.getByRole("tablist"));
+    expect(c).toEqual(expect.arrayContaining(["overflow-x-auto", "justify-center-safe"]));
+    expect(c).not.toContain("justify-center");
+  });
+
   it("quem já passa h-auto continua h-auto também no computador", () => {
     render(
       <Tabs defaultValue="a">

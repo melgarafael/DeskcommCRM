@@ -90,9 +90,12 @@ const credencial = vi.hoisted(() => ({
    */
   conversaGoogle: null as string | null,
   conversaOpenRouter: false,
+  /** O dublê do serviço expõe `transcribeMedindo` com 0,3 centavo (30 s de whisper-1). */
+  medirNoDegrau2: false,
   limiteConhecido: false,
   falhaUpdate: false,
   rejeitaUpdate: false,
+  params: {} as Record<string, unknown>,
 }));
 vi.mock("@/lib/agent-engine/edge/llm/credentials", () => ({
   resolveOrgLlmConfig: vi.fn(async (_db: unknown, _cfg: unknown, _org: string, override?: { provider?: string }) => {
@@ -102,7 +105,7 @@ vi.mock("@/lib/agent-engine/edge/llm/credentials", () => ({
       apiKey: "chave-do-binding",
       origemDaChave: credencial.origemDaChave,
       defaultModel: credencial.conversaOpenRouter ? "mistralai/modelo-controle" : credencial.conversaGoogle ?? "claude-haiku-4-5",
-      params: {},
+      params: credencial.params,
       enabledModels: [],
       orcamento: { modo: "off", tetoCents: 0, efetivoEm: null, limiarPct: 80 },
       orcamentoIndisponivelPorque: null,
@@ -124,6 +127,20 @@ vi.mock("@/lib/agent-engine/edge/llm/providers", () => ({
   fetchDoProvedor: () => globalThis.fetch,
 }));
 
+// O catálogo da instalação: controlável por caso, e por padrão "não conhece"
+// (null) — o estado de quem não cadastrou preço. Nunca toca um banco.
+const catalogo = vi.hoisted(() => ({
+  custo: vi.fn(async (): Promise<number | null> => null),
+}));
+vi.mock("@/lib/agent-engine/edge/llm/pricing-do-catalogo", () => ({
+  custoDoModeloForaDoMotor: catalogo.custo,
+}));
+
+vi.mock("@/lib/logger", async (importOriginal) => {
+  const real = await importOriginal<{ logger: Record<string, unknown> }>();
+  return { ...real, logger: { ...real.logger, warn: vi.fn(), info: vi.fn(), error: vi.fn() } };
+});
+
 vi.mock("@/lib/ai/pontos/capacidade-em-vigor", () => ({
   visaoEmVigor: vi.fn(async () => ({ enxerga: true, sabemos: true })),
 }));
@@ -144,6 +161,9 @@ vi.mock("@/lib/messaging/media/transcription", async (importOriginal) => ({
   apiTranscriptionProvider: () => ({
     transcribe: transcribeDoSvcMock,
     ...(credencial.conversaOpenRouter ? { transcribeMedindo: transcribeMedindoDoSvcMock } : {}),
+    ...(credencial.medirNoDegrau2
+      ? { transcribeMedindo: async () => ({ texto: "transcrição de mentira", uso: null, custoCents: 0.3 }) }
+      : {}),
   }),
 }));
 
@@ -172,6 +192,8 @@ import { PONTO_TRANSCRICAO_DE_AUDIO, PONTO_VISAO_DE_IMAGEM } from "@/lib/ai/pont
 import { deriveMediaText, type DeriveDeps } from "@/lib/messaging/media/derive";
 import type { Env } from "@/lib/env";
 import { TranscriptionTooLargeError } from "@/lib/messaging/media/transcription";
+import { logger } from "@/lib/logger";
+import { TETO_DE_SAIDA_PADRAO } from "@/lib/agent-engine/edge/llm/run-model-call";
 
 function eventRow() {
   return {
@@ -204,9 +226,11 @@ beforeEach(() => {
   credencial.origemDaChave = "credencial_da_organizacao";
   credencial.conversaGoogle = null;
   credencial.conversaOpenRouter = false;
+  credencial.medirNoDegrau2 = false;
   credencial.limiteConhecido = false;
   credencial.falhaUpdate = false;
   credencial.rejeitaUpdate = false;
+  credencial.params = {};
   bindingDaVez = BINDING;
   transcricaoDoEnv.apiKey = "";
   transcricaoDoEnv.baseUrl = "";
@@ -219,6 +243,7 @@ beforeEach(() => {
     media_derived_status: null,
   };
   downloadMock.mockResolvedValue({ data: { arrayBuffer: async () => new ArrayBuffer(8) }, error: null });
+  catalogo.custo.mockImplementation(async () => null);
 });
 
 describe("worker de mídia: chamada paga grava em llm_calls", () => {
@@ -241,6 +266,32 @@ describe("worker de mídia: chamada paga grava em llm_calls", () => {
     // haiku-4-5: 1 USD/MTok de entrada, 5 de saída → (1200×1 + 40×5)/1e6 USD
     expect(linha.cost_cents).toBeCloseTo(((1200 * 1 + 40 * 5) / 1_000_000) * 100, 10);
     expect(typeof linha.latency_ms).toBe("number");
+  });
+
+  it("visão sai com teto de saída: sem ele a OpenRouter reserva o máximo do modelo contra o saldo", async () => {
+    const { generateText } = await import("ai");
+    await deriveMessageMedia(eventRow());
+    await depsDaChamada().describeImage(Buffer.from("jpeg"), "image/jpeg");
+    const pedido = vi.mocked(generateText).mock.calls[0]?.[0] as { maxOutputTokens?: number } | undefined;
+    expect(pedido?.maxOutputTokens).toBe(TETO_DE_SAIDA_PADRAO);
+  });
+
+  it("visão respeita o teto que a organização subiu (modelo de raciocínio), como as respostas do agente", async () => {
+    const { generateText } = await import("ai");
+    credencial.params = { maxOutputTokens: 32000 };
+    await deriveMessageMedia(eventRow());
+    await depsDaChamada().describeImage(Buffer.from("jpeg"), "image/jpeg");
+    const pedido = vi.mocked(generateText).mock.calls[0]?.[0] as { maxOutputTokens?: number } | undefined;
+    expect(pedido?.maxOutputTokens).toBe(32000);
+  });
+
+  it("teto da organização com forma errada vale como ausente: a visão sai com o padrão", async () => {
+    const { generateText } = await import("ai");
+    credencial.params = { maxOutputTokens: "muito" };
+    await deriveMessageMedia(eventRow());
+    await depsDaChamada().describeImage(Buffer.from("jpeg"), "image/jpeg");
+    const pedido = vi.mocked(generateText).mock.calls[0]?.[0] as { maxOutputTokens?: number } | undefined;
+    expect(pedido?.maxOutputTokens).toBe(TETO_DE_SAIDA_PADRAO);
   });
 
   it("visão recusada por destino interno não grava linha", async () => {
@@ -281,6 +332,21 @@ describe("worker de mídia: chamada paga grava em llm_calls", () => {
       output_tokens: 0,
       cost_cents: null,
       status: "ok",
+    });
+  });
+
+  it("fiação: o custo que o serviço mede (duração cobrada pela OpenAI) chega à linha do degrau 2", async () => {
+    comAudio();
+    credencial.medirNoDegrau2 = true;
+
+    await deriveMessageMedia(eventRow());
+    await depsDaChamada().transcriber.transcribe(Buffer.from("ogg"), "audio/ogg");
+
+    expect(llmCallsInsertMock).toHaveBeenCalledTimes(1);
+    expect(llmCallsInsertMock.mock.calls[0]![0]).toMatchObject({
+      origem_da_escolha: "padrao_openai_compativel",
+      model: "whisper-1",
+      cost_cents: 0.3,
     });
   });
 
@@ -386,11 +452,86 @@ describe("worker de mídia: chamada paga grava em llm_calls", () => {
     await deriveMessageMedia(eventRow());
     await depsDaChamada().transcriber.transcribe(Buffer.from("ogg"), "audio/ogg");
 
+    // A consulta ao catálogo corre DEPOIS de o texto voltar: a linha chega em seguida.
+    await vi.waitFor(() => expect(llmCallsInsertMock).toHaveBeenCalledTimes(1));
     expect(llmCallsInsertMock.mock.calls[0]![0]).toMatchObject({
       origem_da_escolha: "modelo_da_organizacao",
       input_tokens: 1200,
       cost_cents: null,
     });
+  });
+
+  it("degrau 4 com modelo fora da tabela, mas no catálogo da instalação, grava o custo do catálogo", async () => {
+    comAudio();
+    credencial.conversaGoogle = "gemini-modelo-que-ninguem-precificou";
+    bindingDaVez = null;
+    catalogo.custo.mockImplementation(async () => 2.5);
+
+    await deriveMessageMedia(eventRow());
+    await depsDaChamada().transcriber.transcribe(Buffer.from("ogg"), "audio/ogg");
+
+    await vi.waitFor(() => expect(llmCallsInsertMock).toHaveBeenCalledTimes(1));
+    expect(llmCallsInsertMock.mock.calls[0]![0]).toMatchObject({
+      origem_da_escolha: "modelo_da_organizacao",
+      model: "gemini-modelo-que-ninguem-precificou",
+      cost_cents: 2.5,
+    });
+    expect(catalogo.custo).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      model: "gemini-modelo-que-ninguem-precificou",
+      provider: "google",
+    }));
+  });
+
+  it("visão com modelo fora da tabela consulta o catálogo, como o seam", async () => {
+    credencial.conversaGoogle = "gemini-modelo-que-ninguem-precificou";
+    bindingDaVez = null;
+    catalogo.custo.mockImplementation(async () => 1.23);
+
+    await deriveMessageMedia(eventRow());
+    await depsDaChamada().describeImage(Buffer.from("jpeg"), "image/jpeg");
+
+    await vi.waitFor(() => expect(llmCallsInsertMock).toHaveBeenCalledTimes(1));
+    expect(llmCallsInsertMock.mock.calls[0]![0]).toMatchObject({
+      purpose: PONTO_VISAO_DE_IMAGEM,
+      model: "gemini-modelo-que-ninguem-precificou",
+      cost_cents: 1.23,
+    });
+  });
+
+  it("guarda: catálogo que nunca responde não segura o texto da visão nem o do degrau 4", async () => {
+    credencial.conversaGoogle = "gemini-modelo-que-ninguem-precificou";
+    bindingDaVez = null;
+    catalogo.custo.mockImplementation(() => new Promise<number | null>(() => {}));
+
+    await deriveMessageMedia(eventRow());
+    await expect(depsDaChamada().describeImage(Buffer.from("jpeg"), "image/jpeg")).resolves.toBe("descrição de mentira");
+
+    vi.mocked(deriveMediaText).mockClear();
+    comAudio();
+    await deriveMessageMedia(eventRow());
+    await expect(depsDaChamada().transcriber.transcribe(Buffer.from("ogg"), "audio/ogg")).resolves.toBe(
+      "descrição de mentira",
+    );
+    expect(llmCallsInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("catálogo que rejeita: o texto volta e sai o aviso de montagem, sem linha", async () => {
+    credencial.conversaGoogle = "gemini-modelo-que-ninguem-precificou";
+    bindingDaVez = null;
+    catalogo.custo.mockImplementation(async () => {
+      throw new Error("catálogo fora do ar");
+    });
+
+    await deriveMessageMedia(eventRow());
+    await expect(depsDaChamada().describeImage(Buffer.from("jpeg"), "image/jpeg")).resolves.toBe("descrição de mentira");
+
+    await vi.waitFor(() =>
+      expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+        "[media-derive] não consegui montar a linha de custo",
+        expect.objectContaining({ organization_id: "org1", error: "catálogo fora do ar" }),
+      ),
+    );
+    expect(llmCallsInsertMock).not.toHaveBeenCalled();
   });
 
   it("transcrição recusada por destino interno não grava linha", async () => {

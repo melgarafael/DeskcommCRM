@@ -94,7 +94,7 @@ function skillComVersaoNova(): InstalledSkill {
 }
 
 function painel(installed: InstalledSkill[]): SkillsState {
-  return { installed, catalog: [] };
+  return { installed, catalog: [], agentes_com_lista_propria: [] };
 }
 
 function pintar(installed: InstalledSkill[]) {

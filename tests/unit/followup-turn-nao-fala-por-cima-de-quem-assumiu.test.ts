@@ -146,7 +146,18 @@ describe("o turno de fluxo diante de uma pessoa no comando da conversa", () => {
       enrollmentId: INSCRICAO,
       nodeId: NO,
       contactId: LEAD,
+      passoDeTexto: true,
     });
+  });
+
+  it("passo de IA (sem texto pronto nem modelo): avisa que NÃO é passo de texto — a opção do fluxo não o libera", async () => {
+    aplicarPessoaNoComandoAoTurno.mockImplementation(async () => ({ kind: "adiada", ate: new Date("2026-10-08T21:00:00.000Z") }));
+    const { d } = deps();
+    const semTexto = job();
+    delete (semTexto.payload as Record<string, unknown>).fixed_body;
+    await criarHandler(d)(semTexto, fakePool(), { workerId: "w1" });
+    expect(aplicarPessoaNoComandoAoTurno).toHaveBeenCalledTimes(1);
+    expect(aplicarPessoaNoComandoAoTurno.mock.calls[0]![1]).toMatchObject({ passoDeTexto: false });
   });
 
   it("⭐ adiada (alguém assumiu, política pause): nada sai, o job volta agendado e o enrollment sabe do adiamento", async () => {

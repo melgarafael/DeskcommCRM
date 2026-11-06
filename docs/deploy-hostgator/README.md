@@ -94,7 +94,8 @@ ufw allow 22,22022,80,443/tcp && ufw --force enable
 ## Passo 3 — Crie o banco de dados (Supabase, grátis)
 
 1. Entre em [supabase.com](https://supabase.com) → **New project**.
-2. Escolha a região **South America (São Paulo)** e uma senha forte para o banco (guarde).
+2. Escolha a região **mais próxima da VPS onde o CRM roda**: com a VPS no Brasil (a da HostGator), é **South America (São Paulo)**; se a sua VPS está nos EUA ou na Europa, escolha a região do Supabase mais perto dela (`us-east-1`, `eu-central-1`) — **não** São Paulo. Cada tela, cada mensagem e cada turno do agente fazem várias consultas ao banco, e cada ida e volta atravessa a distância entre os dois: banco num continente e app em outro somam dezenas de milissegundos por consulta. **A região não se troca depois de criado o projeto** — mudar exige criar outro projeto e migrar os dados. Defina também uma senha forte para o banco (guarde).
+   - Instalando pelo kit com o token do Supabase exportado antes (`export SUPABASE_ACCESS_TOKEN=sbp_...`), o instalador cria o banco e a região vira uma variável: `SUPABASE_REGION=us-east-1 bash hostgator-setup-kit/install.sh`. Para criar só o banco, o segundo argumento do script faz o mesmo: `bash hostgator-setup-kit/supabase-provision.sh "Nome do Projeto" us-east-1` (sem ele, o padrão é `sa-east-1`).
 3. Espere o projeto ficar pronto (~2 min).
 4. No menu **Settings → API**, copie e guarde 3 coisas:
    - **Project URL** (algo como `https://xxxx.supabase.co`)

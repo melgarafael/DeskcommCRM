@@ -118,6 +118,7 @@ interface Caso {
 const CASOS: Caso[] = [
   { rota: "snooze-watcher", recurso: "fila_de_soneca", prova: () => estado.consultas.conversations ?? 0 },
   { rota: "recover-stuck-messages", recurso: "mensagem_presa", prova: () => estado.consultas.messages ?? 0 },
+  { rota: "recover-stuck-calls", recurso: "ligacao_presa", prova: () => estado.consultas.voice_calls ?? 0 },
   { rota: "storage-redaction", recurso: "redacao_de_storage", prova: () => estado.podaDaFilaDeRedacao },
   { rota: "handoff-devolucao", recurso: "devolucao_de_handoff", prova: () => estado.consultas.organizations ?? 0 },
   { rota: "rodizio-devolucao", recurso: "devolucao_ao_rodizio", prova: () => estado.consultas.organizations ?? 0 },

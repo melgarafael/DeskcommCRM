@@ -204,10 +204,13 @@ test("devolver ao automático recusa colega e respeita o CAS real do banco", asy
 
     await login(page, "agent");
     await page.goto(`/app/inbox/${conversa}`);
+    // O idioma do agent fica gravado entre os testes deste arquivo (o da Central troca para es).
+    // Fixar aqui tira a dependência da ordem e faz a tela provar a recusa traduzida (#3436).
+    await trocarIdiomaPelaTela(page, "es");
     const resposta = page.waitForResponse(r => r.url().endsWith(`/conversations/${conversa}/reactivate-bot`) && r.request().method() === "POST");
     await page.getByTestId("devolver-ao-automatico").click();
     expect((await resposta).status()).toBe(403);
-    await expect(page.getByText("Esta conversa é de outro atendente. Peça a um gerente ou assuma a conversa.")).toBeVisible();
+    await expect(page.getByText("Esta conversación es de otro atendente. Pídele a un gerente o asume la conversación.")).toBeVisible();
     expect(await estado()).toMatchObject({ assigned_to_user_id: colega.id, bot_silenced_until: "infinity" });
     await page.screenshot({ path: `${evidencia}/devolucao-colega-recusada.png`, fullPage: true });
 

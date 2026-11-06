@@ -17,6 +17,8 @@ interface MensagemMock {
   sent_via?: string;
   body: string | null;
   media_derived_text?: string | null;
+  type?: string;
+  media_derived_status?: string | null;
   created_at: string;
 }
 
@@ -781,6 +783,8 @@ describe("crm_draft_proposal", () => {
           conversation_id: "55555555-5555-4555-8555-555555555555",
           direction: "inbound",
           sent_via: "external_device",
+          type: "audio",
+          media_derived_status: null,
           body: null,
           media_derived_text: null,
           created_at: "2026-09-27T10:01:00.000Z",
@@ -799,6 +803,74 @@ describe("crm_draft_proposal", () => {
     )) as { error?: string; motivo?: string };
     expect(r.motivo).toBe("transcricao_pendente");
     expect(r.error).toMatch(/ainda está sendo transcrita/);
+    expect(mundo.propostaCriada).toBeNull();
+  });
+
+  /**
+   * Foto cuja leitura TERMINOU sem texto (adiada por falta de leitor, contato
+   * pessoal, vídeo desligado) ou figurinha não é "transcrição pendente": nada
+   * está sendo transcrito, e a ferramenta mentia isso para sempre — o cliente MCP
+   * repetia a chamada sem fim. A frase de confirmação continua obrigatória e
+   * conferida nos textos: só a recusa falsa sai.
+   */
+  const loteComFoto = (statusDaFoto: string | null): MensagemMock[] => [
+    {
+      organization_id: "22222222-2222-4222-8222-222222222222",
+      conversation_id: "55555555-5555-4555-8555-555555555555",
+      direction: "outbound",
+      sent_via: "ai",
+      body: "Pode confirmar o resumo?",
+      media_derived_text: null,
+      created_at: "2026-09-27T10:00:00.000Z",
+    },
+    {
+      organization_id: "22222222-2222-4222-8222-222222222222",
+      conversation_id: "55555555-5555-4555-8555-555555555555",
+      direction: "inbound",
+      sent_via: "external_device",
+      type: "image",
+      media_derived_status: statusDaFoto,
+      body: null,
+      media_derived_text: null,
+      created_at: "2026-09-27T10:01:00.000Z",
+    },
+    {
+      organization_id: "22222222-2222-4222-8222-222222222222",
+      conversation_id: "55555555-5555-4555-8555-555555555555",
+      direction: "inbound",
+      sent_via: "external_device",
+      type: "text",
+      media_derived_status: null,
+      body: FRASE_PADRAO,
+      media_derived_text: null,
+      created_at: "2026-09-27T10:02:00.000Z",
+    },
+  ];
+  const rascunharCom = (mensagens: MensagemMock[]) => {
+    const mundo = montarMundoDeFerramenta({ mensagens });
+    return crmDraftProposal
+      .handler(
+        {
+          lead_id: mundo.leadId,
+          conversation_id: mundo.conversationId,
+          titulo: "Proposta",
+          itens: [{ descricao: "Site", quantidade: 1 }],
+          briefing: briefingCompleto(),
+        } as never,
+        mundo.ctx,
+      )
+      .then((r) => ({ r: r as { error?: string; motivo?: string }, mundo }));
+  };
+
+  it("foto com a leitura terminada sem texto (adiada) + a frase em texto: cria o rascunho", async () => {
+    const { r, mundo } = await rascunharCom(loteComFoto("skipped"));
+    expect(r.motivo, `error=${r.error}`).toBeUndefined();
+    expect(mundo.propostaCriada).not.toBeNull();
+  });
+
+  it("controle: foto com a descrição ainda em andamento segue transcricao_pendente", async () => {
+    const { r, mundo } = await rascunharCom(loteComFoto(null));
+    expect(r.motivo).toBe("transcricao_pendente");
     expect(mundo.propostaCriada).toBeNull();
   });
 

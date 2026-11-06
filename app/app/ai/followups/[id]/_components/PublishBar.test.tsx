@@ -31,6 +31,7 @@ vi.mock("@/hooks/followup/useFollowupFlow", () => {
     useRollbackFollowupFlow: mutacao,
     useSaveFollowupFlowDraft: mutacao,
     useUpdateHandoffPolicy: mutacao,
+    useUpdateSendWhenAssigned: mutacao,
   };
 });
 
@@ -47,6 +48,7 @@ const FLUXO: FollowupFlowDetailRow = {
   active_version_id: null,
   draft_graph: null,
   handoff_policy: "pause",
+  send_when_assigned: false,
   trigger_config: {},
   surface: "followup",
   created_at: "2026-09-01T00:00:00.000Z",

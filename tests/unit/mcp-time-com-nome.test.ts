@@ -6,12 +6,12 @@
  * identidade. O contrato que este arquivo prende tem DUAS pontas:
  *
  *   1. `nome` EXISTE e vem do `user_metadata.full_name` (o mesmo mínimo LGPD
- *      de `team/assignable` e de `resolveUserNames`).
+ *      de `team/assignable` e de `nomesDosAtendentesCom`).
  *   2. `email` NÃO existe: o que sai daqui entra no contexto de um modelo, e a
  *      identidade pessoal de cada um não participa de nenhuma decisão de
  *      encaminhamento — esta é a régua escrita na própria tool.
  *
- * Sem isto, a garantia é só silêncio: `resolveUserNames` engole a falha de
+ * Sem isto, a garantia é só silêncio: `nomesDosAtendentesCom` engole a falha de
  * lookup e devolveria `null` para sempre sem ninguém notar.
  */
 import { describe, expect, it, vi } from "vitest";
@@ -27,7 +27,10 @@ const ORG = "22222222-2222-4222-8222-222222222222";
 const MEMBRO = "11111111-1111-4111-8111-111111111111";
 const NOME_ESPERADO = "Joana da Silva";
 
-/** Dublê do PostgREST: o caminho real é `from().select().eq().is().order()`. */
+/**
+ * Dublê do PostgREST: o caminho real é `from().select().eq().is().order()`; o
+ * vínculo que libera o nome (`.eq().in()` em `user_organizations`) lê as mesmas linhas.
+ */
 function fazerSupabase() {
   const linhas = [
     {
@@ -42,6 +45,7 @@ function fazerSupabase() {
     select: () => chain,
     eq: () => chain,
     is: () => chain,
+    in: () => chain,
     order: () => chain,
     then: (res: (v: unknown) => unknown) => Promise.resolve({ data: linhas, error: null }).then(res),
   };

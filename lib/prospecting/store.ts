@@ -58,6 +58,19 @@ export interface Campaign {
   created_at: Date;
   error: string | null;
   /**
+   * O NÚMERO DE WHATSAPP DESTA CAMPANHA (issue #3896).
+   *
+   * Saiu do jsonb `config` e virou coluna porque é a CHAVE do produto: a
+   * unicidade da prospecção é "uma campanha `running` por (organização,
+   * número)", e índice único parcial não se faz sobre `config->>'...'` sem
+   * deixar escapar a linha de `config` nulo (chave NULL não colide).
+   *
+   * Nulo só em campanha antiga que nunca foi iniciada (o `config` nasce nulo e
+   * o backfill da migration 9221 copiou o que havia). Quem inicia grava.
+   */
+  channel_session_id: string | null;
+
+  /**
    * DESDE QUANDO ESTA CAMPANHA ESPERA O CANAL VOLTAR AO `WORKING` (issue #3073).
    *
    * `null` = não está esperando. É gravado no primeiro adiamento por reconexão
@@ -919,6 +932,15 @@ export async function enfileirarCandidatos(
     await criarPegadaDoCandidato(db, admin, org, c, config, p, triagem.contatoDaCampanha);
   }
 }
+/**
+ * O NÚMERO DE UMA CAMPANHA e a TRAVA "uma campanha running por número".
+ * A implementação mora em `canal-da-campanha.ts` (sem banco) porque o worker e
+ * o teste do worker também precisam dela; aqui fica reexportada para quem já
+ * importa a loja.
+ */
+import { assertCanalLivre, canalDaCampanha } from "./canal-da-campanha";
+export { assertCanalLivre, canalDaCampanha };
+
 export async function activateCampaign(
   pool: pg.Pool,
   admin: SupabaseClient,
@@ -940,15 +962,10 @@ export async function activateCampaign(
         "Aguarde a busca terminar; uma campanha já iniciada deve ser retomada.",
         409,
       );
-    if (
-      (
-        await db.query(
-          "select id from prospecting_campaigns where organization_id=$1 and status='running'",
-          [org],
-        )
-      ).rows.length
-    )
-      throw new ProspectingError("Pause a campanha atual antes de iniciar outra.", 409);
+    // A TRAVA É DO NÚMERO, não da organização (#3896). Duas campanhas em
+    // números diferentes convivem; a segunda no MESMO número é recusada com o
+    // código `prospecting_channel_busy` e o nome de quem ocupa a conexão.
+    await assertCanalLivre(db, org, id, config.channel_session_id);
     if (c.config) {
       // Config PARCIAL salva pelo meio (sem `agent_id`) não pode ser comparada:
       // o `parse` cru estourava ZodError antes de qualquer comparação e a
@@ -961,8 +978,8 @@ export async function activateCampaign(
         );
     }
     await db.query(
-      "update prospecting_campaigns set config=$3 where organization_id=$1 and id=$2",
-      [org, id, config],
+      "update prospecting_campaigns set config=$3,channel_session_id=$4 where organization_id=$1 and id=$2",
+      [org, id, config, config.channel_session_id],
     );
     // Activation is the authorized origin. In `on_start` the service boundary of every company
     // is captured here; in `on_send` each company's is captured when its turn comes
@@ -974,10 +991,23 @@ export async function activateCampaign(
       )
     ).rows;
     await enfileirarCandidatos(db, admin, org, c, config, candidates);
-    await db.query(
-      "update prospecting_campaigns set config=$3,status='running',next_send_at=now()+interval '1 minute',error=null,channel_down_since=null,updated_at=now() where organization_id=$1 and id=$2",
-      [org, id, config],
-    );
+    try {
+      await db.query(
+        "update prospecting_campaigns set config=$3,channel_session_id=$4,status='running',next_send_at=now()+interval '1 minute',error=null,channel_down_since=null,updated_at=now() where organization_id=$1 and id=$2",
+        [org, id, config, config.channel_session_id],
+      );
+    } catch (error) {
+      // O ÍNDICE ÚNICO PARCIAL é a última linha de defesa: quem chegar aqui sem
+      // o bloqueio da organização (processo antigo, escrita fora da rota) bate
+      // em `prospecting_one_running_canal` com 23505. Sem esta tradução, o
+      // conflito saía como 500 genérico (`failure()` só conhece
+      // `ProspectingError`), e a tela não tinha o que oferecer. A releitura
+      // abaixo dá o NOME de quem ocupa o número.
+      if ((error as { code?: string }).code === "23505") {
+        await assertCanalLivre(db, org, id, config.channel_session_id);
+      }
+      throw error;
+    }
     return { started: true };
   });
 }

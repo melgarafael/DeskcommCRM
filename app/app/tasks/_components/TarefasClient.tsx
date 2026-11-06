@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { useUser } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
-import { ArrowsClockwise, CalendarBlank, ListChecks, Plus } from "@/lib/ui/icons";
+import { ArrowsClockwise, CalendarBlank, Kanban, ListChecks, Plus } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { useTasks } from "@/hooks/tasks/useTasks";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
@@ -22,6 +22,7 @@ import type { NovaTarefa, SituacaoDaTarefa, Tarefa } from "@/lib/tarefas/tipos";
 import { CalendarioDeTarefas } from "./CalendarioDeTarefas";
 import { FormularioDeTarefa } from "./FormularioDeTarefa";
 import { ListaDeTarefas } from "./ListaDeTarefas";
+import { QuadroDeTarefas } from "./QuadroDeTarefas";
 import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
 
 /** "aberto" não é uma situação do banco: é o filtro que a tela abre por padrão. */
@@ -44,7 +45,7 @@ export function TarefasClient({
 }) {
   const t = useT();
   const usuario = useUser();
-  const [modo, setModo] = useState<"lista" | "calendario">("lista");
+  const [modo, setModo] = useState<"lista" | "calendario" | "quadro">("lista");
   const [situacao, setSituacao] = useState<FiltroDeSituacao>("aberto");
   const [responsavel, setResponsavel] = useState<FiltroDeResponsavel>(minhasDeInicio ? "eu" : "todos");
   // `/team/assignable` exige agent: o viewer tomaria 403 (e um authz.denied no
@@ -70,11 +71,21 @@ export function TarefasClient({
     editarTarefa,
     apagarTarefa,
     alternarConcluida,
-  } = useTasks({
-    ...(situacao === "aberto" ? { aberto: true } : { status: situacao }),
-    assigned_to: responsavelDoFiltro(responsavel),
-    pipeline_id: funil === "todos" ? undefined : funil,
-  });
+  } = useTasks(
+    {
+      ...(situacao === "aberto" ? { aberto: true } : { status: situacao }),
+      assigned_to: responsavelDoFiltro(responsavel),
+      pipeline_id: funil === "todos" ? undefined : funil,
+    },
+    /*
+     * No QUADRO esta busca fica parada. A visão em quadro faz a SUA própria
+     * consulta, com teto menor (`LIMITE_DO_QUADRO`), e as colunas são as
+     * situações — trazer também a lista de 500 linhas seria somar duas cargas
+     * para desenhar uma tela só. Voltar para Lista ou Calendário reativa e
+     * busca de novo; o cache continua lá, então a volta é instantânea.
+     */
+    { enabled: modo !== "quadro" },
+  );
 
   function abrirNova(dia?: string) {
     setEmEdicao(null);
@@ -108,21 +119,30 @@ export function TarefasClient({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Select
-            value={situacao}
-            onValueChange={(v) => setSituacao(v as FiltroDeSituacao)}
-          >
-            <SelectTrigger className="h-11 w-[168px] text-xs lg:h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="aberto">{t("Em aberto")}</SelectItem>
-              <SelectItem value="pending">{t("Pendente")}</SelectItem>
-              <SelectItem value="in_progress">{t("Em andamento")}</SelectItem>
-              <SelectItem value="done">{t("Concluída")}</SelectItem>
-              <SelectItem value="cancelled">{t("Cancelada")}</SelectItem>
-            </SelectContent>
-          </Select>
+          {/* No QUADRO o filtro de situação não aparece: as colunas SÃO as
+              situações, e filtrar por uma delas deixaria três colunas vazias
+              ao lado da única escolhida. Os outros filtros continuam valendo. */}
+          {modo !== "quadro" && (
+            <Select
+              value={situacao}
+              onValueChange={(v) => setSituacao(v as FiltroDeSituacao)}
+            >
+              <SelectTrigger
+                aria-label={t("Situação")}
+                className="h-11 w-[168px] text-xs lg:h-9"
+                data-testid="tarefas-filtro-situacao"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="aberto">{t("Em aberto")}</SelectItem>
+                <SelectItem value="pending">{t("Pendente")}</SelectItem>
+                <SelectItem value="in_progress">{t("Em andamento")}</SelectItem>
+                <SelectItem value="done">{t("Concluída")}</SelectItem>
+                <SelectItem value="cancelled">{t("Cancelada")}</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
 
           <Select value={responsavel} onValueChange={(v) => setResponsavel(v as FiltroDeResponsavel)}>
             <SelectTrigger aria-label={t("Responsável")} className="h-11 w-[168px] text-xs lg:h-9" data-testid="tarefas-filtro-responsavel">
@@ -159,7 +179,10 @@ export function TarefasClient({
             </Select>
           )}
 
-          {/* O calendário tem 7 colunas: a 390px não cabe, e no celular fica a lista. */}
+          {/* O calendário tem 7 colunas e o quadro tem colunas de 320px: a
+              390px nenhum dos dois cabe, e no celular fica a lista. Os três
+              modos entram e saem juntos porque a régua é a MESMA `md` — um
+              botão visível sem a visão correspondente prenderia a tela. */}
           <div className="hidden items-center gap-0.5 rounded-md border bg-muted p-0.5 md:flex">
             <button
               type="button"
@@ -188,6 +211,21 @@ export function TarefasClient({
             >
               <CalendarBlank size={14} aria-hidden />
               {t("Calendário")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setModo("quadro")}
+              aria-pressed={modo === "quadro"}
+              data-testid="tarefas-modo-quadro"
+              className={cn(
+                "flex min-h-11 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors lg:min-h-0",
+                modo === "quadro"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Kanban size={14} aria-hidden />
+              {t("Quadro")}
             </button>
           </div>
 
@@ -231,6 +269,21 @@ export function TarefasClient({
           {/* A MESMA régua `md` que esconde o seletor esconde o calendário:
               escolhido no tablet deitado e girado para o celular, ele não pode
               ficar preso na tela sem o botão de voltar para a lista. */}
+          {/* O QUADRO: no celular continua a lista — as colunas têm 320px e a
+              régua é a mesma `md` do seletor. */}
+          {modo === "quadro" && (
+            <div data-testid="tarefas-quadro-wrap" className="hidden md:block">
+              <QuadroDeTarefas
+                podeEditar={podeEditar}
+                // A situação NÃO vai: no quadro as colunas são as situações.
+                filtros={{
+                  assigned_to: responsavelDoFiltro(responsavel),
+                  pipeline_id: funil === "todos" ? undefined : funil,
+                }}
+                aoEditar={abrirEdicao}
+              />
+            </div>
+          )}
           {modo === "calendario" && (
             <div data-testid="tarefas-calendario" className="hidden md:block">
               <CalendarioDeTarefas
@@ -241,7 +294,7 @@ export function TarefasClient({
               />
             </div>
           )}
-          <div data-testid="tarefas-lista" className={cn(modo === "calendario" && "md:hidden")}>
+          <div data-testid="tarefas-lista" className={cn(modo !== "lista" && "md:hidden")}>
             <ListaDeTarefas
               tarefas={tarefas}
               podeEditar={podeEditar}

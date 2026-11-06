@@ -81,6 +81,7 @@ export const RECURSOS_DO_CRON = [
   "propostas",
   "fila_de_soneca",
   "mensagem_presa",
+  "ligacao_presa",
   "redacao_de_storage",
   "devolucao_de_handoff",
   "devolucao_ao_rodizio",
@@ -160,6 +161,8 @@ const TETO_DA_LEITURA_MS = 2_000;
  *
  * - `mensagem_presa`: `sending` acima de 3 min, contra o corte de 5 min da rota
  *   (`STUCK_AFTER_MS`) — a folga cobre o relógio do portão e o da rodada;
+ * - `ligacao_presa`: `starting`/`ringing` acima de 3 min, contra o corte de 5 min
+ *   da rota (`STUCK_CALL_AFTER_MS`), pela mesma folga da `mensagem_presa`;
  * - `lembrete_de_tarefa`: a janela de ±1 dia de `janelaDaVarredura`, sem o
  *   filtro de organização parada, que a rodada aplica depois;
  * - `lembrete_de_agenda`: compromisso confirmado e futuro em 30 dias — a maior
@@ -250,6 +253,11 @@ select
      where direction = 'outbound' and status = 'sending'
        and created_at < now() - interval '3 minutes'
   ) as mensagem_presa,
+  exists (
+    select 1 from voice_calls
+     where status in ('starting', 'ringing')
+       and created_at < now() - interval '3 minutes'
+  ) as ligacao_presa,
   exists (
     select 1 from storage_redaction_queue where status = 'pending'
   ) as redacao_de_storage,

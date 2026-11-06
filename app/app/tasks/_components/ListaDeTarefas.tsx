@@ -8,6 +8,7 @@ import { useUser } from "@/hooks/auth/AuthProvider";
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useT } from "@/hooks/i18n/useT";
 import { useAssignableMembers } from "@/hooks/inbox/useAssignableMembers";
+import { COR_DA_PRIORIDADE } from "./estilo-da-prioridade";
 import {
   agrupaPorPrazo,
   estaAtrasada,
@@ -32,14 +33,6 @@ interface Props {
    */
   mostrarNegocio?: boolean;
 }
-
-/** A cor é do TEMA, nunca um hex: ela tem de sobreviver ao claro e ao escuro. */
-const COR_DA_PRIORIDADE: Record<PrioridadeDaTarefa, string> = {
-  low: "bg-muted text-muted-foreground",
-  medium: "bg-primary/10 text-primary",
-  high: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-  urgent: "bg-destructive/15 text-destructive",
-};
 
 function Linha({
   tarefa,

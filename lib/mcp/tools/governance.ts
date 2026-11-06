@@ -13,6 +13,10 @@
 import { z } from "zod";
 
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
+import {
+  definirSetorDaConversa,
+  type RecusaDoSetor,
+} from "@/lib/atendimento/setor-da-conversa";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
@@ -289,6 +293,87 @@ export const crmManageTags: McpToolDefinition<typeof tagsInputShape> = {
     }
 
     return { target_kind: input.target_kind, target_id: input.target_id, tags: nextTags };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// crm_set_conversation_sector (#3881)
+// ---------------------------------------------------------------------------
+
+const setSectorInputShape = {
+  conversation_id: z.string().uuid(),
+  /**
+   * A fila de destino. UUID obrigatório de propósito: `null` limparia a
+   * classificação, e limpar é gesto de gente na tela (a rota humana). Um modelo
+   * que devolvesse nulo por erro de preenchimento apagaria a classificação da
+   * conversa em silêncio.
+   */
+  sector_id: z.string().uuid().describe("id de um setor de atendimento desta organização"),
+  /**
+   * Opt-in explícito para reclassificar a conversa que uma PESSOA já classificou.
+   * Desligado por padrão: a escolha manual vence a IA (regra de precedência da
+   * `lib/atendimento/setor-da-conversa`).
+   */
+  sobrescrever_setor_manual: z.boolean().optional(),
+};
+
+/**
+ * O motivo da recusa vira CÓDIGO na borda da ferramenta: o modelo lê o código e
+ * o runtime o registra. O que NUNCA acontece é sucesso mudo — a ferramenta ou
+ * grava, ou lança com o motivo.
+ */
+const RECUSA_DO_SETOR_MCP: Record<RecusaDoSetor, string> = {
+  conversa_nao_encontrada: "conversation_not_found",
+  setor_inexistente: "sector_not_found",
+  conversa_encerrada: "conversation_closed",
+  setor_manual_preservado: "sector_set_manually",
+  limpeza_nao_permitida: "sector_required",
+  setores_desligados: "sectors_module_off",
+  falha_ao_gravar: "sector_write_failed",
+};
+
+export const crmSetConversationSector: McpToolDefinition<typeof setSectorInputShape> = {
+  name: "crm_set_conversation_sector",
+  description:
+    "Coloca a conversa num SETOR (fila) de atendimento desta organização. Use na triagem, quando " +
+    "você já entendeu o assunto: pedido de pagamento/boleto → o setor financeiro, viagem " +
+    "internacional → o setor internacional. Recusa setor inexistente, conversa encerrada e " +
+    "setor que uma pessoa escolheu à mão (a não ser com sobrescrever_setor_manual=true). " +
+    "Se a conversa não tem dono, ela volta para a distribuição do setor. Registra auditoria " +
+    "com o setor de origem e o de destino. Não muda quem é o responsável.",
+  inputSchema: setSectorInputShape,
+  category: "write",
+  requiresRole: "agent",
+  requiresScope: "mcp:write",
+  handler: async (input, ctx) => {
+    const a = actorAudit(ctx);
+    const resultado = await definirSetorDaConversa({
+      // Service role: a IA não tem sessão. As três cercas viraram explícitas na
+      // régua compartilhada (organização da fonte confiável, conversa conferida,
+      // setor conferido dentro da organização) e a auditoria mora lá.
+      db: ctx.supabase,
+      organizationId: ctx.organizationId,
+      conversationId: input.conversation_id,
+      sectorId: input.sector_id,
+      origem: "ia",
+      sobrescreverSetorManual: input.sobrescrever_setor_manual === true,
+      ator: {
+        tipo: ctx.actor.type === "ai_agent" ? "ai_agent" : "api_token",
+        userId: a.actorUserId,
+        apiTokenId: ctx.apiTokenId,
+        id: ctx.actor.id,
+      },
+      requestId: ctx.requestId,
+    });
+    if (!resultado.ok) throw new Error(RECUSA_DO_SETOR_MCP[resultado.motivo]);
+
+    return {
+      conversation_id: input.conversation_id,
+      sector_id: resultado.para,
+      previous_sector_id: resultado.de,
+      changed: resultado.mudou,
+      requeued: resultado.redistribuiu,
+    };
   },
 };
 

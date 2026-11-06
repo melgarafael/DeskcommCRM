@@ -33,9 +33,174 @@ import {
   type OrigemDaMemoria,
 } from "@/hooks/ai/useOrgMemory";
 import { useT } from "@/hooks/i18n/useT";
+import { countPayloadTokens } from "@/lib/ai/estimativa-de-tokens";
+import { entradasVigentes, renderOrgMemory } from "@/lib/agent-engine/agent/org-memory";
+import {
+  definirLimiteDoPesoDaMemoria,
+  type ErroLimiteDoPeso,
+} from "@/app/actions/settings/definirLimiteDoPesoDaMemoria";
+import {
+  LIMITE_MAXIMO_DO_PESO_DA_MEMORIA,
+  LIMITE_MINIMO_DO_PESO_DA_MEMORIA,
+  LIMITE_RECOMENDADO_DO_PESO_DA_MEMORIA,
+} from "@/lib/schemas/settings";
 
 interface Props {
   initialState: OrgMemoryState;
+  /** `YYYY-MM-DD` no fuso da organização — a régua de "vencida" do runtime. */
+  hoje: string;
+  /** O limite do aviso de peso desta organização (`limiteDoPesoDaMemoria`). */
+  limiteDoAviso: number;
+  /**
+   * Quem pode mudar o limite, calculado no servidor com a MESMA regra de
+   * `definirLimiteDoPesoDaMemoria` — não `usePermission`, que libera o
+   * platform admin que a action recusa.
+   */
+  podeEditarOLimite: boolean;
+}
+
+/**
+ * O peso da memória em tokens, pela MESMA conta do runtime: `renderOrgMemory`
+ * sobre o texto e os aprendizados ATIVOS e VIGENTES (`entradasVigentes`, no fuso
+ * da organização). Aprendizado vencido ou arquivado não entra no prompt, e por
+ * isso não pesa aqui.
+ */
+export function pesoDaMemoriaEmTokens(
+  content: string,
+  entries: OrgMemoryState["entries"],
+  hoje: string,
+): number {
+  return countPayloadTokens(
+    renderOrgMemory({
+      content: content.trim() === "" ? null : content,
+      entries: entradasVigentes(
+        entries.filter((e) => e.status === "active"),
+        hoje,
+      ),
+    }),
+  );
+}
+
+/** Caracteres e tokens do texto, e o aviso de peso quando passa do limite. Só informa. */
+export function PesoDaMemoria({
+  content,
+  entries,
+  hoje,
+  limite,
+}: {
+  content: string;
+  entries: OrgMemoryState["entries"];
+  hoje: string;
+  limite: number;
+}) {
+  const t = useT();
+  const tokens = pesoDaMemoriaEmTokens(content, entries, hoje);
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs text-muted-foreground" data-testid="memoria-peso">
+        {content.length} {t("caracteres")} · ≈{tokens} {t("tokens")}
+      </span>
+      {tokens > limite ? (
+        <p className="text-xs text-warning-fg" data-testid="memoria-peso-aviso">
+          {t(
+            "Este texto vai inteiro em toda resposta de todo agente, várias leituras por mensagem. Regra que vale para um agente só rende mais no prompt dele; o que tem prazo pode virar aprendizado com validade.",
+          )}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+const ERROS_DO_LIMITE: Record<ErroLimiteDoPeso, string> = {
+  invalido: "Use um número inteiro de tokens dentro da faixa do campo.",
+  sessao: "Sua sessão expirou. Entre de novo.",
+  somente_leitura: "Acompanhamento somente leitura ou encerrado.",
+  sem_empresa: "Nenhuma empresa ativa.",
+  sem_permissao: "Só um administrador pode mudar esse limite.",
+  mfa: "Confirme a verificação em duas etapas nesta sessão.",
+  falha: "Não consegui salvar essa mudança agora.",
+};
+
+/**
+ * O limite em vigor do aviso de peso e a recomendação. Um administrador da
+ * empresa escolhe o número; os outros só leem. O aviso continua só informando.
+ */
+export function LimiteDoAviso({
+  limite,
+  podeEditar,
+  onSalvo,
+}: {
+  limite: number;
+  podeEditar: boolean;
+  onSalvo: (valor: number) => void;
+}) {
+  const t = useT();
+  const tagDoIdioma = useTagDeIdioma();
+  const [texto, setTexto] = React.useState(String(limite));
+  const [salvando, startTransition] = React.useTransition();
+  const recomendacao = (
+    <>
+      <p className="text-xs text-muted-foreground">
+        {t("Recomendado:")} {LIMITE_RECOMENDADO_DO_PESO_DA_MEMORIA.toLocaleString(tagDoIdioma)} {t("tokens")}.{" "}
+        {t("A memória vai inteira em toda resposta de todo agente; o aviso só informa, nada é cortado.")}
+      </p>
+      <p className="text-xs text-muted-foreground">
+        {t("Vale para toda a empresa. Só administradores podem mudar.")}
+      </p>
+    </>
+  );
+
+  if (!podeEditar) {
+    return (
+      <div className="flex flex-col gap-1">
+        <p className="text-xs text-muted-foreground" data-testid="memoria-limite">
+          {t("Mostrar o aviso de peso acima de")} {limite.toLocaleString(tagDoIdioma)} {t("tokens")}
+        </p>
+        {recomendacao}
+      </div>
+    );
+  }
+
+  function salvar(e: React.FormEvent) {
+    e.preventDefault();
+    const valor = Number(texto);
+    startTransition(async () => {
+      const r = await definirLimiteDoPesoDaMemoria(valor);
+      if (r.ok) {
+        onSalvo(r.valor);
+        toast.success(t("Salvo"));
+      } else {
+        toast.error(t(ERROS_DO_LIMITE[r.erro]));
+      }
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <form onSubmit={salvar} className="flex flex-wrap items-center gap-2" data-testid="memoria-limite">
+        <Label htmlFor="memoria-limite-tokens" className="text-xs font-normal text-muted-foreground">
+          {t("Mostrar o aviso de peso acima de")}
+        </Label>
+        <Input
+          id="memoria-limite-tokens"
+          type="number"
+          inputMode="numeric"
+          min={LIMITE_MINIMO_DO_PESO_DA_MEMORIA}
+          max={LIMITE_MAXIMO_DO_PESO_DA_MEMORIA}
+          step={1}
+          required
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          className="w-28"
+        />
+        <span className="text-xs text-muted-foreground">{t("tokens")}</span>
+        <Button type="submit" size="sm" variant="outline" disabled={salvando || Number(texto) === limite}>
+          {salvando ? t("Salvando…") : t("Salvar")}
+        </Button>
+      </form>
+      {recomendacao}
+    </div>
+  );
 }
 
 /**
@@ -100,7 +265,7 @@ function formatDate(iso: string, idioma: string): string {
   });
 }
 
-export function OrgMemoryClient({ initialState }: Props) {
+export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarOLimite }: Props) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
   // Exaustivo por tipo: uma origem nova no CHECK sem rótulo aqui para de compilar,
@@ -115,6 +280,7 @@ export function OrgMemoryClient({ initialState }: Props) {
   const versions = data?.versions ?? [];
   const entries = data?.entries ?? [];
   const canPublish = usePermission("ai.memory.publish");
+  const [limite, setLimite] = React.useState(limiteDoAviso);
 
   const [content, setContent] = React.useState(document?.content ?? "");
   const [historyTarget, setHistoryTarget] = React.useState<OrgMemoryVersionMeta | null>(null);
@@ -235,9 +401,10 @@ export function OrgMemoryClient({ initialState }: Props) {
             className="min-h-[220px] font-mono text-[13px]"
           />
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground">
-              {content.length} {t("caracteres")}
-            </span>
+            <div className="flex flex-col gap-2">
+              <PesoDaMemoria content={content} entries={entries} hoje={hoje} limite={limite} />
+              <LimiteDoAviso limite={limite} podeEditar={podeEditarOLimite} onSalvo={setLimite} />
+            </div>
             <div className="flex items-center gap-2">
               {!canPublish && (
                 <span className="text-xs text-muted-foreground">

@@ -88,6 +88,9 @@ describe("visibleInboxTabs (lógica pura de visões)", () => {
   it("agent em 'own' NÃO vê 'all'", () => {
     expect(visibleInboxTabs("agent", "own")).not.toContain("all");
   });
+  it("agent em 'own_and_sector' VÊ 'all' (é onde aparece a conversa do colega do setor)", () => {
+    expect(visibleInboxTabs("agent", "own_and_sector")).toContain("all");
+  });
   it("agent em 'all' VÊ 'all'", () => {
     expect(visibleInboxTabs("agent", "all")).toContain("all");
   });

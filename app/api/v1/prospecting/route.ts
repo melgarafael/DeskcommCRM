@@ -26,6 +26,7 @@ import {
 import {
   activateCampaign,
   adjustPace,
+  assertCanalLivre,
   configureCredential,
   createSearch,
   descartarDesmarcadas,
@@ -58,12 +59,25 @@ const ORDENACAO_POR_SCORE = `(least(greatest(coalesce((p.data->>'rating')::float
       else 0 end end) desc, p.created_at desc`;
 function failure(error: unknown, requestId: string) {
   return fail(
-    "prospecting_unavailable",
+    // O CÓDIGO do erro quando ele declara um (conflito de número:
+    // `prospecting_channel_busy`); sem ele, o genérico de sempre.
+    error instanceof ProspectingError
+      ? (error.codigo ?? "prospecting_unavailable")
+      : "prospecting_unavailable",
     error instanceof ProspectingError
       ? error.message
       : "Não foi possível concluir a operação. Verifique a configuração e tente novamente.",
     error instanceof ProspectingError ? error.status : 500,
-    { requestId, headers },
+    {
+      requestId,
+      headers,
+      // `details` é o caminho para a tela oferecer "abrir essa campanha" em vez
+      // de só mostrar a frase — sem ele o 409 do número ocupado obrigava o
+      // operador a procurar a campanha a pé.
+      ...(error instanceof ProspectingError && error.detalhes
+        ? { details: error.detalhes }
+        : {}),
+    },
   );
 }
 export async function GET(req: NextRequest) {
@@ -89,7 +103,7 @@ export async function GET(req: NextRequest) {
     const [settings, campaigns, candidates, agents, channels, stages, organizacao] = await Promise.all([
       db.query("select organization_id from prospecting_settings where organization_id=$1", [org]),
       db.query(
-        "select id,name,search,config,status,search_status,run_id,cost_usd,result_count,skipped_count,error,next_send_at,created_at from prospecting_campaigns where organization_id=$1 order by created_at desc limit 50",
+        "select id,name,search,config,status,search_status,run_id,cost_usd,result_count,skipped_count,error,next_send_at,created_at,channel_session_id from prospecting_campaigns where organization_id=$1 order by created_at desc limit 50",
         [org],
       ),
       db.query(
@@ -434,20 +448,24 @@ export async function POST(req: NextRequest) {
           )
         ).rows[0];
         if (!c?.config) throw new ProspectingError("Campanha pausada não encontrada.", 404);
-        await validateConfig(db, org, c.config);
-        if (
-          (
-            await db.query(
-              "select id from prospecting_campaigns where organization_id=$1 and status='running'",
-              [org],
-            )
-          ).rows.length
-        )
-          throw new ProspectingError("Pause a outra campanha antes de retomar.", 409);
-        await db.query(
-          "update prospecting_campaigns set status='running',error=null,channel_down_since=null,next_send_at=greatest(next_send_at,now()+interval '1 minute'),updated_at=now() where organization_id=$1 and id=$2",
-          [org, body.id],
-        );
+        const config = await validateConfig(db, org, c.config);
+        // A MESMA régua do `start` (#3896): a retomada também é do NÚMERO. Com
+        // a checagem só no início, retomar uma campanha pausada continuava
+        // travada pela organização — o caminho inverso do mesmo defeito.
+        await assertCanalLivre(db, org, body.id, config.channel_session_id);
+        try {
+          await db.query(
+            "update prospecting_campaigns set status='running',channel_session_id=$3,error=null,channel_down_since=null,next_send_at=greatest(next_send_at,now()+interval '1 minute'),updated_at=now() where organization_id=$1 and id=$2",
+            [org, body.id, config.channel_session_id],
+          );
+        } catch (error) {
+          // 23505 = `prospecting_one_running_canal`: alguém ocupou o número
+          // entre a checagem e o UPDATE. Vira o MESMO 409 com o nome de quem
+          // ocupa — nunca um 500.
+          if ((error as { code?: string }).code === "23505")
+            await assertCanalLivre(db, org, body.id, config.channel_session_id);
+          throw error;
+        }
         return { resumed: true };
       });
     }

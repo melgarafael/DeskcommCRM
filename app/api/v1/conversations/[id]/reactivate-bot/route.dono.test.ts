@@ -36,10 +36,10 @@ const EU = "22222222-2222-4222-8222-222222222222";
 const COLEGA = "33333333-3333-4333-8333-333333333333";
 const CONVERSA = "44444444-4444-4444-8444-444444444444";
 
-function sessao(role: string) {
+function sessao(role: string, idioma = "pt-BR") {
   vi.mocked(requireRole).mockResolvedValue({
     ok: true,
-    user: { id: EU, idioma: "pt-BR" },
+    user: { id: EU, idioma },
     org: { orgId: ORG, role },
   } as Awaited<ReturnType<typeof requireRole>>);
 }
@@ -92,6 +92,22 @@ describe("reactivate-bot e o dono da conversa (#3436)", () => {
     expect(corpo.error.code).toBe("forbidden");
     expect(corpo.error.message).toContain("outro atendente");
     expect(devolverAtendimentoAoAgente).not.toHaveBeenCalled();
+  });
+
+  it("a recusa sai no idioma de quem pediu (espanhol), não em português", async () => {
+    // A frase da recusa mora na ROTA (API), e o guarda de i18n varre o AST das
+    // TELAS — por isso ela precisa de um caso próprio: sem a entrada em
+    // `lib/i18n/dicionario.ts`, `traduzir` degrada para o português e quem usa a
+    // interface em espanhol lê a recusa no idioma errado.
+    sessao("agent", "es");
+    conversaDe(COLEGA);
+    const res = await chamar();
+    const corpo = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(corpo.error.message).toBe(
+      "Esta conversación es de otro atendente. Pídele a un gerente o asume la conversación.",
+    );
   });
 
   it("CONTROLE: agent na conversa sem dono devolve (200)", async () => {

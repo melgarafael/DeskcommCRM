@@ -184,4 +184,25 @@ describe("#3479 — abrir a conversa assume a conversa SEM dono", () => {
     expect(erro).toHaveBeenCalled();
     erro.mockRestore();
   });
+
+  it("canal escolhido desligado/fora do ar recusa com o motivo, sem criar e sem assumir", async () => {
+    // #3483: a recusa nasce ANTES do `fn_service_begin` (é o que o dublê
+    // representa aqui), então não há conversa para assumir nem para navegar —
+    // e o corpo precisa dizer POR QUE, não devolver 200 com a tela parada.
+    const { cliente, rpcs } = clienteFake({ data: [CONVERSA_DA_ORG], error: null });
+    mResolve.mockResolvedValue(authzDeSessao(cliente));
+    mAbrir.mockRejectedValue(new Error("session_unavailable"));
+
+    const res = await POST(requisicao());
+
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toMatchObject({
+      error: {
+        code: "state_conflict",
+        message: "Este canal está desligado ou fora do ar. Reative a conexão ou escolha outro canal.",
+      },
+    });
+    // Sem conversa aberta não há claim: nenhum RPC sai da sessão.
+    expect(rpcs).toHaveLength(0);
+  });
 });

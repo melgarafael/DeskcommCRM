@@ -78,6 +78,8 @@ function requisitarDeVerdade(args: {
       {
         method: 'GET',
         headers: { accept: 'image/jpeg,image/png,image/webp' },
+        // Conexão própria, fora do pool global: o socket aberto para este IP não serve a outra requisição.
+        agent: false,
         lookup: (
           _host: string,
           opcoes: unknown,

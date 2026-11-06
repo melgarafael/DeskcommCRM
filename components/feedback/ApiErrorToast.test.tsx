@@ -116,4 +116,24 @@ describe("ApiErrorToast", () => {
     expect(toast.error).toHaveBeenCalledTimes(1);
     expect(toast.error).toHaveBeenCalledWith("Erro inesperado. Tente novamente.");
   });
+
+  // #3971: o fallback era o único aviso que saía SEM ID, mesmo quando o erro
+  // trazia um. Quem pede ajuda lê o toast; se o ID existe, tem de estar ali.
+  it("mostra o ID no fallback genérico quando o erro traz requestId", () => {
+    showApiError(Object.assign(new Error("falha de rede"), { requestId: "req-3971-fallback" }));
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(toast.error).toHaveBeenCalledWith("Erro inesperado. Tente novamente.", {
+      description: "ID: req-3971-fallback",
+    });
+  });
+
+  it("fallback continua sem descrição quando não há requestId (inclusive vazio)", () => {
+    showApiError({ requestId: "" });
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(toast.error).toHaveBeenCalledWith("Erro inesperado. Tente novamente.");
+
+    vi.mocked(toast.error).mockClear();
+    showApiError(null);
+    expect(toast.error).toHaveBeenCalledWith("Erro inesperado. Tente novamente.");
+  });
 });

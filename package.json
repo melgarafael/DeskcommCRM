@@ -36,6 +36,7 @@
     "release:conferir": "tsx scripts/cortar-release.ts",
     "release:cortar": "tsx scripts/cortar-release.ts --escrever",
     "release:acervo-cabe": "tsx scripts/acervo-cabe-na-tela.ts",
+    "ops:count-prefix": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/ops-count-prefix.ts",
     "gov:verify": "pnpm typecheck && pnpm lint && pnpm lint:channels && pnpm lint:role-rank && pnpm test:unit",
     "worker": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local workers/agent-worker/main.ts",
     "local:up": "bash scripts/local-stack.sh up",

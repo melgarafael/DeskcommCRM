@@ -42,7 +42,7 @@ import {
   type DepsDaOperacao,
 } from "@/lib/operacao/entradas-automaticas";
 import { listarMarcadores, listarTime } from "@/lib/operacao/marcadores-e-time";
-import { resolveUserNames } from "./_users";
+import { nomesDosAtendentesCom } from "@/lib/users/nome-do-atendente";
 import {
   CHAVE_DE_VALOR_MAX,
   VALOR_DE_VARIAVEL_MAX,
@@ -543,8 +543,9 @@ export const crmListTeamMembers: McpToolDefinition<typeof listTeamShape> = {
     const time = await listarTime(deps(ctx));
     // Nome sem UUID na ponta (issue #1539): a mesma resolução de `nome` da
     // `crm_list_available_attendants`, pelo helper que expõe SÓ full_name.
-    const nomes = await resolveUserNames(
+    const nomes = await nomesDosAtendentesCom(
       ctx.supabase,
+      ctx.organizationId,
       time.map((p) => p.user_id),
     );
     return { time: time.map((p) => ({ ...p, nome: nomes.get(p.user_id) ?? null })) };

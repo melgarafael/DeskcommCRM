@@ -17,6 +17,12 @@
  *
  * Requer ANTHROPIC_API_KEY real no env. Custo: ~4 chamadas curtas de Haiku (as 2
  * do teste de cache são as caras; as do passo 6 são de uma palavra).
+ *
+ * Com SMOKE_OPENROUTER=1 e OPENROUTER_API_KEY, repete 2, 3 e 5 pelo seam com o
+ * Claude pela OpenRouter oficial e OPENROUTER_PROMPT_CACHE=on — o caminho
+ * seam → embrulho da fábrica → custo gravado (`usage.cost`) — e acrescenta um laço
+ * de ferramentas para provar a cauda. A prova por provedor de origem é outra:
+ * scripts/prova-cache-openrouter.ts. Custo: 3 chamadas curtas de Haiku 4.5.
  */
 import pg from 'pg';
 import { z } from 'zod';
@@ -27,7 +33,10 @@ import {
   llmEdgeConfigFromEnv,
   LlmBudgetExceededError,
 } from '@/lib/agent-engine/edge/llm/run-model-call';
+import { custoInformadoPeloOpenRouter } from '@/lib/agent-engine/edge/llm/pricing';
 import { stablePrefixHash } from '@/lib/agent-engine/edge/llm/stable-prefix';
+
+import { passoSeguinteLeuOCache } from './lib/cache-do-laco';
 
 const DB_URL = process.env.SMOKE_DB_URL ?? 'postgresql://postgres:postgres@127.0.0.1:54329/postgres';
 const MODEL = process.env.SMOKE_MODEL ?? 'claude-haiku-4-5';
@@ -302,11 +311,93 @@ async function main(): Promise<void> {
     [ORG],
   );
 
+  if (process.env.SMOKE_OPENROUTER === '1' && process.env.OPENROUTER_API_KEY) {
+    await smokeOpenRouter(db);
+  }
+
   console.log(
     `\nSMOKE LLM PASS — ai@7: modelo=${call1.model} custo_total=${agg.cost.toFixed(4)}c ` +
       `write=${call1.usage.cacheWriteTokens} read=${call2.usage.cacheReadTokens} (mínimo ${MODEL}=${min})`,
   );
   await db.end();
+}
+
+/**
+ * Claude pela OpenRouter oficial, pelo SEAM: os pontos de cache que o embrulho da
+ * fábrica põe no corpo chegam e funcionam, e `cost_cents` é o que a OpenRouter
+ * cobrou. Org própria, para não mexer no teto e nas linhas do bloco Anthropic.
+ */
+async function smokeOpenRouter(db: pg.Pool): Promise<void> {
+  const ORG_OR = 'ab5a0c3e-0000-4000-8000-0000000000e0';
+  const MODELO_OR = process.env.SMOKE_OPENROUTER_MODEL ?? 'anthropic/claude-haiku-4.5';
+  // O knob é lido pela fábrica a cada chamada (process.env), como em produção.
+  process.env.OPENROUTER_PROMPT_CACHE = 'on';
+  await db.query(
+    `insert into organizations (id, slug, legal_name, display_name, settings)
+     values ($1, 'smoke-llm-openrouter', 'Smoke LLM OpenRouter', 'Smoke LLM OpenRouter',
+             jsonb_build_object('llm', jsonb_build_object('provider', 'openrouter', 'default_model', $2::text)))
+     on conflict (id) do update set settings = excluded.settings`,
+    [ORG_OR, MODELO_OR],
+  );
+  const cfg = llmEdgeConfigFromEnv({ OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY, LLM_CACHE_TTL: '1h' });
+  const origens: unknown[] = [];
+  const log = {
+    info: (msg: string, campos?: Record<string, unknown>) => {
+      if (msg === 'llm: chamada concluída') origens.push(campos?.['custo_origem']);
+    },
+    warn: () => {},
+    error: (msg: string, campos?: Record<string, unknown>) => console.error(msg, campos),
+  };
+  const system = bigSystem();
+  const chamar = (content: string, extra: { maxSteps?: number; tools?: Parameters<typeof runModelCall>[2]['tools'] } = {}) =>
+    runModelCall(
+      db,
+      cfg,
+      { tenantId: ORG_OR, purpose: 'connection_test', system, messages: [{ role: 'user', content }], ...extra },
+      { log },
+    );
+
+  console.info(`→ OpenRouter chamada 1 (${MODELO_OR}, esperado: cache WRITE)…`);
+  const c1 = await chamar('Olá! Qual o preço do parafuso M3?');
+  check(c1.provider === 'openrouter', 'OpenRouter: a chamada foi pela fábrica openrouter');
+  check(c1.usage.cacheWriteTokens > 0, `OpenRouter: chamada 1 escreveu cache (${c1.usage.cacheWriteTokens})`);
+
+  console.info('→ OpenRouter chamada 2 (mesmo prefixo, esperado: cache READ)…');
+  const c2 = await chamar('E a porca M3, quanto custa?');
+  check(c2.usage.cacheReadTokens >= 4096, `OpenRouter: chamada 2 leu o prefixo (${c2.usage.cacheReadTokens} ≥ 4096)`);
+
+  console.info('→ OpenRouter chamada 3 (laço de ferramentas, esperado: o passo 2 lê a cauda do passo 1)…');
+  const c3 = await chamar('Use a ferramenta consultar_preco para o item "arruela" e depois responda com o preço.', {
+    maxSteps: 3,
+    tools: {
+      consultar_preco: tool({
+        description: 'Consulta o preço de um item do catálogo de teste.',
+        inputSchema: z.object({ item: z.string() }),
+        execute: async () => 'R$ 0,25',
+      }),
+    },
+  });
+  const passos = c3.result.steps ?? [];
+  check(passos.length >= 2, `OpenRouter: o laço rodou ${passos.length} passos`);
+  const cauda = passos[0] && passos[1] ? passoSeguinteLeuOCache(passos[0].usage, passos[1].usage) : null;
+  check(
+    cauda?.ok === true,
+    `OpenRouter: o passo 2 leu do cache tudo o que o passo 1 deixou nele (${cauda?.lido ?? '?'} ≥ ${cauda?.deixado ?? '?'})`,
+  );
+
+  for (const [i, c] of [c1, c2, c3].entries()) {
+    const fatura = custoInformadoPeloOpenRouter(c.result);
+    check(fatura !== undefined && fatura > 0, `OpenRouter: chamada ${i + 1} trouxe usage.cost (${fatura}c)`);
+    const { rows } = await db.query<{ cost: number }>(`select cost_cents::float8 as cost from llm_calls where id = $1`, [c.callId]);
+    check(
+      Math.abs((rows[0]?.cost ?? -1) - fatura!) < 1e-9,
+      `OpenRouter: llm_calls.cost_cents da chamada ${i + 1} = Σ usage.cost × 100 (${rows[0]?.cost})`,
+    );
+  }
+  check(
+    origens.length === 3 && origens.every((o) => o === 'informado_pelo_provedor'),
+    "OpenRouter: o log das 3 chamadas traz custo_origem 'informado_pelo_provedor'",
+  );
 }
 
 main().catch((err) => {

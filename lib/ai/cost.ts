@@ -115,18 +115,26 @@ async function precoDoCatalogo(
   // mais de um provedor com preços diferentes, e o id completo é quem desempata.
   const linha = linhas.find((l) => l.model_id === modelo) ?? linhas[0];
   if (!linha) return null;
+  // Catálogo que conhece o modelo mas não tem preço (as duas taxas null) não é
+  // melhor que ausência: devolver 0 aqui seria inventar "de graça". Já 0/0 é
+  // grátis DE VERDADE (`:free` da OpenRouter) — a mesma regra de
+  // `computeCostCents` (lib/ai/runtime/cost.ts). Olhar o valor CRU: `toNumber`
+  // transforma null em 0 e apagaria a diferença.
+  if (linha.input_price_per_million_cents == null && linha.output_price_per_million_cents == null) {
+    return null;
+  }
   const prompt = toNumber(linha.input_price_per_million_cents);
   const completion = toNumber(linha.output_price_per_million_cents);
-  // Catálogo que conhece o modelo mas não tem preço não é melhor que ausência:
-  // devolver 0 aqui seria inventar "de graça".
-  if (prompt === 0 && completion === 0) return null;
   return { prompt, completion };
 }
 
 /**
- * Returns cost in **cents** (fracionado, sem arredondar). Zero when pricing missing.
+ * Returns cost in **cents** (fracionado, sem arredondar). `null` quando nenhum
+ * catálogo conhece o modelo, nunca 0: o 0 ia para `llm_calls` e dizia "grátis" à
+ * tela de uso e ao teto, que somam `coalesce(cost_cents, 0)` — com o null o gasto
+ * é o mesmo, e o sinal de gasto incompleto acende.
  */
-export async function computeCost(input: ComputeCostInput): Promise<number> {
+export async function computeCost(input: ComputeCostInput): Promise<number | null> {
   // Ids com promoção datada guardam no catálogo a tarifa posterior à promo
   // (0649, 0703). O gasto gravado em llm_calls tem de seguir `costCents`
   // (promo estritamente antes do corte). Outro modelo segue a linha de ai_pricing.
@@ -147,13 +155,21 @@ export async function computeCost(input: ComputeCostInput): Promise<number> {
     // onde a OpenRouter chega. Embedding não passa por aqui — o catálogo não
     // guarda preço de embedding —, e nesse caso o desfecho é o mesmo de antes.
     const doCatalogo = await precoDoCatalogo(input.model);
-    if (!doCatalogo) return 0;
+    if (!doCatalogo) return null;
     const cents =
       ((input.promptTokens ?? 0) * doCatalogo.prompt) / 1_000_000 +
       ((input.completionTokens ?? 0) * doCatalogo.completion) / 1_000_000;
     return cents;
   }
 
+  // Linha sem taxa nenhuma não é preço: é a mesma ausência do catálogo.
+  if (
+    row.prompt_cents_per_million_tokens === null &&
+    row.completion_cents_per_million_tokens === null &&
+    row.embedding_cents_per_million_tokens === null
+  ) {
+    return null;
+  }
   const promptRate = toNumber(row.prompt_cents_per_million_tokens);
   const completionRate = toNumber(row.completion_cents_per_million_tokens);
   const embeddingRate = toNumber(row.embedding_cents_per_million_tokens);

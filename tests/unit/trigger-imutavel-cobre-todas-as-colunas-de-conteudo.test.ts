@@ -108,6 +108,8 @@ describe("trigger de imutabilidade × colunas de conteúdo de ai_agent_versions"
     expect(conteudo.length).toBeGreaterThan(20);
     expect(conteudo).toContain("proposal_ai_draft_enabled");
     expect(conteudo).toContain("inbound_debounce_ms");
+    // Skills por agente (9107): a coluna nova tem de entrar no conjunto lido do schema.
+    expect(conteudo).toContain("skill_names");
   });
 
   it("nova coluna de conteúdo sem a trigger cai (controle de DELETE)", () => {

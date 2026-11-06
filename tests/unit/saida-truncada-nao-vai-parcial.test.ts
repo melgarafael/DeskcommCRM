@@ -68,7 +68,7 @@ describe("turno: detecção, retry limitado e falha terminal visível", () => {
     expect(bloco).toContain("saidaTruncada");
     expect(bloco).toContain("outcomes.length === 0");
     expect(bloco).toContain("seq === 0");
-    expect(bloco).toContain("tentativasDeEnvio === 0");
+    expect(bloco).toContain("!vetoIrrevogavel");
   });
 
   it("isenta toda razão LEGÍTIMA de silêncio — só o trucamento sobra", () => {
@@ -77,9 +77,9 @@ describe("turno: detecção, retry limitado e falha terminal visível", () => {
     expect(bloco).toContain("!turnoDescartado");
     expect(bloco).toContain("!passouParaAEquipe");
     expect(bloco).toContain("!capDeEnvioAtingido()");
-    // `tentativasDeEnvio === 0` cobre o caso do veto: o modelo CHAMOU e levou
-    // veto → o veto é a razão (e já ensinou), não o trucamento.
-    expect(bloco).toContain("tentativasDeEnvio === 0");
+    // Só o veto IRREVOGÁVEL (opt-out, contato interno, LGPD) isenta: o veto de
+    // ensino não entregou nada ao cliente (turno-mudo.ts, 2026-10-25).
+    expect(bloco).toContain("!vetoIrrevogavel");
     // Preview nunca abre caso humano real.
     expect(bloco).toContain("!preview");
   });
@@ -87,10 +87,14 @@ describe("turno: detecção, retry limitado e falha terminal visível", () => {
   it("o desfecho terminal abre caso humano visível com causa própria", () => {
     // A condição única de escala vem logo acima do desfecho.
     expect(turno).toContain(
-      "if (silencioSemRazaoLegitima && (saidaTruncada || correcaoTruncou)) {",
+      "if (silencioSemRazaoLegitima && (saidaTruncada || correcaoTruncou || correcaoTentouEnviar || tetoNaCorrecao)) {",
     );
     const i = turno.indexOf("output_truncated_recovered_failed");
-    const bloco = turno.slice(i, i + 2600);
+    // Até o marco seguinte, não um número de caracteres: cada causa nova traz o
+    // próprio texto para a tela do time, e a janela fixa deixava `kind` de fora.
+    const fim = turno.indexOf("ROTEIRO: a pergunta pendente", i);
+    expect(fim).toBeGreaterThan(i);
+    const bloco = turno.slice(i, fim);
     expect(bloco).toContain("openCase(");
     // `kind` vem de TIPOS_DE_CASO ('problema') — senão a tela do time mostra "Outro".
     expect(bloco).toContain("kind: 'problema'");

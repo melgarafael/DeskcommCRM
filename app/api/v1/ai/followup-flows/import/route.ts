@@ -155,6 +155,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       draft_graph: resultado.graph,
       trigger_config: resultado.trigger_config,
       handoff_policy: arquivo.data.flow.handoff_policy,
+      send_when_assigned: arquivo.data.flow.send_when_assigned,
       surface,
     })
     .select("*")

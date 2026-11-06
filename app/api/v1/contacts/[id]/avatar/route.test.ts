@@ -87,7 +87,9 @@ function novaConsulta(): Consulta {
     maybeSingle: async () => {
       const achado =
         CONTATOS.find((c) =>
-          FILTROS.every(([coluna, valor]) => (c as unknown as Record<string, unknown>)[coluna] === valor),
+          FILTROS.every(
+            ([coluna, valor]) => (c as unknown as Record<string, unknown>)[coluna] === valor,
+          ),
         ) ?? null;
       return { data: achado, error: null };
     },
@@ -168,7 +170,7 @@ beforeEach(() => {
   // Padrão de uma integração: NENHUMA sessão de navegador por perto.
   vi.mocked(loadAuthUser).mockResolvedValue(null);
   vi.mocked(orgAtivaDaApi).mockResolvedValue({ ok: true, org: null } as never);
-  vi.mocked(createClient).mockResolvedValue({ session: true } as never);
+  vi.mocked(createClient).mockResolvedValue({ from: () => novaConsulta() } as never);
   vi.mocked(createAdminClient).mockReturnValue(adminFake());
   vi.mocked(checkRateLimit).mockResolvedValue({ allowed: true } as never);
 });
@@ -293,6 +295,22 @@ describe("GET .../avatar — sessão do navegador (#3420, caso C: regressão zer
     expect(validateBearerToken).not.toHaveBeenCalled();
     // Sessão não paga teto de token, como em toda rota Dual.
     expect(checkRateLimit).not.toHaveBeenCalled();
+  });
+
+  it("contato oculto pela RLS humana não assina avatar mesmo existente no admin", async () => {
+    sessaoOk();
+    CONTATOS = [COM_FOTO];
+    const q = {
+      select: () => q,
+      eq: () => q,
+      maybeSingle: async () => ({ data: null, error: null }),
+    };
+    vi.mocked(createClient).mockResolvedValue({ from: () => q } as never);
+    const { GET } = await import("./route");
+    const res = await GET(reqSemBearer(), PARAMS);
+    expect(res.status).toBe(404);
+    expect(ASSINATURAS).toHaveLength(0);
+    expect(createAdminClient).not.toHaveBeenCalled();
   });
 
   it("sem sessão e sem Bearer → 403 no_active_org, como antes da mudança", async () => {

@@ -605,6 +605,7 @@ function EtapaDoNegocio({ lead, onMovido }: { lead: LeadRow; onMovido: () => voi
         open={perdendo}
         onOpenChange={setPerdendo}
         leadId={lead.id}
+        leadLabel={lead.title}
         pipelineId={lead.pipeline_id}
         onPerdido={onMovido}
         motivos={lead.motivos_de_perda}

@@ -67,6 +67,10 @@ Para criar só o projeto, sem instalar, o script também roda sozinho:
 bash supabase-provision.sh "Nome do Projeto" sa-east-1 >> .env
 ```
 
+O segundo argumento (ou `SUPABASE_REGION`) é a região do projeto: use a **mais próxima da VPS** —
+`sa-east-1` no Brasil, `us-east-1` ou `eu-central-1` nos EUA/Europa. Ela **não muda depois** de
+criado o projeto.
+
 O script cria o projeto, **espera o banco ficar `ACTIVE_HEALTHY`** (projeto novo não
 nasce pronto), busca as chaves e **descobre o host do pooler testando conexão real** em
 vez de adivinhar. Imprime as 4 linhas prontas para colar no `.env`.

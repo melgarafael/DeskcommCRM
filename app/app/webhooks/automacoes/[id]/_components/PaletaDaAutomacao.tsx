@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { acoesQueFechamLaco, MENSAGEM_DO_LACO_DE_LEAD } from "@/lib/schemas/webhooks";
 import { cn } from "@/lib/utils";
 import { useT } from "@/hooks/i18n/useT";
-import { ACTION_LABELS, type ActionType } from "@/app/app/webhooks/_components/labels";
+import { ACTION_LABELS, acaoOferecida, type ActionType } from "@/app/app/webhooks/_components/labels";
+import { useModulosLigados } from "@/hooks/auth/AuthProvider";
 
 import { ACOES_DA_PALETA, VISUAL_DAS_CONDICOES, VISUAL_DA_ACAO, type VisualDaCaixa } from "./visual";
 
@@ -26,6 +27,7 @@ interface Props {
  */
 export function PaletaDaAutomacao({ evento, temCondicoes, onAdd, variant = "desktop" }: Props) {
   const t = useT();
+  const modulosLigados = useModulosLigados();
   const mobile = variant === "mobile";
   const item = (tipo: ItemDaPaleta, visual: VisualDaCaixa, titulo: string, travado: string | null) => {
     const Icone = visual.icon;
@@ -69,7 +71,7 @@ export function PaletaDaAutomacao({ evento, temCondicoes, onAdd, variant = "desk
         temCondicoes ? t("As condições ficam numa caixa só, e ela já está no desenho.") : null,
       )}
       <h2 className="px-1 pb-1 pt-3 text-xs font-medium uppercase tracking-wide text-text-muted">{t("Ações")}</h2>
-      {ACOES_DA_PALETA.map((tipo) =>
+      {ACOES_DA_PALETA.filter((tipo) => acaoOferecida(tipo, modulosLigados)).map((tipo) =>
         item(
           tipo,
           VISUAL_DA_ACAO[tipo],

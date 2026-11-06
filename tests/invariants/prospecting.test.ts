@@ -44,15 +44,25 @@ describe("prospecting tenant boundary and durable deduplication", () => {
     ).toThrow();
     expect(sql("select count(*) from prospecting_candidates")).toBe("2");
   });
-  it("allows only one running campaign per tenant, including concurrent commands", () => {
+  it("allows only one running campaign per NUMBER (channel) in a tenant, including concurrent commands", () => {
+    // A trava é do número, não da organização (#3896): números diferentes da
+    // mesma organização rodam juntos; o MESMO número continua recusado pelo
+    // índice único parcial — não pelo CHECK, que só exige que haja número.
+    const canal1 = "40000000-0000-4000-8000-000000000011",
+      canal2 = "40000000-0000-4000-8000-000000000012";
     sql(
-      `update prospecting_campaigns set status='running' where id in ('${campaignA}','${campaignB}')`,
+      `update prospecting_campaigns set status='running',channel_session_id='${canal1}' where id in ('${campaignA}','${campaignB}')`,
     );
     expect(() =>
       sql(
-        `insert into prospecting_campaigns(organization_id,request_id,name,search,status) values ('${a}',gen_random_uuid(),'duplicate','{}','running')`,
+        `insert into prospecting_campaigns(organization_id,request_id,name,search,status,channel_session_id) values ('${a}',gen_random_uuid(),'other number','{}','running','${canal2}')`,
       ),
-    ).toThrow();
+    ).not.toThrow();
+    expect(() =>
+      sql(
+        `insert into prospecting_campaigns(organization_id,request_id,name,search,status,channel_session_id) values ('${a}',gen_random_uuid(),'duplicate','{}','running','${canal1}')`,
+      ),
+    ).toThrow(/prospecting_one_running_canal/);
   });
 });
 

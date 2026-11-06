@@ -50,6 +50,7 @@ import { CHAVE_DOS_BOTOES_DO_MODELO } from "@/lib/messaging/botoes-do-modelo";
 import { estadoDaJanela } from "@/lib/channels/janela";
 import { isMediaPathOwnedBy } from "@/lib/messaging/media/upload-validation";
 import { assertUrlDeMidiaSegura } from "@/lib/messaging/media/url-de-midia-externa";
+import { semChavesDaDerivacao } from "@/lib/messaging/media/leitura-adiada";
 import {
   buildVcard,
   normalizePhoneForDisplay,
@@ -775,7 +776,7 @@ export async function sendMessageHandler(
     if (coberta) {
       let nomeDoAtendente: string | null = null;
       if (origemDoEmissor === "user" && ctx.actor.type === "user") {
-        nomeDoAtendente = (await nomesDosAtendentes([ctx.actor.id])).get(ctx.actor.id) ?? null;
+        nomeDoAtendente = (await nomesDosAtendentes(ctx.organization_id, [ctx.actor.id])).get(ctx.actor.id) ?? null;
       }
       // #3310: com `por_agente` ligado, a IA assina com o nome do AGENTE QUE
       // ENVIOU (`ai_agents.name`) — com dois agentes no mesmo número, o cliente
@@ -999,7 +1000,10 @@ export async function sendMessageHandler(
     sent_on_behalf_of_user_id: ctx.onBehalfOf?.userId ?? null,
     sent_at: now,
     metadata: {
-      ...metadataDeEntrada,
+      // As chaves da derivação de mídia (âncora do dreno, marca de foto adiada)
+      // são do servidor: o dreno converte a âncora em data e o cron pede visão
+      // paga pela marca. O cliente não as forja — ver `CHAVES_DA_DERIVACAO`.
+      ...semChavesDaDerivacao(metadataDeEntrada),
       ...(ctx.actor.type === "ai_agent" ? { ai_actor_id: ctx.actor.id } : {}),
       ...(origemDoEmissor === "ai" ? { ai_actor_name: nomeDoAgente } : {}),
       ...(botoesDoModeloEnviado.length > 0 ? { [CHAVE_DOS_BOTOES_DO_MODELO]: botoesDoModeloEnviado } : {}),

@@ -72,6 +72,7 @@ const SEM_FILTRO: Record<string, string> = {
   "proposal-expiry": "só vence proposta e abre aviso interno; sem custo nem saída",
   "proposal-promised-not-created": "só abre aviso interno de promessa vencida; sem custo nem saída",
   "proposta-travada": "só destrava proposta presa em 'enviando'; escrita interna",
+  "recover-stuck-calls": "só encerra ligação presa em toque; corrige estado, nada sai nem custa",
   "recover-stuck-messages": "marca failed e avisa, nunca reenvia: deliberadamente não gatilhado (spec §4)",
   "recurring-entries": "só gera lançamento financeiro pendente; escrita interna",
   "risk-watcher": "só classifica risco e registra a proposta de reativação; nada sai",

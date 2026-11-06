@@ -24,10 +24,13 @@
  * a MESMA fita que o stream devolveu — e essa fita atravessa a chamada de
  * fechamento (`toolPartsAsText`), que é o ponto exato onde o turno quebrava.
  */
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { generateText, streamText, type ModelMessage } from "ai";
 
+import { costCents } from "@/lib/agent-engine/edge/llm/pricing";
 import { runModelCall } from "@/lib/agent-engine/edge/llm/run-model-call";
 import { toolPartsAsText } from "@/lib/agent-engine/agent/prune-tool-results";
 import { lerLoginCodexRenovandoSeProxima } from "@/lib/ai/credenciais/login-codex";
@@ -212,9 +215,15 @@ describe("o ramo da assinatura (#2657): o modelo responde E o turno fecha", () =
  * da gravação de cache por TTL vem do `usage` CRU de cada passo
  * (`cache_creation.ephemeral_{5m,1h}_input_tokens`), e não do knob `cacheTtl`.
  */
-function poolDaAnthropic(provider = "anthropic", model = "claude-sonnet-5") {
+function poolDaAnthropic(provider = "anthropic", model = "claude-sonnet-5", baseUrlDoPonto?: string) {
   const inserts: Array<{ params: unknown[] }> = [];
   const query = vi.fn(async (sql: string, params: unknown[] = []) => {
+    // O endereço próprio do ponto, como o painel de provedores grava.
+    if (baseUrlDoPonto !== undefined && sql.includes("from ai_purpose_bindings")) {
+      return {
+        rows: [{ purpose: "agent_turn", provider, credential_id: null, model_id: model, base_url: baseUrlDoPonto, is_enabled: true }],
+      };
+    }
     if (sql.includes("settings->'llm'")) {
       return {
         rows: [
@@ -318,5 +327,181 @@ describe("Terra grava custo real por passo do seam", () => {
     const resultado = await runModelCall(pool,{openaiApiKey:"sk-de-teste",cacheTtl:"1h"},{tenantId:ORG,purpose:"agent_preview",messages:[{role:"user",content:"oi"}]},{registry:{openai:()=>({modelId:"gpt-6.1-terra",provider:"openai.responses",specificationVersion:"v3"})} as never});
     expect(resultado.costCents).toBeCloseTo(26);
     expect(inserts[0]?.params[11]).toBeCloseTo(26);
+  });
+});
+
+/**
+ * CLAUDE PELA OPENROUTER, PELO SEAM INTEIRO.
+ *
+ * O seam decide o cache (4º argumento da fábrica) e o corpo da resposta (o
+ * `include` do generateText) com a MESMA origem de endereço, e grava em
+ * `cost_cents` o que a OpenRouter cobrou (`usage.cost` de cada passo).
+ */
+const AGENTE = "44444444-4444-4444-8444-444444444444";
+
+function registryQueAnota() {
+  const fabrica = vi.fn((...args: unknown[]) => ({
+    specificationVersion: "v3",
+    provider: "openai.chat",
+    modelId: String(args[1]),
+    doGenerate: async () => {
+      throw new Error("SENTINELA: o dublê do generateText não foi usado");
+    },
+    doStream: async () => {
+      throw new Error("SENTINELA: stream fora do dublê");
+    },
+  }));
+  return { fabrica, registry: { openrouter: fabrica, openai: fabrica } as never };
+}
+
+/** Passos com o corpo cru que a OpenRouter devolve; `null` = passo sem `usage.cost`. */
+function generateTextDaOpenRouter(custos: Array<number | null>, corpoEmTexto = false) {
+  const corpo = (cost: number | null) => {
+    const json = {
+      provider: "Anthropic",
+      usage: cost === null ? { prompt_tokens: 10 } : { prompt_tokens: 10, cost, is_byok: false },
+    };
+    return corpoEmTexto ? JSON.stringify(json) : json;
+  };
+  vi.mocked(generateText).mockResolvedValue({
+    text: "ok",
+    usage: {
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      totalTokens: 1_000_000,
+      inputTokenDetails: { cacheReadTokens: 0, cacheWriteTokens: 0 },
+    },
+    response: { id: "resp-or", modelId: "anthropic/claude-sonnet-5", body: corpo(custos.at(-1) ?? null) },
+    steps: custos.map((c) => ({ usage: {}, response: { body: corpo(c) } })),
+    responseMessages: [],
+    toolCalls: [],
+    finishReason: "stop",
+  } as never);
+}
+
+async function rodarPelaOpenRouter(opts: {
+  provider?: string;
+  model?: string;
+  purpose?: string;
+  maxSteps?: number;
+  custos?: Array<number | null>;
+  baseUrlDoPonto?: string;
+  corpoEmTexto?: boolean;
+} = {}) {
+  generateTextDaOpenRouter(opts.custos ?? [0.0123, 0.0007], opts.corpoEmTexto);
+  const { pool, inserts } = poolDaAnthropic(
+    opts.provider ?? "openrouter",
+    opts.model ?? "anthropic/claude-sonnet-5",
+    opts.baseUrlDoPonto,
+  );
+  const { fabrica, registry } = registryQueAnota();
+  const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  const resultado = await runModelCall(
+    pool,
+    { openrouterApiKey: "sk-or-teste", openaiApiKey: "sk-teste", cacheTtl: "1h" },
+    {
+      tenantId: ORG,
+      agentId: AGENTE,
+      purpose: (opts.purpose ?? "agent_turn") as never,
+      messages: [{ role: "user", content: "oi" }],
+      ...(opts.maxSteps !== undefined ? { maxSteps: opts.maxSteps } : {}),
+    },
+    // Antes do prazo da recusa de endereço próprio com a chave da instalação:
+    // o caso aqui é o custo, não essa recusa.
+    { registry, log: log as never, agora: new Date("2026-10-01T00:00:00Z") },
+  );
+  const chamada = vi.mocked(generateText).mock.lastCall?.[0] as Record<string, unknown> | undefined;
+  return { resultado, inserts, fabrica, chamada, log };
+}
+
+describe("o seam e a OpenRouter oficial (T7)", () => {
+  it("⭐ a fábrica recebe o cache da chamada, e o generateText pede o corpo da resposta", async () => {
+    const { fabrica, chamada } = await rodarPelaOpenRouter({ maxSteps: 5 });
+    const args = fabrica.mock.lastCall ?? [];
+    expect(args.slice(0, 3)).toEqual(["sk-or-teste", "anthropic/claude-sonnet-5", undefined]);
+    expect(args[3]).toEqual({ ttl: "1h", cauda: true, sessao: expect.stringMatching(/^[0-9a-f]{32}$/) });
+    expect(chamada?.include).toEqual({ responseBody: true });
+    // Nenhuma opção do SDK escreve campo no corpo (o `prompt_cache_key` iria até para gateway).
+    expect((chamada?.providerOptions as Record<string, unknown> | undefined)?.openai).toBeUndefined();
+  });
+
+  it("sem laço, a cauda não vai; a sessão é um hash estável que muda com o propósito", async () => {
+    const a = (await rodarPelaOpenRouter()).fabrica.mock.lastCall?.[3] as { cauda: boolean; sessao: string };
+    const b = (await rodarPelaOpenRouter()).fabrica.mock.lastCall?.[3] as { sessao: string };
+    const c = (await rodarPelaOpenRouter({ purpose: "agent_preview" })).fabrica.mock.lastCall?.[3] as { sessao: string };
+    expect(a.cauda).toBe(false);
+    expect(a.sessao).toBe(b.sessao);
+    expect(c.sessao).not.toBe(a.sessao);
+    expect(a.sessao).not.toContain(ORG.replace(/-/g, "").slice(0, 8));
+  });
+
+  it("a OpenAI direta não pede o corpo da resposta", async () => {
+    const { chamada } = await rodarPelaOpenRouter({ provider: "openai", model: "gpt-6.1-terra" });
+    expect(chamada).toBeDefined();
+    expect(chamada?.include).toBeUndefined();
+  });
+
+  it("as duas decisões leem o MESMO endereço da chamada (o código-fonte)", () => {
+    const fonte = readFileSync("lib/agent-engine/edge/llm/run-model-call.ts", "utf8");
+    expect(fonte).toContain("fabrica(cfgUsada.apiKey, model, baseUrlDaChamada,");
+    expect(fonte).toContain("corpoDaOpenRouterNoResultado(cfgUsada.provider, baseUrlDaChamada)");
+  });
+});
+
+describe("o custo gravado na OpenRouter é o que ela cobrou (T8)", () => {
+  it("⭐ soma o usage.cost dos passos, em centavos, e o log diz de onde veio", async () => {
+    const { resultado, inserts, log } = await rodarPelaOpenRouter({ maxSteps: 5 });
+    expect(resultado.costCents).toBeCloseTo(1.3, 6);
+    expect(inserts[0]?.params[11]).toBeCloseTo(1.3, 6);
+    const concluida = log.info.mock.calls.find(([msg]) => msg === "llm: chamada concluída")?.[1];
+    expect(concluida).toMatchObject({ custo_origem: "informado_pelo_provedor", provedor_de_origem: "Anthropic" });
+  });
+
+  it("corpo em texto JSON: o custo e o provedor de origem são lidos do mesmo jeito", async () => {
+    const { resultado, log } = await rodarPelaOpenRouter({ maxSteps: 5, corpoEmTexto: true });
+    expect(resultado.costCents).toBeCloseTo(1.3, 6);
+    const concluida = log.info.mock.calls.find(([msg]) => msg === "llm: chamada concluída")?.[1];
+    expect(concluida).toMatchObject({ custo_origem: "informado_pelo_provedor", provedor_de_origem: "Anthropic" });
+  });
+
+  it("gateway do operador cadastrado como openrouter não informa o próprio custo: vale a tabela", async () => {
+    // Um gateway que devolvesse `usage.cost` 0 (ou negativo) furaria o teto
+    // mensal e a cota do plano. O corpo chega até aqui de propósito: quem barra
+    // é o critério do endereço, não a ausência do corpo.
+    const gateway = "https://meu-gateway.exemplo/v1";
+    const { resultado, inserts, fabrica, chamada, log } = await rodarPelaOpenRouter({ baseUrlDoPonto: gateway, custos: [0, 0] });
+    expect(fabrica.mock.lastCall?.[2], "controle: a chamada foi ao gateway").toBe(gateway);
+    expect(chamada?.include).toBeUndefined();
+    const tabela = costCents(
+      "anthropic/claude-sonnet-5",
+      { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      "1h",
+    );
+    expect(tabela).toBeGreaterThan(0);
+    expect(resultado.costCents).toBeCloseTo(tabela!, 6);
+    expect(inserts[0]?.params[11]).toBeCloseTo(tabela!, 6);
+    const concluida = log.info.mock.calls.find(([msg]) => msg === "llm: chamada concluída")?.[1];
+    expect(concluida).not.toHaveProperty("custo_origem");
+  });
+
+  it("o custo informado lê o endereço da chamada que RODOU (o código-fonte)", () => {
+    const fonte = readFileSync("lib/agent-engine/edge/llm/run-model-call.ts", "utf8");
+    expect(fonte).toContain("baseUrlDaChamadaEfetiva = baseUrlDaChamada;");
+    expect(fonte).toMatch(
+      /config\.provider === 'openrouter' && ehOpenRouterOficial\(baseUrlDaChamadaEfetiva\)\s*\?\s*custoInformadoPeloOpenRouter\(result\)/,
+    );
+  });
+
+  it("um passo sem usage.cost: vale a tabela, como antes, sem custo_origem", async () => {
+    const { resultado, log } = await rodarPelaOpenRouter({ custos: [0.0123, null] });
+    const tabela = costCents(
+      "anthropic/claude-sonnet-5",
+      { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      "1h",
+    );
+    expect(tabela).not.toBeNull();
+    expect(resultado.costCents).toBeCloseTo(tabela!, 6);
+    const concluida = log.info.mock.calls.find(([msg]) => msg === "llm: chamada concluída")?.[1];
+    expect(concluida).not.toHaveProperty("custo_origem");
   });
 });

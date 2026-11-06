@@ -73,7 +73,9 @@ const INBOX_TABS: { value: InboxTab; label: string }[] = [
  * É apenas cosmético — a RLS (G4-01) é quem garante o escopo mesmo via ?filter=all.
  */
 export function visibleInboxTabs(role: Role, mode: VisibilityMode | undefined): InboxTab[] {
-  const hideAll = role === "agent" && mode !== "all";
+  // `own_and_sector` (#4022): a conversa do colega do setor não está na Fila nem
+  // em Minhas — sem a aba Todas ela não aparece em lugar nenhum da tela.
+  const hideAll = role === "agent" && mode !== "all" && mode !== "own_and_sector";
   return INBOX_TABS.filter((t) => !(t.value === "all" && hideAll)).map((t) => t.value);
 }
 

@@ -36,6 +36,11 @@ export interface CatalogSkill {
 export interface SkillsState {
   installed: InstalledSkill[];
   catalog: CatalogSkill[];
+  /**
+   * Agentes cuja versão publicada escolheu as próprias skills (9107). Uma skill
+   * instalada agora NÃO chega a eles — o aviso de instalação os nomeia.
+   */
+  agentes_com_lista_propria: Array<{ id: string; name: string; skill_names: string[] }>;
 }
 
 export interface SkillMatcher {

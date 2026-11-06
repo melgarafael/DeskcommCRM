@@ -129,6 +129,13 @@ export const patchFollowupFlowSchema = z.strictObject({
   name: z.string().trim().min(1).max(80).optional(),
   draft_graph: flowGraphSchema.optional(),
   handoff_policy: z.enum(["pause", "cancel", "allow"]).optional(),
+  /**
+   * #3974 — "enviar mesmo com a conversa atribuída a uma pessoa". Por fluxo, e
+   * o default é `false` (comportamento de sempre). Lida pelo motor em
+   * `lib/followup/envio-com-o-dono.ts`, não pela política de handoff: são duas
+   * réguas diferentes, e a de handoff continua valendo para a IA responder.
+   */
+  send_when_assigned: z.boolean().optional(),
   trigger_config: triggerConfigSchema.optional(),
 });
 

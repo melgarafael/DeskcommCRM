@@ -355,7 +355,9 @@ export function renderSemanticPromiseVeto(suspectPhrase: string | null): string 
     "não autorizada antes de reenviar. Se a oferta existe na empresa, consulte sua política e " +
     "condições explícitas antes de reenviar. Preserve a gratuidade realmente autorizada: não " +
     "a retire nem a troque por sinônimo para contornar a revisão. Convite não confirma vaga; " +
-    "não acrescente reserva, prazo ou garantia sem comprovação."
+    "não acrescente reserva, prazo ou garantia sem comprovação. Se o que você ia afirmar só " +
+    "aparece em fala do cliente, não foi dito pela empresa: não o troque por relato (\"consta\", " +
+    "\"foi informado\", \"a informação registrada é\") — diga que não encontrou esse combinado."
   );
 }
 

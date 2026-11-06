@@ -193,6 +193,12 @@ describe("carregaRadarDeRisco — propostas esperando revisão (C6)", () => {
     ]);
   });
 
+  it("rascunho com aviso não mantém negócio fechado no radar geral", async () => {
+    const { admin } = montarAdmin([RASCUNHO], [], { avisos: [{ ref_id: "prop-1" }] });
+    const radar = await carregaRadarDeRisco(admin, { organizationId: ORG_ID });
+    expect(radar.propostas_esperando_revisao).toEqual([]);
+  });
+
   it("rascunho SEM aviso aberto não entra", async () => {
     const { admin } = montarAdmin([RASCUNHO], undefined, { avisos: [] });
     const radar = await carregaRadarDeRisco(admin, { organizationId: ORG_ID });
@@ -231,5 +237,64 @@ describe("carregaRadarDeRisco — propostas esperando revisão (C6)", () => {
       expect(c.filtros).toContainEqual(["kind", "proposta_pronta_para_revisao"]);
       expect(c.filtros).toContainEqual(["status", "open"]);
     }
+  });
+});
+
+// O Postgres honra `.order(last_activity_at asc).limit(500)`: numa org com mais
+// de 500 abertos, o negócio recém-ativo fica FORA de `rows`. Este dublê honra
+// order, limit, `status` e `in(id)`, como o banco, para provar que estar fora de
+// `rows` não tira da revisão um negócio que segue aberto.
+function montarAdminComTeto(leads: Array<{ id: string; status: string; last_activity_at: string }>) {
+  const propostas = ["lead-ativo", "lead-fechado"].map((lead_id, i) => ({
+    id: `prop-${i}`, lead_id, status: "rascunho", numero: null, ano: null, valid_until: null,
+    versao: 1, created_at: "2026-11-04T00:00:00Z", titulo: "x", contact_id: null,
+  }));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin: any = {
+    from: vi.fn((tabela: string) => {
+      let limite = Infinity;
+      let status: unknown;
+      let ids: string[] | undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cadeia: any = {
+        select: () => cadeia, not: () => cadeia, order: () => cadeia, is: () => cadeia, gt: () => cadeia,
+        eq: (campo: string, valor: unknown) => { if (campo === "status") status = valor; return cadeia; },
+        in: (campo: string, valores: string[]) => { if (campo === "id") ids = valores; return cadeia; },
+        limit: (n: number) => { limite = n; return cadeia; },
+        then: (resolve: (r: { data: unknown[]; error: null }) => void) => {
+          if (tabela === "crm_proposals") return resolve({ data: propostas, error: null });
+          if (tabela === "agent_inbox_items") return resolve({ data: propostas.map((p) => ({ ref_id: p.id })), error: null });
+          if (tabela === "crm_leads") {
+            const linhas = leads
+              .filter((l) => status === undefined || l.status === status)
+              .filter((l) => ids === undefined || ids.includes(l.id))
+              .sort((a, b) => a.last_activity_at.localeCompare(b.last_activity_at))
+              .slice(0, limite)
+              .map((l) => ({
+                id: l.id, title: "", contact_id: null, owner_user_id: null, owner_kind: null, owner_agent_id: null,
+                stage_id: null, last_activity_at: l.last_activity_at, created_at: l.last_activity_at, pipeline_id: "pipeline-1",
+              }));
+            return resolve({ data: linhas, error: null });
+          }
+          return resolve({ data: [], error: null });
+        },
+      };
+      return cadeia;
+    }),
+  };
+  return admin;
+}
+
+describe("carregaRadarDeRisco — revisão com mais de 500 negócios abertos (C6)", () => {
+  const parados = Array.from({ length: 500 }, (_, i) => ({ id: `parado-${i}`, status: "open", last_activity_at: "2025-01-01T00:00:00Z" }));
+
+  it("rascunho com aviso de negócio ABERTO e recém-ativo segue no radar geral", async () => {
+    const admin = montarAdminComTeto([
+      ...parados,
+      { id: "lead-ativo", status: "open", last_activity_at: "2026-11-04T00:00:00Z" },
+      { id: "lead-fechado", status: "won", last_activity_at: "2026-11-04T00:00:00Z" },
+    ]);
+    const radar = await carregaRadarDeRisco(admin, { organizationId: ORG_ID });
+    expect(radar.propostas_esperando_revisao.map((p) => p.lead_id)).toEqual(["lead-ativo"]);
   });
 });

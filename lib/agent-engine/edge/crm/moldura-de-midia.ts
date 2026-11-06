@@ -61,6 +61,23 @@ export function frameMediaBody(type: string, caption: string | null, derived: st
   return parts.join('\n');
 }
 
+/**
+ * A foto no turno do agente que NÃO vê imagens (9108). Começa pela mesma moldura
+ * de mídia, para nunca passar por texto que o cliente digitou
+ * (`textoDoClienteNaUltimaMensagem`), e diz as duas coisas que evitam a
+ * invenção: chegou uma imagem, e ele não sabe o que ela mostra. A primeira linha
+ * declara o tipo como `tipoDaMoldura` o lê (" ele enviou uma imagem ", sem
+ * vírgula), senão o cartão da passagem mostraria `[mídia]` no lugar de `[imagem]`.
+ *
+ * ⚠️ Sem palavra com cara de pedido de pessoa ("atendimento", "agente",
+ * "atendente"): este texto entra no corpo da mensagem recebida, e a detecção de
+ * passagem (`matchesHandoffKeyword`) busca por TRECHO as palavras que o dono
+ * cadastrou. "atendimento" cadastrado mandava toda foto para a fila de pessoas.
+ */
+export const MARCADOR_IMAGEM_NAO_VISTA =
+  `${INICIO_DA_MOLDURA_DE_MIDIA} ele enviou uma imagem e você não vê imagens, então não sabe o que ela mostra. ` +
+  `NUNCA descreva nem suponha o conteúdo dela; se precisar, peça que ele conte o que enviou.]`;
+
 /** O tipo de mídia que a primeira linha da moldura declara, ou `null`. */
 function tipoDaMoldura(primeiraLinha: string): string | null {
   for (const [tipo, noun] of Object.entries(MEDIA_NOUN)) {

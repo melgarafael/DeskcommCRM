@@ -136,6 +136,7 @@ vi.mock("@/lib/agent-engine/edge/llm/credentials", () => ({
 }));
 
 import { deriveMessageMedia } from "@/workers/media-derive-worker";
+import { TETO_DE_SAIDA_DA_TRANSCRICAO } from "@/lib/messaging/media/escada-de-transcricao";
 import type { OrgLlmConfig } from "@/lib/agent-engine/edge/llm/credentials";
 
 /**
@@ -229,12 +230,19 @@ describe("transcricao_de_audio — quem ouve o áudio (#2171)", () => {
     const chamada = generateTextMock.mock.calls[0]![0] as {
       model: { modelId?: string };
       messages: { content: Array<Record<string, unknown>> }[];
+      maxOutputTokens?: number;
     };
     const conteudo = chamada.messages[0]!.content;
     expect(conteudo).toEqual(
       expect.arrayContaining([expect.objectContaining({ type: "file", mediaType: "audio/ogg" })]),
     );
     expect(String(chamada.model?.modelId ?? "")).toContain("gemini");
+    // Com teto: sem ele a OpenRouter reserva o máximo do modelo contra o saldo
+    // da chave e recusa quando o crédito está baixo. 8192, não 4096: em modelo
+    // de raciocínio o raciocínio conta no teto, e um áudio longo seria cortado
+    // antes dos 8000 caracteres que a derivação guarda.
+    expect(TETO_DE_SAIDA_DA_TRANSCRICAO).toBe(8192);
+    expect(chamada.maxOutputTokens).toBe(TETO_DE_SAIDA_DA_TRANSCRICAO);
 
     // ...e o endpoint da OpenAI não foi chamado. O degrau OpenAI FOI
     // consultado — ele vem antes (ordem de `lib/ai/embeddings/chave.ts`) — e

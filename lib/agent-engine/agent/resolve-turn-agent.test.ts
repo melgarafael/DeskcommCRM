@@ -32,6 +32,7 @@ function fakeConfig(agentId: string): PublishedAgentConfig {
     casesEnabled: false,
     toolIds: [],
     knowledgeSourceIds: [],
+    skillNames: null,
     activeKbVersionId: null,
     ragTopK: 5,
     ragSimilarityThreshold: 0.72,

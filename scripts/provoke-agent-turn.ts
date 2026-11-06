@@ -52,9 +52,29 @@ const FROM = arg("from", "5531988887777");
  * (não mexemos na fixture alheia): mais recente vence o `order by created_at desc`.
  */
 async function ensureRealCredential(orgId: string): Promise<void> {
-  const key = env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error("ANTHROPIC_API_KEY ausente no .env.local — sem ela não há turno real");
-  const label = "Baseline Canais (chave real de plataforma)";
+  // Sem ANTHROPIC_API_KEY, a chave da OpenRouter vira a credencial da org: é por
+  // ela que a avaliação da parada roda (docs/runbooks/parada-apos-envio.md), e o
+  // agente publicado com `provider = 'openrouter'` a acha por provedor.
+  const provider = env.ANTHROPIC_API_KEY ? "anthropic" : "openrouter";
+  const key = env.ANTHROPIC_API_KEY || env.OPENROUTER_API_KEY;
+  if (!key) {
+    // Provedor direto: as credenciais foram cadastradas pela tela (IA › Provedores)
+    // e o turno as acha por provedor — nenhuma chave passa por aqui.
+    const { data: daOrg } = await admin
+      .from("ai_provider_credentials")
+      .select("provider, api_key_last4")
+      .eq("organization_id", orgId)
+      .eq("is_active", true)
+      .not("validated_at", "is", null);
+    const lista = (daOrg ?? []) as Array<{ provider: string; api_key_last4: string | null }>;
+    if (lista.length > 0) {
+      console.info(`[provoke] sem chave no ambiente: o turno usa as credenciais da organização (${lista.map((c) => `${c.provider} …${c.api_key_last4 ?? "?"}`).join(", ")})`);
+      return;
+    }
+    throw new Error("ANTHROPIC_API_KEY e OPENROUTER_API_KEY ausentes e a organização sem credencial ativa e validada — sem uma delas não há turno real");
+  }
+  const label =
+    provider === "anthropic" ? "Baseline Canais (chave real de plataforma)" : "Baseline Canais (chave real OpenRouter)";
   const { data: existing } = await admin
     .from("ai_provider_credentials")
     .select("id")
@@ -70,7 +90,7 @@ async function ensureRealCredential(orgId: string): Promise<void> {
     .from("ai_provider_credentials")
     .insert({
       organization_id: orgId,
-      provider: "anthropic",
+      provider,
       label,
       api_key_encrypted: bufToBytea(enc.ciphertext),
       api_key_iv: bufToBytea(enc.iv),

@@ -498,6 +498,22 @@ const acoesFixas = [
     }),
   }),
   z.object({ type: z.literal("assign_owner"), config: configDoAtribuirSchema }),
+  /**
+   * #3881 — a automação classifica a conversa num SETOR (a fila que decide para
+   * quem ela é distribuída, 9062). `sector_id` é obrigatório: setor é destino
+   * nomeado, e uma ação sem destino salvaria e só falharia no disparo.
+   *
+   * `sobrescrever_setor_manual` é OPT-IN e nasce desligado — a regra que já
+   * existe não ganha comportamento novo, e a escolha feita por uma pessoa não é
+   * apagada por uma regra sem que alguém tenha marcado a caixa.
+   */
+  z.object({
+    type: z.literal("define_sector"),
+    config: z.object({
+      sector_id: z.string().uuid(),
+      sobrescrever_setor_manual: z.boolean().optional(),
+    }),
+  }),
   z.object({
     type: z.literal("send_ai_message"),
     config: z.object({

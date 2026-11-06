@@ -117,6 +117,24 @@ export interface Message {
   sent_via: SentVia;
   sent_by_user_id: string | null;
   /**
+   * O NOME de quem enviou (#4031) — e por que ele não é coluna.
+   *
+   * `sent_by_user_id` diz QUAL pessoa da equipe digitou, mas o balão só sabia
+   * disso duas coisas: "Você" (para o autor) e "Atendente" (para todos os
+   * outros). Com duas consultoras na mesma conversa, o gestor não tinha como
+   * saber quem prometeu o quê — enquanto a IA já aparecia nomeada ("IA · Clara").
+   *
+   * O nome mora em `auth.users.raw_user_meta_data`, fora do alcance de uma
+   * consulta por PostgREST — e o balão NÃO faz consulta. Por isso este campo é
+   * de PAYLOAD: `GET /api/v1/conversations/[id]/messages` o preenche uma vez por
+   * página (ids distintos, com `nomesDosAtendentes`), exatamente como o export
+   * em PDF já fazia. Opcional porque uma resposta em cache de antes do campo
+   * não o tem — e `null` é a declaração de "não resolvi o nome" (self-host sem
+   * service role, linha antiga, usuário removido). Nunca é o nome de um cliente:
+   * só aparece quando há `sent_by_user_id`.
+   */
+  sent_by_user_name?: string | null;
+  /**
    * Quem DECIDIU o envio quando o que apertou foi um token (#1613, migration
    * 0416) — a pessoa "em nome de" quem a integração mandou. `null` em todo
    * envio direto, e ausente nas linhas anteriores à coluna. O balão lê este

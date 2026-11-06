@@ -70,6 +70,7 @@ import { AgendaPuladoError, MOTIVO_DO_PULO, decidirNoEnvio } from '@/lib/agenda/
 import { escolhaDoFluxoPg } from '@/lib/agenda/escolha-no-envio-leitura';
 import { protecaoAgendaPg } from '@/lib/agenda/protecao-followup';
 import { aplicarPessoaNoComandoAoTurno } from '@/lib/followup/pessoa-no-comando-no-turno';
+import { liberaEnvioComODono } from '@/lib/followup/envio-com-o-dono';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import {
   followupPublicadoDoEnrollment,
@@ -432,6 +433,7 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
             enrollmentId: payload.followup_enrollment_id,
             nodeId: payload.node_id,
             contactId: leadId,
+            passoDeTexto: payload.fixed_body !== undefined || payload.template_id !== undefined,
           },
           agora,
         );
@@ -1316,15 +1318,37 @@ async function sendFixedOutbound(
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
 
   if (await isLeadInHandoff(pool, tenantId, leadId)) {
-    // Três causas no MESMO veto (#2353): handoff humano (`force_human`), a marca
-    // permanente "sempre atendimento humano" (`ai_opt_out`) e a etiqueta de
-    // contato interno. O texto nomeia as três — dizer só "opt-out" atribuía a
-    // parada a um motivo que pode não ser o do contato.
-    runLog.info(
-      'envio fixo pulado — contato silenciado para o envio automático (handoff humano, opt-out de IA ou etiqueta de contato interno)',
-      { kind: job.kind },
-    );
-    return { kind: "skipped" };
+    // #3974 — A OPÇÃO POR FLUXO "enviar mesmo com a conversa atribuída".
+    //
+    // O dono da conversa (assumir/atribuir) grava `bot_silenced_until =
+    // 'infinity'`, e era aqui que o passo de TEXTO do fluxo morria — mesmo com
+    // `handoff_policy = 'allow'`, porque este veto lê o silêncio, não a política.
+    // A opção vence SÓ a posse: `force_human`, `ai_opt_out`, contato interno,
+    // contato bloqueado e as janelas continuam valendo (os três primeiros pelo
+    // próprio `isLeadInHandoff` + `liberaEnvioComODono`, os demais na cadeia).
+    // O veto da IA não é tocado aqui — este caminho só envia texto de operador.
+    const liberado = await liberaEnvioComODono(pool, {
+      organizationId: tenantId,
+      contactId: leadId,
+      enrollmentId:
+        typeof job.payload.followup_enrollment_id === 'string'
+          ? job.payload.followup_enrollment_id
+          : null,
+    });
+    if (!liberado) {
+      // Três causas no MESMO veto (#2353): handoff humano (`force_human`), a marca
+      // permanente "sempre atendimento humano" (`ai_opt_out`) e a etiqueta de
+      // contato interno. O texto nomeia as três — dizer só "opt-out" atribuía a
+      // parada a um motivo que pode não ser o do contato.
+      runLog.info(
+        'envio fixo pulado — contato silenciado para o envio automático (handoff humano, opt-out de IA ou etiqueta de contato interno)',
+        { kind: job.kind },
+      );
+      return { kind: "skipped" };
+    }
+    runLog.info('envio fixo liberado pela opção do fluxo — a conversa está com uma pessoa', {
+      kind: job.kind,
+    });
   }
 
   // SEM gate near-dup AQUI (#2996, item 2 — pedido da triagem após medir os

@@ -4,8 +4,14 @@
  * O preview usa o mesmo core e as mesmas dependências de um turno normal. Este
  * teste fixa o contrato de falha desse caminho: o run guarda um checkpoint
  * útil e a pessoa recebe orientação legível, sem detalhes internos do provider.
+ *
+ * #4020 — e a orientação tem de ser a CERTA: o mesmo `catch` respondia
+ * "confira modelo, credencial e materiais" para um timeout de banco, e duas
+ * instalações recriaram credencial e reindexaram a base por causa disso. Os
+ * casos daqui fixam os dois lados (banco fala de banco; provedor/modelo segue
+ * com a frase de hoje) e, principalmente, o que NÃO pode ser acusado.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 import { requireRole } from "@/lib/auth/require-role";
@@ -14,6 +20,7 @@ import { ROLE_RANK, type AuthUser, type Role } from "@/lib/auth/types";
 import { testAgentVersion } from "@/lib/agent-engine/agent/sandbox";
 import { requestTurnDeps } from "@/lib/agent-engine/agent/request-deps";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
+import { logger } from "@/lib/logger";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
@@ -36,9 +43,9 @@ vi.mock("@/lib/api/auth-dual", () => ({
   tetoDeEscritaDoToken: vi.fn(async () => null),
 }));
 vi.mock("@/lib/agent-engine/agent/sandbox", () => ({
-  testAgentVersion: vi.fn(async () => {
-    throw new Error("AI_GATEWAY_API_KEY ausente");
-  }),
+  // O erro de cada caso é injetado por teste (`mockRejectedValueOnce`); o
+  // default é o de hoje, para o caso-base continuar sendo o mesmo.
+  testAgentVersion: vi.fn(),
 }));
 vi.mock("@/lib/agent-engine/agent/request-deps", () => ({ requestTurnDeps: vi.fn() }));
 vi.mock("@/lib/agent-engine/db/request-pool", () => ({ getRequestPool: vi.fn() }));
@@ -128,6 +135,12 @@ describe("POST .../versions/:vid/test — core compartilhado", () => {
     vi.mocked(createAdminClient).mockReturnValue(stubAdmin(atualizacoes, selectsDeVersao) as never);
     vi.mocked(getRequestPool).mockReturnValue(requestPool as never);
     vi.mocked(requestTurnDeps).mockReturnValue(turnDeps as never);
+    // O caso-base (erro que não se classifica) continua sendo o de antes.
+    vi.mocked(testAgentVersion).mockRejectedValue(new Error("AI_GATEWAY_API_KEY ausente"));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("falha do core vira checkpoint e orientação legível", async () => {
@@ -168,6 +181,151 @@ describe("POST .../versions/:vid/test — core compartilhado", () => {
       status: "failed",
       error_code: "preview_failed",
     }));
+  });
+
+  // ─── #4020: a falha é CLASSIFICADA, e a tela diz a causa certa ─────────────
+  //
+  // A régua dos casos abaixo: banco fala de banco; provedor e modelo seguem com
+  // a frase de hoje; o que não se prova não é acusado de nada. As duas frases
+  // são diferentes no texto E no código estável, para a tela e o suporte não
+  // precisarem adivinhar qual das duas causas aconteceu.
+
+  const FRASE_GENERICA =
+    "Não foi possível executar o teste. Confira modelo, credencial e materiais do agente.";
+
+  async function chamarTeste(): Promise<{
+    status: number;
+    error?: { code?: string; message?: string };
+  }> {
+    const { POST } = await import("./route");
+    const req = new NextRequest("http://localhost/x", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sample_message: "oi" }),
+    });
+    const res = await POST(req, { params: Promise.resolve({ id: AGENT, vid: VERSION }) });
+    const body = (await res.json()) as { error?: { code?: string; message?: string } };
+    return { status: res.status, error: body.error };
+  }
+
+  function espiarLog() {
+    return vi.spyOn(logger, "error").mockImplementation(() => undefined);
+  }
+
+  it("banco que não responde fala de banco — e diz que credencial não é a causa", async () => {
+    // O erro que a issue mediu em produção: `query_timeout` do `pg` chega SEM
+    // `code` (ver `lib/agent-engine/db/pool.test.ts`) — só a mensagem.
+    const log = espiarLog();
+    vi.mocked(testAgentVersion).mockRejectedValueOnce(new Error("Query read timeout"));
+
+    const { status, error } = await chamarTeste();
+
+    expect(status).toBe(502);
+    // O status NÃO pode ser um dos que `lib/api/client.ts` repete sozinho
+    // (RETRYABLE_STATUSES): a rota não é idempotente, e cada repetição criaria
+    // um run e rodaria o turno inteiro do agente de novo.
+    expect([429, 503]).not.toContain(status);
+    expect(error?.code).toBe("preview_banco_indisponivel");
+    expect(error?.message).toContain("banco de dados não respondeu");
+    expect(error?.message).toContain("não têm relação com esta falha");
+    expect(error?.message).not.toBe(FRASE_GENERICA);
+    // O erro cru NÃO se perde: log com o marcador de sempre e a linha do run.
+    expect(log).toHaveBeenCalledWith(
+      "[ai.test] o teste do agente falhou",
+      expect.objectContaining({ error: "Query read timeout" }),
+    );
+    expect(atualizacoes).toContainEqual(expect.objectContaining({
+      status: "failed",
+      error_code: "preview_banco_indisponivel",
+      error_message: "Query read timeout",
+    }));
+  });
+
+  it("statement timeout (SQLSTATE 57014) cai no mesmo desfecho de banco", async () => {
+    vi.mocked(testAgentVersion).mockRejectedValueOnce(
+      Object.assign(new Error("canceling statement due to statement timeout"), { code: "57014" }),
+    );
+
+    const { status, error } = await chamarTeste();
+
+    expect(status).toBe(502);
+    expect(error?.code).toBe("preview_banco_indisponivel");
+    expect(atualizacoes).toContainEqual(expect.objectContaining({
+      error_code: "preview_banco_indisponivel",
+    }));
+  });
+
+  // LADO OPOSTO (a): erro do PROVEDOR não vira problema de banco. 401/403/404
+  // do provedor são resposta dele, não silêncio do banco — e continuam dizendo
+  // o que diziam, porque a orientação (conferir modelo e credencial) está certa.
+  it("401 do provedor não vira banco: segue com a frase de modelo e credencial", async () => {
+    const log = espiarLog();
+    const doProvedor = Object.assign(new Error("401 Unauthorized: invalid api key"), {
+      statusCode: 401,
+    });
+    vi.mocked(testAgentVersion).mockRejectedValueOnce(doProvedor);
+
+    const { status, error } = await chamarTeste();
+
+    expect(status).toBe(422);
+    expect(error).toMatchObject({ code: "preview_failed", message: FRASE_GENERICA });
+    expect(error?.message).not.toContain("banco");
+    expect(log).toHaveBeenCalledWith(
+      "[ai.test] o teste do agente falhou",
+      expect.objectContaining({ error: "401 Unauthorized: invalid api key" }),
+    );
+    expect(atualizacoes).toContainEqual(expect.objectContaining({ error_code: "preview_failed" }));
+  });
+
+  // LADO OPOSTO (b): modelo inexistente/sem permissão continua com a mensagem
+  // certa — é exatamente o caso em que "confira modelo e credencial" ajuda.
+  it("modelo não habilitado continua com a mensagem de modelo e credencial", async () => {
+    vi.mocked(testAgentVersion).mockRejectedValueOnce(
+      Object.assign(
+        new Error("modelo não habilitado para a org (enabled_models): claude-inexistente"),
+        { name: "llm_model_not_enabled" },
+      ),
+    );
+
+    const { status, error } = await chamarTeste();
+
+    expect(status).toBe(422);
+    expect(error).toMatchObject({ code: "preview_failed", message: FRASE_GENERICA });
+    expect(error?.message).not.toContain("banco");
+  });
+
+  // LADO OPOSTO (c): exceção desconhecida NÃO ganha causa inventada. Ela
+  // continua com a frase genérica — mesma régua de "indefinido não acusa".
+  it("exceção desconhecida mantém a frase genérica", async () => {
+    vi.mocked(testAgentVersion).mockRejectedValueOnce(
+      new TypeError("Cannot read properties of undefined (reading 'candidates')"),
+    );
+
+    const { status, error } = await chamarTeste();
+
+    expect(status).toBe(422);
+    expect(error).toMatchObject({ code: "preview_failed", message: FRASE_GENERICA });
+    expect(error?.message).not.toContain("banco");
+  });
+
+  // LADO OPOSTO (e): a mensagem do driver pode trazer host, usuário e SQL. A
+  // tela é de quem está na organização: ela recebe a frase, nunca o cru.
+  it("mensagem de driver com host e SQL não chega à tela — só ao log", async () => {
+    const log = espiarLog();
+    const cru =
+      "Query read timeout — postgres://crm:segredo@db.interno:5432/crm — select * from ai_agents";
+    vi.mocked(testAgentVersion).mockRejectedValueOnce(new Error(cru));
+
+    const { status, error } = await chamarTeste();
+
+    expect(status).toBe(502);
+    expect(error?.message).not.toContain("db.interno");
+    expect(error?.message).not.toContain("segredo");
+    expect(error?.message).not.toContain("select * from ai_agents");
+    expect(log).toHaveBeenCalledWith(
+      "[ai.test] o teste do agente falhou",
+      expect.objectContaining({ error: cru }),
+    );
   });
 
   // #2237 — a config que o Testar usa (prompt, modelo, ferramentas e os

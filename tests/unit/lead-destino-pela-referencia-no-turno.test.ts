@@ -21,12 +21,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  *     → tirar o `return completo.resposta`.
  *  4. Funil e etapa informados pelo modelo não são trocados pela receita
  *     → tirar o `return { ok: true }` do início de `completarDestinoDoNegocio`.
+ *  5. A recusa do destino chega ao gate `registro_sem_efeito` como `falhou`, e o veto
+ *     ensina a dizer a verdade em vez de mandar chamar de novo a ferramenta recusada
+ *     → tirar o `anotarEfeito("falhou")` do bloco.
  */
 
 vi.mock("@/lib/mcp/audit", () => ({ auditMcpToolCall: vi.fn().mockResolvedValue(undefined) }));
 
 const { pickToolsFromMcp } = await import("@/lib/ai/runtime/tools");
 const { getToolByName } = await import("@/lib/mcp/tools");
+const { criarEfeitoDasEscrituras } = await import("@/lib/ai/runtime/efeito-das-escritas");
 const { MODULOS_OPCIONAIS } = await import("@/lib/instalacao/modulos");
 const { CAPACIDADES_DA_ORGANIZACAO } = await import("@/lib/organizacao/capacidades");
 
@@ -84,6 +88,7 @@ async function executar(args: Linha, dados: Record<string, Linha[]>, escopo: str
   const handler = vi.spyOn(def, "handler").mockResolvedValue({ chegou_ao_handler: true } as never);
   const supabase = bancoFalso(dados);
   const ator = { type: "ai_agent", id: "ag-1", role: "ai_operator" };
+  const efeitos = criarEfeitoDasEscrituras();
   const ferramentas = pickToolsFromMcp({
     toolIds: ["crm_create_lead"],
     auth: { organizationId: ORG, role: "ai_operator", scopes: ["mcp:read", "mcp:write"], actor: ator, apiTokenId: "tok-1" },
@@ -96,11 +101,12 @@ async function executar(args: Linha, dados: Record<string, Linha[]>, escopo: str
     proposalAiDraftEnabled: true,
     handoffSignal: { triggered: false },
     contatoDoTurno: DO_TURNO,
+    efeitos,
   } as never);
   const r = await ferramentas.crm_create_lead!.execute!(args, { toolCallId: "c1", messages: [] } as never);
   const chamadas = handler.mock.calls.map((c) => c[0] as Linha);
   handler.mockRestore();
-  return { r: r as Linha, chamadas };
+  return { r: r as Linha, chamadas, desfecho: efeitos.desfechoDe("crm_create_lead") };
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -139,5 +145,17 @@ describe("crm_create_lead com a referência do item e sem funil", () => {
     );
 
     expect(chamadas[0]).toMatchObject({ pipeline_id: OUTRO_FUNIL, stage_id: OUTRA_ETAPA });
+  });
+
+  it("negócio aberto pela referência conta como efeito produzido", async () => {
+    const { desfecho } = await executar(SO_A_REFERENCIA, tabelas({ pipeline_id: FUNIL, stage_id: ETAPA }));
+
+    expect(desfecho).toBe("produziu_efeito");
+  });
+
+  it("receita sem destino: o gate lê que a escrita falhou, não que ninguém tentou", async () => {
+    const { desfecho } = await executar(SO_A_REFERENCIA, tabelas(null));
+
+    expect(desfecho).toBe("falhou");
   });
 });

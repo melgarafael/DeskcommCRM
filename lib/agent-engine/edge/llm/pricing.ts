@@ -13,6 +13,9 @@
  * (`lib/agent-engine/env.ts`), e é por isso que `costCents` recebe o TTL em vigor em vez de
  * supor a doutrina.
  *
+ * Preço por MINUTO de áudio (só `whisper-1`, só na OpenAI): `custoDeAudioCents`, pela
+ * duração que a própria OpenAI cobra (`usage.seconds` da transcrição).
+ *
  * Modelo fora da tabela → custo NULL (desconhecido): mais honesto que inventar 0 —
  * o budget soma coalesce(cost_cents, 0), então modelo sem preço não consome teto;
  * quem habilitar um modelo novo para uma org adiciona a linha de preço aqui.
@@ -296,6 +299,23 @@ export function costCents(
   return usd * 100;
 }
 
+// US$ por minuto, só modelos cobrados por DURAÇÃO e só da OpenAI. Fonte:
+// https://developers.openai.com/api/docs/pricing, linha "Whisper | Transcription |
+// $0.006 / minute", conferida em 31/10/2026. `Map`, e não objeto, para que uma chave do
+// protótipo (`constructor`) nunca case como modelo.
+const USD_POR_MINUTO_DE_AUDIO: ReadonlyMap<string, number> = new Map([['whisper-1', 0.006]]);
+
+/**
+ * Custo em CENTS de uma transcrição cobrada por duração, ou null. Recebe `unknown` porque
+ * o número vem do JSON da resposta: fora do formato (não número, infinito, negativo) ou
+ * modelo sem preço por minuto devolve null, e nunca lança — a chamada já foi paga.
+ */
+export function custoDeAudioCents(model: string, segundos: unknown): number | null {
+  const usd = USD_POR_MINUTO_DE_AUDIO.get(model);
+  if (usd === undefined || typeof segundos !== 'number' || !Number.isFinite(segundos) || segundos < 0) return null;
+  return (segundos / 60) * usd * 100;
+}
+
 /** A gravação de cache em USD × milhão de tokens: dividida por TTL quando o provedor disse. */
 function custoDaGravacao(p: Preco, usage: TokenUsage, cacheTtl: CacheTtl): number {
   if (p.cacheWrite30m !== undefined && p.cacheWrite12h !== undefined) {
@@ -405,6 +425,69 @@ export function custoTerraPorPassos(model: string, result: {
       cacheWriteTokens: raw?.input_tokens_details?.cache_write_tokens ?? u?.inputTokenDetails?.cacheWriteTokens ?? 0,
     }) ?? 0);
   }, 0);
+}
+
+/**
+ * O custo que a OpenRouter COBROU, em centavos, somado por passo — lido do corpo
+ * cru de cada resposta (`step.response.body`, que o seam só pede na OpenRouter
+ * oficial). `undefined` quando algum passo não traz `usage.cost` numérico e não
+ * negativo, ou é BYOK sem `upstream_inference_cost` numérico e não negativo: aí
+ * vale a tabela, como antes, e nunca um número pela metade. Fora do BYOK,
+ * upstream ausente ou negativo conta 0.
+ *
+ * A regra de BYOK (doc usage-accounting: `cost` é o cobrado na conta da
+ * OpenRouter; `cost_details.upstream_inference_cost`, o cobrado pelo provedor de
+ * origem):
+ *   - `is_byok` true  → cost + upstream (a taxa dela mais a conta da sua chave);
+ *   - `is_byok` false → cost (o upstream já está dentro dele);
+ *   - sem o campo     → max(cost, upstream). O exemplo de Chat Completions da doc
+ *     traz cost 0,95 e upstream 19 sem a flag — 0,95 é 5% de 19, a taxa de BYOK:
+ *     "só cost" gravaria 5% do gasto (e 0 dentro da franquia), e o teto nunca
+ *     fecharia; "somar sempre" dobraria a resposta sem BYOK que traga os dois.
+ *     O max nunca dobra e, no BYOK sem flag, subconta no máximo a taxa.
+ */
+export function custoInformadoPeloOpenRouter(result: {
+  response?: { body?: unknown };
+  steps?: ReadonlyArray<{ response?: { body?: unknown } }>;
+}): number | undefined {
+  const corpos = result.steps?.length ? result.steps.map((s) => s.response?.body) : [result.response?.body];
+  let total = 0;
+  for (const bruto of corpos) {
+    const usage = (corpoComoObjeto(bruto) as { usage?: UsoDaOpenRouter | null } | undefined)?.usage;
+    const cost = usage?.cost;
+    // Custo negativo não é fatura: um número assim abateria o gasto do mês e
+    // furaria o teto. Volta à tabela.
+    if (typeof cost !== 'number' || !Number.isFinite(cost) || cost < 0) return undefined;
+    const upBruto = usage?.cost_details?.upstream_inference_cost;
+    const upValido = typeof upBruto === 'number' && Number.isFinite(upBruto) && upBruto >= 0;
+    // BYOK sem upstream legível: o `cost` é só a taxa dela (0 dentro da franquia),
+    // e gravá-lo sozinho seria a mesma porta do custo negativo. Volta à tabela.
+    if (usage?.is_byok === true && !upValido) return undefined;
+    const up = upValido ? upBruto : 0;
+    total += usage?.is_byok === true ? cost + up : usage?.is_byok === false ? cost : Math.max(cost, up);
+  }
+  return total * 100;
+}
+
+/** Os campos de `usage` que a OpenRouter devolve e o custo lê — tudo `unknown` até conferir. */
+interface UsoDaOpenRouter {
+  cost?: unknown;
+  is_byok?: unknown;
+  cost_details?: { upstream_inference_cost?: unknown } | null;
+}
+
+/** O corpo cru do passo: objeto, ou texto JSON. Qualquer outra coisa não tem custo a ler. */
+export function corpoComoObjeto(bruto: unknown): object | undefined {
+  if (typeof bruto === 'string') {
+    try {
+      const json: unknown = JSON.parse(bruto);
+      return json !== null && typeof json === 'object' ? json : undefined;
+    } catch {
+      // Texto que não é JSON não traz `usage.cost`: o custo volta à tabela.
+      return undefined;
+    }
+  }
+  return bruto !== null && typeof bruto === 'object' ? bruto : undefined;
 }
 
 /**

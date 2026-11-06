@@ -62,8 +62,10 @@ beforeAll(async () => {
   );
   const insere = (id: string, org: string, nome: string, status: string, config: unknown) =>
     pool.query(
-      `insert into prospecting_campaigns(id,organization_id,request_id,name,search,status,config)
-       values ($1,$2,gen_random_uuid(),$3,'{}',$4,$5::jsonb)`,
+      // `channel_session_id` sai do `config`, como o `start` grava: campanha
+      // `running` sem número viola o CHECK da 9221 (#3896).
+      `insert into prospecting_campaigns(id,organization_id,request_id,name,search,status,config,channel_session_id)
+       values ($1,$2,gen_random_uuid(),$3,'{}',$4,$5::jsonb,($5::jsonb->>'channel_session_id')::uuid)`,
       [id, org, nome, status, config === null ? null : JSON.stringify(config)],
     );
   await insere(PAUSADA, ORG_A, "pausada", "paused", CONFIG);

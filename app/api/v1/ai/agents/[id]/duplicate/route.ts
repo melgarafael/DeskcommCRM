@@ -4,7 +4,9 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * Spec 10 §4.3. Cria novo agent kind='mcp_agent' clonando o "current draft"
  * (versão draft mais recente; se não houver, clona a published). A nova versão
- * vira v1 status='draft' do novo agent. Nome recebe sufixo " (cópia)".
+ * vira v1 status='draft' do novo agent. O nome é o primeiro livre na
+ * organização: " (cópia)", " (cópia 2)"… — duplicar o mesmo agente duas vezes
+ * não pode tentar o mesmo nome (o índice é `unique (organization_id, name)`).
  *
  * Não copia: published_version_id, archived_at, runs, audit history.
  */

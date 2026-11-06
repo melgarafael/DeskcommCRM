@@ -4,7 +4,7 @@ import type { FollowupFlowDetailRow } from "@/hooks/followup/useFollowupFlow";
 import { rascunhoDoFluxo } from "./rascunho";
 
 const DETAIL_COLUMNS =
-  "id, name, status, active_version_id, draft_graph, handoff_policy, trigger_config, surface, created_at, updated_at";
+  "id, name, status, active_version_id, draft_graph, handoff_policy, send_when_assigned, trigger_config, surface, created_at, updated_at";
 
 /**
  * Carrega o pointer + o rascunho que o editor desenha. Compartilhado pelas duas

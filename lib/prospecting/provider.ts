@@ -27,6 +27,17 @@ export class ProspectingError extends Error {
      * retomada manual; não pausar uma que devia parar custa a lista inteira.
      */
     public escopo: EscopoDaFalha = "campanha",
+    /**
+     * O CÓDIGO de wire, quando a recusa é de um TIPO que a tela precisa
+     * distinguir e não só uma frase. Sem código, a rota responde
+     * `prospecting_unavailable` — que é o certo para falha genérica e o errado
+     * para conflito de conexão: o cliente precisa saber que o problema é "esta
+     * conexão já tem campanha" (e qual) para oferecer o caminho, em vez de
+     * tratar como indisponibilidade do provedor.
+     */
+    public codigo?: string,
+    /** Dados de apoio do código (nunca PII: aqui vai id e nome da campanha). */
+    public detalhes?: Record<string, unknown>,
   ) {
     super(message);
   }

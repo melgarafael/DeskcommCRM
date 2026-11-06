@@ -70,6 +70,27 @@ describe('prévia de send_message com imagem_url — nada é buscado nem enviado
     expect(p.result.candidates).toHaveLength(1);
   });
 
+  it('URL que nenhuma ferramenta devolveu no turno: a prévia avisa que o texto sairia sem foto', async () => {
+    const p = preview();
+    const tools = applyPreviewPolicy(
+      { send_message: definition(vi.fn()) },
+      p,
+      gate(),
+      () => [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (url) => url === 'https://exemplo.test/receitas/outra.jpg',
+    );
+    const r = await execute(tools, 'send_message', {
+      body: 'Olá, posso ajudar?',
+      imagem_url: 'https://exemplo.test/receitas/casa-1.jpg',
+    });
+    expect(r).toMatchObject({ ok: true, foto_enviada: false, foto_prevista: 'recusada: url_fora_dos_resultados' });
+    expect(p.result.warnings.map((w) => w.code)).toContain('imagem_recusada');
+  });
+
   it('URL com extensão recusada: a prévia avisa que o texto sairia sem foto', async () => {
     const p = preview();
     const tools = applyPreviewPolicy({ send_message: definition(vi.fn()) }, p, gate(), () => []);

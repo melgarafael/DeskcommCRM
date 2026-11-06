@@ -111,6 +111,30 @@ const MOTIVO_DA_PARADA: Record<string, string> = {
   fila_vazia: "A fila do rodízio desta automação está vazia. Abra a automação e escolha quem entra no rodízio.",
   sem_rodizio:
     "A automação foi alterada e não tem mais o rodízio que disparou esta ação. Nada foi atribuído.",
+  /* #3881 — a ação `define_sector`. `setor_id_ausente` nasce no executor da
+     ação; `sem_conversa` também (negócio sem contato ou contato sem conversa
+     aberta). As recusas da régua chegam pelo `error` e a frase delas é a
+     deste mapa — o detalhe não leva `explicacao`, que venceria a tradução. */
+  sector_id_ausente:
+    "A ação Definir o setor está sem setor escolhido. Abra a automação e escolha o setor da conversa.",
+  sem_conversa:
+    "Não há conversa aberta para classificar: o contato deste evento não tem conversa em andamento. Nada mudou.",
+  /* #3881 — as recusas da régua do setor. Cada uma é uma pergunta diferente
+     para quem opera: a conversa sumiu, acabou, a fila não existe, quem escolheu
+     foi uma pessoa, ou o banco não deixou gravar. */
+  conversa_nao_encontrada:
+    "A conversa não existe mais nesta organização — nada foi alterado.",
+  conversa_encerrada:
+    "A conversa está encerrada: não aceita mais ser classificada em um setor.",
+  setor_inexistente:
+    "O setor escolhido na regra não existe nesta organização. Abra a automação e escolha um setor da lista.",
+  setor_manual_preservado:
+    "A conversa já foi classificada por uma pessoa e a regra não sobrescreve essa escolha. Nada mudou.",
+  limpeza_nao_permitida:
+    "A ação precisa de um setor de destino: só uma pessoa pode deixar a conversa sem setor.",
+  setores_desligados: "Os setores de atendimento estão desligados nesta instalação. Nada mudou.",
+  falha_ao_gravar:
+    "Não foi possível gravar o setor da conversa. Tente de novo; se persistir, veja o log da automação.",
   lead_nao_encontrado: "O lead deste evento não foi encontrado nesta organização, então ninguém foi atribuído.",
   /* #3804 — o destino dinâmico não achou ninguém: nem o dono do negócio, nem a
      carteira do cliente, nem o fallback servem. Emitido como `error` literal por

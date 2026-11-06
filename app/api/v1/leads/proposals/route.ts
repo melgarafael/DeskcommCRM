@@ -26,12 +26,11 @@ import { fail, ok } from "@/lib/api/wrappers";
 import type { LeadCandidate } from "@/lib/leads/active-lead";
 import { roteiaProximasAcoes, type EstadoDoContato } from "@/lib/leads/next-action";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { isServiceRoleConfigured } from "@/lib/audit";
 import { requireAuth } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 
 export const dynamic = "force-dynamic";
 
@@ -170,17 +169,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const userIds = [
     ...new Set(linhas.map((d) => d.performed_by_user_id).filter((u): u is string => !!u)),
   ];
-  const nomes = new Map<string, string>();
-  if (userIds.length > 0 && isServiceRoleConfigured()) {
-    const admin = createAdminClient();
-    await Promise.all(
-      userIds.map(async (uid) => {
-        const { data } = await admin.auth.admin.getUserById(uid);
-        const nome = data?.user?.user_metadata?.full_name as string | undefined;
-        if (nome) nomes.set(uid, nome);
-      }),
-    );
-  }
+  const nomes = await nomesDosAtendentes(orgId, userIds);
 
   const historico: DecisaoPassada[] = linhas.map((d) => ({
     activity_id: d.id,

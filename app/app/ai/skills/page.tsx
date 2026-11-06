@@ -8,6 +8,7 @@ import { temVersaoNovaNoCatalogo } from "@/lib/ai/skills/versao-nova-catalogo";
 import { compararSkill, type ComparativoEntrada } from "@/lib/ai/skills/comparativo";
 import type { SkillsState } from "@/hooks/ai/useSkills";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { agentesComListaPropria } from "@/lib/ai/skills/skills-do-agente";
 import { SkillsClient } from "./_client";
 
 export const dynamic = "force-dynamic";
@@ -84,7 +85,11 @@ export default async function SkillsPage() {
     .filter((p) => !installedNames.has(p.name))
     .map((p) => ({ name: p.name, description: versionById.get(p.version_id)?.description ?? "" }));
 
-  const initialState: SkillsState = { installed, catalog };
+  const initialState: SkillsState = {
+    installed,
+    catalog,
+    agentes_com_lista_propria: await agentesComListaPropria(admin, activeOrg.orgId),
+  };
   const idioma = user.idioma;
 
   return (

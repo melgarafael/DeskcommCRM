@@ -784,6 +784,11 @@ export function useVoiceCallSession(remoteAudioRef: RefObject<HTMLAudioElement |
     if (!atual) return;
     try {
       await apiClient.post(`/api/v1/voice/calls/${atual.id}/reject`, {});
+    } catch (err) {
+      // O banner sai da tela de qualquer jeito, mas a falha não pode ser muda:
+      // sem o aviso, a recusa que não chegou ao servidor reaparece no próximo
+      // carregamento sem explicação.
+      showApiError(err);
     } finally {
       encerradasRef.current.add(atual.id);
       setCall(null);
