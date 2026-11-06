@@ -25,6 +25,7 @@ import {
   crmUpdateLead,
   crmMoveLeadStage,
   crmRetomarLead,
+  crmProposeLeadFieldsFromDocument,
 } from "./leads";
 import { crmGetPipelineForecast, crmListPipelines } from "./pipelines";
 import { crmSendWhatsappMessage } from "./messages";
@@ -33,6 +34,7 @@ import {
   crmAssignConversation,
   crmManageTags,
   crmGetQueueStatus,
+  crmSetConversationSector,
 } from "./governance";
 import {
   crmListAvailableAttendants,
@@ -159,11 +161,14 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmUpdateLead,
   crmMoveLeadStage,
   crmRetomarLead,
+  crmProposeLeadFieldsFromDocument,
   crmSendWhatsappMessage,
   crmStartConversationAndSend,
   crmCreateConversationDraft,
   crmAssignConversation,
   crmManageTags,
+  // #3881 — a triagem da IA escolhe a FILA da conversa (módulo `setores`).
+  crmSetConversationSector,
   // write — organizar a operação (W4)
   crmCreateStage,
   crmUpdateStage,

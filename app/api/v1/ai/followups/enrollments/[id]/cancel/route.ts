@@ -16,6 +16,7 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { statusCancelavel } from "@/lib/followup/vocabulario";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -29,11 +30,14 @@ const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // `coletando` (0394) é o roteiro de atendimento em andamento: quem opera pode
 // encerrá-lo pela fila — antes, a rota devolvia 409 como se já tivesse acabado.
 // `dormente` (0308) é a espera longa pela vaga do contato: a fila o mostra como
-// vivo (`LIVE_ENROLLMENT_STATUSES`) e oferece o botão de cancelar, então quem
-// opera precisa poder desistir de uma espera de dias. O cancelamento grava
-// `status = 'cancelled'` com `next_eval_at = null`, e o claim do despertar só
-// busca `dormente` — a espera cancelada não volta a acordar.
-const LIVE_STATUSES = ["active", "waiting_reply", "paused_handoff", "paused_manual", "coletando", "dormente"];
+// vivo e oferece o botão de cancelar, então quem opera precisa poder desistir de
+// uma espera de dias. O cancelamento grava `status = 'cancelled'` com
+// `next_eval_at = null`, e o claim do despertar só busca `dormente` — a espera
+// cancelada não volta a acordar.
+//
+// A lista mora em `STATUS_CANCELAVEIS` (#3434) porque era escrita à mão em três
+// lugares e o dossiê ficou para trás justamente nesta mudança do #3263: rota,
+// fila e dossiê agora leem a MESMA constante.
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -62,7 +66,7 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
   if (fetchErr) return fail("internal_error", fetchErr.message, 500, { requestId });
   if (!existing) return fail("not_found", t("Enrollment não encontrado."), 404, { requestId });
 
-  if (!LIVE_STATUSES.includes(existing.status)) {
+  if (!statusCancelavel(existing.status)) {
     return fail("already_terminal", t("Enrollment já está encerrado."), 409, { requestId });
   }
 

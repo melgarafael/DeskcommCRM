@@ -195,6 +195,7 @@ export function VinculoDaMarcacao({
         open={criando}
         onOpenChange={setCriando}
         nomeInicial={termo}
+        permitirIniciarConversa={false}
         onCriado={(contato) => {
           // Volta JÁ SELECIONADO. A busca passa a ser o nome do contato para a
           // lista conter quem acabou de nascer — senão o campo ficaria com um

@@ -9,9 +9,9 @@ import type * as ModuloDeTranscricao from "@/lib/messaging/media/transcription";
  * estes casos fixam: com o teto armado e estourado, a visão não chama o
  * provedor, devolve o marcador de mídia não lida, abre o aviso na Central e
  * deixa a MESMA linha de recusa que o seam deixa (`orcamento_esgotado`). Sem
- * teto, segue igual. A transcrição pelo modelo da organização (degrau 3 da
+ * teto, segue igual. A transcrição pelo modelo da organização (degrau 4 da
  * escada) é LLM cobrado por token e passa pelo MESMO gate; a pelo serviço
- * (degraus 1 e 2), de custo nulo, fica fora por decisão declarada no worker.
+ * (degraus 1 a 3), de custo nulo, fica fora por decisão declarada no worker.
  *
  * Mesmo dublê de `midia-grava-custo-em-llm-calls.test.ts`, mais o pool que o
  * gate consulta.
@@ -96,7 +96,7 @@ vi.mock("@/lib/agent-engine/db/pool", () => ({
 
 const credencial = vi.hoisted(() => ({
   origemDaChave: "credencial_da_organizacao" as "credencial_da_organizacao" | "chave_da_instalacao",
-  /** Preenchido = conversa Google com `audio` e sem chave OpenAI: degrau 3 da escada. */
+  /** Preenchido = conversa Google com `audio` e sem chave OpenAI: degrau 4 da escada. */
   conversaGoogle: null as string | null,
 }));
 vi.mock("@/lib/agent-engine/edge/llm/credentials", () => ({
@@ -122,6 +122,10 @@ vi.mock("@/lib/agent-engine/edge/llm/providers", () => ({
     openrouter: factoryMock,
     google: factoryMock,
   }),
+  // A escada lê estes dois para o degrau OpenRouter (#3382); o mock tem de
+  // exportá-los, senão o import do worker morre antes de qualquer caso.
+  OPENROUTER_ENDPOINT: "https://openrouter.ai/api/v1",
+  cabecalhosDeAtribuicaoOpenRouter: () => undefined,
 }));
 
 vi.mock("@/lib/ai/pontos/capacidade-em-vigor", () => ({
@@ -276,7 +280,7 @@ describe("a visão de imagem respeita o teto de gasto", () => {
     expect(avisoInsertMock).not.toHaveBeenCalled();
   });
 
-  it("o degrau 3 da transcrição (modelo da organização) é LLM pago: com o teto estourado o áudio não sai", async () => {
+  it("o degrau 4 da transcrição (modelo da organização) é LLM pago: com o teto estourado o áudio não sai", async () => {
     armarTeto();
     credencial.conversaGoogle = "gemini-2.5-flash";
     bindingDaVez = null;
@@ -302,7 +306,7 @@ describe("a visão de imagem respeita o teto de gasto", () => {
     expect(aviso.body).toContain("Uso de IA › Orçamento");
   });
 
-  it("o degrau 3 sem teto segue igual: o áudio vai ao modelo", async () => {
+  it("o degrau 4 sem teto segue igual: o áudio vai ao modelo", async () => {
     credencial.conversaGoogle = "gemini-2.5-flash";
     bindingDaVez = null;
     linhaDaMensagem = { ...linhaDaMensagem, type: "audio", media_mime: "audio/ogg", media_storage_path: "org1/conv1/msg1.ogg" };

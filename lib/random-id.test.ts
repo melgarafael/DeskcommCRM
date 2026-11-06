@@ -44,7 +44,7 @@ describe("randomId — UUID v4 dentro E fora de secure context", () => {
     "lib/channels/nome-da-sessao.ts":
       "nomeDaSessaoNovo só é chamado em lib/channels/connect-*, que cria a sessão pelo servidor",
     "lib/followup/nome-da-copia.ts":
-      "nomeDaCopia só é chamado em app/api/v1/ai/followup-flows/[id]/duplicate",
+      "nomeDaCopia só é chamado em app/api/v1/ai/followup-flows/[id]/duplicate e em lib/ai/agents/duplicate (rota de duplicar e server action)",
     "lib/schemas/_validate.ts": "validação de body das rotas de app/api",
   };
 

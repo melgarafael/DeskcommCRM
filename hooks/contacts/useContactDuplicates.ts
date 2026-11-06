@@ -8,6 +8,8 @@ export interface ContatoDuplicado {
   id: string;
   name: string | null;
   display_name: string | null;
+  /** Nome salvo na agenda do celular. SÓ A EQUIPE vê; a varredura passou a lê-lo (spec 31). */
+  address_book_name: string | null;
   email: string | null;
   phone_number: string | null;
   created_at: string;

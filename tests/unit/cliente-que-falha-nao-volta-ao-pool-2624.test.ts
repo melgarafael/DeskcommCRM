@@ -48,6 +48,7 @@ import type { AuthUser } from '@/lib/auth/types';
 
 import { registrarRespostaDeCasoObsoleto } from '@/lib/atendimento/aviso-caso-obsoleto';
 import { channelHealthTick } from '@/lib/agent-engine/health/circuit';
+import { enforceHolds } from '@/lib/agent-engine/edge/crm/session-watchdog';
 import { consultar } from '@/lib/external-db/conexao';
 import { resolveCaseFromHuman } from '@/lib/agent-engine/agent/human-cases';
 import { chatAboutAgent } from '@/lib/prospecting/agent-chat';
@@ -305,7 +306,9 @@ const LOG: Logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
 function poolDoCircuito(cliente: ClienteFalso): pg.Pool {
   return {
-    connect: vi.fn(async () => cliente),
+    // o 1º connect é o da avaliação da sessão; o seguinte é o da liberação de
+    // jobs retidos (enforceHolds, no fim do tick), que tem cliente próprio.
+    connect: vi.fn().mockResolvedValueOnce(cliente).mockResolvedValue(clienteFalso()),
     // espelho, knobs e taxas: tudo no pool; a transação da sessão é do cliente.
     query: vi.fn(async (sql: string) => {
       const s = String(sql).toLowerCase();
@@ -337,6 +340,37 @@ describe('#2624 · health/circuit.ts (evaluateSession via channelHealthTick)', (
       'rollback',
     ]);
     liberouComErro(cliente);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// lib/agent-engine/edge/crm/session-watchdog.ts — enforceHolds (liberação)
+// ---------------------------------------------------------------------------
+
+describe('#2624 · session-watchdog.ts (enforceHolds)', () => {
+  it('a liberação que rejeita solta o cliente COM erro e o erro sobe', async () => {
+    const cliente = clienteFalso('update job_queue');
+    // o hold roda no pool, fora da transação; a liberação é do cliente.
+    const pool = poolFalso(cliente);
+
+    await expect(enforceHolds(pool)).rejects.toThrow(MENSAGEM);
+
+    expect(comandosDaTransacao(cliente)).toEqual([
+      'begin',
+      expect.stringContaining('update job_queue'),
+      'rollback',
+    ]);
+    liberouComErro(cliente);
+  });
+
+  it('caminho feliz: sem job liberado, commit e release sem erro', async () => {
+    const cliente = clienteFalso();
+    const pool = poolFalso(cliente);
+
+    await enforceHolds(pool);
+
+    expect(comandosDaTransacao(cliente).at(-1)).toBe('commit');
+    liberouSemErro(cliente);
   });
 });
 

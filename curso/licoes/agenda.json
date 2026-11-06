@@ -50,13 +50,6 @@
               },
               "rotulo": "Lista de compromissos",
               "tipo": "caixa"
-            },
-            {
-              "alvo": {
-                "testid": "grade-da-agenda"
-              },
-              "rotulo": "Grade da semana",
-              "tipo": "caixa"
             }
           ],
           "antes": []
@@ -197,13 +190,6 @@
             }
           ],
           "destaques": [
-            {
-              "alvo": {
-                "testid": "alternador-de-visao"
-              },
-              "rotulo": "Voltar para Semana",
-              "tipo": "seta"
-            },
             {
               "alvo": {
                 "testid": "grade-da-agenda"

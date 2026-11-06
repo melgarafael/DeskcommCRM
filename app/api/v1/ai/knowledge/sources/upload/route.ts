@@ -28,6 +28,7 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
+import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -227,6 +228,19 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (emitErr) {
     console.warn("[conhecimento-upload] emit_event falhou (não bloqueia):", emitErr.message);
   }
+
+  // Mesmo código da criação em JSON: para a trilha a pergunta é "quem pôs este
+  // material no acervo", não por qual das duas portas ele entrou. Metadados só
+  // com extensão e tamanho — o nome do arquivo pode carregar dado pessoal.
+  void audit({
+    action: "ai.knowledge_source_created",
+    actorUserId: authUser.id,
+    organizationId: activeOrg.orgId,
+    resourceType: "ai_knowledge_source",
+    resourceId: ksId,
+    requestId,
+    metadata: { source_type: "documento", ext, size_bytes: file.size },
+  });
 
   const temChave = await temChaveDeEmbedding(activeOrg.orgId);
 

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": { "title": "Continuidade do atendimento: aviso humano e nome informado", "subtitle": "Cadastros existentes, opt-in por organização e resultados com limites explícitos", "output": "atendimento-alerta-humano-nome-informado.html", "quality_profile": "standard" },
+  "lanes": [{ "id": "tela", "label": "Operação e configuração" }, { "id": "regra", "label": "Runtime e regras" }, { "id": "dados", "label": "Persistência e canal" }],
+  "mainPath": ["handoff", "evento", "aviso", "central", "inbox"],
+  "nodes": [
+    { "id": "configAviso", "lane": "tela", "col": 1, "type": "frontend", "label": "AvisoNoWhatsApp: conexão, destino e ligado" },
+    { "id": "handoff", "lane": "regra", "col": 1, "type": "backend", "label": "performHumanHandoff: episódio na conversa" },
+    { "id": "evento", "lane": "dados", "col": 2, "type": "database", "label": "event_log: ai.handoff_aviso_solicitado", "sublabel": "emitido com a Central; reserva CAS na metadata" },
+    { "id": "aviso", "lane": "regra", "col": 3, "type": "backend", "label": "aviso-de-handoff: worker, revalidação e uma tentativa" },
+    { "id": "canal", "lane": "dados", "col": 4, "type": "external", "label": "TransporteDoAviso + pacing existentes" },
+    { "id": "central", "lane": "tela", "col": 4, "type": "frontend", "label": "Central: agent_inbox_items.body com recibo" },
+    { "id": "inbox", "lane": "tela", "col": 5, "type": "frontend", "label": "Inbox: pessoa continua ou devolve ao automático" },
+    { "id": "configNome", "lane": "tela", "col": 1, "type": "frontend", "label": "NomeInformado → definirNomeInformado", "sublabel": "Distribuição de atendimento; desligado por padrão" },
+    { "id": "tool", "lane": "regra", "col": 2, "type": "backend", "label": "crm_propose_contact_field: seleção do nome no inbound real" },
+    { "id": "nome", "lane": "regra", "col": 3, "type": "backend", "label": "registrarNomeInformado: mensagem, fronteira e CAS" },
+    { "id": "ficha", "lane": "dados", "col": 4, "type": "database", "label": "contacts.name vazio + api_audit_log no mesmo statement" },
+    { "id": "proposta", "lane": "tela", "col": 5, "type": "frontend", "label": "Ficha do contato e revisão de propostas existentes" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "configAviso", "to": "handoff", "label": "config_aviso_de_caso.ligado admite solicitação" },
+    { "id": "e2", "from": "handoff", "to": "evento", "label": "mesmo episódio emite uma vez, com central_id" },
+    { "id": "e3", "from": "evento", "to": "aviso", "label": "handler registrado: pula na organização parada" },
+    { "id": "e4", "from": "configAviso", "to": "aviso", "label": "relê conexão e destinatário antes da reserva" },
+    { "id": "e5", "from": "aviso", "to": "evento", "label": "reserva e resultado; incerto não autoriza retry" },
+    { "id": "e6", "from": "aviso", "to": "canal", "label": "texto genérico e link; uma tentativa" },
+    { "id": "e7", "from": "canal", "to": "aviso", "label": "aceite ou incerteza" },
+    { "id": "e8", "from": "aviso", "to": "central", "label": "recibo preserva adendos concorrentes" },
+    { "id": "e9", "from": "central", "to": "configAviso", "label": "equipe confere resultado e pode desligar aviso" },
+    { "id": "e10", "from": "central", "to": "inbox", "label": "link autenticado da conversa" },
+    { "id": "e11", "from": "inbox", "to": "handoff", "label": "retorno ao automático encerra episódio; nova transferência pode avisar" },
+    { "id": "e12", "from": "configNome", "to": "nome", "label": "settings.crm.nome_informado_no_atendimento revalidado na escrita" },
+    { "id": "e13", "from": "tool", "to": "nome", "label": "valor selecionado + IDs do job e fronteira confiáveis" },
+    { "id": "e14", "from": "nome", "to": "ficha", "label": "aplica só no nome vazio e audita atomicamente" },
+    { "id": "e15", "from": "nome", "to": "proposta", "label": "sem aplicação, usa proporDadoDoContato" },
+    { "id": "e16", "from": "ficha", "to": "proposta", "label": "cadastro atualizado visível; linha contact_field_auto_applied (name) na timeline" },
+    { "id": "e17", "from": "proposta", "to": "configNome", "label": "equipe pode corrigir ficha e desligar a opção" },
+    { "id": "e18", "from": "inbox", "to": "tool", "label": "nova mensagem pode originar seleção pelo assistente" }
+  ],
+  "cards": [{ "dot": "slate", "title": "Limites e não-ligações", "items": ["O aviso reutiliza o destinatário dos casos, com opção própria settings.crm.avisar_transferencia_no_whatsapp (ligada por padrão); não é resposta ao cliente nem autorização para responder pelo WhatsApp interno.", "Aceite do canal não comprova entrega; reserva interrompida vira incerta sem nova tentativa.", "Nome informado não autentica identidade: a seleção semântica ainda pode errar. O SQL protege escopo e escrita, não classifica linguagem.", "A autoaplicação do nome grava auditoria, muda a ficha e deixa linha na timeline quando há negócio aberto. Não há aprendizado automático novo."] }]
+}

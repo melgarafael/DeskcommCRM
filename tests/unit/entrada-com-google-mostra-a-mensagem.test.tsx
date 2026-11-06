@@ -15,6 +15,11 @@
  *
  * A action é a REAL aqui (só os vizinhos dela são mockados) porque o que se
  * exercita é a costura: settings → action → estado → mensagem na tela.
+ *
+ * Com o provedor ligado, quem sai para o Google é a TELA, por
+ * `window.location.assign` — carga completa. O `redirect()` da server action
+ * virava navegação interna do Next quando o Supabase responde no mesmo domínio
+ * do app, e a tela de login ficava parada (ver `signInWithGoogle.test.ts`).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -36,6 +41,9 @@ vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/supabase/server", () => ({ createClientDeEntradaComGoogle: vi.fn() }));
 
 const signInWithOAuth = vi.fn();
+const URL_GOOGLE = "https://accounts.google.com/o/oauth2/v2/auth?client_id=x";
+const assign = vi.fn();
+const original = window.location;
 
 function stubSettings(google: boolean) {
   vi.stubGlobal(
@@ -50,11 +58,14 @@ function stubSettings(google: boolean) {
 
 beforeEach(() => {
   signInWithOAuth.mockReset().mockResolvedValue({
-    data: { url: "https://accounts.google.com/o/oauth2/v2/auth?client_id=x" },
+    data: { url: URL_GOOGLE },
     error: null,
   });
   vi.mocked(redirect).mockClear();
   vi.mocked(audit).mockClear();
+  assign.mockReset();
+  // `window.location.assign` não é substituível direto no jsdom.
+  Object.defineProperty(window, "location", { configurable: true, value: { ...original, assign } });
   vi.mocked(createClientDeEntradaComGoogle).mockResolvedValue({
     auth: { signInWithOAuth },
   } as never);
@@ -62,6 +73,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  Object.defineProperty(window, "location", { configurable: true, value: original });
 });
 
 async function clicar() {
@@ -79,23 +91,28 @@ describe("Entrar com Google com o provedor desligado", () => {
 
     const aviso = await screen.findByText(/O Google não está habilitado nesta instalação/i);
     expect(aviso).toBeInTheDocument();
-    // Nada de navegador para fora: nem o /authorize montado, nem o redirect.
+    // Nada de navegador para fora: nem o /authorize montado, nem a navegação.
     expect(redirect).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
     expect(signInWithOAuth).not.toHaveBeenCalled();
     // E a frase genérica de "não foi possível falar com o Google" não pode
     // roubar o lugar da mensagem que diz ONDE está o conserto.
     expect(screen.queryByText(/Não foi possível falar com o Google agora/i)).toBeNull();
   });
 
-  it("CONTROLE — provedor LIGADO: segue para o Google e nenhuma mensagem aparece", async () => {
+  it("⭐ provedor LIGADO: a tela sai para o Google por carga completa, sem redirect() do roteador", async () => {
     stubSettings(true);
 
     render(<EntrarComGoogle />);
 
     await clicar();
 
-    await waitFor(() => expect(redirect).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(URL_GOOGLE));
+    expect(assign).toHaveBeenCalledTimes(1);
+    expect(redirect).not.toHaveBeenCalled();
     expect(signInWithOAuth).toHaveBeenCalledTimes(1);
+    // Enquanto o navegador troca de página, o botão não volta a ficar clicável.
+    expect(screen.getByRole("button", { name: /abrindo o google/i })).toBeDisabled();
     expect(screen.queryByText(/O Google não está habilitado/i)).toBeNull();
   });
 
@@ -111,7 +128,7 @@ describe("Entrar com Google com o provedor desligado", () => {
 
     await clicar();
 
-    await waitFor(() => expect(redirect).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(URL_GOOGLE));
     expect(screen.queryByText(/O Google não está habilitado/i)).toBeNull();
   });
 });

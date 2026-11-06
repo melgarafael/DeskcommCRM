@@ -198,6 +198,20 @@ export interface ResultadoDaRetencao {
   lotes_checkpoints: number;
   checkpoints_tem_resto: boolean;
   retencao_checkpoints_dias: number;
+  /**
+   * O traço do turno vencido (migration 9021, issue #3201) — uma linha por
+   * execução do agente, e a poda de MAIOR volume da rodada depois da telemetria.
+   *
+   * Sem janela própria de propósito: a issue #3201 deixou aberta a escolha
+   * ("variável nova ou a janela da telemetria?") e a resposta é a segunda — o
+   * traço É telemetria da IA. `retencao_traco_dias` está no relatório porque
+   * quem lê a rodada precisa ver o prazo que foi APLICADO, e não deduzi-lo do
+   * nome de outra poda.
+   */
+  tracos_apagados: number;
+  lotes_tracos: number;
+  tracos_tem_resto: boolean;
+  retencao_traco_dias: number;
   retencao_fila_dias: number;
   retencao_auditoria_dias: number;
   retencao_espelho_dias: number;
@@ -239,7 +253,8 @@ export interface PodaDb {
       | "fn_expurgar_telemetria_de_ia_vencida"
       | "fn_expurgar_ritmo_de_envio_vencido"
       | "fn_expurgar_copias_enviadas_vencidas"
-      | "fn_expurgar_checkpoints_superados",
+      | "fn_expurgar_checkpoints_superados"
+      | "fn_expurgar_traco_do_turno_vencido",
     args: { p_retencao_dias: number; p_limite: number },
   ): Promise<{ data: number | null; error: { message: string } | null }>;
   /**
@@ -307,7 +322,8 @@ async function drenar(
     | "fn_expurgar_telemetria_de_ia_vencida"
     | "fn_expurgar_ritmo_de_envio_vencido"
     | "fn_expurgar_copias_enviadas_vencidas"
-    | "fn_expurgar_checkpoints_superados",
+    | "fn_expurgar_checkpoints_superados"
+    | "fn_expurgar_traco_do_turno_vencido",
   dias: number,
 ): Promise<{ apagadas: number; lotes: number; temResto: boolean }> {
   let apagadas = 0;
@@ -639,6 +655,14 @@ export async function podarHistorico(
   // livro-razão de idempotência dos gatilhos de tempo, e podá-lo reenviaria
   // WhatsApp.
   const telemetriaDrenada = await executarDreno(falhas, "fn_expurgar_telemetria_de_ia_vencida", () => drenar(db, "fn_expurgar_telemetria_de_ia_vencida", telemetriaDeIa.dias), zerado);
+  // O traço do turno (migration 9021, issue #3201): a tabela que a 0721 passou a
+  // alimentar uma vez por execução do agente e que não aparecia em poda nenhuma.
+  // Vai com `telemetriaDeIa.dias` DE PROPÓSITO — um traço é telemetria da IA, e
+  // o preço de escolher a janela compartilhada (não dá para guardá-lo por mais
+  // tempo que as chamadas de LLM sem separar depois) está escrito no cabeçalho
+  // da migration 9021. O piso de 100 continua no CORPO da função: trocar o knob
+  // por "1" aqui não apaga investigação de turno com menos de 100 dias.
+  const tracosDrenados = await executarDreno(falhas, "fn_expurgar_traco_do_turno_vencido", () => drenar(db, "fn_expurgar_traco_do_turno_vencido", telemetriaDeIa.dias), zerado);
   const ritmoDrenado = await executarDreno(falhas, "fn_expurgar_ritmo_de_envio_vencido", () => drenar(db, "fn_expurgar_ritmo_de_envio_vencido", ritmoDeEnvio.dias), zerado);
   const copiasDrenadas = await executarDreno(falhas, "fn_expurgar_copias_enviadas_vencidas", () => drenar(db, "fn_expurgar_copias_enviadas_vencidas", copiasEnviadas.dias), zerado);
   const checkpointsDrenados = await executarDreno(falhas, "fn_expurgar_checkpoints_superados", () => drenar(db, "fn_expurgar_checkpoints_superados", checkpoints.dias), zerado);
@@ -686,6 +710,10 @@ export async function podarHistorico(
     lotes_telemetria_de_ia: telemetriaDrenada.lotes,
     telemetria_de_ia_tem_resto: telemetriaDrenada.temResto,
     retencao_telemetria_de_ia_dias: telemetriaDeIa.dias,
+    tracos_apagados: tracosDrenados.apagadas,
+    lotes_tracos: tracosDrenados.lotes,
+    tracos_tem_resto: tracosDrenados.temResto,
+    retencao_traco_dias: telemetriaDeIa.dias,
     ritmo_de_envio_apagado: ritmoDrenado.apagadas,
     lotes_ritmo_de_envio: ritmoDrenado.lotes,
     ritmo_de_envio_tem_resto: ritmoDrenado.temResto,
@@ -789,7 +817,13 @@ export function houveEfeito(resultado: ResultadoDaRetencao): boolean {
     resultado.telemetria_de_ia_apagada > 0 ||
     resultado.ritmo_de_envio_apagado > 0 ||
     resultado.copias_enviadas_apagadas > 0 ||
-    resultado.checkpoints_apagados > 0
+    resultado.checkpoints_apagados > 0 ||
+    // A do traço do turno (9021), pela mesma razão das anteriores: uma rodada
+    // que só apagou traço de turno apagaria linhas e não deixaria registro.
+    // A linha é metadado (nome de ferramenta, ids, erro truncado) — não é texto
+    // de cliente —, mas é a trilha do que o agente FEZ: silêncio aqui seria
+    // encolhimento de auditoria, não de telemetria.
+    resultado.tracos_apagados > 0
   );
 }
 

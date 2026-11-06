@@ -4,29 +4,50 @@
  * modelo de chat (camada universal). Um backend mlx-whisper local implementa a
  * mesma interface para self-host em Apple Silicon (fora deste MVP).
  */
-import type { TokenUsage } from "@/lib/agent-engine/edge/llm/pricing";
+import { custoDeAudioCents, type TokenUsage } from "@/lib/agent-engine/edge/llm/pricing";
 
 export interface TranscriptionProvider {
   transcribe(audio: Buffer, mime: string): Promise<string>;
   /**
-   * Só quem é cobrado por TOKEN implementa: o modelo de conversa da
-   * organização (degrau 3 da escada, `escada-de-transcricao.ts`). Sem o uso
-   * devolvido, a linha em `llm_calls` sairia sem tokens e com custo nulo —
-   * uma chamada de LLM paga, com preço na tabela, contada como "preço
-   * desconhecido" e fora do teto de gasto.
+   * Medição devolvida pelo fornecedor. O modelo de conversa traz tokens;
+   * o serviço OpenRouter pode trazer o custo em USD, convertido para centavos;
+   * a OpenAI devolve a duração que ela própria cobra (`usage.seconds` no
+   * `whisper-1`), que vezes o preço publicado por minuto é o custo — não é
+   * estimativa. Ausência de custo continua null, nunca um preço inventado.
    */
-  transcribeMedindo?(audio: Buffer, mime: string): Promise<{ texto: string; uso: TokenUsage }>;
+  transcribeMedindo?(audio: Buffer, mime: string): Promise<{
+    texto: string;
+    uso: TokenUsage | null;
+    custoCents?: number | null;
+  }>;
 }
 
 /**
- * Os degraus da escada que chamam `/v1/audio/transcriptions` (abaixo). Esse
- * serviço tem tabela de preço própria, que o sistema não conhece, e a chamada
- * não lê tokens de volta: a linha deles em `llm_calls` tem custo nulo por
- * construção, e é por esta lista — gravada em `origem_da_escolha` — que o
- * aviso de "preço desconhecido" os separa do degrau 3, que é LLM cobrado por
- * token (`lib/ai/budget/check.ts`).
+ * Os degraus da escada que chamam `/v1/audio/transcriptions` (abaixo). Esses
+ * serviços podem informar o custo da chamada, mas não usam a tabela de preço
+ * por tokens do modelo de conversa. Quando o serviço não informa custo, fica
+ * null. Esta lista em `origem_da_escolha` separa essa ausência do preço de LLM
+ * desconhecido no aviso de orçamento (`lib/ai/budget/check.ts`).
+ *
+ * `padrao_openrouter` (#3382) é o degrau 3: a própria OpenRouter transcreve
+ * com a chave da conversa. `usage.cost`, quando válido, mede USD da chamada;
+ * sem esse campo, o custo continua desconhecido.
+ *
+ * Na OpenAI (degrau 2, e o degrau 1 sem endereço próprio), o `whisper-1` é
+ * cobrado por DURAÇÃO: a resposta traz `usage.type='duration'` com `seconds`,
+ * e o custo é esse número vezes o preço publicado (`custoDeAudioCents`). Sem o
+ * campo, ou em outro endereço que aceite o nome `whisper-1`, continua null.
+ *
+ * `elevenlabs_escolhido` é o degrau 0: o Scribe que a organização escolheu no
+ * painel (`escada-de-transcricao.ts`). Cobrado por minuto pelo ElevenLabs, sem
+ * custo informado na resposta — mesmo caso dos serviços acima.
  */
-export const ORIGENS_DA_TRANSCRICAO_POR_SERVICO = ["servico_da_instalacao", "padrao_openai_compativel"] as const;
+export const ORIGENS_DA_TRANSCRICAO_POR_SERVICO = [
+  "servico_da_instalacao",
+  "padrao_openai_compativel",
+  "padrao_openrouter",
+  "elevenlabs_escolhido",
+] as const;
 
 export interface TranscriptionCreds {
   apiKey: string;
@@ -45,6 +66,24 @@ export interface TranscriptionCreds {
    * acertou os três e devolveu vazio para o áudio sem fala.
    */
   languages?: readonly string[];
+  /**
+   * Cabeçalhos EXTRA da chamada, por cima do `Authorization` (#3382: os de
+   * atribuição da OpenRouter, `HTTP-Referer`/`X-Title`, que a própria
+   * OpenRouter documenta como opcionais). Nulo/ausente = só o Authorization de
+   * sempre; o Authorization NUNCA é sobrescrevível por aqui.
+   */
+  headers?: Record<string, string> | undefined;
+  /** Contrato do fornecedor, sem alterar o teto global de mídia. */
+  maxAudioBytes?: number;
+  /** Apenas no contrato OpenRouter: usage.cost é o total da chamada em USD. */
+  medirCustoEmUsd?: boolean;
+}
+
+export class TranscriptionTooLargeError extends Error {
+  override readonly name = "transcription_audio_too_large";
+  constructor(readonly limitBytes: number) {
+    super("transcription_audio_too_large");
+  }
 }
 
 const DEFAULT_BASE = "https://api.openai.com";
@@ -97,7 +136,8 @@ export function camposDeIdioma(model: string, languages: readonly string[]): [st
     : [["language", languages[0]!]];
 }
 
-function extFor(mime: string): string {
+/** Exportada: `transcription-elevenlabs.ts` precisa do mesmo mapeamento MIME→extensão. */
+export function extFor(mime: string): string {
   const base = mime.split(";")[0]!.trim().toLowerCase();
   if (base.includes("ogg")) return "ogg";
   if (base.includes("mpeg") || base.includes("mp3")) return "mp3";
@@ -114,24 +154,37 @@ export function apiTranscriptionProvider(
   const rawBase = (creds.baseUrl ?? DEFAULT_BASE).trim().replace(/\/+$/, "");
   const base = rawBase.replace(/\/v1$/, "");
   const model = creds.model ?? DEFAULT_MODEL;
+  const transcrever = async (audio: Buffer, mime: string) => {
+    if (creds.maxAudioBytes !== undefined && audio.byteLength > creds.maxAudioBytes) {
+      throw new TranscriptionTooLargeError(creds.maxAudioBytes);
+    }
+    const form = new FormData();
+    form.append("model", model);
+    form.append(
+      "file",
+      new Blob([new Uint8Array(audio)], { type: mime.split(";")[0]!.trim() }),
+      `audio.${extFor(mime)}`,
+    );
+    for (const [campo, valor] of camposDeIdioma(model, creds.languages ?? [])) form.append(campo, valor);
+    const res = await fetchImpl(`${base}/v1/audio/transcriptions`, {
+      method: "POST",
+      headers: { ...creds.headers, Authorization: `Bearer ${creds.apiKey}` },
+      body: form,
+    });
+    if (!res.ok) throw new Error(`transcription_${res.status}`);
+    const json = (await res.json()) as { text?: string; usage?: { cost?: unknown; seconds?: unknown } };
+    // `usage.cost` só no contrato que o declara em USD (OpenRouter): outro servidor
+    // compatível poderia devolver `cost` noutra unidade.
+    const custoEmUsd = creds.medirCustoEmUsd ? json.usage?.cost : undefined;
+    const informado = typeof custoEmUsd === "number" && Number.isFinite(custoEmUsd) && custoEmUsd >= 0
+      && Number.isFinite(custoEmUsd * 100) ? custoEmUsd * 100 : null;
+    // O preço da OpenAI só vale para pedido que FOI à OpenAI: um servidor
+    // compatível (Groq, local) que aceite o nome `whisper-1` cobra outra coisa.
+    const porDuracao = base === DEFAULT_BASE ? custoDeAudioCents(model, json.usage?.seconds) : null;
+    return { texto: json.text ?? "", uso: null, custoCents: informado ?? porDuracao };
+  };
   return {
-    async transcribe(audio, mime) {
-      const form = new FormData();
-      form.append("model", model);
-      form.append(
-        "file",
-        new Blob([new Uint8Array(audio)], { type: mime.split(";")[0]!.trim() }),
-        `audio.${extFor(mime)}`,
-      );
-      for (const [campo, valor] of camposDeIdioma(model, creds.languages ?? [])) form.append(campo, valor);
-      const res = await fetchImpl(`${base}/v1/audio/transcriptions`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${creds.apiKey}` },
-        body: form,
-      });
-      if (!res.ok) throw new Error(`transcription_${res.status}`);
-      const json = (await res.json()) as { text?: string };
-      return json.text ?? "";
-    },
+    transcribe: async (audio, mime) => (await transcrever(audio, mime)).texto,
+    transcribeMedindo: transcrever,
   };
 }

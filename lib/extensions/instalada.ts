@@ -142,6 +142,10 @@ export function montarInstalada({
         icon: "BookOpen",
       },
       configuration: binding?.configuration ?? { density: "comfortable", show_description: true },
+      // Pacote que esta versão não lê não OFERECE tema: o campo não pode nascer de um
+      // manifesto que o host recusou (a mesma razão pela qual a paleta gravada continua
+      // preservada no vínculo — a tela só não a edita por aqui).
+      theme_palette: null,
       compatible: false,
       compatibility_reason: MOTIVO_PACOTE_ILEGIVEL,
     };
@@ -160,6 +164,11 @@ export function montarInstalada({
       (temConfiguracaoDeCard(leitura.manifest.configuration)
         ? leitura.manifest.configuration
         : { density: "comfortable", show_description: true }),
+    // O QUE O MANIFESTO DECLARA, e nada mais: a tela alimenta o campo de paleta com
+    // esta chave em vez de uma lista fixa de paletas, e a extensão que não declara
+    // `contributions.theme` fica sem campo. O manifesto já passou pelo contrato desta
+    // versão em `lerManifestoAdmitido`, então o valor é uma paleta conhecida.
+    theme_palette: leitura.manifest.contributions.theme?.palette ?? null,
     compatible: compatibility.compatible,
     compatibility_reason: compatibility.compatible ? null : MOTIVO_API_INCOMPATIVEL,
   };

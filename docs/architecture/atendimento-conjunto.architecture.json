@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": { "title": "Atendimento conjunto", "subtitle": "Convite concede leitura e resposta sem transferir o responsável", "output": "atendimento-conjunto.html", "quality_profile": "standard" },
+  "lanes": [{ "id": "tela", "label": "Inbox" }, { "id": "servidor", "label": "Autorização" }, { "id": "banco", "label": "Persistência" }],
+  "mainPath": ["cabecalho", "rota", "participacao", "leitura", "resposta"],
+  "nodes": [
+    { "id": "cabecalho", "lane": "tela", "col": 1, "type": "frontend", "label": "ParticipantesDaConversa: convidar, remover e sair" },
+    { "id": "rota", "lane": "servidor", "col": 2, "type": "route", "label": "participants: sessão, tenant, dono/gestor e alvo ativo" },
+    { "id": "participacao", "lane": "banco", "col": 3, "type": "database", "label": "conversation_participants: vínculo único e left_at" },
+    { "id": "auditoria", "lane": "banco", "col": 3, "type": "database", "label": "api_audit_log: convidado e removido" },
+    { "id": "leitura", "lane": "servidor", "col": 4, "type": "backend", "label": "RLS: conversa/mensagens; lista Minhas e contador" },
+    { "id": "resposta", "lane": "tela", "col": 5, "type": "frontend", "label": "Compositor: responder sem assumir" },
+    { "id": "controle", "lane": "servidor", "col": 5, "type": "backend", "label": "Status/atribuição conservam a autoridade anterior ao convite" }
+  ],
+  "edges": [
+    { "id": "e1", "from": "cabecalho", "to": "rota", "label": "gesto validado no servidor" },
+    { "id": "e2", "from": "rota", "to": "participacao", "label": "upsert ou saída lógica" },
+    { "id": "e3", "from": "rota", "to": "auditoria", "label": "audita o efeito" },
+    { "id": "e4", "from": "participacao", "to": "leitura", "label": "participação ativa amplia leitura" },
+    { "id": "e5", "from": "leitura", "to": "resposta", "label": "contexto e resposta no mesmo atendimento" },
+    { "id": "e6", "from": "participacao", "to": "cabecalho", "label": "refetch confirma o vínculo" },
+    { "id": "e7", "from": "resposta", "to": "controle", "label": "responder não transfere controle" }
+  ]
+}

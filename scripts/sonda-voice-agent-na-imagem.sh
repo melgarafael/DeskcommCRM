@@ -2,8 +2,8 @@
 # Smoke nativo do boot da imagem, SEM ARI, banco ou chave reais. Não prova ligação.
 set -euo pipefail
 
-sonda_voice_classificar() { # <logs> <running|exited>
-  local logs="${1:-}" estado="${2:-}"
+sonda_voice_classificar() { # <logs> <running|exited> <healthy|starting|unhealthy|vazio>
+  local logs="${1:-}" estado="${2:-}" saude="${3:-}"
   if printf '%s' "$logs" | grep -Eq 'Cannot find module|ERR_MODULE_NOT_FOUND|Cannot use import statement|SyntaxError|env faltando|MODULE_NOT_FOUND'; then
     printf 'Agente de voz falhou no import ou configuração de boot\n' >&2
     return 1
@@ -12,6 +12,11 @@ sonda_voice_classificar() { # <logs> <running|exited>
     printf 'Agente de voz encerrou antes de servir AudioSocket\n' >&2
     return 1
   fi
+  case "$saude" in
+    starting) return 2 ;; # Ainda dentro do orçamento de boot da sonda.
+    healthy) ;;
+    *) printf 'Agente de voz sem saúde confirmada do listener AudioSocket (%s)\n' "${saude:-ausente}" >&2; return 1 ;;
+  esac
   if ! printf '%s' "$logs" | grep -q 'servidor TCP escutando na porta'; then
     printf 'Agente de voz não anunciou o listener AudioSocket\n' >&2
     return 1
@@ -19,9 +24,13 @@ sonda_voice_classificar() { # <logs> <running|exited>
 }
 
 sonda_voice_imagem() { # <imagem local já construída no runner nativo>
-  local imagem="${1:-}" nome="voice-smoke-$$" logs estado
+  local imagem="${1:-}" nome="voice-smoke-$$" logs estado saude probe codigo
   [ -n "$imagem" ] || { printf 'Informe a imagem de voz\n' >&2; return 1; }
   trap 'docker rm -f "$nome" >/dev/null 2>&1 || true' RETURN
+  probe="$(docker image inspect --format '{{if .Config.Healthcheck}}{{json .Config.Healthcheck.Test}}{{end}}' "$imagem" 2>/dev/null)" || probe=""
+  case "$probe" in
+    ''|null|'[]'|'["NONE"]') printf 'Imagem de voz sem healthcheck do listener AudioSocket\n' >&2; return 1 ;;
+  esac
   docker run -d --network none --name "$nome" \
     -e NEXT_PUBLIC_SUPABASE_URL=https://exemplo.invalid \
     -e NEXT_PUBLIC_SUPABASE_ANON_KEY=chave-anon-de-mentira \
@@ -34,19 +43,18 @@ sonda_voice_imagem() { # <imagem local já construída no runner nativo>
     "$imagem" >/dev/null
   for _ in $(seq 1 30); do
     logs="$(docker logs "$nome" 2>&1 || true)"
-    if docker ps --filter "name=$nome" --filter status=running -q | grep -q .; then
-      estado=running
-    else
-      estado=exited
-    fi
-    if [ "$estado" != running ] || printf '%s' "$logs" | grep -q 'servidor TCP escutando na porta'; then
-      sonda_voice_classificar "$logs" "$estado" || { printf '%s\n' "$logs" | tail -30 >&2; return 1; }
-      printf 'Boot nativo do voice-agent OK; ARI, banco e chamada real não medidos.\n'
+    estado="$(docker inspect --format '{{.State.Status}}' "$nome" 2>/dev/null)" || estado=exited
+    saude="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$nome" 2>/dev/null)" || saude=""
+    if sonda_voice_classificar "$logs" "$estado" "$saude"; then
+      printf 'Boot e porta AudioSocket do voice-agent confirmados; ARI, banco e chamada real não medidos.\n'
       return 0
+    else
+      codigo=$?
+      if [ "$codigo" -ne 2 ]; then printf '%s\n' "$logs" | tail -30 >&2; return 1; fi
     fi
     sleep 2
   done
-  printf 'Timeout: listener AudioSocket não abriu em 60s\n' >&2
+  printf 'Timeout: saúde do listener AudioSocket não confirmada em 60s\n' >&2
   docker logs "$nome" 2>&1 | tail -30 >&2 || true
   return 1
 }
