@@ -84,6 +84,11 @@ export const POLITICAS_DE_AVISO = {
   message_send_stuck: { refs: ["conversation"], orientacao: "Confira a resposta que não chegou antes de decidir se precisa enviar novamente." },
   midia_nao_lida: { refs: [], orientacao: "Peça ao gestor para revisar o provedor e as credenciais de leitura de fotos e áudios.", geral: { papel: "manager", href: "/app/ai/providers", rotulo: "Revisar provedores de IA" } },
   channel_template_review: { refs: [], orientacao: "Confira os modelos na conexão WhatsApp via Parceiro. Este aviso não identifica um modelo específico.", geral: { papel: "admin", href: "/app/connections?aba=parceiro&sub=templates", rotulo: "Revisar modelos do canal" } },
+  // Sem `geral`, ao contrário do vizinho: o canal oficial direto SEMPRE nasce
+  // com a conexão (`ref_kind='channel_session'`), porque o mesmo nome de modelo
+  // pode existir em duas conexões da empresa e o aviso não pode levar à errada.
+  // A orientação manda conferir Modelos — o corpo já traz o link.
+  channel_template_review_direct: { refs: ["channel_session"], orientacao: "Abra Modelos em Conexões e confira o estado da definição que a Meta revisou — o corpo do aviso diz o modelo e o desfecho." },
   channel_number_alert: { refs: ["channel_session"], orientacao: "Peça a quem administra para revisar a situação do número nas conexões.", geral: CONEXOES },
   // Sem `geral`, ao contrário do vizinho acima: o `canal-mudo-watcher` SEMPRE
   // nasce apontando para a conexão que ficou muda (`ref_kind: channel_session`),

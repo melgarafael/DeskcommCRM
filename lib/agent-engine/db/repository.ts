@@ -138,6 +138,14 @@ export type InboxKind =
   // sem resposta e a Central vazia. UM item por incidente (índice único
   // parcial), fechado sozinho quando o login volta pela tela de Credenciais.
   | 'assinatura_desconectada'
+  // (migration 9084, fatia 3 do #3635) O canal oficial direto espelhava a
+  // decisão da Meta em silêncio: o modelo era reprovado ou pausado e a
+  // descoberta acontecia no disparo que não saiu. Kind PRÓPRIO, e não o
+  // `channel_template_review` do parceiro, porque a Central dá destino por
+  // kind — aquele aponta para a aba do parceiro, este para Modelos do canal
+  // oficial. Nasce SEMPRE com `ref_kind='channel_session'`: duas conexões da
+  // mesma empresa podem ter modelos de mesmo nome, e o aviso não vaza.
+  | 'channel_template_review_direct'
   | 'other';
 
 export interface InboxItemRow {

@@ -10463,8 +10463,22 @@ alter table public.agent_inbox_items
     -- razões de sempre (#159, bloco único por constraint) e o item nasce SEM
     -- referência: o destino é a tela de Credenciais, para quem administra.
     'assinatura_desconectada',
+    -- (#3635, fatia 3) O canal oficial direto espelha a decisão da Meta e agora
+    -- TAMBÉM avisa na Central. Kind próprio porque a Central dá destino por
+    -- kind — o `channel_template_review` do parceiro leva à aba do parceiro.
+    -- Entra NESTA lista pelas razões de sempre (bloco único por constraint,
+    -- #159; janela de `midia-nao-lida.test.ts`).
+    'channel_template_review_direct',
     'other'
   ));
+
+-- Um aviso ABERTO por (organização, conexão, modelo+idioma+desfecho) — a chave
+-- que a Meta re-entregando o webhook não pode duplicar. Parcial em
+-- `status = 'open'` para um evento novo poder abrir aviso depois que o anterior
+-- foi resolvido. Ver migration 9084 (#3635, fatia 3).
+create unique index if not exists agent_inbox_modelo_direto_aberto_unico
+  on public.agent_inbox_items (organization_id, kind, ref_id, title)
+  where status = 'open' and kind = 'channel_template_review_direct';
 
 
 

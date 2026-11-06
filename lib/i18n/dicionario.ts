@@ -1757,6 +1757,8 @@ export const DICIONARIO: Traducoes = {
   "Confira a resposta que não chegou antes de decidir se precisa enviar novamente.": { es: "Revisa la respuesta que no llegó antes de decidir si debes enviarla de nuevo." },
   "Peça ao gestor para revisar o provedor e as credenciais de leitura de fotos e áudios.": { es: "Pide al responsable que revise el proveedor y las credenciales para leer fotos y audios." },
   "Confira os modelos na conexão WhatsApp via Parceiro. Este aviso não identifica um modelo específico.": { es: "Revisa las plantillas en la conexión de WhatsApp vía proveedor asociado. Este aviso no identifica una plantilla específica." },
+  "Um modelo do canal oficial mudou de situação na revisão": { es: "Una plantilla del canal oficial cambió de situación en la revisión" },
+  "Abra Modelos em Conexões e confira o estado da definição que a Meta revisou — o corpo do aviso diz o modelo e o desfecho.": { es: "Abre Plantillas en Conexiones y revisa el estado de la definición que Meta revisó: el cuerpo del aviso dice la plantilla y el resultado." },
   "Peça a quem administra para revisar a situação do número nas conexões.": { es: "Pide a quien administra que revise la situación del número en las conexiones." },
   "Peça a quem administra para autorizar os números de teste em Conexões ou abrir o canal ao público.": { es: "Pide a quien administra que autorice los números de prueba en Conexiones o que abra el canal al público." },
   "Confira o compromisso descrito e defina quem fica responsável.": { es: "Revisa el compromiso descrito y define quién se hace responsable." },

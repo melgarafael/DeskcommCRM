@@ -65,6 +65,10 @@ export const KIND_LABEL = {
   // qual evento chegou.
   channel_template_review: "Um modelo de mensagem mudou de situação na revisão",
   channel_number_alert: "Seu número de WhatsApp precisa de atenção",
+  // O canal oficial direto. Diz o que a PLATAFORMA decidiu e o que isso muda:
+  // aprovado libera o disparo, reprovado/pausado/desativado o interrompe. O
+  // nome do modelo e o motivo legível ficam no título e no corpo do aviso.
+  channel_template_review_direct: "Um modelo do canal oficial mudou de situação na revisão",
   // "ninguém cumpriu" é um veredito que NENHUMA linha de código apura — o
   // sistema não sabe se a promessa foi cumprida, e agendar um retorno não é
   // cumprir. "ninguém ficou responsável" é exatamente o que `apuraDonoDaPromessa`

@@ -29,6 +29,7 @@ import {
   verifyGraphPartnerSignature,
 } from "./graph-parceiro/webhook";
 import { sincronizarSaudeDaConexao } from "./health";
+import { abrirAvisoDoModelo } from "./meta/avisos-do-modelo";
 import { lerEnvelopeMeta } from "./meta/envelope";
 import { ingestMetaAppContactSync, ingestMetaEcho, ingestMetaInbound } from "./meta/ingest";
 import { parseMetaWebhook } from "./meta/webhook";
@@ -448,6 +449,30 @@ async function datafyInbound(
         .eq("name", e.templateName)
         .eq("language", e.templateLanguage);
       desfechos.push(error ? "modelo_nao_atualizado" : "modelo");
+
+      // ─── O aviso, DEPOIS do espelho e sem poder derrubá-lo ────────────────
+      //
+      // O espelho é a fonte da verdade do estado; o aviso é o empurrão para
+      // olhar. Ordem invertida produziria o pior par: aviso dizendo "reprovado"
+      // e tela mostrando "PENDING". E falha do aviso NÃO vira 5xx — a Meta
+      // re-entrega todo evento sem 2xx em backoff por horas, e um INSERT que
+      // falha não pode transformar visibilidade em auto-DDoS. `abrirAvisoDoModelo`
+      // nunca lança; devolve `"falhou"` e o desfecho do espelho continua sendo
+      // o que a resposta carrega.
+      await abrirAvisoDoModelo(
+        admin,
+        {
+          organizationId: orgId,
+          channelSessionId: input.session.id,
+          conexao: input.session.display_name ?? input.session.phone_number ?? "sem nome",
+        },
+        {
+          templateName: e.templateName,
+          templateLanguage: e.templateLanguage,
+          event: e.event,
+          reason: e.reason,
+        },
+      );
       continue;
     }
     desfechos.push("ignorado");
