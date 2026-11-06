@@ -43,7 +43,12 @@ beforeEach(() => {
   vi.mocked(audit).mockClear();
   vi.mocked(resolveAuthDual).mockReset();
   vi.mocked(runModelCall).mockReset();
-  vi.mocked(resolveAuthDual).mockResolvedValue({ ok: true, organizationId: ORG, via: "token" } as never);
+  vi.mocked(resolveAuthDual).mockResolvedValue({
+    ok: true,
+    organizationId: ORG,
+    via: "token",
+    actor: { type: "module", id: "tok-0" },
+  } as never);
 });
 
 describe("POST /api/v1/ai/assistente/conversa", () => {
