@@ -43,7 +43,7 @@ const inputShape = {
     .array(z.string().min(8).max(20))
     .max(500)
     .optional()
-    .describe("Telefones que verão o Status (com DDI; a máscara é ignorada). Quem pediu para sair fica de fora, e `excluded_opt_out` diz quantos."),
+    .describe("Telefones que verão o Status (com DDI; a máscara é ignorada). Quem pediu para sair, foi anonimizado ou é contato pessoal fica de fora, e `excluded_opt_out` diz quantos."),
   all_contacts: z
     .boolean()
     .optional()

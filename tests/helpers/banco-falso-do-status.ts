@@ -17,12 +17,16 @@ export function bancoFalso(
   opcoes: {
     sessao?: Linha | null;
     idem?: Map<string, Linha>;
-    /** Linhas de `contacts`: `{ phone_number, is_blocked, is_anonymized }`. */
+    /** Linhas de `contacts`: `{ phone_number, is_blocked, is_anonymized, is_personal }`. */
     contatos?: Linha[];
     /** Linhas de `contact_phones`, com a ficha embutida em `contacts`, como o PostgREST devolve. */
     telefonesExtras?: Linha[];
     /** Erro de leitura em `contacts`, para medir a falha fechada. */
     erroEmContatos?: { message: string };
+    /** Dígitos que a marca de apagamento reconhece: o que sobra de quem passou pela cascata. */
+    apagados?: string[];
+    /** O que `fn_titular_apagado_a_pedido` responde, quando não é sim nem não. */
+    respostaDaMarca?: { data: unknown; error: { message: string } | null };
   } = {},
 ) {
   const idem = opcoes.idem ?? new Map<string, Linha>();
@@ -117,23 +121,31 @@ export function bancoFalso(
     };
   };
 
-  const leituraDeContatos = (linhas: Linha[], erro: { message: string } | null) => () => {
+  /** Só o que o SELECT pediu: coluna esquecida chega `undefined`, como no PostgREST. */
+  const projetar = (linha: Linha, colunas: string): Linha => {
+    const embed = /(\w+):\w+\(([^)]*)\)/.exec(colunas);
+    const nomes = (lista: string) => lista.split(",").map((c) => c.trim()).filter(Boolean);
+    const saida: Linha = {};
+    for (const coluna of nomes(colunas.replace(embed?.[0] ?? "", ""))) saida[coluna] = linha[coluna];
+    if (embed) {
+      const ficha = linha[embed[1] as string] as Linha | null | undefined;
+      saida[embed[1] as string] = ficha
+        ? Object.fromEntries(nomes(embed[2] as string).map((c) => [c, ficha[c]]))
+        : null;
+    }
+    return saida;
+  };
+
+  const leituraDeContatos = (linhas: Linha[], erro: { message: string } | null) => (colunas: string) => {
     let grafias: unknown[] = [];
-    let bloqueados = false;
     const b: Record<string, unknown> = {
       eq: () => b,
       in: (_coluna: string, valores: unknown[]) => {
         grafias = valores;
         return b;
       },
-      or: () => {
-        bloqueados = true;
-        return b;
-      },
       then: (r?: (v: unknown) => unknown) => {
-        const data = linhas.filter(
-          (l) => grafias.includes(l.phone_number) && (!bloqueados || l.is_blocked || l.is_anonymized),
-        );
+        const data = linhas.filter((l) => grafias.includes(l.phone_number)).map((l) => projetar(l, colunas));
         return Promise.resolve(erro ? { data: null, error: erro } : { data, error: null }).then(
           r ?? ((v: unknown) => v),
         );
@@ -143,6 +155,15 @@ export function bancoFalso(
   };
 
   const db = {
+    rpc: async (funcao: string, args: { p_org: string; p_telefone: string; p_lid: null }) => {
+      if (funcao !== "fn_titular_apagado_a_pedido") throw new Error(`rpc inesperada: ${funcao}`);
+      return (
+        opcoes.respostaDaMarca ?? {
+          data: (opcoes.apagados ?? []).includes(args.p_telefone),
+          error: null,
+        }
+      );
+    },
     from: (tabela: string) =>
       tabela === "contacts"
         ? { select: leituraDeContatos(opcoes.contatos ?? [], opcoes.erroEmContatos ?? null) }

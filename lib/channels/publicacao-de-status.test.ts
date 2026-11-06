@@ -263,7 +263,12 @@ describe("publicação de Status — o caminho passa pelo adapter do canal", () 
 });
 
 describe("publicação de Status — quem pediu para sair fica de fora da lista", () => {
-  const BLOQUEADO = { phone_number: "+5515999999999", is_blocked: true, is_anonymized: false };
+  const BLOQUEADO = {
+    phone_number: "+5515999999999",
+    is_blocked: true,
+    is_anonymized: false,
+    is_personal: false,
+  };
 
   beforeEach(() => {
     sendStatusImage.mockReset().mockResolvedValue({ id: { id: "ST-1" } });
@@ -297,8 +302,14 @@ describe("publicação de Status — quem pediu para sair fica de fora da lista"
     const { db } = bancoFalso({
       sessao: SESSAO,
       telefonesExtras: [
-        { phone_number: "+5515977776666", contacts: { is_blocked: true, is_anonymized: false } },
-        { phone_number: "+5515988887777", contacts: { is_blocked: false, is_anonymized: false } },
+        {
+          phone_number: "+5515977776666",
+          contacts: { is_blocked: true, is_anonymized: false, is_personal: false },
+        },
+        {
+          phone_number: "+5515988887777",
+          contacts: { is_blocked: false, is_anonymized: false, is_personal: false },
+        },
       ],
     });
 
@@ -310,6 +321,84 @@ describe("publicação de Status — quem pediu para sair fica de fora da lista"
     const envelope = sendStatusImage.mock.calls[0]![1] as { contacts: string[] };
     expect(envelope.contacts).toEqual(["5515988887777@c.us"]);
     expect(feita.excluidos).toBe(1);
+  });
+
+  it("tira quem passou pela cascata de LGPD: sem telefone na ficha e sem extras, só a marca lembra", async () => {
+    // A forma pós-cascata: `phone_number` nulo e nenhuma linha em `contact_phones`.
+    // A ficha existe, mas nenhuma leitura por telefone a encontra.
+    const { db } = bancoFalso({
+      sessao: SESSAO,
+      contatos: [{ phone_number: null, is_blocked: false, is_anonymized: true, is_personal: false }],
+      telefonesExtras: [],
+      apagados: ["5515999999999"],
+    });
+
+    const feita = await publicarStatusDoWhatsapp({
+      db,
+      ...entrada({ contatos: ["+55 (15) 99999-9999", "5515988887777"] }),
+    });
+
+    const envelope = sendStatusImage.mock.calls[0]![1] as { contacts: string[] };
+    expect(envelope.contacts).toEqual(["5515988887777@c.us"]);
+    expect(feita).toMatchObject({ publico: "1 contato(s)", excluidos: 1 });
+  });
+
+  it.each([
+    ["erro de leitura", { data: null, error: { message: "fora do ar" } }],
+    ["resposta sem sim nem não", { data: null, error: null }],
+  ])("sem a marca de apagamento (%s), nada é publicado", async (_caso, respostaDaMarca) => {
+    const { db } = bancoFalso({ sessao: SESSAO, respostaDaMarca });
+
+    await expect(publicarStatusDoWhatsapp({ db, ...entrada() })).rejects.toThrow(/opt_out_ilegivel/);
+    expect(sendStatusImage).not.toHaveBeenCalled();
+  });
+
+  it("contato pessoal sai pelo telefone principal", async () => {
+    const { db } = bancoFalso({
+      sessao: SESSAO,
+      contatos: [{ phone_number: "+5515999999999", is_blocked: false, is_anonymized: false, is_personal: true }],
+    });
+
+    const feita = await publicarStatusDoWhatsapp({
+      db,
+      ...entrada({ contatos: ["5515999999999", "5515988887777"] }),
+    });
+
+    const envelope = sendStatusImage.mock.calls[0]![1] as { contacts: string[] };
+    expect(envelope.contacts).toEqual(["5515988887777@c.us"]);
+    expect(feita.excluidos).toBe(1);
+  });
+
+  it("contato pessoal sai pelo telefone extra da ficha", async () => {
+    const { db } = bancoFalso({
+      sessao: SESSAO,
+      telefonesExtras: [
+        {
+          phone_number: "+5515977776666",
+          contacts: { is_blocked: false, is_anonymized: false, is_personal: true },
+        },
+      ],
+    });
+
+    const feita = await publicarStatusDoWhatsapp({
+      db,
+      ...entrada({ contatos: ["5515977776666", "5515988887777"] }),
+    });
+
+    const envelope = sendStatusImage.mock.calls[0]![1] as { contacts: string[] };
+    expect(envelope.contacts).toEqual(["5515988887777@c.us"]);
+    expect(feita.excluidos).toBe(1);
+  });
+
+  it("contato comum continua no público: a ficha lida não exclui por si só", async () => {
+    const { db } = bancoFalso({
+      sessao: SESSAO,
+      contatos: [{ phone_number: "+5515999999999", is_blocked: false, is_anonymized: false, is_personal: false }],
+    });
+
+    const feita = await publicarStatusDoWhatsapp({ db, ...entrada() });
+
+    expect(feita).toMatchObject({ publico: "1 contato(s)", excluidos: 0 });
   });
 
   it("lista inteira de fora não publica, e diz por quê", async () => {
@@ -342,7 +431,11 @@ describe("publicação de Status — quem pediu para sair fica de fora da lista"
   });
 
   it("`todos` não consulta contatos: a escolha ali é do WhatsApp", async () => {
-    const { db } = bancoFalso({ sessao: SESSAO, erroEmContatos: { message: "não devia ler" } });
+    const { db } = bancoFalso({
+      sessao: SESSAO,
+      erroEmContatos: { message: "não devia ler" },
+      respostaDaMarca: { data: null, error: { message: "não devia perguntar" } },
+    });
 
     const feita = await publicarStatusDoWhatsapp({ db, ...entrada({ contatos: undefined, todos: true }) });
 

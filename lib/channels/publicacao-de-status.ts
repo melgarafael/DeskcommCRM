@@ -33,8 +33,8 @@
  *    desligado pelo operador não publica;
  *  - o público é uma ESCOLHA declarada (`todos` ou lista), nunca deduzida de um
  *    array vazio — no transporte, lista vazia e "sem lista" são a mesma coisa;
- *  - quem pediu para sair fica fora da lista (`semQuemSaiu`), e a resposta diz
- *    quantos saíram;
+ *  - quem pediu para sair, foi apagado a pedido ou é contato pessoal fica fora
+ *    da lista (`semQuemSaiu`), e a resposta diz quantos saíram;
  *  - a lista é validada sobre os DÍGITOS, não sobre a string crua: `+55 (15)
  *    99999-9999` é um telefone, e recusá-lo por causa da máscara seria recusar
  *    o formato em que as pessoas escrevem número;
@@ -60,6 +60,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 import { comIdempotencia } from "@/lib/api/idempotency";
+import { ehContatoPessoal, type MarcaDePessoal } from "@/lib/contacts/contato-pessoal";
 import { lotesDeIds } from "@/lib/kanban/selecao";
 
 import { lerGuardarHistorico } from "./acervo-do-historico";
@@ -135,12 +136,49 @@ export function lerPublico(contatos: readonly string[] | undefined): PublicoDoSt
   return { tipo: "contatos", numeros };
 }
 
+/** O que da ficha decide se ela sai do público. */
+type FichaDoPublico = MarcaDePessoal & {
+  is_blocked?: boolean | null;
+  is_anonymized?: boolean | null;
+};
+
+function fichaForaDoPublico(ficha: FichaDoPublico | null): boolean {
+  return Boolean(ficha?.is_blocked || ficha?.is_anonymized || ehContatoPessoal(ficha));
+}
+
 /**
- * Tira da lista quem não pode ser alcançado: contato bloqueado (pediu para sair)
- * ou anonimizado, pelas duas grafias do número (nono dígito) e também pelos
- * telefones extras da ficha. A lista vem de fora, e o opt-out vale para qualquer
- * saída do número. Em `todos` não há lista a filtrar: quem vê é decidido pelo
- * WhatsApp, e o interruptor do módulo diz isso.
+ * Pergunta à marca de apagamento, com a régua da importação do histórico. Quem
+ * chama lança `opt_out_ilegivel` em vez de ler a dúvida como "não foi apagado".
+ */
+async function foiApagadoAPedido(
+  db: SupabaseClient,
+  organizationId: string,
+  numero: string,
+): Promise<boolean> {
+  const { data, error } = await db.rpc("fn_titular_apagado_a_pedido", {
+    p_org: organizationId,
+    p_telefone: numero,
+    p_lid: null,
+  });
+  if (error) throw new Error(`opt_out_ilegivel: ${error.message}`);
+  if (typeof data !== "boolean") throw new Error("opt_out_ilegivel: resposta sem booleano");
+  return data;
+}
+
+/**
+ * Tira da lista quem não pode ser alcançado, pelas duas grafias do número (nono
+ * dígito) e também pelos telefones extras da ficha: contato bloqueado (pediu para
+ * sair), anonimizado ou marcado como pessoal. A lista vem de fora, e essas regras
+ * valem para qualquer saída do número. Em `todos` não há lista a filtrar: quem vê
+ * é decidido pelo WhatsApp, e o interruptor do módulo diz isso.
+ *
+ * O apagado a pedido não aparece nas duas leituras: a cascata de LGPD zera
+ * `contacts.phone_number` e apaga as linhas de `contact_phones`, então o número
+ * deixa de casar com qualquer ficha. O que sobra dele é a marca da anonimização
+ * (`lgpd_marcas_de_apagamento`, telefone principal e lid), e por isso a pergunta é
+ * a `fn_titular_apagado_a_pedido`. A supressão de `lib/prospecting/store.ts` não
+ * serve aqui: ela mora em `prospecting_candidates` e só existe para quem foi
+ * candidato de prospecção.
  *
  * Falha fechada: sem saber quem saiu, nada é publicado.
  */
@@ -152,31 +190,36 @@ async function semQuemSaiu(
   const fora = new Set<string>();
   for (const lote of lotesDeIds(numeros)) {
     const grafias = lote.flatMap((numero) => phoneLookupVariants(numero));
-    const [principais, extras] = await Promise.all([
+    const [principais, extras, apagados] = await Promise.all([
       db
         .from("contacts")
-        .select("phone_number")
-        .eq("organization_id", organizationId)
-        .in("phone_number", grafias)
-        .or("is_blocked.eq.true,is_anonymized.eq.true"),
-      db
-        .from("contact_phones")
-        .select("phone_number, contacts:contact_id(is_blocked, is_anonymized)")
+        .select("phone_number, is_blocked, is_anonymized, is_personal")
         .eq("organization_id", organizationId)
         .in("phone_number", grafias),
+      db
+        .from("contact_phones")
+        .select("phone_number, contacts:contact_id(is_blocked, is_anonymized, is_personal)")
+        .eq("organization_id", organizationId)
+        .in("phone_number", grafias),
+      // ponytail: uma pergunta por número (no máximo 500 na ferramenta); uma versão em lote da função quando a lista crescer.
+      Promise.all(lote.map((numero) => foiApagadoAPedido(db, organizationId, numero))),
     ]);
     const erro = principais.error ?? extras.error;
     if (erro) throw new Error(`opt_out_ilegivel: ${erro.message}`);
-    for (const { phone_number } of (principais.data ?? []) as Array<{ phone_number: string }>) {
-      fora.add(phone_number);
+    const linhas = (principais.data ?? []) as Array<FichaDoPublico & { phone_number: string }>;
+    for (const linha of linhas) {
+      if (fichaForaDoPublico(linha)) fora.add(linha.phone_number);
     }
-    const linhas = (extras.data ?? []) as unknown as Array<{
+    const linhasExtras = (extras.data ?? []) as unknown as Array<{
       phone_number: string;
-      contacts: { is_blocked: boolean; is_anonymized: boolean } | null;
+      contacts: FichaDoPublico | null;
     }>;
-    for (const { phone_number, contacts } of linhas) {
-      if (contacts?.is_blocked || contacts?.is_anonymized) fora.add(phone_number);
+    for (const { phone_number, contacts } of linhasExtras) {
+      if (fichaForaDoPublico(contacts)) fora.add(phone_number);
     }
+    lote.forEach((numero, posicao) => {
+      if (apagados[posicao]) phoneLookupVariants(numero).forEach((grafia) => fora.add(grafia));
+    });
   }
   return numeros.filter((numero) => !phoneLookupVariants(numero).some((grafia) => fora.has(grafia)));
 }
@@ -210,7 +253,7 @@ export interface PublicacaoDeStatusFeita {
   statusId: string | null;
   /** `"todos"` ou `"N contato(s)"` — quem a publicação alcançou, dito de volta. */
   publico: string;
-  /** Quantos saíram da lista por opt-out ou anonimização. */
+  /** Quantos saíram da lista: opt-out, anonimização ou contato pessoal. */
   excluidos: number;
   /** `true` quando a resposta veio do recibo da primeira publicação. */
   deduplicado: boolean;
@@ -306,7 +349,7 @@ export async function publicarStatusDoWhatsapp(
           };
     if (destino.tipo === "contatos" && destino.numeros.length === 0) {
       throw new Error(
-        "publico_vazio: todos os contatos da lista pediram para não ser incomodados ou foram anonimizados. Nada foi publicado.",
+        "publico_vazio: todos os contatos da lista pediram para não ser incomodados, foram anonimizados ou são contatos pessoais. Nada foi publicado.",
       );
     }
     await input.freio?.segurar();
