@@ -239,6 +239,23 @@ describe("webhook da cobrança pelo Asaas (PR 3b)", () => {
     expect(argumentos(doLog("update")[0]!, "update")?.[0]).toMatchObject({ status: "error", error_message: "cliente_desconhecido" });
   });
 
+  it("⭐ leitura da empresa falhando acima do balde: 200 SEM gravar e sem log de erro, como o aviso de cliente desconhecido", async () => {
+    m.erroDona = true;
+    h.permitido = false;
+    expect((await doAsaas({ "asaas-access-token": TOKEN_ASAAS })).status).toBe(200);
+    expect(h.baldes).toEqual(["cobranca-webhook-desconhecido:asaas"]);
+    expect(doLog("insert")).toEqual([]);
+    expect(h.erro).not.toHaveBeenCalled();
+    expect(emits()).toEqual([]);
+  });
+
+  it("leitura da empresa falhando abaixo do balde: 500 com o ponteiro received e o motivo", async () => {
+    m.erroDona = true;
+    expect((await doAsaas({ "asaas-access-token": TOKEN_ASAAS })).status).toBe(500);
+    expect(h.baldes).toEqual(["cobranca-webhook-desconhecido:asaas"]);
+    expect(gravado()).toMatchObject({ status: "received", error_message: "falha_ao_identificar_empresa" });
+  });
+
   it("controle: aviso VÁLIDO de cliente conhecido do Asaas nunca passa por balde nenhum", async () => {
     h.permitido = false;
     expect((await doAsaas({ "asaas-access-token": TOKEN_ASAAS })).status).toBe(200);

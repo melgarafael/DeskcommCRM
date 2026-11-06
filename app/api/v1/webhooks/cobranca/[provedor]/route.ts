@@ -102,6 +102,20 @@ export async function POST(req: NextRequest, { params }: Rota) {
         .eq("provedor_cliente_id", sinal.clienteRef)
         .maybeSingle()
     : { data: null, error: null };
+  const org = (dona as { organization_id: string } | null)?.organization_id ?? null;
+  if (!org && provedor === "asaas") {
+    // O token do Asaas é estático: vazado, ele assina avisos de clientes que não
+    // existem, e cada um viraria uma linha nova. Acima do balde, 200 SEM gravar:
+    // 429 faria o Asaas interromper a fila, e com ela os avisos verdadeiros; o
+    // que for de verdade, a reconciliação cura. Cliente conhecido só entra aqui se a
+    // leitura da empresa falhou: sem saber a dona, o aviso também vira linha nova.
+    // Chave GLOBAL por provedor, não por IP: o IP é o primeiro salto do
+    // x-forwarded-for, que quem tem o token controla — um IP por aviso daria um
+    // balde novo a cada um. O custo: o atacante pode empurrar para fora outros
+    // avisos de cliente DESCONHECIDO, e esses a reconciliação cura.
+    const taxa = await checkRateLimit(`cobranca-webhook-desconhecido:${provedor}`, DESCONHECIDOS_POR_MINUTO, 60);
+    if (!taxa.allowed) return ok({ ignorado: "limite_de_desconhecidos" }, { requestId });
+  }
   if (erroDaDona) {
     // Sem a linha, este 500 não deixaria rastro. Fica `received`, e não `error`: com
     // assinatura válida, a Visão geral lê `error` como "aviso sem empresa, pode
@@ -109,19 +123,6 @@ export async function POST(req: NextRequest, { params }: Rota) {
     logger.error("cobranca.empresa_nao_identificada", { provedor, codigo: erroDaDona.code ?? null });
     await gravarPonteiro(admin, provedor, sinal, assinatura, "falha_ao_identificar_empresa");
     return fail("internal_error", "Não foi possível identificar a empresa.", 500, { requestId });
-  }
-  const org = (dona as { organization_id: string } | null)?.organization_id ?? null;
-  if (!org && provedor === "asaas") {
-    // O token do Asaas é estático: vazado, ele assina avisos de clientes que não
-    // existem, e cada um viraria uma linha nova. Acima do balde, 200 SEM gravar:
-    // 429 faria o Asaas interromper a fila, e com ela os avisos verdadeiros; o
-    // que for de verdade, a reconciliação cura. Cliente conhecido nunca entra aqui.
-    // Chave GLOBAL por provedor, não por IP: o IP é o primeiro salto do
-    // x-forwarded-for, que quem tem o token controla — um IP por aviso daria um
-    // balde novo a cada um. O custo: o atacante pode empurrar para fora outros
-    // avisos de cliente DESCONHECIDO, e esses a reconciliação cura.
-    const taxa = await checkRateLimit(`cobranca-webhook-desconhecido:${provedor}`, DESCONHECIDOS_POR_MINUTO, 60);
-    if (!taxa.allowed) return ok({ ignorado: "limite_de_desconhecidos" }, { requestId });
   }
 
   const linha = await gravarPonteiro(admin, provedor, sinal, assinatura);
