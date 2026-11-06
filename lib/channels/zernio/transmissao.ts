@@ -179,11 +179,17 @@ export async function transmissaoDoParceiro(
         undefined,
         { limit: String(quantos), skip: String(pular) },
       );
-      const brutos = j.recipients ?? [];
+      // Sem lista ou sem `hasMore` não há leitura: tratar como página vazia daria
+      // por limpo um rascunho desconhecido e por falha quem o provedor entregou.
+      const brutos = j.recipients;
+      if (!Array.isArray(brutos) || typeof j.pagination?.hasMore !== "boolean") {
+        throw new ErroDaTransmissao(502, "relatorio_inesperado", "o relatório de destinatários veio em formato inesperado");
+      }
       return {
         itens: brutos.map(destinatarioDoParceiro).filter((d): d is DestinatarioDaTransmissao => d !== null),
         temMais: j.pagination?.hasMore === true && brutos.length > 0,
         lidos: brutos.length,
+        total: typeof j.pagination.total === "number" ? j.pagination.total : null,
       };
     },
 

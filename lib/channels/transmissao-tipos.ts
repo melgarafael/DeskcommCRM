@@ -53,6 +53,8 @@ export interface OpsDeTransmissao {
     temMais: boolean;
     /** Quantos vieram nesta página, legíveis ou não — é o que avança `pular`. */
     lidos: number;
+    /** Quantos a transmissão tem no total, ou `null` se o provedor não disse. */
+    total: number | null;
   }>;
   /** Cancela o que ainda não saiu. O que já saiu fica (é o que a plataforma faz). */
   cancelar(id: string): Promise<void>;

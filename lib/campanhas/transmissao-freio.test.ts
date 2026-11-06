@@ -45,6 +45,7 @@ vi.mock("@/lib/campanhas/modelo-da-conexao", () => ({
   contratoDe: () => ({ slots: [] }),
 }));
 
+import { logger } from "@/lib/logger";
 import { cancelarAcao, type CampanhaCarregada } from "./acoes";
 import { hashDoEndereco } from "./exclusoes";
 import { aplicarRespostaNaCampanha } from "./resposta";
@@ -53,6 +54,7 @@ import {
   DETALHE_ACIMA_DO_TETO_DO_NUMERO,
   DETALHE_CANCELAMENTO_RECUSADO,
   DETALHE_CANCELAMENTO_SEM_CONEXAO,
+  DETALHE_RASCUNHO_NAO_APAGADO,
   encerrarTransmissao,
   paginasDoRelatorio,
   rodarCampanhaEmTransmissao,
@@ -183,7 +185,7 @@ function provedor(over: Partial<OpsDeTransmissao> = {}) {
     adicionar: async (_id, telefones) => (chamadas.adicionados.push(...telefones), { adicionados: telefones.length, pulados: 0 }),
     enviar: async () => (chamadas.enviar++, { estado: "sending" }),
     ler: async () => ({ estado: "draft" }),
-    destinatarios: async () => ({ itens: [], temMais: false, lidos: 0 }),
+    destinatarios: async () => ({ itens: [], temMais: false, lidos: 0, total: 0 }),
     cancelar: async (id) => {
       chamadas.cancelar.push(id);
     },
@@ -372,7 +374,7 @@ function provedorComRascunho() {
     ler: async (id) => ({ estado: estados.get(id)! }),
     destinatarios: async (id) => {
       const itens = [...rascunhos.get(id)!].map((t) => item(t, { status: "pending" }));
-      return { itens, temMais: false, lidos: itens.length };
+      return { itens, temMais: false, lidos: itens.length, total: itens.length };
     },
     cancelar: async () => undefined,
     descartar: async (id) => {
@@ -533,6 +535,54 @@ describe("quem saiu da lista depois que os telefones subiram", () => {
     expect(p.enviados).toEqual([]);
   });
 
+  it("página vazia sem total confirmado não é rascunho vazio: é refeito, nada sai", async () => {
+    for (const total of [null, 3]) {
+      const t = mundoCom(10, tres());
+      const p = provedorComRascunho();
+      await pausarComOsTelefonesSubindo(t, p);
+      mundo.ops = { ...p.ops, destinatarios: async () => ({ itens: [], temMais: false, lidos: 0, total }) };
+      t.campaigns[0]!.status = "running";
+      const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), { ...CAMPANHA, provider_broadcast_id: "b1" }, AGORA);
+      expect(r.detalhe).toBe("rascunho_refeito");
+      expect(p.enviados).toEqual([]);
+    }
+  });
+
+  it("página vazia com total zero é rascunho vazio de verdade: reaproveita", async () => {
+    const t = mundoCom(10, tres(), campanhaLinha({ provider_broadcast_id: "b1" }));
+    const { ops, chamadas } = provedor();
+    mundo.ops = ops;
+    const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), { ...CAMPANHA, provider_broadcast_id: "b1" }, AGORA);
+    expect(r.detalhe).toBe("transmissao:sending:3");
+    expect(chamadas.descartar).toEqual([]);
+    expect(chamadas.enviar).toBe(1);
+  });
+
+  it("alguém sai da fila entre a conferência e a reserva: não manda, refaz o rascunho", async () => {
+    const t = mundoCom(10, tres());
+    const p = provedorComRascunho();
+    await pausarComOsTelefonesSubindo(t, p);
+    t.campaign_recipients[1]!.status = "sending";
+    const destinatarios = p.ops.destinatarios;
+    mundo.ops = {
+      ...p.ops,
+      // A conferência passa com os 3; logo depois dela, o r1 sai pelo opt-out.
+      destinatarios: async (id, pagina) => {
+        const r = await destinatarios(id, pagina);
+        t.campaign_recipients[0]!.status = "opted_out";
+        return r;
+      },
+    };
+    t.campaigns[0]!.status = "running";
+    const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), { ...CAMPANHA, provider_broadcast_id: "b1" }, AGORA);
+    expect(r.detalhe).toBe("rascunho_refeito");
+    expect(p.enviados).toEqual([]);
+    expect(p.rascunhos.has("b1")).toBe(false);
+    expect(t.campaigns[0]!.provider_broadcast_id).toBeNull();
+    expect(t.campaign_recipients.map((d) => d.status)).toEqual(["opted_out", "pending", "pending"]);
+    expect(mundo.contados).toEqual([]);
+  });
+
   it("o provedor não leu o rascunho: a campanha pausa e nada sai", async () => {
     const t = mundoCom(10, tres());
     const p = provedorComRascunho();
@@ -616,7 +666,7 @@ describe("relatório truncado", () => {
     const { ops } = provedor({
       ler: async () => ({ estado: "completed" }),
       // O provedor nunca diz que acabou: só o r1 aparece, página após página.
-      destinatarios: async () => ({ itens: [item("+595981000001")], temMais: true, lidos: 1 }),
+      destinatarios: async () => ({ itens: [item("+595981000001")], temMais: true, lidos: 1, total: 2 }),
     });
     mundo.ops = ops;
     const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), { ...CAMPANHA, provider_broadcast_id: "b1" }, AGORA);
@@ -644,6 +694,7 @@ describe("a plataforma recusou todos", () => {
         itens: [item("+595981000001", falha), item("+595981000002", falha)],
         temMais: false,
         lidos: 2,
+        total: 2,
       }),
     });
     mundo.ops = ops;
@@ -661,6 +712,7 @@ describe("a plataforma recusou todos", () => {
         itens: [item("+595981000001"), item("+595981000002", { status: "failed", codigoDoErro: "131049" })],
         temMais: false,
         lidos: 2,
+        total: 2,
       }),
     });
     mundo.ops = ops;
@@ -715,6 +767,71 @@ describe("cancelar a campanha por broadcast", () => {
     mundo.ops = saindo.ops;
     await encerrarTransmissao(fakeAdmin(emEnvio), carregada(), AGORA);
     expect(saindo.chamadas.descartar).toEqual([]);
+  });
+
+  it("o rascunho não foi apagado: quem cancelou fica sabendo", async () => {
+    const recusas: Array<Partial<OpsDeTransmissao>> = [
+      {
+        descartar: async () => {
+          throw new ErroDaTransmissao(500, "http_500", "500 erro");
+        },
+      },
+      { descartar: async () => false },
+      {
+        ler: async () => {
+          throw new ErroDaTransmissao(503, "http_503", "503 fora do ar");
+        },
+      },
+    ];
+    const log = vi.spyOn(logger, "warn");
+    for (const recusa of recusas) {
+      log.mockClear();
+      const t = mundoCom(null, tres(), campanhaLinha({ status: "cancelled", provider_broadcast_id: "b1" }));
+      mundo.ops = provedor(recusa).ops;
+      expect(await encerrarTransmissao(fakeAdmin(t), carregada(), AGORA)).toBe(3);
+      expect(t.campaigns[0]).toMatchObject({
+        failure_code: "transmissao_rascunho_nao_apagado",
+        failure_detail: DETALHE_RASCUNHO_NAO_APAGADO,
+      });
+      expect(log).toHaveBeenCalledWith(
+        "[campanha] rascunho da campanha cancelada não apagado",
+        expect.objectContaining({ campanha: "c1", transmissao: "b1" }),
+      );
+    }
+    log.mockRestore();
+  });
+
+  it("cancelada com os telefones subindo: a rodada apaga o rascunho, e avisa se não conseguir", async () => {
+    const rodada = async (over: Partial<OpsDeTransmissao>) => {
+      const t = mundoCom(10, tres());
+      const { ops, chamadas } = provedor({
+        ...over,
+        adicionar: async (_id, telefones) => {
+          t.campaigns[0]!.status = "cancelled";
+          return { adicionados: telefones.length, pulados: 0 };
+        },
+      });
+      mundo.ops = ops;
+      const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), CAMPANHA, AGORA);
+      expect(r.detalhe).toBe("parada_antes_de_mandar:cancelled");
+      expect(chamadas.enviar).toBe(0);
+      expect(t.campaign_recipients.every((d) => d.status === "cancelled")).toBe(true);
+      return { t, chamadas };
+    };
+
+    const apagou = await rodada({});
+    expect(apagou.chamadas.descartar).toEqual(["b1"]);
+    expect(apagou.t.campaigns[0]!.failure_code).toBeNull();
+
+    const recusou = await rodada({
+      descartar: async () => {
+        throw new ErroDaTransmissao(500, "http_500", "500 erro");
+      },
+    });
+    expect(recusou.t.campaigns[0]).toMatchObject({
+      failure_code: "transmissao_rascunho_nao_apagado",
+      failure_detail: DETALHE_RASCUNHO_NAO_APAGADO,
+    });
   });
 
   it("a ação conta os que estavam em voo — não «0 cancelados»", async () => {

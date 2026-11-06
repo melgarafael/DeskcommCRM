@@ -34,7 +34,8 @@
  * quem pedir para sair nesse meio tempo sairia da nossa lista e continuaria na
  * dele. Por isso, com id existente, o rascunho é lido antes: se traz alguém fora
  * da lista revalidada agora, ou alguém que não dá para ler, ele é APAGADO e a
- * rodada seguinte cria outro, só com quem pode receber.
+ * rodada seguinte cria outro, só com quem pode receber. Vale também para quem
+ * sai da fila entre a leitura e a reserva: o telefone dele pode já estar lá.
  *
  * ═══ Por que os valores do modelo são os do destinatário ═══
  *
@@ -238,6 +239,7 @@ async function entregarAoProvedor(
       // A nossa é descartada (sem o id gravado, ela viraria uma segunda) e a
       // campanha pausa com a frase.
       logger.warn("[campanha] id da transmissão não gravado", { campanha: campanha.id, codigo: error.code ?? null });
+      // Recém-criada e sem telefone: se o descarte falhar, sobra um rascunho vazio.
       await ops.descartar(criada.id).catch(() => false);
       await pausar(admin, campanha.id, agora, {
         codigo: "transmissao_id_nao_gravado",
@@ -248,7 +250,8 @@ async function entregarAoProvedor(
     }
     if ((data ?? []).length === 0) {
       // Outra rodada chegou antes (ou a campanha saiu de `running`): a nossa
-      // transmissão fica vazia no rascunho, e é ela que se descarta.
+      // transmissão fica vazia no rascunho, e é ela que se descarta. Sem telefone,
+      // um descarte que falhe não deixa nada para sair.
       await ops.descartar(criada.id).catch(() => false);
       return { ...SO_O_CONTADOR, pulados, detalhe: "ja_entregue" };
     }
@@ -257,6 +260,10 @@ async function entregarAoProvedor(
 
   const reservados = await reservar(admin, campanha, prontos, agora);
   const lista = [...reservados, ...emVoo];
+  if (idExistente && reservados.length < prontos.length) {
+    // Alguém saiu da fila depois da conferência, e o rascunho já tinha o telefone.
+    return await descartarRascunho(admin, campanha, ops, idExistente, lista, pulados, agora);
+  }
   let estado: EstadoDaTransmissao;
   let puladosNoProvedor: number;
   try {
@@ -271,12 +278,15 @@ async function entregarAoProvedor(
     // meio tempo tem de vencer, porque depois do `enviar` a lista inteira saiu.
     const status = await statusDaCampanha(admin, campanha.id);
     if (status !== "running") {
-      if (status === "cancelled") await fecharQuemFicou(admin, campanha.id, "cancelled", agora);
-      else
+      if (status === "cancelled") {
+        await fecharQuemFicou(admin, campanha.id, "cancelled", agora);
+        await apagarRascunhoDaCancelada(admin, ops, campanha.id, id);
+      } else {
         await devolverAFila(
           admin,
           reservados.map((d) => d.id),
         );
+      }
       return { ...SO_O_CONTADOR, pulados, detalhe: `parada_antes_de_mandar:${status}` };
     }
     estado = (await ops.enviar(id)).estado;
@@ -325,8 +335,9 @@ async function entregarAoProvedor(
 
 /**
  * O rascunho do provedor só tem gente da lista? Quem ele traz sem dar para ler
- * conta como fora, e o mesmo vale para um relatório que não acaba: na dúvida, o
- * rascunho é refeito, que custa uma rodada; mandar a quem saiu não tem conserto.
+ * conta como fora, e o mesmo vale para um relatório que não acaba e para uma
+ * página vazia sem o total zero confirmado: na dúvida, o rascunho é refeito, que
+ * custa uma rodada; mandar a quem saiu não tem conserto.
  */
 async function rascunhoSoTemALista(ops: OpsDeTransmissao, id: string, lista: ReadonlySet<string>): Promise<boolean> {
   let pular = 0;
@@ -334,7 +345,8 @@ async function rascunhoSoTemALista(ops: OpsDeTransmissao, id: string, lista: Rea
   for (let pagina = 0; pagina < teto; pagina++) {
     const p = await ops.destinatarios(id, { pular, quantos: POR_PAGINA_DO_PROVEDOR });
     if (p.itens.length < p.lidos || p.itens.some((i) => !lista.has(i.telefone))) return false;
-    if (!p.temMais || p.lidos === 0) return true;
+    if (p.lidos === 0) return p.total === 0;
+    if (!p.temMais) return true;
     pular += p.lidos;
   }
   return false;
@@ -370,7 +382,7 @@ async function descartarRascunho(
     .eq("id", campanha.id)
     .eq("provider_broadcast_id", id);
   if (error) throw new Error(`rascunho da transmissão: ${error.message}`);
-  logger.warn("[campanha] rascunho da transmissão refeito: trazia quem saiu da lista", { campanha: campanha.id });
+  logger.warn("[campanha] rascunho da transmissão refeito: podia trazer quem saiu da lista", { campanha: campanha.id });
   return { ...SO_O_CONTADOR, pulados, detalhe: "rascunho_refeito" };
 }
 
@@ -1018,6 +1030,33 @@ export const DETALHE_CANCELAMENTO_RECUSADO =
   "Cancelada no CRM, mas o provedor recusou o cancelamento do broadcast. Confira no painel de broadcasts dele se o envio parou.";
 export const DETALHE_CANCELAMENTO_SEM_CONEXAO =
   "Cancelada no CRM, mas este número não fala mais com o provedor do broadcast. Confira no painel de broadcasts dele se o envio parou.";
+export const DETALHE_RASCUNHO_NAO_APAGADO =
+  "Cancelada no CRM, mas o rascunho do broadcast pode ter ficado no provedor, com a lista. Confira no painel de broadcasts dele e apague-o.";
+
+/**
+ * `cancelar` não alcança rascunho (o provedor responde 400), e a lista ficaria
+ * lá, pronta para sair por um clique no painel dele. Se não der para apagar,
+ * quem pode resolver precisa saber: a campanha ganha a frase em «Último problema».
+ */
+async function apagarRascunhoDaCancelada(
+  admin: SupabaseClient,
+  ops: OpsDeTransmissao,
+  campanhaId: string,
+  id: string,
+): Promise<void> {
+  let motivo = "o provedor disse que já não é rascunho";
+  try {
+    const { estado } = await ops.ler(id);
+    if (estado !== "draft" || (await ops.descartar(id))) return;
+  } catch (err) {
+    motivo = err instanceof Error ? err.message : String(err);
+  }
+  logger.warn("[campanha] rascunho da campanha cancelada não apagado", { campanha: campanhaId, transmissao: id, motivo });
+  await admin
+    .from("campaigns")
+    .update({ failure_code: "transmissao_rascunho_nao_apagado", failure_detail: DETALHE_RASCUNHO_NAO_APAGADO })
+    .eq("id", campanhaId);
+}
 
 /**
  * Cancelar a campanha cancela o que o provedor ainda não mandou, traz o último
@@ -1066,12 +1105,7 @@ export async function encerrarTransmissao(
         motivo: err instanceof Error ? err.message : String(err),
       });
     });
-    // `cancelar` não alcança rascunho (o provedor responde 400), e a lista ficaria
-    // lá, pronta para sair por um clique no painel dele.
-    await ops
-      .ler(campanha.provider_broadcast_id)
-      .then(({ estado }) => (estado === "draft" ? ops.descartar(campanha.provider_broadcast_id!) : false))
-      .catch(() => false);
+    await apagarRascunhoDaCancelada(admin, ops, campanha.id, campanha.provider_broadcast_id);
   }
   if (recusa) {
     await admin

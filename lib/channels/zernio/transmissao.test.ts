@@ -191,7 +191,30 @@ describe("o relatório por destinatário", () => {
     expect(p.lidos).toBe(2);
     expect(p.itens).toHaveLength(1);
     expect(p.temMais).toBe(true);
+    expect(p.total).toBe(3);
     expect(chamadas[0]!.url).toBe("https://parceiro.test/api/v1/broadcasts/bc_1/recipients?limit=2&skip=0");
+  });
+
+  it("resposta sem lista ou sem paginação não vira página vazia", async () => {
+    const ops = (await transmissaoDoParceiro(admin, { organizationId: "org-1", channelSessionId: "sess-1" }))!;
+    for (const corpo of [
+      { success: true },
+      { success: true, recipients: [] },
+      { success: true, recipients: [], pagination: { total: 0 } },
+      { success: true, pagination: { total: 0, hasMore: false } },
+    ]) {
+      respostas = [{ status: 200, corpo }];
+      await expect(ops.destinatarios("bc_1", { pular: 0, quantos: 2 })).rejects.toMatchObject({
+        status: 502,
+        codigo: "relatorio_inesperado",
+      });
+    }
+  });
+
+  it("sem `total` na paginação, o total fica desconhecido", async () => {
+    respostas = [{ status: 200, corpo: { success: true, recipients: [], pagination: { hasMore: false } } }];
+    const ops = (await transmissaoDoParceiro(admin, { organizationId: "org-1", channelSessionId: "sess-1" }))!;
+    await expect(ops.destinatarios("bc_1", { pular: 0, quantos: 2 })).resolves.toMatchObject({ lidos: 0, total: null });
   });
 });
 
