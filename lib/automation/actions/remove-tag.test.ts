@@ -3,7 +3,7 @@
  *
  * Mede o que a AÇÃO faz: qual função chama, para qual alvo, e o que faz com a
  * resposta. O dublê emula o contrato de `fn_*_remover_etiquetas` (migration
- * 0768): casa pela chave canônica, devolve `tags` e `removidas`, nulo para linha
+ * 9234): casa pela chave canônica, devolve `tags` e `removidas`, nulo para linha
  * que não existe. A corrida entre dois eventos concorrentes é do banco e é
  * medida com transações de verdade em
  * `tests/invariants/remove-tag-concorrente-nao-apaga.test.ts`.

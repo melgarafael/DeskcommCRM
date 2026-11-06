@@ -1,6 +1,6 @@
 -- manifest: **Ação de automação `remove_tag`: tirar etiqueta do negócio ou do contato, atômico no banco.** Funções `fn_lead_remover_etiquetas` e `fn_contato_remover_etiquetas`, irmãs das `fn_*_adicionar_etiquetas` da 0682: a lista é refeita DENTRO do `UPDATE` (`with ordinality`, preserva a ordem das que ficam), então dois eventos concorrentes do mesmo negócio ou contato — um em cada dreno do `event_log` — não devolvem a etiqueta que o outro tirou nem apagam a que o outro pôs. A comparação é pela chave canônica (`lower(btrim(...))`), a mesma do `excluir` do vocabulário (0264/0673): tirar "VIP" tira "vip". `security definer`, `EXECUTE` só para `service_role`, `revoke` de `public`, `anon` e `authenticated`; linha de outra organização devolve nulo e não é tocada.
 
--- ---- o remove_tag tira no UPDATE, sob a trava da linha (migration 0768) ----
+-- ---- o remove_tag tira no UPDATE, sob a trava da linha (migration 9234) ----
 -- A irmã da 0682 no sentido contrário: a ação `remove_tag` das automações.
 --
 -- ─── Por que uma função, e por que dentro do UPDATE ────────────────────────

@@ -1,6 +1,6 @@
 /**
  * `remove_tag` sob DOIS eventos concorrentes sobre o mesmo negócio ou contato
- * (migration 0768) — o espelho de `add-tag-concorrente-nao-apaga.test.ts`.
+ * (migration 9234) — o espelho de `add-tag-concorrente-nao-apaga.test.ts`.
  *
  * Dois clients `pg`, duas transações abertas: um dreno TIRA uma etiqueta e
  * segura a linha; o outro PÕE (ou tira) outra e tem de ESPERAR. Se a remoção

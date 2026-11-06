@@ -6,7 +6,7 @@
  *
  * A lista é refeita DENTRO do `UPDATE`, numa função SQL por tabela
  * (`fn_lead_remover_etiquetas` / `fn_contato_remover_etiquetas`, migration
- * 0768). Ler `tags` aqui e gravar "a lista menos as pedidas" repetiria a corrida
+ * 9234). Ler `tags` aqui e gravar "a lista menos as pedidas" repetiria a corrida
  * da #2888 do outro lado: os dois drenos do `event_log` processam eventos
  * distintos do mesmo negócio em paralelo, e a gravação de um devolveria a
  * etiqueta que o outro tirou (ou apagaria a que o outro pôs). A ação só usa o
