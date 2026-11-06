@@ -171,6 +171,19 @@ describe("remove_tag concorrente", () => {
     expect(await tagsDoNegocio(f.lead)).toEqual(["quente", "novo"]);
   });
 
+  it("⭐ negócio: dois eventos tiram etiquetas DIFERENTES — as duas saem", async () => {
+    const f = await fixture(["vip", "quente", "cliente"]);
+    const foto = () => ({ lead: { id: f.lead, contact_id: f.contato, tags: ["vip", "quente", "cliente"] } });
+
+    const resultadoB = await corrida(
+      (c) => getAction("remove_tag")!.execute(eventoDaRegra(f.org, c, foto()), { tags: ["vip"] }),
+      (c) => getAction("remove_tag")!.execute(eventoDaRegra(f.org, c, foto()), { tags: ["quente"] }),
+    );
+
+    expect(await tagsDoNegocio(f.lead)).toEqual(["cliente"]);
+    expect(resultadoB).toMatchObject({ status: "success", detail: { removed: ["quente"] } });
+  });
+
   it("⭐ contato: dois eventos tiram etiquetas DIFERENTES — as duas saem", async () => {
     const f = await fixture([], ["vip", "quente", "cliente"]);
     const foto = () => ({ contact: { id: f.contato, tags: ["vip", "quente", "cliente"] } });
@@ -182,6 +195,28 @@ describe("remove_tag concorrente", () => {
 
     expect(await tagsDoContato(f.contato)).toEqual(["cliente"]);
     expect(resultadoB).toMatchObject({ status: "success", detail: { removed: ["quente"] } });
+  });
+});
+
+describe("etiqueta longa no contato", () => {
+  const longa = "etiqueta de campanha com quarenta e cinco car";
+
+  it.each([
+    ["cortada em 40", longa.slice(0, 40)],
+    ["inteira", longa],
+  ])("a regra de 45 caracteres tira a etiqueta gravada %s", async (_caso, gravada) => {
+    const f = await fixture([], [gravada, "fica"]);
+    const c = await pool.connect();
+    try {
+      const r = await getAction("remove_tag")!.execute(
+        eventoDaRegra(f.org, c, { contact: { id: f.contato } }),
+        { tags: [longa] },
+      );
+      expect(r).toMatchObject({ status: "success", detail: { removed: [gravada] } });
+    } finally {
+      c.release();
+    }
+    expect(await tagsDoContato(f.contato)).toEqual(["fica"]);
   });
 });
 

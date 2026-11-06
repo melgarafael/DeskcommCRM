@@ -18609,6 +18609,9 @@ export const DICIONARIO: Traducoes = {
   "Sem contato vinculado, nenhuma etiqueta é tirada.": {
     es: "Sin contacto vinculado, no se quita ninguna etiqueta.",
   },
+  "Nenhuma das etiquetas pedidas estava lá, então não havia nada a tirar.": {
+    es: "Ninguna de las etiquetas pedidas estaba allí, así que no había nada que quitar.",
+  },
   // #2744 — compositor: template escolhido sem nome para interpolar.
   "Contato sem nome no CRM: {{nome}}/{{primeiro_nome}} ficaram literais no texto. Edite antes de enviar.": {
     es: "Contacto sin nombre en el CRM: {{nome}}/{{primeiro_nome}} quedaron como texto literal en el mensaje. Edítalo antes de enviar.",

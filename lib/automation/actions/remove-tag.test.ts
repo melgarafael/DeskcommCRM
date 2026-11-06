@@ -12,6 +12,8 @@ import { describe, expect, it } from "vitest";
 
 import { getAction } from "@/lib/automation/actions";
 import "@/lib/automation/actions/register-all";
+import { resultadoParaRecibo } from "@/lib/automation/resultado-para-recibo";
+import { statusDoRun } from "@/lib/automation/engine";
 import type { ActionCtx } from "@/lib/automation/types";
 
 const chave = (t: string) => t.trim().toLowerCase();
@@ -67,7 +69,11 @@ describe("remove_tag", () => {
       { rpc: "fn_lead_remover_etiquetas", args: { p_org: "org-1", p_lead: "lead-1", p_etiquetas: ["quente"] } },
     ]);
     expect(linhas["lead-1"]).toEqual(["vip", "novo"]);
-    expect(r).toEqual({ type: "remove_tag", status: "success", detail: { removed: ["quente"] } });
+    expect(r).toEqual({
+      type: "remove_tag",
+      status: "success",
+      detail: { removed: ["quente"], alvo: "crm_leads", alvo_id: "lead-1" },
+    });
   });
 
   it("⭐ destino contato: tira do contato DO lead", async () => {
@@ -124,10 +130,45 @@ describe("remove_tag", () => {
     expect(r).toEqual({ type: "remove_tag", status: "failed", error: "indisponível" });
   });
 
-  it("não tinha a etiqueta: success com removed vazio", async () => {
+  it("⭐ nada a tirar: segue success, diz o motivo e o alvo, e a foto acompanha o banco", async () => {
+    const { admin } = banco({ "lead-1": ["vip"] });
+    const context = { lead: { id: "lead-1", tags: ["foto-velha"] } };
+    const r = await removeTag().execute(ctx(admin, context), { tags: ["outra"] });
+    expect(r).toEqual({
+      type: "remove_tag",
+      status: "success",
+      detail: { removed: [], reason: "nada_a_tirar", alvo: "crm_leads", alvo_id: "lead-1" },
+    });
+    expect(context.lead.tags).toEqual(["vip"]);
+  });
+
+  it("o motivo de nada a tirar sobrevive ao recibo e não vira falha do run", async () => {
     const { admin } = banco({ "lead-1": ["vip"] });
     const r = await removeTag().execute(ctx(admin, { lead: { id: "lead-1" } }), { tags: ["outra"] });
-    expect(r).toEqual({ type: "remove_tag", status: "success", detail: { removed: [] } });
+    expect(resultadoParaRecibo(r)).toEqual(r);
+    expect(statusDoRun([r])).toBe("success");
+  });
+
+  describe("⭐ regra com mais de 40 caracteres, destino contato", () => {
+    const longa = "etiqueta de campanha com quarenta e cinco car";
+    const cortada = longa.slice(0, 40);
+
+    it.each([
+      ["cortada em 40 pela tela", cortada],
+      ["inteira, como a add_tag grava", longa],
+    ])("tira a etiqueta %s", async (_caso, gravada) => {
+      expect(longa).toHaveLength(45);
+      const { admin, linhas } = banco({ "c-1": [gravada, "fica"] });
+      const r = await removeTag().execute(ctx(admin, { contact: { id: "c-1" } }), { tags: [longa] });
+      expect(linhas["c-1"]).toEqual(["fica"]);
+      expect(r).toMatchObject({ detail: { removed: [gravada], alvo: "contacts", alvo_id: "c-1" } });
+    });
+
+    it("no card a etiqueta não é cortada: a regra pede só o que foi escrito", async () => {
+      const { admin, chamadas } = banco({ "lead-1": [longa] });
+      await removeTag().execute(ctx(admin, { lead: { id: "lead-1" } }), { tags: [longa] });
+      expect(chamadas[0]!.args.p_etiquetas).toEqual([longa]);
+    });
   });
 
   it("a foto do contexto passa a carregar o que ficou gravado", async () => {

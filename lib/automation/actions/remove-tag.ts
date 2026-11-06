@@ -28,9 +28,24 @@
  *
  * A `add_tag` emite `*.tag_added` porque há gatilho que o consome. Não existe
  * gatilho `*.tag_removed`, e evento sem consumidor é o anti-pattern 3 do
- * CLAUDE.md. O rastro é o detalhe da execução (`removed`), na aba Atividade.
+ * CLAUDE.md. O rastro é o detalhe gravado da execução (`removed`, `alvo`,
+ * `alvo_id`). A aba Atividade não mostra esse detalhe: ela só explica o caso em
+ * que não havia nada a tirar (`nada_a_tirar`).
+ *
+ * ─── Nada a tirar é `success`, não `skipped` ───────────────────────────────
+ *
+ * Tirar a etiqueta que já saiu é rotina. `statusDoRun` faz de um `skipped`
+ * sozinho um run `failed`, e isso grava audit e entra no filtro de falhas.
+ *
+ * ─── No contato, as duas formas da etiqueta ────────────────────────────────
+ *
+ * A tela e a importação cortam a etiqueta do contato em 40 caracteres
+ * (`normalizarTags`, #1224); a `add_tag` grava como veio, até 60. Uma regra com
+ * 45 caracteres só acha as duas se pedir as duas. O card não entra: nele a
+ * etiqueta não é cortada, e a chave inteira basta.
  */
 import { registerAction } from "@/lib/automation/actions";
+import { normalizarTags } from "@/lib/contacts/tag-normalizada";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
 
 type Destino = "card" | "contato";
@@ -78,7 +93,7 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
 
   const parametros =
     target.table === "contacts"
-      ? { p_org: ctx.organizationId, p_contato: target.id, p_etiquetas: tags }
+      ? { p_org: ctx.organizationId, p_contato: target.id, p_etiquetas: [...tags, ...normalizarTags(tags)] }
       : { p_org: ctx.organizationId, p_lead: target.id, p_etiquetas: tags };
 
   const { data, error } = await ctx.admin.rpc(target.rpc, parametros);
@@ -92,7 +107,13 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
 
   const retorno = data as RetornoDaRemocao;
   if (target.foto) target.foto.tags = lista(retorno.tags);
-  return { type: "remove_tag", status: "success", detail: { removed: lista(retorno.removidas) } };
+  const removed = lista(retorno.removidas);
+  const rastro = { removed, alvo: target.table, alvo_id: target.id };
+  return {
+    type: "remove_tag",
+    status: "success",
+    detail: removed.length ? rastro : { ...rastro, reason: "nada_a_tirar" },
+  };
 }
 
 registerAction({ type: "remove_tag", execute });

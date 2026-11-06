@@ -30,7 +30,7 @@
 --
 -- Como na 0682, o `select ... for update` não é o que conserta a corrida (quem
 -- conserta é o `UPDATE`); ele responde QUAIS etiquetas esta chamada tirou
--- (`removidas`), que é o que a ação relata na aba Atividade. Nada a tirar =
+-- (`removidas`), que é o que a ação grava no detalhe da execução. Nada a tirar =
 -- nada gravado, e `updated_at` não muda.
 --
 -- ─── O que estas funções NÃO fazem ─────────────────────────────────────────
