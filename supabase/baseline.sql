@@ -69216,11 +69216,7 @@ grant execute on function public.fn_push_inscricoes_que_veem_o_negocio(uuid, uui
 --
 -- ─── Reaplicação ───────────────────────────────────────────────────────────
 --
--- Idempotente: `create or replace` na função nova, `drop` + `create` no wrapper
--- (mesma forma da 0645 — o DROP leva a ACL e as duas origens de EXECUTE voltam
--- explícitas logo abaixo). O `drop` não tem `cascade` e não precisa: funções
--- `language sql` não registram dependência, e o wrapper é o único chamador
--- externo de `fn_comando_da_conversa`.
+-- Idempotente: `create or replace` nas duas funções; os grants vêm logo abaixo.
 
 create or replace function public.fn_org_tem_automatico(p_organization_id uuid)
 returns boolean
