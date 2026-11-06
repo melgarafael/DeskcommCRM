@@ -147,6 +147,13 @@ export const CHANNEL_PROVIDER_WAHA: ChannelProvider = "waha";
 export const CHANNEL_PROVIDER_META: ChannelProvider = "meta_cloud";
 export const CHANNEL_PROVIDER_SOCIAL: ChannelProvider = "zernio_social";
 export const CHANNEL_PROVIDER_ZERNIO: ChannelProvider = "zernio";
+/**
+ * Os canais cuja entrada responde ANTES de processar a mensagem nova — o porquê
+ * está em `./inbound.ts`, que o reexporta. Mora aqui, num módulo sem dependência,
+ * porque o piso ocioso do cron (`lib/cron/piso-ocioso.ts`) também o lê: ele
+ * pergunta se há entrada aceita a reprocessar SEM escrever o nome do canal.
+ */
+export const CANAIS_QUE_RESPONDEM_ANTES: readonly string[] = [CHANNEL_PROVIDER_ZERNIO];
 /** Parceiro que espelha a Cloud API — canal opcional da instalação, desligado por padrão. */
 export const CHANNEL_PROVIDER_DATAFY: ChannelProvider = "datafy";
 /** Chamada de voz WhatsApp (spec 18). Não transporta mensagem — ver abaixo. */
