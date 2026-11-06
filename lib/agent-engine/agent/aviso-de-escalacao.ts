@@ -103,6 +103,12 @@ export interface AvisoDeEscalacaoOpts {
   log: Logger;
   lgpd?: LgpdInput;
   agentId?: string | null;
+  /**
+   * A frase própria do tenant (#3725) — `ai_agents.config.aviso_de_handoff`.
+   * `null`/ausente = o padrão do produto (`textoDoAviso`). Quem lê a config é o
+   * chamador do turno: esta função não faz consulta a mais para uma frase.
+   */
+  fraseConfigurada?: string | null;
   disclosureMode?: 'inject' | 'veto';
   sleep?: (ms: number) => Promise<void>;
   /**
@@ -146,14 +152,14 @@ export async function avisarLeadDaEscalacao(
   }
   try {
     const { quem } = await expectativaDeAtendimento(pool, ids.tenantId, opts.now);
-    body = textoDoAviso(opts.motivo, quem, ids.leadId, idioma);
+    body = textoDoAviso(opts.motivo, quem, ids.leadId, idioma, opts.fraseConfigurada ?? null);
   } catch (err) {
     // `expectativaDeAtendimento` já tem rede própria; se ainda assim quebrar,
     // a frase conservadora (sem prazo) é a certa — nunca a ausência de frase.
     opts.log.warn('aviso de escalação: disponibilidade não lida, usando a frase conservadora', {
       error: err instanceof Error ? err.message.slice(0, 120) : 'erro desconhecido',
     });
-    body = textoDoAviso(opts.motivo, null, ids.leadId, idioma);
+    body = textoDoAviso(opts.motivo, null, ids.leadId, idioma, opts.fraseConfigurada ?? null);
   }
 
   try {

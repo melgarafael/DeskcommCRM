@@ -72,7 +72,7 @@ import {
 import type { DisclosureMode } from './disclosure/template';
 import { escalateLgpdVeto, isLegalBasisValid } from './lgpd/legal-basis';
 import type { LgpdInput } from './lgpd/legal-basis';
-import { detectHumanPromise } from './human-promise';
+import { detectHumanHandoffPromise, detectHumanPromise } from './human-promise';
 import { detectarPromessaDeRetornoDoAssistente } from './retorno-do-assistente';
 import { detectarAfirmacaoDeRegistro } from './registro-sem-efeito';
 import type { EfeitoDasEscrituras, LeituraDoEfeito } from '@/lib/ai/runtime/efeito-das-escritas';
@@ -584,23 +584,47 @@ export const casePromiseGate: Gate = {
   name: 'case_promise',
   evaluate: (ctx) => {
     const lexicoHumano = detectHumanPromise(ctx.body, ctx.humanPromiseExtraTargets);
+    // #3725: o léxico de humano tem DUAS famílias, e só uma pede caso humano. A de
+    // AÇÃO ("já encaminhei para a equipe") envolve alguém agora; a de RETORNO ("nossa
+    // equipe vai te responder outro dia") é promessa de VOLTAR A FALAR. Mandar abrir
+    // caso humano para a segunda era o que ensinava o fail-safe a inventar atendente
+    // para um cliente que só havia respondido "Não".
+    //
+    // #3816 (CR do mantenedor): a separação sobe para o TOPO porque DOIS ramos a leem —
+    // o ramo do retorno do assistente (abaixo) e o desfecho do caminho com casos
+    // ligados. Calcular aqui também impede que os dois discordem: era essa divergência
+    // que fazia a razão mandar chamar `schedule_followup` e o gate vetar a mesma frase
+    // depois de o modelo obedecer.
+    const handoffExplicito = lexicoHumano
+      ? detectHumanHandoffPromise(ctx.body, ctx.humanPromiseExtraTargets)
+      : false;
+    const soRetornoDeHumano = lexicoHumano && !handoffExplicito;
     // ── (A) Retorno do PRÓPRIO assistente — vale com casos LIGADOS ou DESLIGADOS ──
     // (#2916, resíduo) A guarda de casos abaixo existe porque promessa de HUMANO
     // precisa de caso aberto como destino. A promessa de retorno não: o destino dela
     // é `schedule_followup`. Com os casos desligados — o padrão de um agente novo —
     // a guarda liberava tudo na primeira linha e "Combinado, retomamos daqui a duas
     // horas" saía sem nada agendado, deixando o cliente esperando. Aqui o ramo roda
-    // ANTES da guarda e o `!lexicoHumano` impede que ele roube a promessa de humano
-    // (que, sem casos, segue liberada de propósito: não há caso para abrir).
+    // ANTES da guarda e o `!handoffExplicito` impede que ele roube a PASSAGEM para
+    // humano (que, sem casos, segue liberada de propósito: não há caso para abrir).
+    //
+    // `!handoffExplicito` e NÃO `!lexicoHumano` (#3816): o veto de passagem do léxico
+    // era o que deixava "Nossa equipe vai te responder em breve." — família do
+    // RETORNO — cair no `if (!ctx.casesEnabled)` logo abaixo e sair sem destino
+    // nenhum. É a mesma família que o #3725 separou; o ramo do retorno tem de
+    // aceitá-la, senão os casos desligados são um buraco.
     // `followup` ausente = caminho de envio que não informa o retorno (texto
     // determinístico, template). Sem essa informação não dá para distinguir
     // "agendado em outro lugar" de "esquecido", e um veto falso ali calaria um texto
     // que não é do modelo — então não veta.
     if (ctx.followup !== undefined) {
       const retornoDoAssistente =
-        !lexicoHumano &&
+        !handoffExplicito &&
         (detectarPromessaDeRetornoDoAssistente(ctx.body) ||
-          ctx.semanticPromise?.retornoSoDoAssistente === true);
+          ctx.semanticPromise?.retornoSoDoAssistente === true ||
+          // #3816: "nossa equipe vai te responder" é promessa de RETOMADA feita por
+          // quem atende, e o destino dela também é o retorno agendado.
+          soRetornoDeHumano);
       if (retornoDoAssistente) {
         if (ctx.followup.agendadoNesteTurno === true) return { pass: true };
         // Casos ligados continuam no caminho de baixo (código e fail-safe de caso
@@ -647,17 +671,33 @@ export const casePromiseGate: Gate = {
     // assistente, e o `schedule_followup` é o compromisso que o cliente espera.
     const promessaDoAssistente =
       !lexico && (ctx.semanticPromise?.retornoSoDoAssistente === true || retornoLexico);
-    if (promessaDoAssistente && ctx.followup?.agendadoNesteTurno === true) return { pass: true };
+    // #3725/#3816: `handoffExplicito` e `soRetornoDeHumano` vêm calculados do TOPO do
+    // gate (a mesma conta para os dois ramos — ver o comentário da família, acima).
+    if (
+      (promessaDoAssistente || soRetornoDeHumano) &&
+      ctx.followup?.agendadoNesteTurno === true
+    ) {
+      // #3816: o retorno JÁ AGENDADO é destino aceito também para a família de
+      // retorno do léxico humano. Antes, a razão do veto mandava chamar
+      // `schedule_followup` e este `return` só conhecia `promessaDoAssistente` — o
+      // modelo obedecia e continuava barrado, com a MESMA razão. Gate e razão têm
+      // de concordar, senão o cliente fica sem o retorno que a IA prometeu.
+      return { pass: true };
+    }
     return {
       pass: false,
       code: 'case_promise_without_case',
       reason:
-        promessaDoAssistente && ctx.followup?.disponivel === true
+        (promessaDoAssistente || soRetornoDeHumano) && ctx.followup?.disponivel === true
           ? 'Você prometeu voltar a falar com o cliente, mas não deixou o retorno marcado. ' +
             'Chame a tool schedule_followup (agendando o retorno) OU open_human_case ' +
             '(descrevendo o que precisa) OU reformule a mensagem sem prometer retorno.'
-          : 'Você prometeu envolver um humano mas não abriu um caso. Chame a tool ' +
-            'open_human_case (descrevendo o que precisa) OU reformule a mensagem sem prometer humano.',
+          : soRetornoDeHumano
+            ? 'Você prometeu que a equipe responde depois, mas não deixou o retorno marcado. ' +
+              'Reformule a mensagem sem prometer retorno (não há retorno agendável neste turno) ' +
+              'OU chame a tool open_human_case se a conversa precisa mesmo de uma pessoa agora.'
+            : 'Você prometeu envolver um humano mas não abriu um caso. Chame a tool ' +
+              'open_human_case (descrevendo o que precisa) OU reformule a mensagem sem prometer humano.',
     };
   },
 };
