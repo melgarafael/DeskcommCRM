@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 
 import { createClient } from "@supabase/supabase-js";
-import { expect, test, type BrowserContext, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, expect, test, type BrowserContext, type Page } from "./helpers/test";
 
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 
@@ -181,6 +181,7 @@ test("configura responsáveis por canal e o cron distribui sem misturar números
     });
 
     context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    context.on("page", esperarARevelacaoNasCargas);
     const page = await context.newPage();
     await login(page, manager.email, password);
     await page.goto("/app/settings/atendimento");

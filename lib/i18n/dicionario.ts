@@ -241,6 +241,17 @@ export const DICIONARIO: Traducoes = {
   "CEP": { es: "Código postal" },
   "UF": { es: "Provincia" },
   "Logradouro": { es: "Calle" },
+  // Preenchimento pelo CEP (#3494, fatia 2). As quatro frases são o que a tela
+  // diz ao lado do campo: a consulta em andamento, o CEP curto (aviso, não
+  // impedimento), o CEP inexistente e a falha do serviço — esta última manda
+  // preencher à mão, porque o cadastro continua possível.
+  "Buscando o CEP…": { es: "Buscando el código postal…" },
+  "CEP deve ter 8 dígitos.": { es: "El código postal debe tener 8 dígitos." },
+  "CEP não encontrado.": { es: "Código postal no encontrado." },
+  "Não foi possível consultar o CEP agora. Preencha o endereço à mão.": {
+    es: "No fue posible consultar el código postal ahora. Complete la dirección a mano.",
+  },
+  "Endereço preenchido pelo CEP.": { es: "Dirección completada con el código postal." },
   "Escolha um agente": { es: "Elija un agente" },
   "Remover regra de remetente": { es: "Eliminar regla de remitente" },
   "Adicionar número do remetente": { es: "Añadir número del remitente" },
@@ -3707,6 +3718,13 @@ export const DICIONARIO: Traducoes = {
   "Segmentos (tags, opcional)": { es: "Segmentos (tags, opcional)" },
   "ex: vip, carrinho-abandonado": { es: "Ej.: vip, carrito-abandonado" },
   "Cancelar se o lead responder": { es: "Cancelar si el lead responde" },
+  // #3974 — "quando o cliente responder, mover o card para a etapa X", a opção
+  // irmã do interruptor acima no gatilho de ETAPA.
+  "Quando o cliente responder, mover o card para": { es: "Cuando el cliente responda, mover la tarjeta a" },
+  "Não mover o card": { es: "No mover la tarjeta" },
+  "O card que este gatilho armou — o negócio do contato que está na etapa acima — vai para a etapa escolhida quando o cliente responder. Sem card nessa etapa, nada se move, e a trilha da inscrição registra o motivo.": {
+    es: "La tarjeta que armó este disparador — el negocio del contacto que está en la etapa de arriba — pasa a la etapa elegida cuando el cliente responde. Sin tarjeta en esa etapa, nada se mueve, y el historial de la inscripción registra el motivo.",
+  },
   "Salvar gatilho": { es: "Guardar disparador" },
   // Cartão "Mapas" em Provedores (0504) e a API dele.
   "Mapas (Google)": { es: "Mapas (Google)" },
@@ -4593,6 +4611,10 @@ export const DICIONARIO: Traducoes = {
   "Tempo de uma chamada à IA por dia (segundos)": { es: "Tiempo de una llamada a la IA por día (segundos)" },
   "Quanto gastou por dia (US$)": { es: "Cuánto gastaste por día (US$)" },
   "Quanto a inteligência artificial custou, quantas vezes foi chamada, quantos turnos o agente fez, quanto demora uma chamada e quantas vezes precisou chamar uma pessoa — nos últimos 30 dias.": { es: "Cuánto costó la inteligencia artificial, cuántas veces fue llamada, cuántos turnos hizo el agente, cuánto tarda una llamada y cuántas veces necesitó llamar a una persona — en los últimos 30 días." },
+  // ── Uso de IA › aviso de contexto caro (#4123) ───────────────────────────
+  "Agente com contexto caro": { es: "Agente con contexto caro" },
+  "das chamadas de turno passaram de 100 mil tokens de entrada nos últimos 30 dias": { es: "de las llamadas de turno superaron los 100 mil tokens de entrada en los últimos 30 días" },
+  "Acima de 100 mil tokens de entrada o Claude Haiku 5.5 cobra 5× pela chamada inteira (entrada, saída e cache). Base de conhecimento, ferramentas ou histórico grandes demais costumam ser a causa — reduza o que entra no prompt deste agente.": { es: "Por encima de los 100 mil tokens de entrada, Claude Haiku 5.5 cobra 5× por la llamada completa (entrada, salida y caché). La base de conocimiento, las herramientas o el historial demasiado grandes suelen ser la causa: reduce lo que entra en el prompt de este agente." },
   // ── Administração › Destinos internos (decisão 22-d, #1004) ──────────────
   "Destinos internos": { es: "Destinos internos" },
   "Endereços da rede deste servidor que a instalação pode alcançar.": {
@@ -8739,7 +8761,6 @@ export const DICIONARIO: Traducoes = {
   },
   "Ir para as etapas do funil": { es: "Ir a las etapas del embudo" },
   "Etapa para": { es: "Etapa para" },
-  "Não mover o card": { es: "No mover la tarjeta" },
   "As escolhas voltaram para o que está gravado agora — confira e escolha de novo.": {
     es: "La selección volvió a lo que está guardado ahora. Revísala y elige de nuevo.",
   },
@@ -19585,6 +19606,13 @@ export const DICIONARIO: Traducoes = {
     es: "El dominio tiene que ser fijo: usa marcadores solo después de la primera /.",
   },
   "O limite é de seis atalhos por funil.": { es: "El límite es de seis accesos por embudo." },
+  // A FORMA do telefone (2ª fatia da #3487): só aparece no atalho `tel:`.
+  "Discagem do atalho": { es: "Marcación del acceso" },
+  "Com o código do país": { es: "Con el código de país" },
+  "Sem o código do país (DDD + número)": { es: "Sin el código de país (DDD + número)" },
+  "Sem o código do país é o que o PABX costuma discar: DDD + número.": {
+    es: "Sin el código de país es lo que suele marcar la centralita: DDD + número.",
+  },
   "Dê um nome a cada atalho do card antes de salvar.": {
     es: "Ponle un nombre a cada acceso de la tarjeta antes de guardar.",
   },
@@ -19897,6 +19925,20 @@ export const DICIONARIO: Traducoes = {
   "Com ela, cada empresa conecta o número oficial do WhatsApp com um clique, sem ter conta no provedor. Os números ficam na conta da instalação e entram na fatura dela.": { es: "Con ella, cada empresa conecta el número oficial de WhatsApp con un clic, sin tener cuenta en el proveedor. Los números quedan en la cuenta de la instalación y entran en su factura." },
   // Abrir a conversa pelo canal escolhido quando ele não serve (#3483).
   "Este canal está desligado ou fora do ar. Reative a conexão ou escolha outro canal.": { es: "Este canal está desactivado o fuera de línea. Reactiva la conexión o elige otro canal." },
+
+  // ─── o número oficial de pé, mas não inteiro (lib/channels/health.ts) ───
+  // Não recebe mensagens, ou a Meta restringiu o envio: cartão de Conexões e
+  // aviso da Central.
+  "A Meta informa que este número não recebe mensagens. Reconecte o número.": { es: "Meta informa que este número no recibe mensajes. Vuelve a conectar el número." },
+  "A Meta restringiu o envio deste número (código {codigo}).": { es: "Meta restringió el envío de este número (código {codigo})." },
+  "O número \"{apelido}\" não recebe mensagens": { es: "El número \"{apelido}\" no recibe mensajes" },
+  "A Meta informa que as mensagens dos clientes para este número não chegam ao CRM, embora ele ainda consiga enviar. Reconecte o número em Conexões. Se continuar assim, o número pode estar ligado a outra conta do WhatsApp Business (por exemplo, depois de ser vinculado a uma página do Facebook).": { es: "Meta informa que los mensajes de los clientes a este número no llegan al CRM, aunque todavía puede enviar. Vuelve a conectar el número en Conexiones. Si sigue así, es posible que el número esté vinculado a otra cuenta de WhatsApp Business (por ejemplo, después de vincularlo a una página de Facebook)." },
+  "A Meta restringiu o envio do número \"{apelido}\"": { es: "Meta restringió el envío del número \"{apelido}\"" },
+  "A Meta recusou mensagens por um problema de pagamento ou de elegibilidade da conta do WhatsApp Business (código 131042). Confira a forma de pagamento da conta no Gerenciador do WhatsApp, na Meta.": { es: "Meta rechazó mensajes por un problema de pago o de elegibilidad de la cuenta de WhatsApp Business (código 131042). Revisa el método de pago de la cuenta en el Administrador de WhatsApp, en Meta." },
+  "A Meta bloqueou a conta do WhatsApp Business deste número (código 131031). Veja o motivo e peça a revisão no Gerenciador do WhatsApp, na Meta.": { es: "Meta bloqueó la cuenta de WhatsApp Business de este número (código 131031). Mira el motivo y solicita la revisión en el Administrador de WhatsApp, en Meta." },
+  "A Meta bloqueou temporariamente o envio deste número por violação de política (código 368). Veja o motivo no Gerenciador do WhatsApp, na Meta.": { es: "Meta bloqueó temporalmente el envío de este número por infringir sus políticas (código 368). Mira el motivo en el Administrador de WhatsApp, en Meta." },
+  "A Meta está recusando mensagens deste número (código {codigo}).": { es: "Meta está rechazando mensajes de este número (código {codigo})." },
+  "Este aviso fecha sozinho quando uma mensagem voltar a ser entregue.": { es: "Este aviso se cierra solo cuando un mensaje vuelva a entregarse." },
 };
 
 /**
