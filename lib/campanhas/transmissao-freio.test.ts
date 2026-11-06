@@ -627,6 +627,14 @@ describe("quem saiu da lista depois que os telefones subiram", () => {
       expect(f.t.campaign_recipients.map((d) => d.status)).toEqual(["opted_out", "pending", "pending"]);
     });
 
+    it("o telefone da pessoa mudou, com o status ainda `sending`: o que subiu é o antigo, mesma coisa", async () => {
+      const f = await rodadaCom((t) => {
+        (t.campaign_recipients[0]!.contacts as Linha).phone_number = "+595981009999";
+      });
+      refezSemMandar(f);
+      expect(f.t.campaign_recipients.map((d) => d.status)).toEqual(["pending", "pending", "pending"]);
+    });
+
     it("entrou na lista de exclusão: mesma coisa", async () => {
       const f = await rodadaCom((t) => {
         t.campaign_suppressions = [{ organization_id: ORG, recipient_address_hash: hashDoEndereco("+595981000002") }];

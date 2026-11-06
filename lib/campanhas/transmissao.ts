@@ -38,8 +38,9 @@
  * sai da fila entre a leitura e a reserva: o telefone dele pode já estar lá.
  *
  * Subir uma lista longa leva tempo, então a conferência se repete depois de
- * `adicionar`, logo antes de `enviar`: o status de toda a lista e os vetos por
- * pessoa, refeitos. Se alguém saiu, o rascunho é apagado e a fila devolvida. Entre
+ * `adicionar`, logo antes de `enviar`: o status de toda a lista, os vetos por
+ * pessoa e o telefone, refeitos. Se alguém saiu, ou se o número que subiu já não é
+ * o da pessoa, o rascunho é apagado e a fila devolvida. Entre
  * essa releitura e o `enviar` sobra uma janela que não dá para fechar daqui, porque
  * o provedor não aceita condição no envio: quem sair nela pode receber.
  *
@@ -298,8 +299,9 @@ async function entregarAoProvedor(
       }
       return { ...SO_O_CONTADOR, pulados: pulados + relida.pulados, detalhe: `parada_antes_de_mandar:${status}` };
     }
-    const aindaNaLista = new Set(relida.prontos.map((d) => d.id));
-    if (lista.some((d) => !aindaNaLista.has(d.id))) {
+    // O id sozinho não basta: o que o `enviar` usa é o telefone que já subiu.
+    const aindaNaLista = new Map(relida.prontos.map((d) => [d.id, digitosDoTelefone(d.telefone)]));
+    if (lista.some((d) => aindaNaLista.get(d.id) !== digitosDoTelefone(d.telefone))) {
       return await descartarRascunho(admin, campanha, ops, id, lista, pulados + relida.pulados, agora);
     }
     estado = (await ops.enviar(id)).estado;
