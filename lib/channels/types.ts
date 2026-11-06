@@ -453,6 +453,14 @@ export interface ChannelAdapter {
     text: string;
   }): Promise<void>;
 
+  /** Reage à mensagem existente; sem id retornado o transporte depende do eco. */
+  sendReaction?(input: ChannelTenantScope & {
+    sessionRef: string;
+    recipient: string | null;
+    externalId: string;
+    emoji: string;
+  }): Promise<{ externalId: string | null }>;
+
   /** Apaga para todos uma mensagem enviada. Mesmo contrato de `editMessage`. */
   revokeMessage?(input: ChannelTenantScope & {
     sessionRef: string;
