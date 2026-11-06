@@ -314,7 +314,18 @@ describe("fronteiras de política e reserva", () => {
 
 
 describe("worker real contra PostgreSQL — ponte SQL, sem HTTP PostgREST", () => {
-  it("timestamp do trigger permite persistir requeue/attempts/aviso; payload inválido fica terminal", async () => {
+  /**
+   * #3916 — o caso que FIXAVA o laço eterno no banco.
+   *
+   * A versão anterior exigia `status='pending'`, `attempts=1` e
+   * `next_attempt_at = now + 900 s` com `max_retries=1`: ela afirmava, contra o
+   * Postgres, que o evento NUNCA fechava. O contrato decidido (opção (a)) é o
+   * oposto — o teto é de PARADA. A asserção que prova a parada não é o status: é
+   * o SEGUNDO tick não mexer na linha (`updated_at` tem gatilho BEFORE UPDATE, e
+   * `batch_size` não vê evento `done`). Sem essa parte, o teste mediria "virou
+   * done" e não "parou de ser reagendada".
+   */
+  it("teto de tentativas FECHA o evento e o segundo tick não toca a linha (#3916)", async () => {
     await policy([]);
     await query("update organizations set settings=jsonb_set(settings,'{routing}','{\"mode\":\"round_robin\",\"max_retries\":1,\"backoff_seconds\":1}') where id=$1",[org]);
     await query("delete from event_log where organization_id=$1 and event_type='conversation.routing_requested'",[org]);
@@ -322,12 +333,28 @@ describe("worker real contra PostgreSQL — ponte SQL, sem HTTP PostgREST", () =
     await query("update event_log set attempts=1,next_attempt_at=null where organization_id=$1 and entity_id=$2 and event_type='conversation.routing_requested'",[org,conv]);
     const adapter=routingPgSupabase(pool);vi.mocked(createAdminClient).mockReturnValue(adapter.client as never);
     const now=new Date(); const result=await runRoutingWorker({now});
-    expect(result.outcomes.requeued_no_eligible).toBe(1);expect(adapter.errors).toEqual([]);
-    const pending=(await query("select status,attempts,next_attempt_at from event_log where organization_id=$1 and entity_id=$2 and event_type='conversation.routing_requested'",[org,conv])).rows[0];
-    expect(pending.status).toBe("pending");expect(pending.attempts).toBe(1);expect(new Date(pending.next_attempt_at).getTime()).toBe(now.getTime()+900000);
+    expect(result.outcomes.exhausted_no_eligible).toBe(1);
+    expect(result.outcomes.requeued_no_eligible).toBe(0);
+    expect(adapter.errors).toEqual([]);
+    const linha=(await query("select status,attempts,next_attempt_at,metadata,updated_at from event_log where organization_id=$1 and entity_id=$2 and event_type='conversation.routing_requested'",[org,conv])).rows[0];
+    expect(linha.status).toBe("done");
+    expect(linha.attempts).toBe(1);
+    expect(linha.metadata.outcome).toBe("exhausted_no_eligible");
+    // A conversa NÃO foi tocada: continua na fila, sem dono, visível no Inbox.
+    expect((await query("select assigned_to_user_id,status from conversations where organization_id=$1 and id=$2",[org,conv])).rows[0]).toMatchObject({assigned_to_user_id:null,status:"open"});
+    // O SEGUNDO tick: nada é reclamado e a linha não é reescrita.
+    const segundo=await runRoutingWorker({now:new Date(now.getTime()+60_000)});
+    expect(segundo.batch_size).toBe(0);
+    const depois=(await query("select status,attempts,next_attempt_at,updated_at from event_log where organization_id=$1 and entity_id=$2 and event_type='conversation.routing_requested'",[org,conv])).rows[0];
+    expect(depois.updated_at).toEqual(linha.updated_at);
+    expect(depois.next_attempt_at).toEqual(linha.next_attempt_at);
+
+    // Um pedido NOVO (é o que a mensagem do cliente faz, migration 9225) volta a
+    // ser drenado — e um payload inválido continua terminal.
+    await query("select fn_request_channel_routing($1,$2)",[org,conv]);
     await query("update event_log set payload=jsonb_build_object('conversation_id','not-a-uuid','organization_id',$1::text),next_attempt_at=null where organization_id=$1 and entity_id=$2 and event_type='conversation.routing_requested'",[org,conv]);
     expect((await runRoutingWorker()).outcomes.skipped_invalid_payload).toBe(1);
-    expect((await query("select status from event_log where organization_id=$1 and entity_id=$2 and event_type='conversation.routing_requested'",[org,conv])).rows[0].status).toBe("done");
+    expect((await query("select status from event_log where organization_id=$1 and entity_id=$2 and event_type='conversation.routing_requested' order by created_at desc limit 1",[org,conv])).rows[0].status).toBe("done");
   });
   it("falha após criação preserva identidade e permite retry com novo lease", async () => {
     const key="50000000-0000-4000-8000-000000000001";
