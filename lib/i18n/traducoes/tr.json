@@ -7977,7 +7977,7 @@
   "Qualquer uma das condições": "Koşullardan herhangi biri",
   "Quando": "Ne zaman",
   "Quando a IA não tem certeza do que o cliente quer, ela chama este agente em vez de travar a conversa.": "AI müşterinin ne istediğinden emin olmadığında konuşmayı kilitlemek yerine bu asistanı çağırır.",
-  "Quando a IA precisar de você, aparece aqui.": "AI'nın size ihtiyacı olduğunda burada görünür.",
+  "Os casos aparecem aqui quando um agente publicado, com \"Deixar o agente pedir uma tarefa a alguém e seguir conversando\" ligado, pede algo a você. Conversa passada para uma pessoa vai para o Inbox.": "Vakalar, \"Asistan birinden görev isteyip konuşmaya devam edebilsin\" açık olan yayımlanmış bir asistan sizden bir şey istediğinde burada görünür. Bir kişiye devredilen konuşmalar Inbox'a gider.",
   "Quando a IA trava em algo que só um humano resolve, ela abre um caso aqui — e continua conversando com o cliente enquanto espera sua resposta.": "AI yalnızca bir insanın çözebileceği bir noktada takıldığında burada bir vaka açar ve yanıtınızı beklerken müşteriyle konuşmaya devam eder.",
   "Quando a compra de teste der certo, cole em Conexão a chave de produção (sk_live_ ou rk_live_). Até lá, clientes reais NÃO conseguem pagar.": "Test alışverişi başarılı olunca, Bağlantı bölümüne canlı anahtarı (sk_live_ veya rk_live_) yapıştırın. O zamana kadar gerçek müşteriler ödeme YAPAMAZ.",
   "Quando a compra de teste der certo, cole em Conexão a chave de produção do Asaas (começa com $aact_prod_). Até lá, clientes reais NÃO conseguem pagar.": "Test alışverişi başarılı olunca, Bağlantı bölümüne Asaas canlı anahtarını ($aact_prod_ ile başlar) yapıştırın. O zamana kadar gerçek müşteriler ödeme YAPAMAZ.",
@@ -11442,5 +11442,7 @@
   "O servidor não anunciou nenhuma ferramenta.": "Sunucu hiçbir araç duyurmadı.",
   "Escrita": "Yazma",
   "Leitura": "Okuma",
-  "O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.": "Yetkilendirme bağlantısı otomatiktir: müşteri yetkilendirene kadar ajan, bağlantıyı üreten aracı kendiliğinden alır. Burada seçmeniz gerekmez."
+  "O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.": "Yetkilendirme bağlantısı otomatiktir: müşteri yetkilendirene kadar ajan, bağlantıyı üreten aracı kendiliğinden alır. Burada seçmeniz gerekmez.",
+  "Este número já está em outra campanha em andamento.": "Bu numara zaten devam eden başka bir kampanyada kullanılıyor.",
+  "Abrir essa campanha": "O kampanyayı aç"
 }

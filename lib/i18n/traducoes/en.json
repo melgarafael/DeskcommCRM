@@ -2182,7 +2182,7 @@
   "Concluídos": "Completed",
   "Nenhum caso aberto": "No open cases",
   "Nenhum caso concluído": "No completed cases",
-  "Quando a IA precisar de você, aparece aqui.": "When the AI needs you, it will show up here.",
+  "Os casos aparecem aqui quando um agente publicado, com \"Deixar o agente pedir uma tarefa a alguém e seguir conversando\" ligado, pede algo a você. Conversa passada para uma pessoa vai para o Inbox.": "Cases show up here when a published agent with \"Let the agent ask someone for a task and keep talking\" turned on asks you for something. Conversations handed to a person go to the Inbox.",
   "Casos concluídos, cancelados ou repassados ficam aqui.": "Completed, canceled, or transferred cases stay here.",
   "Contato sem nome": "Unnamed contact",
   "Selecione um caso à esquerda": "Select a case on the left",
@@ -9707,5 +9707,7 @@
   "Esta conversa não tem atendente — assuma a conversa antes de ligar a IA com o dono.": "This conversation has no agent — take the conversation before turning on the AI with the owner.",
   "O contato está marcado como humano obrigatório.": "The contact is marked as human-required.",
   "O contato pediu para não falar com a IA.": "The contact asked not to talk to the AI.",
-  "O contato está bloqueado.": "The contact is blocked."
+  "O contato está bloqueado.": "The contact is blocked.",
+  "Este número já está em outra campanha em andamento.": "This number is already in use by another running campaign.",
+  "Abrir essa campanha": "Open that campaign"
 }

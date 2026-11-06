@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -64,6 +64,9 @@ vi.mock("@/components/inbox/JanelaSelo", () => ({ JanelaSelo: () => null }));
 // a barra de ações, e o componente novo lê react-query (exigiria provider).
 vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
   ParticipantesDaConversa: () => null,
+  // O diálogo do convite deixou de morar dentro do menu ⋯ (#3003) e passou a
+  // ser montado pelo cabeçalho: os dois nomes precisam existir no dublê.
+  DialogoDeConvite: () => null,
 }));
 vi.mock("@/components/inbox/ChannelLogo", () => ({ ChannelLogo: () => null }));
 vi.mock("@/hooks/voice/useVoiceSessionStatus", () => ({
@@ -102,6 +105,20 @@ function conversa(status: string): ConversationWithContact {
   } as unknown as ConversationWithContact;
 }
 
+/**
+ * Abre o menu ⋯ (#3003): "Chamar", "Arquivar" e "Marcar como pessoal" deixaram a
+ * barra e moram nele. Radix abre no `pointerdown`, então o clique do userEvent
+ * seria um caminho diferente do real — o `fireEvent` é o mesmo gesto da tela.
+ */
+async function abrirOMenu(): Promise<HTMLElement> {
+  fireEvent.pointerDown(screen.getByTestId("menu-de-acoes"), {
+    button: 0,
+    ctrlKey: false,
+    pointerId: 1,
+  });
+  return await screen.findByTestId("menu-de-acoes-conteudo");
+}
+
 beforeEach(() => {
   closeMutate.mockReset();
   arquivarMutate.mockReset();
@@ -111,40 +128,60 @@ beforeEach(() => {
 });
 
 describe("ConversationHeader — 'IA com o dono' (#3967)", () => {
-  it("conversa SEM dono não mostra o interruptor (não há dono a preservar)", () => {
+  // Abre o ⋯ antes de perguntar: com o menu fechado o `queryByTestId` devolveria
+  // null em QUALQUER estado, e os casos de ausência passariam sem medir nada.
+  it("conversa SEM dono não mostra o interruptor (não há dono a preservar)", async () => {
     render(<ConversationHeader conversation={conversa("open")} />);
+    await abrirOMenu();
     expect(screen.queryByTestId("ia-com-o-dono")).toBeNull();
   });
 
   it("conversa com dono: desligado, liga com um clique", async () => {
-    const user = userEvent.setup();
     const atual = conversa("claimed");
     atual.assigned_to_user_id = "u1";
     render(<ConversationHeader conversation={atual} />);
+    await abrirOMenu();
 
-    const botao = screen.getByTestId("ia-com-o-dono");
-    expect(botao).toHaveAttribute("aria-pressed", "false");
-    await user.click(botao);
+    const item = screen.getByTestId("ia-com-o-dono");
+    expect(item).toHaveAttribute("role", "menuitemcheckbox");
+    expect(item).toHaveAttribute("aria-checked", "false");
+    expect(screen.queryByTestId("badge-ia-com-o-dono")).toBeNull();
+    fireEvent.click(item);
     expect(iaComDonoMutate).toHaveBeenCalledWith({ conversation_id: "conv-1", ligado: true });
   });
 
-  it("modo ligado: aria-pressed e o clique desliga", async () => {
-    const user = userEvent.setup();
+  it("modo ligado: marcado no menu, com selo à vista, e o clique desliga", async () => {
     const atual = conversa("claimed");
     atual.assigned_to_user_id = "u1";
     (atual as { metadata: unknown }).metadata = { ai_com_dono: true };
     render(<ConversationHeader conversation={atual} />);
+    // O selo ANTES de abrir: é ele que diz o estado com o menu fechado.
+    expect(screen.getByTestId("badge-ia-com-o-dono")).toHaveTextContent("IA com o dono");
+    await abrirOMenu();
 
-    const botao = screen.getByTestId("ia-com-o-dono");
-    expect(botao).toHaveAttribute("aria-pressed", "true");
-    await user.click(botao);
+    const item = screen.getByTestId("ia-com-o-dono");
+    expect(item).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(item);
     expect(iaComDonoMutate).toHaveBeenCalledWith({ conversation_id: "conv-1", ligado: false });
   });
 
-  it("conversa encerrada não mostra o interruptor", () => {
+  it("modo ligado com o automático calado: quem fala é o selo do motivo, não o do modo", () => {
+    const atual = conversa("claimed");
+    atual.assigned_to_user_id = "u1";
+    (atual as { metadata: unknown }).metadata = { ai_com_dono: true };
+    atual.bot_silenced_until = "infinity";
+    render(<ConversationHeader conversation={atual} />);
+    expect(screen.getByTestId("badge-atendimento-humano")).toBeInTheDocument();
+    expect(screen.queryByTestId("badge-ia-com-o-dono")).toBeNull();
+  });
+
+  it("conversa encerrada não mostra o interruptor nem o selo", async () => {
     const atual = conversa("closed");
     atual.assigned_to_user_id = "u1";
+    (atual as { metadata: unknown }).metadata = { ai_com_dono: true };
     render(<ConversationHeader conversation={atual} />);
+    expect(screen.queryByTestId("badge-ia-com-o-dono")).toBeNull();
+    await abrirOMenu();
     expect(screen.queryByTestId("ia-com-o-dono")).toBeNull();
   });
 });
@@ -198,11 +235,12 @@ describe("ConversationHeader — chamada de voz na Inbox", () => {
     };
     render(<ConversationHeader conversation={atual} />);
 
-    await user.click(screen.getByRole("button", { name: "Chamar" }));
+    await abrirOMenu();
+    await user.click(screen.getByTestId("acao-chamar"));
     expect(startCall).toHaveBeenCalledWith("contato-1");
   });
 
-  it("não oferece chamada individual para um grupo", () => {
+  it("não oferece chamada individual para um grupo", async () => {
     const atual = conversa("open");
     atual.is_group = true;
     atual.contacts = {
@@ -216,7 +254,9 @@ describe("ConversationHeader — chamada de voz na Inbox", () => {
       is_anonymized: false,
     };
     render(<ConversationHeader conversation={atual} />);
-    expect(screen.queryByRole("button", { name: "Chamar" })).toBeNull();
+    // No menu, e não na barra: o guarda de grupo continua sendo do `DialButton`.
+    const menu = await abrirOMenu();
+    expect(within(menu).queryByTestId("acao-chamar")).toBeNull();
   });
 });
 
@@ -250,7 +290,8 @@ describe("ConversationHeader — Fechar e Arquivar por AlertDialog", () => {
     const user = userEvent.setup();
     render(<ConversationHeader conversation={conversa("open")} />);
 
-    await user.click(screen.getByRole("button", { name: "Arquivar" }));
+    await abrirOMenu();
+    await user.click(screen.getByTestId("acao-arquivar"));
 
     const dialogo = await screen.findByRole("alertdialog");
     expect(within(dialogo).getByText("Arquivar esta conversa?")).toBeTruthy();
@@ -273,7 +314,8 @@ describe("ConversationHeader — Fechar e Arquivar por AlertDialog", () => {
     const user = userEvent.setup();
     render(<ConversationHeader conversation={conversa("closed")} />);
 
-    await user.click(screen.getByRole("button", { name: "Arquivar" }));
+    await abrirOMenu();
+    await user.click(screen.getByTestId("acao-arquivar"));
 
     const dialogo = await screen.findByRole("alertdialog");
     expect(within(dialogo).getByText("Arquivar esta conversa?")).toBeTruthy();

@@ -12696,6 +12696,7 @@ export type Database = {
           agent_setup: NonNullable<Json>;
           agent_setup_revision: number;
           channel_down_since: string | null;
+          channel_session_id: string | null;
           config: Json | null;
           cost_usd: number | null;
           created_at: string;
@@ -12719,6 +12720,7 @@ export type Database = {
           agent_setup?: NonNullable<Json>;
           agent_setup_revision?: number;
           channel_down_since?: string | null;
+          channel_session_id?: string | null;
           config?: Json | null;
           cost_usd?: number | null;
           created_at?: string;
@@ -12741,6 +12743,7 @@ export type Database = {
           agent_setup?: NonNullable<Json>;
           agent_setup_revision?: number;
           channel_down_since?: string | null;
+          channel_session_id?: string | null;
           config?: Json | null;
           cost_usd?: number | null;
           created_at?: string;
@@ -15294,6 +15297,7 @@ export type Database = {
           p_conversation_id: string;
           p_enforce_expected?: boolean;
           p_expected_assignee?: string;
+          p_negocio_so_sem_dono?: boolean;
           p_organization_id: string;
           p_reason: string;
           p_source_job_id?: string | null;
