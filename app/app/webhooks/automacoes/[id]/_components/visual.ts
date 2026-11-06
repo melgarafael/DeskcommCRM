@@ -11,6 +11,7 @@ import {
   ListChecks,
   PaperPlaneTilt,
   Play,
+  Signpost,
   Sparkle,
   Tag,
   UserCircle,
@@ -67,6 +68,10 @@ export const VISUAL_DA_ACAO: Record<ActionType, VisualDaCaixa> = {
   // duas vizinhas de mensagem. Entrada exigida pelo Record<ActionType, …> da
   // main (o tipo ganhou `notify_team` neste PR).
   notify_team: { icon: UsersThree, paleta: "Mensagem para a equipe", ...SUCESSO },
+  // #3881 — a caixa que escolhe a FILA. Signpost porque setor é uma placa que
+  // aponta para onde a conversa vai, e INFO porque é escrita no card (como
+  // atribuir e mover de etapa), não mensagem.
+  define_sector: { icon: Signpost, paleta: "Setor da conversa", ...INFO },
 };
 
 /** A ordem da paleta: a mesma do seletor "Adicionar ação" do editor de hoje. */

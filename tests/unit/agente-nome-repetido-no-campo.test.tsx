@@ -21,7 +21,7 @@
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -95,10 +95,10 @@ function abrirCriacao() {
 /** Preenche nome + modelo e escolhe a chave, na ordem em que a pessoa faria. */
 async function preencherOFormulario(nome: string) {
   fireEvent.change(document.querySelector("#name")!, { target: { value: nome } });
-  // Sem catálogo carregado (jsdom não busca a lista), o seletor de modelo abre
+  // Com o catálogo vazio (ver `RESPOSTAS`), o seletor de modelo abre
   // como campo livre — o caminho que o próprio componente tem para esse caso.
   // ⚠️ O campo só vira `input` quando a consulta de modelos assenta e volta
-  // vazia (jsdom não busca catálogo). Enquanto ela está pendente, `#model` é o
+  // vazia (ver `RESPOSTAS`). Enquanto ela está pendente, `#model` é o
   // BOTÃO do combobox — e `fireEvent.change` num botão não muda estado nenhum.
   // Esperar o campo é parte de preencher a tela como uma pessoa preenche.
   const modelo = await waitFor(() => {
@@ -118,16 +118,56 @@ async function criar() {
   await waitFor(() => expect(acoes.criar).toHaveBeenCalled());
 }
 
+/**
+ * A rede da tela, respondida aqui — e não deixada ao jsdom.
+ *
+ * Sem isto, as três consultas que a tela dispara no mount (modelos, tools e
+ * fluxos de follow-up) iam ao `fetch` real com URL relativa, falhavam, e o
+ * `apiClient` as RETENTAVA com backoff e jitter aleatório (~200 ms + ~400 ms)
+ * antes de `useFollowupFlows` avisar com `toast.error`. Esse toast nascia
+ * ~600 ms depois do mount, numa hora sorteada — antes ou depois do clique,
+ * conforme o quanto o preenchimento demorou. O teste reprovava ~2 em 10
+ * rodadas medindo o relógio, não a recusa do nome.
+ *
+ * Respondida com listas vazias, a tela não tem falha de rede nenhuma para
+ * avisar, e o seletor de modelo abre como campo livre (lista vazia).
+ * URL fora destas três reprova alto no afterEach: consulta nova na tela entra
+ * aqui de propósito, não por acaso. Ela é anotada e respondida com 404 em vez
+ * de lançar — um throw no fetch vira "erro de rede" no apiClient, que repete
+ * com espera sorteada e engole a mensagem, trazendo de volta a corrida.
+ */
+const RESPOSTAS: Record<string, unknown> = {
+  "/api/v1/ai/providers/anthropic/models": { data: { models: [] } },
+  "/api/v1/mcp/tools": { data: { tools: [] } },
+  "/api/v1/ai/followup-flows": { data: [] },
+};
+const naoPrevistas: string[] = [];
+
 beforeEach(() => {
   vi.clearAllMocks();
   acoes.criar.mockResolvedValue({ ok: false, error: "agent_name_taken" });
+  vi.stubGlobal("fetch", async (url: string) => {
+    if (!(url in RESPOSTAS)) {
+      naoPrevistas.push(url);
+      return new Response("{}", { status: 404, headers: { "content-type": "application/json" } });
+    }
+    return new Response(JSON.stringify(RESPOSTAS[url]), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  });
+});
+
+afterEach(() => {
+  const fora = naoPrevistas.splice(0);
+  vi.unstubAllGlobals();
+  expect(fora, "consulta não prevista no teste").toEqual([]);
 });
 
 describe("criar agente com nome que já existe na organização", () => {
   it("a frase aparece no CAMPO de nome, ligada a ele — e não num toast", async () => {
     abrirCriacao();
     await preencherOFormulario("Recepção");
-    const toastsAntesDoClique = (toast.error as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
     await criar();
 
     const frase = await screen.findByTestId("erro-do-nome");
@@ -138,16 +178,9 @@ describe("criar agente com nome que já existe na organização", () => {
     expect(campoDoNome).toHaveAttribute("aria-invalid", "true");
     // A frase nasce DEPOIS de um envio: o leitor de tela precisa ouvi-la.
     expect(frase).toHaveAttribute("role", "alert");
-    // Sem toast genérico POR CAUSA DA RECUSA e sem navegação: nada foi criado.
-    //
-    // ⚠️ Conta os toasts NOVOS, não a existência deles: em jsdom a consulta do
-    // catálogo de modelos falha no mount e o próprio `apiClient` avisa com um
-    // toast que não tem nada a ver com o nome recusado. Comparar o total
-    // mediria rede, não a recusa — e é a recusa que este teste prende.
-    expect(
-      (toast.error as unknown as { mock: { calls: unknown[] } }).mock.calls.length,
-      "a recusa do nome virou toast genérico",
-    ).toBe(toastsAntesDoClique);
+    // Sem toast genérico e sem navegação: nada foi criado. A rede da tela está
+    // respondida (ver `RESPOSTAS`), então qualquer `toast.error` aqui é a recusa.
+    expect(toast.error, "a recusa do nome virou toast genérico").not.toHaveBeenCalled();
     expect(empurrar).not.toHaveBeenCalled();
   });
 

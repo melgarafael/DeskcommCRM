@@ -122,6 +122,15 @@ export function useActiveOrg(): ActiveOrg | null {
 }
 
 /**
+ * Os módulos opcionais ligados, para a tela decidir o que OFERECER. Não lança
+ * fora do provider: devolve vazio, e o que depende de módulo fica escondido —
+ * oferecer a menos é o lado seguro (#3881).
+ */
+export function useModulosLigados(): readonly string[] {
+  return useContext(Ctx)?.activeOrg?.modulos_ligados ?? [];
+}
+
+/**
  * Permission gate based on role rank. Action mapping is intentionally
  * minimal here — feature-specific gates can extend with custom logic.
  */
