@@ -19869,6 +19869,18 @@ export const DICIONARIO: Traducoes = {
   "Com ela, cada empresa conecta o número oficial do WhatsApp com um clique, sem ter conta no provedor. Os números ficam na conta da instalação e entram na fatura dela.": { es: "Con ella, cada empresa conecta el número oficial de WhatsApp con un clic, sin tener cuenta en el proveedor. Los números quedan en la cuenta de la instalación y entran en su factura." },
   // Abrir a conversa pelo canal escolhido quando ele não serve (#3483).
   "Este canal está desligado ou fora do ar. Reative a conexão ou escolha outro canal.": { es: "Este canal está desactivado o fuera de línea. Reactiva la conexión o elige otro canal." },
+  // O seletor único de variável (#3687): o catálogo é o mesmo nas quatro telas,
+  // e os grupos são os rótulos que ele mostra.
+  "Inserir variável": { es: "Insertar variable" },
+  "Buscar variável": { es: "Buscar variable" },
+  "Nenhuma variável encontrada": { es: "No se encontró ninguna variable" },
+  "Prévia": { es: "Vista previa" },
+  // `Contato` já existe no dicionário (linha do bloco de contatos) — não repetir.
+  "Campo do contato": { es: "Campo del contacto" },
+  "Da ação": { es: "De la acción" },
+  "Variável do sistema": { es: "Variable del sistema" },
+  "Número da volta": { es: "Número de la vuelta" },
+  "Total de voltas": { es: "Total de vueltas" },
 };
 
 /**

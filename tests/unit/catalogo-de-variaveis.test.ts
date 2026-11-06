@@ -35,24 +35,26 @@ import {
  * A tentação de um catálogo único é escrever o vocabulário que se GOSTARIA de
  * ter. Aí ele fica bonito e mentiroso: a tela oferece `{{saudacao}}` numa
  * automação, onde o token sai como string VAZIA na mensagem do cliente. Por isso
- * cada fonte de verdade do produto é lida e conferida contra o catálogo, uma a
- * uma, com o arquivo na mensagem de erro:
+ * cada fonte de verdade do produto é lida e conferida contra o catálogo:
  *
  *   - Inbox            · `lib/inbox/template-vars.ts`
  *   - Campanha         · `lib/campanhas/renderizador.ts`
  *   - Automação        · `lib/automation/template.ts`
  *   - Fluxo (Meta)     · `lib/channels/meta/variaveis-do-fluxo.ts`
- *   - Seletor da tela  · `app/app/webhooks/_components/ActionConfigForm.tsx`
+ *   - Seletor da tela  · `components/variaveis/SeletorDeVariavel.tsx`
+ *
+ * ATÉ #3687 a conferência era de LISTA: cada tela tinha a sua (`VARIAVEIS_DE_NOME`
+ * no Inbox, `VARIAVEIS_DA_CAMPANHA` na campanha, `TEMPLATE_VARS` no seletor) e
+ * este arquivo comparava lista com lista. As listas não existem mais: as quatro
+ * telas passaram a chamar o MESMO resolvedor (`lib/variaveis/resolvedor.ts`) com
+ * a MESMA fonte do catálogo. Então a conferência passou a ser de COMPORTAMENTO —
+ * para cada entrada do catálogo, a tela resolve (ou não) exatamente o que o
+ * catálogo promete. É mais forte que a comparação de listas: pega o item que
+ * está catalogado e morreu no motor.
  *
  * Proposta e os campos criados pela organização não têm lista fechada: ficam
  * declarados em `VOCABULARIOS_ABERTOS`, e o teste prova a declaração em vez de
  * fingir paridade.
- *
- * A lista de vocabulário NÃO é redigitada aqui: ela sai do próprio fonte (o
- * array exportado da campanha, o literal `VARIAVEIS_DE_NOME` do Inbox, o
- * `ALIASES` do renderTemplate, os `kind` do schema do fluxo). Quando alguém
- * acrescentar uma variável lá e esquecer aqui, o teste reprova onde a pessoa
- * está editando.
  */
 
 const RAIZ = join(__dirname, "..", "..");
@@ -66,16 +68,6 @@ const PROPOSTA = "lib/propostas/documento/variaveis.ts";
 
 const fonte = (arquivo: string): string => readFileSync(join(RAIZ, arquivo), "utf8");
 
-/**
- * Um array literal do fonte (`const X = ["a", "b"]`), lido por regex. Se o nome
- * sumir, o `throw` reprova com mensagem em vez de passar com lista vazia.
- */
-function listaDoFonte(texto: string, nome: string): string[] {
-  const bloco = new RegExp(`${nome}\\s*=\\s*\\[([^\\]]*)\\]`).exec(texto);
-  if (!bloco) throw new Error(`${nome} não encontrada no fonte`);
-  return [...(bloco[1] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1] as string);
-}
-
 /** As CHAVES de um objeto literal do fonte (`const ALIASES = { nome: "..." }`). */
 function chavesDoObjeto(texto: string, nome: string): string[] {
   const bloco = new RegExp(`${nome}(?:\\s*:[^=]+)?\\s*=\\s*\\{([\\s\\S]*?)\\n\\};`).exec(texto);
@@ -87,12 +79,6 @@ function chavesDoObjeto(texto: string, nome: string): string[] {
   return chaves;
 }
 
-/** O Inbox não exporta a lista (é detalhe interno), mas é ELA que o catálogo espelha. */
-const VARIAVEIS_DO_INBOX = listaDoFonte(fonte(INBOX), "const VARIAVEIS_DE_NOME");
-
-/** O da campanha: as chaves fechadas + as duas raízes de campo, que são caminho. */
-const VARIAVEIS_DA_CAMPANHA_DO_FONTE = listaDoFonte(fonte(CAMPANHA), "VARIAVEIS_DA_CAMPANHA");
-
 /** Os aliases de `renderTemplate` — o vocabulário que a automação conhece por nome. */
 const ALIASES_DA_AUTOMACAO = chavesDoObjeto(fonte(AUTOMACAO), "const ALIASES");
 
@@ -101,12 +87,17 @@ const ORIGENS_DO_FLUXO = [
   ...fonte(FLUXO).matchAll(/kind:\s*z\.literal\("([a-z_]+)"\)/g),
 ].map((m) => m[1] as string);
 
-/** Os três botões fixos do seletor de variável da automação. */
-const TOKENS_DO_SELETOR = [
-  ...(/const TEMPLATE_VARS = \[([\s\S]*?)\n\];/.exec(fonte(SELETOR))?.[1] ?? "").matchAll(
-    /\{\{\s*([^}]+?)\s*\}\}/g,
-  ),
-].map((m) => m[1] as string);
+/**
+ * As telas que oferecem variável (#3687). Todas importam o MESMO seletor e dizem
+ * qual é a fonte — nenhuma mantém lista própria de vocabulário.
+ */
+const TELAS_COM_SELETOR: { arquivo: string; fonte: string }[] = [
+  { arquivo: SELETOR, fonte: "automacao" },
+  { arquivo: "app/app/ai/followups/[id]/_components/forms/ActionForm.tsx", fonte: "automacao" },
+  { arquivo: "app/app/campaigns/new/_client.tsx", fonte: "campanha" },
+  { arquivo: "app/app/campaigns/[id]/edit/_client.tsx", fonte: "campanha" },
+  { arquivo: "app/app/templates/_components/TemplateFormDialog.tsx", fonte: "inbox" },
+];
 
 const CONTATO = { name: "Ana Souza" };
 const VALORES = {
@@ -116,6 +107,8 @@ const VALORES = {
 };
 /** 15:00Z = meio-dia em São Paulo — o primeiro segundo de "Boa tarde". */
 const QUANDO = { agora: new Date("2026-10-29T15:00:00Z"), fuso: "America/Sao_Paulo" };
+/** O instante do Inbox é o do compositor: a hora do clique, no fuso de quem atende. */
+const AGORA_INBOX = { instante: QUANDO.agora, fuso: QUANDO.fuso };
 /** O contexto da automação é `{ contact, lead }` — LINHAS inteiras. */
 const CONTEXTO = {
   contact: {
@@ -147,7 +140,7 @@ describe("o catálogo descreve o que o Inbox e a campanha fazem, variável por v
   const casos: { token: string; inbox: string; campanha: string }[] = [
     { token: "{{nome}}", inbox: "Ana Souza", campanha: "Ana Souza" },
     { token: "{{primeiro_nome}}", inbox: "Ana", campanha: "Ana" },
-    { token: "{{saudacao}}", inbox: "{{saudacao}}", campanha: "Boa tarde" },
+    { token: "{{saudacao}}", inbox: "Boa tarde", campanha: "Boa tarde" },
     { token: "{{lead.gancho}}", inbox: "{{lead.gancho}}", campanha: "do bolo" },
     {
       token: "{{contato.gancho}}",
@@ -158,7 +151,7 @@ describe("o catálogo descreve o que o Inbox e a campanha fazem, variável por v
 
   for (const caso of casos) {
     it(`${caso.token}: Inbox devolve "${caso.inbox}", campanha devolve "${caso.campanha}"`, () => {
-      const inbox = interpolateTemplate(caso.token, CONTATO);
+      const inbox = interpolateTemplate(caso.token, CONTATO, AGORA_INBOX);
       const campanha = renderizar(caso.token, VALORES, QUANDO);
 
       expect(inbox).toBe(caso.inbox);
@@ -189,8 +182,9 @@ describe("o catálogo descreve o que a automação faz, variável por variável"
     // saída passa por mascaramento de privacidade no ambiente de teste).
     { token: "{{telefone}}", esperado: CONTEXTO.contact.phone_number },
     { token: "{{email}}", esperado: "ana@exemplo.com" },
-    // A lacuna mais cara do produto: não é literal, é VAZIO — some sem aviso.
-    { token: "{{saudacao}}", esperado: "" },
+    // Sem instante do envio não há saudação a dar: o token fica como foi escrito
+    // (era a lacuna mais cara do produto — sumia como vazio, sem aviso).
+    { token: "{{saudacao}}", esperado: "{{saudacao}}" },
     // `{{lead.title}}` aqui é a COLUNA do card, não campo personalizado.
     { token: "{{lead.title}}", esperado: "Negocio X" },
     { token: "{{lead.custom_fields.gancho}}", esperado: "cf-negocio" },
@@ -206,17 +200,47 @@ describe("o catálogo descreve o que a automação faz, variável por variável"
 });
 
 describe("toda variável que uma fonte conhece está no catálogo", () => {
-  it(`Inbox (${INBOX}): ${VARIAVEIS_DO_INBOX.join(", ")}`, () => {
-    expect([...variaveisDe("inbox")].sort()).toEqual([...VARIAVEIS_DO_INBOX].sort());
+  it(`Inbox (${INBOX}): resolve o catálogo inteiro de lá e nada além`, () => {
+    // Sem lista própria no fonte, a conferência é de COMPORTAMENTO: o que o
+    // catálogo dá ao Inbox resolve; o que ele NÃO dá continua literal, que é o
+    // que a resposta rápida faz com token de outra tela.
+    for (const nome of variaveisDe("inbox")) {
+      const token = TOKEN_DE_EXEMPLO[nome]!;
+      expect(
+        interpolateTemplate(token, CONTATO, AGORA_INBOX),
+        `${nome} está catalogada no Inbox (${INBOX}) e não resolve lá`,
+      ).not.toBe(token);
+    }
+    for (const v of VARIAVEIS_DO_CATALOGO.filter((v) => !v.disponivelEm.includes("inbox"))) {
+      const token = TOKEN_DE_EXEMPLO[v.nome]!;
+      expect(
+        interpolateTemplate(token, CONTATO, AGORA_INBOX),
+        `${v.nome} NÃO está catalogada no Inbox e mesmo assim resolve em ${INBOX}`,
+      ).toBe(token);
+    }
   });
 
-  it(`campanha (${CAMPANHA}): chaves fechadas + raízes de campo`, () => {
-    expect([...VARIAVEIS_DA_CAMPANHA]).toEqual(VARIAVEIS_DA_CAMPANHA_DO_FONTE);
-    const esperado = [
-      ...VARIAVEIS_DA_CAMPANHA_DO_FONTE,
-      ...RAIZES_DA_CAMPANHA.map((raiz) => `${raiz}${SUFIXO_DE_CURINGA}`),
-    ];
-    expect([...variaveisDe("campanha")].sort()).toEqual(esperado.sort());
+  it(`campanha (${CAMPANHA}): resolve o catálogo inteiro de lá e nada além`, () => {
+    // As raízes de campo são as únicas com caminho aberto — e o catálogo as
+    // declara como curinga, não como chave fechada.
+    for (const raiz of RAIZES_DA_CAMPANHA) {
+      expect(RAIZES_DE_CAMPO as readonly string[]).toContain(raiz);
+    }
+    for (const nome of variaveisDe("campanha")) {
+      const token = TOKEN_DE_EXEMPLO[nome]!;
+      const r = renderizar(token, VALORES, QUANDO);
+      expect(r.desconhecidas, `${nome} está catalogada na campanha e saiu desconhecida`).toEqual([]);
+      expect(r.texto, `${nome} está catalogada na campanha (${CAMPANHA}) e não resolve`).not.toBe(
+        token,
+      );
+    }
+    const doCatalogo = new Set(variaveisDe("campanha"));
+    for (const v of VARIAVEIS_DO_CATALOGO.filter((v) => !v.disponivelEm.includes("campanha"))) {
+      expect(doCatalogo.has(v.nome), `${v.nome} sai da campanha e o catálogo diz que sim`).toBe(
+        false,
+      );
+      expect(renderizar(TOKEN_DE_EXEMPLO[v.nome]!, VALORES, QUANDO).desconhecidas.length).toBe(1);
+    }
   });
 
   it(`automação (${AUTOMACAO}): todo alias de renderTemplate`, () => {
@@ -260,6 +284,9 @@ describe("toda variável que uma fonte conhece está no catálogo", () => {
       contact_name: "{{nome}}",
       contact_first_name: "{{primeiro_nome}}",
       lead_custom: "{{lead.gancho}}",
+      // #3687 — a origem aditiva: qualquer nome do catálogo, resolvido pelo
+      // resolvedor único. O exemplo é a chave fechada que ela acrescenta.
+      variavel: "{{nome}}",
     };
     expect(ORIGENS_DO_FLUXO.length).toBeGreaterThan(0);
     // Igualdade exata: origem nova no schema obriga revisar a tradução.
@@ -286,22 +313,56 @@ describe("toda variável que uma fonte conhece está no catálogo", () => {
       { fonte: { kind: "contact_first_name" }, valor: "Ana" },
       { fonte: { kind: "lead_custom", key: "gancho" }, valor: "do bolo" },
       { fonte: { kind: "lead_custom", key: "naoexiste" }, valor: null },
+      // #3687 — a origem nova fala o vocabulário do catálogo, pelo resolvedor.
+      { fonte: { kind: "variavel", chave: "nome" }, valor: "Ana Souza" },
+      { fonte: { kind: "variavel", chave: "primeiro_nome" }, valor: "Ana" },
+      { fonte: { kind: "variavel", chave: "lead.gancho" }, valor: "do bolo" },
+      // `{{saudacao}}` não vale no fluxo (o fluxo não tem instante de envio
+      // quando monta a tela): sem valor, o passo é recusado com motivo.
+      { fonte: { kind: "variavel", chave: "saudacao" }, valor: null },
     ];
     for (const caso of esperado) expect(valorDaFonte(caso.fonte, dados)).toBe(caso.valor);
   });
 
-  it(`seletor da automação (${SELETOR}): todo botão fixo é uma variável catalogada`, () => {
-    // O seletor é TELA, não resolvedor: ele não pode oferecer mais que o motor.
-    expect(TOKENS_DO_SELETOR.length).toBeGreaterThan(0);
-    for (const token of TOKENS_DO_SELETOR) {
-      const entrada = variavelDoCatalogo(`{{${token}}}`);
-      expect(entrada, `o botão "{{${token}}}" de ${SELETOR} não está no catálogo`).not.toBeNull();
+  it("as telas usam o MESMO seletor, com a fonte certa — e nenhuma lista própria", () => {
+    // Antes de #3687 cada tela tinha a sua lista (três botões fixos na
+    // automação, `VARIAVEIS_DE_NOME` no Inbox, `VARIAVEIS_DA_CAMPANHA` na
+    // campanha). O que este teste impede é a lista VOLTAR: se alguém escrever
+    // um array de variáveis dentro de uma tela, ele reprova aqui.
+    for (const { arquivo, fonte: fonteDaTela } of TELAS_COM_SELETOR) {
+      const texto = fonte(arquivo);
+      expect(texto, `${arquivo} não importa o seletor único`).toMatch(
+        /from "@\/components\/variaveis\/(SeletorDeVariavel|CampoComVariaveis)"/,
+      );
+      if (!texto.includes("CampoComVariaveis")) {
+        expect(texto, `${arquivo} usa o seletor sem dizer a fonte`).toContain(
+          `fonte="${fonteDaTela}"`,
+        );
+      }
+      // Nenhuma lista de tokens escrita à mão na tela.
       expect(
-        entrada!.disponivelEm,
-        `o botão "{{${token}}}" de ${SELETOR} não resolve na automação, que é a tela dele`,
-      ).toContain("automacao");
-      // Botão que insere token que o motor não resolve é promessa vazia.
-      expect(renderTemplate(`{{${token}}}`, CONTEXTO)).not.toBe(`{{${token}}}`);
+        texto,
+        `${arquivo} voltou a manter uma lista própria de variáveis (TEMPLATE_VARS/VARIAVEIS_DE_* com ["..."])`,
+      ).not.toMatch(/const (TEMPLATE_VARS|VARIAVEIS_DE_[A-Z_]+)\s*=\s*\[/);
+    }
+  });
+
+  it("todo item que o seletor oferece vem do catálogo e resolve de verdade", () => {
+    // O seletor é TELA, não resolvedor: ele não pode oferecer mais que o motor.
+    for (const tela of TELAS_COM_SELETOR) {
+      for (const nome of variaveisDe(tela.fonte as Parameters<typeof variaveisDe>[0])) {
+        const token = TOKEN_DE_EXEMPLO[nome]!;
+        const resolvido =
+          tela.fonte === "campanha"
+            ? renderizar(token, VALORES, QUANDO).texto
+            : tela.fonte === "inbox"
+              ? interpolateTemplate(token, CONTATO, AGORA_INBOX)
+              : renderTemplate(token, CONTEXTO, undefined, AGORA_INBOX);
+        expect(
+          resolvido,
+          `o seletor de ${tela.arquivo} oferece ${nome} e o motor da tela não resolve`,
+        ).not.toBe(token);
+      }
     }
   });
 });
@@ -330,24 +391,29 @@ describe("a divergência entre as fontes não fica escondida", () => {
   it("no Inbox, TODA lacuna de lá sai literal — o token chega ao cliente", () => {
     const doInbox = LACUNAS_CONHECIDAS.filter((l) => l.fonte === "inbox");
     expect(doInbox.map((l) => l.variavel).sort()).toEqual(
-      ["contact.*", "contato.*", "email", "lead.*", "saudacao", "telefone"].sort(),
+      ["contact.*", "contato.*", "email", "lead.*", "telefone"].sort(),
     );
     for (const lacuna of doInbox) {
       const token = TOKEN_DE_EXEMPLO[lacuna.variavel]!;
-      expect(interpolateTemplate(token, CONTATO)).toBe(token);
+      expect(interpolateTemplate(token, CONTATO, AGORA_INBOX)).toBe(token);
     }
   });
 
-  it("na automação, saudação e caminho de contato saem VAZIOS — pior que literal", () => {
-    expect(LACUNAS_CONHECIDAS.some((l) => l.variavel === "saudacao" && l.fonte === "automacao")).toBe(
-      true,
-    );
-    expect(renderTemplate("Bom dia, {{primeiro_nome}}! {{saudacao}}", CONTEXTO)).toBe(
-      "Bom dia, Ana! ",
-    );
+  it("na automação, caminho de contato sai VAZIO e saudação resolve no envio", () => {
     // `{{contato.gancho}}` (a sintaxe da campanha) não existe no contexto da
     // automação: sai vazio, sem `desconhecidas` e sem aviso ao operador.
     expect(renderTemplate("{{contato.gancho}}", CONTEXTO)).toBe("");
+    // #3687 — a saudação deixou de ser lacuna: sem instante o token fica como
+    // foi escrito (nunca vazio); com instante, sai a saudação da hora.
+    expect(
+      LACUNAS_CONHECIDAS.some((l) => l.variavel === "saudacao" && l.fonte === "automacao"),
+    ).toBe(false);
+    expect(renderTemplate("Bom dia, {{primeiro_nome}}! {{saudacao}}", CONTEXTO)).toBe(
+      "Bom dia, Ana! {{saudacao}}",
+    );
+    expect(
+      renderTemplate("Bom dia, {{primeiro_nome}}! {{saudacao}}", CONTEXTO, undefined, AGORA_INBOX),
+    ).toBe("Bom dia, Ana! Boa tarde");
   });
 
   it("na campanha, token desconhecido fica literal E entra em `desconhecidas`", () => {
@@ -492,8 +558,10 @@ describe("a forma do catálogo", () => {
 });
 
 describe("as variáveis exclusivas de cada fonte", () => {
-  it("o Inbox não tem nenhuma exclusiva: ele é o subconjunto mínimo", () => {
-    expect(exclusivasDe("inbox")).toEqual([]);
+  it("o Inbox só tem a saudação fora das quatro — e é a única", () => {
+    // `exclusivasDe` = existe nesta fonte e não em todas: é o mapa do que a
+    // pessoa perde ao copiar o texto para outra tela.
+    expect(exclusivasDe("inbox")).toEqual(["saudacao"]);
   });
 
   it("campanha, automação e fluxo têm as suas, e são estas", () => {
@@ -501,12 +569,19 @@ describe("as variáveis exclusivas de cada fonte", () => {
       ["contato.*", "lead.*", "saudacao"].sort(),
     );
     expect([...exclusivasDe("automacao")].sort()).toEqual(
-      ["contact.*", "email", "lead.*", "telefone"].sort(),
+      ["contact.*", "email", "lead.*", "saudacao", "telefone"].sort(),
     );
     expect([...exclusivasDe("fluxo")].sort()).toEqual(["lead.*"].sort());
   });
 
-  it("`saudacao` é a única chave fechada que a campanha tem e o Inbox não", () => {
+  it("`saudacao` é a única chave fechada da campanha além do universal — e agora é das três", () => {
     expect(exclusivasDe("campanha").filter((v) => !eCuringa(v))).toEqual(["saudacao"]);
+    // #3687: deixou de ser só da campanha. Resolve no Inbox (compositor, fuso de
+    // quem atende), na automação (instante do disparo) e na campanha (relógio).
+    expect([...variavelDoCatalogo("{{saudacao}}")!.disponivelEm].sort()).toEqual([
+      "automacao",
+      "campanha",
+      "inbox",
+    ]);
   });
 });
