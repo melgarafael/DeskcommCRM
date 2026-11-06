@@ -503,8 +503,10 @@ describe("seis rotas que aceitam token e não tinham teste de token (Spec 33, R)
       for (const id of idsDe(ORG_A, caso.linhas)) expect(texto).not.toContain(id);
       // Nada de A foi tocado, qualquer que seja a rota.
       expect(linhasDe(ORG_A, falso.linhas)).toEqual(linhasDe(ORG_A, caso.linhas));
-      // Quem só consulta ou recusa não escreve; a rota que cria (201) escreve só em B.
-      if (caso.statusDeB !== 201) expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
+      // Leitura não escreve. Escrita por filtro (ex.: desativar tipo) TENTA o update, mas com o filtro
+      // de B, que não alcança linha nenhuma: o que prova isso é "nada de A mudou" (acima) e todas as
+      // cadeias terem a organização de B (`cadeiasForaDaOrganizacao`, acima).
+      if (caso.metodo === "GET") expect(cadeiasDeEscrita(falso.cadeias)).toEqual([]);
       for (const pedaco of caso.esperaNaRespostaDeB ?? []) expect(texto).toContain(pedaco);
       for (const pedaco of caso.naoEsperaNaRespostaDeB ?? []) expect(texto).not.toContain(pedaco);
       for (const [entrada] of vi.mocked(audit).mock.calls) {
