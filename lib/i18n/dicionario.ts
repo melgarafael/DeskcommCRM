@@ -4593,6 +4593,10 @@ export const DICIONARIO: Traducoes = {
   "Tempo de uma chamada à IA por dia (segundos)": { es: "Tiempo de una llamada a la IA por día (segundos)" },
   "Quanto gastou por dia (US$)": { es: "Cuánto gastaste por día (US$)" },
   "Quanto a inteligência artificial custou, quantas vezes foi chamada, quantos turnos o agente fez, quanto demora uma chamada e quantas vezes precisou chamar uma pessoa — nos últimos 30 dias.": { es: "Cuánto costó la inteligencia artificial, cuántas veces fue llamada, cuántos turnos hizo el agente, cuánto tarda una llamada y cuántas veces necesitó llamar a una persona — en los últimos 30 días." },
+  // ── Uso de IA › aviso de contexto caro (#4123) ───────────────────────────
+  "Agente com contexto caro": { es: "Agente con contexto caro" },
+  "das chamadas de turno passaram de 100 mil tokens de entrada nos últimos 30 dias": { es: "de las llamadas de turno superaron los 100 mil tokens de entrada en los últimos 30 días" },
+  "Acima de 100 mil tokens de entrada o Claude Haiku 5.5 cobra 5× pela chamada inteira (entrada, saída e cache). Base de conhecimento, ferramentas ou histórico grandes demais costumam ser a causa — reduza o que entra no prompt deste agente.": { es: "Por encima de los 100 mil tokens de entrada, Claude Haiku 5.5 cobra 5× por la llamada completa (entrada, salida y caché). La base de conocimiento, las herramientas o el historial demasiado grandes suelen ser la causa: reduce lo que entra en el prompt de este agente." },
   // ── Administração › Destinos internos (decisão 22-d, #1004) ──────────────
   "Destinos internos": { es: "Destinos internos" },
   "Endereços da rede deste servidor que a instalação pode alcançar.": {
