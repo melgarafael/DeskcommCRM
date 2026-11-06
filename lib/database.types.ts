@@ -15297,6 +15297,7 @@ export type Database = {
           p_conversation_id: string;
           p_enforce_expected?: boolean;
           p_expected_assignee?: string;
+          p_negocio_so_sem_dono?: boolean;
           p_organization_id: string;
           p_reason: string;
           p_source_job_id?: string | null;

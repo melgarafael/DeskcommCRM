@@ -46,6 +46,18 @@
   --color-border: #e7e3da;
   --color-border-strong: #d2cdbf;
 
+  /* ---- Identidade de canal (#4094) -------------------------------------
+   * A cor da faixa/ícone que marca DE ONDE veio a mensagem (aviso da esquina
+   * e logo da conversa). Token porque a mesma marca precisa ser legível nos
+   * DOIS temas: o tom de marca pensado para fundo claro some no escuro, e um
+   * hex cravado no componente obriga a repetir o par em cada consumidor.
+   * Os quatro passam no piso de componente da WCAG (3:1) contra o --color-bg
+   * do próprio tema — medido em lib/channels/marca-do-canal.test.ts. */
+  --color-canal-whatsapp: #128c4a;
+  --color-canal-instagram: #c13584;
+  --color-canal-messenger: #0866ff;
+  --color-canal-telegram: #0088cc;
+
   /* Accent — Sage (11 stops) */
   --color-accent-50: #f3f6f1;
   --color-accent-100: #e4ebe0;
@@ -272,6 +284,18 @@
   --color-text-subtle: #7d786c;
   --color-border: #e7e3da;
   --color-border-strong: #d2cdbf;
+
+  /* ---- Identidade de canal (#4094) -------------------------------------
+   * A cor da faixa/ícone que marca DE ONDE veio a mensagem (aviso da esquina
+   * e logo da conversa). Token porque a mesma marca precisa ser legível nos
+   * DOIS temas: o tom de marca pensado para fundo claro some no escuro, e um
+   * hex cravado no componente obriga a repetir o par em cada consumidor.
+   * Os quatro passam no piso de componente da WCAG (3:1) contra o --color-bg
+   * do próprio tema — medido em lib/channels/marca-do-canal.test.ts. */
+  --color-canal-whatsapp: #128c4a;
+  --color-canal-instagram: #c13584;
+  --color-canal-messenger: #0866ff;
+  --color-canal-telegram: #0088cc;
   --color-accent: var(--color-accent-600);
   --color-accent-fg: #ffffff;
   --color-accent-soft: var(--color-accent-100);
@@ -354,6 +378,18 @@
   /* Borders (dark) */
   --color-border: #33312a;
   --color-border-strong: #444239;
+
+  /* ---- Identidade de canal (#4094) -------------------------------------
+   * A cor da faixa/ícone que marca DE ONDE veio a mensagem (aviso da esquina
+   * e logo da conversa). Token porque a mesma marca precisa ser legível nos
+   * DOIS temas: o tom de marca pensado para fundo claro some no escuro, e um
+   * hex cravado no componente obriga a repetir o par em cada consumidor.
+   * Os quatro passam no piso de componente da WCAG (3:1) contra o --color-bg
+   * do próprio tema — medido em lib/channels/marca-do-canal.test.ts. */
+  --color-canal-whatsapp: #25d366;
+  --color-canal-instagram: #f472b6;
+  --color-canal-messenger: #60a5fa;
+  --color-canal-telegram: #38bdf8;
 
   /* Accent stays same hex stops; default shifts up for dark contrast */
   --color-accent-50: #f3f6f1;
