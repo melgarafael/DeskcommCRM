@@ -266,7 +266,7 @@ export function GatewayDaOrganizacaoClient({
                   ? t("O gateway não foi salvo.")
                   : t("O gateway não foi desligado.")}
               </span>
-              <code className="rounded bg-muted px-1 py-0.5 text-xs">{erro.codigo}</code>
+              <code className="rounded-md bg-muted px-1 py-0.5 text-xs">{erro.codigo}</code>
               {erro.mensagem ? <span className="text-muted-foreground">{t(erro.mensagem)}</span> : null}
             </p>
           )}
