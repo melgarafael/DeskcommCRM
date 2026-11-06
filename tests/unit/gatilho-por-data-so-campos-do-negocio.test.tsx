@@ -159,6 +159,7 @@ describe("os seletores de 'Campo de data' não oferecem campo do contato", () =>
           tela: {
             fonte: null,
             umaVezPorContato: false,
+            repetirAposHoras: "",
             data: { pipeline_id: FUNIL, campo: "", dias: "3" },
             tempo: { dias: "7", direcao: "da_equipe", proteger_pela_agenda: false },
           },
