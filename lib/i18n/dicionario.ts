@@ -19574,6 +19574,13 @@ export const DICIONARIO: Traducoes = {
     es: "El dominio tiene que ser fijo: usa marcadores solo después de la primera /.",
   },
   "O limite é de seis atalhos por funil.": { es: "El límite es de seis accesos por embudo." },
+  // A FORMA do telefone (2ª fatia da #3487): só aparece no atalho `tel:`.
+  "Discagem do atalho": { es: "Marcación del acceso" },
+  "Com o código do país": { es: "Con el código de país" },
+  "Sem o código do país (DDD + número)": { es: "Sin el código de país (DDD + número)" },
+  "Sem o código do país é o que o PABX costuma discar: DDD + número.": {
+    es: "Sin el código de país es lo que suele marcar la centralita: DDD + número.",
+  },
   "Dê um nome a cada atalho do card antes de salvar.": {
     es: "Ponle un nombre a cada acceso de la tarjeta antes de guardar.",
   },
