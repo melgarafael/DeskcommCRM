@@ -16,6 +16,7 @@ import type { AdminAuditFilters } from "@/hooks/useAdminAuditLog";
 // acontece". `lib/audit/actions.ts` não importa nada, de propósito: é o que
 // mantém este import de cliente barato. Ver o cabeçalho de lá.
 import { AUDIT_ACTIONS } from "@/lib/audit/actions";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import { useT } from "@/hooks/i18n/useT";
 
 // ---------------------------------------------------------------------------
@@ -56,7 +57,10 @@ function MultiSelectPopover({
   const [search, setSearch] = useState("");
 
   const filtered = options.filter((o) =>
-    o.label.toLowerCase().includes(search.toLowerCase()),
+    // #4168: os DOIS lados pela régua de `lib/inbox/termo-de-busca.ts`. Os
+    // rótulos de ação são códigos ASCII (`lgpd.exportacao`); o texto acentuado
+    // vem das empresas ("Exclusão Fiscal"), e digitar `exclusao` não as achava.
+    termoSemAcento(o.label).includes(termoSemAcento(search)),
   );
 
   return (

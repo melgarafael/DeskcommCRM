@@ -27,6 +27,7 @@ import { apiClient } from "@/lib/api/client";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { useBulkAction } from "@/hooks/kanban/useBulkAction";
 import { resolveVocabulary } from "@/lib/kanban/vocabulary";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import type { PipelineVocabulary, Stage } from "@/lib/kanban/types";
 import { LoseLeadDialog } from "./LoseLeadDialog";
 import { rotuloDoMembro } from "@/lib/users/rotulo-do-atendente";
@@ -326,7 +327,10 @@ export function BulkActionBar({
               </Button>
             </div>
             {tagsExistentes
-              .filter((tag) => tag.toLowerCase().includes(tagInput.trim().toLowerCase()))
+              // #4166: a sugestão em lote passa pela mesma régua dos dois lados.
+              // `toLowerCase()` não ignora acento, então `promocao` não sugeria
+              // "Promoção" e a pessoa criava a duplicada sem acento ao lado.
+              .filter((tag) => termoSemAcento(tag).includes(termoSemAcento(tagInput.trim())))
               .slice(0, 10)
               .map((tag) => (
                 <DropdownMenuItem key={tag} onClick={() => runTagAdd(tag)}>

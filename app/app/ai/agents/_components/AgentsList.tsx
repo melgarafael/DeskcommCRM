@@ -8,6 +8,7 @@ import { Robot, Plus } from "@/lib/ui/icons";
 import { useT } from "@/hooks/i18n/useT";
 import { useAgentsList } from "@/hooks/ai/useAgents";
 import type { AgentRow } from "@/hooks/ai/useAgent";
+import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import { AgentCard } from "./AgentCard";
 import { AgentsListFilters, type StatusFilter } from "./AgentsListFilters";
 import { deriveAgentStatus } from "./AgentStatusBadge";
@@ -27,12 +28,17 @@ export function AgentsList({ initialData, canWrite }: Props) {
   const agents = data ?? [];
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    // #4165: a mesma régua da busca do Inbox, nos DOIS lados. `toLowerCase()`
+    // sozinho ignora caixa e não ignora acento: "pos-venda" não achava
+    // "Atendimento Pós-venda", e quem digita rápido concluía que o agente não
+    // existia. Normalizar só o termo não bastaria — o texto do item também tem
+    // de passar pela régua.
+    const q = termoSemAcento(query.trim());
     return agents.filter((a) => {
       const s = deriveAgentStatus(a);
       if (!showArchived && s === "archived") return false;
       if (status !== "all" && s !== status) return false;
-      if (q && !a.name.toLowerCase().includes(q)) return false;
+      if (q && !termoSemAcento(a.name).includes(q)) return false;
       return true;
     });
   }, [agents, status, query, showArchived]);

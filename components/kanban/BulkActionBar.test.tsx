@@ -214,3 +214,50 @@ describe("BulkActionBar — o card é o NEGÓCIO do funil (#3811)", () => {
     expect(await screen.findByText("Excluir 1 Pedido?")).toBeInTheDocument();
   });
 });
+
+describe('Funil: "promocao" sugere a etiqueta "Promoção"', () => {
+  // #4166: a sugestão em lote filtrava `tag.toLowerCase().includes(tagInput...)`
+  // nos dois lados crus. Quem digita sem acento não via a etiqueta existente e
+  // criava uma duplicada — "Promoção" e "promocao" passavam a conviver.
+  it("sem acento, a etiqueta existente continua sugerida", async () => {
+    get.mockResolvedValue({ data: [] });
+    const user = userEvent.setup();
+    render(
+      <BulkActionBar
+        selectedIds={["lead-1"]}
+        stages={STAGES}
+        pipelineId="p-1"
+        tagsExistentes={["Promoção", "vip"]}
+        onClear={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Tag…" }));
+    const campo = await screen.findByPlaceholderText("nova tag");
+    await user.type(campo, "promocao");
+
+    expect(await screen.findByRole("menuitem", { name: "Promoção" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "vip" })).not.toBeInTheDocument();
+  });
+
+  it("termo que não existe continua sem sugestão", async () => {
+    get.mockResolvedValue({ data: [] });
+    const user = userEvent.setup();
+    render(
+      <BulkActionBar
+        selectedIds={["lead-1"]}
+        stages={STAGES}
+        pipelineId="p-1"
+        tagsExistentes={["Promoção", "vip"]}
+        onClear={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Tag…" }));
+    const campo = await screen.findByPlaceholderText("nova tag");
+    await user.type(campo, "inverno");
+
+    expect(screen.queryByRole("menuitem", { name: "Promoção" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "vip" })).not.toBeInTheDocument();
+  });
+});
