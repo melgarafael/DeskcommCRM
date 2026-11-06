@@ -31,6 +31,7 @@ interface Chamada {
 let chamadas: Chamada[] = [];
 let erroDaLimpeza: { message: string } | null = null;
 let limpezaLanca = false;
+let erroDaGravacao: { message: string } | null = null;
 
 function adminDuble() {
   return {
@@ -40,7 +41,7 @@ function adminDuble() {
         chamadas.push(c);
         const resultado = () => {
           if (tabela === "meta_templates" && limpezaLanca) throw new Error("rede caiu");
-          return { error: tabela === "meta_templates" ? erroDaLimpeza : null };
+          return { error: tabela === "meta_templates" ? erroDaLimpeza : erroDaGravacao };
         };
         const cadeia: Record<string, unknown> = {};
         // `insert(...).select("id").single()`: a conexão nova devolve o id.
@@ -84,26 +85,35 @@ beforeEach(() => {
   chamadas = [];
   erroDaLimpeza = null;
   limpezaLanca = false;
+  erroDaGravacao = null;
   log.warn.mockClear();
 });
 
 describe("conectar: os modelos seguem a conta, não a linha da conexão", () => {
-  it("⭐ reapontar a conexão existente apaga, ANTES de gravar, só os modelos de OUTRA conta desta conexão", async () => {
+  it("⭐ reapontar a conexão existente apaga, DEPOIS de gravar, só os modelos de OUTRA conta desta conexão", async () => {
     const r = await savePartnerSession(adminDuble(), { ...BASE, existingId: "sessao-1" });
 
     expect(r).toEqual({ error: null, id: "sessao-1" });
     expect(chamadas.map((c) => `${c.op}:${c.tabela}`)).toEqual([
-      "delete:meta_templates",
       "update:channel_sessions",
+      "delete:meta_templates",
     ]);
     // `neq` é a alma da guarda: apagar só por `channel_session_id` levaria junto
     // os modelos da conta NOVA numa reconexão com a mesma conta (trocar só a
     // chave, o caso comum) — e `eq` apagaria justamente os que valem.
-    expect(chamadas[0]?.filtros).toEqual([
+    expect(chamadas[1]?.filtros).toEqual([
       ["eq", "organization_id", "org-1"],
       ["eq", "channel_session_id", "sessao-1"],
       ["neq", "waba_id", "conta-nova"],
     ]);
+  });
+
+  it("troca recusada (conta já ligada a outra conexão, limite do plano) não apaga nada: a conexão ficou onde estava", async () => {
+    erroDaGravacao = { message: "duplicate key value" };
+    const r = await savePartnerSession(adminDuble(), { ...BASE, existingId: "sessao-1" });
+
+    expect(r).toEqual({ error: "duplicate key value", id: null });
+    expect(chamadas.map((c) => `${c.op}:${c.tabela}`)).toEqual(["update:channel_sessions"]);
   });
 
   it("conexão nova (sem linha anterior) não apaga nada — não há modelo de outra conta para tirar", async () => {
@@ -118,7 +128,7 @@ describe("conectar: os modelos seguem a conta, não a linha da conexão", () => 
       credencial: { tipo: "instalacao", profileId: "perfil-1" },
       existingId: "sessao-1",
     });
-    expect(chamadas[0]?.filtros).toContainEqual(["neq", "waba_id", "conta-nova"]);
+    expect(chamadas[1]?.filtros).toContainEqual(["neq", "waba_id", "conta-nova"]);
   });
 
   it("a limpeza que falha (erro devolvido ou lançado) não impede a conexão — fica no log", async () => {
