@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { mkdirSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { test, expect, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type Page } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { trocarIdiomaPelaTela } from "./helpers/idioma";
 import { MedidorDeHops } from "./helpers/medir-hops";
@@ -73,6 +73,7 @@ test("fechar canal preserva demanda, desfecho explícito e nova entrada volta à
 }) => {
   test.setTimeout(180_000);
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  context.on("page", esperarARevelacaoNasCargas);
   const page = await context.newPage();
   // Medição por elo da rajada do inbox (#2399) — inerte sem E2E_MEDIR_HOPS=1.
   const medidor = new MedidorDeHops(page);
