@@ -164,6 +164,18 @@ describe("a oferta numa transação só", () => {
 });
 
 describe("concorrência real", () => {
+  it("duas ofertas sobrepostas com inícios diferentes: o índice não pega, e a trava pega", async () => {
+    for (const hora of ["06", "07", "08", "09", "10", "11"]) {
+      const primeira = await inscrever(a.org, await contato(a.org), a.tipo);
+      const segunda = await inscrever(a.org, await contato(a.org), a.tipo);
+      const r = await Promise.all([
+        ofertar(a.org, primeira, em(`${hora}:00`), em(`${hora}:40`), a.dono),
+        ofertar(a.org, segunda, em(`${hora}:20`), em(`${hora}:59`), a.dono),
+      ]);
+      expect(r.filter((x) => x.ok)).toHaveLength(1);
+    }
+  });
+
   it("duas ofertas da mesma vaga: exatamente uma leva", async () => {
     const primeira = await inscrever(a.org, await contato(a.org), a.tipo);
     const segunda = await inscrever(a.org, await contato(a.org), a.tipo);
@@ -209,7 +221,7 @@ describe("contato que saiu não recebe vaga", () => {
   it("a anonimização apaga a observação e tira a pessoa da fila, pela seção do módulo", async () => {
     const pessoa = await contato(a.org);
     const espera = await inscrever(a.org, pessoa, a.tipo);
-    await q("update contacts set is_anonymized=true where id=$1", [pessoa]);
+    await q("select public.fn_lgpd_cascade_redact_contact($1,$2,gen_random_uuid())", [a.org, pessoa]);
     const [linha] = await q("select observacoes,fora_da_fila_em from calendar_waitlist where id=$1", [espera]);
     expect(linha.observacoes).toBeNull();
     expect(linha.fora_da_fila_em).not.toBeNull();
@@ -231,7 +243,7 @@ describe("tipo com serviço passa pelo escritor canônico", () => {
     await q("insert into calendar_service_professionals values($1,$2,$3)", [org, tipo, dono]);
     await q(
       "insert into attendant_availability(organization_id,user_id,is_available,schedule) values($1,$2,true,$3) on conflict do nothing",
-      [org, dono, { timezone: "America/Sao_Paulo", windows: [] }],
+      [org, dono, { timezone: "America/Sao_Paulo", windows: [{ dow: dia.getUTCDay(), start: "08:00", end: "18:00" }] }],
     );
     return tipo;
   }
