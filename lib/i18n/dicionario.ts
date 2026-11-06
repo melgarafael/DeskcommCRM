@@ -241,6 +241,17 @@ export const DICIONARIO: Traducoes = {
   "CEP": { es: "Código postal" },
   "UF": { es: "Provincia" },
   "Logradouro": { es: "Calle" },
+  // Preenchimento pelo CEP (#3494, fatia 2). As quatro frases são o que a tela
+  // diz ao lado do campo: a consulta em andamento, o CEP curto (aviso, não
+  // impedimento), o CEP inexistente e a falha do serviço — esta última manda
+  // preencher à mão, porque o cadastro continua possível.
+  "Buscando o CEP…": { es: "Buscando el código postal…" },
+  "CEP deve ter 8 dígitos.": { es: "El código postal debe tener 8 dígitos." },
+  "CEP não encontrado.": { es: "Código postal no encontrado." },
+  "Não foi possível consultar o CEP agora. Preencha o endereço à mão.": {
+    es: "No fue posible consultar el código postal ahora. Complete la dirección a mano.",
+  },
+  "Endereço preenchido pelo CEP.": { es: "Dirección completada con el código postal." },
   "Escolha um agente": { es: "Elija un agente" },
   "Remover regra de remetente": { es: "Eliminar regla de remitente" },
   "Adicionar número do remetente": { es: "Añadir número del remitente" },

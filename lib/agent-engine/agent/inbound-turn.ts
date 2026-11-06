@@ -239,7 +239,7 @@ import {
 // #3333 — o predicado único do efeito, do lado de quem PERGUNTA. Do lado de quem RESPONDE é
 // a ponte das tools MCP (`lib/ai/runtime/tools.ts`), que recebe este mesmo coletor.
 import { criarEfeitoDasEscrituras } from '@/lib/ai/runtime/efeito-das-escritas';
-import { conferirRecibosDeAgendamento, type EvidenciaDeAgendamento } from '@/lib/ai/runtime/recibos-de-agendamento';
+import { lerAgendaDaRevisao, type EvidenciaDeAgendamento } from '@/lib/ai/runtime/recibos-de-agendamento';
 import { ferramentasDeRegistroDoAgente } from '../guardrails/registro-sem-efeito';
 import { colherDaFerramenta } from '../guardrails/horario-da-agenda';
 import { isStatusSendable } from '../../channels/meta/template-binding';
@@ -3784,6 +3784,7 @@ async function executarTurnoDoAgente(
   const evidenciasComerciais = criarEvidenciasComerciaisDoTurno(fontesQueProvamOferta);
   const efeitosDoTurno = criarEfeitoDasEscrituras();
   let evidenciasDeAgendamento: EvidenciaDeAgendamento[] = [];
+  let reservasAlemDoTeto = false;
   const recuperarEvidencias = criarRecuperadorDeEvidencias(pool, {
     tenantId,
     fontes: fontesQueProvamOferta,
@@ -3809,6 +3810,7 @@ async function executarTurnoDoAgente(
             candidate,
             commercialEvidence: evidenciasComerciais.ler(candidate),
             bookingEvidence: evidenciasDeAgendamento,
+            bookingEvidencePartial: reservasAlemDoTeto,
             conversationContext: montarContextoDaRevisao(
               effectiveContext.messages, effectivePrevious?.rolling_summary,
               (deps.clock?.() ?? new Date()).toISOString(), fusoDaOrg,
@@ -3819,28 +3821,38 @@ async function executarTurnoDoAgente(
         ),
         // As evidências crescem entre o veto e o reenvio; o veredito de antes
         // da consulta não vale para a mesma frase depois dela.
-        () => JSON.stringify([evidenciasComerciais.contexto(), evidenciasDeAgendamento]),
+        () => JSON.stringify([evidenciasComerciais.contexto(), evidenciasDeAgendamento, reservasAlemDoTeto]),
       )
     : undefined;
   const semanticClassifier = classificadorMemoizado === undefined ? undefined : async (candidate: string) => {
     await recuperarEvidencias(candidate);
     const recibos = efeitosDoTurno.recibosDeAgendamento();
+    let temComprovante = recibos.length > 0;
     return protegerRevisaoDeAgendamento(async () => {
       const geracaoDaAgenda = efeitosDoTurno.geracaoDeAgendamento();
-      evidenciasDeAgendamento = await conferirRecibosDeAgendamento(
-        deps.crmCfg.supabase, { organizationId: tenantId, contactId: leadId || null }, recibos,
+      const agenda = await lerAgendaDaRevisao(
+        deps.crmCfg.supabase, pool, {
+          organizationId: tenantId,
+          contactId: preview?.kind === 'sandbox' ? null : leadId || null,
+        }, {
+          recibos,
+          geracaoDaAgenda,
+          temEvidenciaComercial: evidenciasComerciais.ler(candidate).length > 0,
+          agora: deps.clock?.() ?? new Date(),
+        },
       ).catch(() => {
         runLog.warn('recibos da agenda indisponíveis — nenhuma confirmação comprovada', {
           event: 'booking_evidence_lookup_failed',
         });
-        return [];
+        return { evidencias: [], parcial: false };
       });
+      temComprovante ||= agenda.evidencias.length > 0;
       // Uma mutação pode ter começado enquanto a leitura aguardava o banco.
-      if (geracaoDaAgenda !== efeitosDoTurno.geracaoDeAgendamento()) {
-        evidenciasDeAgendamento = [];
-      }
+      const agendaMudou = geracaoDaAgenda !== efeitosDoTurno.geracaoDeAgendamento();
+      evidenciasDeAgendamento = agendaMudou ? [] : agenda.evidencias;
+      reservasAlemDoTeto = !agendaMudou && agenda.parcial;
       return classificadorMemoizado(candidate);
-    }, () => efeitosDoTurno.geracaoDeAgendamento(), () => recibos.length > 0)(candidate);
+    }, () => efeitosDoTurno.geracaoDeAgendamento(), () => temComprovante)(candidate);
   };
   // Conferência de fato (#2231): a TERCEIRA camada do before_send, depois da
   // F4-01/F4-02. A evidência é lida NA HORA (nasce no meio do turno) e a
