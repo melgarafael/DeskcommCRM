@@ -472,8 +472,8 @@ async function criarTarefaDoPasso(
   if (error || !data) throw new Error(error?.message === "cadencia_claim_lost" ? "cadencia_claim_lost" : "cadencia_task_create_failed");
   if (!data.criada_agora || !data.tarefa) return;
   void audit({ action: "crm_task.created", organizationId: inscricao.organization_id, resourceType: "crm_task", resourceId: data.tarefa.id, bypassedRls: true, requestId, metadata: { origem: "cadencias", cadence_id: inscricao.cadence_id, enrollment_id: inscricao.id, passo_id: passo.id } });
-  const { registraAtividadeDaTarefa } = await import("@/lib/tarefas/atividade");
-  await registraAtividadeDaTarefa(admin, { organizationId: inscricao.organization_id, tarefa: data.tarefa, tipo: "task_created", actor: { type: "webhook_source", id: "cadencias" } });
+  const [{ portaDaAplicacao }, { registraAtividadeDaTarefa }] = await Promise.all([import("@/lib/db"), import("@/lib/tarefas/atividade")]);
+  await registraAtividadeDaTarefa(portaDaAplicacao(), { organizationId: inscricao.organization_id, tarefa: data.tarefa, tipo: "task_created", actor: { type: "webhook_source", id: "cadencias" } });
 }
 
 async function avancar(

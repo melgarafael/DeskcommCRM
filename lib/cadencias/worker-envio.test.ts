@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { portaDaAplicacao } from "@/lib/db";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { configuracaoPadrao } from "./exemplos";
 import { processarCadencias } from "./worker";
@@ -117,7 +118,7 @@ describe("efeitos do worker de cadências", () => {
     const b = bancada({ passos: [{ id: "tarefa-1", tipo: "tarefa", titulo: "Ligar para {{primeiro_nome}}", prazoDias: 1 }, email] });
     await processarCadencias(b.admin, agora, "request-sintetico");
     expect(b.tarefas).toHaveLength(1); expect(b.tarefas[0]!.created_by).toBeNull(); expect(b.tarefas[0]!.title).toBe("Ligar para Pessoa");
-    expect(mocks.atividade).toHaveBeenCalledWith(b.admin, expect.objectContaining({ actor: { type: "webhook_source", id: "cadencias" } }));
+    expect(mocks.atividade).toHaveBeenCalledWith(portaDaAplicacao(), expect.objectContaining({ actor: { type: "webhook_source", id: "cadencias" } }));
     expect(b.inscricao.passo_atual_id).toBe("email-1");
   });
   it("resultado local incerto após envio confirmado não reenvia no próximo tick", async () => {
