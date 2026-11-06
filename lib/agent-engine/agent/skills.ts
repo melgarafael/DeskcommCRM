@@ -78,6 +78,8 @@ export interface LoadedSkill {
    * para validar que um ref_path pedido pelo modelo é conhecido ANTES de tocar storage.
    */
   manifest: unknown[];
+  /** Skill da PLATAFORMA (`organization_id` nulo): texto nosso, não da organização. */
+  daPlataforma?: true;
 }
 
 function countLines(content: string): number {
@@ -205,6 +207,7 @@ export async function loadSkills(db: Queryable, tenantId: string): Promise<Loade
         body: r.body,
         matcher: r.matcher,
         manifest: r.manifest ?? [],
+        ...(r.organization_id === null ? { daPlataforma: true as const } : {}),
       });
     }
   }
@@ -221,6 +224,39 @@ export function renderSkillIndex(skills: readonly LoadedSkill[]): string {
     return '';
   }
   return skills.map((s) => `- ${s.name}: ${s.description}`).join('\n');
+}
+
+/**
+ * As skills que ESTE agente usa (`ai_agent_versions.skill_names`, migration 9107).
+ * `null` = todas as da organização e da plataforma (o comportamento de antes, e o
+ * default de toda versão); `[]` = nenhuma; nomes = só estas. Filtra sem reordenar:
+ * a ordem por nome de `loadSkills` é o que mantém o prefixo cacheável estável.
+ */
+export function skillsDoAgente(
+  skills: readonly LoadedSkill[],
+  nomes: readonly string[] | null,
+): LoadedSkill[] {
+  if (nomes === null) return [...skills];
+  const escolhidas = new Set(nomes);
+  return skills.filter((k) => escolhidas.has(k.name));
+}
+
+/**
+ * Skills que o roteiro de atendimento puxa neste passo (o nó `skill` diz "puxe
+ * isto aqui"). Resolve sobre TODAS as da organização, não sobre `skillsDoAgente`:
+ * nomear a skill no roteiro é configuração explícita e vale mesmo fora da lista
+ * do agente — a tela do agente diz isso. Nome que não existe some; a que o
+ * matcher já casou não repete (o match vence o empate por nome).
+ */
+export function skillsPuxadasPeloRoteiro(
+  daOrganizacao: readonly LoadedSkill[],
+  nomes: readonly string[],
+  jaCasadas: readonly LoadedSkill[],
+): LoadedSkill[] {
+  return nomes
+    .map((nome) => daOrganizacao.find((sk) => sk.name === nome))
+    .filter((sk): sk is LoadedSkill => sk !== undefined)
+    .filter((sk) => !jaCasadas.some((m) => m.name === sk.name));
 }
 
 /** Normaliza para o matching: minúsculas + remove acentos (matcher robusto a diacrítico). */

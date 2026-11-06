@@ -31,7 +31,9 @@ interface RouteCtx {
 
 export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  // A mídia é a LEITURA do anexo (#3431): o `viewer` que já vê o negócio abre o
+  // arquivo. Escrever segue em `agent`, na rota da lista (POST/DELETE).
+  const authz = await requireRole("viewer", { requestId, resource: "crm_leads" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org } = authz;

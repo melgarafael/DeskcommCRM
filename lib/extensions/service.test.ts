@@ -103,6 +103,7 @@ import { MOTIVO_PACOTE_ILEGIVEL } from "./instalada";
 import {
   configureExtension,
   listExtensions,
+  loadCrmExtensions,
   readExtensionOperation,
   removeExtension,
   revertExtension,
@@ -531,5 +532,34 @@ describe("auditoria só quando a chamada fez a transição", () => {
       configuration: { density: "compact", show_description: true },
     });
     expect(mocks.audit).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadCrmExtensions", () => {
+  it("o hub segue a ordem de instalação, não a ordem da chave no banco", async () => {
+    const [a, b, c] = ["fase-1", "fase-2", "fase-3"].map((name) => artifact(name));
+    const [ia, ib, ic] = [
+      installationRow(a!, { installed_at: "2026-10-28T15:32:40.456564+00:00" }),
+      installationRow(b!, { installed_at: "2026-10-28T15:32:41.8+00:00" }),
+      installationRow(c!, { installed_at: "2026-10-28T15:32:43.368924+00:00" }),
+    ];
+    const vinculo = (installation: Row): Row => ({
+      organization_id: ORG_A,
+      installation_id: installation.id,
+      enabled: true,
+      configuration: { density: "comfortable", show_description: true },
+      revision: 1,
+      deactivated_by_removal_at: null,
+    });
+    mocks.admin = fakeClient({
+      extension_installations: [ic!, ia!, ib!],
+      extension_artifacts: [a!, b!, c!],
+    });
+    // A sessão não enxerga extension_installations, como `authenticated` no banco.
+    mocks.session = fakeClient({ organization_extensions: [vinculo(ic!), vinculo(ia!), vinculo(ib!)] });
+
+    const guias = await loadCrmExtensions(ORG_A);
+
+    expect(guias.map((guia) => guia.manifest.name)).toEqual(["fase-1", "fase-2", "fase-3"]);
   });
 });

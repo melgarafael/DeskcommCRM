@@ -1,0 +1,956 @@
+{
+  "id": "financeiro",
+  "titulo": "Financeiro",
+  "tela": "/app/settings/tenant/financeiro",
+  "resumo": "Onde você diz onde o dinheiro da clínica fica, como o cliente paga, como cada entrada e saída é classificada e quais contas se repetem todo mês.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo o Financeiro",
+      "objetivo": "Achar a tela pelas Configurações e saber para que serve cada uma das listas.",
+      "papel": "admin",
+      "busca": [
+        "configurar financeiro",
+        "onde cadastro as contas",
+        "formas de pagamento da clínica",
+        "plano de contas",
+        "organizar o dinheiro",
+        "caixa e banco"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica",
+          "texto": "Abra \"Configurações\" no rodapé do menu da esquerda. No grupo \"Sua empresa\" está o cartão \"Financeiro\". Para seguir, clique nele.",
+          "rota": "/app/settings",
+          "destaques": [
+            {
+              "alvo": {
+                "css": "a[href='/app/settings/tenant/financeiro']"
+              },
+              "rotulo": "Financeiro",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "css": "a[href='/app/settings/tenant/financeiro']"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Onde o dinheiro fica e como o cliente paga",
+          "texto": "A tela é uma página só, com várias listas uma embaixo da outra. \"Contas\" são os lugares onde o dinheiro fica: o caixa da recepção, a conta no banco. \"Formas de pagamento\" são os jeitos como o cliente paga, e cada uma diz em qual conta o dinheiro cai. Por isso as duas ficam juntas: dá para conferir de uma olhada que o Pix cai na conta do banco e o dinheiro vivo cai no caixa. O aviso ⚠️ ao lado de \"Cartão de crédito\" quer dizer que essa forma ainda não tem conta. Você resolve isso na lição \"Formas de pagamento\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[href='/app/settings/tenant/financeiro']"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "catalogo-financeiro"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(> h2:text-is('Contas'))"
+              },
+              "rotulo": "Onde o dinheiro fica",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "section:has(> h2:text-is('Formas de pagamento'))"
+              },
+              "rotulo": "Como o cliente paga",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Como cada lançamento é classificado",
+          "texto": "Mais abaixo, o \"Plano de contas\" é a lista de categorias que separam cada entrada e cada saída, como \"Consultas e sessões\" ou \"Aluguel\". Se quem administra o servidor instalar o módulo \"Comandas\", aparece logo depois uma parte chamada \"Comissão\", para combinar quanto cada pessoa da equipe recebe por atendimento.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "section:has(> h2:text-is('Plano de contas'))"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(> h2:text-is('Plano de contas'))"
+              },
+              "rotulo": "Categorias de entrada e saída",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "As contas de todo mês",
+          "texto": "No fim da página, \"Todo mês\" guarda as contas que se repetem, como o aluguel e a internet. O sistema abre cada uma no dia certo, para você não esquecer de lançar. Nas próximas lições você aprende a mexer em cada lista.",
+          "dica": "Quem é atendente vê as listas, mas não vê os campos nem os botões de cadastrar, editar e desativar. Só gerentes e administradores mudam o Financeiro.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "section:has(> h2:text-is('Todo mês'))"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(> h2:text-is('Todo mês'))"
+              },
+              "rotulo": "Contas que se repetem",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contas",
+      "titulo": "Cadastrar, editar e desativar uma conta",
+      "objetivo": "Criar uma conta nova, corrigir o nome de uma conta e tirar de uso a que não serve mais.",
+      "papel": "admin",
+      "busca": [
+        "cadastrar conta do banco",
+        "criar caixa da clínica",
+        "onde o dinheiro fica",
+        "renomear conta",
+        "desativar conta financeira",
+        "conta da maquininha"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Os campos da conta",
+          "texto": "Em \"Contas\", escreva o nome da conta e escolha o tipo: \"Caixa\" (dinheiro guardado na clínica), \"Banco\" ou \"Outra\". O botão \"Adicionar conta\" só fica disponível quando o nome tem pelo menos 2 letras. Embaixo fica a lista das contas que estão em uso, com o nome e o tipo de cada uma.",
+          "rota": "/app/settings/tenant/financeiro",
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome da conta",
+                "exato": true
+              },
+              "rotulo": "Nome",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Tipo da conta",
+                "exato": true
+              },
+              "rotulo": "Tipo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "section:has(> h2:text-is('Contas')) ul"
+              },
+              "rotulo": "Contas em uso",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Preencher",
+          "texto": "Vamos cadastrar a conta onde cai o dinheiro das vendas na maquininha de cartão. Escreva \"Conta da maquininha\" e escolha o tipo \"Outra\". Depois, clique em \"Adicionar conta\".",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Nome da conta",
+                "exato": true
+              },
+              "valor": "Conta da maquininha"
+            },
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "rotulo": "Tipo da conta",
+                "exato": true
+              },
+              "opcao": "Outra"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome da conta",
+                "exato": true
+              },
+              "rotulo": "Nome",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Tipo da conta",
+                "exato": true
+              },
+              "rotulo": "Tipo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Adicionar conta",
+                "exato": true
+              },
+              "rotulo": "Adicionar conta",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Adicionar conta",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "A conta entrou na lista",
+          "texto": "A \"Conta da maquininha\" aparece na lista, com o tipo \"Outra\", e o campo de nome fica vazio para a próxima. A partir de agora ela aparece para escolher nas formas de pagamento e nas contas de todo mês. Se já existir uma conta em uso com o mesmo nome, o sistema avisa e não cria outra.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Adicionar conta",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "section:has(> h2:text-is('Contas')) li:has-text('Conta da maquininha')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(> h2:text-is('Contas')) li:has-text('Conta da maquininha')"
+              },
+              "rotulo": "Conta nova",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Corrigir uma conta",
+          "texto": "Para mudar o nome ou o tipo de uma conta, clique em \"Editar\" na linha dela. Os dados dela sobem para os campos do alto, e o botão vira \"Salvar\". Mude o que precisar e clique em \"Salvar\". Os pagamentos ligados a essa conta continuam ligados a ela. Se mudar de ideia, \"Cancelar\" limpa os campos sem mudar nada.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar",
+                "exato": true,
+                "dentro": {
+                  "css": "section:has(> h2:text-is('Contas')) li:has-text('Caixa da recepção')"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome da conta",
+                "exato": true
+              },
+              "rotulo": "Nome",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Tipo da conta",
+                "exato": true
+              },
+              "rotulo": "Tipo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true,
+                "dentro": {
+                  "css": "section:has(> h2:text-is('Contas'))"
+                }
+              },
+              "rotulo": "Salvar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar",
+                "exato": true,
+                "dentro": {
+                  "css": "section:has(> h2:text-is('Contas'))"
+                }
+              },
+              "rotulo": "Cancelar",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Cancelar",
+            "exato": true,
+            "dentro": {
+              "css": "section:has(> h2:text-is('Contas'))"
+            }
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Tirar uma conta de uso",
+          "texto": "Quando uma conta não serve mais, clique em \"Desativar\" na linha dela. Ela não é apagada: os lançamentos antigos continuam guardados com ela. Ela só sai da lista e deixa de aparecer para escolher. Atenção: o clique vale na hora, sem pergunta de confirmação.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar",
+                "exato": true,
+                "dentro": {
+                  "css": "section:has(> h2:text-is('Contas'))"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Desativar",
+                "exato": true,
+                "dentro": {
+                  "css": "section:has(> h2:text-is('Contas')) li:has-text('Conta da maquininha')"
+                }
+              },
+              "rotulo": "Desativar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Desativar",
+            "exato": true,
+            "dentro": {
+              "css": "section:has(> h2:text-is('Contas')) li:has-text('Conta da maquininha')"
+            }
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "Fora da lista",
+          "texto": "A \"Conta da maquininha\" saiu da lista. Se alguma forma de pagamento ainda apontava para ela, a forma passa a mostrar \"conta removida\" no lugar do nome. Troque a conta dessa forma logo: o sistema não troca sozinho, e enquanto você não troca, o dinheiro pago com ela continua indo para a conta desativada. O mesmo vale para as contas de todo mês ligadas a ela.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Desativar",
+                "exato": true,
+                "dentro": {
+                  "css": "section:has(> h2:text-is('Contas')) li:has-text('Conta da maquininha')"
+                }
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(> h2:text-is('Contas')) ul"
+              },
+              "rotulo": "Só as contas em uso",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "formas-de-pagamento",
+      "titulo": "Formas de pagamento",
+      "objetivo": "Dizer em qual conta cai cada forma de pagamento e cadastrar uma forma nova.",
+      "papel": "admin",
+      "busca": [
+        "formas de pagamento",
+        "cadastrar pix",
+        "cartão de crédito e débito",
+        "sem conta definida",
+        "em qual conta cai o pagamento",
+        "como o cliente paga"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O aviso de forma sem conta",
+          "texto": "Cada linha mostra a forma de pagamento e, depois da seta, a conta onde o dinheiro cai. \"Cartão de crédito\" está com o aviso \"sem conta definida\". Dá para cadastrar a forma antes de decidir a conta. Mas, se a clínica usa comandas, uma comanda paga com ela não fecha: na hora de fechar, a tela da comanda avisa que a forma ainda não tem conta de destino. Para resolver, clique em \"Editar\" na linha do cartão de crédito.",
+          "rota": "/app/settings/tenant/financeiro",
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(> h2:text-is('Formas de pagamento')) li:has-text('Cartão de crédito')"
+              },
+              "rotulo": "Forma sem conta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Editar",
+                "exato": true,
+                "dentro": {
+                  "css": "section:has(> h2:text-is('Formas de pagamento')) li:has-text('Cartão de crédito')"
+                }
+              },
+              "rotulo": "Editar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Editar",
+            "exato": true,
+            "dentro": {
+              "css": "section:has(> h2:text-is('Formas de pagamento')) li:has-text('Cartão de crédito')"
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Escolher a conta",
+          "texto": "O nome \"Cartão de crédito\" sobe para o campo do alto. Em \"Conta de destino\", escolha \"Conta corrente da clínica\", que é onde a operadora do cartão deposita. Depois clique em \"Salvar\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar",
+                "exato": true,
+                "dentro": {
+                  "css": "section:has(> h2:text-is('Formas de pagamento')) li:has-text('Cartão de crédito')"
+                }
+              }
+            },
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "rotulo": "Conta de destino",
+                "exato": true
+              },
+              "opcao": "Conta corrente da clínica"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Conta de destino",
+                "exato": true
+              },
+              "rotulo": "Conta de destino",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true,
+                "dentro": {
+                  "css": "section:has(> h2:text-is('Formas de pagamento'))"
+                }
+              },
+              "rotulo": "Salvar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar",
+            "exato": true,
+            "dentro": {
+              "css": "section:has(> h2:text-is('Formas de pagamento'))"
+            }
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Aviso resolvido",
+          "texto": "O aviso sumiu: agora a linha diz \"Cartão de crédito → Conta corrente da clínica\". Se a clínica usa comandas, a partir daqui toda comanda paga no cartão de crédito põe o dinheiro nessa conta.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true,
+                "dentro": {
+                  "css": "section:has(> h2:text-is('Formas de pagamento'))"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "section:has(> h2:text-is('Formas de pagamento')) li:has-text('Cartão de crédito → Conta corrente da clínica')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(> h2:text-is('Formas de pagamento')) li:has-text('Cartão de crédito')"
+              },
+              "rotulo": "Agora com conta",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Cadastrar uma forma nova",
+          "texto": "Para aceitar cartão de débito, escreva \"Cartão de débito\" no nome e, em \"Conta de destino\", escolha \"Conta corrente da clínica\". Depois clique em \"Adicionar forma\". Se ainda não souber a conta, dá para deixar \"Decidir depois\": a forma é cadastrada com o aviso de sem conta, e você resolve depois como acabou de fazer.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Nome da forma de pagamento",
+                "exato": true
+              },
+              "valor": "Cartão de débito"
+            },
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "rotulo": "Conta de destino",
+                "exato": true
+              },
+              "opcao": "Conta corrente da clínica"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome da forma de pagamento",
+                "exato": true
+              },
+              "rotulo": "Nome",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Conta de destino",
+                "exato": true
+              },
+              "rotulo": "Onde o dinheiro cai",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Adicionar forma",
+                "exato": true
+              },
+              "rotulo": "Adicionar forma",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Adicionar forma",
+            "exato": true
+          }
+        },
+        {
+          "id": "p5",
+          "titulo": "Pronta para usar",
+          "texto": "\"Cartão de débito → Conta corrente da clínica\" entra na lista, em ordem alfabética. Se a clínica usa comandas, ela passa a aparecer como opção de pagamento na hora de fechar uma. \"Desativar\" tira uma forma de uso sem apagar os pagamentos antigos feitos com ela.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Adicionar forma",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "section:has(> h2:text-is('Formas de pagamento')) li:has-text('Cartão de débito')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(> h2:text-is('Formas de pagamento')) li:has-text('Cartão de débito')"
+              },
+              "rotulo": "Forma nova",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "plano-de-contas",
+      "titulo": "Plano de contas",
+      "objetivo": "Criar uma categoria nova para classificar entradas ou saídas.",
+      "papel": "admin",
+      "busca": [
+        "plano de contas",
+        "categoria de despesa",
+        "classificar entrada e saída",
+        "separar gastos da clínica",
+        "categoria de receita",
+        "o que é plano de contas"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "As categorias do dinheiro",
+          "texto": "O plano de contas é a lista de categorias que dizem de onde veio cada entrada e para onde foi cada saída. Cada categoria é de \"Entrada\" ou de \"Saída\", e isso aparece depois do nome. Aqui, \"Consultas e sessões\" e \"Convênios\" são entradas; \"Aluguel\" e \"Material de consumo\" são saídas.",
+          "rota": "/app/settings/tenant/financeiro",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "section:has(> h2:text-is('Plano de contas'))"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(> h2:text-is('Plano de contas')) ul"
+              },
+              "rotulo": "Categorias cadastradas",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Escolher é obrigatório",
+          "texto": "Escreva o nome da categoria nova, por exemplo \"Material de escritório\". Repare que o botão \"Adicionar plano\" continua apagado: o campo \"Entrada ou saída?\" começa vazio de propósito, e o botão só funciona depois que você escolhe. Assim ninguém cadastra uma despesa como se fosse entrada por pressa.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "section:has(> h2:text-is('Plano de contas'))"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Nome do plano de contas",
+                "exato": true
+              },
+              "valor": "Material de escritório"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome do plano de contas",
+                "exato": true
+              },
+              "rotulo": "Nome",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Entrada ou saída",
+                "exato": true,
+                "dentro": {
+                  "css": "section:has(> h2:text-is('Plano de contas'))"
+                }
+              },
+              "rotulo": "Escolha aqui",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Adicionar plano",
+                "exato": true
+              },
+              "rotulo": "Ainda apagado",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Escolher a direção",
+          "texto": "Material de escritório é dinheiro que sai, então escolha \"Saída\". O botão \"Adicionar plano\" acende. Clique nele.",
+          "antes": [
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "rotulo": "Entrada ou saída",
+                "exato": true,
+                "dentro": {
+                  "css": "section:has(> h2:text-is('Plano de contas'))"
+                }
+              },
+              "opcao": "Saída"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome do plano de contas",
+                "exato": true
+              },
+              "rotulo": "Nome",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Entrada ou saída",
+                "exato": true,
+                "dentro": {
+                  "css": "section:has(> h2:text-is('Plano de contas'))"
+                }
+              },
+              "rotulo": "Saída",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Adicionar plano",
+                "exato": true
+              },
+              "rotulo": "Adicionar plano",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Adicionar plano",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Categoria criada",
+          "texto": "\"Material de escritório · Saída\" entra na lista e os dois campos voltam ao começo. \"Editar\" e \"Desativar\" funcionam como nas contas: editar corrige o nome ou a direção; desativar tira a categoria de uso sem apagar os lançamentos que já foram classificados com ela.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Adicionar plano",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "section:has(> h2:text-is('Plano de contas')) li:has-text('Material de escritório')"
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "section:has(> h2:text-is('Todo mês'))"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(> h2:text-is('Plano de contas')) li:has-text('Material de escritório')"
+              },
+              "rotulo": "Categoria nova",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "todo-mes",
+      "titulo": "Contas que se repetem todo mês",
+      "objetivo": "Cadastrar uma conta fixa, como o contador, para o sistema abri-la sozinho todo mês.",
+      "papel": "admin",
+      "busca": [
+        "conta fixa todo mês",
+        "lançamento recorrente",
+        "aluguel todo mês",
+        "despesa mensal automática",
+        "lembrar de pagar conta",
+        "cadastrar contador"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O que já se repete",
+          "texto": "Em \"Todo mês\" ficam as contas fixas. Cada linha mostra o nome, se é saída ou entrada, o valor e o dia do mês. No dia certo, o sistema abre a conta sozinho, e ela aparece em Análise › Faturamento. Ela nasce como conta a pagar, nunca como paga: o sistema sabe que a conta vence, mas não sabe se você já pagou. Atenção: se você cadastrar uma conta fixa com um dia que já passou neste mês, o sistema abre a deste mês em até um dia, mesmo que você já tenha pago.",
+          "rota": "/app/settings/tenant/financeiro",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "section:has(> h2:text-is('Todo mês'))"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(> h2:text-is('Todo mês')) ul"
+              },
+              "rotulo": "Contas fixas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Nasce como conta a pagar, nunca como paga",
+                "exato": false
+              },
+              "rotulo": "Nasce a pagar",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Preencher a conta fixa",
+          "texto": "Escreva o nome (\"Honorários do contador\"), deixe \"Saída\", escolha a conta de onde o dinheiro sai, o valor (450,00) e o dia do mês. Aqui o contador é pago no dia 31. Como nem todo mês tem dia 31, aparece o aviso: \"Nos meses mais curtos, cai no último dia do mês.\" O botão \"Adicionar\" só acende com tudo preenchido.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "section:has(> h2:text-is('Todo mês'))"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Nome do lançamento",
+                "exato": true
+              },
+              "valor": "Honorários do contador"
+            },
+            {
+              "acao": "selecionar",
+              "alvo": {
+                "rotulo": "Conta",
+                "exato": true,
+                "dentro": {
+                  "css": "section:has(> h2:text-is('Todo mês'))"
+                }
+              },
+              "opcao": "Conta corrente da clínica"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Valor",
+                "exato": true
+              },
+              "valor": "450,00"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Dia do mês",
+                "exato": true
+              },
+              "valor": "31"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(> h2:text-is('Todo mês')) > div.flex"
+              },
+              "rotulo": "Dados da conta fixa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Nos meses mais curtos, cai no último dia do mês.",
+                "exato": true
+              },
+              "rotulo": "Aviso do dia 31",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Adicionar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Conta fixa cadastrada",
+          "texto": "A linha \"Honorários do contador · Saída · R$ 450,00 · dia 31\" entra na lista. Repare que os campos continuam preenchidos: não clique em \"Adicionar\" de novo, senão a mesma conta fixa entra duas vezes. Para mudar o valor ou o dia, use \"Editar\" e depois \"Salvar\". O \"×\" no fim da linha tira a conta fixa de uso, sem pergunta de confirmação; as contas que ela já abriu continuam lá.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Adicionar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "section:has(> h2:text-is('Todo mês')) li:has-text('Honorários do contador')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has(> h2:text-is('Todo mês')) li:has-text('Honorários do contador')"
+              },
+              "rotulo": "Conta fixa nova",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Remover lançamento recorrente",
+                "exato": true,
+                "dentro": {
+                  "css": "section:has(> h2:text-is('Todo mês')) li:has-text('Honorários do contador')"
+                }
+              },
+              "rotulo": "Tirar de uso",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

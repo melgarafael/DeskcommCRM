@@ -193,11 +193,13 @@ describe("o furo de medição é medido, não presumido", () => {
       expect(await avisa(semCusto({ status: "erro" }))).toBe(false);
     });
 
-    it("transcrição pelo serviço (degraus 1 e 2) não acende: preço próprio, sem tokens", async () => {
+    it("transcrição pelos serviços (degraus 1 a 3) não acende: preço próprio, sem tokens", async () => {
       // Contá-las fazia o card dizer "o produto não sabe o preço do modelo em
       // uso... a parada pode não acontecer" a toda organização que recebeu um
       // áudio no mês — com o modelo do turno precificado e a parada funcionando.
-      for (const origem of ["servico_da_instalacao", "padrao_openai_compativel"]) {
+      // `padrao_openrouter` (#3382) é o degrau 3: a própria OpenRouter
+      // transcreve em `/audio/transcriptions`; neste controle não informou custo.
+      for (const origem of ["servico_da_instalacao", "padrao_openai_compativel", "padrao_openrouter"]) {
         expect(
           await avisa(semCusto({ purpose: PONTO_TRANSCRICAO_DE_AUDIO, origem_da_escolha: origem })),
           `degrau ${origem} acendeu o aviso`,
@@ -205,7 +207,7 @@ describe("o furo de medição é medido, não presumido", () => {
       }
     });
 
-    it("transcrição pelo modelo da organização (degrau 3) SEM preço ACENDE: é LLM cobrado por token", async () => {
+    it("transcrição pelo modelo da organização (degrau 4) SEM preço ACENDE: é LLM cobrado por token", async () => {
       // Excluir o `purpose` inteiro apagava o aviso justamente aqui: o gasto
       // desse áudio não entra na soma do teto, e o card dizia que entrava.
       expect(

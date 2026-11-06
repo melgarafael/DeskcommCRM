@@ -2,8 +2,8 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "A poda do histórico — as duas tabelas que cresciam sozinhas",
-    "subtitle": "issue #261: o que sai, o que tem dono e não sai, e por que o expurgo da auditoria não é uma porta",
+    "title": "A poda do histórico e o que precisa ficar",
+    "subtitle": "issues #261/#3201: o que sai, o que tem dono e o leitor técnico do traço do turno",
     "output": "retencao-de-historico.html",
     "quality_profile": "standard"
   },
@@ -17,7 +17,7 @@
   ],
   "mainPath": ["scheduler", "rota", "podar", "fnpoda", "fila", "trilha"],
   "nodes": [
-    { "id": "envs", "lane": "humano", "col": 1, "type": "frontend", "label": "JOB_QUEUE_RETENTION_DAYS / AUDIT_LOG_RETENTION_DAYS", "sublabel": "opcionais; os defaults valem sem editar .env (doutrina de packaging)" },
+    { "id": "envs", "lane": "humano", "col": 1, "type": "frontend", "label": "JOB_QUEUE_RETENTION_DAYS / AUDIT_LOG_RETENTION_DAYS / AI_TELEMETRY_RETENTION_DAYS", "sublabel": "opcionais; os defaults valem sem editar .env (doutrina de packaging)" },
     { "id": "runbook", "lane": "humano", "col": 2, "type": "frontend", "label": "docs/runbooks/custo-e-cota-do-supabase.md §4", "sublabel": "comandos: medir tamanho, ver a última poda, separar 'nada vencido' de 'cron parado'" },
     { "id": "painel", "lane": "humano", "col": 3, "type": "frontend", "label": "Painel de auditoria (/admin/audit)", "sublabel": "retention.sweep_run entra no filtro por vir de AUDIT_ACTIONS" },
 
@@ -39,7 +39,11 @@
     { "id": "trilha", "lane": "volta", "col": 2, "type": "service", "label": "audit('retention.sweep_run')", "sublabel": "contagem + retenção em vigor; linha nova demais para o próprio expurgo alcançar" },
     { "id": "log", "lane": "volta", "col": 1, "type": "service", "label": "logger.warn / logger.error", "sublabel": "knob ajustado e falha de RPC saem alto — nunca a frase tranquilizadora" },
     { "id": "fnia", "lane": "banco", "col": 7, "type": "database", "label": "fn_expurgar_telemetria_de_ia_vencida / _ritmo_de_envio_vencido / _copias_enviadas_vencidas / _checkpoints_superados (definer, 0587)", "sublabel": "sem seletor de linha · piso no corpo · último envio do número, janela do anti-repetição e último checkpoint da fronteira ficam" },
-    { "id": "tabelasia", "lane": "banco", "col": 8, "type": "database", "label": "llm_calls · metrics · skill_activations · ai_router_decisions · pacing_ledger · outbound_copies · lead_checkpoints", "sublabel": "append-only da IA; event_log fica FORA (idempotência dos gatilhos de tempo)" }
+    { "id": "tabelasia", "lane": "banco", "col": 8, "type": "database", "label": "llm_calls · metrics · skill_activations · ai_router_decisions · pacing_ledger · outbound_copies · lead_checkpoints", "sublabel": "append-only da IA; event_log fica FORA (idempotência dos gatilhos de tempo)" },
+    { "id": "fntraco", "lane": "banco", "col": 7, "type": "database", "label": "fn_expurgar_traco_do_turno_vencido (9021)", "sublabel": "service_role · piso 100 · mesmo knob da telemetria · só idade e lote" },
+    { "id": "tracos", "lane": "banco", "col": 8, "type": "database", "label": "agent_turn_traces (0721)", "sublabel": "gravado por turno; created_at define a retenção; legado pode conter erro livre" },
+    { "id": "leitortraco", "lane": "borda", "col": 5, "type": "api", "label": "GET /api/v1/ai/turn-traces", "sublabel": "cookie manager+ · organização da sessão · datas UTC e instante do corte · API parcial, tela na issue3201" },
+    { "id": "recibotraco", "lane": "regra", "col": 6, "type": "service", "label": "recibo-do-traco.ts", "sublabel": "projeção fechada: sem error_message, argumentos ou JSON arbitrário; códigos técnicos conhecidos" }
   ],
   "edges": [
     { "id": "e1", "from": "scheduler", "to": "rota", "label": "curl com INTERNAL_SECRET" },
@@ -62,6 +66,13 @@
     { "id": "e18", "from": "rota", "to": "trilha", "label": "request_id correlaciona" },
     { "id": "e19", "from": "podar", "to": "fnia", "label": "rpc em lote" },
     { "id": "e20", "from": "fnia", "to": "tabelasia", "label": "delete do que passou do prazo e já não tem leitor" },
-    { "id": "e21", "from": "fila", "to": "fnia", "label": "job pending/running ⇒ o checkpoint que ele lê fica" }
+    { "id": "e21", "from": "fila", "to": "fnia", "label": "job pending/running ⇒ o checkpoint que ele lê fica" },
+    { "id": "e22", "from": "podar", "to": "fntraco", "label": "dreno em lotes com o knob existente" },
+    { "id": "e23", "from": "fntraco", "to": "tracos", "label": "apaga created_at anterior ao corte" },
+    { "id": "e24", "from": "fntraco", "to": "auditlog", "label": "a erosão fica registrada quando houve efeito" },
+    { "id": "e25", "from": "politica", "to": "leitortraco", "label": "mesmo prazo; pedido vencido não reabre o corte" },
+    { "id": "e26", "from": "tracos", "to": "leitortraco", "label": "RLS e filtro explícito de organização" },
+    { "id": "e27", "from": "leitortraco", "to": "recibotraco", "label": "serializa só o recibo técnico" },
+    { "id": "e28", "from": "recibotraco", "to": "runbook", "label": "contrato de API parcial documentado; sem tela alegada" }
   ]
 }

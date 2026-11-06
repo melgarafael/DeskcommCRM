@@ -78,7 +78,7 @@ async function centavos(
   model: string,
   tokens: { promptTokens?: number; completionTokens?: number },
   em?: Date,
-): Promise<number> {
+): Promise<number | null> {
   return computeCost({ model, ...tokens, ...(em ? { em } : {}) });
 }
 

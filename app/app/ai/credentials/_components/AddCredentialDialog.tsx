@@ -21,19 +21,23 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { apiClient } from "@/lib/api/client";
 import { showApiError } from "@/components/feedback/ApiErrorToast";
-import { credentialsListQueryKey, type CredentialRow } from "@/hooks/ai/useCredentials";
+import { credentialsListQueryKey, type CredentialRow, type ServiceProvider } from "@/hooks/ai/useCredentials";
 import {
   IDS_COM_CHAVE,
   PROVEDORES_COM_CHAVE,
   PROVEDOR_POR_ASSINATURA,
   type ProvedorComChave,
 } from "@/lib/ai/pontos/provedores";
+import { IDS_DE_SERVICO, PROVEDORES_DE_SERVICO } from "@/lib/ai/pontos/provedores-de-servico";
 import { descreverErroDeValidacao } from "@/lib/ai/credenciais/erro-de-validacao";
 import { useT } from "@/hooks/i18n/useT";
 
@@ -47,8 +51,8 @@ const MENSAGEM_DA_ASSINATURA =
   "A conta do ChatGPT não se cadastra colando uma chave: ela se conecta pelo botão de login em IA › Credenciais.";
 
 const formSchema = z.object({
-  // Derivado das listas (`lib/ai/pontos/provedores.ts`), como a rota.
-  provider: z.enum(IDS_COM_CHAVE),
+  // Derivado das listas (`lib/ai/pontos/provedores.ts` e `provedores-de-servico.ts`), como a rota.
+  provider: z.enum([...IDS_COM_CHAVE, ...IDS_DE_SERVICO]),
   // Opcional: o leigo cola só a chave. Em branco, o nome vira o do provedor
   // (ver `onSubmit`) — o banco exige um, e a pessoa não precisa inventá-lo.
   label: z.string().trim().max(80),
@@ -85,7 +89,7 @@ export function AddCredentialDialog({ open, onOpenChange, providerInicial = "ant
   const t = useT();
   const router = useRouter();
   const qc = useQueryClient();
-  const [provider, setProvider] = useState<ProvedorComChave>(providerInicial);
+  const [provider, setProvider] = useState<ProvedorComChave | ServiceProvider>(providerInicial);
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
   /** O endereço da API compatível com a OpenAI — só o provedor personalizado tem. */
@@ -96,7 +100,10 @@ export function AddCredentialDialog({ open, onOpenChange, providerInicial = "ant
   );
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof FormValues, string>>>({});
-  const provedor = PROVEDORES_COM_CHAVE.find((p) => p.id === provider) ?? PROVEDORES_COM_CHAVE[0];
+  const provedor =
+    PROVEDORES_COM_CHAVE.find((p) => p.id === provider) ??
+    PROVEDORES_DE_SERVICO.find((p) => p.id === provider) ??
+    PROVEDORES_COM_CHAVE[0];
   /** A conta do ChatGPT se conecta pelo login, não por chave colada (#2952). */
   const ehAssinatura = provider === PROVEDOR_POR_ASSINATURA;
 
@@ -201,8 +208,13 @@ export function AddCredentialDialog({ open, onOpenChange, providerInicial = "ant
         const fresh = qc.getQueryData<CredentialRow[]>(credentialsListQueryKey);
         const justCreated = fresh?.find((c) => c.id === res.data.id);
         if (justCreated?.models_available != null) {
+          // "modelos" não descreve o catálogo de um serviço de voz — ali o que
+          // a chave devolve é a lista de vozes da conta, não modelo de chat.
+          const substantivo = PROVEDORES_DE_SERVICO.some((p) => p.id === justCreated.provider)
+            ? t("vozes disponíveis.")
+            : t("modelos disponíveis.");
           toast.success(
-            `${t("Validada")} — ${justCreated.models_available.length} ${t("modelos disponíveis.")}`,
+            `${t("Validada")} — ${justCreated.models_available.length} ${substantivo}`,
           );
         } else if (justCreated?.validation_error) {
           const erro = descreverErroDeValidacao(justCreated.validation_error, justCreated.provider);
@@ -242,16 +254,27 @@ export function AddCredentialDialog({ open, onOpenChange, providerInicial = "ant
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="cred-provider">{t("Provedor")}</Label>
-            <Select value={provider} onValueChange={(v) => setProvider(v as ProvedorComChave)}>
+            <Select value={provider} onValueChange={(v) => setProvider(v as ProvedorComChave | ServiceProvider)}>
               <SelectTrigger id="cred-provider">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PROVEDORES_COM_CHAVE.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.rotulo}
-                  </SelectItem>
-                ))}
+                <SelectGroup>
+                  {PROVEDORES_COM_CHAVE.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.rotulo}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+                <SelectSeparator />
+                <SelectGroup>
+                  <SelectLabel>{t("Serviços de voz")}</SelectLabel>
+                  {PROVEDORES_DE_SERVICO.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.rotulo}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">{t(provedor.quandoUsar)}</p>

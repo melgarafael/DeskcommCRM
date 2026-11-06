@@ -425,3 +425,66 @@ test.describe("Campanhas — número oficial manda modelo aprovado", () => {
     await page.screenshot({ path: path.join(EVIDENCIA, "07-rapida-lista-inteira-numa-rodada.png"), fullPage: true });
   });
 });
+
+
+test("campanha de texto prepara a reserva e o dado preenchido pelo mesmo fluxo da tela", async ({ page }) => {
+  test.setTimeout(150_000);
+  const { randomUUID } = await import("node:crypto");
+  const { credenciaisSupabaseDeTeste } = await import("../../scripts/lib/env-de-teste");
+  const { loginComoAdmin, lerCreds } = await import("./helpers/login-admin");
+  const ambiente = credenciaisSupabaseDeTeste();
+  expect(["127.0.0.1", "localhost"]).toContain(new URL(ambiente.url).hostname);
+  const db = createClient(ambiente.url, ambiente.serviceRole, { auth: { persistSession: false } });
+  const cc = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as Creds;
+  const sufixo = randomUUID().slice(0, 8);
+  const nome = `Reserva campanha ${sufixo}`;
+  const etiqueta = `reserva-${sufixo}`;
+  let canal = "";
+  let campanha = "";
+  const contatos: string[] = [];
+  try {
+    const sessao = await db.from("channel_sessions").insert({ organization_id: cc.org_id, display_name: nome, waha_session_name: `reserva-${sufixo}`, status: "WORKING", webhook_secret_encrypted: "\\x00" }).select("id").single();
+    expect(sessao.error).toBeNull();
+    canal = sessao.data!.id as string;
+    for (const [i, pessoa] of ["Carla Souza", null].entries()) {
+      const contato = await db.from("contacts").insert({ organization_id: cc.org_id, name: pessoa, display_name: null, phone_number: `+551197${Date.now().toString().slice(-6)}${i}`, tags: [etiqueta] }).select("id").single();
+      expect(contato.error).toBeNull();
+      contatos.push(contato.data!.id as string);
+    }
+    await loginComoAdmin(page, lerCreds());
+    // Uma organização no seed: o seletor é oculto por contrato. Canal,
+    // público e snapshot abaixo conferem a empresa real da sessão.
+    await page.goto("/app/campaigns/new");
+    await page.locator("#nome").fill(nome);
+    await page.locator("#canal").selectOption(canal);
+    await expect(page.getByText('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')).toBeVisible();
+    await page.getByRole("textbox", { name: "Texto da mensagem" }).fill('Oi {{primeiro_nome|"aluno"}}!');
+    await page.getByLabel("Com alguma destas etiquetas").fill(etiqueta);
+    await page.getByRole("button", { name: "Ver quantas pessoas" }).click();
+    await expect(page.getByText(/2\s*podem receber/)).toBeVisible();
+    await page.getByRole("button", { name: "Salvar rascunho" }).click();
+    await page.waitForURL(/\/app\/campaigns\/[0-9a-f-]{36}$/);
+    campanha = page.url().split("/").pop()!;
+    await page.getByRole("button", { name: "Preparar lista" }).click();
+    await expect(page.getByRole("button", { name: "Enviar teste" })).toBeVisible();
+    const snapshot = await db.from("campaign_recipients").select("rendered_body, status").eq("organization_id", cc.org_id).eq("campaign_id", campanha);
+    expect(snapshot.error).toBeNull();
+    expect(snapshot.data?.map((r) => r.rendered_body).sort()).toEqual(["Oi Carla!", "Oi aluno!"]);
+    expect(snapshot.data?.map((r) => r.status)).toEqual(["pending", "pending"]);
+    fs.mkdirSync("evidence/antigos-core-3405", { recursive: true });
+    await page.screenshot({ path: "evidence/antigos-core-3405/campanha-preparada.png", fullPage: true });
+  } finally {
+    const erros: boolean[] = [];
+    for (const [tabela, coluna, valor] of [
+      ["campaign_recipients", "campaign_id", campanha], ["campaigns", "name", nome],
+      ...contatos.map((id) => ["contacts", "id", id]), ["channel_sessions", "id", canal],
+    ]) {
+      if (!valor) continue;
+      try {
+        const { error } = await db.from(tabela!).delete().eq("organization_id", cc.org_id).eq(coluna!, valor!);
+        erros.push(error !== null);
+      } catch { erros.push(true); }
+    }
+    expect(erros.every((erro) => !erro), "limpeza da fixture da campanha").toBe(true);
+  }
+});

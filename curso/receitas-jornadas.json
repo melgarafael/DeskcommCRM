@@ -1,0 +1,940 @@
+[
+  {
+    "jornada": "advocacia-consulta",
+    "pessoa": "Zeca",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Quero conversar sobre um contrato. Podemos agendar?",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "nota",
+        "mensagem": "Prefiro tratar os detalhes em uma conversa reservada.",
+        "resposta": "Registrei o contexto para que a equipe continue o atendimento."
+      },
+      {
+        "id": "acao",
+        "superficie": "agenda",
+        "mensagem": "Esse horário funciona para mim.",
+        "resposta": "Vamos conferir o compromisso na agenda e a situação registrada."
+      },
+      {
+        "id": "continuidade",
+        "superficie": "agenda",
+        "mensagem": "O compromisso ficou confirmado?",
+        "resposta": "Vamos conferir o compromisso na agenda e a situação registrada."
+      }
+    ]
+  },
+  {
+    "jornada": "advocacia-documentos",
+    "pessoa": "Alba",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Quais documentos preciso organizar para meu atendimento?",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "passagem",
+        "mensagem": "Já enviei uma parte, mas não sei se ficou completa.",
+        "resposta": "Vou encaminhar seu pedido para a pessoa responsável."
+      },
+      {
+        "id": "acao",
+        "superficie": "tarefa",
+        "mensagem": "Podem conferir e me dizer o que falta?",
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "tarefa",
+        "mensagem": "Consegui separar os itens que estavam pendentes.",
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "done"
+      }
+    ]
+  },
+  {
+    "jornada": "advocacia-andamento",
+    "pessoa": "Joel",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Vocês podem me explicar a última atualização?",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "caso",
+        "mensagem": "Tenho dúvida sobre o que ela muda no meu atendimento.",
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise."
+      },
+      {
+        "id": "acao",
+        "superficie": "caso",
+        "mensagem": "Prefiro falar com o profissional responsável.",
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise.",
+        "acao_humana": "escalate"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "conversa",
+        "mensagem": "Estou disponível para conversar com a equipe.",
+        "resposta": "A equipe está acompanhando a conversa e vai conferir os próximos passos."
+      }
+    ]
+  },
+  {
+    "jornada": "clinicas-primeira-consulta",
+    "pessoa": "Marina Exemplo",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Oi! Quero agendar uma avaliação postural na terça-feira, 27 de outubro de 2026, às 9h30. Se esse horário estiver livre, pode marcar para mim, Marina Exemplo.",
+        "resposta": ""
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "agenda",
+        "mensagem": "Pode ser dia 27 de outubro às 9h30?",
+        "resposta": ""
+      },
+      {
+        "id": "acao",
+        "superficie": "agenda",
+        "mensagem": "Confirmo esse horário para a avaliação.",
+        "resposta": "Oi, Marina! Tudo certo 😊\n\nAvaliação postural confirmada:\n📅 Terça-feira, 27/10 às 9h30\n📍 Rua das Acácias, 120 — 3º andar, sala 2\n\nQualquer dúvida é só chamar!",
+        "resposta_observada": true
+      },
+      {
+        "id": "continuidade",
+        "superficie": "agenda",
+        "mensagem": "A avaliação ficou registrada para dia 27 às 9h30?",
+        "resposta": "Vamos conferir o compromisso na agenda e a situação registrada."
+      }
+    ]
+  },
+  {
+    "jornada": "clinicas-remarcar-sessao",
+    "pessoa": "Rui",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Preciso trocar a sessão que estava marcada.",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "agenda",
+        "mensagem": "Quero continuar com a mesma fisioterapeuta.",
+        "resposta": "Vamos conferir o compromisso na agenda e a situação registrada."
+      },
+      {
+        "id": "acao",
+        "superficie": "agenda",
+        "mensagem": "O novo horário funciona para mim.",
+        "resposta": "Vamos conferir o compromisso na agenda e a situação registrada."
+      },
+      {
+        "id": "continuidade",
+        "superficie": "nota",
+        "mensagem": "Preciso recomeçar o atendimento por ter remarcado?",
+        "resposta": "Registrei o contexto para que a equipe continue o atendimento."
+      }
+    ]
+  },
+  {
+    "jornada": "clinicas-duvida-preparo",
+    "pessoa": "Nina",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Devo suspender meu medicamento antes do exame?",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "caso",
+        "mensagem": "Minha dúvida é sobre o preparo do exame agendado.",
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise."
+      },
+      {
+        "id": "acao",
+        "superficie": "caso",
+        "mensagem": "Quero falar com alguém da clínica sobre isso.",
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise.",
+        "acao_humana": "escalate"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "conversa",
+        "mensagem": "Posso conversar com o profissional agora.",
+        "resposta": "A equipe está acompanhando a conversa e vai conferir os próximos passos."
+      }
+    ]
+  },
+  {
+    "jornada": "consorcio-planejamento",
+    "pessoa": "Caio",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Estou considerando um consórcio para imóvel.",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "negocio",
+        "mensagem": "Ainda estou comparando possibilidades.",
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação."
+      },
+      {
+        "id": "acao",
+        "superficie": "agenda",
+        "mensagem": "Podemos marcar uma conversa com o consultor?",
+        "resposta": "Vamos conferir o compromisso na agenda e a situação registrada."
+      },
+      {
+        "id": "continuidade",
+        "superficie": "negocio",
+        "mensagem": "Quero revisar as opções antes de decidir.",
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação."
+      }
+    ]
+  },
+  {
+    "jornada": "consorcio-lance",
+    "pessoa": "Téo",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Se eu oferecer um lance, a contemplação é garantida?",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "caso",
+        "mensagem": "Quero entender as condições antes de decidir.",
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise."
+      },
+      {
+        "id": "acao",
+        "superficie": "caso",
+        "mensagem": "Prefiro que o consultor explique.",
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise.",
+        "acao_humana": "escalate"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "conversa",
+        "mensagem": "Vou conversar com a equipe para tirar as dúvidas.",
+        "resposta": "A equipe está acompanhando a conversa e vai conferir os próximos passos."
+      }
+    ]
+  },
+  {
+    "jornada": "consorcio-cadastro",
+    "pessoa": "Sol",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "O que ainda falta no meu cadastro?",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "nota",
+        "mensagem": "Já enviei parte dos dados pedidos.",
+        "resposta": "Registrei o contexto para que a equipe continue o atendimento."
+      },
+      {
+        "id": "acao",
+        "superficie": "tarefa",
+        "mensagem": "Podem conferir a pendência com a equipe?",
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "tarefa",
+        "mensagem": "Recebi a orientação e vou separar o que falta.",
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "done"
+      }
+    ]
+  },
+  {
+    "jornada": "contabilidade-documentos-mensais",
+    "pessoa": "Mara",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Os documentos que enviei estão completos?",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "nota",
+        "mensagem": "Enviei os arquivos, mas posso ter deixado algo de fora.",
+        "resposta": "Registrei o contexto para que a equipe continue o atendimento."
+      },
+      {
+        "id": "acao",
+        "superficie": "tarefa",
+        "mensagem": "Podem conferir o que ainda preciso organizar?",
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "tarefa",
+        "mensagem": "Vou acompanhar a conferência com a equipe.",
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "done"
+      }
+    ]
+  },
+  {
+    "jornada": "contabilidade-situacao-guia",
+    "pessoa": "Nilo",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Qual situação consta para a minha guia?",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "configuracao-externa",
+        "mensagem": "Quero conferir o registro do escritório.",
+        "resposta": "A consulta depende de uma fonte autorizada. Vou pedir que a equipe confira."
+      },
+      {
+        "id": "acao",
+        "superficie": "tarefa",
+        "mensagem": "A equipe consegue verificar na fonte autorizada?",
+        "resposta": "A consulta depende de uma fonte autorizada. Vou pedir que a equipe confira.",
+        "tarefa_status": "pending"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "tarefa",
+        "mensagem": "Podem me avisar depois da conferência?",
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "in_progress"
+      }
+    ]
+  },
+  {
+    "jornada": "contabilidade-nova-empresa",
+    "pessoa": "Íris",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Quero apoio para organizar uma nova empresa.",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "negocio",
+        "mensagem": "Ainda preciso entender os próximos passos.",
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação."
+      },
+      {
+        "id": "acao",
+        "superficie": "agenda",
+        "mensagem": "Podemos marcar uma conversa?",
+        "resposta": "Vamos conferir o compromisso na agenda e a situação registrada."
+      },
+      {
+        "id": "continuidade",
+        "superficie": "negocio",
+        "mensagem": "Quero falar com o contador antes de decidir.",
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação."
+      }
+    ]
+  },
+  {
+    "jornada": "e-commerce-consultar-pedido",
+    "pessoa": "Bia Exemplo",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Olá! Sou Bia. Comprei a mochila do pedido CT-4729. Vocês já despacharam? Pode conferir a situação e o rastreio?",
+        "resposta": ""
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "nota",
+        "mensagem": "Sou Bia Exemplo. Quero conferir meu pedido CT-4729.",
+        "resposta": ""
+      },
+      {
+        "id": "acao",
+        "superficie": "fonte-externa",
+        "mensagem": "A mochila já foi despachada?",
+        "resposta": "Olá, Bia! Aqui é a Nina da Casa das Trilhas. 😊\n\nConsultei o pedido CT-4729 e está tudo certo:\n\n📦 *Produto:* Mochila Horizonte\n✅ *Situação:* Despachado\n🔍 *Código de rastreio:* RASTREIO-EXEMPLO-4729\n\nPode usar esse código para acompanhar a entrega no site da transportadora. Qualquer dúvida, é só chamar!",
+        "resposta_observada": true
+      },
+      {
+        "id": "continuidade",
+        "superficie": "conversa",
+        "mensagem": "Obrigada, vou acompanhar pelo rastreio informado.",
+        "resposta": ""
+      }
+    ]
+  },
+  {
+    "jornada": "e-commerce-troca-tamanho",
+    "pessoa": "Cris",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Recebi o calçado, mas preciso de outro tamanho.",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "caso",
+        "mensagem": "Quero entender como pedir a troca.",
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise."
+      },
+      {
+        "id": "acao",
+        "superficie": "caso",
+        "mensagem": "Podem conferir com a equipe antes de confirmar?",
+        "resposta": "Você chegou a usar o produto? A equipe precisa dessa informação antes de analisar a troca.",
+        "acao_humana": "need_lead_info"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "conversa",
+        "mensagem": "Não usei o produto. Quais são as orientações de envio?",
+        "resposta": "Vou conferir a política e a compra antes de orientar o envio. A troca ainda não está aprovada.",
+        "responde_ao_caso": true,
+        "acao_humana": "escalate"
+      }
+    ]
+  },
+  {
+    "jornada": "e-commerce-venda-consultiva",
+    "pessoa": "Davi",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Procuro um kit para presentear.",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "negocio",
+        "mensagem": "Ainda não decidi qual combinação faz sentido.",
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação."
+      },
+      {
+        "id": "acao",
+        "superficie": "tarefa",
+        "mensagem": "Podem conferir as opções para me orientar?",
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "negocio",
+        "mensagem": "Quero avaliar as opções antes de comprar.",
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação.",
+        "tarefa_status": "in_progress"
+      }
+    ]
+  },
+  {
+    "jornada": "educacao-visita-escola",
+    "pessoa": "Noa",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Quero conhecer a proposta e os espaços da escola.",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "negocio",
+        "mensagem": "A visita é para um estudante da minha família.",
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação."
+      },
+      {
+        "id": "acao",
+        "superficie": "agenda",
+        "mensagem": "Podemos combinar uma visita?",
+        "resposta": "Vamos conferir o compromisso na agenda e a situação registrada."
+      },
+      {
+        "id": "continuidade",
+        "superficie": "tarefa",
+        "mensagem": "Vou acompanhar os próximos passos com a secretaria.",
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "in_progress"
+      }
+    ]
+  },
+  {
+    "jornada": "educacao-matricula",
+    "pessoa": "Eli",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Gostaria de buscar uma turma para matrícula.",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "negocio",
+        "mensagem": "Ainda preciso conferir documentos e disponibilidade.",
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação."
+      },
+      {
+        "id": "acao",
+        "superficie": "tarefa",
+        "mensagem": "Podem verificar o que falta para avançar?",
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "negocio",
+        "mensagem": "Vou aguardar a análise antes de confirmar a matrícula.",
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação.",
+        "tarefa_status": "in_progress"
+      }
+    ]
+  },
+  {
+    "jornada": "educacao-trocar-turma",
+    "pessoa": "Uli",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Preciso mudar o horário das aulas.",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "caso",
+        "mensagem": "Minha situação exige uma exceção à secretaria.",
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise."
+      },
+      {
+        "id": "acao",
+        "superficie": "caso",
+        "mensagem": "Prefiro conversar com a pessoa responsável.",
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise.",
+        "acao_humana": "escalate"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "conversa",
+        "mensagem": "Posso retomar o assunto com a escola.",
+        "resposta": "A equipe está acompanhando a conversa e vai conferir os próximos passos."
+      }
+    ]
+  },
+  {
+    "jornada": "imobiliarias-visita",
+    "pessoa": "Eva",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Procuro apartamento com elevador.",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "negocio",
+        "mensagem": "Quero visitar antes de decidir.",
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação."
+      },
+      {
+        "id": "acao",
+        "superficie": "agenda",
+        "mensagem": "Podemos combinar uma visita acompanhada?",
+        "resposta": "Vamos conferir o compromisso na agenda e a situação registrada."
+      },
+      {
+        "id": "continuidade",
+        "superficie": "tarefa",
+        "mensagem": "Depois da visita quero revisar as opções.",
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "in_progress"
+      }
+    ]
+  },
+  {
+    "jornada": "imobiliarias-locacao-documentos",
+    "pessoa": "Ivo",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Gostei do imóvel e quero entender a locação.",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "negocio",
+        "mensagem": "Quais documentos a equipe precisa conferir?",
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação."
+      },
+      {
+        "id": "acao",
+        "superficie": "tarefa",
+        "mensagem": "Posso organizar as pendências.",
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "negocio",
+        "mensagem": "Vou aguardar a análise antes de considerar aprovado.",
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação.",
+        "tarefa_status": "in_progress"
+      }
+    ]
+  },
+  {
+    "jornada": "imobiliarias-proprietario",
+    "pessoa": "Luz",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Quero anunciar minha casa. Por qual valor poderia vender?",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "nota",
+        "mensagem": "Posso passar informações sobre o imóvel.",
+        "resposta": "Registrei o contexto para que a equipe continue o atendimento."
+      },
+      {
+        "id": "acao",
+        "superficie": "passagem",
+        "mensagem": "Quero falar com o corretor sobre a avaliação.",
+        "resposta": "Vou encaminhar seu pedido para a pessoa responsável."
+      },
+      {
+        "id": "continuidade",
+        "superficie": "agenda",
+        "mensagem": "Vamos agendar a visita de avaliação.",
+        "resposta": "Vamos conferir o compromisso na agenda e a situação registrada."
+      }
+    ]
+  },
+  {
+    "jornada": "infoprodutos-acesso",
+    "pessoa": "Pati Exemplo",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Oi! No curso Fotografia na Prática, a aula 3 não abre e aparece erro 403. Já saí e entrei de novo, testei outro navegador e as outras aulas funcionam. Como resolvo isso?",
+        "resposta": "Oi, Pati! Tudo bem?\n\nEntendi — você já tentou as principais saídas e as outras aulas funcionam, então precisa de alguém da equipe para verificar o acesso à aula 3 especificamente.\n\nJá encaminhei para eles com todos os detalhes que você passou. Assim que tiver uma resposta, te aviso por aqui. 😊",
+        "resposta_observada": true
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "caso",
+        "mensagem": "As outras aulas funcionam normalmente.",
+        "resposta": ""
+      },
+      {
+        "id": "acao",
+        "superficie": "caso",
+        "mensagem": "A aula 3 é a única que não abre.",
+        "resposta": "",
+        "acao_humana": "need_lead_info"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "conversa",
+        "mensagem": "Posso conferir o título que aparece na lista de aulas.",
+        "resposta": "Oi, Pati! A equipe está verificando o acesso à aula 3 pra você.\n\nSó para ajudar na investigação: qual é o título completo que aparece na aula 3? (Aquele que fica escrito na listagem do curso.) 😊",
+        "resposta_observada": true
+      }
+    ]
+  },
+  {
+    "jornada": "infoprodutos-escolher-formacao",
+    "pessoa": "Guto",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Quero aprender uma habilidade e escolher uma formação.",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "negocio",
+        "mensagem": "Não sei qual curso atende ao meu nível.",
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação."
+      },
+      {
+        "id": "acao",
+        "superficie": "tarefa",
+        "mensagem": "Podem conferir uma indicação para meu objetivo?",
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "negocio",
+        "mensagem": "Quero avaliar a formação antes de decidir.",
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação.",
+        "tarefa_status": "in_progress"
+      }
+    ]
+  },
+  {
+    "jornada": "infoprodutos-contestacao",
+    "pessoa": "Pati",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Quero cancelar minha compra e entender o reembolso.",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "caso",
+        "mensagem": "Tenho dúvida sobre as condições da minha compra.",
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise."
+      },
+      {
+        "id": "acao",
+        "superficie": "caso",
+        "mensagem": "Prefiro conversar com a equipe responsável.",
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise.",
+        "acao_humana": "escalate"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "conversa",
+        "mensagem": "Vou aguardar a análise sem considerar o reembolso aprovado.",
+        "resposta": "A equipe está acompanhando a conversa e vai conferir os próximos passos."
+      }
+    ]
+  },
+  {
+    "jornada": "seguros-cotacao",
+    "pessoa": "Mila",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Quero comparar opções de seguro para o carro.",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "negocio",
+        "mensagem": "Preciso entender as diferenças entre coberturas.",
+        "resposta": "Seu interesse ficou registrado. A equipe vai acompanhar antes de qualquer confirmação."
+      },
+      {
+        "id": "acao",
+        "superficie": "tarefa",
+        "mensagem": "Podem preparar as informações para o corretor?",
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "passagem",
+        "mensagem": "Quero conversar com o corretor antes de contratar.",
+        "resposta": "Vou encaminhar seu pedido para a pessoa responsável.",
+        "tarefa_status": "in_progress"
+      }
+    ]
+  },
+  {
+    "jornada": "seguros-renovacao",
+    "pessoa": "Otto",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Minha apólice está perto do fim?",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "configuracao-externa",
+        "mensagem": "Preciso conferir as informações cadastradas.",
+        "resposta": "A consulta depende de uma fonte autorizada. Vou pedir que a equipe confira."
+      },
+      {
+        "id": "acao",
+        "superficie": "tarefa",
+        "mensagem": "Podem pedir ao corretor para revisar?",
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "pending"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "conversa",
+        "mensagem": "Vou conversar com a equipe antes de renovar.",
+        "resposta": "A equipe está acompanhando a conversa e vai conferir os próximos passos.",
+        "tarefa_status": "in_progress"
+      }
+    ]
+  },
+  {
+    "jornada": "seguros-sinistro",
+    "pessoa": "Yara",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Houve um dano e quero saber se o seguro cobre.",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "caso",
+        "mensagem": "Posso informar o contexto para o corretor.",
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise."
+      },
+      {
+        "id": "acao",
+        "superficie": "caso",
+        "mensagem": "Preciso da análise da equipe.",
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise.",
+        "acao_humana": "escalate"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "conversa",
+        "mensagem": "Vou conversar com o responsável sem presumir cobertura.",
+        "resposta": "A equipe está acompanhando a conversa e vai conferir os próximos passos."
+      }
+    ]
+  },
+  {
+    "jornada": "servicos-receber-equipamento",
+    "pessoa": "Vera",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Meu equipamento parou de funcionar. Posso levar para avaliação?",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "nota",
+        "mensagem": "Posso descrever o defeito que observei.",
+        "resposta": "Registrei o contexto para que a equipe continue o atendimento."
+      },
+      {
+        "id": "acao",
+        "superficie": "agenda",
+        "mensagem": "Vamos combinar o recebimento do equipamento.",
+        "resposta": "Vamos conferir o compromisso na agenda e a situação registrada."
+      },
+      {
+        "id": "continuidade",
+        "superficie": "tarefa",
+        "mensagem": "Quero acompanhar a avaliação da equipe.",
+        "resposta": "A conferência ficou como tarefa da equipe, com uma pessoa responsável.",
+        "tarefa_status": "in_progress"
+      }
+    ]
+  },
+  {
+    "jornada": "servicos-orcamento",
+    "pessoa": "Wes",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Vale a pena reparar o aparelho que deixei aí?",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "caso",
+        "mensagem": "Quero entender a avaliação técnica antes de autorizar.",
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise."
+      },
+      {
+        "id": "acao",
+        "superficie": "caso",
+        "mensagem": "Preciso conversar com a equipe sobre o orçamento.",
+        "resposta": "Essa decisão precisa da equipe. Seu pedido está separado para análise.",
+        "acao_humana": "escalate"
+      },
+      {
+        "id": "continuidade",
+        "superficie": "conversa",
+        "mensagem": "Vou aguardar a proposta antes de aprovar o serviço.",
+        "resposta": "A equipe está acompanhando a conversa e vai conferir os próximos passos."
+      }
+    ]
+  },
+  {
+    "jornada": "servicos-retirada",
+    "pessoa": "Ada",
+    "cenas": [
+      {
+        "id": "chegada",
+        "superficie": "conversa",
+        "mensagem": "Meu veículo está liberado para retirada?",
+        "resposta": "Vou conferir seu pedido e registrar o contexto para a equipe."
+      },
+      {
+        "id": "qualificacao",
+        "superficie": "configuracao-externa",
+        "mensagem": "Quero conferir a situação da ordem de serviço.",
+        "resposta": "A consulta depende de uma fonte autorizada. Vou pedir que a equipe confira."
+      },
+      {
+        "id": "acao",
+        "superficie": "passagem",
+        "mensagem": "Prefiro que a equipe confirme se posso retirar.",
+        "resposta": "Vou encaminhar seu pedido para a pessoa responsável."
+      },
+      {
+        "id": "continuidade",
+        "superficie": "agenda",
+        "mensagem": "Podemos combinar a retirada após essa confirmação?",
+        "resposta": "Vamos conferir o compromisso na agenda e a situação registrada."
+      }
+    ]
+  }
+]

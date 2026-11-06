@@ -15,6 +15,7 @@
  */
 import { beforeEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 import { customFieldSchema } from "@/lib/schemas/settings";
 
@@ -197,9 +198,7 @@ describe("rótulos dos tipos de campo (#3037)", () => {
     expect(screen.getByLabelText(/Tipo do campo 2/i).textContent?.trim()).toBe(
       "Lista de várias escolhas",
     );
-    expect(screen.getByLabelText(/Tipo do campo 3/i).textContent?.trim()).toBe(
-      "Lista pesquisável",
-    );
+    expect(screen.getByLabelText(/Tipo do campo 3/i).textContent?.trim()).toBe("Lista pesquisável");
     expect(screen.getByLabelText(/Tipo do campo 4/i).textContent?.trim()).toBe("Texto curto");
   });
 });
@@ -544,7 +543,10 @@ describe("retomada de negócio encerrado (#1538)", () => {
   });
 
   it("funil já ligado abre marcado, e desligar volta a `mesmo_registro`", () => {
-    const ligado: PipelineRow = { ...FUNIL, settings: { ...FUNIL.settings, reabertura: "novo_negocio" } };
+    const ligado: PipelineRow = {
+      ...FUNIL,
+      settings: { ...FUNIL.settings, reabertura: "novo_negocio" },
+    };
     render(<PipelinesClient pipelines={[ligado]} etapas={{}} podeEditarConfig />);
     abrirEditores();
     const caixa = screen.getByLabelText("Negócio encerrado que volta abre um negócio novo");
@@ -576,7 +578,10 @@ describe("comanda do ganho (#1477)", () => {
   });
 
   it("funil já ligado abre marcado, e desligar grava `false`", () => {
-    const ligado: PipelineRow = { ...FUNIL, settings: { ...FUNIL.settings, comanda_no_ganho: true } };
+    const ligado: PipelineRow = {
+      ...FUNIL,
+      settings: { ...FUNIL.settings, comanda_no_ganho: true },
+    };
     render(<PipelinesClient pipelines={[ligado]} etapas={{}} podeEditarConfig comandaDisponivel />);
     abrirEditores();
     const caixa = screen.getByLabelText(ROTULO);
@@ -589,7 +594,10 @@ describe("comanda do ganho (#1477)", () => {
   });
 
   it("sem o módulo financeiro (#1907) o interruptor some, e salvar não mexe no valor gravado", () => {
-    const ligado: PipelineRow = { ...FUNIL, settings: { ...FUNIL.settings, comanda_no_ganho: true } };
+    const ligado: PipelineRow = {
+      ...FUNIL,
+      settings: { ...FUNIL.settings, comanda_no_ganho: true },
+    };
     render(<PipelinesClient pipelines={[ligado]} etapas={{}} podeEditarConfig />);
     abrirEditores();
     expect(screen.queryByLabelText(ROTULO)).toBeNull();
@@ -602,15 +610,203 @@ describe("comanda do ganho (#1477)", () => {
 
 describe("escreveMostrarQuando — o item 'ainda não escolhi' não vira valor", () => {
   it("escolher o item vazio do seletor de valor deixa a condição meio montada, e ela não grava", async () => {
-    const { escreveMostrarQuando, normalizaMostrarQuando, SEM_VALOR_DA_CONDICAO } = await import(
-      "./_client"
-    );
+    const { escreveMostrarQuando, normalizaMostrarQuando, SEM_VALOR_DA_CONDICAO } =
+      await import("./_client");
     const meio = escreveMostrarQuando(
       { campo: "tipo", operador: "igual", valor: "Outro" },
       { valor: SEM_VALOR_DA_CONDICAO },
     );
     expect(meio).toEqual({ campo: "tipo", operador: "igual" });
     expect(normalizaMostrarQuando(meio)).toBeUndefined();
+  });
+});
+
+describe("mais de uma condição no 'mostrar quando' (#4041)", () => {
+  // O terceiro lugar da régua: o EDITOR. Ele monta a lista, e o que ele grava
+  // tem de ser exatamente o que `campoVisivel` e `validaCamposExigidos` leem —
+  // por isso os dois lados usam `mostrarQuandoSchema`, e o formato de uma
+  // condição só continua sendo o JSON antigo.
+  const AEREO = { campo: "tipo_servico", operador: "contem" as const, valor: "Passagem aérea" };
+  const PACOTE = { campo: "tipo_servico", operador: "contem" as const, valor: "Pacote" };
+
+  it("'+ condição' acrescenta a linha em branco e o seletor de campo a preenche", async () => {
+    const { adicionaCondicao, escreveCondicaoNoIndice } = await import("./_client");
+
+    const duas = adicionaCondicao(AEREO);
+    expect(duas).toEqual({ modo: "qualquer", condicoes: [AEREO, { campo: "" }] });
+
+    const comCampo = escreveCondicaoNoIndice(duas, 1, {
+      campo: "tipo_servico",
+      operador: "contem",
+    });
+    expect(comCampo).toEqual({
+      modo: "qualquer",
+      condicoes: [AEREO, { campo: "tipo_servico", operador: "contem" }],
+    });
+
+    const completa = escreveCondicaoNoIndice(comCampo, 1, { valor: "Pacote" });
+    expect(completa).toEqual({ modo: "qualquer", condicoes: [AEREO, PACOTE] });
+  });
+
+  it("o modo escolhido sobrevive à edição de uma linha", async () => {
+    const { escreveCondicaoNoIndice, escreveModoMostrarQuando } = await import("./_client");
+    const lista = { modo: "qualquer" as const, condicoes: [AEREO, PACOTE] };
+    const todas = escreveModoMostrarQuando(lista, "todas");
+    expect(todas).toEqual({ modo: "todas", condicoes: [AEREO, PACOTE] });
+    expect(escreveCondicaoNoIndice(todas, 0, { valor: "Pacote" })).toEqual({
+      modo: "todas",
+      condicoes: [{ ...AEREO, valor: "Pacote" }, PACOTE],
+    });
+  });
+
+  it("o 'todas' escolhido com uma linha ainda incompleta não volta a ser 'qualquer'", async () => {
+    // A linha em branco do "+ condição" deixa a lista ilegível para a LEITURA
+    // (`leituraDe`), e o modo não pode depender dela: senão o seletor volta
+    // para "qualquer" e o save grava um OU onde a pessoa escolheu E.
+    const {
+      adicionaCondicao,
+      escreveCondicaoNoIndice,
+      escreveModoMostrarQuando,
+      normalizaMostrarQuando,
+      removeCondicaoNoIndice,
+    } = await import("./_client");
+    const { modoDeclarado } = await import("@/lib/schemas/mostrar-quando");
+
+    const comBranco = escreveModoMostrarQuando(adicionaCondicao(AEREO), "todas");
+    expect(modoDeclarado(comBranco)).toBe("todas");
+
+    const preenchida = escreveCondicaoNoIndice(comBranco, 1, {
+      campo: "tipo_servico",
+      operador: "contem",
+    });
+    expect(modoDeclarado(preenchida)).toBe("todas");
+    const completa = escreveCondicaoNoIndice(preenchida, 1, { valor: "Pacote" });
+    expect(completa).toEqual({ modo: "todas", condicoes: [AEREO, PACOTE] });
+
+    // Terceira linha depois do "todas", e o save com ela incompleta.
+    const tres = adicionaCondicao(completa);
+    expect(modoDeclarado(tres)).toBe("todas");
+    expect(normalizaMostrarQuando(tres)).toEqual({ modo: "todas", condicoes: [AEREO, PACOTE] });
+    // Remover uma linha COMPLETA enquanto a em branco segue na tela.
+    expect(removeCondicaoNoIndice(tres, 0)).toEqual({
+      modo: "todas",
+      condicoes: [PACOTE, { campo: "", operador: "igual" }],
+    });
+  });
+
+  it("remover a segunda linha volta ao formato de condição ÚNICA (o JSON de sempre)", async () => {
+    const { removeCondicaoNoIndice } = await import("./_client");
+    expect(removeCondicaoNoIndice({ modo: "qualquer", condicoes: [AEREO, PACOTE] }, 1)).toEqual(
+      AEREO,
+    );
+    // Remover a última apaga a condição: o campo volta a ser sempre visível.
+    expect(removeCondicaoNoIndice(AEREO, 0)).toBeUndefined();
+  });
+
+  it("salvar: a linha meio montada sai, as completas ficam, e a condição única volta intacta", async () => {
+    const { normalizaMostrarQuando } = await import("./_client");
+
+    // (a) o JSON antigo volta BYTE A BYTE — é o que impede o save de todo funil
+    // já configurado de reescrever a condição que estava lá.
+    const antiga = { campo: "tipo_servico", contem: "Outro" };
+    expect(normalizaMostrarQuando(antiga)).toBe(antiga);
+
+    // A linha em branco do "+ condição" não derruba as outras duas.
+    const comBranco = {
+      modo: "qualquer" as const,
+      condicoes: [AEREO, { campo: "" }, PACOTE],
+    };
+    expect(normalizaMostrarQuando(comBranco)).toEqual({
+      modo: "qualquer",
+      condicoes: [AEREO, PACOTE],
+    });
+
+    // Sobrando uma condição, o que grava é a condição única — não uma lista de um.
+    expect(normalizaMostrarQuando({ modo: "todas", condicoes: [AEREO, { campo: "" }] })).toEqual(
+      AEREO,
+    );
+
+    // Sobrando nenhuma, a chave some (o campo volta a ser sempre visível).
+    expect(
+      normalizaMostrarQuando({ modo: "qualquer", condicoes: [{ campo: "" }] }),
+    ).toBeUndefined();
+  });
+});
+
+describe("editor: duas condições de mostrar no mesmo campo (#4041)", () => {
+  // O mock é compartilhado com os outros blocos deste arquivo: sem limpar, o
+  // "chamado uma vez" mede o arquivo inteiro, e não este save.
+  beforeEach(() => vi.mocked(updatePipelineConfig).mockClear());
+
+  // O caso real da issue: os campos de voo aparecem quando o Tipo de serviço é
+  // "Passagem aérea" OU "Pacote". A tela tem de abrir com AS DUAS linhas e o
+  // seletor de modo, e o save tem de levar a lista inteira — sem uma das duas
+  // condições virar uma segunda definição do campo.
+  const CONDICOES = [
+    { campo: "tipo_servico", operador: "contem" as const, valor: "Passagem aérea" },
+    { campo: "tipo_servico", operador: "contem" as const, valor: "Pacote" },
+  ];
+  const MOSTRAR = { modo: "qualquer" as const, condicoes: CONDICOES };
+
+  const COM_OU: PipelineRow = {
+    id: "77777777-7777-4777-8777-777777777777",
+    name: "Viagens",
+    slug: "viagens",
+    vocabulary: null,
+    settings: {
+      fields: [
+        {
+          key: "tipo_servico",
+          label: "Tipo de serviço",
+          type: "select",
+          options: [
+            { value: "aereo", label: "Passagem aérea" },
+            { value: "pacote", label: "Pacote" },
+            { value: "hospedagem", label: "Hospedagem" },
+          ],
+        },
+        {
+          key: "localizador",
+          label: "Localizador do voo",
+          type: "text",
+          mostrar_quando: {
+            modo: "qualquer",
+            condicoes: [
+              { campo: "tipo_servico", operador: "contem", valor: "Passagem aérea" },
+              { campo: "tipo_servico", operador: "contem", valor: "Pacote" },
+            ],
+          },
+        },
+      ],
+    },
+  };
+
+  it("abre com as duas linhas e o modo, e '+ condição' acrescenta a terceira", () => {
+    render(<PipelinesClient pipelines={[COM_OU]} etapas={{}} podeEditarConfig />);
+    abrirEditores();
+
+    expect(screen.getByLabelText("Campo da condição Localizador do voo 1")).toBeDefined();
+    expect(screen.getByLabelText("Campo da condição Localizador do voo 2")).toBeDefined();
+    expect(screen.getByLabelText("Modo da condição Localizador do voo")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: /\+ condição/i }));
+
+    expect(screen.getByLabelText("Campo da condição Localizador do voo 3")).toBeDefined();
+  });
+
+  it("salvar grava a lista como veio, e não uma condição por campo", async () => {
+    render(<PipelinesClient pipelines={[COM_OU]} etapas={{}} podeEditarConfig />);
+    abrirEditores();
+    fireEvent.click(screen.getByRole("button", { name: /Salvar vocabulário e campos/i }));
+
+    await vi.waitFor(() => expect(updatePipelineConfig).toHaveBeenCalled());
+    await vi.waitFor(() => expect(updatePipelineConfig).toHaveBeenCalledTimes(1));
+
+    const patch = vi.mocked(updatePipelineConfig).mock.calls[0]?.[1] as {
+      fields?: Array<{ mostrar_quando?: unknown }>;
+    };
+    // A lista inteira, com o modo, e não uma condição por campo.
+    expect(patch.fields?.[1]?.mostrar_quando).toEqual(MOSTRAR);
   });
 });
 
@@ -643,7 +839,10 @@ describe("'Este campo pertence a' só no funil padrão (#2791)", () => {
   it("com is_default no segundo, o seletor sai do primeiro e vai para ele", () => {
     const { container } = render(
       <PipelinesClient
-        pipelines={[funil(A, "Vendas", { is_default: false }), funil(B, "Pos", { is_default: true })]}
+        pipelines={[
+          funil(A, "Vendas", { is_default: false }),
+          funil(B, "Pos", { is_default: true }),
+        ]}
         podeEditarConfig
       />,
     );
@@ -966,6 +1165,194 @@ describe("organização sem nenhum funil", () => {
   });
 });
 
+/* ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * A ETAPA DE ENTRADA DAS CONVERSAS DO INBOX, PELA TELA (#3011 — CR do PR #3250).
+ *
+ * O ajuste já existia no BANCO: a etapa declarada valia, o fallback era
+ * provado, e NINGUÉM CONSEGUIA LIGAR — nenhum ponto da interface mandava
+ * `entrada_do_inbox` no patch que a tela envia ao `updatePipelineConfig`.
+ *
+ * O que estes casos prendem é o caminho inteiro: o admin escolhe a etapa NA
+ * TELA, a escolha sai no patch da porta única de escrita, a tela reaberta
+ * mostra a escolha feita — e, quando a etapa escolhida deixa de valer, o aviso
+ * aparece em vez de a queda para a primeira etapa virar silêncio.
+ */
+describe("etapa de entrada das conversas do Inbox na tela (#3011)", () => {
+  const ETAPA_ABERTA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const OUTRA_ABERTA = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const ETAPA_ARQUIVADA = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const ETAPA_GANHO = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+  const ETAPAS_DE_ENTRADA: Record<string, EtapaDoFunil[]> = {
+    [FUNIL.id]: [
+      { id: ETAPA_ABERTA, name: "Em atendimento", is_archived: false },
+      { id: OUTRA_ABERTA, name: "Proposta", is_archived: false },
+      { id: ETAPA_ARQUIVADA, name: "Antiga", is_archived: true },
+      { id: ETAPA_GANHO, name: "Fechado", is_archived: false, is_won: true },
+    ],
+  };
+
+  const funilCom = (settings: Record<string, unknown>): PipelineRow => ({
+    ...FUNIL,
+    settings: { ...FUNIL.settings, ...settings },
+  });
+
+  // O editor do funil só monta expandido (#3176): o seletor mora dentro dele.
+  // E o seletor só existe no funil de entrada: por padrão, `p` é o padrão.
+  const montar = (p: PipelineRow) => {
+    const r = render(
+      <PipelinesClient
+        pipelines={[{ is_default: true, ...p }]}
+        etapas={ETAPAS_DE_ENTRADA}
+        podeEditarConfig
+      />,
+    );
+    abrirEditores();
+    return r;
+  };
+  const salvar = () =>
+    fireEvent.click(screen.getByRole("button", { name: "Salvar vocabulário e campos" }));
+  const patchSalvo = () => vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1];
+  const seletor = () => screen.getByLabelText("Etapa de entrada das conversas do Inbox");
+
+  beforeEach(() => vi.mocked(updatePipelineConfig).mockClear());
+
+  it("o seletor só aparece no funil que o servidor lê: o padrão e o de clientes, nunca um secundário", () => {
+    // `funilDeEntrada` consulta `entrada_do_inbox` só no `is_default` e no
+    // `is_client_pipeline`. Num secundário a escolha seria salva e nunca usada.
+    const SECUNDARIO: PipelineRow = {
+      ...FUNIL,
+      id: "44444444-4444-4444-8444-444444444444",
+      name: "Pós-venda",
+      slug: "pos-venda",
+      is_default: false,
+    };
+    const etapas = { ...ETAPAS_DE_ENTRADA, [SECUNDARIO.id]: ETAPAS_DE_ENTRADA[FUNIL.id]! };
+    const rotulo = "Etapa de entrada das conversas do Inbox";
+
+    const { unmount } = render(
+      <PipelinesClient
+        pipelines={[{ ...FUNIL, is_default: true }, SECUNDARIO]}
+        etapas={etapas}
+        podeEditarConfig
+      />,
+    );
+    abrirEditores();
+    expect(screen.getAllByRole("button", { name: /Salvar vocabulário e campos/i })).toHaveLength(2);
+    expect(screen.queryAllByLabelText(rotulo)).toHaveLength(1);
+    unmount();
+
+    const { unmount: desmontar } = render(
+      <PipelinesClient pipelines={[SECUNDARIO]} etapas={etapas} podeEditarConfig />,
+    );
+    abrirEditores();
+    expect(screen.queryAllByLabelText(rotulo)).toHaveLength(0);
+    desmontar();
+
+    render(
+      <PipelinesClient
+        pipelines={[{ ...SECUNDARIO, is_client_pipeline: true }]}
+        etapas={etapas}
+        podeEditarConfig
+      />,
+    );
+    abrirEditores();
+    expect(screen.queryAllByLabelText(rotulo)).toHaveLength(1);
+  });
+
+  it("abre na primeira etapa quando o funil não declara nada, e sem aviso", () => {
+    montar(FUNIL);
+
+    expect(seletor().textContent?.trim()).toBe("Primeira etapa do funil (padrão)");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("o admin ESCOLHE a etapa na tela e a escolha vai no patch do updatePipelineConfig", async () => {
+    const user = userEvent.setup();
+    montar(FUNIL);
+
+    await user.click(seletor());
+    await user.click(await screen.findByRole("option", { name: "Em atendimento" }));
+    salvar();
+
+    await vi.waitFor(() => expect(updatePipelineConfig).toHaveBeenCalledTimes(1));
+    // A chave só existe aqui porque a TELA a mandou: é este o elo que faltava
+    // entre o ajuste do banco e quem configura.
+    expect(patchSalvo().entrada_do_inbox).toEqual({ ativa: true, stage_id: ETAPA_ABERTA });
+  });
+
+  it("a tela reabre mostrando a escolha feita, e salvar mantém a decisão", async () => {
+    montar(funilCom({ entrada_do_inbox: { ativa: true, stage_id: ETAPA_ABERTA } }));
+
+    expect(seletor().textContent?.trim()).toBe("Em atendimento");
+    salvar();
+
+    await vi.waitFor(() => expect(updatePipelineConfig).toHaveBeenCalledTimes(1));
+    expect(patchSalvo().entrada_do_inbox).toEqual({ ativa: true, stage_id: ETAPA_ABERTA });
+  });
+
+  it("não oferece etapa arquivada nem de ganho — a gravação no banco as recusaria", async () => {
+    const user = userEvent.setup();
+    montar(FUNIL);
+
+    await user.click(seletor());
+    expect(await screen.findByRole("option", { name: "Em atendimento" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Antiga/ })).toBeNull();
+    expect(screen.queryByRole("option", { name: /Fechado/ })).toBeNull();
+  });
+
+  it("funil que nunca declarou nada NÃO ganha a chave morta no patch", async () => {
+    montar(FUNIL);
+
+    salvar();
+
+    await vi.waitFor(() => expect(updatePipelineConfig).toHaveBeenCalledTimes(1));
+    // O settings de um funil intocado continua idêntico ao de antes do #3011.
+    expect(patchSalvo()).not.toHaveProperty("entrada_do_inbox");
+  });
+
+  it("desligar GUARDA a etapa escolhida: religar não obriga a escolher de novo", async () => {
+    const user = userEvent.setup();
+    montar(funilCom({ entrada_do_inbox: { ativa: true, stage_id: ETAPA_ABERTA } }));
+
+    await user.click(seletor());
+    await user.click(
+      await screen.findByRole("option", { name: "Primeira etapa do funil (padrão)" }),
+    );
+    salvar();
+
+    await vi.waitFor(() => expect(updatePipelineConfig).toHaveBeenCalledTimes(1));
+    expect(patchSalvo().entrada_do_inbox).toEqual({ ativa: false, stage_id: ETAPA_ABERTA });
+  });
+
+  it("etapa que deixou de valer: AVISO visível, e a escolha continua à mostra", () => {
+    montar(funilCom({ entrada_do_inbox: { ativa: true, stage_id: ETAPA_ARQUIVADA } }));
+
+    expect(screen.getByRole("alert").textContent).toContain("primeira etapa do funil");
+    expect(seletor().textContent?.trim()).toBe("Antiga (indisponível)");
+  });
+
+  it("etapa apagada (nem aparece na lista) também avisa, como removida", () => {
+    montar(
+      funilCom({
+        entrada_do_inbox: { ativa: true, stage_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" },
+      }),
+    );
+
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(seletor().textContent?.trim()).toBe("Etapa removida (indisponível)");
+  });
+
+  it("ajuste DESLIGADO com etapa lembrada não avisa — não há queda acontecendo", () => {
+    montar(funilCom({ entrada_do_inbox: { ativa: false, stage_id: ETAPA_ABERTA } }));
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(seletor().textContent?.trim()).toBe("Primeira etapa do funil (padrão)");
+  });
+});
+
 /**
  * O RECORTE DE ENCERRADOS ANTIGOS DO QUADRO (#2995) — o controle no editor.
  *
@@ -994,7 +1381,10 @@ describe("o recorte de encerrados antigos do quadro (#2995)", () => {
 
   it("relê o que está salvo: caixa marcada e os dias do settings", () => {
     render(
-      <PipelinesClient pipelines={[comRecorte({ ocultar_encerrados_dias: 45 })]} podeEditarConfig />,
+      <PipelinesClient
+        pipelines={[comRecorte({ ocultar_encerrados_dias: 45 })]}
+        podeEditarConfig
+      />,
     );
     abrirEditores();
 
@@ -1028,7 +1418,10 @@ describe("o recorte de encerrados antigos do quadro (#2995)", () => {
   it("desligar manda 0 EXPLÍCITO — a chave não pode ficar com o número antigo", async () => {
     vi.mocked(updatePipelineConfig).mockClear();
     render(
-      <PipelinesClient pipelines={[comRecorte({ ocultar_encerrados_dias: 45 })]} podeEditarConfig />,
+      <PipelinesClient
+        pipelines={[comRecorte({ ocultar_encerrados_dias: 45 })]}
+        podeEditarConfig
+      />,
     );
     abrirEditores();
 
@@ -1054,5 +1447,156 @@ describe("o recorte de encerrados antigos do quadro (#2995)", () => {
     // O schema recusaria o save inteiro com a mensagem genérica de validação;
     // barrar na tela é o que permite dizer QUAL campo está errado.
     expect(updatePipelineConfig).not.toHaveBeenCalled();
+  });
+});
+
+describe("o vocabulário do funil fala português (doc 249, resposta B)", () => {
+  // Os rótulos eram "Lead/Deal/Won/Lost" em inglês, e um funil sem vocabulário
+  // gravado abria a caixa do card com "Deal". O card se chama "Negócio".
+  const SEM_VOCABULARIO: PipelineRow = { ...FUNIL, vocabulary: null };
+
+  it("os quatro rótulos estão em português, e nenhum em inglês", () => {
+    render(<PipelinesClient pipelines={[SEM_VOCABULARIO]} etapas={{}} podeEditarConfig />);
+    abrirEditores();
+    for (const rotulo of ["Contato", "Negócio", "Ganho", "Perdido"]) {
+      expect(screen.getByText(rotulo, { selector: "label" })).toBeInTheDocument();
+    }
+    for (const ingles of ["Lead", "Deal", "Won", "Lost"]) {
+      expect(screen.queryByText(ingles, { selector: "label" })).toBeNull();
+    }
+  });
+
+  it("sem vocabulário gravado, as caixas abrem e salvam os nomes neutros", () => {
+    vi.mocked(updatePipelineConfig).mockClear();
+    render(<PipelinesClient pipelines={[SEM_VOCABULARIO]} etapas={{}} podeEditarConfig />);
+    abrirEditores();
+    fireEvent.click(screen.getByRole("button", { name: "Salvar vocabulário e campos" }));
+
+    expect(vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1].vocabulary).toEqual({
+      lead: "Contato",
+      deal: "Negócio",
+      won: "Ganho",
+      lost: "Perdido",
+    });
+  });
+});
+
+/* ────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * REABRIR O NEGÓCIO PERDIDO QUANDO O CONTATO VOLTA A ESCREVER (#4076) — a tela.
+ *
+ * O motor já sabe reabrir o card perdido dentro da janela (medido em
+ * `tests/invariants/negocio-perdido-reabre.test.ts`), mas opção que ninguém
+ * consegue ligar não existe: é o mesmo defeito da #3011, em que o ajuste estava
+ * no banco e nenhum ponto da interface o mandava. Aqui se mede a PONTE — o valor
+ * salvo volta marcado, e o que a pessoa salva sai no patch da porta única de
+ * escrita, inclusive o `0` de quem DESLIGA (omitir a chave deixaria a janela
+ * antiga gravada e continuaria reabrindo card).
+ *
+ * O controle só aparece no funil que o servidor lê — o padrão e o de clientes,
+ * como o seletor de etapa de entrada: num funil secundário a escolha seria
+ * salva e nunca usada.
+ */
+describe("a janela do negócio perdido que volta (#4076)", () => {
+  const comJanela = (settings: Record<string, unknown>): PipelineRow => ({
+    id: "77777777-7777-4777-8777-777777777777",
+    name: "Vendas",
+    slug: "vendas",
+    vocabulary: null,
+    is_default: true,
+    settings,
+  });
+
+  const caixa = () =>
+    screen.getByRole("checkbox", {
+      name: /Reabrir o negócio perdido quando o contato volta a escrever/i,
+    });
+  const campoDeDias = () =>
+    screen.getByLabelText(/Dias para reabrir o negócio perdido/i) as HTMLInputElement;
+  const salvar = () =>
+    fireEvent.click(screen.getByRole("button", { name: /Salvar vocabulário e campos/i }));
+  const patchSalvo = () => vi.mocked(updatePipelineConfig).mock.calls.at(-1)![1];
+
+  beforeEach(() => vi.mocked(updatePipelineConfig).mockClear());
+
+  it("relê o que está salvo: caixa marcada e os dias do settings", () => {
+    render(
+      <PipelinesClient pipelines={[comJanela({ reabrir_perdido_dias: 45 })]} podeEditarConfig />,
+    );
+    abrirEditores();
+
+    expect(caixa()).toBeChecked();
+    expect(campoDeDias()).toHaveValue(45);
+  });
+
+  it("funil sem a opção nasce DESMARCADO, com a sugestão no campo — o padrão não muda", () => {
+    render(<PipelinesClient pipelines={[comJanela({})]} podeEditarConfig />);
+    abrirEditores();
+
+    expect(caixa()).not.toBeChecked();
+    expect(campoDeDias()).toHaveValue(30);
+    expect(campoDeDias()).toBeDisabled();
+  });
+
+  it("marcar e escolher 10 dias manda a janela no patch", () => {
+    render(<PipelinesClient pipelines={[comJanela({})]} podeEditarConfig />);
+    abrirEditores();
+
+    fireEvent.click(caixa());
+    fireEvent.change(campoDeDias(), { target: { value: "10" } });
+    salvar();
+
+    expect(patchSalvo().reabrir_perdido_dias).toBe(10);
+  });
+
+  it("DESMARCAR manda `0`, e não omite a chave — senão a janela antiga continuaria valendo", () => {
+    render(
+      <PipelinesClient pipelines={[comJanela({ reabrir_perdido_dias: 45 })]} podeEditarConfig />,
+    );
+    abrirEditores();
+
+    fireEvent.click(caixa());
+    salvar();
+
+    expect(patchSalvo().reabrir_perdido_dias).toBe(0);
+  });
+
+  it("janela sem dia nenhum é barrada na tela, com o campo certo no aviso", () => {
+    render(<PipelinesClient pipelines={[comJanela({})]} podeEditarConfig />);
+    abrirEditores();
+
+    fireEvent.click(caixa());
+    fireEvent.change(campoDeDias(), { target: { value: "0" } });
+    salvar();
+
+    // O schema recusaria o save inteiro com a mensagem genérica de validação;
+    // barrar na tela é o que permite dizer QUAL campo está errado.
+    expect(updatePipelineConfig).not.toHaveBeenCalled();
+  });
+
+  it("só no funil que o servidor lê: o padrão e o de clientes, nunca um secundário", () => {
+    const SECUNDARIO: PipelineRow = {
+      ...comJanela({}),
+      id: "88888888-8888-4888-8888-888888888888",
+      name: "Pós-venda",
+      slug: "pos-venda",
+      is_default: false,
+    };
+    render(
+      <PipelinesClient
+        pipelines={[{ ...comJanela({}), is_default: true }, SECUNDARIO]}
+        podeEditarConfig
+      />,
+    );
+    abrirEditores();
+
+    // `garantirLeadDaConversa` lê a opção do funil onde o card nasceria; num
+    // secundário ela nunca seria consultada, e a tela mentiria.
+    expect(
+      screen.queryAllByRole("checkbox", {
+        name: /Reabrir o negócio perdido quando o contato volta a escrever/i,
+      }),
+    ).toHaveLength(1);
   });
 });

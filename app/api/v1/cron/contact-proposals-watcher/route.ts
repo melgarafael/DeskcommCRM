@@ -1,5 +1,10 @@
 /**
- * Cron — fecha as propostas de dado que ninguém decidiu (spec 17 §4b).
+ * Cron — fecha as propostas que ninguém decidiu (spec 17 §4b).
+ *
+ * Duas filas, um relógio: `contact_field_proposals` (o dado do cliente que a IA
+ * ouviu na conversa) e `lead_field_proposals` (o campo do CARD que a IA leu num
+ * documento, #3316). As duas nasceram com `expires_at` obrigatório e as duas
+ * precisam de quem cobre o prazo.
  *
  * A 0123 fez `expires_at` obrigatório. **Prazo que ninguém cobre é pior que
  * prazo nenhum**: promete um limite que não existe, e a pendência fica na ficha
@@ -24,6 +29,7 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { vencePropostasDeDado } from "@/lib/contacts/proposta-de-dado";
+import { vencePropostasDeCampo } from "@/lib/leads/proposta-de-campos-por-documento";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
@@ -56,12 +62,41 @@ async function handle(req: NextRequest): Promise<Response> {
     return fail("internal_error", "Failed to list organizations.", 500, { requestId });
   }
 
+  // ⏳ A fila do CARD (#3316) entra na MESMA varredura, e não numa rota nova.
+  //
+  // `lead_field_proposals` nasceu com `expires_at` obrigatório e — no head do
+  // #3415 — sem NENHUM consumidor: a proposta vencida continuava `pending`,
+  // continuava aparecendo na tela e continuava bloqueando o índice único
+  // parcial. O consumidor é este cron, que já existe, já está agendado no
+  // entrypoint do scheduler e já paga o custo de acordar de hora em hora; uma
+  // rota nova custaria uma linha de crontab, um teste de rota agendada e mais
+  // uma coisa para o self-hoster esquecer.
+  const { data: rowsDoCard, error: erroDoCard } = await admin
+    .from("lead_field_proposals")
+    .select("organization_id")
+    .eq("status", "pending")
+    .lt("expires_at", agora.toISOString());
+
+  if (erroDoCard) {
+    // Falha aqui NÃO derruba o vencimento das propostas de dado do contato (as
+    // de cima já foram lidas): uma tabela que ainda não existe num clone antigo
+    // não pode congelar a fila que já rodava.
+    logger.error("[contact-proposals-watcher] query do card falhou", {
+      error: erroDoCard.message,
+      requestId,
+    });
+  }
+
   const orgs = [
-    ...new Set(((rows ?? []) as Array<{ organization_id: string }>).map((r) => r.organization_id)),
+    ...new Set([
+      ...((rows ?? []) as Array<{ organization_id: string }>).map((r) => r.organization_id),
+      ...((rowsDoCard ?? []) as Array<{ organization_id: string }>).map((r) => r.organization_id),
+    ]),
   ].slice(0, ORG_LIMIT);
 
   let vencidas = 0;
   let itens = 0;
+  let vencidasNoCard = 0;
   const comErro: string[] = [];
 
   for (const org of orgs) {
@@ -80,6 +115,18 @@ async function handle(req: NextRequest): Promise<Response> {
         requestId,
       });
     }
+
+    try {
+      const r = await vencePropostasDeCampo(admin, org, agora);
+      vencidasNoCard += r.vencidas;
+    } catch (e) {
+      comErro.push(org);
+      logger.error("[contact-proposals-watcher] vencimento do card falhou", {
+        organizationId: org,
+        error: e instanceof Error ? e.message : String(e),
+        requestId,
+      });
+    }
   }
 
   return ok(
@@ -87,6 +134,10 @@ async function handle(req: NextRequest): Promise<Response> {
       organizations: orgs.length,
       proposals_expired: vencidas,
       inbox_items: itens,
+      // Nome próprio, e não somado em `proposals_expired`: uma varredura que
+      // vence 0 propostas de contato e 7 do card tem de poder dizer isso. Somar
+      // os dois faria "a fila do card parou de vencer" parecer tráfego normal.
+      lead_field_proposals_expired: vencidasNoCard,
       orgs_with_error: comErro.length,
     },
     { requestId },

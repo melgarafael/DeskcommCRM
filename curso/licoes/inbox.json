@@ -625,7 +625,7 @@
             "nome": "Grupos",
             "exato": true
           },
-          "dica": "Com \"Não lidos\" ligado, o número ao lado de cada aba também passa a contar só as conversas não lidas. Aqui, \"Todas\" mostra 4 em vez de 12. Como os números mudam de tamanho, as abas podem trocar de linha."
+          "dica": "Com \"Não lidos\" ligado, o número ao lado de cada aba também passa a contar só as conversas não lidas. Aqui, \"Todas\" mostra 4 em vez de 12. Como os números mudam de tamanho, as abas podem trocar de linha. O Inbox lembra o \"Não lidos\" e o número escolhido neste navegador: ao voltar, ele abre do jeito que você deixou, até você desligar o filtro."
         },
         {
           "id": "p3",
@@ -918,8 +918,9 @@
             },
             {
               "alvo": {
-                "texto": "Hoje",
-                "exato": true,
+                "texto": "^(Hoje|Ontem)$",
+                "regex": true,
+                "n": 0,
                 "dentro": {
                   "testid": "chat-thread"
                 }
@@ -1640,7 +1641,10 @@
               "alvo": {
                 "role": "option",
                 "nome": "Carlos Mendes",
-                "exato": true
+                "exato": true,
+                "dentro": {
+                  "role": "listbox"
+                }
               }
             }
           ],
@@ -1649,7 +1653,10 @@
               "alvo": {
                 "role": "option",
                 "nome": "Carlos Mendes",
-                "exato": true
+                "exato": true,
+                "dentro": {
+                  "role": "listbox"
+                }
               },
               "rotulo": "Lista da equipe: clique em Carlos Mendes",
               "tipo": "caixa"
@@ -1658,7 +1665,10 @@
           "clicar": {
             "role": "option",
             "nome": "Carlos Mendes",
-            "exato": true
+            "exato": true,
+            "dentro": {
+              "role": "listbox"
+            }
           }
         },
         {
@@ -1671,7 +1681,10 @@
               "alvo": {
                 "role": "option",
                 "nome": "Carlos Mendes",
-                "exato": true
+                "exato": true,
+                "dentro": {
+                  "role": "listbox"
+                }
               }
             }
           ],

@@ -147,6 +147,28 @@ describe("cobertura do e2e no CI", () => {
     ).toEqual(declaradas);
   });
 
+  it("o ambiente da prova causal acompanha a spec causal (rebalanceamento não os separa)", () => {
+    // A parte 8 (#3128; era a 7 até o doc 199) só difere das comuns por dois passos presos à
+    // `meta-lead-submitted-causal`. Quem rebalancear as listas pode mover a spec;
+    // se os passos ficarem no número antigo, ela roda sem HMAC nem Graph dublê
+    // (vermelho) e a parte antiga roda o ambiente causal à toa.
+    const SPEC = "meta-lead-submitted-causal.spec.ts";
+    const onde = [...partes].filter(([, lista]) => lista.includes(SPEC)).map(([k]) => k);
+    expect(onde, `${SPEC} tem de estar em exatamente uma SPECS_PARTE_N`).toHaveLength(1);
+    const n = onde[0]!.replace("SPECS_PARTE_", "");
+    const passos = yml.split(/\n {6}- /);
+    for (const nome of [
+      "Isolar Graph e assinatura WAHA da parte causal",
+      "Semear funil de nascimento para a prova causal",
+    ]) {
+      const passo = passos.filter((p) => p.includes(`name: ${nome}`));
+      expect(passo, `passo "${nome}" sumiu do workflow — o parser envelheceu?`).toHaveLength(1);
+      expect(passo[0], `passo "${nome}" não roda na parte da ${SPEC} (${n})`).toMatch(
+        new RegExp(`if: matrix\\.parte == ${n}\\s*\\n`),
+      );
+    }
+  });
+
   it("as listas do workflow só contêm NOMES DE SPEC — palavra solta vira filtro no runner", () => {
     /**
      * O bloco vai para o shell como `playwright test $LISTA`, SEM aspas. Qualquer

@@ -169,7 +169,10 @@ describe("a hora digitada vira o instante no fuso que o painel exibe", () => {
 
     await waitFor(() => expect(painel()).toHaveAttribute("data-tempo", "marcado"));
     expect(onConfirmar).toHaveBeenCalledTimes(1);
-    expect(onConfirmar).toHaveBeenCalledWith(esperado);
+    // O PRIMEIRO argumento é o instante — o objeto deste caso. O segundo é a
+    // duração (#3709), medida no próprio painel; aqui só interessa que o fuso
+    // não desloque o instante, então ela entra como "algum número".
+    expect(onConfirmar).toHaveBeenCalledWith(esperado, expect.any(Number));
   });
 
   it("sem hora digitada, 'Usar' fica desabilitado", () => {

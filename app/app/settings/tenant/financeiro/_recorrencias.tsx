@@ -67,9 +67,9 @@ export function Recorrencias({
 
   // A moeda da organização é a régua do valor digitado (#3367): em dólar `1,300`
   // é mil e trezentos. A `currency` gravada na recorrência (e na conta do
-  // catálogo) ainda nasce no padrão BRL (ver #3379). O leitor de sessão lê a
-  // mesma coluna (`organizations.currency`) que `moedaDaOrganizacao` lê no
-  // servidor.
+  // catálogo) é resolvida no SERVIDOR por `moedaDaOrganizacao` desde o #3379 —
+  // este leitor lê a mesma coluna (`organizations.currency`) para escrever o
+  // número na mesma unidade em que ele será gravado.
   const moeda = useMoedaDaOrgAtiva() ?? MOEDA_PADRAO;
   const cents = parseReaisToCents(valor, moeda);
   const diaNumero = Number(dia);

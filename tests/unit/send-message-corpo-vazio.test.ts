@@ -25,9 +25,16 @@ const corpoDoSend = (() => {
 })();
 
 describe("send_message nunca manda bolha em branco", () => {
-  it("o execute recusa corpo vazio depois do trim, com erro que ensina o modelo", () => {
-    expect(corpoDoSend).toMatch(/if \(body\.trim\(\) === ''\) \{\s*return \{\s*ok: false,/);
+  it("o execute recusa corpo vazio, com erro que ensina o modelo", () => {
+    expect(corpoDoSend).toMatch(/if \(semConteudoVisivel\(body\)\) \{\s*return \{\s*ok: false,/);
     expect(corpoDoSend).toContain("code: 'corpo_vazio'");
+  });
+
+  it("a trava usa a função de conteúdo visível, não só trim(): U+200E não sai como bolha", () => {
+    // spec 28: "‎".trim() continua "‎" (comprimento 1). Sem a função, a trava deixava passar.
+    expect(corpoDoSend).not.toMatch(/body\.trim\(\) === ''/);
+    expect(FONTE).toContain("import { semConteudoVisivel } from './conteudo-visivel';");
+    expect("‎".trim()).toBe("‎");
   });
 
   it("a recusa vem antes do teto de envios — corpo vazio não gasta a cota do turno", () => {

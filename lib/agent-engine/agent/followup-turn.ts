@@ -12,10 +12,16 @@ import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
  * em OpenClaw/Hermes que transforma continuação fria em retomada natural.
  *
  * Reusa runAgentTurn (F2-09) por inteiro — sessão fresca, loop de tools, checkpoint,
- * veto. A ÚNICA diferença é a abertura: o bloco temporal entra no SUFIXO (messages),
+ * veto. A diferença no PROMPT é a abertura: o bloco temporal entra no SUFIXO (messages),
  * DEPOIS do prefixo cacheável (system do playbook + tools — F2-17), então não
  * invalida o cache org-wide. O delta é RELATIVO ao now do run (clock injetável),
  * nunca persistido estático.
+ *
+ * A outra diferença é o PONTO DE IA: a chamada principal de um job `followup_turn`
+ * sai como `followup_turn`, não `agent_turn` (o turno decide pelo `kind` do job, em
+ * `executarTurnoDoAgente`). É o que deixa o painel de provedores escolher um modelo
+ * só para o follow-up — sem escolha, vale o da versão publicada, como antes — e o
+ * que separa o custo dele em `llm_calls`.
  *
  * Ids de envio (conversa + número) vêm da ROW do lead no harness (fonte confiável),
  * NUNCA do payload do modelo — o cron só carrega o snapshot da promessa (F3-02).
@@ -60,7 +66,11 @@ import {
   type LeadCheckpointRow,
 } from './inbound-turn';
 import { isLeadInHandoff } from './human-handoff';
+import { AgendaPuladoError, MOTIVO_DO_PULO, decidirNoEnvio } from '@/lib/agenda/escolha-no-envio';
+import { escolhaDoFluxoPg } from '@/lib/agenda/escolha-no-envio-leitura';
+import { protecaoAgendaPg } from '@/lib/agenda/protecao-followup';
 import { aplicarPessoaNoComandoAoTurno } from '@/lib/followup/pessoa-no-comando-no-turno';
+import { liberaEnvioComODono } from '@/lib/followup/envio-com-o-dono';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import {
   followupPublicadoDoEnrollment,
@@ -423,6 +433,7 @@ export function createFollowupTurnHandler(deps: FollowupTurnDeps) {
             enrollmentId: payload.followup_enrollment_id,
             nodeId: payload.node_id,
             contactId: leadId,
+            passoDeTexto: payload.fixed_body !== undefined || payload.template_id !== undefined,
           },
           agora,
         );
@@ -712,6 +723,44 @@ async function runFlowDrivenTurn(
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: target.tenantId, lead_id: target.leadId, enrollment_id: enrollmentId });
 
   if (input.purpose === 'send_message') {
+    // #3813 — O PULO PELA AGENDA ACONTECE ANTES DE QUALQUER GASTO, E TEM NOME.
+    //
+    // A escolha do FLUXO (`quando_ha_compromisso` na configuração publicada do
+    // follow-up) vale aqui como vale no caminho inline (`enviar-texto-fixo.ts`).
+    // Sem esta leitura o worker `pg` seguia no padrão `adiar` e um fluxo em
+    // `nao_enviar` nunca pulava — e, quando pulasse pela guarda do envio, o
+    // `AgendaPuladoError` subia como falha do run (o passo não tem desfecho).
+    //
+    // A leitura da proteção só é paga pela escolha que pode pular: em `adiar`
+    // (padrão) e em `enviar` esta decisão NUNCA é `pular`, então o caminho de
+    // hoje — inclusive o adiamento, que continua acontecendo na guarda do envio
+    // e re-agendando o job — não muda nem custa uma consulta a mais.
+    const escolhaDaAgenda = await escolhaDoFluxoPg(pool, target.tenantId, enrollmentId);
+    if (escolhaDaAgenda === 'nao_enviar') {
+      const decisaoDaAgenda = decidirNoEnvio(
+        await protecaoAgendaPg(pool, target.tenantId, target.leadId, clock()),
+        escolhaDaAgenda,
+      );
+      if (decisaoDaAgenda.acao === 'pular') {
+        runLog.info('passo do fluxo pulado — o contato tem horário marcado', {
+          motivo: MOTIVO_DO_PULO,
+          appointment_id: decisaoDaAgenda.appointment_id,
+          node_id: nodeId,
+        });
+        // O desfecho NOMEADO do pulo: o mesmo canal dos outros pulos deste
+        // arquivo (mídia recusada, modelo que não pode sair) — um `skipped`
+        // com o motivo, nunca um envio que não aconteceu em silêncio.
+        await complete(pool, {
+          jobId: job.id,
+          jobClaim: claimOfJob(job),
+          organizationId: target.tenantId,
+          enrollmentId,
+          nodeId,
+          result: { kind: 'skipped', reason: MOTIVO_DO_PULO },
+        });
+        return;
+      }
+    }
     let passo = await resolveFlowSendBody(pool, target.tenantId, target.channelSessionId, target.leadId, input);
     // O PLANO B DA MENSAGEM POR IA. Com a janela de 24 h fechada, o canal recusa
     // qualquer texto livre — o da IA inclusive —, e o passo terminava sem mandar
@@ -757,11 +806,34 @@ async function runFlowDrivenTurn(
         return;
       }
       // Texto do operador: sem camada semântica (ver o cabeçalho de sendFixedOutbound).
-      const desfecho = await sendFixedOutbound(
-        deps, job, pool, ctx, clock, target, passo.body, false,
-        passo.tipo === 'modelo_aprovado' ? passo.modelo : undefined,
-        passo.tipo === 'texto' ? passo.midia : undefined,
-      );
+      let desfecho: EnvioFixoDesfecho;
+      try {
+        desfecho = await sendFixedOutbound(
+          deps, job, pool, ctx, clock, target, passo.body, false,
+          passo.tipo === 'modelo_aprovado' ? passo.modelo : undefined,
+          passo.tipo === 'texto' ? passo.midia : undefined,
+        );
+      } catch (err) {
+        // #3813 — CORRIDA: o compromisso nasceu entre a leitura acima e o
+        // envio, e a guarda do envio (`sendTurnMessage`) pulou por `nao_enviar`.
+        // O desfecho continua sendo o PULO NOMEADO — o erro do pulo não vira
+        // falha de job (o dead-man leria worker morto onde houve decisão).
+        if (!(err instanceof AgendaPuladoError)) throw err;
+        runLog.info('passo do fluxo pulado na guarda do envio — o contato tem horário marcado', {
+          motivo: MOTIVO_DO_PULO,
+          appointment_id: err.protection.appointment_id,
+          node_id: nodeId,
+        });
+        await complete(pool, {
+          jobId: job.id,
+          jobClaim: claimOfJob(job),
+          organizationId: target.tenantId,
+          enrollmentId,
+          nodeId,
+          result: { kind: 'skipped', reason: MOTIVO_DO_PULO },
+        });
+        return;
+      }
       // TODO OS TRÊS DESFECHOS VOLTAM PARA O ENROLLMENT. O adiado era o que não
       // voltava, e o silêncio dele custava o enrollment inteiro: o motor ficava
       // rechecando um turno que ninguém ia fechar e, esgotado o orçamento do
@@ -1246,15 +1318,37 @@ async function sendFixedOutbound(
   const runLog = withFields(deps.log, { job_id: job.id, tenant_id: tenantId, lead_id: leadId });
 
   if (await isLeadInHandoff(pool, tenantId, leadId)) {
-    // Três causas no MESMO veto (#2353): handoff humano (`force_human`), a marca
-    // permanente "sempre atendimento humano" (`ai_opt_out`) e a etiqueta de
-    // contato interno. O texto nomeia as três — dizer só "opt-out" atribuía a
-    // parada a um motivo que pode não ser o do contato.
-    runLog.info(
-      'envio fixo pulado — contato silenciado para o envio automático (handoff humano, opt-out de IA ou etiqueta de contato interno)',
-      { kind: job.kind },
-    );
-    return { kind: "skipped" };
+    // #3974 — A OPÇÃO POR FLUXO "enviar mesmo com a conversa atribuída".
+    //
+    // O dono da conversa (assumir/atribuir) grava `bot_silenced_until =
+    // 'infinity'`, e era aqui que o passo de TEXTO do fluxo morria — mesmo com
+    // `handoff_policy = 'allow'`, porque este veto lê o silêncio, não a política.
+    // A opção vence SÓ a posse: `force_human`, `ai_opt_out`, contato interno,
+    // contato bloqueado e as janelas continuam valendo (os três primeiros pelo
+    // próprio `isLeadInHandoff` + `liberaEnvioComODono`, os demais na cadeia).
+    // O veto da IA não é tocado aqui — este caminho só envia texto de operador.
+    const liberado = await liberaEnvioComODono(pool, {
+      organizationId: tenantId,
+      contactId: leadId,
+      enrollmentId:
+        typeof job.payload.followup_enrollment_id === 'string'
+          ? job.payload.followup_enrollment_id
+          : null,
+    });
+    if (!liberado) {
+      // Três causas no MESMO veto (#2353): handoff humano (`force_human`), a marca
+      // permanente "sempre atendimento humano" (`ai_opt_out`) e a etiqueta de
+      // contato interno. O texto nomeia as três — dizer só "opt-out" atribuía a
+      // parada a um motivo que pode não ser o do contato.
+      runLog.info(
+        'envio fixo pulado — contato silenciado para o envio automático (handoff humano, opt-out de IA ou etiqueta de contato interno)',
+        { kind: job.kind },
+      );
+      return { kind: "skipped" };
+    }
+    runLog.info('envio fixo liberado pela opção do fluxo — a conversa está com uma pessoa', {
+      kind: job.kind,
+    });
   }
 
   // SEM gate near-dup AQUI (#2996, item 2 — pedido da triagem após medir os

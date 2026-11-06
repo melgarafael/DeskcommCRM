@@ -1,0 +1,152 @@
+{
+  "schema": 1,
+  "synthetic": true,
+  "environment_id": "qa-3475-01a178b3",
+  "build": {
+    "sha": "20f335eaede5c423a0fcc902d79eaabb103ea342",
+    "id": "cyznjcUkNaQa9Fn5H6iU4"
+  },
+  "organization": {
+    "id": "f36bf6ae-d17f-45aa-a5d4-59e056caac03",
+    "slug": "qa-3475-01a178b3"
+  },
+  "users": {
+    "manager": {
+      "id": "33c67bfd-e622-457b-b788-ece49d1835c2",
+      "email": "e2e-manager@deskcomm.test",
+      "password_env": "QA_3475_MANAGER_PASSWORD"
+    },
+    "viewer": {
+      "id": "b3a161fd-419f-4c2d-8c64-e8eb06cb3582",
+      "email": "e2e-viewer@deskcomm.test",
+      "password_env": "QA_3475_VIEWER_PASSWORD"
+    },
+    "other_tenant": {
+      "id": "620137cb-4777-4b73-8035-88fdcf70fd01",
+      "email": "qa3475-other-7b0337ad-9bff-420a-9053-dd457a348889@example.test",
+      "password_env": "QA_3475_OTHER_PASSWORD",
+      "organization_id": "70b46507-054d-4f2c-8f80-57b50743236d"
+    },
+    "admin": {
+      "id": "c5adb065-6b19-48fb-be28-4db75015c114",
+      "email": "qa3475-admin@example.test",
+      "password_env": "QA_3475_ADMIN_PASSWORD"
+    }
+  },
+  "enrollments": {
+    "dossie_dormente": {
+      "id": "6bdeead7-d480-4c55-8012-6a52e4863d75",
+      "contact_id": "f586006b-85da-4476-9907-1ea0e7cb44ad",
+      "contact_name": "QA3475 Dossiê Espera",
+      "conversation_id": "00ff8b8f-f020-4200-8a47-708a6da597aa"
+    },
+    "dossie_coletando": {
+      "id": "66cc483a-8dd9-41c7-8eb4-82e6e30a221e",
+      "contact_id": "c6320bd6-732b-400e-a068-5c806c1626ec",
+      "contact_name": "QA3475 Dossiê Roteiro",
+      "conversation_id": "4dbb8f66-65fc-41f5-a721-ab4347989029"
+    },
+    "inbox_dormente": {
+      "id": "fdc9ff58-fc5c-4abe-9017-0bb9f0e7f36c",
+      "contact_id": "0d4d389b-815f-479a-b6e0-f6f2799b355e",
+      "contact_name": "QA3475 Inbox Espera",
+      "conversation_id": "9f9784ee-734d-4c27-8d3a-eb829abc7658"
+    }
+  },
+  "human": {
+    "conversation_id": "c014340b-2954-4c7f-8d25-6f687a00e033",
+    "pure_conversation_id": "2ee064d0-cc92-4204-86a4-c4197be8f050",
+    "user_id": "33c67bfd-e622-457b-b788-ece49d1835c2",
+    "token_env": "QA_3475_TOKEN_ON_BEHALF",
+    "no_scope_token_env": "QA_3475_TOKEN_SEM_ESCOPO"
+  },
+  "signatures": {
+    "agent_id": "b5a02d09-6734-4af2-95f0-033ceefb181d",
+    "agent_name": "Agente QA3475",
+    "llm_mode": "platform",
+    "automation": {
+      "rule_id": "500bf043-fd0d-4912-82d2-70204443d67b",
+      "conversation_id": "01da48e4-bb12-41c5-8823-38b3565a94d6",
+      "event_type": "contact.tag_added",
+      "entity_type": "contact",
+      "entity_id": "0bc3395e-7732-42e4-b39a-b4cdd4747b08",
+      "payload": {
+        "contact_id": "0bc3395e-7732-42e4-b39a-b4cdd4747b08",
+        "tag": "qa3475-assinatura"
+      }
+    },
+    "prospecting": {
+      "campaign_id": "d43ee20b-adea-4de9-85e2-372dafbf74a2",
+      "candidate_id": "96d89882-a6ef-4acc-a39d-f617bc5db043",
+      "config": {
+        "agent_id": "b5a02d09-6734-4af2-95f0-033ceefb181d",
+        "channel_session_id": "8d59a805-9b02-4517-92d0-503de78e00f9",
+        "pipeline_id": "c20095e0-7275-4ef8-aeee-18f55bd94fe4",
+        "stage_id": "9b3ace13-823d-4059-bff2-b9ddf2a6986b",
+        "qualified_stage_id": "1ec482d7-24ce-4b1f-bf4b-b7d638d8ebc8",
+        "instruction": "Faça a abordagem sintética autorizada de teste.",
+        "qualification": "Qualifique somente o contato sintético desta prova.",
+        "ofertas": [
+          "site"
+        ],
+        "daily_limit": 10,
+        "interval_minutes": 5,
+        "legal_basis_ref": "bancada sintética autorizada QA3475",
+        "funnel_entry": "on_start"
+      }
+    }
+  },
+  "notices": {
+    "agent_id": "19b55cc3-7f04-4b7b-ab22-d5716d647a8e",
+    "version_id": "334075fe-d123-4117-963a-fb15efedc913",
+    "keyword_regex": "orçamento",
+    "cases": [
+      {
+        "name": "recusada",
+        "conversation_id": "8a481dfa-b759-450c-8446-f2118b547867",
+        "contact_id": "4f68994d-48d7-4a5e-9506-d99ce8373a21",
+        "channel_session_id": "992178c9-dc4b-4698-979a-2d6b97cdceac",
+        "body": "Olá, bom dia",
+        "type": "text",
+        "expected_notice": true
+      },
+      {
+        "name": "aceita",
+        "conversation_id": "f2b9e0f2-39a2-4f81-b341-b0faef6eee84",
+        "contact_id": "ac7e0118-b122-4d63-b058-0c03e644979b",
+        "channel_session_id": "992178c9-dc4b-4698-979a-2d6b97cdceac",
+        "body": "Quero um orçamento",
+        "type": "text",
+        "expected_notice": false
+      },
+      {
+        "name": "midia_sem_texto",
+        "conversation_id": "13de28c6-a28f-4681-86a8-504a16d4955b",
+        "contact_id": "b010adf1-1f59-43d6-8dbe-4e8a7e45211d",
+        "channel_session_id": "992178c9-dc4b-4698-979a-2d6b97cdceac",
+        "body": null,
+        "type": "audio",
+        "expected_notice": true
+      },
+      {
+        "name": "ja_engajado",
+        "conversation_id": "00e36510-4e60-4ed0-a993-77f5deee2241",
+        "contact_id": "9f704b98-7f25-473f-84d5-47e93a8eafd9",
+        "channel_session_id": "992178c9-dc4b-4698-979a-2d6b97cdceac",
+        "body": "Sim, combinado",
+        "type": "text",
+        "expected_notice": false
+      }
+    ],
+    "push_transport": null
+  },
+  "ack": {
+    "conversation_id": "960f0ad3-4350-4bfb-8c49-af7e76526877",
+    "channel_session_id": "8d59a805-9b02-4517-92d0-503de78e00f9",
+    "session_name": "qa3475-default",
+    "webhook_token_env": "QA_3475_WEBHOOK_PATH_TOKEN",
+    "hmac_secret_env": "QA_3475_WEBHOOK_HMAC_SECRET",
+    "other_tenant_message_id": "83638d3e-e485-4622-a860-c8706c08de6c"
+  },
+  "signature_version_id": "4fcad3d0-6dec-4a35-8f9a-706fad0037cb"
+}

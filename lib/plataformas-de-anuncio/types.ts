@@ -54,10 +54,7 @@ export type PlataformaDeAnuncio = "meta_ads" | "google_ads";
  * (0436) e `MetaEtapa:<uuid>` das da Meta (0524).
  */
 export type NomeDoEvento =
-  | "Purchase"
-  | "QualifiedLead"
-  | `Etapa:${string}`
-  | `MetaEtapa:${string}`;
+  "Purchase" | "LeadSubmitted" | "QualifiedLead" | `Etapa:${string}` | `MetaEtapa:${string}`;
 
 /**
  * Uma conversão pronta para sair — no formato da CASA, não no da plataforma.
@@ -67,10 +64,12 @@ export type NomeDoEvento =
  */
 export interface ConversaoOffline {
   organizationId: string;
-  leadId: string;
+  /** Nulo apenas no LeadSubmitted por clique quando nenhum card foi criado. */
+  leadId: string | null;
   evento: NomeDoEvento;
   /**
-   * Deduplicação, determinística: `<leadId>:<evento>`.
+   * Deduplicação determinística: por lead nos eventos antigos, por clique no
+   * LeadSubmitted causal. O transporte nunca deriva esta identidade.
    *
    * A plataforma descarta a segunda cópia com o mesmo par (id, evento). É a
    * SEGUNDA camada — a primeira é o índice único do livro-razão. Duas porque
@@ -307,6 +306,16 @@ export interface LinhaDeCampanha {
   /** `effective_status` — a veiculação real, que difere do status quando o pai está pausado. */
   veiculacao: string | null;
   objetivo: string | null;
+  /**
+   * `created_time` da campanha, como a plataforma manda (`…+0000`).
+   *
+   * Nulo quando a linha veio SÓ de insights — campanha apagada entre as duas
+   * chamadas, ou payload sem o campo. A ordenação trata nulo como "sem data" e
+   * joga a linha para o fim, em vez de tratá-la como 1970 (#3911).
+   */
+  criadaEm: string | null;
+  /** `start_time` da campanha. Desempata `criadaEm` igual, e serve de data quando ela falta. */
+  iniciadaEm: string | null;
   resultado: ResultadoDaCampanha;
   gasto: number | null;
   impressoes: number | null;

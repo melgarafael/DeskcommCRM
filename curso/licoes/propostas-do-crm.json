@@ -1,0 +1,447 @@
+{
+  "id": "propostas-do-crm",
+  "titulo": "Propostas do dia a dia",
+  "tela": "/app/proposals",
+  "resumo": "Onde a equipe cria, revisa e envia as propostas para os pacientes, confere os rascunhos que a IA preparou e registra se o paciente aceitou ou recusou.",
+  "licoes": [
+    {
+      "id": "propostas-do-crm-conhecendo-a-lista",
+      "titulo": "Conhecendo a lista de propostas",
+      "objetivo": "Saber onde ficam as propostas da clínica e ler, em cada linha, o número, a situação e o valor.",
+      "papel": "agent",
+      "busca": [
+        "propostas",
+        "lista de propostas",
+        "orçamento para o paciente",
+        "proposta comercial",
+        "aguardando revisão",
+        "proposta que a ia fez",
+        "proposta aceita",
+        "proposta recusada"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/crm",
+          "texto": "Propostas não aparece direto no menu lateral. No grupo \"CRM\" do menu, clique em \"Ver tudo em CRM\". Na parte \"Fechar a venda\" está o cartão \"Propostas\". O caminho completo é: CRM › Ver tudo em CRM › Propostas.",
+          "dica": "O cartão só aparece depois que a clínica liga as propostas em Configurações › Propostas. Isso é ensinado no módulo \"Propostas\", das Configurações.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver tudo em CRM",
+                "exato": true
+              },
+              "rotulo": "Ver tudo em CRM",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Propostas",
+                "regex": true
+              },
+              "rotulo": "Abrir as Propostas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Propostas",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Primeiro o que espera por você",
+          "rota": "/app/proposals",
+          "texto": "Cada linha é uma proposta para um paciente. As que a IA preparou sozinha durante o atendimento vêm primeiro, com o selo \"Aguardando revisão\": ninguém da equipe olhou ainda, e nada foi enviado ao paciente. Depois vêm as outras, da mais nova para a mais antiga. Clique no título para abrir a proposta.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Acompanhamento nutricional — 3 meses",
+                "exato": true
+              },
+              "rotulo": "Rascunho da IA",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Aguardando revisão",
+                "exato": true
+              },
+              "rotulo": "Ninguém revisou ainda",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Nova proposta",
+                "exato": true
+              },
+              "rotulo": "Criar uma proposta",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Número, situação e valor",
+          "texto": "Em \"Número\", o rascunho aparece só como \"Rascunho\". A proposta ganha número quando é enviada, como \"0007/2026 v1\": o número, o ano e a versão. Em \"Status\" você vê em que pé ela está: \"Enviada\" espera a resposta do paciente, \"Aceita\" e \"Recusada\" já foram respondidas. \"Valor\" é o total da proposta.",
+          "dica": "A versão muda quando alguém revisa uma proposta já enviada: nasce uma \"v2\" com o mesmo número, e a anterior fica guardada como \"Substituída\".",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "^0007/\\d{4} v1$",
+                "regex": true
+              },
+              "rotulo": "Número da enviada",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "Enviada",
+                "exato": true
+              },
+              "rotulo": "Espera a resposta",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "columnheader",
+                "nome": "Valor",
+                "exato": true
+              },
+              "rotulo": "O total",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "propostas-do-crm-criar",
+      "titulo": "Criar uma proposta",
+      "objetivo": "Começar uma proposta nova a partir de um negócio do funil, com título, validade e condições.",
+      "papel": "agent",
+      "busca": [
+        "nova proposta",
+        "criar proposta",
+        "fazer orçamento",
+        "proposta para um negócio",
+        "validade da proposta",
+        "nenhum negócio elegível"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O botão Nova proposta",
+          "rota": "/app/proposals",
+          "texto": "Para começar uma proposta, clique em \"Nova proposta\", no alto da tela.",
+          "dica": "Quem só tem permissão de leitura vê a lista, mas o botão não aparece para ele.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Nova proposta",
+                "exato": true
+              },
+              "rotulo": "Começar",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Nova proposta",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Escolher o negócio",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Nova proposta",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "rotulo": "Título da proposta"
+              }
+            }
+          ],
+          "texto": "Toda proposta nasce de um negócio do funil que tenha um paciente ligado a ele. Em \"Negócio (Lead)\", a lista mostra cada negócio assim: o nome do negócio e, depois do traço, o paciente. A proposta fica guardada nesse negócio e vai para esse paciente. Se a lista estiver vazia, a tela avisa \"Nenhum negócio elegível encontrado\": antes, crie o negócio do paciente no funil.",
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Negócio (Lead)"
+              },
+              "rotulo": "De qual negócio",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "rotulo": "Negócio (Lead)"
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "O título",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "rotulo": "Negócio (Lead)"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Fernanda Oliveira"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Título da proposta"
+              },
+              "valor": "Fortalecimento do joelho — mais 8 sessões"
+            }
+          ],
+          "texto": "Escolhido o negócio da Fernanda, escreva em \"Título da proposta\" um nome que o paciente entenda. O título aparece para ele e na lista de propostas da clínica.",
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Negócio (Lead)"
+              },
+              "rotulo": "Negócio escolhido",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "rotulo": "Título da proposta"
+              },
+              "rotulo": "Nome da proposta",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Validade e condições",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Condições de pagamento / Observações",
+                "exato": true
+              },
+              "valor": "Pagamento em até 3x no cartão."
+            }
+          ],
+          "texto": "\"Validade da proposta\" já vem com 15 dias a partir de hoje: é até quando o preço e as condições valem. Mude a data se quiser outro prazo. Em \"Condições de pagamento / Observações\", escreva como o paciente pode pagar e qualquer aviso importante. Este campo é opcional.",
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Validade da proposta",
+                "exato": true
+              },
+              "rotulo": "Até quando vale",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Condições de pagamento / Observações",
+                "exato": true
+              },
+              "rotulo": "Como pagar",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Criar o rascunho",
+          "texto": "Clique em \"Criar e abrir editor\". A proposta nasce como rascunho, sem nada enviado ao paciente, e o editor abre em seguida: é lá que você coloca os itens, os valores e o modelo do documento. Para desistir, clique em \"Cancelar\".",
+          "dica": "Cada negócio só pode ter um rascunho aberto de cada vez. Se o negócio já tiver um, abra o que existe na lista em vez de criar outro.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Criar e abrir editor",
+                "exato": true
+              },
+              "rotulo": "Criar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Cancelar",
+                "exato": true
+              },
+              "rotulo": "Desistir",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Criar e abrir editor",
+            "exato": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "propostas-do-crm-revisar-e-acompanhar",
+      "titulo": "Revisar, enviar e acompanhar",
+      "objetivo": "Revisar o rascunho que a IA preparou, entender o que falta para enviar e registrar a resposta do paciente.",
+      "papel": "agent",
+      "busca": [
+        "revisar proposta da ia",
+        "confirmar modelo da proposta",
+        "enviar proposta ao cliente",
+        "enviar proposta pelo whatsapp",
+        "itens da proposta",
+        "marcar proposta como aceita",
+        "paciente recusou a proposta",
+        "revisar proposta enviada"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O modelo sugerido pela IA",
+          "rota": "/app/proposals/f1b00002-0000-4000-8000-000000000001",
+          "texto": "Este é o rascunho que a IA preparou para a Mariana. No alto fica o título, que você pode mudar. Logo abaixo, o documento que o paciente vai receber depende de um modelo: a IA sugeriu um, mas quem decide é você. Clique em \"Usar este modelo\" para aceitar a sugestão, ou escolha outro na lista \"Ou escolha outro modelo\".",
+          "dica": "Os modelos da clínica são criados e ajustados em Configurações › Modelos de proposta.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "A IA sugeriu o modelo"
+              },
+              "rotulo": "A sugestão",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Usar este modelo",
+                "exato": true
+              },
+              "rotulo": "Aceitar a sugestão",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Os itens e o total",
+          "texto": "Na tabela ficam os itens: a descrição, a quantidade (\"Qtd\"), o preço de cada um, o desconto e o subtotal. Aqui a IA colocou três consultas com a nutricionista. \"+ Item à mão\" acrescenta uma linha para você preencher. Em \"Buscar produto no catálogo…\" você procura um produto já cadastrado, que entra com o preço do catálogo. Item sem preço aparece como \"A definir\". O total, embaixo, soma tudo.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "table"
+              },
+              "rotulo": "Os itens",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "+ Item à mão",
+                "exato": true
+              },
+              "rotulo": "Linha nova",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "placeholder": "Buscar produto no catálogo…",
+                "exato": true
+              },
+              "rotulo": "Do catálogo",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Salvar e enviar",
+          "texto": "Mudou alguma coisa? Clique em \"Salvar\", no fim da página. \"Enviar ao cliente\" manda a proposta pelo WhatsApp, na conversa do paciente. Ele fica apagado enquanto o modelo não for confirmado, e a tela avisa: \"Escolha e confirme o modelo da proposta antes de enviar.\". \"Ver como o cliente recebe\" mostra o documento como o paciente vai ver, sem enviar nada.",
+          "dica": "Enviar e descartar um rascunho são tarefas de gerente ou administrador: os botões aparecem para todos, mas para quem atende o sistema recusa com um aviso de permissão. No quadro \"Assistente\", você escreve o que quer mudar e clica em \"Gerar\": a IA sugere as mudanças e você escolhe se aplica. Ele usa a IA e gasta crédito do provedor.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Escolha e confirme o modelo da proposta antes de enviar.",
+                "exato": true
+              },
+              "rotulo": "O que falta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Enviar ao cliente",
+                "exato": true
+              },
+              "rotulo": "Enviar",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Gravar",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Registrar a resposta do paciente",
+          "rota": "/app/proposals/f1b00002-0000-4000-8000-000000000002",
+          "texto": "Depois de enviada, a proposta não muda mais: os campos ficam travados. Quando o paciente responder, registre aqui. \"Marcar como aceita\" e \"Marcar como recusada\" guardam a resposta. Na recusa, o sistema pergunta o motivo, que é opcional. Se o paciente pedir uma mudança, \"Revisar esta proposta\" cria uma versão nova para você editar e enviar de novo.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Marcar como aceita",
+                "exato": true
+              },
+              "rotulo": "Aceitou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Marcar como recusada",
+                "exato": true
+              },
+              "rotulo": "Recusou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Revisar esta proposta",
+                "exato": true
+              },
+              "rotulo": "Mudar e reenviar",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

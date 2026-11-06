@@ -1,5 +1,9 @@
 # Conversões de anúncios pelo CRM
 
+O envio causal de **LeadSubmitted por clique CTWA recebido** da Feature A tem
+[contrato, configuração, evidências e limites próprios](../features/feature-a-leadsubmitted-ctwa.md).
+Ele não substitui Purchase nem o evento de etapa Meta chamado `LeadSubmitted` descrito abaixo.
+
 ## Operação
 
 1. Em **Configurações → Conversões**, conecte a plataforma que trouxe o contato. Exceção: se a conversa do cliente passa por um canal intermediado que já liga o conjunto de dados da Meta ao número (configurado na tela do próprio provedor), a venda de um contato da Meta pode ir por esse canal quando a organização **não tem** conexão direta com a Meta — sem token nem dataset no CRM — **e** ligou a chave **Enviar vendas pelo canal da conversa** na mesma tela. A chave vem **desligada** (`organizations.settings.conversions.report_via_channel` ausente = desligado): o valor, a moeda, o telefone do cliente e a conversa só saem para o provedor do canal quando a empresa pede. Desligada, nem as conversas são lidas e a venda fica na pendência `sem_conexao` de sempre. Quem tem a conexão direta (ligada, desligada ou incompleta) segue por ela; a venda nunca sai pelos dois caminhos. Quem decide é a capacidade `reportConversion` do adapter do canal (`lib/channels/conversao-pelo-canal.ts`), não o nome do provedor.

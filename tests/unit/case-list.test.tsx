@@ -71,6 +71,14 @@ describe("CaseList", () => {
     render(wrap(<CaseList />));
 
     expect(screen.getByText("Nenhum caso aberto")).toBeInTheDocument();
-    expect(screen.getByText(/quando a ia precisar de você/i)).toBeInTheDocument();
+    // O membro achou que o repasse para humano cairia aqui (DES-49): o texto diz
+    // quem abre caso (o interruptor exato) e para onde vai a conversa passada a uma pessoa.
+    const explicacao = screen.getByText(/os casos aparecem aqui/i);
+    expect(explicacao.textContent).toContain(
+      '"Deixar o agente pedir uma tarefa a alguém e seguir conversando"',
+    );
+    expect(explicacao.textContent).toMatch(/agente publicado/);
+    expect(explicacao.textContent).toMatch(/vai para o Inbox/);
+    expect(screen.queryByText(/quando a ia precisar de você/i)).not.toBeInTheDocument();
   });
 });

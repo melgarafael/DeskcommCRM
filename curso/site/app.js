@@ -112,18 +112,20 @@
     }).join("") + "</ol>";
   }
 
+  var demos = window.criarDemonstracoes({ dados: D, esc: esc, vista: vista, figura: figura, legenda: legenda });
+
   // ---------- menu lateral ----------
   function desenharMenu(rota) {
     var f = feitos();
-    document.getElementById("menu-grupos").innerHTML = D.menu.map(function (g) {
+    document.getElementById("menu-grupos").innerHTML = '<div><div class="grupo-titulo">Histórias na tela</div><ul class="grupo-itens"><li><a class="item-menu" href="#acao"' + (rota.demo ? ' aria-current="page"' : '') + '>Deskcomm em ação</a></li></ul></div>' + D.menu.map(function (g) {
       return '<div><div class="grupo-titulo">' + esc(g.grupo) + '</div><ul class="grupo-itens">' + g.itens.map(function (it) {
         var m = it.modulo && modulo(it.modulo);
         var ativo = m ? rota.mod === m.id : rota.tela === it.href;
-        var link = '<a class="item-menu" href="#' + (m ? "m." + m.id : tokenDaTela(it.href)) + '"' + (ativo ? ' aria-current="page"' : "") + ">" +
+        var link = '<a class="item-menu" href="' + esc("#" + (m ? "m." + m.id : tokenDaTela(it.href))) + '"' + (ativo ? ' aria-current="page"' : "") + ">" +
           "<span>" + esc(it.rotulo) + "</span>" +
           (m ? '<span class="qtd">' + plural(m.licoes.length, "lição", "lições") + "</span>" : '<span class="breve">em breve</span>') + "</a>";
         var sub = m && ativo ? '<ul class="sublicoes">' + m.licoes.map(function (l) {
-          return '<li><a href="#l.' + m.id + "." + l.id + '"' + (rota.licao === l.id ? ' aria-current="page"' : "") + ">" +
+          return '<li><a href="' + esc("#l." + m.id + "." + l.id) + '"' + (rota.licao === l.id ? ' aria-current="page"' : "") + ">" +
             (f.indexOf(m.id + "/" + l.id) >= 0 ? '<span class="feito" aria-label="concluída">✓</span>' : "") + esc(l.titulo) + "</a></li>";
         }).join("") + "</ul>" : "";
         return "<li>" + link + sub + "</li>";
@@ -144,6 +146,7 @@
       '<div class="acoes"><a class="botao botao-primario" href="#l.' + m0.id + "." + l0.id + '">Começar pela ' + esc(m0.titulo) + '</a>' +
       '<a class="botao botao-secundario" href="#s.' + m0.id + "." + l0.id + '">Abrir o simulador</a></div></div>' +
       '<div class="abertura-figura">' + figura(cap0, { ansioso: true, alt: "Tela da " + m0.titulo + " do DeskComm" }) + "</div></section>" +
+      '<section class="jornada-convite"><a class="cartao" href="#acao"><span class="rotulo-mono">Histórias na tela</span><h2>Deskcomm em ação</h2><p>Mostre a um cliente como um atendimento caminha pela operação. Escolha um negócio, apresente a história e aprenda a montar.</p><span>Escolher uma história →</span></a></section>' +
       '<section class="como">' +
       "<div><strong>O menu é o do sistema</strong><span>À esquerda estão os mesmos grupos e nomes que você vê no DeskComm. Clique numa tela para aprender sobre ela.</span></div>" +
       "<div><strong>Ler ou simular</strong><span>No modo Ler, cada passo tem a foto da tela e a explicação. No Simulador, você clica no lugar certo para avançar.</span></div>" +
@@ -258,7 +261,7 @@
       desenharSimulador();
       return;
     }
-    var ampliar = e.target.closest(".passo .tela");
+    var ampliar = e.target.closest(".passo .tela, .jornada-foto .tela");
     if (ampliar) {
       var dlg = document.getElementById("ampliada");
       dlg.querySelector(".ampliada-conteudo").innerHTML = ampliar.outerHTML;
@@ -298,6 +301,7 @@
       if (!it.modulo) indice.push({ onde: g.grupo + " · em breve", titulo: it.rotulo, trecho: it.descricao, href: "#" + tokenDaTela(it.href), campos: [[it.rotulo, 5], [it.descricao, 1]] });
     });
   });
+  indice = indice.concat(demos.entradasBusca());
   indice.forEach(function (d) { d.campos = d.campos.map(function (c) { return [normalizar(c[0]), c[1]]; }); });
 
   // Todos os termos precisam aparecer (por prefixo de palavra); o peso do campo decide a ordem.
@@ -358,7 +362,11 @@
 
   // ---------- rotas (#inicio, #m.inbox, #l.inbox.licao[.passo], #s.inbox.licao, #t.app~radar) ----------
   function rotaAtual() {
-    var h = decodeURIComponent(location.hash.slice(1)), partes = h.split(".");
+    var h;
+    try { h = decodeURIComponent(location.hash.slice(1)); } catch { h = "acao"; }
+    var demo = demos.reconhecer(h);
+    if (demo) return { tipo: "demonstracao", demo: demo };
+    var partes = h.split(".");
     var r = { tipo: partes[0] || "inicio", mod: partes[1], licao: partes[2], passo: partes[3] };
     if (r.tipo === "t") r.tela = "/" + h.slice(2).split("~").join("/");
     return r;
@@ -366,22 +374,25 @@
   function render() {
     var r = rotaAtual(), m = modulo(r.mod), l = licaoDe(m, r.licao), html;
     sim = null;
-    if (r.tipo === "m" && m) html = vistaModulo(m);
+    if (r.demo) html = demos.render(r.demo);
+    else if (r.tipo === "m" && m) html = vistaModulo(m);
     else if (r.tipo === "l" && l) html = vistaLicao(m, l);
     else if (r.tipo === "s" && l) html = vistaSimulador(m, l);
     else if (r.tipo === "t") html = vistaTela(r.tela);
     else html = vistaInicio();
     vista.innerHTML = html;
     desenharMenu(r);
+    demos.posRender(r.demo || null);
     if (sim) desenharSimulador();
     var foco = r.passo && document.getElementById("passo-" + r.passo);
     if (foco) foco.scrollIntoView({ block: "start" }); else window.scrollTo(0, 0);
-    var t = l ? l.titulo : m ? m.titulo : "";
+    var t = r.demo ? demos.titulo(r.demo) : l ? l.titulo : m ? m.titulo : "";
     document.title = t ? t + " · Curso DeskComm" : "Curso DeskComm";
   }
   var ampliada = document.getElementById("ampliada");
   ampliada.addEventListener("click", function (e) { if (e.target === ampliada || e.target.closest("[data-fechar]")) ampliada.close(); });
   window.addEventListener("hashchange", function () { if (ampliada.open) ampliada.close(); render(); });
-  document.getElementById("rodape").innerHTML = '<div class="coluna"><span>Fotos tiradas do DeskComm versão ' + esc(D.versao) + " em " + esc(D.gerado.split("-").reverse().join("/")) + ", numa empresa de demonstração. Os nomes e conversas são fictícios.</span></div>";
+  var datasFotos = (D.datas_das_fotos || []).map(function (data) { return data.split("-").reverse().join("/"); });
+  document.getElementById("rodape").innerHTML = '<div class="coluna"><span>Material atualizado em ' + esc(D.gerado.split("-").reverse().join("/")) + ". Fotos das versões " + esc(D.versao) + (datasFotos.length ? ", capturadas em " + esc(datasFotos.join(" e ")) : "") + ", numa empresa de demonstração. Os nomes e conversas são fictícios.</span></div>";
   render();
 })();

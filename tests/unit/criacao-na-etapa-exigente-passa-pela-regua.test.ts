@@ -188,6 +188,27 @@ describe("createLeadHandler — a etapa em que o negócio NASCE", () => {
     expect(inseridos).toHaveLength(1);
   });
 
+  it("saneia a prova reservada sem contornar obrigatorio_em nem remover metadados comuns", async () => {
+    const metadata = {
+      campanha: "outubro",
+      meta_capi_lead_birth_v1: { ctwa_clid: "forjado" },
+    };
+    const semCampo = criacao(EXIGENTE);
+    await expect(createLeadHandler(semCampo.cliente, ctx, {
+      ...payloadBase,
+      source_metadata: metadata,
+    })).rejects.toMatchObject({ code: "required_fields_missing" });
+    expect(semCampo.inseridos).toHaveLength(0);
+
+    const comCampo = criacao(EXIGENTE);
+    await createLeadHandler(comCampo.cliente, ctx, {
+      ...payloadBase,
+      custom_fields: { concorrente: "ACME" },
+      source_metadata: metadata,
+    });
+    expect(comCampo.inseridos[0]?.source_metadata).toEqual({ campanha: "outubro" });
+  });
+
   it("funil SEM `obrigatorio_em`: cria como antes — a regra continua opt-in", async () => {
     // O asterisco antigo (`required: true`) NÃO barra: ele é destaque no
     // formulário, e quem barra é só `obrigatorio_em`.

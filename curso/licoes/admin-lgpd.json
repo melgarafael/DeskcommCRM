@@ -1,0 +1,534 @@
+{
+  "id": "admin-lgpd",
+  "titulo": "LGPD (Admin)",
+  "tela": "/admin/lgpd",
+  "resumo": "A lista dos pedidos de LGPD de todas as empresas do seu servidor (clientes que pedem uma cópia dos seus dados ou que eles sejam apagados), com o prazo e o risco de cada um, para você cobrar quem está atrasado.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-lista",
+      "titulo": "Conhecendo a lista de pedidos",
+      "objetivo": "Ler a lista de pedidos de LGPD de todas as empresas do servidor e entender o aviso vermelho, o prazo, o risco e a situação de cada pedido.",
+      "papel": "admin",
+      "busca": [
+        "pedidos de lgpd",
+        "lgpd de todas as empresas",
+        "cliente pediu para apagar dados",
+        "cliente pediu cópia dos dados",
+        "prazo da lgpd",
+        "pedido de lgpd atrasado",
+        "proteção de dados"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Os pedidos de todas as empresas",
+          "texto": "Pela LGPD, o cliente de uma empresa pode pedir uma cópia dos dados que ela guarda sobre ele, ou pedir que esses dados sejam apagados (o sistema os torna anônimos: o nome vira \"Cliente Anonimizado\"). Hoje esses pedidos só chegam pela loja virtual Nuvemshop ligada à empresa; se nenhuma empresa tem loja Nuvemshop ligada, a lista fica vazia. Esta tela junta os pedidos de TODAS as empresas do seu servidor (é isso que \"Cross-tenant\" quer dizer). Abaixo do título aparece quantos pedidos a lista mostra.",
+          "dica": "A lista vem ordenada pelo prazo: quem vence primeiro aparece em cima. Ela carrega 50 pedidos por vez; quando há mais, o número ganha um \"+\" e aparece o botão \"Carregar mais\" no fim. A faixa amarela \"Sem SMTP configurado\", no alto, é um aviso geral do Admin: o envio de e-mails ainda não está configurado. O item \"E-mail\" do menu leva ao ajuste.",
+          "rota": "/admin/lgpd",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "LGPD",
+                "exato": true,
+                "dentro": {
+                  "role": "navigation"
+                }
+              },
+              "rotulo": "LGPD no menu do Admin",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "LGPD — Cross-tenant",
+                "exato": true
+              },
+              "rotulo": "Pedidos de todas as empresas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "^\\d+ solicitaç(ões|ão)\\+?$",
+                "regex": true
+              },
+              "rotulo": "Quantos pedidos a lista mostra",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O aviso vermelho",
+          "texto": "O aviso vermelho no topo só aparece quando existe pedido ainda aberto que já passou do prazo ou que vence em menos de 24 horas. Ele mostra quantos são. Pedidos concluídos ou que falharam não entram nessa conta. Quando nenhum pedido está nessa situação, o aviso some.",
+          "dica": "Para ver só os pedidos vencidos, use o filtro de risco, que você aprende na próxima lição. O link \"Ver detalhes\" do aviso ainda não aplica esse filtro: ele recarrega a mesma lista completa.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div[role=\"alert\"]:has-text(\"ação imediata requerida\")"
+              },
+              "rotulo": "Pedidos vencidos ou quase vencendo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O que cada coluna diz",
+          "texto": "Cada linha é um pedido. \"ID\" é o código curto do pedido. \"Tipo\" diz o que foi pedido: \"Solicitação de dados\" (o cliente quer uma cópia dos dados), \"Anonimização cliente\" (o cliente quer que os dados dele sejam tornados anônimos) ou \"Anonimização tenant\" (a empresa desinstalou o aplicativo da loja Nuvemshop, e os dados de todos os clientes dela serão tornados anônimos). \"Tenant\" é a empresa que recebeu o pedido. \"Recebido em\" diz há quanto tempo ele chegou.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "thead"
+              },
+              "rotulo": "Colunas da lista",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "NutriBem Consultório",
+                "regex": true
+              },
+              "rotulo": "Um pedido",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Prazo e risco",
+          "texto": "A empresa tem 7 dias úteis para entregar uma cópia dos dados e 15 dias úteis para torná-los anônimos. \"Vence em\" conta quanto falta até o fim do último dia do prazo, ou há quantas horas ele passou (\"em atraso\"). \"Risco\" resume isso num selo: \"OK\" (dentro do prazo), \"Alerta\" (mais da metade do prazo já passou), \"Crítico\" (vence em menos de 24 horas) e \"Vencido\" (o prazo passou).",
+          "dica": "Pedido concluído ou que falhou mostra \"—\" em \"Vence em\": não há mais prazo a contar. Mas o selo de risco olha só a data: um pedido já concluído também fica \"Vencido\" depois que o prazo passa. Antes de cobrar, confira a coluna \"Status\". No horário de Brasília, o prazo acaba às 21h do último dia.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "NutriBem Consultório",
+                "regex": true
+              },
+              "rotulo": "Vencido: o prazo já passou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "Anonimização cliente.*FisioVida",
+                "regex": true
+              },
+              "rotulo": "Alerta: mais da metade do prazo gasta",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "A situação de cada pedido",
+          "texto": "A coluna \"Status\" diz em que pé o pedido está. \"Recebido\": chegou e ainda não começou a ser feito (o pedido de cópia dos dados espera alguém da empresa aprovar). \"Processando\": está sendo feito. \"Revisão\": travou e precisa que alguém da empresa resolva à mão. \"Concluído\": terminou. \"Falhou\": deu erro e o sistema desistiu depois de várias tentativas.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Revisão",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Odonto Sorriso Leve",
+                  "regex": true
+                }
+              },
+              "rotulo": "Precisa de alguém da empresa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Recebido",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "NutriBem Consultório",
+                  "regex": true
+                }
+              },
+              "rotulo": "Esperando aprovação",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "filtrando-os-pedidos",
+      "titulo": "Achando os pedidos que precisam de atenção",
+      "objetivo": "Usar os filtros de situação, tipo e risco para ver só os pedidos que importam agora, e voltar à lista completa.",
+      "papel": "admin",
+      "busca": [
+        "filtrar pedidos de lgpd",
+        "ver pedidos vencidos",
+        "pedidos de lgpd atrasados",
+        "filtro de risco lgpd",
+        "pedidos em revisão",
+        "limpar filtros lgpd"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Os três filtros",
+          "texto": "Acima da lista ficam três filtros. O primeiro escolhe a situação do pedido, o segundo o tipo de pedido e o terceiro o risco do prazo. Eles começam em \"Todos os status\", \"Todos os tipos\" e \"Todos os riscos\", ou seja, sem filtro. Clique no filtro de risco para abrir as opções.",
+          "rota": "/admin/lgpd",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "button[role=\"combobox\"]:has-text(\"Todos os status\")"
+              },
+              "rotulo": "Situação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "button[role=\"combobox\"]:has-text(\"Todos os tipos\")"
+              },
+              "rotulo": "Tipo de pedido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "button[role=\"combobox\"]:has-text(\"Todos os riscos\")"
+              },
+              "rotulo": "Risco do prazo",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "css": "button[role=\"combobox\"]:has-text(\"Todos os riscos\")"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Ver só os vencidos",
+          "texto": "As opções são as mesmas do selo de risco: \"Vencido\", \"Crítico (<24h)\", \"Alerta (>50%)\" e \"OK\". Escolha \"Vencido\" para ver só os pedidos cujo prazo já passou. Os que ainda não estão em \"Concluído\" são os primeiros a cobrar da empresa.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "button[role=\"combobox\"]:has-text(\"Todos os riscos\")"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "listbox"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "option",
+                "nome": "Vencido",
+                "exato": true
+              },
+              "rotulo": "Só os vencidos",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Vencido",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "A lista filtrada",
+          "texto": "Agora a lista mostra só os pedidos vencidos, de todas as empresas, e o número abaixo do título conta só eles. Enquanto houver algum filtro ligado, aparece ao lado dos filtros o selo \"Limpar filtros\". Clique nele para voltar à lista completa.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Vencido",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Limpar filtros ×",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "button[role=\"combobox\"]:has-text(\"Vencido\")"
+              },
+              "rotulo": "Filtro de risco ligado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "tbody"
+              },
+              "rotulo": "Só os pedidos vencidos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Limpar filtros ×",
+                "exato": true
+              },
+              "rotulo": "Volta à lista completa",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "texto": "Limpar filtros ×",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Pedidos que travaram",
+          "texto": "Outro filtro útil é o de situação. Escolha \"Revisão\" no primeiro filtro para ver os pedidos que travaram e esperam alguém da empresa resolver à mão. Aqui aparece o pedido da Odonto Sorriso Leve. A próxima lição abre esse pedido para ver o motivo.",
+          "dica": "Os filtros podem ser combinados: situação, tipo e risco ao mesmo tempo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "texto": "Limpar filtros ×",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "button[role=\"combobox\"]:has-text(\"Todos os status\")"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "listbox"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Revisão",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Limpar filtros ×",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "button[role=\"combobox\"]:has-text(\"Revisão\")"
+              },
+              "rotulo": "Filtro de situação ligado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "Odonto Sorriso Leve",
+                "regex": true
+              },
+              "rotulo": "Pedido em revisão",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "abrindo-um-pedido",
+      "titulo": "Abrindo um pedido",
+      "objetivo": "Abrir a ficha de um pedido de LGPD, ler o prazo, os detalhes e o histórico, e entender por que ele travou.",
+      "papel": "admin",
+      "busca": [
+        "abrir pedido de lgpd",
+        "detalhes do pedido lgpd",
+        "histórico do pedido lgpd",
+        "por que o pedido travou",
+        "prazo do pedido de dados",
+        "quem aprova pedido lgpd"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir a ficha",
+          "texto": "Cada linha tem um botão \"Ver\" no fim. Ele abre a ficha completa do pedido. Clique em \"Ver\" no pedido da Odonto Sorriso Leve, que está em revisão.",
+          "rota": "/admin/lgpd",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "Odonto Sorriso Leve",
+                "regex": true
+              },
+              "rotulo": "Clique em \"Ver\", no fim desta linha",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Ver",
+            "exato": true,
+            "dentro": {
+              "role": "row",
+              "nome": "Odonto Sorriso Leve",
+              "regex": true
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O topo da ficha",
+          "texto": "No topo ficam o código do pedido, a situação (\"Revisão pendente\"), o tipo e a empresa. Logo abaixo aparecem o dia em que o pedido chegou e o último dia do prazo. A frase em itálico avisa que esta ficha é só para leitura: quem aprova ou resolve o pedido é o administrador da própria empresa, na tela de LGPD dela.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Ver",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Odonto Sorriso Leve",
+                  "regex": true
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Linha do tempo SLA",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "^#[0-9a-f]{8}$",
+                "regex": true
+              },
+              "rotulo": "Código do pedido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Revisão pendente",
+                "exato": true,
+                "n": 0
+              },
+              "rotulo": "Situação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "^Recebido em .* · Vence em",
+                "regex": true
+              },
+              "rotulo": "Chegada e último dia do prazo",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Somente leitura",
+                "exato": false
+              },
+              "rotulo": "Quem resolve é a empresa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "A linha do tempo do prazo",
+          "texto": "O quadro \"Linha do tempo SLA\" mostra o prazo em forma de barra. À esquerda, há quantos dias o pedido chegou (\"D+\" e o número de dias); à direita, quantos dias faltam até o último dia do prazo. A barra fica verde, amarela quando três quartos do prazo já passaram, e vermelha quando ele acaba. Abaixo vêm as etapas de referência; a bolinha fica verde quando a data dela já passou.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(> div > div:text-is(\"Linha do tempo SLA\"))"
+              },
+              "rotulo": "Prazo do pedido",
+              "tipo": "caixa"
+            }
+          ],
+          "dica": "As datas das etapas contam dias corridos desde a chegada, mas o prazo conta só dias úteis. Por isso \"Entrega ao titular\" pode cair antes do prazo real. A data que vale é a de \"Vence em\", no topo da ficha."
+        },
+        {
+          "id": "p4",
+          "titulo": "Os detalhes e o motivo da trava",
+          "texto": "O quadro \"Detalhes\" mostra o código completo, o tipo, a situação, de onde o pedido veio (\"Origem\"), quantas vezes o sistema tentou fazê-lo (\"Tentativas\") e a empresa. Quando algo deu errado, aparece no fim desse quadro uma caixa vermelha \"Erro\". Aqui ela diz \"email_not_configured\": o arquivo com os dados do cliente foi gerado, mas o servidor não tem envio de e-mail configurado, então ele não foi entregue ao cliente. \"Escopo\" diz se o pedido é de um cliente só (\"contact\") ou da loja inteira; \"Slug\" é o apelido da empresa no endereço do sistema; \"External customer ID\" é o número do cliente na Nuvemshop.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(> div > div:text-is(\"Detalhes\"))"
+              },
+              "rotulo": "Detalhes do pedido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "email_not_configured",
+                "exato": true
+              },
+              "rotulo": "Motivo da trava",
+              "tipo": "seta"
+            }
+          ],
+          "dica": "O envio de e-mail do servidor é configurado na tela \"E-mail\" do menu do Admin. O aviso \"Sem SMTP configurado\", no alto, lembra disso enquanto ele não estiver pronto. Configurar o e-mail não reenvia este pedido: o arquivo já gerado fica com a empresa, que o baixa na tela de LGPD dela e entrega ao cliente."
+        },
+        {
+          "id": "p5",
+          "titulo": "O histórico do pedido",
+          "texto": "O quadro \"Trilha de auditoria\" lista o que aconteceu com o pedido, do mais antigo para o mais novo, com data e hora: a chegada (\"lgpd.data_request_received\"), a aprovação pela empresa (\"lgpd.manually_approved\") e a geração do arquivo (\"lgpd.export_generated\"). Quando o registro guarda quem fez a ação, aparece \"por\" e o começo do código da pessoa. Cada vez que alguém abre esta ficha, isso também é registrado (\"platform_admin.lgpd_request_viewed\") e aparece aqui numa abertura seguinte (se reabrir logo em seguida, recarregue a página para ver).",
+          "dica": "Para voltar à lista, use \"LGPD Cross-tenant\", no alto da ficha.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(> div > div:text-matches(\"^Trilha de auditoria\")) ol"
+              },
+              "rotulo": "Tudo o que aconteceu com o pedido",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

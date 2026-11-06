@@ -58,6 +58,26 @@
  * como no editor do Inbox (#2789), e cada chip do contato ganha o gatilho de
  * repintar (#2771).
  *
+ * ─── A BUSCA: o MESMO vocabulário do Inbox (issue #3144) ────────────────────
+ *
+ * Faltava a outra metade da paridade: `GET /api/v1/contact-tags` SEM texto lê os
+ * 1000 contatos atualizados mais recentemente e corta em 200 etiquetas
+ * (`app/api/v1/contact-tags/route.ts`), então a etiqueta de Configurações → Tags
+ * que nenhum contato usa ainda — ou a que só aparece em `crm_leads`/conversas, ou
+ * a que só existe como `add_tag` de uma regra — nunca virava sugestão na ficha.
+ * Quem digitava "diam" via "Criar etiqueta «diam»" e digitava o nome inteiro, ou
+ * uma variante dele: exatamente o erro de digitação que a seleção de etiquetas
+ * existentes veio evitar. O Inbox já perguntava com o texto digitado desde a
+ * #2855 (`?busca=` → `fn_vocabulario_de_tags_pagina`), e é isso que a ficha passa
+ * a fazer — pelo MESMO hook, pela MESMA rota: `onDigitar` sobe o texto, quem
+ * monta consulta, e o que o servidor achou volta em `encontradas`.
+ *
+ * Este campo continua sem rede: o componente segue testável sem provider e sem
+ * dublê (o mapa de cores degrada para vazio, e `encontradas` ausente é a lista de
+ * antes). A falha da leitura, essa sim, passou a ser VISÍVEL (`erroNoVocabulario`):
+ * silêncio ali lia como "não há etiquetas", que é o que empurra a pessoa a digitar
+ * a variante. É a mesma frase que o Inbox mostra.
+ *
  * ─── O texto digitado não pode sumir ao SALVAR ──────────────────────────────
  *
  * O texto em digitação mora num `useState` DESTE campo (`draft`): enquanto não
@@ -124,6 +144,31 @@ interface Props {
    * gatilho nos chips.
    */
   onDefinirCor?: (tag: string, cor: string | null) => void;
+  /**
+   * Etiquetas que o SERVIDOR achou para o texto digitado — a leitura COM busca
+   * (`GET /api/v1/contact-tags?busca=`), a mesma que o editor do Inbox faz desde
+   * a #2855. Ela enxerga o vocabulário curado inteiro, e é o que a leitura sem
+   * texto não vê (issue #3144): a etiqueta de Configurações → Tags que nenhum
+   * contato usa ainda, a que só aparece em `crm_leads`/`conversations`, a que só
+   * existe como `add_tag` de uma regra e a que passou do teto de 200 da lista
+   * em uso.
+   *
+   * Entra DEPOIS do `vocabulario`, como no Inbox: a ordem por uso continua
+   * mandando nas que já estavam na lista.
+   */
+  encontradas?: readonly string[] | null;
+  /**
+   * O texto digitado, avisado a quem monta — é ele quem pergunta ao servidor
+   * (este campo não faz rede, pelo motivo no cabeçalho). Sem esta prop o campo é
+   * o de antes: sugere só o `vocabulario` que recebeu.
+   */
+  onDigitar?: (texto: string) => void;
+  /**
+   * A leitura do vocabulário FALHOU. Sem isto a ficha ficava em silêncio: sem
+   * sugestão nenhuma, quem atende conclui que a etiqueta não existe e digita
+   * uma variante — o defeito que o seletor veio evitar. O Inbox já diz a frase.
+   */
+  erroNoVocabulario?: boolean;
 }
 
 /** O teto de etiquetas por contato — o MESMO dos editores do produto. */
@@ -144,6 +189,9 @@ export function EtiquetasDoContato({
   inputId = "etiquetas-do-contato",
   onPendente,
   onDefinirCor,
+  encontradas,
+  onDigitar,
+  erroNoVocabulario = false,
 }: Props) {
   const t = useT();
   const [draft, setDraft] = useState("");
@@ -153,9 +201,16 @@ export function EtiquetasDoContato({
   // e não foi visto) — a mesma régua do editor do Inbox (#2789).
   const [escolhaDeCor, setEscolhaDeCor] = useState<EscolhaDeCor | null>(null);
 
+  // O vocabulário que a tela já tinha MAIS o que o servidor achou para o texto
+  // digitado — a mesma união (e a mesma ordem) do editor do Inbox (#2855): uma
+  // fonte só, dois pontos de uso. Sem `encontradas` a lista é a de sempre.
   const conhecidas = useMemo(
-    () => etiquetasConhecidas({ vocabulario, canonicalTags }),
-    [vocabulario, canonicalTags],
+    () =>
+      etiquetasConhecidas({
+        vocabulario: [...(vocabulario ?? []), ...(encontradas ?? [])],
+        canonicalTags,
+      }),
+    [vocabulario, encontradas, canonicalTags],
   );
   const sugestoes = useMemo(
     () => sugestoesDeEtiqueta({ conhecidas, selecionadas: value, digitado: draft }),
@@ -186,9 +241,14 @@ export function EtiquetasDoContato({
     return etiquetaParaGravar({ conhecidas, selecionadas: value, digitado: texto });
   }
 
-  /** Troca o texto digitado — e avisa o que ele viraria — no MESMO gesto. */
+  /**
+   * Troca o texto digitado — e avisa o que ele viraria — no MESMO gesto. O texto
+   * cru também sobe (`onDigitar`): é o que faz quem monta perguntar ao servidor
+   * o que existe, como o Inbox faz a cada tecla.
+   */
   function definirDraft(texto: string) {
     setDraft(texto);
+    onDigitar?.(texto);
     onPendente?.(alvoDoDigitado(texto));
   }
 
@@ -303,6 +363,15 @@ export function EtiquetasDoContato({
         autoComplete="off"
         aria-label={t("Adicionar etiqueta")}
       />
+
+      {/* A MESMA frase do editor do Inbox: falha de leitura não pode passar por
+          "não há etiquetas", senão quem atende digita a variante que o seletor
+          existe para evitar. */}
+      {erroNoVocabulario ? (
+        <p role="alert" className="text-xs text-destructive">
+          {t("Não foi possível carregar as tags.")}
+        </p>
+      ) : null}
 
       {(sugestoes.length > 0 || textoNovo) && (
         <div

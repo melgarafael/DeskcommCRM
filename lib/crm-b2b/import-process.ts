@@ -5,14 +5,15 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { enrichCompanyFromBrasilApi } from "@/lib/crm-b2b/enrich";
-import { normalizeCnpj, normalizePersonName } from "@/lib/crm-b2b/normalize";
 import {
-  applyMapping,
-  type MappingField,
-  type SheetMatrix,
-} from "@/lib/crm-b2b/spreadsheet";
+  MENSAGEM_DE_CNPJ_INVALIDO,
+  normalizeCnpj,
+  normalizePersonName,
+} from "@/lib/crm-b2b/normalize";
+import { applyMapping, type MappingField, type SheetMatrix } from "@/lib/crm-b2b/spreadsheet";
 import { normalizePhoneBR } from "@/lib/webhooks/inbound";
-import { phoneLookupVariants } from "@/lib/channels/phone-variants";
+import { contatosDonosDosExtras } from "@/lib/channels/contato-por-telefone";
+import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
 
 type SB = SupabaseClient;
 
@@ -190,12 +191,14 @@ async function processOneRow(
   const { organizationId, userId, mapped } = ctx;
   const phoneE164 = mapped.phone ? normalizePhoneBR(mapped.phone) : null;
   const normalizedCnpj = mapped.cnpj ? normalizeCnpj(mapped.cnpj) : null;
+  // Documento informado e inválido não é ausência: cair no cache por nome
+  // juntaria empresas distintas e seus contatos sem avisar (#3497).
+  if (mapped.cnpj.trim() && !normalizedCnpj) {
+    return { status: "failed", error: MENSAGEM_DE_CNPJ_INVALIDO, normalizedCnpj: null };
+  }
   const personName = mapped.person_name.trim();
   const trade =
-    mapped.trade_name.trim() ||
-    mapped.company_name.trim() ||
-    mapped.legal_name.trim() ||
-    "";
+    mapped.trade_name.trim() || mapped.company_name.trim() || mapped.legal_name.trim() || "";
   const legal = mapped.legal_name.trim() || mapped.company_name.trim() || trade;
 
   // Linha sem nada útil
@@ -242,7 +245,11 @@ async function processOneRow(
           .select("id")
           .single();
         if (error || !created) {
-          return { status: "failed", error: error?.message ?? "falha ao criar empresa", normalizedCnpj };
+          return {
+            status: "failed",
+            error: error?.message ?? "falha ao criar empresa",
+            normalizedCnpj,
+          };
         }
         companyId = created.id as string;
         ctx.companiesToEnrich.add(companyId);
@@ -331,6 +338,24 @@ async function processOneRow(
       if (data) {
         existing = data as { id: string; person_id: string | null };
         break;
+      }
+    }
+
+    // Sem principal com o número: a ficha que o tem como EXTRA é o mesmo contato.
+    // Sem isto, o insert abaixo bateria no 23505 e a linha viraria "conflito".
+    if (!existing) {
+      const donaId = (await contatosDonosDosExtras(supabase, organizationId, [phoneE164])).get(
+        canonicalPhoneBR(phoneE164),
+      );
+      if (donaId) {
+        const { data } = await supabase
+          .from("contacts")
+          .select("id, person_id")
+          .eq("organization_id", organizationId)
+          .eq("id", donaId)
+          .is("is_merged_into", null)
+          .maybeSingle();
+        if (data) existing = data as { id: string; person_id: string | null };
       }
     }
 

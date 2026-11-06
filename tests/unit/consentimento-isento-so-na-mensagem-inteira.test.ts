@@ -23,3 +23,30 @@ describe("consentimento junto de prazo ou retorno anunciado continua promessa", 
     expect(detectHumanPromise(body)).toBe(true);
   });
 });
+
+/**
+ * Repasse alegado SEM objeto antes da pergunta: a frase de abertura já afirma que
+ * alguém foi acionado, e o alvo humano só aparece na pergunta, onde nenhuma regra
+ * por frase o alcança. Escapavam na main (medido em 31/10 sobre o corpus da triagem
+ * do #3740). As de baixo têm objeto ou sujeito e seguem livres.
+ */
+describe("repasse alegado sem objeto continua promessa, mesmo seguido de pergunta", () => {
+  it.each([
+    "Já encaminhei! Quer que eu peça para a equipe priorizar?",
+    "Pronto, encaminhado! Quer que eu avise a equipe?",
+    "Já repassei aqui. Quer que eu avise alguém?",
+    "Eu já transferi. Posso ajudar em mais alguma coisa?",
+  ])("%s", (body) => {
+    expect(detectHumanPromise(body)).toBe(true);
+  });
+
+  it.each([
+    "Já te encaminhei o link do catálogo.",
+    "Seu pedido foi encaminhado.",
+    "Já te encaminhei! Conseguiu abrir?",
+    "Encaminhei o boleto para o seu e-mail.",
+    "Entendi! Quer que eu encaminhe para a equipe verificar?",
+  ])("%s", (body) => {
+    expect(detectHumanPromise(body)).toBe(false);
+  });
+});

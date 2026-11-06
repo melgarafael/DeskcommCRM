@@ -44,8 +44,18 @@ const ORG_SEM_FUNIL = "1ead7e00-0000-4000-8000-000000000002";
 const ORG_SO_FECHADAS = "1ead7e00-0000-4000-8000-000000000003";
 /** Org com etapa de GANHO na posição 0 — a armadilha do §6. */
 const ORG_GANHO_PRIMEIRO = "1ead7e00-0000-4000-8000-000000000004";
+/** Org com a ETAPA DE ENTRADA declarada no funil (#3011) — a declarada não é a primeira. */
+const ORG_ENTRADA_CONFIGURADA = "1ead7e00-0000-4000-8000-000000000005";
 
 const CONVERSA = "1ead7e00-0000-4000-8000-00000000c001";
+
+/** Fixtures de `ORG_ENTRADA_CONFIGURADA`, preenchidas no `beforeAll`. */
+let funilConfigurado: string;
+let funilVizinho: string;
+let etapaIniciada: string;
+let etapaEmAtendimento: string;
+let etapaProposta: string;
+let etapaDoVizinho: string;
 
 async function criarOrg(id: string, slug: string): Promise<void> {
   await pool.query(
@@ -96,11 +106,46 @@ beforeAll(async () => {
        ($1, $2, 'Entrada', 'entrada-torta', 2, false, false)`,
     [ORG_GANHO_PRIMEIRO, funilTorto],
   );
+
+  // ORG_ENTRADA_CONFIGURADA: funil próprio com TRÊS etapas abertas — a de
+  // entrada declarada (a do meio) NÃO é a primeira, que é o que separa a regra
+  // nova do comportamento antigo. O funil vizinho e a etapa dele existem para
+  // provar que uma configuração apontando para fora do funil não é obedecida.
+  await criarOrg(ORG_ENTRADA_CONFIGURADA, "org-nascimento-entrada-configurada");
+  await pool.query("delete from crm_stages where organization_id = $1", [ORG_ENTRADA_CONFIGURADA]);
+  await pool.query("delete from crm_pipelines where organization_id = $1", [
+    ORG_ENTRADA_CONFIGURADA,
+  ]);
+
+  const { rows: funis } = await pool.query<{ id: string }>(
+    `insert into crm_pipelines (organization_id, name, slug, is_default, position) values
+       ($1, 'Funil de captação', 'funil-de-captacao', true,  1000),
+       ($1, 'Funil vizinho',     'funil-vizinho',     false, 2000)
+     returning id`,
+    [ORG_ENTRADA_CONFIGURADA],
+  );
+  funilConfigurado = funis[0]!.id;
+  funilVizinho = funis[1]!.id;
+
+  const { rows: etapas } = await pool.query<{ id: string; slug: string }>(
+    `insert into crm_stages (organization_id, pipeline_id, name, slug, position, is_won, is_lost) values
+       ($1, $2, 'Conversas iniciadas', 'conversas-iniciadas', 0, false, false),
+       ($1, $2, 'Em atendimento',      'em-atendimento',      1, false, false),
+       ($1, $2, 'Proposta',            'proposta',            2, false, false),
+       ($1, $3, 'Entrada do vizinho',  'entrada-do-vizinho',  0, false, false)
+     returning id, slug`,
+    [ORG_ENTRADA_CONFIGURADA, funilConfigurado, funilVizinho],
+  );
+  const porSlug = new Map(etapas.map((e) => [e.slug, e.id]));
+  etapaIniciada = porSlug.get("conversas-iniciadas")!;
+  etapaEmAtendimento = porSlug.get("em-atendimento")!;
+  etapaProposta = porSlug.get("proposta")!;
+  etapaDoVizinho = porSlug.get("entrada-do-vizinho")!;
 });
 
 afterAll(async () => {
   await pool.query("delete from organizations where id = any($1)", [
-    [ORG_VIVA, ORG_SEM_FUNIL, ORG_SO_FECHADAS, ORG_GANHO_PRIMEIRO],
+    [ORG_VIVA, ORG_SEM_FUNIL, ORG_SO_FECHADAS, ORG_GANHO_PRIMEIRO, ORG_ENTRADA_CONFIGURADA],
   ]);
   await pool.end();
 });
@@ -466,5 +511,218 @@ describe("três mensagens seguidas NÃO viram três negócios", () => {
     expect(naoCriados[0] && "motivo" in naoCriados[0] ? naoCriados[0].motivo : "?").toBe(
       "ja_existe",
     );
+  });
+});
+
+/**
+ * A ETAPA DE ENTRADA DECLARADA NO FUNIL (issue #3011, fatia 1).
+ *
+ * A conversa do Inbox vira card no funil de entrada (`is_default`) e, dentro
+ * dele, na etapa que o funil declara em `settings.entrada_do_inbox` — a chave
+ * `ativa` ligada e o `stage_id`. O que se mede aqui, contra o schema real:
+ *
+ * 1. SEM configuração, o card nasce na PRIMEIRA etapa aberta — o comportamento
+ *    de hoje, congelado: é ele que impede a fatia nova de ser uma regressão
+ *    silenciosa para toda instalação que nunca configurou nada.
+ * 2. COM a chave ligada, o card nasce na etapa declarada, mesmo que ela não
+ *    seja a primeira.
+ * 3. Etapa declarada que NÃO é etapa utilizável deste funil — de outro funil,
+ *    de outra organização, arquivada, de ganho/perda — não é obedecida: cai na
+ *    primeira, porque um identificador com forma não é uma etapa que existe.
+ * 4. Chave desligada volta à primeira etapa mesmo com a etapa ainda gravada.
+ */
+describe("a etapa de entrada declarada no funil (#3011, fatia 1)", () => {
+  /** Grava a configuração do Inbox no funil de entrada desta org. */
+  async function declararEntrada(bloco: Record<string, unknown> | null): Promise<void> {
+    await pool.query(
+      `update crm_pipelines
+          set settings = case
+                when $2::jsonb is null then coalesce(settings, '{}'::jsonb) - 'entrada_do_inbox'
+                else coalesce(settings, '{}'::jsonb) || jsonb_build_object('entrada_do_inbox', $2::jsonb)
+              end
+        where id = $1`,
+      [funilConfigurado, bloco === null ? null : JSON.stringify(bloco)],
+    );
+  }
+
+  async function ondeNasceu(
+    leadId: string,
+  ): Promise<{ stage_id: string; pipeline_id: string; stage_name: string; padrao: boolean }> {
+    const { rows } = await pool.query<{
+      stage_id: string;
+      pipeline_id: string;
+      stage_name: string;
+      padrao: boolean;
+    }>(
+      `select l.stage_id, l.pipeline_id, s.name as stage_name, p.is_default as padrao
+         from crm_leads l
+         join crm_stages s on s.id = l.stage_id
+         join crm_pipelines p on p.id = l.pipeline_id
+        where l.id = $1`,
+      [leadId],
+    );
+    return rows[0]!;
+  }
+
+  it("SEM configuração, o card nasce na PRIMEIRA etapa do funil de entrada — o comportamento de hoje", async () => {
+    // A reprodução do estado atual, ANTES: nenhuma chave gravada. Se a fatia
+    // nova tivesse trocado o padrão em vez de acrescentar uma escolha, este
+    // caso é o que ficaria vermelho.
+    await declararEntrada(null);
+    const contato = await criarContato(ORG_ENTRADA_CONFIGURADA, "Sem Config Silva");
+
+    const r = await garantirLeadDaConversa(db, {
+      organizationId: ORG_ENTRADA_CONFIGURADA,
+      contactId: contato,
+      conversationId: CONVERSA,
+      nomeDoContato: "Sem Config Silva",
+    });
+
+    expect(r.criado, `esperava criar, veio ${JSON.stringify(r)}`).toBe(true);
+    if (!r.criado) return;
+
+    const destino = await ondeNasceu(r.leadId);
+    expect(destino.pipeline_id, "o funil continua sendo o marcado como padrão").toBe(
+      funilConfigurado,
+    );
+    expect(destino.padrao).toBe(true);
+    expect(destino.stage_name, "sem configuração, a primeira etapa aberta").toBe(
+      "Conversas iniciadas",
+    );
+    expect(destino.stage_id).toBe(etapaIniciada);
+    // E o retorno da função concorda com o banco — quem chamou não pode receber
+    // uma etapa e o card ter nascido noutra.
+    expect(r.stageId).toBe(etapaIniciada);
+    expect(r.pipelineId).toBe(funilConfigurado);
+  });
+
+  it("com a chave ligada, o card nasce na ETAPA DECLARADA — e a segunda mensagem não abre segundo card", async () => {
+    await declararEntrada({ ativa: true, stage_id: etapaEmAtendimento });
+    const contato = await criarContato(ORG_ENTRADA_CONFIGURADA, "Declarada Dias");
+    const dados = {
+      organizationId: ORG_ENTRADA_CONFIGURADA,
+      contactId: contato,
+      conversationId: CONVERSA,
+      nomeDoContato: "Declarada Dias",
+    };
+
+    const primeira = await garantirLeadDaConversa(db, dados);
+    expect(primeira.criado, `esperava criar, veio ${JSON.stringify(primeira)}`).toBe(true);
+    if (!primeira.criado) return;
+
+    const destino = await ondeNasceu(primeira.leadId);
+    expect(destino.stage_name, "a etapa declarada vence a primeira do funil").toBe(
+      "Em atendimento",
+    );
+    expect(destino.stage_id).toBe(etapaEmAtendimento);
+    expect(destino.stage_id).not.toBe(etapaIniciada);
+    // O funil NÃO é escolhido por esta configuração: continua o padrão.
+    expect(destino.pipeline_id).toBe(funilConfigurado);
+    expect(destino.padrao).toBe(true);
+
+    // A configuração não afrouxa o "um card por demanda": a mensagem seguinte
+    // do mesmo contato alimenta o card que já existe.
+    const segunda = await garantirLeadDaConversa(db, dados);
+    expect(segunda.criado).toBe(false);
+    if (segunda.criado) return;
+    expect(segunda.motivo).toBe("ja_existe");
+    const { rows } = await pool.query<{ n: string }>(
+      "select count(*) as n from crm_leads where contact_id = $1",
+      [contato],
+    );
+    expect(rows[0]!.n, "um contato, um card").toBe("1");
+  });
+
+  it("etapa declarada de OUTRO funil não é obedecida — o card nasce na primeira, e nasce", async () => {
+    // `z.uuid()` diz que o valor tem forma de identificador, não que a etapa
+    // seja deste funil. Sem a conferência contra o banco, o card nasceria numa
+    // etapa de outro funil — visível no quadro errado — ou não nasceria.
+    await declararEntrada({ ativa: true, stage_id: etapaDoVizinho });
+    const contato = await criarContato(ORG_ENTRADA_CONFIGURADA, "Vizinho Rocha");
+
+    const r = await garantirLeadDaConversa(db, {
+      organizationId: ORG_ENTRADA_CONFIGURADA,
+      contactId: contato,
+      conversationId: CONVERSA,
+      nomeDoContato: "Vizinho Rocha",
+    });
+
+    expect(r.criado).toBe(true);
+    if (!r.criado) return;
+    const destino = await ondeNasceu(r.leadId);
+    expect(destino.pipeline_id, "o card não vai para o funil do vizinho").toBe(funilConfigurado);
+    expect(destino.stage_id).toBe(etapaIniciada);
+  });
+
+  it("etapa declarada de OUTRA organização não é obedecida — o tenant vale também na configuração", async () => {
+    // ORG_VIVA existe neste banco e tem etapas próprias. Uma configuração que
+    // apontasse para uma delas precisa morrer no filtro de organização: é a
+    // mesma classe de vazamento entre tenants que o resto deste arquivo mede.
+    const { rows } = await pool.query<{ id: string }>(
+      "select id from crm_stages where organization_id = $1 order by position asc limit 1",
+      [ORG_VIVA],
+    );
+    const etapaAlheia = rows[0]!.id;
+    await declararEntrada({ ativa: true, stage_id: etapaAlheia });
+    const contato = await criarContato(ORG_ENTRADA_CONFIGURADA, "Alheia Prado");
+
+    const r = await garantirLeadDaConversa(db, {
+      organizationId: ORG_ENTRADA_CONFIGURADA,
+      contactId: contato,
+      conversationId: CONVERSA,
+      nomeDoContato: "Alheia Prado",
+    });
+
+    expect(r.criado).toBe(true);
+    if (!r.criado) return;
+    const destino = await ondeNasceu(r.leadId);
+    expect(destino.stage_id, "nada nasce em etapa de outra empresa").toBe(etapaIniciada);
+  });
+
+  it("etapa declarada ARQUIVADA não é obedecida — arquivar é tirar do caminho", async () => {
+    await declararEntrada({ ativa: true, stage_id: etapaProposta });
+    await pool.query("update crm_stages set is_archived = true where id = $1", [etapaProposta]);
+    const contato = await criarContato(ORG_ENTRADA_CONFIGURADA, "Arquivada Nunes");
+
+    const r = await garantirLeadDaConversa(db, {
+      organizationId: ORG_ENTRADA_CONFIGURADA,
+      contactId: contato,
+      conversationId: CONVERSA,
+      nomeDoContato: "Arquivada Nunes",
+    });
+
+    await pool.query("update crm_stages set is_archived = false where id = $1", [etapaProposta]);
+
+    expect(r.criado).toBe(true);
+    if (!r.criado) return;
+    const destino = await ondeNasceu(r.leadId);
+    expect(destino.stage_id).toBe(etapaIniciada);
+  });
+
+  it("chave DESLIGADA volta para a primeira etapa, mesmo com a etapa declarada ainda gravada", async () => {
+    await declararEntrada({ ativa: false, stage_id: etapaEmAtendimento });
+    const contato = await criarContato(ORG_ENTRADA_CONFIGURADA, "Desligada Freitas");
+
+    const r = await garantirLeadDaConversa(db, {
+      organizationId: ORG_ENTRADA_CONFIGURADA,
+      contactId: contato,
+      conversationId: CONVERSA,
+      nomeDoContato: "Desligada Freitas",
+    });
+
+    expect(r.criado).toBe(true);
+    if (!r.criado) return;
+    const destino = await ondeNasceu(r.leadId);
+    expect(destino.stage_name).toBe("Conversas iniciadas");
+    expect(destino.stage_id).toBe(etapaIniciada);
+    // E o bloco continua lá: desligar não apaga a escolha.
+    const { rows } = await pool.query<{ settings: { entrada_do_inbox?: unknown } }>(
+      "select settings from crm_pipelines where id = $1",
+      [funilConfigurado],
+    );
+    expect(rows[0]!.settings.entrada_do_inbox).toEqual({
+      ativa: false,
+      stage_id: etapaEmAtendimento,
+    });
   });
 });

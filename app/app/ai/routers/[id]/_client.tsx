@@ -1,7 +1,9 @@
 "use client";
+import { senderRoutesSchema, type SenderRoute } from "@/lib/ai/agents/sender-routes";
 import * as React from "react";
 import Link from "next/link";
 import { useRouter as useNextRouter } from "next/navigation";
+import { useTelefoneExemplo } from "@/hooks/contacts/useTelefoneExemplo";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -128,7 +130,14 @@ export function RouterEditorClient({
   const members = data?.members ?? initialState.members;
 
   const channel = channelSessions.find((c) => c.id === router.channel_session_id);
+  const telefoneExemplo = useTelefoneExemplo();
 
+  const [senderRoutes, setSenderRoutes] = React.useState<SenderRoute[]>(() => {
+    const parsed = senderRoutesSchema.safeParse(router.config?.sender_routes ?? []);
+    return parsed.success ? parsed.data : [];
+  });
+  const routesDirty =
+    JSON.stringify(senderRoutes) !== JSON.stringify(router.config?.sender_routes ?? []);
   const [name, setName] = React.useState(router.name);
   const [isActive, setIsActive] = React.useState(router.is_active);
   const [fallbackAgentId, setFallbackAgentId] = React.useState(router.fallback_agent_id ?? "");
@@ -136,7 +145,10 @@ export function RouterEditorClient({
   // manda o id para o provedor da ORG, e a classificação falha sempre.
   const [classifier, setClassifier] = React.useState(() => classifierKeyFrom(router.config));
   const [contextMessageCount, setContextMessageCount] = React.useState(() =>
-    typeof router.config?.context_message_count === "number" ? router.config.context_message_count : 4);
+    typeof router.config?.context_message_count === "number"
+      ? router.config.context_message_count
+      : 4,
+  );
   const [draftMembers, setDraftMembers] = React.useState<DraftMember[]>(() =>
     members.map((m) => ({ ...m, key: m.id })),
   );
@@ -177,7 +189,10 @@ export function RouterEditorClient({
   // seria prometer um comportamento que a instalação não tem.
   const { activeOrg } = useAuth();
   const roteirosLigados = activeOrg?.modulos_ligados?.includes("fluxos_atendimento") === true;
-  const { data: atendimentoFlows } = useFollowupFlows({ surface: "atendimento", enabled: roteirosLigados });
+  const { data: atendimentoFlows } = useFollowupFlows({
+    surface: "atendimento",
+    enabled: roteirosLigados,
+  });
 
   const baseline = React.useMemo(
     () => ({
@@ -185,7 +200,10 @@ export function RouterEditorClient({
       isActive: router.is_active,
       fallbackAgentId: router.fallback_agent_id ?? "",
       classifier: classifierKeyFrom(router.config),
-      contextMessageCount: typeof router.config?.context_message_count === "number" ? router.config.context_message_count : 4,
+      contextMessageCount:
+        typeof router.config?.context_message_count === "number"
+          ? router.config.context_message_count
+          : 4,
       members: members.map(camposDoMembro),
     }),
     [router, members],
@@ -194,6 +212,7 @@ export function RouterEditorClient({
   const currentMembers = draftMembers.map(camposDoMembro);
 
   const dirty =
+    routesDirty ||
     name !== baseline.name ||
     isActive !== baseline.isActive ||
     fallbackAgentId !== baseline.fallbackAgentId ||
@@ -214,6 +233,9 @@ export function RouterEditorClient({
       .filter((n, i, arr) => n.length > 0 && arr.indexOf(n) !== i),
   );
   const isValid =
+    senderRoutesSchema.safeParse(senderRoutes).success &&
+    (!senderRoutes.length ||
+      (!!fallbackAgentId && !senderRoutes.some((r) => r.agent_id === fallbackAgentId))) &&
     name.trim().length > 0 &&
     memberErrors.every((e) => e === null) &&
     draftMembers.every((m) => !duplicateNames.has(m.intent_name.trim().toLowerCase()));
@@ -251,6 +273,7 @@ export function RouterEditorClient({
     }
     try {
       if (
+        routesDirty ||
         name !== baseline.name ||
         isActive !== baseline.isActive ||
         fallbackAgentId !== baseline.fallbackAgentId ||
@@ -269,6 +292,7 @@ export function RouterEditorClient({
               ? { classifier_model: null, classifier_provider: null }
               : { classifier_model: modelId, classifier_provider: provider }),
             context_message_count: contextMessageCount,
+            sender_routes: senderRoutes,
           },
         });
       }
@@ -311,7 +335,12 @@ export function RouterEditorClient({
           </Badge>
         </div>
         {canManage && (
-          <Button variant="ghost" size="sm" onClick={() => setDeleteOpen(true)} className="text-destructive">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setDeleteOpen(true)}
+            className="text-destructive"
+          >
             <Trash /> {t("Excluir roteador")}
           </Button>
         )}
@@ -360,6 +389,74 @@ export function RouterEditorClient({
           </Card>
 
           <Card className="space-y-3 p-4">
+            <h3 className="text-sm font-medium">{t("Agente por número do remetente")}</h3>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "Com regras nesta lista, o telefone vinculado à conversa escolhe o agente antes da IA. Os demais números usam o fallback público. Intenções, campanhas e o agente anterior não mudam essa escolha.",
+              )}
+            </p>
+            {senderRoutes.map((route, index) => (
+              <div key={index} className="space-y-2 rounded-md border p-2">
+                <Label htmlFor={`sender-phone-${index}`}>{t("Telefone com DDI")}</Label>
+                <Input
+                  id={`sender-phone-${index}`}
+                  value={route.phone ?? ""}
+                  placeholder={telefoneExemplo}
+                  disabled={!canManage}
+                  onChange={(e) =>
+                    setSenderRoutes((prev) =>
+                      prev.map((r, i) => (i === index ? { ...r, phone: e.target.value } : r)),
+                    )
+                  }
+                />
+                <Label htmlFor={`sender-agent-${index}`}>{t("Agente reservado")}</Label>
+                <Select
+                  value={route.agent_id || NONE}
+                  disabled={!canManage}
+                  onValueChange={(value) =>
+                    setSenderRoutes((prev) =>
+                      prev.map((r, i) => (i === index ? { ...r, agent_id: value } : r)),
+                    )
+                  }
+                >
+                  <SelectTrigger id={`sender-agent-${index}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>{t("Escolha um agente")}</SelectItem>
+                    {agents.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  disabled={!canManage}
+                  onClick={() => setSenderRoutes((prev) => prev.filter((_, i) => i !== index))}
+                >
+                  {t("Remover regra de remetente")}
+                </Button>
+              </div>
+            ))}
+            <Button
+              variant="outline"
+              disabled={!canManage || senderRoutes.length >= 100}
+              onClick={() => setSenderRoutes((prev) => [...prev, { phone: "", agent_id: "" }])}
+            >
+              {t("Adicionar número do remetente")}
+            </Button>
+            {senderRoutes.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Escolha abaixo um fallback público diferente dos agentes reservados. Salve antes de testar. O teste de classificação de texto não simula o número de origem.",
+                )}
+              </p>
+            )}
+          </Card>
+
+          <Card className="space-y-3 p-4">
             <h3 className="text-sm font-medium">{t("Modelo que identifica a intenção")}</h3>
             <div className="space-y-1">
               <Label htmlFor="router-classifier">{t("Modelo do classificador")}</Label>
@@ -372,9 +469,14 @@ export function RouterEditorClient({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={AUTO}>{t("Automático — usa o provedor da organização")}</SelectItem>
+                  <SelectItem value={AUTO}>
+                    {t("Automático — usa o provedor da organização")}
+                  </SelectItem>
                   {classifierModels.map((m) => (
-                    <SelectItem key={`${m.provider}::${m.model_id}`} value={`${m.provider}::${m.model_id}`}>
+                    <SelectItem
+                      key={`${m.provider}::${m.model_id}`}
+                      value={`${m.provider}::${m.model_id}`}
+                    >
                       {m.display_name} · {m.provider}
                       {m.origem === "plataforma" ? ` (${t("chave desta instalação")})` : ""}
                     </SelectItem>
@@ -392,13 +494,29 @@ export function RouterEditorClient({
               </p>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="router-context-count">{t("Mensagens anteriores para o roteamento")}</Label>
-              <Input id="router-context-count" type="number" min={0} max={16} step={1}
-                value={contextMessageCount} disabled={!canManage}
-                onChange={(e) => setContextMessageCount(Math.max(0, Math.min(16, Number(e.target.value) || 0)))} />
-              <p className="text-xs text-muted-foreground">{t("Além da mensagem atual; inclui cliente e atendente.")}</p>
-              <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">{t("Como funciona")}</summary>
-                {t("Vale para a sua IA de sempre, que classifica com estas mensagens anteriores. O Jev recebe só a mensagem atual. Mais mensagens podem aumentar custo e demora.")}
+              <Label htmlFor="router-context-count">
+                {t("Mensagens anteriores para o roteamento")}
+              </Label>
+              <Input
+                id="router-context-count"
+                type="number"
+                min={0}
+                max={16}
+                step={1}
+                value={contextMessageCount}
+                disabled={!canManage}
+                onChange={(e) =>
+                  setContextMessageCount(Math.max(0, Math.min(16, Number(e.target.value) || 0)))
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                {t("Além da mensagem atual; inclui cliente e atendente.")}
+              </p>
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer">{t("Como funciona")}</summary>
+                {t(
+                  "Vale para a sua IA de sempre, que classifica com estas mensagens anteriores. O Jev recebe só a mensagem atual. Mais mensagens podem aumentar custo e demora.",
+                )}
               </details>
             </div>
           </Card>
@@ -416,7 +534,9 @@ export function RouterEditorClient({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NONE}>{t("Nenhum — responde com o atendimento padrão")}</SelectItem>
+                  <SelectItem value={NONE}>
+                    {t("Nenhum — responde com o atendimento padrão")}
+                  </SelectItem>
                   {agents.map((a) => (
                     <SelectItem key={a.id} value={a.id}>
                       {a.name}
@@ -489,7 +609,11 @@ export function RouterEditorClient({
 
           {canManage && (
             <div className="flex sm:justify-end">
-              <Button onClick={handleSave} disabled={!dirty || !isValid || saving} className="w-full sm:w-auto">
+              <Button
+                onClick={handleSave}
+                disabled={!dirty || !isValid || saving}
+                className="w-full sm:w-auto"
+              >
                 {saving ? t("Salvando…") : t("Salvar")}
               </Button>
             </div>
@@ -518,7 +642,6 @@ export function RouterEditorClient({
     </div>
   );
 }
-
 
 /**
  * #2155 — para onde o CARD vai quando a intenção casa. Sem destino, o agente é
@@ -550,7 +673,11 @@ function DestinoDoCard({
           value={pipelineId ?? NONE}
           onValueChange={(v) =>
             // trocar de funil invalida a etapa: ela não pertence ao funil novo.
-            onChange(v === NONE ? { pipeline_id: null, stage_id: null } : { pipeline_id: v, stage_id: null })
+            onChange(
+              v === NONE
+                ? { pipeline_id: null, stage_id: null }
+                : { pipeline_id: v, stage_id: null },
+            )
           }
           disabled={disabled}
         >
@@ -630,7 +757,11 @@ function IntentRow({
         </div>
         <div className="flex-1 space-y-1">
           <Label>{t("Agente que atende")}</Label>
-          <Select value={member.agent_id || undefined} onValueChange={(v) => onChange({ agent_id: v })} disabled={disabled}>
+          <Select
+            value={member.agent_id || undefined}
+            onValueChange={(v) => onChange({ agent_id: v })}
+            disabled={disabled}
+          >
             <SelectTrigger>
               <SelectValue placeholder={t("Selecione o agente")} />
             </SelectTrigger>
@@ -669,31 +800,31 @@ function IntentRow({
         />
       </div>
       {flows !== null && (
-      <div className="space-y-1" data-testid="seletor-de-roteiro">
-        <Label>{t("Fluxo de atendimento (opcional)")}</Label>
-        <Select
-          value={member.flow_pointer_id ?? NONE}
-          onValueChange={(v) => onChange({ flow_pointer_id: v === NONE ? null : v })}
-          disabled={disabled}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder={t("Nenhum — só roteia o agente")} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NONE}>{t("Nenhum — só roteia o agente")}</SelectItem>
-            {flows.map((f) => (
-              <SelectItem key={f.id} value={f.id}>
-                {f.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground">
-          {t(
-            "Quando a intenção casar, este fluxo começa e as perguntas dele guiam o atendimento até o cliente completar.",
-          )}
-        </p>
-      </div>
+        <div className="space-y-1" data-testid="seletor-de-roteiro">
+          <Label>{t("Fluxo de atendimento (opcional)")}</Label>
+          <Select
+            value={member.flow_pointer_id ?? NONE}
+            onValueChange={(v) => onChange({ flow_pointer_id: v === NONE ? null : v })}
+            disabled={disabled}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={t("Nenhum — só roteia o agente")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>{t("Nenhum — só roteia o agente")}</SelectItem>
+              {flows.map((f) => (
+                <SelectItem key={f.id} value={f.id}>
+                  {f.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Quando a intenção casar, este fluxo começa e as perguntas dele guiam o atendimento até o cliente completar.",
+            )}
+          </p>
+        </div>
       )}
       <DestinoDoCard
         pipelineId={member.pipeline_id ?? null}
@@ -865,9 +996,13 @@ function TestPanel({
           {!pending && <ArrowRight />}
         </Button>
         {result && (
-          <div className="rounded-md border border-border/60 p-3 text-sm" data-testid="teste-resultado">
+          <div
+            className="rounded-md border border-border/60 p-3 text-sm"
+            data-testid="teste-resultado"
+          >
             <p>
-              {t("Intenção")}: <span className="font-medium">{vale?.intent_name ?? t("nenhuma casou")}</span>
+              {t("Intenção")}:{" "}
+              <span className="font-medium">{vale?.intent_name ?? t("nenhuma casou")}</span>
               {confianca !== null && (
                 <span className="ml-2 text-xs text-muted-foreground">
                   {t("confiança")} {(confianca * 100).toFixed(0)}%
@@ -877,7 +1012,8 @@ function TestPanel({
             {abaixoDoMinimo && confianca !== null && (
               <p className="text-xs text-amber-600">
                 {t("Confiança")} {(confianca * 100).toFixed(0)}% — {t("abaixo do mínimo de")}{" "}
-                {(result.min_confidence * 100).toFixed(0)}%, {t("cairia no atendimento padrão em produção.")}
+                {(result.min_confidence * 100).toFixed(0)}%,{" "}
+                {t("cairia no atendimento padrão em produção.")}
               </p>
             )}
             <p>
@@ -909,17 +1045,27 @@ function EscolhasLadoALado({
 }) {
   const t = useT();
   const porcento = (n: number) => `${(n * 100).toFixed(0)}%`;
-  const jevAbaixoDoMinimo = jev.intent_name !== null && jev.confidence !== null && jev.confidence < result.min_confidence;
+  const jevAbaixoDoMinimo =
+    jev.intent_name !== null && jev.confidence !== null && jev.confidence < result.min_confidence;
   // A mesma marca dos dois lados: decidindo, o bloco de cima lê só o Jev, e a
   // escolha da IA abaixo do mínimo (que leva ao de reserva) ficava sem motivo.
   const iaAbaixoDoMinimo =
-    result.intent_name !== null && result.confidence !== null && result.confidence < result.min_confidence;
+    result.intent_name !== null &&
+    result.confidence !== null &&
+    result.confidence < result.min_confidence;
   return (
     <div className="grid gap-2 sm:grid-cols-2" data-testid="teste-com-o-jev">
-      <div className="rounded-md border border-border/60 p-3 text-sm" data-testid="teste-escolha-da-ia">
+      <div
+        className="rounded-md border border-border/60 p-3 text-sm"
+        data-testid="teste-escolha-da-ia"
+      >
         <p className="text-xs text-muted-foreground">{t("Sua IA escolheu")}</p>
         <p className="font-medium">
-          {result.ia_consultada === false ? t("Não foi necessário consultar a IA de sempre.") : result.confidence === null ? t("não respondeu") : (result.agent_name ?? t("nenhum (sem fallback)"))}
+          {result.ia_consultada === false
+            ? t("Não foi necessário consultar a IA de sempre.")
+            : result.confidence === null
+              ? t("não respondeu")
+              : (result.agent_name ?? t("nenhum (sem fallback)"))}
         </p>
         {result.confidence !== null && (
           <p className="text-xs text-muted-foreground">
@@ -928,7 +1074,10 @@ function EscolhasLadoALado({
           </p>
         )}
       </div>
-      <div className="rounded-md border border-border/60 p-3 text-sm" data-testid="teste-escolha-do-jev">
+      <div
+        className="rounded-md border border-border/60 p-3 text-sm"
+        data-testid="teste-escolha-do-jev"
+      >
         <p className="text-xs text-muted-foreground">{t("O Jev escolheu")}</p>
         <p className="font-medium">
           {jev.respondeu ? (jev.agent_name ?? t("nenhum (sem fallback)")) : t("não respondeu")}
@@ -951,20 +1100,28 @@ function EscolhasLadoALado({
         {result.modo_roteador === "sob_demanda" && jev.estado === "decidindo"
           ? jev.decide
             ? t("O Jev decidiu sozinho; a IA de sempre não foi chamada.")
-            : t("O Jev precisou de reserva. A IA de sempre foi consultada; sem resposta válida, valem as regras de fallback do roteador.")
+            : t(
+                "O Jev precisou de reserva. A IA de sempre foi consultada; sem resposta válida, valem as regras de fallback do roteador.",
+              )
           : jev.decide
-          ? t("O Jev decide esta tarefa: em produção, vale a escolha dele, e a sua IA fica de reserva.")
-          : jev.estado === "observando"
-            ? // Sem a resposta da IA não há "escolha da sua IA": vale a regra de sempre.
-              result.confidence === null
-              ? t(
-                  "O Jev só observa esta tarefa. Sem a resposta da sua IA, em produção vale a regra de sempre: o agente que já atendia a conversa ou o “Agente de fallback” do roteador.",
-                )
-              : t("O Jev só observa esta tarefa: em produção, vale a escolha da sua IA.")
-            : // Sem a resposta da IA, vale a regra de sempre, tenha o Jev respondido ou não (R2).
-              result.confidence === null
-              ? t("O Jev decide esta tarefa, mas sem a resposta da sua IA vale a regra de sempre — nunca só o Jev.")
-              : t("O Jev decide esta tarefa, mas não respondeu: em produção, a sua IA decidiria no lugar dele.")}
+            ? t(
+                "O Jev decide esta tarefa: em produção, vale a escolha dele, e a sua IA fica de reserva.",
+              )
+            : jev.estado === "observando"
+              ? // Sem a resposta da IA não há "escolha da sua IA": vale a regra de sempre.
+                result.confidence === null
+                ? t(
+                    "O Jev só observa esta tarefa. Sem a resposta da sua IA, em produção vale a regra de sempre: o agente que já atendia a conversa ou o “Agente de fallback” do roteador.",
+                  )
+                : t("O Jev só observa esta tarefa: em produção, vale a escolha da sua IA.")
+              : // Sem a resposta da IA, vale a regra de sempre, tenha o Jev respondido ou não (R2).
+                result.confidence === null
+                ? t(
+                    "O Jev decide esta tarefa, mas sem a resposta da sua IA vale a regra de sempre — nunca só o Jev.",
+                  )
+                : t(
+                    "O Jev decide esta tarefa, mas não respondeu: em produção, a sua IA decidiria no lugar dele.",
+                  )}
       </p>
     </div>
   );

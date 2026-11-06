@@ -27,6 +27,12 @@
  * certeza?": o erro que ela precisa pegar não é "cliquei sem querer", é
  * "escolhi o vencedor errado", e para esse erro só o nome na frente serve.
  *
+ * ─── Parecidos (spec 31, PR A) ──────────────────────────────────────────────
+ * Par que só tem NOME parecido não é prova de pessoa repetida: pode ser uma
+ * empresa com nome semelhante. Por isso sai dos grupos fortes (telefone, e-mail)
+ * e vai para a seção "Parecidos — confira", com os dados lado a lado. Juntar e
+ * "Não são a mesma empresa" são de gestor; quem não é gestor só lê.
+ *
  * ─── Vocabulário ───────────────────────────────────────────────────────────
  * Nada aqui conhece nicho. "Contato" é contato em e-commerce, clínica,
  * imobiliária e infoproduto; o `vocabulary` do funil renomeia lead/deal, não
@@ -35,6 +41,8 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { useT } from "@/hooks/i18n/useT";
+import { useActiveOrg } from "@/hooks/auth/AuthProvider";
+import { roleAtLeast } from "@/lib/auth/types";
 import {
   Dialog,
   DialogContent,
@@ -43,15 +51,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
@@ -61,7 +60,15 @@ import {
   type GrupoDuplicado,
 } from "@/hooks/contacts/useContactDuplicates";
 import { useMergeContacts } from "@/hooks/contacts/useMergeContacts";
+import { useDispensarParecido } from "@/hooks/contacts/useDispensarParecido";
+import { ApiError } from "@/lib/api/types";
+import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { MotivoDeDuplicidade } from "@/lib/contacts/duplicados";
+import { ComparacaoDeFichas } from "@/components/contacts/ComparacaoDeFichas";
+import {
+  ConfirmarJuncao,
+  avisarResultadoDaJuncao,
+} from "@/components/contacts/ConfirmarJuncao";
 
 interface Props {
   open: boolean;
@@ -72,6 +79,7 @@ const ROTULO_DO_MOTIVO: Record<MotivoDeDuplicidade, string> = {
   telefone: "mesmo telefone",
   email: "mesmo e-mail",
   telefone_em_conflito: "telefone que o WhatsApp deixou em conflito",
+  nome_parecido: "nome parecido",
 };
 
 function GrupoDeDuplicados({
@@ -101,21 +109,7 @@ function GrupoDeDuplicados({
         primary_contact_id: principal,
         secondary_contact_ids: secundarios,
       });
-      const pendentes = Object.values(res.data.nao_repontado).reduce((a, b) => a + b, 0);
-      // O parcial tem voz própria. Uma fusão que deixou linhas na lápide (por
-      // colisão com um índice único de runtime) não é a mesma coisa que uma
-      // fusão limpa, e dizer "pronto" nas duas esconderia justamente o caso em
-      // que alguém precisa olhar.
-      if (pendentes > 0) {
-        toast.warning(
-          t("Contatos juntados. {n} registro(s) continuaram no cadastro antigo — veja a auditoria.").replace(
-            "{n}",
-            String(pendentes),
-          ),
-        );
-      } else {
-        toast.success(t("Contatos juntados."));
-      }
+      avisarResultadoDaJuncao(res.data, t);
       onFundido();
     } catch {
       /* showApiError já falou no toast */
@@ -179,33 +173,113 @@ function GrupoDeDuplicados({
         </Button>
       </div>
 
-      {/*
-        O porteiro da única ação sem desfazer. Ele NOMEIA os dois lados: o erro
-        que precisa pegar é "escolhi o vencedor errado", e para esse erro
-        "tem certeza?" não serve de nada.
-      */}
-      <AlertDialog open={confirmando} onOpenChange={setConfirmando}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("Juntar estes cadastros?")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {`${nomeDeQuemFica} ${t("fica.")} ${nomesAbsorvidos} ${t(
-                "será absorvido e sai da lista de contatos. Mensagens, negócios e histórico passam para quem fica. Não há como desfazer.",
-              )}`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={merge.isPending}>{t("Cancelar")}</AlertDialogCancel>
-            <Button
-              variant="destructive"
-              onClick={() => void juntar()}
-              disabled={merge.isPending}
-            >
-              {merge.isPending ? t("Juntando…") : t("Juntar contatos")}
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmarJuncao
+        aberto={confirmando}
+        onAbertoChange={setConfirmando}
+        nomeDeQuemFica={nomeDeQuemFica}
+        nomesAbsorvidos={nomesAbsorvidos}
+        pendente={merge.isPending}
+        onConfirmar={() => void juntar()}
+      />
+    </div>
+  );
+}
+
+/**
+ * Um par de nome parecido: a comparação lado a lado, e, para gestor, as duas
+ * saídas — juntar (mesma confirmação nomeada do grupo forte) ou dizer que não
+ * são a mesma empresa.
+ */
+function GrupoParecido({
+  grupo,
+  onFundido,
+  podeJuntar,
+}: {
+  grupo: GrupoDuplicado;
+  onFundido: () => void;
+  podeJuntar: boolean;
+}) {
+  const t = useT();
+  const merge = useMergeContacts();
+  const dispensar = useDispensarParecido();
+  const [principal, setPrincipal] = useState(grupo.principal_sugerido);
+  const [confirmando, setConfirmando] = useState(false);
+
+  const [primeiro, segundo] = grupo.contatos;
+  const idA = primeiro?.id ?? "";
+  const idB = segundo?.id ?? "";
+  const secundario = principal === idA ? idB : idA;
+  const contatoPrincipal = grupo.contatos.find((c) => c.id === principal);
+  const contatoAbsorvido = grupo.contatos.find((c) => c.id !== principal);
+  const nomeDeQuemFica = contatoPrincipal ? rotuloDoContato(contatoPrincipal, t) : "";
+  const nomeAbsorvido = contatoAbsorvido ? rotuloDoContato(contatoAbsorvido, t) : "";
+
+  async function juntar() {
+    setConfirmando(false);
+    try {
+      const res = await merge.mutateAsync({
+        primary_contact_id: principal,
+        secondary_contact_ids: [secundario],
+      });
+      avisarResultadoDaJuncao(res.data, t);
+      onFundido();
+    } catch {
+      /* showApiError já falou no toast */
+    }
+  }
+
+  async function naoSaoAMesma() {
+    try {
+      await dispensar.mutateAsync([idA, idB]);
+      toast.success(t("Sugestão dispensada."));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) {
+        toast.warning(t("Só gestor pode dispensar."));
+      } else {
+        showApiError(err);
+      }
+    }
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border border-border bg-surface p-3">
+      <p className="text-xs text-muted-foreground">
+        {t("Agrupados por")}: {t(ROTULO_DO_MOTIVO.nome_parecido)}
+      </p>
+
+      <ComparacaoDeFichas
+        ids={[idA, idB]}
+        principalId={principal}
+        onEscolherPrincipal={podeJuntar ? setPrincipal : undefined}
+      />
+
+      {podeJuntar ? (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void naoSaoAMesma()}
+            disabled={dispensar.isPending}
+          >
+            {t("Não são a mesma empresa")}
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => setConfirmando(true)}
+            disabled={merge.isPending || !secundario}
+          >
+            {merge.isPending ? t("Juntando…") : t("Juntar")}
+          </Button>
+          <ConfirmarJuncao
+            aberto={confirmando}
+            onAbertoChange={setConfirmando}
+            nomeDeQuemFica={nomeDeQuemFica}
+            nomesAbsorvidos={nomeAbsorvido}
+            pendente={merge.isPending}
+            onConfirmar={() => void juntar()}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -213,7 +287,11 @@ function GrupoDeDuplicados({
 export function MergeDialog({ open, onOpenChange }: Props) {
   const t = useT();
   const q = useContactDuplicates(open);
+  // Juntar e "não são a mesma empresa" são de gestor (o piso de POST /contacts/merge).
+  const podeJuntar = roleAtLeast(useActiveOrg()?.role, "manager");
   const grupos = q.data?.data ?? [];
+  const fortes = grupos.filter((g) => !g.motivos.includes("nome_parecido"));
+  const parecidos = grupos.filter((g) => g.motivos.includes("nome_parecido"));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -229,19 +307,43 @@ export function MergeDialog({ open, onOpenChange }: Props) {
 
         {q.isLoading ? (
           <Skeleton className="h-40 w-full" />
-        ) : grupos.length === 0 ? (
+        ) : fortes.length === 0 && parecidos.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             {t("Nenhum contato duplicado encontrado.")}
           </p>
         ) : (
           <div className="space-y-3">
-            {grupos.map((grupo) => (
+            {fortes.map((grupo) => (
               <GrupoDeDuplicados
                 key={grupo.chave}
                 grupo={grupo}
                 onFundido={() => void q.refetch()}
               />
             ))}
+
+            {parecidos.length > 0 ? (
+              <section
+                data-testid="parecidos-confira"
+                className="space-y-3 border-t border-border pt-4"
+              >
+                <div>
+                  <h3 className="text-sm font-semibold">{t("Parecidos — confira")}</h3>
+                  <p className="text-xs text-muted-foreground">
+                    {t(
+                      "Fichas com nome parecido. Confira os dados lado a lado antes de juntar: pode ser só uma empresa com nome semelhante.",
+                    )}
+                  </p>
+                </div>
+                {parecidos.map((grupo) => (
+                  <GrupoParecido
+                    key={grupo.chave}
+                    grupo={grupo}
+                    onFundido={() => void q.refetch()}
+                    podeJuntar={podeJuntar}
+                  />
+                ))}
+              </section>
+            ) : null}
           </div>
         )}
 
