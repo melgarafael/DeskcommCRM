@@ -35610,7 +35610,13 @@ create table if not exists public.prospecting_campaigns (
   unique (organization_id, id),
   unique (organization_id, request_id)
 );
-create unique index if not exists prospecting_one_running_org on public.prospecting_campaigns(organization_id) where status='running';
+-- A TRAVA DA PROSPECÇÃO É POR NÚMERO (issue #3896), e por isso o índice único
+-- NÃO nasce aqui: a coluna `channel_session_id` e o índice
+-- `prospecting_one_running_canal` são criados no apêndice (bloco da migration
+-- 9221), onde o `alter table` que acrescenta a coluna já rodou. Criar o índice
+-- deste ponto exigiria a coluna antes de ela existir.
+-- (O antigo `prospecting_one_running_org(organization_id) where status='running'`
+-- é derrubado pelo mesmo bloco do apêndice — num banco que já existe, ele está lá.)
 create table if not exists public.prospecting_candidates (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -69107,6 +69113,63 @@ grant execute on function public.fn_conversation_sector_scope() to authenticated
 comment on function public.fn_conversation_sector_scope() is
   'Setores do chamador nas organizações em visibility_mode = own_and_sector (migration 9214). Uma linha por (organização, setor); zero linhas nos outros modos e para viewer/manager/admin. Lida por conversations_select; não concede leitura de nada por si.';
 
+-- ---- o push da etapa a quem pode ver o negócio (migration 9210) ----
+-- O aviso da etapa que avisa deixa de ter um texto só para a organização
+-- inteira: o valor e a soma do dia passam a ser por DESTINATÁRIO, com a régua
+-- de `fn_can_view_lead`. Cria função, então mora ACIMA da VARREDURA anon.
+
+-- manifest: **O push da etapa que avisa leva o valor e a soma do dia a quem PODE VER o negócio, e não mais só quando a organização escolhe «Todos veem tudo» (#3981).** O conteúdo do push era um só para a organização inteira, então o valor só podia entrar com `visibility_mode = 'all'` — numa carteira fechada (`own_and_unassigned`, o padrão), gerente e administrador nunca viam venda com valor, e o único remédio era abrir a visibilidade para todo atendente. O valor e a soma do dia passam a ser decididos por DESTINATÁRIO, com a régua que já existe para negócio (`fn_can_view_lead`, migrations 0036/9090): esta função avalia a MESMA regra para cada inscrito — põe o `sub` dele nos claims da transação, chama `fn_can_view_lead` e devolve as inscrições de quem vê. Nenhuma cópia da regra (papel, `visibility_mode`, dono, vínculo revogado) mora aqui, igual à `fn_push_inscricoes_que_veem_a_conversa` (0612). `ampla` diz se a pessoa vê a ORGANIZAÇÃO inteira (`fn_role_at_least(org, 'manager')`): só ela recebe a soma do dia, que é um número da organização; quem vê apenas a própria carteira recebe o valor do negócio sem a soma, e quem NÃO vê o negócio continua com a frase de antes. Visibilidade de negócio, policies de `crm_leads` e `visibility_mode` INALTERADOS. Negócio de outra organização ou inexistente: nenhuma inscrição. Só o service role executa; idempotente (`create or replace` + grants). Prova em `tests/invariants/push-da-etapa-a-quem-ve-o-negocio.test.ts`.
+
+create or replace function public.fn_push_inscricoes_que_veem_o_negocio(
+  p_org uuid,
+  p_lead uuid
+) returns table (id uuid, user_id uuid, endpoint text, p256dh text, auth text, ampla boolean)
+language plpgsql volatile security definer
+set search_path = public
+as $$
+#variable_conflict use_column
+declare
+  v_dono uuid;
+  v_user uuid;
+  v_claims text := current_setting('request.jwt.claims', true);
+  v_claim text := current_setting('request.jwt.claim', true);
+  v_sub text := current_setting('request.jwt.claim.sub', true);
+begin
+  select l.owner_user_id into v_dono
+    from public.crm_leads l
+   where l.id = p_lead and l.organization_id = p_org;
+  if not found then
+    return;
+  end if;
+
+  -- auth.uid()/auth.jwt() leem estas três; só `claims` carrega o inscrito.
+  perform set_config('request.jwt.claim', '', true);
+  perform set_config('request.jwt.claim.sub', '', true);
+  for v_user in
+    select distinct s.user_id from public.push_subscriptions s
+     where s.organization_id = p_org
+     order by s.user_id
+  loop
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', v_user)::text, true);
+    if public.fn_can_view_lead(p_org, v_dono) then
+      return query
+        select s.id, s.user_id, s.endpoint, s.p256dh, s.auth,
+               public.fn_role_at_least(p_org, 'manager')
+          from public.push_subscriptions s
+         where s.organization_id = p_org and s.user_id = v_user;
+    end if;
+  end loop;
+
+  perform set_config('request.jwt.claims', coalesce(v_claims, ''), true);
+  perform set_config('request.jwt.claim', coalesce(v_claim, ''), true);
+  perform set_config('request.jwt.claim.sub', coalesce(v_sub, ''), true);
+end;
+$$;
+
+revoke all on function public.fn_push_inscricoes_que_veem_o_negocio(uuid, uuid) from public;
+revoke execute on function public.fn_push_inscricoes_que_veem_o_negocio(uuid, uuid) from anon, authenticated;
+grant execute on function public.fn_push_inscricoes_que_veem_o_negocio(uuid, uuid) to service_role;
+
 -- ---- #4019: o negócio aberto do contato acompanha o dono da conversa (migration 9208) ----
 --
 -- Espelho idêntico ao corpo da 9208 (PR #4046 de @webtecnica; decisão do
@@ -73028,6 +73091,59 @@ comment on column public.webhook_sources.reuse_open_lead_on_capture is
 -- manifest: prospecting_campaigns.channel_down_since — desde quando a campanha espera o canal voltar ao `WORKING`. Sem ele o adiamento da reconexão (#3073) não tem TETO: uma sessão presa fora de `WORKING` deixa a campanha "Ativa" sem enviar e sem aviso (STARTING não gera aviso de saúde). Com a coluna, o tick pausa quando a espera passa de TETO_DO_ADIAMENTO_MS; nulo = a campanha não está esperando.
 alter table public.prospecting_campaigns
   add column if not exists channel_down_since timestamptz;
+
+-- ---- campanha de prospecção por número (migration 9221, issue #3896) ----
+-- Espelho idempotente da 9221. Duas coisas moram aqui, e não no create table
+-- lá em cima: a coluna `channel_session_id` (que não existe no dump) e o índice
+-- único por número, que não pode ser criado antes da coluna.
+do $$
+declare
+  pausadas integer;
+begin
+  alter table public.prospecting_campaigns
+    add column if not exists channel_session_id uuid;
+
+  update public.prospecting_campaigns
+     set channel_session_id = trim(config->>'channel_session_id')::uuid
+   where channel_session_id is null
+     and config is not null
+     and trim(config->>'channel_session_id') ~*
+         '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+
+  update public.prospecting_campaigns pc
+     set status = 'paused',
+         error = 'Pausada ao migrar: esta campanha não tinha uma conexão de WhatsApp válida nesta organização. Escolha uma conexão e inicie de novo.',
+         channel_down_since = null,
+         updated_at = now()
+   where pc.status = 'running'
+     and (pc.channel_session_id is null
+          or not exists (select 1
+                           from public.channel_sessions s
+                          where s.organization_id = pc.organization_id
+                            and s.id = pc.channel_session_id
+                            and s.archived_at is null));
+  get diagnostics pausadas = row_count;
+
+  if not exists (
+    select 1 from pg_constraint
+     where conname = 'prospecting_campaigns_running_tem_canal'
+       and conrelid = 'public.prospecting_campaigns'::regclass
+  ) then
+    alter table public.prospecting_campaigns
+      add constraint prospecting_campaigns_running_tem_canal
+      check (status <> 'running' or channel_session_id is not null) not valid;
+    alter table public.prospecting_campaigns
+      validate constraint prospecting_campaigns_running_tem_canal;
+  end if;
+
+  drop index if exists public.prospecting_one_running_org;
+  create unique index if not exists prospecting_one_running_canal
+    on public.prospecting_campaigns(organization_id, channel_session_id)
+    where status = 'running';
+end $$;
+
+comment on column public.prospecting_campaigns.channel_session_id is
+  'Número de WhatsApp (channel_sessions.id) por onde esta campanha dispara. Chave da trava "uma campanha running por número" (índice prospecting_one_running_canal, #3896). Nulo só em rascunho nunca iniciado; quem inicia grava junto com config.channel_session_id.';
 
 -- ---- 0763: tipo de contato — cliente ou fornecedor (issue 3005, fatia 1) ----
 -- Espelho idempotente da migration 0763. É este apêndice que chega a todo

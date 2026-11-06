@@ -238,6 +238,39 @@ describe("abrir conversa: o canal é o que a tela escolheu, e só se ele serve (
     expect(sessaoDoBegin(rpcs)).toBe(ID_WHATSAPP);
   });
 
+  it("sem canal escolhido, o DESLIGADO mais antigo é pulado: a conversa abre no próximo que envia (#4092)", async () => {
+    // O número velho foi desligado pelo operador e o novo foi conectado depois.
+    // `sessaoProntaParaEnvio` pegava o mais antigo sem olhar `metadata.disabled`
+    // e esta função recusava a abertura (`session_unavailable` → 409 na rota,
+    // `route.ts:154`) mesmo havendo um canal pronto: o cadastro salvo não abria
+    // conversa nenhuma.
+    const desligado = { ...WHATSAPP, id: "sessao-desligada", created_at: "2025-01-01T00:00:00Z", metadata: { disabled: true } };
+    const { db, rpcs } = bancoDeMentira([desligado, INSTAGRAM, WHATSAPP]);
+
+    await openSharedContactConversation(db, ORG, {
+      contact_id: CONTATO,
+      phone_number: TELEFONE,
+    });
+
+    expect(sessaoDoBegin(rpcs)).toBe(ID_WHATSAPP);
+  });
+
+  it("sem canal escolhido e TODOS desligados: a recusa continua a de antes (409, não 404)", async () => {
+    // Desligar é intenção declarada do dono do número: a recusa é
+    // `session_unavailable` — a mesma de antes desta issue, com a mensagem que
+    // manda reativar ou escolher outro canal. `session_not_found` (404) é
+    // resposta para organização SEM canal, e dizer isso aqui esconderia a causa.
+    const desligadoA = { ...WHATSAPP, id: "sessao-desligada", metadata: { disabled: true } };
+    const desligadoB = { ...INSTAGRAM, id: "social-desligada", metadata: { disabled: true } };
+    const { db, rpcs } = bancoDeMentira([desligadoA, desligadoB]);
+
+    await expect(
+      openSharedContactConversation(db, ORG, { contact_id: CONTATO, phone_number: TELEFONE }),
+    ).rejects.toThrow("session_unavailable");
+
+    expect(rpcs.filter((r) => r.nome === "fn_service_begin")).toHaveLength(0);
+  });
+
   it("abrir de novo o MESMO contato no MESMO canal devolve a conversa existente", async () => {
     // Não há segunda criação: esta porta nunca insere — delega ao
     // `fn_service_begin`, que reabre a conversa que existe (índice único por

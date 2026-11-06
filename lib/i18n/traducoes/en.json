@@ -2182,7 +2182,7 @@
   "Concluídos": "Completed",
   "Nenhum caso aberto": "No open cases",
   "Nenhum caso concluído": "No completed cases",
-  "Quando a IA precisar de você, aparece aqui.": "When the AI needs you, it will show up here.",
+  "Os casos aparecem aqui quando um agente publicado, com \"Deixar o agente pedir uma tarefa a alguém e seguir conversando\" ligado, pede algo a você. Conversa passada para uma pessoa vai para o Inbox.": "Cases show up here when a published agent with \"Let the agent ask someone for a task and keep talking\" turned on asks you for something. Conversations handed to a person go to the Inbox.",
   "Casos concluídos, cancelados ou repassados ficam aqui.": "Completed, canceled, or transferred cases stay here.",
   "Contato sem nome": "Unnamed contact",
   "Selecione um caso à esquerda": "Select a case on the left",
@@ -9699,5 +9699,7 @@
   "Enviar mesmo com a conversa atribuída a uma pessoa": "Send even when the conversation is assigned to a person",
   "Enviar com a conversa atribuída": "Send with an assigned conversation",
   "Os passos de texto deste fluxo saem mesmo quando um atendente é o dono da conversa. A IA continua calada nessa conversa, e contatos com opt-out, bloqueados ou fora da janela de envio não recebem.": "Text steps in this flow still go out when an agent owns the conversation. The AI stays silent in that conversation, and contacts who opted out, are blocked, or are outside the sending window receive nothing.",
-  "Opção de envio com a conversa atribuída atualizada.": "Assigned-conversation sending option updated."
+  "Opção de envio com a conversa atribuída atualizada.": "Assigned-conversation sending option updated.",
+  "Este número já está em outra campanha em andamento.": "This number is already in use by another running campaign.",
+  "Abrir essa campanha": "Open that campaign"
 }
