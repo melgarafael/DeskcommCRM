@@ -46,20 +46,35 @@ export function ConsentimentoPorArea({
   const gravadas = (extension.consented_areas ?? []).filter((area): area is PermissaoDeArea =>
     declaradas.includes(area as PermissaoDeArea),
   );
-  const [marcadas, setMarcadas] = useState<PermissaoDeArea[]>(gravadas);
-  const [salvando, setSalvando] = useState(false);
-
-  const mudou =
-    marcadas.length !== gravadas.length || marcadas.some((area) => !gravadas.includes(area));
   // Ativar vem antes: a função do banco recusa consentir sem a ativação desta organização.
   const ativada = extension.enabled;
   const editavel = canEdit && ativada && Boolean(onSave);
   const haSensivel = declaradas.some(ehAreaSensivel);
 
+  // Primeira vez (nada consentido ainda): a tela PROPÕE o que o pacote pede, menos as áreas sensíveis,
+  // e o botão é "Consentir". Proposta é só a tela: nada é liberado até a pessoa clicar, e quem decide a
+  // cada chamada continua sendo o servidor. As sensíveis (configuração e agentes de IA) ficam
+  // desmarcadas: quem administra marca de propósito.
+  const primeiraVez = gravadas.length === 0;
+  const proposta = declaradas.filter((area) => !ehAreaSensivel(area));
+  const inicial = primeiraVez && editavel ? proposta : gravadas;
+  // `null` até a pessoa mexer: assim a proposta aparece assim que o módulo é ativado, sem estado velho.
+  const [escolha, setEscolha] = useState<PermissaoDeArea[] | null>(null);
+  const marcadas = escolha ?? inicial;
+  const [salvando, setSalvando] = useState(false);
+
+  const mudou =
+    marcadas.length !== gravadas.length || marcadas.some((area) => !gravadas.includes(area));
+
   function alternar(area: PermissaoDeArea, ligada: boolean) {
-    setMarcadas((atual) =>
-      ligada ? (atual.includes(area) ? atual : [...atual, area]) : atual.filter((a) => a !== area),
-    );
+    setEscolha((atual) => {
+      const base = atual ?? inicial;
+      return ligada
+        ? base.includes(area)
+          ? base
+          : [...base, area]
+        : base.filter((a) => a !== area);
+    });
   }
 
   async function salvar() {
@@ -98,6 +113,16 @@ export function ConsentimentoPorArea({
         </p>
       ) : (
         <>
+          {primeiraVez && editavel ? (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid={`extension-consent-proposal-${extension.id}`}
+            >
+              {t(
+                "Marcamos o que o módulo pede, menos as áreas sensíveis. Revise, desmarque o que não quiser e clique em Consentir. Nada é liberado antes disso.",
+              )}
+            </p>
+          ) : null}
           {haSensivel ? (
             <p
               className="rounded-md border border-warning/30 bg-warning-bg p-2 text-xs text-warning-fg"
@@ -155,7 +180,7 @@ export function ConsentimentoPorArea({
             onClick={() => void salvar()}
           >
             {salvando ? <CircleNotch className="animate-spin" aria-hidden /> : null}
-            {salvando ? t("Salvando…") : t("Salvar áreas")}
+            {salvando ? t("Salvando…") : primeiraVez ? t("Consentir") : t("Salvar áreas")}
           </Button>
         </div>
       ) : null}

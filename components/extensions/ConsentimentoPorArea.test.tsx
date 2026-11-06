@@ -152,6 +152,39 @@ describe("ConsentimentoPorArea", () => {
     expect(onSave.mock.calls[0]?.[1]).toEqual([]);
   });
 
+  it("primeira vez: propõe o que o pacote pede, menos as sensíveis, e o botão é Consentir", async () => {
+    const user = userEvent.setup();
+    const { onSave } = montar({}, conectada({ consented_areas: [] }));
+    expect((caixa("area.contatos.leitura") as HTMLInputElement).checked).toBe(true);
+    expect((caixa("area.contatos.escrita") as HTMLInputElement).checked).toBe(true);
+    // Sensível não vem marcada: quem administra marca de propósito.
+    expect((caixa("area.configuracao.leitura") as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByTestId(`extension-consent-proposal-${INSTALACAO}`).textContent).toContain(
+      "Nada é liberado antes disso",
+    );
+    const botao = screen.getByTestId(`extension-consent-save-${INSTALACAO}`) as HTMLButtonElement;
+    expect(botao.textContent).toContain("Consentir");
+    expect(botao.disabled).toBe(false);
+    // Consentir menos: tira uma marca e confirma.
+    await user.click(caixa("area.contatos.escrita"));
+    await user.click(botao);
+    expect([...(onSave.mock.calls[0]?.[1] as string[])].sort()).toEqual(["area.contatos.leitura"]);
+  });
+
+  it("depois de consentir, a proposta some e o botão volta a ser Salvar áreas", () => {
+    montar();
+    expect(screen.queryByTestId(`extension-consent-proposal-${INSTALACAO}`)).toBeNull();
+    expect(screen.getByTestId(`extension-consent-save-${INSTALACAO}`).textContent).toContain(
+      "Salvar áreas",
+    );
+  });
+
+  it("quem não administra não recebe proposta: vê só o que está gravado", () => {
+    montar({ canEdit: false }, conectada({ consented_areas: [] }));
+    expect((caixa("area.contatos.leitura") as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByTestId(`extension-consent-proposal-${INSTALACAO}`)).toBeNull();
+  });
+
   it("quem não administra vê o consentimento atual travado, com o motivo, sem botão de salvar", () => {
     montar({ canEdit: false });
     for (const area of [
