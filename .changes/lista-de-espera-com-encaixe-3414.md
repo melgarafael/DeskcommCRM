@@ -1,7 +1,11 @@
 ---
 impacto: capacidade_nova
 secao: adicionado
-titulo: Lista de espera com encaixe: a desmarcação oferece a vaga a quem pediu para ser chamado
+titulo: Lista de espera da agenda como módulo opcional: a vaga que abre é oferecida a uma pessoa por vez
 ---
 
-Cada desmarcação abre um horário, e o "se abrir um encaixe, eu quero" vivia no caderno da recepção. Agora existe o pedido no sistema (`calendar_waitlist`): serviço, profissional (ou qualquer um), as faixas de horário que servem, antecedência mínima, até quando vale e a urgência. Quando um compromisso é desmarcado, a vaga é oferecida a **uma pessoa por vez**, na ordem de urgência e depois de chegada, e fica segurada como compromisso `pending` — o mesmo estado que já ocupa o horário e já expira sozinho. Se a pessoa recusar ou o prazo da oferta vencer (duas horas), a vaga passa para o próximo e só então ela volta para a fila; se confirmar, o compromisso vira `confirmed` e a inscrição fecha como atendida. O atendimento inteiro precisa caber no buraco, não só o começo. O pedido de encaixe ainda é criado pelo código — a ferramenta do agente e a tela da equipe ficam para a fatia seguinte. Contribuição de @webtecnica (#3465).
+Novo módulo opcional, instalado em Módulos pelo administrador da instalação. Sem instalar, nada muda: a tabela não existe, a tela não aparece e a agenda segue como sempre. Depois de instalar, cada empresa escolhe os prazos da oferta em Lista de espera e liga o recurso; não há valor padrão.
+
+A equipe inscreve quem aceitou ser avisado, por tipo de atendimento. Quando um horário abre (desmarcação na agenda, pedido expirado ou cancelamento no Google), a vaga vai para uma pessoa por vez e fica segurada como compromisso pendente. Se a pessoa recusar ou o prazo vencer, a vaga passa para a próxima da fila; se ela aceitar, o compromisso é confirmado. Contato bloqueado ou anonimizado não recebe vaga, e tipo que exige aprovação da equipe continua exigindo.
+
+A oferta sai pelo canal da conversa e respeita janela de envio, opt-out, limite e espaçamento. Vaga que abre fora da janela de envio, ou quando ninguém da fila pode ser avisado, não é oferecida. Enquanto a vaga está segurada, a oferta é a única mensagem automática que sai para essa pessoa: os demais envios automáticos do contato seguem adiados. Contribuição de @webtecnica (#3465).
