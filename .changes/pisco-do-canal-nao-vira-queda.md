@@ -9,6 +9,8 @@ número como fora do ar na primeira pergunta que falhava — e uma oscilação d
 rede de um minuto bastava para isso. Nesse intervalo, o que o operador mandava
 ficava "aguardando conexão" e, quando a conexão voltava, ninguém mandava de
 novo. Agora a queda só vale depois de duas verificações ruins seguidas, e a
-volta vale na primeira boa. E a mensagem que segue aguardando há mais de 15
-minutos numa conexão que já voltou abre um aviso na Central, com a conversa,
-para quem escreveu decidir se reenvia — nada é reenviado sozinho. Crédito: @jmpo.
+volta vale na primeira boa. E a mensagem que segue aguardando numa conexão que
+já voltou abre um aviso na Central, com a conversa, para quem escreveu decidir o
+que fazer: 15 minutos depois quando esperava a conexão, 50 quando ainda podia ter
+nova tentativa agendada. Nada é reenviado sozinho, mensagem com mais de 24 horas
+não entra, e o aviso resolvido só volta por mensagem nova. Crédito: @jmpo.

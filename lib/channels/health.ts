@@ -225,7 +225,9 @@ export function julgarQueda(saude: SaudeObservada, contadorAtual: number): Julga
 
   if (!ruim) return { confirmada: false, contador: 0 };
 
-  const contador = contadorAtual + 1;
+  // Para no teto: a sessão caída não paga um UPDATE por rodada para um número
+  // que ninguém mais lê.
+  const contador = Math.min(contadorAtual + 1, CONFIRMACOES_PARA_QUEDA);
   return { confirmada: contador >= CONFIRMACOES_PARA_QUEDA, contador };
 }
 

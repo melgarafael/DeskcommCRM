@@ -91,6 +91,8 @@ describe("a regra: o pisco não vira queda", () => {
     expect(julgarQueda(CAIDO, 1).confirmada).toBe(true);
     expect(julgarQueda(CAIDO, CONFIRMACOES_PARA_QUEDA - 1).confirmada).toBe(true);
     expect(julgarQueda(CAIDO, CONFIRMACOES_PARA_QUEDA - 2).confirmada).toBe(false);
+    // O contador para no teto: a sessão caída não paga um UPDATE por rodada.
+    expect(julgarQueda(CAIDO, CONFIRMACOES_PARA_QUEDA)).toEqual({ confirmada: true, contador: CONFIRMACOES_PARA_QUEDA });
   });
 
   it("uma observação BOA zera o contador na hora — a volta não espera confirmação", () => {

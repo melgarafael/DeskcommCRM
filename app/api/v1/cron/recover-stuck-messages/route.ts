@@ -25,9 +25,9 @@
  *     (`agent_inbox_items`, kind `message_send_stuck`), porque marcar `failed`
  *     em silêncio troca uma falha invisível por outra: a bolha muda de ícone
  *     numa conversa que ninguém tem motivo para reabrir;
- *   - avisa (sem tocar na linha) a outbound `queued` há mais de 15 min numa
- *     conexão que JÁ VOLTOU a WORKING — a espera que ninguém vê
- *     (`avisarEsperaEsquecida`, abaixo);
+ *   - avisa (sem tocar na linha) a outbound `queued` vencida numa conexão que
+ *     JÁ VOLTOU a WORKING — a espera que ninguém vê (`avisarEsperaEsquecida`,
+ *     abaixo);
  *   - **não reenvia nada.** Reenviar exigiria saber POR QUE não foi, e o envio
  *     em dobro é pior que o não-envio: o cliente recebe a mesma mensagem duas
  *     vezes. Retry é decisão de quem lê o aviso.
@@ -49,6 +49,7 @@ import {
   telefoneDoEmbed,
   type EmbedDoContato,
 } from "@/lib/messaging/falha-de-entrega";
+import { MAX_REENVIOS, TETO_DA_ESPERA_DA_FILA_MS } from "@/lib/messaging/reenvio-desacelerado";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 import { recursoOcioso } from "@/lib/cron/piso-ocioso";
@@ -70,11 +71,47 @@ export const STUCK_AFTER_MS = 5 * 60 * 1000;
  */
 const ESPERA_ESQUECIDA_MS = 15 * 60 * 1000;
 
+/**
+ * O prazo da `queued` que pode ter nova tentativa agendada. O reenvio
+ * desacelerado faz até 5 pedidos (o inicial + `MAX_REENVIOS`), e cada um espera
+ * até 5 min — ou até `TETO_DA_ESPERA_DA_FILA_MS` atrás de outra mensagem da
+ * mesma conversa, porque esse teto conta do pedido, não da mensagem. Antes
+ * disso o aviso diria "parada" de uma mensagem que ainda vai sair. Só a linha
+ * que esperava a conexão (`channel_session_not_working`) fica com os 15 min:
+ * ela não tem tentativa nenhuma agendada.
+ */
+const ESPERA_COM_TENTATIVA_MS = (MAX_REENVIOS + 1) * TETO_DA_ESPERA_DA_FILA_MS;
+
+/**
+ * Passado isto a mensagem sai do radar. A `queued` não tem quem a tire desse
+ * estado, então sem teto a primeira rodada depois de atualizar acusaria todo o
+ * histórico da instalação. E com a janela de 24 h fechada o canal oficial já
+ * recusa o reenvio: o aviso não teria saída.
+ */
+const ESPERA_TETO_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Fixo, sem a contagem: o dedup casa pelo título, e um título com número abriria
+ * um segundo aviso quando 1 virasse 2, com o primeiro ainda aberto.
+ */
+const TITULO_DA_ESPERA = "Mensagens ficaram esperando e não saíram";
+
 interface EsperaRow {
   id: string;
   organization_id: string;
   conversation_id: string;
+  created_at: string;
+  metadata: { queued_reason?: unknown } | null;
   channel_sessions: { status: string | null } | null;
+}
+
+/** Quando a mensagem deixa de ser espera legítima e passa a merecer aviso. */
+function vencimentoDaEspera(m: EsperaRow): number {
+  const prazo =
+    m.metadata?.queued_reason === "channel_session_not_working"
+      ? ESPERA_ESQUECIDA_MS
+      : ESPERA_COM_TENTATIVA_MS;
+  return new Date(m.created_at).getTime() + prazo;
 }
 
 /** Teto por invocação — a rodada seguinte pega o resto. */
@@ -129,6 +166,14 @@ export interface RecoverResult {
  *
  * Reenviar automaticamente ficou de fora de propósito: reenviar é a decisão de
  * quem escreveu, e o texto pode não fazer mais sentido meia hora depois.
+ *
+ * ─── O aviso não volta sozinho ──────────────────────────────────────────────
+ *
+ * A linha segue `queued` depois de o operador resolver o aviso, então "não há
+ * aviso aberto" não basta: a rodada seguinte recriaria o que ele acabou de
+ * fechar. Quem reabre é mensagem que venceu DEPOIS do último aviso; a que venceu
+ * antes já estava coberta por ele. Comparar com a CRIAÇÃO da mensagem perderia a
+ * que nasceu antes do aviso e venceu depois dele.
  */
 async function avisarEsperaEsquecida(
   admin: ReturnType<typeof createAdminClient>,
@@ -136,13 +181,20 @@ async function avisarEsperaEsquecida(
   requestId: string,
 ): Promise<number> {
   const corte = new Date(now.getTime() - ESPERA_ESQUECIDA_MS).toISOString();
+  const teto = new Date(now.getTime() - ESPERA_TETO_MS).toISOString();
 
+  // Da mais nova para a mais velha: com mais linhas que o limite, é a mais nova
+  // que decide se o aviso reabre.
   const { data, error } = await admin
     .from("messages")
-    .select("id, organization_id, conversation_id, channel_sessions:channel_session_id(status)")
+    .select(
+      "id, organization_id, conversation_id, created_at, metadata, channel_sessions:channel_session_id(status)",
+    )
     .eq("direction", "outbound")
     .eq("status", "queued")
     .lt("created_at", corte)
+    .gte("created_at", teto)
+    .order("created_at", { ascending: false })
     .limit(SCAN_LIMIT);
 
   if (error) {
@@ -156,7 +208,7 @@ async function avisarEsperaEsquecida(
   // Só as que esperam num canal que JÁ VOLTOU. Enquanto a conexão segue caída,
   // esperar é o comportamento certo e avisar seria repetir o alerta de queda.
   const esquecidas = ((data ?? []) as unknown as EsperaRow[]).filter(
-    (m) => m.channel_sessions?.status === "WORKING",
+    (m) => m.channel_sessions?.status === "WORKING" && vencimentoDaEspera(m) <= now.getTime(),
   );
   if (esquecidas.length === 0) return 0;
 
@@ -168,34 +220,42 @@ async function avisarEsperaEsquecida(
   let avisadas = 0;
   for (const [orgId, linhas] of porOrg) {
     const n = linhas.length;
-    // Um aviso por organização enquanto houver espera esquecida: o dedup por
-    // (kind, title, open) evita que cada rodada de 1 minuto empilhe outro.
-    const titulo =
-      n === 1
-        ? "Uma mensagem sua ficou esperando e não saiu"
-        : `${n} mensagens suas ficaram esperando e não saíram`;
 
-    const { data: jaAberto } = await admin
+    // Um aviso por organização: o mesmo enquanto estiver aberto, e outro só para
+    // a mensagem que venceu depois dele (ver "O aviso não volta sozinho").
+    const { data: ultimo, error: lerErr } = await admin
       .from("agent_inbox_items")
-      .select("id")
+      .select("status, created_at")
       .eq("organization_id", orgId)
       .eq("kind", "message_send_stuck")
-      .eq("title", titulo)
-      .eq("status", "open")
+      .eq("title", TITULO_DA_ESPERA)
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (jaAberto) continue;
+    if (lerErr) {
+      // Sem saber se já há aviso, abrir arriscaria duplicar um crítico. A rodada
+      // seguinte pergunta de novo.
+      logger.warn("[recover-stuck-messages] leitura do aviso de espera falhou", {
+        error: lerErr.message,
+        organization_id: orgId,
+        requestId,
+      });
+      continue;
+    }
+    const venceuPorUltimo = Math.max(...linhas.map(vencimentoDaEspera));
+    const jaCoberta = ultimo && new Date(ultimo.created_at).getTime() >= venceuPorUltimo;
+    if (ultimo?.status === "open" || jaCoberta) continue;
 
     const { error: insErr } = await admin.from("agent_inbox_items").insert({
       organization_id: orgId,
       kind: "message_send_stuck",
       severity: "critical",
-      title: titulo,
+      title: TITULO_DA_ESPERA,
       body:
-        `Foram escritas quando a conexão estava fora do ar e ficaram aguardando. ` +
-        `A conexão já voltou, mas elas não saem sozinhas — abra a conversa e reenvie. ` +
-        `Nada foi reenviado automaticamente: reenviar é a decisão de quem escreveu, ` +
-        `e o texto pode não fazer mais sentido depois de tanto tempo.`,
+        `${n === 1 ? "Uma mensagem segue" : `${n} mensagens seguem`} aguardando envio, ` +
+        `e a conexão já está de pé. Abra a conversa para decidir o que fazer. ` +
+        `Nada foi reenviado automaticamente: o texto pode não fazer mais sentido ` +
+        `depois de tanto tempo.`,
       ref_kind: "conversation",
       ref_id: linhas[0]?.conversation_id ?? null,
     });
@@ -372,7 +432,7 @@ export async function recoverStuckMessages(
 const PASSOS_DEPOIS_DO_PORTAO = [
   "let result",
   "try",
-  "if (result.failed > 0)",
+  "if (result.failed > 0 || result.esperando > 0)",
   "return",
 ] as const;
 void PASSOS_DEPOIS_DO_PORTAO;
@@ -399,9 +459,9 @@ async function handle(req: NextRequest): Promise<Response> {
     return fail("internal_error", "Failed to recover stuck messages.", 500, { requestId });
   }
 
-  // Varredura que não marcou nada não é mutação e não ocupa linha de auditoria
-  // (mesmo critério do snooze-watcher e do followup-flow-worker).
-  if (result.failed > 0) {
+  // Varredura que não marcou nada nem abriu aviso não é mutação e não ocupa linha
+  // de auditoria (mesmo critério do snooze-watcher e do followup-flow-worker).
+  if (result.failed > 0 || result.esperando > 0) {
     void audit({
       action: "message.recover_stuck_run",
       organizationId: null,

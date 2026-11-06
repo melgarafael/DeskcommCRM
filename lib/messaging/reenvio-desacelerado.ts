@@ -11,8 +11,8 @@
  * chamador (o turno do agente só a chama com `blocked`), o turno trata `queued`
  * como "aceita, aguardando o canal" e termina, e o resgate do watchdog só fala
  * com o transporte por QR. Ninguém mandava de novo — a resposta ao cliente
- * ficava parada até a Central acusar a "espera esquecida", quinze minutos
- * depois, numa mensagem do agente que nenhuma pessoa podia reenviar.
+ * ficava parada até a Central acusar a "espera esquecida", numa mensagem do
+ * agente que nenhuma pessoa podia reenviar.
  *
  * ─── O que este módulo faz ──────────────────────────────────────────────────
  *
@@ -31,6 +31,11 @@ import { logger } from "@/lib/logger";
 
 /** O evento-comando, consumido por `./reenvio-desacelerado.handler.ts`. */
 export const EVENTO_REENVIO_DESACELERADO = "message.throttled_resend_requested";
+
+/** Moram aqui, e não no consumidor, porque o prazo da espera esquecida depende delas e o consumidor arrasta o envio inteiro. */
+export const MAX_REENVIOS = 4;
+/** A de trás não espera a da frente para sempre: passado isto desde o pedido, segue sozinha. */
+export const TETO_DA_ESPERA_DA_FILA_MS = 10 * 60_000;
 
 /**
  * A mensagem cuja nova tentativa é DESTE reenvio — pela autoria (`sent_via`).

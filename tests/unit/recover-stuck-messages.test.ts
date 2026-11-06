@@ -78,6 +78,12 @@ function clientDuble(presas: Record<string, unknown>[], atualizadas?: Record<str
           filtros[`lt:${col}`] = val;
           return cadeia;
         },
+        gte() {
+          return cadeia;
+        },
+        order() {
+          return cadeia;
+        },
         limit() {
           chamadas.push({ tabela, op, filtros, valores });
           return Promise.resolve({ data: presas, error: null });
