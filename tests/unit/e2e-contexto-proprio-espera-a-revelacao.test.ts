@@ -66,7 +66,7 @@ function nomeDoContexto(prefixo: string): string | null {
 }
 
 function escapar(nome: string): string {
-  return nome.replace(/\$/g, "\\$");
+  return nome.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
