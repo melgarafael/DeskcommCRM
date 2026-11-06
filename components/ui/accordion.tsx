@@ -96,7 +96,7 @@ export function AccordionItem({
         aria-expanded={expandido}
         aria-controls={idDoPainel}
         onClick={() => alternar(value)}
-        className="flex w-full items-start gap-2 rounded-md p-3 text-left hover:bg-accent-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex w-full items-start gap-2 rounded-md p-3 text-left hover:bg-accent-soft focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{summary}</span>
         <CaretDown
