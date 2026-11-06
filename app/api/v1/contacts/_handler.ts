@@ -30,6 +30,7 @@ import {
 import { camposCpfParaGravar, hashCpf } from "@/lib/contacts/cpf";
 import type { Contact } from "@/lib/types/contacts";
 import { abrirConversaDoContatoNovo } from "@/lib/contacts/conversa-ao-criar";
+import { atribuirConversaDoCadastroAoCriador } from "@/lib/contacts/conversa-do-criador";
 import type {
   ContactCreate,
   ContactPatch,
@@ -698,13 +699,29 @@ export async function createContactHandler(
   // uma sessão torta não pode derrubar o cadastro. O que ela NÃO faz mais é
   // falhar calada — o erro sai em `logger.warn` lá dentro, com org, contato e
   // porta.
-  await abrirConversaDoContatoNovo(supabase, {
+  const conversa = await abrirConversaDoContatoNovo(supabase, {
     porta: "manual",
     organizationId: ctx.organization_id,
     contactId: contact.id,
     phoneNumber: contact.phone_number,
     requestId: ctx.requestId,
   });
+
+  // ── QUEM CRIOU O CONTATO ATENDE O CONTATO (#3479) ─────────────────────────
+  //
+  // No "Só os seus" a conversa sem dono é invisível ao Atendente (0035), e a
+  // que o cadastro acabou de abrir nascia de ninguém. Aqui ela nasce dele —
+  // pelo MESMO claim do botão Assumir, com CAS de "só se estiver livre". A
+  // decisão e o efeito moram em `lib/contacts/conversa-do-criador.ts`; esta
+  // chamada é best-effort e não lança (o contato já está gravado).
+  if (conversa.aberta) {
+    await atribuirConversaDoCadastroAoCriador(supabase, {
+      organizationId: ctx.organization_id,
+      conversationId: conversa.conversationId,
+      actor: ctx.actor,
+      requestId: ctx.requestId,
+    });
+  }
 
   await supabase
     .rpc("emit_event", {
