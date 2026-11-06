@@ -114,7 +114,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // #4019: o negócio ABERTO do contato já acompanhou o dono novo DENTRO da
   // `fn_conversation_assign`, na mesma transação da troca da conversa (migration
   // 9208), dentro da permissão de quem clicou. A régua não mora mais nesta rota:
-  // se ela vivesse aqui, MCP, automação e chamada direta da RPC não a teriam.
+  // se ela vivesse aqui, o MCP e a chamada direta da RPC não a teriam.
   await audit({
     action: "conversation.transferred",
     actorUserId: user.id,

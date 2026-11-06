@@ -1,4 +1,4 @@
--- manifest: **O negócio aberto do contato acompanha o dono da conversa na porta única da atribuição (#4019, PR #4046 de @webtecnica; decisão do mantenedor: B do doc 178, reafirmada no doc 267).** A régua que vivia nas telas (`sincronizarNegocioAbertoDoContato`, removido) desce para `fn_conversation_assign`, na MESMA transação da troca de dono, e passa a valer também para MCP, automação e chamada direta. Só `p_reason = 'transfer'` leva um negócio que já tem responsável; `claim` (Assumir, Iniciar conversa, quem responde assume), `routing`, `handoff` e os demais só dão dono a negócio SEM responsável — nunca tiram de um colega. Com sessão, a escrita fica dentro do que a RLS de `crm_leads` já permite a quem clicou (`fn_can_view_lead` sobre o responsável atual E sobre o novo): na visibilidade padrão, o Atendente que transfere para uma colega continua sem levar o negócio. A troca de carteira e a passagem de conversas do contato (`fn_definir_carteira_do_cliente`, `fn_passar_conversas_do_contato`) entram com `'transfer'` e sem sessão: são recriadas passando `p_negocio_so_sem_dono => true`, e não levam negócio que já tem responsável (#2591). Só um negócio aberto é tocado; zero não cria card; mais de um não é tocado. 8º argumento `p_negocio_so_sem_dono` (default `false`) exige o `drop` da assinatura de 7. Idempotente; espelho no `baseline.sql` antes da VARREDURA anon. Gate: `tests/invariants/negocio-aberto-acompanha-o-dono.test.ts`.
+-- manifest: **O negócio aberto do contato acompanha o dono da conversa na porta única da atribuição (#4019, PR #4046 de @webtecnica; decisão do mantenedor: B do doc 178, reafirmada no doc 267).** A régua que vivia nas telas (`sincronizarNegocioAbertoDoContato`, removido) desce para `fn_conversation_assign`, na MESMA transação da troca de dono, e passa a valer também para MCP e chamada direta (na automação, só preenche negócio sem dono). Só `p_reason = 'transfer'` leva um negócio que já tem responsável; `claim` (Assumir, Iniciar conversa, quem responde assume), `routing`, `handoff` e os demais só dão dono a negócio SEM responsável — nunca tiram de um colega. Com sessão, a escrita fica dentro do que a RLS de `crm_leads` já permite a quem clicou (`fn_can_view_lead` sobre o responsável atual E sobre o novo): na visibilidade padrão, o Atendente que transfere para uma colega continua sem levar o negócio. A troca de carteira e a passagem de conversas do contato (`fn_definir_carteira_do_cliente`, `fn_passar_conversas_do_contato`) entram com `'transfer'` e sem sessão: são recriadas passando `p_negocio_so_sem_dono => true`, e não levam negócio que já tem responsável (#2591). Só um negócio aberto é tocado; zero não cria card; mais de um não é tocado. 8º argumento `p_negocio_so_sem_dono` (default `false`) exige o `drop` da assinatura de 7. Idempotente; espelho no `baseline.sql` antes da VARREDURA anon. Gate: `tests/invariants/negocio-aberto-acompanha-o-dono.test.ts`.
 --
 -- 9208 — O NEGÓCIO ABERTO DO CONTATO ACOMPANHA O DONO DA CONVERSA (#4019).
 --
@@ -9,8 +9,8 @@
 -- helper do Assumir, com o cliente da SESSÃO. Levantamento do relator da #4019
 -- em 46 conversas com dono: 14 negócios abertos com responsável DIFERENTE do
 -- dono da conversa (ou sem responsável). A transferência FORA da tela —
--- `crm_assign_conversation` (MCP), automação e chamada direta da função — não
--- passava por régua nenhuma, porque a régua morava na tela.
+-- `crm_assign_conversation` (MCP) e chamada direta da função — não passava por
+-- régua nenhuma, porque a régua morava na tela.
 --
 -- ─── O conserto: a régua desce para a porta única ──────────────────────────
 --
@@ -44,7 +44,8 @@
 -- (o USING) e sobre o NOVO (o WITH CHECK). Gestor e admin enxergam tudo; o
 -- Atendente, na visibilidade padrão, não entrega o negócio a uma colega (#2556)
 -- — ampliar isso é decisão separada, que o mantenedor não tomou. Sem sessão
--- (service role: MCP, automação, fila), a regra vale inteira.
+-- (service role: MCP, automação, fila) esse filtro não existe: decidem o motivo
+-- e `p_negocio_so_sem_dono`.
 --
 -- ─── O que muda para os chamadores ────────────────────────────────────────
 --
@@ -313,8 +314,8 @@ grant  execute on function public.fn_conversation_assign(uuid, uuid, uuid, text,
 -- As duas funções abaixo passam conversas pela porta única com `'transfer'`
 -- e SEM sessão. Sem o 8º argumento, a régua da transferência moveria o
 -- negócio aberto de um colega junto com a conversa — contra a regra da
--- carteira (#2591: "os que já têm dono não mudam") e contra o doc 267 (só a
--- transferência pedida por alguém leva o negócio de outro responsável).
+-- carteira (#2591: "os que já têm dono não mudam"). Com isto, esses dois caminhos
+-- seguem como eram antes da 9208.
 -- Corpo idêntico à última definição de cada uma (9077 e 9057); a única
 -- mudança é `p_negocio_so_sem_dono => true` na chamada interna.
 
