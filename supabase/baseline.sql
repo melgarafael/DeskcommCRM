@@ -69678,6 +69678,21 @@ grant execute on function public.fn_passar_conversas_do_contato(uuid, uuid, uuid
 
 notify pgrst, 'reload schema';
 
+-- ---- catálogo: capacidade do produto (migration 9237) ----
+alter table public.catalog_products add column if not exists capacidade text;
+
+do $capacidade$
+begin
+  alter table public.catalog_products drop constraint if exists catalog_products_capacidade_tamanho;
+  alter table public.catalog_products
+    add constraint catalog_products_capacidade_tamanho
+    check (capacidade is null or char_length(capacidade) <= 60);
+end
+$capacidade$;
+
+comment on column public.catalog_products.capacidade is
+  'Capacidade do produto (opcional, texto livre: 128GB, 1TB, 500ml). A empresa liga em settings.catalogo.capacidade.';
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria

@@ -22,8 +22,14 @@ import { telefoniaEmUso } from "@/lib/telefonia/em-uso";
  * menu de todo mundo e levava a uma tela vazia para quem nunca ligou o módulo.
  * Ela é uma capacidade da ORGANIZAÇÃO, com o mesmo desenho de `propostas` — não
  * uma segunda régua: o menu lê `capacidades_ligadas` e mais nada.
+ *
+ * `capacidade_do_produto` (#3472) é o campo opcional do catálogo: a capacidade
+ * que uma loja de celulares cadastra não faz sentido para uma clínica, então a
+ * tela, a API, a planilha e a busca do agente perguntam aqui antes de mostrá-lo.
+ * Desligar não apaga o que foi guardado. A chave mora em
+ * `settings.catalogo.capacidade`.
  */
-export const CAPACIDADES_DA_ORGANIZACAO = ["propostas", "telefonia"] as const;
+export const CAPACIDADES_DA_ORGANIZACAO = ["propostas", "telefonia", "capacidade_do_produto"] as const;
 export type CapacidadeDaOrganizacao = (typeof CAPACIDADES_DA_ORGANIZACAO)[number];
 
 /**
@@ -40,6 +46,7 @@ export type CapacidadeDaOrganizacao = (typeof CAPACIDADES_DA_ORGANIZACAO)[number
 const MODULO_DA_CAPACIDADE: Record<CapacidadeDaOrganizacao, ModuloOpcional | null> = {
   propostas: "propostas",
   telefonia: null,
+  capacidade_do_produto: null,
 };
 
 function objeto(v: unknown): Record<string, unknown> | null {
@@ -73,6 +80,7 @@ export function capacidadesLigadas(
   // também não funciona — mas esse estado o app não enxerga, e fingir que
   // enxerga seria pior que o defeito.
   if (telefoniaEmUsoDaOrganizacao) daEmpresa.push("telefonia");
+  if (objeto(objeto(settings)?.catalogo)?.capacidade === true) daEmpresa.push("capacidade_do_produto");
   return daEmpresa;
 }
 

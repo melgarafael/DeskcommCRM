@@ -6014,5 +6014,16 @@
   "O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.": "授权链接是自动的：在客户授权之前，智能体会自动获得生成链接的工具，无需在此选择。",
   "Este número já está em outra campanha em andamento.": "此号码已被另一个进行中的活动占用。",
   "Abrir essa campanha": "打开该活动",
-  "Conexão removida.": "连接已移除。"
+  "Conexão removida.": "连接已移除。",
+  "Ex.: 128GB": "例如：128GB",
+  "Capacidade do produto": "产品容量",
+  "capacidade com mais de 60 caracteres": "容量超过 60 个字符",
+  "A capacidade do produto está desligada nesta empresa.": "本公司已关闭产品容量。",
+  "Catálogo salvo.": "目录已保存。",
+  "Usar o campo Capacidade nos produtos": "在产品中使用容量字段",
+  "Mostra o campo em Produtos e na planilha, para 128GB, 1TB ou 500ml, e o atendente de IA passa a procurar por ele. Desligar esconde o campo, mas não apaga o que já foi cadastrado.": "在“产品”和表格中显示该字段（如 128GB、1TB 或 500ml），AI 客服也会按它搜索。关闭后字段会隐藏，但不会删除已保存的内容。",
+  "Salvar catálogo": "保存目录",
+  "Falha ao salvar.": "保存失败。",
+  "A configuração mudou. Recarregue a página e tente novamente.": "配置已更改。请刷新页面后重试。",
+  "Um campo a mais no catálogo para 128GB, 1TB ou 500ml. O atendente de IA passa a achar o produto por ele, mesmo quando o nome não repete a capacidade.": "目录中多一个字段，用于 128GB、1TB 或 500ml。即使名称中没有容量，AI 客服也能据此找到产品。"
 }
