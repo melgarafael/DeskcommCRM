@@ -97,6 +97,55 @@ export async function emailsDosConvidadosDaEquipe(
   }
 }
 
+/**
+ * Os e-mails de quem está em `deskcomm_guests` e não fica no evento: saiu da
+ * lista, ou segue nela sem vínculo ativo com a organização.
+ *
+ * ⚠️ Não usa o filtro de membro ativo de `emailsDosConvidadosDaEquipe`: é para
+ * quem saiu da empresa que a remoção mais importa. Basta o vínculo ter existido
+ * nesta organização. Conta encerrada também vale, porque o convite pode ter ido
+ * para ela, e por isso vão TODOS os e-mails conhecidos da pessoa.
+ *
+ * ⚠️ Falha de leitura LANÇA, ao contrário da função acima. O PATCH reescreve
+ * `deskcomm_guests`, então seguir sem saber o e-mail apagaria o único registro de
+ * quem ainda tem de sair. A passada falha e o worker tenta de novo. Com vínculo
+ * lido, a pessoa existe (`on delete cascade`), logo erro do GoTrue é transitório.
+ */
+export async function emailsDeQuemSaiuDoEvento(
+  db: SupabaseClient,
+  org: string,
+  publicados: readonly string[],
+  listados: readonly string[],
+): Promise<string[]> {
+  const ids = normalizarConvidadosDaEquipe(publicados);
+  if (!ids.length || typeof db.from !== "function") return [];
+  const { data: vinculos, error } = await db
+    .from("user_organizations")
+    .select("user_id,revoked_at")
+    .eq("organization_id", org)
+    .in("user_id", ids);
+  if (error) throw new Error("Falha ao conferir quem saiu do evento.");
+  const ficam = new Set(normalizarConvidadosDaEquipe(listados));
+  const sairam = ((vinculos ?? []) as Array<{ user_id: string; revoked_at: string | null }>)
+    .filter((v) => v.revoked_at !== null || !ficam.has(String(v.user_id).toLowerCase()))
+    .map((v) => String(v.user_id).toLowerCase());
+  if (!sairam.length) return [];
+  const { data: contas, error: erroContas } = await db
+    .from("calendar_connections")
+    .select("account_email")
+    .eq("organization_id", org)
+    .in("user_id", sairam);
+  if (erroContas) throw new Error("Falha ao conferir quem saiu do evento.");
+  const emails = ((contas ?? []) as Array<{ account_email: string | null }>).map((c) => c.account_email);
+  const admin = resolveAdmin(db);
+  for (const id of admin ? sairam : []) {
+    const { data, error: erroUsuario } = await admin!.getUserById(id);
+    if (erroUsuario) throw new Error("Falha ao conferir quem saiu do evento.");
+    emails.push(data.user?.email ?? null);
+  }
+  return emails.filter((e): e is string => Boolean(e?.trim()));
+}
+
 /** O e-mail de login (GoTrue), que é o último recurso antes de desistir. */
 async function emailDeLogin(
   db: SupabaseClient,

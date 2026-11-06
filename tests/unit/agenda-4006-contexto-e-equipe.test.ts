@@ -22,7 +22,10 @@ import {
   descricaoDoEvento,
   montarBlocoDoNegocio,
 } from "@/lib/agenda/contexto-do-negocio";
-import { emailsDosConvidadosDaEquipe } from "@/lib/agenda/google/convidados-da-equipe";
+import {
+  emailsDeQuemSaiuDoEvento,
+  emailsDosConvidadosDaEquipe,
+} from "@/lib/agenda/google/convidados-da-equipe";
 import { blocoDoNegocioDoEvento } from "@/lib/agenda/google/contexto-do-negocio";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -254,6 +257,76 @@ describe("#4006 · o e-mail do convite, resolvido pelo banco", () => {
       { "u-sdr": { email: "sem-arroba" }, "u-closer": { email: null } },
     );
     await expect(emailsDosConvidadosDaEquipe(db, ORG, ["u-sdr", "u-closer"])).resolves.toEqual([]);
+  });
+});
+
+describe("#4006 · quem sai do evento", () => {
+  const membros = [
+    { user_id: "u-fica", organization_id: ORG, revoked_at: null },
+    { user_id: "u-tirado", organization_id: ORG, revoked_at: null },
+    { user_id: "u-saiu", organization_id: ORG, revoked_at: "2026-01-01T00:00:00Z" },
+    { user_id: "u-de-fora", organization_id: OUTRA_ORG, revoked_at: null },
+  ];
+  const usuarios = {
+    "u-fica": { email: "fica@login.test" },
+    "u-tirado": { email: "tirado@login.test" },
+    "u-saiu": { email: "saiu@login.test" },
+    "u-de-fora": { email: "fora@login.test" },
+  };
+
+  it("tirado da lista sai; quem está na lista e ativo fica", async () => {
+    const db = dbFalso({ user_organizations: membros, calendar_connections: [] }, usuarios);
+    await expect(
+      emailsDeQuemSaiuDoEvento(db, ORG, ["u-fica", "u-tirado"], ["u-fica"]),
+    ).resolves.toEqual(["tirado@login.test"]);
+  });
+
+  it("revogado sai mesmo seguindo na lista, com a conta Google que tiver, saudável ou não", async () => {
+    const db = dbFalso(
+      {
+        user_organizations: membros,
+        calendar_connections: [
+          {
+            user_id: "u-saiu",
+            organization_id: ORG,
+            account_email: "saiu.calendario@deskcomm.test",
+            status: "disconnected",
+          },
+        ],
+      },
+      usuarios,
+    );
+    await expect(emailsDeQuemSaiuDoEvento(db, ORG, ["u-saiu"], ["u-saiu"])).resolves.toEqual([
+      "saiu.calendario@deskcomm.test",
+      "saiu@login.test",
+    ]);
+  });
+
+  it("id que nunca foi desta organização não resolve e-mail nenhum", async () => {
+    const db = dbFalso({ user_organizations: membros, calendar_connections: [] }, usuarios);
+    await expect(emailsDeQuemSaiuDoEvento(db, ORG, ["u-de-fora"], [])).resolves.toEqual([]);
+  });
+
+  it("evento sem lista publicada não custa leitura", async () => {
+    const consultas: string[] = [];
+    const db = { from: (t: string) => consultas.push(t) } as never;
+    await expect(emailsDeQuemSaiuDoEvento(db, ORG, [""], ["u-fica"])).resolves.toEqual([]);
+    expect(consultas).toEqual([]);
+  });
+
+  it("falha ao ler o vínculo LANÇA: a lista publicada não pode avançar sem o e-mail", async () => {
+    const q = {
+      select: () => q,
+      eq: () => q,
+      in: async () => ({ data: null, error: { message: "fora do ar" } }),
+    };
+    const db = { from: () => q } as never;
+    await expect(emailsDeQuemSaiuDoEvento(db, ORG, ["u-tirado"], [])).rejects.toThrow();
+  });
+
+  it("falha do cadastro de usuários também LANÇA, em vez de esquecer quem saiu", async () => {
+    const db = dbFalso({ user_organizations: membros, calendar_connections: [] }, {});
+    await expect(emailsDeQuemSaiuDoEvento(db, ORG, ["u-tirado"], [])).rejects.toThrow();
   });
 });
 

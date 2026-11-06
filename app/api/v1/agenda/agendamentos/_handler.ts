@@ -450,6 +450,18 @@ async function executarCriacaoDeAgendamento(
         "Neste serviço a duração é definida na agenda do serviço e não pode ser trocada na marcação.",
       );
     }
+    // A reserva de serviço não grava `team_guest_user_ids` (`fn_calendar_service_book`
+    // lista as colunas uma a uma): sem esta recusa a equipe marcada sumiria com um
+    // 201, e um id de fora da organização nem chegaria a ser conferido (#4006).
+    if (input.team_guest_user_ids?.length) {
+      throw new ApiError(
+        422,
+        "agenda_equipe_no_servico",
+        undefined,
+        ctx.requestId,
+        "Neste serviço não dá para convidar a equipe na marcação.",
+      );
+    }
     // Refresh de servidor explícito. A mutação humana abaixo continua pela sessão e pelo escritor nativo.
     await atualizarFontesDoServico(ctx.actor.type === "user" ? createAdminClient() : supabase, ctx.organization_id, tipo.id, input.owner_user_id);
     const booking = tipo.location_kind === "google_meet" ? ctx.meetingBooking : undefined;

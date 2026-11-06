@@ -69185,7 +69185,7 @@ revoke all on function public.fn_google_projection_stamp() from public,anon,auth
 -- a equipe devolvia 200 e a lista ficava como estava. Ausente não mexe; `[]` limpa.
 -- `p_remote` continua recusando a chave: o Google nunca altera quem é convidado.
 -- Corpo idêntico ao da 9055 (a última definição), mais a linha de
--- `team_guest_user_ids`, logo abaixo de `guest_email`.
+-- `team_guest_user_ids`, logo abaixo de `guest_email`, e a recusa nomeada da lista.
 create or replace function public.fn_appointment_change_core(p_org uuid,p_id uuid,p_revision bigint,p_patch jsonb,p_remote boolean,p_base jsonb)
 returns jsonb language plpgsql security definer set search_path=public as $$
 declare a public.calendar_appointments; contact uuid; origin jsonb; event_id uuid; service_fact jsonb; service_occurrence uuid; service_owner uuid;
@@ -69200,6 +69200,16 @@ begin
  -- recusa vem NOMEADA, antes de qualquer trava, para o chamador receber um erro
  -- que aponta o campo em vez de uma violação de constraint em inglês.
  if p_patch?'title' and btrim(coalesce(p_patch->>'title',''))='' then raise exception 'appointment_title_empty' using errcode='22023'; end if;
+ -- A LISTA DA EQUIPE TEM A MESMA RÉGUA DA ROTA: teto de 20 e só membro ativo da
+ -- organização (array não aceita FK; o nulo cai no `not exists`). Recusa nomeada,
+ -- antes de qualquer trava, como o título.
+ if p_patch?'team_guest_user_ids' then
+  if jsonb_typeof(p_patch->'team_guest_user_ids')<>'array' then raise exception 'appointment_team_guests_invalid' using errcode='22023'; end if;
+  if jsonb_array_length(p_patch->'team_guest_user_ids')>20 or exists(
+    select 1 from jsonb_array_elements_text(p_patch->'team_guest_user_ids') g
+    where not exists(select 1 from public.user_organizations m where m.organization_id=p_org and m.user_id::text=lower(g) and m.revoked_at is null))
+  then raise exception 'appointment_team_guests_invalid' using errcode='22023'; end if;
+ end if;
  perform public.fn_calendar_service_lock(p_org);
  select contact_id into contact from public.calendar_appointments where organization_id=p_org and id=p_id;
  if not found then raise exception 'appointment_not_found' using errcode='P0002'; end if;

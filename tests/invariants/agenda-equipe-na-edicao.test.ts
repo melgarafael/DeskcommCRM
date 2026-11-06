@@ -27,6 +27,9 @@ const manager = randomUUID();
 const bruna = randomUUID();
 const caio = randomUUID();
 const duda = randomUUID();
+const revogada = randomUUID();
+const outraOrg = randomUUID();
+const deFora = randomUUID();
 
 async function comUsuario<T>(run: (db: pg.PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
@@ -80,13 +83,33 @@ beforeAll(async () => {
     "insert into organizations(id,slug,legal_name,display_name) values($1::uuid,$1::text,'Equipe na edição','Equipe na edição')",
     [org],
   );
-  await pool.query("insert into auth.users(id,email) values($1,$2)", [
-    manager,
-    `${manager}@invariant.test`,
-  ]);
+  await pool.query(
+    "insert into organizations(id,slug,legal_name,display_name) values($1::uuid,$1::text,'Outra','Outra')",
+    [outraOrg],
+  );
+  for (const usuario of [manager, bruna, caio, duda, revogada, deFora]) {
+    await pool.query("insert into auth.users(id,email) values($1,$2)", [
+      usuario,
+      `${usuario}@invariant.test`,
+    ]);
+  }
   await pool.query(
     "insert into user_organizations(organization_id,user_id,role,accepted_at) values($1,$2,'manager',now())",
     [org, manager],
+  );
+  for (const membro of [bruna, caio, duda]) {
+    await pool.query(
+      "insert into user_organizations(organization_id,user_id,role,accepted_at) values($1,$2,'agent',now())",
+      [org, membro],
+    );
+  }
+  await pool.query(
+    "insert into user_organizations(organization_id,user_id,role,accepted_at,revoked_at) values($1,$2,'agent',now(),now())",
+    [org, revogada],
+  );
+  await pool.query(
+    "insert into user_organizations(organization_id,user_id,role,accepted_at) values($1,$2,'agent',now())",
+    [outraOrg, deFora],
   );
 });
 afterAll(() => pool.end());
@@ -145,6 +168,27 @@ describe("a equipe do compromisso é editável pela RPC de transição (#4006)",
 
     await expect(altera(id, 99, { team_guest_user_ids: [duda] })).rejects.toMatchObject({
       code: "PT409",
+    });
+
+    expect((await linha(id)).team_guest_user_ids).toEqual([bruna, caio]);
+  });
+
+  it.each([
+    ["uma lista", () => bruna],
+    ["um objeto", () => ({ id: bruna })],
+    ["nulo no lugar da lista", () => null],
+    ["um nulo na lista", () => [bruna, null]],
+    ["um id que não é uuid", () => ["bruna"]],
+    ["mais de 20 ids", () => Array.from({ length: 21 }, () => bruna)],
+    ["quem saiu da organização", () => [bruna, revogada]],
+    ["quem é de outra organização", () => [bruna, deFora]],
+    ["quem nunca foi da organização", () => [randomUUID()]],
+  ])("a lista recusa %s com erro nomeado, e nada muda", async (_nome, valor) => {
+    const id = await compromisso();
+
+    await expect(altera(id, 1, { team_guest_user_ids: valor() })).rejects.toMatchObject({
+      code: "22023",
+      message: expect.stringContaining("appointment_team_guests_invalid"),
     });
 
     expect((await linha(id)).team_guest_user_ids).toEqual([bruna, caio]);

@@ -8,7 +8,7 @@ import {
   PREFIXO_PROPRIEDADE,
   type EventoDoGoogle,
 } from "./evento";
-import { emailsDosConvidadosDaEquipe } from "./convidados-da-equipe";
+import { emailsDeQuemSaiuDoEvento, emailsDosConvidadosDaEquipe } from "./convidados-da-equipe";
 import { blocoDoNegocioDoEvento } from "./contexto-do-negocio";
 import {
   compare,
@@ -235,28 +235,6 @@ export async function reconcileAppointment(
       convidados_equipe_ids: a.team_guest_user_ids,
       contexto_do_negocio: blocoDoNegocio,
     });
-    /** Os e-mails que NÓS gerenciamos no evento — a lista que o `attendees` filtra. */
-    const convidadosGerenciados = () => [
-      a.guest_email,
-      ...convidadosDaEquipe.map((g) => g.email),
-    ];
-    /**
-     * Quem ERA convidado da equipe e saiu da lista (#4006).
-     *
-     * O evento guarda os ids publicados em `deskcomm_guests`; os e-mails deles
-     * são o que permite DESconvidar. Custa uma leitura só quando há ids que não
-     * estão mais na lista, e nunca no caminho de criação.
-     */
-    const convidadosAnteriores = async (evento: EventoDoGoogle | null | undefined) => {
-      const publicados = (evento?.extendedProperties?.private?.[`${PREFIXO_PROPRIEDADE}_guests`] ?? "")
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean);
-      const atuais = new Set(a.team_guest_user_ids);
-      const removidos = publicados.filter((id) => !atuais.has(id));
-      if (!removidos.length) return [];
-      return (await emailsDosConvidadosDaEquipe(db, org, removidos)).map((g) => g.email);
-    };
     if (!a.google_connection_id || !a.google_calendar_id || !a.google_event_id)
       throw new Error("Publicação antiga sem identidade completa. Revise a conexão.");
     const api = googleTransport(
@@ -359,6 +337,27 @@ export async function reconcileAppointment(
     // Listagem é sinal de mudança, não versão para um PATCH: GET exato revalida.
     const event = await api.get(a.google_calendar_id, a.google_event_id);
     const linked = event?.extendedProperties?.private;
+    /**
+     * Quem ERA convidado da equipe e não fica (#4006). O evento guarda os ids
+     * publicados em `deskcomm_guests`; os e-mails deles é que permitem DESconvidar.
+     */
+    const quemSaiu = await emailsDeQuemSaiuDoEvento(
+      db,
+      org,
+      (linked?.[`${PREFIXO_PROPRIEDADE}_guests`] ?? "").split(","),
+      a.team_guest_user_ids,
+    );
+    /**
+     * Os e-mails que NÓS gerenciamos no evento, a lista que o `attendees` filtra.
+     * Quem saiu entra aqui: sem ele a leitura do Google não enxergaria a saída, e
+     * uma lista de 2 ou mais pessoas nunca mandaria o PATCH que o tira (só saída
+     * convergia em silêncio; saída com entrada virava conflito).
+     */
+    const convidadosGerenciados = () => [
+      a.guest_email,
+      ...convidadosDaEquipe.map((g) => g.email),
+      ...quemSaiu,
+    ];
     const association =
       linked?.[`${PREFIXO_PROPRIEDADE}_org`] === org &&
       linked?.[`${PREFIXO_PROPRIEDADE}_appointment`] === id;
@@ -663,7 +662,7 @@ export async function reconcileAppointment(
             base,
             decision.groups,
             decision.shared,
-            { convidadosAnteriores: await convidadosAnteriores(event) },
+            { convidadosAnteriores: quemSaiu },
           ),
       event.etag ?? null,
       decision.groups,
@@ -760,7 +759,7 @@ export async function reconcileAppointment(
             base,
             campos,
             shared,
-            { convidadosAnteriores: await convidadosAnteriores(event) },
+            { convidadosAnteriores: quemSaiu },
           );
         }
       }

@@ -981,8 +981,11 @@ export function AgendaClient({
               desconvidaria todo mundo a cada remarcação — o oposto do que o
               campo ausente significa. Editar a equipe de um compromisso que já
               existe é assunto de outro incremento.
+
+              Nem num SERVIÇO: a reserva não grava a equipe e a rota recusa
+              `agenda_equipe_no_servico`.
             */}
-            {!remarcandoId ? (
+            {!remarcandoId && !tipo?.servico ? (
               <fieldset>
                 <legend className="block">
                   {t("Equipe no compromisso")}{" "}
@@ -1172,10 +1175,13 @@ export function AgendaClient({
                       guest_email: convidado,
                       // `undefined` (e não `[]`) quando ninguém foi marcado: é o
                       // que mantém o caminho de sempre idêntico, sem depender de
-                      // a coluna ter default no banco.
-                      team_guest_user_ids: convidadosDaEquipe.length
-                        ? convidadosDaEquipe
-                        : undefined,
+                      // a coluna ter default no banco. Num serviço também não
+                      // vai: quem marcou e depois trocou para um serviço não vê
+                      // mais os botões, e a rota recusaria a lista.
+                      team_guest_user_ids:
+                        convidadosDaEquipe.length && !tipo.servico
+                          ? convidadosDaEquipe
+                          : undefined,
                       location_details: endereco.trim(),
                       description: observacao.trim() || undefined,
                       // TÍTULO LIVRE (#3766): digitado, é ele o `title` da
