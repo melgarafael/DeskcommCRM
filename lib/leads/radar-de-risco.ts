@@ -507,13 +507,30 @@ export async function carregaRadarDeRisco(
   // Com `contactId` (turno do agente), o negócio da proposta também tem de ser
   // do contato: a proposta guarda o contato de quando foi feita, e o negócio
   // pode ter mudado de dono depois. Mesmo cruzamento de `leadsValidos` acima.
-  const rascunhosEsperando = (todasAsPropostas ?? []).filter(
-    (p) =>
-      p.status === "rascunho" &&
-      p.lead_id != null &&
-      comAvisoAberto.has(p.id as string) &&
-      (!opts.contactId || leadsValidos.has(p.lead_id as string)),
+  const candidatosARevisao = (todasAsPropostas ?? []).filter(
+    (p) => p.status === "rascunho" && p.lead_id != null && comAvisoAberto.has(p.id as string),
   );
+  // `rows` é cortado em SCAN_CAP pelos negócios mais PARADOS: o negócio recém-
+  // ativo de uma org com mais de 500 abertos não está nele. Fora de `rows` não
+  // quer dizer encerrado — confirma no banco, com o mesmo corte de `rows`.
+  const negociosAbertosDaRevisao = new Set(leadsValidos);
+  const leadsAConfirmar = [
+    ...new Set(candidatosARevisao.map((p) => p.lead_id as string).filter((id) => !leadsValidos.has(id))),
+  ];
+  if (leadsAConfirmar.length > 0) {
+    let consulta = admin
+      .from("crm_leads")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .eq("status", "open")
+      .in("id", leadsAConfirmar);
+    if (funisArquivados.length > 0) consulta = consulta.not("pipeline_id", "in", `(${funisArquivados.join(",")})`);
+    if (opts.contactId) consulta = consulta.eq("contact_id", opts.contactId);
+    const { data: abertos, error: abertosErr } = await consulta;
+    if (abertosErr) throw new Error(`radar_revisao_leads_failed: ${abertosErr.message}`);
+    for (const l of abertos ?? []) negociosAbertosDaRevisao.add(l.id as string);
+  }
+  const rascunhosEsperando = candidatosARevisao.filter((p) => negociosAbertosDaRevisao.has(p.lead_id as string));
   const nomePorContato = new Map<string, string | null>(nameByContact);
   const contatosFaltando = [
     ...new Set(

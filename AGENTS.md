@@ -232,7 +232,8 @@ if (!authz.ok) return authz.response;
 ```
 
 **Erros** — `fail(code, message, status)` com código de `lib/api/errors.ts`. Nunca `throw` cru na
-borda. Cada response leva `X-Request-Id`, correlacionado com o audit log.
+borda. Toda resposta de `ok()`/`fail()` leva o `X-Request-Id`, e é o mesmo do registro e da auditoria;
+as rotas que montam resposta à mão estão sendo migradas (issue #4107).
 
 **Nomes e dados** — arquivos e símbolos em PT-BR são a norma (mantenha o idioma do arquivo que
 editar). JSON da API em **snake_case**; dinheiro em `_cents` + `currency`; datas ISO-8601 UTC;
