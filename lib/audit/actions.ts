@@ -1476,6 +1476,11 @@ export const AUDIT_ACTIONS = [
   // 9096), na organização NOVA, com o id do molde e as contagens no metadata;
   // quem lê é Painel › Empresas › [empresa] ("IA copiada do molde").
   "ai.molde_de_ia_aplicado",
+  // Um módulo conectado conversou com o modelo de IA da organização (Spec 33): gasta o orçamento
+  // dela. UMA linha por turno que chegou ao modelo, e só com efeito (recusa de autorização e teto
+  // de gasto atingido não auditam). metadata só com contagens e a pessoa que clicava: nunca o texto
+  // da conversa. O ator é o token do módulo.
+  "ai.assistente_conversa",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */
