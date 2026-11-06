@@ -25,9 +25,13 @@ import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabular
 import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
 import { AbrirConversaAposSalvar } from "@/components/channels/AbrirConversaAposSalvar";
 import type { AlvoDeConversa } from "@/components/channels/SeletorDeCanalParaConversa";
+import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
+import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
+import { CustomFieldsEditor } from "@/components/contacts/CustomFieldsEditor";
 import { EtiquetasDoContato } from "@/components/contacts/EtiquetasDoContato";
 
 interface FormShape {
+  custom_fields?: Record<string, unknown>;
   name?: string;
   email?: string;
   phone_number?: string;
@@ -71,6 +75,9 @@ export function NewContactDialog({
   const org = useActiveOrg();
   const perfil = perfilDoPais(org?.country);
   const create = useCreateContact();
+  // Mesma definição da ficha: campos do contato no funil padrão, sem defaults de nicho.
+  const pipeline = useDefaultPipeline(open && Boolean(org));
+  const campos = camposPorEscopo(camposDoFunil(pipeline.data?.pipeline?.settings), "contato");
   /**
    * A CONVERSA A ABRIR DEPOIS DE SALVAR (#3483) — `null` = nada pendente.
    *
@@ -83,6 +90,14 @@ export function NewContactDialog({
   // O MESMO vocabulário de sugestões da ficha (#2732): a chave do react-query é
   // a mesma, então quem já leu na lista de contatos não paga outra requisição.
   const vocabulario = useContactTagVocabulary(org?.orgId ?? null);
+  // O texto digitado no campo de etiquetas e a MESMA pergunta que o Inbox faz
+  // com ele (issue #3144): a leitura com `?busca=` alcança o vocabulário curado
+  // inteiro, que a lista "em uso" (teto de 200, só contatos) não vê.
+  const [buscaDeEtiqueta, setBuscaDeEtiqueta] = useState("");
+  const buscaNoVocabulario = useContactTagVocabulary(
+    org?.orgId ?? null,
+    buscaDeEtiqueta.trim(),
+  );
   const { definirCor } = useDefinirCorDaEtiqueta();
   // A cor da etiqueta é VOCABULÁRIO e a rota exige manager + MFA: para os outros
   // papéis a paleta nem chega ao campo, como na ficha e no editor do Inbox.
@@ -115,10 +130,18 @@ export function NewContactDialog({
       phone_number: "",
       cpf: "",
       tags: [],
+      custom_fields: {},
     },
   });
 
+  const customFields = useWatch({ control: form.control, name: "custom_fields" }) ?? {};
   const cpfError = form.formState.errors.cpf;
+  // ENQUANTO O DOCUMENTO ESTIVER INVÁLIDO, O ENVIO FICA IMPEDIDO (#3496).
+  // Avisar no campo e deixar o clique seguir faria o aviso virar decoração: o
+  // botão é a segunda testemunha do mesmo erro, e não a primeira. Quem digitou
+  // errado e nunca saiu do campo ainda é barrado pelo `handleSubmit`, que
+  // valida tudo de novo — o botão desabilitado é conveniência, não a defesa.
+  const documentoInvalido = Boolean(cpfError);
   const tags = useWatch({ control: form.control, name: "tags" }) ?? [];
 
   async function onSubmit(values: FormShape) {
@@ -173,6 +196,7 @@ export function NewContactDialog({
     if (values.phone_number?.trim()) payload.phone_number = values.phone_number.trim();
     if (values.cpf?.trim()) payload.cpf = values.cpf.trim();
     if (tags.length) payload.tags = tags;
+    if (Object.keys(values.custom_fields ?? {}).length) payload.custom_fields = values.custom_fields;
 
     // A MESMA régua do servidor: a tela que mostra 'Bilhete' não pode
     // recusá-lo como CPF antes de chegar lá.
@@ -297,8 +321,22 @@ export function NewContactDialog({
               onDefinirCor={
                 podeDefinirCor ? (tag, cor) => void definirCor(tag, cor) : undefined
               }
+              encontradas={buscaNoVocabulario.data}
+              onDigitar={setBuscaDeEtiqueta}
+              erroNoVocabulario={vocabulario.isError || buscaNoVocabulario.isError}
             />
           </div>
+          {campos.length > 0 && (
+            <div className="space-y-3 rounded-md border border-border p-3">
+              <h3 className="text-sm font-medium">{t("Campos personalizados")}</h3>
+              <CustomFieldsEditor
+                fields={campos}
+                mode="contact"
+                value={customFields}
+                onChange={(next) => form.setValue("custom_fields", next, { shouldDirty: true })}
+              />
+            </div>
+          )}
           {serverError && (
             <p className="text-sm text-error-fg">{serverError}</p>
           )}
@@ -320,13 +358,13 @@ export function NewContactDialog({
               <Button
                 type="button"
                 variant="secondary"
-                disabled={create.isPending}
+                disabled={create.isPending || documentoInvalido}
                 onClick={form.handleSubmit((values) => void salvar(values, true))}
               >
                 {t("Salvar e iniciar conversa")}
               </Button>
             )}
-            <Button type="submit" disabled={create.isPending}>
+            <Button type="submit" disabled={create.isPending || documentoInvalido}>
               {create.isPending ? t("Criando…") : t("Criar contato")}
             </Button>
           </DialogFooter>

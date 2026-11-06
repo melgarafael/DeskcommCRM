@@ -35,6 +35,7 @@ import {
   crmAssignConversation,
   crmManageTags,
   crmGetQueueStatus,
+  crmSetConversationSector,
 } from "./governance";
 import {
   crmListAvailableAttendants,
@@ -171,6 +172,8 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmCreateConversationDraft,
   crmAssignConversation,
   crmManageTags,
+  // #3881 — a triagem da IA escolhe a FILA da conversa (módulo `setores`).
+  crmSetConversationSector,
   // write — organizar a operação (W4)
   crmCreateStage,
   crmUpdateStage,

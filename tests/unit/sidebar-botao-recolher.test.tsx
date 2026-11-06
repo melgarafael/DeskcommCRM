@@ -45,6 +45,9 @@ vi.mock("@/components/shell/ContadorDeCasos", () => ({
 vi.mock("@/components/shell/ContadorDaFila", () => ({
   ContadorDaFila: () => null,
 }));
+vi.mock("@/components/shell/ContadorDeTarefas", () => ({
+  ContadorDeTarefas: () => null,
+}));
 vi.mock("@/app/actions/shell/toggleSidebar", () => ({
   toggleSidebar: vi.fn(),
 }));

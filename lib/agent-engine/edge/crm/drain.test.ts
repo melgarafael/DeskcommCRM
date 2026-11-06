@@ -2,8 +2,15 @@ import { expect, it, vi } from 'vitest';
 import type pg from 'pg';
 
 import { TIPOS_DERIVAVEIS } from '@/lib/messaging/media/derivable';
+import { ANCORA_ISO_8601, LOTE_DE_REABERTURA } from '@/lib/messaging/media/leitura-adiada';
 
 import { drainTick } from './drain';
+
+// O acordar é observado por dublê: o que este arquivo prova é QUE o drain do
+// turno acorda o laço do event_log no ponto certo, não a mecânica do sinal (ela
+// tem teste próprio, com relógio falso, em `tests/unit/sinal-de-trabalho-do-laco`).
+const { acordarLacoDeEventLog } = vi.hoisted(() => ({ acordarLacoDeEventLog: vi.fn() }));
+vi.mock('@/lib/event-log/sinal-de-trabalho', () => ({ acordarLacoDeEventLog }));
 
 const knobs = { batchSize: 10, intervalMs: 0, idleIntervalMs: 0, debounceMs: 0, reapTimeoutMs: 60000 };
 const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never;
@@ -68,13 +75,30 @@ function poolFalso(
   msgRow: { type: string; media_derived_status: string | null; quando?: string },
   calls: string[],
   capacidade: { tem_agente: boolean; tem_roteador: boolean } = { tem_agente: true, tem_roteador: false },
+  reabertura: { rows: unknown[] } | Error = { rows: [] },
+  params: unknown[][] = [],
+  /** A versão publicada do dono da conversa (`active_ai_agent_id`); ausente = sem dono. */
+  agente?: Record<string, unknown>,
+  /** `haLeitorDaDescricao`: a empresa tem quem veja a foto (outro agente, token...). */
+  temLeitor = true,
 ) {
-  const query = vi.fn().mockImplementation((sql: string) => {
+  const query = vi.fn().mockImplementation((sql: string, p?: unknown[]) => {
     calls.push(sql);
+    params.push(p ?? []);
+    if (sql.includes('as tem_leitor')) return { rows: [{ settings: {}, tem_leitor: temLeitor }] };
+    if (agente && sql.includes('select active_ai_agent_id')) return { rows: [{ active_ai_agent_id: 'ag1', contact_id: null }] };
+    if (agente && sql.includes('a.published_version_id') && sql.includes('a.id = $2')) return { rows: [agente] };
     if (sql.includes('returning e.id')) return { rows: [eventoDeAudio(Number(process.env.__ESPERA__ ?? 0))] };
     if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null, status: 'active' }] };
     if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
     if (sql.includes('tem_agente')) return { rows: [capacidade] };
+    // A reabertura da foto adiada também cita `media_derived_status` (ela o
+    // zera): o ramo dela vem ANTES, senão a consulta de espera e a reabertura
+    // seriam respondidas pela mesma linha falsa.
+    if (sql.includes('derivacao_adiada')) {
+      if (reabertura instanceof Error) throw reabertura;
+      return reabertura;
+    }
     // A consulta real filtra por TIPOS_DERIVAVEIS — linha de texto não entra. O
     // falso banco precisa recusá-la também, senão devolveria um texto para uma
     // pergunta que o Postgres nunca responderia, e o teste passaria por engano.
@@ -82,7 +106,9 @@ function poolFalso(
     // A idade da mídia acompanha a do evento nos testes: o caso medido é o do
     // LOTE (foto + texto chegando juntos), onde as duas têm a mesma idade.
     if (sql.includes('media_derived_status')) {
-      if (!TIPOS_DERIVAVEIS.has(msgRow.type)) return { rows: [] };
+      // Os tipos esperados vêm do PARÂMETRO, como no Postgres.
+      const tipos = (p?.[2] as string[] | undefined) ?? [...TIPOS_DERIVAVEIS];
+      if (!tipos.includes(msgRow.type)) return { rows: [] };
       const quando =
         msgRow.quando ?? new Date(Date.now() - Number(process.env.__ESPERA__ ?? 0)).toISOString();
       return { rows: [{ ...msgRow, quando }] };
@@ -96,10 +122,34 @@ it('áudio ainda sem transcrição: turno é ADIADO, sem enfileirar job', async 
   const calls: string[] = [];
   process.env.__ESPERA__ = '1000'; // chegou há 1s — dentro do teto
   await drainTick(poolFalso({ type: 'audio', media_derived_status: null }, calls), knobs, log);
-  expect(calls.some((s) => s.includes('media_derived_status'))).toBe(true);
+  expect(calls.some((s) => /as\s+quando/.test(s))).toBe(true);
   expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
   expect(calls.some((s) => s.includes("status = 'pending'") && s.includes('next_attempt_at'))).toBe(true);
   expect(calls.some((s) => s.includes("status = 'done'"))).toBe(false);
+});
+
+it('áudio ainda sem transcrição ACORDA o laço do event_log — o teste é o primeiro que o recuo de 60s punia', async () => {
+  // Sem este acordar, o laço que roda persist→derive dorme até 60s e o turno
+  // paga o teto do recuo inteiro antes da primeira resposta; 60+86s de um áudio
+  // lento estoura o teto de 120s e o cliente ouve "não consegui ouvir".
+  acordarLacoDeEventLog.mockClear();
+  process.env.__ESPERA__ = '1000';
+  await drainTick(poolFalso({ type: 'audio', media_derived_status: null }, []), knobs, log);
+  expect(acordarLacoDeEventLog).toHaveBeenCalledOnce();
+});
+
+it('áudio JÁ transcrito NÃO acorda o laço — não há derivação pendente', async () => {
+  acordarLacoDeEventLog.mockClear();
+  process.env.__ESPERA__ = '1000';
+  await drainTick(poolFalso({ type: 'audio', media_derived_status: 'ready' }, []), knobs, log);
+  expect(acordarLacoDeEventLog).not.toHaveBeenCalled();
+});
+
+it('derivação travada além do teto NÃO acorda o laço — o turno já seguiu sem o texto', async () => {
+  acordarLacoDeEventLog.mockClear();
+  process.env.__ESPERA__ = '150000';
+  await drainTick(poolFalso({ type: 'audio', media_derived_status: null }, []), knobs, log);
+  expect(acordarLacoDeEventLog).not.toHaveBeenCalled();
 });
 
 it('áudio JÁ transcrito: turno segue normalmente', async () => {
@@ -135,9 +185,7 @@ it('foto + pergunta em texto: a espera da mídia olha a CONVERSA, não o id do e
   // A mídia pendente é a FOTO; o evento veio do TEXTO que chegou depois dela.
   await drainTick(poolFalso({ type: 'image', media_derived_status: null }, calls), knobs, log);
 
-  const consultaDeMidia = calls.find(
-    (s) => s.includes('media_derived_status') && s.includes('conversation_id'),
-  );
+  const consultaDeMidia = calls.find((s) => /as\s+quando/.test(s) && s.includes('conversation_id'));
   expect(consultaDeMidia, 'a espera precisa consultar a conversa').toBeDefined();
   // O recorte por id de mensagem era o defeito: ele ignora a foto que chegou
   // antes do texto que disparou o evento.
@@ -158,12 +206,253 @@ it('foto + pergunta em texto: a espera da mídia olha a CONVERSA, não o id do e
  */
 it('espera da mídia: âncora é created_at (não sent_at) e só conta mídia com media_url', async () => {
   const calls: string[] = [];
+  const params: unknown[][] = [];
   process.env.__ESPERA__ = '1000';
-  await drainTick(poolFalso({ type: 'image', media_derived_status: null }, calls), knobs, log);
-  const consultaDeMidia = calls.find((s) => s.includes('media_derived_status')) ?? '';
-  expect(consultaDeMidia).toMatch(/created_at\s+as\s+quando/);
+  await drainTick(
+    poolFalso({ type: 'image', media_derived_status: null }, calls, undefined, undefined, params),
+    knobs, log,
+  );
+  const iEspera = calls.findIndex((s) => /as\s+quando/.test(s));
+  const consultaDeMidia = calls[iEspera] ?? '';
+  // A âncora é o PEDIDO da leitura quando ela foi reaberta (foto adiada por
+  // falta de leitor), senão a chegada. Sem isto, uma foto antiga reaberta agora
+  // já nasceria além do teto e o turno não esperaria a descrição que acabou de
+  // pedir. E a ordem segue a âncora: uma reaberta antiga fora das 20 primeiras
+  // por `created_at` nunca seria esperada.
+  //
+  // A âncora mora em `metadata`, e o cast dela só roda DEPOIS de o texto casar o
+  // ISO-8601 de calendário real: lixo ali derrubava a consulta inteira e calava a
+  // IA da empresa. Data futura cai na chegada — `least(…, now())` seria "pedida
+  // agora" a cada rodada, e o turno esperaria para sempre.
+  expect(consultaDeMidia).toMatch(
+    /case\s+when\s+coalesce\(metadata->>'derivacao_pedida_em',\s*''\)\s+!~\s+\$4\s+then\s+created_at/,
+  );
+  expect(consultaDeMidia).toMatch(
+    /when\s+\(metadata->>'derivacao_pedida_em'\)::timestamptz\s+>\s+now\(\)\s+then\s+created_at/,
+  );
+  expect(consultaDeMidia).toMatch(/end\s+as\s+quando/);
+  expect(params[iEspera]?.[3]).toBe(ANCORA_ISO_8601);
+  expect(consultaDeMidia).toMatch(/order by quando desc/);
   expect(consultaDeMidia).not.toMatch(/sent_at/);
   expect(consultaDeMidia).toMatch(/media_url\s+is\s+not\s+null/);
+});
+
+/**
+ * O padrão da âncora aceita o que `jsonb_build_object('…', now())` grava e
+ * recusa tudo o que o Postgres não converteria — o mesmo texto roda no banco
+ * (`tests/invariants/leitura-adiada.test.ts` prova o cast lá). Data que não
+ * existe no calendário casaria um padrão só de forma e derrubaria o cast.
+ */
+it.each([
+  ['2026-10-31T18:01:00.123456+00:00', true],
+  ['2026-10-31T18:01:00+00:00', true],
+  ['2026-10-31T15:01:00.5-03:00', true],
+  ['2026-10-31T23:31:00.1+05:30', true],
+  ['2026-10-31T18:01:00Z', true],
+  ['2028-02-29T10:00:00+00:00', true],
+  ['2000-02-29T10:00:00+00:00', true],
+  ['2026-02-29T10:00:00+00:00', false],
+  ['2026-02-30T10:00:00+00:00', false],
+  ['2026-04-31T10:00:00+00:00', false],
+  ['2026-13-01T10:00:00+00:00', false],
+  ['2026-10-31T24:00:00+00:00', false],
+  ['2026-10-31T18:01:00', false],
+  ['2026-10-31', false],
+  ['infinity', false],
+  ['now', false],
+  ['lixo', false],
+  ['', false],
+  ["2026-10-31T18:01:00+00:00'; drop table messages; --", false],
+])('âncora %j casa o padrão? %s', (texto, casa) => {
+  expect(new RegExp(ANCORA_ISO_8601).test(texto)).toBe(casa);
+});
+
+/**
+ * FOTO ADIADA POR FALTA DE LEITOR (MEDIA_VISION_WITHOUT_READER=defer): o turno
+ * que VAI ler a conversa pede a descrição e espera por ela. O ponto certo é
+ * depois do portão de quem atende e da elegibilidade — é ali que se sabe que um
+ * agente vai ler — e antes da espera, que segura o primeiro turno.
+ */
+it('foto adiada: o turno que vai ler pede a leitura da conversa e ADIA', async () => {
+  const calls: string[] = [];
+  const params: unknown[][] = [];
+  process.env.__ESPERA__ = '0';
+  await drainTick(
+    poolFalso(
+      // A espera vê a foto reaberta, com status nulo e a âncora no pedido.
+      { type: 'image', media_derived_status: null, quando: new Date().toISOString() },
+      calls,
+      { tem_agente: true, tem_roteador: false },
+      { rows: [{ emit_event: 'ev-novo' }] },
+      params,
+    ),
+    knobs,
+    log,
+  );
+  const iPortao = calls.findIndex((s) => s.includes('tem_agente'));
+  const iReabre = calls.findIndex((s) => s.includes('derivacao_adiada'));
+  expect(iReabre, 'a reabertura não rodou').toBeGreaterThan(-1);
+  expect(iReabre, 'a reabertura tem de vir DEPOIS do portão de quem atende').toBeGreaterThan(iPortao);
+  // Sem dono resolvido, o lote de sempre e sem limite de idade (o dreno lê agora).
+  expect(params[iReabre]).toEqual([event.organization_id, event.payload.conversation_id, LOTE_DE_REABERTURA, null]);
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
+  expect(calls.some((s) => s.includes("status = 'pending'") && s.includes('next_attempt_at'))).toBe(true);
+});
+
+/**
+ * O AGENTE QUE DESLIGOU "VER AS FOTOS" (9108) recebe o aviso de imagem não vista
+ * no lugar da descrição. Mas quem responde o turno é escolhido DEPOIS do dreno
+ * (`resolveTurnAgent`: roteador, campanha) e pode ser outro agente, que vê. Então
+ * o "não" do agente da conversa não basta: a régua é a da empresa
+ * (`haLeitorDaDescricao`), e a espera da foto não depende do agente.
+ */
+const versaoDoDono = (extra: Record<string, unknown>) => ({
+  agent_id: 'ag1', version_id: 'v1', agent_name: 'Recepção', system_prompt: 'x', provider: 'anthropic',
+  model: 'claude-sonnet-4-6', max_steps: 10, history_message_window: 20, history_token_window: 8000,
+  inbound_debounce_ms: null, multimodal_input: true, image_vision_enabled: true, ...extra,
+});
+
+it('agente que não vê imagens, numa empresa sem quem veja: não reabre, e a foto adiada não segura o turno', async () => {
+  const calls: string[] = [];
+  process.env.__ESPERA__ = '0';
+  await drainTick(
+    poolFalso(
+      { type: 'image', media_derived_status: 'skipped', quando: new Date().toISOString() },
+      calls,
+      { tem_agente: true, tem_roteador: false },
+      { rows: [{ emit_event: 'ev-novo' }] },
+      [],
+      versaoDoDono({ image_vision_enabled: false }),
+      false,
+    ),
+    knobs,
+    log,
+  );
+  expect(calls.some((s) => s.includes('as tem_leitor')), 'o não do agente tem de consultar a empresa').toBe(true);
+  expect(calls.some((s) => s.includes('derivacao_adiada')), 'pediu visão sem ninguém que a leia').toBe(false);
+  expect(calls.some((s) => s.includes('job_queue')), 'o turno ficou segurado pela foto adiada').toBe(true);
+});
+
+it('agente da conversa sem visão, mas a empresa tem quem veja (o roteador pode entregar a outro): reabre o lote de sempre e espera', async () => {
+  const calls: string[] = [];
+  const params: unknown[][] = [];
+  process.env.__ESPERA__ = '0';
+  await drainTick(
+    poolFalso(
+      { type: 'image', media_derived_status: null, quando: new Date().toISOString() },
+      calls,
+      { tem_agente: true, tem_roteador: true },
+      { rows: [{ emit_event: 'ev-novo' }] },
+      params,
+      versaoDoDono({ image_vision_enabled: false, history_message_window: 37 }),
+      true,
+    ),
+    knobs,
+    log,
+  );
+  const iReabre = calls.findIndex((s) => s.includes('derivacao_adiada'));
+  expect(iReabre, 'o agente que vê, escolhido depois, ficaria sem a descrição').toBeGreaterThan(-1);
+  expect(params[iReabre]).toEqual([event.organization_id, event.payload.conversation_id, LOTE_DE_REABERTURA, null]);
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
+});
+
+it('foto JÁ sendo descrita segura o turno mesmo com o agente da conversa sem visão (o comprovante + "já paguei")', async () => {
+  const calls: string[] = [];
+  const params: unknown[][] = [];
+  process.env.__ESPERA__ = '0';
+  await drainTick(
+    poolFalso(
+      { type: 'image', media_derived_status: 'pending', quando: new Date().toISOString() },
+      calls,
+      { tem_agente: true, tem_roteador: true },
+      { rows: [] },
+      params,
+      versaoDoDono({ image_vision_enabled: false }),
+    ),
+    knobs,
+    log,
+  );
+  const iEspera = calls.findIndex((s) => /as\s+quando/.test(s));
+  expect(iEspera).toBeGreaterThan(-1);
+  expect(params[iEspera]?.[2], 'a espera tirou a foto da lista').toEqual([...TIPOS_DERIVAVEIS]);
+  expect(calls.some((s) => s.includes('job_queue')), 'o turno saiu sem a descrição que estava chegando').toBe(false);
+});
+
+it('sem agente resolvido (número só com roteador) e sem quem veja na empresa: não reabre', async () => {
+  const calls: string[] = [];
+  process.env.__ESPERA__ = '0';
+  await drainTick(
+    poolFalso(
+      { type: 'image', media_derived_status: 'skipped', quando: new Date().toISOString() },
+      calls,
+      { tem_agente: false, tem_roteador: true },
+      { rows: [{ emit_event: 'ev-novo' }] },
+      [],
+      undefined,
+      false,
+    ),
+    knobs,
+    log,
+  );
+  expect(calls.some((s) => s.includes('as tem_leitor'))).toBe(true);
+  expect(calls.some((s) => s.includes('derivacao_adiada')), 'pagou visão sem ninguém que a leia').toBe(false);
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(true);
+});
+
+it('controle: o mesmo agente com a opção ligada reabre até a janela de histórico DELE e espera', async () => {
+  const calls: string[] = [];
+  const params: unknown[][] = [];
+  process.env.__ESPERA__ = '0';
+  await drainTick(
+    poolFalso(
+      { type: 'image', media_derived_status: null, quando: new Date().toISOString() },
+      calls,
+      { tem_agente: true, tem_roteador: false },
+      { rows: [{ emit_event: 'ev-novo' }] },
+      params,
+      versaoDoDono({ image_vision_enabled: true, history_message_window: 37 }),
+    ),
+    knobs,
+    log,
+  );
+  const iReabre = calls.findIndex((s) => s.includes('derivacao_adiada'));
+  expect(iReabre).toBeGreaterThan(-1);
+  expect(params[iReabre]).toEqual([event.organization_id, event.payload.conversation_id, 37, null]);
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
+});
+
+it('agente que não vê imagens ainda espera o ÁUDIO', async () => {
+  const calls: string[] = [];
+  process.env.__ESPERA__ = '1000';
+  await drainTick(
+    poolFalso({ type: 'audio', media_derived_status: null }, calls, undefined, undefined, [],
+      versaoDoDono({ image_vision_enabled: false })),
+    knobs,
+    log,
+  );
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
+  expect(calls.some((s) => s.includes("status = 'pending'") && s.includes('next_attempt_at'))).toBe(true);
+});
+
+it('controle: sem quem atenda, nada é reaberto (a reabertura vem depois do portão)', async () => {
+  const calls: string[] = [];
+  process.env.__ESPERA__ = '0';
+  await drainTick(
+    poolFalso(textoSimples, calls, { tem_agente: false, tem_roteador: false }),
+    knobs, log,
+  );
+  expect(calls.some((s) => s.includes('derivacao_adiada'))).toBe(false);
+});
+
+it('controle: a reabertura falhou — o turno segue o fluxo normal', async () => {
+  const calls: string[] = [];
+  process.env.__ESPERA__ = '0';
+  await drainTick(
+    poolFalso(textoSimples, calls, { tem_agente: true, tem_roteador: false }, new Error('deadlock detected')),
+    knobs, log,
+  );
+  expect(calls.some((s) => s.includes('derivacao_adiada'))).toBe(true);
+  expect(calls.some((s) => s.includes('job_queue'))).toBe(true);
 });
 
 /**
@@ -196,7 +485,7 @@ it('áudio esperando 90s (janela 45s–120s do #530): turno segue ADIADO, não d
   const calls: string[] = [];
   process.env.__ESPERA__ = '90000'; // 90s — dentro do teto de 120s e fora do antigo de 45s
   await drainTick(poolFalso({ type: 'audio', media_derived_status: null }, calls), knobs, log);
-  expect(calls.some((s) => s.includes('media_derived_status'))).toBe(true);
+  expect(calls.some((s) => /as\s+quando/.test(s))).toBe(true);
   // Nada de job: a resposta não sai antes de o texto derivado existir.
   expect(calls.some((s) => s.includes('job_queue'))).toBe(false);
   // Adiar não é falha: volta a 'pending' com espera curta, sem gastar tentativa.
@@ -243,7 +532,7 @@ it('coalescência exclui job em hold (held_run_after) — sessão morta não seq
   });
   await drainTick({ query } as unknown as pg.Pool, debounceKnobs, log);
 
-  const coalescencia = calls.find((s) => s.includes('select id from job_queue'));
+  const coalescencia = calls.find((s) => s.includes('select id, payload from job_queue'));
   expect(coalescencia, 'a query de coalescência deveria ter rodado').toBeTruthy();
   expect(coalescencia).toContain('held_run_after');
   // Sem o job em hold como falso-positivo, o turno segue e enfileira um job novo.
@@ -500,4 +789,154 @@ it('#2729: grupo só passa pela guarda do engine quando a chave por grupo libera
 
   const individual = await chamadas({ is_group: false, ia_responde: null });
   expect(individual.some((s) => s.includes('tem_agente'))).toBe(true);
+});
+
+/**
+ * #3688 — quem ENFILEIRA é quem acorda o laço da fila.
+ *
+ * O laço dorme até o teto de 60 s com a fila vazia (recuo exponencial). Sem
+ * este aviso, o job que o drain acabou de criar espera o fim da soneca: 49,25 s
+ * de atraso no claim, medidos pelo @melgarafael numa chegada 125 s depois de a
+ * fila esvaziar. O teste dirige o `drainTick` inteiro e olha o EFEITO na fiação
+ * (`knobs.acordarFila`) — reverter a chamada deixa os testes da soneca verdes,
+ * porque eles exercitam o laço, não o produtor.
+ *
+ * O par de baixo é o guarda contra o conserto exagerado: acordar a cada tick,
+ * sem job novo, manteria a fila no ritmo curto e devolveria o egress da #3688.
+ */
+it('#3688: turno enfileirado ACORDA o laço da fila', async () => {
+  process.env.__ESPERA__ = '0';
+  const calls: string[] = [];
+  const acordarFila = vi.fn();
+  // O insert DEVOLVE linha: sem ela o `enqueueJob` lança, o `drainTick` engole
+  // no catch e o teste veria "nenhum job" onde houve erro de dublê.
+  const query = vi.fn().mockImplementation((sql: string) => {
+    calls.push(sql);
+    if (sql.includes('returning e.id')) return { rows: [event] };
+    if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null, status: 'active' }] };
+    if (sql.includes('is_group')) return { rows: [{ is_group: false }] };
+    if (sql.includes('tem_agente')) return { rows: [{ tem_agente: true, tem_roteador: false }] };
+    if (sql.includes('insert into job_queue')) return { rows: [{ id: 'job-novo' }] };
+    return { rows: [] };
+  });
+  await drainTick({ query } as unknown as pg.Pool, { ...knobs, acordarFila }, log);
+
+  expect(calls.some((s) => s.includes('insert into job_queue')), 'nada foi enfileirado').toBe(true);
+  expect(acordarFila).toHaveBeenCalledTimes(1);
+});
+
+it('#3688: evento consumido SEM job não acorda a fila', async () => {
+  process.env.__ESPERA__ = '0';
+  const calls: string[] = [];
+  const acordarFila = vi.fn();
+  // Agente não publicado: o evento vira done e nenhum turno nasce.
+  await drainTick(
+    poolFalso(textoSimples, calls, { tem_agente: false, tem_roteador: false }),
+    { ...knobs, acordarFila },
+    log,
+  );
+
+  expect(calls.some((s) => s.includes('insert into job_queue'))).toBe(false);
+  expect(acordarFila, 'acordar sem job novo devolveria a fila ao ritmo curto').not.toHaveBeenCalled();
+});
+
+// ── #3383: a janela mudou e o job adiado não pode continuar dormindo ───────
+
+/** Terça, 22h11 em São Paulo — fora da janela 7h–22h, dentro de 0h–24h. */
+const AGORA_DA_JANELA = new Date('2026-07-28T01:11:00Z');
+const ABRIDO_PELA_JANELA = {
+  adiado_por_janela: { tipo: 'resposta', abertura: '2026-07-29T10:00:00.000Z', janela: '7h-22h' },
+};
+
+/**
+ * Pool falso que responde o caminho INTEIRO do drain — inclusive a leitura de
+ * knobs (`loadChannelKnobs`, reconhecida por `k.resposta_start_hour`) e as
+ * duas escritas possíveis na fila: acordar o adiado (`update job_queue`) e
+ * enfileirar o turno da mensagem nova (`insert into job_queue`).
+ */
+function poolDaJanela(
+  resposta: [number, number],
+  candidato: { id: string; payload: unknown } | null,
+): { pool: pg.Pool; chamadas: string[] } {
+  const chamadas: string[] = [];
+  const query = vi.fn().mockImplementation((sql: string) => {
+    chamadas.push(sql);
+    if (sql.includes('returning e.id')) return { rows: [eventoDeAudio(0)] };
+    if (sql.includes('ai_dispatch_mode')) return { rows: [{ mode: null, status: 'active' }] };
+    if (sql.includes('is_group')) return { rows: [{ is_group: false, ia_responde: null }] };
+    if (sql.includes('tem_agente')) return { rows: [{ tem_agente: true, tem_roteador: false }] };
+    if (sql.includes('media_derived_status')) return { rows: [] };
+    if (sql.includes('k.resposta_start_hour')) {
+      return {
+        rows: [
+          {
+            resposta_start_hour: resposta[0],
+            resposta_end_hour: resposta[1],
+            timezone: 'America/Sao_Paulo',
+            org_timezone: null,
+          },
+        ],
+      };
+    }
+    if (sql.includes('select id, payload from job_queue')) return { rows: candidato ? [candidato] : [] };
+    if (sql.includes('update job_queue')) return { rows: [{ id: candidato?.id }], rowCount: 1 };
+    if (sql.includes('insert into job_queue')) return { rows: [{ id: 'job-novo' }] };
+    return { rows: [] };
+  });
+  return { pool: { query } as unknown as pg.Pool, chamadas };
+}
+
+it('#3383 cenário A: janela aberta para 0h–24h — a mensagem nova NÃO entra no job adiado e ele acorda', async () => {
+  process.env.__ESPERA__ = '0';
+  const { pool, chamadas } = poolDaJanela([0, 24], { id: 'job-adiado', payload: ABRIDO_PELA_JANELA });
+  const logLocal = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+  await drainTick(pool, { ...knobs, debounceMs: 500, clock: () => AGORA_DA_JANELA }, logLocal as never);
+
+  // O adiado é acordado na MESMA linha — sem insert, sem segundo turno.
+  const acordar = chamadas.find((s) => s.includes('update job_queue'));
+  expect(acordar, 'o job adiado tinha de ser acordado para não dormir até o horário velho').toBeTruthy();
+  expect(acordar).toContain('run_after = now()');
+  expect(acordar, 'idempotência: só pendente e só futuro — running nunca re-arma').toContain("status = 'pending'");
+  expect(acordar).toContain('run_after > now()');
+  expect(acordar).toContain('adiado_por_janela');
+  // A mensagem das 22h40 enfileira o PRÓPrio turno, em vez de entrar no adiado.
+  expect(chamadas.some((s) => s.includes('insert into job_queue')), 'mensagem nova ganha job próprio').toBe(true);
+  expect(
+    logLocal.info.mock.calls.some((c) => String(c[0]).includes('não recebe carona')),
+    'o drain tem de registrar a recusa da carona',
+  ).toBe(true);
+});
+
+it('#3383 cenário B: 22h11 com janela 7h–22h fechada — a mensagem continua de carona (regressão zero)', async () => {
+  process.env.__ESPERA__ = '0';
+  const { pool, chamadas } = poolDaJanela([7, 22], { id: 'job-adiado', payload: ABRIDO_PELA_JANELA });
+  const logLocal = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+  await drainTick(pool, { ...knobs, debounceMs: 500, clock: () => AGORA_DA_JANELA }, logLocal as never);
+
+  // Ninguém acorda o adiado: ele segue para a abertura de sempre…
+  expect(chamadas.some((s) => s.includes('update job_queue')), 'janela fechada = ninguém mexe no job').toBe(false);
+  // …e a mensagem viaja de carona nele, sem turno novo (o de hoje, byte a byte).
+  expect(chamadas.some((s) => s.includes('insert into job_queue')), 'sem job novo: a mensagem é carona').toBe(false);
+  expect(
+    logLocal.info.mock.calls.some((c) => String(c[0]).includes('rajada coalescida em job pendente')),
+  ).toBe(true);
+});
+
+it('#3383: a abertura da janela não desmonta a coalescência normal — só o ADIADO é solto', async () => {
+  process.env.__ESPERA__ = '0';
+  const { pool, chamadas } = poolDaJanela([0, 24], {
+    id: 'job-de-debounce',
+    payload: { conversation_id: '11111111-1111-4111-8111-111111111111' },
+  });
+  const logLocal = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+  await drainTick(pool, { ...knobs, debounceMs: 500, clock: () => AGORA_DA_JANELA }, logLocal as never);
+
+  expect(chamadas.some((s) => s.includes('update job_queue')), 'job sem rastro de adiamento não é acordado').toBe(false);
+  expect(chamadas.some((s) => s.includes('insert into job_queue')), 'mensagens juntas seguem virando UM job').toBe(false);
+  expect(
+    logLocal.info.mock.calls.some((c) => String(c[0]).includes('rajada coalescida em job pendente')),
+  ).toBe(true);
 });

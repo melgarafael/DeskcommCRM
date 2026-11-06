@@ -71,6 +71,15 @@ export const contactCreateSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  // Endereço da pessoa física (issue 3494): os mesmos campos que entrega e
+  // cobrança precisam, espelhando `companies`.
+  zip_code: z.string().max(16).optional().nullable(),
+  street: z.string().max(300).optional().nullable(),
+  number: z.string().max(40).optional().nullable(),
+  complement: z.string().max(120).optional().nullable(),
+  district: z.string().max(120).optional().nullable(),
+  city: z.string().max(120).optional().nullable(),
+  state: z.string().max(2, "UF com 2 letras (ex.: SP)").optional().nullable(),
   // O papel do contato (issue 3005): ausente = o default do BANCO ('cliente'),
   // e por isso `contactPatchSchema` também o deixa opcional — um PATCH que só
   // troca o nome não reescreve o tipo de um fornecedor.

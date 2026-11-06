@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { apiClient } from "@/lib/api/client";
+import { ApiError } from "@/lib/api/types";
 import { useT } from "@/hooks/i18n/useT";
 import { rodapeDeSaida } from "@/lib/prospecting/rodape-de-saida";
 import {
@@ -31,6 +32,12 @@ import { precisaDeRede, siteEfetivo } from "@/lib/prospecting/site-efetivo";
 import { opcoesDoPreparo } from "@/lib/prospecting/opcoes-do-preparo";
 import { previaPorGerar, previaValida } from "@/lib/prospecting/previa";
 
+/** Uma linha que a importação recusou — o número é o da planilha (1 = cabeçalho). */
+type RecusadaDaLinha = { linha: number; motivo: string; telefone?: string | null; detalhe?: string };
+
+/** `planilha` é o nome que a 1.95.0 gravou nas campanhas importadas antes do #3724. */
+const ehImportada = (origem: string | undefined) => origem === "importacao" || origem === "planilha";
+
 type Campaign = {
   id: string;
   name: string;
@@ -38,12 +45,18 @@ type Campaign = {
   search_status: string;
   error: string | null;
   config: CampaignConfig | null;
-  // `origem: "planilha"` marca a campanha importada de uma lista própria (sem busca no Maps).
+  // `origem: "importacao"` marca a campanha importada de uma lista própria (sem busca no Maps).
   search: ({ niche: string; location?: string; origem?: string } & Record<string, unknown>) | null;
   result_count: number;
   skipped_count: number;
   cost_usd: string | null;
   next_send_at: string;
+  /**
+   * O NÚMERO desta campanha (#3896). Duas campanhas em conexões diferentes
+   * rodam juntas, então a conexão deixa de ser dedutível: sem ela no cartão,
+   * duas campanhas "Em andamento" parecem a mesma coisa repetida.
+   */
+  channel_session_id: string | null;
 };
 type Candidate = {
   id: string;
@@ -265,6 +278,10 @@ export function ProspectingClient() {
   const searchAttempt = useRef<{ fingerprint: string; id: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A campanha que ocupa o número (409 `prospecting_channel_busy`, #3896). Só
+  // aparece enquanto o aviso na tela for o DELA — `aviso` amarra os dois, e
+  // qualquer outro `setError` a esconde sem precisar limpá-la em cada caminho.
+  const [ocupante, setOcupante] = useState<{ id: string; aviso: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [key, setKey] = useState("");
   const [settings, setSettings] = useState(false);
@@ -287,9 +304,14 @@ export function ProspectingClient() {
   const [avaliarSiteLista, setAvaliarSiteLista] = useState(true);
   const [gerarPreviaLista, setGerarPreviaLista] = useState(true);
   const [resumoDaImportacao, setResumoDaImportacao] = useState<string | null>(null);
-  const [recusadasDaImportacao, setRecusadasDaImportacao] = useState<
-    { linha: number; motivo: string }[]
-  >([]);
+  // A prévia (conferir antes de importar) e o resultado da importação compartilham a lista de
+  // recusadas: as duas mostram a mesma coisa, linha e motivo.
+  const [previaDaLista, setPreviaDaLista] = useState<{
+    entram: number;
+    fora: number;
+    total: number;
+  } | null>(null);
+  const [recusadasDaImportacao, setRecusadasDaImportacao] = useState<RecusadaDaLinha[]>([]);
   const [campaignDrafts, setCampaignDrafts] = useState<Record<string, CampaignConfig>>({});
   const [manualCampaigns, setManualCampaigns] = useState<Record<string, boolean>>({});
   const [createdAgents, setCreatedAgents] = useState<{ id: string; name: string }[]>([]);
@@ -372,11 +394,31 @@ export function ProspectingClient() {
       setNotice(typeof message === "function" ? message(resposta) : message);
       return true;
     } catch (e) {
+      if (e instanceof ApiError && e.code === "prospecting_channel_busy") {
+        const quem = e.details as { campaign_id?: unknown; campaign_name?: unknown } | undefined;
+        const nome = typeof quem?.campaign_name === "string" ? quem.campaign_name : null;
+        const aviso = nome
+          ? `${t("Este número já está em outra campanha em andamento.")} ${t("Em uso por")} "${nome}".`
+          : t("Este número já está em outra campanha em andamento.");
+        setError(aviso);
+        if (typeof quem?.campaign_id === "string") setOcupante({ id: quem.campaign_id, aviso });
+        return false;
+      }
       setError(e instanceof Error ? e.message : t("Não foi possível concluir a operação."));
       return false;
     } finally {
       setBusy(false);
     }
+  }
+  function abrirCampanha(id: string) {
+    setSelected(id);
+    setNotice(null);
+    // O aviso geral não pertence a uma campanha: trocar de
+    // campanha limpa o que era da anterior.
+    setError(null);
+    // A confirmação de exclusão vale para UMA campanha: ao trocar, ela some.
+    setConfirmandoExclusao(false);
+    setMostrarDesmarcadas(false);
   }
   const update = <K extends keyof CampaignConfig>(field: K, value: CampaignConfig[K]) =>
     setConfig((c) => ({ ...c, [field]: value }));
@@ -421,10 +463,13 @@ export function ProspectingClient() {
     a.click();
     URL.revokeObjectURL(url);
   }
-  async function importarPlanilha() {
+  // Um formulário, dois destinos: `previa=true` só confere e devolve os motivos de cada linha
+  // recusada; sem ela, importa de verdade. Reaproveitar o mesmo corpo é o que garante que a
+  // prévia fala do MESMO arquivo e dos MESMOS campos que o botão de importar vai mandar.
+  function formularioDaLista(somentePrevia: boolean): FormData | null {
     if (!arquivo) {
       setError(t("Escolha o arquivo da planilha."));
-      return;
+      return null;
     }
     // O mesmo arquivo com os mesmos campos reaproveita o `request_id`: reenviar depois de uma
     // falha de rede não cria uma segunda campanha.
@@ -446,11 +491,59 @@ export function ProspectingClient() {
     form.set("origem_da_lista", origemDaLista);
     form.set("avaliar_site", String(avaliarSiteLista));
     form.set("gerar_previa", String(avaliarSiteLista && gerarPreviaLista));
+    form.set("previa", String(somentePrevia));
     form.set("file", arquivo);
+    return form;
+  }
+  async function conferirLista() {
+    const form = formularioDaLista(true);
+    if (!form) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    setPreviaDaLista(null);
+    setRecusadasDaImportacao([]);
+    try {
+      const res = await fetch("/api/v1/prospecting/importar", {
+        method: "POST",
+        body: form,
+        credentials: "same-origin",
+      });
+      const corpo = (await res.json().catch(() => null)) as {
+        data?: {
+          previa?: true;
+          entram: number;
+          recusadas: RecusadaDaLinha[];
+          total_recusadas: number;
+          total_linhas: number;
+        };
+        error?: { message?: string; details?: { recusadas?: RecusadaDaLinha[] } };
+      } | null;
+      if (!res.ok || !corpo?.data?.previa) {
+        setError(corpo?.error?.message ?? t("Não foi possível conferir a planilha."));
+        setRecusadasDaImportacao(corpo?.error?.details?.recusadas ?? []);
+        return;
+      }
+      setPreviaDaLista({
+        entram: corpo.data.entram,
+        fora: corpo.data.total_recusadas,
+        total: corpo.data.total_linhas,
+      });
+      setRecusadasDaImportacao(corpo.data.recusadas);
+    } catch {
+      setError(t("Não foi possível conferir a planilha."));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function importarPlanilha() {
+    const form = formularioDaLista(false);
+    if (!form) return;
     setBusy(true);
     setError(null);
     setNotice(null);
     setResumoDaImportacao(null);
+    setPreviaDaLista(null);
     setRecusadasDaImportacao([]);
     try {
       const res = await fetch("/api/v1/prospecting/importar", {
@@ -477,9 +570,11 @@ export function ProspectingClient() {
         return;
       }
       const r = corpo.data;
-      const linhas = r.inseridos + r.ja_na_base + r.total_recusadas;
+      const linhas = r.inseridos + r.total_recusadas;
+      // `ja_na_base` deixou de ser um saco único: cada linha que não entrou tem o motivo logo
+      // abaixo, nesta mesma tela. O resumo só conta.
       setResumoDaImportacao(
-        `${linhas} ${t("linhas")} · ${r.inseridos} ${t("entraram")} · ${r.ja_na_base} ${t("já estavam na base ou foram excluídas a pedido do titular")} · ${r.total_recusadas} ${t("recusadas")}`,
+        `${linhas} ${t("linhas")} · ${r.inseridos} ${t("entraram")} · ${r.total_recusadas} ${t("ficam de fora")}`,
       );
       setRecusadasDaImportacao(r.recusadas);
       setSelected(r.campaign_id);
@@ -548,6 +643,9 @@ export function ProspectingClient() {
   const criaSoNoEnvio = campaign?.config?.funnel_entry === "on_send";
   /** Linha que a caixa pode alterar agora. Espelha as regras do servidor (`selecionarNaFila`). */
   const marcavel = (c: Candidate) => {
+    // Sem WhatsApp (`lib/prospecting/whatsapp.ts`): quem tirou foi o produto, não o
+    // operador — a caixa não a devolve, e o servidor a recusaria ao iniciar.
+    if (c.data.whatsapp?.existe === false) return false;
     if (noRascunho) return true;
     if (c.status === "queued") return true;
     return (
@@ -578,6 +676,13 @@ export function ProspectingClient() {
   const marcadas = candidates.filter((c) => c.selected !== false);
   const opcoes = opcoesDoPreparo(campaign?.search);
   const sitesVerificados = marcadas.length - pendentesDeSite;
+  // WhatsApp (`lib/prospecting/whatsapp.ts`): sobre TODAS as que têm telefone — quem não
+  // tem WhatsApp sai da seleção, e é justamente ela que a conta precisa mostrar. Só
+  // aparece com algum veredito: sem conexão capaz, ou com o módulo `conferir_whatsapp`
+  // desligado (o padrão), "0 de N" ficaria parado para sempre.
+  const comTelefone = candidates.filter((c) => !!c.data.phone);
+  const whatsappVerificados = comTelefone.filter((c) => c.data.whatsapp != null).length;
+  const semWhatsapp = comTelefone.filter((c) => c.data.whatsapp?.existe === false).length;
   const previasProntas = marcadas.filter((c) => previaValida(c.data)).length;
   /**
    * O que o botão "Excluir desmarcadas" realmente apaga. Espelha o `where` do servidor: sem
@@ -637,6 +742,13 @@ export function ProspectingClient() {
             (query.error instanceof Error
               ? query.error.message
               : t("Falha ao carregar a prospecção."))}
+          {error && ocupante?.aviso === error && (
+            <div className="mt-2">
+              <Button variant="outline" size="sm" onClick={() => abrirCampanha(ocupante.id)}>
+                {t("Abrir essa campanha")}
+              </Button>
+            </div>
+          )}
         </div>
       )}
       {notice && (
@@ -1018,10 +1130,33 @@ export function ProspectingClient() {
                   {t("Baixar modelo")}
                 </button>
               </p>
-              {/* Não depende da chave do provedor: a planilha não faz busca paga. */}
-              <Button className="w-full" type="submit" disabled={busy}>
-                {busy ? t("Aguarde…") : t("Importar planilha")}
-              </Button>
+              {/* Não depende da chave do provedor: a planilha não faz busca paga.
+                  Lado a lado só entre sm e lg: a partir de lg o formulário mora na
+                  coluna de 320px e os dois botões juntos passam da borda do cartão. */}
+              <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={conferirLista}
+                  disabled={busy}
+                >
+                  {t("Conferir a lista antes de importar")}
+                </Button>
+                <Button className="w-full" type="submit" disabled={busy}>
+                  {busy ? t("Aguarde…") : t("Importar planilha")}
+                </Button>
+              </div>
+              {previaDaLista && (
+                <div role="status" className="rounded-md bg-muted/40 p-3 text-sm">
+                  <p className="font-medium">
+                    {`${previaDaLista.entram} ${t("entram")} · ${previaDaLista.fora} ${t("ficam de fora")}`}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t("Nada foi importado ainda: a conferência não cria campanha.")}
+                  </p>
+                </div>
+              )}
               {resumoDaImportacao && (
                 <p role="status" className="rounded-md bg-muted/40 p-3 text-sm">
                   {resumoDaImportacao}
@@ -1029,11 +1164,12 @@ export function ProspectingClient() {
               )}
               {recusadasDaImportacao.length > 0 && (
                 <div className="text-sm">
-                  <p className="font-medium">{t("Linhas recusadas")}</p>
+                  <p className="font-medium">{t("Linhas que ficam de fora")}</p>
                   <ul className="mt-1 max-h-48 list-disc space-y-1 overflow-y-auto pl-5 text-xs text-muted-foreground">
                     {recusadasDaImportacao.map((r) => (
                       <li key={r.linha}>
                         {t("Linha")} {r.linha}: {t(r.motivo)}
+                        {r.detalhe ? ` (${r.detalhe})` : ""}
                       </li>
                     ))}
                   </ul>
@@ -1049,21 +1185,12 @@ export function ProspectingClient() {
                 <button
                   key={c.id}
                   type="button"
-                  onClick={() => {
-                    setSelected(c.id);
-                    setNotice(null);
-                    // O aviso geral não pertence a uma campanha: trocar de
-                    // campanha limpa o que era da anterior.
-                    setError(null);
-                    // A confirmação de exclusão vale para UMA campanha: ao trocar, ela some.
-                    setConfirmandoExclusao(false);
-                    setMostrarDesmarcadas(false);
-                  }}
+                  onClick={() => abrirCampanha(c.id)}
                   className={`w-full rounded-lg border p-3 text-left ${campaign?.id === c.id ? "border-primary bg-primary/5" : "bg-card"}`}
                 >
                   <span className="block text-sm font-medium">{c.name}</span>
                   <span className="mt-1 block text-xs text-muted-foreground">
-                    {c.search?.origem === "planilha" && <>{t("Planilha")} · </>}
+                    {ehImportada(c.search?.origem) && <>{t("Planilha")} · </>}
                     {t(labels[c.status] ?? c.status)} · {c.result_count} {t("empresas")}
                   </span>
                 </button>
@@ -1089,12 +1216,23 @@ export function ProspectingClient() {
                   <div>
                     <h2 className="text-xl font-semibold">{campaign.name}</h2>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {campaign.search?.origem === "planilha"
+                      {ehImportada(campaign.search?.origem)
                         ? t("Planilha")
                         : t(labels[campaign.search_status] ?? campaign.search_status)}
                       {campaign.cost_usd !== null
                         ? ` · US$ ${Number(campaign.cost_usd).toFixed(2)}`
                         : ""}
+                      {(() => {
+                        // A CONEXÃO no cartão (#3896): com uma campanha por
+                        // número, "Em andamento" sozinho não diz por onde ela
+                        // fala — e é a conexão que o operador escolhe na
+                        // próxima.
+                        if (!campaign.channel_session_id) return "";
+                        const c = data?.channels.find((x) => x.id === campaign.channel_session_id);
+                        return c
+                          ? ` · ${c.display_name ?? c.phone_number ?? c.id}`
+                          : ` · ${t("Conexão removida.")}`;
+                      })()}
                     </p>
                   </div>
                   <Badge variant="outline">{t(labels[campaign.status] ?? campaign.status)}</Badge>
@@ -1708,6 +1846,20 @@ export function ProspectingClient() {
                               {t("Prévias:")} {previasProntas} {t("de")} {marcadas.length}
                             </>
                           )}
+                          {whatsappVerificados > 0 && (
+                            <>
+                              {" · "}
+                              {t("WhatsApp verificado:")} {whatsappVerificados} {t("de")}{" "}
+                              {comTelefone.length}
+                              {semWhatsapp > 0 && (
+                                <>
+                                  {" ("}
+                                  {semWhatsapp} {t("sem WhatsApp, fora da abordagem")}
+                                  {")"}
+                                </>
+                              )}
+                            </>
+                          )}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -1912,6 +2064,14 @@ export function ProspectingClient() {
                                 {c.data.category}
                               </p>
                               <p className="mt-1 text-xs">{c.data.phone ?? t("Sem telefone")}</p>
+                              {c.data.phone && c.data.whatsapp?.existe === true && (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {t("Tem WhatsApp")}
+                                </p>
+                              )}
+                              {c.data.phone && c.data.whatsapp?.existe === false && (
+                                <p className="mt-1 text-xs font-medium">{t("Sem WhatsApp")}</p>
+                              )}
                             </td>
                             <td className="max-w-64 p-4 align-top">
                               <p className="text-xs text-muted-foreground">{c.data.address}</p>
@@ -1937,7 +2097,7 @@ export function ProspectingClient() {
                             <td className="max-w-64 p-4 align-top">
                               <Badge variant="outline">{t(labels[c.progress] ?? c.progress)}</Badge>
                               {c.error && (
-                                <p className="mt-2 text-xs text-muted-foreground">{c.error}</p>
+                                <p className="mt-2 text-xs text-muted-foreground">{t(c.error)}</p>
                               )}
                               {c.message_status && (
                                 <p className="mt-1 text-xs text-muted-foreground">

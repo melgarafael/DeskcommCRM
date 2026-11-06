@@ -22,6 +22,7 @@ import {
 } from "@/lib/auth/requirePlatformAdmin";
 import type { TipoDeSuspensao } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { invalidarOrg } from "@/lib/auth/cache-curto";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 
@@ -100,6 +101,11 @@ export async function POST(
       metadata: { tenant_id: tenantId, tenant_slug: org.slug, suspended_by: adminCtx.user.id, reason: body.reason, kind: KIND },
     });
   }
+
+  // #3696: `org_status` vai dentro do snapshot de permissões de cada membro;
+  // com a etiqueta da organização, a suspensão derruba o de todos eles de uma
+  // vez — sem isto, a empresa suspensa seguiria "operante" por até 30 s.
+  invalidarOrg(tenantId);
 
   return ok(resultado.data, { requestId });
 }

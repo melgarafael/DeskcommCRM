@@ -58,6 +58,13 @@ export interface FontesDeEstado {
   settings: Record<string, unknown> | null;
   /** Detecção dos recursos do servidor, por `id`. Ausente/`null` = não detectado. */
   servidor: Readonly<Record<string, boolean | null>>;
+  /**
+   * A telefonia está em uso NESTA organização (#1290) — o mesmo sinal que decide
+   * o item Chamadas no menu (`lib/telefonia/em-uso.ts`): o tronco SIP salvo.
+   * `null` = não lido. Booleano porque a leitura compartilhada falha fechada e
+   * não distingue "desligada" de "não li" — igual a `modulosLigados()`.
+   */
+  telefonia: boolean | null;
 }
 
 export interface RecursoOpcional {
@@ -133,6 +140,27 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Login do Codex por assinatura",
     oQueFaz:
       "Conecta a assinatura do ChatGPT (o mesmo login do Codex): cada empresa conecta a própria conta, em Credenciais, com a chave de API da mesma empresa como reserva. Desligado por padrão.",
+  },
+  setores: {
+    nome: "Setores de atendimento",
+    oQueFaz:
+      "Agrupa os atendentes da Equipe por área e distribui as conversas que têm setor definido entre quem atende aquela área, dentro do horário do setor. Conversa sem setor continua indo pelo número, como antes.",
+  },
+  avisos: {
+    nome: "Avisos para a equipe",
+    oQueFaz: "O administrador da empresa escreve um aviso e ele chega como notificação nos aparelhos da equipe.",
+  },  conferir_whatsapp: {
+    nome: "Conferir WhatsApp na prospecção",
+    oQueFaz: "Antes de abordar, pergunta ao WhatsApp se o telefone da empresa achada tem conta, e tira da abordagem quem não tem.",
+  },
+  mcp_por_agente: {
+    nome: "Ferramentas externas por agente",
+    oQueFaz:
+      "Cada agente conecta os próprios servidores de ferramentas externas, e o cliente pode autorizar, pela conversa, o acesso à conta dele num sistema de terceiro.",
+  },
+  cold_call: {
+    nome: "Cold Call (fila de ligações)",
+    oQueFaz: "Uma fila para ligar para uma lista de leads, um por vez, com roteiro e o resultado de cada ligação movendo o lead no funil.",
   },
 };
 
@@ -610,6 +638,25 @@ const DA_EMPRESA: RecursoOpcional[] = [
     padrao: "desligado",
     quemDecide: "admin",
     href: "/app/extensions",
+  },
+  {
+    /**
+     * O par da empresa para a telefonia (#1290), no molde de
+     * `propostas_da_empresa`: `telefonia_sip` é o profile do servidor, que o app
+     * não lê; ESTA linha é o que a empresa fez — salvou o tronco em
+     * `/app/settings/voip-trunk`. É o mesmo sinal que o menu lê para mostrar (ou
+     * esconder) Chamadas: uma régua, dois lugares.
+     */
+    id: "telefonia_da_empresa",
+    nome: "Telefonia da empresa",
+    oQueFaz:
+      "Com o servidor preparado para telefonia, a empresa salva o tronco SIP da operadora e passa a ver as ligações em Chamadas.",
+    nivel: "organizacao",
+    padrao: "desligado",
+    quemDecide: "admin",
+    href: "/app/settings/voip-trunk",
+    capacidade: "telefonia",
+    ler: (f) => (f.telefonia === null ? "nao_lido" : f.telefonia ? "ligado" : "desligado"),
   },
   {
     id: "propostas_da_empresa",

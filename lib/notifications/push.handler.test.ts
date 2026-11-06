@@ -61,6 +61,20 @@ vi.mock("./web_push", () => ({
 // desativado, #2329, lê `channel_sessions`), então a trava é `from("contacts")`,
 // não `createAdminClient`.
 const fromMock = vi.fn();
+/**
+ * Leitura sem linha, para qualquer tabela. O handler lê `organizations` (o
+ * idioma e o fuso dos títulos) antes de montar o push: sem locale, o título
+ * sai no padrão (pt-BR). Cada teste que precisa de uma linha troca isto.
+ */
+function semLinha() {
+  const q: Record<string, unknown> = {};
+  Object.assign(q, {
+    select: () => q,
+    eq: () => q,
+    maybeSingle: async () => ({ data: null, error: null }),
+  });
+  return q;
+}
 const createAdminClientMock = vi.fn(() => ({ from: fromMock }) as unknown);
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => createAdminClientMock(),
@@ -90,7 +104,8 @@ describe("webPushInboundHandler", () => {
     enviarPushAQuemVeAConversaMock.mockClear();
     carregarDestinatariosMock.mockClear();
     createAdminClientMock.mockClear();
-    fromMock.mockClear();
+    fromMock.mockReset();
+    fromMock.mockImplementation(semLinha);
   });
 
   it("pula quando VAPID não está configurado", async () => {

@@ -647,3 +647,48 @@ describe("o negócio que a campanha abre: a regra de `lead.created` RODA (#3072)
     expect(motor.inserts).toHaveLength(0);
   });
 });
+
+describe("sem WhatsApp (lib/prospecting/whatsapp.ts): o produto tira, e o motivo diz isso", () => {
+  const semZap = (n: number, extra: Record<string, unknown> = {}) =>
+    candidato(n, {
+      data: {
+        name: `Clínica ${n}`,
+        key: `place-${n}`,
+        maps_url: null,
+        socials: [],
+        whatsapp: { existe: false, verificado_em: "2026-11-02T12:00:00Z" },
+      },
+      ...extra,
+    });
+
+  it("triarCandidato: pula com o motivo, sem nem consultar o CRM", async () => {
+    const { db, chamadas } = bancoFalso();
+    expect(await triarCandidato(db, ORG, CAMPANHA, semZap(1))).toEqual({
+      motivo: "Sem WhatsApp neste número.",
+    });
+    expect(chamadas).toHaveLength(0);
+  });
+
+  it.each([
+    { modo: "on_send", config: configOnSend },
+    { modo: "on_start", config: configOnStart },
+  ])(
+    "`$modo`: a desmarcada por não ter WhatsApp vira 'Não abordado' com ESSE motivo, não 'pelo operador'",
+    async ({ config }) => {
+      const { db, chamadas } = bancoFalso();
+      // O preparo já a desmarcou (selected=false); mesmo marcada de volta pela API, não entra.
+      await enfileirarCandidatos(db, {} as never, ORG, campanha, config, [
+        semZap(1, { selected: false }),
+        semZap(2),
+        candidato(3),
+      ]);
+      const puladas = chamadas
+        .filter((c) => c.sql.includes("set status='skipped'"))
+        .map((c) => [c.params[1], c.params[2]]);
+      expect(puladas).toEqual([
+        [uuid(101), "Sem WhatsApp neste número."],
+        [uuid(102), "Sem WhatsApp neste número."],
+      ]);
+    },
+  );
+});
