@@ -31,10 +31,12 @@
  *      (`skipped_contato_pessoal`): pessoal é a régua mais forte e a nova não
  *      pode divergir dela.
  *
- * O quarto caso mede o caminho que o autor da issue descreve no defeito 2: o
- * `release` reenfileira a conversa na MESMA transação, pelo gatilho. Ele fica
- * como MEDIÇÃO — a conversa de fornecedor liberada não volta ao dono porque a
- * distribuição a recusa, e não porque o `release` mudou de significado.
+ * O quarto caso media o caminho que o autor da issue descreve no defeito 2: o
+ * `release` reenfileirava a conversa na MESMA transação, pelo gatilho, e a
+ * distribuição a recusava de novo. Ele virou o CONTRATO com a migration 9226
+ * (decisão do mantenedor: "Liberar" não pede rodízio): a conversa liberada não
+ * gera pedido nenhum e continua sem dono. A régua do tipo de contato não mudou
+ * — o caso 2 prova que ela segue recusando quem pedir a distribuição.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Pool } from "pg";
@@ -205,7 +207,7 @@ describe("rodízio não distribui contato do tipo fornecedor (#3937)", () => {
     expect(await conversa(CONV_FORNECEDOR_PESSOAL)).toMatchObject({ assigned_to_user_id: null });
   });
 
-  it("release reenfileira pelo gatilho, e a distribuição recusa de novo (medição do defeito 2)", async () => {
+  it("release não pede mais o rodízio, e a conversa de fornecedor fica sem dono (#3937)", async () => {
     // Dá dono à conversa de fornecedor por escrita direta: é o estado de quem
     // recebeu antes desta fatia.
     await query(
@@ -215,16 +217,18 @@ describe("rodízio não distribui contato do tipo fornecedor (#3937)", () => {
     await query("delete from event_log where organization_id=$1 and event_type='conversation.routing_requested'", [org]);
 
     // "Liberar": exatamente o que a rota faz — `fn_conversation_assign` com
-    // p_to_user_id nulo e reason 'release' (release/route.ts:48-49).
+    // `p_to_user_id` nulo e reason 'release' (release/route.ts:44-49).
     await query("select public.fn_conversation_assign($1,$2,null,'release')", [org, CONV_FORNECEDOR]);
 
-    // O gatilho `trg_routing_assignment_changed` já pediu o rodízio NA MESMA
-    // transação — é o mecanismo do defeito 2, medido aqui, não consertado.
-    expect((await eventoDo(CONV_FORNECEDOR))?.status).toBe("pending");
+    // A porta do "Liberar" NÃO pede mais o rodízio (migration 9226, decisão do
+    // mantenedor). Antes dela este caso afirmava `status='pending'`: a conversa
+    // liberada era reenfileirada na mesma transação e voltava a girar até o
+    // worker recusá-la — o defeito 2 da issue, medido e não consertado.
+    expect(await eventoDo(CONV_FORNECEDOR)).toBeUndefined();
 
     const resultado = await rodarWorker();
 
-    expect(resultado.outcomes.skipped_contato_fornecedor).toBe(1);
+    expect(resultado.batch_size).toBe(0);
     expect(await conversa(CONV_FORNECEDOR)).toMatchObject({ assigned_to_user_id: null, status: "open" });
   });
 });
