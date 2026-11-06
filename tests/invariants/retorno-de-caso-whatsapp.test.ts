@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import {
+  getCaseAwaitingLead,
   openCase,
   markAwaitingLead,
   provideCaseUpdate,
@@ -54,11 +55,11 @@ beforeEach(async () => {
   await pool.query("delete from event_log where organization_id=$1", [org]);
   await pool.query("delete from agent_cases where organization_id=$1", [org]);
   await pool.query(
-    "update conversations set status='ai_handling',service_revision=1,current_demanda_id=null where id=$1",
+    "update conversations set status='ai_handling',service_revision=1,current_demanda_id=null,is_group=false where id=$1",
     [conv],
   );
   await pool.query(
-    "update config_aviso_de_caso set ligado=true,resposta_whatsapp_habilitada=true,telefone_destino=$2 where organization_id=$1",
+    "update config_aviso_de_caso set ligado=true,resposta_whatsapp_habilitada=true,telefone_destino=$2,destino_modo='fixo' where organization_id=$1",
     [org, phone],
   );
   const result = await openCase(
@@ -127,7 +128,7 @@ async function sent(id: string) {
     [org, caseId, phone, session, id],
   );
 }
-async function reply(id: string | null, key = randomUUID(), action = "resolved") {
+async function reply(id: string | null, key = randomUUID(), action = "resolved", from = phone) {
   const db = await pool.connect();
   try {
     await db.query("begin");
@@ -135,7 +136,7 @@ async function reply(id: string | null, key = randomUUID(), action = "resolved")
     await db.query("select set_config('request.jwt.claims','{\"role\":\"service_role\"}',true)");
     const result = await db.query(
       "select fn_responder_caso_por_whatsapp($1,$2,$3,$4,$5,$6,$7,$8) v",
-      [org, caseId, session, [phone], action, "Autorizado somente neste pedido", key, id],
+      [org, caseId, session, [from], action, "Autorizado somente neste pedido", key, id],
     );
     await db.query("commit");
     return result.rows[0].v;
@@ -300,4 +301,89 @@ it("isolamento, alteração do destino e nova fronteira impedem reaproveitamento
   e.payload.config_revision = cfg;
   await pool.query("update conversations set service_revision=2 where id=$1", [conv]);
   expect(await current(e)).toBeNull();
+});
+
+/**
+ * A fronteira decide o aviso e o comando, nunca se a resposta do cliente fica no
+ * caso. Cada cenário vence a fronteira de um jeito e cobra as MESMAS consequências:
+ * o caso continua achável no turno, a resposta é gravada, o caso volta a esperar a
+ * equipe, o aviso não sai e o WhatsApp não comanda mais este ciclo (na main o
+ * comando da abertura era aceito aqui; agora só a tela responde).
+ */
+async function cobraFronteiraVencida() {
+  expect(await getCaseAwaitingLead(pool, org, conv)).toMatchObject({ id: caseId, eventId: askId });
+  expect(await provide()).toEqual({ ok: true });
+  expect(
+    (await pool.query("select status from agent_cases where id=$1", [caseId])).rows[0].status,
+  ).toBe("awaiting_human");
+  const provided = await pool.query(
+    "select id from agent_case_events where case_id=$1 and kind='lead_provided' and body='Primeira opção' order by created_at desc,id desc",
+    [caseId],
+  );
+  expect(provided.rowCount).toBeGreaterThan(0);
+  const e = await event();
+  expect(e.payload.case_event_id).toBe(provided.rows[0].id);
+  expect(await current(e)).toBeNull();
+  expect(await reply(null)).toBe("case_unavailable");
+  await sent(e.payload.case_event_id);
+  expect(await reply(e.payload.case_event_id)).toBe("case_unavailable");
+}
+it("conversa fechada e reaberta: a resposta fica no caso e só o aviso e o comando caem", async () => {
+  await pool.query("update conversations set status='closed' where id=$1", [conv]);
+  await pool.query("update conversations set status='ai_handling' where id=$1", [conv]);
+  expect(
+    Number(
+      (await pool.query("select service_revision from conversations where id=$1", [conv])).rows[0]
+        .service_revision,
+    ),
+  ).toBeGreaterThan(1);
+  await cobraFronteiraVencida();
+});
+it("próximo passo da demanda alterado: a resposta fica no caso e só o aviso e o comando caem", async () => {
+  const demanda = (
+    await pool.query(
+      "insert into demandas(organization_id,contact_id,agent_case_id) values($1,$2,$3) returning id,revision",
+      [org, contact, caseId],
+    )
+  ).rows[0];
+  await pool.query("update conversations set current_demanda_id=$2 where id=$1", [conv, demanda.id]);
+  await pool.query(
+    "update agent_cases set context_snapshot=jsonb_set(jsonb_set(context_snapshot,'{service_boundary,demanda_id}',to_jsonb($2::text)),'{service_boundary,demanda_revision}',to_jsonb($3::int)) where id=$1",
+    [caseId, demanda.id, demanda.revision],
+  );
+  // Controle: com a demanda intacta, a mesma resposta gera aviso.
+  expect(await provide()).toEqual({ ok: true });
+  expect(await current(await event())).not.toBeNull();
+  await ask();
+  await pool.query("update demandas set proximo_passo='Conferir a segunda opção' where id=$1", [
+    demanda.id,
+  ]);
+  await cobraFronteiraVencida();
+});
+it("caso de grupo: a resposta fica no caso e só o aviso e o comando caem", async () => {
+  await pool.query("update conversations set is_group=true where id=$1", [conv]);
+  await cobraFronteiraVencida();
+});
+it("caso legado sem fronteira ainda gera aviso", async () => {
+  await pool.query(
+    "update agent_cases set context_snapshot=context_snapshot-'service_boundary' where id=$1",
+    [caseId],
+  );
+  await pool.query("update conversations set service_revision=2 where id=$1", [conv]);
+  expect(await provide()).toEqual({ ok: true });
+  expect(await current(await event())).toMatchObject({ info: "Primeira opção", ask: "Qual opção?" });
+});
+it("modo responsavel: o celular pessoal não comanda; o recuo ao número da empresa comanda", async () => {
+  await pool.query("update config_aviso_de_caso set destino_modo='responsavel' where organization_id=$1", [org]);
+  await provide();
+  const e = await event();
+  const celular = "+5511990000104";
+  await pool.query(
+    "insert into entregas_de_aviso_de_caso(organization_id,case_id,destino,channel_session_id,status,enviado_em,update_event_id) values($1,$2,$3,$4,'enviado',now(),$5)",
+    [org, caseId, celular, session, e.payload.case_event_id],
+  );
+  expect(await reply(e.payload.case_event_id, randomUUID(), "resolved", celular)).toBe("unauthorized");
+  expect(await reply(e.payload.case_event_id)).toBe("case_unavailable");
+  await sent(e.payload.case_event_id);
+  expect(await reply(e.payload.case_event_id)).toBe("accepted");
 });

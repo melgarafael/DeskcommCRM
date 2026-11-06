@@ -656,4 +656,83 @@ describe("aviso ao suporte — RESPONDER/PERGUNTAR só para o número da empresa
     expect(estado.enviados[0]?.to).toBe("5531998966398@c.us");
     expect(estado.enviados[0]?.body).toContain(`RESPONDER ${CASO}`);
   });
+
+  describe("no aviso da resposta do cliente (migration 9240)", () => {
+    const RESPOSTA = "99999999-9999-4999-8999-999999999999";
+    const retorno = () =>
+      evento({
+        event_type: "ai.case_updated",
+        payload: {
+          case_id: CASO,
+          conversation_id: CONVERSA,
+          contact_id: CONTATO,
+          case_event_id: RESPOSTA,
+          config_revision: "r1",
+        },
+      });
+    function comRetorno(destinoModo: "fixo" | "responsavel") {
+      const montado = comResposta(destinoModo);
+      const reivindicadas: Array<{ destino: string; caseEventId?: string }> = [];
+      const reivindica = montado.deps.db.reivindicaEntrega;
+      montado.deps.db.reivindicaEntrega = async (e) => {
+        reivindicadas.push(e);
+        return reivindica(e);
+      };
+      montado.deps.db.carregaAtualizacao = async () => ({
+        info: "Prefiro a segunda opção",
+        ask: "Qual opção?",
+        contactId: CONTATO,
+        conversationId: CONVERSA,
+      });
+      return { ...montado, reivindicadas };
+    }
+
+    it("vai ao celular do responsável, sem ensinar comando, e a entrega nasce com o id da resposta", async () => {
+      const { deps, estado, reivindicadas } = comRetorno("responsavel");
+      expect((await aplicaAvisoDeCaso(deps, retorno())).status).toBe("ok");
+      expect(reivindicadas).toMatchObject([{ destino: CELULAR_DO_VENDEDOR, caseEventId: RESPOSTA }]);
+      expect(estado.enviados[0]?.to).toBe("5531988881111@c.us");
+      expect(estado.enviados[0]?.body).toContain("Prefiro a segunda opção");
+      expect(estado.enviados[0]?.body).not.toContain("RESPONDER");
+      expect(estado.enviados[0]?.body).not.toContain("ATUALIZACAO");
+      expect(estado.enviados[0]?.body).toContain("Responder aqui não chega ao cliente");
+    });
+
+    it("sem responsável com número, recua ao número da empresa e ensina o comando preso à resposta", async () => {
+      const { deps, estado } = comRetorno("responsavel");
+      deps.db.carregaMundoDoAviso = async () => ({
+        conversa: { assigned_to_user_id: null, assignee_kind: null },
+        negocio: null,
+        contato: null,
+        whatsapps: new Map(),
+      });
+      expect((await aplicaAvisoDeCaso(deps, retorno())).status).toBe("ok");
+      expect(estado.enviados[0]?.to).toBe("5531998966398@c.us");
+      expect(estado.enviados[0]?.body).toContain(`RESPONDER ${CASO} ATUALIZACAO ${RESPOSTA}`);
+    });
+
+    it("no modo fixo vai ao número da empresa com o comando preso à resposta", async () => {
+      const { deps, estado } = comRetorno("fixo");
+      expect((await aplicaAvisoDeCaso(deps, retorno())).status).toBe("ok");
+      expect(estado.enviados[0]?.to).toBe("5531998966398@c.us");
+      expect(estado.enviados[0]?.body).toContain(`PERGUNTAR ${CASO} ATUALIZACAO ${RESPOSTA}`);
+    });
+
+    it("destino trocado durante o preparo cancela a entrega antes da rede", async () => {
+      const { deps, estado } = comRetorno("responsavel");
+      const mundo = deps.db.carregaMundoDoAviso!;
+      let leituras = 0;
+      deps.db.carregaMundoDoAviso = async (e) =>
+        ++leituras === 1
+          ? mundo(e)
+          : {
+              conversa: { assigned_to_user_id: null, assignee_kind: null },
+              negocio: null,
+              contato: null,
+              whatsapps: new Map(),
+            };
+      expect((await aplicaAvisoDeCaso(deps, retorno())).detail).toBe("envio_superado");
+      expect(estado.enviados).toHaveLength(0);
+    });
+  });
 });

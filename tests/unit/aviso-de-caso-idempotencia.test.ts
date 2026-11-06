@@ -10,7 +10,8 @@
  *      entre o envio e a gravação do `enviado` deixa a linha `pendente` com a
  *      mensagem já no celular de alguém.
  *
- * A defesa é a `unique (organization_id, case_id, destino)`: o handler
+ * A defesa são os dois índices parciais da migration 9240 (`..._abertura_unica`
+ * e `..._atualizacao_unica`, que somam o `update_event_id`): o handler
  * REIVINDICA a entrega ANTES de tocar a rede, e o `23505` é o sinal de que
  * outro processo chegou primeiro. Mandar duas vezes é pior que mandar tarde —
  * a equipe aprende a ignorar um canal que repete.

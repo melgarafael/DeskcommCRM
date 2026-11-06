@@ -111,6 +111,9 @@ export function EntregasDoAviso({
                 >
                   {t(situacao(entrega.status))}
                 </span>
+                <span className="text-xs text-muted-foreground">
+                  {t(entrega.update_event_id ? "Resposta do cliente" : "Abertura")}
+                </span>
                 <span className="text-xs text-muted-foreground">{entrega.destino_mascarado}</span>
                 <Link
                   href={`/app/ai/cases?caso=${entrega.case_id}`}
