@@ -24,8 +24,8 @@ import {
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import {
   CHAVE_DA_REFERENCIA,
-  REFERENCIA_EXTERNA,
   descricaoComReferencia,
+  ehReferenciaExterna,
 } from "@/lib/leads/referencia-externa";
 import { createLeadSchema, updateLeadSchema } from "@/lib/schemas/leads";
 import { completarDestinoDoNegocio } from "@/lib/external-db/receitas/destino-pela-referencia";
@@ -299,12 +299,12 @@ const createInputShape = {
     .string()
     .uuid()
     .optional()
-    .describe("O funil do negócio. Pode ser omitido (junto com stage_id) quando passar referencia_externa de um item cuja receita já tem funil de destino."),
+    .describe("Omita, com stage_id, ao passar referencia_externa."),
   stage_id: z
     .string()
     .uuid()
     .optional()
-    .describe("A etapa do negócio. Pode ser omitida (junto com pipeline_id) quando passar referencia_externa de um item cuja receita já tem funil de destino."),
+    .describe("Omita, com pipeline_id, ao passar referencia_externa."),
   title: z.string().min(2).max(200),
   description: z.string().max(2000).optional(),
   contact_id: z.string().uuid().optional(),
@@ -328,11 +328,11 @@ const createInputShape = {
    */
   referencia_externa: z
     .string()
-    .regex(REFERENCIA_EXTERNA)
+    // `refine`, não `.regex()`: o padrão iria no esquema de todo passo de todo turno,
+    // em toda instalação, e este campo só serve a quem usa o banco externo.
+    .refine(ehReferenciaExterna, "use o formato <receita>:<id>")
     .optional()
-    .describe(
-      "Só quando o cliente escolheu UM item de um resultado de receita do banco externo: a referência no formato <receita>:<id> (ex.: wordpress-conteudo:4821), com a receita que veio no resultado e o código (id) do item que está escrito na conversa. Nunca invente. Use junto com o contact_id da conversa; o funil e a etapa saem da receita, então pipeline_id e stage_id podem ser omitidos. O mesmo cliente repetindo o interesse no mesmo item não cria outro negócio.",
-    ),
+    .describe("O item que o cliente escolheu num resultado de receita: <receita>:<id> (ex.: wordpress-conteudo:4821). Nunca invente."),
   /**
    * Os campos que o DONO declarou em `pipeline.settings.fields` (#2297).
    *
