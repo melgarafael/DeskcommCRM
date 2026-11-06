@@ -25,7 +25,9 @@ const {
   pipelinesMock: vi.fn((): { data: unknown } => ({ data: undefined })),
   stagesMock: vi.fn((): { data: unknown } => ({ data: undefined })),
   // #2569 — as etapas do funil gravado, pela rota leve (`/pipelines/<id>/stages`).
-  estagiosMock: vi.fn((): { data: unknown; isPending?: boolean } => ({ data: undefined })),
+  estagiosMock: vi.fn(
+    (_id?: string | null): { data: unknown; isPending?: boolean } => ({ data: undefined }),
+  ),
   testeMock: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, data: undefined as unknown })),
   updateMock: vi.fn(async () => ({})),
   saveMock: vi.fn(async () => ({})),
@@ -446,7 +448,7 @@ describe("destino do funil/etapa já gravado, na primeira renderização (#2569)
   /** Depois que `/pipelines` e `/pipelines/<id>/stages` respondem. */
   function comAsListas() {
     pipelinesMock.mockReturnValue({ data: { data: [{ id: "p1", name: "Funil Vendas" }] } });
-    estagiosMock.mockImplementation((id: string | null) => ({
+    estagiosMock.mockImplementation((id?: string | null) => ({
       data: id === "p1" ? [{ id: "e1", name: "Prospecção" }] : [],
       isPending: false,
     }));
@@ -517,7 +519,7 @@ describe("destino do funil/etapa já gravado, na primeira renderização (#2569)
       },
     });
     // Uma etapa de cada funil: a de `p1` não existe em `p2`.
-    estagiosMock.mockImplementation((id: string | null) => ({
+    estagiosMock.mockImplementation((id?: string | null) => ({
       data:
         id === "p1"
           ? [{ id: "e1", name: "Prospecção" }]
