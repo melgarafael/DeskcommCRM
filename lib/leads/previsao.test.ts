@@ -324,7 +324,10 @@ describe("previsao — as duas parcelas: único e recorrência nova mensal (#360
     expect(mes.mes).toBe("2026-11");
 
     // As duas parcelas, com a MESMA probabilidade (50% da etapa "qualificada").
-    expect(mes.unico).toEqual({ bruto_cents: 300_000, ponderado_cents: 150_000, n: 1 });
+    // `unico.n` conta os dois negócios (o de setup e o de mensalidade têm valor
+    // único — o segundo, zero); `recorrente_mensal.n` conta só quem criou
+    // recorrência, a mesma convenção de `valores-do-periodo.ts`.
+    expect(mes.unico).toEqual({ bruto_cents: 300_000, ponderado_cents: 150_000, n: 2 });
     expect(mes.recorrente_mensal).toEqual({
       bruto_cents: 50_000,
       ponderado_cents: 25_000,

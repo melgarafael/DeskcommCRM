@@ -20,6 +20,28 @@
  * 3. **"SEM DATA" TAMBÉM É BALDE, NÃO EXCEÇÃO.** Sem `expected_close_date` não
  *    há mês para onde projetar; o valor continua visível, só sem cronograma.
  *
+ * 4. **DUAS PARCELAS, NUNCA A SOMA DELAS (fatia 2 da issue #3602).** Quem vende
+ *    setup + mensalidade guarda o setup em `value_cents` e a mensalidade em
+ *    `recurring_value_cents` (fatia 1, migration 9028). Até aqui a previsão lia
+ *    só a primeira coluna: o contrato de R$ 3.000 + R$ 500/mês era projetado
+ *    como R$ 3.000, seis vezes menor. Cada balde passa a carregar DOIS números
+ *    nomeados — `unico` e `recorrente_mensal` — com a MESMA ponderação por
+ *    etapa e NENHUM campo com a soma dos dois: somar é o defeito que a issue
+ *    descreve. `bruto_cents`/`ponderado_cents` do balde continuam sendo o
+ *    valor ÚNICO, para não quebrar quem já lia a resposta.
+ *
+ *    Decisões declaradas desta fatia:
+ *     · só a periodicidade MENSAL (ou ausente, que nasce mensal pela regra 2 de
+ *       `lib/leads/valor-recorrente.ts`) entra em `recorrente_mensal`; uma
+ *       `anual` NÃO é convertida em mensal (dividir por 12 inventaria número);
+ *     · `recurring_months` é lido do banco e NÃO multiplica nada: "único +
+ *       mensalidade × meses" é rótulo de comparação de contrato, não projeção
+ *       de caixa — a projeção é o que entra em CADA mês;
+ *     · a recorrência herda a probabilidade da etapa do negócio, como o único;
+ *     · o balde "sem probabilidade" mostra as duas parcelas brutas com
+ *       ponderado 0 (não somem); o "sem data" mostra as duas com o ponderado
+ *       que a etapa dá.
+ *
  * A fonte da probabilidade é escolhida por funil em
  * `crm_pipelines.settings.previsao.fonte`:
  *   - `"etapa"` (padrão): a calibração do gestor em `crm_stages.win_probability`;
@@ -31,6 +53,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ApiError } from "@/lib/api/types";
+import { PERIODICIDADE_PADRAO } from "@/lib/leads/valor-recorrente";
 
 export type FonteDeProbabilidade = "etapa" | "ia_quando_houver";
 
@@ -57,14 +80,51 @@ export interface LeadDaPrevisao {
   expected_close_date: string | null;
   /** De `crm_lead_scores`, quando a fonte é `ia_quando_houver`. 0–100. */
   ai_probability?: number | null;
+  /** Mensalidade (fatia 1). `null`/ausente = não há recorrência. */
+  recurring_value_cents?: number | null;
+  /**
+   * Periodicidade da fatia 1. Ausente = mensal (regra 2 de
+   * `lib/leads/valor-recorrente.ts`); `string` e não o literal do banco porque
+   * uma periodicidade que este build não conhece precisa ser REPRESENTÁVEL —
+   * é ela que o teste fixa como "não entra em `recorrente_mensal`".
+   */
+  recurring_period?: string | null;
+  /**
+   * Duração em meses. LIDA do banco e NÃO usada na projeção: multiplicar a
+   * mensalidade pelos meses daria o "valor do contrato", que é rótulo de
+   * comparação — a previsão responde o que entra EM CADA mês.
+   */
+  recurring_months?: number | null;
 }
 
-/** Um recorte por moeda: o valor bruto, o ponderado e quantos negócios. */
-export interface Balde {
-  moeda: string;
+/** Uma das duas parcelas de um balde — nunca a soma das duas. */
+export interface ParcelaDoBalde {
   bruto_cents: number;
   ponderado_cents: number;
+  /** Quantos negócios entraram nesta parcela. */
   n: number;
+}
+
+/**
+ * Um recorte por moeda: o valor bruto, o ponderado e quantos negócios.
+ *
+ * `bruto_cents`/`ponderado_cents` são o valor ÚNICO e continuam existindo com o
+ * mesmo significado de antes (retrocompatibilidade de consumidor). As duas
+ * parcelas nomeadas entram ao lado, e `unico` repete exatamente esses dois
+ * números — nenhum campo deste objeto soma `unico` com `recorrente_mensal`.
+ */
+export interface Balde {
+  moeda: string;
+  /** Retrocompatibilidade: valor ÚNICO bruto (== `unico.bruto_cents`). */
+  bruto_cents: number;
+  /** Retrocompatibilidade: valor ÚNICO ponderado (== `unico.ponderado_cents`). */
+  ponderado_cents: number;
+  /** Negócios contados no balde (único: todo negócio tem `value_cents`, nulo = 0). */
+  n: number;
+  /** `value_cents` — setup, implantação, matrícula. */
+  unico: ParcelaDoBalde;
+  /** `recurring_value_cents` mensal — a recorrência NOVA que o negócio cria. */
+  recorrente_mensal: ParcelaDoBalde;
 }
 
 /** Um mês de `expected_close_date`, dentro de uma moeda. */
@@ -75,7 +135,10 @@ export interface FaixaDeMes extends Balde {
 
 export interface Previsao {
   fonte: FonteDeProbabilidade;
-  /** Por moeda × mês de `expected_close_date`, em ordem de moeda e de mês. */
+  /**
+   * Por moeda × mês de `expected_close_date`, em ordem de moeda e de mês. Cada
+   * faixa traz as DUAS parcelas (`unico`, `recorrente_mensal`), nunca somadas.
+   */
   meses: FaixaDeMes[];
   /** Por moeda. NUNCA um total único: moeda diferente não soma. */
   totais: Balde[];
@@ -88,17 +151,73 @@ export interface Previsao {
   sem_probabilidade: Balde[];
 }
 
+const parcelaVazia = (): ParcelaDoBalde => ({ bruto_cents: 0, ponderado_cents: 0, n: 0 });
+
 const baldeVazio = (moeda: string): Balde => ({
   moeda,
   bruto_cents: 0,
   ponderado_cents: 0,
   n: 0,
+  unico: parcelaVazia(),
+  recorrente_mensal: parcelaVazia(),
 });
 
-function somar(alvo: Balde, bruto: number, ponderado: number): void {
-  alvo.bruto_cents += bruto;
-  alvo.ponderado_cents += ponderado;
+/** O que UM negócio contribui para o balde: as duas parcelas já ponderadas. */
+interface ParcelasDoNegocio {
+  unicoBruto: number;
+  unicoPonderado: number;
+  recorrenteBruto: number;
+  recorrentePonderado: number;
+  /** Há recorrência MENSAL (mesmo que de valor zero — o dado existe). */
+  temRecorrenciaMensal: boolean;
+}
+
+/**
+ * Soma um negócio no balde — as duas parcelas, cada uma no seu campo.
+ *
+ * O `n` do balde e o de `unico` contam o mesmo (todo negócio tem valor único,
+ * ainda que 0); `recorrente_mensal.n` conta só quem criou recorrência mensal.
+ */
+function somar(alvo: Balde, parcelas: ParcelasDoNegocio): void {
+  alvo.bruto_cents += parcelas.unicoBruto;
+  alvo.ponderado_cents += parcelas.unicoPonderado;
   alvo.n += 1;
+
+  alvo.unico.bruto_cents += parcelas.unicoBruto;
+  alvo.unico.ponderado_cents += parcelas.unicoPonderado;
+  alvo.unico.n += 1;
+
+  if (!parcelas.temRecorrenciaMensal) return;
+  alvo.recorrente_mensal.bruto_cents += parcelas.recorrenteBruto;
+  alvo.recorrente_mensal.ponderado_cents += parcelas.recorrentePonderado;
+  alvo.recorrente_mensal.n += 1;
+}
+
+/**
+ * Centavos que uma coluna pode somar — a mesma sanitização de
+ * `lib/metrics/valores-do-periodo.ts`: nulo é zero legítimo, e valor negativo
+ * ou não-finito entra como zero em vez de DIMINUIR a projeção.
+ */
+function centavos(valor: number | null | undefined): number {
+  if (typeof valor !== "number" || !Number.isFinite(valor)) return 0;
+  return Math.max(0, Math.round(valor));
+}
+
+/**
+ * A mensalidade do negócio — ou `null` quando ela NÃO é mensal.
+ *
+ * Mesma régua da fatia 1/2-item1: sem `recurring_value_cents` não há
+ * recorrência; periodicidade ausente nasce `monthly`; qualquer outra
+ * periodicidade fica de fora de `recorrente_mensal` em vez de ser convertida
+ * (uma anual dividida por 12 seria um número que ninguém pediu).
+ */
+function recorrenteMensalDe(lead: LeadDaPrevisao): number | null {
+  if (lead.recurring_value_cents === null || lead.recurring_value_cents === undefined) {
+    return null;
+  }
+  const periodicidade = (lead.recurring_period ?? "").trim() || PERIODICIDADE_PADRAO;
+  if (periodicidade !== PERIODICIDADE_PADRAO) return null;
+  return centavos(lead.recurring_value_cents);
 }
 
 /** ISO 4217 em caixa alta; sem moeda declarada o funil é BRL, como o resto da tela. */
@@ -169,34 +288,48 @@ export function previsao(
     if (lead.status !== "open") continue;
 
     const moeda = moedaDe(lead);
-    const bruto = Math.max(0, lead.value_cents ?? 0);
+    const bruto = centavos(lead.value_cents);
+    const recorrente = recorrenteMensalDe(lead);
     const prob = probabilidadeDoLead(
       lead,
       lead.stage_id ? porId.get(lead.stage_id) : undefined,
       fonte,
     );
 
+    // A MESMA probabilidade pondera as duas parcelas: a chance de fechar é do
+    // negócio, não do tipo de valor. Sem probabilidade, as duas ficam com
+    // ponderado 0 no balde próprio — bruto visível, promessa nenhuma.
+    const parcelas: ParcelasDoNegocio = {
+      unicoBruto: bruto,
+      unicoPonderado: prob === null ? 0 : Math.round((bruto * prob) / 100),
+      recorrenteBruto: recorrente ?? 0,
+      recorrentePonderado:
+        prob === null || recorrente === null ? 0 : Math.round((recorrente * prob) / 100),
+      temRecorrenciaMensal: recorrente !== null,
+    };
+
     // SEM PROBABILIDADE: não pesa e não some. Vem antes da data de propósito —
     // um negócio sem probabilidade e sem data é incerto nos DOIS eixos, e
     // contá-lo duas vezes sugeriria que são problemas separados.
     if (prob === null) {
-      somar(acumular(semProbabilidade, moeda), bruto, 0);
+      somar(acumular(semProbabilidade, moeda), parcelas);
       continue;
     }
 
-    const ponderado = Math.round((bruto * prob) / 100);
-    somar(acumular(totais, moeda), bruto, ponderado);
+    somar(acumular(totais, moeda), parcelas);
 
     const data = lead.expected_close_date;
     if (!data || !DATA_VALIDA.test(data)) {
-      somar(acumular(semData, moeda), bruto, ponderado);
+      // Sem data a recorrência NÃO some: ela aparece no balde sem mês, com o
+      // ponderado que a etapa dela dá.
+      somar(acumular(semData, moeda), parcelas);
       continue;
     }
 
     const mes = data.slice(0, 7);
     const chave = `${moeda}::${mes}`;
     const faixa = meses.get(chave) ?? { ...baldeVazio(moeda), mes };
-    somar(faixa, bruto, ponderado);
+    somar(faixa, parcelas);
     meses.set(chave, faixa);
   }
 
@@ -271,7 +404,10 @@ export async function carregarPrevisao(
       .order("position", { ascending: true }),
     supabase
       .from("crm_leads")
-      .select("id, stage_id, status, value_cents, currency, expected_close_date")
+      .select(
+        "id, stage_id, status, value_cents, currency, expected_close_date, " +
+          "recurring_value_cents, recurring_period, recurring_months",
+      )
       .eq("organization_id", organizationId)
       .eq("pipeline_id", pipelineId)
       .eq("status", "open")

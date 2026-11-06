@@ -170,9 +170,17 @@ describe("GET /api/v1/pipelines/[id]/forecast — visibilidade", () => {
       };
     };
 
-    // Só o negócio do atendente: R$ 1.000,00 a 50% → R$ 500,00.
+    // Só o negócio do atendente: R$ 1.000,00 a 50% → R$ 500,00. Sem
+    // recorrência preenchida, a segunda parcela vem ZERADA (fatia 2 da #3602).
     expect(body.data.totais).toEqual([
-      { moeda: "BRL", bruto_cents: 100_000, ponderado_cents: 50_000, n: 1 },
+      {
+        moeda: "BRL",
+        bruto_cents: 100_000,
+        ponderado_cents: 50_000,
+        n: 1,
+        unico: { bruto_cents: 100_000, ponderado_cents: 50_000, n: 1 },
+        recorrente_mensal: { bruto_cents: 0, ponderado_cents: 0, n: 0 },
+      },
     ]);
 
     // O client admin (service-role, bypassa RLS) nem é cogitado.

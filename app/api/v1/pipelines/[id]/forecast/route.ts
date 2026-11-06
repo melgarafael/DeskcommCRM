@@ -6,6 +6,12 @@
  * os baldes "sem data" e "sem probabilidade" reportados à parte. A regra pura
  * mora em `lib/leads/previsao.ts`; aqui só há transporte.
  *
+ * Cada balde traz DUAS parcelas nomeadas (fatia 2 da #3602): `unico`
+ * (`value_cents` — setup) e `recorrente_mensal` (`recurring_value_cents` mensal
+ * — a recorrência nova), ponderadas pela mesma probabilidade e NUNCA somadas.
+ * `bruto_cents`/`ponderado_cents` do balde continuam sendo o valor único, para
+ * não quebrar consumidor antigo.
+ *
  * Auth: `requireRole("agent")` — é leitura de card, não configuração.
  *
  * ⚠️ O CLIENTE É O DE SESSÃO, e isto é o CRITÉRIO DE ACEITE, não um detalhe de

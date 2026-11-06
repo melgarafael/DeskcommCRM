@@ -65,10 +65,13 @@ export const crmGetPipelineForecast: McpToolDefinition<typeof forecastInputShape
   description:
     "Devolve a previsão ponderada de um funil: negócios ABERTOS agrupados por moeda e por mês de " +
     "expected_close_date, com bruto_cents e ponderado_cents (valor x probabilidade), mais os baldes " +
-    "\"sem data\" e \"sem probabilidade\" reportados À PARTE — nunca somados como zero. A fonte da " +
-    "probabilidade vem de crm_pipelines.settings.previsao.fonte: \"etapa\" (padrão) ou " +
-    "\"ia_quando_houver\" (usa crm_lead_scores.ai_probability quando existe). Moedas diferentes " +
-    "NUNCA são somadas entre si.",
+    "\"sem data\" e \"sem probabilidade\" reportados À PARTE — nunca somados como zero. Cada balde " +
+    "traz DUAS parcelas nomeadas e separadas: `unico` (value_cents — setup, implantação) e " +
+    "`recorrente_mensal` (recurring_value_cents mensal — a recorrência nova que o negócio cria), " +
+    "ponderadas pela mesma probabilidade e NUNCA somadas entre si; bruto_cents/ponderado_cents do " +
+    "balde continuam sendo o valor único. A fonte da probabilidade vem de " +
+    "crm_pipelines.settings.previsao.fonte: \"etapa\" (padrão) ou \"ia_quando_houver\" (usa " +
+    "crm_lead_scores.ai_probability quando existe). Moedas diferentes NUNCA são somadas entre si.",
   inputSchema: forecastInputShape,
   category: "read",
   requiresRole: "agent",

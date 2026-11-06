@@ -17338,6 +17338,11 @@ export const DICIONARIO: Traducoes = {
 
   // ─── PREVISÃO PONDERADA DO FUNIL (issue #1535) ───
   "Previsão": { es: "Previsión" },
+  "Único": { es: "Único" },
+  "Recorrência/mês": { es: "Recurrencia/mes" },
+  "Valor único e recorrência nova por mês ficam lado a lado — nunca somados.": {
+    es: "El valor único y la recurrencia nueva por mes van lado a lado, nunca sumados.",
+  },
   "Ponderado": { es: "Ponderado" },
   "ponderado": { es: "ponderado" },
   "Bruto": { es: "Bruto" },
