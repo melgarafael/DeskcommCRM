@@ -1854,6 +1854,7 @@ export const DICIONARIO: Traducoes = {
   // (migration 9222, #3635) O aviso do canal oficial direto tem kind próprio,
   // então tem destino e rótulo próprios — e por isso precisa da própria linha.
   "Revisar modelos do canal oficial": { es: "Revisar plantillas del canal oficial" },
+  "Um modelo do WhatsApp oficial mudou de situação na revisão": { es: "Una plantilla del WhatsApp oficial cambió de situación en la revisión" },
   "Abra Conexões › Modelos do canal oficial: o modelo reprovado precisa de correção no texto antes de voltar para revisão.": { es: "Abre Conexiones › Plantillas del canal oficial: la plantilla rechazada necesita corrección en el texto antes de volver a revisión." },
   "Abrir uma conversa afetada": { es: "Abrir una conversación afectada" },
   "Abrir Agenda": { es: "Abrir Agenda" },
