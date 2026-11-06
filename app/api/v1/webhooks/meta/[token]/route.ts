@@ -239,12 +239,16 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
       // contradiz a tela que ele manda abrir. E `avisarStatusDoModelo` não
       // lança — falha dela não pode virar 5xx (a Meta re-entregaria o mesmo
       // evento para sempre) nem desfazer o espelho já gravado.
-      const desfecho = erroDoEspelho
-        ? "modelo_nao_atualizado"
-        : desfechoDoAviso(await avisarStatusDoModelo(admin, {
-            organizationId: session.organizationId,
-            channelSessionId: session.id,
-          }, e));
+      let desfecho = "modelo_nao_atualizado";
+      if (!erroDoEspelho) {
+        desfecho = desfechoDoAviso(
+          await avisarStatusDoModelo(
+            admin,
+            { organizationId: session.organizationId, channelSessionId: session.id },
+            e,
+          ),
+        );
+      }
       desfechos.push(desfecho);
     } else if (e.status === "failed") {
       // A recusa da plataforma chega DEPOIS do 200 (131047 fora da janela,

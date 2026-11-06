@@ -452,15 +452,16 @@ async function datafyInbound(
       // antes de a tela que ele manda abrir já estar certa. Mesmo caminho do
       // canal oficial direto (`meta/aviso-do-modelo`), e nunca uma segunda
       // tabela de avisos — a Central é uma só.
-      const desfecho = error
-        ? "modelo_nao_atualizado"
-        : desfechoDoAviso(
-            await avisarStatusDoModelo(
-              admin,
-              { organizationId: orgId, channelSessionId: input.session.id },
-              e,
-            ),
-          );
+      let desfecho = "modelo_nao_atualizado";
+      if (!error) {
+        desfecho = desfechoDoAviso(
+          await avisarStatusDoModelo(
+            admin,
+            { organizationId: orgId, channelSessionId: input.session.id },
+            e,
+          ),
+        );
+      }
       desfechos.push(desfecho);
       continue;
     }
