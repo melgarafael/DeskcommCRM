@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   conferirRecibosDeAgendamento,
+  extrairRecibosDeAgendamento,
   lerAgendaDaRevisao,
   lerReservasConfirmadasDoContato,
   MAXIMO_DE_RESERVAS_NA_REVISAO,
@@ -212,6 +213,17 @@ describe("conferência atual dos recibos, sem repetir a gravação", () => {
     { service_requires_confirmation: true },
   ])("descarta replay cujo estado atual diverge: %j", async (mudanca) => {
     expect((await conferir([{ ...linha, ...mudanca }])).evidencias).toEqual([]);
+  });
+
+  it.each([
+    [recibo.starts_at, false],
+    ["2026-12-10T14:00:00+03:00", false], // 11h em UTC: o texto parece depois, o instante é antes
+    ["2026-12-10T12:00:00-03:00", true], // 15h em UTC: o texto parece antes, o instante é depois
+  ])("recibo só vale se termina depois de começar: %s", (ends_at, vale) => {
+    const compromisso = { ...recibo, ends_at };
+    expect(extrairRecibosDeAgendamento({ marcado: true, compromisso })).toEqual(
+      vale ? [compromisso] : [],
+    );
   });
 
   it("sem beneficiário registrado, comprova só o contato; nome operacional excessivo invalida", async () => {

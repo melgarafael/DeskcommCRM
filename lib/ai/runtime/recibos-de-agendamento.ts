@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { LOCAIS_DE_AGENDAMENTO } from "@/lib/agenda/tipos";
 import { rotuloDoLocal } from "@/lib/agenda/locais";
 import type { Queryable } from "@/lib/agent-engine/queue/queue";
+import { instanteDoBanco } from "@/lib/tempo/agora";
 
 /** Mutações que tornam qualquer comprovante anterior do turno insuficiente. */
 export const ESCRITAS_DE_AGENDAMENTO: ReadonlySet<string> = new Set([
@@ -14,6 +15,18 @@ export const ESCRITAS_DE_AGENDAMENTO: ReadonlySet<string> = new Set([
   "crm_set_appointment_outcome",
 ]);
 
+/** Hora ilegível não comprova: `null` nunca coincide nem ordena. */
+function mesmoInstante(a: unknown, b: unknown): boolean {
+  const instante = instanteDoBanco(a);
+  return instante !== null && instante === instanteDoBanco(b);
+}
+
+function terminaDepois(inicio: unknown, fim: unknown): boolean {
+  const de = instanteDoBanco(inicio);
+  const ate = instanteDoBanco(fim);
+  return de !== null && ate !== null && ate > de; // ISO em UTC ordena como texto
+}
+
 const reciboSchema = z
   .object({
     id: z.uuid(),
@@ -22,7 +35,7 @@ const reciboSchema = z
     ends_at: z.iso.datetime({ offset: true }),
     revision: z.number().int().positive(),
   })
-  .refine((r) => Date.parse(r.ends_at) > Date.parse(r.starts_at));
+  .refine((r) => terminaDepois(r.starts_at, r.ends_at));
 
 export type ReciboDeAgendamento = z.infer<typeof reciboSchema>;
 
@@ -165,8 +178,8 @@ export async function conferirRecibosDeAgendamento(
     if (
       !comprovaReserva(row, escopo) ||
       row.revision !== recibo.revision ||
-      Date.parse(row.starts_at) !== Date.parse(recibo.starts_at) ||
-      Date.parse(row.ends_at) !== Date.parse(recibo.ends_at)
+      !mesmoInstante(row.starts_at, recibo.starts_at) ||
+      !mesmoInstante(row.ends_at, recibo.ends_at)
     )
       return [];
     evidencias.push(projetarEvidencia(row));
