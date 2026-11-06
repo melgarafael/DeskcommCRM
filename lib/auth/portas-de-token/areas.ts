@@ -253,6 +253,32 @@ export function estaSemAreaPorDesenho(modelo: string, metodo: string): boolean {
   });
 }
 
+/**
+ * Leituras que trazem o CONTATO (nome, telefone) dentro da resposta e que NÃO passam pelo redator
+ * (`lib/modulo/redigir-contato.ts`). Para módulo, estas portas exigem TAMBÉM a área `contatos` em
+ * leitura: o consentimento por área vale para o dado e não só para a rota (ADR-0005 D4). Conversas e
+ * o quadro de negócios não entram aqui: o redator tira o contato e eles seguem com a própria área.
+ * Lado seguro: rota nova que embute contato entra nesta lista ou passa pelo redator; a cerca
+ * `tests/unit/modulo-rota-com-contato-redige.test.ts` cobra uma das duas.
+ */
+const LEITURAS_COM_CONTATO_EMBUTIDO: readonly string[] = [
+  "agenda/agendamentos",
+  "agenda/vinculos",
+  "ai/followups/queue",
+  "ai/followups/enrollments/[id]",
+  "ai/cases/[id]/chat",
+  "leads/[id]/contatos-relacionados",
+  "leads/proposals",
+  "proposals/[id]/documento",
+];
+
+export function leituraExigeAreaContatos(modelo: string, metodo: string): boolean {
+  if (!LEITURA.includes(metodoNormalizado(metodo))) return false;
+  const partes = segmentos(modelo);
+  if (!partes) return false;
+  return LEITURAS_COM_CONTATO_EMBUTIDO.some((p) => casa(p, partes, false));
+}
+
 export function areaDaPorta(modelo: string, metodo: string): AreaDaPorta | null {
   const m = metodoNormalizado(metodo);
   const modo: ModoDaPorta | null = LEITURA.includes(m)
@@ -281,7 +307,12 @@ export function areaDaPorta(modelo: string, metodo: string): AreaDaPorta | null 
  * "valor dinâmico" quando o valor não é um UUID. Segmento que não está aqui vira `[id]`.
  */
 export const SEGMENTOS_LITERAIS_CONHECIDOS: ReadonlySet<string> = new Set(
-  [...SEM_AREA.map((x) => x.modelo), ...MAPA.map(([prefixo]) => prefixo)]
+  [
+    ...SEM_AREA.map((x) => x.modelo),
+    ...MAPA.map(([prefixo]) => prefixo),
+    // Sem isto `agenda/vinculos` viraria `agenda/[id]` e a trava de contato nunca casaria.
+    ...LEITURAS_COM_CONTATO_EMBUTIDO,
+  ]
     .flatMap((modelo) => modelo.split("/"))
     .filter((s) => !ehParametro(s)),
 );
