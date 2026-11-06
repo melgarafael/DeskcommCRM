@@ -4742,6 +4742,8 @@
   "Configuração e agentes de IA são áreas sensíveis: mexem no funcionamento da organização e do atendimento. Libere só para um módulo em que você confia.": "Ayarlar ve yapay zekâ ajanları hassas alanlardır: kuruluşun ve müşteri hizmetlerinin işleyişini değiştirir. Yalnızca güvendiğiniz bir modüle izin verin.",
   "Sensível": "Hassas",
   "Salvar áreas": "Alanları kaydet",
+  "Consentir": "Onay ver",
+  "Marcamos o que o módulo pede, menos as áreas sensíveis. Revise, desmarque o que não quiser e clique em Consentir. Nada é liberado antes disso.": "Modülün istediklerini, hassas alanlar hariç, işaretledik. Gözden geçirin, istemediğinizin işaretini kaldırın ve Onay ver'e tıklayın. Bundan önce hiçbir şey serbest bırakılmaz.",
   "Ative o módulo nesta organização para escolher as áreas.": "Alanları seçmek için modülü bu kuruluşta etkinleştirin.",
   "Saia do acompanhamento para alterar o consentimento.": "İzni değiştirmek için destek oturumundan çıkın.",
   "Só um administrador da organização pode alterar este consentimento.": "Bu izni yalnızca kuruluş yöneticisi değiştirebilir.",

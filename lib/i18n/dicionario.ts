@@ -15410,6 +15410,8 @@ export const DICIONARIO: Traducoes = {
   "Configuração e agentes de IA são áreas sensíveis: mexem no funcionamento da organização e do atendimento. Libere só para um módulo em que você confia.": { es: "Configuración y agentes de IA son áreas sensibles: afectan el funcionamiento de la organización y de la atención. Libéralas solo para un módulo en el que confíes." },
   "Sensível": { es: "Sensible" },
   "Salvar áreas": { es: "Guardar áreas" },
+  "Consentir": { es: "Consentir" },
+  "Marcamos o que o módulo pede, menos as áreas sensíveis. Revise, desmarque o que não quiser e clique em Consentir. Nada é liberado antes disso.": { es: "Marcamos lo que el módulo pide, menos las áreas sensibles. Revisa, desmarca lo que no quieras y haz clic en Consentir. Nada se libera antes de eso." },
   "Ative o módulo nesta organização para escolher as áreas.": { es: "Activa el módulo en esta organización para elegir las áreas." },
   "Saia do acompanhamento para alterar o consentimento.": { es: "Sal del acompañamiento para cambiar el consentimiento." },
   "Só um administrador da organização pode alterar este consentimento.": { es: "Solo un administrador de la organización puede cambiar este consentimiento." },
