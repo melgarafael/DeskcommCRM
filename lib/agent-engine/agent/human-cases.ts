@@ -146,12 +146,6 @@ export async function getCaseAwaitingLead(
           limit 1
        ) e on true
       where c.organization_id = $1 and c.conversation_id = $2 and c.status = 'awaiting_lead'
-        and (c.context_snapshot->'service_boundary' is null or exists (
-          select 1 from conversations scope left join demandas d on d.organization_id=scope.organization_id
-            and d.contact_id=scope.contact_id and d.id=scope.current_demanda_id
-          where scope.organization_id=$1 and scope.id=$2 and public.fn_meet_boundary_current(
-            (c.context_snapshot->'service_boundary') || case when c.context_snapshot->'service_boundary'->>'demanda_id' is null
-              then jsonb_build_object('demanda_id',scope.current_demanda_id,'demanda_revision',d.revision) else '{}'::jsonb end)))
       limit 1`,
     [tenantId, conversationId],
   );
@@ -185,14 +179,14 @@ export const FRASE_AO_CLIENTE_EM_PEDIDO_SOBRE_CASO_ABERTO =
  *
  * ## Por que INSTRUÇÃO, e não reenvio do aviso (issue #3097)
  *
- * O autor aceitava as duas saídas. O reenvio do aviso à equipe (opção a) esbarra
- * no MESMO controle de repetição do aviso inicial — a `unique (organization_id,
- * case_id, destino)` de `entregas_de_aviso_de_caso` (migration 0292, replicada
- * aqui no `reivindicaEntrega` de `lib/escalacao/aviso-ao-suporte.ts`). Com a
- * entrega do caso já `enviado`, o reenvio cai em `ja_resolvido:enviado`: nenhuma
- * linha nasce e ninguém é avisado justamente no cenário do relato. Fazer o
- * segundo pedido avisar exigiria OUTRA chave de entrega — coluna nova, decisão
- * do mantenedor, e o próprio goal manda preferir a instrução nesse caso.
+ * O autor aceitava as duas saídas. Quando #3097 foi fechada, o reenvio do aviso à
+ * equipe (opção a) esbarrava na `unique (organization_id, case_id, destino)` de
+ * `entregas_de_aviso_de_caso` (migration 0292): com a entrega já `enviado`, nenhuma
+ * linha nascia. A migration 9240 trocou essa chave por dois índices parciais, um
+ * da abertura e um por `update_event_id`, para o retorno do cliente. A chave
+ * deixou de ser o impedimento: `agent_noted` segue sem aviso porque o que falta
+ * para o segundo pedido avisar é a decisão de produto do #3097, e a instrução
+ * continua sendo a saída vigente.
  *
  * ## O que a instrução faz
  *
@@ -321,6 +315,11 @@ export async function provideCaseUpdate(
   await guardServiceEffect();
   // A transição, o fato persistido e a outbox são um único efeito atômico.
   // O id do pedido vem da fotografia do turno, nunca da saída do modelo.
+  // A fronteira do atendimento NÃO entra aqui: ela decide o aviso e o comando
+  // (`fn_ler_retorno_de_caso`), nunca se a resposta do cliente fica no caso. Com
+  // ela vencida (conversa reaberta, próximo passo da demanda mudou), o caso volta
+  // a `awaiting_human` sem aviso; o comando da abertura também é recusado, porque
+  // não é o da última informação, e a equipe responde pela tela do caso.
   const { rows } = await db.query<{ case_id: string }>(
     `with request as (
        select id from agent_case_events
@@ -333,12 +332,6 @@ export async function provideCaseUpdate(
         where organization_id = $1 and id = $2 and status = 'awaiting_lead'
           and conversation_id = $4
           and exists (select 1 from request where $5::uuid is null or id = $5)
-          and (ac.context_snapshot->'service_boundary' is null or exists (
-            select 1 from conversations scope left join demandas d on d.organization_id=scope.organization_id
-              and d.contact_id=scope.contact_id and d.id=scope.current_demanda_id
-            where scope.organization_id=$1 and scope.id=$4 and public.fn_meet_boundary_current(
-              (ac.context_snapshot->'service_boundary') || case when ac.context_snapshot->'service_boundary'->>'demanda_id' is null
-                then jsonb_build_object('demanda_id',scope.current_demanda_id,'demanda_revision',d.revision) else '{}'::jsonb end)))
           and ($6::uuid is null or exists (
             select 1 from messages m join conversations c on c.organization_id=m.organization_id and c.id=m.conversation_id
             where m.organization_id=$1 and m.conversation_id=$4 and m.id=$6 and m.direction='inbound'
