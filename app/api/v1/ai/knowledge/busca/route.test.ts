@@ -50,7 +50,9 @@ type Linha = { chunk_id: string; knowledge_source_id: string | null; source_name
 /** Supabase falso: `.from()` encadeável, `.rpc()` devolvendo o que o caso pedir
  *  e `.insert()` REGISTRANDO a linha — a F2 da #1869 grava telemetria, e sem
  *  registrar aqui não há como provar que a busca humana virou métrica. */
-function supabaseFalso(opts: { fontes?: unknown[]; linhas?: Linha[]; insertFalha?: boolean } = {}) {
+function supabaseFalso(
+  opts: { fontes?: unknown[]; linhas?: Linha[]; insertFalha?: boolean; fontesErro?: string } = {},
+) {
   const rpcArgs: unknown[] = [];
   const inserts: Record<string, unknown>[] = [];
   const fontes = opts.fontes ?? [{ id: FONTE }];
@@ -66,7 +68,11 @@ function supabaseFalso(opts: { fontes?: unknown[]; linhas?: Linha[]; insertFalha
       return Promise.resolve({ data: null, error: null });
     },
     then: (resolve: (v: unknown) => unknown) =>
-      Promise.resolve({ data: fontes, error: null }).then(resolve),
+      Promise.resolve(
+        opts.fontesErro
+          ? { data: null, error: { message: opts.fontesErro } }
+          : { data: fontes, error: null },
+      ).then(resolve),
   };
   const db = {
     from: () => cadeia,
@@ -117,8 +123,15 @@ describe("perguntar ao acervo", () => {
     // (a) nenhuma fonte ativa — o mais parecido possível de "não encontramos".
     vi.mocked(createClient).mockResolvedValue(supabaseFalso({ fontes: [] }) as never);
     const vazio = await resultadoDe({ pergunta: "qual o horario" });
-    const a = (await vazio.json()) as { data: { motivo: string; trechos: unknown[] } };
+    // Acervo vazio é ESTADO, não falha: 200 com lista vazia e sem similaridade.
+    // Um 500 (ou um erro de banco) faria o operador abrir suporte por causa de
+    // uma organização que só ainda não publicou material.
+    expect(vazio.status).toBe(200);
+    const a = (await vazio.json()) as {
+      data: { motivo: string; trechos: unknown[]; melhorSimilaridade: number | null };
+    };
     expect(a.data.trechos).toEqual([]);
+    expect(a.data.melhorSimilaridade).toBeNull();
     expect(a.data.motivo).toContain("material publicado");
 
     // (b) a base TEM material, mas não tem essa informação.
@@ -169,6 +182,75 @@ describe("perguntar ao acervo", () => {
     const rpc = db.__rpc as Array<{ args: { p_organization_id: string } }>;
     expect(rpc).toHaveLength(1);
     expect(rpc[0]?.args.p_organization_id).toBe(ORG_DA_SESSAO);
+  });
+
+  it("devolve os trechos com o NOME da fonte, que é o que a tela cita", async () => {
+    // Sem `source_name` o operador lê um parágrafo solto e não sabe de que
+    // material ele saiu — e é justamente a citação que separa "a IA respondeu"
+    // de "a IA inventou". O campo tem de atravessar a rota, não só o `busca.ts`.
+    vi.mocked(createClient).mockResolvedValue(
+      supabaseFalso({
+        linhas: [
+          {
+            chunk_id: "c1",
+            knowledge_source_id: FONTE,
+            source_name: "Manual do plano",
+            content: "O prazo de entrega é de 5 dias úteis.",
+            similarity: 0.87,
+          },
+        ],
+      }) as never,
+    );
+
+    const res = await resultadoDe({ pergunta: "qual o prazo de entrega" });
+    expect(res.status).toBe(200);
+    const corpo = (await res.json()) as {
+      data: {
+        trechos: Array<{ source_name: string; content: string; similarity: number }>;
+        melhorSimilaridade: number | null;
+      };
+    };
+
+    expect(corpo.data.trechos).toHaveLength(1);
+    expect(corpo.data.trechos[0]?.source_name).toBe("Manual do plano");
+    expect(corpo.data.trechos[0]?.content).toContain("5 dias úteis");
+    expect(corpo.data.melhorSimilaridade).toBeCloseTo(0.87, 5);
+  });
+
+  it("quem não enxerga o inbox recebe 403, sem ler acervo nenhum", async () => {
+    // O gate é o `requireRole("agent")` da rota. Sem ele, um `viewer` (ou um
+    // membership revogado) perguntaria ao acervo de uma organização que não
+    // pode abrir — e o custo do embedding sairia na chave do self-hoster.
+    vi.mocked(requireRole).mockResolvedValueOnce({
+      ok: false,
+      response: new Response(null, { status: 403 }),
+    } as never);
+
+    const res = await resultadoDe({ pergunta: "qual o prazo de entrega" });
+
+    expect(res.status).toBe(403);
+    // Nem cliente, nem embedding: a recusa acontece ANTES de qualquer leitura.
+    expect(createClient).not.toHaveBeenCalled();
+    const { embedText } = await import("@/lib/ai/embed");
+    expect(vi.mocked(embedText)).not.toHaveBeenCalled();
+  });
+
+  it("erro ao LER o acervo vira 500 — nunca um 200 dizendo 'a base não tem'", async () => {
+    // Este é o caso que separa "não sei" de "não tem". Engolir o erro do banco
+    // e devolver lista vazia faria a tela afirmar, com todas as letras, que a
+    // base não sabe a resposta — quando na verdade a leitura falhou. Quem
+    // pergunta desiste de procurar por causa de um diagnóstico inventado.
+    vi.mocked(createClient).mockResolvedValue(
+      supabaseFalso({ fontesErro: "connection refused" }) as never,
+    );
+
+    const res = await resultadoDe({ pergunta: "qual o prazo de entrega" });
+
+    expect(res.status).toBe(500);
+    const corpo = (await res.json()) as { error: { message: string } };
+    expect(corpo.error.message).toContain("Não foi possível ler o acervo");
+    const { embedText } = await import("@/lib/ai/embed");
+    expect(vi.mocked(embedText)).not.toHaveBeenCalled();
   });
 
   it("apara a quantidade entre 1 e 10", async () => {
