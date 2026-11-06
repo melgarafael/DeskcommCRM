@@ -16,7 +16,10 @@
 import type pg from 'pg';
 
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
-import { lerTextoDoAvisoForaDoHorario } from './aviso-fora-do-horario';
+import {
+  lerTextoDoAvisoDeFeriadoForaDoHorario,
+  lerTextoDoAvisoForaDoHorario,
+} from './aviso-fora-do-horario';
 import { lerFiltroDePalavraChave } from './palavra-chave-do-gatilho';
 import {
   avaliarPublico,
@@ -147,6 +150,12 @@ export interface PublishedAgentConfig {
    * Opcional porque nasce depois das fixtures que montam esta interface à mão.
    */
   avisoForaDoHorario?: string | null;
+  /**
+   * Texto do aviso de FERIADO NACIONAL (#3877), da chave irmã
+   * `filters.business_hours.notice_feriado`. `null` = não configurado, e o
+   * feriado sai com o `notice` de sempre. Opcional pela mesma razão acima.
+   */
+  avisoDeFeriadoForaDoHorario?: string | null;
   /**
    * `ai_agents.config.mcp_externo_no_atendimento` (#2147): o servidor MCP
    * externo também carrega em turno com contato, com a identidade dele em
@@ -323,6 +332,7 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // `null` (sem janela ⇒ atende sempre), nunca uma mordaça acidental.
     janelaDeAtendimento: lerJanelaDeAtendimento(r.trigger_config),
     avisoForaDoHorario: lerTextoDoAvisoForaDoHorario(r.trigger_config),
+    avisoDeFeriadoForaDoHorario: lerTextoDoAvisoDeFeriadoForaDoHorario(r.trigger_config),
     // `=== true`: jsonb ausente ou com outro tipo é DESLIGADO, o lado seguro.
     mcpExternoNoAtendimento: cfg.mcp_externo_no_atendimento === true,
     // Mesma leitura defensiva da linha acima: regex torta/valor vazio ⇒ `null`
