@@ -1460,6 +1460,12 @@ export const AUDIT_ACTIONS = [
   // 9096), na organização NOVA, com o id do molde e as contagens no metadata;
   // quem lê é Painel › Empresas › [empresa] ("IA copiada do molde").
   "ai.molde_de_ia_aplicado",
+  "scheduled_message.created",
+  "scheduled_message.cancelled",
+  "scheduled_message.updated",
+  "scheduled_message.sent",
+  "scheduled_message.failed",
+  "scheduled_message.skipped",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

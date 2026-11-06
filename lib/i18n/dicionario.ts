@@ -40,6 +40,14 @@ import { TEXTOS_AGENDA_SERVICOS } from "./agenda-servicos";
 type Traducoes = Record<string, Partial<Record<Exclude<Idioma, "pt-BR">, string>>>;
 
 export const DICIONARIO: Traducoes = {
+  // Mensagens agendadas (issue #3118): textos da tela do contato.
+  "Nenhuma mensagem agendada para este contato.": { es: "No hay mensajes programados para este contacto." },
+  "Título (opcional)": { es: "Título (opcional)" },
+  "Insira aqui o título": { es: "Escriba aquí el título" },
+  "Insira sua mensagem": { es: "Escriba su mensaje" },
+  "Recorrência": { es: "Repetición" },
+  "Definir data de término": { es: "Definir fecha de término" },
+  "Cancelar este envio": { es: "Cancelar este envío" },
   "Custo AI / dia (US$)": { es: "Costo IA / día (US$)" },
   "chamadas sem preço": { es: "llamadas sin precio" },
   "A empresa ativa mudou. Recarregue a página antes de continuar.": { es: "La empresa activa cambió. Recarga la página antes de continuar." },
