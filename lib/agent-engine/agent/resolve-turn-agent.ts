@@ -503,15 +503,19 @@ export async function resolveTurnAgent(
           ...rastroDoPublico(escolha),
         };
       }
-      const config = await _loadAgentById(db, input.tenantId, router.fallbackAgentId);
+      // O nome `agentConfig` não é estilo: é o que a cerca
+      // `knobs-da-versao-publicada-sao-aplicados` enxerga como CONSUMIDOR do
+      // campo (`agentConfig.publico`). Renomear para `config` faria o campo
+      // parecer carregado e nunca aplicado.
+      const agentConfig = await _loadAgentById(db, input.tenantId, router.fallbackAgentId);
       // #3722 fatia 2: o fallback também tem público. Se a régua o barra, ele
       // NÃO assume — nem como "membro padrão/none". A conversa fica sem dono e
       // o turno termina em silêncio, como quando o número inteiro barra.
-      if (config !== null) {
+      if (agentConfig !== null) {
         const avaliado = await avaliarAgentePeloPublico(
-          config.agentId,
-          config.agentName,
-          config.publico,
+          agentConfig.agentId,
+          agentConfig.agentName,
+          agentConfig.publico,
           lerFatosDoPublico,
           router.members.length,
         );
@@ -521,7 +525,7 @@ export async function resolveTurnAgent(
             deps.log.info('resolve-turn-agent: público barrou o fallback do roteador — turno silenciado (#3722)', {
               routerId: router.id,
               outcome,
-              fallbackAgentId: config.agentId,
+              fallbackAgentId: agentConfig.agentId,
               regra: avaliado.decisao.regra,
             });
             return {
@@ -535,7 +539,7 @@ export async function resolveTurnAgent(
           }
         }
       }
-      if (config === null) {
+      if (agentConfig === null) {
         // regra 7: fallback também sem versão publicada — fim legítimo da
         // linha, mas o outcome que já explicava a causa (classifier_failed)
         // não vira 'no_match' por engano; só rebaixa quando o motivo era
@@ -546,11 +550,11 @@ export async function resolveTurnAgent(
         });
       }
       return {
-        config,
+        config: agentConfig,
         routerId: router.id,
         intentName: null,
         confidence,
-        outcome: outcome === 'classifier_failed' ? 'classifier_failed' : config === null ? 'no_match' : 'fallback',
+        outcome: outcome === 'classifier_failed' ? 'classifier_failed' : agentConfig === null ? 'no_match' : 'fallback',
       };
     };
 
