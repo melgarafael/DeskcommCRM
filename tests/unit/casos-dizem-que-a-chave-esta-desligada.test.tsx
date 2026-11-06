@@ -89,7 +89,9 @@ describe("Casos — a tela vazia explica por que está vazia", () => {
 
     expect(screen.getByText("Nenhum caso aberto")).toBeInTheDocument();
     expect(screen.queryByTestId("casos-sem-chave")).not.toBeInTheDocument();
-    expect(screen.queryByText(/Deixar o agente pedir uma tarefa/i)).not.toBeInTheDocument();
+    // O texto normal cita o interruptor (diz quem abre caso); o que não pode é
+    // acusar a chave de desligada ou mandar a pessoa ligá-la.
+    expect(screen.queryByText(/está desligada/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 

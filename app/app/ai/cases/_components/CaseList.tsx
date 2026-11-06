@@ -90,7 +90,9 @@ export function CaseList({
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {tab === "open"
-                    ? t("Quando a IA precisar de você, aparece aqui.")
+                    ? t(
+                        'Os casos aparecem aqui quando um agente publicado, com "Deixar o agente pedir uma tarefa a alguém e seguir conversando" ligado, pede algo a você. Conversa passada para uma pessoa vai para o Inbox.',
+                      )
                     : t("Casos concluídos, cancelados ou repassados ficam aqui.")}
                 </p>
               </div>
@@ -126,10 +128,9 @@ export function CaseList({
 /**
  * O VAZIO QUE EXPLICA — e que leva ao lugar onde se liga.
  *
- * O vazio de sempre ("Nenhum caso aberto / Quando a IA precisar de você,
- * aparece aqui.") descreve um FUTURO possível. Quando nenhum agente publicado
- * tem a chave, esse futuro não existe: nada vai aparecer por mais que se espere,
- * e a frase vira promessa falsa. Aqui a tela diz o motivo e onde fica o botão —
+ * O vazio de sempre ("Nenhum caso aberto" + quem abre caso) descreve um FUTURO
+ * possível. Quando nenhum agente publicado tem a chave, esse futuro não existe:
+ * nada vai aparecer por mais que se espere, e a frase vira promessa falsa. Aqui a tela diz o motivo e onde fica o botão —
  * o cartão “Pedir ajuda sem sair da conversa” do agente.
  *
  * Reusa `EmptyState` (o padrão do repo para vazio que explica e leva à

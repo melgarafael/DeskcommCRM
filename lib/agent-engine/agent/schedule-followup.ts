@@ -43,6 +43,10 @@ export const scheduleFollowupInputSchema = z.strictObject({
   promised_at: z.string().min(1).max(64),
   promise: z.string().min(1).max(1_000),
   context_snapshot: z.string().max(4_000).nullable().optional(),
+  // Só a variante de quem tinha `crm_schedule_followup` o mostra ao modelo
+  // (`SCHEDULE_FOLLOWUP_COM_NEGOCIO`). Ele não escolhe o ALVO do retorno — esse é o
+  // contato do runtime —, só em qual negócio dele a linha da timeline cai.
+  lead_id: z.string().max(64).nullable().optional(),
 });
 export type ScheduleFollowupInput = z.infer<typeof scheduleFollowupInputSchema>;
 
@@ -58,8 +62,9 @@ export type ScheduleFollowupResult =
 
 const PAYLOAD_TEACHING =
   'Campos aceitos: reason (por que agendar), promised_at (data ISO 8601 do retorno, no futuro), ' +
-  'promise (o que você prometeu ao lead), context_snapshot (contexto curto para o run futuro) — ' +
-  'nada além. Lead e organização vêm do runtime, nunca do payload da tool.';
+  'promise (o que você prometeu ao lead), context_snapshot (contexto curto para o run futuro), ' +
+  'lead_id (opcional: o negócio deste cliente a que o retorno pertence) — nada além. ' +
+  'Cliente e organização vêm do runtime; lead_id só escolhe ENTRE os negócios deste cliente.';
 
 function teachInvalidPayload(issues: string): ScheduleFollowupResult {
   return {
@@ -77,7 +82,13 @@ function teachInvalidPayload(issues: string): ScheduleFollowupResult {
 export async function applyScheduleFollowup(
   db: pg.Pool,
   cfg: { clock: () => Date; knobs: FollowupWindowKnobs },
-  ids: { tenantId: string; leadId: string; agentId?: string | null },
+  ids: {
+    tenantId: string;
+    leadId: string;
+    agentId?: string | null;
+    /** Funis do agente: o `lead_id` escolhido só vale dentro deles. */
+    pipelineIds?: readonly string[] | null;
+  },
   rawInput: unknown,
 ): Promise<ScheduleFollowupResult> {
   const forbidden = findForbiddenKey(rawInput);
@@ -178,6 +189,8 @@ export async function applyScheduleFollowup(
     sourceModule: 'followup',
     sourceId: null,
     agentId: ids.agentId ?? null,
+    negocioEscolhido: input.lead_id ?? null,
+    escopoDoNegocioEscolhido: ids.pipelineIds ?? null,
     payload: {
       retorno_id: resultado.retorno.id,
       quando: resultado.retorno.quando,
