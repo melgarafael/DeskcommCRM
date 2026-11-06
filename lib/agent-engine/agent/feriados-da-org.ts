@@ -54,9 +54,11 @@ export function dataCivilNoFuso(instante: Date, fuso: string): string {
  *     bloco. A lista `proprios` entra (é a mesma leitura): quem já cadastrou a
  *     loja fechada em 19/03 não precisa de tela nova para o aviso acertar.
  *   - **Falha ABERTA**: banco atrás do código, fuso recusado, settings com
- *     shape torto ⇒ `null`, que é exatamente o comportamento de hoje. Um erro
- *     aqui pode perder um texto melhor; nunca pode segurar a mensagem nem
- *     derrubar o turno (que é adiado de qualquer forma).
+ *     shape torto ⇒ a degradação que o turno já usa (`fusoDaOrganizacao` cai no
+ *     fuso padrão do produto, `feriadosDasSettings` em "nacionais ligados") e,
+ *     no pior caso, `null`. O contrato é NÃO lançar: um throw aqui viraria
+ *     turno adiado sem aviso, e um erro pode perder um texto melhor — nunca a
+ *     mensagem nem o turno.
  */
 export async function feriadoDoDiaDaOrganizacao(
   db: Queryable,

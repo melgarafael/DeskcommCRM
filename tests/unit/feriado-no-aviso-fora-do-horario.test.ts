@@ -11,8 +11,10 @@
  *      usar a data do processo daria o feriado errado para quem está a oeste;
  *   2. os feriados `proprios` que a organização já cadastra entram (mesma
  *      leitura do bloco), sem tela nova;
- *   3. falha ABERTA: banco atrás do código ou settings torto ⇒ `null` (o
- *      comportamento de hoje), nunca exceção no ramo que adia o turno.
+ *   3. falha ABERTA: banco atrás do código, fuso inválido ou settings torto
+ *      NÃO lançam — caem na degradação que o turno já usa (fuso padrão do
+ *      produto, nacionais ligados), nunca numa exceção no ramo que adia o
+ *      turno.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -94,13 +96,31 @@ describe('feriado do dia no fuso da organização (#3877)', () => {
     expect(feriado).toBeNull();
   });
 
-  it('falha ABERTA: banco com erro ⇒ null, nunca exceção', async () => {
-    const feriado = await feriadoDoDiaDaOrganizacao(
-      dbFalso({ estoura: true }),
-      'org-1',
-      new Date('2026-11-02T22:00:00Z'),
-    );
+  it('falha ABERTA: banco com erro NÃO lança — cai na degradação que o turno já usa', async () => {
+    // `fusoDaOrganizacao` degrada para o fuso padrão do produto e
+    // `feriadosDaOrganizacao` para "nacionais ligados" (ambos documentados nos
+    // seus arquivos), então o resultado é o calendário padrão, não uma exceção.
+    // O contrato DESTE nível é não lançar: o aviso roda no ramo em que o turno
+    // já vai ser adiado, e um throw aqui viraria turno adiado sem aviso — pior
+    // que um texto de feriado calculado no fuso padrão.
+    await expect(
+      feriadoDoDiaDaOrganizacao(
+        dbFalso({ estoura: true }),
+        'org-1',
+        new Date('2026-11-02T22:00:00Z'),
+      ),
+    ).resolves.toBe('Finados');
+  });
 
-    expect(feriado).toBeNull();
+  it('fuso inválido na organização ⇒ não lança e usa o padrão do produto', async () => {
+    // `organizations.timezone` não é validada por escritor nenhum; um
+    // "Marte/Base" derrubaria o `Intl` e, com ele, o aviso.
+    await expect(
+      feriadoDoDiaDaOrganizacao(
+        dbFalso({ timezone: 'Marte/Base' }),
+        'org-1',
+        new Date('2026-11-02T22:00:00Z'),
+      ),
+    ).resolves.toBe('Finados');
   });
 });
