@@ -15,8 +15,8 @@ export const TOOLS_MARKETING = declararTools([
     category: "write",
     rotulo: "Publicar imagem no Status do WhatsApp",
     explicacao:
-      "Publica uma imagem no Status de um número conectado do CRM, visível só para os " +
-      "contatos escolhidos. A peça sai de verdade, no celular de quem vê, e some em 24 horas — não dá para apagar antes.",
+      "Publica uma imagem no Status de um número conectado do CRM, visível para os " +
+      "contatos escolhidos ou para todos. A peça sai de verdade, no celular de quem vê, e some em 24 horas — não dá para apagar antes.",
     oQueToca: "Status do WhatsApp",
     risco: "critico",
     modulo: "status_whatsapp",

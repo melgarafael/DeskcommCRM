@@ -33,6 +33,8 @@
  *    desligado pelo operador não publica;
  *  - o público é uma ESCOLHA declarada (`todos` ou lista), nunca deduzida de um
  *    array vazio — no transporte, lista vazia e "sem lista" são a mesma coisa;
+ *  - quem pediu para sair fica fora da lista (`semQuemSaiu`), e a resposta diz
+ *    quantos saíram;
  *  - a lista é validada sobre os DÍGITOS, não sobre a string crua: `+55 (15)
  *    99999-9999` é um telefone, e recusá-lo por causa da máscara seria recusar
  *    o formato em que as pessoas escrevem número;
@@ -219,8 +221,9 @@ export interface PublicacaoDeStatusFeita {
  *
  * Lança quando não pode publicar — e cada recusa diz em português o que falta:
  * canal inexistente/arquivado, canal desativado, canal que não publica Status,
- * WhatsApp desconectado, público ausente ou inválido, acervo desligado com
- * `todos`, transporte recusando, choque de chave de idempotência.
+ * WhatsApp desconectado, público ausente, inválido ou vazio depois do opt-out,
+ * acervo desligado com `todos`, transporte recusando ou sem responder, choque de
+ * chave de idempotência.
  */
 export async function publicarStatusDoWhatsapp(
   input: PublicacaoDeStatusInput,
