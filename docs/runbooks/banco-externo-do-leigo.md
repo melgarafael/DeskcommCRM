@@ -1,7 +1,7 @@
 ---
 title: Runbook — Banco de dados externo, para quem não programa
 status: rascunho
-last_review: 2026-10-22
+last_review: 2026-11-05
 owner: Paulo Lima Jr (contribuição)
 ---
 
@@ -128,8 +128,8 @@ As três receitas que existem hoje:
 - **O que você preenche:**
   1. **"Tipo de post"**: o nome do tipo de post do seu site (por exemplo, `imovel`).
   2. **"Começar de um modelo"**: o botão **"Imóveis"** preenche a tela com campos de imóvel. O botão **"Em branco"** começa do zero. Trocar de modelo apaga o que você digitou, e a tela pede confirmação.
-  3. **"Campos do site"**: cada dado que o site guarda, com **"Rótulo"** (como o cliente vai ler), **"Campo no site"** (o nome do campo no ACF ou no JetEngine), **"Tipo"** (Texto, Número ou Preço) e **"Filtro"** (Nenhum, Contém, Igual, Mínimo ou Máximo).
-  4. **"Categorias do site"**: bairro, cidade, tipo ou finalidade, que o WordPress guarda como categoria. Cada uma tem **"Categoria no site"** (a taxonomia) e **"Nível"** ("Qualquer", "Tem categoria acima" ou "Não tem categoria acima").
+  3. **"Campos do site"**: cada dado que o site guarda, com **"Rótulo"** (como o cliente vai ler), **"Campo no site"** (o nome do campo no ACF ou no JetEngine), **"Tipo"** (Texto, Número ou Preço) e **"Filtro"**. No tipo Texto, o filtro pode ser Nenhum ou Contém. Nos tipos Número e Preço, Nenhum, Mínimo ou Máximo.
+  4. **"Categorias do site"**: bairro, cidade, tipo ou finalidade, que o WordPress guarda como categoria. Cada uma tem **"Categoria no site"** (a taxonomia) e **"Nível"** ("Qualquer", "Tem categoria acima" ou "Não tem categoria acima") e **"Filtro"** (Nenhum, Contém ou Igual).
   5. **"Esconder itens"**: um campo e os valores que somem para o cliente, por exemplo o campo de situação com o valor "vendido".
 - **Tabelas que precisam estar liberadas:** `wp_posts` e `wp_postmeta`. Se houver categoria mapeada, também `wp_terms`, `wp_term_taxonomy` e `wp_term_relationships`.
 - **Exemplo fictício:** uma imobiliária de Sorocaba. O cliente pede "apartamento de 3 quartos até 700 mil". O campo "Quartos" tem filtro **Mínimo**, o campo "Preço de venda" tem filtro **Máximo**, e a categoria "Bairro" tem filtro **Contém**. O imóvel vendido some porque o campo de situação esconde o valor "vendido".
@@ -178,7 +178,7 @@ Crie o funil antes, no menu **"Funis"**, com o botão "Novo funil" (ou "Criar me
 
 ## 8. Passo 6 — Dar ao agente as capacidades certas
 
-Na tela do agente, abra a aba **"Configuração"**, papel **"Conversa com o cliente"**, card **"O que o agente pode fazer"**. Ali as capacidades vêm agrupadas em pacotes, com um interruptor por pacote, e o agente aceita no máximo 27 capacidades. Todo agente novo já nasce com **"Vender e mover o funil"** ligado. Se você ligar o pacote inteiro **"Organizar a operação"** ou **"Passar para um humano"**, passa desse limite e a tela recusa. Por isso, clique em **"Escolher uma a uma (modo avançado)"** e marque, uma por uma, as capacidades abaixo. A aba **"Capacidades"** só mostra o uso de cada uma depois de ligada.
+Na tela do agente, abra a aba **"Configuração"**, papel **"Conversa com o cliente"**, card **"O que o agente pode fazer"**. Ali as capacidades vêm agrupadas em pacotes, com um interruptor por pacote, e o agente aceita no máximo 27 capacidades. O primeiro agente, criado na configuração inicial, já nasce com **"Vender e mover o funil"** ligado. Um agente criado depois nasce sem nenhuma capacidade. Com esse pacote ligado, se você ligar também o pacote inteiro **"Organizar a operação"** ou **"Passar para um humano"**, passa desse limite e a tela recusa. Por isso, clique em **"Escolher uma a uma (modo avançado)"** e marque, uma por uma, as capacidades abaixo. A aba **"Capacidades"** só mostra o uso de cada uma depois de ligada.
 
 | Capacidade (nome na tela) | Para que serve | Pacote onde ela mora |
 |---|---|---|
@@ -190,7 +190,7 @@ Na tela do agente, abra a aba **"Configuração"**, papel **"Conversa com o clie
 
 Pontos de atenção:
 
-- **O funil de destino precisa estar liberado para o agente.** Na aba **"Configuração"**, no papel **"Organiza o sistema"**, o campo **"Em que negócios ele pode mexer"** lista os funis. Marque o funil que você escolheu na receita. Se não marcar, o agente não consegue criar o negócio. A tela não avisa isso hoje (a spec 25 registra como não medido na tela).
+- **O funil de destino precisa estar liberado para o agente.** Na aba **"Configuração"**, no papel **"Organiza o sistema"**, o campo **"Em que negócios ele pode mexer"** lista os funis. Marque o funil que você escolheu na receita. Se não marcar, o agente não consegue criar o negócio. A tela não avisa isso hoje.
 - **O código da conexão vem da ferramenta de descoberta.** Por isso a capacidade "Ver as tabelas do banco conectado" é necessária mesmo para a receita.
 - Os nomes acima vêm do próprio sistema. Se a sua tela mostrar outro texto, siga o nome que aparecer.
 
@@ -212,7 +212,7 @@ Exemplo para uma imobiliária (fictício, pode adaptar):
 >
 > Se o cliente pedir algo que você não consegue resolver, ou quiser falar com uma pessoa, passe a conversa para a equipe.
 
-Por que escrever o código junto de cada item: quando o cliente escolhe, o agente precisa do código na conversa. O resultado da busca anterior não fica disponível no turno seguinte. Sem o código, o agente pode consultar de novo, não achar, e dizer que registrou sem registrar. Foi o que aconteceu no ambiente de teste (seção 13).
+Por que escrever o código junto de cada item: quando o cliente escolhe, o agente precisa do código na conversa. O resultado da busca anterior não fica disponível no turno seguinte. Sem o código, o agente pode consultar de novo, não achar e não abrir o negócio. Foi o que aconteceu no ambiente de teste (seção 13). Com as capacidades "Consultar receitas prontas do banco conectado" e "Criar oportunidade no funil" ligadas, o sistema já dá essa orientação ao agente a cada mensagem. A instrução acima reforça.
 
 ---
 
@@ -248,7 +248,8 @@ As mensagens abaixo são as que o sistema devolve ao agente, ou os avisos que a 
 |---|---|---|
 | A entrada "Dados externos" não aparece em Configurações, ou a tela não abre (página não encontrada). | O módulo está desligado nesta instalação. | Peça ao administrador da instalação para ligar o interruptor "Banco de dados externo" em **Admin › Sistema**, cartão "Módulos opcionais". |
 | O cartão "Receitas prontas" não aparece na conexão. | A conexão não é MySQL. As receitas só existem para MySQL. | Crie a conexão de novo com **"Tipo de banco"** = MySQL. O tipo não muda depois de criado. |
-| "Não foi possível conectar." no teste. | O sistema não conseguiu entrar no banco. | Confira **"Host"**, **"Porta"**, **"Banco de dados"**, **"Usuário"** e **"Senha"**. |
+| "Não foi possível conectar." no teste. | O sistema não conseguiu entrar no banco. | Confira **"Host"**, **"Porta"**, **"Banco de dados"**, **"Usuário"** e **"Senha"**. Se estiver tudo certo, peça a quem administra o banco para conferir duas coisas: se ele aceita conexão vinda do servidor do CRM (muitas hospedagens exigem liberar esse endereço no painel delas) e se ele aceita TLS, porque "Obrigatório (padrão)" só conecta com TLS. |
+| "O endereço informado não é um destino permitido pela política de rede." ao salvar a conexão. | O host aponta para um endereço que o sistema nunca acessa, como `localhost` ou `127.0.0.1`. | Use o endereço do servidor do banco. Endereço de rede interna, como `192.168.0.10`, é aceito. |
 | Aviso amarelo: "Este usuário do banco pode escrever. Crie um usuário só de leitura (apenas SELECT) para o assistente." | O usuário tem permissão de escrita. | Peça ao administrador do banco um usuário só de leitura e troque a conexão por esse usuário. |
 | Aviso amarelo: "Este usuário lê o banco inteiro. Libere só as tabelas e views que o assistente deve ver." | O usuário enxerga o banco todo. | Marque só as tabelas necessárias em "O que o assistente pode ver" e mantenha "Só o que eu marcar (recomendado)". |
 | "Falta escolher o que o assistente pode ler. Até lá, ele não enxerga nada deste banco." | Nenhuma tabela foi liberada. | Marque as tabelas no cartão "O que o assistente pode ver" e clique em "Salvar". |
@@ -257,7 +258,7 @@ As mensagens abaixo são as que o sistema devolve ao agente, ou os avisos que a 
 | Mensagem ao agente: "não foi possível abrir a conexão." | A conexão não abriu. Vale também quando o módulo está desligado (a ferramenta de receitas não mostra o motivo). | Confira se a conexão está ativa ("Conexão ativa") e se o módulo está ligado. |
 | O interesse vai para a equipe, e não cai no funil. | Nenhum funil de destino está escolhido, ou o funil escolhido foi apagado ou arquivado. | Escolha o funil e a etapa na receita. Se o funil foi arquivado, escolha outro. Enquanto isso, a equipe recebe a conversa na **"Central de avisos"**. |
 | O interesse vai para a equipe mesmo com o funil escolhido. | Há mais de uma receita **ativa do mesmo tipo** com destinos diferentes, ou a receita está desativada. | Deixe uma única receita ativa daquele tipo com destino, ou repita **o mesmo funil e a mesma etapa** em todas. Confira também se a receita está **"Ativa"** (seção 6). |
-| O agente diz que registrou o interesse, e o negócio não aparece no funil. | Medido no ambiente de teste (seção 13). Causas possíveis: o funil não está em "Em que negócios ele pode mexer", ou o agente não tinha o código do item na conversa. | Confira, nesta ordem: (1) o funil está marcado em "Em que negócios ele pode mexer"; (2) o agente escreve "cód." junto de cada item; (3) a receita está "Ativa" na conexão (seção 6); (4) o negócio no menu "Funis". Se nada disso resolver, passe a conversa para a equipe e avise o suporte. |
+| O agente não confirma o registro, ou diz que registrou, e o negócio não aparece no funil. | O negócio não nasceu. O sistema barra a frase de confirmação quando nada foi gravado, mas essa trava lê o texto da resposta e pode deixar passar uma frase diferente. Causas possíveis: o funil não está em "Em que negócios ele pode mexer", ou o agente não tinha o código do item na conversa. | Confira, nesta ordem: (1) o funil está marcado em "Em que negócios ele pode mexer"; (2) o agente escreve "cód." junto de cada item; (3) a receita está "Ativa" na conexão (seção 6); (4) o negócio no menu "Funis". Se nada disso resolver, passe a conversa para a equipe e avise o suporte. |
 
 ---
 
@@ -267,7 +268,7 @@ As mensagens abaixo são as que o sistema devolve ao agente, ou os avisos que a 
 - **Não sugere campos sozinho.** Você mapeia cada campo e cada categoria na mão, ou usa um modelo como ponto de partida.
 - **Não traz foto.** As três receitas não trazem o endereço da foto do item. O agente sabe enviar uma foto por endereço (jpg, png ou webp, de até 5 MB, por https), mas nenhuma receita fornece esse endereço ainda. Por isso, hoje, a resposta sai só com texto.
 - **Não faz SQL livre.** Você não escreve consulta. Só usa as receitas prontas e os campos da tela.
-- **Não lê outros tipos de banco.** Só MySQL. PostgreSQL não tem receitas prontas. MariaDB não está incluído.
+- **Receitas só para MySQL.** PostgreSQL conecta, mas não tem receitas prontas. MariaDB não está incluído.
 - **O link do conteúdo pode estar antigo.** O link vem de um campo que o WordPress não atualiza quando o site muda de domínio. Se o site mudou de endereço, o link aponta para o antigo.
 - **Base migrada com campo repetido.** Se o mesmo campo do site estiver gravado duas vezes no mesmo item, o item repete na lista. A receita não remove a repetição.
 - **Sistemas próprios com relacionamento próprio não entram.** Se o seu sistema guarda os dados de um jeito artesanal, sem receita pronta, ele fica fora do que esta versão faz.
@@ -277,3 +278,5 @@ As mensagens abaixo são as que o sistema devolve ao agente, ou os avisos que a 
 ## 13. Medido na prática (22/10/2026)
 
 Numa imobiliária montada do zero no ambiente de teste, o agente consultou o banco, mostrou os imóveis com código e, quando o cliente disse "tenho interesse", o negócio foi criado no funil e na etapa configurados, com a referência do imóvel — usando o modelo de IA `gpt-5.6-sol`. Com o modelo mais econômico `gpt-5.6-luna`, o agente não chamou a ferramenta de criar negócio e escreveu "já está registrado" sem registrar (4 tentativas). Por isso: para o atendimento que depende de abrir negócio sozinho, prefira um modelo mais forte e confira o funil depois das primeiras conversas.
+
+Depois dessa medição, o sistema passou a barrar a frase "registrei" quando o negócio não foi criado. A trava impede a afirmação falsa, mas não faz o modelo abrir o negócio. A medição acima não foi repetida com ela.
