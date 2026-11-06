@@ -237,7 +237,6 @@ select
       select 1 from webhook_events_log
        where status = 'received' and valid_signature
          and provider = any($1::text[])
-         and received_at > now() - interval '6 hours'
     )
   ) as webhook_replay,
   exists (

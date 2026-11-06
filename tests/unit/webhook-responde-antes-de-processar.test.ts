@@ -13,7 +13,8 @@ import type * as NextServer from "next/server";
  *   - se o arquivo (a caixa durável) não gravou, 503 — nunca 200;
  *   - o que o `after()` não terminar (contêiner reiniciou) o cron reprocessa
  *     UMA vez, pela mesma ingestão, sem duplicar;
- *   - linha recente, velha demais, de outro canal ou não aceita, ele não toca.
+ *   - linha recente, de outro canal ou não aceita, ele não toca;
+ *   - a que passou da janela não é ingerida: vira `dead` com aviso.
  *
  * O banco é dublado EM MEMÓRIA e os filtros mordem (`eq`, `in`, `gte`, `lt`,
  * `is`, `order`, `limit`): um dublê que só registra a chamada diria "reprocessou
@@ -132,6 +133,8 @@ async function rodarODepois(): Promise<void> {
 // ─── A ingestão: lenta, falhando, e com o `unique (org, external_id)` ────────
 const ingestao = vi.hoisted(() => ({
   chamadas: 0,
+  /** O que cada chamada pediu: só o reprocessamento retoma os efeitos. */
+  retomadas: [] as Array<boolean | undefined>,
   demoraMs: 0,
   falhasRestantes: 0,
   /** As mensagens gravadas — o índice único da tabela `messages`. */
@@ -139,8 +142,12 @@ const ingestao = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/channels/zernio/ingest", () => ({
   aplicarEdicaoZernio: async () => "aplicado",
-  ingestZernioInbound: async (_a: unknown, input: { organizationId: string; payload: { message: { platformMessageId: string } } }) => {
+  ingestZernioInbound: async (
+    _a: unknown,
+    input: { organizationId: string; retomada?: boolean; payload: { message: { platformMessageId: string } } },
+  ) => {
     ingestao.chamadas += 1;
+    ingestao.retomadas.push(input.retomada);
     if (ingestao.demoraMs > 0) await new Promise((r) => setTimeout(r, ingestao.demoraMs));
     if (ingestao.falhasRestantes > 0) {
       ingestao.falhasRestantes -= 1;
@@ -246,6 +253,7 @@ beforeEach(() => {
   banco.falhaDeEscrita = {};
   depois.tarefas.length = 0;
   ingestao.chamadas = 0;
+  ingestao.retomadas.length = 0;
   ingestao.demoraMs = 0;
   ingestao.falhasRestantes = 0;
   ingestao.mensagens.clear();
@@ -277,6 +285,7 @@ describe("a rota responde antes de processar", () => {
     await rodarODepois();
 
     expect(ingestao.chamadas).toBe(1);
+    expect(ingestao.retomadas, "a entrada ao vivo não pode retomar efeitos").toEqual([false]);
     expect(ingestao.mensagens.size).toBe(1);
     expect(arquivo()[0]).toMatchObject({ status: "processed", valid_signature: true });
     expect(arquivo()[0]!.processed_at).toEqual(expect.any(String));
@@ -352,6 +361,7 @@ describe("o cron reprocessa a entrada aceita que ficou no meio", () => {
     expect(r2.lidas, "a rodada seguinte releu a linha já processada").toBe(0);
 
     expect(ingestao.chamadas).toBe(1);
+    expect(ingestao.retomadas, "o cron não pediu a retomada dos efeitos").toEqual([true]);
     expect(ingestao.mensagens.size).toBe(1);
     expect(arquivo()[0]).toMatchObject({ status: "processed", attempts: 1 });
   });
@@ -379,9 +389,9 @@ describe("o cron reprocessa a entrada aceita que ficou no meio", () => {
     expect(arquivo()[0]).toMatchObject({ status: "received", attempts: 0 });
   });
 
-  it("não toca linha velha demais, não aceita, de outro canal nem já processada", async () => {
+  it("não toca linha não aceita, de outro canal nem já processada", async () => {
     const agora = new Date();
-    linhaAceita(agora, JANELA_DA_ENTRADA_MS + 60_000, { wamid: "w.velha" });
+    linhaAceita(agora, JANELA_DA_ENTRADA_MS + 60_000, { wamid: "w.velha-nao-aceita", valid_signature: null });
     linhaAceita(agora, 10 * 60_000, { wamid: "w.nao-aceita", valid_signature: null });
     linhaAceita(agora, 10 * 60_000, { wamid: "w.outro-canal", provider: "waha" });
     linhaAceita(agora, 10 * 60_000, { wamid: "w.processada", status: "processed" });
@@ -391,6 +401,67 @@ describe("o cron reprocessa a entrada aceita que ficou no meio", () => {
     expect(r.lidas).toBe(0);
     expect(ingestao.chamadas).toBe(0);
     expect(arquivo().map((l) => l.attempts)).toEqual([0, 0, 0, 0]);
+  });
+
+  it("⭐ passou da janela sem terminar: não ingere, vira `dead` e abre o aviso", async () => {
+    const agora = new Date();
+    linhaAceita(agora, JANELA_DA_ENTRADA_MS + 60_000, { attempts: 2 });
+
+    const r = await reprocessarEntradasAceitas(admin as never, agora);
+
+    expect(r).toEqual({ lidas: 1, processadas: 0, ainda_falhando: 0, desistidas: 1 });
+    expect(ingestao.chamadas, "responderia uma mensagem velha").toBe(0);
+    expect(arquivo()[0]).toMatchObject({ status: "dead", attempts: 2 });
+    expect(avisos()).toHaveLength(1);
+    expect(avisos()[0]).toMatchObject({ title: MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU.titulo });
+    expect(String(avisos()[0]!.body)).toContain("passou da janela");
+  });
+
+  it("⭐ passou da janela com a mensagem já no CRM (só o fechamento falhou): fecha, sem aviso falso", async () => {
+    const agora = new Date();
+    banco.tabelas.messages = [{ id: "m1", organization_id: "org-1", external_id: "wamid.SINTETICO" }];
+    linhaAceita(agora, JANELA_DA_ENTRADA_MS + 60_000);
+
+    const r = await reprocessarEntradasAceitas(admin as never, agora);
+
+    expect(r).toMatchObject({ processadas: 1, desistidas: 0 });
+    expect(arquivo()[0]).toMatchObject({ status: "processed", error_message: "vencida_com_a_mensagem_no_crm" });
+    expect(avisos()).toHaveLength(0);
+  });
+
+  it("passou da janela e a mesma mensagem existe em OUTRA organização: continua perdida aqui", async () => {
+    const agora = new Date();
+    banco.tabelas.messages = [{ id: "m1", organization_id: "org-2", external_id: "wamid.SINTETICO" }];
+    linhaAceita(agora, JANELA_DA_ENTRADA_MS + 60_000);
+
+    await reprocessarEntradasAceitas(admin as never, agora);
+
+    expect(arquivo()[0]).toMatchObject({ status: "dead" });
+    expect(avisos()).toHaveLength(1);
+  });
+
+  it("passou da janela sem corpo: não há como conferir, então avisa", async () => {
+    const agora = new Date();
+    linhaAceita(agora, JANELA_DA_ENTRADA_MS + 60_000, { raw_body: null });
+
+    await reprocessarEntradasAceitas(admin as never, agora);
+
+    expect(arquivo()[0]).toMatchObject({ status: "dead" });
+    expect(avisos()).toHaveLength(1);
+  });
+
+  it("a linha vencida não tira a vez da recente, e a rodada seguinte não a relê", async () => {
+    const agora = new Date();
+    linhaAceita(agora, JANELA_DA_ENTRADA_MS + 60_000, { wamid: "w.velha" });
+    linhaAceita(agora, 10 * 60_000, { wamid: "w.recente" });
+
+    const r1 = await reprocessarEntradasAceitas(admin as never, agora);
+    expect(r1).toEqual({ lidas: 2, processadas: 1, ainda_falhando: 0, desistidas: 1 });
+    expect(arquivo().map((l) => l.status)).toEqual(["dead", "processed"]);
+
+    const r2 = await reprocessarEntradasAceitas(admin as never, agora);
+    expect(r2.lidas).toBe(0);
+    expect(avisos()).toHaveLength(1);
   });
 
   it("duas rodadas sobrepostas não processam a mesma linha com a mesma leitura", async () => {

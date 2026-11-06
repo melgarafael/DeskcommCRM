@@ -129,13 +129,15 @@ describe("retrato do piso ocioso contra o baseline", () => {
       );
     try {
       await inserir(captacao, "generic", "1 minute");
-      await inserir(velha, canal, "7 hours");
       expect(await leitura("webhook_replay")).toBe(false);
       await inserir(aceita, canal, "1 minute");
       expect(await leitura("webhook_replay")).toBe(true);
       // controle: é a linha sem desfecho que acorda o cron
       await pool.query("update webhook_events_log set status = 'processed' where id = $1", [aceita]);
       expect(await leitura("webhook_replay")).toBe(false);
+      // a que passou da janela também acorda: é o cron que a marca `dead` e avisa
+      await inserir(velha, canal, "7 hours");
+      expect(await leitura("webhook_replay")).toBe(true);
     } finally {
       await pool.query("delete from webhook_events_log where id = any($1::uuid[])", [[aceita, captacao, velha]]);
     }

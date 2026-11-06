@@ -38,6 +38,13 @@ let rpcResposta: Record<string, unknown> = {
 let insertErro: { code?: string; message: string } | null = null;
 /** Conversa que o provider já associou a esta thread — o caminho curto. */
 let conversaExistente: { id: string; contact_id: string } | null = null;
+/** O erro da leitura da conversa pela thread (o PostgREST devolve, não lança). */
+let erroDaThread: { code?: string; message: string } | null = null;
+/** A linha já gravada que o `23505` esconde, e o que a ingestão interrompida deixou. */
+let mensagemGravada: Record<string, unknown> | null = null;
+let carimboDaConversa: string | null = null;
+let despachoPedido = false;
+let erroDaRetomada: { message: string } | null = null;
 
 /** Imita o builder do PostgREST: encadeável, resolve no `maybeSingle`. */
 function chain(tabela: string, op: string, payload?: unknown): Record<string, unknown> {
@@ -51,7 +58,16 @@ function chain(tabela: string, op: string, payload?: unknown): Record<string, un
           // mensagem também termina em maybeSingle. Separar por tabela+op é o
           // que impede o dublê de responder a pergunta errada.
           if (tabela === "conversations" && op === "select") {
-            return async () => ({ data: conversaExistente, error: null });
+            return async () =>
+              payload === "last_inbound_at"
+                ? { data: { last_inbound_at: carimboDaConversa }, error: null }
+                : { data: erroDaThread ? null : conversaExistente, error: erroDaThread };
+          }
+          if (tabela === "messages" && op === "select") {
+            return async () => ({ data: erroDaRetomada ? null : mensagemGravada, error: erroDaRetomada });
+          }
+          if (tabela === "event_log" && op === "select") {
+            return async () => ({ data: despachoPedido ? { id: "evento-1" } : null, error: null });
           }
           if (tabela === "contacts" && op === "select") {
             return async () => ({ data: null, error: null });
@@ -104,7 +120,7 @@ const admin = {
     return v === null ? { data: null, error: { message: "falhou" } } : { data: v, error: null };
   },
   from: (tabela: string) => ({
-    select: () => chain(tabela, "select"),
+    select: (colunas: string) => chain(tabela, "select", colunas),
     insert: (payload: unknown) => chain(tabela, "insert", payload),
     update: (payload: unknown) => chain(tabela, "update", payload),
   }),
@@ -145,6 +161,11 @@ beforeEach(() => {
   ops.length = 0;
   linhaConversa = { provider_conversation_id: null };
   conversaExistente = null;
+  erroDaThread = null;
+  mensagemGravada = null;
+  carimboDaConversa = null;
+  despachoPedido = false;
+  erroDaRetomada = null;
   insertErro = null;
   rpcResposta = { fn_upsert_wa_contact: "contact-1", fn_upsert_wa_conversation: "conv-1" };
 });
@@ -546,6 +567,124 @@ describe("idempotência", () => {
     await expect(
       ingestZernioInbound(admin, { ...ENTRADA, payload: evento() }),
     ).rejects.toThrow(/zernio_ingest_insert_failed/);
+  });
+});
+
+describe("falha de banco não vira `ignored`", () => {
+  // A resposta já saiu quando a ingestão roda: `ignored` fecha a linha como
+  // processada e a mensagem some. Lançar é o que a deixa pendente para o cron.
+  it("a RPC do contato falhou: lança", async () => {
+    rpcResposta.fn_upsert_wa_contact = null;
+    await expect(ingestZernioInbound(admin, { ...ENTRADA, payload: evento() })).rejects.toThrow(
+      /zernio_contact_upsert_failed/,
+    );
+  });
+
+  it("a RPC da conversa falhou: lança", async () => {
+    rpcResposta.fn_upsert_wa_conversation = null;
+    await expect(ingestZernioInbound(admin, { ...ENTRADA, payload: evento() })).rejects.toThrow(
+      /zernio_conversation_upsert_failed/,
+    );
+  });
+
+  it("a leitura pela thread falhou: lança antes de criar contato", async () => {
+    erroDaThread = { code: "57014", message: "canceling statement due to statement timeout" };
+    await expect(ingestZernioInbound(admin, { ...ENTRADA, payload: evento() })).rejects.toThrow(
+      /zernio_thread_lookup_failed/,
+    );
+    expect(ops.some((o) => o.op === "fn_upsert_wa_contact"), "falha de leitura virou contato novo").toBe(false);
+  });
+
+  it("controle: duas conversas na mesma thread não são falha de banco, e a âncora resolve", async () => {
+    erroDaThread = { code: "PGRST116", message: "JSON object requested, multiple (or no) rows returned" };
+    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: evento() });
+    expect(r.status).toBe("ingested");
+  });
+
+  it("controle: RPC sem erro e sem id segue `ignored` — é ausência, não falha", async () => {
+    delete rpcResposta.fn_upsert_wa_contact;
+    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: evento() });
+    expect(r).toEqual({ status: "ignored", reason: "contato_nao_resolvido" });
+  });
+});
+
+describe("o reprocessamento retoma a mensagem gravada sem os efeitos", () => {
+  const SENT_AT = "2026-08-08T01:00:00.000Z";
+  const emitidos = (tipo: string) =>
+    ops.filter((o) => o.op === "emit_event" && (o.payload as { p_event_type?: string }).p_event_type === tipo);
+  const carimbos = () => ops.filter((o) => o.op === "fn_mark_conversation_message");
+  const DESPACHO = "ai_agent.dispatch_requested";
+
+  beforeEach(() => {
+    insertErro = { code: "23505", message: "duplicate key" };
+    mensagemGravada = {
+      id: "msg-gravada",
+      conversation_id: "conv-1",
+      contact_id: "contact-1",
+      direction: "inbound",
+      sent_at: SENT_AT,
+    };
+  });
+
+  it("⭐ morreu logo depois do INSERT: carimba uma vez, despacha uma vez, com a mensagem que já existe", async () => {
+    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: evento(), retomada: true });
+
+    expect(r).toEqual({ status: "duplicate", conversationId: "conv-1", reason: "efeitos_retomados" });
+    expect(carimbos()).toHaveLength(1);
+    expect((carimbos()[0]!.payload as { p_at: string }).p_at).toBe(SENT_AT);
+    expect(emitidos(DESPACHO)).toHaveLength(1);
+    expect((emitidos(DESPACHO)[0]!.payload as { p_entity_id: string }).p_entity_id).toBe("msg-gravada");
+  });
+
+  it("⭐ morreu depois do carimbo: a não lida não soma de novo, e o despacho sai", async () => {
+    carimboDaConversa = SENT_AT;
+    await ingestZernioInbound(admin, { ...ENTRADA, payload: evento(), retomada: true });
+    expect(carimbos()).toHaveLength(0);
+    expect(emitidos(DESPACHO)).toHaveLength(1);
+  });
+
+  it("⭐ o despacho já saiu: nada roda, e não há segundo turno", async () => {
+    despachoPedido = true;
+    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: evento(), retomada: true });
+    expect(r).toEqual({ status: "duplicate", conversationId: "conv-1" });
+    expect(carimbos()).toHaveLength(0);
+    expect(emitidos(DESPACHO)).toHaveLength(0);
+  });
+
+  it("vale também no caminho da conversa já associada à thread", async () => {
+    conversaExistente = { id: "conv-1", contact_id: "contact-1" };
+    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: evento(), retomada: true });
+    expect(r.reason).toBe("efeitos_retomados");
+    expect(emitidos(DESPACHO)).toHaveLength(1);
+  });
+
+  it("⭐ a entrada ao vivo não retoma: os efeitos da primeira entrega podem estar em curso", async () => {
+    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: evento() });
+    expect(r).toEqual({ status: "duplicate", conversationId: "conv-1" });
+    expect(carimbos()).toHaveLength(0);
+    expect(emitidos(DESPACHO)).toHaveLength(0);
+  });
+
+  it("saída duplicada não é retomada: é o eco do nosso envio", async () => {
+    mensagemGravada = { ...mensagemGravada, direction: "outbound" };
+    const r = await ingestZernioInbound(admin, {
+      ...ENTRADA,
+      payload: {
+        ...evento({ direction: "outgoing" }),
+        event: "message.sent",
+        conversation: { participantId: "+595991733685" },
+      },
+      retomada: true,
+    });
+    expect(r.reason).toBeUndefined();
+    expect(carimbos()).toHaveLength(0);
+  });
+
+  it("leitura que falha lança: a linha fica pendente para a rodada seguinte", async () => {
+    erroDaRetomada = { message: "canceling statement due to statement timeout" };
+    await expect(ingestZernioInbound(admin, { ...ENTRADA, payload: evento(), retomada: true })).rejects.toThrow(
+      /zernio_retomada_failed/,
+    );
   });
 });
 

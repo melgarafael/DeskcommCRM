@@ -77,15 +77,21 @@ export async function aceitarEntrada(admin: SupabaseClient, arquivoId: string): 
 /**
  * Roda a ingestão de uma entrada aceita e fecha a linha quando há desfecho.
  * Nunca lança: a falha volta como `falhou`, com a linha ainda `received`, e
- * quem chama decide o que fazer com ela.
+ * quem chama decide o que fazer com ela. `retomada` é do reprocessamento: a
+ * mensagem já gravada ainda pode estar sem os efeitos.
  */
 export async function processarEntradaAceita(
   admin: SupabaseClient,
   entrada: EntradaAceita,
+  opcoes: { retomada?: boolean } = {},
 ): Promise<DesfechoDaEntradaAceita> {
   let r: Awaited<ReturnType<typeof processarEventoAceito>>;
   try {
-    r = await processarEventoAceito(admin, { session: entrada.sessao, rawBody: entrada.rawBody });
+    r = await processarEventoAceito(admin, {
+      session: entrada.sessao,
+      rawBody: entrada.rawBody,
+      retomada: opcoes.retomada,
+    });
   } catch (err) {
     return { tipo: "falhou", detalhe: err instanceof Error ? err.message : "ingest_failed" };
   }

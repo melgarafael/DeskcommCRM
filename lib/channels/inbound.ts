@@ -41,7 +41,7 @@ import {
 } from "./zernio/avisos";
 import { aplicarEdicaoZernio, ingestZernioInbound } from "./zernio/ingest";
 import { lerEnvelopeZernio } from "./zernio/envelope";
-import { parseZernioEdicao, verifyZernioSignature } from "./zernio/webhook";
+import { parseZernioEdicao, parseZernioInbound, verifyZernioSignature } from "./zernio/webhook";
 import type { ChannelProvider } from "./types";
 
 /** Curto demais para ser segredo — placeholder ou lixo de decrypt. */
@@ -271,12 +271,19 @@ export function processaDepoisDeResponder(provider: string, rawBody: string): bo
  */
 export async function processarEventoAceito(
   admin: SupabaseClient,
-  input: { session: InboundWebhookInput["session"]; rawBody: string },
+  input: { session: InboundWebhookInput["session"]; rawBody: string; retomada?: boolean },
 ): Promise<InboundWebhookOutcome> {
   if (!CANAIS_QUE_RESPONDEM_ANTES.includes(input.session.provider)) {
     return { ok: false, code: "provider_mismatch", message: "canal não responde antes de processar" };
   }
-  return zernioEventoConferido(admin, input.session, input.rawBody);
+  return zernioEventoConferido(admin, input.session, input.rawBody, input.retomada);
+}
+
+/** O id externo da mensagem deste corpo aceito; `null` quando o corpo não o traz. */
+export function idExternoDaEntradaAceita(rawBody: string): string | null {
+  const leitura = lerEnvelopeZernio(rawBody);
+  if (!leitura.ok) return null;
+  return parseZernioInbound(leitura.envelope)?.externalId ?? null;
 }
 
 async function zernioInbound(
@@ -310,6 +317,7 @@ async function zernioEventoConferido(
   admin: SupabaseClient,
   session: InboundWebhookInput["session"],
   rawBody: string,
+  retomada = false,
 ): Promise<InboundWebhookOutcome> {
   const input = { session, rawBody };
 
@@ -432,6 +440,7 @@ async function zernioEventoConferido(
     organizationId: input.session.organization_id,
     channelSessionId: input.session.id,
     payload,
+    retomada,
   });
   return { ok: true, body: { ...r } };
 }
