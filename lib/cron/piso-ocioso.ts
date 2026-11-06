@@ -89,6 +89,7 @@ export const RECURSOS_DO_CRON = [
   "mcp_a_revogar",
   "lembrete_de_tarefa",
   "lembrete_de_agenda",
+  "catalogo_do_feed",
 ] as const;
 export type RecursoDoCron = (typeof RECURSOS_DO_CRON)[number];
 
@@ -295,7 +296,10 @@ select
   ) or exists (
     select 1 from agent_inbox_items
      where ref_kind = 'agenda_reminder_sender' and status = 'open'
-  ) as lembrete_de_agenda
+  ) as lembrete_de_agenda,
+  exists (
+    select 1 from catalog_feed_sources where ativo = true
+  ) as catalogo_do_feed
 `;
 
 type Retrato = { emUso: Record<RecursoDoCron, boolean>; ate: number };
