@@ -7993,7 +7993,7 @@
   "lead(s) e": "lead(s) and",
   "conversa(s).": "conversation(s).",
   "Atenção:": "Attention:",
-  "regra(s) de agente continuam escrevendo esta etiqueta. Excluir aqui não apaga a regra — o agente vai recriar a etiqueta no próximo atendimento.": "agent rule(s) keep writing this tag. Deleting it here doesn't remove the rule — the agent will recreate the tag on the next conversation.",
+  "regra(s) de agente continuam citando esta etiqueta. Excluir aqui não apaga a regra — a que põe a etiqueta vai recriá-la no próximo atendimento.": "agent rule(s) still mention this tag. Deleting it here doesn't remove the rule — the one that adds the tag will recreate it on the next conversation.",
   "Etiqueta removida de": "Tag removed from",
   "Etiqueta atualizada em": "Tag updated in",
   "registro(s).": "record(s).",

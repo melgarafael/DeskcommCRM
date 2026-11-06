@@ -15207,8 +15207,8 @@ export const DICIONARIO: Traducoes = {
   "lead(s) e": { es: "lead(s) y" },
   "conversa(s).": { es: "conversación(es)." },
   "Atenção:": { es: "Atención:" },
-  "regra(s) de agente continuam escrevendo esta etiqueta. Excluir aqui não apaga a regra — o agente vai recriar a etiqueta no próximo atendimento.": {
-    es: "regla(s) de agente siguen escribiendo esta etiqueta. Eliminarla aquí no borra la regla: el agente volverá a crear la etiqueta en la próxima atención.",
+  "regra(s) de agente continuam citando esta etiqueta. Excluir aqui não apaga a regra — a que põe a etiqueta vai recriá-la no próximo atendimento.": {
+    es: "regla(s) de agente siguen citando esta etiqueta. Eliminarla aquí no borra la regla: la que pone la etiqueta volverá a crearla en la próxima atención.",
   },
   "Etiqueta removida de": { es: "Etiqueta eliminada de" },
   "Etiqueta atualizada em": { es: "Etiqueta actualizada en" },
