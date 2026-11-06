@@ -20,11 +20,38 @@ import { audit } from "@/lib/audit";
 import { ingestConversationsBatch } from "@/lib/ai/rag/ingest/conversations";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { STATUS_OPERANTE, ehOperante, statusDaOrgEmbutida } from "@/lib/organizacao/operante";
 
 export const dynamic = "force-dynamic";
 
 const LOOKBACK_HOURS = 24;
+
+/**
+ * O que roda DEPOIS do portão do piso ocioso (#3731), na ordem do arquivo.
+ * `tests/unit/cron-passa-pelo-portao.test.ts` compara esta lista com o AST
+ * deste arquivo e reprova, com linha, o passo que ninguém declarou.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "const admin",
+  "const sinceTs",
+  "const {data, error}",
+  "if (agentErr)",
+  "const agents",
+  "const seenOrgs",
+  "const unique",
+  "for (a of agents)",
+  "let totalProcessed",
+  "let totalFlagged",
+  "let totalSkipped",
+  "let orgsProcessed",
+  "const failures",
+  "for (agent of unique)",
+  "const houveEfeito",
+  "if (houveEfeito)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
 
 interface AgentRow {
   id: string;
@@ -39,6 +66,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
+
+  // Sem agente ativo não há organização com conversa a ingerir para o RAG: a
+  // rodada diária pagava a lista de agentes para receber vazio.
+  if (await recursoOcioso("agentes_de_ia")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   const admin = createAdminClient();
   const sinceTs = new Date(Date.now() - LOOKBACK_HOURS * 60 * 60 * 1000);

@@ -40,6 +40,7 @@ import { classificarErroDoGoogle, estadoDaConexaoApos } from "@/lib/agenda/googl
 import { fundirTokens, precisaRenovar, type TokenDoGoogle } from "@/lib/agenda/google/oauth";
 import { renovarToken } from "@/lib/agenda/google/token";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,14 @@ export const JANELA_DE_RENOVACAO_MS = 15 * 60 * 1000;
 
 /** Teto por rodada: renovar mil agendas num tick estouraria a cota do Google. */
 export const TETO_POR_RODADA = 50;
+
+/**
+ * O que roda DEPOIS do portão do piso ocioso (#3731), na ordem do arquivo.
+ * `tests/unit/cron-passa-pelo-portao.test.ts` compara esta lista com o AST
+ * deste arquivo e reprova, com linha, o passo que ninguém declarou.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = ["const resumo", "return"] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
 
 export interface ResumoDaRodada {
   examinadas: number;
@@ -212,6 +221,11 @@ async function executar(req: NextRequest): Promise<Response> {
   if (!autorizaCron(req)) {
     return NextResponse.json({ error: { code: "unauthenticated", message: "cron secret inválido" } }, { status: 401 });
   }
+  // Sem conexão Google com token a expirar não há o que renovar: a instalação
+  // que nunca conectou a agenda ia ao PostgREST a cada 10 min para descobrir
+  // isso. O sinal inclui `rate_limited` de propósito — é justamente a conexão
+  // que precisa de renovação para voltar.
+  if (await recursoOcioso("agenda_google_renovacao")) return NextResponse.json({ data: { pulado: "recurso_ocioso" } });
   const resumo = await renovarAgendasDoGoogle(createAdminClient(), { agora: new Date() });
   return NextResponse.json({ data: resumo });
 }

@@ -62,18 +62,29 @@ const DIR_CRON = join(RAIZ, "app", "api", "v1", "cron");
 const NOME_DA_DECLARACAO = "PASSOS_DEPOIS_DO_PORTAO";
 
 /**
- * As rotas que saem pelo portão hoje (#3731, e as três do #3694). Rota nova com
- * portão entra sozinha. A `followup-flow-worker` não está aqui: lá o retrato
- * desliga etapa por etapa, sem saída antecipada da rota inteira.
+ * As rotas que saem pelo portão hoje (#3731, e as três do #3694; mais as dez
+ * dos recursos OPCIONAIS cobertas nesta fatia do #3731). Rota nova com portão
+ * entra sozinha. A `followup-flow-worker` não está aqui: lá o retrato desliga
+ * etapa por etapa, sem saída antecipada da rota inteira.
  */
 const ROTAS_CONHECIDAS = [
+  "agenda-expira-pendentes",
   "agenda-google-push",
+  "agenda-google-refresh",
   "agenda-google-sync",
+  "agenda-resumo-do-dia",
   "campaign-worker",
   "channel-pause-scheduler",
+  "contact-avatars",
+  "contact-birthdays",
+  "contact-names",
+  "contact-phones",
   "historico-import",
+  "kb-conversations-batch",
   "proposta-travada",
   "prospecting",
+  "proposal-expiry",
+  "risk-watcher",
   "webhook-replay",
 ];
 

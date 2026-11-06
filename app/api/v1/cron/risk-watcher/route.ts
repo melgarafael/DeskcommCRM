@@ -35,16 +35,42 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { logger } from "@/lib/logger";
 import { venceReativacoes } from "@/lib/leads/reactivation";
 import { observaTravessias } from "@/lib/leads/risk-worker";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { autorizaCron } from "@/lib/auth/cron-auth";
 
 export const dynamic = "force-dynamic";
 
 /** Teto de orgs por invocação — a próxima passada pega o resto. */
 const ORG_LIMIT = 50;
+
+/**
+ * O que roda DEPOIS do portão do piso ocioso (#3731), na ordem do arquivo.
+ * `tests/unit/cron-passa-pelo-portao.test.ts` compara esta lista com o AST
+ * deste arquivo e reprova, com linha, o passo que ninguém declarou.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "const admin",
+  "const {data, error}",
+  "if (error)",
+  "const orgs",
+  "let travessias",
+  "let esfriaram",
+  "let reativaram",
+  "let falhas",
+  "let gravacoesFalhas",
+  "let propostas",
+  "let vencidas",
+  "const comErro",
+  "for (org of orgs)",
+  "if (falhas > 0)",
+  "if (gravacoesFalhas > 0)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
 
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -52,6 +78,11 @@ async function handle(req: NextRequest): Promise<Response> {
   if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
+
+  // Sem negócio ABERTO não há travessia a observar: instalação nova, sem funil,
+  // ia ao PostgREST a cada 15 min para descobrir que não tinha nenhuma
+  // organização para visitar.
+  if (await recursoOcioso("leads_abertos")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   const admin = createAdminClient();
 

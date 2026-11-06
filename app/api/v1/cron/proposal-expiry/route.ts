@@ -11,12 +11,26 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { emitLeadActivity } from "@/lib/leads/activity-emitter";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { dataIsoNoFuso } from "@/lib/propostas/data-no-fuso";
 import { FUSO_PADRAO, fusoUtilizavel } from "@/lib/tempo/fusos";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * O que roda DEPOIS do portão do piso ocioso (#3731), na ordem do arquivo.
+ * `tests/unit/cron-passa-pelo-portao.test.ts` compara esta lista com o AST
+ * deste arquivo e reprova, com linha, o passo que ninguém declarou.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "let result",
+  "try",
+  "if (result.vencidas > 0)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
 
 interface PropostaParaVerificar {
   id: string; organization_id: string; lead_id: string; contact_id: string;
@@ -112,6 +126,10 @@ async function handle(req: NextRequest): Promise<Response> {
   if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
+
+  // Sem proposta ENVIADA com validade não há vencimento a processar: a rodada
+  // diária ia ao PostgREST varrer `enviada` para não achar nada.
+  if (await recursoOcioso("propostas_a_vencer")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   let result: VencimentoResult;
   try {

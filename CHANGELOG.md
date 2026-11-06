@@ -8,6 +8,10 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+### Adicionado
+
+- **Dez crons de recurso opcional deixam de consultar o banco quando a instalação não tem o recurso ligado** Sem agenda conectada, sem aviso de agendamento ligado, sem automação de aniversário, sem contato a completar (foto, nome da agenda, telefone opaco), sem proposta enviada, sem negócio aberto ou sem agente de IA, essas rotas iam ao PostgREST em toda batida para receber a lista vazia — e é essa cota que o `PGRST002` estoura numa instalação ociosa. Agora elas consultam o piso ocioso (`lib/cron/piso-ocioso.ts`) antes de qualquer leitura: a resposta vem de uma única consulta ao banco direto, sem gastar requisição, dividida por todas as rotas e válida por 30 segundos. O sinal é sempre a condição da rota ou um superconjunto dela, e leitura que falha faz a rota RODAR (na dúvida, roda). As rotas de núcleo — `agent-dispatcher`, `event-log-drain`, `routing-worker`, `data-retention` e as demais — ficaram de fora de propósito. Cada rota coberta tem teste próprio provando a saída sem nenhuma consulta e a volta ao caminho normal quando o recurso está ligado (#3731).
+
 ## [1.99.0] — 2026-11-02
 
 ### Adicionado

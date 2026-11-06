@@ -73,6 +73,17 @@ export const RECURSOS_DO_CRON = [
   "historico",
   "agenda_google",
   "agenda_google_push",
+  // #3731, fatia do piso ocioso dos recursos opcionais (ver a nota do SQL).
+  "agenda_google_renovacao",
+  "agenda_pendentes",
+  "aviso_de_agendamento",
+  "avatares_de_contato",
+  "aniversario_do_contato",
+  "nomes_da_agenda",
+  "telefones_opacos",
+  "propostas_a_vencer",
+  "leads_abertos",
+  "agentes_de_ia",
   "webhook_replay",
   "followup",
   "followup_silencio",
@@ -137,6 +148,32 @@ const TETO_DA_LEITURA_MS = 2_000;
  *   `pending` (o dreno de texto fixo); janela `scheduled`/`running` já começada
  *   (`aplicarAgendas` não lê a que ainda vai começar); proposta `enviando` (o
  *   corte de 5 min continua sendo da rodada).
+ *
+ * - os dez da fatia #3731 dos recursos OPCIONAIS seguem a mesma regra — a
+ *   condição da rota, ou um superconjunto dela, sempre sem o corte de TEMPO
+ *   (que é o que a rodada aplica depois):
+ *   `agenda_google_renovacao` = conexão Google com `token_expires_at` (a rota
+ *   renova `healthy` e `rate_limited`; filtrar por `healthy` deixaria a conexão
+ *   em `rate_limited` sem renovar e ela morreria calada);
+ *   `agenda_pendentes` = compromisso `pending` (o pedido que ocupa horário e
+ *   pode expirar; o prazo é por organização e fica na rodada);
+ *   `aviso_de_agendamento` = linha de `config_aviso_de_agendamento` com
+ *   `ligado` (a rodada só visita quem ligou o aviso; a janela das 7h–10h fica
+ *   nela — sem isso a instalação que não ligou o resumo ia ao PostgREST a cada
+ *   10 min para nada);
+ *   `avatares_de_contato` / `nomes_da_agenda` / `telefones_opacos` = o contato
+ *   que a varredura poderia visitar (`wa_identity` presente e não anonimizado;
+ *   `kind='person'` sem `name` nem `address_book_name`; sem `phone_number` e com
+ *   identidade opaca), sem os cortes de revisita — mais largo que o lote da
+ *   rodada, e a anonimização LGPD continua barrada nos dois lados;
+ *   `aniversario_do_contato` = regra ATIVA de `contact.birthday` (a varredura
+ *   começa pelas regras; sem regra não há evento para ninguém ouvir);
+ *   `propostas_a_vencer` = proposta `enviada` com `valid_until` (a comparação
+ *   com o "hoje" do fuso da organização é da rodada);
+ *   `leads_abertos` = negócio `open` (o radar só visita organização com negócio
+ *   aberto — instalação nova, sem funil, não tem travessia a observar);
+ *   `agentes_de_ia` = agente ativo (o lote de conversas para RAG só existe onde
+ *   há agente; o status da organização fica no filtro da rodada).
  */
 const SQL_DO_RETRATO = `
 select
@@ -174,6 +211,44 @@ select
         or (google_event_id is not null and google_conflict is null)
         or google_conflict -> 'resolution' is not null
   ) as agenda_google_push,
+  exists (
+    select 1 from calendar_connections
+     where provider = 'google_calendar'
+       and status in ('healthy', 'rate_limited')
+       and token_expires_at is not null
+  ) as agenda_google_renovacao,
+  exists (
+    select 1 from calendar_appointments where status = 'pending'
+  ) as agenda_pendentes,
+  exists (
+    select 1 from config_aviso_de_agendamento where ligado
+  ) as aviso_de_agendamento,
+  exists (
+    select 1 from contacts
+     where wa_identity is not null and is_anonymized = false
+  ) as avatares_de_contato,
+  exists (
+    select 1 from automation_rules
+     where trigger_event = 'contact.birthday' and is_active
+  ) as aniversario_do_contato,
+  exists (
+    select 1 from contacts
+     where kind = 'person' and name is null and address_book_name is null
+       and is_anonymized = false and is_personal = false
+  ) as nomes_da_agenda,
+  exists (
+    select 1 from contacts
+     where phone_number is null and wa_identity is not null and is_anonymized = false
+  ) as telefones_opacos,
+  exists (
+    select 1 from crm_proposals where status = 'enviada' and valid_until is not null
+  ) as propostas_a_vencer,
+  exists (
+    select 1 from crm_leads where status = 'open'
+  ) as leads_abertos,
+  exists (
+    select 1 from ai_agents where is_active
+  ) as agentes_de_ia,
   exists (
     select 1 from webhook_events_log
      where status = 'error' and error_message like 'transitoria:%'

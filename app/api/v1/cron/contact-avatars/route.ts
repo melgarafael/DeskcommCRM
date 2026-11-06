@@ -60,6 +60,7 @@ import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { PROVIDERS_DE_MENSAGEM } from "@/lib/channels/capabilities";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +70,26 @@ const SCAN_LIMIT = 25;
 const REFRESH_AFTER_DAYS = 7;
 /** Foto de perfil do WhatsApp é pequena; acima disto é resposta errada. */
 const MAX_BYTES = 2 * 1024 * 1024;
+
+/**
+ * O que roda DEPOIS do portão do piso ocioso (#3731), na ordem do arquivo.
+ * `tests/unit/cron-passa-pelo-portao.test.ts` compara esta lista com o AST
+ * deste arquivo e reprova, com linha, o passo que ninguém declarou.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "const admin",
+  "const cutoff",
+  "const {data, error}",
+  "if (queryError)",
+  "const rows",
+  "const sessaoDaEmpresa",
+  "let atualizados",
+  "let semFoto",
+  "let falhas",
+  "for (c of rows)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
 
 interface ContactRow {
   id: string;
@@ -116,6 +137,11 @@ async function handle(req: NextRequest): Promise<Response> {
   if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
+
+  // Sem contato que possa ter foto (`wa_identity` presente e não anonimizado)
+  // não há o que baixar: a rodada de 10 em 10 minutos ia ao PostgREST para
+  // receber a lista vazia.
+  if (await recursoOcioso("avatares_de_contato")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   const admin = createAdminClient();
   const cutoff = new Date(Date.now() - REFRESH_AFTER_DAYS * 86_400_000).toISOString();

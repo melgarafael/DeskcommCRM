@@ -32,6 +32,7 @@ import { aplicaResumoDoDia } from "@/lib/agenda/aviso-de-agendamento";
 import { criarDepsDoAvisoDeAgendamento } from "@/lib/agenda/aviso-de-agendamento.handler";
 import { ok, fail } from "@/lib/api/wrappers";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { logger } from "@/lib/logger";
 import { idsDeOrgsParadas } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -41,11 +42,37 @@ export const dynamic = "force-dynamic";
 /** Quantas organizações uma rodada atende. O resto fica para a de daqui a 10 min. */
 const TETO_DE_ORGANIZACOES = 200;
 
+/**
+ * O que roda DEPOIS do portão do piso ocioso (#3731), na ordem do arquivo.
+ * `tests/unit/cron-passa-pelo-portao.test.ts` compara esta lista com o AST
+ * deste arquivo e reprova, com linha, o passo que ninguém declarou.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "const admin",
+  "const {data, error}",
+  "if (error)",
+  "const ligadas",
+  "if (ligadas.length === 0)",
+  "const paradas",
+  "const deps",
+  "let enviados",
+  "const desfechos",
+  "const contar",
+  "for (orgId of ligadas)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
+
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
+
+  // Sem organização com o aviso LIGADO não há resumo a montar — e a rodada de
+  // 10 em 10 minutos ia ao PostgREST ler a tabela de configuração para
+  // descobrir isso.
+  if (await recursoOcioso("aviso_de_agendamento")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   const admin = createAdminClient();
   const { data, error } = await admin

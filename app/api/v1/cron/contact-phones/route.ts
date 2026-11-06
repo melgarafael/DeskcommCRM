@@ -50,6 +50,7 @@ import { canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { emitirTelefoneGanho } from "@/lib/contacts/telefone-ganho";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,25 @@ const SCAN_LIMIT = 40;
  */
 const RETRY_AFTER_DAYS = 3;
 
+/**
+ * O que roda DEPOIS do portão do piso ocioso (#3731), na ordem do arquivo.
+ * `tests/unit/cron-passa-pelo-portao.test.ts` compara esta lista com o AST
+ * deste arquivo e reprova, com linha, o passo que ninguém declarou.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "const admin",
+  "const cutoff",
+  "const {data, error}",
+  "if (queryError)",
+  "const rows",
+  "let resolvidos",
+  "let semResposta",
+  "let semCanal",
+  "for (c of rows)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
+
 interface ContactRow {
   id: string;
   organization_id: string;
@@ -77,6 +97,11 @@ async function handle(req: NextRequest): Promise<Response> {
   if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
+
+  // Sem contato de identidade opaca esperando telefone não há pergunta a fazer
+  // ao canal — a rodada de 30 em 30 minutos ia ao PostgREST buscar o lote
+  // vazio.
+  if (await recursoOcioso("telefones_opacos")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   const admin = createAdminClient();
   const cutoff = new Date(Date.now() - RETRY_AFTER_DAYS * 86_400_000).toISOString();

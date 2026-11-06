@@ -49,15 +49,44 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { logger } from "@/lib/logger";
 import { agendaSettingsSchema } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { autorizaCron } from "@/lib/auth/cron-auth";
 
 export const dynamic = "force-dynamic";
 
 /** Teto por rodada. A varredura roda a cada 15 min; sobra volta na seguinte. */
 const LIMITE_DA_VARREDURA = 500;
+
+/**
+ * O que roda DEPOIS do portão do piso ocioso (#3731), na ordem do arquivo.
+ * `tests/unit/cron-passa-pelo-portao.test.ts` compara esta lista com o AST
+ * deste arquivo e reprova, com linha, o passo que ninguém declarou.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "const admin",
+  "const agora",
+  "const {data, error}",
+  "if (error)",
+  "const linhas",
+  "if (linhas.length === 0)",
+  "const orgs",
+  "const {data}",
+  "const prazoPorOrg",
+  "for (o of configs ?? [])",
+  "const expirados",
+  "let mantidos",
+  "for (linha of linhas)",
+  "if (expirados.length === 0)",
+  "const {data, error}",
+  "if (erroUpdate)",
+  "const quantos",
+  "if (quantos > 0)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
 
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -65,6 +94,10 @@ async function handle(req: NextRequest): Promise<Response> {
   if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
+
+  // Sem pedido `pending` não há reserva a expirar: a instalação que não usa
+  // confirmação de horário ia ao PostgREST a cada 15 min só para ler o nada.
+  if (await recursoOcioso("agenda_pendentes")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   const admin = createAdminClient();
   const agora = new Date();

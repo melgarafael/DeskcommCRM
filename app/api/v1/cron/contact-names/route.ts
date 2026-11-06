@@ -44,6 +44,7 @@ import {
   type ChannelSessionRef,
 } from "@/lib/channels";
 import { patchDoNome, REVISITA_NOME_MS } from "@/lib/contacts/nome-da-agenda";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { logger } from "@/lib/logger";
 import { STATUS_OPERANTE, ehOperante, statusDaOrgEmbutida } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -59,6 +60,29 @@ const SCAN_LIMIT = 5;
 
 /** Passado isto, a rodada para e devolve o que fez. Quem não foi visitado não é carimbado. */
 const PRAZO_DA_RODADA_MS = 45_000;
+
+/**
+ * O que roda DEPOIS do portão do piso ocioso (#3731), na ordem do arquivo.
+ * `tests/unit/cron-passa-pelo-portao.test.ts` compara esta lista com o AST
+ * deste arquivo e reprova, com linha, o passo que ninguém declarou.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "const admin",
+  "const cutoff",
+  "const prazo",
+  "const {data, error}",
+  "if (queryError)",
+  "const rows",
+  "const preenchidosPorOrg",
+  "let varridos",
+  "let preenchidos",
+  "let semNome",
+  "let semCanal",
+  "for (c of rows)",
+  "if (preenchidos > 0)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
 
 interface ContactRow {
   id: string;
@@ -85,6 +109,11 @@ async function handle(req: NextRequest): Promise<Response> {
   if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
+
+  // Sem contato pessoa que a varredura possa visitar (sem nome, sem nome da
+  // agenda, não anonimizado, não pessoal) o lote volta vazio — e a rodada de 10
+  // em 10 minutos pagava o PostgREST para descobrir isso.
+  if (await recursoOcioso("nomes_da_agenda")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   const admin = createAdminClient();
   const cutoff = new Date(Date.now() - REVISITA_NOME_MS).toISOString();

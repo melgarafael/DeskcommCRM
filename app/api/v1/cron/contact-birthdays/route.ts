@@ -60,9 +60,10 @@ import {
   configDoAniversario,
 } from "@/lib/automation/aniversario-do-contato";
 import { audit } from "@/lib/audit";
+import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { autorizaCron } from "@/lib/auth/cron-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,30 @@ const TETO_POR_ORGANIZACAO = 200;
 
 /** O PostgREST monta a lista do `in` dentro da URL, e URL tem fim. */
 const TAMANHO_DO_LOTE = 100;
+
+/**
+ * O que roda DEPOIS do portão do piso ocioso (#3731), na ordem do arquivo.
+ * `tests/unit/cron-passa-pelo-portao.test.ts` compara esta lista com o AST
+ * deste arquivo e reprova, com linha, o passo que ninguém declarou.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "const admin",
+  "const agora",
+  "const {data, error}",
+  "if (erroRegras)",
+  "const todasAsRegras",
+  "if (todasAsRegras.length === 0)",
+  "const orgsComRegra",
+  "const {data}",
+  "let emitidos",
+  "let examinados",
+  "const pulados",
+  "const pular",
+  "for (organizacao of organizacoes ?? [])",
+  "if (emitidos > 0)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
 
 /**
  * Quais dias de aniversário esta organização parabeniza AGORA.
@@ -116,6 +141,11 @@ async function handle(req: NextRequest): Promise<Response> {
   if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
+
+  // Sem regra ativa de `contact.birthday` não há evento para ninguém ouvir: a
+  // varredura horária de toda instalação que não ligou a automação ia ao
+  // PostgREST buscar a lista vazia de regras.
+  if (await recursoOcioso("aniversario_do_contato")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   const admin = createAdminClient();
   const agora = new Date();
