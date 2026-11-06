@@ -17257,7 +17257,6 @@ export const DICIONARIO: Traducoes = {
   "Escolha o atendimento": { es: "Elige la atención" },
   "A pessoa aceitou ser avisada quando abrir uma vaga": { es: "La persona aceptó recibir el aviso cuando se abra una plaza" },
   "Inscrever": { es: "Inscribir" },
-  "Fila": { es: "Fila" },
   "Ninguém na fila.": { es: "Nadie en la fila." },
   "Oferta até": { es: "Oferta hasta" },
   "Aceitou": { es: "Aceptó" },
