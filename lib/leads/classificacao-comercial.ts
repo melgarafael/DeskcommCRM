@@ -34,6 +34,7 @@ import {
   decidirReversao,
   ehNaoComercial,
   motivoParaATimeline,
+  recusaDoMotivoDoNaoComercial,
   type EstadoDaClassificacao,
 } from "@/lib/leads/elegibilidade-comercial";
 
@@ -117,6 +118,13 @@ export async function classificaNegocioComoNaoComercial(
   supabase: SupabaseClient,
   input: ClassificarInput,
 ): Promise<ResultadoDaClassificacao> {
+  // Motivo inválido é recusado ANTES da leitura: corpo errado não depende do
+  // negócio, e um pedido com motivo em branco não precisa custar consulta.
+  const recusa = recusaDoMotivoDoNaoComercial(input.motivo);
+  if (recusa !== null) {
+    return { ok: false, codigo: recusa.codigo, mensagem: recusa.mensagem, httpStatus: 422 };
+  }
+
   const { linha, erro } = await lerLead(supabase, input.organizationId, input.leadId);
   if (erro) return { ok: false, codigo: "internal_error", mensagem: erro, httpStatus: 500 };
   if (linha === null) return naoEncontrado;

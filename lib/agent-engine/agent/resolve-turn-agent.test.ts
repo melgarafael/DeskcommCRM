@@ -624,13 +624,19 @@ describe('o Jev no roteador (onda 2 do Jev, bloco 2.2)', () => {
     expect(classifyIntent).toHaveBeenCalledOnce();
     const [, entrada] = jev.consultarJev.mock.calls[0]! as unknown as [unknown, Record<string, unknown>];
     // R4: só a última mensagem — o contexto das 4 anteriores fica com a IA de sempre.
-    expect(entrada).toEqual({
+    const { fatosDoCrmDoTurno, ...semFatos } = entrada as Record<string, unknown> & {
+      fatosDoCrmDoTurno?: unknown;
+    };
+    expect(semFatos).toEqual({
       organizationId: 'org-1',
       mensagem: 'meu pedido não chegou',
       membros: members,
       contactId: 'lead-1',
       jobId: 'job-1',
     });
+    // #3917: o que o Jev recebe de contexto do CRM é um GETTER do turno — não
+    // um valor lido por ele, e não o histórico da conversa (R4 continua).
+    expect(typeof fatosDoCrmDoTurno).toBe('function');
   });
 
   it('observando: o turno NÃO espera o Jev — vale a IA de sempre, e a observação sai quando ele responder', async () => {

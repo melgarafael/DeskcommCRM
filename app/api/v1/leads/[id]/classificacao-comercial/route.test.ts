@@ -62,7 +62,7 @@ describe("#4191 — POST classificar como não comercial", () => {
     const corpo = await res.json();
 
     expect(res.status).toBe(200);
-    expect(corpo).toMatchObject({
+    expect(corpo.data).toMatchObject({
       lead_id: LEAD,
       classificacao: "nao_comercial",
       ja_estava: false,
@@ -116,7 +116,7 @@ describe("#4191 — POST classificar como não comercial", () => {
       lead: { id: LEAD },
     });
     const res = await POST(requisicao({ motivo: "golpe" }), ctx);
-    expect(await res.json()).toMatchObject({ ja_estava: true });
+    expect((await res.json()).data).toMatchObject({ ja_estava: true });
   });
 });
 
@@ -129,7 +129,7 @@ describe("#4191 — DELETE reverter", () => {
     });
     const res = await DELETE(requisicao(), ctx);
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ lead_id: LEAD, classificacao: "comercial" });
+    expect((await res.json()).data).toMatchObject({ lead_id: LEAD, classificacao: "comercial" });
     expect(reverteClassificacaoNaoComercial).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ organizationId: ORG, leadId: LEAD }),

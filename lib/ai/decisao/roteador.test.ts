@@ -462,7 +462,7 @@ describe("#3917 — o contexto do CRM entra na pergunta feita ao Jev", () => {
 
   it("o contexto chega ao Jev pela leitura do TURNO, e só uma vez por decisão", async () => {
     const fatos = vi.fn(async () => FATOS);
-    const fetchImpl = vi.fn(async () => respostaCom("pos_venda"));
+    const fetchImpl = vi.fn(async () => respostaCom("suporte"));
     const jev = consultarJevNoRoteador(
       poolCom(LIGADO).pool,
       { ...entrada(novaOrg(), "Bom dia! Tudo bem?"), fatosDoCrmDoTurno: fatos },
@@ -470,16 +470,16 @@ describe("#3917 — o contexto do CRM entra na pergunta feita ao Jev", () => {
     );
     const escolha = await jev.escolha;
 
-    expect(escolha?.veredito).toEqual({ intentName: "pos_venda", confidence: 0.93 });
+    expect(escolha?.veredito).toEqual({ intentName: "suporte", confidence: 0.93 });
     expect(fatos).toHaveBeenCalledTimes(1);
     const corpo = JSON.parse(String(fetchImpl.mock.calls[0]![1].body)) as {
-      questions: { roteador: { instrucao: string; criterios: Record<string, string> } };
+      questions: { roteador: { instructions: string; criteria: Record<string, string> } };
     };
-    expect(corpo.questions.roteador.instrucao).toContain("Fatos do CRM deste contato");
-    expect(corpo.questions.roteador.instrucao).toContain("Experiência");
-    expect(corpo.questions.roteador.instrucao).toContain("viagem-fechada");
+    expect(corpo.questions.roteador.instructions).toContain("Fatos do CRM deste contato");
+    expect(corpo.questions.roteador.instructions).toContain("Experiência");
+    expect(corpo.questions.roteador.instructions).toContain("viagem-fechada");
     // O critério de cada intenção continua sendo só a descrição da empresa.
-    expect(corpo.questions.roteador.criterios.vendas).not.toContain("Experiência");
+    expect(corpo.questions.roteador.criteria.suporte).not.toContain("Experiência");
   });
 
   it("a tarefa desligada NÃO paga a leitura dos fatos", async () => {
