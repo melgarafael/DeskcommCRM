@@ -130,6 +130,18 @@ function abrirEditor(followup: Record<string, unknown>) {
   };
 }
 
+/**
+ * "Salvar rascunho" só habilita com o formulário SUJO (`!dirty && isEdit`).
+ * Uma edição qualquer no prompt basta para o payload sair — e é o que estes
+ * casos precisam quando o assunto é só o que a tela MANDA, sem clique no rádio.
+ */
+function sujarOPrompt() {
+  fireEvent.change(
+    screen.getByDisplayValue("Você é a Sofia, assistente do consultório. Atenda com acolhimento."),
+    { target: { value: "Você é a Sofia. Convide para a avaliação." } },
+  );
+}
+
 async function salvarEVerPayload() {
   fireEvent.click(screen.getByRole("button", { name: /salvar rascunho/i }));
   await waitFor(() => expect(acoes.salvar).toHaveBeenCalled());
@@ -174,6 +186,7 @@ describe("follow-up do agente — quando o contato tiver horário marcado", () =
     const { botaoEnviar } = abrirEditor({ ...FOLLOWUP_LIGADO, quando_ha_compromisso: "enviar" });
 
     expect(botaoEnviar()).toBeChecked();
+    sujarOPrompt();
     const enviado = await salvarEVerPayload();
     expect(enviado.followup?.quando_ha_compromisso).toBe("enviar");
   });
@@ -182,6 +195,7 @@ describe("follow-up do agente — quando o contato tiver horário marcado", () =
     const { botaoAdiar } = abrirEditor(FOLLOWUP_LIGADO);
 
     expect(botaoAdiar()).toBeChecked();
+    sujarOPrompt();
     // Quem nunca mexeu não ganha a chave no jsonb — o payload é o de sempre.
     const enviado = await salvarEVerPayload();
     expect(enviado.followup).not.toHaveProperty("quando_ha_compromisso");
