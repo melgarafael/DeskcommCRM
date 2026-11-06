@@ -69,7 +69,7 @@ export const DETALHE_TECNICO = "Detalhe técnico, para quem der suporte:";
 
 export interface EventoMorto {
   eventType: string;
-  /** Quantas vezes o evento foi tentado, contando a que o matou. */
+  /** Quantas vezes o evento foi tentado, contando a que o matou. Zero: a entrada passou da janela sem ser tentada. */
   tentativas: number;
   motivo: string;
   /**
@@ -149,7 +149,7 @@ export const MENSAGEM_DO_NUMERO_OFICIAL_SEM_ATENDIMENTO = {
   titulo: "Uma mensagem do número oficial ficou sem atendimento",
   consequencia:
     "Um cliente escreveu para o número oficial e a mensagem está no Inbox, mas o processamento dela parou no meio e o prazo para retomá-lo passou. " +
-    "Um pedido de sair da lista foi respeitado, mas a IA não vai responder essa mensagem e nenhum negócio nasce dela: confira as conversas desse horário e responda por lá.",
+    "A IA não vai responder essa mensagem e nenhum negócio nasce dela: confira as conversas desse horário e responda por lá.",
   rearme:
     "Enquanto este aviso estiver aberto, outras mensagens na mesma situação não abrem aviso novo: " +
     "depois de conferir, marque-o como resolvido para voltar a ser avisado.",
@@ -174,13 +174,18 @@ const REARME_GENERICO =
   "(a IA que deixa de responder um cliente abre o seu próprio): " +
   "depois de corrigida a causa, marque-o como resolvido para voltar a ser avisado.";
 
+function contagemDeTentativas(n: number): string {
+  if (n === 0) return "nenhuma tentativa";
+  return n === 1 ? "1 tentativa" : `${n} tentativas`;
+}
+
 export function avisoDeEventoMorto(evento: EventoMorto): { title: string; body: string } {
   return {
     title: evento.efeito?.titulo ?? TITULO_GENERICO,
     body:
       `${evento.efeito?.consequencia ?? CONSEQUENCIA_GENERICA} ` +
       `${evento.efeito?.rearme ?? REARME_GENERICO} ` +
-      `${DETALHE_TECNICO} evento ${evento.eventType}, ${evento.tentativas} tentativas; ` +
+      `${DETALHE_TECNICO} evento ${evento.eventType}, ${contagemDeTentativas(evento.tentativas)}; ` +
       `motivo: ${evento.motivo.slice(0, 400)}`,
   };
 }
