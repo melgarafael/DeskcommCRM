@@ -15,6 +15,7 @@ import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import type { Idioma } from "@/lib/i18n/idiomas";
 import { extractBearer } from "@/lib/mcp/auth";
+import { moduloSemContato, redigirContatoParaModulo } from "@/lib/modulo/redigir-contato";
 import { listConversationsQuerySchema } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { comNomeDoAtendente } from "@/lib/users/com-nome-do-atendente";
@@ -39,7 +40,15 @@ export async function GET(req: NextRequest): Promise<Response> {
     if (!authz.ok) return authz.response;
     const teto = await tetoDeEscritaDoToken(authz, "conversations", requestId);
     if (teto) return teto;
-    return responderLista(authz.supabase, authz.organizationId, authz.actor, authz.idioma, req, requestId);
+    return responderLista(
+      authz.supabase,
+      authz.organizationId,
+      authz.actor,
+      authz.idioma,
+      req,
+      requestId,
+      authz,
+    );
   }
 
   const supabase = await createClient();
@@ -78,9 +87,25 @@ async function responderLista(
   idioma: Idioma | undefined,
   req: NextRequest,
   requestId: string,
+  /** Só no caminho do token: diz se é módulo e se ele pode ver contato (Spec 33, F3). */
+  quemChama?: { actor: { type: string }; contatoVisivel?: boolean },
 ): Promise<Response> {
   const t = (texto: string) => traduzir(texto, idioma ?? "pt-BR");
   const url = new URL(req.url);
+  // Busca por texto casa com nome/telefone do contato: sem a área `contatos`, ela viraria um oráculo
+  // ("tem alguém chamada Ana?"). O módulo sem contatos não filtra por contato nem por texto.
+  if (
+    quemChama &&
+    moduloSemContato(quemChama) &&
+    (url.searchParams.get("search") || url.searchParams.get("contact_id"))
+  ) {
+    return fail(
+      "module_area_not_granted",
+      t("Este módulo não tem permissão para esta área da organização."),
+      403,
+      { requestId },
+    );
+  }
   const qsParsed = listConversationsQuerySchema.safeParse({
     status: url.searchParams.get("status") ?? undefined,
     exclude_finished: url.searchParams.get("exclude_finished") === "true" ? true : undefined,
@@ -145,7 +170,8 @@ async function responderLista(
     // handler é compartilhado com as tools MCP, que já resolvem o nome por conta
     // própria (`lib/mcp/tools/conversations.ts`) — enriquecer lá faria a mesma
     // leitura duas vezes por chamada do agente.
-    return ok(await comNomeDoAtendente(organizationId, conversations), {
+    const comAtendente = await comNomeDoAtendente(organizationId, conversations);
+    return ok(quemChama ? redigirContatoParaModulo(quemChama, comAtendente) : comAtendente, {
       requestId,
       meta: { cursor, has_more },
     });

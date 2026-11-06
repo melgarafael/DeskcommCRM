@@ -21,6 +21,7 @@ import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
 import { extractBearer } from "@/lib/mcp/auth";
+import { redigirContatoParaModulo } from "@/lib/modulo/redigir-contato";
 import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
@@ -611,6 +612,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       req,
       requestId,
       authz.idioma ?? IDIOMA_PADRAO,
+      authz,
     );
   }
 
@@ -639,6 +641,8 @@ async function responder(
   req: NextRequest,
   requestId: string,
   idioma: Idioma,
+  /** Só no caminho do token: módulo sem a área `contatos` não recebe dado de contato (Spec 33, F3). */
+  quemChama?: { actor: { type: string }; contatoVisivel?: boolean },
 ): Promise<Response> {
   const t = (texto: string) => traduzir(texto, idioma);
 
@@ -829,8 +833,5 @@ async function responder(
     ...(leituraDosLeads.truncado ? { truncado: true as const } : {}),
   };
 
-  return ok(board, {
-    requestId,
-    headers: leituraDosLeads.truncado ? { "X-Quadro-Truncado": "1" } : undefined,
-  });
+  return ok(quemChama ? redigirContatoParaModulo(quemChama, board) : board, { requestId });
 }

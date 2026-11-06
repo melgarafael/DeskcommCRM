@@ -97,6 +97,90 @@ describe("autorizarModulo — declarado ∩ consentido", () => {
     expect(await decide(banco(), "PATCH", `/api/v1/contacts/${ID}`)).toMatchObject({ ok: true });
   });
 
+  it("contatoVisivel: só com `contatos` em LEITURA declarada E consentida (não basta a rota de outra área passar)", async () => {
+    // negocios consentida, contatos não consentida: a rota passa, mas o contato embutido não.
+    const semContato = banco();
+    semContato.vinculo = { enabled: true, consented_areas: ["area.negocios.leitura"] };
+    expect(await decide(semContato, "GET", "/api/v1/pipelines/" + ID + "/board")).toMatchObject({
+      ok: true,
+      contatoVisivel: false,
+    });
+    // contatos consentida e declarada: o contato embutido vale.
+    const comContato = banco();
+    comContato.vinculo = { enabled: true, consented_areas: ["area.negocios.leitura", "area.contatos.leitura"] };
+    expect(await decide(comContato, "GET", "/api/v1/pipelines/" + ID + "/board")).toMatchObject({
+      ok: true,
+      contatoVisivel: true,
+    });
+    // declarada pelo pacote mas NÃO consentida: não vê.
+    const naoConsentida = banco();
+    naoConsentida.vinculo = { enabled: true, consented_areas: ["area.negocios.leitura"] };
+    expect((await decide(naoConsentida, "GET", "/api/v1/pipelines/" + ID + "/board")) as { contatoVisivel?: boolean }).toMatchObject({
+      contatoVisivel: false,
+    });
+    // consentida mas NÃO declarada pelo pacote: não vê (o consentimento sozinho não basta).
+    const naoDeclarada = banco();
+    naoDeclarada.instalacao = {
+      ...naoDeclarada.instalacao!,
+      extension_artifacts: {
+        manifest: {
+          profile: "connected",
+          host_api: { min: HOST_API_VERSION, max: HOST_API_VERSION },
+          permissions: ["area.negocios.leitura"],
+        },
+      },
+    };
+    naoDeclarada.vinculo = { enabled: true, consented_areas: ["area.negocios.leitura", "area.contatos.leitura"] };
+    expect(await decide(naoDeclarada, "GET", "/api/v1/pipelines/" + ID + "/board")).toMatchObject({
+      ok: true,
+      contatoVisivel: false,
+    });
+  });
+
+  it("leitura que embute contato e não é redigida: sem `contatos` consentida a porta fecha; com ela abre", async () => {
+    const LEITURAS = [
+      "/api/v1/agenda/agendamentos",
+      `/api/v1/agenda/agendamentos/${ID}`,
+      "/api/v1/agenda/vinculos",
+      "/api/v1/ai/followups/queue",
+      `/api/v1/ai/followups/enrollments/${ID}`,
+      `/api/v1/ai/cases/${ID}/chat`,
+      `/api/v1/leads/${ID}/contatos-relacionados`,
+      "/api/v1/leads/proposals",
+      `/api/v1/proposals/${ID}/documento`,
+    ];
+    const declara = ["area.contatos.leitura", "area.agenda.leitura", "area.agentes_ia.leitura", "area.negocios.leitura"];
+    const montar = (consentidas: string[]): Banco => {
+      const b = banco();
+      b.instalacao = {
+        ...b.instalacao!,
+        extension_artifacts: {
+          manifest: {
+            profile: "connected",
+            host_api: { min: HOST_API_VERSION, max: HOST_API_VERSION },
+            permissions: declara,
+          },
+        },
+      };
+      b.vinculo = { enabled: true, consented_areas: consentidas };
+      return b;
+    };
+    const semContatos = montar(["area.agenda.leitura", "area.agentes_ia.leitura", "area.negocios.leitura"]);
+    const comContatos = montar(declara);
+    for (const caminho of LEITURAS) {
+      expect(await decide(semContatos, "GET", caminho), `sem contatos: ${caminho}`).toEqual({
+        ok: false,
+        codigo: "module_area_not_granted",
+      });
+      expect(await decide(comContatos, "GET", caminho), `com contatos: ${caminho}`).toMatchObject({
+        ok: true,
+        contatoVisivel: true,
+      });
+    }
+    // A trava é só das leituras que embutem contato: uma leitura da mesma área sem contato segue aberta.
+    expect(await decide(semContatos, "GET", "/api/v1/agenda/tipos")).toMatchObject({ ok: true });
+  });
+
   it("consentiu só leitura: GET passa, POST e PATCH recusam (escrita sem permissão de escrita)", async () => {
     const b = banco();
     b.vinculo = { enabled: true, consented_areas: ["area.contatos.leitura"] };

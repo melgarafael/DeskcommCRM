@@ -14,6 +14,7 @@ import { orgAtivaDaApi, requireRole } from "@/lib/auth/require-role";
 import { loadAuthUser } from "@/lib/auth/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { extractBearer } from "@/lib/mcp/auth";
+import { redigirContatoParaModulo } from "@/lib/modulo/redigir-contato";
 import { patchConversationSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { comNomeDoAtendente } from "@/lib/users/com-nome-do-atendente";
@@ -88,7 +89,7 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
         id,
       );
       const [comNome] = await comNomeDoAtendente(authz.organizationId, [conv]);
-      return ok(comNome ?? conv, { requestId });
+      return ok(redigirContatoParaModulo(authz, comNome ?? conv), { requestId });
     } catch (err) {
       if (err instanceof ApiError) {
         return fail(err.code, err.message, err.status, { requestId });

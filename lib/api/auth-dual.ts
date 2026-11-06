@@ -76,6 +76,12 @@ export type AuthDual =
       apiTokenId?: string;
       /** Só token de módulo com JWT de contexto válido: a pessoa (`sub`) de quem a tela agiu. */
       pessoaDoModulo?: string;
+      /**
+       * Só token de MÓDULO: a área `contatos` (leitura) foi declarada e consentida? Sem ela, a rota que
+       * embute contato na resposta (conversa, negócio, agenda) passa a resposta por
+       * `redigirContatoParaModulo`. Sessão e outros tokens não têm o campo e veem tudo.
+       */
+      contatoVisivel?: boolean;
     }
   | { ok: false; response: Response };
 
@@ -135,6 +141,7 @@ export async function resolveAuthDual(
     // certo (declarado ∩ consentido, lido do banco agora). Sem porta conhecida, recusa.
     let papelDoBearer: Role = auth.role;
     let pessoaDoModulo: string | undefined;
+    let contatoVisivel: boolean | undefined;
     if (auth.actor.type === "module") {
       const decisao = await autorizarModulo({
         organizationId: auth.organizationId,
@@ -151,6 +158,8 @@ export async function resolveAuthDual(
           }),
         };
       }
+
+      contatoVisivel = decisao.contatoVisivel;
 
       // PAPEL EFETIVO (F3, tarefa 4): com JWT de contexto válido, min(teto admin, papel ATUAL da
       // pessoa, lido do banco agora); sem JWT, min(papel do token, teto agent). As áreas consentidas
@@ -223,6 +232,7 @@ export async function resolveAuthDual(
       scopes: auth.scopes,
       apiTokenId: auth.apiTokenId,
       ...(pessoaDoModulo ? { pessoaDoModulo } : {}),
+      ...(contatoVisivel !== undefined ? { contatoVisivel } : {}),
     };
   }
 
