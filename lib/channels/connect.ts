@@ -19,7 +19,12 @@ import { metadataInicialDoCanal } from "@/lib/ai/elegibilidade/pre-go-live";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "./archived";
 import { decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
-import { apagarWebhook, desconectarConta, garantirWebhook } from "./zernio/conexao-pela-instalacao";
+import {
+  apagarWebhook,
+  contaEstaNoPerfil,
+  desconectarConta,
+  garantirWebhook,
+} from "./zernio/conexao-pela-instalacao";
 import { chaveDaInstalacao, zernioBaseUrl } from "./zernio/credentials";
 import {
   CAMINHO_DA_ENTRADA_DA_INSTALACAO,
@@ -469,7 +474,9 @@ export async function registrarNoWebhookDaInstalacao(
  *     entregando as outras conexões — nunca é apagado aqui) e desconecta o
  *     número da conta da instalação, senão ele continuaria na fatura do
  *     provedor depois de sair do CRM. Uma assinatura que não é a compartilhada,
- *     se a sessão guardar uma, é apagada.
+ *     se a sessão guardar uma, é apagada. Antes, o provedor confirma que a
+ *     conta está no perfil desta organização: a chave da instalação alcança
+ *     todos os números, e a linha sozinha não prova de quem a conta é.
  *
  * Roda ANTES do patch de exclusão (que gira o token). Erro do provedor LANÇA;
  * quem chama decide seguir em best-effort.
@@ -481,7 +488,9 @@ export async function desfazerNoProvedor(
 ): Promise<"desfeito" | "nada_a_desfazer" | "sem_credencial"> {
   const { data, error } = await admin
     .from("channel_sessions")
-    .select("zernio_account_id, zernio_token_encrypted, zernio_credencial_da_instalacao, zernio_webhook_id")
+    .select(
+      "zernio_account_id, zernio_token_encrypted, zernio_credencial_da_instalacao, zernio_webhook_id, zernio_profile_id",
+    )
     .eq("organization_id", organizationId)
     .eq("id", sessionId)
     .maybeSingle();
@@ -491,6 +500,7 @@ export async function desfazerNoProvedor(
     zernio_token_encrypted: string | null;
     zernio_credencial_da_instalacao: boolean | null;
     zernio_webhook_id: string | null;
+    zernio_profile_id: string | null;
   } | null;
   if (!linha) return "nada_a_desfazer";
   const pelaInstalacao = linha.zernio_credencial_da_instalacao === true;
@@ -505,11 +515,20 @@ export async function desfazerNoProvedor(
     if (linha.zernio_webhook_id) await apagarWebhook(chave, linha.zernio_webhook_id);
     return "desfeito";
   }
-  const compartilhado = await idDoWebhookDaInstalacao();
-  if (linha.zernio_webhook_id && linha.zernio_webhook_id !== compartilhado) {
-    await apagarWebhook(chave, linha.zernio_webhook_id);
+  const conta = linha.zernio_account_id;
+  const perfil = linha.zernio_profile_id;
+  if (conta && perfil && (await contaEstaNoPerfil(chave, perfil, conta))) {
+    const compartilhado = await idDoWebhookDaInstalacao();
+    if (linha.zernio_webhook_id && linha.zernio_webhook_id !== compartilhado) {
+      await apagarWebhook(chave, linha.zernio_webhook_id);
+    }
+    await desconectarConta(chave, conta);
+  } else if (conta) {
+    logger.warn("[channels.connect] conta fora do perfil da organização: nada desconectado no provedor", {
+      session_id: sessionId,
+      organization_id: organizationId,
+    });
   }
-  if (linha.zernio_account_id) await desconectarConta(chave, linha.zernio_account_id);
   await sincronizarWebhookDaInstalacao(admin, chave, { nome: "", excluirSessao: sessionId });
   return "desfeito";
 }

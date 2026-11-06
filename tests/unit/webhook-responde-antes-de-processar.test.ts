@@ -2,6 +2,8 @@ import { createHmac } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type * as NextServer from "next/server";
 
+import type * as Ingest from "@/lib/channels/zernio/ingest";
+
 /**
  * A ENTRADA DO NÚMERO OFICIAL RESPONDE ANTES DE PROCESSAR.
  *
@@ -13,7 +15,10 @@ import type * as NextServer from "next/server";
  *   - se o arquivo (a caixa durável) não gravou, 503 — nunca 200;
  *   - o que o `after()` não terminar (contêiner reiniciou) o cron reprocessa
  *     UMA vez, pela mesma ingestão, sem duplicar;
- *   - linha recente, velha demais, de outro canal ou não aceita, ele não toca.
+ *   - linha recente, de outro canal ou não aceita, ele não toca;
+ *   - a que passou da janela não é ingerida: vira `dead` com aviso;
+ *   - a que passou da janela com a mensagem no CRM só fecha sem repetir nada se os
+ *     efeitos rodaram; sem o marco, roda o opt-out e o resto sem acordar o agente.
  *
  * O banco é dublado EM MEMÓRIA e os filtros mordem (`eq`, `in`, `gte`, `lt`,
  * `is`, `order`, `limit`): um dublê que só registra a chamada diria "reprocessou
@@ -98,7 +103,23 @@ function consulta(tabela: string) {
   return q;
 }
 
-const admin = { from: (tabela: string) => consulta(tabela), rpc: async () => ({ data: null, error: null }) };
+/** As RPCs chamadas, e o carimbo da conversa de verdade: é ele que soma a não lida. */
+const rpcs = vi.hoisted(() => ({ chamadas: [] as Array<{ fn: string; args: Record<string, unknown> }> }));
+const admin = {
+  from: (tabela: string) => consulta(tabela),
+  rpc: async (fn: string, args: Record<string, unknown>) => {
+    rpcs.chamadas.push({ fn, args });
+    if (fn === "fn_mark_conversation_message") {
+      const conversa = (banco.tabelas.conversations ?? []).find((c) => c.id === args.p_conv);
+      if (conversa) {
+        conversa.last_message_at = args.p_at;
+        conversa.last_inbound_at = args.p_at;
+        conversa.unread_count_for_assignee = Number(conversa.unread_count_for_assignee ?? 0) + 1;
+      }
+    }
+    return { data: null, error: null };
+  },
+};
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => admin }));
 vi.mock("@/lib/channels/archived", () => ({
@@ -114,6 +135,19 @@ vi.mock("@/lib/audit", () => ({
   },
 }));
 vi.mock("@/lib/auth/cron-auth", () => ({ autorizaCron: () => true }));
+// O efeito de follow-up e a resposta de campanha têm os próprios testes: aqui basta
+// saber que rodaram, e que o follow-up não acordou ninguém.
+const followup = vi.hoisted(() => ({ opcoes: [] as Array<{ semAcordar?: boolean } | undefined> }));
+vi.mock("@/lib/followup/reactivity", () => ({
+  createSupabaseReactivityClient: () => ({}),
+  applyReactivityEvent: async (_c: unknown, _r: unknown, _e: unknown, opcoes?: { semAcordar?: boolean }) => {
+    followup.opcoes.push(opcoes);
+    return { matched: false, reacted: 0 };
+  },
+}));
+vi.mock("@/lib/campanhas/resposta", () => ({
+  aplicarRespostaNaCampanha: async () => ({ atribuiu: false, optOut: 0 }),
+}));
 
 // ─── O `after()` do Next: guardado, para o caso decidir QUANDO ele roda ──────
 //
@@ -132,15 +166,22 @@ async function rodarODepois(): Promise<void> {
 // ─── A ingestão: lenta, falhando, e com o `unique (org, external_id)` ────────
 const ingestao = vi.hoisted(() => ({
   chamadas: 0,
+  /** O que cada chamada pediu: só o reprocessamento retoma os efeitos. */
+  retomadas: [] as Array<boolean | undefined>,
   demoraMs: 0,
   falhasRestantes: 0,
   /** As mensagens gravadas — o índice único da tabela `messages`. */
   mensagens: new Set<string>(),
 }));
-vi.mock("@/lib/channels/zernio/ingest", () => ({
+vi.mock("@/lib/channels/zernio/ingest", async (orig) => ({
+  ...(await orig<typeof Ingest>()),
   aplicarEdicaoZernio: async () => "aplicado",
-  ingestZernioInbound: async (_a: unknown, input: { organizationId: string; payload: { message: { platformMessageId: string } } }) => {
+  ingestZernioInbound: async (
+    _a: unknown,
+    input: { organizationId: string; retomada?: boolean; payload: { message: { platformMessageId: string } } },
+  ) => {
     ingestao.chamadas += 1;
+    ingestao.retomadas.push(input.retomada);
     if (ingestao.demoraMs > 0) await new Promise((r) => setTimeout(r, ingestao.demoraMs));
     if (ingestao.falhasRestantes > 0) {
       ingestao.falhasRestantes -= 1;
@@ -161,7 +202,11 @@ import {
   reprocessarEntradasAceitas,
 } from "@/lib/channels/reprocessar-entradas-aceitas";
 import { MAX_TENTATIVAS } from "@/lib/channels/reprocessar-arquivo-de-webhook";
-import { MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU } from "@/lib/event-log/aviso-de-evento-morto";
+import {
+  MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU,
+  MENSAGEM_DO_NUMERO_OFICIAL_SEM_ATENDIMENTO,
+} from "@/lib/event-log/aviso-de-evento-morto";
+import { avisarEventoMorto } from "@/lib/event-log/drain";
 import { esquecerRetrato, RECURSOS_DO_CRON, semearRetrato, type RecursoDoCron } from "@/lib/cron/piso-ocioso";
 
 const SEGREDO = "segredo-da-sessao-longo-o-bastante";
@@ -178,7 +223,7 @@ const SESSAO = {
   zernio_account_id: CONTA,
 };
 
-const mensagem = (wamid = "wamid.SINTETICO") => ({
+const mensagem = (wamid = "wamid.SINTETICO", texto = "oi, vocês entregam?") => ({
   id: "evt_1",
   event: "message.received",
   account: { id: CONTA },
@@ -188,7 +233,7 @@ const mensagem = (wamid = "wamid.SINTETICO") => ({
     platform: "whatsapp",
     platformMessageId: wamid,
     direction: "incoming",
-    text: "oi, vocês entregam?",
+    text: texto,
     attachments: [],
     sender: { phoneNumber: "+5511900000003", name: "Cliente" },
     sentAt: "2026-10-27T12:00:00.000Z",
@@ -215,7 +260,7 @@ const avisos = () => (banco.tabelas.agent_inbox_items ?? []) as Linha[];
 
 /** Uma linha que a rota aceitou e cujo `after()` não terminou, recebida há `idadeMs`. */
 function linhaAceita(agora: Date, idadeMs: number, extra: Linha = {}): Linha {
-  const corpo = JSON.stringify(mensagem(String(extra.wamid ?? "wamid.SINTETICO")));
+  const corpo = JSON.stringify(mensagem(String(extra.wamid ?? "wamid.SINTETICO"), extra.texto as string | undefined));
   const l: Linha = {
     id: `arq-${++banco.seq}`,
     organization_id: "org-1",
@@ -232,8 +277,63 @@ function linhaAceita(agora: Date, idadeMs: number, extra: Linha = {}): Linha {
     ...extra,
   };
   delete l.wamid;
+  delete l.texto;
   (banco.tabelas.webhook_events_log ??= []).push(l);
   return l;
+}
+
+const VENCIDA = JANELA_DA_ENTRADA_MS + 60_000;
+const PEDIDO_DE_SAIR = "parar";
+const ENVIADA_EM = mensagem().message.sentAt;
+
+const contato = () => banco.tabelas.contacts![0]! as Linha;
+const conversa = () => banco.tabelas.conversations![0]! as Linha;
+const bloqueios = () => auditoria.linhas.filter((l) => l.action === "contact.blocked");
+const despachos = () =>
+  rpcs.chamadas.filter((c) => c.fn === "emit_event" && c.args.p_event_type === "ai_agent.dispatch_requested");
+
+function semearFicha(extra: Linha = {}): void {
+  banco.tabelas.contacts = [
+    { id: "ct-1", organization_id: "org-1", phone_number: "+5511900000003", is_blocked: false, ...extra },
+  ];
+}
+
+const conversaDaFicha = (): Linha => ({
+  id: "cv-1",
+  organization_id: "org-1",
+  channel_session_id: "sessao-1",
+  provider_conversation_id: mensagem().message.conversationId,
+  contact_id: "ct-1",
+  last_message_at: null,
+  unread_count_for_assignee: 0,
+});
+
+/** A mensagem gravada, com ou sem o marco de que os efeitos rodaram. */
+function semearMensagemNoCrm(opcoes: { marco?: boolean; direction?: string } = {}): void {
+  semearFicha();
+  banco.tabelas.conversations = [conversaDaFicha()];
+  banco.tabelas.messages = [
+    {
+      id: "m1",
+      organization_id: "org-1",
+      external_id: "wamid.SINTETICO",
+      conversation_id: "cv-1",
+      contact_id: "ct-1",
+      direction: opcoes.direction ?? "inbound",
+      sent_at: ENVIADA_EM,
+    },
+  ];
+  if (opcoes.marco) {
+    banco.tabelas.event_log = [
+      {
+        id: "ev-1",
+        organization_id: "org-1",
+        entity_kind: "message",
+        entity_id: "m1",
+        event_type: "ai_agent.dispatch_requested",
+      },
+    ];
+  }
 }
 
 beforeEach(() => {
@@ -246,10 +346,13 @@ beforeEach(() => {
   banco.falhaDeEscrita = {};
   depois.tarefas.length = 0;
   ingestao.chamadas = 0;
+  ingestao.retomadas.length = 0;
   ingestao.demoraMs = 0;
   ingestao.falhasRestantes = 0;
   ingestao.mensagens.clear();
   auditoria.linhas.length = 0;
+  rpcs.chamadas.length = 0;
+  followup.opcoes.length = 0;
 });
 
 describe("a rota responde antes de processar", () => {
@@ -277,6 +380,7 @@ describe("a rota responde antes de processar", () => {
     await rodarODepois();
 
     expect(ingestao.chamadas).toBe(1);
+    expect(ingestao.retomadas, "a entrada ao vivo não pode retomar efeitos").toEqual([false]);
     expect(ingestao.mensagens.size).toBe(1);
     expect(arquivo()[0]).toMatchObject({ status: "processed", valid_signature: true });
     expect(arquivo()[0]!.processed_at).toEqual(expect.any(String));
@@ -352,6 +456,7 @@ describe("o cron reprocessa a entrada aceita que ficou no meio", () => {
     expect(r2.lidas, "a rodada seguinte releu a linha já processada").toBe(0);
 
     expect(ingestao.chamadas).toBe(1);
+    expect(ingestao.retomadas, "o cron não pediu a retomada dos efeitos").toEqual([true]);
     expect(ingestao.mensagens.size).toBe(1);
     expect(arquivo()[0]).toMatchObject({ status: "processed", attempts: 1 });
   });
@@ -379,9 +484,9 @@ describe("o cron reprocessa a entrada aceita que ficou no meio", () => {
     expect(arquivo()[0]).toMatchObject({ status: "received", attempts: 0 });
   });
 
-  it("não toca linha velha demais, não aceita, de outro canal nem já processada", async () => {
+  it("não toca linha não aceita, de outro canal nem já processada", async () => {
     const agora = new Date();
-    linhaAceita(agora, JANELA_DA_ENTRADA_MS + 60_000, { wamid: "w.velha" });
+    linhaAceita(agora, JANELA_DA_ENTRADA_MS + 60_000, { wamid: "w.velha-nao-aceita", valid_signature: null });
     linhaAceita(agora, 10 * 60_000, { wamid: "w.nao-aceita", valid_signature: null });
     linhaAceita(agora, 10 * 60_000, { wamid: "w.outro-canal", provider: "waha" });
     linhaAceita(agora, 10 * 60_000, { wamid: "w.processada", status: "processed" });
@@ -391,6 +496,265 @@ describe("o cron reprocessa a entrada aceita que ficou no meio", () => {
     expect(r.lidas).toBe(0);
     expect(ingestao.chamadas).toBe(0);
     expect(arquivo().map((l) => l.attempts)).toEqual([0, 0, 0, 0]);
+  });
+
+  it("⭐ passou da janela sem terminar: não ingere, vira `dead` e abre o aviso", async () => {
+    const agora = new Date();
+    linhaAceita(agora, JANELA_DA_ENTRADA_MS + 60_000, { attempts: 2 });
+
+    const r = await reprocessarEntradasAceitas(admin as never, agora);
+
+    expect(r).toEqual({ lidas: 1, processadas: 0, ainda_falhando: 0, desistidas: 1 });
+    expect(ingestao.chamadas, "responderia uma mensagem velha").toBe(0);
+    expect(arquivo()[0]).toMatchObject({ status: "dead", attempts: 2 });
+    expect(avisos()).toHaveLength(1);
+    expect(avisos()[0]).toMatchObject({ title: MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU.titulo });
+    expect(String(avisos()[0]!.body)).toContain("passou da janela");
+  });
+
+  it("⭐ passou da janela com a mensagem já no CRM (só o fechamento falhou): fecha, sem aviso falso", async () => {
+    const agora = new Date();
+    semearMensagemNoCrm({ marco: true });
+    linhaAceita(agora, JANELA_DA_ENTRADA_MS + 60_000);
+
+    const r = await reprocessarEntradasAceitas(admin as never, agora);
+
+    expect(r).toMatchObject({ processadas: 1, desistidas: 0 });
+    expect(arquivo()[0]).toMatchObject({ status: "processed", error_message: "vencida_com_a_mensagem_no_crm" });
+    expect(avisos()).toHaveLength(0);
+  });
+
+  it("passou da janela e a mesma mensagem existe em OUTRA organização: continua perdida aqui", async () => {
+    const agora = new Date();
+    banco.tabelas.messages = [{ id: "m1", organization_id: "org-2", external_id: "wamid.SINTETICO" }];
+    linhaAceita(agora, JANELA_DA_ENTRADA_MS + 60_000);
+
+    await reprocessarEntradasAceitas(admin as never, agora);
+
+    expect(arquivo()[0]).toMatchObject({ status: "dead" });
+    expect(avisos()).toHaveLength(1);
+  });
+
+  it("⭐ vencida com pedido de sair e efeitos não rodados: bloqueia, sem acordar o agente, e avisa", async () => {
+    const agora = new Date();
+    semearMensagemNoCrm();
+    linhaAceita(agora, VENCIDA, { texto: PEDIDO_DE_SAIR });
+
+    const r = await reprocessarEntradasAceitas(admin as never, agora);
+
+    expect(r).toMatchObject({ processadas: 1, desistidas: 0 });
+    expect(contato()).toMatchObject({ is_blocked: true, blocked_reason: "stop_keyword" });
+    expect(bloqueios(), "o pedido de sair não foi auditado uma vez").toHaveLength(1);
+    expect(ingestao.chamadas, "a ingestão reprocessou uma mensagem velha").toBe(0);
+    expect(despachos(), "acordou o agente seis horas depois").toHaveLength(0);
+    expect(followup.opcoes).toEqual([{ semAcordar: true }]);
+    expect(conversa()).toMatchObject({ unread_count_for_assignee: 1, last_message_at: ENVIADA_EM });
+    expect(arquivo()[0]).toMatchObject({ status: "processed", error_message: "vencida_efeitos_sem_ia" });
+    expect(avisos()).toHaveLength(1);
+    expect(avisos()[0]).toMatchObject({ title: MENSAGEM_DO_NUMERO_OFICIAL_SEM_ATENDIMENTO.titulo });
+    expect(String(avisos()[0]!.body)).toMatch(/está no Inbox/);
+  });
+
+  it("⭐ a linha que volta (o fechamento falhou) não repete auditoria, não lida nem aviso", async () => {
+    const agora = new Date();
+    semearMensagemNoCrm();
+    linhaAceita(agora, VENCIDA, { texto: PEDIDO_DE_SAIR });
+
+    await reprocessarEntradasAceitas(admin as never, agora);
+    Object.assign(arquivo()[0]!, { status: "received", error_message: null });
+    await reprocessarEntradasAceitas(admin as never, agora);
+
+    expect(bloqueios()).toHaveLength(1);
+    expect(conversa()).toMatchObject({ unread_count_for_assignee: 1 });
+    expect(avisos()).toHaveLength(1);
+    expect(despachos()).toHaveLength(0);
+  });
+
+  it("⭐ vencida com o marco: os efeitos já rodaram, e nada se repete", async () => {
+    const agora = new Date();
+    semearMensagemNoCrm({ marco: true });
+    linhaAceita(agora, VENCIDA, { texto: PEDIDO_DE_SAIR });
+
+    await reprocessarEntradasAceitas(admin as never, agora);
+
+    expect(arquivo()[0]).toMatchObject({ status: "processed", error_message: "vencida_com_a_mensagem_no_crm" });
+    expect(contato()).toMatchObject({ is_blocked: false });
+    expect(auditoria.linhas).toHaveLength(0);
+    expect(rpcs.chamadas).toHaveLength(0);
+    expect(followup.opcoes).toHaveLength(0);
+    expect(conversa()).toMatchObject({ unread_count_for_assignee: 0 });
+    expect(avisos()).toHaveLength(0);
+  });
+
+  it("sem o marco, mas com a conversa já carimbada: a não lida não soma", async () => {
+    const agora = new Date();
+    semearMensagemNoCrm();
+    Object.assign(conversa(), { last_message_at: ENVIADA_EM, unread_count_for_assignee: 1 });
+    linhaAceita(agora, VENCIDA);
+
+    await reprocessarEntradasAceitas(admin as never, agora);
+
+    expect(conversa()).toMatchObject({ unread_count_for_assignee: 1 });
+    expect(arquivo()[0]).toMatchObject({ status: "processed", error_message: "vencida_efeitos_sem_ia" });
+  });
+
+  it("quem já estava bloqueado não ganha segunda auditoria", async () => {
+    const agora = new Date();
+    semearMensagemNoCrm();
+    Object.assign(contato(), { is_blocked: true, blocked_reason: "stop_keyword" });
+    linhaAceita(agora, VENCIDA, { texto: PEDIDO_DE_SAIR });
+
+    await reprocessarEntradasAceitas(admin as never, agora);
+
+    expect(bloqueios()).toHaveLength(0);
+    expect(arquivo()[0]).toMatchObject({ status: "processed" });
+  });
+
+  it("saída vencida no CRM é o eco do envio: fecha sem efeito e sem aviso", async () => {
+    const agora = new Date();
+    semearMensagemNoCrm({ direction: "outbound" });
+    linhaAceita(agora, VENCIDA, { texto: PEDIDO_DE_SAIR });
+
+    await reprocessarEntradasAceitas(admin as never, agora);
+
+    expect(arquivo()[0]).toMatchObject({ status: "processed", error_message: "vencida_com_a_mensagem_no_crm" });
+    expect(contato()).toMatchObject({ is_blocked: false });
+    expect(avisos()).toHaveLength(0);
+  });
+
+  it("o opt-out não gravou: a linha vencida não fecha, e a rodada seguinte bloqueia", async () => {
+    const agora = new Date();
+    semearMensagemNoCrm();
+    linhaAceita(agora, VENCIDA, { texto: PEDIDO_DE_SAIR });
+
+    banco.falhaDeEscrita.contacts = "canceling statement due to statement timeout";
+    await reprocessarEntradasAceitas(admin as never, agora);
+    expect(arquivo()[0]).toMatchObject({ status: "received" });
+    expect(avisos()).toHaveLength(0);
+
+    delete banco.falhaDeEscrita.contacts;
+    await reprocessarEntradasAceitas(admin as never, agora);
+    expect(contato()).toMatchObject({ is_blocked: true });
+    expect(arquivo()[0]).toMatchObject({ status: "processed" });
+  });
+
+  it("⭐ linha `dead` por vencimento com pedido de sair: bloqueia a ficha achada pelo telefone", async () => {
+    const agora = new Date();
+    semearFicha();
+    linhaAceita(agora, VENCIDA, { texto: PEDIDO_DE_SAIR });
+
+    await reprocessarEntradasAceitas(admin as never, agora);
+
+    expect(arquivo()[0]).toMatchObject({ status: "dead" });
+    expect(contato()).toMatchObject({ is_blocked: true, blocked_reason: "stop_keyword" });
+    expect(bloqueios()).toHaveLength(1);
+    expect(avisos()[0]).toMatchObject({ title: MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU.titulo });
+    expect(despachos()).toHaveLength(0);
+  });
+
+  it("⭐ linha `dead` no teto com pedido de sair: bloqueia a ficha achada pela thread", async () => {
+    const agora = new Date();
+    semearFicha({ phone_number: null });
+    banco.tabelas.conversations = [conversaDaFicha()];
+    linhaAceita(agora, 10 * 60_000, { texto: PEDIDO_DE_SAIR, attempts: MAX_TENTATIVAS - 1 });
+    ingestao.falhasRestantes = 99;
+
+    await reprocessarEntradasAceitas(admin as never, agora);
+
+    expect(arquivo()[0]).toMatchObject({ status: "dead", attempts: MAX_TENTATIVAS });
+    expect(contato()).toMatchObject({ is_blocked: true });
+  });
+
+  it("linha `dead` sem pedido de sair, ou com a ficha em OUTRA organização: ninguém é bloqueado", async () => {
+    const agora = new Date();
+    semearFicha();
+    linhaAceita(agora, VENCIDA);
+    await reprocessarEntradasAceitas(admin as never, agora);
+    expect(contato()).toMatchObject({ is_blocked: false });
+
+    contato().organization_id = "org-2";
+    arquivo().length = 0;
+    linhaAceita(agora, VENCIDA, { texto: PEDIDO_DE_SAIR });
+    await reprocessarEntradasAceitas(admin as never, agora);
+    expect(arquivo()[0]).toMatchObject({ status: "dead" });
+    expect(contato()).toMatchObject({ is_blocked: false });
+  });
+
+  it("linha `dead` de SAÍDA: quem escreveu «parar» foi a equipe, e o cliente não é bloqueado", async () => {
+    const agora = new Date();
+    semearFicha();
+    const base = mensagem("wamid.SINTETICO", PEDIDO_DE_SAIR);
+    const saida = {
+      ...base,
+      event: "message.sent",
+      message: { ...base.message, direction: "outgoing" },
+      conversation: { participantId: "+5511900000003" },
+    };
+    linhaAceita(agora, VENCIDA, { raw_body: JSON.stringify(saida), payload_parsed: saida });
+
+    await reprocessarEntradasAceitas(admin as never, agora);
+
+    expect(arquivo()[0]).toMatchObject({ status: "dead" });
+    expect(contato()).toMatchObject({ is_blocked: false });
+  });
+
+  it("o bloqueio da linha que ia morrer falhou: ela não morre, e a rodada seguinte bloqueia", async () => {
+    const agora = new Date();
+    semearFicha();
+    linhaAceita(agora, VENCIDA, { texto: PEDIDO_DE_SAIR });
+
+    banco.falhaDeEscrita.contacts = "canceling statement due to statement timeout";
+    await reprocessarEntradasAceitas(admin as never, agora);
+    expect(arquivo()[0]).toMatchObject({ status: "received" });
+
+    delete banco.falhaDeEscrita.contacts;
+    await reprocessarEntradasAceitas(admin as never, agora);
+    expect(arquivo()[0]).toMatchObject({ status: "dead" });
+    expect(contato()).toMatchObject({ is_blocked: true });
+  });
+
+  it("o aviso de mensagem sem atendimento não cala as outras tarefas que param de tentar", async () => {
+    banco.tabelas.agent_inbox_items = [
+      {
+        id: "a1",
+        organization_id: "org-1",
+        kind: "event_dead",
+        status: "open",
+        title: MENSAGEM_DO_NUMERO_OFICIAL_SEM_ATENDIMENTO.titulo,
+      },
+    ];
+
+    await avisarEventoMorto(
+      admin as never,
+      { id: "e1", organization_id: "org-1", event_type: "qualquer", attempts: 5 },
+      "falhou",
+    );
+
+    expect(avisos()).toHaveLength(2);
+  });
+
+  it("passou da janela sem corpo: não há como conferir, então avisa", async () => {
+    const agora = new Date();
+    linhaAceita(agora, JANELA_DA_ENTRADA_MS + 60_000, { raw_body: null });
+
+    await reprocessarEntradasAceitas(admin as never, agora);
+
+    expect(arquivo()[0]).toMatchObject({ status: "dead" });
+    expect(avisos()).toHaveLength(1);
+  });
+
+  it("a linha vencida não tira a vez da recente, e a rodada seguinte não a relê", async () => {
+    const agora = new Date();
+    linhaAceita(agora, JANELA_DA_ENTRADA_MS + 60_000, { wamid: "w.velha" });
+    linhaAceita(agora, 10 * 60_000, { wamid: "w.recente" });
+
+    const r1 = await reprocessarEntradasAceitas(admin as never, agora);
+    expect(r1).toEqual({ lidas: 2, processadas: 1, ainda_falhando: 0, desistidas: 1 });
+    expect(arquivo().map((l) => l.status)).toEqual(["dead", "processed"]);
+
+    const r2 = await reprocessarEntradasAceitas(admin as never, agora);
+    expect(r2.lidas).toBe(0);
+    expect(avisos()).toHaveLength(1);
   });
 
   it("duas rodadas sobrepostas não processam a mesma linha com a mesma leitura", async () => {

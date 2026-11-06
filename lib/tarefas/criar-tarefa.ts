@@ -15,8 +15,18 @@
  * é lido por uma pessoa na tela, e o push vai só para o RESPONSÁVEL. É a
  * diferença que a issue pede — advocacia, saúde e serviços regulados precisam
  * que o sistema LEMBRE a equipe e não que o sistema fale.
+ *
+ * ═══ O BANCO VEM PELA PORTA (#3715) ═══
+ *
+ * As três consultas (negócio, contato, INSERT da tarefa) deixaram de ser a
+ * cadeia do PostgREST e são SQL com parâmetros em `lib/db`. Quem chama passa a
+ * PORTA (`portaDaAplicacao()`), não mais o cliente do SDK: aceitar os dois
+ * seria aceitar um cliente que a função ignora — e o chamador acharia que a
+ * escrita foi por ele. Os quatro chamadores (as duas ações de automação, o nó
+ * `internal_task` do follow-up e o aviso de carteira) foram adaptados junto.
+ * A organização é filtro de SQL em toda leitura: o pool não passa por RLS.
  */
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Db } from "@/lib/db";
 
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
@@ -120,6 +130,33 @@ export function recusaDeConfiguracao(
 }
 
 /**
+ * Leitura de UMA linha que já tolerava erro — e continua tolerando.
+ *
+ * Com o PostgREST, `.maybeSingle()` devolvia `{ data: null, error }` e este
+ * módulo olhava só `data`: um erro de leitura virava "não achei", e a recusa
+ * saía como `sem_alvo` (configuração) e não como `falha` (infra). Preservar
+ * isso é preservar o contrato visível de quem chama — inclusive o desfecho
+ * FECHADO (nunca cria tarefa com um alvo que não conseguiu ler). Distinguir os
+ * dois casos é decisão de produto, não de migração.
+ */
+async function lerLinha<T>(
+  db: Db,
+  sql: string,
+  parametros: readonly unknown[],
+): Promise<T | null> {
+  try {
+    return await db.queryOne<T>(sql, parametros);
+  } catch {
+    return null;
+  }
+}
+
+/** Mensagem crua do driver, sem SQL montado — é o que vira `erro` no resultado. */
+function mensagemDoErro(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
  * Grava a tarefa, audita, registra na linha do tempo do negócio e (se houver
  * responsável) manda o push.
  *
@@ -132,31 +169,34 @@ export function recusaDeConfiguracao(
  * lista de tarefas sem responsável vira ruído que ensina o time a ignorar.
  */
 export async function criarTarefaInterna(
-  db: SupabaseClient,
+  db: Db,
   pedido: PedidoDeTarefa,
 ): Promise<ResultadoDaTarefa> {
   const agora = pedido.agora ?? new Date();
+
   const lead = pedido.leadId
-    ? ((
-        await db
-          .from("crm_leads")
-          .select("id, title, contact_id, owner_user_id")
-          .eq("id", pedido.leadId)
-          .eq("organization_id", pedido.organizationId)
-          .maybeSingle()
-      ).data as LeadDoPedido | null)
+    ? await lerLinha<LeadDoPedido>(
+        db,
+        `select id, title, contact_id, owner_user_id
+           from crm_leads
+          where id = $1
+            and organization_id = $2
+          limit 1`,
+        [pedido.leadId, pedido.organizationId],
+      )
     : null;
 
   const contactId = pedido.contactId ?? lead?.contact_id ?? null;
   const contact = contactId
-    ? ((
-        await db
-          .from("contacts")
-          .select("id, name, display_name")
-          .eq("id", contactId)
-          .eq("organization_id", pedido.organizationId)
-          .maybeSingle()
-      ).data as ContatoDoPedido | null)
+    ? await lerLinha<ContatoDoPedido>(
+        db,
+        `select id, name, display_name
+           from contacts
+          where id = $1
+            and organization_id = $2
+          limit 1`,
+        [contactId, pedido.organizationId],
+      )
     : null;
 
   if (!lead && !contact) {
@@ -172,28 +212,39 @@ export async function criarTarefaInterna(
 
   const dueDate = new Date(agora.getTime() + pedido.venceEmDias * 86_400_000).toISOString();
 
-  const { data: criada, error } = await db
-    .from("crm_tasks")
-    .insert({
-      organization_id: pedido.organizationId,
-      title: titulo,
-      description: pedido.descricao ?? null,
-      due_date: dueDate,
-      priority: pedido.prioridade,
-      status: "pending",
-      lead_id: lead?.id ?? null,
-      contact_id: contactId,
-      assigned_to: assignedTo,
-      created_by: null,
-    })
-    .select("id")
-    .maybeSingle();
+  // INSERT … RETURNING id: o `.insert().select("id").maybeSingle()` do
+  // PostgREST devolvia a linha criada numa segunda ida (Prefer: return=
+  // representation); aqui o id vem na MESMA ida.
+  let tarefaId: string;
+  try {
+    const criadas = await db.query<{ id: string }>(
+      `insert into crm_tasks
+         (organization_id, title, description, due_date, priority, status,
+          lead_id, contact_id, assigned_to, created_by)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       returning id`,
+      [
+        pedido.organizationId,
+        titulo,
+        pedido.descricao ?? null,
+        dueDate,
+        pedido.prioridade,
+        "pending",
+        lead?.id ?? null,
+        contactId,
+        assignedTo,
+        null,
+      ],
+    );
 
-  if (error || !criada) {
-    return { ok: false, codigo: "falha", erro: error?.message };
+    // `RETURNING id` devolve exatamente a linha inserida; se o driver não
+    // devolveu nada, o INSERT não aconteceu — e isso é `falha`, nunca `ok`.
+    const criada = criadas[0];
+    if (!criada) return { ok: false, codigo: "falha" };
+    tarefaId = criada.id;
+  } catch (err) {
+    return { ok: false, codigo: "falha", erro: mensagemDoErro(err) };
   }
-
-  const tarefaId = criada.id as string;
 
   // Fire-and-forget quanto a erro: perder o audit ou o push não pode desfazer a
   // tarefa que já existe (lei do CLAUDE.md §Audit log — mesma razão dos crons

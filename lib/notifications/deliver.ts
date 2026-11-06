@@ -2,6 +2,7 @@ import { toast } from "sonner";
 
 import { traduzir } from "@/lib/i18n/dicionario";
 import { idiomaAtual } from "@/lib/i18n/IdiomaProvider";
+import { aderecosDoAviso } from "@/lib/notifications/marca-do-aviso";
 import { conteudoNaTelaBloqueadaWriteSchema, type ConteudoNaTelaBloqueada } from "@/lib/schemas/settings";
 import { emitNotification } from "./emit";
 import type { NotifyKind } from "./kinds";
@@ -18,6 +19,12 @@ export interface EntregarAvisoInput {
   icon?: string;
   /** O que a bandeja mostra no modo `nome` no lugar de `body`; ausente = corpo vazio. */
   corpoSemPrevia?: string;
+  /**
+   * A REDE de onde o aviso veio (`whatsapp`, `telegram`, …, ou `unknown`).
+   * Ausente = aviso que não vem de conversa (lead, menção, exportação) e que
+   * portanto não ganha marca — os toasts existentes seguem idênticos (#4094).
+   */
+  canal?: string;
   /** A opção da empresa, quando o produtor já a tem; senão é lida do servidor. */
   conteudo?: ConteudoNaTelaBloqueada;
 }
@@ -49,6 +56,10 @@ export function entregarAviso(input: EntregarAvisoInput): void {
     // mensagem" e deixava a pessoa procurando a conversa na mão. Com ação, ele
     // leva direto para lá. Sem destino, não inventa botão: um botão morto é
     // pior que nenhum.
+    //
+    // A marca do canal (ícone + faixa na cor da rede) entra só quando o
+    // produtor declarou de onde veio: `aderecosDoAviso` devolve `null` para os
+    // outros avisos, e o toast sai como sempre saiu (#4094).
     toast(title, {
       description: body,
       action: href
@@ -59,6 +70,7 @@ export function entregarAviso(input: EntregarAvisoInput): void {
             },
           }
         : undefined,
+      ...(aderecosDoAviso(input.canal) ?? {}),
     });
   }
   if (canalLigado(input.category, "push")) {

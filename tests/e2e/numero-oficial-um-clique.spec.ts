@@ -252,7 +252,7 @@ test.describe("Conexões — número oficial com um clique, pela conta do proved
       status: "WORKING",
     });
     if (sB.error) throw sB.error;
-    provedor.perfis.push({ _id: PERFIL_B, name: `Loja B · ${orgB.slice(0, 8)}` });
+    provedor.perfis.push({ _id: PERFIL_B, name: `Loja B · ${orgB}` });
     provedor.contas.push(contaB());
   });
 
@@ -341,7 +341,7 @@ test.describe("Conexões — número oficial com um clique, pela conta do proved
       pedidos.every((p) => p.caminho === "/cadastro" || p.autorizacao === `Bearer ${CHAVE}`),
     ).toBe(true);
     const perfil = pedidos.find((p) => p.metodo === "POST" && p.caminho === "/v1/profiles");
-    expect(String(perfil?.corpo?.name).endsWith(` · ${creds.org_id.slice(0, 8)}`)).toBe(true);
+    expect(String(perfil?.corpo?.name).endsWith(` · ${creds.org_id}`)).toBe(true);
     const conexao = pedidos.find((p) => p.caminho === "/v1/connect/whatsapp");
     expect(conexao?.query).toMatchObject({
       profileId: PERFIL,

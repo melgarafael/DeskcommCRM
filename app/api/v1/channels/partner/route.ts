@@ -144,9 +144,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const chaveCifrada = await encryptWebhookSecret(admin, parsed.data.api_key);
   // Segredo do webhook: é o que autentica o que ENTRA. Sem ele a rota de entrada
   // recusa tudo — que é o comportamento certo, mas o canal ficaria mudo. Ao
-  // reconectar, o MESMO segredo: a assinatura que já entrega continua valendo
-  // enquanto recebe o filtro, e nenhum evento se perde na troca.
-  const segredoAtual = existente ? await segredoAtualDoWebhook(admin, orgId, existente.id) : null;
+  // reconectar o MESMO número ativo, o MESMO segredo: a assinatura que já
+  // entrega continua valendo enquanto recebe o filtro, e nenhum evento se perde
+  // na troca. Conta trocada ou conexão excluída geram outro: é o jeito de
+  // aposentar um segredo que alguém de fora ainda tenha.
+  const mesmoNumero =
+    !!existente && !existente.archivedAt && existente.accountId === parsed.data.account_id.trim();
+  const segredoAtual =
+    mesmoNumero && existente ? await segredoAtualDoWebhook(admin, orgId, existente.id) : null;
   const segredoWebhook = segredoAtual ?? randomBytes(32).toString("hex");
   const segredoCifrado = await encryptWebhookSecret(admin, segredoWebhook);
 

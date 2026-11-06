@@ -31,6 +31,16 @@
  * Quem chama já resolveu a sessão (rota e página), e o `organization_id` que
  * vale é o da SESSÃO. O id do material vem do caminho justamente porque é o
  * dado que o pedido escolhe — e um id de outra empresa não pode voltar.
+ *
+ * ─── Um núcleo, dois acessos (#4133) ───────────────────────────────────────
+ *
+ * A ORDEM acima é a lógica e mora num lugar só (`lerMaterial`). O que muda
+ * entre os chamadores é COMO se chega ao banco: a tela tem cliente de sessão
+ * (RLS), o turno do agente tem `pg.Pool` + admin (`createAdminClient`, usado
+ * pela extração). Em vez de duplicar a ordem no turno — e deixar os dois
+ * caminhos divergirem com o tempo —, o núcleo fala com a interface
+ * `LeitorDoAcervo`, e cada lado tem seu adaptador fino (`leitorDeSessao`,
+ * `leitorDePool`). O cliente de sessão continua atendendo a tela como antes.
  */
 
 import { ErroDeExtracao, extrairTextoDoArquivo } from "@/lib/ai/rag/ingest/documento";
@@ -44,7 +54,7 @@ type ClienteComSessao = Awaited<ReturnType<typeof createClient>>;
  * Teto de leitura: uma tela não folheia mil itens nem mil trechos, e o corpo da
  * resposta não precisa carregá-los (mesma régua da rota de trechos).
  */
-const TETO = 200;
+export const TETO = 200;
 
 /** De onde saiu o conteúdo legível que a tela vai mostrar. */
 export type OrigemDoConteudo =
@@ -91,7 +101,7 @@ export type LeituraDoMaterial =
 const SEM_CONTEUDO =
   "Este material ainda não foi preparado — não há texto guardado dele e nada foi indexado ainda.";
 
-interface FonteRow {
+export interface FonteDoMaterial {
   id: string;
   name: string;
   source_type: string | null;
@@ -100,24 +110,56 @@ interface FonteRow {
   chunks_count: number | null;
 }
 
-export async function lerConteudoDoMaterial(
-  supabase: ClienteComSessao,
+export interface ParDeFaq {
+  question: string;
+  answer: string;
+}
+
+/**
+ * O que o núcleo precisa saber do acervo. Cada método é uma pergunta SEMÂNTICA
+ * (não SQL): assim o cliente de sessão (PostgREST) e o `pg.Pool` do turno
+ * respondem a mesma coisa sem que o núcleo conheça nenhum dos dois.
+ */
+export interface LeitorDoAcervo {
+  fonte(p: {
+    orgId: string;
+    sourceId: string;
+  }): Promise<
+    { ok: true; fonte: FonteDoMaterial } | { ok: false; falha: "nao_encontrado" | "leitura" }
+  >;
+  paresDeFaq(p: { orgId: string; sourceId: string }): Promise<{ itens: ParDeFaq[]; total: number }>;
+  trechos(p: { orgId: string; sourceId: string }, versaoAtiva: string | null): Promise<string[]>;
+}
+
+/**
+ * O mínimo de um banco SQL que o adaptador do turno usa. Sem genérico de
+ * propósito: assim `pg.Pool` (cujo `query` é genérico e restrito a
+ * `QueryResultRow`) é atribuível aqui sem cast no chamador; o tipo concreto de
+ * cada consulta é dado no adaptador, junto do SQL que o produz.
+ */
+export interface ConsultaSql {
+  query(sql: string, params?: unknown[]): Promise<{ rows: unknown[] }>;
+}
+
+/** Executa e tipa o resultado: o SQL e o tipo moram no MESMO lugar. */
+async function consultar<T>(db: ConsultaSql, sql: string, params: unknown[]): Promise<T[]> {
+  const { rows } = await db.query(sql, params);
+  return rows as T[];
+}
+
+/**
+ * O núcleo: a ORDEM (FAQ → blob → chunks), os tetos e o motivo de cada falha.
+ * Não sabe se quem chamou é a tela ou o turno.
+ */
+export async function lerMaterial(
+  leitor: LeitorDoAcervo,
   p: { orgId: string; sourceId: string },
+  opcoes?: { extrair?: typeof extrairTextoDoArquivo },
 ): Promise<LeituraDoMaterial> {
-  const { data, error } = await supabase
-    .from("ai_knowledge_sources")
-    .select("id, name, source_type, source_metadata, active_kb_version_id, chunks_count")
-    .eq("id", p.sourceId)
-    .eq("organization_id", p.orgId)
-    .maybeSingle();
+  const leitura = await leitor.fonte(p);
+  if (!leitura.ok) return leitura;
 
-  if (error) {
-    console.error("[conhecimento-conteudo] leitura do material falhou:", error.message);
-    return { ok: false, falha: "leitura" };
-  }
-  if (!data) return { ok: false, falha: "nao_encontrado" };
-
-  const fonte = data as unknown as FonteRow;
+  const fonte = leitura.fonte;
   const nome = fonte.name;
   const tipo = canonizarTipoDeFonte(fonte.source_type ?? "") ?? "faq";
   const versaoAtiva = fonte.active_kb_version_id;
@@ -149,7 +191,7 @@ export async function lerConteudoDoMaterial(
 
   // 1. FAQ: o que a pessoa escreveu, na ordem em que escreveu.
   if (tipo === "faq") {
-    const { itens, total } = await lerParesDeFaq(supabase, p);
+    const { itens, total } = await leitor.paresDeFaq(p);
     if (itens.length > 0) {
       return fechar({
         origem: "faq",
@@ -166,7 +208,8 @@ export async function lerConteudoDoMaterial(
   let motivoDaFalha: string | null = null;
   if (blobPath) {
     try {
-      const { texto } = await extrairTextoDoArquivo(blobPath, ext);
+      const extrair = opcoes?.extrair ?? extrairTextoDoArquivo;
+      const { texto } = await extrair(blobPath, ext);
       return fechar({ origem: "arquivo", conteudo: texto, total: 1 });
     } catch (err) {
       // Arquivo apagado do Storage, PDF só de imagens, bytes que não são texto:
@@ -185,7 +228,7 @@ export async function lerConteudoDoMaterial(
 
   // 3. O que sobrou: o material automático (conversas, catálogo) e o arquivo que
   //    não pôde ser lido agora. É o que o agente já sabe deste material.
-  const trechos = await lerTrechosIndexados(supabase, p, versaoAtiva);
+  const trechos = await leitor.trechos(p, versaoAtiva);
   if (trechos.length > 0) {
     // O total é o do material (`chunks_count`), como em `trechos/route.ts`.
     const total = fonte.chunks_count ?? trechos.length;
@@ -205,47 +248,147 @@ export async function lerConteudoDoMaterial(
   });
 }
 
-/** Os pares cadastrados (até o teto) e quantos existem. Falha de leitura aqui não é fatal: o índice ainda pode ter texto. */
-async function lerParesDeFaq(
-  supabase: ClienteComSessao,
-  p: { orgId: string; sourceId: string },
-): Promise<{ itens: { question: string; answer: string }[]; total: number }> {
-  const { data, error, count } = await supabase
-    .from("ai_faq_items")
-    .select("question, answer", { count: "exact" })
-    .eq("organization_id", p.orgId)
-    .eq("knowledge_source_id", p.sourceId)
-    .order("position", { ascending: true })
-    .limit(TETO);
+/** Adaptador da TELA: cliente com sessão (RLS) — o comportamento de sempre. */
+export function leitorDeSessao(supabase: ClienteComSessao): LeitorDoAcervo {
+  return {
+    async fonte(p) {
+      const { data, error } = await supabase
+        .from("ai_knowledge_sources")
+        .select("id, name, source_type, source_metadata, active_kb_version_id, chunks_count")
+        .eq("id", p.sourceId)
+        .eq("organization_id", p.orgId)
+        .maybeSingle();
 
-  if (error) {
-    console.error("[conhecimento-conteudo] leitura dos pares falhou:", error.message);
-    return { itens: [], total: 0 };
-  }
-  const itens = (data ?? []) as unknown as { question: string; answer: string }[];
-  return { itens, total: count ?? itens.length };
+      if (error) {
+        console.error("[conhecimento-conteudo] leitura do material falhou:", error.message);
+        return { ok: false, falha: "leitura" };
+      }
+      if (!data) return { ok: false, falha: "nao_encontrado" };
+      return { ok: true, fonte: data as unknown as FonteDoMaterial };
+    },
+    async paresDeFaq(p) {
+      const { data, error, count } = await supabase
+        .from("ai_faq_items")
+        .select("question, answer", { count: "exact" })
+        .eq("organization_id", p.orgId)
+        .eq("knowledge_source_id", p.sourceId)
+        .order("position", { ascending: true })
+        .limit(TETO);
+
+      if (error) {
+        console.error("[conhecimento-conteudo] leitura dos pares falhou:", error.message);
+        return { itens: [], total: 0 };
+      }
+      const itens = (data ?? []) as unknown as ParDeFaq[];
+      return { itens, total: count ?? itens.length };
+    },
+    async trechos(p, versaoAtiva) {
+      if (!versaoAtiva) return [];
+
+      const { data, error } = await supabase
+        .from("ai_chunks")
+        .select("content")
+        .eq("organization_id", p.orgId)
+        .eq("knowledge_source_id", p.sourceId)
+        .eq("kb_version_id", versaoAtiva)
+        .order("position", { ascending: true })
+        .limit(TETO);
+
+      if (error) {
+        console.error("[conhecimento-conteudo] leitura dos trechos falhou:", error.message);
+        return [];
+      }
+      return ((data ?? []) as unknown as { content: string }[]).map((t) => t.content);
+    },
+  };
 }
 
-/** Os trechos da versão ATIVA, na ordem de indexação e sem o vetor. */
-async function lerTrechosIndexados(
+/**
+ * Adaptador do TURNO: `pg.Pool` (ou qualquer `Queryable`) com admin — o turno
+ * não tem sessão. MESMAS perguntas, mesmo escopo de organização.
+ *
+ * `id::text = $1` em vez de `id = $1::uuid`: um id forjado/não-uuid vira MISS
+ * limpo (não encontrado), nunca erro de cast 22P02 que derrubaria o turno.
+ */
+export function leitorDePool(db: ConsultaSql): LeitorDoAcervo {
+  return {
+    async fonte(p) {
+      try {
+        const rows = await consultar<FonteDoMaterial>(
+          db,
+          `select id, name, source_type, source_metadata, active_kb_version_id, chunks_count
+             from ai_knowledge_sources
+            where id::text = $1 and organization_id = $2
+            limit 1`,
+          [p.sourceId, p.orgId],
+        );
+        const fonte = rows[0];
+        if (!fonte) return { ok: false, falha: "nao_encontrado" };
+        return { ok: true, fonte };
+      } catch (err) {
+        console.error(
+          "[conhecimento-conteudo] leitura do material falhou:",
+          err instanceof Error ? err.message : String(err),
+        );
+        return { ok: false, falha: "leitura" };
+      }
+    },
+    async paresDeFaq(p) {
+      try {
+        const rows = await consultar<ParDeFaq>(
+          db,
+          `select question, answer
+             from ai_faq_items
+            where organization_id = $1 and knowledge_source_id::text = $2
+            order by position, id
+            limit $3`,
+          [p.orgId, p.sourceId, TETO],
+        );
+        const contagem = await consultar<{ total: number | string }>(
+          db,
+          `select count(*)::int as total
+             from ai_faq_items
+            where organization_id = $1 and knowledge_source_id::text = $2`,
+          [p.orgId, p.sourceId],
+        );
+        const total = Number(contagem[0]?.total ?? rows.length);
+        return { itens: rows, total };
+      } catch (err) {
+        console.error(
+          "[conhecimento-conteudo] leitura dos pares falhou:",
+          err instanceof Error ? err.message : String(err),
+        );
+        return { itens: [], total: 0 };
+      }
+    },
+    async trechos(p, versaoAtiva) {
+      if (!versaoAtiva) return [];
+      try {
+        const rows = await consultar<{ content: string }>(
+          db,
+          `select content
+             from ai_chunks
+            where organization_id = $1 and knowledge_source_id::text = $2 and kb_version_id = $3
+            order by position, id
+            limit $4`,
+          [p.orgId, p.sourceId, versaoAtiva, TETO],
+        );
+        return rows.map((t) => t.content);
+      } catch (err) {
+        console.error(
+          "[conhecimento-conteudo] leitura dos trechos falhou:",
+          err instanceof Error ? err.message : String(err),
+        );
+        return [];
+      }
+    },
+  };
+}
+
+/** A tela: cliente de sessão (RLS). Assinatura preservada para rota e página. */
+export async function lerConteudoDoMaterial(
   supabase: ClienteComSessao,
   p: { orgId: string; sourceId: string },
-  versaoAtiva: string | null,
-): Promise<string[]> {
-  if (!versaoAtiva) return [];
-
-  const { data, error } = await supabase
-    .from("ai_chunks")
-    .select("content")
-    .eq("organization_id", p.orgId)
-    .eq("knowledge_source_id", p.sourceId)
-    .eq("kb_version_id", versaoAtiva)
-    .order("position", { ascending: true })
-    .limit(TETO);
-
-  if (error) {
-    console.error("[conhecimento-conteudo] leitura dos trechos falhou:", error.message);
-    return [];
-  }
-  return ((data ?? []) as unknown as { content: string }[]).map((t) => t.content);
+): Promise<LeituraDoMaterial> {
+  return lerMaterial(leitorDeSessao(supabase), p);
 }

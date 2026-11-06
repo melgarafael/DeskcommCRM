@@ -75,6 +75,8 @@ function iaCaladaEm(ate: Date, quando: Date): boolean {
     modo: "open",
     forceHuman: false,
     contatoInterno: false,
+    // #3534: contato comum; a régua da equipe não participa deste isolamento.
+    contatoDaEquipe: false,
     aiOptOut: false,
     botSilencedUntil: normalizarInstante(ate.toISOString()),
     assigneeKind: null,

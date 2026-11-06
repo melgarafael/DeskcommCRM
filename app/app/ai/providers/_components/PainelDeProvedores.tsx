@@ -672,9 +672,23 @@ function CartaoDoPonto({
 
   return (
     <Card className="p-4" data-testid={`ponto-${ponto.id}`}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+      {/*
+        A 375 px o texto do cabeçalho perdia a largura para a coluna do modelo:
+        `flex-1` dentro de um `flex-wrap` tem base ZERO, então a linha nunca
+        quebrava — o bloco do modelo/origem ficava com o que pedia e o texto
+        encolhia até o `min-w-0`. Medido com o Tailwind deste repo a 375 px: o
+        título ficava com 82 px e quebrava em 5 linhas; sem o `flex-1`, 197 px;
+        com as duas colunas empilhadas, os 293 px do cartão, em 2 linhas.
+
+        Abaixo de `md` é uma coluna só — texto na largura do cartão e
+        modelo/origem na linha de baixo, alinhados à esquerda. De `md` para cima
+        as duas colunas voltam a dividir a linha, como antes.
+      */}
+      <div className="grid gap-x-3 gap-y-2 md:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="min-w-0">
+          {/* `flex-wrap`: selo que não cabe desce para a linha de baixo em vez
+              de espremer o título. */}
+          <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-medium">{t(ponto.rotulo)}</h3>
             {ponto.exige.tools && (
               <Badge variant="outline" className="text-xs">
@@ -700,8 +714,8 @@ function CartaoDoPonto({
             </p>
           )}
         </div>
-        <div className="text-right text-xs text-muted-foreground">
-          <div className="font-mono">{ponto.efetivo.modelId ?? "—"}</div>
+        <div className="text-left text-xs text-muted-foreground md:col-start-2 md:row-start-1 md:text-right">
+          <div className="break-words font-mono">{ponto.efetivo.modelId ?? "—"}</div>
           <div data-testid={`origem-${ponto.id}`}>{t(ponto.efetivo.porQue)}</div>
         </div>
       </div>

@@ -470,7 +470,8 @@ export const zernioAdapter: ChannelAdapter = {
    *   `platformConnection.inboundWebhookSubscribed: false`
    *                  → a Meta diz que o provedor não assina o webhook de
    *                    mensagens deste número: ele ENVIA e não RECEBE. `null` é
-   *                    "a Meta não informou" — não é evidência, não avisa.
+   *                    "a Meta não informou" — não é evidência: não abre aviso e
+   *                    também não fecha o que está aberto (`defeitosSemMedida`).
    *   `messagingRestriction` (na RAIZ — medido nesta instalação: `null` quando
    *                    não há nada) → a plataforma recusou envio deste número
    *                    com 131042 (pagamento), 131031 (conta bloqueada) ou 368
@@ -545,7 +546,18 @@ export const zernioAdapter: ChannelAdapter = {
       if (restricaoCodigo !== null) {
         return { reachable: true, status: "WORKING", detail: `${PREFIXO_ENVIO_RESTRITO}${restricaoCodigo}` };
       }
-      return { reachable: true, status: "WORKING", detail: null };
+      // Sem defeito à vista não é número inteiro: só `true` descarta o defeito de
+      // recebimento, e só a chave presente (mesmo `null`) descarta a restrição.
+      const defeitosSemMedida = [
+        ...(elo?.inboundWebhookSubscribed === true ? [] : (["nao_recebe"] as const)),
+        ...(restricao === undefined ? (["envio_restrito"] as const) : []),
+      ];
+      return {
+        reachable: true,
+        status: "WORKING",
+        detail: null,
+        ...(defeitosSemMedida.length > 0 ? { defeitosSemMedida } : {}),
+      };
     };
 
     if (elo?.status === "disconnected") {

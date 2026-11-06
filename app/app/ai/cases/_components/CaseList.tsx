@@ -74,7 +74,9 @@ export function CaseList({ heading }: { heading?: ReactNode } = {}) {
               </p>
               <p className="text-xs text-muted-foreground">
                 {tab === "open"
-                  ? t("Quando a IA precisar de você, aparece aqui.")
+                  ? t(
+                      'Os casos aparecem aqui quando um agente publicado, com "Deixar o agente pedir uma tarefa a alguém e seguir conversando" ligado, pede algo a você. Conversa passada para uma pessoa vai para o Inbox.',
+                    )
                   : t("Casos concluídos, cancelados ou repassados ficam aqui.")}
               </p>
             </div>

@@ -58,6 +58,7 @@ import { finalizeHandoff } from "./handoff";
 import { loadHistoryWithBudget } from "./history";
 import { mintEphemeralToken, revokeEphemeralToken } from "./mcp_token";
 import { carregarServidorMcpExternoDoTurno } from "@/lib/mcp/servidor-externo/carregar";
+import { carregarServidoresDoAgenteNoTurno } from "@/lib/mcp/servidor-externo/do-agente/carregar";
 import { pickToolsFromMcp, type RuntimeHandoffSignal } from "./tools";
 import { modulosLigados } from "@/lib/instalacao/modulos";
 import { capacidadesDaOrganizacao } from "@/lib/organizacao/capacidades";
@@ -652,6 +653,20 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
           : {}),
       },
     );
+    // Servidores MCP DO AGENTE (migration 9095). `[]` sem rede quando a versão
+    // não escolheu ferramenta de nenhum deles. OAuth por contato só carrega
+    // com contato do turno; os de chave seguem a mesma opção do agente acima.
+    const servidoresDoAgente = await carregarServidoresDoAgenteNoTurno(
+      admin,
+      run.organization_id,
+      run.agent_id,
+      version.tool_ids ?? [],
+      {
+        ...(contatoDoTurno ? { contatoDoTurno } : {}),
+        ...(run.conversation_id ? { conversaDoTurno: run.conversation_id } : {}),
+        ...(agent?.config?.mcp_externo_no_atendimento === true ? { noAtendimento: true } : {}),
+      },
+    );
     const tools = pickToolsFromMcp({
       supabase: admin,
       ctx,
@@ -665,6 +680,7 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       capacidadesLigadas: await capacidadesDaOrganizacao(admin, run.organization_id),
       handoffSignal,
       ...(servidorExterno ? { servidorMcpExterno: servidorExterno } : {}),
+      ...(servidoresDoAgente.length > 0 ? { servidoresDoAgente } : {}),
       ...(contatoDoTurno ? { contatoDoTurno } : {}),
     });
 

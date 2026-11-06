@@ -37,12 +37,14 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { fusoDasExcecoes, instantesDaExcecao } from "@/lib/agenda/fechamentos-na-grade";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
+import { fusoUtilizavel } from "@/lib/tempo/fusos";
 
 export const dynamic = "force-dynamic";
 
@@ -87,7 +89,63 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const { data, error } = await q;
   if (error) return fail("internal_error", error.message, 500, { requestId });
-  return ok(data ?? [], { requestId });
+  const linhas = (data ?? []) as LinhaListada[];
+  if (linhas.length === 0) return ok([], { requestId });
+
+  // `comeca`/`termina` são ACRÉSCIMO, para a grade da Agenda pintar a faixa
+  // fechada sem refazer a conta do motor (`lib/agenda/fechamentos-na-grade.ts`).
+  // Quem já lia esta rota (a lista de "Dias fora da rotina") segue igual.
+  const fusos = await fusosDasPessoas(supabase, authz.org.orgId, [
+    ...new Set(linhas.map((l) => l.user_id)),
+  ]);
+  return ok(
+    linhas.map((l) => ({
+      ...l,
+      ...instantesDaExcecao(l, fusos.daPessoa.get(l.user_id) ?? fusos.daOrganizacao),
+    })),
+    { requestId },
+  );
+}
+
+type LinhaListada = {
+  id: string;
+  user_id: string;
+  exception_date: string;
+  is_unavailable: boolean;
+  start_minute: number;
+  end_minute: number;
+  reason: string | null;
+};
+
+/**
+ * O fuso em que o MOTOR lê as exceções de cada pessoa — o da jornada dela —, e o
+ * da organização para quem não tem jornada legível.
+ *
+ * Falha de leitura aqui NÃO derruba a lista: os instantes são enfeite da grade,
+ * e a lista de "Dias fora da rotina" não depende deles. Quem não teve o fuso
+ * lido cai no da organização, que é o que a pessoa viu ao cadastrar.
+ */
+async function fusosDasPessoas(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  orgId: string,
+  ids: string[],
+): Promise<{ daOrganizacao: string; daPessoa: Map<string, string> }> {
+  const [disponibilidades, organizacao] = await Promise.all([
+    supabase
+      .from("attendant_availability")
+      .select("user_id, schedule")
+      .eq("organization_id", orgId)
+      .in("user_id", ids),
+    supabase.from("organizations").select("timezone").eq("id", orgId).maybeSingle(),
+  ]);
+  const daOrganizacao = fusoUtilizavel(
+    (organizacao.data as { timezone?: string | null } | null)?.timezone,
+  );
+  const daPessoa = new Map<string, string>();
+  for (const d of (disponibilidades.data ?? []) as Array<{ user_id: string; schedule: unknown }>) {
+    daPessoa.set(d.user_id, fusoDasExcecoes(d.schedule, daOrganizacao));
+  }
+  return { daOrganizacao, daPessoa };
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
