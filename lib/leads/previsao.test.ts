@@ -46,6 +46,24 @@ const ETAPAS: EtapaDaPrevisao[] = [
   etapaDe("perdido", { is_lost: true }),
 ];
 
+/**
+ * Um balde esperado SEM recorrência: os dois campos antigos continuam sendo o
+ * valor ÚNICO (retrocompatibilidade) e as duas parcelas novas aparecem, com
+ * `recorrente_mensal` zerado.
+ *
+ * Os testes de recorrência (#3602) NÃO usam este atalho: eles escrevem as duas
+ * parcelas por extenso, porque é exatamente a separação delas que está sendo
+ * medida.
+ */
+const baldeUnico = (moeda: string, bruto: number, ponderado: number, n: number) => ({
+  moeda,
+  bruto_cents: bruto,
+  ponderado_cents: ponderado,
+  n,
+  unico: { bruto_cents: bruto, ponderado_cents: ponderado, n },
+  recorrente_mensal: { bruto_cents: 0, ponderado_cents: 0, n: 0 },
+});
+
 describe("previsao — o critério de aceite de moedas separadas", () => {
   it("R$ 10 mil a 50%, R$ 20 mil a 25% e € 4 mil a 50% → R$ 10 mil + € 2 mil, separados", () => {
     const leads = [
@@ -70,26 +88,14 @@ describe("previsao — o critério de aceite de moedas separadas", () => {
     const r = previsao(leads, ETAPAS, { fonte: "etapa" });
 
     expect(r.totais).toEqual([
-      { moeda: "BRL", bruto_cents: 3_000_000, ponderado_cents: 1_000_000, n: 2 },
-      { moeda: "EUR", bruto_cents: 400_000, ponderado_cents: 200_000, n: 1 },
+      baldeUnico("BRL", 3_000_000, 1_000_000, 2),
+      baldeUnico("EUR", 400_000, 200_000, 1),
     ]);
 
     // Agrupado por moeda × mês, e a soma dos meses bate com o total da moeda.
     expect(r.meses).toEqual([
-      {
-        moeda: "BRL",
-        mes: "2026-10",
-        bruto_cents: 3_000_000,
-        ponderado_cents: 1_000_000,
-        n: 2,
-      },
-      {
-        moeda: "EUR",
-        mes: "2026-10",
-        bruto_cents: 400_000,
-        ponderado_cents: 200_000,
-        n: 1,
-      },
+      { ...baldeUnico("BRL", 3_000_000, 1_000_000, 2), mes: "2026-10" },
+      { ...baldeUnico("EUR", 400_000, 200_000, 1), mes: "2026-10" },
     ]);
     expect(r.sem_data).toEqual([]);
     expect(r.sem_probabilidade).toEqual([]);
@@ -118,9 +124,7 @@ describe("previsao — os baldes que nunca viram zero silencioso", () => {
       { fonte: "etapa" },
     );
 
-    expect(r.sem_data).toEqual([
-      { moeda: "BRL", bruto_cents: 100_000, ponderado_cents: 50_000, n: 1 },
-    ]);
+    expect(r.sem_data).toEqual([baldeUnico("BRL", 100_000, 50_000, 1)]);
     // Sem mês não há faixa de mês — e o total da moeda continua batendo.
     expect(r.meses).toEqual([]);
     expect(r.totais[0]?.ponderado_cents).toBe(50_000);
@@ -140,22 +144,10 @@ describe("previsao — os baldes que nunca viram zero silencioso", () => {
       { fonte: "etapa" },
     );
 
-    expect(r.sem_probabilidade).toEqual([
-      { moeda: "BRL", bruto_cents: 100_000, ponderado_cents: 0, n: 1 },
-    ]);
+    expect(r.sem_probabilidade).toEqual([baldeUnico("BRL", 100_000, 0, 1)]);
     // O que tem calibração segue no total; o que não tem, não entra.
-    expect(r.totais).toEqual([
-      { moeda: "BRL", bruto_cents: 900_000, ponderado_cents: 450_000, n: 1 },
-    ]);
-    expect(r.meses).toEqual([
-      {
-        moeda: "BRL",
-        mes: "2026-10",
-        bruto_cents: 900_000,
-        ponderado_cents: 450_000,
-        n: 1,
-      },
-    ]);
+    expect(r.totais).toEqual([baldeUnico("BRL", 900_000, 450_000, 1)]);
+    expect(r.meses).toEqual([{ ...baldeUnico("BRL", 900_000, 450_000, 1), mes: "2026-10" }]);
   });
 
   it("sem probabilidade E sem data aparece uma vez só — em 'sem probabilidade'", () => {
@@ -300,5 +292,152 @@ describe("fontePrevisao — o que o funil declarou", () => {
   it("valor torto cai no padrão em vez de derrubar a leitura", () => {
     expect(fontePrevisao({ previsao: { fonte: "qualquer_coisa" } })).toBe("etapa");
     expect(fontePrevisao("lixo")).toBe("etapa");
+  });
+});
+
+/**
+ * A PREVISÃO DEIXA DE IGNORAR A RECORRÊNCIA — fatia 2 da issue #3602.
+ *
+ * O defeito medido na main: `previsao.ts` lia só `value_cents`, então o
+ * contrato setup + mensalidade era projetado seis vezes menor e a recorrência
+ * nova não aparecia em mês nenhum. Cada balde passa a trazer `unico` e
+ * `recorrente_mensal` — e NENHUM campo traz a soma dos dois.
+ */
+describe("previsao — as duas parcelas: único e recorrência nova mensal (#3602)", () => {
+  it("mesmo mês: 3.000 de setup e 500/mês de recorrência ficam separados, nunca 3.500", () => {
+    const r = previsao(
+      [
+        leadDe("a", { value_cents: 300_000, expected_close_date: "2026-11-10" }),
+        leadDe("b", {
+          value_cents: 0,
+          recurring_value_cents: 50_000,
+          recurring_period: "monthly",
+          expected_close_date: "2026-11-20",
+        }),
+      ],
+      ETAPAS,
+      { fonte: "etapa" },
+    );
+
+    expect(r.meses).toHaveLength(1);
+    const mes = r.meses[0]!;
+    expect(mes.mes).toBe("2026-11");
+
+    // As duas parcelas, com a MESMA probabilidade (50% da etapa "qualificada").
+    expect(mes.unico).toEqual({ bruto_cents: 300_000, ponderado_cents: 150_000, n: 1 });
+    expect(mes.recorrente_mensal).toEqual({
+      bruto_cents: 50_000,
+      ponderado_cents: 25_000,
+      n: 1,
+    });
+
+    // Retrocompatibilidade: o campo antigo continua sendo SÓ o valor único.
+    expect(mes.bruto_cents).toBe(300_000);
+    expect(mes.ponderado_cents).toBe(150_000);
+
+    // A prova do defeito: a soma 350.000/175.000 não existe em campo NENHUM.
+    const json = JSON.stringify(mes);
+    expect(json).not.toContain("350000");
+    expect(json).not.toContain("175000");
+    expect(Object.values(mes)).not.toContain(350_000);
+
+    // O total da moeda repete o mesmo corte.
+    expect(r.totais[0]?.unico.bruto_cents).toBe(300_000);
+    expect(r.totais[0]?.recorrente_mensal.bruto_cents).toBe(50_000);
+  });
+
+  it("recorrência ANUAL não entra em 'recorrente_mensal' — a regra não converte período", () => {
+    const r = previsao(
+      [
+        leadDe("a", {
+          value_cents: 100_000,
+          recurring_value_cents: 120_000,
+          recurring_period: "annual",
+          expected_close_date: "2026-11-10",
+        }),
+      ],
+      ETAPAS,
+      { fonte: "etapa" },
+    );
+
+    const mes = r.meses[0]!;
+    // O valor único continua lá, inteiro.
+    expect(mes.unico.bruto_cents).toBe(100_000);
+    // A anual NÃO é dividida por 12 nem somada como se fosse mensal.
+    expect(mes.recorrente_mensal).toEqual({ bruto_cents: 0, ponderado_cents: 0, n: 0 });
+    expect(mes.n).toBe(1);
+  });
+
+  it("recorrente sem periodicidade nasce MENSAL (a régua da fatia 1)", () => {
+    const r = previsao(
+      [
+        leadDe("a", {
+          value_cents: 0,
+          recurring_value_cents: 50_000,
+          recurring_period: null,
+          expected_close_date: "2026-11-10",
+        }),
+      ],
+      ETAPAS,
+      { fonte: "etapa" },
+    );
+
+    expect(r.meses[0]?.recorrente_mensal).toEqual({
+      bruto_cents: 50_000,
+      ponderado_cents: 25_000,
+      n: 1,
+    });
+  });
+
+  it("negócio sem data prevista mantém a recorrência no balde 'sem data'", () => {
+    const r = previsao(
+      [
+        leadDe("a", {
+          value_cents: 0,
+          recurring_value_cents: 50_000,
+          recurring_period: "monthly",
+          expected_close_date: null,
+        }),
+      ],
+      ETAPAS,
+      { fonte: "etapa" },
+    );
+
+    expect(r.meses).toEqual([]);
+    expect(r.sem_data).toEqual([
+      {
+        moeda: "BRL",
+        bruto_cents: 0,
+        ponderado_cents: 0,
+        n: 1,
+        unico: { bruto_cents: 0, ponderado_cents: 0, n: 1 },
+        recorrente_mensal: { bruto_cents: 50_000, ponderado_cents: 25_000, n: 1 },
+      },
+    ]);
+  });
+
+  it("etapa sem probabilidade: as duas parcelas aparecem brutas, ponderado 0", () => {
+    const r = previsao(
+      [
+        leadDe("a", {
+          stage_id: "sem_calibracao",
+          value_cents: 300_000,
+          recurring_value_cents: 50_000,
+          recurring_period: "monthly",
+          expected_close_date: "2026-11-10",
+        }),
+      ],
+      ETAPAS,
+      { fonte: "etapa" },
+    );
+
+    expect(r.totais).toEqual([]);
+    const balde = r.sem_probabilidade[0]!;
+    expect(balde.unico).toEqual({ bruto_cents: 300_000, ponderado_cents: 0, n: 1 });
+    expect(balde.recorrente_mensal).toEqual({
+      bruto_cents: 50_000,
+      ponderado_cents: 0,
+      n: 1,
+    });
   });
 });
