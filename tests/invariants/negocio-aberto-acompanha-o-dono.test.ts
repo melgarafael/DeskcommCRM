@@ -81,6 +81,7 @@ const CT = {
   daIa: "dddddddd-3333-4000-8000-000000000012",
   carteira: "dddddddd-3333-4000-8000-000000000013",
   passagem: "dddddddd-3333-4000-8000-000000000014",
+  passagemLivre: "dddddddd-3333-4000-8000-000000000015",
 } as const;
 
 const CONV = {
@@ -107,6 +108,7 @@ const CONV = {
   daIa: "dddddddd-4444-4000-8000-000000000013",
   carteira: "dddddddd-4444-4000-8000-000000000014",
   passagem: "dddddddd-4444-4000-8000-000000000015",
+  passagemLivre: "dddddddd-4444-4000-8000-000000000016",
 } as const;
 
 const NEG = {
@@ -130,6 +132,7 @@ const NEG = {
   daIa: "dddddddd-6666-4000-8000-000000000012",
   carteira: "dddddddd-6666-4000-8000-000000000013",
   passagem: "dddddddd-6666-4000-8000-000000000014",
+  passagemLivre: "dddddddd-6666-4000-8000-000000000015",
 } as const;
 
 /** Agente de IA dono de um card: "sem responsável" exige também owner_agent_id nulo. */
@@ -323,7 +326,8 @@ beforeAll(() => {
       ('${CT.continua}', '${ORG}', 'Contato Continua'),
       ('${CT.daIa}', '${ORG}', 'Contato Da IA'),
       ('${CT.carteira}', '${ORG}', 'Contato Carteira'),
-      ('${CT.passagem}', '${ORG}', 'Contato Passagem')
+      ('${CT.passagem}', '${ORG}', 'Contato Passagem'),
+      ('${CT.passagemLivre}', '${ORG}', 'Contato Passagem Livre')
     on conflict (id) do nothing;
 
     insert into public.ai_agents (id, organization_id, name, system_prompt) values
@@ -444,6 +448,10 @@ beforeAll(() => {
   // A passagem de conversas: a conversa e o negócio são de B.
   conversaNova(CONV.passagem, CT.passagem, B);
   negocioNovo({ id: NEG.passagem, contato: CT.passagem, dono: B });
+
+  // A mesma passagem, com o único negócio aberto do contato sem responsável.
+  conversaNova(CONV.passagemLivre, CT.passagemLivre, B);
+  negocioNovo({ id: NEG.passagemLivre, contato: CT.passagemLivre, dono: null });
 
   // A escada A→B→C.
   conversaNova(CONV.escada, CT.escada, A);
@@ -650,6 +658,16 @@ describe("#4019 — o negócio aberto acompanha o dono da conversa", () => {
     expect(movidas).toBe("1");
     expect(donoDaConversa(CONV.passagem)).toBe(C);
     expect(donoDoNegocio(NEG.passagem)).toBe(B);
+  });
+
+  it("a passagem das conversas do contato preenche o único negócio aberto sem responsável", () => {
+    expect(donoDoNegocio(NEG.passagemLivre)).toBe("SEM_DONO");
+
+    sql(`set role service_role;
+      select public.fn_passar_conversas_do_contato('${ORG}', '${CT.passagemLivre}', '${C}');`);
+
+    expect(donoDaConversa(CONV.passagemLivre)).toBe(C);
+    expect(donoDoNegocio(NEG.passagemLivre)).toBe(C);
   });
 
   it("caminho 4 (decisão de produto): com DOIS negócios abertos, nada é tocado", () => {

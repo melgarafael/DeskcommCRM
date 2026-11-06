@@ -314,8 +314,9 @@ grant  execute on function public.fn_conversation_assign(uuid, uuid, uuid, text,
 -- As duas funções abaixo passam conversas pela porta única com `'transfer'`
 -- e SEM sessão. Sem o 8º argumento, a régua da transferência moveria o
 -- negócio aberto de um colega junto com a conversa — contra a regra da
--- carteira (#2591: "os que já têm dono não mudam"). Com isto, esses dois caminhos
--- seguem como eram antes da 9208.
+-- carteira (#2591: "os que já têm dono não mudam"). Com isto, a carteira segue
+-- como antes da 9208; a passagem de conversas passa a preencher o negócio
+-- aberto sem responsável, quando há um só, e nunca tira negócio de um colega.
 -- Corpo idêntico à última definição de cada uma (9077 e 9057); a única
 -- mudança é `p_negocio_so_sem_dono => true` na chamada interna.
 
