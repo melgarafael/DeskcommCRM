@@ -37,6 +37,12 @@
  * rodada seguinte cria outro, só com quem pode receber. Vale também para quem
  * sai da fila entre a leitura e a reserva: o telefone dele pode já estar lá.
  *
+ * Subir uma lista longa leva tempo, então a conferência se repete depois de
+ * `adicionar`, logo antes de `enviar`: o status de toda a lista e os vetos por
+ * pessoa, refeitos. Se alguém saiu, o rascunho é apagado e a fila devolvida. Entre
+ * essa releitura e o `enviar` sobra uma janela que não dá para fechar daqui, porque
+ * o provedor não aceita condição no envio: quem sair nela pode receber.
+ *
  * ═══ Por que os valores do modelo são os do destinatário ═══
  *
  * O provedor recebe um valor por variável, o mesmo para todos. A rota só deixa
@@ -273,6 +279,9 @@ async function entregarAoProvedor(
         lista.map((d) => d.telefone),
       )
     ).pulados;
+    // Quem saiu enquanto os telefones subiam já está no rascunho. A janela entre
+    // esta releitura e o `enviar` não fecha: está declarada no cabeçalho.
+    const relida = await revalidar(admin, campanha, agora, "sending");
     // Cancelar um rascunho no provedor não o trava (o `cancelar` dele responde
     // 400), e subir uma lista longa leva tempo: quem cancelou ou pausou nesse
     // meio tempo tem de vencer, porque depois do `enviar` a lista inteira saiu.
@@ -280,14 +289,18 @@ async function entregarAoProvedor(
     if (status !== "running") {
       if (status === "cancelled") {
         await fecharQuemFicou(admin, campanha.id, "cancelled", agora);
-        await apagarRascunhoDaCancelada(admin, ops, campanha.id, id);
+        await pararNoProvedor(admin, ops, campanha.id, id);
       } else {
         await devolverAFila(
           admin,
           reservados.map((d) => d.id),
         );
       }
-      return { ...SO_O_CONTADOR, pulados, detalhe: `parada_antes_de_mandar:${status}` };
+      return { ...SO_O_CONTADOR, pulados: pulados + relida.pulados, detalhe: `parada_antes_de_mandar:${status}` };
+    }
+    const aindaNaLista = new Set(relida.prontos.map((d) => d.id));
+    if (lista.some((d) => !aindaNaLista.has(d.id))) {
+      return await descartarRascunho(admin, campanha, ops, id, lista, pulados + relida.pulados, agora);
     }
     estado = (await ops.enviar(id)).estado;
   } catch (err) {
@@ -336,8 +349,9 @@ async function entregarAoProvedor(
 /**
  * O rascunho do provedor só tem gente da lista? Quem ele traz sem dar para ler
  * conta como fora, e o mesmo vale para um relatório que não acaba e para uma
- * página vazia sem o total zero confirmado: na dúvida, o rascunho é refeito, que
- * custa uma rodada; mandar a quem saiu não tem conserto.
+ * última página cuja conta não fecha com o total do provedor, ou sem total: na
+ * dúvida, o rascunho é refeito, que custa uma rodada; mandar a quem saiu não tem
+ * conserto.
  */
 async function rascunhoSoTemALista(ops: OpsDeTransmissao, id: string, lista: ReadonlySet<string>): Promise<boolean> {
   let pular = 0;
@@ -345,8 +359,7 @@ async function rascunhoSoTemALista(ops: OpsDeTransmissao, id: string, lista: Rea
   for (let pagina = 0; pagina < teto; pagina++) {
     const p = await ops.destinatarios(id, { pular, quantos: POR_PAGINA_DO_PROVEDOR });
     if (p.itens.length < p.lidos || p.itens.some((i) => !lista.has(i.telefone))) return false;
-    if (p.lidos === 0) return p.total === 0;
-    if (!p.temMais) return true;
+    if (!p.temMais || p.lidos === 0) return p.total === pular + p.lidos;
     pular += p.lidos;
   }
   return false;
@@ -1027,49 +1040,107 @@ async function pausar(
 // ─── 3. O cancelamento ──────────────────────────────────────────────────────
 
 export const DETALHE_CANCELAMENTO_RECUSADO =
-  "Cancelada no CRM, mas o provedor recusou o cancelamento do broadcast. Confira no painel de broadcasts dele se o envio parou.";
+  "Cancelada no CRM, mas o provedor recusou o cancelamento do broadcast, e o envio pode continuar. Confira no painel de broadcasts dele se o envio parou e apague o rascunho, se ele ainda estiver lá.";
 export const DETALHE_CANCELAMENTO_SEM_CONEXAO =
-  "Cancelada no CRM, mas este número não fala mais com o provedor do broadcast. Confira no painel de broadcasts dele se o envio parou.";
+  "Cancelada no CRM, mas este número não fala mais com o provedor do broadcast, e o envio pode continuar. Confira no painel de broadcasts dele se o envio parou e apague o rascunho, se ele ainda estiver lá.";
+export const DETALHE_ENVIO_PODE_CONTINUAR =
+  "Cancelada no CRM, mas o provedor não confirmou que o broadcast parou, e o envio pode continuar. Confira no painel de broadcasts dele se o envio parou e apague o rascunho, se ele ainda estiver lá.";
 export const DETALHE_RASCUNHO_NAO_APAGADO =
   "Cancelada no CRM, mas o rascunho do broadcast pode ter ficado no provedor, com a lista. Confira no painel de broadcasts dele e apague-o.";
 
+/** A campanha cancelada ganha UMA frase em «Último problema»: cada uma já diz tudo o que o operador tem a conferir. */
+async function avisarDoCancelamento(
+  admin: SupabaseClient,
+  campanhaId: string,
+  id: string,
+  aviso: { codigo: string; detalhe: string; motivo: string },
+): Promise<void> {
+  logger.warn("[campanha] parada da transmissão cancelada não confirmada", {
+    campanha: campanhaId,
+    transmissao: id,
+    codigo: aviso.codigo,
+    motivo: aviso.motivo,
+  });
+  await admin.from("campaigns").update({ failure_code: aviso.codigo, failure_detail: aviso.detalhe }).eq("id", campanhaId);
+}
+
+/** O estado no provedor, ou `null` se não deu para ler: quem não leu não sabe que parou. */
+async function estadoLido(ops: OpsDeTransmissao, campanhaId: string, id: string): Promise<EstadoDaTransmissao | null> {
+  try {
+    return (await ops.ler(id)).estado;
+  } catch (err) {
+    logger.warn("[campanha] estado da transmissão cancelada não lido", {
+      campanha: campanhaId,
+      transmissao: id,
+      motivo: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+const ehFinal = (estado: EstadoDaTransmissao | null): boolean =>
+  estado !== null && ESTADOS_FINAIS_DA_TRANSMISSAO.has(estado);
+
 /**
- * `cancelar` não alcança rascunho (o provedor responde 400), e a lista ficaria
- * lá, pronta para sair por um clique no painel dele. Se não der para apagar,
- * quem pode resolver precisa saber: a campanha ganha a frase em «Último problema».
+ * Faz o provedor parar, e só dá por parado o que ele diz que terminou. Rascunho
+ * é apagado, porque `cancelar` não o alcança e a lista ficaria lá, pronta para
+ * sair por um clique no painel dele. O resto é cancelado e relido: o `cancelar`
+ * também responde em silêncio a um 400, então a resposta dele não prova nada. Sem
+ * confirmação, quem cancelou precisa saber, porque acha que parou.
  */
-async function apagarRascunhoDaCancelada(
+async function pararNoProvedor(
   admin: SupabaseClient,
   ops: OpsDeTransmissao,
   campanhaId: string,
   id: string,
-): Promise<void> {
-  let motivo = "o provedor disse que já não é rascunho";
-  try {
-    const { estado } = await ops.ler(id);
-    if (estado !== "draft" || (await ops.descartar(id))) return;
-  } catch (err) {
-    motivo = err instanceof Error ? err.message : String(err);
+): Promise<{ apagado: boolean }> {
+  const antes = await estadoLido(ops, campanhaId, id);
+  if (ehFinal(antes)) return { apagado: false };
+  if (antes === "draft") {
+    try {
+      if (await ops.descartar(id)) return { apagado: true };
+    } catch (err) {
+      await avisarDoCancelamento(admin, campanhaId, id, {
+        codigo: "transmissao_rascunho_nao_apagado",
+        detalhe: DETALHE_RASCUNHO_NAO_APAGADO,
+        motivo: err instanceof Error ? err.message : String(err),
+      });
+      return { apagado: false };
+    }
   }
-  logger.warn("[campanha] rascunho da campanha cancelada não apagado", { campanha: campanhaId, transmissao: id, motivo });
-  await admin
-    .from("campaigns")
-    .update({ failure_code: "transmissao_rascunho_nao_apagado", failure_detail: DETALHE_RASCUNHO_NAO_APAGADO })
-    .eq("id", campanhaId);
+  try {
+    await ops.cancelar(id);
+  } catch (err) {
+    await avisarDoCancelamento(admin, campanhaId, id, {
+      codigo: "transmissao_cancelamento_recusado",
+      detalhe: DETALHE_CANCELAMENTO_RECUSADO,
+      motivo: err instanceof Error ? err.message : String(err),
+    });
+    return { apagado: false };
+  }
+  const depois = await estadoLido(ops, campanhaId, id);
+  if (!ehFinal(depois)) {
+    await avisarDoCancelamento(admin, campanhaId, id, {
+      codigo: "transmissao_envio_pode_continuar",
+      detalhe: DETALHE_ENVIO_PODE_CONTINUAR,
+      motivo: `estado depois do cancelamento: ${depois ?? "não lido"}`,
+    });
+  }
+  return { apagado: false };
 }
 
 /**
- * Cancelar a campanha cancela o que o provedor ainda não mandou, traz o último
- * retrato do relatório e fecha quem ficou. Devolve quantos destinatários fechou
- * — numa transmissão todos estão `sending`, e é aqui que o cancelamento os
- * alcança.
+ * Cancelar a campanha para o que o provedor ainda não mandou
+ * (`pararNoProvedor`), traz o último retrato do relatório e fecha quem ficou.
+ * Devolve quantos destinatários fechou — numa transmissão todos estão `sending`,
+ * e é aqui que o cancelamento os alcança.
  *
  * A campanha já está cancelada no CRM quando isto roda, e uma falha do provedor
  * não a desfaz. Mas ela não pode dizer só "cancelada" enquanto o provedor segue
- * entregando: quando o provedor recusa (ou o número não fala mais com ele), a
- * campanha ganha a frase em «Último problema», para o operador conferir no
- * painel dele. Quem ficou `sending` é fechado nos dois caminhos — antes, a
- * conexão trocada deixava as linhas em `sending` para sempre.
+ * entregando: quando o provedor recusa, não confirma a parada (ou o número não
+ * fala mais com ele), a campanha ganha a frase em «Último problema», para o
+ * operador conferir no painel dele. Quem ficou `sending` é fechado nos dois
+ * caminhos — antes, a conexão trocada deixava as linhas em `sending` para sempre.
  */
 export async function encerrarTransmissao(
   admin: SupabaseClient,
@@ -1079,39 +1150,30 @@ export async function encerrarTransmissao(
   // Sem id, nada foi entregue ao provedor — e a reserva (`sending`) só nasce
   // depois do id. Fechar `sending` aqui alcançaria a campanha de sempre, onde
   // `sending` é mensagem que pode estar saindo neste instante.
-  if (!campanha.provider_broadcast_id) return 0;
-  let recusa: string | null = null;
+  const id = campanha.provider_broadcast_id;
+  if (!id) return 0;
   const ops = await transmissaoDaConexao(admin, {
     organizationId: campanha.organization_id,
     channelSessionId: campanha.channel_session_id,
   }).catch(() => null);
   if (!ops) {
-    recusa = DETALHE_CANCELAMENTO_SEM_CONEXAO;
-  } else {
-    try {
-      await ops.cancelar(campanha.provider_broadcast_id);
-    } catch (err) {
-      recusa = DETALHE_CANCELAMENTO_RECUSADO;
-      logger.warn("[campanha] cancelamento da transmissão no provedor falhou", {
-        campanha: campanha.id,
-        transmissao: campanha.provider_broadcast_id,
-        motivo: err instanceof Error ? err.message : String(err),
-      });
-    }
-    // O último retrato é melhor esforço: sem ele, fecha-se igual.
-    await sincronizarTransmissao(admin, campanha, ops, campanha.provider_broadcast_id).catch((err: unknown) => {
+    await avisarDoCancelamento(admin, campanha.id, id, {
+      codigo: "transmissao_cancelamento_recusado",
+      detalhe: DETALHE_CANCELAMENTO_SEM_CONEXAO,
+      motivo: "sem conexão com o provedor",
+    });
+    return fecharQuemFicou(admin, campanha.id, "cancelled", agora);
+  }
+  const { apagado } = await pararNoProvedor(admin, ops, campanha.id, id);
+  // Rascunho apagado não tem relatório: nada saiu. O último retrato é melhor
+  // esforço: sem ele, fecha-se igual.
+  if (!apagado) {
+    await sincronizarTransmissao(admin, campanha, ops, id).catch((err: unknown) => {
       logger.warn("[campanha] relatório da transmissão cancelada não lido", {
         campanha: campanha.id,
         motivo: err instanceof Error ? err.message : String(err),
       });
     });
-    await apagarRascunhoDaCancelada(admin, ops, campanha.id, campanha.provider_broadcast_id);
-  }
-  if (recusa) {
-    await admin
-      .from("campaigns")
-      .update({ failure_code: "transmissao_cancelamento_recusado", failure_detail: recusa })
-      .eq("id", campanha.id);
   }
   return fecharQuemFicou(admin, campanha.id, "cancelled", agora);
 }
