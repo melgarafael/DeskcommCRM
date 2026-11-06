@@ -80,6 +80,13 @@ export const ApiErrorCodes = {
   // retentar depois resolve, enquanto conflito manda trocar a chave.
   idempotency_in_progress: "idempotency_in_progress",
   state_conflict: "state_conflict",
+  // POST /api/v1/prospecting (`start` e `resume`): a CONEXÃO escolhida já tem
+  // uma campanha de prospecção em andamento (#3896). Uma campanha ativa por
+  // NÚMERO, não por organização — a recusa é do número, e `details` traz
+  // `campaign_id`/`campaign_name` de quem o ocupa para a tela oferecer
+  // "abrir essa campanha". Irmão do `channel_archived`: mesma classe (o canal é
+  // o recurso escasso), outro motivo.
+  prospecting_channel_busy: "prospecting_channel_busy",
   // Escrita vinda de uma aba que ficou numa organização diferente da do cookie
   // `active_org` (#2335). O header `X-Org-Da-Aba` só serve para RECUSAR: a org
   // efetiva continua sendo a do cookie (`lib/auth/require-role.ts`).
