@@ -21,6 +21,8 @@ const h = vi.hoisted(() => ({
   // (`delete().eq().eq().neq("waba_id", …)`) antes do upsert.
   deletes: [] as Array<{ tabela: string; filtros: Array<[string, string, unknown]> }>,
   erroDoDelete: null as { message: string } | null,
+  apagadas: 0,
+  avisos: [] as Record<string, unknown>[],
   ordem: [] as string[],
 }));
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: h.role }));
@@ -45,13 +47,23 @@ vi.mock("@/lib/supabase/admin", () => ({
           const d = {
             eq: (c: string, v: unknown) => (registro.filtros.push(["eq", c, v]), d),
             neq: (c: string, v: unknown) => (registro.filtros.push(["neq", c, v]), d),
-            then: (ok: (r: unknown) => unknown) => ok({ error: h.erroDoDelete }),
+            then: (ok: (r: unknown) => unknown) => ok({ error: h.erroDoDelete, count: h.apagadas }),
           };
           return d;
         },
+        limit: () => q,
+        update: () => q,
+        insert: async (linha: Record<string, unknown>) => {
+          if (tabela === "agent_inbox_items") h.avisos.push(linha);
+          return { error: null };
+        },
         order: () => q,
         maybeSingle: async () => ({
-          data: { id: "sess-1", provider: "zernio", zernio_account_id: "ACC" },
+          // `agent_inbox_items`: nenhum aviso aberto.
+          data:
+            tabela === "agent_inbox_items"
+              ? null
+              : { id: "sess-1", provider: "zernio", zernio_account_id: "ACC" },
           error: null,
         }),
         upsert: async (linha: Record<string, unknown>) => {
@@ -81,6 +93,8 @@ beforeEach(() => {
   h.upserts = [];
   h.deletes = [];
   h.erroDoDelete = null;
+  h.apagadas = 0;
+  h.avisos = [];
   h.ordem = [];
   h.role.mockResolvedValue(PERMITIDO);
   h.find.mockResolvedValue({ id: "sess-1", archivedAt: null });
@@ -168,5 +182,18 @@ describe("rota de modelos do canal intermediado", () => {
     h.erroDoDelete = { message: "permission denied" };
     expect((await post({ acao: "sincronizar" })).status).toBe(200);
     expect(h.upserts).toHaveLength(1);
+    expect(h.avisos).toHaveLength(1);
+  });
+
+  it("sincronizar que tirou modelos de outra conta avisa na Central", async () => {
+    h.apagadas = 2;
+    expect((await post({ acao: "sincronizar" })).status).toBe(200);
+    expect(h.avisos).toHaveLength(1);
+    expect(h.avisos[0]).toMatchObject({ organization_id: "org-da-sessao", kind: "channel_template_review" });
+  });
+
+  it("sincronizar sem nada a tirar não abre aviso", async () => {
+    expect((await post({ acao: "sincronizar" })).status).toBe(200);
+    expect(h.avisos).toEqual([]);
   });
 });

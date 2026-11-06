@@ -21,27 +21,37 @@ const log = vi.hoisted(() => ({ warn: vi.fn() }));
 vi.mock("@/lib/logger", () => ({ logger: { warn: log.warn, info: vi.fn(), error: vi.fn() } }));
 
 import { savePartnerSession } from "@/lib/channels/connect";
+import { AVISO_MODELOS_FICARAM, AVISO_MODELOS_SAIRAM } from "@/lib/channels/modelos-de-outra-conta";
 
 interface Chamada {
   tabela: string;
   op: "delete" | "update" | "insert";
   filtros: Array<[string, string, unknown]>;
+  linha?: Record<string, unknown>;
+  opcoes?: unknown;
 }
 
 let chamadas: Chamada[] = [];
 let erroDaLimpeza: { message: string } | null = null;
 let limpezaLanca = false;
 let erroDaGravacao: { message: string } | null = null;
+let apagadas = 0;
+let avisoJaAberto = false;
+let centralLanca = false;
 
 function adminDuble() {
   return {
     from(tabela: string) {
-      const registrar = (op: Chamada["op"]) => {
-        const c: Chamada = { tabela, op, filtros: [] };
+      const registrar = (op: Chamada["op"], extra: Partial<Chamada> = {}) => {
+        const c: Chamada = { tabela, op, filtros: [], ...extra };
         chamadas.push(c);
         const resultado = () => {
           if (tabela === "meta_templates" && limpezaLanca) throw new Error("rede caiu");
-          return { error: tabela === "meta_templates" ? erroDaLimpeza : erroDaGravacao };
+          if (tabela === "agent_inbox_items" && centralLanca) throw new Error("central fora");
+          if (tabela === "meta_templates") {
+            return { error: erroDaLimpeza, count: erroDaLimpeza ? null : apagadas };
+          }
+          return { error: tabela === "channel_sessions" ? erroDaGravacao : null };
         };
         const cadeia: Record<string, unknown> = {};
         // `insert(...).select("id").single()`: a conexão nova devolve o id.
@@ -63,9 +73,18 @@ function adminDuble() {
         return cadeia;
       };
       return {
-        delete: () => registrar("delete"),
-        update: () => registrar("update"),
-        insert: () => registrar("insert"),
+        delete: (opcoes?: unknown) => registrar("delete", { opcoes }),
+        update: (linha: Record<string, unknown>) => registrar("update", { linha }),
+        insert: (linha: Record<string, unknown>) => registrar("insert", { linha }),
+        // `registrarAviso`: procura o aviso aberto antes de inserir.
+        select: () => {
+          const leitura: Record<string, unknown> = {
+            eq: () => leitura,
+            limit: () => leitura,
+            maybeSingle: async () => ({ data: avisoJaAberto ? { id: "aviso-1" } : null, error: null }),
+          };
+          return leitura;
+        },
       };
     },
   } as never;
@@ -86,15 +105,23 @@ beforeEach(() => {
   erroDaLimpeza = null;
   limpezaLanca = false;
   erroDaGravacao = null;
+  apagadas = 0;
+  avisoJaAberto = false;
+  centralLanca = false;
   log.warn.mockClear();
 });
+
+const opsDe = (tabela: string) =>
+  chamadas.filter((c) => c.tabela === tabela).map((c) => c.op);
+const avisosInseridos = () =>
+  chamadas.filter((c) => c.tabela === "agent_inbox_items" && c.op === "insert").map((c) => c.linha);
 
 describe("conectar: os modelos seguem a conta, não a linha da conexão", () => {
   it("⭐ reapontar a conexão existente apaga, DEPOIS de gravar, só os modelos de OUTRA conta desta conexão", async () => {
     const r = await savePartnerSession(adminDuble(), { ...BASE, existingId: "sessao-1" });
 
     expect(r).toEqual({ error: null, id: "sessao-1" });
-    expect(chamadas.map((c) => `${c.op}:${c.tabela}`)).toEqual([
+    expect(chamadas.slice(0, 2).map((c) => `${c.op}:${c.tabela}`)).toEqual([
       "update:channel_sessions",
       "delete:meta_templates",
     ]);
@@ -143,5 +170,80 @@ describe("conectar: os modelos seguem a conta, não a linha da conexão", () => 
 
     expect(chamadas.filter((c) => c.op === "update")).toHaveLength(2);
     expect(log.warn).toHaveBeenCalledTimes(2);
+  });
+
+  // Apagar o modelo zera o escolhido no aviso e no lembrete, e o plano B do
+  // follow-up morre sem lançar: sem o aviso na hora da troca, a primeira notícia
+  // seria uma mensagem que não saiu, às vezes sem notícia nenhuma.
+  it("⭐ a limpeza que APAGOU linhas abre um aviso na Central, com a contagem, no momento da troca", async () => {
+    apagadas = 3;
+    await savePartnerSession(adminDuble(), { ...BASE, existingId: "sessao-1" });
+
+    expect(chamadas.find((c) => c.op === "delete")?.opcoes).toEqual({ count: "exact" });
+    const avisos = avisosInseridos();
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0]).toMatchObject({
+      organization_id: "org-1",
+      kind: "channel_template_review",
+      severity: "warn",
+      title: AVISO_MODELOS_SAIRAM,
+    });
+    expect(avisos[0]?.body).toContain("3 modelos da conta anterior saíram");
+    expect(avisos[0]?.body).toContain("lembrete da Agenda");
+  });
+
+  it("reconectar na mesma conta (zero linhas apagadas) não abre aviso nenhum", async () => {
+    apagadas = 0;
+    await savePartnerSession(adminDuble(), { ...BASE, existingId: "sessao-1" });
+    expect(avisosInseridos()).toEqual([]);
+  });
+
+  it("com o aviso ainda aberto, a segunda troca não abre outro: é UM item", async () => {
+    apagadas = 2;
+    avisoJaAberto = true;
+    await savePartnerSession(adminDuble(), { ...BASE, existingId: "sessao-1" });
+    expect(avisosInseridos()).toEqual([]);
+  });
+
+  it("⭐ a limpeza que falhou também avisa na Central: não fica só no log", async () => {
+    // A mensagem é a do gatilho da Agenda, medida em
+    // tests/invariants/modelo-de-outra-conta-e-o-servico-da-agenda.test.ts.
+    erroDaLimpeza = { message: "service_configuration_invalid" };
+    const r = await savePartnerSession(adminDuble(), { ...BASE, existingId: "sessao-1" });
+
+    expect(r.error).toBeNull();
+    const avisos = avisosInseridos();
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0]).toMatchObject({ title: AVISO_MODELOS_FICARAM, severity: "warn" });
+    expect(avisos[0]?.body).toContain("serviço da Agenda");
+  });
+
+  it("a limpeza que passou fecha o aviso de falha daquela organização", async () => {
+    await savePartnerSession(adminDuble(), { ...BASE, existingId: "sessao-1" });
+
+    const fechamento = chamadas.find((c) => c.tabela === "agent_inbox_items" && c.op === "update");
+    expect(fechamento?.linha).toMatchObject({ status: "resolved" });
+    expect(fechamento?.filtros).toEqual([
+      ["eq", "organization_id", "org-1"],
+      ["eq", "kind", "channel_template_review"],
+      ["eq", "title", AVISO_MODELOS_FICARAM],
+      ["eq", "status", "open"],
+    ]);
+  });
+
+  it("a limpeza que falhou não fecha aviso nenhum", async () => {
+    erroDaLimpeza = { message: "service_configuration_invalid" };
+    await savePartnerSession(adminDuble(), { ...BASE, existingId: "sessao-1" });
+    expect(opsDe("agent_inbox_items")).toEqual(["insert"]);
+  });
+
+  it("Central fora do ar depois da limpeza não vira aviso de limpeza falha nem derruba a conexão", async () => {
+    apagadas = 2;
+    centralLanca = true;
+    const r = await savePartnerSession(adminDuble(), { ...BASE, existingId: "sessao-1" });
+
+    expect(r).toEqual({ error: null, id: "sessao-1" });
+    expect(avisosInseridos().filter((a) => a?.title === AVISO_MODELOS_FICARAM)).toEqual([]);
+    expect(log.warn).toHaveBeenCalled();
   });
 });
