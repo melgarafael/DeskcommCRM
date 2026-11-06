@@ -24,7 +24,7 @@ const RAIZ = process.cwd();
 const PORTA = "lib/extensions/eventos-do-modulo.ts";
 const ROTA = "app/api/v1/extensions/events/route.ts";
 const MIGRATIONS = [
-  "supabase/migrations/20261105130000_9120_modulo_conectado_eventos.sql",
+  "supabase/migrations/20261105130100_9120_modulo_conectado_eventos.sql",
   "supabase/migrations/20261105220000_9121_modulo_conectado_atraso.sql",
 ];
 const INICIO_DO_APENDICE = "-- ---- modulo conectado: eventos que o módulo busca (migration 9120) ----";

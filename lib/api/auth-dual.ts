@@ -82,6 +82,12 @@ export type AuthDual =
        * `redigirContatoParaModulo`. Sessão e outros tokens não têm o campo e veem tudo.
        */
       contatoVisivel?: boolean;
+      /**
+       * Só SESSÃO: o papel da pessoa na organização ativa, como o `requireRole` o leu. Existe para a
+       * rota que decide por papel e que, antes de aceitar token, lia `activeOrg.role` (criar contato
+       * em "Só os seus", #3479). O token não tem papel de pessoa e fica sem o campo.
+       */
+      papelDaSessao?: Role;
     }
   | { ok: false; response: Response };
 
@@ -245,6 +251,7 @@ export async function resolveAuthDual(
     supabase: await createClient(),
     idioma: authz.user.idioma,
     via: "session",
+    papelDaSessao: authz.org.role,
   };
 }
 

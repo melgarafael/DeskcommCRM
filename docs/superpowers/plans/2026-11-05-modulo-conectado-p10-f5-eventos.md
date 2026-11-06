@@ -46,7 +46,7 @@
 
 | Arquivo | Responsabilidade |
 |---|---|
-| `supabase/migrations/20261105130000_9120_modulo_conectado_eventos.sql` + apêndice no baseline | tabela de eventos, tabela de cursores, 4 gatilhos, funções de leitura e de autorização |
+| `supabase/migrations/20261105130100_9120_modulo_conectado_eventos.sql` + apêndice no baseline | tabela de eventos, tabela de cursores, 4 gatilhos, funções de leitura e de autorização |
 | `lib/extensions/prova-do-modulo.ts` | os passos de prova (formato, carimbo, segredo, assinatura, nonce) extraídos de `token-do-modulo.ts`, usados pela busca de token e pela leitura de eventos |
 | `lib/extensions/eventos-do-modulo.ts` | autoriza, lê por cursor, grava o cursor |
 | `app/api/v1/extensions/events/route.ts` | a rota `GET` |

@@ -244,6 +244,12 @@ const envSchema = z.object({
   LEAD_CONTEXT_HISTORY_FORMAT: z.enum(['json', 'linhas']).default('json'),
   // Memória durável por contato — orçamento fixo do índice de notas.
   LEAD_NOTES_INDEX_MAX_TOKENS: z.coerce.number().int().positive().default(500),
+  // Base de conhecimento lida pelo próprio modelo (#4133) — orçamento do ÍNDICE
+  // de materiais no sufixo do prompt. É POR TURNO (não cabe no prefixo estável,
+  // que é cacheado): default conservador, ~23 materiais por nome com id e ~2 com
+  // resumo de uma linha na medição de 06/11; quem tem acervo maior sobe aqui ou
+  // fica no modo `busca`.
+  KNOWLEDGE_INDEX_MAX_TOKENS: z.coerce.number().int().positive().default(600),
   // Recall híbrido das notas (BM25 × vetorial × decay × MMR).
   LEAD_RECALL_HALF_LIFE_DAYS: z.coerce.number().positive().default(30),
   LEAD_RECALL_MMR_LAMBDA: z.coerce.number().min(0).max(1).default(0.7),

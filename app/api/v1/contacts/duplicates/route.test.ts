@@ -51,6 +51,7 @@ type Linha = Record<string, unknown>;
 
 interface Consulta {
   tabela: string;
+  colunas: string;
   filtros: Array<[string, unknown]>;
   ordens: string[];
   faixas: Array<[number, number]>;
@@ -60,13 +61,17 @@ interface Consulta {
 /**
  * Dublê com o teto do servidor aplicado na resposta: `range` e `limit` são
  * recortados em `maxRows`. Filtros `eq`/`is` são APLICADOS de verdade.
+ *
+ * A lista de COLUNAS é registrada (não aplicada): é por ela que se prova que a
+ * rota pediu `cpf_hash` — o defeito da #4081 era exatamente uma coluna ausente da
+ * leitura, e um dublê que devolve a linha inteira esconde isso.
  */
 function fakeSupabase(dados: Record<string, Linha[]>, maxRows = MAX_ROWS) {
   const consultas: Consulta[] = [];
 
   const client = {
     from(tabela: string) {
-      const registro: Consulta = { tabela, filtros: [], ordens: [], faixas: [], contou: false };
+      const registro: Consulta = { tabela, colunas: "", filtros: [], ordens: [], faixas: [], contou: false };
       consultas.push(registro);
 
       const filtros: Array<(linha: Linha) => boolean> = [];
@@ -83,7 +88,8 @@ function fakeSupabase(dados: Record<string, Linha[]>, maxRows = MAX_ROWS) {
       };
 
       const builder: Record<string, unknown> = {};
-      builder.select = (_colunas: string, opcoes?: { count?: string }) => {
+      builder.select = (colunas: string, opcoes?: { count?: string }) => {
+        registro.colunas = colunas;
         pediuCount = opcoes?.count === "exact";
         registro.contou = pediuCount;
         return builder;
@@ -127,6 +133,7 @@ function contato(i: number, parcial: Linha = {}): Linha {
     email: null,
     email_normalized: null,
     phone_number: `+553198${String(1000000 + i)}`, // 8 dígitos iniciando em 1: sem nono dígito
+    cpf_hash: null,
     is_merged_into: null,
     is_anonymized: false,
     source_metadata: null,
@@ -292,5 +299,66 @@ describe("o repetido pelo nome: sugestão depois dos fortes, e dispensa que vale
     const grupos = (await corpo(await chamar())).data as Array<{ motivos: string[] }>;
 
     expect(grupos.map((g) => g.motivos)).toEqual([["telefone"]]);
+  });
+});
+
+/**
+ * ─── O CPF na varredura (#4081) ───────────────────────────────────────────────
+ *
+ * `cpf_hash` passa a ser LIDO (é comparação de igualdade, e o índice único
+ * dele nasce com `if not exists`) e continua NÃO sendo devolvido: hash de
+ * documento é PII derivada, e a tela não tem uso para ela.
+ */
+describe("CPF na varredura", () => {
+  const CPF_A = "1111111111111111111111111111111111111111111111111111111111111111";
+
+  function comCpf(linhas: Linha[]): Linha[] {
+    // Dois contatos com o MESMO CPF, nomes diferentes e telefones diferentes —
+    // o caso real que a tela não achava.
+    linhas[4] = contato(5, { name: "Maria Souza Lima", cpf_hash: CPF_A });
+    linhas[149] = contato(150, { name: "M. S. Lima", cpf_hash: CPF_A });
+    return linhas;
+  }
+
+  it("⭐ CPF igual une o par com o motivo `cpf` — e a rota PEDE a coluna", async () => {
+    const { consultas, client } = fakeSupabase({ contacts: comCpf(base(300)) });
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const json = await corpo(await chamar());
+    const grupos = json.data as Array<{ motivos: string[]; contatos: Array<{ id: string }> }>;
+
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0]!.motivos).toEqual(["cpf"]);
+    expect(grupos[0]!.contatos.map((c) => c.id).sort()).toEqual(["contato-0005", "contato-0150"]);
+
+    // Sabotagem: tirar `cpf_hash` de `COLUNAS_DO_CONTATO` deixa esta asserção
+    // vermelha — e, no banco, o par nunca mais é encontrado.
+    const leitura = consultas.find((c) => c.tabela === "contacts")!;
+    expect(leitura.colunas).toContain("cpf_hash");
+  });
+
+  it("o `cpf_hash` NÃO sai no JSON — nem no detalhe do grupo", async () => {
+    const { client } = fakeSupabase({ contacts: comCpf(base(300)) });
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    const res = await chamar();
+    const texto = await res.clone().text();
+
+    expect(texto).not.toContain("cpf_hash");
+    expect(texto).not.toContain(CPF_A);
+    // Controle positivo: o grupo está lá (um payload vazio também não teria o hash).
+    const json = (await res.json()) as { data: unknown[] };
+    expect(json.data).toHaveLength(1);
+  });
+
+  it("o `eq(organization_id)` continua preso na leitura — outra organização não entra", async () => {
+    // Sabotagem: tirar o `.eq("organization_id", …)` deixa esta asserção vermelha.
+    const { consultas, client } = fakeSupabase({ contacts: comCpf(base(300)) });
+    vi.mocked(createClient).mockResolvedValue(client as never);
+
+    await chamar();
+
+    const leitura = consultas.find((c) => c.tabela === "contacts")!;
+    expect(leitura.filtros).toContainEqual(["organization_id", ORG_ID]);
   });
 });
