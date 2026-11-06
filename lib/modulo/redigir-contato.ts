@@ -3,7 +3,8 @@
  *
  * O consentimento por área vale para o DADO que vem na resposta, e não só para a rota. Conversa, negócio e
  * agenda trazem o contato junto (nome, telefone, etiquetas, bloqueio). Um módulo que tem `conversas` e não
- * tem `contatos` (leitura) recebe só o `id` do contato, que é opaco; o resto sai da resposta, no servidor.
+ * tem `contatos` (leitura) recebe só o `id` do contato, que é opaco, mais `redacted: true` (o módulo sabe que
+ * o dado foi retirado); o resto sai da resposta, no servidor.
  *
  * Sessão de navegador e token que não é de módulo não passam por aqui: veem tudo, como sempre viram.
  * LADO SEGURO: token de módulo SEM o campo `contatoVisivel` (nunca preenchido, teste que simula o
@@ -38,10 +39,14 @@ const CAMPOS_SOLTOS_DE_CONTATO: ReadonlySet<string> = new Set([
 
 const PROFUNDIDADE_MAXIMA = 16;
 
+/**
+ * Só o `id`, mais `redacted: true`. O marcador existe para o módulo NÃO confundir "o dado foi retirado"
+ * com "o dado é falso": sem ele, `is_blocked` some e quem lê o contato conclui "ninguém está bloqueado".
+ */
 function soOId(valor: unknown): unknown {
   if (valor === null || typeof valor !== "object") return null;
   const id = (valor as { id?: unknown }).id;
-  return typeof id === "string" ? { id } : null;
+  return typeof id === "string" ? { id, redacted: true } : null;
 }
 
 function redigir(valor: unknown, profundidade: number): unknown {
