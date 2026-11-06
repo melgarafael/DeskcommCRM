@@ -1,5 +1,5 @@
 -- manifest: índice parcial da outbound `queued`, para o portão de minuto do piso ocioso e a varredura da espera esquecida (#3907) não lerem `messages` inteira.
--- 9236 — índice da mensagem que espera em `queued`.
+-- 9242 — índice da mensagem que espera em `queued`.
 --
 -- `recover-stuck-messages` passou a ler outbound `queued` por idade, e o piso
 -- ocioso (`mensagem_presa`) faz a mesma pergunta num `exists` a cada retrato.
