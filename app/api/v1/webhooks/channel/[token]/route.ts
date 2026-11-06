@@ -28,6 +28,11 @@
  * 200, e recusar um payload que nunca vai servir faria a reentrega durar para
  * sempre. 500 fica reservado para falha de ESCRITA — aí a reentrega é o que
  * queremos, porque o evento era bom e nós é que não gravamos.
+ *
+ * O evento que o canal processa DEPOIS de responder (`processaDepoisDeResponder`)
+ * troca o 500 por 503: ele responde 200 assim que o arquivo do webhook o
+ * guardou, e o 503 é para quando nem o arquivo gravou — sem ele, o 200 não
+ * teria o que garantir.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
