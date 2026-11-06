@@ -23,12 +23,37 @@ import { metodosExportados, modeloDaRota, semComentarios } from "./helpers/contr
 const RAIZ = process.cwd();
 const API = join(RAIZ, "app/api/v1");
 
-/** Modelo da rota → por que ela não precisa do redator nem da trava. Motivo sempre escrito. */
+/**
+ * "MÉTODO modelo" → por que a resposta NÃO devolve dado de contato. Motivo sempre escrito, e medido na
+ * rota (não é palpite). Por método, para uma leitura nova na mesma rota não herdar a isenção.
+ */
 const JUSTIFICADAS: Record<string, string> = {
-  "/api/v1/leads/import":
-    "POST: a resposta é o resumo da importação (contagens e erro por linha), sem dado de contato lido do banco.",
-  "/api/v1/conversations/[id]/participants":
-    "lê só o indicador `is_personal` do contato para decidir a regra; a resposta não devolve o contato.",
+  "POST /api/v1/leads/import":
+    "a resposta é o resumo da importação (contagens e erro por linha), sem dado de contato lido do banco.",
+  "GET /api/v1/leads/import":
+    "devolve o modelo de CSV com duas linhas de exemplo fixas no código; não lê contato.",
+  "GET /api/v1/conversations/[id]/participants":
+    "lê só o indicador `is_personal` do contato para decidir a regra; a resposta lista pessoas da equipe (`user_id`).",
+  "POST /api/v1/conversations/[id]/participants":
+    "mesma rota: a resposta é a linha do participante da equipe (`user_id`), sem contato.",
+  "DELETE /api/v1/conversations/[id]/participants":
+    "mesma rota: a resposta é `{ removidos }`, sem contato.",
+  "POST /api/v1/leads":
+    "o handler só confere se o contato existe e se é pessoal (`select id, is_personal`); a resposta é o negócio.",
+  "POST /api/v1/agenda/agendamentos":
+    "o handler só confere se o contato existe (`select id`); a resposta é o agendamento, com `contact_id`.",
+  "PATCH /api/v1/agenda/agendamentos":
+    "mesma rota de escrita do POST: a resposta é o agendamento, com `contact_id`.",
+  "DELETE /api/v1/agenda/agendamentos":
+    "mesma rota de escrita do POST: a resposta é o resultado do cancelamento, com `contact_id`.",
+  "POST /api/v1/leads/[id]/contatos-relacionados":
+    "a resposta é `{ contact_id, papel }`: só o identificador que o chamador enviou.",
+  "DELETE /api/v1/leads/[id]/contatos-relacionados":
+    "a resposta é `{ contact_id, removido }`: só o identificador que o chamador enviou.",
+  "PATCH /api/v1/proposals/[id]/documento":
+    "a resposta é `{ campo }` ou `{ secoesEditadas }`: nome de campo e de seção, sem contato.",
+  "POST /api/v1/proposals/[id]/preencher-com-conversa":
+    "a rota só aceita sessão de pessoa (`requireRole`); token de módulo não autentica ali.",
 };
 
 const TRAZ_CONTATO = /contacts?\s*:\s*\w*\s*\(|contacts!?\w*\s*\(|from\(\s*["']contacts["']\s*\)|contact_(?:name|phone|email)\b/;
@@ -68,7 +93,7 @@ describe("rota que o módulo alcança e traz contato na resposta", () => {
         if (!porta || porta.area === "contatos") continue; // sem área: módulo recusado; contatos: a área é dele
         if (rota.includes("redigirContatoParaModulo")) continue;
         if (leituraExigeAreaContatos(modelo, metodo)) continue;
-        if (JUSTIFICADAS[modelo]) continue;
+        if (JUSTIFICADAS[`${metodo} ${modelo}`]) continue;
         sem.push(`${metodo} ${modelo} (área ${porta.area})`);
       }
     }
@@ -79,10 +104,14 @@ describe("rota que o módulo alcança e traz contato na resposta", () => {
     ).toEqual([]);
   });
 
-  it("toda justificativa aponta para uma rota que existe e tem motivo escrito", () => {
-    const modelos = new Set(todas.map((a) => modeloDaRota(RAIZ, a)));
-    for (const [modelo, motivo] of Object.entries(JUSTIFICADAS)) {
-      expect(modelos.has(modelo), `justificativa de rota que não existe: ${modelo}`).toBe(true);
+  it("toda justificativa aponta para um método que a rota exporta e tem motivo escrito", () => {
+    const exportados = new Set<string>();
+    for (const arquivo of todas) {
+      const modelo = modeloDaRota(RAIZ, arquivo);
+      for (const metodo of metodosExportados(textoDaRota(arquivo).rota)) exportados.add(`${metodo} ${modelo}`);
+    }
+    for (const [chave, motivo] of Object.entries(JUSTIFICADAS)) {
+      expect(exportados.has(chave), `justificativa de rota/método que não existe: ${chave}`).toBe(true);
       expect(motivo.length).toBeGreaterThan(20);
     }
   });
