@@ -361,8 +361,7 @@ describe("índice da base — medição 50 / 200 / 1.000 documentos", () => {
     }));
   }
 
-  it("imprime tamanho natural e o que cabe no orçamento default (600)", () => {
-    const linhas: string[] = [];
+  it("respeita o orçamento default (600) e conta o que ficou fora, com 50, 200 e 1.000 documentos", () => {
     for (const n of [50, 200, 1000]) {
       const materiais = acervo(n);
       const natural = renderizarIndiceComOrcamento(materiais, 10_000_000);
@@ -379,11 +378,6 @@ describe("índice da base — medição 50 / 200 / 1.000 documentos", () => {
           .find((l) => l.startsWith("+"))
           ?.match(/^\+(\d+)/)?.[1] ?? 0,
       );
-      linhas.push(
-        `${n} docs: natural=${natural.length} chars/${countPayloadTokens(natural)} tok · ` +
-          `default600=${comDefault.length} chars/${countPayloadTokens(comDefault)} tok · ` +
-          `comResumo=${linhasCompletas} porNome=${linhasPorNome} fora=${fora}`,
-      );
 
       // O orçamento é respeitado (o bloco do default NUNCA passa de 600 tokens)…
       expect(countPayloadTokens(comDefault)).toBeLessThanOrEqual(600);
@@ -392,9 +386,5 @@ describe("índice da base — medição 50 / 200 / 1.000 documentos", () => {
       // Natural cresce com o acervo — é o custo que o orçamento evita.
       expect(countPayloadTokens(natural)).toBeGreaterThan(600);
     }
-    // Os números vão para o corpo do PR: são a medição exigida pela issue.
-    console.log(
-      `\n[#4133] medição do índice (orçamento default 600 tokens)\n${linhas.join("\n")}\n`,
-    );
   });
 });
