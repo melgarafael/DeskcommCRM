@@ -17,6 +17,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { enderecoDaUltimaRecebida, respondePelaUltimaRecebida } from "@/lib/channels/endereco-da-ultima-recebida";
 import { samePhone } from "@/lib/channels/phone-variants";
+import { ehContatoPessoal } from "@/lib/contacts/contato-pessoal";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -69,12 +70,16 @@ export async function GET(_req: NextRequest, ctx: Context): Promise<Response> {
   if (conversa.contact_id) {
     const { data: ficha, error: errFicha } = await supabase
       .from("contacts")
-      .select("phone_number, wa_lid")
+      .select("phone_number, wa_lid, is_personal")
       .eq("organization_id", organizationId)
       .eq("id", conversa.contact_id)
       .maybeSingle();
     if (errFicha) {
       return fail("internal_error", "Não foi possível ler a ficha.", 500, { requestId });
+    }
+    // Mesma resposta das portas irmãs da conversa (spec 21, D10).
+    if (ehContatoPessoal(ficha)) {
+      return fail("not_found", "Conversa não encontrada.", 404, { requestId });
     }
     if (ficha) {
       principal = { phone_number: ficha.phone_number ?? null, lid: ficha.wa_lid ?? null };

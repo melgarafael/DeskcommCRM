@@ -7,6 +7,7 @@
  * - Aceitar o `@c.us` sem conferir que o número é da ficha: o caso do número que a ficha já não tem cai.
  * - Procurar o `@lid` sem olhar o extra (só o principal): o caso "@lid do extra" cai.
  * - Ficha sem extra usando o chat mesmo assim: o caso "via principal" cai.
+ * - Tirar o `is_personal` do select ou a guarda de `ehContatoPessoal`: o caso da spec 21, D10 cai.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
@@ -30,7 +31,7 @@ const CONVERSA = "33333333-3333-4333-8333-333333333333";
 const CONTATO = "44444444-4444-4444-8444-444444444444";
 
 interface Montagem {
-  principal?: { phone_number: string; wa_lid?: string | null };
+  principal?: { phone_number: string; wa_lid?: string | null; is_personal?: boolean };
   extras?: Array<{ phone_number: string; wa_lid: string | null }>;
   provider?: string;
   isGroup?: boolean;
@@ -40,6 +41,7 @@ interface Montagem {
 /** Fake de leitura: conversa, ficha e extras, sempre com o filtro de organização registrado. */
 function fakeSupabase(m: Montagem) {
   const filtros: Array<{ tabela: string; coluna: string; valor: unknown }> = [];
+  const colunas: Record<string, string> = {};
   const respostas: Record<string, unknown> = {
     conversations: {
       id: CONVERSA,
@@ -55,13 +57,23 @@ function fakeSupabase(m: Montagem) {
     cliente: {
       from: (tabela: string) => {
         const q: Record<string, unknown> = {
-          select: () => q,
+          select: (lista: string) => {
+            colunas[tabela] = lista;
+            return q;
+          },
           eq: (coluna: string, valor: unknown) => {
             filtros.push({ tabela, coluna, valor });
             return q;
           },
           limit: () => q,
-          maybeSingle: async () => ({ data: respostas[tabela], error: null }),
+          // Como o PostgREST: a coluna que o select não pediu não chega.
+          maybeSingle: async () => ({
+            data:
+              tabela === "contacts" && m.principal && !colunas.contacts?.includes("is_personal")
+                ? { ...m.principal, is_personal: undefined }
+                : respostas[tabela],
+            error: null,
+          }),
           then: (ok: (v: unknown) => unknown, ko: (e: unknown) => unknown) =>
             Promise.resolve({ data: respostas[tabela], error: null }).then(ok, ko),
         };
@@ -159,6 +171,24 @@ describe("GET /api/v1/conversations/[id]/reply-address", () => {
 
     expect(corpo.data.phone_number).toBe("+5515988887777");
     expect(corpo.data.via).toBe("ultima_recebida");
+  });
+
+  it("spec 21, D10: mesma 404 das portas irmãs, sem telefone na resposta", async () => {
+    vi.mocked(enderecoDaUltimaRecebida).mockResolvedValue("5511999998888@c.us");
+    const { cliente } = fakeSupabase({
+      principal: { phone_number: "+5511999998888", is_personal: true },
+      extras: [{ phone_number: "+5521977776666", wa_lid: null }],
+    });
+    vi.mocked(createClient).mockResolvedValue(cliente as never);
+    const { GET } = await import("./route");
+
+    const res = await GET(req(), CONTEXTO);
+    const corpo = await res.text();
+
+    expect(res.status).toBe(404);
+    expect(corpo).toContain("not_found");
+    expect(corpo).not.toContain("5511999998888");
+    expect(corpo).not.toContain("5521977776666");
   });
 
   it("todas as consultas filtram a organização da sessão", async () => {
