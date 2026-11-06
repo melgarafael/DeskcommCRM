@@ -475,8 +475,11 @@ do texto (pacing, LGPD, opt-out, teto de envios do turno).
   `tests/unit/send-message-manda-imagem-por-url.test.ts`.
 
 ### O que NÃO entra nesta fatia
-- A receita do WordPress ainda não devolve URL de foto. Resolver anexo → URL é
-  fatia à parte; até lá nenhuma receita aciona `imagem_url` sozinha.
+- As receitas prontas de WordPress e WooCommerce ainda não devolvem URL de foto.
+  Resolver anexo → URL é fatia à parte. Uma coluna de foto mapeada na receita de
+  tabela direta, ou lida por `crm_query_external_data`, já alcança `imagem_url`.
+- Célula com vários endereços (galeria separada por vírgula ou `|`) não autoriza
+  nenhum deles: a foto é recusada. Separar a lista é da mesma fatia.
 - Foto do catálogo (`produto_codigo`) continua como estava.
 - Nenhuma migration, tela ou variável de ambiente nova.
 
@@ -490,15 +493,16 @@ do texto (pacing, LGPD, opt-out, teto de envios do turno).
   não recebe mais a URL.
 
 ### Procedência da URL
-O `send_message` só busca uma `imagem_url` que tenha aparecido, igual, no resultado
-de `crm_consultar_receita`, `crm_query_external_data` ou `crm_search_products` do
-mesmo turno. Fora disso nada é baixado: a mensagem sai só com o texto e o retorno
-traz `foto_recusada: url_fora_dos_resultados`. A prévia confere a mesma regra e avisa
-(`imagem_recusada`). Resultado de outra ferramenta não conta, porque pode repetir o
-que o contato escreveu, e endereço que já estava nos argumentos da chamada também não.
+O `send_message` só busca uma `imagem_url` que seja, igual, o valor inteiro de um
+campo do resultado de `crm_consultar_receita` ou `crm_query_external_data` no mesmo
+turno. Endereço no meio de um texto não conta. Fora disso nada é baixado: a mensagem
+sai só com o texto e o retorno traz `foto_recusada: url_fora_dos_resultados`. A prévia
+confere a mesma regra e avisa (`imagem_recusada`). Resultado de outra ferramenta não
+conta, porque pode repetir o que o contato escreveu, e endereço que já estava nos
+argumentos da chamada também não. `crm_search_products` fica de fora porque devolve
+só a contagem de `fotos`; a foto do catálogo sai por `produto_codigo`.
 Sem padrão novo para ninguém: o campo nasce com a guarda, e nenhuma instalação
 usava `imagem_url` antes dela.
 
 A guarda confere de onde o endereço veio; destino e conteúdo seguem conferidos pelo
-download. O que uma tabela externa ou o catálogo guardam é dado da organização, e
-ela responde por ele.
+download. O que uma tabela externa guarda é dado da organização, e ela responde por ele.
