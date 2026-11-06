@@ -127,3 +127,46 @@ test("importa uma planilha sem escolher etapa (não há esse seletor) e o negóc
   await page.goto(`/app/pipelines/${creds.kanban!.pipeline_id}`);
   await expect(page.getByText(NOME_DO_NEGOCIO)).toBeVisible({ timeout: 15_000 });
 });
+
+
+test("CNPJ informado inválido falha pela API antes de criar empresa, pessoa ou contato", async ({ page }) => {
+  await login(page, creds.users.manager!.email);
+  const flag = "MODULO_CRM_B2B";
+  const anterior = await admin.from("platform_config").select("valor").eq("chave", flag).maybeSingle();
+  expect(anterior.error).toBeNull();
+  expect((await admin.from("platform_config").upsert({ chave: flag, valor: "ligado" }, { onConflict: "chave" })).error).toBeNull();
+  const nome = `CNPJ inválido lote ${SUFIXO}`;
+  const pessoa = `Pessoa recusada ${SUFIXO}`;
+  let batchId: string | undefined;
+  try {
+    // Ambas as linhas têm dados para writes posteriores; sem a guarda virariam empresa por nome.
+    const resposta = await page.request.post("/api/v1/imports", { multipart: {
+      file: { name: "cnpj-invalido.csv", mimeType: "text/csv", buffer: Buffer.from(
+        `Empresa,CNPJ,Pessoa,Telefone\n${nome},11.222.333/0001-00,${pessoa},+5511999017101\n${nome},22.222.222/0001-00,${pessoa},+5511999017102\n`,
+      ) },
+      mapping: JSON.stringify({ company_name: "Empresa", cnpj: "CNPJ", person_name: "Pessoa", phone: "Telefone" }),
+      enrich: "false",
+    } });
+    expect(resposta.status()).toBe(201);
+    const { data } = (await resposta.json()) as { data: { batch_id: string; failed_rows: number; successful_rows: number } };
+    batchId = data.batch_id;
+    expect(data.failed_rows).toBe(2);
+    expect(data.successful_rows).toBe(0);
+    for (const [tabela, coluna, valor] of [["companies", "trade_name", nome], ["people", "full_name", pessoa], ["contacts", "name", pessoa]]) {
+      const lido = await admin.from(tabela!).select("id", { count: "exact", head: true }).eq("organization_id", creds.org_id).eq(coluna!, valor!);
+      expect(lido.error).toBeNull();
+      expect(lido.count).toBe(0);
+    }
+    const linhas = await admin.from("import_rows").select("status,error").eq("organization_id", creds.org_id).eq("batch_id", batchId);
+    expect(linhas.error).toBeNull();
+    expect(linhas.data).toHaveLength(2);
+    expect(linhas.data?.every((r) => r.status === "failed" && r.error ===
+          "CNPJ inválido: confira as 12 posições (dígitos ou letras) e os 2 dígitos verificadores.")).toBe(true);
+  } finally {
+    if (batchId) expect((await admin.from("import_batches").delete().eq("id", batchId).eq("organization_id", creds.org_id)).error).toBeNull();
+    const restaurado = anterior.data
+      ? await admin.from("platform_config").update({ valor: anterior.data.valor }).eq("chave", flag)
+      : await admin.from("platform_config").delete().eq("chave", flag);
+    expect(restaurado.error).toBeNull();
+  }
+});

@@ -13,6 +13,10 @@
 import { z } from "zod";
 
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
+import {
+  definirSetorDaConversa,
+  type RecusaDoSetor,
+} from "@/lib/atendimento/setor-da-conversa";
 import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
@@ -60,7 +64,8 @@ export const crmAssignConversation: McpToolDefinition<typeof assignInputShape> =
     "Atribui/transfere uma conversa a um atendente (reason='transfer', to_user_id preenchido) " +
     "ou libera de volta à fila (reason='release', to_user_id null). Grava assignment event " +
     "auditado. Recusa destino de outra org (guard de membership). Idempotente: se a conversa " +
-    "já está no estado alvo, retorna sucesso sem duplicar evento.",
+    "já está no estado alvo, retorna sucesso sem duplicar evento. Atribuir não interrompe o seu " +
+    "próprio turno: pode ser chamada junto com a passagem para uma pessoa, em qualquer ordem.",
   inputSchema: assignInputShape,
   category: "write",
   requiresRole: "agent",
@@ -98,6 +103,14 @@ export const crmAssignConversation: McpToolDefinition<typeof assignInputShape> =
     // true com o dono que ACABAMOS de ler ⇒ optimistic lock: sob CORRIDA (dois
     // assigns idênticos leem o mesmo dono antigo), o 1º vence (1 evento) e o 2º
     // vê o dono já mudado (v_from ≠ expected) ⇒ 0 rows, SEM evento duplicado.
+    //
+    // `p_source_job_id` (#3926): o turno DIZ que foi ele quem atribuiu, e o
+    // gatilho de assumir poupa esse job em vez de revogá-lo. Vem de
+    // `ctx.sourceJobId` — campo que o runtime injeta e o modelo NÃO escreve —,
+    // então é nulo em toda chamada de fora do turno (rota MCP, Inbox, automação)
+    // e o comportamento delas não muda. Sem isso, o próprio turno era marcado
+    // `failed`/`conversation_command_taken` e a passagem e a mudança de etapa
+    // que vinham depois morriam na guarda de fronteira.
     const { data: rows, error: assignErr } = await ctx.supabase.rpc("fn_conversation_assign", {
       p_organization_id: ctx.organizationId,
       p_conversation_id: parsed.conversation_id,
@@ -105,6 +118,7 @@ export const crmAssignConversation: McpToolDefinition<typeof assignInputShape> =
       p_reason: parsed.reason,
       p_expected_assignee: currentOwner,
       p_enforce_expected: true,
+      p_source_job_id: ctx.sourceJobId ?? null,
     });
     if (assignErr) throw new Error(assignErr.message);
     if (!Array.isArray(rows) || rows.length === 0) {
@@ -279,6 +293,87 @@ export const crmManageTags: McpToolDefinition<typeof tagsInputShape> = {
     }
 
     return { target_kind: input.target_kind, target_id: input.target_id, tags: nextTags };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// crm_set_conversation_sector (#3881)
+// ---------------------------------------------------------------------------
+
+const setSectorInputShape = {
+  conversation_id: z.string().uuid(),
+  /**
+   * A fila de destino. UUID obrigatório de propósito: `null` limparia a
+   * classificação, e limpar é gesto de gente na tela (a rota humana). Um modelo
+   * que devolvesse nulo por erro de preenchimento apagaria a classificação da
+   * conversa em silêncio.
+   */
+  sector_id: z.string().uuid().describe("id de um setor de atendimento desta organização"),
+  /**
+   * Opt-in explícito para reclassificar a conversa que uma PESSOA já classificou.
+   * Desligado por padrão: a escolha manual vence a IA (regra de precedência da
+   * `lib/atendimento/setor-da-conversa`).
+   */
+  sobrescrever_setor_manual: z.boolean().optional(),
+};
+
+/**
+ * O motivo da recusa vira CÓDIGO na borda da ferramenta: o modelo lê o código e
+ * o runtime o registra. O que NUNCA acontece é sucesso mudo — a ferramenta ou
+ * grava, ou lança com o motivo.
+ */
+const RECUSA_DO_SETOR_MCP: Record<RecusaDoSetor, string> = {
+  conversa_nao_encontrada: "conversation_not_found",
+  setor_inexistente: "sector_not_found",
+  conversa_encerrada: "conversation_closed",
+  setor_manual_preservado: "sector_set_manually",
+  limpeza_nao_permitida: "sector_required",
+  setores_desligados: "sectors_module_off",
+  falha_ao_gravar: "sector_write_failed",
+};
+
+export const crmSetConversationSector: McpToolDefinition<typeof setSectorInputShape> = {
+  name: "crm_set_conversation_sector",
+  description:
+    "Coloca a conversa num SETOR (fila) de atendimento desta organização. Use na triagem, quando " +
+    "você já entendeu o assunto: pedido de pagamento/boleto → o setor financeiro, viagem " +
+    "internacional → o setor internacional. Recusa setor inexistente, conversa encerrada e " +
+    "setor que uma pessoa escolheu à mão (a não ser com sobrescrever_setor_manual=true). " +
+    "Se a conversa não tem dono, ela volta para a distribuição do setor. Registra auditoria " +
+    "com o setor de origem e o de destino. Não muda quem é o responsável.",
+  inputSchema: setSectorInputShape,
+  category: "write",
+  requiresRole: "agent",
+  requiresScope: "mcp:write",
+  handler: async (input, ctx) => {
+    const a = actorAudit(ctx);
+    const resultado = await definirSetorDaConversa({
+      // Service role: a IA não tem sessão. As três cercas viraram explícitas na
+      // régua compartilhada (organização da fonte confiável, conversa conferida,
+      // setor conferido dentro da organização) e a auditoria mora lá.
+      db: ctx.supabase,
+      organizationId: ctx.organizationId,
+      conversationId: input.conversation_id,
+      sectorId: input.sector_id,
+      origem: "ia",
+      sobrescreverSetorManual: input.sobrescrever_setor_manual === true,
+      ator: {
+        tipo: ctx.actor.type === "ai_agent" ? "ai_agent" : "api_token",
+        userId: a.actorUserId,
+        apiTokenId: ctx.apiTokenId,
+        id: ctx.actor.id,
+      },
+      requestId: ctx.requestId,
+    });
+    if (!resultado.ok) throw new Error(RECUSA_DO_SETOR_MCP[resultado.motivo]);
+
+    return {
+      conversation_id: input.conversation_id,
+      sector_id: resultado.para,
+      previous_sector_id: resultado.de,
+      changed: resultado.mudou,
+      requeued: resultado.redistribuiu,
+    };
   },
 };
 

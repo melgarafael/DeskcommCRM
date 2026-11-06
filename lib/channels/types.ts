@@ -101,6 +101,14 @@ export interface RecipientInput {
    * `waIdentity.startsWith("lid:")` — justo o caso que a regra protege.
    */
   waLid?: string | null | undefined;
+  /**
+   * Endereço (chat) da última mensagem RECEBIDA na conversa, só quando a ficha
+   * tem telefone extra. Com dois números na mesma ficha, responder pelo principal
+   * sairia por número que a pessoa não usou nesta conversa; a resposta vai, então,
+   * pelo número que ela escreveu. Vem preenchido só nesse caso: ficha sem extra
+   * segue pela regra de sempre (`waLid`, depois o principal).
+   */
+  ultimoRecebidoChatId?: string | null;
 }
 
 /** Contato compartilhado (vcard) — só `kind: "contact"`. */
@@ -347,6 +355,24 @@ export interface ChannelAdapter {
   resolveRegisteredPhone?(
     input: ChannelTenantScope & { sessionRef: string; phone: string },
   ): Promise<string | null>;
+
+  /**
+   * O telefone TEM conta nesta plataforma? Pergunta sem enviar nada — a
+   * prospecção a faz antes de abordar uma empresa (`lib/prospecting/whatsapp.ts`).
+   *
+   * TRÊS respostas, e a terceira é a que importa: `true`/`false` é o que a
+   * plataforma disse; `null` é "não deu para saber" (transporte fora, sessão
+   * caindo). Quem chama NUNCA lê `null` como "não tem" — descartaria uma empresa
+   * porque o servidor piscou. É por isso que não reaproveita
+   * `resolveRegisteredPhone`, que devolve `null` também para "não existe" e para
+   * quem só tem identidade opaca (que TEM conta).
+   *
+   * OPCIONAL: só implementa quem consegue perguntar à plataforma; quem chama
+   * testa a presença (ou usa `provedoresQueConferemNumero`), nunca o nome.
+   */
+  numeroTemConta?(
+    input: ChannelTenantScope & { sessionRef: string; phone: string },
+  ): Promise<boolean | null>;
 
   /**
    * Gestão das definições aprovadas — criar, editar, apagar.

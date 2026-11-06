@@ -3,7 +3,10 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import { toast } from "sonner";
+
 import { CRMSidePanel } from "@/components/inbox/CRMSidePanel";
+import { ApiError } from "@/lib/api/types";
 
 /**
  * A PORTA DE FOLLOW-UP no painel da conversa (#3178).
@@ -18,8 +21,9 @@ import { CRMSidePanel } from "@/components/inbox/CRMSidePanel";
  *     outro contato na lista é o caso que separa "leu" de "filtrou".
  *  2. **Iniciar manda pointer_id e contact_id** — sem os dois o POST não inscreve
  *     ninguém; a rota cobra o par em `createFollowupEnrollmentSchema`.
- *  3. **Parar chama o cancel do enrollment vivo** — não é um "desmarcar" local:
- *     a escrita vai para `POST .../:id/cancel`.
+ *  3. **Parar chama o cancel do enrollment mostrado** — não é um "desmarcar"
+ *     local: a escrita vai para `POST .../:id/cancel`, que aceita os vivos e o
+ *     `dormente` (o caso novo da #3375).
  *  4. **Auto-ocultação** — sem enrollment vivo e sem fluxo ativo a seção não
  *     existe; é o contrato de `RoteirosDoContato` (módulo/estado sem dado não
  *     muda a tela de quem não usa).
@@ -108,10 +112,25 @@ function renderPainel() {
   );
 }
 
-/** O GET do follow-up é por URL; o crm-summary do painel continua sendo o default. */
-function servirApi(opts: { enrollments?: unknown[]; flows?: unknown[] }) {
+/**
+ * O GET do follow-up é por URL; o crm-summary do painel continua sendo o default.
+ *
+ * `podeInscrever` é o `meta.pode_inscrever` da resposta (#3746): a capacidade que
+ * o servidor afirma para ESTE contato. `true` por padrão porque a maioria dos
+ * casos aqui mede outras coisas; quem mede a capacidade passa o valor.
+ */
+function servirApi(opts: {
+  enrollments?: unknown[];
+  flows?: unknown[];
+  podeInscrever?: boolean;
+}) {
   get.mockImplementation((url: string) => {
-    if (url.includes("/followups/enrollments")) return Promise.resolve({ data: opts.enrollments ?? [] });
+    if (url.includes("/followups/enrollments")) {
+      return Promise.resolve({
+        data: opts.enrollments ?? [],
+        meta: { pode_inscrever: opts.podeInscrever ?? true },
+      });
+    }
     if (url.includes("/followup-flows")) return Promise.resolve({ data: opts.flows ?? [] });
     return Promise.resolve({ data: RESPOSTA });
   });
@@ -124,6 +143,10 @@ beforeEach(() => {
   post.mockReset();
   patch.mockReset();
   post.mockResolvedValue({ data: { id: "e-novo" } });
+  // O aviso é por chamada: sem limpar, o caso da frase de canal veria o toast
+  // que o caso anterior disparou.
+  vi.mocked(toast.error).mockClear();
+  vi.mocked(toast.success).mockClear();
 });
 
 describe("painel do inbox — seção de follow-up", () => {
@@ -138,9 +161,12 @@ describe("painel do inbox — seção de follow-up", () => {
     await userEvent.click(screen.getByTestId("iniciar-followup"));
 
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    // A CONVERSA vai no payload (#3746): é o escopo de posse que o servidor
+    // confere — o Atendente inscreve o cliente cuja conversa está com ele.
     expect(post).toHaveBeenCalledWith("/api/v1/ai/followups/enrollments", {
       pointer_id: FLUXO.id,
       contact_id: CONTACT,
+      conversation_id: "cv-1",
     });
   });
 
@@ -224,18 +250,59 @@ describe("painel do inbox — seção de follow-up", () => {
     },
   );
 
-  it("dormente aparece com o status, sem Parar (o cancel o recusa), e Iniciar segue oferecido", async () => {
+  it("dormente aparece com o status e com o Parar (o cancel o aceita desde #3292), e Iniciar segue oferecido", async () => {
     servirApi({ enrollments: [{ ...ENROLLMENT, status: "dormente" }], flows: [FLUXO] });
     renderPainel();
 
     const secao = await screen.findByTestId("inbox-followup");
     expect(secao.textContent).toContain(FLUXO.name);
     expect(secao.textContent).toMatch(/aguardando a data do retorno/i);
-    expect(screen.queryByTestId("parar-followup")).toBeNull();
+    // O dormente não ocupa a vaga, mas é cancelável: as DUAS portas ficam de pé.
+    expect(screen.getByTestId("parar-followup")).toBeTruthy();
     expect(screen.getByTestId("iniciar-followup")).toBeTruthy();
   });
 
-  it("papel agent vê o fluxo vivo, mas sem Iniciar nem Parar (as rotas cobram manager)", async () => {
+  it("dormente: o Parar manda o cancel, o enrollment sai de cena e a seção volta ao select (#3375)", async () => {
+    // O cancel grava `cancelled` no servidor; o refetch da seção por isso não
+    // devolve mais a inscrição e só a porta de iniciar sobra.
+    let encerrado = false;
+    servirApi({ enrollments: [{ ...ENROLLMENT, status: "dormente" }], flows: [FLUXO] });
+    get.mockImplementation((url: string) => {
+      if (url.includes("/followups/enrollments"))
+        return Promise.resolve({
+          data: encerrado ? [] : [{ ...ENROLLMENT, status: "dormente" }],
+          // A capacidade (#3746) é do servidor e não muda no cancel: o que muda
+          // é a vaga, que fica livre para outro fluxo.
+          meta: { pode_inscrever: true },
+        });
+      if (url.includes("/followup-flows")) return Promise.resolve({ data: [FLUXO] });
+      return Promise.resolve({ data: RESPOSTA });
+    });
+    post.mockImplementation((url: string) => {
+      if (String(url).endsWith("/cancel")) {
+        encerrado = true;
+        return Promise.resolve({ data: { status: "cancelled" } });
+      }
+      return Promise.resolve({ data: { id: "e-novo" } });
+    });
+
+    renderPainel();
+    const secao = await screen.findByTestId("inbox-followup");
+    expect(secao.textContent).toMatch(/aguardando a data do retorno/i);
+
+    await userEvent.click(screen.getByTestId("parar-followup"));
+
+    // A escrita vai para a rota que grava `cancelled` (cancel_reason manual).
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post).toHaveBeenCalledWith(`/api/v1/ai/followups/enrollments/${ENROLLMENT.id}/cancel`, {});
+
+    // Sem a inscrição, a seção volta ao select — e o Parar some com ela.
+    await waitFor(() => expect(screen.queryByTestId("parar-followup")).toBeNull());
+    expect(screen.getByTestId("escolher-fluxo-followup")).toBeTruthy();
+    expect(screen.getByTestId("iniciar-followup")).toBeTruthy();
+  });
+
+  it("papel agent vê o fluxo vivo: Parar continua manager+ (fora do recorte do #3746)", async () => {
     authRole = "agent";
     servirApi({ enrollments: [ENROLLMENT], flows: [FLUXO] });
     renderPainel();
@@ -243,15 +310,67 @@ describe("painel do inbox — seção de follow-up", () => {
     const secao = await screen.findByTestId("inbox-followup");
     expect(secao.textContent).toContain(FLUXO.name);
     expect(screen.queryByTestId("parar-followup")).toBeNull();
+    // A vaga está ocupada: Iniciar não é oferecido a ninguém, com ou sem posse.
     expect(screen.queryByTestId("iniciar-followup")).toBeNull();
   });
 
-  it("papel agent sem follow-up vivo: a seção some, mesmo com fluxo ativo", async () => {
+  it("#3746 — o Atendente DONO do cliente vê Iniciar (a capacidade vem do servidor)", async () => {
     authRole = "agent";
-    servirApi({ flows: [FLUXO] });
+    servirApi({ flows: [FLUXO], podeInscrever: true });
     renderPainel();
 
+    await screen.findByTestId("inbox-followup");
+    expect(screen.getByTestId("iniciar-followup")).toBeTruthy();
+  });
+
+  it("#3746 — o Atendente de FORA do cliente não vê Iniciar (o servidor diria 403)", async () => {
+    authRole = "agent";
+    servirApi({ flows: [FLUXO], podeInscrever: false });
+    renderPainel();
+
+    // Sem enrollment vivo e sem a capacidade, não sobra nada para mostrar.
     await waitFor(() => expect(get).toHaveBeenCalled());
     expect(screen.queryByTestId("inbox-followup")).toBeNull();
+    expect(screen.queryByTestId("iniciar-followup")).toBeNull();
+  });
+
+  it("#3923 — sem número conectado, a recusa vira a frase de CONECTAR NÚMERO, não a genérica", async () => {
+    servirApi({ flows: [FLUXO] });
+    // O que o servidor devolve depois da correção: 409 com o código estável.
+    post.mockRejectedValue(
+      new ApiError(
+        409,
+        "service_channel_not_found",
+        undefined,
+        "req-3923",
+        "Conecte um número de WhatsApp antes de iniciar o follow-up.",
+      ),
+    );
+    renderPainel();
+
+    await screen.findByTestId("inbox-followup");
+    await userEvent.selectOptions(screen.getByLabelText("Fluxo de follow-up"), FLUXO.id);
+    await userEvent.click(screen.getByTestId("iniciar-followup"));
+
+    // A frase diz o que FAZER — é o pedido da issue ("uma frase que o leigo
+    // entenda"). O "não foi possível" continua reservado ao resto.
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Conecte um número de WhatsApp antes de iniciar o follow-up."),
+    );
+    expect(toast.error).not.toHaveBeenCalledWith("Não foi possível iniciar o follow-up.");
+  });
+
+  it("CONTROLE: falha de outro tipo continua na frase genérica", async () => {
+    servirApi({ flows: [FLUXO] });
+    post.mockRejectedValue(new ApiError(500, "internal_error", undefined, "req-2", "boom"));
+    renderPainel();
+
+    await screen.findByTestId("inbox-followup");
+    await userEvent.selectOptions(screen.getByLabelText("Fluxo de follow-up"), FLUXO.id);
+    await userEvent.click(screen.getByTestId("iniciar-followup"));
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith("Não foi possível iniciar o follow-up."),
+    );
   });
 });

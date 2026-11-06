@@ -12,13 +12,29 @@ const espioes = vi.hoisted(() => ({
   dispatch: vi.fn(),
   posEntrada: vi.fn(),
   marcar: vi.fn(),
+  /** Os efeitos de "o cliente respondeu" da queda (Spec 32 §3): só recebida, só gravada nova. */
+  recuperacao: vi.fn(),
+}));
+/** Os avisos da Central do fim da queda (Spec 32 §2). */
+const avisos = vi.hoisted(() => ({
+  cliente: vi.fn(),
+  resumo: vi.fn(),
+  fechar: vi.fn(),
 }));
 vi.mock("@/lib/waha/ingest", async (orig) => ({
   ...(await orig<typeof IngestModule>()),
   dispatchWahaEvent: espioes.dispatch,
 }));
-vi.mock("@/lib/channels/pos-entrada", () => ({ aplicarEfeitosPosEntrada: espioes.posEntrada }));
+vi.mock("@/lib/channels/pos-entrada", () => ({
+  aplicarEfeitosPosEntrada: espioes.posEntrada,
+  aplicarEfeitosDaRecuperacao: espioes.recuperacao,
+}));
 vi.mock("@/lib/channels/marcar-conversa", () => ({ marcarConversaComMensagem: espioes.marcar }));
+vi.mock("@/lib/channels/historico/avisos-da-queda", () => ({
+  avisarClienteSemResposta: avisos.cliente,
+  avisarResumoDaRecuperacao: avisos.resumo,
+  fecharResumoDaRecuperacao: avisos.fechar,
+}));
 
 // O canal de mentira: a mesma página que o cliente devolve, sem HTTP.
 const canal = vi.hoisted(() => ({
@@ -78,7 +94,7 @@ const DIA = 86_400;
 type Linha = Record<string, unknown>;
 
 /** Banco em memória com as regras de que o desfecho depende: a unique
- * (organization_id, external_id) e a chave da conversa 1:1. */
+ * (organization_id, external_id), o formato do telefone e a chave da conversa 1:1. */
 function bancoDeMentira() {
   const importacoes = new Map<string, Linha>();
   const messages: Linha[] = [];
@@ -86,6 +102,9 @@ function bancoDeMentira() {
   const contatos = new Map<string, string>();
   const rpcs: Array<{ fn: string; args: Record<string, unknown> }> = [];
   const tabelasTocadas: string[] = [];
+  /** As fichas (`contacts`) que a consulta do escopo `so_crm` enxerga. */
+  const fichas: Linha[] = [];
+  let falhaNasFichas: string | null = null;
   /** Telefones (canônicos) e lids marcados como apagados a pedido; `falhaNaMarca` simula erro na pergunta. */
   const apagados = new Set<string>();
   let falhaNaMarca: string | null = null;
@@ -104,6 +123,9 @@ function bancoDeMentira() {
         return Promise.resolve({ data: apagados.has(args.p_telefone as string) || apagados.has(args.p_lid as string), error: null });
       }
       if (fn === "fn_upsert_wa_contact") {
+        if (args.p_phone != null && !/^\+\d{8,15}$/.test(String(args.p_phone))) {
+          return Promise.resolve({ data: null, error: { code: "23514", message: 'new row for relation "contacts" violates check constraint "contacts_phone_e164_format"' } });
+        }
         const chave = `${args.p_kind}:${args.p_kind === "lid" ? args.p_lid : args.p_phone}`;
         if (!contatos.has(chave)) contatos.set(chave, `ct-${contatos.size + 1}`);
         return Promise.resolve({ data: contatos.get(chave), error: null });
@@ -149,12 +171,46 @@ function bancoDeMentira() {
           },
         };
       }
+      if (tabela === "conversations") {
+        // Só a leitura do fim da queda: a equipe já respondeu ao vivo depois da volta?
+        const filtros: Array<[string, unknown]> = [];
+        const q = {
+          eq: (c: string, v: unknown) => (filtros.push([c, v]), q),
+          maybeSingle: async () => {
+            const id = filtros.find(([c]) => c === "id")?.[1] as string | undefined;
+            const linha = id ? conversations.get(id) : undefined;
+            return { data: linha ? { last_outbound_at: (linha.last_outbound_at as string | undefined) ?? null } : null, error: null };
+          },
+        };
+        return { select: () => q };
+      }
       if (tabela === "channel_sessions") {
         const q = {
           eq: () => q,
           maybeSingle: async () => ({ data: { waha_session_name: "nome-no-canal" }, error: null }),
         };
         return { select: () => q };
+      }
+      if (tabela === "contacts") {
+        // A consulta de ficha do escopo `so_crm`: filtros encadeados, `limit`, e await.
+        return {
+          select: () => {
+            const filtros: Array<(l: Linha) => boolean> = [];
+            let limite = Number.POSITIVE_INFINITY;
+            const q = {
+              eq: (c: string, v: unknown) => (filtros.push((l) => l[c] === v), q),
+              is: (c: string, v: unknown) => (filtros.push((l) => l[c] === v), q),
+              in: (c: string, vs: unknown[]) => (filtros.push((l) => vs.includes(l[c])), q),
+              limit: (n: number) => ((limite = n), q),
+              then: (ok: (v: unknown) => unknown) => {
+                if (falhaNasFichas) return Promise.resolve(ok({ data: null, error: { message: falhaNasFichas } }));
+                const achadas = fichas.filter((l) => filtros.every((f) => f(l))).slice(0, limite);
+                return Promise.resolve(ok({ data: achadas, error: null }));
+              },
+            };
+            return q;
+          },
+        };
       }
       if (tabela === "messages") {
         return {
@@ -209,6 +265,10 @@ function bancoDeMentira() {
     rpcs,
     tabelasTocadas,
     apagados,
+    fichas,
+    falharNasFichas(msg: string) {
+      falhaNasFichas = msg;
+    },
     falharNaMarca(msg: string) {
       falhaNaMarca = msg;
     },
@@ -285,10 +345,43 @@ beforeEach(() => {
   espioes.dispatch.mockReset();
   espioes.posEntrada.mockReset();
   espioes.marcar.mockReset();
+  espioes.recuperacao.mockReset();
+  avisos.cliente.mockReset();
+  avisos.resumo.mockReset();
+  avisos.fechar.mockReset();
   acervoPadrao();
 });
 
 describe("rodarUmaRodada", () => {
+  it.each(["0@s.whatsapp.net", "0@c.us"])("ignora avisos de %s e importa os chats seguintes (#3519)", async (chat) => {
+    canal.chats.unshift({ id: chat, ultimaEm: agora });
+    canal.mensagens[chat] = [
+      { id: `false_${chat}_AVISO`, from: chat, fromMe: false, body: "Aviso do WhatsApp", timestamp: agora - DIA },
+    ];
+    const db = bancoDeMentira();
+    novaImportacao(db);
+
+    // O primeiro lote só encontra o aviso. A retomada precisa alcançar telefone e LID.
+    const primeira = await rodarUmaRodada(db.admin as never, IMP, { conversas: 1, mensagens: 300 });
+    expect(primeira).toEqual({ status: "rodando", gravadas: 0, existentes: 0 });
+    expect(db.importacoes.get(IMP)).toMatchObject({
+      cursor: { indiceConversa: 1, offsetMensagens: 0 },
+      mensagens_ignoradas: 1,
+      erro: null,
+    });
+    expect(db.rpcs.filter((x) => x.fn === "fn_upsert_wa_contact")).toHaveLength(0);
+
+    expect(await rodarUmaRodada(db.admin as never, IMP, SEM_TETO)).toEqual({ status: "concluida", gravadas: 4, existentes: 0 });
+    expect(db.importacoes.get(IMP)).toMatchObject({ status: "concluida", mensagens_gravadas: 4, mensagens_ignoradas: 3, erro: null });
+    expect(db.messages.map((m) => m.external_id).sort()).toEqual([`false_${TEL}_A1`, "A2", `false_${LID}_B1`, "B2"].sort());
+    const contatos = db.rpcs.filter((x) => x.fn === "fn_upsert_wa_contact").map((x) => x.args);
+    expect(contatos).toContainEqual(expect.objectContaining({ p_kind: "phone", p_phone: "+5511900000001" }));
+    expect(contatos).toContainEqual(expect.objectContaining({ p_kind: "lid", p_lid: "111111111111111", p_phone: "+5511900000002" }));
+    expect(contatos.every((c) => c.p_chat_id !== chat)).toBe(true);
+    expect(espioes.dispatch).not.toHaveBeenCalled();
+    expect(espioes.posEntrada).not.toHaveBeenCalled();
+  });
+
   it("grava contato, conversa e mensagens marcadas como histórico, e conclui", async () => {
     const db = bancoDeMentira();
     novaImportacao(db);
@@ -688,5 +781,193 @@ describe("rodarUmaRodada", () => {
     expect(imp.status).toBe("cancelada");
     expect(imp.cursor).toEqual({});
     expect(imp.mensagens_gravadas).toBe(0);
+  });
+});
+
+/** Escopo `so_crm`, janela com fim e origem da queda (Spec 32 §1, §2 e §3). */
+describe("rodarUmaRodada: escopo, janela e origem da queda (Spec 32)", () => {
+  const iso = (segundos: number) => new Date(segundos * 1000).toISOString();
+  const FICHA_TEL = {
+    id: "ct-ana",
+    organization_id: ORG,
+    phone_number: "+5511900000001",
+    wa_lid: null,
+    is_merged_into: null,
+    is_anonymized: false,
+  };
+
+  it("so_crm: só o chat com ficha entra, e a ficha nunca é criada (fn_upsert_wa_contact fora)", async () => {
+    const db = bancoDeMentira();
+    db.fichas.push(FICHA_TEL);
+    novaImportacao(db, { escopo: "so_crm" });
+    const r = await rodarUmaRodada(db.admin as never, IMP, SEM_TETO);
+
+    expect(r.status).toBe("concluida");
+    expect(new Set(db.messages.map((m) => m.external_id))).toEqual(new Set([`false_${TEL}_A1`, "A2"]));
+    expect(db.rpcs.some((x) => x.fn === "fn_upsert_wa_contact")).toBe(false);
+    const conversas = db.rpcs.filter((x) => x.fn === "fn_upsert_wa_conversation_importada");
+    expect(conversas).toEqual([expect.objectContaining({ args: expect.objectContaining({ p_contact: "ct-ana" }) })]);
+    // TEL: o reação e a mensagem sem id; LID (sem ficha): as 2 da 1ª página.
+    expect(db.importacoes.get(IMP)).toMatchObject({ mensagens_ignoradas: 4, mensagens_gravadas: 2 });
+    // Sabotagem: chamar fn_upsert_wa_contact no so_crm faz este caso ficar vermelho.
+  });
+
+  it("so_crm: casa pelo @lid da ficha, e pelo telefone que a mensagem traz (remoteJidAlt)", async () => {
+    const db = bancoDeMentira();
+    db.fichas.push({ id: "ct-lid", organization_id: ORG, phone_number: null, wa_lid: "111111111111111", is_merged_into: null, is_anonymized: false });
+    novaImportacao(db, { escopo: "so_crm" });
+    await rodarUmaRodada(db.admin as never, IMP, SEM_TETO);
+    expect(db.messages.map((m) => m.external_id)).toEqual([`false_${LID}_B1`, "B2"]);
+
+    const db2 = bancoDeMentira();
+    db2.fichas.push({ id: "ct-alt", organization_id: ORG, phone_number: "+5511900000002", wa_lid: null, is_merged_into: null, is_anonymized: false });
+    novaImportacao(db2, { escopo: "so_crm" });
+    await rodarUmaRodada(db2.admin as never, IMP, SEM_TETO);
+    expect(db2.messages.map((m) => m.external_id)).toEqual([`false_${LID}_B1`, "B2"]);
+    // Sabotagem: ignorar o remoteJidAlt na lista de telefones deixa a 2ª conversa de fora.
+  });
+
+  it("so_crm: ficha mesclada, anonimizada ou de OUTRA organização não entra", async () => {
+    const db = bancoDeMentira();
+    db.fichas.push(
+      { id: "m", organization_id: ORG, phone_number: "+5511900000001", wa_lid: null, is_merged_into: "outra", is_anonymized: false },
+      { id: "a", organization_id: ORG, phone_number: "+5511900000001", wa_lid: null, is_merged_into: null, is_anonymized: true },
+      { id: "o", organization_id: "org-2", phone_number: "+5511900000001", wa_lid: null, is_merged_into: null, is_anonymized: false },
+    );
+    novaImportacao(db, { escopo: "so_crm" });
+    const r = await rodarUmaRodada(db.admin as never, IMP, SEM_TETO);
+    expect(r.status).toBe("concluida");
+    expect(db.messages).toHaveLength(0);
+    expect(db.conversations.size).toBe(0);
+    // Sabotagem: tirar o filtro de organização ou de fundido faz a ficha errada entrar.
+  });
+
+  it("so_crm: chat sem ficha não gasta o teto de conversas (a ficha entra na 1ª rodada)", async () => {
+    const dez = Array.from({ length: 10 }, (_, i) => ({ id: `${500 + i}@c.us`, ultimaEm: agora - DIA }));
+    canal.chats = [...dez, { id: TEL, ultimaEm: agora - DIA }];
+    canal.mensagens = Object.fromEntries([
+      ...dez.map((c) => [c.id, [{ id: `false_${c.id}_X`, from: c.id, fromMe: false, body: "oi", timestamp: agora - DIA }]]),
+      [TEL, canal.mensagens[TEL]],
+    ]);
+    const db = bancoDeMentira();
+    db.fichas.push(FICHA_TEL);
+    novaImportacao(db, { escopo: "so_crm" });
+    const r = await rodarUmaRodada(db.admin as never, IMP, { conversas: 1, mensagens: 300, chamadas: 1000 });
+
+    expect(r.status).toBe("rodando");
+    expect(db.messages.map((m) => m.external_id)).toContain(`false_${TEL}_A1`);
+    // Sabotagem: contar o chat ignorado no teto de conversas faz a ficha ficar para a 2ª rodada.
+  });
+
+  it("so_crm: erro na consulta de ficha termina a rodada em erro, sem criar nada (falha fechada)", async () => {
+    const db = bancoDeMentira();
+    db.falharNasFichas("fichas indisponiveis");
+    novaImportacao(db, { escopo: "so_crm" });
+    const r = await rodarUmaRodada(db.admin as never, IMP, SEM_TETO);
+    expect(r.status).toBe("erro");
+    expect(db.importacoes.get(IMP)).toMatchObject({ status: "erro" });
+    expect(String(db.importacoes.get(IMP)!.erro)).toContain("fichas_do_crm");
+    expect(db.messages).toHaveLength(0);
+    expect(db.rpcs.some((x) => x.fn === "fn_upsert_wa_contact")).toBe(false);
+    // Sabotagem: devolver null no erro (em vez de lançar) deixa esta rodada 'concluida' sem ninguém.
+  });
+
+  it("janela com fim: mensagem a partir de `ate` não grava, mas o cursor avança por ela", async () => {
+    const db = bancoDeMentira();
+    novaImportacao(db, { dias: null, desde: iso(agora - 5 * DIA), ate: iso(agora - 2 * DIA - 500) });
+    const r = await rodarUmaRodada(db.admin as never, IMP, SEM_TETO);
+    expect(r.status).toBe("concluida");
+    expect(db.messages.map((m) => m.external_id).sort()).toEqual([`false_${TEL}_A1`, `false_${LID}_B1`, "B2"].sort());
+    expect(db.importacoes.get(IMP)).toMatchObject({ mensagens_gravadas: 3, status: "concluida" });
+    // Sabotagem: deixar `ate` de fora (ou filtrar antes de contar em lidas) faz A2 entrar ou o offset repetir.
+  });
+
+  it("origem da queda: chama os efeitos 1 vez por recebida nova; enviada e já existente não chamam", async () => {
+    const db = bancoDeMentira();
+    db.webhookAntesDoInsert({ organization_id: ORG, external_id: `false_${TEL}_A1` });
+    novaImportacao(db, { origem: "queda", dias: null, desde: iso(agora - 5 * DIA), ate: iso(agora + DIA) });
+    await rodarUmaRodada(db.admin as never, IMP, SEM_TETO);
+
+    // A1 já existia (webhook); A2 e B2 são enviadas pelo aparelho; sobra só B1.
+    expect(espioes.recuperacao).toHaveBeenCalledTimes(1);
+    expect(espioes.recuperacao).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        organizationId: ORG,
+        channelSessionId: SESSAO,
+        origem: "historico_queda",
+        texto: "bom dia",
+        enviadaEm: iso(agora - 5 * DIA),
+        previa: "bom dia",
+      }),
+    );
+    expect(espioes.posEntrada).not.toHaveBeenCalled();
+    // Sabotagem: chamar também para fromMe, ou para as já existentes, faz a contagem passar de 1.
+  });
+
+  it("origem manual nunca chama os efeitos da queda, nem avisa a Central", async () => {
+    const db = bancoDeMentira();
+    novaImportacao(db);
+    await rodarUmaRodada(db.admin as never, IMP, SEM_TETO);
+    expect(espioes.recuperacao).not.toHaveBeenCalled();
+    expect(avisos.cliente).not.toHaveBeenCalled();
+    expect(avisos.resumo).not.toHaveBeenCalled();
+    expect(avisos.fechar).not.toHaveBeenCalled();
+    // Sabotagem: chamar os efeitos sem olhar a origem faz este caso ficar vermelho.
+  });
+
+  it("fim da queda concluída: quem ficou sem resposta (última 'in') vai à Central; o resumo sai com a contagem", async () => {
+    canal.mensagens = {
+      [TEL]: [
+        { id: `false_${TEL}_A1`, from: TEL, fromMe: false, body: "oi", timestamp: agora - 3 * DIA, _data: { pushName: "Ana" } },
+        { id: `true_${TEL}_A2`, from: "5511999999999@c.us", to: TEL, fromMe: true, body: "olá", timestamp: agora - 2 * DIA },
+      ],
+      [LID]: [
+        { id: `false_${LID}_B1`, from: LID, fromMe: false, body: "bom dia", timestamp: agora - 5 * DIA, _data: { key: { remoteJidAlt: "5511900000002@s.whatsapp.net" } } },
+        { id: `false_${LID}_B2`, from: LID, fromMe: false, body: "tudo bem?", timestamp: agora - 4 * DIA, _data: { key: { remoteJidAlt: "5511900000002@s.whatsapp.net" } } },
+      ],
+    };
+    const db = bancoDeMentira();
+    novaImportacao(db, { origem: "queda", dias: null, desde: iso(agora - 5 * DIA), ate: iso(agora + DIA) });
+    const r = await rodarUmaRodada(db.admin as never, IMP, SEM_TETO);
+    expect(r.status).toBe("concluida");
+
+    // TEL acabou com a equipe (última 'out'): sem aviso. LID acabou com o cliente (última 'in'): aviso.
+    expect(avisos.cliente).toHaveBeenCalledTimes(1);
+    expect(avisos.cliente).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ organizationId: ORG, contactId: "ct-2" }));
+    expect(avisos.resumo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ motivo: "concluida", mensagens: 4, conversas: 2, channelSessionId: SESSAO }),
+    );
+    expect(avisos.fechar).not.toHaveBeenCalled();
+    expect(Object.keys((db.importacoes.get(IMP)!.cursor as { tocadas: object }).tocadas)).toHaveLength(2);
+    // Sabotagem: avisar todas as conversas (e não só a 'in') faz o `toHaveBeenCalledTimes(1)` ficar vermelho.
+  });
+
+  it("fim da queda sem nada gravado: só fecha o resumo aberto, sem aviso de cliente", async () => {
+    canal.mensagens = {};
+    const db = bancoDeMentira();
+    novaImportacao(db, { origem: "queda", dias: null, desde: iso(agora - 5 * DIA), ate: iso(agora + DIA) });
+    const r = await rodarUmaRodada(db.admin as never, IMP, SEM_TETO);
+    expect(r).toEqual({ status: "concluida", gravadas: 0, existentes: 0 });
+    expect(avisos.fechar).toHaveBeenCalledTimes(1);
+    expect(avisos.resumo).not.toHaveBeenCalled();
+    expect(avisos.cliente).not.toHaveBeenCalled();
+    // Sabotagem: abrir o resumo mesmo com 0 mensagens faz o `not.toHaveBeenCalled` ficar vermelho.
+  });
+
+  it("fim da queda com erro: o resumo sai com motivo 'erro' e o erro resumido (sem o nome do provedor)", async () => {
+    canal.falha = "waha caiu no meio";
+    const db = bancoDeMentira();
+    novaImportacao(db, { origem: "queda", dias: null, desde: iso(agora - 5 * DIA), ate: iso(agora + DIA) });
+    const r = await rodarUmaRodada(db.admin as never, IMP, SEM_TETO);
+    expect(r.status).toBe("erro");
+    expect(avisos.resumo).toHaveBeenCalledWith(
+      expect.anything(),
+      // `resumirErroDaImportacao`: o aviso do administrador não mostra o nome do provedor.
+      expect.objectContaining({ motivo: "erro", erro: expect.stringContaining("canal caiu no meio") }),
+    );
+    expect(avisos.cliente).not.toHaveBeenCalled();
+    // Sabotagem: avisar o cliente também no erro faz o `not.toHaveBeenCalled` ficar vermelho.
   });
 });

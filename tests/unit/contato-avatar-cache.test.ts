@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
 
 /**
  * Cache do redirect da foto de perfil — GET /api/v1/contacts/{id}/avatar.
@@ -65,6 +66,11 @@ vi.mock("@/lib/auth/server", () => ({
   orgAtivaSemPortao: async () => orgAtiva,
 }));
 
+// Cliente de sessão da nova conferência RLS; a autorização tem teste próprio na rota.
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: async () => ({ from: () => ({ select: () => chain() }) }),
+}));
+
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
     from: () => ({ select: () => chain() }),
@@ -74,8 +80,16 @@ vi.mock("@/lib/supabase/admin", () => ({
 
 const { GET } = await import("@/app/api/v1/contacts/[id]/avatar/route");
 
+/**
+ * A rota lê o cabeçalho `authorization` para escolher a porta (sessão do
+ * navegador OU chave de integração, #3420), então `req` precisa ser um
+ * `NextRequest` de verdade — o `{}` de antes não tinha `headers`. Sem
+ * cabeçalho nenhum: este arquivo prova o caminho do NAVEGADOR.
+ */
 function chamar(id = "contato-1") {
-  return GET({} as never, { params: Promise.resolve({ id }) });
+  return GET(new NextRequest(`http://localhost/api/v1/contacts/${id}/avatar`), {
+    params: Promise.resolve({ id }),
+  });
 }
 
 describe("GET /api/v1/contacts/{id}/avatar — cache do redirect", () => {

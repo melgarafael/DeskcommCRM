@@ -16,10 +16,22 @@
  *
  * 1. `external.google: false` → NÃO chama `redirect`, nem `signInWithOAuth`:
  *    devolve `google_indisponivel`, que é o que a tela transforma na mensagem.
- * 2. `external.google: true` → o redirect continua IDÊNTICO ao de antes
- *    (controle: sem ele, "nunca redireciona" ficaria verde e trancava o login).
+ * 2. `external.google: true` → devolve a URL do Google para a TELA navegar
+ *    (controle: sem ele, "nunca sai do CRM" ficaria verde e trancava o login).
  * 3. Leitura que FALHA (rede, HTTP 500, campo ausente) → comportamento de
- *    sempre, redirect incluído: falta de rede não prova provedor desligado.
+ *    sempre, URL incluída: falta de rede não prova provedor desligado.
+ *
+ * ─── Por que a action NÃO chama `redirect()` ────────────────────────────────
+ *
+ * Quando o Supabase responde no MESMO domínio do app (o Traefik/Caddy manda
+ * `/auth/v1` para o gateway — é o caso do `Caddyfile.single-server`), a URL do
+ * `/authorize` é same-origin. O `redirect()` de server action vira então
+ * navegação INTERNA do roteador do Next: a barra mostra `/auth/v1/authorize`,
+ * nenhum pedido sai para o GoTrue e a tela de login fica parada até alguém
+ * recarregar. Medido em produção (crm.seax.com.br, 29/10/2026): a resposta da
+ * action trazia `x-action-redirect` e o navegador nunca pediu `/authorize`.
+ * Quem navega é a tela, com `window.location.assign`, que é sempre carga
+ * completa — qualquer que seja o domínio do Supabase.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -95,32 +107,33 @@ describe("signInWithGoogle com o provedor Google desligado", () => {
     );
   });
 
-  it("CONTROLE — provedor LIGADO: o redirect continua idêntico ao de antes", async () => {
+  it("CONTROLE — provedor LIGADO: devolve a URL do Google, sem redirect() do roteador", async () => {
     stubFetch(settings({ external: { google: true }, disable_signup: false }));
 
     const { signInWithGoogle } = await import("./signInWithGoogle");
     const res = await signInWithGoogle({ next: "/app/inbox" });
 
-    // `redirect` (mockado) não lança, então a action devolve `undefined`.
-    expect(res).toBeUndefined();
+    expect(res).toEqual({ ok: true, url: URL_GOOGLE });
     expect(signInWithOAuth).toHaveBeenCalledTimes(1);
     expect(signInWithOAuth).toHaveBeenCalledWith({
       provider: "google",
       options: { redirectTo: expect.stringContaining("/auth/callback") },
     });
-    expect(redirect).toHaveBeenCalledWith(URL_GOOGLE);
+    // `redirect()` de server action para URL same-origin vira navegação interna
+    // do Next e trava a tela (ver cabeçalho). Quem navega é a tela.
+    expect(redirect).not.toHaveBeenCalled();
   });
 });
 
 describe("a leitura das settings falha — o comportamento é o de sempre", () => {
-  it("⭐ rede fora do ar: segue para o redirect, sem inventar provedor desligado", async () => {
+  it("⭐ rede fora do ar: segue para o Google, sem inventar provedor desligado", async () => {
     stubFetch(new TypeError("fetch failed"));
 
     const { signInWithGoogle } = await import("./signInWithGoogle");
-    await signInWithGoogle();
+    const res = await signInWithGoogle();
 
     expect(signInWithOAuth).toHaveBeenCalledTimes(1);
-    expect(redirect).toHaveBeenCalledWith(URL_GOOGLE);
+    expect(res).toEqual({ ok: true, url: URL_GOOGLE });
   });
 
   it.each([
@@ -131,9 +144,9 @@ describe("a leitura das settings falha — o comportamento é o de sempre", () =
     stubFetch(resposta);
 
     const { signInWithGoogle } = await import("./signInWithGoogle");
-    await signInWithGoogle();
+    const res = await signInWithGoogle();
 
     expect(signInWithOAuth).toHaveBeenCalledTimes(1);
-    expect(redirect).toHaveBeenCalledWith(URL_GOOGLE);
+    expect(res).toEqual({ ok: true, url: URL_GOOGLE });
   });
 });

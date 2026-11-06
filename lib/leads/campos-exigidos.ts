@@ -133,10 +133,23 @@ interface EntradaDeCampos {
    * As chaves de campo `file` que TÊM anexo em `crm_lead_attachments` (#3229) —
    * de `camposComAnexo()`. Campo de arquivo não se lê de `custom_fields`: a
    * lista lá seria uma segunda fonte, e um `custom_fields` forjado passaria a
-   * régua sem arquivo nenhum. Ausente = nenhum anexo (o negócio que ainda vai
-   * nascer, na criação e no clone, não tem como ter).
+   * régua sem arquivo nenhum. Ausente = nenhum anexo — e por isso a CRIAÇÃO
+   * precisa da opção abaixo: o negócio que ainda vai nascer não tem como ter
+   * anexo, e sem `semAnexosAinda` a exigência vira impossibilidade (#3433).
    */
   camposComAnexo?: ReadonlySet<string> | null;
+  /**
+   * A CRIAÇÃO de um negócio: o anexo é do negócio (`crm_lead_attachments.lead_id`)
+   * e só pode ser enviado DEPOIS que ele existe, então o campo `file` não é
+   * cobrado aqui (#3433). Volta a ser cobrado no próximo move, no lote ou no
+   * fechamento, onde o servidor lê os anexos de verdade (`camposComAnexo`).
+   *
+   * Só os caminhos de criação passam esta opção (`createLeadHandler` e o
+   * `NewLeadDialog`). Ela é explícita de propósito: um padrão "ausente = pula"
+   * teria afrouxado o move em silêncio, que é o caminho em que o arquivo PODE
+   * existir.
+   */
+  semAnexosAinda?: boolean;
 }
 
 /** `undefined`/`null`/branco/array vazio são ausência; `false` e `0` são resposta. */
@@ -265,6 +278,11 @@ export function validaCamposExigidos(entrada: EntradaDeCampos): VereditoDeCampos
     // que a tela escondeu transformaria "esconder" em "travar". O valor que
     // ele já tinha continua no lead — esta função só decide se PERGUNTA.
     if (!visiveis.has(campo.key)) continue;
+    // A CRIAÇÃO não cobra o arquivo (#3433): o anexo é do negócio que ainda vai
+    // nascer. Sem esta linha o campo `file` conta sempre como vazio na criação
+    // (não há `camposComAnexo` para ler) e a etapa que exige documento vira
+    // impossível de entrar — nem pela tela, nem pela API, nem pela captação.
+    if (campo.type === "file" && entrada.semAnexosAinda) continue;
     const preenchido =
       campo.type === "file"
         ? (entrada.camposComAnexo?.has(campo.key) ?? false)

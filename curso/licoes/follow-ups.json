@@ -309,16 +309,24 @@
               "acao": "aguardar",
               "alvo": {
                 "role": "option",
-                "nome": "Em tratamento · Pacientes",
-                "exato": true
+                "nome": "Em tratamento",
+                "dentro": {
+                  "role": "group",
+                  "nome": "Pacientes",
+                  "exato": true
+                }
               }
             },
             {
               "acao": "hover",
               "alvo": {
                 "role": "option",
-                "nome": "Em tratamento · Pacientes",
-                "exato": true
+                "nome": "Em tratamento",
+                "dentro": {
+                  "role": "group",
+                  "nome": "Pacientes",
+                  "exato": true
+                }
               }
             }
           ],
@@ -326,8 +334,12 @@
             {
               "alvo": {
                 "role": "option",
-                "nome": "Em tratamento · Pacientes",
-                "exato": true
+                "nome": "Em tratamento",
+                "dentro": {
+                  "role": "group",
+                  "nome": "Pacientes",
+                  "exato": true
+                }
               },
               "rotulo": "Etapa escolhida",
               "tipo": "seta"
@@ -335,8 +347,12 @@
           ],
           "clicar": {
             "role": "option",
-            "nome": "Em tratamento · Pacientes",
-            "exato": true
+            "nome": "Em tratamento",
+            "dentro": {
+              "role": "group",
+              "nome": "Pacientes",
+              "exato": true
+            }
           }
         },
         {
@@ -349,8 +365,12 @@
               "acao": "click",
               "alvo": {
                 "role": "option",
-                "nome": "Em tratamento · Pacientes",
-                "exato": true
+                "nome": "Em tratamento",
+                "dentro": {
+                  "role": "group",
+                  "nome": "Pacientes",
+                  "exato": true
+                }
               }
             },
             {
@@ -1238,17 +1258,23 @@
             {
               "acao": "aguardar",
               "alvo": {
-                "role": "button",
-                "nome": "Cancelar retorno",
-                "exato": true
+                "testid": "cancelar-item-da-fila",
+                "dentro": {
+                  "role": "row",
+                  "nome": "Pedro Henrique Lima",
+                  "regex": true
+                }
               }
             },
             {
               "acao": "click",
               "alvo": {
-                "role": "button",
-                "nome": "Cancelar retorno",
-                "exato": true
+                "testid": "cancelar-item-da-fila",
+                "dentro": {
+                  "role": "row",
+                  "nome": "Pedro Henrique Lima",
+                  "regex": true
+                }
               }
             },
             {

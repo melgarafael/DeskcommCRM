@@ -1,0 +1,24 @@
+{
+  "synthetic": true,
+  "recorded_at": "2026-10-26T19:22:31.053270+00:00",
+  "project": "codex3475-01a178b3",
+  "app_pids_stopped": [
+    2752355,
+    2752368
+  ],
+  "llm_pid_stopped": 3171263,
+  "supabase_stop": "--project-id codex3475-01a178b3 --no-backup; RC0",
+  "redis_removed": [
+    "3e9ae7786751",
+    "de1ab944eee2"
+  ],
+  "network_removed": "codex3475-01a178b3-redis",
+  "containers_and_volumes_with_owned_prefix_remaining": 0,
+  "owned_listeners_remaining": 0,
+  "course_containers_running": 7,
+  "mem_available_mib_after": 6011,
+  "limits": [
+    "Nenhum prune/contexto Docker global; recursos alheios preservados.",
+    "Timestamp desta ficha é a consolidação do marco observado nos comandos, não medição do instante de cada kill."
+  ]
+}

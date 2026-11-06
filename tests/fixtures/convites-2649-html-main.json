@@ -1,0 +1,97 @@
+{
+  "origem": "origin/main 028b40c118af6346c759186a40a67bdcf3748b63 antes da adaptação #2649; entradas sintéticas",
+  "casos": [
+    {
+      "tipo": "convite",
+      "marca": {
+        "nome": "Marca & Parceiros",
+        "logoUrl": null,
+        "accent": "#2f6f4e",
+        "accentFg": "#ffffff",
+        "origens": {
+          "nome": "banco",
+          "cor": "banco"
+        }
+      },
+      "esperado": {
+        "subject": "Ana convidou você para a Equipe sintética no Marca & Parceiros",
+        "html": "<!doctype html>\n<html lang=\"pt-BR\">\n<body style=\"margin:0;padding:0;background:#faf9f6;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#1c1a16\">\n  <div style=\"max-width:560px;margin:0 auto;padding:32px 24px\">\n    \n    <h1 style=\"font-size:22px;line-height:1.3;margin:0 0 16px;color:#1c1a16\">\n      Você foi convidado para a Equipe sintética\n    </h1>\n    <p style=\"margin:0 0 16px;font-size:15px;line-height:1.5\">\n      Ana convidou você como\n      <strong>Atendente</strong> no Marca &amp; Parceiros.\n    </p>\n    <p style=\"margin:24px 0\">\n      <a href=\"https://crm.example.test/team/accept-invite/token\" style=\"display:inline-block;padding:12px 24px;background:#2f6f4e;color:#ffffff;border-radius:6px;text-decoration:none;font-weight:600\">\n        Aceitar convite\n      </a>\n    </p>\n    <p style=\"margin:0 0 8px;font-size:13px;color:#7d786c\">\n      Ou copie e cole este link no navegador:<br>\n      <span style=\"word-break:break-all;color:#2f6f4e\">https://crm.example.test/team/accept-invite/token</span>\n    </p>\n    <p style=\"margin:24px 0 0;font-size:13px;color:#7d786c\">\n      Este link expira em <strong>01/11/2026, 09:00:00</strong>. Se você não esperava este convite, pode ignorá-lo.\n    </p>\n  </div>\n</body>\n</html>",
+        "text": "Você foi convidado para a Equipe sintética como Atendente no Marca & Parceiros.\n\nAceitar: https://crm.example.test/team/accept-invite/token\n\nExpira em 01/11/2026, 09:00:00."
+      }
+    },
+    {
+      "tipo": "confirmation",
+      "marca": {
+        "nome": "Marca & Parceiros",
+        "logoUrl": null,
+        "accent": "#2f6f4e",
+        "accentFg": "#ffffff",
+        "origens": {
+          "nome": "banco",
+          "cor": "banco"
+        }
+      },
+      "esperado": "<!doctype html>\n<html lang=\"pt-BR\">\n<body style=\"margin:0;padding:0;background:#faf9f6;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#1c1a16\">\n  <div style=\"max-width:560px;margin:0 auto;padding:32px 24px\">\n    \n    <h1 style=\"font-size:22px;line-height:1.3;margin:0 0 16px;color:#1c1a16\">\n      Confirme seu e-mail\n    </h1>\n    <p style=\"margin:0 0 16px;font-size:15px;line-height:1.5\">\n      Sua conta no Marca &amp; Parceiros está quase pronta. Clique no botão abaixo para confirmar seu e-mail e ativar sua conta.\n    </p>\n    <p style=\"margin:24px 0\">\n      <a href=\"{{ .RedirectTo }}&token_hash={{ .TokenHash }}\" style=\"display:inline-block;padding:12px 24px;background:#2f6f4e;color:#ffffff;border-radius:6px;text-decoration:none;font-weight:600\">\n        Confirmar e-mail\n      </a>\n    </p>\n    <p style=\"margin:0 0 8px;font-size:13px;color:#7d786c\">\n      Ou copie e cole este link no navegador:<br>\n      <span style=\"word-break:break-all;color:#2f6f4e\">{{ .RedirectTo }}&token_hash={{ .TokenHash }}</span>\n    </p>\n    <p style=\"margin:24px 0 0;font-size:13px;color:#7d786c\">\n      Se você não criou esta conta, ignore este e-mail.\n    </p>\n  </div>\n</body>\n</html>"
+    },
+    {
+      "tipo": "recovery",
+      "marca": {
+        "nome": "Marca & Parceiros",
+        "logoUrl": null,
+        "accent": "#2f6f4e",
+        "accentFg": "#ffffff",
+        "origens": {
+          "nome": "banco",
+          "cor": "banco"
+        }
+      },
+      "esperado": "<!doctype html>\n<html lang=\"pt-BR\">\n<body style=\"margin:0;padding:0;background:#faf9f6;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#1c1a16\">\n  <div style=\"max-width:560px;margin:0 auto;padding:32px 24px\">\n    \n    <h1 style=\"font-size:22px;line-height:1.3;margin:0 0 16px;color:#1c1a16\">\n      Redefinir sua senha\n    </h1>\n    <p style=\"margin:0 0 16px;font-size:15px;line-height:1.5\">\n      Recebemos um pedido para redefinir a senha da sua conta no Marca &amp; Parceiros. Clique no botão abaixo para escolher uma nova.\n    </p>\n    <p style=\"margin:24px 0\">\n      <a href=\"{{ .RedirectTo }}&token_hash={{ .TokenHash }}\" style=\"display:inline-block;padding:12px 24px;background:#2f6f4e;color:#ffffff;border-radius:6px;text-decoration:none;font-weight:600\">\n        Definir nova senha\n      </a>\n    </p>\n    <p style=\"margin:0 0 8px;font-size:13px;color:#7d786c\">\n      Ou copie e cole este link no navegador:<br>\n      <span style=\"word-break:break-all;color:#2f6f4e\">{{ .RedirectTo }}&token_hash={{ .TokenHash }}</span>\n    </p>\n    <p style=\"margin:24px 0 0;font-size:13px;color:#7d786c\">\n      Se não foi você quem pediu, ignore este e-mail — sua senha continua a mesma.\n    </p>\n  </div>\n</body>\n</html>"
+    },
+    {
+      "tipo": "convite",
+      "marca": {
+        "nome": "Marca & Parceiros",
+        "logoUrl": "https://cdn.example.test/logo.png?a=1&b=2",
+        "accent": "#2f6f4e",
+        "accentFg": "#ffffff",
+        "origens": {
+          "nome": "banco",
+          "cor": "banco"
+        }
+      },
+      "esperado": {
+        "subject": "Ana convidou você para a Equipe sintética no Marca & Parceiros",
+        "html": "<!doctype html>\n<html lang=\"pt-BR\">\n<body style=\"margin:0;padding:0;background:#faf9f6;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#1c1a16\">\n  <div style=\"max-width:560px;margin:0 auto;padding:32px 24px\">\n    <p style=\"margin:0 0 24px\"><img src=\"https://cdn.example.test/logo.png?a=1&amp;b=2\" alt=\"Marca &amp; Parceiros\" height=\"40\" style=\"height:40px;width:auto;max-width:200px;border:0;display:block\"></p>\n    <h1 style=\"font-size:22px;line-height:1.3;margin:0 0 16px;color:#1c1a16\">\n      Você foi convidado para a Equipe sintética\n    </h1>\n    <p style=\"margin:0 0 16px;font-size:15px;line-height:1.5\">\n      Ana convidou você como\n      <strong>Atendente</strong> no Marca &amp; Parceiros.\n    </p>\n    <p style=\"margin:24px 0\">\n      <a href=\"https://crm.example.test/team/accept-invite/token\" style=\"display:inline-block;padding:12px 24px;background:#2f6f4e;color:#ffffff;border-radius:6px;text-decoration:none;font-weight:600\">\n        Aceitar convite\n      </a>\n    </p>\n    <p style=\"margin:0 0 8px;font-size:13px;color:#7d786c\">\n      Ou copie e cole este link no navegador:<br>\n      <span style=\"word-break:break-all;color:#2f6f4e\">https://crm.example.test/team/accept-invite/token</span>\n    </p>\n    <p style=\"margin:24px 0 0;font-size:13px;color:#7d786c\">\n      Este link expira em <strong>01/11/2026, 09:00:00</strong>. Se você não esperava este convite, pode ignorá-lo.\n    </p>\n  </div>\n</body>\n</html>",
+        "text": "Você foi convidado para a Equipe sintética como Atendente no Marca & Parceiros.\n\nAceitar: https://crm.example.test/team/accept-invite/token\n\nExpira em 01/11/2026, 09:00:00."
+      }
+    },
+    {
+      "tipo": "confirmation",
+      "marca": {
+        "nome": "Marca & Parceiros",
+        "logoUrl": "https://cdn.example.test/logo.png?a=1&b=2",
+        "accent": "#2f6f4e",
+        "accentFg": "#ffffff",
+        "origens": {
+          "nome": "banco",
+          "cor": "banco"
+        }
+      },
+      "esperado": "<!doctype html>\n<html lang=\"pt-BR\">\n<body style=\"margin:0;padding:0;background:#faf9f6;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#1c1a16\">\n  <div style=\"max-width:560px;margin:0 auto;padding:32px 24px\">\n    <p style=\"margin:0 0 24px\"><img src=\"https://cdn.example.test/logo.png?a=1&amp;b=2\" alt=\"Marca &amp; Parceiros\" height=\"40\" style=\"height:40px;width:auto;max-width:200px;border:0;display:block\"></p>\n    <h1 style=\"font-size:22px;line-height:1.3;margin:0 0 16px;color:#1c1a16\">\n      Confirme seu e-mail\n    </h1>\n    <p style=\"margin:0 0 16px;font-size:15px;line-height:1.5\">\n      Sua conta no Marca &amp; Parceiros está quase pronta. Clique no botão abaixo para confirmar seu e-mail e ativar sua conta.\n    </p>\n    <p style=\"margin:24px 0\">\n      <a href=\"{{ .RedirectTo }}&token_hash={{ .TokenHash }}\" style=\"display:inline-block;padding:12px 24px;background:#2f6f4e;color:#ffffff;border-radius:6px;text-decoration:none;font-weight:600\">\n        Confirmar e-mail\n      </a>\n    </p>\n    <p style=\"margin:0 0 8px;font-size:13px;color:#7d786c\">\n      Ou copie e cole este link no navegador:<br>\n      <span style=\"word-break:break-all;color:#2f6f4e\">{{ .RedirectTo }}&token_hash={{ .TokenHash }}</span>\n    </p>\n    <p style=\"margin:24px 0 0;font-size:13px;color:#7d786c\">\n      Se você não criou esta conta, ignore este e-mail.\n    </p>\n  </div>\n</body>\n</html>"
+    },
+    {
+      "tipo": "recovery",
+      "marca": {
+        "nome": "Marca & Parceiros",
+        "logoUrl": "https://cdn.example.test/logo.png?a=1&b=2",
+        "accent": "#2f6f4e",
+        "accentFg": "#ffffff",
+        "origens": {
+          "nome": "banco",
+          "cor": "banco"
+        }
+      },
+      "esperado": "<!doctype html>\n<html lang=\"pt-BR\">\n<body style=\"margin:0;padding:0;background:#faf9f6;font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#1c1a16\">\n  <div style=\"max-width:560px;margin:0 auto;padding:32px 24px\">\n    <p style=\"margin:0 0 24px\"><img src=\"https://cdn.example.test/logo.png?a=1&amp;b=2\" alt=\"Marca &amp; Parceiros\" height=\"40\" style=\"height:40px;width:auto;max-width:200px;border:0;display:block\"></p>\n    <h1 style=\"font-size:22px;line-height:1.3;margin:0 0 16px;color:#1c1a16\">\n      Redefinir sua senha\n    </h1>\n    <p style=\"margin:0 0 16px;font-size:15px;line-height:1.5\">\n      Recebemos um pedido para redefinir a senha da sua conta no Marca &amp; Parceiros. Clique no botão abaixo para escolher uma nova.\n    </p>\n    <p style=\"margin:24px 0\">\n      <a href=\"{{ .RedirectTo }}&token_hash={{ .TokenHash }}\" style=\"display:inline-block;padding:12px 24px;background:#2f6f4e;color:#ffffff;border-radius:6px;text-decoration:none;font-weight:600\">\n        Definir nova senha\n      </a>\n    </p>\n    <p style=\"margin:0 0 8px;font-size:13px;color:#7d786c\">\n      Ou copie e cole este link no navegador:<br>\n      <span style=\"word-break:break-all;color:#2f6f4e\">{{ .RedirectTo }}&token_hash={{ .TokenHash }}</span>\n    </p>\n    <p style=\"margin:24px 0 0;font-size:13px;color:#7d786c\">\n      Se não foi você quem pediu, ignore este e-mail — sua senha continua a mesma.\n    </p>\n  </div>\n</body>\n</html>"
+    }
+  ]
+}

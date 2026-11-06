@@ -130,3 +130,23 @@ describe("sem IP identificável — o balde global que era um DoS", () => {
     expect(veredito).toEqual([false, false, true]);
   });
 });
+
+describe("mfaBloqueadoPorFalhas & registrarFalhaDeMfa", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("barra após 3 falhas de TOTP na mesma conta mesmo sem cookie e trocando de IP", async () => {
+    const { mfaBloqueadoPorFalhas, registrarFalhaDeMfa } = await import("./rate-limit");
+    const userId = "user-mfa-123";
+
+    for (let i = 0; i < 3; i++) {
+      comIp(`198.51.100.${50 + i}`);
+      expect(await mfaBloqueadoPorFalhas(userId)).toBe(false);
+      await registrarFalhaDeMfa(userId);
+    }
+
+    comIp("198.51.100.99");
+    expect(await mfaBloqueadoPorFalhas(userId)).toBe(true);
+  });
+});

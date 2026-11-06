@@ -21,6 +21,8 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/auth/server", () => ({
@@ -159,5 +161,37 @@ describe("GET /board — recorte de encerrados antigos (#2995)", () => {
     const { ids } = await quadroDoBoard();
 
     expect(ids).toEqual([]);
+  });
+});
+
+describe("GET /board — a ordem do quadro é ESTÁVEL (#3461)", () => {
+  /**
+   * Dois cards que empatam em `position_in_stage` (o lote antigo gravava a
+   * mesma posição em N linhas) saíam na ordem que o plano devolvesse — ordem
+   * que o Postgres não promete entre duas leituras. Na tela isso é o card
+   * trocando de lugar a cada render, sem ninguém arrastar.
+   *
+   * O desempate por `id` vive na TELA também (`compararNaEtapa`, coberto em
+   * `lib/kanban/entrada-na-etapa.test.ts`), mas o contrato do servidor é este:
+   * a leitura precisa PEDIR o desempate. Sem isso, o cliente recebe uma lista
+   * cuja ordem entre empatados já nasceu arbitrária, e comparador nenhum
+   * conserta — ele só reordena o que já veio.
+   *
+   * Prova o pedido, não a obediência do Postgres (`ORDER BY ... , id` é
+   * determinístico por definição).
+   */
+  it("a leitura do quadro pede `id` como desempate depois da posição", () => {
+    const fonte = readFileSync(
+      join(process.cwd(), "app/api/v1/pipelines/[id]/board/route.ts"),
+      "utf8",
+    );
+    // Os COMENTÁRIOS saem antes da medida: eles citam `.order("id")` para
+    // explicar a régua, e um comentário não ordena nada. Sem esta linha, apagar
+    // a chamada de verdade deixaria o caso verde — medido na sabotagem S3.
+    const codigo = fonte
+      .split("\n")
+      .filter((linha) => !linha.trim().startsWith("//"))
+      .join("\n");
+    expect(codigo).toMatch(/\.order\("position_in_stage"\)[\s\S]{0,200}\.order\("id"\)/);
   });
 });

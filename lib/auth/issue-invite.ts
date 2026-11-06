@@ -62,7 +62,7 @@ export async function issueInvite(input: {
   // Falhas de infraestrutura não desfazem a organização já criada nem o link.
   if (input.dispatch !== false) {
     try {
-      const marca = await marcaDaSaida(input.organizationId);
+      const marca = await marcaDaSaida(input.organizationId, { semMemo: true });
       const message = buildInviteEmail({
         inviterName: input.inviterName,
         orgName: input.orgName,

@@ -24,7 +24,7 @@
  * a tela mostra. O envio (`useSendMessage`) é um espião só para provar que o
  * clique NÃO envia.
  */
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -99,6 +99,8 @@ vi.mock("@/hooks/inbox/useUploadMedia", () => ({
   useUploadMedia: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
+  // Sem grupo (#3245): a barra e o slash-menu são os de antes dos grupos.
+  useGruposDeRespostas: () => ({ data: [] }),
   useMessageTemplates: () => ({ data: RECURSOS, isLoading: false }),
 }));
 vi.mock("@/hooks/inbox/useDraftReply", () => ({
@@ -118,7 +120,8 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({
 
 import { Composer } from "@/components/inbox/Composer";
 import { BarraDeRecursos } from "@/components/inbox/composer/BarraDeRecursos";
-import { ehRecursoDeAudio, recursosDaBarra, type Recurso } from "@/lib/inbox/recursos";
+import { recursosDaBarra, type Recurso } from "@/lib/inbox/recursos";
+import { lerRespostaRapidaGravada } from "@/lib/inbox/resposta-rapida";
 import {
   RECURSOS_VISIVEIS_RECOLHIDA,
   chaveDaBarra,
@@ -159,21 +162,23 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
 });
 
-describe("ehRecursoDeAudio (a régua do 🎧 da barra)", () => {
+describe("a régua do tipo (ex-`ehRecursoDeAudio`, #3009)", () => {
   it("quem decide é o CAMINHO, não o `media_mime` da linha", () => {
     // A coluna é gravável pelo PostgREST: um `.ogg` com `media_mime` mentiroso
     // continua sendo áudio (o caminho foi gravado pelo upload), e um `.jpg`
     // marcado como áudio continua sendo imagem.
     expect(
-      ehRecursoDeAudio({
+      lerRespostaRapidaGravada({
+        body: "",
         midias: [{ storage_path: AUDIO_PATH, media_mime: "image/jpeg", media_size_bytes: 1 }],
       }),
-    ).toBe(true);
+    ).toMatchObject({ ok: true, tipo: "audio", audios: 1, imagens: 0 });
     expect(
-      ehRecursoDeAudio({
+      lerRespostaRapidaGravada({
+        body: "Olha a tabela",
         midias: [{ storage_path: IMAGEM_PATH, media_mime: "audio/ogg", media_size_bytes: 1 }],
       }),
-    ).toBe(false);
+    ).toMatchObject({ ok: true, tipo: "texto+imagem", audios: 0, imagens: 1 });
   });
 });
 
@@ -380,5 +385,170 @@ describe("BarraDeRecursos — marcação e recolhimento na tela (#3282)", () => 
     gravarBarraAberta(window.localStorage, chaveDaBarra("u-1"), true);
     expect(lerBarraAberta(window.localStorage, chaveDaBarra("u-1"))).toBe(true);
     expect(lerBarraAberta(window.localStorage, chaveDaBarra("u-2"))).toBe(false);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * O RASCUNHO QUE JÁ ESTÁ NO CAMPO NÃO É APAGADO POR UM CLIQUE DA BARRA (#3354).
+ *
+ * O clique passa pelo `applyTemplate`, que ESCREVE POR CIMA do campo
+ * (`escreverNoCampo`) e, com mídia que aceita legenda, o ZERA (`setText("")`).
+ * O `/` não corre esse risco: o menu só abre quando o campo inteiro é o comando
+ * (`resolveSlash`), e o que ele troca é o próprio `/consulta`. A barra, sim: com
+ * uma frase escrita, um clique a apagava sem aviso e sem desfazer.
+ *
+ * Os casos (a), (b), (d) e (f) acima clicam na barra com o campo VAZIO — por
+ * isso nenhum deles via isso.
+ * ══════════════════════════════════════════════════════════════════════════════ */
+describe("Composer + recursos pré-prontos: o rascunho que já está no campo (#3354)", () => {
+  const RASCUNHO = "Oi Ana, já confirmo o horário com a equipe";
+  const DICA_DE_SEMPRE = "Prepara no compositor — você revisa e envia";
+
+  function escrever(valor: string) {
+    const campo = screen.getByLabelText(/mensagem/i);
+    fireEvent.change(campo, { target: { value: valor } });
+    return campo;
+  }
+
+  it("(g) recurso de TEXTO com rascunho: o rascunho fica, e o botão diz por que está desligado", () => {
+    renderComposer();
+    const campo = escrever(RASCUNHO);
+
+    const botao = screen.getByRole("button", { name: /boas vindas/i });
+    fireEvent.click(botao);
+
+    // O que importa a quem atende: a frase escrita continua ali.
+    expect(campo).toHaveValue(RASCUNHO);
+    expect(botao).toBeDisabled();
+    expect(botao).toHaveAttribute("title", expect.stringContaining("substitui o texto do campo"));
+
+    // Enviou ou apagou o rascunho: a barra volta a valer.
+    escrever("");
+    expect(botao).toBeEnabled();
+  });
+
+  it.each([
+    ["IMAGEM", /tabela de preços/i],
+    ["ÁUDIO", /áudio preço/i],
+  ])(
+    "(h) recurso de %s com rascunho: o campo não é zerado e nada entra na fila",
+    async (_, nome) => {
+      renderComposer();
+      const campo = escrever(RASCUNHO);
+
+      fireEvent.click(screen.getByRole("button", { name: nome }));
+      // A mídia chega depois do `fetch` dos bytes: dá a vez a ele antes de olhar.
+      await act(async () => {
+        await new Promise((resolver) => setTimeout(resolver, 0));
+      });
+
+      expect(campo).toHaveValue(RASCUNHO);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining("/midias/"));
+    },
+  );
+
+  it("(i) campo vazio ou só com o `/` em curso: a barra segue ligada e troca o comando, como o menu", () => {
+    renderComposer();
+    const botao = screen.getByRole("button", { name: /boas vindas/i });
+    expect(botao).toBeEnabled();
+
+    escrever("/boa");
+    expect(botao).toBeEnabled();
+    fireEvent.click(botao);
+    expect(screen.getByLabelText(/mensagem/i)).toHaveValue("Oi Ana, tudo bem?");
+  });
+
+  it("(j) resposta barrada com texto no campo: a dica não manda apagar o que o campo travado não deixa", () => {
+    // O texto sugerido por integração (#1611) entra pelo `initialDraft`, e a
+    // janela de 24h pode estar fechada: o campo nasce travado, com texto.
+    renderComposer({ janelaFechada: "Janela de 24h fechada", initialDraft: RASCUNHO });
+
+    const botao = screen.getByRole("button", { name: /boas vindas/i });
+    expect(screen.getByLabelText(/mensagem/i)).toBeDisabled();
+    expect(botao).toBeDisabled();
+    // O motivo é a janela, não o rascunho: a dica continua a de sempre.
+    expect(botao).toHaveAttribute("title", DICA_DE_SEMPRE);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * O CLIQUE INJETA — E O QUE ACONTECE DEPOIS DO CLIQUE (#2833).
+ *
+ * Os casos (a), (b) e (d) provam o instante do clique. Estes três prendem o que
+ * a issue chama de "funcionando como um rascunho", e que nenhum caso anterior
+ * olhava:
+ *
+ *   (e) DIGITAR POR CIMA — depois de injetado, o texto é do operador: ele
+ *       edita, e o que sai no Enviar é o EDITADO, não o corpo do recurso. Sem
+ *       isto, um compositor que "injetasse" e guardasse o corpo original na
+ *       frente mandaria o texto do cadastro por cima do ajuste do atendente.
+ *   (k) ÁUDIO CANCELADO — desistir da prévia não sobe byte nenhum e não deixa
+ *       fila presa; o recurso pode ser escolhido de novo. É a metade "sem
+ *       enviar" do critério, do lado de quem desiste.
+ *   (l) CONTROLE — o `/` e a barra entregam a MESMA string para o mesmo
+ *       contato: os dois passam pelo `payloadDeUso`. Se a barra tivesse
+ *       interpolação própria, este caso seria o único a separar as duas.
+ * ══════════════════════════════════════════════════════════════════════════════ */
+describe("Composer + recursos: o clique injeta, e o operador decide o resto (#2833)", () => {
+  function campo() {
+    return screen.getByLabelText(/mensagem/i) as HTMLTextAreaElement;
+  }
+
+  it("(e) digitar por cima do texto injetado: o Enviar leva o texto EDITADO, e nada sai antes", () => {
+    renderComposer();
+
+    fireEvent.click(screen.getByRole("button", { name: /boas vindas/i }));
+    expect(campo().value).toBe("Oi Ana, tudo bem?");
+
+    // O atendente completa a frase como faria escrevendo do zero.
+    const editado = `${campo().value} O horário é 14h.`;
+    fireEvent.change(campo(), { target: { value: editado } });
+    expect(campo().value).toBe(editado);
+    // Editar não é enviar: quem manda é o botão, um clique humano depois.
+    expect(sendMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    // O corpo é o do CAMPO, não o do recurso: o ajuste do operador é o que sai.
+    expect(sendMock.mock.calls[0]?.[0]).toMatchObject({ body: editado, type: "text" });
+  });
+
+  it("(k) áudio: cancelar a prévia não envia, não sobe byte e libera a próxima escolha", async () => {
+    renderComposer();
+
+    fireEvent.click(screen.getByRole("button", { name: /áudio preço/i }));
+    const fila = await screen.findByRole("dialog");
+    fireEvent.click(within(fila).getByRole("button", { name: "Cancelar" }));
+
+    // Desistir fecha a prévia sem mandar nada — nem mensagem, nem upload.
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(postMock).not.toHaveBeenCalled();
+
+    // E a fila não ficou presa: o mesmo recurso abre de novo.
+    fireEvent.click(screen.getByRole("button", { name: /áudio preço/i }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it("(l) ⭐ controle: o `/` e a barra entregam o MESMO texto para o mesmo contato", () => {
+    renderComposer();
+
+    fireEvent.click(screen.getByRole("button", { name: /boas vindas/i }));
+    const pelaBarra = campo().value;
+
+    // Mesmo recurso pelo atalho `/`, com o campo limpo antes.
+    fireEvent.change(campo(), { target: { value: "" } });
+    fireEvent.change(campo(), { target: { value: "/boas" } });
+    fireEvent.click(within(screen.getByRole("listbox")).getByText("Boas vindas"));
+    const peloMenu = campo().value;
+
+    // Um caminho só de interpolação: `{{primeiro_nome}}` virou "Ana" nos dois,
+    // e a barra não tem regra própria que possa divergir do `/`.
+    expect(pelaBarra).toBe("Oi Ana, tudo bem?");
+    expect(peloMenu).toBe(pelaBarra);
+    expect(sendMock).not.toHaveBeenCalled();
   });
 });

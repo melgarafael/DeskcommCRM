@@ -1,0 +1,919 @@
+{
+  "id": "modelos-de-proposta",
+  "titulo": "Modelos de proposta",
+  "tela": "/app/settings/tenant/proposals/modelos",
+  "resumo": "Onde você escolhe quais modelos de proposta a clínica usa, cria os seus e ajusta os textos que vão para o paciente.",
+  "licoes": [
+    {
+      "id": "conhecendo-os-modelos",
+      "titulo": "Conhecendo os modelos",
+      "objetivo": "Encontrar a tela de Modelos de proposta e entender a diferença entre os modelos da plataforma e os da sua empresa.",
+      "papel": "admin",
+      "busca": [
+        "modelos de proposta",
+        "onde ficam os modelos de orçamento",
+        "modelo de proposta comercial",
+        "texto padrão da proposta",
+        "modelo de orçamento da clínica",
+        "lista de modelos"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Os modelos moram em Configurações",
+          "texto": "Abra \"Configurações\", no rodapé do menu lateral. Na parte \"Sua empresa\" está o cartão \"Modelos de proposta\". Um modelo é o texto pronto que vira a proposta: as partes, a ordem e os campos que mudam de um paciente para outro.",
+          "dica": "O cartão só aparece para gerente ou administrador. Se as propostas ainda não foram ligadas no cartão \"Propostas\", ao lado, a tela de modelos abre só com um aviso e o botão \"Ir para Configurações › Propostas\".",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "^Modelos de proposta",
+                "regex": true
+              },
+              "rotulo": "Modelos de proposta",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "^Modelos de proposta",
+            "regex": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "A lista de modelos",
+          "texto": "Cada linha é um modelo. Embaixo do nome aparece de onde ele vem e quantas partes (seções) tem. \"Da plataforma\" são os modelos que já vêm prontos com o sistema, como o \"Projeto personalizado\". \"Da empresa\" são os que a clínica criou, como o \"Pacote de nutrição — 3 meses\".",
+          "dica": "Os modelos da plataforma foram escritos para projetos digitais (site, loja virtual, automação). Para a clínica, o melhor é criar os seus e deixar de usar os que não servem.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "^Modelos de proposta",
+                "regex": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Pacote de nutrição — 3 meses",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li:has-text('Pacote de nutrição — 3 meses')"
+              },
+              "rotulo": "Criado pela clínica",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Da plataforma · 20 seções",
+                "dentro": {
+                  "css": "li:has-text('Projeto personalizado')"
+                }
+              },
+              "rotulo": "Veio com o sistema",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os botões de cada tipo",
+          "texto": "Num modelo da plataforma você tem \"Não usar\" e \"Personalizar\": o texto original não muda, mas você pode fazer uma cópia da clínica para editar. Num modelo da empresa você tem \"Editar\" e \"Remover\". \"Não usar\", \"Personalizar\" e \"Editar\" têm lições a seguir. \"Remover\" pergunta antes de agir e tira o modelo da lista. As propostas já enviadas não mudam.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li:has-text('Projeto personalizado') > div:last-child"
+              },
+              "rotulo": "Não usar e Personalizar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "li:has-text('Pacote de nutrição — 3 meses') > div:last-child"
+              },
+              "rotulo": "Editar e Remover",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Duas formas de criar um modelo",
+          "texto": "No alto da tela ficam as duas formas de criar um modelo da clínica. Em \"Novo modelo em branco\" você dá um nome e escreve as partes. Em \"Criar a partir da proposta que a empresa já usa\" você envia o arquivo da proposta que já usa (PDF ou arquivo de texto, até 5 MB), e a IA divide o texto em partes para você revisar antes de salvar.",
+          "dica": "Arquivo do Word não é aceito: no Word, use \"Salvar como\" e escolha PDF. Enviar o arquivo depende de a IA estar ligada nesta instalação. Sem ela, aparece um aviso em vermelho e nenhum modelo é criado. O caminho em branco funciona sempre.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Modelos de proposta",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "section:has-text('Criar a partir da proposta que a empresa já usa')"
+              },
+              "rotulo": "A partir de um arquivo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "section:has-text('Novo modelo em branco')"
+              },
+              "rotulo": "Em branco",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "deixar-de-usar-um-modelo",
+      "titulo": "Deixar de usar um modelo",
+      "objetivo": "Tirar da lista de escolhas um modelo da plataforma que não serve para a clínica, e trazê-lo de volta se precisar.",
+      "papel": "admin",
+      "busca": [
+        "esconder modelo de proposta",
+        "desligar modelo que não uso",
+        "tirar modelo da lista",
+        "modelo não aparece para a IA",
+        "voltar a usar modelo"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Um modelo que não serve para a clínica",
+          "texto": "O \"Catálogo imobiliário\" foi feito para imobiliárias. Para que ninguém escolha esse modelo por engano, clique em \"Não usar\" na linha dele.",
+          "rota": "/app/settings/tenant/proposals/modelos",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "li:has-text('Catálogo imobiliário')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li:has-text('Catálogo imobiliário')"
+              },
+              "rotulo": "Modelo de imobiliária",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Não usar",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has-text('Catálogo imobiliário')"
+                }
+              },
+              "rotulo": "Tirar de uso",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Não usar",
+            "exato": true,
+            "dentro": {
+              "css": "li:has-text('Catálogo imobiliário')"
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Desligado",
+          "texto": "A linha passa a dizer \"Desligado — não aparece para a IA nem no seletor\". O modelo some da lista de escolhas ao criar uma proposta e a IA deixa de sugeri-lo. Propostas antigas feitas com ele continuam abrindo normalmente.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Não usar",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has-text('Catálogo imobiliário')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Desligado — não aparece para a IA nem no seletor"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Desligado — não aparece para a IA nem no seletor"
+              },
+              "rotulo": "Fora das escolhas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Usar",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has-text('Catálogo imobiliário')"
+                }
+              },
+              "rotulo": "Volta a usar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Usar",
+            "exato": true,
+            "dentro": {
+              "css": "li:has-text('Catálogo imobiliário')"
+            }
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "Trazer de volta",
+          "texto": "Mudou de ideia? Clique em \"Usar\" na mesma linha. O aviso de desligado some e o modelo volta para a lista de escolhas.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Usar",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has-text('Catálogo imobiliário')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Não usar",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has-text('Catálogo imobiliário')"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li:has-text('Catálogo imobiliário')"
+              },
+              "rotulo": "De volta à lista",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "criar-um-modelo-da-clinica",
+      "titulo": "Criar um modelo da clínica",
+      "objetivo": "Criar do zero um modelo de proposta para os planos de fisioterapia, com as partes e os campos que mudam de um paciente para outro.",
+      "papel": "admin",
+      "busca": [
+        "criar modelo de proposta",
+        "novo modelo de orçamento",
+        "proposta de plano de tratamento",
+        "escrever texto da proposta",
+        "campos que mudam por paciente",
+        "adicionar seção na proposta"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Dar um nome",
+          "texto": "Em \"Novo modelo em branco\", escreva o nome do modelo, como \"Plano de tratamento — Fisioterapia\", e clique em \"Criar\". O botão só acende quando o nome tem pelo menos 2 letras.",
+          "rota": "/app/settings/tenant/proposals/modelos",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Ex.: Locação por temporada"
+              },
+              "valor": "Plano de tratamento — Fisioterapia"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Ex.: Locação por temporada"
+              },
+              "rotulo": "Nome do modelo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Criar",
+                "exato": true
+              },
+              "rotulo": "Criar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Criar",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O modelo já nasce gravado",
+          "texto": "Ao clicar em \"Criar\", o modelo é gravado com uma parte de exemplo, \"Resumo da proposta\", e abre para edição. O texto de exemplo só traz o nome do projeto e o do paciente. Por isso o aviso amarelo diz que o modelo ainda quase não pede nada ao paciente: com tão poucos campos, a IA não tem o que perguntar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Criar",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "rotulo": "Nome do modelo"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Título da seção"
+              },
+              "rotulo": "Parte de exemplo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Este modelo quase não pede nada ao cliente",
+                "regex": true
+              },
+              "rotulo": "Faltam campos",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Acrescentar uma parte",
+          "texto": "Clique em \"+ Seção\" para acrescentar uma parte nova no fim. Dê um título e escreva o texto. O que muda de um paciente para outro vai entre chaves duplas, como {{project.objective}} (o objetivo) e {{included.list}} (o que está incluído). Na proposta, cada campo é trocado pelo dado daquele paciente.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "+ Seção",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Título da seção",
+                "n": 1
+              },
+              "valor": "Plano de tratamento"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Texto da seção",
+                "n": 1
+              },
+              "valor": "Objetivo do tratamento: {{project.objective}}.\nO plano inclui: {{included.list}}."
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "heading",
+                "nome": "Campos usados",
+                "exato": true
+              }
+            },
+            {
+              "acao": "press",
+              "tecla": "End"
+            },
+            {
+              "acao": "esperar",
+              "ms": 500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Título da seção",
+                "n": 1
+              },
+              "rotulo": "Título da parte",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Texto da seção",
+                "n": 1
+              },
+              "rotulo": "Texto com campos",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "+ Seção",
+                "exato": true
+              },
+              "rotulo": "Nova parte",
+              "tipo": "seta"
+            }
+          ],
+          "dica": "Pode usar nomes seus, sem espaço e sem acento, como {{objetivo_do_tratamento}}. Use _ no lugar do espaço. Campo que ficar sem dado aparece na proposta como \"[a definir]\"."
+        },
+        {
+          "id": "p4",
+          "titulo": "O que a IA vai perguntar",
+          "texto": "Com os campos no texto, o aviso amarelo vira o quadro azul \"Este modelo vai pedir ao cliente:\", com cada campo e o nome dele. À direita, \"Campos usados\" lista todos os campos do modelo, inclusive os que o sistema preenche sozinho, como o nome do paciente.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div:has(> p:text-is('Este modelo vai pedir ao cliente:'))"
+              },
+              "rotulo": "Perguntas ao paciente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "aside:has(> h2:text-is('Campos usados')) > ul"
+              },
+              "rotulo": "Campos usados",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Salvar o modelo",
+          "texto": "Clique em \"Salvar modelo\". Você volta para a lista, que confirma no alto \"Modelo «Plano de tratamento — Fisioterapia» salvo.\". O \"×\" da faixa fecha o aviso.",
+          "dica": "Se alguma parte ficar sem título ou sem texto, o modelo não é salvo e a tela mostra, numa caixa vermelha, o que falta corrigir.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar modelo",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "status"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "status"
+              },
+              "rotulo": "Salvo",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "O modelo novo na lista",
+          "texto": "Descendo a lista, o modelo novo aparece junto dos outros da empresa, depois dos da plataforma e em ordem alfabética, com a marca \"Da empresa\" e 2 seções: a parte de exemplo e a que você acrescentou. A partir de agora ele pode ser escolhido ao criar uma proposta.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "li:has-text('Plano de tratamento — Fisioterapia')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li:has-text('Plano de tratamento — Fisioterapia')"
+              },
+              "rotulo": "Modelo novo",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "editar-um-modelo-da-clinica",
+      "titulo": "Editar um modelo da clínica",
+      "objetivo": "Mudar a ordem das partes de um modelo, decidir quais aparecem sempre e salvar a mudança.",
+      "papel": "admin",
+      "busca": [
+        "editar modelo de proposta",
+        "mudar texto da proposta",
+        "ordem das seções da proposta",
+        "seção obrigatória ou opcional",
+        "remover parte do modelo"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir o modelo",
+          "texto": "Na lista, clique em \"Editar\" na linha do \"Pacote de nutrição — 3 meses\".",
+          "rota": "/app/settings/tenant/proposals/modelos",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "li:has-text('Pacote de nutrição — 3 meses')"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Editar",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has-text('Pacote de nutrição — 3 meses')"
+                }
+              },
+              "rotulo": "Editar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Editar",
+            "exato": true,
+            "dentro": {
+              "css": "li:has-text('Pacote de nutrição — 3 meses')"
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Nome e para que serve",
+          "texto": "No alto ficam o \"Nome do modelo\", que aparece na lista de escolhas ao criar uma proposta, e \"Para que serve (opcional)\", uma anotação sua sobre o modelo. Por enquanto essa anotação só aparece aqui, nesta tela.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Editar",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has-text('Pacote de nutrição — 3 meses')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "rotulo": "Nome do modelo"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome do modelo"
+              },
+              "rotulo": "Nome",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Para que serve (opcional)"
+              },
+              "rotulo": "Para que serve",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os controles de cada parte",
+          "texto": "Cada parte tem as setas ↑ e ↓, que sobem e descem a parte na proposta, e \"Remover\", que tira a parte do modelo. Embaixo do texto, \"Só aparece se tiver dado\" faz a parte sumir da proposta quando nenhum dos campos dela foi preenchido, como em \"O que não está incluído\". \"Obrigatória\" desmarca essa opção: a parte sai sempre. As duas não ficam marcadas juntas.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Subir seção",
+                "exato": true,
+                "n": 3
+              },
+              "rotulo": "Subir",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "css": "div.flex.gap-4.text-sm",
+                "dentro": {
+                  "css": "div.rounded-lg.border:has(input[value='O que não está incluído'])"
+                }
+              },
+              "rotulo": "Quando a parte aparece",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Trocar a ordem",
+          "texto": "Clicamos na seta ↑ de \"Investimento\": a parte subiu uma posição e agora vem antes de \"O que não está incluído\". A mudança aparece na hora, mas só vale depois de salvar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Subir seção",
+                "exato": true,
+                "n": 4
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has(input[value='Investimento'])"
+              },
+              "rotulo": "Subiu uma posição",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Salvar",
+          "texto": "No fim da tela, clique em \"Salvar modelo\". Só depois de salvar a mudança passa a valer. Se você sair da tela sem salvar, ela se perde.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "heading",
+                "nome": "Campos usados",
+                "exato": true
+              }
+            },
+            {
+              "acao": "press",
+              "tecla": "End"
+            },
+            {
+              "acao": "esperar",
+              "ms": 500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.flex.gap-2:has(> button:text-is('Salvar modelo'))"
+              },
+              "rotulo": "Salvar modelo",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar modelo",
+            "exato": true
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "Modelo salvo",
+          "texto": "Você volta para a lista, com a confirmação \"Modelo «Pacote de nutrição — 3 meses» salvo.\". As próximas propostas feitas com este modelo já saem com a nova ordem.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar modelo",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "status"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "status"
+              },
+              "rotulo": "Salvo",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "personalizar-um-modelo-da-plataforma",
+      "titulo": "Personalizar um modelo da plataforma",
+      "objetivo": "Fazer uma cópia da clínica de um modelo da plataforma, ajustar o texto e saber como voltar ao original.",
+      "papel": "admin",
+      "busca": [
+        "personalizar modelo da plataforma",
+        "mudar modelo pronto",
+        "copiar modelo de proposta",
+        "voltar ao modelo original",
+        "ajustar texto do modelo"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Personalizar",
+          "texto": "O texto de um modelo da plataforma não pode ser mudado. Para ajustar, clique em \"Personalizar\": a clínica ganha uma cópia própria, que abre na hora para edição. Aqui vamos personalizar o \"Projeto personalizado\".",
+          "rota": "/app/settings/tenant/proposals/modelos",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "css": "li:has-text('Projeto personalizado')"
+              }
+            },
+            {
+              "acao": "press",
+              "tecla": "End"
+            },
+            {
+              "acao": "esperar",
+              "ms": 500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li:has-text('Projeto personalizado')"
+              },
+              "rotulo": "Personalizar, à direita",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Personalizar",
+            "exato": true,
+            "dentro": {
+              "css": "li:has-text('Projeto personalizado')"
+            }
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Ajustar o texto",
+          "texto": "A cópia traz todas as partes do original. Troque o que não combina com a clínica. Aqui, o \"Resumo da proposta\" passou a falar em plano de cuidado em vez de design e desenvolvimento. Mantenha os campos entre chaves duplas: são eles que trazem o dado de cada paciente.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Personalizar",
+                "exato": true,
+                "dentro": {
+                  "css": "li:has-text('Projeto personalizado')"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "rotulo": "Nome do modelo"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Texto da seção",
+                "n": 0
+              },
+              "valor": "Esta proposta apresenta o plano de cuidado {{project.name}} para {{client.company_or_name}}, com a equipe da Clínica Bem Viver."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Texto da seção",
+                "n": 0
+              },
+              "rotulo": "Texto ajustado",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Salvar a cópia",
+          "texto": "Antes de salvar, desça pelas outras partes: \"Garantia e suporte\", por exemplo, ainda fala de desenvolvimento. Revise cada uma. Depois, no fim da tela, clique em \"Salvar modelo\" para gravar o texto ajustado. As próximas propostas com este modelo passam a usar o texto da clínica.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "heading",
+                "nome": "Campos usados",
+                "exato": true
+              }
+            },
+            {
+              "acao": "press",
+              "tecla": "End"
+            },
+            {
+              "acao": "esperar",
+              "ms": 500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.flex.gap-2:has(> button:text-is('Salvar modelo'))"
+              },
+              "rotulo": "Salvar modelo",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Salvar modelo",
+            "exato": true
+          },
+          "dica": "A cópia já foi criada quando você clicou em \"Personalizar\": se sair sem salvar, ela continua na lista como \"Personalizado\", mas com o texto original."
+        },
+        {
+          "id": "p4",
+          "titulo": "Personalizado, com volta",
+          "texto": "O modelo agora aparece como \"Personalizado\", com \"Editar\" para mudar de novo e o mesmo \"Não usar\" de antes. \"Voltar ao modelo da plataforma\" pergunta antes: \"Voltar ao modelo da plataforma? As mudanças da empresa deixam de valer nas próximas propostas.\" Ao confirmar, a cópia da clínica é desativada e as próximas propostas voltam a usar o texto original.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar modelo",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Voltar ao modelo da plataforma",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Personalizado · 20 seções"
+              },
+              "rotulo": "Cópia da clínica",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "li:has-text('Projeto personalizado') > div:last-child"
+              },
+              "rotulo": "Editar ou voltar ao original",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,508 @@
+{
+  "id": "admin-users",
+  "titulo": "Users (Admin)",
+  "tela": "/admin/users",
+  "resumo": "A lista de todas as pessoas que fazem parte de alguma empresa do seu servidor, em todas as empresas: quem é, em qual empresa trabalha, com que papel, quando entrou pela última vez e se ainda tem acesso.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-lista",
+      "titulo": "Conhecendo a lista de pessoas",
+      "objetivo": "Ler a lista de pessoas do servidor: o que cada coluna diz, por que a mesma pessoa pode aparecer duas vezes e o que quer dizer \"Revogado\".",
+      "papel": "admin",
+      "busca": [
+        "lista de usuários",
+        "todas as pessoas do servidor",
+        "quem tem conta",
+        "users admin",
+        "ver equipe de todas as empresas",
+        "último acesso"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Todas as pessoas do servidor",
+          "texto": "No Admin, \"Users\" é a lista de todas as pessoas que fazem parte de alguma empresa do seu servidor, de todas as empresas juntas. Aqui você só consulta: nada se muda nesta tela. Logo abaixo do título aparece quantas linhas a lista mostra. Quem entrou no sistema mais recentemente aparece primeiro; quem nunca entrou fica no fim.",
+          "dica": "A lista carrega 30 linhas por vez. Quando há mais, o número ganha um \"+\" e aparece o botão \"Carregar mais\" no fim da tabela.",
+          "rota": "/admin/users",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Users",
+                "exato": true,
+                "dentro": {
+                  "role": "navigation"
+                }
+              },
+              "rotulo": "Users no menu do Admin",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "^\\d+ usuários?\\+?$",
+                "regex": true
+              },
+              "rotulo": "Quantas linhas a lista mostra",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O que cada coluna diz",
+          "texto": "Cada linha é uma pessoa dentro de uma empresa. \"Email\" e \"Nome\" são os da conta. \"Tenant\" é a empresa, com o nome curto que a identifica no sistema embaixo. \"Role\" é o papel da pessoa naquela empresa: Admin, Manager, Agente ou Viewer (este último só olha, não mexe). \"Último acesso\" diz há quanto tempo a conta entrou no sistema pela última vez, em qualquer empresa; um traço quer dizer que ela ainda não entrou nenhuma vez.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "thead"
+              },
+              "rotulo": "Colunas da lista",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "juliana\\.martins",
+                "regex": true
+              },
+              "rotulo": "Uma pessoa numa empresa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "A mesma pessoa em duas empresas",
+          "texto": "Uma pessoa pode trabalhar em mais de uma empresa do servidor com a mesma conta. Nesse caso ela aparece numa linha para cada empresa, e o papel pode ser diferente em cada uma. Aqui, a consultora Marina Lopes é Viewer na Odonto Sorriso Leve e Manager na FisioVida. Por isso o número no alto conta linhas, e não pessoas.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "marina\\.lopes.*Odonto",
+                "regex": true
+              },
+              "rotulo": "Marina na Odonto",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "marina\\.lopes.*FisioVida",
+                "regex": true
+              },
+              "rotulo": "Marina na FisioVida",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Quem ainda tem acesso",
+          "texto": "A coluna \"Status\" diz se a pessoa ainda entra naquela empresa. \"Ativo\": entra normalmente. \"Revogado\": alguém tirou o acesso dela na tela Equipe, em Configurações, daquela empresa. A conta continua existindo, mas ela não entra mais ali. Para ver tudo sobre uma pessoa, clique em \"Ver\", no fim da linha.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Ativo",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "juliana\\.martins",
+                  "regex": true
+                }
+              },
+              "rotulo": "Entra normalmente",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Revogado",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "rafael\\.torres",
+                  "regex": true
+                }
+              },
+              "rotulo": "Acesso tirado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "juliana\\.martins",
+                  "regex": true
+                }
+              },
+              "rotulo": "Abre a ficha da pessoa",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "encontrar-uma-pessoa",
+      "titulo": "Encontrando uma pessoa",
+      "objetivo": "Achar alguém pelo nome ou e-mail e filtrar a lista por empresa e por papel.",
+      "papel": "admin",
+      "busca": [
+        "buscar usuário",
+        "achar pessoa pelo email",
+        "filtrar por empresa",
+        "quem é admin",
+        "filtrar por papel",
+        "pessoas de uma clínica"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Buscar pelo nome ou e-mail",
+          "texto": "Digite parte do nome ou do e-mail na busca. Não precisa apertar Enter: a lista se ajusta sozinha logo depois que você para de digitar. Aqui, \"marina\" trouxe as duas linhas da Marina Lopes, uma para cada empresa.",
+          "rota": "/admin/users",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Buscar por email ou nome..."
+              },
+              "valor": "marina"
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "2 usuários",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "placeholder": "Buscar por email ou nome..."
+              },
+              "rotulo": "Busca",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "tbody"
+              },
+              "rotulo": "Só quem bate com a busca",
+              "tipo": "caixa"
+            }
+          ],
+          "dica": "A busca diferencia acento: 'patricia' não acha 'Patrícia' pelo nome. Se não achar, tente com acento ou por um pedaço do e-mail."
+        },
+        {
+          "id": "p2",
+          "titulo": "Ver só uma empresa",
+          "texto": "O primeiro filtro, que começa em \"Todos os tenants\", mostra a lista de empresas do servidor. Escolha uma para ver só a equipe dela.",
+          "rota": "/admin/users",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox",
+                "nome": "Filtrar por tenant"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "listbox"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "listbox"
+              },
+              "rotulo": "Empresas do servidor",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "FisioVida Reabilitação",
+            "exato": true
+          }
+        },
+        {
+          "id": "p3",
+          "titulo": "A equipe de uma empresa",
+          "texto": "Com \"FisioVida Reabilitação\" escolhida, a lista mostra só as pessoas dessa clínica, inclusive quem teve o acesso revogado.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "FisioVida Reabilitação",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "3 usuários",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Filtrar por tenant"
+              },
+              "rotulo": "Empresa escolhida",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "tbody"
+              },
+              "rotulo": "Só a equipe da FisioVida",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "combobox",
+            "nome": "Filtrar por role"
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "Somar o filtro de papel",
+          "texto": "O segundo filtro, que começa em \"Todos os roles\", separa as pessoas pelo papel: Admin, Manager, Agente ou Viewer. Ele soma com o filtro de empresa. Aqui, empresa FisioVida e papel Admin mostram quem administra aquela clínica. Para desfazer, volte cada filtro para \"Todos os tenants\" e \"Todos os roles\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox",
+                "nome": "Filtrar por role"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Admin",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "1 usuário",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Filtrar por role"
+              },
+              "rotulo": "Papel escolhido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "patricia\\.nogueira",
+                "regex": true
+              },
+              "rotulo": "Quem administra a FisioVida",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Quando ninguém aparece",
+          "texto": "Se nenhuma pessoa bate com a busca e os filtros, a lista mostra \"Nenhum usuário encontrado\". Confira se o nome está escrito certo (com acento) ou volte os filtros para \"Todos os tenants\" e \"Todos os roles\".",
+          "rota": "/admin/users",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Buscar por email ou nome..."
+              },
+              "valor": "dentista"
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Nenhum usuário encontrado",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Nenhum usuário encontrado",
+                "exato": true
+              },
+              "rotulo": "Nada bate com a busca",
+              "tipo": "caixa"
+            }
+          ],
+          "dica": "Se a lista vier vazia sem nenhuma busca nem filtro, recarregue a página: pode ter sido uma falha passageira do servidor."
+        }
+      ]
+    },
+    {
+      "id": "ficha-da-pessoa",
+      "titulo": "A ficha de uma pessoa",
+      "objetivo": "Abrir a ficha de uma pessoa e ler os dados da conta, as empresas em que ela está e o que ela fez por último no sistema.",
+      "papel": "admin",
+      "busca": [
+        "detalhes do usuário",
+        "em quais empresas a pessoa está",
+        "verificação em duas etapas ativa",
+        "e-mail confirmado",
+        "histórico do usuário",
+        "o que a pessoa fez"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Os dados da conta",
+          "texto": "Clicando em \"Ver\" numa linha, abre a ficha da pessoa. No alto ficam o nome, o e-mail e o código da conta. O quadro \"Informações do usuário\" mostra quando o e-mail foi confirmado (ou \"Pendente\", se ainda não foi), o último acesso, o dia em que a conta foi criada e o \"MFA\": \"Ativo\" quando a pessoa usa a verificação em duas etapas, \"Inativo\" quando não usa.",
+          "rota": "/admin/users",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Buscar por email ou nome..."
+              },
+              "valor": "marina"
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "2 usuários",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Ver",
+                "exato": true,
+                "n": 0
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Marina Lopes"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Marina Lopes"
+              },
+              "rotulo": "Nome da pessoa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has-text('Informações do usuário')"
+              },
+              "rotulo": "Dados da conta",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Em quais empresas ela está",
+          "texto": "O quadro \"Memberships\" lista as empresas em que a pessoa está, com o papel em cada uma, o dia em que ela aceitou o convite e se o acesso está \"Ativo\" ou \"Revogado\". O nome da empresa é um link: ele abre a ficha da empresa, em \"Tenants\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has-text('Memberships (')"
+              },
+              "rotulo": "Empresas da pessoa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Odonto Sorriso Leve",
+                "exato": true
+              },
+              "rotulo": "Abre a ficha da empresa",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O que a pessoa fez por último",
+          "texto": "O último quadro, \"Audit recente\", lista as últimas ações dessa pessoa que ficaram registradas no sistema, até 50, da mais nova para a mais antiga. Cada linha traz o código da ação (por exemplo, \"platform_admin.users_listed\" é abrir ou filtrar esta lista de pessoas) e o dia e a hora. Na foto, a ficha da Helena, que usa o sistema todo dia, rolada até o fim. Quem ainda não fez nada que fique registrado, como a Marina, aparece com \"Nenhuma entrada de auditoria encontrada para este usuário.\"",
+          "dica": "Para ver o registro completo de todas as ações do servidor, use \"Audit\" no menu do Admin. Lá, cole o código da conta (o que aparece no alto desta ficha) no filtro \"Actor (user ID)\" para ver só o que esta pessoa fez.",
+          "rota": "/admin/users",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "placeholder": "Buscar por email ou nome..."
+              },
+              "valor": "helena"
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "1 usuário",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Ver",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Helena Prado"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border:has-text('Audit recente')"
+              },
+              "rotulo": "Últimas ações da pessoa",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

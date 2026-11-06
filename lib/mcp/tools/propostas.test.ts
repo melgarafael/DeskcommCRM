@@ -17,6 +17,8 @@ interface MensagemMock {
   sent_via?: string;
   body: string | null;
   media_derived_text?: string | null;
+  type?: string;
+  media_derived_status?: string | null;
   created_at: string;
 }
 
@@ -318,13 +320,16 @@ describe("crm_draft_proposal", () => {
     expect((r as { proposal_id?: string }).proposal_id).toBeDefined();
   });
 
-  it("valid_until omitido: calcula no FUSO DA ORGANIZAÇÃO, não em UTC (D8)", async () => {
-    // 2026-06-16T23:30:00Z: em UTC ainda é 16/06, mas em Europe/Lisbon
-    // (verão europeu, UTC+1) já é 17/06. Com default_valid_days=15, o fuso
-    // importa: UTC daria 2026-07-01, Lisboa dá 2026-07-02.
+  it.each([
+    ["2026-06-16T23:30:00Z", "2026-07-02"],
+    ["2026-03-14T23:30:00Z", "2026-03-29"],
+    ["2026-10-11T00:30:00+01:00", "2026-10-26"],
+  ])("valid_until omitido: soma 15 dias no calendário da organização a partir de %s (D8)", async (iso, esperado) => {
+    // A ferramenta usa a mesma data da rota, inclusive quando os 15 dias
+    // atravessam a entrada ou a saída do horário de verão.
     vi.useFakeTimers();
     try {
-      vi.setSystemTime(new Date("2026-06-16T23:30:00Z"));
+      vi.setSystemTime(new Date(iso));
       const mundo = montarMundoDeFerramenta({ fusoDaOrganizacao: "Europe/Lisbon" });
       const r = await crmDraftProposal.handler(
         {
@@ -337,7 +342,7 @@ describe("crm_draft_proposal", () => {
         mundo.ctx,
       );
       expect((r as { error?: string }).error).toBeUndefined();
-      expect(mundo.propostaCriada?.valid_until).toBe("2026-07-02");
+      expect(mundo.propostaCriada?.valid_until).toBe(esperado);
     } finally {
       vi.useRealTimers();
     }
@@ -778,6 +783,8 @@ describe("crm_draft_proposal", () => {
           conversation_id: "55555555-5555-4555-8555-555555555555",
           direction: "inbound",
           sent_via: "external_device",
+          type: "audio",
+          media_derived_status: null,
           body: null,
           media_derived_text: null,
           created_at: "2026-09-27T10:01:00.000Z",
@@ -796,6 +803,74 @@ describe("crm_draft_proposal", () => {
     )) as { error?: string; motivo?: string };
     expect(r.motivo).toBe("transcricao_pendente");
     expect(r.error).toMatch(/ainda está sendo transcrita/);
+    expect(mundo.propostaCriada).toBeNull();
+  });
+
+  /**
+   * Foto cuja leitura TERMINOU sem texto (adiada por falta de leitor, contato
+   * pessoal, vídeo desligado) ou figurinha não é "transcrição pendente": nada
+   * está sendo transcrito, e a ferramenta mentia isso para sempre — o cliente MCP
+   * repetia a chamada sem fim. A frase de confirmação continua obrigatória e
+   * conferida nos textos: só a recusa falsa sai.
+   */
+  const loteComFoto = (statusDaFoto: string | null): MensagemMock[] => [
+    {
+      organization_id: "22222222-2222-4222-8222-222222222222",
+      conversation_id: "55555555-5555-4555-8555-555555555555",
+      direction: "outbound",
+      sent_via: "ai",
+      body: "Pode confirmar o resumo?",
+      media_derived_text: null,
+      created_at: "2026-09-27T10:00:00.000Z",
+    },
+    {
+      organization_id: "22222222-2222-4222-8222-222222222222",
+      conversation_id: "55555555-5555-4555-8555-555555555555",
+      direction: "inbound",
+      sent_via: "external_device",
+      type: "image",
+      media_derived_status: statusDaFoto,
+      body: null,
+      media_derived_text: null,
+      created_at: "2026-09-27T10:01:00.000Z",
+    },
+    {
+      organization_id: "22222222-2222-4222-8222-222222222222",
+      conversation_id: "55555555-5555-4555-8555-555555555555",
+      direction: "inbound",
+      sent_via: "external_device",
+      type: "text",
+      media_derived_status: null,
+      body: FRASE_PADRAO,
+      media_derived_text: null,
+      created_at: "2026-09-27T10:02:00.000Z",
+    },
+  ];
+  const rascunharCom = (mensagens: MensagemMock[]) => {
+    const mundo = montarMundoDeFerramenta({ mensagens });
+    return crmDraftProposal
+      .handler(
+        {
+          lead_id: mundo.leadId,
+          conversation_id: mundo.conversationId,
+          titulo: "Proposta",
+          itens: [{ descricao: "Site", quantidade: 1 }],
+          briefing: briefingCompleto(),
+        } as never,
+        mundo.ctx,
+      )
+      .then((r) => ({ r: r as { error?: string; motivo?: string }, mundo }));
+  };
+
+  it("foto com a leitura terminada sem texto (adiada) + a frase em texto: cria o rascunho", async () => {
+    const { r, mundo } = await rascunharCom(loteComFoto("skipped"));
+    expect(r.motivo, `error=${r.error}`).toBeUndefined();
+    expect(mundo.propostaCriada).not.toBeNull();
+  });
+
+  it("controle: foto com a descrição ainda em andamento segue transcricao_pendente", async () => {
+    const { r, mundo } = await rascunharCom(loteComFoto(null));
+    expect(r.motivo).toBe("transcricao_pendente");
     expect(mundo.propostaCriada).toBeNull();
   });
 

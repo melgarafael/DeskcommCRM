@@ -12,6 +12,7 @@
  * a base os recria com id novo a cada rodada.
  */
 import { type Contexto, contatoId, exigir, semErro } from "../semear-demonstracao";
+import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
 
 const tarefaId = (n: number) => `7a5c0000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
@@ -43,11 +44,11 @@ export async function semear(c: Contexto) {
   const { db, org, pessoa } = c;
 
   const leads = exigir(
-    await db.from("crm_leads").select("id, title").eq("organization_id", org).in("title", [LEAD_MARIANA, LEAD_FERNANDA]),
+    await db.from("crm_leads").select("id, title").eq("organization_id", org).in("title", [demo(LEAD_MARIANA), demo(LEAD_FERNANDA)]),
     "negócios da base",
   ) as Array<{ id: string; title: string }>;
   const lead = (titulo: string) => {
-    const l = leads.find((x) => x.title === titulo);
+    const l = leads.find((x) => x.title === demo(titulo));
     if (!l) throw new Error(`negócio da base sumiu: ${titulo}`);
     return l.id;
   };
