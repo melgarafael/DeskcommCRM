@@ -166,7 +166,7 @@ export function resumoDoNo(node: FlowNode): NoDoDossie {
         ...base,
         resumo:
           node.config.mode === "fixed"
-            ? `espera ${duracaoLegivel(node.config.duration_ms)}`
+            ? `espera ${duracaoLegivel(node.config.duration_ms)}${node.config.ate_o_horario ? " e só termina em horário comercial" : ""}`
             : `espera adaptativa, entre ${duracaoLegivel(node.config.min_ms)} e ${duracaoLegivel(node.config.max_ms)}`,
       };
     case "condition":
@@ -471,7 +471,7 @@ export function descreveEvento(
       const ate = quandoLegivel(p.next_eval_at, idioma);
       return {
         titulo: "Segurou o fluxo por causa de um retorno agendado",
-        detalhe: ate ? `volta a andar em ${ate}, um dia depois do retorno` : null,
+        detalhe: ate ? `volta a andar em ${ate}, depois do retorno` : null,
         ...motor,
       };
     }
@@ -503,6 +503,25 @@ export function descreveEvento(
       return {
         titulo: "Não conseguiu mover o card para a etapa escolhida",
         detalhe: texto(p.error) ?? texto(p.codigo),
+        ...motor,
+      };
+    case "waiting_for_taken_slot":
+      // A espera "imune à resposta" libera a vaga do contato; outro fluxo entrou
+      // nela enquanto esta dormia. Adiar NÃO é falhar — sem esta linha a trilha
+      // mostrava um silêncio sem dizer que a espera era por causa de outro
+      // acompanhamento.
+      return {
+        titulo: "Esperando o outro acompanhamento deste contato terminar",
+        detalhe: "tenta de novo a cada hora, por até 7 dias",
+        ...motor,
+      };
+    case "gave_up_taken_slot":
+      // A espera pela vaga estourou o limite: o retorno foi cancelado, e o
+      // cancelamento saiu na Central com aviso. A trilha repete a mesma
+      // história para quem não viu o aviso.
+      return {
+        titulo: "Cancelado: outro acompanhamento ocupou o contato por 7 dias",
+        detalhe: "esperou 7 dias pelo outro acompanhamento deste contato terminar",
         ...motor,
       };
     case "inbound_woke":
@@ -537,6 +556,14 @@ export function descreveEvento(
       return {titulo:"Acompanhamento encerrado sem novo envio",detalhe:texto(p.reason),...motor};
     case "cancelled_manual":
       return { titulo: "Cancelado por uma pessoa da equipe", detalhe: null, ...pessoa };
+    case "replaced_by_rule":
+      // `start_message_flow` com `replace_live_flow`: outra regra pôs o contato
+      // num fluxo diferente. O nome da regra é o que a pessoa procura na tela.
+      return {
+        titulo: "Encerrado porque uma automação o colocou em outro fluxo",
+        detalhe: texto(p.rule_name),
+        ...motor,
+      };
     case "paused_manual":
       return { titulo: "Pausado por uma pessoa da equipe", detalhe: texto(p.motivo), ...pessoa };
     case "resumed_manual": {
@@ -592,6 +619,25 @@ export function descreveEvento(
       return {
         titulo: "Cancelado porque o caso foi resolvido",
         detalhe: "o follow-up existia para esse caso e parou junto com ele",
+        ...motor,
+      };
+    // O vínculo do negócio (#3363): a execução do roteiro passou a ter um card
+    // EXPLÍCITO, e o roteiro continua nele até terminar. Sem frase, a escolha
+    // aparecia como "Passo registrado pelo motor, código: roteiro_negocio" — o
+    // nome da variável no lugar do fato, que é o defeito que este arquivo existe
+    // para não ter.
+    case "roteiro_negocio":
+      return {
+        titulo: "Negócio do roteiro definido",
+        detalhe: "as respostas deste roteiro vão para este negócio até ele terminar",
+        ...motor,
+      };
+    case "cancelled_by_stage_change":
+      return {
+        titulo: "Cancelado porque o negócio saiu da etapa",
+        // Sem nome de etapa no detalhe de propósito: o payload guarda o
+        // `to_stage_id`, e um uuid na tela é pior que a frase cobrindo o caso.
+        detalhe: "o toque era da etapa que armou este fluxo, e o card saiu dela",
         ...motor,
       };
     default:

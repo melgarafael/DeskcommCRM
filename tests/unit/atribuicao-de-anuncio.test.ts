@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { extrairAtribuicaoMeta } from "@/lib/channels/atribuicao-de-anuncio-oficial";
 import { estamparAtribuicaoDoContato } from "@/lib/leads/atribuicao-de-anuncio";
 import { extrairAtribuicaoWaha } from "@/lib/waha/atribuicao-de-anuncio";
+import { extrairAtribuicaoDoInbound, mapInboundPayload } from "@/lib/webhooks/inbound";
 
 describe("extrairAtribuicaoMeta — referral do webhook oficial", () => {
   it("extrai um referral de anúncio na forma documentada (snake_case)", () => {
@@ -246,5 +247,114 @@ describe("estamparAtribuicaoDoContato", () => {
         bruto: {},
       }),
     ).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * Issue #2317 — quem anuncia para LANDING PAGE COM FORMULÁRIO não tinha a
+ * origem do anúncio estampada no contato. O envio do formulário manda `fbclid`,
+ * `fbc`, `fbp`, `gclid`, `ad_id`, `adset_id` e `campaign_id`, e até aqui tudo
+ * isso caía em `custom_fields`: o card do lead mostrava esses valores como se a
+ * pessoa os tivesse preenchido, e a atribuição — que o clique-pro-WhatsApp já
+ * estampa — nem existia. `lib/conversoes`, que lê a atribuição do contato, não
+ * sabia de que clique veio uma venda de formulário.
+ *
+ * Aqui se prova a corrente INTEIRA, com o payload cru de um formulário: as
+ * chaves viram reservadas (não campo do card) → a atribuição é extraída → ela é
+ * gravada pela MESMA função de primeiro toque (`fn_estampar_atribuicao_de_anuncio`)
+ * que o referral do clique-pro-WhatsApp usa. É o arquivo que o brief pediu.
+ */
+describe("atribuição de anúncio do webhook de entrada (formulário)", () => {
+  const FORMULARIO = {
+    name: "Ana",
+    phone: "11998765432",
+    email: "ana@example.com",
+    mensagem: "quero um orçamento",
+    fbclid: "IwAR-fbclid-do-clique",
+    fbc: "fb.1.1770000000000.IwAR-fbclid-do-clique",
+    fbp: "fb.1.1770000000000.987654321",
+    gclid: "Cj0KCQjw-gclid-do-clique",
+    ad_id: "120210000000000",
+    adset_id: "120210000000111",
+    campaign_id: "120210000000222",
+  };
+
+  it("as chaves de anúncio são RESERVADAS: vão para source_metadata, não para o card", () => {
+    const m = mapInboundPayload(FORMULARIO);
+    // `mensagem` é resposta da pessoa e continua campo do card. As sete chaves de
+    // anúncio NÃO estão aqui — é o defeito que a #2317 conserta.
+    expect(m.custom_fields).toEqual({ mensagem: "quero um orçamento" });
+    expect(m.source_metadata).toEqual({
+      fbclid: "IwAR-fbclid-do-clique",
+      fbc: "fb.1.1770000000000.IwAR-fbclid-do-clique",
+      fbp: "fb.1.1770000000000.987654321",
+      gclid: "Cj0KCQjw-gclid-do-clique",
+      ad_id: "120210000000000",
+      adset_id: "120210000000111",
+      campaign_id: "120210000000222",
+    });
+  });
+
+  it("o payload do formulário grava a atribuição no contato pela regra de primeiro toque", async () => {
+    const rpc = vi.fn().mockResolvedValue({ error: null });
+    const admin = { rpc } as never;
+
+    const atribuicao = extrairAtribuicaoDoInbound(FORMULARIO);
+    expect(atribuicao).not.toBeNull();
+    // A MESMA função do clique-pro-WhatsApp: a regra de primeiro toque mora no
+    // banco, não numa segunda cópia em JS.
+    await estamparAtribuicaoDoContato(admin, "org-1", "contact-1", atribuicao!);
+
+    expect(rpc).toHaveBeenCalledWith(
+      "fn_estampar_atribuicao_de_anuncio",
+      expect.objectContaining({
+        p_org: "org-1",
+        p_contact: "contact-1",
+        p_platform: "meta_ads",
+        p_metadata: expect.objectContaining({
+          ad_platform: "meta_ads",
+          // A marca de que a captura foi na PÁGINA: é ela que faz a leitura
+          // entregar o lead pelo ramo SEM clique (e o transporte trocar a
+          // identidade do evento). Sem ela, o `fbclid` sairia como `ctwa_clid`.
+          ad_click_source: "site",
+          // O clique da Meta (fbclid) tem precedência sobre o gclid quando o
+          // formulário traz os dois — ordem declarada no extrator.
+          ad_source_id: "IwAR-fbclid-do-clique",
+          ad_id: "120210000000000",
+          // As chaves todas sobrevivem no payload cru: o Google, os dois níveis
+          // abaixo da campanha e o id do navegador. Perder qualquer uma aqui é
+          // perder a prova de onde o dado saiu.
+          ad_raw: expect.objectContaining({
+            fbclid: "IwAR-fbclid-do-clique",
+            fbc: "fb.1.1770000000000.IwAR-fbclid-do-clique",
+            fbp: "fb.1.1770000000000.987654321",
+            gclid: "Cj0KCQjw-gclid-do-clique",
+            ad_id: "120210000000000",
+            adset_id: "120210000000111",
+            campaign_id: "120210000000222",
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("o clique IDENTIFICA a plataforma: só gclid (Google) grava google_ads", () => {
+    const r = extrairAtribuicaoDoInbound({
+      gclid: "Cj0KCQjw-gclid",
+      ad_id: "ads-google",
+      campaign_id: "camp-google",
+    });
+    expect(r).toMatchObject({
+      plataforma: "google_ads",
+      sourceId: "Cj0KCQjw-gclid",
+      adId: "ads-google",
+      bruto: expect.objectContaining({ campaign_id: "camp-google" }),
+    });
+  });
+
+  it("sem um clique não há atribuição — ad_id sozinho não diz de qual rede", () => {
+    expect(extrairAtribuicaoDoInbound({ ad_id: "x", campaign_id: "y" })).toBeNull();
+    expect(extrairAtribuicaoDoInbound({ mensagem: "oi" })).toBeNull();
+    expect(extrairAtribuicaoDoInbound({ fbclid: "   " })).toBeNull();
   });
 });

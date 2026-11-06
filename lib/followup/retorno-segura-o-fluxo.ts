@@ -15,8 +15,9 @@
  *
  * Com um retorno VIVO para o contato, o fluxo de silêncio não fala por cima:
  *   - a varredura não inscreve o contato (`contatosComRetornoVivo`);
- *   - a inscrição que já estava andando fica segurada até `FOLGA_DEPOIS_DO_RETORNO_MS`
- *     depois do retorno (`quandoDoRetornoVivo` + `reavaliarDepoisDoRetorno`).
+ *   - a inscrição que já estava andando fica segurada até a folga do fluxo
+ *     (`folgaDepoisDoRetorno`) depois do retorno (`quandoDoRetornoVivo` +
+ *     `reavaliarDepoisDoRetorno`).
  *     Se o cliente responder ao retorno, o `cancel_on_reply` do fluxo o encerra
  *     como sempre; se não responder, o fluxo retoma de onde estava.
  *
@@ -34,7 +35,7 @@
  * O que muda é só a inscrição NOVA: `contatosQueORetornoSegura` une o retorno
  * vivo ao RECÉM-EXECUTADO — a mesma linha de `cron_jobs`, uma janela depois —
  * para o corte de silêncio valer também para quem ainda não estava inscrito.
- * A folga é a mesma (`FOLGA_DEPOIS_DO_RETORNO_MS`), ancorada no mesmo instante
+ * A folga é a mesma (`folgaDepoisDoRetorno`), ancorada no mesmo instante
  * (`next_run_at`, que o disparo não move).
  *
  * Só o gatilho de SILÊNCIO: é ele que insiste com quem parou de falar, e é ele
@@ -52,14 +53,25 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Quanto o fluxo espera DEPOIS do retorno antes de retomar. Um dia: o tempo de a
- * pessoa ler e responder ao que foi prometido. Menos que isso, o fluxo emendaria
- * uma mensagem na outra no mesmo dia — o bombardeio que a regra existe para evitar.
+ * Menor espera depois de um retorno, qualquer que seja o gatilho do fluxo. É a
+ * proteção da issue #2907: com gatilho de 40 min, o retorno saiu às 18:56 e o
+ * "Follow-up 1" às 18:58 — duas mensagens seguidas sem o lead responder.
  */
-export const FOLGA_DEPOIS_DO_RETORNO_MS = 24 * 3_600_000;
+export const PISO_DA_FOLGA_DEPOIS_DO_RETORNO_MS = 4 * 3_600_000;
 
-export function reavaliarDepoisDoRetorno(quandoDoRetorno: string): string {
-  return new Date(Date.parse(quandoDoRetorno) + FOLGA_DEPOIS_DO_RETORNO_MS).toISOString();
+/**
+ * Quanto o fluxo de silêncio espera DEPOIS do retorno antes de falar: o retorno
+ * conta como a última conversa e o relógio do silêncio recomeça dali — o próprio
+ * gatilho do fluxo (`threshold_minutes`), nunca menos que o piso. O fluxo de 3
+ * dias espera 3 dias; o de 1 h e o de 40 min esperam 4 h. Antes era 1 dia para
+ * todos: o fluxo de 1 h ficava um dia parado depois do retorno (PR #3692).
+ */
+export function folgaDepoisDoRetorno(gatilhoMinutos: number): number {
+  return Math.max(gatilhoMinutos * 60_000, PISO_DA_FOLGA_DEPOIS_DO_RETORNO_MS);
+}
+
+export function reavaliarDepoisDoRetorno(quandoDoRetorno: string, gatilhoMinutos: number): string {
+  return new Date(Date.parse(quandoDoRetorno) + folgaDepoisDoRetorno(gatilhoMinutos)).toISOString();
 }
 
 function retornosVivos(admin: SupabaseClient, orgId: string) {
@@ -105,7 +117,7 @@ export async function contatosComRetornoVivo(admin: SupabaseClient, orgId: strin
  * desabilitam os pendentes do lead sem marcar `cancelled_at`), e isso não é um
  * retorno que falou.
  */
-function retornosJaDisparados(admin: SupabaseClient, orgId: string, agora: Date) {
+function retornosJaDisparados(admin: SupabaseClient, orgId: string, folgaMs: number, agora: Date) {
   return admin
     .from("cron_jobs")
     .select("contact_id, next_run_at")
@@ -117,7 +129,7 @@ function retornosJaDisparados(admin: SupabaseClient, orgId: string, agora: Date)
     .is("last_error", null)
     .is("payload->>followup_enrollment_id", null)
     .lte("next_run_at", agora.toISOString())
-    .gt("next_run_at", new Date(agora.getTime() - FOLGA_DEPOIS_DO_RETORNO_MS).toISOString());
+    .gt("next_run_at", new Date(agora.getTime() - folgaMs).toISOString());
 }
 
 /**
@@ -126,19 +138,21 @@ function retornosJaDisparados(admin: SupabaseClient, orgId: string, agora: Date)
  * nascia no minuto seguinte ao disparo e o fluxo falava por cima do retorno que
  * acabara de sair (issue #2907).
  *
- * `agora` é injetável só para o teste provar a janela; a regra é a mesma dos
- * dois lados — um dia depois do retorno (`FOLGA_DEPOIS_DO_RETORNO_MS`).
+ * `folgaMs` é a do fluxo que pergunta (`folgaDepoisDoRetorno`): a varredura
+ * chama por pointer, e cada fluxo tem o seu gatilho. `agora` é injetável só para
+ * o teste provar a janela; a regra é a mesma dos dois lados.
  */
 export async function contatosQueORetornoSegura(
   admin: SupabaseClient,
   orgId: string,
+  folgaMs: number,
   agora: Date = new Date(),
 ): Promise<Set<string>> {
   const segura = await contatosComRetornoVivo(admin, orgId);
-  const { data, error } = await retornosJaDisparados(admin, orgId, agora);
+  const { data, error } = await retornosJaDisparados(admin, orgId, folgaMs, agora);
   if (error) throw new Error(`retorno_disparado_query_failed: ${error.message}`);
   const fim = agora.getTime();
-  const corte = fim - FOLGA_DEPOIS_DO_RETORNO_MS;
+  const corte = fim - folgaMs;
   for (const row of (data ?? []) as Array<{ contact_id: string | null; next_run_at: string }>) {
     if (!row.contact_id) continue;
     const quando = Date.parse(row.next_run_at);

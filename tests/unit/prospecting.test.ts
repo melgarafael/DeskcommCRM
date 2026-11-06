@@ -15,13 +15,13 @@ const valid = {
 };
 afterEach(() => vi.unstubAllGlobals());
 describe("native prospecting", () => {
-  it("normalizes Maps data without inventing international phones", () => {
+  it("normalizes Maps data and keeps a foreign phone that carries its country code", () => {
     expect(
       normalizeProspect({ title: "Example", placeId: "p1", phone: "(11) 99999-0000" })?.phone,
     ).toBe("+5511999990000");
     expect(
       normalizeProspect({ title: "Example", placeId: "p1", phone: "+1 212 555 1234" })?.phone,
-    ).toBeNull();
+    ).toBe("+12125551234");
     expect(
       normalizeProspect({ title: "Example", placeId: "p1", permanentlyClosed: true }),
     ).toBeNull();

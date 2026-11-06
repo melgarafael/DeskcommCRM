@@ -19,7 +19,7 @@ import { CORES_DA_MARCA } from "@/lib/branding/desenho";
  * evidência de símbolo, não de comportamento).
  */
 
-vi.mock("next/navigation", () => ({ usePathname: () => "/app/inbox" }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/app/inbox", useRouter: () => ({ prefetch: vi.fn() }) }));
 vi.mock("@/app/actions/shell/toggleSidebar", () => ({ toggleSidebar: vi.fn() }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (chave: string) => chave }));
 vi.mock("@/components/connections/ConnectionHealthDot", () => ({
@@ -29,6 +29,9 @@ vi.mock("@/components/connections/ConnectionHealthDot", () => ({
 // número não é o objeto destes casos (o dele mora em contador-de-casos.test.tsx).
 vi.mock("@/components/shell/ContadorDeCasos", () => ({ ContadorDeCasos: () => null }));
 vi.mock("@/components/shell/ContadorDaFila", () => ({ ContadorDaFila: () => null }));
+// O de tarefas lê a lista pelo React Query, e sem provider ele lança: o número
+// dele mora em contador-de-tarefas.test.tsx.
+vi.mock("@/components/shell/ContadorDeTarefas", () => ({ ContadorDeTarefas: () => null }));
 vi.mock("@/components/shell/VersionFooter", () => ({ VersionFooter: () => null }));
 
 const usuario = {

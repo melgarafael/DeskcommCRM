@@ -251,7 +251,14 @@ export async function pausarIaPorAtendimentoManual(
           : silenciadaAte;
     if (atualMs >= propostoMs) return false;
 
-    const { error: updErr } = await admin
+    // A LINHA VOLTA. Um UPDATE pode devolver `error: null` sem ter tocado em
+    // nada — uma corrida com um DELETE que apaga a linha entre a leitura de
+    // cima e esta escrita (o cliente é admin, então RLS não é a causa). Sem
+    // ler de volta, a função dizia "pausei" com o banco intacto, e a IA
+    // voltava a falar por cima do humano no turno seguinte. Pedir
+    // `select("id")` é o que torna a pausa OBSERVÁVEL: sem linha nenhuma
+    // afetada, não houve pausa — é falha.
+    const { data: afetadas, error: updErr } = await admin
       .from("conversations")
       .update({
         bot_silenced_until: gravado,
@@ -259,13 +266,26 @@ export async function pausarIaPorAtendimentoManual(
         last_handoff_reason: motivo,
       })
       .eq("organization_id", input.organizationId)
-      .eq("id", input.conversationId);
+      .eq("id", input.conversationId)
+      .select("id");
 
     if (updErr) {
       logger.warn("[atendimento-manual] pausa da IA não gravada", {
         organization_id: input.organizationId,
         conversation_id: input.conversationId,
         detail: updErr.message.slice(0, 160),
+      });
+      return false;
+    }
+
+    // Zero linhas é o mesmo que erro: o `error` do supabase-js fica `null` e só
+    // a contagem denuncia. Segue o contrato — devolve `false`, nunca lança.
+    const rows = afetadas?.length ?? 0;
+    if (rows === 0) {
+      logger.warn("[atendimento-manual] pausa da IA não gravada — nenhuma linha afetada", {
+        organization_id: input.organizationId,
+        conversation_id: input.conversationId,
+        rows: 0,
       });
       return false;
     }

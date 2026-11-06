@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "Conversões de anúncios",
-    "subtitle": "Da venda ao diagnóstico e ao reprocessamento",
+    "subtitle": "Purchase, etapas e LeadSubmitted por clique CTWA",
     "output": "conversoes-de-anuncios.html",
     "quality_profile": "standard"
   },
@@ -170,6 +170,69 @@
       "col": 5,
       "type": "component",
       "label": "meta_ads_conversion_rules"
+    },
+    {
+      "id": "msg-ctwa",
+      "lane": "dados",
+      "col": 0,
+      "type": "component",
+      "label": "Mensagem inbound: meta_ctwa_message_v1"
+    },
+    {
+      "id": "nascimento-ctwa",
+      "lane": "motor",
+      "col": 1,
+      "type": "component",
+      "label": "RPC de nascimento por mensagem"
+    },
+    {
+      "id": "prova-lead",
+      "lane": "dados",
+      "col": 2,
+      "type": "component",
+      "label": "Lead: meta_capi_lead_birth_v1"
+    },
+    {
+      "id": "handler-nascimento",
+      "lane": "motor",
+      "col": 3,
+      "type": "component",
+      "label": "conversoes.nascimento_meta: pendências legadas"
+    },
+    {
+      "id": "claim-nascimento",
+      "lane": "motor",
+      "col": 4,
+      "type": "component",
+      "label": "Claim/lease LeadSubmitted"
+    },
+    {
+      "id": "ativacao-nascimento",
+      "lane": "dados",
+      "col": 3,
+      "type": "component",
+      "label": "organizations.meta_lead_birth_enabled_at"
+    },
+    {
+      "id": "registro-cliques",
+      "lane": "dados",
+      "col": 2,
+      "type": "component",
+      "label": "meta_ctwa_click_dispatches: primeiro clique e estado"
+    },
+    {
+      "id": "handler-clique",
+      "lane": "motor",
+      "col": 3,
+      "type": "component",
+      "label": "conversoes.clique_meta"
+    },
+    {
+      "id": "claim-clique",
+      "lane": "motor",
+      "col": 4,
+      "type": "component",
+      "label": "Claim/lease por (organização, ctwa_clid)"
     }
   ],
   "edges": [
@@ -358,6 +421,108 @@
       "from": "tela",
       "to": "regras-meta",
       "label": "O que cada etapa informa à Meta"
+    },
+    {
+      "id": "feature-a-1",
+      "from": "msg-ctwa",
+      "to": "nascimento-ctwa",
+      "label": "message_id e escopo"
+    },
+    {
+      "id": "feature-a-2",
+      "from": "nascimento-ctwa",
+      "to": "prova-lead",
+      "label": "prova no novo lead e lead.created atomico"
+    },
+    {
+      "id": "feature-a-3",
+      "from": "prova-lead",
+      "to": "handler-nascimento",
+      "label": "somente prova causal"
+    },
+    {
+      "id": "feature-a-4",
+      "from": "eventos",
+      "to": "handler-nascimento",
+      "label": "lead.created"
+    },
+    {
+      "id": "feature-a-5",
+      "from": "handler-nascimento",
+      "to": "claim-nascimento",
+      "label": "owner unico e event_id estavel"
+    },
+    {
+      "id": "feature-a-6",
+      "from": "claim-nascimento",
+      "to": "registro",
+      "label": "lease e settlement"
+    },
+    {
+      "id": "feature-a-7",
+      "from": "handler-nascimento",
+      "to": "transporte",
+      "label": "LeadSubmitted sem valor"
+    },
+    {
+      "id": "feature-a-ativacao-tela",
+      "from": "tela",
+      "to": "ativacao-nascimento",
+      "label": "admin liga/desliga com auditoria e corte do banco"
+    },
+    {
+      "id": "feature-a-ativacao-handler",
+      "from": "ativacao-nascimento",
+      "to": "handler-nascimento",
+      "label": "compatibilidade de eventos legados pendentes"
+    },
+    {
+      "id": "feature-a1-captura",
+      "from": "msg-ctwa",
+      "to": "registro-cliques",
+      "label": "trigger na mesma transação da mensagem"
+    },
+    {
+      "id": "feature-a1-evento",
+      "from": "eventos",
+      "to": "handler-clique",
+      "label": "message.received ou retry por clique"
+    },
+    {
+      "id": "feature-a1-ledger",
+      "from": "registro-cliques",
+      "to": "handler-clique",
+      "label": "primeira mensagem, epoch e event_id estáveis"
+    },
+    {
+      "id": "feature-a1-claim",
+      "from": "handler-clique",
+      "to": "claim-clique",
+      "label": "uma posse concorrente por clique"
+    },
+    {
+      "id": "feature-a1-settle",
+      "from": "claim-clique",
+      "to": "registro-cliques",
+      "label": "sent, skipped ou error"
+    },
+    {
+      "id": "feature-a1-transporte",
+      "from": "handler-clique",
+      "to": "transporte",
+      "label": "LeadSubmitted sem exigir card"
+    },
+    {
+      "id": "feature-a1-ativacao",
+      "from": "ativacao-nascimento",
+      "to": "handler-clique",
+      "label": "captura elegível e releitura antes do POST"
+    },
+    {
+      "id": "feature-a1-historico",
+      "from": "registro-cliques",
+      "to": "tela",
+      "label": "histórico e pedido de retry autorizado"
     }
   ]
 }

@@ -34,7 +34,7 @@
  * fonte confiável — e nunca de conteúdo de usuário (CLAUDE.md §multi-tenancy).
  */
 
-import { embedText, SemChaveDeEmbeddingError } from "@/lib/ai/embed";
+import { embedTexts, SemChaveDeEmbeddingError } from "@/lib/ai/embed";
 import {
   FamiliaDaBaseIlegivelError,
   modeloDeEmbedding,
@@ -238,12 +238,13 @@ async function pedacosDeDocumento(fonte: FonteRow): Promise<Pedaco[]> {
 }
 
 /** Catálogo: os produtos já sincronizados desta organização. */
-async function pedacosDeCatalogo(fonte: FonteRow, productId?: string): Promise<Pedaco[]> {
-  const produtos = productId
-    ? [await buscarProdutoNaLoja(fonte.organization_id, productId)].filter(
-        (p): p is NuvemshopProduct => p !== null,
-      )
-    : [];
+async function pedacosDeCatalogo(fonte: FonteRow): Promise<Pedaco[]> {
+  // SEMPRE a loja INTEIRA, e isso é o invariante desta fonte: cada indexação
+  // publica uma versão nova que substitui a anterior, e a busca só enxerga a
+  // ativa. Uma versão montada com um produto só apagaria os outros do acervo,
+  // sem erro nenhum. A função nem aceita um produto avulso para que não exista
+  // caminho que leve a isso.
+  const produtos = await listarCatalogoDaLoja(fonte.organization_id);
 
   const pedacos: Pedaco[] = [];
   for (const p of produtos) {
@@ -257,29 +258,96 @@ async function pedacosDeCatalogo(fonte: FonteRow, productId?: string): Promise<P
   return pedacos;
 }
 
-async function buscarProdutoNaLoja(
-  organizationId: string,
-  productId: string,
-): Promise<NuvemshopProduct | null> {
+/**
+ * O catálogo inteiro, para a carga inicial de uma loja recém-conectada.
+ *
+ * Paginado, com teto de propósito. O limite não é a API da loja: é o reaper do
+ * drain, que devolve à fila evento em `processing` há mais de 10 minutos.
+ * Passar dessa janela não deixa a carga lenta — faz DOIS workers indexarem a
+ * mesma fonte, com o embedding pago em dobro e corrida na ativação da versão.
+ *
+ * A primeira versão deste teto declarava 2 mil produtos e NÃO os entregava: os
+ * embeddings saíam um a um, a 200-400 ms por pedaço, e cada produto rende um ou
+ * dois pedaços. Dá de 6,7 min (2000 × 1 × 0,2 s) a 26,7 min (2000 × 2 × 0,4 s)
+ * contra uma janela de 10. No pior caso a janela só comportava ~750 produtos, e
+ * menos que isso contando a ida ao banco por trecho, que o laço antigo também
+ * fazia uma a uma.
+ *
+ * Agora os embeddings vão em lote (`TRECHOS_POR_LOTE`), que é o que faz 2 mil
+ * produtos caberem de fato: ~40 chamadas de 100 textos, da ordem de segundos
+ * cada (o 200-400 ms era o custo de UM texto), mais ~40 idas ao banco. Sobra
+ * folga larga nos 10 minutos.
+ *
+ * O teto segue em 10 páginas porque a janela não mudou, e o que passar disso
+ * FALHA com a conta na mensagem, em vez de virar catálogo pela metade publicado
+ * como completo. Loja maior precisa de carga com cursor entre execuções, que é
+ * trabalho próprio e está registrado como tal.
+ */
+/** 10 páginas de 200 = 2 mil produtos. Ver o porquê do teto acima. */
+const TETO_DE_PAGINAS = 10;
+
+/**
+ * Trechos por chamada de embedding.
+ *
+ * É o que faz o teto de 2 mil produtos ser verdadeiro em vez de declarado: o
+ * `embedMany` do AI SDK divide a lista conforme o limite do provedor e
+ * paraleliza as partes, então o lote de 100 troca ~4 mil chamadas HTTP em série
+ * por ~40, e isso cabe na janela de 10 minutos do reaper — o limite que o teto
+ * pequeno existia para respeitar.
+ *
+ * 100 não é número redondo: é o `maxEmbeddingsPerCall` do `@ai-sdk/google`
+ * (o da OpenAI é 2048). Ou seja, é o maior valor que ainda é UMA chamada HTTP
+ * nos dois provedores, e é disso que as ~40 chamadas dependem. Subir daqui não
+ * quebra, porque o `embedMany` fatia sozinho, mas invalida a conta acima.
+ */
+const TRECHOS_POR_LOTE = 100;
+
+async function listarCatalogoDaLoja(organizationId: string): Promise<NuvemshopProduct[]> {
   const creds = await credenciaisDaLoja(organizationId);
   if (!creds) {
     console.warn("[rag-indexer] loja não conectada para a org", organizationId);
-    return null;
+    return [];
   }
-  try {
-    const client = new NuvemshopApiClient({
-      storeId: creds.storeId,
-      accessToken: creds.accessToken,
-    });
-    return (await client.get<NuvemshopProduct>(`/products/${productId}`)) ?? null;
-  } catch (err) {
-    console.warn(
-      "[rag-indexer] busca do produto falhou",
-      productId,
-      err instanceof Error ? err.message : String(err),
-    );
-    return null;
+  const client = new NuvemshopApiClient({
+    storeId: creds.storeId,
+    accessToken: creds.accessToken,
+  });
+  const todos: NuvemshopProduct[] = [];
+  for (let pagina = 1; pagina <= TETO_DE_PAGINAS; pagina += 1) {
+    let lote: NuvemshopProduct[];
+    try {
+      lote = await client.get<NuvemshopProduct[]>(`/products?per_page=200&page=${pagina}`);
+    } catch (err) {
+      // ERRO SOBE, e não `break`.
+      //
+      // O `break` fazia pior do que parecia: com a página 1 falhando (429, 5xx,
+      // rede), `[]` é indistinguível de "loja sem produtos" e o evento era
+      // marcado consumido para sempre; com uma página do meio falhando, um
+      // catálogo truncado era ATIVADO como se estivesse completo, e o
+      // `content_hash` do truncado fazia a carga seguinte ser pulada por
+      // "sem_mudanca". Não existe "próxima sincronização completa o resto": o
+      // único emissor de carga inteira é a conexão.
+      //
+      // Deixando subir, o drain reagenda com backoff e, no limite, abre aviso
+      // crítico. Barulho é o desfecho certo aqui.
+      throw new Error(
+        `catálogo incompleto: página ${pagina} falhou (${
+          err instanceof Error ? err.message : String(err)
+        })`,
+      );
+    }
+    if (!Array.isArray(lote) || lote.length === 0) return todos;
+    todos.push(...lote);
+    if (lote.length < 200) return todos;
   }
+  // Chegou ao teto com a página cheia: há mais loja do que esta carga alcança.
+  // Devolver o que veio publicaria um catálogo truncado como se fosse a loja
+  // inteira, e o `content_hash` do truncado faria a carga seguinte ser pulada
+  // por "sem_mudanca" — o erro que se conserta sozinho nunca, porque ninguém vê.
+  throw new Error(
+    `catálogo maior que o teto desta carga: ${todos.length} produtos em ${TETO_DE_PAGINAS} páginas. ` +
+      "Loja desse tamanho precisa de carga com cursor entre execuções.",
+  );
 }
 
 async function credenciaisDaLoja(
@@ -289,10 +357,15 @@ async function credenciaisDaLoja(
 
   const { data, error } = await admin
     .from("tenant_integrations")
-    .select("id, organization_id, provider, store_metadata")
+    .select("id, organization_id, provider, store_metadata, oauth_access_token_encrypted")
     .eq("organization_id", organizationId)
     .eq("provider", "nuvemshop")
-    .eq("status", "active")
+    // `healthy`, e não `active`: o CHECK de `tenant_integrations` aceita
+    // connecting | healthy | token_expired | scope_missing | disconnected |
+    // rate_limited | error. `active` NUNCA existiu, então este filtro devolvia
+    // zero linhas para toda organização — e, com credencial nula, o catálogo
+    // não tinha como ser lido nem que todo o resto estivesse certo.
+    .eq("status", "healthy")
     .maybeSingle();
 
   if (error || !data) return null;
@@ -301,10 +374,22 @@ async function credenciaisDaLoja(
   const storeId = String(meta["store_id"] ?? meta["id"] ?? "");
   if (!storeId) return null;
 
-  const { data: decrypted, error: decErr } = await admin.rpc("fn_decrypt_oauth" as never, {
-    p_organization_id: organizationId,
-    p_integration_id: (data as { id: string }).id,
-  } as never);
+  // `fn_decrypt_oauth(ciphertext bytea)` — UM argumento, e é o texto cifrado.
+  //
+  // Aqui se pedia `p_organization_id` e `p_integration_id`, que não existem em
+  // assinatura nenhuma: o PostgREST devolvia "função não encontrada", a
+  // credencial voltava nula e o catálogo ficava vazio pelo mesmo silêncio que
+  // esta correção veio matar — um nível abaixo. Quem escondeu isso do
+  // compilador foi o `as never`, por isso ele saiu junto.
+  //
+  // O mesmo padrão está em `webhooks/nuvemshop/[event]/route.ts` e em
+  // `lib/webhooks/secrets.ts`.
+  const cifrado = (data as { oauth_access_token_encrypted: string | null })
+    .oauth_access_token_encrypted;
+  if (!cifrado) return null;
+  const { data: decrypted, error: decErr } = await admin.rpc("fn_decrypt_oauth", {
+    ciphertext: cifrado,
+  });
 
   if (decErr || !decrypted) return null;
   const accessToken = String(decrypted);
@@ -333,7 +418,6 @@ async function credenciaisDaLoja(
 export async function indexarFonte(
   fonte: FonteRow,
   chave: ChaveDeEmbedding,
-  extra: { productId?: string },
 ): Promise<Resultado> {
   const tipo = canonizarTipoDeFonte(fonte.source_type);
   if (tipo === null) {
@@ -350,7 +434,7 @@ export async function indexarFonte(
         pedacos = await pedacosDeDocumento(fonte);
         break;
       case "catalogo":
-        pedacos = await pedacosDeCatalogo(fonte, extra.productId);
+        pedacos = await pedacosDeCatalogo(fonte);
         break;
       case "conversas":
         // A ingestão anonimizada tem pipeline próprio (cron
@@ -420,48 +504,64 @@ export async function indexarFonte(
   let gravados = 0;
   // Trecho que não gravou NÃO pode seguir para a ativação: a versão fica
   // incompleta e a anterior — que funciona — é quem deve continuar no ar.
-  const falhas: Array<{ posicao: number; mensagem: string }> = [];
+  const falhas: Array<{ de: number; ate: number; mensagem: string }> = [];
 
-  for (let i = 0; i < pedacos.length; i++) {
-    const p = pedacos[i]!;
-    let embedding: number[];
+  // EM LOTES, e nao um-a-um. O laco sequencial era o teto real da indexacao:
+  // a 200-400 ms por pedaco, mil produtos passavam da janela de 10 minutos que
+  // o reaper do drain usa para devolver evento a fila, e o efeito nao era carga
+  // lenta — eram DOIS workers na mesma fonte, embedding pago em dobro e corrida
+  // na ativacao da versao. `embedTexts` manda o lote numa chamada e o upsert vai
+  // junto, com uma ida ao banco por lote em vez de uma por trecho.
+  for (let inicio = 0; inicio < pedacos.length; inicio += TRECHOS_POR_LOTE) {
+    const lote = pedacos.slice(inicio, inicio + TRECHOS_POR_LOTE);
+
+    let embeddings: number[][];
     try {
-      // `chave` já resolvida: sem isto, um documento de 200 trechos decifraria a
+      // `chave` ja resolvida: sem isto, um documento de 200 trechos decifraria a
       // credencial 200 vezes.
-      const r = await embedText(p.content, {
-        organizationId: fonte.organization_id,
-        chave,
-      });
-      embedding = r.embedding;
+      const r = await embedTexts(
+        lote.map((p) => p.content),
+        { organizationId: fonte.organization_id, chave },
+      );
+      embeddings = r.embeddings;
     } catch (err) {
       const detalhe = err instanceof Error ? err.message : String(err);
-      await markVersionFailed(versionId, fonte.organization_id, `embed@${i}: ${detalhe}`);
-      return { tipo: "erro", detalhe: `embedding falhou no trecho ${i}: ${detalhe}` };
+      // A FAIXA, não `inicio`: em lote não se sabe qual trecho o provedor
+      // recusou, e este texto aparece para o cliente no cartão da fonte.
+      // Dizer "trecho 100" quando a culpa pode ser do 173 é mentir com número.
+      const faixa = `${inicio}-${inicio + lote.length - 1}`;
+      await markVersionFailed(versionId, fonte.organization_id, `embed@lote ${faixa}: ${detalhe}`);
+      return { tipo: "erro", detalhe: `embedding falhou no lote ${faixa}: ${detalhe}` };
     }
 
+    const linhas = lote.map((p, j) => ({
+      organization_id: fonte.organization_id,
+      kb_version_id: versionId,
+      knowledge_source_id: fonte.id,
+      position: inicio + j,
+      content: p.content,
+      content_hash: computeContentHash(p.content),
+      token_count: estimateTokens(p.content),
+      embedding: embeddings[j] as unknown as string,
+      metadata: p.metadata,
+    }));
+
     const { error: upErr } = await admin.from("ai_chunks").upsert(
-      {
-        organization_id: fonte.organization_id,
-        kb_version_id: versionId,
-        knowledge_source_id: fonte.id,
-        position: i,
-        content: p.content,
-        content_hash: computeContentHash(p.content),
-        token_count: estimateTokens(p.content),
-        embedding: embedding as unknown as string,
-        metadata: p.metadata,
-      },
-      // A constraint que EXISTE é `ai_chunks_position_unique`
-      // (knowledge_source_id, kb_version_id, position). Como cada indexação cria
-      // uma versão nova, na prática nunca há conflito — o alvo certo é o que faz
+      linhas,
+      // A constraint que EXISTE e `ai_chunks_position_unique`
+      // (knowledge_source_id, kb_version_id, position). Como cada indexacao cria
+      // uma versao nova, na pratica nunca ha conflito — o alvo certo e o que faz
       // o insert passar.
       { onConflict: "knowledge_source_id,kb_version_id,position", ignoreDuplicates: true },
     );
 
     if (upErr) {
-      falhas.push({ posicao: i, mensagem: upErr.message });
+      // O lote e atomico: se deu erro, nenhuma linha dele entrou. Guardar a
+      // FAIXA, e nao cada posicao, porque com lote de 100 a mensagem de falha
+      // viraria uma lista de cem numeros iguais.
+      falhas.push({ de: inicio, ate: inicio + linhas.length - 1, mensagem: upErr.message });
     } else {
-      gravados++;
+      gravados += linhas.length;
     }
   }
 
@@ -471,14 +571,15 @@ export async function indexarFonte(
   }
 
   if (falhas.length > 0) {
+    const quantos = falhas.reduce((soma, f) => soma + (f.ate - f.de + 1), 0);
     await markVersionFailed(
       versionId,
       fonte.organization_id,
-      `${falhas.length} de ${pedacos.length} trechos não gravaram: ${falhas
-        .map((f) => `posição ${f.posicao} (${f.mensagem})`)
+      `${quantos} de ${pedacos.length} trechos não gravaram: ${falhas
+        .map((f) => `posições ${f.de}-${f.ate} (${f.mensagem})`)
         .join("; ")}`,
     );
-    return { tipo: "erro", detalhe: `trechos_nao_gravados:${falhas.length}` };
+    return { tipo: "erro", detalhe: `trechos_nao_gravados:${quantos}` };
   }
 
   await markVersionReady(versionId, fonte.organization_id, gravados);
@@ -504,7 +605,6 @@ export async function indexarFonte(
  */
 async function fonteDoEvento(row: EventRow): Promise<{
   fonte: FonteRow | null;
-  productId?: string;
   motivo?: string;
 }> {
   if (row.event_type === "knowledge_source.updated") {
@@ -514,11 +614,34 @@ async function fonteDoEvento(row: EventRow): Promise<{
     return { fonte, ...(fonte ? {} : { motivo: "fonte_nao_encontrada" }) };
   }
 
-  // nuvemshop.product_synced
-  const productId = String(row.payload["product_id"] ?? "");
-  if (!productId) return { fonte: null, motivo: "evento_sem_product_id" };
+  // nuvemshop.product_synced — o evento diz O QUE mudou, não o que indexar:
+  // a reindexação é sempre da loja inteira (ver `pedacosDeCatalogo`). O
+  // `product_id` serve só para separar evento legítimo de evento malformado.
+  //
+  // `catalogo_inteiro` é a carga inicial, emitida quando a loja acaba de
+  // conectar: ali não existe produto nenhum em mãos, e exigir `product_id`
+  // deixava a conexão nova com um acervo vazio até alguém editar um produto.
+  const catalogoInteiro = row.payload["catalogo_inteiro"] === true;
+  const temProduto = String(row.payload["product_id"] ?? "") !== "";
+  if (!temProduto && !catalogoInteiro) return { fonte: null, motivo: "evento_sem_product_id" };
   const fonte = await garantirFonteDeCatalogo(row.organization_id);
-  return { fonte, productId, ...(fonte ? {} : { motivo: "fonte_de_catalogo_indisponivel" }) };
+  // ── A VERSÃO ATIVA DO CATÁLOGO NUNCA PODE ENCOLHER ───────────────────────
+  //
+  // `indexarFonte` cria uma versão com os pedaços que receber e a ATIVA, e
+  // `activateVersion` desliga a anterior; a busca só enxerga o ponteiro ativo
+  // (`fn_buscar_trechos_das_fontes` filtra `c.kb_version_id =
+  // s.active_kb_version_id`). Indexar UM produto na fonte do catálogo
+  // publicaria uma versão com um item só, e os outros ficariam invisíveis ao
+  // agente — a loja inteira apagada pela edição de um preço, sem erro nenhum.
+  //
+  // Por isso todo evento de produto reindexa o catálogo inteiro. O debounce
+  // junta a rajada de quem edita vários produtos seguidos. Indexação
+  // incremental de verdade (herdar os pedaços da versão ativa e trocar só os do
+  // produto tocado) é o desenho que economiza embedding, e é trabalho próprio.
+  //
+  // `product_id` segue no payload de propósito: o log do turno diz qual edição
+  // disparou a carga.
+  return { fonte, ...(fonte ? {} : { motivo: "fonte_de_catalogo_indisponivel" }) };
 }
 
 /**
@@ -577,7 +700,7 @@ export async function processRagIndexer(row: EventRow): Promise<HandlerResult> {
   }
 
   try {
-    const { fonte, productId, motivo } = await fonteDoEvento(row);
+    const { fonte, motivo } = await fonteDoEvento(row);
     if (!fonte) {
       return { consumer_key: consumerKey, status: "skipped", detail: motivo ?? "fonte_indisponivel" };
     }
@@ -621,7 +744,7 @@ export async function processRagIndexer(row: EventRow): Promise<HandlerResult> {
 
     await marcarFonte(row.organization_id, fonte.id, { last_index_status: "indexando" });
 
-    const resultado = await indexarFonte(fonte, chave, productId ? { productId } : {});
+    const resultado = await indexarFonte(fonte, chave);
 
     if (resultado.tipo === "ok") {
       await marcarFonte(row.organization_id, fonte.id, {

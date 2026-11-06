@@ -705,7 +705,7 @@ export function ProposalEditorClient({ id, podeEditar, podeRevisar = false }: { 
         <p className="text-sm text-warning-fg">{t("Escolha e confirme o modelo da proposta antes de enviar.")}</p>
       )}
       {proposta.status === "rascunho" && (
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button onClick={enviar} disabled={salvando || !proposta.template_slug} className="flex-1">
             {t("Enviar ao cliente")}
           </Button>
@@ -722,7 +722,7 @@ export function ProposalEditorClient({ id, podeEditar, podeRevisar = false }: { 
         </Button>
       </div>
       {proposta.status === "enviada" && (
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button onClick={() => decidir("aceita")}>
             {t("Marcar como aceita")}
           </Button>

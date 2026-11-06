@@ -29,6 +29,7 @@
  */
 import { detectarVazamentoInterno } from '../guardrails/vazamento-interno';
 import type { LeadContext } from '../edge/crm/get-lead-context';
+import { rotuloDoRemetente } from '@/lib/messaging/remetente-de-grupo';
 
 /**
  * QUANDO a projeção arma — e a regra se justifica sozinha.
@@ -59,6 +60,13 @@ export interface MensagemProjetada {
   quando: string;
   /** marcador legível quando houve mídia ("[imagem]"); nunca o caminho dela. */
   anexo?: string;
+  /**
+   * #2729 — quem escreveu, num GRUPO. Nome e telefone FICAM: são dados da pessoa
+   * e é a allowlist que os deixa passar (a linha é "dado da pessoa fica").
+   * Sem isto, um turno que projeta volta a ler três participantes como uma voz
+   * só — o defeito que o contexto passou a evitar, escondido atrás da projeção.
+   */
+  quem?: string;
 }
 
 /** O contexto como o Conversador o lê. Tudo o que não está aqui, ele não vê. */
@@ -145,9 +153,11 @@ export function projetarContexto(ctx: LeadContext): ContextoProjetado {
       };
       // O caminho de storage é endereço interno; o TIPO é informação útil ("ela
       // mandou uma imagem"). Fica o segundo, sai o primeiro.
-      return m.type !== undefined && m.type !== null && m.type !== 'text'
-        ? { ...base, anexo: `[${m.type}]` }
-        : base;
+      const comAnexo =
+        m.type !== undefined && m.type !== null && m.type !== 'text'
+          ? { ...base, anexo: `[${m.type}]` }
+          : base;
+      return m.sender === undefined ? comAnexo : { ...comAnexo, quem: rotuloDoRemetente(m.sender) };
     }),
   };
 }

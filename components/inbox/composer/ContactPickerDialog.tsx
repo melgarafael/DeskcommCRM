@@ -1,6 +1,7 @@
 "use client";
 
 import { useT } from "@/hooks/i18n/useT";
+import { useTelefoneExemplo } from "@/hooks/contacts/useTelefoneExemplo";
 
 import { useEffect, useState } from "react";
 
@@ -51,6 +52,7 @@ export function ContactPickerDialog({
   onPick,
 }: Props) {
   const t = useT();
+  const telefoneExemplo = useTelefoneExemplo();
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [manualName, setManualName] = useState("");
@@ -237,7 +239,7 @@ export function ContactPickerDialog({
                 id="manual-contact-phone"
                 value={manualPhone}
                 onChange={(e) => setManualPhone(e.target.value)}
-                placeholder="+55 32 98479-3302"
+                placeholder={telefoneExemplo}
                 disabled={sending}
               />
             </div>

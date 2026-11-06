@@ -1,0 +1,1009 @@
+{
+  "id": "dados-externos",
+  "titulo": "Dados externos",
+  "tela": "/app/integracao-dados",
+  "resumo": "Onde você liga o CRM ao banco de dados de outro sistema da clínica, para o agente de IA consultar essas informações sem poder mudar nada lá.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Dados externos",
+      "objetivo": "Achar a tela e ler, em cada conexão, se ela está funcionando e o que o assistente já pode consultar.",
+      "papel": "admin",
+      "busca": [
+        "dados externos",
+        "banco de dados",
+        "outro sistema",
+        "integração",
+        "ERP",
+        "sistema da clínica",
+        "agente consultar dados",
+        "conectar banco"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica",
+          "texto": "Abra \"Configurações\", no rodapé do menu lateral. Na parte \"Dados e acesso\" fica o cartão \"Dados externos\". Clique nele.",
+          "dica": "Este cartão só existe quando quem administra o servidor liga o recurso \"Banco de dados externo\", no Admin, em \"Recursos opcionais\". Desligado, a tela some para todo mundo.",
+          "rota": "/app/settings",
+          "destaques": [
+            {
+              "alvo": {
+                "css": "a[href='/app/integracao-dados']"
+              },
+              "rotulo": "Dados externos",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "css": "a[href='/app/integracao-dados']"
+          },
+          "antes": []
+        },
+        {
+          "id": "p2",
+          "titulo": "Para que serve",
+          "texto": "Aqui você liga o CRM ao banco de dados de outro sistema que a clínica já usa, como o sistema de agendamentos ou o cadastro de convênios. Só funciona com bancos PostgreSQL ou MySQL, e o servidor do CRM precisa conseguir chegar até esse banco pela rede. A ligação é só de leitura: nada que o agente faz muda o sistema de origem. Cada cartão da lista é uma conexão.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[href='/app/integracao-dados']"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Dados externos",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "^Conecte um banco de dados de outro sistema",
+                "regex": true
+              },
+              "rotulo": "Só leitura: nada muda na origem",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Nova conexão",
+                "exato": true
+              },
+              "rotulo": "Cadastrar outra conexão",
+              "tipo": "seta"
+            }
+          ],
+          "dica": "Conectar não basta para o agente usar os dados. Na configuração de cada agente de IA, ligue as capacidades 'Ver as tabelas do banco conectado' e 'Buscar dados no banco conectado'. Elas ficam no pacote 'Organizar a operação'."
+        },
+        {
+          "id": "p3",
+          "titulo": "Uma conexão recém-cadastrada",
+          "texto": "O nome em cima é o que você deu à conexão. Ao lado aparecem dois selos: o primeiro diz se ela funciona (\"Não testada\" quer dizer que ninguém clicou em \"Testar\" ainda) e o segundo diz o tipo do banco, PostgreSQL ou MySQL. Embaixo ficam o endereço do servidor, a porta, o nome do banco e o usuário usado para entrar.",
+          "dica": "Os selos possíveis são \"Conectada\" (o último teste deu certo), \"Falha no último teste\", \"Não testada\" e \"Desativada\".",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Sistema de agendamentos",
+                "exato": true
+              },
+              "rotulo": "Nome da conexão",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Não testada",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+                }
+              },
+              "rotulo": "Se funciona",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "PostgreSQL",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+                }
+              },
+              "rotulo": "Tipo do banco",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "192.168.0.50:5432/agenda · crm_leitura",
+                "exato": true
+              },
+              "rotulo": "Endereço, banco e usuário",
+              "tipo": "seta"
+            }
+          ],
+          "antes": []
+        },
+        {
+          "id": "p4",
+          "titulo": "Os avisos em laranja",
+          "texto": "As frases em laranja embaixo do cartão dizem o que falta. \"O assistente ainda não enxerga nada deste banco\" quer dizer que nenhuma tabela foi liberada: o link \"Escolher o que ele pode ler\" leva direto a essa escolha. O segundo aviso diz que, nas conversas, o assistente consultaria o banco sem se limitar ao paciente que está falando. Para corrigir, use \"Editar\" e diga qual coluna identifica o cliente.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "O assistente ainda não enxerga nada deste banco.",
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+                }
+              },
+              "rotulo": "Nada liberado ainda",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "^Nas conversas, o assistente consulta este banco sem limitar",
+                "regex": true,
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+                }
+              },
+              "rotulo": "Falta dizer quem é o cliente",
+              "tipo": "caixa"
+            }
+          ],
+          "antes": []
+        },
+        {
+          "id": "p5",
+          "titulo": "Uma conexão desativada",
+          "texto": "O cartão \"Cadastro de convênios\" mostra o selo \"Desativada\": o cadastro continua salvo, mas o agente não usa esse banco. Ele também mostra \"2 tabelas liberadas\", que é o que o assistente pode ler quando a conexão estiver ativa. Como esta conexão já diz qual coluna identifica o paciente, o aviso em laranja sobre o cliente não aparece.",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Desativada",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000002'])"
+                }
+              },
+              "rotulo": "Desligada, sem apagar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "2 tabelas liberadas",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000002'])"
+                }
+              },
+              "rotulo": "O que o assistente pode ler",
+              "tipo": "caixa"
+            }
+          ],
+          "antes": []
+        },
+        {
+          "id": "p6",
+          "titulo": "Os botões de cada conexão",
+          "texto": "\"Explorar\" abre a conexão para ver as tabelas e escolher o que o assistente lê. \"Testar\" confere se o CRM consegue entrar no banco. O lápis (\"Editar\") muda os dados da conexão e a lixeira (\"Remover\") apaga a conexão. Você usa cada um deles nas próximas lições.",
+          "dica": "Todo mundo da equipe vê esta lista e pode explorar os dados liberados. Só o administrador da empresa vê 'Nova conexão', o lápis e a lixeira, e só ele consegue testar a conexão.",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Explorar",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+                }
+              },
+              "rotulo": "Abrir a conexão",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Testar",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+                }
+              },
+              "rotulo": "Conferir se funciona",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Editar",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+                }
+              },
+              "rotulo": "Editar",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Remover",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+                }
+              },
+              "rotulo": "Remover",
+              "tipo": "numero"
+            }
+          ],
+          "antes": []
+        }
+      ]
+    },
+    {
+      "id": "cadastrar-conexao",
+      "titulo": "Cadastrar uma conexão nova",
+      "objetivo": "Preencher o formulário de conexão com os dados que o responsável pelo outro sistema passar, com segurança e limites certos.",
+      "papel": "admin",
+      "busca": [
+        "conectar banco de dados",
+        "nova conexão",
+        "cadastrar banco",
+        "mysql",
+        "postgresql",
+        "usuário só leitura",
+        "senha do banco",
+        "host e porta"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Começar uma conexão",
+          "texto": "Peça a quem cuida do outro sistema (o fornecedor ou o técnico de informática) o endereço do servidor, a porta, o nome do banco e um usuário com senha que só consiga ler. Com esses dados em mãos, clique em \"Nova conexão\".",
+          "dica": "Só o administrador da empresa vê este botão. O servidor do CRM precisa conseguir chegar ao banco: se o CRM está na internet e o banco fica num computador da clínica, peça ao responsável que libere esse acesso. Sem isso, o teste sempre falha.",
+          "rota": "/app/integracao-dados",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Nova conexão",
+                "exato": true
+              },
+              "rotulo": "Nova conexão",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Nova conexão",
+            "exato": true
+          },
+          "antes": []
+        },
+        {
+          "id": "p2",
+          "titulo": "O tipo de banco",
+          "texto": "Abre a janela \"Conectar banco de dados\". Comece pelo \"Tipo de banco\": PostgreSQL ou MySQL. Pergunte ao responsável qual é o do seu sistema. A frase de cima avisa que a senha é guardada embaralhada e nunca aparece de novo na tela.",
+          "dica": "Depois de criada, a conexão não troca de tipo. Para trocar, é preciso remover e cadastrar de novo.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Nova conexão",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Conectar banco de dados",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "^A senha é cifrada antes de gravar",
+                "regex": true
+              },
+              "rotulo": "A senha fica protegida",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "#ext-motor"
+              },
+              "rotulo": "Tipo de banco",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O guia para quem usa MySQL",
+          "texto": "Ao escolher MySQL, aparece o \"Como criar um acesso só de leitura (guia rápido)\". Clique nele para abrir: são comandos prontos para você mandar a quem administra o banco. Eles criam um usuário novo que só lê e liberam somente as informações que o assistente pode ver. A porta muda sozinha para 3306, a porta comum do MySQL.",
+          "dica": "Se o seu sistema for um site em WordPress, o próprio formulário recomenda criar uma \"view\": uma tabela de consulta só com o que o assistente deve ver.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "#ext-motor"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "MySQL",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "texto": "Como criar um acesso só de leitura (guia rápido)",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "como-criar-acesso"
+              },
+              "rotulo": "Comandos para o responsável",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Os dados de acesso",
+          "texto": "Em \"Nome da conexão\", dê um nome que a equipe reconheça. Em \"Host\" vai o endereço do servidor e em \"Porta\", o número que o responsável informar. \"Banco de dados\" é o nome do banco lá dentro. \"Usuário\" e \"Senha\" são os do acesso só de leitura criado para o CRM.",
+          "dica": "Use um usuário só para o CRM, nunca o do administrador do banco.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "texto": "Como criar um acesso só de leitura (guia rápido)",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#ext-label"
+              },
+              "valor": "Sistema financeiro"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#ext-host"
+              },
+              "valor": "192.168.0.70"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#ext-database"
+              },
+              "valor": "financeiro"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#ext-user"
+              },
+              "valor": "crm_leitura"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#ext-password"
+              },
+              "valor": "Financeiro#Leitura2026"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "#ext-label"
+              },
+              "rotulo": "Nome que a equipe reconhece",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.grid-cols-3:has(#ext-host)"
+              },
+              "rotulo": "Endereço e porta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "#ext-database"
+              },
+              "rotulo": "Nome do banco",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.grid-cols-2:has(#ext-user)"
+              },
+              "rotulo": "Acesso só de leitura",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "A segurança da conexão",
+          "texto": "Em \"Segurança da conexão (TLS)\" você escolhe se a conversa entre o CRM e o banco vai protegida. Deixe em \"Obrigatório (padrão)\", a não ser que o responsável peça outra opção. \"Sem TLS\" só serve para um banco dentro da mesma rede, que você confia.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "#ext-ssl"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "#ext-ssl"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "listbox"
+              },
+              "rotulo": "Opções de proteção",
+              "tipo": "caixa"
+            }
+          ],
+          "dica": "As duas opções \"Verificar certificado\" são mais rígidas: além de proteger a conversa, conferem se o servidor apresenta um certificado válido e recusam a ligação se não apresentar. Use uma delas, ou \"Preferir TLS\", só se o responsável pedir."
+        },
+        {
+          "id": "p6",
+          "titulo": "Quem é o cliente na conversa",
+          "texto": "No quadro 'Cliente nas conversas', em 'O que identifica o cliente', escolha 'Telefone do cliente' ou 'E-mail do cliente'. Em 'Nome da coluna', escreva o nome do campo onde o outro sistema guarda esse dado. Assim, quando um paciente escreve no WhatsApp, o assistente só lê as linhas desse paciente. Escolhendo telefone, o aviso logo abaixo explica em que formato o número precisa estar gravado.",
+          "dica": "Se deixar 'Não configurado', o assistente consulta o banco nas conversas sem se limitar ao paciente que está falando. Se configurar, uma tabela que não tenha essa coluna fica fora das conversas.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Obrigatório (padrão)",
+                "exato": true
+              }
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "#ext-key-kind"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "#ext-key-kind"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Telefone do cliente",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "#ext-key-column"
+              },
+              "valor": "telefone"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "fieldset:has(#ext-key-kind)"
+              },
+              "rotulo": "Só os dados de quem está falando",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p7",
+          "titulo": "Limites e salvar",
+          "texto": "Os \"Limites de leitura\" dizem quanto o assistente pode ler de uma vez: quantas linhas por consulta, quantos filtros e o tamanho da resposta. Os valores que já vêm preenchidos servem para quase todo mundo. Ao clicar em \"Salvar\", o CRM guarda a conexão e abre a página dela para você escolher o que o assistente pode ler.",
+          "dica": "Uma conexão nova não libera nada sozinha: até você escolher as tabelas, o assistente não enxerga nenhum dado desse banco.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "fieldset:has(#ext-max-rows)"
+              },
+              "rotulo": "Quanto pode ler de uma vez",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "rotulo": "Guardar a conexão",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "testar-editar-remover",
+      "titulo": "Testar, editar e remover uma conexão",
+      "objetivo": "Conferir se o CRM alcança o banco, entender a falha, ajustar a conexão e saber o que acontece ao removê-la.",
+      "papel": "admin",
+      "busca": [
+        "testar conexão",
+        "falha no teste",
+        "não conecta",
+        "editar conexão",
+        "trocar senha do banco",
+        "desativar conexão",
+        "remover conexão",
+        "apagar banco"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Testar a conexão",
+          "texto": "Depois de cadastrar, clique em \"Testar\". O CRM tenta entrar no banco com o usuário e a senha guardados e mostra o resultado no próprio cartão.",
+          "dica": "O teste não mexe em nenhum dado do outro sistema: ele só confere se a entrada funciona.",
+          "rota": "/app/integracao-dados",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Testar",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+                }
+              },
+              "rotulo": "Testar",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Testar",
+            "exato": true,
+            "dentro": {
+              "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+            }
+          },
+          "antes": []
+        },
+        {
+          "id": "p2",
+          "titulo": "Quando o teste falha",
+          "texto": "Neste exemplo, o servidor 192.168.0.50 não respondeu. O selo virou 'Falha no último teste' e a linha vermelha mostra o motivo, em inglês. Mande essa linha para quem cuida do outro sistema: em geral é endereço, porta, senha ou um bloqueio de rede. Quando o teste dá certo, o selo vira 'Conectada'. Se nenhuma tabela foi escolhida ainda, a página da conexão abre sozinha para você fazer isso.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Testar",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Falha no último teste",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+                }
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Falha no último teste",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+                }
+              },
+              "rotulo": "O teste não passou",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "p.text-destructive",
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+                }
+              },
+              "rotulo": "Motivo da falha",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Corrigir os dados",
+          "texto": "O lápis abre a janela \"Editar conexão\" com os dados já preenchidos. O tipo de banco fica travado. A senha nunca volta para a tela: o campo diz \"Guardada — preencha só para trocar\". Deixe em branco para manter a senha atual.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Editar conexão",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "heading",
+                "nome": "Editar conexão",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "O tipo de banco não muda depois de criado. Para trocar, apague a conexão e crie outra."
+              },
+              "rotulo": "Tipo travado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "#ext-password"
+              },
+              "rotulo": "Senha guardada",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Desativar sem apagar",
+          "texto": "A chave \"Conexão ativa\" para o uso do banco sem apagar o cadastro. Desligada e salva, o cartão mostra \"Desativada\" e o agente deixa de consultar esse banco. Para voltar, é só ligar a chave de novo e clicar em \"Salvar\".",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "#ext-enabled"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-md.border:has(> #ext-enabled)"
+              },
+              "rotulo": "Ligar ou desligar o uso",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Remover uma conexão",
+          "texto": "A lixeira pede confirmação antes. Ao clicar em 'Remover', a conexão inteira é apagada: a senha guardada, as tabelas escolhidas e os ajustes. O agente deixa de enxergar esse banco. O banco do outro sistema não é tocado: só some a ligação com o CRM. Se quiser só pausar, prefira desativar. Aqui, clique em 'Cancelar'.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Cancelar",
+                "exato": true,
+                "dentro": {
+                  "role": "dialog"
+                }
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Remover",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "alertdialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "alertdialog"
+              },
+              "rotulo": "Pede confirmação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Remover",
+                "exato": true,
+                "dentro": {
+                  "role": "alertdialog"
+                }
+              },
+              "rotulo": "Apaga a conexão",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Cancelar",
+            "exato": true,
+            "dentro": {
+              "role": "alertdialog"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "o-que-o-assistente-ve",
+      "titulo": "Escolher o que o assistente pode ver",
+      "objetivo": "Abrir uma conexão, decidir quais informações do outro sistema o assistente pode ler e saber onde consultar os dados.",
+      "papel": "admin",
+      "busca": [
+        "o que o assistente pode ver",
+        "liberar tabelas",
+        "escolher tabelas",
+        "esconder dados sensíveis",
+        "explorar dados",
+        "ver dados do outro sistema",
+        "tudo liberado"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir a conexão",
+          "texto": "Clique em \"Explorar\" no cartão da conexão. O link em laranja \"Escolher o que ele pode ler\" leva para a mesma página.",
+          "rota": "/app/integracao-dados",
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Explorar",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+                }
+              },
+              "rotulo": "Explorar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Explorar",
+            "exato": true,
+            "dentro": {
+              "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+            }
+          },
+          "antes": []
+        },
+        {
+          "id": "p2",
+          "titulo": "A página da conexão",
+          "texto": "No topo ficam o nome, o endereço e o lembrete 'somente leitura'. Logo abaixo vem o quadro 'O que o assistente pode ver'. O selo à direita resume a escolha atual: 'Nada liberado', o número de tabelas liberadas ou 'Tudo liberado'. Numa conexão em que nada foi liberado ainda, o quadro já vem aberto.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Explorar",
+                "exato": true,
+                "dentro": {
+                  "css": "div.rounded-lg.p-4:has(a[href='/app/integracao-dados/de100000-0000-4000-8000-000000000001'])"
+                }
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Não foi possível ler o catálogo do banco agora. Confira a conexão e tente de novo."
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "header:has(> h1)"
+              },
+              "rotulo": "Nome, endereço e somente leitura",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "^O que o assistente pode ver",
+                "regex": true
+              },
+              "rotulo": "Abre e fecha o quadro",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Só o que você marcar",
+          "texto": "Deixe marcado 'Só o que eu marcar (recomendado)'. Quando o CRM alcança o banco, aparece aqui a lista das tabelas, cada uma com uma caixinha para liberar. Depois de marcar uma tabela, o botão 'Detalhes' deixa escolher as colunas e escrever uma descrição para o assistente. Neste exemplo o banco não respondeu, por isso aparece o aviso de que o catálogo não pôde ser lido e o botão 'Tentar de novo'.",
+          "dica": "O aviso amarelo continua até você marcar a primeira tabela e clicar em 'Salvar': até lá, o assistente não enxerga nada deste banco.",
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Só o que eu marcar (recomendado)",
+                "exato": true
+              },
+              "rotulo": "O modo recomendado",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Falta escolher o que o assistente pode ler. Até lá, ele não enxerga nada deste banco."
+              },
+              "rotulo": "Nada liberado ainda",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Não foi possível ler o catálogo do banco agora. Confira a conexão e tente de novo."
+              },
+              "rotulo": "Banco não respondeu",
+              "tipo": "caixa"
+            }
+          ],
+          "antes": []
+        },
+        {
+          "id": "p4",
+          "titulo": "Liberar tudo, com cuidado",
+          "texto": "A opção \"Tudo que o usuário do banco enxerga\" libera de uma vez tudo o que o usuário do banco consegue ler. O aviso amarelo explica o risco: se houver senhas ou outros dados sensíveis, o assistente passa a enxergá-los. Nada muda até você clicar em \"Salvar\". Até lá, aparece \"Alterações não salvas\" ao lado dos botões, e \"Descartar alterações\" volta para o que estava salvo.",
+          "dica": "Prefira liberar tabela por tabela. Ou peça ao responsável um usuário de banco que só enxergue o necessário.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "rotulo": "Tudo que o usuário do banco enxerga",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-md.border.p-3:has(> p.font-medium)"
+              },
+              "rotulo": "Cuidado com dados sensíveis",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Descartar alterações",
+                "exato": true
+              },
+              "rotulo": "Desfazer",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar",
+                "exato": true
+              },
+              "rotulo": "Confirmar a escolha",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Consultar os dados",
+          "texto": "Antes, clique em \"Descartar alterações\" para voltar ao modo recomendado. Mais abaixo fica o explorador. À esquerda, em \"Tabelas\", aparecem as tabelas liberadas. Clique numa delas e, à direita, os dados aparecem numa grade, página por página, só para leitura. Aqui a lista mostra \"Não foi possível ler o catálogo.\" porque o banco de exemplo não respondeu.",
+          "dica": "Qualquer pessoa da equipe pode abrir esta página e consultar os dados liberados. Só o administrador muda o que é liberado.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Descartar alterações",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Não foi possível ler o catálogo.",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "aside.rounded-md.border"
+              },
+              "rotulo": "Tabelas liberadas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Escolha uma tabela à esquerda para ver os dados.",
+                "exato": true
+              },
+              "rotulo": "Aqui aparecem os dados",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

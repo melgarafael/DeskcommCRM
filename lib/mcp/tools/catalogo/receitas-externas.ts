@@ -13,7 +13,7 @@ export const TOOLS_RECEITAS_EXTERNAS = declararTools([
     category: "read",
     rotulo: "Consultar receitas prontas do banco conectado",
     explicacao:
-      "Lista as receitas prontas da conexão (ex.: produtos do WooCommerce) e executa uma delas com filtros, para o assistente responder ao cliente com o dado real do banco de origem — só leitura.",
+      "Lista as receitas prontas da conexão (ex.: produtos do WooCommerce, ou o conteúdo de qualquer tipo de post de um site WordPress) e executa uma delas com filtros, para o assistente responder ao cliente com o dado real do banco de origem — só leitura.",
     oQueToca: "Banco de dados conectado",
     risco: "seguro",
     pacotes: ["organizar"],

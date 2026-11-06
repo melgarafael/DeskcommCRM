@@ -1,0 +1,483 @@
+{
+  "id": "servidor-mcp-externo",
+  "titulo": "Servidor MCP externo",
+  "tela": "/app/settings/servidor-mcp-externo",
+  "resumo": "Onde o dono da instalação cadastra e testa o endereço e a chave de um sistema de fora (um prontuário, um sistema de gestão).",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela do servidor externo",
+      "objetivo": "Achar a tela do servidor MCP externo e reconhecer os dois campos e os três botões dela.",
+      "papel": "admin",
+      "busca": [
+        "servidor mcp externo",
+        "ligar a ia a outro sistema",
+        "ia consultar meu prontuário",
+        "conectar sistema de gestão à ia",
+        "endereço e chave do sistema de fora",
+        "integrar erp com a ia"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "texto": "Abra \"Configurações\", no rodapé do menu lateral. Na parte \"Dados e acesso\" fica o cartão \"Servidor MCP externo\". Clique nele.",
+          "dica": "Só o dono da instalação entra nesta tela. Quem não é dono e clica no cartão vê \"Sem permissão\". Se a verificação em duas etapas estiver ligada na sua conta, o sistema pode pedir o código antes de abrir a tela.",
+          "rota": "/app/settings",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "a[href='/app/settings/servidor-mcp-externo']"
+              },
+              "rotulo": "Servidor MCP externo",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "css": "a[href='/app/settings/servidor-mcp-externo']"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Para que serve",
+          "texto": "Esta tela guarda o endereço e a senha de acesso (a chave) de um sistema de fora, como o prontuário ou o sistema de gestão da clínica. MCP é o nome do jeito padrão de a IA conversar com outro sistema. Guardar aqui ainda não faz a IA usar esse sistema: aqui você só cadastra e testa a ligação. A frase do cartão já avisa a regra: o endereço precisa começar com https e ser de um servidor público na internet.",
+          "dica": "A tela sempre abre com os campos vazios, mesmo que um servidor já esteja cadastrado: o endereço e a chave guardados não voltam para a tela.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "css": "a[href='/app/settings/servidor-mcp-externo']"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "endpoint"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Servidor MCP externo",
+                "exato": true
+              },
+              "rotulo": "A tela",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "^O endereço precisa ser um servidor público em https",
+                "regex": true
+              },
+              "rotulo": "A regra do endereço",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os campos e os botões",
+          "texto": "Em \"Endereço do servidor MCP\" vai o endereço que o fornecedor do seu sistema passou. Em \"Chave de acesso\" vai a senha de acesso; ela aparece em bolinhas enquanto você digita. Logo abaixo ficam \"Salvar\", que guarda os dois, e \"Testar conexão\", que pergunta ao sistema de fora o que ele oferece. Mais embaixo, separado, fica \"Remover\", que apaga o cadastro. O texto cinza que aparece no endereço (https://erp.example.com/mcp) é só um exemplo de formato: o campo está vazio.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "endpoint"
+              },
+              "rotulo": "Onde o sistema fica",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "chave"
+              },
+              "rotulo": "A senha de acesso",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "salvar"
+              },
+              "rotulo": "Salvar",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "testar"
+              },
+              "rotulo": "Testar conexão",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "testid": "remover"
+              },
+              "rotulo": "Apagar o cadastro",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cadastrar-o-servidor",
+      "titulo": "Cadastrar o endereço e a chave",
+      "objetivo": "Preencher o endereço e a chave do sistema de fora, salvar e conferir o fim da chave que ficou gravada.",
+      "papel": "admin",
+      "busca": [
+        "cadastrar servidor mcp",
+        "salvar endereço e chave",
+        "colocar a chave do sistema",
+        "ligar prontuário na ia",
+        "onde ponho a chave de acesso"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Preencha os dois campos",
+          "texto": "Cole em \"Endereço do servidor MCP\" o endereço que o fornecedor do sistema passou. Aqui usamos o do prontuário da Clínica Bem Viver. Depois cole a chave em \"Chave de acesso\". Os dois são obrigatórios.",
+          "dica": "Não cole a chave dentro do endereço (por exemplo, depois de um \"?token=\"). O endereço com segredo colado é recusado.",
+          "rota": "/app/settings/servidor-mcp-externo",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "endpoint"
+              },
+              "valor": "https://prontuario.clinicabemviver.com.br/mcp"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "chave"
+              },
+              "valor": "bemviver-ia-2026-7Q4x"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "endpoint"
+              },
+              "rotulo": "Endereço do sistema",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "chave"
+              },
+              "rotulo": "Chave em bolinhas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "testid": "salvar"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Salve",
+          "texto": "Clique em \"Salvar\". A tela confirma com \"Configuração salva\". O campo da chave fica vazio de novo e aparece um aviso com só os quatro últimos caracteres dela, aqui \"7Q4x\". É a única vez que você vê esse pedaço: a chave é guardada de forma embaralhada e não volta para a tela.",
+          "dica": "Anote em algum lugar seguro qual chave você usou. Se perder, peça uma nova ao fornecedor do sistema e salve de novo: o cadastro novo substitui o anterior.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "endpoint"
+              },
+              "valor": "https://prontuario.clinicabemviver.com.br/mcp"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "chave"
+              },
+              "valor": "bemviver-ia-2026-7Q4x"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "salvar"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "chave-criada"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "chave-criada"
+              },
+              "rotulo": "O fim da chave gravada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "aviso"
+              },
+              "rotulo": "Confirmação",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O próximo passo é testar",
+          "texto": "Com o cadastro salvo, o próximo passo é \"Testar conexão\": a tela pergunta ao seu sistema o que ele oferece e mostra a resposta. O que aparece quando o teste não encontra resposta está na lição \"Testar e remover\".",
+          "dica": "Salvar não chama o seu sistema: só confere se o endereço tem a forma certa e guarda. Quem chama o sistema é o botão \"Testar conexão\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "testar"
+              },
+              "rotulo": "Conferir se o sistema responde",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "o-que-a-tela-recusa",
+      "titulo": "O que a tela recusa",
+      "objetivo": "Entender as duas recusas mais comuns ao salvar: campo vazio e endereço que não é seguro.",
+      "papel": "admin",
+      "busca": [
+        "endereço recusado por segurança",
+        "não consigo salvar o servidor mcp",
+        "erro ao salvar endereço",
+        "preencha o endereço e a chave",
+        "por que precisa de https"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Faltou a chave",
+          "texto": "Se você preencher só o endereço e clicar em \"Salvar\", a tela avisa em vermelho que precisa dos dois. Nada é gravado. Para apagar um cadastro, o caminho é o botão \"Remover\", não salvar com um campo vazio.",
+          "rota": "/app/settings/servidor-mcp-externo",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "endpoint"
+              },
+              "valor": "https://prontuario.clinicabemviver.com.br/mcp"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "salvar"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "erro"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "chave"
+              },
+              "rotulo": "Chave em branco",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "erro"
+              },
+              "rotulo": "O aviso",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Endereço da rede interna",
+          "texto": "Aqui o endereço aponta para um computador dentro da clínica (um número que começa com 192.168) e não usa https. Ao clicar em \"Salvar\", a tela recusa e explica: o endereço precisa ser de um servidor na internet, em https, sem rede interna, sem \"localhost\" e sem segredo colado nele. Nada é gravado.",
+          "dica": "Se o seu sistema só funciona dentro da clínica, peça ao fornecedor um endereço público em https.",
+          "rota": "/app/settings/servidor-mcp-externo",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "endpoint"
+              },
+              "valor": "http://192.168.0.20/mcp"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "chave"
+              },
+              "valor": "bemviver-ia-2026-7Q4x"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "salvar"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "erro"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "endpoint"
+              },
+              "rotulo": "Endereço interno",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "testid": "erro"
+              },
+              "rotulo": "Recusado por segurança",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "testar-e-remover",
+      "titulo": "Testar e remover",
+      "objetivo": "Usar \"Testar conexão\" para ver se o sistema de fora responde e \"Remover\" para apagar o cadastro.",
+      "papel": "admin",
+      "busca": [
+        "testar conexão servidor mcp",
+        "nenhum servidor externo respondeu",
+        "ver ferramentas do sistema de fora",
+        "remover servidor mcp",
+        "apagar o cadastro do sistema externo"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Testar a conexão",
+          "texto": "\"Testar conexão\" usa o endereço e a chave já salvos, não o que está digitado nos campos. Quando o sistema responde, aparece embaixo o cartão \"O que o servidor oferece\", com o nome do servidor consultado (só a parte principal do endereço) e a lista de ferramentas que ele anuncia.",
+          "rota": "/app/settings/servidor-mcp-externo",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "testar"
+              },
+              "rotulo": "Testar conexão",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": {
+            "testid": "testar"
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Quando nada responde",
+          "texto": "Aqui o teste não encontrou resposta, e a tela avisa \"Nenhum servidor externo respondeu\". Esse aviso aparece tanto quando não há nada salvo quanto quando o sistema de fora não atende ou recusa a chave. Confira o endereço e a chave com o fornecedor, salve de novo e teste outra vez.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "testar"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "erro"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "erro"
+              },
+              "rotulo": "Nada respondeu",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Remover o cadastro",
+          "texto": "Com um servidor cadastrado, clique em \"Remover\" para apagar o cadastro. Não há pergunta de confirmação: o endereço e a chave desta empresa são apagados na hora. A tela confirma com \"Servidor externo removido\".",
+          "dica": "Para cadastrar de novo, é só preencher o endereço e a chave e clicar em \"Salvar\".",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "endpoint"
+              },
+              "valor": "https://prontuario.clinicabemviver.com.br/mcp"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "testid": "chave"
+              },
+              "valor": "bemviver-ia-2026-7Q4x"
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "salvar"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "chave-criada"
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "testid": "remover"
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "^Servidor externo removido",
+                "regex": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "testid": "remover"
+              },
+              "rotulo": "Remover",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "testid": "aviso"
+              },
+              "rotulo": "Confirmação",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

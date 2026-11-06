@@ -40,6 +40,10 @@ vi.mock("@/lib/external-db/receitas/instancias", async (importOriginal) => {
     lerReceitasDoBanco: deps.receitas,
     validarFixosDaReceita: deps.validarFixos,
     atualizarReceitasSchema: actual.atualizarReceitasSchema,
+    // A classe vai DE VERDADE: a rota faz `err instanceof ErroDeFixosInvalidos`
+    // para saber se os motivos são por campo. Sem ela no mock, o `instanceof`
+    // estoura dentro do `catch` e a rota devolve 500 em vez de 422.
+    ErroDeFixosInvalidos: actual.ErroDeFixosInvalidos,
   };
 });
 vi.mock("@/lib/external-db/receitas/registro", async (importOriginal) => {
@@ -54,6 +58,7 @@ vi.mock("../../../_falha", () => ({
 }));
 
 import { GET, PUT } from "./route";
+import { ErroDeFixosInvalidos } from "@/lib/external-db/receitas/instancias";
 import type { receitaDe } from "@/lib/external-db/receitas/registro";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -220,6 +225,31 @@ describe("PUT /connections/:id/recipes", () => {
     expect(res.status).toBe(422);
     const texto = JSON.stringify(await res.json());
     expect(texto).toContain("validation_failed");
+    expect(deps.audit).not.toHaveBeenCalled();
+    expect(deps.admin.mock.calls).toHaveLength(0);
+  });
+
+  it("fixos inválidos: o 422 traz o CAMINHO do campo em details.fieldErrors", async () => {
+    // O que `validarFixosDaReceita` lança hoje: o caminho inteiro ("esconder.
+    // meta_key"), não o último pedaço. A tela usa o caminho para mostrar o
+    // rótulo legível.
+    deps.validarFixos.mockImplementation(() => {
+      throw new ErroDeFixosInvalidos("wordpress-conteudo", {
+        "esconder.meta_key": [
+          "Use apenas letras, números, underscore e hífen no nome do campo.",
+        ],
+      });
+    });
+
+    const res = await PUT(put({ receitas: [INSTANCIA] }), ctx);
+
+    expect(res.status).toBe(422);
+    const corpo = (await res.json()) as {
+      error: { details: { fieldErrors: Record<string, string[]> } };
+    };
+    expect(corpo.error.details.fieldErrors["esconder.meta_key"]?.[0]).toContain(
+      "nome do campo",
+    );
     expect(deps.audit).not.toHaveBeenCalled();
     expect(deps.admin.mock.calls).toHaveLength(0);
   });

@@ -1,10 +1,14 @@
 import { type NextRequest } from "next/server";
 import { z } from "zod";
-import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
+import {
+  falhaDaEscritaDePlatformAdmin,
+  requirePlatformAdmin,
+} from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { randomUUID } from "node:crypto";
+import { lerPaginasDeUso } from "@/lib/admin/usage-pages";
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -27,6 +31,8 @@ export interface UsageTenantRow {
   ai_invocations_count: number;
   ai_tokens_total: number;
   ai_cost_cents: number;
+  /** Chamadas cujo preço ainda não foi registrado; não equivalem a custo zero. */
+  ai_unpriced_count?: number;
   conversations_count: number;
   /**
    * Nome do agente publicado nesta organização — o de maior prioridade, quando
@@ -73,8 +79,8 @@ export async function GET(req: NextRequest) {
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try {
     adminCtx = await requirePlatformAdmin();
-  } catch {
-    return fail("forbidden", "Platform admin required", 403, { requestId });
+  } catch (err) {
+    return falhaDaEscritaDePlatformAdmin(err, requestId);
   }
 
   const parsed = querySchema.safeParse(Object.fromEntries(req.nextUrl.searchParams.entries()));
@@ -128,78 +134,83 @@ export async function GET(req: NextRequest) {
     pessoais = ((marcados ?? []) as Array<{ id: string }>).map((c) => c.id);
   }
 
-  // Compute start date
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
+  // Dias de calendário UTC, incluindo hoje: tabela e gráficos medem [from,to).
+  const endDate = new Date();
+  endDate.setUTCHours(0, 0, 0, 0);
+  endDate.setUTCDate(endDate.getUTCDate() + 1);
+  const startDate = new Date(endDate);
+  startDate.setUTCDate(startDate.getUTCDate() - days);
   const startIso = startDate.toISOString();
-
-  // ---- messages count per org ----
+  const endIso = endDate.toISOString();
+  interface UsoLinha {
+    id: string;
+    organization_id: string;
+    created_at: string;
+    input_tokens?: number | null;
+    output_tokens?: number | null;
+    cost_cents?: number | null;
+  }
+  const lerUso = (tabela: "messages" | "conversations" | "llm_calls", colunas: string) =>
+    lerPaginasDeUso<UsoLinha>((depois, tamanho) => {
+      let query = admin
+        .from(tabela)
+        .select(colunas)
+        .in("organization_id", orgIds)
+        .gte("created_at", startIso)
+        .lt("created_at", endIso);
+      if (tabela === "messages" && pessoais.length > 0) {
+        query = query.not("contact_id", "in", `(${pessoais.join(",")})`);
+      }
+      if (depois !== null) query = query.gt("id", depois);
+      return query.order("id", { ascending: true }).limit(tamanho) as unknown as PromiseLike<{
+        data: UsoLinha[] | null;
+        error: unknown;
+      }>;
+    });
+  let mensagens: UsoLinha[] = [],
+    conversas: UsoLinha[] = [],
+    chamadas: UsoLinha[] = [];
+  if (orgIds.length > 0) {
+    try {
+      [mensagens, conversas, chamadas] = await Promise.all([
+        lerUso("messages", "id, organization_id, created_at"),
+        lerUso("conversations", "id, organization_id, created_at"),
+        lerUso(
+          "llm_calls",
+          "id, organization_id, created_at, input_tokens, output_tokens, cost_cents",
+        ),
+      ]);
+    } catch {
+      return fail("db_error", "Não foi possível ler o período completo de uso.", 500, {
+        requestId,
+      });
+    }
+  }
   const messagesCountMap = new Map<string, number>();
-  if (orgIds.length > 0) {
-    let consulta = admin
-      .from("messages")
-      .select("organization_id")
-      .in("organization_id", orgIds)
-      .gte("created_at", startIso);
-    if (pessoais.length > 0) {
-      consulta = consulta.not("contact_id", "in", `(${pessoais.join(",")})`);
-    }
-    const { data: msgRows, error: msgErr } = await consulta;
-    if (!msgErr && msgRows) {
-      for (const row of msgRows) {
-        const oid = row.organization_id as string;
-        messagesCountMap.set(oid, (messagesCountMap.get(oid) ?? 0) + 1);
-      }
-    }
-  }
-
-  // ---- conversations count per org ----
   const convsCountMap = new Map<string, number>();
-  if (orgIds.length > 0) {
-    const { data: convRows, error: convErr } = await admin
-      .from("conversations")
-      .select("organization_id")
-      .in("organization_id", orgIds)
-      .gte("created_at", startIso);
-    if (!convErr && convRows) {
-      for (const row of convRows) {
-        const oid = row.organization_id as string;
-        convsCountMap.set(oid, (convsCountMap.get(oid) ?? 0) + 1);
-      }
-    }
-  }
-
-  // ---- consumo de IA por org: `llm_calls`, a tabela única (migration 0130) ----
-  //
-  // Lia `ai_invocations`, e a 0130 deixou essa tabela SEM NENHUM ESCRITOR:
-  // `lib/ai/log-invocation.ts` passou a gravar em `llm_calls`. O painel de
-  // plataforma continuaria somando o histórico congelado e, passados os 30 dias
-  // da janela, mostraria ZERO consumo para todo tenant com o dinheiro saindo —
-  // exatamente o sintoma que a 0130 existe para matar, reintroduzido na tela do
-  // outro lado. `tests/unit/telemetria-tem-um-leitor-so.test.ts` guarda isto.
   const aiInvCountMap = new Map<string, number>();
   const aiTokensMap = new Map<string, number>();
   const aiCostMap = new Map<string, number>();
-
-  if (orgIds.length > 0) {
-    const { data: aiRows, error: aiErr } = await admin
-      .from("llm_calls")
-      .select("organization_id, input_tokens, output_tokens, cost_cents")
-      .in("organization_id", orgIds)
-      .gte("created_at", startIso);
-    if (!aiErr && aiRows) {
-      for (const row of aiRows) {
-        const oid = row.organization_id as string;
-        aiInvCountMap.set(oid, (aiInvCountMap.get(oid) ?? 0) + 1);
-        aiTokensMap.set(
-          oid,
-          (aiTokensMap.get(oid) ?? 0) +
-            ((row.input_tokens as number) ?? 0) +
-            ((row.output_tokens as number) ?? 0),
-        );
-        aiCostMap.set(oid, (aiCostMap.get(oid) ?? 0) + ((row.cost_cents as number) ?? 0));
-      }
-    }
+  const aiUnpricedMap = new Map<string, number>();
+  const msgDayMap = new Map<string, number>();
+  const aiCostDayMap = new Map<string, number>();
+  const aiTokensDayMap = new Map<string, number>();
+  const somar = (mapa: Map<string, number>, chave: string, valor = 1) =>
+    mapa.set(chave, (mapa.get(chave) ?? 0) + valor);
+  for (const row of mensagens) {
+    somar(messagesCountMap, row.organization_id);
+    somar(msgDayMap, row.created_at.slice(0, 10));
+  }
+  for (const row of conversas) somar(convsCountMap, row.organization_id);
+  for (const row of chamadas) {
+    const tokens = (row.input_tokens ?? 0) + (row.output_tokens ?? 0);
+    const dia = row.created_at.slice(0, 10);
+    somar(aiInvCountMap, row.organization_id);
+    somar(aiTokensMap, row.organization_id, tokens);
+    somar(aiTokensDayMap, dia, tokens);
+    somar(aiCostMap, row.organization_id, row.cost_cents ?? 0);
+    if (row.cost_cents == null) somar(aiUnpricedMap, row.organization_id);
+    somar(aiCostDayMap, dia, row.cost_cents ?? 0);
   }
 
   // ---- agente publicado por organização ----
@@ -236,6 +247,7 @@ export async function GET(req: NextRequest) {
         ai_invocations_count: aiInvCountMap.get(org.id) ?? 0,
         ai_tokens_total: aiTokensMap.get(org.id) ?? 0,
         ai_cost_cents: aiCostMap.get(org.id) ?? 0,
+        ai_unpriced_count: aiUnpricedMap.get(org.id) ?? 0,
         conversations_count: convsCountMap.get(org.id) ?? 0,
         agent_name: agentNamePorOrg[org.id] ?? null,
       };
@@ -249,54 +261,11 @@ export async function GET(req: NextRequest) {
   // Daily series
   // -------------------------------------------------------------------------
 
-  // Build date labels for last N days
   const dateLabels: string[] = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    dateLabels.push(d.toISOString().slice(0, 10));
-  }
-
-  // messages per day
-  const msgDayMap = new Map<string, number>();
-  if (orgIds.length > 0) {
-    const filterOrgIds = tenant_id ? [tenant_id] : orgIds;
-    const { data: msgDays, error: msgDayErr } = await admin
-      .from("messages")
-      .select("created_at")
-      .in("organization_id", filterOrgIds)
-      .gte("created_at", startIso);
-    if (!msgDayErr && msgDays) {
-      for (const row of msgDays) {
-        const day = (row.created_at as string).slice(0, 10);
-        msgDayMap.set(day, (msgDayMap.get(day) ?? 0) + 1);
-      }
-    }
-  }
-
-  // ai cost + tokens per day
-  const aiCostDayMap = new Map<string, number>();
-  const aiTokensDayMap = new Map<string, number>();
-  if (orgIds.length > 0) {
-    const filterOrgIds = tenant_id ? [tenant_id] : orgIds;
-    // `llm_calls`, pelo mesmo motivo do bloco acima (migration 0130).
-    const { data: aiDays, error: aiDayErr } = await admin
-      .from("llm_calls")
-      .select("created_at, input_tokens, output_tokens, cost_cents")
-      .in("organization_id", filterOrgIds)
-      .gte("created_at", startIso);
-    if (!aiDayErr && aiDays) {
-      for (const row of aiDays) {
-        const day = (row.created_at as string).slice(0, 10);
-        aiCostDayMap.set(day, (aiCostDayMap.get(day) ?? 0) + ((row.cost_cents as number) ?? 0));
-        aiTokensDayMap.set(
-          day,
-          (aiTokensDayMap.get(day) ?? 0) +
-            ((row.input_tokens as number) ?? 0) +
-            ((row.output_tokens as number) ?? 0),
-        );
-      }
-    }
+  for (let i = 0; i < days; i++) {
+    const dia = new Date(startDate);
+    dia.setUTCDate(dia.getUTCDate() + i);
+    dateLabels.push(dia.toISOString().slice(0, 10));
   }
 
   const series: UsageSeries = {
@@ -326,5 +295,12 @@ export async function GET(req: NextRequest) {
     requestId,
   });
 
-  return ok<UsageData>({ range, tenants, series }, { requestId });
+  return ok<UsageData>(
+    {
+      range,
+      tenants,
+      series,
+    },
+    { requestId },
+  );
 }

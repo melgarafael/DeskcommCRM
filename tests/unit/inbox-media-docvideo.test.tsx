@@ -61,10 +61,16 @@ describe("DocumentCard", () => {
         isOutbound={false}
       />,
     );
-    expect(screen.getByText("PDF")).toBeInTheDocument();
+    // Sem nome original, a extensão vem identificada como extensão (#2613).
+    expect(screen.getByText("Documento PDF")).toBeInTheDocument();
     expect(screen.getByText(/3,0 MB/)).toBeInTheDocument();
-    const link = screen.getByRole("link", { name: /baixar pdf \(3,0 MB\)/i });
-    expect(link).toHaveAttribute("href", "/api/v1/messages/m5/media");
+    // O caminho do arquivo abre a mídia; o ícone é o download, que pede o nome.
+    expect(screen.getByRole("link", { name: /^Documento PDF \(3,0 MB\)$/ })).toHaveAttribute(
+      "href",
+      "/api/v1/messages/m5/media",
+    );
+    const link = screen.getByRole("link", { name: /baixar documento pdf \(3,0 MB\)/i });
+    expect(link).toHaveAttribute("href", "/api/v1/messages/m5/media?baixar=1");
     expect(link).toHaveAttribute("target", "_blank");
   });
 });

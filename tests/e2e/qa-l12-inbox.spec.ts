@@ -2,7 +2,7 @@
  * QA VISUAL DO LOTE 12 — O PAINEL DO CONTATO NO INBOX.
  *
  *  · #909 — o botão que cria o lead tem o MESMO nome do diálogo que abre
- *  · #944 — "Leads recentes" diz Funil · Etapa, e o desfecho é Ganho/Perdido
+ *  · #944 — "Negócios recentes" diz Funil · Etapa, e o desfecho é Ganho/Perdido
  *           (NUNCA o vocabulário do funil, que numa clínica diria "Pago")
  *  · #946 — sugestão de tags do contato, com caixa mista e duplicata
  *  · L12.G2.1 — GET /api/v1/contact-tags responde 200 numa org com contato
@@ -195,7 +195,7 @@ test.describe("Lote 12 — painel do contato no Inbox", () => {
     registra(`#944 · GET /crm-summary = ${rr.status()}`);
 
     // ── #909: o rótulo do botão é o TÍTULO do diálogo que ele abre ─────────
-    const botao = page.getByRole("button", { name: "Novo Lead" });
+    const botao = page.getByRole("button", { name: "Novo negócio" });
     await expect(botao).toBeVisible({ timeout: 30_000 });
     registra(`#909 · rótulo do botão = "${await botao.innerText()}"`);
     await captura(page, "909-01-painel-com-botao-novo-lead");
@@ -204,16 +204,16 @@ test.describe("Lote 12 — painel do contato no Inbox", () => {
     await expect(dialogo).toBeVisible();
     const titulo = await dialogo.getByRole("heading").first().innerText();
     registra(`#909 · título do diálogo = "${titulo}"`);
-    expect(titulo.trim()).toBe("Novo Lead");
+    expect(titulo.trim()).toBe("Novo negócio");
     await captura(page, "909-02-dialogo-mesmo-nome");
     await page.keyboard.press("Escape");
     await expect(dialogo).toHaveCount(0);
 
     // ── #944: Funil · Etapa e o desfecho pelas PALAVRAS FIXAS ─────────────
     const secao = page.locator('[data-testid="inbox-campos-lead"]');
-    await expect(secao.getByText("Leads recentes")).toBeVisible();
+    await expect(secao.getByText("Negócios recentes")).toBeVisible();
     const texto = await secao.innerText();
-    registra(`#944 · seção "Leads recentes" = ${JSON.stringify(texto)}`);
+    registra(`#944 · seção "Negócios recentes" = ${JSON.stringify(texto)}`);
 
     expect(texto, "o lead do funil ARQUIVADO não pode aparecer").not.toContain(`Fantasma ${SUFIXO}`);
     expect(texto).toContain(`Funil de Vendas Consultivas B2B Enterprise ${SUFIXO} · Proposta enviada ao comitê`);
@@ -403,4 +403,107 @@ test.describe("Lote 12 — o painel em 400 px e no tema escuro", () => {
     await captura(page, "g2-06-inbox-400px-escuro");
     expect(pagina.transborda, "nada pode rolar na horizontal em 400 px").toBe(false);
   });
+});
+
+
+test("resposta rápida usa a reserva sem nome e preserva o nome preenchido no envio real", async ({ page }) => {
+  test.setTimeout(150_000);
+  const { createServer } = await import("node:http");
+  const { mkdirSync } = await import("node:fs");
+  const { carregarEnvLocal } = await import("../../scripts/lib/env-de-teste");
+  const { loginComoAdmin, lerCreds } = await import("./helpers/login-admin");
+  const cc = creds();
+  const ambiente = carregarEnvLocal();
+  const transporte = new URL(ambiente.WAHA_API_BASE_URL!);
+  expect(["127.0.0.1", "localhost"]).toContain(transporte.hostname);
+  expect(Number(transporte.port)).toBeGreaterThan(0);
+  const recebidos: string[] = [];
+  const servidor = createServer((req, res) => {
+    let corpo = "";
+    req.on("data", (c) => { corpo += c; });
+    req.on("end", () => {
+      if (req.url?.endsWith("/sendText")) {
+        const data = JSON.parse(corpo) as { text?: unknown };
+        if (typeof data.text === "string") recebidos.push(data.text);
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ id: `reserva-${randomUUID()}`, status: "WORKING" }));
+    });
+  });
+  let canal = "";
+  let contato = "";
+  let conversa = "";
+  const sufixo = randomUUID().slice(0, 8);
+  const titulo = `Reserva ${sufixo}`;
+  const atalho = `reserva${sufixo}`;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      servidor.once("error", reject);
+      servidor.listen(Number(transporte.port), transporte.hostname, resolve);
+    });
+    canal = await insere("channel_sessions", { organization_id: cc.org_id, display_name: titulo, waha_session_name: `reserva-${sufixo}`, status: "WORKING", webhook_secret_encrypted: "\\x00" });
+    const knobs = await admin.from("channel_knobs").insert({ organization_id: cc.org_id, channel_session_id: canal, window_start_hour: 0, window_end_hour: 24, timezone: "UTC", allow_sunday: true, throttle_ms: 0, jitter_max_ms: 0 });
+    expect(knobs.error).toBeNull();
+    contato = await insere("contacts", { organization_id: cc.org_id, name: null, display_name: null, phone_number: `+5511${randomInt(100000000, 1000000000)}` });
+    conversa = await insere("conversations", { organization_id: cc.org_id, channel_session_id: canal, contact_id: contato, status: "open", assignee_kind: "user", assigned_to_user_id: cc.users.admin!.id });
+    await insere("messages", { organization_id: cc.org_id, conversation_id: conversa, channel_session_id: canal, contact_id: contato, direction: "inbound", type: "text", body: "Olá", status: "delivered", sent_via: "external_device", sent_at: new Date().toISOString() });
+    await loginComoAdmin(page, lerCreds());
+    // O admin do seed tem uma organização: não existe seletor para trocar
+    // para a própria empresa. O recibo real da criação confirma o escopo.
+    await page.goto("/app/templates");
+    await page.getByRole("button", { name: "Nova resposta rápida", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByText('Para não depender do dado, ponha um texto de reserva: {{primeiro_nome|"aluno"}}.')).toBeVisible();
+    await dialog.getByLabel("Título", { exact: true }).fill(titulo);
+    await dialog.getByLabel("Mensagem", { exact: true }).fill('Oi {{primeiro_nome|"aluno"}}!');
+    await dialog.getByLabel("Atalho (opcional)").fill(atalho);
+    const [criada] = await Promise.all([
+      page.waitForResponse((r) => new URL(r.url()).pathname === "/api/v1/message-templates" && r.request().method() === "POST"),
+      dialog.getByRole("button", { name: "Criar resposta rápida", exact: true }).click(),
+    ]);
+    expect(criada.ok()).toBe(true);
+    const recibo = (await criada.json()) as { data: { id: string; organization_id: string } };
+    expect(recibo.data.organization_id).toBe(cc.org_id);
+    const templateId = recibo.data.id;
+    const escolher = async (esperado: string) => {
+      await page.goto(`/app/inbox?id=${conversa}`);
+      const campo = page.getByRole("textbox", { name: "Mensagem", exact: true });
+      await campo.fill(`/${atalho}`);
+      await page.getByRole("listbox", { name: "Templates de script" }).getByRole("button", { name: new RegExp(titulo) }).click();
+      await expect(campo).toHaveValue(esperado);
+    };
+    for (const [nome, esperado] of [[null, "Oi aluno!"], ["Ana Souza", "Oi Ana!"]] as const) {
+      const pessoa = await admin.from("contacts").update({ name: nome }).eq("organization_id", cc.org_id).eq("id", contato);
+      expect(pessoa.error).toBeNull();
+      await escolher(esperado);
+      await page.getByRole("button", { name: "Enviar", exact: true }).click();
+      await expect.poll(() => recebidos.includes(esperado)).toBe(true);
+      await expect(page.getByText(esperado, { exact: true })).toBeVisible();
+    }
+    const invalida = 'Oi {{primeiro_nome|aluno}}!';
+    const editada = await page.request.patch(`/api/v1/message-templates/${templateId}`, { data: { body: invalida } });
+    expect(editada.ok()).toBe(true);
+    await escolher(invalida);
+    expect(recebidos).toEqual(["Oi aluno!", "Oi Ana!"]);
+    mkdirSync("evidence/antigos-core-3405", { recursive: true });
+    await page.screenshot({ path: "evidence/antigos-core-3405/resposta-rapida-e-envios.png" });
+  } finally {
+    const erros: boolean[] = [];
+    try {
+      for (const [tabela, coluna, valor] of [
+        ["message_templates", "title", titulo], ["messages", "conversation_id", conversa],
+        ["conversations", "id", conversa], ["contacts", "id", contato],
+        ["channel_knobs", "channel_session_id", canal], ["channel_sessions", "id", canal],
+      ]) {
+        if (!valor) continue;
+        try {
+          const { error } = await admin.from(tabela!).delete().eq("organization_id", cc.org_id).eq(coluna!, valor!);
+          erros.push(error !== null);
+        } catch { erros.push(true); }
+      }
+    } finally {
+      if (servidor.listening) await new Promise<void>((resolve, reject) => servidor.close((error) => error ? reject(error) : resolve()));
+    }
+    expect(erros.every((erro) => !erro), "limpeza da fixture da resposta rápida").toBe(true);
+  }
 });

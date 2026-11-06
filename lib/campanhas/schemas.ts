@@ -6,6 +6,8 @@
 import { z } from "zod";
 
 import { filtroDeAudienciaSchema } from "./audiencia";
+import { variaveisDaCampanhaSchema } from "./modelo";
+import { MODOS_DA_MENSAGEM, VELOCIDADES_DA_CAMPANHA } from "./tipos";
 
 /**
  * O ritmo próprio. Todos opcionais e anuláveis: `null` devolve a decisão ao
@@ -21,6 +23,16 @@ export const ritmoSchema = z.object({
   janela_fim_hora: z.number().int().min(1).max(24).nullable().optional(),
   teto_diario: z.number().int().min(1).max(10_000).nullable().optional(),
   teto_horario: z.number().int().min(1).max(10_000).nullable().optional(),
+  /**
+   * Migration 0711. Ausente = a que já está (`gradual` numa campanha nova). A
+   * rota confere contra o número: rápida só com modelo aprovado.
+   */
+  velocidade: z.enum(VELOCIDADES_DA_CAMPANHA).optional(),
+  /**
+   * Migration 0765. Texto em balões, um por parágrafo; ausente = o que já está
+   * (`false` numa campanha nova). Modelo aprovado nunca se divide.
+   */
+  split_messages: z.boolean().optional(),
 });
 
 const baseDaCampanha = {
@@ -28,6 +40,15 @@ const baseDaCampanha = {
   description: z.string().trim().max(4000).nullable().optional(),
   channel_session_id: z.string().uuid(),
   message_body: z.string().trim().max(4096).nullable().optional(),
+  /**
+   * Migration 0710 (#1330, fatia 4). Ausente = `text`, que é o que toda campanha
+   * anterior é. A rota confere contra o número: o modo é o que o canal aceita
+   * (`modoDeCampanhaDoCanal`), nunca uma escolha solta do corpo.
+   */
+  message_mode: z.enum(MODOS_DA_MENSAGEM).optional(),
+  provider_template_name: z.string().trim().min(1).max(512).nullable().optional(),
+  provider_template_language: z.string().trim().min(2).max(15).nullable().optional(),
+  provider_template_variables: variaveisDaCampanhaSchema.optional(),
   base_legal: z.enum(["consent", "legitimate_interest"]),
   lia_ref: z.string().trim().max(120).nullable().optional(),
   audience_filter: filtroDeAudienciaSchema.optional(),
@@ -77,6 +98,10 @@ export const editarCampanhaSchema = z
     description: baseDaCampanha.description,
     channel_session_id: baseDaCampanha.channel_session_id.optional(),
     message_body: baseDaCampanha.message_body,
+    message_mode: baseDaCampanha.message_mode,
+    provider_template_name: baseDaCampanha.provider_template_name,
+    provider_template_language: baseDaCampanha.provider_template_language,
+    provider_template_variables: baseDaCampanha.provider_template_variables,
     base_legal: baseDaCampanha.base_legal.optional(),
     lia_ref: baseDaCampanha.lia_ref,
     audience_filter: filtroDeAudienciaSchema.optional(),
@@ -91,6 +116,18 @@ export const previaSchema = z.object({
   audience_filter: filtroDeAudienciaSchema,
   message_body: z.string().max(4096).default(""),
   campaign_id: z.string().uuid().optional(),
+  /**
+   * Com modelo, quem sai por `variavel_ausente` é decidido pelo MAPA de
+   * variáveis, não pelo texto — a prévia precisa dele para contar certo.
+   */
+  modelo: z
+    .object({
+      channel_session_id: z.string().uuid(),
+      name: z.string().trim().min(1).max(512),
+      language: z.string().trim().min(2).max(15),
+      variables: variaveisDaCampanhaSchema.default({}),
+    })
+    .optional(),
 });
 
 export const criarTemplateSchema = z.object({

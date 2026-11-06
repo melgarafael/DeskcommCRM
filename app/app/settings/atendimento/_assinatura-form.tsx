@@ -18,6 +18,8 @@ export interface AssinaturaConfig {
   humanos: boolean;
   ia: boolean;
   nome_ia: string;
+  /** #3310: a IA assina com o nome de cada agente (desligado = `nome_ia`). */
+  por_agente: boolean;
 }
 
 export function AssinaturaForm({ initial }: { initial: AssinaturaConfig }) {
@@ -91,6 +93,24 @@ export function AssinaturaForm({ initial }: { initial: AssinaturaConfig }) {
           />
           <p className="text-xs text-muted-foreground">{t("Sem asteriscos nem quebra de linha.")}</p>
         </div>
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            data-testid="assinatura-por_agente"
+            checked={form.por_agente}
+            disabled={isPending || !form.ia}
+            onChange={(e) => setForm((f) => ({ ...f, por_agente: e.target.checked }))}
+            className="mt-1 h-4 w-4 shrink-0 accent-primary"
+          />
+          <span className="space-y-1">
+            <span className="block text-sm font-medium">{t("Assinar com o nome de cada agente")}</span>
+            <span className="block text-xs text-muted-foreground">
+              {t(
+                "Ligado, cada mensagem da IA leva o nome do agente que a escreveu, como está no cadastro do agente. O Nome da IA acima fica para a mensagem sem agente.",
+              )}
+            </span>
+          </span>
+        </label>
       </Card>
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={isPending || !sujo}>

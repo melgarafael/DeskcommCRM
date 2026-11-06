@@ -7,7 +7,7 @@ import { showApiError } from "@/components/feedback/ApiErrorToast";
 import type { Lead } from "@/lib/types/leads";
 import type { BoardData } from "@/lib/kanban/types";
 
-interface MoveArgs {
+export interface MoveArgs {
   leadId: string;
   stageId: string;
   positionInStage: number;
@@ -19,6 +19,8 @@ interface MoveArgs {
   customFields?: Record<string, unknown>;
   /** O motivo do ganho coletado pelo mesmo diálogo, quando o destino fecha. */
   wonReason?: string;
+  /** O motivo da perda, quando o destino é a etapa de perda — na MESMA escrita (#917). */
+  lostReason?: string;
 }
 
 /**
@@ -71,6 +73,7 @@ export function useMoveCard(pipelineId: string, opcoes: OpcoesDeMove = {}) {
         expected_updated_at: args.expectedUpdatedAt,
         ...(args.customFields ? { custom_fields: args.customFields } : {}),
         ...(args.wonReason !== undefined ? { won_reason: args.wonReason } : {}),
+        ...(args.lostReason !== undefined ? { lost_reason: args.lostReason } : {}),
       });
     },
     onMutate: async (args) => {

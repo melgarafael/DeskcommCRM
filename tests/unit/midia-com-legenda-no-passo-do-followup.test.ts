@@ -5,9 +5,10 @@
  *
  * Dois contratos do follow-up mudam com esta entrega, e os dois são de forma:
  *
- *  1. `classificarMidiaComLegenda` — a régua "imagem ou PDF" que a automação E o
- *     follow-up consultam. Ela é o único lugar onde o corte mora; se ela rebaixasse
- *     um `.docx` a "documento", as duas telas prometeriam menos do que entregam.
+ *  1. `classificarMidiaComLegenda` — a régua de tipo que a automação E o
+ *     follow-up consultam. Ela é o único lugar onde o corte mora; o #2972 a
+ *     ampliou para áudio, vídeo e documento qualquer (o `.docx`/`.xlsx` deixou
+ *     de ser recusado, que era o que empurrava o operador ao script externo).
  *  2. `actionConfigSchema` (modo `text`) — o `media_url` opcional. "Opcional" é a
  *     metade que protege o que já está publicado: os grafos em produção NÃO têm a
  *     chave, e um campo obrigatório os invalidaria no próximo save do editor.
@@ -22,7 +23,7 @@ import { corpoDoEnvio } from "@/lib/agent-engine/edge/crm/send-message";
 import { actionConfigSchema } from "@/lib/followup/graph-schema";
 import { classificarMidiaComLegenda } from "@/lib/messaging/media/midia-com-legenda";
 
-describe("classificarMidiaComLegenda — imagem ou PDF, nada mais", () => {
+describe("classificarMidiaComLegenda — imagem, vídeo, áudio e documento", () => {
   it("aceita o que o Inbox aceita como imagem", () => {
     expect(classificarMidiaComLegenda("https://cdn.exemplo/a.jpg")).toEqual({
       ok: true,
@@ -54,18 +55,17 @@ describe("classificarMidiaComLegenda — imagem ou PDF, nada mais", () => {
     expect(classificarMidiaComLegenda("https://cdn.exemplo/a.pdf", "image/png")).toMatchObject({ type: "image" });
   });
 
-  it("recusa documento que NÃO é PDF — não rebaixa a `document`", () => {
-    // Os outros documentos que o upload do Inbox conhece (docx, xlsx, zip, csv,
-    // texto) passam por `kindFromMime` como `document`; aqui eles param de propósito.
+  it("aceita documento que NÃO é PDF — planilha, docx, zip e csv saem como `document`", () => {
+    // #2972: era aqui que o `.xlsx` de preços e o `.docx` de contrato paravam de
+    // propósito, o que devolvia o operador ao script externo que a issue aposenta.
+    // Eles passam por `kindFromMime` como `document` e saem por `sendFile`.
     for (const url of [
       "https://cdn.exemplo/custos.xlsx",
       "https://cdn.exemplo/contrato.docx",
       "https://cdn.exemplo/pacote.zip",
       "https://cdn.exemplo/dados.csv",
     ]) {
-      const r = classificarMidiaComLegenda(url);
-      expect(r.ok, url).toBe(false);
-      if (!r.ok) expect(r.motivo).toMatch(/imagem|PDF/);
+      expect(classificarMidiaComLegenda(url), url).toMatchObject({ ok: true, type: "document" });
     }
   });
 

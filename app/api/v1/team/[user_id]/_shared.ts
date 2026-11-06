@@ -15,6 +15,7 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
+import { invalidarUsuario } from "@/lib/auth/cache-curto";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { changeRoleSchema, validateRequest } from "@/lib/schemas";
@@ -77,11 +78,21 @@ export async function changeMemberRole(
     }
   }
 
+  // #3696: derrubar o snapshot ANTES da escrita fecha a janela em que uma tela
+  // que atualiza "ao vivo" (evento → `router.refresh`) pede o valor velho no
+  // meio do UPDATE e o guarda de novo. A invalidação de baixo, depois do
+  // commit, cobre o intervalo que sobra.
+  invalidarUsuario(targetUserId);
+
   const { error: updErr } = await supabase
     .from("user_organizations")
     .update({ role: input.role, updated_at: new Date().toISOString() })
     .eq("id", target.id);
   if (updErr) return fail("internal_error", updErr.message, 500, { requestId });
+
+  // #3696: papel novo vale a partir da PRÓXIMA requisição. Sem isto, uma
+  // promoção (ou um rebaixamento) ficaria até 30 s atrás do cache.
+  invalidarUsuario(targetUserId);
 
   await audit({
     action: "team.role_changed",

@@ -235,6 +235,9 @@ beforeEach(() => {
     model: {} as never,
     modelId: "anthropic/claude-haiku-4-5",
     origem: "padrao",
+    // O provedor EFETIVO do endereço — o resolvedor o devolve desde a #3098, e
+    // é ele que o chamador entrega ao log de invocação.
+    provider: "anthropic",
   });
   vi.mocked(haQuemAtendaAOrganizacao).mockResolvedValue(true);
 });

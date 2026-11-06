@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { isElementorPayload, mapElementorPayload } from "@/lib/webhooks/elementor";
 import { isRdStationPayload } from "@/lib/webhooks/rdstation";
 import { isRespondiPayload } from "@/lib/webhooks/respondi";
-import { mapInboundPayload } from "@/lib/webhooks/inbound";
+import { extrairAtribuicaoDoInbound, mapInboundPayload } from "@/lib/webhooks/inbound";
 
 /**
  * Envio real da ação "Webhook" do Elementor Pro (form-urlencoded, colchetes),
@@ -181,5 +181,45 @@ describe("o defeito que este arquivo conserta", () => {
     expect(m.name).toBeNull();
     expect(m.phone).toBeNull();
     expect(m.email).toBeNull();
+  });
+});
+
+/**
+ * Issue #3149, ponta 1: o `id` do campo do Elementor é livre, então um formulário
+ * montado num anúncio manda o clique como `fields[fbclid][value]`. Até aqui ele
+ * virava campo personalizado do card e a atribuição do contato ficava sem o
+ * clique — o caminho genérico (e só ele) lia essas chaves.
+ */
+describe("chaves de anúncio do Elementor", () => {
+  const elementoComAnuncio = (id: string, valor: string) =>
+    envio({ [`fields[${id}][id]`]: id, [`fields[${id}][type]`]: "hidden", [`fields[${id}][value]`]: valor });
+
+  it("o clique vai para source_metadata (a atribuição), não para o card", () => {
+    const m = mapElementorPayload(elementoComAnuncio("fbclid", "IwAR1abc"));
+    expect(m.source_metadata.fbclid).toBe("IwAR1abc");
+    expect(m.custom_fields.fbclid).toBeUndefined();
+  });
+
+  it("chega no MESMO campo de atribuição do caminho genérico, pelo MESMO extrator", () => {
+    const doElementor = extrairAtribuicaoDoInbound(
+      mapElementorPayload(elementoComAnuncio("fbclid", "IwAR1abc")).source_metadata,
+    );
+    const doGenerico = extrairAtribuicaoDoInbound(
+      mapInboundPayload({ nome: "Maria", fbclid: "IwAR1abc" }).source_metadata,
+    );
+    expect(doElementor).not.toBeNull();
+    // Mesma plataforma, mesmo clique, mesma identidade de navegador (`fbc`
+    // remontado do `fbclid`): o que muda é só o fornecedor que entregou o envio.
+    expect(doElementor!.plataforma).toBe(doGenerico!.plataforma);
+    expect(doElementor!.sourceId).toBe(doGenerico!.sourceId);
+    expect(doElementor!.identidadeDoNavegador!.fbc).toMatch(/^fb\.1\.\d+\.IwAR1abc$/);
+    expect(doGenerico!.identidadeDoNavegador!.fbc).toMatch(/^fb\.1\.\d+\.IwAR1abc$/);
+  });
+
+  it("CONTROLE: sem chave de anúncio, nenhuma atribuição é inventada", () => {
+    const m = mapElementorPayload(envio());
+    expect(extrairAtribuicaoDoInbound(m.source_metadata)).toBeNull();
+    // e o que a pessoa respondeu continua no card, como sempre
+    expect(m.custom_fields.servico).toBe("projeto_customizado");
   });
 });

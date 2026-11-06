@@ -29,8 +29,8 @@ export async function GET(
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try {
     adminCtx = await requirePlatformAdmin();
-  } catch {
-    return fail("forbidden", "Platform admin required", 403, { requestId });
+  } catch (err) {
+    return falhaDaEscritaDePlatformAdmin(err, requestId);
   }
 
   const admin = createAdminClient();

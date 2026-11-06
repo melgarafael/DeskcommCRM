@@ -26,15 +26,31 @@ import {
   type TriggerHandoffResult,
 } from "@/lib/ai/handoff/orchestrator";
 import { motivoCodigoDoTexto } from "@/lib/escalacao/passagem";
-import { loadEligibleAttendants } from "@/lib/routing/eligibles";
+import { loadEligibleAttendants, InvalidRoutingSector } from "@/lib/routing/eligibles";
 import { selectRoundRobin } from "@/lib/routing/decide";
 import { getQueuePosition } from "@/lib/routing/queue";
 import { logger } from "@/lib/logger";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import type { McpToolDefinition } from "../types";
 
 const inputShape = {
   conversation_id: z.string().uuid(),
-  reason: z.string().min(1).max(500).default("requested_human"),
+  /**
+   * ⚠️ **SEM DEFAULT, e isto é o conserto (#3310).** Era
+   * `.default("requested_human")`, e um agente externo que passasse a conversa
+   * sem declarar o motivo — o caso comum de quem escala por não ter a
+   * informação, ou por regra do próprio prompt — fazia o cartão de quem assume
+   * afirmar "O cliente pediu para falar com uma pessoa" e o cliente receber a
+   * abertura de quem PEDIU um humano. Ausente agora é ausente: o texto é
+   * classificado por `motivoCodigoDoTexto`, que devolve o motivo honesto de
+   * "o assistente não resolveu sozinho" e nunca inventa um pedido do cliente.
+   * Quem ATENDE ao pedido continua mandando `"requested_human"` e recebendo a
+   * frase do pedido.
+   */
+  reason: z.string().min(1).max(500).optional().describe(
+    'código do motivo ou texto livre. Envie exatamente "requested_human" quando o cliente pedir uma pessoa; ' +
+      "sem isso a passagem fica registrada como low_confidence (o assistente não resolveu sozinho).",
+  ),
   urgency: z.enum(["low", "normal", "high"]).default("normal"),
   /**
    * O contexto para quem vai assumir — o mesmo vocabulário da ferramenta nativa
@@ -78,7 +94,7 @@ export const crmRequestHumanHandoff: McpToolDefinition<typeof inputShape> = {
     // Conversation must belong to org (defense in depth — service role bypassa RLS).
     const { data: conv, error: convErr } = await ctx.supabase
       .from("conversations")
-      .select("id, organization_id, contact_id, channel_session_id, awaiting_since")
+      .select("id, organization_id, contact_id, channel_session_id, awaiting_since, sector_id")
       .eq("organization_id", ctx.organizationId)
       .eq("id", input.conversation_id)
       .maybeSingle();
@@ -118,7 +134,7 @@ export const crmRequestHumanHandoff: McpToolDefinition<typeof inputShape> = {
       organizationId: ctx.organizationId,
       reason: motivoDoAgenteExterno(input.reason),
       origem: "mcp_externo",
-      motivoTexto: input.reason,
+      motivoTexto: input.reason ?? null,
       // Só o que o agente DECLAROU. O contexto acumulado (checkpoint durável e
       // as falas pendentes do cliente) quem lê é o orquestrador, para todos os
       // seus chamadores — um lugar, uma montagem.
@@ -142,9 +158,24 @@ export const crmRequestHumanHandoff: McpToolDefinition<typeof inputShape> = {
     if (result.triggered) {
       const now = new Date();
       // INB-12: mesmos elegíveis do worker de roteamento (G5) — um algoritmo só.
-      const eligibles = await loadEligibleAttendants(ctx.supabase, ctx.organizationId, now, {
-        kind: "conversation_channel", channelSessionId: conv.channel_session_id,
-      });
+      // (9062) Com fila na conversa, o escopo é a FILA: o handoff da IA não
+      // entrega a quem não atende o setor que a pessoa escolheu. Sem fila, o
+      // escopo é o de sempre (o número).
+      // Módulo `setores` desligado ⇒ a fila não manda (mesma regra do worker).
+      const sectorId = conv.sector_id && (await moduloLigado(ctx.supabase, "setores")) ? conv.sector_id : null;
+      let eligibles: Awaited<ReturnType<typeof loadEligibleAttendants>>;
+      try {
+        eligibles = await loadEligibleAttendants(ctx.supabase, ctx.organizationId, now, sectorId
+          ? { kind: "sector", sectorId, channelSessionId: conv.channel_session_id }
+          : { kind: "conversation_channel", channelSessionId: conv.channel_session_id });
+      } catch (error) {
+        if (!(error instanceof InvalidRoutingSector)) throw error;
+        // A fila sumiu no meio do caminho: a FK já deixou a conversa sem fila.
+        // Segue pelo caminho de sempre em vez de falhar o handoff.
+        eligibles = await loadEligibleAttendants(ctx.supabase, ctx.organizationId, now, {
+          kind: "conversation_channel", channelSessionId: conv.channel_session_id,
+        });
+      }
       const picked =
         input.target_user_id && eligibles.some((e) => e.userId === input.target_user_id)
           ? input.target_user_id
@@ -249,10 +280,18 @@ function proximoPasso(result: TriggerHandoffResult): string {
  * fato que ele não observou (`verificacao_manual` é o motivo com que o runtime
  * grava a passagem quando um fluxo determinístico entrega o turno). O texto
  * inteiro não se perde: ele vai para `content`.
+ *
+ * ⚠️ **Estes três NÃO viram `requested_human` (#3310).** Viravam, e o efeito era
+ * o defeito que a issue mediu: o agente externo escrevia o próprio motivo (ou
+ * nenhum) e o cartão de quem assume dizia "O cliente pediu para falar com uma
+ * pessoa". Código que o agente não pode declarar cai no mesmo lugar da ausência
+ * — `low_confidence`, o motivo honesto de "o assistente não resolveu sozinho" —,
+ * e o pedido real do cliente continua sendo `requested_human`, escrito com todas
+ * as letras por quem o atendeu.
  */
-function motivoDoAgenteExterno(texto: string): HandoffReason {
+function motivoDoAgenteExterno(texto: string | null | undefined): HandoffReason {
   const codigo = motivoCodigoDoTexto(texto);
   return codigo === "suspected_optout" || codigo === "caso_escalado" || codigo === "verificacao_manual"
-    ? "requested_human"
+    ? "low_confidence"
     : codigo;
 }

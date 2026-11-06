@@ -46,6 +46,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { camposDoFunil, escopoDoCampo } from "@/lib/leads/campos-do-funil";
+import { logger } from "@/lib/logger";
 import { camposVisiveis } from "@/lib/schemas/mostrar-quando";
 import type { CustomFieldDef } from "@/lib/schemas/settings";
 
@@ -128,6 +129,27 @@ interface EntradaDeCampos {
    * cairia na mesma recusa da primeira: o lead ainda não foi gravado.
    */
   customFieldsPropostos?: Record<string, unknown> | null;
+  /**
+   * As chaves de campo `file` que TÊM anexo em `crm_lead_attachments` (#3229) —
+   * de `camposComAnexo()`. Campo de arquivo não se lê de `custom_fields`: a
+   * lista lá seria uma segunda fonte, e um `custom_fields` forjado passaria a
+   * régua sem arquivo nenhum. Ausente = nenhum anexo — e por isso a CRIAÇÃO
+   * precisa da opção abaixo: o negócio que ainda vai nascer não tem como ter
+   * anexo, e sem `semAnexosAinda` a exigência vira impossibilidade (#3433).
+   */
+  camposComAnexo?: ReadonlySet<string> | null;
+  /**
+   * A CRIAÇÃO de um negócio: o anexo é do negócio (`crm_lead_attachments.lead_id`)
+   * e só pode ser enviado DEPOIS que ele existe, então o campo `file` não é
+   * cobrado aqui (#3433). Volta a ser cobrado no próximo move, no lote ou no
+   * fechamento, onde o servidor lê os anexos de verdade (`camposComAnexo`).
+   *
+   * Só os caminhos de criação passam esta opção (`createLeadHandler` e o
+   * `NewLeadDialog`). Ela é explícita de propósito: um padrão "ausente = pula"
+   * teria afrouxado o move em silêncio, que é o caminho em que o arquivo PODE
+   * existir.
+   */
+  semAnexosAinda?: boolean;
 }
 
 /** `undefined`/`null`/branco/array vazio são ausência; `false` e `0` são resposta. */
@@ -136,6 +158,42 @@ function valorPreenchido(valor: unknown): boolean {
   if (typeof valor === "string") return valor.trim().length > 0;
   if (Array.isArray(valor)) return valor.length > 0;
   return true;
+}
+
+/**
+ * Quais campos `file` exigíveis deste funil têm anexo neste negócio (#3229).
+ *
+ * Só consulta quando o funil TEM campo de arquivo com `obrigatorio_em`: todo
+ * funil sem ele (o caso comum) não paga a ida ao banco. `organization_id` vai
+ * explícito porque metade dos chamadores usa o cliente admin.
+ *
+ * Falha FECHADA: sem a leitura, o campo conta como vazio e a escrita é
+ * recusada com a lista do que falta — melhor pedir o anexo de novo do que
+ * mover o negócio sem o documento que o funil exige.
+ */
+export async function camposComAnexo(
+  supabase: SupabaseClient,
+  settings: unknown,
+  organizationId: string,
+  leadId: string,
+): Promise<ReadonlySet<string>> {
+  const exigiveis = camposDoFunil(settingsComoRecord(settings)).some(
+    (campo) => campo.type === "file" && campo.obrigatorio_em,
+  );
+  if (!exigiveis) return new Set();
+  const { data, error } = await supabase
+    .from("crm_lead_attachments")
+    .select("field_key")
+    .eq("organization_id", organizationId)
+    .eq("lead_id", leadId);
+  if (error) {
+    logger.warn("[campos-exigidos] anexos não lidos; o campo de arquivo conta como vazio", {
+      leadId,
+      erro: error.message,
+    });
+    return new Set();
+  }
+  return new Set(((data ?? []) as { field_key: string }[]).map((linha) => linha.field_key));
 }
 
 /** O `settings` do funil como record tolerante — lixo vira objeto vazio. */
@@ -166,6 +224,33 @@ function campoExigidoNoDestino(
 }
 
 /**
+ * OS CAMPOS QUE ESTE DESTINO EXIGE — a lista, não o veredito.
+ *
+ * É o recorte que a régua de baixo percorre, e é a MESMA pergunta que a TELA
+ * precisa fazer para saber o que desenhar (issue #3038): o `NewLeadDialog`
+ * monta o formulário com esta lista em vez de reimplementar `obrigatorio_em`
+ * — duas cópias da regra divergiriam, e a tela voltaria a esconder um campo
+ * que o servidor cobra.
+ *
+ * Campo do CONTATO (issue #2791) fica de fora: ele nem aparece no card, e o
+ * valor mora em `contacts.custom_fields` — exigi-lo numa etapa do funil
+ * barraria o negócio por um campo que a tela do funil não mostra. Marcas de
+ * `obrigatorio_em` num campo `contato` são inertes.
+ *
+ * A VISIBILIDADE (`mostrar_quando`, #2728) NÃO é decidida aqui: ela depende dos
+ * valores, e quem os tem em mãos é a régua (a lista de `faltando`) e o
+ * `CustomFieldsEditor` no formulário.
+ */
+export function camposExigidosNoDestino(
+  settingsDoFunil: unknown,
+  destino: DestinoDaEscrita,
+): CustomFieldDef[] {
+  return camposDoFunil(settingsComoRecord(settingsDoFunil)).filter(
+    (campo) => escopoDoCampo(campo) === "negocio" && campoExigidoNoDestino(campo, destino),
+  );
+}
+
+/**
  * Devolve o que FALTA para esta escrita poder acontecer — nunca decide se a
  * escrita acontece (quem escreve é quem chama, e a recusa é 422 com esta lista
  * em `details.faltando`).
@@ -185,19 +270,24 @@ export function validaCamposExigidos(entrada: EntradaDeCampos): VereditoDeCampos
   const campos = camposDoFunil(settings);
   const visiveis = new Set(camposVisiveis(campos, valores).map((campo) => campo.key));
 
-  for (const campo of campos) {
-    // Campo do CONTATO (issue #2791) não entra na régua do NEGÓCIO: ele nem
-    // aparece no card, e o valor mora em `contacts.custom_fields` — exigi-lo
-    // numa etapa do funil barraria o negócio por um campo que a tela do funil
-    // não mostra. Marcas de `obrigatorio_em` num campo `contato` são inertes.
-    if (escopoDoCampo(campo) !== "negocio") continue;
-    if (!campoExigidoNoDestino(campo, entrada.destino)) continue;
+  // Escopo (só campo do NEGÓCIO) e destino (`obrigatorio_em`) são filtrados
+  // pelo recorte compartilhado com a tela — ver `camposExigidosNoDestino`.
+  for (const campo of camposExigidosNoDestino(settings, entrada.destino)) {
     // O campo OCULTO pela condição não é cobrado (issue #2728): quem não o
     // vê na ficha não tem como preenchê-lo, e barar a escrita por um campo
     // que a tela escondeu transformaria "esconder" em "travar". O valor que
     // ele já tinha continua no lead — esta função só decide se PERGUNTA.
     if (!visiveis.has(campo.key)) continue;
-    if (valorPreenchido(valores[campo.key])) continue;
+    // A CRIAÇÃO não cobra o arquivo (#3433): o anexo é do negócio que ainda vai
+    // nascer. Sem esta linha o campo `file` conta sempre como vazio na criação
+    // (não há `camposComAnexo` para ler) e a etapa que exige documento vira
+    // impossível de entrar — nem pela tela, nem pela API, nem pela captação.
+    if (campo.type === "file" && entrada.semAnexosAinda) continue;
+    const preenchido =
+      campo.type === "file"
+        ? (entrada.camposComAnexo?.has(campo.key) ?? false)
+        : valorPreenchido(valores[campo.key]);
+    if (preenchido) continue;
     faltando.push({
       chave: campo.key,
       rotulo: campo.label,

@@ -19,8 +19,10 @@ import type { FunilDaResposta } from "@/hooks/pipelines/usePipelines";
 import { coberturaDoFunil, type EtapaDoMapa } from "@/lib/leads/agent-mapping";
 import type { CoberturaPorFunil } from "./_components/FunisDoAgente";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { escolherVersoesDaTela } from "@/lib/ai/agents/versoes-da-tela";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
+import { skillsDisponiveis } from "@/lib/ai/skills/skills-do-agente";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +30,7 @@ const AGENT_COLUMNS =
   "id, organization_id, name, description, model, system_prompt, is_active, is_default, kind, channel, priority, published_version_id, paused_at, operation_mode, operation_revision, archived_at, config, guardrails, active_kb_version_id, created_at, updated_at";
 
 const VERSION_COLUMNS =
-  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, split_messages, split_max_chars, followup, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,provisioning_origin,inbound_debounce_ms";
+  "id, organization_id, agent_id, version_number, system_prompt, provider, model, credential_id, tool_ids, trigger_config, channel_session_id, max_steps, token_budget, cost_budget_cents, history_message_window, history_token_window, handoff_keywords, handoff_tool_enabled, handoff_legal_enabled, proposal_ai_draft_enabled, cases_enabled, split_messages, split_max_chars, followup, voz_enabled, voz_quando, operator_enabled, operator_model, operator_tool_ids, status, published_at, superseded_at, created_at, created_by,pipeline_ids,knowledge_source_ids,skill_names,image_vision_enabled,provisioning_origin,inbound_debounce_ms,reply_min_interval_ms";
 
 const CREDENTIAL_COLUMNS =
   "id, organization_id, provider, label, api_key_last4, validated_at, validation_error, models_available, is_active, created_by, created_at, updated_at";
@@ -118,7 +120,7 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
       listSelectableChannels(supabase, activeOrg.orgId),
       supabase
         .from("ai_router_members")
-        .select("router_id, ai_routers(name)")
+        .select("router_id, ai_routers(name, organization_id, channel_session_id)")
         .eq("organization_id", activeOrg.orgId)
         .eq("agent_id", id)
         .limit(1)
@@ -168,12 +170,21 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
   const credentials = (credentialsRes.data ?? []) as CredentialRow[];
   const routerMemberRow = routerMemberRes.data as {
     router_id: string;
-    ai_routers: { name: string } | null;
+    ai_routers: { name: string; organization_id: string; channel_session_id: string } | null;
   } | null;
-  const routerMembership = routerMemberRow
+  // A tela não deve confiar só em uma linha de ai_router_members: confirmar que
+  // o próprio roteador pertence à organização ativa antes de liberar a publicação.
+  const routerDaOrg =
+    routerMemberRow?.ai_routers?.organization_id === activeOrg.orgId
+      ? { routerId: routerMemberRow.router_id, roteador: routerMemberRow.ai_routers }
+      : null;
+  const routerMembership = routerDaOrg
     ? {
-        routerId: routerMemberRow.router_id,
-        routerName: routerMemberRow.ai_routers?.name ?? "roteador",
+        routerId: routerDaOrg.routerId,
+        routerName: routerDaOrg.roteador.name,
+        channelSessionId: routerDaOrg.roteador.channel_session_id,
+        channelStatus:
+          channelSessions.find((c) => c.id === routerDaOrg.roteador.channel_session_id)?.status ?? null,
       }
     : null;
 
@@ -236,9 +247,11 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
         funis={funis}
         cobertura={cobertura}
         materiais={materiais}
+        skills={await skillsDisponiveis(createAdminClient(), activeOrg.orgId)}
         routerMembership={routerMembership}
         readOnly={readOnly}
         organizationTimezone={fusoUtilizavel(activeOrg.timezone)}
+        mcpPorAgente={await moduloLigado(createAdminClient(), "mcp_por_agente")}
       />
     </div>
   );

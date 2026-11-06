@@ -32,7 +32,10 @@ export async function generateDraftReply(
   crmCfg: CrmEdgeConfig,
   input: DraftReplyInput,
 ): Promise<DraftReplyResult> {
-  const agent = await loadPublishedAgentConfig(db, input.tenantId, input.channelSessionId);
+  // #3722: `leadId` é o CONTATO — o público do agente decide se ele entra. Sem
+  // o contato, o rascunho sairia pelo agente errado (o de vendas escrevendo
+  // para o cliente com contrato), e a tela mostraria isso como sugestão.
+  const agent = await loadPublishedAgentConfig(db, input.tenantId, input.channelSessionId, input.leadId);
   if (agent === null) return { ok: false, reason: 'no_agent' };
 
   const ctx = await getLeadContext(
@@ -47,7 +50,11 @@ export async function generateDraftReply(
     // knobs reais da versão publicada — mesmos usados pelo turno completo
     // (inbound-turn.ts), sem número mágico: historyMessageWindow/historyTokenWindow
     // já são exatamente os campos que LeadContextKnobs espera.
-    { historyLimit: agent.historyMessageWindow, maxTokens: agent.historyTokenWindow },
+    {
+      historyLimit: agent.historyMessageWindow,
+      maxTokens: agent.historyTokenWindow,
+      verImagens: agent.imageVisionEnabled ?? true,
+    },
   );
   // Erro de leitura do CRM (lead_not_found/crm_error/crm_unavailable) é falha
   // técnica → "error" (vira 500 na rota), NÃO "blocked" (que diria ao vendedor

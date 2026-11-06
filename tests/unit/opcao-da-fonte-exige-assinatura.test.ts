@@ -12,12 +12,46 @@
 //   - DESLIGAR qualquer uma das duas → passa sempre (a tela promete "desligue
 //     primeiro", e uma recusa aqui deixaria a pessoa presa).
 
-import { describe, expect, it } from "vitest";
+import { NextRequest } from "next/server";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   assinaturaObrigatoriaAusente,
   opcaoSemAssinatura,
 } from "@/lib/webhooks/assinatura-autorizacao";
+
+// Só para o caso da ROTA (#3101, no fim do arquivo): a fonte lida do banco e
+// quem pede. A regra em si é a de verdade.
+const rota = vi.hoisted(() => ({
+  fonte: null as Record<string, unknown> | null,
+  update: vi.fn(),
+}));
+vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
+vi.mock("@/lib/auth/require-role", () => ({
+  requireRole: async () => ({
+    ok: true,
+    user: { id: "user-1", idioma: "pt" },
+    org: { orgId: "org-1", role: "manager" },
+  }),
+}));
+vi.mock("@/lib/audit", () => ({ audit: async () => undefined }));
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: async () => {
+    const cadeia: Record<string, unknown> = {
+      select: () => cadeia,
+      eq: () => cadeia,
+      update: (...args: unknown[]) => {
+        rota.update(...args);
+        return cadeia;
+      },
+      maybeSingle: async () => ({ data: rota.fonte, error: null }),
+      single: async () => ({ data: { ...rota.fonte, secret_encrypted: null }, error: null }),
+    };
+    return { from: () => cadeia };
+  },
+}));
+
+import { PATCH } from "@/app/api/v1/webhook-sources/[id]/route";
 
 const SEM_SEGREDO = { authorize_ai_on_capture: false, secret_encrypted: null };
 const COM_SEGREDO = { authorize_ai_on_capture: false, secret_encrypted: "cifrado" };
@@ -85,5 +119,45 @@ describe("a régua da autorização de IA continua a mesma", () => {
     // Um patch que não toca em nenhuma das duas opções (definir a assinatura,
     // renomear, desativar) nunca recusa.
     expect(assinaturaObrigatoriaAusente(SEM_SEGREDO, { secret: CIFRADO })).toBe(false);
+  });
+});
+
+describe("reaproveitar o card aberto do contato exige assinatura (#3101)", () => {
+  it("⭐ o PATCH que liga o reuso numa fonte SEM assinatura recusa com 422 signature_required", async () => {
+    rota.update.mockClear();
+    rota.fonte = {
+      id: "fonte-1",
+      authorize_ai_on_capture: false,
+      update_existing_lead_on_capture: false,
+      reuse_open_lead_on_capture: false,
+      secret_encrypted: null,
+    };
+    const req = new NextRequest("http://localhost/api/v1/webhook-sources/fonte-1", {
+      method: "PATCH",
+      body: JSON.stringify({ reuse_open_lead_on_capture: true }),
+      headers: { "content-type": "application/json" },
+    });
+
+    const res = await PATCH(req, { params: Promise.resolve({ id: "fonte-1" }) });
+
+    expect(res.status).toBe(422);
+    const corpo = (await res.json()) as { error: { code: string; message: string } };
+    expect(corpo.error.code).toBe("signature_required");
+    expect(corpo.error.message).toContain("reaproveitar o card aberto");
+    expect(rota.update, "a opção foi gravada sem assinatura na fonte").not.toHaveBeenCalled();
+  });
+
+  it("remover a assinatura com o reuso LIGADO: recusa — desligue primeiro", () => {
+    expect(
+      opcaoSemAssinatura(
+        { authorize_ai_on_capture: false, reuse_open_lead_on_capture: true, secret_encrypted: CIFRADO },
+        { secret: null },
+      ),
+    ).toBe("reuse_lead");
+  });
+
+  it("fonte com assinatura liga o reuso; desligar nunca pede assinatura", () => {
+    expect(opcaoSemAssinatura(COM_SEGREDO, { reuse_open_lead_on_capture: true })).toBeNull();
+    expect(opcaoSemAssinatura(SEM_SEGREDO, { reuse_open_lead_on_capture: false })).toBeNull();
   });
 });

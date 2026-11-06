@@ -24,6 +24,9 @@ import {
 // MESMA transferência do roteador de intenção (#2155): duas implementações de
 // "trocar de funil" divergiriam na primeira mudança de uma delas.
 import { COLUNAS_DA_ORIGEM, transfereParaOFunil } from "@/lib/leads/transfere-para-o-funil";
+// O degrau compartilhado com a captação por webhook (#3101): "o negócio aberto
+// do contato neste funil" é UMA pergunta, com um dono só.
+import { negocioAbertoDoContato } from "@/lib/leads/negocio-aberto-do-contato";
 
 /** O que a linha do tempo diz de quem levou o card — o roteador de intenção diz outra coisa. */
 const RAZAO_DA_AUTOMACAO = "Levado para outro funil pela automação";
@@ -252,11 +255,11 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
       // ganhava um negócio novo a cada vez que a regra rodava (#958). O negócio
       // procurado é o ABERTO no funil de destino — negócio de outro funil segue
       // fora, pela mesma regra que recusa mover entre funis.
-      const existente = await negocioAbertoDoContato(ctx, contact.id, pipelineId);
+      const existente = await negocioAbertoDoContato(ctx.admin, ctx.organizationId, contact.id, pipelineId);
       if (existente) {
-        const movido = await moveLeadHandler(ctx.admin, handlerCtx, existente, { to_stage_id: stageId });
+        const movido = await moveLeadHandler(ctx.admin, handlerCtx, existente.id, { to_stage_id: stageId });
         publicaNoContexto(ctx, movido, contact.id);
-        return { type: "create_or_move_lead", status: "success", detail: { moved: existente } };
+        return { type: "create_or_move_lead", status: "success", detail: { moved: existente.id } };
       }
 
       // ── O CONTATO COM NEGÓCIO ABERTO EM OUTRO FUNIL: A REGRA TRANSFERE ───────
@@ -307,32 +310,6 @@ async function execute(ctx: ActionCtx, config: Record<string, unknown>): Promise
     };
   }
 }
-
-/**
- * O negócio ABERTO do contato neste funil, se houver um.
- *
- * Só o funil de destino. O negócio do contato em OUTRO funil não é movido de
- * etapa (mover entre funis é recusado logo acima) — ele é o caso de
- * `negocioAbertoEmOutroFunil`, que transfere. Falha de leitura devolve `null`.
- */
-async function negocioAbertoDoContato(
-  ctx: ActionCtx,
-  contactId: string,
-  pipelineId: string,
-): Promise<string | null> {
-  const { data } = await ctx.admin
-    .from("crm_leads")
-    .select("id")
-    .eq("organization_id", ctx.organizationId)
-    .eq("contact_id", contactId)
-    .eq("pipeline_id", pipelineId)
-    .eq("status", "open")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return (data as { id?: string } | null)?.id ?? null;
-}
-
 
 /**
  * O negócio ABERTO do contato em qualquer OUTRO funil, se houver um.

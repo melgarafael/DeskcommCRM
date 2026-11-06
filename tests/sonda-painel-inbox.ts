@@ -3,13 +3,13 @@
  *
  * Prova nos DOIS sentidos, que é o padrão que passei a exigir do time depois do
  * teste de mutação do @DevVivo: não basta ver a tela certa quando tudo funciona.
- * Um painel que mostra dados no caminho feliz e diz "Sem leads." quando a
+ * Um painel que mostra dados no caminho feliz e diz "Sem negócios." quando a
  * leitura falha continua mentindo — só que mais raramente.
  *
  *   A) CAMINHO FELIZ  — o contato tem lead e atividade, e a tela mostra os dois,
  *                       com o motivo humano e sem UUID.
  *   B) FALHA INJETADA — a rota devolve 500 e a tela precisa dizer que NÃO
- *                       CONSEGUIU LER. Se disser "Sem leads.", reprova: isso é
+ *                       CONSEGUIU LER. Se disser "Sem negócios.", reprova: isso é
  *                       afirmação sobre o negócio em cima de um erro.
  *
  * Run: E2E_PORT=3020 npx tsx tests/sonda-painel-inbox.ts
@@ -31,9 +31,9 @@ function record(nome: string, ok: boolean, detalhe: string): void {
 async function abrirConversa(page: Page): Promise<void> {
   await page.goto(`${BASE}/app/inbox`, { waitUntil: "networkidle" });
 
-  // Espera pela RESOLUÇÃO, não por um título. Esperar "Leads recentes" me deu
+  // Espera pela RESOLUÇÃO, não por um título. Esperar "Negócios recentes" me deu
   // um falso verde: o cabeçalho existe ANTES dos dados, então as asserções
-  // negativas ("não diz Sem leads") passaram por ausência — verde vácuo, a
+  // negativas ("não diz Sem negócios") passaram por ausência — verde vácuo, a
   // mesma armadilha que virou lei no §7.4 e que eu quebrei no meu próprio teste.
   // A resolução verdadeira é a resposta da rota, que também dispara quando ela
   // está interceptada com 500.

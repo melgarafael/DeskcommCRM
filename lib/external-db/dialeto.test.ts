@@ -174,9 +174,15 @@ describe("criarDialetoDeLeitura (qualquer motor)", () => {
     it("J1(a) modo list com fonte marcada no schema certo: passa e chama o motor", async () => {
       const op = operacoes();
       const d = criarDialetoDeLeitura(op, lista(fonte("clientes")));
-      // `clientes` tem schema "public", igual ao schemaDasReceitas do dublê.
+      // O SQL lê a mesma tabela que declara em `tabelas` (`clientes`); senão
+      // o validador (que agora enxerga tabela entre crases) recusaria.
       await d.executarReceita(
-        { ...consultaValida, tabelas: ["clientes"] },
+        {
+          ...consultaValida,
+          sql: "select id from `clientes` where id = ?",
+          tabelas: ["clientes"],
+          colunasPorTabela: { clientes: ["id"] },
+        },
         { limiteMax: 5 },
       );
       expect(op.executarReceita).toHaveBeenCalledTimes(1);
@@ -194,10 +200,16 @@ describe("criarDialetoDeLeitura (qualquer motor)", () => {
     it("J1(c) modo list com fonte marcada em OUTRO schema: fonte_nao_liberada", async () => {
       const op = operacoes();
       const d = criarDialetoDeLeitura(op, lista({ schema: "outro_schema", tabela: "clientes", colunas: null, descricao: "" }));
-      // fonte de outro schema não casa com schema "public" do dublê.
+      // fonte de outro schema não casa com schema "public" do dublê. O SQL lê
+      // a tabela declarada (`clientes`) para chegar até a checagem de fonte.
       await expect(
         d.executarReceita(
-          { ...consultaValida, tabelas: ["clientes"] },
+          {
+            sql: "select id from `clientes` where id = ?",
+            valores: [1],
+            tabelas: ["clientes"],
+            colunasPorTabela: { clientes: ["id"] },
+          },
           { limiteMax: 5 },
         ),
       ).rejects.toBeInstanceOf(FonteNaoLiberadaError);
@@ -215,7 +227,8 @@ describe("criarDialetoDeLeitura (qualquer motor)", () => {
       await expect(
         d.executarReceita(
           {
-            ...consultaValida,
+            sql: "select id from `clientes` where id = ?",
+            valores: [1],
             tabelas: ["clientes"],
             colunasPorTabela: { clientes: ["ID", "post_title", "post_status"] },
           },

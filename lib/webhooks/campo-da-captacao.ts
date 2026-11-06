@@ -10,7 +10,11 @@
  *
  * Puro, sem I/O.
  */
-import { customFieldSchema, type CustomFieldDef } from "@/lib/schemas/settings";
+import {
+  customFieldSchema,
+  MAX_CAMPOS_DO_NEGOCIO,
+  type CustomFieldDef,
+} from "@/lib/schemas/settings";
 
 /**
  * Os tipos oferecidos na captação. `select` e `multiselect` ficam de fora de
@@ -31,8 +35,15 @@ export const TIPOS_CADASTRAVEIS_DA_CAPTACAO = [
 
 export type TipoCadastravel = (typeof TIPOS_CADASTRAVEIS_DA_CAPTACAO)[number];
 
-/** O mesmo limite de `pipelineConfigPatchSchema.fields`. */
-export const MAX_CAMPOS_DO_FUNIL = 50;
+/**
+ * O teto de campos do NEGÓCIO do funil (issue #3111).
+ *
+ * É a MESMA cota de `pipelineConfigPatchSchema.fields` — a captação cadastra um
+ * campo de negócio, e o teto que a server action aplica é este. A fonte única é
+ * `MAX_CAMPOS_DO_NEGOCIO`; os campos do CONTATO não entram nesta conta (eles não
+ * aparecem no card, e o valor deles não vira `crm_leads.custom_fields`).
+ */
+export const MAX_CAMPOS_DO_FUNIL = MAX_CAMPOS_DO_NEGOCIO;
 
 /** A chave vira `key` da definição, e `customFieldSchema` só aceita isto. */
 export function chaveCadastravel(chave: string): boolean {
@@ -81,6 +92,10 @@ export function comNovoCampo(
   const label = rotulo.trim().slice(0, 80);
   if (!label) return { ok: false, motivo: "rotulo_vazio" };
   if (atuais.some((c) => c.key === chave)) return { ok: false, motivo: "ja_cadastrado" };
-  if (atuais.length >= MAX_CAMPOS_DO_FUNIL) return { ok: false, motivo: "limite" };
+  // A cota é do NEGÓCIO (issue #3111): a captação acrescenta um campo de
+  // negócio, então só os do negócio contam — um funil com 50 do negócio cheio de
+  // campos do contato ainda cabe a captação.
+  const doNegocio = atuais.filter((c) => c.escopo !== "contato").length;
+  if (doNegocio >= MAX_CAMPOS_DO_FUNIL) return { ok: false, motivo: "limite" };
   return { ok: true, fields: [...atuais, { key: chave, label, type: tipo }] };
 }

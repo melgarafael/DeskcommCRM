@@ -21,6 +21,20 @@ vi.mock("@/hooks/auth/AuthProvider", () => ({
 }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("@/hooks/contacts/useUpdateContact", () => ({ useUpdateContact: () => useUpdate }));
+/* O escritor da cor também é react-query (`useQueryClient`) e este fixture monta
+   o diálogo sem provider nenhum — então ele é dublado aqui, como o
+   `useUpdateContact` acima. O `useActiveOrg` sem `role` já deixa a paleta fora
+   do campo, que é o que estes casos medem. */
+vi.mock("@/hooks/tags/useDefinirCorDaEtiqueta", () => ({
+  useDefinirCorDaEtiqueta: () => ({ definirCor: vi.fn(async () => true) }),
+}));
+/* A leitura de sugestões de etiqueta também é react-query, e passou a acontecer
+   DENTRO do diálogo com a #3144 (a ficha pergunta ao vocabulário curado o que o
+   texto digitado casaria). Dublada pelo mesmo motivo da cor acima: este fixture
+   monta o diálogo sem provider, e aqui o assunto é o padrão dos campos. */
+vi.mock("@/hooks/contacts/useContactTagVocabulary", () => ({
+  useContactTagVocabulary: () => ({ data: [], isError: false }),
+}));
 const { mutateAsync, useUpdate } = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
   useUpdate: { mutateAsync: vi.fn(), isPending: false },

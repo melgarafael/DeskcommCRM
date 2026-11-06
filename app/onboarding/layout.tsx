@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { exigirProvaDeMfa, requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { loadOnboardingState } from "@/app/actions/onboarding/_shared";
 import { Stepper } from "./_components/Stepper";
 import { OutrasOrganizacoes } from "./_components/OutrasOrganizacoes";
@@ -27,6 +27,9 @@ export default async function OnboardingLayout({ children }: { children: React.R
 
   const { state, onboardedAt } = await loadOnboardingState(activeOrg.orgId);
   if (onboardedAt) redirect("/app/inbox");
+  // A mesma regra de sessão do layout de `/app`: quem tem fator prova antes do
+  // wizard. Depois dos redirects, para só quem vai VER o wizard pagar a leitura.
+  await exigirProvaDeMfa();
 
   // Os passos que ESTA instalação oferece, com o que já foi resolvido. O
   // indicador não decide mais nada sozinho — ele desenha o que recebe.

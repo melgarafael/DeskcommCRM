@@ -2,7 +2,7 @@
 
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useTransition, useState } from "react";
+import { useState } from "react";
 
 import { useT } from "@/hooks/i18n/useT";
 import { resetPasswordSchema, type ResetPasswordInput } from "@/lib/auth/schemas";
@@ -10,12 +10,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { updatePassword } from "@/app/actions/auth/updatePassword";
+import { AvisoSemResposta, useEnvioComTeto } from "@/components/auth/teto-da-espera";
 import { Eye, EyeSlash } from "@/lib/ui/icons";
 import { PasswordStrength } from "@/components/auth/PasswordStrength";
 
 export function ResetPasswordForm() {
   const t = useT();
-  const [isPending, startTransition] = useTransition();
+  const { pendente: isPending, semResposta, enviar } = useEnvioComTeto();
   const [serverError, setServerError] = useState<string | null>(null);
   const [needsMfa, setNeedsMfa] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -34,9 +35,8 @@ export function ResetPasswordForm() {
 
   const onSubmit = (values: ResetPasswordInput) => {
     setServerError(null);
-    startTransition(async () => {
-      // Sucesso redireciona server-side para /login?reset=success.
-      const res = await updatePassword(values);
+    // Sucesso redireciona server-side para /login?reset=success.
+    void enviar(() => updatePassword(values), (res) => {
       if (!res) return;
       if (res.error === "mfa_required") {
         setNeedsMfa(true);
@@ -148,6 +148,7 @@ export function ResetPasswordForm() {
           {serverError}
         </div>
       )}
+      {semResposta && <AvisoSemResposta />}
       <Button type="submit" className="w-full" disabled={isPending}>
         {isPending ? t("Salvando...") : t("Definir nova senha")}
       </Button>

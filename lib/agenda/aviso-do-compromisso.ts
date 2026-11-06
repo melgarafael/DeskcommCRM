@@ -64,6 +64,14 @@ export interface EntradaDoAviso {
   compromisso?: RecorteDoCompromisso | null;
   tipo?: TipoDoAtendimento | null;
   leadIds?: string[];
+  /**
+   * QUEM fez esta mudança, no vocabulário de `created_by_kind` (`user`, `ai`,
+   * `system`, `contact`) mais `google`, para a mudança que chegou pela
+   * sincronização. A coluna da linha responde só quem MARCOU; quem remarcou ou
+   * cancelou só o emissor sabe. Consumido pelo aviso de agendamento no
+   * WhatsApp (`lib/agenda/aviso-de-agendamento.ts`), que mostra a origem.
+   */
+  autor?: string | null;
 }
 
 const texto = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v : null);
@@ -116,5 +124,6 @@ export function payloadDoAviso(entrada: EntradaDoAviso): Record<string, unknown>
     // cabeçalho) — o `call_webhook` os acrescenta da linha atual.
     local: { tipo: texto(compromisso?.location_kind) },
     lead_ids: leadIds,
+    autor: texto(entrada.autor),
   };
 }

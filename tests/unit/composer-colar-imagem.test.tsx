@@ -218,4 +218,8 @@ describe("Composer — texto digitado durante o envio", () => {
 });
 
 // A fixture exercita um atendente autorizado a consultar modelos de mensagem.
-vi.mock("@/hooks/auth/AuthProvider", () => ({ usePermission: () => true }));
+vi.mock("@/hooks/auth/AuthProvider", () => ({
+  usePermission: () => true,
+  // A escolha de contato do Composer lê o país da organização (o exemplo do telefone); sem organização, o Brasil.
+  usePaisDaOrgAtiva: () => null,
+}));

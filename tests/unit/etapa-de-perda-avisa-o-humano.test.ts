@@ -121,15 +121,19 @@ describe("a etapa de perda sem motivo vira AÇÃO para o humano, não incidente"
     expect(aviso!.title).not.toContain("inconsistente");
   });
 
-  it("diz para qual etapa o assistente quis levar o negócio", () => {
+  it("diz para qual etapa do FUNIL o assistente quis levar o negócio", () => {
     // Sem o nome da etapa o dono não sabe QUAL perda o assistente enxergou, e o
-    // aviso vira um pedido genérico de atenção.
+    // aviso vira um pedido genérico de atenção. O nome vem do funil do dono
+    // (`etapaDoFunil`) — o passo interno do agente nunca aparece neste texto
+    // (issue #3148).
     const aviso = avisoDoEspelhoRecusado({
       motivo: "perda_sem_motivo",
       detalhe: "…",
-      etapaDeDestino: "Cancelado pelo paciente",
+      etapaDeDestino: "lost",
+      etapaDoFunil: "Cancelado pelo paciente",
     });
     expect(aviso!.body).toContain("Cancelado pelo paciente");
+    expect(aviso!.body).not.toContain("lost");
   });
 });
 
@@ -195,7 +199,7 @@ describe("abrir o aviso na Central", () => {
     const { db, chamadas } = bancoQueRegistra();
 
     await abreAvisoDoEspelhoRecusado(db, "org-1", {
-      leadId: "lead-1",
+      negocioId: "negocio-1",
       motivo: "perda_sem_motivo",
       detalhe: "d",
       etapaDeDestino: ETAPA,
@@ -213,14 +217,14 @@ describe("abrir o aviso na Central", () => {
     // ref_kind, ref_id, "casa a ref?", "casa o título?".
     expect(params.slice(0, 2)).toEqual(["org-1", "other"]);
     expect(params[3]).toBe(titulo);
-    expect(params.slice(5)).toEqual(["lead", "lead-1", true, true]);
+    expect(params.slice(5)).toEqual(["lead", "negocio-1", true, true]);
   });
 
   it("warn-only não chega ao banco", async () => {
     const { db, chamadas } = bancoQueRegistra();
 
     await abreAvisoDoEspelhoRecusado(db, "org-1", {
-      leadId: "lead-1",
+      negocioId: "negocio-1",
       motivo: "human_conflict",
       detalhe: "d",
       etapaDeDestino: ETAPA,

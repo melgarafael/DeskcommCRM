@@ -28,6 +28,15 @@ import { join } from "node:path";
 
 import { fireEvent, render, screen, cleanup, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+import { NAV_GROUPS } from "@/lib/navigation/catalogo";
+import { NAV_DESTINATIONS } from "@/lib/navigation/registry";
+
+// O caminho é o do menu, não um nome solto: "Configurações › Funis" mandava
+// para um lugar que o menu não tem. Lido do catálogo para não envelhecer.
+const crm = NAV_GROUPS.find((g) => g.id === "crm")!;
+const etapas = NAV_DESTINATIONS.find((d) => d.href === "/app/settings/tenant/pipelines")!;
+const ONDE_CADASTRAR = `cadastre em ${crm.label} › ${crm.hub!.label} › ${etapas.label}.`;
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { LoseLeadDialog } from "@/components/kanban/LoseLeadDialog";
@@ -93,7 +102,9 @@ function abrir(qc: QueryClient) {
 
 /** Pelas VALUES, não pelos rótulos: o valor é o contrato com o servidor. */
 const valuesDosMotivos = () =>
-  Array.from(document.querySelectorAll<HTMLInputElement>('input[name="lost-reason"]')).map((r) => r.value);
+  Array.from(document.querySelectorAll<HTMLInputElement>('input[name="lost-reason"]')).map(
+    (r) => r.value,
+  );
 
 const radio = (valor: string) =>
   document.querySelector<HTMLInputElement>(`input[name="lost-reason"][value="${valor}"]`)!;
@@ -162,13 +173,13 @@ describe("motivos de perda configurados no funil", () => {
     // motivo já cadastrado, e sem esta frase não diz onde se cadastra um novo.
     abrir(comFunil({ lost_reasons: ["Sem orçamento"] }));
     fireEvent.click(radio("other"));
-    expect(screen.getByText(/cadastre em Configurações/)).toBeTruthy();
+    expect(screen.getByText(ONDE_CADASTRAR, { exact: false })).toBeTruthy();
   });
 
   it("sem funil configurado a frase NÃO aparece antes de digitar — nada a corrigir ainda", () => {
     abrir(comFunil({}));
     fireEvent.click(radio("other"));
-    expect(screen.queryByText(/cadastre em Configurações/)).toBeNull();
+    expect(screen.queryByText(ONDE_CADASTRAR, { exact: false })).toBeNull();
   });
 
   it("BUG REPRODUZIDO (crm.fabrasoftware.com.br): sem funil configurado, texto livre em 'Outro' é recusado ANTES do clique, não 500 depois", () => {
@@ -188,7 +199,7 @@ describe("motivos de perda configurados no funil", () => {
     expect(screen.getByRole("alert").textContent).toBe(
       "Esse motivo de perda não está na lista deste funil — escolha um dos motivos configurados.",
     );
-    expect(screen.getByText(/cadastre em Configurações/)).toBeTruthy();
+    expect(screen.getByText(ONDE_CADASTRAR, { exact: false })).toBeTruthy();
   });
 
   it("sem funil configurado, o padrão do produto e o 'other' vazio continuam valendo", async () => {
@@ -240,7 +251,9 @@ describe("motivosDoFunil (a régua da leitura)", () => {
     // um rótulo que o banco recusa com 22023 — a classe de defeito que este
     // arquivo fecha. O dedupe segue ignorando espaço nas pontas.
     expect(
-      motivosDoFunil({ lost_reasons: ["  Sem orçamento  ", "Sem orçamento", "", "Fora do perfil"] }),
+      motivosDoFunil({
+        lost_reasons: ["  Sem orçamento  ", "Sem orçamento", "", "Fora do perfil"],
+      }),
     ).toEqual(["  Sem orçamento  ", "Fora do perfil"]);
   });
 
@@ -264,7 +277,7 @@ describe("motivosDoFunil (a régua da leitura)", () => {
     // a literal antiga no próprio texto do caso, e cobrá-la aqui seria o teste
     // reprovando a si mesmo.
     const hook = readFileSync(join(raiz, "hooks/kanban/useMotivosDePerdaDoFunil.ts"), "utf8");
-    expect(hook.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")).not.toContain("\"board\"");
+    expect(hook.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")).not.toContain('"board"');
   });
 
   it("lixo no settings vira lista vazia, não motivo na tela", () => {
@@ -272,4 +285,25 @@ describe("motivosDoFunil (a régua da leitura)", () => {
     expect(motivosDoFunil({})).toEqual([]);
     expect(motivosDoFunil({ lost_reasons: "Sem orçamento" })).toEqual([]);
   });
+});
+
+it("identifica o negócio sem alterar o motivo selecionado ou o cancelamento", () => {
+  const qc = comFunil({ lost_reasons: ["Sem orçamento"] });
+  const close = vi.fn();
+  render(
+    <QueryClientProvider client={qc}>
+      <LoseLeadDialog
+        open
+        onOpenChange={close}
+        leadId={LEAD}
+        pipelineId={PIL}
+        leadLabel="Negócio de teste"
+      />
+    </QueryClientProvider>,
+  );
+  expect(screen.getByText("Negócio de teste")).toBeInTheDocument();
+  expect(valuesDosMotivos()).toEqual(["Sem orçamento", "other"]);
+  fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+  expect(close).toHaveBeenCalledWith(false);
+  expect(apiPost).not.toHaveBeenCalled();
 });

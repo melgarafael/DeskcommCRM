@@ -33,7 +33,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { GET as exportar } from "./route";
 import { GET as listar } from "../route";
 
-vi.mock("@/lib/auth/requirePlatformAdmin", () => ({ requirePlatformAdmin: vi.fn() }));
+vi.mock("@/lib/auth/requirePlatformAdmin", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/requirePlatformAdmin")>()),
+  requirePlatformAdmin: vi.fn(),
+}));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 

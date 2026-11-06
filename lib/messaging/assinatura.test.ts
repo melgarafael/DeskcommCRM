@@ -18,16 +18,16 @@ import {
 
 describe("configAssinatura", () => {
   it("degenera para tudo desligado quando não há settings (adição não muda instalação existente)", () => {
-    expect(configAssinatura(undefined)).toEqual({ humanos: false, ia: false, nomeIa: "Assistente Virtual" });
-    expect(configAssinatura({})).toEqual({ humanos: false, ia: false, nomeIa: "Assistente Virtual" });
-    expect(configAssinatura({ outras: 1 })).toEqual({ humanos: false, ia: false, nomeIa: "Assistente Virtual" });
+    expect(configAssinatura(undefined)).toEqual({ humanos: false, ia: false, nomeIa: "Assistente Virtual", porAgente: false });
+    expect(configAssinatura({})).toEqual({ humanos: false, ia: false, nomeIa: "Assistente Virtual", porAgente: false });
+    expect(configAssinatura({ outras: 1 })).toEqual({ humanos: false, ia: false, nomeIa: "Assistente Virtual", porAgente: false });
   });
 
   it("lê humanos/ia/nome_ia do settings, e jsonb torto degrada sem lançar", () => {
     const on = configAssinatura({
       assinatura_mensagens: { humanos: true, ia: true, nome_ia: "Ana I.A." },
     });
-    expect(on).toEqual({ humanos: true, ia: true, nomeIa: "Ana I.A." });
+    expect(on).toEqual({ humanos: true, ia: true, nomeIa: "Ana I.A.", porAgente: false });
 
     // A string "true" não liga — só o booleano (régua da casa).
     expect(configAssinatura({ assinatura_mensagens: { humanos: "true", ia: 1 } }).humanos).toBe(false);
@@ -35,6 +35,7 @@ describe("configAssinatura", () => {
       humanos: false,
       ia: false,
       nomeIa: "Assistente Virtual",
+      porAgente: false,
     });
   });
 });
@@ -49,31 +50,31 @@ describe("capitalizarIniciais", () => {
 
 describe("linhaDeAssinatura", () => {
   it("humano: `*Nome*\n` com iniciais em maiúsculo, quando a config liga humanos", () => {
-    expect(linhaDeAssinatura({ humanos: true, ia: false, nomeIa: "x" }, "user", "carlos gaban")).toBe(
+    expect(linhaDeAssinatura({ humanos: true, ia: false, nomeIa: "x", porAgente: false }, "user", "carlos gaban")).toBe(
       "*Carlos Gaban*\n",
     );
   });
 
   it("humano desligado → null, mesmo com o nome à mão", () => {
-    expect(linhaDeAssinatura({ humanos: false, ia: false, nomeIa: "x" }, "user", "Carlos")).toBeNull();
+    expect(linhaDeAssinatura({ humanos: false, ia: false, nomeIa: "x", porAgente: false }, "user", "Carlos")).toBeNull();
   });
 
   it("humano sem nome resolvido → null (não assina uma linha sem dono)", () => {
-    expect(linhaDeAssinatura({ humanos: true, ia: false, nomeIa: "x" }, "user", "  ")).toBeNull();
-    expect(linhaDeAssinatura({ humanos: true, ia: false, nomeIa: "x" }, "user", null)).toBeNull();
+    expect(linhaDeAssinatura({ humanos: true, ia: false, nomeIa: "x", porAgente: false }, "user", "  ")).toBeNull();
+    expect(linhaDeAssinatura({ humanos: true, ia: false, nomeIa: "x", porAgente: false }, "user", null)).toBeNull();
   });
 
   it("IA: usa o nome configurável da organização, no formato que ela deu", () => {
-    expect(linhaDeAssinatura({ humanos: false, ia: true, nomeIa: "Assistente Virtual" }, "ai")).toBe(
+    expect(linhaDeAssinatura({ humanos: false, ia: true, nomeIa: "Assistente Virtual", porAgente: false }, "ai")).toBe(
       "*Assistente Virtual*\n",
     );
-    expect(linhaDeAssinatura({ humanos: false, ia: true, nomeIa: "Agente Juliana" }, "ai")).toBe(
+    expect(linhaDeAssinatura({ humanos: false, ia: true, nomeIa: "Agente Juliana", porAgente: false }, "ai")).toBe(
       "*Agente Juliana*\n",
     );
   });
 
   it("IA desligada → null", () => {
-    expect(linhaDeAssinatura({ humanos: false, ia: false, nomeIa: "x" }, "ai")).toBeNull();
+    expect(linhaDeAssinatura({ humanos: false, ia: false, nomeIa: "x", porAgente: false }, "ai")).toBeNull();
   });
 });
 

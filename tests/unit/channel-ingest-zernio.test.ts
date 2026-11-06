@@ -210,6 +210,25 @@ describe("o que a ingestão GRAVA", () => {
     });
   });
 
+  it("ancora o clique CTWA da mensagem inbound, sem confundir source_id do anúncio", async () => {
+    await ingestZernioInbound(admin, {
+      ...ENTRADA,
+      payload: evento({ referral: { source_type: "ad", source_id: "ad-123", ctwa_clid: "click-456" } }),
+    });
+    const ins = ops.find((o) => o.tabela === "messages" && o.op === "insert")?.payload as Record<string, unknown>;
+    expect(ins.metadata).toMatchObject({
+      meta_ctwa_message_v1: { platform: "meta_ads", source_type: "ad", ctwa_clid: "click-456" },
+    });
+
+    ops.length = 0;
+    await ingestZernioInbound(admin, {
+      ...ENTRADA,
+      payload: evento({ referral: { source_type: "ad", source_id: "ad-123" } }),
+    });
+    const somenteAnuncio = ops.find((o) => o.tabela === "messages" && o.op === "insert")?.payload as Record<string, unknown>;
+    expect(somenteAnuncio.metadata).not.toHaveProperty("meta_ctwa_message_v1");
+  });
+
   it("anexo define o tipo e a url fica no metadata, não no body", async () => {
     await ingestZernioInbound(admin, {
       ...ENTRADA,

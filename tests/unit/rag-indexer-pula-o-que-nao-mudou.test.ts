@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { processRagIndexer } from "@/workers/rag-indexer";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { embedText } from "@/lib/ai/embed";
+import { embedTexts } from "@/lib/ai/embed";
 import { FamiliaDaBaseIlegivelError, resolverChaveDeEmbedding } from "@/lib/ai/embeddings/chave";
 import { acquireDebounce } from "@/lib/ai/rag/debounce";
 import { computeContentHash } from "@/lib/ai/rag/chunker";
@@ -22,7 +22,7 @@ import { createKnowledgeVersion } from "@/lib/ai/rag/version";
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/ai/embed", () => ({
-  embedText: vi.fn(),
+  embedTexts: vi.fn(),
   SemChaveDeEmbeddingError: class SemChaveDeEmbeddingError extends Error {},
 }));
 vi.mock("@/lib/ai/embeddings/chave", () => ({
@@ -121,7 +121,7 @@ beforeEach(() => {
 
   vi.mocked(acquireDebounce).mockResolvedValue(true as never);
   vi.mocked(resolverChaveDeEmbedding).mockResolvedValue({ origem: "org" } as never);
-  vi.mocked(embedText).mockResolvedValue({ embedding: [0.1, 0.2] } as never);
+  vi.mocked(embedTexts).mockResolvedValue({ embeddings: [[0.1, 0.2]] } as never);
   vi.mocked(createKnowledgeVersion).mockResolvedValue({ versionId: "v-1", versionNumber: 1 } as never);
 });
 
@@ -131,13 +131,13 @@ describe("rag-indexer — pulo incremental por hash do conteúdo", () => {
     fonte = { ...fonteBase(), content_hash: hash, last_index_status: "success", active_kb_version_id: "v-1" };
     carimbos = [];
     vi.mocked(createKnowledgeVersion).mockClear();
-    vi.mocked(embedText).mockClear();
+    vi.mocked(embedTexts).mockClear();
 
     const r = await processRagIndexer(EVENTO as never);
 
     expect(r).toMatchObject({ status: "skipped", detail: "sem_mudanca" });
     expect(createKnowledgeVersion).not.toHaveBeenCalled();
-    expect(embedText).not.toHaveBeenCalled();
+    expect(embedTexts).not.toHaveBeenCalled();
     expect(carimbos.at(-1)).toEqual({ last_index_status: "success" });
   });
 
@@ -221,7 +221,7 @@ describe("rag-indexer — pulo incremental por hash do conteúdo", () => {
 
     expect(r).toMatchObject({ status: "retry", detail: "familia_da_base_ilegivel" });
     expect(createKnowledgeVersion).not.toHaveBeenCalled();
-    expect(embedText).not.toHaveBeenCalled();
+    expect(embedTexts).not.toHaveBeenCalled();
     expect(carimbos).toEqual([]);
   });
 });

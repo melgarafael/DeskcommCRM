@@ -14,7 +14,7 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
+import { falhaDaEscritaDePlatformAdmin, requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export interface MembroDoTenant {
@@ -38,8 +38,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   let atorId: string;
   try {
     atorId = (await requirePlatformAdmin()).user.id;
-  } catch {
-    return fail("forbidden", "Platform admin required", 403, { requestId });
+  } catch (err) {
+    return falhaDaEscritaDePlatformAdmin(err, requestId);
   }
 
   const admin = createAdminClient();

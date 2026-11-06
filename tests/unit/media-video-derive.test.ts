@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { deriveVideoText } from "@/lib/messaging/media/video-derive";
+import { ENTRADA_DE_VIDEO, deriveVideoText } from "@/lib/messaging/media/video-derive";
 
 // Evita tocar o filesystem real / ffmpeg: mocka fs/promises usado pelo módulo.
 // vi.hoisted p/ o factory (hoisted) alcançar as refs.
@@ -38,6 +38,21 @@ afterEach(() => {
 });
 
 describe("deriveVideoText", () => {
+  it("as duas chamadas do ffmpeg passam a lista de formatos inteira antes do -i", async () => {
+    const runFfmpeg = vi.fn(async (_args: string[], _cwd: string) => undefined);
+    await deriveVideoText(Buffer.from([9]), deps({ runFfmpeg }));
+    expect(runFfmpeg).toHaveBeenCalledTimes(2);
+    for (const [args] of runFfmpeg.mock.calls) {
+      const antes = args.slice(0, args.indexOf("-i"));
+      expect(args.indexOf("-i")).toBeGreaterThan(0);
+      for (let k = 0; k < ENTRADA_DE_VIDEO.length; k += 2) {
+        const flag = ENTRADA_DE_VIDEO[k]!;
+        expect(antes, `${flag} antes do -i`).toContain(flag);
+        expect(antes[antes.indexOf(flag) + 1]).toBe(ENTRADA_DE_VIDEO[k + 1]);
+      }
+    }
+  });
+
   it("combina transcrição do áudio + descrição dos frames", async () => {
     const out = await deriveVideoText(Buffer.from([9]), deps());
     expect(out).toContain("Transcrição do áudio do vídeo: olá quero comprar o produto");

@@ -69,33 +69,37 @@ export function PrevisaoPanel() {
           </p>
         ) : null}
 
+        {/* A caixa que rola é a da tabela, não a tela: cinco colunas de valor em
+            reais não quebram linha e passam dos 390px do celular. */}
         {data.meses.length > 0 && (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                <th className="py-1 font-medium">{t("Mês")}</th>
-                <th className="py-1 font-medium">{t("Moeda")}</th>
-                <th className="py-1 text-right font-medium">{t("Ponderado")}</th>
-                <th className="py-1 text-right font-medium">{t("Bruto")}</th>
-                <th className="py-1 text-right font-medium">{t("Negócios")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.meses.map((faixa) => (
-                <tr key={`${faixa.moeda}-${faixa.mes}`} className="border-b border-border/50">
-                  <td className="py-1 tabular-nums">{faixa.mes}</td>
-                  <td className="py-1">{faixa.moeda}</td>
-                  <td className="py-1 text-right tabular-nums">
-                    {formatValorDoNegocio(faixa.ponderado_cents, faixa.moeda)}
-                  </td>
-                  <td className="py-1 text-right tabular-nums text-muted-foreground">
-                    {formatValorDoNegocio(faixa.bruto_cents, faixa.moeda)}
-                  </td>
-                  <td className="py-1 text-right tabular-nums">{faixa.n}</td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                  <th className="py-1 font-medium">{t("Mês")}</th>
+                  <th className="py-1 font-medium">{t("Moeda")}</th>
+                  <th className="py-1 text-right font-medium">{t("Ponderado")}</th>
+                  <th className="py-1 text-right font-medium">{t("Bruto")}</th>
+                  <th className="py-1 text-right font-medium">{t("Negócios")}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.meses.map((faixa) => (
+                  <tr key={`${faixa.moeda}-${faixa.mes}`} className="border-b border-border/50">
+                    <td className="py-1 tabular-nums">{faixa.mes}</td>
+                    <td className="py-1">{faixa.moeda}</td>
+                    <td className="py-1 text-right tabular-nums">
+                      {formatValorDoNegocio(faixa.ponderado_cents, faixa.moeda)}
+                    </td>
+                    <td className="py-1 text-right tabular-nums text-muted-foreground">
+                      {formatValorDoNegocio(faixa.bruto_cents, faixa.moeda)}
+                    </td>
+                    <td className="py-1 text-right tabular-nums">{faixa.n}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
 
         {data.sem_data.length > 0 && (

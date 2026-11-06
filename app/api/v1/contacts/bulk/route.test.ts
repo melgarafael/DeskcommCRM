@@ -209,6 +209,9 @@ vi.mock("@/lib/legal/perfil-do-pais", () => ({
     telefoneExemplo: "+5511999999999",
   })),
   isValidCpf: () => true,
+  // `telefoneDoPais` compara o país do perfil com o padrão (#3301): sem a
+  // constante no dublê, o PATCH que o lote chama morre antes de gravar.
+  PAIS_PADRAO: "BR",
 }));
 vi.mock("@/lib/atendimento/origem", () => ({ observeServiceOrigin: vi.fn(async () => null) }));
 

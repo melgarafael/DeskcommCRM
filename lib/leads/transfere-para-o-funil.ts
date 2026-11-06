@@ -4,6 +4,7 @@ import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { createLeadHandler } from "@/app/api/v1/leads/_handler";
 import { ApiError } from "@/lib/api/types";
 import {
+  camposComAnexo,
   recusaDeCamposObrigatorios,
   settingsDoFunil,
   validaCamposExigidos,
@@ -112,6 +113,7 @@ export async function transfereParaOFunil(
   const vereditoDaOrigem = validaCamposExigidos({
     lead: origem as unknown as Record<string, unknown>,
     settingsDoFunil: settingsDaOrigem,
+    camposComAnexo: await camposComAnexo(admin, settingsDaOrigem, organizationId, origem.id),
     destino: { stageId: etapaDePerda.id, desfecho: "lost" },
     motivoDeGanho: null,
   });

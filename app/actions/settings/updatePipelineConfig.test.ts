@@ -20,6 +20,9 @@ const h = vi.hoisted(() => ({
   filtrosDasRegras: [] as Array<[string, unknown]>,
   gravou: null as unknown,
   idioma: "pt-BR",
+  /** A organização da LINHA e o papel de quem salva — o caso de recusa os varia. */
+  orgDaFila: "22222222-2222-4222-8222-222222222222",
+  papel: "admin" as "admin" | "manager" | "agent" | "viewer",
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -34,7 +37,8 @@ vi.mock("@/lib/auth/server", () => ({
     support: null,
     idioma: h.idioma,
   }),
-  resolveActiveOrg: async () => ({ orgId: ORG, role: "admin" }),
+  resolveActiveOrg: async () => ({ orgId: ORG, role: h.papel }),
+  mfaEmDivida: async () => false,
 }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
@@ -44,7 +48,7 @@ vi.mock("@/lib/supabase/server", () => ({
         cadeia.select = () => cadeia;
         cadeia.eq = () => cadeia;
         cadeia.maybeSingle = async () => ({
-          data: { vocabulary: {}, settings: h.settings, organization_id: ORG },
+          data: { vocabulary: {}, settings: h.settings, organization_id: h.orgDaFila },
           error: null,
         });
         cadeia.update = (payload: unknown) => {
@@ -63,7 +67,9 @@ vi.mock("@/lib/supabase/server", () => ({
       };
       cadeia.then = (resolve: (r: unknown) => unknown) => {
         const linhas = h.regras.filter((r) =>
-          h.filtrosDasRegras.every(([coluna, valor]) => (r as Record<string, unknown>)[coluna] === valor),
+          h.filtrosDasRegras.every(
+            ([coluna, valor]) => (r as Record<string, unknown>)[coluna] === valor,
+          ),
         );
         return Promise.resolve({ data: linhas, error: null }).then(resolve);
       };
@@ -94,6 +100,8 @@ beforeEach(() => {
   h.filtrosDasRegras = [];
   h.gravou = null;
   h.idioma = "pt-BR";
+  h.orgDaFila = ORG;
+  h.papel = "admin";
 });
 
 describe("updatePipelineConfig — campo que vira Contato e o gatilho por data", () => {
@@ -143,14 +151,18 @@ describe("updatePipelineConfig — campo que vira Contato e o gatilho por data",
       }),
     ];
 
-    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_CONTATO] })).toEqual({ ok: true });
+    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_CONTATO] })).toEqual({
+      ok: true,
+    });
     expect(h.gravou).not.toBeNull();
   });
 
   it("aceita marcar como Contato um campo que nenhuma regra lê", async () => {
     h.regras = [regra("Entrega", "entrega")];
 
-    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_CONTATO] })).toEqual({ ok: true });
+    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_CONTATO] })).toEqual({
+      ok: true,
+    });
     expect(h.gravou).not.toBeNull();
   });
 
@@ -159,7 +171,9 @@ describe("updatePipelineConfig — campo que vira Contato e o gatilho por data",
     // vocabulário. Recusar aqui travaria a tela de Funis de toda org com regra.
     h.regras = [regra("Parabéns", "nascimento")];
 
-    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_NEGOCIO] })).toEqual({ ok: true });
+    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_NEGOCIO] })).toEqual({
+      ok: true,
+    });
     expect(h.gravou).not.toBeNull();
   });
 
@@ -167,7 +181,9 @@ describe("updatePipelineConfig — campo que vira Contato e o gatilho por data",
     h.settings = { fields: [NASCIMENTO_CONTATO] };
     h.regras = [regra("Parabéns", "nascimento")];
 
-    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_NEGOCIO] })).toEqual({ ok: true });
+    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_NEGOCIO] })).toEqual({
+      ok: true,
+    });
     expect(h.gravou).not.toBeNull();
   });
 
@@ -175,6 +191,320 @@ describe("updatePipelineConfig — campo que vira Contato e o gatilho por data",
     h.settings = { fields: [NASCIMENTO_CONTATO] };
     h.regras = [regra("Antiga", "nascimento")];
 
-    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_CONTATO] })).toEqual({ ok: true });
+    expect(await updatePipelineConfig(FUNIL, { fields: [NASCIMENTO_CONTATO] })).toEqual({
+      ok: true,
+    });
+  });
+});
+
+/**
+ * A ENTRADA DO INBOX (issue #3011, fatia 1) — o gravador.
+ *
+ * O zod DESCARTA chave que não está no schema: sem o campo em
+ * `pipelineConfigPatchSchema`, a tela salvaria a etapa de entrada e não
+ * gravaria NADA, sem erro nenhum — o defeito que o #1477 já mediu uma vez com
+ * `comanda_no_ganho`. Aqui se prova que o bloco chega ao `settings` do funil,
+ * que ele convive com as outras chaves e que valor inválido é recusado ANTES de
+ * gravar (em vez de virar card em etapa errada no próximo ingest).
+ */
+describe("updatePipelineConfig — entrada do Inbox por funil (#3011)", () => {
+  const STAGE = "aaaaaaaa-1111-4111-8111-111111111111";
+
+  it("grava a etapa declarada no settings do funil, preservando as outras chaves", async () => {
+    h.settings = { lost_reasons: ["Preço"], entrada_do_inbox: { ativa: false } };
+
+    const r = await updatePipelineConfig(FUNIL, {
+      entrada_do_inbox: { ativa: true, stage_id: STAGE },
+    });
+
+    expect(r).toEqual({ ok: true });
+    const gravado = h.gravou as { settings: Record<string, unknown> };
+    expect(gravado.settings.entrada_do_inbox).toEqual({ ativa: true, stage_id: STAGE });
+    // O que já estava lá continua lá: o gravador mescla, não substitui o jsonb.
+    expect(gravado.settings.lost_reasons).toEqual(["Preço"]);
+  });
+
+  it("desligar a chave mantém a etapa escolhida — religar não obriga a escolher de novo", async () => {
+    h.settings = { entrada_do_inbox: { ativa: true, stage_id: STAGE } };
+
+    const r = await updatePipelineConfig(FUNIL, {
+      entrada_do_inbox: { ativa: false, stage_id: STAGE },
+    });
+
+    expect(r).toEqual({ ok: true });
+    const gravado = h.gravou as { settings: Record<string, unknown> };
+    expect(gravado.settings.entrada_do_inbox).toEqual({ ativa: false, stage_id: STAGE });
+  });
+
+  it("salvar outra coisa NÃO encosta na entrada do Inbox já configurada", async () => {
+    h.settings = { entrada_do_inbox: { ativa: true, stage_id: STAGE } };
+
+    const r = await updatePipelineConfig(FUNIL, { reabertura: "novo_negocio" });
+
+    expect(r).toEqual({ ok: true });
+    const gravado = h.gravou as { settings: Record<string, unknown> };
+    expect(gravado.settings.entrada_do_inbox).toEqual({ ativa: true, stage_id: STAGE });
+    expect(gravado.settings.reabertura).toBe("novo_negocio");
+  });
+
+  it("recusa etapa sem forma de identificador antes de gravar", async () => {
+    const r = await updatePipelineConfig(FUNIL, {
+      entrada_do_inbox: { ativa: true, stage_id: "primeira" },
+    });
+
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.error).toBe("validation_failed");
+    expect(h.gravou, "nada foi gravado").toBeNull();
+  });
+
+  it("recusa chave ligada sem booleano — a leitura só aceita o `true` explícito", async () => {
+    // `as unknown as` porque o tipo do patch já não aceita string aqui: o que se
+    // mede é o caminho de RUNTIME (uma chamada de fora do TypeScript, um JSON de
+    // script antigo), não o que o compilador deixaria alguém escrever.
+    const patch = {
+      entrada_do_inbox: { ativa: "sim", stage_id: STAGE },
+    } as unknown as Parameters<typeof updatePipelineConfig>[1];
+
+    const r = await updatePipelineConfig(FUNIL, patch);
+
+    expect(r.ok).toBe(false);
+    expect(h.gravou).toBeNull();
+  });
+});
+
+/**
+ * O RECORTE DE ENCERRADOS ANTIGOS DO QUADRO (#2995) — a GRAVAÇÃO.
+ *
+ * A opção mora no `settings` que o funil já tem, e a action faz MERGE com o que
+ * está no banco: é aqui que se prova que a chave nova é gravada (o payload da
+ * tela sair certo e a action ignorá-la deixaria a tela mentindo) e que o
+ * DESLIGAR grava `0` em vez de sumir do patch — omitir a chave manteria o
+ * número antigo na linha e os cards continuariam sumindo do quadro.
+ */
+describe("updatePipelineConfig — o recorte de encerrados antigos do quadro (#2995)", () => {
+  it("grava os dias no settings do funil, preservando o que já estava lá", async () => {
+    expect(await updatePipelineConfig(FUNIL, { ocultar_encerrados_dias: 15 })).toEqual({
+      ok: true,
+    });
+
+    expect(h.gravou).toMatchObject({
+      settings: { ...h.settings, ocultar_encerrados_dias: 15 },
+    });
+  });
+
+  it("desligar grava 0 — não pode deixar o número antigo na linha", async () => {
+    h.settings = { fields: [NASCIMENTO_NEGOCIO], ocultar_encerrados_dias: 45 };
+
+    expect(await updatePipelineConfig(FUNIL, { ocultar_encerrados_dias: 0 })).toEqual({ ok: true });
+
+    expect(h.gravou).toMatchObject({ settings: { ocultar_encerrados_dias: 0 } });
+  });
+
+  it("dias fora da faixa são recusados pelo schema, sem gravar nada", async () => {
+    expect(await updatePipelineConfig(FUNIL, { ocultar_encerrados_dias: -1 })).toMatchObject({
+      ok: false,
+      error: "validation_failed",
+    });
+    // O teto do domínio: dez anos. Acima disso é linha editada à mão, não tela.
+    expect(await updatePipelineConfig(FUNIL, { ocultar_encerrados_dias: 3651 })).toMatchObject({
+      ok: false,
+      error: "validation_failed",
+    });
+
+    expect(h.gravou).toBeNull();
+  });
+});
+
+describe("updatePipelineConfig — atalhos do card (#3487)", () => {
+  /**
+   * A PORTA DE GRAVAÇÃO. O `url` do atalho vira `<a href>` na tela de quem
+   * atende, e o `settings` do funil é jsonb: além deste caminho, ele é escrito
+   * por script, seed e restauração de backup. O que se prova aqui é o caminho da
+   * TELA — o schema recusa, a linha NÃO é tocada, e o operador recebe
+   * `validation_failed` (o veredito da server action; a tradução para HTTP é
+   * 422 na rota PATCH do funil, coberta em `app/api/v1/pipelines/[id]/route.test.ts`).
+   */
+  const LIGAR = { rotulo: "Ligar", icone: "telefone" as const, url: "tel:{{telefone}}" };
+
+  it.each([
+    "javascript:alert(document.cookie)",
+    "data:text/html,<script>alert(1)</script>",
+    "file:///etc/passwd",
+    "vbscript:msgbox(1)",
+  ])("recusa %j SEM gravar nada", async (url) => {
+    const r = await updatePipelineConfig(FUNIL, {
+      atalhos: [{ rotulo: "Armadilha", icone: "link", url }],
+    });
+    expect(r).toMatchObject({ ok: false, error: "validation_failed" });
+    // O que separa "recusou" de "recusou depois de escrever".
+    expect(h.gravou).toBeNull();
+  });
+
+  it.each(["https://{{lead.site}}/pedido", "https://erp.exemplo.com{{lead.x}}/p"])(
+    "recusa marcador no domínio (%j) SEM gravar nada",
+    async (url) => {
+      const r = await updatePipelineConfig(FUNIL, {
+        atalhos: [{ rotulo: "Pedido", icone: "link", url }],
+      });
+      expect(r).toMatchObject({ ok: false, error: "validation_failed" });
+      expect(h.gravou).toBeNull();
+    },
+  );
+
+  it("grava os três esquemas permitidos no settings do funil", async () => {
+    const atalhos = [
+      LIGAR,
+      {
+        rotulo: "Tirar pedido",
+        icone: "carrinho" as const,
+        url: "https://pedidos.exemplo.com/?cliente={{erp_id}}",
+      },
+      { rotulo: "Central", icone: "link" as const, url: "http://intranet.exemplo.com/" },
+    ];
+    expect(await updatePipelineConfig(FUNIL, { atalhos })).toEqual({ ok: true });
+    expect(h.gravou).toMatchObject({ settings: { atalhos } });
+    // O que já estava no settings continua lá: a action faz merge, não substitui.
+    expect((h.gravou as { settings: Record<string, unknown> }).settings.fields).toEqual(
+      h.settings.fields,
+    );
+  });
+
+  it("lista vazia grava `[]` — é assim que o botão sai do card", async () => {
+    h.settings = { fields: [NASCIMENTO_NEGOCIO], atalhos: [LIGAR] };
+    expect(await updatePipelineConfig(FUNIL, { atalhos: [] })).toEqual({ ok: true });
+    expect((h.gravou as { settings: Record<string, unknown> }).settings.atalhos).toEqual([]);
+  });
+
+  it("patch sem a chave não mexe no que está gravado", async () => {
+    h.settings = { fields: [NASCIMENTO_NEGOCIO], atalhos: [LIGAR] };
+    expect(await updatePipelineConfig(FUNIL, { won_reason_required: true })).toEqual({ ok: true });
+    expect((h.gravou as { settings: Record<string, unknown> }).settings.atalhos).toEqual([LIGAR]);
+  });
+
+  it("recusa mais de seis atalhos e ícone fora do catálogo", async () => {
+    const sete = Array.from({ length: 7 }, (_, i) => ({ ...LIGAR, rotulo: `A${i}` }));
+    expect(await updatePipelineConfig(FUNIL, { atalhos: sete })).toMatchObject({
+      ok: false,
+      error: "validation_failed",
+    });
+    expect(
+      await updatePipelineConfig(FUNIL, {
+        // `foguete` não está em ICONES_DE_ATALHO: a lista é fixa, do design system.
+        atalhos: [{ rotulo: "Abrir", icone: "foguete" as never, url: "https://x.exemplo.com/" }],
+      }),
+    ).toMatchObject({ ok: false, error: "validation_failed" });
+    expect(h.gravou).toBeNull();
+  });
+});
+
+/**
+ * A JANELA DO NEGÓCIO PERDIDO QUE VOLTA (#4076) — a GRAVAÇÃO.
+ *
+ * O motor já sabe reabrir o card (medido em
+ * `tests/invariants/negocio-perdido-reabre.test.ts`); o que se prova aqui é que
+ * a escolha da tela CHEGA ao `settings` do funil. Sem esta ponte, a opção seria
+ * ligada, a tela diria "ligado", e a mensagem do contato continuaria abrindo um
+ * negócio novo vazio — o defeito da issue, com um botão a mais.
+ *
+ * O `0` é o caso que mais importa: DESLIGAR tem de gravar o zero, e não sumir do
+ * patch. Omitir a chave manteria a janela antiga na linha, e quem desmarcasse a
+ * opção continuaria reabrindo card sem entender por quê.
+ */
+describe("updatePipelineConfig — a janela do negócio perdido que volta (#4076)", () => {
+  it("grava os dias no settings do funil, preservando o que já estava lá", async () => {
+    expect(await updatePipelineConfig(FUNIL, { reabrir_perdido_dias: 30 })).toEqual({ ok: true });
+
+    expect(h.gravou).toMatchObject({
+      settings: { ...h.settings, reabrir_perdido_dias: 30 },
+    });
+  });
+
+  it("desligar grava 0 — não pode deixar a janela antiga na linha", async () => {
+    h.settings = { fields: [NASCIMENTO_NEGOCIO], reabrir_perdido_dias: 30 };
+
+    expect(await updatePipelineConfig(FUNIL, { reabrir_perdido_dias: 0 })).toEqual({ ok: true });
+
+    expect(h.gravou).toMatchObject({ settings: { reabrir_perdido_dias: 0 } });
+  });
+
+  it("janela fora da faixa é recusada pelo schema, sem gravar nada", async () => {
+    expect(await updatePipelineConfig(FUNIL, { reabrir_perdido_dias: -1 })).toMatchObject({
+      ok: false,
+      error: "validation_failed",
+    });
+    // O teto do domínio: dez anos. Acima disso é linha editada à mão, não tela —
+    // e janela sem teto reabriria card de outra década como se a conversa
+    // tivesse continuado.
+    expect(await updatePipelineConfig(FUNIL, { reabrir_perdido_dias: 3651 })).toMatchObject({
+      ok: false,
+      error: "validation_failed",
+    });
+
+    expect(h.gravou).toBeNull();
+  });
+});
+
+/**
+ * A ORDEM DOS CAMPOS PERSONALIZADOS (#4043).
+ *
+ * A ordem que o card, o dossiê e o formulário de novo negócio mostram É a ordem
+ * do array `settings.fields`, e é esta action — a ÚNICA porta de escrita do
+ * `settings` — que a grava: a tela manda a lista inteira, já reordenada. A
+ * alternativa (uma chave `field_order` ao lado de `fields`) poria a ordem em
+ * dois lugares que divergem na primeira mudança, e o editor já mandava a lista
+ * inteira antes desta issue.
+ *
+ * O que se prova: a ordem RECEBIDA é a gravada (nada reordena por conta
+ * própria), a lista sai inteira (nada truncado), chave repetida é recusada, e as
+ * duas recusas de sempre — outra organização e papel sem permissão — continuam
+ * valendo para esta escrita. Reordenar não toca em dado do negócio porque
+ * `crm_leads.custom_fields` é lido POR CHAVE, não por posição.
+ */
+describe("updatePipelineConfig — a ordem dos campos do funil (#4043)", () => {
+  const AEREO = { key: "aereo", label: "Aéreo", type: "text" as const };
+  const SEGURO = { key: "seguro", label: "Seguro", type: "text" as const };
+
+  it("grava a lista na ordem recebida, sem normalizar nem truncar", async () => {
+    h.settings = { fields: [NASCIMENTO_NEGOCIO], lost_reasons: ["Preço"] };
+
+    expect(await updatePipelineConfig(FUNIL, { fields: [SEGURO, AEREO] })).toEqual({ ok: true });
+
+    // As outras chaves do settings seguem intactas: reordenar manda só `fields`.
+    expect(h.gravou).toMatchObject({
+      settings: { fields: [SEGURO, AEREO], lost_reasons: ["Preço"] },
+    });
+    const gravado = (h.gravou as { settings: { fields: Array<{ key: string }> } }).settings.fields;
+    expect(gravado.map((c) => c.key)).toEqual(["seguro", "aereo"]);
+  });
+
+  it("recusa chave repetida — a lista deixaria de descrever uma ordem", async () => {
+    expect(await updatePipelineConfig(FUNIL, { fields: [AEREO, SEGURO, AEREO] })).toMatchObject({
+      ok: false,
+      error: "validation_failed",
+    });
+
+    expect(h.gravou).toBeNull();
+  });
+
+  it("outra organização continua intacta: a recusa vem antes de qualquer escrita", async () => {
+    h.orgDaFila = "99999999-9999-4999-8999-999999999999";
+
+    expect(await updatePipelineConfig(FUNIL, { fields: [SEGURO, AEREO] })).toEqual({
+      ok: false,
+      error: "forbidden_tenant",
+    });
+
+    expect(h.gravou).toBeNull();
+  });
+
+  it("papel sem permissão de editar o funil recebe recusa NOMEADA", async () => {
+    h.papel = "agent";
+
+    expect(await updatePipelineConfig(FUNIL, { fields: [SEGURO, AEREO] })).toEqual({
+      ok: false,
+      error: "forbidden_role",
+    });
+
+    expect(h.gravou).toBeNull();
   });
 });

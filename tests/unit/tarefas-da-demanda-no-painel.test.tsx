@@ -64,6 +64,9 @@ vi.mock("@/hooks/pipelines/useDefaultPipeline", () => ({
   useDefaultPipeline: () => ({ data: null, isError: false }),
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+// O bloco Carteira (#3026) busca a própria rota; o dublê de `get` deste arquivo
+// devolve o resumo do painel para TODA URL, então o cartão sai da cena aqui.
+vi.mock("@/components/contacts/CartaoDaCarteira", () => ({ CartaoDaCarteira: () => null }));
 vi.mock("@/hooks/inbox/useConversationTags", () => ({
   useUpdateConversationTags: () => ({ mutate: vi.fn(), isPending: false }),
   useConversationTagVocabulary: () => ({ data: [] }),

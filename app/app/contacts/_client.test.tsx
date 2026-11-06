@@ -6,6 +6,7 @@
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ContactsListClient } from "@/app/app/contacts/_client";
@@ -93,5 +94,16 @@ describe("caixas de seleção da lista de contatos", () => {
     renderLista();
     expect(screen.getByText("Joana Prado")).toBeInTheDocument();
     expect(caixas()).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "Selecionar todos os contatos visíveis" })).toBeNull();
+  });
+
+  // Abaixo de `md` o cabeçalho da tabela some (lista em cartão), e com ele a
+  // caixa "selecionar todas": o botão é a porta que a substitui.
+  it("o botão 'Selecionar todos' do celular marca todas as linhas", async () => {
+    const user = userEvent.setup();
+    renderLista();
+    await user.click(screen.getByRole("button", { name: "Selecionar todos os contatos visíveis" }));
+    expect(caixas()).toHaveLength(3);
+    for (const caixa of caixas()) expect(caixa).toHaveAttribute("aria-checked", "true");
   });
 });

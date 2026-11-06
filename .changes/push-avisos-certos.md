@@ -1,6 +1,0 @@
----
-impacto: capacidade_nova
-secao: alterado
-titulo: Avisos fora do app deixam a empresa escolher o que aparece, param ao sair e respeitam o plantão
----
-Em Configurações › Notificações, quem administra a empresa escolhe o que os avisos mostram fora do app — com o celular bloqueado e nas notificações do computador: nada além de que chegou um aviso, só quem mandou (nome e foto, sem a mensagem), ou quem mandou e o começo da mensagem. O padrão passa a ser só quem mandou, inclusive no computador; para voltar a ver a mensagem, escolha a terceira opção nessa tela. Mensagens de áudio, imagem, vídeo, documento, figurinha, localização ou contato passam a dizer o tipo em vez de "Mídia". Sair da conta encerra os avisos daquele aparelho, e "Sair de todos os dispositivos" encerra os de todos. O push de "Nova mensagem" passa a ser o interruptor do aparelho: desligado, nenhum aviso chega fora do app, e a tela mostra os outros pushes desligados e explica por quê. Com a distribuição automática ligada (rodízio ou menor carga), o aviso de conversa sem responsável vai só para quem está de plantão e, se ninguém estiver, para gerentes e administradores; no modo manual nada muda. Conversa que o assistente de IA está atendendo não avisa a equipe a cada mensagem: o aviso chega quando ele passa a conversa para uma pessoa. Nada a fazer na atualização.

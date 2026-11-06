@@ -111,7 +111,12 @@ export function FunisClient({
    * Mostrar o controle com a regra desligada seria oferecer o que o motor
    * ignora.
    */
-  const clientesLigado = useActiveOrg()?.cliente_pela_agenda === true;
+  // As DUAS regras de "é cliente" mantêm o funil de clientes em uso: a da agenda
+  // (migration 0262) e a da venda (#3644). Com qualquer uma ligada, marcar um
+  // funil como de clientes deixa de ser um controle decorativo.
+  const orgAtiva = useActiveOrg();
+  const clientesLigado =
+    orgAtiva?.cliente_pela_agenda === true || orgAtiva?.cliente_pela_venda === true;
   /**
    * ⚠️ A LISTA VEM DO SERVIDOR E É ATUALIZADA PELO CORPO DA RESPOSTA.
    *
@@ -291,7 +296,7 @@ export function FunisClient({
         <>
           <p className="text-xs text-muted-foreground" data-testid="arquivados-explicacao">
             {t(
-              "Funil arquivado não aparece na lista nem recebe negócio novo. Traga de volta para usar outra vez, ou exclua de vez para liberar o nome.",
+              "Funil arquivado não aparece na lista nem recebe negócio novo. Abrir é leitura: nada muda até você tirar do arquivo. Traga de volta para usar outra vez, ou exclua de vez para liberar o nome.",
             )}
           </p>
           <ul
@@ -308,9 +313,22 @@ export function FunisClient({
                   data-testid={`arquivado-${funil.id}`}
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                    <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+                    {/*
+                      LINK, e não `<span>` (#1298): decidir entre tirar do arquivo
+                      e excluir de vez exige OLHAR o que ficou dentro — e até aqui
+                      a única porta era desarquivar, abrir e arquivar de novo (três
+                      escritas e duas linhas de auditoria para uma leitura; a
+                      segunda escrita é a que se esquece). O destino é o MESMO da
+                      lista viva, e abrir não muda o estado do funil.
+                    */}
+                    <Link
+                      href={`/app/pipelines/${funil.id}`}
+                      className="min-h-6 min-w-0 flex-1 truncate py-0.5 text-sm text-muted-foreground underline-offset-2 hover:text-text hover:underline"
+                      aria-label={`${t("Abrir")} «${funil.name}» ${t("sem tirar do arquivo")}`}
+                      data-testid={`abrir-arquivado-${funil.id}`}
+                    >
                       {funil.name}
-                    </span>
+                    </Link>
                     <span className="shrink-0 text-xs text-muted-foreground">/{funil.slug}</span>
                     <div className="flex shrink-0 flex-wrap gap-1">
                       <Button
@@ -490,7 +508,17 @@ export function FunisClient({
 
           return (
             <li key={funil.id} className="flex flex-col gap-3 p-4" data-testid={`funil-${funil.id}`}>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              {/* `sm:flex-wrap`: a linha do funil QUEBRA em vez de espremer a
+                  coluna do nome. Em ~900px o grupo de ações (Renomear/Tornar
+                  padrão/Funil de clientes/Arquivar) e o `shrink-0` que ele
+                  tinha tomavam a largura toda, a coluna do nome (`flex-1`)
+                  colapsava para 0 e o nome sumia sob os selos — com os botões
+                  passando da borda do cartão. Deixando a linha quebrar, quando
+                  os botões não couberem eles descem para a linha de baixo,
+                  DENTRO do cartão; em janela cheia continuam ao lado, como
+                  sempre. Vale em qualquer largura: não há breakpoint novo, só
+                  a permissão de quebrar. */}
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                 {podeGerenciar && (
                   <div className="flex shrink-0 flex-wrap gap-1">
                     <Button
@@ -516,7 +544,15 @@ export function FunisClient({
                   </div>
                 )}
 
-                <div className="min-w-0 flex-1">
+                {/* SEM `min-w-*`: o piso da coluna do nome é o PRÓPRIO conteúdo
+                    (min-width automático = palavra mais longa do nome + selos).
+                    Com `min-w-0` ela encolhia até 0 e o nome ia para baixo dos
+                    selos; um piso fixo (`min-w-40`, 160px) também não basta,
+                    porque «Padrão» + «Clientes» com os espaços já ocupam ~139px
+                    e «Predeterminado» (es) passa sozinho dos 160px. Com o piso
+                    no conteúdo, quando não cabe é a LINHA que quebra
+                    (`sm:flex-wrap` acima), não o selo que cruza o slug. */}
+                <div className="flex-1">
                   {renomeandoAqui ? (
                     <div className="flex gap-2">
                       <Input
@@ -571,8 +607,16 @@ export function FunisClient({
 
                 <span className="shrink-0 text-xs text-muted-foreground">/{funil.slug}</span>
 
+                {/*
+                  SEM `shrink-0`, que era a CAUSA: com ele o grupo exigia a
+                  largura de todos os botões numa linha só (~419px de um cartão
+                  de ~556px) e empurrava tudo para fora; a coluna do nome é que
+                  encolhia. Agora o grupo pode encolher e, se ainda faltar
+                  espaço na linha, a própria linha quebra (`sm:flex-wrap`) e ele
+                  desce inteiro, dentro do cartão.
+                */}
                 {podeGerenciar && !renomeandoAqui && (
-                  <div className="flex shrink-0 flex-wrap gap-1">
+                  <div className="flex min-w-0 flex-wrap gap-1">
                     <Button
                       variant="ghost"
                       size="sm"

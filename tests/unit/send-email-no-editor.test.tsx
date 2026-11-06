@@ -90,7 +90,7 @@ describe("ActionConfigForm: o formulário do e-mail", () => {
   it("defaultActionConfig nasce com destinatário Contato e o endereço fixo vazio", () => {
     expect(defaultActionConfig("send_email")).toEqual({
       type: "send_email",
-      config: { destinatario: "contato", email_fixo: "", assunto: "", corpo: "", formato: "texto" },
+      config: { destinatario: "contato", email_fixo: "", membro_id: "", assunto: "", corpo: "", formato: "texto" },
     });
   });
 

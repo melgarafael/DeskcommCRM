@@ -61,6 +61,22 @@
  * a coluna `kind` tem CHECK e a governance do repo congela `MANIFEST.md`; o
  * próximo que quiser esse rastro na Central soma o kind e a migration juntos.)
  *
+ * ## O filtro decide a ENTRADA, não cada mensagem (#3142)
+ *
+ * A promessa da tela é sobre a ENTRADA do agente na conversa ("só entra quando
+ * a mensagem contiver uma dessas palavras"), não sobre cada turno seguinte.
+ * Numa conversa em que o MESMO agente já respondeu neste atendimento o turno
+ * segue SEM filtro: o cliente que responde "camiseta azul, tamanho M" à
+ * pergunta do agente não pode ficar sem retorno (o exemplo medido no #2696). O
+ * miss na ENTRADA continua calando, como sempre.
+ *
+ * A âncora do "já respondeu" NÃO é o sticky do roteador (CR do #3240: sem
+ * roteador ele nunca é gravado, e com roteador é gravado no início do turno,
+ * antes deste portão) — é uma outbound DESTE agente neste atendimento, a linha
+ * de `messages` que o caminho de envio só grava depois de o agente responder.
+ * O desenho inteiro está em `agente-ja-respondeu.ts`; quem lê o sinal e decide
+ * pular o portão é o próprio portão, em `inbound-turn.ts`.
+ *
  * ## Onde isto é aplicado
  *
  * `inbound-turn.ts`, no caminho AUTOMÁTICO do turno `inbound_turn`: depois de

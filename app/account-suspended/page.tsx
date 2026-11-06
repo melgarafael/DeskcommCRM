@@ -32,7 +32,7 @@ const PEDIDO = z.uuid();
  *
  * Fica fora de `app/app/` de propósito: quem manda a empresa suspensa para cá é
  * o layout de `/app`, então nada aqui pode depender dele. Não lê `x-pathname`:
- * o `proxy.ts` grava esse cabeçalho DEPOIS do `NextResponse.next`.
+ * a tela não precisa do caminho.
  *
  * Esta tela entregava o NOSSO endereço de suporte ao cliente de um revendedor,
  * e aqui isso é ativamente errado: quem suspendeu a conta foi o revendedor, e

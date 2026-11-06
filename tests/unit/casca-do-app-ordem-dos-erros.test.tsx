@@ -107,6 +107,7 @@ describe("casca do /app: leituras paralelas não mudam a ordem dos erros nem dei
         loadAuthUser: async () => ({ id: U, idioma: "pt-BR", is_platform_admin: false, support: null, organizations: [] }),
         resolveActiveOrg: async () => ({ orgId: O, role: "admin", interface_settings: null }),
         isMfaEnrolled: async () => true,
+        exigirProvaDeMfa: async () => {},
         requiresMfa: async () => false,
       }));
       const { default: AppLayout } = await import("@/app/app/layout");

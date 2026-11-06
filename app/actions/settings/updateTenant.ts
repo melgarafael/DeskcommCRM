@@ -6,9 +6,10 @@ import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { invalidarOrg } from "@/lib/auth/cache-curto";
 import { audit } from "@/lib/audit";
 import { tenantSchema, type TenantInput } from "@/lib/schemas/settings";
-import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
+import { loadAuthUser, mfaEmDivida, resolveActiveOrg } from "@/lib/auth/server";
 import { podeAdministrarEmpresa } from "@/lib/auth/pode-administrar-empresa";
 import { gravarDadosCadastrais } from "@/lib/tenants/dados-cadastrais";
 
@@ -30,6 +31,7 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
   if (!podeAdministrarEmpresa(authUser, activeOrg)) {
     return { ok: false, error: "forbidden_role" };
   }
+  if (await mfaEmDivida()) return { ok: false, error: "mfa_required" };
 
 /**
  * A ESCRITA EM `organizations` VAI PELO ADMIN CLIENT — e não é preguiça.
@@ -59,6 +61,11 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
   // País revisado, CNPJ único e a lista de colunas: a gravação mora em
   // `lib/tenants/dados-cadastrais.ts`, compartilhada com a gestão de tenants do
   // admin da plataforma.
+  // #3696: nome, idioma, fuso, moeda e país da empresa viajam no snapshot de
+  // permissões de cada membro — e o idioma decide a tela inteira. A escrita aqui
+  // derruba o snapshot de todos os membros da organização (antes e depois: uma
+  // requisição concorrente pode regravar o valor velho no meio do UPDATE).
+  invalidarOrg(activeOrg.orgId);
   const gravado = await gravarDadosCadastrais(supabase, activeOrg.orgId, parsed.data);
   if (!gravado.ok) {
     if (gravado.erro === "cnpj_em_uso") {
@@ -66,6 +73,7 @@ export async function updateTenant(input: TenantInput): Promise<UpdateTenantResu
     }
     return { ok: false, error: gravado.erro };
   }
+  invalidarOrg(activeOrg.orgId);
 
   await audit({
     action: "org.updated",

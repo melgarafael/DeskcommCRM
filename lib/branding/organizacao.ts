@@ -89,6 +89,13 @@ export function marcaDaOrganizacaoDeSettings(settings: unknown): MarcaDaOrganiza
     // partir de um objeto.
     logo_path: texto(envelope.logo_path),
     ...(texto(envelope.logo_dark_path) ? { logo_dark_path: texto(envelope.logo_dark_path) } : {}),
+    // O remetente da AUTOMAÇÃO (#3287, fatia 1) — as duas chaves que a tela de
+    // marca grava ao lado do nome e da cor. Entram pelo MESMO tratamento dos
+    // pares: só viram chave quando são string, e só quando têm conteúdo — um
+    // `email_from_name: 7` desceria para o cabeçalho do e-mail como texto
+    // inventado, e uma chave AUSENTE é o que faz o envio sair como sempre saiu.
+    ...(texto(envelope.email_from_name) ? { email_from_name: texto(envelope.email_from_name) } : {}),
+    ...(texto(envelope.email_reply_to) ? { email_reply_to: texto(envelope.email_reply_to) } : {}),
   };
 }
 

@@ -19,6 +19,9 @@
 # #2587 — o molde aponta para o app pela REDE PRIVADA (`http://app:3000`), não
 # pelo domínio público: de dentro do contêiner do auth, o domínio resolve para o
 # IP da própria VPS, e atrás de um Traefik externo esse retorno dá timeout.
+#
+# O assunto dos dois e-mails (caso 10): o GoTrue o lê de `GOTRUE_MAILER_SUBJECTS_*`,
+# e sem elas o single-server mandava o padrão dele, em inglês.
 
 set -uo pipefail
 
@@ -245,6 +248,36 @@ check "guarda: base http que não é a interna do app (localhost) não grava mol
 atualizar_antiga
 check "update: sem SITE_URL, o molde interno é gravado (não depende do domínio)" \
   grep -qxF "$RECOVERY" "$SB_A/.env"
+
+# (10) O ASSUNTO. O GoTrue o lê de uma configuração própria, nunca do molde: sem
+#      `GOTRUE_MAILER_SUBJECTS_*` ele manda o padrão dele, em inglês, por cima
+#      do corpo em português. Gravado pelo mesmo caminho dos moldes — na
+#      instalação e na atualização —, sem a marca (a do revendedor mora no
+#      banco), e o que o operador escreveu fica.
+ASSUNTO_CONFIRMACAO="GOTRUE_MAILER_SUBJECTS_CONFIRMATION=Confirme seu e-mail"
+ASSUNTO_RECOVERY="GOTRUE_MAILER_SUBJECTS_RECOVERY=Redefinir sua senha"
+check "assunto: a instalação grava o da confirmação" grep -qxF "$ASSUNTO_CONFIRMACAO" "$ENV_SB"
+check "assunto: a instalação grava o da recuperação" grep -qxF "$ASSUNTO_RECOVERY" "$ENV_SB"
+check "assunto: uma linha por chave, também depois da segunda execução" \
+  test "$(conta GOTRUE_MAILER_SUBJECTS_CONFIRMATION)" = 1 -a \
+       "$(conta GOTRUE_MAILER_SUBJECTS_RECOVERY)" = 1
+check "assunto: sem o nome do produto (a marca do revendedor mora no banco)" \
+  bash -c '! grep -qi "^GOTRUE_MAILER_SUBJECTS_.*deskcomm" "$1"' _ "$ENV_SB"
+check "assunto: override entrega o da confirmação ao serviço auth (default vazio)" \
+  grep -qxF '      GOTRUE_MAILER_SUBJECTS_CONFIRMATION: "${GOTRUE_MAILER_SUBJECTS_CONFIRMATION:-}"' "$OVERRIDE"
+check "assunto: override entrega o da recuperação ao serviço auth (default vazio)" \
+  grep -qxF '      GOTRUE_MAILER_SUBJECTS_RECOVERY: "${GOTRUE_MAILER_SUBJECTS_RECOVERY:-}"' "$OVERRIDE"
+check "assunto: as duas chaves estão no bloco do auth, e não em outro serviço" \
+  bash -c 'grep -qF "GOTRUE_MAILER_SUBJECTS_CONFIRMATION" <<<"$1" && grep -qF "GOTRUE_MAILER_SUBJECTS_RECOVERY" <<<"$1"' _ "$(bloco_auth)"
+instalacao_antiga
+atualizar_antiga
+check "assunto: quem já instalou recebe os dois pela atualização" \
+  bash -c 'grep -qxF "$1" "$3" && grep -qxF "$2" "$3"' _ "$ASSUNTO_CONFIRMACAO" "$ASSUNTO_RECOVERY" "$SB_A/.env"
+instalacao_antiga 'GOTRUE_MAILER_SUBJECTS_RECOVERY=Sua senha nova na Loja'
+atualizar_antiga
+check "assunto: o que o operador escreveu não é sobrescrito" \
+  grep -qxF 'GOTRUE_MAILER_SUBJECTS_RECOVERY=Sua senha nova na Loja' "$SB_A/.env"
+check "assunto: e o que faltava é completado" grep -qxF "$ASSUNTO_CONFIRMACAO" "$SB_A/.env"
 
 if [[ "$FAILS" -ne 0 ]]; then
   printf '\n%d teste(s) falharam.\n' "$FAILS"

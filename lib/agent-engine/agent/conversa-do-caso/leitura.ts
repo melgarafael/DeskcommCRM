@@ -23,6 +23,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { caseEventLabel } from "@/lib/ai/case-copy";
 import { lerContinuidadeHumana } from "@/lib/escalacao/continuidade";
+import { instanteDoBanco } from "@/lib/tempo/agora";
 
 import { corpoDaMensagem, type CorpoDaMensagemRow } from "../../edge/crm/get-lead-context";
 import type { FalaDaConversa, EventoDoCaso, MemoriaDoAtendimento } from "./contexto";
@@ -111,6 +112,12 @@ export async function lerConversaDoCaso(
     serviceRevision: number | null;
     abertoEm: string;
     limite: number;
+    /**
+     * Quem responde vê as fotos (9108)? A persona do agente do caso segue a
+     * opção dele; a persona padrão da organização vê. `false` = a foto do
+     * cliente vira o aviso de imagem não vista, como no turno.
+     */
+    verImagens: boolean;
   },
 ): Promise<{ origem: FalaDaConversa[]; depois: FalaDaConversa[] }> {
   const { rows } = await db.query<
@@ -132,7 +139,7 @@ export async function lerConversaDoCaso(
     quando: r.sent_at ? new Date(r.sent_at).toISOString() : input.abertoEm,
     // `corpoDaMensagem` já embute transcrição e descrição de mídia. Reescrever a
     // regra aqui daria dois donos para "o que o modelo lê de um áudio".
-    texto: corpoDaMensagem(r),
+    texto: corpoDaMensagem(r, input.verImagens),
     depois: r.depois_da_abertura,
   }));
   return {
@@ -203,7 +210,7 @@ export function falasDoSnapshot(
     return [
       {
         de: r.direction === "inbound" ? "cliente" : "nos",
-        quando: typeof r.sent_at === "string" ? r.sent_at : abertoEm,
+        quando: instanteDoBanco(r.sent_at) ?? abertoEm,
         texto,
       },
     ];

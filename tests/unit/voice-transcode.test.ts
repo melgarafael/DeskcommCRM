@@ -28,7 +28,13 @@ import { describe, expect, it, vi } from "vitest";
 import { extFromMime } from "@/lib/messaging/media/types";
 import { validateOutboundMedia } from "@/lib/messaging/media/upload-validation";
 import {
+  CONVERSOES_POR_ORGANIZACAO,
+  ENTRADA_ACEITA,
+  CONVERSOES_SIMULTANEAS,
+  ConversorOcupado,
   VOICE_MIME,
+  TETO_REPRODUCAO_BYTES,
+  paraReproducaoAac,
   precisaTranscodificar,
   transcodificarNotaDeVoz,
 } from "@/lib/messaging/media/voice-transcode";
@@ -136,5 +142,192 @@ describe("o elo que some sem barulho", () => {
     const fonte = readFileSync("app/api/v1/conversations/[id]/media/route.ts", "utf8");
     expect(fonte).toMatch(/media_mime:\s*mimeFinal/);
     expect(fonte).toMatch(/media_size_bytes:\s*buffer\.length/);
+  });
+});
+
+/**
+ * F2 (ADR-0006): o iPhone grava `audio/mp4` (AAC) — o Safari anterior ao 18.4
+ * não grava webm nem ogg. O WAHA converte sozinho, mas os canais oficiais só
+ * aceitam opus como nota de voz. Por isso, QUANDO o arquivo é uma nota de voz
+ * do gravador (`notaDeVoz`), tudo que não é ogg vira opus. Sem a marca, um m4a
+ * enviado por token segue intacto: uma música não pode virar opus mono de 24k.
+ */
+describe("nota de voz gravada no iPhone (F2)", () => {
+  it("com notaDeVoz, mp4/aac/m4a precisam converter; sem a marca, não", () => {
+    for (const m of ["audio/mp4", "audio/aac", "audio/x-m4a", "audio/mp4;codecs=mp4a.40.2"]) {
+      expect(precisaTranscodificar(m, true), m).toBe(true);
+      expect(precisaTranscodificar(m), m).toBe(false);
+    }
+  });
+
+  it("com notaDeVoz, ogg continua sem conversão — já é o destino", () => {
+    expect(precisaTranscodificar("audio/ogg;codecs=opus", true)).toBe(false);
+  });
+
+  it("com notaDeVoz, o que não é áudio não vira ffmpeg à toa", () => {
+    expect(precisaTranscodificar("application/pdf", true)).toBe(false);
+    expect(precisaTranscodificar("image/jpeg", true)).toBe(false);
+  });
+
+  it("AAC é REENCODADO em opus mono 24k: copiar o container não serve para AAC", async () => {
+    const run = vi.fn(async (args: string[], _cwd: string) => {
+      const { writeFile } = await import("node:fs/promises");
+      await writeFile(args[args.length - 1]!, Buffer.from("ogg-opus"));
+    });
+    const r = await transcodificarNotaDeVoz(
+      { buffer: Buffer.from("m4a"), mime: "audio/mp4", notaDeVoz: true },
+      { run },
+    );
+    const args = run.mock.calls[0]?.[0] ?? [];
+    expect(args).toEqual(expect.arrayContaining(["-c:a", "libopus", "-b:a", "24k", "-ac", "1", "-ar", "48000"]));
+    expect(args).not.toContain("copy");
+    expect(r).toMatchObject({ convertido: true, mime: VOICE_MIME });
+    expect(r.buffer.toString()).toBe("ogg-opus");
+  });
+
+  it("webm com notaDeVoz continua trocando só o container", async () => {
+    const run = vi.fn(async (_args: string[], _cwd: string) => {});
+    await transcodificarNotaDeVoz({ ...webm, notaDeVoz: true }, { run });
+    expect(run.mock.calls[0]?.[0]).toContain("copy");
+  });
+
+  it("ffmpeg falhando no AAC devolve o original — o WAHA segue convertendo sozinho", async () => {
+    const run = vi.fn(async () => {
+      throw new Error("ffmpeg_exit_1");
+    });
+    const entrada = { buffer: Buffer.from("m4a"), mime: "audio/mp4", notaDeVoz: true };
+    const r = await transcodificarNotaDeVoz(entrada, { run });
+    expect(r).toMatchObject({ convertido: false, mime: "audio/mp4" });
+    expect(r.buffer).toBe(entrada.buffer);
+  });
+
+  it("a rota de upload lê a marca com Zod e a repassa", () => {
+    const fonte = readFileSync("app/api/v1/conversations/[id]/media/route.ts", "utf8");
+    expect(fonte).toMatch(/z\.literal\("1"\)/);
+    expect(fonte).toMatch(/transcodificarNotaDeVoz\(\{[^}]*notaDeVoz/);
+  });
+});
+
+/**
+ * F2: o Safari do iPhone (antes do 18.4) não toca ogg/opus. Para tocar, o
+ * servidor converte NA HORA para AAC em MP4 e não guarda nada — a cópia
+ * derivada escaparia do expurgo e da anonimização.
+ */
+/** A lista de formatos aceitos vem inteira e antes do `-i`; depois dele ela não vale para a entrada. */
+function listaAntesDaEntrada(args: string[]): void {
+  const i = args.indexOf("-i");
+  expect(i).toBeGreaterThan(0);
+  const antes = args.slice(0, i);
+  for (let k = 0; k < ENTRADA_ACEITA.length; k += 2) {
+    const flag = ENTRADA_ACEITA[k]!;
+    expect(antes, `${flag} antes do -i`).toContain(flag);
+    expect(antes[antes.indexOf(flag) + 1]).toBe(ENTRADA_ACEITA[k + 1]);
+  }
+}
+
+describe("o ffmpeg só lê os formatos de áudio esperados", () => {
+  it("nota de voz e conversão para tocar passam a lista antes do -i", async () => {
+    const run = vi.fn(async (args: string[], _cwd: string) => {
+      const { writeFile } = await import("node:fs/promises");
+      await writeFile(args[args.length - 1]!, Buffer.from("x"));
+    });
+    await transcodificarNotaDeVoz({ buffer: Buffer.from("m4a"), mime: "audio/mp4", notaDeVoz: true }, { run });
+    await paraReproducaoAac(Buffer.from("ogg"), "org-lista", { run });
+    expect(run).toHaveBeenCalledTimes(2);
+    for (const [args] of run.mock.calls) listaAntesDaEntrada(args);
+  });
+});
+
+describe("paraReproducaoAac", () => {
+  it("converte para AAC em MP4 com faststart e devolve os bytes", async () => {
+    const run = vi.fn(async (args: string[], _cwd: string) => {
+      const { writeFile } = await import("node:fs/promises");
+      await writeFile(args[args.length - 1]!, Buffer.from("mp4-aac"));
+    });
+    const r = await paraReproducaoAac(Buffer.from("ogg"), "org-a", { run });
+    const args = run.mock.calls[0]?.[0] ?? [];
+    expect(args).toEqual(expect.arrayContaining(["-vn", "-c:a", "aac", "-b:a", "64k", "-movflags", "+faststart", "-f", "mp4"]));
+    expect(r.toString()).toBe("mp4-aac");
+  });
+
+  it("recusa entrada acima do teto sem chamar o ffmpeg", async () => {
+    const run = vi.fn(async () => {});
+    await expect(paraReproducaoAac(Buffer.alloc(TETO_REPRODUCAO_BYTES + 1), "org-a", { run })).rejects.toThrow();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("ffmpeg falhando REJEITA — quem chama responde 502, não devolve o ogg intocável", async () => {
+    const run = vi.fn(async () => {
+      throw new Error("ffmpeg_exit_1");
+    });
+    await expect(paraReproducaoAac(Buffer.from("ogg"), "org-a", { run })).rejects.toThrow();
+  });
+
+  it("acima de CONVERSOES_SIMULTANEAS no processo recusa com ConversorOcupado, e a vaga volta ao terminar", async () => {
+    const soltar: Array<() => void> = [];
+    const run = vi.fn(
+      (args: string[], _cwd: string) =>
+        new Promise<void>((resolve) => {
+          soltar.push(async () => {
+            const { writeFile } = await import("node:fs/promises");
+            await writeFile(args[args.length - 1]!, Buffer.from("mp4"));
+            resolve();
+          });
+        }),
+    );
+    const emCurso = Array.from({ length: CONVERSOES_SIMULTANEAS }, (_, i) => paraReproducaoAac(Buffer.from("ogg"), `org-${i}`, { run }));
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(CONVERSOES_SIMULTANEAS));
+
+    await expect(paraReproducaoAac(Buffer.from("ogg"), "org-outra", { run })).rejects.toBeInstanceOf(ConversorOcupado);
+    expect(run).toHaveBeenCalledTimes(CONVERSOES_SIMULTANEAS);
+
+    for (const s of soltar) s();
+    await Promise.all(emCurso);
+    // A vaga volta mesmo quando o ffmpeg falha.
+    await expect(
+      paraReproducaoAac(Buffer.from("ogg"), "org-0", { run: async () => { throw new Error("ffmpeg_exit_1"); } }),
+    ).rejects.toThrow("ffmpeg_exit_1");
+    const depois = vi.fn(async (args: string[], _cwd: string) => {
+      const { writeFile } = await import("node:fs/promises");
+      await writeFile(args[args.length - 1]!, Buffer.from("mp4"));
+    });
+    await expect(paraReproducaoAac(Buffer.from("ogg"), "org-0", { run: depois })).resolves.toBeInstanceOf(Buffer);
+  });
+
+  it("uma organização não ocupa sozinha as vagas: a segunda dela espera e a de outra entra", async () => {
+    expect(CONVERSOES_POR_ORGANIZACAO).toBeLessThan(CONVERSOES_SIMULTANEAS);
+    let soltar: () => void = () => {};
+    const presa = vi.fn(
+      (args: string[], _cwd: string) =>
+        new Promise<void>((resolve) => {
+          soltar = async () => {
+            const { writeFile } = await import("node:fs/promises");
+            await writeFile(args[args.length - 1]!, Buffer.from("mp4"));
+            resolve();
+          };
+        }),
+    );
+    const daA = paraReproducaoAac(Buffer.from("ogg"), "org-a", { run: presa });
+    await vi.waitFor(() => expect(presa).toHaveBeenCalledTimes(1));
+
+    const livre = vi.fn(async (args: string[], _cwd: string) => {
+      const { writeFile } = await import("node:fs/promises");
+      await writeFile(args[args.length - 1]!, Buffer.from("mp4"));
+    });
+    await expect(paraReproducaoAac(Buffer.from("ogg"), "org-a", { run: livre })).rejects.toBeInstanceOf(ConversorOcupado);
+    await expect(paraReproducaoAac(Buffer.from("ogg"), "org-b", { run: livre })).resolves.toBeInstanceOf(Buffer);
+
+    soltar();
+    await daA;
+    // A vaga da organização volta ao terminar.
+    await expect(paraReproducaoAac(Buffer.from("ogg"), "org-a", { run: livre })).resolves.toBeInstanceOf(Buffer);
+  });
+
+  it("saída vazia também rejeita", async () => {
+    const run = vi.fn(async (args: string[], _cwd: string) => {
+      const { writeFile } = await import("node:fs/promises");
+      await writeFile(args[args.length - 1]!, Buffer.alloc(0));
+    });
+    await expect(paraReproducaoAac(Buffer.from("ogg"), "org-a", { run })).rejects.toThrow();
   });
 });

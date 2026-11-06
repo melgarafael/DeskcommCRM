@@ -13,7 +13,7 @@
 import { describe, expect, it } from "vitest";
 
 import { midpoint } from "./fractional-indexing";
-import { proximoNaEtapaInteira } from "./vizinho-na-etapa";
+import { posicaoNoFimDaEtapa, proximoNaEtapaInteira } from "./vizinho-na-etapa";
 
 type Card = { id: string; position_in_stage: number };
 
@@ -96,5 +96,19 @@ describe("proximoNaEtapaInteira", () => {
     const antes = etapa.map((l) => l.id);
     proximoNaEtapaInteira(card("a", 1000), null, etapa, ARRASTADO);
     expect(etapa.map((l) => l.id)).toEqual(antes);
+  });
+});
+
+describe("posicaoNoFimDaEtapa", () => {
+  it("etapa vazia: 1000, a posição de quem chega primeiro", () => {
+    expect(posicaoNoFimDaEtapa([], ARRASTADO)).toBe(1000);
+  });
+
+  it("depois do ÚLTIMO da etapa inteira, mesmo fora de ordem", () => {
+    expect(posicaoNoFimDaEtapa([card("c", 3000), card("a", 1000), card("b", 5000)], ARRASTADO)).toBe(6000);
+  });
+
+  it("o próprio card sai da conta: mover para a etapa em que ele já é o último não o empurra", () => {
+    expect(posicaoNoFimDaEtapa([card("a", 1000), card(ARRASTADO, 9000)], ARRASTADO)).toBe(2000);
   });
 });

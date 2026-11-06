@@ -2,9 +2,11 @@ import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { logger } from "@/lib/logger";
+import { lerPosicaoDeEntrada } from "@/lib/leads/posicao-de-entrada";
 import { emitLeadActivity, stageChangeReason } from "@/lib/leads/activity-emitter";
 import { registraFalhaDeAtividade } from "@/lib/leads/activity-write-failure";
 import {
+  camposComAnexo,
   recusaDeCamposObrigatorios,
   settingsDoFunil,
   validaCamposExigidos,
@@ -163,6 +165,7 @@ export async function moverLeadParaEtapaDeAgendamento(
   const vereditoDeCampos = validaCamposExigidos({
     lead: leadRow as unknown as Record<string, unknown>,
     settingsDoFunil: settings,
+    camposComAnexo: await camposComAnexo(admin, settings, input.organizationId, leadRow.id),
     destino: {
       stageId: etapaRow.id,
       desfecho: etapaRow.is_won ? "won" : etapaRow.is_lost ? "lost" : null,
@@ -188,9 +191,10 @@ export async function moverLeadParaEtapaDeAgendamento(
     .maybeSingle();
 
   const serviceOrigin = await observeServiceOrigin(admin, input.organizationId, leadRow.contact_id);
+  const posicao = await lerPosicaoDeEntrada(admin, input.organizationId, etapaRow.id);
   const { data: atualizadas, error: erroUpdate } = await admin
     .from("crm_leads")
-    .update({ stage_id: etapaRow.id })
+    .update({ stage_id: etapaRow.id, ...(posicao === null ? {} : { position_in_stage: posicao }) })
     .eq("id", leadRow.id)
     // Trava otimista pelo estágio de ORIGEM: se um humano moveu o card entre a
     // leitura e a escrita, a decisão dele vence.

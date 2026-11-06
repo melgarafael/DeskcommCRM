@@ -14,6 +14,9 @@ vi.mock('@/lib/agent-engine/agent/intent-classifier', () => ({ classifyIntent: m
 vi.mock('@/lib/agent-engine/agent/agent-config', () => ({
   loadPublishedAgentConfigById: mocks.byId, loadPublishedAgentConfig: mocks.bySession,
   loadConversationAgentConfig: mocks.conversationAgent,
+  // #3722: a escolha do agente do número passa por aqui; o dublê deriva do
+  // `bySession` acima, sem público.
+  escolherAgenteDoNumero: async (...a: unknown[]) => ({ config: await (mocks.bySession as (...x: unknown[]) => unknown)(...a), motivo: 'primeiro_da_fila' }),
 }));
 vi.mock('@/lib/agent-engine/agent/reply-drafts', () => ({ generateReplyDraft: mocks.draft }));
 vi.mock('@/lib/atendimento/fronteira-server', () => ({
@@ -22,6 +25,10 @@ vi.mock('@/lib/atendimento/fronteira-server', () => ({
 }));
 vi.mock('@/lib/agent-engine/agent/human-handoff', async importOriginal => ({
   ...await importOriginal<Record<string, unknown>>(), isLeadInHandoff: mocks.handoff,
+}));
+// A restrição comercial (#2877) fica fora do que este arquivo mede: desligada.
+vi.mock('@/lib/escalacao/assunto-comercial', async importOriginal => ({
+  ...await importOriginal<Record<string, unknown>>(), comercialExigeHumano: vi.fn(async () => false),
 }));
 vi.mock('@/lib/agent-engine/guardrails/camadas-da-org', () => ({
   lerCamadasDaOrg: vi.fn(async () => ({})), camadaLigada: vi.fn(() => false),

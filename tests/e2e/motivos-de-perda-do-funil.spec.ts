@@ -171,7 +171,7 @@ test.describe("Janela de perder — os motivos são os do funil", () => {
     await page.goto(`/app/pipelines/${pipelineId}`);
     await expect(page.getByText(TITULO, { exact: true })).toBeVisible({ timeout: 30_000 });
 
-    await page.getByRole("button", { name: "Ações do lead" }).first().click();
+    await page.getByRole("button", { name: "Ações do negócio" }).first().click();
     await page.getByRole("menuitem", { name: "Marcar como perdido" }).click();
     await expect(page.getByText("Marcar como perdido").last()).toBeVisible();
 
@@ -187,7 +187,7 @@ test.describe("Janela de perder — os motivos são os do funil", () => {
     // ── 2. "OUTRO" RECUSA ANTES DO CLIQUE, E DIZ ONDE CADASTRAR ────────────
     await page.locator('input[name="lost-reason"][value="other"]').check();
     await expect(
-      page.getByText(/cadastre em Configurações/),
+      page.getByText(/cadastre em CRM › Ver tudo em CRM › Etapas do funil/),
       "sem esta frase, 'Outro' é beco sem saída: recusa todo texto novo e não diz onde se cadastra um",
     ).toBeVisible();
 

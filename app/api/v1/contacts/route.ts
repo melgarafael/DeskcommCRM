@@ -126,6 +126,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     modo: url.searchParams.get("modo") ?? undefined,
     source: url.searchParams.get("source") ?? undefined,
     pessoais: url.searchParams.get("pessoais") ?? undefined,
+    blocked: url.searchParams.get("blocked") ?? undefined,
     cursor: url.searchParams.get("cursor") ?? undefined,
     limit: url.searchParams.get("limit") ?? undefined,
     order_by: url.searchParams.get("order_by") ?? undefined,

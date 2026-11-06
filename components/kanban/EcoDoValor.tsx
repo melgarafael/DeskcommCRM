@@ -18,15 +18,23 @@ import { formatValorDoNegocio, parseReaisToCents } from "@/lib/money";
 export function EcoDoValor<T extends FieldValues>({
   control,
   moeda,
+  campo = "valueReais" as Path<T>,
 }: {
   control: Control<T>;
   /** A moeda do NEGÓCIO; o eco em real embaixo de um campo em euro era o defeito. */
   moeda: string;
+  /**
+   * Qual campo monetário ecoar. O valor único continua sendo o padrão (nenhum
+   * chamador atual muda); o campo de VALOR RECORRENTE (fatia 1 da #3602) passa
+   * o seu nome, porque dinheiro digitado em silêncio é o defeito que este
+   * componente existe para impedir — e mensalidade é dinheiro.
+   */
+  campo?: Path<T>;
 }) {
-  const digitado = useWatch({ control, name: "valueReais" as Path<T> }) as unknown as
-    | string
-    | undefined;
-  const centavos = parseReaisToCents(digitado ?? "");
+  const digitado = useWatch({ control, name: campo }) as unknown as string | undefined;
+  // A MESMA moeda do rótulo e do valor gravado: o eco é o que a pessoa vê
+  // antes de salvar, então ele não pode ler o número por outra régua (#3331).
+  const centavos = parseReaisToCents(digitado ?? "", moeda);
   if (centavos === null) return null;
   // `formatValorDoNegocio`, e NÃO `formatCents`: o negócio guarda o valor ×100
   // em qualquer moeda (é o que `parseReaisToCents` acabou de fazer logo acima),

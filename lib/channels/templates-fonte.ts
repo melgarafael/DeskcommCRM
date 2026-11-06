@@ -61,3 +61,13 @@ export function rotaDeTemplates(fonte: FonteDeTemplates): string {
   if (fonte === "graph") return "/api/v1/channels/graph-partner/templates";
   return "/api/v1/channels/templates";
 }
+
+/**
+ * A TELA onde quem opera cria e edita as definições desta fonte (Conexões, aba
+ * do canal, sub-aba de modelos). A campanha aponta para cá em vez de criar
+ * modelo no meio do formulário: a plataforma leva de minutos a horas para
+ * aprovar, e um formulário de campanha não é lugar de esperar.
+ */
+export function telaDeModelos(fonte: FonteDeTemplates): string {
+  return `/app/connections?aba=${fonte}&sub=templates`;
+}

@@ -1,0 +1,63 @@
+{
+  "source_pr": 3516,
+  "author": "webtecnica",
+  "source_head": "93d3e924d9b3b963b56941530e1946859c28c072",
+  "main": "3b3bec7d66acea1299fb09baaea8797c7b691913",
+  "candidate_state": "MERGE_IN_PROGRESS_STAGED",
+  "index_tree_before_generation": "c01efe925c1b022dda1f9777b6813138021ca9fc",
+  "baseline_sha256": "d50dc101eb31e20f8e3ae33c3c2944f305f215e88feb68b5b01dc95b80a24a93",
+  "prelude_sha256": "62afc1fa29248f8c5d9318b882489894aab92adb1d6716d7b2e39e4e06d3eb3c",
+  "runner_sha256": "1b79a3af72504168a8ac5e665154ae8f96306c28869557e8e39cc2bda6a8db6e",
+  "cli": "2.122.0",
+  "postgres": "17.11",
+  "node": "v22.23.3",
+  "pnpm": "9.15.9",
+  "baseline_install": "PASS",
+  "baseline_update": "PASS",
+  "on_error_stop": true,
+  "raw_outputs_equal": true,
+  "raw_sha256": "87770f464ddd876e7e9b4b3057dc42c624fafb5425abb287cd7e9ca3ea43c113",
+  "formatted_outputs_equal": true,
+  "formatted_sha256": "25a4fd4c3b369637f922924ad484ef96f142b46078d21670da815734fb37d36f",
+  "generation_source": "fresh canonical template before invariant fixtures; whole generated file copied after formatting both outputs",
+  "contracts": {
+    "tables": 206,
+    "functions": 249,
+    "added_function": "fn_expurgar_traco_do_turno_vencido",
+    "other_contracts": "identical to main3b3",
+    "lead_field_proposals": "identical",
+    "agent_turn_traces": "identical"
+  },
+  "db_tests": {
+    "files": 2,
+    "passed": 13,
+    "workers": 1,
+    "config": "canonical DB config and per-file reset; only Vite cacheDir redirected to own folder"
+  },
+  "author_invariant_sha256": "5a0ed86b8ba999cc4b23765efc5b5347159a0abe1ec538ab8413b986256c9e70",
+  "limits": {
+    "memory_bytes": 1073741824,
+    "cpu": 1,
+    "bind": "127.0.0.1"
+  },
+  "cleanup": {
+    "exit": 0,
+    "container_remaining": false,
+    "port_remaining": false
+  },
+  "http_runtime": "pending official CI; local Playwright collection only",
+  "ui": "not delivered; issue3201 stays open",
+  "local_db_scope": "Only baseline_sha256 above was applied locally; integrated baseline below awaits exact-head CI install/update and invariants.",
+  "integrated_contract": {
+    "main_before": "3b3bec7d66acea1299fb09baaea8797c7b691913",
+    "main_integrated": "790b592fbaa79ebf682625637d752aff368ad94d",
+    "types_blobs_identical": true,
+    "types_blob": "b9d8e587b3dca09f3245d26627a6f707fa532620",
+    "fn_conversation_assign_header_unchanged": true,
+    "header": "create or replace function public.fn_conversation_assign(p_organization_id uuid, p_conversation_id uuid, p_to_user_id uuid, p_reason text, p_expected_assignee uuid default null::uuid, p_enforce_expected boolean default false) returns setof conversations language plpgsql security definer set search_path to 'public'",
+    "integrated_head_after_merge": "2661fbac72c505b1435caca0d60bdd929dd96917",
+    "integrated_baseline_sha256": "550bec0574c5f88b97e2b5157fee6d1db8dcb6a63d999cf264f537906954067e",
+    "new_schema_diff": ["9017 body of fn_conversation_assign, unchanged signature/return"],
+    "integrated_baseline_db_proof": "pending exact-head CI, old local proof remains scoped to its prior baseline hash"
+  }
+}

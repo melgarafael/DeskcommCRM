@@ -222,17 +222,20 @@ describe("credencial de enfeite não derruba a leitura (#754)", () => {
     expect(iTenancy, "quem não é da organização lê o CPF antes da checagem").toBeLessThan(iDecifra);
     expect(iAudit, "decrypt sairia sem deixar rastro").toBeLessThan(iDecifra);
 
-    // Quem instala (baseline) e quem atualiza (migration 0597) recebem igual.
+    // Quem instala (baseline) e quem atualiza (a ÚLTIMA migration que define a
+    // função — 0597, depois o forward-fix 0762) recebem igual.
     const arquivo0597 = readdirSync(MIGRATIONS).find((n) => n.includes("_0597_"));
     expect(arquivo0597, "migration 0597 não está em supabase/migrations/").toBeTruthy();
-    const naMigration = definicoesDeFuncao(
-      readFileSync(join(MIGRATIONS, arquivo0597!), "utf8"),
-      "decrypt_cpf",
-    );
+    const definidoras = readdirSync(MIGRATIONS)
+      .filter((n) => n.endsWith(".sql"))
+      .sort()
+      .map((n) => definicoesDeFuncao(readFileSync(join(MIGRATIONS, n), "utf8"), "decrypt_cpf"))
+      .filter((d) => d.length > 0);
+    const naMigration = definidoras.at(-1) ?? [];
     expect(naMigration.length, "a migration não define decrypt_cpf").toBe(1);
     expect(
       naMigration[0]!.corpo,
-      "corpo divergente entre baseline (install) e migration 0597 (update)",
+      "corpo divergente entre baseline (install) e a última migration de decrypt_cpf (update)",
     ).toBe(corpo);
   });
 });

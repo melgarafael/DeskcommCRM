@@ -129,10 +129,15 @@ describe("AuditoriaDoCandidato: resumo na linha, total no modal", () => {
     await screen.findByRole("dialog");
     fireEvent.click(screen.getByRole("button", { name: "Prévia da abordagem" }));
     await screen.findByText(PREVIA.mensagem);
-    const rolado = rolagem.mock.contexts.find(
-      (alvo) => alvo instanceof Element && alvo.textContent?.includes(PREVIA.mensagem),
-    );
-    expect(rolado, "o elemento rolado precisa ser o que contém o texto da prévia").toBeTruthy();
+    // A rolagem mora num `useEffect`, que roda DEPOIS do commit que pôs o texto
+    // na tela: o `findByText` pode resolver antes dele, e sob CPU disputada
+    // resolvia (verify-parte (1), run 39805397729). Esperar a rolagem, não o texto.
+    await waitFor(() => {
+      const rolado = rolagem.mock.contexts.find(
+        (alvo) => alvo instanceof Element && alvo.textContent?.includes(PREVIA.mensagem),
+      );
+      expect(rolado, "o elemento rolado precisa ser o que contém o texto da prévia").toBeTruthy();
+    });
     expect(
       rolagem.mock.calls.some(
         ([opcoes]) =>

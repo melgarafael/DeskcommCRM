@@ -38,13 +38,15 @@ export function useUpdateConversationTags() {
  * Via server route — o cookie de sessão é HttpOnly, então o browser-supabase
  * não autentica; a leitura org-scoped passa pelo servidor.
  */
-export function useConversationTagVocabulary(orgId: string | null) {
+export function useConversationTagVocabulary(orgId: string | null, busca = "") {
   return useQuery({
-    queryKey: ["conversation-tag-vocabulary", orgId],
+    queryKey: ["conversation-tag-vocabulary", orgId, busca],
     enabled: !!orgId,
     staleTime: 5 * 60_000,
-    queryFn: async (): Promise<string[]> => {
-      const res = await apiClient.get<{ data: string[] }>("/api/v1/conversation-tags");
+    queryFn: async ({ signal }): Promise<string[]> => {
+      const res = busca
+        ? await apiClient.get<{ data: string[] }>("/api/v1/conversation-tags?busca="+encodeURIComponent(busca), { signal })
+        : await apiClient.get<{ data: string[] }>("/api/v1/conversation-tags");
       return res.data;
     },
   });

@@ -279,7 +279,7 @@ test.describe("dossiê do follow-up — ler a história e intervir", () => {
     // É o que o próximo atendente vê no card, e o que impede o agente de
     // reagendar o que uma pessoa acabou de segurar.
     await page.goto(`/app/pipelines/${cenario.pipelineId}`);
-    const card = page.getByRole("group", { name: `Lead: ${cenario.contactName}` });
+    const card = page.getByRole("group", { name: `Negócio: ${cenario.contactName}` });
     await expect(card).toBeVisible({ timeout: 30_000 });
     await card.getByRole("button", { name: cenario.contactName }).click();
     // O dossiê do negócio é um Sheet — `role=dialog` no Radix.

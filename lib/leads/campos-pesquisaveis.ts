@@ -143,31 +143,66 @@ function vazio(valor: unknown): boolean {
 }
 
 /**
+ * O veredito de UM item de uma escrita — a mesma régua do valor único, aplicada
+ * item a item no modo múltiplo. Casa? `value` canônico. Não casa e `allow_new`?
+ * o texto aparado. Não casa e sem `allow_new`? recusa.
+ */
+function valorDeUmItem(
+  campo: Pick<CustomFieldDef, "options" | "allow_new">,
+  item: unknown,
+): ResultadoDoValor {
+  if (typeof item !== "string") {
+    // A lista é de STRINGS; um número/booleano/objeto não tem como casar com
+    // opção nenhuma, então cai na mesma régua de "não casou".
+    return campo.allow_new === true ? { ok: true, valor: item } : { ok: false, motivo: "fora_da_lista" };
+  }
+  const canonico = valorCanonico(opcoesDoCampo(campo), item);
+  if (canonico !== null) return { ok: true, valor: canonico };
+  return campo.allow_new === true
+    ? { ok: true, valor: item.trim() }
+    : { ok: false, motivo: "fora_da_lista" };
+}
+
+/**
  * A RÉGUA de uma escrita num campo do funil (critério "b").
  *
  * Para QUALQUER tipo que não seja `searchable_select` é um passe direto — este
  * módulo não muda o comportamento dos tipos que já existem, byte a byte. Só o
  * tipo novo decide: normaliza o que casa, aceita cru o que `allow_new` libera,
  * recusa o resto.
+ *
+ * Com `multiple: true` (issue #3182) a escrita é uma LISTA e a régua é a MESMA,
+ * aplicada ITEM A ITEM: cada item que casa vira o `value` canônico da sua opção,
+ * o que não casa é recusado só se `allow_new` estiver desligado, e o resultado é
+ * a lista de canônicos — sem repetição, porque duas grafias da mesma opção
+ * ("Maceió (AL)" e "maceio") são a MESMA escolha. Um item ruim recusa a escrita
+ * inteira: gravar metade da lista silenciosamente repetiria, do outro lado, o
+ * defeito que este tipo existe para fechar.
  */
 export function validarValorPesquisavel(
-  campo: Pick<CustomFieldDef, "type" | "options" | "allow_new">,
+  campo: Pick<CustomFieldDef, "type" | "options" | "allow_new" | "multiple">,
   valor: unknown,
 ): ResultadoDoValor {
   if (campo.type !== TIPO_DA_LISTA_PESQUISAVEL) return { ok: true, valor };
-  if (vazio(valor)) return { ok: true, valor };
 
-  if (typeof valor !== "string") {
-    // A lista é de STRINGS; um número/booleano/array não tem como casar com
-    // opção nenhuma, então cai na mesma régua de "não casou".
-    return campo.allow_new === true ? { ok: true, valor } : { ok: false, motivo: "fora_da_lista" };
+  if (campo.multiple === true) {
+    // Ausente/`null` e a lista vazia são "limpar": nunca recusados.
+    if (valor === undefined || valor === null) return { ok: true, valor };
+    if (Array.isArray(valor) && valor.length === 0) return { ok: true, valor: [] };
+    // Um escalar num campo múltiplo é uma lista de UM — o mesmo valor único que
+    // a ficha gravava antes de a pessoa escolher o segundo, normalizado.
+    const itens = Array.isArray(valor) ? valor : [valor];
+    const canonicos: unknown[] = [];
+    for (const item of itens) {
+      const r = valorDeUmItem(campo, item);
+      if (!r.ok) return r;
+      if (!canonicos.includes(r.valor)) canonicos.push(r.valor);
+    }
+    return { ok: true, valor: canonicos };
   }
 
-  const canonico = valorCanonico(opcoesDoCampo(campo), valor);
-  if (canonico !== null) return { ok: true, valor: canonico };
-  return campo.allow_new === true
-    ? { ok: true, valor: valor.trim() }
-    : { ok: false, motivo: "fora_da_lista" };
+  if (vazio(valor)) return { ok: true, valor };
+  return valorDeUmItem(campo, valor);
 }
 
 /**
@@ -225,4 +260,157 @@ export function importarOpcoesCsv(
   }
 
   return { opcoes: [...opcoesAtuais, ...adicionadas], adicionadas, ignoradas };
+}
+
+/**
+ * EXPORTAR AS OPÇÕES EM CSV (sugestão 3 da issue #3176).
+ *
+ * O INVERSO EXATO da importação acima, e de propósito: `value,label,apelidos`
+ * por linha, apelidos separados por `;`, encabeçado pela linha que o próprio
+ * `importarOpcoesCsv` reconhece e pula. O que sai daqui volta pelo "Importar" —
+ * editar a lista fora do CRM (numa planilha) e reimportar é o ciclo que a issue
+ * pede, e ele só existe se o arquivo exportado for um arquivo que o importador
+ * aceita.
+ *
+ * SEM PERDER O `value` CANÔNICO: o arquivo traz a coluna `value` (não só o
+ * rótulo), então uma lista que passou por aqui e voltou continua gravando o
+ * mesmo valor canônico — os negócios já registrados com ele seguem casando.
+ *
+ * O LIMITE É DO DIALETO DA IMPORTAÇÃO, e está declarado em vez de escondido: o
+ * leitor separa as colunas por VÍRGULA e não entende aspas, então um `value`,
+ * `label` ou apelido que contenha vírgula não sobrevive à ida e volta. Escapar
+ * aqui seria pior — o arquivo deixaria de ser lido pelo importador que já
+ * existe, e o formato da importação não muda nesta correção.
+ */
+export function exportarOpcoesCsv(opcoes: OpcaoPesquisavel[]): string {
+  const linhas = ["value,label,apelidos"];
+  for (const opcao of opcoes) {
+    linhas.push(`${opcao.value},${opcao.label},${(opcao.aliases ?? []).join(";")}`);
+  }
+  return `${linhas.join("\n")}\n`;
+}
+
+/** Os tipos de campo que guardam uma OPÇÃO da lista do funil. */
+const TIPOS_COM_OPCOES = new Set<string>(["select", "multiselect", TIPO_DA_LISTA_PESQUISAVEL]);
+
+/** O veredito de `canonizarValorDoCampo`: o que gravar, ou o item que não casou. */
+export type ResultadoCanonico =
+  | { ok: true; valor: unknown }
+  | { ok: false; motivo: "fora_da_lista"; item: string };
+
+/**
+ * A RÉGUA DA OPÇÃO PARA OS TRÊS TIPOS DE LISTA (#3508).
+ *
+ * ─── O que isto generaliza, e o que NÃO é ──────────────────────────────────
+ *
+ * `validarValorPesquisavel` acima já casava o valor com a opção — mas só para
+ * `searchable_select`, e as escritas do SERVIDOR (API, MCP, captação) não a
+ * chamavam. `select` e `multiselect`, que existem desde antes, gravavam o texto
+ * cru: o funil com a opção "São Paulo" (`value` `sp`) nascia com
+ * `estado: "sao paulo"` e a ficha não marcava opção nenhuma.
+ *
+ * Esta função é a MESMA régua, não uma paralela: ela lê o campo pelos mesmos
+ * `opcoesDoCampo`/`valorCanonico`/`valorDeUmItem` de cima. O que muda é o
+ * alcance — os três tipos que guardam opção passam a ser julgados, e cada um
+ * com o que ele tem de próprio:
+ *
+ *  - `multiselect` (e a lista pesquisável com `multiple: true`) guarda LISTA:
+ *    aceita array ou texto separado por vírgula. Se o texto INTEIRO já é uma
+ *    opção ("Rio de Janeiro, RJ"), não corta — a vírgula é do rótulo, não do
+ *    separador.
+ *  - `select` e a lista de valor único NÃO separam por vírgula: um valor só,
+ *    casado inteiro.
+ *  - `allow_new` continua exclusivo da lista pesquisável. Num `select` a lista
+ *    de opções é FECHADA — é o que o dono do funil declarou, e recusar o resto
+ *    é o que impede a sétima grafia do mesmo estado.
+ *  - vazio (ausente, `null`, branco) nunca é recusado: limpar é escrita válida.
+ *  - campo sem opção cadastrada, e qualquer outro tipo, passam direto, byte a
+ *    byte — a régua é aditiva para toda base existente.
+ *
+ * Função PURA (sem I/O e sem `ApiError`): o veredito é dado aqui, e a recusa
+ * virar 422 é do servidor (`lib/leads/opcao-do-campo-no-servidor`). A ficha
+ * importa daqui sem arrastar código de servidor para o bundle.
+ */
+export function canonizarValorDoCampo(
+  def: Pick<CustomFieldDef, "type" | "options" | "allow_new" | "multiple">,
+  bruto: unknown,
+): ResultadoCanonico {
+  if (!TIPOS_COM_OPCOES.has(def.type)) return { ok: true, valor: bruto };
+  if (!def.options || def.options.length === 0) return { ok: true, valor: bruto };
+
+  // Guarda uma LISTA: `multiselect` sempre, e a pesquisável quando `multiple`.
+  const lista =
+    def.type === "multiselect" ||
+    (def.type === TIPO_DA_LISTA_PESQUISAVEL && def.multiple === true);
+  // `allow_new` é da lista pesquisável; num `select`/`multiselect` a lista é
+  // fechada, e a válvula do valor novo não vale (nem quando o jsonb a traz).
+  const campo = {
+    options: def.options,
+    allow_new: def.type === TIPO_DA_LISTA_PESQUISAVEL && def.allow_new === true,
+  };
+  const opcoes = opcoesDoCampo(campo);
+
+  const doItem = (item: unknown): ResultadoCanonico => {
+    const r = valorDeUmItem(campo, item);
+    return r.ok ? r : { ok: false, motivo: "fora_da_lista", item: String(item).trim() };
+  };
+
+  if (!lista) {
+    if (vazio(bruto)) return { ok: true, valor: bruto };
+    return doItem(bruto);
+  }
+
+  if (bruto === undefined || bruto === null) return { ok: true, valor: bruto };
+  let itens: unknown[];
+  if (Array.isArray(bruto)) itens = bruto;
+  else if (typeof bruto === "string") {
+    if (bruto.trim() === "") return { ok: true, valor: [] };
+    // O texto inteiro é uma opção? Então a vírgula é do RÓTULO ("Rio de
+    // Janeiro, RJ") e não separa nada.
+    itens = valorCanonico(opcoes, bruto) !== null ? [bruto] : bruto.split(",");
+  } else itens = [bruto];
+
+  const canonicos: unknown[] = [];
+  for (const item of itens) {
+    if (typeof item === "string" && item.trim() === "") continue;
+    const r = doItem(item);
+    if (!r.ok) return r;
+    if (!canonicos.includes(r.valor)) canonicos.push(r.valor);
+  }
+  return { ok: true, valor: canonicos };
+}
+
+/** Um campo do funil recusado pela régua de opção: `valor` é o item que não casou. */
+export interface RecusaDeOpcao {
+  campo: string;
+  motivo: "fora_da_lista";
+  valor: string;
+}
+
+/**
+ * Aplica a régua a CADA chave de `campos` que tem definição, e devolve só o que
+ * muda mais as recusas.
+ *
+ * `mudados` e `recusas` são disjuntos por construção (um campo recusado nunca
+ * entra em `mudados`), então quem grava não precisa filtrar de novo: o que está
+ * em `mudados` é o `value` canônico, e o que está em `recusas` fica como veio.
+ *
+ * Devolver só o que mudou é o que permite ao chamador APLICAR por cima do
+ * `custom_fields` inteiro sem julgar (nem reescrever) o que ele nem tocou — a
+ * mesma razão do `camposQueMudaram` da edição.
+ */
+export function canonizarCamposDoFunil(
+  defs: ReadonlyArray<Pick<CustomFieldDef, "key" | "type" | "options" | "allow_new" | "multiple">>,
+  campos: Record<string, unknown>,
+): { mudados: Record<string, unknown>; recusas: RecusaDeOpcao[] } {
+  const mudados: Record<string, unknown> = {};
+  const recusas: RecusaDeOpcao[] = [];
+  for (const def of defs) {
+    if (!Object.prototype.hasOwnProperty.call(campos, def.key)) continue;
+    const bruto = campos[def.key];
+    const r = canonizarValorDoCampo(def, bruto);
+    if (!r.ok) recusas.push({ campo: def.key, motivo: r.motivo, valor: r.item });
+    else if (JSON.stringify(r.valor) !== JSON.stringify(bruto)) mudados[def.key] = r.valor;
+  }
+  return { mudados, recusas };
 }

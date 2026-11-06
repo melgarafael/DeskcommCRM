@@ -11,6 +11,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { useT } from "@/hooks/i18n/useT";
+import { useTelefoneExemplo } from "@/hooks/contacts/useTelefoneExemplo";
 import { apiClient } from "@/lib/api/client";
 import { aiAccessUpdateSchema, type AiAccessMode } from "@/lib/ai/elegibilidade/pre-go-live";
 
@@ -71,6 +72,7 @@ export function ChannelAiAccess({ channelId, phoneTesting = true }: { channelId:
 
 function AccessForm({ channelId, initial, onClose, phoneTesting }: { channelId: string; initial: Access; onClose: () => void; phoneTesting: boolean }) {
   const t = useT();
+  const telefoneExemplo = useTelefoneExemplo();
   const id = useId();
   const qc = useQueryClient();
   const [numbers, setNumbers] = useState(initial.test_phone_numbers.join("\n"));
@@ -83,7 +85,8 @@ function AccessForm({ channelId, initial, onClose, phoneTesting }: { channelId: 
       mode, test_phone_numbers: phoneTesting ? numbers.split("\n").map(n => n.trim()).filter(Boolean) : [],
     });
     if (!parsed.success) {
-      setError(t("Use um telefone com DDI por linha, por exemplo +5511999998888."));
+      // O exemplo é o do país da organização, não um celular brasileiro escrito na frase.
+      setError(t("Use um telefone com DDI por linha, por exemplo {exemplo}.").replace("{exemplo}", () => telefoneExemplo));
       return;
     }
     setBusy(true);
@@ -117,7 +120,7 @@ function AccessForm({ channelId, initial, onClose, phoneTesting }: { channelId: 
         <Textarea id={id} rows={6} value={numbers} disabled={busy}
           onChange={e => { setNumbers(e.target.value); setError(null); }}
           aria-invalid={Boolean(error)} aria-describedby={`${id}-help`}
-          placeholder="+5511999998888" />
+          placeholder={telefoneExemplo} />
         <p id={`${id}-help`} className="text-sm text-muted-foreground">
           {t("Um telefone com DDI por linha. Lista vazia no modo de teste bloqueia todas as respostas automáticas.")}
         </p>

@@ -15,6 +15,7 @@
  *   3. um filtro que "conserta" limpando o valor — `registro` teria de voltar
  *      sem a chave, e é justamente o contrário: esconder não é limpar.
  */
+import { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -305,5 +306,138 @@ describe("CustomFieldsEditor — lista pesquisável mostra o que a busca acha (#
     } finally {
       Element.prototype.scrollIntoView = original;
     }
+  });
+});
+
+/**
+ * A LISTA PESQUISÁVEL COM MÚLTIPLA ESCOLHA NA FICHA (#3182).
+ *
+ * O defeito: o campo guardava UM `value` canônico, então o segundo fornecedor
+ * escolhido sobrescrevia o primeiro; e o modo múltiplo que existia
+ * (`multiselect`) despeja a lista INTEIRA de opções na ficha — inviável com as
+ * listas longas de fornecedor/hotel. Aqui a régua é a mesma da lista
+ * pesquisável (busca com apelidos, `value` canônico, recusa fora da lista) e o
+ * que muda é o REGISTRO: uma lista, com os escolhidos como chips.
+ */
+describe("CustomFieldsEditor — lista pesquisável com MÚLTIPLA ESCOLHA (#3182)", () => {
+  const FORNECEDORES: CustomFieldDef[] = [
+    {
+      key: "fornecedores",
+      label: "Fornecedores",
+      type: "searchable_select",
+      multiple: true,
+      options: [
+        { value: "consolidadora-a", label: "Consolidadora A", aliases: ["consol a"] },
+        { value: "operadora-b", label: "Operadora B" },
+        { value: "seguradora-c", label: "Seguradora C" },
+      ],
+    },
+  ];
+  const AVISO = "Esse valor não está na lista. Escolha uma das opções.";
+
+  /** Um harness CONTROLADO: é o registro que volta para a tela a cada escolha. */
+  function Harness({ inicial }: { inicial?: unknown }) {
+    const [v, setV] = useState<Record<string, unknown>>(
+      inicial === undefined ? {} : { fornecedores: inicial },
+    );
+    return <CustomFieldsEditor mode="lead" fields={FORNECEDORES} value={v} onChange={setV} />;
+  }
+  function escolher(input: HTMLElement, texto: string) {
+    fireEvent.change(input, { target: { value: texto } });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+  }
+
+  it("os escolhidos aparecem como CHIPS, e a lista de opções não é despejada na ficha", () => {
+    render(<Harness inicial={["consolidadora-a", "seguradora-c"]} />);
+    // Os DOIS valores gravados aparecem, pelo rótulo da opção…
+    expect(screen.getByText("Consolidadora A")).toBeTruthy();
+    expect(screen.getByText("Seguradora C")).toBeTruthy();
+    // …e o que NÃO foi escolhido não ocupa espaço: a lista inteira de opções
+    // era o que tornava o modo múltiplo inviável com listas longas.
+    expect(screen.queryByText("Operadora B")).toBeNull();
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("escolher duas opções no MESMO campo grava as duas — a segunda não sobrescreve", () => {
+    render(<Harness />);
+    const input = screen.getByRole("combobox", { name: /Fornecedores/ });
+    escolher(input, "consolidadora");
+    expect(screen.getByText("Consolidadora A")).toBeTruthy();
+
+    escolher(input, "operadora");
+    expect(screen.getByText("Consolidadora A")).toBeTruthy();
+    expect(screen.getByText("Operadora B")).toBeTruthy();
+  });
+
+  it("grava o `value` CANÔNICO do apelido digitado, com um chip por opção", () => {
+    render(<Harness />);
+    const input = screen.getByRole("combobox", { name: /Fornecedores/ });
+    escolher(input, "consol a");
+    expect(screen.getAllByText("Consolidadora A")).toHaveLength(1);
+  });
+
+  it("escolher a MESMA opção de novo não duplica o chip", () => {
+    render(<Harness inicial={["consolidadora-a"]} />);
+    const input = screen.getByRole("combobox", { name: /Fornecedores/ });
+    escolher(input, "consolidadora");
+    expect(screen.getAllByText("Consolidadora A")).toHaveLength(1);
+  });
+
+  it("remover um chip tira só ele", () => {
+    render(<Harness inicial={["consolidadora-a", "seguradora-c"]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Remover Consolidadora A" }));
+    expect(screen.queryByText("Consolidadora A")).toBeNull();
+    expect(screen.getByText("Seguradora C")).toBeTruthy();
+  });
+
+  it("item fora da lista sem `allow_new`: não grava, explica e mantém os chips", () => {
+    render(<Harness inicial={["consolidadora-a"]} />);
+    const input = screen.getByRole("combobox", { name: /Fornecedores/ });
+    fireEvent.change(input, { target: { value: "Fornecedor X" } });
+    expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(false);
+    expect(screen.getByText(AVISO)).toBeTruthy();
+    expect(screen.getByText("Consolidadora A")).toBeTruthy();
+    expect(screen.queryByText("Fornecedor X")).toBeNull();
+  });
+
+  it("com `allow_new`, o valor novo entra como chip, junto dos escolhidos", () => {
+    const comNovo: CustomFieldDef[] = [{ ...FORNECEDORES[0]!, allow_new: true }];
+    function HarnessNovo() {
+      const [v, setV] = useState<Record<string, unknown>>({ fornecedores: ["consolidadora-a"] });
+      return <CustomFieldsEditor mode="lead" fields={comNovo} value={v} onChange={setV} />;
+    }
+    render(<HarnessNovo />);
+    const input = screen.getByRole("combobox", { name: /Fornecedores/ });
+    fireEvent.change(input, { target: { value: "  Operadora Nova  " } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByText("Consolidadora A")).toBeTruthy();
+    expect(screen.getByText("Operadora Nova")).toBeTruthy();
+  });
+
+  it("valor ÚNICO já gravado (o campo virou múltiplo depois) aparece como chip e sobrevive à próxima escolha", () => {
+    // Registro de antes da caixa "Permitir várias escolhas", ou gravado pelo
+    // diálogo de campos exigidos (seletor de valor único): é uma string, não
+    // uma lista. Sem tratá-la como lista de UM, ela some da ficha e a próxima
+    // escolha grava só o item novo — a "Consolidadora A" se perde.
+    let gravado: unknown;
+    function HarnessLegado() {
+      const [v, setV] = useState<Record<string, unknown>>({ fornecedores: "consolidadora-a" });
+      return (
+        <CustomFieldsEditor
+          mode="lead"
+          fields={FORNECEDORES}
+          value={v}
+          onChange={(n) => {
+            gravado = n.fornecedores;
+            setV(n);
+          }}
+        />
+      );
+    }
+    render(<HarnessLegado />);
+    expect(screen.getByText("Consolidadora A")).toBeTruthy();
+    escolher(screen.getByRole("combobox", { name: /Fornecedores/ }), "operadora");
+    expect(gravado).toEqual(["consolidadora-a", "operadora-b"]);
   });
 });

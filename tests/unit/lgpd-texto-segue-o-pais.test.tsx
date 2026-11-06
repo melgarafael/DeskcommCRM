@@ -42,6 +42,12 @@
  * segue o gravado em c85293f05: o payload brasileiro é comparado a ele SEM
  * essas duas chaves (`semAsChavesDoDoc110`), o que prova que nenhuma outra
  * mudou, e um caso à parte cobra que as duas estão lá.
+ *
+ * Sexta exceção, regravando `data-*.json`: a seção `lead_attachments` (#3229),
+ * os anexos dos negócios do titular. Entra pela regra já escrita para
+ * `lead_notes` (#1957, Art. 18 II): o que a cascata apaga a pedido dele é o que
+ * se entrega a pedido dele. A diferença nos dois arquivos é só a linha
+ * `"lead_attachments": []`; o resto segue byte a byte.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

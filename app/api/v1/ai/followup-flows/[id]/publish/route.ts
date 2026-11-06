@@ -211,9 +211,12 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
       ),
     };
   }
-  // O plano B da mensagem por IA só existe para canal com janela de 24 h. Uma
-  // organização só com canal sem janela não tem modelo aprovado para escolher,
-  // e exigir o plano B dela travaria o publish (revisão do #1729).
+  // O plano B da mensagem por IA só existe para canal que EXIGE modelo aprovado
+  // fora da janela: precisa da regra da janela E de um catálogo aprovado para
+  // oferecer. Uma organização sem esse canal não tem modelo aprovado para
+  // escolher, e exigir o plano B dela travaria o publish (revisão do #1729). A
+  // régua inteira mora em `algumCanalExigeModeloForaDaJanela` — inclusive o
+  // #3109, em que o canal social fecha a janela mas não tem catálogo nenhum.
   const { data: conexoes, error: conexoesErr } = await admin
     .from("channel_sessions")
     .select("provider")

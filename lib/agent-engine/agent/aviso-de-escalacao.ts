@@ -178,6 +178,10 @@ export async function avisarLeadDaEscalacao(
       // a ser escalada na mesma janela do número receberia silêncio — pelo
       // guardrail. Este é o ÚNICO chamador que o desarma.
       enforceSpinning: false,
+      // Texto fixo deste arquivo, não da IA: a restrição comercial (#2877) não o
+      // julga. Sem o `false`, a cadeia leria a escolha da organização — e o aviso
+      // que a própria passagem comercial manda poderia ser barrado por ela.
+      enforceCommercialRestriction: false,
       // Mesmo débito declarado no caminho do agente e no da re-entrada: o
       // daily_message_limit do CRM ainda não é lido no runtime.
       crmDailyLimit: null,
@@ -205,6 +209,10 @@ export async function avisarLeadDaEscalacao(
       const codigo = CODIGO_DO_VETO[chain.code];
       return {
         avisado: false,
+        // O código REAL do gate: `contato_bloqueado` (opt-out) e
+        // `atendimento_com_humano` (a conversa foi passada para a equipe) são
+        // desfechos diferentes, e este campo é lido por quem diagnostica o
+        // aviso que não saiu (#3310).
         porque: chain.code,
         ...(codigo !== undefined ? { motivoCodigo: codigo } : {}),
       };

@@ -126,3 +126,46 @@ it("escolhido o número e conectado, a MESMA versão publica — o rascunho é e
   expect(depois.published_version_id).toBe(f.version);
   expect(depois.status).toBe("published");
 });
+
+it("permite publicar especialista ligado ao roteador inativo no canal WORKING, sem número próprio", async () => {
+  const f = await rascunhoSemNumero();
+  await pool.query("update channel_sessions set status='WORKING' where id=$1", [f.channel]);
+  const router = randomUUID();
+  await pool.query(
+    "insert into ai_routers(id,organization_id,name,channel_session_id,is_active) values($1,$2,'Squad', $3,false)",
+    [router, f.org, f.channel],
+  );
+  await pool.query(
+    "insert into ai_router_members(organization_id,router_id,agent_id,intent_name,intent_description) values($1,$2,$3,'refin','Refinanciamento')",
+    [f.org, router, f.agent],
+  );
+  const resultado = (await pool.query(
+    "select * from fn_publish_ai_agent_version($1,$2,$3,true)",
+    [f.org, f.agent, f.version],
+  )).rows[0];
+  expect(resultado.version_id).toBe(f.version);
+  expect((await pool.query(
+    "select channel_session_id,status from ai_agent_versions where id=$1",
+    [f.version],
+  )).rows[0]).toMatchObject({ channel_session_id: null, status: "published" });
+  expect((await pool.query("select is_active from ai_routers where id=$1", [router])).rows[0].is_active)
+    .toBe(false);
+});
+
+it("não publica membro de roteador cujo canal está desconectado", async () => {
+  const f = await rascunhoSemNumero();
+  await pool.query("update channel_sessions set status='STOPPED' where id=$1", [f.channel]);
+  const router = randomUUID();
+  await pool.query(
+    "insert into ai_routers(id,organization_id,name,channel_session_id,is_active) values($1,$2,'Squad desligado',$3,false)",
+    [router, f.org, f.channel],
+  );
+  await pool.query(
+    "insert into ai_router_members(organization_id,router_id,agent_id,intent_name,intent_description) values($1,$2,$3,'port','Portabilidade')",
+    [f.org, router, f.agent],
+  );
+  await expect(pool.query(
+    "select * from fn_publish_ai_agent_version($1,$2,$3,true)",
+    [f.org, f.agent, f.version],
+  )).rejects.toThrow("channel_session_offline");
+});

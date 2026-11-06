@@ -7,8 +7,11 @@
  * já barra quem é menos que admin (`app/app/connections/page.tsx`). Não há
  * segunda leitura de papel aqui: seria uma fonte paralela do mesmo dado.
  *
- * A IA nunca responde em grupo — o texto do cabeçalho diz isso, para que ligar
- * um grupo não pareça "a IA vai atender aqui também".
+ * Duas chaves por grupo, e por isso o texto do cabeçalho diz as duas: a de
+ * CIMA é quem entra na inbox (e mexe no filtro do WhatsApp — por isso a
+ * confirmação de volume), a de BAIXO é só a IA passar a responder (#2729), e
+ * ela só existe em grupo já LIGADO — em grupo fora da fila não há mensagem
+ * nenhuma para a IA responder.
  *
  * Um número pode estar em 100+ grupos: a lista SEMPRE rola dentro do próprio
  * container (`overflow-y-auto` + `min-h-0 flex-1`), nunca a folha inteira —
@@ -35,6 +38,13 @@ interface Grupo {
   enabled: boolean;
   enabledAt: string | null;
   presente: boolean;
+  /**
+   * #2729 — a chave POR GRUPO "Permitir que a IA responda neste grupo".
+   * Opcional de propósito: um servidor que ainda não atualizou não manda a
+   * coluna, e "ausente" é a mesma coisa que desligada (a régua do servidor é
+   * `=== true`, falha fechada).
+   */
+  iaResponde?: boolean;
 }
 
 const AVISO_DE_VOLUME =
@@ -154,6 +164,34 @@ export function GruposSheet({
   }
 
   /**
+   * #2729 — a segunda chave, a da IA. Mesmo PUT da rota de grupos, mas o body
+   * traz `ia_responde` e NUNCA `enabled`: esta chave é preferência local, não
+   * mexe no filtro do WhatsApp (nenhuma confirmação de volume, nenhuma ida ao
+   * transporte). Recusa da rota (409 `grupo_desligado`, o grupo saiu da fila
+   * entre o GET e o clique) mantém a chave como estava e mostra o erro — o
+   * estado novo só entra no local depois do servidor confirmar.
+   */
+  async function alternarIa(g: Grupo, iaResponde: boolean) {
+    setSalvando(g.chatId);
+    setErro(null);
+    const res = await fetch(`/api/v1/channel-sessions/${channelId}/groups`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group_chat_id: g.chatId, subject: g.subject, ia_responde: iaResponde }),
+    });
+    setSalvando(null);
+    if (!res.ok) {
+      setErro(
+        res.status === 502
+          ? t("O WhatsApp não confirmou a mudança. Nada foi alterado; tente de novo.")
+          : t("Não foi possível salvar."),
+      );
+      return;
+    }
+    setGrupos((atual) => atual?.map((x) => (x.chatId === g.chatId ? { ...x, iaResponde } : x)) ?? null);
+  }
+
+  /**
    * Desliga todos os grupos ligados. Sempre recarrega a lista do GET no fim,
    * sucesso ou não — a mensagem de falha (se houver) é só ARMADA antes do
    * reload e aplicada DEPOIS, senão o `carregar()` do `finally` (que limpa
@@ -229,17 +267,17 @@ export function GruposSheet({
           <SheetTitle>{t("Grupos")}</SheetTitle>
           <SheetDescription>
             {t(
-              "Grupos ligados aparecem no chat para os atendentes responderem. A IA nunca responde em grupo.",
+              "Grupos ligados aparecem no chat para os atendentes responderem. A IA só responde em grupo quando você liberar a chave de cada grupo.",
             )}
           </SheetDescription>
         </SheetHeader>
 
         <div className="flex flex-col gap-2 pb-2 pt-3">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Button variant="outline" size="sm" onClick={() => void carregar()}>
               {t("Atualizar lista")}
             </Button>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {alvosParaLigar.length > 0 && (
                 <Button
                   variant="outline"
@@ -357,21 +395,42 @@ export function GruposSheet({
         <div className="min-h-0 flex-1 overflow-y-auto">
           <ul className="space-y-2">
             {filtrados.map((g) => (
-              <li key={g.chatId} className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <span className="text-sm">{g.subject ?? t("Grupo sem nome")}</span>
-                  {!g.presente && (
-                    <p className="text-xs text-muted-foreground">
-                      {t("O número saiu deste grupo. Desligue a chave se não precisar mais dela.")}
-                    </p>
-                  )}
+              <li key={g.chatId} className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <span className="text-sm">{g.subject ?? t("Grupo sem nome")}</span>
+                    {!g.presente && (
+                      <p className="text-xs text-muted-foreground">
+                        {t("O número saiu deste grupo. Desligue a chave se não precisar mais dela.")}
+                      </p>
+                    )}
+                  </div>
+                  <Switch
+                    aria-label={g.subject ?? t("Grupo sem nome")}
+                    checked={g.enabled}
+                    disabled={salvando === g.chatId || progresso !== null}
+                    onCheckedChange={(v) => alternar(g, v)}
+                  />
                 </div>
-                <Switch
-                  aria-label={g.subject ?? t("Grupo sem nome")}
-                  checked={g.enabled}
-                  disabled={salvando === g.chatId || progresso !== null}
-                  onCheckedChange={(v) => alternar(g, v)}
-                />
+                {/* #2729 — a segunda chave, a da IA, só em grupo LIGADO: fora
+                    da fila não há mensagem nossa na inbox, logo não há nada
+                    para a IA responder — uma chave que não liga nada seria
+                    mentira na tela (e o servidor recusa com 409
+                    `grupo_desligado`). O texto fica ao lado para as duas
+                    chaves da linha não parecerem uma só. */}
+                {g.enabled && (
+                  <div className="flex items-center gap-2 pl-1">
+                    <Switch
+                      aria-label={t("Permitir que a IA responda neste grupo")}
+                      checked={g.iaResponde === true}
+                      disabled={salvando === g.chatId || progresso !== null}
+                      onCheckedChange={(v) => void alternarIa(g, v)}
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      {t("Permitir que a IA responda neste grupo")}
+                    </span>
+                  </div>
+                )}
               </li>
             ))}
           </ul>

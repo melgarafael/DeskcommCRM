@@ -16,6 +16,8 @@ export interface ComparativoMatcher {
   // e um matcher sem `any_keywords` não pode derrubar o GET /skills e o SSR.
   any_keywords?: string[];
   probe_keywords?: string[];
+  // Ausente em skill anterior a `any_tags`: tolerado como lista vazia.
+  any_tags?: string[];
 }
 
 export interface ComparativoEntrada {
@@ -35,6 +37,10 @@ export interface ComparativoSkill {
    * duas vias (cópia × catálogo), sem a versão de origem.
    */
   any_removidas: string[];
+  /** Etiquetas de ativação (`any_tags`) que ENTRAM ao adotar. Mesma régua das palavras-chave. */
+  tags_adicionadas: string[];
+  /** Etiquetas de ativação (`any_tags`) que SAEM ao adotar. */
+  tags_removidas: string[];
   corpo_mudou: boolean;
   linhas_adicionadas: number;
   linhas_removidas: number;
@@ -109,8 +115,12 @@ export function compararSkill(org: ComparativoEntrada, catalogo: ComparativoEntr
   const descricao_mudou = org.description !== catalogo.description;
 
   const anyDiff = diffList(org.matcher.any_keywords ?? [], catalogo.matcher.any_keywords ?? []);
+  const tagsDiff = diffList(org.matcher.any_tags ?? [], catalogo.matcher.any_tags ?? []);
   const matcher_mudou =
-    anyDiff.adicionadas.length > 0 || anyDiff.removidas.length > 0;
+    anyDiff.adicionadas.length > 0 ||
+    anyDiff.removidas.length > 0 ||
+    tagsDiff.adicionadas.length > 0 ||
+    tagsDiff.removidas.length > 0;
 
   const linhas = diffLinhas(org.body, catalogo.body);
   const corpo_mudou = linhas.adicionadas > 0 || linhas.removidas > 0;
@@ -125,6 +135,8 @@ export function compararSkill(org: ComparativoEntrada, catalogo: ComparativoEntr
     matcher_mudou,
     any_adicionadas: anyDiff.adicionadas,
     any_removidas: anyDiff.removidas,
+    tags_adicionadas: tagsDiff.adicionadas,
+    tags_removidas: tagsDiff.removidas,
     corpo_mudou,
     linhas_adicionadas: linhas.adicionadas,
     linhas_removidas: linhas.removidas,

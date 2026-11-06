@@ -24,6 +24,18 @@ interface Props {
   initialState: SkillsState;
 }
 
+/**
+ * Os agentes que NÃO recebem a skill `nome` (skills por agente, 9107): os que
+ * escolheram as próprias skills e não a marcaram. Uma skill nova chega a todo
+ * agente que usa "todas", mas não a estes — e o aviso de instalação diz quais.
+ */
+export function agentesSemASkill(
+  nome: string,
+  agentes: SkillsState["agentes_com_lista_propria"],
+): string[] {
+  return agentes.filter((a) => !a.skill_names.includes(nome)).map((a) => a.name);
+}
+
 function formatDate(iso: string, idioma: string): string {
   return new Date(iso).toLocaleString(idioma, {
     day: "2-digit",
@@ -40,6 +52,7 @@ export function SkillsClient({ initialState }: Props) {
   const { data } = useSkills(initialState);
   const installed = data?.installed ?? [];
   const catalog = data?.catalog ?? [];
+  const agentesComListaPropria = data?.agentes_com_lista_propria ?? [];
   const canManage = usePermission("ai.skills.manage");
 
   const install = useInstallSkill();
@@ -53,7 +66,12 @@ export function SkillsClient({ initialState }: Props) {
     setPendingName(name);
     install.mutate(name, {
       onSuccess: () => {
-        toast.success(`Skill "${name}" ${t("instalada — já vale para os agentes desta organização.")}`);
+        const deFora = agentesSemASkill(name, agentesComListaPropria);
+        toast.success(
+          deFora.length === 0
+            ? `Skill "${name}" ${t("instalada — já vale para os agentes desta organização.")}`
+            : `Skill "${name}" ${t("instalada — vale para os agentes que usam todas as skills. Não chega a estes, que têm lista própria (marque na tela de cada um):")} ${deFora.join(", ")}`,
+        );
         setPendingName(null);
       },
       onError: (err) => {
@@ -194,6 +212,21 @@ export function SkillsClient({ initialState }: Props) {
                                       skill.comparativo.any_removidas.length > 0 && <span aria-hidden> </span>}
                                     {skill.comparativo.any_removidas.length > 0 && (
                                       <span className="text-destructive">−{skill.comparativo.any_removidas.join(", ")}</span>
+                                    )}
+                                  </span>
+                                )}
+                              {skill.comparativo.mudou_em.includes("matcher") &&
+                                (skill.comparativo.tags_adicionadas.length > 0 ||
+                                  skill.comparativo.tags_removidas.length > 0) && (
+                                  <span>
+                                    • {t("Etiquetas de ativação")}:{" "}
+                                    {skill.comparativo.tags_adicionadas.length > 0 && (
+                                      <span className="text-accent">+{skill.comparativo.tags_adicionadas.join(", ")}</span>
+                                    )}
+                                    {skill.comparativo.tags_adicionadas.length > 0 &&
+                                      skill.comparativo.tags_removidas.length > 0 && <span aria-hidden> </span>}
+                                    {skill.comparativo.tags_removidas.length > 0 && (
+                                      <span className="text-destructive">−{skill.comparativo.tags_removidas.join(", ")}</span>
                                     )}
                                   </span>
                                 )}

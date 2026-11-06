@@ -86,6 +86,28 @@ describe("compararSkill — o que mudou entre a cópia da org e a versão nova d
     expect(r.any_removidas).toEqual([]);
     expect(r.mudou_em).toEqual(["matcher"]);
   });
+
+  it("etiqueta de ativação (any_tags) nova no catálogo → matcher_mudou e tags_adicionadas", () => {
+    const r = compararSkill(
+      { description: "D", body: "X", matcher: { any_keywords: ["frete"] } },
+      { description: "D", body: "X", matcher: { any_keywords: ["frete"], any_tags: ["odonto"] } },
+    );
+    expect(r.tags_adicionadas).toEqual(["odonto"]);
+    expect(r.tags_removidas).toEqual([]);
+    expect(r.any_adicionadas).toEqual([]);
+    expect(r.matcher_mudou).toBe(true);
+    expect(r.mudou_em).toEqual(["matcher"]);
+  });
+
+  it("any_tags ausente nos dois lados segue sem diferença (tolerância a skill antiga)", () => {
+    const r = compararSkill(
+      { description: "D", body: "X", matcher: { any_keywords: ["frete"] } },
+      { description: "D", body: "X", matcher: { any_keywords: ["frete"] } },
+    );
+    expect(r.tags_adicionadas).toEqual([]);
+    expect(r.tags_removidas).toEqual([]);
+    expect(r.matcher_mudou).toBe(false);
+  });
 });
 
 describe("diffLinhas — LCS por linha do procedimento", () => {

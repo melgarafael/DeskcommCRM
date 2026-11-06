@@ -2,17 +2,15 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useT } from "@/hooks/i18n/useT";
+import { motivoDaFalhaDaMensagem } from "@/lib/inbox/motivo-da-falha";
 
 import { Button } from "@/components/ui/button";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
-import {
-  renderTemplatePreview,
-  type BlocoDaPrevia,
-  type PreviaDaMensagem,
-} from "@/lib/channels/meta/render-template";
+import { PreviaDoModelo } from "@/components/channels/PreviaDoModelo";
+import { renderTemplatePreview } from "@/lib/channels/meta/render-template";
 import { fonteDeTemplates, rotaDeTemplates } from "@/lib/channels/templates-fonte";
 import { lerConteudo } from "@/lib/channels/template-conteudo";
 import { cn } from "@/lib/utils";
@@ -126,181 +124,6 @@ interface ModeloAprovado {
  */
 function textoDoModelo(modelo: ModeloAprovado): string {
   return lerConteudo(modelo.components ?? []).body?.trim() || modelo.name;
-}
-
-/**
- * Um trecho do texto da prévia — com cada `{{n}}` SEM valor destacado.
- *
- * O placeholder não some quando o campo está vazio: ele é a metade visual do
- * contrato "campo vazio continua aparecendo como `{{n}}` destacado" (#2446).
- * Sumir com ele deixaria a prévia parecer pronta enquanto o envio seria recusado
- * por `missingSlots` — a mesma mentira que este painel já pagou em 21/09/2026.
- *
- * O chip é o MESMO desenho que a tela Conexões → Templates usa para marcar os
- * `{{n}}` do texto aprovado: o operador aprende a marca uma vez e a reconhece
- * nas duas telas.
- */
-function Trecho({ texto }: { texto: string }) {
-  const partes = texto.split(/(\{\{\w+\}\})/g);
-  return (
-    <>
-      {partes.map((parte, i) =>
-        /^\{\{\w+\}\}$/.test(parte) ? (
-          <span
-            key={i}
-            data-testid="parametro-em-falta"
-            className="rounded-md bg-primary/10 px-1 py-0.5 font-mono text-[11px] font-medium text-primary ring-1 ring-primary/20"
-          >
-            {parte}
-          </span>
-        ) : (
-          <span key={i}>{parte}</span>
-        ),
-      )}
-    </>
-  );
-}
-
-/** Mídia do cabeçalho, corpo e cabeçalho de UM bloco — o de cima ou o de um card. */
-function Bloco({ bloco, prefixo }: { bloco: BlocoDaPrevia; prefixo: string }) {
-  const t = useT();
-  return (
-    <>
-      {bloco.midia && (
-        <div data-testid={`${prefixo}midia`} className="min-w-0">
-          {bloco.midia.link ? (
-            bloco.midia.formato === "image" ? (
-              <img
-                src={bloco.midia.link}
-                alt={t("Prévia da mídia do cabeçalho")}
-                className="max-h-36 w-full rounded-md border border-amber-300/60 object-cover dark:border-amber-800/60"
-              />
-            ) : bloco.midia.formato === "video" ? (
-              <video
-                src={bloco.midia.link}
-                controls
-                preload="metadata"
-                className="max-h-36 w-full rounded-md border border-amber-300/60 dark:border-amber-800/60"
-              />
-            ) : (
-              <a
-                href={bloco.midia.link}
-                target="_blank"
-                rel="noreferrer"
-                className="block truncate rounded-md border border-input bg-background px-2 py-1 text-xs underline"
-              >
-                {bloco.midia.link}
-              </a>
-            )
-          ) : (
-            // Sem link não há o que desenhar. Dizer isso é melhor que um
-            // retângulo de imagem quebrada — e o campo acima é onde ele entra.
-            <p className="text-xs text-amber-900/70 dark:text-amber-200/70">
-              {t("Cole o link da mídia para ver a prévia aqui.")}
-            </p>
-          )}
-        </div>
-      )}
-
-      {bloco.cabecalho && (
-        <p
-          data-testid={`${prefixo}cabecalho`}
-          className="wrap-anywhere text-sm font-semibold text-amber-900 dark:text-amber-200"
-        >
-          <Trecho texto={bloco.cabecalho} />
-        </p>
-      )}
-
-      {bloco.corpo && (
-        <p
-          data-testid={`${prefixo}corpo`}
-          className="whitespace-pre-wrap wrap-anywhere text-sm leading-relaxed text-amber-900 dark:text-amber-200"
-        >
-          <Trecho texto={bloco.corpo} />
-        </p>
-      )}
-    </>
-  );
-}
-
-/** Os botões do bloco, na ordem da definição — é o cliente quem escolhe um deles. */
-function Botoes({ bloco, prefixo }: { bloco: BlocoDaPrevia; prefixo: string }) {
-  if (bloco.botoes.length === 0) return null;
-  return (
-    <div
-      data-testid={`${prefixo}botoes`}
-      className="flex flex-col gap-1 border-t border-amber-300/60 pt-1.5 dark:border-amber-800/60"
-    >
-      {bloco.botoes.map((botao, i) => (
-        <div
-          key={`${botao.tipo}:${i}`}
-          className="flex items-center justify-between gap-2 rounded-md border border-input bg-background px-2 py-1 text-xs"
-        >
-          <span className="font-medium">
-            <Trecho texto={botao.texto} />
-          </span>
-          {botao.url && (
-            <span className="min-w-0 truncate text-muted-foreground">
-              <Trecho texto={botao.url} />
-            </span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/**
- * A prévia da mensagem COMPLETA — cabeçalho, corpo, rodapé e botões.
- *
- * O atendente a olha ENQUANTO preenche: é ela que responde à pergunta "como vai
- * ficar para o cliente?", que antes só se respondia depois do envio, na bolha.
- *
- * Os textos vêm de `renderTemplatePreview`, que é o MESMO núcleo de
- * `renderTemplateBody` — a função que monta o texto do envio e que a cadeia
- * `before_send` avalia. Prévia e mensagem enviada, portanto, não têm como
- * divergir: não há duas rotinas de substituição para driftar.
- */
-function Previa({ previa }: { previa: PreviaDaMensagem }) {
-  const t = useT();
-  return (
-    <div
-      data-testid="previa-modelo"
-      role="group"
-      aria-label={t("Prévia da mensagem")}
-      className="mt-2 flex flex-col gap-1.5 rounded-md border border-amber-300/70 bg-background/60 p-2.5 dark:border-amber-800/70 dark:bg-black/25"
-    >
-      <span className="text-[10px] font-medium uppercase tracking-wide text-amber-900/70 dark:text-amber-200/70">
-        {t("Prévia da mensagem")}
-      </span>
-
-      <Bloco bloco={previa} prefixo="previa-" />
-
-      {previa.rodape && (
-        <p
-          data-testid="previa-rodape"
-          className="text-[11px] text-amber-900/70 dark:text-amber-200/70"
-        >
-          {previa.rodape}
-        </p>
-      )}
-
-      <Botoes bloco={previa} prefixo="previa-" />
-
-      {previa.cards.map((card) => (
-        <div
-          key={card.indice}
-          className="flex flex-col gap-1.5 rounded-md border border-dashed border-amber-300/70 p-1.5 dark:border-amber-800/70"
-        >
-          <span className="text-[10px] font-medium uppercase tracking-wide text-amber-900/70 dark:text-amber-200/70">
-            {t("Item do carrossel")} {card.indice + 1}
-          </span>
-          <Bloco bloco={card} prefixo={`previa-card-${card.indice}-`} />
-          <Botoes bloco={card} prefixo={`previa-card-${card.indice}-`} />
-        </div>
-      ))}
-    </div>
-  );
 }
 
 export function JanelaFechadaAviso({
@@ -422,7 +245,7 @@ export function JanelaFechadaAviso({
         onSuccess: (res) => {
           const enviada = res.data;
           if (enviada?.status === "failed") {
-            toast.error(enviada.error_message ?? t("Não consegui enviar o modelo."));
+            toast.error(t("Não consegui enviar o modelo."), { description: motivoDaFalhaDaMensagem(enviada, t) });
             return;
           }
           salvarNoModelo(modelo, enviados);
@@ -458,7 +281,9 @@ export function JanelaFechadaAviso({
             disabled={send.isPending}
             aria-label={t("Modelo aprovado")}
             className={cn(
-              "h-9 min-w-[16rem] flex-1 rounded-md border border-input bg-background px-2 text-sm",
+              // 16px e 44px no toque: o Safari do iPhone amplia a página ao
+              // focar campo com fonte menor (F2).
+              "h-11 min-w-[16rem] flex-1 rounded-md border border-input bg-background px-2 text-base md:text-sm lg:h-9",
               "focus:outline-hidden focus:ring-1 focus:ring-ring",
             )}
           >
@@ -487,7 +312,7 @@ export function JanelaFechadaAviso({
           mensagem vai ficar para o cliente, e os `{{n}}` destacados dizem o que
           ainda falta preencher — a pergunta que antes só se respondia depois do
           envio, na bolha da conversa (#2446). */}
-      {previa && <Previa previa={previa} />}
+      {previa && <PreviaDoModelo previa={previa} />}
 
       {slots.length > 0 && (
         <div className="mt-2 flex flex-col gap-2">
@@ -505,7 +330,7 @@ export function JanelaFechadaAviso({
                 disabled={send.isPending}
                 placeholder={ehMidia(slot) ? "https://…" : ""}
                 className={cn(
-                  "h-9 rounded-md border border-input bg-background px-2 text-sm",
+                  "h-11 rounded-md border border-input bg-background px-2 text-base md:text-sm lg:h-9",
                   "focus:outline-hidden focus:ring-1 focus:ring-ring",
                 )}
               />

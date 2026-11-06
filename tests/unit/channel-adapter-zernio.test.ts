@@ -29,6 +29,7 @@ vi.mock("@/lib/channels/zernio/credentials", () => ({
 }));
 
 import { zernioAdapter } from "@/lib/channels/adapters/zernio";
+import { deriveTemplateContract } from "@/lib/channels/meta/template-contract";
 
 const CREDS = {
   accountId: "6a3572a15f7d1751ab117832",
@@ -257,6 +258,20 @@ describe("send — mídia", () => {
     expect(corpo()).toMatchObject({ attachmentType: "audio", voiceNote: true });
   });
 
+  it("áudio com legenda NÃO manda message — a bolha de voz não leva legenda (#3266)", async () => {
+    respondeOk();
+    await zernioAdapter.send({
+      organizationId: ORG,
+      sessionRef: CREDS.accountId,
+      to: "5959",
+      providerConversationId: THREAD,
+      kind: "audio",
+      media: { ...media, mime: "audio/ogg", filename: "a.ogg", caption: "olha" },
+    });
+    expect(corpo()).toMatchObject({ attachmentType: "audio", voiceNote: true });
+    expect(corpo()).not.toHaveProperty("message");
+  });
+
   it("documento cai em file, não em image", async () => {
     respondeOk();
     await zernioAdapter.send({
@@ -307,6 +322,63 @@ describe("erros", () => {
         body: "x",
       }),
     ).rejects.toThrow(/zernio_send_failed/);
+  });
+});
+
+describe("sendTemplate — o contrato conferido decide onde cada valor vai", () => {
+  // docs.zernio.com/messages/create-inbox-conversation (15/10/2026): texto do
+  // cabeçalho + corpo + sufixo de link numa lista plana; imagem em headerMedia.
+  // Antes, só as chaves numéricas do corpo saíam: a imagem trocada e o valor do
+  // cabeçalho se perdiam sem aviso.
+  const contrato = deriveTemplateContract({
+    name: "oferta_cafeteira",
+    language: "pt_BR",
+    parameter_format: "POSITIONAL",
+    components: [
+      { type: "HEADER", format: "IMAGE" },
+      { type: "BODY", text: "Olá {{1}}, sua {{2}}" },
+      { type: "BUTTONS", buttons: [{ type: "URL", text: "Ver", url: "https://loja.exemplo.com.br/{{1}}" }] },
+    ] as never,
+  });
+
+  it("manda headerMedia e a lista na ordem do contrato", async () => {
+    respondeOk(201);
+    await zernioAdapter.sendTemplate!({
+      organizationId: ORG,
+      sessionRef: CREDS.accountId,
+      to: "5511900000710",
+      name: "oferta_cafeteira",
+      language: "pt_BR",
+      values: { "button0:1": "cafeteira", "2": "encomenda", "1": "Ana", "header:1": "https://cdn.x/p.jpg" },
+      contrato,
+    });
+    expect(ultimaChamada().url).toBe(`${CREDS.baseUrl}/v1/inbox/conversations`);
+    expect(corpo()).toMatchObject({
+      templateName: "oferta_cafeteira",
+      templateLanguage: "pt_BR",
+      templateParams: ["Ana", "encomenda", "cafeteira"],
+      headerMedia: { type: "image", link: "https://cdn.x/p.jpg" },
+    });
+  });
+
+  it("a recusa carrega o código da plataforma marcado — é ele que diz se a campanha para", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      json: async () => ({ error: "Template paused", code: "platform_api_error", platformError: { code: 132015 } }),
+    });
+    await expect(
+      zernioAdapter.sendTemplate!({
+        organizationId: ORG,
+        sessionRef: CREDS.accountId,
+        to: "5511900000710",
+        name: "oferta_cafeteira",
+        language: "pt_BR",
+        values: { "1": "Ana", "2": "x", "button0:1": "cafeteira" },
+        contrato,
+      }),
+    ).rejects.toThrow(/\[plataforma:132015\]/);
   });
 });
 

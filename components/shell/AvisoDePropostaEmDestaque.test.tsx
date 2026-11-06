@@ -208,6 +208,20 @@ describe("aviso de proposta em destaque", () => {
     expect(cartao()).toBeNull();
   });
 
+  it("no celular o cartão fica ACIMA da barra de abas, pela reserva do rodapé", async () => {
+    // `bottom-4` sozinho punha o cartão em cima do "Inbox"/"Mais" da barra de
+    // baixo. A reserva vem da mesma variável que a casca desconta
+    // (`lib/ui/rodape-ocupado.tsx`); acima de md não há barra e fica `bottom-4`.
+    caixa.data = abertos([ANTIGO]);
+    const { rerender } = render(<AvisoDePropostaEmDestaque />);
+    caixa.data = abertos([ANTIGO, NOVO]);
+    rerender(<AvisoDePropostaEmDestaque />);
+
+    const c = ((await screen.findByTestId("aviso-proposta-destaque")).getAttribute("class") ?? "").split(/\s+/);
+    expect(c).toContain("max-md:bottom-[calc(var(--rodape-ocupado,0px)+1rem)]");
+    expect(c).toContain("bottom-4");
+  });
+
   it("o cartão NÃO toca som próprio nem notifica o sistema — quem faz isso é o sino", async () => {
     // O som da organização e o push do celular vivem no `AlertsBell`
     // (`useSonsDaCentral`) e no `pushDoAvisoDaCentral`. Um sinal aqui tocaria

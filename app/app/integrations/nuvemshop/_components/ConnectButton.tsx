@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { connectNuvemshop } from "@/app/actions/integrations/connectNuvemshop";
 import { disconnectNuvemshop } from "@/app/actions/integrations/disconnectNuvemshop";
 import { useT } from "@/hooks/i18n/useT";
+import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 
 const CONNECT_ERRORS: Record<string, string> = {
   auth_required: "Faça login para conectar.",
@@ -32,6 +33,7 @@ export function ConnectButton({ disabled }: { disabled?: boolean }) {
           const res = await connectNuvemshop();
           // Server Action redirects on success — we only get a result on failure.
           if (res && !res.ok) {
+            if (res.error === "mfa_required") return irAoDesafioDeMfa();
             toast.error(t(CONNECT_ERRORS[res.error] ?? `Erro: ${res.error}`));
           }
         })
@@ -54,6 +56,8 @@ export function DisconnectButton() {
           const res = await disconnectNuvemshop();
           if (res.ok) {
             toast.success(t("Nuvemshop desconectada."));
+          } else if (res.error === "mfa_required") {
+            irAoDesafioDeMfa();
           } else {
             toast.error(t(DISCONNECT_ERRORS[res.error] ?? `Erro: ${res.error}`));
           }

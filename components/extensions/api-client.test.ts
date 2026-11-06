@@ -1,9 +1,39 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
+
 import { requestExtensionApi } from "./api-client";
+
+vi.mock("@/lib/auth/ir-ao-desafio-de-mfa", () => ({ irAoDesafioDeMfa: vi.fn() }));
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.mocked(irAoDesafioDeMfa).mockReset();
+});
+
+const resposta = (status: number, code: string) =>
+  new Response(JSON.stringify({ error: { code, message: "x" } }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+
+describe("recusa por falta do código", () => {
+  it("403 mfa_required leva ao desafio do código e devolve a recusa", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(resposta(403, "mfa_required")));
+
+    const result = await requestExtensionApi("/api/v1/extensions/install", { method: "POST" });
+
+    expect(irAoDesafioDeMfa).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ ok: false, status: 403, error: { code: "mfa_required" } });
+  });
+
+  it("CONTROLE: 403 forbidden não leva ao desafio", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(resposta(403, "forbidden")));
+
+    await requestExtensionApi("/api/v1/extensions/install", { method: "POST" });
+
+    expect(irAoDesafioDeMfa).not.toHaveBeenCalled();
+  });
 });
 
 describe("requestExtensionApi", () => {

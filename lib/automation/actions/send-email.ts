@@ -11,16 +11,34 @@
  *
  * ═══ O que ela faz ═══
  *
- *   1. resolve PARA QUEM (contato do negócio, responsável do negócio ou um
- *      endereço fixo escrito na tela);
+ *   1. resolve PARA QUEM (contato do negócio, responsável do negócio, uma
+ *      PESSOA DA EQUIPE ou um endereço fixo escrito na tela);
  *   2. renderiza assunto e corpo com as MESMAS variáveis do WhatsApp
  *      (`{{nome}}`, `{{primeiro_nome}}`, `{{lead.*}}` e os campos do funil
- *      como `{{destino}}`) — `renderTemplate` é o mesmo de sempre;
+ *      como `{{destino}}`) — `renderTemplate` é o mesmo de sempre —, mais a
+ *      variável `{{resumo}}`, que é desta ação: o resumo automático do negócio
+ *      (cliente, telefone, valor, pontuação e o atalho para o negócio —
+ *      nenhum texto livre da conversa, doc 176 A), montado no disparo pelo
+ *      MESMO carregador do `notify_team`;
  *   3. entrega o pedido pronto e registra o desfecho honesto: sucesso só com
  *      o resultado do provedor na mão, recusa de configuração/destinatário
  *      como `skipped`, e falha do transporte como `failed` com o CÓDIGO no
  *      `error` (é o que a aba Atividade traduz, ver `MOTIVO_DA_PARADA`) e a
  *      mensagem crua do provedor no `detail.error`, como detalhe técnico.
+ *
+ * ═══ O destinatário "membro da equipe" (#2642) ═══
+ *
+ * O recorte do mantenedor no PR #2834 tirou o e-mail do `notify_team` e o
+ * trouxe para cá: uma ação, um caminho de e-mail. O que ele acrescenta é um
+ * destinatário que é uma PESSOA (`user_organizations.user_id`), com o endereço
+ * lido do GoTrue — nunca digitado na regra.
+ *
+ * O VÍNCULO é conferido NO MOMENTO DO ENVIO, e não no save: a regra é salva
+ * uma vez e dispara para sempre, então uma pessoa removida da organização
+ * continuaria recebendo se a checagem morasse na tela. Era o defeito do #2794;
+ * aqui a consulta a `user_organizations` (`revoked_at is null`) vem ANTES do
+ * endereço, e a recusa é `skipped` com o motivo — não um envio para fora.
+ * Consulta que não voltou não é "não é membro": é `membro_indeterminado`.
  *
  * ═══ Por que as recusas são `skipped` e as do transporte são `failed` ═══
  *
@@ -34,11 +52,26 @@
  * O consentimento segue o gate FIXO de `guarda-do-contato.ts` (lê
  * `declined_at`, não a ausência de `granted_at` — ver o cabeçalho daquele
  * arquivo): sem isso, TODO contato que nunca perguntado não receberia nada.
+ *
+ * ═══ DE QUEM o e-mail sai (#3287, fatia 1) ═══
+ *
+ * O remetente é da ORG quando ela configurou nome de exibição e/ou "responder
+ * para" (`lib/email/remetente-da-organizacao.ts`), e da PLATAFORMA quando não.
+ * O ENDEREÇO do `From` NUNCA vem daqui: trocar o transporte é a fatia 2 desta
+ * mesma issue (o SMTP próprio da organização), e o e-mail de SISTEMA — convite,
+ * recuperação de senha, LGPD — segue intocado, com o remetente da plataforma.
  */
 import { registerAction } from "@/lib/automation/actions";
 import type { ActionCtx, ActionResultDetail } from "@/lib/automation/types";
+import { carregarResumoParaAEquipe } from "@/lib/automation/resumo-do-evento";
 import { renderTemplate } from "@/lib/automation/template";
+import {
+  remetenteDaOrganizacaoDeSettings,
+  SEM_REMETENTE_DA_ORGANIZACAO,
+  type RemetenteDaOrganizacao,
+} from "@/lib/email/remetente-da-organizacao";
 import { sendEmail, type EmailDeliveryError } from "@/lib/email/roteador";
+import { logger } from "@/lib/logger";
 import { checkRateLimit, peekRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 
 /**
@@ -72,8 +105,8 @@ async function postponeUntil(ctx: ActionCtx): Promise<string | null> {
   return new Date((Math.floor(Date.now() / janelaMs) + 1) * janelaMs).toISOString();
 }
 
-/** Quem recebe: o contato, o responsável do negócio ou um endereço gravado na regra. */
-type Destinatario = "contato" | "dono_do_lead" | "fixo";
+/** Quem recebe: o contato, o responsável do negócio, uma pessoa da equipe ou um endereço gravado na regra. */
+type Destinatario = "contato" | "dono_do_lead" | "membro_da_equipe" | "fixo";
 
 /**
  * Endereço com cara de endereço. NÃO é validação de entregabilidade — é o
@@ -109,8 +142,37 @@ async function resolverDestinatario(
   ctx: ActionCtx,
   destinatario: Destinatario,
   fixo: string,
+  membroId: string,
 ): Promise<DestinatarioResolvido> {
   if (destinatario === "fixo") return { ok: true, endereco: fixo };
+
+  if (destinatario === "membro_da_equipe") {
+    if (membroId === "") return { ok: false, motivo: "sem_membro" };
+    // O VÍNCULO, conferido AGORA (#2794). A regra é salva uma vez e dispara
+    // para sempre; revogar a pessoa não reescreve a regra, então a checagem
+    // tem de ser no envio. Mesmo filtro de `assign-owner.ts` e do extinto
+    // caminho de e-mail do `notify_team`: só membro ativo DESTA organização.
+    const { data: membro, error: erroDaConsulta } = await ctx.admin
+      .from("user_organizations")
+      .select("user_id")
+      .eq("organization_id", ctx.organizationId)
+      .eq("user_id", membroId)
+      .is("revoked_at", null)
+      .maybeSingle();
+    // Consulta que não voltou não é "não é membro": não envia, e diz que foi a
+    // consulta (frase de `membro_indeterminado`), não a configuração.
+    if (erroDaConsulta) return { ok: false, motivo: "membro_indeterminado" };
+    if (!membro) return { ok: false, motivo: "membro_fora_da_equipe" };
+    try {
+      const { data } = await ctx.admin.auth.admin.getUserById(membroId);
+      const email = emailValido(data?.user?.email);
+      return email ? { ok: true, endereco: email } : { ok: false, motivo: "membro_sem_email" };
+    } catch {
+      // Mesma tolerância do caminho do dono: o acesso da pessoa nunca derruba o
+      // envio inteiro — aqui ele só não tem endereço para mandar.
+      return { ok: false, motivo: "membro_sem_email" };
+    }
+  }
 
   if (destinatario === "dono_do_lead") {
     const lead = ctx.context.lead as { owner_user_id?: string | null } | undefined;
@@ -173,6 +235,44 @@ function codigoDaFalha(erro: EmailDeliveryError | undefined): string {
   }
 }
 
+/** Códigos de falha já registrados neste processo — sem isto, um banco fora do ar enche o log. */
+const avisosDeRemetenteRegistrados = new Set<string>();
+
+/**
+ * O REMETENTE com que este e-mail sai (#3287, fatia 1).
+ *
+ * Lê `organizations.settings` — a MESMA linha onde a marca da organização já
+ * vive — e devolve o nome de exibição e o "responder para" que ela configurou,
+ * quando configurou. Sem configuração, ou com a leitura falhando, devolve o
+ * vazio: o envio sai exatamente como sempre saiu.
+ *
+ * `ctx.admin` e não um cliente novo: a ação já recebe este client para as
+ * outras leituras (vínculo de equipe, resumo), e uma segunda conexão aqui
+ * esconderia de quem testa que este caminho também vai ao banco.
+ */
+async function remetenteDaAutomacao(ctx: ActionCtx): Promise<RemetenteDaOrganizacao> {
+  const { data, error } = await ctx.admin
+    .from("organizations")
+    .select("settings")
+    .eq("id", ctx.organizationId)
+    .maybeSingle();
+  if (error) {
+    // Recusa que NÃO derruba o envio: o e-mail sai como sempre saiu, e o motivo
+    // fica no log — mesma disciplina de `lib/branding/saida.ts`, onde a leitura
+    // da marca degrada em vez de trocar um problema de estética por um e-mail
+    // que não sai. Um aviso por código evita encher o log a cada disparo.
+    if (!avisosDeRemetenteRegistrados.has(error.code ?? "?")) {
+      avisosDeRemetenteRegistrados.add(error.code ?? "?");
+      logger.warn("remetente da automação: não deu para ler a organização; vale o remetente da plataforma", {
+        codigo: error.code,
+        detalhe: error.message,
+      });
+    }
+    return SEM_REMETENTE_DA_ORGANIZACAO;
+  }
+  return remetenteDaOrganizacaoDeSettings((data as { settings?: unknown } | null)?.settings ?? null);
+}
+
 function escaparHtml(texto: string): string {
   return texto
     .replace(/&/g, "&amp;")
@@ -202,33 +302,79 @@ function corpoParaTexto(corpo: string, formato: string): string {
   return corpo.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * O contexto das variáveis do envio: o do evento, mais `{{resumo}}`.
+ *
+ * ─── Por que só quando o modelo USA a variável ─────────────────────────────
+ *
+ * Montar o resumo custa duas consultas (`organizations`, `crm_lead_scores`).
+ * Fazer isso em TODO e-mail de automação seria pagar esse
+ * preço por um texto que a maioria dos modelos não usa — e a ação já tem o teto
+ * de envios como parte mais cara. O gatilho é o próprio modelo, e o teste de
+ * `{{resumo}}` cobre os dois lados (usa → resolvido; não usa → nenhuma leitura).
+ *
+ * Evento sem negócio devolve o contexto intacto: a marcação fica vazia, que é a
+ * verdade disponível (o mesmo critério de `resumo-para-a-equipe.ts` para linha
+ * sem conteúdo).
+ */
+async function contextoDoEnvio(
+  ctx: ActionCtx,
+  assunto: string,
+  corpo: string,
+): Promise<Record<string, unknown>> {
+  const usaResumo =
+    /\{\{\s*resumo\s*\}\}/.test(assunto) || /\{\{\s*resumo\s*\}\}/.test(corpo);
+  if (!usaResumo) return ctx.context;
+
+  const resumo = await carregarResumoParaAEquipe({
+    admin: ctx.admin,
+    organizationId: ctx.organizationId,
+    regra: ctx.ruleName,
+    contexto: ctx.context,
+  });
+  return resumo === null ? ctx.context : { ...ctx.context, resumo };
+}
+
 async function execute(
   ctx: ActionCtx,
   config: Record<string, unknown>,
 ): Promise<ActionResultDetail> {
   const bruto = config.destinatario;
   const destinatario: Destinatario | null =
-    bruto === "contato" || bruto === "dono_do_lead" || bruto === "fixo" ? bruto : null;
+    bruto === "contato" ||
+    bruto === "dono_do_lead" ||
+    bruto === "membro_da_equipe" ||
+    bruto === "fixo"
+      ? bruto
+      : null;
   const assunto = typeof config.assunto === "string" ? config.assunto.trim() : "";
   const corpo = typeof config.corpo === "string" ? config.corpo.trim() : "";
   const formato = config.formato === "html" ? "html" : "texto";
   const fixo = typeof config.email_fixo === "string" ? config.email_fixo.trim() : "";
+  const membroId = typeof config.membro_id === "string" ? config.membro_id.trim() : "";
 
   // Mesma recusa de `send-whatsapp.ts`: sem o essencial a regra não roda, e
   // dizer "failed silencioso" aqui deixaria quem opera procurando o transporte.
-  if (!destinatario || !assunto || !corpo || (destinatario === "fixo" && !fixo)) {
+  const semDestino =
+    !destinatario ||
+    !assunto ||
+    !corpo ||
+    (destinatario === "fixo" && !fixo) ||
+    (destinatario === "membro_da_equipe" && !membroId);
+  if (semDestino) {
     return { type: "send_email", status: "failed", error: "missing_config" };
   }
 
-  const para = await resolverDestinatario(ctx, destinatario, fixo);
+  const para = await resolverDestinatario(ctx, destinatario, fixo, membroId);
   if (!para.ok) {
     return { type: "send_email", status: "skipped", detail: { reason: para.motivo } };
   }
 
-  const assuntoPronto = renderTemplate(assunto, ctx.context);
-  const corpoPronto = renderTemplate(corpo, ctx.context);
+  const contexto = await contextoDoEnvio(ctx, assunto, corpo);
+  const assuntoPronto = renderTemplate(assunto, contexto);
+  const corpoPronto = renderTemplate(corpo, contexto);
   // No HTML, cada valor de fora (contato, negócio) entra como texto.
-  const corpoHtml = formato === "html" ? renderTemplate(corpo, ctx.context, escaparHtml) : corpoPronto;
+  const corpoHtml = formato === "html" ? renderTemplate(corpo, contexto, escaparHtml) : corpoPronto;
 
   // A consulta do `postponeUntil` é só o atalho; quem decide é esta contagem.
   // `skipped`, não `postponed`: o motor não reexecuta um evento por resultado
@@ -237,11 +383,24 @@ async function execute(
   if (!teto.allowed) {
     return { type: "send_email", status: "skipped", detail: { reason: "email_limite_atingido", destinatario } };
   }
+  // Depois do teto, de propósito: recusa por limite não paga a leitura do
+  // `settings` da organização. Quem não vai enviar não precisa saber o remetente.
+  const remetente = await remetenteDaAutomacao(ctx);
   const resultado = await sendEmail({
     to: para.endereco,
     subject: assuntoPronto,
     html: corpoParaHtml(corpoHtml, formato),
     text: corpoParaTexto(corpoPronto, formato),
+    // O remetente da ORGANIZAÇÃO (#3287, fatia 1): quando ela configurou um
+    // nome de exibição e/ou um "responder para", o e-mail da automação sai com
+    // eles. O ENDEREÇO do `From` continua sendo o da PLATAFORMA — quem entrega
+    // não muda nesta fatia (o SMTP próprio é a fatia 2). Sem configuração, as
+    // duas chaves ficam AUSENTES e o envio sai byte a byte como sempre saiu:
+    // `fromName: undefined` não é o mesmo que a chave ausente para quem monta o
+    // cabeçalho (o SMTP da plataforma usa o `fromName` DELE quando ninguém
+    // passa um).
+    ...(remetente.fromName ? { fromName: remetente.fromName } : {}),
+    ...(remetente.replyTo ? { replyTo: remetente.replyTo } : {}),
     // Mesma tag da cobrança, com o valor que diz de ONDE veio: no painel da
     // Resend dá para separar o envio de automação do convite de equipe.
     tags: [{ name: "origem", value: "automacao" }],

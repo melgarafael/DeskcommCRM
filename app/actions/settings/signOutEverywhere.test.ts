@@ -12,6 +12,7 @@ const m = vi.hoisted(() => ({
   signOut: vi.fn(),
   warn: vi.fn(),
   redirect: vi.fn(),
+  esquecer: vi.fn(),
   filtros: [] as Array<[string, unknown]>,
   resposta: { data: [] as unknown, error: null as { message: string } | null },
 }));
@@ -20,6 +21,7 @@ vi.mock("next/navigation", () => ({ redirect: m.redirect }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers({ "x-request-id": "req-1" }) }));
 vi.mock("@/lib/audit", () => ({ audit: m.audit, auditForOrganizations: m.auditForOrganizations }));
 vi.mock("@/lib/logger", () => ({ logger: { warn: m.warn } }));
+vi.mock("@/lib/auth/dispositivo-confiavel", () => ({ esquecerDispositivosConfiaveis: m.esquecer }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     auth: {
@@ -59,6 +61,9 @@ beforeEach(() => {
     return { error: null };
   });
   m.resposta = { data: [], error: null };
+  m.esquecer.mockImplementation(async () => {
+    ordem.push("esqueceu");
+  });
 });
 
 describe("signOutEverywhere", () => {
@@ -68,7 +73,8 @@ describe("signOutEverywhere", () => {
       error: null,
     };
     await signOutEverywhere();
-    expect(ordem).toEqual(["apagou", "signOut"]);
+    expect(ordem).toEqual(["apagou", "esqueceu", "signOut"]);
+    expect(m.esquecer).toHaveBeenCalledWith("u-ana");
     expect(m.filtros).toEqual([
       ["tabela", "push_subscriptions"],
       ["user_id", "u-ana"],
@@ -97,6 +103,14 @@ describe("signOutEverywhere", () => {
     expect(m.warn).toHaveBeenCalledWith("push_subscriptions_signout_global_failed", expect.anything());
     expect(m.signOut).toHaveBeenCalledWith({ scope: "global" });
     expect(m.audit).toHaveBeenCalledWith(expect.objectContaining({ action: "auth.logout" }));
+    expect(m.redirect).toHaveBeenCalledWith("/login");
+  });
+
+  it("falha ao esquecer os dispositivos confiáveis → registra e sai do mesmo jeito", async () => {
+    m.esquecer.mockRejectedValue(new Error("fora"));
+    await signOutEverywhere();
+    expect(m.warn).toHaveBeenCalledWith("dispositivos_confiaveis_signout_global_failed", expect.anything());
+    expect(m.signOut).toHaveBeenCalledWith({ scope: "global" });
     expect(m.redirect).toHaveBeenCalledWith("/login");
   });
 });

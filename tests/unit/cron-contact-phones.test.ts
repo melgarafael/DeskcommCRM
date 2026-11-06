@@ -26,6 +26,8 @@ let contatos: Record<string, unknown>[] = [];
 let sessao: Record<string, unknown> | null = null;
 let phoneResolvido: string | null = null;
 let lookupLanca = false;
+/** Os `emit_event` que a rota mandou (#3315) — o dublê do `rpc` os registra. */
+const emissoes: Record<string, unknown>[] = [];
 
 function chain(tabela: string, op: string, payload?: unknown): Record<string, unknown> {
   const filtros: [string, unknown][] = [];
@@ -70,6 +72,15 @@ vi.mock("@/lib/supabase/admin", () => ({
       select: () => chain(tabela, "select"),
       update: (payload: unknown) => chain(tabela, "update", payload),
     }),
+    // (#3315) o cron passou a emitir `contact.phone_added` quando a varredura
+    // preenche a ficha vazia: o dublê precisa do `rpc` — sem ele a rota estoura
+    // `admin.rpc is not a function` e o arquivo inteiro cai por um motivo que
+    // não tem nada a ver com o que ele vigia. A emissão em si é coberta em
+    // `tests/unit/contacts/telefone-ganho-no-cron.test.ts`.
+    rpc: async (nome: string, args: Record<string, unknown>) => {
+      if (nome === "emit_event") emissoes.push(args);
+      return { data: "evt-1", error: null };
+    },
   }),
 }));
 

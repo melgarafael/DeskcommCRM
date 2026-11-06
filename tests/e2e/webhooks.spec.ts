@@ -18,11 +18,15 @@
  * spec usa APP_URL absoluto em vez do baseURL do config.
  */
 import { execFileSync } from "node:child_process";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createClient } from "@supabase/supabase-js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { test, expect, type Page, type Locator } from "./helpers/test";
-import { carregarEnvLocal } from "../../scripts/lib/env-de-teste";
+import { carregarEnvLocal, credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
+import { resultadoParaRecibo } from "../../lib/automation/resultado-para-recibo";
+import { slugDeFunil } from "../../lib/pipelines/pipeline-editing";
 
 // Segue o dev server do harness (playwright.config webServer) — nunca hardcodar
 // porta: o config usa E2E_PORT (default 3001).
@@ -397,6 +401,146 @@ test.describe("webhooks & automações — fluxo completo", () => {
       } catch (cleanupErr) {
         console.error("[cleanup] falhou (não mascara o erro do teste):", cleanupErr);
       }
+    }
+  });
+});
+
+/** Receitas reais de banco/API/worker; só a falha técnica dos leitores é fixture.
+ * Bearers e payload pessoal sintético ficam fora de trace/vídeo/capturas. */
+const testSemGravacao = test.extend({ trace: "off", video: "off" });
+testSemGravacao.describe("#3267 — uma vez por contato e o mesmo recibo nos dois leitores", () => {
+  testSemGravacao.use({ actionTimeout: 15_000 });
+  testSemGravacao.setTimeout(180_000);
+
+  testSemGravacao("persiste a opção, executa uma tarefa por contato e isola o histórico MCP", async ({ page, request }) => {
+    const c = credenciaisSupabaseDeTeste();
+    const admin = createClient(c.url, c.serviceRole, { auth: { persistSession: false, autoRefreshToken: false } });
+    const base = JSON.parse(fs.readFileSync(CREDS_PATH, "utf8")) as { org_id: string; users: Record<string, { id: string }> };
+    const org = base.org_id, outroOrg = randomUUID(), pipeline = randomUUID(), stage = randomUUID();
+    const contatos = [randomUUID(), randomUUID()];
+    const nome = `Uma vez ${randomUUID().slice(0, 8)}`, titulo = `Lembrete ${nome}`;
+    let regra: string | undefined;
+    const tokens: string[] = [];
+    const leads: string[] = [];
+    const conferir = (r: { error: { message: string } | null }) => { if (r.error) throw new Error(r.error.message); };
+    // Mesmo formato/hash/scopes do seed canônico; token só em memória, nunca em artefato.
+    const emitirToken = async (organizationId: string) => {
+      const prefix = `dsk_e2eag_${randomBytes(3).toString("hex")}`;
+      const bearer = `${prefix}_${randomBytes(32).toString("base64url")}`;
+      const r = await admin.from("api_tokens").insert({ organization_id: organizationId,
+        created_by: base.users.manager!.id, name: nome, prefix,
+        token_hash: `\\x${createHash("sha256").update(bearer).digest("hex")}`,
+        scopes: ["mcp:read", "actor:ai_agent", "role:manager"],
+        expires_at: new Date(Date.now() + 3_600_000).toISOString() }).select("id").single();
+      conferir(r); tokens.push(r.data!.id); return bearer;
+    };
+    const lerMcp = async (bearer: string, ruleId?: string) => {
+      // fetch de Node: credencial não entra no trace de navegador/Playwright.
+      const r = await fetch(`${APP_URL}/api/mcp`, { method: "POST", headers: {
+        "content-type": "application/json", accept: "application/json, text/event-stream", authorization: `Bearer ${bearer}`,
+      }, body: JSON.stringify({ jsonrpc: "2.0", id: 3267, method: "tools/call",
+        params: { name: "crm_list_automation_runs", arguments: { limit: 100, ...(ruleId ? { rule_id: ruleId } : {}) } } }) });
+      expect(r.ok).toBe(true);
+      const texto = await r.text();
+      const linha = texto.split("\n").find((l) => l.startsWith("data:"));
+      const body = JSON.parse(linha ? linha.slice(5).trim() : texto);
+      expect(body.error).toBeUndefined();
+      return body.result as { isError?: boolean; content: Array<{ text: string }> };
+    };
+    try {
+      conferir(await admin.from("organizations").insert({ id: outroOrg, slug: `uma-vez-${outroOrg}`, legal_name: "Empresa sintética B", display_name: "Empresa sintética B" }));
+      conferir(await admin.from("crm_pipelines").insert({ id: pipeline, organization_id: org, name: nome, slug: slugDeFunil(nome) }));
+      conferir(await admin.from("crm_stages").insert({ id: stage, organization_id: org, pipeline_id: pipeline, name: "Entrada", slug: "entrada", position: 1 }));
+      conferir(await admin.from("contacts").insert(contatos.map((id, i) => ({ id, organization_id: org, name: `Contato sintético ${i}` }))));
+      await login(page, creds.users.manager!.email);
+      const criada = await page.request.post(`${APP_URL}/api/v1/automation-rules`, { data: {
+        name: nome, trigger_event: "lead.created", trigger_config: {},
+        conditions: [{ field: "lead.pipeline_id", op: "eq", value: pipeline }],
+        actions: [{ type: "create_task", config: { titulo, vence_em_dias: 1, prioridade: "medium", atribuir_a: { usuario_id: base.users.manager!.id } } }],
+      } });
+      expect(criada.ok()).toBe(true); regra = (await criada.json()).data.id;
+      await page.goto(`${APP_URL}/app/webhooks`);
+      await page.getByRole("tab", { name: "Automações", exact: true }).click();
+      const card = cardOf(page.getByText(nome, { exact: true }));
+      await card.getByRole("button", { name: "Editar automação" }).click();
+      const editor = page.getByRole("dialog");
+      const opcao = editor.getByRole("checkbox", { name: "Rodar no máximo uma vez por contato" });
+      await expect(opcao).not.toBeChecked();
+      await opcao.check();
+      await Promise.all([page.waitForResponse((r) => r.url().endsWith(`/automation-rules/${regra}`) && r.request().method() === "PATCH"),
+        editor.getByRole("button", { name: "Salvar alterações" }).click()]);
+      await expect(editor).not.toBeVisible();
+      // O switch marca antes da rede: só a resposta confirma a persistência.
+      const ativacao = page.waitForResponse((r) =>
+        new URL(r.url()).pathname === `/api/v1/automation-rules/${regra}` &&
+        r.request().method() === "PATCH" && r.request().postDataJSON()?.is_active === true);
+      await card.getByRole("switch", { name: `Ligar ${nome}` }).click();
+      const respostaAtivacao = await ativacao;
+      expect(respostaAtivacao.status()).toBe(200);
+      expect(await respostaAtivacao.json()).toMatchObject({ data: { is_active: true } });
+      await expect(card.getByRole("switch")).toBeChecked();
+      const salva = await admin.from("automation_rules").select("trigger_config,is_active").eq("id", regra!).single();
+      conferir(salva); expect(salva.data).toMatchObject({ trigger_config: { uma_vez_por_contato: true }, is_active: true });
+      // Dois leads distintos do MESMO contato: duas emissões reais de lead.created.
+      const criarLead = async (contactId: string) => {
+        const r = await page.request.post(`${APP_URL}/api/v1/leads`, { data: { pipeline_id: pipeline, stage_id: stage,
+          contact_id: contactId, title: `${nome} ${randomUUID().slice(0, 8)}` } });
+        expect(r.ok()).toBe(true); leads.push((await r.json()).data.id);
+      };
+      await Promise.all([criarLead(contatos[0]!), criarLead(contatos[0]!)]);
+      const drenar = async () => {
+        const r = await request.post(`${APP_URL}/api/v1/cron/event-log-drain`, { headers: { Authorization: `Bearer ${loadInternalSecret()}` }, timeout: 60_000 });
+        expect(r.ok()).toBe(true);
+      };
+      await Promise.all([drenar(), drenar()]);
+      await expect.poll(async () => {
+        const r = await admin.from("automation_rule_runs").select("id").eq("rule_id", regra!).eq("organization_id", org);
+        conferir(r); return r.data?.length;
+      }, { timeout: 45_000 }).toBe(2);
+      const runs = await admin.from("automation_rule_runs").select("id,actions_result,contact_id").eq("rule_id", regra!).eq("organization_id", org);
+      conferir(runs);
+      expect(runs.data!.every((r) => r.contact_id === contatos[0])).toBe(true);
+      const acoes = runs.data!.flatMap((r) => r.actions_result);
+      expect(acoes.filter((a: { status: string }) => a.status === "success")).toHaveLength(1);
+      expect(acoes.filter((a: { status: string; error?: string }) => a.status === "skipped" && a.error === "uma_vez_por_contato")).toHaveLength(1);
+      const tarefas = () => admin.from("crm_tasks").select("id").eq("organization_id", org).eq("title", titulo);
+      expect((await tarefas()).data).toHaveLength(1);
+      await criarLead(contatos[1]!); await drenar();
+      await expect.poll(async () => (await tarefas()).data?.length, { timeout: 45_000 }).toBe(2);
+
+      // Fixture declarada: o serializador real recebe erro pessoal sintético;
+      // os leitores reais recebem APENAS o recibo técnico persistido.
+      const pessoal = "Pessoa sintética recibo3267@example.test +5511999032670";
+      const recibo = resultadoParaRecibo({ type: "call_webhook", status: "failed", error: pessoal,
+        detail: { error_code: "ECONNRESET", error_type: "TypeError", error: pessoal } });
+      const fixture = await admin.from("automation_rule_runs").insert({ organization_id: org, rule_id: regra!, status: "failed", actions_result: [recibo] }).select("id").single();
+      conferir(fixture);
+      const tokenA = await emitirToken(org), tokenB = await emitirToken(outroOrg);
+      const leitura = await lerMcp(tokenA, regra);
+      expect(leitura.isError).not.toBe(true);
+      const execucoes = JSON.parse(leitura.content[0]!.text).execucoes as Array<{ id: string; falhas: unknown }>;
+      expect(execucoes).toEqual(expect.arrayContaining(runs.data!.map((r) => expect.objectContaining({ id: r.id }))));
+      expect(execucoes.find((r) => r.id === fixture.data!.id)?.falhas).toEqual([{ acao: "call_webhook", erro: "ECONNRESET" }]);
+      expect(JSON.stringify(leitura)).not.toContain(pessoal);
+      const listaB = await lerMcp(tokenB);
+      expect(listaB.isError).not.toBe(true);
+      expect(JSON.parse(listaB.content[0]!.text).execucoes).toEqual([]);
+      expect((await lerMcp(tokenB, regra)).isError).toBe(true);
+      await page.getByRole("tab", { name: "Atividade", exact: true }).click();
+      await expect(page.getByText("Detalhe técnico: TypeError · ECONNRESET", { exact: false })).toBeVisible();
+      await expect(page.getByText(/este contato já passou por ela/)).toBeVisible();
+      await expect(page.locator("body")).not.toContainText(pessoal);
+      fs.mkdirSync(path.join("evidence", "automacoes-3267-01a178b3"), { recursive: true });
+      await page.screenshot({ path: path.join("evidence", "automacoes-3267-01a178b3", "atividade-e-causa-tecnica.png") });
+    } finally {
+      if (regra) await admin.from("automation_rules").delete().eq("organization_id", org).eq("id", regra);
+      await admin.from("crm_tasks").delete().eq("organization_id", org).eq("title", titulo);
+      if (leads.length) await admin.from("crm_leads").delete().eq("organization_id", org).in("id", leads);
+      await admin.from("contacts").delete().eq("organization_id", org).in("id", contatos);
+      await admin.from("crm_stages").delete().eq("organization_id", org).eq("pipeline_id", pipeline);
+      await admin.from("crm_pipelines").delete().eq("organization_id", org).eq("id", pipeline);
+      if (tokens.length) await admin.from("api_tokens").delete().in("id", tokens);
+      await admin.from("organizations").delete().eq("id", outroOrg);
     }
   });
 });

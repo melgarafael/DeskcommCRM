@@ -180,10 +180,15 @@ async function settingsDaOrganizacao(organizationId: string): Promise<unknown> {
  * `lib/event-log/register-handlers.ts:12` é importado só por
  * `app/api/v1/cron/event-log-drain/route.ts:21`; `Dockerfile.worker` roda
  * `workers/agent-worker/main.ts`, que não importa e-mail nenhum).
+ *
+ * `semMemo` é só de quem envia: a fachada mantém seu memo de leitura.
  */
-export async function marcaDaSaida(organizationId: string | null): Promise<MarcaDeSaida> {
+export async function marcaDaSaida(
+  organizationId: string | null,
+  opcoes: { semMemo?: boolean } = {},
+): Promise<MarcaDeSaida> {
   try {
-    const linha = await marcaDaInstalacao();
+    const linha = await marcaDaInstalacao({ semMemo: opcoes.semMemo });
     const marca =
       organizationId === null
         ? resolverMarca([camadaDaInstalacao(linha), camadaDoAmbiente(env)], REGUA_DO_PRODUTO)

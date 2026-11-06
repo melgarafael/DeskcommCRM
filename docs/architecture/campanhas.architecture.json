@@ -39,7 +39,7 @@
       "lane": "tela",
       "col": 1,
       "type": "ui",
-      "label": "Nova campanha (/app/campaigns/new) — público, texto, ritmo"
+      "label": "Nova campanha (/app/campaigns/new) — público, texto ou modelo aprovado (número oficial), ritmo"
     },
     {
       "id": "detalhe",
@@ -102,7 +102,7 @@
       "lane": "motor",
       "col": 1,
       "type": "worker",
-      "label": "cron campaign-worker → rodada.ts: 1 mensagem por número por tique"
+      "label": "cron campaign-worker → rodada.ts: 1 mensagem por número por tique (gradual) ou rajada (rápida)"
     },
     {
       "id": "ritmo",
@@ -194,6 +194,41 @@
       "col": 3,
       "type": "logic",
       "label": "trg_redigir_campanhas_anonimizado + export-collector — apaga e entrega"
+    },
+    {
+      "id": "rota-modelos",
+      "lane": "api",
+      "col": 5,
+      "type": "service",
+      "label": "GET /api/v1/campaigns/modelos — o modo do número e os modelos DESTA conexão, com as variáveis (0710)"
+    },
+    {
+      "id": "modelo-da-campanha",
+      "lane": "motor",
+      "col": 4,
+      "type": "service",
+      "label": "lib/campanhas/modelo.ts — de onde sai cada variável; valores resolvidos por contato na preparação"
+    },
+    {
+      "id": "espelho-de-modelos",
+      "lane": "dados",
+      "col": 4,
+      "type": "database",
+      "label": "meta_templates — o espelho dos modelos aprovados, lido pela conexão (linhaDoEspelho / modelosDaConexao)"
+    },
+    {
+      "id": "erro-da-plataforma",
+      "lane": "retorno",
+      "col": 4,
+      "type": "service",
+      "label": "lib/channels/erro-da-plataforma.ts — falha da pessoa (segue) × do envio inteiro (pausa a campanha com o motivo)"
+    },
+    {
+      "id": "rajada",
+      "lane": "motor",
+      "col": 3,
+      "type": "logic",
+      "label": "rajada.ts — envio rápido (0711): 6 inícios/s, 4 em voo, até 38 s por rodada; para no 1º desfecho que vale para todos"
     }
   ],
   "edges": [
@@ -226,6 +261,16 @@
     { "id": "lgpd-apaga", "from": "lgpd", "to": "campaign-recipients", "label": "anonimizar apaga telefone e texto; o export entrega" },
     { "id": "detalhe-le-metricas", "from": "detalhe", "to": "rota-metricas", "label": "funil, progresso e quem ficou de fora" },
     { "id": "metricas-le-destinatarios", "from": "rota-metricas", "to": "campaign-recipients", "label": "contagem por carimbo, não por status" },
-    { "id": "antiban-edita-knobs", "from": "antiban", "to": "channel-knobs", "label": "o operador ajusta o ritmo do número aqui" }
+    { "id": "antiban-edita-knobs", "from": "antiban", "to": "channel-knobs", "label": "o operador ajusta o ritmo do número aqui" },
+    { "id": "nova-lista-modelos", "from": "nova", "to": "rota-modelos", "label": "número oficial: quais modelos aprovados e de onde sai cada variável" },
+    { "id": "rota-modelos-le-espelho", "from": "rota-modelos", "to": "espelho-de-modelos", "label": "modelos da conexão" },
+    { "id": "preparacao-resolve-modelo", "from": "preparacao", "to": "modelo-da-campanha", "label": "valores de cada contato congelados em variables.modelo" },
+    { "id": "modelo-confere-espelho", "from": "modelo-da-campanha", "to": "espelho-de-modelos", "label": "aprovado neste número? toda variável tem origem?" },
+    { "id": "rodada-manda-modelo", "from": "rodada", "to": "send-handler", "label": "type=template com os valores congelados; corpo = texto do modelo preenchido (o agente lê)" },
+    { "id": "falha-classificada", "from": "erro-da-plataforma", "to": "rodada", "label": "modelo pausado / número restringido / pagamento → campanha pausa com o motivo" },
+    { "id": "rodada-usa-rajada", "from": "rodada", "to": "rajada", "label": "campaigns.velocidade = rapida: o envio de sempre repetido em lotes no prazo da rodada" },
+    { "id": "rajada-le-fila", "from": "rajada", "to": "campaign-recipients", "label": "lotes de pendentes; reserva em compare-and-set, ninguém duas vezes" },
+    { "id": "limite-volta-para-fila", "from": "erro-da-plataforma", "to": "rajada", "label": "429 do provedor / 130429: a pessoa volta para a fila e a rajada para" },
+    { "id": "detalhe-escolhe-velocidade", "from": "detalhe", "to": "campaigns", "label": "ritmo: Gradual ou Rápido (só número oficial)" }
   ]
 }

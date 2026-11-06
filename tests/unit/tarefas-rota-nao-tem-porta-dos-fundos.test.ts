@@ -23,6 +23,14 @@
  * vocabulário de um nicho, e uma segunda verdade ao lado de
  * `calendar_appointments` (migration 0177). O caso `só toca crm_tasks` prende
  * as duas ausências de uma vez: qualquer volta a `crm_leads` reprova.
+ *
+ * ─── O QUE MUDOU NA #3715 ──────────────────────────────────────────────────
+ *
+ * A timeline do negócio deixou de ser gravada pelo emissor do Supabase: a rota
+ * passa a porta de `lib/db` para `registraAtividadeDaTarefa`, e a linha vai por
+ * SQL. O instrumento deste arquivo passou a ser um `Db` que ANOTA o SQL e os
+ * parâmetros — o INSERT em `crm_lead_activities` continua sendo o que se mede,
+ * só que agora pelo texto da instrução, e não por uma chamada de SDK.
  */
 import { NextRequest } from "next/server";
 import { describe, expect, it, vi, beforeEach } from "vitest";
@@ -31,15 +39,16 @@ import { fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
 import { ROLE_RANK, type AuthUser, type Role } from "@/lib/auth/types";
-import { emitLeadActivity } from "@/lib/leads/activity-emitter";
+import { portaDaAplicacao, type Db } from "@/lib/db";
 import { createClient } from "@/lib/supabase/server";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
-vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
-vi.mock("@/lib/leads/activity-emitter", () => ({
-  emitLeadActivity: vi.fn(async () => ({ ok: true })),
+vi.mock("@/lib/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/db")>()),
+  portaDaAplicacao: vi.fn(),
 }));
+vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 const OUTRA_ORG = "33333333-3333-4333-8333-333333333333";
@@ -68,6 +77,9 @@ interface Resposta {
   data?: unknown;
   error?: { code?: string; message: string } | null;
 }
+
+/** Colunas do INSERT de `crm_lead_activities`, na ordem em que `atividade.ts` as vincula. */
+const COLUNA = { organization_id: 0, lead_id: 1, type: 3, reason: 9 } as const;
 
 /**
  * Dublê do PostgREST que ANOTA o que foi tocado.
@@ -101,7 +113,26 @@ function fazerSupabase(respostas: Resposta[]) {
     return elo;
   };
   vi.mocked(createClient).mockResolvedValue({ from } as never);
-  return { tabelas, filtros };
+
+  // A PORTA: registra SQL e parâmetros; as consultas deste arquivo (régua de
+  // demanda e INSERT da timeline) não precisam devolver linha.
+  const consultas: Array<{ sql: string; parametros: readonly unknown[] }> = [];
+  const porta: Db = {
+    async query(sql, parametros = []) {
+      consultas.push({ sql, parametros });
+      return [];
+    },
+    async queryOne(sql, parametros = []) {
+      consultas.push({ sql, parametros });
+      return null;
+    },
+  };
+  vi.mocked(portaDaAplicacao).mockReturnValue(porta);
+
+  const atividades = () =>
+    consultas.filter((c) => c.sql.includes("insert into crm_lead_activities"));
+
+  return { tabelas, filtros, consultas, atividades };
 }
 
 const LINHA = {
@@ -159,6 +190,50 @@ describe("GET /api/v1/tasks", () => {
     expect(res.status).toBe(500);
     expect(espiao.tabelas).toEqual(["crm_tasks"]);
   });
+
+  it('"minhas" filtra pelo id da SESSÃO', async () => {
+    const espiao = fazerSupabase([{ data: [LINHA] }]);
+    const { GET } = await import("@/app/api/v1/tasks/route");
+
+    const res = await GET(new NextRequest("http://x/api/v1/tasks?assigned_to=me"));
+
+    expect(res.status).toBe(200);
+    expect(espiao.filtros).toContainEqual(["assigned_to", ANA]);
+  });
+
+  it("o id de um membro só ESTREITA a lista da org da sessão — nunca abre outra", async () => {
+    // O #3254 aceitava só `me`. O filtro por responsável (#3280) passou a aceitar
+    // o id de um colega: ele só estreita uma lista que viewer+ já vê inteira, e a
+    // organização continua saindo da sessão. Se o `.eq(organization_id)` sair,
+    // este caso reprova.
+    const espiao = fazerSupabase([{ data: [LINHA] }]);
+    const { GET } = await import("@/app/api/v1/tasks/route");
+
+    const res = await GET(new NextRequest(`http://x/api/v1/tasks?assigned_to=${LEAD}`));
+
+    expect(res.status).toBe(200);
+    expect(espiao.filtros).toContainEqual(["assigned_to", LEAD]);
+    expect(espiao.filtros).toContainEqual(["organization_id", ORG]);
+  });
+
+  it("assigned_to que não é `me`, `ninguem` nem um id é 422 — e não toca o banco", async () => {
+    const espiao = fazerSupabase([{ data: [LINHA] }]);
+    const { GET } = await import("@/app/api/v1/tasks/route");
+
+    const res = await GET(new NextRequest("http://x/api/v1/tasks?assigned_to=mariana"));
+
+    expect(res.status).toBe(422);
+    expect(espiao.tabelas).toEqual([]);
+  });
+
+  it("sem o parâmetro, não filtra por responsável", async () => {
+    const espiao = fazerSupabase([{ data: [LINHA] }]);
+    const { GET } = await import("@/app/api/v1/tasks/route");
+
+    await GET(new NextRequest("http://x/api/v1/tasks"));
+
+    expect(espiao.filtros.map(([coluna]) => coluna)).not.toContain("assigned_to");
+  });
 });
 
 describe("POST /api/v1/tasks", () => {
@@ -188,24 +263,27 @@ describe("POST /api/v1/tasks", () => {
   });
 
   it("tarefa presa a um negócio deixa linha na timeline dele", async () => {
-    fazerSupabase([{ data: { ...LINHA, lead_id: LEAD } }]);
+    const espiao = fazerSupabase([{ data: { ...LINHA, lead_id: LEAD } }]);
     const { POST } = await import("@/app/api/v1/tasks/route");
 
     await POST(pedido({ title: "Ligar de volta", lead_id: LEAD }));
 
-    expect(vi.mocked(emitLeadActivity)).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ leadId: LEAD, type: "task_created" }),
-    );
+    const atividades = espiao.atividades();
+    expect(atividades).toHaveLength(1);
+    expect(atividades[0]!.parametros[COLUNA.lead_id]).toBe(LEAD);
+    expect(atividades[0]!.parametros[COLUNA.type]).toBe("task_created");
+    // A linha nasce na organização da SESSÃO — o mesmo tenant da tarefa.
+    expect(atividades[0]!.parametros[COLUNA.organization_id]).toBe(ORG);
+    expect(atividades[0]!.parametros[COLUNA.reason]).toBe("Ligar de volta");
   });
 
   it("tarefa SOLTA não inventa timeline — lead_id é not null lá", async () => {
-    fazerSupabase([{ data: LINHA }]);
+    const espiao = fazerSupabase([{ data: LINHA }]);
     const { POST } = await import("@/app/api/v1/tasks/route");
 
     await POST(pedido({ title: "Revisar os textos do agente" }));
 
-    expect(vi.mocked(emitLeadActivity)).not.toHaveBeenCalled();
+    expect(espiao.atividades()).toEqual([]);
   });
 
   it("título vazio é recusado com 422, não gravado como espaço", async () => {
@@ -241,7 +319,7 @@ describe("PATCH e DELETE /api/v1/tasks/[id]", () => {
 
   it("concluir uma tarefa aberta deixa UMA linha de conclusão na timeline", async () => {
     // 1ª resposta: o status ANTES. 2ª: a linha depois do update.
-    fazerSupabase([
+    const espiao = fazerSupabase([
       { data: { status: "pending" } },
       { data: { ...LINHA, lead_id: LEAD, status: "done" } },
     ]);
@@ -250,18 +328,15 @@ describe("PATCH e DELETE /api/v1/tasks/[id]", () => {
     const res = await PATCH(patch({ status: "done" }), ctx);
 
     expect(res.status).toBe(200);
-    expect(vi.mocked(emitLeadActivity)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(emitLeadActivity)).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ type: "task_completed" }),
-    );
+    expect(espiao.atividades()).toHaveLength(1);
+    expect(espiao.atividades()[0]!.parametros[COLUNA.type]).toBe("task_completed");
   });
 
   it("salvar de novo uma tarefa JÁ concluída não repete a linha", async () => {
     // Sem a leitura do estado anterior, cada PATCH numa tarefa fechada escreveria
     // "concluída" outra vez — e a timeline passaria a contar um fato que não
     // aconteceu.
-    fazerSupabase([
+    const espiao = fazerSupabase([
       { data: { status: "done" } },
       { data: { ...LINHA, lead_id: LEAD, status: "done" } },
     ]);
@@ -269,7 +344,7 @@ describe("PATCH e DELETE /api/v1/tasks/[id]", () => {
 
     await PATCH(patch({ status: "done" }), ctx);
 
-    expect(vi.mocked(emitLeadActivity)).not.toHaveBeenCalled();
+    expect(espiao.atividades()).toEqual([]);
   });
 
   it("PATCH vazio é 422 — a tela não pode dizer 'salvo' sobre nada", async () => {
@@ -297,7 +372,7 @@ describe("PATCH e DELETE /api/v1/tasks/[id]", () => {
 
 // Este teste isola o handler; autoridade de suporte é exercitada na suíte própria.
 vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@/lib/impersonate/support")>(),
+  ...(await importOriginal<typeof import("@/lib/impersonate/support")>()),
   requireSupportWrite: vi.fn(async () => null),
   authenticatedSessionId: vi.fn(async () => "f2200000-0000-4000-8000-000000000099"),
 }));

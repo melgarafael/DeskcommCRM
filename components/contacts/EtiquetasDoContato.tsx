@@ -1,6 +1,7 @@
 "use client";
 /**
- * AS ETIQUETAS DA FICHA DO CONTATO — seletor com autocompletar (issue #2732).
+ * AS ETIQUETAS DA FICHA DO CONTATO — seletor com autocompletar (issue #2732) e
+ * com a cor do vocabulário da organização (issue #3235).
  *
  * ─── Por que o campo virou seletor ──────────────────────────────────────────
  *
@@ -27,6 +28,56 @@
  * aqui deixaria o campo com duas regras e deixaria a variante entrar pelo
  * `ContactTagsEditor` do inbox.
  *
+ * ─── A COR: lida do contexto, ESCRITA por prop (issue #3235) ────────────────
+ *
+ * A ficha era o único editor de `contacts.tags` que ficou fora da cor que a
+ * #2718 trouxe ao Inbox: as sugestões saíam todas no mesmo cinza tracejado, a
+ * etiqueta nova nascia sem tom e a que já estava no contato não tinha por onde
+ * ser repintada. Mandar quem opera sair da ficha, achar a etiqueta em
+ * Configurações → Tags e voltar é o caminho que faz a etiqueta nascer sem cor —
+ * e cor que não se vê de relance na tela onde o contato é classificado não serve
+ * para nada.
+ *
+ * A LEITURA vem do MESMO lugar que já pinta o `ChipDeEtiqueta`
+ * (`useCoresDasEtiquetas`): é um contexto que degrada para o mapa vazio, não uma
+ * consulta — fora do provider o chip sai cinza, que é o estado de quem nunca
+ * escolheu cor. Nada aqui pergunta por etiqueta nem toca em rede.
+ *
+ * E a SUGESTÃO é o próprio `ChipDeEtiqueta`, com papel de botão e Enter/Espaço:
+ * o produto tem um caminho único de pintura — a régua mora em
+ * `lib/tags/cor-da-etiqueta` e só o chip a importa —, então pintar um botão por
+ * fora seria a segunda cópia da regra que a cerca existe para impedir. O
+ * tracejado segue dizendo "esta ainda não está no contato".
+ *
+ * A ESCRITA chega por `onDefinirCor`, e AUSENTE é o padrão: quem monta a ficha
+ * só a passa quando a rota não vai recusar (`POST /api/v1/tags/vocabulario` exige
+ * `manager` + MFA) — a mesma régua do `SeletorDeCorDaEtiqueta` e do
+ * `DialogoDeNovaEtiqueta`, "a tela não oferece o que a escrita recusa". Sem a
+ * prop, o campo é byte a byte o de antes: sugere, cria direto e não mostra
+ * gatilho de cor. Com ela, a paleta abre ANTES de a etiqueta entrar na lista,
+ * como no editor do Inbox (#2789), e cada chip do contato ganha o gatilho de
+ * repintar (#2771).
+ *
+ * ─── A BUSCA: o MESMO vocabulário do Inbox (issue #3144) ────────────────────
+ *
+ * Faltava a outra metade da paridade: `GET /api/v1/contact-tags` SEM texto lê os
+ * 1000 contatos atualizados mais recentemente e corta em 200 etiquetas
+ * (`app/api/v1/contact-tags/route.ts`), então a etiqueta de Configurações → Tags
+ * que nenhum contato usa ainda — ou a que só aparece em `crm_leads`/conversas, ou
+ * a que só existe como `add_tag` de uma regra — nunca virava sugestão na ficha.
+ * Quem digitava "diam" via "Criar etiqueta «diam»" e digitava o nome inteiro, ou
+ * uma variante dele: exatamente o erro de digitação que a seleção de etiquetas
+ * existentes veio evitar. O Inbox já perguntava com o texto digitado desde a
+ * #2855 (`?busca=` → `fn_vocabulario_de_tags_pagina`), e é isso que a ficha passa
+ * a fazer — pelo MESMO hook, pela MESMA rota: `onDigitar` sobe o texto, quem
+ * monta consulta, e o que o servidor achou volta em `encontradas`.
+ *
+ * Este campo continua sem rede: o componente segue testável sem provider e sem
+ * dublê (o mapa de cores degrada para vazio, e `encontradas` ausente é a lista de
+ * antes). A falha da leitura, essa sim, passou a ser VISÍVEL (`erroNoVocabulario`):
+ * silêncio ali lia como "não há etiquetas", que é o que empurra a pessoa a digitar
+ * a variante. É a mesma frase que o Inbox mostra.
+ *
  * ─── O texto digitado não pode sumir ao SALVAR ──────────────────────────────
  *
  * O texto em digitação mora num `useState` DESTE campo (`draft`): enquanto não
@@ -42,14 +93,19 @@
  * apertado agora — a etiqueta existente, pela mesma grafia, ou a nova —, e
  * `null` quando não há o que gravar (vazio, já no contato, no teto ou
  * desabilitado). O `Salvar` do diálogo então inclui essa etiqueta no payload em
- * vez de descartá-la. A régua de reuso de grafia NÃO se divide: ela vive em
- * `lib/contacts/etiquetas` e é chamada aqui, dona do `draft`; e os três
- * caminhos que já funcionavam seguem intocados — este só ACRESCENTA o do
- * salvar.
+ * vez de descartá-la.
+ *
+ * A paleta não mexe nesse contrato: ela é aberta ANTES do `onChange`, e o
+ * rascunho só é limpo quando a etiqueta entra na lista (`adicionar`). Fechar a
+ * paleta sem confirmar deixa o texto onde estava — e o `Salvar` o leva sem cor,
+ * exatamente como levava antes.
  */
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 
 import { ChipDeEtiqueta } from "@/components/tags/ChipDeEtiqueta";
+import { DialogoDeNovaEtiqueta } from "@/components/tags/DialogoDeNovaEtiqueta";
+import { SeletorDeCorDaEtiqueta } from "@/components/tags/SeletorDeCorDaEtiqueta";
+import { useCoresDasEtiquetas } from "@/components/tags/CoresDasEtiquetas";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/hooks/i18n/useT";
 import { TAMANHO_MAXIMO_DA_TAG } from "@/lib/contacts/tag-normalizada";
@@ -60,6 +116,8 @@ import {
   etiquetasConhecidas,
   sugestoesDeEtiqueta,
 } from "@/lib/contacts/etiquetas";
+import { chaveDaEtiqueta } from "@/lib/tags/cor-da-etiqueta";
+import { cn } from "@/lib/utils";
 import { Plus, X } from "@/lib/ui/icons";
 
 interface Props {
@@ -79,10 +137,48 @@ interface Props {
    * este valor para o `Salvar` não descartar o texto em silêncio.
    */
   onPendente?: (tag: string | null) => void;
+  /**
+   * Grava a cor da etiqueta no vocabulário da organização. AUSENTE = quem monta
+   * não pode escrever no vocabulário (a rota exige `manager` + MFA), e aí o
+   * campo é o de sempre: sem paleta na sugestão, sem paleta ao criar e sem
+   * gatilho nos chips.
+   */
+  onDefinirCor?: (tag: string, cor: string | null) => void;
+  /**
+   * Etiquetas que o SERVIDOR achou para o texto digitado — a leitura COM busca
+   * (`GET /api/v1/contact-tags?busca=`), a mesma que o editor do Inbox faz desde
+   * a #2855. Ela enxerga o vocabulário curado inteiro, e é o que a leitura sem
+   * texto não vê (issue #3144): a etiqueta de Configurações → Tags que nenhum
+   * contato usa ainda, a que só aparece em `crm_leads`/`conversations`, a que só
+   * existe como `add_tag` de uma regra e a que passou do teto de 200 da lista
+   * em uso.
+   *
+   * Entra DEPOIS do `vocabulario`, como no Inbox: a ordem por uso continua
+   * mandando nas que já estavam na lista.
+   */
+  encontradas?: readonly string[] | null;
+  /**
+   * O texto digitado, avisado a quem monta — é ele quem pergunta ao servidor
+   * (este campo não faz rede, pelo motivo no cabeçalho). Sem esta prop o campo é
+   * o de antes: sugere só o `vocabulario` que recebeu.
+   */
+  onDigitar?: (texto: string) => void;
+  /**
+   * A leitura do vocabulário FALHOU. Sem isto a ficha ficava em silêncio: sem
+   * sugestão nenhuma, quem atende conclui que a etiqueta não existe e digita
+   * uma variante — o defeito que o seletor veio evitar. O Inbox já diz a frase.
+   */
+  erroNoVocabulario?: boolean;
 }
 
 /** O teto de etiquetas por contato — o MESMO dos editores do produto. */
 const MAXIMO_DE_ETIQUETAS = 20;
+
+/** A etiqueta na paleta aberta, e o tom que ela MOSTROU quando a paleta abriu. */
+interface EscolhaDeCor {
+  tag: string;
+  corInicial: string | null;
+}
 
 export function EtiquetasDoContato({
   value,
@@ -92,13 +188,29 @@ export function EtiquetasDoContato({
   disabled = false,
   inputId = "etiquetas-do-contato",
   onPendente,
+  onDefinirCor,
+  encontradas,
+  onDigitar,
+  erroNoVocabulario = false,
 }: Props) {
   const t = useT();
   const [draft, setDraft] = useState("");
+  const cores = useCoresDasEtiquetas();
+  // `null` = paleta fechada. O tom mostrado fica CONGELADO em `corInicial`:
+  // confirmar compara com ele, e não com o mapa ao vivo (que pode chegar depois
+  // e não foi visto) — a mesma régua do editor do Inbox (#2789).
+  const [escolhaDeCor, setEscolhaDeCor] = useState<EscolhaDeCor | null>(null);
 
+  // O vocabulário que a tela já tinha MAIS o que o servidor achou para o texto
+  // digitado — a mesma união (e a mesma ordem) do editor do Inbox (#2855): uma
+  // fonte só, dois pontos de uso. Sem `encontradas` a lista é a de sempre.
   const conhecidas = useMemo(
-    () => etiquetasConhecidas({ vocabulario, canonicalTags }),
-    [vocabulario, canonicalTags],
+    () =>
+      etiquetasConhecidas({
+        vocabulario: [...(vocabulario ?? []), ...(encontradas ?? [])],
+        canonicalTags,
+      }),
+    [vocabulario, encontradas, canonicalTags],
   );
   const sugestoes = useMemo(
     () => sugestoesDeEtiqueta({ conhecidas, selecionadas: value, digitado: draft }),
@@ -115,6 +227,9 @@ export function EtiquetasDoContato({
   const textoNovo = digitou && !existente && !jaSelecionada;
   const noTeto = value.length >= MAXIMO_DE_ETIQUETAS;
 
+  /** A cor da etiqueta na chave canônica do mapa (`lower(btrim(tag))` no banco). */
+  const corDe = (tag: string): string | null => cores[chaveDaEtiqueta(tag)] ?? null;
+
   /**
    * A régua ÚNICA de quem digita: a etiqueta EXISTENTE vence (reusa a grafia,
    * nunca cria variante), o texto novo vira etiqueta, e nada acontece quando não
@@ -126,18 +241,25 @@ export function EtiquetasDoContato({
     return etiquetaParaGravar({ conhecidas, selecionadas: value, digitado: texto });
   }
 
-  /** Troca o texto digitado — e avisa o que ele viraria — no MESMO gesto. */
+  /**
+   * Troca o texto digitado — e avisa o que ele viraria — no MESMO gesto. O texto
+   * cru também sobe (`onDigitar`): é o que faz quem monta perguntar ao servidor
+   * o que existe, como o Inbox faz a cada tecla.
+   */
   function definirDraft(texto: string) {
     setDraft(texto);
+    onDigitar?.(texto);
     onPendente?.(alvoDoDigitado(texto));
   }
 
-  function adicionar(tag: string) {
-    if (disabled || noTeto) return;
+  /** Devolve a etiqueta que ENTROU na lista, ou `null` quando o gesto é recusado. */
+  function adicionar(tag: string): string | null {
+    if (disabled || noTeto) return null;
     const k = chaveDeComparacaoDeEtiqueta(tag);
-    if (k === "" || value.some((v) => chaveDeComparacaoDeEtiqueta(v) === k)) return;
+    if (k === "" || value.some((v) => chaveDeComparacaoDeEtiqueta(v) === k)) return null;
     onChange([...value, tag]);
     definirDraft("");
+    return tag;
   }
 
   function remover(tag: string) {
@@ -145,10 +267,46 @@ export function EtiquetasDoContato({
     onChange(value.filter((v) => v !== tag));
   }
 
-  /** O texto digitado VIRA etiqueta — é o que o Enter e o "Criar" fazem. */
+  /**
+   * O clique numa sugestão. Com a paleta disponível ela abre com o tom que a
+   * etiqueta JÁ tem marcado (#2789) — abrir como se ela não tivesse cor faria
+   * "Confirmar" apagar o que estava lá (#2771).
+   *
+   * Desabilitado (salvando) ou no teto, o clique não faz nada: a peça existe
+   * para o gesto que vai gravar, e o botão de antes também era inerte ali.
+   */
+  function escolherSugestao(tag: string) {
+    if (disabled || noTeto) return;
+    if (!onDefinirCor) {
+      adicionar(tag);
+      return;
+    }
+    setEscolhaDeCor({ tag, corInicial: corDe(tag) });
+  }
+
+  /**
+   * O texto digitado VIRA etiqueta — é o que o Enter e o "Criar" fazem. Passa
+   * pela paleta quando ela existe: é por este caminho que a etiqueta nova
+   * nascia sem cor, e a ficha é justamente onde ela é criada.
+   */
   function confirmarDigitado() {
     const alvo = alvoDoDigitado(draft);
-    if (alvo) adicionar(alvo);
+    if (alvo === null) return;
+    // `alvo` também é uma etiqueta EXISTENTE quando o texto casou com a grafia
+    // gravada: aí o tom inicial é o dela, e confirmar sem trocar nada não regrava.
+    if (onDefinirCor) setEscolhaDeCor({ tag: alvo, corInicial: corDe(alvo) });
+    else adicionar(alvo);
+  }
+
+  /** O "Confirmar" da paleta: a etiqueta entra na lista e o tom vai ao vocabulário. */
+  function confirmarCor(tom: string | null) {
+    if (!escolhaDeCor) return;
+    const gravada = adicionar(escolhaDeCor.tag);
+    // `null` aqui é "Sem cor" escolhido de propósito — só não regrava o que já
+    // estava lá. E nada se grava quando a etiqueta não entrou (teto/duplicada),
+    // como no editor do Inbox.
+    if (gravada !== null && tom !== escolhaDeCor.corInicial) onDefinirCor?.(gravada, tom);
+    setEscolhaDeCor(null);
   }
 
   return (
@@ -160,17 +318,30 @@ export function EtiquetasDoContato({
           </span>
         ) : (
           value.map((tag) => (
-            <ChipDeEtiqueta key={tag} tag={tag}>
-              <button
-                type="button"
-                onClick={() => remover(tag)}
-                disabled={disabled}
-                aria-label={`${t("Remover etiqueta")} ${tag}`}
-                className="ml-1 rounded-sm hover:text-destructive"
-              >
-                <X size={10} weight="bold" aria-hidden />
-              </button>
-            </ChipDeEtiqueta>
+            <Fragment key={tag}>
+              <ChipDeEtiqueta tag={tag}>
+                <button
+                  type="button"
+                  onClick={() => remover(tag)}
+                  disabled={disabled}
+                  aria-label={`${t("Remover etiqueta")} ${tag}`}
+                  className="ml-1 rounded-sm hover:text-destructive"
+                >
+                  <X size={10} weight="bold" aria-hidden />
+                </button>
+              </ChipDeEtiqueta>
+              {/* O repintar de quem JÁ está no contato, com a MESMA peça que o
+                  Inbox usa desde a #2771: nenhuma rota nova, nenhum seletor novo. */}
+              {onDefinirCor ? (
+                <SeletorDeCorDaEtiqueta
+                  cor={corDe(tag)}
+                  onChange={(tom) => onDefinirCor(tag, tom)}
+                  tag={tag}
+                  rotulo={`${t("Cor da etiqueta")} ${tag}`}
+                  disabled={disabled}
+                />
+              ) : null}
+            </Fragment>
           ))
         )}
       </div>
@@ -193,6 +364,15 @@ export function EtiquetasDoContato({
         aria-label={t("Adicionar etiqueta")}
       />
 
+      {/* A MESMA frase do editor do Inbox: falha de leitura não pode passar por
+          "não há etiquetas", senão quem atende digita a variante que o seletor
+          existe para evitar. */}
+      {erroNoVocabulario ? (
+        <p role="alert" className="text-xs text-destructive">
+          {t("Não foi possível carregar as tags.")}
+        </p>
+      ) : null}
+
       {(sugestoes.length > 0 || textoNovo) && (
         <div
           role="group"
@@ -200,16 +380,36 @@ export function EtiquetasDoContato({
           className="flex flex-wrap gap-1"
         >
           {sugestoes.map((tag) => (
-            <button
+            /* A sugestão É o chip (issue #3235). O produto tem UM caminho de
+               pintura — a régua de cor só é importada pelo `ChipDeEtiqueta`,
+               guardado por `tests/unit/chip-contraste-da-etiqueta.test.ts` —,
+               então pintar um botão por fora seria a segunda cópia da regra que
+               a cerca existe para impedir. O chip recebe o papel de botão, com
+               Enter e Espaço: `role` sem teclado seria menos acessível do que o
+               botão sem cor que estava aqui. O tracejado continua sendo o que
+               distingue a sugestão do chip sólido de quem já está no contato. */
+            <ChipDeEtiqueta
               key={tag}
-              type="button"
-              onClick={() => adicionar(tag)}
-              disabled={disabled || noTeto}
+              tag={tag}
+              role="button"
+              tabIndex={0}
+              aria-label={`${t("Adicionar etiqueta")}: ${tag}`}
+              aria-disabled={disabled || noTeto}
               data-testid={`sugestao-${chaveDeComparacaoDeEtiqueta(tag)}`}
-              className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[10px] text-muted-foreground hover:border-solid hover:text-foreground disabled:opacity-50"
+              onClick={() => escolherSugestao(tag)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  escolherSugestao(tag);
+                }
+              }}
+              className={cn(
+                "border-dashed px-2 py-0.5 text-[10px]",
+                disabled || noTeto ? "opacity-50" : "cursor-pointer hover:border-solid",
+              )}
             >
-              {tag}
-            </button>
+              <Plus size={10} weight="bold" aria-hidden />
+            </ChipDeEtiqueta>
           ))}
           {textoNovo && (
             <button
@@ -225,6 +425,18 @@ export function EtiquetasDoContato({
           )}
         </div>
       )}
+
+      {/* Montada só com a escolha em curso: cada abertura nasce com o tom do
+          vocabulário pré-marcado, sem estado herdado da abertura anterior. */}
+      {escolhaDeCor ? (
+        <DialogoDeNovaEtiqueta
+          tag={escolhaDeCor.tag}
+          corInicial={escolhaDeCor.corInicial}
+          onFechar={() => setEscolhaDeCor(null)}
+          onConfirmar={confirmarCor}
+          disabled={disabled}
+        />
+      ) : null}
     </div>
   );
 }

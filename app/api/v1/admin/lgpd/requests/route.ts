@@ -9,7 +9,7 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
+import { falhaDaEscritaDePlatformAdmin, requirePlatformAdmin } from "@/lib/auth/requirePlatformAdmin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/audit";
 import { computeRiskLevel } from "@/lib/lgpd/balde-de-sla";
@@ -74,8 +74,8 @@ export async function GET(req: NextRequest): Promise<Response> {
   let adminCtx: Awaited<ReturnType<typeof requirePlatformAdmin>>;
   try {
     adminCtx = await requirePlatformAdmin();
-  } catch {
-    return fail("forbidden", "Platform admin required.", 403, { requestId });
+  } catch (err) {
+    return falhaDaEscritaDePlatformAdmin(err, requestId, "Platform admin required.");
   }
 
   const parsed = querySchema.safeParse(

@@ -1,0 +1,1134 @@
+{
+  "id": "admin-tenants",
+  "titulo": "Tenants (Admin)",
+  "tela": "/admin/tenants",
+  "resumo": "A lista de todas as empresas instaladas no seu servidor: onde você cria uma empresa nova, abre a ficha de cada uma, confere a saúde e o agente dela e, quando precisa, suspende o acesso.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-lista",
+      "titulo": "Conhecendo a lista de empresas",
+      "objetivo": "Ler a lista de empresas do servidor, entender a situação de cada uma e filtrar a lista pela situação.",
+      "papel": "admin",
+      "busca": [
+        "lista de empresas",
+        "tenants",
+        "clientes do servidor",
+        "empresas instaladas",
+        "ver empresas suspensas",
+        "situação da empresa"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Todas as empresas do servidor",
+          "texto": "No Admin, \"Tenants\" é o nome dado às empresas instaladas no seu servidor. Cada clínica que usa o sistema aqui é um tenant. Esta tela lista todas elas, das mais novas para as mais antigas. Logo abaixo do título aparece quantas empresas a lista mostra.",
+          "dica": "A lista carrega 30 empresas por vez. Quando há mais, o número ganha um \"+\" e aparece o botão \"Carregar mais\" no fim da tabela.",
+          "rota": "/admin/tenants",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Tenants",
+                "exato": true,
+                "dentro": {
+                  "role": "navigation"
+                }
+              },
+              "rotulo": "Tenants no menu do Admin",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "^\\d+ tenants?\\+?$",
+                "regex": true
+              },
+              "rotulo": "Quantas empresas a lista mostra",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "O que cada coluna diz",
+          "texto": "Cada linha é uma empresa. \"Slug\" é o apelido curto dela no sistema, sem espaços nem acentos. \"Nome\" é como ela aparece para a equipe. \"CNPJ\" mostra só o começo do número. \"Users\" conta os acessos ligados à empresa, inclusive os de quem já perdeu o acesso. \"Conversas\" conta as conversas dela. \"Criado em\" é o dia em que a empresa foi criada no servidor.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "thead"
+              },
+              "rotulo": "Colunas da lista",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "Odonto Sorriso Leve",
+                "regex": true
+              },
+              "rotulo": "Uma empresa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "A situação de cada empresa",
+          "texto": "A coluna \"Status\" diz como a empresa está. \"Ativo\": funcionando normalmente. \"Onboarding\": a empresa existe, mas a configuração inicial ainda não foi concluída. \"Suspenso\": o acesso foi cortado, e a equipe dela não entra. \"Redigido\": os dados pessoais da empresa foram apagados por pedido de LGPD.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Onboarding",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "NutriBem",
+                  "regex": true
+                }
+              },
+              "rotulo": "Configuração por concluir",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Suspenso",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Studio Movimento",
+                  "regex": true
+                }
+              },
+              "rotulo": "Acesso cortado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Redigido",
+                "exato": true,
+                "dentro": {
+                  "role": "row",
+                  "nome": "Espaço Equilíbrio",
+                  "regex": true
+                }
+              },
+              "rotulo": "Dados apagados",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Os atalhos de cada linha",
+          "texto": "No fim de cada linha há três atalhos. O olho abre a página de saúde da empresa. O lápis abre a ficha, onde você também edita os dados. O botão de pausa abre a confirmação para suspender a empresa, sem sair da lista. Numa empresa suspensa pelo admin, ele vira um botão de \"Reativar\". Se a empresa foi suspensa por falta de pagamento, ele vira um ícone de recibo que leva à ficha. Numa empresa redigida, só existe o link \"Ver\", que abre a ficha.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "tr:has(a[aria-label='Editar os dados de Odonto Sorriso Leve']) td:last-child"
+              },
+              "rotulo": "Olho, lápis e pausa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Reativar Studio Movimento Pilates",
+                "exato": true
+              },
+              "rotulo": "Reativar (empresa suspensa)",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ver",
+                "exato": true
+              },
+              "rotulo": "Só a ficha",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Filtrando pela situação",
+          "texto": "O seletor ao lado do campo de busca mostra só as empresas de uma situação. Ele começa em \"Todos os status\". Escolha \"Ativo\", \"Onboarding\", \"Suspenso\" ou \"Redigido\" para ver só aquelas empresas.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox",
+                "nome": "Filtrar por status",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "listbox"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "listbox"
+              },
+              "rotulo": "Situações para filtrar",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "option",
+            "nome": "Suspenso",
+            "exato": true
+          }
+        },
+        {
+          "id": "p6",
+          "titulo": "Só as suspensas",
+          "texto": "Com \"Suspenso\" escolhido, a lista mostra só as empresas com o acesso cortado. Para voltar a ver todas, abra o seletor de novo e escolha \"Todos os status\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "option",
+                "nome": "Suspenso",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 1500
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Filtrar por status",
+                "exato": true
+              },
+              "rotulo": "Filtro escolhido",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "row",
+                "nome": "Studio Movimento",
+                "regex": true
+              },
+              "rotulo": "Empresa suspensa",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "criar-empresa",
+      "titulo": "Criando uma empresa nova",
+      "objetivo": "Preencher o cadastro de uma empresa nova e saber o que acontece quando ela é criada.",
+      "papel": "admin",
+      "busca": [
+        "criar empresa nova",
+        "novo tenant",
+        "cadastrar cliente no servidor",
+        "nova organização",
+        "convidar dono da empresa",
+        "adicionar clínica"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O botão de criar",
+          "texto": "Para colocar uma empresa nova no servidor, clique em \"Novo tenant\", no alto da lista.",
+          "rota": "/admin/tenants",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Novo tenant",
+                "exato": true
+              },
+              "rotulo": "Criar empresa",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Novo tenant",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O nome e o slug",
+          "texto": "Comece pelo \"Nome de exibição\", que é como a equipe vê a empresa. Enquanto você digita, o sistema monta o \"Slug\" sozinho: o mesmo nome em minúsculas, sem acentos e com hífens no lugar dos espaços. Você pode trocar o slug à mão. Se ele já existir em outra empresa, o sistema avisa ao criar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Novo tenant",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Nova organização",
+                "exato": true
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Nome de exibição"
+              },
+              "valor": "Clínica Respirar Fisioterapia"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Nome de exibição"
+              },
+              "rotulo": "Nome da empresa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "input#slug"
+              },
+              "rotulo": "Slug montado sozinho",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Os dados da empresa e do responsável",
+          "texto": "\"Razão social\" e \"CNPJ\" são opcionais; sem razão social, o sistema usa o nome de exibição. O \"Plano\" (Standard, Pro ou Enterprise) é só uma etiqueta para você organizar: ele não cobra nem limita nada. Se a Cobrança estiver ligada no seu servidor, no lugar dele aparece \"Plano de cobrança\", e aí o plano escolhido cobra de verdade. Em \"E-mail do responsável\", coloque o e-mail da pessoa que vai ser a dona da empresa no sistema.",
+          "antes": [
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Razão social"
+              },
+              "valor": "Clínica Respirar Fisioterapia Ltda"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "CNPJ"
+              },
+              "valor": "67.890.123/0001-54"
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "E-mail do responsável",
+                "exato": false
+              },
+              "valor": "dra.camila@clinicarespirar.com.br"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Razão social"
+              },
+              "rotulo": "Opcional",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "combobox",
+                "nome": "Plano",
+                "exato": true
+              },
+              "rotulo": "Só uma etiqueta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "E-mail do responsável",
+                "exato": false
+              },
+              "rotulo": "Quem vai ser o dono",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "O que o responsável vai ver no menu",
+          "texto": "Em \"Interface\" você escolhe quais áreas aparecem no menu do responsável. \"Completa\" mostra todas; \"Simplificada\" mostra menos áreas, para quem está começando. Em \"Personalizar áreas visíveis\" dá para marcar uma a uma. Isso só muda o menu: o que a pessoa pode fazer continua definido pelo cargo dela.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Perfil de interface"
+              },
+              "rotulo": "Menu do responsável",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "Personalizar áreas visíveis"
+              },
+              "rotulo": "Escolher área por área",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Criar a empresa",
+          "texto": "Confira os dados e clique em \"Criar organização\". A empresa é criada e aparece na lista como \"Onboarding\" até a configuração inicial ser concluída. Você entra nela como administrador, para fazer essa configuração. O responsável recebe um convite para ser o dono: a tela mostra o link do convite e o botão \"Copiar convite\", e, se o servidor tiver e-mail configurado, o convite também vai por e-mail. O convite tem prazo de validade. O seu acesso à empresa é provisório e sai quando o dono aceitar.",
+          "dica": "\"Cancelar\" volta para a tela anterior sem criar nada.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "button",
+                "nome": "Criar organização",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Criar organização",
+                "exato": true
+              },
+              "rotulo": "Criar a empresa",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ficha-da-empresa",
+      "titulo": "Lendo a ficha de uma empresa",
+      "objetivo": "Abrir a ficha de uma empresa e entender os dados, os números, as integrações e a equipe dela.",
+      "papel": "admin",
+      "busca": [
+        "ficha da empresa",
+        "detalhes do tenant",
+        "quantas conversas a empresa tem",
+        "equipe de uma empresa",
+        "alterar e-mail de acesso",
+        "dados da empresa no admin"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrindo a ficha",
+          "texto": "Para ver tudo sobre uma empresa, clique no lápis da linha dela. Aqui vamos abrir a ficha da Clínica Bem Viver.",
+          "rota": "/admin/tenants",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Editar os dados de Clínica Bem Viver",
+                "exato": true
+              },
+              "rotulo": "Abrir a ficha",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Editar os dados de Clínica Bem Viver",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O topo da ficha",
+          "texto": "No topo ficam o nome da empresa, o slug e a situação. Logo abaixo, as abas: \"Visão Geral\" (esta), \"Saúde\" e \"Agente\". As abas \"Equipe\" e \"Uso\" ainda não funcionam e mostram \"em breve\". O link \"Tenants\", acima do nome, volta para a lista.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Editar os dados de Clínica Bem Viver",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Informações",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div:has(> h1:text-is('Clínica Bem Viver'))"
+              },
+              "rotulo": "Nome, slug e situação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.flex.gap-0.border-b"
+              },
+              "rotulo": "Abas da ficha",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Informações e volumes",
+          "texto": "O quadro \"Informações\" mostra o plano, a razão social, o CNPJ, \"Onboarding concluído\" (o dia em que a configuração inicial terminou) e \"Criado em\". Numa empresa suspensa, aparece também \"Suspenso em\". Em \"Volumes\" ficam os totais da empresa: usuários, conversas, mensagens, leads e pedidos.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.bg-card:has(> h2:text-is('Informações'))"
+              },
+              "rotulo": "Dados da empresa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div:has(> h2:text-is('Volumes'))"
+              },
+              "rotulo": "Totais da empresa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Integrações, LGPD e IA",
+          "texto": "Em \"Integrações\", você vê a situação da loja Nuvemshop e, em \"WAHA sessions\", quantos canais de atendimento a empresa tem cadastrados, conectados ou não. Em \"Compliance & IA\", ficam os pedidos de LGPD ainda abertos, que ganham um alerta amarelo quando existem, e quantas vezes a IA foi usada nos últimos 30 dias.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "div.rounded-lg.border.bg-card:has(> h2:text-is('Integrações'))"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.bg-card:has(> h2:text-is('Integrações'))"
+              },
+              "rotulo": "Loja e números",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.bg-card:has(> h2:text-is('Compliance & IA'))"
+              },
+              "rotulo": "LGPD e uso da IA",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "A equipe e os e-mails de acesso",
+          "texto": "\"Membros e e-mails de acesso\" lista as pessoas ligadas a esta empresa, com o e-mail de login e o cargo. Selos mostram quem é o \"Dono\", quem é \"Admin da plataforma\" e quem teve o \"Acesso revogado\". É aqui que você corrige o e-mail de quem se cadastrou errado: \"Alterar e-mail\" troca o endereço de login e de recuperação de senha, e a empresa recebe um aviso. O botão fica apagado para quem é admin da plataforma, que só troca o e-mail pela própria conta, e para quem já teve o acesso revogado.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "texto": "Membros e e-mails de acesso",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.bg-card:has(> h2:text-is('Membros e e-mails de acesso'))"
+              },
+              "rotulo": "Quem entra na empresa",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "editar-e-acompanhar",
+      "titulo": "Editando e acompanhando uma empresa",
+      "objetivo": "Usar o quadro de ações da ficha para corrigir os dados de uma empresa e para entrar nela como ela vê.",
+      "papel": "admin",
+      "busca": [
+        "editar dados da empresa",
+        "entrar como a empresa",
+        "acompanhar organização",
+        "ver o sistema como o cliente",
+        "corrigir cnpj da empresa",
+        "suporte ao cliente"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O quadro de ações",
+          "texto": "À direita da ficha fica o quadro \"Ações\". \"Acompanhar organização\" deixa você entrar na empresa para ver o que a equipe vê. \"Editar dados\" corrige o cadastro. \"Suspender tenant\" corta o acesso; ele tem uma lição só para ele. Para excluir uma empresa, é preciso suspendê-la primeiro.",
+          "rota": "/admin/tenants/a7000000-0000-4000-8000-000000000001",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Ações",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.bg-card:has(> h2:text-is('Ações'))"
+              },
+              "rotulo": "Ações sobre a empresa",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Editar dados",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Corrigindo os dados",
+          "texto": "\"Editar dados\" abre os mesmos campos que o administrador da empresa vê em Configurações › Empresa: nome, razão social, CNPJ, e-mail do responsável pelos dados pessoais (DPO), fuso horário, idioma, moeda, país, a limpeza automática da mídia antiga (e depois de quantos dias ela apaga) e o endereço da política de privacidade. Altere o que precisar e clique em \"Salvar\". Fechar a janela não muda nada.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Editar dados",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "dialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Editar dados do tenant",
+                "exato": true
+              },
+              "rotulo": "Cadastro da empresa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "rotulo": "Nome de exibição",
+                "dentro": {
+                  "role": "dialog"
+                }
+              },
+              "rotulo": "Campos para corrigir",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Entrando na empresa para ajudar",
+          "texto": "\"Acompanhar organização\" pede confirmação antes. Ao clicar em \"Confirmar e entrar\", você vai para a Inbox da empresa, com a sua própria identidade: tudo o que você fizer fica registrado no seu nome. O acesso dura até uma hora. Marque \"Somente leitura\" para só olhar, sem poder mudar nada.",
+          "dica": "Use isto para ver um problema exatamente como o cliente vê, sem pedir a senha dele.",
+          "rota": "/admin/tenants/a7000000-0000-4000-8000-000000000001",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Acompanhar Odonto Sorriso Leve",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Acompanhar Odonto Sorriso Leve",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "alertdialog"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "checkbox",
+                "nome": "Somente leitura",
+                "exato": true
+              },
+              "rotulo": "Só olhar",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar e entrar",
+                "exato": true
+              },
+              "rotulo": "Entrar na empresa",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "saude-e-agente",
+      "titulo": "Conferindo a saúde e o agente de uma empresa",
+      "objetivo": "Ler os quatro cartões de saúde de uma empresa e ver qual agente de IA ela tem publicado.",
+      "papel": "admin",
+      "busca": [
+        "saúde da empresa",
+        "whatsapp da empresa desconectado",
+        "gasto de ia do cliente",
+        "agente publicado da empresa",
+        "empresa com problema",
+        "teto de gasto ia"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrindo a saúde pela lista",
+          "texto": "O olho, no fim da linha, abre direto a página de saúde da empresa. Vamos ver a FisioVida Reabilitação.",
+          "rota": "/admin/tenants",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Acompanhar a saúde de FisioVida Reabilitação",
+                "exato": true
+              },
+              "rotulo": "Ver a saúde",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Acompanhar a saúde de FisioVida Reabilitação",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Os quatro cartões",
+          "texto": "A aba \"Saúde\" tem quatro cartões, cada um com um selo: \"OK\" em verde, \"Atenção\" em amarelo ou \"Crítico\" em vermelho. A página se atualiza sozinha a cada minuto, e o horário da última leitura fica no canto.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Acompanhar a saúde de FisioVida Reabilitação",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Status de Saúde",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.grid:has(> div.rounded-xl)"
+              },
+              "rotulo": "Os quatro cartões",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "^Atualizado às",
+                "regex": true
+              },
+              "rotulo": "Última leitura",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O WhatsApp e a loja",
+          "texto": "O cartão \"WAHA\" mostra quantos canais de WhatsApp da empresa estão conectados, do total. Aqui é \"0/1 conectada\": o único número está parado, por isso o selo é \"Crítico\". Sem nenhum número, o selo é \"Atenção\". O cartão \"Nuvemshop\" diz se a loja virtual está ligada e quando o acesso a ela vence. Empresa que não usa loja virtual aparece como \"Não conectado\", com selo \"Atenção\": nesse caso, não há nada a resolver.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-xl:has(span:text-is('WAHA'))"
+              },
+              "rotulo": "Números de WhatsApp",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-xl:has(span:text-is('Nuvemshop'))"
+              },
+              "rotulo": "Loja virtual",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "O gasto com IA e os registros",
+          "texto": "\"Orçamento IA\" compara o gasto do mês com o teto da empresa, em dólares. A FisioVida já usou 92%. O selo fica em \"Atenção\" a partir de 80%. Só vira \"Crítico\" quando chega a 100% e o teto está no modo que para a IA; aqui o \"Limite\" é \"Só avisa\". Com o limite \"Não aplicado\", o selo fica sempre em \"OK\". \"Audit Lag\" mostra há quanto tempo foi gravado o último registro de atividade da empresa: até 2 minutos é \"OK\", e acima de 10 minutos vira \"Crítico\".",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-xl:has(span:text-is('Orçamento IA'))"
+              },
+              "rotulo": "Gasto com IA",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-xl:has(span:text-is('Audit Lag'))"
+              },
+              "rotulo": "Último registro",
+              "tipo": "caixa"
+            }
+          ],
+          "dica": "Abrir a ficha ou esta página também grava um registro na empresa. Por isso, logo depois de você olhar, o \"Audit Lag\" tende a mostrar poucos segundos."
+        },
+        {
+          "id": "p5",
+          "titulo": "O agente de IA da empresa",
+          "texto": "A aba \"Agente\" lista os agentes de IA da empresa. Cada um mostra se está ativo e qual versão está publicada. Na FisioVida, o agente está \"Inativo\" e nunca foi publicado, por isso aparece \"Nenhum agente publicado\": a IA dela não atende ninguém. \"Tipo\" mostra um nome técnico; \"rag_bot\" é o agente de atendimento. Esta aba é só para consultar: mudar o agente se faz dentro da empresa.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Agente",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Versão publicada",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li.rounded-xl"
+              },
+              "rotulo": "Agente sem versão publicada",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Um agente no ar",
+          "texto": "Na Odonto Sorriso Leve, o agente \"Lia — Atendimento Sorriso Leve\" está \"Ativo\". Em \"Versão publicada\", \"v3 · anthropic · claude-sonnet-4-6\" quer dizer: versão 3, usando a IA da Anthropic, no modelo claude-sonnet-4-6. \"Publicado em\" diz desde quando essa é a versão em uso. Para ela responder de fato, a empresa também precisa estar com o WhatsApp conectado.",
+          "rota": "/admin/tenants/a7000000-0000-4000-8000-000000000001/agent",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "texto": "Versão publicada",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li.rounded-xl"
+              },
+              "rotulo": "Agente publicado",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "suspender-reativar-excluir",
+      "titulo": "Suspendendo, reativando e excluindo",
+      "objetivo": "Saber cortar o acesso de uma empresa, devolver o acesso e, no fim, excluí-la de vez.",
+      "papel": "admin",
+      "busca": [
+        "suspender empresa",
+        "cortar acesso do cliente",
+        "reativar empresa suspensa",
+        "excluir empresa do servidor",
+        "apagar tenant",
+        "cliente cancelou contrato"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Suspender pela lista",
+          "texto": "O botão de pausa, no fim da linha, suspende a empresa sem sair da lista. Ele abre uma confirmação com o nome da empresa, para não suspender a errada.",
+          "rota": "/admin/tenants",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Suspender Odonto Sorriso Leve",
+                "exato": true
+              },
+              "rotulo": "Suspender",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Suspender Odonto Sorriso Leve",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O que a suspensão faz",
+          "texto": "Leia o aviso com atenção: a equipe da empresa perde o acesso, e a IA, os envios e as automações dela param. Mensagens na fila e tarefas agendadas são descartadas e não saem quando ela voltar; os follow-ups em andamento ficam parados e retomam de onde pararam quando ela for reativada. As mensagens que chegarem continuam gravadas. Escreva o motivo (pelo menos 10 caracteres) e clique em \"Confirmar suspensão\". Para desistir, use \"Cancelar\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Suspender Odonto Sorriso Leve",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "alertdialog"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Motivo da suspensão",
+                "exato": false
+              },
+              "valor": "Mensalidade de setembro em aberto; combinado com a clínica."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Motivo da suspensão",
+                "exato": false
+              },
+              "rotulo": "Motivo obrigatório",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar suspensão",
+                "exato": true
+              },
+              "rotulo": "Suspender de verdade",
+              "tipo": "caixa"
+            }
+          ],
+          "dica": "\"Cancelar\", à esquerda do botão vermelho, fecha a janela sem suspender."
+        },
+        {
+          "id": "p3",
+          "titulo": "Uma empresa suspensa",
+          "texto": "Na ficha de uma empresa suspensa aparece uma faixa amarela no topo, com quando ela foi suspensa. No quadro \"Ações\", a frase \"Suspensão administrativa\" diz que foi o admin que suspendeu. No lugar de \"Suspender tenant\", aparecem \"Reativar tenant\" e \"Excluir tenant\".",
+          "rota": "/admin/tenants/a7000000-0000-4000-8000-000000000004",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "testid": "tipo-da-suspensao"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "region",
+                "nome": "Tenant Suspenso",
+                "exato": true
+              },
+              "rotulo": "Faixa de suspensa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.bg-card:has(> h2:text-is('Ações'))"
+              },
+              "rotulo": "Reativar ou excluir",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "button",
+            "nome": "Reativar tenant",
+            "exato": true
+          },
+          "dica": "A faixa sempre diz \"Sem razão registrada\", mesmo quando você escreveu um motivo. O motivo fica guardado no histórico do Admin, na tela \"Audit\"."
+        },
+        {
+          "id": "p4",
+          "titulo": "Devolvendo o acesso",
+          "texto": "\"Reativar tenant\" pede o motivo da reativação, que fica registrado no histórico do Admin. Ao clicar em \"Confirmar reativação\", a equipe volta a entrar.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Reativar tenant",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "alertdialog"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Motivo da reativação",
+                "exato": false
+              },
+              "valor": "Clínica renovou o contrato por mais 12 meses."
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "rotulo": "Motivo da reativação",
+                "exato": false
+              },
+              "rotulo": "Motivo obrigatório",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Confirmar reativação",
+                "exato": true
+              },
+              "rotulo": "Devolver o acesso",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Excluindo de vez",
+          "texto": "\"Excluir tenant\" apaga a empresa e todos os dados dela, sem volta: conversas, mensagens, leads, arquivos, agentes e integrações. Os números de WhatsApp são desconectados, e os logins de quem só trabalhava nesta empresa são removidos; quem participa de outra empresa continua. Para liberar \"Excluir definitivamente\", escreva o motivo e digite o slug da empresa, que aparece logo acima do campo.",
+          "rota": "/admin/tenants/a7000000-0000-4000-8000-000000000004",
+          "antes": [
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir tenant",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir tenant",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "alertdialog"
+              }
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "rotulo": "Motivo da exclusão",
+                "exato": false
+              },
+              "valor": "Contrato encerrado a pedido da clínica em outubro."
+            },
+            {
+              "acao": "fill",
+              "alvo": {
+                "css": "input#delete-confirm"
+              },
+              "valor": "studio-movimento-pilates"
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Excluir tenant definitivamente",
+                "exato": true
+              },
+              "rotulo": "Sem volta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "input#delete-confirm"
+              },
+              "rotulo": "Slug digitado",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Excluir definitivamente",
+                "exato": true
+              },
+              "rotulo": "Exclui de vez",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

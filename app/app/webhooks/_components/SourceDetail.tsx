@@ -134,6 +134,16 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
     atualizacaoDeCard?.id === source.id
       ? atualizacaoDeCard.ativa
       : source.update_existing_lead_on_capture;
+  /**
+   * A opção do #3101, com o mesmo cuidado de estado das irmãs: a resposta do
+   * PATCH é o dado mais fresco que esta tela alcança (`source` é snapshot), e o
+   * id junto evita pintar o estado de uma fonte no painel de outra.
+   */
+  const [reusoDoCardAberto, setReusoDoCardAberto] = React.useState<{ id: string; ativa: boolean } | null>(null);
+  const reusaCardAberto =
+    reusoDoCardAberto?.id === source.id
+      ? reusoDoCardAberto.ativa
+      : source.reuse_open_lead_on_capture;
   const [testing, setTesting] = React.useState(false);
   const [testOk, setTestOk] = React.useState(false);
   const [formFields, setFormFields] = React.useState<WebhookFormField[]>(source.form_fields ?? []);
@@ -415,6 +425,26 @@ export function SourceDetail({ source, open, onOpenChange }: Props) {
             </p>
             {!temAssinatura && <p className="text-sm text-muted-foreground">
               {t("Configure a assinatura da fonte antes de deixar a integração atualizar o card. Para remover a assinatura, desligue primeiro a atualização pelo external_id.")}
+            </p>}
+          </section>
+
+          <section className="space-y-2 rounded-sm border border-border p-3">
+            <div className="flex items-center justify-between gap-3">
+              <label htmlFor="reuse-open-lead-on-capture" className="block text-sm font-medium text-text">
+                {t("Reaproveitar o card aberto do contato")}
+              </label>
+              <Switch id="reuse-open-lead-on-capture" checked={Boolean(reusaCardAberto)}
+                disabled={!podeGerirWebhooks || update.isPending || (!temAssinatura && !reusaCardAberto)}
+                onCheckedChange={(ativa) => update.mutate(
+                  { id: source.id, reuse_open_lead_on_capture: ativa },
+                  { onSuccess: (res) => setReusoDoCardAberto({ id: source.id, ativa: res.data.reuse_open_lead_on_capture }) },
+                )} />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {t("Só para fontes com assinatura: ligado, um envio de quem já tem card aberto neste funil atualiza esse card — os campos novos e a etapa da fonte, sempre para a frente — em vez de abrir um segundo card. Desligado, o padrão, cada envio continua virando um card novo.")}
+            </p>
+            {!temAssinatura && <p className="text-sm text-muted-foreground">
+              {t("Configure a assinatura da fonte antes de reaproveitar o card aberto do contato. Para remover a assinatura, desligue primeiro o reaproveitamento do card aberto.")}
             </p>}
           </section>
 

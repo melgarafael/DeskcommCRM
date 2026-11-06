@@ -133,14 +133,20 @@ describe('janela de resposta separada da janela de disparo (0495)', () => {
     }
   });
 
-  it('cap diário continua valendo na RESPOSTA — 24h não é sem limite', () => {
-    // A janela é cortesia; o anti-ban (cap, warm-up, throttle) não abre junto.
+  it('RESPOSTA não é barrada pelo teto do dia; o espaçamento continua (9061)', () => {
+    // O teto mede quantas pessoas o número ABORDA. Segurar a resposta a quem
+    // escreveu até amanhã perde o lead e não protege o número — medido em
+    // produção. O throttle (espaçamento entre mensagens) não abre junto.
     const k = knobs({ respostaStartHour: 0, respostaEndHour: 24 });
     const d = decidePacing({
-      now: AS_3H, knobs: k, state: { ...estado, sentToday: 999 }, crmDailyLimit: null, resposta: true,
+      now: AS_3H,
+      knobs: k,
+      state: { ...estado, sentToday: 999, lastSentAt: new Date(AS_3H.getTime() - 100) },
+      crmDailyLimit: null,
+      resposta: true,
+      rng: () => 0,
     });
-    expect(d.allow).toBe(false);
-    if (!d.allow) expect(d.code).not.toBe('outside_window');
+    expect(d).toEqual({ allow: true, waitMs: k.throttleMs - 100 });
   });
 
   it('domingo desligado cala a resposta também (knob único, sem par)', () => {

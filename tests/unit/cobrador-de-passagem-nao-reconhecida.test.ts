@@ -59,6 +59,15 @@ const registro: Registro = { inserts: [], updates: [], consultas: [] };
  */
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => ({
+    // O braço dos CASOS pergunta ao banco quem venceu (`fn_casos_parados_para_lembrar`,
+    // migration 0766); a conta da cadência é medida no invariante dela. Aqui o
+    // dublê devolve os casos em `awaiting_human` como se todos tivessem vencido.
+    rpc: (nome: string) =>
+      Promise.resolve(
+        nome === "fn_casos_parados_para_lembrar"
+          ? { data: banco.agent_cases.filter((c) => c.status === "awaiting_human"), error: null }
+          : { data: null, error: { message: `rpc inesperada: ${nome}` } },
+      ),
     from: (tabela: keyof Banco) => {
       let linhas = [...(banco[tabela] ?? [])];
       let limite = Infinity;
@@ -299,8 +308,9 @@ describe("o vigia cobra a passagem que ninguém assumiu", () => {
         organization_id: ORG,
         title: "Cliente quer trocar o produto",
         opened_at: ONTEM,
-        updated_at: ONTEM,
         followup_attempts: 0,
+        cobrancas_na_espera: 0,
+        teto: 3,
         status: "awaiting_human",
       },
     ];

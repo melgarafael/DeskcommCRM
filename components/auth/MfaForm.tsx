@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import { useT } from "@/hooks/i18n/useT";
 import { TOTPInput } from "@/components/auth/TOTPInput";
 import { Button } from "@/components/ui/button";
 import { verifyMfa } from "@/app/actions/auth/verifyMfa";
+import { AvisoSemResposta, useEnvioComTeto } from "@/components/auth/teto-da-espera";
 
 interface MfaFormProps {
   next?: string;
@@ -15,10 +16,11 @@ interface MfaFormProps {
 export function MfaForm({ next }: MfaFormProps) {
   const t = useT();
   const [code, setCode] = useState("");
+  const [confiar, setConfiar] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [locked, setLocked] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(0);
-  const [isPending, startTransition] = useTransition();
+  const { pendente: isPending, semResposta, enviar } = useEnvioComTeto();
 
   useEffect(() => {
     if (!locked || secondsLeft <= 0) return;
@@ -39,8 +41,7 @@ export function MfaForm({ next }: MfaFormProps) {
     const finalCode = codeArg ?? code;
     if (finalCode.length !== 6 || locked) return;
     setError(null);
-    startTransition(async () => {
-      const res = await verifyMfa(finalCode, next);
+    void enviar(() => verifyMfa(finalCode, next, confiar), (res) => {
       if (!res) return; // server-side redirect on success
       if (res.error === "mfa_locked") {
         setLocked(true);
@@ -82,6 +83,16 @@ export function MfaForm({ next }: MfaFormProps) {
         hasError={!!error}
       />
 
+      <label className="flex cursor-pointer items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={confiar}
+          onChange={(e) => setConfiar(e.target.checked)}
+          className="mt-0.5 h-4 w-4 rounded-md border-border"
+        />
+        <span>{t("Confiar neste dispositivo por 30 dias")}</span>
+      </label>
+
       {error && (
         <div
           role="alert"
@@ -92,6 +103,7 @@ export function MfaForm({ next }: MfaFormProps) {
             : error}
         </div>
       )}
+      {semResposta && <AvisoSemResposta />}
 
       <Button
         type="submit"

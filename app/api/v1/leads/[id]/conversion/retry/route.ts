@@ -14,7 +14,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // (0436) e da Meta (0524).
   const evento = z
     .union([
-      z.enum(["Purchase", "QualifiedLead"]),
+      z.enum(["Purchase", "QualifiedLead", "LeadSubmitted"]),
       z.string().regex(/^(Meta)?Etapa:[0-9a-f-]{36}$/),
     ])
     .safeParse(new URL(req.url).searchParams.get("event_name") ?? "Purchase");

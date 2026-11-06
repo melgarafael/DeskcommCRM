@@ -371,6 +371,8 @@ describe("o teto de IA do plano no caminho legado (forçado: hoje o veto é inal
       model: "modelo-dublê" as never,
       modelId: "anthropic/claude-sonnet-4-6",
       origem,
+      // Campo exigido desde a #3098 (o provedor efetivo vai para a linha).
+      provider: "anthropic",
     });
   const itensDoPlano = (operacoes: Operacao[]) =>
     itensDeOrcamento(operacoes).filter((o) => o.tipo === "insert" && o.row.ref_kind === "plano");

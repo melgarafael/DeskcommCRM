@@ -44,6 +44,14 @@ vi.mock("@/lib/leads/nascimento-do-lead", () => ({
 vi.mock("@/lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
+// A inferência pelo horário tem o próprio arquivo de teste
+// (`tests/unit/origem-por-horario.test.ts`); aqui só importa QUANDO ela é chamada.
+const casarOrigemPorHorario = vi.fn(async (..._a: unknown[]) => {
+  sequencia.push("origem:horario");
+});
+vi.mock("@/lib/leads/origem-por-horario", () => ({
+  casarOrigemPorHorario: (...a: unknown[]) => casarOrigemPorHorario(...a),
+}));
 vi.mock("@/lib/dev/kick-local-pipeline", () => ({
   acelerarFollowupDoInbound: vi.fn(async () => {}),
   drenarEventosDoInbound: vi.fn(async () => {}),
@@ -84,6 +92,11 @@ let leadsAbertos: Array<{ id: string }> = [];
 let leadsErro: { message: string } | null = null;
 /** Os `.eq()` da leitura de `crm_leads` — provam organização, contato e "só os abertos". */
 let filtrosDeLeads: Array<[string, unknown]> = [];
+/** As DEMANDAS ABERTAS do contato, como a leitura de `demandas` as devolve (#3288). */
+let demandasAbertas: Array<{ id: string; revision: number }> = [];
+let demandasErro: { message: string } | null = null;
+/** Os `.eq()`/`.is()` da leitura de `demandas` — provam org, contato e "só as abertas". */
+let filtrosDeDemandas: Array<[string, unknown]> = [];
 
 /** Imita o builder do PostgREST: encadeável, o efeito acontece no `await`. */
 function cadeia(rotulo: string): Record<string, unknown> {
@@ -140,6 +153,7 @@ const admin = {
           eq(coluna: string, valor: unknown) {
             if (tabela === "messages") filtrosDeMessages.push([coluna, valor]);
             if (tabela === "crm_leads") filtrosDeLeads.push([coluna, valor]);
+            if (tabela === "demandas") filtrosDeDemandas.push([coluna, valor]);
             return consulta;
           },
           order(_coluna: string, _opcoes?: unknown) {
@@ -165,6 +179,21 @@ const admin = {
             then(resolve: (v: unknown) => void) {
               sequencia.push("select:crm_leads");
               return Promise.resolve({ data: leadsAbertos, error: leadsErro }).then(resolve);
+            },
+          });
+        }
+        // A leitura de `demandas` (#3288) filtra por `fechada_em is null` e é
+        // aguardada direto — então devolve o `then`, e registra o `.is()` para
+        // provar que só as ABERTAS são encerradas.
+        if (tabela === "demandas") {
+          return Object.assign(consulta, {
+            is(coluna: string, valor: unknown) {
+              filtrosDeDemandas.push([coluna, valor]);
+              return consulta;
+            },
+            then(resolve: (v: unknown) => void) {
+              sequencia.push("select:demandas");
+              return Promise.resolve({ data: demandasAbertas, error: demandasErro }).then(resolve);
             },
           });
         }
@@ -212,9 +241,13 @@ beforeEach(() => {
   leadsAbertos = [];
   leadsErro = null;
   filtrosDeLeads = [];
+  demandasAbertas = [];
+  demandasErro = null;
+  filtrosDeDemandas = [];
   encerraDemanda.mockReset();
   encerraDemanda.mockResolvedValue({ lead: {}, jaEstava: false } as never);
   audit.mockClear();
+  casarOrigemPorHorario.mockClear();
   garantirLeadDaConversa.mockClear();
   garantirLeadDaConversa.mockResolvedValue({ criado: true, leadId: "lead-1" } as never);
   vi.mocked(acelerarFollowupDoInbound).mockReset();
@@ -449,6 +482,91 @@ describe("opt-out fecha o negócio aberto como perdido", () => {
   });
 });
 
+describe("opt-out encerra as demandas abertas do contato (#3288)", () => {
+  const encerramentos = () => rpcChamadas.filter((c) => c.nome === "fn_demanda_encerrar");
+
+  it("cada demanda aberta é encerrada como encerrada_pelo_cliente, com a revisão lida", async () => {
+    // A demanda do contato abria e ficava: fechar a conversa/caso só preenche o
+    // próximo passo. Com o opt-out encerrando, ela sai do Radar no mesmo ato.
+    demandasAbertas = [
+      { id: "dem-1", revision: 3 },
+      { id: "dem-2", revision: 7 },
+    ];
+
+    await rodar({ texto: "PARAR" });
+
+    const chamadas = encerramentos();
+    expect(chamadas).toHaveLength(2);
+    expect(chamadas[0]?.args).toMatchObject({
+      p_org: "org-1",
+      p_demanda: "dem-1",
+      p_expected: 3,
+      p_desfecho: "encerrada_pelo_cliente",
+    });
+    expect(chamadas[1]?.args).toMatchObject({ p_demanda: "dem-2", p_expected: 7 });
+    // A origem do encerramento fica registrada — o MESMO ator do fechamento do
+    // card (o sistema que agiu pela mensagem), não uma pessoa.
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "demanda.encerrada",
+        organizationId: "org-1",
+        resourceType: "demanda",
+        resourceId: "dem-1",
+        metadata: expect.objectContaining({
+          actor_id: "canal-inbound",
+          desfecho: "encerrada_pelo_cliente",
+        }),
+      }),
+    );
+  });
+
+  it("lê só as ABERTAS do contato, na organização certa", async () => {
+    // O filtro `fechada_em is null` é o que garante que demanda JÁ encerrada não
+    // é tocada: sem ele, o rpc devolveria conflito e reencerraria pela porta dos
+    // fundos algo que já tinha desfecho. Nenhum rpc a mais.
+    await rodar({ texto: "PARAR" });
+
+    expect(filtrosDeDemandas).toEqual(
+      expect.arrayContaining([
+        ["organization_id", "org-1"],
+        ["contact_id", "contato-1"],
+        ["fechada_em", null],
+      ]),
+    );
+    expect(encerramentos()).toHaveLength(0);
+  });
+
+  it("contato sem demanda aberta percorre o caminho sem erro e sem rpc", async () => {
+    await expect(rodar({ texto: "PARAR" })).resolves.toBeUndefined();
+    expect(encerramentos()).toHaveLength(0);
+    // O resto da ingestão segue: o agente ainda é despachado.
+    expect(sequencia).toContain("rpc:ai_agent.dispatch_requested");
+  });
+
+  it("mensagem que não pede para sair não lê nem encerra demanda", async () => {
+    demandasAbertas = [{ id: "dem-1", revision: 1 }];
+
+    await rodar({ texto: "oi, tudo bem?" });
+
+    expect(sequencia).not.toContain("select:demandas");
+    expect(encerramentos()).toHaveLength(0);
+  });
+
+  it("falha ao encerrar uma demanda não derruba a ingestão", async () => {
+    demandasAbertas = [{ id: "dem-1", revision: 1 }];
+    rpcErro = { message: "demanda_stale" };
+
+    await expect(rodar({ texto: "PARAR" })).resolves.toBeUndefined();
+
+    // Tentou encerrar; o erro do banco ficou no log e a ingestão seguiu.
+    expect(encerramentos()).toHaveLength(1);
+    expect(sequencia).toContain("rpc:ai_agent.dispatch_requested");
+    expect(audit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "demanda.encerrada" }),
+    );
+  });
+});
+
 describe("despacho do agente", () => {
   it("emite com o payload que o consumidor lê, campo a campo", async () => {
     // O consumidor é UM só. Um payload por canal faria o worker adivinhar de
@@ -483,6 +601,46 @@ describe("despacho do agente", () => {
 });
 
 describe("nascimento do lead", () => {
+  it("sem ID retornado do INSERT ainda tenta abrir demanda sem fabricar prova CTWA", async () => {
+    await rodar({ messageId: null });
+
+    expect(garantirLeadDaConversa).toHaveBeenCalledTimes(1);
+    expect(garantirLeadDaConversa).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        organizationId: "org-1",
+        contactId: "contato-1",
+        conversationId: "conversa-1",
+        messageId: null,
+      }),
+    );
+    expect(sequencia).not.toContain("rpc:ai_agent.dispatch_requested");
+  });
+
+  it("uma nova tentativa apos falha do nascimento preserva a mesma identidade", async () => {
+    garantirLeadDaConversa
+      .mockRejectedValueOnce(new Error("falha transitoria") as never)
+      .mockResolvedValueOnce({ criado: false, motivo: "ja_existe" } as never);
+
+    await expect(rodar({ messageId: null })).resolves.toBeUndefined();
+    await expect(rodar({ messageId: null })).resolves.toBeUndefined();
+
+    expect(garantirLeadDaConversa).toHaveBeenCalledTimes(2);
+    for (const numero of [1, 2]) {
+      expect(garantirLeadDaConversa).toHaveBeenNthCalledWith(
+        numero,
+        expect.anything(),
+        expect.objectContaining({
+          organizationId: "org-1",
+          contactId: "contato-1",
+          conversationId: "conversa-1",
+          messageId: null,
+        }),
+      );
+    }
+    expect(sequencia).not.toContain("rpc:ai_agent.dispatch_requested");
+  });
+
   it("leva o nome do contato para batizar o card", async () => {
     await rodar({ nomeDoContato: "Marcela" });
     expect(garantirLeadDaConversa).toHaveBeenCalledWith(
@@ -815,5 +973,43 @@ describe("o ref curto da página que veio no texto", () => {
 
     expect(sequencia).not.toContain("update:meta_ads_click_refs");
     expect(nomesDeRpc()).toContain("fn_estampar_atribuicao_de_anuncio");
+  });
+});
+
+describe("sem código no texto, a origem pode vir do horário do clique", () => {
+  const REF = "[ref:K7M2P9]";
+  const DK1 = `[dk1:${Buffer.from(JSON.stringify({ utm_campaign: "x" }), "utf8").toString("base64url")}]`;
+
+  it("tenta a inferência com a entrada desta mensagem", async () => {
+    await rodar({ texto: "oi, quero saber do produto" });
+
+    expect(casarOrigemPorHorario).toHaveBeenCalledTimes(1);
+    expect(casarOrigemPorHorario.mock.calls[0]?.[1]).toMatchObject({
+      organizationId: "org-1",
+      contactId: "contato-1",
+      messageId: "msg-1",
+      channelSessionId: "sessao-1",
+    });
+  });
+
+  it("e a tenta ANTES de o card nascer", async () => {
+    garantirLeadDaConversa.mockImplementationOnce(async () => {
+      sequencia.push("lead:nascimento");
+      return { criado: true, leadId: "lead-1" } as never;
+    });
+    await rodar({ texto: "oi" });
+
+    expect(sequencia.indexOf("origem:horario")).toBeGreaterThanOrEqual(0);
+    expect(sequencia.indexOf("lead:nascimento")).toBeGreaterThan(sequencia.indexOf("origem:horario"));
+  });
+
+  it("com o `[ref:]` no texto, a prova manda e a inferência nem roda", async () => {
+    await rodar({ texto: `oi ${REF}` });
+    expect(casarOrigemPorHorario).not.toHaveBeenCalled();
+  });
+
+  it("com o `[dk1:]` no texto, também não", async () => {
+    await rodar({ texto: `oi ${DK1}` });
+    expect(casarOrigemPorHorario).not.toHaveBeenCalled();
   });
 });

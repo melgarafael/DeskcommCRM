@@ -23,7 +23,7 @@
  * inalterado — é o requisito explícito de preservar o comportamento atual.
  */
 import type { MappedLead } from "@/lib/webhooks/inbound";
-import { normalizePhoneBR } from "@/lib/webhooks/inbound";
+import { ehChaveDeAnuncio, normalizePhoneBR } from "@/lib/webhooks/inbound";
 
 interface RespondiRawAnswer {
   answer: unknown;
@@ -227,13 +227,21 @@ export function mapRespondiPayload(payload: RespondiPayload): RespondiMapped {
   // antes de captar. Nenhuma delas começa com "utm_" nos envios reais
   // observados (Respondi não manda UTM neste payload); se um dia mandar,
   // cai em source_metadata como o resto do produto espera.
+  //
+  // O mesmo vale para as chaves de ANÚNCIO (issue #3149): o Respondi não tem
+  // campo nativo para o clique, então a pergunta do formulário vem com o rótulo
+  // (`fbclid`, `gclid`…), e uma pergunta assim era gravada como campo do card —
+  // o clique do anúncio sumia antes de chegar à atribuição do contato. Agora
+  // ela segue a MESMA lista (`CHAVES_DE_ANUNCIO`) e o MESMO destino dos outros
+  // caminhos: `source_metadata`.
   const matchedTitles = new Set(Object.values(RESPONDI_QUESTION_ALIASES).flat());
   const source_metadata: Record<string, string> = {};
   for (const [title, value] of Object.entries(answers)) {
     if (matchedTitles.has(title)) continue;
     if (typeof value !== "string" || !value.trim()) continue;
-    if (title.toLowerCase().startsWith("utm_")) {
-      source_metadata[title.toLowerCase()] = value.trim();
+    const chave = title.toLowerCase();
+    if (chave.startsWith("utm_") || ehChaveDeAnuncio(chave)) {
+      source_metadata[chave] = value.trim();
     } else {
       custom_fields[`respondi_q_${slugifyQuestion(title)}`] = value.trim();
     }

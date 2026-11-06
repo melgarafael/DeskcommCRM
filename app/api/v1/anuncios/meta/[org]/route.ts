@@ -109,10 +109,9 @@ export async function GET(req: NextRequest, ctx: RouteContext): Promise<Response
     return paginaDeSaida(whatsAppUrl(config.whatsappE164, textoSemRef(config.messageTemplate)));
   }
 
-  const queryRaw = Object.fromEntries(parametros.entries());
   const criado = await criarClickRef(admin, "meta_ads_click_refs", organizationId, {
     utm,
-    query_raw: queryRaw,
+    query_raw: utm,
   });
   if (!criado) {
     // Falha ao gravar: mesma régua — a pessoa não paga o preço de um erro

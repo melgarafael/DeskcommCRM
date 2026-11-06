@@ -79,10 +79,15 @@ describe("o motivo da passagem acionada pela ferramenta", () => {
     });
   });
 
+  // #3310: o motivo do cartão passa a ser o que foi DECLARADO. Ausência de
+  // `motivo_codigo` e texto livre deixam de virar "o cliente pediu uma pessoa"
+  // (o modelo é ensinado a declarar `requested_human` para o pedido de fato —
+  // ver `PAYLOAD_TEACHING`); o que o chamador escreveu continua inteiro em
+  // `conversations.last_handoff_reason`, que é a fonte do aviso ao lead.
   it.each([
-    { payload: {}, motivo: "requested_human", texto: "requested_human" },
-    { payload: { reason: "Texto do chamador antigo" }, motivo: "requested_human", texto: "Texto do chamador antigo" },
-    { payload: { por_que: "Pedido explícito", reason: "Sinônimo antigo" }, motivo: "requested_human", texto: "Pedido explícito" },
+    { payload: {}, motivo: "low_confidence", texto: "low_confidence" },
+    { payload: { reason: "Texto do chamador antigo" }, motivo: "low_confidence", texto: "Texto do chamador antigo" },
+    { payload: { por_que: "Pedido explícito", reason: "Sinônimo antigo" }, motivo: "low_confidence", texto: "Pedido explícito" },
     { payload: { motivo_codigo: "requested_human", por_que: "Quero falar com alguém" }, motivo: "requested_human", texto: "Quero falar com alguém" },
     { payload: { motivo_codigo: "critical_stage" }, motivo: "critical_stage", texto: "critical_stage" },
     { payload: { motivo_codigo: "critical_stage", reason: "Conclusão pela equipe" }, motivo: "critical_stage", texto: "Conclusão pela equipe" },

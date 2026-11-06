@@ -1,0 +1,6 @@
+interface:
+  display_name: "Atualizar o curso"
+  short_description: "Revê aulas e refaz capturas do curso após mudanças do CRM"
+  default_prompt: "Use a skill deskcomm-curso para atualizar o curso visual conforme a versão do CRM, revisar as aulas afetadas e gerar capturas reais."
+policy:
+  allow_implicit_invocation: true

@@ -10,7 +10,8 @@
  *
  * Cada caso aqui é um formato de falha REAL do caminho por assinatura: janela de
  * uso estourada, token do login vencido, assinatura inativa, 5xx do provedor e
- * rede — mais o 4xx que NÃO é da credencial e que, por isso, não cai.
+ * rede — mais o 4xx que NÃO é da credencial, que sem reserva passa para um
+ * humano em vez de calar (#3371, fatias 1 e 2).
  */
 import { describe, expect, it } from "vitest";
 
@@ -30,9 +31,20 @@ describe("classificarFalhaDaAssinatura — o que aconteceu", () => {
   const casos: [string, number | null, string | null, MotivoDaQueda | null][] = [
     ["janela de uso estourada", 429, null, "limite_de_uso"],
     ["crédito esgotado devolve 402", 402, null, "limite_de_uso"],
-    ["400 de payload: a chamada é que está errada", 400, "invalid tool schema", null],
-    ["404 de rota desconhecida", 404, "not found", null],
-    ["422 de parâmetro", 422, "unprocessable", null],
+    [
+      // #3371: o incidente. O ChatGPT por assinatura esgota a cota com HTTP 400,
+      // e o status sozinho mandava o caso para "erro nosso" — a reserva não era
+      // tentada e o turno morria em silêncio.
+      "400 do ChatGPT dizendo Subscription Sharing usage limit (#3371)",
+      400,
+      "The ChatGPT user has reached their Subscription Sharing usage limit",
+      "limite_de_uso",
+    ],
+    ["400 de limite de uso sem o nome do produto", 400, "You exceeded your current usage limit", "limite_de_uso"],
+    ["422 que na verdade é cota estourada, com usage_limit colado", 422, "usage_limit reached", "limite_de_uso"],
+    ["400 de payload: a chamada é que está errada", 400, "invalid tool schema", "erro_de_pedido"],
+    ["404 de rota desconhecida", 404, "not found", "erro_de_pedido"],
+    ["422 de parâmetro", 422, "unprocessable", "erro_de_pedido"],
     ["401 sem sinal de expiração: assinatura recusada", 401, "invalid api key", "sem_autorizacao"],
     ["403 idem", 403, "forbidden", "sem_autorizacao"],
     ["401 dizendo que venceu", 401, "token expired", "token_expirado"],
@@ -85,6 +97,17 @@ describe("decidirQuedaDaAssinatura — para onde vai", () => {
     expect(decisao && "motivo" in decisao ? decisao.motivo : null).toBe("token_expirado");
   });
 
+  it("sem reserva, o erro de pedido TAMBÉM passa para um humano — a falha não vira silêncio (#3371)", () => {
+    // Antes da #3371 o 400 nosso não gerava motivo nenhum: sem reserva, o turno
+    // morria calado, do mesmo jeito que o 400 de cota estourada.
+    const decisao = decidirQuedaDaAssinatura({ motivo: "erro_de_pedido", temChaveDeReserva: false });
+    expect(decisao).toEqual({ acao: "passar_para_humano", motivo: "erro_de_pedido" });
+  });
+
+  it("com reserva, o erro de pedido NÃO cai: o mesmo corpo seria recusado de novo", () => {
+    expect(decidirQuedaDaAssinatura({ motivo: "erro_de_pedido", temChaveDeReserva: true })).toBeNull();
+  });
+
   it("sem falha não há decisão", () => {
     expect(decidirQuedaDaAssinatura({ motivo: null, temChaveDeReserva: true })).toBeNull();
     expect(decidirQuedaDaAssinatura({ motivo: null, temChaveDeReserva: false })).toBeNull();
@@ -111,6 +134,33 @@ describe("decidirQuedaDoProvedor — quem tem direito a cair", () => {
       temChaveDeReserva: true,
     });
     expect(decisao).toBeNull();
+  });
+
+  it("o 400 que DIZ ser limite de uso é limite de uso — e cai para a reserva (#3371)", () => {
+    // O caso do incidente de 23/10/2026: o ChatGPT por assinatura devolveu
+    // HTTP 400 com a cota estourada, o status sozinho classificava como erro
+    // nosso, a reserva não era tentada e o agente ficou ~30 minutos calado.
+    const decisao = decidirQuedaDoProvedor({
+      provider: PROVEDOR_POR_ASSINATURA,
+      status: 400,
+      detalhe: "The ChatGPT user has reached their Subscription Sharing usage limit",
+      temChaveDeReserva: true,
+    });
+    expect(decisao).toEqual({
+      acao: "tentar_reserva",
+      provedorDeReserva: PROVEDOR_DE_RESERVA_DA_ASSINATURA,
+      motivo: "limite_de_uso",
+    });
+  });
+
+  it("o 400 que é nosso, sem reserva, passa para um humano — nunca silêncio (#3371)", () => {
+    const decisao = decidirQuedaDoProvedor({
+      provider: PROVEDOR_POR_ASSINATURA,
+      status: 400,
+      detalhe: "invalid tool schema",
+      temChaveDeReserva: false,
+    });
+    expect(decisao).toEqual({ acao: "passar_para_humano", motivo: "erro_de_pedido" });
   });
 
   it("provedor nativo que falha segue com o desfecho de sempre — não cai para chave alheia", () => {

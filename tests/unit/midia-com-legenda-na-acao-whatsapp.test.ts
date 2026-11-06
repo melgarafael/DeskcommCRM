@@ -7,9 +7,11 @@
  * mídia do Inbox e das campanhas (`sendMessageHandler`) nunca era alcançada daqui,
  * e um `media_url` no config era campo morto — validado pela tela e ignorado pelo
  * runtime. O que se prova aqui é o outro lado: COM mídia, o `body` sai como LEGENDA
- * da imagem/PDF pelo MESMO handler; e quando a mídia não pode sair — arquivo que não
- * é imagem nem PDF, ou janela de 24 h fechada num canal de hetero-restrição — o
+ * da mídia pelo MESMO handler; e quando a mídia não pode sair — URL sem tipo
+ * identificável, ou janela de 24 h fechada num canal de hetero-restrição — o
  * passo RECUSA com motivo em vez de mandar o texto solto no lugar dela.
+ * #2972: os tipos que saem deixaram de ser só imagem e PDF (áudio, vídeo e
+ * documento entraram), e o caso da planilha virou o CONTROLE disso.
  *
  * ═══ O que o dublê é, e o que ele não é ═══
  *
@@ -200,16 +202,53 @@ describe("send_whatsapp_message — COM mídia, o texto vira LEGENDA", () => {
   });
 });
 
-describe("send_whatsapp_message — arquivo que não é imagem nem PDF", () => {
-  it("planilha: recusada com motivo, e NENHUM envio sai — nem o texto", async () => {
+describe("send_whatsapp_message — áudio, vídeo e documento (#2972)", () => {
+  it("planilha: sai como `document` com o texto de legenda, pela mesma cadeia", async () => {
     const r = await executar(
       { channel_session_id: CANAL, template: "Segue a planilha.", media_url: "https://cdn.exemplo/custos.xlsx" },
       bancoFalso({ provider: "waha", ultimoInbound: null }),
     );
 
+    expect(r.status).toBe("success");
+    expect(envio()).toMatchObject({
+      type: "document",
+      media_url: "https://cdn.exemplo/custos.xlsx",
+      media_mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    // A legenda continua sendo o texto da regra renderizado — não uma string vazia.
+    expect(String(envio().body).length).toBeGreaterThan(0);
+  });
+
+  it("áudio do operador: sai como `type: audio` (mensagem de voz na ponta do canal)", async () => {
+    const r = await executar(
+      { channel_session_id: CANAL, template: "Escuta o recado.", media_url: "https://cdn.exemplo/recado.ogg" },
+      bancoFalso({ provider: "waha", ultimoInbound: null }),
+    );
+
+    expect(r.status).toBe("success");
+    expect(envio()).toMatchObject({ type: "audio", media_mime: "audio/ogg" });
+  });
+
+  it("vídeo curto: sai como `type: video`", async () => {
+    const r = await executar(
+      { channel_session_id: CANAL, template: "Olha o produto.", media_url: "https://cdn.exemplo/produto.mp4" },
+      bancoFalso({ provider: "waha", ultimoInbound: null }),
+    );
+
+    expect(r.status).toBe("success");
+    expect(envio()).toMatchObject({ type: "video", media_mime: "video/mp4" });
+  });
+
+  it("CONTROLE: a URL sem tipo identificável continua recusada, e nada sai", async () => {
+    // A cerca que SOBREVIVEU à ampliação: o que a régua ganhou foram tipos
+    // conhecidos, não a permissão de adivinhar.
+    const r = await executar(
+      { channel_session_id: CANAL, template: "Segue.", media_url: "https://cdn.exemplo/relatorio.qzx" },
+      bancoFalso({ provider: "waha", ultimoInbound: null }),
+    );
+
     expect(r.status).toBe("failed");
-    expect(String(r.error)).toMatch(/imagem|PDF/);
-    // A metade que importa: "recusado" não pode virar "mandei só a legenda".
+    expect(String(r.error)).toMatch(/imagem/);
     expect(sendMessageHandler).not.toHaveBeenCalled();
     expect(espacarEnvio).not.toHaveBeenCalled();
   });

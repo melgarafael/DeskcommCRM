@@ -51,9 +51,10 @@ export const corDeEtiquetaSchema = z
   .transform((valor) => normalizarCorDeEtiqueta(valor) as string);
 
 /**
- * `juntar` é o único caso em que a tag de origem e o destino podem coexistir com
- * grafias diferentes ("vip" + "VIP" → "VIP"): a função de banco desduplica por
- * nome canônico, então aqui só se exige que o destino exista e seja diferente.
+ * Renomear só a caixa também é operação (#3507): a função de banco conserva a
+ * grafia pedida onde ela é exibida e normaliza as colunas que exigem minúscula.
+ * Os nomes já passam por `trim`; só o nome exatamente igual é recusado aqui.
+ * `juntar` continua aceitando "vip" + "VIP" → "VIP" para desduplicar grafias.
  */
 export const vocabularioDeTagsSchema = z
   .object({
@@ -108,11 +109,11 @@ export const vocabularioDeTagsSchema = z
     }
     if (
       valor.acao === "renomear" &&
-      valor.destino.toLowerCase() === valor.tag.toLowerCase()
+      valor.destino === valor.tag
     ) {
-      // Renomear para o mesmo nome (mesmo com outra caixa) não é operação: a
-      // função de banco devolveria `alterou: false` e a tela diria "nada mudou"
-      // sem explicar por quê.
+      // Depois de aparar, o nome exatamente igual não muda nada. Outra caixa
+      // precisa chegar à operação do banco, que preserva a normalização de
+      // contatos e conversas sem apagar a grafia de exibição pedida.
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["destino"],
@@ -134,3 +135,16 @@ export type LinhaDeVocabulario = {
   descricao: string | null;
   no_vocabulario: boolean;
 };
+
+export const tagsPageQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).max(10000).default(1),
+  busca: z.string().trim().max(60).default(""),
+});
+export const tagsPageResultSchema = z.object({
+  total: z.number().int().nonnegative(),
+  items: z.array(z.object({
+    tag: z.string(), uso_em_contatos: z.number(), uso_em_leads: z.number(),
+    uso_em_conversas: z.number(), em_regras: z.number(),
+    cor: z.string().nullable(), descricao: z.string().nullable(), no_vocabulario: z.boolean(),
+  })),
+});

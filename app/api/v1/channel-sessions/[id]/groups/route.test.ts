@@ -9,10 +9,11 @@ vi.mock("@/lib/grupos/servico", async (orig) => ({
   criarDepsDeGrupos: vi.fn(() => ({})),
   listarGruposDoNumero: vi.fn(),
   alternarGrupo: vi.fn(),
+  definirIaDoGrupo: vi.fn(),
 }));
 
 import { requireRole } from "@/lib/auth/require-role";
-import { alternarGrupo, GrupoError, listarGruposDoNumero } from "@/lib/grupos/servico";
+import { alternarGrupo, definirIaDoGrupo, GrupoError, listarGruposDoNumero } from "@/lib/grupos/servico";
 import { GET, PUT } from "./route";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
@@ -33,7 +34,7 @@ describe("grupos do número", () => {
   });
   it("lista os grupos com a organização da sessão, nunca do body", async () => {
     autorizado();
-    vi.mocked(listarGruposDoNumero).mockResolvedValue([{ chatId: "1@g.us", subject: "A", enabled: false, enabledAt: null, presente: true }]);
+    vi.mocked(listarGruposDoNumero).mockResolvedValue([{ chatId: "1@g.us", subject: "A", enabled: false, enabledAt: null, presente: true, iaResponde: false }]);
     const res = await GET(new NextRequest("http://x"), ctx);
     expect(res.status).toBe(200);
     expect(listarGruposDoNumero).toHaveBeenCalledWith(expect.anything(), { organizationId: ORG, channelSessionId: SESS });
@@ -64,5 +65,41 @@ describe("grupos do número", () => {
     autorizado();
     const res = await PUT(new NextRequest("http://x", { method: "PUT", body: JSON.stringify({ group_chat_id: "5568@c.us", enabled: "sim" }) }), ctx);
     expect(res.status).toBe(400);
+  });
+
+  // ── #2729 — a chave POR GRUPO "Permitir que a IA responda neste grupo" ────
+  it("#2729: libera a IA num grupo, sem tocar no filtro do WhatsApp", async () => {
+    autorizado();
+    vi.mocked(definirIaDoGrupo).mockResolvedValue({ ia_responde: true });
+    const res = await PUT(
+      new NextRequest("http://x", { method: "PUT", body: JSON.stringify({ group_chat_id: "1@g.us", ia_responde: true }) }),
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    expect(definirIaDoGrupo).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ organizationId: ORG, groupChatId: "1@g.us", iaResponde: true, actorUserId: "u1" }));
+    expect(alternarGrupo).not.toHaveBeenCalled();
+    // O mesmo `organization_id` forjado no body que o teste acima prova ignorado.
+    expect(vi.mocked(definirIaDoGrupo).mock.calls[0]![1]).not.toHaveProperty("organization_id");
+  });
+
+  it("#2729: grupo desligado é 409 — não há chave para liberar", async () => {
+    autorizado();
+    vi.mocked(definirIaDoGrupo).mockRejectedValue(new GrupoError("grupo_desligado"));
+    const res = await PUT(
+      new NextRequest("http://x", { method: "PUT", body: JSON.stringify({ group_chat_id: "1@g.us", ia_responde: true }) }),
+      ctx,
+    );
+    expect(res.status).toBe(409);
+  });
+
+  it("#2729: body sem nada para alterar é 400", async () => {
+    autorizado();
+    const res = await PUT(
+      new NextRequest("http://x", { method: "PUT", body: JSON.stringify({ group_chat_id: "1@g.us" }) }),
+      ctx,
+    );
+    expect(res.status).toBe(400);
+    expect(alternarGrupo).not.toHaveBeenCalled();
+    expect(definirIaDoGrupo).not.toHaveBeenCalled();
   });
 });

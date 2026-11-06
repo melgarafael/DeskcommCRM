@@ -67,6 +67,8 @@ export interface EntradaDoBloqueio {
   provedor: string;
   chave: ChaveDaVersao;
   numero: NumeroDaVersao;
+  /** Membro de um roteador: o canal de entrada pertence ao roteador, não à versão. */
+  roteador?: { estadoDoCanal: string | null } | null;
 }
 
 export type MotivoDeBloqueio =
@@ -117,9 +119,13 @@ export function bloqueioDePublicacao(e: EntradaDoBloqueio): MotivoDeBloqueio | n
     }
   }
 
-  if (e.numero.estado === null) return { codigo: "sem_numero" };
-  if (!canalNoAr(e.numero.estado)) {
-    return { codigo: "numero_desconectado", estado: e.numero.estado };
+  // Canal explícito prevalece. Se não houver, SOMENTE um vínculo real com
+  // roteador pode fornecer o estado do seu canal; o servidor revalida org,
+  // associação e WORKING na publicação (não confiar apenas no cliente).
+  const estado = e.numero.estado ?? e.roteador?.estadoDoCanal ?? null;
+  if (estado === null) return { codigo: "sem_numero" };
+  if (!canalNoAr(estado)) {
+    return { codigo: "numero_desconectado", estado };
   }
 
   return null;

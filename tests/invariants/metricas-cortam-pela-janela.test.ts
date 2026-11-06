@@ -372,7 +372,16 @@ const chave = (func: string) => (func === "fn_attendant_metrics" ? "attendants" 
 /**
  * A RPC NOVA e a régua de REFERÊNCIA na MESMA sessão, sob a MESMA RLS, recortadas
  * pela mesma chave — a comparação é byte a byte do jsonb.
+ *
+ * #3212 — a função nova ganha um campo DE PROPÓSITO (`median_first_response_seconds`)
+ * e a régua de referência, que é o corpo de `origin/main`, NÃO o tem. A paridade
+ * que este arquivo mede é a dos NÚMEROS da #2514: o campo novo sai do lado novo
+ * antes da comparação, e o lado de referência é conferido como NÃO o tendo — se
+ * ele aparecer lá um dia, a referência deixou de ser referência e este caso tem
+ * de ser revisto, não "consertado".
  */
+const CAMPO_DA_MEDIANA = "median_first_response_seconds";
+
 function expectParidade(func: string, actor: string, org: string, de: string, ate: string) {
   const out = sql(`
     ${como(actor)}
@@ -384,7 +393,24 @@ function expectParidade(func: string, actor: string, org: string, de: string, at
   const ref = linhas.find((l) => l.startsWith("REF:"));
   expect(novo, `a saída da RPC nova não chegou: ${out.slice(0, 200)}`).toBeDefined();
   expect(ref, `a saída da régua de referência não chegou: ${out.slice(0, 200)}`).toBeDefined();
-  expect(JSON.parse(novo!.slice(5))).toEqual(JSON.parse(ref!.slice(4)));
+  const novoJson = JSON.parse(novo!.slice(5)) as Array<Record<string, unknown>> | null;
+  const refJson = JSON.parse(ref!.slice(4)) as Array<Record<string, unknown>> | null;
+  if (func === "fn_attendant_metrics") {
+    for (const linha of novoJson ?? []) {
+      expect(
+        Object.prototype.hasOwnProperty.call(linha, CAMPO_DA_MEDIANA),
+        "a mediana da #3212 desapareceu da linha do atendente",
+      ).toBe(true);
+      delete linha[CAMPO_DA_MEDIANA];
+    }
+    for (const linha of refJson ?? []) {
+      expect(
+        Object.prototype.hasOwnProperty.call(linha, CAMPO_DA_MEDIANA),
+        "a régua de referência (corpo de origin/main) não pode ter a mediana da #3212",
+      ).toBe(false);
+    }
+  }
+  expect(novoJson).toEqual(refJson);
 }
 
 type NoPlano = {

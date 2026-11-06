@@ -644,6 +644,23 @@ export type MarcaDaOrganizacao = {
    * motivo de `logo_dark_path` (kit self-host com código velho sobre dado novo).
    */
   readonly accent_dark_hex?: string | null;
+  /**
+   * O NOME de exibição e o "responder para" do e-mail que a AUTOMAÇÃO manda ao
+   * cliente final (#3287, fatia 1).
+   *
+   * Mora no MESMO `settings.branding` porque é a mesma pergunta que a marca já
+   * responde — "como a minha empresa aparece para o meu cliente" —, e o jsonb
+   * acolhe o campo sem migration pelo mesmo motivo dos dois `*_dark_path`:
+   * código velho sobre dado novo é o estado NORMAL de um rollback do kit, e as
+   * chaves de baixo continuam valendo por campo.
+   *
+   * NÃO entram em `CamadaDeMarca`: elas não pintam tela nenhuma (nem cor, nem
+   * nome de menu, nem logo), são lidas SÓ pelo caminho do e-mail de automação
+   * (`lib/email/remetente-da-organizacao.ts`). Misturá-las à camada de marca
+   * faria o resolvedor de CSS carregar e-mail.
+   */
+  readonly email_from_name?: string | null;
+  readonly email_reply_to?: string | null;
 };
 
 /**

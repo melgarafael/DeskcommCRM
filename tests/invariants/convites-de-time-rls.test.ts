@@ -165,6 +165,48 @@ describe("team_invites — isolamento e gate de papel", () => {
     ).toBeGreaterThan(0);
   });
 
+  /**
+   * O índice único PARCIAL da migration 0238 é o que impede a aba Membros de
+   * listar dois pendentes para a mesma pessoa — e é o que faz o recônvite
+   * RENOVAR a linha em vez de inserir outra. Medido aqui porque a garantia é do
+   * banco: o caminho de aplicação (`emitirConvite`) lê o pendente antes de
+   * escrever, e essa leitura não sobrevive a duas requisições simultâneas.
+   */
+  describe("índice único de pendentes (uma linha por e-mail e organização)", () => {
+    const EMAIL = "duplicado@invariant.test";
+
+    it("dois convites PENDENTES para o mesmo e-mail na mesma org são recusados", () => {
+      // Case-insensitive: o índice é sobre lower(email), e o caminho de
+      // aplicação normaliza o endereço — grafias diferentes são a MESMA pessoa.
+      expect(() =>
+        sql(`
+          insert into public.team_invites (organization_id, email, role, expires_at)
+          values ('${ORG_A}', '${EMAIL}', 'agent',   now() + interval '24 hours'),
+                 ('${ORG_A}', 'DUPLICADO@invariant.test', 'manager', now() + interval '24 hours');
+        `),
+      ).toThrow();
+
+      // O insert de duas linhas é atômico: nada ficou pela metade.
+      const gravados = sql(`
+        select count(*) from public.team_invites
+         where organization_id = '${ORG_A}' and lower(email) = '${EMAIL}';
+      `);
+      expect(gravados.split("\n").pop()).toBe("0");
+    });
+
+    it("o MESMO e-mail em OUTRA organização é permitido — o índice é por org", () => {
+      sql(`
+        insert into public.team_invites (organization_id, email, role, expires_at)
+        values ('${ORG_B}', '${EMAIL}', 'agent', now() + interval '24 hours');
+      `);
+      const gravados = sql(`
+        select count(*) from public.team_invites
+         where organization_id = '${ORG_B}' and lower(email) = '${EMAIL}';
+      `);
+      expect(Number(gravados.split("\n").pop())).toBe(1);
+    });
+  });
+
   it("o MANAGER não consegue revogar — a escrita exige admin", () => {
     sql(`
       set role authenticated;

@@ -153,6 +153,15 @@ export const CHANNEL_PROVIDER_DATAFY: ChannelProvider = "datafy";
 export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
 
 /**
+ * O provider em que o NÚMERO é a conexão: pareado por QR, a linha só vira
+ * conexão quando um aparelho lê o código. A linha morta (`FAILED`/`STOPPED`)
+ * sem número, ali, é QR que ninguém leu e não ocupa a vaga do plano (#3416);
+ * nos outros provedores o número não identifica a conexão. É a mesma régua dos
+ * gatilhos `fn_trava_canais_do_plano` e `fn_vaga_ao_reviver_canal`.
+ */
+export const PROVIDER_EM_QUE_O_NUMERO_E_A_CONEXAO: ChannelProvider = CHANNEL_PROVIDER_WAHA;
+
+/**
  * Os providers por onde MENSAGEM entra e sai — a única lista que responde
  * "este canal serve para conversar?".
  *
@@ -174,6 +183,27 @@ export const PROVIDERS_DE_MENSAGEM = [
   "zernio_social",
   "datafy",
 ] as const satisfies readonly ProviderDeMensagem[];
+
+/**
+ * Os providers que alcançam um APARELHO: o endereço é o TELEFONE.
+ *
+ * É um recorte de `PROVIDERS_DE_MENSAGEM`, e a diferença é a das REDES SOCIAIS
+ * (`zernio_social`): o Instagram e o Facebook só falam com quem já escreveu, o
+ * contato de lá é outro endereço (handle) e não existe telefone a discar. Quem
+ * tem um número na mão e escolhe a sessão social escolheu um canal que NÃO
+ * alcança o destino — e o envio fora da janela de 24h é recusado (#3358,
+ * medido: "O canal recusou o envio. Confira a conexão em Conexões.").
+ *
+ * `satisfies` sobre o recorte declara a relação entre as duas listas: um
+ * provider que não seja de mensagem não pode entrar aqui, e um provider social
+ * que apareça nesta lista reprova em compilação, não em produção.
+ */
+export const PROVIDERS_DE_TELEFONE = [
+  "waha",
+  "meta_cloud",
+  "zernio",
+  "datafy",
+] as const satisfies readonly Exclude<(typeof PROVIDERS_DE_MENSAGEM)[number], "zernio_social">[];
 
 /**
  * `true` quando a linha de `channel_sessions` é um canal de mensagem.
@@ -223,6 +253,46 @@ void _todoProviderFoiClassificado;
 /** `true` só para provider conhecido cuja natureza não é mensagem. */
 export function canalConhecidoSemMensagem(provider: string | null | undefined): boolean {
   return (PROVIDERS_SEM_MENSAGEM as readonly string[]).includes(provider ?? "");
+}
+
+/**
+ * Como uma CAMPANHA fala por este canal: texto livre (`text`), modelo aprovado
+ * (`template`) ou não fala (`null`).
+ *
+ * Campanha é contato que a empresa inicia — quase sempre fora das 24 horas da
+ * última mensagem do cliente. Por isso a pergunta é `freeformOutsideWindow`, e
+ * não "aceita texto": o número oficial aceita texto, mas só dentro da janela.
+ * Canal que nem manda texto fora da janela nem tem modelo (as redes sociais)
+ * não serve para campanha nenhuma.
+ *
+ * Tolerante como `transportaMensagem`: provider que esta imagem não conhece
+ * responde `null` em vez de lançar — a tela de campanha lista conexões, e um
+ * throw apagaria a lista inteira.
+ */
+export function modoDeCampanhaDoCanal(provider: string | null | undefined): "text" | "template" | null {
+  if (!transportaMensagem(provider)) return null;
+  try {
+    const caps = capabilitiesOf(provider as ProviderDeMensagem);
+    if (caps.freeformOutsideWindow) return "text";
+    if (caps.requiresTemplates) return "template";
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * O canal corre risco de banimento por volume (número por QR)? É o que liga o
+ * aquecimento e o teto anti-ban do ritmo. Desconhecido responde `true`: no
+ * ritmo, errar para o lado de mandar devagar é o erro barato.
+ */
+export function canalTemRiscoDeBanimento(provider: string | null | undefined): boolean {
+  if (!transportaMensagem(provider)) return true;
+  try {
+    return capabilitiesOf(provider as ProviderDeMensagem).banRisk;
+  } catch {
+    return true;
+  }
 }
 
 export function capabilitiesOf(provider: ChannelProvider): ChannelCapabilities {

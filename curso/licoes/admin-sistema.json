@@ -1,0 +1,638 @@
+{
+  "id": "admin-sistema",
+  "titulo": "Recursos opcionais (Admin)",
+  "tela": "/admin/sistema",
+  "resumo": "O lugar onde quem instalou o sistema liga os recursos extras, decide como ele se comporta e vê o que depende do servidor, para todas as empresas de uma vez.",
+  "licoes": [
+    {
+      "id": "conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Recursos opcionais",
+      "objetivo": "Saber o que a tela de Recursos opcionais controla e reconhecer as suas três partes.",
+      "papel": "admin",
+      "busca": [
+        "recursos opcionais",
+        "onde ligar recursos do sistema",
+        "ligar e desligar funções",
+        "configuração da instalação",
+        "módulos do sistema",
+        "admin recursos opcionais"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "texto": "No Admin, o item \"Recursos opcionais\" do menu abre a tela que junta tudo o que se liga e desliga neste sistema. O que você escolhe aqui vale para todas as empresas hospedadas no seu servidor, não para uma só. Por isso só quem administra a instalação vê esta tela.",
+          "rota": "/admin/sistema",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Recursos opcionais",
+                "exato": true
+              },
+              "rotulo": "Recursos opcionais no menu",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "h1 + p"
+              },
+              "rotulo": "Vale para todas as empresas",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Primeira parte: Módulos",
+          "texto": "A primeira parte, \"Módulos\", lista os recursos extras que a maioria das instalações não usa. Todos vêm desligados. Desligado, um módulo não aparece para nenhuma empresa: nem tela, nem item no menu. Cada um tem uma chave à direita, e o texto ao lado conta o que ligar abre.",
+          "antes": [],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Módulos",
+                "exato": true
+              },
+              "rotulo": "Recursos extras",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Banco de dados externo",
+                "exato": true
+              },
+              "rotulo": "Chave de cada módulo",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Segunda parte: Comportamento",
+          "texto": "A segunda parte, \"Comportamento\", reúne as escolhas sobre como o sistema age no dia a dia, como o que acontece quando uma empresa passa do teto de gasto com a IA. Elas ficam no quadro \"O que esta instalação faz\". A lição \"Decidir como o sistema se comporta\" explica cada uma.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Comportamento",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Comportamento",
+                "exato": true
+              },
+              "rotulo": "Como o sistema age",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "O que esta instalação faz",
+                "exato": true
+              },
+              "rotulo": "As escolhas do dia a dia",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Terceira parte: Depende do servidor",
+          "texto": "A última parte, \"Depende do servidor\", só mostra, não liga nada. São recursos que precisam de uma senha de outro serviço ou de um ajuste no servidor, como o envio de e-mail. O selo de cada linha diz se ele está \"Configurado\" ou \"Não configurado\". Quando a tela não consegue conferir, o selo diz \"Não dá para ver daqui\". Nenhuma senha aparece aqui.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Depende do servidor",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Depende do servidor",
+                "exato": true
+              },
+              "rotulo": "Só leitura",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "li[data-recurso='email']"
+              },
+              "rotulo": "Um recurso do servidor",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ligar-um-modulo",
+      "titulo": "Ligar um módulo para as empresas",
+      "objetivo": "Ligar um módulo opcional, saber onde ele aparece depois e como desligar.",
+      "papel": "admin",
+      "busca": [
+        "ligar módulo",
+        "ativar propostas comerciais",
+        "como liberar recurso para as empresas",
+        "módulo não aparece no menu",
+        "desligar módulo",
+        "liguei e não apareceu"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Escolha o módulo",
+          "texto": "Cada módulo tem um quadro com o nome, o que ele faz e onde vai aparecer. Aqui, \"Propostas comerciais\" deixa a IA montar propostas pelos modelos da empresa. A linha de baixo diz onde ele aparece no menu depois de ligado. Para ligar, clique na chave à direita.",
+          "rota": "/admin/sistema",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "switch",
+                "nome": "Propostas comerciais",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.p-4:has(> div > label[for='modulo-propostas'])"
+              },
+              "rotulo": "Propostas comerciais",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Propostas comerciais",
+                "exato": true
+              },
+              "rotulo": "Clique para ligar",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "switch",
+            "nome": "Propostas comerciais",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "Ligou, salvou",
+          "texto": "Não há botão de salvar: o módulo fica ligado assim que você clica, e a chave fica colorida. A linha de baixo passa a dizer \"Aparece no menu em:\", com o caminho no menu das empresas. Cada troca fica registrada no item \"Audit\" do menu, com quem ligou e quando.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Propostas comerciais",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2000
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Propostas comerciais",
+                "exato": true
+              },
+              "rotulo": "Ligado",
+              "tipo": "seta"
+            },
+            {
+              "alvo": {
+                "texto": "Aparece no menu em:",
+                "dentro": {
+                  "css": "div.rounded-lg.border.p-4:has(> div > label[for='modulo-propostas'])"
+                }
+              },
+              "rotulo": "Onde ele aparece agora",
+              "tipo": "caixa"
+            }
+          ],
+          "dica": "As propostas pedem um segundo passo: cada empresa ainda precisa ligá-las para si, em \"Configurações\" › \"Propostas\"."
+        },
+        {
+          "id": "p3",
+          "titulo": "Módulo que vira tela no Admin",
+          "texto": "A \"Cobrança dos seus clientes\" é diferente: quem controla é você. Ligada, ela cria o item \"Cobrança\" no menu do Admin, onde você monta planos e decide quais empresas passam a pagar. As empresas que já existem ficam isentas até você escolher. Para receber de verdade, a tela Cobrança pede que você conecte uma conta do Asaas ou da Stripe, e o sistema precisa estar num endereço com https. As empresas que pagam veem o próprio plano em \"Plano e cobrança\". Clique na chave para ver.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "switch",
+                "nome": "Cobrança dos seus clientes",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.p-4:has(> div > label[for='modulo-cobranca'])"
+              },
+              "rotulo": "Cobrança dos seus clientes",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": {
+            "role": "switch",
+            "nome": "Cobrança dos seus clientes",
+            "exato": true
+          }
+        },
+        {
+          "id": "p4",
+          "titulo": "O item novo no menu do Admin",
+          "texto": "Com a cobrança ligada, o item \"Cobrança\" passa a aparecer no fim do menu do Admin. Para desligar qualquer módulo, clique de novo na chave. Desligar a cobrança faz os limites dos planos deixarem de valer e libera as empresas que estavam suspensas por falta de pagamento.",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "switch",
+                "nome": "Cobrança dos seus clientes",
+                "exato": true
+              }
+            },
+            {
+              "acao": "esperar",
+              "ms": 2000
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "link",
+                "nome": "Cobrança",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Cobrança",
+                "exato": true
+              },
+              "rotulo": "Item novo no menu",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "switch",
+                "nome": "Cobrança dos seus clientes",
+                "exato": true
+              },
+              "rotulo": "Ligado",
+              "tipo": "seta"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Módulos que se instalam em outra tela",
+          "texto": "Abaixo das chaves ficam \"Honorários\" e \"Comandas\". Esses não ligam por chave: eles se instalam na tela \"Módulos\" do Admin. O selo mostra se estão ligados, e o botão \"Ajustar\" leva até lá.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "li[data-recurso='modulo:financeiro']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li[data-recurso='modulo:honorarios']"
+              },
+              "rotulo": "Honorários",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "li[data-recurso='modulo:financeiro']"
+              },
+              "rotulo": "Comandas",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "comportamento",
+      "titulo": "Decidir como o sistema se comporta",
+      "objetivo": "Entender as quatro escolhas de comportamento e onde ficam as que moram em outras telas.",
+      "papel": "admin",
+      "busca": [
+        "proteção de gasto de IA",
+        "IA parou de responder teto de gasto",
+        "assinatura nas entregas do canal",
+        "divulgação de pagamento",
+        "conferência de promessa",
+        "comportamento do sistema"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "O quadro de comportamento",
+          "texto": "O quadro \"O que esta instalação faz\" tem quatro escolhas. Elas valem para todas as empresas daqui, com uma exceção que a lição mostra adiante. Como nos módulos, cada escolha salva na hora, sem botão de salvar, e fica registrada no item \"Audit\" do menu, com o valor de antes e o de depois.",
+          "rota": "/admin/sistema",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Comportamento",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Comportamento",
+                "exato": true
+              },
+              "rotulo": "Comportamento",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "texto": "O que esta instalação faz",
+                "exato": true
+              },
+              "rotulo": "Quatro escolhas",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "titulo": "Proteção de gasto de IA",
+          "texto": "Cada empresa escolhe um teto de gasto com a IA. Esta escolha decide o que acontece quando ela passa dele. \"Respeita o teto de cada empresa\" é o padrão: vale o que cada empresa escolheu. \"Só avisa, nunca para a IA\" avisa a empresa, mas deixa a IA seguir respondendo. \"Desligada\" ignora o teto: nem avisa, nem para. Esta escolha nunca liga a proteção de uma empresa: só pode afrouxá-la.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "combobox",
+                "nome": "Proteção de gasto de IA",
+                "exato": true
+              }
+            },
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "combobox",
+                "nome": "Proteção de gasto de IA",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "listbox"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "listbox"
+              },
+              "rotulo": "As três opções",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Exigir assinatura nas entregas do canal",
+          "texto": "Ligada, esta chave faz o sistema recusar toda mensagem do WhatsApp conectado por QR code que chegar sem a assinatura secreta da conexão. Ela vem desligada porque nem todo servidor de WhatsApp assina: ligar sem que ele assine corta a entrada de mensagens. Logo abaixo, a tela conta se as últimas mensagens chegaram assinadas. Se nenhuma mensagem chegou na última semana, aparece \"Nenhuma entrega do WhatsApp na última semana para conferir a assinatura.\". Quando aparecer \"Pode ligar: o WhatsApp já assina.\", é seguro ligar.",
+          "antes": [
+            {
+              "acao": "press",
+              "tecla": "Escape"
+            },
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "switch",
+                "nome": "Exigir assinatura nas entregas do canal",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.p-4:has(> div > label[for='assinatura-do-webhook'])"
+              },
+              "rotulo": "Assinatura das mensagens",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Divulgação e conferência de promessa",
+          "texto": "\"Divulgação de pagamento no atendimento\" decide o que fazer quando a primeira mensagem a um contato sai sem o aviso de que quem atende é um assistente virtual. \"Injetar\" acrescenta o aviso, e \"Vetar\" barra o envio e pede à IA para reescrever. Ela só age se a empresa tiver um texto de aviso cadastrado. Já a \"Conferência de promessa antes de enviar\", ligada, faz a IA reler cada mensagem para não prometer o que a empresa não cumpre. Ela se soma a uma conferência fixa que sempre roda, e cada releitura custa uma chamada a mais à IA. Aqui você escolhe o padrão: cada empresa pode mudar o dela no painel de segurança do agente. Aqui a divulgação está em \"Injetar\", e a conferência de promessa vem ligada de fábrica.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "role": "switch",
+                "nome": "Conferência de promessa antes de enviar",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.p-4:has(> div > label[for='divulgacao-de-pagamento'])"
+              },
+              "rotulo": "Divulgação de pagamento",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "div.rounded-lg.border.p-4:has(> div > label[for='promessa-semantica'])"
+              },
+              "rotulo": "Conferência de promessa",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Escolhas que moram em outra tela",
+          "texto": "Abaixo do quadro ficam duas escolhas da instalação que têm tela própria: \"Quem pode criar conta\" e \"Destinos internos\". O selo \"Veja na tela dele\" quer dizer que esta lista não mostra o valor. Clique em \"Ajustar\" para abrir a tela e ver ou mudar.",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "li[data-recurso='destinos_internos']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li[data-recurso='cadastro']"
+              },
+              "rotulo": "Quem pode criar conta",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "li[data-recurso='destinos_internos']"
+              },
+              "rotulo": "Destinos internos",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "depende-do-servidor",
+      "titulo": "O que depende do servidor",
+      "objetivo": "Ler o estado dos recursos que dependem do servidor e saber o caminho para configurar cada um.",
+      "papel": "admin",
+      "busca": [
+        "e-mail não configurado",
+        "o que falta configurar no servidor",
+        "recursos que dependem do servidor",
+        "configurar google agenda",
+        "notificação com a aba fechada",
+        "arquivo de ambiente do servidor"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Como ler uma linha",
+          "texto": "Cada linha diz o nome do recurso e o que ele faz. Embaixo, em letra menor, aparece quem decide e se ele vem ligado ou desligado. O selo à direita é o estado agora: aqui o e-mail aparece \"Não configurado\", então convite de equipe e recuperação de senha ainda não chegam por e-mail.",
+          "rota": "/admin/sistema",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "li[data-recurso='email']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li[data-recurso='email']"
+              },
+              "rotulo": "E-mail",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "link",
+                "nome": "Ajustar: E-mail",
+                "exato": true
+              },
+              "rotulo": "Leva à tela de E-mail",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": {
+            "role": "link",
+            "nome": "Ajustar: E-mail",
+            "exato": true
+          }
+        },
+        {
+          "id": "p2",
+          "titulo": "O botão Ajustar leva até a tela",
+          "texto": "Clicar em \"Ajustar\" abre a tela onde o recurso se configura. No caso do e-mail, é a tela \"E-mail\" do Admin, onde você cadastra o servidor que vai enviar os e-mails do sistema. Depois de salvar lá, o selo em \"Recursos opcionais\" passa a dizer \"Configurado\".",
+          "antes": [
+            {
+              "acao": "click",
+              "alvo": {
+                "role": "link",
+                "nome": "Ajustar: E-mail",
+                "exato": true
+              }
+            },
+            {
+              "acao": "aguardar",
+              "alvo": {
+                "role": "heading",
+                "nome": "Servidor de e-mail desta instalação",
+                "exato": true
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "role": "heading",
+                "nome": "Servidor de e-mail desta instalação",
+                "exato": true
+              },
+              "rotulo": "A tela do recurso",
+              "tipo": "caixa"
+            }
+          ],
+          "dica": "na instalação feita pelo kit, a recuperação de senha só passa a usar esse e-mail depois que quem cuida do servidor roda a atualização do sistema."
+        },
+        {
+          "id": "p3",
+          "titulo": "Recursos sem tela",
+          "texto": "Alguns recursos não têm botão \"Ajustar\": eles só ligam no arquivo de configuração do servidor, e a linha diz o que fazer. Mostre esse texto a quem cuida do seu servidor. Depois do ajuste e de reiniciar o sistema, o selo muda para \"Configurado\". A \"Telefonia por SIP\" mostra \"Não dá para ver daqui\": ela é montada fora deste sistema, e a tela não tem como saber se está pronta. Isso não quer dizer que está desligada.",
+          "rota": "/admin/sistema",
+          "antes": [
+            {
+              "acao": "rolar",
+              "alvo": {
+                "css": "li[data-recurso='nuvemshop']"
+              }
+            }
+          ],
+          "destaques": [
+            {
+              "alvo": {
+                "css": "li[data-recurso='telefonia_sip']"
+              },
+              "rotulo": "A tela não consegue ver",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "css": "li[data-recurso='nuvemshop']"
+              },
+              "rotulo": "Liga no servidor",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

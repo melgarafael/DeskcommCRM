@@ -64,7 +64,7 @@ function Bloco({
           <TableBody>
             {linhas.map((linha) => (
               <TableRow key={linha.chave}>
-                <TableCell className="truncate">
+                <TableCell className="max-md:wrap-anywhere md:truncate">
                   {SENTINELAS.has(linha.chave) ? t(linha.chave) : rotulo(linha.chave)}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{linha.quantidade}</TableCell>

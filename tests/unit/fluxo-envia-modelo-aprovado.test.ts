@@ -379,10 +379,10 @@ describe("passo de texto fixo com mídia (#2734)", () => {
     expect(r.reason).toContain("janela de 24 horas");
   });
 
-  it("URL de tipo que não é imagem nem PDF: o passo é RECUSADO com o motivo, sem tocar na cadeia", async () => {
+  it("URL de tipo não identificável: o passo é RECUSADO com o motivo, sem tocar na cadeia", async () => {
     const { d, send, completeFollowupTurn } = deps();
     await criarHandler(d)(
-      job({ fixed_body: "Segue o contrato", fixed_media_url: "https://cdn.exemplo.com/contrato.docx" }),
+      job({ fixed_body: "Segue o contrato", fixed_media_url: "https://cdn.exemplo.com/contrato-sem-tipo" }),
       fakePool({ ultimoInboundHa: 2 }),
       { workerId: "w1" },
     );
@@ -392,6 +392,20 @@ describe("passo de texto fixo com mídia (#2734)", () => {
     const r = resultado(completeFollowupTurn);
     expect(r.kind).toBe("skipped");
     expect(r.reason).toContain("imagem");
+  });
+
+  it("#2972 — o `.docx` deixou de ser recusa: sai como mídia, com o texto de legenda", async () => {
+    const { d, send, completeFollowupTurn } = deps();
+    await criarHandler(d)(
+      job({ fixed_body: "Segue o contrato", fixed_media_url: "https://cdn.exemplo.com/contrato.docx" }),
+      fakePool({ ultimoInboundHa: 2 }),
+      { workerId: "w1" },
+    );
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(runBeforeSend).toHaveBeenCalled();
+    const r = resultado(completeFollowupTurn);
+    expect(r.kind).toBe("sent");
   });
 
   it("controle: janela ABERTA — sai como mídia, com o texto de legenda", async () => {

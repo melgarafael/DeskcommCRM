@@ -24,6 +24,7 @@ import { useT } from "@/hooks/i18n/useT";
  * "Editar conteúdo" para quem cadastrou um documento e abria o editor de FAQ
  * vazio — um controle que promete conteúdo que aquele material não tem.
  */
+import Link from "next/link";
 import { useState } from "react";
 import {
   BookOpen,
@@ -58,6 +59,13 @@ interface Props {
   source: SourceRow;
   /** Nomes dos assistentes que consultam este material. */
   usadoPor: string[];
+  /**
+   * Endereço da LEITURA do material (`/app/ai/knowledge/sources/[id]`).
+   *
+   * Opcional de propósito: o cartão é usado em telas que não são o acervo, e
+   * controle que não leva a lugar nenhum gasta a confiança de quem clicou.
+   */
+  href?: string;
   onReindex: () => void;
   onArquivar: () => void;
   onMudou: () => void;
@@ -85,6 +93,7 @@ function formatRelative(
 export function KnowledgeSourceCard({
   source,
   usadoPor,
+  href,
   onReindex,
   onArquivar,
   onMudou,
@@ -111,7 +120,21 @@ export function KnowledgeSourceCard({
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2">
             <Icon className="h-5 w-5 shrink-0 text-accent" aria-hidden />
-            <CardTitle className="text-base">{source.name}</CardTitle>
+            <CardTitle className="text-base">
+              {/* O nome é a porta mais óbvia para ler o material: quem olha a
+                  grade clica no título antes de procurar um botão. */}
+              {href ? (
+                <Link
+                  href={href}
+                  className="hover:text-accent focus-visible:underline"
+                  data-testid={`material-abrir-nome-${source.id}`}
+                >
+                  {source.name}
+                </Link>
+              ) : (
+                source.name
+              )}
+            </CardTitle>
           </div>
           <SourceStatusBadge source={source} />
         </div>
@@ -167,6 +190,18 @@ export function KnowledgeSourceCard({
           />
           {isReindexing ? t("Preparando…") : t("Preparar de novo")}
         </Button>
+
+        {/* ABRIR O MATERIAL — ler o que está guardado nele. Fica ANTES de "Ver o
+            que ele aprendeu" porque a pergunta da tela é "o que tem neste
+            material?", e os trechos do índice respondem outra pergunta. */}
+        {href ? (
+          <Button variant="ghost" size="sm" asChild>
+            <Link href={href} data-testid={`material-abrir-${source.id}`}>
+              <FileText className="mr-2 h-3.5 w-3.5" aria-hidden />
+              {t("Ler o material")}
+            </Link>
+          </Button>
+        ) : null}
 
         {temTrechos ? (
           <>

@@ -17,9 +17,10 @@ import type {
   PatchConversationInput,
 } from "@/lib/schemas";
 import type { Conversation } from "@/lib/types/messaging";
-import { normalizarTermoDeBusca } from "@/lib/inbox/termo-de-busca";
+import { normalizarTermoDeBusca, termoSemAcento } from "@/lib/inbox/termo-de-busca";
 import { ORDEM_DA_ESPERA, ehAFila } from "@/lib/inbox/comando-da-conversa";
 import { aplicarMarcadores } from "@/lib/inbox/marcador-da-conversa";
+import { exigirControleDaConversa } from "@/lib/inbox/controle-da-conversa";
 
 /**
  * Prepara o termo digitado para viajar dentro de um `or=` do PostgREST.
@@ -93,7 +94,7 @@ const SELECT_COLS = `
   bot_silenced_until, last_handoff_at, last_handoff_reason,
   comando_da_conversa,
   usable_for_rag,
-  contacts:contact_id (id, display_name, name, address_book_name, phone_number, is_anonymized, tags, is_blocked, is_personal, avatar_storage_path, force_human),
+  contacts:contact_id (id, display_name, name, address_book_name, phone_number, is_anonymized, tags, is_blocked, is_personal, contact_type, avatar_storage_path, force_human),
   channel_sessions:channel_session_id (phone_number, display_name, provider, social_platform:metadata->>social_platform)
 `;
 
@@ -305,7 +306,41 @@ export async function listConversationsHandler(
         '"assigned_to=me" requer ator humano.',
       );
     }
-    query = query.eq("assigned_to_user_id", ctx.actor.id);
+    // "Minhas" é também o que eu PARTICIPO: o convite é da conversa e a aba Minhas
+    // é onde a convidada tem de achar — medido com navegador na mão no CR de 24/10
+    // (#2848). Sem isto, com `own_and_unassigned` ela nem alcança a aba "Todas" e a
+    // conversa não aparece em lugar nenhum: Fila 0, Minhas 0.
+    //
+    // Sem participações o predicado é o MESMO de antes (`.eq`), byte a byte: o `or`
+    // só nasce quando existe convite de pé, então quem não participa de nada mede o
+    // mesmo de sempre. Quando existe, o `or=` compõe por AND com os demais
+    // (organização, busca, cursor): o PostgREST junta parâmetros repetidos com E.
+    // ⚠️ Se esta pergunta falhar (banco fora, mock de teste sem `.is`), o caminho
+    // é o de SEMPRE (`.eq`): o filtro nunca muda de regra sozinho, só ganha as
+    // conversas de quem participa quando a pergunta responde.
+    let idsParticipadas: string[] = [];
+    try {
+      const participadas = await supabase
+        .from("conversation_participants")
+        .select("conversation_id")
+        .eq("organization_id", ctx.organization_id)
+        .eq("user_id", ctx.actor.id)
+        .is("left_at", null);
+      idsParticipadas = (participadas.data ?? []).map((r) => r.conversation_id);
+    } catch {
+      idsParticipadas = [];
+    }
+    if (idsParticipadas.length > 0) {
+      // ⚠️ participações ativas são convites manuais (poucas por pessoa) — daí
+      // entrarem juntas no `in()`. Se um dia alguém participar de centenas, este
+      // `or=` fica longo; aí o conserto é subquery via RPC — e nunca corte
+      // silencioso: um corte escondido manda a convidada voltar a não achar.
+      query = query.or(
+        `assigned_to_user_id.eq.${ctx.actor.id},id.in.(${idsParticipadas.join(",")})`,
+      );
+    } else {
+      query = query.eq("assigned_to_user_id", ctx.actor.id);
+    }
   } else if (q.assigned_to === "unassigned") {
     query = query.is("assigned_to_user_id", null);
   } else if (q.assigned_to) {
@@ -378,10 +413,33 @@ export async function listConversationsHandler(
     const pareceTelefone = somenteDigitos.length >= 4;
 
     const camposDoContato = [
-      `display_name.ilike.*${s}*`,
-      `name.ilike.*${s}*`,
-      // O nome da agenda do celular (#2439): a lista o mostra, a busca o acha.
-      `address_book_name.ilike.*${s}*`,
+      // ─── O NOME DO CONTATO CASA SEM ACENTO (#3918) ────────────────────────
+      //
+      // Aqui havia `display_name.ilike.*s*`, `name.ilike.*s*` e
+      // `address_book_name.ilike.*s*`, e os três tinham o mesmo buraco: `ILIKE`
+      // dobra a CAIXA, não o ACENTO. `lower('Á') = 'á'`, que não é `'a'` — quem
+      // digita "Andreia" não acha "Andréia", e quem digita "Andréia" não acha
+      // quem foi cadastrado sem acento. No Brasil as duas grafias convivem, e o
+      // atendente digita rápido, sem acento: o cliente parece não existir.
+      //
+      // A correção precisa dos DOIS lados normalizados, e é por isso que ela não
+      // caberia só aqui: limpar o termo e comparar com a coluna crua continua
+      // devolvendo zero. O lado do banco é a coluna GERADA
+      // `contacts.busca_sem_acento` — `lower(public.f_unaccent(display_name,
+      // name, address_book_name))`, com índice `pg_trgm` (migration 9098) —, e o
+      // lado do termo é `termoSemAcento`, que é a mesma régua em TypeScript.
+      // As duas são comparadas por `tests/invariants/busca-do-inbox-ignora-acento.test.ts`.
+      //
+      // Por que `like` e não `ilike`: a coluna já é minúscula. `like` sobre ela
+      // com o termo minúsculo dá o mesmo resultado sem depender de o plano
+      // dobrar caixa em cima de uma coluna gerada — e o índice GIN de trigrama
+      // serve os dois operadores.
+      //
+      // O nome da agenda do celular (#2439) continua entrando: ele é a terceira
+      // parte da coluna gerada, e a lista o mostra — a busca tem de achá-lo.
+      `busca_sem_acento.like.*${termoSemAcento(s)}*`,
+      // O telefone tem OUTRO caminho: dígitos não têm acento, e o número é
+      // comparado só por dígitos (o `somenteDigitos` descarta o resto).
       ...(pareceTelefone ? [`phone_number.ilike.*${somenteDigitos}*`] : []),
     ].join(",");
 
@@ -418,9 +476,27 @@ export async function listConversationsHandler(
       // ou o formato do id mudarem.
       .limit(TETO_DE_CONTATOS_NA_BUSCA);
 
-    const ids = idsQueCabemNaURL(
-      (contatos ?? []).map((c) => (c as { id: string }).id),
-    );
+    // Ficha cujo TELEFONE EXTRA casa o número também entra na lista: a busca acima
+    // só olha o principal. A consulta embute a ficha e aplica os mesmos filtros de
+    // organização, anonimizado, pessoal e lápide — e não manda lista de ids na URL.
+    let idsDoExtra: string[] = [];
+    if (pareceTelefone) {
+      const { data: extras } = await supabase
+        .from("contact_phones")
+        .select("contact_id, contacts!inner(id)")
+        .eq("organization_id", ctx.organization_id)
+        .eq("contacts.organization_id", ctx.organization_id)
+        .eq("contacts.is_anonymized", false)
+        .eq("contacts.is_personal", false)
+        .is("contacts.is_merged_into", null)
+        .ilike("phone_number", `*${somenteDigitos}*`)
+        .limit(TETO_DE_CONTATOS_NA_BUSCA);
+      idsDoExtra = ((extras ?? []) as { contact_id: string }[]).map((r) => r.contact_id);
+    }
+
+    const ids = idsQueCabemNaURL([
+      ...new Set([...(contatos ?? []).map((c) => (c as { id: string }).id), ...idsDoExtra]),
+    ]);
     if (ids.length > 0) {
       query = query.or(
         `last_message_preview.ilike.*${s}*,contact_id.in.(${ids.join(",")})`,
@@ -528,6 +604,10 @@ export async function patchConversationHandler(
   input: PatchConversationInput,
 ): Promise<Conversation> {
   const update: Record<string, unknown> = {};
+  const observed = input.status !== undefined
+    ? await getConversationHandler(supabase, ctx, conversationId)
+    : null;
+  if (observed) await exigirControleDaConversa(supabase, ctx, observed);
 
   /**
    * O ATALHO `status='claimed'` PASSA PELA RPC, e não escreve o dono aqui.
@@ -563,10 +643,9 @@ export async function patchConversationHandler(
   }
 
   if (input.status !== undefined) {
-    const observed = await getConversationHandler(supabase, ctx, conversationId);
     const { error: statusError } = await createAdminClient().rpc("fn_service_status", {
       p_org: ctx.organization_id, p_conversation: conversationId, p_status: input.status,
-      p_expected: input.expected_revision ?? observed.service_revision,
+      p_expected: input.expected_revision ?? observed?.service_revision,
     });
     // PT409: revisão obsoleta (migration 0514). 40001: contato trocou no meio, ou banco anterior à 0514.
     const conflito = statusError?.code === "PT409" || statusError?.code === "40001";

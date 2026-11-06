@@ -185,7 +185,7 @@ export function ContactsListClient() {
   );
 
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-4 md:p-6">
       <header className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">{t("Contatos")}</h1>
@@ -450,6 +450,18 @@ export function ContactsListClient() {
         </Card>
       ) : (
         <>
+          {/* Abaixo de `md` a tabela vira cartão e o cabeçalho some, levando a
+              caixa "selecionar todas": este botão é a porta que a substitui. */}
+          {podeAgirEmLote && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="md:hidden"
+              onClick={() => selecao.selecionarTodos(allContacts.map((c) => c.id))}
+            >
+              {t("Selecionar todos os contatos visíveis")}
+            </Button>
+          )}
           <Card className="overflow-hidden">
             <ContactsTable
               contacts={allContacts}

@@ -9,6 +9,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { revogarAcessosDoContato } from "@/lib/mcp/servidor-externo/do-agente/revogacao";
+import { logger } from "@/lib/logger";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
@@ -18,9 +20,16 @@ import type { Idioma } from "@/lib/i18n/idiomas";
 import { roleAtLeast } from "@/lib/auth/types";
 import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-variants";
 import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone";
+import {
+  INDICE_CPF,
+  INDICE_EMAIL,
+  encontrarContatoPorCpfHash,
+  encontrarContatoPorEmail,
+  nomeDoIndiceUnico,
+} from "@/lib/contacts/conflito-unico";
 import { camposCpfParaGravar, hashCpf } from "@/lib/contacts/cpf";
 import type { Contact } from "@/lib/types/contacts";
-import { ensureConversation, sessaoProntaParaEnvio } from "@/lib/automation/start-conversation";
+import { abrirConversaDoContatoNovo } from "@/lib/contacts/conversa-ao-criar";
 import type {
   ContactCreate,
   ContactPatch,
@@ -42,7 +51,7 @@ import { testaComPrazo } from "@/lib/leads/padrao-do-campo-no-servidor";
 type SB = SupabaseClient;
 
 const SELECT_COLS =
-  "id, organization_id, name, display_name, address_book_name, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_personal, ai_opt_out, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at, first_service_at";
+  "id, organization_id, name, display_name, address_book_name, zip_code, street, number, complement, district, city, state, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_personal, contact_type, ai_opt_out, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at, first_service_at";
 
 interface CursorPayload {
   sort: string | null;
@@ -242,9 +251,34 @@ export async function listContactsHandler(
         !digits.startsWith("55") && (digits.length === 10 || digits.length === 11)
           ? `55${digits}`
           : digits;
+      // Os critérios de TELEFONE do principal, reaproveitados para o extra abaixo.
+      const criteriosDeTelefone = [`phone_number.imatch.${s}`];
       for (const v of phoneLookupVariants(base)) {
         const d = v.replace(/\D/g, "");
-        if (d && d !== digits) orParts.push(`phone_number.ilike.%${d}%`);
+        if (d && d !== digits) {
+          orParts.push(`phone_number.ilike.%${d}%`);
+          criteriosDeTelefone.push(`phone_number.ilike.%${d}%`);
+        }
+      }
+      // Ficha cujo TELEFONE EXTRA casa o termo também entra na busca: sem isto, o
+      // número que não é o principal não acharia a pessoa que o tem. A consulta
+      // aos extras é do mesmo jeito filtrada por organização; a ficha continua
+      // passando pelo filtro de lápide e de pessoal da listagem.
+      //
+      // Só quando o termo TEM CARA DE TELEFONE (dígitos e a pontuação de número):
+      // texto com letras e dígitos ("a,organization_id.eq.000…") não é busca de
+      // número, e uma consulta a mais por termo hostil é o que a cerca da busca
+      // (`busca-de-contatos-normaliza-termo`) conta.
+      if (/^[\d\s()+.-]+$/.test(q.search.trim())) {
+        const { data: extras } = await supabase
+          .from("contact_phones")
+          .select("contact_id")
+          .eq("organization_id", ctx.organization_id)
+          .or(criteriosDeTelefone.join(","));
+        const idsDeExtras = [
+          ...new Set(((extras ?? []) as { contact_id: string }[]).map((r) => r.contact_id)),
+        ];
+        if (idsDeExtras.length > 0) orParts.push(`id.in.(${idsDeExtras.join(",")})`);
       }
     }
     if (digits.length === 11) {
@@ -269,6 +303,9 @@ export async function listContactsHandler(
     query = query.contains("tags", q.tag);
   }
   if (q.source) query = query.eq("source", q.source);
+  // `yes` responde "quem pediu para não ser incomodado"; `no`, quem não pediu
+  // opt-out. Só o opt-out: exclusão de campanha e anonimizados não entram aqui.
+  if (q.blocked) query = query.eq("is_blocked", q.blocked === "yes");
   if (soContato) query = query.eq("id", soContato);
   // Pessoal fora da lista por padrão; `?pessoais=true` lista SÓ pessoais
   // (spec 21, etapa 13 — a tela do filtro e o desmarcar). Sem esta linha a
@@ -470,6 +507,100 @@ export async function getContactHandler(
 }
 
 // ---------------------------------------------------------------------------
+// conflito de dado único (#3084)
+// ---------------------------------------------------------------------------
+
+/**
+ * Traduz um 23505 do INSERT/UPDATE de `contacts` no 409 `contact_exists` certo —
+ * ou devolve `null` para deixá-lo seguir no 500 de sempre.
+ *
+ * ─── O telefone continua decidindo pela RELEITURA, não pelo texto ──────────
+ *
+ * O 23505 sozinho nomeia UM índice; o estado (contato vivo com o mesmo telefone
+ * na mesma organização) já implica a trava de telefone de qualquer jeito. Por
+ * isso o caminho do telefone é o de antes — a releitura por `organization_id`
+ * decide, sem olhar o nome do índice. Mudar isso seria trocar um desenho que já
+ * estava certo.
+ *
+ * ─── CPF e e-mail precisam do NOME do índice ───────────────────────────────
+ *
+ * Aqui não há como inferir pelo estado: o erro diz qual índice bateu (o driver
+ * escreve o nome na `message`). Só o índice conhecido vira 409, e só depois de a
+ * releitura — sempre repetindo `organization_id` e `is_merged_into IS NULL` —
+ * achar o contato vivo que já tem o dado. Sem o contato, ou com o índice
+ * trocado, o 23505 continua no 500: não se inventa 409 sobre um conflito que
+ * não se sabe qual é.
+ *
+ * O `contact_id` devolvido vem SEMPRE da releitura, nunca do corpo.
+ */
+async function erroDeConflitoUnico(
+  supabase: SB,
+  ctx: HandlerCtx,
+  campos: { phone_number?: unknown; email?: unknown; cpf_hash?: unknown },
+  erro: { code?: string; message?: string; details?: string | null; constraint?: string | null },
+  excluirId?: string,
+): Promise<ApiError | null> {
+  if (erro.code !== "23505") return null;
+  const idioma = ctx.idioma ?? "pt-BR";
+
+  // 1) CPF e e-mail — só quando o erro NOMEIA o índice (#3084). Vem ANTES do
+  //    telefone: o PATCH da tela reenvia o telefone do PRÓPRIO contato, e a
+  //    releitura por telefone o acharia — 409 de telefone apontando para si mesmo.
+  const indice = nomeDoIndiceUnico(erro);
+  if (indice === INDICE_CPF) {
+    const hash = typeof campos.cpf_hash === "string" ? campos.cpf_hash : null;
+    if (hash) {
+      const existente = await encontrarContatoPorCpfHash(supabase, ctx.organization_id, hash);
+      if (existente) {
+        return new ApiError(
+          409,
+          "contact_exists",
+          { contact_id: existente.id },
+          ctx.requestId,
+          traduzir("Já existe um contato com este CPF.", idioma),
+        );
+      }
+    }
+  }
+  if (indice === INDICE_EMAIL) {
+    const email = typeof campos.email === "string" ? campos.email : null;
+    if (email) {
+      const existente = await encontrarContatoPorEmail(supabase, ctx.organization_id, email);
+      if (existente) {
+        return new ApiError(
+          409,
+          "contact_exists",
+          { contact_id: existente.id },
+          ctx.requestId,
+          traduzir("Já existe um contato com este e-mail.", idioma),
+        );
+      }
+    }
+  }
+
+  // 2) Telefone — o desenho de sempre (fatia S1 da #852): a releitura decide,
+  //    salvo quando o erro já nomeou CPF ou e-mail. No PATCH, `excluirId` é o
+  //    contato editado: achar a si mesmo pelo telefone não explica conflito
+  //    nenhum, e o 23505 segue no 500.
+  if (indice === INDICE_CPF || indice === INDICE_EMAIL) return null;
+  const telefone = typeof campos.phone_number === "string" ? campos.phone_number : null;
+  if (telefone) {
+    const existente = await encontrarContatoPorTelefone(supabase, ctx.organization_id, telefone);
+    if (existente && existente.id !== excluirId) {
+      return new ApiError(
+        409,
+        "contact_exists",
+        { contact_id: existente.id },
+        ctx.requestId,
+        traduzir("Já existe um contato com este telefone.", idioma),
+      );
+    }
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // create
 // ---------------------------------------------------------------------------
 
@@ -509,9 +640,20 @@ export async function createContactHandler(
     created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
     name: input.name ?? null,
     display_name: input.display_name ?? null,
+    zip_code: input.zip_code ?? null,
+    street: input.street ?? null,
+    number: input.number ?? null,
+    complement: input.complement ?? null,
+    district: input.district ?? null,
+    city: input.city ?? null,
+    state: input.state ?? null,
     email: input.email ?? null,
     phone_number: input.phone_number ? canonicalPhoneBR(input.phone_number) : null,
     birthdate: input.birthdate ?? null,
+    // Só quando INFORMADO: sem a chave, quem grava o default é o banco
+    // ('cliente', migration 0763) — e é isso que o invariante de coluna prova
+    // ("contato novo nasce cliente sem ninguém informar").
+    ...(input.contact_type !== undefined ? { contact_type: input.contact_type } : {}),
     tags: input.tags ?? [],
     source: input.source,
     source_metadata: input.source_metadata ?? {},
@@ -533,44 +675,36 @@ export async function createContactHandler(
     .single();
 
   if (insErr) {
-    // 409 quando o telefone já é de um contato vivo desta organização: o índice
-    // parcial `uniq_contacts_org_phone` (organization_id, phone_number) barra o
-    // insert com 23505. E-mail e CPF também têm trava única na tabela, então o
-    // 23505 sozinho não diz qual índice bateu: só vira `contact_exists` se a
-    // releitura do telefone achar um contato vivo. A releitura repete o filtro
-    // por `organization_id` — o id devolvido no `details` nunca vem do corpo da
+    // 409 quando o dado já pertence a um contato vivo desta organização (#3084).
+    //
+    // O índice parcial `uniq_contacts_org_phone` (organization_id, phone_number)
+    // barra o telefone repetido com 23505; o CPF (`uniq_contacts_org_cpf`) e o
+    // e-mail (`uniq_contacts_org_email`) têm a mesma trava. O telefone decide
+    // pela RELEITURA (não pelo texto do erro); CPF e e-mail usam o nome do
+    // índice que o driver nomeia. A releitura repete o filtro por
+    // `organization_id` — o id devolvido no `details` nunca vem do corpo da
     // requisição — e qualquer outro conflito continua no 500 de sempre.
-    const telefoneDoInsert = insertRow.phone_number as string | null;
-    if (insErr.code === "23505" && telefoneDoInsert) {
-      const existente = await encontrarContatoPorTelefone(
-        supabase,
-        ctx.organization_id,
-        telefoneDoInsert,
-      );
-      if (existente) {
-        throw new ApiError(
-          409,
-          "contact_exists",
-          { contact_id: existente.id },
-          ctx.requestId,
-          traduzir("Já existe um contato com este telefone.", ctx.idioma ?? "pt-BR"),
-        );
-      }
-    }
+    const conflito = await erroDeConflitoUnico(supabase, ctx, insertRow, insErr);
+    if (conflito) throw conflito;
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, insErr.message);
   }
 
   const contact = created as Contact;
-  if (contact.phone_number) {
-    try {
-      const sessionId = await sessaoProntaParaEnvio(supabase, ctx.organization_id);
-      if (sessionId) {
-        await ensureConversation(supabase, ctx.organization_id, contact.id, sessionId);
-      }
-    } catch {
-      // conversa no create é best-effort; o contato já existe
-    }
-  }
+  // ── A CONVERSA DO CONTATO NOVO (#3718) ────────────────────────────────────
+  //
+  // A regra — esta porta abre, a importação por CSV não — mora num lugar só:
+  // `lib/contacts/conversa-ao-criar.ts`. Aqui só se diz QUAL porta está
+  // criando. A chamada é best-effort e não lança: o contato já está gravado, e
+  // uma sessão torta não pode derrubar o cadastro. O que ela NÃO faz mais é
+  // falhar calada — o erro sai em `logger.warn` lá dentro, com org, contato e
+  // porta.
+  await abrirConversaDoContatoNovo(supabase, {
+    porta: "manual",
+    organizationId: ctx.organization_id,
+    contactId: contact.id,
+    phoneNumber: contact.phone_number,
+    requestId: ctx.requestId,
+  });
 
   await supabase
     .rpc("emit_event", {
@@ -679,6 +813,13 @@ export async function patchContactHandler(
   const patch: Record<string, unknown> = {};
   if (input.name !== undefined) patch.name = input.name;
   if (input.display_name !== undefined) patch.display_name = input.display_name;
+  if (input.zip_code !== undefined) patch.zip_code = input.zip_code;
+  if (input.street !== undefined) patch.street = input.street;
+  if (input.number !== undefined) patch.number = input.number;
+  if (input.complement !== undefined) patch.complement = input.complement;
+  if (input.district !== undefined) patch.district = input.district;
+  if (input.city !== undefined) patch.city = input.city;
+  if (input.state !== undefined) patch.state = input.state;
   // `email_normalized` NÃO entra no patch — é `GENERATED ALWAYS AS
   // (lower(trim(email))) STORED` (baseline.sql:1349), e o Postgres RECUSA
   // qualquer atribuição a coluna gerada (SQLSTATE 428C9), abortando o UPDATE
@@ -691,6 +832,10 @@ export async function patchContactHandler(
     patch.phone_number = input.phone_number ? canonicalPhoneBR(input.phone_number) : input.phone_number;
   }
   if (input.birthdate !== undefined) patch.birthdate = input.birthdate;
+  // O TIPO DO CONTATO (issue 3005): o PATCH troca cliente ↔ fornecedor. Ausente
+  // NÃO entra no patch — quem não fala de tipo não reescreve a coluna, e é por
+  // isso que o schema não tem default aqui (o default 'cliente' é do BANCO).
+  if (input.contact_type !== undefined) patch.contact_type = input.contact_type;
   if (input.tags !== undefined) patch.tags = input.tags;
   if (input.source !== undefined) patch.source = input.source;
   if (input.source_metadata !== undefined) patch.source_metadata = input.source_metadata;
@@ -748,6 +893,12 @@ export async function patchContactHandler(
     .maybeSingle();
 
   if (updErr) {
+    // #3084: o PATCH grava pela MESMA tabela e cai nas MESMAS travas únicas —
+    // `uniq_contacts_org_email` é o caso medido na issue (trocar o e-mail por um
+    // que já é de outro contato). O 409 sai com o `contact_id` de quem já tem o
+    // dado; qualquer outro conflito segue no 500 de sempre.
+    const conflito = await erroDeConflitoUnico(supabase, ctx, patch, updErr, contactId);
+    if (conflito) throw conflito;
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, updErr.message);
   }
   if (!updated) {
@@ -1053,6 +1204,18 @@ export async function deleteContactHandler(
   // tudo, ou não sai nada. É `security invoker` — a RLS de quem chama continua
   // valendo, e o filtro de `organization_id` é do banco (argumento + where), não
   // do chamador. Nenhum service role entra aqui.
+  //
+  // A exceção, antes da transação: os acessos OAuth do contato a servidores
+  // MCP externos (9095). A cascata apaga o token, e sem ele não há revogação no
+  // terceiro (RFC 7009) — então revoga primeiro. A tabela é server-side only
+  // (service role), filtrada pela organização do ctx. Melhor esforço: falha
+  // do terceiro não barra a exclusão.
+  await revogarAcessosDoContato(createAdminClient(), ctx.organization_id, contactId).catch((err: unknown) => {
+    logger.warn("revogacao dos acessos MCP do contato falhou antes da exclusao", {
+      organization_id: ctx.organization_id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
   let apagou = false;
   try {
     const { data, error: rpcErr } = await supabase.rpc("fn_apagar_contato_com_historico", {

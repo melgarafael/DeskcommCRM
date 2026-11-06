@@ -73,7 +73,7 @@ export function ProposalsClient({ podeCriar }: { podeCriar: boolean }) {
   }, [tentativa]);
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-4 p-6">
+    <div className="mx-auto w-full max-w-5xl space-y-4 md:p-6">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">{t("Propostas")}</h1>
         {podeCriar ? (
@@ -107,8 +107,8 @@ export function ProposalsClient({ podeCriar }: { podeCriar: boolean }) {
         </p>
       ) : (
         <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full text-sm">
-            <thead>
+          <table className="w-full text-sm max-md:block">
+            <thead className="max-md:hidden">
               <tr className="border-b text-left">
                 <th scope="col" className="p-3">{t("Número")}</th>
                 <th scope="col" className="p-3">{t("Título")}</th>
@@ -116,20 +116,26 @@ export function ProposalsClient({ podeCriar }: { podeCriar: boolean }) {
                 <th scope="col" className="p-3 text-right">{t("Valor")}</th>
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody className="divide-y max-md:block">
               {propostas.map((p) => (
-                <tr key={p.id}>
-                  <td className="whitespace-nowrap p-3">
+                <tr
+                  key={p.id}
+                  className="max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-3 max-md:px-3 max-md:py-2"
+                >
+                  <td className="whitespace-nowrap p-3 max-md:p-0 max-md:text-xs">
                     {p.numero !== null && p.ano !== null
                       ? `${String(p.numero).padStart(4, "0")}/${p.ano} v${p.versao}`
                       : t("Rascunho")}
                   </td>
-                  <td className="p-3">
-                    <Link href={`/app/proposals/${p.id}`} className="underline underline-offset-4">
+                  <td className="p-3 max-md:order-first max-md:basis-full max-md:p-0">
+                    <Link
+                      href={`/app/proposals/${p.id}`}
+                      className="underline underline-offset-4 max-md:flex max-md:min-h-11 max-md:items-center"
+                    >
                       {p.titulo}
                     </Link>
                   </td>
-                  <td className="p-3">
+                  <td className="p-3 max-md:p-0 max-md:text-xs">
                     {aguardaRevisao(p) ? (
                       <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
                         {t("Aguardando revisão")}
@@ -138,7 +144,7 @@ export function ProposalsClient({ podeCriar }: { podeCriar: boolean }) {
                       statusLabels[p.status]
                     )}
                   </td>
-                  <td className="whitespace-nowrap p-3 text-right tabular-nums">
+                  <td className="whitespace-nowrap p-3 text-right tabular-nums max-md:p-0 max-md:text-xs">
                     {formatCents(p.total_cents, p.moeda)}
                   </td>
                 </tr>

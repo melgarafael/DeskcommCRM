@@ -34,11 +34,31 @@ interface Stubs {
   }>;
   versionsError?: unknown;
   rejectNullVersionIds?: boolean;
+  /** Skills por agente (9107): agentes vivos e a versão publicada de cada um. */
+  agentes?: Array<{ id: string; name: string; published_version_id: string }>;
+  versoesDosAgentes?: Array<{ id: string; skill_names: string[] }>;
+  agentesError?: unknown;
 }
 
 function makeAdminStub(cfg: Stubs) {
   return {
     from(table: string) {
+      if (table === "ai_agents" || table === "ai_agent_versions") {
+        const resposta =
+          table === "ai_agents"
+            ? { data: cfg.agentes ?? [], error: cfg.agentesError ?? null }
+            : { data: cfg.versoesDosAgentes ?? [], error: null };
+        const q = {
+          select: () => q,
+          eq: () => q,
+          is: () => q,
+          not: () => q,
+          in: () => q,
+          then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
+            Promise.resolve(resposta).then(onF, onR),
+        };
+        return q;
+      }
       if (table !== "skill_pointers" && table !== "skill_versions") {
         throw new Error(`unexpected table ${table}`);
       }
@@ -105,6 +125,39 @@ function getReq() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe("GET /api/v1/ai/skills — agentes com lista própria (9107)", () => {
+  it("devolve os agentes cuja versão publicada escolheu as próprias skills", async () => {
+    mockAuthzOk();
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeAdminStub({
+        agentes: [
+          { id: "a-lia", name: "Lia", published_version_id: "v-lia" },
+          { id: "a-nina", name: "Nina", published_version_id: "v-nina" },
+        ],
+        // A Nina não vem: versão com `skill_names` null (todas) fica fora da consulta.
+        versoesDosAgentes: [{ id: "v-lia", skill_names: ["visita-ao-imovel"] }],
+      }) as never,
+    );
+    const { GET } = await import("./route");
+    const res = await GET(getReq());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { agentes_com_lista_propria: unknown } };
+    expect(body.data.agentes_com_lista_propria).toEqual([
+      { id: "a-lia", name: "Lia", skill_names: ["visita-ao-imovel"] },
+    ]);
+  });
+
+  it("erro ao ler os agentes vira 500 — nunca uma lista vazia que diria 'vale para todos'", async () => {
+    mockAuthzOk();
+    vi.mocked(createAdminClient).mockReturnValue(
+      makeAdminStub({ agentesError: { message: "connection terminated" } }) as never,
+    );
+    const { GET } = await import("./route");
+    const res = await GET(getReq());
+    expect(res.status).toBe(500);
+  });
 });
 
 describe("GET /api/v1/ai/skills", () => {
@@ -257,6 +310,8 @@ describe("GET /api/v1/ai/skills", () => {
           matcher_mudou: boolean;
           any_adicionadas: string[];
           any_removidas: string[];
+          tags_adicionadas: string[];
+          tags_removidas: string[];
           corpo_mudou: boolean;
           linhas_adicionadas: number;
           linhas_removidas: number;
@@ -273,6 +328,8 @@ describe("GET /api/v1/ai/skills", () => {
       matcher_mudou: true,
       any_adicionadas: ["entrega"],
       any_removidas: [],
+      tags_adicionadas: [],
+      tags_removidas: [],
       corpo_mudou: true,
       linhas_adicionadas: 1,
       linhas_removidas: 0,

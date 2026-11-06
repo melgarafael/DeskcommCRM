@@ -6,6 +6,7 @@
 import type { SendMessageInput } from "@/lib/schemas";
 import type { FetchedMedia } from "@/lib/messaging/media/types";
 import type { OutboundMedia } from "@/lib/waha/media-send";
+import type { TemplateContract } from "@/lib/channels/meta/template-contract";
 import type { ContatoDoAparelho } from "@/lib/waha/client";
 
 // O tipo do contato do aparelho ATRAVESSA o seam como tipo só (o import some na
@@ -100,6 +101,14 @@ export interface RecipientInput {
    * `waIdentity.startsWith("lid:")` — justo o caso que a regra protege.
    */
   waLid?: string | null | undefined;
+  /**
+   * Endereço (chat) da última mensagem RECEBIDA na conversa, só quando a ficha
+   * tem telefone extra. Com dois números na mesma ficha, responder pelo principal
+   * sairia por número que a pessoa não usou nesta conversa; a resposta vai, então,
+   * pelo número que ela escreveu. Vem preenchido só nesse caso: ficha sem extra
+   * segue pela regra de sempre (`waLid`, depois o principal).
+   */
+  ultimoRecebidoChatId?: string | null;
 }
 
 /** Contato compartilhado (vcard) — só `kind: "contact"`. */
@@ -348,6 +357,24 @@ export interface ChannelAdapter {
   ): Promise<string | null>;
 
   /**
+   * O telefone TEM conta nesta plataforma? Pergunta sem enviar nada — a
+   * prospecção a faz antes de abordar uma empresa (`lib/prospecting/whatsapp.ts`).
+   *
+   * TRÊS respostas, e a terceira é a que importa: `true`/`false` é o que a
+   * plataforma disse; `null` é "não deu para saber" (transporte fora, sessão
+   * caindo). Quem chama NUNCA lê `null` como "não tem" — descartaria uma empresa
+   * porque o servidor piscou. É por isso que não reaproveita
+   * `resolveRegisteredPhone`, que devolve `null` também para "não existe" e para
+   * quem só tem identidade opaca (que TEM conta).
+   *
+   * OPCIONAL: só implementa quem consegue perguntar à plataforma; quem chama
+   * testa a presença (ou usa `provedoresQueConferemNumero`), nunca o nome.
+   */
+  numeroTemConta?(
+    input: ChannelTenantScope & { sessionRef: string; phone: string },
+  ): Promise<boolean | null>;
+
+  /**
    * Gestão das definições aprovadas — criar, editar, apagar.
    *
    * OPCIONAL pelo mesmo motivo dos dois métodos acima: nem todo canal expõe
@@ -531,6 +558,13 @@ export interface ChannelAdapter {
     language: string;
     /** Valores dos `{{n}}`, na ordem em que a definição os declara. */
     values: Record<string, string>;
+    /**
+     * O contrato que o pré-voo conferiu (`conferirDefinicao`), quando o espelho
+     * tem a definição. O transporte que precisa ORDENAR os valores — modelo
+     * nomeado, texto do cabeçalho, sufixo de link de botão — lê a ordem daqui.
+     * `null`/ausente: modelo fora do espelho, e vale a ordem numérica das chaves.
+     */
+    contrato?: TemplateContract | null;
   }): Promise<{ externalId: string | null }>;
 }
 
