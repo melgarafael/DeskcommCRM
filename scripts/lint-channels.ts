@@ -104,6 +104,16 @@ const KNOWN_DEBT: { reason: string; files: string[] }[] = [
   },
   {
     reason:
+      "`notify_team` — o literal `'telegram'` é usado como VALOR INVÁLIDO de " +
+      "outro domínio: o schema da ação exige `canal: 'whatsapp'` e o teste " +
+      "prova que um destino torto morre na porta. Não é acoplamento nenhum ao " +
+      "canal do bot (que entrou na #3440 e não tem ação de aviso de equipe); " +
+      "sai quando o teste escolher outro literal qualquer — o valor não " +
+      "importa para o que ele mede.",
+    files: ["lib/automation/actions/notify-team.test.ts"],
+  },
+  {
+    reason:
       "Texto VISÍVEL ao usuário (cópia de tela) ou nome de campo de resposta de " +
       "API pública (`checks.waha`, `waha_ban`, `waha_sessions_count`, o código " +
       "de erro `waha_error`). Trocar é mudança de comportamento observável — " +

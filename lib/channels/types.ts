@@ -15,7 +15,20 @@ import type { ContatoDoAparelho } from "@/lib/waha/client";
 // e o lint de canal reprovaria o caminho.
 export type { OutboundMedia, ContatoDoAparelho };
 
-export type ChannelProvider = "waha" | "meta_cloud" | "zernio" | "zernio_social" | "wacalls" | "datafy";
+export type ChannelProvider =
+  | "waha"
+  | "meta_cloud"
+  | "zernio"
+  | "zernio_social"
+  | "wacalls"
+  | "datafy"
+  /**
+   * Bot do Telegram, o do @BotFather (#3440). Entra com o TIPO, e não como uma
+   * variação de um dos canais de WhatsApp, porque o endereço dele não é
+   * telefone: é o `chat_id` que o próprio bot recebe no update. Ver
+   * `./adapters/telegram.ts` e a ausência dele em `PROVIDERS_DE_TELEFONE`.
+   */
+  | "telegram";
 
 /**
  * Os providers que transportam MENSAGEM — o subconjunto sobre o qual a matriz
