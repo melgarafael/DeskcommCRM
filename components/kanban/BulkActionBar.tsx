@@ -130,7 +130,7 @@ export function BulkActionBar({
   // (`vocab.lead`: "Cliente") — o resto do funil já chama o card de negócio (#3811).
   const rotuloDaContagem =
     selectedIds.length === 1
-      ? `1 ${vocab.deal} ${t("selecionado")}`
+      ? `1 ${t(vocab.deal)} ${t("selecionado")}`
       : `${selectedIds.length} ${t("selecionados")}`;
 
   const runMove = (stageId: string) => {
@@ -367,7 +367,7 @@ export function BulkActionBar({
           <DialogHeader>
             <DialogTitle>
               {selectedIds.length === 1
-                ? `${t("Excluir")} 1 ${vocab.deal}?`
+                ? `${t("Excluir")} 1 ${t(vocab.deal)}?`
                 : `${t("Excluir")} ${selectedIds.length} ${t("selecionados")}?`}
             </DialogTitle>
             <DialogDescription>

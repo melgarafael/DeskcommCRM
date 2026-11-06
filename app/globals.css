@@ -1524,3 +1524,22 @@
     animation-iteration-count: infinite !important;
   }
 }
+
+/* As ondas da ligação no Cold Call: só `transform`, e paradas fora de uma ligação. */
+.cc-onda {
+  transform-origin: center;
+  transition: opacity 0.3s ease;
+}
+
+.cc-ondas-ativa .cc-onda {
+  animation: cc-onda 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes cc-onda {
+  from { transform: scaleY(0.35); }
+  to { transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-ondas-ativa .cc-onda { animation: none; }
+}

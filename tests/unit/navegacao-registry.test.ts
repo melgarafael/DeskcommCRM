@@ -191,6 +191,8 @@ describe("hubSections", () => {
       // menu do dia a dia com os 20 itens de sempre; a porta é o hub e o ⌘K.
       "/app/tasks/planos",
       "/app/calls",
+      // #3933: a fila de ligações ativas, ao lado do histórico de chamadas. Só com o módulo ligado.
+      "/app/cold-call",
       "/app/comandas",
       "/app/products",
       "/app/imports",

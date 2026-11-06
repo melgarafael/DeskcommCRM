@@ -93,3 +93,55 @@ export function buscaValeConsulta(bruto: string): boolean {
   const semLixo = bruto.replace(/[()*]/g, " ");
   return normalizarTermoDeBusca(semLixo).length >= PISO_DA_BUSCA;
 }
+
+/**
+ * Letras que o NFD não decompõe — o `unaccent` do Postgres mapeia todas elas.
+ *
+ * Sem esta tabela, um contato cadastrado como "Øyvind" (coluna do banco:
+ * "oyvind") deixaria de ser achado por quem digita "Øyvind" — um REGRESSO em
+ * relação ao `ilike` atual, que casava igual com igual. A lista é a das letras
+ * latinas que o arquivo `unaccent.rules` cobre e a decomposição NFD não.
+ */
+const NAO_DECOMPOEM: Record<string, string> = {
+  ß: "ss",
+  æ: "ae",
+  œ: "oe",
+  ø: "o",
+  đ: "d",
+  ð: "d",
+  ł: "l",
+  þ: "th",
+  ı: "i",
+  ħ: "h",
+  ŧ: "t",
+  ĸ: "k",
+};
+
+/**
+ * O termo como o BANCO o guarda: sem acento e em minúscula (#3918).
+ *
+ * ─── Por que existe, se o `ilike` já dobra a caixa ───────────────────────────
+ * `ILIKE` dobra CAIXA, não ACENTO: `lower('Á') = 'á'`, que não é `'a'`. Quem
+ * digita "Andreia" não acha "Andréia" — e no Brasil a mesma pessoa é escrita das
+ * duas formas, com o atendente digitando rápido, sem acento.
+ *
+ * ─── O outro lado mora no banco, e não aqui ──────────────────────────────────
+ * A coluna `contacts.busca_sem_acento` é GERADA por
+ * `lower(public.f_unaccent(…))` (migration 9098). Comparar o termo limpo contra
+ * a coluna crua não resolveria nada — os dois lados têm de estar normalizados,
+ * e é por isso que a coluna existe: `ilike` sobre `display_name` continua sem
+ * achar nada, por mais limpo que o termo chegue.
+ *
+ * ⚠️ Esta função e `public.f_unaccent` são a MESMA regra em duas linguagens, e
+ * duas cópias divergem no primeiro ajuste (é a classe de defeito que já apareceu
+ * neste repo com telefone). O que as mantém juntas é
+ * `tests/invariants/busca-do-inbox-ignora-acento.test.ts`, que compara as duas
+ * sobre uma matriz de nomes — não uma delas sozinha.
+ */
+export function termoSemAcento(bruto: string): string {
+  return bruto
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[ßæœøđðłþıħŧĸ]/gi, (letra) => NAO_DECOMPOEM[letra.toLowerCase()] ?? letra)
+    .toLowerCase();
+}

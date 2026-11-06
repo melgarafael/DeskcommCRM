@@ -62,6 +62,10 @@ export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string
   crm_propose_contact_field: { contact_id: "contato" },
   crm_create_conversation_draft: { conversation_id: "conversa" },
   crm_assign_conversation: { conversation_id: "conversa", to_user_id: "configuracao" },
+  // #3881: a conversa vem do TURNO (o modelo não escolhe em qual conversa
+  // escreve) e o setor é identificador de CONFIGURAÇÃO da organização — mesmo
+  // dono de `to_user_id` acima, e recusado se vier como lista/objeto.
+  crm_set_conversation_sector: { conversation_id: "conversa", sector_id: "configuracao" },
   crm_manage_tags: { target_id: "alvo_de_tag" },
   crm_send_whatsapp_message: { conversation_id: "conversa" },
   crm_request_human_handoff: { conversation_id: "conversa", target_user_id: "configuracao" },
