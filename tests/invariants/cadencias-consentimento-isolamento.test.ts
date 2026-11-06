@@ -36,6 +36,13 @@ describe("abertura autorizada no banco, sem sessão de destinatário", () => {
     expect(abrir(OUTRA)).toBe("false");
     expect(countAs(GOV_AGENT_A,`select count(*) from public.email_cadence_enrollments where organization_id='${GOV_ORG}';`)).toBe(1);
     expect(countAs(USER_B,`select count(*) from public.email_cadence_enrollments where organization_id='${GOV_ORG}';`)).toBe(0);
+    for (const tabela of ["email_cadences", "email_cadence_enrollments", "email_cadence_events"]) {
+      const consulta = `select count(*) from public.${tabela} where organization_id='${GOV_ORG}';`;
+      const total = Number(lastLine(sql(consulta)));
+      expect(total, `${tabela}: a fixture deve ter linha real antes da recusa`).toBeGreaterThan(0);
+      expect(countAs(GOV_AGENT_A, consulta), `${tabela}: o tenant dono deve ler suas linhas`).toBe(total);
+      expect(countAs(USER_B, consulta), `${tabela}: outro tenant não pode ler as linhas`).toBe(0);
+    }
   });
   it("string true não liga; desligar e descadastrar vetam o pixel", () => {
     sql(`update public.organizations set settings='{"cadencias":{"enabled":"true"}}'::jsonb where id='${GOV_ORG}';`); expect(abrir()).toBe("false");
