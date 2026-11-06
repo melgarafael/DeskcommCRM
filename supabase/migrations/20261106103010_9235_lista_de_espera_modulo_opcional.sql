@@ -250,7 +250,8 @@ begin
 
   alter table public.calendar_waitlist enable row level security;
   drop policy if exists calendar_waitlist_select on public.calendar_waitlist;
-  create policy calendar_waitlist_select on public.calendar_waitlist
+  create policy calendar_waitlist_select
+    on public.calendar_waitlist
     for select using (
       public.fn_is_platform_admin()
       or organization_id in (select public.fn_user_org_ids())
@@ -269,7 +270,8 @@ begin
 
   perform public.fn_proteger_modulo_provisionado();
   perform public.fn_lista_de_espera_declarar_secoes_lgpd();
-end $f$;
+end
+$f$;
 revoke execute on function public.fn_lista_de_espera_provisionar() from public, anon, authenticated;
 grant execute on function public.fn_lista_de_espera_provisionar() to service_role;
 

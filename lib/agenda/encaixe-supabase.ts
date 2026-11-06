@@ -35,6 +35,7 @@ import { espacarEnvio } from "@/lib/automation/throttle";
 import { ehContatoPessoal } from "@/lib/contacts/contato-pessoal";
 import { moduloLigado, moduloLigadoComMemo } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
+import { ehOperante } from "@/lib/organizacao/operante";
 import type { ScheduleWindow } from "@/lib/schemas/routing";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -110,8 +111,9 @@ const COLUNAS_DA_INSCRICAO =
   "id, contact_id, event_type_id, owner_user_id, janelas, antecedencia_minima_horas, valido_ate, urgencia, vaga_recusada_inicio, created_at";
 
 /**
- * Os prazos da organização, se o recurso está ligado. Só o que passa inteiro pelo
- * schema vale: sem prazos escolhidos, `null`, nunca um padrão (doc 208).
+ * Os prazos da organização, se o recurso está ligado e a organização opera. Só o
+ * que passa inteiro pelo schema vale: sem prazos escolhidos, `null`, nunca um
+ * padrão (doc 208). Empresa suspensa não oferece vaga, porque a oferta é mensagem.
  */
 export async function configDaEspera(
   admin: SB,
@@ -119,12 +121,13 @@ export async function configDaEspera(
 ): Promise<ConfigDaListaDeEspera | null> {
   const { data, error } = await admin
     .from("organizations")
-    .select("settings")
+    .select("settings, status")
     .eq("id", organizationId)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  const settings = (data as { settings?: Record<string, unknown> | null } | null)?.settings;
-  const config = configDaListaDeEsperaSchema.safeParse(settings?.lista_de_espera);
+  const linha = data as { settings?: Record<string, unknown> | null; status?: string } | null;
+  if (!ehOperante(linha?.status)) return null;
+  const config = configDaListaDeEsperaSchema.safeParse(linha?.settings?.lista_de_espera);
   return config.success && config.data.ativa ? config.data : null;
 }
 

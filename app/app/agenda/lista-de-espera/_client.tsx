@@ -38,11 +38,7 @@ type Tipo = { id: string; name: string };
 type Contato = { id: string; name: string | null; display_name: string | null; phone_number: string | null };
 
 const CHAVE = ["agenda", "lista-de-espera"];
-const CAMPOS_DE_PRAZO = [
-  ["prazo_maximo_minutos", "Prazo máximo da oferta (minutos)"],
-  ["margem_antes_minutos", "Folga antes do horário (minutos)"],
-  ["prazo_minimo_minutos", "Prazo mínimo para oferecer (minutos)"],
-] as const;
+const CAMPOS_DE_PRAZO = ["prazo_maximo_minutos", "margem_antes_minutos", "prazo_minimo_minutos"] as const;
 
 function Prazos({ config }: { config: Config | null }) {
   const t = useT();
@@ -53,7 +49,12 @@ function Prazos({ config }: { config: Config | null }) {
     margem_antes_minutos: config ? String(config.margem_antes_minutos) : "",
     prazo_minimo_minutos: config ? String(config.prazo_minimo_minutos) : "",
   });
-  const faltaPrazo = CAMPOS_DE_PRAZO.some(([campo]) => prazos[campo] === "");
+  const faltaPrazo = CAMPOS_DE_PRAZO.some((campo) => prazos[campo] === "");
+  const rotulos = {
+    prazo_maximo_minutos: t("Prazo máximo da oferta (minutos)"),
+    margem_antes_minutos: t("Folga antes do horário (minutos)"),
+    prazo_minimo_minutos: t("Prazo mínimo para oferecer (minutos)"),
+  };
 
   const salvar = useMutation({
     mutationFn: () =>
@@ -73,9 +74,9 @@ function Prazos({ config }: { config: Config | null }) {
       <p className="text-sm text-text-muted">
         {t("Não há valor padrão. A lista de espera só liga depois de você escolher os três.")}
       </p>
-      {CAMPOS_DE_PRAZO.map(([campo, rotulo]) => (
+      {CAMPOS_DE_PRAZO.map((campo) => (
         <div key={campo} className="space-y-1">
-          <Label htmlFor={campo}>{t(rotulo)}</Label>
+          <Label htmlFor={campo}>{rotulos[campo]}</Label>
           <Input
             id={campo}
             type="number"
