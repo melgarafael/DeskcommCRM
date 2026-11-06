@@ -125,7 +125,20 @@ export async function GET(req: NextRequest): Promise<Response> {
   // Canal desativado nunca entra na inbox: o mesmo corte da lista, para badge
   // e aba nunca divergirem.
   const idsDesativados = await idsDosCanaisDesativados(supabase, org);
-  const countExact = (filtrosDaAba: readonly FiltroDeContagem[] = auxiliares) => {
+  const countExact = (
+    filtrosDaAba: readonly FiltroDeContagem[] = auxiliares,
+    /**
+     * Spec 33 — a aba "Pessoal" INVERTE a exclusão: em vez de subtrair os contatos
+     * pessoais, conta só eles (os que este usuário pode ver). Vem como argumento
+     * da fábrica, e não como query solta, porque montar contagem por fora de
+     * `countExact()` é a única forma de o badge deixar de herdar organização,
+     * auxiliares e não-lidas — e há cerca para isso.
+     *
+     * `undefined` = régua de sempre (pessoal fora). `[]` nunca chega aqui: quem
+     * chama responde zero sem consultar o banco.
+     */
+    pessoalVisivel?: readonly string[],
+  ) => {
     let q = supabase
       .from("conversations")
       .select("id", { count: "exact", head: true })
@@ -134,7 +147,8 @@ export async function GET(req: NextRequest): Promise<Response> {
     for (const [coluna, valor] of filtrosDaAba) q = q.eq(coluna, valor);
     // O marcador entra pela régua da LISTA — a mesma função, não uma segunda.
     q = aplicarMarcadores(q, marcadores, modo);
-    if (pessoais.length > 0) q = q.not("contact_id", "in", `(${pessoais.join(",")})`);
+    if (pessoalVisivel) q = q.in("contact_id", [...pessoalVisivel]);
+    else if (pessoais.length > 0) q = q.not("contact_id", "in", `(${pessoais.join(",")})`);
     if (soNaoLidas) q = q.gt("unread_count_for_assignee", 0);
     return q;
   };
@@ -233,18 +247,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     // o atendente procurar trabalho que não existe.
     pessoaisVisiveis.length === 0
       ? Promise.resolve({ count: 0, error: null })
-      : idsDesativados.length > 0
-        ? supabase
-            .from("conversations")
-            .select("id", { count: "exact", head: true })
-            .eq("organization_id", org)
-            .in("contact_id", pessoaisVisiveis)
-            .not("channel_session_id", "in", `(${idsDesativados.join(",")})`)
-        : supabase
-            .from("conversations")
-            .select("id", { count: "exact", head: true })
-            .eq("organization_id", org)
-            .in("contact_id", pessoaisVisiveis),
+      : countExact(auxiliares, pessoaisVisiveis),
   ]);
 
   const firstErr =
