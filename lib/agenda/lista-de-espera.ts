@@ -41,7 +41,9 @@
  * limitação do motor de horários livres, e está escrita para ser encontrada
  * antes de alguém vender atendimento noturno — não depois.
  */
-import type { ScheduleWindow } from "@/lib/schemas/routing";
+import { z } from "zod";
+
+import { scheduleWindowSchema, type ScheduleWindow } from "@/lib/schemas/routing";
 import { rotuloLocal } from "@/lib/tempo/agora";
 
 import { diaDaSemanaLocal, partesNoFuso } from "./fuso";
@@ -64,6 +66,8 @@ export interface InscricaoNaEspera {
   /** Maior primeiro. Empate desempata pela ordem de chegada (`createdAt`). */
   urgencia: number;
   createdAt: Date;
+  /** Início da última vaga que a pessoa recusou ou deixou vencer. */
+  vagaRecusadaInicio?: Date | null;
 }
 
 /** A vaga que abriu: o intervalo que a desmarcação liberou. */
@@ -90,18 +94,37 @@ export type MotivoDeRecusa =
   | "profissional_diferente"
   | "fora_da_janela"
   | "antecedencia_insuficiente"
-  | "inscricao_vencida";
+  | "inscricao_vencida"
+  | "vaga_ja_recusada";
 
 export type DecisaoDeEncaixe =
   | { cabe: true }
   | { cabe: false; motivo: MotivoDeRecusa };
 
-/** Prazo máximo de uma oferta: duas horas é o que a pessoa demora a olhar o celular. */
-export const PRAZO_MAXIMO_DA_OFERTA_MS = 2 * 60 * 60 * 1000;
-/** Folga entre o fim do prazo e o início da vaga — o atendente precisa saber antes. */
-export const MARGEM_ANTES_DA_VAGA_MS = 15 * 60 * 1000;
-/** Prazo menor que isto não dá tempo de a pessoa responder: nem oferece. */
-export const PRAZO_MINIMO_DA_OFERTA_MS = 15 * 60 * 1000;
+const MINUTOS_DA_OFERTA = z.number().int().min(1).max(1440);
+
+/**
+ * Os prazos da oferta são escolha de cada organização (doc 208): sem valor
+ * padrão, sem fallback. Configuração que não passa aqui deixa o recurso
+ * desligado, e o `.catch` de leitura seria o defeito que a decisão proíbe.
+ */
+export const configDaListaDeEsperaSchema = z
+  .strictObject({
+    ativa: z.boolean(),
+    /** Quanto tempo, no máximo, a vaga fica segurada para uma pessoa. */
+    prazo_maximo_minutos: MINUTOS_DA_OFERTA,
+    /** Folga entre o fim do prazo e o início da vaga. */
+    margem_antes_minutos: z.number().int().min(0).max(1440),
+    /** Prazo menor que este não dá tempo de responder: a vaga nem é oferecida. */
+    prazo_minimo_minutos: MINUTOS_DA_OFERTA,
+  })
+  .refine((c) => c.prazo_minimo_minutos <= c.prazo_maximo_minutos, {
+    message: "O prazo mínimo não pode passar do máximo.",
+  });
+export type ConfigDaListaDeEspera = z.infer<typeof configDaListaDeEsperaSchema>;
+
+/** As janelas de uma inscrição, na escrita e na leitura: a mesma régua do roteamento. */
+export const janelasDaEsperaSchema = z.array(scheduleWindowSchema).max(50);
 
 const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -126,10 +149,9 @@ function paredeLocal(instante: Date, fuso: string): { dow: number; minutos: numb
  * podia. É a diferença entre "cabe o começo" e "cabe o atendimento", e a versão
  * anterior desta função comparava só o início.
  *
- * Janela com texto inválido é DESCARTADA em silêncio (`minutosDaParede` devolve
- * `null`): jsonb é dado solto, e uma janela que não é hora não pode virar regra.
- * Se sobrar zero janela válida de uma lista não vazia, ninguém casa — falha
- * fechado, do lado que não promete horário.
+ * Janela com texto inválido não casa (`minutosDaParede` devolve `null`), e a
+ * leitura da inscrição recusa a linha antes de chegar aqui: a falha é fechada,
+ * do lado que não promete horário.
  */
 export function cabeNaJanela(
   janelas: readonly ScheduleWindow[],
@@ -166,6 +188,9 @@ export function decideEncaixe(
   const inicio = vaga.startsAt.getTime();
   const fimDaVaga = vaga.endsAt.getTime();
   if (inicio <= agora.getTime()) return { cabe: false, motivo: "vaga_no_passado" };
+  if (inscricao.vagaRecusadaInicio?.getTime() === inicio) {
+    return { cabe: false, motivo: "vaga_ja_recusada" };
+  }
   const duracaoMs = servico.duracaoMinutos * 60_000;
   if (inicio + duracaoMs > fimDaVaga) return { cabe: false, motivo: "servico_nao_cabe" };
   if (inscricao.ownerUserId !== null && inscricao.ownerUserId !== vaga.ownerUserId) {
@@ -208,47 +233,55 @@ export interface CandidatoAoEncaixe {
 }
 
 /**
- * O primeiro da fila que CABE. `servico` é consultado sob demanda porque duas
- * inscrições podem ser de atendimentos diferentes — e um molde apagado (o
- * `on delete cascade` da tabela existe para isso não sobrar) simplesmente não
- * entra na conta.
+ * Quem da fila CABE, na ordem de chamada. `servico` é consultado sob demanda
+ * porque duas inscrições podem ser de atendimentos diferentes — e um molde
+ * apagado simplesmente não entra na conta. É uma lista, e não só o primeiro:
+ * quem cabe na decisão ainda pode não poder ser avisado, e aí chama o seguinte.
  */
+export function candidatosAoEncaixe(
+  vaga: VagaAberta,
+  fila: readonly InscricaoNaEspera[],
+  servicoDe: (eventTypeId: string) => ServicoDaEspera | null,
+  agora: Date,
+): CandidatoAoEncaixe[] {
+  const candidatos: CandidatoAoEncaixe[] = [];
+  for (const inscricao of ordenarFila(fila)) {
+    const servico = servicoDe(inscricao.eventTypeId);
+    if (servico && decideEncaixe(vaga, servico, inscricao, agora).cabe) {
+      candidatos.push({ inscricao, servico });
+    }
+  }
+  return candidatos;
+}
+
+/** O primeiro da fila que cabe. */
 export function escolherCandidato(
   vaga: VagaAberta,
   fila: readonly InscricaoNaEspera[],
   servicoDe: (eventTypeId: string) => ServicoDaEspera | null,
   agora: Date,
 ): CandidatoAoEncaixe | null {
-  for (const inscricao of ordenarFila(fila)) {
-    const servico = servicoDe(inscricao.eventTypeId);
-    if (!servico) continue;
-    if (decideEncaixe(vaga, servico, inscricao, agora).cabe) return { inscricao, servico };
-  }
-  return null;
+  return candidatosAoEncaixe(vaga, fila, servicoDe, agora)[0] ?? null;
 }
 
 /**
- * Até quando a vaga fica segurada para a primeira pessoa da fila.
+ * Até quando a vaga fica segurada para a primeira pessoa da fila, pelos prazos
+ * da organização: o teto, ou a margem antes do início, o que vier primeiro.
  *
- * Duas travas, e as duas por medição de uso:
- *
- * - **Teto de duas horas.** O prazo que o produto já tem para "pedido que
- *   ninguém confirmou" é por organização e tem default de 24h — um dia inteiro
- *   com o horário preso não é oferta, é a agenda travada. A oferta de encaixe é
- *   mais curta porque a vaga que abriu costuma ser próxima.
- * - **Margem de 15 min antes do início.** Quem responde SIM no minuto do
- *   atendimento não dá tempo de o profissional se organizar.
- *
- * Devolve `null` quando não sobra prazo utilizável — e aí a vaga NÃO é
- * oferecida. Oferecer com prazo de três minutos é uma promessa que já nasce
- * vencida; o horário segue livre para quem aparecer na conversa.
+ * Devolve `null` quando não sobra o prazo mínimo — e aí a vaga NÃO é oferecida.
+ * Uma oferta que nasce vencida é promessa que não se cumpre; o horário segue
+ * livre para quem aparecer na conversa.
  */
-export function prazoDaOferta(vaga: VagaAberta, agora: Date): Date | null {
+export function prazoDaOferta(
+  vaga: VagaAberta,
+  agora: Date,
+  config: ConfigDaListaDeEspera,
+): Date | null {
   const limite = Math.min(
-    vaga.startsAt.getTime() - MARGEM_ANTES_DA_VAGA_MS,
-    agora.getTime() + PRAZO_MAXIMO_DA_OFERTA_MS,
+    vaga.startsAt.getTime() - config.margem_antes_minutos * 60_000,
+    agora.getTime() + config.prazo_maximo_minutos * 60_000,
   );
-  if (limite - agora.getTime() < PRAZO_MINIMO_DA_OFERTA_MS) return null;
+  if (limite - agora.getTime() < config.prazo_minimo_minutos * 60_000) return null;
   return new Date(limite);
 }
 

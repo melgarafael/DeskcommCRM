@@ -52,7 +52,7 @@ import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { agendaSettingsSchema } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { varrerOfertasVencidas } from "@/lib/agenda/encaixe-supabase";
+import { aposVagaLiberada, varrerOfertasVencidas } from "@/lib/agenda/encaixe-supabase";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 
 export const dynamic = "force-dynamic";
@@ -70,14 +70,8 @@ async function handle(req: NextRequest): Promise<Response> {
   const admin = createAdminClient();
   const agora = new Date();
 
-  // A OFERTA DE ENCAIXE SEM RESPOSTA SOLTA O HORÁRIO PELA MESMA LEI.
-  //
-  // A vaga oferecida à lista de espera é um compromisso `pending`, então ela
-  // cai nesta varredura depois do prazo da organização — mas o prazo da OFERTA
-  // é de duas horas, e esperar 24h para devolvê-la à fila seria horário preso
-  // pelo mesmo motivo que esta rota existe. Roda antes dos laços porque é
-  // independente do que vence nos pendentes, e o que sobrar volta na próxima
-  // rodada.
+  // A oferta de encaixe tem prazo próprio, mais curto que o do pendente. Com o
+  // módulo desligado esta chamada não toca na tabela.
   const encaixes = await varrerOfertasVencidas(admin, { agora });
 
   // O prazo é POR ORGANIZAÇÃO, então a varredura não pode usar um corte único
@@ -164,6 +158,13 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   const quantos = efetivados?.length ?? 0;
+
+  // Pendente que expirou é horário que abriu, e a vaga segurada da lista de
+  // espera também cai aqui se o prazo da organização for menor que o da oferta.
+  for (const { id } of efetivados ?? []) {
+    const organizationId = linhas.find((l) => l.id === id)?.organization_id;
+    if (organizationId) await aposVagaLiberada({ organizationId, appointmentId: id, agora });
+  }
 
   // Rodada que não expirou nada NÃO é mutação e não audita — a lei está no
   // CLAUDE.md §Audit log, e `cron-audita-so-quando-ha-efeito.test.ts` varre o

@@ -85,20 +85,50 @@ describe("o cron solta a oferta vencida", () => {
   it("o que a varredura fez volta no corpo da resposta", () => {
     expect(rota).toContain("encaixes: encaixes.vencidas");
   });
+
+  it("o módulo desligado não toca na tabela: a chave vem antes da consulta", () => {
+    const fonte = ler("lib/agenda/encaixe-supabase.ts");
+    const varredura = corpoDaFuncao(fonte, "export async function varrerOfertasVencidas");
+    expect(varredura.indexOf("moduloLigado(")).toBeGreaterThan(-1);
+    expect(varredura.indexOf("moduloLigado(")).toBeLessThan(varredura.indexOf('from("calendar_waitlist")'));
+    const gancho = corpoDaFuncao(fonte, "export async function aposVagaLiberada");
+    expect(gancho.indexOf("moduloLigadoComMemo(")).toBeGreaterThan(-1);
+    expect(gancho.indexOf("moduloLigadoComMemo(")).toBeLessThan(gancho.indexOf('from("calendar_waitlist")'));
+  });
 });
 
-describe("a migration entra na cadeia", () => {
-  it("existe e cria a fila com o índice de uma inscrição viva", () => {
-    const arquivo = "supabase/migrations/20261026130000_0771_lista_de_espera_com_encaixe.sql";
-    const sql = ler(arquivo);
-    expect(sql).toContain("create table if not exists public.calendar_waitlist");
-    expect(sql).toContain("calendar_waitlist_viva_por_contato_servico_idx");
-    expect(sql).toContain("'waitlist'");
+describe("toda vaga que abre chama o encaixe", () => {
+  it("a expiração de pendentes passa cada id efetivado", () => {
+    const rota = ler("app/api/v1/cron/agenda-expira-pendentes/route.ts");
+    expect(rota.indexOf("aposVagaLiberada(")).toBeGreaterThan(rota.indexOf("efetivados"));
   });
 
-  it("o baseline de self-host tem a mesma tabela — quem instala não roda migrations", () => {
-    const baseline = ler("supabase/baseline.sql");
-    expect(baseline).toContain("create table if not exists public.calendar_waitlist");
-    expect(baseline).toContain("'ui','mcp','google_sync','public_page','waitlist'");
+  it("o cancelamento vindo do Google também", () => {
+    expect(ler("lib/agenda/google/mudanca-vinda-do-google.ts")).toContain("aposVagaLiberada(");
+  });
+});
+
+describe("o módulo nasce pela provisionadora (ADR-0002)", () => {
+  const migration = ler("supabase/migrations/20261106103010_9235_lista_de_espera_modulo_opcional.sql");
+  const baseline = ler("supabase/baseline.sql");
+  const corpo = (sql: string) => {
+    const inicio = sql.indexOf("create or replace function public.fn_lista_de_espera_provisionar()");
+    return sql.slice(inicio, sql.indexOf("$f$;", inicio));
+  };
+
+  it("a tabela só existe dentro da função, nos dois artefatos", () => {
+    for (const sql of [migration, baseline]) {
+      expect(sql.split("create table if not exists public.calendar_waitlist").length).toBe(2);
+      expect(corpo(sql)).toContain("create table if not exists public.calendar_waitlist");
+    }
+  });
+
+  it("os dois artefatos trazem o mesmo corpo", () => {
+    expect(corpo(baseline)).toBe(corpo(migration));
+  });
+
+  it("o CHECK de `source` do núcleo não muda", () => {
+    expect(migration).not.toContain("calendar_appointments_source_check");
+    expect(baseline).not.toContain("'public_page','waitlist'");
   });
 });

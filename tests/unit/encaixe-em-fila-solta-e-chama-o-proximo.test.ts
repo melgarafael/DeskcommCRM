@@ -10,11 +10,14 @@
  *    alguém diz não.
  * 2. **Oferta vencida não é aceita**, mesmo com o SIM chegando — entre o prazo
  *    e a resposta, a varredura pode já ter chamado outra pessoa.
- * 3. **Nada de horário preso**: se a inscrição mudou de estado entre a leitura
- *    e a oferta, a vaga segurada é devolvida.
+ * 3. **Nada de horário preso**: quem não pode ser avisado não recebe vaga, e o
+ *    aviso que não sai solta a vaga na hora.
+ * 4. **A vaga não encolhe**: o próximo enxerga o buraco original, não a duração
+ *    do serviço de quem recusou.
  *
- * A porta é falsa de propósito: o fluxo é o que se quer provar, e um Postgres de
- * verdade custaria o teste inteiro sem medir mais nada disso.
+ * A porta é falsa de propósito: aqui se prova a ordem dos passos. A atomicidade
+ * da oferta e a concorrência são provadas em Postgres, em
+ * `tests/invariants/lista-de-espera-encaixe.test.ts`.
  */
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -23,16 +26,29 @@ import {
   oferecerVagaQueAbriu,
   recusarEncaixe,
   vencerOfertas,
+  type PedidoDeOferta,
   type PortaDoEncaixe,
-  type SeguroDaVaga,
 } from "@/lib/agenda/encaixe";
-import type { InscricaoNaEspera, ServicoDaEspera, VagaAberta } from "@/lib/agenda/lista-de-espera";
+import type {
+  ConfigDaListaDeEspera,
+  InscricaoNaEspera,
+  ServicoDaEspera,
+  VagaAberta,
+} from "@/lib/agenda/lista-de-espera";
 
 const ORG = "org-1";
 const FUSO = "America/Sao_Paulo";
 /** Terça 03/11/2026, 09:00 em São Paulo. */
 const VAGA_INICIO = new Date("2026-11-03T12:00:00.000Z");
 const AGORA = new Date("2026-11-03T09:00:00.000Z");
+const CONFIG: ConfigDaListaDeEspera = {
+  ativa: true,
+  prazo_maximo_minutos: 90,
+  margem_antes_minutos: 10,
+  prazo_minimo_minutos: 20,
+};
+/** Quem confirma, no lugar da porta de alteração da agenda. */
+const confirmaSempre = async () => true;
 
 interface CompromissoFalso {
   id: string;
@@ -67,7 +83,10 @@ function criarPorta(estado: {
   servicos?: Record<string, ServicoDaEspera>;
   compromissos?: Map<string, CompromissoFalso>;
   colisao?: boolean;
-  recusaAoMarcar?: boolean;
+  inscricaoMudou?: boolean;
+  semAviso?: readonly string[];
+  avisoFalha?: readonly string[];
+  config?: ConfigDaListaDeEspera | null;
   situacoes?: Map<string, string>;
 }) {
   const compromissos =
@@ -89,11 +108,13 @@ function criarPorta(estado: {
     new Map<string, string>(estado.fila.map((i) => [i.id, "waiting"] as const));
   const servicos = estado.servicos ?? { limpeza: servico() };
   const chamadas: string[] = [];
-  const segurados: SeguroDaVaga[] = [];
+  const segurados: PedidoDeOferta[] = [];
   let proximoId = 0;
 
   const esperaIdDono = new Map<string, string>();
   const prazos = new Map<string, Date>();
+  const buracos = new Map<string, Date>();
+  const recusadas = new Map<string, Date>();
 
   const ofertaCorrente = (esperaId: string) => {
     for (const [id, c] of compromissos) {
@@ -104,7 +125,10 @@ function criarPorta(estado: {
         esperaId,
         contatoId: `contato-${esperaId}`,
         compromissoId: id,
+        compromissoStatus: c.status as string,
+        contatoDisponivel: true,
         expiraEm: prazos.get(id) ?? new Date(0),
+        vagaFim: buracos.get(id) ?? c.endsAt,
         startsAt: c.startsAt,
         endsAt: c.endsAt,
         ownerUserId: c.ownerUserId,
@@ -114,9 +138,12 @@ function criarPorta(estado: {
     return null;
   };
 
-  const porta: PortaDoEncaixe & { chamadas: string[]; segurados: SeguroDaVaga[] } = {
+  const porta: PortaDoEncaixe & { chamadas: string[]; segurados: PedidoDeOferta[] } = {
     chamadas,
     segurados,
+    async config() {
+      return estado.config === undefined ? CONFIG : estado.config;
+    },
     async vaga(_org, appointmentId) {
       const c = compromissos.get(appointmentId);
       if (!c || c.status !== "cancelled") return null;
@@ -130,32 +157,38 @@ function criarPorta(estado: {
       return vaga;
     },
     async fila() {
-      return estado.fila.filter((i) => situacoes.get(i.id) === "waiting");
+      return estado.fila
+        .filter((i) => situacoes.get(i.id) === "waiting")
+        .map((i) => ({ ...i, vagaRecusadaInicio: recusadas.get(i.id) ?? null }));
     },
     async servico(_org, eventTypeId) {
       return servicos[eventTypeId] ?? null;
     },
-    async segurar(entrada) {
-      chamadas.push(`segurar:${entrada.contatoId}`);
-      if (estado.colisao) return null;
-      segurados.push(entrada);
+    async podeAvisar(_org, contatoId) {
+      return !estado.semAviso?.includes(contatoId);
+    },
+    async ofertar(pedido) {
+      chamadas.push(`ofertar:${pedido.esperaId}`);
+      if (estado.colisao) return { ok: false, motivo: "vaga_ja_ocupada" };
+      if (estado.inscricaoMudou) return { ok: false, motivo: "inscricao_mudou" };
+      segurados.push(pedido);
       const id = `hold-${(proximoId += 1)}`;
       compromissos.set(id, {
         id,
-        startsAt: entrada.inicio,
-        endsAt: entrada.fim,
-        ownerUserId: entrada.ownerUserId,
+        startsAt: pedido.inicio,
+        endsAt: pedido.fim,
+        ownerUserId: pedido.ownerUserId,
         status: "pending",
       });
-      return id;
+      esperaIdDono.set(id, pedido.esperaId);
+      prazos.set(id, pedido.expiraEm);
+      buracos.set(id, pedido.vagaFim);
+      situacoes.set(pedido.esperaId, "offered");
+      return { ok: true, compromissoId: id };
     },
-    async marcarOfertada({ esperaId, compromissoId, expiraEm }) {
-      if (estado.recusaAoMarcar) return false;
-      chamadas.push(`marcarOfertada:${esperaId}`);
-      esperaIdDono.set(compromissoId, esperaId);
-      prazos.set(compromissoId, expiraEm);
-      situacoes.set(esperaId, "offered");
-      return true;
+    async avisar(_org, contatoId) {
+      chamadas.push(`avisar:${contatoId}`);
+      return !estado.avisoFalha?.includes(contatoId);
     },
     async oferta(_org, esperaId) {
       if (situacoes.get(esperaId) !== "offered") return null;
@@ -170,19 +203,15 @@ function criarPorta(estado: {
       }
       return vencidas;
     },
-    async confirmar(_org, compromissoId) {
-      chamadas.push(`confirmar:${compromissoId}`);
-      const c = compromissos.get(compromissoId);
-      if (c) c.status = "confirmed";
-    },
     async soltar(_org, compromissoId, _motivo) {
       chamadas.push(`soltar:${compromissoId}`);
       const c = compromissos.get(compromissoId);
       if (c && c.status === "pending") c.status = "cancelled";
     },
-    async situar(_org, esperaId, situacao) {
+    async situar(_org, esperaId, situacao, vagaRecusada) {
       chamadas.push(`situar:${esperaId}:${situacao}`);
       situacoes.set(esperaId, situacao);
+      if (vagaRecusada) recusadas.set(esperaId, vagaRecusada);
     },
   };
 
@@ -208,12 +237,41 @@ describe("oferecer a vaga que abriu", () => {
     if (!r.ofertada) return;
     expect(r.esperaId).toBe("a");
     expect(r.contatoId).toBe("contato-a");
-    expect(r.expiraEm.getTime()).toBe(AGORA.getTime() + 2 * 60 * 60_000);
+    expect(r.expiraEm.getTime()).toBe(AGORA.getTime() + 90 * 60_000);
     expect(r.texto).toContain("Limpeza");
     // A vaga segurada dura o SERVIÇO, não o buraco inteiro.
     expect(porta.segurados[0]?.inicio.getTime()).toBe(VAGA_INICIO.getTime());
     expect(porta.segurados[0]?.fim.getTime()).toBe(VAGA_INICIO.getTime() + 60 * 60_000);
     expect(porta.segurados[0]?.ownerUserId).toBe("doutora-ana");
+    expect(porta.chamadas).toEqual(["ofertar:a", "avisar:contato-a"]);
+  });
+
+  it("com a organização desligada, ou sem prazos, nada é lido nem segurado", async () => {
+    const porta = criarPorta({ fila, config: null });
+    const r = await oferecerVagaQueAbriu(porta, { organizationId: ORG, appointmentId: "vaga-1", agora: AGORA });
+    expect(r).toEqual({ ofertada: false, motivo: "desligada" });
+    expect(porta.chamadas).toEqual([]);
+  });
+
+  it("quem não pode ser avisado agora não recebe a vaga: chama o próximo", async () => {
+    const porta = criarPorta({ fila, semAviso: ["contato-a"] });
+    const r = await oferecerVagaQueAbriu(porta, { organizationId: ORG, appointmentId: "vaga-1", agora: AGORA });
+    expect(r.ofertada && r.esperaId).toBe("b");
+    expect(porta.chamadas).not.toContain("ofertar:a");
+  });
+
+  it("aviso que não saiu solta a vaga, devolve a pessoa e segue a fila", async () => {
+    const porta = criarPorta({ fila, avisoFalha: ["contato-a"] });
+    const r = await oferecerVagaQueAbriu(porta, { organizationId: ORG, appointmentId: "vaga-1", agora: AGORA });
+    expect(r.ofertada && r.esperaId).toBe("b");
+    expect(porta.chamadas).toEqual([
+      "ofertar:a",
+      "avisar:contato-a",
+      "soltar:hold-1",
+      "situar:a:waiting",
+      "ofertar:b",
+      "avisar:contato-b",
+    ]);
   });
 
   it("pula quem não cabe e chama o próximo — o primeiro da fila não é o primeiro que serve", async () => {
@@ -278,11 +336,11 @@ describe("oferecer a vaga que abriu", () => {
     expect(r).toEqual({ ofertada: false, motivo: "vaga_ja_ocupada" });
   });
 
-  it("inscrição que saiu da fila na corrida DEVOLVE a vaga segurada", async () => {
-    const porta = criarPorta({ fila, recusaAoMarcar: true });
+  it("inscrição que saiu da fila na corrida não segura nada", async () => {
+    const porta = criarPorta({ fila, inscricaoMudou: true });
     const r = await oferecerVagaQueAbriu(porta, { organizationId: ORG, appointmentId: "vaga-1", agora: AGORA });
-    expect(r).toEqual({ ofertada: false, motivo: "vaga_ja_ocupada" });
-    expect(porta.chamadas).toContain("soltar:hold-1");
+    expect(r).toEqual({ ofertada: false, motivo: "sem_candidato" });
+    expect(porta.segurados).toHaveLength(0);
   });
 });
 
@@ -297,14 +355,33 @@ describe("a pessoa respondeu SIM", () => {
     expect(oferta.ofertada).toBe(true);
     if (!oferta.ofertada) return;
 
-    const r = await aceitarEncaixe(porta, {
-      organizationId: ORG,
-      esperaId: oferta.esperaId,
-      agora: AGORA,
-    });
+    const confirmados: string[] = [];
+    const r = await aceitarEncaixe(
+      porta,
+      { organizationId: ORG, esperaId: oferta.esperaId, agora: AGORA },
+      async (id) => {
+        confirmados.push(id);
+        return true;
+      },
+    );
     expect(r).toEqual({ aceito: true, compromissoId: oferta.compromissoId });
-    expect(porta.chamadas).toContain(`confirmar:${oferta.compromissoId}`);
+    expect(confirmados).toEqual([oferta.compromissoId]);
     expect(porta.chamadas).toContain(`situar:${oferta.esperaId}:booked`);
+  });
+
+  it("compromisso que caiu antes do SIM NÃO vira aceito, e a pessoa volta à fila", async () => {
+    const porta = criarPorta({ fila });
+    const oferta = await oferecerVagaQueAbriu(porta, { organizationId: ORG, appointmentId: "vaga-1", agora: AGORA });
+    if (!oferta.ofertada) throw new Error("esperava oferta");
+
+    const r = await aceitarEncaixe(
+      porta,
+      { organizationId: ORG, esperaId: oferta.esperaId, agora: AGORA },
+      async () => false,
+    );
+    expect(r).toEqual({ aceito: false, motivo: "vaga_perdida" });
+    expect(porta.chamadas).not.toContain(`situar:${oferta.esperaId}:booked`);
+    expect(porta.chamadas).toContain(`situar:${oferta.esperaId}:waiting`);
   });
 
   it("SIM depois do prazo NÃO confirma — a vaga pode já ter ido para o próximo", async () => {
@@ -317,18 +394,22 @@ describe("a pessoa respondeu SIM", () => {
     if (!oferta.ofertada) throw new Error("esperava oferta");
 
     const depois = new Date(oferta.expiraEm.getTime() + 1);
-    const r = await aceitarEncaixe(porta, {
-      organizationId: ORG,
-      esperaId: oferta.esperaId,
-      agora: depois,
-    });
+    let confirmou = false;
+    const r = await aceitarEncaixe(
+      porta,
+      { organizationId: ORG, esperaId: oferta.esperaId, agora: depois },
+      async () => {
+        confirmou = true;
+        return true;
+      },
+    );
     expect(r).toEqual({ aceito: false, motivo: "oferta_vencida" });
-    expect(porta.chamadas.some((c) => c.startsWith("confirmar:"))).toBe(false);
+    expect(confirmou).toBe(false);
   });
 
   it("SIM sem oferta de pé não inventa compromisso", async () => {
     const porta = criarPorta({ fila });
-    const r = await aceitarEncaixe(porta, { organizationId: ORG, esperaId: "a", agora: AGORA });
+    const r = await aceitarEncaixe(porta, { organizationId: ORG, esperaId: "a", agora: AGORA }, confirmaSempre);
     expect(r).toEqual({ aceito: false, motivo: "sem_oferta" });
   });
 });
@@ -359,11 +440,35 @@ describe("a pessoa respondeu NÃO", () => {
 
     // A ORDEM, medida: soltou → ofereceu ao próximo → reativou quem recusou.
     const indiceSoltar = porta.chamadas.indexOf(`soltar:${oferta.compromissoId}`);
-    const indiceProximo = porta.chamadas.indexOf("marcarOfertada:b");
+    const indiceProximo = porta.chamadas.indexOf("ofertar:b");
     const indiceReativar = porta.chamadas.indexOf("situar:a:waiting");
     expect(indiceSoltar).toBeGreaterThanOrEqual(0);
     expect(indiceProximo).toBeGreaterThan(indiceSoltar);
     expect(indiceReativar).toBeGreaterThan(indiceProximo);
+  });
+
+  it("a vaga NÃO encolhe: o próximo enxerga o buraco original, não o serviço de quem recusou", async () => {
+    fila = [inscricao("a", { eventTypeId: "curto" }), inscricao("b")];
+    const porta = criarPorta({
+      fila,
+      servicos: { curto: servico({ eventTypeId: "curto", duracaoMinutos: 30 }), limpeza: servico() },
+    });
+    const oferta = await oferecerVagaQueAbriu(porta, { organizationId: ORG, appointmentId: "vaga-1", agora: AGORA });
+    if (!oferta.ofertada) throw new Error("esperava oferta");
+    expect(porta.segurados[0]?.fim.getTime()).toBe(VAGA_INICIO.getTime() + 30 * 60_000);
+
+    const r = await recusarEncaixe(porta, { organizationId: ORG, esperaId: "a", definitivo: false, agora: AGORA });
+    expect(r.proximo?.ofertada && r.proximo.esperaId).toBe("b");
+    expect(porta.segurados[1]?.fim.getTime()).toBe(VAGA_INICIO.getTime() + 60 * 60_000);
+  });
+
+  it("a vaga recusada não volta a quem a recusou quando o próximo também recusa", async () => {
+    const porta = criarPorta({ fila });
+    await oferecerVagaQueAbriu(porta, { organizationId: ORG, appointmentId: "vaga-1", agora: AGORA });
+    await recusarEncaixe(porta, { organizationId: ORG, esperaId: "a", definitivo: false, agora: AGORA });
+    const r = await recusarEncaixe(porta, { organizationId: ORG, esperaId: "b", definitivo: false, agora: AGORA });
+    expect(r.proximo).toEqual({ ofertada: false, motivo: "sem_candidato" });
+    expect(porta.chamadas.filter((c) => c === "ofertar:a")).toHaveLength(1);
   });
 
   it("'não quero mais encaixe' tira a pessoa da fila em vez de reativá-la", async () => {
@@ -408,7 +513,7 @@ describe("a oferta venceu sem resposta", () => {
     expect(r.vencidas).toBe(1);
     expect(r.reoferecidas).toBe(1);
     expect(porta.chamadas).toContain(`soltar:${oferta.compromissoId}`);
-    expect(porta.chamadas).toContain("marcarOfertada:b");
+    expect(porta.chamadas).toContain("ofertar:b");
     expect(porta.chamadas).toContain("situar:a:waiting");
   });
 
@@ -427,6 +532,25 @@ describe("a oferta venceu sem resposta", () => {
       agora: new Date(oferta.expiraEm.getTime() + 60_000),
     });
     expect(r).toEqual({ vencidas: 1, reoferecidas: 0 });
+  });
+
+  it("compromisso confirmado cujo fecho não aconteceu vira `booked`, não volta à fila", async () => {
+    const compromissos = new Map<string, CompromissoFalso>([
+      ["vaga-1", { id: "vaga-1", startsAt: VAGA_INICIO, endsAt: new Date(VAGA_INICIO.getTime() + 3_600_000), ownerUserId: "x", status: "cancelled" }],
+    ]);
+    const porta = criarPorta({ fila, compromissos });
+    const oferta = await oferecerVagaQueAbriu(porta, { organizationId: ORG, appointmentId: "vaga-1", agora: AGORA });
+    if (!oferta.ofertada) throw new Error("esperava oferta");
+    const hold = compromissos.get(oferta.compromissoId);
+    if (hold) hold.status = "pending";
+    const r0 = await porta.oferta(ORG, oferta.esperaId);
+    expect(r0?.compromissoStatus).toBe("pending");
+
+    porta.ofertasVencidas = async () => [{ ...r0!, compromissoStatus: "confirmed" }];
+    const r = await vencerOfertas(porta, { organizationId: ORG, agora: new Date(oferta.expiraEm.getTime() + 60_000) });
+    expect(r).toEqual({ vencidas: 1, reoferecidas: 0 });
+    expect(porta.chamadas).toContain("situar:a:booked");
+    expect(porta.chamadas).not.toContain(`soltar:${oferta.compromissoId}`);
   });
 
   it("nada vencido não mexe em nada", async () => {

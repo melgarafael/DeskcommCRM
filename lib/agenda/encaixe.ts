@@ -17,75 +17,86 @@
  * segundo mecanismo de reserva divergiria do primeiro no primeiro conserto, e o
  * sintoma seria o agente oferecendo um horário que a tela mostra ocupado.
  *
- * ─── Este arquivo não fala com o cliente ──────────────────────────────────
+ * ─── A ordem da oferta ────────────────────────────────────────────────────
  *
- * Ele devolve o TEXTO da oferta (`textoDaOferta`) e o prazo. Quem manda é o
- * caminho de saída que já existe — janela de envio, espaçamento do número,
- * opt-out e limite diário são regras que não podem ter uma segunda versão
- * (CLAUDE.md § Saída). Criar um envio paralelo aqui seria a primeira automação
- * a furar o anti-banimento.
+ * `podeAvisar` vem ANTES de segurar: quem está fora da janela do canal ou sem
+ * conversa não recebe vaga presa por uma mensagem que não vai sair. O aviso
+ * passa pelo caminho de saída que já existe, e quando ele não sai a vaga é
+ * solta na hora e a fila segue.
  */
 import type {
+  ConfigDaListaDeEspera,
   InscricaoNaEspera,
   ServicoDaEspera,
   VagaAberta,
 } from "./lista-de-espera";
-import {
-  escolherCandidato,
-  prazoDaOferta,
-  textoDaOferta,
-} from "./lista-de-espera";
+import { candidatosAoEncaixe, prazoDaOferta, textoDaOferta } from "./lista-de-espera";
 
 /** A oferta que está de pé: quem está com a vaga segurada e até quando. */
 export interface OfertaCorrente {
   esperaId: string;
   contatoId: string;
   compromissoId: string;
+  /** A situação do compromisso segurado: a recusa e a varredura leem antes de soltar. */
+  compromissoStatus: string;
+  contatoDisponivel: boolean;
   expiraEm: Date;
-  /** `startsAt` da vaga segurada — o texto da oferta precisa dele. */
+  /** O fim do BURACO que abriu, que é o que passa ao próximo da fila. */
+  vagaFim: Date;
   startsAt: Date;
   endsAt: Date;
   ownerUserId: string | null;
   timeZone: string;
 }
 
-export interface SeguroDaVaga {
+export interface PedidoDeOferta {
   organizationId: string;
-  contatoId: string;
-  servico: ServicoDaEspera;
+  esperaId: string;
   inicio: Date;
   fim: Date;
   fuso: string;
   ownerUserId: string | null;
-  /** O compromisso que abriu a vaga — vira `rescheduled_from_id`? NÃO: é só rastro. */
-  vagaAbertaPorId: string;
+  vagaFim: Date;
+  expiraEm: Date;
 }
+
+export type DesfechoDaOferta =
+  | { ok: true; compromissoId: string }
+  | {
+      ok: false;
+      motivo: "inscricao_mudou" | "contato_indisponivel" | "servico_indisponivel" | "vaga_ja_ocupada";
+    };
 
 /**
  * A porta do banco. Uma interface só com o que a decisão precisa, porque o fluxo
- * (oferecer → aceitar/recusar/vencer → próximo) é o que se quer provar, e provar
- * isso contra um Postgres de verdade custaria o teste inteiro.
+ * (oferecer → aceitar/recusar/vencer → próximo) é o que se quer provar passo a
+ * passo; a atomicidade e a concorrência são provadas em Postgres, nos invariantes.
  */
 export interface PortaDoEncaixe {
+  /** Os prazos da organização. `null` = recurso desligado ou sem prazos escolhidos. */
+  config(organizationId: string): Promise<ConfigDaListaDeEspera | null>;
   /** A vaga, se ela ainda está liberada. `null` = ocupada, apagada ou não cancelada. */
   vaga(organizationId: string, appointmentId: string): Promise<VagaAberta | null>;
-  /** Só quem está `waiting` — quem já está com oferta na mão não entra na fila. */
+  /** Só quem está `waiting`, com contato que pode ser chamado. */
   fila(organizationId: string): Promise<InscricaoNaEspera[]>;
   servico(organizationId: string, eventTypeId: string): Promise<ServicoDaEspera | null>;
-  /** Segura a vaga num compromisso `pending`. `null` = outra coisa pegou o instante. */
-  segurar(entrada: SeguroDaVaga): Promise<string | null>;
-  /** `false` = a inscrição mudou de estado na corrida e não aceita mais oferta. */
-  marcarOfertada(entrada: {
-    esperaId: string;
-    compromissoId: string;
-    expiraEm: Date;
-  }): Promise<boolean>;
+  /** Antes de segurar: dá para mandar a mensagem agora? */
+  podeAvisar(organizationId: string, contatoId: string): Promise<boolean>;
+  /** Segura a vaga e marca a inscrição numa transação só (`fn_lista_de_espera_ofertar`). */
+  ofertar(pedido: PedidoDeOferta): Promise<DesfechoDaOferta>;
+  /** `false` = a mensagem não saiu. */
+  avisar(organizationId: string, contatoId: string, texto: string): Promise<boolean>;
   oferta(organizationId: string, esperaId: string): Promise<OfertaCorrente | null>;
   ofertasVencidas(organizationId: string, agora: Date): Promise<OfertaCorrente[]>;
-  confirmar(organizationId: string, compromissoId: string): Promise<void>;
   /** Cancela o compromisso segurado, devolvendo o horário. */
   soltar(organizationId: string, compromissoId: string, motivo: string): Promise<void>;
-  situar(organizationId: string, esperaId: string, situacao: "waiting" | "booked" | "cancelled"): Promise<void>;
+  /** `vagaRecusada` = o início da vaga que esta pessoa não quis, para não voltar a ela. */
+  situar(
+    organizationId: string,
+    esperaId: string,
+    situacao: "waiting" | "booked" | "cancelled",
+    vagaRecusada?: Date,
+  ): Promise<void>;
 }
 
 export type ResultadoDaOferta =
@@ -95,107 +106,114 @@ export type ResultadoDaOferta =
       contatoId: string;
       compromissoId: string;
       expiraEm: Date;
-      /** Texto pronto para o agente mandar. O envio NÃO acontece aqui. */
       texto: string;
     }
   | {
       ofertada: false;
-      motivo: "vaga_indisponivel" | "sem_candidato" | "vaga_perto_demais" | "vaga_ja_ocupada";
+      motivo: "desligada" | "vaga_indisponivel" | "sem_candidato" | "vaga_perto_demais" | "vaga_ja_ocupada";
     };
 
 /**
- * A vaga abriu: escolhe a primeira pessoa da fila que cabe, segura o horário
- * para ela e devolve o prazo e o texto.
+ * A vaga abriu: chama a primeira pessoa da fila que cabe e pode ser avisada.
  *
- * A ORDEM DOS PASSOS É A GARANTIA. `segurar` vem antes de `marcarOfertada`
- * porque é o INSERT que perde a corrida quando duas desmarcações abrem o mesmo
- * instante ao mesmo tempo (o índice único parcial
- * `calendar_appointments_sem_duplicata_idx` recusa o segundo). Marcar a
- * inscrição como `offered` antes de ter o compromisso deixaria alguém
- * "esperando resposta" numa vaga que outra pessoa levou.
+ * `fimDaVaga` é o fim do buraco original. Numa vaga que passa de mão em mão, o
+ * compromisso solto tem só a duração do serviço do anterior, e ler o fim dele
+ * encolheria a vaga a cada recusa.
  */
 export async function oferecerVagaQueAbriu(
   porta: PortaDoEncaixe,
-  entrada: { organizationId: string; appointmentId: string; agora: Date },
+  entrada: { organizationId: string; appointmentId: string; agora: Date; fimDaVaga?: Date },
 ): Promise<ResultadoDaOferta> {
-  const vaga = await porta.vaga(entrada.organizationId, entrada.appointmentId);
-  if (!vaga) return { ofertada: false, motivo: "vaga_indisponivel" };
+  const { organizationId, agora } = entrada;
+  const config = await porta.config(organizationId);
+  if (!config) return { ofertada: false, motivo: "desligada" };
 
-  const expiraEm = prazoDaOferta(vaga, entrada.agora);
+  const aberta = await porta.vaga(organizationId, entrada.appointmentId);
+  if (!aberta) return { ofertada: false, motivo: "vaga_indisponivel" };
+  const vaga = { ...aberta, endsAt: entrada.fimDaVaga ?? aberta.endsAt };
+
+  const expiraEm = prazoDaOferta(vaga, agora, config);
   if (!expiraEm) return { ofertada: false, motivo: "vaga_perto_demais" };
 
-  const fila = await porta.fila(entrada.organizationId);
+  const fila = await porta.fila(organizationId);
   if (fila.length === 0) return { ofertada: false, motivo: "sem_candidato" };
 
-  const cache = new Map<string, ServicoDaEspera | null>();
-  const servicoDe = (eventTypeId: string): ServicoDaEspera | null =>
-    cache.get(eventTypeId) ?? null;
-  // A fila é curta por construção (uma clínica tem dezenas de pedidos), e
-  // carregar os moldes antes de decidir evita N idas ao banco dentro do laço.
-  for (const tipo of new Set(fila.map((i) => i.eventTypeId)))
-    cache.set(tipo, await porta.servico(entrada.organizationId, tipo));
-
-  const candidato = escolherCandidato(vaga, fila, servicoDe, entrada.agora);
-  if (!candidato) return { ofertada: false, motivo: "sem_candidato" };
-
-  const compromissoId = await porta.segurar({
-    organizationId: entrada.organizationId,
-    contatoId: candidato.inscricao.contactId,
-    servico: candidato.servico,
-    inicio: vaga.startsAt,
-    fim: new Date(vaga.startsAt.getTime() + candidato.servico.duracaoMinutos * 60_000),
-    fuso: vaga.timeZone,
-    ownerUserId: vaga.ownerUserId,
-    vagaAbertaPorId: vaga.appointmentId,
-  });
-  if (!compromissoId) return { ofertada: false, motivo: "vaga_ja_ocupada" };
-
-  const marcou = await porta.marcarOfertada({
-    esperaId: candidato.inscricao.id,
-    compromissoId,
-    expiraEm,
-  });
-  if (!marcou) {
-    // A inscrição saiu de `waiting` entre a leitura da fila e o UPDATE (a equipe
-    // cancelou, outra vaga a pegou): a vaga segurada não tem dono, e deixá-la
-    // presa seria o mesmo defeito que o prazo existe para evitar.
-    await porta.soltar(entrada.organizationId, compromissoId, "Encaixe cancelado antes da oferta.");
-    return { ofertada: false, motivo: "vaga_ja_ocupada" };
+  const servicos = new Map<string, ServicoDaEspera | null>();
+  for (const tipo of new Set(fila.map((i) => i.eventTypeId))) {
+    servicos.set(tipo, await porta.servico(organizationId, tipo));
   }
+  const servicoDe = (tipo: string) => servicos.get(tipo) ?? null;
 
-  return {
-    ofertada: true,
-    esperaId: candidato.inscricao.id,
-    contatoId: candidato.inscricao.contactId,
-    compromissoId,
-    expiraEm,
-    texto: textoDaOferta(vaga, candidato.servico, expiraEm),
-  };
+  for (const { inscricao, servico } of candidatosAoEncaixe(vaga, fila, servicoDe, agora)) {
+    if (!(await porta.podeAvisar(organizationId, inscricao.contactId))) continue;
+
+    const desfecho = await porta.ofertar({
+      organizationId,
+      esperaId: inscricao.id,
+      inicio: vaga.startsAt,
+      fim: new Date(vaga.startsAt.getTime() + servico.duracaoMinutos * 60_000),
+      fuso: vaga.timeZone,
+      ownerUserId: vaga.ownerUserId,
+      vagaFim: vaga.endsAt,
+      expiraEm,
+    });
+    if (!desfecho.ok) {
+      if (desfecho.motivo === "vaga_ja_ocupada") return { ofertada: false, motivo: "vaga_ja_ocupada" };
+      continue;
+    }
+
+    const texto = textoDaOferta(vaga, servico, expiraEm);
+    if (await porta.avisar(organizationId, inscricao.contactId, texto)) {
+      return {
+        ofertada: true,
+        esperaId: inscricao.id,
+        contatoId: inscricao.contactId,
+        compromissoId: desfecho.compromissoId,
+        expiraEm,
+        texto,
+      };
+    }
+    // Vaga segurada para quem não foi avisado é vaga presa: solta e segue a fila.
+    await porta.soltar(organizationId, desfecho.compromissoId, "O aviso da vaga não saiu.");
+    await porta.situar(organizationId, inscricao.id, "waiting");
+  }
+  return { ofertada: false, motivo: "sem_candidato" };
 }
 
 export type ResultadoDaAceitacao =
   | { aceito: true; compromissoId: string }
-  | { aceito: false; motivo: "sem_oferta" | "oferta_vencida" };
+  | {
+      aceito: false;
+      motivo: "sem_oferta" | "oferta_vencida" | "contato_indisponivel" | "vaga_perdida";
+    };
 
 /**
- * A pessoa respondeu SIM.
+ * A pessoa disse SIM.
+ *
+ * `confirmar` é a porta de alteração da agenda, a mesma do `crm_confirm_appointment`
+ * e da tela: é ela que serializa a corrida com o cancelamento, pela revisão do
+ * compromisso, e é ela que cobra a aprovação humana do serviço que a exige. Devolve
+ * `false` quando o compromisso já não pode ser confirmado.
  *
  * ⚠️ OFERTA VENCIDA NÃO É ACEITA, mesmo com o SIM na mão. Entre o vencimento e a
- * resposta, a varredura pode já ter soltado o horário e chamado o próximo —
- * confirmar aqui criaria dois compromissos para o mesmo instante, e o segundo
- * cliente ouviria "já foi" depois de ouvir SIM. Quem chama trata o
- * `oferta_vencida` como "ofereça outro horário".
+ * resposta, a varredura pode já ter soltado o horário e chamado o próximo.
  */
 export async function aceitarEncaixe(
   porta: PortaDoEncaixe,
   entrada: { organizationId: string; esperaId: string; agora: Date },
+  confirmar: (compromissoId: string) => Promise<boolean>,
 ): Promise<ResultadoDaAceitacao> {
   const oferta = await porta.oferta(entrada.organizationId, entrada.esperaId);
   if (!oferta) return { aceito: false, motivo: "sem_oferta" };
   if (oferta.expiraEm.getTime() <= entrada.agora.getTime()) {
     return { aceito: false, motivo: "oferta_vencida" };
   }
-  await porta.confirmar(entrada.organizationId, oferta.compromissoId);
+  if (!oferta.contatoDisponivel) return { aceito: false, motivo: "contato_indisponivel" };
+
+  if (!(await confirmar(oferta.compromissoId))) {
+    await porta.situar(entrada.organizationId, entrada.esperaId, "waiting");
+    return { aceito: false, motivo: "vaga_perdida" };
+  }
   await porta.situar(entrada.organizationId, entrada.esperaId, "booked");
   return { aceito: true, compromissoId: oferta.compromissoId };
 }
@@ -212,8 +230,7 @@ export interface ResultadoDaRecusa {
  *
  * A ordem aqui também é a garantia: **soltar → oferecer ao próximo → só então
  * devolver esta inscrição à fila**. Se a reativação viesse primeiro, a mesma
- * pessoa seria escolhida de novo para a mesma vaga — o laço mais fácil de
- * escrever e o mais difícil de perceber, porque só aparece quando alguém recusa.
+ * pessoa seria escolhida de novo para a mesma vaga.
  *
  * `definitivo` é "não quero mais encaixe" (a inscrição vira `cancelled`); sem
  * ele, a pessoa volta para a fila e continua valendo para outras vagas.
@@ -222,29 +239,32 @@ export async function recusarEncaixe(
   porta: PortaDoEncaixe,
   entrada: { organizationId: string; esperaId: string; definitivo: boolean; agora: Date },
 ): Promise<ResultadoDaRecusa> {
-  const oferta = await porta.oferta(entrada.organizationId, entrada.esperaId);
+  const { organizationId, esperaId, definitivo } = entrada;
+  const oferta = await porta.oferta(organizationId, esperaId);
   if (!oferta) {
-    if (entrada.definitivo) await porta.situar(entrada.organizationId, entrada.esperaId, "cancelled");
+    if (definitivo) await porta.situar(organizationId, esperaId, "cancelled");
+    return { solta: false, proximo: null };
+  }
+  // A confirmação venceu a corrida: a pessoa tem o horário.
+  if (oferta.compromissoStatus === "confirmed") {
+    await porta.situar(organizationId, esperaId, "booked");
     return { solta: false, proximo: null };
   }
 
   await porta.soltar(
-    entrada.organizationId,
+    organizationId,
     oferta.compromissoId,
-    entrada.definitivo
+    definitivo
       ? "Encaixe recusado: a pessoa não quer mais entrar na lista."
       : "Encaixe recusado: a pessoa não pôde neste horário.",
   );
   const proximo = await oferecerVagaQueAbriu(porta, {
-    organizationId: entrada.organizationId,
+    organizationId,
     appointmentId: oferta.compromissoId,
     agora: entrada.agora,
+    fimDaVaga: oferta.vagaFim,
   });
-  await porta.situar(
-    entrada.organizationId,
-    entrada.esperaId,
-    entrada.definitivo ? "cancelled" : "waiting",
-  );
+  await porta.situar(organizationId, esperaId, definitivo ? "cancelled" : "waiting", oferta.startsAt);
   return { solta: true, proximo };
 }
 
@@ -256,10 +276,6 @@ export interface ResultadoDaVarredura {
 /**
  * O prazo venceu sem resposta: solta a vaga e chama o próximo.
  *
- * É o outro lado da garantia "segurar a vaga para um por vez". Sem esta
- * varredura, a oferta sem resposta prenderia o horário — o mesmo defeito que a
- * `agenda-expira-pendentes` já corrigiu para o pedido que ninguém confirmou.
- *
  * Uma vaga vencida que não acha próximo volta a ser horário livre, e isso é o
  * desfecho desejado: melhor vazia e disponível do que presa.
  */
@@ -267,23 +283,25 @@ export async function vencerOfertas(
   porta: PortaDoEncaixe,
   entrada: { organizationId: string; agora: Date },
 ): Promise<ResultadoDaVarredura> {
-  const vencidas = await porta.ofertasVencidas(entrada.organizationId, entrada.agora);
+  const { organizationId, agora } = entrada;
+  const vencidas = await porta.ofertasVencidas(organizationId, agora);
   let reoferecidas = 0;
   for (const oferta of vencidas) {
-    await porta.soltar(
-      entrada.organizationId,
-      oferta.compromissoId,
-      "Oferta de encaixe venceu sem resposta.",
-    );
+    // Confirmada pela agenda e o fecho da inscrição não aconteceu: recupera aqui.
+    if (oferta.compromissoStatus === "confirmed") {
+      await porta.situar(organizationId, oferta.esperaId, "booked");
+      continue;
+    }
+    await porta.soltar(organizationId, oferta.compromissoId, "Oferta de encaixe venceu sem resposta.");
     const proximo = await oferecerVagaQueAbriu(porta, {
-      organizationId: entrada.organizationId,
+      organizationId,
       appointmentId: oferta.compromissoId,
-      agora: entrada.agora,
+      agora,
+      fimDaVaga: oferta.vagaFim,
     });
     if (proximo.ofertada) reoferecidas += 1;
-    // Quem não respondeu volta para a fila: a inscrição dela não venceu, a
-    // oferta sim. `valido_ate` continua sendo quem tira alguém da lista.
-    await porta.situar(entrada.organizationId, oferta.esperaId, "waiting");
+    // Quem não respondeu volta para a fila: a oferta venceu, a inscrição não.
+    await porta.situar(organizationId, oferta.esperaId, "waiting", oferta.startsAt);
   }
   return { vencidas: vencidas.length, reoferecidas };
 }

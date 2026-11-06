@@ -1,11 +1,9 @@
 /**
  * A LISTA DE ESPERA É REDIGIDA NA ANONIMIZAÇÃO — E POR ISSO ENTRA NO ACESSO.
  *
- * A migration 0771 criou `calendar_waitlist` com o gatilho
- * `fn_redigir_espera_do_contato_anonimizado`, que zera `observacoes` quando o
- * contato vira anonimizado. A outra ponta da mesma regra é este export: o
- * texto que a casa apaga a pedido do titular tem de sair quando ele pede
- * acesso (Art. 18 II).
+ * O módulo de lista de espera declara `observacoes` em `modulo_secoes_lgpd`, e a
+ * anonimização a apaga. A outra ponta da mesma regra é este export: o texto que
+ * a casa apaga a pedido do titular tem de sair quando ele pede acesso (Art. 18 II).
  *
  * `tests/unit/lgpd-exporta-o-que-redige.test.ts` cobra o PAR de tabelas lendo o
  * código-fonte — ele passa com um `.from("calendar_waitlist")` morto. Este
@@ -34,6 +32,8 @@ const request = {
 };
 let rows: Record<string, Row[]>;
 let consultadas: string[];
+/** O erro que a leitura de `calendar_waitlist` devolve neste caso. */
+let erroDaTabela: { code: string; message: string } | null = null;
 
 /** Banco falso que aplica `eq` como o Postgres e projeta as colunas pedidas.
  *  Método do client que o coletor chame e este duble não conheça (`.or`, `.is`)
@@ -96,6 +96,7 @@ class ReadQuery {
   }
   async execute() {
     consultadas.push(this.table);
+    if (this.table === "calendar_waitlist" && erroDaTabela) return { data: null, error: erroDaTabela };
     const data = (rows[this.table] ?? [])
       .filter((row) => this.filters.every(([key, value]) => row[key] === value))
       .filter((row) => this.ins.every(([key, values]) => values.includes(row[key])))
@@ -135,6 +136,7 @@ const inscricao = (org: string, contato: string, extra: Row = {}): Row => ({
 });
 
 beforeEach(() => {
+  erroDaTabela = null;
   consultadas = [];
   rows = {
     organizations: [
@@ -186,5 +188,16 @@ describe("LGPD: a lista de espera no pedido de acesso (migration 0771)", () => {
     expect(payload.calendar_waitlist).toBeUndefined();
     // CONTROLE: a consulta foi feita e voltou vazia (não é um bloco que sumiu).
     expect(consultadas).toContain("calendar_waitlist");
+  });
+
+  it.each(["42P01", "PGRST205"])("módulo não instalado (%s): a seção sai vazia e o export segue", async (code) => {
+    erroDaTabela = { code, message: "relation does not exist" };
+    const payload = await collectExportData(request);
+    expect(payload.calendar_waitlist).toBeUndefined();
+  });
+
+  it("outro erro NÃO vira export completo: lança para o worker tentar de novo", async () => {
+    erroDaTabela = { code: "57014", message: "statement timeout" };
+    await expect(collectExportData(request)).rejects.toThrow("calendar_waitlist_load_failed");
   });
 });

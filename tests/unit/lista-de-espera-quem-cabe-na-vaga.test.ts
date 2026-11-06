@@ -20,6 +20,7 @@ import {
   decideEncaixe,
   escolherCandidato,
   ordenarFila,
+  configDaListaDeEsperaSchema,
   prazoDaOferta,
   textoDaOferta,
   type InscricaoNaEspera,
@@ -275,42 +276,65 @@ describe("a ordem da fila", () => {
   });
 });
 
-describe("o prazo da oferta", () => {
-  it("para vaga distante, o teto é de duas horas", () => {
+describe("o prazo da oferta vem da organização", () => {
+  const config = {
+    ativa: true,
+    prazo_maximo_minutos: 120,
+    margem_antes_minutos: 15,
+    prazo_minimo_minutos: 15,
+  };
+
+  it("para vaga distante, vale o teto escolhido", () => {
     const vagaDaquiA3Dias = vaga({
       startsAt: new Date(AGORA.getTime() + 72 * 60 * 60_000),
       endsAt: new Date(AGORA.getTime() + 73 * 60 * 60_000),
     });
-    expect(prazoDaOferta(vagaDaquiA3Dias, AGORA)?.getTime()).toBe(
-      AGORA.getTime() + 2 * 60 * 60_000,
+    expect(prazoDaOferta(vagaDaquiA3Dias, AGORA, config)?.getTime()).toBe(AGORA.getTime() + 120 * 60_000);
+    expect(prazoDaOferta(vagaDaquiA3Dias, AGORA, { ...config, prazo_maximo_minutos: 30 })?.getTime()).toBe(
+      AGORA.getTime() + 30 * 60_000,
     );
   });
 
-  it("para vaga próxima, o prazo fecha 15 min antes dela — e não depois do início", () => {
-    const vagaDaquiA3h = vaga({
-      startsAt: new Date(AGORA.getTime() + 3 * 60 * 60_000),
-      endsAt: new Date(AGORA.getTime() + 4 * 60 * 60_000),
-    });
-    expect(prazoDaOferta(vagaDaquiA3h, AGORA)?.getTime()).toBe(
-      AGORA.getTime() + 2 * 60 * 60_000,
-    );
+  it("para vaga próxima, o prazo fecha na margem antes dela", () => {
     const vagaDaquiAUmaHoraEMeia = vaga({
       startsAt: new Date(AGORA.getTime() + 90 * 60_000),
       endsAt: new Date(AGORA.getTime() + 150 * 60_000),
     });
-    expect(prazoDaOferta(vagaDaquiAUmaHoraEMeia, AGORA)?.getTime()).toBe(
-      AGORA.getTime() + 75 * 60_000,
-    );
+    expect(prazoDaOferta(vagaDaquiAUmaHoraEMeia, AGORA, config)?.getTime()).toBe(AGORA.getTime() + 75 * 60_000);
   });
 
-  it("vaga perto demais não é oferecida — promessa que já nasce vencida", () => {
+  it("sem o prazo mínimo a vaga não é oferecida", () => {
     const vagaDaquiA20Min = vaga({
       startsAt: new Date(AGORA.getTime() + 20 * 60_000),
       endsAt: new Date(AGORA.getTime() + 80 * 60_000),
     });
-    expect(prazoDaOferta(vagaDaquiA20Min, AGORA)).toBeNull();
+    expect(prazoDaOferta(vagaDaquiA20Min, AGORA, config)).toBeNull();
+  });
+});
+
+describe("os prazos não têm valor padrão", () => {
+  it("a configuração incompleta é recusada", () => {
+    expect(configDaListaDeEsperaSchema.safeParse({ ativa: true }).success).toBe(false);
+    expect(configDaListaDeEsperaSchema.safeParse(undefined).success).toBe(false);
+    expect(
+      configDaListaDeEsperaSchema.safeParse({
+        ativa: true,
+        prazo_maximo_minutos: 60,
+        margem_antes_minutos: 0,
+      }).success,
+    ).toBe(false);
   });
 
+  it("o prazo mínimo não passa do máximo", () => {
+    expect(
+      configDaListaDeEsperaSchema.safeParse({
+        ativa: true,
+        prazo_maximo_minutos: 30,
+        margem_antes_minutos: 0,
+        prazo_minimo_minutos: 31,
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("o texto da oferta", () => {

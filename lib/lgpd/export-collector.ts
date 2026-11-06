@@ -269,15 +269,9 @@ export interface AppointmentRow {
 }
 
 /**
- * O "quero encaixe" do titular na lista de espera (`calendar_waitlist`,
- * migration 0771).
- *
- * Entra porque a anonimização a REDIGE: `fn_redigir_espera_do_contato_anonimizado`
- * zera `observacoes` — o texto livre da recepção ("prefere manhã, falar com a
- * Ana") — quando o contato vira anonimizado. Sem este bloco, o titular exercia o
- * Art. 18 II e recebia um arquivo sem a inscrição cujo texto acabou de ser
- * apagado a pedido dele; a régua de `lgpd-exporta-o-que-redige` reprova por
- * isso (a redação e o export são as duas pontas da mesma regra).
+ * O "quero encaixe" do titular na lista de espera (`calendar_waitlist`, módulo
+ * opcional). Entra porque a seção de LGPD do módulo apaga `observacoes` na
+ * anonimização: a redação e o export são as duas pontas da mesma regra.
  *
  * `janelas`, `antecedencia_minima_horas`, `urgencia` e `status` a redação
  * PRESERVA (parâmetro de operação, não identificação) e ainda assim entram: "eu
@@ -293,6 +287,8 @@ export interface WaitlistRow {
   janelas: Json;
   antecedencia_minima_horas: number;
   valido_ate: string | null;
+  consentimento_em: string;
+  consentimento_origem: string;
   oferta_appointment_id: string | null;
   oferta_expira_em: string | null;
   ofertada_em: string | null;
@@ -784,7 +780,7 @@ export interface ExportPayload {
   mcp_acessos?: AcessoMcpRow[];
   appointments: AppointmentRow[];
   /**
-   * A inscrição do titular na lista de espera (migration 0771). Ausente quando
+   * A inscrição do titular na lista de espera (módulo opcional). Ausente quando
    * vazia — a cópia de quem nunca pediu encaixe não ganha uma chave a mais —,
    * e nunca ausente de propósito: quem tem inscrição precisa receber a linha
    * cujo `observacoes` a anonimização apaga.
@@ -1754,31 +1750,25 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
-  // Lista de espera — contact_id direto em calendar_waitlist (migration 0771).
-  //
-  // ⚠️ A OUTRA PONTA da mesma regra que a agenda abriu: a 0771 ligou o gatilho
-  // `fn_redigir_espera_do_contato_anonimizado`, que zera `observacoes` quando o
-  // contato vira anonimizado — e o export não visitava a tabela. O titular
-  // pedia acesso e o relatório não mencionava a inscrição cujo texto a casa
-  // acabou de apagar a pedido dele. Mesmas colunas que a redação toca
-  // (`observacoes`), mais as que ela preserva e que descrevem o pedido dele.
-  // Só no `data.json`: como `activities`, é linha de operação, não seção do PDF.
+  // Lista de espera — módulo opcional (ADR-0002 D8). Onde ele não foi instalado a
+  // tabela não existe (42P01/PGRST205) e o bloco sai vazio. Qualquer outro erro
+  // lança: o worker tenta de novo, e o titular nunca recebe como completo um
+  // arquivo sem a inscrição cujo texto a anonimização apaga.
   let calendar_waitlist: WaitlistRow[] = [];
   if (contactId) {
     const { data, error } = await admin
       .from("calendar_waitlist")
       .select(
-        "id, event_type_id, status, urgencia, janelas, antecedencia_minima_horas, valido_ate, oferta_appointment_id, oferta_expira_em, ofertada_em, observacoes, created_by_kind, created_at, updated_at",
+        "id, event_type_id, status, urgencia, janelas, antecedencia_minima_horas, valido_ate, consentimento_em, consentimento_origem, oferta_appointment_id, oferta_expira_em, ofertada_em, observacoes, created_by_kind, created_at, updated_at",
       )
       .eq("organization_id", organizationId)
       .eq("contact_id", contactId)
       .order("created_at", { ascending: false })
       .limit(500);
     if (error) {
-      logger.warn("[lgpd-export-worker] calendar_waitlist load failed", {
-        request_id: requestId,
-        error: error.message,
-      });
+      if (error.code !== "42P01" && error.code !== "PGRST205") {
+        throw new Error(`calendar_waitlist_load_failed: ${error.message}`);
+      }
     } else if (data) {
       conferirTeto("calendar_waitlist", data, 500);
       calendar_waitlist = data;
