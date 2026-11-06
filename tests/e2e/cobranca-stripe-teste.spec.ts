@@ -20,7 +20,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 
 import { STRIPE_API_BASE, STRIPE_VERSION } from "@/lib/cobranca/provedores/stripe";
 
-import { test, expect, type BrowserContext } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type BrowserContext } from "./helpers/test";
 import { lerChaveStripeDeTeste } from "./helpers/chave-stripe-de-teste";
 import {
   assinaturaDe, criarPessoa, db, drenarAte, entrar, estadoDaOrg, fotografarChaves, inserir, restaurarChaves, type FotoDasChaves,
@@ -124,6 +124,7 @@ test.describe("cobrança — contra a Stripe de verdade, em modo teste", () => {
       expect(atribui.ok(), await atribui.text()).toBe(true);
 
       const ctxB = await browser.newContext({ baseURL: APP });
+      ctxB.on("page", esperarARevelacaoNasCargas);
       contextos.push(ctxB);
       const pB = await ctxB.newPage();
       pB.setDefaultTimeout(30_000);

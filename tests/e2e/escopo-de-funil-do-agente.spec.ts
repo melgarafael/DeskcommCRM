@@ -25,7 +25,7 @@
  */
 import { execFileSync } from "node:child_process";
 
-import { test, expect, type Browser, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type Browser, type Page } from "./helpers/test";
 
 import { loginComoAdmin, lerCreds, type CredsE2E } from "./helpers/login-admin";
 
@@ -54,6 +54,7 @@ test.beforeAll(async ({ browser }: { browser: Browser }) => {
   // como "hook timeout", que não diz nada sobre a tela.
   test.setTimeout(180_000);
   const contexto = await browser.newContext({ locale: "pt-BR" });
+  contexto.on("page", esperarARevelacaoNasCargas);
   pagina = await contexto.newPage();
 
   // ⚠️ ORDEM. O login vem PRIMEIRO porque, quando o fator TOTP em disco não
