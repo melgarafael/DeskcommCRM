@@ -46,6 +46,15 @@ export function problemaNasEtiquetas(texto: string): "demais" | "longa" | null {
   return normalizarTags(partes).length > CONTACT_TAGS_MAXIMO ? "demais" : null;
 }
 
+/**
+ * As etiquetas que o nicho da busca sugere, ou nenhuma quando ele não cabe. O nicho aceita 120
+ * caracteres e a etiqueta 40: cortar geraria uma etiqueta que nunca casa com a skill, e devolver
+ * lista inválida prenderia o Iniciar por um texto que o operador não digitou.
+ */
+export function etiquetasDoNicho(nicho: string): string[] {
+  return problemaNasEtiquetas(nicho) === null ? normalizarTags(nicho.split(",")) : [];
+}
+
 export const campaignConfigSchema = z
   .object({
     agent_id: z.string().uuid(),

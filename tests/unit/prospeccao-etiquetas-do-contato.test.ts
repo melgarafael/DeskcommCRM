@@ -35,6 +35,7 @@ vi.mock("@/lib/logger", () => ({
 
 import {
   campaignConfigSchema,
+  etiquetasDoNicho,
   problemaNasEtiquetas,
   prospectingInputSchema,
 } from "@/lib/prospecting/schema";
@@ -165,6 +166,23 @@ describe("o campo de etiquetas avisa em vez de cortar", () => {
   it("etiqueta com mais de 40 caracteres é recusada, não encurtada", () => {
     expect(problemaNasEtiquetas("x".repeat(40))).toBeNull();
     expect(problemaNasEtiquetas(`a, ${"x".repeat(41)}`)).toBe("longa");
+  });
+});
+
+describe("o nicho só preenche o campo quando cabe, porque ninguém o digitou ali", () => {
+  it("nicho que cabe vira uma etiqueta por parte, na forma do CRM", () => {
+    expect(etiquetasDoNicho("Estetica, Odonto")).toEqual(["estetica", "odonto"]);
+    expect(etiquetasDoNicho("")).toEqual([]);
+  });
+
+  it("nicho com parte acima de 40 caracteres não preenche: etiqueta cortada nunca casa com a skill", () => {
+    expect(etiquetasDoNicho("clinicas de estetica e harmonizacao facial em sorocaba")).toEqual([]);
+    expect(etiquetasDoNicho("x".repeat(40))).toEqual(["x".repeat(40)]);
+  });
+
+  it("nicho com seis partes não preenche: lista inválida prenderia o Iniciar", () => {
+    expect(etiquetasDoNicho("a, b, c, d, e, f")).toEqual([]);
+    expect(etiquetasDoNicho("a, b, c, d, e")).toHaveLength(5);
   });
 });
 

@@ -65,8 +65,10 @@ Onde está cada causa no código:
   comparação de `activateCampaign` entre a config salva e a enviada continua
   valendo para campanha antiga).
 - Na tela da campanha (`app/app/prospecting/_client.tsx`, passo da
-  configuração, junto de "Qualificação"), campo **"Etiquetas do contato"**,
-  pré-preenchido com o nicho da busca normalizado (`search.niche`) e editável. O
+  configuração, nos dois modos: por conversa e manual), campo **"Etiquetas do
+  contato"**, pré-preenchido com o nicho da busca normalizado (`search.niche`)
+  quando ele cabe (até 5 partes, cada uma com até 40 caracteres), e editável.
+  Nicho que não cabe deixa o campo vazio em vez de gravar etiqueta cortada. O
   texto de ajuda diz para que serve: "as skills com estas etiquetas entram
   desde a primeira resposta".
 - Em `criarPegadaDoCandidato`, logo depois de o `contactId` existir (contato
