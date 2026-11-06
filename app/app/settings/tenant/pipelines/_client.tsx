@@ -452,11 +452,14 @@ export function PipelinesClient({
   /**
    * A ÂNCORA ABRE O FUNIL QUE ELA APONTA.
    *
-   * `#etapas-<id>` e `#mapeamento-<id>` são destinos de link de outras telas (o
-   * Painel de Evolução manda o dono para cá quando aponta a lacuna; a etapa com
-   * passo do assistente linka «Mudar isso»). Recolhido, o alvo existe no DOM mas
-   * está `hidden` — o navegador não rola até ele e a pessoa cai no topo, sem
-   * entender por que o link não levou a lugar nenhum.
+   * `#etapas-<id>` e `#mapeamento-<id>` são os destinos do «Mudar isso» da etapa
+   * e do mapeamento, e o hash sobrevive a recarregar a página. Recolhido, o alvo
+   * existe no DOM mas está `hidden` — o navegador não rola até ele e a pessoa cai
+   * no topo, sem entender por que o link não levou a lugar nenhum.
+   *
+   * ⚠️ SÓ NA MONTAGEM. O hash fica na URL depois do clique, e salvar o funil
+   * revalida a rota e entrega `pipelines` novo: com a lista nas dependências, o
+   * funil que a pessoa abriu depois recolhia sozinho e o do hash velho voltava.
    */
   useEffect(() => {
     const alvo = pipelines.find(
@@ -465,7 +468,8 @@ export function PipelinesClient({
         window.location.hash === `#${ancoraDoMapeamento(p.id)}`,
     );
     if (alvo) setFunilAberto(alvo.id);
-  }, [pipelines]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ver ⚠️ acima: é leitura de chegada.
+  }, []);
   if (pipelines.length === 0) {
     // ⚠️ NÃO PROMETA UM CAMINHO QUE NÃO EXISTE — nem NEGUE um que existe. Este
     // texto dizia que criar funil "é feito por quem instalou o sistema, direto
@@ -570,7 +574,7 @@ function CardDoFunil({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-auto gap-2 px-0 text-base font-semibold hover:bg-transparent"
+            className="h-auto justify-start gap-2 whitespace-normal px-0 text-left text-base font-semibold hover:bg-transparent"
             aria-expanded={aberto}
             aria-controls={idDoCorpo}
             data-testid={`abrir-funil-${pipeline.id}`}

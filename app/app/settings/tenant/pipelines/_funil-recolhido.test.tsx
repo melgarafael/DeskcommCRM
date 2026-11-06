@@ -55,6 +55,8 @@ globalThis.ResizeObserver = class {
   disconnect() {}
 };
 
+import { toast } from "sonner";
+
 import { apiClient } from "@/lib/api/client";
 import { PipelinesClient, type PipelineRow } from "./_client";
 
@@ -241,9 +243,8 @@ describe("a tela dos funis — recolhido é o padrão, aberto é um por vez", ()
   });
 
   it("a âncora #mapeamento-<id> ABRE o funil que ela aponta", async () => {
-    // Outras telas mandam o dono para cá por âncora (o Painel de Evolução, o
-    // «Mudar isso» da etapa). Recolhido, o alvo estaria `hidden` e o link não
-    // levaria a lugar nenhum.
+    // O hash do «Mudar isso» sobrevive a recarregar a página. Recolhido, o alvo
+    // estaria `hidden` e o link não levaria a lugar nenhum.
     window.location.hash = `#mapeamento-${FILIAL}`;
     montar();
 
@@ -269,5 +270,48 @@ describe("a tela dos funis — o editor de vocabulário não some quando o funil
     expect(
       screen.getAllByRole("button", { name: /Editar vocabulário e campos deste funil/i }),
     ).toHaveLength(2);
+  });
+});
+
+describe("a tela dos funis — o que acontece depois de abrir", () => {
+  it("salvar o funil (lista nova, hash velho na URL) não troca o funil aberto", async () => {
+    // `updatePipelineConfig` revalida a rota e a lista chega como array NOVO; o
+    // hash do «Mudar isso» continua na URL. A âncora vale só na chegada à tela.
+    window.location.hash = `#mapeamento-${FILIAL}`;
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tela = (lista: PipelineRow[]) => (
+      <QueryClientProvider client={qc}>
+        <PipelinesClient pipelines={lista} podeEditarConfig={false} />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(tela([VENDAS, LOCACAO]));
+    await waitFor(() => expect(corpoDe(FILIAL).hidden).toBe(false));
+
+    await userEvent.setup().click(cabecalhoDe(DONO));
+    expect(corpoDe(DONO).hidden).toBe(false);
+
+    rerender(tela([{ ...VENDAS }, { ...LOCACAO }]));
+
+    await new Promise((fim) => setTimeout(fim, 0));
+    expect(corpoDe(DONO).hidden).toBe(false);
+    expect(corpoDe(FILIAL).hidden).toBe(true);
+  });
+
+  it("nome recusado ao clicar direto no cabeçalho avisa fora do corpo recolhido", async () => {
+    // O clique no cabeçalho tira o foco do campo: é esse blur que grava. A
+    // recusa chega com o corpo já `hidden`, onde o aviso da linha ninguém vê.
+    vi.mocked(apiClient.patch).mockRejectedValue(new Error("recusado"));
+    montar();
+    const user = userEvent.setup();
+
+    await user.click(cabecalhoDe(DONO));
+    const campo = await within(corpoDe(DONO)).findByTestId("nome-d-1");
+    await user.clear(campo);
+    await user.type(campo, "Em conversa");
+    await user.click(cabecalhoDe(DONO));
+
+    await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
+    expect(corpoDe(DONO).hidden).toBe(true);
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
   });
 });
