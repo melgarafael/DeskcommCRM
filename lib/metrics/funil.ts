@@ -36,6 +36,7 @@
  */
 
 import { SEM_MOEDA } from "@/lib/metrics/perdas";
+import { apenasComerciais, ehNaoComercial } from "@/lib/leads/elegibilidade-comercial";
 
 export interface Janela {
   from: string;
@@ -61,6 +62,12 @@ export interface LeadDaJanela {
   currency: string | null;
   created_at: string;
   closed_at: string | null;
+  /**
+   * #4191 — quando a equipe classificou o negócio como NÃO comercial. `null`
+   * (ou ausente) é comercial, o estado de sempre; a leitura da rota passa a
+   * coluna, e `montarRelatorioDeFunil` corta os classificados da conta.
+   */
+  nao_comercial_em?: string | null;
 }
 
 export interface EtapaReferencia {
@@ -477,7 +484,25 @@ export function montarRelatorioDeFunil(entrada: {
   etapas: readonly EtapaReferencia[];
   funis?: readonly FunilReferencia[];
 }): RelatorioDeFunil {
-  const { janela, atividades, leads, etapas } = entrada;
+  const { janela, etapas } = entrada;
+  // #4191 — NEGÓCIO NÃO COMERCIAL FORA DA CONTA COMERCIAL.
+  //
+  // A classificação não muda `status`, então sem este corte o negócio seguiria
+  // contando como "aberto" na matriz de origem e como entrada de etapa (foi
+  // criado na janela) — e a conversão comercial passaria a ter no denominador
+  // um atendimento que a equipe disse não ser oportunidade. As ATIVIDADES dele
+  // saem junto, pelo id: uma passagem de etapa registrada antes da
+  // classificação não pode continuar medindo conversão depois dela.
+  //
+  // Limite declarado: a leitura da rota traz os negócios criados ou encerrados
+  // na janela; um negócio não comercial mais ANTIGO que só se moveu na janela
+  // não está em `leads`, e a passagem dele continua contando. Fechar isso pede
+  // ler a coluna por id de atividade — consulta nova, e a issue não pede.
+  const leads = apenasComerciais(entrada.leads);
+  const idsNaoComerciais = new Set(
+    entrada.leads.filter((l) => ehNaoComercial(l)).map((l) => l.id),
+  );
+  const atividades = entrada.atividades.filter((a) => !idsNaoComerciais.has(a.lead_id));
   const funis = entrada.funis ?? [];
   const conversao = calcularConversao(atividades, leads, etapas, janela);
   const nomes = new Map(funis.map((f) => [f.id, f.nome]));
@@ -487,7 +512,8 @@ export function montarRelatorioDeFunil(entrada: {
 
   return {
     janela,
-    base: "Negócios criados OU encerrados na janela; passagens de etapa registradas na janela.",
+    base:
+      "Negócios criados OU encerrados na janela; passagens de etapa registradas na janela. Negócios classificados como NÃO comerciais ficam fora da conta comercial (#4191).",
     conversao,
     dias_ate_fechar: calcularDiasAteFechar(leads, janela, funis),
     origem: { linhas: calcularOrigem(leads, janela), valor_por_moeda: true },

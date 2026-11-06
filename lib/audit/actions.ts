@@ -56,6 +56,14 @@ export const AUDIT_ACTIONS = [
   "lead.moved",
   "lead.won",
   "lead.lost",
+  /**
+   * #4191 — o negócio foi classificado como NÃO comercial, ou voltou a ser
+   * comercial. Ação própria, e não `lead.updated`: a decisão muda a
+   * elegibilidade do negócio em Radar e métricas, e quem audita precisa poder
+   * filtrar por ela sem ler metadata.
+   */
+  "lead.non_commercial",
+  "lead.non_commercial_reverted",
   "lead.bulk_action",
   // A importação de planilha (extração do PR #418). O GESTO é auditado além dos
   // N `lead.created`: "quem despejou 300 negócios neste funil, e quando" é a

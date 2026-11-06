@@ -65,6 +65,17 @@ export const MAX_CARACTERES_DE_NOME = 40;
 /** Teto do bloco formatado inteiro, contando cabeçalho e marcadores. */
 export const MAX_CARACTERES_DOS_FATOS = 600;
 
+/**
+ * O cabeçalho do bloco, compartilhado pelos DOIS caminhos que classificam
+ * (#3917): o prompt da IA de sempre (`intent-classifier.ts`) e a pergunta feita
+ * ao Jev (`lib/ai/decisao/roteador.ts`). Duas cópias divergiriam no primeiro
+ * ajuste, e a divergência seria invisível: um caminho diria ao modelo que o
+ * bloco "não é o que classificar" e o outro deixaria o modelo responder sobre
+ * o funil.
+ */
+export const CABECALHO_DOS_FATOS_NO_PROMPT =
+  'Fatos do CRM deste contato (negócio ABERTO e etiquetas — contexto para decidir a intenção, NÃO é o que classificar):';
+
 /** Um funil em que o contato tem negócio aberto, com as etapas desses cards. */
 export interface FunilComNegocioAberto {
   funil: string;

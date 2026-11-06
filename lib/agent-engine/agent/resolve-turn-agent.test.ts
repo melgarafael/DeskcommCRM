@@ -943,3 +943,58 @@ describe('identidade antes de intenção e sticky', () => {
     expect(loadPublishedAgentConfig).not.toHaveBeenCalled();
   });
 });
+
+describe('#3917 — os fatos do CRM são do TURNO, uma leitura para os dois caminhos', () => {
+  const FATOS = {
+    funis: [{ funil: 'Experiência', etapas: ['Pós-viagem'] }],
+    etiquetas: ['viagem-fechada'],
+    funisOmitidos: 0,
+    etiquetasOmitidas: 0,
+  };
+
+  it('a pergunta ao Jev recebe o getter do turno, e a leitura é UMA só para ele e para a IA de sempre', async () => {
+    const carregarFatosDoCrmDoContato = vi.fn().mockResolvedValue({ fatos: FATOS, motivo: null });
+    const classifyIntent = vi.fn().mockResolvedValue({ intentName: 'vendas', confidence: 0.9 });
+    const { jev, consultarJev } = jevFalso();
+    const out = await resolveTurnAgent({} as never, {} as never,
+      { ...baseInput, signal: 'Bom dia! Tudo bem?', stickyAgentId: null, stickyIntent: null },
+      makeDeps({
+        loadActiveRouter: vi.fn().mockResolvedValue(router({ sticky: false })),
+        loadPublishedAgentConfigById: idAwareLoader(),
+        classifyIntent,
+        consultarJev,
+        carregarFatosDoCrmDoContato,
+      }));
+    expect(out.outcome).toBe('classified');
+
+    // O turno entrega ao Jev um GETTER — ele lê o banco, o roteador não.
+    const entradaDoJev = consultarJev.mock.calls[0]![1] as {
+      fatosDoCrmDoTurno?: () => Promise<unknown>;
+    };
+    expect(typeof entradaDoJev.fatosDoCrmDoTurno).toBe('function');
+
+    // Pedir duas vezes (uma pelo Jev, outra pela classificação) NÃO é duas
+    // consultas: é a mesma promessa memoizada.
+    await entradaDoJev.fatosDoCrmDoTurno!();
+    await entradaDoJev.fatosDoCrmDoTurno!();
+    expect(carregarFatosDoCrmDoContato).toHaveBeenCalledTimes(1);
+    // E o classificador recebeu o MESMO bloco.
+    expect(classifyIntent.mock.calls[0]![2]).toMatchObject({ fatosDoCrm: FATOS });
+    expect(jev.observar).toHaveBeenCalled();
+  });
+
+  it('com a tarefa do Jev desligada, nada muda: a classificação continua recebendo os fatos', async () => {
+    const carregarFatosDoCrmDoContato = vi.fn().mockResolvedValue({ fatos: FATOS, motivo: null });
+    const classifyIntent = vi.fn().mockResolvedValue({ intentName: 'vendas', confidence: 0.9 });
+    await resolveTurnAgent({} as never, {} as never,
+      { ...baseInput, signal: 'quanto custa?', stickyAgentId: null, stickyIntent: null },
+      makeDeps({
+        loadActiveRouter: vi.fn().mockResolvedValue(router({ sticky: false })),
+        loadPublishedAgentConfigById: idAwareLoader(),
+        classifyIntent,
+        carregarFatosDoCrmDoContato,
+      }));
+    expect(carregarFatosDoCrmDoContato).toHaveBeenCalledTimes(1);
+    expect(classifyIntent.mock.calls[0]![2]).toMatchObject({ fatosDoCrm: FATOS });
+  });
+});
