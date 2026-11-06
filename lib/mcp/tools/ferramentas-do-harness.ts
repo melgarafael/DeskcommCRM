@@ -40,6 +40,11 @@ export const FERRAMENTAS_DO_HARNESS: ReadonlyArray<FerramentaDoHarness> = [
       'O agente já envia por conta própria, pelo caminho seguro do sistema — com opt-out e regra anti-ban aplicados. Não há nada a ligar aqui.',
   },
   {
+    id: 'crm_send_material',
+    motivo:
+      'O agente já envia material da empresa pela nativa `send_message` (argumento `material_id`), com os freios de reenvio do turno. Ligar esta tool no atendimento daria ao modelo uma segunda porta de envio para escolher errado.',
+  },
+  {
     id: 'crm_request_human_handoff',
     motivo:
       'O agente já passa a conversa para uma pessoa pelo caminho seguro do sistema, que silencia o automático na hora. Não há nada a ligar aqui.',
