@@ -6,7 +6,7 @@ titulo: A tela de Casos diz que a chave do agente está desligada, em vez de fic
 
 Quem abria **Agente de IA › Casos** para acompanhar os pedidos que a IA faz à
 equipe encontrava a tela sempre vazia e nenhuma pista do motivo: `cases_enabled`
-vem **desligada de fábrica** (`AgentForm.tsx:318`), então a fila estava vazia por
+vem **desligada de fábrica** (`AgentForm.tsx`), então a fila estava vazia por
 configuração, não por falta de caso.
 
 Agora o estado vazio pergunta primeiro *por que* está vazio: se nenhum agente da

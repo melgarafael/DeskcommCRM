@@ -109,7 +109,8 @@ export async function lerLiberacaoDeCasos(
   const { data: versoes, error: erroVersoes } = await client
     .from("ai_agent_versions")
     .select("id, agent_id, status, cases_enabled")
-    .eq("organization_id", organizationId);
+    .eq("organization_id", organizationId)
+    .eq("cases_enabled", true);
   if (erroVersoes) {
     logger.error("[ai/cases] não consegui ler as versões dos agentes — a tela não pode dizer que a chave está desligada", {
       organization_id: organizationId,
