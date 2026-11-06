@@ -196,4 +196,32 @@ describe("rota de modelos do canal intermediado", () => {
     expect((await post({ acao: "sincronizar" })).status).toBe(200);
     expect(h.avisos).toEqual([]);
   });
+
+  it("⭐ sincronizar que tirou modelos audita template.deleted, com o motivo e a contagem", async () => {
+    h.apagadas = 2;
+    expect((await post({ acao: "sincronizar" })).status).toBe(200);
+    expect(h.audit).toHaveBeenCalledTimes(1);
+    expect(h.audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "template.deleted",
+        actorUserId: "u-1",
+        organizationId: "org-da-sessao",
+        resourceType: "channel_session",
+        resourceId: "sess-1",
+        metadata: { motivo: "conta_trocada", apagados: 2 },
+      }),
+    );
+  });
+
+  it("sincronizar sem nada a tirar não audita apagamento", async () => {
+    expect((await post({ acao: "sincronizar" })).status).toBe(200);
+    expect(h.audit).not.toHaveBeenCalled();
+  });
+
+  it("limpeza recusada não audita apagamento: nenhum modelo saiu", async () => {
+    h.erroDoDelete = { message: "service_configuration_invalid" };
+    h.apagadas = 2;
+    expect((await post({ acao: "sincronizar" })).status).toBe(200);
+    expect(h.audit).not.toHaveBeenCalled();
+  });
 });

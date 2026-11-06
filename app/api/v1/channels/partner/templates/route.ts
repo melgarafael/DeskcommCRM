@@ -274,11 +274,22 @@ export async function POST(req: NextRequest): Promise<Response> {
     // que não é desta conta sai — e só isso. Modelo desta conta que o provedor
     // não devolveu FICA: a lista pode vir curta por erro transitório, e apagar
     // por ausência trocaria um defeito visível por perda silenciosa.
-    await limparModelosDeOutraConta(admin, {
+    const apagados = await limparModelosDeOutraConta(admin, {
       organizationId: r.ctx.orgId,
       sessionId: r.ctx.sessionId,
       accountId: r.ctx.sessionRef,
     });
+    if (apagados > 0) {
+      await audit({
+        action: "template.deleted",
+        actorUserId: r.ctx.userId,
+        organizationId: r.ctx.orgId,
+        resourceType: "channel_session",
+        resourceId: r.ctx.sessionId,
+        requestId,
+        metadata: { motivo: "conta_trocada", apagados },
+      });
+    }
 
     let gravadas = 0;
     for (const t of remotas) {

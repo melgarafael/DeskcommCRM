@@ -68,13 +68,14 @@ async function avisar(admin: SupabaseClient, organizationId: string, title: stri
 }
 
 /**
- * Tira da conexão os modelos que não são da conta atual. NUNCA lança: quem
- * chama está fechando uma conexão ou uma sincronização.
+ * Tira da conexão os modelos que não são da conta atual e devolve quantos saíram
+ * (zero quando a limpeza falhou: quem chama audita só o que de fato apagou).
+ * NUNCA lança: quem chama está fechando uma conexão ou uma sincronização.
  */
 export async function limparModelosDeOutraConta(
   admin: SupabaseClient,
   alvo: { organizationId: string; sessionId: string; accountId: string },
-): Promise<void> {
+): Promise<number> {
   let apagados: number;
   try {
     const { error, count } = await admin
@@ -91,7 +92,7 @@ export async function limparModelosDeOutraConta(
       detail: err instanceof Error ? err.message : String(err),
     });
     await avisar(admin, alvo.organizationId, AVISO_MODELOS_FICARAM, CORPO_DOS_QUE_FICARAM);
-    return;
+    return 0;
   }
 
   try {
@@ -113,4 +114,5 @@ export async function limparModelosDeOutraConta(
   if (apagados > 0) {
     await avisar(admin, alvo.organizationId, AVISO_MODELOS_SAIRAM, corpoDosQueSairam(apagados));
   }
+  return apagados;
 }
