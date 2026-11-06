@@ -10,7 +10,6 @@ Para consultar na hora, veja a seção 'Como consultar na hora' do SKILL.md.
 |---|---|---|---|---|
 | Inbox | Atendimento → Inbox `/app/inbox` | As conversas de WhatsApp, com você e a IA atendendo lado a lado. | todos | Mostra quantas conversas esperam uma pessoa (aba Fila). |
 | Radar | Atendimento → Radar `/app/radar` | Quem esfriou e ainda está aberto — o que corre risco de morrer sem resposta. | todos |  |
-| Painel do setor | Atendimento → Painel do setor `/app/painel` (pelo ⌘K) | Quem espera resposta, quem está em atendimento e quem foi atendido hoje, por número. | todos | Fora do menu lateral: abra pelo ⌘K. |
 | Agenda | Atendimento → Agenda `/app/agenda` | O que está marcado, com quem, e quem atende — seu e da equipe. | todos |  |
 | Respostas rápidas | Atendimento → Respostas rápidas `/app/templates` | Scripts salvos para responder mais rápido, seus ou da equipe. | todos |  |
 
@@ -107,6 +106,7 @@ Hub: "Ver tudo em Análise" → `/app/analise`
 | Desempenho | Análise → Desempenho `/app/metrics` | Funil e performance por atendente nos últimos 30 dias. | todos |  |
 | Meta Ads | Análise → Meta Ads `/app/ads/meta` | Quanto custou cada resultado das campanhas que trazem gente para cá. | gerente ou acima |  |
 | Atividades | Análise → Atividades `/app/activities` | Relatório do que a equipe e os agentes fizeram no período: quanto, quem e de que tipo. | todos |  |
+| Painel de atendimento | Análise → Hub "Ver tudo em Análise" → Painel de atendimento `/app/painel` | Quem espera resposta, quem está em atendimento e quem foi atendido hoje, por número. | todos | Só aparece se o módulo `painel_atendimento` estiver ligado. |
 
 ### O histórico que se consulta
 

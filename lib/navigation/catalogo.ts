@@ -180,15 +180,6 @@ export const NAV_CATALOG = [
     contador: "fila",
   },
   {
-    // Sem `sidebar`: o menu lateral está no teto medido (ver a nota da Prospecção,
-    // acima, e `tests/e2e/navegacao.spec.ts`). A porta é o ⌘K.
-    href: "/app/painel",
-    label: "Painel do setor",
-    description: "Quem espera resposta, quem está em atendimento e quem foi atendido hoje, por número.",
-    icon: "ListChecks",
-    group: "atendimento",
-  },
-  {
     href: "/app/radar",
     label: "Radar",
     description: "Quem esfriou e ainda está aberto — o que corre risco de morrer sem resposta.",
@@ -953,6 +944,18 @@ export const NAV_CATALOG = [
     group: "analise",
     section: "Os números do período",
     sidebar: true,
+  },
+  {
+    // Em Análise, e não em Atendimento: porta de módulo mora em grupo com hub
+    // ("Ver tudo em Análise"), como a do Cold Call.
+    href: "/app/painel",
+    label: "Painel de atendimento",
+    description: "Quem espera resposta, quem está em atendimento e quem foi atendido hoje, por número.",
+    icon: "ListChecks",
+    group: "analise",
+    section: "Os números do período",
+    // Módulo opcional da instalação, desligado por padrão (#3403).
+    modulo: "painel_atendimento",
   },
   {
     // Observabilidade, não configuração: por isso não fica junto dos agentes.

@@ -3,12 +3,13 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 
+import { useAutomaticoAtivo } from "@/hooks/ai/useAutomaticoAtivo";
 import { useT } from "@/hooks/i18n/useT";
 import { useAuth } from "@/hooks/auth/AuthProvider";
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { apiClient } from "@/lib/api/client";
 import { rotuloDoContato, type ContatoNomeavel } from "@/lib/contacts/rotulo-do-contato";
-import { haQuantoTempo, montarColunas, type ConversaDoPainel } from "@/lib/inbox/painel-do-setor";
+import { consultasDoPainel, haQuantoTempo, montarColunas, type ConversaDoPainel } from "@/lib/inbox/painel-de-atendimento";
 import { Robot } from "@/lib/ui/icons";
 
 interface Conversa extends ConversaDoPainel {
@@ -74,51 +75,59 @@ function Coluna<C extends Conversa>({
   );
 }
 
-export function PainelDoSetor() {
+export function PainelDeAtendimento() {
   const t = useT();
   const { activeOrg } = useAuth();
   const orgId = activeOrg?.orgId ?? null;
   const { data: numeros } = useChannelSessions();
   const [numero, setNumero] = useState<string>("");
 
-  const filtroNumero = numero ? `&channel_session_id=${numero}` : "";
+  const { data: automaticoDaOrg } = useAutomaticoAtivo();
+  const fuso = activeOrg?.timezone;
+  const consultas = consultasDoPainel({ numero, automaticoDaOrg, fuso });
+
   const abertas = useQuery({
-    queryKey: ["painel-do-setor", "abertas", numero],
-    queryFn: () =>
-      apiClient.get<RespostaDaLista>(`/api/v1/conversations?status=open,claimed,ai_handling&limit=100${filtroNumero}`),
+    queryKey: ["painel-de-atendimento", consultas.abertas],
+    queryFn: () => apiClient.get<RespostaDaLista>(consultas.abertas),
+    refetchInterval: 15_000,
+    enabled: !!orgId,
+  });
+  const fila = useQuery({
+    queryKey: ["painel-de-atendimento", consultas.fila],
+    queryFn: () => apiClient.get<RespostaDaLista>(consultas.fila),
     refetchInterval: 15_000,
     enabled: !!orgId,
   });
   const encerradas = useQuery({
-    queryKey: ["painel-do-setor", "encerradas", numero],
-    queryFn: () => apiClient.get<RespostaDaLista>(`/api/v1/conversations?status=closed&limit=100${filtroNumero}`),
+    queryKey: ["painel-de-atendimento", consultas.encerradas],
+    queryFn: () => apiClient.get<RespostaDaLista>(consultas.encerradas),
     refetchInterval: 60_000,
     enabled: !!orgId,
   });
   const casos = useQuery({
-    queryKey: ["painel-do-setor", "casos"],
+    queryKey: ["painel-de-atendimento", "casos"],
     queryFn: () => apiClient.get<{ data: { open_count?: number } }>("/api/v1/ai/cases?status=open"),
     refetchInterval: 30_000,
     enabled: !!orgId,
   });
 
   const colunas = useMemo(
-    () => montarColunas([...(abertas.data?.data ?? []), ...(encerradas.data?.data ?? [])]),
-    [abertas.data, encerradas.data],
+    () => montarColunas([...(abertas.data?.data ?? []), ...(fila.data?.data ?? []), ...(encerradas.data?.data ?? [])], fuso),
+    [abertas.data, fila.data, encerradas.data, fuso],
   );
   const casosAbertos = casos.data?.data?.open_count ?? 0;
   const rotulo = (c: Conversa) => rotuloDoContato(c.contacts, t);
   const rotuloIA = t("Atendido pela IA");
   const haTempo = (iso: string) => t("há {tempo}").replace("{tempo}", haQuantoTempo(iso));
   // Cada consulta devolve no máximo 100: se há mais, a coluna não é a lista inteira.
-  const truncado = abertas.data?.meta?.has_more === true || encerradas.data?.meta?.has_more === true;
+  const truncado = [abertas, fila, encerradas].some((lista) => lista.data?.meta?.has_more === true);
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-4 md:overflow-visible md:p-6">
       <header className="flex flex-wrap items-center gap-3">
-        <h1 className="mr-auto text-2xl font-semibold tracking-tight">{t("Painel do setor")}</h1>
+        <h1 className="mr-auto text-2xl font-semibold tracking-tight">{t("Painel de atendimento")}</h1>
         <select
-          aria-label={t("Número do setor")}
+          aria-label={t("Número")}
           value={numero}
           onChange={(e) => setNumero(e.target.value)}
           className="h-9 min-w-0 max-w-full rounded-md border border-border bg-background px-3 text-sm"
@@ -142,10 +151,14 @@ export function PainelDoSetor() {
           </Link>
         )}
       </header>
-      {(abertas.isError || encerradas.isError) && (
+      {(abertas.isError || fila.isError || encerradas.isError) && (
         <p className="text-sm text-red-500">{t("Não deu para carregar as conversas agora.")}</p>
       )}
-      {truncado && <p className="text-xs text-text-muted">{t("Mostrando as 100 conversas mais recentes de cada lista.")}</p>}
+      {truncado && (
+        <p className="text-xs text-text-muted">
+          {t("Há mais de 100 conversas em alguma lista. Quem espera sem dono são as 100 com mais tempo de espera; as demais são as 100 com a mensagem mais recente.")}
+        </p>
+      )}
       <div className="grid grid-cols-1 gap-4 md:min-h-0 md:flex-1 md:grid-cols-3">
         <Coluna
           titulo={t("Aguardando atendimento")}
