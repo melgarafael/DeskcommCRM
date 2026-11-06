@@ -349,7 +349,9 @@ export function previsao(
     meses.set(chave, faixa);
   }
 
-  const ordenar = (a: Balde, b: Balde) => a.moeda.localeCompare(b.moeda);
+  // Baldes de moedas diferentes nunca se misturam: a ordem é a da moeda, e a
+  // genérica serve aos `Balde` e às `RecorrenciaForaDoMes`.
+  const ordenar = <T extends { moeda: string }>(a: T, b: T) => a.moeda.localeCompare(b.moeda);
 
   return {
     fonte,

@@ -19313,8 +19313,6 @@ export const DICIONARIO: Traducoes = {
   "Recorrência fora do mensal — não entra na projeção por mês": {
     es: "Recurrencia fuera del mensual: no entra en la proyección por mes",
   },
-  // Conectivo curto do painel: fica colado ao número ("2 negócios").
-  "negócios": { es: "negocios" },
   "Só quem administra a empresa define a meta.": {
     es: "Solo quien administra la empresa define la meta.",
   },
