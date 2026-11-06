@@ -159,6 +159,47 @@ describe("montarLembrete", () => {
   });
 });
 
+describe("montarLembrete — o link da reunião (Google Meet)", () => {
+  const quando = new Date("2026-11-10T17:00:00Z"); // 14:00 em São Paulo
+  const MEET = "https://meet.google.com/abc-defg-hij";
+  const base = { nomeDoContato: "Maria", titulo: "Reunião comercial", quando, timezone: "America/Sao_Paulo", local: null };
+
+  it("link pronto vai na frase padrão", () => {
+    const texto = montarLembrete({ ...base, linkDaReuniao: { estado: "pronto", url: MEET } });
+    expect(texto).toContain("14:00");
+    expect(texto).toContain(`Link da reunião: ${MEET}`);
+  });
+
+  it("link pendente: não inventa URL e diz que ele chega pela conversa", () => {
+    const texto = montarLembrete({ ...base, linkDaReuniao: { estado: "pendente", url: null } });
+    expect(texto).not.toContain("https://");
+    expect(texto).toContain("O link da reunião chega por aqui");
+  });
+
+  it("molde com {{link}} usa o link no lugar, sem repetir", () => {
+    const texto = montarLembrete({
+      ...base,
+      molde: "Oi {{primeiro_nome}}! Nossa reunião é {{quando}}: {{link}}",
+      linkDaReuniao: { estado: "pronto", url: MEET },
+    });
+    expect(texto).toBe(`Oi Maria! Nossa reunião é terça-feira, 10/11 às 14:00: ${MEET}`);
+  });
+
+  it("molde SEM {{link}} ganha o link no fim — reunião online nunca sai sem como entrar", () => {
+    const texto = montarLembrete({
+      ...base,
+      molde: "Oi {{primeiro_nome}}! Até {{hora}}.",
+      linkDaReuniao: { estado: "pronto", url: MEET },
+    });
+    expect(texto).toBe(`Oi Maria! Até 14:00.\nLink da reunião: ${MEET}`);
+  });
+
+  it("presencial continua igual: nenhuma linha de link", () => {
+    const com = montarLembrete({ ...base, linkDaReuniao: { estado: "nao_e_meet", url: null } });
+    expect(com).toBe(montarLembrete(base));
+  });
+});
+
 describe("isolamento entre organizações (estrutural)", () => {
   const fonte = readFileSync(join(__dirname, "route.ts"), "utf8");
 
