@@ -33,6 +33,11 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+const resend = vi.hoisted(() => ({ configurada: false }));
+vi.mock("@/lib/email/resend", async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  isEmailConfigured: async () => resend.configurada,
+}));
 
 const OWNER = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -89,6 +94,7 @@ beforeEach(() => {
   versionSelectError = null;
   runSelectError = null;
   smtpRow = null;
+  resend.configurada = false;
   smtpSelectError = null;
   versionRow = {
     id: 1,
@@ -1063,6 +1069,16 @@ describe("GET /api/v1/system/version — o estado do SMTP da instalação", () =
   it("⭐ CONTROLE — com SMTP salvo na tela: smtp_configured: true e o painel fica calado", async () => {
     vi.stubEnv("SINGLE_SERVER", "1");
     smtpRow = LINHA_COM_SMTP;
+    vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
+
+    const body = await corpo();
+
+    expect(body.data.smtp_configured).toBe(true);
+  });
+
+  it("⭐ servidor único sem SMTP, com a Resend: smtp_configured: true — o kit a leva ao login (#3039)", async () => {
+    vi.stubEnv("SINGLE_SERVER", "1");
+    resend.configurada = true;
     vi.mocked(loadAuthUser).mockResolvedValue(OWNER as never);
 
     const body = await corpo();
