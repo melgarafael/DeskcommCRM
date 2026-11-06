@@ -564,7 +564,8 @@ function RitmoDaCampanha({ campanha }: { campanha: CampanhaDetalhada }) {
           onClick={() =>
             editar.mutate({
               // Na rápida o intervalo não vale: a rajada tem o próprio espaçamento.
-              // No broadcast também não valem os tetos: a lista sai inteira.
+              // No broadcast a tela não oferece os máximos da campanha: a lista sai inteira,
+              // e quem freia é o teto diário do número (`tetoDaTransmissao`).
               intervalo_segundos: velocidadeEfetiva === "gradual" ? numero(intervalo) : null,
               ...(ehOficial && !listaEntregue ? { velocidade: velocidadeEfetiva } : {}),
               teto_diario: emBroadcast ? null : numero(tetoDia),

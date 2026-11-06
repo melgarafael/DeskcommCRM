@@ -243,6 +243,19 @@ async function entregarAoProvedor(
         lista.map((d) => d.telefone),
       )
     ).pulados;
+    // Cancelar um rascunho no provedor não o trava (o `cancelar` dele responde
+    // 400), e subir uma lista longa leva tempo: quem cancelou ou pausou nesse
+    // meio tempo tem de vencer, porque depois do `enviar` a lista inteira saiu.
+    const status = await statusDaCampanha(admin, campanha.id);
+    if (status !== "running") {
+      if (status === "cancelled") await fecharQuemFicou(admin, campanha.id, "cancelled", agora);
+      else
+        await devolverAFila(
+          admin,
+          reservados.map((d) => d.id),
+        );
+      return { ...SO_O_CONTADOR, pulados, detalhe: `parada_antes_de_mandar:${status}` };
+    }
     estado = (await ops.enviar(id)).estado;
   } catch (err) {
     // 400 é "não dá neste estado" — a mesma leitura que o `cancelar` já faz. Com
@@ -356,11 +369,14 @@ async function revalidarPendentes(
   const suprimidos = new Set<string>();
   const hashes = [...new Set(semVeto.map((c) => hashDoEndereco(c.endereco)))];
   for (let i = 0; i < hashes.length; i += IDS_POR_FILTRO) {
-    const { data } = await admin
+    const { data, error } = await admin
       .from("campaign_suppressions")
       .select("recipient_address_hash")
       .eq("organization_id", campanha.organization_id)
       .in("recipient_address_hash", hashes.slice(i, i + IDS_POR_FILTRO));
+    // Sem a lista, não se sabe quem pediu para não receber, e o que sai daqui sai
+    // para todos de uma vez: a rodada cai e a seguinte confere de novo.
+    if (error) throw new Error(`lista de exclusão da transmissão: ${error.message}`);
     for (const l of (data ?? []) as Array<{ recipient_address_hash: string }>) suprimidos.add(l.recipient_address_hash);
   }
 
@@ -453,6 +469,11 @@ async function reservar(
   return prontos.filter((p) => reservadosIds.has(p.id));
 }
 
+async function statusDaCampanha(admin: SupabaseClient, campanhaId: string): Promise<string | null> {
+  const { data } = await admin.from("campaigns").select("status").eq("id", campanhaId).maybeSingle();
+  return (data as { status?: string } | null)?.status ?? null;
+}
+
 async function devolverAFila(admin: SupabaseClient, ids: string[]): Promise<void> {
   for (let i = 0; i < ids.length; i += IDS_POR_FILTRO) {
     await admin
@@ -525,7 +546,7 @@ async function janelaAberta(
 export const DETALHE_ACIMA_DO_TETO_DO_NUMERO =
   "A lista inteira não cabe no teto diário deste número (Conexões › Proteção de envio). O broadcast não manda em partes: ponha no teto o nível de mensagens que a plataforma deu ao número, ou troque a velocidade para Rápido, e retome a campanha.";
 export const DETALHE_ACIMA_DO_TETO_DA_CAMPANHA =
-  "A lista inteira passa do máximo por dia ou por hora desta campanha, e o broadcast não manda em partes. Tire o máximo ou troque a velocidade para Rápido, e retome a campanha.";
+  "A lista inteira passa do máximo por dia ou por hora desta campanha, e o broadcast não manda em partes. Em «Ritmo desta campanha», salve com Broadcast para limpar o máximo ou troque a velocidade para Rápido, e retome a campanha.";
 
 /**
  * A lista inteira cabe no que o número e a campanha deixam mandar agora? Pura,

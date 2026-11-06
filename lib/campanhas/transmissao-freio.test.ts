@@ -16,6 +16,7 @@ const mundo = vi.hoisted(() => ({
   enviadosHojeNoNumero: 0,
   contados: [] as number[],
   erroNoUpdateDaCampanha: null as { code: string; message: string } | null,
+  erroNaListaDeExclusao: null as { message: string } | null,
 }));
 
 vi.mock("@/lib/logger", () => ({ logger: { info: () => undefined, warn: () => undefined, error: () => undefined } }));
@@ -69,6 +70,9 @@ function fakeAdmin(tabelas: Record<string, Linha[]>) {
     const resolver = () => {
       if (patch && tabela === "campaigns" && mundo.erroNoUpdateDaCampanha && "provider_broadcast_id" in patch) {
         return { data: null, error: mundo.erroNoUpdateDaCampanha, count: null };
+      }
+      if (tabela === "campaign_suppressions" && mundo.erroNaListaDeExclusao) {
+        return { data: null, error: mundo.erroNaListaDeExclusao, count: null };
       }
       let linhas = (tabelas[tabela] ?? []).filter((l) => filtros.every((f) => f(l)));
       if (patch) for (const l of linhas) Object.assign(l, patch);
@@ -202,6 +206,7 @@ beforeEach(() => {
   mundo.enviadosHojeNoNumero = 0;
   mundo.contados = [];
   mundo.erroNoUpdateDaCampanha = null;
+  mundo.erroNaListaDeExclusao = null;
 });
 
 const tres = () => [
@@ -269,6 +274,53 @@ describe("o teto do número e da campanha vale para a lista inteira", () => {
     expect(
       tetoDaTransmissao({ ...base, limiteDoNumero: 100, tetoDiarioDaCampanha: 50, tetoHorarioDaCampanha: 4 }),
     ).toEqual({ cabe: false, de: "campanha", livre: 4 });
+  });
+});
+
+// ─── Da triagem: as duas portas que a lista não pode atravessar ──────────────
+
+describe("o que segura a lista antes do envio", () => {
+  it("sem a lista de exclusão, ninguém sai: a rodada cai e a seguinte confere de novo", async () => {
+    const t = mundoCom(10, tres());
+    const { ops, chamadas } = provedor();
+    mundo.ops = ops;
+    mundo.erroNaListaDeExclusao = { message: "banco fora" };
+    await expect(rodarCampanhaEmTransmissao(fakeAdmin(t), CAMPANHA, AGORA)).rejects.toThrow(/lista de exclusão/);
+    expect(chamadas.criar).toBe(0);
+    expect(chamadas.enviar).toBe(0);
+    expect(t.campaign_recipients.map((d) => d.status)).toEqual(["pending", "pending", "pending"]);
+  });
+
+  it("cancelada enquanto os telefones subiam: o envio não sai e ninguém fica `sending`", async () => {
+    const t = mundoCom(10, tres());
+    const { ops, chamadas } = provedor({
+      adicionar: async (_id, telefones) => {
+        t.campaigns[0]!.status = "cancelled";
+        return { adicionados: telefones.length, pulados: 0 };
+      },
+    });
+    mundo.ops = ops;
+    const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), CAMPANHA, AGORA);
+    expect(r.detalhe).toBe("parada_antes_de_mandar:cancelled");
+    expect(chamadas.enviar).toBe(0);
+    expect(mundo.contados).toEqual([]);
+    expect(t.campaign_recipients.map((d) => d.status)).toEqual(["cancelled", "cancelled", "cancelled"]);
+  });
+
+  it("pausada enquanto os telefones subiam: o envio não sai e a lista volta à fila para a retomada", async () => {
+    const t = mundoCom(10, tres());
+    const { ops, chamadas } = provedor({
+      adicionar: async (_id, telefones) => {
+        t.campaigns[0]!.status = "paused";
+        return { adicionados: telefones.length, pulados: 0 };
+      },
+    });
+    mundo.ops = ops;
+    const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), CAMPANHA, AGORA);
+    expect(r.detalhe).toBe("parada_antes_de_mandar:paused");
+    expect(chamadas.enviar).toBe(0);
+    expect(t.campaign_recipients.map((d) => d.status)).toEqual(["pending", "pending", "pending"]);
+    expect(t.campaigns[0]!.provider_broadcast_id).toBe("b1");
   });
 });
 

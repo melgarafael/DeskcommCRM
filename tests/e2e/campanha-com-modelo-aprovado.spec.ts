@@ -520,7 +520,7 @@ test.describe("Campanhas — número oficial manda modelo aprovado", () => {
     await expect(page.getByTestId("broadcast-travado")).toHaveCount(0);
     await expect(page.getByTestId("broadcast-texto-fixo")).toContainText("«amiga»");
     await expect(page.getByTestId("broadcast-texto-fixo")).toContainText("«Cafeteira Elétrica»");
-    // A lista sai inteira: intervalo e tetos não valem, e a tela não os oferece.
+    // A lista sai inteira: a tela não oferece o intervalo nem os máximos da campanha.
     await expect(page.locator("#intervalo")).toHaveCount(0);
     await expect(page.locator("#teto")).toHaveCount(0);
     await expect(page.locator("#teto-hora")).toHaveCount(0);

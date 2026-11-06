@@ -150,7 +150,8 @@ export function NovaCampanha() {
       lia_ref: liaRef.trim() || null,
       audience_filter: filtro,
       // Na rápida o intervalo não vale (a rajada tem o próprio espaçamento); no
-      // broadcast também não valem os tetos (a lista sai inteira).
+      // broadcast a tela não oferece os máximos da campanha: a lista sai inteira,
+      // e quem freia é o teto diário do número (`tetoDaTransmissao`).
       intervalo_segundos: intervalo && velocidadeEfetiva === "gradual" ? Number(intervalo) : null,
       velocidade: velocidadeEfetiva,
       janela_inicio_hora: janelaInicio ? Number(janelaInicio) : null,
