@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import { useEffect, useRef, useState } from "react";
 
@@ -7,6 +9,7 @@ import { useT } from "@/hooks/i18n/useT";
 import { useActiveOrg, usePermission, useUser } from "@/hooks/auth/AuthProvider";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { ArrowSquareOut } from "@/lib/ui/icons";
 import { useLeadTimeline } from "@/hooks/leads/useLeadTimeline";
 import type { Lead } from "@/lib/types/leads";
 import type { Stage } from "@/lib/kanban/types";
@@ -50,6 +53,34 @@ interface Props {
    * Ausente = nenhum botão, que é o comportamento de antes da entrega.
    */
   atalhos?: AtalhoDoCard[];
+  /**
+   * #4151 — DE ONDE SE ABRIU O PAINEL, para a página inteira saber voltar.
+   *
+   * O dossiê é uma coluna estreita: bom para agir, ruim para LER um resumo de
+   * caso longo. O botão "Expandir" abre o mesmo negócio em `/app/leads/<id>`,
+   * e leva consigo o endereço de quem estava olhando — quadro + filtro —, que a
+   * página devolve no "Voltar ao quadro". Sem esta prop o link continua válido
+   * (só não sabe o caminho de volta), e é por isso que ela é OPCIONAL: o
+   * calendário e a lista passam o dossiê sem ela hoje.
+   *
+   * O quadro monta o valor com `pathname + searchParams` MENOS o `lead` — o
+   * parâmetro que abre este painel não faz sentido no retorno.
+   */
+  origem?: string;
+}
+
+/**
+ * O endereço do negócio em página inteira, com o retorno junto.
+ *
+ * Separado do componente para haver UM lugar onde o formato mora: a página lê
+ * `?voltar=`, e as duas pontas precisam concordar sobre o nome do parâmetro e
+ * sobre o encoding. `URLSearchParams` porque o destino é uma URL inteira com
+ * query string própria dentro de outra.
+ */
+export function linkParaPaginaDoNegocio(leadId: string, origem?: string | null): string {
+  const caminho = `/app/leads/${encodeURIComponent(leadId)}`;
+  if (!origem) return caminho;
+  return `${caminho}?${new URLSearchParams({ voltar: origem }).toString()}`;
 }
 
 function formatValor(cents: number | null, currency: string | null): string {
@@ -108,6 +139,7 @@ export function LeadDossier({
   etapas,
   onMudarEtapa,
   atalhos,
+  origem,
 }: Props) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
@@ -188,8 +220,23 @@ export function LeadDossier({
         // negócio sem novidade é um estado normal.
         data-refetch-divergencias={timeline.seguranca.divergencias}
       >
+        {/* #4151 — O BOTÃO "EXPANDIR" MORA AQUI, ao lado do título, e não no
+            rodapé nem atrás de um menu: quem abre o painel para ler um caso
+            longo decide isso na primeira olhada, com o título já na tela. O
+            resto do cabeçalho (título, valor, etapa, dono, score e "Editar
+            campos") continua exatamente onde estava. */}
         <SheetHeader className="pb-3">
-          <SheetTitle className="text-base leading-6">{lead.title}</SheetTitle>
+          <div className="flex items-start justify-between gap-2">
+            <SheetTitle className="text-base leading-6">{lead.title}</SheetTitle>
+            <Link
+              href={linkParaPaginaDoNegocio(lead.id, origem)}
+              data-expandir-negocio={lead.id}
+              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-sm text-xs font-medium text-text-muted underline-offset-2 hover:text-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ArrowSquareOut size={14} aria-hidden />
+              {t("Expandir")}
+            </Link>
+          </div>
         </SheetHeader>
 
         {/* ① cabeçalho vivo */}

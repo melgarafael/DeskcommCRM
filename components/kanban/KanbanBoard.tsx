@@ -45,6 +45,15 @@ interface KanbanBoardProps {
   /** Lead a abrir já na montagem (deep link `?lead=` — ver o dossiê abaixo). */
   leadInicial?: string | null;
   /**
+   * #4151 — o endereço DESTA tela (quadro + filtro), que o dossiê leva consigo
+   * quando a pessoa clica em "Expandir" e devolve no "Voltar ao quadro".
+   *
+   * Vem de quem monta o quadro porque é lá que a query string mora de verdade
+   * (`useSearchParams` no `_client` da página). Sem ela o link do dossiê
+   * continua funcionando — só não carrega o caminho de volta.
+   */
+  origem?: string;
+  /**
    * `manager`+ pode renomear a etapa direto no cabeçalho da coluna — mesmo
    * corte de papel da rota (`PATCH .../stages/:stageId`, `requireRole("manager")`).
    * `viewer`/`agent` também abrem este board (ele não é rota manager-only),
@@ -105,6 +114,7 @@ export function KanbanBoard({
   pulses: pulsesProp,
   onSelectionChange,
   leadInicial,
+  origem,
   podeRenomearEtapa = false,
   denso = false,
   somenteLeitura = false,
@@ -416,6 +426,7 @@ export function KanbanBoard({
           onOpenChange={(v: boolean) => !v && setDossieId(null)}
           lead={leadDoDossie}
           pipelineId={pipelineId}
+          origem={origem}
           fieldDefs={camposPorEscopo(camposDoFunil(data.pipeline.settings ?? null), "negocio")}
           stageName={
             data.stages.find((s) => s.id === leadDoDossie.stage_id)?.name ?? "—"

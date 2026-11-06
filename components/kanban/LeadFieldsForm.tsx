@@ -52,6 +52,13 @@ interface Props {
   onCancel?: () => void;
   /** Confirmação externa do próprio card: preserva os outros campos em edição. */
   controle?: Ref<ControleDosCamposDoNegocio>;
+  /**
+   * #4151 — A DESCRIÇÃO EM ÁREA ALTA, que é o motivo de a página inteira
+   * existir. No painel lateral ela tem 3 linhas, e um resumo de caso longo cabe
+   * espremido num campo onde ninguém consegue reler o que escreveu. O DEFAULT
+   * continua 3: o painel não muda.
+   */
+  descricaoAlta?: boolean;
 }
 
 function centsToReais(cents: number | null | undefined): string {
@@ -73,7 +80,15 @@ function mesesComoTexto(meses: number | null | undefined): string {
  * registro justamente de quem o produziu — a funcionalidade que prova "sua ação
  * fica registrada" provaria isso para todo mundo menos para o autor.
  */
-export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCancel, controle }: Props) {
+export function LeadFieldsForm({
+  lead,
+  pipelineId,
+  fieldDefs = [],
+  onSaved,
+  onCancel,
+  controle,
+  descricaoAlta = false,
+}: Props) {
   const t = useT();
   const org = useActiveOrg();
   // A moeda do negócio JÁ GRAVADO vence: trocar a moeda da empresa não
@@ -210,7 +225,12 @@ export function LeadFieldsForm({ lead, pipelineId, fieldDefs = [], onSaved, onCa
 
         <div className="space-y-2">
           <Label htmlFor="description">{t("Descrição")}</Label>
-          <Textarea id="description" rows={3} {...form.register("description")} />
+          <Textarea
+            id="description"
+            rows={descricaoAlta ? 14 : 3}
+            className={descricaoAlta ? "min-h-[18rem] text-sm leading-6" : undefined}
+            {...form.register("description")}
+          />
         </div>
 
         <div className="grid grid-cols-2 gap-3">

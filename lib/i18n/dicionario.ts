@@ -10714,6 +10714,11 @@ export const DICIONARIO: Traducoes = {
   "Marcar como perdido…": { es: "Marcar como perdido…" },
   "Probabilidade recalculada automaticamente": { es: "Probabilidad recalculada automáticamente" },
   "Dados do negócio": { es: "Datos del negocio" },
+  // #4151 — o negócio em página inteira: o botão do painel, o retorno ao
+  // quadro e o título da segunda coluna (tarefas + linha do tempo).
+  "Expandir": { es: "Expandir" },
+  "Voltar ao quadro": { es: "Volver al tablero" },
+  "Acompanhamento": { es: "Seguimiento" },
   "Carregando a linha do tempo…": { es: "Cargando la línea de tiempo…" },
   "Não consegui carregar a linha do tempo. Tente de novo em instantes.": {
     es: "No pude cargar la línea de tiempo. Intenta de nuevo en unos instantes.",

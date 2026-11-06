@@ -94,7 +94,7 @@ const LEAD = {
   owner_agent: null,
 } as unknown as Lead;
 
-function montarDossie() {
+function montarDossie(origem?: string) {
   return render(
     <LeadDossier
       open
@@ -103,6 +103,7 @@ function montarDossie() {
       pipelineId="funil-1"
       fieldDefs={[]}
       stageName="Novo"
+      origem={origem}
     />,
   );
 }
@@ -318,5 +319,55 @@ describe("os campos do negócio continuam alcançáveis (#3181)", () => {
 
     expect(secao("dados-do-negocio").getAttribute("data-recolhida")).toBe("nao");
     expect(within(secao("dados-do-negocio")).getByRole("button", { expanded: true })).toBeInTheDocument();
+  });
+});
+
+
+/**
+ * #4151 — O NEGÓCIO EM PÁGINA INTEIRA, A PARTIR DO PANEL.
+ *
+ * O painel lateral é bom para AGIR e ruim para LER um resumo de caso longo: a
+ * coluna é estreita e a rolagem dos campos compete com a da linha do tempo. A
+ * saída pedida é um botão no cabeçalho que abre o MESMO negócio numa página.
+ *
+ * O que este teste cobra, além da existência do link, é o RETORNO: o botão
+ * carrega junto o endereço de quem estava olhando (o quadro COM o filtro
+ * aplicado). Sem isso, "voltar" devolveria o quadro limpo e a pessoa teria de
+ * refazer a seleção para achar o card que acabou de ler — que é justamente o
+ * trabalho que a página inteira existe para poupar.
+ */
+describe("o dossiê abre o negócio em página inteira (#4151)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    linhaDoTempo.itens = seisAtividades();
+  });
+
+  it("⭐ o cabeçalho tem o link 'Expandir' para /app/leads/<id> levando a origem", () => {
+    montarDossie("/app/pipelines/funil-1?etapa=e1&etiqueta=quente");
+
+    const expandir = screen.getByRole("link", { name: "Expandir" });
+    // O `voltar` vai percent-encoded: é uma URL inteira, com query string
+    // própria, dentro de outra.
+    expect(expandir).toHaveAttribute(
+      "href",
+      "/app/leads/lead-1?voltar=%2Fapp%2Fpipelines%2Ffunil-1%3Fetapa%3De1%26etiqueta%3Dquente",
+    );
+  });
+
+  it("sem origem o link continua abrindo o negócio — só não leva o retorno", () => {
+    montarDossie();
+
+    expect(screen.getByRole("link", { name: "Expandir" })).toHaveAttribute("href", "/app/leads/lead-1");
+  });
+
+  it("o cabeçalho NÃO perde o que já tinha (título, valor, etapa e 'Editar campos')", () => {
+    montarDossie();
+
+    expect(screen.getByRole("heading", { name: "Viagem Rio" })).toBeInTheDocument();
+    expect(screen.getByText("Novo")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Editar campos" })).toBeInTheDocument();
+    // O painel lateral continua sendo o painel: a página inteira é um CAMINHO
+    // a mais, não um substituto — em tela estreita nada muda aqui.
+    expect(document.querySelector('[data-realtime-status]')).not.toBeNull();
   });
 });

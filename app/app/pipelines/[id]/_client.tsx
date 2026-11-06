@@ -147,6 +147,23 @@ export function PipelinePageClient({
   const router = useRouter();
   const pathname = usePathname();
   /**
+   * #4151 — O ENDEREÇO DESTA TELA, PARA O DOSSIÊ LEVAR CONSIGO.
+   *
+   * O "Expandir" do painel abre o negócio em página inteira e leva este valor
+   * no `?voltar=`, para o "Voltar ao quadro" devolver o quadro COM o filtro de
+   * quem estava olhando. Montado da URL viva — e sem o `lead=`, que só existe
+   * para abrir o painel e não faz sentido no caminho de volta.
+   *
+   * O `visao` fica: quem estava na Lista volta para a Lista, com o mesmo
+   * filtro, porque é a mesma query string.
+   */
+  const origemDoQuadro = useMemo(() => {
+    const p = new URLSearchParams(searchParams.toString());
+    p.delete("lead");
+    const qs = p.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+  }, [pathname, searchParams]);
+  /**
    * ⚠️ O FILTRO PEDIDO VALE ANTES DE A URL CHEGAR NELE.
    *
    * `router.replace` só muda o `useSearchParams` depois da ida ao servidor
@@ -537,6 +554,7 @@ export function PipelinePageClient({
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}
           leadInicial={searchParams.get("lead")}
+          origem={origemDoQuadro}
           podeRenomearEtapa={!arquivado && ROLE_RANK[role] >= ROLE_RANK.manager}
           denso={cardsCompactos}
           somenteLeitura={arquivado}
