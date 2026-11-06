@@ -89,7 +89,7 @@ export async function transmissaoDoParceiro(
   }
 
   async function chamar<T extends Bruto>(
-    metodo: "GET" | "POST",
+    metodo: "GET" | "POST" | "DELETE",
     caminho: string,
     corpo?: unknown,
     consulta?: Record<string, string>,
@@ -194,6 +194,22 @@ export async function transmissaoDoParceiro(
         // 400 = "não dá para cancelar neste estado": já terminou, ou nem saiu do
         // rascunho. Nos dois casos não há o que parar, e não é falha de quem cancela.
         if (err instanceof ErroDaTransmissao && err.status === 400) return;
+        throw err;
+      }
+    },
+
+    async descartar(id) {
+      try {
+        await chamar("DELETE", `/v1/broadcasts/${encodeURIComponent(id)}`);
+        return true;
+      } catch (err) {
+        if (err instanceof ErroDaTransmissao) {
+          if (err.status === 404) return true;
+          // A especificação diz "only drafts can be deleted" sem dizer com que
+          // status recusa. Lido como o `cancelar` lê o 400; outro status lança, e a
+          // campanha pausa sem esquecer o id.
+          if (err.status === 400 || err.status === 409) return false;
+        }
         throw err;
       }
     },

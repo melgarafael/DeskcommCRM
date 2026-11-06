@@ -56,6 +56,12 @@ export interface OpsDeTransmissao {
   }>;
   /** Cancela o que ainda não saiu. O que já saiu fica (é o que a plataforma faz). */
   cancelar(id: string): Promise<void>;
+  /**
+   * Apaga um rascunho e os telefones dele — é a única forma de tirar alguém: o
+   * provedor só acrescenta destinatário. `false` = já não é rascunho, nada foi
+   * apagado; quem chama relê o estado.
+   */
+  descartar(id: string): Promise<boolean>;
 }
 
 /**

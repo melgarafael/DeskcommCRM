@@ -209,3 +209,29 @@ describe("cancelar", () => {
     await expect(ops.cancelar("bc_1")).rejects.toBeInstanceOf(ErroDaTransmissao);
   });
 });
+
+describe("descartar", () => {
+  const abrir = async () =>
+    (await transmissaoDoParceiro(admin, { organizationId: "org-1", channelSessionId: "sess-1" }))!;
+
+  it("apaga o rascunho pelo DELETE da especificação", async () => {
+    const ops = await abrir();
+    await expect(ops.descartar("bc_1")).resolves.toBe(true);
+    expect(chamadas[0]).toMatchObject({ metodo: "DELETE", url: "https://parceiro.test/api/v1/broadcasts/bc_1" });
+  });
+
+  it("404: já não existe, é o que se queria", async () => {
+    respostas = [{ status: 404, corpo: { error: "Not found" } }];
+    await expect((await abrir()).descartar("bc_1")).resolves.toBe(true);
+  });
+
+  it("400: já não é rascunho, nada foi apagado", async () => {
+    respostas = [{ status: 400, corpo: { error: "Only drafts can be deleted" } }];
+    await expect((await abrir()).descartar("bc_1")).resolves.toBe(false);
+  });
+
+  it("outra recusa sobe: sem isto, o id seria esquecido com o rascunho ainda lá", async () => {
+    respostas = [{ status: 500, corpo: { error: "boom" } }];
+    await expect((await abrir()).descartar("bc_1")).rejects.toBeInstanceOf(ErroDaTransmissao);
+  });
+});

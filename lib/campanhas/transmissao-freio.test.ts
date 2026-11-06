@@ -9,7 +9,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PACING_DEFAULTS } from "@/lib/agent-engine/pacing/defaults";
-import { ErroDaTransmissao, type DestinatarioDaTransmissao, type OpsDeTransmissao } from "@/lib/channels/transmissao";
+import {
+  ErroDaTransmissao,
+  type DestinatarioDaTransmissao,
+  type EstadoDaTransmissao,
+  type OpsDeTransmissao,
+} from "@/lib/channels/transmissao";
 
 const mundo = vi.hoisted(() => ({
   ops: null as OpsDeTransmissao | null,
@@ -41,6 +46,7 @@ vi.mock("@/lib/campanhas/modelo-da-conexao", () => ({
 }));
 
 import { cancelarAcao, type CampanhaCarregada } from "./acoes";
+import { hashDoEndereco } from "./exclusoes";
 import { aplicarRespostaNaCampanha } from "./resposta";
 import {
   DETALHE_ACIMA_DO_TETO_DA_CAMPANHA,
@@ -165,7 +171,13 @@ const CAMPANHA: CampanhaDaTransmissao = {
 
 /** O provedor de mentira: grava o que recebeu e devolve o que o caso pede. */
 function provedor(over: Partial<OpsDeTransmissao> = {}) {
-  const chamadas = { criar: 0, adicionados: [] as string[], enviar: 0, cancelar: [] as string[] };
+  const chamadas = {
+    criar: 0,
+    adicionados: [] as string[],
+    enviar: 0,
+    cancelar: [] as string[],
+    descartar: [] as string[],
+  };
   const ops: OpsDeTransmissao = {
     criar: async () => (chamadas.criar++, { id: "b1" }),
     adicionar: async (_id, telefones) => (chamadas.adicionados.push(...telefones), { adicionados: telefones.length, pulados: 0 }),
@@ -174,6 +186,10 @@ function provedor(over: Partial<OpsDeTransmissao> = {}) {
     destinatarios: async () => ({ itens: [], temMais: false, lidos: 0 }),
     cancelar: async (id) => {
       chamadas.cancelar.push(id);
+    },
+    descartar: async (id) => {
+      chamadas.descartar.push(id);
+      return true;
     },
     ...over,
   };
@@ -184,7 +200,7 @@ function mundoCom(tetoDoNumero: number | null, destinatarios: Linha[], campanha:
   return {
     campaigns: [campanha],
     campaign_recipients: destinatarios,
-    campaign_suppressions: [],
+    campaign_suppressions: [] as Linha[],
     channel_sessions: [{ id: "s1", organization_id: ORG, status: "WORKING", daily_message_limit: tetoDoNumero }],
   };
 }
@@ -324,6 +340,239 @@ describe("o que segura a lista antes do envio", () => {
   });
 });
 
+// ─── Do cético: o rascunho guarda quem saiu da lista depois de subir ─────────
+
+/**
+ * O provedor de verdade: um rascunho por id, que só cresce (`adicionar` acrescenta,
+ * não existe remover), e `enviar` manda a quem estiver nele. `para` guarda quem
+ * cada envio alcançou — é a afirmação que importa nestes casos.
+ */
+function provedorComRascunho() {
+  const rascunhos = new Map<string, Set<string>>();
+  const enviados: Array<{ id: string; para: string[] }> = [];
+  const estados = new Map<string, EstadoDaTransmissao>();
+  let criados = 0;
+  const so = (telefone: string) => telefone.replace(/\D/g, "");
+  const ops: OpsDeTransmissao = {
+    criar: async () => {
+      const id = `b${++criados}`;
+      rascunhos.set(id, new Set());
+      estados.set(id, "draft");
+      return { id };
+    },
+    adicionar: async (id, telefones) => {
+      for (const t of telefones) rascunhos.get(id)!.add(so(t));
+      return { adicionados: telefones.length, pulados: 0 };
+    },
+    enviar: async (id) => {
+      enviados.push({ id, para: [...rascunhos.get(id)!] });
+      estados.set(id, "sending");
+      return { estado: "sending" };
+    },
+    ler: async (id) => ({ estado: estados.get(id)! }),
+    destinatarios: async (id) => {
+      const itens = [...rascunhos.get(id)!].map((t) => item(t, { status: "pending" }));
+      return { itens, temMais: false, lidos: itens.length };
+    },
+    cancelar: async () => undefined,
+    descartar: async (id) => {
+      if (estados.get(id) !== "draft") return false;
+      rascunhos.delete(id);
+      estados.delete(id);
+      return true;
+    },
+  };
+  return { ops, rascunhos, enviados, estados };
+}
+
+/** Rodada 1: a campanha pausa com os telefones já no rascunho, como no caminho real. */
+async function pausarComOsTelefonesSubindo(t: ReturnType<typeof mundoCom>, p: ReturnType<typeof provedorComRascunho>) {
+  const adicionar = p.ops.adicionar;
+  mundo.ops = {
+    ...p.ops,
+    adicionar: async (id, telefones) => {
+      const r = await adicionar(id, telefones);
+      t.campaigns[0]!.status = "paused";
+      return r;
+    },
+  };
+  const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), CAMPANHA, AGORA);
+  expect(r.detalhe).toBe("parada_antes_de_mandar:paused");
+  expect(p.rascunhos.get("b1")?.size).toBe(3);
+  expect(t.campaigns[0]!.provider_broadcast_id).toBe("b1");
+  mundo.ops = p.ops;
+}
+
+/** O que a retomada faz: `running` de novo, e as rodadas do cron até o envio sair. */
+async function retomar(t: ReturnType<typeof mundoCom>) {
+  t.campaigns[0]!.status = "running";
+  const rodada = () =>
+    rodarCampanhaEmTransmissao(
+      fakeAdmin(t),
+      { ...CAMPANHA, provider_broadcast_id: (t.campaigns[0]!.provider_broadcast_id as string | null) ?? null },
+      AGORA,
+    );
+  return [await rodada(), await rodada()];
+}
+
+const SO_OS_OUTROS = ["595981000002", "595981000003"];
+
+describe("quem saiu da lista depois que os telefones subiram", () => {
+  it("opt-out na pausa: o rascunho é apagado, o novo sai sem a pessoa, e ela segue `opted_out`", async () => {
+    const t = mundoCom(10, tres());
+    const p = provedorComRascunho();
+    await pausarComOsTelefonesSubindo(t, p);
+
+    // A pessoa pede para sair durante a pausa, pelo caminho da ingestão.
+    const r1 = t.campaign_recipients[0]!;
+    (r1.contacts as Linha).is_blocked = true;
+    await aplicarRespostaNaCampanha(
+      fakeAdmin({
+        contacts: [{ id: r1.contact_id, organization_id: ORG, is_personal: false, is_blocked: true }],
+        organizations: [{ id: ORG, settings: {} }],
+        campaign_recipients: t.campaign_recipients,
+      }),
+      { organizationId: ORG, contactId: r1.contact_id as string, recebidoEm: AGORA },
+    );
+    expect(r1.status).toBe("opted_out");
+
+    const [refez] = await retomar(t);
+    expect(refez!.detalhe).toBe("rascunho_refeito");
+    expect(p.rascunhos.has("b1")).toBe(false);
+    expect(p.enviados.map((e) => e.id)).toEqual(["b2"]);
+    expect(p.enviados[0]!.para.sort()).toEqual(SO_OS_OUTROS);
+    expect(t.campaigns[0]).toMatchObject({ status: "running", provider_broadcast_id: "b2" });
+    expect(r1.status).toBe("opted_out");
+    expect(mundo.contados).toEqual([2]);
+  });
+
+  it("entrou na lista de exclusão na pausa: mesma coisa", async () => {
+    const t = mundoCom(10, tres());
+    const p = provedorComRascunho();
+    await pausarComOsTelefonesSubindo(t, p);
+    t.campaign_suppressions = [{ organization_id: ORG, recipient_address_hash: hashDoEndereco("+595981000001") }];
+    await retomar(t);
+    expect(p.enviados.map((e) => e.id)).toEqual(["b2"]);
+    expect(p.enviados[0]!.para.sort()).toEqual(SO_OS_OUTROS);
+    expect(t.campaign_recipients[0]).toMatchObject({ status: "skipped", exclusion_reason: "suprimido" });
+  });
+
+  it("5xx no envio devolve à fila; quem foi anonimizado depois não sai na retomada", async () => {
+    const t = mundoCom(10, tres());
+    const p = provedorComRascunho();
+    mundo.ops = {
+      ...p.ops,
+      enviar: async () => {
+        throw new ErroDaTransmissao(503, "http_503", "503 fora do ar");
+      },
+    };
+    const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), CAMPANHA, AGORA);
+    expect(r.detalhe).toBe("pausada:transmissao_http_503");
+    expect(p.enviados).toEqual([]);
+    expect(t.campaign_recipients.map((d) => d.status)).toEqual(["pending", "pending", "pending"]);
+
+    mundo.ops = p.ops;
+    (t.campaign_recipients[0]!.contacts as Linha).is_anonymized = true;
+    await retomar(t);
+    expect(p.enviados.map((e) => e.id)).toEqual(["b2"]);
+    expect(p.enviados[0]!.para.sort()).toEqual(SO_OS_OUTROS);
+  });
+
+  it("reservado de uma rodada que caiu passa pelos mesmos vetos, e ninguém fica `sending` sem id", async () => {
+    const t = mundoCom(10, tres());
+    const p = provedorComRascunho();
+    await pausarComOsTelefonesSubindo(t, p);
+    // A rodada caiu depois de reservar: todos `sending`, nenhum na fila.
+    for (const d of t.campaign_recipients) d.status = "sending";
+    (t.campaign_recipients[0]!.contacts as Linha).is_blocked = true;
+    t.campaigns[0]!.status = "running";
+    const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), { ...CAMPANHA, provider_broadcast_id: "b1" }, AGORA);
+    expect(r).toMatchObject({ detalhe: "rascunho_refeito", pulados: 1 });
+    expect(p.enviados).toEqual([]);
+    expect(t.campaign_recipients.map((d) => d.status)).toEqual(["opted_out", "pending", "pending"]);
+    expect(t.campaigns[0]!.provider_broadcast_id).toBeNull();
+  });
+
+  it("todo mundo saiu: o rascunho é apagado e a campanha conclui sem mandar", async () => {
+    const t = mundoCom(10, tres());
+    const p = provedorComRascunho();
+    await pausarComOsTelefonesSubindo(t, p);
+    for (const d of t.campaign_recipients) (d.contacts as Linha).is_blocked = true;
+    const [refez, depois] = await retomar(t);
+    expect(refez!.detalhe).toBe("rascunho_refeito");
+    expect(depois).toMatchObject({ concluidas: 1, detalhe: "concluida" });
+    expect(p.enviados).toEqual([]);
+    expect(t.campaigns[0]).toMatchObject({ status: "completed", provider_broadcast_id: null });
+  });
+
+  it("ninguém saiu: o rascunho é reaproveitado, sem apagar nem criar outro", async () => {
+    const t = mundoCom(10, tres());
+    const p = provedorComRascunho();
+    await pausarComOsTelefonesSubindo(t, p);
+    const [r] = await retomar(t);
+    expect(r!.detalhe).toBe("transmissao:sending:3");
+    expect(p.enviados.map((e) => e.id)).toEqual(["b1"]);
+    expect(p.enviados[0]!.para).toHaveLength(3);
+  });
+
+  it("rascunho com alguém que não dá para ler é refeito: na dúvida, não sai", async () => {
+    const t = mundoCom(10, tres());
+    const p = provedorComRascunho();
+    await pausarComOsTelefonesSubindo(t, p);
+    const destinatarios = p.ops.destinatarios;
+    mundo.ops = {
+      ...p.ops,
+      destinatarios: async (id, pagina) => {
+        const r = await destinatarios(id, pagina);
+        return { ...r, lidos: r.lidos + 1 };
+      },
+    };
+    t.campaigns[0]!.status = "running";
+    const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), { ...CAMPANHA, provider_broadcast_id: "b1" }, AGORA);
+    expect(r.detalhe).toBe("rascunho_refeito");
+    expect(p.enviados).toEqual([]);
+  });
+
+  it("o provedor não leu o rascunho: a campanha pausa e nada sai", async () => {
+    const t = mundoCom(10, tres());
+    const p = provedorComRascunho();
+    await pausarComOsTelefonesSubindo(t, p);
+    mundo.ops = {
+      ...p.ops,
+      destinatarios: async () => {
+        throw new ErroDaTransmissao(500, "http_500", "500 erro");
+      },
+    };
+    t.campaigns[0]!.status = "running";
+    const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), { ...CAMPANHA, provider_broadcast_id: "b1" }, AGORA);
+    expect(r.detalhe).toBe("pausada:transmissao_http_500");
+    expect(p.enviados).toEqual([]);
+    expect(t.campaigns[0]).toMatchObject({ status: "paused", provider_broadcast_id: "b1" });
+  });
+
+  it("outra rodada já mandou o rascunho: não esquece o id nem cria outro", async () => {
+    const t = mundoCom(10, tres());
+    const p = provedorComRascunho();
+    await pausarComOsTelefonesSubindo(t, p);
+    (t.campaign_recipients[0]!.contacts as Linha).is_blocked = true;
+    const ler = p.ops.ler;
+    let lidas = 0;
+    mundo.ops = {
+      ...p.ops,
+      // A 1ª leitura ainda vê rascunho; no meio da rodada, a outra manda.
+      ler: async (id) => (lidas++ === 0 ? { estado: "draft" } : ler(id)),
+      descartar: async () => {
+        p.estados.set("b1", "sending");
+        return false;
+      },
+    };
+    t.campaigns[0]!.status = "running";
+    const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), { ...CAMPANHA, provider_broadcast_id: "b1" }, AGORA);
+    expect(r.detalhe).toMatch(/^transmissao:sending:/);
+    expect(t.campaigns[0]!.provider_broadcast_id).toBe("b1");
+  });
+});
+
 // ─── Achado 3: quem pede para parar com a lista em voo ───────────────────────
 
 describe("opt-out com a lista `sending`", () => {
@@ -454,6 +703,20 @@ describe("cancelar a campanha por broadcast", () => {
     expect(t.campaign_recipients[0]!.status).toBe("sending");
   });
 
+  it("cancelar com a lista no rascunho apaga o rascunho; com a transmissão em envio, não", async () => {
+    const emRascunho = mundoCom(null, tres(), campanhaLinha({ status: "cancelled", provider_broadcast_id: "b1" }));
+    const rascunho = provedor();
+    mundo.ops = rascunho.ops;
+    await encerrarTransmissao(fakeAdmin(emRascunho), carregada(), AGORA);
+    expect(rascunho.chamadas.descartar).toEqual(["b1"]);
+
+    const emEnvio = mundoCom(null, tres(), campanhaLinha({ status: "cancelled", provider_broadcast_id: "b1" }));
+    const saindo = provedor({ ler: async () => ({ estado: "sending" }) });
+    mundo.ops = saindo.ops;
+    await encerrarTransmissao(fakeAdmin(emEnvio), carregada(), AGORA);
+    expect(saindo.chamadas.descartar).toEqual([]);
+  });
+
   it("a ação conta os que estavam em voo — não «0 cancelados»", async () => {
     const t = mundoCom(null, tres().map((d) => ({ ...d, status: "sending" })), campanhaLinha({ provider_broadcast_id: "b1" }));
     mundo.ops = provedor().ops;
@@ -472,7 +735,7 @@ describe("o id da transmissão não grava", () => {
     mundo.ops = ops;
     const r = await rodarCampanhaEmTransmissao(fakeAdmin(t), CAMPANHA, AGORA);
     expect(r.detalhe).toBe("pausada:transmissao_id_nao_gravado");
-    expect(chamadas.cancelar).toEqual(["b1"]);
+    expect(chamadas.descartar).toEqual(["b1"]);
     expect(t.campaigns[0]).toMatchObject({ status: "paused", failure_code: "transmissao_id_nao_gravado" });
   });
 });

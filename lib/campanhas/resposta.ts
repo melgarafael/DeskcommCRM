@@ -188,7 +188,9 @@ export async function aplicarRespostaNaCampanha(
  * provedor não tira uma pessoa da transmissão (o contrato só cancela a
  * transmissão inteira), então a linha não impede a mensagem que já está na fila
  * dele — mas sai da contagem certa, e o relatório dele não a reabre
- * (`opted_out` é estável em `desfechoDaTransmissao`). Na rodada de sempre, toda
+ * (`opted_out` é estável em `desfechoDaTransmissao`). Com a transmissão ainda em
+ * rascunho a linha impede, sim: `rascunhoSoTemALista` a vê fora da lista e o
+ * rascunho é refeito. Na rodada de sempre, toda
  * saída de `sending` confere `.eq("status", "sending")`: o opt-out vence.
  */
 async function fecharPorOptOut(

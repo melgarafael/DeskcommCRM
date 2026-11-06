@@ -26,6 +26,16 @@
  * o id gravado, ela criaria uma SEGUNDA transmissão, e a lista receberia em
  * dobro.
  *
+ * ═══ Por que o rascunho é conferido antes de ser reaproveitado ═══
+ *
+ * O provedor só ACRESCENTA telefone: não existe tirar destinatário de um
+ * rascunho, e `enviar` manda a quem estiver nele. Uma campanha pausada, ou uma
+ * rodada que caiu, deixa no rascunho telefones que podem esperar por dias — e
+ * quem pedir para sair nesse meio tempo sairia da nossa lista e continuaria na
+ * dele. Por isso, com id existente, o rascunho é lido antes: se traz alguém fora
+ * da lista revalidada agora, ou alguém que não dá para ler, ele é APAGADO e a
+ * rodada seguinte cria outro, só com quem pode receber.
+ *
  * ═══ Por que os valores do modelo são os do destinatário ═══
  *
  * O provedor recebe um valor por variável, o mesmo para todos. A rota só deixa
@@ -163,8 +173,21 @@ async function entregarAoProvedor(
   const janela = await janelaAberta(admin, campanha, agora);
   if (!janela.aberta) return { ...SO_O_CONTADOR, detalhe: `ritmo:${janela.motivo}` };
 
-  const { prontos, pulados } = await revalidarPendentes(admin, campanha, agora);
-  const emVoo = await jaReservados(admin, campanha.id);
+  const fila = await revalidar(admin, campanha, agora, "pending");
+  // Quem uma rodada anterior reservou e não chegou a sair: a espera pode ter sido
+  // de horas (janela, canal fora do ar), e a pessoa pode ter saído da lista nela.
+  const emEspera = await revalidar(admin, campanha, agora, "sending");
+  const prontos = fila.prontos;
+  const emVoo = emEspera.prontos;
+  const pulados = fila.pulados + emEspera.pulados;
+
+  if (idExistente) {
+    const lista = new Set([...prontos, ...emVoo].map((d) => digitosDoTelefone(d.telefone)));
+    if (!(await rascunhoSoTemALista(ops, idExistente, lista))) {
+      return await descartarRascunho(admin, campanha, ops, idExistente, emVoo, pulados, agora);
+    }
+  }
+
   if (prontos.length === 0 && emVoo.length === 0) {
     const concluidas = await concluirSeNadaEmVoo(admin, campanha.id, agora);
     return { enviadas: 0, pulados, concluidas, detalhe: concluidas > 0 ? "concluida" : "aguardando" };
@@ -215,7 +238,7 @@ async function entregarAoProvedor(
       // A nossa é descartada (sem o id gravado, ela viraria uma segunda) e a
       // campanha pausa com a frase.
       logger.warn("[campanha] id da transmissão não gravado", { campanha: campanha.id, codigo: error.code ?? null });
-      await ops.cancelar(criada.id).catch(() => undefined);
+      await ops.descartar(criada.id).catch(() => false);
       await pausar(admin, campanha.id, agora, {
         codigo: "transmissao_id_nao_gravado",
         detalhe:
@@ -226,7 +249,7 @@ async function entregarAoProvedor(
     if ((data ?? []).length === 0) {
       // Outra rodada chegou antes (ou a campanha saiu de `running`): a nossa
       // transmissão fica vazia no rascunho, e é ela que se descarta.
-      await ops.cancelar(criada.id).catch(() => undefined);
+      await ops.descartar(criada.id).catch(() => false);
       return { ...SO_O_CONTADOR, pulados, detalhe: "ja_entregue" };
     }
     id = criada.id;
@@ -300,6 +323,57 @@ async function entregarAoProvedor(
   };
 }
 
+/**
+ * O rascunho do provedor só tem gente da lista? Quem ele traz sem dar para ler
+ * conta como fora, e o mesmo vale para um relatório que não acaba: na dúvida, o
+ * rascunho é refeito, que custa uma rodada; mandar a quem saiu não tem conserto.
+ */
+async function rascunhoSoTemALista(ops: OpsDeTransmissao, id: string, lista: ReadonlySet<string>): Promise<boolean> {
+  let pular = 0;
+  const teto = paginasDoRelatorio(lista.size);
+  for (let pagina = 0; pagina < teto; pagina++) {
+    const p = await ops.destinatarios(id, { pular, quantos: POR_PAGINA_DO_PROVEDOR });
+    if (p.itens.length < p.lidos || p.itens.some((i) => !lista.has(i.telefone))) return false;
+    if (!p.temMais || p.lidos === 0) return true;
+    pular += p.lidos;
+  }
+  return false;
+}
+
+/**
+ * Apaga o rascunho com gente que saiu da lista e esquece o id: a rodada seguinte
+ * cria outro. O provedor primeiro, o banco depois: esquecer um id cujo envio já
+ * saiu faria a lista sair em dobro. Quem estava reservado volta à fila, porque
+ * `sending` sem id não existe (`encerrarTransmissao` conta com isso).
+ */
+async function descartarRascunho(
+  admin: SupabaseClient,
+  campanha: CampanhaDaTransmissao,
+  ops: OpsDeTransmissao,
+  id: string,
+  reservados: Pronto[],
+  pulados: number,
+  agora: Date,
+): Promise<ResultadoDaTransmissao> {
+  if (!(await ops.descartar(id))) {
+    // Já não é rascunho: outra rodada mandou. Quem decide é o estado relido.
+    const { estado } = await ops.ler(id);
+    return await acompanhar(admin, campanha, ops, id, estado, agora);
+  }
+  await devolverAFila(
+    admin,
+    reservados.map((d) => d.id),
+  );
+  const { error } = await admin
+    .from("campaigns")
+    .update({ provider_broadcast_id: null })
+    .eq("id", campanha.id)
+    .eq("provider_broadcast_id", id);
+  if (error) throw new Error(`rascunho da transmissão: ${error.message}`);
+  logger.warn("[campanha] rascunho da transmissão refeito: trazia quem saiu da lista", { campanha: campanha.id });
+  return { ...SO_O_CONTADOR, pulados, detalhe: "rascunho_refeito" };
+}
+
 interface Pronto {
   id: string;
   telefone: string;
@@ -307,14 +381,15 @@ interface Pronto {
 }
 
 /**
- * Os pendentes da campanha, com os vetos por PESSOA refeitos agora — os mesmos
- * da rodada de sempre (`rodarUmaCampanha`), em lote. Quem caiu num veto sai da
- * fila com o motivo; o resto vai para o provedor.
+ * Os destinatários nesse status, com os vetos por PESSOA refeitos agora — os
+ * mesmos da rodada de sempre (`rodarUmaCampanha`), em lote. Quem caiu num veto
+ * sai com o motivo; o resto vai para o provedor.
  */
-async function revalidarPendentes(
+async function revalidar(
   admin: SupabaseClient,
   campanha: CampanhaDaTransmissao,
   agora: Date,
+  status: "pending" | "sending",
 ): Promise<{ prontos: Pronto[]; pulados: number }> {
   const candidatos: Array<Pronto & { motivo: MotivoDeExclusao | null; endereco: string }> = [];
   for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
@@ -325,11 +400,11 @@ async function revalidarPendentes(
           "contacts(phone_number, is_blocked, is_personal, is_anonymized, consent)",
       )
       .eq("campaign_id", campanha.id)
-      .eq("status", "pending")
+      .eq("status", status)
       .order("created_at", { ascending: true })
       .order("id", { ascending: true })
       .range(pagina * POR_PAGINA, pagina * POR_PAGINA + POR_PAGINA - 1);
-    if (error) throw new Error(`pendentes da transmissão: ${error.message}`);
+    if (error) throw new Error(`destinatários da transmissão (${status}): ${error.message}`);
     const linhas = (data ?? []) as unknown as Array<{
       id: string;
       contact_id: string;
@@ -400,44 +475,15 @@ async function revalidarPendentes(
           eligibility_status: "excluded",
           exclusion_reason: motivo,
           opted_out_at: motivo === "opt_out" ? agora.toISOString() : null,
+          sending_at: null,
         })
         .in("id", ids.slice(i, i + IDS_POR_FILTRO))
-        .eq("status", "pending")
+        .eq("status", status)
         .select("id");
       pulados += (data ?? []).length;
     }
   }
   return { prontos, pulados };
-}
-
-/** Quem uma rodada anterior já reservou e não chegou a sair (a rodada caiu). */
-async function jaReservados(admin: SupabaseClient, campanhaId: string): Promise<Pronto[]> {
-  const reservados: Pronto[] = [];
-  for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
-    const { data, error } = await admin
-      .from("campaign_recipients")
-      .select("id, recipient_address, variables, contacts(phone_number)")
-      .eq("campaign_id", campanhaId)
-      .eq("status", "sending")
-      .order("id", { ascending: true })
-      .range(pagina * POR_PAGINA, pagina * POR_PAGINA + POR_PAGINA - 1);
-    if (error) throw new Error(`reservados da transmissão: ${error.message}`);
-    const linhas = (data ?? []) as unknown as Array<{
-      id: string;
-      recipient_address: string | null;
-      variables: unknown;
-      contacts: { phone_number: string | null } | null;
-    }>;
-    for (const l of linhas) {
-      reservados.push({
-        id: l.id,
-        telefone: (l.contacts?.phone_number ?? l.recipient_address ?? "").trim(),
-        valores: valoresCongelados(l.variables),
-      });
-    }
-    if (linhas.length < POR_PAGINA) break;
-  }
-  return reservados;
 }
 
 async function reservar(
@@ -1020,6 +1066,12 @@ export async function encerrarTransmissao(
         motivo: err instanceof Error ? err.message : String(err),
       });
     });
+    // `cancelar` não alcança rascunho (o provedor responde 400), e a lista ficaria
+    // lá, pronta para sair por um clique no painel dele.
+    await ops
+      .ler(campanha.provider_broadcast_id)
+      .then(({ estado }) => (estado === "draft" ? ops.descartar(campanha.provider_broadcast_id!) : false))
+      .catch(() => false);
   }
   if (recusa) {
     await admin
