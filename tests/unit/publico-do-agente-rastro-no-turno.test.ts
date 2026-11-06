@@ -267,7 +267,9 @@ function cenario(op: {
     modo: Promise.resolve('comparacao' as const),
     observar: vi.fn(),
   };
-  const consultarJev = vi.fn(() => jev);
+  const consultarJev = vi.fn(
+    (_db: unknown, _entrada: { membros: RouterMember[] }, _deps?: unknown) => jev,
+  );
   const deps = {
     log: { info, warn: vi.fn(), error: vi.fn() },
     loadActiveRouter: vi.fn().mockResolvedValue(op.router),
