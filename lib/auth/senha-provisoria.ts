@@ -6,8 +6,8 @@ import type { AuthUser } from "@/lib/auth/types";
  *
  * ─── Por que o sinal mora no VÍNCULO e não no auth ────────────────────────
  *
- * `auth.users.user_metadata` é escrita pelo PRÓPRIO usuário
- * (`supabase.auth.updateUser({ data })`). Um gate apoiado nela seria desarmado
+ * `auth.users.user_metadata` é escrita pelo PRÓPRIO usuário (o `updateUser` do
+ * GoTrue, com o token da própria sessão). Um gate apoiado nela seria desarmado
  * pela pessoa obrigada a trocar a senha, sem nem precisar de tela: uma chamada
  * ao GoTrue com o token da sessão apaga a marca. A coluna
  * `user_organizations.senha_provisoria` (migration 9227) só é escrita com
@@ -40,7 +40,10 @@ export function senhaProvisoriaPendente(
   organizationId: string,
 ): boolean {
   if (user.support) return false;
-  return user.organizations.some(
+  // `organizations` é opcional no tipo e chega ausente em sessão sem vínculo
+  // (e em qualquer mock de usuário). Ler `.some` direto aqui derrubava o layout
+  // inteiro — 10 testes alheios caíram por causa disso no CI do #4120.
+  return (user.organizations ?? []).some(
     (o) => o.organization_id === organizationId && o.senha_provisoria === true,
   );
 }
@@ -50,7 +53,7 @@ export function organizacoesComSenhaProvisoria(
   user: Pick<AuthUser, "support" | "organizations">,
 ): string[] {
   if (user.support) return [];
-  return user.organizations
+  return (user.organizations ?? [])
     .filter((o) => o.senha_provisoria === true)
     .map((o) => o.organization_id);
 }
