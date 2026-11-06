@@ -12,9 +12,9 @@
  *     não passava pelo contrato do adapter — e o lint de canal
  *     (`scripts/lint-channels.ts`) existe justamente para impedir que uma
  *     feature saiba QUAL transporte está do outro lado.
- *  2. **Ligava o acervo do NOWEB em toda sessão** para a lista de público
- *     funcionar. A #999 decidiu o contrário: o acervo fica desligado por padrão
- *     e liga por conexão, na tela. Feature nenhuma liga sozinha.
+ *  2. **Ligava o acervo do NOWEB em toda sessão.** A #999 decidiu o contrário:
+ *     o acervo fica desligado por padrão e liga por conexão, na tela. Feature
+ *     nenhuma liga sozinha.
  *  3. **Não reservava a idempotência antes do envio**, então um retry podia
  *     publicar em dobro — e Status é peça de marketing, onde a duplicata tem
  *     custo de imagem, não de mensagem.
@@ -41,12 +41,16 @@
  *
  * ─── O acervo do histórico ──────────────────────────────────────────────────
  *
- * Numa sessão NOWEB o provedor só honra a LISTA de público com o acervo
- * (`noweb.store`) ligado; sem ele responde 400. Este módulo lê a opção por
- * conexão (`lerGuardarHistorico`, chave `guardar_historico` do `metadata`) e,
- * quando falta, EXPLICA o que falta em vez de ligar por conta própria — a
- * decisão da #999 é que quem liga é o operador, na tela. Publicar para todos
- * não depende do acervo, e por isso segue valendo sem ele.
+ * Quem depende do acervo é `todos`, não a lista. Na fonte do WAHA, na tag que o
+ * kit fixa (2026.7.2, `prepareJidsForStatus` em `session.noweb.core.ts`), a
+ * LISTA vira JID direto e não consulta nada; SEM lista ele busca os contatos no
+ * acervo (`store.getContacts`), e com o `noweb.store` desligado essa busca
+ * responde 400. Lido na fonte, não medido num número pareado.
+ *
+ * Este módulo lê a opção por conexão (`lerGuardarHistorico`, chave
+ * `guardar_historico` do `metadata`) e, quando `todos` a encontra desligada,
+ * EXPLICA o que falta em vez de ligar por conta própria: a decisão da #999 é que
+ * quem liga é o operador, na tela. A lista segue valendo sem o acervo.
  */
 import { createHash } from "node:crypto";
 
@@ -149,7 +153,7 @@ export interface PublicacaoDeStatusFeita {
  * Lança quando não pode publicar — e cada recusa diz em português o que falta:
  * canal inexistente/arquivado, canal desativado, canal que não publica Status,
  * WhatsApp desconectado, público ausente ou inválido, acervo desligado com
- * lista de público, transporte recusando, choque de chave de idempotência.
+ * `todos`, transporte recusando, choque de chave de idempotência.
  */
 export async function publicarStatusDoWhatsapp(
   input: PublicacaoDeStatusInput,
@@ -204,12 +208,12 @@ export async function publicarStatusDoWhatsapp(
     );
   }
 
-  if (publico.tipo === "contatos" && !lerGuardarHistorico(sessao.metadata)) {
+  if (publico.tipo === "todos" && !lerGuardarHistorico(sessao.metadata)) {
     // O acervo NÃO é ligado aqui (#999). A ferramenta explica o que falta, e o
-    // operador decide: ligar na tela, ou publicar para todos (que não depende
-    // do acervo).
+    // operador decide: ligar na tela, ou informar a lista (que não depende do
+    // acervo).
     throw new Error(
-      "acervo_desligado: a lista de público do Status depende de este número guardar histórico do WhatsApp, e essa opção está desligada nesta conexão. Ligue \"Guardar histórico\" na Central de Conexões, ou publique para todos os contatos.",
+      "acervo_desligado: publicar para todos os contatos depende de este número guardar histórico do WhatsApp, e essa opção está desligada nesta conexão. Ligue \"Guardar histórico\" na Central de Conexões, ou informe a lista de contatos.",
     );
   }
 

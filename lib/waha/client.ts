@@ -1218,10 +1218,11 @@ export class WahaClient {
    *
    * O corpo não tem destinatário — Status não se endereça, se PUBLICA. O que
    * escolhe quem vê é `contacts`: uma lista de JIDs, ou vazia/ausente para o
-   * número inteiro. Numa sessão NOWEB a lista só é honrada com o acervo do
-   * histórico ligado (`noweb.store`), e sem ele o provedor responde 400 — por
-   * isso quem chama decide o público ANTES, e a ferramenta explica o que falta
-   * em vez de ligar o acervo por conta própria (decisão da #999).
+   * número inteiro. Numa sessão NOWEB a lista não consulta nada; é o número
+   * inteiro que busca os contatos no acervo do histórico (`noweb.store`), e sem
+   * ele o provedor responde 400. Por isso quem chama decide o público ANTES, e
+   * a ferramenta explica o que falta em vez de ligar o acervo por conta própria
+   * (decisão da #999).
    *
    * Teto de MÍDIA, como `sendMedia`: o provedor grava o arquivo antes de
    * responder, e o teto de texto cortaria uma publicação legítima.

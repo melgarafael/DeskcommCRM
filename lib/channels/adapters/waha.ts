@@ -322,19 +322,39 @@ export const wahaAdapter: ChannelAdapter = {
    * `{ tipo: "todos" }` sai SEM lista: no provedor, "sem `contacts`" é o número
    * inteiro. É por isso que o público é uma escolha declarada, e não um array
    * possivelmente vazio (ver `PublicoDoStatus`).
+   *
+   * A recusa sai daqui em português, porque o `waha_status_N` só diz algo a quem
+   * conhece o transporte. Com `todos`, 400 e 422 são o mesmo fato: não há lista
+   * de contatos para o provedor usar, por acervo desligado (400) ou ainda vazio
+   * (422, `No participants to send status`).
    */
   async publishStatus(input: PublishStatusInput): Promise<{ externalId: string | null }> {
     const client = getWahaClient();
     if (!client) throw new Error("waha_not_configured");
-    const res = await client.sendStatusImage(input.sessionRef, {
-      mimetype: input.imagem.mime,
-      data: input.imagem.base64,
-      ...(input.legenda ? { caption: input.legenda } : {}),
-      ...(input.publico.tipo === "contatos"
-        ? { contacts: input.publico.numeros.map((numero) => `${numero}@c.us`) }
-        : {}),
-    });
-    return { externalId: parseWahaMessageId(res) };
+    try {
+      const res = await client.sendStatusImage(input.sessionRef, {
+        mimetype: input.imagem.mime,
+        data: input.imagem.base64,
+        ...(input.legenda ? { caption: input.legenda } : {}),
+        ...(input.publico.tipo === "contatos"
+          ? { contacts: input.publico.numeros.map((numero) => `${numero}@c.us`) }
+          : {}),
+      });
+      return { externalId: parseWahaMessageId(res) };
+    } catch (erro) {
+      const http = statusHttpDoErroWaha(erro instanceof Error ? erro.message : "");
+      if (input.publico.tipo === "todos" && (http === 400 || http === 422)) {
+        throw new Error(
+          "publico_indisponivel: o WhatsApp não tem a lista de contatos deste número. Confira se \"Guardar histórico\" está ligado na Central de Conexões. Se o número foi pareado antes disso, a lista pode ainda não existir: informe os contatos um a um.",
+        );
+      }
+      if (http !== null && http >= 400 && http < 500) {
+        throw new Error(
+          `publicacao_recusada: o WhatsApp recusou esta publicação (HTTP ${http}). Confira a imagem e a conexão do número.`,
+        );
+      }
+      throw erro;
+    }
   },
 
   async send(envelope: OutboundEnvelope): Promise<{ externalId: string | null }> {

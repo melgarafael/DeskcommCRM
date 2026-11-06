@@ -64,7 +64,7 @@ describe("WahaClient.sendStatusImage", () => {
   });
 
   it("recusa do provedor vira erro com o status no nome (o chamador vê o HTTP)", async () => {
-    provedorQueResponde(400, { message: "store not enabled" });
+    provedorQueResponde(400, { message: "recusado" });
     const cliente = new WahaClient("http://waha.local", "chave");
 
     await expect(

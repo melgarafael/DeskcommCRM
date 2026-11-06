@@ -38,11 +38,11 @@ const inputShape = {
     .array(z.string().min(8).max(20))
     .max(500)
     .optional()
-    .describe("Telefones que verão o Status (com DDI; a máscara é ignorada). A conexão precisa guardar histórico."),
+    .describe("Telefones que verão o Status (com DDI; a máscara é ignorada)."),
   all_contacts: z
     .boolean()
     .optional()
-    .describe("true = todos os contatos do número. Só use com autorização explícita do dono."),
+    .describe("true = todos os contatos do número. A conexão precisa guardar histórico. Só use com autorização explícita do dono."),
   idempotency_key: z.string().min(1).max(200).optional().describe("Deduplicação (24h): a mesma chave devolve a publicação anterior."),
 };
 

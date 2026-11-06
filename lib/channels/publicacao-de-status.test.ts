@@ -11,7 +11,7 @@
  *   - quem não publica Status responde pela CAPABILITY, sem que a feature
  *     precise saber qual canal é;
  *   - canal desativado e canal fora do ar recusam ANTES do envio;
- *   - a lista de público depende do acervo do histórico, e a falta dele é
+ *   - publicar para TODOS depende do acervo do histórico, e a falta dele é
  *     EXPLICADA — nunca consertada ligando o acervo por conta própria (#999);
  *   - a chave de idempotência é reservada antes do efeito: retry não publica
  *     duas vezes.
@@ -261,23 +261,51 @@ describe("publicação de Status — o caminho passa pelo adapter do canal", () 
     expect(sendStatusImage).not.toHaveBeenCalled();
   });
 
-  it("lista de público sem acervo do histórico EXPLICA o que falta e não liga nada", async () => {
+  it("publicar para TODOS sem acervo do histórico EXPLICA o que falta e não liga nada", async () => {
     const { db, contagem } = bancoFalso({ sessao: { ...SESSAO, metadata: {} } });
 
-    await expect(publicarStatusDoWhatsapp({ db, ...entrada() })).rejects.toThrow(/acervo_desligado/);
+    await expect(
+      publicarStatusDoWhatsapp({ db, ...entrada({ contatos: undefined, todos: true }) }),
+    ).rejects.toThrow(/acervo_desligado/);
     expect(sendStatusImage).not.toHaveBeenCalled();
     // A decisão da #999: quem liga o acervo é o operador, na tela. A publicação
     // não pode "resolver" a falta escrevendo no canal.
     expect(contagem.escritasEmCanais).toBe(0);
   });
 
-  it("sem acervo, publicar para TODOS continua valendo (o acervo só governa a lista)", async () => {
+  it("sem acervo, a LISTA continua valendo (o acervo só governa `todos`)", async () => {
     const { db } = bancoFalso({ sessao: { ...SESSAO, metadata: {} } });
 
-    const feita = await publicarStatusDoWhatsapp({ db, ...entrada({ contatos: undefined, todos: true }) });
+    const feita = await publicarStatusDoWhatsapp({ db, ...entrada() });
 
     expect(feita.publicado).toBe(true);
     expect(sendStatusImage).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["waha_status_400", "waha_status_422"])(
+    "`todos` recusado pelo canal (%s) vira frase de quem opera, sem nome de provedor",
+    async (recusa) => {
+      sendStatusImage.mockRejectedValue(new Error(recusa));
+      const { db } = bancoFalso({ sessao: SESSAO });
+
+      const erro = await publicarStatusDoWhatsapp({
+        db,
+        ...entrada({ contatos: undefined, todos: true }),
+      }).catch((e: Error) => e);
+
+      expect(String(erro)).toMatch(/publico_indisponivel: .*Guardar histórico/);
+      expect(String(erro)).not.toMatch(/waha/i);
+    },
+  );
+
+  it("recusa do canal com lista também sai em português", async () => {
+    sendStatusImage.mockRejectedValue(new Error("waha_status_400"));
+    const { db } = bancoFalso({ sessao: SESSAO });
+
+    const erro = await publicarStatusDoWhatsapp({ db, ...entrada() }).catch((e: Error) => e);
+
+    expect(String(erro)).toMatch(/publicacao_recusada: .*HTTP 400/);
+    expect(String(erro)).not.toMatch(/waha/i);
   });
 
   it("o público é escolha declarada: nem omitido, nem os dois", async () => {
