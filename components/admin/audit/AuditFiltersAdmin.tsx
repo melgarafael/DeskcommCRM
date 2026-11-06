@@ -16,7 +16,7 @@ import type { AdminAuditFilters } from "@/hooks/useAdminAuditLog";
 // acontece". `lib/audit/actions.ts` não importa nada, de propósito: é o que
 // mantém este import de cliente barato. Ver o cabeçalho de lá.
 import { AUDIT_ACTIONS } from "@/lib/audit/actions";
-import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
+import { filtrarOpcoes } from "@/lib/audit/filtrar-opcoes";
 import { useT } from "@/hooks/i18n/useT";
 
 // ---------------------------------------------------------------------------
@@ -56,12 +56,10 @@ function MultiSelectPopover({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
-  const filtered = options.filter((o) =>
-    // #4168: os DOIS lados pela régua de `lib/inbox/termo-de-busca.ts`. Os
-    // rótulos de ação são códigos ASCII (`lgpd.exportacao`); o texto acentuado
-    // vem das empresas ("Exclusão Fiscal"), e digitar `exclusao` não as achava.
-    termoSemAcento(o.label).includes(termoSemAcento(search)),
-  );
+  // #4168: o casamento do termo é de `lib/audit/filtrar-opcoes.ts`, fora do
+  // componente — os DOIS lados pela régua do Inbox, nada de `normalize` solto
+  // na tela.
+  const filtered = filtrarOpcoes(options, search);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

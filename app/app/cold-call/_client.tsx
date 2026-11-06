@@ -23,7 +23,7 @@ import { useTeamMembers } from "@/hooks/team/useTeamMembers";
 import { useVoiceSessionStatus } from "@/hooks/voice/useVoiceSessionStatus";
 import { apiClient } from "@/lib/api/client";
 import { copyToClipboard } from "@/lib/clipboard";
-import { termoSemAcento } from "@/lib/inbox/termo-de-busca";
+import { filtrarLigacoes } from "@/lib/cold-call/filtrar-ligacoes";
 import { ROLE_RANK } from "@/lib/auth/types";
 import {
   aceitaResultadoDaLigacao,
@@ -340,15 +340,9 @@ function Fila({
 
   const visiveis = useMemo(() => {
     const base = etapa === "fila" ? fila : etapa === "todos" ? leads : leads.filter((l) => l.etapa === etapa);
-    // #4167: a régua do Inbox nos DOIS lados. `toLowerCase()` não ignora acento,
-    // então `sao joao` não achava "Padaria São João". O telefone continua sendo
-    // comparado como veio: é dígito, e a régua não mexe nele.
-    const termo = termoSemAcento(busca.trim());
-    return base.filter(
-      (l) =>
-        (!termo || termoSemAcento(l.titulo).includes(termo) || (l.telefone ?? "").includes(termo)) &&
-        (!titular || l.responsavel_id === titular),
-    );
+    // #4167: o casamento do termo é de `lib/cold-call/filtrar-ligacoes.ts`, fora
+    // do componente. O recorte por etapa e por titular continua sendo da tela.
+    return filtrarLigacoes(base, busca).filter((l) => !titular || l.responsavel_id === titular);
   }, [busca, etapa, fila, leads, titular]);
 
   const paginas = Math.max(1, Math.ceil(visiveis.length / POR_PAGINA));
