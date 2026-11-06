@@ -18,7 +18,9 @@ const conversa = {
 describe("redigirContatoParaModulo", () => {
   it("módulo sem contatos: o objeto do contato vira só o id; o resto da conversa fica", () => {
     const r = redigirContatoParaModulo(SEM, [conversa]);
-    expect(r[0]!.contacts).toEqual({ id: "k1" });
+    // `redacted: true` diz ao módulo que o dado foi retirado (e não que é falso): sem is_blocked, ninguém pode
+    // concluir "não há bloqueados".
+    expect(r[0]!.contacts).toEqual({ id: "k1", redacted: true });
     expect(r[0]!.contact_id).toBe("k1");
     expect(r[0]!.channel).toBe("whatsapp");
     expect(r[0]!.last_message_preview).toBe("oi");
@@ -43,14 +45,14 @@ describe("redigirContatoParaModulo", () => {
   it("lado seguro: módulo cujo `contatoVisivel` não veio é tratado como sem contatos", () => {
     expect(moduloSemContato({ actor: { type: "module" } })).toBe(true);
     const r = redigirContatoParaModulo({ actor: { type: "module" } }, conversa);
-    expect(r.contacts).toEqual({ id: "k1" });
+    expect(r.contacts).toEqual({ id: "k1", redacted: true });
   });
 
   it("lista de contatos aninhada, contato nulo e campos soltos", () => {
     const r = redigirContatoParaModulo(SEM, {
       linhas: [{ contact: { id: "a", name: "X", phone_number: "1" }, contact_name: "X", contact_phone: "1", contacts: null }],
     });
-    expect(r.linhas[0]).toEqual({ contact: { id: "a" }, contact_name: null, contact_phone: null, contacts: null });
+    expect(r.linhas[0]).toEqual({ contact: { id: "a", redacted: true }, contact_name: null, contact_phone: null, contacts: null });
   });
 
   it("objeto de contato sem id vira null (nada vaza)", () => {
