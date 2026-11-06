@@ -158,6 +158,9 @@ function montar(versaoDaTela: AgentVersionRow) {
         base={versaoDaTela}
         credentials={[]}
         channelSessions={[]}
+        // A chave vem do `.env` da instalação: sem esta prop a validação da tela
+        // desabilita "Salvar rascunho" e o teste não exercitaria o caminho real.
+        provedoresDaInstalacao={["anthropic"]}
       />
     </QueryClientProvider>,
   );
@@ -233,7 +236,9 @@ describe("o seletor da agenda no follow-up do agente (#3813)", () => {
   it("com o follow-up desligado o seletor fica desabilitado", () => {
     montar(versao({ enabled: false }));
     for (const opcao of screen.getAllByRole("radio")) {
-      expect((opcao as HTMLInputElement).disabled).toBe(true);
+      // `fieldset disabled` desabilita de VERDADE (`:disabled`), sem escrever
+      // o atributo no input: por isso `toBeDisabled()`, que consulta a regra.
+      expect(opcao).toBeDisabled();
     }
     expect(
       screen.getByText(
