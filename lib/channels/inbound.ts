@@ -30,6 +30,7 @@ import {
 } from "./graph-parceiro/webhook";
 import { sincronizarSaudeDaConexao } from "./health";
 import { lerEnvelopeMeta } from "./meta/envelope";
+import { avisarStatusDoModelo, desfechoDoAviso } from "./meta/aviso-do-modelo";
 import { ingestMetaAppContactSync, ingestMetaEcho, ingestMetaInbound } from "./meta/ingest";
 import { parseMetaWebhook } from "./meta/webhook";
 import { samePhone } from "./phone-variants";
@@ -447,7 +448,20 @@ async function datafyInbound(
         .eq("channel_session_id", input.session.id)
         .eq("name", e.templateName)
         .eq("language", e.templateLanguage);
-      desfechos.push(error ? "modelo_nao_atualizado" : "modelo");
+      // O aviso vem DEPOIS do espelho: o empurrão para olhar não pode chegar
+      // antes de a tela que ele manda abrir já estar certa. Mesmo caminho do
+      // canal oficial direto (`meta/aviso-do-modelo`), e nunca uma segunda
+      // tabela de avisos — a Central é uma só.
+      const desfecho = error
+        ? "modelo_nao_atualizado"
+        : desfechoDoAviso(
+            await avisarStatusDoModelo(
+              admin,
+              { organizationId: orgId, channelSessionId: input.session.id },
+              e,
+            ),
+          );
+      desfechos.push(desfecho);
       continue;
     }
     desfechos.push("ignorado");
