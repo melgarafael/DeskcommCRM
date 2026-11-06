@@ -55,6 +55,12 @@ import {
   FollowupWindowEditor,
   type FollowupWindowValue,
 } from "./FollowupWindowEditor";
+import { EscolhaQuandoHaCompromisso } from "@/components/agenda/EscolhaQuandoHaCompromisso";
+import {
+  ESCOLHA_PADRAO,
+  lerEscolhaNoEnvio,
+  type EscolhaNoEnvio,
+} from "@/lib/agenda/escolha-no-envio";
 import { PainelDoOperador } from "./PainelDoOperador";
 import { PainelDeSeguranca } from "./PainelDeSeguranca";
 import { BasesDoAgente, type MaterialDoAcervo } from "./BasesDoAgente";
@@ -223,6 +229,15 @@ interface FollowupValue {
   callback_enabled: boolean;
   /** Ausente em versões antigas; null = sem janela própria. */
   send_window?: FollowupWindowValue | null;
+  /**
+   * #3813 — "Quando o contato tiver horário marcado", por FLUXO de follow-up.
+   *
+   * Obrigatório AQUI (na tela) e opcional no banco: `buildState` lê o jsonb com
+   * `lerEscolhaNoEnvio`, que devolve `adiar` para versão antiga, `null` ou
+   * string torta. A leitura tolerante é a mesma que o disparo usa — a tela não
+   * inventa um segundo vocabulário.
+   */
+  quando_ha_compromisso: EscolhaNoEnvio;
 }
 
 const DEFAULT_FOLLOWUP: FollowupValue = {
@@ -230,6 +245,7 @@ const DEFAULT_FOLLOWUP: FollowupValue = {
   flow_pointer_ids: [],
   send_window: null,
   callback_enabled: true,
+  quando_ha_compromisso: ESCOLHA_PADRAO,
 };
 
 const DEFAULT_TRIGGER: TriggerValue = {
@@ -324,6 +340,10 @@ export function buildState(args: {
           ...DEFAULT_FOLLOWUP,
           ...version.followup,
           callback_enabled: callbacksHabilitados(version.followup),
+          // O spread acima traz o valor cru; a leitura tolerante é quem decide
+          // (versão antiga sem a chave, `null` ou string torta = `adiar`), do
+          // mesmo jeito que o disparo lê a configuração publicada.
+          quando_ha_compromisso: lerEscolhaNoEnvio(version.followup),
         }
       : DEFAULT_FOLLOWUP,
     voz_enabled: version?.voz_enabled ?? false,
@@ -1537,6 +1557,22 @@ export function AgentForm(props: Props) {
               onChange={(send_window) =>
                 patch({ followup: { ...form.followup, send_window } })
               }
+              disabled={disabled || !form.followup.enabled}
+            />
+            {/*
+              #3813 — a escolha do FLUXO, ao lado da janela: as duas são regras
+              de envio proativo e o disparo lê as duas da configuração
+              publicada. O valor é gravado SEMPRE (inclusive `adiar`), e não
+              omitido como no config de uma regra: o PATCH da versão substitui
+              o `followup` inteiro, e omitir a chave ao voltar para o padrão
+              deixaria o valor antigo vivo no banco.
+            */}
+            <EscolhaQuandoHaCompromisso
+              escolha={form.followup.quando_ha_compromisso}
+              onChange={(quando_ha_compromisso) =>
+                patch({ followup: { ...form.followup, quando_ha_compromisso } })
+              }
+              ajudaExtra="Vale para todos os fluxos de follow-up deste agente."
               disabled={disabled || !form.followup.enabled}
             />
             <FollowupFlowPicker

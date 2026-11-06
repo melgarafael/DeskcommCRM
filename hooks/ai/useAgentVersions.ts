@@ -42,6 +42,12 @@ export interface AgentVersionRow {
     flow_pointer_ids: string[];
     callback_enabled?: boolean;
     send_window?: { start: string; end: string; weekdays: number[] } | null;
+    /**
+     * #3813 — a escolha do FLUXO para quem tem horário marcado. Opcional no
+     * fio de propósito: versão publicada antes desta entrega não tem a chave, e
+     * a leitura tolerante (`lerEscolhaNoEnvio`) devolve `adiar`.
+     */
+    quando_ha_compromisso?: "adiar" | "enviar" | "nao_enviar";
   };
   voz_enabled: boolean;
   voz_quando: "nunca" | "espelhar" | "sempre";

@@ -19386,6 +19386,41 @@ export const DICIONARIO: Traducoes = {
   "Setor inexistente nesta organização.": {
     es: "El sector no existe en esta organización.",
   },
+  // #3813 — "Quando o contato tiver horário marcado" no FOLLOW-UP do agente.
+  // O texto é o MESMO do passo da automação (`components/agenda/
+  // EscolhaQuandoHaCompromisso`): duas perguntas iguais com respostas
+  // diferentes fariam o operador duvidar de qual vale para quê.
+  "Quando o contato tiver horário marcado": {
+    es: "Cuando el contacto tenga una cita agendada",
+  },
+  "Em qualquer das três continuam valendo o descadastro do contato, a janela de envio do número e o limite diário.":
+    {
+      es: "En cualquiera de las tres siguen valiendo la baja del contacto, la ventana de envío del número y el límite diario.",
+    },
+  "Vale para todos os fluxos de follow-up deste agente.": {
+    es: "Vale para todos los flujos de follow-up de este agente.",
+  },
+  "Adiar e enviar depois do horário": {
+    es: "Posponer y enviar después de la cita",
+  },
+  "A mensagem espera o atendimento terminar e sai logo depois. É o comportamento de sempre e o que continua valendo em quem nunca mexeu aqui.":
+    {
+      es: "El mensaje espera a que termine la cita y sale justo después. Es el comportamiento de siempre y el que sigue valiendo para quien nunca tocó esta opción.",
+    },
+  "Enviar mesmo assim": { es: "Enviar de todos modos" },
+  "A mensagem sai na hora, mesmo com atendimento marcado. Serve para o pós-atendimento e o aniversário, que perdem o sentido se esperarem.":
+    {
+      es: "El mensaje sale en el momento, aunque haya una cita agendada. Sirve para el posventa y el cumpleaños, que pierden el sentido si esperan.",
+    },
+  "Não enviar": { es: "No enviar" },
+  "A mensagem não sai e o pulo fica registrado na Atividade com o motivo “contato com horário marcado”, para a equipe saber que a automação passou.":
+    {
+      es: "El mensaje no sale y el salto queda registrado en la Actividad con el motivo “contacto con cita agendada”, para que el equipo sepa que la automatización pasó.",
+    },
+  "Ligue o follow-up para escolher o que fazer com quem tem horário marcado.":
+    {
+      es: "Activa el follow-up para elegir qué hacer con quien tiene una cita agendada.",
+    },
 };
 
 /**
