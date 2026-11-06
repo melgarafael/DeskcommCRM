@@ -45,10 +45,17 @@ export interface AttendantAvailability {
 export const ATTENDANTS_KEY = ["team", "attendants"] as const;
 const ROUTING_KEY = ["settings", "routing"] as const;
 
-/** Disponibilidade + carga da equipe (org-wide, agent+). */
-export function useAttendants() {
+/**
+ * Disponibilidade + carga da equipe (org-wide, agent+).
+ *
+ * `ligado` é o mesmo contrato de `useSectors(ligado)`: quem entra numa tela que
+ * depende do módulo opcional de setores (doc 213) não pergunta pelo roster
+ * quando o módulo está desligado. Omitir = pergunta, como sempre fez.
+ */
+export function useAttendants(ligado = true) {
   return useQuery({
     queryKey: ATTENDANTS_KEY,
+    enabled: ligado,
     queryFn: async () =>
       apiClient.get<{ data: AttendantAvailability[] }>("/api/v1/attendants/availability"),
     staleTime: 15_000,

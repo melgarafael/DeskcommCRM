@@ -61,6 +61,7 @@ import { logger } from "@/lib/logger";
 
 import type { DestinoDoAviso } from "./destino-do-aviso";
 import { resolveDestinoDoEnvio, type MundoDoAviso } from "./membros-do-aviso";
+import type { AvaliacaoDoModelo, ModeloDoAviso } from "./modelo-do-aviso";
 import { montarAvisoDeCaso } from "./texto-do-aviso";
 import { linkDoCaso, urlPublicaUsavel } from "./url-publica";
 import {
@@ -141,6 +142,11 @@ export interface ConfigDoAviso {
    * comportamento que a instalação já tinha.
    */
   destino_modo?: string | null;
+  /**
+   * O modelo aprovado que leva o aviso quando a conexão só manda modelo
+   * (migration 9094). Ausente/`null` = texto livre, e a conexão precisa aceitar.
+   */
+  modelo_id?: string | null;
 }
 
 export interface CasoDoAviso {
@@ -240,6 +246,17 @@ export interface AvisoDb {
   registraJidDoAviso(orgId: string, jid: string): Promise<void>;
   nomeDoContato(orgId: string, contactId: string): Promise<string | null>;
   marcaDaOrganizacao(orgId: string): Promise<{ nome: string; idioma: Idioma }>;
+  /**
+   * O modelo `modeloId` ainda serve para avisar por esta conexão AGORA
+   * (`lib/escalacao/modelo-do-aviso.ts`)? `motivo: "indeterminado"` é a leitura
+   * que falhou — não o modelo que não serve. Opcional: quem não o implementa é
+   * tratado como "sem modelo", o comportamento de antes da 9094.
+   */
+  carregaModeloDoAviso?(
+    orgId: string,
+    channelSessionId: string,
+    modeloId: string,
+  ): Promise<AvaliacaoDoModelo>;
 }
 
 /**
@@ -264,12 +281,23 @@ export interface TransporteDoAviso {
     canal: CanalDoAviso,
     telefone: string,
   ): Promise<string | null>;
+  /**
+   * Sem `opcoes.modelo`, o aviso sai como texto livre — o de sempre. Com ele, o
+   * texto vai DENTRO do modelo aprovado, na variável única (migration 9094):
+   * é o único jeito de a conexão que só manda modelo avisar alguém.
+   */
   envia(
     organizationId: string,
     canal: CanalDoAviso,
     to: string,
     body: string,
+    opcoes?: OpcoesDoEnvioDoAviso,
   ): Promise<{ externalId: string | null }>;
+}
+
+/** Como o aviso sai, quando não é texto livre. */
+export interface OpcoesDoEnvioDoAviso {
+  modelo?: ModeloDoAviso | null;
 }
 
 export type DecisaoDePacing =
@@ -496,8 +524,29 @@ export async function aplicaAvisoDeCaso(
   if (canal.desativado) {
     return await condena(deps, orgId, caso, entrega, "canal_desativado", null, agora);
   }
+  // A conexão que só manda modelo serve quando a configuração escolheu um
+  // modelo aprovado DELA, com uma variável (migration 9094). A pergunta é
+  // feita aqui, no envio, e não só ao salvar: o status do modelo muda na
+  // plataforma sem passar pela tela.
+  let modelo: ModeloDoAviso | null = null;
   if (!canal.aceitaMensagemLivre) {
-    return await condena(deps, orgId, caso, entrega, "canal_nao_aceita_aviso_livre", null, agora);
+    if (cfg.modelo_id && deps.db.carregaModeloDoAviso) {
+      const avaliacao = await deps.db.carregaModeloDoAviso(orgId, channelSessionId, cfg.modelo_id);
+      // Leitura que falhou não é modelo que não serve: condenar aqui perderia
+      // o aviso por um engasgo do banco. Volta mais tarde, como o transporte
+      // fora do ar, até o teto de tentativas.
+      if (!avaliacao.ok && avaliacao.motivo === "indeterminado") {
+        if (tentativas >= TETO_DE_TENTATIVAS_DE_ENVIO) {
+          return await condena(deps, orgId, caso, entrega, "indeterminado", null, agora);
+        }
+        await deps.db.atualizaEntrega(orgId, entrega.id, { tentativas, erro_codigo: "indeterminado" });
+        return retry(new Date(agora.getTime() + ADIAMENTO_DO_CANAL_MS), "modelo do aviso não conferido");
+      }
+      modelo = avaliacao.ok ? avaliacao.modelo : null;
+    }
+    if (!modelo) {
+      return await condena(deps, orgId, caso, entrega, "canal_nao_aceita_aviso_livre", null, agora);
+    }
   }
   if (canal.status !== "WORKING") {
     if (tentativas >= TETO_DE_TENTATIVAS_DO_CANAL) {
@@ -590,7 +639,9 @@ export async function aplicaAvisoDeCaso(
   // ── 14. O transporte ─────────────────────────────────────────────────────
   let externalId: string | null = null;
   try {
-    const resposta = await deps.transporte.envia(orgId, canal, to, body);
+    const resposta = modelo
+      ? await deps.transporte.envia(orgId, canal, to, body, { modelo })
+      : await deps.transporte.envia(orgId, canal, to, body);
     externalId = resposta.externalId;
   } catch (err) {
     const causa = err instanceof Error ? err.message : String(err);
@@ -776,7 +827,7 @@ export function createSupabaseAvisoDb(admin: SupabaseClient): AvisoDb {
       const { data, error } = await admin
         .from("config_aviso_de_caso")
         .select(
-          "organization_id, channel_session_id, telefone_destino, destino_jid, ligado, resposta_whatsapp_habilitada, destino_modo",
+          "organization_id, channel_session_id, telefone_destino, destino_jid, ligado, resposta_whatsapp_habilitada, destino_modo, modelo_id",
         )
         .eq("organization_id", orgId)
         .maybeSingle();
@@ -905,6 +956,16 @@ export function createSupabaseAvisoDb(admin: SupabaseClient): AvisoDb {
         aceitaMensagemLivre: aceita,
         desativado: canalDesativado(linha.metadata),
       };
+    },
+
+    /**
+     * A regra única de `modelo-do-aviso.ts`. O import é TARDIO pelo mesmo motivo
+     * das capacidades acima: ela puxa o espelho de modelos, e o topo deste
+     * arquivo tem de carregar sem ambiente.
+     */
+    async carregaModeloDoAviso(orgId, channelSessionId, modeloId) {
+      const { carregarModeloDoAviso } = await import("./modelo-do-aviso");
+      return carregarModeloDoAviso(admin, { organizationId: orgId, channelSessionId, modeloId });
     },
 
     /**

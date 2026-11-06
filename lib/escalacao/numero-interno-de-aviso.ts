@@ -25,6 +25,22 @@
  * `ligado` faria pausar o aviso numa sexta transformar o número do suporte em
  * lead na segunda — e ninguém ligaria uma coisa à outra.
  *
+ * ## O MEMBRO DA EQUIPE QUE TAMBÉM É CLIENTE (#3900)
+ *
+ * Em `destino_modo = 'responsavel'` o mesmo campo guarda outro tipo de número:
+ * o WhatsApp PESSOAL de quem atende. Numa agência de viagens a equipe viaja
+ * pela própria agência, então esse número é TAMBÉM um cliente — e cortar a
+ * mensagem dele faz a atendente sumir do CRM quando ela mesma escreve como
+ * cliente. Aqui a regra ganha a segunda pergunta, que é `destinoDoAvisoEhDeMembroDaEquipe`:
+ * destino que é o WhatsApp de um membro ATIVO não é interno. Em `fixo` nada
+ * muda — o número da empresa continua interno, e é o caso de todo mundo que
+ * nunca escolheu o modo novo.
+ *
+ * O que NÃO muda: o caminho de resposta ao aviso (`resposta-whatsapp-ao-caso`)
+ * continua reconhecendo o número como o destino do aviso — é por ele que
+ * `RESPONDER`/`PERGUNTAR` funcionam. A exceção é só do que a ingestão
+ * DESCARTA, e só para mensagem de ENTRADA.
+ *
  * ## Falha de leitura NÃO vira "é interno"
  *
  * Falhar fechado aqui significaria DESCARTAR mensagem de cliente toda vez que o
@@ -74,6 +90,18 @@ export interface NumeroInternoDeAviso {
   respostaWhatsappHabilitada?: boolean;
   /** `config_aviso_de_caso.channel_session_id` — a conexão que envia os avisos. */
   sessaoId?: string | null;
+  /**
+   * `config_aviso_de_caso.destino_modo` (#3900). Só `responsavel` muda a leitura
+   * do destino; ausente/`fixo` é o comportamento de sempre.
+   */
+  destinoModo?: string | null;
+  /**
+   * `user_organizations.whatsapp_e164` dos membros ATIVOS (#3900).
+   *
+   * `null` = não lido (modo `fixo`, ou a leitura falhou). AUSENTE e `null` dão
+   * no mesmo na regra: sem a lista, nenhum destino é de membro.
+   */
+  whatsappsDaEquipe?: readonly (string | null)[] | null;
 }
 
 /**
@@ -173,6 +201,69 @@ export function ehOChatDoAviso(parsed: ChatIdentidade, cfg: NumeroInternoDeAviso
   return false;
 }
 
+/**
+ * O DESTINO DO AVISO É O WHATSAPP DE UM MEMBRO DA EQUIPE? (#3900)
+ *
+ * Em `destino_modo = 'responsavel'` o número gravado em `telefone_destino` é o
+ * celular PESSOAL de quem atende — e essa pessoa pode ser cliente da própria
+ * empresa (agência em que a equipe viaja pela agência). Nesse caso o número NÃO
+ * é interno: o aviso sai, e o que chega dele continua virando contato, conversa
+ * e atendimento.
+ *
+ * `phoneLookupVariants` e não string crua, pela mesma razão de `ehOChatDoAviso`:
+ * o membro cadastrado com o nono dígito e o destino gravado sem (ou o
+ * contrário) são a mesma pessoa, e a comparação crua erraria o caso mais comum.
+ *
+ * Fora de `responsavel` a resposta é sempre `false` — o modo `fixo` é o número
+ * da empresa, e o comportamento dele não muda por causa desta entrega.
+ */
+export function destinoDoAvisoEhDeMembroDaEquipe(cfg: NumeroInternoDeAviso): boolean {
+  if (cfg.destinoModo !== "responsavel" || !cfg.destino) return false;
+  const doDestino = phoneLookupVariants(cfg.destino);
+  for (const numero of cfg.whatsappsDaEquipe ?? []) {
+    if (!numero) continue;
+    if (phoneLookupVariants(numero).some((variante) => doDestino.includes(variante))) return true;
+  }
+  return false;
+}
+
+/**
+ * Os WhatsApps dos membros ATIVOS da organização — uma linha por vínculo.
+ *
+ * Só é chamada no modo `responsavel`: em `fixo` o destino é o número da empresa
+ * e não há o que comparar, então a instalação que nunca escolheu o modo novo
+ * não paga a consulta.
+ *
+ * Nunca lança: uma leitura acessória não pode derrubar a ingestão. Na falha
+ * devolve `null`, que a regra lê como "nenhum destino é de membro" — o
+ * comportamento de hoje — e o log diz que a exceção do #3900 não pôde ser
+ * aplicada, em vez de o silêncio sugerir que ela não existe.
+ */
+async function lerWhatsappsDaEquipeDaOrg(
+  db: SupabaseClient,
+  organizationId: string,
+): Promise<readonly string[] | null> {
+  try {
+    // `revoked_at is null` porque quem saiu da equipe não recebe aviso: o número
+    // que ficou na linha não é mais destino de ninguém.
+    const r = await db
+      .from("user_organizations")
+      .select("whatsapp_e164")
+      .eq("organization_id", organizationId)
+      .is("revoked_at", null)
+      .not("whatsapp_e164", "is", null);
+    if (r.error) throw new Error(r.error.message);
+    const linhas = (r.data ?? []) as Array<{ whatsapp_e164: string | null }>;
+    return linhas.map((l) => l.whatsapp_e164).filter((n): n is string => typeof n === "string" && n !== "");
+  } catch (err) {
+    logger.warn("[aviso-interno] não foi possível ler os WhatsApps da equipe", {
+      organizationId,
+      causa: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
 /** A configuração da organização, memoizada por 30 s. Nunca lança. */
 export async function lerNumeroInternoDeAviso(
   db: SupabaseClient,
@@ -193,7 +284,7 @@ export async function lerNumeroInternoDeAviso(
   try {
     const r = await db
       .from("config_aviso_de_caso")
-      .select("telefone_destino, destino_jid, resposta_whatsapp_habilitada, channel_session_id")
+      .select("telefone_destino, destino_jid, resposta_whatsapp_habilitada, channel_session_id, destino_modo")
       .eq("organization_id", organizationId)
       .maybeSingle();
     if (r.error) throw new Error(r.error.message);
@@ -214,12 +305,18 @@ export async function lerNumeroInternoDeAviso(
     destino_jid?: string | null;
     resposta_whatsapp_habilitada?: boolean | null;
     channel_session_id?: string | null;
+    destino_modo?: string | null;
   } | null;
+  const modo = linha?.destino_modo ?? null;
   const valor: NumeroInternoDeAviso = {
     destino: linha?.telefone_destino ?? null,
     jid: linha?.destino_jid ?? null,
     respostaWhatsappHabilitada: linha?.resposta_whatsapp_habilitada === true,
     sessaoId: linha?.channel_session_id ?? null,
+    destinoModo: modo,
+    // Só o modo `responsavel` precisa saber quem são os membros: em `fixo` o
+    // destino é o número da empresa e não há exceção a aplicar (#3900).
+    whatsappsDaEquipe: modo === "responsavel" ? await lerWhatsappsDaEquipeDaOrg(db, organizationId) : null,
   };
   _cache.set(organizationId, { at: agora, valor });
   return valor;
@@ -275,7 +372,11 @@ export async function ehContatoDoNumeroInterno(
     phone: linha.phone_number ?? null,
     lid: linha.wa_lid ?? null,
   };
-  return ehOChatDoAviso(chat, cfg) || ehOChatDoAvisoDeAgendamento(chat, daAgenda);
+  // #3900: o destino em `responsavel` é o celular de um membro da equipe, e ele
+  // pode ser cliente. Nesse caso o cinto não vale — a mensagem entra e segue a
+  // cadeia de cliente, como a de qualquer outro contato.
+  const doAvisoDeCaso = !destinoDoAvisoEhDeMembroDaEquipe(cfg) && ehOChatDoAviso(chat, cfg);
+  return doAvisoDeCaso || ehOChatDoAvisoDeAgendamento(chat, daAgenda);
 }
 
 /** A pergunta que os ingestores fazem, com a leitura já resolvida. */

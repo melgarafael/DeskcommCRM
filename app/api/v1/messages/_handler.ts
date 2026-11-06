@@ -44,10 +44,13 @@ import {
 } from "@/lib/channels";
 import { ARCHIVED_AT, queryTolerantToMissingArchived } from "@/lib/channels/archived";
 import { canalDesativado } from "@/lib/channels/desativado";
+import { botoesDaDefinicao } from "@/lib/channels/botoes-da-definicao";
 import { conferirDefinicao } from "@/lib/channels/conferir-definicao";
+import { CHAVE_DOS_BOTOES_DO_MODELO } from "@/lib/messaging/botoes-do-modelo";
 import { estadoDaJanela } from "@/lib/channels/janela";
 import { isMediaPathOwnedBy } from "@/lib/messaging/media/upload-validation";
 import { assertUrlDeMidiaSegura } from "@/lib/messaging/media/url-de-midia-externa";
+import { semChavesDaDerivacao } from "@/lib/messaging/media/leitura-adiada";
 import {
   buildVcard,
   normalizePhoneForDisplay,
@@ -220,7 +223,7 @@ export function origemDaMensagem(actor: Actor): "user" | "ai" | "automation" | "
 }
 
 const MSG_COLS =
-  "id, organization_id, conversation_id, channel_session_id, contact_id, external_id, type, direction, status, ack, error_code, error_message, body, media_url, media_mime, media_size_bytes, media_storage_path, media_derived_text, media_derived_status, sent_via, sent_by_user_id, sent_on_behalf_of_user_id, sent_at, delivered_at, read_at, metadata, edited_at, revoked_at, reply_to_message_id, created_at, updated_at";
+  "id, organization_id, conversation_id, channel_session_id, contact_id, external_id, type, direction, status, ack, error_code, error_message, body, media_url, media_mime, media_size_bytes, media_storage_path, media_derived_text, media_derived_status, sent_via, sent_by_user_id, sent_on_behalf_of_user_id, sent_at, delivered_at, read_at, metadata, edited_at, revoked_at, reply_to_message_id, created_at, template_name, template_language, updated_at";
 
 /**
  * `Actor.type` → o vocabulário de `messages.sent_via` (o CHECK da coluna:
@@ -773,7 +776,7 @@ export async function sendMessageHandler(
     if (coberta) {
       let nomeDoAtendente: string | null = null;
       if (origemDoEmissor === "user" && ctx.actor.type === "user") {
-        nomeDoAtendente = (await nomesDosAtendentes([ctx.actor.id])).get(ctx.actor.id) ?? null;
+        nomeDoAtendente = (await nomesDosAtendentes(ctx.organization_id, [ctx.actor.id])).get(ctx.actor.id) ?? null;
       }
       // #3310: com `por_agente` ligado, a IA assina com o nome do AGENTE QUE
       // ENVIOU (`ai_agents.name`) — com dois agentes no mesmo número, o cliente
@@ -951,6 +954,21 @@ export async function sendMessageHandler(
     );
   }
 
+  // Os BOTÕES que o modelo leva ao cliente, gravados na própria linha: o balão
+  // mostra o que o cliente recebeu, e não faz join (`lib/messaging/botoes-do-modelo.ts`).
+  // Lidos do espelho da definição — nunca do `metadata` de entrada, que é do
+  // cliente da API — e sem barrar nada: é dado de exibição.
+  const { [CHAVE_DOS_BOTOES_DO_MODELO]: _botoesDoCliente, ...metadataDeEntrada } = input.metadata ?? {};
+  const botoesDoModeloEnviado =
+    input.type === "template"
+      ? await botoesDaDefinicao(supabase, {
+          organizationId: ctx.organization_id,
+          channelSessionId: c.channel_session_id ?? null,
+          name: input.template_name ?? "",
+          language: input.template_language ?? "",
+        })
+      : [];
+
   const insertRow = {
     ...(ctx.internalMessageId ? { id: ctx.internalMessageId } : {}),
     organization_id: c.organization_id,
@@ -982,9 +1000,13 @@ export async function sendMessageHandler(
     sent_on_behalf_of_user_id: ctx.onBehalfOf?.userId ?? null,
     sent_at: now,
     metadata: {
-      ...(input.metadata ?? {}),
+      // As chaves da derivação de mídia (âncora do dreno, marca de foto adiada)
+      // são do servidor: o dreno converte a âncora em data e o cron pede visão
+      // paga pela marca. O cliente não as forja — ver `CHAVES_DA_DERIVACAO`.
+      ...semChavesDaDerivacao(metadataDeEntrada),
       ...(ctx.actor.type === "ai_agent" ? { ai_actor_id: ctx.actor.id } : {}),
       ...(origemDoEmissor === "ai" ? { ai_actor_name: nomeDoAgente } : {}),
+      ...(botoesDoModeloEnviado.length > 0 ? { [CHAVE_DOS_BOTOES_DO_MODELO]: botoesDoModeloEnviado } : {}),
       // Os dois nomes viajam GRAVADOS porque o balão não faz join: "Fulano ·
       // via {token}" é desenhado da própria linha. Vêm DEPOIS de
       // `input.metadata` de propósito — metadata é entrada do cliente, e
