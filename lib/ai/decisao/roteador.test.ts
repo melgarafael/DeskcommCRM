@@ -9,10 +9,12 @@ import type pg from "pg";
 import { describe, expect, it, vi } from "vitest";
 
 import type { RouterMember } from "@/lib/agent-engine/agent/router-config";
+import { lerPublicoDoGatilho } from "@/lib/agent-engine/agent/publico-do-gatilho";
 import { registrarFalha } from "@/lib/ai/decisao/disjuntor";
 import {
   consultarJevNoRoteador,
   MEMBROS_NO_MAXIMO,
+  membrosElegiveisPeloPublico,
   perguntaDoRoteador,
   registrarRoteadorDoJev,
   type EscolhaDoJev,
@@ -422,5 +424,88 @@ describe("o histórico do Jev espera a TypeSafe (DEC-012, escolha 2)", () => {
     await jev.escolha;
     const corpo = JSON.parse(String(fetchImpl.mock.calls[0]![1].body));
     expect(corpo.state).toBe("a primeira");
+  });
+});
+
+/**
+ * O PÚBLICO TIRA O MEMBRO DA PERGUNTA (#3722, fatia 2).
+ *
+ * A régua é a da fatia 1 (`avaliarPublico`) e NÃO é reimplementada aqui: o que
+ * este bloco prova é a COMPOSIÇÃO — a lista que `perguntaDoRoteador` recebe é a
+ * que sobrou do público. É por isso que a intenção de quem não atende o contato
+ * não é oferecida ao Jev (que monta a escolha a partir desta função) nem ao
+ * classificador de sempre (`buildClassifierPrompt`, mesma lista, no turno).
+ */
+describe("membrosElegiveisPeloPublico — quem não atende este contato sai da pergunta (#3722)", () => {
+  const publicoDe = (filters: unknown) => lerPublicoDoGatilho({ filters });
+  const contato = (tags: string[], funis: string[] = []) => ({ etiquetas: tags, funisAbertos: funis });
+  const membro = (
+    agentId: string,
+    intentName: string,
+    publico: ReturnType<typeof lerPublicoDoGatilho>,
+  ): RouterMember => ({
+    agentId,
+    intentName,
+    intentDescription: `assunto de ${intentName}`,
+    examples: [],
+    publicoDoGatilho: publico,
+  });
+
+  it("exclude_tags barra o membro e a pergunta do classificador NÃO o oferece", () => {
+    const lista = [
+      membro("agente-vendas", "vendas", publicoDe({ exclude_tags: ["cliente ativo"] })),
+      membro("agente-suporte", "suporte", publicoDe({})),
+    ];
+
+    const { elegiveis, barrados, julgados } = membrosElegiveisPeloPublico(lista, contato(["cliente ativo"]));
+
+    expect(julgados).toBe(1);
+    expect(barrados.map((b) => [b.membro.intentName, b.regra, b.valor])).toEqual([
+      ["vendas", "barrado_por_etiqueta_excluida", "cliente ativo"],
+    ]);
+    expect(elegiveis.map((m) => m.intentName)).toEqual(["suporte"]);
+
+    const pergunta = perguntaDoRoteador(elegiveis);
+    expect(pergunta?.tipo === "choice" && Object.keys(pergunta.criterios)).toEqual(["suporte", "none"]);
+    // A lista enviada não pode conter o membro barrado em lugar nenhum.
+    expect(JSON.stringify(pergunta)).not.toContain("vendas");
+  });
+
+  it("include_pipeline_ids exige negócio ABERTO: contato sem lead NÃO passa", () => {
+    const lista = [membro("agente-pos-venda", "pos_venda", publicoDe({ include_pipeline_ids: ["funil-x"] }))];
+
+    const { elegiveis, barrados } = membrosElegiveisPeloPublico(lista, contato([]));
+
+    expect(elegiveis).toEqual([]);
+    expect(barrados.map((b) => b.regra)).toEqual(["barrado_por_funil_exigido"]);
+  });
+
+  it("exclude_pipeline_ids NÃO atinge quem ainda não tem lead aberto — a porta de quem chega continua aberta", () => {
+    const lista = [membro("agente-vendas", "vendas", publicoDe({ exclude_pipeline_ids: ["funil-x"] }))];
+
+    const { elegiveis, barrados } = membrosElegiveisPeloPublico(lista, contato([]));
+
+    expect(barrados).toEqual([]);
+    expect(elegiveis.map((m) => m.intentName)).toEqual(["vendas"]);
+  });
+
+  it("lead aberto no funil da exclusão barra; no funil da inclusão libera", () => {
+    const excluido = [membro("a", "vendas", publicoDe({ exclude_pipeline_ids: ["funil-x"] }))];
+    const exigido = [membro("b", "pos_venda", publicoDe({ include_pipeline_ids: ["funil-x"] }))];
+
+    expect(membrosElegiveisPeloPublico(excluido, contato([], ["funil-x"])).barrados[0]?.regra).toBe(
+      "barrado_por_funil_excluido",
+    );
+    expect(membrosElegiveisPeloPublico(exigido, contato([], ["funil-x"])).elegiveis).toHaveLength(1);
+  });
+
+  it("ninguém declarou público: a lista volta INTEIRA e ninguém é julgado (nada de leitura extra)", () => {
+    const semPublico = MEMBROS.map((m) => ({ ...m, publicoDoGatilho: publicoDe({}) }));
+
+    const out = membrosElegiveisPeloPublico(semPublico, contato([]));
+
+    expect(out.julgados).toBe(0);
+    expect(out.barrados).toEqual([]);
+    expect(out.elegiveis).toEqual(semPublico);
   });
 });

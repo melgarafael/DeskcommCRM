@@ -13,11 +13,21 @@
 import type pg from 'pg';
 import { CLASSIFIER_CONTEXT_MESSAGES, MAX_CLASSIFIER_CONTEXT_MESSAGES } from '@/lib/ai/classifier-context';
 
+import { lerPublicoDoGatilho, type PublicoDoAgente } from './publico-do-gatilho';
+
 export interface RouterMember {
   agentId: string;
   intentName: string;
   intentDescription: string;
   examples: string[];
+  /**
+   * O PÚBLICO declarado pela versão publicada deste agente (#3722, fatia 2).
+   *
+   * Vem na MESMA consulta dos membros (join na versão publicada): o roteador
+   * precisa saber quem pode ser OFERECIDO ao classificador sem uma segunda ida
+   * ao banco por turno. `null`/ausente = o membro atende qualquer contato.
+   */
+  publicoDoGatilho?: PublicoDoAgente | null;
   /**
    * Fluxo de atendimento que COMEÇA quando esta intenção casa (migration 0394; 0237 na branch do autor).
    * `null`/ausente = só roteia agente, como antes.
@@ -79,6 +89,8 @@ interface MemberRow {
   flow_pointer_id: string | null;
   pipeline_id: string | null;
   stage_id: string | null;
+  /** Da versão PUBLICADA do agente membro — o público (#3722, fatia 2). */
+  trigger_config: unknown;
 }
 
 export async function loadActiveRouter(
@@ -98,11 +110,23 @@ export async function loadActiveRouter(
   if (router === undefined) return null;
 
   const { rows: memberRows } = await db.query<MemberRow>(
-    `select agent_id, intent_name, intent_description, examples, flow_pointer_id, pipeline_id, stage_id
-     from ai_router_members
-     where router_id = $1
-       and organization_id = $2
-     order by position asc, intent_name asc`,
+    // O join na versão PUBLICADA é o que traz o público de cada membro (#3722,
+    // fatia 2) sem uma consulta a mais: é o mesmo dado que a seleção do número
+    // lê, e é dele que sai `include_tags`/`exclude_pipeline_ids`. LEFT JOIN de
+    // propósito — membro cujo agente ficou sem versão publicada continua na
+    // lista (o turno já trata isso caindo no fallback) e apenas não tem
+    // público declarado.
+    `select m.agent_id, m.intent_name, m.intent_description, m.examples,
+            m.flow_pointer_id, m.pipeline_id, m.stage_id,
+            v.trigger_config
+     from ai_router_members m
+     left join ai_agents a
+            on a.id = m.agent_id and a.organization_id = m.organization_id
+     left join ai_agent_versions v
+            on v.id = a.published_version_id and v.status = 'published'
+     where m.router_id = $1
+       and m.organization_id = $2
+     order by m.position asc, m.intent_name asc`,
     [router.id, organizationId],
   );
 
@@ -150,6 +174,9 @@ export async function loadActiveRouter(
       flowPointerId: m.flow_pointer_id,
       destinationPipelineId: m.pipeline_id,
       destinationStageId: m.stage_id,
+      // Lista torta ⇒ `null` ⇒ o membro atende todo mundo: a falha ABERTA de
+      // configuração é a do módulo, não uma segunda leitura aqui.
+      publicoDoGatilho: lerPublicoDoGatilho(m.trigger_config),
     })),
   };
 }

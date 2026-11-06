@@ -23,6 +23,9 @@ import {
   carregarFatosDoContato,
   lerPublicoDoGatilho,
   type DecisaoDoPublico,
+  type FatosDoContato,
+  type PublicoDoAgente,
+  type RegraDoPublico,
 } from './publico-do-gatilho';
 
 export interface PublishedAgentConfig {
@@ -129,6 +132,17 @@ export interface PublishedAgentConfig {
    * Opcional porque nasce depois das fixtures que montam esta interface à mão.
    */
   avisoForaDoHorario?: string | null;
+  /**
+   * O PÚBLICO desta versão (#3722, fatia 2), lido do mesmo `trigger_config` que
+   * o turno já traz na linha — sem consulta a mais.
+   *
+   * O caminho do NÚMERO não usa este campo (lá quem decide é
+   * `escolherAgenteDoNumero`, sobre a linha crua). Ele existe para o turno
+   * julgar o FALLBACK do roteador: se o agente padrão declarou
+   * `exclude_tags: [cliente ativo]`, ele não pode assumir o contato que o
+   * público dele barra. `null`/ausente = atende todo mundo.
+   */
+  publicoDoGatilho?: PublicoDoAgente | null;
   /**
    * `ai_agents.config.mcp_externo_no_atendimento` (#2147): o servidor MCP
    * externo também carrega em turno com contato, com a identidade dele em
@@ -299,6 +313,9 @@ function mapAgentConfigRow(r: Row): PublishedAgentConfig {
     // `null` (sem janela ⇒ atende sempre), nunca uma mordaça acidental.
     janelaDeAtendimento: lerJanelaDeAtendimento(r.trigger_config),
     avisoForaDoHorario: lerTextoDoAvisoForaDoHorario(r.trigger_config),
+    // Mesma leitura do campo acima, do mesmo jsonb: quem consome é o turno,
+    // para julgar o fallback do roteador (#3722, fatia 2).
+    publicoDoGatilho: lerPublicoDoGatilho(r.trigger_config),
     // `=== true`: jsonb ausente ou com outro tipo é DESLIGADO, o lado seguro.
     mcpExternoNoAtendimento: cfg.mcp_externo_no_atendimento === true,
     // Mesma leitura defensiva da linha acima: regex torta/valor vazio ⇒ `null`
@@ -380,6 +397,46 @@ export interface RastroDoPublico {
   candidatos: CandidatoNoRastroDoPublico[];
   /** Quem ganhou. `null` = o público barrou todo mundo (silêncio). */
   escolhidoAgentId: string | null;
+  /**
+   * O público aplicado aos MEMBROS do roteador neste turno (#3722, fatia 2).
+   * Ausente = nenhum membro declarou público (o turno nem leu o contato) — é a
+   * mesma disciplina de silêncio da fatia 1, agora na lista que vai para o
+   * classificador.
+   */
+  roteador?: ResumoDoPublicoNoRoteador;
+}
+
+/** Um membro do roteador que o público barrou, com a regra que decidiu. */
+export interface MembroBarradoNoRastro {
+  agentId: string;
+  intentName: string;
+  regra: RegraDoPublico;
+  /** O item DECLARADO na config que decidiu — nunca dado do contato. */
+  valor: string | null;
+}
+
+/**
+ * Quantos membros o público barrou ANTES de montar a pergunta do classificador
+ * (#3722, fatia 2) e por qual regra.
+ *
+ * A pergunta que ele responde é a do operador: "por que a intenção de vendas
+ * não apareceu para este cliente?". `barrados` é o número; `porRegra` é a lista
+ * que nomeia cada um. Os dois lados vêm da MESMA régua da fatia 1
+ * (`avaliarPublico`) — este resumo é rastro, não uma segunda decisão.
+ */
+export interface ResumoDoPublicoNoRoteador {
+  /** `publico_barrou` = ninguém sobrou para o classificador oferecer. */
+  motivo: 'publico_liberou' | 'publico_barrou';
+  /** Membros do roteador que declararam público (os demais não são julgados). */
+  julgados: number;
+  /** Quantos o público barrou. */
+  barrados: number;
+  /** Quantos seguem elegíveis para a pergunta do classificador. */
+  elegiveis: number;
+  /** A regra de cada barrado — "por qual regra", sem abrir o banco. */
+  porRegra: MembroBarradoNoRastro[];
+  /** O fallback do roteador também foi barrado pelo público. */
+  fallbackBarrado: boolean;
 }
 
 /**
@@ -426,6 +483,13 @@ export async function escolherAgenteDoNumero(
   organizationId: string,
   channelSessionId: string,
   contactId?: string | null,
+  /**
+   * Fatos do contato JÁ lidos neste turno (opcional). O turno do roteador lê os
+   * fatos uma vez para filtrar os membros (#3722, fatia 2) e os reaproveita
+   * aqui quando cai na escolha do número — a régua é a mesma e a consulta não
+   * se repete.
+   */
+  fatosDoChamador?: FatosDoContato | null,
 ): Promise<EscolhaDoNumero> {
   const { rows } = await db.query<Row>(
     `select ${SELECT_AGENT_CONFIG_COLUMNS}
@@ -491,7 +555,7 @@ export async function escolherAgenteDoNumero(
   }
 
   // Erro de leitura sobe de propósito: a fila re-tenta o job.
-  const fatos = await carregarFatosDoContato(db, organizationId, contactId);
+  const fatos = fatosDoChamador ?? (await carregarFatosDoContato(db, organizationId, contactId));
   for (const [i, candidato] of candidatos.entries()) {
     if (candidato.publico !== null) {
       const decisao = avaliarPublico(candidato.publico, fatos);

@@ -46,6 +46,11 @@ import type pg from "pg";
 
 import type { IntentVerdict } from "@/lib/agent-engine/agent/intent-classifier";
 import type { RouterMember } from "@/lib/agent-engine/agent/router-config";
+import {
+  avaliarPublico,
+  type FatosDoContato,
+  type RegraDoPublico,
+} from "@/lib/agent-engine/agent/publico-do-gatilho";
 import { costCents } from "@/lib/agent-engine/edge/llm/pricing";
 import { logger } from "@/lib/logger";
 import { scrubMessage } from "@/lib/sentry/scrub";
@@ -71,6 +76,10 @@ const INSTRUCAO =
  * com mais do que o fornecedor aceita — a API recusaria a chamada inteira, e a
  * recusa abriria o disjuntor da tarefa sem ninguém ter errado nada.
  *
+ * `membros` é a lista JÁ FILTRADA pelo público do contato (#3722, fatia 2 —
+ * `membrosElegiveisPeloPublico`): a intenção de quem não atende este contato
+ * não é oferecida, e por isso ele não pode ser escolhido.
+ *
  * Os critérios são os do prompt do classificador de sempre
  * (`buildClassifierPrompt`), intenção a intenção. Um membro chamado `none`
  * fica de fora, como lá: o classificador de sempre também lê `none` como
@@ -85,6 +94,60 @@ export function perguntaDoRoteador(membros: readonly RouterMember[]): Pergunta |
   }
   criterios[NENHUMA] = "Nenhuma das intenções acima se aplica.";
   return { tipo: "choice", instrucao: INSTRUCAO, criterios };
+}
+
+/** Um membro que o público barrou, com a regra da config que decidiu. */
+export interface MembroBarradoPeloPublico {
+  membro: RouterMember;
+  regra: RegraDoPublico;
+  /** O item DECLARADO na config — nunca um dado do contato. */
+  valor: string | null;
+}
+
+/** O que sobrou da lista de membros depois da régua do público. */
+export interface MembrosPeloPublico {
+  /** Quem pode ser OFERECIDO ao classificador. */
+  elegiveis: RouterMember[];
+  /** Quem o público barrou — e por qual regra. */
+  barrados: MembroBarradoPeloPublico[];
+  /** Quantos membros declararam público (os demais não são julgados). */
+  julgados: number;
+}
+
+/**
+ * Tira da lista o membro que não atende a ESTE contato (#3722, fatia 2).
+ *
+ * É o conserto do buraco medido na fatia 1: o público já decidia a escolha do
+ * agente do número, mas o roteador continuava oferecendo ao classificador — e
+ * ao Jev — a intenção do membro que o público barra. A pergunta "o cliente com
+ * contrato ativo quer comprar?" continuava sendo feita, e a resposta podia
+ * levar o turno justamente para quem não devia atender.
+ *
+ * A régua é a MESMA da fatia 1 (`avaliarPublico`, de `publico-do-gatilho.ts`):
+ * aqui só se decide QUEM ENTRA NA PERGUNTA, nunca se o contato passa. Um membro
+ * sem público declarado entra sempre (falha aberta de configuração) e `julgados`
+ * zero significa "ninguém declarou nada" — é esse zero que autoriza o turno a
+ * nem ler os dados do contato.
+ */
+export function membrosElegiveisPeloPublico(
+  membros: readonly RouterMember[],
+  fatos: FatosDoContato,
+): MembrosPeloPublico {
+  const elegiveis: RouterMember[] = [];
+  const barrados: MembroBarradoPeloPublico[] = [];
+  let julgados = 0;
+  for (const membro of membros) {
+    const publico = membro.publicoDoGatilho ?? null;
+    if (publico === null) {
+      elegiveis.push(membro);
+      continue;
+    }
+    julgados += 1;
+    const decisao = avaliarPublico(publico, fatos);
+    if (decisao.passa) elegiveis.push(membro);
+    else barrados.push({ membro, regra: decisao.regra, valor: decisao.valor });
+  }
+  return { elegiveis, barrados, julgados };
 }
 
 export interface EscolhaDoJev {
