@@ -4,6 +4,7 @@ import { useTagDeIdioma } from "@/hooks/i18n/useLocaleDeData";
 import * as React from "react";
 import { toast } from "sonner";
 
+import { Accordion, AccordionItem } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -285,6 +286,15 @@ export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarO
   const [content, setContent] = React.useState(document?.content ?? "");
   const [historyTarget, setHistoryTarget] = React.useState<OrgMemoryVersionMeta | null>(null);
   const [showArchived, setShowArchived] = React.useState(false);
+  /**
+   * Qual aprendizado está aberto (`null` = todos fechados). Mora aqui e não no
+   * `Accordion` porque o estado é da LISTA: um só aberto, e trocar de aba
+   * (ativos/arquivados) não pode deixar dois abertos. O aprendizado recém-criado
+   * NÃO abre sozinho — o toast "Aprendizado adicionado." é o aviso, e abrir uma
+   * linha que o servidor pode reordenar seria adivinhação; a pessoa abre a que
+   * quiser ler.
+   */
+  const [aprendizadoAberto, setAprendizadoAberto] = React.useState<string | null>(null);
   const [formOpen, setFormOpen] = React.useState(false);
   const [title, setTitle] = React.useState("");
   const [body, setBody] = React.useState("");
@@ -536,19 +546,23 @@ export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarO
                   )}
             </p>
           ) : (
-            <ol className="flex flex-col gap-2">
+            <Accordion value={aprendizadoAberto} onValueChange={setAprendizadoAberto}>
               {visibleEntries.map((entry) => (
-                <li
+                <AccordionItem
                   key={entry.id}
-                  className="flex flex-col gap-1.5 rounded-md border border-border/60 p-3 text-sm"
+                  value={entry.id}
+                  summary={
+                    <>
+                      <span className="font-medium">{entry.title}</span>
+                      <Badge variant={entry.source === "manual" ? "neutral" : "info"} className="text-[10px]">
+                        {rotuloDaOrigem[entry.source]}
+                      </Badge>
+                      <span className="ml-auto text-xs text-muted-foreground">
+                        {formatDate(entry.created_at, tagDoIdioma)}
+                      </span>
+                    </>
+                  }
                 >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">{entry.title}</span>
-                    <Badge variant={entry.source === "manual" ? "neutral" : "info"} className="text-[10px]">
-                      {rotuloDaOrigem[entry.source]}
-                    </Badge>
-                    <span className="ml-auto text-xs text-muted-foreground">{formatDate(entry.created_at, tagDoIdioma)}</span>
-                  </div>
                   <p className="whitespace-pre-wrap text-text-muted">{entry.body}</p>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                     <div className="flex flex-col gap-1">
@@ -589,9 +603,9 @@ export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarO
                       )}
                     </Button>
                   </div>
-                </li>
+                </AccordionItem>
               ))}
-            </ol>
+            </Accordion>
           )}
         </CardContent>
       </Card>
