@@ -27,6 +27,13 @@
  * contexto com a permissão que tem. O destino é o mesmo que a Central daria ao
  * aviso (`REFERENCIAS_DE_AVISO`).
  *
+ * A PASSAGEM COM RESPONSÁVEL vai só a ele: a conversa atribuída, ou, sem
+ * atendente, o dono do negócio aberto (`responsaveisDaConversa`, a mesma régua
+ * do aviso de mensagem, mas sem somar os administradores). Com vários nichos na
+ * mesma organização, avisar o time inteiro a cada passagem tirava o sinal de
+ * quem precisava responder. O aviso continua na Central para todos, e sem
+ * responsável, ou com ele sem celular inscrito, o push segue indo ao time.
+ *
  * Os corpos são frases fixas, por isso todo ramo declara `corpoSemPrevia`
  * igual ao `body` — menos a etapa que avisa, cujo corpo pode levar a soma do
  * dia: aí o corpo sem prévia é a frase fixa, sem número. O que de fato aparece
@@ -49,6 +56,7 @@ import {
   valorDoNegocio,
 } from "./push-de-venda";
 import { truncar, type PushPayload } from "./push_payload";
+import { responsaveisDaConversa } from "./destinatarios-da-mensagem";
 import { somDoAviso } from "./sons-da-org";
 import type { DestinoDoPush } from "./web_push";
 
@@ -97,6 +105,8 @@ type Aviso = {
 export type PushDoAviso = {
   payload: PushPayload;
   para: DestinoDoPush;
+  /** Para quem vai quando `para` não alcançou nenhum celular. */
+  seNinguemRecebeu?: DestinoDoPush;
   etapa?: { leadId: string; daCarteira: PushPayload; semValor: PushPayload };
 };
 
@@ -148,7 +158,57 @@ export async function pushDoAvisoDaCentral(
       para: { papelMinimo: PAPEL_MINIMO_DA_CENTRAL, soUsuario: item.para_user_id },
     };
   }
-  return { ...montagem, para: { papelMinimo: PAPEL_MINIMO_DA_CENTRAL } };
+  const doTime: DestinoDoPush = { papelMinimo: PAPEL_MINIMO_DA_CENTRAL };
+  const responsaveis = await responsaveisDaPassagem(admin, orgId, item);
+  if (responsaveis.length > 0) {
+    return {
+      ...montagem,
+      para: { papelMinimo: PAPEL_MINIMO_DA_CENTRAL, soUsuarios: responsaveis },
+      seNinguemRecebeu: doTime,
+    };
+  }
+  return { ...montagem, para: doTime };
+}
+
+/**
+ * Quem responde pela conversa da passagem. Vazio = o aviso é do time: outro tipo
+ * de aviso, passagem de clone antigo (ref no contato), conversa que sumiu, grupo
+ * ou conversa sem dono. Como a leitura do aviso, falha aqui LANÇA: nada foi
+ * enviado ainda, e a retentativa do dreno decide com o dado certo.
+ *
+ * A leitura acontece quando o dreno processa o evento, não quando a passagem
+ * nasce: é o que alcança a atribuição feita no mesmo turno da IA.
+ */
+async function responsaveisDaPassagem(admin: SupabaseClient, orgId: string, item: Aviso): Promise<string[]> {
+  if (item.kind !== "handoff" || item.ref_kind !== "conversation" || !item.ref_id) return [];
+  // ⚠️ Organização junto do id: o client é service-role e ignora RLS.
+  const { data, error } = await admin
+    .from("conversations")
+    .select("assigned_to_user_id, contact_id, is_group")
+    .eq("organization_id", orgId)
+    .eq("id", item.ref_id)
+    .maybeSingle();
+  if (error) throw new Error(`Não foi possível ler a conversa do aviso: ${error.message}`);
+  const conversa = data as {
+    assigned_to_user_id: string | null;
+    contact_id: string | null;
+    is_group: boolean | null;
+  } | null;
+  if (!conversa || conversa.is_group) return [];
+  if (conversa.assigned_to_user_id || !conversa.contact_id) {
+    return responsaveisDaConversa({ atribuidoA: conversa.assigned_to_user_id, donosDeNegocioAberto: [] });
+  }
+  const { data: negocios, error: erroDosNegocios } = await admin
+    .from("crm_leads")
+    .select("owner_user_id")
+    .eq("organization_id", orgId)
+    .eq("contact_id", conversa.contact_id)
+    .eq("status", "open");
+  if (erroDosNegocios) throw new Error(`Não foi possível ler os negócios do aviso: ${erroDosNegocios.message}`);
+  return responsaveisDaConversa({
+    atribuidoA: null,
+    donosDeNegocioAberto: ((negocios ?? []) as Array<{ owner_user_id: string | null }>).map((n) => n.owner_user_id),
+  });
 }
 
 async function montarPush(admin: SupabaseClient, orgId: string, item: Aviso): Promise<Montagem | null> {
