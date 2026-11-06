@@ -22,7 +22,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 
-import { test, expect, type Browser, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type Browser, type Page } from "./helpers/test";
 
 import { loginComoAdmin, lerCreds, type CredsE2E } from "./helpers/login-admin";
 
@@ -68,6 +68,7 @@ let pagina: Page;
 
 test.beforeAll(async ({ browser }: { browser: Browser }) => {
   const contexto = await browser.newContext({ locale: "pt-BR" });
+  contexto.on("page", esperarARevelacaoNasCargas);
   pagina = await contexto.newPage();
   creds = await loginComoAdmin(pagina, creds);
 });
