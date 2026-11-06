@@ -5,10 +5,15 @@ gasta, quantos atendimentos ela fez, e quanto o cliente espera entre mandar a
 mensagem e receber a primeira resposta — com as esperas deliberadas separadas da
 lentidão de verdade.
 
-Tudo aqui é **só leitura**. Rode com o `psql` contra o banco da instalação:
+Tudo aqui é **só leitura**. Rode **na VPS, de dentro da pasta da instalação**, e
+o `psql` é o do contêiner: a VPS instalada pelo kit não traz cliente de Postgres
+no host, e a connection string mora no `.env`, não no seu shell. O porquê de cada
+linha está em [`rodar-sql-na-vps.md`](./rodar-sql-na-vps.md).
 
 ```bash
-psql "$SUPABASE_DB_URL"
+P="$(find /root /opt /home /var/www -maxdepth 4 -name docker-compose.prod.yml 2>/dev/null | head -1)"
+if [ -n "$P" ]; then cd "$(dirname "$P")" && pwd; else echo "instalação não encontrada"; fi
+bash -c 'source hostgator-setup-kit/_common.sh && load_env .env && pg_container -it postgres:17-alpine psql "$(url_do_schema)"'   # sessão interativa
 ```
 
 e, dentro dele, escolha a organização uma vez (o id está em

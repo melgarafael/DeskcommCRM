@@ -83,6 +83,11 @@ function dubleSupabase() {
         else filtrosLidos.push({ tabela, coluna, valor });
         return cadeia;
       };
+      cadeia.in = (coluna: string, valores: unknown) => {
+        if (filtrosDaEscrita) filtrosDaEscrita.push([coluna, valores]);
+        else filtrosLidos.push({ tabela, coluna, valor: valores });
+        return cadeia;
+      };
       cadeia.update = (patch: unknown) => {
         filtrosDaEscrita = [];
         escritas.push({ tabela, patch, filtros: filtrosDaEscrita });
@@ -496,6 +501,76 @@ describe("o discador exige o consentimento da organização", () => {
     expect(res.status).toBe(503);
     expect((await corpo(res)).error).toMatchObject({ code: "voice_estado_indeterminado" });
     expect(wacalls.startCall).not.toHaveBeenCalled();
+  });
+});
+
+describe("recusar a chamada recebida: SIP e WaCalls", () => {
+  async function recusar() {
+    const { POST } = await import("@/app/api/v1/voice/calls/[id]/reject/route");
+    return POST(new Request("http://x", { method: "POST" }), { params: Promise.resolve({ id: CHAMADA }) });
+  }
+
+  /** Respostas em sequência para `voice_calls`: a leitura do provider, depois o UPDATE (e a releitura). */
+  function sequencia(...rs: Resposta[]) {
+    let i = 0;
+    respostas["voice_calls"] = () => rs[Math.min(i++, rs.length - 1)]!;
+  }
+
+  it("SIP tocando, instalação SEM WaCalls: encerra como recusada, só se ainda tocando, sem chamar o WaCalls", async () => {
+    // Era 503 `wacalls_not_configured` (ou 404, sem sessão WaCalls), e a tela
+    // escondia o banner só em memória — recarregou, voltou.
+    vi.mocked(getWacallsClient).mockReturnValue(null as never);
+    sequencia(
+      { data: { provider: "sip", contact_id: CONTATO }, error: null },
+      { data: [{ id: CHAMADA }], error: null },
+    );
+    const res = await recusar();
+
+    expect(res.status).toBe(200);
+    expect(wacalls.rejectCall).not.toHaveBeenCalled();
+    const escrita = escritas.find((e) => e.tabela === "voice_calls");
+    expect(escrita?.patch).toMatchObject({ status: "ended", end_reason: "declined" });
+    expect(escrita?.filtros).toEqual(
+      expect.arrayContaining([
+        ["organization_id", ORG],
+        ["id", CHAMADA],
+        ["provider", "sip"],
+        ["status", ["starting", "ringing"]],
+      ]),
+    );
+  });
+
+  it("SIP que alguém já atendeu: 409, não 200", async () => {
+    sequencia(
+      { data: { provider: "sip", contact_id: CONTATO }, error: null },
+      { data: [], error: null },
+      { data: { status: "connected" }, error: null },
+    );
+    const res = await recusar();
+    expect(res.status).toBe(409);
+    expect((await corpo(res)).error).toMatchObject({ code: "state_conflict" });
+  });
+
+  it("SIP que já acabou (fantasma encerrado pelo cron, outra aba): 200 sem auditar recusa", async () => {
+    const { audit } = await import("@/lib/audit");
+    sequencia(
+      { data: { provider: "sip", contact_id: CONTATO }, error: null },
+      { data: [], error: null },
+      { data: { status: "ended" }, error: null },
+    );
+    const res = await recusar();
+    expect(res.status).toBe(200);
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("controle: chamada do WaCalls continua recusada no WaCalls", async () => {
+    sequencia(
+      { data: { provider: "wacalls", contact_id: CONTATO }, error: null },
+      chamadaNoBanco({ status: "ringing", owner_user_id: null, created_by: null }),
+    );
+    const res = await recusar();
+    expect(res.status).toBe(200);
+    expect(wacalls.rejectCall).toHaveBeenCalledWith("sessao-up", "up-1");
   });
 });
 

@@ -3,6 +3,7 @@
 import { useT } from "@/hooks/i18n/useT";
 import Link from "next/link";
 import { useState, useTransition } from "react";
+import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,12 @@ import {
   importarOpcoesCsv,
 } from "@/lib/leads/campos-pesquisaveis";
 import { atalhosDoFunil, motivoDaRecusaDoModelo, type AtalhoDoCard } from "@/lib/leads/atalhos-do-card";
+import {
+  DIAS_MAXIMO_PARA_REABRIR,
+  DIAS_MINIMO_PARA_REABRIR,
+  DIAS_PADRAO_PARA_REABRIR,
+  diasParaReabrirPerdido,
+} from "@/lib/leads/janela-do-perdido";
 import { modoDeReabertura } from "@/lib/leads/reabertura";
 import { CATEGORIAS_DE_PERDA } from "@/lib/schemas/leads";
 import { rotuloDoTipo } from "@/lib/schemas/rotulos-do-campo";
@@ -38,17 +45,24 @@ import { EditorDeAtalhos } from "./_atalhos-do-card";
 import { useMoedaDaOrgAtiva } from "@/hooks/auth/AuthProvider";
 import { MOEDA_PADRAO } from "@/lib/money";
 import {
+  camposDoFunilPatchSchema,
   customFieldSchema,
   MAX_CAMPOS_DO_NEGOCIO,
   type CustomFieldDef,
 } from "@/lib/schemas/settings";
 import {
+  condicaoDeMostraSchema,
+  condicoesDeclaradas,
+  modoDeclarado,
   mostrarQuandoSchema,
   OPERADORES_DE_MOSTRA,
+  type CondicaoDeMostra,
+  type ModoDeCondicao,
+  type MostrarQuando,
   type OperadorDeMostra,
 } from "@/lib/schemas/mostrar-quando";
 import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
-import { CaretDown, Plus, Trash } from "@/lib/ui/icons";
+import { CaretDown, CaretUp, DragHandle, Plus, Trash } from "@/lib/ui/icons";
 import { entradaDoInboxDeclarada } from "@/lib/leads/entrada-do-inbox";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
 import { StagesSection, ancoraDasEtapas } from "./_stages";
@@ -87,6 +101,35 @@ export const TIPOS_DE_CAMPO = customFieldSchema.shape.type.options;
 /** Tipos cujo valor sai de uma lista fechada — são os que mostram o campo de opções. */
 export function tipoTemOpcoes(tipo: CustomFieldDef["type"]): boolean {
   return tipo === "select" || tipo === "multiselect" || tipo === "searchable_select";
+}
+
+/**
+ * MOVE UM CAMPO DE LUGAR (#4043) — a única conta que o arrasto e as setas fazem.
+ *
+ * A ordem dos campos É a ordem do array `settings.fields`: o card, o dossiê e o
+ * formulário de novo negócio desenham nessa sequência, e `handleSave` regrava a
+ * lista inteira. Por isso reordenar não encosta em chave, rótulo nem em valor
+ * gravado — `crm_leads.custom_fields` é lido POR CHAVE (issue #4043, item 3).
+ *
+ * Índice fora da lista devolve a MESMA lista, não uma cópia nem um recorte: o
+ * `slice`/`splice` de uma posição inválida apagaria justamente o campo que a
+ * pessoa está tentando mover, e o save seguiria adiante com o array truncado.
+ * Uma função pura com essa guarda é o que os dois caminhos (arrastar e os
+ * botões de teclado) compartilham — régua escrita duas vezes divergiria.
+ */
+export function moverCampo(
+  campos: CustomFieldDef[],
+  de: number,
+  para: number,
+): CustomFieldDef[] {
+  if (de === para) return campos;
+  if (de < 0 || de >= campos.length) return campos;
+  if (para < 0 || para >= campos.length) return campos;
+  const next = [...campos];
+  const [movido] = next.splice(de, 1);
+  if (!movido) return campos;
+  next.splice(para, 0, movido);
+  return next;
 }
 
 /**
@@ -192,40 +235,41 @@ export const SEM_CONDICAO = "__sem_condicao__";
 export const SEM_VALOR_DA_CONDICAO = "__sem_valor_da_condicao__";
 
 /**
- * O operador da condição, resolvendo as DUAS formas que ela pode estar gravada:
- * a da issue (`{campo, contem: "Outro"}`) e a par que o editor escreve
+ * O operador de UMA condição, resolvendo as DUAS formas em que ela pode estar
+ * gravada: a da issue (`{campo, contem: "Outro"}`) e a par que o editor escreve
  * (`{campo, operador, valor}`). Sem condição, o padrão é `igual` — é o que o
  * seletor mostra antes de a pessoa montar a regra.
  */
-export function operadorDaCondicao(condicao: CustomFieldDef["mostrar_quando"]): OperadorDeMostra {
+export function operadorDaCondicao(condicao: CondicaoDeMostra | undefined): OperadorDeMostra {
   if (condicao?.operador) return condicao.operador;
   return OPERADORES_DE_MOSTRA.find((op) => condicao?.[op] !== undefined) ?? "igual";
 }
 
 /**
- * O valor da condição como TEXTO: é o que o input devolve, é o que a pessoa
+ * O valor de UMA condição como TEXTO: é o que o input devolve, é o que a pessoa
  * digita, e é o que `campoVisivel` compara (`"2"` e `2` casam na régua de
  * número lá).
  */
-export function valorDaCondicao(condicao: CustomFieldDef["mostrar_quando"]): string {
+export function valorDaCondicao(condicao: CondicaoDeMostra | undefined): string {
   const valor =
     condicao?.operador !== undefined ? condicao?.valor : condicao?.[operadorDaCondicao(condicao)];
   return valor === undefined || valor === null ? "" : String(valor);
 }
 
 /**
- * Monta a condição de volta na forma GRAVÁVEL — a que `mostrarQuandoSchema`
+ * Monta UMA condição de volta na forma GRAVÁVEL — a que `mostrarQuandoSchema`
  * valida.
  *
  * Sem campo não há condição (a pessoa limpou o seletor, ou escolheu "Sempre
- * mostrar"). Com campo mas sem valor, a condição fica MEIO montada na tela —
- * é o estado de quem está digitando — e `normalizaMostrarQuando` a descarta
- * no save, do mesmo jeito que `obrigatorio_em` sem nenhuma marca é ausência.
+ * mostrar", que na lista de condições REMOVE a linha). Com campo mas sem valor,
+ * a condição fica MEIO montada na tela — é o estado de quem está digitando — e
+ * `normalizaMostrarQuando` a descarta no save, do mesmo jeito que
+ * `obrigatorio_em` sem nenhuma marca é ausência.
  */
 export function escreveMostrarQuando(
-  condicao: CustomFieldDef["mostrar_quando"],
+  condicao: CondicaoDeMostra | undefined,
   mudanca: { campo?: string; operador?: OperadorDeMostra; valor?: string },
-): CustomFieldDef["mostrar_quando"] {
+): CondicaoDeMostra | undefined {
   const proximo = {
     campo: mudanca.campo ?? condicao?.campo ?? "",
     operador: mudanca.operador ?? operadorDaCondicao(condicao),
@@ -244,15 +288,89 @@ export function escreveMostrarQuando(
 }
 
 /**
+ * Monta o que se GRAVA a partir das linhas da tela (#4041): nenhuma condição é
+ * ausência, UMA volta a ser a condição única de sempre (o formato do JSON
+ * antigo, e o que esconde o seletor de modo) e duas ou mais viram a lista.
+ */
+export function montaMostrarQuando(
+  condicoes: CondicaoDeMostra[],
+  modo: ModoDeCondicao,
+): MostrarQuando | undefined {
+  if (condicoes.length === 0) return undefined;
+  if (condicoes.length === 1) return condicoes[0];
+  return { modo, condicoes };
+}
+
+/** Escreve UMA linha da lista, sem tocar nas outras (#4041). */
+export function escreveCondicaoNoIndice(
+  bruta: MostrarQuando | undefined,
+  indice: number,
+  mudanca: { campo?: string; operador?: OperadorDeMostra; valor?: string },
+): MostrarQuando | undefined {
+  const condicoes = condicoesDeclaradas(bruta);
+  const atual: CondicaoDeMostra = condicoes[indice] ?? { campo: "" };
+  // `escreveMostrarQuando` devolve `undefined` para campo em branco (é a
+  // regra da condição única); numa LISTA a linha em branco continua na tela,
+  // porque é o estado de quem acabou de clicar em "+ condição".
+  condicoes[indice] =
+    escreveMostrarQuando(atual, mudanca) ?? {
+      campo: (mudanca.campo ?? atual.campo ?? "").trim(),
+      operador: mudanca.operador ?? operadorDaCondicao(atual),
+      ...(mudanca.valor !== undefined &&
+      mudanca.valor !== SEM_VALOR_DA_CONDICAO &&
+      mudanca.valor.trim().length > 0
+        ? { valor: mudanca.valor }
+        : {}),
+    };
+  return montaMostrarQuando(condicoes, modoDeclarado(bruta));
+}
+
+/** Remove UMA linha da lista (#4041); a última que sobra some com a condição. */
+export function removeCondicaoNoIndice(
+  bruta: MostrarQuando | undefined,
+  indice: number,
+): MostrarQuando | undefined {
+  const condicoes = condicoesDeclaradas(bruta).filter((_, j) => j !== indice);
+  return montaMostrarQuando(condicoes, modoDeclarado(bruta));
+}
+
+/** Acrescenta uma linha em branco — o "+ condição" do editor (#4041). */
+export function adicionaCondicao(bruta: MostrarQuando | undefined): MostrarQuando | undefined {
+  const condicoes = condicoesDeclaradas(bruta);
+  condicoes.push({ campo: "" });
+  return montaMostrarQuando(condicoes, modoDeclarado(bruta));
+}
+
+/** Troca o modo da lista (#4041): "qualquer uma" ou "todas". */
+export function escreveModoMostrarQuando(
+  bruta: MostrarQuando | undefined,
+  modo: ModoDeCondicao,
+): MostrarQuando | undefined {
+  const condicoes = condicoesDeclaradas(bruta);
+  return montaMostrarQuando(condicoes, modo);
+}
+
+/**
  * A condição só grava quando está COMPLETA — o espelho exato de
- * `normalizaObrigatorioEm`: meio montada é ausência, e não um save que
- * recusa a tela inteira com a mensagem de um campo que a pessoa nem terminou
- * de configurar.
+ * `normalizaObrigatorioEm`: meio montada é ausência, e não um save que recusa a
+ * tela inteira com a mensagem de um campo que a pessoa nem terminou de
+ * configurar.
+ *
+ * Com MAIS de uma condição (#4041) a peneira é por LINHA: a linha meio
+ * preenchida sai, as completas ficam. Derrubar a lista inteira por causa de uma
+ * linha deixaria duas condições prontas sem efeito, sem a pessoa entender por
+ * quê. Condição já válida volta INTACTA — é o que mantém o JSON antigo byte a
+ * byte no save de um funil que ninguém mexeu.
  */
 export function normalizaMostrarQuando(
-  condicao: CustomFieldDef["mostrar_quando"],
-): CustomFieldDef["mostrar_quando"] {
-  return mostrarQuandoSchema.safeParse(condicao).success ? condicao : undefined;
+  condicao: MostrarQuando | undefined,
+): MostrarQuando | undefined {
+  if (condicao === undefined) return undefined;
+  if (mostrarQuandoSchema.safeParse(condicao).success) return condicao;
+  const completas = condicoesDeclaradas(condicao).filter(
+    (linha) => condicaoDeMostraSchema.safeParse(linha).success,
+  );
+  return montaMostrarQuando(completas, modoDeclarado(condicao));
 }
 
 /**
@@ -724,6 +842,22 @@ function PipelineEditor({
   const [retomaComoNovo, setRetomaComoNovo] = useState(
     modoDeReabertura(pipeline.settings) === "novo_negocio",
   );
+  /**
+   * REABRIR O NEGÓCIO PERDIDO RECENTE (#4076) — opção POR FUNIL, desligada por
+   * padrão. O número relido é o que está gravado (`null` = desligado) e é ele
+   * que preenche o campo de dias, para ligar/desligar não exigir digitação; o
+   * campo nasce com a sugestão, que NÃO é gravada enquanto ninguém ligar a
+   * opção. A régua do schema e a do leitor são a MESMA função
+   * (`diasParaReabrirPerdido`), para a tela não mostrar um número que o motor
+   * ignora.
+   */
+  const diasParaReabrirRelidos = diasParaReabrirPerdido(pipeline.settings);
+  const [reabrePerdido, setReabrePerdido] = useState(diasParaReabrirRelidos !== null);
+  const [diasParaReabrir, setDiasParaReabrir] = useState(
+    diasParaReabrirRelidos !== null
+      ? String(diasParaReabrirRelidos)
+      : String(DIAS_PADRAO_PARA_REABRIR),
+  );
   // O recorte de encerrados antigos do quadro (#2995): opção POR FUNIL em
   // `settings.ocultar_encerrados_dias`, desligada por padrão. O número relido é
   // o que está gravado (`null` = desligado) e é ele que preenche o campo de
@@ -764,6 +898,19 @@ function PipelineEditor({
   const atalhosIniciais = atalhosDoFunil(pipeline.settings);
   const [atalhos, setAtalhos] = useState<AtalhoDoCard[]>(atalhosIniciais);
   const [isPending, startTransition] = useTransition();
+
+  /**
+   * O SOLTAR DO ARRASTO (#4043) — traduz o `DropResult` para a MESMA conta das
+   * setas (`moverCampo`). `destination` nulo é soltar fora da lista; cair na
+   * mesma posição é gesto cancelado. Nada além disso: a lista nova vira estado e
+   * o save regrava `fields` inteiro pela `updatePipelineConfig`, que é a única
+   * porta de escrita do `settings`.
+   */
+  function aoSoltarCampo(resultado: DropResult) {
+    const { source, destination } = resultado;
+    if (!destination || destination.index === source.index) return;
+    setFields((atuais) => moverCampo(atuais, source.index, destination.index));
+  }
 
   function handleSave() {
     const ok: CustomFieldDef[] = [];
@@ -811,6 +958,16 @@ function PipelineEditor({
       }
       ok.push(parsed.data);
     }
+    // A ORDEM É O PRÓPRIO ARRAY (#4043): a lista inteira vai no `fields` do
+    // patch, na ordem da tela. A régua da LISTA (e não só a de cada campo) roda
+    // aqui para a recusa ter nome: chave repetida faz dois campos disputarem a
+    // mesma posição e a mesma gaveta do `custom_fields`, e a action responderia
+    // só `validation_failed` — que não diz a ninguém o que consertar.
+    const lista = camposDoFunilPatchSchema.safeParse(ok);
+    if (!lista.success) {
+      toast.error(lista.error.issues[0]?.message ?? t("Campo inválido."));
+      return;
+    }
     const reasons = reasonsText
       .split(",")
       .map((s) => s.trim())
@@ -845,6 +1002,27 @@ function PipelineEditor({
         diasDigitados > DIAS_MAXIMO_DO_RECORTE)
     ) {
       toast.error(t("Escolha de 1 a 3650 dias para esconder os negócios encerrados do quadro."));
+      return;
+    }
+
+    // #4076 — a JANELA do negócio perdido que volta a ser o mesmo card. A
+    // mesma técnica do recorte acima: número fora da faixa faria o schema
+    // recusar o save inteiro com a mensagem genérica de validação, e barrar
+    // aqui diz o que está errado. O `0` é o DESLIGADO e vai explícito no
+    // patch: omitir a chave deixaria a janela antiga gravada e desligar a
+    // opção não desligaria nada.
+    const diasDaReabertura = Number(diasParaReabrir.trim());
+    if (
+      reabrePerdido &&
+      (!Number.isInteger(diasDaReabertura) ||
+        diasDaReabertura < DIAS_MINIMO_PARA_REABRIR ||
+        diasDaReabertura > DIAS_MAXIMO_PARA_REABRIR)
+    ) {
+      toast.error(
+        t(
+          "Escolha de 1 a 3650 dias para reabrir o negócio perdido quando o contato volta a escrever.",
+        ),
+      );
       return;
     }
 
@@ -893,6 +1071,9 @@ function PipelineEditor({
           }
         : {}),
       ocultar_encerrados_dias: ocultarEncerrados ? diasDigitados : 0,
+      // A REABERTURA DO PERDIDO RECENTE (#4076) pela MESMA porta de escrita do
+      // settings. `0` é o desligado, e é o padrão de quem nunca configurou.
+      reabrir_perdido_dias: reabrePerdido ? diasDaReabertura : 0,
       // OS ATALHOS DO CARD (#3487) vão no MESMO patch, pela MESMA porta de
       // escrita do settings. A chave só entra quando há o que dizer — um funil
       // que nunca declarou atalho continua idêntico ao de antes —, mas quem JÁ
@@ -1040,6 +1221,56 @@ function PipelineEditor({
           )}
         </p>
       </div>
+
+      {/* ─── A REABERTURA DO PERDIDO RECENTE (#4076) ───────────────────────
+          Quando o contato volta a escrever e o último negócio dele foi perdido
+          MINUTOS antes, o nascimento do card criava um negócio novo vazio e o
+          histórico comercial (descrição, campos, motivo da perda) ficava no
+          card perdido. O autor da issue mediu 5 de 7 perdas virando card
+          vazio em até 85 minutos, quase sempre por uma despedida.
+
+          A opção é POR FUNIL e vem DESLIGADA: quem não ligar continua com o
+          card novo de hoje. Dentro da janela, a conversa REABRE O MESMO card
+          (mesmo id, status de volta a aberto, histórico intacto) — nada é
+          copiado, nada é fundido. Fora da janela, segue como hoje: reabrir um
+          perdido de meses atrás esconderia a rotatividade do funil.
+
+          SÓ NO FUNIL QUE O MOTOR LÊ: a mensagem nasce no funil de entrada
+          (`funilDeEntrada`), então num funil secundário a escolha seria salva e
+          nunca usada — o mesmo motivo do bloco de `entrada_do_inbox` abaixo. A
+          escolha de retomada (`novo_negocio`) vence esta: ela é a decisão do
+          funil sobre "encerrado que volta", e as duas não podem valer juntas. */}
+      {(pipeline.is_default === true || pipeline.is_client_pipeline === true) && (
+        <div className="space-y-1">
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={reabrePerdido}
+              onChange={(e) => setReabrePerdido(e.target.checked)}
+            />
+            {t("Reabrir o negócio perdido quando o contato volta a escrever")}
+          </label>
+          <label className="flex flex-wrap items-center gap-2 text-xs">
+            {t("Reabrir o negócio perdido há menos de")}
+            <Input
+              type="number"
+              min={DIAS_MINIMO_PARA_REABRIR}
+              max={DIAS_MAXIMO_PARA_REABRIR}
+              aria-label={t("Dias para reabrir o negócio perdido")}
+              className="h-8 w-20 text-xs"
+              disabled={!reabrePerdido}
+              value={diasParaReabrir}
+              onChange={(e) => setDiasParaReabrir(e.target.value)}
+            />
+            {t("dias")}
+          </label>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Ligado, a mensagem de quem tem um negócio perdido dentro dessa janela reabre o MESMO card, com descrição, campos e motivo da perda intactos — nada é copiado nem fundido. Fora da janela, ou desligado, a conversa abre um negócio novo como hoje.",
+            )}
+          </p>
+        </div>
+      )}
 
       {/* ─── A ENTRADA DAS CONVERSAS DO INBOX (#3011) ─────────────────────
           O ajuste existia só no BANCO: a etapa declarada já valia, o fallback
@@ -1198,13 +1429,91 @@ function PipelineEditor({
         <p className="text-xs text-muted-foreground">
           {t("Aparecem no dossiê do negócio. No follow-up, você escolhe em qual campo gravar a resposta.")}
         </p>
+        {/* ─── A ORDEM DOS CAMPOS (#4043) ──────────────────────────────────
+            A ordem que o card, o dossiê e o formulário de novo negócio mostram É
+            a ordem deste array, e `handleSave` regrava a lista inteira: mudar a
+            ordem aqui não encosta em chave nem em valor já gravado, porque
+            `crm_leads.custom_fields` é lido POR CHAVE.
+
+            O arrasto é o mesmo desenho das respostas rápidas (#3244, com
+            `@hello-pangea/dnd`, que já é dependência) e as setas existem porque
+            arrastar sozinho exclui quem usa teclado. Os dois caminhos chamam a
+            MESMA `moverCampo` — o `DropResult` só diz de qual índice para qual.
+
+            Agrupar os campos em SEÇÕES recolhíveis (item 2 da issue) fica para
+            outra fatia: muda o formato de `settings.fields` e é lido no card, no
+            dossiê e no follow-up. */}
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Arraste pela alça, ou use as setas, para mudar a ordem em que os campos aparecem no card.",
+          )}
+        </p>
         {/* `lg:` e não `md:` (#3099): com a barra lateral aberta, a 768px sobram ~380px
             para a linha, e a coluna de 13rem deixava Chave e Rótulo com 46px. Abaixo de
             1024px os campos empilham, como no celular. Os `col-span-4` dos blocos de
             dentro seguem o MESMO corte: um `md:col-span-4` sozinho cria quatro colunas
-            implícitas e devolve a linha espremida, mesmo sem o template. */}
-        {fields.map((f, i) => (
-          <div key={`${f.key}-${i}`} className="grid gap-2 rounded-md border border-border p-2 lg:grid-cols-[1fr_1fr_13rem_auto]">
+            implícitas e devolve a linha espremida, mesmo sem o template.
+
+            Os invólucros do arrasto ficam alinhados com a LINHA, sem reindentar as
+            ~400 linhas de dentro: este arquivo é compartilhado com outras frentes e
+            um diff de formatação aqui já queimou uma PR. */}
+        <DragDropContext onDragEnd={aoSoltarCampo}>
+          <Droppable droppableId="campos-do-funil">
+            {(lista) => (
+        <div ref={lista.innerRef} {...lista.droppableProps} className="space-y-2">
+        {fields.map((f, i) => {
+          // As condições DESTE campo como linhas de tela (#4041): o JSON antigo
+          // (uma condição) vira uma linha só, e o campo sem condição ganha a
+          // linha vazia que o seletor "Sempre mostrar" preenche.
+          const condicoesDoCampo = condicoesDeclaradas(f.mostrar_quando);
+          const linhas: CondicaoDeMostra[] =
+            condicoesDoCampo.length > 0 ? condicoesDoCampo : [{ campo: "" }];
+          return (
+          <Draggable key={`${f.key}-${i}`} draggableId={`campo-${i}`} index={i}>
+          {(arrastavel, instantaneo) => (
+          <div
+            ref={arrastavel.innerRef}
+            {...arrastavel.draggableProps}
+            className={`grid gap-2 rounded-md border border-border p-2 lg:grid-cols-[1fr_1fr_13rem_auto]${
+              instantaneo.isDragging ? " shadow-md ring-1 ring-accent/40" : ""
+            }`}
+            data-testid={`campo-${i + 1}`}
+          >
+            {/* A alça e as duas setas. A ordem de leitura importa: a alça é o
+                primeiro alvo, e os botões dizem em VOZ ALTA para onde o campo
+                vai — quem usa leitor de tela não arrasta. */}
+            <div className="flex items-center gap-1 lg:col-span-4">
+              <span
+                {...arrastavel.dragHandleProps}
+                aria-label={`${t("Arrastar para reordenar")} ${f.label || f.key || i + 1}`}
+                data-testid={`arrastar-campo-${i + 1}`}
+                className="shrink-0 cursor-grab text-muted-foreground"
+              >
+                <DragHandle />
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={`${t("Mover para cima")} «${f.label || f.key || i + 1}»`}
+                data-testid={`subir-campo-${i + 1}`}
+                disabled={i === 0}
+                onClick={() => setFields(moverCampo(fields, i, i - 1))}
+              >
+                <CaretUp size={14} aria-hidden />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label={`${t("Mover para baixo")} «${f.label || f.key || i + 1}»`}
+                data-testid={`descer-campo-${i + 1}`}
+                disabled={i === fields.length - 1}
+                onClick={() => setFields(moverCampo(fields, i, i + 1))}
+              >
+                <CaretDown size={14} aria-hidden />
+              </Button>
+            </div>
             <Input
               aria-label={`${t("Chave do campo")} ${i + 1}`}
               placeholder={t("chave (endereco)")}
@@ -1385,122 +1694,197 @@ function PipelineEditor({
                 )}
               </p>
             </div>
-            {/* ── QUANDO ESTE CAMPO APARECE (issue #2728) ──────────────────
+            {/* ── QUANDO ESTE CAMPO APARECE (issues #2728 e #4041) ──────────
                 A condição que a ficha do contato, o dossiê e o painel do inbox
-                leem para ESCONDER o campo. Campo + operador + valor, e os
-                operadores são exatamente os três que `campoVisivel` aplica —
-                a tela não promete nenhum outro. Meio montada, a condição não
-                grava (ver `normalizaMostrarQuando`), como `obrigatorio_em`. */}
+                leem para ESCONDER o campo: UMA condição (o de sempre) ou uma
+                LISTA delas, em "qualquer uma" (OU) ou "todas" (E). Os
+                operadores são exatamente os três que `campoVisivel` aplica — a
+                tela não promete nenhum outro. Meio montada, a condição não
+                grava (ver `normalizaMostrarQuando`), como `obrigatorio_em`; e
+                numa lista a peneira é por linha, para a linha em branco do
+                "+ condição" não derrubar as que já estavam prontas. */}
             <div className="space-y-1 lg:col-span-4">
               <p className="text-xs font-medium">{t("Mostrar só quando:")}</p>
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <Select
-                  value={f.mostrar_quando?.campo || SEM_CONDICAO}
-                  onValueChange={(campo) => {
-                    const next = [...fields];
-                    next[i] = {
-                      ...f,
-                      mostrar_quando:
-                        campo === SEM_CONDICAO
-                          ? undefined
-                          : escreveMostrarQuando(f.mostrar_quando, { campo }),
-                    };
-                    setFields(next);
-                  }}
-                >
-                  <SelectTrigger aria-label={`${t("Campo da condição")} ${f.label || i + 1}`}>
-                    <SelectValue placeholder={t("Sempre mostrar")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={SEM_CONDICAO}>{t("Sempre mostrar")}</SelectItem>
-                    {fields
-                      .filter((outra, j) => j !== i && outra.key.trim().length > 0)
-                      .map((outra) => (
-                        <SelectItem key={outra.key} value={outra.key}>
-                          {outra.label || outra.key}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-                {f.mostrar_quando?.campo && (
-                  <>
-                    <Select
-                      value={operadorDaCondicao(f.mostrar_quando)}
-                      onValueChange={(op) => {
-                        const next = [...fields];
-                        next[i] = {
-                          ...f,
-                          mostrar_quando: escreveMostrarQuando(f.mostrar_quando, {
-                            operador: op as OperadorDeMostra,
-                          }),
-                        };
-                        setFields(next);
-                      }}
+              {linhas.map((condicao, ci) => (
+                <div key={ci} className="flex flex-wrap items-center gap-2 text-xs">
+                  <Select
+                    value={condicao.campo || SEM_CONDICAO}
+                    onValueChange={(campo) => {
+                      const next = [...fields];
+                      next[i] = {
+                        ...f,
+                        mostrar_quando:
+                          campo === SEM_CONDICAO
+                            ? removeCondicaoNoIndice(f.mostrar_quando, ci)
+                            : escreveCondicaoNoIndice(f.mostrar_quando, ci, { campo }),
+                      };
+                      setFields(next);
+                    }}
+                  >
+                    <SelectTrigger
+                      aria-label={`${t("Campo da condição")} ${f.label || i + 1} ${ci + 1}`}
                     >
-                      <SelectTrigger
-                        aria-label={`${t("Operador da condição")} ${f.label || i + 1}`}
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="igual">{t("é igual a")}</SelectItem>
-                        <SelectItem value="contem">{t("contém")}</SelectItem>
-                        <SelectItem value="maior_que">{t("é maior que")}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {/* O valor vem de lista quando o campo que MANDA na condição
-                        é de lista fechada: digitar "Outro" errado deixaria a
-                        condição montada e quieta, casando com nada. */}
-                    {tipoTemOpcoes(
-                      fields.find((o) => o.key === f.mostrar_quando?.campo)?.type ?? "text",
-                    ) ? (
+                      <SelectValue placeholder={t("Sempre mostrar")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={SEM_CONDICAO}>{t("Sempre mostrar")}</SelectItem>
+                      {fields
+                        .filter((outra, j) => j !== i && outra.key.trim().length > 0)
+                        .map((outra) => (
+                          <SelectItem key={outra.key} value={outra.key}>
+                            {outra.label || outra.key}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  {condicao.campo && (
+                    <>
                       <Select
-                        value={valorDaCondicao(f.mostrar_quando) || SEM_VALOR_DA_CONDICAO}
-                        onValueChange={(valor) => {
+                        value={operadorDaCondicao(condicao)}
+                        onValueChange={(op) => {
                           const next = [...fields];
                           next[i] = {
                             ...f,
-                            mostrar_quando: escreveMostrarQuando(f.mostrar_quando, { valor }),
+                            mostrar_quando: escreveCondicaoNoIndice(f.mostrar_quando, ci, {
+                              operador: op as OperadorDeMostra,
+                            }),
                           };
                           setFields(next);
                         }}
                       >
                         <SelectTrigger
-                          aria-label={`${t("Valor da condição")} ${f.label || i + 1}`}
+                          aria-label={`${t("Operador da condição")} ${f.label || i + 1} ${ci + 1}`}
                         >
-                          <SelectValue placeholder={t("Valor da condição")} />
+                          <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value={SEM_VALOR_DA_CONDICAO}>
-                            {t("Valor da condição")}
-                          </SelectItem>
-                          {fields
-                            .find((o) => o.key === f.mostrar_quando?.campo)
-                            ?.options?.map((o) => (
-                              <SelectItem key={o.value} value={o.value}>
-                                {o.label}
-                              </SelectItem>
-                            ))}
+                          <SelectItem value="igual">{t("é igual a")}</SelectItem>
+                          <SelectItem value="contem">{t("contém")}</SelectItem>
+                          <SelectItem value="maior_que">{t("é maior que")}</SelectItem>
                         </SelectContent>
                       </Select>
-                    ) : (
-                      <Input
-                        className="w-40"
-                        aria-label={`${t("Valor da condição")} ${f.label || i + 1}`}
-                        value={valorDaCondicao(f.mostrar_quando)}
-                        onChange={(ev) => {
-                          const next = [...fields];
-                          next[i] = {
-                            ...f,
-                            mostrar_quando: escreveMostrarQuando(f.mostrar_quando, {
-                              valor: ev.target.value,
-                            }),
-                          };
-                          setFields(next);
-                        }}
-                      />
-                    )}
-                  </>
+                      {/* O valor vem de lista quando o campo que MANDA na condição
+                          é de lista fechada: digitar "Outro" errado deixaria a
+                          condição montada e quieta, casando com nada. */}
+                      {tipoTemOpcoes(
+                        fields.find((o) => o.key === condicao.campo)?.type ?? "text",
+                      ) ? (
+                        <Select
+                          value={valorDaCondicao(condicao) || SEM_VALOR_DA_CONDICAO}
+                          onValueChange={(valor) => {
+                            const next = [...fields];
+                            next[i] = {
+                              ...f,
+                              mostrar_quando: escreveCondicaoNoIndice(f.mostrar_quando, ci, {
+                                valor,
+                              }),
+                            };
+                            setFields(next);
+                          }}
+                        >
+                          <SelectTrigger
+                            aria-label={`${t("Valor da condição")} ${f.label || i + 1} ${ci + 1}`}
+                          >
+                            <SelectValue placeholder={t("Valor da condição")} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={SEM_VALOR_DA_CONDICAO}>
+                              {t("Valor da condição")}
+                            </SelectItem>
+                            {fields
+                              .find((o) => o.key === condicao.campo)
+                              ?.options?.map((o) => (
+                                <SelectItem key={o.value} value={o.value}>
+                                  {o.label}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                          className="w-40"
+                          aria-label={`${t("Valor da condição")} ${f.label || i + 1} ${ci + 1}`}
+                          value={valorDaCondicao(condicao)}
+                          onChange={(ev) => {
+                            const next = [...fields];
+                            next[i] = {
+                              ...f,
+                              mostrar_quando: escreveCondicaoNoIndice(f.mostrar_quando, ci, {
+                                valor: ev.target.value,
+                              }),
+                            };
+                            setFields(next);
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
+                  {linhas.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-2"
+                      aria-label={`${t("Remover condição")} ${f.label || i + 1} ${ci + 1}`}
+                      onClick={() => {
+                        const next = [...fields];
+                        next[i] = {
+                          ...f,
+                          mostrar_quando: removeCondicaoNoIndice(f.mostrar_quando, ci),
+                        };
+                        setFields(next);
+                      }}
+                    >
+                      <Trash size={14} aria-hidden />
+                    </Button>
+                  )}
+                </div>
+              ))}
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                {condicoesDoCampo.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2"
+                    onClick={() => {
+                      const next = [...fields];
+                      next[i] = { ...f, mostrar_quando: adicionaCondicao(f.mostrar_quando) };
+                      setFields(next);
+                    }}
+                  >
+                    <Plus size={14} aria-hidden className="mr-1" /> {t("+ condição")}
+                  </Button>
+                )}
+                {/* O modo só aparece com duas condições ou mais: com uma, "qualquer
+                    uma" e "todas" querem dizer a mesma coisa, e oferecer a escolha
+                    sugere uma diferença que não existe. */}
+                {condicoesDoCampo.length > 1 && (
+                  <Select
+                    value={modoDeclarado(f.mostrar_quando)}
+                    onValueChange={(modo) => {
+                      const next = [...fields];
+                      next[i] = {
+                        ...f,
+                        mostrar_quando: escreveModoMostrarQuando(
+                          f.mostrar_quando,
+                          modo as ModoDeCondicao,
+                        ),
+                      };
+                      setFields(next);
+                    }}
+                  >
+                    <SelectTrigger
+                      aria-label={`${t("Modo da condição")} ${f.label || i + 1}`}
+                      className="h-8 w-44 text-xs"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="qualquer">{t("qualquer uma das condições")}</SelectItem>
+                      <SelectItem value="todas">{t("todas as condições")}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
@@ -1546,7 +1930,15 @@ function PipelineEditor({
               </div>
             )}
           </div>
-        ))}
+          )}
+          </Draggable>
+          );
+        })}
+        {lista.placeholder}
+        </div>
+            )}
+          </Droppable>
+        </DragDropContext>
         {/* A cota é do NEGÓCIO (issue #3111): o campo do contato não esconde o botão. */}
         {fields.filter((f) => escopoDoCampo(f) === "negocio").length < MAX_CAMPOS_DO_NEGOCIO && (
           <Button
@@ -1573,3 +1965,4 @@ function PipelineEditor({
     </div>
   );
 }
+

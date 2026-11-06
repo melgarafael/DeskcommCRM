@@ -41,6 +41,7 @@ import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 
 import { mascara } from "./aviso-ao-suporte";
 import { modoDoDestinoDoAviso } from "./destino-do-aviso";
+import { modelosDoAvisoDaConexao } from "./modelo-do-aviso";
 import {
   avisosDaTela,
   podeLigarOAviso,
@@ -75,6 +76,8 @@ export interface ConfigNaResposta {
   rotulo: string | null;
   ligado: boolean;
   resposta_whatsapp_habilitada: boolean;
+  /** O modelo aprovado que leva o aviso pela conexão que só manda modelo (9094). */
+  modelo_id: string | null;
   atualizado_em: string;
   /** `fixo` ou `responsavel` (#3803). */
   destino_modo: ModoDoDestinoNaTela;
@@ -87,6 +90,13 @@ export interface EstadoDaTelaDeAviso {
    * antes de alguém escolher o modo `responsavel`, e avisa quem está sem número.
    */
   equipe: MembroDoAvisoNaTela[];
+  /**
+   * `true` = a leitura dos números da equipe FALHOU (`equipe` vem vazia por
+   * isso, não porque a organização não tem gente). A tela precisa dizer isso em
+   * vez de "ainda não há outras pessoas" — e não pode oferecer o modo
+   * `responsavel` como se soubesse quem tem número (#3935).
+   */
+  equipe_indisponivel: boolean;
   conexoes: ConexaoParaAviso[];
   avisos: AvisoDaTela[];
   pode_ligar: boolean;
@@ -109,6 +119,7 @@ interface LinhaDeConfig {
   rotulo: string | null;
   ligado: boolean;
   resposta_whatsapp_habilitada: boolean;
+  modelo_id?: string | null;
   mensagens_ignoradas: number;
   ultima_mensagem_ignorada_em: string | null;
   updated_at: string;
@@ -152,6 +163,7 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
         ligado: config.ligado,
         respostaWhatsappHabilitada: config.resposta_whatsapp_habilitada,
         destinoModo: modoDoDestinoDoAviso({ destino_modo: config.destino_modo }),
+        modeloId: config.modelo_id ?? null,
       }
     : null;
 
@@ -180,11 +192,13 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
           rotulo: config.rotulo,
           ligado: config.ligado,
           resposta_whatsapp_habilitada: config.resposta_whatsapp_habilitada,
+          modelo_id: config.modelo_id ?? null,
           atualizado_em: config.updated_at,
           destino_modo: modoDoDestinoDoAviso({ destino_modo: config.destino_modo }),
         }
       : null,
-    equipe,
+    equipe: equipe ?? [],
+    equipe_indisponivel: equipe === null,
     conexoes,
     avisos: avisosDaTela(fatos),
     pode_ligar: podeLigarOAviso(fatos),
@@ -207,10 +221,15 @@ export async function lerEstadoDaTelaDeAviso(entrada: {
  * policy a `manager` seria uma decisão de privacidade que ninguém tomou.
  * `organization_id` filtrado À MÃO (o admin bypassa a RLS).
  *
- * Falha ABERTA (lista vazia): a tela perde a lista de números, não o resto. O
- * log é quem distingue "não há equipe" de "não deu para ler".
+ * Falha ABERTA (lista vazia) para a TELA não cair, mas DECLARADA: o erro vira
+ * `null`, que a resposta entrega como `equipe_indisponivel`. A diferença entre
+ * "não há equipe" e "não deu para ler" é a diferença entre uma frase honesta e
+ * um `null` gravado por cima do WhatsApp de todo mundo (#3935).
  */
-async function lerEquipe(admin: SupabaseClient, orgId: string): Promise<MembroDoAvisoNaTela[]> {
+async function lerEquipe(
+  admin: SupabaseClient,
+  orgId: string,
+): Promise<MembroDoAvisoNaTela[] | null> {
   const { data, error } = await admin
     .from("user_organizations")
     .select("user_id, whatsapp_e164")
@@ -220,11 +239,11 @@ async function lerEquipe(admin: SupabaseClient, orgId: string): Promise<MembroDo
     .limit(200);
   if (error) {
     logger.warn("[aviso-de-caso] equipe não lida", { organizationId: orgId, causa: error.message });
-    return [];
+    return null;
   }
   const linhas = (data ?? []) as Array<{ user_id: string; whatsapp_e164: string | null }>;
   if (linhas.length === 0) return [];
-  const nomes = await nomesDosAtendentes(linhas.map((l) => l.user_id));
+  const nomes = await nomesDosAtendentes(orgId, linhas.map((l) => l.user_id));
   return linhas.map((l) => ({
     user_id: l.user_id,
     nome: nomes.get(l.user_id) ?? null,
@@ -237,7 +256,7 @@ async function lerConfig(db: SupabaseClient, orgId: string): Promise<LinhaDeConf
   const { data, error } = await db
     .from("config_aviso_de_caso")
     .select(
-      "channel_session_id, destino_modo, telefone_destino, rotulo, ligado, resposta_whatsapp_habilitada, mensagens_ignoradas, ultima_mensagem_ignorada_em, updated_at",
+      "channel_session_id, destino_modo, telefone_destino, rotulo, ligado, resposta_whatsapp_habilitada, modelo_id, mensagens_ignoradas, ultima_mensagem_ignorada_em, updated_at",
     )
     .eq("organization_id", orgId)
     .maybeSingle();
@@ -296,12 +315,24 @@ async function lerConexoes(db: SupabaseClient, orgId: string): Promise<ConexaoPa
     }
   }
 
+  // Os modelos aprovados que levam o aviso, só para quem não manda texto livre
+  // (migration 9094): para as outras a lista não serve para nada, e lê-la
+  // custaria uma ida ao banco por conexão.
+  const modelos = new Map(
+    await Promise.all(
+      canais
+        .filter((c) => !c.aceitaMensagemLivre)
+        .map(async (c) => [c.id, await modelosDoAvisoDaConexao(db, orgId, c.id)] as const),
+    ),
+  );
+
   return canais.map((c) => ({
     id: c.id,
     nome: c.display_name,
     status: c.status,
     aceitaMensagemLivre: c.aceitaMensagemLivre,
     atendeClientes: emUso.has(c.id),
+    ...(c.aceitaMensagemLivre ? {} : { modelos: modelos.get(c.id) ?? [] }),
   }));
 }
 

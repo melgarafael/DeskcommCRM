@@ -44,6 +44,7 @@ import type pg from "pg";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { audit } from "@/lib/audit";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { logger } from "@/lib/logger";
 import { configPadraoDaOrganizacao, type ConfigPadrao } from "./config-padrao";
 import { personalizacaoDaOrganizacao } from "./personalizar";
@@ -52,6 +53,12 @@ import { opcoesDoPreparo } from "./opcoes-do-preparo";
 import { gravarPrevia, previaPorGerar } from "./previa";
 import { campaignConfigSchema, type Prospect } from "./schema";
 import { enriquecerSitesPendentes } from "./site-enrich";
+import {
+  consultaPelaConexao,
+  TETO_DE_WHATSAPP_POR_RODADA,
+  verificarWhatsappPendentes,
+  type ConsultaWhatsapp,
+} from "./whatsapp";
 
 /** Gasto máximo de IA por organização por rodada (a rodada é de 1 minuto). */
 export const TETO_PREVIAS_POR_RODADA = 8;
@@ -62,6 +69,8 @@ const MAX_FALHAS_POR_RODADA = 3;
 const TETO_DE_SITES_POR_RODADA = 30;
 
 export interface ResumoDoPreparo {
+  /** Telefones conferidos no WhatsApp nesta rodada (`lib/prospecting/whatsapp.ts`). */
+  whatsapp: number;
   /** Candidatos que ganharam veredito de site nesta rodada. */
   sites: number;
   /** Prévias geradas e gravadas nesta rodada. */
@@ -77,6 +86,18 @@ type CandidatoDoPreparo = {
   status: string;
   selected: boolean | null;
   contact_id: string | null;
+};
+
+/** O que o preparo pede de fora — trocável nos testes (a plataforma real não entra lá). */
+export interface DependenciasDoPreparo {
+  /** O módulo `conferir_whatsapp` (`lib/instalacao/modulos.ts`), desligado por padrão. */
+  conferirWhatsapp: (admin: SupabaseClient) => Promise<boolean>;
+  consultaWhatsapp: typeof consultaPelaConexao;
+  dormir?: (ms: number) => Promise<void>;
+}
+const DEPENDENCIAS_PADRAO: DependenciasDoPreparo = {
+  conferirWhatsapp: (admin) => moduloLigado(admin, "conferir_whatsapp"),
+  consultaWhatsapp: consultaPelaConexao,
 };
 
 /** A chave NÃO é a do `withProspectingLock` (`prospecting:<org>`): bloqueios independentes. */
@@ -100,17 +121,18 @@ const mensagemDe = (error: unknown) =>
   (error instanceof Error ? error.message : String(error)).slice(0, 200);
 
 /**
- * `_admin` acompanha a assinatura do tick (todo passo do worker recebe o cliente
- * de serviço), mas o preparo não o usa: a geração fala com o modelo pelo `pool`.
+ * `admin` só lê se o módulo `conferir_whatsapp` está ligado: a geração fala com o
+ * modelo pelo `pool`.
  */
 export async function prepararCandidatos(
   pool: pg.Pool,
-  _admin: SupabaseClient,
+  admin: SupabaseClient,
   org: string,
   requestId: string,
   deadline: number,
+  deps: DependenciasDoPreparo = DEPENDENCIAS_PADRAO,
 ): Promise<ResumoDoPreparo> {
-  const resumo: ResumoDoPreparo = { sites: 0, previas: 0, pulou: false };
+  const resumo: ResumoDoPreparo = { whatsapp: 0, sites: 0, previas: 0, pulou: false };
   const db = await pool.connect();
   let locked = false;
   let erroNoUnlock: Error | undefined;
@@ -126,7 +148,7 @@ export async function prepararCandidatos(
       resumo.pulou = true;
       return resumo;
     }
-    await trabalhar(db, pool, org, requestId, deadline, resumo);
+    await trabalhar(db, pool, admin, org, requestId, deadline, resumo, deps);
   } catch (error) {
     logger.error("[prospecting.preparo] rodada falhou", {
       organization_id: org,
@@ -151,10 +173,12 @@ export async function prepararCandidatos(
 async function trabalhar(
   db: pg.PoolClient,
   pool: pg.Pool,
+  admin: SupabaseClient,
   org: string,
   requestId: string,
   deadline: number,
   resumo: ResumoDoPreparo,
+  deps: DependenciasDoPreparo,
 ): Promise<void> {
   if (Date.now() >= deadline) return;
   const campanhas = (
@@ -163,6 +187,49 @@ async function trabalhar(
       [org],
     )
   ).rows;
+
+  // Passo 0 — o WhatsApp: o telefone da empresa tem WhatsApp? Vem ANTES de tudo
+  // porque decide quem sai da lista — e quem sai não deve gastar verificação de
+  // site nem, sobretudo, prévia de IA. Pela conexão da campanha, se ela escolheu uma
+  // (senão qualquer uma conectada que saiba perguntar); sem ela, o passo não faz nada
+  // e o resto segue igual.
+  // Só com o módulo `conferir_whatsapp` ligado: quem pergunta é o número do cliente,
+  // e consulta em massa é risco de banimento que ninguém mediu (#3887).
+  const conferir = campanhas.length > 0 && (await deps.conferirWhatsapp(admin));
+  let restanteDeWhatsapp = conferir ? TETO_DE_WHATSAPP_POR_RODADA : 0;
+  const consultas = new Map<string, ConsultaWhatsapp | null>();
+  for (const c of campanhas) {
+    if (restanteDeWhatsapp <= 0 || Date.now() >= deadline) break;
+    try {
+      const cfg = campaignConfigSchema.safeParse(c.config);
+      const canal = cfg.success ? cfg.data.channel_session_id : null;
+      if (!consultas.has(canal ?? ""))
+        consultas.set(canal ?? "", await deps.consultaWhatsapp(db, org, canal));
+      const consultar = consultas.get(canal ?? "");
+      if (!consultar) continue;
+      const r = await verificarWhatsappPendentes(
+        db,
+        org,
+        requestId,
+        deadline,
+        c.id,
+        restanteDeWhatsapp,
+        consultar,
+        deps.dormir,
+      );
+      resumo.whatsapp += r.verificados;
+      restanteDeWhatsapp -= r.verificados;
+      // Transporte fora: as outras campanhas dariam o mesmo erro nesta rodada.
+      if (r.interrompida) break;
+    } catch (error) {
+      logger.error("[prospecting.preparo] verificação de WhatsApp falhou, seguindo", {
+        organization_id: org,
+        campaign_id: c.id,
+        request_id: requestId,
+        error: mensagemDe(error),
+      });
+    }
+  }
 
   // Passo 1 — a rede: verifica os sites. De TODAS as campanhas, com ou sem agente
   // (o veredito serve à decisão de quem abordar, e a prévia só vem depois dele).

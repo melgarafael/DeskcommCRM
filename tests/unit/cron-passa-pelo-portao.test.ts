@@ -21,7 +21,7 @@
  *
  * ─── O desenho: cada rota declara os passos, o teste confere contra o arquivo ─
  *
- * Cada uma das cinco rotas com portão carrega uma constante local
+ * Cada rota com portão carrega uma constante local
  * `PASSOS_DEPOIS_DO_PORTAO` com os passos de NÍVEL SUPERIOR que rodam depois do
  * portão, na ordem do arquivo. Este teste lê o FONTE pelo AST, acha o `if` do
  * portão, acha a função que o contém e compara, índice por índice, o que está
@@ -61,13 +61,20 @@ const DIR_CRON = join(RAIZ, "app", "api", "v1", "cron");
 /** O nome que cada rota usa para declarar; a cerca acha a constante pelo nome. */
 const NOME_DA_DECLARACAO = "PASSOS_DEPOIS_DO_PORTAO";
 
-/** As cinco rotas que têm o portão hoje (#3731). Rota nova com portão entra sozinha. */
+/**
+ * As rotas que saem pelo portão hoje (#3731, e as três do #3694). Rota nova com
+ * portão entra sozinha. A `followup-flow-worker` não está aqui: lá o retrato
+ * desliga etapa por etapa, sem saída antecipada da rota inteira.
+ */
 const ROTAS_CONHECIDAS = [
   "agenda-google-push",
   "agenda-google-sync",
   "campaign-worker",
+  "channel-pause-scheduler",
   "historico-import",
+  "proposta-travada",
   "prospecting",
+  "webhook-replay",
 ];
 
 const AJUDA =
@@ -275,7 +282,7 @@ function lerDaRota(rota: string): Leitura | null {
 }
 
 describe("portão do piso ocioso × passo abaixo dele (#3773)", () => {
-  it("o instrumento enxerga as rotas e as cinco declarações (controle positivo)", () => {
+  it("o instrumento enxerga as rotas e as declarações (controle positivo)", () => {
     // Sem isto, um `readdir` vazio ou um AST que nunca casa o portão fariam o
     // caso abaixo passar por vacuidade: "zero divergências" seria verdade e não
     // significaria nada.
