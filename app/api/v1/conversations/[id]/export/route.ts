@@ -142,7 +142,10 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // Uma leitura por user id DISTINTO (o helper deduplica) — nome de quem
   // enviou não fica na linha da mensagem, e "Atendente" no PDF de prova é a
   // metade da prova. Se o lookup cair, o rótulo cai junto, sem falhar o export.
-  const nomesDosUsuarios = await nomesDosAtendentes(mensagens.map((m) => m.sent_by_user_id));
+  const nomesDosUsuarios = await nomesDosAtendentes(
+    authz.org.orgId,
+    mensagens.map((m) => m.sent_by_user_id),
+  );
 
   const conversaParaPdf: ConversaParaPdf = {
     id,

@@ -17,6 +17,7 @@ import {
   recursosVisiveis,
   type StorageLeve,
 } from "@/lib/inbox/barra-de-respostas";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 /**
  * A barra de recursos do Inbox (#2833): um botão por TÍTULO cadastrado. É o
@@ -45,6 +46,38 @@ import {
  * A leitura é num `useEffect`, não na inicialização do estado: o `localStorage`
  * não existe no servidor, e ler no render faria o HTML nascer recolhido e pular
  * para aberto na hidratação. É o mesmo desenho das divisórias do Inbox (#2579).
+ *
+ * ─── UMA LINHA SÓ, COM ROLAGEM LATERAL (#3875) ──────────────────────────────
+ *
+ * A barra era `flex-wrap`: cada resposta a mais virava mais uma linha ACIMA do
+ * campo de digitação, e o preço era a altura da conversa — numa agência com
+ * dezenas de respostas a seção comia metade do fio. Agora ela é uma linha que
+ * NÃO quebra (`flex-nowrap`) e rola no eixo horizontal (`overflow-x-auto`), com
+ * `shrink-0` em cada item: sem isso o navegador espremeria as pílulas em vez de
+ * rolar, e o rótulo de cada resposta deixaria de ser legível.
+ *
+ * A barra NÃO tem teto de largura (`max-w-*`): em tela grande ela ocupa o
+ * compositor inteiro e as respostas cabem sem rolar — carrossel apertado em
+ * desktop seria trocar um defeito por outro. Rolagem de verdade é só o caso de
+ * MUITOS itens ou tela estreita.
+ *
+ * ─── O GRUPO É UM POPUP, NÃO UM CABEÇALHO SEGUIDO DE BOTÕES (#3875) ─────────
+ *
+ * Antes, cada grupo despejava TODAS as suas respostas na mesma área vertical,
+ * com um rótulo em cima: a barra crescia com o cadastro, não com a tela. Agora
+ * o grupo é um único botão — só o nome — que abre um painel flutuante com as
+ * respostas dele. O painel é o da casa (`components/ui/popover.tsx`, Radix), o
+ * MESMO que o "+" do compositor usa: nada de um terceiro tipo de camada
+ * flutuante no Inbox.
+ *
+ * `modal={false}` é deliberado: o painel não pode sequestrar o foco da conversa
+ * (nem esconder o fio de leitores de tela atrás de `aria-hidden`). Abrir com
+ * teclado, `Escape` para fechar e o foco voltando para o gatilho são o
+ * comportamento padrão do Radix — este componente não reimplementa nenhum deles.
+ *
+ * Grupo VAZIO não vira gatilho: popup sem resposta é popup quebrado, e um grupo
+ * recém-criado ainda não tem o que oferecer ao atendente — ele é da TELA de
+ * cadastro, não da conversa.
  *
  * ─── O ÍCONE É A RÉGUA, NÃO UM `if` DE ÁUDIO (#3009) ────────────────────────
  *
@@ -93,6 +126,23 @@ const ICONE_DO_CONTEUDO: Record<Exclude<ConteudoDeRespostaRapida, "texto">, stri
 };
 
 /**
+ * A LINHA DA BARRA — uma só, em qualquer largura (#3875).
+ *
+ * `flex-nowrap` + `overflow-x-auto` são o conserto do defeito da issue; o
+ * `w-full` garante que a rolagem aconteça na largura do compositor, e não numa
+ * caixa encolhida ao conteúdo (que é o que faria o desktop parecer carrossel).
+ *
+ * Sem altura própria e sem `pb-*`: quando as respostas CABEM (o caso de desktop
+ * com um cadastro normal), a linha mede exatamente o que media antes do #3875 —
+ * o conserto não pode entregar 2px a mais justamente onde não havia defeito.
+ * Quando há rolagem, o navegador desenha a barra fina do tema dentro da própria
+ * linha; isso custa uma altura fixa de barra de rolagem, nunca uma linha nova
+ * por resposta.
+ */
+const CLASSE_DA_BARRA =
+  "flex w-full flex-nowrap items-center gap-1 overflow-x-auto overflow-y-hidden mb-1.5";
+
+/**
  * O rótulo do botão: os ícones das mídias que o clique prepara, na ordem
  * canônica (imagem, áudio), e o título. Sem mídia, o título SOZINHO — é o
  * rótulo de antes, byte a byte.
@@ -139,9 +189,9 @@ export function BarraDeRecursos({
 
   // Sem grupo, o caminho é o de hoje: `secoesDeRespostas` devolve `null` e a
   // barra desenha a lista plana do MESMO markup (o componente abaixo é o que
-  // ela sempre foi). Com grupo, cada grupo vira um rótulo seguido dos botões
-  // dele — e o recolhimento continua valendo, porque as seções saem dos
-  // recursos JÁ recortados (`visiveis`).
+  // ela sempre foi). Com grupo, cada grupo vira UM gatilho de popup no lugar do
+  // rótulo seguido de botões — e o recolhimento continua valendo, porque as
+  // seções saem dos recursos JÁ recortados (`visiveis`).
   const secoes = secoesDeRespostas(visiveis, grupos);
   const controles = (
     <>
@@ -150,7 +200,7 @@ export function BarraDeRecursos({
           type="button"
           aria-expanded={false}
           onClick={alternar}
-          className="rounded-full border border-dashed border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
+          className="shrink-0 rounded-full border border-dashed border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
         >
           {t("mais")} ({restantes})
         </button>
@@ -160,7 +210,7 @@ export function BarraDeRecursos({
           type="button"
           aria-expanded
           onClick={alternar}
-          className="rounded-full border border-dashed border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
+          className="shrink-0 rounded-full border border-dashed border-border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
         >
           {t("menos")}
         </button>
@@ -174,20 +224,25 @@ export function BarraDeRecursos({
         data-testid="barra-de-recursos"
         role="toolbar"
         aria-label={t("Respostas rápidas")}
-        className="mb-1.5 flex flex-wrap items-center gap-1"
+        className={CLASSE_DA_BARRA}
       >
         {secoes
           .filter((secao) => secao.respostas.length > 0)
-          .map((secao) => (
-            <span
-              key={secao.grupo?.id ?? "sem-grupo"}
-              data-secao-de-recursos={secao.grupo?.id ?? "sem-grupo"}
-              className="inline-flex flex-wrap items-center gap-1"
-            >
-              <span className="px-1 text-[11px] font-medium text-muted-foreground">
-                {secao.grupo ? secao.grupo.name : t("Sem grupo")}
-              </span>
-              {secao.respostas.map((recurso) => (
+          .map((secao) =>
+            secao.grupo ? (
+              // Grupo: UM botão com o nome; as respostas moram no painel.
+              <GrupoEmPopup
+                key={secao.grupo.id}
+                grupo={secao.grupo}
+                respostas={secao.respostas}
+                disabled={disabled}
+                dica={dica}
+                onEscolher={onEscolher}
+              />
+            ) : (
+              // Sem grupo: os botões soltos de sempre, a um clique. O caminho
+              // curto não pode ganhar um popup no meio (#3875).
+              secao.respostas.map((recurso) => (
                 <BotaoDeRecurso
                   key={recurso.id}
                   recurso={recurso}
@@ -195,9 +250,9 @@ export function BarraDeRecursos({
                   dica={dica}
                   onEscolher={onEscolher}
                 />
-              ))}
-            </span>
-          ))}
+              ))
+            ),
+          )}
         {controles}
       </div>
     );
@@ -208,7 +263,7 @@ export function BarraDeRecursos({
       data-testid="barra-de-recursos"
       role="toolbar"
       aria-label={t("Respostas rápidas")}
-      className="mb-1.5 flex flex-wrap items-center gap-1"
+      className={CLASSE_DA_BARRA}
     >
       {visiveis.map((recurso) => (
         <BotaoDeRecurso
@@ -225,19 +280,107 @@ export function BarraDeRecursos({
 }
 
 /**
- * O botão de UM recurso — o mesmo markup na barra plana e nas seções. Extraído
- * para a barra agrupada não divergir da plana em rótulo, `title` ou atributo de
- * teste que um e2e procura.
+ * O GRUPO COMO GATILHO (#3875) — um botão com o nome do grupo e o painel
+ * flutuante com as respostas dele.
+ *
+ * O estado aberto/fechado é LOCAL e por grupo: abrir "Abordagem" não abre
+ * "Fechamento", e não há motivo para lembrar disso entre recarregamentos (um
+ * painel que reabre sozinho cobriria a conversa que ele veio devolver).
+ *
+ * Escolher uma resposta fecha o painel ANTES de entregar o recurso: o que vem
+ * depois do clique (prévia de anexo, texto no campo) é do compositor, e deixar
+ * um painel flutuante por cima disso esconde do operador o que ele acabou de
+ * preparar.
+ */
+function GrupoEmPopup({
+  grupo,
+  respostas,
+  disabled,
+  dica,
+  onEscolher,
+}: {
+  grupo: GrupoDeRespostas;
+  respostas: Recurso[];
+  disabled: boolean;
+  dica?: string;
+  onEscolher: (recurso: Recurso) => void;
+}) {
+  const t = useT();
+  const [aberto, setAberto] = useState(false);
+
+  return (
+    <Popover open={aberto} onOpenChange={setAberto} modal={false}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          data-grupo-de-recursos={grupo.id}
+          disabled={disabled}
+          // Quando o compositor sabe por que está travado (#3354), o motivo vai
+          // no gatilho também: um grupo que não abre sem explicação é pior que
+          // um botão desligado.
+          title={dica}
+          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50 pointer-coarse:min-h-11"
+        >
+          {grupo.name}
+          {/* A contagem é informação VISUAL: o nome acessível do gatilho é o
+              nome do grupo ("Abordagem"), não "Abordagem 2". */}
+          <span
+            aria-hidden
+            className="rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground"
+          >
+            {respostas.length}
+          </span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        side="top"
+        sideOffset={6}
+        aria-label={`${t("Respostas do grupo")}: ${grupo.name}`}
+        className="w-64 p-1"
+      >
+        <p className="px-2 pb-1 pt-0.5 text-[11px] font-medium text-muted-foreground">
+          {grupo.name}
+        </p>
+        <div data-testid="respostas-do-grupo" className="max-h-64 space-y-0.5 overflow-y-auto">
+          {respostas.map((recurso) => (
+            <BotaoDeRecurso
+              key={recurso.id}
+              recurso={recurso}
+              disabled={disabled}
+              dica={dica}
+              bloco
+              onEscolher={(escolhido) => {
+                setAberto(false);
+                onEscolher(escolhido);
+              }}
+            />
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * O botão de UM recurso — o mesmo markup na barra plana e no painel do grupo.
+ * Extraído para a barra agrupada não divergir da plana em rótulo, `title` ou
+ * atributo de teste que um e2e procura.
+ *
+ * `bloco` é o do painel do grupo (#3875): o mesmo conteúdo, mas ocupando a linha
+ * inteira e alinhado à esquerda, que é como se lê uma lista de escolhas.
  */
 function BotaoDeRecurso({
   recurso,
   disabled,
   dica,
+  bloco = false,
   onEscolher,
 }: {
   recurso: Recurso;
   disabled: boolean;
   dica?: string;
+  bloco?: boolean;
   onEscolher: (recurso: Recurso) => void;
 }) {
   const t = useT();
@@ -257,7 +400,11 @@ function BotaoDeRecurso({
       data-recurso-tipo={leitura.ok ? leitura.tipo : "invalida"}
       onClick={() => onEscolher(recurso)}
       title={motivos.length ? motivos.join(" — ") : t("Prepara no compositor — você revisa e envia")}
-      className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
+      className={
+        bloco
+          ? "flex min-h-11 w-full items-center rounded-md px-2 py-1.5 text-left text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50 lg:min-h-0"
+          : "shrink-0 rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
+      }
     >
       {rotuloDoBotao(leitura, recurso.title)}
     </button>

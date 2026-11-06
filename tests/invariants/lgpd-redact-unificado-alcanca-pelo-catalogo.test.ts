@@ -262,6 +262,16 @@ const DECISOES: Record<string, Decisao> = {
     caminho: "gatilho",
     razao: "fn_apaga_propostas_de_contato_anonimizado: a fila guarda o VALOR proposto para virar escrita em contacts — apaga, não redige, porque proposta pendente de contato anonimizado não tem mais destinatário.",
   },
+  contato_mcp_credenciais: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "9095: fn_mcp_contato_anonimizado_revoga_acessos agenda a revogação IMEDIATA na virada; o cron mcp-oauth-revogacao revoga no terceiro (RFC 7009 — precisa do token) e, com o contato anonimizado, apaga a linha.",
+  },
+  mcp_oauth_pedidos: {
+    decidida: "redigir",
+    caminho: "gatilho",
+    razao: "9095: fn_mcp_contato_anonimizado_revoga_acessos APAGA os pedidos de autorização pendentes na virada — link de acesso de contato anonimizado não tem mais destinatário.",
+  },
   crm_tasks: {
     decidida: "redigir",
     caminho: "gatilho",

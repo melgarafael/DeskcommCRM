@@ -23,7 +23,7 @@
  * config de LLM), que é o mesmo de `filtro-de-palavra-chave-no-turno`: chegar
  * ali prova que o turno atravessou a abertura com o contexto já composto.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   /** Cada contexto que o turno recebeu — é o material do PROMPT. */
@@ -281,6 +281,15 @@ function estadoDoRelato(): Estado {
   };
   return estado;
 }
+
+// O relógio do turno é o `Date.now()` da fixture: sem fixá-lo em INICIO, a
+// suíte rodada entre 22h e 7h BRT cai no gate anti-ban antes do roteador e os
+// cinco casos leem "fora da janela" em vez do erro de config. Só o `Date` é
+// falso — os timers seguem reais, e o tempo anda para a medição de duração.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true });
+  vi.setSystemTime(INICIO);
+});
 
 afterEach(() => {
   mocks.contextos.length = 0;

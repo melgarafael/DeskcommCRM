@@ -41,6 +41,7 @@
  * decoração.
  */
 import { renderDeclaracaoParaHumano, type DeclaracaoDoTurno } from "@/lib/agent-engine/agent/declaracao";
+import { falaDoClienteSemMoldura } from "@/lib/agent-engine/edge/crm/moldura-de-midia";
 
 import {
   FRASE_DO_MOTIVO,
@@ -122,7 +123,11 @@ export interface EntradaDoBriefing {
   } | null;
   /** Checkpoint durável — a mesma linha que `buildHandoffSummary` já lia. */
   checkpoint: CheckpointParaBriefing | null;
-  /** Mensagens do cliente ainda sem resposta NESTE turno, literais. */
+  /**
+   * Mensagens do cliente ainda sem resposta NESTE turno, literais — como o turno
+   * as entregou ao modelo. Uma mídia chega com a moldura de instrução ao modelo
+   * em volta (`frameMediaBody`); a montagem a tira antes de citar.
+   */
   pendentesDoCliente?: readonly string[];
   /**
    * A declaração do turno quando já existe fresca (fechamento/compaction). Tem
@@ -273,7 +278,12 @@ export function montarBriefingDaPassagem(e: EntradaDoBriefing): BriefingDaPassag
   const declaracao = e.declaracaoDoTurno ?? e.checkpoint?.declaracao ?? null;
   const doCheckpoint = blocoDoCheckpoint(e.checkpoint, declaracao);
 
-  const falas = (e.pendentesDoCliente ?? []).map((t) => t.trim()).filter((t) => t !== "");
+  // A moldura da mídia é instrução ao MODELO ("NUNCA responda que não consegue
+  // ver/ouvir…") e saía no cartão entre aspas, como se o cliente a tivesse dito.
+  // Quem lê recebe a transcrição do áudio, ou a legenda da imagem/documento.
+  const falas = (e.pendentesDoCliente ?? [])
+    .map((t) => falaDoClienteSemMoldura(t.trim()).trim())
+    .filter((t) => t !== "");
   const notes = falas.length > 0 ? falas.join("\n") : null;
 
   // `title` é a LEITURA da IA sobre o que a pessoa quer — nunca a fala dela
