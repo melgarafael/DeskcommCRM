@@ -14789,7 +14789,8 @@ alter table public.webhook_events_log
     -- (migration 0601) os provedores de cobrança do revendedor. A linha deles
     -- nasce com organization_id nulo e corpo {id,type}: é ponteiro, nunca o
     -- corpo do provedor, e fica invisível ao tenant pela própria policy.
-    'stripe', 'asaas'
+    -- (migration 9223) o Efi Bank entra no mesmo encaixe (issue #4056).
+    'stripe', 'asaas', 'efi'
   ));
 
 -- ---- a marca da instalação sai do .env e vai para o banco (migration 0155) ----
@@ -47921,7 +47922,7 @@ create table if not exists public.cobranca_assinaturas (
   plano_agendado_id uuid references public.cobranca_planos(id) on delete restrict,
   estado text not null default 'trial' check (estado in ('trial', 'ativa', 'em_atraso', 'cancelada')),
   trial_ate timestamptz,
-  provedor text check (provedor in ('stripe', 'asaas')),
+  provedor text check (provedor in ('stripe', 'asaas', 'efi')),
   modo text check (modo in ('teste', 'producao')),
   provedor_cliente_id text,
   provedor_assinatura_id text,
@@ -49532,7 +49533,7 @@ grant execute on function public.fn_mesclar_contatos(uuid, uuid, uuid[]) to auth
 -- deduplicar antes de criar o índice.
 create unique index if not exists uniq_webhook_events_log_cobranca
   on public.webhook_events_log (provider, external_id)
-  where provider in ('stripe', 'asaas');
+  where provider in ('stripe', 'asaas', 'efi');
 
 -- ── D. quem a reconciliação relê: um predicado só ────────────────────────────
 -- A reconciliação (cron da cobrança, §8) relê pela API as assinaturas com

@@ -34,6 +34,7 @@ interface Lida {
   trial_ate: string | null;
   provedor: ProvedorDeCobranca | null;
   provedor_cliente_id: string | null;
+  provedor_assinatura_id: string | null;
   checkout_url: string | null;
   checkout_expira_em: string | null;
   troca_id: string | null;
@@ -77,7 +78,7 @@ export async function gerarLinkDePagamento(
 
   const { data, error } = await admin
     .from("cobranca_assinaturas")
-    .select("plano_id, estado, trial_ate, provedor, provedor_cliente_id, checkout_url, checkout_expira_em, troca_id, troca_status, troca_pagamento_ref, troca_reserva_ate")
+    .select("plano_id, estado, trial_ate, provedor, provedor_cliente_id, provedor_assinatura_id, checkout_url, checkout_expira_em, troca_id, troca_status, troca_pagamento_ref, troca_reserva_ate")
     .eq("organization_id", orgId)
     .maybeSingle();
   if (error) return recusar(500, "internal_error", "Não foi possível ler a assinatura.");
@@ -209,7 +210,7 @@ async function gerarCheckout(
 ): Promise<{ url: string } | { vivo: string | null } | { recusa: ResultadoDoCheckout }> {
   const ad = adaptador(provedor);
   if (lida.provedor_cliente_id) {
-    const situacao = await ad.lerSituacao({ clienteRef: lida.provedor_cliente_id });
+    const situacao = await ad.lerSituacao({ clienteRef: lida.provedor_cliente_id, assinaturaRef: lida.provedor_assinatura_id });
     if (situacao.assinaturasVivas > 0) return { vivo: situacao.linkDePagamento };
   }
   if (lida.troca_id) {

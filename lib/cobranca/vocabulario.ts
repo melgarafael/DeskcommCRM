@@ -11,7 +11,7 @@
 export const ESTADOS_DA_ASSINATURA = ["trial", "ativa", "em_atraso", "cancelada"] as const;
 export type EstadoDaAssinatura = (typeof ESTADOS_DA_ASSINATURA)[number];
 
-export const PROVEDORES_DE_COBRANCA = ["stripe", "asaas"] as const;
+export const PROVEDORES_DE_COBRANCA = ["stripe", "asaas", "efi"] as const;
 export type ProvedorDeCobranca = (typeof PROVEDORES_DE_COBRANCA)[number];
 
 export const MODOS = ["teste", "producao"] as const;
