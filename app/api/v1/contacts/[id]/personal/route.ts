@@ -178,7 +178,7 @@ export async function POST(_req: NextRequest, ctx: Context): Promise<Response> {
   // obrigatório (CLAUDE.md, anti-pattern 10).
   const { data: contato, error: leituraErro } = await admin
     .from("contacts")
-    .select("id, display_name, is_personal")
+    .select("id, display_name, is_personal, personal_owner_user_id")
     .eq("organization_id", authz.org.orgId)
     .eq("id", id)
     .maybeSingle();
@@ -196,15 +196,28 @@ export async function POST(_req: NextRequest, ctx: Context): Promise<Response> {
   // meio dos efeitos deixaria a prova pela metade para sempre: a retentativa
   // bateria no "já é pessoal" e nunca completaria o que faltou.
   const eraPessoal = (contato as { is_personal?: boolean }).is_personal === true;
+  // Contato marcado antes da 9238 tem dono nulo e só o `admin` o enxerga (spec
+  // 33). Quem marca de novo ADOTA: sem isso, a fila Pessoal herdada ficaria
+  // órfã para sempre — e a doutrina nova proíbe contato sem ninguém que possa
+  // responder. Adotar não gera auditoria nova: o fato "virou pessoal" já está
+  // na trilha; o que muda é de quem é a posse.
+  const donoAtual =
+    (contato as { personal_owner_user_id?: string | null }).personal_owner_user_id ?? null;
+  const precisaAdotar = eraPessoal && donoAtual === null;
 
-  let marcado = contato as { id: string; display_name: string | null; is_personal: boolean };
-  if (!eraPessoal) {
+  let marcado = contato as {
+    id: string;
+    display_name: string | null;
+    is_personal: boolean;
+    personal_owner_user_id?: string | null;
+  };
+  if (!eraPessoal || precisaAdotar) {
     const { data, error: updateErro } = await admin
       .from("contacts")
-      .update({ is_personal: true })
+      .update({ is_personal: true, personal_owner_user_id: authz.user.id })
       .eq("organization_id", authz.org.orgId)
       .eq("id", id)
-      .select("id, display_name, is_personal")
+      .select("id, display_name, is_personal, personal_owner_user_id")
       .maybeSingle();
     if (updateErro || !data) {
       return fail("internal_error", t("Não foi possível marcar o contato como pessoal."), 500, {
@@ -495,7 +508,7 @@ export async function DELETE(_req: NextRequest, ctx: Context): Promise<Response>
   const admin = createAdminClient();
   const { data: contato, error: leituraErro } = await admin
     .from("contacts")
-    .select("id, display_name, is_personal")
+    .select("id, display_name, is_personal, personal_owner_user_id")
     .eq("organization_id", authz.org.orgId)
     .eq("id", id)
     .maybeSingle();
@@ -513,10 +526,10 @@ export async function DELETE(_req: NextRequest, ctx: Context): Promise<Response>
 
   const { data: desmarcado, error: updateErro } = await admin
     .from("contacts")
-    .update({ is_personal: false })
+    .update({ is_personal: false, personal_owner_user_id: null })
     .eq("organization_id", authz.org.orgId)
     .eq("id", id)
-    .select("id, display_name, is_personal")
+    .select("id, display_name, is_personal, personal_owner_user_id")
     .maybeSingle();
   if (updateErro || !desmarcado) {
     return fail("internal_error", t("Não foi possível desmarcar o contato como pessoal."), 500, {

@@ -4,6 +4,8 @@
 >
 > Base medida: leitura direta dos arquivos citados, em 03/10/2026.
 > Revisão cega da v2: 14 pontos confirmados, 5 endereços corrigidos (ver rodapé). Regra do dono: nunca se responde contato pessoal por dentro do CRM.
+>
+> ⚠️ **Revisada pela [spec 33](./33-spec-fila-pessoal-no-inbox.md) (06/11/2026):** a **§2 decisão 3**, a **§3.3** e a **§5 (fora de escopo)** ficam **superadas**. O pessoal continua escondido da operação — e isso segue inegociável —, mas deixa de ser *inalcançável*: o dono da marca (e o `admin`) respondem por ação humana, e o único veto de envio que o CRM mantém por conta própria é o do titular (`is_blocked`). O restante desta spec continua valendo, inteiro.
 
 ---
 

@@ -20,7 +20,8 @@ import { orgTemAutomatico } from "@/lib/ai/agents/org-tem-automatico";
 import { comandosDaFila } from "@/lib/inbox/comando-da-conversa";
 import { aplicarMarcadores, modoDeEtiqueta } from "@/lib/inbox/marcador-da-conversa";
 import { createClient } from "@/lib/supabase/server";
-import { idsDeContatosPessoais } from "../_handler";
+import { roleAtLeast } from "@/lib/auth/types";
+import { idsDeContatosPessoais, idsDeContatosPessoaisVisiveis } from "../_handler";
 
 export const dynamic = "force-dynamic";
 
@@ -169,7 +170,14 @@ export async function GET(req: NextRequest): Promise<Response> {
     idsParticipadas = [];
   }
 
-  const [fila, automatico, mine, all, closed, archived] = await Promise.all([
+  // Quem vê qual pessoal (spec 33): o próprio, ou todos se for `admin`. A MESMA
+  // função que a lista usa — duas réguas divergem na primeira condição nova.
+  const pessoaisVisiveis = await idsDeContatosPessoaisVisiveis(supabase, org, {
+    userId: user.id,
+    verTodos: roleAtLeast(activeOrg.role, "admin"),
+  });
+
+  const [fila, automatico, mine, all, closed, archived, pessoal] = await Promise.all([
     // A FILA DEIXOU DE SER "sem dono + status de espera".
     //
     // Aquele par contava como trabalho humano pendente tudo que o robô estava
@@ -217,10 +225,36 @@ export async function GET(req: NextRequest): Promise<Response> {
     // para que arquivar seja reversível e auditável sem se confundir com o
     // encerramento do atendimento.
     countExact().eq("status", "archived"),
+    // A aba "Pessoal" (spec 33): conta o MESMO que ela lista — o pessoal que
+    // este usuário pode ver (o próprio, ou todos se for `admin`), em qualquer
+    // status, sem os canais desativados. NÃO herda `countExact()` de propósito:
+    // aquela fábrica EXCLUI pessoal, e é exatamente o que ela deve continuar
+    // fazendo nas outras seis abas — badge que conta o que a aba esconde manda
+    // o atendente procurar trabalho que não existe.
+    pessoaisVisiveis.length === 0
+      ? Promise.resolve({ count: 0, error: null })
+      : idsDesativados.length > 0
+        ? supabase
+            .from("conversations")
+            .select("id", { count: "exact", head: true })
+            .eq("organization_id", org)
+            .in("contact_id", pessoaisVisiveis)
+            .not("channel_session_id", "in", `(${idsDesativados.join(",")})`)
+        : supabase
+            .from("conversations")
+            .select("id", { count: "exact", head: true })
+            .eq("organization_id", org)
+            .in("contact_id", pessoaisVisiveis),
   ]);
 
   const firstErr =
-    fila.error ?? automatico.error ?? mine.error ?? all.error ?? closed.error ?? archived.error;
+    fila.error ??
+    automatico.error ??
+    mine.error ??
+    all.error ??
+    closed.error ??
+    archived.error ??
+    pessoal.error;
   if (firstErr) {
     return fail("internal_error", firstErr.message, 500, { requestId });
   }
@@ -238,6 +272,10 @@ export async function GET(req: NextRequest): Promise<Response> {
       all: all.count ?? 0,
       closed: closed.count ?? 0,
       archived: archived.count ?? 0,
+      // A aba "Pessoal" (spec 33). Opcional do lado da tela pelo mesmo motivo de
+      // `closed`/`archived`: cache gravado antes deste deploy não tem o campo, e
+      // um `number` obrigatório imprimiria `NaN` no primeiro segundo.
+      pessoal: pessoal.count ?? 0,
     },
     { requestId },
   );

@@ -144,7 +144,7 @@ export async function resolveAuthDual(
   return {
     ok: true,
     organizationId: authz.org.orgId,
-    actor: { type: "user", id: authz.user.id },
+    actor: { type: "user", id: authz.user.id, role: authz.org.role },
     supabase: await createClient(),
     idioma: authz.user.idioma,
     via: "session",
