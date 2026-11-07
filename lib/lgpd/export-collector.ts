@@ -269,6 +269,36 @@ export interface AppointmentRow {
 }
 
 /**
+ * O "quero encaixe" do titular na lista de espera (`calendar_waitlist`, módulo
+ * opcional). Entra porque a seção de LGPD do módulo apaga `observacoes` na
+ * anonimização: a redação e o export são as duas pontas da mesma regra.
+ *
+ * `janelas`, `antecedencia_minima_horas`, `urgencia` e `status` a redação
+ * PRESERVA (parâmetro de operação, não identificação) e ainda assim entram: "eu
+ * pedi encaixe para tal semana, com tal urgência, e fui atendido" é informação a
+ * respeito dele. `owner_user_id` e `created_by_user_id` ficam de fora: são a
+ * equipe, não ele.
+ */
+export interface WaitlistRow {
+  id: string;
+  event_type_id: string;
+  status: string;
+  urgencia: number;
+  janelas: Json;
+  antecedencia_minima_horas: number;
+  valido_ate: string | null;
+  consentimento_em: string;
+  consentimento_origem: string;
+  oferta_appointment_id: string | null;
+  oferta_expira_em: string | null;
+  ofertada_em: string | null;
+  observacoes: string | null;
+  created_by_kind: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
  * A comanda do titular (migrations 0350-0359).
  *
  * Entra porque a anonimização APAGA: a 0359 pôs `sales` na cascata de redação
@@ -749,6 +779,13 @@ export interface ExportPayload {
   mcp_pedidos_de_acesso?: AcessoMcpRow[];
   mcp_acessos?: AcessoMcpRow[];
   appointments: AppointmentRow[];
+  /**
+   * A inscrição do titular na lista de espera (módulo opcional). Ausente quando
+   * vazia — a cópia de quem nunca pediu encaixe não ganha uma chave a mais —,
+   * e nunca ausente de propósito: quem tem inscrição precisa receber a linha
+   * cujo `observacoes` a anonimização apaga.
+   */
+  calendar_waitlist?: WaitlistRow[];
   sales: SaleRow[];
   proposals: ProposalRow[];
   tasks: TaskRow[];
@@ -1713,6 +1750,31 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     }
   }
 
+  // Lista de espera — módulo opcional (ADR-0002 D8). Onde ele não foi instalado a
+  // tabela não existe (42P01/PGRST205) e o bloco sai vazio. Qualquer outro erro
+  // lança: o worker tenta de novo, e o titular nunca recebe como completo um
+  // arquivo sem a inscrição cujo texto a anonimização apaga.
+  let calendar_waitlist: WaitlistRow[] = [];
+  if (contactId) {
+    const { data, error } = await admin
+      .from("calendar_waitlist")
+      .select(
+        "id, event_type_id, status, urgencia, janelas, antecedencia_minima_horas, valido_ate, consentimento_em, consentimento_origem, oferta_appointment_id, oferta_expira_em, ofertada_em, observacoes, created_by_kind, created_at, updated_at",
+      )
+      .eq("organization_id", organizationId)
+      .eq("contact_id", contactId)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      if (error.code !== "42P01" && error.code !== "PGRST205") {
+        throw new Error(`calendar_waitlist_load_failed: ${error.message}`);
+      }
+    } else if (data) {
+      conferirTeto("calendar_waitlist", data, 500);
+      calendar_waitlist = data;
+    }
+  }
+
   // Comandas — contact_id direto em sales (migrations 0350-0359).
   //
   // A 0359 acrescentou esta tabela à cascata de redação; este bloco é a outra
@@ -2542,6 +2604,7 @@ export async function collectExportData(args: CollectArgs): Promise<ExportPayloa
     mcp_pedidos_de_acesso: mcpPedidos,
     mcp_acessos: mcpAcessos,
     appointments,
+    ...(calendar_waitlist.length > 0 ? { calendar_waitlist } : {}),
     sales,
     proposals,
     tasks,

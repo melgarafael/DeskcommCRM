@@ -101,6 +101,8 @@ export const O_QUE_FICA = {
   mcp_pedidos_de_acesso: "os links de autorização gerados para ele acessar sistemas externos, e quando foram usados",
   mcp_acessos: "os sistemas externos que ele autorizou o agente a acessar, com os escopos e as datas (nunca o token)",
   appointments: "os compromissos dele, com o link da reunião e a anotação que o PDF já imprime",
+  calendar_waitlist:
+    "a inscrição dele na lista de espera de encaixe: o serviço, as janelas que ele pediu, a urgência, a oferta que recebeu e a observação da recepção que a anonimização apaga (seção só do data.json, como `activities`)",
   sales: "as compras dele e por que foram canceladas ou estornadas",
   proposals: "as propostas comerciais enviadas a ele",
   tasks: "o que se combinou fazer para ele",
