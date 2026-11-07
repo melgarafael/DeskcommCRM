@@ -40,7 +40,13 @@
  *   `atendimento-manual.ts`): tem prazo próprio e vence sozinha. Aqui só entra
  *   quem está com humano de forma durável: `'infinity'`, `assignee_kind='user'`
  *   ou `assigned_to_user_id` preenchido.
+ * - **Conversa no modo "IA com o dono"** (#3967): ali a IA responde de
+ *   propósito sem soltar o dono, então o "sinal humano" que este prazo espera
+ *   nunca vem. Devolver seria justamente soltar quem ligou o modo para não
+ *   soltar. Sem dono, o modo é inerte e a régua abaixo é a de sempre.
  */
+
+import { modoProtegeODono } from "@/lib/ai/elegibilidade/ia-com-dono";
 
 /**
  * Piso do prazo, em minutos. Abaixo de 5 a IA volta no meio da digitação.
@@ -83,6 +89,22 @@ export interface ConversaEmHandoff {
   last_handoff_at: string | null;
   last_outbound_at: string | null;
   status_changed_at: string | null;
+  /**
+   * `conversations.metadata`. Obrigatório de propósito: é daqui que sai o modo
+   * "IA com o dono" (#3967), e esquecer de selecionar a coluna faria o cron
+   * devolver ao agente uma conversa que alguém ligou para a IA acompanhar.
+   */
+  metadata: unknown;
+}
+
+/**
+ * O modo "IA com o dono" (#3967) protege um dono que existe?
+ *
+ * Exportado daqui porque é nesta régua que a pergunta importa primeiro, e o
+ * route do cron filtra o mesmo caso antes de montar a rodada.
+ */
+export function emModoIaComDono(c: ConversaEmHandoff): boolean {
+  return modoProtegeODono({ metadata: c.metadata, assignedToUserId: c.assigned_to_user_id });
 }
 
 /**
@@ -145,6 +167,7 @@ export interface Selecao {
 
 export type MotivoDeNaoDevolver =
   | "sem_prazo"
+  | "ia_com_dono"
   | "nao_esta_com_humano"
   | "status_nao_devolvivel"
   | "sessao_sem_agente"
@@ -157,6 +180,12 @@ export function avaliarDevolucao(
 ): { devolver: true; minutos: number } | { devolver: false; motivo: MotivoDeNaoDevolver } {
   const minutos = sel.prazoPorOrg.get(c.organization_id);
   if (minutos === undefined) return { devolver: false, motivo: "sem_prazo" };
+  // #3967: no modo "IA com o dono" a conversa tem dono E automático, e o
+  // "sinal humano" que este prazo espera nunca vem — quem responde é a IA, de
+  // propósito. Devolver aqui seria soltar o dono exatamente de quem ligou o
+  // modo para não soltá-lo. Sem dono, o modo é inerte: a conversa segue a régua
+  // de sempre (e pode voltar ao rodízio como qualquer outra).
+  if (emModoIaComDono(c)) return { devolver: false, motivo: "ia_com_dono" };
   if (!estaComHumanoDuravel(c)) return { devolver: false, motivo: "nao_esta_com_humano" };
   if (!STATUS_DEVOLVIVEIS.has(c.status ?? "")) {
     return { devolver: false, motivo: "status_nao_devolvivel" };

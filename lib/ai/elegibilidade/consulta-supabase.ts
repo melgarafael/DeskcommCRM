@@ -32,6 +32,8 @@ import {
 interface ConversaEmbed {
   bot_silenced_until: string | null;
   assignee_kind: string | null;
+  /** `conversations.metadata` — o modo "IA com o dono" (#3967) mora aqui. */
+  metadata: unknown;
   contacts: {
     force_human: boolean | null;
     /** A marca permanente "sempre atendimento humano" (issue 2379). */
@@ -56,7 +58,7 @@ export async function decidirElegibilidadeDaConversaViaSupabase(
   const { data, error } = await admin
     .from("conversations")
     .select(
-      "bot_silenced_until, assignee_kind, organizations:organization_id(status, settings), contacts:contact_id(force_human, ai_opt_out, ai_authorized_at, phone_number, tags), channel_sessions:channel_session_id(metadata)",
+      "bot_silenced_until, assignee_kind, metadata, organizations:organization_id(status, settings), contacts:contact_id(force_human, ai_opt_out, ai_authorized_at, phone_number, tags), channel_sessions:channel_session_id(metadata)",
     )
     .eq("organization_id", input.organizationId)
     .eq("id", input.conversationId)
@@ -80,6 +82,7 @@ export async function decidirElegibilidadeDaConversaViaSupabase(
     orgSettings: row.organizations?.settings,
     aiOptOut: row.contacts?.ai_opt_out ?? false,
     assigneeKind: row.assignee_kind,
+    metadataDaConversa: row.metadata,
     botSilencedUntil: row.bot_silenced_until,
     aiAuthorizedAt: row.contacts?.ai_authorized_at ?? null,
     agora: input.agora,

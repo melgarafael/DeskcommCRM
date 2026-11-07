@@ -19,6 +19,8 @@ interface LinhaDeElegibilidade {
   force_human: boolean;
   ai_opt_out: boolean;
   assignee_kind: string | null;
+  /** `conversations.metadata` — o modo "IA com o dono" (#3967) mora aqui. */
+  conversation_metadata: unknown;
   bot_silenced_until: Date | string | null;
   ai_authorized_at: Date | string | null;
   phone_number: string | null;
@@ -43,6 +45,7 @@ export async function decidirElegibilidadeDaConversa(
        ct.force_human               as force_human,
        ct.ai_opt_out                as ai_opt_out,
        cv.assignee_kind             as assignee_kind,
+       cv.metadata                  as conversation_metadata,
        cv.bot_silenced_until        as bot_silenced_until,
        ct.ai_authorized_at          as ai_authorized_at,
        ct.phone_number              as phone_number,
@@ -73,6 +76,7 @@ export async function decidirElegibilidadeDaConversa(
     orgSettings: r.org_settings,
     aiOptOut: r.ai_opt_out,
     assigneeKind: r.assignee_kind,
+    metadataDaConversa: r.conversation_metadata,
     botSilencedUntil: r.bot_silenced_until,
     aiAuthorizedAt: r.ai_authorized_at,
     agora: input.agora,
