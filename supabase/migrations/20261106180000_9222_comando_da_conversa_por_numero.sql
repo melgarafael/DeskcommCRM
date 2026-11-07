@@ -164,8 +164,17 @@ $automatico$;
 comment on function public.fn_automatico_da_conversa(uuid, uuid, text)
   is 'Há agente que vai responder ESTA conversa? Espelho SQL do portão do dreno (haQuemAtendaASessao) + pré-go-live (numeroPodeTestar). false = sem agente publicado no número, ou contato fora da lista de teste do canal. Issue #4012.';
 
-revoke execute on function public.fn_automatico_da_conversa(uuid, uuid, text) from public, anon;
-grant  execute on function public.fn_automatico_da_conversa(uuid, uuid, text) to authenticated, service_role;
+-- `authenticated` EXPLÍCITO: o `ALTER DEFAULT PRIVILEGES` do projeto concede
+-- EXECUTE a `authenticated` em toda função nova de `public`, e o revoke de
+-- `public` não desfaz esse grant — medido por `has_function_privilege` na
+-- varredura de definer (tests/invariants/definer-membership-varredura.test.ts).
+revoke execute on function public.fn_automatico_da_conversa(uuid, uuid, text) from public, anon, authenticated;
+-- A régua é INTERNA: só os wrappers `comando_da_conversa` e
+-- `automatico_da_conversa` (ambos definer) a chamam. Expor ao `authenticated`
+-- deixaria um usuário logado sondar qualquer organização por RPC — a varredura
+-- de definer (issue #3849) recusa função definer com org no argumento que não
+-- confere o pertencimento, e a saída certa aqui é não alcançar.
+grant  execute on function public.fn_automatico_da_conversa(uuid, uuid, text) to service_role;
 
 -- ─── (2) o comando deixa de mentir ──────────────────────────────────────────
 -- `create or replace` preserva a ACL e a forma da 0404 (parâmetro SEM NOME: com

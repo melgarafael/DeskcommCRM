@@ -128,7 +128,20 @@ describe("a 0404 — comando_da_conversa sem reavaliar a RLS (issue #1571)", () 
 
     const motivo =
       "subconsulta em contacts sem `ct.organization_id = $1.organization_id`: sob o definer, uma conversa apontada para contato de outra empresa leria force_human/is_blocked dele";
-    expect(conta(sql), `migration — ${motivo}`).toBe(2);
-    expect(conta(apendice), `apêndice do baseline — ${motivo}`).toBe(2);
+    // A régua é TODA subconsulta em contacts, não um número fixo de duas: a
+    // #4012 acrescentou o telefone ao caminho (`comando_da_conversa` e o campo
+    // calculado `automatico_da_conversa`), e uma contagem cravada em 2 passaria
+    // a abençoar subconsulta nova sem a empresa só porque o total continuou.
+    // Medir por IGUALDADE entre subconsultas e subconsultas com o predicado
+    // fecha o buraco para qualquer quantidade.
+    const subconsulta = "from public.contacts ct where ct.id = $1.contact_id";
+    const semEmpresa = (texto: string): number =>
+      texto.split(subconsulta).length -
+      1 -
+      (texto.split(PREDICADO).length - 1);
+    expect(conta(sql), `migration — ${motivo}`).toBeGreaterThanOrEqual(2);
+    expect(semEmpresa(sql), `migration — ${motivo}`).toBe(0);
+    expect(conta(apendice), `apêndice do baseline — ${motivo}`).toBeGreaterThanOrEqual(2);
+    expect(semEmpresa(apendice), `apêndice do baseline — ${motivo}`).toBe(0);
   });
 });
