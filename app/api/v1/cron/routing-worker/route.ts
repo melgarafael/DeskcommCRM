@@ -21,6 +21,24 @@ import { runRoutingWorker } from "@/lib/routing/worker";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * O que roda DEPOIS do portão (#3773), na ordem do arquivo.
+ *
+ * Nenhum destes passos pode ser pulado numa instalação ociosa, e a lista é a
+ * decisão escrita: `summary`/`try` são a própria rodada (que só roda quando há
+ * evento na fila); a auditoria já é condicional a `batch_size > 0`, ou seja, o
+ * tick vazio não gravava linha de auditoria nem antes deste portão; e o
+ * `return` é a resposta. Passo novo aqui embaixo — um aviso, uma promoção —
+ * precisa ser declarado, e o teste reprova se a lista divergir do fonte.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "let summary",
+  "try",
+  "if (summary.batch_size > 0 || summary.errors.length > 0)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
+
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
