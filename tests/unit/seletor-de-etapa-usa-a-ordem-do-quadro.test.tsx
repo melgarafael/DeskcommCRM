@@ -110,7 +110,11 @@ function lead(id: string, stageId: string, pos: number): Lead {
     tags: [],
     created_at: UPDATED_AT,
     updated_at: UPDATED_AT,
-  } as Lead;
+    // Fixture parcial de propósito: este teste lê `stage_id` e `position_in_stage`
+    // e nada mais. O duplo cast é o que o CI cobra quando o objeto não cobre
+    // todos os campos que a tabela ganhou — inventar os ausentes esconderia
+    // que o teste não os usa.
+  } as unknown as Lead;
 }
 
 /**
