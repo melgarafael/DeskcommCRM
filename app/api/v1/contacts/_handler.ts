@@ -54,6 +54,17 @@ type SB = SupabaseClient;
 const SELECT_COLS =
   "id, organization_id, name, display_name, address_book_name, zip_code, street, number, complement, district, city, state, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_personal, contact_type, ai_opt_out, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at, first_service_at";
 
+/** A linha como o banco devolve: `cpf_hash` é interno a este módulo. */
+type LinhaDeContato = Omit<Contact, "cpf_available"> & { cpf_hash: string | null };
+
+/**
+ * A ficha que sai deste módulo: o sinal de que há CPF, nunca a coluna. Toda
+ * saída de `SELECT_COLS` passa aqui — os handlers servem à REST e ao MCP.
+ */
+function fichaDaResposta({ cpf_hash, ...ficha }: LinhaDeContato): Contact {
+  return { ...ficha, cpf_available: !!cpf_hash };
+}
+
 interface CursorPayload {
   sort: string | null;
   id: string;
@@ -343,7 +354,7 @@ export async function listContactsHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
   }
 
-  const rows = (data ?? []) as Contact[];
+  const rows = ((data ?? []) as LinhaDeContato[]).map(fichaDaResposta);
   const hasMore = rows.length > q.limit;
   const page = hasMore ? rows.slice(0, q.limit) : rows;
   const last = page[page.length - 1];
@@ -419,7 +430,6 @@ export interface GetContactInput {
 }
 
 export interface GetContactResult extends Contact {
-  cpf_available: boolean;
   cpf_decrypted: string | null;
   cpf_decrypt_denied?: boolean;
 }
@@ -448,12 +458,12 @@ export async function getContactHandler(
       traduzir("Contato não encontrado.", ctx.idioma ?? "pt-BR"),
     );
   }
-  const contact = data as Contact;
+  const contact = fichaDaResposta(data as LinhaDeContato);
 
   let cpfDecrypted: string | null = null;
   let cpfDecryptDenied = false;
 
-  if (input.decryptPurpose && contact.cpf_hash && ctx.actor.type === "user") {
+  if (input.decryptPurpose && contact.cpf_available && ctx.actor.type === "user") {
     const { data: membership } = await supabase
       .from("user_organizations")
       .select("role")
@@ -501,7 +511,6 @@ export async function getContactHandler(
 
   return {
     ...contactWithConversa,
-    cpf_available: !!contact.cpf_hash,
     cpf_decrypted: cpfDecrypted,
     cpf_decrypt_denied: cpfDecryptDenied || undefined,
   };
@@ -690,7 +699,7 @@ export async function createContactHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, insErr.message);
   }
 
-  const contact = created as Contact;
+  const contact = fichaDaResposta(created as LinhaDeContato);
   // ── A CONVERSA DO CONTATO NOVO (#3718) ────────────────────────────────────
   //
   // A regra — esta porta abre, a importação por CSV não — mora num lugar só:
@@ -732,7 +741,7 @@ export async function createContactHandler(
         source: contact.source,
         has_email: !!contact.email,
         has_phone: !!contact.phone_number,
-        has_cpf: !!contact.cpf_hash,
+        has_cpf: contact.cpf_available,
       },
       p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
       p_organization_id: contact.organization_id,
@@ -928,7 +937,7 @@ export async function patchContactHandler(
     );
   }
 
-  const contact = updated as Contact;
+  const contact = fichaDaResposta(updated as LinhaDeContato);
   const a = actorAuditPayload(ctx.actor);
   const fields = Object.keys(patch).filter((k) => k !== "updated_at");
 
