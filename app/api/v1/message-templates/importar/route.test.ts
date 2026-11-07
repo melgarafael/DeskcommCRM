@@ -446,6 +446,26 @@ describe("POST /message-templates/importar", () => {
     expect(db.inserts).toHaveLength(0);
   });
 
+  it("o tamanho declarado acima de 2 MB é 413 antes de ler o corpo", async () => {
+    const db = banco();
+    // Corpo pequeno e válido, cabeçalho declarando mais que o teto: o único
+    // jeito de este pedido dar 413 é a rota olhar o cabeçalho antes de ler.
+    const req = new NextRequest("http://localhost/api/v1/message-templates/importar", {
+      method: "POST",
+      body: JSON.stringify(blueprint([{ titulo: "x", corpo: "y" }])),
+      headers: {
+        "Content-Type": "application/json",
+        "content-length": String(2 * 1024 * 1024 + 1),
+      },
+    });
+
+    const res = await POST(req);
+
+    expect(res.status).toBe(413);
+    expect((await res.json()).error.code).toBe("payload_too_large");
+    expect(db.inserts).toHaveLength(0);
+  });
+
   it("a guarda de apoio barra antes de qualquer leitura do banco", async () => {
     h.apoio.mockResolvedValue(
       new Response(JSON.stringify({ error: { code: "forbidden_scope" } }), { status: 403 }),

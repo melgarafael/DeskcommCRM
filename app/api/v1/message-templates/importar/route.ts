@@ -128,8 +128,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
-  // Texto antes de JSON: com `req.json()` o corpo grande já foi materializado, e
-  // o teto viraria decoração.
+  // O tamanho DECLARADO é conferido antes de ler: `req.text()` materializa o
+  // corpo inteiro, e um teto conferido só depois dele viraria decoração. É o
+  // mesmo desenho das rotas irmãs de import. A conferência do texto lido logo
+  // abaixo continua, para o corpo que chega sem `content-length` (chunked).
+  const declarado = Number(req.headers.get("content-length") ?? "0");
+  if (declarado > TAMANHO_MAXIMO) {
+    return fail("payload_too_large", t("O arquivo passa de 2 MB."), 413, { requestId });
+  }
+
   const texto = await req.text().catch(() => null);
   if (texto === null) {
     return fail("invalid_request", t("Falha ao ler o arquivo enviado."), 400, { requestId });
