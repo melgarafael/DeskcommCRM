@@ -20,7 +20,7 @@ O cron anda a fila a cada minuto. E-mail só sai dentro da janela e dos dias con
 
 Pausar a cadência ou desligar o uso na empresa preserva os dados e impede os próximos envios. Retirar uma inscrição a encerra, sem apagar histórico. Cadência com inscrições não é excluída: pause para preservar histórico e supressões. A montagem dos passos não muda enquanto houver inscrição ativa, mesmo em cadência pausada: termine ou retire as inscrições primeiro.
 
-Todo e-mail tem descadastro assinado, sem sessão e sem expiração artificial. A abertura e o descadastro usam finalidades HMAC distintas. Descadastrar interrompe as inscrições ativas desse contato na empresa e registra supressão na inscrição de origem, inclusive quando ela já estava concluída ou a empresa desligada. Clique repetido é idempotente. A reinscrição comum não remove a supressão.
+Todo e-mail tem descadastro assinado, sem sessão e sem expiração artificial. A abertura e o descadastro usam finalidades HMAC distintas. Abrir o link (GET ou HEAD) não muda nada: filtro de e-mail abre links sozinho, então a página só pede a confirmação, sem mostrar dado da pessoa. Quem descadastra é o POST: o botão da página ou o provedor de e-mail, pelos cabeçalhos `List-Unsubscribe` e `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058), sem cookie; o token é a credencial. Descadastrar interrompe as inscrições ativas desse contato na empresa e registra supressão na inscrição de origem, inclusive quando ela já estava concluída ou a empresa desligada. POST repetido é idempotente. A reinscrição comum não remove a supressão.
 
 A anonimização encerra a fila, revoga rastreio e redige metadados do titular. O export LGPD inclui inscrições e eventos. Tabela ausente é seção vazia; falha de leitura de módulo existente aborta a coleta, em vez de entregar cópia incompleta como completa.
 
@@ -34,4 +34,4 @@ WhatsApp, detecção de resposta/bounce, clique, inscrição automática por tag
 
 ## Evidência deste recorte
 
-Unitários e cercas têm resultados medidos no despacho da execução e no PR. Banco (install/update, provisionadora, RLS, LGPD), build e prova visual com e-mail de teste continuam obrigatórios antes de retirar o draft. Presença na vitrine do código não é publicação de imagem: a publicação final é do pipeline após merge/release.
+Unitários, cercas, banco (install/update, provisionadora, RLS, LGPD), build e prova visual com e-mail de teste têm os resultados medidos no PR. Presença na vitrine do código não é publicação de imagem: a publicação final é do pipeline após merge/release.

@@ -194,9 +194,11 @@ function Conector({
               type="button"
               aria-label={t("Adicionar passo aqui")}
               data-testid={`inserir-${ponto.lista}-${ponto.indice}`}
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-border-strong bg-surface text-text-muted shadow-xs transition hover:scale-110 hover:border-accent hover:text-accent focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-500"
+              className="group flex h-11 w-11 items-center justify-center rounded-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-accent-500 sm:h-6 sm:w-6"
             >
-              <Plus size={12} weight="bold" aria-hidden />
+              <span className="flex h-6 w-6 items-center justify-center rounded-full border border-border-strong bg-surface text-text-muted shadow-xs transition group-hover:scale-110 group-hover:border-accent group-hover:text-accent">
+                <Plus size={12} weight="bold" aria-hidden />
+              </span>
             </button>
           </PopoverTrigger>
           <PopoverContent className="w-80 p-1" align="center">

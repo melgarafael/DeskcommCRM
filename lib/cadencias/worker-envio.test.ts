@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { portaDaAplicacao } from "@/lib/db";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { configuracaoPadrao } from "./exemplos";
+import { verifyCadenciaLink } from "./token";
 import { processarCadencias } from "./worker";
 import type { Passo } from "./tipos";
 
@@ -107,6 +108,14 @@ describe("efeitos do worker de cadências", () => {
     const args = mocks.enviar.mock.calls[0]![0];
     expect(args.html).toContain("cadencia-descadastro/"); expect(args.html).not.toContain("<img");
     expect(b.inscricao.emails_enviados).toBe(1); expect(b.inscricao.status).toBe("concluida"); expect(b.inscricao.envio_pendente_passo_id).toBeNull();
+  });
+  it("e-mail leva descadastro de um clique (RFC 8058) com o token da própria inscrição", async () => {
+    const b = bancada(); await processarCadencias(b.admin, agora, "request-sintetico");
+    const { headers } = mocks.enviar.mock.calls[0]![0] as { headers: Record<string, string> };
+    expect(headers["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click");
+    const url = headers["List-Unsubscribe"]!.match(/^<(https:\/\/cadencias\.test\/api\/v1\/webhooks\/cadencia-descadastro\/([^>]+))>$/);
+    expect(url).not.toBeNull();
+    expect(verifyCadenciaLink(url![2]!, "descadastro")?.enrollment_id).toBe(b.inscricao.id);
   });
   it("com autorização inclui pixel e dois tokens distintos", async () => {
     const b = bancada({ consentimento: true }); await processarCadencias(b.admin, agora, "request-sintetico");

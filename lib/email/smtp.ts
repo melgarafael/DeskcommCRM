@@ -12,6 +12,7 @@ interface SendArgs {
   replyTo?: string;
   fromName?: string;
   tags?: { name: string; value: string }[];
+  headers?: Record<string, string>;
 }
 export type EmailDeliveryError =
   "not_configured" | "send_failed" | "rate_limited" | "sender_rejected";
@@ -82,6 +83,7 @@ export async function sendEmail(args: SendArgs): Promise<SendResult> {
       html: args.html,
       text: args.text,
       replyTo: args.replyTo,
+      headers: args.headers,
     });
     return { ok: true, id: result.messageId };
   } catch (error) {

@@ -73,6 +73,7 @@ interface SendArgs {
   replyTo?: string;
   fromName?: string;
   tags?: { name: string; value: string }[];
+  headers?: Record<string, string>;
 }
 
 /**

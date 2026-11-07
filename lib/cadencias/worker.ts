@@ -192,6 +192,8 @@ async function executarPassoEmail(
     text: `${corpoRenderizado}\n\n---\nNão quer mais receber estes e-mails? ${urlDescadastro}`,
     fromName: nomeDoVendedor ?? undefined,
     replyTo: emailDoVendedor ?? undefined,
+    // RFC 8058: o provedor de e-mail faz POST nesta URL, sem cookie; o GET só mostra a confirmação.
+    headers: { "List-Unsubscribe": `<${urlDescadastro}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
     tags: [
       { name: "cadencia_id", value: inscricao.cadence_id },
       { name: "enrollment_id", value: inscricao.id },

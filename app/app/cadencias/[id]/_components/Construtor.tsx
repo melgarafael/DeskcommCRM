@@ -106,7 +106,7 @@ export function Construtor({ id }: { id: string }) {
           value={cadencia.nome}
           disabled={somenteLeitura}
           onChange={(e) => mudar({ nome: e.target.value })}
-          className="min-w-0 flex-1 rounded-sm bg-transparent px-1.5 py-1 text-sm font-semibold outline-hidden hover:bg-surface-elevated focus:bg-surface-elevated"
+          className="min-w-40 flex-1 rounded-sm bg-transparent px-1.5 py-1 text-sm font-semibold outline-hidden hover:bg-surface-elevated focus:bg-surface-elevated"
           data-testid="nome-cadencia"
         />
         <span className="text-xs text-text-muted">
