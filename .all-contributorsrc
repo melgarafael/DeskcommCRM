@@ -31,7 +31,8 @@
       "avatar_url": "https://avatars.githubusercontent.com/u/75556242?v=4",
       "profile": "https://github.com/webtecnica",
       "contributions": [
-        "code"
+        "code",
+        "doc"
       ]
     },
     {
@@ -1544,6 +1545,106 @@
       "profile": "https://github.com/ygorl",
       "contributions": [
         "code"
+      ]
+    },
+    {
+      "login": "bfs2021",
+      "name": "zgy",
+      "avatar_url": "https://avatars.githubusercontent.com/u/101915083?v=4",
+      "profile": "https://github.com/bfs2021",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "ricagui",
+      "name": "Ricardo Mendes",
+      "avatar_url": "https://avatars.githubusercontent.com/u/63175361?v=4",
+      "profile": "https://github.com/ricagui",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "ZvisionAutomations",
+      "name": "ZvisionAutomations",
+      "avatar_url": "https://avatars.githubusercontent.com/u/263388721?v=4",
+      "profile": "https://github.com/ZvisionAutomations",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "jhometal",
+      "name": "jhometal",
+      "avatar_url": "https://avatars.githubusercontent.com/u/86752996?v=4",
+      "profile": "https://github.com/jhometal",
+      "contributions": [
+        "bug",
+        "ideas"
+      ]
+    },
+    {
+      "login": "juniorpagedown",
+      "name": "juniorpagedown",
+      "avatar_url": "https://avatars.githubusercontent.com/u/81428565?v=4",
+      "profile": "https://github.com/juniorpagedown",
+      "contributions": [
+        "bug"
+      ]
+    },
+    {
+      "login": "nemyasalmeida",
+      "name": "nemyasalmeida",
+      "avatar_url": "https://avatars.githubusercontent.com/u/298016233?v=4",
+      "profile": "https://github.com/nemyasalmeida",
+      "contributions": [
+        "bug"
+      ]
+    },
+    {
+      "login": "hudson-souza-mkt",
+      "name": "hudson-souza-mkt",
+      "avatar_url": "https://avatars.githubusercontent.com/u/173297369?v=4",
+      "profile": "https://github.com/hudson-souza-mkt",
+      "contributions": [
+        "bug"
+      ]
+    },
+    {
+      "login": "NeroSued",
+      "name": "Nero Sued",
+      "avatar_url": "https://avatars.githubusercontent.com/u/250192521?v=4",
+      "profile": "https://github.com/NeroSued",
+      "contributions": [
+        "ideas"
+      ]
+    },
+    {
+      "login": "aerosuiteapp",
+      "name": "Danilo Costa",
+      "avatar_url": "https://avatars.githubusercontent.com/u/284125218?v=4",
+      "profile": "https://github.com/aerosuiteapp",
+      "contributions": [
+        "ideas"
+      ]
+    },
+    {
+      "login": "frankjohann",
+      "name": "Frank Johann",
+      "avatar_url": "https://avatars.githubusercontent.com/u/184155572?v=4",
+      "profile": "https://github.com/frankjohann",
+      "contributions": [
+        "ideas"
+      ]
+    },
+    {
+      "login": "tec7alex",
+      "name": "tec7alex",
+      "avatar_url": "https://avatars.githubusercontent.com/u/101949364?v=4",
+      "profile": "https://github.com/tec7alex",
+      "contributions": [
+        "ideas"
       ]
     }
   ]
