@@ -292,6 +292,48 @@ describe("costCents — id com prefixo provider/ (formato OpenRouter)", () => {
   });
 });
 
+describe("costCents — id com PONTO no lugar do hífen (formato atual do OpenRouter)", () => {
+  // Issue #1931: o relator mediu 48 de 60 execuções de `anthropic/claude-haiku-5.5`
+  // com `cost_cents` nulo, enquanto `anthropic/claude-haiku-4-5` precificava. O
+  // recorte do prefixo (issue #1880) sozinho não bastava: a tabela indexa
+  // `claude-haiku-5-5` (hífen) e o OpenRouter publica a versão com ponto. Sem isso o
+  // custo só não ficava nulo quando o próprio OpenRouter informava `usage.cost`.
+  const USO: TokenUsage = {
+    inputTokens: 359_369,
+    outputTokens: 4_070,
+    cacheReadTokens: 294_128,
+    cacheWriteTokens: 0,
+  };
+
+  it("o id com ponto custa o MESMO que o id canônico com hífen", () => {
+    const canonico = costCents("claude-haiku-5-5", USO, "1h");
+    const comPonto = costCents("anthropic/claude-haiku-5.5", USO, "1h");
+    expect(canonico).not.toBeNull();
+    expect(comPonto).not.toBeNull();
+    expect(comPonto).toBeCloseTo(canonico as number, 10);
+  });
+
+  it.each([
+    // id com PONTO, id canônico com hífen
+    ["anthropic/claude-haiku-5.5", "claude-haiku-5-5"],
+    ["anthropic/claude-haiku-4.5", "claude-haiku-4-5"],
+    ["anthropic/claude-sonnet-5.5", "claude-sonnet-5-5"],
+    ["anthropic/claude-opus-5.5", "claude-opus-5-5"],
+  ])("%s precifica como %s em todas as tarifas", (comPonto, canonico) => {
+    expect(entrada(comPonto)).toBeCloseTo(entrada(canonico) as number, 6);
+    expect(saida(comPonto)).toBeCloseTo(saida(canonico) as number, 6);
+    expect(leituraDeCache(comPonto)).toBeCloseTo(leituraDeCache(canonico) as number, 6);
+    expect(gravacaoDeCache(comPonto, "1h")).toBeCloseTo(
+      gravacaoDeCache(canonico, "1h") as number,
+      6,
+    );
+  });
+
+  it("ponto + sufixo de data do vendor casa a linha sem data", () => {
+    expect(entrada("anthropic/claude-haiku-4.5-20251001")).toBeCloseTo(100, 6);
+  });
+});
+
 describe("costCents — sufixo de data do vendor é tolerado", () => {
   it.each([
     ["claude-opus-4-1-20250805", 1500],
