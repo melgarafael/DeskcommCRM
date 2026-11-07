@@ -13,6 +13,7 @@ import { addDays, format, startOfDay, startOfMonth, startOfWeek } from "date-fns
 import * as React from "react";
 
 import { AvisoDaConexaoGoogle } from "./_components/AvisoDaConexaoGoogle";
+import { ConvidadosDaEquipe } from "./_components/ConvidadosDaEquipe";
 import { CartaoDaConexaoGoogle } from "./_components/CartaoDaConexaoGoogle";
 
 import { AgendaInterativa } from "@/components/agenda/AgendaInterativa";
@@ -331,6 +332,17 @@ export function AgendaClient({
   // para entender o 403 do Atendente precisa saber que ele JÁ não existe, e um
   // comentário que afirma o contrário é o defeito de novo.
   const { data: pessoas = [] } = usePessoasDaAgenda();
+
+  /**
+   * #4006 — convidados da equipe escolhidos na tela.
+   *
+   * `convidadosTocados` separa "não falei de convidados" (campo AUSENTE: o
+   * servidor aplica os padrão do tipo) de "tirei todo mundo" (lista VAZIA, que
+   * é escolha). Sem essa distinção, abrir o formulário e salvar apagaria os
+   * convidados padrão do tipo.
+   */
+  const [convidadosDaEquipe, setConvidadosDaEquipe] = React.useState<string[]>([]);
+  const [convidadosTocados, setConvidadosTocados] = React.useState(false);
 
   // A JANELA ACOMPANHA O MÊS QUE O PAINEL MOSTRA.
   //
@@ -955,6 +967,17 @@ export function AgendaClient({
                     )}
               </p>
             </div>
+            {/* #4006 — a EQUIPE, que o campo acima não cobre (ele é uma pessoa
+                de fora). O convidado não vira dono do compromisso. */}
+            <ConvidadosDaEquipe
+              pessoas={pessoas as unknown as { user_id: string; display_label: string }[]}
+              selecionados={convidadosDaEquipe}
+              desabilitado={remarcandoId ? false : undefined}
+              onSelecionados={(ids) => {
+                setConvidadosDaEquipe(ids);
+                setConvidadosTocados(true);
+              }}
+            />
             {!remarcandoId ? (
               <>
                 <EnderecoDaMarcacao value={endereco} onChange={setEnderecoEditado} />
@@ -1076,6 +1099,9 @@ export function AgendaClient({
                         revision: agendamentos.find((a) => a.id === remarcandoId)?.revision,
                         starts_at: instante,
                         guest_email: convidado,
+                        // AUSENTE = "não falei de convidados": o PATCH não os
+                        // toca e a lista atual continua. VAZIA = tirou todos.
+                        convidados_da_equipe: convidadosTocados ? convidadosDaEquipe : undefined,
                       })
                       .then((r) => {
                         setRemarcandoId(null);
@@ -1083,6 +1109,8 @@ export function AgendaClient({
                         setEmailConvidado("");
                         setEnderecoEditado(null);
                         setObservacao("");
+                        setConvidadosDaEquipe([]);
+                        setConvidadosTocados(false);
                         return r;
                       });
                   }
@@ -1101,6 +1129,9 @@ export function AgendaClient({
                       // publicada e a rota recusa qualquer duration_minutes ali.
                       duration_minutes: tipo.servico ? undefined : duracaoDoAtendimento,
                       guest_email: convidado,
+                      // Ausente = padrão do tipo (o servidor aplica); vazia =
+                      // a pessoa tirou todo mundo.
+                      convidados_da_equipe: convidadosTocados ? convidadosDaEquipe : undefined,
                       location_details: endereco.trim(),
                       description: observacao.trim() || undefined,
                       // TÍTULO LIVRE (#3766): digitado, é ele o `title` da
@@ -1113,6 +1144,8 @@ export function AgendaClient({
                     .then((r) => {
                       setEmailConvidado("");
                       setEnderecoEditado(null);
+                      setConvidadosDaEquipe([]);
+                      setConvidadosTocados(false);
                       setObservacao("");
                       setTituloLivre("");
                       // Guardado para o fechamento saber para onde levar a grade.

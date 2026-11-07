@@ -39,6 +39,8 @@ export function useRemarcarAgendamento() {
       revision?: number;
       starts_at: string;
       guest_email?: string;
+      /** #4006 — lista COMPLETA dos convidados da equipe. Ausente não mexe. */
+      convidados_da_equipe?: string[];
     }) => apiClient.patch<{ data: { id: string } }>("/api/v1/agenda/agendamentos", entrada),
     onSuccess: () => {
       toast.success(t("Agendamento remarcado."));

@@ -34,6 +34,8 @@ export interface NovoAgendamento {
    * Google quando existe. Vazio ou ausente não convida outra pessoa.
    */
   guest_email?: string;
+  /** #4006 — ids das pessoas da EQUIPE convidadas. Ausente = padrão do tipo. */
+  convidados_da_equipe?: string[];
 }
 
 /**

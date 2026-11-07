@@ -115,6 +115,22 @@ const camposDoTipo = {
    */
   reminder_meta_template_id: z.string().uuid().nullish(),
   /**
+   * #4006 — os convidados PADRÃO do tipo, pré-marcados na tela de marcar.
+   *
+   * A pessoa pode tirar alguém antes de salvar. No caminho automático (IA,
+   * automação, MCP) entram SÓ estes: a IA nunca escolhe pessoas. Id que não é
+   * membro ativo é ignorado no envio (`convidadosDaEquipe`), não recusado aqui
+   * — a lista pode envelhecer com a saída de alguém da empresa.
+   */
+  convidados_padrao: z.array(z.string().uuid()).max(20).optional(),
+  /**
+   * #4006 — levar negócio, etapa, produtos, cliente e telefone para a descrição
+   * do evento do Google. Ligado de fábrica (o cliente também é convidado,
+   * quando a ficha tem e-mail, e todos os convidados veem a descrição); quem
+   * escreve informação interna no nome do negócio desliga.
+   */
+  levar_dados_do_negocio: z.boolean().optional(),
+  /**
    * ⚠️ ESTA FAIXA É MAIS ESTREITA QUE O CHECK DO BANCO, E ISSO CONTRARIA O
    * PARÁGRAFO ACIMA DE PROPÓSITO.
    *

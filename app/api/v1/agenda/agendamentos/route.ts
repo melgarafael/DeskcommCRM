@@ -119,6 +119,14 @@ const marcarSchema = z.object({
   location_details: z.string().max(300).optional(),
   guest_email: emailDoConvidado.optional(),
   /**
+   * Pessoas da EQUIPE convidadas (#4006) — ids de membros ativos.
+   *
+   * O teto é o mesmo de `MAXIMO_DE_CONVIDADOS`: uma lista com a empresa inteira
+   * dentro do evento de um cliente é vazamento de agenda interna, e o
+   * `attendees` é visível a todos os convidados.
+   */
+  convidados_da_equipe: z.array(z.string().uuid()).max(20).optional(),
+  /**
    * A duração DESTE atendimento, em minutos (issue #3709) — ausente, a do tipo.
    *
    * A faixa é a dos moldes (`lib/agenda/duracao-escolhida.ts`), e recusar aqui
@@ -155,6 +163,8 @@ const alterarSchema = z
     status: z.enum(["confirmed", "completed", "no_show"]).optional(),
     notes: z.string().max(2000).optional(),
     guest_email: emailDoConvidado.optional(),
+    /** Lista COMPLETA dos convidados da equipe (#4006). Ausente não mexe. */
+    convidados_da_equipe: z.array(z.string().uuid()).max(20).optional(),
     /**
      * O texto que a grade desenha no bloco (#3776). Entra no `.refine` abaixo:
      * sem isso o campo era DESCARTADO em silêncio e o pedido voltava com
@@ -170,6 +180,7 @@ const alterarSchema = z
       c.status !== undefined ||
       c.notes !== undefined ||
       c.guest_email !== undefined ||
+      c.convidados_da_equipe !== undefined ||
       c.title !== undefined,
     {
       message: "Informe pelo menos um campo para alterar.",

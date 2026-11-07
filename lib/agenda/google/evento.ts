@@ -43,6 +43,7 @@
  */
 
 import { instanteDaParede, primeiroInstanteDoDia } from "./tempo";
+import { descricaoComNegocio } from "@/lib/agenda/negocio-na-descricao";
 
 /**
  * O sufixo que marca um evento como nosso, gravado DENTRO do Google.
@@ -120,21 +121,42 @@ export function participantesDoAgendamento(input: {
   contactEmail?: string | null;
   contactName?: string | null;
   guestEmail?: string | null;
+  /**
+   * As pessoas da EQUIPE convidadas para este compromisso (#4006).
+   *
+   * Já resolvidas em e-mail por `convidadosDaEquipe` (conta Google saudável, ou
+   * login). Entram no MESMO ponto de deduplicação que o contato e o convidado
+   * digitado: o Google recusa o evento INTEIRO se `attendees` tiver um e-mail
+   * repetido, e é comum a pessoa da equipe também estar na ficha do cliente.
+   *
+   * O dono da agenda é convite do organizador, não terceiro: quem chama tira
+   * ele da lista (`normalizarIdsDeConvidados`).
+   */
+  teamGuests?: readonly { email: string; nome?: string | null }[];
 }): ParticipanteDoAgendamento[] {
   const out: ParticipanteDoAgendamento[] = [];
-  const vistos = new Set<string>();
+  /** E-mail normalizado → participante já montado (dedup com ENRIQUECIMENTO). */
+  const vistos = new Map<string, ParticipanteDoAgendamento>();
   const entra = (email: string | null | undefined, nome?: string | null) => {
     const limpo = email?.trim();
     if (!limpo) return;
     const chave = limpo.toLowerCase();
-    if (vistos.has(chave)) return;
-    vistos.add(chave);
+    const existente = vistos.get(chave);
+    if (existente) {
+      // O MESMO e-mail pode chegar duas vezes e só na segunda com nome — o
+      // "e-mail do convidado" digitado à mão e a equipe apontam para a mesma
+      // pessoa. Sem isto o `displayName` se perdia conforme a ordem da lista.
+      if (!existente.nome && nome?.trim()) existente.nome = nome.trim();
+      return;
+    }
     const p: ParticipanteDoAgendamento = { email: limpo, aguardandoResposta: true };
     if (nome?.trim()) p.nome = nome.trim();
+    vistos.set(chave, p);
     out.push(p);
   };
   entra(input.contactEmail, input.contactName);
   entra(input.guestEmail);
+  for (const convidado of input.teamGuests ?? []) entra(convidado.email, convidado.nome);
   return out;
 }
 
@@ -171,6 +193,23 @@ export interface AgendamentoParaGoogle {
    */
   meet_aberto?: boolean | null;
   participantes?: ParticipanteDoAgendamento[];
+  /**
+   * E-mails das pessoas da EQUIPE convidadas (#4006).
+   *
+   * Não viram `attendees` por si: quem monta a lista é o executor, via
+   * `participantesDoAgendamento({ teamGuests })`, no mesmo ponto em que a ficha
+   * e o convidado digitado são deduplicados. Aqui eles existem por OUTRA razão:
+   * entram no hash do grupo `guest`, e é isso que faz o cron de push enxergar
+   * "os convidados mudaram" e reenviar o evento. Sem eles no hash, convidar
+   * alguém na tela não chegaria ao Google.
+   */
+  convidados_da_equipe?: readonly string[];
+  /**
+   * O bloco de dados do negócio (#4006, item 3), JÁ MONTADO por
+   * `blocoDoNegocioNoEvento`. Entra DEPOIS do texto da pessoa, nunca no lugar
+   * dele; vazio/ausente não muda a descrição.
+   */
+  bloco_do_negocio?: string | null;
   /** Quando já existe, é a identidade do evento lá — nunca se gera outra. */
   google_ical_uid?: string | null;
 }
@@ -397,7 +436,10 @@ export function paraEventoDoGoogle(a: AgendamentoParaGoogle): CorpoDeEventoDoGoo
   };
 
   const descricao = a.description?.trim();
-  if (descricao) corpo.description = descricao;
+  // O bloco do negócio (#4006) entra DEPOIS do texto e nunca o apaga: quem
+  // escreveu "levar proposta impressa" continua com a frase acima do bloco.
+  const descricaoFinal = descricaoComNegocio(descricao, a.bloco_do_negocio ?? "");
+  if (descricaoFinal) corpo.description = descricaoFinal;
   const local = localDoEvento(a);
   if (local) corpo.location = local;
   if (participantes.length > 0) corpo.attendees = participantes;
