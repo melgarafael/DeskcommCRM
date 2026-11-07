@@ -170,10 +170,12 @@ describe("contrato do adaptador OLX", () => {
       });
 
       expect(chamadas).toHaveLength(1);
-      expect(chamadas[0].url).toBe("https://apps.olx.com.br/autoservice/v1/chat/send");
-      const headers = chamadas[0].init.headers as Record<string, string>;
+      const chamada = chamadas[0];
+      if (!chamada) throw new Error("nenhuma requisição saiu");
+      expect(chamada.url).toBe("https://apps.olx.com.br/autoservice/v1/chat/send");
+      const headers = chamada.init.headers as Record<string, string>;
       expect(headers.Authorization).toBe(`Bearer ${TOKEN}`);
-      const corpo = JSON.parse(String(chamadas[0].init.body)) as Record<string, string>;
+      const corpo = JSON.parse(String(chamada.init.body)) as Record<string, string>;
       expect(Object.keys(corpo).sort()).toEqual(["chatId", "messageId", "textMessage"]);
       expect(corpo.chatId).toBe(FIXTURE.chatId);
       expect(corpo.textMessage).toBe("Sim, está disponível!");
