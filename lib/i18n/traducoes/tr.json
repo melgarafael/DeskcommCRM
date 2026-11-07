@@ -11001,7 +11001,7 @@
   "registro(s).": "kayıt.",
   "regra · espera": "kural · bekleme",
   "regra · uma saída por regra": "kural · kural başına bir çıkış",
-  "regra(s) de agente continuam escrevendo esta etiqueta. Excluir aqui não apaga a regra — o agente vai recriar a etiqueta no próximo atendimento.": "asistan kuralı bu etiketi yazmaya devam ediyor. Burada silmek kuralı silmez — asistan etiketi bir sonraki görüşmede yeniden oluşturur.",
+  "regra(s) de agente continuam citando esta etiqueta. Excluir aqui não apaga a regra — a que põe a etiqueta vai recriá-la no próximo atendimento.": "asistan kuralı bu etiketi anmaya devam ediyor. Burada silmek kuralı silmez — etiketi ekleyen kural onu bir sonraki görüşmede yeniden oluşturur.",
   "regra(s) de agente.": "asistan kuralı.",
   "regras da casa": "işletme kuralları",
   "regras · espera": "kural · bekleme",
