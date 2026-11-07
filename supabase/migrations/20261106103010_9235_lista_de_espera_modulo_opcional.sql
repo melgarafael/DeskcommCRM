@@ -38,6 +38,7 @@ begin
   select * into a from public.calendar_appointments where organization_id=p_org and service_operation_key=command_key;
   if found then
     if a.service_operation_request is distinct from jsonb_build_object('event_type_id',type_id,'contact_id',contact,'starts_at',start_at,'participant_key',participant)
+      ||jsonb_strip_nulls(jsonb_build_object('space_id',(p_input->>'space_id')::uuid,'party_size',nullif(coalesce((p_input->>'party_size')::integer,1),1)))
       then raise exception 'service_idempotency_conflict' using errcode='PT409';end if;
     return to_jsonb(a)||jsonb_build_object('deduplicated',true);
   end if;
@@ -48,7 +49,8 @@ begin
     and participant_key=participant and status in ('pending','confirmed');
   if found then return to_jsonb(a)||jsonb_build_object('deduplicated',true);end if;
   if p_input?'expected_revision' and t.service_revision is distinct from (p_input->>'expected_revision')::bigint then raise exception 'service_stale' using errcode='PT409';end if;
-  fact:=public.fn_calendar_service_check(p_org,type_id,start_at,(p_input->>'owner_user_id')::uuid);
+  fact:=public.fn_calendar_service_check(p_org,type_id,start_at,(p_input->>'owner_user_id')::uuid,null,now(),
+    (p_input->>'space_id')::uuid,(p_input->>'party_size')::integer);
   if not coalesce((fact->>'available')::boolean,false) then raise exception '%',fact->>'reason' using errcode='PT409';end if;
   if p_actor->>'type'='user' and fact->>'owner_user_id' is not null and fact->>'owner_user_id' is distinct from p_actor->>'id'
     and not exists(select 1 from public.user_organizations where organization_id=p_org and user_id=(p_actor->>'id')::uuid
@@ -57,7 +59,8 @@ begin
   occurrence:=public.fn_calendar_service_occurrence(p_org,type_id,fact);
   insert into public.calendar_appointments(organization_id,event_type_id,title,starts_at,ends_at,time_zone,status,owner_user_id,contact_id,conversation_id,
     description,notes,location_kind,location_details,guest_email,meeting_delivery,created_by_kind,created_by_user_id,source,service_occurrence_id,participant_key,participant_name,
-    service_booking_mode,service_capacity_rule,service_capacity_limit,service_rule_revision,service_destination_calendar_id,service_publication_mode,service_requires_confirmation,service_operation_key,service_operation_request)
+    service_booking_mode,service_capacity_rule,service_capacity_limit,service_rule_revision,service_destination_calendar_id,service_publication_mode,service_requires_confirmation,service_operation_key,service_operation_request,
+    service_space_id,service_party_size)
     values(p_org,type_id,coalesce(nullif(p_input->>'title',''),t.name||case when participant_name is null then '' else ' · '||participant_name end),start_at,(fact->>'ends_at')::timestamptz,t.service_timezone,
       case when t.requires_confirmation or (auth.uid() is null and p_input->>'segurar_pendente'='true') then 'pending' else 'confirmed' end,(fact->>'owner_user_id')::uuid,contact,(p_input->>'conversation_id')::uuid,
       nullif(trim(p_input->>'description'),''),nullif(p_input->>'notes',''),t.location_kind,
@@ -67,7 +70,9 @@ begin
       case when p_actor->>'type'='user' then (p_actor->>'id')::uuid else null end,
       case when p_actor->>'type'='user' then 'ui' else 'mcp' end,occurrence,participant,participant_name,
       t.booking_mode,fact->>'capacity_rule',(fact->>'capacity_limit')::integer,t.service_revision,(fact->>'destination_calendar_id')::uuid,t.service_publication_mode,t.requires_confirmation,command_key,
-      jsonb_build_object('event_type_id',type_id,'contact_id',contact,'starts_at',start_at,'participant_key',participant))
+      jsonb_build_object('event_type_id',type_id,'contact_id',contact,'starts_at',start_at,'participant_key',participant)
+      ||jsonb_strip_nulls(jsonb_build_object('space_id',(p_input->>'space_id')::uuid,'party_size',nullif(coalesce((p_input->>'party_size')::integer,1),1))),
+      (fact->>'space_id')::uuid,coalesce((fact->>'party_size')::integer,1))
     returning * into a;
   return to_jsonb(a)||jsonb_build_object('deduplicated',false,'service_facts',fact);
 end $$;
@@ -85,16 +90,16 @@ begin
     then raise exception 'service_writer_required' using errcode='42501';end if;
   if tg_op='INSERT' and auth.uid() is not null and (new.service_block or (new.service_occurrence_id is null and (new.service_destination_calendar_id is not null or new.service_publication_mode is not null)))
     then raise exception 'service_writer_required' using errcode='42501';end if;
-  if tg_op='UPDATE' and auth.uid() is not null and row(new.participant_key,new.participant_name,new.service_destination_calendar_id,new.service_publication_mode,new.service_requires_confirmation,new.service_operation_key,new.service_operation_request,new.service_block)
-    is distinct from row(old.participant_key,old.participant_name,old.service_destination_calendar_id,old.service_publication_mode,old.service_requires_confirmation,old.service_operation_key,old.service_operation_request,old.service_block)
+  if tg_op='UPDATE' and auth.uid() is not null and row(new.participant_key,new.participant_name,new.service_destination_calendar_id,new.service_publication_mode,new.service_requires_confirmation,new.service_operation_key,new.service_operation_request,new.service_block,new.service_space_id,new.service_party_size)
+    is distinct from row(old.participant_key,old.participant_name,old.service_destination_calendar_id,old.service_publication_mode,old.service_requires_confirmation,old.service_operation_key,old.service_operation_request,old.service_block,old.service_space_id,old.service_party_size)
     then raise exception 'service_writer_required' using errcode='42501';end if;
   if tg_op='UPDATE' and auth.uid() is not null and ((old.service_occurrence_id is null and new.service_occurrence_id is not null)
     or (old.service_occurrence_id is not null and row(new.contact_id,new.event_type_id) is distinct from row(old.contact_id,old.event_type_id))
     or (row(new.starts_at,new.ends_at,new.owner_user_id,new.service_occurrence_id) is not distinct from row(old.starts_at,old.ends_at,old.owner_user_id,old.service_occurrence_id)
       and row(new.service_booking_mode,new.service_capacity_rule,new.service_capacity_limit,new.service_rule_revision) is distinct from row(old.service_booking_mode,old.service_capacity_rule,old.service_capacity_limit,old.service_rule_revision)))
     then raise exception 'service_writer_required' using errcode='42501';end if;
-  if tg_op='UPDATE' and row(new.starts_at,new.ends_at,new.owner_user_id,new.status,new.service_occurrence_id,new.contact_id,new.event_type_id,new.service_destination_calendar_id)
-    is not distinct from row(old.starts_at,old.ends_at,old.owner_user_id,old.status,old.service_occurrence_id,old.contact_id,old.event_type_id,old.service_destination_calendar_id) then return new;end if;
+  if tg_op='UPDATE' and row(new.starts_at,new.ends_at,new.owner_user_id,new.status,new.service_occurrence_id,new.contact_id,new.event_type_id,new.service_destination_calendar_id,new.service_space_id,new.service_party_size)
+    is not distinct from row(old.starts_at,old.ends_at,old.owner_user_id,old.status,old.service_occurrence_id,old.contact_id,old.event_type_id,old.service_destination_calendar_id,old.service_space_id,old.service_party_size) then return new;end if;
   if tg_op='INSERT' and new.service_occurrence_id is not null and new.contact_id is not null then perform public.fn_service_lock(new.organization_id,new.contact_id);end if;
   perform public.fn_calendar_service_lock(new.organization_id);
   if tg_op='INSERT' and new.service_occurrence_id is not null then
@@ -108,7 +113,9 @@ begin
     if new.conversation_id is not null and not exists(select 1 from public.conversations where organization_id=new.organization_id and id=new.conversation_id and contact_id=new.contact_id and not is_group)
       then raise exception 'service_conversation_not_found' using errcode='P0002';end if;
     new.participant_key:=new.contact_id::text||':'||coalesce(lower(regexp_replace(nullif(trim(new.participant_name),''),'\s+',' ','g')),'primary');
-    new.service_operation_request:=jsonb_build_object('event_type_id',new.event_type_id,'contact_id',new.contact_id,'starts_at',new.starts_at,'participant_key',new.participant_key);
+    -- O lugar e as pessoas entram no pedido: a mesma chave com outra mesa é conflito, não a reserva antiga devolvida.
+    new.service_operation_request:=jsonb_build_object('event_type_id',new.event_type_id,'contact_id',new.contact_id,'starts_at',new.starts_at,'participant_key',new.participant_key)
+      ||jsonb_strip_nulls(jsonb_build_object('space_id',new.service_space_id,'party_size',nullif(new.service_party_size,1)));
   end if;
   if new.status not in ('pending','confirmed') or new.service_block then return new;end if;
   checked:=new.service_occurrence_id is not null;
@@ -116,14 +123,16 @@ begin
     if not exists(select 1 from public.calendar_service_occurrences o where o.organization_id=new.organization_id and o.id=new.service_occurrence_id
       and o.event_type_id=new.event_type_id and o.starts_at=new.starts_at and o.ends_at=new.ends_at)
       then raise exception 'service_occurrence_mismatch' using errcode='23503';end if;
-    -- Confirmação não reabre uma reserva já ocupante; mudança de horário/reativação revalida.
+    -- Confirmação não reabre uma reserva já ocupante; mudança de horário, de lugar, de pessoas ou reativação revalida.
     if tg_op='INSERT' or row(new.starts_at,new.ends_at,new.owner_user_id,new.service_occurrence_id) is distinct from row(old.starts_at,old.ends_at,old.owner_user_id,old.service_occurrence_id)
+      or row(new.service_space_id,new.service_party_size) is distinct from row(old.service_space_id,old.service_party_size)
       or old.status not in ('pending','confirmed') then
-      fact:=public.fn_calendar_service_check(new.organization_id,new.event_type_id,new.starts_at,new.owner_user_id,new.id);
+      fact:=public.fn_calendar_service_check(new.organization_id,new.event_type_id,new.starts_at,new.owner_user_id,new.id,now(),new.service_space_id,new.service_party_size);
       if not coalesce((fact->>'available')::boolean,false) then raise exception '%',fact->>'reason' using errcode='PT409';end if;
       if (fact->>'ends_at')::timestamptz is distinct from new.ends_at then raise exception 'service_duration_mismatch' using errcode='PT409';end if;
       new.service_booking_mode:=fact->>'booking_mode';new.service_capacity_rule:=fact->>'capacity_rule';
       new.service_capacity_limit:=(fact->>'capacity_limit')::integer;new.service_rule_revision:=(fact->>'service_revision')::bigint;
+      new.service_space_id:=(fact->>'space_id')::uuid;new.service_party_size:=coalesce((fact->>'party_size')::integer,1);
       new.service_occurrence_id:=public.fn_calendar_service_occurrence(new.organization_id,new.event_type_id,fact);
       if tg_op='INSERT' then
         select * into type_row from public.calendar_event_types where organization_id=new.organization_id and id=new.event_type_id;

@@ -59,7 +59,7 @@ const BASE = {
   phone_number: "+5511999998888",
   phone_type: "celular",
   phone_whatsapp: "sim",
-  cpf_hash: null,
+  cpf_available: false,
   birthdate: null,
   is_blocked: false,
   is_personal: false,

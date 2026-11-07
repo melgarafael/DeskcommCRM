@@ -48,7 +48,8 @@ export interface Contact {
   phone_whatsapp?: WhatsappDoTelefone | null;
   /** Spec 31 (B1): os telefones extras da ficha, `[]` quando não há nenhum. */
   additional_phones?: TelefoneExtra[];
-  cpf_hash: string | null;
+  /** Se a ficha tem CPF. O valor não sai pela API: é pedido à parte, por quem pode. */
+  cpf_available: boolean;
   birthdate: string | null;
   is_blocked: boolean;
   blocked_reason: string | null;
