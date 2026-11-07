@@ -122,7 +122,13 @@ export function fail(
  */
 export function comIdDaRequisicao<T extends Response>(res: T, reqOuId: Request | string | null | undefined): T {
   const doHeader =
-    typeof reqOuId === "string" ? reqOuId : reqOuId?.headers.get("x-request-id");
+    typeof reqOuId === "string"
+      ? reqOuId
+      : // `headers` também pode faltar: há chamador de teste que monta a requisição
+        // só com o que a rota lê (o handshake do webhook da Meta), e o carimbo não
+        // pode ser o motivo de um 500. Sem header, nasce um id novo — o pior caso é
+        // perder a correlação daquela resposta, nunca derrubar a rota.
+        reqOuId?.headers?.get("x-request-id");
   const requestId = doHeader && doHeader.length > 0 ? doHeader : randomUUID();
 
   // Quem já carimbou o PRÓPRIO id (o export de tenant, o `/api/mcp`) manda: ali
