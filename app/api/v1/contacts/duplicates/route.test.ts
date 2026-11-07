@@ -32,10 +32,13 @@ import { createClient } from "@/lib/supabase/server";
  */
 const dispensa = vi.hoisted(() => ({ pares: new Set<string>() }));
 
+/** O cliente do servidor da vez: é por ele, e não pela sessão, que o CPF é lido. */
+const servidor = vi.hoisted(() => ({ cliente: {} as unknown }));
+
 vi.mock("@/lib/auth/server", () => ({ loadAuthUser: vi.fn() }));
 vi.mock("@/lib/auth/require-role", () => ({ orgAtivaDaApi: vi.fn() }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
-vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({}) }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => servidor.cliente }));
 vi.mock("@/lib/contacts/dispensar-par", () => ({
   lerParesDispensados: async () => new Set(dispensa.pares),
 }));
@@ -63,10 +66,14 @@ interface Consulta {
  * recortados em `maxRows`. Filtros `eq`/`is` são APLICADOS de verdade.
  *
  * A lista de COLUNAS é registrada (não aplicada): é por ela que se prova que a
- * rota pediu `cpf_hash` — o defeito da #4081 era exatamente uma coluna ausente da
- * leitura, e um dublê que devolve a linha inteira esconde isso.
+ * rota pediu `cpf_hash`, e a quem — e um dublê que devolve a linha inteira
+ * esconde isso.
  */
-function fakeSupabase(dados: Record<string, Linha[]>, maxRows = MAX_ROWS) {
+function fakeSupabase(
+  dados: Record<string, Linha[]>,
+  maxRows = MAX_ROWS,
+  falha?: { data: null; error: { message: string } },
+) {
   const consultas: Consulta[] = [];
 
   const client = {
@@ -108,6 +115,19 @@ function fakeSupabase(dados: Record<string, Linha[]>, maxRows = MAX_ROWS) {
         registro.ordens.push(coluna);
         return builder;
       };
+      builder.in = (coluna: string, valores: unknown[]) => {
+        registro.filtros.push([`${coluna} in`, valores]);
+        filtros.push((l) => valores.includes(l[coluna]));
+        return builder;
+      };
+      builder.not = (coluna: string, _operador: "is", valor: unknown) => {
+        registro.filtros.push([`${coluna} not is`, valor]);
+        filtros.push((l) => (l[coluna] ?? null) !== valor);
+        return builder;
+      };
+      // A leitura do servidor não pagina: `await` direto na cadeia.
+      builder.then = (resolver: (v: unknown) => unknown) =>
+        Promise.resolve(falha ?? executar(null)).then(resolver);
       builder.range = (inicio: number, fim: number) => {
         registro.faixas.push([inicio, fim]);
         return Promise.resolve(executar([inicio, fim]));
@@ -158,6 +178,7 @@ function corpo(res: Response): Promise<{ data: unknown; meta: Record<string, unk
 
 beforeEach(() => {
   dispensa.pares.clear();
+  servidor.cliente = fakeSupabase({}).client;
   vi.mocked(loadAuthUser).mockResolvedValue({
     id: USER_ID,
     email: "a@example.com",
@@ -305,9 +326,9 @@ describe("o repetido pelo nome: sugestão depois dos fortes, e dispensa que vale
 /**
  * ─── O CPF na varredura (#4081) ───────────────────────────────────────────────
  *
- * `cpf_hash` passa a ser LIDO (é comparação de igualdade, e o índice único
- * dele nasce com `if not exists`) e continua NÃO sendo devolvido: hash de
- * documento é PII derivada, e a tela não tem uso para ela.
+ * `cpf_hash` é comparado (é igualdade, e o índice único dele nasce com
+ * `if not exists`) pelo SERVIDOR, só nas fichas que a rota listou. A resposta não
+ * o devolve.
  */
 describe("CPF na varredura", () => {
   const CPF_A = "1111111111111111111111111111111111111111111111111111111111111111";
@@ -320,9 +341,17 @@ describe("CPF na varredura", () => {
     return linhas;
   }
 
-  it("⭐ CPF igual une o par com o motivo `cpf` — e a rota PEDE a coluna", async () => {
-    const { consultas, client } = fakeSupabase({ contacts: comCpf(base(300)) });
-    vi.mocked(createClient).mockResolvedValue(client as never);
+  /** A sessão lê a base; o servidor conhece o CPF dela. */
+  function montar(linhasDaSessao: Linha[] = base(300)) {
+    const sessao = fakeSupabase({ contacts: linhasDaSessao });
+    const doServidor = fakeSupabase({ contacts: comCpf(base(300)) });
+    vi.mocked(createClient).mockResolvedValue(sessao.client as never);
+    servidor.cliente = doServidor.client;
+    return { sessao, doServidor };
+  }
+
+  it("⭐ CPF igual une o par com o motivo `cpf` — e quem lê o CPF é o servidor", async () => {
+    const { sessao, doServidor } = montar();
 
     const json = await corpo(await chamar());
     const grupos = json.data as Array<{ motivos: string[]; contatos: Array<{ id: string }> }>;
@@ -331,15 +360,47 @@ describe("CPF na varredura", () => {
     expect(grupos[0]!.motivos).toEqual(["cpf"]);
     expect(grupos[0]!.contatos.map((c) => c.id).sort()).toEqual(["contato-0005", "contato-0150"]);
 
-    // Sabotagem: tirar `cpf_hash` de `COLUNAS_DO_CONTATO` deixa esta asserção
-    // vermelha — e, no banco, o par nunca mais é encontrado.
-    const leitura = consultas.find((c) => c.tabela === "contacts")!;
-    expect(leitura.colunas).toContain("cpf_hash");
+    // Sabotagem: devolver `cpf_hash` a `COLUNAS_DO_CONTATO` deixa a primeira
+    // asserção vermelha; tirar a leitura do servidor deixa o grupo acima vazio.
+    for (const leitura of sessao.consultas) expect(leitura.colunas).not.toContain("cpf_hash");
+    expect(doServidor.consultas.some((c) => c.colunas.includes("cpf_hash"))).toBe(true);
+  });
+
+  it("o servidor só olha as fichas que a sessão viu, na organização da sessão", async () => {
+    // Ficha 150 fora do que a sessão enxerga: o par não pode se formar por ela.
+    const { doServidor } = montar(base(100));
+
+    const json = await corpo(await chamar());
+    expect(json.data).toEqual([]);
+
+    const pedidos = doServidor.consultas.filter((c) => c.tabela === "contacts");
+    expect(pedidos.length).toBe(1);
+    // Sabotagem: tirar o `.eq("organization_id", …)` deixa esta asserção vermelha.
+    expect(pedidos[0]!.filtros).toContainEqual(["organization_id", ORG_ID]);
+    const ids = pedidos[0]!.filtros.find(([c]) => c === "id in")![1] as string[];
+    expect(ids).toHaveLength(100);
+    expect(ids).not.toContain("contato-0150");
+  });
+
+  it("base maior que um lote de ids é lida em vários pedidos, sem perder o par", async () => {
+    // Fichas 5 e 150 caem em lotes diferentes (o lote é de 100).
+    const { doServidor } = montar();
+
+    const json = await corpo(await chamar());
+    expect((json.data as unknown[]).length).toBe(1);
+    expect(doServidor.consultas.filter((c) => c.tabela === "contacts").length).toBe(3);
+  });
+
+  it("falha na leitura do CPF é erro da rota, não lista sem o par", async () => {
+    vi.mocked(createClient).mockResolvedValue(fakeSupabase({ contacts: base(10) }).client as never);
+    servidor.cliente = fakeSupabase({}, MAX_ROWS, { data: null, error: { message: "fora" } }).client;
+
+    const res = await chamar();
+    expect(res.status).toBe(500);
   });
 
   it("o `cpf_hash` NÃO sai no JSON — nem no detalhe do grupo", async () => {
-    const { client } = fakeSupabase({ contacts: comCpf(base(300)) });
-    vi.mocked(createClient).mockResolvedValue(client as never);
+    montar();
 
     const res = await chamar();
     const texto = await res.clone().text();
@@ -353,12 +414,11 @@ describe("CPF na varredura", () => {
 
   it("o `eq(organization_id)` continua preso na leitura — outra organização não entra", async () => {
     // Sabotagem: tirar o `.eq("organization_id", …)` deixa esta asserção vermelha.
-    const { consultas, client } = fakeSupabase({ contacts: comCpf(base(300)) });
-    vi.mocked(createClient).mockResolvedValue(client as never);
+    const { sessao } = montar();
 
     await chamar();
 
-    const leitura = consultas.find((c) => c.tabela === "contacts")!;
+    const leitura = sessao.consultas.find((c) => c.tabela === "contacts")!;
     expect(leitura.filtros).toContainEqual(["organization_id", ORG_ID]);
   });
 });

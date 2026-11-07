@@ -53,17 +53,40 @@ import { testaComPrazo } from "@/lib/leads/padrao-do-campo-no-servidor";
 type SB = SupabaseClient;
 
 const SELECT_COLS =
-  "id, organization_id, name, display_name, address_book_name, zip_code, street, number, complement, district, city, state, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_personal, contact_type, ai_opt_out, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at, first_service_at";
+  "id, organization_id, name, display_name, address_book_name, zip_code, street, number, complement, district, city, state, email, email_normalized, phone_number, cpf_encrypted, birthdate, is_blocked, blocked_reason, is_personal, contact_type, ai_opt_out, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at, first_service_at";
 
-/** A linha como o banco devolve: `cpf_hash` é interno a este módulo. */
-type LinhaDeContato = Omit<Contact, "cpf_available"> & { cpf_hash: string | null };
+/**
+ * A linha como o banco devolve. `cpf_encrypted` é interno a este módulo e só diz
+ * se há CPF: `contacts_cpf_consistency` obriga as duas colunas de CPF a serem
+ * nulas juntas, e a cifra só se abre em `decrypt_cpf`. Comparar por CPF é do
+ * servidor (`idsDeContatosPorCpf`, `erroDeConflitoUnico`).
+ */
+type LinhaDeContato = Omit<Contact, "cpf_available"> & { cpf_encrypted: unknown };
 
 /**
  * A ficha que sai deste módulo: o sinal de que há CPF, nunca a coluna. Toda
  * saída de `SELECT_COLS` passa aqui — os handlers servem à REST e ao MCP.
  */
-function fichaDaResposta({ cpf_hash, ...ficha }: LinhaDeContato): Contact {
-  return { ...ficha, cpf_available: !!cpf_hash };
+function fichaDaResposta({ cpf_encrypted, ...ficha }: LinhaDeContato): Contact {
+  return { ...ficha, cpf_available: !!cpf_encrypted };
+}
+
+/**
+ * As fichas vivas desta organização com o CPF de `digits`. Sem `limit`: o índice
+ * único de CPF nasce com `if not exists`, e a ficha repetida num clone sem ele
+ * também tem de aparecer na busca.
+ */
+async function idsDeContatosPorCpf(ctx: HandlerCtx, digits: string): Promise<string[]> {
+  const { data, error } = await createAdminClient()
+    .from("contacts")
+    .select("id")
+    .eq("organization_id", ctx.organization_id)
+    .eq("cpf_hash", hashCpf(digits))
+    .is("is_merged_into", null);
+  if (error) {
+    throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+  }
+  return ((data ?? []) as { id: string }[]).map((r) => r.id);
 }
 
 interface CursorPayload {
@@ -302,7 +325,8 @@ export async function listContactsHandler(
       }
     }
     if (digits.length === 11) {
-      orParts.push(`cpf_hash.eq.${hashCpf(digits)}`);
+      const idsPorCpf = await idsDeContatosPorCpf(ctx, digits);
+      if (idsPorCpf.length > 0) orParts.push(`id.in.(${idsPorCpf.join(",")})`);
     }
     query = query.or(orParts.join(","));
   }
@@ -568,7 +592,7 @@ async function erroDeConflitoUnico(
   if (indice === INDICE_CPF) {
     const hash = typeof campos.cpf_hash === "string" ? campos.cpf_hash : null;
     if (hash) {
-      const existente = await encontrarContatoPorCpfHash(supabase, ctx.organization_id, hash);
+      const existente = await encontrarContatoPorCpfHash(createAdminClient(), ctx.organization_id, hash);
       if (existente) {
         return new ApiError(
           409,
