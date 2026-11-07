@@ -69885,9 +69885,9 @@ grant  execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uui
 
 -- ─── (1) a régua, numa função só ─────────────────────────────────────────────
 create or replace function public.fn_automatico_da_conversa(
-  p_organization_id   uuid,
+  p_organization_id    uuid,
   p_channel_session_id uuid,
-  p_telefone          text
+  p_contato_id         uuid
 ) returns boolean
 language plpgsql
 stable
@@ -69900,7 +69900,16 @@ declare
   v_numeros     jsonb;
   v_variantes   text[];
   v_numero      text;
+  v_telefone    text;
 begin
+  -- O telefone é resolvido AQUI, e não no wrapper: `comando_da_conversa` é
+  -- campo calculado de conversa e a issue #2739 proíbe subconsulta a `contacts`
+  -- por linha (o invariante `o-comando-da-conversa-le-o-bit-do-contato` mede).
+  select ct.phone_number
+    into v_telefone
+    from public.contacts ct
+   where ct.id = p_contato_id
+     and ct.organization_id = p_organization_id;
   -- (a) HÁ QUEM ATENDA ESTE NÚMERO? Espelho de `haQuemAtendaASessao`
   -- (lib/ai/agents/quem-atende-a-sessao.ts): agente publicado na sessão, ou
   -- roteador ativo nela cujo fallback/membro pode EXECUTAR (versão publicada,
@@ -69979,11 +69988,11 @@ begin
   if v_numeros is null or jsonb_typeof(v_numeros) <> 'array' or jsonb_array_length(v_numeros) = 0 then
     return false;
   end if;
-  if p_telefone is null or btrim(p_telefone) = '' then
+  if v_telefone is null or btrim(v_telefone) = '' then
     return false;
   end if;
 
-  v_variantes := public.fn_telefone_variantes(p_telefone);
+  v_variantes := public.fn_telefone_variantes(v_telefone);
   if coalesce(array_length(v_variantes, 1), 0) = 0 then
     return false;
   end if;
@@ -70003,20 +70012,20 @@ begin
 end;
 $automatico$;
 
-comment on function public.fn_automatico_da_conversa(uuid, uuid, text)
-  is 'Há agente que vai responder ESTA conversa? Espelho SQL do portão do dreno (haQuemAtendaASessao) + pré-go-live (numeroPodeTestar). false = sem agente publicado no número, ou contato fora da lista de teste do canal. Issue #4012.';
+comment on function public.fn_automatico_da_conversa(uuid, uuid, uuid)
+  is 'Há agente que vai responder ESTA conversa? Espelho SQL do portão do dreno (haQuemAtendaASessao) + pré-go-live (numeroPodeTestar). Recebe o CONTATO (não o telefone) e resolve o número por dentro, com a empresa: o wrapper comando_da_conversa não pode voltar a consultar contacts por linha (issue #2739). false = sem agente publicado no número, ou contato fora da lista de teste do canal. Issue #4012.';
 
 -- `authenticated` EXPLÍCITO: o `ALTER DEFAULT PRIVILEGES` do projeto concede
 -- EXECUTE a `authenticated` em toda função nova de `public`, e o revoke de
 -- `public` não desfaz esse grant — medido por `has_function_privilege` na
 -- varredura de definer (tests/invariants/definer-membership-varredura.test.ts).
-revoke execute on function public.fn_automatico_da_conversa(uuid, uuid, text) from public, anon, authenticated;
+revoke execute on function public.fn_automatico_da_conversa(uuid, uuid, uuid) from public, anon, authenticated;
 -- A régua é INTERNA: só os wrappers `comando_da_conversa` e
 -- `automatico_da_conversa` (ambos definer) a chamam. Expor ao `authenticated`
 -- deixaria um usuário logado sondar qualquer organização por RPC — a varredura
 -- de definer (issue #3849) recusa função definer com org no argumento que não
 -- confere o pertencimento, e a saída certa aqui é não alcançar.
-grant  execute on function public.fn_automatico_da_conversa(uuid, uuid, text) to service_role;
+grant  execute on function public.fn_automatico_da_conversa(uuid, uuid, uuid) to service_role;
 
 -- ─── (2) o comando deixa de mentir ──────────────────────────────────────────
 -- `create or replace` preserva a ACL e a forma da 0404 (parâmetro SEM NOME: com
@@ -70036,7 +70045,7 @@ as $comando$
      and not public.fn_automatico_da_conversa(
            $1.organization_id,
            $1.channel_session_id,
-           base.telefone
+           $1.contact_id
          )
     then 'aguardando'
     else base.comando
@@ -70047,12 +70056,14 @@ as $comando$
         $1.status,
         $1.assigned_to_user_id,
         $1.bot_silenced_until,
-        coalesce((select ct.force_human from public.contacts ct where ct.id = $1.contact_id and ct.organization_id = $1.organization_id), false),
-        coalesce((select ct.is_blocked  from public.contacts ct where ct.id = $1.contact_id and ct.organization_id = $1.organization_id), false),
+        -- O bit da LINHA (contato_trava_humano), não subconsulta a contacts:
+        -- a migration 0645 moveu a trava para a conversa justamente para
+        -- acabar com duas consultas por linha (issue #2739).
+        $1.contato_trava_humano,
+        false,
         now(),
         coalesce($1.is_group, false)
-      ) as comando,
-      (select ct.phone_number from public.contacts ct where ct.id = $1.contact_id and ct.organization_id = $1.organization_id) as telefone
+      ) as comando
   ) as base;
 $comando$;
 
@@ -70077,7 +70088,7 @@ as $campo$
   select public.fn_automatico_da_conversa(
     $1.organization_id,
     $1.channel_session_id,
-    (select ct.phone_number from public.contacts ct where ct.id = $1.contact_id and ct.organization_id = $1.organization_id)
+    $1.contact_id
   );
 $campo$;
 
