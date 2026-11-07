@@ -362,6 +362,147 @@ export type Database = {
           },
         ];
       };
+      agencia_clientes: {
+        Row: { agencia_id: string; created_at: string; organization_id: string };
+        ComputedFields: never;
+        Insert: { agencia_id: string; created_at?: string; organization_id: string };
+        Update: { agencia_id?: string; created_at?: string; organization_id?: string };
+        Relationships: [
+          {
+            foreignKeyName: "agencia_clientes_agencia_id_fkey";
+            columns: ["agencia_id"];
+            isOneToOne: false;
+            referencedRelation: "agencia_configuracoes";
+            referencedColumns: ["organization_id"];
+          },
+          {
+            foreignKeyName: "agencia_clientes_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: true;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      agencia_configuracoes: {
+        Row: {
+          clientes_inclusos: boolean;
+          habilitada: boolean;
+          limite_clientes: number;
+          organization_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          clientes_inclusos?: boolean;
+          habilitada?: boolean;
+          limite_clientes?: number;
+          organization_id: string;
+        };
+        Update: {
+          clientes_inclusos?: boolean;
+          habilitada?: boolean;
+          limite_clientes?: number;
+          organization_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "agencia_configuracoes_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: true;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      agencia_criacoes: {
+        Row: {
+          actor_user_id: string;
+          chave: string;
+          cliente_id: string;
+          organization_id: string;
+          pedido: NonNullable<Json>;
+        };
+        ComputedFields: never;
+        Insert: {
+          actor_user_id: string;
+          chave: string;
+          cliente_id: string;
+          organization_id: string;
+          pedido: NonNullable<Json>;
+        };
+        Update: {
+          actor_user_id?: string;
+          chave?: string;
+          cliente_id?: string;
+          organization_id?: string;
+          pedido?: NonNullable<Json>;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "agencia_criacoes_cliente_id_fkey";
+            columns: ["cliente_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "agencia_criacoes_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      agencia_sessoes: {
+        Row: {
+          actor_user_id: string;
+          agencia_id: string;
+          auth_session_id: string;
+          created_at: string;
+          ended_at: string | null;
+          expires_at: string;
+          id: string;
+          organization_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          actor_user_id: string;
+          agencia_id: string;
+          auth_session_id: string;
+          created_at?: string;
+          ended_at?: string | null;
+          expires_at?: string;
+          id?: string;
+          organization_id: string;
+        };
+        Update: {
+          actor_user_id?: string;
+          agencia_id?: string;
+          auth_session_id?: string;
+          created_at?: string;
+          ended_at?: string | null;
+          expires_at?: string;
+          id?: string;
+          organization_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "agencia_sessoes_agencia_id_fkey";
+            columns: ["agencia_id"];
+            isOneToOne: false;
+            referencedRelation: "agencia_configuracoes";
+            referencedColumns: ["organization_id"];
+          },
+          {
+            foreignKeyName: "agencia_sessoes_organization_id_fkey";
+            columns: ["organization_id"];
+            isOneToOne: false;
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       agent_case_chat_messages: {
         Row: {
           agent_id: string | null;
@@ -14935,6 +15076,23 @@ export type Database = {
         Args: { p_from: string; p_limit?: number; p_org: string; p_to: string; p_tz?: string };
         Returns: Json;
       };
+      fn_agencia_abrir_cliente: {
+        Args: { p_agencia: string; p_cliente: string };
+        Returns: string;
+      };
+      fn_agencia_autoridade: {
+        Args: { p_actor: string; p_agencia: string };
+        Returns: boolean;
+      };
+      fn_agencia_criar_cliente: {
+        Args: { p_agencia: string; p_chave: string; p_nome: string; p_slug: string };
+        Returns: Json;
+      };
+      fn_agencia_encerrar_sessao: {
+        Args: Record<PropertyKey, never>;
+        Returns: Json;
+      };
+      fn_agencia_pode_gerir: { Args: { p_agencia: string }; Returns: boolean };
       fn_agenda_conexoes_google_do_dono: {
         Args: { p_org: string; p_owner: string };
         Returns: {

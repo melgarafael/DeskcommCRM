@@ -445,6 +445,8 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
   const { paRow, memberships } = permissoes;
   if (!leituraDoSuporte.ok) throw leituraDoSuporte.erro;
   const support = leituraDoSuporte.contexto;
+  const { data: agencias, error: erroAgencias } = await supabase.from("agencia_configuracoes").select("organization_id").eq("habilitada", true);
+  if (erroAgencias) throw new Error("Não foi possível confirmar a gestão de organizações clientes.");
   const fullName = (user.user_metadata?.full_name as string | undefined) ?? null;
   const avatarUrl = (user.user_metadata?.avatar_url as string | undefined) ?? null;
   const locale = (user.user_metadata?.locale as string | undefined) ?? null;
@@ -470,6 +472,7 @@ export const loadAuthUser = cache(async (): Promise<AuthUser | null> => {
     locale,
     idioma,
     timezone,
+    agency_org_ids: (agencias ?? []).map((a) => a.organization_id),
     organizations: memberships,
     support,
   };

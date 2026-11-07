@@ -4175,6 +4175,10 @@ terão trace/vídeo. Não foi medido download na janela anterior à persistênci
 do worker, viewer PDF ou aplicativo externo. O PASS de UX deste head não
 substitui os cinco checks obrigatórios: o verify antigo falhou no teste de
 relógio, cujo reparo central entra pela composição da main, sem repetir a rodada antiga.
+## Gestão delegada de organizações por agência `[P1]`
+
+Spec: `tests/e2e/agencias-organizacoes.spec.ts`. A plataforma habilita a agência e define a cota; o administrador direto cria um cliente pelo seletor do topo, entra no CRM do cliente e volta. A desabilitação pela plataforma invalida a sessão já aberta. A API global permanece proibida e a auditoria identifica a pessoa real. Prova local realizada e limites do ambiente registrados em [organizacoes-agencias](../specs/organizacoes-agencias.md); execução da spec no ambiente oficial fresco ainda pendente.
+
 ## Transcrição pelo serviço da OpenRouter — adaptação #3408 (2026-10-27)
 
 **Prova real confirmada no head `081d4b2a`.** A
