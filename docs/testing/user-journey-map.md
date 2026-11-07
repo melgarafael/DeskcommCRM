@@ -4318,20 +4318,20 @@ painel mostra modelo e origem, não faz chamada paga).
 
 ## E-mail da organização — conta e domínio (#3443 + #3464)
 
-**Estado do resgate:** unitários e transporte HTTP sintético medidos; banco e jornada
-pelo browser ainda **NÃO EXECUTADOS** no candidato integrado. O receiver recebe
-requisições reais da SDK com credenciais/destinatários artificiais; isso não prova
-entrega pela Resend nem chegada à caixa de entrada.
+**Estado:** spec `conta-resend-da-organizacao.spec.ts` verde no CI em `d531c6ebe` (27/10,
+53,2 s, parte 2); a prova em instalação limpa, pela vps-teste, ainda **não foi feita**. O
+receiver recebe requisições reais da SDK com credenciais e destinatários artificiais; isso
+não prova entrega pela Resend nem chegada à caixa de entrada.
 
 | Jornada | Aceite | Estado |
 |---|---|---|
-| Admin encontra Configurações › Marca › Como seus e-mails saem | conecta uma conta com From válido e domínio habilitado na Resend; chave não volta após recarregar | UI pendente; action/SDK unitários |
-| Chave só de envio, domínio pendente, envio desabilitado ou falha de rede | causa nomeada; sem escrita nem segredo em payload/log | unitários; UI pendente |
-| Conta ausente versus conta ilegível | ausência mantém transporte da instalação; cifra/consulta falhando recusa, sem enviar pela outra conta | unitários; DB/UI pendentes |
-| Duas organizações com contas diferentes | automação entrega ao receiver com a chave e From da sua organização; convite/LGPD seguem pela plataforma | SDK→HTTP real para duas contas; DB/UI/sistema pendentes |
-| Conferir domínio com Reply-To de outro domínio | usa From da conta e registros oficiais; campos do browser não escolhem tenant/domínio | unitários; UI pendente |
-| Return-Path personalizado/CNAME, null MX, SPF divergente e timeout | consulta nomes oficiais; mostra divergência/indisponibilidade separadamente do estado da Resend; sem selo de garantia de entrega | unitários; UI pendente |
-| Desconectar pela tela | remove só a conta da organização ativa e restaura o transporte da instalação | action unitária; DB/UI pendentes |
+| Admin encontra Configurações › Marca › Como seus e-mails saem | conecta uma conta com From válido e domínio habilitado na Resend; chave não volta após recarregar | spec no CI; action/SDK unitários |
+| Chave só de envio, domínio pendente, envio desabilitado ou falha de rede | causa nomeada; sem escrita nem segredo em payload/log | unitários; spec no CI |
+| Conta ausente versus conta ilegível | ausência mantém transporte da instalação; cifra/consulta falhando recusa, sem enviar pela outra conta | unitários; invariantes e spec no CI |
+| Duas organizações com contas diferentes | automação entrega ao receiver com a chave e From da sua organização; convite/LGPD seguem pela plataforma | SDK→HTTP real para duas contas; spec no CI |
+| Conferir domínio com Reply-To de outro domínio | usa From da conta e registros oficiais; campos do browser não escolhem tenant/domínio | unitários; spec no CI |
+| Return-Path personalizado/CNAME, null MX, SPF divergente e timeout | consulta nomes oficiais; mostra divergência/indisponibilidade separadamente do estado da Resend; sem selo de garantia de entrega | unitários; spec no CI |
+| Desconectar pela tela | remove só a conta da organização ativa e restaura o transporte da instalação | action unitária; spec no CI |
 
 Fontes: `lib/email/resend-da-organizacao*.test.ts`, `lib/email/dominio-de-envio*.test.ts`,
 `tests/unit/conferir-dominio-de-envio.test.ts` e

@@ -3,11 +3,13 @@
  *
  * ═══ O que esta ação NÃO faz ═══
  *
- * Ela não escolhe transporte, não abre conexão e não conhece credencial: quem
- * entrega é `lib/email/roteador.ts` (SMTP configurado → SMTP; sem SMTP →
- * Resend), o MESMO caminho de um convite ou de um alarme de LGPD. Escrever um
- * segundo transporte aqui seria o defeito que o roteador existe para matar
- * (ver o cabeçalho dele: trocar oito `import` por um não é somar).
+ * Ela não abre conexão nem decifra credencial. Há UM desvio: se a organização
+ * conectou a conta Resend dela, quem entrega é `lib/email/resend-da-organizacao.ts`,
+ * e conta ilegível falha com motivo próprio, sem trocar o remetente. Sem conta
+ * conectada, quem entrega é `lib/email/roteador.ts` (SMTP configurado → SMTP; sem
+ * SMTP → Resend), o MESMO caminho de um convite ou de um alarme de LGPD. Escrever
+ * outro transporte aqui seria o defeito que o roteador existe para matar (ver o
+ * cabeçalho dele: trocar oito `import` por um não é somar).
  *
  * ═══ O que ela faz ═══
  *
