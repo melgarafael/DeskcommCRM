@@ -28,7 +28,7 @@ import { ancoraAoFecharPainel } from "@/lib/agenda/ancora-depois-de-marcar";
 import { ancoraLocalDoDia } from "@/lib/agenda/semana-semente";
 import { dataDeParede, diaLocalISO, partesNoFuso } from "@/lib/agenda/fuso";
 import { janelaDoMesVisivel } from "@/lib/agenda/janela-do-mes-visivel";
-import { recorteDaGrade as recorteDaGradeDe } from "@/lib/agenda/recorte-da-grade";
+import { diasDoRecorte, recorteDaGrade as recorteDaGradeDe } from "@/lib/agenda/recorte-da-grade";
 import { resolverResponsavelDoPainel } from "@/lib/agenda/responsavel-do-painel";
 import { useVinculoDaMarcacao } from "@/lib/agenda/vinculo-da-marcacao";
 import { Button } from "@/components/ui/button";
@@ -417,24 +417,11 @@ export function AgendaClient({
     return { de: de.toISOString(), ate: ate.toISOString() };
   }, [visao, ancora]);
 
-  // A JANELA DA CAMADA "Datas dos negócios" (#3221), EM DIAS DE CALENDÁRIO do
-  // fuso da organização.
-  //
-  // `recorteDaGrade` é `[de, ate)` em INSTANTES: o fim é exclusivo, e converter
-  // o fim direto em dia somaria um dia extra à camada (o primeiro dia fora da
-  // grade apareceria com "embarque"). Um segundo antes do fim cai no último dia
-  // desenhado, e é isso que a camada recebe.
-  //
-  // Os dias saem no fuso da ORGANIZAÇÃO (`diaLocalISO`) e não no do navegador:
-  // a grade inteira é desenhada nessa régua (#1362), e a camada não pode
-  // discordar dela — deslocaria o embarque de quem abre a Agenda de outro fuso.
-  const janelaDaCamada = React.useMemo(
-    () => ({
-      de: diaLocalISO(new Date(recorteDaGrade.de), fusoDaAgenda),
-      ate: diaLocalISO(new Date(new Date(recorteDaGrade.ate).getTime() - 1), fusoDaAgenda),
-    }),
-    [recorteDaGrade, fusoDaAgenda],
-  );
+  // A JANELA DA CAMADA "Datas dos negócios" (#3221): os dias que a grade
+  // desenha, na mesma leitura das colunas dela. A âncora já é o dia da
+  // organização; converter de novo deslocaria um dia para quem abre a Agenda de
+  // outro fuso.
+  const janelaDaCamada = React.useMemo(() => diasDoRecorte(visao, ancora), [visao, ancora]);
 
   // A janela que o SERVIDOR pintou. Sem esta comparação, navegar para outra
   // semana mostraria os compromissos DESTA por um instante — o fallback estaria

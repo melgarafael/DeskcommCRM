@@ -26,7 +26,8 @@
  * já existia.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AgendaClient } from "@/app/app/agenda/_client";
@@ -189,6 +190,50 @@ describe("Agenda — a camada 'Datas dos negócios' desligada não muda a tela",
 
   it("desligada não faz busca nenhuma — nem para saber se há o que mostrar", () => {
     montar(FUNIS);
-    expect(fetch).not.toHaveBeenCalled();
+    // A Agenda tem as buscas dela (as exceções da jornada, por exemplo); a
+    // promessa é que a camada desligada não acrescente nenhuma.
+    const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+    expect(urls.filter((url) => url.includes("datas-dos-negocios"))).toEqual([]);
   });
+});
+
+describe("Agenda — a janela da camada em qualquer fuso de navegador", () => {
+  // Polyfills que o Radix Select exige e o jsdom não tem.
+  beforeAll(() => {
+    window.HTMLElement.prototype.scrollIntoView = vi.fn();
+    window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+    window.HTMLElement.prototype.setPointerCapture = vi.fn();
+    window.HTMLElement.prototype.releasePointerCapture = vi.fn();
+  });
+
+  it.each(["America/Sao_Paulo", "America/Los_Angeles", "Asia/Tokyo"])(
+    "navegador em %s pede os dias que a grade desenha, com a organização em São Paulo",
+    async (fuso) => {
+      const anterior = process.env.TZ;
+      process.env.TZ = fuso;
+      try {
+        // Sem isto, o caso passaria sem ter mudado de fuso nenhum.
+        expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe(fuso);
+
+        montar(FUNIS);
+        // Quarta, 11/03/2026: a semana desenhada vai do domingo 08 ao sábado 14.
+        expect(screen.getByTestId("coluna-dia-2026-03-08")).toBeTruthy();
+        expect(screen.getByTestId("coluna-dia-2026-03-14")).toBeTruthy();
+
+        await userEvent.click(screen.getByTestId("camada-datas-alternar"));
+        await userEvent.click(screen.getByRole("combobox", { name: "Campo de data do negócio" }));
+        await userEvent.click(await screen.findByRole("option", { name: "Embarque" }));
+
+        const url = vi
+          .mocked(fetch)
+          .mock.calls.map(([alvo]) => String(alvo))
+          .find((alvo) => alvo.includes("datas-dos-negocios"));
+        expect(url).toContain("de=2026-03-08");
+        expect(url).toContain("ate=2026-03-14");
+      } finally {
+        cleanup();
+        process.env.TZ = anterior;
+      }
+    },
+  );
 });
