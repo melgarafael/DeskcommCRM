@@ -39,6 +39,7 @@ import {
   DURACAO_MINIMA_MIN,
   duracaoEscolhidaValida,
 } from "@/lib/agenda/duracao-escolhida";
+import { aposVagaLiberada, fecharEncaixeConfirmado } from "@/lib/agenda/encaixe-supabase";
 import { colide } from "@/lib/agenda/horarios-livres";
 import {
   atividadeDaTransicao,
@@ -783,6 +784,12 @@ export async function alterarAgendamentoHandler(
 
   }
 
+  // A vaga segurada da lista de espera pode ser confirmada por qualquer porta da
+  // agenda (tela, `crm_confirm_appointment`): a inscrição fecha aqui, numa só.
+  if (String(salvo.status ?? "") === "confirmed" && String(atual.status) !== "confirmed") {
+    await fecharEncaixeConfirmado({ organizationId: ctx.organization_id, appointmentId: input.id });
+  }
+
   if (!transicao) void audit({action:"agenda.appointment_updated",actorUserId:ctx.actor.type==="user"?ctx.actor.id:null,
     organizationId:ctx.organization_id,resourceType:"calendar_appointment",resourceId:input.id,requestId:ctx.requestId,
     metadata:{revision:salvo.revision,confirmation_next_at:salvo.confirmation_next_at}});
@@ -848,6 +855,14 @@ export async function cancelarAgendamentoHandler(
     resourceId: atual.id as string,
     requestId: ctx.requestId,
     metadata: { reason: input.reason },
+  });
+
+  // A vaga abriu: com o módulo de lista de espera ligado, ela passa adiante agora,
+  // e não numa varredura minutos depois. `aposVagaLiberada` não lança.
+  await aposVagaLiberada({
+    organizationId: ctx.organization_id,
+    appointmentId: atual.id as string,
+    agora: new Date(),
   });
 
   return salvo as Record<string, unknown>;
