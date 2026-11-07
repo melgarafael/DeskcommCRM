@@ -124,7 +124,7 @@ describe("transição real de atendimento", () => {
       ]),
     ).rejects.toMatchObject({ code: "PT409" });
   });
-  it("antigo/igual/outbound não reabre; nova entrada concorrente reabre uma vez e invalida trabalho antigo", async () => {
+  it("atrasada reabre pela ordem de CHEGADA; saída não reabre e a reabertura é uma só", async () => {
     const closed = await state();
     // 0228 coalesce trabalho ativo por org/conversa. Arma backoff futuro para
     // provar que a reabertura acorda a fila, sem exigir evento duplicado.
@@ -138,9 +138,14 @@ describe("transição real de atendimento", () => {
       )
     ).rows;
     expect(pending).toHaveLength(1);
-    const at = closed.service_closed_at.toISOString();
-    await inbound(conversation, at);
-    await inbound(conversation, "2000-01-01");
+    const carimbo = async (id: string) =>
+      (await pool.query("select service_revision from messages where id=$1", [id])).rows[0]
+        .service_revision;
+    // A fronteira do episódio encerrado, lida enquanto ele ainda está encerrado.
+    const old = await readCurrentServiceBoundary(pool, GOV_ORG, conversation);
+
+    // Saída não reabre nada: o `fn_service_inbound` devolve cedo em
+    // `m.direction <> 'inbound'` e a fila não é rearmada.
     await inbound(conversation, undefined, "outbound");
     expect((await state()).status).toBe("closed");
     const stillWaiting = (
@@ -150,12 +155,29 @@ describe("transição real de atendimento", () => {
       ])
     ).rows[0];
     expect(stillWaiting.next_attempt_at).toEqual(pending[0].next_attempt_at);
-    const old = await readCurrentServiceBoundary(pool, GOV_ORG, conversation);
-    await Promise.all([inbound(), inbound()]);
+
+    // ── A LEI QUE A #3015 MUDOU ─────────────────────────────────────────────
+    // Antes, as duas entradas abaixo NÃO reabriam: o guard
+    // `if m.sent_at <= c.service_closed_at then return; end if` vinha ANTES do
+    // cálculo de `reopened`, e uma mensagem entregue atrasada (sent_at igual ou
+    // anterior ao fechamento) era descartada em silêncio — a conversa seguia
+    // encerrada COM a mensagem dentro e o Inbox não a mostrava. Agora reabrem: a
+    // ordem do CANAL decide se a atrasada entra no episódio em curso, nunca se um
+    // cliente que escreveu depois do fechamento volta a ser atendido.
+    const atrasada = await inbound(conversation, "2000-01-01");
+    // Com a conversa JÁ reaberta, o guard volta a valer: esta segunda atrasada
+    // (sent_at igual ao fechamento) não cria episódio nenhum.
+    const segundaAtrasada = await inbound(conversation, closed.service_closed_at.toISOString());
+
     const reopened = await state();
     expect(reopened.status).toBe("open");
     expect(Number(reopened.service_revision)).toBe(Number(closed.service_revision) + 1);
     expect(reopened.current_demanda_id).not.toBe(closed.current_demanda_id);
+    expect(await carimbo(atrasada), "a atrasada que reabriu entra no episódio novo").not.toBeNull();
+    expect(
+      await carimbo(segundaAtrasada),
+      "a segunda atrasada, com a conversa já aberta, fica fora do episódio",
+    ).toBeNull();
     await expect(requireCurrentServiceBoundary(pool, old)).rejects.toThrow(
       "service_boundary_stale",
     );
