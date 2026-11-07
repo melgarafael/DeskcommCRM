@@ -107,8 +107,8 @@ a decisão, sem cortar o acesso do serviço. Sem seção no `CHANGELOG.md`.
 
 ## Migrations (tripla)
 
-- `supabase/migrations/20261104180000_9115_modulo_conectado_perfil.sql` (perfil, permissões, origem do serviço)
-- `supabase/migrations/20261104190000_9116_modulo_conectado_interruptor.sql` (interruptor)
+- `supabase/migrations/20261104180100_9115_modulo_conectado_perfil.sql` (perfil, permissões, origem do serviço)
+- `supabase/migrations/20261104190100_9116_modulo_conectado_interruptor.sql` (interruptor)
 - `supabase/baseline.sql`: apêndice idempotente com os dois blocos.
 - Cada migration tem `-- manifest:` na linha 1.
 

@@ -70905,6 +70905,44 @@ end $function$;
 revoke execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) from public, anon;
 grant  execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) to authenticated, service_role;
 
+-- ---- a marca de apagamento cobre todos os telefones do contato (migration 9241) ----
+-- manifest: **A marca de apagamento cobre todos os telefones do contato.** `fn_lgpd_guardar_marca_de_apagamento` passa a gravar em `lgpd_marcas_de_apagamento` uma linha por telefone da ficha, o principal e os extras de `contact_phones`, cada uma com sal próprio, o HMAC dos dígitos e o `lid` daquele número; mesma tabela, mesma normalização, nada em claro, e `fn_titular_apagado_a_pedido` segue igual. Corpo novo, assinatura, `search_path`, `security definer`, gatilho e grants inalterados. Vale para as anonimizações feitas a partir desta versão. Idempotente; espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (0116). Prova em `tests/invariants/lgpd-marca-de-apagamento.test.ts`.
+--
+-- O gatilho roda no `update` do passo 1 da cascata, antes de o passo 1b apagar
+-- `contact_phones`: é por isso que os extras ainda estão aqui para serem lidos,
+-- como em `fn_redigir_conversas_ao_anonimizar`. A virada de `is_anonymized`
+-- acontece uma vez só, então a segunda anonimização não grava nada de novo.
+create or replace function public.fn_lgpd_guardar_marca_de_apagamento()
+returns trigger language plpgsql security definer
+set search_path = public, extensions, pg_temp as $$
+declare
+  v_alvo record;
+  v_sal bytea;
+begin
+  for v_alvo in
+    select distinct nullif(regexp_replace(coalesce(a.telefone, ''), '\D', '', 'g'), '') as telefone, a.lid
+      from (
+        select old.phone_number as telefone, old.wa_lid as lid
+        union all
+        select t.phone_number, t.wa_lid
+          from public.contact_phones t
+         where t.organization_id = new.organization_id and t.contact_id = new.id
+      ) as a
+  loop
+    continue when v_alvo.telefone is null and v_alvo.lid is null;
+    v_sal := gen_random_bytes(32);
+    insert into public.lgpd_marcas_de_apagamento (organization_id, sal, marca_telefone, marca_lid)
+    values (
+      new.organization_id,
+      v_sal,
+      case when v_alvo.telefone is null then null else hmac(convert_to(v_alvo.telefone, 'UTF8'), v_sal, 'sha256') end,
+      case when v_alvo.lid is null then null else hmac(convert_to(v_alvo.lid, 'UTF8'), v_sal, 'sha256') end
+    );
+  end loop;
+  return null;
+end $$;
+revoke execute on function public.fn_lgpd_guardar_marca_de_apagamento() from public, anon, authenticated, service_role;
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
@@ -74492,9 +74530,12 @@ comment on column public.campaigns.provider_template_variables is
 alter table public.campaigns
   add column if not exists velocidade text not null default 'gradual';
 
+-- O vocabulário FINAL vive aqui, no bloco único da constraint: `transmissao`
+-- (migration 0712) foi acrescentado a esta lista, e o bloco da 0712 não a recria
+-- (`tests/unit/baseline-constraint-reconstruida.test.ts`).
 alter table public.campaigns drop constraint if exists campaigns_velocidade_check;
 alter table public.campaigns
-  add constraint campaigns_velocidade_check check (velocidade in ('gradual', 'rapida'));
+  add constraint campaigns_velocidade_check check (velocidade in ('gradual', 'rapida', 'transmissao'));
 
 update public.campaigns
    set velocidade = 'gradual'
@@ -75593,5 +75634,48 @@ alter table public.followup_flow_pointers
 
 comment on column public.followup_flow_pointers.send_when_assigned is
   'Envia o passo do follow-up mesmo com a conversa atribuída a uma pessoa (dono). Não vence force_human, ai_opt_out, contato interno, contato bloqueado nem as janelas de horário — e não acorda a IA.';
+
+notify pgrst, 'reload schema';
+
+-- ---- campanha por transmissão do provedor (migration 0712) ----
+-- ═══ Por que uma terceira velocidade ═══
+--
+-- A rápida (0711) manda em rajada, mas quem dispara é a rodada do cron, uma
+-- mensagem por chamada. A transmissão entrega a lista ao provedor numa chamada:
+-- a campanha aparece no painel de transmissões dele, com o relatório de cada
+-- destinatário (enviado, entregue, lido, falhou e o motivo), e 500 pessoas saem
+-- em segundos. Medido em 16/10/2026 com 2 destinatários: entregues em 1 a 3 s.
+--
+-- ═══ Por que o id da transmissão mora na campanha ═══
+--
+-- Cada mensagem da transmissão volta pelo webhook como uma saída que o CRM não
+-- mandou. Sem o id, a ingestão a lia como "uma pessoa respondeu pelo celular" —
+-- e calava o agente naquela conversa — e guardava "[Template: nome]" no lugar
+-- do texto, então o agente não sabia o que a pessoa tinha recebido. Com o id, o
+-- eco acha a campanha e o destinatário, e a linha nasce com o texto do modelo.
+-- Único por organização: dois ecos nunca podem apontar para duas campanhas.
+--
+-- O CHECK `campaigns_rapida_so_com_modelo` (0711) já cobre a transmissão: tudo
+-- que não é `gradual` exige modelo.
+--
+-- Idempotente: `add column if not exists`, constraint recriada por nome, índice
+-- `if not exists`.
+
+alter table public.campaigns
+  add column if not exists provider_broadcast_id text;
+
+-- `transmissao` entra no CHECK `campaigns_velocidade_check` no bloco único da
+-- constraint (o da migration 0711, acima): reconstruí-la aqui faria o bloco
+-- antigo falhar ao re-aplicar num banco que já tem campanha por transmissão.
+
+create unique index if not exists campaigns_provider_broadcast_id_uidx
+  on public.campaigns (organization_id, provider_broadcast_id)
+  where provider_broadcast_id is not null;
+
+comment on column public.campaigns.velocidade is
+  'gradual = uma mensagem por número a cada rodada (uma por minuto); rapida = rajada de várias por segundo; transmissao = a lista inteira entregue ao provedor numa chamada. As duas últimas só com modelo aprovado (número oficial). Migrations 0711 e 0712.';
+
+comment on column public.campaigns.provider_broadcast_id is
+  'Id da transmissão no provedor (velocidade = transmissao). O eco de cada mensagem traz este id e volta por ele à campanha e ao destinatário. Migration 0712.';
 
 notify pgrst, 'reload schema';
