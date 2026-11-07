@@ -11,7 +11,6 @@ import {
   limiteDoPlano,
   recursosDoPlano,
   RecursoForaDoVocabulario,
-  type PlanoDeclarado,
 } from "./planos";
 import { RECURSOS, RECURSOS_DO_PLANO, type RecursoDoPlano } from "./vocabulario";
 
@@ -192,21 +191,20 @@ describe("compatibilidade: o plano de hoje continua com o MESMO limite", () => {
 });
 
 describe("recurso fora do vocabulário NÃO cai em default", () => {
-  const plano: PlanoDeclarado = declararPlano({
-    id: "x",
-    nome: "Essencial",
-    max_assentos: 3,
-    max_canais: 1,
-    teto_ia_usd_cents: 2_000,
-  });
+  // criado dentro de cada teste: um recurso inventado no vocabulário já estoura
+  // aqui na COLETA se isto for de módulo, e a suíte inteira vira "0 test".
+  const umPlano = () =>
+    declararPlano({ id: "x", nome: "Essencial", max_assentos: 3, max_canais: 1, teto_ia_usd_cents: 2_000 });
 
   it("⭐ em runtime: recusa explícita (inclusive nome herdado do prototype)", () => {
+    const plano = umPlano();
     expect(() => limiteDoPlano(plano, "armazenamento" as RecursoDoPlano)).toThrow(RecursoForaDoVocabulario);
     expect(() => limiteDoPlano(plano, "toString" as RecursoDoPlano)).toThrow(RecursoForaDoVocabulario);
     expect(() => limiteDoPlano(plano, "assentos " as RecursoDoPlano)).toThrow(/armazenamento|recurso_do_plano_invalido/);
   });
 
   it("⭐ em compilação: o tipo recusa o recurso que o vocabulário não declara", () => {
+    const plano = umPlano();
     // @ts-expect-error — "armazenamento" não é RecursoDoPlano: o compilador barra antes do runtime
     expect(() => limiteDoPlano(plano, "armazenamento")).toThrow();
   });
