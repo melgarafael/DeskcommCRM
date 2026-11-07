@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   resume: vi.fn(),
   runModel: vi.fn(),
   query: vi.fn(),
+  adaptador: vi.fn(),
 }));
 
 vi.mock("@/lib/agent-engine/agent/human-handoff", async (importOriginal) => ({
@@ -24,8 +25,19 @@ vi.mock("@/lib/agent-engine/agent/agent-config", async (importOriginal) => ({
 vi.mock("@/lib/agent-engine/agent/resolve-turn-agent", () => ({
   resolveConversationTurn: mocks.resolveConversation,
 }));
+vi.mock("@/lib/agent-engine/edge/channel/waha-adapter", () => ({
+  WahaChannelAdapter: class {
+    constructor(_pool: unknown, cfg: unknown) {
+      mocks.adaptador(cfg);
+    }
+  },
+}));
 vi.mock("@/lib/catalogo/retomada-de-apresentacao", () => ({
   resumePersistedCatalogPresentation: mocks.resume,
+}));
+vi.mock("@/lib/catalogo/snapshot-de-apresentacao", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  readCatalogPresentationSnapshot: vi.fn(() => null),
 }));
 vi.mock("@/lib/agent-engine/edge/llm/run-model-call", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -39,7 +51,7 @@ import {
 } from "@/lib/agent-engine/agent/inbound-turn";
 import { CAMADA_RESTRICAO_COMERCIAL } from "@/lib/agent-engine/guardrails/camadas-da-org";
 import { StaleServiceBoundaryError } from "@/lib/atendimento/fronteira";
-import { CHAVE_DO_SNAPSHOT_DA_APRESENTACAO } from "@/lib/catalogo/snapshot-de-apresentacao";
+import { CHAVE_DO_SNAPSHOT_DA_APRESENTACAO, readCatalogPresentationSnapshot } from "@/lib/catalogo/snapshot-de-apresentacao";
 
 const IDS = {
   organization: "11000000-0000-4000-8000-000000000001",
@@ -122,6 +134,21 @@ describe("replay de apresentacao persistida antes da classificacao", () => {
     expect(mocks.resume).toHaveBeenCalledOnce();
     expect(mocks.resolveConversation).not.toHaveBeenCalled();
     expect(mocks.runModel).not.toHaveBeenCalled();
+  });
+
+  it("o envio retomado sai em nome do agente gravado no snapshot, não do ator de fallback", async () => {
+    const AGENTE = "11000000-0000-4000-8000-000000000099";
+    vi.mocked(readCatalogPresentationSnapshot).mockReturnValueOnce({
+      agent_operation: { agentId: AGENTE },
+    } as never);
+    const semCanalInjetado = { ...deps, channel: undefined } as unknown as InboundTurnDeps;
+
+    await createInboundTurnHandler(semCanalInjetado)(job as never, { query: mocks.query } as never, {
+      workerId: "worker-a",
+    });
+
+    expect(mocks.adaptador).toHaveBeenCalledWith(expect.objectContaining({ agentActorId: AGENTE }));
+    expect(mocks.resume).toHaveBeenCalledOnce();
   });
 
   it("pausa encaminha o snapshot para reagendamento sem classificar nem chamar o modelo", async () => {

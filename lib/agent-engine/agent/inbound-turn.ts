@@ -106,7 +106,7 @@ import {
 import { enqueueJob, rescheduleJob, type JobRow, type Queryable } from '../queue/queue';
 import { apresentacaoOferecidaNoTurno } from '@/lib/catalogo/apresentacao-ligada';
 import { resumePersistedCatalogPresentation } from '@/lib/catalogo/retomada-de-apresentacao';
-import { resolveAndSnapshotCatalogPresentation } from '@/lib/catalogo/snapshot-de-apresentacao';
+import { readCatalogPresentationSnapshot, resolveAndSnapshotCatalogPresentation } from '@/lib/catalogo/snapshot-de-apresentacao';
 import { StaleServiceBoundaryError } from '@/lib/atendimento/fronteira';
 import { catalogPresentationSelectionSchema } from '@/lib/catalogo/plano-de-apresentacao';
 import { apresentacaoEncerraTurno, terminalizarApresentacaoNoTurno } from '@/lib/catalogo/terminalidade-de-apresentacao';
@@ -7372,6 +7372,15 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
     // A coluna interna conserva plano e operação originais; não é uma nova
     // escolha de agente. O payload legado nunca autoriza nem controla replay.
     if (job.catalog_presentation_snapshot !== undefined && job.catalog_presentation_snapshot !== null) {
+      // O envio retomado credita o agente do turno que gravou o snapshot, como o
+      // envio original; sem isto ele sairia com o ator de fallback.
+      const agenteDoSnapshot = readCatalogPresentationSnapshot(
+        job.catalog_presentation_snapshot,
+        job.organization_id,
+      )?.agent_operation.agentId;
+      const crmCfgDaRetomada = agenteDoSnapshot
+        ? { ...deps.crmCfg, agentActorId: agenteDoSnapshot }
+        : deps.crmCfg;
       const resumedPresentation = await resumePersistedCatalogPresentation(
         pool,
         job,
@@ -7381,7 +7390,7 @@ export function createInboundTurnHandler(deps: InboundTurnDeps) {
           channelSessionId: payload.channel_session_id,
         },
         {
-          channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(pool),
+          channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, crmCfgDaRetomada)))(pool),
           log: deps.log,
           maxSendsPerTurn: deps.knobs.maxSendsPerTurn ?? DEFAULT_MAX_SENDS_PER_TURN,
           queuedRetryDelayMs: deps.knobs.queuedRetryDelayMs,
