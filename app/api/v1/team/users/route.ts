@@ -114,8 +114,11 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   if (!resultado.ok) {
     if (resultado.motivo === "senha_fraca") {
-      // 422: o corpo está bem formado, o VALOR não passa na régua — a mesma
-      // frase do fluxo de redefinição, para a tela poder exibi-la como está.
+      // DEFESA EM PROFUNDIDADE: nesta rota a senha fraca morre antes, no schema
+      // do corpo (`criarMembroSchema` → `senhaDoAcesso`, 422 `validation_error`
+      // no campo `password`) — o teste da porta prende isso. Este ramo vale para
+      // chamadores DIRETOS do módulo (uma server action futura) e mantém a
+      // mesma frase, porque a régua é o mesmo objeto zod.
       return fail("invalid_password", resultado.detalhe ?? "Senha inválida", 422, {
         requestId,
         details: { campo: "password" },
