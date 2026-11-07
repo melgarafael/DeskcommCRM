@@ -24,6 +24,7 @@ import {
   type RegraDoNumero,
 } from "@/lib/routing/decide";
 import { motivoParaNaoRotear, type MotivoDoCaso } from "@/lib/routing/caso-da-conversa";
+import { lerQualificacaoDaIA } from "@/lib/routing/qualificacao-da-ia";
 import { loadEligibleAttendants, InvalidRoutingChannel, InvalidRoutingSector } from "@/lib/routing/eligibles";
 import { routingConfigSchema } from "@/lib/schemas/routing";
 
@@ -47,6 +48,8 @@ export type RoutingOutcome =
   | "skipped_contato_fornecedor"
   /** #3717: o caso mais recente da conversa não pede uma pessoa agora. */
   | "skipped_caso_sem_humano"
+  /** #3966: a IA ainda está qualificando — a fila espera a passagem para humano. */
+  | "skipped_ia_qualificando"
   | "assign_lost_race"
   | "error";
 
@@ -89,6 +92,7 @@ const EMPTY_OUTCOMES = (): Record<RoutingOutcome, number> => ({
   skipped_contato_pessoal: 0,
   skipped_contato_fornecedor: 0,
   skipped_caso_sem_humano: 0,
+  skipped_ia_qualificando: 0,
   assign_lost_race: 0,
   error: 0,
 });
@@ -196,7 +200,7 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
   const { data: conv, error: convError } = await admin
     .from("conversations")
     .select(
-      "id, organization_id, contact_id, channel_session_id, assigned_to_user_id, status, metadata, last_inbound_at, sector_id",
+      "id, organization_id, contact_id, channel_session_id, assigned_to_user_id, status, metadata, last_inbound_at, sector_id, bot_silenced_until, last_handoff_at, active_ai_agent_id",
     )
     .eq("id", conversationId)
     .eq("organization_id", orgId)
@@ -248,6 +252,21 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
     last_inbound_at: (conv as { last_inbound_at?: string | null }).last_inbound_at ?? null,
   });
 
+  // A IA AINDA ESTÁ QUALIFICANDO? (#3966) — a pergunta que a fila nunca fez.
+  // Fica DEPOIS do caso (o caso já tira a conversa quando não há humano a
+  // chamar) e ANTES de qualquer leitura de elegíveis: enquanto a IA atende, a
+  // conversa não é trabalho de ninguém, e montar a lista de candidatos seria
+  // pagar caro para nada. A leitura é fail-open (ver `qualificacao-da-ia.ts`).
+  const iaQualificando = await lerQualificacaoDaIA(admin, orgId, {
+    channel_session_id: conv.channel_session_id,
+    active_ai_agent_id:
+      (conv as { active_ai_agent_id?: string | null }).active_ai_agent_id ?? null,
+    bot_silenced_until:
+      (conv as { bot_silenced_until?: string | null }).bot_silenced_until ?? null,
+    last_handoff_at: (conv as { last_handoff_at?: string | null }).last_handoff_at ?? null,
+    assigned_to_user_id: conv.assigned_to_user_id ?? null,
+  }, now);
+
   // organizations.settings.routing → Zod (default manual; knobs = config, não hardcode).
   const { data: org, error: orgError } = await admin
     .from("organizations")
@@ -292,6 +311,7 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
   let eligibles: Awaited<ReturnType<typeof loadEligibleAttendants>> = [];
   if (
     !alreadyAssigned &&
+    !iaQualificando &&
     !viaDestinoPadrao &&
     (efetivo.mode === "round_robin" || efetivo.mode === "load")
   ) {
@@ -338,6 +358,7 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
     attempts: event.attempts,
     now,
     motivoDoCaso,
+    iaQualificando,
   });
 
   switch (action.kind) {
@@ -399,7 +420,9 @@ async function processEvent(event: EventRow, now: Date): Promise<RoutingOutcome>
             ? "skipped_already_assigned"
             : action.reason === "caso_aguardando_cliente" || action.reason === "caso_encerrado"
               ? "skipped_caso_sem_humano"
-              : "skipped_unsupported_mode";
+              : action.reason === "ia_qualificando"
+                ? "skipped_ia_qualificando"
+                : "skipped_unsupported_mode";
       if (action.reason.startsWith("unsupported_mode")) {
         logger.warn("[routing-worker] modo não suportado (post-MVP) — no-op", {
           organization_id: orgId,

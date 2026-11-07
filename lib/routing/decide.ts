@@ -61,6 +61,22 @@ export interface DecideRoutingInput {
    * módulo da regra — onde o vocabulário de `agent_cases.status` é lido.
    */
   motivoDoCaso?: MotivoDoCaso | null;
+  /**
+   * A IA ESTÁ QUALIFICANDO ESTA CONVERSA? (#3966) — `true` = sim.
+   *
+   * O pedido de roteamento nasce no INSERT (`trg_conversation_routing_requested`),
+   * antes de qualquer resposta da IA. Num número com agente de qualificação, a
+   * fila entregava a conversa a uma pessoa em menos de 1 min: a atribuição grava
+   * `assignee_kind = 'user'`, o gate da IA cala o agente (`conversa_de_humano`) e
+   * o lead ficava sem resposta até alguém olhar. A pergunta vem pronta — quem a
+   * responde é `qualificacaoEmCurso` (`./qualificacao-da-ia`), com os fatos que o
+   * worker leu —, para a decisão continuar sem banco.
+   *
+   * `false`/ausente é o comportamento de sempre: distribui no nascimento. É o
+   * caso de quem NÃO tem IA ligada, e é o que impede a mudança de virar atraso
+   * geral.
+   */
+  iaQualificando?: boolean;
 }
 
 /**
@@ -96,6 +112,7 @@ export function decideRouting(input: DecideRoutingInput): RoutingAction {
   // Idempotência (acceptance 3): conversa que já ganhou dono não é reatribuída.
   if (input.alreadyAssigned) return { kind: "skip", reason: "already_assigned" };
 
+
   // O CASO MANDA ANTES DA FILA (#3717). Se o caso mais recente da conversa não
   // pede uma pessoa agora — `awaiting_lead` (a bola está com o cliente) ou um
   // caso já concluído sem entrada nova do cliente —, a conversa sai da fila
@@ -105,6 +122,18 @@ export function decideRouting(input: DecideRoutingInput): RoutingAction {
   // decide SE há distribuição. Um caso concluído não vira trabalho de ninguém
   // só porque o número entrega tudo a uma pessoa específica.
   if (input.motivoDoCaso) return { kind: "skip", reason: input.motivoDoCaso };
+
+  // A IA AINDA ESTÁ QUALIFICANDO (#3966). Vem antes do destino padrão do número
+  // e do modo: enquanto a IA atende, a conversa não é trabalho de ninguém — o
+  // destino padrão também grava `assignee_kind='user'` e calaria o agente que
+  // deveria qualificar. O pedido é reemitido UMA vez quando a qualificação
+  // termina (`last_handoff_at` novo ⇒ `fn_request_channel_routing` no banco), e
+  // é ele que traz a conversa de volta à fila já com a IA fora do caminho.
+  //
+  // Depois do caso de propósito: quando o caso já diz que não há humano a chamar,
+  // o motivo dele é o que explica a conversa na fila — a IA não está no caminho
+  // nem nesse caso.
+  if (input.iaQualificando) return { kind: "skip", reason: "ia_qualificando" };
 
   // Destino padrão do NÚMERO (#2331): vence o modo. O canal que entrega tudo a
   // uma pessoa específica recebe mesmo quando o modo da organização é manual (o

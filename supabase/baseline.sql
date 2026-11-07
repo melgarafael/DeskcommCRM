@@ -71311,6 +71311,34 @@ grant execute on function public.fn_vocabulario_de_tags_pagina(uuid,text,integer
 
 notify pgrst, 'reload schema';
 
+-- ---- a passagem para humano pede o roteamento uma vez (migration 9242, #3966) ----
+-- manifest: **A passagem para humano devolve a conversa à fila UMA vez (#3966).** Com rodízio ou carga ligados, a conversa era distribuída no NASCIMENTO (`trg_conversation_routing_requested`, AFTER INSERT) e o `routing-worker` a entregava antes de a IA terminar de qualificar: a atribuição grava `assignee_kind = 'user'` e o gate calava o agente (`conversa_de_humano`). O worker agora pula enquanto há agente de IA publicado atendendo o número e a conversa não passou por handoff (`lib/routing/qualificacao-da-ia.ts`), e o evento do nascimento morre consumido. Faltava a outra metade: `fn_routing_assignment_changed` não pedia roteamento na transição `ai_handling → pending` que `performHumanHandoff` grava, então a conversa que esperou a IA nunca entrava na fila. O gatilho passa a disparar também em `last_handoff_at` e a pedir o roteamento quando ele muda — o marcador durável de "a qualificação terminou", gravado pelos DOIS caminhos de passagem (motor nativo e `crm_request_human_handoff`) e limpo pelo `reactivate-bot`. `fn_request_channel_routing` já deduplica por `(organization_id, entity_id)` enquanto o pedido está pendente: um handoff, um pedido. Quem não tem IA ligada não é tocado — o worker distribui no nascimento como sempre. Corpo idêntico ao da 0228 mais o ramo novo; gatilho recriado com a coluna. Gate: `tests/invariants/roteamento-espera-a-qualificacao.test.ts`.
+
+create or replace function public.fn_routing_assignment_changed()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+ if new.assigned_to_user_id is not null or new.status not in('open','pending','claimed','ai_handling') then
+  update public.agent_inbox_items set status='resolved' where organization_id=new.organization_id
+   and kind='routing_unassigned' and ref_id=new.id and status<>'resolved';
+ elsif old.assigned_to_user_id is not null or old.status not in('open','pending','claimed','ai_handling')
+    -- #3966: a PASSAGEM PARA HUMANO tira a conversa do comando da IA. Sem este
+    -- ramo, o pedido do nascimento já foi consumido (a IA qualificava) e a
+    -- conversa nunca entrava na fila: a IA ficava calada e ninguém recebia.
+    or (new.last_handoff_at is not null and new.last_handoff_at is distinct from old.last_handoff_at) then
+  perform public.fn_request_channel_routing(new.organization_id,new.id);
+ end if;
+ return new;
+end;
+$$;
+revoke all on function public.fn_routing_assignment_changed() from public,anon,authenticated;
+
+drop trigger if exists trg_routing_assignment_changed on public.conversations;
+create trigger trg_routing_assignment_changed after update of assigned_to_user_id,status,last_handoff_at on public.conversations
+ for each row execute function public.fn_routing_assignment_changed();
+
+notify pgrst, 'reload schema';
+
+
 -- ---- VARREDURA anon: função nova nasce exposta em quem ATUALIZA (migration 0116) ----
 --
 -- ⚠️ DE PROPÓSITO, NENHUMA FUNÇÃO É CRIADA DEPOIS DESTE BLOCO. Apêndice que cria
