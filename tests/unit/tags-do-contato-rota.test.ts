@@ -63,7 +63,13 @@ async function chamaRota() {
 
 beforeEach(() => {
   logError.mockReset();
-  vi.mocked(requireRole).mockResolvedValue({ ok: true, org: { orgId: ORG, name: "Org", role: "agent" } } as never);
+  // resolveAuthDual (sessão) lê `authz.user.id` para montar o actor: o dublê de
+  // requireRole precisa trazer o usuário, como o de produção.
+  vi.mocked(requireRole).mockResolvedValue({
+    ok: true,
+    user: { id: "pessoa-1", idioma: "pt-BR" },
+    org: { orgId: ORG, name: "Org", role: "agent" },
+  } as never);
 });
 
 describe("GET /api/v1/contact-tags", () => {

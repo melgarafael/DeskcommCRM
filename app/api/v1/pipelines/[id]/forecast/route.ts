@@ -6,24 +6,31 @@
  * os baldes "sem data" e "sem probabilidade" reportados à parte. A regra pura
  * mora em `lib/leads/previsao.ts`; aqui só há transporte.
  *
- * Auth: `requireRole("agent")` — é leitura de card, não configuração.
+ * Auth: sessão de navegador (`agent`, é leitura de card, não configuração) OU
+ * Bearer `dsk_…` com escopo `config:read` e papel admin (`tokenRole`).
  *
- * ⚠️ O CLIENTE É O DE SESSÃO, e isto é o CRITÉRIO DE ACEITE, não um detalhe de
- * implementação: com `visibility_mode = "own"` (migration 0036) a RLS devolve
- * só os negócios do atendente, e é isso que faz a previsão de um atendente ser
- * a DELE. Um cliente admin furaria o `visibility_mode` e devolveria a previsão
- * da equipe inteira para quem só deveria ver a própria.
+ * ⚠️ NA SESSÃO O CLIENTE É O DE SESSÃO, e isto é o CRITÉRIO DE ACEITE, não um
+ * detalhe de implementação: com `visibility_mode = "own"` (migration 0036) a RLS
+ * devolve só os negócios do atendente, e é isso que faz a previsão de um
+ * atendente ser a DELA. `resolveAuthDual` entrega `createClient()` na sessão e o
+ * mesmo comportamento fica.
  *
- * `organization_id` sai do JWT — nunca da URL nem do body.
+ * ⚠️ NO TOKEN A LEITURA É DA ORGANIZAÇÃO INTEIRA. O cliente é o admin (sem RLS) e
+ * não há pessoa para o `visibility_mode` recortar: por isso o token exige papel
+ * admin, que já enxerga a equipe toda. Toda consulta de `carregarPrevisao` filtra
+ * `organization_id`, e funil de outra organização responde 404.
+ *
+ * `organization_id` sai do JWT (sessão) ou da linha do token — nunca da URL nem
+ * do body.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { ApiError } from "@/lib/api/types";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { carregarPrevisao } from "@/lib/leads/previsao";
-import { createClient } from "@/lib/supabase/server";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -32,17 +39,24 @@ interface RouteCtx {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "pipeline_forecast" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "pipeline_forecast",
+    role: "agent",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "pipelines.forecast", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { id } = await ctx.params;
 
   try {
-    const supabase = await createClient();
-    const previsao = await carregarPrevisao(supabase, {
-      organizationId: authz.org.orgId,
+    const previsao = await carregarPrevisao(authz.supabase, {
+      organizationId: authz.organizationId,
       pipelineId: id,
       requestId,
     });

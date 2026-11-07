@@ -31,7 +31,7 @@ sim.
 | Campo | Regra | Observação |
 |---|---|---|
 | `format_version` | exatamente `1` | é a versão do **formato**, não a sua |
-| `profile` | exatamente `"declarative"` | o único perfil que existe |
+| `profile` | `"declarative"` para este guia | o host admite também `data` e `connected`, cada um com contrato próprio: `grep -n 'profile: z.enum' lib/extensions/manifest.ts` |
 | `publisher` | slug `^[a-z0-9]+(?:-[a-z0-9]+)*$`, 2 a 64 caracteres | quem publica; sem maiúscula, acento ou espaço |
 | `name` | mesmo formato de slug | `publisher` + `name` + `version` é a identidade |
 | `version` | SemVer `x.y.z`, inteiros sem zero à esquerda, até 64 caracteres | sem `-beta`, sem `+build` |

@@ -33,7 +33,10 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireRole } from "@/lib/auth/require-role";
+import { extractBearer } from "@/lib/mcp/auth";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { getBudgetStatus, type BudgetStatus } from "@/lib/ai/budget/check";
 import {
   PISO_DE_TETO_CENTS,
@@ -86,8 +89,27 @@ const patchSchema = z
     { message: "Informe ao menos um campo: teto, limiar ou modo." },
   );
 
-export async function GET(_req: NextRequest): Promise<Response> {
+/** Quem chama, pelo portão que o trouxe (sessão de navegador ou token de integração). */
+type QuemChama = { idioma: Idioma; orgId: string; autor: string | null; apiTokenId: string | null };
+
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
+  // Token de integração (Bearer). Sem Bearer, a sessão segue como era.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "ai_budget",
+      role: "manager",
+      scope: "config:read",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "ai_budget", requestId);
+    if (teto) return teto;
+    const status = await getBudgetStatus(authz.organizationId);
+    return ok(status, { requestId });
+  }
+
   const authz = await requireRole("manager", { requestId, resource: "ai_budget" });
   if (!authz.ok) return authz.response;
   const { org: activeOrg } = authz;
@@ -101,10 +123,31 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("admin", { requestId, resource: "ai_budget" });
-  if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user: authUser, org: activeOrg } = authz;
+  let quem: QuemChama;
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "ai_budget",
+      role: "admin",
+      scope: "config:write",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "ai_budget", requestId);
+    if (teto) return teto;
+    quem = {
+      idioma: authz.idioma ?? IDIOMA_PADRAO,
+      orgId: authz.organizationId,
+      autor: authz.actor.type === "user" ? authz.actor.id : null,
+      apiTokenId: authz.apiTokenId ?? null,
+    };
+  } else {
+    const authz = await requireRole("admin", { requestId, resource: "ai_budget" });
+    if (!authz.ok) return authz.response;
+    quem = { idioma: authz.user.idioma, orgId: authz.org.orgId, autor: authz.user.id, apiTokenId: null };
+  }
+  const t = (texto: string) => traduzir(texto, quem.idioma);
+  const activeOrg = { orgId: quem.orgId };
 
   let body: unknown;
   try {
@@ -262,7 +305,8 @@ export async function PATCH(req: NextRequest): Promise<Response> {
       : desarmando
         ? "ai.budget_enforcement_disarmed"
         : "ai.budget_limit_changed",
-    actorUserId: authUser.id,
+    actorUserId: quem.autor,
+    actorApiTokenId: quem.apiTokenId,
     organizationId: activeOrg.orgId,
     resourceType: "ai_budgets",
     resourceId: activeOrg.orgId,

@@ -5,8 +5,9 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { MODELOS_BASE } from "@/lib/propostas/modelos/catalogo-base";
 import { listarModelosDaOrganizacao } from "@/lib/propostas/modelos/catalogo-da-organizacao";
@@ -40,14 +41,16 @@ const SECAO_INICIAL = {
   conditional: false,
 };
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "proposal_templates" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "proposal_templates", role: "viewer", scope: "config:read", tokenRole: "admin" });
   if (!authz.ok) return authz.response;
-  const desligada = await sePropostasDesligadas(authz.org.orgId, requestId);
+  const teto = await tetoDeEscritaDoToken(authz, "settings.proposal-templates", requestId);
+  if (teto) return teto;
+  const desligada = await sePropostasDesligadas(authz.organizationId, requestId);
   if (desligada) return desligada;
   const admin = createAdminClient();
-  return ok(await listarModelosDaOrganizacao(admin, authz.org.orgId), { requestId });
+  return ok(await listarModelosDaOrganizacao(admin, authz.organizationId), { requestId });
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -55,16 +58,18 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "proposal_templates" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "proposal_templates", role: "manager", scope: "config:write", tokenRole: "admin" });
   if (!authz.ok) return authz.response;
-  const desligada = await sePropostasDesligadas(authz.org.orgId, requestId);
+  const teto = await tetoDeEscritaDoToken(authz, "settings.proposal-templates", requestId);
+  if (teto) return teto;
+  const desligada = await sePropostasDesligadas(authz.organizationId, requestId);
   if (desligada) return desligada;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const parsed = postSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return fail("validation_failed", t("Campos inválidos."), 422, { requestId });
   const admin = createAdminClient();
-  const orgId = authz.org.orgId;
+  const orgId = authz.organizationId;
 
   // Desligar um modelo da plataforma: some do seletor e da lista da IA, mas
   // continua resolvendo para propostas que já o usam. Guardado em
@@ -97,7 +102,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     void audit({
       action: parsed.data.acao === "ocultar" ? "proposal_template.hidden" : "proposal_template.shown",
-      actorUserId: authz.user.id,
+      actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+      actorApiTokenId: authz.apiTokenId ?? null,
       organizationId: orgId,
       resourceType: "proposal_templates",
       resourceId: null,
@@ -183,7 +189,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   void audit({
     action: "proposal_template.saved",
-    actorUserId: authz.user.id,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     organizationId: orgId,
     resourceType: "proposal_templates",
     resourceId: null,

@@ -13,9 +13,9 @@ import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { FILTRO_VAZIO } from "@/lib/campanhas/audiencia";
 import {
   decidirConteudo,
@@ -30,10 +30,10 @@ import {
   decodificarCursor,
   listarCampanhasSchema,
 } from "@/lib/campanhas/schemas";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -44,9 +44,17 @@ const COLUNAS_DA_LISTA =
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaigns" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "campaigns",
+    role: "manager",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "campaigns_lista", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
 
   const params = Object.fromEntries(new URL(req.url).searchParams.entries());
   const parsed = listarCampanhasSchema.safeParse(params);
@@ -58,11 +66,11 @@ export async function GET(req: NextRequest): Promise<Response> {
   }
   const q = parsed.data;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   let query = supabase
     .from("campaigns")
     .select(COLUNAS_DA_LISTA)
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", org.orgId)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(q.limit + 1);
@@ -96,10 +104,20 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (negado) return negado;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaigns" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "campaigns",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "campaigns_criar", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
+  // Autor só quando é uma pessoa logada: o token não é usuário, e NULL é o
+  // que a coluna `created_by` aceita (`references auth.users`, nullable).
+  const autor = authz.actor.type === "user" ? authz.actor.id : null;
 
   const parsed = criarCampanhaSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -175,7 +193,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       pipeline_id: entrada.pipeline_id ?? null,
       stage_id: entrada.stage_id ?? null,
       agent_id: entrada.agent_id ?? null,
-      created_by: user.id,
+      created_by: autor,
     })
     .select(COLUNAS_DA_LISTA)
     .single();
@@ -205,7 +223,8 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   void audit({
     action: "campaign.created",
-    actorUserId: user.id,
+    actorUserId: autor,
+    actorApiTokenId: authz.apiTokenId ?? null,
     organizationId: org.orgId,
     resourceType: "campaign",
     resourceId: criada.id,

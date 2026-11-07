@@ -39,11 +39,13 @@ import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
 import type { Actor } from "@/lib/api/handlers/types";
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireRole } from "@/lib/auth/require-role";
 import { donoQualificado } from "@/lib/carteira/dono";
 import { conferirPosse, MENSAGEM_FORA_DA_POSSE, respostaDaPosse } from "@/lib/carteira/posse";
 import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -211,7 +213,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
       antes: antes ?? null,
       depois: dono ?? null,
       origem: dono === null ? null : origem,
-      adotados: dono !== null, // a RPC adota, na mesma transação, os negócios abertos sem dono
+      adotados: dono !== null,
     },
   });
 
@@ -251,14 +253,23 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
 export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
   const requestId = randomUUID();
 
-  const authz = await requireRole("agent", { requestId, resource: "contacts" });
+  // Sessão OU token de integração (Spec 33, R2): `mcp:read` e papel `agent`.
+  // A organização sai da sessão ou da LINHA DO TOKEN.
+  const authz = await resolveAuthDual(_req, {
+    requestId,
+    resource: "contacts",
+    role: "agent",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const orgId = authz.org.orgId;
+  const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+  if (teto) return teto;
+  const orgId = authz.organizationId;
   const { id: contactId } = await ctx.params;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
-  const supabase = await createClient();
-  // Os dois `.eq` (id + organization_id da sessão) são obrigatórios: a RLS de
+  const supabase = authz.supabase;
+  // Os dois `.eq` (id + organization_id do token) são obrigatórios: a RLS de
   // contacts deixa passar as orgs do usuário, e um membro de duas leria a
   // carteira do contato da org que não está selecionada.
   const { data: contato, error } = await supabase
@@ -287,17 +298,26 @@ export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
   // #3746 — a capacidade, respondida pelo SERVIDOR com a régua do PATCH. Falha
   // de leitura devolve `false` (a tela esconde o seletor) em vez de estourar a
   // ficha: o botão a menos é um incômodo, a ficha em branco é um defeito.
-  const posse = await conferirPosse({
-    acao: "carteira",
-    db: admin,
-    organizationId: orgId,
-    atorId: authz.user.id,
-    papel: authz.org.role,
-    contactId,
-  });
+  // A régua de posse pergunta por pessoa e papel: só a sessão tem os dois. O token
+  // não escolhe "dono desta carteira", então `pode_alterar` fica `false` nele.
+  let podeAlterar = false;
+  if (authz.via === "session") {
+    const sessao = await requireRole("agent", { requestId, resource: "contacts" });
+    if (sessao.ok) {
+      const posse = await conferirPosse({
+        acao: "carteira",
+        db: admin,
+        organizationId: orgId,
+        atorId: sessao.user.id,
+        papel: sessao.org.role,
+        contactId,
+      });
+      podeAlterar = posse.pode;
+    }
+  }
 
   return ok(
-    { contact_id: contactId, dono_user_id: dono, qualificado, pode_alterar: posse.pode },
+    { contact_id: contactId, dono_user_id: dono, qualificado, pode_alterar: podeAlterar },
     { requestId },
   );
 }

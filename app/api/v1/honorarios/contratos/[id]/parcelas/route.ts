@@ -3,18 +3,23 @@
  *
  * Pagar uma parcela NÃO acontece aqui: é `/api/v1/honorarios/parcelas/[id]/pagar`, que cria o
  * `financial_entries` do caixa núcleo (DIRC "integrar" — não há tabela de "pagamento" própria).
+ *
+ * SESSÃO OU TOKEN (Spec 33, R2): o GET com `mcp:read` e o POST com `mcp:write`
+ * (`manager` nos dois modos). Com token o client é a service role e a RLS da
+ * migration 0480 (a que recusa parcela apontando contrato de outra organização)
+ * deixa de valer: o POST busca o contrato com o filtro de `organization_id` antes
+ * de inserir.
  */
 import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
 import { requireSupportWrite } from "@/lib/impersonate/support";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -34,17 +39,26 @@ const criarSchema = z.object({
 
 type Ctx = { params: Promise<{ id: string }> };
 
-export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "honorarios_parcelas" });
+  // Leitura do calendário: sessão OU token `mcp:read`. O papel mínimo é o da sessão.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "honorarios_parcelas",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "honorarios_parcelas_listar", requestId);
+  if (teto) return teto;
   const { id: contratoId } = await ctx.params;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase
     .from("honorarios_parcelas")
     .select("id, contrato_id, numero, vencimento, valor_cents, currency, financial_entry_id, status")
     .eq("contrato_id", contratoId)
+    .eq("organization_id", authz.organizationId)
     .order("numero", { ascending: true });
 
   if (error) {
@@ -62,8 +76,15 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  const authz = await requireRole("manager", { requestId, resource: "honorarios_parcelas" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "honorarios_parcelas",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "honorarios_parcelas_criar", requestId);
+  if (teto) return teto;
   const { id: contratoId } = await ctx.params;
 
   const lido = criarSchema.safeParse(await req.json().catch(() => ({})));
@@ -73,7 +94,26 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
     });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
+
+  // Só o token precisa desta conferência: a sessão passa pela RLS do banco.
+  if (authz.via === "token") {
+    const { data: contrato, error: erroDoContrato } = await supabase
+      .from("honorarios_contratos")
+      .select("id")
+      .eq("organization_id", authz.organizationId)
+      .eq("id", contratoId)
+      .maybeSingle();
+    if (erroDoContrato) {
+      if (moduloNaoInstalado(erroDoContrato)) {
+        return fail("module_not_installed", MODULO_NAO_INSTALADO, 409, { requestId });
+      }
+      return fail("internal_error", erroDoContrato.message, 500, { requestId });
+    }
+    if (!contrato) {
+      return fail("validation_failed", "Contrato inválido para esta organização.", 422, { requestId });
+    }
+  }
 
   // ─── A PARCELA NASCE NA MOEDA DA ORGANIZAÇÃO (#3379) ───────────────────
   //
@@ -83,12 +123,12 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   // do `organizations.currency` de hoje faria o histórico inteiro mudar de
   // rótulo no dia em que a organização trocasse de moeda. A unidade vem do
   // servidor; o corpo nem declara o campo, então o Zod o descarta.
-  const moeda = await moedaDaOrganizacao(supabase, authz.org.orgId);
+  const moeda = await moedaDaOrganizacao(supabase, authz.organizationId);
 
   const { data, error } = await supabase
     .from("honorarios_parcelas")
     .insert({
-      organization_id: authz.org.orgId,
+      organization_id: authz.organizationId,
       contrato_id: contratoId,
       numero: lido.data.numero,
       vencimento: lido.data.vencimento,
@@ -119,6 +159,9 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   await audit({
     action: "honorarios.parcela_criada",
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "honorarios_parcela",
     resourceId: data.id,
     requestId,

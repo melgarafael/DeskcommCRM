@@ -23,9 +23,8 @@ import { type NextRequest } from "next/server";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { contactsMergeSchema, validateRequest } from "@/lib/schemas";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -82,9 +81,17 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const requestId = randomUUID();
 
-  const authz = await requireRole("manager", { requestId, resource: "contact" });
+  // Sessão OU token de integração (Spec 33, R2): `mcp:write` e papel `manager`.
+  // A organização sai da sessão ou da LINHA DO TOKEN.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "contact",
+    role: "manager",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const { user, org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "contacts", requestId);
+  if (teto) return teto;
 
   let input;
   try {
@@ -99,9 +106,9 @@ export async function POST(req: NextRequest): Promise<Response> {
     throw err;
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const { data, error } = await supabase.rpc("fn_mesclar_contatos", {
-    p_organization_id: org.orgId,
+    p_organization_id: authz.organizationId,
     p_contato_principal: input.primary_contact_id,
     p_contatos_secundarios: input.secondary_contact_ids,
   });
@@ -131,8 +138,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   // sairia da fusão sem registro em lugar algum se esta linha não existisse.
   await audit({
     action: "contact.merged",
-    actorUserId: user.id,
-    organizationId: org.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "contact",
     resourceId: input.primary_contact_id,
     requestId,

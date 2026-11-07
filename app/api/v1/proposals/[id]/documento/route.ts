@@ -5,7 +5,8 @@ import { z } from "zod";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { resolverAvisoDeRevisaoSeProntaOuEncerrada } from "@/lib/propostas/aviso-de-revisao";
@@ -85,20 +86,22 @@ function comoObjeto(valor: unknown): Record<string, unknown> {
   return valor && typeof valor === "object" && !Array.isArray(valor) ? (valor as Record<string, unknown>) : {};
 }
 
-export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "crm_proposals" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "crm_proposals", role: "viewer", scope: "mcp:read" });
   if (!authz.ok) return authz.response;
-  const desligada = await sePropostasDesligadas(authz.org.orgId, requestId);
+  const teto = await tetoDeEscritaDoToken(authz, "proposals_documento_leitura", requestId);
+  if (teto) return teto;
+  const desligada = await sePropostasDesligadas(authz.organizationId, requestId);
   if (desligada) return desligada;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { id } = await ctx.params;
   const admin = createAdminClient();
 
-  const proposta = await buscarProposta(admin, authz.org.orgId, id);
+  const proposta = await buscarProposta(admin, authz.organizationId, id);
   if (!proposta) return fail("not_found", t("Proposta não encontrada."), 404, { requestId });
 
   const base = {
@@ -114,14 +117,14 @@ export async function GET(_req: NextRequest, ctx: Ctx): Promise<Response> {
   };
   if (!proposta.template_slug) return ok(base, { requestId });
 
-  const contato = await buscarContato(admin, authz.org.orgId, proposta.contact_id);
-  const documento = await montarDocumentoDaProposta(admin, authz.org.orgId, proposta, contato);
+  const contato = await buscarContato(admin, authz.organizationId, proposta.contact_id);
+  const documento = await montarDocumentoDaProposta(admin, authz.organizationId, proposta, contato);
   if (!documento) return ok(base, { requestId });
 
   const { data: itens } = await admin
     .from("crm_proposal_items")
     .select("preco_unitario_cents")
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("proposal_id", id);
   const temItensComPreco = (itens ?? []).length > 0 && (itens ?? []).every((it) => it.preco_unitario_cents !== null);
 
@@ -156,18 +159,20 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "crm_proposals" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "crm_proposals", role: "manager", scope: "mcp:write" });
   if (!authz.ok) return authz.response;
-  const desligada = await sePropostasDesligadas(authz.org.orgId, requestId);
+  const teto = await tetoDeEscritaDoToken(authz, "proposals_documento_editar", requestId);
+  if (teto) return teto;
+  const desligada = await sePropostasDesligadas(authz.organizationId, requestId);
   if (desligada) return desligada;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
   const { id } = await ctx.params;
 
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return fail("validation_failed", t("Campos inválidos."), 422, { requestId });
 
   const admin = createAdminClient();
-  const proposta = await buscarProposta(admin, authz.org.orgId, id);
+  const proposta = await buscarProposta(admin, authz.organizationId, id);
   if (!proposta) return fail("not_found", t("Proposta não encontrada."), 404, { requestId });
   // Achado do plano M6 que ficou sem dono: editar uma proposta já enviada
   // mudava a tela sem mudar o que o cliente recebeu.
@@ -179,8 +184,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
 
   if ("campo" in parsed.data) {
     const { campo, valor } = parsed.data;
-    const contato = await buscarContato(admin, authz.org.orgId, proposta.contact_id);
-    const documento = await montarDocumentoDaProposta(admin, authz.org.orgId, proposta, contato);
+    const contato = await buscarContato(admin, authz.organizationId, proposta.contact_id);
+    const documento = await montarDocumentoDaProposta(admin, authz.organizationId, proposta, contato);
     if (!documento) {
       return fail("validation_failed", t("Escolha o modelo da proposta antes de preencher campos."), 422, { requestId });
     }
@@ -193,15 +198,16 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
     const { error } = await admin
       .from("crm_proposals")
       .update({ briefing_json: briefing })
-      .eq("organization_id", authz.org.orgId)
+      .eq("organization_id", authz.organizationId)
       .eq("id", id);
     if (error) return fail("internal_error", t("Falha ao salvar o campo."), 500, { requestId });
 
-    void resolverAvisoDeRevisaoSeProntaOuEncerrada(admin, authz.org.orgId, id);
+    void resolverAvisoDeRevisaoSeProntaOuEncerrada(admin, authz.organizationId, id);
     void audit({
       action: "proposal.documento_campo_preenchido",
-      actorUserId: authz.user.id,
-      organizationId: authz.org.orgId,
+      actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+      organizationId: authz.organizationId,
       resourceType: "crm_proposals",
       resourceId: id,
       requestId,
@@ -219,15 +225,16 @@ export async function PATCH(req: NextRequest, ctx: Ctx): Promise<Response> {
   const { error } = await admin
     .from("crm_proposals")
     .update({ secoes_editadas: secoesEditadas })
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .eq("id", id);
   if (error) return fail("internal_error", t("Falha ao salvar a seção."), 500, { requestId });
 
-  void resolverAvisoDeRevisaoSeProntaOuEncerrada(admin, authz.org.orgId, id);
+  void resolverAvisoDeRevisaoSeProntaOuEncerrada(admin, authz.organizationId, id);
   void audit({
     action: "proposal.documento_editado",
-    actorUserId: authz.user.id,
-    organizationId: authz.org.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "crm_proposals",
     resourceId: id,
     requestId,

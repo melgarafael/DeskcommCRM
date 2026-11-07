@@ -53,6 +53,10 @@ ferramenta ainda não existe: [`references/decidir-nucleo-ou-extensao.md`](refer
 
 ## Passo 2 — o que uma extensão consegue fazer hoje
 
+Esta lista vale para o perfil `declarative`. O host admite também `data` e `connected` (módulo
+conectado, F1): o `connected` não publica cards e não leva endereço no pacote, porque o endereço do
+serviço fica na entrada do catálogo. Lista atual dos perfis: `grep -n 'profile: z.enum' lib/extensions/manifest.ts`.
+
 **O que ela faz:** publica até 4 **cards de orientação** no hub do CRM. Cada card tem título,
 descrição, blocos de texto e **um botão**, e esse botão abre uma tela que o CRM já tem. Quem
 administra a instalação admite o catálogo e instala; quem administra a organização ativa e

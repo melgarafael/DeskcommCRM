@@ -358,8 +358,10 @@ describe("GET .../avatar — PUBLIC_PATHS (borda do proxy)", () => {
   it("não libera id fora da forma de UUID, sub-path de /avatar nem os irmãos", () => {
     expect(isPublicPath(`/api/v1/contacts/${ID_FORA_DA_FORMA}/avatar`)).toBe(false);
     expect(isPublicPath(`/api/v1/contacts/${CONTATO_ID}/avatar/extra`)).toBe(false);
-    expect(isPublicPath(`/api/v1/contacts/${CONTATO_ID}/person`)).toBe(false);
-    expect(isPublicPath(`/api/v1/contacts/${CONTATO_ID}`)).toBe(false);
+    // Spec 33 (R2): a rota passou a aceitar token
+    expect(isPublicPath(`/api/v1/contacts/${CONTATO_ID}/person`)).toBe(true);
+    // Spec 33 (R2): a rota passou a aceitar token
+    expect(isPublicPath(`/api/v1/contacts/${CONTATO_ID}`)).toBe(true);
     expect(isPublicPath("/api/v1/contacts/bulk/avatar")).toBe(false);
   });
 

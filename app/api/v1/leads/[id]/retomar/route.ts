@@ -23,10 +23,8 @@ import { retomarLeadHandler } from "@/app/api/v1/leads/_handler";
 import type { HandlerCtx } from "@/lib/api/handlers/types";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { retomarLeadSchema, validateRequest } from "@/lib/schemas";
-import { createClient } from "@/lib/supabase/server";
-
 export const dynamic = "force-dynamic";
 
 export async function POST(
@@ -39,17 +37,25 @@ export async function POST(
   const requestId = randomUUID();
   const { id: leadId } = await ctx.params;
 
-  const supabase = await createClient();
   // spec 13 §4: escrita é agent+ (viewer é read-only) — a MESMA régua do arrasto
   // que esta rota substitui quando a retomada é a saída.
-  const authz = await requireRole("agent", { requestId, resource: "crm_leads" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_leads",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "leads_retomar", requestId);
+  if (teto) return teto;
+  const supabase = authz.supabase;
+  const { organizationId, actor, idioma } = authz;
 
   const handlerCtx: HandlerCtx = {
-    organization_id: authz.org.orgId,
-    actor: { type: "user", id: authz.user.id },
+    organization_id: organizationId,
+    actor,
     requestId,
-    idioma: authz.user.idioma,
+    idioma,
   };
 
   try {

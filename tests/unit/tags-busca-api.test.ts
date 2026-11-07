@@ -7,6 +7,8 @@ import { GET as conversations } from "@/app/api/v1/conversation-tags/route";
 import { GET as vocabulary, POST as operar } from "@/app/api/v1/tags/vocabulario/route";
 vi.mock("@/lib/auth/require-role",()=>({requireRole:vi.fn()}));
 vi.mock("@/lib/supabase/server",()=>({createClient:vi.fn()}));
+vi.mock("@/lib/supabase/admin",()=>({createAdminClient:vi.fn()}));
+vi.mock("@/lib/ai/dispatcher/rate-limit",()=>({checkRateLimit:vi.fn()}));
 vi.mock("@/lib/auth/server",()=>({mfaEmDivida:vi.fn().mockResolvedValue(false)}));
 vi.mock("@/lib/audit",()=>({audit:vi.fn()}));
 vi.mock("@/lib/impersonate/support",()=>({requireSupportWrite:vi.fn().mockResolvedValue(null)}));
