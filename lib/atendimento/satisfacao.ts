@@ -102,7 +102,7 @@ function venceu(expiraEm: string | null | undefined, quando: Date): boolean {
 
 export type DesfechoDoPedido =
   | { pedida: true; pedidoId: string }
-  | { pedida: false; motivo: "desligada" | "ja_pedida" | "falha_ao_enviar" | "sem_contato" | "erro" };
+  | { pedida: false; motivo: "desligada" | "ja_pedida" | "falha_ao_enviar" | "sem_contato" | "org_parada" | "erro" };
 
 interface LinhaDeSettings {
   settings?: unknown;
