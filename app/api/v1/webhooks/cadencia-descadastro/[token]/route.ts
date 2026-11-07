@@ -23,9 +23,16 @@
  * POST repetido (duas abas, ou o provedor e o botão) é IDEMPOTENTE: só conta
  * a PRIMEIRA vez — o filtro `motivo_parada is distinct from descadastro` na
  * RPC garante que a segunda passada não encontra linha para mudar.
+ *
+ * Auditoria: a primeira passada grava UMA linha `lgpd.consent_changed` em
+ * `api_audit_log`, com a organização do TOKEN assinado (nunca do corpo, que é
+ * ignorado) e só ids e a contagem — sem e-mail, IP ou user-agent de quem
+ * clicou. A repetida não grava: a RPC devolve 0, nada mudou, e não há
+ * mutação a auditar.
  */
 import type { NextRequest } from "next/server";
 
+import { audit } from "@/lib/audit";
 import { registrarFalhaDeToken, tokenFailureLimited } from "@/lib/auth/rate-limit";
 import { verifyCadenciaLink } from "@/lib/cadencias/token";
 import { logger } from "@/lib/logger";
@@ -84,13 +91,24 @@ export async function POST(
 
   const admin = createAdminClient();
   try {
-    const { error } = await admin.rpc("fn_cadencia_descadastrar", {
+    const { data: paradas, error } = await admin.rpc("fn_cadencia_descadastrar", {
       p_enrollment_id: payload.enrollment_id,
       p_organization_id: payload.organization_id,
     });
     if (error) {
       logger.error("[cadencia-descadastro] update falhou", { codigo: "cadencia_unsubscribe_write_failed" });
       return pagina(`<p>${TENTE_DEPOIS}</p>`, 503);
+    }
+
+    if (typeof paradas === "number" && paradas > 0) {
+      await audit({
+        action: "lgpd.consent_changed",
+        organizationId: payload.organization_id,
+        resourceType: "email_cadence_enrollment",
+        resourceId: payload.enrollment_id,
+        bypassedRls: true,
+        metadata: { canal: "email_cadencia", consentimento: "revogado", origem: "link_descadastro", inscricoes_paradas: paradas },
+      });
     }
 
     return pagina("<p>Você não vai mais receber estes e-mails. Obrigado.</p>");

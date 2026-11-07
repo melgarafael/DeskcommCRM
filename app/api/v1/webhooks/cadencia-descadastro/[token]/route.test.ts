@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signCadenciaLink } from "@/lib/cadencias/token";
 import { GET, HEAD, POST } from "./route";
 
-const mocks = vi.hoisted(() => ({ rpc: vi.fn(), falha: vi.fn(), limitado: vi.fn() }));
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), falha: vi.fn(), limitado: vi.fn(), audit: vi.fn() }));
+vi.mock("@/lib/audit", () => ({ audit: mocks.audit }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ rpc: mocks.rpc }) }));
 vi.mock("@/lib/auth/rate-limit", () => ({ tokenFailureLimited: mocks.limitado, registrarFalhaDeToken: mocks.falha }));
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }));
@@ -23,6 +24,7 @@ beforeEach(() => {
   vi.stubEnv("INTERNAL_SECRET", "segredo-sintetico-da-prova-cadencias");
   mocks.rpc.mockReset().mockResolvedValue({ data: 1, error: null });
   mocks.falha.mockReset();
+  mocks.audit.mockReset().mockResolvedValue(undefined);
   mocks.limitado.mockReset().mockResolvedValue(false);
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -62,6 +64,7 @@ describe("descadastro: só o POST muda estado", () => {
       expect((await POST(req, ctx(token))).status).toBe(400);
     }
     expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.audit).not.toHaveBeenCalled();
     expect(mocks.falha).toHaveBeenCalledTimes(2);
   });
   it("GET com token inválido não oferece o botão", async () => {
@@ -74,5 +77,32 @@ describe("descadastro: só o POST muda estado", () => {
     const r = await POST(req, ctx(signCadenciaLink(inscricao, "descadastro")));
     expect(r.status).toBe(503);
     expect(await r.text()).not.toContain("não vai mais receber");
+    expect(mocks.audit).not.toHaveBeenCalled();
+  });
+});
+
+describe("descadastro: auditoria", () => {
+  it("o POST que para inscrições grava uma linha lgpd.consent_changed, na empresa do token, sem dado pessoal", async () => {
+    mocks.rpc.mockResolvedValue({ data: 2, error: null });
+    await POST(req, ctx(signCadenciaLink(inscricao, "descadastro")));
+    expect(mocks.audit).toHaveBeenCalledTimes(1);
+    const linha = mocks.audit.mock.calls[0][0];
+    expect(linha).toEqual({
+      action: "lgpd.consent_changed",
+      organizationId: inscricao.organization_id,
+      resourceType: "email_cadence_enrollment",
+      resourceId: inscricao.enrollment_id,
+      bypassedRls: true,
+      metadata: { canal: "email_cadencia", consentimento: "revogado", origem: "link_descadastro", inscricoes_paradas: 2 },
+    });
+    expect(linha).not.toHaveProperty("ip");
+    expect(linha).not.toHaveProperty("userAgent");
+  });
+  it("o POST repetido (a RPC devolve 0) responde igual e não grava segunda linha", async () => {
+    mocks.rpc.mockResolvedValue({ data: 0, error: null });
+    const r = await POST(req, ctx(signCadenciaLink(inscricao, "descadastro")));
+    expect(r.status).toBe(200);
+    expect(await r.text()).toContain("não vai mais receber");
+    expect(mocks.audit).not.toHaveBeenCalled();
   });
 });
