@@ -63,7 +63,7 @@ export function ConvidadosDaEquipe({
             <label
               key={pessoa.user_id}
               className={cn(
-                "flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-sm",
+                "flex cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm",
                 desabilitado && "cursor-not-allowed opacity-60",
               )}
             >
