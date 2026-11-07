@@ -4,6 +4,7 @@ import { type NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { requireSupportWrite } from "@/lib/impersonate/support";
 import { aplicarEfeitosPosEntrada } from "@/lib/channels/pos-entrada";
 import { liberarDaQuarentena } from "@/lib/entrada/quarentena";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -40,6 +41,10 @@ interface RouteCtx {
 }
 
 export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+  // Guarda de EFEITO antes de qualquer cliente privilegiado: em acompanhamento
+  // administrativo só leitura, liberar mensagem é escrita e não pode passar.
+  const support = await requireSupportWrite();
+  if (support) return support;
   const requestId = randomUUID();
   const authz = await requireRole("agent", { requestId, resource: "quarentena" });
   if (!authz.ok) return authz.response;
