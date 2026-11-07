@@ -239,7 +239,9 @@ fusão (item B5).
    extras entram — lidas **antes** de apagar — nos três pontos que hoje usam só o principal
    (C18): apagar candidatos da prospecção, redigir mensagens de grupo e a busca de mensagens de
    grupo da exportação. A exportação do titular inclui os extras com tipo, WhatsApp, rótulo e
-   `lid` (junto das colunas da ficha que `lib/lgpd/export-collector.ts` já exporta).
+   `lid` (junto das colunas da ficha que `lib/lgpd/export-collector.ts` já exporta). A marca de
+   `lgpd_marcas_de_apagamento` também é por telefone: uma linha para o principal e uma para cada
+   extra, gravadas antes de os extras saírem (migration 9241).
 9. **IA.** `crm_get_contact` (`lib/mcp/tools/contacts.ts`) devolve os números com tipo e
    WhatsApp. A ferramenta de proposta de dado (`contact_field_proposals`) **não** ganha telefone
    extra nesta spec.

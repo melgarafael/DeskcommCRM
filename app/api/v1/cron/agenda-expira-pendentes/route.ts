@@ -52,6 +52,7 @@ import { audit } from "@/lib/audit";
 import { logger } from "@/lib/logger";
 import { agendaSettingsSchema } from "@/lib/schemas/settings";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { aposVagaLiberada, varrerOfertasVencidas } from "@/lib/agenda/encaixe-supabase";
 import { autorizaCron } from "@/lib/auth/cron-auth";
 
 export const dynamic = "force-dynamic";
@@ -68,6 +69,10 @@ async function handle(req: NextRequest): Promise<Response> {
 
   const admin = createAdminClient();
   const agora = new Date();
+
+  // A oferta de encaixe tem prazo próprio, mais curto que o do pendente. Com o
+  // módulo desligado esta chamada não toca na tabela.
+  const encaixes = await varrerOfertasVencidas(admin, { agora });
 
   // O prazo é POR ORGANIZAÇÃO, então a varredura não pode usar um corte único
   // de `created_at` no SQL. Busca os pendentes de todas as orgs e aplica o prazo
@@ -86,7 +91,10 @@ async function handle(req: NextRequest): Promise<Response> {
 
   const linhas = data ?? [];
   if (linhas.length === 0) {
-    return ok({ examinados: 0, expirados: 0, mantidos: 0 }, { requestId });
+    return ok(
+      { examinados: 0, expirados: 0, mantidos: 0, encaixes: encaixes.vencidas, reoferecidos: encaixes.reoferecidas },
+      { requestId },
+    );
   }
 
   // Um SELECT por organização presente, não um por linha.
@@ -120,7 +128,10 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   if (expirados.length === 0) {
-    return ok({ examinados: linhas.length, expirados: 0, mantidos }, { requestId });
+    return ok(
+      { examinados: linhas.length, expirados: 0, mantidos, encaixes: encaixes.vencidas, reoferecidos: encaixes.reoferecidas },
+      { requestId },
+    );
   }
 
   // `.eq("status","pending")` de novo: se alguém confirmou entre a leitura e
@@ -148,6 +159,13 @@ async function handle(req: NextRequest): Promise<Response> {
 
   const quantos = efetivados?.length ?? 0;
 
+  // Pendente que expirou é horário que abriu, e a vaga segurada da lista de
+  // espera também cai aqui se o prazo da organização for menor que o da oferta.
+  for (const { id } of efetivados ?? []) {
+    const organizationId = linhas.find((l) => l.id === id)?.organization_id;
+    if (organizationId) await aposVagaLiberada({ organizationId, appointmentId: id, agora });
+  }
+
   // Rodada que não expirou nada NÃO é mutação e não audita — a lei está no
   // CLAUDE.md §Audit log, e `cron-audita-so-quando-ha-efeito.test.ts` varre o
   // AST desta pasta atrás de `audit` incondicional.
@@ -161,7 +179,13 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   return ok(
-    { examinados: linhas.length, expirados: quantos, mantidos },
+    {
+      examinados: linhas.length,
+      expirados: quantos,
+      mantidos,
+      encaixes: encaixes.vencidas,
+      reoferecidos: encaixes.reoferecidas,
+    },
     { requestId },
   );
 }
