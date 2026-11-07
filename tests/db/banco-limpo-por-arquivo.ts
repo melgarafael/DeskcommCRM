@@ -27,11 +27,11 @@
  *
  * ## Por que aqui e não dentro dos arquivos
  *
- * `tests/invariants/**` é congelado (loop/hooks/freeze-invariants.sh): invariante
- * que incomoda vai para a inbox de governança, não para o Edit. Renomear as
- * fixtures dos dois pares acima resolveria ESTAS duas colisões e deixaria a
+ * `tests/invariants/**` é suíte compartilhada: editar um invariante é manutenção
+ * normal de teste (o congelamento do eval do épico foi aposentado), mas renomear
+ * as fixtures dos dois pares acima resolveria ESTAS duas colisões e deixaria a
  * classe intacta — a próxima entra do mesmo jeito. Isolar o estado é o conserto
- * por classe, e cabe inteiro fora do congelamento.
+ * por classe, e não depende de nenhum arquivo de invariante mudar.
  *
  * ## Custo
  *

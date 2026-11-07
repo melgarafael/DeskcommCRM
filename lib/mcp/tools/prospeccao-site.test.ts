@@ -142,8 +142,14 @@ describe("crm_get_prospecting_site_audit — o que o agente lê", () => {
       provisoria: false,
     });
     if (!r.disponivel) throw new Error("esperava análise disponível");
-    expect(r.problemas).toEqual([descreverProblema("nao-mobile"), descreverProblema("falta-mapa")]);
-    expect(r.checklist.tem).toEqual([{ codigo: "whatsapp", rotulo: "WhatsApp" }]);
+    // `falta-mapa` é melhoria: sai de `problemas` (o que se cita) e fica só no
+    // checklist, que é onde a tela mostra "o que falta" (#3723).
+    expect(r.problemas).toEqual([descreverProblema("nao-mobile")]);
+    // Site com WhatsApp TEM telefone de contato: a leitura acrescenta `tel` (#3723).
+    expect(r.checklist.tem).toEqual([
+      { codigo: "whatsapp", rotulo: "WhatsApp" },
+      { codigo: "tel", rotulo: "Telefone" },
+    ]);
     expect(r.checklist.falta).toEqual([{ codigo: "mapa", rotulo: ROTULOS_DO_CHECKLIST.mapa }]);
     expect(r.orientacao).toContain("Pode citar como fato");
   });

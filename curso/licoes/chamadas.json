@@ -1,0 +1,187 @@
+{
+  "id": "chamadas",
+  "titulo": "Chamadas",
+  "tela": "/app/calls",
+  "resumo": "O histórico das ligações por telefone que a IA de voz fez e recebeu, com a conversa escrita de cada uma.",
+  "licoes": [
+    {
+      "id": "chamadas-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Chamadas",
+      "objetivo": "Saber onde fica o histórico de ligações, o que cada linha mostra e para que serve o botão Nova ligação.",
+      "papel": "manager",
+      "busca": [
+        "chamadas",
+        "ligações",
+        "histórico de ligações",
+        "ligação perdida",
+        "ligação não atendida",
+        "telefone",
+        "voz por ia",
+        "ia que liga"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/crm",
+          "texto": "Chamadas não aparece direto no menu lateral. No grupo \"CRM\" do menu, clique em \"Ver tudo em CRM\". Na parte \"O dia a dia da venda\" está o cartão \"Chamadas\". O caminho completo é: CRM › Ver tudo em CRM › Chamadas.",
+          "dica": "Só gerente ou administrador vê este cartão. As ligações só acontecem se quem cuida do servidor ligou a telefonia e a linha do provedor foi cadastrada em Configurações › Trunk SIP. Sem isso, a tela abre, mas fica vazia.",
+          "destaques": [
+            {
+              "alvo": { "role": "link", "nome": "Ver tudo em CRM", "exato": true },
+              "rotulo": "Ver tudo em CRM",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "link", "nome": "^Chamadas", "regex": true },
+              "rotulo": "Abrir as Chamadas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": { "role": "link", "nome": "^Chamadas", "regex": true }
+        },
+        {
+          "id": "p2",
+          "titulo": "Uma linha para cada ligação",
+          "rota": "/app/calls",
+          "texto": "Aqui ficam as ligações por telefone da clínica, a mais recente em cima. Cada linha é uma ligação: o dia e a hora, a direção (\"Entrada\" quando o paciente ligou, \"Saída\" quando a clínica ligou), o número do paciente em \"Quem é\", como terminou, quem atendeu e quanto tempo durou. Em \"Atendido por\", \"IA\" quer dizer que a IA de voz conduziu a conversa sozinha.",
+          "destaques": [
+            {
+              "alvo": { "role": "row", "nome": "+5511976540001" },
+              "rotulo": "Uma ligação",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "columnheader", "nome": "Direção", "exato": true },
+              "rotulo": "Recebida ou feita",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "columnheader", "nome": "Atendido por", "exato": true },
+              "rotulo": "IA ou pessoa",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Como cada ligação terminou",
+          "texto": "A coluna \"Status\" diz o que aconteceu. \"Concluída\" é uma conversa que foi até o fim. \"Não atendida\" é uma ligação que tocou e ninguém atendeu: vale retornar para esse paciente. \"Ocupado\" quer dizer que a linha do outro lado estava em uso. Quando ninguém conversou, a duração aparece como \"—\".",
+          "destaques": [
+            {
+              "alvo": {
+                "texto": "Não atendida",
+                "exato": true,
+                "dentro": { "role": "row", "nome": "+5511976540003" }
+              },
+              "rotulo": "Retornar",
+              "tipo": "numero"
+            },
+            {
+              "alvo": {
+                "texto": "Ocupado",
+                "exato": true,
+                "dentro": { "role": "row", "nome": "+5511976540004" }
+              },
+              "rotulo": "Linha ocupada",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Pedir para a IA ligar",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "button", "nome": "Nova ligação", "exato": true } }
+          ],
+          "texto": "\"Nova ligação\", no alto da tela, abre esta janela. Digite o número em \"Número\" e clique em \"Ligar com IA\": a IA de voz liga para o paciente e conduz a conversa. O botão só acende depois de pelo menos 8 dígitos. Por enquanto não dá para você mesmo falar na ligação, só a IA. Para desistir, aperte Esc ou clique fora da janela.",
+          "dica": "Não clique em \"Ligar com IA\" só para testar: a ligação é de verdade, toca no telefone da pessoa e é cobrada pelo provedor da linha.",
+          "destaques": [
+            {
+              "alvo": { "rotulo": "Número", "exato": true },
+              "rotulo": "Para quem ligar",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "button", "nome": "Ligar com IA", "exato": true },
+              "rotulo": "A IA liga",
+              "tipo": "seta"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "chamadas-ler-a-conversa",
+      "titulo": "Ler o que foi conversado",
+      "objetivo": "Abrir uma ligação e ler, por escrito, o que a IA e o paciente disseram.",
+      "papel": "manager",
+      "busca": [
+        "transcrição da ligação",
+        "o que a ia falou no telefone",
+        "conversa da ligação",
+        "gravação da ligação",
+        "sem transcrição"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir uma ligação",
+          "rota": "/app/calls",
+          "texto": "Para ver o que foi conversado numa ligação, clique na linha dela. Esta foi uma ligação recebida que a IA atendeu e que terminou com uma consulta marcada.",
+          "destaques": [
+            {
+              "alvo": { "role": "row", "nome": "+5511976540001" },
+              "rotulo": "Clique na ligação",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": { "role": "row", "nome": "+5511976540001" }
+        },
+        {
+          "id": "p2",
+          "titulo": "A conversa por escrito",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "row", "nome": "+5511976540001" } },
+            { "acao": "aguardar", "alvo": { "role": "dialog" } }
+          ],
+          "texto": "A janela mostra, no alto, com quem foi a ligação, o dia, a direção e como terminou. Embaixo vem a conversa inteira, por escrito, na ordem em que foi falada. Os balões cinza, à esquerda, são a IA; os coloridos, à direita, são o paciente. É assim que você confere o que a IA prometeu sem ter de ouvir nada. Para fechar, aperte Esc ou clique fora da janela.",
+          "destaques": [
+            {
+              "alvo": { "texto": "Clínica Bem Viver, boa tarde! Em que posso ajudar?" },
+              "rotulo": "A IA fala",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "texto": "Oi, queria saber se tem horário para fisioterapia na quinta de manhã." },
+              "rotulo": "O paciente responde",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "texto": "Pronto, ficou marcado para quinta às 10h. Até lá!" },
+              "rotulo": "O combinado",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "Ligação sem conversa",
+          "antes": [
+            { "acao": "press", "tecla": "Escape" },
+            { "acao": "click", "alvo": { "role": "row", "nome": "+5511976540003" } },
+            { "acao": "aguardar", "alvo": { "texto": "Sem transcrição pra esta chamada.", "exato": true } }
+          ],
+          "texto": "Uma ligação que ninguém atendeu, ou que deu ocupado, não tem conversa para mostrar. A janela avisa \"Sem transcrição pra esta chamada.\". Nesse caso, o que vale é o horário e o número: use-os para retornar a ligação.",
+          "destaques": [
+            {
+              "alvo": { "texto": "Sem transcrição pra esta chamada.", "exato": true },
+              "rotulo": "Não houve conversa",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -59,7 +59,21 @@ export async function semear(c: Contexto) {
       reminder_body: null, is_active: false,
     },
   ];
-  const ids = TIPOS.map((t) => tipoId(t.n));
+  await limparTiposDasLicoes(c);
+
+  // ---------- recria ----------
+  semErro(await db.from("calendar_event_types").insert(TIPOS.map(({ n, ...t }) => ({
+    id: tipoId(n), organization_id: org, ...t, requires_confirmation: false, position: 200 + n,
+  }))), "tipos de agendamento");
+}
+
+/**
+ * Tira o que este módulo e as lições dele deixaram. A Agenda chama também: sem isso, uma aula da
+ * Agenda refotografada depois deste módulo mostra os tipos dele na lista de "Horários livres de".
+ */
+export async function limparTiposDasLicoes(c: Contexto) {
+  const { db, org, pessoa } = c;
+  const ids = [1, 2, 3, 4, 5].map(tipoId);
 
   // ---------- limpa: o que as lições criaram/mudaram e os próprios tipos ----------
   semErro(await db.from("calendar_event_types").delete().eq("organization_id", org).eq("slug", SLUG_CRIADO_NA_LICAO), "limpar tipo criado na lição");
@@ -68,9 +82,4 @@ export async function semear(c: Contexto) {
   semErro(await db.from("calendar_event_types").delete().eq("organization_id", org).in("id", ids), "limpar tipos");
   semErro(await db.from("calendar_availability_exceptions").delete().eq("organization_id", org)
     .eq("user_id", pessoa.helena).eq("exception_date", DIA_FECHADO_NA_LICAO), "limpar dia fechado");
-
-  // ---------- recria ----------
-  semErro(await db.from("calendar_event_types").insert(TIPOS.map(({ n, ...t }) => ({
-    id: tipoId(n), organization_id: org, ...t, requires_confirmation: false, position: 200 + n,
-  }))), "tipos de agendamento");
 }

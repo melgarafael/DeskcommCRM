@@ -12,9 +12,9 @@ export interface AssignableMember {
 export function useAssignableMembers(enabled: boolean) {
   return useQuery({
     queryKey: ["team", "assignable"],
-    queryFn: async () => apiClient.get<{ data: AssignableMember[] }>("/api/v1/team/assignable"),
+    queryFn: async () =>
+      (await apiClient.get<{ data: AssignableMember[] }>("/api/v1/team/assignable")).data,
     enabled,
     staleTime: 60_000,
-    select: (res) => res.data,
   });
 }

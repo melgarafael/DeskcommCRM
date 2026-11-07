@@ -159,15 +159,19 @@ describe("fiação — histórico e linha do job compõem o corpo pela MESMA fun
    */
   const corpoDoHistorico = (() => {
     const i = CTX.indexOf("function fitToBudget(");
-    const j = CTX.indexOf("const MEDIA_NOUN", i);
+    // A moldura saiu para `moldura-de-midia.ts`; o fim do trecho é a reexportação
+    // dela (e do marcador da foto não vista), que ocupa o lugar onde a definição morava.
+    const j = CTX.indexOf("export { frameMediaBody", i);
     expect(i).toBeGreaterThan(-1);
     expect(j).toBeGreaterThan(i);
     return CTX.slice(i, j);
   })();
 
   it("os dois leitores chamam `corpoDaMensagem`", () => {
-    expect(FONTE).toMatch(/corpoDaMensagem\(row\)/);
-    expect(corpoDoHistorico).toMatch(/const body = corpoDaMensagem\(m\)/);
+    // O 2º argumento é a opção "ver as fotos" do agente (9108) — a MESMA função
+    // nos dois leitores, com a mesma opção.
+    expect(FONTE).toMatch(/corpoDaMensagem\(row, verImagens\)/);
+    expect(corpoDoHistorico).toMatch(/const body = corpoDaMensagem\(m, verImagens\)/);
   });
 
   it("a linha do job não volta a ler a coluna crua", () => {

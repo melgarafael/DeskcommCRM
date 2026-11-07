@@ -203,3 +203,115 @@ describe("ConversationTagsEditor — sugestões filtram pelo digitado (#3180)", 
     expect(sugestao("carteira-andreia")).toBeNull();
   });
 });
+
+/**
+ * CRIAR É A ÚLTIMA OPÇÃO, E SÓ QUANDO O TEXTO NÃO EXISTE AINDA (#3180,
+ * critério 3).
+ *
+ * ─── O que faltava ──────────────────────────────────────────────────────────
+ *
+ * Filtrar pelo digitado (critério 1) e ordenar por uso (critério 2) já estavam
+ * de pé; o que a tela ainda não dizia era QUAL das duas coisas o clique faz. A
+ * lista oferecia só as existentes, e o Enter no campo criava uma etiqueta nova
+ * com o texto cru — então quem digitava "Carteira-Andréia" de memória, com a
+ * `carteira-andreia` na frente dos olhos, criava a variante que o vocabulário
+ * existe para evitar.
+ *
+ * ─── A régua ────────────────────────────────────────────────────────────────
+ *
+ *  - Enter/clique com texto que CASA com uma existente (sem caixa, sem acento)
+ *    aplica a EXISTENTE, com a grafia dela;
+ *  - a opção "Criar «…»" é a ÚLTIMA da lista e some quando há correspondência
+ *    exata — nesse caso a sugestão da etiqueta já está ali.
+ */
+describe("ConversationTagsEditor — criar só o que não existe (#3180)", () => {
+  beforeEach(() => {
+    papel = "manager";
+    vi.clearAllMocks();
+    vocabularioRef.current = [];
+  });
+  afterEach(() => cleanup());
+
+  const campo = () => screen.getByLabelText("Adicionar tag à conversa");
+  const sugestao = (tag: string) => screen.queryByRole("button", { name: `+ ${tag}` });
+  const opcaoDeCriar = () => screen.queryByRole("button", { name: /^Criar «/ });
+  /** Os chips da lista, na ordem em que a tela os desenha. */
+  const opcoes = () =>
+    screen
+      .getAllByRole("button")
+      .map((b) => (b.textContent ?? "").replace(/\s+/g, " ").trim())
+      .filter((rotulo) => rotulo.startsWith("+ ") || rotulo.startsWith("Criar «"));
+
+  it("o Enter APLICA a etiqueta existente quando o texto casa por caixa e acento", async () => {
+    const user = userEvent.setup();
+    vocabularioRef.current = ["carteira-andreia", "carteira-danilo"];
+    renderEditor();
+
+    // Grafia de quem digita de memória: caixa alta e acento que a etiqueta não
+    // tem. Criar "carteira-andréia" aqui seria a 74ª etiqueta da organização.
+    await user.type(campo(), "CARTEIRA-ANDRÉIA{Enter}");
+
+    expect(mutateSpy).toHaveBeenCalledTimes(1);
+    expect(mutateSpy).toHaveBeenCalledWith({
+      conversation_id: "c1",
+      tags: ["carteira-andreia"],
+    });
+  });
+
+  it("a opção de criar vem por ÚLTIMO, depois das que casam", async () => {
+    const user = userEvent.setup();
+    vocabularioRef.current = ["carteira-andreia", "carteira-danilo"];
+    renderEditor();
+
+    await user.type(campo(), "carteira");
+
+    expect(sugestao("carteira-andreia")).not.toBeNull();
+    expect(sugestao("carteira-danilo")).not.toBeNull();
+    expect(opcoes()).toEqual([
+      "+ carteira-andreia",
+      "+ carteira-danilo",
+      "Criar «carteira»",
+    ]);
+  });
+
+  it("com correspondência exata a opção de criar não aparece", async () => {
+    const user = userEvent.setup();
+    vocabularioRef.current = ["carteira-andreia"];
+    renderEditor();
+
+    await user.type(campo(), "Carteira-Andreia");
+
+    // A existente continua sugerida (é ela que o clique aplica)...
+    expect(sugestao("carteira-andreia")).not.toBeNull();
+    // ...e não há o que criar.
+    expect(opcaoDeCriar()).toBeNull();
+  });
+
+  it("clicar em Criar «…» grava a etiqueta nova, pela régua do banco", async () => {
+    const user = userEvent.setup();
+    vocabularioRef.current = ["carteira-andreia"];
+    renderEditor();
+
+    await user.type(campo(), "Indicação de Parceiro");
+    const criar = opcaoDeCriar();
+    expect(criar).not.toBeNull();
+
+    await user.click(criar as HTMLElement);
+
+    // Minúscula e sem espaço sobrando: a mesma forma que o PATCH grava e que o
+    // filtro `?tag=` casa.
+    expect(mutateSpy).toHaveBeenCalledWith({
+      conversation_id: "c1",
+      tags: ["indicação de parceiro"],
+    });
+  });
+
+  it("não oferece criar uma etiqueta que a conversa já tem", async () => {
+    const user = userEvent.setup();
+    renderEditor(["vip"]);
+
+    await user.type(campo(), "VIP");
+
+    expect(opcaoDeCriar()).toBeNull();
+  });
+});

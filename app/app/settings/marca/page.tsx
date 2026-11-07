@@ -90,6 +90,7 @@ export default async function MarcaDaOrganizacaoPage() {
           // a URL pronta do servidor faria a tela ter uma segunda regra de
           // montagem, e a que divergisse seria a que ninguém abre.
           logo_path: gravada?.logo_path ?? null,
+          logo_dark_path: gravada?.logo_dark_path ?? null,
           // O remetente da AUTOMAÇÃO (#3287, fatia 1): os dois campos que a tela
           // grava junto da marca e lê de volta para preencher os inputs.
           email_from_name: gravada?.email_from_name ?? null,

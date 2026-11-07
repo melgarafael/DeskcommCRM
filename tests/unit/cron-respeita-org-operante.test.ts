@@ -67,10 +67,12 @@ const SEM_FILTRO: Record<string, string> = {
   "lead-time-triggers": "só emite lead.silent_for/stage_stale; o consumidor (automationRulesHandler) é 'pula'",
   "lgpd-sla-watcher": "LGPD nunca é bloqueada (spec §1.3)",
   "media-retention": "retenção de mídia: apagar é obrigação, não custo",
+  "mcp-oauth-revogacao": "revoga acesso de terceiro do contato (encerramento/LGPD): obrigação, nunca bloqueada",
   "proposal-acceptance-rate": "só calcula a taxa e abre aviso interno; sem custo nem saída",
   "proposal-expiry": "só vence proposta e abre aviso interno; sem custo nem saída",
   "proposal-promised-not-created": "só abre aviso interno de promessa vencida; sem custo nem saída",
   "proposta-travada": "só destrava proposta presa em 'enviando'; escrita interna",
+  "recover-stuck-calls": "só encerra ligação presa em toque; corrige estado, nada sai nem custa",
   "recover-stuck-messages": "marca failed e avisa, nunca reenvia: deliberadamente não gatilhado (spec §4)",
   "recurring-entries": "só gera lançamento financeiro pendente; escrita interna",
   "risk-watcher": "só classifica risco e registra a proposta de reativação; nada sai",
@@ -79,7 +81,7 @@ const SEM_FILTRO: Record<string, string> = {
   "storage-redaction": "LGPD e retenção nunca são bloqueadas (spec §1.3)",
   "sync-model-catalog": "catálogo da instalação inteira; não pertence a organização nenhuma",
   "webhook-log-retention": "retenção do arquivo de webhook: obrigação, nunca bloqueada",
-  "webhook-replay": "reprocessa ENTRADA do WAHA; mensagem que chega continua gravada (spec §1.3)",
+  "webhook-replay": "reprocessa ENTRADA dos canais pela mesma ingestão da rota; mensagem que chega continua gravada (spec §1.3)",
 };
 
 function rotasDeCron(): string[] {

@@ -483,6 +483,30 @@ describe("POST /api/v1/channel-sessions/[id]/reconnect — canal excluído não 
     expect(db.linhas[0]?.status).toBe("STARTING");
   });
 
+  it("⭐ sem vaga no plano para reviver a linha sem número → 409 plan_limit_reached, transporte intocado (9036)", async () => {
+    authOk();
+    const db = makeDb({ sessions: [canalQr({ status: "FAILED", phone_number: null })] });
+    const cliente = vi.mocked(createAdminClient)() as unknown as {
+      rpc: (fn: string, args: Record<string, unknown>) => Promise<unknown>;
+    };
+    const rpcOriginal = cliente.rpc;
+    cliente.rpc = async (fn, args) =>
+      fn === "fn_vaga_ao_reviver_canal"
+        ? { data: null, error: { code: "PT402", message: "limite_do_plano:canais:1" } }
+        : rpcOriginal(fn, args);
+    const waha = transporteOk();
+    const { POST } = await import("@/app/api/v1/channel-sessions/[id]/reconnect/route");
+    const res = await POST(req(), ctx());
+
+    expect(res.status).toBe(409);
+    const corpo = await res.json();
+    expect(corpo.error.code).toBe("plan_limit_reached");
+    expect(corpo.error.details).toEqual({ recurso: "canais", limite: 1 });
+    expect(waha.stopSession).not.toHaveBeenCalled();
+    expect(waha.startSession).not.toHaveBeenCalled();
+    expect(db.escritas).toEqual([]);
+  });
+
   it("I1: reconectar ressincroniza o filtro de grupos DEPOIS de reiniciar a sessão, na org da sessão", async () => {
     authOk();
     makeDb({ sessions: [canalQr({ status: "FAILED" })] });

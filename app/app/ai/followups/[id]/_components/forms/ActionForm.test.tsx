@@ -18,7 +18,10 @@ const AVISO = "O modelo que estava aqui não está disponível nesta conta. Esco
 
 let textos: Consulta<{ id: string; title: string }[]> = pronta([{ id: DA_CONTA, title: "Boas-vindas" }]);
 let aprovados: Consulta<{ id: string; name: string; language: string; texto: string }[]> = pronta([]);
-vi.mock("@/hooks/inbox/useMessageTemplates", () => ({ useMessageTemplates: () => textos }));
+vi.mock("@/hooks/inbox/useMessageTemplates", () => ({
+  // Sem grupo (#3245): a barra e o slash-menu são os de antes dos grupos.
+  useGruposDeRespostas: () => ({ data: [] }),
+  useMessageTemplates: () => textos }));
 vi.mock("@/hooks/followup/useModelosAprovadosDoFluxo", () => ({ useModelosAprovadosDoFluxo: () => aprovados }));
 vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 

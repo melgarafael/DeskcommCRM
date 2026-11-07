@@ -102,7 +102,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     // handler é compartilhado com as tools MCP, que já resolvem o nome por conta
     // própria (`lib/mcp/tools/conversations.ts`) — enriquecer lá faria a mesma
     // leitura duas vezes por chamada do agente.
-    return ok(await comNomeDoAtendente(conversations), {
+    return ok(await comNomeDoAtendente(activeOrg.orgId, conversations), {
       requestId,
       meta: { cursor, has_more },
     });

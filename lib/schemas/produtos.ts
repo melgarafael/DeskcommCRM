@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { MAXIMO_DE_FOTOS } from "@/lib/catalogo/fotos";
+
 /**
  * O CONTRATO DO CATÁLOGO — um só, lido pela tela E pela rota.
  *
@@ -91,6 +93,58 @@ const codigo = z
 
 const nome = z.string().trim().min(2, "o nome precisa de ao menos 2 letras").max(200);
 
+/**
+ * A FOTO QUE VEM POR URL — a lista que a rota BAIXA e guarda (#3587, fatia 1).
+ *
+ * A régua é a mesma da planilha (`lib/catalogo/planilha.ts`, `fotosDaLinha`):
+ * `new URL` porque é a régua do que o `fetch` do servidor consegue abrir — um
+ * `data:`/`file:`/`ftp:` passaria como string e morreria longe de quem escreveu
+ * — e o teto de itens é o mesmo CHECK da coluna (`MAXIMO_DE_FOTOS`).
+ *
+ * ⚠️ Isto é URL de ENTRADA, não o valor da coluna: `catalog_products.fotos`
+ * guarda CAMINHOS no bucket, e quem transforma uma coisa na outra é a rota,
+ * chamando o MESMO `guardarFotosPorUrl` da importação. Por isso o campo é
+ * separado do corpo antes de qualquer insert/update — um `{...parsed.data}` com
+ * esta lista dentro gravaria links de terceiro numa coluna que só aceita
+ * caminho nosso (e `fotoPertenceAoProduto` os descartaria na leitura: a foto
+ * sumiria sem erro).
+ *
+ * O que o Zod recusa aqui é recusa do CORPO INTEIRO, como a linha da planilha,
+ * e não "ignora esta foto": guardar 3 das 5 deixaria a capa errada sem ninguém
+ * perceber. O que não dá para decidir sem baixar (link morto, arquivo que não é
+ * JPG/PNG, acima de 5 MB) é recusado pela rota, com o motivo do downloader.
+ */
+const urlDeFoto = z.string().trim().min(1, "a foto está em branco").max(2000);
+
+/** O que o `fetch` do servidor consegue abrir: `data:`/`file:`/`ftp:` não. */
+function ehEnderecoHttp(valor: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(valor);
+  } catch {
+    return false;
+  }
+  return (url.protocol === "http:" || url.protocol === "https:") && url.hostname !== "";
+}
+
+/**
+ * A lista, na ordem da capa. A recusa nomeia o ITEM (posição e URL) porque o
+ * conserto é no corpo de quem chamou, não no servidor.
+ */
+const fotos = z
+  .array(urlDeFoto)
+  .max(MAXIMO_DE_FOTOS, `a lista aceita no máximo ${MAXIMO_DE_FOTOS} fotos, na ordem da capa`)
+  .superRefine((lista, ctx) => {
+    lista.forEach((valor, indice) => {
+      if (ehEnderecoHttp(valor)) return;
+      ctx.addIssue({
+        code: "custom",
+        path: [indice],
+        message: `a foto ${indice + 1} não é um endereço http(s): ${valor}`,
+      });
+    });
+  });
+
 export const produtoCreateSchema = z.object({
   codigo,
   nome,
@@ -116,6 +170,8 @@ export const produtoCreateSchema = z.object({
   quantidade: z.number().int().min(0).default(0),
   ativo: z.boolean().default(true),
   imagem_url: z.string().trim().url().max(2000).optional(),
+  /** As URLs das fotos, na ordem da capa (ver `fotos` acima). */
+  fotos: fotos.optional(),
 });
 
 /** Tudo opcional: o PATCH muda o que veio e não encosta no resto. */

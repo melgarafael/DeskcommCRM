@@ -62,10 +62,11 @@ código) + `docs/specs/` — este agente só existe pra executar dentro dela.
 - pt-br em texto voltado ao usuário final; código, identifiers e paths em inglês.
 - Sem `console.log` em código merged; erro nunca engolido (catch vazio proibido).
 - Zod em todo input externo; API key nunca em query string; wrappers `ok()`/`fail()`.
-- **`tests/invariants/**` existente é congelado** — você ADICIONA invariante novo
-  livremente, mas não edita/deleta os existentes (um hook bloqueia; o flip
-  test.fails→normal é decisão do orquestrador no commit, não sua). Se a feature
-  parecer exigir editar um invariante, devolva `BLOCKED:`.
+- **`tests/invariants/**`: editar é livre, APAGAR não** — ajustar um invariante
+  existente é manutenção normal de teste (o congelamento do eval do épico foi
+  aposentado). O que um hook barra é `rm`/rename de invariante que a `main` tem:
+  se a feature parecer exigir APAGAR um invariante, devolva `BLOCKED:` — deleção é
+  decisão do dono, com `DESKCOMM_GOV_INVARIANTS_EDIT=1` e a razão no commit.
 - **Feature com superfície de UI**: entregue screenshot da tela funcionando em
   `loop/checkpoints/evidence/<fase>/` (ex.: `loop/checkpoints/evidence/G3/G3-03-kanban-owner.png`)
   e cite o path no resumo. Sem screenshot, a entrega de UI está incompleta.

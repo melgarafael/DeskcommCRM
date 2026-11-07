@@ -182,7 +182,16 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   // ASSINATURA dos bytes, nunca pelo content-type que o cliente diz.
   { arquivo: "app/api/v1/message-templates/[id]/midias/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/cron/contact-avatars/route.ts", fronteira: "storage.chave-de-objeto" },
-  { arquivo: "app/api/v1/channels/partner/templates/media/route.ts", fronteira: "storage.chave-de-objeto" },
+  // #3635: o upload do cabeçalho saiu da rota do parceiro para `lib/` quando o
+  // canal oficial direto passou a gerenciar modelo pela tela — a lógica é a
+  // mesma, e as duas rotas (`partner/templates/media` e `templates/media`) são só
+  // o handler. A chave é a de antes: `{org}/templates/{uuid}.{jpg|png}`, com a
+  // extensão vinda da ASSINATURA dos bytes.
+  { arquivo: "lib/channels/templates-midia.ts", fronteira: "storage.chave-de-objeto" },
+  // A nota de voz do agente (`uploadDeVoz`): `{org}/{conversa}/voz-agente-{jobId}-{seq}.mp3`
+  // — org e conversa do turno, jobId uuid da fila, seq inteiro do turno. Nada de
+  // texto do cliente nem do modelo entra na chave.
+  { arquivo: "lib/agent-engine/agent/inbound-turn.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/settings/sons/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/marca/logo/route.ts", fronteira: "storage.chave-de-objeto" },
   { arquivo: "app/api/v1/conversations/[id]/media/route.ts", fronteira: "storage.chave-de-objeto" },
@@ -195,6 +204,12 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   { arquivo: "app/api/v1/ai/knowledge/sources/route.ts", fronteira: "storage.chave-de-objeto" },
   // O PDF da proposta comercial (#1832): `<org>/<proposta>.pdf`, dois uuids.
   { arquivo: "lib/propostas/storage.ts", fronteira: "storage.chave-de-objeto" },
+  // A foto do produto por URL na planilha (#3587, fatia 1): a chave é
+  // `<org>/<produto>/<uuid>.<ext>` — os mesmos pedaços que a tela grava. O uuid
+  // nasce aqui (`randomUUID`), a extensão vem do tipo farejado nos BYTES (não
+  // do nome nem da URL) e o `org`/`produto` são uuids já resolvidos. Nenhum
+  // texto da planilha entra na chave — a URL do cliente só escolhe o conteúdo.
+  { arquivo: "lib/catalogo/fotos-por-url.ts", fronteira: "storage.chave-de-objeto" },
   // Chave de idempotência: os geradores (manda UUID) e os validadores (exige UUID).
   { arquivo: "app/onboarding/connect-whatsapp/_client.tsx", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "components/extensions/ExtensionsManager.tsx", fronteira: "api.idempotency-key", papel: "gerador" },
