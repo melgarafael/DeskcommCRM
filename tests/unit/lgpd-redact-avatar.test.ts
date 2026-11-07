@@ -73,6 +73,11 @@ vi.mock("@/lib/supabase/admin", () => ({
           inserts.push({ tabela, payload, opcoes });
           return { error: erroDoInsert };
         }),
+      delete: () =>
+        chain(async () => {
+          ops.push(`delete:${tabela}`);
+          return { error: null };
+        }),
       update: (patch: Record<string, unknown>) =>
         chain(async () => {
           ops.push(`update:${tabela}`);
@@ -182,6 +187,21 @@ describe("cascadeRedactContact — foto de perfil", () => {
     expect(inserts[0]?.payload).toMatchObject({ organization_id: ORG });
   });
 
+  it("anexo de nota com caminho fora da organização não entra na fila", async () => {
+    const PROPRIO = `${ORG}/conversa/nota.jpg`;
+    filaPendente = [
+      { id: "c1", media_storage_path: `outra-org/conversa/nota.jpg` },
+      { id: "c2", media_storage_path: PROPRIO },
+    ] as unknown as typeof filaPendente;
+
+    await cascadeRedactContact({ organizationId: ORG, contactId: CONTATO, requestId: PEDIDO });
+
+    const naFila = inserts
+      .filter((i) => i.tabela === "storage_redaction_queue" && i.payload.bucket === "internal-media")
+      .map((i) => i.payload.object_path);
+    expect(naFila).toEqual([PROPRIO]);
+  });
+
   it("enfileiramento que falha NÃO pode zerar o ponteiro — seria perder o rastro do arquivo", async () => {
     // O caminho do avatar é ESTÁVEL por contato (`{org}/avatars/{id}.jpg`) e
     // reaproveitado a cada refresh, ao contrário da mídia de mensagem. Por isso
@@ -216,6 +236,29 @@ describe("drainStorageRedactionQueue — o arquivo sai do bucket", () => {
     expect(stats).toMatchObject({ attempted: 1, deleted: 1, failed: 0 });
     expect(updates.find((u) => u.tabela === "storage_redaction_queue")?.patch).toMatchObject({
       status: "deleted",
+    });
+  });
+
+  it.each([
+    ["outra organização", "outra-org/avatars/x.jpg"],
+    ["prefixo parecido", `${ORG}-x/avatars/x.jpg`],
+    ["barra inicial", `/${ORG}/avatars/x.jpg`],
+    ["subida de pasta", `${ORG}/../outra-org/x.jpg`],
+    ["ponto", `${ORG}/./x.jpg`],
+    ["segmento vazio", `${ORG}//x.jpg`],
+    ["contrabarra", `${ORG}/pasta\\x.jpg`],
+  ])("caminho fora da organização não é removido: %s", async (_nome, caminho) => {
+    filaPendente = [
+      { id: "fila-fora", organization_id: ORG, bucket: "whatsapp-media", object_path: caminho, attempts: 0 },
+    ];
+
+    const stats = await drainStorageRedactionQueue({ limit: 10 });
+
+    expect(removes).toEqual([]);
+    expect(stats).toMatchObject({ attempted: 1, skipped: 1, deleted: 0, failed: 0 });
+    expect(updates.find((u) => u.tabela === "storage_redaction_queue")?.patch).toMatchObject({
+      status: "skipped",
+      error_message: "path_outside_organization",
     });
   });
 

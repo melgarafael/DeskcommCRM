@@ -363,22 +363,69 @@ describe("a cascata alcança as fichas absorvidas", () => {
     ).toBe("0|t|t");
   });
 
-  it("anexo de negócio ligado pela crm_lead_links sai junto, e o de outro negócio fica", () => {
+  it("negócio só ligado pela crm_lead_links mantém os anexos, e a contagem diz quantos", () => {
     const fica = criar(ORG, "Fica Ligado", novoTelefone());
     const dono = criar(ORG, "Dono do Negocio", novoTelefone());
     const ligado = comFotoEAnexo(dono);
-    const alheio = comFotoEAnexo(criar(ORG, "Dono Alheio", novoTelefone()));
-    sql(`insert into public.crm_lead_links (organization_id, lead_id, target_kind, target_id, link_kind)
-         values ('${ORG}', '${ligado.lead}', 'contact', '${fica}', 'related');`);
+    const proprio = comFotoEAnexo(fica);
+    sql(`insert into public.crm_lead_links (organization_id, lead_id, target_kind, target_id, link_kind) values
+           ('${ORG}', '${ligado.lead}', 'contact', '${fica}', 'related'),
+           ('${ORG}', '${ligado.lead}', 'contact', '${fica}', 'primary');`);
+
+    const contagens = JSON.parse(
+      sql(`select public.fn_lgpd_cascade_redact_contact('${ORG}', '${fica}', null) -> 'counts';`),
+    ) as Record<string, number>;
+
+    expect(contagens.crm_lead_attachments_mantidos).toBe(1);
+    expect(contagens.crm_lead_attachments).toBe(1);
+    expect(sql(`select count(*) from public.crm_lead_attachments where lead_id = '${ligado.lead}';`)).toBe("1");
+    expect(sql(`select count(*) from public.storage_redaction_queue where object_path = '${ligado.anexo}';`)).toBe("0");
+    expect(sql(`select count(*) from public.crm_lead_attachments where lead_id = '${proprio.lead}';`)).toBe("0");
+    expect(
+      sql(`select status from public.storage_redaction_queue where bucket = 'internal-media' and object_path = '${proprio.anexo}';`),
+    ).toBe("pending");
+  });
+
+  it("ponteiro sem merged_at não é fusão: a cascata não alcança a ficha", () => {
+    const fica = criar(ORG, "Fica Sem Data", novoTelefone());
+    const semData = criar(ORG, "Sem Data", novoTelefone());
+    const meio = criar(ORG, "Meio Com Data", novoTelefone());
+    const abaixoSemData = criar(ORG, "Abaixo Sem Data", novoTelefone());
+    fundida(meio, fica);
+    sql(`update public.contacts set is_merged_into = '${fica}' where id = '${semData}';
+         update public.contacts set is_merged_into = '${meio}' where id = '${abaixoSemData}';`);
 
     cascata(ORG, fica);
 
-    expect(sql(`select count(*) from public.crm_lead_attachments where lead_id = '${ligado.lead}';`)).toBe("0");
+    apagadaDeVerdade(meio);
+    expect(estado(semData)).toMatchObject({ anonimizada: false, nome: "Sem Data" });
+    expect(estado(abaixoSemData)).toMatchObject({ anonimizada: false, nome: "Abaixo Sem Data" });
+  });
+
+  it("mídia de mensagem com caminho fora da organização não entra na fila", () => {
+    const contato = criar(ORG, "Midia Fora", novoTelefone());
+    const sessao = novoId();
+    const conversa = novoId();
+    const propria = `${ORG}/${conversa}/propria.jpg`;
+    const fora = `${VIZINHA}/${conversa}/fora.jpg`;
+    sql(`
+      insert into public.channel_sessions (id, organization_id, waha_session_name, webhook_secret_encrypted)
+        values ('${sessao}', '${ORG}', 'sessao-${sessao}', '\\x00'::bytea);
+      insert into public.conversations (id, organization_id, contact_id, channel_session_id, status)
+        values ('${conversa}', '${ORG}', '${contato}', '${sessao}', 'open');
+      insert into public.messages
+        (organization_id, conversation_id, channel_session_id, contact_id, type, direction, status, sent_via, body, media_storage_path)
+        values ('${ORG}', '${conversa}', '${sessao}', '${contato}', 'image', 'inbound', 'received', 'crm', 'a', '${propria}'),
+               ('${ORG}', '${conversa}', '${sessao}', '${contato}', 'image', 'inbound', 'received', 'crm', 'b', '${fora}');
+    `);
+
+    const midias = sql(`select public.fn_lgpd_cascade_redact_contact('${ORG}', '${contato}', null) -> 'media_paths';`);
+
+    expect(JSON.parse(midias)).toEqual([propria]);
+    expect(sql(`select count(*) from public.storage_redaction_queue where object_path = '${fora}';`)).toBe("0");
     expect(
-      sql(`select status from public.storage_redaction_queue where bucket = 'internal-media' and object_path = '${ligado.anexo}';`),
+      sql(`select status from public.storage_redaction_queue where bucket = 'whatsapp-media' and object_path = '${propria}';`),
     ).toBe("pending");
-    expect(sql(`select count(*) from public.crm_lead_attachments where lead_id = '${alheio.lead}';`)).toBe("1");
-    expect(sql(`select count(*) from public.storage_redaction_queue where object_path = '${alheio.anexo}';`)).toBe("0");
   });
 
   it("corrente longa não esgota a pilha, e a mais funda vira primeiro", () => {
@@ -565,14 +612,21 @@ describe("o bloco de dados alcança o que ficou para trás", () => {
 
     const caminhoDeOutra = `${VIZINHA}/avatars/${novoId()}.jpg`;
     const caminhoProprio = `${ORG}/avatars/${novoId()}.jpg`;
-    const caminhoSemOrganizacao = `sem-organizacao/${novoId()}.jpg`;
-    const caminhoDeOutroUuid = `${novoId()}/x.jpg`;
+    const ponteiroSemData = criar(ORG, "Velha Sem Data", novoTelefone());
+    sql(`update public.contacts set is_merged_into = '${fica}' where id = '${ponteiroSemData}';`);
+    const caminhosFora = [
+      caminhoDeOutra,
+      `sem-organizacao/${novoId()}.jpg`,
+      `${novoId()}/x.jpg`,
+      `/${ORG}/${novoId()}.jpg`,
+      `${ORG}/../${VIZINHA}/${novoId()}.jpg`,
+      `${ORG}/./${novoId()}.jpg`,
+      `${ORG}//${novoId()}.jpg`,
+      `${ORG}/pasta\\${novoId()}.jpg`,
+    ];
     sql(`
       insert into public.storage_redaction_queue (organization_id, bucket, object_path) values
-        ('${ORG}', 'whatsapp-media', '${caminhoDeOutra}'),
-        ('${ORG}', 'whatsapp-media', '${caminhoProprio}'),
-        ('${ORG}', 'whatsapp-media', '${caminhoSemOrganizacao}'),
-        ('${ORG}', 'whatsapp-media', '${caminhoDeOutroUuid}');
+        ${[caminhoProprio, ...caminhosFora].map((c) => `('${ORG}', 'whatsapp-media', '${c}')`).join(",\n")};
     `);
 
     expect(marcado(ORG, telefone, null), "CONTROLE: antes do bloco não há marca").toBe("f");
@@ -583,10 +637,11 @@ describe("o bloco de dados alcança o que ficou para trás", () => {
 
     for (const f of [direta, meio, ponta, abaixoDaAnonimizada, comArquivos]) apagadaDeVerdade(f);
     semPonteiroEComFila(comArquivos, arquivos);
-    expect(sql(`select count(*) from public.storage_redaction_queue where object_path = '${caminhoDeOutra}';`)).toBe("0");
+    expect(estado(ponteiroSemData)).toMatchObject({ anonimizada: false, nome: "Velha Sem Data" });
+    for (const caminho of caminhosFora) {
+      expect(sql(`select count(*) from public.storage_redaction_queue where object_path = '${caminho}';`), caminho).toBe("0");
+    }
     expect(sql(`select count(*) from public.storage_redaction_queue where object_path = '${caminhoProprio}';`)).toBe("1");
-    expect(sql(`select count(*) from public.storage_redaction_queue where object_path = '${caminhoSemOrganizacao}';`)).toBe("1");
-    expect(sql(`select count(*) from public.storage_redaction_queue where object_path = '${caminhoDeOutroUuid}';`)).toBe("1");
     expect(marcado(ORG, telefone, null)).toBe("t");
     expect(marcado(ORG, telefoneMeio, null)).toBe("t");
     expect(estado(viva)).toMatchObject({ anonimizada: false, nome: "Viva Velha" });

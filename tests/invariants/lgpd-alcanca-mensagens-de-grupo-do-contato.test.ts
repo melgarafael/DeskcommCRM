@@ -145,6 +145,7 @@ const DO_TITULAR_POR_LID = randomUUID(); // sem telefone no rótulo, com mídia
 const DE_OUTRO_PARTICIPANTE = randomUUID();
 const DE_QUEM_FOI_PELA_TELA = randomUUID();
 const MIDIA = `${ORG}/grupo-titular.jpg`;
+const MIDIA_FORA = `${randomUUID()}/grupo-titular.jpg`;
 
 async function mensagemDeGrupo(id: string, body: string, sender: object, mediaPath: string | null = null) {
   await q(
@@ -181,7 +182,7 @@ beforeAll(async () => {
     name: "Titular",
     phone: "+551187654321",
     lid: null,
-  });
+  }, MIDIA_FORA);
   await mensagemDeGrupo(DO_TITULAR_POR_LID, "foto do meu documento", { name: "Titular", phone: null, lid: LID_DO_TITULAR }, MIDIA);
   await mensagemDeGrupo(DE_OUTRO_PARTICIPANTE, "oi, sou a Outra", {
     name: "Outra",
@@ -224,6 +225,8 @@ describe("mensagens de grupo de quem já é contato", () => {
 
     const fila = await q("select count(*)::int n from storage_redaction_queue where bucket='whatsapp-media' and object_path=$1", [MIDIA]);
     expect(fila.rows[0].n).toBe(1);
+    const foraDaOrganizacao = await q("select count(*)::int n from storage_redaction_queue where object_path=$1", [MIDIA_FORA]);
+    expect(foraDaOrganizacao.rows[0].n).toBe(0);
 
     const outro = await mensagem(DE_OUTRO_PARTICIPANTE);
     expect(outro.body).toBe("oi, sou a Outra");

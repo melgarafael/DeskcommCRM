@@ -1,4 +1,4 @@
--- manifest: **Anonimizar um contato alcança as fichas fundidas nele.** `fn_lgpd_cascade_redact_contact` passa a percorrer, depois de virar a ficha, as fichas com `is_merged_into` apontando para ela na mesma organização, da mais funda para a de cima: mesmas regras, marca de apagamento de cada telefone delas (#4201) e uma linha `lgpd.redact_executed` por ficha, com o ator (`auth.uid()`) e `ficha_de_origem` no metadata. A própria cascata passa também a pôr na fila de remoção, por `fn_fila_de_remocao_de_arquivo`, a foto de perfil e os anexos dos negócios, os ligados direto e pela `crm_lead_links`, e a soltar os ponteiros; o retorno ganha as contagens `crm_lead_attachments` e `fichas_absorvidas`. As colunas de fusão e anonimização de `contacts` e a fila `storage_redaction_queue` passam a ser escritas só pelo servidor. O bloco final confere a organização das linhas da fila de remoção e anonimiza, em qualquer banco, as fichas absorvidas de quem já estava anonimizado; rodá-lo de novo não acha ninguém. Assinatura, `search_path`, `security definer` e grants da cascata inalterados. Espelho no apêndice do `supabase/baseline.sql`: funções e gatilhos antes da VARREDURA anon (0116), bloco de dados no fim do arquivo. Prova em `tests/invariants/lgpd-alcanca-fichas-fundidas.test.ts`.
+-- manifest: **Anonimizar um contato alcança as fichas fundidas nele.** `fn_lgpd_cascade_redact_contact` passa a percorrer, depois de virar a ficha, as fichas com `is_merged_into` apontando para ela na mesma organização, da mais funda para a de cima: mesmas regras, marca de apagamento de cada telefone delas (#4201) e uma linha `lgpd.redact_executed` por ficha, com o ator (`auth.uid()`) e `ficha_de_origem` no metadata. A própria cascata passa também a pôr na fila de remoção, por `fn_fila_de_remocao_de_arquivo`, a foto de perfil e os anexos dos negócios de que o contato é o titular, e a soltar os ponteiros; o negócio só ligado pela `crm_lead_links` mantém os anexos; o retorno ganha as contagens `crm_lead_attachments`, `crm_lead_attachments_mantidos` e `fichas_absorvidas`. `fn_redigir_conversas_ao_anonimizar` e o passo 7 enfileiram só caminho sob a organização. As colunas de fusão e anonimização de `contacts` e a fila `storage_redaction_queue` passam a ser escritas só pelo servidor. O bloco final confere a organização das linhas da fila de remoção e anonimiza, em qualquer banco, as fichas absorvidas de quem já estava anonimizado; rodá-lo de novo não acha ninguém. Assinatura, `search_path`, `security definer` e grants da cascata inalterados. Espelho no apêndice do `supabase/baseline.sql`: funções e gatilhos antes da VARREDURA anon (0116), bloco de dados no fim do arquivo. Prova em `tests/invariants/lgpd-alcanca-fichas-fundidas.test.ts`.
 --
 -- Põe um arquivo na fila de remoção. Quem chama já provou pela forma do caminho que
 -- ele é desta organização, então a linha que exista com o mesmo caminho passa a ser
@@ -17,6 +17,170 @@ set search_path = '' as $$
     error_message = null;
 $$;
 revoke execute on function public.fn_fila_de_remocao_de_arquivo(uuid, uuid, text, text) from public, anon, authenticated, service_role;
+
+-- A virada de `is_anonymized` também enfileira a mídia das mensagens, antes do passo 7
+-- da cascata: o mesmo filtro nas duas. O restante é a última definição do baseline.
+create or replace function public.fn_redigir_conversas_ao_anonimizar()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $f$
+declare
+  v_variantes text[];
+  v_lids text[];
+  v_msgs_de_grupo uuid[];
+begin
+  insert into public.storage_redaction_queue (organization_id, bucket, object_path)
+  select distinct new.organization_id, 'whatsapp-media', m.media_storage_path
+    from public.messages m
+   where m.organization_id = new.organization_id
+     and m.conversation_id in (
+       select c.id from public.conversations c
+        where c.contact_id = new.id and c.organization_id = new.organization_id)
+     and m.media_storage_path like new.organization_id::text || '/%'
+  on conflict (bucket, object_path) do nothing;
+
+  update public.messages set
+    body = '[mensagem anonimizada]',
+    media_url = null,
+    media_mime = null,
+    media_size_bytes = null,
+    media_storage_path = null,
+    media_derived_text = null,
+    metadata = '{}'::jsonb,
+    updated_at = now()
+  where organization_id = new.organization_id
+    and conversation_id in (
+      select c.id from public.conversations c
+       where c.contact_id = new.id and c.organization_id = new.organization_id);
+
+  update public.conversations set
+    metadata = '{}'::jsonb,
+    last_message_preview = null,
+    last_handoff_reason = null,
+    updated_at = now()
+  where contact_id = new.id and organization_id = new.organization_id;
+
+  update public.lead_checkpoints set
+    rolling_summary = '[resumo anonimizado]',
+    commitments = '[]'::jsonb,
+    objections = '[]'::jsonb,
+    next_action = null,
+    declaracao = null
+  where contact_id = new.id and organization_id = new.organization_id;
+
+  -- ── issue #1964 — lead_notes: a memória do agente sobre o contato ─────────
+  update public.lead_notes set
+    headline = '(anonimizado)',
+    body = '(anonimizado)',
+    embedding = null,
+    updated_at = now()
+  where organization_id = new.organization_id
+    and contact_id = new.id
+    and (headline is distinct from '(anonimizado)'
+         or body is distinct from '(anonimizado)'
+         or embedding is not null);
+
+  -- ── issue #1964 — ai_agent_runs.tool_calls: preserva o nome e redige o resto
+  -- A transformação espelha `redigirToolCalls` (lib/lgpd/cascata.ts): cada
+  -- passo vira `{ step?, tool_name?, redacted: true, tool_calls: [{ tool_name }] }`.
+  -- Fica QUAIS ferramentas rodaram e em que passo; sai o texto do modelo, os
+  -- argumentos e os resultados. Guard no WHERE: só corre quando há passo sem
+  -- `redacted`, então o `[]` de nascença e a run já redigida não são tocados.
+  update public.ai_agent_runs set
+    tool_calls = public.fn_lgpd_redigir_tool_calls(ai_agent_runs.tool_calls)
+  where ai_agent_runs.organization_id = new.organization_id
+    and ai_agent_runs.contact_id = new.id
+    and exists (
+      select 1 from jsonb_array_elements(ai_agent_runs.tool_calls) s
+       where coalesce(s->>'redacted', 'false')::boolean is not true
+    );
+
+  -- ── issue #1964 — lead_state: a próxima ação e a qualificação da lead ─────
+  update public.lead_state set
+    next_action = null,
+    qualification = '{}'::jsonb,
+    updated_at = now()
+  where organization_id = new.organization_id
+    and contact_id = new.id
+    and (next_action is not null
+         or coalesce(qualification, '{}'::jsonb) <> '{}'::jsonb);
+
+  -- ── issue #1964 — contacts.social_identity ───────────────────────────────
+  -- O índice único parcial `where social_identity is not null` torna anular
+  -- seguro (a linha sai do índice sem violar unicidade). Guard no WHERE para a
+  -- varredura não reescrever o que já está anonimizado.
+  update public.contacts set
+    social_identity = null,
+    updated_at = now()
+  where id = new.id
+    and organization_id = new.organization_id
+    and social_identity is not null;
+
+  -- Mensagens de grupo escritas pelo titular (0482, ver o cabeçalho daquele bloco).
+  -- (9043) O principal E os telefones extras. O gatilho roda no `update` da
+  -- ficha, ANTES de `fn_lgpd_cascade_redact_contact` apagar os extras: é por
+  -- isso que eles ainda estão aqui para serem lidos.
+  select coalesce(array_agg(distinct v), '{}') into v_variantes
+    from (
+      select unnest(public.fn_telefone_variantes(coalesce(old.phone_number, new.phone_number))) as v
+      union all
+      select unnest(public.fn_telefone_variantes(t.phone_number))
+        from public.contact_phones t
+       where t.organization_id = new.organization_id and t.contact_id = new.id
+    ) as todas;
+  select coalesce(array_agg(distinct l), '{}') into v_lids
+    from (
+      select coalesce(old.wa_lid, new.wa_lid) as l
+      union all
+      select t.wa_lid from public.contact_phones t
+       where t.organization_id = new.organization_id and t.contact_id = new.id
+    ) as todos
+   where l is not null;
+
+  select coalesce(array_agg(m.id), '{}')
+    into v_msgs_de_grupo
+    from public.messages m
+   where m.organization_id = new.organization_id
+     and m.metadata ? 'group_sender'
+     and (
+       regexp_replace(coalesce(m.metadata->'group_sender'->>'phone', ''), '\D', '', 'g') = any(v_variantes)
+       or (m.metadata->'group_sender'->>'lid' = any(v_lids))
+     );
+
+  if cardinality(v_msgs_de_grupo) > 0 then
+    insert into public.storage_redaction_queue (organization_id, bucket, object_path)
+    select distinct new.organization_id, 'whatsapp-media', m.media_storage_path
+      from public.messages m
+     where m.organization_id = new.organization_id
+       and m.id = any(v_msgs_de_grupo)
+       and m.media_storage_path like new.organization_id::text || '/%'
+    on conflict (bucket, object_path) do nothing;
+
+    update public.conversations set
+      last_message_preview = null,
+      updated_at = now()
+    where organization_id = new.organization_id
+      and id in (select m.conversation_id from public.messages m
+                  where m.organization_id = new.organization_id and m.id = any(v_msgs_de_grupo));
+
+    update public.messages set
+      body = '[mensagem anonimizada]',
+      media_url = null,
+      media_mime = null,
+      media_size_bytes = null,
+      media_storage_path = null,
+      media_derived_text = null,
+      metadata = '{}'::jsonb,
+      updated_at = now()
+    where organization_id = new.organization_id
+      and id = any(v_msgs_de_grupo);
+  end if;
+
+  return new;
+end
+$f$;
 
 -- O alcance mora na cascata, e não num gatilho na virada de `is_anonymized`, para
 -- ficar só no caminho autorizado (`fn_lgpd_anonymize_contact` e o pedido formal).
@@ -97,7 +261,10 @@ begin
        where t.contact_id = p_contact_id and t.organization_id = p_organization_id
     ) as todas;
 
-  select coalesce(array_agg(distinct media_storage_path) filter (where media_storage_path is not null), '{}')
+  -- O arquivo da mensagem mora sob a organização dela: as outras formas não entram
+  -- na fila (9243), como no passo 6d.
+  select coalesce(array_agg(distinct media_storage_path) filter (
+           where media_storage_path like p_organization_id::text || '/%'), '{}')
     into v_media_paths
     from messages
     where organization_id = p_organization_id
@@ -223,22 +390,16 @@ begin
     );
   get diagnostics v_count = row_count;
   v_counts := v_counts || jsonb_build_object('leads', v_count);
-  -- 5a. crm_lead_attachments (9243) — o mesmo conjunto de negócios dos passos 4, 5
-  -- e 5b, direto ou pela `crm_lead_links`: o arquivo vai para a fila e a linha sai.
-  -- `crm_lead_attachments_storage_path_check` prende o caminho à organização e ao
-  -- negócio da linha, então aqui não há outra forma a conferir.
+  -- 5a. crm_lead_attachments (9243) — só no negócio de que o contato é o titular
+  -- (`crm_leads.contact_id`): o arquivo vai para a fila e a linha sai. O negócio só
+  -- ligado pela `crm_lead_links` tem outro titular e mantém os anexos, contados em
+  -- `crm_lead_attachments_mantidos`. `crm_lead_attachments_storage_path_check` prende
+  -- o caminho à organização e ao negócio da linha, então aqui não há outra forma a
+  -- conferir.
   select coalesce(array_agg(l.id), '{}') into v_leads
     from crm_leads l
    where l.organization_id = p_organization_id
-     and (
-       l.contact_id = p_contact_id
-       or l.id in (
-         select lead_id from crm_lead_links
-          where target_kind = 'contact'
-            and target_id = p_contact_id
-            and organization_id = p_organization_id
-       )
-     );
+     and l.contact_id = p_contact_id;
   perform public.fn_fila_de_remocao_de_arquivo(p_organization_id, p_request_id, 'internal-media', a.storage_path)
     from crm_lead_attachments a
    where a.organization_id = p_organization_id
@@ -248,6 +409,13 @@ begin
      and a.lead_id = any (v_leads);
   get diagnostics v_count = row_count;
   v_counts := v_counts || jsonb_build_object('crm_lead_attachments', v_count);
+  select count(distinct a.id) into v_count
+    from crm_lead_attachments a
+    join crm_lead_links k on k.lead_id = a.lead_id and k.organization_id = a.organization_id
+   where a.organization_id = p_organization_id
+     and k.target_kind = 'contact'
+     and k.target_id = p_contact_id;
+  v_counts := v_counts || jsonb_build_object('crm_lead_attachments_mantidos', v_count);
 
   -- 5b. lead_field_proposals (0772, #3316) — a proposta de campo que a IA leu
   -- num DOCUMENTO (voucher, bilhete, apólice). `trecho` é o texto do documento
@@ -571,16 +739,19 @@ begin
   -- 7y. as fichas fundidas nesta (9243), pela mesma função: mesmas regras, a marca
   -- de cada telefone delas e a própria linha de auditoria. A mais funda primeiro:
   -- quando a de cima é chamada, as de baixo já viraram, e a recursão não acompanha
-  -- o comprimento da corrente. `cycle` encerra ponteiro em círculo.
+  -- o comprimento da corrente. `cycle` encerra ponteiro em círculo. Só conta a fusão
+  -- com data: todo caminho que funde grava `merged_at` junto com o ponteiro.
   for v_absorvida in
     with recursive alcance (id, profundidade) as (
       select c.id, 1 from contacts c
        where c.organization_id = p_organization_id and c.is_merged_into = p_contact_id
+         and c.merged_at is not null
       union all
       select f.id, a.profundidade + 1
         from contacts f
         join alcance a on f.is_merged_into = a.id
        where f.organization_id = p_organization_id
+         and f.merged_at is not null
     ) cycle id set em_ciclo using caminho
     select a.id
       from alcance a
@@ -665,12 +836,13 @@ do $fichas_absorvidas$
 declare
   v_ficha record;
 begin
-  -- Uma linha da fila cujo caminho nomeia outra organização não é da organização
-  -- da linha, e a cascata recoloca na fila o que ainda for de alguma ficha.
+  -- A linha da fila vale para arquivo sob a organização dela, com segmentos de nome
+  -- comum: a régua do dreno (`isMediaPathInOrganization`). A cascata recoloca na fila
+  -- o que ainda for de alguma ficha.
   delete from public.storage_redaction_queue q
-   using public.organizations o
-   where o.id::text = split_part(q.object_path, '/', 1)
-     and o.id <> q.organization_id;
+   where q.object_path not like q.organization_id::text || '/%'
+      or q.object_path ~ '(^|/)\.{0,2}(/|$)'
+      or position(chr(92) in q.object_path) > 0;
 
   -- A ficha alcançada leva as que estão abaixo dela pela própria cascata.
   for v_ficha in
@@ -678,7 +850,7 @@ begin
       from public.contacts a
       join public.contacts s
         on s.id = a.is_merged_into and s.organization_id = a.organization_id
-     where s.is_anonymized and not a.is_anonymized
+     where s.is_anonymized and not a.is_anonymized and a.merged_at is not null
      order by a.organization_id, a.id
   loop
     perform public.fn_lgpd_cascade_redact_contact(v_ficha.organization_id, v_ficha.id, null);

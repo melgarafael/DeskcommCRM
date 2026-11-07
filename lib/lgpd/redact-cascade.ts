@@ -13,8 +13,10 @@
  *   - Redacts `conversation_notes` and enqueues its attachment with the
  *     `internal-media` bucket (migration 0483) — notes are NOT in
  *     `whatsapp-media`, which belongs to the customer channel.
- *   - Clears the profile picture and lead attachments, enqueueing the files,
- *     and repeats all of this for the records merged into the contact (9243).
+ *   - Clears the profile picture and the attachments of the deals the contact
+ *     owns, enqueueing the files (a deal only linked to the contact keeps its
+ *     attachments, counted in `crm_lead_attachments_mantidos`), and repeats all
+ *     of this for the records merged into the contact (9243).
  *   - Inserts a dense `lgpd.redact_executed` audit row inside the TX.
  *
  * All tenant filtering is enforced at the RPC level (programmatic
@@ -22,7 +24,7 @@
  */
 
 import { logger } from "@/lib/logger";
-import { isLeadAttachmentPathOwnedBy } from "@/lib/messaging/media/upload-validation";
+import { isLeadAttachmentPathOwnedBy, isMediaPathInOrganization } from "@/lib/messaging/media/upload-validation";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export interface CascadeResult {
@@ -196,7 +198,7 @@ export async function cascadeRedactContact(args: CascadeArgs): Promise<CascadeRe
     }
     for (const nota of notasComMidia ?? []) {
       const caminho = nota.media_storage_path;
-      if (!caminho) continue;
+      if (!caminho || !isMediaPathInOrganization(caminho, args.organizationId)) continue;
       await enfileirarMidiaNaFila(admin, {
         organizationId: args.organizationId,
         requestId: args.requestId,
@@ -215,6 +217,8 @@ export async function cascadeRedactContact(args: CascadeArgs): Promise<CascadeRe
   if (leadsErro) {
     throw new Error(`[lgpd-redact-cascade] leads do contato não lidos: ${leadsErro.message}`);
   }
+  // Só no negócio de que o contato é o titular: o negócio só ligado pela
+  // `crm_lead_links` tem outro titular e mantém os anexos, como no passo 5a da RPC.
   const idsDosLeads = (leadsDoContato ?? []).map((l) => l.id);
   if (idsDosLeads.length > 0) {
     const { data: anexosDosLeads, error: anexosErro } = await admin
@@ -227,7 +231,7 @@ export async function cascadeRedactContact(args: CascadeArgs): Promise<CascadeRe
     }
     for (const anexo of anexosDosLeads ?? []) {
       if (!anexo.storage_path) continue;
-      // A fila remove com o cliente admin: só o que mora sob o prefixo do negócio.
+      // Só o que mora sob o prefixo do negócio.
       if (!isLeadAttachmentPathOwnedBy(anexo.storage_path, args.organizationId, anexo.lead_id)) {
         logger.warn("[lgpd-redact-cascade] anexo com caminho fora do negócio; não enfileirado", {
           attachmentId: anexo.id,
