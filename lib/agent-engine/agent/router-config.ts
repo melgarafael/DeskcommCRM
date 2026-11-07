@@ -13,11 +13,28 @@
 import type pg from 'pg';
 import { CLASSIFIER_CONTEXT_MESSAGES, MAX_CLASSIFIER_CONTEXT_MESSAGES } from '@/lib/ai/classifier-context';
 
+import { lerPublicoDoGatilho, type PublicoDoAgente } from './publico-do-gatilho';
+
 export interface RouterMember {
   agentId: string;
   intentName: string;
   intentDescription: string;
   examples: string[];
+  /**
+   * Nome do agente (`ai_agents.name`) — só para o rastro do público (#3722).
+   * Ausente nos dublês que montam o membro à mão; o rastro cai no `agentId`.
+   */
+  agentName?: string;
+  /**
+   * O PÚBLICO que a versão publicada do agente declara no `trigger_config`
+   * (#3722, fatia 2). `null`/ausente = atende todo mundo.
+   *
+   * Lido na MESMA consulta dos membros (o join com a versão publicada), e não
+   * numa segunda: quem não declara público não paga consulta extra por turno.
+   * Lista torta vira `null` pela régua de `publico-do-gatilho.ts` — a mesma de
+   * todo o resto.
+   */
+  publico?: PublicoDoAgente | null;
   /**
    * Fluxo de atendimento que COMEÇA quando esta intenção casa (migration 0394; 0237 na branch do autor).
    * `null`/ausente = só roteia agente, como antes.
@@ -79,6 +96,8 @@ interface MemberRow {
   flow_pointer_id: string | null;
   pipeline_id: string | null;
   stage_id: string | null;
+  agent_name: string | null;
+  trigger_config: unknown;
 }
 
 export async function loadActiveRouter(
@@ -98,11 +117,21 @@ export async function loadActiveRouter(
   if (router === undefined) return null;
 
   const { rows: memberRows } = await db.query<MemberRow>(
-    `select agent_id, intent_name, intent_description, examples, flow_pointer_id, pipeline_id, stage_id
-     from ai_router_members
-     where router_id = $1
-       and organization_id = $2
-     order by position asc, intent_name asc`,
+    `select m.agent_id, m.intent_name, m.intent_description, m.examples, m.flow_pointer_id, m.pipeline_id, m.stage_id,
+            a.name as agent_name,
+            v.trigger_config
+     from ai_router_members m
+     -- O público (#3722) vem da versão PUBLICADA do agente, na MESMA consulta
+     -- dos membros: leitura extra por turno só para quem declarou público, e
+     -- nenhuma para quem não declarou. LEFT JOIN de propósito — membro sem
+     -- versão publicada continua na lista e cai na reserva no turno, como antes.
+     left join ai_agents a
+       on a.id = m.agent_id and a.organization_id = m.organization_id and a.archived_at is null
+     left join ai_agent_versions v
+       on v.id = a.published_version_id and v.status = 'published'
+     where m.router_id = $1
+       and m.organization_id = $2
+     order by m.position asc, m.intent_name asc`,
     [router.id, organizationId],
   );
 
@@ -147,6 +176,10 @@ export async function loadActiveRouter(
       intentName: m.intent_name,
       intentDescription: m.intent_description,
       examples: m.examples ?? [],
+      // `?? undefined`: a coluna é do join; dublê antigo que não a traz cai no
+      // `agentId` do rastro, sem inventar nome.
+      agentName: m.agent_name ?? undefined,
+      publico: lerPublicoDoGatilho(m.trigger_config),
       flowPointerId: m.flow_pointer_id,
       destinationPipelineId: m.pipeline_id,
       destinationStageId: m.stage_id,
