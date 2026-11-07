@@ -4,7 +4,7 @@ import type {
   ConversationsFilters,
   ConversationWithContact,
 } from "@/hooks/inbox/useConversationsRealtime";
-import { comandoDaConversa, type ComandoDoBanco } from "@/lib/inbox/comando-da-conversa";
+import { comandoDaConversa } from "@/lib/inbox/comando-da-conversa";
 import { CONVERSATION_TERMINAL_STATUSES } from "@/lib/schemas/messaging";
 import { marcadoresEscolhidos } from "@/lib/inbox/marcador-da-conversa";
 
@@ -198,8 +198,11 @@ export function julgarAtualizacao(
   if (filtros.comando && filtros.comando.length > 0) {
     // `comandoDaConversa` é a régua única de "quem manda" (a linha da lista usa a
     // MESMA). O fato org-wide vai `undefined` = "não sei", que a função trata
-    // assumindo que há automático — a Fila pede `aguardando` e `automatico`
-    // juntos (`comandosDaFila`), então a ambiguidade não muda a resposta.
+    // assumindo que há automático, então daqui nunca sai `ninguem`. Limite
+    // aceito: enquanto a tela ainda não sabe o fato, a Fila pede `aguardando` e
+    // `ninguem` sem `automatico`, e uma linha `ninguem` do banco (organização sem
+    // agente) que muda em tempo real sai da lista até o próximo refetch. Marcar
+    // como indecidível faria refetch a cada mensagem que a IA responde.
     const { comando } = comandoDaConversa({
       status: String(atual.status),
       assigned_to_user_id: atual.assigned_to_user_id ?? null,
@@ -211,10 +214,8 @@ export function julgarAtualizacao(
       is_blocked: atual.contacts?.is_blocked ?? null,
       is_group: atual.is_group ?? false,
     });
-    // `ninguem` é o mesmo balde do `automatico` no vocabulário do banco.
-    const noVocabularioDoBanco: ComandoDoBanco =
-      comando.quem === "ninguem" ? "automatico" : comando.quem;
-    if (!filtros.comando.includes(noVocabularioDoBanco)) return "sai";
+    // Desde a #4012 `ninguem` é palavra do banco: o vocabulário é o mesmo.
+    if (!filtros.comando.includes(comando.quem)) return "sai";
   }
 
   return "fica";

@@ -32,17 +32,35 @@ const C2 = "aaaaaaaa-0000-4000-8000-00000000d1c2";
 const V1 = "aaaaaaaa-0000-4000-8000-00000000d1e1";
 const V2 = "aaaaaaaa-0000-4000-8000-00000000d1e2";
 
-/** Uma organização, sessão, dois contatos limpos e uma conversa apontando o C1. */
+/**
+ * Uma organização, sessão, dois contatos limpos e uma conversa apontando o C1 —
+ * COM agente publicado.
+ *
+ * O agente não é enfeite: desde a issue #4012 o comando rebaixa `automatico` para
+ * `ninguem` quando a organização não tem agente no ar, e o que este arquivo mede é
+ * a passagem LIMPO -> travado -> limpo. Sem o agente, o "limpo" viraria `ninguem`
+ * e o caso deixaria de distinguir a trava do contato do fato da organização.
+ */
+const AGENTE = "aaaaaaaa-0000-4000-8000-00000000d1a1";
+const VERSAO = "aaaaaaaa-0000-4000-8000-00000000d1a2";
+
 function semear() {
   sql(`
     delete from conversations where organization_id = '${ORG}';
     delete from contacts where organization_id = '${ORG}';
+    delete from ai_agent_versions where organization_id = '${ORG}';
+    delete from ai_agents where organization_id = '${ORG}';
     delete from channel_sessions where organization_id = '${ORG}';
     delete from organizations where id = '${ORG}';
     insert into organizations (id, slug, legal_name, display_name)
       values ('${ORG}', 'bit-do-contato-2739', 'Bit LTDA', 'Bit');
     insert into channel_sessions (id, organization_id, webhook_secret_encrypted, waha_session_name)
       values ('${SESS}', '${ORG}', '\\x00', 'bit-2739');
+    insert into ai_agents (id, organization_id, name, system_prompt)
+      values ('${AGENTE}', '${ORG}', 'Bit', 'prompt');
+    insert into ai_agent_versions (id, organization_id, agent_id, version_number, system_prompt, provider, model, channel_session_id, status, published_at)
+      values ('${VERSAO}', '${ORG}', '${AGENTE}', 1, 'prompt', 'anthropic', 'claude-sonnet-4-6', '${SESS}', 'published', now());
+    update ai_agents set published_version_id = '${VERSAO}' where id = '${AGENTE}';
     insert into contacts (id, organization_id, force_human, is_blocked)
       values ('${C1}', '${ORG}', false, false), ('${C2}', '${ORG}', false, false);
     insert into conversations (id, organization_id, contact_id, channel_session_id, status)
