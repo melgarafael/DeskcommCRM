@@ -316,12 +316,12 @@
     {
       "from": "candidates",
       "to": "site-tool",
-      "label": "lê data.site, a estratégia e o cadastro do contato da conversa"
+      "label": "lê data.site, cadastro e ofertas da configuração da campanha do contato da conversa"
     },
     {
       "from": "site-tool",
       "to": "inbound-turn",
-      "label": "o agente consulta durante qualquer turno, da primeira à última mensagem"
+      "label": "o agente consulta ofertas e estratégia complementar durante a conversa; a configuração também entra no contexto do inbound"
     },
     {
       "from": "site-tool",

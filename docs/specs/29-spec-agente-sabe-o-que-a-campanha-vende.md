@@ -4,6 +4,10 @@ Status: **PROPOSTA**. Medido numa instalação 1.89.0 em produção, em 26/10/20
 entre 11h30 e 11h50 (Brasília), só leitura e filtrado por `organization_id`.
 Referências conferidas na main `40db34708` (24/10/2026).
 
+Estado de QA da adaptação: [prova preparada e limites de aceite](../testing/ofertas-da-campanha.md).
+O registro não altera o status PROPOSTA. O lado do par com modelo real está marcado
+NAO_ALCANCAVEL: nenhuma sessão lê chave de provedor, e isso não foi medido.
+
 ## O problema, em uma frase
 
 A tela da campanha de prospecção tem "O que esta campanha vende" (Site

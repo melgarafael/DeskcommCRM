@@ -4303,3 +4303,28 @@ funções copiáveis com `credential_id` nulo — regra única em `lib/ai/molde-
 
 Não provado: que a primeira chamada de IA da empresa nova sai com a chave da instalação (o
 painel mostra modelo e origem, não faz chamada paga).
+
+
+## Ofertas da campanha no atendimento — resgate #3503 (2026-10-27)
+
+**PREPARADO, execução real pendente.** A seção final de
+`prospeccao-auditoria-do-site.spec.ts` mantém o caso anterior de score/KPI/ordenação
+e seu teto de 120s. Novas fixtures próprias cobrem três ofertas com agente válido,
+site-only e duas automações sem site, pela configuração persistida/recarregada e
+pelo modal real. Capturas/recibos serão produzidos em `evidence/prospeccao-ofertas`
+após assertivas e com limpeza restrita. Nenhum PNG futuro é citado como prova atual.
+
+O helper de inbound e tool direta usa a mesma conversa e o mesmo texto cru. Modelo
+e canal controlados medem encadeamento; não provam semântica de modelo, resposta
+persistida na Inbox ou entrega. O novo invariante A/B usa SQL real e mede filtros
+explícitos, sem alegar RLS/PostgREST pelo adapter postgres. O invariante antigo
+permanece byte a byte. Aceite visual, banco e par com modelo real continuam pendentes.
+O planejamento marginal de 45s não é duração medida nem margem garantida na parte 1.
+
+Entrada: `prospecting_campaigns.config.ofertas`; consumidores: contexto do inbound,
+`crm_get_prospecting_site_audit` e estratégia no modal de Prospecção. A consulta
+aparece no registro de ferramentas do agente; falha de leitura mantém o resultado
+explícito de indisponibilidade. Laço: comparar as ofertas persistidas, tool direta
+e resposta observada, bloqueando o aceite quando divergem. Mapa: `prospeccao-nativa`.
+[Instrumento e comando de aceite preparados](ofertas-da-campanha.md). CNPJ já foi
+entregue na 1.93.0 e não integra esta capacidade nova; crédito de ofertas: @paulolimajr77.
