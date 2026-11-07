@@ -272,10 +272,12 @@ describe("gradual outreach", () => {
     expect(mocks.send).not.toHaveBeenCalled();
   });
   it("does not bypass channel pre-go-live restrictions", async () => {
+    // Motivo que este módulo não conhece: a frase cai na genérica, aponta o
+    // caminho de Conexões e NUNCA repete o código do banco (#4170).
     mocks.preflight.mockResolvedValue({ permite: false, motivo: "restricted" });
     await expect(
       sendNextCandidate({} as never, database() as never, {} as never, campaign),
-    ).rejects.toThrow("restricted");
+    ).rejects.toThrow("Conexões");
     expect(mocks.generate).not.toHaveBeenCalled();
   });
   it("records uncertain sends as failures without retrying", async () => {
@@ -850,11 +852,21 @@ describe("funil só no envio: a checagem do canal vem ANTES de criar qualquer co
   };
 
   it("canal que recusa a abordagem: a campanha pausa SEM ter deixado contato, negócio nem conversa", async () => {
-    mocks.preflight.mockResolvedValue({ permite: false, motivo: "telefone fora da lista liberada" });
+    mocks.preflight.mockResolvedValue({ permite: false, motivo: "fora_da_lista_de_teste" });
     const db = database(undefined, naFila);
-    await expect(
-      sendNextCandidate({} as never, db as never, {} as never, noEnvio),
-    ).rejects.toThrow("O canal ainda não permite esta abordagem");
+    // #4170 — a pausa diz à pessoa que o número está em modo de teste e onde
+    // liberar. O código cru (`fora_da_lista_de_teste`) fica no log, não na tela.
+    let erro: Error | null = null;
+    try {
+      await sendNextCandidate({} as never, db as never, {} as never, noEnvio);
+    } catch (e) {
+      erro = e as Error;
+    }
+    expect(erro, "o canal que recusa pausa a campanha").toBeInstanceOf(Error);
+    const texto = erro?.message ?? "";
+    expect(texto).toContain("modo de teste");
+    expect(texto).toContain("Liberar atendimento ao público");
+    expect(texto).not.toContain("fora_da_lista_de_teste");
     expect(mocks.prepare, "recusa do canal vem antes de qualquer criação").not.toHaveBeenCalled();
     expect(mocks.send).not.toHaveBeenCalled();
   });
