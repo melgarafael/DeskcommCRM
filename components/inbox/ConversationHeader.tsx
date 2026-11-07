@@ -778,13 +778,18 @@ export function ConversationHeader({
         aberto={conviteAberto}
         onAbertoChange={setConviteAberto}
       />
-      {/* O diálogo da fila, FORA do menu ⋯ — o mesmo desenho do convite acima. */}
-      <DialogoMoverParaFila
-        conversationId={conversation.id}
-        filaAtual={conversation.sector_id ?? null}
-        aberto={filaAberta}
-        onAbertoChange={setFilaAberta}
-      />
+      {/* O diálogo da fila, FORA do menu ⋯ — o mesmo desenho do convite acima —
+          e montado só quando abre. Aberto é o único estado em que ele existe, e
+          um diálogo fechado que consultasse setores em toda conversa seria uma
+          requisição por cabeçalho montado para quem nunca tocou no ⋯. */}
+      {filaAberta && (
+        <DialogoMoverParaFila
+          conversationId={conversation.id}
+          filaAtual={conversation.sector_id ?? null}
+          aberto
+          onAbertoChange={setFilaAberta}
+        />
+      )}
       {podeReservar && c?.id && activeOrg && (
         <ReservarServicoNaConversa
           key={`${activeOrg.orgId}:${conversation.id}`}

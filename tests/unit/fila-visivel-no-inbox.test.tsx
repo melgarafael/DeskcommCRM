@@ -49,10 +49,14 @@ vi.mock("@/components/feedback/ApiErrorToast", () => ({ showApiError: vi.fn() })
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({
     user: { id: "u1", support: null },
-    activeOrg: { orgId: "00000000-0000-4000-8000-0000000000aa", role: "agent", visibility_mode: "all" },
+    activeOrg: {
+      orgId: "00000000-0000-4000-8000-0000000000aa",
+      role: "agent",
+      visibility_mode: "all",
+      modulos_ligados: h.modulos,
+    },
   }),
   usePermission: () => true,
-  useModulosLigados: () => h.modulos,
 }));
 
 import { InboxFilters, OpcaoDaFila, type InboxFiltersValue } from "@/components/inbox/InboxFilters";
@@ -132,11 +136,15 @@ describe("#3876 — o seletor mostra a fila com a cor dela", () => {
     expect(screen.queryByText("0")).toBeNull();
   });
 
-  it("o seletor existe quando o módulo Setores está ligado e há fila", async () => {
+  it("o seletor existe quando a organização tem filas", async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={qc}>
-        <InboxFilters value={{ tab: "all", search: "", onlyUnread: false }} onChange={vi.fn()} />
+        <InboxFilters
+          value={{ tab: "all", search: "", onlyUnread: false }}
+          onChange={vi.fn()}
+          filas={h.filas}
+        />
       </QueryClientProvider>,
     );
     const gatilho = await screen.findByTestId("filtro-de-fila");
@@ -144,8 +152,10 @@ describe("#3876 — o seletor mostra a fila com a cor dela", () => {
     expect(gatilho.textContent).toContain("Todas as filas");
   });
 
-  it("módulo Setores desligado NÃO desenha o seletor (a rota daria 404)", async () => {
-    h.modulos = [];
+  it("organização sem filas NÃO desenha o seletor (módulo Setores desligado ou sem fila)", async () => {
+    // A página só passa lista quando o módulo está ligado e há fila; ausente é
+    // o caso de quem não usa Setores — e um controle que abre lista vazia é
+    // ruído na coluna de 280 px.
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={qc}>

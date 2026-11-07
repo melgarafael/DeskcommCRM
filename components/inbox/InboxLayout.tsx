@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, startTransition } fr
 import { useT } from "@/hooks/i18n/useT";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth, usePermission } from "@/hooks/auth/AuthProvider";
+import { useSectors } from "@/hooks/team/useSectors";
 import { roleAtLeast } from "@/lib/auth/types";
 import { useBulkConversations, type AcaoEmLote } from "@/hooks/inbox/useBulkConversations";
 import { useSelecaoEmLote } from "@/hooks/inbox/useSelecaoEmLote";
@@ -290,6 +291,16 @@ export function InboxLayout({
 }: InboxLayoutProps = {}) {
   const t = useT();
   const { activeOrg, user } = useAuth();
+  /**
+   * AS FILAS DA ORGANIZAÇÃO (#3876) — buscadas AQUI, e não na barra de filtros.
+   *
+   * Setores é módulo opcional (doc 213): desligado, a rota responderia 404 e o
+   * pedido nem sai (`enabled`). A página já tem o `activeOrg` e vive dentro do
+   * `QueryClientProvider`; a barra de filtros recebe a lista pronta e continua
+   * sem consultar o servidor, como sempre foi.
+   */
+  const setoresLigados = (activeOrg?.modulos_ligados ?? []).includes("setores");
+  const { data: filasDaOrganizacao } = useSectors(setoresLigados);
   useParticipacoesRealtime(user.id, activeOrg?.orgId ?? null);
   const supportReadonly = user.support?.access_mode === "support_readonly";
   const orgId = activeOrg?.orgId ?? null;
@@ -956,7 +967,11 @@ export function InboxLayout({
         )}
       >
         <BotaoIniciarConversa />
-        <InboxFilters value={filterValue} onChange={setFilterValue} />
+        <InboxFilters
+          value={filterValue}
+          onChange={setFilterValue}
+          filas={filasDaOrganizacao?.data ?? []}
+        />
         {podeAgirEmLote && (
           <BarraDeAcoesEmLote
             quantidade={selecao.quantidade}

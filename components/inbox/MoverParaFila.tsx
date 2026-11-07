@@ -39,7 +39,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { useAuth, useModulosLigados } from "@/hooks/auth/AuthProvider";
+import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useT } from "@/hooks/i18n/useT";
 import { useDefinirFilaDaConversa } from "@/hooks/inbox/useDefinirFilaDaConversa";
 import { useSectors, type Sector } from "@/hooks/team/useSectors";
@@ -93,7 +93,10 @@ interface ItemProps {
 export function ItemMoverParaFila({ onAbrir, encerrada }: ItemProps) {
   const t = useT();
   const { user, activeOrg } = useAuth();
-  const modulos = useModulosLigados();
+  // Mesma fonte de `useModulosLigados` (`AuthProvider.tsx:129-131`), sem o
+  // hook: os dublês de `AuthProvider` nos testes do cabeçalho não precisam
+  // exportá-lo para montar a barra.
+  const modulos = activeOrg?.modulos_ligados ?? [];
   const pode = podeMoverParaFila({
     papel: activeOrg?.role,
     modulos,
@@ -133,7 +136,8 @@ export function DialogoMoverParaFila({
   onAbertoChange,
 }: DialogoProps) {
   const t = useT();
-  const modulos = useModulosLigados();
+  const { activeOrg } = useAuth();
+  const modulos = activeOrg?.modulos_ligados ?? [];
   const { data: respostaDasFilas } = useSectors(modulos.includes("setores") && aberto);
   const filas: Sector[] = respostaDasFilas?.data ?? [];
   const mover = useDefinirFilaDaConversa();

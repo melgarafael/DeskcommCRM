@@ -30,14 +30,14 @@ import {
   type ModoDeEtiqueta,
   marcadoresEscolhidos,
 } from "@/lib/inbox/marcador-da-conversa";
-import { useAuth, useModulosLigados } from "@/hooks/auth/AuthProvider";
+import { useAuth } from "@/hooks/auth/AuthProvider";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { useConversationTagVocabulary } from "@/hooks/inbox/useConversationTags";
 import { useConversationCounts } from "@/hooks/inbox/useConversationCounts";
 import { useDepoisDeMontar } from "@/hooks/ui/useDepoisDeMontar";
 import { roleAtLeast, type Role, type VisibilityMode } from "@/lib/auth/types";
 import { SeletorDeAtendente } from "@/components/inbox/SeletorDeAtendente";
-import { useSectors, type Sector } from "@/hooks/team/useSectors";
+import type { Sector } from "@/hooks/team/useSectors";
 
 export type InboxTab = "unassigned" | "mine" | "all" | "closed" | "archived" | "ai";
 
@@ -162,9 +162,19 @@ export function comAba(value: InboxFiltersValue, tab: InboxTab): InboxFiltersVal
 interface Props {
   value: InboxFiltersValue;
   onChange: (next: InboxFiltersValue) => void;
+  /**
+   * As filas da organização, JÁ filtradas pelo módulo (#3876).
+   *
+   * Vêm de fora, e não de um `useSectors` aqui dentro, por duas razões: a barra
+   * de filtros é montada em 16 arquivos de teste que não têm `QueryClient`
+   * (ela nunca consultou o servidor — as contagens chegam por hook dublado), e
+   * quem sabe se Setores está ligado é a página, que já tem o `activeOrg` e o
+   * provider. Ausente = organização sem Setores: o seletor não existe.
+   */
+  filas?: Pick<Sector, "id" | "name" | "color">[];
 }
 
-export function InboxFilters({ value, onChange }: Props) {
+export function InboxFilters({ value, onChange, filas: filasDaOrganizacao }: Props) {
   const t = useT();
   const [searchInput, setSearchInput] = useState(value.search);
   const tabsListRef = useRef<HTMLDivElement>(null);
@@ -291,13 +301,10 @@ export function InboxFilters({ value, onChange }: Props) {
    * Nome + ponto + contagem é a mesma gramática do seletor de etiqueta logo
    * abaixo — quem já aprendeu um leu o outro sem explicação.
    */
-  const modulosLigados = useModulosLigados();
-  const setoresLigados = modulosLigados.includes("setores");
-  const { data: respostaDasFilas } = useSectors(setoresLigados);
-  const filas = respostaDasFilas?.data ?? [];
+  const filas = filasDaOrganizacao ?? [];
   const filaForaDaLista =
     value.sector_id != null && filas.length > 0 && !filas.some((f) => f.id === value.sector_id);
-  const mostrarSeletorDeFila = setoresLigados && (filas.length > 0 || filaForaDaLista);
+  const mostrarSeletorDeFila = filas.length > 0 || filaForaDaLista;
 
   // Filtro por ATENDENTE: só para gerente ou acima (a lista de quem atende é da
   // gestão; o atendente comum continua vendo só o escopo dele, que a RLS impõe).

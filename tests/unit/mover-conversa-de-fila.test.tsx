@@ -30,8 +30,10 @@ const h = vi.hoisted(() => ({
   ],
 }));
 
-const put = vi.fn(async () => ({ data: { id: "conversa-1", sector_id: "fila-suporte", redistribuiu: false } }));
-const get = vi.fn(async () => ({ data: h.filas }));
+const put = vi.fn(async (_url: string, _corpo: unknown) => ({
+  data: { id: "conversa-1", sector_id: "fila-suporte", redistribuiu: false },
+}));
+const get = vi.fn(async (_url: string) => ({ data: h.filas }));
 
 vi.mock("@/lib/api/client", () => ({
   apiClient: {
@@ -44,9 +46,11 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({
   useAuth: () => ({
     user: { id: "u1", support: null },
-    activeOrg: h.papel === undefined ? null : { role: h.papel, orgId: "org-1" },
+    activeOrg:
+      h.papel === undefined
+        ? null
+        : { role: h.papel, orgId: "org-1", modulos_ligados: h.modulos },
   }),
-  useModulosLigados: () => h.modulos,
 }));
 
 import {
