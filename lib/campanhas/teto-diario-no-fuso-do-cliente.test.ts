@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { dayStartInTz } from "@/lib/agent-engine/pacing/engine";
 
-import { estadoDeEnvio } from "./rodada";
+import { estadoDeEnvio } from "./estado-de-envio";
 
 /**
  * O teto diário da campanha conta no fuso DO CLIENTE, nunca em UTC.
@@ -65,19 +65,23 @@ describe("teto diário conta no fuso do cliente", () => {
  * seguiam passando).
  */
 describe("estadoDeEnvio conta o dia no fuso que recebe", () => {
-  /** Supabase falso: devolve os envios a partir do corte que a função pedir em `gte`. */
+  /** Supabase falso: conta e lê os envios a partir do corte que a função pedir em `gte`. */
   function adminComEnvios(enviosEm: string[]) {
-    let corte = "";
-    const consulta: Record<string, unknown> = {
-      select: () => consulta,
-      eq: () => consulta,
-      not: () => consulta,
-      gte: (_coluna: string, valor: string) => ((corte = valor), consulta),
-      order: async () => ({
-        data: enviosEm.filter((s) => s >= corte).map((sent_at) => ({ sent_at })),
-      }),
-    };
-    return { from: () => consulta } as never;
+    return {
+      from: () => {
+        let corte = "";
+        const desdeOCorte = () => enviosEm.filter((s) => s >= corte);
+        const consulta: Record<string, unknown> = {
+          select: () => consulta,
+          eq: () => consulta,
+          gte: (_coluna: string, valor: string) => ((corte = valor), consulta),
+          order: () => consulta,
+          limit: async () => ({ data: desdeOCorte().map((sent_at) => ({ sent_at })), error: null }),
+          then: (ok: (v: unknown) => unknown) => Promise.resolve({ count: desdeOCorte().length, error: null }).then(ok),
+        };
+        return consulta;
+      },
+    } as never;
   }
 
   const DEZ_DA_MANHA_EM_SP = "2026-09-18T13:00:00.000Z";

@@ -41,7 +41,7 @@ import type pg from "pg";
 import { logger } from "@/lib/logger";
 
 /**
- * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call` e `painel_atendimento` ligam/desligam por uma linha em `platform_config`
+ * `banco_externo`, `fluxos_atendimento`, `propostas`, `crm_b2b`, `cobranca`, `login_codex`, `setores`, `avisos`, `conferir_whatsapp`, `mcp_por_agente`, `cold_call`, `painel_atendimento` e `reservas_de_lugar` ligam/desligam por uma linha em `platform_config`
  * (ver o resto deste arquivo). `honorarios` e `financeiro` são MÓDULOS DE TABELA (ADR-0002): a fonte da
  * verdade é `modulos_instalados`, escrita só por `fn_modulo_instalar` (`lib/modulos/service.ts`),
  * nunca por esta tela. Os dois mecanismos convivem na mesma lista porque é isso que
@@ -68,6 +68,7 @@ export const MODULOS_OPCIONAIS = [
   "mcp_por_agente",
   "cold_call",
   "painel_atendimento",
+  "reservas_de_lugar",
 ] as const;
 export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
@@ -95,6 +96,7 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
   "mcp_por_agente",
   "cold_call",
   "painel_atendimento",
+  "reservas_de_lugar",
 ] as const satisfies readonly ModuloOpcional[];
 
 /** A linha de cada módulo por FLAG em `platform_config`. O formato é o da CHECK da 0341.
@@ -149,6 +151,11 @@ export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number]
   // Inbox não precisa dela (régua do núcleo enxuto). Desligado, a porta some e a
   // tela responde 404.
   painel_atendimento: "MODULO_PAINEL_DE_ATENDIMENTO",
+  // Doc 283 (A): o lugar com capacidade em pessoas do #4029 (mesa, camarote,
+  // quadra) serve a restaurante, casa de evento e quadra, não à maioria. A
+  // parte de banco entra para todos e não muda nada para quem não cria lugar;
+  // desligado, criar um lugar pela agenda responde 404.
+  reservas_de_lugar: "MODULO_RESERVAS_DE_LUGAR",
 };
 
 const LIGADO = "ligado";

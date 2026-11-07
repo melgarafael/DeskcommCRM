@@ -166,6 +166,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Painel de atendimento",
     oQueFaz: "Uma tela com três colunas, por número: quem espera resposta, quem está em atendimento e quem foi atendido hoje.",
   },
+  reservas_de_lugar: {
+    nome: "Reservas de lugar",
+    oQueFaz: "A agenda reserva um lugar, como mesa, camarote ou quadra, com capacidade em pessoas.",
+  },
 };
 
 /**

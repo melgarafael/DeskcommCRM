@@ -367,6 +367,14 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
     descricao:
       "Ligado, cada empresa ganha em Análise a tela Painel de atendimento: quem espera resposta, quem está em atendimento e quem foi atendido hoje, por número, com o que cada pessoa já vê no Inbox. Desligado, a tela e o menu somem, e nenhuma conversa muda.",
   },
+  {
+    modulo: "reservas_de_lugar",
+    id: "modulo-reservas-de-lugar",
+    rotulo: "Reservas de lugar",
+    descricao:
+      "Ligado, cada empresa pode cadastrar na agenda um lugar, como mesa, camarote ou quadra, com capacidade em pessoas, e a reserva passa a escolher o lugar e dizer quantas pessoas vêm. Desligado, ninguém cria lugar novo; os lugares e as reservas que já existem ficam guardados.",
+    foraDoMenu: "Não cria porta no menu do CRM: por enquanto o lugar é cadastrado e reservado pela API, em /api/v1/agenda/servicos.",
+  },
 ];
 
 /**

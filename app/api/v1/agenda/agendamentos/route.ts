@@ -129,6 +129,14 @@ const marcarSchema = z.object({
   duration_minutes: z.number().int().min(DURACAO_MINIMA_MIN).max(DURACAO_MAXIMA_MIN).optional(),
   participant_name: z.string().trim().min(1).max(120).optional(),
   participants: z.array(z.string().trim().min(1).max(120)).min(1).max(20).optional(),
+  /**
+   * O LUGAR reservado e quantas pessoas vêm (issue #4029). Ausentes, o serviço
+   * sem lugar continua reservando como antes; num serviço COM lugares a recusa
+   * vem nomeada (`space_required`), nunca uma vaga escolhida em silêncio.
+   * `party_size` presente conta em pessoas na capacidade do serviço também.
+   */
+  space_id: z.string().uuid().optional(),
+  party_size: z.number().int().min(1).max(100000).optional(),
   expected_service_revision: z.number().int().positive().optional(),
 });
 
