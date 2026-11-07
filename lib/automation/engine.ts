@@ -31,6 +31,7 @@ import { falhaDeExecucaoParaRecibo, resultadosParaRecibo } from "@/lib/automatio
 import type { ActionResultDetail } from "@/lib/automation/types";
 import { audit } from "@/lib/audit";
 import { regraDoEvento } from "@/lib/automation/gatilho-de-data-do-funil";
+import { recorteDoGatilhoCasa } from "@/lib/automation/recorte-do-gatilho";
 import {
   acoesQueFechamLaco,
   ENTIDADE_ESPERADA_POR_GATILHO,
@@ -622,11 +623,11 @@ export async function runAutomationForEvent(
 
   const barradasPeloLimite: RuleRow[] = [];
   const applicable = matched.filter((rule) => {
-    const configuredSourceId = rule.trigger_config?.webhook_source_id;
+    // O recorte do GATILHO (fonte do negócio, post + palavra do comentário)
+    // mora num registro por tipo de evento — `recorte-do-gatilho.ts`. Aqui só se
+    // pergunta; um `if` por gatilho dentro desta seleção envelheceria em cadeia.
     if (
-      row.event_type === "lead.created" &&
-      typeof configuredSourceId === "string" &&
-      configuredSourceId !== webhookSourceId
+      !recorteDoGatilhoCasa(row.event_type, rule.trigger_config, row.payload, { webhookSourceId })
     ) {
       return false;
     }
