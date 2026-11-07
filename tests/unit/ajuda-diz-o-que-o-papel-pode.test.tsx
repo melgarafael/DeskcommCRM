@@ -10,7 +10,7 @@ import { AjudaConteudo } from "@/app/app/ajuda/_client";
 import { ajudaDoPapel, AJUDA_POR_PAPEL } from "@/lib/ajuda/papel";
 import { PAPEIS_HUMANOS, ROLE_RANK, type Role } from "@/lib/auth/types";
 import { DICIONARIO } from "@/lib/i18n/dicionario";
-import { NAV_CATALOG } from "@/lib/navigation/catalogo";
+import { NAV_CATALOG, type NavMetadata } from "@/lib/navigation/catalogo";
 
 /**
  * O QUE ESTE TESTE PROVA, e por que ele não é "o texto está na tela".
@@ -36,7 +36,11 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 const rank = (papel: string) => ROLE_RANK[papel as Role] ?? 0;
-const noCatalogo = (href: string) => NAV_CATALOG.find((d) => d.href === href);
+// `NAV_CATALOG` é `as const`: metade das entradas não declara `minRole`. A
+// leitura tipada da interface é a mesma que o menu usa (`NavMetadata`), e
+// `minRole` ausente vale `viewer` — igual ao resolvedor do catálogo.
+const noCatalogo = (href: string): NavMetadata | undefined =>
+  (NAV_CATALOG as readonly NavMetadata[]).find((d) => d.href === href);
 const temEspanhol = (texto: string) => Boolean(DICIONARIO[texto]?.es);
 
 describe("a ajuda diz o alcance de cada papel", () => {
@@ -73,7 +77,7 @@ describe("a ajuda diz o alcance de cada papel", () => {
     for (const ajuda of Object.values(AJUDA_POR_PAPEL)) {
       for (const item of [...ajuda.poderes, ...ajuda.limites]) {
         expect(JSON.stringify(item), `${ajuda.papel}: item sem fonte`).toContain('"fonte"');
-        const [arquivo, linha] = item.fonte.split(":");
+        const [arquivo = "", linha = "0"] = item.fonte.split(":");
         expect(arquivo, `fonte sem arquivo em ${item.href}`).toBeTruthy();
         const linhas = readFileSync(resolve(process.cwd(), arquivo), "utf8").split("\n");
         const citada = linhas[Number(linha) - 1] ?? "";

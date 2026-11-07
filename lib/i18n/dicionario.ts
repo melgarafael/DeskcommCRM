@@ -19670,9 +19670,6 @@ export const DICIONARIO: Traducoes = {
   "O que este papel não abre": {
     es: "Lo que este rol no abre",
   },
-  "Fonte": {
-    es: "Fuente",
-  },
   "Acompanha o que a equipe já fez. Não configura a operação.": {
     es: "Acompaña lo que el equipo ya hizo. No configura la operación.",
   },

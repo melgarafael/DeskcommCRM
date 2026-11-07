@@ -23,8 +23,19 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
+// A página tem DOIS grupos de link desde a fatia F2: o índice (que esta suíte
+// mede) e o bloco "o que o seu papel pode fazer" (medido em
+// `ajuda-diz-o-que-o-papel-pode`). Este helper lê só o índice, que é o que
+// responde "a Ajuda acompanha o menu".
 function urls() {
-  return screen.queryAllByRole("link").map((a) => a.getAttribute("href")).sort();
+  return screen
+    .queryAllByRole("link")
+    .filter((a) => {
+      const testid = a.getAttribute("data-testid") ?? "";
+      return testid.startsWith("ajuda-") && !testid.startsWith("ajuda-papel-");
+    })
+    .map((a) => a.getAttribute("href"))
+    .sort();
 }
 
 describe("conteúdo da Ajuda acompanha o contexto do menu", () => {
@@ -57,7 +68,12 @@ describe("conteúdo da Ajuda acompanha o contexto do menu", () => {
     authRef.activeOrg!.interface_settings = { preset: "completa", destinos: ["/app/ajuda"] };
     render(<AjudaConteudo />);
     expect(screen.getByRole("heading", { level: 1, name: "Ajuda" })).toBeInTheDocument();
-    expect(screen.queryAllByRole("heading", { level: 2 })).toEqual([]);
+    // O título do bloco do papel não é seção do índice: a asserção é sobre
+    // seções vazias do ÍNDICE, e o papel (aqui `manager`) sempre tem a sua.
+    const secoesDoIndice = screen
+      .queryAllByRole("heading", { level: 2 })
+      .filter((h) => h.id !== "ajuda-do-papel-titulo");
+    expect(secoesDoIndice).toEqual([]);
     expect(urls()).toEqual([]);
   });
 
