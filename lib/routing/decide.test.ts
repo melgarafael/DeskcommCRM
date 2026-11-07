@@ -82,7 +82,18 @@ describe("decideRouting — os 5 cenários do acceptance", () => {
     }
   });
 
-  it("sem elegível após max_retries mantém retry lento e contador limitado", () => {
+  /**
+   * #3916 — o caso que FIXAVA o laço eterno.
+   *
+   * A versão anterior deste teste afirmava `kind === "requeue"`, `attempts === 5`
+   * e `now + 900_000` com `attempts: 5` e `max_retries: 5`: ela congelava o
+   * defeito como se fosse contrato ("retry lento e contador limitado"). O
+   * contrato verdadeiro é o do rótulo da tela ("Tentativas antes de desistir"):
+   * ao chegar no teto, a decisão para. Reescrever — e não afrouxar para
+   * `expect(["requeue","exhausted"]).toContain(...)`, que ficaria verde nos dois
+   * mundos — é o que mantém o defeito fora do produto.
+   */
+  it("sem elegível no teto ⇒ exhausted, sem próxima tentativa (#3916)", () => {
     const action = decideRouting({
       mode: "round_robin",
       alreadyAssigned: false,
@@ -91,10 +102,29 @@ describe("decideRouting — os 5 cenários do acceptance", () => {
       attempts: 5,
       now: NOW,
     });
+    expect(action).toEqual({
+      kind: "exhausted",
+      reason: "no_eligible_exhausted",
+      attempts: 5,
+    });
+    // A parada é do CONTRATO, não um `attempts` que estaciona: não há
+    // `nextAttemptAt` no retorno, e nenhuma chamada devolve `requeue` daqui.
+    expect("nextAttemptAt" in action).toBe(false);
+  });
+
+  it("a última tentativa AINDA é tentativa: com attempts = max_retries - 1, ainda reenfileira (#3916)", () => {
+    const action = decideRouting({
+      mode: "round_robin",
+      alreadyAssigned: false,
+      eligibles: [],
+      config, // max_retries=5
+      attempts: 4,
+      now: NOW,
+    });
     expect(action.kind).toBe("requeue");
     if (action.kind === "requeue") {
       expect(action.attempts).toBe(5);
-      expect(new Date(action.nextAttemptAt).getTime()).toBe(NOW.getTime() + 900_000);
+      expect(new Date(action.nextAttemptAt).getTime()).toBe(NOW.getTime() + 60_000);
     }
   });
 
