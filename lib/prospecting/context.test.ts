@@ -58,16 +58,21 @@ describe("prospectingConversationContext — o que o agente lê sobre as ofertas
     );
   });
 
-  it("campanha sem a chave `ofertas` (configuração de antes): vale o padrão, só 'Site profissional'", async () => {
-    const texto = await prospectingConversationContext(bancoCom(configDaCampanha(), []), ORG_A, CONVERSA);
-    expect(texto).toContain(`${LINHA_DO_OFERTAS} Site profissional.`);
-    expect(texto).not.toContain("Automação do atendimento");
-    expect(texto).not.toContain("Automações e integrações");
+  it.each([
+    ["sem a chave `ofertas` (configuração de antes)", configDaCampanha()],
+    ["só site marcado (o padrão da tela)", configDaCampanha({ ofertas: ["site"] })],
+  ])("campanha %s: o contexto fica como antes, sem a linha das ofertas", async (_caso, config) => {
+    const texto = await prospectingConversationContext(bancoCom(config, []), ORG_A, CONVERSA);
+    expect(texto).not.toContain(LINHA_DO_OFERTAS);
+    expect(texto).not.toContain("Site profissional");
+    expect(texto).toContain(
+      "Critérios de qualificação a confirmar com a pessoa: Confirmar se a clínica recebe agendamentos pelo WhatsApp.\nConverse naturalmente, uma pergunta por vez.",
+    );
   });
 
   it("o resto do contexto fica como estava: a linha entra entre os critérios e a conversa natural", async () => {
     const texto = await prospectingConversationContext(
-      bancoCom(configDaCampanha({ ofertas: ["site"] }), []),
+      bancoCom(configDaCampanha({ ofertas: ["site", "automacao_crm"] }), []),
       ORG_A,
       CONVERSA,
     );

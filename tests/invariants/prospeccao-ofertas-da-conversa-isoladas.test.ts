@@ -102,7 +102,7 @@ describe("ofertas reais da campanha no contexto e na tool, com organizações A/
       expect(await crmGetProspectingSiteAudit.handler({}, contexto(a.org, a.contact, a.agent)))
         .toMatchObject({ ofertas_da_campanha: ["Site profissional"], estrategia_de_abordagem: { complementar: null } });
       expect(await prospectingConversationContext(pool, a.org, a.conversation))
-        .toContain("O que esta campanha vende, em ordem: Site profissional.");
+        .not.toContain("O que esta campanha vende");
       await mudarOfertas(pool, a, ["automacao_crm", "automacao_n8n"]);
       expect(await crmGetProspectingSiteAudit.handler({}, contexto(a.org, a.contact, a.agent)))
         .toMatchObject({

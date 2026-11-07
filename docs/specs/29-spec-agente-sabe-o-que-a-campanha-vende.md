@@ -45,7 +45,9 @@ estratégia que o sistema monta só usa a automação num caso estreito; o resul
 - `prospectingConversationContext` acrescenta uma linha com as ofertas marcadas,
   nos rótulos da tela, na ordem de prioridade: "O que esta campanha vende, em
   ordem: Site profissional; Automação do atendimento (CRM); Automações e
-  integrações (N8N)." Campanha sem a chave = `["site"]` (o padrão de hoje).
+  integrações (N8N)." Campanha sem a chave = `["site"]` (o padrão de hoje), e
+  só `["site"]` não ganha a linha: as caixinhas nascem com site marcado, e quem
+  vende outra coisa pelo campo livre não pode passar a ler que vende site.
 - `crm_get_prospecting_site_audit` devolve `ofertas_da_campanha` (os mesmos
   rótulos) junto de `estrategia_de_abordagem`.
 - Os rótulos saem de uma constante única ao lado de `OFERTAS_DA_CAMPANHA`
@@ -84,7 +86,7 @@ estratégia que o sistema monta só usa a automação num caso estreito; o resul
 
 - **Unit, com sabotagem:**
   - `prospectingConversationContext` com `ofertas` de três itens traz a linha
-    com os três rótulos em ordem; sem a chave, traz só "Site profissional".
+    com os três rótulos em ordem; sem a chave ou só com site, não traz a linha.
   - A ferramenta devolve `ofertas_da_campanha` igual à config.
   - Automação isolada e as duas automações sem site não anunciam site na frase
     complementar; todas essas combinações têm cobertura de espanhol.

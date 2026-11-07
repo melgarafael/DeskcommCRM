@@ -27,6 +27,11 @@ export async function prospectingConversationContext(
     fraseSaida =
       "\n\nAntes da mensagem que leva a instrução de saída, não apresente serviço, preço nem proposta: apresente-se e peça permissão. O sistema acrescenta a instrução de saída sozinho; não a escreva.";
   }
-  const ofertas = c.ofertas.map((o) => ROTULOS_DAS_OFERTAS[o]).join("; ");
-  return `\n\nEsta conversa veio de uma campanha de prospecção. Objetivo definido pelo operador: ${c.instruction}\nCritérios de qualificação a confirmar com a pessoa: ${c.qualification}\nO que esta campanha vende, em ordem: ${ofertas}.\nConverse naturalmente, uma pergunta por vez. Uma empresa da lista da campanha ainda não é um cliente qualificado. Registre o que a pessoa confirmar, sem inventar necessidade, orçamento ou interesse. Só depois de confirmar os critérios, use as ferramentas disponíveis para mover o negócio do funil ${c.pipeline_id} para a etapa ${c.qualified_stage_id}. Explique a evidência no registro. Se faltar informação, continue qualificando. Respeite recusa, opt-out e intervenção humana; não prometa condições fora da política do agente.${fraseSaida}`;
+  // Só site é o padrão (`emptyConfig` nasce com ele marcado): quem não mexeu nas caixinhas e
+  // vende outra coisa pelo campo livre não pode passar a ler, em todo turno, que vende site.
+  const soSite = c.ofertas.length === 1 && c.ofertas[0] === "site";
+  const linhaDasOfertas = soSite
+    ? ""
+    : `\nO que esta campanha vende, em ordem: ${c.ofertas.map((o) => ROTULOS_DAS_OFERTAS[o]).join("; ")}.`;
+  return `\n\nEsta conversa veio de uma campanha de prospecção. Objetivo definido pelo operador: ${c.instruction}\nCritérios de qualificação a confirmar com a pessoa: ${c.qualification}${linhaDasOfertas}\nConverse naturalmente, uma pergunta por vez. Uma empresa da lista da campanha ainda não é um cliente qualificado. Registre o que a pessoa confirmar, sem inventar necessidade, orçamento ou interesse. Só depois de confirmar os critérios, use as ferramentas disponíveis para mover o negócio do funil ${c.pipeline_id} para a etapa ${c.qualified_stage_id}. Explique a evidência no registro. Se faltar informação, continue qualificando. Respeite recusa, opt-out e intervenção humana; não prometa condições fora da política do agente.${fraseSaida}`;
 }
