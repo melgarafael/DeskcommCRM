@@ -102,8 +102,10 @@ const passarParaHumano = () =>
   );
 
 const donoDaConversa = async () =>
-  (await query("select assigned_to_user_id from conversations where organization_id=$1 and id=$2", [org, conv]))
-    .rows[0].assigned_to_user_id as string | null;
+  (
+    (await query("select assigned_to_user_id from conversations where organization_id=$1 and id=$2", [org, conv]))
+      .rows[0] as { assigned_to_user_id: string | null }
+  ).assigned_to_user_id;
 
 const rodarWorker = async () => {
   const adapter = routingPgSupabase(pool);
@@ -126,10 +128,13 @@ const publicarAgente = async () => {
        (organization_id, agent_id, version_number, system_prompt, provider, model, channel_session_id, status, published_at)
      values ($1, $2, 1, 'Qualifique o lead.', 'anthropic', 'claude-sonnet-4-6', $3, 'published', now())
      returning id`,
-    [org, agente.rows[0].id, channel],
+    [org, (agente.rows[0] as { id: string }).id, channel],
   );
-  const versaoId = versao.rows[0].id as string;
-  await query("update ai_agents set published_version_id = $1 where id = $2", [versaoId, agente.rows[0].id]);
+  const versaoId = (versao.rows[0] as { id: string }).id;
+  await query("update ai_agents set published_version_id = $1 where id = $2", [
+    versaoId,
+    (agente.rows[0] as { id: string }).id,
+  ]);
   return versaoId;
 };
 
@@ -172,7 +177,7 @@ describe("#3966 — a passagem para humano devolve a conversa à fila", () => {
     await passarParaHumano();
     const primeiro = await pedidos();
     expect(primeiro).toHaveLength(1);
-    expect(primeiro[0].status).toBe("pending");
+    expect(primeiro.map((p) => p.status)).toEqual(["pending"]);
 
     await passarParaHumano();
     // A deduplicação é do `fn_request_channel_routing` (índice parcial por
