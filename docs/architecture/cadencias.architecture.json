@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Cadências opcionais — envio e consentimento",
+    "subtitle": "CONFIRMADO em código; provas de banco/UI pendentes no draft",
+    "output": "cadencias.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "instalacao",
+      "label": "Instalação"
+    },
+    {
+      "id": "empresa",
+      "label": "Empresa"
+    },
+    {
+      "id": "motor",
+      "label": "Execução"
+    },
+    {
+      "id": "privacidade",
+      "label": "Privacidade"
+    }
+  ],
+  "mainPath": [
+    "vitrine",
+    "provisionar",
+    "ligar",
+    "construtor",
+    "inscricao",
+    "fila",
+    "worker",
+    "email"
+  ],
+  "nodes": [
+    {
+      "id": "vitrine",
+      "lane": "instalacao",
+      "col": 0,
+      "type": "service",
+      "label": "/admin/modulos → catálogo oficial cadencias"
+    },
+    {
+      "id": "provisionar",
+      "lane": "instalacao",
+      "col": 1,
+      "type": "service",
+      "label": "fn_cadencias_provisionar: três tabelas, só após instalar"
+    },
+    {
+      "id": "ligar",
+      "lane": "empresa",
+      "col": 2,
+      "type": "service",
+      "label": "/app/settings/cadencias: enabled estrito por empresa"
+    },
+    {
+      "id": "construtor",
+      "lane": "empresa",
+      "col": 3,
+      "type": "service",
+      "label": "/app/cadencias: rascunho, árvore, ativação manager+"
+    },
+    {
+      "id": "inscricao",
+      "lane": "empresa",
+      "col": 0,
+      "type": "service",
+      "label": "Inscrições e atividade: busca real, autorização opt-in, retirada"
+    },
+    {
+      "id": "fila",
+      "lane": "motor",
+      "col": 1,
+      "type": "service",
+      "label": "email_cadence_enrollments: claim e reserva durável de envio"
+    },
+    {
+      "id": "worker",
+      "lane": "motor",
+      "col": 2,
+      "type": "service",
+      "label": "cron/cadencia-worker: gates, janela/fuso e tetos"
+    },
+    {
+      "id": "email",
+      "lane": "motor",
+      "col": 3,
+      "type": "service",
+      "label": "lib/email/roteador: transporte único da instalação"
+    },
+    {
+      "id": "falha",
+      "lane": "motor",
+      "col": 0,
+      "type": "service",
+      "label": "Falha/resultado incerto visível na inscrição; não repete envio reservado"
+    },
+    {
+      "id": "pixel",
+      "lane": "privacidade",
+      "col": 1,
+      "type": "service",
+      "label": "HMAC abertura + empresa ligada + consentimento atual → contagem/evento atômicos"
+    },
+    {
+      "id": "saida",
+      "lane": "privacidade",
+      "col": 2,
+      "type": "service",
+      "label": "HMAC descadastro → supressão por contato, mesmo concluído/desligado"
+    },
+    {
+      "id": "lgpd",
+      "lane": "privacidade",
+      "col": 3,
+      "type": "service",
+      "label": "Registro de seções + trigger encerra fila + export inclui inscrições/eventos"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "from": "vitrine",
+      "to": "provisionar",
+      "label": "instalar"
+    },
+    {
+      "id": "e1",
+      "from": "provisionar",
+      "to": "ligar",
+      "label": "módulo disponível"
+    },
+    {
+      "id": "e2",
+      "from": "ligar",
+      "to": "construtor",
+      "label": "empresa habilitada"
+    },
+    {
+      "id": "e3",
+      "from": "construtor",
+      "to": "inscricao",
+      "label": "cadência ativa"
+    },
+    {
+      "id": "e4",
+      "from": "inscricao",
+      "to": "fila",
+      "label": "cria inscrição"
+    },
+    {
+      "id": "e5",
+      "from": "fila",
+      "to": "worker",
+      "label": "vencida e reivindicada"
+    },
+    {
+      "id": "e6",
+      "from": "worker",
+      "to": "email",
+      "label": "reserva antes de enviar"
+    },
+    {
+      "id": "e7",
+      "from": "email",
+      "to": "fila",
+      "label": "grava avanço e contadores"
+    },
+    {
+      "id": "e8",
+      "from": "worker",
+      "to": "falha",
+      "label": "resultado desconhecido / erro"
+    },
+    {
+      "id": "e9",
+      "from": "falha",
+      "to": "inscricao",
+      "label": "operador vê e retira"
+    },
+    {
+      "id": "e10",
+      "from": "email",
+      "to": "pixel",
+      "label": "somente com autorização"
+    },
+    {
+      "id": "e11",
+      "from": "pixel",
+      "to": "fila",
+      "label": "abre sinal do último e-mail"
+    },
+    {
+      "id": "e12",
+      "from": "email",
+      "to": "saida",
+      "label": "link sempre presente"
+    },
+    {
+      "id": "e13",
+      "from": "saida",
+      "to": "fila",
+      "label": "encerra e suprime"
+    },
+    {
+      "id": "e14",
+      "from": "fila",
+      "to": "lgpd",
+      "label": "dados do titular"
+    },
+    {
+      "id": "e15",
+      "from": "lgpd",
+      "to": "fila",
+      "label": "anonimização encerra e revoga"
+    },
+    {
+      "id": "e16",
+      "from": "pixel",
+      "to": "inscricao",
+      "label": "contagem real na atividade"
+    }
+  ]
+}

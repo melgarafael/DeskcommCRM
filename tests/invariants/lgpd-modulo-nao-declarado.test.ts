@@ -86,6 +86,11 @@ interface Violacao {
  * padrão é o mesmo defeito de não decidir.
  */
 const ALLOWLIST: Record<string, string> = {
+  "cadencias.email_cadences":
+    "Configuração compartilhada da sequência por organização, sem vínculo com contacts. " +
+    "name nomeia a cadência, e configuracao/passos guardam modelos, não a execução " +
+    "de um titular. Inscrições e eventos permanecem declarados na LGPD; anonimizar " +
+    "um contato não deve apagar todas as sequências da organização.",
   "financeiro.commission_rules":
     "commission_rules não tem ligação nenhuma com a pessoa: guarda a regra de " +
     "comissão (tipo, evento, percentual, atendente/serviço) e a coluna `name` é o " +

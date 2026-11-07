@@ -15,6 +15,11 @@ export interface ModuloCatalogo {
 
 export const CATALOGO_DE_MODULOS: readonly ModuloCatalogo[] = [
   {
+    slug: "cadencias",
+    nome: "Cadências de e-mail",
+    descricao: "Sequências de e-mail por negócio, com envio pela instalação, descadastro e abertura somente com consentimento. Contribuição de Marcelo (@lmarceloc), PR #1738.",
+  },
+  {
     slug: "honorarios",
     nome: "Honorários (advocacia)",
     descricao:

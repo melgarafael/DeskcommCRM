@@ -162,6 +162,8 @@ export {
   GoogleLogo,
   MapPin,
   ArrowsOutSimple,
+  // Construtor de cadências — mesma família da interface.
+  Hourglass, Lightning, Minus, StopCircle, CheckSquare, ArrowLeft,
   // /admin/modulos: módulo opcional com tabela própria (ADR-0002)
   Stack,
   // atalhos do card (#3487): carrinho do app de pedidos e o link genérico.
