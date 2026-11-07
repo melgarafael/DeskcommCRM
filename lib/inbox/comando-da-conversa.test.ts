@@ -171,6 +171,35 @@ describe("o que a tela NÃO pode afirmar", () => {
     expect(r.comando).toEqual({ quem: "ninguem" });
   });
 
+  it("⭐ sem agente NESTE número: é fila ('aguardando'), não 'ninguem' nem 'automatico' (#4012)", () => {
+    // O caso medido em produção: a organização TEM agente, publicado em outro
+    // número (ou o canal em pré-go-live com o contato fora da lista). Ninguém
+    // vai responder esta conversa — e `ninguem` esconderia a conversa da Fila,
+    // que é onde o atendente a encontra.
+    const r = comandoDaConversa(fatos({ automaticoDaConversa: false }), AGORA);
+    expect(r.comando).toEqual({ quem: "aguardando" });
+    expect(r.automaticoAtivo).toBe(false);
+    // Não há automático PAUSADO a explicar: não há automático aqui.
+    expect(r.motivo).toBeNull();
+  });
+
+  it("sem agente no número e silêncio vigente: continua fila, e o motivo é o silêncio", () => {
+    const r = comandoDaConversa(fatos({ automaticoDaConversa: false, bot_silenced_until: "infinity" }), AGORA);
+    expect(r.comando).toEqual({ quem: "aguardando" });
+    expect(r.motivo).toBe("pausado");
+  });
+
+  it("com agente no número (true) nada muda: segue 'automatico'", () => {
+    const r = comandoDaConversa(fatos({ automaticoDaConversa: true }), AGORA);
+    expect(r.comando).toEqual({ quem: "automatico" });
+    expect(r.automaticoAtivo).toBe(true);
+  });
+
+  it("sem agente no número, mas COM dono humano: quem manda é a pessoa", () => {
+    const r = comandoDaConversa(fatos({ automaticoDaConversa: false, assigned_to_user_id: ATENDENTE }), AGORA);
+    expect(r.comando).toEqual({ quem: "humano", userId: ATENDENTE, nome: null });
+  });
+
   it("'não sei' NÃO vira 'não há': leitura ausente mantém o comportamento anterior", () => {
     // `undefined` é leitura em andamento ou que falhou. Traduzi-la para "não há
     // automático" seria a mesma mentira ao contrário — e ela apareceria em toda
