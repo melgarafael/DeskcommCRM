@@ -11,7 +11,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { fail, ok } from "@/lib/api/wrappers";
+import { comIdDaRequisicao, fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import { logger } from "@/lib/logger";
@@ -336,7 +336,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<NextRespons
 
   const respondWithLead = (leadId: string): NextResponse => {
     if (isForm && source.redirect_to) {
-      return NextResponse.redirect(source.redirect_to as string, 303);
+      return comIdDaRequisicao(NextResponse.redirect(source.redirect_to as string, 303), requestId);
     }
     return ok({ lead_id: leadId }, { requestId });
   };

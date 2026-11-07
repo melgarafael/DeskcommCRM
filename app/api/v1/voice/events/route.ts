@@ -35,6 +35,7 @@ import { resolveWacallsSession } from "@/lib/wacalls/session";
 import { getWacallsClient } from "@/lib/wacalls/client";
 import { nomeDaSessaoDeVoz } from "@/lib/wacalls/nome-da-sessao";
 import { env } from "@/lib/env";
+import { comIdDaRequisicao } from "@/lib/api/wrappers";
 
 export const dynamic = "force-dynamic";
 
@@ -54,7 +55,7 @@ export async function GET(): Promise<Response> {
   const { org: activeOrg } = authz;
 
   if (!getWacallsClient()) {
-    return new Response(null, { status: 503 });
+    return comIdDaRequisicao(new Response(null, { status: 503 }), requestId);
   }
 
   const supabase = await createClient();
@@ -76,7 +77,7 @@ export async function GET(): Promise<Response> {
     },
   });
   if (!upstream.ok || !upstream.body) {
-    return new Response(null, { status: 502 });
+    return comIdDaRequisicao(new Response(null, { status: 502 }), requestId);
   }
 
   const reader = upstream.body.getReader();
@@ -170,11 +171,11 @@ export async function GET(): Promise<Response> {
     },
   });
 
-  return new Response(stream, {
+  return comIdDaRequisicao(new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
     },
-  });
+  }), requestId);
 }
