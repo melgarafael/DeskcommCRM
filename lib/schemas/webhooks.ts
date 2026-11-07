@@ -497,7 +497,32 @@ const acoesFixas = [
       destino: z.enum(["card", "contato"]).optional(),
     }),
   }),
+  // A irmã da `add_tag`: TIRA as etiquetas, do card ou do contato, com a mesma
+  // forma de config e o mesmo destino padrão (`card`).
+  z.object({
+    type: z.literal("remove_tag"),
+    config: z.object({
+      tags: z.array(z.string().min(1).max(60)).min(1).max(10),
+      destino: z.enum(["card", "contato"]).optional(),
+    }),
+  }),
   z.object({ type: z.literal("assign_owner"), config: configDoAtribuirSchema }),
+  /**
+   * #3881 — a automação classifica a conversa num SETOR (a fila que decide para
+   * quem ela é distribuída, 9062). `sector_id` é obrigatório: setor é destino
+   * nomeado, e uma ação sem destino salvaria e só falharia no disparo.
+   *
+   * `sobrescrever_setor_manual` é OPT-IN e nasce desligado — a regra que já
+   * existe não ganha comportamento novo, e a escolha feita por uma pessoa não é
+   * apagada por uma regra sem que alguém tenha marcado a caixa.
+   */
+  z.object({
+    type: z.literal("define_sector"),
+    config: z.object({
+      sector_id: z.string().uuid(),
+      sobrescrever_setor_manual: z.boolean().optional(),
+    }),
+  }),
   z.object({
     type: z.literal("send_ai_message"),
     config: z.object({
@@ -543,6 +568,14 @@ const acoesFixas = [
     config: z.object({
       flow_pointer_id: z.string().uuid(),
       surface: z.enum(["followup", "atendimento"]).optional(),
+      /**
+       * Se o contato já está em OUTRO fluxo (ativo ou esperando), encerra aquele
+       * e inscreve neste. Desligado por padrão: o contato só tem uma inscrição
+       * viva, e sem isto a regra perde para o fluxo que chegou antes. Só vale
+       * para o follow-up (`surface` ausente ou `followup`); o roteiro de
+       * atendimento não lê esta chave.
+       */
+      replace_live_flow: z.boolean().optional(),
     }),
   }),
   // #1540 — a ação que NUNCA fala com o cliente: grava `crm_tasks` e avisa o

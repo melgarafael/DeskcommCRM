@@ -12,7 +12,7 @@
  * seria a terceira lista da qual o repo avisa.
  *
  * ⚠️ O NOME DO ATENDENTE NÃO É MOCKADO: ele passa pelo helper de verdade
- * (`lib/mcp/tools/_users.ts`), que é a regra de exposição de responsável. Se
+ * (`lib/users/nome-do-atendente.ts`), que é a regra de exposição de responsável. Se
  * alguém trocar o helper por uma montagem de nome à mão, este arquivo cai — e
  * se a exposição alargar além do `full_name`, a asserção de não-vazamento cai.
  */
@@ -46,6 +46,12 @@ const ctx: McpContext = {
   apiTokenId: "tok-1",
   requestId: "req-1",
   supabase: {
+    // O nome só sai para membro da organização: o dono do compromisso é membro.
+    from: () => ({
+      select: () => ({
+        eq: () => ({ in: async () => ({ data: [{ user_id: DONO }], error: null }) }),
+      }),
+    }),
     auth: {
       admin: {
         getUserById: async () => ({

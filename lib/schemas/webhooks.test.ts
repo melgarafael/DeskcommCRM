@@ -98,6 +98,21 @@ describe("createAutomationRuleSchema", () => {
     expect(r.success).toBe(false);
   });
 
+  it("start_message_flow keeps replace_live_flow (boolean) and refuses anything else", () => {
+    const regra = (config: Record<string, unknown>) =>
+      createAutomationRuleSchema.safeParse({
+        name: "Regra",
+        trigger_event: "lead.created",
+        actions: [{ type: "start_message_flow", config }],
+      });
+    const r = regra({ flow_pointer_id: UUID, replace_live_flow: true });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.actions[0]!.config).toEqual({ flow_pointer_id: UUID, replace_live_flow: true });
+    }
+    expect(regra({ flow_pointer_id: UUID, replace_live_flow: "sim" }).success).toBe(false);
+  });
+
   it("rejects an action of unknown type", () => {
     const r = createAutomationRuleSchema.safeParse({
       name: "Regra",

@@ -38,7 +38,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { getRequestPool } from "@/lib/agent-engine/db/request-pool";
-import { decidePacing, dayStartInTz } from "@/lib/agent-engine/pacing/engine";
+import { decidePacing } from "@/lib/agent-engine/pacing/engine";
 import { loadChannelKnobs, loadPacingState, recordSend } from "@/lib/agent-engine/pacing/store";
 import { beginServiceAtOrigin } from "@/lib/atendimento/origem";
 import { canalTemRiscoDeBanimento } from "@/lib/channels/capabilities";
@@ -53,10 +53,12 @@ import { OrgNaoOperanteError, STATUS_OPERANTE, ehOperante, statusDaOrgEmbutida }
 
 import { baloesDaCampanha, enviarEmBaloes, pausaEntreBaloes } from "./baloes";
 import { motivoParaExcluir, recusouMarketing, statusDaSaida } from "./elegibilidade";
+import { estadoDeEnvio } from "./estado-de-envio";
 import { hashDoEndereco } from "./exclusoes";
 import type { ConteudoDoEnvio } from "./modelo";
 import { renderizar } from "./renderizador";
 import { RAJADA, rodarEmRajada } from "./rajada";
+import { rodarCampanhaEmTransmissao } from "./transmissao";
 import { escolherNumero, poolDaCampanha, type NumeroDisponivel } from "./rodizio";
 import { podeMandarAgora, proximaTentativa, type RitmoDaCampanha } from "./ritmo";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
@@ -107,6 +109,9 @@ interface CampanhaRow {
   provider_template_language: string | null;
   /** Migration 0711: `rapida` = rajada na rodada (só com modelo); `gradual` = uma por rodada. */
   velocidade: string;
+  /** Migration 0712: com `velocidade = transmissao`, as origens das variáveis e o id no provedor. */
+  provider_template_variables: unknown;
+  provider_broadcast_id: string | null;
   /** Migration 0765: texto sai em balões, um por parágrafo. Modelo nunca se divide. */
   split_messages: boolean;
   started_at: string | null;
@@ -116,7 +121,8 @@ interface CampanhaRow {
 const COLUNAS_DA_CAMPANHA =
   "id, organization_id, channel_session_id, name, message_body, content_version, " +
   "intervalo_segundos, janela_inicio_hora, janela_fim_hora, teto_diario, teto_horario, " +
-  "message_mode, provider_template_name, provider_template_language, velocidade, split_messages, started_at, paused_at";
+  "message_mode, provider_template_name, provider_template_language, velocidade, started_at, paused_at, " +
+  "provider_template_variables, provider_broadcast_id, split_messages";
 
 /**
  * O status da organização embutido com `!inner` no `select`, e filtrado na
@@ -186,9 +192,11 @@ export async function rodarUmaRodadaDeCampanha(
     if (principaisOcupados.size >= NUMEROS_POR_RODADA) break;
 
     try {
-      const r = emRajada(campanha)
-        ? await rodarCampanhaEmRajada(admin, campanha, numerosQueFalaram)
-        : await rodarUmaCampanha(admin, campanha, agora, numerosQueFalaram);
+      const r = emTransmissao(campanha)
+        ? await rodarCampanhaEmTransmissao(admin, campanha, agora)
+        : emRajada(campanha)
+          ? await rodarCampanhaEmRajada(admin, campanha, numerosQueFalaram)
+          : await rodarUmaCampanha(admin, campanha, agora, numerosQueFalaram);
       total.enviadas += r.enviadas;
       total.pulados += r.pulados;
       total.concluidas += r.concluidas;
@@ -320,6 +328,14 @@ async function pendentesDaCampanha(
 /** Velocidade rápida só com modelo: o CHECK da 0711 garante, e o despacho confere de novo. */
 function emRajada(campanha: CampanhaRow): boolean {
   return campanha.velocidade === "rapida" && campanha.message_mode === "template";
+}
+
+/**
+ * Transmissão só com modelo, como a rápida. Quem manda é o provedor; a rodada
+ * entrega a lista e depois acompanha o relatório (`transmissao.ts`).
+ */
+function emTransmissao(campanha: CampanhaRow): boolean {
+  return campanha.velocidade === "transmissao" && campanha.message_mode === "template";
 }
 
 /**
@@ -871,33 +887,6 @@ async function numeroDoHistorico(
     .limit(1);
   const linha = (data ?? [])[0] as { channel_session_id: string } | undefined;
   return linha?.channel_session_id ?? null;
-}
-
-/** Quantas saíram hoje e na última hora, mais o último envio — o estado do ritmo. */
-export async function estadoDeEnvio(
-  admin: SupabaseClient,
-  campanhaId: string,
-  agora: Date,
-  fuso: string,
-): Promise<{ ultimoEnvio: Date | null; enviadasHoje: number; enviadasNaUltimaHora: number }> {
-  // O dia do teto diário é o dia DO CLIENTE, como o resto do ritmo. Ver a nota
-  // no chamador: `setUTCHours` fazia o dia virar 21h em `America/Sao_Paulo`.
-  const inicioDoDia = dayStartInTz(agora, fuso);
-  const { data } = await admin
-    .from("campaign_recipients")
-    .select("sent_at")
-    .eq("campaign_id", campanhaId)
-    .not("sent_at", "is", null)
-    .gte("sent_at", inicioDoDia.toISOString())
-    .order("sent_at", { ascending: false });
-
-  const enviados = (data ?? []).map((r) => new Date((r as { sent_at: string }).sent_at));
-  const umaHoraAtras = agora.getTime() - 3_600_000;
-  return {
-    ultimoEnvio: enviados[0] ?? null,
-    enviadasHoje: enviados.length,
-    enviadasNaUltimaHora: enviados.filter((d) => d.getTime() >= umaHoraAtras).length,
-  };
 }
 
 /** Exportado só para a tela e o teste lerem a mesma frase do motivo. */

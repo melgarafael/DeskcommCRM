@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
+import { createClient } from "@/lib/supabase/server";
 
 import { TarefasClient } from "./_components/TarefasClient";
 
@@ -40,5 +41,22 @@ export default async function TarefasPage({
   // `?assigned_to=me` é o endereço que o lembrete e o push de tarefa abrem.
   const { assigned_to } = await searchParams;
 
-  return <TarefasClient podeEditar={podeEditar} minhasDeInicio={assigned_to === "me"} />;
+  // Os funis vivos da organização ativa, para o seletor. Lido aqui e não por `GET /api/v1/pipelines`
+  // (que exige manager): a tela de Tarefas abre para qualquer papel. `organization_id` à mão porque
+  // a RLS libera todas as organizações do usuário.
+  const supabase = await createClient();
+  const { data: funis } = await supabase
+    .from("crm_pipelines")
+    .select("id, name")
+    .eq("organization_id", activeOrg.orgId)
+    .eq("is_archived", false)
+    .order("position");
+
+  return (
+    <TarefasClient
+      podeEditar={podeEditar}
+      minhasDeInicio={assigned_to === "me"}
+      funis={(funis ?? []) as Array<{ id: string; name: string }>}
+    />
+  );
 }

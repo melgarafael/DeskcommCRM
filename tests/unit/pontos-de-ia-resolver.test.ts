@@ -19,7 +19,9 @@ import { describe, expect, it } from "vitest";
 import {
   decidirBinding,
   EXPLICACAO_DA_ORIGEM,
+  PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL,
   PONTOS_DO_AGENTE_PUBLICADO,
+  PONTOS_QUE_HERDAM_DO_AGENTE,
   type AgentePublicado,
   type EntradaDaDecisao,
   type OrigemDaEscolha,
@@ -294,5 +296,96 @@ describe("o conjunto de pontos do agente publicado", () => {
       entrada({ pontoId, binding: binding({ purpose: pontoId }) }),
     );
     expect(d.origem).toBe("binding");
+  });
+});
+
+/**
+ * O FOLLOW-UP: o agente escrevendo sozinho, com o modelo escolhível no painel.
+ *
+ * É o mesmo turno de `agent_turn` (mesma versão publicada, mesmas ferramentas),
+ * mas a ordem é a inversa: binding habilitado → versão publicada. Medido numa
+ * instalação real, os follow-ups eram 31% do gasto do agente; um modelo barato
+ * escreve bem a retomada e não opera o CRM — por isso a troca é só aqui.
+ *
+ * O caso que mais importa é o SEM escolha: ele tem de devolver exatamente o que
+ * o turno usava antes de o ponto existir — o modelo, o provider, a credencial e
+ * a ORIGEM (`agente_publicado`, que vai para `llm_calls.origem_da_escolha`).
+ */
+describe("followup_turn — binding do painel, senão a versão publicada", () => {
+  const seguimento = (over: Partial<LinhaDeBinding> = {}) =>
+    binding({ purpose: "followup_turn", provider: "openai", credential_id: "cred-barata", model_id: "gpt-5.6-luna", ...over });
+  const agenteSonnet = () => agente({ provider: "anthropic", credentialId: "cred-anthropic", model: "claude-sonnet-5" });
+
+  it("com binding habilitado: o modelo do painel, com provider e credencial dele", () => {
+    const d = decidirBinding(entrada({ pontoId: "followup_turn", binding: seguimento(), agentePublicado: agenteSonnet() }));
+    expect(d).toMatchObject({
+      origem: "binding",
+      provider: "openai",
+      modelId: "gpt-5.6-luna",
+      credentialId: "cred-barata",
+      baseUrl: null,
+    });
+    // E sem o aviso de "a escolha do painel não se aplica" — aqui ela se aplica.
+    expect(d.avisos).toEqual([]);
+  });
+
+  it("sem binding: a versão publicada INTEIRA, com a origem de sempre", () => {
+    const d = decidirBinding(entrada({ pontoId: "followup_turn", agentePublicado: agenteSonnet() }));
+    expect(d).toMatchObject({
+      origem: "agente_publicado",
+      provider: "anthropic",
+      modelId: "claude-sonnet-5",
+      credentialId: "cred-anthropic",
+      baseUrl: null,
+    });
+  });
+
+  it("sem binding, decide IGUAL a `agent_turn` — o comportamento de antes do ponto", () => {
+    // A régua de "nada muda sem escolha": a mesma entrada nos dois pontos dá a
+    // mesma decisão, campo por campo.
+    const base = { agentePublicado: agenteSonnet(), modeloDeAmbiente: "claude-haiku-4-5" };
+    expect(decidirBinding(entrada({ pontoId: "followup_turn", ...base }))).toEqual(
+      decidirBinding(entrada({ pontoId: "agent_turn", ...base })),
+    );
+  });
+
+  it("binding DESLIGADO devolve o lugar à versão publicada, sem vazar a credencial dele", () => {
+    const d = decidirBinding(
+      entrada({ pontoId: "followup_turn", binding: seguimento({ is_enabled: false }), agentePublicado: agenteSonnet() }),
+    );
+    expect(d).toMatchObject({ origem: "agente_publicado", provider: "anthropic", modelId: "claude-sonnet-5" });
+    expect(d.credentialId).toBe("cred-anthropic");
+    expect(d.baseUrl).toBeNull();
+  });
+
+  it("o mesmo binding NÃO alcança `agent_turn` — a resposta ao cliente segue na versão publicada", () => {
+    // A recíproca que separa os dois pontos. Sem ela, "o binding sempre ganha"
+    // passaria em tudo acima — e trocaria o modelo de quem opera o CRM.
+    const d = decidirBinding(
+      entrada({ pontoId: "agent_turn", binding: seguimento({ purpose: "agent_turn" }), agentePublicado: agenteSonnet() }),
+    );
+    expect(d).toMatchObject({ origem: "agente_publicado", modelId: "claude-sonnet-5", provider: "anthropic" });
+  });
+
+  it("versão publicada sem modelo: o padrão da organização inteiro, nunca o provider do agente com o modelo da org", () => {
+    const d = decidirBinding(
+      entrada({ pontoId: "followup_turn", agentePublicado: agente({ model: undefined }) }),
+    );
+    expect(d).toMatchObject({ origem: "padrao_da_organizacao", provider: PADRAO.provider, modelId: PADRAO.defaultModel, credentialId: null });
+  });
+
+  it("sem agente publicado: o painel, senão o padrão — o mesmo que `agent_turn` faz", () => {
+    expect(decidirBinding(entrada({ pontoId: "followup_turn", binding: seguimento() })).origem).toBe("binding");
+    expect(decidirBinding(entrada({ pontoId: "followup_turn" })).origem).toBe("padrao_da_organizacao");
+  });
+
+  it("o conjunto é exato e não se mistura com os outros dois", () => {
+    // Um ponto em dois conjuntos teria duas ordens de precedência — e quem
+    // ganha dependeria da ordem dos `if`, não de uma decisão escrita.
+    expect([...PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL]).toEqual(["followup_turn"]);
+    for (const p of PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL) {
+      expect(PONTOS_DO_AGENTE_PUBLICADO.has(p), `${p} também é ponto travado no agente`).toBe(false);
+      expect(PONTOS_QUE_HERDAM_DO_AGENTE.has(p), `${p} também é ponto auxiliar`).toBe(false);
+    }
   });
 });

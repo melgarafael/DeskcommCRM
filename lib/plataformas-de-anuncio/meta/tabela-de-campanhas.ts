@@ -244,6 +244,114 @@ function extrairResultado(linha: LinhaDeInsightCrua): ResultadoDaCampanha {
 }
 
 /**
+ * As ordens que a tela oferece para a tabela (#3911).
+ *
+ * `mais_recentes` é o PADRÃO, e o motivo está na issue: quem abre a aba quer ver
+ * o que está rodando ou acabou de rodar, e a plataforma devolve a lista das mais
+ * antigas para as mais novas — ou seja, a campanha do dia ficava no fim.
+ *
+ * As métricas (gasto, resultado, custo por resultado) NÃO estão aqui de
+ * propósito: elas existem no payload, mas ordenar por elas exige decidir o que
+ * fazer com linha de métrica ausente (que neste módulo é `null`, não zero) e
+ * isso é outra fatia. Entrar com duas opções que ordenam "pelo que veio" já
+ * resolve o defeito relatado sem inventar semântica.
+ */
+export type CriterioDeOrdenacao = "mais_recentes" | "mais_antigas" | "status";
+
+/** A ordem em que a tabela abre quando ninguém escolheu nada. */
+export const ORDEM_PADRAO: CriterioDeOrdenacao = "mais_recentes";
+
+/**
+ * Data da plataforma (`2026-08-14T09:31:10+0000`) → milissegundos, ou `null`.
+ *
+ * `Date.parse` em vez de comparar as strings: as strings têm offset, e comparar
+ * texto colocaria uma campanha de `-0300` no lugar errado. `NaN` (formato que a
+ * plataforma mudou) vira `null`, e `null` é "sem data" — nunca 1970, que faria
+ * a linha sem data parecer a mais antiga de todas e descer a lista inteira.
+ */
+function instante(valor: string | null | undefined): number | null {
+  if (!valor) return null;
+  const ms = Date.parse(valor);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/**
+ * Compara dois instantes, com a ausência SEMPRE no fim — nas duas direções.
+ *
+ * Inverter o sinal inteiro para "mais antigas" mandaria as linhas sem data para
+ * o TOPO, que é o pior lugar possível para a linha de que menos se sabe. Por
+ * isso a direção vale só entre dois instantes conhecidos.
+ */
+function compararInstantes(
+  a: number | null,
+  b: number | null,
+  maisRecentePrimeiro: boolean,
+): number {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return maisRecentePrimeiro ? b - a : a - b;
+}
+
+/** Criação manda; `start_time` desempata (duas campanhas do mesmo rascunho). */
+function compararPorData(
+  a: LinhaDeCampanha,
+  b: LinhaDeCampanha,
+  maisRecentePrimeiro: boolean,
+): number {
+  const porCriacao = compararInstantes(
+    instante(a.criadaEm),
+    instante(b.criadaEm),
+    maisRecentePrimeiro,
+  );
+  if (porCriacao !== 0) return porCriacao;
+  return compararInstantes(instante(a.iniciadaEm), instante(b.iniciadaEm), maisRecentePrimeiro);
+}
+
+/**
+ * A faixa de cada linha na ordem "ativas primeiro".
+ *
+ * Usa `effective_status` (a `veiculacao` da tela) e não o `status` do cadastro:
+ * campanha com status ACTIVE e pai pausado NÃO está entregando, e é justamente
+ * essa a pergunta que traz alguém a esta aba. `null` — linha que veio só de
+ * insights — fica por último: não se sabe o estado, então não se afirma que ela
+ * esteja ativa.
+ */
+function faixaDeStatus(linha: LinhaDeCampanha): number {
+  const estado = linha.veiculacao ?? linha.status;
+  if (estado === null) return 2;
+  return estado === "ACTIVE" ? 0 : 1;
+}
+
+/**
+ * Ordena as linhas para a tela, sem tocar no array recebido.
+ *
+ * `sort` é estável por especificação, e é disso que a tabela depende: entre
+ * linhas EMPATADAS (mesma data, ou todas sem data) a ordem de montagem é
+ * preservada — insights primeiro, cadastro sem veiculação depois. Ordenar não
+ * reescreve a regra de quem entrou na tabela, só a ordem de leitura.
+ */
+export function ordenarCampanhas(
+  linhas: readonly LinhaDeCampanha[],
+  criterio: CriterioDeOrdenacao = ORDEM_PADRAO,
+): LinhaDeCampanha[] {
+  const ordenadas = [...linhas];
+  // Critério desconhecido (valor de um `select` que mudou de vocabulário, por
+  // exemplo) cai na PADRÃO — nunca em "ordem de entrada", que é o defeito que
+  // esta função existe para consertar.
+  const efetivo: CriterioDeOrdenacao =
+    criterio === "mais_antigas" || criterio === "status" ? criterio : ORDEM_PADRAO;
+  if (efetivo === "status") {
+    ordenadas.sort(
+      (a, b) => faixaDeStatus(a) - faixaDeStatus(b) || compararPorData(a, b, true),
+    );
+    return ordenadas;
+  }
+  ordenadas.sort((a, b) => compararPorData(a, b, efetivo === "mais_recentes"));
+  return ordenadas;
+}
+
+/**
  * Cruza campanhas e insights numa tabela.
  *
  * ─── Quem entra na tabela, e por quê ────────────────────────────────────────
@@ -259,8 +367,11 @@ function extrairResultado(linha: LinhaDeInsightCrua): ResultadoDaCampanha {
  *    `null`. Descartá-la faria o operador procurar por uma campanha que ele
  *    acabou de criar e concluir que a tela está quebrada.
  *
- * A ordem é a de insights primeiro (quem gastou aparece antes), com as
- * sem-veiculação no fim.
+ * A ordem é a PADRÃO da tela (#3911): da campanha mais recente para a mais
+ * antiga, por `created_time` (o `start_time` desempata). Antes disso a ordem era
+ * a da plataforma — das mais antigas para as mais novas —, e a campanha que
+ * estava rodando aparecia no fim da tabela. Quem empata continua na ordem de
+ * montagem (insights primeiro, sem-veiculação depois), porque `sort` é estável.
  */
 export function montarTabelaDeCampanhas(
   campanhas: CampanhaCrua[],
@@ -299,6 +410,11 @@ export function montarTabelaDeCampanhas(
       status: campanha?.status ?? null,
       veiculacao: campanha?.effective_status ?? null,
       objetivo: campanha?.objective ?? null,
+      // Sem cadastro não há data: a linha veio só do insight (campanha
+      // apagada entre as duas chamadas). `null` é a verdade, e a ordenação a
+      // manda para o fim.
+      criadaEm: campanha?.created_time ?? null,
+      iniciadaEm: campanha?.start_time ?? null,
       resultado: extrairResultado(insight),
       gasto: numeroOuNulo(insight.spend),
       impressoes,
@@ -321,6 +437,8 @@ export function montarTabelaDeCampanhas(
       status: campanha.status ?? null,
       veiculacao: campanha.effective_status ?? null,
       objetivo: campanha.objective ?? null,
+      criadaEm: campanha.created_time ?? null,
+      iniciadaEm: campanha.start_time ?? null,
       resultado: { valor: null, custoPorResultado: null, indicador: null },
       gasto: null,
       impressoes: null,
@@ -335,5 +453,5 @@ export function montarTabelaDeCampanhas(
     });
   }
 
-  return linhas;
+  return ordenarCampanhas(linhas);
 }

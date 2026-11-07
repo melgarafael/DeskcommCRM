@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import pg from "pg";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 
@@ -55,6 +56,32 @@ function sqlLiteral(v: unknown): string {
   if (Array.isArray(v)) return `ARRAY[${v.map((x) => sqlString(String(x))).join(",")}]::text[]`;
   if (typeof v === "object") return `${sqlString(JSON.stringify(v))}::jsonb`;
   return sqlString(String(v));
+}
+
+/**
+ * O dublê do client admin fala com o Postgres por UMA conexão `pg`, e não pelo
+ * `sql()` do gov-helpers. Cada `sql()` é um `docker exec … psql` — um processo
+ * novo por consulta —, e o motor faz ~88 idas ao banco por caso: medido
+ * isolado, 5 vezes numa máquina de 8 núcleos sem outra carga, os casos A, A3 e
+ * E ficavam entre 20 e 32 s com teto de 30 s, e o E estourou o teto sozinho em
+ * 1 das 5. Com esta conexão, o mais lento fica em ~5 s.
+ *
+ * A conexão é a do `TEST_DB_PORT`, a mesma que os invariantes com `pg` já usam.
+ * A saída é a do psql: cada leitura devolve o `json_agg` como TEXTO e o dublê
+ * faz o `JSON.parse`, como antes, então o motor recebe os mesmos objetos. Uma
+ * conexão só, como o `execFileSync` era: as chamadas saem uma depois da outra,
+ * na ordem em que o motor as faz. As preparações e as asserções do teste
+ * seguem no `sql()`.
+ */
+const conexao = new pg.Client({
+  connectionString: `postgresql://postgres:postgres@127.0.0.1:${process.env.TEST_DB_PORT ?? 54329}/postgres`,
+});
+
+/** Uma instrução pela conexão do dublê; devolve a primeira coluna da primeira linha, como o `-tA` do psql. */
+async function noBanco(texto: string): Promise<string> {
+  const r = await conexao.query({ text: texto, rowMode: "array" });
+  const primeira = (r.rows as unknown[][])[0]?.[0];
+  return primeira === null || primeira === undefined ? "" : String(primeira);
 }
 
 type QResult = { data: unknown; error: { message: string; code?: string } | null };
@@ -277,16 +304,15 @@ class FakeQuery implements PromiseLike<QResult> {
         const inner = this.toSql();
         const wrapped =
           this.mode === "select"
-            ? `select coalesce(json_agg(t), '[]') from (${inner}) t;`
-            : `with w as (${inner}) select coalesce(json_agg(w), '[]') from w;`;
-        const out = sql(wrapped);
+            ? `select coalesce(json_agg(t), '[]')::text from (${inner}) t;`
+            : `with w as (${inner}) select coalesce(json_agg(w), '[]')::text from w;`;
+        const out = await noBanco(wrapped);
         return { data: JSON.parse(out || "[]"), error: null };
       }
-      sql(`${this.toSql()};`);
+      await noBanco(`${this.toSql()};`);
       return { data: null, error: null };
     } catch (err) {
-      const stderr = (err as { stderr?: string }).stderr ?? (err as Error).message;
-      return { data: null, error: { message: stderr } };
+      return { data: null, error: { message: (err as Error).message } };
     }
   }
 }
@@ -311,15 +337,15 @@ function fakeAdminClient(): SupabaseClient {
               name === "fn_service_boundary"
                 ? `public.fn_service_boundary(${sqlLiteral(params.p_org)}::uuid,${sqlLiteral(params.p_conversation)}::uuid)`
                 : `public.fn_service_event_origin(${sqlLiteral(params.p_org)}::uuid,${sqlLiteral(params.p_event)}::uuid,${sqlLiteral(params.p_contact)}::uuid,${sqlLiteral(params.p_session)}::uuid)`;
-            return { data: JSON.parse(sql(`select ${expression};`)), error: null };
+            return { data: JSON.parse(await noBanco(`select (${expression})::text;`)), error: null };
           } catch (error) {
             return { data: null, error: { message: String(error) } };
           }
         }
         if (name === "fn_service_begin") {
           try {
-            const out = sql(
-              `select public.fn_service_begin(p_org => ${sqlLiteral(params.p_org)}::uuid, p_contact => ${sqlLiteral(params.p_contact)}::uuid, p_session => ${sqlLiteral(params.p_session)}::uuid);`,
+            const out = await noBanco(
+              `select public.fn_service_begin(p_org => ${sqlLiteral(params.p_org)}::uuid, p_contact => ${sqlLiteral(params.p_contact)}::uuid, p_session => ${sqlLiteral(params.p_session)}::uuid)::text;`,
             );
             return { data: JSON.parse(out), error: null };
           } catch (error) {
@@ -328,8 +354,8 @@ function fakeAdminClient(): SupabaseClient {
         }
         if (name === "fn_contato_adicionar_etiquetas") {
           try {
-            const out = sql(`select public.fn_contato_adicionar_etiquetas(${sqlLiteral(params.p_org)}::uuid, ${sqlLiteral(params.p_contato)}::uuid, ${sqlLiteral(params.p_etiquetas)});`);
-            return { data: JSON.parse(lastLine(out)), error: null };
+            const out = await noBanco(`select public.fn_contato_adicionar_etiquetas(${sqlLiteral(params.p_org)}::uuid, ${sqlLiteral(params.p_contato)}::uuid, ${sqlLiteral(params.p_etiquetas)})::text;`);
+            return { data: JSON.parse(out), error: null };
           } catch (error) {
             return { data: null, error: { message: String(error) } };
           }
@@ -337,7 +363,7 @@ function fakeAdminClient(): SupabaseClient {
         if (name !== "emit_event") throw new Error(`fakeAdminClient: unsupported rpc ${name}`);
         const p = params as unknown as EmitEventParams;
         try {
-          sql(
+          await noBanco(
             `select public.emit_event(${sqlString(p.p_event_type)}, ${sqlString(p.p_entity_kind)}, ${
               p.p_entity_id ? sqlString(p.p_entity_id) : "null"
             }, ${sqlString(JSON.stringify(p.p_payload))}::jsonb, ${sqlString(
@@ -365,9 +391,12 @@ const T0 = "2026-07-17T13:00:00Z"; // 10h em São Paulo, janela aberta; compromi
 /** Os instantes de volta que o próprio motor devolve em `retry_at` (medidos na main 0781f19b5). */
 const VOLTAS = ["2026-07-17T15:00:00Z", "2026-07-17T16:00:00Z", "2026-07-17T16:01:00Z", "2026-07-18T16:00:00Z"];
 
-beforeAll(() => {
+beforeAll(async () => {
   seedGov();
+  await conexao.connect();
 });
+
+afterAll(() => conexao.end());
 
 afterEach(() => {
   vi.useRealTimers();

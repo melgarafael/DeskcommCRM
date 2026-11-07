@@ -21,7 +21,14 @@ import { usePipelines, usePipelineStages } from "@/hooks/webhooks/useWebhookSour
 import { useAgentsList } from "@/hooks/ai/useAgents";
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { useAssignableMembers, type AssignableMember } from "@/hooks/inbox/useAssignableMembers";
+import { useSectors } from "@/hooks/team/useSectors";
 import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
+import {
+  CHAVE_DA_ESCOLHA,
+  ESCOLHA_PADRAO,
+  lerEscolhaNoEnvio,
+  type EscolhaNoEnvio,
+} from "@/lib/agenda/escolha-no-envio";
 import { camposDeDataDoNegocio, camposDoFunil } from "@/lib/leads/campos-do-funil";
 import { apiClient } from "@/lib/api/client";
 import { useAuth } from "@/hooks/auth/AuthProvider";
@@ -87,7 +94,13 @@ export type ActionItem =
   | { type: "create_or_move_lead"; config: { pipeline_id: string; stage_id: string } }
   | {
       type: "send_whatsapp_message";
-      config: { channel_session_id: string; template: string; media_url?: string | null };
+      config: {
+        channel_session_id: string;
+        template: string;
+        media_url?: string | null;
+        /** #3813 — o que o passo faz com quem tem horário marcado. Ausente = `adiar`. */
+        quando_ha_compromisso?: EscolhaNoEnvio;
+      };
     }
   // #2726 — o e-mail de saída: mesmo campo que a irmã de WhatsApp (`assunto`/
   // `corpo` no lugar do `template`), e `email_fixo` só preenche quando o
@@ -106,17 +119,27 @@ export type ActionItem =
     }
   | {
       type: "send_ai_message";
-      config: { agent_id: string; channel_session_id: string; instruction: string };
+      config: {
+        agent_id: string;
+        channel_session_id: string;
+        instruction: string;
+        /** #3813 — mesma escolha da irmã de WhatsApp. Ausente = `adiar`. */
+        quando_ha_compromisso?: EscolhaNoEnvio;
+      };
     }
   | {
       type: "add_tag";
+      config: { tags: string[]; destino?: "card" | "contato" };
+    }
+  | {
+      type: "remove_tag";
       config: { tags: string[]; destino?: "card" | "contato" };
     }
   | { type: "assign_owner"; config: ConfigDoAtribuir }
   | { type: "call_webhook"; config: { url: string; secret?: string; secret_enc?: string; include_owner?: boolean } }
   | {
       type: "start_message_flow";
-      config: { flow_pointer_id: string; surface?: "followup" | "atendimento" };
+      config: { flow_pointer_id: string; surface?: "followup" | "atendimento"; replace_live_flow?: boolean };
     }
   // #1540 — o lembrete interno: mesmos campos do schema da API e do nó de fluxo.
   | {
@@ -140,7 +163,11 @@ export type ActionItem =
   // isso não existe campo de número, de endereço, de pessoa nem de canal: a
   // configuração guarda só o canal, e é o executor que lê o destino
   // cadastrado. Mesmos campos do schema da API.
-  | { type: "notify_team"; config: { canal: "whatsapp" } };
+  | { type: "notify_team"; config: { canal: "whatsapp" } }
+  // #3881 — a conversa vai para um SETOR. Mesmos campos do schema da API: o
+  // setor escolhido e a caixa (desligada por padrão) que autoriza a regra a
+  // reclassificar o que uma pessoa classificou à mão.
+  | { type: "define_sector"; config: { sector_id: string; sobrescrever_setor_manual?: boolean } };
 
 export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
   switch (type) {
@@ -165,6 +192,7 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
     case "send_ai_message":
       return { type, config: { agent_id: "", channel_session_id: "", instruction: "" } };
     case "add_tag":
+    case "remove_tag":
       return { type, config: { tags: [] } };
     case "assign_owner":
       return { type, config: { user_id: "" } };
@@ -191,12 +219,109 @@ export function defaultActionConfig(type: ActionItem["type"]): ActionItem {
     // por isso o `config` guarda apenas o canal (o schema exige o literal).
     case "notify_team":
       return { type, config: { canal: "whatsapp" } };
+    // #3881 — o setor nasce vazio: a lista é da INSTALAÇÃO (módulo `setores`) e
+    // quem escolhe é quem monta a regra. Sem escolha, a regra falha nomeada no
+    // disparo (`sector_id_ausente`) em vez de gravar qualquer coisa.
+    case "define_sector":
+      return { type, config: { sector_id: "" } };
   }
 }
 
 interface FormProps<T> {
   config: T;
   onChange: (config: T) => void;
+}
+
+/**
+ * #3813 — AS TRÊS RESPOSTAS PARA "E SE O CONTATO TIVER HORÁRIO MARCADO?".
+ *
+ * A escolha mora no `config` do PASSO que envia, e não no `trigger_config`:
+ * é de lá que `lerEscolhaNoEnvio` a lê no disparo (`send-whatsapp.ts:24`,
+ * `send-ai-message.ts:64`), e gravar no gatilho daria uma tela que o motor não
+ * obedece. Cada passo tem a sua — a mesma regra pode adiar o lembrete de
+ * cobrança e mandar o pós-atendimento na hora.
+ *
+ * A ajuda de cada opção diz o EFEITO, não o nome do campo: quem lê esta gaveta
+ * é quem descobriu que os parabéns saíram duas semanas atrasados.
+ */
+const ESCOLHAS_DA_AGENDA: Array<{ valor: EscolhaNoEnvio; rotulo: string; ajuda: string }> = [
+  {
+    valor: "adiar",
+    rotulo: "Adiar e enviar depois do horário",
+    ajuda:
+      "A mensagem espera o atendimento terminar e sai logo depois. É o comportamento de sempre e o que continua valendo em quem nunca mexeu aqui.",
+  },
+  {
+    valor: "enviar",
+    rotulo: "Enviar mesmo assim",
+    ajuda:
+      "A mensagem sai na hora, mesmo com atendimento marcado. Serve para o pós-atendimento e o aniversário, que perdem o sentido se esperarem.",
+  },
+  {
+    valor: "nao_enviar",
+    rotulo: "Não enviar",
+    ajuda:
+      "A mensagem não sai e o pulo fica registrado na Atividade com o motivo “contato com horário marcado”, para a equipe saber que a automação passou.",
+  },
+];
+
+/**
+ * O config do passo com a escolha nova — preservando o resto.
+ *
+ * `...config` é o que impede a escolha de apagar o número, a mensagem e a
+ * mídia que a pessoa acabou de preencher. `adiar` é o padrão declarado da
+ * leitura tolerante, então voltar para ele REMOVE a chave: a regra de antes
+ * desta entrega não a tem, e um payload sem ela é byte a byte o de sempre.
+ */
+function configComEscolha<T extends object>(config: T, escolha: EscolhaNoEnvio): T {
+  const { [CHAVE_DA_ESCOLHA]: _anterior, ...resto } = config as Record<string, unknown>;
+  return (
+    escolha === ESCOLHA_PADRAO ? resto : { ...resto, [CHAVE_DA_ESCOLHA]: escolha }
+  ) as T;
+}
+
+function EscolhaQuandoHaCompromisso({
+  escolha,
+  onChange,
+}: {
+  /** O valor JÁ lido com `lerEscolhaNoEnvio` — quem chama não reimplementa a leitura. */
+  escolha: EscolhaNoEnvio;
+  onChange: (escolha: EscolhaNoEnvio) => void;
+}) {
+  const t = useT();
+  const grupo = React.useId();
+
+  return (
+    <div className="space-y-1">
+      <Label id={`${grupo}-rotulo`}>{t("Quando o contato tiver horário marcado")}</Label>
+      <p className="text-xs text-muted-foreground">
+        {t(
+          "Em qualquer das três continuam valendo o descadastro do contato, a janela de envio do número e o limite diário.",
+        )}
+      </p>
+      <div role="radiogroup" aria-labelledby={`${grupo}-rotulo`} className="space-y-1">
+        {ESCOLHAS_DA_AGENDA.map((opcao) => (
+          <label
+            key={opcao.valor}
+            className="flex cursor-pointer items-start gap-2 rounded-md border p-3"
+          >
+            <input
+              type="radio"
+              name={grupo}
+              value={opcao.valor}
+              checked={escolha === opcao.valor}
+              onChange={() => onChange(opcao.valor)}
+              className="mt-1"
+            />
+            <span className="space-y-0.5">
+              <span className="block text-sm font-medium">{t(opcao.rotulo)}</span>
+              <span className="block text-xs text-muted-foreground">{t(opcao.ajuda)}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function CreateOrMoveLeadForm({
@@ -269,7 +394,12 @@ const TEMPLATE_VARS = [
 function SendWhatsappForm({
   config,
   onChange,
-}: FormProps<{ channel_session_id: string; template: string; media_url?: string | null }>) {
+}: FormProps<{
+  channel_session_id: string;
+  template: string;
+  media_url?: string | null;
+  quando_ha_compromisso?: EscolhaNoEnvio;
+}>) {
   const t = useT();
   const { data: sessions } = useChannelSessions();
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -363,6 +493,11 @@ function SendWhatsappForm({
           {t("Com uma imagem, um vídeo, um áudio ou um documento, a mensagem acima vira a legenda do arquivo (o áudio sai como mensagem de voz, sem legenda — o texto não vai junto). Em número oficial, fora da janela de 24h a mídia não sai — só um modelo aprovado.")}
         </p>
       </div>
+      {/* #3813 — a escolha da agenda DESTE passo. */}
+      <EscolhaQuandoHaCompromisso
+        escolha={lerEscolhaNoEnvio(config)}
+        onChange={(escolha) => onChange(configComEscolha(config, escolha))}
+      />
     </div>
   );
 }
@@ -569,7 +704,12 @@ function SendEmailForm({
 function SendAiMessageForm({
   config,
   onChange,
-}: FormProps<{ agent_id: string; channel_session_id: string; instruction: string }>) {
+}: FormProps<{
+  agent_id: string;
+  channel_session_id: string;
+  instruction: string;
+  quando_ha_compromisso?: EscolhaNoEnvio;
+}>) {
   const t = useT();
   const { data: agentes } = useAgentsList();
   const { data: sessions } = useChannelSessions();
@@ -637,6 +777,12 @@ function SendAiMessageForm({
           {t("O agente já sabe que é a PRIMEIRA mensagem, logo depois de a pessoa preencher o formulário, e recebe todos os campos que ela respondeu. Aqui você diz o que fazer com eles — quanto mais concreto, melhor a mensagem.")}
         </p>
       </div>
+
+      {/* #3813 — a mesma escolha da irmã de WhatsApp, no config DESTE passo. */}
+      <EscolhaQuandoHaCompromisso
+        escolha={lerEscolhaNoEnvio(config)}
+        onChange={(escolha) => onChange(configComEscolha(config, escolha))}
+      />
     </div>
   );
 }
@@ -653,14 +799,21 @@ function SendAiMessageForm({
 function AddTagForm({
   config,
   onChange,
-}: FormProps<{ tags: string[]; destino?: "card" | "contato" }>) {
+  tirar = false,
+}: FormProps<{ tags: string[]; destino?: "card" | "contato" }> & {
+  /** `remove_tag`: a mesma tela, com as frases de quem TIRA a etiqueta. */
+  tirar?: boolean;
+}) {
   const t = useT();
   const [text, setText] = React.useState(config.tags.join(", "));
   return (
     <div className="space-y-2">
       <div className="space-y-1">
-        <Label>{t("Tags (separadas por vírgula)")}</Label>
+        <Label htmlFor={tirar ? "remove-tag-tags" : "add-tag-tags"}>
+          {tirar ? t("Tags para tirar (separadas por vírgula)") : t("Tags (separadas por vírgula)")}
+        </Label>
         <Input
+          id={tirar ? "remove-tag-tags" : "add-tag-tags"}
           value={text}
           onChange={(e) => {
             setText(e.target.value);
@@ -676,7 +829,7 @@ function AddTagForm({
         />
       </div>
       <div className="space-y-1">
-        <Label>{t("Destino da etiqueta")}</Label>
+        <Label>{tirar ? t("De onde tirar") : t("Destino da etiqueta")}</Label>
         <Select
           value={config.destino ?? "card"}
           onValueChange={(v) => onChange({ ...config, destino: v as "card" | "contato" })}
@@ -685,13 +838,15 @@ function AddTagForm({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="card">{t("Card (comportamento atual)")}</SelectItem>
-            <SelectItem value="contato">{t("Contato do lead")}</SelectItem>
+            <SelectItem value="card">{tirar ? t("Do card") : t("Card (comportamento atual)")}</SelectItem>
+            <SelectItem value="contato">{tirar ? t("Do contato do lead") : t("Contato do lead")}</SelectItem>
           </SelectContent>
         </Select>
         {config.destino === "contato" && (
           <p className="text-xs text-muted-foreground">
-            {t("Sem contato vinculado, a etiqueta não é aplicada.")}
+            {tirar
+              ? t("Sem contato vinculado, nenhuma etiqueta é tirada.")
+              : t("Sem contato vinculado, a etiqueta não é aplicada.")}
           </p>
         )}
       </div>
@@ -1294,7 +1449,7 @@ function CallWebhookForm({
 function StartMessageFlowForm({
   config,
   onChange,
-}: FormProps<{ flow_pointer_id: string; surface?: "followup" | "atendimento" }>) {
+}: FormProps<{ flow_pointer_id: string; surface?: "followup" | "atendimento"; replace_live_flow?: boolean }>) {
   const t = useT();
   const superficie: "followup" | "atendimento" =
     config.surface === "atendimento" ? "atendimento" : "followup";
@@ -1384,6 +1539,27 @@ function StartMessageFlowForm({
               "O roteiro de atendimento acontece na conversa: a automação abre o atendimento e a primeira pergunta sai quando o cliente responder.",
             )}
           </p>
+        ) : null}
+        {/* Trocar de fluxo só existe no follow-up: o roteiro de atendimento tem a
+            própria regra de um por contato. Um contato só anda em UM follow-up
+            por vez; desligado, a regra perde para o fluxo que chegou antes — e
+            quem acabou de pedir pode ficar sem a confirmação porque já estava
+            num fluxo de remarketing. */}
+        {!ehRoteiro ? (
+          <div className="mt-2 flex items-center justify-between gap-3 rounded-md border p-3">
+            <div className="space-y-0.5">
+              <Label>{t("Tirar o contato de outro fluxo")}</Label>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Se o contato já estiver em outro fluxo, ele sai daquele e entra neste. Fluxo pausado por uma pessoa não é trocado.",
+                )}
+              </p>
+            </div>
+            <Switch
+              checked={config.replace_live_flow === true}
+              onCheckedChange={(v) => onChange({ ...config, replace_live_flow: v ? true : undefined })}
+            />
+          </div>
         ) : null}
       </div>
     </div>
@@ -1559,6 +1735,77 @@ function NotifyTeamForm() {
   );
 }
 
+/**
+ * `define_sector` (#3881) — a regra classifica a conversa num SETOR.
+ *
+ * A lista vem de `/api/v1/attendants/sectors` (o mesmo leitor da aba Equipe:
+ * uma pergunta, um dono). Módulo `setores` desligado ⇒ a rota responde 404 e a
+ * tela diz isso, em vez de oferecer uma escolha que não existe na instalação.
+ *
+ * A caixa de sobrescrita nasce DESMARCADA e o texto diz o que ela faz: sem ela,
+ * a regra só classifica conversa sem setor ou conversa que a própria automação
+ * classificou. É a precedência do trabalho manual, dita na tela de quem monta a
+ * regra — não escondida no executor.
+ */
+function DefineSectorForm({
+  config,
+  onChange,
+}: FormProps<{ sector_id: string; sobrescrever_setor_manual?: boolean }>) {
+  const t = useT();
+  const setores = useSectors();
+  const lista = setores.data?.data ?? [];
+
+  return (
+    <div className="space-y-2">
+      <div className="space-y-1">
+        <Label>{t("Setor da conversa")}</Label>
+        {setores.isError ? (
+          <p className="text-xs text-muted-foreground">
+            {t("Os setores de atendimento não estão disponíveis nesta instalação.")}
+          </p>
+        ) : (
+          <Select
+            value={config.sector_id || undefined}
+            onValueChange={(v) => onChange({ ...config, sector_id: v })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={t("Escolha o setor")} />
+            </SelectTrigger>
+            <SelectContent>
+              {lista.map((setor) => (
+                <SelectItem key={setor.id} value={setor.id}>
+                  {setor.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "A conversa passa a ser distribuída para quem atende este setor. Se ela já tiver dono, continua com ele.",
+          )}
+        </p>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="space-y-0.5">
+          <Label>{t("Sobrescrever o setor escolhido por uma pessoa")}</Label>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "Desligado, a regra só classifica conversa sem setor ou que ela mesma classificou antes.",
+            )}
+          </p>
+        </div>
+        <Switch
+          checked={config.sobrescrever_setor_manual === true}
+          onCheckedChange={(v) =>
+            onChange({ ...config, sobrescrever_setor_manual: v ? true : undefined })
+          }
+        />
+      </div>
+    </div>
+  );
+}
+
 export function ActionConfigForm({
   action,
   onChange,
@@ -1598,6 +1845,14 @@ export function ActionConfigForm({
     case "add_tag":
       return (
         <AddTagForm
+          config={action.config}
+          onChange={(config) => onChange({ type: action.type, config })}
+        />
+      );
+    case "remove_tag":
+      return (
+        <AddTagForm
+          tirar
           config={action.config}
           onChange={(config) => onChange({ type: action.type, config })}
         />
@@ -1646,5 +1901,12 @@ export function ActionConfigForm({
       );
     case "notify_team":
       return <NotifyTeamForm />;
+    case "define_sector":
+      return (
+        <DefineSectorForm
+          config={action.config}
+          onChange={(config) => onChange({ type: action.type, config })}
+        />
+      );
   }
 }

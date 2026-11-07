@@ -3,7 +3,7 @@
 import { useLocaleDeData } from "@/hooks/i18n/useLocaleDeData";
 import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
-import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
+import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, FileText, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import type { ReacaoNoBalao } from "@/lib/inbox/reacoes-no-fio";
 import { lerMencoesDeGrupo, textoComMencoesResolvidas } from "@/lib/messaging/mencoes-de-grupo";
 import { lerRemetenteDeGrupo, rotuloDoRemetente } from "@/lib/messaging/remetente-de-grupo";
 import { motivoDaFalhaDaMensagem } from "@/lib/inbox/motivo-da-falha";
+import { primeiroNomeDeQuemEnviou } from "@/lib/inbox/nome-no-balao";
 import { hrefDoCompromisso, puloDaAgendaDaMensagem } from "@/lib/inbox/pulo-da-agenda";
 import { CitationButton } from "@/components/ai/CitationButton";
 import { MediaRenderer } from "@/components/inbox/media/MediaRenderer";
@@ -26,6 +27,7 @@ import { MediaUnavailable } from "@/components/inbox/media/MediaUnavailable";
 import { ContactCard } from "@/components/inbox/media/ContactCard";
 import { LocationCard } from "@/components/inbox/media/LocationCard";
 import { localizacaoDaMensagem } from "@/lib/messaging/localizacao";
+import { lerBotoesDoModelo } from "@/lib/messaging/botoes-do-modelo";
 import { reenvioDaMensagem } from "@/lib/messaging/reenvio";
 import { ApiError } from "@/lib/api/types";
 import { resolveSharedContact } from "@/lib/messaging/contact-card";
@@ -174,6 +176,10 @@ export function MessageBubble({
   const isContact = message.type === "contact";
   // Pino com coordenadas: o cartão substitui o corpo, que é só o mesmo link em texto.
   const localizacao = localizacaoDaMensagem(message);
+  // Saiu por MODELO aprovado: o balão diz qual e mostra as opções que o cliente
+  // recebeu — sem isso, a resposta dele ("Quero mudar algo") ficava solta.
+  const porModelo = message.type === "template";
+  const botoesDoModelo = porModelo ? lerBotoesDoModelo(message.metadata) : [];
   // Figurinha sem caption: sem moldura de bolha (padrão WhatsApp).
   const isBareSticker = hasMedia && message.type === "sticker" && !message.body;
   // Apagada pelo autor ("apagar para todos"). A linha continua no histórico —
@@ -282,9 +288,17 @@ export function MessageBubble({
       // qualquer uma, o rótulo cai para "Atendente" — que continua dizendo o
       // que `sent_via` de fato garante (um humano, pelo CRM) sem afirmar uma
       // identidade que o dado não sustenta.
-      return viewerUserId != null && message.sent_by_user_id === viewerUserId
-        ? "Você"
-        : "Atendente";
+      if (viewerUserId != null && message.sent_by_user_id === viewerUserId) return "Você";
+      // #4031: com o nome no PAYLOAD (resolvido uma vez por página na rota, que
+      // é quem tem service role), o balão diz QUAL pessoa da equipe falou —
+      // "Atendente · Andreia", no mesmo formato de "IA · Clara". Sem nome
+      // (linha antiga, lookup caído, self-host sem service role), "Atendente":
+      // o id continua sendo a verdade, o nome é a cortesia. O nome NUNCA é
+      // lido de `metadata` — ali é entrada do cliente, como no #3649.
+      const nome = message.sent_by_user_id
+        ? primeiroNomeDeQuemEnviou(message.sent_by_user_name)
+        : null;
+      return nome ? `${t("Atendente")} · ${nome}` : "Atendente";
     }
     return null;
   })();
@@ -483,11 +497,17 @@ export function MessageBubble({
           </p>
         )}
         {senderLabel && (
-          <div className="mb-0.5 flex items-center gap-1 text-[11px] font-semibold opacity-80">
+          <div className="mb-0.5 flex min-w-0 max-w-full items-center gap-1 text-[11px] font-semibold opacity-80">
             {message.sent_via === "ai" ? (
               <Robot size={10} weight="duotone" aria-hidden />
             ) : null}
-            {senderLabel && t(senderLabel)}
+            {/*
+              `truncate` + `min-w-0` no pai: o rótulo pode ganhar um NOME
+              (#4031, "Atendente · Andreia") e o nome vem do cadastro de quem
+              usa o sistema, fora do nosso controle. Num fio estreito — a
+              gaveta do inbox no celular — o corte é do TEXTO, nunca do balão.
+            */}
+            <span className="truncate">{senderLabel && t(senderLabel)}</span>
           </div>
         )}
 
@@ -556,8 +576,40 @@ export function MessageBubble({
 
             {localizacao && <LocationCard localizacao={localizacao} />}
 
+            {porModelo && (
+              <div
+                data-testid="selo-do-modelo"
+                className="mb-1 inline-flex max-w-full items-center gap-1 rounded-sm bg-current/10 px-1.5 py-0.5 text-[10px] font-medium"
+              >
+                <FileText size={11} weight="bold" aria-hidden />
+                <span className="truncate">
+                  {t("Modelo do WhatsApp")}
+                  {message.template_name ? ` · ${message.template_name}` : ""}
+                </span>
+              </div>
+            )}
+
             {message.body && !isContact && !localizacao && (
               <p className="whitespace-pre-wrap wrap-anywhere leading-snug">{corpo}</p>
+            )}
+
+            {botoesDoModelo.length > 0 && (
+              // As opções como o cliente as vê: abaixo do texto, uma por linha.
+              // Não são clicáveis aqui — quem responde é o cliente, no WhatsApp.
+              <ul
+                aria-label={t("Opções enviadas ao cliente")}
+                className="mt-2 flex flex-col gap-1 border-t border-current/20 pt-2"
+              >
+                {botoesDoModelo.map((botao, i) => (
+                  <li
+                    key={`${i}-${botao}`}
+                    className="flex items-center justify-center gap-1 rounded-md bg-current/10 px-2 py-1 text-xs font-medium"
+                  >
+                    <ArrowBendUpLeft size={12} aria-hidden />
+                    <span className="wrap-anywhere">{botao}</span>
+                  </li>
+                ))}
+              </ul>
             )}
           </>
         )}

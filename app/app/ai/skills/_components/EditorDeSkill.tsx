@@ -106,7 +106,7 @@ export function EditorDeSkill({ nome, aberto, aoMudarAberto }: Props) {
       },
       {
         onSuccess: () => {
-          toast.success(`Skill "${nome}" ${t("atualizada — já vale para os agentes.")}`);
+          toast.success(`Skill "${nome}" ${t("atualizada — já vale para os agentes que usam esta skill.")}`);
           aoMudarAberto(false);
         },
         onError: (err) => showApiError(err),

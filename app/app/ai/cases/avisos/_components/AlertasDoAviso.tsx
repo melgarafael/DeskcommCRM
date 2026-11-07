@@ -11,7 +11,7 @@
  *
  * `tests/unit/i18n-espanhol-cobre-a-tela.test.ts` resolve `t(TABELA[chave])`
  * quando a tabela é um literal de objeto no topo do arquivo — e é assim que
- * cada uma das onze frases passa a ter espanhol COBRADO. Uma frase montada
+ * cada uma das doze frases passa a ter espanhol COBRADO. Uma frase montada
  * dentro do componente escaparia da conta, e o espanhol dela ficaria faltando
  * em silêncio. As tabelas são RASAS (`Record<codigo, string>`) de propósito: o
  * resolvedor do guarda não desce em objeto aninhado.
@@ -33,6 +33,7 @@ import { ArrowSquareOut, Info, Warning, WarningOctagon } from "@/lib/ui/icons";
 const TITULO_DO_ESTADO = {
   sem_conexao: "Você ainda não conectou nenhum número",
   so_canal_oficial: "Seus números atuais não servem para avisar a equipe",
+  oficial_sem_modelo: "Escolha o modelo aprovado que leva o aviso",
   sem_endereco_publico: "Este sistema ainda não tem um endereço na internet",
   conexao_removida: "A conexão que enviava os avisos foi removida",
   conexao_fora_do_ar: "A conexão escolhida está fora do ar",
@@ -48,7 +49,9 @@ const CORPO_DO_ESTADO = {
   sem_conexao:
     "Conecte um WhatsApp lendo o QR code na tela de Conexões. É por ele que os avisos vão sair.",
   so_canal_oficial:
-    "Seus números atuais só enviam mensagem para quem falou com você nas últimas 24 horas — isso não serve para um aviso interno. Conecte um número pelo QR code para usar este recurso.",
+    "Seus números atuais só enviam mensagem para quem falou com você nas últimas 24 horas, e nenhum tem um modelo aprovado com uma variável para levar o aviso. Crie esse modelo na aba de modelos do número, em Conexões, ou conecte um número pelo QR code.",
+  oficial_sem_modelo:
+    "A conexão escolhida só manda modelo aprovado fora das 24 horas. Escolha abaixo um modelo dela com uma variável — o aviso vai dentro dele. Se não houver nenhum, crie na aba de modelos do número, em Conexões.",
   sem_endereco_publico:
     "O endereço público do sistema ainda não foi configurado, então o link do aviso não abriria nada. Peça a quem instalou para definir o endereço do seu domínio.",
   conexao_removida:
@@ -80,6 +83,7 @@ const DESCARTE_COM_COMANDOS = {
 const LINK_DO_ESTADO: Partial<Record<CodigoDoEstadoDoAviso, string>> = {
   sem_conexao: "/app/connections",
   so_canal_oficial: "/app/connections",
+  oficial_sem_modelo: "/app/connections",
   conexao_fora_do_ar: "/app/connections",
   casos_desligados: "/app/ai/agents",
   agente_assistido: "/app/ai/agents",
@@ -88,6 +92,7 @@ const LINK_DO_ESTADO: Partial<Record<CodigoDoEstadoDoAviso, string>> = {
 const ROTULO_DO_LINK: Partial<Record<CodigoDoEstadoDoAviso, string>> = {
   sem_conexao: "Ir para Conexões",
   so_canal_oficial: "Ir para Conexões",
+  oficial_sem_modelo: "Ir para Conexões",
   conexao_fora_do_ar: "Ir para Conexões",
   casos_desligados: "Ir para os assistentes",
   agente_assistido: "Ir para os assistentes",
