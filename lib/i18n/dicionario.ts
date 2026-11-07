@@ -241,6 +241,17 @@ export const DICIONARIO: Traducoes = {
   "CEP": { es: "Código postal" },
   "UF": { es: "Provincia" },
   "Logradouro": { es: "Calle" },
+  // Preenchimento pelo CEP (#3494, fatia 2). As quatro frases são o que a tela
+  // diz ao lado do campo: a consulta em andamento, o CEP curto (aviso, não
+  // impedimento), o CEP inexistente e a falha do serviço — esta última manda
+  // preencher à mão, porque o cadastro continua possível.
+  "Buscando o CEP…": { es: "Buscando el código postal…" },
+  "CEP deve ter 8 dígitos.": { es: "El código postal debe tener 8 dígitos." },
+  "CEP não encontrado.": { es: "Código postal no encontrado." },
+  "Não foi possível consultar o CEP agora. Preencha o endereço à mão.": {
+    es: "No fue posible consultar el código postal ahora. Complete la dirección a mano.",
+  },
+  "Endereço preenchido pelo CEP.": { es: "Dirección completada con el código postal." },
   "Escolha um agente": { es: "Elija un agente" },
   "Remover regra de remetente": { es: "Eliminar regla de remitente" },
   "Adicionar número do remetente": { es: "Añadir número del remitente" },
@@ -3707,6 +3718,13 @@ export const DICIONARIO: Traducoes = {
   "Segmentos (tags, opcional)": { es: "Segmentos (tags, opcional)" },
   "ex: vip, carrinho-abandonado": { es: "Ej.: vip, carrito-abandonado" },
   "Cancelar se o lead responder": { es: "Cancelar si el lead responde" },
+  // #3974 — "quando o cliente responder, mover o card para a etapa X", a opção
+  // irmã do interruptor acima no gatilho de ETAPA.
+  "Quando o cliente responder, mover o card para": { es: "Cuando el cliente responda, mover la tarjeta a" },
+  "Não mover o card": { es: "No mover la tarjeta" },
+  "O card que este gatilho armou — o negócio do contato que está na etapa acima — vai para a etapa escolhida quando o cliente responder. Sem card nessa etapa, nada se move, e a trilha da inscrição registra o motivo.": {
+    es: "La tarjeta que armó este disparador — el negocio del contacto que está en la etapa de arriba — pasa a la etapa elegida cuando el cliente responde. Sin tarjeta en esa etapa, nada se mueve, y el historial de la inscripción registra el motivo.",
+  },
   "Salvar gatilho": { es: "Guardar disparador" },
   // Cartão "Mapas" em Provedores (0504) e a API dele.
   "Mapas (Google)": { es: "Mapas (Google)" },
@@ -4175,6 +4193,8 @@ export const DICIONARIO: Traducoes = {
   "Excluir credencial": { es: "Eliminar credencial" },
   Modelos: { es: "Modelos" },
   "Em uso por": { es: "En uso por" },
+  "Este número já está em outra campanha em andamento.": { es: "Este número ya está en otra campaña en curso." },
+  "Abrir essa campanha": { es: "Abrir esa campaña" },
   publicado: { es: "publicado" },
   "Revalidar credencial": { es: "Revalidar credencial" },
   "Remover credencial": { es: "Eliminar credencial" },
@@ -4234,7 +4254,9 @@ export const DICIONARIO: Traducoes = {
   "Concluídos": { es: "Concluidos" },
   "Nenhum caso aberto": { es: "Ningún caso abierto" },
   "Nenhum caso concluído": { es: "Ningún caso concluido" },
-  "Quando a IA precisar de você, aparece aqui.": { es: "Cuando la IA te necesite, lo verás aquí." },
+  "Os casos aparecem aqui quando um agente publicado, com \"Deixar o agente pedir uma tarefa a alguém e seguir conversando\" ligado, pede algo a você. Conversa passada para uma pessoa vai para o Inbox.": {
+    es: "Los casos aparecen aquí cuando un agente publicado, con \"Dejar que el agente pida una tarea a alguien y siga conversando\" activado, te pide algo. La conversación transferida a una persona va al Inbox.",
+  },
   "Casos concluídos, cancelados ou repassados ficam aqui.": {
     es: "Los casos concluidos, cancelados o transferidos quedan aquí.",
   },
@@ -4589,6 +4611,10 @@ export const DICIONARIO: Traducoes = {
   "Tempo de uma chamada à IA por dia (segundos)": { es: "Tiempo de una llamada a la IA por día (segundos)" },
   "Quanto gastou por dia (US$)": { es: "Cuánto gastaste por día (US$)" },
   "Quanto a inteligência artificial custou, quantas vezes foi chamada, quantos turnos o agente fez, quanto demora uma chamada e quantas vezes precisou chamar uma pessoa — nos últimos 30 dias.": { es: "Cuánto costó la inteligencia artificial, cuántas veces fue llamada, cuántos turnos hizo el agente, cuánto tarda una llamada y cuántas veces necesitó llamar a una persona — en los últimos 30 días." },
+  // ── Uso de IA › aviso de contexto caro (#4123) ───────────────────────────
+  "Agente com contexto caro": { es: "Agente con contexto caro" },
+  "das chamadas de turno passaram de 100 mil tokens de entrada nos últimos 30 dias": { es: "de las llamadas de turno superaron los 100 mil tokens de entrada en los últimos 30 días" },
+  "Acima de 100 mil tokens de entrada o Claude Haiku 5.5 cobra 5× pela chamada inteira (entrada, saída e cache). Base de conhecimento, ferramentas ou histórico grandes demais costumam ser a causa — reduza o que entra no prompt deste agente.": { es: "Por encima de los 100 mil tokens de entrada, Claude Haiku 5.5 cobra 5× por la llamada completa (entrada, salida y caché). La base de conocimiento, las herramientas o el historial demasiado grandes suelen ser la causa: reduce lo que entra en el prompt de este agente." },
   // ── Administração › Destinos internos (decisão 22-d, #1004) ──────────────
   "Destinos internos": { es: "Destinos internos" },
   "Endereços da rede deste servidor que a instalação pode alcançar.": {
@@ -8735,7 +8761,6 @@ export const DICIONARIO: Traducoes = {
   },
   "Ir para as etapas do funil": { es: "Ir a las etapas del embudo" },
   "Etapa para": { es: "Etapa para" },
-  "Não mover o card": { es: "No mover la tarjeta" },
   "As escolhas voltaram para o que está gravado agora — confira e escolha de novo.": {
     es: "La selección volvió a lo que está guardado ahora. Revísala y elige de nuevo.",
   },
@@ -10205,6 +10230,7 @@ export const DICIONARIO: Traducoes = {
   "Agrupados por": { es: "Agrupados por" },
   "mesmo telefone": { es: "mismo teléfono" },
   "mesmo e-mail": { es: "mismo correo" },
+  "mesmo CPF": { es: "mismo CPF" },
   "telefone que o WhatsApp deixou em conflito": {
     es: "teléfono que WhatsApp dejó en conflicto",
   },
@@ -10275,8 +10301,8 @@ export const DICIONARIO: Traducoes = {
   "Um dos contatos não está disponível — ele pode ter sido anonimizado ou já mesclado em outro.": {
     es: "Uno de los contactos no está disponible. Puede haberse anonimizado o fusionado con otro.",
   },
-  "Mesmo telefone ou mesmo e-mail não se dispensa: junte as fichas.": {
-    es: "Mismo teléfono o mismo correo no se descarta: fusione las fichas.",
+  "Mesmo telefone, mesmo e-mail ou mesmo CPF não se dispensa: junte as fichas.": {
+    es: "Mismo teléfono, mismo correo o mismo CPF no se descarta: fusione las fichas.",
   },
   "Não foi possível dispensar a sugestão agora.": { es: "No fue posible descartar la sugerencia ahora." },
   "Mostrando os duplicados entre os contatos mais antigos. Junte estes e reabra para ver os próximos.": {
@@ -13600,6 +13626,11 @@ export const DICIONARIO: Traducoes = {
   "Prazo": { es: "Plazo" },
   "Situação": { es: "Estado" },
   "Em andamento": { es: "En curso" },
+  // ─── Visão em QUADRO (#4028) ───
+  "Sem situação": { es: "Sin estado" },
+  "Só as primeiras tarefas aparecem aqui — use os filtros para ver as demais.": {
+    es: "Solo aparecen las primeras tareas — usa los filtros para ver las demás.",
+  },
   "Escreva um título para a tarefa.": { es: "Escribe un título para la tarea." },
   "Não foi possível salvar a tarefa.": { es: "No se pudo guardar la tarea." },
 
@@ -16921,6 +16952,32 @@ export const DICIONARIO: Traducoes = {
   "Número por QR envia uma mensagem por minuto: é a proteção contra banimento. O envio rápido é do número oficial.": { es: "El número por QR envía un mensaje por minuto: es la protección contra el bloqueo. El envío rápido es del número oficial." },
   "Envio rápido: sai tudo em cerca de {n} min.": { es: "Envío rápido: sale todo en unos {n} min." },
   "Envio rápido é só do número oficial, com modelo aprovado: no número por QR a rajada leva ao banimento.": { es: "El envío rápido es solo del número oficial, con plantilla aprobada: en el número por QR, enviar todo de golpe lleva al bloqueo." },
+  // Campanha por broadcast do provedor (migration 0712).
+  "Broadcast": { es: "Broadcast" },
+  "A lista inteira vai para o provedor numa chamada e sai em segundos. Você acompanha também no painel de broadcasts dele, com o estado de cada pessoa. O texto é o mesmo para todos.": { es: "La lista entera va al proveedor en una sola llamada y sale en segundos. También la sigues en su panel de broadcasts, con el estado de cada persona. El texto es el mismo para todos." },
+  "Broadcast indisponível com este modelo: ele usa dados de cada pessoa ({variaveis}), e o broadcast manda o mesmo texto a todos. Ponha texto fixo nessas variáveis ou use o envio rápido.": { es: "Broadcast no disponible con esta plantilla: usa datos de cada persona ({variaveis}), y el broadcast envía el mismo texto a todos. Pon un texto fijo en esas variables o usa el envío rápido." },
+  "No broadcast, as variáveis saem iguais para todos:": { es: "En el broadcast, las variables salen iguales para todos:" },
+  "No broadcast vale a janela de horário, e a lista inteira tem de caber no teto diário do número (Conexões › Proteção de envio): ponha nele o nível de mensagens que a plataforma deu ao número. Se a lista não couber, a campanha pausa antes de mandar — o broadcast não manda em partes.": { es: "En el broadcast vale la franja horaria, y la lista entera tiene que caber en el tope diario del número (Conexiones › Protección de envío): pon en él el nivel de mensajes que la plataforma le dio al número. Si la lista no cabe, la campaña se pausa antes de enviar — el broadcast no envía por partes." },
+  "Quem pedir para parar enquanto o provedor entrega a lista sai das próximas campanhas, mas o provedor não tira uma pessoa do broadcast: para parar o envio, só cancelando a campanha inteira.": { es: "Quien pida que paren mientras el proveedor entrega la lista sale de las próximas campañas, pero el proveedor no saca a una persona del broadcast: para detener el envío, solo cancelando la campaña entera." },
+  "A lista inteira não cabe no teto diário deste número (Conexões › Proteção de envio). O broadcast não manda em partes: ponha no teto o nível de mensagens que a plataforma deu ao número, ou troque a velocidade para Rápido, e retome a campanha.": { es: "La lista entera no cabe en el tope diario de este número (Conexiones › Protección de envío). El broadcast no envía por partes: pon en el tope el nivel de mensajes que la plataforma le dio al número, o cambia la velocidad a Rápido, y reanuda la campaña." },
+  "A lista inteira passa do máximo por dia ou por hora desta campanha, e o broadcast não manda em partes. Em «Ritmo desta campanha», salve com Broadcast para limpar o máximo ou troque a velocidade para Rápido, e retome a campanha.": { es: "La lista entera supera el máximo por día o por hora de esta campaña, y el broadcast no envía por partes. En «Ritmo de esta campaña», guarda con Broadcast para limpiar el máximo o cambia la velocidad a Rápido, y reanuda la campaña." },
+  "O CRM não conseguiu guardar o broadcast criado no provedor e o descartou, para a lista não sair duas vezes. Retome a campanha para tentar de novo.": { es: "El CRM no pudo guardar el broadcast creado en el proveedor y lo descartó, para que la lista no salga dos veces. Reanuda la campaña para intentarlo de nuevo." },
+  "A plataforma recusou o broadcast para todos os destinatários. Veja o motivo de cada pessoa na lista e confira o modelo e a qualidade do número antes de tentar de novo.": { es: "La plataforma rechazó el broadcast para todos los destinatarios. Mira el motivo de cada persona en la lista y revisa la plantilla y la calidad del número antes de intentarlo de nuevo." },
+  "Cancelada no CRM, mas o provedor recusou o cancelamento do broadcast, e o envio pode continuar. Confira no painel de broadcasts dele se o envio parou e apague o rascunho, se ele ainda estiver lá.": { es: "Cancelada en el CRM, pero el proveedor rechazó la cancelación del broadcast, y el envío puede continuar. Revisa en su panel de broadcasts si el envío se detuvo y borra el borrador, si todavía está allí." },
+  "Cancelada no CRM, mas o provedor não confirmou que o broadcast parou, e o envio pode continuar. Confira no painel de broadcasts dele se o envio parou e apague o rascunho, se ele ainda estiver lá.": { es: "Cancelada en el CRM, pero el proveedor no confirmó que el broadcast se detuvo, y el envío puede continuar. Revisa en su panel de broadcasts si el envío se detuvo y borra el borrador, si todavía está allí." },
+  "Cancelada no CRM, mas o rascunho do broadcast pode ter ficado no provedor, com a lista. Confira no painel de broadcasts dele e apague-o.": { es: "Cancelada en el CRM, pero el borrador del broadcast puede haber quedado en el proveedor, con la lista. Revísalo en su panel de broadcasts y bórralo." },
+  "Cancelada no CRM, mas este número não fala mais com o provedor do broadcast, e o envio pode continuar. Confira no painel de broadcasts dele se o envio parou e apague o rascunho, se ele ainda estiver lá.": { es: "Cancelada en el CRM, pero este número ya no se comunica con el proveedor del broadcast, y el envío puede continuar. Revisa en su panel de broadcasts si el envío se detuvo y borra el borrador, si todavía está allí." },
+  "A lista já foi entregue ao provedor por broadcast. Para parar o envio, cancele a campanha.": { es: "La lista ya se entregó al proveedor por broadcast. Para detener el envío, cancela la campaña." },
+  "Broadcast: a lista inteira vai para o provedor de uma vez e sai em poucos minutos.": { es: "Broadcast: la lista entera va al proveedor de una vez y sale en pocos minutos." },
+  "Broadcast é só do número oficial, com modelo aprovado.": { es: "El broadcast es solo del número oficial, con plantilla aprobada." },
+  "Este número não faz broadcast: o provedor dele não recebe a lista inteira. Use o envio rápido.": { es: "Este número no hace broadcast: su proveedor no recibe la lista entera. Usa el envío rápido." },
+  "O broadcast manda o mesmo texto a todos, e este modelo usa dados de cada pessoa ({variaveis}). Escreva um texto fixo nessas variáveis ou use o envio rápido.": { es: "El broadcast envía el mismo texto a todos, y esta plantilla usa datos de cada persona ({variaveis}). Escribe un texto fijo en esas variables o usa el envío rápido." },
+  "Este número não faz broadcast. Troque a velocidade para Rápido e retome a campanha.": { es: "Este número no hace broadcast. Cambia la velocidad a Rápido y reanuda la campaña." },
+  "O broadcast manda o mesmo texto a todos, e este modelo usa dados de cada pessoa. Troque a velocidade para Rápido e retome a campanha.": { es: "El broadcast envía el mismo texto a todos, y esta plantilla usa datos de cada persona. Cambia la velocidad a Rápido y reanuda la campaña." },
+  "Os destinatários têm valores diferentes no modelo, e o broadcast manda o mesmo a todos. Troque a velocidade para Rápido e retome a campanha.": { es: "Los destinatarios tienen valores distintos en la plantilla, y el broadcast envía lo mismo a todos. Cambia la velocidad a Rápido y reanuda la campaña." },
+  "O modelo da campanha não existe mais neste número.": { es: "La plantilla de la campaña ya no existe en este número." },
+  "Escolha o modelo aprovado da campanha.": { es: "Elige la plantilla aprobada de la campaña." },
+  "O provedor não registrou este destinatário: o número não tem WhatsApp ou estava repetido na lista.": { es: "El proveedor no registró a este destinatario: el número no tiene WhatsApp o estaba repetido en la lista." },
   // Campanha com modelo aprovado (migration 0710, #1330 fatia 4).
   "Número oficial só aceita texto livre para quem escreveu nas últimas 24 horas. Para falar com quem não escreveu, a campanha manda um modelo aprovado.": { es: "El número oficial solo acepta texto libre para quien escribió en las últimas 24 horas. Para hablarle a quien no escribió, la campaña envía una plantilla aprobada." },
   "Carregando modelos…": { es: "Cargando plantillas…" },
@@ -19550,6 +19607,13 @@ export const DICIONARIO: Traducoes = {
     es: "El dominio tiene que ser fijo: usa marcadores solo después de la primera /.",
   },
   "O limite é de seis atalhos por funil.": { es: "El límite es de seis accesos por embudo." },
+  // A FORMA do telefone (2ª fatia da #3487): só aparece no atalho `tel:`.
+  "Discagem do atalho": { es: "Marcación del acceso" },
+  "Com o código do país": { es: "Con el código de país" },
+  "Sem o código do país (DDD + número)": { es: "Sin el código de país (DDD + número)" },
+  "Sem o código do país é o que o PABX costuma discar: DDD + número.": {
+    es: "Sin el código de país es lo que suele marcar la centralita: DDD + número.",
+  },
   "Dê um nome a cada atalho do card antes de salvar.": {
     es: "Ponle un nombre a cada acceso de la tarjeta antes de guardar.",
   },
@@ -19783,6 +19847,22 @@ export const DICIONARIO: Traducoes = {
   "Setor inexistente nesta organização.": {
     es: "El sector no existe en esta organización.",
   },
+  // ─── #3003: o menu ⋯ do cabeçalho da conversa e as guias das ações que ele
+  // guardou. O nome acessível do gatilho é "Mais ações", que já tem entrada
+  // acima ("Más acciones") — o mesmo nome do menu da barra de ações em lote.
+  "Mais ações desta conversa": { es: "Más acciones de esta conversación" },
+  "Liga para o telefone deste contato pelo navegador.": {
+    es: "Llama al teléfono de este contacto desde el navegador.",
+  },
+  "Marca um horário na agenda para este contato, sem enviar mensagem a ele.": {
+    es: "Reserva un horario en la agenda para este contacto, sin enviarle mensaje.",
+  },
+  "Abre uma sala de vídeo e manda o link dela pelo chat desta conversa.": {
+    es: "Abre una sala de video y envía su enlace por el chat de esta conversación.",
+  },
+  "Tira a conversa da fila até o horário escolhido; depois ela volta sozinha.": {
+    es: "Saca la conversación de la cola hasta la hora elegida; después vuelve sola.",
+  },
   // #3813 — a escolha "Quando o contato tiver horário marcado", no passo que
   // envia (WhatsApp e mensagem escrita pela IA). As três opções dizem o EFEITO:
   // o operador não precisa saber que existe uma chave `quando_ha_compromisso`.
@@ -19846,6 +19926,20 @@ export const DICIONARIO: Traducoes = {
   "Com ela, cada empresa conecta o número oficial do WhatsApp com um clique, sem ter conta no provedor. Os números ficam na conta da instalação e entram na fatura dela.": { es: "Con ella, cada empresa conecta el número oficial de WhatsApp con un clic, sin tener cuenta en el proveedor. Los números quedan en la cuenta de la instalación y entran en su factura." },
   // Abrir a conversa pelo canal escolhido quando ele não serve (#3483).
   "Este canal está desligado ou fora do ar. Reative a conexão ou escolha outro canal.": { es: "Este canal está desactivado o fuera de línea. Reactiva la conexión o elige otro canal." },
+
+  // ─── o número oficial de pé, mas não inteiro (lib/channels/health.ts) ───
+  // Não recebe mensagens, ou a Meta restringiu o envio: cartão de Conexões e
+  // aviso da Central.
+  "A Meta informa que este número não recebe mensagens. Reconecte o número.": { es: "Meta informa que este número no recibe mensajes. Vuelve a conectar el número." },
+  "A Meta restringiu o envio deste número (código {codigo}).": { es: "Meta restringió el envío de este número (código {codigo})." },
+  "O número \"{apelido}\" não recebe mensagens": { es: "El número \"{apelido}\" no recibe mensajes" },
+  "A Meta informa que as mensagens dos clientes para este número não chegam ao CRM, embora ele ainda consiga enviar. Reconecte o número em Conexões. Se continuar assim, o número pode estar ligado a outra conta do WhatsApp Business (por exemplo, depois de ser vinculado a uma página do Facebook).": { es: "Meta informa que los mensajes de los clientes a este número no llegan al CRM, aunque todavía puede enviar. Vuelve a conectar el número en Conexiones. Si sigue así, es posible que el número esté vinculado a otra cuenta de WhatsApp Business (por ejemplo, después de vincularlo a una página de Facebook)." },
+  "A Meta restringiu o envio do número \"{apelido}\"": { es: "Meta restringió el envío del número \"{apelido}\"" },
+  "A Meta recusou mensagens por um problema de pagamento ou de elegibilidade da conta do WhatsApp Business (código 131042). Confira a forma de pagamento da conta no Gerenciador do WhatsApp, na Meta.": { es: "Meta rechazó mensajes por un problema de pago o de elegibilidad de la cuenta de WhatsApp Business (código 131042). Revisa el método de pago de la cuenta en el Administrador de WhatsApp, en Meta." },
+  "A Meta bloqueou a conta do WhatsApp Business deste número (código 131031). Veja o motivo e peça a revisão no Gerenciador do WhatsApp, na Meta.": { es: "Meta bloqueó la cuenta de WhatsApp Business de este número (código 131031). Mira el motivo y solicita la revisión en el Administrador de WhatsApp, en Meta." },
+  "A Meta bloqueou temporariamente o envio deste número por violação de política (código 368). Veja o motivo no Gerenciador do WhatsApp, na Meta.": { es: "Meta bloqueó temporalmente el envío de este número por infringir sus políticas (código 368). Mira el motivo en el Administrador de WhatsApp, en Meta." },
+  "A Meta está recusando mensagens deste número (código {codigo}).": { es: "Meta está rechazando mensajes de este número (código {codigo})." },
+  "Este aviso fecha sozinho quando uma mensagem voltar a ser entregue.": { es: "Este aviso se cierra solo cuando un mensaje vuelva a entregarse." },
 };
 
 /**

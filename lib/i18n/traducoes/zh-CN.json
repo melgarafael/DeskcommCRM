@@ -1234,7 +1234,7 @@
   "Concluídos": "已完成",
   "Nenhum caso aberto": "没有未解决的案例",
   "Nenhum caso concluído": "没有已完成的案例",
-  "Quando a IA precisar de você, aparece aqui.": "当 AI 需要你时，会显示在这里。",
+  "Os casos aparecem aqui quando um agente publicado, com \"Deixar o agente pedir uma tarefa a alguém e seguir conversando\" ligado, pede algo a você. Conversa passada para uma pessoa vai para o Inbox.": "当已发布且开启了\"允许 AI 智能体向他人请求任务并继续对话\"的智能体向你请求某件事时，案例会显示在这里。转交给人工的对话会进入 Inbox。",
   "Casos concluídos, cancelados ou repassados ficam aqui.": "已完成、已取消或已转交的案例会显示在这里。",
   "Contato sem nome": "未命名联系人",
   "Selecione um caso à esquerda": "在左侧选择一个案例",
@@ -6011,5 +6011,8 @@
   "Escrita": "写入",
   "Leitura": "读取",
   "Não foi possível falar com o servidor.": "无法连接服务器。",
-  "O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.": "授权链接是自动的：在客户授权之前，智能体会自动获得生成链接的工具，无需在此选择。"
+  "O link de autorização é automático: enquanto o cliente não autorizar, o agente recebe sozinho a ferramenta que gera o link. Não é preciso marcá-la aqui.": "授权链接是自动的：在客户授权之前，智能体会自动获得生成链接的工具，无需在此选择。",
+  "Este número já está em outra campanha em andamento.": "此号码已被另一个进行中的活动占用。",
+  "Abrir essa campanha": "打开该活动",
+  "Conexão removida.": "连接已移除。"
 }
