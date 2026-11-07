@@ -61,10 +61,8 @@ function fakeDb({
   stages?: Linha[];
   leads?: Linha[];
 }) {
-  const consultas: Array<{
-    tabela: string;
-    filtros: Array<{ op: string; coluna: string; valor: unknown }>;
-  }> = [];
+  type Filtro = { op: string; coluna: string; valor: unknown };
+  const consultas: Array<{ tabela: string; filtros: Filtro[] }> = [];
 
   function valorDe(linha: Linha, coluna: string): unknown {
     const caminho = /^([a-z_]+)->>([a-z0-9_]+)$/i.exec(coluna);
@@ -77,24 +75,55 @@ function fakeDb({
     return linha[coluna];
   }
 
+  function casa(linha: Linha, { op, coluna, valor }: Filtro): boolean {
+    if (op === "or") return partesDoOr(String(valor)).some((parte) => condicao(linha, parte));
+    const atual = valorDe(linha, coluna);
+    if (op === "eq") return atual === valor;
+    if (op === "neq") return atual !== valor;
+    if (op === "not") return atual !== null && atual !== undefined;
+    // Como no SQL, comparar com NULL não é verdadeiro.
+    if (atual === null || atual === undefined) return false;
+    if (op === "gte") return String(atual) >= String(valor);
+    if (op === "lte") return String(atual) <= String(valor);
+    if (op === "lt") return String(atual) < String(valor);
+    throw new Error(`filtro desconhecido: ${op}`);
+  }
+
+  /** `a.gte.x,and(b.gte.x,b.lt.y)`: o pedaço da sintaxe do `or` que a rota usa. */
+  function partesDoOr(texto: string): string[] {
+    return texto.match(/and\([^)]*\)|[^,]+/g) ?? [];
+  }
+
+  function condicao(linha: Linha, texto: string): boolean {
+    const todas = /^and\((.*)\)$/.exec(texto);
+    if (todas) return partesDoOr(todas[1]!).every((parte) => condicao(linha, parte));
+    const simples = /^(.+?)\.(gte|lt)\.(.+)$/.exec(texto);
+    if (!simples) throw new Error(`or não entendido: ${texto}`);
+    return casa(linha, { op: simples[2]!, coluna: simples[1]!, valor: simples[3]! });
+  }
+
   function tabela(nome: string) {
     const linhas = nome === "crm_pipelines" ? pipelines : nome === "crm_stages" ? stages : leads;
-    const filtros: Array<{ op: string; coluna: string; valor: unknown }> = [];
+    const filtros: Filtro[] = [];
+    const ordem: string[] = [];
+    let limite = Number.POSITIVE_INFINITY;
     consultas.push({ tabela: nome, filtros });
 
+    // Filtro, ordem e `limit` valem de verdade e nessa sequência: sem isso, o
+    // dublê não enxerga a fatia que o banco devolve, que foi onde a semana
+    // visível se perdeu.
     const resultado = () => {
-      const achadas = linhas.filter((linha) =>
-        filtros.every(({ op, coluna, valor }) => {
-          const atual = valorDe(linha, coluna);
-          if (op === "eq") return atual === valor;
-          if (op === "neq") return atual !== valor;
-          if (op === "not") return atual !== null && atual !== undefined;
-          if (op === "gte") return String(atual) >= String(valor);
-          if (op === "lte") return String(atual) <= String(valor);
-          return true;
-        }),
-      );
-      return { data: achadas, error: null };
+      const achadas = linhas.filter((linha) => filtros.every((filtro) => casa(linha, filtro)));
+      const ordenadas = ordem.length
+        ? [...achadas].sort((x, y) => {
+            for (const coluna of ordem) {
+              const [a, b] = [String(valorDe(x, coluna)), String(valorDe(y, coluna))];
+              if (a !== b) return a < b ? -1 : 1;
+            }
+            return 0;
+          })
+        : achadas;
+      return { data: ordenadas.slice(0, limite), error: null };
     };
 
     const q = {
@@ -119,8 +148,22 @@ function fakeDb({
         filtros.push({ op: "lte", coluna, valor });
         return q;
       },
-      order: () => q,
-      limit: () => q,
+      lt: (coluna: string, valor: unknown) => {
+        filtros.push({ op: "lt", coluna, valor });
+        return q;
+      },
+      or: (valor: string) => {
+        filtros.push({ op: "or", coluna: "", valor });
+        return q;
+      },
+      order: (coluna: string) => {
+        ordem.push(coluna);
+        return q;
+      },
+      limit: (n: number) => {
+        limite = n;
+        return q;
+      },
       maybeSingle: async () => {
         const { data } = resultado();
         return { data: data[0] ?? null, error: null };
@@ -264,7 +307,7 @@ describe("GET /api/v1/agenda/datas-dos-negocios", () => {
     // E o filtro de data vai no WHERE: varrer o funil inteiro para desenhar uma
     // semana é o que a #3172 mediu em 19 s.
     const filtrosDeData = leads.filtros.filter((f) => f.coluna === "custom_fields->>data_inicio");
-    expect(filtrosDeData.map((f) => f.op).sort()).toEqual(["gte", "lte", "not"]);
+    expect(filtrosDeData.map((f) => f.op).sort()).toEqual(["gte", "lt", "not"]);
   });
 
   it("funil de OUTRA organização: 404, e não lista vazia", async () => {
@@ -392,5 +435,95 @@ describe("GET /api/v1/agenda/datas-dos-negocios", () => {
       ["2026-03-10", "Embarque"],
       ["2026-03-12", "Retorno"],
     ]);
+  });
+
+  /** Um negócio deste funil, com as datas do caso. */
+  function negocio(id: string, campos: Record<string, unknown>): Linha {
+    return {
+      id,
+      title: id,
+      organization_id: ORG,
+      pipeline_id: FUNIL,
+      stage_id: ETAPA,
+      status: "open",
+      custom_fields: campos,
+    };
+  }
+
+  /** Muitos negócios com data no ano anterior, vindos ANTES na ordem física. */
+  function antigos(quantos: number, campos: Record<string, unknown>): Linha[] {
+    return Array.from({ length: quantos }, (_, i) =>
+      negocio(`antigo-${String(i).padStart(3, "0")}`, campos),
+    );
+  }
+
+  describe("funil com volume: o teto de leitura não pode engolir a janela", () => {
+    it("um campo: 600 antigos não tiram da tela o negócio da semana", async () => {
+      const { cliente } = fakeDb({
+        pipelines: [funilComDatas()],
+        leads: [
+          ...antigos(600, { data_inicio: "2025-06-15" }),
+          negocio("da-semana", { data_inicio: "2026-03-10" }),
+        ],
+      });
+      vi.mocked(createClient).mockResolvedValue(cliente);
+
+      const corpo = await (await GET(req(CONSULTA_BASE))).json();
+
+      expect(corpo.data.itens.map((i: { negocio: { id: string } }) => i.negocio.id)).toEqual([
+        "da-semana",
+      ]);
+      expect(corpo.data.truncado).toBe(false);
+    });
+
+    it("dois campos: a ida e a volta da semana aparecem, e os antigos ficam de fora", async () => {
+      const { cliente } = fakeDb({
+        pipelines: [funilComDatas()],
+        leads: [
+          ...antigos(600, { data_inicio: "2025-06-15", data_fim: "2025-06-20" }),
+          negocio("so-a-volta", { data_inicio: "2026-02-20", data_fim: "2026-03-12" }),
+          negocio("so-a-ida", { data_inicio: "2026-03-10", data_fim: "2026-03-20" }),
+        ],
+      });
+      vi.mocked(createClient).mockResolvedValue(cliente);
+
+      const corpo = await (await GET(req({ ...CONSULTA_BASE, campo_fim: "data_fim" }))).json();
+
+      expect(
+        corpo.data.itens.map((i: { dia: string; negocio: { id: string } }) => [i.dia, i.negocio.id]),
+      ).toEqual([
+        ["2026-03-10", "so-a-ida"],
+        ["2026-03-12", "so-a-volta"],
+      ]);
+      expect(corpo.data.truncado).toBe(false);
+    });
+
+    it("data com hora no último dia da janela entra", async () => {
+      const { cliente } = fakeDb({
+        pipelines: [funilComDatas()],
+        leads: [negocio("com-hora", { data_inicio: "2026-03-15T12:00:00Z" })],
+      });
+      vi.mocked(createClient).mockResolvedValue(cliente);
+
+      const corpo = await (await GET(req(CONSULTA_BASE))).json();
+
+      expect(corpo.data.itens.map((i: { dia: string }) => i.dia)).toEqual(["2026-03-15"]);
+    });
+
+    it("mais negócios que o teto dentro da janela: truncado, e a fatia não depende da ordem física", async () => {
+      const naJanela = Array.from({ length: 510 }, (_, i) =>
+        negocio(`lead-${String(i).padStart(3, "0")}`, { data_inicio: "2026-03-10" }),
+      ).reverse();
+      const { cliente } = fakeDb({ pipelines: [funilComDatas()], leads: naJanela });
+      vi.mocked(createClient).mockResolvedValue(cliente);
+
+      const corpo = await (await GET(req(CONSULTA_BASE))).json();
+      const ids = corpo.data.itens.map((i: { negocio: { id: string } }) => i.negocio.id);
+
+      expect(corpo.data.truncado).toBe(true);
+      expect(ids).toHaveLength(500);
+      expect(ids[0]).toBe("lead-000");
+      expect(ids[499]).toBe("lead-499");
+    });
   });
 });

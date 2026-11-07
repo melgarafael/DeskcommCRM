@@ -35,7 +35,7 @@
  * A forma inválida é `validation_error`; a data que NÃO EXISTE no calendário
  * (`2026-02-31`) é `data_de_calendario_invalida`. Antes, as duas caiam no
  * `RE_DIA`, que só confere a FORMA: o filtro ia para o banco, voltava vazio, e
- * a grade dizia "ninguém embarca neste período" para um dia que ninguém
+ * a grade dizia que não havia negócio neste período para um dia que ninguém
  * digitou — o oposto da resposta explícita que esta rota promete.
  *
  * ─── Por que o campo escolhido é conferido no SERVIDOR ─────────────────────
@@ -49,13 +49,23 @@
  *
  * ─── O custo é limitado pelo dia, não pelo funil ───────────────────────────
  *
- * O filtro de data vai no `where` (`custom_fields->>campo` entre `de - 366` e
- * `ate`), e não na memória: um funil migrado tem milhares de negócios, e varrer
- * todos para desenhar uma semana é exatamente o que a #3172 mediu em 19 s. O
- * piso de `de - 366` é o teto do intervalo do Calendário do funil: uma viagem
- * que começou antes da janela e termina dentro dela continua aparecendo. O
- * `limit` fecha o pior caso e a resposta diz quando ele foi atingido
- * (`truncado`), em vez de fingir que a lista está completa.
+ * O filtro de data vai no `where`, e não na memória: um funil migrado tem
+ * milhares de negócios, e varrer todos para desenhar uma semana é exatamente o
+ * que a #3172 mediu em 19 s. E o `limit` só serve à janela se o `where` for
+ * justo: com um piso folgado e sem ordem, 3.000 negócios antigos ocupavam as 500
+ * vagas e a semana visível voltava VAZIA (medido em Postgres: 0 de 20).
+ *
+ *  - **Um campo:** o piso é o próprio `de`.
+ *  - **Dois campos:** o negócio também entra pelo segundo campo. O piso recua
+ *    `LIMITE_DO_INTERVALO` (o teto do intervalo do Calendário do funil), para
+ *    alcançar quem começou antes da janela, e o `or` deixa só quem tem uma das
+ *    duas datas dentro dela.
+ *  - **O fim é exclusivo** (`< ate + 1 dia`): a comparação é de TEXTO, e
+ *    `'2026-11-15T14:00:00Z' <= '2026-11-15'` é falso. Data com hora no último
+ *    dia ficaria de fora.
+ *  - **A ordem é explícita** (data, id): sem ela, quem decide a fatia é a ordem
+ *    física do banco. Quando a janela passa do teto, a resposta diz
+ *    (`truncado`), em vez de fingir que a lista está completa.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -78,10 +88,10 @@ export const dynamic = "force-dynamic";
 /**
  * Quantos negócios a camada lê por vez.
  *
- * Não é paginação: é o teto de um desenho. A janela de uma semana numa agência
- * de viagens não chega perto disto; quando chegar, `truncado: true` diz na tela
- * que falta coisa — e a resposta honesta é dividir o funil ou estreitar o
- * período, não carregar o funil inteiro para descobrir.
+ * Não é paginação: é o teto de um desenho, e vale para os negócios com data
+ * DENTRO da janela (ver o cabeçalho). Quando a janela passa dele, `truncado: true`
+ * diz na tela que falta coisa — e a resposta honesta é dividir o funil ou
+ * estreitar o período, não carregar o funil inteiro para descobrir.
  */
 export const NEGOCIOS_POR_LEITURA = 500;
 
@@ -172,6 +182,9 @@ export async function GET(req: NextRequest): Promise<Response> {
     ((etapas ?? []) as Array<{ id: string; name: string }>).map((e) => [e.id, e.name]),
   );
 
+  const colunaInicio = `custom_fields->>${campo}`;
+  const fimExclusivo = diasAntes(ate, -1);
+
   /**
    * A consulta dos negócios.
    *
@@ -180,15 +193,26 @@ export async function GET(req: NextRequest): Promise<Response> {
    * quem não preencheu o campo — é o caso que a tela tem de NÃO mostrar, e
    * filtrar aqui evita trazer linha que a camada jogaria fora.
    */
-  const { data: linhas, error: leadsErr } = await supabase
+  const baseDaConsulta = supabase
     .from("crm_leads")
     .select("id, title, pipeline_id, stage_id, custom_fields")
     .eq("organization_id", orgId)
     .eq("pipeline_id", pipelineId)
     .neq("status", "archived")
-    .not(`custom_fields->>${campo}`, "is", null)
-    .gte(`custom_fields->>${campo}`, diasAntes(de, LIMITE_DO_INTERVALO))
-    .lte(`custom_fields->>${campo}`, ate)
+    .not(colunaInicio, "is", null)
+    .lt(colunaInicio, fimExclusivo);
+
+  // A chave interpolada no `or` já passou pelo schema e foi conferida no funil.
+  const colunaFim = final ? `custom_fields->>${final.key}` : null;
+  const naJanela = colunaFim
+    ? baseDaConsulta
+        .gte(colunaInicio, diasAntes(de, LIMITE_DO_INTERVALO))
+        .or(`${colunaInicio}.gte.${de},and(${colunaFim}.gte.${de},${colunaFim}.lt.${fimExclusivo})`)
+    : baseDaConsulta.gte(colunaInicio, de);
+
+  const { data: linhas, error: leadsErr } = await naJanela
+    .order(colunaInicio)
+    .order("id")
     .limit(NEGOCIOS_POR_LEITURA);
   if (leadsErr) return fail("internal_error", leadsErr.message, 500, { requestId });
 
