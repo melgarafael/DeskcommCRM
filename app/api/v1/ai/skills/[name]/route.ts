@@ -43,10 +43,11 @@ import { caminhosDoManifesto, copiarArquivosDoPacote } from "@/lib/ai/skills/pac
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { nomeDeSkillValido } from "@/lib/skills/nome-de-skill";
 
 export const dynamic = "force-dynamic";
 
-const nameSchema = z.string().min(1).max(120).regex(/^[a-z0-9][a-z0-9-]{0,119}$/);
+const nameSchema = z.string().min(1).max(120);
 
 const salvarSkillSchema = z
   .object({
@@ -77,7 +78,7 @@ export async function GET(
 
   const { name: rawName } = await ctx.params;
   const nameParsed = nameSchema.safeParse(decodeURIComponent(rawName));
-  if (!nameParsed.success) {
+  if (!nameParsed.success || (authz.via === "token" && !nomeDeSkillValido(nameParsed.data))) {
     return fail("validation_failed", t("Nome de skill inválido."), 422, { requestId });
   }
   const name = nameParsed.data;
@@ -159,7 +160,7 @@ export async function PUT(
 
   const { name: rawName } = await ctx.params;
   const nameParsed = nameSchema.safeParse(decodeURIComponent(rawName));
-  if (!nameParsed.success) {
+  if (!nameParsed.success || (authz.via === "token" && !nomeDeSkillValido(nameParsed.data))) {
     return fail("validation_failed", t("Nome de skill inválido."), 422, { requestId });
   }
   const name = nameParsed.data;
@@ -325,7 +326,7 @@ export async function DELETE(
 
   const { name: rawName } = await ctx.params;
   const nameParsed = nameSchema.safeParse(decodeURIComponent(rawName));
-  if (!nameParsed.success) {
+  if (!nameParsed.success || (authz.via === "token" && !nomeDeSkillValido(nameParsed.data))) {
     return fail("validation_failed", t("Nome de skill inválido."), 422, { requestId });
   }
   const name = nameParsed.data;
