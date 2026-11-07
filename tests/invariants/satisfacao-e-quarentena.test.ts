@@ -42,6 +42,8 @@ const VIZINHA_MESSAGE = "96920000-7777-4000-8000-000000000001";
 const MENSAGEM_1 = "cccccccc-7777-4000-8000-000000000001";
 const MENSAGEM_2 = "cccccccc-7777-4000-8000-000000000002";
 const CONVERSA_2 = "cccccccc-4444-4000-8000-0000000000a2";
+/** Contato PRÓPRIO deste arquivo: os três do `seedGov` já têm conversa na sessão. */
+const CONTATO_2 = "96920000-3333-4000-8000-0000000000c2";
 
 function resumoDaSatisfacao(): Record<string, unknown> {
   return JSON.parse(
@@ -79,8 +81,13 @@ beforeAll(() => {
       ('${VIZINHA_MESSAGE}', '${VIZINHA_ORG}', '${VIZINHA_CONV}', '${VIZINHA_SESSION}', '${VIZINHA_CONTACT}',
        'text', 'inbound', 'received', 'ai', 'ganhe um premio bit.ly/x', now());
 
+    -- Contato PRÓPRIO: a constraint uniq_conversations_1to1_per_contact_session
+    -- é 1:1 por (contato, sessão), e os três contatos do seedGov já têm
+    -- conversa nesta sessão.
+    insert into public.contacts (id, organization_id, display_name)
+      values ('${CONTATO_2}', '${GOV_ORG}', 'Contato Onda 692') on conflict do nothing;
     insert into public.conversations (id, organization_id, contact_id, channel_session_id, status)
-      values ('${CONVERSA_2}', '${GOV_ORG}', '${GOV_CONTACT_1}', '${GOV_SESSION}', 'closed')
+      values ('${CONVERSA_2}', '${GOV_ORG}', '${CONTATO_2}', '${GOV_SESSION}', 'closed')
       on conflict (id) do nothing;
     insert into public.messages
       (id, organization_id, conversation_id, channel_session_id, contact_id, type,
@@ -88,7 +95,7 @@ beforeAll(() => {
     values
       ('${MENSAGEM_1}', '${GOV_ORG}', '${GOV_CONV_UNASSIGNED}', '${GOV_SESSION}', '${GOV_CONTACT_1}',
        'text', 'inbound', 'received', 'ai', 'PARABENS voce foi sorteado: bit.ly/premio', now()),
-      ('${MENSAGEM_2}', '${GOV_ORG}', '${CONVERSA_2}', '${GOV_SESSION}', '${GOV_CONTACT_1}',
+      ('${MENSAGEM_2}', '${GOV_ORG}', '${CONVERSA_2}', '${GOV_SESSION}', '${CONTATO_2}',
        'text', 'inbound', 'received', 'ai', 'Sou do suporte, sua conta sera bloqueada', now());
   `);
 });
@@ -121,14 +128,14 @@ describe("#4023 — o pedido de nota no banco", () => {
       sql(`
         insert into public.satisfacao_do_atendimento
           (organization_id, conversation_id, contact_id, status, expira_em)
-        values ('${GOV_ORG}', '${CONVERSA_2}', '${GOV_CONTACT_1}', 'respondida', now() + interval '1 day');
+        values ('${GOV_ORG}', '${CONVERSA_2}', '${CONTATO_2}', 'respondida', now() + interval '1 day');
       `),
     ).toThrow();
     expect(() =>
       sql(`
         insert into public.satisfacao_do_atendimento
           (organization_id, conversation_id, contact_id, status, nota, respondido_em, expira_em)
-        values ('${GOV_ORG}', '${CONVERSA_2}', '${GOV_CONTACT_1}', 'respondida', 9, now(), now() + interval '1 day');
+        values ('${GOV_ORG}', '${CONVERSA_2}', '${CONTATO_2}', 'respondida', 9, now(), now() + interval '1 day');
       `),
     ).toThrow();
   });
@@ -137,7 +144,7 @@ describe("#4023 — o pedido de nota no banco", () => {
     sql(`
       insert into public.satisfacao_do_atendimento
         (organization_id, conversation_id, contact_id, status, nota, respondido_em, expira_em)
-      values ('${GOV_ORG}', '${CONVERSA_2}', '${GOV_CONTACT_1}', 'respondida', 4, now(), now() + interval '1 day');
+      values ('${GOV_ORG}', '${CONVERSA_2}', '${CONTATO_2}', 'respondida', 4, now(), now() + interval '1 day');
       insert into public.satisfacao_do_atendimento
         (organization_id, conversation_id, contact_id, status, expira_em)
       values ('${GOV_ORG}', '${GOV_CONV_UNASSIGNED}', '${GOV_CONTACT_1}', 'sem_nota', now() - interval '1 day');
@@ -215,7 +222,7 @@ describe("#4026 — a quarentena no banco", () => {
     sql(`
       insert into public.quarentena_de_entrada
         (organization_id, conversation_id, contact_id, message_id, veredito, confianca)
-      values ('${GOV_ORG}', '${CONVERSA_2}', '${GOV_CONTACT_1}', '${MENSAGEM_2}',
+      values ('${GOV_ORG}', '${CONVERSA_2}', '${CONTATO_2}', '${MENSAGEM_2}',
               'falso_suporte', 0.55);
     `);
     expect(Number(resumoDaQuarentena().perdidas)).toBe(0);

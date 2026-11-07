@@ -87,12 +87,14 @@ describe("#4023 — a pergunta sai UMA vez, e só com a opção ligada", () => {
 
     expect(desfecho.pedida).toBe(true);
     expect(sendMessageHandler).toHaveBeenCalledTimes(1);
-    const [, ctx, entrada] = vi.mocked(sendMessageHandler).mock.calls[0];
-    expect(ctx.organization_id).toBe(ORG);
+    const chamada = vi.mocked(sendMessageHandler).mock.calls[0];
+    const ctx = chamada?.[1];
+    const entrada = chamada?.[2];
+    expect(ctx?.organization_id).toBe(ORG);
     expect((entrada as { conversation_id: string }).conversation_id).toBe(CONVERSA);
     expect((entrada as { metadata?: Record<string, unknown> }).metadata?.pesquisa_de_satisfacao).toBe(true);
     expect(banco.estado.pedidos).toHaveLength(1);
-    expect(banco.estado.pedidos[0].status).toBe("aguardando");
+    expect(banco.estado.pedidos[0]?.status).toBe("aguardando");
   });
 
   it("fechar a MESMA conversa de novo não manda a segunda pergunta", async () => {
@@ -131,7 +133,7 @@ describe("#4023 — a pergunta sai UMA vez, e só com a opção ligada", () => {
     });
 
     expect(desfecho).toEqual({ pedida: false, motivo: "falha_ao_enviar" });
-    expect(banco.estado.pedidos[0].status).toBe("sem_nota");
+    expect(banco.estado.pedidos[0]?.status).toBe("sem_nota");
   });
 });
 
@@ -170,9 +172,9 @@ describe("#4023 — a resposta vira nota do pedido", () => {
     });
 
     expect(desfecho).toEqual({ capturada: true, nota: 4 });
-    expect(banco.estado.pedidos[0].status).toBe("respondida");
-    expect(banco.estado.pedidos[0].nota).toBe(4);
-    expect(banco.estado.pedidos[0].mensagem_da_resposta_id).toBe("msg-resposta");
+    expect(banco.estado.pedidos[0]?.status).toBe("respondida");
+    expect(banco.estado.pedidos[0]?.nota).toBe(4);
+    expect(banco.estado.pedidos[0]?.mensagem_da_resposta_id).toBe("msg-resposta");
   });
 
   it("uma SEGUNDA resposta não sobrescreve a primeira", async () => {
@@ -199,7 +201,7 @@ describe("#4023 — a resposta vira nota do pedido", () => {
     });
 
     expect(desfecho).toEqual({ capturada: false, motivo: "sem_pedido" });
-    expect(banco.estado.pedidos[0].nota).toBe(5);
+    expect(banco.estado.pedidos[0]?.nota).toBe(5);
   });
 
   it("mensagem que não é 1-5 não é capturada (segue o caminho normal)", async () => {
@@ -224,7 +226,7 @@ describe("#4023 — a resposta vira nota do pedido", () => {
     });
 
     expect(desfecho).toEqual({ capturada: false, motivo: "nao_e_nota" });
-    expect(banco.estado.pedidos[0].status).toBe("aguardando");
+    expect(banco.estado.pedidos[0]?.status).toBe("aguardando");
   });
 });
 

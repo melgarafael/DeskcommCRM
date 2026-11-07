@@ -129,10 +129,11 @@ export function bancoFake(inicial: {
       }
       if (op === "update") {
         const alvo = estado.pedidos.filter((p) => casa(p as unknown as Record<string, unknown>, filtros));
-        if (alvo.length === 0) return { data: null, error: null };
-        Object.assign(alvo[0], valores);
+        const linha = alvo[0];
+        if (!linha) return { data: null, error: null };
+        Object.assign(linha, valores);
         estado.atualizacoes.push({ tabela, filtros, valores });
-        return { data: { id: alvo[0].id }, error: null };
+        return { data: { id: linha.id }, error: null };
       }
       const achado = estado.pedidos.find((p) => casa(p as unknown as Record<string, unknown>, filtros));
       return { data: achado ?? null, error: null };

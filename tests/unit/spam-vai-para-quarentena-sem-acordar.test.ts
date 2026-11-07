@@ -201,9 +201,9 @@ describe("#4026 — a mensagem retida não acorda ninguém", () => {
 
     // 1. Retida, com o motivo e a confiança que a fila mostra.
     expect(duplo.estado.quarentena).toHaveLength(1);
-    expect(duplo.estado.quarentena[0].message_id).toBe(MENSAGEM);
-    expect(duplo.estado.quarentena[0].status).toBe("em_quarentena");
-    expect(duplo.estado.quarentena[0].confianca).toBeGreaterThanOrEqual(LIMIAR_PADRAO);
+    expect(duplo.estado.quarentena[0]?.message_id).toBe(MENSAGEM);
+    expect(duplo.estado.quarentena[0]?.status).toBe("em_quarentena");
+    expect(duplo.estado.quarentena[0]?.confianca).toBeGreaterThanOrEqual(LIMIAR_PADRAO);
 
     // 2. Nada de trabalho: nem turno, nem lead, nem campanha, nem follow-up.
     expect(despachos(duplo)).toHaveLength(0);
@@ -231,6 +231,7 @@ describe("#4026 — a mensagem retida não acorda ninguém", () => {
     const duplo = banco({ ligado: true });
     await aplicarEfeitosPosEntrada(duplo.client, entradaDeTeste(GOLPE));
     const retida = duplo.estado.quarentena[0];
+    if (!retida) throw new Error("a mensagem suspeita não foi retida");
     expect(despachos(duplo)).toHaveLength(0);
 
     const liberacao = await liberarDaQuarentena(duplo.client, {
@@ -256,6 +257,7 @@ describe("#4026 — a mensagem retida não acorda ninguém", () => {
     const duplo = banco({ ligado: true });
     await aplicarEfeitosPosEntrada(duplo.client, entradaDeTeste(GOLPE));
     const retida = duplo.estado.quarentena[0];
+    if (!retida) throw new Error("a mensagem suspeita não foi retida");
 
     await liberarDaQuarentena(duplo.client, { organizationId: ORG, id: retida.id, userId: "u-1" });
     const segunda = await liberarDaQuarentena(duplo.client, {
