@@ -15,12 +15,13 @@
  * - o corpo do pino — o que o agente lê — com "(aprox.)", e IDÊNTICO ao de
  *   antes quando não há endereço;
  * - o recebimento do pino: sem chave, nenhuma chamada ao Google; com chave, o
- *   endereço entra; Google fora do ar, o pino entra como antes.
+ *   endereço entra; Google fora do ar, o pino entra como antes. As coordenadas
+ *   vêm do próprio webhook (`metadata.location`, lido por `parseZernioInbound`):
+ *   o recebimento não pergunta mais ao provedor (27/10/2026).
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { completarLocalizacao } from "@/lib/channels/zernio/localizacao";
-import { resolveZernioCreds } from "@/lib/channels/zernio/credentials";
 import type { ZernioInboundMessage } from "@/lib/channels/zernio/webhook";
 import {
   geocodificarReverso,
@@ -30,9 +31,12 @@ import {
 } from "@/lib/mapas/geocodificacao";
 import { corpoDaLocalizacao, lerLocalizacao } from "@/lib/messaging/localizacao";
 
+// Credencial do provedor SEMPRE disponível: sem ela, a busca antiga pela API
+// nem começava, e "nenhuma chamada de rede" passaria verde também no código que
+// ainda perguntava ao provedor dentro do recebimento (achado pelo sabotador).
 vi.mock("@/lib/channels/zernio/credentials", async (orig) => ({
   ...(await orig<typeof import("@/lib/channels/zernio/credentials")>()),
-  resolveZernioCreds: vi.fn(),
+  resolveZernioCreds: vi.fn(async () => ({ accountId: "acc_1", apiKey: "k", baseUrl: "https://z.test/api", source: "session" })),
 }));
 
 const comp = (long_name: string, ...types: string[]) => ({ long_name, short_name: long_name, types });
@@ -216,6 +220,8 @@ const PINO = {
   attachments: [],
   sentAt: null,
   identity: {},
+  // O que `parseZernioInbound` lê de `metadata.location` no webhook.
+  location: { latitude: -25.4284, longitude: -49.2733 },
 } as unknown as ZernioInboundMessage;
 
 function adminFalso(opcoes: { temChave: boolean }) {
@@ -237,53 +243,58 @@ function adminFalso(opcoes: { temChave: boolean }) {
   };
 }
 
+/** Só o Google responde; qualquer chamada ao provedor do canal é defeito e fica contada. */
 function redeFalsa(google: () => Response) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
     if (String(url).includes("maps.googleapis.com")) return google();
-    return new Response(
-      JSON.stringify({ status: "success", messages: [{ id: "wamid.X", metadata: { location: { latitude: -25.4284, longitude: -49.2733 } } }] }),
-      { status: 200 },
-    );
+    return new Response("{}", { status: 500 });
   });
 }
+const chamouOProvedor = (f: ReturnType<typeof redeFalsa>) =>
+  f.mock.calls.some(([u]) => !String(u).includes("maps.googleapis.com"));
 
 describe("o pino que chega pelo canal", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("⭐ com a chave de Mapas: o pino entra com rua, cidade e estado", async () => {
-    vi.mocked(resolveZernioCreds).mockResolvedValue({ accountId: "acc_1", apiKey: "k", baseUrl: "https://z.test/api", source: "session" });
     const f = redeFalsa(() => new Response(JSON.stringify(CURITIBA), { status: 200 }));
     const msg = await completarLocalizacao(adminFalso({ temChave: true }) as never, ORG, PINO);
     expect(msg.location?.aproximado).toEqual({ rua: "Rua XV de Novembro", cidade: "Curitiba", regiao: "Paraná" });
     expect(corpoDaLocalizacao(msg.location!)).toContain("Rua XV de Novembro, Curitiba, Paraná (aprox.)");
     const google = f.mock.calls.find(([u]) => String(u).includes("maps.googleapis.com"));
     expect(new URL(String(google![0])).searchParams.get("language")).toBe("es");
+    expect(chamouOProvedor(f), "as coordenadas já vieram no webhook").toBe(false);
   });
 
   it("⭐ sem chave: nenhuma chamada ao Google, e o pino é o de antes", async () => {
-    vi.mocked(resolveZernioCreds).mockResolvedValue({ accountId: "acc_1", apiKey: "k", baseUrl: "https://z.test/api", source: "session" });
     const f = redeFalsa(() => new Response("{}", { status: 200 }));
     const msg = await completarLocalizacao(adminFalso({ temChave: false }) as never, ORG, PINO);
     expect(msg.location).toEqual({ latitude: -25.4284, longitude: -49.2733 });
-    expect(f.mock.calls.some(([u]) => String(u).includes("maps.googleapis.com"))).toBe(false);
+    expect(f).not.toHaveBeenCalled();
   });
 
   it("Google recusando ou fora do ar: o pino entra com as coordenadas, sem endereço", async () => {
-    vi.mocked(resolveZernioCreds).mockResolvedValue({ accountId: "acc_1", apiKey: "k", baseUrl: "https://z.test/api", source: "session" });
     redeFalsa(() => new Response(JSON.stringify({ status: "REQUEST_DENIED", error_message: "This API is not activated on your API project." }), { status: 200 }));
     const recusado = await completarLocalizacao(adminFalso({ temChave: true }) as never, ORG, PINO);
     expect(recusado.location).toEqual({ latitude: -25.4284, longitude: -49.2733 });
 
     vi.restoreAllMocks();
-    vi.mocked(resolveZernioCreds).mockResolvedValue({ accountId: "acc_1", apiKey: "k", baseUrl: "https://z.test/api", source: "session" });
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
-      if (String(url).includes("maps.googleapis.com")) throw new TypeError("fetch failed");
-      return new Response(
-        JSON.stringify({ status: "success", messages: [{ id: "wamid.X", metadata: { location: { latitude: -25.4284, longitude: -49.2733 } } }] }),
-        { status: 200 },
-      );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      throw new TypeError("fetch failed");
     });
     const foraDoAr = await completarLocalizacao(adminFalso({ temChave: true }) as never, ORG, PINO);
     expect(foraDoAr.location).toEqual({ latitude: -25.4284, longitude: -49.2733 });
   });
+
+  it("⭐ pino SEM coordenadas no webhook: nenhuma chamada de rede dentro do recebimento", async () => {
+    // A busca pela API era feita aqui, dentro da requisição do webhook — até
+    // 2 × 4 s mais 0,8 s —, e o provedor dá por falhada a entrega que passa de
+    // 5 s. Agora quem busca é a nova busca do pino, fora da requisição.
+    const f = redeFalsa(() => new Response(JSON.stringify(CURITIBA), { status: 200 }));
+    const semCoordenadas = { ...PINO, location: undefined } as ZernioInboundMessage;
+    const msg = await completarLocalizacao(adminFalso({ temChave: true }) as never, ORG, semCoordenadas);
+    expect(msg).toBe(semCoordenadas);
+    expect(f).not.toHaveBeenCalled();
+  });
 });
+
