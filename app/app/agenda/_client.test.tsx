@@ -264,7 +264,7 @@ describe("Agenda por profissional — a lista filtrada", () => {
   });
 
   it("isolar quem não tem compromisso na janela esvazia a grade, e 'Todos' a repõe", async () => {
-    montar({ agendamentos: [AGENDAMENTOS[1]] });
+    montar({ agendamentos: [AGENDAMENTOS[1]!] });
 
     await userEvent.click(screen.getByTestId("botao-pessoa-ana"));
     expect(screen.queryByTestId("agendamento-b1")).toBeNull();
@@ -328,7 +328,7 @@ describe("Agenda por profissional — o filtro manda no painel, nos horários e 
     await userEvent.click(screen.getByTestId("painel-confirmar"));
 
     expect(corpos).toHaveLength(1);
-    expect(corpos[0].owner_user_id).toBe(ANA.id);
-    expect(corpos[0].event_type_id).toBe("tipo-1");
+    expect(corpos[0]!.owner_user_id).toBe(ANA.id);
+    expect(corpos[0]!.event_type_id).toBe("tipo-1");
   });
 });
