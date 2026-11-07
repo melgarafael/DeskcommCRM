@@ -25034,6 +25034,7 @@ as $$
     -- canal e conversa
     'channel_session.status_changed',
     'conversation.claimed',
+    'conversation.closed',
     'conversation.transferred',
     'whatsapp.chat_id_not_recognized',
     'whatsapp.conversation_mark_failed',
@@ -69170,6 +69171,745 @@ revoke all on function public.fn_push_inscricoes_que_veem_o_negocio(uuid, uuid) 
 revoke execute on function public.fn_push_inscricoes_que_veem_o_negocio(uuid, uuid) from anon, authenticated;
 grant execute on function public.fn_push_inscricoes_que_veem_o_negocio(uuid, uuid) to service_role;
 
+-- ---- #4019: o negócio aberto do contato acompanha o dono da conversa (migration 9208) ----
+--
+-- Espelho idêntico ao corpo da 9208 (PR #4046 de @webtecnica; decisão do
+-- mantenedor: B do doc 178, reafirmada no doc 267). A régua do negócio aberto
+-- sai das telas e mora na porta única da atribuição, na mesma transação:
+-- TRANSFERIR leva o negócio aberto do contato; Assumir, fila automática,
+-- passagem para humano e os demais motivos só dão dono a negócio SEM
+-- responsável. Com sessão, a escrita fica dentro do que crm_leads_update já
+-- permite a quem clicou (fn_can_view_lead sobre o responsável atual e o novo).
+-- Um aberto é tocado; zero não cria card; mais de um não é tocado.
+-- A carteira e a passagem de conversas (#2591, #3514) são recriadas com
+-- `p_negocio_so_sem_dono => true`: entram com 'transfer' e sem sessão, e não
+-- podem levar o negócio de um colega.
+--
+-- Cria função: mora ACIMA da VARREDURA anon. Assinatura nova (8º argumento com
+-- default) exige o drop da de 7 argumentos, senão as chamadas de 6/7 viram
+-- "function ... is not unique". Idempotente: drop if exists + create or replace.
+drop function if exists public.fn_conversation_assign(uuid, uuid, uuid, text, uuid, boolean, uuid);
+
+create or replace function public.fn_conversation_assign(
+  p_organization_id uuid,
+  p_conversation_id uuid,
+  p_to_user_id uuid,
+  p_reason text,
+  p_expected_assignee uuid default null,
+  p_enforce_expected boolean default false,
+  p_source_job_id uuid default null,
+  -- #4019: com `true`, o negócio aberto só ganha dono se estiver SEM dono,
+  -- qualquer que seja o motivo. Fora de `'transfer'` essa já é a régua.
+  p_negocio_so_sem_dono boolean default false
+)
+ RETURNS SETOF conversations
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_from uuid;
+  v_conv public.conversations%rowtype;
+  v_numero uuid;
+  v_trocou_de_numero boolean := false;
+  v_continua uuid;
+  -- #4019 — o negócio ABERTO do contato que acompanha o dono novo.
+  v_negocios integer;
+  v_negocio public.crm_leads%rowtype;
+  -- Doc 178 (B) / doc 267 (A): só a transferência tira o negócio de alguém.
+  v_so_sem_dono boolean := p_negocio_so_sem_dono or p_reason is distinct from 'transfer';
+begin
+  if not public.fn_support_write_allowed(p_organization_id) then raise exception 'support_readonly' using errcode='42501'; end if;
+  -- #3926 — `p_source_job_id` é do RUNTIME (o turno que está executando),
+  -- nunca de uma sessão de pessoa: recusar em vez de ignorar, porque ignorar
+  -- em silêncio deixaria a atribuição de uma pessoa passando com o turno
+  -- revogado sem ninguém saber por quê.
+  if p_source_job_id is not null and auth.uid() is not null then
+    raise exception 'source_job_requires_runtime_caller'
+      using hint = 'p_source_job_id is set by the agent runtime, never by a user session';
+  end if;
+  if auth.uid() is not null
+     and not public.fn_role_at_least(p_organization_id, 'agent') then
+    raise exception 'caller_not_authorized_for_org'
+      using hint = 'caller must be an active agent+ member of the organization';
+  end if;
+
+  if p_to_user_id is not null then
+    if coalesce(public.fn_member_role_in_org(p_to_user_id, p_organization_id), 'none')
+         not in ('agent','manager','admin') then
+      raise exception 'assignee_not_eligible_member'
+        using hint = 'target must be an active agent+ member of the organization';
+    end if;
+  end if;
+
+  -- Conversa fora da visibilidade de quem chama responde como conversa
+  -- inexistente (zero linhas). A regra fica no WHERE, com o dono da própria
+  -- linha (reavaliado na versão nova se houver espera), nunca um valor do
+  -- corpo. Service role (sem auth.uid) segue.
+  --
+  -- A EXCEÇÃO DA #3479: conversa SEM dono pode ser assumida por quem assume
+  -- para si. Sem ela o modo "Só os seus" se morde: a conversa que nasceu do
+  -- cadastro do contato tem dono nulo, o predicado do modo responde "não vejo"
+  -- para dono nulo, e o claim — a operação que daria dono a ela — era recusado,
+  -- com a tela dizendo "está com outro atendente" sobre uma conversa de
+  -- ninguém. O termo se limita sozinho: exige dono nulo E dono novo =
+  -- chamador, então conversa de colega (o caso que a 0685 protege), a
+  -- transferência para terceiro e o release continuam respondendo zero linhas
+  -- exatamente como antes.
+  select * into v_conv
+    from public.conversations
+   where id = p_conversation_id
+     and organization_id = p_organization_id
+     and (
+       auth.uid() is null
+       or public.fn_can_view_conversation(organization_id, assigned_to_user_id)
+       or (assigned_to_user_id is null and p_to_user_id = auth.uid()
+           and p_reason = 'claim' and p_enforce_expected)
+     )
+   for no key update;
+
+  if not found then
+    return;
+  end if;
+
+  v_from := v_conv.assigned_to_user_id;
+
+  if p_enforce_expected and v_from is distinct from p_expected_assignee then
+    return;
+  end if;
+
+  -- ─── #3642: o número segue o vendedor ──────────────────────────────────────
+  -- Numa empresa com um número por vendedor (`channel_routing_policies` +
+  -- `channel_routing_responsibles`), a troca de dono mudava só o dono: a
+  -- conversa continuava no `channel_session_id` do vendedor ANTERIOR e o envio
+  -- (que sai pela sessão da conversa) fazia o vendedor novo responder pelo
+  -- WhatsApp do colega. Aqui a conversa passa para o número conectado do dono
+  -- novo, na MESMA transação — e como esta é a porta única da atribuição, a
+  -- regra vale para Transferir (um e em lote), Assumir, MCP, automação e a
+  -- passagem de carteira sem nenhum deles precisar conhecê-la.
+  --
+  -- QUAL número é a `fn_numero_da_transferencia` — a mesma que o diálogo de
+  -- Transferir consulta para avisar antes de confirmar, então o aviso e o efeito
+  -- não divergem. Nulo = o número fica (número compartilhado, número sem dono,
+  -- dono novo sem número conectado do mesmo canal, grupo, ou o contato já tem
+  -- conversa no número novo). A transferência nunca falha por causa do número.
+  v_numero := public.fn_numero_da_transferencia(p_organization_id, p_conversation_id, p_to_user_id);
+  v_trocou_de_numero := v_numero is not null;
+
+  -- ─── #3732: e quando o número NÃO pode seguir ──────────────────────────────
+  -- O caso que a 9039 deixou em pé: o contato já tem conversa no número do dono
+  -- novo, então o número fica, e a conversa ficava presa com o dono novo num
+  -- número que não é dele (envio em 409, "transfira para você" — já feito).
+  --
+  -- A conversa que está NESSE número passa para o dono novo quando estava sem
+  -- dono ou com o dono ANTERIOR: é a metade que faltava para ele ter onde
+  -- responder. Conversa que já é de uma TERCEIRA pessoa não é tomada — quem a
+  -- assumiu no meio continua com ela, e o aviso do envio diz o nome dele. A
+  -- adoção passa por esta mesma função, então o evento da linha do tempo e o
+  -- resto vão junto.
+  if not v_trocou_de_numero and p_to_user_id is not null then
+    select o.id into v_continua
+      from public.conversations o
+     where o.id = public.fn_conversa_que_continua(
+             p_organization_id, p_conversation_id, p_to_user_id)
+       and (o.assigned_to_user_id is null
+            or o.assigned_to_user_id is not distinct from v_from)
+       and o.assigned_to_user_id is distinct from p_to_user_id
+       -- Doc 237, escolha 3-B: a conversa que a IA está atendendo fica com a
+       -- IA. Sem esta condição, conversa sem dono e com a IA ativa era adotada
+       -- e calada sem prazo (`bot_silenced_until = 'infinity'`), inclusive por
+       -- tabela numa troca de carteira, que pula essa conversa de propósito.
+       and public.comando_da_conversa(o) <> 'automatico';
+  end if;
+
+  update public.conversations
+     set assigned_to_user_id = p_to_user_id,
+         -- Desnormalizado JUNTO com o dono, na mesma transação: nunca existe
+         -- uma janela em que id e nome discordam. NULL junto com o id quando
+         -- a atribuição é removida (release) — nunca sobra um nome órfão de
+         -- dono nenhum. Lido de auth.users porque quem chama esta função
+         -- (RPC) não necessariamente tem acesso ao Admin API — a definer
+         -- resolve por dentro.
+         assigned_to_user_name = case
+           when p_to_user_id is null then null
+           else (select raw_user_meta_data ->> 'full_name' from auth.users where id = p_to_user_id)
+         end,
+         assigned_at = case when p_to_user_id is null then null else now() end,
+         assignee_kind = case when p_to_user_id is null then null else 'user' end,
+         status = case when p_to_user_id is null then 'open' else 'claimed' end,
+         status_changed_at = now(),
+         unread_count_for_assignee = 0,
+         bot_silenced_until = case
+           when p_reason = 'routing'  then bot_silenced_until
+           when p_to_user_id is null  then (case when last_handoff_at is null
+                                                 then null
+                                                 else bot_silenced_until end)
+           else 'infinity'::timestamptz
+         end,
+         -- #3642: o número acompanha o dono, e a thread do provider ANTERIOR não
+         -- viaja — ela pertence ao número antigo.
+         channel_session_id = case when v_trocou_de_numero then v_numero
+                                   else channel_session_id end,
+         provider_conversation_id = case when v_trocou_de_numero then null
+                                         else provider_conversation_id end,
+         updated_at = now()
+   where id = p_conversation_id
+   returning * into v_conv;
+
+  insert into public.conversation_assignment_events
+    (organization_id, conversation_id, from_user_id, to_user_id, changed_by, reason, source_job_id)
+  values
+    (p_organization_id, p_conversation_id, v_from, p_to_user_id, auth.uid(), p_reason, p_source_job_id);
+
+  -- #3732: a conversa que continua no número do dono novo vai junto (depois do
+  -- evento da conversa transferida, para a linha do tempo contar na ordem).
+  if v_continua is not null then
+    perform public.fn_conversation_assign(
+      p_organization_id, v_continua, p_to_user_id, 'transfer', null, false, p_source_job_id,
+      v_so_sem_dono);
+  end if;
+
+  -- ─── #4019: o NEGÓCIO ABERTO do contato acompanha o dono novo ──────────────
+  --
+  -- Porta única: Transferir (um e em lote), Assumir, MCP, automação, fila e
+  -- carteira entram todos por aqui. A régua:
+  --   · só status = 'open'; zero aberto = nada criado; mais de um = nada tocado
+  --     (caminho 4 da issue, decisão de produto);
+  --   · já é o dono novo: não escreve (o gatilho de crm_leads emite
+  --     `lead.assigned` a cada UPDATE);
+  --   · v_so_sem_dono (todo motivo que não é 'transfer'): só card SEM
+  --     responsável — nunca tira o card de um colega;
+  --   · com sessão, a escrita é a que a RLS de crm_leads_update já daria a quem
+  --     clicou: enxergar o responsável atual E o novo (fn_can_view_lead).
+  if p_to_user_id is not null then
+    select count(*) into v_negocios
+      from public.crm_leads l
+     where l.organization_id = p_organization_id
+       and l.contact_id = v_conv.contact_id
+       and l.status = 'open';
+
+    if v_negocios = 1 then
+      -- Sem `for update`: o UPDATE abaixo repete `status = 'open'`, então uma
+      -- corrida que feche o card entre a leitura e a escrita não é vencida por
+      -- engano. Travar a linha aqui só acrescentaria, no caminho mais quente da
+      -- atribuição, um lock de crm_leads DEPOIS do lock de conversations — a
+      -- ordem inversa da automação que cria card e mexe na conversa.
+      select * into v_negocio
+        from public.crm_leads l
+       where l.organization_id = p_organization_id
+         and l.contact_id = v_conv.contact_id
+         and l.status = 'open';
+
+      if found
+         and v_negocio.owner_user_id is distinct from p_to_user_id
+         and (not v_so_sem_dono
+              or (v_negocio.owner_user_id is null and v_negocio.owner_agent_id is null))
+         -- A permissão é a de quem clicou: a mesma conta de crm_leads_update
+         -- (USING sobre o responsável atual, WITH CHECK sobre o novo).
+         and (auth.uid() is null
+              or (public.fn_can_view_lead(p_organization_id, v_negocio.owner_user_id)
+                  and public.fn_can_view_lead(p_organization_id, p_to_user_id)))
+      then
+        -- O trio dono/kind é o da migration 0070: owner_user_id sozinho produz
+        -- card com dono e sem kind, que some do filtro e das métricas sem erro.
+        update public.crm_leads
+           set owner_user_id = p_to_user_id,
+               owner_agent_id = null,
+               owner_kind = 'user',
+               assigned_at = now()
+         where id = v_negocio.id
+           and organization_id = p_organization_id
+           and status = 'open'
+           -- Sem lock na leitura: o responsável lido é a condição da escrita.
+           -- Se alguém trocou o card no meio, a escrita não acontece.
+           and owner_user_id is not distinct from v_negocio.owner_user_id
+           and owner_agent_id is not distinct from v_negocio.owner_agent_id;
+      end if;
+    end if;
+  end if;
+
+  return next v_conv;
+end;
+$function$;
+revoke all     on function public.fn_conversation_assign(uuid, uuid, uuid, text, uuid, boolean, uuid, boolean) from public;
+revoke execute on function public.fn_conversation_assign(uuid, uuid, uuid, text, uuid, boolean, uuid, boolean) from anon;
+grant  execute on function public.fn_conversation_assign(uuid, uuid, uuid, text, uuid, boolean, uuid, boolean)
+  to authenticated, service_role;
+
+-- ─── #4019: a carteira e a passagem de conversas não levam negócio com dono ──
+--
+-- As duas funções abaixo passam conversas pela porta única com `'transfer'`
+-- e SEM sessão. Sem o 8º argumento, a régua da transferência moveria o
+-- negócio aberto de um colega junto com a conversa — contra a regra da
+-- carteira (#2591: "os que já têm dono não mudam"). Com isto, a carteira segue
+-- como antes da 9208; a passagem de conversas passa a preencher o negócio
+-- aberto sem responsável, quando há um só, e nunca tira negócio de um colega.
+-- Corpo idêntico à última definição de cada uma (9077 e 9057); a única
+-- mudança é `p_negocio_so_sem_dono => true` na chamada interna.
+
+create or replace function public.fn_definir_carteira_do_cliente(
+  p_org uuid,
+  p_actor uuid,
+  p_contact uuid,
+  p_dono uuid,
+  p_origem text default 'manual'
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_ator uuid := p_actor;
+  v_papel text;
+  v_dono_papel text;
+  v_contato_org uuid;
+  v_origem text := coalesce(p_origem, 'manual');
+  v_anterior uuid;
+  v_conversa uuid;
+  v_dono_atual uuid;
+begin
+  if v_origem not in ('manual', 'importacao', 'atribuicao_automatica', 'automacao') then
+    raise exception 'carteira_origem_invalida' using errcode = '22023';
+  end if;
+  if v_ator is null then
+    -- #3514: sem ator humano, quem grava é o SISTEMA — e só ele. A automação
+    -- não tem sessão; o que a identifica é a origem `automacao`, que a função
+    -- recusa a quem chega com ator (senão a origem do sistema virava um rótulo
+    -- que qualquer manager escolhia para esconder o próprio ato).
+    if v_origem <> 'automacao' then
+      raise exception 'carteira_sem_ator' using errcode = '42501';
+    end if;
+  end if;
+  if p_org is null or p_contact is null then
+    raise exception 'carteira_parametro_invalido' using errcode = '22023';
+  end if;
+
+  if v_ator is not null then
+    -- Quem muda: `agent`+ da MESMA organização (e membro aceito, não revogado).
+    -- #3746: o Atendente entrou nesta porta, mas com ESCOPO DE POSSE — o papel
+    -- sozinho não distingue "meu cliente" de "cliente do colega", e liberar o
+    -- papel seco deixaria qualquer Atendente se pôr como dono do cliente de
+    -- outro e levar o negócio seguinte no nome errado (o defeito do #2591).
+    select uo.role into v_papel
+      from public.user_organizations uo
+     where uo.user_id = v_ator
+       and uo.organization_id = p_org
+       and uo.accepted_at is not null
+       and uo.revoked_at is null;
+    if v_papel is null or v_papel not in ('agent', 'manager', 'admin') then
+      raise exception 'carteira_permissao_negada'
+        using errcode = '42501',
+              detail = 'Só atendente, manager e admin definem a carteira do cliente.';
+    end if;
+    if v_papel = 'agent' then
+      -- A POSSE, conferida AQUI e não só na rota: esta é a porta ÚNICA de
+      -- gravação (`trg_contacts_carteira_so_pelo_servidor` recusa a sessão), e
+      -- um chamador novo não pode nascer sem a régua. Doc 250, escolha 1-B:
+      --   • o contato já está na carteira dele → passa (pode passar adiante);
+      --   • conversa do contato atribuída a ele + contato SEM dono → passa;
+      --   • conversa com ele + contato na carteira de OUTRO →
+      --     `carteira_permissao_negada`: tirar o cliente de um colega segue
+      --     sendo do gerente (a regra do #2591 — o rodízio não leva a venda
+      --     de quem atende o cliente);
+      --   • nenhuma das duas → `carteira_fora_da_posse`.
+      -- A rota traduz as duas recusas em 403.
+      select c.carteira_user_id into v_dono_atual
+        from public.contacts c
+       where c.id = p_contact
+         and c.organization_id = p_org;
+      if v_dono_atual is distinct from v_ator then
+        if not exists (
+             select 1
+               from public.conversations cv
+              where cv.organization_id = p_org
+                and cv.contact_id = p_contact
+                and cv.assigned_to_user_id = v_ator
+           ) then
+          raise exception 'carteira_fora_da_posse'
+            using errcode = '42501',
+                  detail = 'O atendente só muda a carteira do cliente que já está com ele: contato na carteira dele, ou conversa atribuída a ele com o contato sem dono.';
+        end if;
+        if v_dono_atual is not null then
+          raise exception 'carteira_permissao_negada'
+            using errcode = '42501',
+                  detail = 'O cliente está na carteira de outro vendedor: só manager e admin tiram o cliente da carteira de um colega.';
+        end if;
+      end if;
+    end if;
+    if v_origem = 'automacao' then
+      raise exception 'carteira_origem_invalida'
+        using errcode = '22023',
+              detail = 'A origem automacao é do servidor, sem ator: quem chama com ator grava manual ou atribuicao_automatica.';
+    end if;
+  end if;
+
+  select c.organization_id, c.carteira_user_id into v_contato_org, v_anterior
+    from public.contacts c
+   where c.id = p_contact;
+  if v_contato_org is null then
+    raise exception 'carteira_contato_nao_encontrado' using errcode = '22023';
+  end if;
+  if v_contato_org <> p_org then
+    raise exception 'carteira_contato_de_outra_organizacao' using errcode = '42501';
+  end if;
+
+  if p_dono is not null then
+    -- Quem CONTA: membro ativo da mesma org com papel de trabalho. `viewer` e
+    -- membro revogado não contam — o cliente volta ao fluxo normal.
+    select uo.role into v_dono_papel
+      from public.user_organizations uo
+     where uo.user_id = p_dono
+       and uo.organization_id = p_org
+       and uo.accepted_at is not null
+       and uo.revoked_at is null;
+    if v_dono_papel is null or v_dono_papel not in ('agent', 'manager', 'admin') then
+      raise exception 'carteira_dono_invalido'
+        using errcode = '22023',
+              detail = 'O dono precisa ser membro ativo da mesma organização com papel agent, manager ou admin.';
+    end if;
+  end if;
+
+  update public.contacts
+     set carteira_user_id = p_dono,
+         carteira_origem = case when p_dono is null then null else v_origem end,
+         carteira_definida_em = case when p_dono is null then null else now() end,
+         updated_at = now()
+   where id = p_contact
+     and organization_id = p_org;
+
+  -- Os negócios ABERTOS sem dono do contato vão para o dono da carteira; os que
+  -- já têm dono não mudam (ninguém perde carteira por causa de uma carteira).
+  if p_dono is not null then
+    update public.crm_leads
+       set owner_user_id = p_dono,
+           owner_kind = 'user',
+           assigned_at = coalesce(assigned_at, now())
+     where organization_id = p_org
+       and contact_id = p_contact
+       and status = 'open'
+       and owner_user_id is null
+       and owner_agent_id is null;
+
+    -- ─── #3642: a carteira leva as conversas abertas ─────────────────────────
+    -- Só as que estavam com o dono ANTERIOR da carteira (ou sem dono): conversa
+    -- que já é de outra pessoa não é roubada por uma troca de carteira. Passa
+    -- pela MESMA porta da transferência, então a conversa, o evento na linha do
+    -- tempo e o número do vendedor andam juntos — e `reason` fica no vocabulário
+    -- fechado da tabela de eventos ('transfer').
+    if p_dono is distinct from v_anterior then
+      for v_conversa in
+        select c.id
+          from public.conversations c
+         where c.organization_id = p_org
+           and c.contact_id = p_contact
+           and c.status in ('open', 'pending', 'claimed', 'ai_handling')
+           and (c.assigned_to_user_id is null or c.assigned_to_user_id = v_anterior)
+           -- Doc 237, escolha 3-B: a conversa que a IA está atendendo fica com a
+           -- IA. Quem diz isso é `comando_da_conversa` (a mesma regra da tela e
+           -- do motor), não o status: a IA atende conversa `open` sem dono, e
+           -- `ai_handling` quase não é escrito. Passá-la aqui a deixaria
+           -- "assumida" e a IA calada sem prazo. Quando a IA passar a conversa
+           -- para humano, o dono da carteira já é o vendedor novo.
+           and public.comando_da_conversa(c) <> 'automatico'
+         order by c.id
+      loop
+        perform public.fn_conversation_assign(p_org, v_conversa, p_dono, 'transfer',
+          p_negocio_so_sem_dono => true);
+      end loop;
+    end if;
+  end if;
+
+  return p_dono;
+end;
+$$;
+
+revoke execute on function public.fn_definir_carteira_do_cliente(uuid, uuid, uuid, uuid, text)
+  from public, anon, authenticated;
+grant execute on function public.fn_definir_carteira_do_cliente(uuid, uuid, uuid, uuid, text)
+  to service_role;
+
+create or replace function public.fn_passar_conversas_do_contato(
+  p_org uuid,
+  p_contact uuid,
+  p_dono uuid
+)
+returns integer
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_conversa uuid;
+  v_passou uuid;
+  v_movidas integer := 0;
+begin
+  if p_org is null or p_contact is null or p_dono is null then
+    raise exception 'passagem_parametro_invalido' using errcode = '22023';
+  end if;
+
+  for v_conversa in
+    select c.id
+      from public.conversations c
+     where c.organization_id = p_org
+       and c.contact_id = p_contact
+       and c.status in ('open', 'pending', 'claimed', 'ai_handling')
+       and c.assigned_to_user_id is not null
+       and c.assigned_to_user_id <> p_dono
+     order by c.id
+       for no key update
+  loop
+    -- Zero linhas devolvidas = nada gravado: `v_passou` fica nulo e não conta.
+    select a.id into v_passou
+      from public.fn_conversation_assign(p_org, v_conversa, p_dono, 'transfer',
+                                          p_negocio_so_sem_dono => true) a;
+    if v_passou is not null then
+      v_movidas := v_movidas + 1;
+    end if;
+  end loop;
+
+  return v_movidas;
+end;
+$$;
+
+revoke execute on function public.fn_passar_conversas_do_contato(uuid, uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.fn_passar_conversas_do_contato(uuid, uuid, uuid)
+  to service_role;
+
+notify pgrst, 'reload schema';
+
+-- ---- o fechamento da conversa vira fato no `event_log` (migration 9212) ----
+--
+-- `fn_service_status(…, 'closed')` mudava o status e o encerramento NÃO virava
+-- fato no barramento: a rota gravava só a auditoria `conversation.closed`, e
+-- auditoria não é evento — nenhuma automação podia reagir ao fim do
+-- atendimento, então não havia como mandar nada depois dele (#4023).
+--
+-- O EMISSOR É GATILHO, e não a rota, porque o fechamento tem três escritores
+-- hoje: a rota `POST /conversations/[id]/close` (que o lote `…/bulk` reusa item
+-- a item), o `PATCH` de status (`app/api/v1/conversations/_handler.ts`) e a
+-- marcação de contato pessoal, que fecha TODAS as conversas abertas do contato.
+-- Emissor em código deixaria o próximo caminho mudo sem ninguém notar — é o
+-- mesmo motivo pelo qual `ai.case_closed` nasceu de gatilho (0148).
+--
+-- UMA VEZ POR TRANSIÇÃO: o `when` só deixa passar a conversa que ENTRA em
+-- `closed`. Fechar de novo não muda status nenhum (`fn_service_status` devolve
+-- antes do UPDATE, e o `when` cobre o UPDATE direto), então a segunda execução
+-- não gera linha. Conversa que reabre e volta a fechar gera OUTRA linha, e isso
+-- é o correto: são dois encerramentos.
+--
+-- FALHA AO EMITIR NÃO DERRUBA O FECHAMENTO: o `exception when others`
+-- transforma o erro num `WARNING` do log do banco. Encerrar é o gesto pedido —
+-- o mesmo critério que a rota já usa na devolução ao automático. O que se perde
+-- é o fato, e ele fica registrado com o id da conversa em vez de sumir calado.
+--
+-- O TIPO AINDA NÃO TEM CONSUMIDOR: `conversation.closed` entra em
+-- `fn_event_log_e_registro` para a linha nascer `done`, e não `pending` para
+-- sempre (o defeito da issue #753). A pesquisa 1–5, que é a fatia seguinte da
+-- #4023, é quem passa a consumi-lo.
+
+create or replace function public.fn_emit_conversation_closed() returns trigger
+  language plpgsql
+  security definer
+  set search_path = public
+as $fn$
+begin
+  begin
+    perform public.emit_event(
+      'conversation.closed',
+      'conversation',
+      new.id,
+      jsonb_build_object(
+        'conversation_id', new.id,
+        'contact_id', new.contact_id,
+        'channel_session_id', new.channel_session_id,
+        'assigned_to_user_id', new.assigned_to_user_id,
+        'service_revision', new.service_revision,
+        'closed_at', new.service_closed_at
+      ),
+      jsonb_build_object('actor_type', 'system', 'actor_id', 'trg_conversation_closed_no_log'),
+      new.organization_id
+    );
+  exception when others then
+    raise warning 'conversation.closed nao emitido para a conversa %: %', new.id, sqlerrm;
+  end;
+  return null;
+end $fn$;
+
+revoke all on function public.fn_emit_conversation_closed() from public;
+revoke execute on function public.fn_emit_conversation_closed() from anon, authenticated;
+grant execute on function public.fn_emit_conversation_closed() to service_role;
+
+drop trigger if exists trg_conversation_closed_no_log on public.conversations;
+create trigger trg_conversation_closed_no_log
+  after update of status on public.conversations
+  for each row
+  when (new.status = 'closed' and old.status is distinct from new.status)
+  execute function public.fn_emit_conversation_closed();
+
+-- A reserva: encerramento de conversa não se forja pela sessão do usuário.
+CREATE OR REPLACE FUNCTION public.emit_event(p_event_type text, p_entity_kind text, p_entity_id uuid, p_payload jsonb DEFAULT '{}'::jsonb, p_metadata jsonb DEFAULT '{}'::jsonb, p_organization_id uuid DEFAULT NULL::uuid)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_org_id uuid;
+  v_event_id uuid;
+  v_contact uuid;
+  v_origin jsonb;
+begin
+  -- message.received nasce somente do INSERT inbound interno. Um chamador
+  -- público não pode reapresentar uma mensagem existente como evento novo.
+  -- `ai.case_opened`/`ai.case_closed` entram pela mesma razão (0279): o caso é
+  -- do motor, e um evento de caso forjado por login move o funil e acorda o
+  -- agente em nome de uma decisão que ninguém tomou.
+  -- `contact.birthday` entra pela 0551: só o cron (`contact-birthdays`, sem
+  -- sessão) o emite, e a partir desta migration ele alcança a origem e manda
+  -- WhatsApp de verdade — forjado por login, seria envio em nome de um
+  -- aniversário que ninguém fez.
+  -- `contact.phone_added` entra pela 0670, pela mesma razão do aniversário:
+  -- quem o emite é o servidor (o PATCH de contatos, com a chave de serviço,
+  -- depois de gravar o número), e ele alcança a origem e manda WhatsApp.
+  -- `lead.date_field_due` entra pela 0743, como o aniversário: quem o emite é
+  -- só o cron `lead-date-field-due` (sem sessão), e a partir dela ele alcança a
+  -- origem e manda WhatsApp.
+  -- `lead.stage_stale` entra pela 9206, pela mesma razão do gatilho de data do
+  -- funil: quem o emite é só a varredura `lead-time-triggers` (sem sessão), e
+  -- a partir dela ele alcança a origem e manda WhatsApp — forjado por login,
+  -- seria envio em nome de uma etapa que ninguém parou.
+  -- Revogação do turno é fato da tomada nativa, nunca um pedido do login.
+  -- `conversation.closed` entra pela 9212: quem o emite é o gatilho do
+  -- encerramento (o servidor), e a partir dele uma automação reage ao
+  -- atendimento encerrado e manda mensagem ao cliente — forjado por login,
+  -- seria mensagem em nome de um encerramento que ninguém fez.
+  if auth.uid() is not null and p_event_type in (
+    'message.received','appointment.outcome_confirmed',
+    'ai.case_opened','ai.case_closed','contact.birthday','contact.phone_added',
+    'lead.date_field_due','lead.stage_stale','conversation.autonomous_turn_revoked',
+    'conversation.closed'
+  ) then
+    raise exception 'reserved_message_received' using errcode='42501';
+  end if;
+  -- Desfecho e responsável do negócio só nascem do gatilho de `crm_leads`
+  -- (`fn_emit_event_on_lead_change`), quando a linha muda de fato. Nenhum
+  -- emissor do app os pede por RPC; os consumidores produzem efeito real
+  -- (push, webhook de saída, conversão de anúncio).
+  if auth.uid() is not null
+     and p_event_type in ('lead.won','lead.lost','lead.reopened','lead.assigned')
+     and coalesce(current_setting('deskcomm.desfecho_pelo_negocio', true), '') <> 'on' then
+    raise exception 'reserved_message_received' using errcode='42501';
+  end if;
+  -- Estes campos autorizam efeitos operacionais; não são payload público.
+  if auth.uid() is not null and (
+    coalesce(p_payload,'{}'::jsonb) ?| array['service_origin','service_boundary']
+    or coalesce(p_metadata,'{}'::jsonb) ?| array['service_origin','service_boundary']
+  ) then raise exception 'reserved_service_origin' using errcode='42501'; end if;
+  v_org_id := coalesce(p_organization_id, (public.fn_support_context()->>'organization_id')::uuid);
+  if v_org_id is null then
+    select organization_id into v_org_id
+      from public.user_organizations
+      where user_id = auth.uid() and revoked_at is null
+      limit 1;
+  end if;
+  if v_org_id is null then
+    raise exception 'emit_event: organization_id obrigatorio';
+  end if;
+
+  if auth.uid() is not null
+     and not public.fn_role_at_least(v_org_id, 'viewer') then
+    raise exception 'caller_not_authorized_for_org'
+      using hint = 'emit_event: caller must be an active member of the organization';
+  end if;
+
+  if not public.fn_support_write_allowed(v_org_id) then raise exception 'support_readonly' using errcode='42501'; end if;
+
+  -- A ORIGEM E RESERVADA AO SERVIDOR — ENTAO O SERVIDOR TEM DE ESCREVE-LA.
+  --
+  -- O bloco acima recusa `service_origin` vindo de chamador autenticado (42501,
+  -- e com razao: e o campo que AUTORIZA efeito operacional, nao payload
+  -- publico). So que ninguem o escrevia no lugar dele. Efeito medido: quem move
+  -- o negocio pela IA carimba a origem no servidor (`agent-stage-sync`,
+  -- `appointment-stage-move`, `handoff-stage-move`) e o follow-up nasce; quem
+  -- move PELO QUADRO — o operador, pela rota HTTP autenticada — emitia um
+  -- evento SEM origem, `fn_service_event_origin` caia no `service_stale` final
+  -- (40001), `serviceForEvent` engolia como `stale_origin` e o follow-up nunca
+  -- nascia. Sem erro em lugar nenhum: o gatilho de etapa era inalcancavel pelo
+  -- caminho que o produto oferece na tela.
+  --
+  -- O retrato e tirado AQUI, no instante da emissao, que e exatamente a
+  -- semantica de procedencia que a 0223 quer: "quando este evento nasceu, o
+  -- atendimento estava assim". A resolucao do contato vem da mesma tabela de
+  -- `fn_service_event_contact` — se ela nao souber resolver o tipo, nao ha o que
+  -- carimbar e o evento segue sem origem, como antes.
+  if not (coalesce(p_payload,'{}'::jsonb) ? 'service_origin')
+     and not (coalesce(p_metadata,'{}'::jsonb) ? 'service_origin') then
+    select f.contact_id into v_contact
+      from public.fn_service_event_contact(v_org_id, p_event_type, p_entity_kind, p_entity_id) f;
+    if v_contact is not null
+       and exists(select 1 from public.contacts
+                   where organization_id=v_org_id and id=v_contact
+                     and not is_anonymized and is_merged_into is null) then
+      v_origin := jsonb_build_object('kind','command',
+        'observed', public.fn_service_observe_command(v_org_id, v_contact));
+    end if;
+  end if;
+
+  insert into public.event_log
+    (organization_id, event_type, entity_kind, entity_id, payload, metadata)
+  values
+    (v_org_id, p_event_type, p_entity_kind, p_entity_id,
+     coalesce(p_payload, '{}'::jsonb)
+       || case when v_origin is null then '{}'::jsonb else jsonb_build_object('service_origin', v_origin) end,
+     coalesce(p_metadata, '{}'::jsonb)
+       || jsonb_build_object('emitted_at', extract(epoch from now())))
+  returning id into v_event_id;
+
+  return v_event_id;
+end $function$;
+revoke execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) from public, anon;
+grant  execute on function public.emit_event(text, text, uuid, jsonb, jsonb, uuid) to authenticated, service_role;
+
+-- ---- a marca de apagamento cobre todos os telefones do contato (migration 9241) ----
+-- manifest: **A marca de apagamento cobre todos os telefones do contato.** `fn_lgpd_guardar_marca_de_apagamento` passa a gravar em `lgpd_marcas_de_apagamento` uma linha por telefone da ficha, o principal e os extras de `contact_phones`, cada uma com sal próprio, o HMAC dos dígitos e o `lid` daquele número; mesma tabela, mesma normalização, nada em claro, e `fn_titular_apagado_a_pedido` segue igual. Corpo novo, assinatura, `search_path`, `security definer`, gatilho e grants inalterados. Vale para as anonimizações feitas a partir desta versão. Idempotente; espelho no apêndice do `supabase/baseline.sql`, antes da VARREDURA anon (0116). Prova em `tests/invariants/lgpd-marca-de-apagamento.test.ts`.
+--
+-- O gatilho roda no `update` do passo 1 da cascata, antes de o passo 1b apagar
+-- `contact_phones`: é por isso que os extras ainda estão aqui para serem lidos,
+-- como em `fn_redigir_conversas_ao_anonimizar`. A virada de `is_anonymized`
+-- acontece uma vez só, então a segunda anonimização não grava nada de novo.
+create or replace function public.fn_lgpd_guardar_marca_de_apagamento()
+returns trigger language plpgsql security definer
+set search_path = public, extensions, pg_temp as $$
+declare
+  v_alvo record;
+  v_sal bytea;
+begin
+  for v_alvo in
+    select distinct nullif(regexp_replace(coalesce(a.telefone, ''), '\D', '', 'g'), '') as telefone, a.lid
+      from (
+        select old.phone_number as telefone, old.wa_lid as lid
+        union all
+        select t.phone_number, t.wa_lid
+          from public.contact_phones t
+         where t.organization_id = new.organization_id and t.contact_id = new.id
+      ) as a
+  loop
+    continue when v_alvo.telefone is null and v_alvo.lid is null;
+    v_sal := gen_random_bytes(32);
+    insert into public.lgpd_marcas_de_apagamento (organization_id, sal, marca_telefone, marca_lid)
+    values (
+      new.organization_id,
+      v_sal,
+      case when v_alvo.telefone is null then null else hmac(convert_to(v_alvo.telefone, 'UTF8'), v_sal, 'sha256') end,
+      case when v_alvo.lid is null then null else hmac(convert_to(v_alvo.lid, 'UTF8'), v_sal, 'sha256') end
+    );
+  end loop;
+  return null;
+end $$;
+revoke execute on function public.fn_lgpd_guardar_marca_de_apagamento() from public, anon, authenticated, service_role;
+
 -- ---- Lugar com capacidade por período (migration 9224) ----
 -- Espelho idempotente da 9224. É este apêndice que chega a todo clone que
 -- INSTALA do zero; a cadeia de migrations é o caminho de quem ATUALIZA.
@@ -73207,9 +73947,12 @@ comment on column public.campaigns.provider_template_variables is
 alter table public.campaigns
   add column if not exists velocidade text not null default 'gradual';
 
+-- O vocabulário FINAL vive aqui, no bloco único da constraint: `transmissao`
+-- (migration 0712) foi acrescentado a esta lista, e o bloco da 0712 não a recria
+-- (`tests/unit/baseline-constraint-reconstruida.test.ts`).
 alter table public.campaigns drop constraint if exists campaigns_velocidade_check;
 alter table public.campaigns
-  add constraint campaigns_velocidade_check check (velocidade in ('gradual', 'rapida'));
+  add constraint campaigns_velocidade_check check (velocidade in ('gradual', 'rapida', 'transmissao'));
 
 update public.campaigns
    set velocidade = 'gradual'
@@ -74308,5 +75051,48 @@ alter table public.followup_flow_pointers
 
 comment on column public.followup_flow_pointers.send_when_assigned is
   'Envia o passo do follow-up mesmo com a conversa atribuída a uma pessoa (dono). Não vence force_human, ai_opt_out, contato interno, contato bloqueado nem as janelas de horário — e não acorda a IA.';
+
+notify pgrst, 'reload schema';
+
+-- ---- campanha por transmissão do provedor (migration 0712) ----
+-- ═══ Por que uma terceira velocidade ═══
+--
+-- A rápida (0711) manda em rajada, mas quem dispara é a rodada do cron, uma
+-- mensagem por chamada. A transmissão entrega a lista ao provedor numa chamada:
+-- a campanha aparece no painel de transmissões dele, com o relatório de cada
+-- destinatário (enviado, entregue, lido, falhou e o motivo), e 500 pessoas saem
+-- em segundos. Medido em 16/10/2026 com 2 destinatários: entregues em 1 a 3 s.
+--
+-- ═══ Por que o id da transmissão mora na campanha ═══
+--
+-- Cada mensagem da transmissão volta pelo webhook como uma saída que o CRM não
+-- mandou. Sem o id, a ingestão a lia como "uma pessoa respondeu pelo celular" —
+-- e calava o agente naquela conversa — e guardava "[Template: nome]" no lugar
+-- do texto, então o agente não sabia o que a pessoa tinha recebido. Com o id, o
+-- eco acha a campanha e o destinatário, e a linha nasce com o texto do modelo.
+-- Único por organização: dois ecos nunca podem apontar para duas campanhas.
+--
+-- O CHECK `campaigns_rapida_so_com_modelo` (0711) já cobre a transmissão: tudo
+-- que não é `gradual` exige modelo.
+--
+-- Idempotente: `add column if not exists`, constraint recriada por nome, índice
+-- `if not exists`.
+
+alter table public.campaigns
+  add column if not exists provider_broadcast_id text;
+
+-- `transmissao` entra no CHECK `campaigns_velocidade_check` no bloco único da
+-- constraint (o da migration 0711, acima): reconstruí-la aqui faria o bloco
+-- antigo falhar ao re-aplicar num banco que já tem campanha por transmissão.
+
+create unique index if not exists campaigns_provider_broadcast_id_uidx
+  on public.campaigns (organization_id, provider_broadcast_id)
+  where provider_broadcast_id is not null;
+
+comment on column public.campaigns.velocidade is
+  'gradual = uma mensagem por número a cada rodada (uma por minuto); rapida = rajada de várias por segundo; transmissao = a lista inteira entregue ao provedor numa chamada. As duas últimas só com modelo aprovado (número oficial). Migrations 0711 e 0712.';
+
+comment on column public.campaigns.provider_broadcast_id is
+  'Id da transmissão no provedor (velocidade = transmissao). O eco de cada mensagem traz este id e volta por ele à campanha e ao destinatário. Migration 0712.';
 
 notify pgrst, 'reload schema';

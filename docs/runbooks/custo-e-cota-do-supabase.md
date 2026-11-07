@@ -1,8 +1,9 @@
 # Runbook — “meu Supabase estourou a cota”
 
 Para quem roda o DeskcommCRM numa VPS com Supabase (em especial o **plano free**,
-cuja cota de egress é de 5 GB/mês) e recebeu aviso de consumo, throttling ou
-cobrança. Também serve para quem só quer saber **quanto o sistema parado custa**.
+cuja cota de egress é de 5 GB/mês e a de log ingerido, 1 GB por ciclo — §5) e
+recebeu aviso de consumo, throttling ou cobrança. Também serve para quem só quer
+saber **quanto o sistema parado custa**.
 
 ## Antes de rodar — a pasta e o `psql`
 
@@ -202,7 +203,99 @@ psql_vps -c \
     where relname in ('job_queue','api_audit_log','send_ledger','before_send_traces');"
 ```
 
-## 5. Quando o compute Nano do plano grátis não basta
+## 5. Log ingestion é outra cota — o aviso “Log Ingestion Exceeded”
+
+Se o aviso que chegou no e-mail de cobrança ou no banner do painel diz **“Log
+Ingestion Exceeded”**, o aperto não é egress (§3) nem disco (§4): é o **volume de
+log** que o Supabase ingeriu no ciclo. É a cota que estoura com o sistema
+parado — e a que quase ninguém procura, porque o texto do aviso não aparece em
+lugar nenhum do sistema.
+
+### 5.1. O que a cota é
+
+No plano free a cota incluída é de **1 GB de log ingerido por ciclo**, e o
+excedente **não é cobrado**: a linha do free na tabela de preços é “Not billed”, e
+o caminho para quem passa do teto é a restrição do §5.2, não a fatura
+([*Manage Logs Ingest usage*](https://supabase.com/docs/guides/platform/manage-your-usage/logs-ingest),
+lida em 06/11/2026).
+
+O que conta é o que o Supabase **ingere** de todos os serviços do projeto —
+Postgres, API gateway, Auth, Storage, Realtime, Edge Functions —, medido por byte.
+Não é o que o seu contêiner escreve no `docker logs`. O número oficial está em
+**Settings → Usage**, na linha “Logs Ingest”.
+
+**A cobrança deste item ainda não começou.** A mesma página avisa que há uma
+carência até o início de 2027 antes de a fatura valer, e o painel de uma
+instalação no free mostra o mesmo texto (“Billing starts after the grace period
+ends in early 2027”). Ou seja: a cota existe e é ela que dispara o aviso, mas o
+excedente hoje não vira dinheiro — e isso muda sozinho. Confira a data na página
+antes de contar com a carência.
+
+### 5.2. O que o aviso significa, e por que a segunda vez é pior
+
+O aviso não corta nada na hora. O caminho tem ordem, e a ordem é a informação:
+
+| passo | o que acontece |
+|---|---|
+| 1. aviso | notificação no e-mail de cobrança da organização; o consumo acima da cota aparece no painel de uso |
+| 2. carência | período antes de qualquer restrição — é a janela para corrigir sem queda |
+| 3. Fair Use Policy | passada a carência, a restrição vem por serviço: **projeto pausado**, **banco em somente leitura**, novos projetos bloqueados e **402** para toda requisição à API. Vale para todos os projetos da organização |
+
+**O segundo estouro não tem carência.** Depois que a carência termina, o painel
+continua mostrando o aviso mesmo se o consumo voltar para baixo — é o registro de
+que a organização já estourou. Estourando de novo, a restrição entra **sem** nova
+carência; o aviso só some depois de vários ciclos abaixo do teto. A restrição por
+cota cai sozinha quando a cota se renova no início do ciclo seguinte (com um
+atraso curto depois da virada) ou na hora, se a organização passa para um plano
+pago. ([*Billing FAQ — Fair Use Policy*](https://supabase.com/docs/guides/platform/billing-faq#fair-use-policy),
+lida em 06/11/2026)
+
+### 5.3. O que consome
+
+O log cresce com o **número de chamadas**, não com o tamanho da resposta: cada
+requisição que chega ao PostgREST, ao Auth e ao Realtime vira linha ingerida.
+Duas medições do projeto, em instalações diferentes:
+
+- **#2235** — um ciclo fechou com **99 GB contra o 1 GB do free**: pico de
+  ~15 GB/dia entre 12 e 17/09 e, depois, **~0,3–0,5 GB/dia** em regime, sem
+  ninguém mexer no sistema.
+- **#4103** (relato da comunidade, 01–05/11) — **0,74 GB de 1 GB em cinco dias**,
+  entre ~100 e ~164 MB por dia, numa instalação do kit com pouco volume de
+  atendimento.
+
+O que produz essas chamadas, na ordem em que costuma aparecer:
+
+- **A fila ociosa.** Com `QUEUE_IDLE_MAX_INTERVAL_MS` desligado — o default da
+  §2 —, a instalação parada consulta o banco a cada piso: 3.880 consultas em 2h19
+  (~28/min), medido na **#3688**. Com `60000`, cai para ~1/min.
+- **Cron duplicado.** O `event-log-drain` é chamado pelo contêiner `scheduler` (de
+  minuto em minuto) **e** pelo crontab do host que o kit provisiona; na **#2235**,
+  ~62% das chamadas `service_role` ao PostgREST eram da `event_log`. Confira as
+  duas entradas antes de acusar o worker.
+- **Painel aberto.** Telas com refetch de 5 s (painel de atualização, detalhe do
+  compromisso, revisão de resposta) chamam PostgREST e `getUser` em laço: na
+  **#2235**, ~264 req/min com abas abertas contra ~85–91/min com todas fechadas.
+  Aba esquecida é chamada que continua com ninguém usando o sistema.
+
+### 5.4. O que fazer — e o que não resolve
+
+Meça antes (§1) e ataque a origem que a medição apontar:
+
+- Ligue o recuo da fila: `QUEUE_IDLE_MAX_INTERVAL_MS=60000` no `.env` e
+  `up -d worker` (§2).
+- Confira o `event-log-drain` no contêiner e no crontab do host (§5.3).
+- Feche as abas do painel que ficam abertas o dia inteiro — o intervalo de refetch
+  é do produto, não do `.env`.
+- Espere **um ou dois dias** e olhe a tendência no painel de uso e no Logs
+  Explorer antes de concluir: o volume varia de dia para dia, e uma leitura
+  isolada engana (é o mesmo conselho da doc oficial).
+
+**O que não resolve:** ajustar a retenção ou rodar `VACUUM` (§4) não muda uma
+linha de log ingerido — é outra cota, e nenhuma tabela encolhe por causa dela.
+Também não basta pausar o projeto para “limpar” o consumo: pausar ou apagar para
+de acumular, mas o que já foi ingerido no ciclo continua contando até a virada.
+
+## 6. Quando o compute Nano do plano grátis não basta
 
 O sintoma não é lentidão, é indisponibilidade: o projeto fica fora do ar **sem ninguém usando**, toda chamada a
 `/rest/v1` responde `522` ou `503 PGRST002`, e o `/api/v1/health` diz `supabase: down` com
@@ -233,7 +326,7 @@ US$ 25/mês + Micro US$ 0,01344/h (~US$ 10/mês) − US$ 10 de crédito ≈ **US
 no Micro, ≈ **US$ 35/mês**. Preço e crédito mudam; confira os valores e o que o crédito cobre em
 <https://supabase.com/docs/guides/platform/manage-your-usage/compute> antes de trocar o compute.
 
-## 6. Se ainda não fechar
+## 7. Se ainda não fechar
 
 Abra uma issue com: a saída dos três comandos da seção 1, a janela de tempo que
 elas cobrem, e o painel **Usage** do Supabase no mesmo período. Medição sem a
