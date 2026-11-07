@@ -464,6 +464,10 @@ export function InboxLayout({
         ? filterValue.search
         : undefined,
       channel_session_id: filterValue.channel_session_id,
+      // A FILA (#3876): o seletor da barra vira o mesmo `sector_id` que a rota
+      // lê. Sem esta linha o controle existiria e a lista não mudaria — a
+      // rotura silenciosa que o schema e a rota já documentam nas duas pontas.
+      sector_id: filterValue.sector_id,
       tag: filterValue.tag,
       tagMode: filterValue.tagMode,
       unread: filterValue.onlyUnread || undefined,
@@ -475,6 +479,7 @@ export function InboxLayout({
       filterValue.assigned_to,
       filterValue.search,
       filterValue.channel_session_id,
+      filterValue.sector_id,
       filterValue.tag,
       filterValue.tagMode,
       filterValue.onlyUnread,

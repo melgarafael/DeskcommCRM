@@ -19999,6 +19999,41 @@ export const DICIONARIO: Traducoes = {
   "A Meta bloqueou temporariamente o envio deste número por violação de política (código 368). Veja o motivo no Gerenciador do WhatsApp, na Meta.": { es: "Meta bloqueó temporalmente el envío de este número por infringir sus políticas (código 368). Mira el motivo en el Administrador de WhatsApp, en Meta." },
   "A Meta está recusando mensagens deste número (código {codigo}).": { es: "Meta está rechazando mensajes de este número (código {codigo})." },
   "Este aviso fecha sozinho quando uma mensagem voltar a ser entregue.": { es: "Este aviso se cierra solo cuando un mensaje vuelva a entregarse." },
+
+  // ─── o botão de exportar a conversa (#1982) ────────────────────────────────
+  // A rota e o PDF existiam; faltava a porta. O rótulo é o gesto, e a guia diz
+  // o FORMATO — "exportar" sozinho promete CSV, planilha, o que a pessoa
+  // imaginar.
+  "Exportar conversa": { es: "Exportar conversación" },
+  "Gerando PDF…": { es: "Generando PDF…" },
+  "Baixa o histórico desta conversa em PDF, para guardar ou anexar ao caso.": {
+    es: "Descarga el historial de esta conversación en PDF, para guardarlo o adjuntarlo al caso.",
+  },
+  "Seu perfil não permite exportar o histórico desta conversa.": {
+    es: "Tu perfil no permite exportar el historial de esta conversación.",
+  },
+  "Não foi possível exportar a conversa agora.": {
+    es: "No se pudo exportar la conversación ahora.",
+  },
+
+  // ─── filas visíveis e transferíveis (#3876) ────────────────────────────────
+  "Filtrar por fila": { es: "Filtrar por fila" },
+  "Todas as filas": { es: "Todas las filas" },
+  "Fila removida": { es: "Fila eliminada" },
+  "Mover para fila": { es: "Mover a la fila" },
+  "Classifica esta conversa em outra fila de atendimento.": {
+    es: "Clasifica esta conversación en otra fila de atención.",
+  },
+  "Escolha a fila para onde esta conversa vai. Se ela estiver sem dono, volta para a distribuição.": {
+    es: "Elige la fila a la que va esta conversación. Si está sin dueño, vuelve a la distribución.",
+  },
+  "Fila atual": { es: "Fila actual" },
+  "Nenhuma fila cadastrada.": { es: "Ninguna fila registrada." },
+  "Movendo…": { es: "Moviendo…" },
+  "Conversa movida para a fila.": { es: "Conversación movida a la fila." },
+  "Não foi possível mover a conversa de fila.": {
+    es: "No se pudo mover la conversación de fila.",
+  },
 };
 
 /**

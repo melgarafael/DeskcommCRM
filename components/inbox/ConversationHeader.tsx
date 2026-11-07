@@ -46,6 +46,8 @@ import { comandoDaConversa, ROTULO_DO_MOTIVO } from "@/lib/inbox/comando-da-conv
 import { ReassignDialog } from "@/components/inbox/ReassignDialog";
 import { SnoozeButton } from "@/components/inbox/SnoozeButton";
 import { DialogoDeConvite, ParticipantesDaConversa } from "@/components/inbox/ParticipantesDaConversa";
+import { ExportarConversa } from "@/components/inbox/ExportarConversa";
+import { DialogoMoverParaFila, ItemMoverParaFila } from "@/components/inbox/MoverParaFila";
 import { DialButton } from "@/components/voice/DialButton";
 import { VideoCallButton } from "@/components/inbox/VideoCallButton";
 import { ItemReservarServico, ReservarServicoNaConversa } from "@/components/agenda/ReservarServicoNaConversa";
@@ -139,6 +141,9 @@ export function ConversationHeader({
   // A folha de reserva segue o MESMO desenho do convite: o item do ⋯ só levanta
   // a bandeira, a folha mora fora do menu e o menu fecha como qualquer outro.
   const [reservaAberta, setReservaAberta] = useState(false);
+  // A FILA (#3876): o item do ⋯ só levanta a bandeira — o diálogo mora fora do
+  // menu, pelo mesmo motivo do convite acima.
+  const [filaAberta, setFilaAberta] = useState(false);
 
   const c = conversation.contacts ?? null;
   /**
@@ -650,6 +655,18 @@ export function ConversationHeader({
                 {t("Convidar")}
               </DropdownMenuItem>
             )}
+            {/* ─── A FILA E O HISTÓRICO (#3876, #1982) ───────────────────────
+                Duas ações que a conversa já tinha e a tela não oferecia: o
+                `PUT /conversations/[id]/sector` (9062) sem consumidor e o
+                export em PDF (#1982) sem botão. Ficam no ⋯ porque nenhuma das
+                duas é do dia a dia: classificar é correção de rota, exportar é
+                arquivamento. `ItemMoverParaFila` devolve `null` quando a rota
+                recusaria (viewer, módulo desligado, conversa encerrada);
+                `ExportarConversa` fica desabilitado, porque o papel que não
+                baixa o arquivo continua lendo a conversa na tela. */}
+            <DropdownMenuSeparator />
+            <ItemMoverParaFila encerrada={encerrada} onAbrir={() => setFilaAberta(true)} />
+            <ExportarConversa conversationId={conversation.id} como="menu" />
             <DropdownMenuSeparator />
             {podePausar && (
               <DropdownMenuItem
@@ -760,6 +777,13 @@ export function ConversationHeader({
         conversationId={conversation.id}
         aberto={conviteAberto}
         onAbertoChange={setConviteAberto}
+      />
+      {/* O diálogo da fila, FORA do menu ⋯ — o mesmo desenho do convite acima. */}
+      <DialogoMoverParaFila
+        conversationId={conversation.id}
+        filaAtual={conversation.sector_id ?? null}
+        aberto={filaAberta}
+        onAbertoChange={setFilaAberta}
       />
       {podeReservar && c?.id && activeOrg && (
         <ReservarServicoNaConversa
