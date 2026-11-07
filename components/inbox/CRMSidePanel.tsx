@@ -812,6 +812,12 @@ export function CRMSidePanel({
   // quem responde "posso mudar a carteira DESTE cliente?" é o servidor, no
   // `pode_alterar` do GET, e o `CartaoDaCarteira` lê essa resposta (#3746).
   const podeVerCarteira = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "agent");
+  // A BIBLIOTECA do acervo é `manager`+ — a página `/app/ai/knowledge/sources`
+  // redireciona o resto para /403 e o GET do conteúdo cobra o mesmo papel. A
+  // CONSULTA ao lado é `agent`+ (a rota de busca). É por isso que a régua do
+  // botão "abrir o material de origem" no trecho é ESTA, e não a da busca: o
+  // painel mostra o nome da fonte a quem só pergunta, e o link a quem abre.
+  const podeAbrirAcervo = (user.is_platform_admin && !user.support) || roleAtLeast(activeOrg?.role, "manager");
   const localeDaData = useLocaleDeData();
   const t = useT();
   const contact = conversation?.contacts ?? null;
@@ -1441,7 +1447,7 @@ export function CRMSidePanel({
         <p className="mt-1 mb-2 text-xs text-muted-foreground">
           {t("Pergunte como a IA perguntaria — a resposta vem com a origem de cada trecho.")}
         </p>
-        <AcervoSearch />
+        <AcervoSearch podeAbrirFonte={podeAbrirAcervo} />
       </section>
     ),
   };
