@@ -154,7 +154,14 @@ describe("#4023 — o pedido de nota no banco", () => {
       GOV_AGENT_A,
       `select count(*) from public.satisfacao_do_atendimento where organization_id = '${GOV_ORG}';`,
     );
+    // O vizinho é `admin` da PRÓPRIA organização: a policy abre para ele lá,
+    // e é isso que faz o zero aqui ser isolamento, não falta de privilégio.
+    const comoVizinha = countAs(
+      VIZINHA_ADMIN,
+      `select count(*) from public.satisfacao_do_atendimento where organization_id = '${GOV_ORG}';`,
+    );
     expect(comoManager).toBeGreaterThan(0);
     expect(comoAgent).toBe(0);
+    expect(comoVizinha).toBe(0);
   });
 });
