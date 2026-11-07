@@ -26,6 +26,8 @@ interface LinhaDoPar {
   email: string | null;
   email_normalized: string | null;
   cpf_hash: string | null;
+  wa_identity: string | null;
+  wa_lid: string | null;
   source_metadata: Record<string, unknown> | null;
 }
 
@@ -65,6 +67,8 @@ function linha(id: string, campos: Partial<LinhaDoPar> = {}): LinhaDoPar {
     email: null,
     email_normalized: null,
     cpf_hash: null,
+    wa_identity: null,
+    wa_lid: null,
     source_metadata: null,
     ...campos,
   };
@@ -119,6 +123,59 @@ describe("dispensar par de contatos: o CPF é motivo forte", () => {
     const { pool, inseridos } = poolFalso([
       linha(A, { cpf_hash: HASH }),
       linha(B, { cpf_hash: `${HASH.slice(0, -1)}f` }),
+    ]);
+
+    const r = await dispensarParDeContatos(pool, {
+      organizationId: ORG,
+      contactIds: [A, B],
+      userId: USUARIO,
+    });
+
+    expect(r.ok).toBe(true);
+    expect(inseridos).toHaveLength(1);
+  });
+});
+
+/**
+ * A conta de WhatsApp (#4081) é motivo forte, e pela mesma mecânica muda: se a
+ * leitura do par não trouxer `wa_identity`/`wa_lid`, `ligadosPorMotivoForte` vê
+ * `undefined` dos dois lados e o atendente consegue dispensar — para todo mundo —
+ * o par que é a MESMA conta de WhatsApp.
+ */
+describe("dispensar par de contatos: a conta de WhatsApp é motivo forte", () => {
+  const LID = "100000000000001";
+
+  it("mesmo `wa_lid` → par_forte, rollback e NENHUMA linha de dispensa", async () => {
+    const { pool, inseridos } = poolFalso([
+      linha(A, { wa_identity: `lid:${LID}`, wa_lid: LID }),
+      linha(B, { wa_identity: `lid:${LID}`, wa_lid: LID }),
+    ]);
+
+    const r = await dispensarParDeContatos(pool, {
+      organizationId: ORG,
+      contactIds: [A, B],
+      userId: USUARIO,
+    });
+
+    expect(r).toEqual({ ok: false, motivo: "par_forte" });
+    expect(inseridos).toEqual([]);
+  });
+
+  it("a leitura do par PEDE `wa_identity` e `wa_lid`", async () => {
+    // Sabotagem: tirar qualquer das duas do `select` deixa esta asserção vermelha.
+    const { pool, consultas } = poolFalso([linha(A), linha(B)]);
+
+    await dispensarParDeContatos(pool, { organizationId: ORG, contactIds: [A, B], userId: USUARIO });
+
+    const leitura = consultas.find((sql) => /from public\.contacts/.test(sql))!;
+    expect(leitura).toContain("wa_identity");
+    expect(leitura).toContain("wa_lid");
+  });
+
+  it("conta de WhatsApp diferente: o par continua dispensável", async () => {
+    const { pool, inseridos } = poolFalso([
+      linha(A, { wa_identity: `lid:${LID}`, wa_lid: LID }),
+      linha(B, { wa_identity: "lid:70192801579999", wa_lid: "70192801579999" }),
     ]);
 
     const r = await dispensarParDeContatos(pool, {

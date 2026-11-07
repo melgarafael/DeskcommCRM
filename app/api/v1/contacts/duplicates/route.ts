@@ -21,8 +21,10 @@
  * ─── O que sai daqui e o que não sai ─────────────────────────────────────────
  * `cpf_hash` é LIDO (a comparação precisa dele) e NÃO é devolvido: é PII derivada,
  * e a tela de conferência mostra pessoa, telefone e e-mail — não hash de
- * documento. O mapeamento do `ok(...)` abaixo é a lista fechada do que o cliente
- * recebe; campo novo em `contacts` não vaza por acidente.
+ * documento. O mesmo vale para `wa_identity`/`wa_lid`: identificam a CONTA do
+ * WhatsApp, não a pessoa para quem se liga; a tela mostra `phone_number`. O
+ * mapeamento do `ok(...)` abaixo é a lista fechada do que o cliente recebe; campo
+ * novo em `contacts` não vaza por acidente.
  *
  * `viewer` pode LISTAR (é leitura de contato, que ele já enxerga na tabela);
  * quem funde é `manager`, e esse gate está na rota de POST /contacts/merge.
@@ -70,7 +72,7 @@ const TETO_DE_VARREDURA = 2000;
 const TAMANHO_DA_PAGINA = 1000;
 
 const COLUNAS_DO_CONTATO =
-  "id, name, display_name, address_book_name, email, email_normalized, phone_number, cpf_hash, is_merged_into, is_anonymized, source_metadata, created_at, last_activity_at";
+  "id, name, display_name, address_book_name, email, email_normalized, phone_number, cpf_hash, wa_identity, wa_lid, is_merged_into, is_anonymized, source_metadata, created_at, last_activity_at";
 
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
