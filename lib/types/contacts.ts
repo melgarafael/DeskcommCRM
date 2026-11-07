@@ -14,6 +14,7 @@ export type OrigemDoTelefone = "manual" | "fusao" | "importacao" | "prospeccao" 
  * O `wa_lid` NÃO vai na API: é identificador interno do WhatsApp daquele número.
  */
 export interface TelefoneExtra {
+  id: string;
   phone_number: string;
   type: TipoDeTelefone;
   whatsapp: WhatsappDoTelefone;
