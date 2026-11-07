@@ -274,6 +274,17 @@ export interface SilenceSweepDb {
    * continua tratado no insert: ele cobre a corrida, não o caso comum.
    */
   loadContatosComInscricaoViva(orgId: string, contactIds: string[]): Promise<Set<string>>;
+  /**
+   * Canal (`conversations.channel_session_id`) da conversa que decidiu o
+   * silêncio de cada contato — a MESMA conversa do inbound vencedor que
+   * `loadSilentContactIds` já leu (#3852). É o número em que o follow-up vai
+   * falar, e portanto o que decide qual agente pode ser pinado.
+   *
+   * OPCIONAL pela mesma razão dos demais: falso antigo sem o método = canal
+   * desconhecido, e a escolha do agente volta a ser a de hoje (menor uuid),
+   * sem quebrar os treze falsos de teste.
+   */
+  loadCanalDosContatos?(orgId: string, contactIds: string[]): Promise<Map<string, string | null>>;
   /** Insere o enrollment nascendo no nó trigger; `inserted:false` = 23505 (já vivo nesse pointer) → skip. */
   insertEnrollment(input: {
     organization_id: string;
@@ -306,6 +317,12 @@ export interface SilenceSweepSummary {
   /** Silenciosos que já bateram o teto de repetições deste fluxo. */
   skipped_teto_de_repeticoes: number;
   /**
+   * Silenciosos cuja conversa acontece num número onde NENHUM agente publicado
+   * arma este pointer (#3852). O fluxo pede IA e não há agente DAQUELE número:
+   * inscrever com o agente de outro número escreveria com a persona errada.
+   */
+  skipped_sem_agente_no_canal: number;
+  /**
    * Pointers que FALHARAM nesta varredura (logados e pulados). Um pointer ruim
    * — de uma empresa só — não pode calar a varredura de todas as outras: antes,
    * a primeira exceção abortava o laço e nenhum pointer depois dele era varrido.
@@ -333,6 +350,7 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
     skipped_sem_resposta_da_equipe: 0,
     skipped_resposta_a_automacao: 0,
     skipped_teto_de_repeticoes: 0,
+    skipped_sem_agente_no_canal: 0,
     pointers_failed: 0,
   };
 
@@ -342,16 +360,21 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
   // Memoiza a decisão do agente por pointer nesta varredura. A query do gate
   // é 1 por org; o grafo diz se a ausência de agente é gate-out ou `agent_id`
   // nulo (texto fixo).
+  //
+  // #3852: a chave inclui o CANAL. A decisão deixou de ser "do pointer" e
+  // passou a ser "do pointer naquele número" — dois contatos silenciosos do
+  // mesmo fluxo podem estar em números diferentes, cada um com seu agente.
   const agentCache = new Map<string, Promise<{ agentId: string | null; barrado: boolean }>>();
   const decidirAgente = (
     orgId: string,
     pointerId: string,
     pedeAgente: boolean,
+    canal: string | null = null,
   ): Promise<{ agentId: string | null; barrado: boolean }> => {
-    const key = `${orgId}:${pointerId}:${pedeAgente ? "1" : "0"}`;
+    const key = `${orgId}:${pointerId}:${pedeAgente ? "1" : "0"}:${canal ?? ""}`;
     let hit = agentCache.get(key);
     if (!hit) {
-      hit = decidirAgenteDoEnrollmentAutomatico(gateDb, orgId, pointerId, pedeAgente);
+      hit = decidirAgenteDoEnrollmentAutomatico(gateDb, orgId, pointerId, pedeAgente, canal);
       agentCache.set(key, hit);
     }
     return hit;
@@ -423,6 +446,12 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
             new Map(contactIds.map((id) => [id, teto])))
           : new Map<string, number>();
       const comInscricaoViva = await db.loadContatosComInscricaoViva(pointer.organization_id, contactIds);
+      // #3852: o número da conversa que decidiu o silêncio de cada contato.
+      // Ausência do método = canal desconhecido → decisão no nível do pointer,
+      // exatamente o comportamento de antes.
+      const canalPorContato =
+        (await db.loadCanalDosContatos?.(pointer.organization_id, contactIds)) ??
+        new Map<string, string | null>();
 
       for (const contactId of contactIds) {
         if (comRetorno.has(contactId)) {
@@ -464,6 +493,26 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
           summary.skipped_existing++;
           continue;
         }
+        // #3852: com o canal da conversa em mãos, o agente é escolhido DENTRO
+        // do número em que o follow-up vai falar. Fluxo que pede IA e não tem
+        // agente naquele número não inscreve — o de outro número escreveria
+        // com a persona errada. Sem canal (falso antigo), vale a decisão do
+        // pointer, como antes.
+        let agenteDoContato = agentId;
+        const canal = canalPorContato.get(contactId) ?? null;
+        if (canal !== null) {
+          const decisaoDoCanal = await decidirAgente(
+            pointer.organization_id,
+            pointer.id,
+            trigger.pedeAgente,
+            canal,
+          );
+          if (decisaoDoCanal.barrado) {
+            summary.skipped_sem_agente_no_canal++;
+            continue;
+          }
+          agenteDoContato = decisaoDoCanal.agentId;
+        }
         const { inserted } = await db.insertEnrollment({
           organization_id: pointer.organization_id,
           pointer_id: pointer.id,
@@ -471,7 +520,7 @@ export async function runSilenceSweep(deps: SilenceSweepDeps): Promise<SilenceSw
           contact_id: contactId,
           current_node_id: trigger.id,
           next_eval_at: nextEvalAt,
-          agent_id: agentId,
+          agent_id: agenteDoContato,
         });
         if (inserted) summary.enrolled++;
         else summary.skipped_existing++;
@@ -517,6 +566,8 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
   const ultimaMensagem = new Map<string, number>();
   const pessoaNoComando = new Set<string>();
   const semRespostaDaEquipe = new Set<string>();
+  /** #3852: canal (`channel_session_id`) da conversa que decidiu o silêncio. */
+  const canalDoContato = new Map<string, string | null>();
   return {
     async loadActiveSilencePointers() {
       const { data, error } = await admin
@@ -575,7 +626,7 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
       const { data, error } = await admin
         .from("conversations")
         .select(
-          "id, service_revision, current_demanda_id, demandas!conversations_current_demanda_id_fkey(revision,fechada_em), status, assignee_kind, bot_silenced_until, last_outbound_at, messages!messages_conversation_id_fkey(organization_id,contact_id,conversation_id,service_revision,demanda_id,demanda_revision,sent_at), contact_id, last_inbound_at, contacts:contact_id(tags, is_blocked, ai_authorized_at, phone_number, force_human, ai_opt_out), sessao:channel_session_id(metadata), organizations:organization_id(status, settings)",
+          "id, channel_session_id, service_revision, current_demanda_id, demandas!conversations_current_demanda_id_fkey(revision,fechada_em), status, assignee_kind, bot_silenced_until, last_outbound_at, messages!messages_conversation_id_fkey(organization_id,contact_id,conversation_id,service_revision,demanda_id,demanda_revision,sent_at), contact_id, last_inbound_at, contacts:contact_id(tags, is_blocked, ai_authorized_at, phone_number, force_human, ai_opt_out), sessao:channel_session_id(metadata), organizations:organization_id(status, settings)",
         )
         .eq("organization_id", orgId).eq("demandas.organization_id", orgId)
         .eq("contacts.organization_id", orgId).eq("sessao.organization_id", orgId)
@@ -588,7 +639,7 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
       if (error) throw new Error(error.message);
 
       type Row = {
-        id: string; service_revision: number; current_demanda_id: string | null; demandas: { revision: number; fechada_em: string | null } | null;
+        id: string; channel_session_id?: string | null; service_revision: number; current_demanda_id: string | null; demandas: { revision: number; fechada_em: string | null } | null;
         status: string; messages: Array<ServiceBoundary & { sent_at: string }>;
         assignee_kind?: string | null; bot_silenced_until?: string | null;
         contact_id: string;
@@ -612,6 +663,8 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
           permitidoPeloGate: boolean;
           pessoaNoComando: boolean;
           respondido: boolean;
+          /** #3852: número da conversa vencedora — o mesmo em que o follow-up fala. */
+          canal: string | null;
         }
       >();
       for (const row of (data ?? []) as unknown as Row[]) {
@@ -651,6 +704,10 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
           );
           latest.set(row.contact_id, {
             boundary, at,
+            canal:
+              typeof row.channel_session_id === "string" && row.channel_session_id !== ""
+                ? row.channel_session_id
+                : null,
             tags: row.contacts?.tags ?? [],
             blocked: row.contacts?.is_blocked ?? false,
             permitidoPeloGate: acesso.permite,
@@ -684,6 +741,7 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
         silentIds.push(contactId);
         origins.set(`${orgId}:${contactId}`, v.boundary);
         ultimaMensagem.set(`${orgId}:${contactId}`, v.at);
+        canalDoContato.set(`${orgId}:${contactId}`, v.canal);
         if (v.respondido) semRespostaDaEquipe.delete(`${orgId}:${contactId}`);
         else semRespostaDaEquipe.add(`${orgId}:${contactId}`);
         if (v.pessoaNoComando) pessoaNoComando.add(`${orgId}:${contactId}`);
@@ -718,6 +776,12 @@ export function createSupabaseSilenceSweepDb(admin: SupabaseClient): SilenceSwee
 
     async loadContatosComPessoaNoComando(orgId, contactIds) {
       return new Set(contactIds.filter((id) => pessoaNoComando.has(`${orgId}:${id}`)));
+    },
+
+    async loadCanalDosContatos(orgId, contactIds) {
+      const mapa = new Map<string, string | null>();
+      for (const id of contactIds) mapa.set(id, canalDoContato.get(`${orgId}:${id}`) ?? null);
+      return mapa;
     },
 
     async loadContatosSemRespostaDaEquipe(orgId, contactIds) {

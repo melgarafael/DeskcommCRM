@@ -25,6 +25,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { EventRow } from "@/lib/event-log/dispatcher";
 import { ORIGEM_DA_PLANILHA } from "@/lib/leads/planilha";
+import { CONVERSATION_TERMINAL_STATUSES } from "@/lib/schemas";
 import { flowGraphSchema } from "./graph-schema";
 import { triggerConfigSchema } from "./api-schemas";
 import {
@@ -45,6 +46,12 @@ export interface PointerDeLead {
 export interface GatilhoLeadDb {
   carregaPointersDeLead(orgId: string): Promise<PointerDeLead[]>;
   carregaContatoDoNegocio(orgId: string, leadId: string): Promise<string | null>;
+  /**
+   * Canal (`conversations.channel_session_id`) da conversa mais recente do
+   * contato — o número em que o follow-up vai falar (#3852). Opcional: falso
+   * antigo sem o método = canal desconhecido, escolha do agente como antes.
+   */
+  carregaCanalDoContato?(orgId: string, contactId: string): Promise<string | null>;
   carregaNoDeGatilho(orgId: string, versionId: string): Promise<NoDeGatilho | null>;
   insereEnrollment(input: {
     service_origin?: unknown;
@@ -127,6 +134,10 @@ export async function aplicaGatilhoDeLead(
     return summary;
   }
 
+  // #3852: o número em que este contato conversa. É o que restringe os
+  // candidatos ao agente publicado naquele WhatsApp.
+  const canal = (await deps.db.carregaCanalDoContato?.(row.organization_id, contatoId)) ?? null;
+
   for (const pointer of armados) {
     const noDeGatilho = await deps.db.carregaNoDeGatilho(row.organization_id, pointer.active_version_id);
     if (!noDeGatilho) continue;
@@ -135,6 +146,7 @@ export async function aplicaGatilhoDeLead(
       row.organization_id,
       pointer.id,
       noDeGatilho.pedeAgente,
+      canal,
     );
     if (barrado) {
       summary.pointers_barrados_pelo_gate++;
@@ -215,6 +227,25 @@ export function createSupabaseGatilhoLeadDb(admin: SupabaseClient): GatilhoLeadD
         .maybeSingle();
       if (error) throw new Error(error.message);
       return data?.contact_id ?? null;
+    },
+
+    async carregaCanalDoContato(orgId, contactId) {
+      // A conversa mais recente do contato: é nela que o follow-up fala. Sem
+      // conversa (ou sem canal) devolve `null` — a escolha do agente volta a ser
+      // a de antes, e o gate registrará `barrado` se o fluxo pedir IA.
+      const { data, error } = await admin
+        .from("conversations")
+        .select("channel_session_id")
+        .eq("organization_id", orgId)
+        .eq("contact_id", contactId)
+        .not("channel_session_id", "is", null)
+        .not("status", "in", `(${CONVERSATION_TERMINAL_STATUSES.join(",")})`)
+        .order("last_inbound_at", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      const sessao = (data as { channel_session_id?: string | null } | null)?.channel_session_id;
+      return typeof sessao === "string" && sessao !== "" ? sessao : null;
     },
 
     async carregaNoDeGatilho(orgId, versionId) {

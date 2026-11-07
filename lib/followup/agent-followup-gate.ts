@@ -96,13 +96,24 @@ export function agenteDoGatilhoAutomatico(
   return { agentId: null, barrado: true };
 }
 
+/**
+ * Decide o agente do enrollment — agora com o CANAL da conversa (#3852).
+ *
+ * `canal` é o `channel_sessions.id` do número em que a conversa acontece. Com
+ * ele, só concorrem os agentes publicados NESSE número: o fluxo do agente A
+ * deixa de pegar lead que falou no número do agente B e escrever com a persona
+ * errada. Sem ele (`undefined`/`null`/vazio), a escolha é a de sempre — menor
+ * uuid entre todos os agentes que armam o pointer —, que é o que mantém
+ * compatíveis os chamadores sem conversa (prévia de fluxos, testes antigos).
+ */
 export async function decidirAgenteDoEnrollmentAutomatico(
   db: FollowupGateDb,
   orgId: string,
   pointerId: string,
   pedeAgente: boolean,
+  canal?: string | null,
 ): Promise<{ agentId: string | null; barrado: boolean }> {
-  const agentId = await resolveAgentForAutomaticTrigger(db, orgId, pointerId);
+  const agentId = await resolveAgentForAutomaticTrigger(db, orgId, pointerId, canal);
   return agenteDoGatilhoAutomatico(agentId, pedeAgente);
 }
 
@@ -110,6 +121,14 @@ export async function decidirAgenteDoEnrollmentAutomatico(
 export interface EnabledFollowupAgent {
   agentId: string;
   pointerIds: string[];
+  /**
+   * `channel_sessions.id` do número em que a versão publicada atende. Vazio ou
+   * ausente = canal desconhecido. Quando o chamador informa um canal, agente
+   * sem canal NÃO é candidato: escolhê-lo sem saber o número é exatamente o
+   * defeito do #3852 (persona do agente A no lead do número B). O adapter de
+   * produção sempre preenche; os falsos antigos só são exercitados sem canal.
+   */
+  channelSessionIds?: string[];
 }
 
 /** Interface estreita de DB — mesma doutrina de `AdminClient`/`ReactivityAdminClient`
@@ -119,22 +138,33 @@ export interface FollowupGateDb {
   loadEnabledPublishedFollowupAgents(orgId: string): Promise<EnabledFollowupAgent[]>;
 }
 
-/** Puro: agent_ids que armam este pointer, em ordem determinística (menor uuid primeiro). */
-function agentsEnablingPointer(agents: EnabledFollowupAgent[], pointerId: string): string[] {
+/** Puro: agent_ids que armam este pointer, em ordem determinística (menor uuid primeiro).
+ *
+ *  Com `canal` informado, o recorte é duplo: arma o pointer E está publicado
+ *  naquele número. Canal vazio/ausente mantém a lista inteira (compatibilidade). */
+function agentsEnablingPointer(
+  agents: EnabledFollowupAgent[],
+  pointerId: string,
+  canal?: string | null,
+): string[] {
+  const filtroDeCanal = typeof canal === "string" && canal.trim() !== "" ? canal : null;
   return agents
     .filter((a) => a.pointerIds.includes(pointerId))
+    .filter((a) => filtroDeCanal === null || (a.channelSessionIds ?? []).includes(filtroDeCanal))
     .map((a) => a.agentId)
     .sort();
 }
 
-/** Gate booleano: existe ao menos 1 agente publicado da org armando este pointer? */
+/** Gate booleano: existe ao menos 1 agente publicado da org armando este pointer?
+ *  Com `canal`, a pergunta é a mesma restrita ao número da conversa (#3852). */
 export async function isPointerEnabledForAutomaticTrigger(
   db: FollowupGateDb,
   orgId: string,
   pointerId: string,
+  canal?: string | null,
 ): Promise<boolean> {
   const agents = await db.loadEnabledPublishedFollowupAgents(orgId);
-  return agentsEnablingPointer(agents, pointerId).length > 0;
+  return agentsEnablingPointer(agents, pointerId, canal).length > 0;
 }
 
 /**
@@ -142,14 +172,19 @@ export async function isPointerEnabledForAutomaticTrigger(
  * exibição na fila). Determinístico quando >1 agente habilita o mesmo pointer:
  * MENOR agent_id (uuid asc). `null` = nenhum agente publicado arma (gate-out) —
  * mesma condição em que `isPointerEnabledForAutomaticTrigger` retorna false.
+ *
+ * Com `canal`, só entram os agentes publicados naquele número (#3852): com dois
+ * números, cada um com seu agente, cada fluxo escolhe o agente do número em que
+ * a conversa acontece. Sem canal, a escolha é a de sempre.
  */
 export async function resolveAgentForAutomaticTrigger(
   db: FollowupGateDb,
   orgId: string,
   pointerId: string,
+  canal?: string | null,
 ): Promise<string | null> {
   const agents = await db.loadEnabledPublishedFollowupAgents(orgId);
-  return agentsEnablingPointer(agents, pointerId)[0] ?? null;
+  return agentsEnablingPointer(agents, pointerId, canal)[0] ?? null;
 }
 
 interface FollowupColumnShape {
@@ -163,24 +198,40 @@ export function createSupabaseFollowupGateDb(admin: SupabaseClient): FollowupGat
     async loadEnabledPublishedFollowupAgents(orgId) {
       const { data, error } = await admin
         .from("ai_agent_versions")
-        .select("agent_id, followup")
+        .select("agent_id, followup, channel_session_id")
         .eq("organization_id", orgId)
         .eq("status", "published");
       if (error) throw new Error(`followup_gate_query_failed: ${error.message}`);
 
       // Um agente tem no máximo 1 versão publicada; ainda assim agrego por
       // agent_id (defensivo) unindo os pointers habilitados.
-      const byAgent = new Map<string, Set<string>>();
-      for (const row of (data ?? []) as Array<{ agent_id: string; followup: FollowupColumnShape | null }>) {
+      const byAgent = new Map<string, { pointerIds: Set<string>; channelSessionIds: Set<string> }>();
+      for (const row of (data ?? []) as Array<{
+        agent_id: string;
+        followup: FollowupColumnShape | null;
+        channel_session_id: string | null;
+      }>) {
         const f = row.followup;
         if (!f || f.enabled !== true || !Array.isArray(f.flow_pointer_ids)) continue;
-        const set = byAgent.get(row.agent_id) ?? new Set<string>();
+        const atual = byAgent.get(row.agent_id) ?? {
+          pointerIds: new Set<string>(),
+          channelSessionIds: new Set<string>(),
+        };
         for (const id of f.flow_pointer_ids) {
-          if (typeof id === "string") set.add(id);
+          if (typeof id === "string") atual.pointerIds.add(id);
         }
-        if (set.size > 0) byAgent.set(row.agent_id, set);
+        // #3852: o número em que ESTA versão publicada atende. É o que separa o
+        // agente do WhatsApp A do agente do WhatsApp B na hora de pinar.
+        if (typeof row.channel_session_id === "string" && row.channel_session_id !== "") {
+          atual.channelSessionIds.add(row.channel_session_id);
+        }
+        if (atual.pointerIds.size > 0) byAgent.set(row.agent_id, atual);
       }
-      return [...byAgent].map(([agentId, ids]) => ({ agentId, pointerIds: [...ids] }));
+      return [...byAgent].map(([agentId, v]) => ({
+        agentId,
+        pointerIds: [...v.pointerIds],
+        channelSessionIds: [...v.channelSessionIds],
+      }));
     },
   };
 }

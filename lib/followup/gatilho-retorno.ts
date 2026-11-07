@@ -52,6 +52,12 @@ export interface EstadoDaConversaDeRetorno {
   assignee_kind: string | null;
   bot_silenced_until: string | null;
   tags: string[];
+  /**
+   * `conversations.channel_session_id` — o número em que o retorno aconteceu
+   * (#3852). Opcional: falso antigo sem o campo = canal desconhecido, e a
+   * escolha do agente volta a ser a de antes. Lido na MESMA consulta do estado.
+   */
+  canal?: string | null;
 }
 
 export interface EnrollmentVivoRef {
@@ -202,11 +208,15 @@ export async function aplicaGatilhoDeRetorno(
 
     const noDeGatilho = await deps.db.carregaNoDeGatilho(row.organization_id, pointer.active_version_id);
     if (!noDeGatilho) continue;
+    // #3852: o retorno aconteceu num número; o agente é o daquele número. Com
+    // dois, cada um com o seu, o retorno no número B não pode ser inscrito com
+    // a persona do agente do número A.
     const { agentId, barrado } = await decidirAgenteDoEnrollmentAutomatico(
       deps.gateDb,
       row.organization_id,
       pointer.id,
       noDeGatilho.pedeAgente,
+      estado.canal ?? null,
     );
     if (barrado) {
       summary.pointers_barrados_pelo_gate++;
@@ -308,7 +318,7 @@ export function createSupabaseGatilhoRetornoDb(admin: SupabaseClient): GatilhoRe
     async carregaEstadoDaConversa(orgId, conversationId, contactId) {
       const { data: conv, error: convErr } = await admin
         .from("conversations")
-        .select("is_group, assignee_kind, bot_silenced_until")
+        .select("is_group, assignee_kind, bot_silenced_until, channel_session_id")
         .eq("organization_id", orgId)
         .eq("id", conversationId)
         .maybeSingle();
@@ -327,6 +337,10 @@ export function createSupabaseGatilhoRetornoDb(admin: SupabaseClient): GatilhoRe
         force_human: Boolean((contato as { force_human?: boolean } | null)?.force_human),
         assignee_kind: (conv as { assignee_kind: string | null }).assignee_kind,
         bot_silenced_until: (conv as { bot_silenced_until: string | null }).bot_silenced_until,
+        canal: (() => {
+          const sessao = (conv as { channel_session_id?: string | null }).channel_session_id;
+          return typeof sessao === "string" && sessao !== "" ? sessao : null;
+        })(),
         tags: Array.isArray((contato as { tags?: string[] } | null)?.tags)
           ? ((contato as { tags: string[] }).tags as string[])
           : [],
