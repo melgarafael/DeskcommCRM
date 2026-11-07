@@ -38,7 +38,7 @@ import { useDepoisDeMontar } from "@/hooks/ui/useDepoisDeMontar";
 import { roleAtLeast, type Role, type VisibilityMode } from "@/lib/auth/types";
 import { SeletorDeAtendente } from "@/components/inbox/SeletorDeAtendente";
 
-export type InboxTab = "unassigned" | "mine" | "all" | "closed" | "archived" | "ai";
+export type InboxTab = "unassigned" | "mine" | "all" | "closed" | "archived" | "ai" | "pessoal";
 
 /**
  * A faixa na ORDEM DO TRABALHO (#2498): primeiro o que o robô conduz, depois o
@@ -65,6 +65,10 @@ const INBOX_TABS: { value: InboxTab; label: string }[] = [
   // separada dela porque são passados diferentes (#923): fechada é atendimento
   // encerrado, arquivada é o que saiu da fila de trabalho sem ser destruído.
   { value: "archived", label: "Arquivadas" },
+  // PESSOAL (spec 33): o fora-da-operação que continua alcançável. Fecha a
+  // faixa de propósito — é o único lugar da tela que não é trabalho, e o
+  // operador tem de atravessar as abas de atendimento para chegar nele.
+  { value: "pessoal", label: "Pessoal" },
 ];
 
 /**
@@ -76,7 +80,14 @@ export function visibleInboxTabs(role: Role, mode: VisibilityMode | undefined): 
   // `own_and_sector` (#4022): a conversa do colega do setor não está na Fila nem
   // em Minhas — sem a aba Todas ela não aparece em lugar nenhum da tela.
   const hideAll = role === "agent" && mode !== "all" && mode !== "own_and_sector";
-  return INBOX_TABS.filter((t) => !(t.value === "all" && hideAll)).map((t) => t.value);
+  // "Pessoal" (spec 33) segue a MESMA régua que marca e desmarca o contato:
+  // `manager`+ (`requireRole("manager")` na rota de marcar). Para quem não pode
+  // marcar, a aba seria uma porta para um conjunto que ele nunca preenche.
+  // O `admin` vê o pessoal de todo mundo; o `manager`, só o que é dele.
+  const hidePessoal = !roleAtLeast(role, "manager");
+  return INBOX_TABS.filter(
+    (t) => !(t.value === "all" && hideAll) && !(t.value === "pessoal" && hidePessoal),
+  ).map((t) => t.value);
 }
 
 export interface InboxFiltersValue {
@@ -258,6 +269,10 @@ export function InboxFilters({ value, onChange }: Props) {
     all: counts?.all,
     closed: counts?.closed,
     archived: counts?.archived,
+    // A aba "Pessoal" (spec 33): badge que conta o que a aba lista — o pessoal
+    // que este usuário pode ver. Opcional na resposta por causa de cache antigo
+    // (ver `ConversationCounts`), então `undefined` some, não vira zero.
+    pessoal: counts?.pessoal,
   };
   // Filtrar por um número que saiu da lista (o operador acabou de excluir o
   // canal) deixa o inbox mostrando um subconjunto — às vezes vazio — sem nada na

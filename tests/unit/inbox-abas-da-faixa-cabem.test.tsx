@@ -99,14 +99,27 @@ describe("faixa da Inbox — quebra em vez de esconder aba (#2745)", () => {
     ).toContain("gap-x-1");
   });
 
-  it("as SEIS abas estão na faixa, com os rótulos inteiros", () => {
+  it("as SETE abas estão na faixa, com os rótulos inteiros", () => {
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
     // Guarda de vacuidade do caso acima e defesa do outro lado do defeito:
-    // a saída fácil para \"não cabe\" é encurtar rótulo ou tirar aba, e aí a
+    // a saída fácil para "não cabe" é encurtar rótulo ou tirar aba, e aí a
     // catraca de classe continua verde com a tela errada.
+    //
+    // Eram SEIS até a spec 33, que acrescentou "Pessoal" no fim da faixa (o
+    // fora-da-operação, depois das abas de trabalho). Com `flex-wrap` a sétima
+    // aba quebra para outra linha em vez de sumir atrás da seta — é o
+    // comportamento que esta catraca existe para exigir.
     const abas = screen.getAllByRole("tab");
-    expect(abas).toHaveLength(6);
-    for (const rotulo of ["Automático", "Fila", "Minhas", "Todas", "Fechadas", "Arquivadas"]) {
+    expect(abas).toHaveLength(7);
+    for (const rotulo of [
+      "Automático",
+      "Fila",
+      "Minhas",
+      "Todas",
+      "Fechadas",
+      "Arquivadas",
+      "Pessoal",
+    ]) {
       expect(
         screen.getByRole("tab", { name: new RegExp(rotulo) }),
         `a aba "${rotulo}" não está na faixa`,
@@ -134,6 +147,7 @@ describe("faixa da Inbox — quebra em vez de esconder aba (#2745)", () => {
       "all",
       "closed",
       "archived",
+      "pessoal",
     ]);
     expect(screen.getAllByRole("tab").map((a) => a.textContent?.replace(/\s+/g, ""))).toEqual([
       "Automático12",
@@ -142,6 +156,7 @@ describe("faixa da Inbox — quebra em vez de esconder aba (#2745)", () => {
       "Todas130",
       "Fechadas25",
       "Arquivadas9",
+      "Pessoal",
     ]);
   });
 });

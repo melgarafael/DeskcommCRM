@@ -76014,6 +76014,24 @@ alter table public.followup_flow_pointers
 comment on column public.followup_flow_pointers.send_when_assigned is
   'Envia o passo do follow-up mesmo com a conversa atribuída a uma pessoa (dono). Não vence force_human, ai_opt_out, contato interno, contato bloqueado nem as janelas de horário — e não acorda a IA.';
 
+
+-- ---- fila pessoal: o dono da marca (migration 9238) ----
+-- Spec 33: o pessoal continua escondido da operação, mas deixa de ser
+-- inalcançável. Esta coluna é o que escopa a aba Pessoal do Inbox — cada pessoa
+-- vê o próprio pessoal, e o papel `admin` vê todos, para que nenhum contato
+-- fique sem ninguém que possa responder. Nula = legado anterior à 9238 ou
+-- usuário removido (`on delete set null`).
+alter table public.contacts
+  add column if not exists personal_owner_user_id uuid
+    references auth.users(id) on delete set null;
+
+comment on column public.contacts.personal_owner_user_id is
+  'Dono da marca pessoal (spec 33): quem marcou o contato. Escopa a aba Pessoal do Inbox — cada pessoa vê o próprio, e o papel admin vê todos para que nenhum contato fique inalcançável. Nulo = legado anterior à 9238 ou usuário removido. Zera no desmarcar; quem/quando fica em auditoria + timeline.';
+
+create index if not exists idx_contacts_org_personal_dono
+  on public.contacts (organization_id, personal_owner_user_id)
+  where (is_personal = true);
+
 notify pgrst, 'reload schema';
 
 -- ---- campanha por transmissão do provedor (migration 0712) ----

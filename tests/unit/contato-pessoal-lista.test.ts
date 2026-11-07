@@ -47,8 +47,18 @@ describe("lista do inbox esconde pessoal (critério 1)", () => {
 });
 
 describe("busca zera para pessoal (critério 2: nome, telefone e prévia)", () => {
-  it("a subconsulta de contatos filtra pessoal", () => {
-    expect(LISTA).toMatch(/\.eq\("is_personal",\s*false\)/);
+  it("a subconsulta de contatos filtra pessoal pelo MESMO `querPessoal` da lista", () => {
+    // Spec 33: a régua deixou de ser a constante `false`. O que a spec 21
+    // protegia continua protegido (padrão = pessoal fora da busca), e a aba
+    // Pessoal inverte pelo MESMO booleano em nome/telefone e na prévia — nunca
+    // por uma segunda condição que possa divergir.
+    expect(LISTA).toMatch(/const querPessoal = q\.pessoais === true \|\| q\.pessoais === "true"/);
+    expect(LISTA.match(/\.eq\("(?:contacts\.)?is_personal",\s*querPessoal\)/g) ?? []).toHaveLength(
+      2,
+    );
+    // A catraca da doutrina antiga: ninguém pode voltar a FIXAR `false` numa
+    // ponta e deixar a outra invertida.
+    expect(LISTA).not.toMatch(/\.eq\("(?:contacts\.)?is_personal",\s*false\)/);
   });
 
   it("a prévia segue coberta pelo .not da query principal", () => {

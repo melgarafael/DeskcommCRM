@@ -23,6 +23,12 @@ export interface ConversationCounts {
   closed?: number;
   /** A aba "Arquivadas" (#923). Opcional pelo mesmo motivo: cache antigo não tem. */
   archived?: number;
+  /**
+   * A aba "Pessoal" (spec 33): o pessoal que ESTE usuário pode ver (o próprio, ou
+   * todos se for `admin`), em qualquer status. Opcional pelo mesmo motivo dos de
+   * cima — cache gravado antes deste deploy não tem o campo.
+   */
+  pessoal?: number;
 }
 
 /** Os filtros auxiliares ligados na barra, que a contagem tem de aplicar junto. */

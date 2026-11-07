@@ -67,8 +67,8 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe("as seis abas, na ordem pedida pela #2498", () => {
-  it("Automático, Fila, Minhas, Todas, Fechadas, Arquivadas — nessa ordem", () => {
+describe("as abas na ordem pedida pela #2498 (a Pessoal entrou pela spec 33)", () => {
+  it("Automático, Fila, Minhas, Todas, Fechadas, Arquivadas, Pessoal — nessa ordem", () => {
     render(<InboxFilters value={VALUE} onChange={() => {}} />);
     expect(abasRenderizadas()).toEqual([
       "Automático",
@@ -77,6 +77,10 @@ describe("as seis abas, na ordem pedida pela #2498", () => {
       "Todas",
       "Fechadas",
       "Arquivadas",
+      // Spec 33: o fora-da-operação fecha a faixa, depois de TODO o trabalho.
+      // A ordem é contrato: a aba Pessoal não pode subir para o meio das abas
+      // de atendimento.
+      "Pessoal",
     ]);
   });
 
@@ -97,6 +101,7 @@ describe("as seis abas, na ordem pedida pela #2498", () => {
       "all=Todas",
       "closed=Fechadas",
       "archived=Arquivadas",
+      "pessoal=Pessoal",
     ]);
   });
 
@@ -112,7 +117,7 @@ describe("as seis abas, na ordem pedida pela #2498", () => {
 });
 
 describe("só a ordem muda — as permissões continuam quem eram", () => {
-  it("manager vê as seis, com 'Todas' no meio", () => {
+  it("manager vê as sete, com 'Todas' no meio e 'Pessoal' no fim", () => {
     expect(visibleInboxTabs("manager", "all")).toEqual([
       "ai",
       "unassigned",
@@ -120,6 +125,8 @@ describe("só a ordem muda — as permissões continuam quem eram", () => {
       "all",
       "closed",
       "archived",
+      // Spec 33: quem pode marcar (manager+) vê a aba Pessoal; `agent` não.
+      "pessoal",
     ]);
   });
 
