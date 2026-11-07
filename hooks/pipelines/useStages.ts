@@ -3,6 +3,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/lib/api/client";
 
+import { chaveDoQuadro } from "@/hooks/kanban/useBoard";
+
 import { chaveDoFunil } from "./useAgentMapping";
 
 /**
@@ -56,6 +58,16 @@ function useReler(pipelineId: string) {
   const qc = useQueryClient();
   return () => {
     void qc.invalidateQueries({ queryKey: chaveDoFunil(pipelineId) });
+    /**
+     * ⚠️ E O QUADRO TAMBÉM (#3874). Renomear, reordenar ou desativar etapa aqui
+     * é uma escrita em `crm_stages` — a MESMA tabela que desenha o Kanban. Até
+     * esta linha, o quadro só relia quando ele mesmo escrevia (`useRenameStage`,
+     * do cabeçalho da coluna, invalida `chaveDoQuadro`); vindo de
+     * Configurações, o cache ficava com a ordem e o nome antigos até um F5.
+     * O sintoma era o pior tipo: a tela de etapas mostrava a coluna nova, o
+     * quadro mostrava a velha, e ninguém sabia em qual acreditar.
+     */
+    void qc.invalidateQueries({ queryKey: chaveDoQuadro(pipelineId) });
   };
 }
 
