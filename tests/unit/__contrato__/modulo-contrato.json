@@ -635,7 +635,7 @@
         {
           "nome": "triggerConfigSchema",
           "origem": "@/lib/followup/api-schemas",
-          "hash": "7c9ca42cf40a0cd9"
+          "hash": "9b5936d3412dfcb9"
         }
       ],
       "resposta": []
@@ -655,7 +655,7 @@
         {
           "nome": "triggerConfigSchema",
           "origem": "@/lib/followup/api-schemas",
-          "hash": "7c9ca42cf40a0cd9"
+          "hash": "9b5936d3412dfcb9"
         }
       ],
       "resposta": []
