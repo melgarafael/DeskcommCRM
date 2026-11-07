@@ -1,8 +1,9 @@
 /**
  * Salvar OUTRA configuração da instalação não reabre o cadastro.
  *
- * `platform_settings` é singleton: a tela de comportamento e a de destinos
- * internos gravam na mesma linha 1 que guarda `signup_mode`. Quando a linha
+ * `platform_settings` é singleton: o comportamento da instalação, o molde de IA
+ * e os destinos internos gravam na mesma linha 1 que guarda `signup_mode`
+ * (#4244). Quando a linha
  * ainda não existia, a primeira dessas gravações a criava com o default da
  * coluna (`'aberto'`), e linha presente vence o `SIGNUP_MODE` do `.env` —
  * medido em produção em 2026-11-03: `SIGNUP_MODE=so_convite` e `/signup`
@@ -50,6 +51,8 @@ vi.mock("@/lib/supabase/admin", () => ({
 import { esquecerModoDeCadastro, modoDeCadastro } from "@/lib/auth/politica-de-cadastro";
 import { gravarComportamentoDaInstalacao } from "@/lib/instalacao/comportamento-servidor";
 import { gravarDestinosInternos } from "@/lib/automation/destinos-internos-autorizados";
+import { gravarMoldeDeIa } from "@/lib/instalacao/molde-de-ia-servidor";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const COMPORTAMENTO = {
   orcamento_de_ia: "on",
@@ -75,6 +78,13 @@ describe("a linha da instalação nasce com o modo em vigor", () => {
 
   it("salvar os destinos internos numa instalação sem linha mantém `so_convite`", async () => {
     expect(await gravarDestinosInternos(["10.0.0.5"], "u-1")).toBe(true);
+    expect(banco.linha?.signup_mode).toBe("so_convite");
+  });
+
+  it("salvar o molde de IA numa instalação sem linha mantém `so_convite`", async () => {
+    // O action passa o cliente de serviço; o dublê é o mesmo banco singleton.
+    const db = createAdminClient() as unknown as Parameters<typeof gravarMoldeDeIa>[0];
+    expect(await gravarMoldeDeIa(db, null, "u-1")).toBe(true);
     expect(banco.linha?.signup_mode).toBe("so_convite");
   });
 

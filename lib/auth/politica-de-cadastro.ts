@@ -236,8 +236,10 @@ async function lerModo(): Promise<ModoDeCadastro | null> {
 /**
  * Garante que a linha da instalação exista ANTES de outra tela gravar nela.
  *
- * `platform_settings` é singleton e guarda mais do que o cadastro: a tela de
- * comportamento e a de destinos internos também fazem `upsert` na linha 1. Sem
+ * `platform_settings` é singleton e guarda mais do que o cadastro: o
+ * comportamento da instalação, o molde de IA e os destinos internos também
+ * fazem `upsert` na linha 1 (#4244). Quem grava nessa linha chama esta função
+ * antes. Sem
  * isto, a primeira dessas gravações CRIA a linha, e o `signup_mode` nasce
  * `'aberto'` pelo default da coluna — e linha presente vence o `SIGNUP_MODE` do
  * `.env`. Medido em produção em 2026-11-03: instalação com
