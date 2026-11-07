@@ -876,6 +876,11 @@ const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
     categoria: "FORNECEDOR",
     motivo: "endpoint oficial da Google Data Manager API: recebe conversões e consulta o processamento na conta autorizada pela própria organização. O destino pertence ao fornecedor e não à instalação do CRM.",
   },
+  "apps.olx.com.br": {
+    categoria: "FORNECEDOR",
+    motivo:
+      "endpoint autoservice do chat da OLX (#2927), o DESTINO do `POST /autoservice/v1/chat/send` em `lib/channels/adapters/olx.ts` (base em `lib/channels/olx/webhook.ts`): é por ali que a resposta ao comprador sai, com o token OAuth da própria organização. O host é da plataforma de anúncios, não da instalação — trocar pelo domínio do revendedor faria a mensagem nunca chegar à thread do anúncio.",
+  },
   "meet.googleapis.com": {
     categoria: "FORNECEDOR",
     motivo:

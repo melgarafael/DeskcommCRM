@@ -331,6 +331,28 @@ describe("a varredura não fecha o que o provedor abriu", () => {
   });
 });
 
+/**
+ * Canais SEM `checkHealth`, declarados com razão — e a declaração é conferida
+ * nos DOIS sentidos mais abaixo.
+ *
+ * O método é OPCIONAL no contrato (`ChannelAdapter.checkHealth?`) exatamente
+ * para o canal que não tem sessão a consultar (`lib/channels/types.ts`): "quem
+ * chama testa a presença em vez de perguntar QUAL provider é". O chat da OLX
+ * (#2927) é esse caso — a conexão dele é credencial OAuth por conta
+ * (`lib/channels/olx/credentials.ts`), não aparelho pareado; não existe
+ * `sessionRef` cujo estado de conexão se possa perguntar a um provedor. Um
+ * `checkHealth` inventado responderia "saudável" para a conta sem token — o
+ * oposto do que a Central existe para mostrar. O desfecho real de credencial
+ * ausente já é falado pelo `send` (`olx_not_configured`).
+ */
+const SEM_CHECKHEALTH_DECLARADO: Readonly<Record<string, string>> = {
+  olx:
+    "chat dos anúncios (#2927): a conexão é credencial OAuth por conta " +
+    "(lib/channels/olx/credentials.ts), não sessão pareada — não há aparelho " +
+    "nem `sessionRef` a consultar. Credencial ausente já é dita pelo `send` " +
+    "(`olx_not_configured`); um health inventado esconderia esse caso.",
+};
+
 describe("o cron enxerga os três canais", () => {
   it("todo adapter registrado sabe responder pela própria saúde", async () => {
     // O cron pula quem não implementa, SEM log e sem contador — então um canal
@@ -340,8 +362,25 @@ describe("o cron enxerga os três canais", () => {
     // canal novo entra ali por obrigação, então este caso o alcança sozinho.
     const { getAdapter, CHANNEL_CAPABILITIES } = await import("@/lib/channels");
     const mudos = Object.keys(CHANNEL_CAPABILITIES).filter(
-      (p) => typeof getAdapter(p as never).checkHealth !== "function",
+      (p) =>
+        typeof getAdapter(p as never).checkHealth !== "function" && !(p in SEM_CHECKHEALTH_DECLARADO),
     );
     expect(mudos, `canais sem checkHealth: ${mudos.join(", ")}`).toEqual([]);
+  });
+
+  it("a ausência declarada é honesta e não vira desculpa eterna", async () => {
+    // Três formas de a declaração mentir: citar canal que saiu da matriz,
+    // motivo curto demais para servir de rastro, ou canal que JÁ tem o método
+    // (aí a linha virou impune e o guarda de cima deixou de olhar para ele).
+    const { getAdapter, CHANNEL_CAPABILITIES } = await import("@/lib/channels");
+    const mentiras = Object.entries(SEM_CHECKHEALTH_DECLARADO)
+      .filter(
+        ([p, razao]) =>
+          !(p in CHANNEL_CAPABILITIES) ||
+          razao.length <= 40 ||
+          typeof getAdapter(p as never).checkHealth === "function",
+      )
+      .map(([p]) => p);
+    expect(mentiras).toEqual([]);
   });
 });

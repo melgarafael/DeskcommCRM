@@ -142,6 +142,9 @@ describe("CONTROLE: os canais que já existiam continuam declarados", () => {
       "zernio",
       "zernio_social",
       "datafy",
+      // #2927: o chat dos anúncios entra como canal de MENSAGEM de verdade
+      // (envia e recebe texto); o que ele não tem é sessão pareada.
+      "olx",
     ]);
     for (const provider of PROVIDERS_DE_MENSAGEM) {
       const caps = capabilitiesOf(provider);
