@@ -30,6 +30,7 @@ import {
 import { camposCpfParaGravar, hashCpf } from "@/lib/contacts/cpf";
 import type { Contact } from "@/lib/types/contacts";
 import { abrirConversaDoContatoNovo } from "@/lib/contacts/conversa-ao-criar";
+import { atribuirConversaDoCadastroAoCriador } from "@/lib/contacts/conversa-do-criador";
 import type {
   ContactCreate,
   ContactPatch,
@@ -52,6 +53,17 @@ type SB = SupabaseClient;
 
 const SELECT_COLS =
   "id, organization_id, name, display_name, address_book_name, zip_code, street, number, complement, district, city, state, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_personal, contact_type, ai_opt_out, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at, first_service_at";
+
+/** A linha como o banco devolve: `cpf_hash` é interno a este módulo. */
+type LinhaDeContato = Omit<Contact, "cpf_available"> & { cpf_hash: string | null };
+
+/**
+ * A ficha que sai deste módulo: o sinal de que há CPF, nunca a coluna. Toda
+ * saída de `SELECT_COLS` passa aqui — os handlers servem à REST e ao MCP.
+ */
+function fichaDaResposta({ cpf_hash, ...ficha }: LinhaDeContato): Contact {
+  return { ...ficha, cpf_available: !!cpf_hash };
+}
 
 interface CursorPayload {
   sort: string | null;
@@ -342,7 +354,7 @@ export async function listContactsHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
   }
 
-  const rows = (data ?? []) as Contact[];
+  const rows = ((data ?? []) as LinhaDeContato[]).map(fichaDaResposta);
   const hasMore = rows.length > q.limit;
   const page = hasMore ? rows.slice(0, q.limit) : rows;
   const last = page[page.length - 1];
@@ -418,7 +430,6 @@ export interface GetContactInput {
 }
 
 export interface GetContactResult extends Contact {
-  cpf_available: boolean;
   cpf_decrypted: string | null;
   cpf_decrypt_denied?: boolean;
 }
@@ -447,12 +458,12 @@ export async function getContactHandler(
       traduzir("Contato não encontrado.", ctx.idioma ?? "pt-BR"),
     );
   }
-  const contact = data as Contact;
+  const contact = fichaDaResposta(data as LinhaDeContato);
 
   let cpfDecrypted: string | null = null;
   let cpfDecryptDenied = false;
 
-  if (input.decryptPurpose && contact.cpf_hash && ctx.actor.type === "user") {
+  if (input.decryptPurpose && contact.cpf_available && ctx.actor.type === "user") {
     const { data: membership } = await supabase
       .from("user_organizations")
       .select("role")
@@ -500,7 +511,6 @@ export async function getContactHandler(
 
   return {
     ...contactWithConversa,
-    cpf_available: !!contact.cpf_hash,
     cpf_decrypted: cpfDecrypted,
     cpf_decrypt_denied: cpfDecryptDenied || undefined,
   };
@@ -689,7 +699,7 @@ export async function createContactHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, insErr.message);
   }
 
-  const contact = created as Contact;
+  const contact = fichaDaResposta(created as LinhaDeContato);
   // ── A CONVERSA DO CONTATO NOVO (#3718) ────────────────────────────────────
   //
   // A regra — esta porta abre, a importação por CSV não — mora num lugar só:
@@ -698,13 +708,29 @@ export async function createContactHandler(
   // uma sessão torta não pode derrubar o cadastro. O que ela NÃO faz mais é
   // falhar calada — o erro sai em `logger.warn` lá dentro, com org, contato e
   // porta.
-  await abrirConversaDoContatoNovo(supabase, {
+  const conversa = await abrirConversaDoContatoNovo(supabase, {
     porta: "manual",
     organizationId: ctx.organization_id,
     contactId: contact.id,
     phoneNumber: contact.phone_number,
     requestId: ctx.requestId,
   });
+
+  // ── QUEM CRIOU O CONTATO ATENDE O CONTATO (#3479) ─────────────────────────
+  //
+  // No "Só os seus" a conversa sem dono é invisível ao Atendente (0035), e a
+  // que o cadastro acabou de abrir nascia de ninguém. Aqui ela nasce dele —
+  // pelo MESMO claim do botão Assumir, com CAS de "só se estiver livre". A
+  // decisão e o efeito moram em `lib/contacts/conversa-do-criador.ts`; esta
+  // chamada é best-effort e não lança (o contato já está gravado).
+  if (conversa.aberta) {
+    await atribuirConversaDoCadastroAoCriador(supabase, {
+      organizationId: ctx.organization_id,
+      conversationId: conversa.conversationId,
+      actor: ctx.actor,
+      requestId: ctx.requestId,
+    });
+  }
 
   await supabase
     .rpc("emit_event", {
@@ -715,7 +741,7 @@ export async function createContactHandler(
         source: contact.source,
         has_email: !!contact.email,
         has_phone: !!contact.phone_number,
-        has_cpf: !!contact.cpf_hash,
+        has_cpf: contact.cpf_available,
       },
       p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
       p_organization_id: contact.organization_id,
@@ -911,7 +937,7 @@ export async function patchContactHandler(
     );
   }
 
-  const contact = updated as Contact;
+  const contact = fichaDaResposta(updated as LinhaDeContato);
   const a = actorAuditPayload(ctx.actor);
   const fields = Object.keys(patch).filter((k) => k !== "updated_at");
 

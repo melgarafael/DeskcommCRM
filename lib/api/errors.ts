@@ -80,6 +80,13 @@ export const ApiErrorCodes = {
   // retentar depois resolve, enquanto conflito manda trocar a chave.
   idempotency_in_progress: "idempotency_in_progress",
   state_conflict: "state_conflict",
+  // POST /api/v1/prospecting (`start` e `resume`): a CONEXÃO escolhida já tem
+  // uma campanha de prospecção em andamento (#3896). Uma campanha ativa por
+  // NÚMERO, não por organização — a recusa é do número, e `details` traz
+  // `campaign_id`/`campaign_name` de quem o ocupa para a tela oferecer
+  // "abrir essa campanha". Irmão do `channel_archived`: mesma classe (o canal é
+  // o recurso escasso), outro motivo.
+  prospecting_channel_busy: "prospecting_channel_busy",
   // Escrita vinda de uma aba que ficou numa organização diferente da do cookie
   // `active_org` (#2335). O header `X-Org-Da-Aba` só serve para RECUSAR: a org
   // efetiva continua sendo a do cookie (`lib/auth/require-role.ts`).
@@ -371,18 +378,38 @@ export const ApiErrorCodes = {
   campanha_modelo_nao_aprovado: "campanha_modelo_nao_aprovado", // 422: modelo pausado, recusado ou em análise
   campanha_modelo_variaveis: "campanha_modelo_variaveis", // 422: variável sem origem, ou origem que não serve
   // Migration 0711: envio rápido (rajada) só pelo número oficial, com modelo aprovado.
-  campanha_velocidade_do_canal: "campanha_velocidade_do_canal", // 422: envio rápido pedido num número por QR
+  campanha_velocidade_do_canal: "campanha_velocidade_do_canal", // 422: envio rápido ou broadcast pedido num número que não o faz
+  campanha_transmissao_variavel: "campanha_transmissao_variavel", // 422: broadcast com variável que muda por pessoa (migration 0712)
+  campanha_transmissao_entregue: "campanha_transmissao_entregue", // 409: a velocidade não muda depois que a lista foi entregue ao provedor
 
   // 500 / upstream
   internal_error: "internal_error",
   upstream_unavailable: "upstream_unavailable",
   unavailable: "unavailable", // 503: dependência de config ausente (ex.: pool do engine sem SUPABASE_DB_URL)
+
+  // ─── CEP DO CONTATO (issue #3494, fatia 2) ───
+  //
+  // 404 próprio, e não `not_found` genérico: a tela do cadastro precisa dizer
+  // "este CEP não existe" ao lado do campo, sem confundir com "contato não
+  // encontrado" — mesmo motivo de `campanha_nao_encontrada`. A falha do serviço
+  // de terceiro continua `upstream_unavailable` (502), que é o código que o
+  // cliente já trata como "tente de novo".
+  cep_nao_encontrado: "cep_nao_encontrado",
+
   base_publica_nao_configurada: "base_publica_nao_configurada", // 503: NEXT_PUBLIC_APP_URL ausente, placeholder ou da própria máquina — o webhook único da instalação não é registrado
   waha_error: "waha_error",
   channel_unavailable: "channel_unavailable", // 502: o transporte do canal não respondeu (ex.: listar grupos com a sessão fora de WORKING)
   wacalls_error: "wacalls_error", // 502: o serviço de chamada de voz recusou ou não respondeu
   wacalls_not_connected: "wacalls_not_connected", // 503 + Retry-After: sessão pareada cujo socket com o WhatsApp caiu por um instante (ver `wacallsSemConexao`)
   ai_provider_error: "ai_provider_error",
+  // 502: o teste do agente (#4020) não chegou a rodar porque o BANCO não
+  // atendeu — `Query read timeout`, `statement timeout`, socket derrubado ou o
+  // pool do engine sem `SUPABASE_DB_URL`. Código próprio, e não `preview_failed`,
+  // porque a tela e quem depura precisam distinguir "a configuração do agente
+  // está errada" (422, `preview_failed`) de "a dependência não respondeu"
+  // (502, este — não 503, que o cliente repete) — a primeira manda conferir
+  // modelo/credencial, a segunda manda esperar e tentar de novo.
+  preview_banco_indisponivel: "preview_banco_indisponivel",
   nuvemshop_error: "nuvemshop_error",
 } as const;
 

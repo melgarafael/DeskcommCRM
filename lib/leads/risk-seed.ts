@@ -1,6 +1,8 @@
 import { protecaoAgendaSupabase } from "@/lib/agenda/protecao-followup";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { buscaEmLotes } from "@/lib/supabase/em-lotes";
+
 import { classifyRisk, resolveStageWindow, type RiskBucket } from "@/lib/leads/risk-radar";
 import { sinceDoBucket } from "@/lib/leads/risk-since";
 
@@ -132,15 +134,22 @@ async function coletaEClassifica(
   const contactIds = [...new Set(leads.map((l) => l.contact_id).filter((c): c is string => !!c))];
   const followupPorContato = new Set<string>();
   if (contactIds.length > 0) {
-    const { data: jobs } = await admin
-      .from("cron_jobs")
-      .select("contact_id")
-      .eq("organization_id", organizationId)
-      .eq("kind", "at")
-      .eq("enabled", true)
-      .gt("next_run_at", now.toISOString())
-      .in("contact_id", contactIds);
-    for (const j of (jobs ?? []) as Array<{ contact_id: string }>) {
+    // Em lotes: um `.in()` com os contatos de todos os negócios abertos passa
+    // do teto de header do Node a partir de ~430 uuids.
+    const { data: jobs, error: jobsErr } = await buscaEmLotes(contactIds, (lote) =>
+      admin
+        .from("cron_jobs")
+        .select("contact_id")
+        .eq("organization_id", organizationId)
+        .eq("kind", "at")
+        .eq("enabled", true)
+        .gt("next_run_at", now.toISOString())
+        .in("contact_id", lote),
+    );
+    // Falha aqui NÃO é "sem follow-up": sem este dado todo negócio com retomada
+    // marcada seria gravado como abandono.
+    if (jobsErr) throw new Error(`seed de risco (follow-ups): ${jobsErr.message}`);
+    for (const j of jobs as Array<{ contact_id: string }>) {
       followupPorContato.add(j.contact_id);
     }
   }

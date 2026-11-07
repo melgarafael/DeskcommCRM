@@ -142,6 +142,13 @@ const ORIGENS: DeclaracaoDeOrigem[] = [
     produtor: { arquivo: "lib/tarefas/criar-tarefa.ts" },
   },
   {
+    arquivo: "lib/automation/actions/define-sector.ts",
+    expressao: "resultado.motivo",
+    porque:
+      "#3881 — a recusa da régua do setor (conversa encerrada, setor de outra organização, setor escolhido por uma pessoa) chega à tela pelo `error` do resultado; os códigos possíveis estão escritos no tipo RecusaDoSetor, em lib/atendimento/setor-da-conversa.ts, e a frase que o operador lê é a do mapa MOTIVO_DA_PARADA — o detalhe da recusa não leva `explicacao`, que venceria a tradução",
+    produtor: { arquivo: "lib/atendimento/setor-da-conversa.ts" },
+  },
+  {
     arquivo: "lib/automation/actions/apply-task-plan.ts",
     expressao: "resultado.codigo",
     porque:

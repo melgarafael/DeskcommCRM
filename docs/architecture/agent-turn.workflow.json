@@ -359,7 +359,7 @@
       "col": 4,
       "type": "backend",
       "label": "Comprovantes da agenda",
-      "sublabel": "recibo do turno + estado atual por org/contato; sem bypass",
+      "sublabel": "recibo do turno ou reserva confirmada atual, por org/contato; sem bypass",
       "tag": "conferirRecibosDeAgendamento"
     },
     {
