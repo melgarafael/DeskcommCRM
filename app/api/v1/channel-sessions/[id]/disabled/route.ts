@@ -1,12 +1,15 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { audit } from "@/lib/audit";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { extractBearer } from "@/lib/mcp/auth";
 import { canalDesativado } from "@/lib/channels/desativado";
 import { sincronizarAvisoDePausa } from "@/lib/channels/central-de-pausa";
 
@@ -16,14 +19,39 @@ type Context = { params: Promise<{ id: string }> };
 const toggleSchema = z.object({ disabled: z.boolean() }).strict();
 
 /** Lê se o canal está desativado pelo operador. */
-export async function GET(_req: NextRequest, { params }: Context): Promise<Response> {
+export async function GET(req: NextRequest, { params }: Context): Promise<Response> {
   const requestId = randomUUID();
+
+  // DOIS PORTÕES, UM CORPO (Spec 33, R3). O token `dsk_…` (escopo `mcp:read`,
+  // papel admin) entra por `resolveAuthDual`; a sessão segue pelo `requireRole`
+  // de sempre. A organização vem da linha do token ou da sessão, nunca do path.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "channel_sessions",
+      role: "admin",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "channel_sessions", requestId);
+    if (teto) return teto;
+    return lerDisabled(authz.supabase, authz.organizationId, (await params).id, requestId);
+  }
+
   const auth = await requireRole("admin", { requestId, resource: "channel_sessions", allowPlatformAdmin: "leitura" });
   if (!auth.ok) return auth.response;
-  const { id } = await params;
+  return lerDisabled(createAdminClient(), auth.org.orgId, (await params).id, requestId);
+}
+
+async function lerDisabled(
+  db: SupabaseClient,
+  organizationId: string,
+  id: string,
+  requestId: string,
+): Promise<Response> {
   if (!z.uuid().safeParse(id).success) return fail("validation_failed", "Canal inválido.", 422, { requestId });
-  const { data, error } = await createAdminClient().from("channel_sessions")
-    .select("metadata").eq("organization_id", auth.org.orgId).eq("id", id)
+  const { data, error } = await db.from("channel_sessions")
+    .select("metadata").eq("organization_id", organizationId).eq("id", id)
     .is("archived_at", null).maybeSingle();
   if (error) return fail("internal_error", "Não foi possível carregar o estado do canal.", 500, { requestId });
   if (!data) return fail("not_found", "Canal não encontrado.", 404, { requestId });

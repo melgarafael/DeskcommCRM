@@ -220,10 +220,13 @@ beforeEach(() => {
   vi.mocked(audit).mockClear();
   // Sessão de escrita com papel `agent` na org A: o que está em julgamento aqui
   // é a defesa de organização, não o RBAC.
+  // O formato real do `requireRole`: `org` é um `ActiveOrg`, com `orgId` (a
+  // rota lê `authz.org.orgId`; sem ele a consulta filtra por `undefined` e o
+  // negócio some, dando 404 onde o teste espera 201/200/409).
   vi.mocked(requireRole).mockResolvedValue({
     ok: true,
     user: { id: "usuario-1", idioma: "pt-BR" },
-    org: { id: ORG_A },
+    org: { orgId: ORG_A, name: "Org A", role: "agent", org_status: null },
   } as never);
 });
 

@@ -13,34 +13,45 @@
  * ela devolve o que ESTÁ guardado (`lib/ai/knowledge/conteudo-do-material.ts`
  * documenta a ordem: FAQ → arquivo guardado → índice).
  *
- * Auth: sessão por cookie, papel >= manager (mesmo gate do resto do acervo).
- * `organization_id` vem da sessão — nunca do caminho.
+ * Auth: sessão por cookie OU token de servidor (`resolveAuthDual`), papel >= manager
+ * (mesmo gate do resto do acervo). `organization_id` vem da sessão ou da linha do
+ * token — nunca do caminho.
  */
 
 import { randomUUID } from "node:crypto";
+import type { NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { lerConteudoDoMaterial } from "@/lib/ai/knowledge/conteudo-do-material";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { createClient } from "@/lib/supabase/server";
+import { lerConteudoDoMaterial } from "@/lib/ai/knowledge/conteudo-do-material";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const requestId = randomUUID();
   const { id: sourceId } = await params;
 
-  const authz = await requireRole("manager", { requestId, resource: "ai_knowledge" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_knowledge",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "ai_knowledge", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const activeOrg = { orgId: authz.organizationId };
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   const leitura = await lerConteudoDoMaterial(supabase, {
-    orgId: authz.org.orgId,
+    orgId: activeOrg.orgId,
     sourceId,
   });
 

@@ -132,9 +132,29 @@ function criarBody(sobrescreve: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * Cliente admin que só responde a leitura do modo de visibilidade (`organizations`).
+ * A criação do aviso não lê a org no caminho de token, mas a rota lê o `settings`
+ * da org sempre que o ator é usuário e o corpo não manda responsável.
+ */
+function adminDaOrg(settings: Record<string, unknown>) {
+  const admin = {
+    from() {
+      const q = {
+        select: () => q,
+        eq: () => q,
+        maybeSingle: async () => ({ data: { settings }, error: null }),
+      };
+      return q;
+    },
+  };
+  return admin as never;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   authOk();
+  vi.mocked(createAdminClient).mockReturnValue(adminDaOrg({}));
 });
 
 describe("POST /api/v1/leads — aviso de negócio aberto duplicado", () => {

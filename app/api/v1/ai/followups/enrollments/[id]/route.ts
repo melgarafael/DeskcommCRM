@@ -22,8 +22,9 @@
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { rotuloDoContato } from "@/lib/contacts/rotulo-do-contato";
 import {
   resumoDoNo,
@@ -34,7 +35,6 @@ import {
 import { carregaEtapasCitadas, nomesDasEtapas } from "@/lib/followup/etapas-citadas";
 import { leituraDoPlano, type TimingPlan } from "@/lib/followup/plano-de-tempo";
 import { flowGraphSchema } from "@/lib/followup/graph-schema";
-import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -92,10 +92,6 @@ export interface DossieDoEnrollment {
   autores: Record<string, string>;
 }
 
-function embedded<T>(v: T | T[] | null): T | null {
-  return Array.isArray(v) ? (v[0] ?? null) : v;
-}
-
 /**
  * Os nomes de quem interveio, resolvidos uma vez por pessoa.
  *
@@ -124,29 +120,41 @@ async function resolveAutores(
   return autores;
 }
 
-export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
   if (!UUID_RX.test(id)) return fail("invalid_request", "id inválido.", 400, { requestId });
 
-  const authz = await requireRole("viewer", { requestId, resource: "followup_enrollments" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "followup_enrollments",
+    role: "viewer",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "followup_enrollments", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId } = authz;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
+
+  const selecionar =
+    `id, status, contact_id, pointer_id, agent_id, version_id, current_node_id, next_eval_at, claimed_until,
+     started_at, completed_at, updated_at, outcome, cancel_reason, last_error, attempts, max_attempts,
+     steps_taken, timing_plan` +
+    (authz.via === "session"
+      ? `,
+        contacts:contact_id(id, name, display_name, phone_number),
+        followup_flow_pointers:pointer_id(name),
+        ai_agents:agent_id(name),
+        followup_flow_versions:version_id(graph)`
+      : "");
   const { data: row, error } = await supabase
     .from("followup_enrollments")
-    .select(
-      `id, status, contact_id, pointer_id, version_id, current_node_id, next_eval_at, claimed_until,
-       started_at, completed_at, updated_at, outcome, cancel_reason, last_error, attempts, max_attempts,
-       steps_taken, timing_plan,
-       contacts:contact_id(id, name, display_name, phone_number),
-       followup_flow_pointers:pointer_id(name),
-       ai_agents:agent_id(name),
-       followup_flow_versions:version_id(graph)`,
-    )
-    .eq("organization_id", org.orgId)
+    .select(selecionar)
+    .eq("organization_id", organizationId)
     .eq("id", id)
     .maybeSingle();
 
@@ -156,7 +164,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const { data: eventos, error: evErr } = await supabase
     .from("followup_enrollment_events")
     .select("id, node_id, event_type, payload, created_at")
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", organizationId)
     .eq("enrollment_id", id)
     .order("created_at", { ascending: true })
     .order("id", { ascending: true })
@@ -166,7 +174,46 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const lidos = eventos ?? [];
   const truncado = lidos.length > TETO_DE_EVENTOS;
 
-  const versao = embedded(row.followup_flow_versions as { graph: unknown } | { graph: unknown }[] | null);
+  const linha = row as unknown as {
+    id: string;
+    status: string;
+    contact_id: string;
+    pointer_id: string;
+    agent_id: string | null;
+    version_id: string;
+    current_node_id: string;
+    next_eval_at: string | null;
+    claimed_until: string | null;
+    started_at: string;
+    completed_at: string | null;
+    updated_at: string;
+    outcome: string | null;
+    cancel_reason: string | null;
+    last_error: string | null;
+    attempts: number;
+    max_attempts: number;
+    steps_taken: number;
+    timing_plan: unknown;
+    contacts: { id: string; name: string | null; display_name: string | null; phone_number: string | null } | null;
+    followup_flow_pointers: { name: string } | null;
+    ai_agents: { name: string } | null;
+    followup_flow_versions: { graph: unknown } | null;
+  };
+
+  const versao =
+    authz.via === "session"
+      ? linha.followup_flow_versions
+      : linha.version_id
+        ? (
+            await supabase
+              .from("followup_flow_versions")
+              .select("graph")
+              .eq("id", linha.version_id)
+              .eq("organization_id", organizationId)
+              .maybeSingle()
+          ).data as { graph: unknown } | null
+        : null;
+
   const grafo = versao ? flowGraphSchema.safeParse(versao.graph) : null;
   const nos: NoDoDossie[] = grafo?.success ? grafo.data.nodes.map(resumoDoNo) : [];
   const porId = new Map(nos.map((n) => [n.id, n]));
@@ -174,15 +221,15 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // O nó de ORIGEM vai junto: no grafo v2 o rótulo do ramo mora nele, não na
   // aresta — sem ele a tela ofereceria "pelo ramo b3f1" na hora de escolher
   // por onde pular.
-  const noDeOrigem = grafo?.success
-    ? grafo.data.nodes.find((n) => n.id === row.current_node_id)
-    : undefined;
+  const noDeOrigem = grafo?.success ? grafo.data.nodes.find((n) => n.id === linha.current_node_id) : undefined;
+
   // A regra de etapa guarda o id; o nome vem do banco. Falha aqui não derruba o
   // dossiê — a frase só descreve a opção, e cai em "(não encontrada)" sem id.
-  const citadas = await carregaEtapasCitadas(supabase, org.orgId, noDeOrigem ? [noDeOrigem] : []);
+  // `carregaEtapasCitadas` já filtra por organização (sem embed de crm_pipelines).
+  const citadas = await carregaEtapasCitadas(supabase, organizationId, noDeOrigem ? [noDeOrigem] : []);
   const nomesDeEtapa = citadas.ok ? nomesDasEtapas(citadas.etapas) : {};
   const saidas = (grafo?.success ? grafo.data.edges : [])
-    .filter((e) => e.source === row.current_node_id)
+    .filter((e) => e.source === linha.current_node_id)
     .sort((a, b) => b.priority - a.priority)
     .map((e) => ({
       edge_id: e.id,
@@ -191,53 +238,81 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
       quando: rotuloDaAresta(e, noDeOrigem, nomesDeEtapa),
     }));
 
-  const contato = embedded(
-    row.contacts as
-      | { id: string; name: string | null; display_name: string | null; phone_number: string | null }
-      | Array<{ id: string; name: string | null; display_name: string | null; phone_number: string | null }>
-      | null,
-  );
-  const pointer = embedded(
-    row.followup_flow_pointers as
-      | { name: string }
-      | { name: string }[]
-      | null,
-  );
-  const agente = embedded(row.ai_agents as { name: string } | { name: string }[] | null);
+  const contato =
+    authz.via === "session"
+      ? linha.contacts
+      : linha.contact_id
+        ? (
+            await supabase
+              .from("contacts")
+              .select("id, name, display_name, phone_number")
+              .eq("id", linha.contact_id)
+              .eq("organization_id", organizationId)
+              .maybeSingle()
+          ).data as
+            | { id: string; name: string | null; display_name: string | null; phone_number: string | null }
+            | null
+        : null;
+  const pointerNome =
+    authz.via === "session"
+      ? linha.followup_flow_pointers
+      : linha.pointer_id
+        ? (
+            await supabase
+              .from("followup_flow_pointers")
+              .select("name")
+              .eq("id", linha.pointer_id)
+              .eq("organization_id", organizationId)
+              .maybeSingle()
+          ).data as { name: string } | null
+        : null;
+  const agente =
+    authz.via === "session"
+      ? linha.ai_agents
+      : linha.agent_id
+        ? (
+            await supabase
+              .from("ai_agents")
+              .select("name")
+              .eq("id", linha.agent_id)
+              .eq("organization_id", organizationId)
+              .maybeSingle()
+          ).data as { name: string } | null
+        : null;
 
   const dossie: DossieDoEnrollment = {
-    id: row.id,
-    status: row.status,
-    current_node_id: row.current_node_id,
-    next_eval_at: row.next_eval_at,
-    claimed_until: row.claimed_until,
-    motor_ocupado: row.claimed_until !== null && Date.parse(row.claimed_until) > Date.now(),
-    started_at: row.started_at,
-    completed_at: row.completed_at,
-    updated_at: row.updated_at,
-    outcome: row.outcome,
-    cancel_reason: row.cancel_reason,
-    last_error: row.last_error,
-    attempts: row.attempts,
-    max_attempts: row.max_attempts,
-    steps_taken: row.steps_taken,
+    id: linha.id,
+    status: linha.status,
+    current_node_id: linha.current_node_id,
+    next_eval_at: linha.next_eval_at,
+    claimed_until: linha.claimed_until,
+    motor_ocupado: linha.claimed_until !== null && Date.parse(linha.claimed_until) > Date.now(),
+    started_at: linha.started_at,
+    completed_at: linha.completed_at,
+    updated_at: linha.updated_at,
+    outcome: linha.outcome,
+    cancel_reason: linha.cancel_reason,
+    last_error: linha.last_error,
+    attempts: linha.attempts,
+    max_attempts: linha.max_attempts,
+    steps_taken: linha.steps_taken,
     contact: {
-      id: row.contact_id,
+      id: linha.contact_id,
       name: contato ? rotuloDoContato(contato) : "Contato removido",
     },
     flow: {
-      pointer_id: row.pointer_id,
-      name: pointer?.name ?? null,
-      version_id: row.version_id,
+      pointer_id: linha.pointer_id,
+      name: pointerNome?.name ?? null,
+      version_id: linha.version_id,
     },
     agent_name: agente?.name ?? null,
-    no_atual: porId.get(row.current_node_id) ?? null,
+    no_atual: porId.get(linha.current_node_id) ?? null,
     nos,
     saidas,
     eventos: lidos.slice(0, TETO_DE_EVENTOS) as EventoDeEnrollment[],
     eventos_truncados: truncado,
-    plano_de_tempo: leituraDoPlano(row.timing_plan),
-    autores: await resolveAutores(org.orgId, lidos),
+    plano_de_tempo: leituraDoPlano(linha.timing_plan),
+    autores: await resolveAutores(organizationId, lidos),
   };
 
   return ok(dossie, { requestId });

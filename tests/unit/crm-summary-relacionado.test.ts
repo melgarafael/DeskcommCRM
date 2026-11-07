@@ -69,6 +69,12 @@ vi.mock("@/lib/supabase/admin", () => ({
   },
 }));
 vi.mock("@/lib/users/nome-do-atendente", () => ({ nomesDosAtendentes: async () => new Map() }));
+// A sessão da rota passa por loadAuthUser (RPC de acompanhamento) e pela org
+// ativa; as duas fronteiras são dublês, como em duplicates/route.test.ts.
+vi.mock("@/lib/auth/server", () => ({ loadAuthUser: async () => ({ id: "user-a", idioma: "pt-BR" }) }));
+vi.mock("@/lib/auth/require-role", () => ({
+  orgAtivaDaApi: async () => ({ ok: true, org: { orgId: "org-a", name: "Org A" } }),
+}));
 
 import { GET } from "@/app/api/v1/contacts/[id]/crm-summary/route";
 

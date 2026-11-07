@@ -11,8 +11,8 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { montarPayloadDeUso, usoDeIaSchema } from "@/lib/ai/usage/aggregate";
 import { logger } from "@/lib/logger";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -60,10 +60,18 @@ function resolveRange(qs: { from?: string; to?: string }): { from: Date; to: Dat
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const authz = await requireRole("manager", { requestId, resource: "ai_usage" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_usage",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_usage", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const activeOrg = { orgId: authz.organizationId };
 
   const parsed = querySchema.safeParse(
     Object.fromEntries(req.nextUrl.searchParams.entries()),
@@ -79,7 +87,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const fromIso = range.from.toISOString();
   const toIso = endOfUtcDay(range.to).toISOString();
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   // A soma é feita NO BANCO (`fn_uso_de_ia`, migration 0586). Esta rota buscava
   // as linhas de `llm_calls` e somava aqui — e o PostgREST entrega no máximo

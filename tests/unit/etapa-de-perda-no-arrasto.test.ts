@@ -57,8 +57,9 @@ interface Estado {
 }
 
 function stub(estado: Estado) {
-  const select = (tabela: string) => ({
-    eq: () => ({
+  const select = (tabela: string) => {
+    const cadeia = {
+      eq: (_coluna: string, _valor: unknown) => cadeia,
       maybeSingle: async () => {
         if (tabela === "crm_leads") {
           return {
@@ -81,8 +82,9 @@ function stub(estado: Estado) {
           error: null,
         };
       },
-    }),
-  });
+    };
+    return cadeia;
+  };
 
   return {
     from: (tabela: string) => ({
@@ -97,21 +99,19 @@ function stub(estado: Estado) {
         // devolve o MESMO 422 que a decisão, então os dois caminhos chegavam à
         // mesma saída e o caso ficava verde com a decisão sabotada. Ramo
         // redundante não distingue conserto de defeito.
-        return {
-          eq: () => ({
-            eq: () => ({
-              select: () => ({
-                maybeSingle: async () =>
-                  payload.lost_reason
-                    ? {
-                        data: { id: LEAD_ID, stage_id: PERDIDO_ID, updated_at: UPDATED_AT },
-                        error: null,
-                      }
-                    : { data: null, error: RECUSA_DO_BANCO },
-              }),
-            }),
+        const cadeia = {
+          eq: (_coluna: string, _valor: unknown) => cadeia,
+          select: () => ({
+            maybeSingle: async () =>
+              payload.lost_reason
+                ? {
+                    data: { id: LEAD_ID, stage_id: PERDIDO_ID, updated_at: UPDATED_AT },
+                    error: null,
+                  }
+                : { data: null, error: RECUSA_DO_BANCO },
           }),
         };
+        return cadeia;
       },
     }),
     // A rota emite o evento de domínio depois do movimento (`.then` sobre o

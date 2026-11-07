@@ -40,10 +40,12 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
 
 export const dynamic = "force-dynamic";
@@ -67,39 +69,65 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_req: NextRequest, { params }: RouteParams): Promise<Response> {
+export async function GET(req: NextRequest, { params }: RouteParams): Promise<Response> {
   const requestId = randomUUID();
+  const { id } = await params;
+
+  const authHeader = req.headers.get("authorization");
+  if (authHeader && /^Bearer\s+/i.test(authHeader.trim())) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "passagens_de_atendimento",
+      role: "agent",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "passagens_de_atendimento", requestId);
+    if (teto) return teto;
+    const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+    const { organizationId } = authz;
+    return responderPassagens(authz.supabase, organizationId, id, requestId, t);
+  }
+
+  // Caminho de sessão: byte a byte igual.
   const authz = await requireRole("agent", { requestId, resource: "passagens_de_atendimento" });
   if (!authz.ok) return authz.response;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { org } = authz;
-  const { id } = await params;
-
   const supabase = await createClient();
+  return responderPassagens(supabase, org.orgId, id, requestId, t);
+}
 
+async function responderPassagens(
+  supabase: SupabaseClient,
+  organizationId: string,
+  conversationId: string,
+  requestId: string,
+  t: (texto: string) => string,
+): Promise<Response> {
   // A existência é confirmada ANTES: sem isto, uma conversa de outra organização
   // devolveria `[]` com 200, que se lê como "esta conversa não teve passagem
   // nenhuma" — e afirma a existência dela de graça.
   const { data: conversa } = await supabase
     .from("conversations")
     .select("id")
-    .eq("id", id)
-    .eq("organization_id", org.orgId)
+    .eq("id", conversationId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
   if (!conversa) return fail("not_found", t("Conversa não encontrada."), 404, { requestId });
 
   const { data, error } = await supabase
     .from("passagens_de_atendimento")
     .select(COLUNAS)
-    .eq("conversation_id", id)
-    .eq("organization_id", org.orgId)
+    .eq("conversation_id", conversationId)
+    .eq("organization_id", organizationId)
     .order("criado_em", { ascending: true })
     .limit(TETO_DE_PASSAGENS);
 
   if (error) {
     logger.error("[passagens] leitura falhou", {
-      conversation_id: id,
-      organization_id: org.orgId,
+      conversation_id: conversationId,
+      organization_id: organizationId,
       error: error.message,
       requestId,
     });
@@ -109,7 +137,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
   }
 
   const linhas = data ?? [];
-  const nomes = await nomesDosAtendentes(org.orgId, linhas.map((l) => l.reconhecido_por));
+  const nomes = await nomesDosAtendentes(organizationId, linhas.map((l) => l.reconhecido_por));
 
   return ok(
     // `reconhecido_por` continua na linha mesmo sem nome: o dono é a VERDADE, o

@@ -13,19 +13,18 @@ import { randomUUID } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string; itemId: string }> };
 
-export async function DELETE(_req: NextRequest, ctx: Ctx): Promise<Response> {
+export async function DELETE(req: NextRequest, ctx: Ctx): Promise<Response> {
   const requestId = randomUUID();
   // #1907 item 4 — comanda é MÓDULO DE TABELA: sem `modulos_instalados` a
   // linha ativa as cinco tabelas não existem e a rota não existe. 404,
@@ -35,16 +34,24 @@ export async function DELETE(_req: NextRequest, ctx: Ctx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
-  const authz = await requireRole("agent", { requestId, resource: "financeiro" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "financeiro",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "financeiro_comanda_item_remover", requestId);
+  if (teto) return teto;
 
   const { id, itemId } = await ctx.params;
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   const { data: comanda } = await supabase
     .from("sales")
     .select("id, status, number")
     .eq("id", id)
+    .eq("organization_id", authz.organizationId)
     .maybeSingle();
   if (!comanda) return fail("not_found", "Comanda não encontrada.", 404, { requestId });
   if (comanda.status !== "open") {
@@ -66,6 +73,7 @@ export async function DELETE(_req: NextRequest, ctx: Ctx): Promise<Response> {
     .delete()
     .eq("id", itemId)
     .eq("sale_id", id)
+    .eq("organization_id", authz.organizationId)
     .select("id")
     .maybeSingle();
 
@@ -74,6 +82,9 @@ export async function DELETE(_req: NextRequest, ctx: Ctx): Promise<Response> {
 
   await audit({
     action: "comanda.item_removido",
+    organizationId: authz.organizationId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     resourceType: "sale",
     resourceId: id,
     requestId,

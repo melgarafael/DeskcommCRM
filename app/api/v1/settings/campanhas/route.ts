@@ -13,7 +13,8 @@ import type { NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import {
   CONFIGURACAO_PADRAO,
   configuracaoDeCampanhasSchema,
@@ -25,16 +26,18 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaign_settings" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "campaign_settings", role: "manager", scope: "config:read", tokenRole: "admin" });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "settings.campanhas", requestId);
+  if (teto) return teto;
 
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("organizations")
     .select("settings")
-    .eq("id", authz.org.orgId)
+    .eq("id", authz.organizationId)
     .maybeSingle();
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
@@ -49,9 +52,11 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   if (negado) return negado;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "campaign_settings" });
+  const authz = await resolveAuthDual(req, { requestId, resource: "campaign_settings", role: "manager", scope: "config:write", tokenRole: "admin" });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "settings.campanhas", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const parsed = configuracaoDeCampanhasSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -75,7 +80,7 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   const { data: atual, error: erroLeitura } = await admin
     .from("organizations")
     .select("settings")
-    .eq("id", authz.org.orgId)
+    .eq("id", authz.organizationId)
     .maybeSingle();
   if (erroLeitura) return fail("internal_error", erroLeitura.message, 500, { requestId });
 
@@ -84,15 +89,16 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   const { error } = await admin
     .from("organizations")
     .update({ settings: { ...settings, campanhas: nova } })
-    .eq("id", authz.org.orgId);
+    .eq("id", authz.organizationId);
   if (error) return fail("internal_error", error.message, 500, { requestId });
 
   void audit({
     action: "campaign.settings_updated",
-    actorUserId: authz.user.id,
-    organizationId: authz.org.orgId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: authz.organizationId,
     resourceType: "organization",
-    resourceId: authz.org.orgId,
+    resourceId: authz.organizationId,
     requestId,
     metadata: nova as unknown as Record<string, unknown>,
   });

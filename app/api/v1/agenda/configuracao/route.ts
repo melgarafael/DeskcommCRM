@@ -1,21 +1,22 @@
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
+import { type NextRequest } from "next/server";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { agendaSettingsSchema, agendaSettingsWriteSchema } from "@/lib/schemas/settings";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const requestId = randomUUID();
-  const auth = await requireRole("viewer", { requestId, resource: "agenda" });
-  if (!auth.ok) return auth.response;
-  const { data, error } = await (
-    await createClient()
-  )
+  const authz = await resolveAuthDual(req, { requestId, resource: "agenda", role: "viewer", scope: "mcp:read" });
+  if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "agenda_configuracao", requestId); if (teto) return teto;
+  const { data, error } = await authz.supabase
     .from("organizations")
     .select("settings")
-    .eq("id", auth.org.orgId)
+    .eq("id", authz.organizationId)
     .single();
   if (error)
     return fail("internal_error", "Não foi possível carregar os prazos.", 500, { requestId });

@@ -25,12 +25,16 @@ import type { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import type { LeadCandidate } from "@/lib/leads/active-lead";
 import { roteiaProximasAcoes, type EstadoDoContato } from "@/lib/leads/next-action";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { nomesDosAtendentes } from "@/lib/users/nome-do-atendente";
+import { extractBearer } from "@/lib/mcp/auth";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -60,8 +64,22 @@ export interface DecisaoPassada {
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  void req;
 
+  const authHeader = req.headers.get("authorization");
+  if (extractBearer(authHeader)) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "crm_leads",
+      role: "viewer",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "leads_proposals", requestId);
+    if (teto) return teto;
+    return responder(authz.supabase, authz.organizationId, authz.idioma ?? IDIOMA_PADRAO, requestId);
+  }
+
+  // Sessão do navegador
   const user = await requireAuth();
   const ativa = await orgAtivaDaApi(user, requestId);
   if (!ativa.ok) return ativa.response;
@@ -69,9 +87,16 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (!activeOrg) {
     return fail("forbidden", traduzir("sem organização ativa", user.idioma), 403, { requestId });
   }
-  const orgId = activeOrg.orgId;
   const supabase = await createClient();
+  return responder(supabase, activeOrg.orgId, user.idioma, requestId);
+}
 
+async function responder(
+  supabase: SupabaseClient,
+  orgId: string,
+  idioma: Idioma,
+  requestId: string,
+): Promise<Response> {
   // ── PENDENTES ────────────────────────────────────────────────────────────
   const [{ data: estados, error: estadosErr }, { data: candidatos, error: candErr }] =
     await Promise.all([
@@ -106,24 +131,51 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (leadIds.length > 0) {
     const { data: leads, error: leadsErr } = await supabase
       .from("crm_leads")
-      .select("id, title, contact_id, crm_stages!crm_leads_stage_id_fkey(name), contacts(name, display_name)")
+      .select("id, title, contact_id, pipeline_id")
       .eq("organization_id", orgId)
       .in("id", leadIds);
     if (leadsErr) return fail("internal", leadsErr.message, 500, { requestId });
 
+    // Consultas separadas (sem EMBED do PostgREST, que o service role ignora):
+    // estágios e contatos, cada uma filtrada pela organização do token.
+    const stageIds = [...new Set((leads ?? []).map((l) => l.pipeline_id).filter(Boolean))];
+    const stageMap = new Map<string, string>();
+    if (stageIds.length > 0) {
+      const { data: stages } = await supabase
+        .from("crm_stages")
+        .select("id, name")
+        .eq("organization_id", orgId)
+        .in("id", stageIds);
+      for (const s of (stages ?? []) as Array<{ id: string; name: string }>) {
+        stageMap.set(s.id, s.name);
+      }
+    }
+    const contactIds = [...new Set((leads ?? []).map((l) => l.contact_id).filter(Boolean))];
+    const contactMap = new Map<string, { name: string | null; display_name: string | null }>();
+    if (contactIds.length > 0) {
+      const { data: contacts } = await supabase
+        .from("contacts")
+        .select("id, name, display_name")
+        .eq("organization_id", orgId)
+        .in("id", contactIds);
+      for (const c of (contacts ?? []) as Array<{ id: string; name: string | null; display_name: string | null }>) {
+        contactMap.set(c.id, { name: c.name, display_name: c.display_name });
+      }
+    }
+
     for (const l of (leads ?? []) as unknown as Array<{
       id: string;
       title: string | null;
-      crm_stages: { name: string | null } | null;
-      contacts: { name: string | null; display_name: string | null } | null;
+      contact_id: string | null;
+      pipeline_id: string | null;
     }>) {
       const proposta = porLead.get(l.id);
       if (!proposta) continue;
       pendentes.push({
         lead_id: l.id,
-        lead_title: l.title ?? traduzir("(sem título)", user.idioma),
-        stage_name: l.crm_stages?.name ?? null,
-        contact_name: nomeDoContato(l.contacts),
+        lead_title: l.title ?? traduzir("(sem título)", idioma),
+        stage_name: l.pipeline_id ? stageMap.get(l.pipeline_id) ?? null : null,
+        contact_name: l.contact_id ? nomeDoContato(contactMap.get(l.contact_id) ?? null) : null,
         next_action: proposta.label,
         seq: proposta.seq,
         proposed_at: proposta.proposed_at,
@@ -141,7 +193,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   // de decisão — que é exatamente o defeito que a wave 4 consertou.
   const { data: decididas, error: decErr } = await supabase
     .from("crm_lead_activities")
-    .select("id, lead_id, type, payload, performed_at, performed_by_user_id, crm_leads(title)")
+    .select("id, lead_id, type, payload, performed_at, performed_by_user_id, crm_leads!crm_lead_activities_lead_id_fkey(title)")
     .eq("organization_id", orgId)
     .in("type", ["next_action_approved", "next_action_dismissed"])
     .order("performed_at", { ascending: false })
@@ -174,7 +226,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const historico: DecisaoPassada[] = linhas.map((d) => ({
     activity_id: d.id,
     lead_id: d.lead_id ?? "",
-    lead_title: d.crm_leads?.title ?? traduzir("(negócio removido)", user.idioma),
+    lead_title: d.crm_leads?.title ?? traduzir("(negócio removido)", idioma),
     decision: d.type === "next_action_approved" ? "approve" : "dismiss",
     next_action: d.payload?.next_action ?? "",
     decided_by: d.performed_by_user_id ? (nomes.get(d.performed_by_user_id) ?? null) : null,
