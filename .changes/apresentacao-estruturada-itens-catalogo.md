@@ -1,11 +1,13 @@
 ---
 impacto: capacidade_nova
 secao: adicionado
-titulo: Apresentação estruturada de itens do catálogo pela IA
+titulo: Apresentação de produtos pela IA, opcional por empresa
 ---
 
-Itens do catálogo agora podem ter uma apresentação própria para uso pelos agentes de IA.
+Cada empresa pode ligar, em Configurações › Organização › Catálogo, a apresentação de produtos pela IA. Ela vem desligada, e quem não ligar não vê nada de novo.
 
-A apresentação pode usar texto ou áudio configurado, reutilizar as fotos já cadastradas no item e, quando habilitado, incluir o preço canônico do catálogo.
+Com a chave ligada, cada item do catálogo ganha uma apresentação própria em texto ou áudio (OGG, WebM ou M4A), que pode reutilizar as fotos cadastradas e incluir o preço do catálogo. O agente envia os itens em sequência, na ordem pedida, e só recebe essa ferramenta quando há ao menos uma apresentação ativa na empresa.
 
-O agente pode apresentar vários itens em sequência preservando a ordem, o conteúdo cadastrado e os limites operacionais do canal. O preview usa o mesmo planejamento da execução real para facilitar a conferência antes da publicação.
+Desligar a chave esconde a seção e tira a ferramenta do agente, sem apagar o que foi cadastrado.
+
+Contribuição de @vanksestevao (#2780, #3168).

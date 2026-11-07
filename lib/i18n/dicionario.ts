@@ -9305,7 +9305,7 @@ export const DICIONARIO: Traducoes = {
   },
   "Usar fotos cadastradas": { es: "Usar fotos registradas" },
   "Exibir preço": { es: "Mostrar precio" },
-  "Ordem futura de envio": { es: "Orden futuro de envío" },
+  "Ordem de envio": { es: "Orden de envío" },
   "mensagens físicas estimadas": { es: "mensajes físicos estimados" },
   "Texto ainda não configurado": { es: "Texto aún no configurado" },
   "Áudio OGG/Opus": { es: "Audio OGG/Opus" },

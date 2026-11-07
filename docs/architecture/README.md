@@ -17,6 +17,7 @@ ser fonte sem ninguém decidir isso.
 | arquivo | escopo |
 |---|---|
 | `atendimento-alerta-humano-nome-informado.architecture.json` | aviso interno por episódio, reserva sem reenvio incerto, nome selecionado pela ferramenta com escopo inbound e ficha vazia; limites da timeline declarados |
+| `apresentacao-do-catalogo.architecture.json` | apresentação de produto pela IA, opcional por empresa: chave, seção, ferramenta no turno, snapshot, retomada e envio em ordem |
 | `catalogo-de-modelos.architecture.json` | descoberta diária de modelos nativos OpenAI/Anthropic via Models.dev, conciliação OpenRouter, seletores e auditoria |
 | `lista-de-espera.architecture.json` | módulo opcional da agenda: vaga que abre, oferta atômica, aviso pelo caminho proativo, aceite pela agenda, recusa e vencimento chamam o próximo |
 | `etiquetas-paginadas.architecture.json` | vocabulário paginado, busca e sugestões nos editores do Inbox |

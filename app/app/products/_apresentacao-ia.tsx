@@ -363,7 +363,7 @@ export function CatalogProductAiPresentation({
                 data-testid="preview-apresentacao"
               >
                 <div className="mb-2 flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium">{t("Ordem futura de envio")}</p>
+                  <p className="text-sm font-medium">{t("Ordem de envio")}</p>
                   <span
                     className="text-xs text-muted-foreground"
                     data-testid="quantidade-mensagens"
