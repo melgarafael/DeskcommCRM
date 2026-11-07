@@ -6,8 +6,8 @@
  * está sendo atendido e quem foi atendido hoje. Esta é a REGRA das colunas e das
  * consultas, separada do React para o teste prender as duas no mesmo conjunto.
  *
- *   - Aguardando: o cliente falou por último, ou a conversa está `pending` e
- *     espera uma pessoa (a régua da aba Fila: `comando_da_conversa`). Resposta da
+ *   - Aguardando: o cliente falou por último, ou a conversa foi entregue à equipe
+ *     e ninguém assumiu (a régua da aba Fila: `comando_da_conversa`). Resposta da
  *     IA conta como atendimento (o que ela não resolve vira Caso, que tem fila
  *     própria). Ordem: quem espera há mais tempo em cima.
  *   - Em atendimento: viva e com a última palavra nossa. Mais recente em cima.
@@ -19,7 +19,7 @@
  * última resposta.
  */
 
-import { comandosDaFila, esperaDaConversa, STATUS_ENCERRADOS } from "@/lib/inbox/comando-da-conversa";
+import { comandosDaFila, esperaDaConversa, silencioVigente, STATUS_ENCERRADOS } from "@/lib/inbox/comando-da-conversa";
 import { inicioDoDia } from "@/lib/notifications/push-de-venda";
 import { dataIsoNoFuso } from "@/lib/propostas/data-no-fuso";
 
@@ -34,6 +34,9 @@ export interface ConversaDoPainel {
   awaiting_since: string | null;
   service_closed_at?: string | null;
   status_changed_at?: string | null;
+  bot_silenced_until?: string | null;
+  is_group?: boolean | null;
+  contacts?: { force_human?: boolean | null; is_blocked?: boolean | null } | null;
 }
 
 export interface ColunasDoPainel<C extends ConversaDoPainel> {
@@ -87,9 +90,30 @@ export function esperandoDesde(c: ConversaDoPainel): string {
   return c.last_inbound_at as string;
 }
 
-/** A conversa entregue à equipe segue na espera até alguém assumir, como na Fila. */
-function esperaUmaPessoa(c: ConversaDoPainel): boolean {
-  return c.status === "pending" && c.comando_da_conversa === "aguardando";
+/**
+ * A conversa entregue à equipe segue na espera até alguém assumir, como na Fila.
+ * O `status` não decide: passada pelo motor, ela fica `open` com silêncio
+ * `infinity` (medido na prova de tela do #3403).
+ *
+ * A Fila também mostra a conversa sem dono nos 5 min depois de uma resposta manual.
+ * Essa janela não entra: alguém acabou de responder, e ela volta sozinha ao
+ * automático, então o cartão iria para Aguardando e sairia de lá sem ninguém agir.
+ * O silêncio é lido sem depender do relógio: quem disse `aguardando` foi o banco, e
+ * a janela vencer no navegador antes da próxima consulta não muda a resposta.
+ */
+function esperaUmaPessoa(c: ConversaDoPainel, agora: Date): boolean {
+  if (c.comando_da_conversa !== "aguardando") return false;
+  if (c.is_group || c.contacts?.force_human || c.contacts?.is_blocked) return true;
+  return c.bot_silenced_until == null || silencioVigente(c.bot_silenced_until, agora).duravel;
+}
+
+/**
+ * O automático está no comando? É o selo do Inbox, e não `assignee_kind`: `'ai'` só
+ * é gravado ao devolver a conversa (`devolverAtendimentoAoAgente`, que o encerramento
+ * também chama), e o motor não o grava ao responder.
+ */
+export function automaticoNoComando(c: ConversaDoPainel, automaticoDaOrg: boolean | undefined): boolean {
+  return automaticoDaOrg === true && c.comando_da_conversa === "automatico";
 }
 
 export function montarColunas<C extends ConversaDoPainel>(
@@ -108,7 +132,7 @@ export function montarColunas<C extends ConversaDoPainel>(
       if (c.status === "closed" && encerrada && dataIsoNoFuso(new Date(encerrada), fuso ?? "") === hoje) {
         atendidosHoje.push(c);
       }
-    } else if (esperaUmaPessoa(c)) {
+    } else if (esperaUmaPessoa(c, agora)) {
       aguardando.push({ ...c, esperandoDesde: esperaDaConversa(c) ?? c.created_at });
     } else if (clienteFalouPorUltimo(c)) {
       aguardando.push({ ...c, esperandoDesde: esperandoDesde(c) });

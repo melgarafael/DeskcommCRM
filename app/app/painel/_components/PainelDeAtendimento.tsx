@@ -9,13 +9,12 @@ import { useAuth } from "@/hooks/auth/AuthProvider";
 import { channelLabel, useChannelSessions } from "@/hooks/channels/useChannelSessions";
 import { apiClient } from "@/lib/api/client";
 import { rotuloDoContato, type ContatoNomeavel } from "@/lib/contacts/rotulo-do-contato";
-import { consultasDoPainel, haQuantoTempo, montarColunas, type ConversaDoPainel } from "@/lib/inbox/painel-de-atendimento";
+import { automaticoNoComando, consultasDoPainel, haQuantoTempo, montarColunas, type ConversaDoPainel } from "@/lib/inbox/painel-de-atendimento";
 import { Robot } from "@/lib/ui/icons";
 
 interface Conversa extends ConversaDoPainel {
   last_message_preview: string | null;
-  assignee_kind?: string | null;
-  contacts?: ContatoNomeavel | null;
+  contacts?: (ContatoNomeavel & NonNullable<ConversaDoPainel["contacts"]>) | null;
 }
 
 interface RespostaDaLista {
@@ -30,6 +29,7 @@ function Coluna<C extends Conversa>({
   vazio,
   tempo,
   rotulo,
+  automaticoDaOrg,
   rotuloIA,
 }: {
   titulo: string;
@@ -38,6 +38,7 @@ function Coluna<C extends Conversa>({
   vazio: string;
   tempo: (c: C) => string;
   rotulo: (c: Conversa) => string;
+  automaticoDaOrg: boolean | undefined;
   rotuloIA: string;
 }) {
   return (
@@ -64,7 +65,7 @@ function Coluna<C extends Conversa>({
                 </span>
               </div>
               <p className="mt-1 line-clamp-2 text-xs text-text-muted">
-                {c.assignee_kind === "ai" && <Robot className="mr-1 inline h-3 w-3" aria-label={rotuloIA} />}
+                {automaticoNoComando(c, automaticoDaOrg) && <Robot className="mr-1 inline h-3 w-3" aria-label={rotuloIA} />}
                 {c.last_message_preview ?? ""}
               </p>
             </Link>
@@ -117,13 +118,13 @@ export function PainelDeAtendimento() {
   );
   const casosAbertos = casos.data?.data?.open_count ?? 0;
   const rotulo = (c: Conversa) => rotuloDoContato(c.contacts, t);
-  const rotuloIA = t("Atendido pela IA");
+  const rotuloIA = t("Automático atendendo");
   const haTempo = (iso: string) => t("há {tempo}").replace("{tempo}", haQuantoTempo(iso));
   // Cada consulta devolve no máximo 100: se há mais, a coluna não é a lista inteira.
   const truncado = [abertas, fila, encerradas].some((lista) => lista.data?.meta?.has_more === true);
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto p-4 md:overflow-visible md:p-6">
+    <div className="flex h-full flex-col gap-4 overflow-y-auto p-4 md:h-[calc(100dvh-var(--faixas-de-cima,0px)-3.5rem-var(--space-6)-max(var(--space-6),var(--rodape-ocupado,0px)))] md:overflow-visible md:p-6">
       <header className="flex flex-wrap items-center gap-3">
         <h1 className="mr-auto text-2xl font-semibold tracking-tight">{t("Painel de atendimento")}</h1>
         <select
@@ -159,13 +160,14 @@ export function PainelDeAtendimento() {
           {t("Há mais de 100 conversas em alguma lista. Quem espera sem dono são as 100 com mais tempo de espera; as demais são as 100 com a mensagem mais recente.")}
         </p>
       )}
-      <div className="grid grid-cols-1 gap-4 md:min-h-0 md:flex-1 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:min-h-0 md:flex-1 md:grid-cols-3 md:grid-rows-[minmax(0,1fr)]">
         <Coluna
           titulo={t("Aguardando atendimento")}
           itens={colunas.aguardando}
           destaque
           vazio={t("Ninguém esperando.")}
           rotulo={rotulo}
+          automaticoDaOrg={automaticoDaOrg}
           rotuloIA={rotuloIA}
           tempo={(c) => t("esperando há {tempo}").replace("{tempo}", haQuantoTempo(c.esperandoDesde))}
         />
@@ -174,6 +176,7 @@ export function PainelDeAtendimento() {
           itens={colunas.emAtendimento}
           vazio={t("Nenhuma conversa em andamento.")}
           rotulo={rotulo}
+          automaticoDaOrg={automaticoDaOrg}
           rotuloIA={rotuloIA}
           tempo={(c) => (c.last_message_at ? haTempo(c.last_message_at) : "")}
         />
@@ -182,6 +185,7 @@ export function PainelDeAtendimento() {
           itens={colunas.atendidosHoje}
           vazio={t("Nada encerrado hoje ainda.")}
           rotulo={rotulo}
+          automaticoDaOrg={automaticoDaOrg}
           rotuloIA={rotuloIA}
           tempo={(c) => {
             const quando = c.service_closed_at ?? c.status_changed_at;

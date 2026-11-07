@@ -11696,7 +11696,6 @@ export const DICIONARIO: Traducoes = {
   "Nenhuma conversa em andamento.": { es: "Ninguna conversación en curso." },
   "Atendidos hoje": { es: "Atendidos hoy" },
   "Nada encerrado hoje ainda.": { es: "Nada cerrado hoy todavía." },
-  "Atendido pela IA": { es: "Atendido por la IA" },
   "Há mais de 100 conversas em alguma lista. Quem espera sem dono são as 100 com mais tempo de espera; as demais são as 100 com a mensagem mais recente.": { es: "Hay más de 100 conversaciones en alguna lista. Quienes esperan sin responsable son las 100 con más tiempo de espera; las demás son las 100 con el mensaje más reciente." },
   "Demandas abertas que esfriaram e precisam de você. Se o assistente já agendou um retorno, aparece como “em voo”; sem próximo passo, é risco de perder o cliente.": { es: "Casos abiertos que se enfriaron y necesitan tu atención. Si el asistente ya programó un seguimiento, aparecen como “En seguimiento”. Los que no tienen un siguiente paso corren el riesgo de perder al cliente." },
   "Scripts salvos para responder mais rápido no atendimento.": { es: "Plantillas guardadas para responder más rápido durante la atención." },

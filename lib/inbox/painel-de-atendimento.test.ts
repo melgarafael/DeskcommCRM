@@ -4,7 +4,7 @@ import { listConversationsHandler } from "@/app/api/v1/conversations/_handler";
 import { ehAFila, ORDEM_DA_ESPERA } from "@/lib/inbox/comando-da-conversa";
 import { conversationStatusFiltroSchema, CONVERSATION_TERMINAL_STATUSES, listConversationsQuerySchema } from "@/lib/schemas";
 
-import { consultasDoPainel, haQuantoTempo, montarColunas, type ConversaDoPainel } from "./painel-de-atendimento";
+import { automaticoNoComando, consultasDoPainel, haQuantoTempo, montarColunas, type ConversaDoPainel } from "./painel-de-atendimento";
 
 const agora = new Date("2026-10-23T21:00:00Z");
 const SP = "America/Sao_Paulo";
@@ -118,8 +118,9 @@ describe("painel de atendimento", () => {
     ]);
   });
 
-  describe("conversa que a IA passou para a equipe (pending)", () => {
-    const naEspera = { status: "pending", comando_da_conversa: "aguardando", awaiting_since: "2026-10-23T19:59:00Z" };
+  // A linha é a medida no banco depois da passagem pelo motor (prova de tela do #3403): `open`, não `pending`.
+  describe("conversa que a IA passou para a equipe", () => {
+    const naEspera = { status: "open", comando_da_conversa: "aguardando", bot_silenced_until: "infinity", awaiting_since: "2026-10-23T19:59:00Z" };
 
     it("com o aviso da IA como última palavra fica em Aguardando, pela régua da Fila", () => {
       const { aguardando, emAtendimento } = montarColunas(
@@ -143,8 +144,8 @@ describe("painel de atendimento", () => {
     it("com dono segue a regra de quem falou por último", () => {
       const { aguardando, emAtendimento } = montarColunas(
         [
-          conv("assumida", { status: "pending", comando_da_conversa: "humano", last_inbound_at: "2026-10-23T19:59:00Z", last_outbound_at: "2026-10-23T20:10:00Z" }),
-          conv("cobrando", { status: "pending", comando_da_conversa: "humano", last_inbound_at: "2026-10-23T20:20:00Z", last_outbound_at: "2026-10-23T20:10:00Z" }),
+          conv("assumida", { status: "claimed", comando_da_conversa: "humano", bot_silenced_until: "infinity", last_inbound_at: "2026-10-23T19:59:00Z", last_outbound_at: "2026-10-23T20:10:00Z" }),
+          conv("cobrando", { status: "claimed", comando_da_conversa: "humano", bot_silenced_until: "infinity", last_inbound_at: "2026-10-23T20:20:00Z", last_outbound_at: "2026-10-23T20:10:00Z" }),
         ],
         SP,
         agora,
@@ -154,8 +155,65 @@ describe("painel de atendimento", () => {
     });
 
     it("sem mensagem nenhuma do cliente usa a criação da conversa", () => {
-      const { aguardando } = montarColunas([conv("calada", { status: "pending", comando_da_conversa: "aguardando" })], SP, agora);
+      const { aguardando } = montarColunas([conv("calada", { status: "open", comando_da_conversa: "aguardando", bot_silenced_until: "infinity" })], SP, agora);
       expect(aguardando.map((c) => c.esperandoDesde)).toEqual(["2026-10-01T12:00:00Z"]);
+    });
+  });
+
+  describe("sem dono, na janela de 5 min depois de uma resposta manual", () => {
+    const naJanela = {
+      status: "open",
+      comando_da_conversa: "aguardando",
+      bot_silenced_until: "2026-10-23T21:03:00Z",
+      awaiting_since: "2026-10-23T20:50:00Z",
+      last_inbound_at: "2026-10-23T20:50:00Z",
+      last_outbound_at: "2026-10-23T20:58:00Z",
+    };
+
+    it("fica em Em atendimento, porque alguém acabou de responder", () => {
+      const { aguardando, emAtendimento } = montarColunas([conv("respondida", naJanela)], SP, agora);
+      expect(aguardando).toHaveLength(0);
+      expect(emAtendimento.map((c) => c.id)).toEqual(["respondida"]);
+    });
+
+    it("a janela vencer no navegador antes da próxima consulta não joga o cartão em Aguardando", () => {
+      const depois = new Date("2026-10-23T21:03:01Z");
+      expect(montarColunas([conv("respondida", naJanela)], SP, depois).aguardando).toHaveLength(0);
+    });
+
+    it("o cliente voltar a falar a leva para Aguardando", () => {
+      const { aguardando } = montarColunas([conv("voltou", { ...naJanela, last_inbound_at: "2026-10-23T20:59:00Z" })], SP, agora);
+      expect(aguardando.map((c) => c.id)).toEqual(["voltou"]);
+    });
+
+    it("grupo e contato travado seguem em Aguardando: não há automático para quem a janela devolver", () => {
+      const { aguardando } = montarColunas(
+        [
+          conv("grupo", { ...naJanela, is_group: true }),
+          conv("travado", { ...naJanela, contacts: { force_human: true } }),
+          conv("bloqueado", { ...naJanela, contacts: { is_blocked: true } }),
+        ],
+        SP,
+        agora,
+      );
+      expect(aguardando.map((c) => c.id).sort()).toEqual(["bloqueado", "grupo", "travado"]);
+    });
+  });
+
+  describe("ícone do automático", () => {
+    it("aparece na conversa que o automático está atendendo", () => {
+      expect(automaticoNoComando(conv("robo", { comando_da_conversa: "automatico" }), true)).toBe(true);
+    });
+
+    it("não aparece na encerrada, mesmo com o `assignee_kind='ai'` que o encerramento grava", () => {
+      const encerrada = { ...conv("fechada", { status: "closed", comando_da_conversa: "encerrada" }), assignee_kind: "ai" };
+      expect(automaticoNoComando(encerrada, true)).toBe(false);
+    });
+
+    it("não afirma automático em org sem automático, nem enquanto não se sabe", () => {
+      const c = conv("sem", { comando_da_conversa: "automatico" });
+      expect(automaticoNoComando(c, false)).toBe(false);
+      expect(automaticoNoComando(c, undefined)).toBe(false);
     });
   });
 
