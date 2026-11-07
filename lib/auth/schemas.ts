@@ -68,6 +68,28 @@ export const signupComConviteSchema = z
 
 export type SignupComConviteInput = z.infer<typeof signupComConviteSchema>;
 
+/**
+ * A régua da senha que alguém DEFINE para o próprio acesso entrar (#3876).
+ *
+ * Mora aqui, e não dentro do schema de redefinição, porque agora tem DOIS
+ * leitores: a redefinição de sempre (`resetPasswordSchema`, abaixo) e o
+ * "admin cria a pessoa com senha" (`lib/auth/criar-membro.ts`). Duas cópias da
+ * mesma régua divergiriam na primeira mudança — e o defeito apareceria como
+ * "a senha que a tela aceitou foi recusada na criação", longe da causa.
+ *
+ * O CADASTRO (`signupSchema`) mantém a régua dele, mais frouxa (só 8
+ * caracteres): ali quem escolhe a senha é a própria pessoa, no primeiro
+ * contato, e endurecer esse caminho é outra decisão de produto. Esta é a régua
+ * de quem está DEFININDO a senha de outra pessoa — e ela é a mesma do fluxo de
+ * redefinição, byte a byte, porque é o mesmo objeto.
+ */
+export const senhaDoAcesso = z
+  .string()
+  .min(8, "Senha deve ter pelo menos 8 caracteres")
+  .regex(/[A-Za-zÀ-ÿ]/, "Senha deve ter pelo menos uma letra")
+  .regex(/[0-9]/, "Senha deve ter pelo menos um número")
+  .regex(/[^A-Za-zÀ-ÿ0-9\s]/, "Senha deve ter pelo menos um símbolo");
+
 export const forgotPasswordSchema = z.object({
   email: z.string().email("Email inválido"),
 });
@@ -76,12 +98,8 @@ export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 
 export const resetPasswordSchema = z
   .object({
-    password: z
-      .string()
-      .min(8, "Senha deve ter pelo menos 8 caracteres")
-      .regex(/[A-Za-zÀ-ÿ]/, "Senha deve ter pelo menos uma letra")
-      .regex(/[0-9]/, "Senha deve ter pelo menos um número")
-      .regex(/[^A-Za-zÀ-ÿ0-9\s]/, "Senha deve ter pelo menos um símbolo"),
+    // A MESMA régua do "admin define a senha" — um objeto só, dois leitores.
+    password: senhaDoAcesso,
     password_confirm: z.string(),
     // Código TOTP: só exigido quando a conta tem MFA (a sessão de recovery é
     // AAL1 e o GoTrue pede AAL2 para trocar a senha). Opcional no schema; a

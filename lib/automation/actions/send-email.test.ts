@@ -157,9 +157,13 @@ interface Leitura {
  *                            que o modelo sem `{{resumo}}` não lê tabela de
  *                            resumo nenhuma.
  */
-function tabelaDaOrganizacao(marca: Record<string, unknown> | null, leitura: Leitura | null) {
+function tabelaDaOrganizacao(
+  marca: Record<string, unknown> | null,
+  leitura: Leitura | null,
+  orgId = "org-1",
+) {
   const linha: Linha = {
-    id: "org-1",
+    id: orgId,
     locale: "pt-BR",
     settings: marca === null ? null : { branding: marca },
   };
@@ -196,6 +200,8 @@ function ctx(
   emailDoAcesso: (id: string) => string | null = () => "dono@estudio.com",
   /** O `settings.branding` da organização — o remetente da automação (#3287). */
   marcaDaOrganizacao: Record<string, unknown> | null = null,
+  /** A organização do EVENTO: é ela que o remetente tem de seguir, e só ela. */
+  orgId = "org-1",
 ): ActionCtx {
   return {
     admin: {
@@ -209,7 +215,7 @@ function ctx(
         // `organizations` é lida pela AÇÃO (o remetente da automação, #3287) e —
         // só com `{{resumo}}` — pelo carregador do resumo. O dublê separa as
         // duas pela forma da consulta; ver `tabelaDaOrganizacao`.
-        if (tabela === "organizations") return tabelaDaOrganizacao(marcaDaOrganizacao, resumo);
+        if (tabela === "organizations") return tabelaDaOrganizacao(marcaDaOrganizacao, resumo, orgId);
         // Sem `resumo`, ler qualquer outra tabela é defeito: o dublê estoura e
         // o teste de `{{resumo}}` que não é usado vira vermelho se a ação
         // passar a carregar o resumo sempre.
@@ -218,13 +224,13 @@ function ctx(
         return tabelaGenerica(resumo.tabelas[tabela] ?? []);
       },
     } as unknown as ActionCtx["admin"],
-    organizationId: "org-1",
+    organizationId: orgId,
     ruleId: "rule-1",
     ruleName: "Aviso de viagem",
     requestId: "evt-1",
     event: {
       id: "evt-1",
-      organization_id: "org-1",
+      organization_id: orgId,
       event_type: "lead.stage_changed",
       entity_kind: "crm_lead",
       entity_id: "lead-1",
@@ -815,5 +821,54 @@ describe("send_email — o remetente da organização (#3287, fatia 1)", () => {
 
     expect(r.status).toBe("success");
     expect("fromName" in enviar.mock.calls[0]![0]).toBe(false);
+  });
+
+  /**
+   * O REMETENTE DE OUTRA EMPRESA NUNCA VAZA — o critério que fecha a fatia 1.
+   *
+   * O risco não é hipotético: o processo serve várias organizações e este
+   * caminho poderia ganhar um memo (o de `marcaDaSaida` já existe e é tentador
+   * reaproveitar). Com memo sem chave por organização, o segundo disparo sairia
+   * assinado pela primeira — e o cliente final da empresa B receberia um e-mail
+   * com o nome da empresa A. O teste força TRÊS organizações no mesmo processo,
+   * nesta ordem: A configurada, B configurada, C sem configuração. A e B provam
+   * que cada uma usa o PRÓPRIO remetente; C prova que nem o vazio herda o que
+   * acabou de passar por aqui.
+   */
+  it("empresa A nunca assina como B: cada disparo lê a organização do próprio evento", async () => {
+    enviar.mockResolvedValue({ ok: true, id: "e-mail-org", via: "smtp" });
+
+    await acao()!.execute(
+      ctx({}, EQUIPE_ATIVA, null, null, undefined, {
+        email_from_name: "Loja da Ana",
+        email_reply_to: "contato@lojadaana.com",
+      }, "org-a"),
+      CONFIG,
+    );
+    await acao()!.execute(
+      ctx({}, EQUIPE_ATIVA, null, null, undefined, {
+        email_from_name: "Loja do Beto",
+        email_reply_to: "oi@lojadobeto.com",
+      }, "org-b"),
+      CONFIG,
+    );
+    await acao()!.execute(
+      ctx({}, EQUIPE_ATIVA, null, null, undefined, null, "org-c"),
+      CONFIG,
+    );
+
+    const [daA, daB, daC] = enviar.mock.calls.map((c) => c[0]!);
+
+    expect(daA.fromName).toBe("Loja da Ana");
+    expect(daA.replyTo).toBe("contato@lojadaana.com");
+    expect(daB.fromName).toBe("Loja do Beto");
+    expect(daB.replyTo).toBe("oi@lojadobeto.com");
+    // O que o cliente de B NUNCA pode ver no cabeçalho é o nome ou a resposta de A
+    // — as duas linhas acima já negam; esta diz o que o vazamento pareceria.
+    expect([daB.fromName, daB.replyTo]).not.toContain("Loja da Ana");
+    expect([daB.fromName, daB.replyTo]).not.toContain("contato@lojadaana.com");
+    // E depois de duas organizações configuradas, a terceira sai como sempre saiu.
+    expect("fromName" in daC!).toBe(false);
+    expect("replyTo" in daC!).toBe(false);
   });
 });
