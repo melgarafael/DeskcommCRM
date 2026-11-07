@@ -348,22 +348,20 @@ export function ligadosPorMotivoForte(
 /**
  * O par tem identidade FORTE que se CONTRADIZ? Se sim, o nome NÃO sugere nada.
  *
- * São duas contradições, e as duas são de documento, não de semelhança:
+ * Uma só contradição conta, e é de documento: **CPF**. Dois hashes diferentes,
+ * ambos presentes, são dois documentos — e documento é a prova mais forte que
+ * existe de que a pessoa é outra. Nenhuma coincidência de nome junta o que o CPF
+ * separa.
  *
- *  - **CPF.** Dois hashes diferentes, ambos presentes, são dois documentos — e
- *    documento é a prova mais forte que existe de que a pessoa é outra. Nenhuma
- *    coincidência de nome pode juntar o que o CPF separa.
- *  - **Telefone.** Dois números diferentes, ambos presentes, são duas linhas —
- *    duas fichas que o produto trata como contatos distintos (é a regra "um
- *    número, uma ficha" da spec 31). O caso em que o número falta de um lado
- *    continua sugerido: é justamente a ficha nascida do WhatsApp, que ainda não
- *    tem telefone, e é o par útil. O que não se sugere é o par de duas fichas
- *    com números DIFERENTES: aí a semelhança de nome não é evidência de nada e
- *    separa sugestão útil de ruído.
+ * Telefone NÃO entra aqui, e a razão é medida: a mesma pessoa tem fixo e celular,
+ * e uma empresa tem linha comercial e WhatsApp. Tratar números diferentes como
+ * contradição faria a sugestão por nome perder justamente o par que ela existe
+ * para achar (o B1 da issue: a empresa com dois números). A regra "um número, uma
+ * ficha" governa o AGRUPAMENTO forte, não a supressão da sugestão.
  *
- * Telefone IGUAL (ou a variante do nono dígito) nunca chega aqui: o par já é
- * forte e sai pelo agrupamento de `encontrarContatosDuplicados`. E o telefone que
- * a ingestão parkou em `telefone_em_conflito` do outro lado também já é motivo
+ * Telefone IGUAL (ou a variante do nono dígito) nunca chega aqui: o par já é forte
+ * e sai pelo agrupamento de `encontrarContatosDuplicados`. E o telefone que a
+ * ingestão parkou em `telefone_em_conflito` do outro lado também já é motivo
  * forte — `ligadosPorMotivoForte` o reconhece.
  */
 export function identidadeForteConflita(
@@ -372,10 +370,7 @@ export function identidadeForteConflita(
 ): boolean {
   const cpfA = chaveDeCpf(a);
   const cpfB = chaveDeCpf(b);
-  if (cpfA && cpfB && cpfA !== cpfB) return true;
-  const telefoneA = chaveDeTelefone(a.phone_number);
-  const telefoneB = chaveDeTelefone(b.phone_number);
-  return Boolean(telefoneA && telefoneB && telefoneA !== telefoneB);
+  return Boolean(cpfA && cpfB && cpfA !== cpfB);
 }
 
 /**

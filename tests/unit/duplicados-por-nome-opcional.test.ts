@@ -9,9 +9,9 @@
  *   - a opção nasce DESLIGADA, e só o booleano `true` liga;
  *   - com ela desligada, a varredura por nome não roda (a rota é a dona disso, e
  *     está provado em `app/api/v1/contacts/duplicates/route.test.ts`);
- *   - dois CPFs diferentes ou dois telefones diferentes NÃO formam par: é a régua
+ *   - dois CPFs diferentes NÃO formam par: é a régua
  *     que separa sugestão útil de ruído;
- *   - ficha sem telefone continua sendo o par útil (a que nasceu do WhatsApp);
+ *   - telefone diferente continua formando par (fixo + celular, B1 da issue);
  *   - acento, caixa e espaço sobrando não impedem o par.
  */
 import { describe, expect, it } from "vitest";
@@ -68,23 +68,22 @@ describe("#4138 · a opção da empresa", () => {
 });
 
 describe("#4138 · identidade forte que se contradiz", () => {
-  it("3. ⭐ telefone diferente nos dois lados: o nome NÃO forma par", () => {
-    // O teste-chave: duas fichas com o mesmo nome e dois números diferentes não
-    // são o mesmo cadastro — sugerir a junção aí é o ruído que a opção desligada
-    // por padrão existe para evitar.
-    // Sabotagem: tirar a chamada de `identidadeForteConflita` em
-    // `encontrarParecidosPorNome` faz este par aparecer e deixa vermelho.
+  it("3. ⭐ telefone diferente nos dois lados: o nome AINDA forma par (fixo e celular)", () => {
+    // O B1 da issue: a mesma empresa com dois números — comercial e WhatsApp, ou
+    // fixo e celular. Número diferente NÃO é contradição; a regra "um número, uma
+    // ficha" governa o agrupamento forte, não a sugestão por nome.
+    // Sabotagem: fazer `identidadeForteConflita` olhar telefone derruba este caso.
     const pares = encontrarParecidosPorNome([
-      contato("a", { name: "Clínica Santos Odontologia", phone_number: "+5531911110010" }),
-      contato("b", { name: "Santos Odontologia Clínica", phone_number: "+5531911110020" }),
+      contato("a", { name: "Clínica Santos Odontologia", phone_number: "+553****0010" }),
+      contato("b", { name: "Santos Odontologia Clínica", phone_number: "+553****0020" }),
     ]);
-    expect(pares).toEqual([]);
+    expect(pares).toHaveLength(1);
     expect(
       identidadeForteConflita(
-        { phone_number: "+5531911110010", cpf_hash: null },
-        { phone_number: "+5531911110020", cpf_hash: null },
+        { phone_number: "+553****0010", cpf_hash: null },
+        { phone_number: "+553****0020", cpf_hash: null },
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("4. ⭐ CPF diferente nos dois lados: dois documentos, dois cadastros — não sugere", () => {

@@ -295,7 +295,7 @@ describe("o repetido pelo nome: sugestão depois dos fortes, e dispensa que vale
     linhas[9] = contato(10, { name: "Clínica Santos Odontologia", phone_number: "+553191110010" });
     linhas[19] = contato(20, {
       name: "Santos Odontologia Clínica Avançada",
-      phone_number: null,
+      phone_number: "+553****0020",
     });
     return linhas;
   }
@@ -359,22 +359,6 @@ describe("o repetido pelo nome: sugestão depois dos fortes, e dispensa que vale
     expect(grupos.map((g) => g.motivos)).toEqual([["telefone"]]);
   });
 
-  it("⭐ dois telefones diferentes e o mesmo nome: a sugestão não aparece (#4138)", async () => {
-    // O caso que a régua de conflito existe para cortar: duas fichas com números
-    // DIFERENTES não são o mesmo cadastro, e o nome sozinho não junta.
-    // Sabotagem: tirar `identidadeForteConflita` de `encontrarParecidosPorNome`
-    // faz o par voltar e deixa vermelho.
-    const linhas = cenario();
-    linhas[19] = contato(20, {
-      name: "Santos Odontologia Clínica Avançada",
-      phone_number: `+55319${String(80000000 + 20)}`,
-    });
-    comOpcao(true, linhas);
-
-    const grupos = (await corpo(await chamar())).data as Array<{ motivos: string[] }>;
-
-    expect(grupos.map((g) => g.motivos)).toEqual([["telefone"]]);
-  });
 });
 
 /**

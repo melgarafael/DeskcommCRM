@@ -89,11 +89,9 @@ const NOME_ABSORVIDO = `Duplicado Absorvido ${SUFIXO}`;
  */
 const NOME_SORRISO_A = "Clínica Exemplo Sorriso";
 const NOME_SORRISO_B = "Exemplo Sorriso Clínica Dental";
-// Telefone de UM lado só: número nos dois lados e DIFERENTE não é sugestão de nome
-// (#4138, `identidadeForteConflita`), e igual cairia no grupo forte. A ficha sem
-// número é justamente a que nasce do WhatsApp — o par útil de B1/B7.
+// Telefones diferentes, para o par NÃO cair no grupo forte de "mesmo telefone".
 const TELEFONE_SORRISO_A = `+5531${`7${SUFIXO}`}`; // 55 + 31 + 8 = 12
-const TELEFONE_SORRISO_B = null;
+const TELEFONE_SORRISO_B = `+5531${`6${SUFIXO}`}`; // 55 + 31 + 8 = 12
 
 let idPrincipal = "";
 let idAbsorvido = "";
@@ -156,7 +154,7 @@ async function contarMensagensDoContato(contatoId: string): Promise<number> {
   return contarPor("messages", "contact_id", contatoId);
 }
 
-async function criarContato(nome: string, telefone: string | null): Promise<string> {
+async function criarContato(nome: string, telefone: string): Promise<string> {
   const { data, error } = await admin
     .from("contacts")
     .insert({
