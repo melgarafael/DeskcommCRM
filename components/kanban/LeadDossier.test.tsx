@@ -59,6 +59,16 @@ vi.mock("@/hooks/leads/useLeadTimeline", () => ({
   }),
 }));
 
+// A seção "Conversas e ligações dos números" (#3669) só existe quando há pessoa
+// relacionada. Este arquivo mede a CASCA do dossiê — ordem e recolhimento —, e
+// com a lista vazia a seção não entra: é assim que a ordem esperada abaixo
+// continua sendo a de três seções. A seção com relacionado tem teste próprio
+// (`dossie-dos-numeros.test.tsx`).
+vi.mock("@/hooks/leads/useContatosRelacionados", () => ({
+  chaveDosContatosRelacionados: (leadId: string | null) => ["contatos-relacionados", leadId],
+  useContatosRelacionados: () => ({ data: { data: [] }, isLoading: false, isError: false }),
+}));
+
 vi.mock("./ContatoDoNegocio", () => ({ ContatoDoNegocio: () => <div data-peca="contato" /> }));
 vi.mock("./LeadFieldsForm", () => ({ LeadFieldsForm: () => <div data-peca="campos" /> }));
 vi.mock("./TarefasDoNegocio", () => ({ TarefasDoNegocio: () => <div data-peca="tarefas" /> }));
