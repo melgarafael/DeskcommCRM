@@ -38,6 +38,8 @@ function operationTitle(operation: ExtensionOperationView, t: (texto: string) =>
       return t("Configuração");
     case "module_install":
       return t("Instalação de módulo");
+    case "switch":
+      return t("Interruptor do módulo");
   }
 }
 

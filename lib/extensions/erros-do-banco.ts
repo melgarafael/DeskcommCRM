@@ -69,6 +69,10 @@ export const SQL_ERRORS: Readonly<Record<string, { message: string; status: numb
     message: "O responsável pela instalação removeu esta extensão de todas as organizações.",
     status: 410,
   },
+  extension_switch_not_applicable: {
+    message: "Só um módulo conectado tem o que ligar ou desligar nesta instalação.",
+    status: 409,
+  },
   extension_artifact_mismatch: {
     message:
       "O arquivo recebido não corresponde à versão admitida. Peça ao mantenedor para conferir a publicação.",
