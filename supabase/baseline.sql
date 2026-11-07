@@ -76589,7 +76589,7 @@ comment on column public.campaigns.provider_broadcast_id is
 
 notify pgrst, 'reload schema';
 
--- ---- o rótulo do telefone principal (#4242, item 2, migration 9242) ----
+-- ---- o rótulo do telefone principal (#4242, item 2, migration 9245) ----
 -- "Tornar principal" descartava o rótulo do extra promovido: o rótulo mora em
 -- `contact_phones.rotulo`, e o principal não tinha coluna para ele. Fica no
 -- apêndice, e não no create table do bloco de `contacts`, porque o `update.sh`
