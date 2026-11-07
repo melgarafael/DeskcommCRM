@@ -122,7 +122,7 @@ function montagensAMao(fonte: string): Array<{ linha: number; trecho: string }> 
   const achadas: Array<{ linha: number; trecho: string }> = [];
   for (let m = construtor.exec(fonte); m; m = construtor.exec(fonte)) {
     const linha = fonte.slice(0, m.index).split("\n");
-    const l = linha[linha.length - 1];
+    const l = linha[linha.length - 1] ?? "";
     // linha de comentário não é montagem: o doc do `health` cita os construtores.
     if (/^\s*(\/\/|\*)/.test(l)) continue;
     // Carimbada quando o construtor é o PRIMEIRO argumento de

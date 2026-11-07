@@ -399,7 +399,11 @@ describe("aviso da conexão do Google — o contrato com quem ESCREVE o código"
     const achados = new Set<string>();
     for (const rota of ROTAS) {
       const fonte = readFileSync(resolve(process.cwd(), rota), "utf-8");
-      for (const [, codigo] of fonte.matchAll(/voltar\("erro=([a-z_]+)"\)/g)) achados.add(codigo!);
+      // `voltar(...)` ganhou um segundo argumento (a requisição, para carimbar
+      // o X-Request-Id — #4107): a varredura aceita argumentos extras, senão o
+      // controle de vacuidade abaixo passaria a ler zero código e o gate
+      // seguinte ficaria verde sem ter lido uma linha.
+      for (const [, codigo] of fonte.matchAll(/voltar\("erro=([a-z_]+)"[^)]*\)/g)) achados.add(codigo!);
       for (const [, codigo] of fonte.matchAll(/voltarComErro\("([a-z_]+)"\)/g)) achados.add(codigo!);
     }
     return [...achados];
