@@ -126,7 +126,7 @@ class ReadQuery {
       const data = r.rows.map((row) => row.j);
       return { data: this.one ? (data[0] ?? null) : data, error: null };
     } catch (e) {
-      return { data: null, error: { message: (e as Error).message } };
+      return { data: null, error: { code: (e as { code?: string }).code, message: (e as Error).message } };
     }
   }
 }
