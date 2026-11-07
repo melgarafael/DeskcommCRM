@@ -201,7 +201,7 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
    */
   const transicao =
     parsed.data.status !== undefined
-      ? { de: (antes as { status?: string } | null)?.status ?? null, para: tarefa.status }
+      ? { de: (antes as { status?: string } | null)?.status ?? null, para: gravada.status }
       : {};
 
   await audit({
