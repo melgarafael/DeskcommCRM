@@ -153,8 +153,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         user.id,
         activeOrg.orgId,
       ),
-      // Da INSTALAÇÃO: decide se a porta de um módulo opcional entra no menu.
-      modulosLigados(admin),
+      // Da INSTALAÇÃO, com a exceção DESTA empresa (#3868): decide se a porta de
+      // um módulo opcional entra no menu. Sem linha da empresa = herda a instalação.
+      modulosLigados(admin, activeOrg.orgId),
       // Da ORGANIZAÇÃO (#1290): a telefonia não tem chave de instalação que o app
       // leia — o que se mede é o tronco SIP que esta empresa salvou. Entra no
       // mesmo `Promise.all`, então custa a consulta mais lenta, não uma espera.

@@ -8,6 +8,7 @@ import { tagDeIdioma } from "@/lib/i18n/datas";
 import { carregarComportamentoDaInstalacao } from "@/lib/instalacao/comportamento-servidor";
 import { empresasParaMolde, lerMoldeDeIa, resumoDoMoldeNoBanco } from "@/lib/instalacao/molde-de-ia-servidor";
 import { MODULOS_AINDA_NAO_LIGAVEIS, MODULOS_OPCIONAIS_POR_FLAG, modulosLigados, type ModuloOpcional } from "@/lib/instalacao/modulos";
+import { empresasDosModulos, lerModulosDaEmpresa } from "@/lib/instalacao/modulos-por-empresa";
 import type { TipoDeSuspensao } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -20,6 +21,7 @@ import {
 import { detectarServidor } from "@/lib/recursos-opcionais/estado";
 
 import { FormularioDeComportamento, FormularioDeModulos } from "./_form";
+import { FormularioDeModulosPorEmpresa } from "./_modulos-por-empresa";
 import { FormularioDoMoldeDeIa } from "./_molde-de-ia";
 
 export const metadata = { title: "Recursos opcionais" };
@@ -82,7 +84,11 @@ function instanteLegivel(iso: string | null, tag: string): string | null {
  * gravando pelos formulários de sempre; a lista de recursos é
  * `lib/recursos-opcionais/catalogo.ts`.
  */
-export default async function Page() {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ empresa?: string | string[] }>;
+}) {
   const usuario = await loadAuthUser();
   if (!usuario?.is_platform_admin) notFound();
   const idioma = usuario.idioma;
@@ -105,6 +111,18 @@ export default async function Page() {
     molde === undefined ? Promise.resolve(null) : empresasParaMolde(admin, moldeAtual),
     moldeAtual ? resumoDoMoldeNoBanco(admin, moldeAtual) : Promise.resolve(null),
   ]);
+  // #3868: a EMPRESA escolhida no bloco "Por empresa" chega por query string, e o
+  // filtro é por formato de UUID — é identificador indo para consulta, e um valor
+  // arbitrário não deve nem virar `where`. A existência é conferida na leitura
+  // (`lerModulosDaEmpresa` responde `null` para empresa inexistente).
+  const params = await searchParams;
+  const pedida = typeof params.empresa === "string" ? params.empresa : null;
+  const empresaId = pedida && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pedida) ? pedida : null;
+  const [empresas, modulosDaEmpresa] = await Promise.all([
+    empresasDosModulos(admin),
+    empresaId ? lerModulosDaEmpresa(admin, empresaId, ligados) : Promise.resolve(null),
+  ]);
+
   // Spec da cobrança §7(h): o aviso de quantas o desligar libera só existe com ela ligada.
   const suspensasPorCobranca = ligados.includes("cobranca") ? await contarSuspensasPorCobranca(admin) : 0;
   // Módulo que ainda não se liga nesta versão só aparece se já estiver ligado
@@ -138,6 +156,12 @@ export default async function Page() {
             idioma,
           )}
         </p>
+        <p className="text-sm text-muted-foreground">
+          {traduzir(
+            "Cada empresa pode ter a exceção dela em “Módulos por empresa”; quem nunca configurar segue o que está aqui.",
+            idioma,
+          )}
+        </p>
       </div>
 
       <section className="space-y-3" aria-labelledby="bloco-modulos">
@@ -162,6 +186,11 @@ export default async function Page() {
             })}
           </ul>
         )}
+        <FormularioDeModulosPorEmpresa
+          empresas={empresas}
+          empresaId={empresaId}
+          modulos={modulosDaEmpresa}
+        />
       </section>
 
       <section className="space-y-3" aria-labelledby="bloco-comportamento">

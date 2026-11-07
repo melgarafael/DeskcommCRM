@@ -72,7 +72,9 @@ export async function fontesDaEmpresa(db: SupabaseClient, organizationId: string
     // ponytail: `modulosLigados` falha fechada (erro de banco = nenhum módulo) e não
     // distingue "desligado" de "não li". Para a tela que só informa, isso vira
     // "desligado"; separar os dois pede mudar o contrato dele, e não é deste PR.
-    modulosLigados(db),
+    // #3868: com a organização, a tela da empresa mostra o que vale PARA ELA — a
+    // exceção dela, não o interruptor largo da instalação.
+    modulosLigados(db, organizationId),
     (async (): Promise<FontesDeEstado["settings"]> => {
       try {
         const { data, error } = await db
