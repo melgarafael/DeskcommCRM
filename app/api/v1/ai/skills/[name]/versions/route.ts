@@ -43,7 +43,7 @@ export async function GET(
 
   const { name: rawName } = await ctx.params;
   const nameParsed = nameSchema.safeParse(decodeURIComponent(rawName));
-  if (!nameParsed.success || !nomeDeSkillValido(nameParsed.data)) {
+  if (!nameParsed.success || (authz.via === "token" && !nomeDeSkillValido(nameParsed.data))) {
     return fail("validation_failed", t("Nome de skill inválido."), 422, { requestId });
   }
   const name = nameParsed.data;
