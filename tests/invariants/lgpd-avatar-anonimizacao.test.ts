@@ -113,11 +113,9 @@ afterAll(async () => {
 });
 
 describe("foto de perfil sob anonimização LGPD", () => {
-  it("a RPC de cascata NÃO apaga o caminho do avatar — é o que permite enfileirar antes dela", async () => {
-    // Se alguém acrescentar `avatar_storage_path = null` ao UPDATE da RPC sem
-    // enfileirar o arquivo junto, este teste fica vermelho. Esse é exatamente o
-    // cenário do arquivo órfão: o contato vira anônimo e o rosto fica no bucket
-    // sem ninguém sabendo o caminho para removê-lo.
+  it("a RPC de cascata solta o caminho do avatar e põe o arquivo na fila", async () => {
+    // Soltar o ponteiro sem enfileirar é o cenário do arquivo órfão: o contato
+    // vira anônimo e o rosto fica no bucket sem ninguém saber o caminho (9243).
     const id = "afa00000-0000-4000-8000-00000000000a";
     const caminho = await criarContatoComFoto(id, "+5511900000001");
 
@@ -128,7 +126,12 @@ describe("foto de perfil sob anonimização LGPD", () => {
       [id],
     );
     expect(rows[0]?.is_anonymized).toBe(true);
-    expect(rows[0]?.avatar_storage_path).toBe(caminho);
+    expect(rows[0]?.avatar_storage_path).toBeNull();
+    const fila = await pool.query<{ status: string }>(
+      `select status from storage_redaction_queue where bucket = 'whatsapp-media' and object_path = $1`,
+      [caminho],
+    );
+    expect(fila.rows[0]?.status).toBe("pending");
   });
 
   it("depois de anonimizado o contato sai do escopo do cron — o rosto não é rebaixado", async () => {
