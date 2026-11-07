@@ -80,7 +80,7 @@ function supabaseDeTeste(): never {
 }
 
 /** Extras da ficha (`contact_phones`) e as mensagens recebidas, para o caso de ficha com telefone extra. */
-let extrasDaFicha: Array<{ id: string }> = [];
+let extrasDaFicha: Array<{ phone_number: string }> = [];
 let ultimasRecebidas: Array<{ external_id: string }> = [];
 
 const CONVERSA_NORMAL: LinhaDeConversa = {
@@ -112,7 +112,7 @@ describe("sinalizarDigitando — ficha com telefone extra (Spec 31 B1)", () => {
   it("o 'digitando…' sai para o número que a pessoa escreveu (o extra), não para o principal", async () => {
     // Principal: +5527999998888. A pessoa escreveu pelo extra +5531988887777.
     linha!.contact_id = "ficha-1";
-    extrasDaFicha = [{ id: "extra-1" }];
+    extrasDaFicha = [{ phone_number: "+5531988887777" }];
     ultimasRecebidas = [{ external_id: "false_5531988887777@c.us_3EB0XYZ" }];
 
     await sinalizarDigitando(supabaseDeTeste(), { organizationId: "org-1", conversationId: "conv-1" });
@@ -121,6 +121,15 @@ describe("sinalizarDigitando — ficha com telefone extra (Spec 31 B1)", () => {
     expect(filtros.contact_phones).toContainEqual(["organization_id", "org-1"]);
     // Sabotagem: remover a consulta de extras (ou voltar ao principal) faz o
     // "digitando…" sair pelo 5527999998888 e deixa este teste vermelho.
+  });
+
+  it("número que saiu da ficha: o 'digitando…' sai pelo principal, como a resposta", async () => {
+    extrasDaFicha = [{ phone_number: "+5531900001111" }];
+    ultimasRecebidas = [{ external_id: "false_5531988887777@c.us_3EB0XYZ" }];
+
+    await sinalizarDigitando(supabaseDeTeste(), { organizationId: "org-1", conversationId: "conv-1" });
+
+    expect(setPresence).toHaveBeenCalledWith("sessao-do-sitio", "5527999998888@c.us", "typing");
   });
 });
 
