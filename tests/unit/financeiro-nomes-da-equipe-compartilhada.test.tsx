@@ -75,14 +75,16 @@ beforeEach(() => {
 });
 
 describe("nomes financeiros no contrato compartilhado com o atendimento", () => {
-  it("Comissão mostra full_name nas opções e regras, com fallback sem nome ou membro desconhecido", async () => {
+  it("Comissão mostra full_name nas opções e regras, com a régua única para quem não tem nome (#3023)", async () => {
     const view = await atendimentoNoMesmoCache();
     view.rerender(<CatalogoFinanceiro podeEditar comissaoDisponivel />);
     const pessoas = await screen.findByRole("combobox", { name: "Pessoa" });
     expect(await within(pessoas).findByRole("option", { name: "Técnica Azul" })).toHaveValue(
       "pessoa-azul",
     );
-    expect(within(pessoas).getByRole("option", { name: "Sem nome" })).toHaveValue(
+    // Membro conhecido sem nome não vira "Sem nome": a régua do #3023 dá
+    // `Atendente <sufixo do hash do id>` — estável e sem uuid na tela.
+    expect(within(pessoas).getByRole("option", { name: "Atendente CIHS" })).toHaveValue(
       "pessoa-sem-nome",
     );
     const titulo = screen.getByRole("heading", { name: "Comissão", level: 2 });
@@ -90,16 +92,24 @@ describe("nomes financeiros no contrato compartilhado com o atendimento", () => 
     expect(
       await within(secao).findByText("Técnica Azul · 10%", { selector: "span" }),
     ).toBeVisible();
-    expect(within(secao).getAllByText("alguém · 10%")).toHaveLength(2);
+    // A regra da pessoa sem nome mostra o rótulo do helper; só o id DESCONHECIDO
+    // (que não está na equipe) cai em "alguém".
+    expect(within(secao).getAllByText("alguém · 10%")).toHaveLength(1);
+    expect(within(secao).getAllByText("Atendente CIHS · 10%")).toHaveLength(1);
   });
 
-  it("Faturamento nomeia a pessoa pelo full_name e mantém Sem responsável para null ou desconhecido", async () => {
+  it("Faturamento nomeia a pessoa pelo full_name; null e desconhecido seguem «Sem responsável»", async () => {
     const view = await atendimentoNoMesmoCache();
     view.rerender(<Faturamento podeLancar={false} moedaDaOrg="BRL" />);
     const nome = await screen.findByRole("cell", { name: /^Técnica Azul$/ });
     const tabela = nome.closest("table")!;
+    // `null` e id fora da equipe continuam "Sem responsável" (2 linhas); a
+    // pessoa CONHECIDA sem nome ganha o rótulo do helper, não o genérico.
     expect(
       within(tabela).getAllByRole("cell", { name: /^Sem responsável$/ }),
-    ).toHaveLength(3);
+    ).toHaveLength(2);
+    expect(
+      within(tabela).getAllByRole("cell", { name: /^Atendente CIHS$/ }),
+    ).toHaveLength(1);
   });
 });

@@ -9,6 +9,11 @@ function ok(sheet: SheetMatrix) {
   return r;
 }
 
+/** O candidato i: a prévia usa `linha`, os testes de conteúdo olham o `prospect`. */
+function p(r: ReturnType<typeof ok>, i: number) {
+  return r.candidatos[i]?.prospect;
+}
+
 describe("lerPlanilhaDeProspeccao", () => {
   it("lê cabeçalho em português e normaliza o telefone para E.164", () => {
     const r = ok({
@@ -17,7 +22,7 @@ describe("lerPlanilhaDeProspeccao", () => {
     });
     expect(r.erros).toEqual([]);
     expect(r.candidatos).toHaveLength(1);
-    expect(r.candidatos[0]).toMatchObject({
+    expect(p(r, 0)).toMatchObject({
       key: "planilha:+5511999990000",
       name: "Padaria Exemplo",
       phone: "+5511999990000",
@@ -35,7 +40,7 @@ describe("lerPlanilhaDeProspeccao", () => {
       headers: ["NOMBRE", "Teléfono", "Sitio Web", "Dirección"],
       rows: [["Panadería Sol", "+351 912 345 678", "https://sol.pt", "Lisboa"]],
     });
-    expect(r.candidatos[0]).toMatchObject({
+    expect(p(r, 0)).toMatchObject({
       name: "Panadería Sol",
       phone: "+351912345678",
       website: "https://sol.pt/",
@@ -45,10 +50,12 @@ describe("lerPlanilhaDeProspeccao", () => {
 
   it("aceita telefone estrangeiro com +", () => {
     const r = ok({ headers: ["empresa", "telefone"], rows: [["Empresa PT", "+351 912 345 678"]] });
-    expect(r.candidatos[0]?.phone).toBe("+351912345678");
+    expect(p(r, 0)?.phone).toBe("+351912345678");
   });
 
-  it("recusa telefone vazio e curto com o número da linha como a planilha mostra", () => {
+  it("telefone em branco e telefone inválido são motivos DIFERENTES, com a linha", () => {
+    // O operador conserta um preenchendo a célula e o outro corrigindo o número: uma frase só
+    // para os dois esconde qual dos dois consertos a linha pede.
     const r = ok({
       headers: ["empresa", "telefone"],
       rows: [
@@ -59,8 +66,8 @@ describe("lerPlanilhaDeProspeccao", () => {
     });
     expect(r.candidatos).toHaveLength(1);
     expect(r.erros).toEqual([
-      { linha: 3, motivo: "Sem telefone válido." },
-      { linha: 4, motivo: "Sem telefone válido." },
+      { linha: 3, telefone: null, codigo: "sem_telefone", motivo: "Sem telefone." },
+      { linha: 4, telefone: null, codigo: "telefone_invalido", motivo: "Telefone inválido." },
     ]);
   });
 
@@ -72,14 +79,24 @@ describe("lerPlanilhaDeProspeccao", () => {
         ["Segunda", "11 99999-0000"],
       ],
     });
-    expect(r.candidatos.map((c) => c.name)).toEqual(["Primeira"]);
-    expect(r.erros).toEqual([{ linha: 3, motivo: "Telefone repetido na planilha (linha 2)." }]);
+    expect(r.candidatos.map((c) => c.prospect.name)).toEqual(["Primeira"]);
+    expect(r.erros).toEqual([
+      {
+        linha: 3,
+        telefone: "+5511999990000",
+        codigo: "repetido_na_planilha",
+        motivo: "Telefone repetido na planilha.",
+        detalhe: "linha 2",
+      },
+    ]);
   });
 
   it("recusa nome de uma letra", () => {
     const r = ok({ headers: ["empresa", "telefone"], rows: [["A", "(11) 99999-0000"]] });
     expect(r.candidatos).toEqual([]);
-    expect(r.erros).toEqual([{ linha: 2, motivo: "Sem nome da empresa." }]);
+    expect(r.erros).toEqual([
+      { linha: 2, telefone: null, codigo: "sem_nome", motivo: "Sem nome da empresa." },
+    ]);
   });
 
   it("mais de 500 linhas de dados recusa o arquivo inteiro", () => {
@@ -124,7 +141,7 @@ describe("lerPlanilhaDeProspeccao", () => {
         ],
       ],
     });
-    expect(r.candidatos[0]?.socials).toEqual([
+    expect(p(r, 0)?.socials).toEqual([
       "https://facebook.com/loja",
       "https://instagram.com/loja",
     ]);
@@ -139,7 +156,7 @@ describe("lerPlanilhaDeProspeccao", () => {
         ["Loja C", "(11) 99999-0003", "http://loja-c.com.br/"],
       ],
     });
-    expect(r.candidatos.map((c) => c.website)).toEqual([
+    expect(r.candidatos.map((c) => c.prospect.website)).toEqual([
       "https://www.loja-a.com.br/",
       null,
       "http://loja-c.com.br/",
@@ -151,7 +168,7 @@ describe("lerPlanilhaDeProspeccao", () => {
       headers: ["empresa", "telefone", "email"],
       rows: [["Loja", "(11) 99999-0000", "a@x.com; b@x.com, c@x.com d@x.com e@x.com f@x.com sem-arroba"]],
     });
-    expect(r.candidatos[0]?.emails).toEqual(["a@x.com", "b@x.com", "c@x.com", "d@x.com", "e@x.com"]);
+    expect(p(r, 0)?.emails).toEqual(["a@x.com", "b@x.com", "c@x.com", "d@x.com", "e@x.com"]);
   });
 
   it("lista as colunas que não reconhece", () => {
@@ -172,6 +189,8 @@ describe("lerPlanilhaDeProspeccao", () => {
       ],
     });
     expect(r.candidatos).toHaveLength(1);
-    expect(r.erros).toEqual([{ linha: 4, motivo: "Sem nome da empresa." }]);
+    expect(r.erros).toEqual([
+      { linha: 4, telefone: null, codigo: "sem_nome", motivo: "Sem nome da empresa." },
+    ]);
   });
 });

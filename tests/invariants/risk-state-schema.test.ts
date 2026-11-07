@@ -18,9 +18,10 @@ import { sql } from "./gov-helpers";
  * de runtime.
  *
  * ⚠️ A publicação de realtime é a asserção menos óbvia e a mais fácil de perder:
- * `crm_lead_scores` fica FORA dela de propósito e esta fica DENTRO, então quem
- * copiar o bloco da 0075 sem ler o cabeçalho da 0078 inverte o sinal e o card
- * para de reagir sem reload — falha que não aparece em teste de API nenhum.
+ * `crm_lead_scores` fica FORA dela de propósito (telemetria) — e desde a 9046
+ * (#3697) `crm_lead_risk_states` também: nenhuma tela assina a tabela, então
+ * publicá-la só custava decodificação. Quem copiar o bloco da 0078 achando que
+ * "estado tem que estar na publicação" reintroduz esse custo sem consumidor.
  */
 describe("0078 · estado de risco chega ao clone", () => {
   it("a tabela existe no baseline, não só na migration", () => {
@@ -54,16 +55,18 @@ describe("0078 · estado de risco chega ao clone", () => {
     ).toBe("1");
   });
 
-  it("DENTRO da publicação de realtime — e o score continua FORA", () => {
-    // As duas asserções juntas de propósito: a segunda é o que impede alguém de
-    // "uniformizar" as duas tabelas achando que corrigiu uma inconsistência.
-    // Elas divergem porque significam coisas diferentes — telemetria x estado.
+  it("FORA da publicação de realtime — sem consumidor, não paga decodificação (#3697)", () => {
+    // As duas asserções juntas de propósito: nenhuma das duas é telemetria, mas as
+    // duas ficam fora — `crm_lead_scores` porque recálculo não pinta card, e
+    // `crm_lead_risk_states` porque nenhuma tela assina (9046). Quem "uniformizar"
+    // publicando a de risco reintroduz custo por escrita sem consumidor; quem
+    // publicar o score reabre o pulso que mente (0075).
     const publicadas = sql(
       `select tablename from pg_publication_tables
         where pubname = 'supabase_realtime'
           and tablename in ('crm_lead_risk_states', 'crm_lead_scores')`,
     ).split("\n").filter(Boolean);
-    expect(publicadas).toContain("crm_lead_risk_states");
+    expect(publicadas).not.toContain("crm_lead_risk_states");
     expect(publicadas).not.toContain("crm_lead_scores");
   });
 

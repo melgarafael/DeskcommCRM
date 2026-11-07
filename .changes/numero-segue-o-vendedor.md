@@ -1,7 +1,0 @@
----
-impacto: capacidade_nova
-secao: corrigido
-titulo: Transferir a conversa leva junto o número de WhatsApp do novo responsável
----
-
-Numa empresa com um número por vendedor, transferir uma conversa trocava só o responsável: a conversa continuava no número do vendedor anterior, e o novo respondia pelo WhatsApp do colega. A mensagem saía pelo número do antigo, e a resposta do cliente chegava no celular dele. Agora a conversa passa para o número do vendedor novo, e o diálogo Transferir avisa antes de confirmar: "a conversa vai continuar pelo número de Fulano". Na transferência pelo diálogo, a auditoria registra o número antigo e o novo. Trocar a carteira do cliente (também em lote) leva junto as conversas abertas do vendedor anterior e as que estão sem dono com a IA parada (silenciada, ou com o contato marcado para atendimento humano); as que a IA está atendendo continuam com a IA. Quem tem número próprio não consegue mais responder por uma conversa que está no número de outra pessoa: recebe um aviso dizendo o que fazer. Quem não tem número próprio, como um gerente fora da lista de quem atende o número, continua respondendo como antes. Nada muda em número compartilhado, no número geral da empresa (sem lista de quem atende), em conversa de grupo, nem quando o vendedor novo não tem número conectado do mesmo canal. Conversas que já estavam no número errado antes desta versão não são mudadas sozinhas: elas trocam de número na próxima transferência. Crédito: @webtecnica, que escreveu o conserto, e @hudson-souza-mkt, que mediu o defeito (issue 3642).

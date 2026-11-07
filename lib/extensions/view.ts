@@ -1,5 +1,6 @@
 /** Contrato de apresentação; não importa cliente de banco nem configuração do servidor. */
 import type { CatalogEntry, ExtensionConfiguration, ExtensionManifest } from "./manifest";
+import type { PaletaDeTema } from "./tema";
 import type { ExtensionOperationKind, ExtensionOperationStatus } from "./vocabulario";
 
 export interface ExtensionOperationView {
@@ -48,6 +49,13 @@ export interface InstalledExtensionView {
   /** Revisão do VÍNCULO desta organização (a precondição de configurar). */
   revision: number;
   configuration: ExtensionConfiguration;
+  /**
+   * A paleta que o MANIFESTO desta versão declara em `contributions.theme`.
+   * `null` = a extensão não oferece tema: a tela não mostra o campo, para não
+   * oferecer uma escolha que o host recusaria (o gancho só aplica a paleta que
+   * o manifesto declarou — `temaAplicavel`, `lib/extensions/tema.ts`).
+   */
+  theme_palette: PaletaDeTema | null;
   compatible: boolean;
   compatibility_reason: string | null;
   /** Revisão da INSTALAÇÃO (a precondição de atualizar, desfazer e remover). */

@@ -25,6 +25,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { normalizarTags } from "@/lib/contacts/tag-normalizada";
+import {
+  CAMPOS_DO_ENDERECO,
+  type EnderecoDoContato,
+} from "@/lib/contacts/endereco-por-cep";
 import { camposQueMudaram, mensagemDaRecusa, recusasDePadrao } from "@/lib/leads/padrao-do-campo";
 import {
   contactPatchSchemaDoPais,
@@ -33,7 +37,10 @@ import {
   type ContactType,
 } from "@/lib/schemas/contacts";
 import { useUpdateContact } from "@/hooks/contacts/useUpdateContact";
+import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { CustomFieldsEditor, type CustomFieldDef } from "@/components/contacts/CustomFieldsEditor";
+import { CamposDeEndereco } from "@/components/contacts/CamposDeEndereco";
+
 import { EtiquetasDoContato } from "@/components/contacts/EtiquetasDoContato";
 import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
 import type { Contact } from "@/lib/types/contacts";
@@ -62,16 +69,6 @@ interface FormShape {
   tags?: string[];
   custom_fields?: Record<string, unknown>;
 }
-
-const CAMPOS_DO_ENDERECO = [
-  "zip_code",
-  "street",
-  "number",
-  "complement",
-  "district",
-  "city",
-  "state",
-] as const;
 
 /** O rótulo de cada tipo, na língua da tela — a chave é o valor da coluna. */
 const ROTULO_DO_TIPO: Record<ContactType, string> = {
@@ -137,11 +134,43 @@ export function EditContactDialog({
   // O valor do `Select` de tipo. `useWatch` (e não `form.watch`) para o
   // componente re-renderizar quando o tipo muda — o gatilho do Radix lê daqui.
   const tipoDeContato = useWatch({ control: form.control, name: "contact_type" }) ?? "cliente";
+  // Os sete campos do endereço como UM objeto — é o que `CamposDeEndereco` lê.
+  // `useWatch` com a lista (e não `form.watch`) para o componente re-renderizar
+  // quando o CEP preenche: `setValue` não redesenha sozinho quem lê o formulário
+  // por referência.
+  const [zipCode, street, number, complement, district, city, state] =
+    useWatch({ control: form.control, name: CAMPOS_DO_ENDERECO }) ?? [];
+  const endereco: EnderecoDoContato = {
+    zip_code: zipCode ?? "",
+    street: street ?? "",
+    number: number ?? "",
+    complement: complement ?? "",
+    district: district ?? "",
+    city: city ?? "",
+    state: state ?? "",
+  };
+
   // A etiqueta que o texto AINDA digitado no campo de etiquetas viraria — o
   // campo avisa pelo `onPendente`, e o `Salvar` inclui isto no payload. Sem
   // isso, quem digita e salva sem Enter perde o texto em silêncio (defeito
   // medido na tela do PR #2831).
   const [etiquetaPendente, setEtiquetaPendente] = useState<string | null>(null);
+  // O TEXTO DIGITADO no campo de etiquetas, e a pergunta que ele dispara ao
+  // MESMO vocabulário do Inbox (issue #3144): `GET /api/v1/contact-tags?busca=`
+  // cai na RPC do vocabulário curado, que enxerga a etiqueta de Configurações →
+  // Tags que nenhum contato usa ainda, a que só vive em `crm_leads`/`conversas`,
+  // a que só existe como `add_tag` de uma regra e a que passou do teto de 200 da
+  // lista em uso. Sem ela, quem digita "diam" na ficha não recebe "cliente
+  // diamante" e digita o nome inteiro — ou uma variante dele.
+  const [buscaDeEtiqueta, setBuscaDeEtiqueta] = useState("");
+  const buscaNoVocabulario = useContactTagVocabulary(
+    org?.orgId ?? null,
+    buscaDeEtiqueta.trim(),
+  );
+  // A falha da leitura de sugestões vira a frase do Inbox dentro do campo:
+  // silêncio ali leria como "não há etiquetas", e é justamente aí que a pessoa
+  // digita a variante que o seletor existe para evitar.
+  const erroNoVocabulario = buscaNoVocabulario.isError;
 
   useEffect(() => {
     if (open) {
@@ -168,7 +197,12 @@ export function EditContactDialog({
   // fechar por qualquer caminho o descarta, senão o texto de uma edição
   // cancelada entra no próximo Salvar, e um chip removido volta sozinho.
   function mudarAbertura(v: boolean) {
-    if (!v) setEtiquetaPendente(null);
+    if (!v) {
+      setEtiquetaPendente(null);
+      // A busca é do campo, não do contato: fechar não pode deixar a lista
+      // filtrada pelo texto da edição cancelada.
+      setBuscaDeEtiqueta("");
+    }
     onOpenChange(v);
   }
 
@@ -281,37 +315,15 @@ export function EditContactDialog({
             <Label htmlFor="ec-birthdate">{t("Data de nascimento")}</Label>
             <Input id="ec-birthdate" type="date" {...form.register("birthdate")} />
           </div>
-          {/* Endereço (issue 3494) */}
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="ec-zip">{t("CEP")}</Label>
-              <Input id="ec-zip" {...form.register("zip_code")} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ec-state">{t("UF")}</Label>
-              <Input id="ec-state" {...form.register("state")} />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="ec-street">{t("Logradouro")}</Label>
-              <Input id="ec-street" {...form.register("street")} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ec-number">{t("Número")}</Label>
-              <Input id="ec-number" {...form.register("number")} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ec-complement">{t("Complemento")}</Label>
-              <Input id="ec-complement" {...form.register("complement")} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ec-district">{t("Bairro")}</Label>
-              <Input id="ec-district" {...form.register("district")} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="ec-city">{t("Cidade")}</Label>
-              <Input id="ec-city" {...form.register("city")} />
-            </div>
-          </div>
+          {/* Endereço (issue 3494) — os MESMOS campos do cadastro, com o CEP
+              preenchendo logradouro/bairro/cidade/UF (#3494, fatia 2). */}
+          <CamposDeEndereco
+            idPrefix="ec"
+            valores={endereco}
+            onCampo={(campo, valor) => form.setValue(campo, valor, { shouldDirty: true })}
+            consultarCep={perfil.codigo === PAIS_PADRAO}
+            disabled={update.isPending}
+          />
           {/*
             O TIPO DE CONTATO (issue 3005, fatia 1). Não é campo de formulário
             comum (`form.register`): o `Select` do Radix devolve o valor pelo
@@ -356,6 +368,9 @@ export function EditContactDialog({
               onDefinirCor={
                 podeDefinirCor ? (tag, cor) => void definirCor(tag, cor) : undefined
               }
+              encontradas={buscaNoVocabulario.data}
+              onDigitar={setBuscaDeEtiqueta}
+              erroNoVocabulario={erroNoVocabulario}
             />
           </div>
           {customFieldDefs.length > 0 && (

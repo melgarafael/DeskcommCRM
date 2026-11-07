@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { createServer } from "node:http";
 import { createClient } from "@supabase/supabase-js";
-import { test, expect, type BrowserContext, type Page, type Request } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type BrowserContext, type Page, type Request } from "./helpers/test";
 import { credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 const credentials=credenciaisSupabaseDeTeste();
 const db=createClient(credentials.url,credentials.serviceRole,{auth:{persistSession:false}});
@@ -130,7 +130,7 @@ test("suporte mantém identidade, opera B e encerra sem misturar A; readonly/exp
   await login(page,email);await acknowledgeKnownAction(page,"/login");
   const sameTab=await page.context().newPage();await sameTab.goto("/app/inbox");
   await expect(sameTab.getByTestId("tenant-switcher")).toContainText(`Suporte A ${suffix}`);
-  second=await browser.newContext();observeRequests(second);const other=await second.newPage();observeAuth(other);await login(other,email);await acknowledgeKnownAction(other,"/login");
+  second=await browser.newContext();second.on("page",esperarARevelacaoNasCargas);observeRequests(second);const other=await second.newPage();observeAuth(other);await login(other,email);await acknowledgeKnownAction(other,"/login");
   await start(page,orgs[1]!);
   await expect(sameTab.getByTestId("tenant-switcher")).toContainText(`Suporte B ${suffix}`);
   // A lista só aparece depois da recarga + dois GETs em série (a chave muda com o automatico-ativo); 5s do expect não cabem no CI (#2360).

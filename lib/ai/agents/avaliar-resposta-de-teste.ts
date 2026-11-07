@@ -60,6 +60,10 @@ const NAO_AVALIAVEIS_SEM_TURNO: ReadonlyArray<{ gate: string; porque: string }> 
   { gate: "messaging_window", porque: "depende de quando o contato falou com você pela última vez" },
   { gate: "spinning", porque: "depende das últimas mensagens enviadas por este número" },
   { gate: "promise", porque: "depende da tabela de preços e condições da organização" },
+  {
+    gate: "concessao_sem_lastro",
+    porque: "depende do que o cliente e a empresa já escreveram na conversa — não há conversa real no teste",
+  },
   { gate: "semantic_promise", porque: "esta checagem textual não chama modelo; a prévia do motor pode chamar um modelo adicional" },
   {
     gate: "factual_claim",
@@ -69,6 +73,11 @@ const NAO_AVALIAVEIS_SEM_TURNO: ReadonlyArray<{ gate: string; porque: string }> 
   {
     gate: "agenda_stall",
     porque: "depende de a ferramenta de agenda ter sido chamada neste turno — não há turno real no teste",
+  },
+  {
+    gate: "horario_da_agenda",
+    porque:
+      "depende do que as ferramentas de agenda devolveram neste turno — não há turno real no teste",
   },
   {
     gate: "registro_sem_efeito",

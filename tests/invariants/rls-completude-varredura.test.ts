@@ -254,6 +254,27 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "orçamento, criativo e performance de quem anuncia.",
   },
   {
+    tabela: "ai_agent_mcp_servers",
+    razao:
+      "tests/invariants/servidores-mcp-por-agente-server-side.test.ts — privilégio " +
+      "NENHUM para anon e authenticated, `permission denied` sob `set role` com JWT " +
+      "de admin da própria organização E de outra, RLS ligada, zero policies. Guarda chave e client_secret cifrados dos servidores MCP do agente (9095).",
+  },
+  {
+    tabela: "mcp_oauth_pedidos",
+    razao:
+      "tests/invariants/servidores-mcp-por-agente-server-side.test.ts — privilégio " +
+      "NENHUM para anon e authenticated, `permission denied` sob `set role` com JWT " +
+      "de admin da própria organização E de outra, RLS ligada, zero policies. Guarda o state de uso único e o code_verifier cifrado do OAuth por contato (9095).",
+  },
+  {
+    tabela: "contato_mcp_credenciais",
+    razao:
+      "tests/invariants/servidores-mcp-por-agente-server-side.test.ts — privilégio " +
+      "NENHUM para anon e authenticated, `permission denied` sob `set role` com JWT " +
+      "de admin da própria organização E de outra, RLS ligada, zero policies. Guarda o access e o refresh token cifrados do CONTATO num terceiro (9095).",
+  },
+  {
     tabela: "map_provider_credentials",
     razao:
       "tests/invariants/credencial-de-mapas-e-server-side.test.ts — privilégio " +
@@ -377,6 +398,18 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "anon com permission denied por GRANT ausente; GRANT explícito a authenticated " +
       "conferido no catálogo; FK composta recusa resposta apontando para grupo de outra " +
       "organização e on delete set null (grupo_id) devolve a resposta à lista plana sem apagá-la.",
+  },
+  {
+    tabela: "avisos",
+    razao:
+      "tests/invariants/aviso-do-admin-e-server-side.test.ts — privilégio NENHUM " +
+      "para anon e authenticated (catálogo + `permission denied` medido sob `set " +
+      "role` nos três verbos de escrita), RLS ligada, nenhuma policy alcançável " +
+      "por anon/authenticated, `organization_id` NOT NULL com FK em cascata e " +
+      "`autor_id` em `set null`. Deny-all em vez de policy de tenant porque o " +
+      "aviso é conteúdo escrito em nome do cliente e só o servidor (a rota " +
+      "`app/api/v1/avisos`, com admin client) lê e grava. Migration 9059, " +
+      "issue #1418.",
   },
 ];
 

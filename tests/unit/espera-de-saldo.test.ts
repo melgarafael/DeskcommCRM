@@ -121,7 +121,20 @@ describe("o que vai para o banco", () => {
     await adiarAteORecarregar(db, job, "w1", new Error(ANTHROPIC), "2026-09-24 12:48:49.1+00", AGORA);
     const [c] = consultas;
     expect(c?.sql).toMatch(/attempts = greatest\(attempts - 1, 0\)/);
-    expect(c?.params).toEqual(["job-1", "w1", 120_000, `${PREFIXO_DA_ESPERA}${ANTHROPIC}`, "2026-09-24 12:48:49.1+00"]);
+    // Mudou de propósito no #3383, não de passagem: o rescheduleJob ganhou o
+    // 6º parâmetro $6 (payloadPatch do rastro adiado_por_janela, gravado no
+    // MESMO update). O adiamento por SALDO não passa rastro nenhum — ele vem
+    // `null` e o `coalesce($6::jsonb, '{}')` deixa o payload intacto. Os 5
+    // parâmetros que este teste afirma (job, worker, atraso, motivo, lease)
+    // seguem iguais; o $6 existe para quem adia pela janela de resposta.
+    expect(c?.params).toEqual([
+      "job-1",
+      "w1",
+      120_000,
+      `${PREFIXO_DA_ESPERA}${ANTHROPIC}`,
+      "2026-09-24 12:48:49.1+00",
+      null,
+    ]);
   });
 
   it("só o inbound_turn pergunta se já foi respondido, e sempre com a organização", async () => {

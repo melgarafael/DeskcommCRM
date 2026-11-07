@@ -13,8 +13,9 @@ import {
 } from "@/lib/planilha/ler-arquivo";
 import { ProspectingError } from "@/lib/prospecting/provider";
 import { importarPlanilhaCamposSchema } from "@/lib/prospecting/schema";
+import type { PreviaDaImportacao } from "@/lib/prospecting/importacao-previa";
 import { lerPlanilhaDeProspeccao, PLANILHA_MAX_LINHAS } from "@/lib/prospecting/planilha";
-import { importarPlanilha } from "@/lib/prospecting/store";
+import { importarPlanilha, previaDaPlanilha } from "@/lib/prospecting/store";
 
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "no-store" };
@@ -101,20 +102,59 @@ export async function POST(req: NextRequest) {
   const planilha = lerPlanilhaDeProspeccao(lido.sheet);
   if ("erro" in planilha)
     return fail("validation_failed", planilha.erro, 422, { requestId, headers });
-  if (planilha.candidatos.length === 0)
-    return fail("validation_failed", "Nenhuma linha da planilha tem nome e telefone válidos.", 422, {
-      requestId,
-      headers,
-      details: {
-        recusadas: planilha.erros.slice(0, MAX_RECUSADAS_NA_RESPOSTA),
-        total_recusadas: planilha.erros.length,
+  // A CLASSIFICAÇÃO ACONTECE ANTES DE QUALQUER ESCRITA. Aqui, e de novo dentro do lock da
+  // importação: entre a prévia e o clique em "Importar" o telefone pode ter virado contato ou
+  // o titular pode ter pedido a exclusão. Quem responde as duas perguntas é a mesma função
+  // (`previaDaPlanilha`), então a prévia não pode prometer um número que a escrita não cumpre.
+  const pool = getRequestPool();
+  const { request_id, previa: somentePrevia, ...resto } = campos.data;
+  let previa: PreviaDaImportacao;
+  try {
+    previa = await previaDaPlanilha(pool, org, planilha);
+  } catch {
+    return fail(
+      "prospecting_unavailable",
+      "Não foi possível conferir a planilha agora. Tente novamente.",
+      500,
+      { requestId, headers },
+    );
+  }
+  const recusadas = previa.fora.slice(0, MAX_RECUSADAS_NA_RESPOSTA);
+
+  // A prévia NÃO cria campanha, não audita e não escreve: é o operador conferindo o arquivo.
+  if (somentePrevia)
+    return ok(
+      {
+        previa: true as const,
+        entram: previa.entram.length,
+        recusadas,
+        total_recusadas: previa.fora.length,
+        total_linhas: previa.total_linhas,
+        resumo: previa.resumo,
+        colunas_ignoradas: planilha.colunasIgnoradas,
       },
-    });
+      { requestId, headers },
+    );
+
+  if (previa.entram.length === 0)
+    return fail(
+      "validation_failed",
+      "Nenhuma linha da planilha pode entrar: confira os motivos de cada linha recusada.",
+      422,
+      {
+        requestId,
+        headers,
+        details: {
+          recusadas,
+          total_recusadas: previa.fora.length,
+          resumo: previa.resumo,
+        },
+      },
+    );
 
   try {
-    const { request_id, ...resto } = campos.data;
     const resultado = await importarPlanilha(
-      getRequestPool(),
+      pool,
       org,
       request_id,
       {
@@ -122,7 +162,7 @@ export async function POST(req: NextRequest) {
         arquivo_bytes: file.size,
         linhas: lido.sheet.rows.length,
       },
-      planilha.candidatos,
+      planilha,
     );
     if (!resultado.repetida) {
       await audit({
@@ -132,13 +172,16 @@ export async function POST(req: NextRequest) {
         resourceType: "prospecting",
         resourceId: resultado.campaign.id,
         // Contagens apenas: sem nome de arquivo (pode ter nome de pessoa) e sem dado de linha.
+        // `motivos` guarda QUANTOS saíram por cada razão — o suficiente para a LGPD provar que
+        // a supressão rodou, sem gravar telefone nem nome de quem ficou de fora.
         metadata: {
           operation: "importar_planilha",
           arquivo_bytes: file.size,
           linhas: lido.sheet.rows.length,
           inseridos: resultado.inseridos,
           ja_na_base: resultado.ja_na_base,
-          recusadas: planilha.erros.length,
+          recusadas: resultado.fora.length,
+          motivos: resultado.resumo,
           classes_puras: resultado.classesPuras,
         },
         requestId,
@@ -149,8 +192,10 @@ export async function POST(req: NextRequest) {
         campaign_id: resultado.campaign.id,
         inseridos: resultado.inseridos,
         ja_na_base: resultado.ja_na_base,
-        recusadas: planilha.erros.slice(0, MAX_RECUSADAS_NA_RESPOSTA),
-        total_recusadas: planilha.erros.length,
+        recusadas: resultado.fora.slice(0, MAX_RECUSADAS_NA_RESPOSTA),
+        total_recusadas: resultado.fora.length,
+        total_linhas: resultado.total_linhas,
+        resumo: resultado.resumo,
         colunas_ignoradas: planilha.colunasIgnoradas,
         repetida: resultado.repetida,
       },

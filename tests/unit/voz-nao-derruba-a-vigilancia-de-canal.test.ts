@@ -45,7 +45,15 @@ vi.mock("@/lib/env", () => ({
 vi.mock("@/lib/waha/client", () => ({ getWahaClient: () => null }));
 
 const sincronizou = vi.fn();
-vi.mock("@/lib/channels/health", () => ({
+// `importOriginal` e não um objeto literal: o módulo de saúde exporta MAIS do
+// que a função dublada (`defeitoDoNumero` e `motivoParaGravar`, que a rota do
+// cron importa), e um dublê que enumera exports à mão apaga em silêncio tudo
+// que ele não listou — a rota quebra antes de verificar coisa alguma e a
+// asserção lê isso como "não verificou nada", que é a mensagem errada. Espalhar
+// o original mantém o dublê vivo para todo export futuro; o que se substitui é
+// só o efeito que este arquivo quer observar.
+vi.mock("@/lib/channels/health", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   sincronizarSaudeDaConexao: (...args: unknown[]) => {
     sincronizou(...args);
     return Promise.resolve("sem_mudanca");

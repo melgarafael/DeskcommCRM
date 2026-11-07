@@ -39,6 +39,7 @@ import {
   DURACAO_MINIMA_MIN,
   duracaoEscolhidaValida,
 } from "@/lib/agenda/duracao-escolhida";
+import { aposVagaLiberada, fecharEncaixeConfirmado } from "@/lib/agenda/encaixe-supabase";
 import { colide } from "@/lib/agenda/horarios-livres";
 import {
   atividadeDaTransicao,
@@ -122,6 +123,15 @@ export interface MarcarInput {
    * continua sendo o do tipo.
    */
   duration_minutes?: number;
+  /**
+   * O lugar reservado e quantas pessoas vêm (issue #4029). O serviço com
+   * lugares recusa sem `space_id` (`space_required`) em vez de escolher a mesa
+   * pelo cliente; o serviço sem lugar recusa um `space_id` (`space_not_eligible`).
+   * `party_size` conta em PESSOAS também na capacidade do serviço, com ou sem
+   * lugar: ausente, a reserva vale uma pessoa, como antes.
+   */
+  space_id?: string;
+  party_size?: number;
   expected_service_revision?: number;
 }
 
@@ -135,6 +145,11 @@ export interface AlterarInput {
   notes?: string;
   /** Igual ao de `MarcarInput`: `""` desconvida, ausente não mexe. */
   guest_email?: string;
+  /**
+   * O texto do bloco na grade (#3776). Ausente não mexe; vazio é RECUSA — a
+   * régua da edição, e o porquê, estão em `tituloDoCompromisso` na rota.
+   */
+  title?: string;
 }
 
 export interface CancelarInput {
@@ -618,6 +633,28 @@ export async function alterarAgendamentoHandler(
   }
   if(input.confirmation_next_at) mudanca.confirmation_next_at=input.confirmation_next_at;
   if (input.notes !== undefined) mudanca.notes = input.notes;
+  /**
+   * O TÍTULO ENTRA PELO MESMO `mudanca` — e o vazio morre aqui TAMBÉM.
+   *
+   * A rota já recusa `""` no schema, mas o handler é a mesma porta da
+   * ferramenta MCP (`lib/mcp/tools/agendamento.ts`) e de qualquer chamador
+   * interno. Deixar a recusa só na rota faria o título em branco chegar à RPC
+   * por um caminho que não foi medido — e lá o resultado seria um erro de
+   * constraint (`not null`), em inglês, sem apontar o campo.
+   */
+  if (input.title !== undefined) {
+    const titulo = input.title.trim();
+    if (!titulo) {
+      throw new ApiError(
+        422,
+        "agenda_titulo_vazio",
+        undefined,
+        ctx.requestId,
+        "O título do compromisso não pode ficar vazio. Escreva um nome ou desmarque e marque de novo com o título do tipo.",
+      );
+    }
+    mudanca.title = titulo;
+  }
   // Trocar SÓ o convidado não é remarcação nem mudança de situação, então não
   // produz `transicao` — e não deveria: a timeline do lead não ganha notícia
   // por causa de um e-mail digitado. Quem leva a mudança ao Google é a coluna
@@ -747,6 +784,12 @@ export async function alterarAgendamentoHandler(
 
   }
 
+  // A vaga segurada da lista de espera pode ser confirmada por qualquer porta da
+  // agenda (tela, `crm_confirm_appointment`): a inscrição fecha aqui, numa só.
+  if (String(salvo.status ?? "") === "confirmed" && String(atual.status) !== "confirmed") {
+    await fecharEncaixeConfirmado({ organizationId: ctx.organization_id, appointmentId: input.id });
+  }
+
   if (!transicao) void audit({action:"agenda.appointment_updated",actorUserId:ctx.actor.type==="user"?ctx.actor.id:null,
     organizationId:ctx.organization_id,resourceType:"calendar_appointment",resourceId:input.id,requestId:ctx.requestId,
     metadata:{revision:salvo.revision,confirmation_next_at:salvo.confirmation_next_at}});
@@ -812,6 +855,14 @@ export async function cancelarAgendamentoHandler(
     resourceId: atual.id as string,
     requestId: ctx.requestId,
     metadata: { reason: input.reason },
+  });
+
+  // A vaga abriu: com o módulo de lista de espera ligado, ela passa adiante agora,
+  // e não numa varredura minutos depois. `aposVagaLiberada` não lança.
+  await aposVagaLiberada({
+    organizationId: ctx.organization_id,
+    appointmentId: atual.id as string,
+    agora: new Date(),
   });
 
   return salvo as Record<string, unknown>;

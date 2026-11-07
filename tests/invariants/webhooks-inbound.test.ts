@@ -550,6 +550,62 @@ describe("POST /api/v1/webhooks/in/[token] (Task 6)", () => {
     // si (insertErr.code === "23505") fica sem cobertura direta de teste.
   });
 
+  it("caso 8 — só nome e e-mail: cria o contato (sem telefone) e liga o card a ele (#3719)", async () => {
+    // O bloco de contato da rota existia só dentro de `if (mapped.phone)`. Um
+    // formulário de isca — material, newsletter, e-book — mandava nome e e-mail,
+    // o card entrava no funil com `contact_id = null` e a pessoa não aparecia em
+    // Contatos.
+    const email = "isca.sem.telefone@example.com";
+    const res = await POST(jsonReq(TOKEN_JSON, { nome: "Isca Sem Telefone", email }), reqCtx(TOKEN_JSON));
+    expect(res.status).toBe(200);
+    const leadId = ((await res.json()) as { data: { lead_id: string } }).data.lead_id;
+
+    const lead = rows(`select * from public.crm_leads where id = '${leadId}'`)[0]!;
+    expect(lead.contact_id, "o card nasceu sem contato").not.toBeNull();
+
+    const contato = rows(`select * from public.contacts where id = '${lead.contact_id}'`)[0]!;
+    expect(contato.organization_id).toBe(GOV_ORG);
+    expect(contato.name).toBe("Isca Sem Telefone");
+    expect(contato.email_normalized).toBe(email);
+    expect(contato.phone_number).toBeNull();
+    expect(contato.source).toBe("webhook");
+  });
+
+  it("caso 9 — telefone que chega DEPOIS com o mesmo e-mail: completa o contato e emite contact.phone_added (#3719)", async () => {
+    // O defeito mais caro: o INSERT colidia em `uniq_contacts_org_email`, o
+    // vencedor era achado pelo e-mail e o telefone do envio era DESCARTADO — o
+    // card ficava num contato sem número e o WhatsApp parava para esse lead.
+    const email = "completa.telefone@example.com";
+    const telefone = "+5511977770042";
+    const preexistente = "dddddddd-8888-4000-8000-000000000001";
+    sql(`
+      insert into public.contacts (id, organization_id, name, email, source)
+      values ('${preexistente}', '${GOV_ORG}', 'Completa Telefone', '${email}', 'manual')
+      on conflict do nothing;
+    `);
+
+    const res = await POST(
+      jsonReq(TOKEN_JSON, { nome: "Completa Telefone", email, telefone }),
+      reqCtx(TOKEN_JSON),
+    );
+    expect(res.status).toBe(200);
+    const leadId = ((await res.json()) as { data: { lead_id: string } }).data.lead_id;
+
+    const lead = rows(`select * from public.crm_leads where id = '${leadId}'`)[0]!;
+    expect(lead.contact_id, "criou um segundo contato em vez de completar o existente").toBe(preexistente);
+
+    const contato = rows(`select * from public.contacts where id = '${preexistente}'`)[0]!;
+    expect(contato.phone_number, "o telefone do envio foi descartado").toBe(telefone);
+
+    // A transição que as regras com o gatilho esperam — emitida DEPOIS da
+    // gravação, com o número já no contato.
+    const eventos = rows(
+      `select * from public.event_log where event_type = 'contact.phone_added' and entity_id = '${preexistente}'`,
+    );
+    expect(eventos.length, "a transição não foi anunciada").toBe(1);
+    expect((eventos[0]!.payload as Record<string, unknown>).phone_number).toBe(telefone);
+  });
+
   // ponytail: rate limit cai no fallback in-memory sem Upstash (sem env
   // configurada no vitest.db.config.ts) — esse fallback já é coberto por
   // unit test em lib/ai/dispatcher/rate-limit.ts. Provar o 429 aqui exigiria
@@ -1260,7 +1316,7 @@ describe("POST /api/v1/webhooks/in/[token] — RD Station (envelope leads[])", (
     expect(lead.external_id).toBe("rdstation:lead:5035999003");
   });
 
-  it("rd 4 — nome + email e SEM telefone em lugar nenhum: ainda cria lead (regra atual)", async () => {
+  it("rd 4 — nome + email e SEM telefone em lugar nenhum: cria o contato só com e-mail e liga o card (#3719)", async () => {
     const payload = rdStationEnvelope({
       eventUuid: "aaaa0004-0000-4000-8000-000000000004",
       leadId: "5035999004",
@@ -1272,7 +1328,16 @@ describe("POST /api/v1/webhooks/in/[token] — RD Station (envelope leads[])", (
     const leadId = ((await res.json()) as { data: { lead_id: string } }).data.lead_id;
     const lead = rows(`select * from public.crm_leads where id = '${leadId}'`)[0]!;
     expect(lead.title).toBe("Maria RD");
-    expect(lead.contact_id).toBeNull(); // sem telefone → contato não é criado (mesma regra do genérico)
+    // A regra ANTIGA era "sem telefone → contato não é criado". A #3719 mudou
+    // isso: o e-mail também identifica contato, então o card nasce com vínculo
+    // mesmo quando o envio não traz número — achando o contato pelo
+    // `email_normalized` ou criando um só com e-mail.
+    expect(lead.contact_id, "o card nasceu sem contato").not.toBeNull();
+    const contato = rows(`select * from public.contacts where id = '${lead.contact_id}'`)[0]!;
+    // O contato pode ser o que um caso ANTERIOR desta suíte já criou para este
+    // e-mail (rd 1 manda o mesmo `maria.rd@example.com`) — o que este caso mede
+    // é o VÍNCULO que antes não existia, não o estado da ficha.
+    expect(contato.email_normalized).toBe("maria.rd@example.com");
   });
 
   it("rd 5 — sem identidade nenhuma (nome/email/telefone ausentes): 400 invalid_request, sem lead", async () => {

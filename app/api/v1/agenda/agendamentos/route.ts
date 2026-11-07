@@ -82,6 +82,31 @@ const emailDoConvidado = z.preprocess(
   z.union([z.literal(""), z.string().email().max(320)]),
 );
 
+/**
+ * O TÍTULO — e o VAZIO é recusa, não "volte ao nome do tipo".
+ *
+ * A criação já aceita texto livre desde o #3766 (`marcarSchema.title`, `max 200`,
+ * e campo AUSENTE significa "usa o nome do tipo" — `_handler.ts`,
+ * `title ?? tipo.name`). Na EDIÇÃO a régua é outra: o compromisso já tem título
+ * gravado (`title` é `not null` no banco), e "vazio" aqui não teria um molde óbvio para onde
+ * voltar — o nome do tipo pode ter mudado desde a marcação, e o compromisso
+ * pode ter sido criado já com outro nome. Recusar com mensagem clara é o que
+ * a #3776 pede; adivinhar seria trocar o título de alguém por outro que ele
+ * nunca escolheu.
+ *
+ * O `preprocess` apara ANTES de decidir, como no e-mail do convidado: quem
+ * apagou o campo e deixou um espaço para trás quis limpar, não errar de
+ * formato — e `"   "` tem de cair na recusa do vazio, não passar como um título
+ * de três espaços.
+ */
+const tituloDoCompromisso = z.preprocess(
+  (v) => (typeof v === "string" ? v.trim() : v),
+  z
+    .string()
+    .min(1, { message: "O título do compromisso não pode ficar vazio." })
+    .max(200, { message: "O título do compromisso cabe em até 200 caracteres." }),
+);
+
 const marcarSchema = z.object({
   event_type_id: z.string().uuid(),
   starts_at: z.string().datetime({ offset: true }),
@@ -104,6 +129,14 @@ const marcarSchema = z.object({
   duration_minutes: z.number().int().min(DURACAO_MINIMA_MIN).max(DURACAO_MAXIMA_MIN).optional(),
   participant_name: z.string().trim().min(1).max(120).optional(),
   participants: z.array(z.string().trim().min(1).max(120)).min(1).max(20).optional(),
+  /**
+   * O LUGAR reservado e quantas pessoas vêm (issue #4029). Ausentes, o serviço
+   * sem lugar continua reservando como antes; num serviço COM lugares a recusa
+   * vem nomeada (`space_required`), nunca uma vaga escolhida em silêncio.
+   * `party_size` presente conta em pessoas na capacidade do serviço também.
+   */
+  space_id: z.string().uuid().optional(),
+  party_size: z.number().int().min(1).max(100000).optional(),
   expected_service_revision: z.number().int().positive().optional(),
 });
 
@@ -122,6 +155,13 @@ const alterarSchema = z
     status: z.enum(["confirmed", "completed", "no_show"]).optional(),
     notes: z.string().max(2000).optional(),
     guest_email: emailDoConvidado.optional(),
+    /**
+     * O texto que a grade desenha no bloco (#3776). Entra no `.refine` abaixo:
+     * sem isso o campo era DESCARTADO em silêncio e o pedido voltava com
+     * "Informe pelo menos um campo para alterar" — mentindo sobre a causa, já
+     * que o cliente tinha mandado um campo.
+     */
+    title: tituloDoCompromisso.optional(),
   })
   .refine(
     (c) =>
@@ -129,7 +169,8 @@ const alterarSchema = z
       c.starts_at !== undefined ||
       c.status !== undefined ||
       c.notes !== undefined ||
-      c.guest_email !== undefined,
+      c.guest_email !== undefined ||
+      c.title !== undefined,
     {
       message: "Informe pelo menos um campo para alterar.",
     },

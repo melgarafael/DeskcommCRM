@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemo, useState } from "react";
+
 import {
   Table,
   TableBody,
@@ -9,7 +11,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useT } from "@/hooks/i18n/useT";
-import { rotuloDoIndicador } from "@/lib/plataformas-de-anuncio/meta/tabela-de-campanhas";
+import {
+  ORDEM_PADRAO,
+  type CriterioDeOrdenacao,
+  ordenarCampanhas,
+  rotuloDoIndicador,
+} from "@/lib/plataformas-de-anuncio/meta/tabela-de-campanhas";
 import type { LinhaDeCampanha } from "@/lib/plataformas-de-anuncio/types";
 
 /**
@@ -129,6 +136,20 @@ export function TabelaDeCampanhas({ linhas, moeda, avisos }: Props) {
   const t = useT();
 
   /**
+   * A ordenação é ESCOLHA DE LEITURA, não dado: mora no componente e não
+   * atravessa a requisição. Guardar por usuário (pedido 4 da issue) exige
+   * coluna de preferência — outra fatia.
+   *
+   * `linhas` já chega na ordem padrão (`montarTabelaDeCampanhas` ordena), então
+   * a primeira renderização não depende deste estado.
+   */
+  const [criterio, setCriterio] = useState<CriterioDeOrdenacao>(ORDEM_PADRAO);
+  const linhasOrdenadas = useMemo(
+    () => ordenarCampanhas(linhas, criterio),
+    [linhas, criterio],
+  );
+
+  /**
    * A ressalva da leitura, quando existe: é o `title` do "—" da coluna do
    * Connect rate. Sem ela, "não veio da plataforma" e "mediu zero" ficam
    * idênticos na tela — e o erro invisível é pior que o visível.
@@ -173,120 +194,147 @@ export function TabelaDeCampanhas({ linhas, moeda, avisos }: Props) {
   }
 
   return (
-    /*
-      O scroll horizontal mora AQUI, num contêiner próprio — nunca no `<body>`.
-      São 15 colunas; em telas estreitas a tabela rola dentro do próprio quadro e
-      a página segue parada, que é o combinado do produto para conteúdo largo.
-    */
-    <div className="overflow-x-auto rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="sticky left-0 z-10 bg-bg">{t("Campanha")}</TableHead>
-            <TableHead>{t("Status")}</TableHead>
-            <TableHead>{t("Veiculação")}</TableHead>
-            <TableHead className="text-right">{t("Resultado")}</TableHead>
-            <TableHead className="text-right">{t("Custo por Resultado")}</TableHead>
-            <TableHead className="text-right">{t("Valor Gasto")}</TableHead>
-            <TableHead className="text-right">{t("Impressões")}</TableHead>
-            <TableHead className="text-right">{t("Alcance")}</TableHead>
-            <TableHead className="text-right">{t("CPM")}</TableHead>
-            <TableHead className="text-right">{t("CTR")}</TableHead>
-            {/*
-              Coluna nova, logo depois do CTR — e a ÚNICA das duas derivadas que
-              fica sem o numerador escrito no rótulo. Não é inconsistência: o
-              Hook Rate precisa avisar que o numerador dele diverge do de
-              mercado (3s → total de reproduções); aqui numerador e denominador
-              são exatamente os do Gerenciador de Anúncios, então a fórmula só
-              precisa estar a um hover de distância e o rótulo curto mantém a
-              coluna da largura das vizinhas.
+    <div className="space-y-2">
+      {/*
+        O controle mora ACIMA da tabela, e fora do contêiner de scroll: são 15
+        colunas, e dentro do `overflow-x-auto` ele rolaria junto, ficando fora da
+        tela justamente em tela estreita, que é onde ele mais importa.
+      */}
+      <div className="flex items-center justify-end gap-2">
+        <label htmlFor="ordem-das-campanhas" className="text-sm text-muted-foreground">
+          {t("Ordenar por")}
+        </label>
+        <select
+          id="ordem-das-campanhas"
+          value={criterio}
+          onChange={(evento) => setCriterio(evento.target.value as CriterioDeOrdenacao)}
+          className="h-9 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
+        >
+          {/*
+            O rótulo diz o que a ordem SIGNIFICA para quem opera, não o nome do
+            campo: "mais recentes" é `created_time` desc, e ninguém abre a aba
+            pensando em `created_time`.
+          */}
+          <option value="mais_recentes">{t("Mais recentes")}</option>
+          <option value="mais_antigas">{t("Mais antigas")}</option>
+          <option value="status">{t("Ativas primeiro")}</option>
+        </select>
+      </div>
+      {/*
+        O scroll horizontal mora AQUI, num contêiner próprio — nunca no `<body>`.
+        São 15 colunas; em telas estreitas a tabela rola dentro do próprio quadro e
+        a página segue parada, que é o combinado do produto para conteúdo largo.
+      */}
+      <div className="overflow-x-auto rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="sticky left-0 z-10 bg-bg">{t("Campanha")}</TableHead>
+              <TableHead>{t("Status")}</TableHead>
+              <TableHead>{t("Veiculação")}</TableHead>
+              <TableHead className="text-right">{t("Resultado")}</TableHead>
+              <TableHead className="text-right">{t("Custo por Resultado")}</TableHead>
+              <TableHead className="text-right">{t("Valor Gasto")}</TableHead>
+              <TableHead className="text-right">{t("Impressões")}</TableHead>
+              <TableHead className="text-right">{t("Alcance")}</TableHead>
+              <TableHead className="text-right">{t("CPM")}</TableHead>
+              <TableHead className="text-right">{t("CTR")}</TableHead>
+              {/*
+                Coluna nova, logo depois do CTR — e a ÚNICA das duas derivadas que
+                fica sem o numerador escrito no rótulo. Não é inconsistência: o
+                Hook Rate precisa avisar que o numerador dele diverge do de
+                mercado (3s → total de reproduções); aqui numerador e denominador
+                são exatamente os do Gerenciador de Anúncios, então a fórmula só
+                precisa estar a um hover de distância e o rótulo curto mantém a
+                coluna da largura das vizinhas.
 
-              Fica visível mesmo quando nenhuma linha tem valor (conta só com
-              campanha de mensagem): coluna que aparece e some conforme o
-              período faz a tabela pular, e "—" já diz o que precisa dizer.
-            */}
-            <TableHead
-              className="text-right"
-              title={t("Visualizações da página ÷ cliques no link")}
-            >
-              {t("Connect rate")}
-            </TableHead>
-            <TableHead className="text-right">{t("Frequência")}</TableHead>
-            <TableHead className="text-right">{t("CPC")}</TableHead>
-            {/*
-              O rótulo diz o numerador de propósito. O Hook Rate de mercado usa
-              reproduções de 3 segundos, e esse campo FOI REMOVIDO da v22.0 —
-              sobrou o total de reproduções, que dá um número maior. Uma coluna
-              "Hook Rate" pelada não bateria com o Gerenciador e não explicaria
-              por quê; com o numerador escrito, bate a conta na hora.
-            */}
-            <TableHead className="text-right" title={t("Reproduções de vídeo ÷ impressões")}>
-              {t("Hook Rate")}
-              <span className="ml-1 font-normal text-muted-foreground">
-                {t("(reproduções)")}
-              </span>
-            </TableHead>
-            <TableHead className="text-right">{t("ThruPlays")}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {linhas.map((linha) => {
-            const rotulo = rotuloDoIndicador(linha.resultado.indicador);
-            return (
-              <TableRow key={linha.campanhaId}>
-                <TableCell className="sticky left-0 z-10 max-w-[9rem] bg-bg font-medium md:max-w-[22rem]">
-                  <span className="block max-w-[9rem] truncate md:max-w-[22rem]" title={linha.nome}>
-                    {linha.nome}
-                  </span>
-                </TableCell>
-                <TableCell>{estado(linha.status)}</TableCell>
-                <TableCell>{estado(linha.veiculacao)}</TableCell>
-                <TableCell className="text-right">
-                  <Numero valor={linha.resultado.valor} />
-                  {/*
-                    O rótulo do indicador viaja com o número. "15" sozinho não
-                    diz se são conversas, cadastros ou compras — e a tabela
-                    mistura objetivos, então a mesma coluna significa coisas
-                    diferentes em linhas vizinhas.
-                  */}
-                  {rotulo && (
-                    <span className="block text-xs font-normal text-muted-foreground">
-                      {t(rotulo)}
+                Fica visível mesmo quando nenhuma linha tem valor (conta só com
+                campanha de mensagem): coluna que aparece e some conforme o
+                período faz a tabela pular, e "—" já diz o que precisa dizer.
+              */}
+              <TableHead
+                className="text-right"
+                title={t("Visualizações da página ÷ cliques no link")}
+              >
+                {t("Connect rate")}
+              </TableHead>
+              <TableHead className="text-right">{t("Frequência")}</TableHead>
+              <TableHead className="text-right">{t("CPC")}</TableHead>
+              {/*
+                O rótulo diz o numerador de propósito. O Hook Rate de mercado usa
+                reproduções de 3 segundos, e esse campo FOI REMOVIDO da v22.0 —
+                sobrou o total de reproduções, que dá um número maior. Uma coluna
+                "Hook Rate" pelada não bateria com o Gerenciador e não explicaria
+                por quê; com o numerador escrito, bate a conta na hora.
+              */}
+              <TableHead className="text-right" title={t("Reproduções de vídeo ÷ impressões")}>
+                {t("Hook Rate")}
+                <span className="ml-1 font-normal text-muted-foreground">
+                  {t("(reproduções)")}
+                </span>
+              </TableHead>
+              <TableHead className="text-right">{t("ThruPlays")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {linhasOrdenadas.map((linha) => {
+              const rotulo = rotuloDoIndicador(linha.resultado.indicador);
+          return (
+                <TableRow key={linha.campanhaId}>
+                  <TableCell className="sticky left-0 z-10 max-w-[9rem] bg-bg font-medium md:max-w-[22rem]">
+                    <span className="block max-w-[9rem] truncate md:max-w-[22rem]" title={linha.nome}>
+                      {linha.nome}
                     </span>
-                  )}
-                </TableCell>
-                <TableCell className="text-right">
-                  {dinheiro(linha.resultado.custoPorResultado)}
-                </TableCell>
-                <TableCell className="text-right">{dinheiro(linha.gasto)}</TableCell>
-                <TableCell className="text-right">
-                  <Numero valor={linha.impressoes} />
-                </TableCell>
-                <TableCell className="text-right">
-                  <Numero valor={linha.alcance} />
-                </TableCell>
-                <TableCell className="text-right">{dinheiro(linha.cpm)}</TableCell>
-                <TableCell className="text-right">
-                  <Percentual valor={linha.ctr} />
-                </TableCell>
-                <TableCell className="text-right">
-                  <Percentual valor={linha.connectRate} titulo={ressalvaDoConnectRate} />
-                </TableCell>
-                <TableCell className="text-right">
-                  <Numero valor={linha.frequencia} casas={2} />
-                </TableCell>
-                <TableCell className="text-right">{dinheiro(linha.cpc)}</TableCell>
-                <TableCell className="text-right">
-                  <Percentual valor={linha.hookRate} />
-                </TableCell>
-                <TableCell className="text-right">
-                  <Numero valor={linha.thruPlays} />
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
+                  </TableCell>
+                  <TableCell>{estado(linha.status)}</TableCell>
+                  <TableCell>{estado(linha.veiculacao)}</TableCell>
+                  <TableCell className="text-right">
+                    <Numero valor={linha.resultado.valor} />
+                    {/*
+                      O rótulo do indicador viaja com o número. "15" sozinho não
+                      diz se são conversas, cadastros ou compras — e a tabela
+                      mistura objetivos, então a mesma coluna significa coisas
+                      diferentes em linhas vizinhas.
+                    */}
+                    {rotulo && (
+                      <span className="block text-xs font-normal text-muted-foreground">
+                        {t(rotulo)}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {dinheiro(linha.resultado.custoPorResultado)}
+                  </TableCell>
+                  <TableCell className="text-right">{dinheiro(linha.gasto)}</TableCell>
+                  <TableCell className="text-right">
+                    <Numero valor={linha.impressoes} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Numero valor={linha.alcance} />
+                  </TableCell>
+                  <TableCell className="text-right">{dinheiro(linha.cpm)}</TableCell>
+                  <TableCell className="text-right">
+                    <Percentual valor={linha.ctr} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Percentual valor={linha.connectRate} titulo={ressalvaDoConnectRate} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Numero valor={linha.frequencia} casas={2} />
+                  </TableCell>
+                  <TableCell className="text-right">{dinheiro(linha.cpc)}</TableCell>
+                  <TableCell className="text-right">
+                    <Percentual valor={linha.hookRate} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Numero valor={linha.thruPlays} />
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }

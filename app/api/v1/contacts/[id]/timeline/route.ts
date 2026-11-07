@@ -70,7 +70,7 @@ export async function GET(
   // Verify contact accessible (RLS will filter); 404 if not.
   const { data: contactRow, error: cErr } = await supabase
     .from("contacts")
-    .select("id")
+    .select("id, organization_id")
     .eq("id", contactId)
     .maybeSingle();
   if (cErr) return fail("internal_error", cErr.message, 500, { requestId });
@@ -145,7 +145,7 @@ export async function GET(
   // vez de a tela ter de descobrir sozinha (e mostrar "Agente" genérico quando
   // não descobre). Sem filtro de is_active/archived: quem AGIU agiu, mesmo que
   // o agente tenha sido desligado depois.
-  const page = await comNomeDoAtor(supabase, pageRows);
+  const page = await comNomeDoAtor(supabase, contactRow.organization_id, pageRows);
   const last = page[page.length - 1];
   const nextCursor =
     hasMore && last

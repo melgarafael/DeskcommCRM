@@ -53,15 +53,18 @@ import { ConversaNoDossie } from "@/components/kanban/ConversaNoDossie";
 import { rotuloParaAEquipe } from "@/lib/contacts/rotulo-do-contato";
 import { ORIGEM_AGENDA_DO_CELULAR, origemDoContato } from "@/lib/leads/origem-do-contato";
 import { phoneForDisplay } from "@/lib/channels/phone-variants";
+import { TelefonesDaFicha } from "@/components/contacts/TelefonesDaFicha";
 import { DialButton } from "@/components/voice/DialButton";
-import type { Contact } from "@/lib/types/contacts";
 import { ListaDeLinks } from "@/components/contacts/ListaDeLinks";
+import { AcessosMcpDoContato } from "@/components/contacts/AcessosMcpDoContato";
 import { linksParaExibir } from "@/lib/leads/links-de-contato";
 
 interface Props {
   contactId: string;
   /** Painéis de módulo de dados que declaram referência a contato. Resolvido no servidor. */
   paineisDeModulo?: { modulo: string; objeto: string }[];
+  /** Módulo opcional `mcp_por_agente` ligado (doc 252). Ausente = desligado. */
+  acessosMcp?: boolean;
 }
 
 /**
@@ -82,83 +85,7 @@ function NivelDaOrigem({ rotulo, valor }: { rotulo: string; valor: string | null
   );
 }
 
-/**
- * Rótulos do tipo e do WhatsApp de um telefone (Spec 31, B1). Cada ramo traz o
- * `t("...")` LITERAL: o guardião de espanhol só enxerga texto escrito na tela, e
- * `t(variavel)` escapa dele.
- */
-function textoDoTipoDoTelefone(tipo: string | null | undefined, t: (texto: string) => string): string | null {
-  if (tipo === "fixo") return t("Fixo");
-  if (tipo === "celular") return t("Celular");
-  if (tipo === "outro") return t("Outro");
-  return null;
-}
-
-function textoDoWhatsappDoTelefone(
-  whatsapp: string | null | undefined,
-  t: (texto: string) => string,
-): string | null {
-  if (whatsapp === "sim") return t("Tem WhatsApp");
-  if (whatsapp === "nao") return t("Sem WhatsApp");
-  if (whatsapp === "nao_sei") return t("WhatsApp: não sabemos");
-  return null;
-}
-
-/**
- * O bloco "Telefones" da ficha (Spec 31, B1), SÓ LEITURA: o principal e cada
- * extra, com tipo, WhatsApp, rótulo e, quando a fusão trouxe o número, a origem.
- * Editar é a próxima entrega (B2). Só aparece com extra; sem extra a ficha segue
- * como hoje, com o tipo ao lado do número.
- */
-function BlocoDeTelefones({ contato, t }: { contato: Contact; t: (texto: string) => string }) {
-  const extras = contato.additional_phones ?? [];
-  return (
-    <div className="md:col-span-2">
-      <dt className="text-xs uppercase text-muted-foreground">{t("Telefones")}</dt>
-      <dd className="mt-1">
-        <ul className="flex flex-col gap-2">
-          {contato.phone_number && (
-            <li className="flex flex-wrap items-center gap-2">
-              <span>{phoneForDisplay(contato.phone_number)}</span>
-              <Badge variant="secondary">{t("Principal")}</Badge>
-              {textoDoTipoDoTelefone(contato.phone_type, t) && (
-                <span className="text-xs text-muted-foreground">
-                  {textoDoTipoDoTelefone(contato.phone_type, t)}
-                </span>
-              )}
-              {textoDoWhatsappDoTelefone(contato.phone_whatsapp, t) && (
-                <span className="text-xs text-muted-foreground">
-                  {textoDoWhatsappDoTelefone(contato.phone_whatsapp, t)}
-                </span>
-              )}
-            </li>
-          )}
-          {extras.map((extra) => (
-            <li key={extra.phone_number} className="flex flex-wrap items-center gap-2">
-              <span>{phoneForDisplay(extra.phone_number)}</span>
-              {textoDoTipoDoTelefone(extra.type, t) && (
-                <span className="text-xs text-muted-foreground">
-                  {textoDoTipoDoTelefone(extra.type, t)}
-                </span>
-              )}
-              {textoDoWhatsappDoTelefone(extra.whatsapp, t) && (
-                <span className="text-xs text-muted-foreground">
-                  {textoDoWhatsappDoTelefone(extra.whatsapp, t)}
-                </span>
-              )}
-              {extra.label && <span className="text-xs text-muted-foreground">{extra.label}</span>}
-              {extra.origin === "fusao" && (
-                <span className="text-xs text-muted-foreground">{t("Veio da junção de fichas")}</span>
-              )}
-            </li>
-          ))}
-        </ul>
-      </dd>
-    </div>
-  );
-}
-
-export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) {
+export function ContactDetailClient({ contactId, paineisDeModulo = [], acessosMcp = false }: Props) {
   const localeDaData = useLocaleDeData();
   const t = useT();
   const q = useContact(contactId);
@@ -508,24 +435,14 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
                 <dd className="mt-1">{contact.email ?? "—"}</dd>
               </div>
               {/*
-                Com telefone extra, o bloco lista o principal e os extras (Spec 31,
-                B1). Sem extra, a linha segue como hoje; o tipo do número vai ao lado.
+                Os telefones da ficha (Spec 31). Sem extra, a linha segue como hoje
+                ("Telefone", com o tipo ao lado); com extra, "Telefones" lista o
+                principal e os extras. Quem tem papel `agent` ou acima edita aqui.
               */}
-              {contact.additional_phones && contact.additional_phones.length > 0 ? (
-                <BlocoDeTelefones contato={contact} t={t} />
-              ) : (
-                <div>
-                  <dt className="text-xs uppercase text-muted-foreground">{t("Telefone")}</dt>
-                  <dd className="mt-1">
-                    {contact.phone_number ? phoneForDisplay(contact.phone_number) : "—"}
-                    {contact.phone_number && textoDoTipoDoTelefone(contact.phone_type, t) && (
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        {textoDoTipoDoTelefone(contact.phone_type, t)}
-                      </span>
-                    )}
-                  </dd>
-                </div>
-              )}
+              <TelefonesDaFicha
+                contato={contact}
+                podeEditar={Boolean(activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent)}
+              />
               {linksDoContato.length > 0 && (
                 <div>
                   <dt className="text-xs uppercase text-muted-foreground">{t("Links")}</dt>
@@ -572,6 +489,13 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
                 <dd className="mt-1">
                   {origem.origem === ORIGEM_AGENDA_DO_CELULAR ? t("Agenda do celular") : origem.origem}
                 </dd>
+                {origem.inferidaPorHorario && (
+                  <dd className="mt-1 text-sm text-muted-foreground">
+                    {t(
+                      "Provável: deduzida pelo horário do clique. A mensagem chegou sem o código do link.",
+                    )}
+                  </dd>
+                )}
               </div>
               <NivelDaOrigem rotulo={t("Campanha")} valor={origem.campanha} />
               <NivelDaOrigem rotulo={t("Conjunto")} valor={origem.conjunto} />
@@ -635,13 +559,14 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
           </Card>
           {/* CARTEIRA DO CLIENTE (#2591): de quem é este cliente. Fica na Visão
               geral, junto dos dados que dizem "quem é esta pessoa" — quem atende
-              responde a pergunta antes de prometer o negócio, e o gerente muda o
-              dono aqui (o seletor só aparece para `manager`+; o gate real é o da
-              rota `PATCH /contacts/[id]/carteira`). Só de `agent` para cima: é
-              o piso do GET da carteira, e o `viewer` receberia 403. */}
+              responde a pergunta antes de prometer o negócio, e o seletor de dono
+              aparece para quem o servidor autoriza NAQUELE cliente: `manager`+ e o
+              Atendente que atende o cliente (#3746). Quem decide é o `pode_alterar`
+              do GET, não o papel lido aqui. Só de `agent` para cima: é o piso do
+              GET da carteira, e o `viewer` receberia 403. */}
           {activeOrg && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && (
             <div className="mt-4">
-              <CartaoDaCarteira contactId={contactId} papelDoUsuario={activeOrg.role} />
+              <CartaoDaCarteira contactId={contactId} />
             </div>
           )}
           <div className="mt-4">
@@ -676,7 +601,9 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [] }: Props) 
         </TabsContent>
 
         {isAdmin && (
-          <TabsContent value="lgpd" className="mt-4">
+          <TabsContent value="lgpd" className="mt-4 space-y-4">
+            {/* Acessos OAuth do contato a servidores MCP externos (9095). */}
+            {acessosMcp && <AcessosMcpDoContato contactId={contactId} />}
             <Card className="space-y-4 p-4">
               <div>
                 <h2 className="text-lg font-semibold">{t("Direito ao esquecimento (LGPD)")}</h2>
