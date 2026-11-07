@@ -99,6 +99,7 @@ CRONS="
 # tipo de agendamento; uma varredura mais lenta transformaria avisar 30 minutos
 # antes em avisar entre 30 e 45 minutos antes. Barato: só olha compromisso
 # confirmado, futuro e ainda não avisado.
+*/5 * * * *|60|api/v1/cron/amigo-sync
 */5 * * * *|45|api/v1/cron/agenda-reminder
 # O LEMBRETE DE TAREFA. A cada 5 minutos porque a antecedência é escolhida
 # pela PESSOA (15 min, 1 h que é o padrão, ou 1 dia): uma varredura mais lenta

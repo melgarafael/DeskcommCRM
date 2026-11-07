@@ -451,3 +451,9 @@ describe("a rota escolhe o canal ANTES do carimbo e registra o pulo (#2595)", ()
     for (const provider of PROVIDERS_DE_MENSAGEM) expect(fonte).not.toContain(`"${provider}"`);
   });
 });
+
+it('ordem de chegada usa intervalo nas peças do lembrete e não promete um minuto exato', () => {
+ const result=montarLembrete({nomeDoContato:'Ana',titulo:'Consulta',quando:new Date('2026-11-07T17:00:00Z'),timezone:'America/Fortaleza',local:null,horarioLivre:'ordem de chegada: tarde, 13:00–17:00'});
+ expect(result).toContain('ordem de chegada: tarde, 13:00–17:00');
+ expect(result).not.toContain('às 14:00');
+});

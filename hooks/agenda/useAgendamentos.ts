@@ -16,6 +16,9 @@ import type { Agendamento } from "@/components/agenda/tipos";
  * contra o nome do código). O SHA da branch estava alcançável, então li lá.
  */
 interface AgendamentoListado {
+  authority?: string;
+  external_status?: string | null;
+  external_connection_id?: string | null;
   revision?:number;
   id: string;
   titulo: string;
@@ -29,11 +32,14 @@ interface AgendamentoListado {
 }
 
 export interface RecorteDaGrade {
+  authority?: "local" | "amigo";
   /** INSTANTE ISO com offset — nunca o filtro `dia`. Ver o comentário abaixo. */
   de: string;
   ate: string;
   owner_user_id?: string;
 }
+
+type AgendamentoComAutoridade = Agendamento & Pick<AgendamentoListado, "authority" | "external_status" | "external_connection_id">;
 
 /**
  * Os agendamentos de um período.
@@ -66,8 +72,9 @@ export function useAgendamentos(recorte: RecorteDaGrade | null) {
   return useQuery({
     queryKey: ["agenda", "agendamentos", recorte],
     enabled: recorte !== null,
-    queryFn: async (): Promise<Agendamento[]> => {
+    queryFn: async (): Promise<AgendamentoComAutoridade[]> => {
       const qs = new URLSearchParams({ de: recorte!.de, ate: recorte!.ate });
+      if (recorte!.authority) qs.set("authority", recorte!.authority);
       if (recorte!.owner_user_id) qs.set("owner_user_id", recorte!.owner_user_id);
       try {
         const r = await apiClient.get<{ data: AgendamentoListado[] }>(
@@ -78,6 +85,9 @@ export function useAgendamentos(recorte: RecorteDaGrade | null) {
           (r as unknown as AgendamentoListado[]);
         return (lista ?? []).map((a) => ({
           id: a.id,
+          authority: a.authority ?? "local",
+          external_status: a.external_status ?? null,
+          external_connection_id: a.external_connection_id ?? null,
           revision:a.revision,
           titulo: a.titulo,
           responsavelId: a.donoId ?? "",

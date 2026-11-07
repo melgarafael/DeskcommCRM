@@ -73744,3 +73744,737 @@ comment on column public.followup_flow_pointers.send_when_assigned is
   'Envia o passo do follow-up mesmo com a conversa atribuída a uma pessoa (dono). Não vence force_human, ai_opt_out, contato interno, contato bloqueado nem as janelas de horário — e não acorda a IA.';
 
 notify pgrst, 'reload schema';
+
+-- ---- Amigo optional store (migration 9215) ----
+-- manifest: Amigo opcional: provisionamento service-only, credencial cifrada, vínculos por organização/conexão e recibos serializados; autoridade genérica no calendário.
+-- Only generic calendar columns and fixed functions are installed here. The
+-- five Amigo tables are created only when fn_provision_amigo() is called.
+alter table public.calendar_appointments
+  add column if not exists authority text not null default 'local',
+  add column if not exists external_status text,
+  add column if not exists external_connection_id uuid;
+alter table public.calendar_event_types
+  add column if not exists external_provider text,
+  add column if not exists external_id text,
+  add column if not exists external_connection_id uuid;
+create unique index if not exists calendar_event_types_external_identity_uq
+  on public.calendar_event_types(organization_id, external_provider, external_connection_id, external_id);
+
+-- Fixed body; no SQL identifiers or code supplied by callers. DDL needs owner
+-- privileges; default function ACLs are explicitly revoked below.
+create or replace function public.fn_provision_amigo() returns void
+language plpgsql security definer set search_path = '' as $fn$
+begin
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('public.fn_provision_amigo', 0));
+  create unique index if not exists amigo_contacts_org_id_uq on public.contacts(organization_id,id);
+  create unique index if not exists amigo_leads_org_id_uq on public.crm_leads(organization_id,id);
+  create unique index if not exists amigo_appointments_org_id_uq on public.calendar_appointments(organization_id,id);
+
+  create table if not exists public.amigo_connections (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    active boolean not null default false,
+    token_last4 text check (token_last4 is null or length(token_last4) between 1 and 4),
+    validated_at timestamptz,
+    default_place_id integer check (default_place_id > 0),
+    -- Empty until explicitly confirmed. An inferred default must not activate a clinic.
+    timezone text not null default '',
+    allow_same_day boolean,
+    months_ahead integer check (months_ahead in (3,6)),
+    reminders_enabled boolean not null default false,
+    last_sync_at timestamptz,
+    last_error text,
+    created_at timestamptz not null default clock_timestamp(),
+    unique (organization_id,id),
+    constraint amigo_connections_activation_check check (not active or (token_last4 is not null and validated_at is not null and default_place_id is not null and timezone <> ''))
+  );
+  create unique index if not exists amigo_connections_one_active_uq on public.amigo_connections(organization_id) where active;
+  create index if not exists amigo_connections_latest_idx on public.amigo_connections(organization_id,created_at desc,id desc);
+  create table if not exists public.amigo_credentials (
+    connection_id uuid primary key,
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    ciphertext text not null check (length(ciphertext) > 0),
+    foreign key (organization_id,connection_id) references public.amigo_connections(organization_id,id) on delete cascade
+  );
+  create table if not exists public.amigo_patient_links (
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    connection_id uuid not null,
+    patient_id integer not null check (patient_id > 0),
+    contact_id uuid not null,
+    lead_id uuid,
+    primary key (organization_id,connection_id,patient_id),
+    foreign key (organization_id,connection_id) references public.amigo_connections(organization_id,id) on delete cascade,
+    foreign key (organization_id,contact_id) references public.contacts(organization_id,id) on delete cascade,
+    foreign key (organization_id,lead_id) references public.crm_leads(organization_id,id)
+  );
+  create table if not exists public.amigo_appointment_links (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    connection_id uuid not null,
+    attendance_id integer not null check (attendance_id > 0),
+    appointment_id uuid,
+    patient_id integer check (patient_id > 0),
+    remote_status text,
+    remote_data jsonb not null default '{}'::jsonb,
+    synced_at timestamptz not null default now(),
+    unique (organization_id,connection_id,attendance_id),
+    foreign key (organization_id,connection_id) references public.amigo_connections(organization_id,id) on delete cascade,
+    foreign key (organization_id,appointment_id) references public.calendar_appointments(organization_id,id)
+  );
+  create table if not exists public.amigo_operations (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    connection_id uuid not null,
+    key text not null check (length(key)>0),
+    request_hash text not null,
+    operation text not null,
+    state text not null default 'prepared' check (state in ('prepared','sent','confirmed','rejected','uncertain')),
+    result jsonb,
+    request_context jsonb not null default '{}'::jsonb,
+    target_id text,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (organization_id,connection_id,key),
+    foreign key (organization_id,connection_id) references public.amigo_connections(organization_id,id) on delete cascade
+  );
+  -- target_id: attendance identity, or the natural request hash for creation.
+  -- NULL carries no lock; domain must assign a stable target before sending.
+  create unique index if not exists amigo_operations_inflight_target_uq
+    on public.amigo_operations(organization_id,connection_id,target_id)
+    where state in ('prepared','sent','uncertain');
+  create index if not exists amigo_patient_links_contact_idx on public.amigo_patient_links(organization_id,contact_id);
+  create index if not exists amigo_patient_links_lead_idx on public.amigo_patient_links(organization_id,lead_id);
+  create index if not exists amigo_appointment_links_appointment_idx on public.amigo_appointment_links(organization_id,appointment_id);
+
+  alter table public.amigo_connections enable row level security;
+  alter table public.amigo_credentials enable row level security;
+  alter table public.amigo_patient_links enable row level security;
+  alter table public.amigo_appointment_links enable row level security;
+  alter table public.amigo_operations enable row level security;
+  -- Remove Supabase default ACLs, including TRUNCATE. Only the guarded backend writes.
+  revoke all on public.amigo_connections, public.amigo_credentials, public.amigo_patient_links, public.amigo_appointment_links, public.amigo_operations from public, anon, authenticated, service_role;
+  grant select,insert,update,delete on public.amigo_connections, public.amigo_credentials, public.amigo_patient_links, public.amigo_appointment_links, public.amigo_operations to service_role;
+  grant select on public.amigo_connections, public.amigo_patient_links, public.amigo_appointment_links, public.amigo_operations to authenticated;
+  -- Conservative direct access: global patient payloads/operation results only
+  -- for management of this org. Contextual agents go through the domain guard.
+  drop policy if exists tenant_isolation_amigo_connections_select on public.amigo_connections;
+  create policy tenant_isolation_amigo_connections_select on public.amigo_connections for select to authenticated
+    using (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'manager'));
+  drop policy if exists tenant_isolation_amigo_patient_links_select on public.amigo_patient_links;
+  create policy tenant_isolation_amigo_patient_links_select on public.amigo_patient_links for select to authenticated
+    using (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'manager'));
+  drop policy if exists tenant_isolation_amigo_appointment_links_select on public.amigo_appointment_links;
+  create policy tenant_isolation_amigo_appointment_links_select on public.amigo_appointment_links for select to authenticated
+    using (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'manager'));
+  drop policy if exists tenant_isolation_amigo_operations_select on public.amigo_operations;
+  create policy tenant_isolation_amigo_operations_select on public.amigo_operations for select to authenticated
+    using (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'manager'));
+
+  drop trigger if exists amigo_connection_timezone on public.amigo_connections;
+  create trigger amigo_connection_timezone before insert or update of timezone on public.amigo_connections
+    for each row execute function public.fn_amigo_check_timezone();
+  perform public.fn_proteger_modulo_provisionado();
+end;
+$fn$;
+revoke all on function public.fn_provision_amigo() from public, anon, authenticated;
+grant execute on function public.fn_provision_amigo() to service_role;
+
+create or replace function public.fn_amigo_check_timezone() returns trigger
+language plpgsql set search_path = '' as $fn$
+begin
+  if new.timezone <> '' then
+    begin
+      perform pg_catalog.timezone(new.timezone, pg_catalog.now());
+    exception when invalid_parameter_value then
+      raise exception using errcode='23514', message='amigo_invalid_timezone';
+    end;
+  end if;
+  return new;
+end;
+$fn$;
+revoke all on function public.fn_amigo_check_timezone() from public, anon, authenticated;
+grant execute on function public.fn_amigo_check_timezone() to service_role;
+
+-- Serialized configuration updates; validates the current membership again in
+-- the transaction. p_org/p_actor come from server authentication, never body.
+create or replace function public.fn_amigo_save_config(p_org uuid, p_actor uuid, p_input jsonb, p_ciphertext text default null, p_connection uuid default null) returns jsonb
+language plpgsql security definer set search_path = '' as $fn$
+declare
+  connection uuid;
+  saved jsonb;
+begin
+  if not exists(select 1 from public.user_organizations where organization_id=p_org and user_id=p_actor and role='admin' and revoked_at is null and accepted_at is not null) then
+    raise exception using errcode='42501', message='amigo_admin_required';
+  end if;
+  perform 1 from public.organizations where id=p_org for update;
+  if not found then raise exception using errcode='23503', message='amigo_org_missing'; end if;
+  if p_input - array['active','token_last4','default_place_id','timezone','allow_same_day','months_ahead','reminders_enabled']::text[] <> '{}'::jsonb then
+    raise exception using errcode='22023', message='amigo_invalid_config';
+  end if;
+  if p_ciphertext is not null then
+    if length(p_ciphertext)=0 or coalesce(p_input->>'token_last4','')='' then
+      raise exception using errcode='22023', message='amigo_credential_missing';
+    end if;
+    update public.amigo_connections set active=false where organization_id=p_org and active;
+    insert into public.amigo_connections(organization_id,active,token_last4,validated_at,default_place_id,timezone,allow_same_day,months_ahead,reminders_enabled)
+      values(p_org,false,p_input->>'token_last4',now(),(p_input->>'default_place_id')::integer,coalesce(p_input->>'timezone',''),(p_input->>'allow_same_day')::boolean,(p_input->>'months_ahead')::integer,coalesce((p_input->>'reminders_enabled')::boolean,false))
+      returning id into connection;
+    insert into public.amigo_credentials(organization_id,connection_id,ciphertext) values(p_org,connection,p_ciphertext);
+  else
+    select id into connection from public.amigo_connections where organization_id=p_org order by created_at desc,id desc limit 1 for update;
+    if connection is null then raise exception using errcode='22023', message='amigo_not_configured'; end if;
+    if connection is distinct from p_connection then
+      raise exception using errcode='40001', message='amigo_connection_changed';
+    end if;
+    if coalesce((p_input->>'active')::boolean,false) and not exists(select 1 from public.amigo_credentials where organization_id=p_org and connection_id=connection) then
+      raise exception using errcode='22023', message='amigo_credential_missing';
+    end if;
+    update public.amigo_connections set
+      active=case when p_input ? 'active' then (p_input->>'active')::boolean else active end,
+      default_place_id=case when p_input ? 'default_place_id' then (p_input->>'default_place_id')::integer else default_place_id end,
+      timezone=case when p_input ? 'timezone' then p_input->>'timezone' else timezone end,
+      allow_same_day=case when p_input ? 'allow_same_day' then (p_input->>'allow_same_day')::boolean else allow_same_day end,
+      months_ahead=case when p_input ? 'months_ahead' then (p_input->>'months_ahead')::integer else months_ahead end,
+      reminders_enabled=case when p_input ? 'reminders_enabled' then (p_input->>'reminders_enabled')::boolean else reminders_enabled end
+      where organization_id=p_org and id=connection;
+  end if;
+  select to_jsonb(c) into saved from public.amigo_connections c where c.organization_id=p_org and c.id=connection;
+  return saved;
+end;
+$fn$;
+revoke all on function public.fn_amigo_save_config(uuid,uuid,jsonb,text,uuid) from public, anon, authenticated;
+grant execute on function public.fn_amigo_save_config(uuid,uuid,jsonb,text,uuid) to service_role;
+
+create or replace function public.fn_amigo_disconnect(p_org uuid) returns void
+language plpgsql security definer set search_path = '' as $fn$
+begin
+  perform 1 from public.organizations where id=p_org for update;
+  if pg_catalog.to_regclass('public.amigo_connections') is null then return; end if;
+  update public.amigo_connections set active=false,token_last4=null,validated_at=null,reminders_enabled=false where organization_id=p_org;
+  delete from public.amigo_credentials where organization_id=p_org;
+end;
+$fn$;
+revoke all on function public.fn_amigo_disconnect(uuid) from public, anon, authenticated;
+grant execute on function public.fn_amigo_disconnect(uuid) to service_role;
+
+-- manifest: Notificar PostgREST após provisionar o módulo opcional Amigo para disponibilizar suas tabelas pela API.
+create or replace function public.fn_provision_amigo() returns void
+language plpgsql security definer set search_path = '' as $fn$
+begin
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('public.fn_provision_amigo', 0));
+  create unique index if not exists amigo_contacts_org_id_uq on public.contacts(organization_id,id);
+  create unique index if not exists amigo_leads_org_id_uq on public.crm_leads(organization_id,id);
+  create unique index if not exists amigo_appointments_org_id_uq on public.calendar_appointments(organization_id,id);
+
+  create table if not exists public.amigo_connections (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    active boolean not null default false,
+    token_last4 text check (token_last4 is null or length(token_last4) between 1 and 4),
+    validated_at timestamptz,
+    default_place_id integer check (default_place_id > 0),
+    -- Empty until explicitly confirmed. An inferred default must not activate a clinic.
+    timezone text not null default '',
+    allow_same_day boolean,
+    months_ahead integer check (months_ahead in (3,6)),
+    reminders_enabled boolean not null default false,
+    last_sync_at timestamptz,
+    last_error text,
+    created_at timestamptz not null default clock_timestamp(),
+    unique (organization_id,id),
+    constraint amigo_connections_activation_check check (not active or (token_last4 is not null and validated_at is not null and default_place_id is not null and timezone <> ''))
+  );
+  create unique index if not exists amigo_connections_one_active_uq on public.amigo_connections(organization_id) where active;
+  create index if not exists amigo_connections_latest_idx on public.amigo_connections(organization_id,created_at desc,id desc);
+  create table if not exists public.amigo_credentials (
+    connection_id uuid primary key,
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    ciphertext text not null check (length(ciphertext) > 0),
+    foreign key (organization_id,connection_id) references public.amigo_connections(organization_id,id) on delete cascade
+  );
+  create table if not exists public.amigo_patient_links (
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    connection_id uuid not null,
+    patient_id integer not null check (patient_id > 0),
+    contact_id uuid not null,
+    lead_id uuid,
+    primary key (organization_id,connection_id,patient_id),
+    foreign key (organization_id,connection_id) references public.amigo_connections(organization_id,id) on delete cascade,
+    foreign key (organization_id,contact_id) references public.contacts(organization_id,id) on delete cascade,
+    foreign key (organization_id,lead_id) references public.crm_leads(organization_id,id)
+  );
+  create table if not exists public.amigo_appointment_links (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    connection_id uuid not null,
+    attendance_id integer not null check (attendance_id > 0),
+    appointment_id uuid,
+    patient_id integer check (patient_id > 0),
+    remote_status text,
+    remote_data jsonb not null default '{}'::jsonb,
+    synced_at timestamptz not null default now(),
+    unique (organization_id,connection_id,attendance_id),
+    foreign key (organization_id,connection_id) references public.amigo_connections(organization_id,id) on delete cascade,
+    foreign key (organization_id,appointment_id) references public.calendar_appointments(organization_id,id)
+  );
+  create table if not exists public.amigo_operations (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    connection_id uuid not null,
+    key text not null check (length(key)>0),
+    request_hash text not null,
+    operation text not null,
+    state text not null default 'prepared' check (state in ('prepared','sent','confirmed','rejected','uncertain')),
+    result jsonb,
+    request_context jsonb not null default '{}'::jsonb,
+    target_id text,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (organization_id,connection_id,key),
+    foreign key (organization_id,connection_id) references public.amigo_connections(organization_id,id) on delete cascade
+  );
+  -- target_id: attendance identity, or the natural request hash for creation.
+  -- NULL carries no lock; domain must assign a stable target before sending.
+  create unique index if not exists amigo_operations_inflight_target_uq
+    on public.amigo_operations(organization_id,connection_id,target_id)
+    where state in ('prepared','sent','uncertain');
+  create index if not exists amigo_patient_links_contact_idx on public.amigo_patient_links(organization_id,contact_id);
+  create index if not exists amigo_patient_links_lead_idx on public.amigo_patient_links(organization_id,lead_id);
+  create index if not exists amigo_appointment_links_appointment_idx on public.amigo_appointment_links(organization_id,appointment_id);
+
+  alter table public.amigo_connections enable row level security;
+  alter table public.amigo_credentials enable row level security;
+  alter table public.amigo_patient_links enable row level security;
+  alter table public.amigo_appointment_links enable row level security;
+  alter table public.amigo_operations enable row level security;
+  -- Remove Supabase default ACLs, including TRUNCATE. Only the guarded backend writes.
+  revoke all on public.amigo_connections, public.amigo_credentials, public.amigo_patient_links, public.amigo_appointment_links, public.amigo_operations from public, anon, authenticated, service_role;
+  grant select,insert,update,delete on public.amigo_connections, public.amigo_credentials, public.amigo_patient_links, public.amigo_appointment_links, public.amigo_operations to service_role;
+  grant select on public.amigo_connections, public.amigo_patient_links, public.amigo_appointment_links, public.amigo_operations to authenticated;
+  -- Conservative direct access: global patient payloads/operation results only
+  -- for management of this org. Contextual agents go through the domain guard.
+  drop policy if exists tenant_isolation_amigo_connections_select on public.amigo_connections;
+  create policy tenant_isolation_amigo_connections_select on public.amigo_connections for select to authenticated
+    using (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'manager'));
+  drop policy if exists tenant_isolation_amigo_patient_links_select on public.amigo_patient_links;
+  create policy tenant_isolation_amigo_patient_links_select on public.amigo_patient_links for select to authenticated
+    using (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'manager'));
+  drop policy if exists tenant_isolation_amigo_appointment_links_select on public.amigo_appointment_links;
+  create policy tenant_isolation_amigo_appointment_links_select on public.amigo_appointment_links for select to authenticated
+    using (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'manager'));
+  drop policy if exists tenant_isolation_amigo_operations_select on public.amigo_operations;
+  create policy tenant_isolation_amigo_operations_select on public.amigo_operations for select to authenticated
+    using (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'manager'));
+
+  drop trigger if exists amigo_connection_timezone on public.amigo_connections;
+  create trigger amigo_connection_timezone before insert or update of timezone on public.amigo_connections
+    for each row execute function public.fn_amigo_check_timezone();
+  perform public.fn_proteger_modulo_provisionado();
+  perform pg_catalog.pg_notify('pgrst','reload schema');
+end;
+$fn$;
+revoke all on function public.fn_provision_amigo() from public, anon, authenticated;
+grant execute on function public.fn_provision_amigo() to service_role;
+
+
+
+-- manifest: Autoridade da agenda: metadados seguros por RPC, Amigo excluído da publicação Google e da reserva pelo sincronizador.
+-- No credential or patient payload is returned by these member-checked functions.
+create or replace function public.fn_calendar_agenda_provider(p_org uuid)
+returns jsonb language plpgsql stable security definer set search_path='' as $fn$
+declare result jsonb;
+begin
+ if not (current_setting('role',true)='service_role' or (session_user='postgres' and current_setting('role',true)='none'))
+    and not exists(select 1 from public.fn_user_org_ids() org where org=p_org) then
+  raise exception 'agenda_org_required' using errcode='42501';
+ end if;
+ if pg_catalog.to_regclass('public.amigo_connections') is null then return null;end if;
+ select jsonb_build_object('id',c.id,'active',c.active,'timezone',c.timezone,'default_place_id',c.default_place_id)
+ into result from public.amigo_connections c where c.organization_id=p_org and c.active;
+ return result;
+end;
+$fn$;
+revoke all on function public.fn_calendar_agenda_provider(uuid) from public,anon;
+grant execute on function public.fn_calendar_agenda_provider(uuid) to authenticated,service_role;
+
+create or replace function public.fn_calendar_amigo_target(p_org uuid,p_id uuid,p_connection uuid)
+returns jsonb language plpgsql stable security definer set search_path='' as $fn$
+declare result jsonb;
+begin
+ if not (current_setting('role',true)='service_role' or (session_user='postgres' and current_setting('role',true)='none'))
+    and not public.fn_role_at_least(p_org,'agent') then
+  raise exception 'agenda_agent_required' using errcode='42501';
+ end if;
+ if pg_catalog.to_regclass('public.amigo_appointment_links') is null then return null;end if;
+ select jsonb_build_object('attendance_id',l.attendance_id,'patient_id',l.patient_id)
+ into result from public.amigo_appointment_links l
+ join public.calendar_appointments a on a.organization_id=l.organization_id and a.id=l.appointment_id
+ where l.organization_id=p_org and l.appointment_id=p_id and l.connection_id=p_connection
+ and a.authority='amigo' and a.external_connection_id=p_connection;
+ return result;
+end;
+$fn$;
+revoke all on function public.fn_calendar_amigo_target(uuid,uuid,uuid) from public,anon;
+grant execute on function public.fn_calendar_amigo_target(uuid,uuid,uuid) to authenticated,service_role;
+
+create or replace function public.fn_google_appointment(p_org uuid,p_id uuid,p_action text,p_args jsonb default '{}')
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare a public.calendar_appointments; c public.calendar_connection_calendars; conn public.calendar_connections;
+ contact uuid; publication_owner uuid; claim jsonb:=p_args->'claim'; result jsonb; b jsonb; changed boolean; remote jsonb;
+begin
+ perform public.fn_calendar_service_lock(p_org);
+ select contact_id into contact from public.calendar_appointments where organization_id=p_org and id=p_id;
+ if not found then raise exception 'appointment_not_found' using errcode='P0002';end if;
+ if contact is not null then perform public.fn_service_lock(p_org,contact);end if;
+ -- Seleção/reserva compartilham membership antes dos locks de calendário/appointment.
+ select case when x.service_occurrence_id is null and not x.service_block then x.owner_user_id else coalesce(link.user_id,dest.user_id) end into publication_owner
+  from public.calendar_appointments x
+  left join public.calendar_connections link on link.organization_id=x.organization_id and link.id=x.google_connection_id
+  left join public.calendar_connection_calendars k on k.organization_id=x.organization_id and k.id=x.service_destination_calendar_id
+  left join public.calendar_connections dest on dest.organization_id=k.organization_id and dest.id=k.connection_id
+  where x.organization_id=p_org and x.id=p_id;
+ perform 1 from public.user_organizations m where m.organization_id=p_org and m.user_id=publication_owner for update of m;
+ if p_args?'calendar_fence' then
+  perform public.fn_google_calendar_fence(p_org,(p_args->'calendar_fence'->>'id')::uuid,p_args->'calendar_fence'->'claim',p_args->'calendar_fence'->'cursor');
+ end if;
+ select * into a from public.calendar_appointments where organization_id=p_org and id=p_id for update;
+ -- External authority never acquires a Google reservation or mutates publication state.
+ if a.authority<>'local' then
+  if p_action='claim' then return jsonb_build_object('terminal','external_authority');end if;
+  raise exception 'google_external_authority' using errcode='42501';
+ end if;
+ if a.contact_id is distinct from contact then raise exception 'appointment_stale' using errcode='PT409';end if;
+ if contact is not null and exists(select 1 from public.contacts where organization_id=p_org and id=contact and is_anonymized) then
+  if p_action='claim' then return jsonb_build_object('terminal','redacted');end if;
+  raise exception 'google_contact_redacted' using errcode='42501';end if;
+ if (a.service_occurrence_id is not null or a.service_block) and a.service_publication_mode='none' and p_action='claim' then return jsonb_build_object('terminal','not_configured');end if;
+ if not exists(select 1 from public.user_organizations where organization_id=p_org and user_id=publication_owner and revoked_at is null) then
+  raise exception 'google_owner_unavailable' using errcode='42501';end if;
+ if p_action='claim' then
+  if a.google_claim_until>clock_timestamp() then return null;end if;
+  if a.google_event_id is null and a.status<>'cancelled' then
+   select k.* into c from public.calendar_connection_calendars k join public.calendar_connections x on x.id=k.connection_id and x.organization_id=k.organization_id
+    where k.organization_id=p_org and x.user_id=publication_owner
+      and case when (a.service_occurrence_id is not null or a.service_block) then k.id=a.service_destination_calendar_id else k.is_destination end;
+   if not found or (select count(*) from public.calendar_connection_calendars k join public.calendar_connections x on x.id=k.connection_id and x.organization_id=k.organization_id where k.organization_id=p_org and x.user_id=publication_owner and case when (a.service_occurrence_id is not null or a.service_block) then k.id=a.service_destination_calendar_id else k.is_destination end)<>1 then
+    update public.calendar_appointments set google_sync_error='Escolha uma agenda de destino nas configurações.',google_next_attempt_at=now()+interval '15 minutes' where organization_id=p_org and id=p_id;return null;
+   end if;
+   if not c.available or c.access_role not in ('owner','writer') then
+    update public.calendar_appointments set google_sync_error='A agenda de destino não permite publicação. Confira o acesso nas configurações.',google_next_attempt_at=now()+interval '15 minutes' where organization_id=p_org and id=p_id;return null;end if;
+   update public.calendar_appointments set google_connection_id=c.connection_id,google_calendar_id=c.external_calendar_id,
+    google_event_id='deskcommapp'||replace(id::text,'-',''),google_pending_write='{"reservation":true}'::jsonb where organization_id=p_org and id=p_id returning * into a;
+  end if;
+  update public.calendar_appointments set google_claim_token=gen_random_uuid(),google_claim_epoch=google_claim_epoch+1,
+   google_claim_until=clock_timestamp()+interval '90 seconds' where organization_id=p_org and id=p_id returning * into a;
+ else
+  if a.google_claim_token is distinct from (claim->>'token')::uuid or a.google_claim_epoch::text is distinct from claim->>'epoch'
+   or a.google_claim_until is null or a.google_claim_until<=clock_timestamp() then raise exception 'google_stale' using errcode='PT409';end if;
+  if p_action='renew' then
+   if a.revision::text is distinct from p_args->>'revision' or a.google_local_revision::text is distinct from p_args->>'local_revision' then raise exception 'google_stale' using errcode='PT409';end if;
+   if not exists(select 1 from public.calendar_connections x join public.calendar_connection_calendars k on k.organization_id=x.organization_id and k.connection_id=x.id
+    where x.organization_id=p_org and x.id=a.google_connection_id and x.user_id=publication_owner and x.status='healthy' and k.external_calendar_id=a.google_calendar_id and k.available and k.access_role in ('writer','owner')) then raise exception 'google_connection_unavailable' using errcode='42501';end if;
+   update public.calendar_appointments set google_claim_until=clock_timestamp()+interval '90 seconds' where organization_id=p_org and id=p_id returning * into a;
+  elsif p_action='release' then
+   update public.calendar_appointments set google_claim_token=null,google_claim_until=null where organization_id=p_org and id=p_id;return 'true';
+  else
+   if a.revision::text is distinct from p_args->>'revision' or a.google_local_revision::text is distinct from p_args->>'local_revision'
+    or a.google_event_id is distinct from p_args->>'event_id' or a.google_connection_id::text is distinct from p_args->>'connection_id'
+    or a.google_calendar_id is distinct from p_args->>'calendar_id' then raise exception 'google_stale' using errcode='PT409';end if;
+   if p_action='error' then
+    update public.calendar_appointments set google_sync_error=left(p_args->>'message',200),google_next_attempt_at=now()+interval '15 minutes',
+     meeting_state=case when meeting_state='pending' and meeting_attempts>=19 then 'failed' else meeting_state end,
+     meeting_last_error=case when meeting_state='pending' then 'unknown' else meeting_last_error end,
+     meeting_attempts=meeting_attempts+case when meeting_state='pending' then 1 else 0 end,
+     meeting_next_attempt_at=case when meeting_state='pending' then now()+make_interval(secs=>least(900,15*power(2,least(meeting_attempts,6)))::double precision+floor(random()*5)) else meeting_next_attempt_at end
+     where organization_id=p_org and id=p_id;return 'true';end if;
+   if a.google_event_id is not null then
+    select * into conn from public.calendar_connections where organization_id=p_org and id=a.google_connection_id and user_id=publication_owner;
+    select * into c from public.calendar_connection_calendars where organization_id=p_org and connection_id=a.google_connection_id and external_calendar_id=a.google_calendar_id;
+    if conn.id is null or conn.status<>'healthy' or c.id is null or not c.available then raise exception 'google_connection_unavailable' using errcode='42501';end if;
+   end if;
+   if p_action='meet' then
+    perform public.fn_meet_observe(p_org,p_id,p_args);
+    select * into a from public.calendar_appointments where organization_id=p_org and id=p_id;
+   elsif p_action='prepare' then
+    if c.access_role not in ('owner','writer') or (a.google_pending_write is not null and a.google_pending_write<>'{"reservation":true}'::jsonb) or a.google_conflict is not null then raise exception 'google_write_unavailable' using errcode='PT409';end if;
+    if p_args->'operation'?'conference_request_id' and (a.meeting_request_id is distinct from (p_args->'operation'->>'conference_request_id')::uuid or a.meeting_state<>'pending' or a.meeting_received_at is not null or a.status='cancelled') then raise exception 'meet_stale' using errcode='PT409';end if;
+    update public.calendar_appointments set meeting_requested_at=case when p_args->'operation'?'conference_request_id' then coalesce(meeting_requested_at,now()) else meeting_requested_at end,google_pending_write=p_args->'operation' where organization_id=p_org and id=p_id;return 'true';
+   elsif p_action='idle' then
+   -- idle = convergente sem nada a fazer e sem falha nesta rodada: erro
+   -- guardado aqui e de rodada passada e nao pode sobreviver (#2467).
+    update public.calendar_appointments set google_sync_error=null,google_next_attempt_at=now()+interval '15 minutes' where organization_id=p_org and id=p_id;return 'true';
+   elsif p_action='commit' then
+    result:=p_args->'result'; b:=result->'base';remote:=result->'remote';
+    if result?'operation_id' and a.google_pending_write->>'operation_id' is distinct from result->>'operation_id' then raise exception 'google_stale' using errcode='PT409';end if;
+    if result?'apply_remote' then
+     if a.status not in ('pending','confirmed') then raise exception 'google_outcome_protected' using errcode='PT409';end if;
+     if a.service_occurrence_id is null and not a.service_block and not coalesce((remote->>'cancelled')::boolean,false) and exists(select 1 from public.calendar_appointments other
+      where other.organization_id=p_org and other.owner_user_id=a.owner_user_id and other.id<>a.id and other.status in ('pending','confirmed')
+      and other.starts_at<(remote->>'ends_at')::timestamptz and other.ends_at>(remote->>'starts_at')::timestamptz) then
+      return jsonb_build_object('overlap',true);end if;
+     changed:=row(a.starts_at,a.ends_at,a.time_zone,a.status='cancelled') is distinct from row((remote->>'starts_at')::timestamptz,(remote->>'ends_at')::timestamptz,remote->>'time_zone',(remote->>'cancelled')::boolean);
+     -- Um evento de bloqueio é projeção do bloqueio local: uma edição remota
+     -- não o retira nem muda seu alcance sem a ação explícita do operador.
+     if a.service_block and changed then return jsonb_build_object('overlap',true);end if;
+     begin
+      perform public.fn_appointment_change_core(p_org,p_id,a.revision,
+       case when (remote->>'cancelled')::boolean then '{"status":"cancelled","cancellation_reason":"Cancelado no Google"}'::jsonb
+       else jsonb_build_object('starts_at',remote->>'starts_at','ends_at',remote->>'ends_at','time_zone',remote->>'time_zone') end,true,b);
+     exception when sqlstate 'PT409' then
+      -- A subtransação desfaz atribuições novas. A reserva original continua
+      -- íntegra e o executor persiste o conflito; autoridade/lease não são ocultados.
+      return jsonb_build_object('overlap',true);
+     end;
+     if changed then
+      insert into public.crm_lead_activities(organization_id,lead_id,contact_id,type,source_module,source_id,actor_kind,reason,payload)
+       select p_org,l.lead_id,a.contact_id,case when (remote->>'cancelled')::boolean then 'appointment_cancelled' else 'appointment_rescheduled' end,
+        'agenda',p_id,'system',case when (remote->>'cancelled')::boolean then 'Cancelado no Google' else 'Remarcado no Google' end,jsonb_build_object('origin','google','appointment_id',p_id,'resolution_actor_id',a.google_conflict->'resolution'->>'actor_id')
+       from public.crm_lead_links l where l.organization_id=p_org and l.target_id=p_id and l.target_kind='appointment' group by l.lead_id;
+     end if;
+    end if;
+    update public.calendar_appointments set
+     google_base_projection=case when result?'base' then b else google_base_projection end,
+     google_etag=case when result?'etag' then result->>'etag' else google_etag end,
+     google_conflict=case when result?'conflict' then nullif(result->'conflict','null'::jsonb) else google_conflict end,
+     google_pending_write=case when coalesce((result->>'retry_creation')::boolean,false) and a.google_base_projection is null and a.google_pending_write->>'method'='POST'
+      then '{"reservation":true}'::jsonb when coalesce((result->>'clear_pending')::boolean,false) then null else google_pending_write end,
+     google_synced_local_revision=case when coalesce((result->>'ack')::boolean,false) then a.google_local_revision else google_synced_local_revision end,
+     google_synced_at=case when coalesce((result->>'ack')::boolean,false) then now() else google_synced_at end,
+     google_sync_error=null,google_next_attempt_at=now()+interval '5 minutes'
+     where organization_id=p_org and id=p_id returning * into a;
+   else raise exception 'google_action_invalid' using errcode='22023';end if;
+  end if;
+ end if;
+ return to_jsonb(a)||jsonb_build_object('revision',a.revision::text,'google_local_revision',a.google_local_revision::text,
+  'google_synced_local_revision',a.google_synced_local_revision::text,'meeting_allowed_types',(select allowed_conference_types from public.calendar_connection_calendars where organization_id=p_org and connection_id=a.google_connection_id and external_calendar_id=a.google_calendar_id),'claim',jsonb_build_object('token',a.google_claim_token,'epoch',a.google_claim_epoch::text,'lease_until',a.google_claim_until));
+end;$$;
+
+revoke all on function public.fn_google_appointment(uuid,uuid,text,jsonb) from public,anon,authenticated;
+grant execute on function public.fn_google_appointment(uuid,uuid,text,jsonb) to service_role;
+create or replace view public.calendar_service_google_candidates with (security_invoker=true) as
+ select a.id,a.organization_id,
+  case when a.service_occurrence_id is null and not a.service_block then a.owner_user_id else coalesce(link.user_id,dest.user_id) end owner_user_id,
+  a.needs_google_push,a.google_event_id,a.google_conflict,a.google_next_attempt_at,a.authority
+ from public.calendar_appointments a
+ left join public.calendar_connections link on link.organization_id=a.organization_id and link.id=a.google_connection_id
+ left join public.calendar_connection_calendars k on k.organization_id=a.organization_id and k.id=a.service_destination_calendar_id
+ left join public.calendar_connections dest on dest.organization_id=k.organization_id and dest.id=k.connection_id
+ where a.authority='local'
+  and ((a.service_occurrence_id is null and not a.service_block) or a.service_publication_mode<>'none')
+  and not exists(select 1 from public.contacts c where c.organization_id=a.organization_id and c.id=a.contact_id and c.is_anonymized);
+revoke all on public.calendar_service_google_candidates from public,anon,authenticated;
+grant select on public.calendar_service_google_candidates to service_role;
+
+-- manifest: Proteger autoridade Amigo no banco, permitir desfechos externos sem certificação humana e manter o marcador de efeitos reparáveis.
+create or replace function public.fn_provision_amigo() returns void
+language plpgsql security definer set search_path = '' as $fn$
+begin
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('public.fn_provision_amigo', 0));
+  create unique index if not exists amigo_contacts_org_id_uq on public.contacts(organization_id,id);
+  create unique index if not exists amigo_leads_org_id_uq on public.crm_leads(organization_id,id);
+  create unique index if not exists amigo_appointments_org_id_uq on public.calendar_appointments(organization_id,id);
+
+  create table if not exists public.amigo_connections (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    active boolean not null default false,
+    token_last4 text check (token_last4 is null or length(token_last4) between 1 and 4),
+    validated_at timestamptz,
+    default_place_id integer check (default_place_id > 0),
+    -- Empty until explicitly confirmed. An inferred default must not activate a clinic.
+    timezone text not null default '',
+    allow_same_day boolean,
+    months_ahead integer check (months_ahead in (3,6)),
+    reminders_enabled boolean not null default false,
+    last_sync_at timestamptz,
+    last_error text,
+    created_at timestamptz not null default clock_timestamp(),
+    unique (organization_id,id),
+    constraint amigo_connections_activation_check check (not active or (token_last4 is not null and validated_at is not null and default_place_id is not null and timezone <> ''))
+  );
+  create unique index if not exists amigo_connections_one_active_uq on public.amigo_connections(organization_id) where active;
+  create index if not exists amigo_connections_latest_idx on public.amigo_connections(organization_id,created_at desc,id desc);
+  create table if not exists public.amigo_credentials (
+    connection_id uuid primary key,
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    ciphertext text not null check (length(ciphertext) > 0),
+    foreign key (organization_id,connection_id) references public.amigo_connections(organization_id,id) on delete cascade
+  );
+  create table if not exists public.amigo_patient_links (
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    connection_id uuid not null,
+    patient_id integer not null check (patient_id > 0),
+    contact_id uuid not null,
+    lead_id uuid,
+    primary key (organization_id,connection_id,patient_id),
+    foreign key (organization_id,connection_id) references public.amigo_connections(organization_id,id) on delete cascade,
+    foreign key (organization_id,contact_id) references public.contacts(organization_id,id) on delete cascade,
+    foreign key (organization_id,lead_id) references public.crm_leads(organization_id,id)
+  );
+  create table if not exists public.amigo_appointment_links (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    connection_id uuid not null,
+    attendance_id integer not null check (attendance_id > 0),
+    appointment_id uuid,
+    patient_id integer check (patient_id > 0),
+    remote_status text,
+    remote_data jsonb not null default '{}'::jsonb,
+    synced_at timestamptz not null default now(),
+    unique (organization_id,connection_id,attendance_id),
+    foreign key (organization_id,connection_id) references public.amigo_connections(organization_id,id) on delete cascade,
+    foreign key (organization_id,appointment_id) references public.calendar_appointments(organization_id,id)
+  );
+  create table if not exists public.amigo_operations (
+    id uuid primary key default gen_random_uuid(),
+    organization_id uuid not null references public.organizations(id) on delete cascade,
+    connection_id uuid not null,
+    key text not null check (length(key)>0),
+    request_hash text not null,
+    operation text not null,
+    state text not null default 'prepared' check (state in ('prepared','sent','confirmed','rejected','uncertain')),
+    result jsonb,
+    request_context jsonb not null default '{}'::jsonb,
+    target_id text,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    unique (organization_id,connection_id,key),
+    foreign key (organization_id,connection_id) references public.amigo_connections(organization_id,id) on delete cascade
+  );
+  -- target_id: attendance identity, or the natural request hash for creation.
+  -- NULL carries no lock; domain must assign a stable target before sending.
+  create unique index if not exists amigo_operations_inflight_target_uq
+    on public.amigo_operations(organization_id,connection_id,target_id)
+    where state in ('prepared','sent','uncertain');
+  create index if not exists amigo_patient_links_contact_idx on public.amigo_patient_links(organization_id,contact_id);
+  create index if not exists amigo_patient_links_lead_idx on public.amigo_patient_links(organization_id,lead_id);
+  create index if not exists amigo_appointment_links_appointment_idx on public.amigo_appointment_links(organization_id,appointment_id);
+
+  alter table public.amigo_appointment_links add column if not exists effects_fingerprint text;
+  alter table public.amigo_connections enable row level security;
+  alter table public.amigo_credentials enable row level security;
+  alter table public.amigo_patient_links enable row level security;
+  alter table public.amigo_appointment_links enable row level security;
+  alter table public.amigo_operations enable row level security;
+  -- Remove Supabase default ACLs, including TRUNCATE. Only the guarded backend writes.
+  revoke all on public.amigo_connections, public.amigo_credentials, public.amigo_patient_links, public.amigo_appointment_links, public.amigo_operations from public, anon, authenticated, service_role;
+  grant select,insert,update,delete on public.amigo_connections, public.amigo_credentials, public.amigo_patient_links, public.amigo_appointment_links, public.amigo_operations to service_role;
+  grant select on public.amigo_connections, public.amigo_patient_links, public.amigo_appointment_links, public.amigo_operations to authenticated;
+  -- Conservative direct access: global patient payloads/operation results only
+  -- for management of this org. Contextual agents go through the domain guard.
+  drop policy if exists tenant_isolation_amigo_connections_select on public.amigo_connections;
+  create policy tenant_isolation_amigo_connections_select on public.amigo_connections for select to authenticated
+    using (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'manager'));
+  drop policy if exists tenant_isolation_amigo_patient_links_select on public.amigo_patient_links;
+  create policy tenant_isolation_amigo_patient_links_select on public.amigo_patient_links for select to authenticated
+    using (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'manager'));
+  drop policy if exists tenant_isolation_amigo_appointment_links_select on public.amigo_appointment_links;
+  create policy tenant_isolation_amigo_appointment_links_select on public.amigo_appointment_links for select to authenticated
+    using (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'manager'));
+  drop policy if exists tenant_isolation_amigo_operations_select on public.amigo_operations;
+  create policy tenant_isolation_amigo_operations_select on public.amigo_operations for select to authenticated
+    using (organization_id in (select public.fn_user_org_ids()) and public.fn_role_at_least(organization_id,'manager'));
+
+  drop trigger if exists amigo_connection_timezone on public.amigo_connections;
+  create trigger amigo_connection_timezone before insert or update of timezone on public.amigo_connections
+    for each row execute function public.fn_amigo_check_timezone();
+  perform public.fn_proteger_modulo_provisionado();
+  perform pg_catalog.pg_notify('pgrst','reload schema');
+end;
+$fn$;
+revoke all on function public.fn_provision_amigo() from public, anon, authenticated;
+grant execute on function public.fn_provision_amigo() to service_role;
+
+
+do $ddl$ begin
+ if to_regclass('public.amigo_appointment_links') is not null then
+  alter table public.amigo_appointment_links add column if not exists effects_fingerprint text;
+ end if;
+end $ddl$;
+
+create or replace function public.fn_amigo_protect_projection() returns trigger
+language plpgsql security definer set search_path='' as $body$
+declare privileged boolean := coalesce(current_setting('role',true),'none') in ('service_role','none','postgres');
+begin
+ if not privileged then
+  if tg_op='INSERT' then
+   if new.authority <> 'local' then raise exception 'amigo_remote_authority_required' using errcode='42501'; end if;
+   if to_regclass('public.amigo_connections') is not null and exists(select 1 from public.amigo_connections where organization_id=new.organization_id and active) then
+    raise exception 'amigo_main_agenda_required' using errcode='42501';
+   end if;
+  elsif tg_op='DELETE' then
+   if old.authority='amigo' then raise exception 'amigo_remote_authority_required' using errcode='42501';end if;
+  elsif old.authority='amigo' or new.authority is distinct from old.authority or new.external_connection_id is distinct from old.external_connection_id or new.external_status is distinct from old.external_status then
+   raise exception 'amigo_remote_authority_required' using errcode='42501';
+  end if;
+ end if;
+ if tg_op='DELETE' then return old;end if;
+ return new;
+end $body$;
+revoke all on function public.fn_amigo_protect_projection() from public,anon,authenticated;
+grant execute on function public.fn_amigo_protect_projection() to service_role;
+drop trigger if exists trg_amigo_protect_projection on public.calendar_appointments;
+create trigger trg_amigo_protect_projection before insert or update or delete on public.calendar_appointments for each row execute function public.fn_amigo_protect_projection();
+
+create or replace function public.fn_amigo_protect_event_identity() returns trigger
+language plpgsql security definer set search_path='' as $body$
+begin
+ if coalesce(current_setting('role',true),'none') not in ('service_role','none','postgres') then
+  if tg_op='DELETE' then
+   if old.external_provider='amigo' then raise exception 'amigo_external_type_identity' using errcode='42501';end if;
+  elsif tg_op='INSERT' then
+   if new.external_provider is not null then raise exception 'amigo_external_type_identity' using errcode='42501';end if;
+  elsif row(new.external_provider,new.external_id,new.external_connection_id) is distinct from row(old.external_provider,old.external_id,old.external_connection_id) then
+   raise exception 'amigo_external_type_identity' using errcode='42501';
+  end if;
+ end if;
+ if tg_op='DELETE' then return old;end if;return new;
+end $body$;
+revoke all on function public.fn_amigo_protect_event_identity() from public,anon,authenticated;
+grant execute on function public.fn_amigo_protect_event_identity() to service_role;
+drop trigger if exists trg_amigo_protect_event_identity on public.calendar_event_types;
+create trigger trg_amigo_protect_event_identity before insert or update or delete on public.calendar_event_types for each row execute function public.fn_amigo_protect_event_identity();
+
+-- Adapt the effective revision/evidence trigger, preserving its current local rules.
+do $ddl$
+declare definition text; needle text := 'actor:=auth.uid();';
+begin
+ definition:=pg_get_functiondef('public.fn_appointment_stamp()'::regprocedure);
+ if position('amigo_external_outcome' in definition)=0 then
+  if position(needle in definition)=0 then raise exception 'appointment_stamp_contract_changed';end if;
+  definition:=replace(definition,needle,$patch$
+  -- amigo_external_outcome: authoritative import is not certified human attendance.
+  if new.authority='amigo' and coalesce(current_setting('role',true),'none')='service_role' then
+   new.outcome_source_kind:=null;new.outcome_user_id:=null;new.outcome_message_id:=null;new.outcome_recorded_at:=null;
+   return new;
+  end if;
+  actor:=auth.uid();$patch$);
+  execute definition;
+ end if;
+end $ddl$;
+notify pgrst,'reload schema';
+
+-- manifest: Manter a agenda local utilizável antes de provisionar o módulo Amigo: resolver a existência da tabela antes de preparar sua consulta.
+create or replace function public.fn_amigo_protect_projection() returns trigger
+language plpgsql security definer set search_path='' as $body$
+declare privileged boolean := coalesce(current_setting('role',true),'none') in ('service_role','none','postgres');
+begin
+ if not privileged then
+  if tg_op='INSERT' then
+   if new.authority <> 'local' then raise exception 'amigo_remote_authority_required' using errcode='42501'; end if;
+   if to_regclass('public.amigo_connections') is not null then
+    if exists(select 1 from public.amigo_connections where organization_id=new.organization_id and active) then
+     raise exception 'amigo_main_agenda_required' using errcode='42501';
+    end if;
+   end if;
+  elsif tg_op='DELETE' then
+   if old.authority='amigo' then raise exception 'amigo_remote_authority_required' using errcode='42501';end if;
+  elsif old.authority='amigo' or new.authority is distinct from old.authority or new.external_connection_id is distinct from old.external_connection_id or new.external_status is distinct from old.external_status then
+   raise exception 'amigo_remote_authority_required' using errcode='42501';
+  end if;
+ end if;
+ if tg_op='DELETE' then return old;end if;
+ return new;
+end $body$;
+revoke all on function public.fn_amigo_protect_projection() from public,anon,authenticated;
+grant execute on function public.fn_amigo_protect_projection() to service_role;

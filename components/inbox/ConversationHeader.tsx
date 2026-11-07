@@ -624,6 +624,13 @@ export function ConversationHeader({
             contato — por isso a condição é a mesma do painel, e não um valor
             escolhido à parte. Não é esconder ação; é não repeti-la. */}
         {c?.id && (
+          <Button asChild size="sm" variant="ghost">
+            <Link href={`/app/integrations/amigo?aba=pacientes&contact_id=${c.id}`}>
+              {t("Amigo")}
+            </Link>
+          </Button>
+        )}
+        {c?.id && (
           <Button asChild size="sm" variant="ghost" className="xl:hidden">
             <Link
               href={`/app/contacts/${c.id}`}

@@ -5,6 +5,10 @@ import { rotuloDoLocal } from "@/lib/agenda/locais";
 
 /** Mutações que tornam qualquer comprovante anterior do turno insuficiente. */
 export const ESCRITAS_DE_AGENDAMENTO: ReadonlySet<string> = new Set([
+  "crm_amigo_attendance_create",
+  "crm_amigo_attendance_reschedule",
+  "crm_amigo_attendance_cancel",
+  "crm_amigo_attendance_status",
   "crm_book_appointment",
   "crm_find_and_book_appointment",
   "crm_reschedule_appointment",

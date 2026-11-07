@@ -796,6 +796,15 @@ export const NAV_CATALOG = [
     healthDot: true,
   },
   {
+    href: "/app/integrations/amigo",
+    label: "Amigo API",
+    description: "Configure a clínica e opere pacientes, convênios e consultas do Amigo.",
+    icon: "CalendarBlank",
+    group: "canais",
+    minRole: "agent",
+    sidebar: true,
+  },
+  {
     // Não tinha link nenhum no app inteiro: só se chegava digitando a URL.
     href: "/app/integrations/nuvemshop",
     label: "Nuvemshop",

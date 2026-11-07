@@ -212,3 +212,10 @@ anterior à v1.0.0; regenere (`/graphify .`) antes de confiar em detalhe fino.
   nome de pasta, portanto **INFERIDO**.
 
 - [Acompanhamento administrativo por sessão](support-sessions.md) — autoridade, somente leitura, saída e contratos OAuth.
+
+## Integração Amigo API
+
+- [Configuração e operação](amigo-api.md)
+- [Contratos e limites documentados](research/2026-11-06-amigo-api.md)
+- [Evidências e limites da validação local](research/2026-11-07-amigo-api-validation.md)
+- [Mapa de integração](architecture/amigo-api.architecture.json)

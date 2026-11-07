@@ -142,17 +142,21 @@ describe("sidebarGroups", () => {
       // é profile do compose, não estado que o aplicativo conheça).
     ]);
     // E continua alcançável: o hub é a porta dela.
-    expect(
-      hubSections("crm", true, null).flatMap((s) => s.items.map((i) => i.href)),
-    ).toContain("/app/comandas");
+    expect(hubSections("crm", true, null).flatMap((s) => s.items.map((i) => i.href))).toContain(
+      "/app/comandas",
+    );
     expect(NAV_GROUPS.find((g) => g.id === "crm")?.hub?.href).toBe("/app/crm");
   });
 
-  it("omite o grupo inteiro quando o papel não vê nenhum item dele", () => {
-    // CANAIS é todo manager+/admin: um agent não deve ver o título órfão.
-    const ids = sidebarGroups(AGENT.platform, AGENT.role).map((g) => g.group.id);
-    expect(ids).not.toContain("canais");
-    expect(ids).toContain("atendimento");
+  it("mostra Amigo operacional ao atendente e preserva as restrições dos outros canais", () => {
+    const groups = sidebarGroups(AGENT.platform, AGENT.role);
+    expect(groups.find((g) => g.group.id === "canais")?.items.map((i) => i.href)).toEqual([
+      "/app/integrations/amigo",
+    ]);
+    expect(groups.map((g) => g.group.id)).toContain("atendimento");
+    expect(sidebarGroups(VIEWER.platform, VIEWER.role).map((g) => g.group.id)).not.toContain(
+      "canais",
+    );
   });
 
   it("a ordem dentro do grupo de IA é a do uso real: agentes, follow-ups, casos", () => {
@@ -177,7 +181,11 @@ describe("hubSections", () => {
     // dia contra o que se define uma vez. Lista EXATA: `toContain` deixaria uma
     // tela nova entrar sem que ninguém decidisse de que lado dela ela cai.
     const secoes = hubSections("crm", true, null);
-    expect(secoes.map((s) => s.section)).toEqual(["O dia a dia da venda", "Preparar a venda", "Fechar a venda"]);
+    expect(secoes.map((s) => s.section)).toEqual([
+      "O dia a dia da venda",
+      "Preparar a venda",
+      "Fechar a venda",
+    ]);
     expect(secoes.flatMap((s) => s.items.map((i) => i.href))).toEqual([
       "/app/prospecting",
       "/app/kanban",

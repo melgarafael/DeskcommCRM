@@ -145,7 +145,10 @@ import { IDIOMA_PADRAO, normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { resolverRemetenteDoLembrete, type CanalDoLembrete } from "@/lib/agenda/remetente-do-lembrete";
+import {
+  resolverRemetenteDoLembrete,
+  type CanalDoLembrete,
+} from "@/lib/agenda/remetente-do-lembrete";
 import {
   lerModeloDoLembrete,
   valoresDoModeloDoLembrete,
@@ -185,6 +188,9 @@ interface TipoDoCompromisso {
 }
 
 interface CompromissoAVencer {
+  authority?: string;
+  amigo_arrival_window?: string;
+  external_connection_id?: string | null;
   conversation_id?: string | null;
   id: string;
   organization_id: string;
@@ -254,6 +260,7 @@ export function pecasDoLembrete(input: {
   local: string | null;
   idioma?: Idioma;
   tipoNome?: string | null;
+  horarioLivre?: string;
 }): Record<string, string> {
   const idioma = input.idioma ?? IDIOMA_PADRAO;
   const t = (texto: string) => traduzir(texto, idioma);
@@ -265,12 +272,14 @@ export function pecasDoLembrete(input: {
     day: "2-digit",
     month: "2-digit",
   }).format(input.quando);
-  const hora = new Intl.DateTimeFormat(etiqueta, {
-    timeZone: input.timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(input.quando);
+  const hora =
+    input.horarioLivre ??
+    new Intl.DateTimeFormat(etiqueta, {
+      timeZone: input.timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(input.quando);
 
   const nome = input.nomeDoContato?.trim() ?? "";
   return {
@@ -281,14 +290,15 @@ export function pecasDoLembrete(input: {
     dia,
     hora,
     endereco: input.local?.trim() ?? "",
-    quando: `${dia} ${t("às")} ${hora}`,
+    quando: input.horarioLivre ? `${dia}, ${hora}` : `${dia} ${t("às")} ${hora}`,
   };
 }
 
 /** As peças para o modelo aprovado: o `{{1}}` nunca sai vazio (a plataforma recusa parâmetro vazio). */
 function pecasParaOModelo(input: Parameters<typeof pecasDoLembrete>[0]): Record<string, string> {
   const pecas = pecasDoLembrete(input);
-  if (!pecas.primeiro_nome) pecas.primeiro_nome = traduzir("cliente", input.idioma ?? IDIOMA_PADRAO);
+  if (!pecas.primeiro_nome)
+    pecas.primeiro_nome = traduzir("cliente", input.idioma ?? IDIOMA_PADRAO);
   return pecas;
 }
 
@@ -316,6 +326,7 @@ export function montarLembrete(input: {
   molde?: string | null;
   /** Nome do tipo de atendimento, para `{{tipo}}`. Cai no título se faltar. */
   tipoNome?: string | null;
+  horarioLivre?: string;
 }): string {
   const idioma = input.idioma ?? IDIOMA_PADRAO;
   const t = (texto: string) => traduzir(texto, idioma);
@@ -335,7 +346,7 @@ export function montarLembrete(input: {
   const onde = pecas.endereco ? ` ${t("Endereço")}: ${pecas.endereco}.` : "";
   return (
     `${saudacao} ${t("Passando pra lembrar do seu compromisso:")} ` +
-    `${input.titulo}, ${dia} ${t("às")} ${hora}.${onde}`
+    `${input.titulo}, ${dia}${input.horarioLivre ? "," : ` ${t("às")}`} ${hora}.${onde}`
   );
 }
 
@@ -590,7 +601,8 @@ async function handle(req: NextRequest): Promise<Response> {
   // A saída vem antes de qualquer consulta da rodada, e o portão responde de um
   // retrato em memória (`lib/cron/piso-ocioso.ts`): esta rota ia ao PostgREST a
   // cada batida só para descobrir que a fila está vazia.
-  if (await recursoOcioso("lembrete_de_agenda")) return ok({ pulado: "recurso_ocioso" }, { requestId });
+  if (await recursoOcioso("lembrete_de_agenda"))
+    return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   const admin = createAdminClient();
   const agora = new Date();
@@ -607,7 +619,7 @@ async function handle(req: NextRequest): Promise<Response> {
   const { data, error } = await admin
     .from("calendar_appointments")
     .select(
-      "id, organization_id, contact_id, conversation_id, title, starts_at, created_at, starts_at_marked_at, location_details, reminder_sent_offsets_minutes, reminder_sent_at, " +
+      "id, organization_id, contact_id, conversation_id, title, starts_at, created_at, starts_at_marked_at, location_details, reminder_sent_offsets_minutes, reminder_sent_at, authority, external_connection_id, " +
         "calendar_event_types!inner(name, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_template_name, reminder_body, reminder_bodies, location_details), organizations:organization_id!inner(status)",
     )
     .eq("status", "confirmed")
@@ -668,6 +680,13 @@ async function handle(req: NextRequest): Promise<Response> {
   };
 
   for (const linha of linhas) {
+    if (linha.authority === "amigo") {
+      const { verifyAmigoReminder } = await import("@/lib/amigo/sync");
+      if (!(await verifyAmigoReminder(admin, linha))) {
+        pular("amigo_nao_verificado");
+        continue;
+      }
+    }
     const tipo = tipoDe(linha);
     if (!tipo) {
       pular("sem_tipo");
@@ -740,7 +759,12 @@ async function handle(req: NextRequest): Promise<Response> {
     const numeroForaDaJanela = escolha.canal ? undefined : escolha.foraDaJanela;
     const modelo: ModeloDoLembrete | null =
       numeroForaDaJanela && tipo.reminder_meta_template_id
-        ? await lerModeloDoLembrete(admin, org, tipo.reminder_meta_template_id, numeroForaDaJanela.id)
+        ? await lerModeloDoLembrete(
+            admin,
+            org,
+            tipo.reminder_meta_template_id,
+            numeroForaDaJanela.id,
+          )
         : null;
 
     const organizacao = await organizacaoDe(org);
@@ -752,14 +776,22 @@ async function handle(req: NextRequest): Promise<Response> {
       local: linha.location_details ?? tipo.location_details ?? null,
       idioma: normalizarIdioma(organizacao?.locale),
       tipoNome: tipo.name,
+      horarioLivre: linha.amigo_arrival_window,
     };
 
     // Os valores do modelo ANTES do aviso e do carimbo: um modelo que não fecha
     // (pede o endereço e a reserva não tem) não consome o degrau, e a equipe
     // continua avisada — o aviso só se resolve quando algo vai mesmo sair.
-    const porModelo = modelo ? valoresDoModeloDoLembrete(modelo, pecasParaOModelo(dadosDoLembrete)) : null;
+    const porModelo = modelo
+      ? valoresDoModeloDoLembrete(modelo, pecasParaOModelo(dadosDoLembrete))
+      : null;
 
-    await atualizarAvisoDeRemetente(admin, org, linha.id, escolha.canal || porModelo ? null : escolha.motivo);
+    await atualizarAvisoDeRemetente(
+      admin,
+      org,
+      linha.id,
+      escolha.canal || porModelo ? null : escolha.motivo,
+    );
     if (!escolha.canal && !porModelo) {
       logger.warn("[agenda-reminder] lembrete sem remetente seguro", {
         appointmentId: linha.id,

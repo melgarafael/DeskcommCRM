@@ -856,6 +856,10 @@ type CategoriaDeHost =
 type EntradaDeHost = { categoria: CategoriaDeHost; motivo: string };
 
 const HOSTS_DECLARADOS: Record<string, EntradaDeHost> = {
+  "amigobot-api.amigoapp.com.br": {
+    categoria: "FORNECEDOR",
+    motivo: "Origem oficial fixa da Amigo API para a agenda e os pacientes da clínica configurada pelo administrador. O token permanece no servidor; não é domínio da instalação nem do revendedor.",
+  },
   "chatgpt.com": {
     categoria: "CONSOLE",
     motivo:

@@ -10,6 +10,7 @@
  *  `apenasHumano` no catálogo — nunca alcançável pelo agente publicado).
  */
 import type { McpToolDefinition } from "../types";
+import { amigoTools } from "./amigo";
 import { TOOL_CATALOG, VALID_TOOL_IDS } from "./catalog";
 import { crmSearchContacts, crmGetContact, crmProposeContactField } from "./contacts";
 import {
@@ -102,6 +103,7 @@ import { crmDraftProposal, crmPrepararProposta } from "./propostas";
 // nivel do array — o server core ja recebe args como `Record<string,
 // unknown>` e cada handler valida no Zod do registerTool.
 export const allTools: ReadonlyArray<McpToolDefinition> = [
+  ...amigoTools,
   // read
   crmListEventTypes,
   crmFindFreeSlots,

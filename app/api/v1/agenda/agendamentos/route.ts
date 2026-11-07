@@ -30,6 +30,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { createClient } from "@/lib/supabase/server";
+import { amigoBookingContextSchema } from "@/lib/amigo/agenda";
 
 import {
   alterarAgendamentoHandler,
@@ -48,6 +49,7 @@ import {
 type AgendamentoDaResposta = AgendamentoListado & { origem?: "google_sync" };
 
 const listarSchema = z.object({
+  authority: z.enum(["local", "amigo"]).optional(),
   collective_only: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
   contact_id: z.string().uuid().optional(),
   lead_id: z.string().uuid().optional(),
@@ -108,6 +110,7 @@ const tituloDoCompromisso = z.preprocess(
 );
 
 const marcarSchema = z.object({
+  amigo: amigoBookingContextSchema.optional(),
   event_type_id: z.string().uuid(),
   starts_at: z.string().datetime({ offset: true }),
   owner_user_id: z.string().uuid().optional(),
@@ -210,6 +213,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const url = new URL(req.url);
   const parsed = listarSchema.safeParse({
+    authority: url.searchParams.get("authority") ?? undefined,
     collective_only: url.searchParams.get("collective_only") ?? undefined,
     contact_id: url.searchParams.get("contact_id") ?? undefined,
     lead_id: url.searchParams.get("lead_id") ?? undefined,
@@ -229,6 +233,7 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const supabase = await createClient();
   const resultado = await listaAgendamentos(supabase, activeOrg.orgId, {
+    authority: parsed.data.authority,
     ...(parsed.data.collective_only !== undefined ? { somenteColetivas: parsed.data.collective_only } : {}),
     contactId: parsed.data.contact_id ?? null,
     leadId: parsed.data.lead_id ?? null,

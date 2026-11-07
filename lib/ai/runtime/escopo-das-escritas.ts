@@ -46,13 +46,34 @@ export type DonoDoCampo =
   | "alvo_de_tag"
   /** `lead_id`: quem guarda é `negocioDaEscritaDoTurno`, em `tools.ts`. */
   | "negocio"
+  /** Vínculos externos: número positivo e conexão ativa da organização. */
+  | "paciente_amigo"
+  | "consulta_amigo"
+  /** Escolha ainda sem vínculo: linkAmigoPatient verifica paciente/telefone no domínio. */
+  | "selecao_amigo"
+  /** Catálogo externo numérico; schemas e relações são conferidos pelo domínio. */
+  | "recurso_amigo"
+  | "contexto_amigo"
+  | "negocio_do_contato"
   /** Não é registro de cliente: funil, etapa, usuário, fluxo. */
   | "configuracao";
 
 export const ESCOPO_DAS_ESCRITAS: Readonly<Record<string, Readonly<Record<string, DonoDoCampo>>>> = {
+  // Amigo não usa escritaDelegadaAoContato. A ponte confere vínculos atuais;
+  // o handler repete a autorização no domínio antes de acessar o provedor.
+  crm_amigo_patient_create: { contact_id: "contato", insurance_id: "recurso_amigo" },
+  crm_amigo_patient_update: { contact_id: "contato", patientId: "paciente_amigo", insurance_id: "recurso_amigo" },
+  crm_amigo_link_patient: { contact_id: "contato", patient_id: "selecao_amigo", lead_id: "negocio_do_contato" },
+  crm_amigo_attendance_create: {
+    contact_id: "contato", patient_id: "paciente_amigo", event_id: "recurso_amigo", user_id: "recurso_amigo",
+    place_id: "recurso_amigo", insurance_id: "recurso_amigo", insurance_product_id: "recurso_amigo",
+  },
+  crm_amigo_attendance_cancel: { contact_id: "contato", patient_id: "paciente_amigo", id: "consulta_amigo" },
+  crm_amigo_attendance_reschedule: { contact_id: "contato", patient_id: "paciente_amigo", id: "consulta_amigo" },
+  crm_amigo_attendance_status: { contact_id: "contato", patient_id: "paciente_amigo", attendance_id: "consulta_amigo" },
   // ---- agenda ----
-  crm_book_appointment: { contact_id: "contato", owner_user_id: "configuracao" },
-  crm_find_and_book_appointment: { contact_id: "contato", owner_user_id: "configuracao" },
+  crm_book_appointment: { contact_id: "contato", owner_user_id: "configuracao", amigo: "contexto_amigo" },
+  crm_find_and_book_appointment: { contact_id: "contato", owner_user_id: "configuracao", amigo: "contexto_amigo" },
   crm_reschedule_appointment: { appointment_id: "compromisso" },
   crm_cancel_appointment: { appointment_id: "compromisso" },
   crm_confirm_appointment: { appointment_id: "compromisso" },
@@ -149,9 +170,17 @@ async function campoEhDoContato(
   args: Record<string, unknown>,
 ): Promise<boolean> {
   switch (dono) {
+    case "paciente_amigo":
+    case "consulta_amigo":
+    case "selecao_amigo":
+    case "recurso_amigo":
+    case "contexto_amigo":
+      return false; // Conferidos como números em identificadorAmigoCabeNoTurno.
     case "negocio":
     case "configuracao":
       return true;
+    case "negocio_do_contato":
+      return existeDoContato(supabase, "crm_leads", organizationId, contato, id);
     case "contato":
       return id.toLowerCase() === contato.toLowerCase();
     case "conversa":
@@ -197,6 +226,31 @@ async function campoEhDoContato(
   }
 }
 
+async function identificadorAmigoCabeNoTurno(
+  db: SupabaseClient, organizationId: string, contato: string, dono: DonoDoCampo,
+  id: number, args: Record<string, unknown>,
+): Promise<boolean> {
+  if (dono === "recurso_amigo" || dono === "selecao_amigo") return true;
+  const { data: connection, error } = await db.from("amigo_connections").select("id")
+    .eq("organization_id", organizationId).eq("active", true).maybeSingle();
+  if (error) throw new Error("amigo_scope_lookup_failed");
+  if (!connection) return false;
+  let patientId = id;
+  if (dono === "consulta_amigo") {
+    const attendance = await db.from("amigo_appointment_links").select("patient_id")
+      .eq("organization_id", organizationId).eq("connection_id", connection.id)
+      .eq("attendance_id", id).maybeSingle();
+    if (attendance.error) throw new Error("amigo_scope_lookup_failed");
+    if (!attendance.data || attendance.data.patient_id !== args.patient_id) return false;
+    patientId = attendance.data.patient_id;
+  }
+  const link = await db.from("amigo_patient_links").select("patient_id")
+    .eq("organization_id", organizationId).eq("connection_id", connection.id)
+    .eq("contact_id", contato).eq("patient_id", patientId).maybeSingle();
+  if (link.error) throw new Error("amigo_scope_lookup_failed");
+  return link.data !== null;
+}
+
 /**
  * O veredito da ponte para uma escrita (`write` ou `handoff`) durante um turno.
  *
@@ -225,9 +279,32 @@ export async function escritaCabeNoTurno(
     };
   }
   try {
+    // As novas escritas externas sempre declaram responsável e paciente. Não
+    // herdam a vacuidade dos inputs legados nem aceitam ID numérico como UUID.
+    if (ferramenta.startsWith("crm_amigo_")) {
+      if (typeof args.contact_id !== "string" || args.contact_id.toLowerCase() !== contatoDoTurno.toLowerCase()) return FORA_DA_CONVERSA;
+      const campoPaciente = ferramenta === "crm_amigo_patient_update" ? "patientId" : "patient_id";
+      if (ferramenta !== "crm_amigo_patient_create" && !Number.isSafeInteger(args[campoPaciente])) return FORA_DA_CONVERSA;
+    }
     for (const [campo, dono] of Object.entries(campos)) {
       const valor = args[campo];
       if (valor === undefined || valor === null) continue;
+      if (dono === "contexto_amigo") {
+        if (typeof valor !== "object" || Array.isArray(valor) || typeof args.contact_id !== "string" || args.contact_id.toLowerCase() !== contatoDoTurno.toLowerCase()) return FORA_DA_CONVERSA;
+        const selecao = valor as Record<string, unknown>;
+        const permitidos = ["patient_id", "user_id", "place_id", "insurance_id", "insurance_product_id"];
+        if (Object.keys(selecao).some(c => !permitidos.includes(c)) ||
+          ["patient_id", "user_id", "place_id"].some(c => !Number.isSafeInteger(selecao[c])) ||
+          Object.values(selecao).some(v => typeof v !== "number" || !Number.isSafeInteger(v) || v <= 0) ||
+          (selecao.insurance_product_id !== undefined && selecao.insurance_id === undefined)) return FORA_DA_CONVERSA;
+        if (!(await identificadorAmigoCabeNoTurno(supabase, organizationId, contatoDoTurno, "paciente_amigo", selecao.patient_id as number, selecao))) return FORA_DA_CONVERSA;
+        continue;
+      }
+      if (["paciente_amigo", "consulta_amigo", "selecao_amigo", "recurso_amigo"].includes(dono)) {
+        if (typeof valor !== "number" || !Number.isSafeInteger(valor) || valor <= 0) return FORA_DA_CONVERSA;
+        if (!(await identificadorAmigoCabeNoTurno(supabase, organizationId, contatoDoTurno, dono, valor, args))) return FORA_DA_CONVERSA;
+        continue;
+      }
       if (typeof valor !== "string") return FORA_DA_CONVERSA;
       if (!(await campoEhDoContato(supabase, organizationId, contatoDoTurno, dono, valor, args))) {
         return FORA_DA_CONVERSA;

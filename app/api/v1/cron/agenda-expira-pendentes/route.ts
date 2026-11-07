@@ -76,6 +76,7 @@ async function handle(req: NextRequest): Promise<Response> {
     .from("calendar_appointments")
     .select("id, organization_id, created_at, starts_at")
     .eq("status", "pending")
+    .eq("authority", "local")
     .order("created_at", { ascending: true })
     .limit(LIMITE_DA_VARREDURA);
 
@@ -135,6 +136,7 @@ async function handle(req: NextRequest): Promise<Response> {
     })
     .in("id", expirados)
     .eq("status", "pending")
+    .eq("authority", "local")
     .select("id");
 
   if (erroUpdate) {

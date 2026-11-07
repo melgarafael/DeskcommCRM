@@ -312,6 +312,11 @@ export function ContactDetailClient({ contactId, paineisDeModulo = [], acessosMc
         </div>
         {!contact.is_anonymized && user.support?.access_mode !== "support_readonly" && (
           <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <Button asChild variant="outline">
+              <a href={`/app/integrations/amigo?aba=pacientes&contact_id=${contactId}`}>
+                {t("Paciente no Amigo")}
+              </a>
+            </Button>
             {/* O CAMINHO DE VOLTA do descadastro. Sem ele, o contato que pediu
                 para sair — ou que caiu num falso positivo — ficava preso para
                 sempre: `before-send` recusa todo envio, o funil não cria lead,

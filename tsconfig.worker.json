@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./*"],
+      "server-only": ["./node_modules/next/dist/compiled/server-only/empty.js"]
+    }
+  }
+}

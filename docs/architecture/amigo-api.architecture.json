@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "titulo": "Agenda e pacientes Amigo",
+  "descricao": "Uma clínica por instalação. Amigo como agenda principal quando ativado. Projeção local nunca publicada no Google. Bootstrap sem criação de leads ou mensagens. Estado incerto bloqueia reenvio até evidência remota.",
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "Telas e atendimento"
+    },
+    {
+      "id": "service",
+      "label": "Serviços"
+    },
+    {
+      "id": "database",
+      "label": "Persistência"
+    },
+    {
+      "id": "external",
+      "label": "Amigo"
+    }
+  ],
+  "mainPath": ["forms", "domain", "remote", "sync", "crm"],
+  "nodes": [
+    {
+      "id": "config",
+      "lane": "ui",
+      "label": "Amigo API: token, unidade e fuso",
+      "sublabel": "app/app/integrations/amigo/page.tsx",
+      "type": "ui"
+    },
+    {
+      "id": "forms",
+      "lane": "ui",
+      "label": "Pacientes, catálogos e agenda",
+      "sublabel": "app/app/integrations/amigo/_client.tsx",
+      "type": "ui"
+    },
+    {
+      "id": "tools",
+      "lane": "service",
+      "label": "Ferramentas de atendimento",
+      "sublabel": "lib/mcp/tools/amigo.ts",
+      "type": "service"
+    },
+    {
+      "id": "domain",
+      "lane": "service",
+      "label": "Permissões, recibos e projeção",
+      "sublabel": "lib/amigo/service.ts",
+      "type": "service"
+    },
+    {
+      "id": "remote",
+      "lane": "external",
+      "label": "Amigo API",
+      "sublabel": "https://amigobot-api.amigoapp.com.br/api-docs/",
+      "type": "external"
+    },
+    {
+      "id": "journal",
+      "lane": "database",
+      "label": "Vínculos e recibos por conexão",
+      "sublabel": "lib/amigo/operations.ts",
+      "type": "database"
+    },
+    {
+      "id": "crm",
+      "lane": "ui",
+      "label": "Agenda, timeline e etapas do negócio",
+      "sublabel": "lib/amigo/projection.ts",
+      "type": "ui"
+    },
+    {
+      "id": "sync",
+      "lane": "service",
+      "label": "Sincronização e reconciliação",
+      "sublabel": "lib/amigo/sync.ts",
+      "type": "service"
+    },
+    {
+      "id": "reminder",
+      "lane": "service",
+      "label": "Lembretes com revalidação",
+      "sublabel": "app/api/v1/cron/agenda-reminder/route.ts",
+      "type": "service"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e0",
+      "from": "config",
+      "to": "domain",
+      "label": "configuração autenticada"
+    },
+    {
+      "id": "e1",
+      "from": "forms",
+      "to": "domain",
+      "label": "seleção explícita de paciente"
+    },
+    {
+      "id": "e2",
+      "from": "tools",
+      "to": "domain",
+      "label": "contato confiável do turno"
+    },
+    {
+      "id": "e3",
+      "from": "domain",
+      "to": "remote",
+      "label": "contratos de origem fixa"
+    },
+    {
+      "id": "e4",
+      "from": "remote",
+      "to": "domain",
+      "label": "resultado validado"
+    },
+    {
+      "id": "e5",
+      "from": "domain",
+      "to": "journal",
+      "label": "reserva antes de escrever"
+    },
+    {
+      "id": "e6",
+      "from": "journal",
+      "to": "domain",
+      "label": "replay sem repetir"
+    },
+    {
+      "id": "e7",
+      "from": "domain",
+      "to": "crm",
+      "label": "consulta vinculada"
+    },
+    {
+      "id": "e8",
+      "from": "remote",
+      "to": "sync",
+      "label": "leitura periódica"
+    },
+    {
+      "id": "e9",
+      "from": "sync",
+      "to": "journal",
+      "label": "evidência única confirma recibo"
+    },
+    {
+      "id": "e10",
+      "from": "sync",
+      "to": "crm",
+      "label": "espelha mudanças externas"
+    },
+    {
+      "id": "e11",
+      "from": "crm",
+      "to": "reminder",
+      "label": "consulta e responsável"
+    },
+    {
+      "id": "e12",
+      "from": "reminder",
+      "to": "remote",
+      "label": "revalida estado e horário"
+    },
+    {
+      "id": "e13",
+      "from": "sync",
+      "to": "config",
+      "label": "última sincronização e erro"
+    },
+    {
+      "id": "e14",
+      "from": "config",
+      "to": "sync",
+      "label": "ativação e lembretes opt-in"
+    }
+  ]
+}

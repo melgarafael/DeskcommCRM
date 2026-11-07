@@ -1,6 +1,11 @@
 import { tituloDaAgenda } from "@/lib/agenda/apresentacao";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
+import { z } from "zod";
+import Link from "next/link";
+import { agendaAuthority } from "@/lib/amigo/agenda";
+import { getAmigoConfig } from "@/lib/amigo/store";
+import { AmigoAgenda } from "../integrations/amigo/_agenda";
 
 import {
   enderecoDeRetorno,
@@ -53,7 +58,7 @@ function contatoDoEmbed(c: ContatoNomeavel | ContatoNomeavel[] | null): string |
   return nomeDoContato(Array.isArray(c) ? (c[0] ?? null) : c) ?? undefined;
 }
 
-export default async function AgendaPage() {
+export default async function AgendaPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> } = {}) {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/app");
@@ -92,6 +97,40 @@ export default async function AgendaPage() {
    * indistinguível, para quem olha, de uma agenda sem compromissos.
    */
   const supabase = await createClient();
+  const authority = await agendaAuthority(supabase, activeOrg.orgId);
+  const params = await searchParams;
+  let localHistory = params?.origem === "local";
+  // Existing detail/type links may omit origem; resolve them by their stored source.
+  if (authority.provider === "amigo" && !localHistory) {
+    const appointmentId = z.uuid().safeParse(params?.compromisso);
+    const typeId = z.uuid().safeParse(params?.tipo);
+    if (appointmentId.success) {
+      const { data, error } = await supabase.from("calendar_appointments").select("authority")
+        .eq("organization_id", activeOrg.orgId).eq("id", appointmentId.data).maybeSingle();
+      if (error) throw new Error("Não foi possível conferir a origem do compromisso.");
+      localHistory = data?.authority === "local";
+    } else if (typeId.success) {
+      const { data, error } = await supabase.from("calendar_event_types").select("external_provider")
+        .eq("organization_id", activeOrg.orgId).eq("id", typeId.data).maybeSingle();
+      if (error) throw new Error("Não foi possível conferir a origem do atendimento.");
+      localHistory = !!data && data.external_provider === null;
+    }
+  }
+  if (authority.provider === "amigo" && !localHistory) {
+    return <div className="space-y-6 p-6">
+      <header className="space-y-2">
+        <h1 className="text-2xl font-semibold">Agenda Amigo</h1>
+        <p className="text-sm text-muted-foreground">Consultas e vagas vêm do Amigo. O estado exibido é o do provedor; atendimentos por ordem de chegada indicam um turno, sem promessa de hora exata.</p>
+        <nav className="flex flex-wrap gap-4 text-sm" aria-label="Origem da agenda">
+          <Link href="/app/agenda?origem=local" className="underline">Histórico da agenda local</Link>
+          {ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && <Link href="/app/integrations/amigo?aba=agenda" className="underline">Abrir Amigo API</Link>}
+        </nav>
+      </header>
+      {ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent
+        ? <AmigoAgenda initialConfig={await getAmigoConfig(activeOrg.orgId)} canManage={ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager} />
+        : <p>Peça à equipe de atendimento para consultar ou alterar uma consulta no Amigo.</p>}
+    </div>;
+  }
 
   /**
    * O RELÓGIO É DA ORGANIZAÇÃO — decisão do dono do produto (2026-09-20, #1350):
@@ -134,6 +173,7 @@ export default async function AgendaPage() {
         "id, name, duration_minutes, location_kind, location_details, is_active, default_owner_user_id, service_enabled, booking_mode",
       )
       .eq("organization_id", activeOrg.orgId)
+      .is("external_provider", null)
       .eq("is_active", true)
       .order("name"),
     supabase
@@ -142,6 +182,7 @@ export default async function AgendaPage() {
         "id, revision, title, starts_at, ends_at, status, owner_user_id, contact_id, event_type_id, location_kind, contacts(name, display_name)",
       )
       .eq("organization_id", activeOrg.orgId)
+      .eq("authority", "local")
       .gte("starts_at", inicio.toISOString())
       .lt("starts_at", fim.toISOString())
       .order("starts_at"),
@@ -249,7 +290,13 @@ export default async function AgendaPage() {
   const faltaNoGoogle = googleConfigurado ? [] : await faltaParaConectarOGoogle();
 
   return (
+    <>
+    <nav className="flex flex-wrap gap-4 px-6 pt-4 text-sm" aria-label="Origem da agenda">
+      {authority.provider === "amigo" && <><p>Histórico local · novas consultas são marcadas no Amigo.</p><Link href="/app/agenda" className="underline">Voltar à agenda Amigo</Link></>}
+      {ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent && <Link href="/app/integrations/amigo?aba=agenda" className="underline">Consultas e configuração do Amigo</Link>}
+    </nav>
     <AgendaClient
+      autoridadeDaAgenda="local"
       tituloDaAgenda={tituloDaAgenda(apresentacao?.settings)}
       // O fuso RESOLVIDO da organização: a régua da grade inteira. `page.tsx`
       // é a única que tem `activeOrg.timezone`, e até aqui ele parava em
@@ -280,7 +327,7 @@ export default async function AgendaPage() {
       // O piso da rota de marcar é `agent`; `viewer` — e o acompanhamento só de
       // leitura, que `resolveActiveOrg` resolve como `viewer` — levaria 403. A
       // tela esconder é cortesia: quem decide segue sendo a rota.
-      podeMarcar={ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent}
+      podeMarcar={authority.provider === "local" && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent}
       tiposIniciais={(tipos ?? []).map((t) => ({
         id: t.id,
         nome: t.name,
@@ -348,5 +395,6 @@ export default async function AgendaPage() {
         }) as AgendamentoDaTela[],
       )}
     />
+    </>
   );
 }

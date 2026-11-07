@@ -4,6 +4,7 @@ import { atualizarFontesDoServico } from "@/lib/agenda/servicos/consulta";
 import { execucaoDoServico, reciboDoServico, rpcDoServico } from "@/lib/agenda/servicos/escrita";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { randomUUID } from "node:crypto";
+import { agendaAuthority, AMIGO_CONTEXT_REQUIRED, changeAmigoAppointment, createAmigoAppointment, type AmigoBookingContext } from "@/lib/amigo/agenda";
 import type { Json } from "@/lib/database.types";
 /**
  * A REGRA de marcar, remarcar e cancelar — fora da rota, de propósito.
@@ -74,9 +75,11 @@ const CODIGO_DA_RECUSA = {
   sem_responsavel: { status: 422, code: "agenda_sem_responsavel" },
   jornada_mal_configurada: { status: 422, code: "agenda_disponibilidade_invalida" },
   erro_interno: { status: 500, code: "internal_error" },
+  amigo_context_required: { status: 422, code: "agenda_amigo_context_required" },
 } as const;
 
 export interface MarcarInput {
+  amigo?: AmigoBookingContext;
   event_type_id: string;
   starts_at: string;
   owner_user_id?: string;
@@ -287,6 +290,12 @@ export async function marcarAgendamentoHandler(
   ctx: HandlerCtx,
   input: MarcarInput,
 ): Promise<Record<string, unknown>> {
+  const authority = await agendaAuthority(supabase, ctx.organization_id);
+  if (authority.provider === "amigo") {
+    await guardServiceEffect();
+    return createAmigoAppointment(supabase, ctx, input, authority.connection!);
+  }
+  if (input.amigo) throw new ApiError(422, "agenda_amigo_context_required", undefined, ctx.requestId, `Ative a conexão Amigo antes de marcar por este provedor. ${AMIGO_CONTEXT_REQUIRED}`);
   const chave =
     ctx.idempotencyKey ??
     (ctx.sourceJobId ? `agent-job:${ctx.sourceJobId}:${hashDoCorpo(input)}` : null);
@@ -358,7 +367,7 @@ async function executarCriacaoDeAgendamento(
   const { data: tipo, error: erroTipo } = await supabase
     .from("calendar_event_types")
     .select(
-      "id, name, is_active, duration_minutes, default_owner_user_id, requires_confirmation, location_kind, location_details, service_enabled",
+      "id, name, is_active, duration_minutes, default_owner_user_id, requires_confirmation, location_kind, location_details, service_enabled, external_provider",
     )
     .eq("organization_id", ctx.organization_id)
     .eq("id", input.event_type_id)
@@ -367,6 +376,7 @@ async function executarCriacaoDeAgendamento(
   if (!tipo) {
     throw new ApiError(404, "not_found", undefined, ctx.requestId, "Tipo de agendamento não encontrado.");
   }
+  if (tipo.external_provider) throw new ApiError(422, "agenda_amigo_context_required", undefined, ctx.requestId, AMIGO_CONTEXT_REQUIRED);
   if (!tipo.is_active) {
     throw new ApiError(422, "agenda_tipo_desativado", undefined, ctx.requestId, `"${tipo.name}" está desativado.`);
   }
@@ -603,9 +613,12 @@ export async function alterarAgendamentoHandler(
     "service_occurrence_id",
   ]);
 
-  await exigeDonoDoCompromisso(supabase, ctx, atual);
-
   if (input.revision !== undefined && input.revision !== Number(atual.revision)) throw new ApiError(409,"conflict",undefined,ctx.requestId,"O compromisso mudou. Recarregue antes de confirmar.");
+  if ((await agendaAuthority(supabase, ctx.organization_id, atual)).provider === "amigo") {
+    await guardServiceEffect();
+    return changeAmigoAppointment(supabase, ctx, atual, { ...input }, "change");
+  }
+  await exigeDonoDoCompromisso(supabase, ctx, atual);
   if (atual.status === "cancelled") {
     throw new ApiError(
       422,
@@ -808,11 +821,14 @@ export async function cancelarAgendamentoHandler(
     "time_zone",
   ]);
 
-  await exigeDonoDoCompromisso(supabase, ctx, atual);
-
   // Idempotente: cancelar o que já está cancelado devolve o estado, não erro —
   // quem chamou queria o compromisso desmarcado, e ele está.
   if (input.revision !== undefined && input.revision !== Number(atual.revision)) throw new ApiError(409,"conflict",undefined,ctx.requestId,"O compromisso mudou. Recarregue antes de confirmar.");
+  if ((await agendaAuthority(supabase, ctx.organization_id, atual)).provider === "amigo") {
+    await guardServiceEffect();
+    return changeAmigoAppointment(supabase, ctx, atual, { ...input }, "cancel");
+  }
+  await exigeDonoDoCompromisso(supabase, ctx, atual);
   if (atual.status === "cancelled") {
     return { id: atual.id, status: "cancelled", ja_estava: true };
   }
@@ -890,7 +906,7 @@ async function exigeAgendamento(
 ): Promise<Record<string, unknown>> {
   const { data, error } = await supabase
     .from("calendar_appointments")
-    .select([...new Set([...colunas, "service_occurrence_id", "service_block"])].join(", "))
+    .select([...new Set([...colunas, "service_occurrence_id", "service_block", "authority", "external_status", "external_connection_id"])].join(", "))
     .eq("organization_id", ctx.organization_id)
     .eq("id", id)
     .maybeSingle();

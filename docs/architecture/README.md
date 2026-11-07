@@ -113,3 +113,7 @@ implementação, com a peça já meio pronta.
 
 - `carteiras-transferencia.architecture.json`: atribuição respeita o escopo da carteira sob lock.
 - `atendimento-comercial.architecture.json`: entrada, veto, briefing e configuração de atendimento comercial exclusivamente humano.
+
+### Amigo API
+
+`amigo-api.architecture.json` liga a configuração e os formulários às ferramentas de IA, aos recibos duráveis, à projeção no CRM, à sincronização e à revalidação de lembretes. Operação e limitações em [Amigo API](../amigo-api.md).

@@ -18,6 +18,7 @@
  * dentro, e é o que separa esta chamada de um vazamento entre organizações.
  */
 import { z } from "zod";
+import { amigoBookingContextSchema, AMIGO_CONTEXT_REQUIRED, type AmigoBookingContext } from "@/lib/amigo/agenda";
 
 import {
   horariosLivresDaOrg,
@@ -125,6 +126,7 @@ export const crmListEventTypes: McpToolDefinition<typeof tiposShape> = {
       return { tipos: [], motivo: r.codigo, mensagem: r.motivoParaCliente };
     }
     return {
+      ...(r.provider ? { provider: r.provider, provider_context: r.provider_context } : {}),
       tipos: r.tipos.map((t) => ({
         // O SLUG vem primeiro, e o `id` NÃO vem: o slug existe para dar à IA um
         // handle que ela não alucina, e devolver o uuid ao lado convidaria o
@@ -137,6 +139,10 @@ export const crmListEventTypes: McpToolDefinition<typeof tiposShape> = {
         // recebe. `rotuloDoLocal` é o MESMO tradutor que a tela usa.
         onde: rotuloDoLocal(t.localKind, t.localDetalhes) ?? null,
         precisa_confirmacao: t.precisaConfirmacao,
+        ...(t.external_provider ? {
+          external_provider: t.external_provider, external_id: t.external_id,
+          external_connection_id: t.external_connection_id,
+        } : {}),
         ...(t.servico ? { servico: t.servico } : {}),
       })),
     };
@@ -372,6 +378,7 @@ export const crmFindFreeSlots: McpToolDefinition<typeof horariosLivresShape> = {
       return {
         horarios: [],
         motivo: consulta.codigo,
+        ...(consulta.provider ? { provider: consulta.provider, provider_context: consulta.provider_context } : {}),
         // A face do CLIENTE, nunca a do operador: `motivoParaOperador` nomeia
         // campo e pessoa, e o modelo repassa o que recebe (DECISÃO 20).
         mensagem: consulta.motivoParaCliente,
@@ -566,6 +573,7 @@ export const crmListAppointments: McpToolDefinition<typeof listarShape> = {
         quando: rotuloLocal(new Date(a.iniciaEm), a.fuso),
         fim_quando: rotuloLocal(new Date(a.terminaEm), a.fuso),
         situacao: a.situacao,
+        ...(a.authority ? { authority: a.authority, external_status: a.external_status, external_connection_id: a.external_connection_id } : {}),
         meet_state: a.meetingState,
         meeting_url: a.meetingState === "ready" ? a.meetingUrl : null,
         // O RÓTULO DO CONTATO nunca é montado aqui: vem de `nomeDoContato` por
@@ -637,8 +645,14 @@ async function semDerrubarOTurno<T>(
     return {
       [chave]: false,
       motivo: e.code,
+      ...(e.code === "agenda_amigo_unconfirmed" ? {
+        resultado_incerto: true,
+        ...(typeof e.details?.operation_id === "string" ? { operation_id: e.details.operation_id } : {}),
+        provider: "amigo",
+      } : {}),
       mensagem:
-        ENSINO_POR_CODIGO[e.code] ??
+        (e.code === "agenda_amigo_context_required" ? AMIGO_CONTEXT_REQUIRED :
+          e.code === "agenda_amigo_unconfirmed" ? "A operação Amigo precisa de conferência humana. Atualize a agenda antes de repetir e não confirme a marcação ao paciente." : ENSINO_POR_CODIGO[e.code]) ??
         "não consegui completar agora. Avise que alguém da equipe confirma o horário.",
     };
   }
@@ -696,6 +710,7 @@ function compromissoComHorarioLocal(r: Record<string, unknown>): Record<string, 
 }
 
 const marcarShape = {
+  amigo: amigoBookingContextSchema.optional().describe("Seleção explícita de paciente, médico, unidade e convênio do Amigo. Use IDs retornados pelas ferramentas Amigo, nunca inferidos pelo telefone."),
   event_type_slug: z.string().min(1).describe("o identificador legível do tipo de atendimento"),
   starts_at: z.string().datetime({ offset: true }).describe("o instante exato do início, vindo de `crm_find_free_slots`"),
   contact_id: z.string().uuid().describe("quem vai ser atendido"),
@@ -769,11 +784,14 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
             "equipe inclui no convite.",
         };
       }
+      // O adapter Amigo lê o papel do ator; a autoridade continua sendo o
+      // contexto autenticado do MCP, nunca o que veio nos argumentos.
+      const actor = input.amigo ? { ...ctx.actor, role: ctx.role } : ctx.actor;
       const r = await marcarAgendamentoHandler(
         ctx.supabase,
         {
           organization_id: ctx.organizationId,
-          actor: ctx.actor,
+          actor,
           requestId: ctx.requestId,
           meetingBooking: ctx.meetingBooking,
           ...(ctx.idempotencyKey !== undefined ? { idempotencyKey: ctx.idempotencyKey } : {}),
@@ -783,6 +801,7 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
           event_type_id: tipo.id,
           starts_at: input.starts_at,
           contact_id: input.contact_id,
+          ...(input.amigo ? { amigo: input.amigo } : {}),
           ...(input.owner_user_id ? { owner_user_id: input.owner_user_id } : {}),
           ...(input.title ? { title: input.title } : {}),
           ...(input.notes ? { notes: input.notes } : {}),
@@ -864,6 +883,7 @@ async function marcarHorario(
     participants?: string[];
     participantName?: string;
     serviceRevision?: number;
+    amigo?: AmigoBookingContext;
   },
 ): Promise<unknown> {
   return crmBookAppointment.handler(
@@ -871,6 +891,7 @@ async function marcarHorario(
       event_type_slug: args.eventTypeSlug,
       starts_at: args.startsAt,
       contact_id: args.contactId,
+      ...(args.amigo ? { amigo: args.amigo } : {}),
       ...(args.ownerUserId !== undefined ? { owner_user_id: args.ownerUserId } : {}),
       ...(args.title !== undefined ? { title: args.title } : {}),
       ...(args.notes !== undefined ? { notes: args.notes } : {}),
@@ -884,6 +905,7 @@ async function marcarHorario(
 }
 
 const consultarEMarcarShape = {
+  amigo: marcarShape.amigo,
   event_type_slug: z.string().min(1).describe("o identificador legível do tipo de atendimento"),
   participant_name: marcarShape.participant_name,
   participants: marcarShape.participants,
@@ -976,6 +998,7 @@ export const crmFindAndBookAppointment: McpToolDefinition<typeof consultarEMarca
         marcado: false,
         horarios: [],
         motivo: consulta.codigo,
+        ...(consulta.provider ? { provider: consulta.provider, provider_context: consulta.provider_context } : {}),
         // A face do CLIENTE, nunca a do operador (DECISÃO 20).
         mensagem: consulta.motivoParaCliente,
       };
@@ -1013,6 +1036,7 @@ export const crmFindAndBookAppointment: McpToolDefinition<typeof consultarEMarca
       // agenda confirmou como livre.
       startsAt: achado.inicio.toISOString(),
       contactId: input.contact_id,
+      ...(input.amigo ? { amigo: input.amigo } : {}),
       ...(input.owner_user_id !== undefined ? { ownerUserId: input.owner_user_id } : {}),
       ...(input.participants !== undefined ? { participants: input.participants } : {}),
       ...(input.participant_name !== undefined ? { participantName: input.participant_name } : {}),

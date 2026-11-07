@@ -4,6 +4,7 @@ export function googlePushCandidates(db: SupabaseClient, now = new Date()) {
   return db
     .from("calendar_service_google_candidates")
     .select("id,organization_id,user_id:owner_user_id")
+    .eq("authority", "local")
     .or(
       "needs_google_push.eq.true,and(google_event_id.not.is.null,google_conflict.is.null),google_conflict->resolution.not.is.null",
     )

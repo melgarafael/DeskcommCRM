@@ -91,7 +91,9 @@ export function AgendaClient({
   tiposIniciais,
   agendamentosIniciais,
   podeMarcar,
+  autoridadeDaAgenda,
 }: {
+  autoridadeDaAgenda?: "local" | "amigo";
   tituloDaAgenda?: string | null;
   /**
    * O fuso RESOLVIDO da organização (`fusoUtilizavel(activeOrg.timezone)`,
@@ -402,8 +404,8 @@ export function AgendaClient({
   // do mês vizinho que ela mostra.
   const recorteDaGrade = React.useMemo(() => {
     const { de, ate } = recorteDaGradeDe(visao, ancora);
-    return { de: de.toISOString(), ate: ate.toISOString() };
-  }, [visao, ancora]);
+    return { de: de.toISOString(), ate: ate.toISOString(), ...(autoridadeDaAgenda ? { authority: autoridadeDaAgenda } : {}) };
+  }, [visao, ancora, autoridadeDaAgenda]);
 
   // A janela que o SERVIDOR pintou. Sem esta comparação, navegar para outra
   // semana mostraria os compromissos DESTA por um instante — o fallback estaria
@@ -1370,6 +1372,7 @@ export function AgendaClient({
            primeiro (#1657). */
         onAbrirAgendamento={(id) => {
           const parametros = new URLSearchParams();
+          if (autoridadeDaAgenda === "local" && busca.get("origem") === "local") parametros.set("origem", "local");
           if (tipo) parametros.set("tipo", tipo.id);
           parametros.set("compromisso", id);
           router.push(`/app/agenda?${parametros.toString()}`);

@@ -126,6 +126,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     // nome do campo. Quem fala com o cliente final (as ferramentas MCP) usa
     // `motivoParaCliente` — dois campos para a escolha ser explícita.
     const status: Record<CodigoDeRecusaDaConsulta, { codigo: string; http: number }> = {
+      amigo_context_required: { codigo: "agenda_amigo_context_required", http: 422 },
       tipo_desconhecido: { codigo: "not_found", http: 404 },
       tipo_desativado: { codigo: "validation_failed", http: 422 },
       sem_responsavel: { codigo: "validation_failed", http: 422 },

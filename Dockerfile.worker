@@ -26,6 +26,10 @@ COPY . .
 ARG APP_VERSION=dev
 ENV APP_VERSION=$APP_VERSION
 
+# Only this server process resolves Next server-only markers to the server entry.
+# The web application keeps tsconfig.json and its client-import compile guard.
+ENV TSX_TSCONFIG_PATH=tsconfig.worker.json
+
 # Healthz do worker (bind 0.0.0.0 dentro do container).
 EXPOSE 8787
 

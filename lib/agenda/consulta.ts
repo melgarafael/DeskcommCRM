@@ -1,6 +1,7 @@
 import { googleRpc } from "./google/sync-store";
 import { consultarServico, lerServico, type DisponibilidadeDoServico } from "./servicos/consulta";
 import { lerCorposDoLembrete } from "./lembretes";
+import { agendaAuthority, AMIGO_CONTEXT_REQUIRED, providerContext } from "@/lib/amigo/agenda";
 /**
  * OS HORÁRIOS LIVRES DE UMA ORGANIZAÇÃO — a coleta, num lugar só.
  *
@@ -92,6 +93,7 @@ export type CodigoDeRecusaDaConsulta =
   | "tipo_desativado"
   | "sem_responsavel"
   | "jornada_mal_configurada"
+  | "amigo_context_required"
   | "erro_interno";
 
 export interface ParametrosDaConsulta {
@@ -174,6 +176,8 @@ export type ResultadoDaConsulta =
       motivoParaOperador: string;
       /** Sem nome de campo, e diz o que fazer. Plateia: o modelo, e por tabela o cliente. */
       motivoParaCliente: string;
+      provider?: "amigo";
+      provider_context?: ReturnType<typeof providerContext>["provider_context"];
     };
 
 /**
@@ -202,10 +206,25 @@ export async function horariosLivresDaOrg(
   organizationId: string,
   params: ParametrosDaConsulta,
 ): Promise<ResultadoDaConsulta> {
+  try {
+    let appointment: Record<string, unknown> | undefined;
+    if (params.ignorarAgendamentoId) {
+      const { data, error } = await supabase.from("calendar_appointments").select("id,authority,external_connection_id")
+        .eq("organization_id", organizationId).eq("id", params.ignorarAgendamentoId).maybeSingle();
+      if (error || !data) throw new Error("Não foi possível conferir a origem do compromisso.");
+      appointment = data;
+    }
+    const authority = await agendaAuthority(supabase, organizationId, appointment);
+    if (authority.provider === "amigo") return { ok: false, codigo: "amigo_context_required", motivoParaOperador: AMIGO_CONTEXT_REQUIRED,
+      motivoParaCliente: "A equipe precisa escolher paciente, unidade e médico nas ferramentas Amigo para consultar vagas reais. Não ofereça horários da agenda local.",
+      provider: "amigo", provider_context: providerContext(authority).provider_context };
+  } catch {
+    return { ok: false, codigo: "erro_interno", motivoParaOperador: "Não foi possível verificar a autoridade da agenda. Tente novamente.", motivoParaCliente: NAO_OFERECA };
+  }
   const { data: tipo, error: erroTipo } = await supabase
     .from("calendar_event_types")
     .select(
-      "id, name, is_active, duration_minutes, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, slot_interval_minutes, booking_window_days, default_owner_user_id, service_enabled",
+      "id, name, is_active, duration_minutes, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, slot_interval_minutes, booking_window_days, default_owner_user_id, service_enabled, external_provider",
     )
     .eq("organization_id", organizationId)
     .eq(params.eventTypeSlug ? "slug" : "id", params.eventTypeSlug ?? params.eventTypeId ?? "")
@@ -231,6 +250,7 @@ export async function horariosLivresDaOrg(
         "Pergunte à pessoa que tipo de atendimento ela quer e use um dos tipos que a organização oferece.",
     };
   }
+  if (tipo.external_provider) return { ok: false, codigo: "amigo_context_required", provider: "amigo", motivoParaOperador: AMIGO_CONTEXT_REQUIRED, motivoParaCliente: AMIGO_CONTEXT_REQUIRED };
   if (!tipo.is_active) {
     return {
       ok: false,
@@ -543,6 +563,9 @@ export async function coletaOQueOcupa(
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface AgendamentoListado {
+  authority?: string;
+  external_status?: string | null;
+  external_connection_id?: string | null;
   meetingState?: string;
   meetingUrl?: string | null;
   revision?:number;
@@ -582,6 +605,7 @@ export interface AgendamentoListado {
 }
 
 export interface ParametrosDaLista {
+  authority?: "local" | "amigo";
   somenteColetivas?: boolean;
   contactId?: string | null;
   /** Resolvido por `crm_lead_links` — ver o aviso acima. */
@@ -897,7 +921,7 @@ export async function listaAgendamentos(
   let q = supabase
     .from("calendar_appointments")
     .select(
-      "id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error",
+      "id, authority, external_status, external_connection_id, title, starts_at, ends_at, time_zone, status, revision, meeting_state, meeting_url, owner_user_id, contact_id, location_kind, location_details, calendar_event_types(id, name, slug), contacts(name, display_name), service_occurrence_id, participant_name, service_booking_mode, service_capacity_limit, service_publication_mode, google_event_id, google_local_revision, google_synced_local_revision, google_conflict, google_sync_error",
     )
     .eq("organization_id", organizationId)
     .order("starts_at", { ascending: true })
@@ -908,6 +932,7 @@ export async function listaAgendamentos(
     .limit(params.limite + 1);
 
   q = q.eq("service_block", false);
+  if (params.authority) q = q.eq("authority", params.authority);
 
   if (idsPorLead) q = q.in("id", idsPorLead);
   if (params.contactId) q = q.eq("contact_id", params.contactId);
@@ -1029,6 +1054,9 @@ export async function listaAgendamentos(
       const texto = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v : null);
       return {
         id: String(l.id),
+        authority: l.authority ?? "local",
+        external_status: l.external_status ?? null,
+        external_connection_id: l.external_connection_id ?? null,
         titulo: String(l.title),
         meetingState: l.meeting_state,
         meetingUrl: l.meeting_state === "ready" ? l.meeting_url : null,
@@ -1104,6 +1132,9 @@ export async function idDoTipoPorSlug(
  * `tipo_desativado`. Por isso o default é SÓ ATIVOS — quem quer o outro pede.
  */
 export interface TipoDeAtendimento {
+  external_provider?: string | null;
+  external_id?: string | null;
+  external_connection_id?: string | null;
   /** Chave de lista e alvo de PATCH/DELETE na TELA. Nunca vai ao modelo (ver a tool). */
   id: string;
   nome: string;
@@ -1157,7 +1188,7 @@ export interface TipoDeAtendimento {
 }
 
 export type ResultadoDosTipos =
-  | { ok: true; tipos: TipoDeAtendimento[] }
+  | ({ ok: true; tipos: TipoDeAtendimento[] } & Partial<ReturnType<typeof providerContext>>)
   | {
       ok: false;
       codigo: "erro_interno";
@@ -1178,12 +1209,15 @@ export async function listaTiposDeAtendimento(
   organizationId: string,
   opcoes?: { incluirInativos?: boolean },
 ): Promise<ResultadoDosTipos> {
+  let authority;
+  try { authority = await agendaAuthority(supabase, organizationId); }
+  catch { return { ok: false, codigo: "erro_interno", motivoParaOperador: "Não foi possível verificar o provedor da agenda.", motivoParaCliente: NAO_OFERECA }; }
   const incluirInativos = opcoes?.incluirInativos ?? false;
 
   let q = supabase
     .from("calendar_event_types")
     .select(
-        "id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity, service_revision, service_publication_mode",
+        "id, external_provider, external_id, external_connection_id, name, slug, description, category, duration_minutes, location_kind, location_details, requires_confirmation, is_active, default_owner_user_id, buffer_before_minutes, buffer_after_minutes, minimum_notice_minutes, booking_window_days, reminder_channel_session_id, reminder_meta_template_id, reminder_enabled, reminder_minutes_before, reminder_extra_offsets_minutes, reminder_body, reminder_bodies, default_price_cents, service_enabled, booking_mode, service_capacity, service_revision, service_publication_mode",
     )
     // Service role bypassa a RLS: este filtro é a única proteção no caminho da
     // ferramenta MCP (ver o cabeçalho do arquivo).
@@ -1203,7 +1237,11 @@ export async function listaTiposDeAtendimento(
 
   return {
     ok: true,
+    ...providerContext(authority),
     tipos: (data ?? []).map((t) => ({
+      external_provider: t.external_provider ?? null,
+      external_id: t.external_id ?? null,
+      external_connection_id: t.external_connection_id ?? null,
       id: String(t.id),
       nome: String(t.name),
       slug: String(t.slug),
