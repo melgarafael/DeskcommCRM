@@ -15174,6 +15174,10 @@ export type Database = {
         Args: { p_assigned_to: string; p_created_by: string; p_org: string };
         Returns: boolean;
       };
+      fn_caso_na_fronteira_atual: {
+        Args: { p_case: string; p_org: string };
+        Returns: boolean;
+      };
       fn_casos_parados_para_lembrar: {
         Args: { p_limite?: number };
         Returns: {

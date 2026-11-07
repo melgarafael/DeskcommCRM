@@ -6687,6 +6687,7 @@
   "O cliente quer": "Müşteri şunu istiyor",
   "O cliente recebeu e não decidiu. Retome antes que esfrie de vez.": "Müşteri aldı ve karar vermedi. Tamamen soğumadan önce yeniden iletişime geçin.",
   "O cliente respondeu": "Müşteri yanıt verdi",
+  "O cliente respondeu fora do atendimento atual (sem aviso no WhatsApp)": "Müşteri mevcut hizmetin dışında yanıt verdi (WhatsApp bildirimi yok)",
   "O cliente respondeu — o fluxo acordou na hora": "Müşteri yanıt verdi — akış hemen uyandı",
   "O cliente é atendido normalmente, mas nada aparece no funil — nenhum lead criado, nenhuma etapa movida.": "Müşteriye normal şekilde yanıt veriliyor, ancak satış hunisinde hiçbir şey görünmüyor — hiç potansiyel müşteri oluşmadı, hiçbir aşama taşınmadı.",
   "O clima da conversa deixa de ser medido: ninguém da equipe é chamado quando um cliente se irrita.": "Konuşmanın havası artık ölçülmüyor: bir müşteri sinirlendiğinde ekipten kimse çağrılmaz.",

@@ -213,6 +213,7 @@ import { avisarJanelaFechada, resolverAvisoDeJanela } from '../pacing/aviso-de-j
 import { resolveConversationTurn, type TurnAgentResolution } from './resolve-turn-agent';
 import {
   hasOpenCaseForContact,
+  blocoDoCasoAguardandoCliente,
   getCaseAwaitingLead,
   openCase,
   provideCaseUpdate,
@@ -5609,7 +5610,9 @@ async function executarTurnoDoAgente(
           if (!res.ok) return res;
           return {
             ok: true,
-            message: 'informação registrada no caso para a equipe; o aviso segue pela fila de entrega.',
+            message: res.foraDaFronteira
+              ? 'informação registrada no caso para a equipe; nenhum aviso sai agora e a equipe vê pela tela do caso. NÃO diga ao cliente que alguém foi acionado.'
+              : 'informação registrada no caso para a equipe; o aviso segue pela fila de entrega.',
           };
         } catch (err) {
           noteRunError(err instanceof Error ? err : new Error(String(err)));
@@ -6086,13 +6089,7 @@ async function executarTurnoDoAgente(
       preview?.kind !== 'sandbox' && agentConfig !== null && agentConfig.casesEnabled
         ? await getCaseAwaitingLead(pool, tenantId, input.conversationId)
         : null;
-    const caseAwaitingLeadBlock =
-      caseAwaitingLead !== null
-        ? `## Caso aguardando resposta deste cliente\n` +
-          `Há um caso aberto (case_id: ${caseAwaitingLead.id}) esperando uma informação dele: "${caseAwaitingLead.ask}". ` +
-          `Se a mensagem dele responde a isso, chame provide_case_update com este case_id e a informação recebida — ` +
-          `NÃO diga que já repassou/avisou o responsável sem chamar a tool.`
-        : '';
+    const caseAwaitingLeadBlock = blocoDoCasoAguardandoCliente(caseAwaitingLead);
     // ── O RELÓGIO DO TURNO ────────────────────────────────────────────────────
     //
     // Entra AQUI, e o lugar é a metade do conserto.

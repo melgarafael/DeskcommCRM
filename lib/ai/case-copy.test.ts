@@ -3,6 +3,15 @@ import { describe, expect, it } from "vitest";
 import { caseEventLabel } from "./case-copy";
 
 describe("caseEventLabel — quem respondeu", () => {
+  it("resposta do cliente fora do atendimento atual fica marcada; o resto segue igual", () => {
+    const lead = { kind: "lead_provided", actor_kind: "lead", human_action: null } as const;
+    expect(caseEventLabel({ ...lead, fora_da_fronteira: "true" })).toBe(
+      "O cliente respondeu fora do atendimento atual (sem aviso no WhatsApp)",
+    );
+    expect(caseEventLabel({ ...lead, fora_da_fronteira: "false" })).toBe("O cliente respondeu");
+    expect(caseEventLabel({ ...lead, fora_da_fronteira: null })).toBe("O cliente respondeu");
+  });
+
   it("resposta pelo WhatsApp de avisos não é atribuída a quem olha a tela", () => {
     for (const human_action of ["resolved", "need_lead_info"] as const) {
       expect(

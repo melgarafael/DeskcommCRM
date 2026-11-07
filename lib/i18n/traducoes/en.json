@@ -2219,6 +2219,7 @@
   "Você respondeu": "You responded",
   "A IA perguntou ao cliente": "The AI asked the customer",
   "O cliente respondeu": "The customer responded",
+  "O cliente respondeu fora do atendimento atual (sem aviso no WhatsApp)": "The customer replied outside the current service (no WhatsApp notice)",
   "O cliente não respondeu a tempo": "The customer didn't respond in time",
   "Você concluiu o caso": "You completed the case",
   "A equipe respondeu pelo WhatsApp": "The team replied via WhatsApp",

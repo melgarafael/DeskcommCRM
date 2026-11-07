@@ -2,11 +2,14 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import {
+  blocoDoCasoAguardandoCliente,
   getCaseAwaitingLead,
   openCase,
   markAwaitingLead,
   provideCaseUpdate,
 } from "@/lib/agent-engine/agent/human-cases";
+import { carregarContextoDoAtendimento } from "@/lib/agent-engine/agent/contexto-do-atendimento";
+import { lerEventosDoCaso } from "@/lib/agent-engine/agent/conversa-do-caso/leitura";
 
 if (!process.env.TEST_DB_CONTAINER) throw new Error("rode via pnpm test:db");
 const pool = new pg.Pool({
@@ -104,6 +107,24 @@ async function provide(requestEventId = askId) {
     { caseId, info: "Primeira opção", requestEventId },
   );
 }
+/** O segundo caminho do pedido até um modelo: a continuidade do contexto do atendimento. */
+async function pedidoNoContexto() {
+  const contexto = await carregarContextoDoAtendimento(pool, {
+    tenantId: org,
+    leadId: contact,
+    conversationId: conv,
+  });
+  const caso = contexto.continuidade.find((f) => f.origem === "caso_humano");
+  if (!caso) throw new Error("o caso sumiu do contexto do atendimento");
+  return caso.dados.pergunta_humana;
+}
+async function marcaDaResposta(eventId: string) {
+  return (
+    await pool.query("select metadata->'fora_da_fronteira' v from agent_case_events where id=$1", [
+      eventId,
+    ])
+  ).rows[0].v;
+}
 async function event() {
   return (
     await pool.query(
@@ -148,8 +169,14 @@ async function reply(id: string | null, key = randomUUID(), action = "resolved",
   }
 }
 it("persiste a transição, o fato e a outbox, sem recriar abertura", async () => {
-  expect(await provide()).toEqual({ ok: true });
+  // Controle da fronteira: dentro dela o pedido vai ao modelo pelos dois caminhos.
+  const caso = await getCaseAwaitingLead(pool, org, conv);
+  expect(caso).toMatchObject({ id: caseId, eventId: askId, ask: "Qual opção?" });
+  expect(blocoDoCasoAguardandoCliente(caso)).toContain("Qual opção?");
+  expect(await pedidoNoContexto()).toBe("Qual opção?");
+  expect(await provide()).toEqual({ ok: true, foraDaFronteira: false });
   const e = await event();
+  expect(await marcaDaResposta(e.payload.case_event_id)).toBe(false);
   expect(e.payload).toMatchObject({ case_id: caseId, conversation_id: conv, contact_id: contact });
   expect(await current(e)).toEqual({
     info: "Primeira opção",
@@ -304,15 +331,20 @@ it("isolamento, alteração do destino e nova fronteira impedem reaproveitamento
 });
 
 /**
- * A fronteira decide o aviso e o comando, nunca se a resposta do cliente fica no
- * caso. Cada cenário vence a fronteira de um jeito e cobra as MESMAS consequências:
- * o caso continua achável no turno, a resposta é gravada, o caso volta a esperar a
- * equipe, o aviso não sai e o WhatsApp não comanda mais este ciclo (na main o
- * comando da abertura era aceito aqui; agora só a tela responde).
+ * A fronteira decide o aviso, o comando e o que o modelo lê, nunca se a resposta do
+ * cliente fica no caso. Cada cenário vence a fronteira de um jeito e cobra as MESMAS
+ * consequências: o caso continua achável no turno sem o pedido antigo, a resposta é
+ * gravada e marcada, o caso volta a esperar a equipe, o aviso não sai e o WhatsApp
+ * não comanda mais este ciclo (na main o comando da abertura era aceito aqui; agora
+ * só a tela responde).
  */
 async function cobraFronteiraVencida() {
-  expect(await getCaseAwaitingLead(pool, org, conv)).toMatchObject({ id: caseId, eventId: askId });
-  expect(await provide()).toEqual({ ok: true });
+  const caso = await getCaseAwaitingLead(pool, org, conv);
+  expect(caso).toMatchObject({ id: caseId, eventId: askId, title: "Escolha", ask: null });
+  const bloco = blocoDoCasoAguardandoCliente(caso);
+  expect(bloco).toContain(caseId);
+  expect(bloco).not.toContain("Qual opção?");
+  expect(await provide()).toEqual({ ok: true, foraDaFronteira: true });
   expect(
     (await pool.query("select status from agent_cases where id=$1", [caseId])).rows[0].status,
   ).toBe("awaiting_human");
@@ -323,6 +355,11 @@ async function cobraFronteiraVencida() {
   expect(provided.rowCount).toBeGreaterThan(0);
   const e = await event();
   expect(e.payload.case_event_id).toBe(provided.rows[0].id);
+  expect(await marcaDaResposta(e.payload.case_event_id)).toBe(true);
+  expect((await lerEventosDoCaso(pool, org, caseId)).at(-1)).toMatchObject({
+    rotulo: "O cliente respondeu fora do atendimento atual (sem aviso no WhatsApp)",
+    corpo: "Primeira opção",
+  });
   expect(await current(e)).toBeNull();
   expect(await reply(null)).toBe("case_unavailable");
   await sent(e.payload.case_event_id);
@@ -337,6 +374,7 @@ it("conversa fechada e reaberta: a resposta fica no caso e só o aviso e o coman
         .service_revision,
     ),
   ).toBeGreaterThan(1);
+  expect(await pedidoNoContexto()).toBeNull();
   await cobraFronteiraVencida();
 });
 it("próximo passo da demanda alterado: a resposta fica no caso e só o aviso e o comando caem", async () => {
@@ -352,12 +390,17 @@ it("próximo passo da demanda alterado: a resposta fica no caso e só o aviso e 
     [caseId, demanda.id, demanda.revision],
   );
   // Controle: com a demanda intacta, a mesma resposta gera aviso.
-  expect(await provide()).toEqual({ ok: true });
+  expect(await provide()).toEqual({ ok: true, foraDaFronteira: false });
   expect(await current(await event())).not.toBeNull();
   await ask();
+  expect((await getCaseAwaitingLead(pool, org, conv))?.ask).toBe("Qual opção?");
   await pool.query("update demandas set proximo_passo='Conferir a segunda opção' where id=$1", [
     demanda.id,
   ]);
+  expect(
+    Number((await pool.query("select revision from demandas where id=$1", [demanda.id])).rows[0].revision),
+  ).toBeGreaterThan(Number(demanda.revision));
+  expect(await pedidoNoContexto()).toBeNull();
   await cobraFronteiraVencida();
 });
 it("caso de grupo: a resposta fica no caso e só o aviso e o comando caem", async () => {
@@ -370,7 +413,8 @@ it("caso legado sem fronteira ainda gera aviso", async () => {
     [caseId],
   );
   await pool.query("update conversations set service_revision=2 where id=$1", [conv]);
-  expect(await provide()).toEqual({ ok: true });
+  expect((await getCaseAwaitingLead(pool, org, conv))?.ask).toBe("Qual opção?");
+  expect(await provide()).toEqual({ ok: true, foraDaFronteira: false });
   expect(await current(await event())).toMatchObject({ info: "Primeira opção", ask: "Qual opção?" });
 });
 it("modo responsavel: o celular pessoal não comanda; o recuo ao número da empresa comanda", async () => {

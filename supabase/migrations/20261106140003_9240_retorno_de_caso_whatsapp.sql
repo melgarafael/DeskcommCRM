@@ -18,14 +18,31 @@ create unique index if not exists entregas_de_aviso_atualizacao_unica
  on public.entregas_de_aviso_de_caso(organization_id,case_id,destino,update_event_id) where update_event_id is not null;
 drop index if exists public.entregas_de_aviso_de_caso_unica;
 
+-- A fronteira do atendimento decide o aviso, o comando e o que o modelo lê, nunca
+-- se a resposta do cliente fica registrada. Quem chega com a fronteira vencida
+-- (conversa reaberta, próximo passo da demanda mudou, caso de grupo) ainda grava
+-- `lead_provided` e volta a `awaiting_human`, como antes, com o evento marcado em
+-- `metadata.fora_da_fronteira`; nesse ciclo não nasce entrega de atualização, o
+-- comando da abertura também é recusado, porque não é o da última informação, e o
+-- pedido antigo não vai ao modelo. A equipe responde pela tela do caso. Caso legado
+-- sem `service_boundary` não tem fronteira a conferir. A regra é uma só, aqui, para
+-- a marca na tela e o aviso não divergirem.
+create or replace function public.fn_caso_na_fronteira_atual(p_org uuid,p_case uuid)
+returns boolean language sql stable security definer set search_path=public,pg_temp as $$
+ select coalesce((
+  select not c.is_group and (ac.context_snapshot->'service_boundary' is null or public.fn_meet_boundary_current((ac.context_snapshot->'service_boundary') ||
+   case when ac.context_snapshot->'service_boundary'->>'demanda_id' is null
+    then jsonb_build_object('demanda_id',c.current_demanda_id,'demanda_revision',d.revision)
+    else '{}'::jsonb end))
+  from public.agent_cases ac
+  join public.conversations c on c.organization_id=ac.organization_id and c.id=ac.conversation_id
+  left join public.demandas d on d.organization_id=c.organization_id and d.contact_id=c.contact_id and d.id=c.current_demanda_id
+  where ac.organization_id=p_org and ac.id=p_case),false)
+$$;
+revoke all on function public.fn_caso_na_fronteira_atual(uuid,uuid) from public,anon,authenticated;
+grant execute on function public.fn_caso_na_fronteira_atual(uuid,uuid) to service_role;
+
 -- Leitura server-only: nenhum conteúdo vem da carga do event_log ou do comando.
--- A fronteira do atendimento mora AQUI e só aqui: ela decide se o aviso sai e se
--- o comando dele vale, nunca se a resposta do cliente fica registrada. Quem chega
--- com a fronteira vencida (conversa reaberta, próximo passo da demanda mudou,
--- caso de grupo) ainda grava `lead_provided` e volta a `awaiting_human`, como
--- antes; nesse ciclo não nasce entrega de atualização, e o comando da abertura
--- também é recusado, porque não é o da última informação. A equipe responde pela
--- tela do caso. Caso legado sem `service_boundary` não tem fronteira a conferir.
 create or replace function public.fn_ler_retorno_de_caso(
  p_org uuid,p_case uuid,p_event uuid,p_config_revision text
 ) returns jsonb language sql stable security definer set search_path=public,pg_temp as $$
@@ -36,18 +53,14 @@ create or replace function public.fn_ler_retorno_de_caso(
  join public.config_aviso_de_caso cfg on cfg.organization_id=ac.organization_id
  join public.agent_case_events pedido on pedido.organization_id=e.organization_id
   and pedido.case_id=e.case_id and pedido.id::text=e.metadata->>'request_event_id'
- left join public.demandas d on d.organization_id=c.organization_id and d.contact_id=c.contact_id and d.id=c.current_demanda_id
  where e.organization_id=p_org and e.case_id=p_case and e.id=p_event
   and e.kind='lead_provided' and e.actor_kind='lead' and e.body is not null
-  and ac.status='awaiting_human' and not c.is_group
+  and ac.status='awaiting_human'
   and cfg.ligado and cfg.channel_session_id is not null and cfg.updated_at::text=p_config_revision
   and pedido.kind='human_replied' and pedido.human_action='need_lead_info'
   and pedido.id=(select n.id from public.agent_case_events n where n.organization_id=p_org
    and n.case_id=p_case and n.kind='human_replied' order by n.created_at desc,n.id desc limit 1)
-  and (ac.context_snapshot->'service_boundary' is null or public.fn_meet_boundary_current((ac.context_snapshot->'service_boundary') ||
-   case when ac.context_snapshot->'service_boundary'->>'demanda_id' is null
-    then jsonb_build_object('demanda_id',c.current_demanda_id,'demanda_revision',d.revision)
-    else '{}'::jsonb end))
+  and public.fn_caso_na_fronteira_atual(p_org,p_case)
 $$;
 revoke all on function public.fn_ler_retorno_de_caso(uuid,uuid,uuid,text) from public,anon,authenticated;
 grant execute on function public.fn_ler_retorno_de_caso(uuid,uuid,uuid,text) to service_role;
