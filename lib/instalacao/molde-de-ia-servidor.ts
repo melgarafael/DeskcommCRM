@@ -28,6 +28,8 @@ import {
 import { logger } from "@/lib/logger";
 import { ehOperante, STATUS_OPERANTE } from "@/lib/organizacao/operante";
 
+import { gravarNaLinhaDaInstalacao } from "./linha-da-instalacao";
+
 /**
  * O molde em vigor. `null` = nenhum (cada empresa nasce com o padrão do
  * produto); `undefined` = o banco não respondeu.
@@ -119,23 +121,16 @@ export async function resumoDoMoldeNoBanco(db: SupabaseClient, orgId: string): P
  * `gravarComportamentoDaInstalacao`). Só a coluna do molde vai no corpo — o
  * PostgREST funde as colunas citadas, e as outras escolhas da instalação ficam
  * como estão.
+ *
+ * Como o corpo NÃO fala de `signup_mode`, a gravação passa pela régua de
+ * `linha-da-instalacao.ts` (#4244): criar a linha por aqui faria
+ * `signup_mode` nascer `'aberto'` e reabriria o cadastro de uma instalação
+ * fechada só pelo `.env`.
  */
 export async function gravarMoldeDeIa(
   db: SupabaseClient,
   moldeId: string | null,
   atorUserId: string,
 ): Promise<boolean> {
-  try {
-    const { error } = await db
-      .from("platform_settings")
-      .upsert({ id: 1, molde_de_ia_org_id: moldeId, updated_by: atorUserId }, { onConflict: "id" });
-    if (error) {
-      logger.error("molde de IA: não deu para gravar", { codigo: error.code, detalhe: error.message });
-      return false;
-    }
-    return true;
-  } catch (erro) {
-    logger.error("molde de IA: gravação falhou", { detalhe: erro instanceof Error ? erro.message : String(erro) });
-    return false;
-  }
+  return gravarNaLinhaDaInstalacao(db, { molde_de_ia_org_id: moldeId }, atorUserId);
 }

@@ -4,6 +4,7 @@ import { isIPv4, isIPv6 } from "node:net";
 import { assertDestinoResolvidoSeguro, ipEhEspecial } from "@/lib/automation/outbound-ip";
 import { assertSafeOutboundUrl } from "@/lib/automation/outbound-url";
 import { env } from "@/lib/env";
+import { gravarNaLinhaDaInstalacao } from "@/lib/instalacao/linha-da-instalacao";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -243,33 +244,25 @@ async function lerListaGravada(): Promise<readonly string[] | null> {
  * Grava a lista. Devolve `false` quando o banco recusou — quem chama transforma
  * isso em mensagem na tela, nunca em silêncio. Quem valida as entradas é quem
  * chama; aqui só entra o que já passou por `entradaDeDestinoValida`.
+ *
+ * O corpo não fala de `signup_mode`, então a gravação passa pela régua de
+ * `lib/instalacao/linha-da-instalacao.ts` (#4244).
  */
 export async function gravarDestinosInternos(
   lista: readonly string[],
   atorUserId: string,
 ): Promise<boolean> {
-  try {
-    const { error } = await createAdminClient()
-      .from("platform_settings")
-      .upsert(
-        { id: 1, internal_destinations: [...lista], updated_by: atorUserId },
-        { onConflict: "id" },
-      );
-    if (error) {
-      logger.error("destinos internos: não deu para gravar", {
-        codigo: error.code,
-        detalhe: error.message,
-      });
-      return false;
-    }
-    invalidarDestinosInternos();
-    return true;
-  } catch (erro) {
-    logger.error("destinos internos: gravação falhou", {
-      detalhe: erro instanceof Error ? erro.message : String(erro),
-    });
+  if (
+    !(await gravarNaLinhaDaInstalacao(
+      createAdminClient(),
+      { internal_destinations: [...lista] },
+      atorUserId,
+    ))
+  ) {
     return false;
   }
+  invalidarDestinosInternos();
+  return true;
 }
 
 // ─── A régua de destino ─────────────────────────────────────────────────────

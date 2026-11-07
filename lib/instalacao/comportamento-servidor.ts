@@ -23,6 +23,7 @@ import {
   type ComportamentoDaInstalacao,
   type DivulgacaoDePagamento,
 } from "./comportamento";
+import { gravarNaLinhaDaInstalacao } from "./linha-da-instalacao";
 
 const COLUNAS =
   "orcamento_de_ia, exigir_assinatura_no_webhook, divulgacao_de_pagamento, promessa_semantica";
@@ -82,6 +83,11 @@ export async function carregarComportamentoDaInstalacao(): Promise<Comportamento
  * existir quando alguém configura algo, e é por isso que a leitura trata "sem
  * linha" como o piso.
  *
+ * O upsert NÃO fala de `signup_mode`, e por isso passa pela régua de
+ * `./linha-da-instalacao.ts` (#4244): sem ela, criar a linha por aqui faria a
+ * coluna nascer com o default `'aberto'` e reabriria o cadastro de uma
+ * instalação fechada só pelo `SIGNUP_MODE` do `.env`.
+ *
  * Devolve `false` quando o banco recusou — quem chama transforma isso em
  * mensagem na tela, nunca em silêncio.
  */
@@ -89,24 +95,9 @@ export async function gravarComportamentoDaInstalacao(
   valores: ComportamentoDaInstalacao,
   atorUserId: string,
 ): Promise<boolean> {
-  try {
-    const { error } = await createAdminClient()
-      .from("platform_settings")
-      .upsert({ id: 1, ...valores, updated_by: atorUserId }, { onConflict: "id" });
-
-    if (error) {
-      logger.error("comportamento da instalação: não deu para gravar", {
-        codigo: error.code,
-        detalhe: error.message,
-      });
-      return false;
-    }
-    invalidarComportamento();
-    return true;
-  } catch (erro) {
-    logger.error("comportamento da instalação: gravação falhou", {
-      detalhe: erro instanceof Error ? erro.message : String(erro),
-    });
+  if (!(await gravarNaLinhaDaInstalacao(createAdminClient(), { ...valores }, atorUserId))) {
     return false;
   }
+  invalidarComportamento();
+  return true;
 }
