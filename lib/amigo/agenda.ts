@@ -139,6 +139,8 @@ async function serviceContext(
     requestId: ctx.requestId,
     contactId,
     connectionId,
+    agentExecution: ctx.amigoAgentExecution,
+    agentToolIds: ctx.amigoAgentToolIds,
     role,
   };
 }

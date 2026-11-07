@@ -13,6 +13,7 @@
  *   - "Publicado vN + Rascunho vM" (formulário mostra a draft)
  */
 import * as React from "react";
+import {AmigoAgentTools} from "./AmigoAgentTools";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -1536,6 +1537,7 @@ export function AgentForm(props: Props) {
                 "Ligue por jornada de trabalho. O agente só consegue fazer o que estiver ligado aqui — e o que estiver ligado, ele fará sozinho durante o atendimento.",
               )}
             </p>
+            <AmigoAgentTools value={form.tool_ids} onChange={(ids)=>patch({tool_ids:ids})} disabled={disabled}/>
             <ToolPicker
               value={form.tool_ids}
               onChange={(ids) => patch({ tool_ids: ids })}

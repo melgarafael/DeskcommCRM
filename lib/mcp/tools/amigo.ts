@@ -74,10 +74,18 @@ function domainContext(ctx: McpContext, contactId?: string): AmigoContext {
     requestId: ctx.requestId,
     role: ctx.role,
     contactId: ctx.contatoDoTurno ?? contactId,
+    agentExecution: Boolean(ctx.contatoDoTurno),
+    agentToolIds: ctx.amigoAgentToolIds,
   };
 }
 function failure(error: unknown) {
   const e = error as { code?: unknown; status?: unknown; uncertain?: unknown } | null;
+  if (e?.code === "amigo_agent_operation_disabled")
+    return {
+      error: "amigo_agent_operation_disabled",
+      mensagem:
+        "Esta operação está desativada para o agente. Peça à equipe para revisar as permissões Amigo.",
+    };
   if (e?.status === 403) return fora;
   if (e?.uncertain) return pending({ data: null, state: "uncertain" });
   // Nunca devolve corpo/mensagem externa: podem conter CPF, telefone ou dados clínicos.

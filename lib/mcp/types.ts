@@ -39,6 +39,8 @@ export interface McpContext {
    * saem do turno.
    */
   contatoDoTurno?: string;
+  /** Ferramentas da versão publicada, atribuídas pelo runtime. */
+  amigoAgentToolIds?: readonly string[];
   organizationId: string;
   role: Role;
   actor: Actor;

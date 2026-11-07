@@ -1,4 +1,5 @@
 import "server-only";
+import { agentMayExecute } from "./agent-permissions";
 import { checkConnection } from "./connection";
 import { randomUUID } from "node:crypto";
 import type { Actor } from "@/lib/api/handlers/types";
@@ -26,6 +27,8 @@ export interface AmigoContext {
   /** Original connection resolved by the server from a persisted appointment, never a request argument. */
   connectionId?: string;
   expectedConnectionId?: string;
+  agentExecution?: boolean;
+  agentToolIds?: readonly string[];
 }
 export interface AmigoResult {
   data: unknown;
@@ -86,6 +89,15 @@ export async function executeAmigo(
       "amigo_not_configured",
       422,
       "Configure o token na área Amigo API antes de usar a integração.",
+    );
+  if (
+    (automated || ctx.agentExecution || ctx.agentToolIds !== undefined) &&
+    !agentMayExecute(connection.agent_operations, operation, ctx.agentToolIds)
+  )
+    throw new AmigoDomainError(
+      "amigo_agent_operation_disabled",
+      403,
+      "Esta operação está desativada para o agente na configuração Amigo.",
     );
   checkConnection(
     connection.id,
@@ -457,6 +469,15 @@ export async function linkAmigoPatient(
       "amigo_not_configured",
       422,
       "Configure o Amigo antes de vincular pacientes.",
+    );
+  if (
+    (ctx.actor.type !== "user" || ctx.agentExecution || ctx.agentToolIds !== undefined) &&
+    !agentMayExecute(connection.agent_operations, "link_patient", ctx.agentToolIds)
+  )
+    throw new AmigoDomainError(
+      "amigo_agent_operation_disabled",
+      403,
+      "O vínculo de pacientes está desativado para o agente.",
     );
   checkConnection(connection.id, ctx.expectedConnectionId ?? ctx.connectionId, true);
   const response = await requestAmigo(connection.token, "patient_get", {

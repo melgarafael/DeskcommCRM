@@ -791,6 +791,7 @@ export const crmBookAppointment: McpToolDefinition<typeof marcarShape> = {
         ctx.supabase,
         {
           organization_id: ctx.organizationId,
+          amigoAgentExecution: Boolean(ctx.contatoDoTurno), amigoAgentToolIds:ctx.amigoAgentToolIds,
           actor,
           requestId: ctx.requestId,
           meetingBooking: ctx.meetingBooking,
@@ -1146,7 +1147,7 @@ export const crmRescheduleAppointment: McpToolDefinition<typeof remarcarShape> =
     semDerrubarOTurno("remarcado", async () => {
       const r = await alterarAgendamentoHandler(
         ctx.supabase,
-        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId },
+        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId, amigoAgentExecution: Boolean(ctx.contatoDoTurno), amigoAgentToolIds:ctx.amigoAgentToolIds },
         {
           id: input.appointment_id,
           starts_at: input.new_starts_at,
@@ -1185,7 +1186,7 @@ export const crmCancelAppointment: McpToolDefinition<typeof cancelarShape> = {
     semDerrubarOTurno("cancelado", async () => {
       const r = await cancelarAgendamentoHandler(
         ctx.supabase,
-        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId },
+        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId, amigoAgentExecution: Boolean(ctx.contatoDoTurno), amigoAgentToolIds:ctx.amigoAgentToolIds },
         { id: input.appointment_id, reason: input.reason },
       );
       return { cancelado: true, compromisso: compromissoComHorarioLocal(r) };
@@ -1216,7 +1217,7 @@ export const crmConfirmAppointment: McpToolDefinition<typeof confirmarShape> = {
     semDerrubarOTurno("confirmado", async () => {
       const r = await alterarAgendamentoHandler(
         ctx.supabase,
-        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId },
+        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId, amigoAgentExecution: Boolean(ctx.contatoDoTurno), amigoAgentToolIds:ctx.amigoAgentToolIds },
         {
           id: input.appointment_id,
           status: "confirmed",
@@ -1252,7 +1253,7 @@ export const crmSetAppointmentOutcome: McpToolDefinition<typeof desfechoShape> =
         href: `/app/agenda?compromisso=${input.appointment_id}` };
       const r = await alterarAgendamentoHandler(
         ctx.supabase,
-        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId },
+        { organization_id: ctx.organizationId, actor: ctx.actor, requestId: ctx.requestId, amigoAgentExecution: Boolean(ctx.contatoDoTurno), amigoAgentToolIds:ctx.amigoAgentToolIds },
         {
           id: input.appointment_id,
           status: input.outcome,

@@ -1,4 +1,9 @@
 "use client";
+import {
+  agentOperationOptions,
+  agentOperations,
+  type AgentOperation,
+} from "@/lib/amigo/agent-permissions";
 import { useCallback, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +32,12 @@ export function AmigoConfig({
   );
   const [months, setMonths] = useState(String(config.months_ahead ?? ""));
   const [reminders, setReminders] = useState(config.reminders_enabled);
+  const [agentSelection, setAgentSelection] = useState<AgentOperation[]>(
+    config.agent_operations ??
+      agentOperations.filter(
+        (id) => !agentOperationOptions.find((option) => option.id === id)?.humanOnly,
+      ),
+  );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -74,6 +85,7 @@ export function AmigoConfig({
         allow_same_day: sameDay ? sameDay === "true" : null,
         months_ahead: months ? Number(months) : null,
         reminders_enabled: reminders,
+        agent_operations: agentSelection,
       });
       onChange(result);
       setToken("");
@@ -174,6 +186,35 @@ export function AmigoConfig({
               void save();
             }}
           >
+            <fieldset className="space-y-3 rounded-lg border p-4">
+              <legend className="px-2 font-semibold">Limite geral da clínica para o Amigo</legend>
+              <p className="text-sm text-muted-foreground">
+                Defina as operações disponíveis para os agentes da clínica. Cada agente tem sua
+                própria seleção. As permissões da equipe e os limites de acesso aos pacientes continuam valendo.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {agentOperationOptions.map((option) => (
+                  <label key={option.id} className="flex items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={!option.humanOnly && agentSelection.includes(option.id)}
+                      disabled={pending || option.humanOnly}
+                      onChange={(e) =>
+                        setAgentSelection((current) =>
+                          e.target.checked
+                            ? [...current, option.id]
+                            : current.filter((id) => id !== option.id),
+                        )
+                      }
+                    />
+                    <span>
+                      {option.label}
+                      {option.humanOnly ? " (somente equipe)" : ""}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <div className="grid gap-4 lg:grid-cols-2">
               <Field label="Token Amigo">
                 <Input

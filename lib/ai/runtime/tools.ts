@@ -477,7 +477,7 @@ function wrapMcpTool(
             if (def.category === "write") await guardServiceEffect();
             return def.handler(
               argsRecord as never,
-              input.contatoDoTurno ? { ...input.ctx, contatoDoTurno: input.contatoDoTurno } : input.ctx,
+              { ...input.ctx, amigoAgentToolIds: input.toolIds, ...(input.contatoDoTurno ? {contatoDoTurno:input.contatoDoTurno} : {}) },
             );
           },
         );

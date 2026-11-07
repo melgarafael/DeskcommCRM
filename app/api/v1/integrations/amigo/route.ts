@@ -1,4 +1,5 @@
 import { checkConnection } from "@/lib/amigo/connection";
+import { agentOperations } from "@/lib/amigo/agent-permissions";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth/require-role";
@@ -20,6 +21,11 @@ const configInput = z.strictObject({
     .nullable()
     .optional(),
   reminders_enabled: z.boolean().optional(),
+  agent_operations: z
+    .array(z.enum(agentOperations))
+    .max(agentOperations.length)
+    .refine((v) => new Set(v).size === v.length)
+    .optional(),
 });
 
 export async function GET() {

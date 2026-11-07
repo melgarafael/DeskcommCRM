@@ -77,6 +77,9 @@ export type Actor =
   | { type: "webhook_source"; id: string; textoEscritoPelaIA?: true; agent_id?: string };
 
 export interface HandlerCtx {
+  /** Contexto confiável de execução do agente para políticas de integração. */
+  amigoAgentExecution?: boolean;
+  amigoAgentToolIds?: readonly string[];
   prospectingDelivery?: ProspectingDelivery;
   agentOperation?: AgentOperationContext;
   meetingDelivery?: MeetingDeliveryContext;

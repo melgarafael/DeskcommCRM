@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptWebhookSecret, decryptWebhookSecret } from "@/lib/webhooks/secrets";
 import { fusoValido } from "@/lib/tempo/fusos";
 import { requestAmigo } from "./transport";
+import { agentOperations, type AgentOperation } from "./agent-permissions";
 import { AmigoDomainError } from "./access";
 
 export interface AmigoSafeConfig {
@@ -17,6 +18,7 @@ export interface AmigoSafeConfig {
   allow_same_day?: boolean;
   months_ahead?: 3 | 6;
   reminders_enabled: boolean;
+  agent_operations?: AgentOperation[];
   last_sync_at: string | null;
   last_error: string | null;
 }
@@ -28,6 +30,7 @@ export interface AmigoConfigInput {
   allow_same_day?: boolean | null;
   months_ahead?: 3 | 6 | null;
   reminders_enabled?: boolean;
+  agent_operations?: AgentOperation[];
 }
 const inputSchema = z
   .object({
@@ -41,10 +44,15 @@ const inputSchema = z
       .nullable()
       .optional(),
     reminders_enabled: z.boolean().optional(),
+    agent_operations: z
+      .array(z.enum(agentOperations))
+      .max(agentOperations.length)
+      .refine((v) => new Set(v).size === v.length)
+      .optional(),
   })
   .strict();
 const SAFE_COLUMNS =
-  "id,active,token_last4,validated_at,default_place_id,timezone,allow_same_day,months_ahead,reminders_enabled,last_sync_at,last_error";
+  "id,active,token_last4,validated_at,default_place_id,timezone,allow_same_day,months_ahead,reminders_enabled,agent_operations,last_sync_at,last_error";
 type ConnectionRow = {
   id: string;
   active: boolean;
@@ -55,6 +63,7 @@ type ConnectionRow = {
   allow_same_day: boolean | null;
   months_ahead: 3 | 6 | null;
   reminders_enabled: boolean;
+  agent_operations: unknown;
   last_sync_at: string | null;
   last_error: string | null;
 };
@@ -83,6 +92,12 @@ function safeConfig(row: ConnectionRow | null): AmigoSafeConfig {
     ...(row.allow_same_day == null ? {} : { allow_same_day: row.allow_same_day }),
     ...(row.months_ahead == null ? {} : { months_ahead: row.months_ahead }),
     reminders_enabled: row.reminders_enabled,
+    ...(row.agent_operations == null
+      ? {}
+      : {
+          agent_operations:
+            z.array(z.enum(agentOperations)).safeParse(row.agent_operations).data ?? [],
+        }),
     last_sync_at: row.last_sync_at,
     // Never forward arbitrary remote errors/PII from storage to a config response.
     last_error: row.last_error

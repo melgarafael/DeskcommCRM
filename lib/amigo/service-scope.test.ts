@@ -143,3 +143,40 @@ describe("escopo do domínio e resultado remoto", () => {
     expect(g.receipt).toHaveBeenCalled();
   });
 });
+
+it("bloqueia a operação desmarcada do agente antes de consultar o Amigo", async () => {
+  g.load.mockResolvedValue({
+    id: "connection",
+    token: "private-token",
+    active: true,
+    timezone: "America/Fortaleza",
+    agent_operations: [],
+  });
+  await expect(executeAmigo(ctx, "patient_get", { patientId: 12 })).rejects.toMatchObject({
+    code: "amigo_agent_operation_disabled",
+  });
+  expect(g.request).not.toHaveBeenCalled();
+});
+
+it("versão do agente desmarcada impede ação mesmo quando o ator é um usuário do operador", async () => {
+  g.load.mockResolvedValue({
+    id: "connection",
+    token: "private-token",
+    active: true,
+    timezone: "America/Fortaleza",
+  });
+  await expect(
+    executeAmigo(
+      {
+        organizationId: "org",
+        actor: { type: "user", id: "u", role: "manager" },
+        role: "manager",
+        requestId: "r",
+        agentToolIds: [],
+      },
+      "events",
+      {},
+    ),
+  ).rejects.toMatchObject({ code: "amigo_agent_operation_disabled" });
+  expect(g.request).not.toHaveBeenCalled();
+});
