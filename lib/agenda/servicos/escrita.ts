@@ -28,6 +28,8 @@ const reciboSchema = z.object({
   service_booking_mode: z.string(), service_capacity_rule: z.string(), service_capacity_limit: z.number().nullable(),
   service_rule_revision: z.coerce.number(), service_publication_mode: z.string(),
   service_requires_confirmation: z.boolean(),
+  /** Lugar reservado e pessoas esperadas (issue #4029); nulos para serviço sem lugar. */
+  service_space_id: z.uuid().nullable().default(null), service_party_size: z.number().int().nullable().default(null),
   meeting_state: z.string(), meeting_url: z.string().nullable(), deduplicated: z.boolean().optional(),
 });
 

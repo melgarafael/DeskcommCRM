@@ -2960,9 +2960,11 @@ export type Database = {
           service_occurrence_id: string | null;
           service_operation_key: string | null;
           service_operation_request: Json | null;
+          service_party_size: number;
           service_publication_mode: string | null;
           service_requires_confirmation: boolean | null;
           service_rule_revision: number | null;
+          service_space_id: string | null;
           source: string;
           starts_at: string;
           starts_at_marked_at: string | null;
@@ -3042,9 +3044,11 @@ export type Database = {
           service_occurrence_id?: string | null;
           service_operation_key?: string | null;
           service_operation_request?: Json | null;
+          service_party_size?: number;
           service_publication_mode?: string | null;
           service_requires_confirmation?: boolean | null;
           service_rule_revision?: number | null;
+          service_space_id?: string | null;
           source?: string;
           starts_at: string;
           starts_at_marked_at?: string | null;
@@ -9011,6 +9015,7 @@ export type Database = {
           id: string;
           name: string;
           organization_id: string;
+          send_when_assigned: boolean;
           status: string;
           surface: string;
           trigger_config: NonNullable<Json>;
@@ -9025,6 +9030,7 @@ export type Database = {
           id?: string;
           name: string;
           organization_id: string;
+          send_when_assigned?: boolean;
           status?: string;
           surface?: string;
           trigger_config?: NonNullable<Json>;
@@ -9038,6 +9044,7 @@ export type Database = {
           id?: string;
           name?: string;
           organization_id?: string;
+          send_when_assigned?: boolean;
           status?: string;
           surface?: string;
           trigger_config?: NonNullable<Json>;
@@ -12693,6 +12700,7 @@ export type Database = {
           agent_setup: NonNullable<Json>;
           agent_setup_revision: number;
           channel_down_since: string | null;
+          channel_session_id: string | null;
           config: Json | null;
           cost_usd: number | null;
           created_at: string;
@@ -12716,6 +12724,7 @@ export type Database = {
           agent_setup?: NonNullable<Json>;
           agent_setup_revision?: number;
           channel_down_since?: string | null;
+          channel_session_id?: string | null;
           config?: Json | null;
           cost_usd?: number | null;
           created_at?: string;
@@ -12738,6 +12747,7 @@ export type Database = {
           agent_setup?: NonNullable<Json>;
           agent_setup_revision?: number;
           channel_down_since?: string | null;
+          channel_session_id?: string | null;
           config?: Json | null;
           cost_usd?: number | null;
           created_at?: string;
@@ -15291,6 +15301,7 @@ export type Database = {
           p_conversation_id: string;
           p_enforce_expected?: boolean;
           p_expected_assignee?: string;
+          p_negocio_so_sem_dono?: boolean;
           p_organization_id: string;
           p_reason: string;
           p_source_job_id?: string | null;
