@@ -12,13 +12,15 @@
  *
  * ─── Por que o 400 é causa própria, e o resto não ──────────────────────────
  *
- * O código cru do transporte (`waha_contacts_all_<status>`, `lib/waha/client.ts`)
- * diz QUAL status o WAHA devolveu; 400 é o único que tem um conserto do lado de
- * quem está na tela e um nome de botão para citar. Os demais (403, 404, 5xx,
- * teto de tempo) continuam na frase da conexão — é o que eles são, e inventar
- * uma causa por status seria adivinhar. O código cru vai para o log junto do
- * motivo escolhido: a frase é para quem clica, o código é para quem investiga.
+ * O transporte lança `ErroDaLeituraDaAgenda` com o status no CAMPO
+ * (`lib/channels/erro-da-leitura-da-agenda.ts`); 400 é o único status com um
+ * conserto do lado de quem está na tela e um nome de botão para citar. Os demais
+ * (403, 404, 5xx, teto de tempo) continuam na frase da conexão — é o que eles
+ * são, e inventar uma causa por status seria adivinhar. O código cru do
+ * transporte (a mensagem do erro) vai para o log junto do motivo escolhido: a
+ * frase é para quem clica, o código é para quem investiga.
  */
+import { ErroDaLeituraDaAgenda } from "@/lib/channels/erro-da-leitura-da-agenda";
 
 /** O que a recusa da agenda quer dizer, e qual botão resolve. */
 export type CodigoDaRecusaDaAgenda = "acervo_desligado" | "transporte";
@@ -43,14 +45,13 @@ export interface RecusaDaAgenda {
 /**
  * Traduz o erro do transporte na recusa certa.
  *
- * Aceita `unknown` porque é isso que o `catch` entrega; o reconhecimento é pelo
- * código cru que `listarAgendaDoAparelho` lança, não pelo texto da mensagem de
- * erro do WAHA (que muda entre builds).
+ * Aceita `unknown` porque é isso que o `catch` entrega. O reconhecimento é pelo
+ * TIPO do erro e pelo status — nunca pelo texto da mensagem, que muda entre
+ * builds e entre versões do engine do transporte (foi uma suposição sobre esse
+ * texto que produziu o defeito da #4102).
  */
 export function recusaDaAgenda(causa: unknown): RecusaDaAgenda {
-  const bruto = causa instanceof Error ? causa.message : String(causa ?? "");
-  // `\b` para não casar `..._4000` nem um status futuro com o mesmo prefixo.
-  if (/waha_contacts_all_400\b/.test(bruto)) {
+  if (causa instanceof ErroDaLeituraDaAgenda && causa.status === 400) {
     return { codigo: "acervo_desligado", mensagem: MSG_ACERVO_DESLIGADO_NA_AGENDA };
   }
   return { codigo: "transporte", mensagem: MSG_TRANSPORTE_SEM_RESPOSTA };

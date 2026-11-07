@@ -149,8 +149,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     //
     // A EXCEÇÃO é o 400 do `GET /api/contacts/all` (#4102): ele não é a conexão
     // fora do ar, é o store da sessão desligado — no NOWEB sem "Guardar o
-    // histórico" o WAHA recusa a leitura da agenda. A frase aponta a opção e a
-    // tela de Conexões; o código cru continua no log, ao lado do motivo.
+    // histórico" o transporte recusa a leitura da agenda. A frase aponta a opção
+    // e a tela de Conexões; o código cru continua no log, ao lado do motivo.
     const recusa = recusaDaAgenda(err);
     logger.warn("sync-agenda: o transporte do canal não respondeu", {
       requestId,

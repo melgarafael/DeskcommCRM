@@ -7,6 +7,7 @@
  */
 import { z } from "zod";
 import { describeWahaServer, type WahaServerCapabilities } from "@/lib/channels/waha-server";
+import { ErroDaLeituraDaAgenda } from "@/lib/channels/erro-da-leitura-da-agenda";
 
 import { logger } from "@/lib/logger";
 import { wahaPayloadSchema, type WahaPayload } from "@/lib/waha/envelope";
@@ -1149,7 +1150,7 @@ export class WahaClient {
     const res = await this.fetchComTeto(url, {
       headers: { "X-Api-Key": this.apiKey, Accept: "application/json" },
     });
-    if (!res.ok) throw new Error(`waha_contacts_all_${res.status}`);
+    if (!res.ok) throw new ErroDaLeituraDaAgenda(res.status, `waha_contacts_all_${res.status}`);
     const bruto: unknown = await res.json().catch(() => null);
     if (!Array.isArray(bruto)) return [];
     const contatos: ContatoDoAparelho[] = [];
