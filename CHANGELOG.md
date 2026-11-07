@@ -8,6 +8,12 @@ Se você roda o DeskcommCRM numa VPS, **leia a seção da versão para a qual es
 
 ## [Não lançado]
 
+### Corrigido
+
+- **O dreno de eventos do kit deixa de rodar duas vezes por minuto** No self-host do kit, o `event-log-drain` era chamado pelo contêiner `scheduler` (de minuto em minuto) **e** pela linha do crontab do host que o `install.sh`/`update.sh` grava — a mesma chamada, no mesmo minuto, duas vezes. Na issue #2235 isso era ~62% das chamadas `service_role` ao PostgREST, com o sistema parado. A linha do host agora é **vigia**: de 15 em 15 minutos e só dispara o dreno quando o contêiner `scheduler` desta instalação não está rodando (`hostgator-setup-kit/drain-watchdog.sh`). Instalação saudável sai de ~60 para ~4 chamadas por hora; scheduler fora do ar continua drenando, com atraso de até 15 minutos. A regra de falha é aberta: se o `docker` não responde, o vigia dispara o dreno em vez de calar. O `update.sh` regrava a linha sozinho. Crédito: @webtecnica (#2235).
+
+- **O `routing-worker` sai antes de consultar o PostgREST quando não há conversa a distribuir** A rota roda de minuto em minuto e fazia duas leituras de `event_log` (a varredura de `processing` preso e a de `pending`) em toda batida, mesmo numa instalação sem nada na fila — 2.880 requisições por dia contra o endpoint nº 1 do egress no relato da #3878. Agora ela pergunta ao portão do piso ocioso (`lib/cron/piso-ocioso.ts`) por um sinal novo, `roteamento`, que é a união exata das duas varreduras e vai pelo pool `pg` (não gasta a cota do PostgREST). Evento novo continua sendo distribuído na batida seguinte ao TTL de 30 s. Crédito: @webtecnica (#3878).
+
 ## [1.103.0] — 2026-11-06
 
 ### Adicionado

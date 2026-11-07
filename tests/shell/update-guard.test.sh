@@ -683,7 +683,11 @@ python3 - "$CASO11/hostgator-setup-kit/_common.sh" <<'PATCH'
 import sys
 p = sys.argv[1]
 s = open(p, encoding="utf-8").read()
-nova = 'local cron_line="* * * * * curl -fsS -H @\\"${cabecalho}\\" \\"${url_drain}\\" >/dev/null 2>&1 ${marcador}"'
+# A linha do kit ATUAL é a do vigia (#2235): o segundo dreno do host deixou de
+# rodar de minuto em minuto e passou a perguntar ao `docker` se o `scheduler`
+# desta instalação está no ar antes de drenar. O veículo da prova (uma linha de
+# cron que o conserto muda) continua o mesmo; o que mudou foi a forma dela.
+nova = 'local cron_line="*/15 * * * * \\"${vigia}\\" \\"${url_drain}\\" \\"${cabecalho}\\" \\"${projeto}\\" ${marcador}"'
 velha = 'local cron_line="* * * * * curl -fsS -H \\"Authorization: Bearer ${secret}\\" \\"${url_drain}\\" >/dev/null 2>&1 ${marcador}"'
 assert s.count(nova) == 1, "a linha nova do cron mudou de forma: %d ocorrência(s)" % s.count(nova)
 s = s.replace(nova, velha)
@@ -707,8 +711,8 @@ git checkout --quiet HEAD~1   # a instalação está no kit ANTIGO
 : > "$FAKE_CRONTAB"
 rm -f "$CASO11/.env.cron-drain"
 bash hostgator-setup-kit/update.sh --to v9.9.9 --skip-backup > "$WORK/saida11.txt" 2>&1
-check "a linha do cron aponta para o arquivo de cabeçalho (conserto aplicado nesta passada)" \
-  grep -q -- "-H @" "$FAKE_CRONTAB"
+check "a linha do cron é a do vigia e leva o arquivo de cabeçalho (conserto aplicado nesta passada)" \
+  bash -c "grep -q 'drain-watchdog.sh' \"$FAKE_CRONTAB\" && grep -q '.env.cron-drain' \"$FAKE_CRONTAB\""
 check "  e o segredo NÃO está escrito na linha do cron" \
   bash -c '! grep -q "Authorization: Bearer" "$FAKE_CRONTAB"'
 # `stat -c` (GNU) PRIMEIRO e `stat -f` (BSD) como reserva, nesta ordem: no Linux,
