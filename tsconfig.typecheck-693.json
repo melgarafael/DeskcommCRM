@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "next-env.d.ts",
+    "lib/routing/decide.ts",
+    "lib/routing/qualificacao-da-ia.ts",
+    "lib/routing/worker.ts",
+    "tests/unit/negocio-acompanha-o-dono-da-conversa.test.ts",
+    "tests/unit/roteamento-espera-a-qualificacao.test.ts",
+    "tests/invariants/roteamento-espera-a-qualificacao.test.ts"
+  ],
+  "exclude": ["node_modules", ".next", "dist", "scripts/**"]
+}
