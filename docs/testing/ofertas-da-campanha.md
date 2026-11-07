@@ -1,4 +1,4 @@
-# Ofertas da campanha — prova preparada
+# Ofertas da campanha — prova
 
 O resgate de #3503 preserva os commits de @paulolimajr77 e a proposta da
 [Spec 29](../specs/29-spec-agente-sabe-o-que-a-campanha-vende.md). Este registro
@@ -18,9 +18,9 @@ site. A ausência vale para a frase nova, não para toda a auditoria legada.
 As capturas físicas e os recibos serão escritos em `evidence/prospeccao-ofertas`
 depois das assertivas. O recibo separa controles e limpeza; a limpeza encerra e
 junta o filho antes de retirar somente os recursos próprios. A organização e o
-agente do seed não são substituídos. O acréscimo de até 45s é planejamento, não
-duração observada: não demonstra margem na parte 1 nem autoriza outro caso.
-Listas, tetos, workers e retries do CI ficam intactos.
+agente do seed não são substituídos. Medido em 07/11/2026 numa instalação nova do
+baseline: o caso inteiro levou 14,1s, contra 5,4 a 6,0s antes desta seção. Listas,
+tetos, workers e retries do CI ficam intactos.
 
 O helper `tests/e2e/helpers/ofertas-no-turno.ts` persiste o texto sintético cru,
 executa o inbound normal (não o preview), adquire somente seu job e chama a tool
@@ -36,6 +36,16 @@ três ofertas e B com N8N, positivos próprios, contatos/conversas cruzados e os
 controles site-only/sem-site. `pgComoSupabase` executa SQL real, mas usa o papel
 postgres: essa prova mede filtros explícitos, não RLS nem transporte PostgREST.
 O invariante antigo de isolamento fica intacto.
+
+## O que foi medido em 07/11/2026
+
+- Invariante A/B em Postgres real: 3 de 3 verdes.
+- Tela, em build de produção sobre banco novo do baseline: as três variantes passam,
+  e a frase nova cabe no modal em 1280px e em 375px, sem rolagem horizontal da página.
+- O que chega ao modelo, com `OPENROUTER_BASE_URL` num receptor HTTP local e o
+  handler real do turno: a linha das ofertas no sistema, o texto cru da pessoa e, na
+  mesma conversa, a saída da ferramenta igual à chamada direta. O receptor responde
+  texto fixo, então isto não mede como um modelo usa as ofertas.
 
 ## Modelo real — NAO_ALCANCAVEL nesta entrega
 

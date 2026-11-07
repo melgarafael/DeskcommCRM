@@ -7,6 +7,7 @@ import { expect, test } from "./helpers/test";
 import { createClient } from "@supabase/supabase-js";
 
 import { carregarEnvLocal, destinoEhLocal } from "../../scripts/lib/env-de-teste";
+import { seedPlatformPlaybook } from "../../lib/agent-engine/agent/playbook-seed";
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 import { iniciarFilhoDoTurno } from "./helpers/filho-do-turno-local";
 import {
@@ -231,6 +232,8 @@ test.describe("Auditoria do site na fila de prospecção (#2703)", () => {
       await page.keyboard.press("Escape");
       await expect(dialogo).toHaveCount(0);
       const { org_id } = JSON.parse(fs.readFileSync(path.join(process.cwd(), ".e2e-creds.json"), "utf8")) as { org_id: string };
+      // O turno exige a camada de plataforma, que numa instalação real o worker semeia ao subir.
+      await seedPlatformPlaybook(pool);
       fixture = await criarFixtureDeOfertas(pool, org_id);
       const abrirAuditoriaPropria = async () => {
         await page.reload();

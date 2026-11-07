@@ -177,8 +177,8 @@ if (indice >= 0) {
       await pool.end();
     }
   };
-  void executar().catch(() => {
-    process.stderr.write("A prova de ofertas falhou; o recibo não foi promovido a PASS.\n");
+  void executar().catch((erro: unknown) => {
+    process.stderr.write(`${erro instanceof Error ? erro.message : "Falha na prova de ofertas."}\n`);
     process.exitCode = 1;
   });
 }
