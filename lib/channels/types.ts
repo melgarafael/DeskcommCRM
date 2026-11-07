@@ -16,7 +16,19 @@ import type { DefeitoDoNumero } from "./defeito-do-numero";
 // e o lint de canal reprovaria o caminho.
 export type { OutboundMedia, ContatoDoAparelho };
 
-export type ChannelProvider = "waha" | "meta_cloud" | "zernio" | "zernio_social" | "wacalls" | "datafy";
+export type ChannelProvider =
+  | "waha"
+  | "meta_cloud"
+  | "zernio"
+  | "zernio_social"
+  | "wacalls"
+  | "datafy"
+  /**
+   * Chat dos anúncios da OLX (issue #2927). Canal SEM telefone: o endereço é o
+   * `chatId` que a OLX inventa para a thread de um anúncio, então ele NÃO entra
+   * em `PROVIDERS_DE_TELEFONE` — quem disca um número não alcança ninguém aqui.
+   */
+  | "olx";
 
 /**
  * Os providers que transportam MENSAGEM — o subconjunto sobre o qual a matriz

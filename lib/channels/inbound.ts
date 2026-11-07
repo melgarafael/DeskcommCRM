@@ -20,7 +20,12 @@ import { CHANNEL_PROVIDER_SOCIAL } from "./capabilities";
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { CANAIS_QUE_RESPONDEM_ANTES, CHANNEL_PROVIDER_DATAFY, CHANNEL_PROVIDER_ZERNIO } from "./capabilities";
+import {
+  CANAIS_QUE_RESPONDEM_ANTES,
+  CHANNEL_PROVIDER_DATAFY,
+  CHANNEL_PROVIDER_OLX,
+  CHANNEL_PROVIDER_ZERNIO,
+} from "./capabilities";
 import { canalGraphParceiroLigado } from "./graph-parceiro/credentials";
 import { graphPartnerRefsDaSessao } from "./graph-parceiro/session";
 import {
@@ -30,6 +35,8 @@ import {
 } from "./graph-parceiro/webhook";
 import { sincronizarSaudeDaConexao } from "./health";
 import { lerEnvelopeMeta } from "./meta/envelope";
+import { ingestOlxInbound } from "./olx/ingest";
+import { lerEnvelopeOlx, parseOlxInbound } from "./olx/webhook";
 import { ingestMetaAppContactSync, ingestMetaEcho, ingestMetaInbound } from "./meta/ingest";
 import { parseMetaWebhook } from "./meta/webhook";
 import { samePhone } from "./phone-variants";
@@ -91,11 +98,36 @@ export function acceptsInboundWebhook(provider: string): boolean {
   // O canal Datafy é opcional da instalação: desligado, a entrada dele não
   // existe — nem para quem tem o token de uma sessão gravada antes.
   if (provider === CHANNEL_PROVIDER_DATAFY) return canalGraphParceiroLigado();
+  // A OLX é o único canal cujo recebimento não depende de credencial nossa: o
+  // webhook é configurado do lado DELA (`POST /autoservice/v1/chat` com a URL
+  // desta rota), então a entrada existe desde que a sessão exista.
+  if (provider === CHANNEL_PROVIDER_OLX) return true;
   return provider === CHANNEL_PROVIDER_ZERNIO || provider === CHANNEL_PROVIDER_SOCIAL;
 }
 
 /** Authenticate before archiving raw payloads. The handler repeats this guard for non-HTTP callers. */
 export function verifyInboundWebhookSignature(provider: string, raw: string, headers: Headers, secret: string | null): boolean {
+  /**
+   * ─── O canal que NÃO assina: OLX (#2927) ────────────────────────────────
+   *
+   * A documentação do webhook do chat (`developers.olx.com.br/chat/receive_message.html`)
+   * não define header de assinatura, algoritmo nem corpo assinado: o corpo é
+   * JSON puro e a única proteção que a OLX oferece é "restringir por IP" — que
+   * este repo PROÍBE usar como autorização (`lib/http/ip-do-cliente.ts`: os
+   * headers de origem "podem ser forjados ... nada no produto pode DECIDIR com
+   * base neste valor — nem autorizar, nem bloquear").
+   *
+   * Então a credencial deste canal é o TOKEN DO CAMINHO: 32+ caracteres por
+   * sessão, comparado contra `channel_sessions.webhook_path_token` — a mesma
+   * coisa que a rota já faz antes de chegar aqui, e é exatamente o valor que a
+   * OLX guarda quando o integrador registra a URL. Quem não tem o token não tem
+   * a URL; e quem tem a URL é, por construção, a conta daquela sessão.
+   *
+   * Isto NÃO é o "verifica o que der e processa assim mesmo" que a rota do canal
+   * por QR carregou como dívida: ali havia assinatura disponível e ignorada;
+   * aqui não existe assinatura para conferir, e o limite fica declarado no PR.
+   */
+  if (provider === CHANNEL_PROVIDER_OLX) return acceptsInboundWebhook(provider);
   if (!acceptsInboundWebhook(provider) || !secret || secret.length < MIN_SECRET_LEN) return false;
   // Cada canal assina do seu jeito; o esquema do Datafy está em `graph-parceiro/webhook`.
   if (provider === CHANNEL_PROVIDER_DATAFY) {
@@ -138,6 +170,16 @@ export async function inboundPayloadBelongsToSession(admin: SupabaseClient, inpu
   if (input.session.provider === CHANNEL_PROVIDER_SOCIAL) {
     return socialPayloadBelongsToSession(admin, input.session.organization_id, input.session.id, input.rawBody);
   }
+  /**
+   * A OLX não manda identificador de conta no corpo do webhook (os dez campos
+   * documentados são do CHAT, não do vendedor) — diferente do provedor
+   * intermediado, cujo webhook é por ESPAÇO DE TRABALHO e por isso precisava
+   * desta guarda. Aqui o vínculo conta × evento é o próprio destino: a OLX
+   * entrega no webhook configurado por UMA conta, e a URL é o token daquela
+   * sessão. Sem campo para comparar, inventar uma comparação seria pior que
+   * declarar a ausência dela.
+   */
+  if (input.session.provider === CHANNEL_PROVIDER_OLX) return true;
   if (input.session.provider === CHANNEL_PROVIDER_ZERNIO) {
     const { evento, conta: contaDoEvento } = cabecalhoDoEventoZernio(input.rawBody);
     if (contaDoEvento === null) return !EVENTOS_QUE_SEMPRE_TRAZEM_CONTA.some((p) => evento?.startsWith(p));
@@ -199,6 +241,8 @@ export async function handleInboundWebhook(
       return zernioInbound(admin, input);
     case CHANNEL_PROVIDER_DATAFY:
       return datafyInbound(admin, input);
+    case CHANNEL_PROVIDER_OLX:
+      return olxInbound(admin, input);
     default:
       // Token de um canal que não entra por aqui. É configuração trocada, não
       // ataque — mas processar seria ler o payload com o parser errado.
@@ -563,4 +607,66 @@ async function datafyInbound(
   }
 
   return { ok: true, body: { received: eventos.length, outcomes: desfechos } };
+}
+
+
+/**
+ * Entrada do chat da OLX (#2927).
+ *
+ * O contrato do fio é conferido ANTES de qualquer leitura, como nos outros
+ * canais: `lerEnvelopeOlx` separa "não é JSON" de "é JSON com campo errado" e
+ * NOMEIA o campo, nunca o valor (o corpo traz nome, e-mail e telefone do
+ * comprador).
+ *
+ * Duas coisas respondem 200 sem gravar, e as duas são de propósito:
+ *
+ *   - `origin: "seller"` e `senderType: "system"` — eco do nosso próprio envio e
+ *     aviso da plataforma. Não são mensagem de comprador; ingeri-los criaria
+ *     bolha duplicada do lado do cliente;
+ *   - falha de escrita volta como `{status:"failed"}` DENTRO de um 200, como nos
+ *     outros canais: a mensagem boa já pode ter entrado (a idempotência é do
+ *     banco), e um 500 faria a OLX reentregar para sempre um evento que talvez
+ *     nunca passe. O desfecho fica no arquivo do webhook, onde se investiga.
+ */
+async function olxInbound(
+  admin: SupabaseClient,
+  input: InboundWebhookInput,
+): Promise<InboundWebhookOutcome> {
+  if (!verifyInboundWebhookSignature(input.session.provider, input.rawBody, input.headers, input.secret)) {
+    return { ok: false, code: "unauthorized", message: "bad_signature" };
+  }
+
+  const leitura = lerEnvelopeOlx(input.rawBody);
+  if (!leitura.ok) {
+    if (leitura.motivo === "json_invalido") {
+      return { ok: false, code: "invalid_json", message: "invalid_json" };
+    }
+    return {
+      ok: false,
+      code: "contrato_violado",
+      message: `payload fora do contrato do canal: ${leitura.campos.join(", ")}`,
+    };
+  }
+
+  const mensagem = parseOlxInbound(leitura.envelope);
+  if (!mensagem) {
+    return { ok: true, body: { status: "ignored", reason: "evento_sem_interesse" } };
+  }
+
+  const r = await ingestOlxInbound(admin, {
+    organizationId: input.session.organization_id,
+    channelSessionId: input.session.id,
+    mensagem,
+  });
+
+  if (r.status === "failed") {
+    return { ok: true, body: { status: "failed", reason: r.reason } };
+  }
+  if (r.status === "duplicate") {
+    return { ok: true, body: { status: "duplicate", messageId: mensagem.messageId } };
+  }
+  return {
+    ok: true,
+    body: { status: "ingested", message_id: r.messageId, conversation_id: r.conversationId },
+  };
 }

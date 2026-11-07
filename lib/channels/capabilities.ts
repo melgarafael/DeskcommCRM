@@ -134,6 +134,30 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
   },
+  // Chat dos anúncios da OLX (issue #2927). Perfil medido na documentação do
+  // canal (`developers.olx.com.br/chat/`), não em intuição:
+  //
+  //  - `freeformOutsideWindow: true`. Não existe janela de 24h nem definição
+  //    aprovada no chat da OLX: o vendedor responde quando quiser, e é o único
+  //    caminho de envio que o canal tem (`POST /autoservice/v1/chat/send`).
+  //  - `banRisk: true` NÃO é medida — é o lado barato do erro enquanto não há
+  //    volume medido: armar throttle/warm-up deixa o envio mais lento, e o
+  //    contrário deixaria o número exposto a um limite que ninguém conhece.
+  //  - `voiceNote: "server-convert"` é INÓCUO aqui: o corpo do envio só tem
+  //    `textMessage`, e o `send` recusa qualquer tipo que não seja texto.
+  olx: {
+    freeformOutsideWindow: true,
+    requiresTemplates: false,
+    canManageTemplates: false,
+    banRisk: true,
+    minIntervalMs: null,
+    voiceNote: "server-convert",
+    groups: "none",
+    costPerMessage: false,
+    alteraMensagemEnviada: false,
+    transmissao: false,
+    phonebook: false,
+  },
 };
 
 /**
@@ -165,6 +189,8 @@ export const CHANNEL_PROVIDER_ZERNIO: ChannelProvider = "zernio";
 export const CANAIS_QUE_RESPONDEM_ANTES: readonly string[] = [CHANNEL_PROVIDER_ZERNIO];
 /** Parceiro que espelha a Cloud API — canal opcional da instalação, desligado por padrão. */
 export const CHANNEL_PROVIDER_DATAFY: ChannelProvider = "datafy";
+/** Chat dos anúncios da OLX (#2927): endereço é `chatId`, nunca telefone. */
+export const CHANNEL_PROVIDER_OLX: ChannelProvider = "olx";
 /** Chamada de voz WhatsApp (spec 18). Não transporta mensagem — ver abaixo. */
 export const CHANNEL_PROVIDER_WACALLS: ChannelProvider = "wacalls";
 
@@ -198,6 +224,9 @@ export const PROVIDERS_DE_MENSAGEM = [
   "zernio",
   "zernio_social",
   "datafy",
+  // Ordem importa para quem DERIVA da lista (testes e seletores pegam o
+  // primeiro que não disca telefone): canal novo entra no FIM.
+  "olx",
 ] as const satisfies readonly ProviderDeMensagem[];
 
 /**
