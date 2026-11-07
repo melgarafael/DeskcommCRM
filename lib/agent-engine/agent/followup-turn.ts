@@ -86,6 +86,7 @@ import {
 } from './followup-flow-classify';
 import { consultarJevNoFollowup } from '@/lib/ai/decisao/followup';
 import { enviarComSaidaConfiguravel } from "@/lib/prospecting/saida-configuravel";
+import { carregarBlocoDoNegocio } from './negocio-do-followup';
 
 
 const DAY_MS = 86_400_000;
@@ -253,6 +254,46 @@ function buildFollowupOpeningMessage(
     'Houve avanço REAL no funil neste turno? Marque-o com update_lead_state (só o próximo estágio válido).',
     'Aprendeu algo durável sobre o lead? Salve com save_lead_note (a headline entra no índice de memória).',
   ].join('\n');
+}
+
+/**
+ * Abertura do passo de IA de um FLUXO de follow-up. PURA, exportada para teste.
+ *
+ * Não reusa o cabeçalho de `buildFollowupOpeningMessage` ("você havia combinado
+ * retornar a este lead") porque, num fluxo, ele é FALSO na maioria dos casos: o
+ * passo sai porque a EQUIPE armou o fluxo (card entrou numa etapa, silêncio,
+ * acionamento manual), não por uma promessa do agente. Medido: num fluxo de
+ * boas-vindas por etapa, com o contato sem conversa nenhuma, o modelo leu a
+ * promessa inventada e escreveu "aquela obra que conversamos".
+ *
+ * A ordem: o ritual (histórico, estado), o NEGÓCIO e só então a orientação do
+ * passo — a instrução do dono do fluxo é a última palavra.
+ */
+export function buildFlowStepOpeningMessage(
+  temporalBlock: string,
+  ritual: string[],
+  negocioBlock: string,
+  promptHint: string | undefined,
+): string {
+  const partes = [
+    'Passo de um fluxo de follow-up: a equipe configurou esta mensagem para sair agora. Não presuma',
+    'conversa nem combinado que não estejam no histórico abaixo — se o histórico está vazio, este é o primeiro contato.',
+    '',
+    '## Contexto temporal do follow-up',
+    temporalBlock,
+    '',
+    ...ritual,
+    '',
+  ];
+  if (negocioBlock !== '') partes.push(negocioBlock, '');
+  partes.push(
+    'Escreva a mensagem usando a tool send_message — NUNCA escreva a resposta como texto direto',
+    '(texto fora de tool é descartado pelo runtime). Use get_lead_context se precisar reler o contexto.',
+    'Houve avanço REAL no funil neste turno? Marque-o com update_lead_state (só o próximo estágio válido).',
+    'Aprendeu algo durável sobre o lead? Salve com save_lead_note (a headline entra no índice de memória).',
+  );
+  if (promptHint) partes.push('', '## Orientação do passo do fluxo', promptHint);
+  return partes.join('\n');
 }
 
 /** Última mensagem inbound do contexto (a "última coisa que o lead disse" — Z). */
@@ -879,14 +920,20 @@ async function runFlowDrivenTurn(
       });
       return;
     }
+    // O card do negócio entra no turno (ver `negocio-do-followup.ts`). Lido
+    // ANTES do turno porque `buildOpening` é síncrono; falha vira bloco vazio.
+    const negocioBlock = await carregarBlocoDoNegocio(pool, target.tenantId, target.leadId, runLog);
     await runAgentTurn(deps, job, pool, ctx, {
       channelSessionId: target.channelSessionId,
       conversationId: target.conversationId,
       buildOpening: ({ previous, leadState, context, notesIndexBlock, projeta }) => {
         const temporalBlock = buildTemporalBlock({ now: clock(), lastInbound: lastInboundOf(context) });
-        const opening = buildFollowupOpeningMessage(temporalBlock, previous, leadState, context, notesIndexBlock, projeta);
-        if (!input.promptHint) return opening;
-        return `${opening}\n\n## Orientação do passo do fluxo\n${input.promptHint}`;
+        return buildFlowStepOpeningMessage(
+          temporalBlock,
+          ritualBlocks(previous, leadState, context, notesIndexBlock, projeta),
+          negocioBlock,
+          input.promptHint,
+        );
       },
     });
     const result = await resultadoDoEnvioDoFollowup(pool,job.organization_id,job.id);
