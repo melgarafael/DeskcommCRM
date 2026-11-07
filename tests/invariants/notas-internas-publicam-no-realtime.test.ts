@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
  *
  * Duas condições, e as duas são necessárias: a tabela estar na publicação
  * `supabase_realtime` (0478) e o registro antigo carregar a linha inteira, senão
- * o `filter: conversation_id=eq.<id>` de `hooks/inbox/useConversationNotes.ts:40`
+ * o `filter: conversation_id=eq.<id>` de `hooks/inbox/useConversationNotes.ts:43`
  * não casa no DELETE (9247). As duas falham do mesmo jeito: o canal responde
  * `SUBSCRIBED` e a tela simplesmente não muda — sem erro em lugar nenhum.
  *

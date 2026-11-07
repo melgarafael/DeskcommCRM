@@ -71839,7 +71839,7 @@ revoke execute on function public.fn_tornar_telefone_principal(uuid, uuid, uuid)
 grant execute on function public.fn_tornar_telefone_principal(uuid, uuid, uuid) to authenticated, service_role;
 
 -- ---- a nota apagada chega no canal da conversa (migration 9247) ----
--- manifest: **A nota apagada some da tela de quem não apagou (#1863, F1).** a publicação veio na 0478 (bloco "notas internas: realtime + visibilidade herdada da conversa", mais abaixo neste arquivo); o que faltava é o DELETE — com `replica identity` de fábrica o payload traz só a chave primária e o canal de `hooks/inbox/useConversationNotes.ts:40`, que filtra por `conversation_id`, descarta o evento antes de entregar. Com `full`, o registro antigo carrega a linha inteira, o filtro casa e o hook invalida a query sem recarregar.
+-- manifest: **A nota apagada some da tela de quem não apagou (#1863, F1).** a publicação veio na 0478 (bloco "notas internas: realtime + visibilidade herdada da conversa", mais abaixo neste arquivo); o que faltava é o DELETE — com `replica identity` de fábrica o payload traz só a chave primária e o canal de `hooks/inbox/useConversationNotes.ts:43`, que filtra por `conversation_id`, descarta o evento antes de entregar. Com `full`, o registro antigo carrega a linha inteira, o filtro casa e o hook invalida a query sem recarregar.
 --
 -- Cláusula declarativa: reaplicar o mesmo valor é no-op, então o `update.sh`
 -- não precisa de guarda. Sem coluna nova, sem backfill.
