@@ -94,6 +94,12 @@ export interface GatilhoCasoDb {
   carregaPointersDeCaso(orgId: string): Promise<PointerDeCaso[]>;
   /** Fallback: o payload do trigger já traz `contact_id`; isto só roda se faltar. */
   carregaContatoDaConversa(orgId: string, conversationId: string): Promise<string | null>;
+  /**
+   * Canal (`conversations.channel_session_id`) da conversa que abriu o caso —
+   * o número em que o follow-up vai falar (#3852). Opcional: falso antigo sem
+   * o método = canal desconhecido, e a escolha do agente é a de antes.
+   */
+  carregaCanalDaConversa?(orgId: string, conversationId: string): Promise<string | null>;
   carregaNoDeGatilho(orgId: string, versionId: string): Promise<NoDeGatilho | null>;
   insereEnrollment(input: {
     source_case_id?: string | null;
@@ -252,6 +258,14 @@ export async function aplicaGatilhoDeCaso(
     return summary;
   }
 
+  // #3852: o agente é o do NÚMERO em que a conversa acontece. Com dois
+  // números, cada um com o seu, o caso aberto no número B não pode ser
+  // inscrito com a persona do agente do número A. Lido UMA vez: a conversa é
+  // a mesma para todos os pointers deste evento.
+  const canal = conversationId
+    ? ((await deps.db.carregaCanalDaConversa?.(row.organization_id, conversationId)) ?? null)
+    : null;
+
   for (const pointer of armados) {
     const noDeGatilho = await deps.db.carregaNoDeGatilho(row.organization_id, pointer.active_version_id);
     if (!noDeGatilho) continue;
@@ -260,6 +274,7 @@ export async function aplicaGatilhoDeCaso(
       row.organization_id,
       pointer.id,
       noDeGatilho.pedeAgente,
+      canal,
     );
     if (barrado) {
       summary.pointers_barrados_pelo_gate++;
@@ -353,6 +368,18 @@ export function createSupabaseGatilhoCasoDb(admin: SupabaseClient): GatilhoCasoD
         .maybeSingle();
       if (error) throw new Error(error.message);
       return data?.contact_id ?? null;
+    },
+
+    async carregaCanalDaConversa(orgId, conversationId) {
+      const { data, error } = await admin
+        .from("conversations")
+        .select("channel_session_id")
+        .eq("id", conversationId)
+        .eq("organization_id", orgId)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      const sessao = (data as { channel_session_id?: string | null } | null)?.channel_session_id;
+      return typeof sessao === "string" && sessao !== "" ? sessao : null;
     },
 
     async carregaNoDeGatilho(orgId, versionId) {
