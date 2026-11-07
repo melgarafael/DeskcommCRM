@@ -132,6 +132,10 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Comandas",
     oQueFaz: "A comanda do atendimento: itens, forma de pagamento, comissões e fidelidade.",
   },
+  lista_de_espera: {
+    nome: "Lista de espera da agenda",
+    oQueFaz: "Quando um horário abre, a vaga é oferecida a uma pessoa por vez, entre quem aceitou ser avisado.",
+  },
   cobranca: {
     nome: "Cobrança dos seus clientes",
     oQueFaz: "Você cria planos e cobra as empresas desta instalação, com teste grátis e suspensão de quem não paga.",

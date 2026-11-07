@@ -725,6 +725,12 @@ export const AUDIT_ACTIONS = [
   // negativa de um colega não teria explicação na trilha — nem como responder
   // "quando foi que desligaram isso?".
   "agenda.colegas_podem_mexer_alterado",
+  // Lista de espera (módulo opcional, doc 208): os prazos da organização, a
+  // inscrição, a resposta registrada pela equipe e a oferta que venceu.
+  "agenda.lista_de_espera_configurada",
+  "agenda.lista_de_espera_inscrito",
+  "agenda.lista_de_espera_respondida",
+  "agenda.encaixe_vencido",
   // A opção que faz o Meet da reunião nascer JÁ ABERTO (issue #2063, migration
   // 0648). Risco é parte do desenho — quem tiver o link entra sem pedir —, então
   // "quando foi que ligaram isso?" é a primeira pergunta depois de um incidente.
@@ -1441,6 +1447,14 @@ export const AUDIT_ACTIONS = [
   // O admin mudou o limite em tokens acima do qual a tela Memória da IA avisa
   // que a memória pesa (`settings.memoria_da_ia`); metadata com o anterior e o novo.
   "ai.org_memory_weight_limit_updated",
+  // Telefones extras da ficha (Spec 31, B2). Código próprio, e não
+  // `contact.phone_added`, que é o evento de "a ficha vazia ganhou o principal"
+  // e tem consumidores próprios. O metadata leva ids, tipo e WhatsApp, nunca o
+  // número: a trilha é append-only e a cascata de LGPD não a alcança.
+  "contact.extra_phone_added",
+  "contact.extra_phone_updated",
+  "contact.extra_phone_removed",
+  "contact.primary_phone_changed",
   // Aviso escrito pelo admin da empresa e empurrado para a equipe (#1418). O
   // metadata leva só a janela de publicação; título e corpo ficam em `avisos`.
   "aviso.created",
