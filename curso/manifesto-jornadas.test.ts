@@ -89,7 +89,10 @@ describe("recaptura de jornadas com manifesto anterior", () => {
     const montagem = f.cli("montar.ts");
     expect(montagem.status).toBe(1);
     expect(montagem.stderr).toMatch(/pendente.*demo-clinicas-primeira-consulta/s);
-    expect(readFileSync(path.join(f.saida, "index.html"))).toEqual(indiceAnterior);
+    // `Buffer.equals`, e não `toEqual`: a igualdade genérica do vitest anda byte a byte, a ~4 s por MB (medido), e o
+    // índice da montagem inteira tem 1,7 MB — a comparação era ~8 s dos ~12 s deste caso, mais que as três subidas do
+    // CLI somadas (~3 s). É a mesma igualdade, byte a byte.
+    expect(readFileSync(path.join(f.saida, "index.html")).equals(indiceAnterior), "o índice anterior mudou").toBe(true);
     // O recorte sem módulos exigidos pela clínica continua utilizável e omite a jornada pendente.
     const parcial = f.cli("montar.ts", "inbox");
     expect(parcial.status).toBe(0);
@@ -112,6 +115,29 @@ describe("recaptura de jornadas com manifesto anterior", () => {
     expect(montagem.status).toBe(1);
     expect(montagem.stderr).toMatch(/falha nos módulos selecionados/);
     expect(readFileSync(path.join(f.saida, "index.html"), "utf8")).toBe("índice anterior");
+  });
+
+  it("a montagem recusa chave bruta pendente com foto anterior e preserva o recorte não afetado", () => {
+    const f = fixture();
+    const chave = "agenda--conhecendo-a-agenda--p1";
+    expect(f.manifesto.capturas[chave]).toBeDefined();
+    const foto = path.join(f.saida, f.manifesto.capturas[chave]!.foto);
+    const fotoAnterior = readFileSync(foto);
+    expect(f.cli("montar.ts", "agenda").status).toBe(0);
+    const indiceAnterior = readFileSync(path.join(f.saida, "index.html"));
+    f.manifesto.falhas = [chave]; f.salvar(f.manifesto);
+    const montagem = f.cli("montar.ts", "agenda");
+    expect(montagem.status).toBe(1);
+    expect(montagem.stderr).toMatch(/capturas com falha nos módulos selecionados: agenda/);
+    expect(readFileSync(foto)).toEqual(fotoAnterior);
+    expect(readFileSync(path.join(f.saida, "index.html")).equals(indiceAnterior), "o índice anterior mudou").toBe(true);
+    const outroRecorte = f.cli("montar.ts", "inbox");
+    expect(outroRecorte.status).toBe(0);
+    const html = readFileSync(path.join(f.saida, "index.html"), "utf8");
+    const dados = JSON.parse(html.match(/<script[^>]+id="dados"[^>]*>(.*?)<\/script>/s)![1]!);
+    expect(dados.modulos.map((m: { id: string }) => m.id)).toEqual(["inbox"]);
+    expect(dados.capturas).not.toHaveProperty(chave);
+    expect(lerManifesto(f.arquivo).falhas).toEqual([chave]);
   });
 
   it("só libera a cena concluída; a falha seguinte bloqueia a montagem até a recaptura terminar", async () => {

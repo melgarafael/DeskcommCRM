@@ -23,7 +23,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 
-import { test, expect, type BrowserContext } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type BrowserContext } from "./helpers/test";
 import { extractAuthConfirmLink, seguirLinkDeAcesso, uniqueEmail, waitForEmail } from "./helpers/auth";
 import {
   assinaturaDe, contarAuditoria, criarPessoa, db, diasAtras, drenarAte, entrar, estadoDaOrg, fotografarChaves,
@@ -80,7 +80,8 @@ test("[P0] primeira cobrança: conectar, assinar, atrasar, suspender e voltar so
     // O switch é otimista; navegar antes da resposta aborta a Server Action.
     const respostaDoSalvamento = await salvamento;
     expect(respostaDoSalvamento.status()).toBe(200);
-    expect(await respostaDoSalvamento.finished()).toBeNull();
+    // A transição reabilita o controle ao receber o resultado; o poll abaixo confirma a gravação.
+    await expect(interruptor).toBeEnabled();
     await expect.poll(async () => {
       const gravada = await db.from("platform_config").select("valor").eq("chave", "MODULO_COBRANCA").maybeSingle();
       expect(gravada.error).toBeNull();
@@ -133,6 +134,7 @@ test("[P0] primeira cobrança: conectar, assinar, atrasar, suspender e voltar so
 
     // ── 3. O cliente se cadastra e nasce em teste grátis ────────────────────
     const ctxB = await browser.newContext();
+    ctxB.on("page", esperarARevelacaoNasCargas);
     contextos.push(ctxB);
     const pB = await ctxB.newPage();
     pB.setDefaultTimeout(20_000);

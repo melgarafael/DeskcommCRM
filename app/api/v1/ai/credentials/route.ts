@@ -18,6 +18,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { guardarCredencial, MENSAGEM_ASSINATURA_SO_PELO_LOGIN } from "@/lib/ai/credenciais/guardar";
 import { IDS_COM_CHAVE } from "@/lib/ai/pontos/provedores";
+import { IDS_DE_SERVICO } from "@/lib/ai/pontos/provedores-de-servico";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -33,7 +34,12 @@ const createSchema = z.object({
   // recusava com 422 — o operador via a tela de Provedores oferecer OpenRouter
   // e não tinha onde cadastrar a chave. A UNIÃO, e não só quem conversa: a
   // chave do Jev (que só decide) se cadastra por aqui também.
-  provider: z.enum(IDS_COM_CHAVE),
+  //
+  // `IDS_DE_SERVICO` entra na MESMA rota (não um endpoint próprio): a
+  // credencial é a mesma tabela, a mesma cifra, o mesmo audit — só o
+  // vocabulário de quem pode ser escolhido é separado (ver o cabeçalho de
+  // `provedores-de-servico.ts`).
+  provider: z.enum([...IDS_COM_CHAVE, ...IDS_DE_SERVICO]),
   label: z.string().trim().min(1).max(80),
   api_key: z.string().trim().min(8).max(2048),
   /**

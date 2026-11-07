@@ -36,7 +36,7 @@
             },
             {
               "alvo": {
-                "texto": "Vale para todas as empresas hospedadas aqui"
+                "css": "h1 + p"
               },
               "rotulo": "Vale para todas as empresas",
               "tipo": "caixa"

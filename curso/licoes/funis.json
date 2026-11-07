@@ -237,7 +237,8 @@
           "destaques": [
             {
               "alvo": {
-                "css": "[aria-label='Responsável: Ana Ribeiro']",
+                "css": "[title='Ana Ribeiro']",
+                "literal": true,
                 "dentro": {
                   "role": "group",
                   "nome": "Lead: Avaliação de fisioterapia — Roberto Almeida",
@@ -249,7 +250,8 @@
             },
             {
               "alvo": {
-                "css": "[aria-label^='Responsável: Bia']",
+                "css": "[title^='Bia']",
+                "literal": true,
                 "dentro": {
                   "role": "group",
                   "nome": "Lead: Pacote de pilates — Camila Rocha",
@@ -263,9 +265,7 @@
               "alvo": {
                 "css": "[aria-label='Sem responsável']",
                 "dentro": {
-                  "role": "group",
-                  "nome": "Lead: Primeira consulta nutricional — Mariana",
-                  "exato": true
+                  "css": "[role='group']:has(button:text-is('Primeira consulta nutricional — Mariana'))"
                 }
               },
               "rotulo": "Ninguém cuidando",
@@ -847,7 +847,7 @@
         {
           "id": "p3",
           "titulo": "Preencha o negócio",
-          "texto": "Ao escolher o contato, o título vem com o nome dele; troque por algo que diga o que está sendo negociado. Em \"Etapa\" já vem a primeira etapa do funil. Preencha o \"Valor\" e, se quiser, a data de \"Fechamento previsto\" e etiquetas em \"Tags\", separadas por vírgula.",
+          "texto": "Ao escolher o contato, o título vem com o nome dele; troque por algo que diga o que está sendo negociado. Em \"Etapa\" já vem a primeira etapa do funil. Preencha o \"Valor\" e, se quiser, a data de \"Fechamento previsto\" e etiquetas em \"Tags\", separadas por vírgula. Se quiser falar com o cliente logo depois, \"Salvar e iniciar conversa\" cria o negócio e abre a conversa com o contato.",
           "antes": [
             {
               "acao": "click",
@@ -905,6 +905,15 @@
                 "exato": true
               },
               "rotulo": "Etiquetas",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": {
+                "role": "button",
+                "nome": "Salvar e iniciar conversa",
+                "exato": true
+              },
+              "rotulo": "Criar e já abrir a conversa",
               "tipo": "caixa"
             }
           ],

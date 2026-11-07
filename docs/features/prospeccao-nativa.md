@@ -1,8 +1,57 @@
 # Prospecção nativa
 
-Em **CRM → Prospecção**, um administrador configura a chave Apify, pesquisa empresas no Brasil por segmento/região e consulta dados comerciais. O adaptador usa o mesmo Actor Google Maps dos fluxos existentes. Não depende de n8n nem grava em Airtable.
+Em **CRM → Prospecção**, um administrador configura a chave Apify, pesquisa empresas por segmento/região e consulta dados comerciais. O adaptador usa o mesmo Actor Google Maps dos fluxos existentes. Não depende de n8n nem grava em Airtable.
+
+**Idioma.** A busca e o agente criado pela campanha seguem o idioma da organização (`organizations.locale`, `lib/prospecting/idioma.ts`). Em português do Brasil nada muda: a busca vai com `language: "pt-BR"` e país Brasil. Em espanhol, a busca pede os dados em espanhol (o rubro deixa de chegar como "Concessionária") e não prende o país no Brasil — quem diz onde buscar é a localização digitada ("Montevideo, Uruguay"); e o agente criado por **Configurar por conversa** nasce instruído a conversar em espanhol. Agente criado antes desta mudança continua com o prompt que tinha: ajuste no editor do agente, se for o caso.
 
 A busca é paga pelo saldo da conta Apify: limite de até 100 empresas e teto de US$ 0,50 a US$ 10 por execução. A quantidade pode ser menor. O enriquecimento consulta e-mails comerciais e redes do site, sem buscar pessoas físicas ou decisores. Chave cifrada por `fn_encrypt_oauth`, indisponível aos papéis do navegador. Não existe chave obrigatória no `.env`.
+
+### Buscar pela Scavio em vez da Apify
+
+A organização pode buscar as empresas do Google Maps pela API da Scavio. A Apify continua sendo o provedor de quem não escolhe outro, e a escolha de uma organização não muda nada para as outras.
+
+1. Escolha `scavio` em `organizations.settings.prospecting.provider`. Essa escolha ainda não tem tela; hoje é feita por SQL no banco:
+
+   ```sql
+   update organizations
+      set settings = coalesce(settings, '{}'::jsonb)
+        || jsonb_build_object('prospecting',
+             coalesce(settings->'prospecting', '{}'::jsonb) || '{"provider": "scavio"}'::jsonb)
+    where id = '<id da organização>';
+   ```
+
+2. Em **CRM → Prospecção**, salve a chave da Scavio no campo de chave (o rótulo ainda diz "Chave da Apify"). A chave é conferida em `GET /api/v1/usage`, que não gasta crédito, e fica cifrada como a da Apify.
+
+A busca usa o mesmo segmento e local do formulário e devolve até 20 empresas por página; cada página consome um crédito da conta Scavio, então uma busca de 100 empresas usa no máximo 5. Ela roda no tick seguinte do scheduler, sem execução para acompanhar. O teto em US$ e a opção "Enriquecer com e-mails comerciais e redes" são da Apify e não se aplicam aqui; a avaliação do site e a prévia seguem iguais. Se uma página depois da primeira falhar, a busca fica com o que já veio.
+
+Ao trocar de provedor, salve de novo a chave do provedor novo. A Scavio recusa, sem chamar a rede, uma chave que não é dela (as chaves da Scavio começam com `sk_`), e uma busca iniciada pela Apify antes da troca para com um aviso em vez de ser lida pela Scavio.
+
+### Lista própria (planilha)
+
+Se você já tem a lista de empresas (de uma feira, de uma associação, de uma planilha antiga), não precisa pagar uma busca: em **CRM → Prospecção**, no cartão "1. Encontrar empresas", abra a aba **Usar minha planilha**. Essa aba não depende da chave Apify nem de qualquer provedor de busca.
+
+- **Arquivo:** `.csv` ou `.xlsx` (só a primeira aba), com até **500 empresas**. Use "Baixar modelo" para ver o formato.
+- **Colunas obrigatórias:** o nome da empresa (`empresa`, `nome`, `nome fantasia`, `razão social`…) e o telefone (`telefone`, `celular`, `whatsapp`…). Opcionais: `site`, `segmento`, `cidade` (ou `endereço`), `email`, `instagram`/`facebook`/`linkedin`. Os nomes das colunas valem com ou sem acento, em maiúscula ou minúscula, e também em espanhol.
+- **Telefone:** brasileiro com DDD, com ou sem máscara, ou internacional com `+`. Linha sem telefone válido, sem nome ou com telefone repetido no arquivo é recusada, e a tela mostra o número da linha e o motivo para você corrigir e enviar de novo.
+- **De onde veio esta lista?** é obrigatório e fica registrado na campanha, para o caso de um titular perguntar de onde veio o dado dele.
+- **Quem já é contato do CRM não é abordado**, como em qualquer campanha. Quem já estava na sua lista de prospecção também não entra de novo.
+- **Enviar o mesmo arquivo duas vezes não duplica** a campanha nem as empresas.
+- **LGPD:** quem foi anonimizado a pedido do titular não volta por planilha, mesmo que o telefone venha escrito de outro jeito.
+- Nenhuma abordagem começa nesta etapa: a planilha vira uma campanha em preparação, e daí em diante é o caminho de sempre (seleção das empresas, avaliação do site, prévia, agente, ritmo e fila).
+
+### WhatsApp conferido antes da abordagem
+
+**Módulo opcional, desligado por padrão.** Quem administra o servidor liga em `/admin/sistema` › "Conferir WhatsApp na prospecção" (`MODULO_CONFERIR_WHATSAPP` em `platform_config`). A pergunta sai do número do cliente, para todo telefone achado (inclusive em rascunho que nunca será lançado), a qualquer hora e sem o aquecimento de número novo, num ritmo que ninguém mediu contra banimento. Desligado, nada é consultado, a lista não mostra contador e a abordagem segue como antes.
+
+O telefone que a empresa publicou nem sempre tem WhatsApp. Com o módulo ligado, depois da busca, o preparo automático pergunta ao WhatsApp, número por número, se ele existe lá (`check-exists` do WAHA, `lib/prospecting/whatsapp.ts`) — sem mandar mensagem nenhuma. A pergunta sai pela conexão da campanha e só por ela (se a campanha escolheu o número oficial, nada é conferido); antes de a conexão ser escolhida, por qualquer conexão WAHA conectada da organização. No máximo 15 números por minuto, com 2 segundos entre um e outro, porque quem consulta é o número do cliente.
+
+- **Tem WhatsApp:** a linha mostra "Tem WhatsApp" e segue normalmente.
+- **Sem WhatsApp:** a empresa sai da seleção (fica nas desmarcadas, com "Sem WhatsApp", e a caixa não a devolve), não ganha prévia de IA e não entra na fila; ao iniciar, vai para "Não abordado" com o motivo "Sem WhatsApp neste número.". Se ela já estava na fila de uma campanha pausada ou rodando, sai da fila com o mesmo motivo.
+- **Não é o prefixo que decide.** Medido numa busca real: um telefone fixo tinha WhatsApp Business. Descartar fixos por prefixo perderia essa empresa.
+- **WAHA fora do ar não descarta ninguém:** a rodada para sem gravar nada e tenta de novo no minuto seguinte.
+- **Sem conexão WAHA** (só canal oficial), nada é conferido e tudo segue como antes.
+
+Quando há ao menos um veredito, o contador da lista mostra "WhatsApp verificado: X de Y" e quantas ficaram fora. Cada rodada com efeito entra em `api_audit_log` como `prospecting.whatsapp_checked`, só com contagens.
 
 ## Campanha
 
@@ -65,7 +114,7 @@ A ativação separa as empresas (as desmarcadas, as sem telefone e as que já s�
 
 **Mexer na fila depois de iniciada.** Com a campanha **pausada**, o operador marca e desmarca as empresas que ainda estão na fila (`select_in_queue` em `POST /api/v1/prospecting`). Desmarcar tira da fila quem está `queued` e a deixa como "Não abordado", com o motivo "Não selecionada pelo operador."; quem já teve tentativa (`sending`, `sent`, `failed`) não muda. Marcar de novo devolve só quem o operador tirou: quem o produto recusou (sem telefone, contato que já existia) não volta. Em `on_send` qualquer desmarcada pode voltar; em `on_start` só volta quem já tem conversa, porque a empresa desmarcada antes de iniciar nunca ganhou contato nem negócio. Em `on_start` o contato e o negócio das empresas enfileiradas já foram criados ao iniciar e **ficam no funil** quando elas são desmarcadas: o produto não tem como ocultar nem apagar negócio, e desmarcar só impede o envio. A tela esconde as desmarcadas por padrão ("Mostrar desmarcadas (N)"). **Excluir desmarcadas** (`discard_unselected`, com confirmação, em rascunho ou pausada) apaga a linha da busca de quem o operador tirou e que nunca virou registro do CRM, e nunca a linha-tomba de supressão de LGPD; como o telefone dessas linhas é o que evita que a mesma empresa reapareça como nova numa busca futura, excluir é aceitar que ela possa voltar em outra busca. A exclusão registra em `api_audit_log` quantas linhas saíram. Telefones e identificadores de empresa são únicos por organização; contatos anteriores são preservados. Uma preparação interrompida deve ser retomada com a mesma configuração. A fila começa após um minuto e envia somente a primeira abordagem. Respostas passam pelo atendimento normal; a qualificação exige os critérios definidos pelo operador e só é contada quando a etapa do negócio muda. Encontrar uma empresa não significa qualificá-la.
 
-Há uma campanha ativa por organização, até 50 tentativas em 24 horas no conjunto das campanhas, e intervalo mínimo de cinco minutos. Falhas e envios incertos consomem o limite. A janela do número, modo de teste, versão do agente, fechamento do atendimento, recusa, pausa e intervenção humana continuam ativos. Pausar interrompe novas abordagens; uma transmissão já iniciada pode concluir.
+Há uma campanha ativa por **número** (conexão de WhatsApp), até 50 tentativas em 24 horas **por número**, e intervalo mínimo de cinco minutos por número. Duas campanhas em conexões diferentes rodam ao mesmo tempo; a segunda no mesmo número é recusada com `prospecting_channel_busy` e o nome de quem ocupa a conexão (pausar a que está rodando libera o número). O teto de aquecimento (`tetoDiarioDaEsteiraFria`) e o intervalo também contam por número: a tentativa de um número não segura nem consome a cota de outro. Falhas e envios incertos consomem o limite. A janela do número, modo de teste, versão do agente, fechamento do atendimento, recusa, pausa e intervenção humana continuam ativos. Pausar interrompe novas abordagens; uma transmissão já iniciada pode concluir.
 
 ### Quando a saída é oferecida
 
@@ -74,6 +123,8 @@ A opção de parar de receber ("responda PARAR") é oferecida na **primeira mens
 **Dias da prospecção por conexão.** A primeira abordagem só sai nos dias marcados em **Conexões › Proteção de envio › Dias da prospecção** (`channel_knobs.prospeccao_dias`, 0=domingo … 6=sábado), dentro da janela de disparo do número. Fora do dia, o envio fica agendado para a próxima abertura, sem tentativa e sem queimar quota — a fila espera, não morre. Os dias são próprios da prospecção: desligar o domingo em **Enviar aos domingos** cala a resposta e os disparos em massa no domingo, mas não a prospecção (e vice-versa). Instalação nova nasce com todos os dias; quem tinha o domingo desligado migra com seg a sáb, e a mudança de dias entra em `api_audit_log` (`ai.pacing_knobs_updated`).
 
 **Ajustar o ritmo depois de iniciada.** Com a campanha **pausada**, o administrador troca o limite por dia (1 a 50) e o intervalo (5 a 1440 minutos) em **Editar ritmo**, ao lado de **Retomar fila**; a ação é `adjust_pace` em `POST /api/v1/prospecting` (issue #2095). O valor novo vale a partir do próximo envio. Só esses dois campos mudam: conexão, agente, funil, base legal e instrução da campanha seguem fixos depois de iniciada. A mudança entra em `api_audit_log` com o ritmo anterior e o novo.
+
+**Etiquetas do contato na abordagem (spec 27).** O passo de configuração tem **Etiquetas do contato**, pré-preenchido com o nicho da busca (até 5). Ao abordar uma empresa, a campanha grava essas etiquetas no contato antes da primeira mensagem, pela mesma junção da ação `add_tag`, e anuncia `contact.tag_added` quando alguma é nova. Assim, a skill com `any_tags` entra desde a primeira resposta. Falha ao gravar a etiqueta não derruba a abordagem: vai para o log e a empresa segue. Campanha sem a chave na configuração não grava nada. A troca depois de iniciada é a ação `adjust_tags` em `POST /api/v1/prospecting`, só com a campanha pausada, fechada ao token e auditada com a lista anterior e a nova; ela vale para os contatos criados dali em diante, e ainda não tem tela.
 
 ## Operação e recuperação
 

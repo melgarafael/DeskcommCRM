@@ -160,7 +160,16 @@ describe("gerarPreviaDoCandidato", () => {
     // Igual ao envio (worker.ts): nesse modo a 1ª mensagem só cumprimenta.
     const fora = {
       ...DADOS,
-      site: { ...SITE_OK, classe: "fora-do-ar", problemas: ["http-503"], conteudo_resumo: "Página de erro" },
+      // Domínio morto é veredito PROVADO (citável); 503 seria medição barrada,
+      // que a leitura normaliza para `nao-medido` e não cita (#3723).
+      site: {
+        ...SITE_OK,
+        classe: "fora-do-ar",
+        problemas: ["dns-morto"],
+        final_url: null,
+        http_status: null,
+        conteudo_resumo: "Página de erro",
+      },
     } as unknown as Prospect;
     const chamada = async (exit_offer: "first_message" | "second_message") => {
       mocks.generate.mockClear();

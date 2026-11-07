@@ -1126,11 +1126,10 @@ rótulos dos dois lados antes de concatenar**; se algum se repetir, pare e escol
 
 ## 8-quater. Os hooks reprovam o MERGE, e isso não é o defeito que eles descrevem
 
-Dois hooks locais desta casa disparam em merge da `main` sem que você tenha editado nada:
+Um hook local desta casa dispara em merge da `main` sem que você tenha editado nada:
 
 | hook | por que dispara num merge | como confirmar antes de escapar |
 |---|---|---|
-| invariantes congelados | o merge traz a versão da `main` de um arquivo de `tests/invariants/` | `git diff --quiet origin/main -- <arquivo>` → **exit 0** quer dizer que ficou IDÊNTICO ao da main: foi o merge, não você |
 | tripla da migration | ele examina só arquivo com status `A`, e um `git mv` entra como `R096` — então ele **passa de graça** na renumeração | conferir à mão contra `git log --all --name-only`, os PRs abertos e as outras branches |
 
 O NNNN que o hook confere é medido sobre a **população da pergunta** — a main do
@@ -1143,8 +1142,16 @@ ficam fora de propósito (sobrevivem ao fechamento do PR): o 0269 do PR aberto #
 que vivia só em `refs/remotes/origin/pr/965`, continua invisível ao hook — quem o
 pega é o `checar`, pela lista de abertos.
 
-O escape existe (`DESKCOMM_GOV_INVARIANTS_EDIT=1`, `DESKCOMM_GOV_MIGRATION_EDIT=1`) e é legítimo
-nesses dois casos — mas **a razão vai escrita no corpo do commit, com a medição**, nunca implícita
+**Invariantes não são mais congelados** (PR #3594, doc de decisão 231 = A, 29/10): editar um
+arquivo de `tests/invariants/` é livre, e o guarda (`loop/hooks/guard-invariants.sh`) só barra
+**apagar ou renomear** um invariante que a `main` tem. Quem passa a vigiar o afrouxamento é a
+triagem: no diff de `tests/invariants/`, **acrescentar é livre**; **tirar uma conferência
+(`expect`), pôr `skip`/`todo` ou apagar o arquivo** vira documento de decisão para o mantenedor,
+com o trecho e o motivo. Confira com `git diff origin/main...HEAD -- tests/invariants/ | grep -E '^-.*expect|^\+.*\.(skip|todo)\('`.
+
+O escape da migration existe (`DESKCOMM_GOV_MIGRATION_EDIT=1`), e o de invariantes
+(`DESKCOMM_GOV_INVARIANTS_EDIT=1`) agora só serve para uma deleção deliberada. Os dois são
+legítimos — mas **a razão vai escrita no corpo do commit, com a medição**, nunca implícita
 no uso da variável. A linha do segundo caso é a mais importante: o hook da migration **não é rede
 para renumeração**, e quem lê a mensagem dele achando que é vai renumerar contra uma régua cega.
 O que mudou na #1273 é o RECORTE, não a rede: onde media só as branches locais, o hook mede a
@@ -2805,8 +2812,9 @@ Cada um destes foi cometido de verdade nesta casa, e é por isso que estão escr
 62. **Renumerar migration de PR que trouxe invariante novo: a prosa muda, o fixture fica.** Ao
     renumerar a `0255` do #861 para `0257`, a troca com escopo alcançou três rótulos de valor de
     teste (`"segredo-de-app-de-teste-0255"`) dentro de `tests/invariants/` — e o `pre-commit`
-    barrou, porque invariante é congelado **mesmo quando nasceu no mesmo lote**. O rótulo de
-    fixture não cita a migration: é texto sem efeito. Troque só a frase que aponta para a
+    barrou, porque na época invariante era congelado **mesmo quando nasceu no mesmo lote**
+    (o congelamento foi aposentado em 29/10, #3594; editar é livre). A lição continua: o rótulo
+    de fixture não cita a migration, é texto sem efeito. Troque só a frase que aponta para a
     migration (comentário, MANIFEST, rótulo do apêndice, caminho lido por teste) e deixe o valor.
 
 63. **O PR que devia fechar sozinho continua `OPEN` logo depois do merge do lote.** Em 15/09 o #841

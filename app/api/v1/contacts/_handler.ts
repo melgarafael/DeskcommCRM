@@ -9,6 +9,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { revogarAcessosDoContato } from "@/lib/mcp/servidor-externo/do-agente/revogacao";
+import { logger } from "@/lib/logger";
 import { observeServiceOrigin } from "@/lib/atendimento/origem";
 import { ApiError } from "@/lib/api/types";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
@@ -27,7 +29,8 @@ import {
 } from "@/lib/contacts/conflito-unico";
 import { camposCpfParaGravar, hashCpf } from "@/lib/contacts/cpf";
 import type { Contact } from "@/lib/types/contacts";
-import { ensureConversation, sessaoProntaParaEnvio } from "@/lib/automation/start-conversation";
+import { abrirConversaDoContatoNovo } from "@/lib/contacts/conversa-ao-criar";
+import { atribuirConversaDoCadastroAoCriador } from "@/lib/contacts/conversa-do-criador";
 import type {
   ContactCreate,
   ContactPatch,
@@ -49,7 +52,41 @@ import { testaComPrazo } from "@/lib/leads/padrao-do-campo-no-servidor";
 type SB = SupabaseClient;
 
 const SELECT_COLS =
-  "id, organization_id, name, display_name, address_book_name, email, email_normalized, phone_number, cpf_hash, birthdate, is_blocked, blocked_reason, is_personal, contact_type, ai_opt_out, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at, first_service_at";
+  "id, organization_id, name, display_name, address_book_name, zip_code, street, number, complement, district, city, state, email, email_normalized, phone_number, cpf_encrypted, birthdate, is_blocked, blocked_reason, is_personal, contact_type, ai_opt_out, is_anonymized, anonymized_at, is_merged_into, merged_at, consent, tags, source, source_metadata, custom_fields, created_at, updated_at, last_activity_at, first_service_at";
+
+/**
+ * A linha como o banco devolve. `cpf_encrypted` é interno a este módulo e só diz
+ * se há CPF: `contacts_cpf_consistency` obriga as duas colunas de CPF a serem
+ * nulas juntas, e a cifra só se abre em `decrypt_cpf`. Comparar por CPF é do
+ * servidor (`idsDeContatosPorCpf`, `erroDeConflitoUnico`).
+ */
+type LinhaDeContato = Omit<Contact, "cpf_available"> & { cpf_encrypted: unknown };
+
+/**
+ * A ficha que sai deste módulo: o sinal de que há CPF, nunca a coluna. Toda
+ * saída de `SELECT_COLS` passa aqui — os handlers servem à REST e ao MCP.
+ */
+function fichaDaResposta({ cpf_encrypted, ...ficha }: LinhaDeContato): Contact {
+  return { ...ficha, cpf_available: !!cpf_encrypted };
+}
+
+/**
+ * As fichas vivas desta organização com o CPF de `digits`. Sem `limit`: o índice
+ * único de CPF nasce com `if not exists`, e a ficha repetida num clone sem ele
+ * também tem de aparecer na busca.
+ */
+async function idsDeContatosPorCpf(ctx: HandlerCtx, digits: string): Promise<string[]> {
+  const { data, error } = await createAdminClient()
+    .from("contacts")
+    .select("id")
+    .eq("organization_id", ctx.organization_id)
+    .eq("cpf_hash", hashCpf(digits))
+    .is("is_merged_into", null);
+  if (error) {
+    throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
+  }
+  return ((data ?? []) as { id: string }[]).map((r) => r.id);
+}
 
 interface CursorPayload {
   sort: string | null;
@@ -249,13 +286,39 @@ export async function listContactsHandler(
         !digits.startsWith("55") && (digits.length === 10 || digits.length === 11)
           ? `55${digits}`
           : digits;
+      // Os critérios de TELEFONE do principal, reaproveitados para o extra abaixo.
+      const criteriosDeTelefone = [`phone_number.imatch.${s}`];
       for (const v of phoneLookupVariants(base)) {
         const d = v.replace(/\D/g, "");
-        if (d && d !== digits) orParts.push(`phone_number.ilike.%${d}%`);
+        if (d && d !== digits) {
+          orParts.push(`phone_number.ilike.%${d}%`);
+          criteriosDeTelefone.push(`phone_number.ilike.%${d}%`);
+        }
+      }
+      // Ficha cujo TELEFONE EXTRA casa o termo também entra na busca: sem isto, o
+      // número que não é o principal não acharia a pessoa que o tem. A consulta
+      // aos extras é do mesmo jeito filtrada por organização; a ficha continua
+      // passando pelo filtro de lápide e de pessoal da listagem.
+      //
+      // Só quando o termo TEM CARA DE TELEFONE (dígitos e a pontuação de número):
+      // texto com letras e dígitos ("a,organization_id.eq.000…") não é busca de
+      // número, e uma consulta a mais por termo hostil é o que a cerca da busca
+      // (`busca-de-contatos-normaliza-termo`) conta.
+      if (/^[\d\s()+.-]+$/.test(q.search.trim())) {
+        const { data: extras } = await supabase
+          .from("contact_phones")
+          .select("contact_id")
+          .eq("organization_id", ctx.organization_id)
+          .or(criteriosDeTelefone.join(","));
+        const idsDeExtras = [
+          ...new Set(((extras ?? []) as { contact_id: string }[]).map((r) => r.contact_id)),
+        ];
+        if (idsDeExtras.length > 0) orParts.push(`id.in.(${idsDeExtras.join(",")})`);
       }
     }
     if (digits.length === 11) {
-      orParts.push(`cpf_hash.eq.${hashCpf(digits)}`);
+      const idsPorCpf = await idsDeContatosPorCpf(ctx, digits);
+      if (idsPorCpf.length > 0) orParts.push(`id.in.(${idsPorCpf.join(",")})`);
     }
     query = query.or(orParts.join(","));
   }
@@ -315,7 +378,7 @@ export async function listContactsHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, error.message);
   }
 
-  const rows = (data ?? []) as Contact[];
+  const rows = ((data ?? []) as LinhaDeContato[]).map(fichaDaResposta);
   const hasMore = rows.length > q.limit;
   const page = hasMore ? rows.slice(0, q.limit) : rows;
   const last = page[page.length - 1];
@@ -391,7 +454,6 @@ export interface GetContactInput {
 }
 
 export interface GetContactResult extends Contact {
-  cpf_available: boolean;
   cpf_decrypted: string | null;
   cpf_decrypt_denied?: boolean;
 }
@@ -420,12 +482,12 @@ export async function getContactHandler(
       traduzir("Contato não encontrado.", ctx.idioma ?? "pt-BR"),
     );
   }
-  const contact = data as Contact;
+  const contact = fichaDaResposta(data as LinhaDeContato);
 
   let cpfDecrypted: string | null = null;
   let cpfDecryptDenied = false;
 
-  if (input.decryptPurpose && contact.cpf_hash && ctx.actor.type === "user") {
+  if (input.decryptPurpose && contact.cpf_available && ctx.actor.type === "user") {
     const { data: membership } = await supabase
       .from("user_organizations")
       .select("role")
@@ -473,7 +535,6 @@ export async function getContactHandler(
 
   return {
     ...contactWithConversa,
-    cpf_available: !!contact.cpf_hash,
     cpf_decrypted: cpfDecrypted,
     cpf_decrypt_denied: cpfDecryptDenied || undefined,
   };
@@ -523,7 +584,7 @@ async function erroDeConflitoUnico(
   if (indice === INDICE_CPF) {
     const hash = typeof campos.cpf_hash === "string" ? campos.cpf_hash : null;
     if (hash) {
-      const existente = await encontrarContatoPorCpfHash(supabase, ctx.organization_id, hash);
+      const existente = await encontrarContatoPorCpfHash(createAdminClient(), ctx.organization_id, hash);
       if (existente) {
         return new ApiError(
           409,
@@ -613,6 +674,13 @@ export async function createContactHandler(
     created_by_user_id: ctx.actor.type === "user" ? ctx.actor.id : null,
     name: input.name ?? null,
     display_name: input.display_name ?? null,
+    zip_code: input.zip_code ?? null,
+    street: input.street ?? null,
+    number: input.number ?? null,
+    complement: input.complement ?? null,
+    district: input.district ?? null,
+    city: input.city ?? null,
+    state: input.state ?? null,
     email: input.email ?? null,
     phone_number: input.phone_number ? canonicalPhoneBR(input.phone_number) : null,
     birthdate: input.birthdate ?? null,
@@ -655,16 +723,37 @@ export async function createContactHandler(
     throw new ApiError(500, "internal_error", undefined, ctx.requestId, insErr.message);
   }
 
-  const contact = created as Contact;
-  if (contact.phone_number) {
-    try {
-      const sessionId = await sessaoProntaParaEnvio(supabase, ctx.organization_id);
-      if (sessionId) {
-        await ensureConversation(supabase, ctx.organization_id, contact.id, sessionId);
-      }
-    } catch {
-      // conversa no create é best-effort; o contato já existe
-    }
+  const contact = fichaDaResposta(created as LinhaDeContato);
+  // ── A CONVERSA DO CONTATO NOVO (#3718) ────────────────────────────────────
+  //
+  // A regra — esta porta abre, a importação por CSV não — mora num lugar só:
+  // `lib/contacts/conversa-ao-criar.ts`. Aqui só se diz QUAL porta está
+  // criando. A chamada é best-effort e não lança: o contato já está gravado, e
+  // uma sessão torta não pode derrubar o cadastro. O que ela NÃO faz mais é
+  // falhar calada — o erro sai em `logger.warn` lá dentro, com org, contato e
+  // porta.
+  const conversa = await abrirConversaDoContatoNovo(supabase, {
+    porta: "manual",
+    organizationId: ctx.organization_id,
+    contactId: contact.id,
+    phoneNumber: contact.phone_number,
+    requestId: ctx.requestId,
+  });
+
+  // ── QUEM CRIOU O CONTATO ATENDE O CONTATO (#3479) ─────────────────────────
+  //
+  // No "Só os seus" a conversa sem dono é invisível ao Atendente (0035), e a
+  // que o cadastro acabou de abrir nascia de ninguém. Aqui ela nasce dele —
+  // pelo MESMO claim do botão Assumir, com CAS de "só se estiver livre". A
+  // decisão e o efeito moram em `lib/contacts/conversa-do-criador.ts`; esta
+  // chamada é best-effort e não lança (o contato já está gravado).
+  if (conversa.aberta) {
+    await atribuirConversaDoCadastroAoCriador(supabase, {
+      organizationId: ctx.organization_id,
+      conversationId: conversa.conversationId,
+      actor: ctx.actor,
+      requestId: ctx.requestId,
+    });
   }
 
   await supabase
@@ -676,7 +765,7 @@ export async function createContactHandler(
         source: contact.source,
         has_email: !!contact.email,
         has_phone: !!contact.phone_number,
-        has_cpf: !!contact.cpf_hash,
+        has_cpf: contact.cpf_available,
       },
       p_metadata: { request_id: ctx.requestId, ...a.metadataActor },
       p_organization_id: contact.organization_id,
@@ -706,7 +795,9 @@ export async function patchContactHandler(
   supabase: SB,
   ctx: HandlerCtx,
   contactId: string,
-  input: ContactPatch,
+  // `null` em `phone_number` é o pedido de apagar o principal (Spec 31, B2);
+  // o schema da rota é o único que o deixa passar (`contactPatchSchemaDoPais`).
+  input: Omit<ContactPatch, "phone_number"> & { phone_number?: string | null },
 ): Promise<Contact> {
   const { data: existing, error: selErr } = await supabase
     .from("contacts")
@@ -774,6 +865,13 @@ export async function patchContactHandler(
   const patch: Record<string, unknown> = {};
   if (input.name !== undefined) patch.name = input.name;
   if (input.display_name !== undefined) patch.display_name = input.display_name;
+  if (input.zip_code !== undefined) patch.zip_code = input.zip_code;
+  if (input.street !== undefined) patch.street = input.street;
+  if (input.number !== undefined) patch.number = input.number;
+  if (input.complement !== undefined) patch.complement = input.complement;
+  if (input.district !== undefined) patch.district = input.district;
+  if (input.city !== undefined) patch.city = input.city;
+  if (input.state !== undefined) patch.state = input.state;
   // `email_normalized` NÃO entra no patch — é `GENERATED ALWAYS AS
   // (lower(trim(email))) STORED` (baseline.sql:1349), e o Postgres RECUSA
   // qualquer atribuição a coluna gerada (SQLSTATE 428C9), abortando o UPDATE
@@ -785,6 +883,10 @@ export async function patchContactHandler(
   if (input.phone_number !== undefined) {
     patch.phone_number = input.phone_number ? canonicalPhoneBR(input.phone_number) : input.phone_number;
   }
+  // Tipo e WhatsApp do principal (Spec 31, B2). Ausentes não entram no patch: o
+  // gatilho do banco recalcula só o que a pessoa não fixou (ver a migration 9043).
+  if (input.phone_type !== undefined) patch.phone_type = input.phone_type;
+  if (input.phone_whatsapp !== undefined) patch.phone_whatsapp = input.phone_whatsapp;
   if (input.birthdate !== undefined) patch.birthdate = input.birthdate;
   // O TIPO DO CONTATO (issue 3005): o PATCH troca cliente ↔ fornecedor. Ausente
   // NÃO entra no patch — quem não fala de tipo não reescreve a coluna, e é por
@@ -833,6 +935,30 @@ export async function patchContactHandler(
     );
   }
 
+  // Apagar o principal com telefone extra deixaria os extras sem número de
+  // resposta ("Tornar principal" é o caminho). Recusa ANTES do UPDATE: nada é
+  // gravado (Spec 31, B2, item 6). Leitura pela sessão, com o filtro de organização.
+  if (input.phone_number === null && (existing as { phone_number?: string | null }).phone_number) {
+    const { data: extras, error: errExtras } = await supabase
+      .from("contact_phones")
+      .select("id")
+      .eq("organization_id", ctx.organization_id)
+      .eq("contact_id", contactId)
+      .limit(1);
+    if (errExtras) {
+      throw new ApiError(500, "internal_error", undefined, ctx.requestId, errExtras.message);
+    }
+    if (extras && extras.length > 0) {
+      throw new ApiError(
+        409,
+        "primary_phone_has_extras",
+        undefined,
+        ctx.requestId,
+        traduzir("Torne outro número principal antes de remover este.", ctx.idioma ?? "pt-BR"),
+      );
+    }
+  }
+
   const tagServiceOrigin = input.tags !== undefined
     ? await observeServiceOrigin(createAdminClient(), ctx.organization_id, contactId)
     : null;
@@ -865,7 +991,7 @@ export async function patchContactHandler(
     );
   }
 
-  const contact = updated as Contact;
+  const contact = fichaDaResposta(updated as LinhaDeContato);
   const a = actorAuditPayload(ctx.actor);
   const fields = Object.keys(patch).filter((k) => k !== "updated_at");
 
@@ -1158,6 +1284,18 @@ export async function deleteContactHandler(
   // tudo, ou não sai nada. É `security invoker` — a RLS de quem chama continua
   // valendo, e o filtro de `organization_id` é do banco (argumento + where), não
   // do chamador. Nenhum service role entra aqui.
+  //
+  // A exceção, antes da transação: os acessos OAuth do contato a servidores
+  // MCP externos (9095). A cascata apaga o token, e sem ele não há revogação no
+  // terceiro (RFC 7009) — então revoga primeiro. A tabela é server-side only
+  // (service role), filtrada pela organização do ctx. Melhor esforço: falha
+  // do terceiro não barra a exclusão.
+  await revogarAcessosDoContato(createAdminClient(), ctx.organization_id, contactId).catch((err: unknown) => {
+    logger.warn("revogacao dos acessos MCP do contato falhou antes da exclusao", {
+      organization_id: ctx.organization_id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
   let apagou = false;
   try {
     const { data, error: rpcErr } = await supabase.rpc("fn_apagar_contato_com_historico", {

@@ -8,6 +8,7 @@ import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { requireSupportWrite } from "@/lib/impersonate/support";
+import { lerMencoesDeGrupo, textoComMencoesResolvidas } from "@/lib/messaging/mencoes-de-grupo";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
 import { createClient } from "@/lib/supabase/server";
 
@@ -53,7 +54,14 @@ async function alterar(req: NextRequest, ctx: Ctx, ocultar: boolean): Promise<Re
     .eq("organization_id", authz.org.orgId).eq("conversation_id", message.conversation_id)
     .order("sent_at", { ascending: false }).limit(1).maybeSingle();
   if (latest?.id === id) {
-    const antigoPreview = previaDaMensagem(message.body, message.type);
+    // A régua do filtro é a MESMA que gravou a coluna: em grupo, a ingestão grava
+    // a prévia com a menção já resolvida (`@Maria`, #3566). Recalcular do corpo
+    // cru (`@<lid>`) faria o compare-and-set não achar a linha — a rota responde
+    // 200 e a lista segue mostrando o texto que o gestor acabou de ocultar.
+    const antigoPreview = previaDaMensagem(
+      textoComMencoesResolvidas(message.body, lerMencoesDeGrupo(message.metadata)),
+      message.type,
+    );
     await supabase.from("conversations").update({
       last_message_preview: ocultar ? "Mensagem ocultada no CRM" : antigoPreview,
     }).eq("id", message.conversation_id).eq("organization_id", authz.org.orgId)

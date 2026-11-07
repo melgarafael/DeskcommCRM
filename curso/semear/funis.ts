@@ -13,6 +13,7 @@
  * ficasse lá apareceria nas fotos de outros módulos.
  */
 import { type Contexto, contatoId, exigir, semErro } from "../semear-demonstracao";
+import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
 
 const negocioId = (n: number) => `f1000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const contatoNovoId = (n: number) => `f2000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -90,7 +91,7 @@ export async function semear(c: Contexto) {
     "etapas",
   ) as Array<{ id: string; name: string }>;
   const etapa = (nome: string) => {
-    const e = etapas.find((x) => x.name === nome);
+    const e = etapas.find((x) => x.name === demo(nome));
     if (!e) throw new Error(`etapa "${nome}" não existe no funil Pacientes`);
     return e.id;
   };

@@ -92,6 +92,11 @@ interface TriggerFormState {
   pauseFromLastSend: boolean;
   stageId: string;
   cancelOnReply: boolean;
+  /**
+   * #3974 — "quando o cliente responder, mover o card para a etapa X". Vazio =
+   * não move. Só existe no gatilho de ETAPA: é o único que sabe qual card armou.
+   */
+  moveToStageId: string;
   eventTypeIds: string[];
 }
 
@@ -100,6 +105,15 @@ const MIN_THRESHOLD_MINUTES = 5;
 const MAX_PAUSA_HORAS = MAX_PAUSA_DE_REENTRADA_MINUTES / 60;
 /** O mesmo teto do mínimo no contrato (7 dias). */
 const MAX_SILENCIO_MINUTOS = 10_080;
+
+/**
+ * O "não mover" do seletor de etapa do #3974.
+ *
+ * O Radix `Select` não aceita item com valor vazio, então o "nenhuma etapa" tem
+ * um valor próprio e a conversão para `""` (ausente no `trigger_config`) mora no
+ * `onValueChange` e no `toTriggerConfig`.
+ */
+const NAO_MOVER = "nao_mover";
 
 const KIND_LABEL: Record<TriggerKind, string> = {
   appointment_no_show:"Falta confirmada pela equipe",
@@ -183,16 +197,35 @@ function parseTriggerConfig(raw: Record<string, unknown>): TriggerFormState {
     exigeResposta: kind === "silence" && params.exige_resposta_da_equipe === true,
     stageId: kind === "stage_change" && typeof params.stage_id === "string" ? params.stage_id : "",
     cancelOnReply: raw.cancel_on_reply === true,
+    moveToStageId:
+      kind === "stage_change" && typeof raw.move_to_stage_on_reply === "string" ? raw.move_to_stage_on_reply : "",
   };
 }
 
 function toTriggerConfig(form: TriggerFormState): Record<string, unknown> {
   const cancelOnReply = form.cancelOnReply ? { cancel_on_reply: true } : {};
-  if (form.kind === "appointment_no_show") return {kind:"appointment_no_show",params:{event_type_ids:form.eventTypeIds}};
+  // ⚠️ ESTE TIPO GRAVA O INTERRUPTOR LIGADO, SEMPRE. A tela o mostra ligado
+  // (e travado) porque neste gatilho não há escolha a fazer — quem marca a
+  // consulta é o atendimento, e a sequência de falta só existe para o silêncio
+  // de quem não compareceu (`lib/followup/modelos/clinica.ts`). Faltava a outra
+  // metade: o valor visível não entrava no `trigger_config`, e para o motor
+  // (`cancel_on_reply ?? false`) o fluxo seguia disparando por cima do paciente
+  // que respondeu «quero remarcar» — issue #3400. O `true` é LITERAL e não
+  // `form.cancelOnReply` de propósito: trocar o tipo para este gatilho dentro do
+  // painel não mexe no interruptor, e a verdade gravada é a constante da tela.
+  if (form.kind === "appointment_no_show") return {kind:"appointment_no_show",params:{event_type_ids:form.eventTypeIds},cancel_on_reply:true};
   if (form.kind === "manual") return { kind: "manual", ...cancelOnReply };
 
   if (form.kind === "stage_change") {
-    return { kind: "stage_change", params: { stage_id: form.stageId }, ...cancelOnReply };
+    return {
+      kind: "stage_change",
+      params: { stage_id: form.stageId },
+      ...cancelOnReply,
+      // #3974: a opção irmã de "cancelar ao responder". Vazia, a chave NEM
+      // VIAJA — o motor lê o ausente como "não move", e um `""` gravado
+      // reprovaria o uuid do schema e derrubaria o publish inteiro.
+      ...(form.moveToStageId ? { move_to_stage_on_reply: form.moveToStageId } : {}),
+    };
   }
 
   // Sem `params`: não há o que casar. Todo caso aberto da organização dispara
@@ -359,7 +392,8 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
       (form.thresholdValor !== saved.thresholdValor ||
         form.thresholdUnidade !== saved.thresholdUnidade ||
         form.segments !== saved.segments)) ||
-    (form.kind === "stage_change" && form.stageId !== saved.stageId);
+    (form.kind === "stage_change" && form.stageId !== saved.stageId) ||
+    (form.kind === "stage_change" && form.moveToStageId !== saved.moveToStageId);
 
   const onSave = () => {
     if (thresholdInvalid || stageInvalid) return;
@@ -374,6 +408,13 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
   // Duas etapas homônimas em funis diferentes precisam do cabeçalho do grupo
   // para serem distinguíveis.
   const funis = etapasPorFunil(etapas);
+
+  // A etapa de destino do "mover ao responder" (#3974) vive no MESMO funil da
+  // etapa que dispara: mover entre funis é recusado pelo escritor de etapa
+  // (`pipeline_immutable_use_clone`), e oferecer na tela o que o motor vai
+  // recusar seria a tela prometendo o que não faz.
+  const funilDoGatilho = etapas.find((e) => e.stageId === form.stageId)?.pipelineId ?? null;
+  const etapasDoFunilDoGatilho = funilDoGatilho ? etapas.filter((e) => e.pipelineId === funilDoGatilho) : [];
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -687,6 +728,13 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
 
           <div className="flex items-center justify-between gap-2">
             <Label htmlFor="trigger-cancel-on-reply">{t("Cancelar se o lead responder")}</Label>
+            {/* ⚠️ NÃO DESTRAVE ESTE INTERRUPTOR NO GATILHO DE FALTA. Ele é a
+                única coisa travada do painel porque não há escolha: a sequência
+                de falta só existe para o silêncio de quem não compareceu. O
+                valor que ele mostra vai no `trigger_config` (`toTriggerConfig`)
+                e, em fluxo antigo que ainda não tem o campo, o motor o lê como
+                `true` (`lib/followup/reactivity.ts`) — destravar aqui sem mudar
+                aqueles dois deixaria a tela mentindo de novo (#3400). */}
             <Switch
               id="trigger-cancel-on-reply"
               checked={form.kind === "appointment_no_show" || form.cancelOnReply}
@@ -694,6 +742,43 @@ export function TriggerConfigControl({ flowId, triggerConfig }: Props) {
               onCheckedChange={(checked) => setForm((f) => ({ ...f, cancelOnReply: checked }))}
             />
           </div>
+
+          {/* #3974 — a opção IRMÃ de "cancelar ao responder", e só no gatilho de
+              etapa: é o único que sabe qual card armou (o negócio que entrou na
+              etapa acima). Nos outros tipos o fluxo nasce sem card identificado,
+              e mover "o negócio do contato" ali seria escolher por quem monta o
+              fluxo quando o contato tem dois. */}
+          {form.kind === "stage_change" && (
+            <div className="space-y-2">
+              <Label htmlFor="trigger-move-on-reply">
+                {t("Quando o cliente responder, mover o card para")}
+              </Label>
+              <Select
+                value={form.moveToStageId || NAO_MOVER}
+                onValueChange={(v) => setForm((f) => ({ ...f, moveToStageId: v === NAO_MOVER ? "" : v }))}
+                disabled={etapasCarregando || etapasDoFunilDoGatilho.length === 0}
+              >
+                <SelectTrigger id="trigger-move-on-reply" data-testid="trigger-move-on-reply">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NAO_MOVER}>{t("Não mover o card")}</SelectItem>
+                  {etapasDoFunilDoGatilho
+                    .filter((etapa) => etapa.stageId !== form.stageId)
+                    .map((etapa) => (
+                      <SelectItem key={etapa.stageId} value={etapa.stageId}>
+                        {nomeDaEtapa(etapa)}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "O card que este gatilho armou — o negócio do contato que está na etapa acima — vai para a etapa escolhida quando o cliente responder. Sem card nessa etapa, nada se move, e a trilha da inscrição registra o motivo.",
+                )}
+              </p>
+            </div>
+          )}
 
           <Button
             type="button"

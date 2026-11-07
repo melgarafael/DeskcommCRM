@@ -36,7 +36,17 @@ export interface CompraDoContato {
   id: string;
   pipeline_id: string;
   title: string;
+  /** O valor ÚNICO que o cliente pagou (setup, matrícula, implantação). */
   value_cents: number | null;
+  /**
+   * A mensalidade que ele passou a pagar (fatia 1 da #3602) — `null` quando a
+   * compra foi só de valor único. A seção mostra as duas parcelas na mesma
+   * linha ("R$ 3.000 + R$ 500/mês"): numa carteira de recorrência, "quanto este
+   * cliente paga por mês" é a pergunta, e somar as duas a apagaria.
+   */
+  recurring_value_cents: number | null;
+  recurring_period: string | null;
+  recurring_months: number | null;
   currency: string | null;
   /** Quando o negócio foi ganho (`crm_leads.closed_at`). */
   closed_at: string;
@@ -51,6 +61,9 @@ export interface LeadGanhoRow {
   title: string;
   status: string;
   value_cents: number | null;
+  recurring_value_cents?: number | null;
+  recurring_period?: string | null;
+  recurring_months?: number | null;
   currency: string | null;
   closed_at: string | null;
   custom_fields: Record<string, unknown> | null;
@@ -156,6 +169,9 @@ export function montarCompras(
       pipeline_id: row.pipeline_id,
       title: row.title,
       value_cents: row.value_cents,
+      recurring_value_cents: row.recurring_value_cents ?? null,
+      recurring_period: row.recurring_period ?? null,
+      recurring_months: row.recurring_months ?? null,
       currency: row.currency,
       closed_at: row.closed_at ?? "",
       campos,

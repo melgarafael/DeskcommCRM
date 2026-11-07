@@ -31,6 +31,7 @@
  * resposta que faz quem chamou consertar o pedido.
  */
 import { ApiError } from "@/lib/api/types";
+import { hidratarCamposDoFunil } from "@/lib/automation/campos-do-render";
 import { MARCACAO, marcacaoDoCrm, renderTemplate } from "@/lib/automation/template";
 import type { DepsDaOperacao } from "@/lib/operacao/entradas-automaticas";
 
@@ -267,6 +268,12 @@ function valoresDoIntegrador(
  * O `contact_id` do negócio é usado quando só o negócio foi informado — quem
  * pede "preencha para este negócio" espera o nome do cliente dele, não uma
  * lacuna.
+ *
+ * `custom_fields` e `pipeline_id` entram no `select` desde o #3605: sem eles o
+ * `{{destino}}` de um campo de LISTA saía VAZIO na resposta rápida (o valor é o
+ * código da opção, e é o funil que diz o rótulo). A resposta rápida usa o mesmo
+ * `renderTemplate` da automação; deixá-la de fora seria o mesmo defeito com
+ * outro nome.
  */
 async function montarContexto(
   deps: DepsDaOperacao,
@@ -279,7 +286,7 @@ async function montarContexto(
   if (input.leadId) {
     const { data: lead } = await deps.supabase
       .from("crm_leads")
-      .select("id, title, value_cents, currency, contact_id")
+      .select("id, title, value_cents, currency, contact_id, pipeline_id, custom_fields")
       .eq("id", input.leadId)
       .eq("organization_id", deps.organizationId)
       .maybeSingle();
@@ -288,6 +295,10 @@ async function montarContexto(
       contactId = contactId ?? ((lead as unknown as { contact_id: string | null }).contact_id ?? null);
     }
   }
+
+  // DEPOIS do negócio: o carregador lê `context.lead`. Sem negócio (ou sem
+  // campo preenchido) não faz leitura nenhuma e o render segue como antes.
+  await hidratarCamposDoFunil(contexto, deps.supabase, deps.organizationId);
 
   if (contactId) {
     const { data: contato } = await deps.supabase

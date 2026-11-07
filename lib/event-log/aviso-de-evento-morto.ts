@@ -69,7 +69,7 @@ export const DETALHE_TECNICO = "Detalhe técnico, para quem der suporte:";
 
 export interface EventoMorto {
   eventType: string;
-  /** Quantas vezes o evento foi tentado, contando a que o matou. */
+  /** Quantas vezes o evento foi tentado, contando a que o matou. Zero: a entrada passou da janela sem ser tentada. */
   tentativas: number;
   motivo: string;
   /**
@@ -78,6 +78,8 @@ export interface EventoMorto {
    */
   efeito?: { titulo: string; consequencia: string; rearme: string };
 }
+
+export type EfeitoDoEvento = NonNullable<EventoMorto["efeito"]>;
 
 /**
  * O despacho da IA que morreu — a família que nenhum outro aviso pode esconder.
@@ -112,6 +114,55 @@ export const MENSAGEM_QUE_NAO_ENTROU = {
     "depois de conferir, marque-o como resolvido para voltar a ser avisado.",
 } as const;
 
+/**
+ * A mensagem do NÚMERO OFICIAL que o reprocessamento não conseguiu gravar — a
+ * quarta família, irmã da terceira.
+ *
+ * O canal intermediado responde ao provedor antes de processar
+ * (`lib/channels/entrada-aceita.ts`), então quem desiste dela é o cron
+ * `webhook-replay`, depois do teto de tentativas. O texto da terceira não serve:
+ * ela culpa o banco (aqui a causa pode ser outra) e manda olhar "o celular do
+ * número", que o número oficial não tem — as conversas ficam no painel do
+ * provedor.
+ *
+ * Título próprio pela mesma razão da terceira: o dreno de handlers o exclui do
+ * seu dedupe — senão um aviso destes aberto calaria as outras tarefas que param
+ * de tentar.
+ */
+export const MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU = {
+  titulo: "Uma mensagem do número oficial não entrou no CRM",
+  consequencia:
+    "Um cliente escreveu para o número oficial, mas a mensagem não pôde ser gravada, mesmo depois de várias tentativas. " +
+    "Ela não aparece no Inbox e a IA não a respondeu: confira no painel do provedor do número as conversas desse horário e responda por lá.",
+  rearme:
+    "Enquanto este aviso estiver aberto, outras mensagens do número oficial que também não entrarem não abrem aviso novo: " +
+    "depois de conferir, marque-o como resolvido para voltar a ser avisado.",
+} as const;
+
+/**
+ * A mensagem do NÚMERO OFICIAL que entrou, mas cuja ingestão parou no meio e passou
+ * da janela de retomada: a quinta família. O reprocessamento roda os efeitos sem a
+ * IA, então o texto da quarta seria falso: a mensagem ESTÁ no Inbox. Título próprio
+ * pela mesma razão das outras: o dreno de handlers o exclui do seu dedupe.
+ */
+export const MENSAGEM_DO_NUMERO_OFICIAL_SEM_ATENDIMENTO = {
+  titulo: "Uma mensagem do número oficial ficou sem atendimento",
+  consequencia:
+    "Um cliente escreveu para o número oficial e a mensagem está no Inbox, mas o processamento dela parou no meio e o prazo para retomá-lo passou. " +
+    "A IA não vai responder essa mensagem e nenhum negócio nasce dela: confira as conversas desse horário e responda por lá.",
+  rearme:
+    "Enquanto este aviso estiver aberto, outras mensagens na mesma situação não abrem aviso novo: " +
+    "depois de conferir, marque-o como resolvido para voltar a ser avisado.",
+} as const;
+
+/** O aviso da quarta ou da quinta família: o que aconteceu e o que fazer primeiro, o técnico no fim. */
+export function avisoDaMensagemDoNumeroOficial(
+  evento: { eventType: string; tentativas: number; motivo: string },
+  efeito: EfeitoDoEvento = MENSAGEM_DO_NUMERO_OFICIAL_QUE_NAO_ENTROU,
+): { title: string; body: string } {
+  return avisoDeEventoMorto({ ...evento, efeito });
+}
+
 export const TITULO_GENERICO = "Uma tarefa automática parou de tentar";
 
 const CONSEQUENCIA_GENERICA =
@@ -123,13 +174,18 @@ const REARME_GENERICO =
   "(a IA que deixa de responder um cliente abre o seu próprio): " +
   "depois de corrigida a causa, marque-o como resolvido para voltar a ser avisado.";
 
+function contagemDeTentativas(n: number): string {
+  if (n === 0) return "nenhuma tentativa";
+  return n === 1 ? "1 tentativa" : `${n} tentativas`;
+}
+
 export function avisoDeEventoMorto(evento: EventoMorto): { title: string; body: string } {
   return {
     title: evento.efeito?.titulo ?? TITULO_GENERICO,
     body:
       `${evento.efeito?.consequencia ?? CONSEQUENCIA_GENERICA} ` +
       `${evento.efeito?.rearme ?? REARME_GENERICO} ` +
-      `${DETALHE_TECNICO} evento ${evento.eventType}, ${evento.tentativas} tentativas; ` +
+      `${DETALHE_TECNICO} evento ${evento.eventType}, ${contagemDeTentativas(evento.tentativas)}; ` +
       `motivo: ${evento.motivo.slice(0, 400)}`,
   };
 }

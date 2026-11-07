@@ -12,10 +12,13 @@ import { provedorDaChamada } from "@/lib/ai/log-invocation";
 import { visaoEmVigor } from "@/lib/ai/pontos/capacidade-em-vigor";
 import { PONTO_TRANSCRICAO_DE_AUDIO, PONTO_VISAO_DE_IMAGEM } from "@/lib/ai/pontos/registro";
 import { costCents, type TokenUsage } from "@/lib/agent-engine/edge/llm/pricing";
+import { custoDoModeloForaDoMotor } from "@/lib/agent-engine/edge/llm/pricing-do-catalogo";
 import {
   aplicarOrcamento,
   LlmBudgetExceededError,
   normalizarErro,
+  tetoDeSaida,
+  tetoDeSaidaDaOrganizacao,
 } from "@/lib/agent-engine/edge/llm/run-model-call";
 import { normalizarChaveDeOrcamento } from "@/lib/agent-engine/edge/llm/orcamento";
 import { chaveDeOrcamentoDaInstalacao } from "@/lib/instalacao/comportamento";
@@ -37,7 +40,7 @@ import {
   type DecisaoDeTranscricao,
   type OrigemDaTranscricao,
 } from "@/lib/messaging/media/escada-de-transcricao";
-import type { TranscriptionProvider } from "@/lib/messaging/media/transcription";
+import { TranscriptionTooLargeError, type TranscriptionProvider } from "@/lib/messaging/media/transcription";
 import { logger } from "@/lib/logger";
 import { validarParProvedorModelo } from "@/lib/ai/par-provedor-modelo";
 import { reagirAConclusaoDeDerivacao } from "@/lib/escalacao/handoff-tecnico";
@@ -45,6 +48,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { motivoDaRecusaDeDestino } from "@/lib/automation/destinos-internos-autorizados";
 import { DETALHE_TECNICO } from "@/lib/event-log/aviso-de-evento-morto";
 import { MENSAGEM_REDIGIDA } from "@/lib/lgpd/cascata";
+import { lerPessoalDaConversa } from "@/lib/contacts/contato-pessoal";
 import { avaliarPedidosFalados } from "@/workers/media-derive-worker.pedidos";
 
 export const MEDIA_DERIVE_CONSUMER_KEY = "media_derive_v1";
@@ -143,6 +147,50 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
 
   if (!msg.media_storage_path) return markSkipped("no media");
   if (msg.media_derived_status === "ready") return { consumer_key, status: "skipped", detail: "already derived" };
+
+  // ⚠️ CONTATO PESSOAL (spec 21) NÃO É LEITURA DE IA — #3592.
+  //
+  // A marca tira o contato da operação inteira: a conversa fechada, o
+  // follow-up, a campanha e a prospecção param, o RAG esquece, e a entrada de
+  // mensagem pula os efeitos. A derivação de mídia era o único caminho que
+  // olhava só a mensagem — baixava o arquivo do bucket e mandava o áudio
+  // (transcrição), a foto (visão), o vídeo (quadros) ou o documento ao
+  // provedor. Dois custos, e o segundo não se paga com dinheiro: token da
+  // organização em conteúdo que ninguém da operação vai ler, e a vida privada
+  // de alguém indo parar num terceiro — exatamente o que a marca promete
+  // evitar. O arquivo CONTINUA salvo e tocável na conversa; o que não nasce é
+  // o `media_derived_text`.
+  //
+  // A régua é uma só (`contacts.is_personal`, via
+  // `lib/contacts/contato-pessoal.ts`): este worker só conhece a conversa, e
+  // resolver o dono aqui dentro com um SELECT próprio criaria a segunda régua
+  // que divergiria na primeira condição nova. O corte vem DEPOIS do
+  // `already derived` de propósito: rebaixar `ready` para `skipped` sem apagar
+  // o texto faria a linha mentir sobre o próprio estado.
+  //
+  // `skipped` é TERMINAL no dreno do turno (`DERIVACAO_TERMINADA`): sem a
+  // marca, o drain da conversa esperaria o teto de 120s por uma leitura que
+  // ninguém vai fazer.
+  const donoDaMidia = await lerPessoalDaConversa(admin, {
+    organizationId: msg.organization_id,
+    conversationId: msg.conversation_id,
+  });
+  // Falha de leitura FECHA O GASTO em vez de abrir. Na entrada de mensagem a
+  // mesma dúvida segue o fluxo (a mensagem já está gravada; falhar ali viraria
+  // 500 para o provider) — aqui a política é a inversa e é de propósito: sem
+  // saber de quem é o arquivo, mandar o áudio de alguém a um terceiro é o dano
+  // que não tem desfazer, e o dreno ainda tem cinco tentativas para a leitura
+  // voltar. A causa vai para o log; o recibo do evento leva um código estável.
+  if (donoDaMidia.erro) {
+    logger.warn("[media-derive] leitura de is_personal falhou; a mídia não vai ao provedor", {
+      organization_id: msg.organization_id,
+      conversation_id: msg.conversation_id,
+      detail: donoDaMidia.erro,
+    });
+    return { consumer_key, status: "error", detail: "personal_check_failed" };
+  }
+  if (donoDaMidia.pessoal) return markSkipped("contato pessoal");
+
   if (!TIPOS_DERIVAVEIS.has(msg.type)) return { consumer_key, status: "skipped", detail: `type ${msg.type}` };
   // Vídeo é opt-in (custo: ffmpeg + N chamadas de visão): só deriva se algum agente
   // publicado da org tem video_frames_enabled=true (flag da migration 0058).
@@ -186,7 +234,7 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
   // derivação é `failed` + a razão, gravada em `metadata.media_derived_motivo`,
   // que é o que o operador lê antes de sair mexendo em Provedores de IA.
   const markFailed = async (motivo: string) => {
-    await admin.from("messages")
+    return admin.from("messages")
       .update({
         media_derived_text: MARCADOR_NAO_LIDA,
         media_derived_status: "failed",
@@ -336,6 +384,28 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
           ? { provider: conversa.provider, apiKey: conversa.apiKey, modelId: conversa.defaultModel }
           : null,
       chaveOpenai,
+      // Degrau 0: o Scribe que a organização escolheu no painel. Binding
+      // apontando para ElevenLabs sem chave utilizável NÃO derruba a derivação —
+      // a escada segue para o degrau seguinte e o log diz por quê, a mesma
+      // regra do binding de visão acima.
+      elevenlabsEscolhido: async () => {
+        if (!precisaTranscricao) return null;
+        const binding = await lerBindingDoPonto(admin, row.organization_id, "transcricao_de_audio");
+        if (binding?.provider !== "elevenlabs") return null;
+        try {
+          const el = await resolveOrgLlmConfig(derivePool(), llmCfg, row.organization_id, {
+            provider: "elevenlabs",
+            credentialId: binding.credential_id,
+          });
+          return { apiKey: el.apiKey, modelId: binding.model_id || "scribe_v1" };
+        } catch (err) {
+          logger.warn("[media-derive] ElevenLabs escolhido para transcrever, sem credencial utilizável; seguindo a escada", {
+            organization_id: row.organization_id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          return null;
+        }
+      },
     });
     logger.info("[media-derive] transcrição resolvida", {
       organization_id: row.organization_id,
@@ -476,6 +546,20 @@ export async function deriveMessageMedia(row: EventRow): Promise<HandlerResult> 
     }
     return { consumer_key, status: "ok" };
   } catch (err) {
+    if (err instanceof TranscriptionTooLargeError) {
+      const motivo = "o áudio excede o limite de 25 MB da transcrição pela OpenRouter e não foi enviado ao serviço";
+      try {
+        const { error } = await markFailed(motivo);
+        if (error) return { consumer_key, status: "error", detail: "failed_status_update_failed" };
+      } catch {
+        return { consumer_key, status: "error", detail: "failed_status_update_failed" };
+      }
+      await avisarMidiaNaoLida(
+        msg.organization_id, rotuloDoTipo, motivo,
+        "Envie um áudio menor, de até 25 MB, para que o conteúdo possa ser transcrito.",
+      );
+      return { consumer_key, status: "skipped", detail: "transcription_audio_too_large" };
+    }
     const detail = err instanceof Error ? err.message : String(err);
     if (row.attempts >= DRAIN_MAX_ATTEMPTS - 1) {
       logger.error("[media-derive] failed permanently", { message_id: msg.id, detail });
@@ -569,7 +653,7 @@ async function lerBindingDoPonto(
 }
 
 function buildDeriveDeps(
-  llm: Pick<OrgLlmConfig, "provider" | "apiKey" | "defaultModel" | "orcamento" | "orcamentoIndisponivelPorque" | "origemDaChave">,
+  llm: Pick<OrgLlmConfig, "provider" | "apiKey" | "defaultModel" | "orcamento" | "orcamentoIndisponivelPorque" | "origemDaChave" | "params">,
   decisao: DecisaoDeTranscricao,
   orgId: string,
   admin: ReturnType<typeof createAdminClient>,
@@ -606,11 +690,10 @@ function buildDeriveDeps(
   // O gate de orçamento do seam, não uma cópia: mesmo veredito, mesmo item
   // `budget_exceeded` na Central, mesma linha `orcamento_esgotado` em
   // Execuções. Vale para toda chamada de LLM cobrada por token que este
-  // worker faz — a visão e o degrau 3 da transcrição (o modelo de conversa da
-  // organização). Os degraus 1 e 2 da transcrição ficam fora: o custo deles é
-  // nulo (o serviço tem preço próprio, que o sistema não conhece), então
-  // nunca entram na soma que o teto compara, e o degrau 1 pode ser o serviço
-  // da própria instalação, que não é gasto da organização.
+  // worker faz — a visão e o degrau 4 da transcrição (o modelo de conversa da
+  // organização). Os serviços dos degraus 1 a 3 conservam o comportamento
+  // anterior, sem este gate de LLM. O custo informado pela OpenRouter pode
+  // entrar na soma de gastos; sua ausência continua null, sem estimativa.
   const barradoPeloTeto = async (d: {
     tipo: "imagem" | "áudio";
     oQueNaoSaiu: string;
@@ -780,6 +863,11 @@ function buildDeriveDeps(
             ],
           },
         ],
+        // Sem teto, a OpenRouter reserva o MÁXIMO do modelo contra o saldo da
+        // chave e recusa com crédito baixo. O mesmo teto das respostas do
+        // agente: o que a organização configurou, ou 4096, muito acima da
+        // saída medida (máx. 182 tokens).
+        maxOutputTokens: tetoDeSaida(tetoDeSaidaDaOrganizacao(llm.params), undefined),
       });
     } catch (err) {
       registrarChamadaDeMidia(admin, orgId, () =>
@@ -788,13 +876,14 @@ function buildDeriveDeps(
       throw err;
     }
     registrarChamadaDeMidia(admin, orgId, () => {
+      const latency_ms = Date.now() - inicio;
       const uso = {
         inputTokens: res.usage.inputTokens ?? 0,
         outputTokens: res.usage.outputTokens ?? 0,
         cacheReadTokens: res.usage.inputTokenDetails.cacheReadTokens ?? 0,
         cacheWriteTokens: res.usage.inputTokenDetails.cacheWriteTokens ?? 0,
       };
-      return {
+      const linhaCom = (cost_cents: number | null): ChamadaDeMidia => ({
         purpose: PONTO_VISAO_DE_IMAGEM,
         provider: llm.provider,
         model: modelo,
@@ -802,9 +891,12 @@ function buildDeriveDeps(
         output_tokens: uso.outputTokens,
         cache_read_tokens: uso.cacheReadTokens,
         cache_write_tokens: uso.cacheWriteTokens,
-        cost_cents: costCents(modelo, uso),
-        latency_ms: Date.now() - inicio,
-      };
+        cost_cents,
+        latency_ms,
+      });
+      // A mesma régua do seam: tabela estática primeiro; o catálogo da instalação só
+      // quando ela não conhece o modelo — e depois de o texto já ter voltado.
+      return custoComCatalogo(modelo, llm.provider, uso, linhaCom);
     });
     return res.text;
   };
@@ -855,10 +947,10 @@ function buildDeriveDeps(
   //
   // Só o degrau 1 (o serviço de transcrição do `.env`) aponta para um
   // endereço configurado à mão — por isso é o único que ainda passa pela
-  // recusa de destino interno antes da chave sair. Os degraus 2 e 3 vão para
+  // recusa de destino interno antes da chave sair. Os degraus 2, 3 e 4 vão para
   // o endereço público do provedor com a chave da própria organização.
   // `semTranscricao` continua sendo o fallback de quem não é áudio (vídeo e
-  // imagem têm o caminho deles), porque o degrau 4 `nada` já foi tratado no
+  // imagem têm o caminho deles), porque o degrau 5 `nada` já foi tratado no
   // corpo do handler — lá em cima, com `failed` + motivo.
   //
   // Todo degrau que transcreve passa por `comCustoRegistrado`: a chamada paga
@@ -875,7 +967,7 @@ function buildDeriveDeps(
       model: decisao.anuncio.modelId ?? "desconhecido",
       origem: decisao.origem,
     });
-  // O degrau 3 é o modelo de conversa da organização: chamada de LLM cobrada
+  // O degrau 4 é o modelo de conversa da organização: chamada de LLM cobrada
   // por token, então passa pelo teto antes de o áudio sair, como a visão.
   const transcriberDoModelo = (servico: TranscriptionProvider): TranscriptionProvider => ({
     transcribe: async (audio, mime) => {
@@ -924,8 +1016,8 @@ interface ChamadaDeMidia {
   latency_ms: number;
   /**
    * Na transcrição, o degrau da escada que ouviu o áudio. É o que separa a
-   * linha de custo nulo por construção (degraus 1 e 2, serviço sem tokens) da
-   * linha de LLM sem preço conhecido (degrau 3), que acende o aviso.
+   * ausência de custo informado por serviço (degraus 1 a 3) do preço de LLM
+   * desconhecido (degrau 4), que acende o aviso.
    */
   origem_da_escolha?: OrigemDaTranscricao;
   /** Ausente = `ok`. */
@@ -988,41 +1080,75 @@ function linhaDeFalha(
 function registrarChamadaDeMidia(
   admin: ReturnType<typeof createAdminClient>,
   orgId: string,
-  montar: () => ChamadaDeMidia,
+  montar: () => ChamadaDeMidia | Promise<ChamadaDeMidia>,
 ): void {
-  try {
-    const linha = montar();
-    void Promise.resolve(
-      admin.from("llm_calls").insert({
-        organization_id: orgId,
-        status: "ok",
-        ...linha,
-        provider: provedorDaChamada(linha.provider, linha.model),
-      }),
-    ).then(
-      ({ error }) => {
-        if (error) {
-          logger.warn("[media-derive] o banco recusou a linha de custo", {
-            organization_id: orgId,
-            purpose: linha.purpose,
-            error: error.message,
-          });
-        }
-      },
-      (err: unknown) => {
-        logger.warn("[media-derive] não consegui gravar a linha de custo", {
-          organization_id: orgId,
-          purpose: linha.purpose,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      },
-    );
-  } catch (err) {
+  const avisoDeMontagem = (err: unknown) => {
     logger.warn("[media-derive] não consegui montar a linha de custo", {
       organization_id: orgId,
       error: err instanceof Error ? err.message : String(err),
     });
+  };
+  const gravar = (linha: ChamadaDeMidia) => {
+    try {
+      void Promise.resolve(
+        admin.from("llm_calls").insert({
+          organization_id: orgId,
+          status: "ok",
+          ...linha,
+          provider: provedorDaChamada(linha.provider, linha.model),
+        }),
+      ).then(
+        ({ error }) => {
+          if (error) {
+            logger.warn("[media-derive] o banco recusou a linha de custo", {
+              organization_id: orgId,
+              purpose: linha.purpose,
+              error: error.message,
+            });
+          }
+        },
+        (err: unknown) => {
+          logger.warn("[media-derive] não consegui gravar a linha de custo", {
+            organization_id: orgId,
+            purpose: linha.purpose,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        },
+      );
+    } catch (err) {
+      avisoDeMontagem(err);
+    }
+  };
+  let montada: ChamadaDeMidia | Promise<ChamadaDeMidia>;
+  try {
+    montada = montar();
+  } catch (err) {
+    avisoDeMontagem(err);
+    return;
   }
+  // Linha síncrona grava NA HORA, como sempre; só a que espera o catálogo vai
+  // para a cadeia que ninguém espera — o texto da mídia nunca depende dela.
+  if (montada instanceof Promise) void montada.then(gravar, avisoDeMontagem);
+  else gravar(montada);
+}
+
+/**
+ * O custo de uma chamada de mídia cobrada por token, pela MESMA régua do seam
+ * (`run-model-call.ts`): a tabela estática do motor primeiro; quando ela não conhece
+ * o modelo (provedor personalizado, modelo de catálogo), o preço do catálogo da
+ * instalação. Síncrono quando a tabela resolve — o INSERT sai na hora, como antes
+ * —, e uma promessa só no caso do catálogo. `custoDoModeloForaDoMotor` nunca
+ * rejeita: banco fora do ar vira custo nulo com aviso.
+ */
+function custoComCatalogo(
+  model: string,
+  provider: string,
+  uso: TokenUsage,
+  linhaCom: (cost_cents: number | null) => ChamadaDeMidia,
+): ChamadaDeMidia | Promise<ChamadaDeMidia> {
+  const doMotor = costCents(model, uso);
+  if (doMotor !== null) return linhaCom(doMotor);
+  return custoDoModeloForaDoMotor(derivePool(), { model, provider, usage: uso, log: logger }).then(linhaCom);
 }
 
 /**
@@ -1030,12 +1156,14 @@ function registrarChamadaDeMidia(
  * destino não aceito, teto de gasto) ficam FORA deste embrulho, então não
  * gravam linha de custo.
  *
- * Dois tipos de cobrança passam aqui. O modelo de conversa (degrau 3) é LLM
+ * Dois tipos de cobrança passam aqui. O modelo de conversa (degrau 4) é LLM
  * cobrado por token e devolve o uso (`transcribeMedindo`): a linha leva tokens
- * e o custo da tabela de preços, nulo só quando o modelo não está nela. O
- * serviço `/v1/audio/transcriptions` (degraus 1 e 2) tem preço próprio, que o
- * sistema não conhece, e não devolve tokens que se leiam aqui: custo nulo,
- * nunca 0.
+ * e o custo pela régua do seam — a tabela de preços e, quando ela não conhece o
+ * modelo, o catálogo da instalação —, nulo só quando nenhum dos dois o conhece.
+ * O serviço `/v1/audio/transcriptions` (degraus 1 a 3) usa o custo informado
+ * pela API: o `usage.cost` em USD da OpenRouter, ou a duração que a OpenAI
+ * cobra (`usage.seconds` do `whisper-1`) vezes o preço por minuto. Sem esse
+ * dado, fica null; não se estima preço por tokens nem se inventa zero.
  */
 function comCustoRegistrado(
   servico: TranscriptionProvider,
@@ -1052,13 +1180,16 @@ function comCustoRegistrado(
       const inicio = Date.now();
       let texto: string;
       let uso: TokenUsage | null = null;
+      let custoInformado: number | null | undefined;
       try {
         if (servico.transcribeMedindo) {
-          ({ texto, uso } = await servico.transcribeMedindo(audio, mime));
+          ({ texto, uso, custoCents: custoInformado } = await servico.transcribeMedindo(audio, mime));
         } else {
           texto = await servico.transcribe(audio, mime);
         }
       } catch (err) {
+        // Limite recusado antes do fetch não é chamada paga nem falha da API.
+        if (err instanceof TranscriptionTooLargeError) throw err;
         registrarChamadaDeMidia(ctx.admin, ctx.orgId, () =>
           linhaDeFalha(err, {
             purpose: PONTO_TRANSCRICAO_DE_AUDIO,
@@ -1070,18 +1201,25 @@ function comCustoRegistrado(
         );
         throw err;
       }
-      registrarChamadaDeMidia(ctx.admin, ctx.orgId, () => ({
-        purpose: PONTO_TRANSCRICAO_DE_AUDIO,
-        provider: ctx.provider,
-        model: ctx.model,
-        origem_da_escolha: ctx.origem,
-        input_tokens: uso?.inputTokens ?? 0,
-        output_tokens: uso?.outputTokens ?? 0,
-        cache_read_tokens: uso?.cacheReadTokens ?? 0,
-        cache_write_tokens: uso?.cacheWriteTokens ?? 0,
-        cost_cents: uso ? costCents(ctx.model, uso) : null,
-        latency_ms: Date.now() - inicio,
-      }));
+      registrarChamadaDeMidia(ctx.admin, ctx.orgId, () => {
+        const latency_ms = Date.now() - inicio;
+        const linhaCom = (cost_cents: number | null): ChamadaDeMidia => ({
+          purpose: PONTO_TRANSCRICAO_DE_AUDIO,
+          provider: ctx.provider,
+          model: ctx.model,
+          origem_da_escolha: ctx.origem,
+          input_tokens: uso?.inputTokens ?? 0,
+          output_tokens: uso?.outputTokens ?? 0,
+          cache_read_tokens: uso?.cacheReadTokens ?? 0,
+          cache_write_tokens: uso?.cacheWriteTokens ?? 0,
+          cost_cents,
+          latency_ms,
+        });
+        // Custo informado pelo serviço (USD da OpenRouter, duração cobrada pela
+        // OpenAI) vence; o modelo de conversa (degrau 4) vai pela régua do seam.
+        if (custoInformado !== undefined) return linhaCom(custoInformado);
+        return uso ? custoComCatalogo(ctx.model, ctx.provider, uso, linhaCom) : linhaCom(null);
+      });
       return texto;
     },
   };

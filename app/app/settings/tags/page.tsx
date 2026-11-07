@@ -34,7 +34,7 @@ import { redirect } from "next/navigation";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
 import { ROLE_RANK } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
-import { tagsInternasDaOrg } from "@/lib/schemas/settings";
+import { tagsDaEquipeDaOrg, tagsInternasDaOrg } from "@/lib/schemas/settings";
 import type { LinhaDeVocabulario } from "@/lib/schemas/tags";
 import { createClient } from "@/lib/supabase/server";
 
@@ -90,6 +90,11 @@ export default async function TagsPage({ searchParams }: { searchParams: Promise
   const tagsInternas = tagsInternasDaOrg(
     (linhaDaOrganizacao as { settings?: unknown } | null)?.settings,
   );
+  // #3534: a lista da equipe sai da MESMA leitura de `settings`, com a mesma
+  // régua de normalização — só muda a chave lida.
+  const tagsDaEquipe = tagsDaEquipeDaOrg(
+    (linhaDaOrganizacao as { settings?: unknown } | null)?.settings,
+  );
 
   const idioma = user.idioma;
   const t = (texto: string) => traduzir(texto, idioma);
@@ -131,6 +136,9 @@ export default async function TagsPage({ searchParams }: { searchParams: Promise
       {/* #2353: a lista de contato interno não depende do vocabulário (que pode
           ter falhado acima) — vive em `settings` e é independente dele. */}
       <TagsInternasForm tags={tagsInternas} idioma={idioma} />
+      {/* #3534: a lista da EQUIPE, ao lado e não no lugar da interna. Contato
+          aqui continua sendo atendido; o que ele não tem é repasse por clima. */}
+      <TagsInternasForm tags={tagsDaEquipe} idioma={idioma} variante="equipe" />
     </div>
   );
 }
