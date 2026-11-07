@@ -7,16 +7,29 @@ import { formatDistanceToNowStrict } from "date-fns";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCases, type CaseListItem } from "@/hooks/ai/useCases";
+import type { AvisoDeVazioDeCasos } from "@/lib/ai/cases/liberacao-de-casos";
 import { STATUS_BADGE_VARIANT, STATUS_LABEL, tipoDeCasoLabel } from "@/lib/ai/case-copy";
 import { CaretLeft, Robot } from "@/lib/ui/icons";
 import { cn } from "@/lib/utils";
 import { useT } from "@/hooks/i18n/useT";
 import { CaseDetail } from "./CaseDetail";
 
-export function CaseList({ heading }: { heading?: ReactNode } = {}) {
+export function CaseList({
+  heading,
+  aviso = null,
+}: {
+  heading?: ReactNode;
+  /**
+   * Por que a fila está vazia quando NENHUM agente da organização pode abrir
+   * caso (`lib/ai/cases/liberacao-de-casos`). `null` = a fila pode receber caso
+   * e o vazio é o de sempre ("ainda não pediram"), que não se explica.
+   */
+  aviso?: AvisoDeVazioDeCasos | null;
+} = {}) {
   const t = useT();
   const [tab, setTab] = useState<"open" | "resolved">("open");
   // Deep link: o aviso "um atendimento espera decisão" na Central manda para cá
@@ -67,19 +80,23 @@ export function CaseList({ heading }: { heading?: ReactNode } = {}) {
               <Skeleton className="h-16 w-full" />
             </div>
           ) : !data || data.cases.length === 0 ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center">
-              <Robot size={28} className="text-muted-foreground" aria-hidden />
-              <p className="text-sm font-medium">
-                {tab === "open" ? t("Nenhum caso aberto") : t("Nenhum caso concluído")}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {tab === "open"
-                  ? t(
-                      'Os casos aparecem aqui quando um agente publicado, com "Deixar o agente pedir uma tarefa a alguém e seguir conversando" ligado, pede algo a você. Conversa passada para uma pessoa vai para o Inbox.',
-                    )
-                  : t("Casos concluídos, cancelados ou repassados ficam aqui.")}
-              </p>
-            </div>
+            aviso && tab === "open" ? (
+              <VazioSemChave aviso={aviso} />
+            ) : (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center">
+                <Robot size={28} className="text-muted-foreground" aria-hidden />
+                <p className="text-sm font-medium">
+                  {tab === "open" ? t("Nenhum caso aberto") : t("Nenhum caso concluído")}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {tab === "open"
+                    ? t(
+                        'Os casos aparecem aqui quando um agente publicado, com "Deixar o agente pedir uma tarefa a alguém e seguir conversando" ligado, pede algo a você. Conversa passada para uma pessoa vai para o Inbox.',
+                      )
+                    : t("Casos concluídos, cancelados ou repassados ficam aqui.")}
+                </p>
+              </div>
+            )
           ) : (
             <ul className="min-h-0 overflow-y-auto divide-y divide-border rounded-lg border border-border">
               {data.cases.map((c) => (
@@ -104,6 +121,69 @@ export function CaseList({ heading }: { heading?: ReactNode } = {}) {
           <CaseDetail caseId={selectedId} />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * O VAZIO QUE EXPLICA — e que leva ao lugar onde se liga.
+ *
+ * O vazio de sempre ("Nenhum caso aberto" + quem abre caso) descreve um FUTURO
+ * possível. Quando nenhum agente publicado tem a chave, esse futuro não existe:
+ * nada vai aparecer por mais que se espere, e a frase vira promessa falsa. Aqui a tela diz o motivo e onde fica o botão —
+ * o cartão “Pedir ajuda sem sair da conversa” do agente.
+ *
+ * Reusa `EmptyState` (o padrão do repo para vazio que explica e leva à
+ * configuração, ver `app/app/kanban/_client.tsx`) em vez de inventar um
+ * terceiro desenho.
+ */
+function VazioSemChave({ aviso }: { aviso: AvisoDeVazioDeCasos }) {
+  const t = useT();
+
+  const headline =
+    aviso.motivo === "sem_agente"
+      ? t("Nenhum agente configurado ainda")
+      : aviso.motivo === "falta_publicar"
+        ? t("A opção de abrir casos está ligada, mas o agente não foi publicado")
+        : t("Nenhum agente está liberado para abrir casos");
+
+  const subcopy =
+    aviso.motivo === "sem_agente"
+      ? t(
+          "Casos são pedidos internos que o agente de IA abre quando esbarra em algo que só uma pessoa resolve. Configure um agente para que ele possa pedir ajuda por aqui.",
+        )
+      : aviso.motivo === "falta_publicar"
+        ? t(
+            "Ligar a opção no rascunho não basta: é a versão publicada que atende. Abra o agente e publique a versão para que a IA comece a pedir ajuda por aqui.",
+          )
+        : t(
+            "Esta tela fica vazia porque a opção “Deixar o agente pedir uma tarefa a alguém e seguir conversando”, no cartão “Pedir ajuda sem sair da conversa” do agente, está desligada — ela vem desligada de fábrica. Ligue a opção e publique a versão.",
+          );
+
+  // Sem link para quem a página do agente recusaria: papel `agent` vê Casos mas
+  // não vê agente, e um botão que termina em 403 não é ajuda.
+  const rotulo =
+    aviso.href === null
+      ? null
+      : aviso.alvo === "lista"
+        ? t("Ver os agentes")
+        : aviso.podeEditar
+          ? t("Abrir o agente")
+          : t("Ver o agente");
+
+  return (
+    <div data-testid="casos-sem-chave" className="flex flex-1 flex-col items-center justify-center">
+      <EmptyState
+        icon={Robot}
+        headline={headline}
+        subcopy={subcopy}
+        primary={aviso.href !== null && rotulo !== null ? { label: rotulo, href: aviso.href } : undefined}
+      />
+      {aviso.podeEditar ? null : (
+        <p className="-mt-6 max-w-sm text-center text-xs text-muted-foreground">
+          {t("Só um administrador da organização pode ligar esta opção.")}
+        </p>
+      )}
     </div>
   );
 }
