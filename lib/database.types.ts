@@ -13704,6 +13704,8 @@ export type Database = {
           provisional_until_handover: boolean;
           revoked_at: string | null;
           role: string;
+          /** Senha definida por quem administra e ainda não trocada (#3876). */
+          senha_provisoria: boolean;
           updated_at: string;
           user_id: string;
           /** WhatsApp PESSOAL do membro, E.164 — destino do aviso no modo `responsavel` (#3803). */
@@ -13722,6 +13724,7 @@ export type Database = {
           provisional_until_handover?: boolean;
           revoked_at?: string | null;
           role: string;
+          senha_provisoria?: boolean;
           updated_at?: string;
           user_id: string;
           whatsapp_e164?: string | null;
@@ -13738,6 +13741,7 @@ export type Database = {
           provisional_until_handover?: boolean;
           revoked_at?: string | null;
           role?: string;
+          senha_provisoria?: boolean;
           updated_at?: string;
           user_id?: string;
           whatsapp_e164?: string | null;

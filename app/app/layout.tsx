@@ -40,12 +40,28 @@ import { listarConexoesCaidas, type ConexaoCaida } from "@/lib/channels/health";
 import { VoiceCallProvider } from "@/components/voice/VoiceCallContext";
 import { ProvedorDaOcupacaoDoRodape } from "@/lib/ui/rodape-ocupado";
 import { acessoFoiRevogado } from "@/lib/auth/vinculo-revogado";
+import { senhaProvisoriaPendente } from "@/lib/auth/senha-provisoria";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await loadAuthUser();
   if (!user) redirect("/login");
 
   let activeOrg = await resolveActiveOrg(user);
+
+  /**
+   * PRIMEIRO ACESSO COM SENHA DEFINIDA PELO ADMIN (#3876) — antes de qualquer
+   * portão de onboarding, cobrança ou MFA: com a senha provisória de pé, a
+   * única tela que a pessoa pode ver é a troca. O gate VALE TAMBÉM na API
+   * (`requireRole` recusa `/api/v1` com `password_change_required`): este
+   * redirect é a experiência, não a defesa.
+   *
+   * Fica fora do `if (activeOrg)` mais abaixo porque não depende de nenhuma
+   * leitura extra — a marca vem na lista de vínculos que `loadAuthUser` já
+   * resolveu, e `resolveActiveOrg` só escolheu qual deles é o ativo.
+   */
+  if (activeOrg && senhaProvisoriaPendente(user, activeOrg.orgId)) {
+    redirect("/trocar-senha");
+  }
 
   // Sem organização ativa existem DOIS estados, e eles pedem telas opostas:
   //

@@ -30,6 +30,11 @@ import { fail, type ApiError } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { CODIGO_ORG_DIVERGENTE, HEADER_ORG_DA_ABA } from "@/lib/auth/org-da-aba";
 import { loadAuthUser, mfaEmDivida, mfaEmDividaEstrita, orgAtivaSemPortao } from "@/lib/auth/server";
+import {
+  CODIGO_SENHA_PROVISORIA,
+  MENSAGEM_SENHA_PROVISORIA,
+  senhaProvisoriaPendente,
+} from "@/lib/auth/senha-provisoria";
 import { ROLE_RANK, type ActiveOrg, type AuthUser, type Role } from "@/lib/auth/types";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { STATUS_OPERANTE, ehOperante } from "@/lib/organizacao/operante";
@@ -166,6 +171,35 @@ export async function requireRole(min: Role, opts: RequireRoleOpts = {}): Promis
     return {
       ok: false,
       response: fail("forbidden_tenant", t("Sem organização ativa."), 403, { requestId }),
+    };
+  }
+
+  /**
+   * O GATE DO PRIMEIRO ACESSO (#3876) — AQUI, e não só no layout.
+   *
+   * Quem foi criado por um administrador com senha definida por ele entra com
+   * essa senha, e não pode usar o produto antes de trocá-la. O layout de
+   * `/app` redireciona para a tela de troca, mas layout não roda em rota de
+   * API: com o redirect como única defesa, a sessão de senha provisória
+   * chamaria direto `POST /api/v1/messages`, `.../lgpd/anonymize`, exportação,
+   * cobrança — tudo o que exige uma pessoa que já escolheu a própria senha.
+   *
+   * Fica ANTES do atalho de platform admin e do rank: enquanto a troca não
+   * acontece, não existe leitura nem escrita nesta organização, e a recusa não
+   * depende de papel (o recém-criado pode ser admin da empresa). O código é o
+   * que a tela usa para reconhecer a recusa e levar à troca; `route` de troca
+   * de senha não passa por aqui (Server Action própria).
+   *
+   * Sessão de acompanhamento fica de fora — `senhaProvisoriaPendente` já
+   * ignora `support`.
+   */
+  if (senhaProvisoriaPendente(user, org.orgId)) {
+    return {
+      ok: false,
+      response: fail(CODIGO_SENHA_PROVISORIA, t(MENSAGEM_SENHA_PROVISORIA), 403, {
+        requestId,
+        details: { organization_id: org.orgId },
+      }),
     };
   }
 

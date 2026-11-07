@@ -90,6 +90,47 @@ describe("requireRole — helper único (spec 13 §4)", () => {
     expect(body.error.code).toBe("forbidden_tenant");
   });
 
+  // #3876 — o gate do primeiro acesso é do SERVIDOR. A tela de troca é o
+  // caminho bonito; esta recusa é o que impede que a senha provisória alcance
+  // qualquer rota /api/v1 chamada direto.
+  describe("gate da senha provisória (#3876)", () => {
+    function sessaoComSenhaProvisoria(role: Role, senhaProvisoria: boolean) {
+      session(role);
+      vi.mocked(loadAuthUser).mockResolvedValue({
+        ...authUserFixture(role),
+        organizations: [
+          {
+            organization_id: ORG_ID,
+            organization_name: "Org",
+            role,
+            org_status: "active",
+            senha_provisoria: senhaProvisoria,
+          },
+        ],
+      });
+    }
+
+    it("recusa 403 password_change_required ANTES de resolver o papel", async () => {
+      sessaoComSenhaProvisoria("admin", true);
+      const res = await requireRole("viewer", { requestId: "req-1", resource: "team" });
+      expect(res.ok).toBe(false);
+      if (res.ok) throw new Error("unreachable");
+      expect(res.response.status).toBe(403);
+      const body = await res.response.json();
+      expect(body.error.code).toBe("password_change_required");
+      expect(body.error.details).toEqual({ organization_id: ORG_ID });
+      // Nada de consulta de papel: quem deve trocar a senha não vê o produto.
+      expect(createClient).not.toHaveBeenCalled();
+      expect(audit).not.toHaveBeenCalled();
+    });
+
+    it("o convidado (sem a marca) atravessa normalmente", async () => {
+      sessaoComSenhaProvisoria("admin", false);
+      const res = await requireRole("viewer");
+      expect(res.ok).toBe(true);
+    });
+  });
+
   it("nega 403 forbidden_role padronizado + audita authz.denied (sem PII)", async () => {
     session("agent");
     const res = await requireRole("manager", { requestId: "req-1", resource: "team" });
