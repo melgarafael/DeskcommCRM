@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   const db = createAdminClient();
   const { data, error } = await db
     .from("amigo_connections")
-    .select("organization_id,organizations!inner(status)")
+    .select("organization_id,organizations!amigo_connections_organization_id_fkey!inner(status)")
     .eq("active", true)
     .eq("organizations.status", STATUS_OPERANTE)
     .or(`last_sync_at.is.null,last_sync_at.lt.${new Date(Date.now() - 240_000).toISOString()}`)
