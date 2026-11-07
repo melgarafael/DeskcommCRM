@@ -608,3 +608,199 @@ it.each(["completed", "no_show", "cancelled"])(
     }
   },
 );
+
+async function pessoaDaEquipe(apelido: string) {
+  const id = randomUUID(),
+    email = `${apelido}-${id}@local.test`;
+  await pool.query("insert into auth.users(id,email) values($1,$2)", [id, email]);
+  await pool.query(
+    "insert into user_organizations(organization_id,user_id,role,accepted_at) values($1,$2,'agent',now())",
+    [GOV_ORG, id],
+  );
+  await pool.query(
+    "insert into calendar_connections(id,organization_id,user_id,provider,account_email,status) values($1,$2,$3,'google_calendar',$4,'healthy')",
+    [randomUUID(), GOV_ORG, id, email],
+  );
+  return { id, email };
+}
+const convidados = (http: { remote: Event | null }) =>
+  (http.remote?.attendees ?? []).map((p) => p.email).sort();
+
+// `deskcomm_guests` e o checkpoint só existem depois do POST; por isso a publicação
+// real, e não um evento montado à mão. Com 2 ou mais convidados o hash do checkpoint
+// é o da lista inteira e não reconhece ninguém individualmente: é o caso que importa.
+async function publicadoComEquipe(ids: string[]) {
+  const f = await fixture(),
+    http = await receiver(),
+    db = pgClient();
+  await pool.query("update calendar_appointments set team_guest_user_ids=$2::uuid[] where id=$1", [
+    f.id,
+    ids,
+  ]);
+  const run = () =>
+    reconcileAppointment(db, GOV_ORG, f.id, { token: "local", transport: http.transport });
+  expect(await run()).toBe("processed");
+  return { f, http, db, run };
+}
+it("I-equipe-1: tirar uma pessoa de lista com 2 ou mais a tira do evento, sem conflito", async () => {
+  const [bruna, caio] = [await pessoaDaEquipe("bruna"), await pessoaDaEquipe("caio")];
+  const { f, http, run } = await publicadoComEquipe([bruna.id, caio.id]);
+  try {
+    expect(convidados(http)).toEqual([bruna.email, caio.email].sort());
+    http.remote = {
+      ...http.remote!,
+      attendees: [
+        { email: bruna.email, responseStatus: "accepted" },
+        { email: caio.email, responseStatus: "accepted" },
+      ],
+    };
+    await pool.query("update calendar_appointments set team_guest_user_ids=$2::uuid[] where id=$1", [
+      f.id,
+      [bruna.id],
+    ]);
+    expect(await run()).toBe("processed");
+    expect(http.remote!.attendees).toEqual([{ email: bruna.email, responseStatus: "accepted" }]);
+    expect((await row(f)).google_conflict).toBeNull();
+  } finally {
+    await http.close();
+  }
+});
+it("I-equipe-2: trocar uma pessoa da lista publica a troca, sem virar conflito", async () => {
+  const [bruna, caio, duda] = [
+    await pessoaDaEquipe("bruna"),
+    await pessoaDaEquipe("caio"),
+    await pessoaDaEquipe("duda"),
+  ];
+  const { f, http, run } = await publicadoComEquipe([bruna.id, caio.id]);
+  try {
+    await pool.query("update calendar_appointments set team_guest_user_ids=$2::uuid[] where id=$1", [
+      f.id,
+      [bruna.id, duda.id],
+    ]);
+    expect(await run()).toBe("processed");
+    expect(convidados(http)).toEqual([bruna.email, duda.email].sort());
+    expect((await row(f)).google_conflict).toBeNull();
+  } finally {
+    await http.close();
+  }
+});
+it("I-equipe-3: membro revogado sai do evento na alteração seguinte, mesmo seguindo na lista", async () => {
+  const [bruna, caio] = [await pessoaDaEquipe("bruna"), await pessoaDaEquipe("caio")];
+  const { f, http, run } = await publicadoComEquipe([bruna.id, caio.id]);
+  try {
+    await pool.query(
+      "update user_organizations set revoked_at=now() where organization_id=$1 and user_id=$2",
+      [GOV_ORG, caio.id],
+    );
+    await pool.query("update calendar_appointments set title='Consulta alterada' where id=$1", [f.id]);
+    expect(await run()).toBe("processed");
+    expect(http.remote!.summary).toBe("Consulta alterada");
+    expect(convidados(http)).toEqual([bruna.email]);
+    expect((await row(f)).google_conflict).toBeNull();
+  } finally {
+    await http.close();
+  }
+});
+it.each([
+  ["entradas inválidas", ["nao-e-uuid", "{x}", "", "12345"]],
+  ["25 entradas inválidas antes dos ids", Array.from({ length: 25 }, (_, i) => `invalida-${i}`)],
+])("I-equipe-5: %s na lista publicada não travam a passada e quem é de verdade sai", async (_, invalidas) => {
+  const [bruna, caio] = [await pessoaDaEquipe("bruna"), await pessoaDaEquipe("caio")];
+  const { f, http, run } = await publicadoComEquipe([bruna.id, caio.id]);
+  try {
+    const privadas = (http.remote!.extendedProperties as { private: Record<string, string> }).private;
+    privadas.deskcomm_guests = [...invalidas, bruna.id, caio.id].join(",");
+    await pool.query("update calendar_appointments set team_guest_user_ids=$2::uuid[] where id=$1", [
+      f.id,
+      [bruna.id],
+    ]);
+    expect(await run()).toBe("processed");
+    expect(convidados(http)).toEqual([bruna.email]);
+    expect((await row(f)).google_conflict).toBeNull();
+    expect((http.remote!.extendedProperties as { private: Record<string, string> }).private.deskcomm_guests).toBe(
+      bruna.id,
+    );
+  } finally {
+    await http.close();
+  }
+});
+it("I-equipe-6: a lista publicada só é lida em evento associado a este compromisso", async () => {
+  const [bruna, caio] = [await pessoaDaEquipe("bruna"), await pessoaDaEquipe("caio")];
+  const { f, http, db } = await publicadoComEquipe([bruna.id, caio.id]);
+  try {
+    const leituras: string[] = [];
+    const espiao = {
+      ...db,
+      from: (tabela: string) => {
+        const q = db.from(tabela);
+        const select = q.select.bind(q);
+        return Object.assign(q, {
+          select: (colunas: string) => {
+            leituras.push(colunas);
+            return select(colunas);
+          },
+        });
+      },
+    } as unknown as SupabaseClient;
+    (http.remote!.extendedProperties as { private: Record<string, string> }).private.deskcomm_org =
+      randomUUID();
+    await pool.query("update calendar_appointments set team_guest_user_ids=$2::uuid[] where id=$1", [
+      f.id,
+      [bruna.id],
+    ]);
+    await reconcileAppointment(espiao, GOV_ORG, f.id, { token: "local", transport: http.transport });
+    expect(leituras.length).toBeGreaterThan(0);
+    expect(leituras.filter((c) => c.includes("revoked_at"))).toEqual([]);
+    expect(convidados(http)).toContain(caio.email);
+  } finally {
+    await http.close();
+  }
+});
+it("I-equipe-4: sem conseguir ler quem saiu, nada é escrito e a lista publicada não avança", async () => {
+  const [bruna, caio] = [await pessoaDaEquipe("bruna"), await pessoaDaEquipe("caio")];
+  const { f, http, db, run } = await publicadoComEquipe([bruna.id, caio.id]);
+  try {
+    const publicada = (http.remote!.extendedProperties as { private: Record<string, string> }).private
+      .deskcomm_guests;
+    await pool.query("update calendar_appointments set team_guest_user_ids=$2::uuid[] where id=$1", [
+      f.id,
+      [bruna.id],
+    ]);
+    const patchesAntes = http.requests.filter((r) => r.method === "PATCH").length;
+    const leituraDerrubada = {
+      ...db,
+      from: (tabela: string) => {
+        if (tabela !== "user_organizations") return db.from(tabela);
+        // A 1ª leitura é a do membro ativo, que degrada de propósito. Só a de
+        // quem saiu pede `revoked_at` no select.
+        const q = db.from(tabela);
+        const select = q.select.bind(q);
+        return {
+          ...q,
+          select: (colunas: string) => {
+            if (!colunas.includes("revoked_at")) return select(colunas);
+            const falha = {
+              eq: () => falha,
+              in: async () => ({ data: null, error: { message: "fora do ar" } }),
+            };
+            return falha;
+          },
+        };
+      },
+    } as unknown as SupabaseClient;
+    expect(
+      await reconcileAppointment(leituraDerrubada, GOV_ORG, f.id, {
+        token: "local",
+        transport: http.transport,
+      }),
+    ).toBe("failed");
+    expect(http.requests.filter((r) => r.method === "PATCH")).toHaveLength(patchesAntes);
+    expect((http.remote!.extendedProperties as { private: Record<string, string> }).private.deskcomm_guests).toBe(
+      publicada,
+    );
+    expect(await run()).toBe("processed");
+    expect(convidados(http)).toEqual([bruna.email]);
+  } finally {
+    await http.close();
+  }
+});

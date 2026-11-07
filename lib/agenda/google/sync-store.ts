@@ -25,6 +25,16 @@ export const appointmentSnapshotSchema = z.object({
   location_kind: z.enum(["in_person", "phone", "whatsapp", "video_link", "google_meet"]),
   location_details: z.string().nullable(),
   guest_email: z.string().nullable(),
+  /**
+   * Convidados da EQUIPE (#4006) — ids de `auth.users` de membros ativos.
+   *
+   * Vem no `to_jsonb(a)` de `fn_google_appointment`, mas `z.object` STRIPA o que
+   * não está no schema: sem esta linha o worker publicaria o compromisso sem os
+   * convidados e sem saber que a lista mudou.
+   */
+  team_guest_user_ids: z.array(z.uuid()).default([]),
+  /** O tipo do compromisso — o interruptor do bloco do negócio mora nele. */
+  event_type_id: z.uuid().nullable().default(null),
   revision: z.string(),
   google_local_revision: z.string(),
   google_synced_local_revision: z.string(),

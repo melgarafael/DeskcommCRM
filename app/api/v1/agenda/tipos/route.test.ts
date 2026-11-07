@@ -479,6 +479,7 @@ describe("GET /api/v1/agenda/tipos", () => {
           antecedenciaMinimaMin: 120,
           janelaDeAgendamentoDias: 60,
           lembreteLigado: true,
+          levarDadosDoNegocio: true,
           lembreteAntecedenciaMin: 180,
           lembreteDegrausExtras: [],
           lembreteMensagem: "Oi {{nome}}, te espero {{dia}} às {{hora}}.",
@@ -498,15 +499,54 @@ describe("GET /api/v1/agenda/tipos", () => {
         reminder_minutes_before: number;
         reminder_body: string | null;
         reminder_bodies: Record<string, string>;
+        levar_dados_do_negocio: boolean;
       }>;
     };
     expect(corpo.data[0]?.reminder_enabled).toBe(true);
+    expect(corpo.data[0]?.levar_dados_do_negocio).toBe(true);
     expect(corpo.data[0]?.reminder_minutes_before).toBe(180);
     expect(corpo.data[0]?.reminder_body).toBe("Oi {{nome}}, te espero {{dia}} às {{hora}}.");
     expect(corpo.data[0]?.reminder_bodies).toEqual({});
   });
 });
 
+
+/**
+ * O BLOCO DO NEGÓCIO no evento do Google (#4006, doc 272 = B): desligado de
+ * fábrica, e a tela do tipo é a porta para ligar. O que se prende no POST é a
+ * AUSÊNCIA do campo no INSERT — quem decide o padrão é o default da coluna
+ * (false, migration 9209), não um `.default()` do Zod.
+ */
+describe("levar os dados do negócio ao Google — a chave do tipo", () => {
+  it("sem o campo, o INSERT não o menciona", async () => {
+    authOk();
+    const db = makeAdmin([]);
+    const { POST } = await import("./route");
+    await POST(req("POST", { name: "Reunião", category: "reuniao", duration_minutes: 30, location_kind: "google_meet" }));
+    expect(Object.keys(db.escritas[0]?.campos ?? {})).not.toContain("levar_dados_do_negocio");
+  });
+
+  it("PATCH liga e desliga, e o valor CHEGA à linha", async () => {
+    authOk();
+    const linhas = [linha({ id: TIPO_DA_ORG, organization_id: ORG, levar_dados_do_negocio: false })];
+    makeAdmin(linhas);
+    const { PATCH } = await import("./route");
+    expect((await PATCH(req("PATCH", { id: TIPO_DA_ORG, levar_dados_do_negocio: true }))).status).toBe(200);
+    expect(linhas[0]?.levar_dados_do_negocio).toBe(true);
+    expect((await PATCH(req("PATCH", { id: TIPO_DA_ORG, levar_dados_do_negocio: false }))).status).toBe(200);
+    expect(linhas[0]?.levar_dados_do_negocio).toBe(false);
+  });
+
+  it("recusa valor que não é booleano sem escrever", async () => {
+    authOk();
+    const linhas = [linha({ id: TIPO_DA_ORG, organization_id: ORG, levar_dados_do_negocio: false })];
+    const db = makeAdmin(linhas);
+    const { PATCH } = await import("./route");
+    expect((await PATCH(req("PATCH", { id: TIPO_DA_ORG, levar_dados_do_negocio: "sim" }))).status).toBe(422);
+    expect(db.escritas).toHaveLength(0);
+    expect(linhas[0]?.levar_dados_do_negocio).toBe(false);
+  });
+});
 
 describe("canal do lembrete na API de tipos", () => {
   const CANAL = "77777777-7777-4777-8777-777777777777";

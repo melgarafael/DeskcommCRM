@@ -34,6 +34,13 @@ export interface NovoAgendamento {
    * Google quando existe. Vazio ou ausente não convida outra pessoa.
    */
   guest_email?: string;
+  /**
+   * Convidados da EQUIPE (#4006) — ids de membros desta organização.
+   *
+   * Além do responsável e do e-mail digitado: cada um recebe o convite no Google
+   * e passa a ver o compromisso na própria agenda. `[]` limpa; ausente não mexe.
+   */
+  team_guest_user_ids?: string[];
 }
 
 /**

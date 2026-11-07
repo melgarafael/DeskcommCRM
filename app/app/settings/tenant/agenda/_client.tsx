@@ -47,6 +47,8 @@ export interface TipoRow {
   requires_confirmation: boolean;
   is_active: boolean;
   reminder_enabled: boolean;
+  /** Bloco do negócio na descrição do evento do Google (migration 9209). Desligado de fábrica. */
+  levar_dados_do_negocio?: boolean;
   reminder_channel_session_id?: string | null;
   /** Modelo aprovado para quando a janela de 24 h do cliente fechou (migration 9092). */
   reminder_meta_template_id?: string | null;
@@ -842,6 +844,7 @@ export function TiposDeAgendamentoClient({
                           return cents === null ? null : cents;
                         })(),
                         reminder_enabled: dados.get("reminder_enabled") === "on",
+                        levar_dados_do_negocio: dados.get("levar_dados_do_negocio") === "on",
                         // O campo desabilitado também não aparece, e omitir é o
                         // certo: desligar o aviso não pode apagar a lista que
                         // alguém escolheu (ver `LembreteDoCompromisso`).
@@ -936,6 +939,23 @@ export function TiposDeAgendamentoClient({
                     </span>
                   </label>
                 </div>
+                {/* Doc 272 = B: desligado de fábrica. No Google todo convidado lê
+                    a descrição — inclusive o cliente com e-mail na ficha. */}
+                <label className="flex items-start gap-2 border-t border-border pt-3 text-xs text-text-muted">
+                  <input
+                    type="checkbox"
+                    name="levar_dados_do_negocio"
+                    defaultChecked={tipo.levar_dados_do_negocio === true}
+                    data-testid={`editar-levar-negocio-${tipo.id}`}
+                    className="mt-0.5 size-4 shrink-0 rounded-sm border-border accent-accent"
+                  />
+                  <span className="grid gap-0.5">
+                    <span>{t("Levar os dados do negócio para o Google")}</span>
+                    <span className="text-[11px]">
+                      {t("Negócio, etapa, produtos, cliente e telefone entram na descrição do evento. Todo convidado lê, inclusive o cliente.")}
+                    </span>
+                  </span>
+                </label>
                 <LembreteDoCompromisso
                   tipo={tipo}
                   canais={canais}

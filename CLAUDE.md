@@ -190,6 +190,16 @@ DeskcommCRM é um sistema operacional de vendas open source com agentes de IA na
     TypeScript, o emissor usa **constante compartilhada, nunca string literal**, e a coluna fica
     **fora** do invariante `tests/invariants/vocabulario-banco-x-typescript.test.ts` — que cobre
     apenas colunas que JÁ têm CHECK. Ver o cabeçalho desse arquivo antes de "completar" o schema.
+- **Exceção deliberada ao anti-pattern 4 — lista de ids sem FK (`uuid[]`):** aceita só quando as TRÊS
+  condições valem — conjunto pequeno e com teto na rota (≤ 20), sempre lido e escrito JUNTO com a
+  linha dona (nunca consultado por item), e o handler confere que todo id é membro da organização
+  antes de gravar (recusa 422 nomeando quem ficou de fora) e o consumidor confere de novo ao usar.
+  Caso aceito: `calendar_appointments.team_guest_user_ids` (migration 9209, doc de decisão 272) —
+  quem publica no Google é um gatilho NA LINHA do compromisso, e tabela à parte exigiria um segundo
+  mecanismo só para avisar a linha. O custo, conhecido e aceito: quem perde o acesso à organização
+  segue na lista até a próxima edição (a publicação o descarta). Precedente anterior:
+  `ai_agent_versions.pipeline_ids` e `knowledge_source_ids`. Faltando uma das três condições, é
+  tabela com FK.
 - `tags text[]` + GIN index; promove pra coluna gerada apenas quando vira hot path
 - `custom_fields jsonb` com schema declarativo em `pipeline.settings.fields`; Zod construído dinamicamente
 - `vocabulary jsonb` em pipeline permite renomear lead/deal/won/lost (e-commerce: lead=Cliente, deal=Pedido, won=Pago, lost=Cancelado)
