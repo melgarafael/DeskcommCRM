@@ -732,7 +732,12 @@ export async function createContactHandler(
   // uma sessão torta não pode derrubar o cadastro. O que ela NÃO faz mais é
   // falhar calada — o erro sai em `logger.warn` lá dentro, com org, contato e
   // porta.
-  const conversa = await abrirConversaDoContatoNovo(supabase, {
+  //
+  // Cliente de SERVIÇO, não o recebido: `fn_service_begin` só é concedido a
+  // `service_role`, e com o cliente do cookie a RPC voltava 42501 — o contato
+  // gravava e a conversa nunca abria. A organização já veio de fonte confiável
+  // (sessão ou token) em `ctx`, e a escolha da sessão e a RPC filtram por ela.
+  const conversa = await abrirConversaDoContatoNovo(createAdminClient(), {
     porta: "manual",
     organizationId: ctx.organization_id,
     contactId: contact.id,
