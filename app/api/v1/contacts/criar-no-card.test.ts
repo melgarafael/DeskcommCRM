@@ -41,11 +41,16 @@ describe("criar contato no card", () => {
     );
     const insert = vi.fn().mockResolvedValue({ error: null });
     const from = vi.fn(() => ({ insert }));
-    const result = await createContactHandler({ rpc, from } as never, ctx, input, "lead-a");
+    const comEndereco = { ...input, zip_code: "80000-000", street: "Rua XV", city: "Curitiba" };
+    const result = await createContactHandler({ rpc, from } as never, ctx, comEndereco, "lead-a");
     expect(result.contact.id).toBe("contact-a");
     expect(rpc).toHaveBeenCalledWith(
       "fn_create_contact_for_lead",
-      expect.objectContaining({ p_organization_id: "org-a", p_lead_id: "lead-a" }),
+      expect.objectContaining({
+        p_organization_id: "org-a",
+        p_lead_id: "lead-a",
+        p_contact: expect.objectContaining({ zip_code: "80000-000", street: "Rua XV", city: "Curitiba" }),
+      }),
     );
     // O contato NÃO é inserido fora da RPC: a única escrita por `from` é a timeline.
     expect(from).toHaveBeenCalledTimes(1);

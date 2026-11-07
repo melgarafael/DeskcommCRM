@@ -23,12 +23,14 @@ describe("campos configurados no cadastro", () => {
     fireEvent.click(screen.getByRole("button", { name: "Criar contato" }));
     await waitFor(() => expect(state.save).toHaveBeenCalledWith(expect.objectContaining({ custom_fields: { preferencia: "Manhã" } })));
   });
-  it("criar pelo negócio envia os campos configurados junto dos dados do card", async () => {
+  it("criar pelo negócio envia os campos configurados e o endereço junto dos dados do card", async () => {
     render(<QueryClientProvider client={new QueryClient()}><NewContactDialog open onOpenChange={() => {}} leadId="22222222-2222-4222-8222-222222222222" nomeInicial="Maria" dadosIniciais={{ email: "maria@exemplo.test", tags: ["quente"] }} permitirIniciarConversa={false} /></QueryClientProvider>);
     expect(state.leadId).toHaveBeenCalledWith("22222222-2222-4222-8222-222222222222");
     fireEvent.change(screen.getByLabelText("Preferência"), { target: { value: "Manhã" } });
+    fireEvent.change(screen.getByLabelText("Logradouro"), { target: { value: "Rua XV" } });
+    fireEvent.change(screen.getByLabelText("Cidade"), { target: { value: "Curitiba" } });
     fireEvent.click(screen.getByRole("button", { name: "Criar contato" }));
-    await waitFor(() => expect(state.save).toHaveBeenCalledWith(expect.objectContaining({ name: "Maria", email: "maria@exemplo.test", tags: ["quente"], custom_fields: { preferencia: "Manhã" } })));
+    await waitFor(() => expect(state.save).toHaveBeenCalledWith(expect.objectContaining({ name: "Maria", email: "maria@exemplo.test", tags: ["quente"], custom_fields: { preferencia: "Manhã" }, street: "Rua XV", city: "Curitiba" })));
   });
   it("sem configuração não inventa campos nem defaults de cliente", () => { state.fields = []; mount(); expect(screen.queryByText("Campos personalizados")).toBeNull(); });
   it("fechado não habilita a consulta de definições", () => { mount(false); expect(state.enabled).toHaveBeenLastCalledWith(false); });
