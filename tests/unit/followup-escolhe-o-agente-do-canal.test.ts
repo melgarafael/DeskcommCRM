@@ -427,7 +427,7 @@ describe("#3852 · os QUATRO gatilhos honram o canal", () => {
       eventoDeEtapa(),
     );
     expect(registros).toHaveLength(1);
-    expect(registros[0].agent_id, "ignorou o canal e pinou o agente de menor uuid").toBe(AGENTE_B);
+    expect(registros[0]?.agent_id, "ignorou o canal e pinou o agente de menor uuid").toBe(AGENTE_B);
   });
 
   it("stage_change: sem agente no número da conversa, NÃO inscreve com o de outro", async () => {
@@ -446,7 +446,7 @@ describe("#3852 · os QUATRO gatilhos honram o canal", () => {
       eventoDeLead(),
     );
     expect(registros).toHaveLength(1);
-    expect(registros[0].agent_id, "ignorou o canal e pinou o agente de menor uuid").toBe(AGENTE_B);
+    expect(registros[0]?.agent_id, "ignorou o canal e pinou o agente de menor uuid").toBe(AGENTE_B);
   });
 
   it("lead_created: sem agente no número da conversa, NÃO inscreve com o de outro", async () => {
@@ -465,7 +465,7 @@ describe("#3852 · os QUATRO gatilhos honram o canal", () => {
       eventoDeCaso(),
     );
     expect(registros).toHaveLength(1);
-    expect(registros[0].agent_id, "ignorou o canal e pinou o agente de menor uuid").toBe(AGENTE_B);
+    expect(registros[0]?.agent_id, "ignorou o canal e pinou o agente de menor uuid").toBe(AGENTE_B);
   });
 
   it("case_opened: sem agente no número da conversa, NÃO inscreve com o de outro", async () => {
@@ -484,7 +484,7 @@ describe("#3852 · os QUATRO gatilhos honram o canal", () => {
       eventoDeRetorno(),
     );
     expect(registros).toHaveLength(1);
-    expect(registros[0].agent_id, "ignorou o canal e pinou o agente de menor uuid").toBe(AGENTE_B);
+    expect(registros[0]?.agent_id, "ignorou o canal e pinou o agente de menor uuid").toBe(AGENTE_B);
   });
 
   it("inbound_after_silence: sem agente no número da conversa, NÃO inscreve com o de outro", async () => {
