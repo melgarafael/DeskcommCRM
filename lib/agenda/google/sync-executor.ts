@@ -337,16 +337,22 @@ export async function reconcileAppointment(
     // Listagem é sinal de mudança, não versão para um PATCH: GET exato revalida.
     const event = await api.get(a.google_calendar_id, a.google_event_id);
     const linked = event?.extendedProperties?.private;
+    const association =
+      linked?.[`${PREFIXO_PROPRIEDADE}_org`] === org &&
+      linked?.[`${PREFIXO_PROPRIEDADE}_appointment`] === id;
     /**
      * Quem ERA convidado da equipe e não fica (#4006). O evento guarda os ids
      * publicados em `deskcomm_guests`; os e-mails deles é que permitem DESconvidar.
+     * Só vale em evento que é deste compromisso: nos outros, a lista não é nossa.
      */
-    const quemSaiu = await emailsDeQuemSaiuDoEvento(
-      db,
-      org,
-      (linked?.[`${PREFIXO_PROPRIEDADE}_guests`] ?? "").split(","),
-      a.team_guest_user_ids,
-    );
+    const quemSaiu = association
+      ? await emailsDeQuemSaiuDoEvento(
+          db,
+          org,
+          (linked?.[`${PREFIXO_PROPRIEDADE}_guests`] ?? "").split(","),
+          a.team_guest_user_ids,
+        )
+      : [];
     /**
      * Os e-mails que NÓS gerenciamos no evento, a lista que o `attendees` filtra.
      * Quem saiu entra aqui: sem ele a leitura do Google não enxergaria a saída, e
@@ -358,9 +364,6 @@ export async function reconcileAppointment(
       ...convidadosDaEquipe.map((g) => g.email),
       ...quemSaiu,
     ];
-    const association =
-      linked?.[`${PREFIXO_PROPRIEDADE}_org`] === org &&
-      linked?.[`${PREFIXO_PROPRIEDADE}_appointment`] === id;
     const wasPublished = base !== null;
     const conflict = async (
       reason: GoogleConflict["reason"],

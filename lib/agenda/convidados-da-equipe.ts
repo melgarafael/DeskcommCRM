@@ -1,3 +1,5 @@
+import { ehUuid } from "@/lib/inbox/rascunho-sugerido";
+
 /**
  * CONVIDADOS DA EQUIPE — as réguas que não dependem de banco (#4006).
  *
@@ -16,7 +18,11 @@
 export const MAXIMO_DE_CONVIDADOS_DA_EQUIPE = 20;
 
 /**
- * A lista canônica: sem repetidos, sem vazios, com teto.
+ * A lista canônica: só UUID, sem repetidos, com teto.
+ *
+ * A forma é conferida ANTES do teto: entrada que não é id não ocupa vaga de quem
+ * é, e não chega ao `.in()` de uma coluna uuid, onde derrubaria a leitura inteira.
+ * A rota já recusa id malformado no schema; aqui a lista pode vir de outra fonte.
  *
  * A deduplicação aqui é a mesma que o Google exige no `attendees` (e-mail
  * repetido = evento recusado inteiro). Repetir cedo evita depender de a tela
@@ -29,7 +35,7 @@ export function normalizarConvidadosDaEquipe(
   const saida: string[] = [];
   for (const bruto of ids ?? []) {
     const id = typeof bruto === "string" ? bruto.trim().toLowerCase() : "";
-    if (!id || vistos.has(id)) continue;
+    if (!ehUuid(id) || vistos.has(id)) continue;
     vistos.add(id);
     saida.push(id);
     if (saida.length >= MAXIMO_DE_CONVIDADOS_DA_EQUIPE) break;

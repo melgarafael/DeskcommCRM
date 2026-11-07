@@ -701,6 +701,61 @@ it("I-equipe-3: membro revogado sai do evento na alteração seguinte, mesmo seg
     await http.close();
   }
 });
+it.each([
+  ["entradas inválidas", ["nao-e-uuid", "{x}", "", "12345"]],
+  ["25 entradas inválidas antes dos ids", Array.from({ length: 25 }, (_, i) => `invalida-${i}`)],
+])("I-equipe-5: %s na lista publicada não travam a passada e quem é de verdade sai", async (_, invalidas) => {
+  const [bruna, caio] = [await pessoaDaEquipe("bruna"), await pessoaDaEquipe("caio")];
+  const { f, http, run } = await publicadoComEquipe([bruna.id, caio.id]);
+  try {
+    const privadas = (http.remote!.extendedProperties as { private: Record<string, string> }).private;
+    privadas.deskcomm_guests = [...invalidas, bruna.id, caio.id].join(",");
+    await pool.query("update calendar_appointments set team_guest_user_ids=$2::uuid[] where id=$1", [
+      f.id,
+      [bruna.id],
+    ]);
+    expect(await run()).toBe("processed");
+    expect(convidados(http)).toEqual([bruna.email]);
+    expect((await row(f)).google_conflict).toBeNull();
+    expect((http.remote!.extendedProperties as { private: Record<string, string> }).private.deskcomm_guests).toBe(
+      bruna.id,
+    );
+  } finally {
+    await http.close();
+  }
+});
+it("I-equipe-6: a lista publicada só é lida em evento associado a este compromisso", async () => {
+  const [bruna, caio] = [await pessoaDaEquipe("bruna"), await pessoaDaEquipe("caio")];
+  const { f, http, db } = await publicadoComEquipe([bruna.id, caio.id]);
+  try {
+    const leituras: string[] = [];
+    const espiao = {
+      ...db,
+      from: (tabela: string) => {
+        const q = db.from(tabela);
+        const select = q.select.bind(q);
+        return Object.assign(q, {
+          select: (colunas: string) => {
+            leituras.push(colunas);
+            return select(colunas);
+          },
+        });
+      },
+    } as unknown as SupabaseClient;
+    (http.remote!.extendedProperties as { private: Record<string, string> }).private.deskcomm_org =
+      randomUUID();
+    await pool.query("update calendar_appointments set team_guest_user_ids=$2::uuid[] where id=$1", [
+      f.id,
+      [bruna.id],
+    ]);
+    await reconcileAppointment(espiao, GOV_ORG, f.id, { token: "local", transport: http.transport });
+    expect(leituras.length).toBeGreaterThan(0);
+    expect(leituras.filter((c) => c.includes("revoked_at"))).toEqual([]);
+    expect(convidados(http)).toContain(caio.email);
+  } finally {
+    await http.close();
+  }
+});
 it("I-equipe-4: sem conseguir ler quem saiu, nada é escrito e a lista publicada não avança", async () => {
   const [bruna, caio] = [await pessoaDaEquipe("bruna"), await pessoaDaEquipe("caio")];
   const { f, http, db, run } = await publicadoComEquipe([bruna.id, caio.id]);
