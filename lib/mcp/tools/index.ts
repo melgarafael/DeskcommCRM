@@ -28,7 +28,7 @@ import {
   crmProposeLeadFieldsFromDocument,
 } from "./leads";
 import { crmGetPipelineForecast, crmListPipelines } from "./pipelines";
-import { crmSendWhatsappMessage } from "./messages";
+import { crmSendMaterial, crmSendWhatsappMessage } from "./messages";
 import { crmStartConversationAndSend } from "./start-conversation";
 import {
   crmAssignConversation,
@@ -163,6 +163,9 @@ export const allTools: ReadonlyArray<McpToolDefinition> = [
   crmRetomarLead,
   crmProposeLeadFieldsFromDocument,
   crmSendWhatsappMessage,
+  // #4129 — o material cadastrado da empresa, como documento. Serve ao wire
+  // (API/MCP); no turno, o envio é da nativa `send_message` com `material_id`.
+  crmSendMaterial,
   crmStartConversationAndSend,
   crmCreateConversationDraft,
   crmAssignConversation,

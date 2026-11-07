@@ -411,6 +411,27 @@ const PROVA_PROPRIA: readonly Excecao[] = [
       "`app/api/v1/avisos`, com admin client) lê e grava. Migration 9059, " +
       "issue #1418.",
   },
+  {
+    tabela: "crm_materiais",
+    razao:
+      "tests/invariants/crm-materiais-rls.test.ts (migration 9222, #4129) — dois " +
+      "tenants reais por JWT `authenticated` nas DUAS direções: membro da org A lê " +
+      "o material de A e ZERO de B, e o contrário; controle positivo com as duas " +
+      "linhas semeadas, para o verde não vir de vácuo. A escrita direta por " +
+      "authenticated é recusada (só o service_role grava), anon sem privilégio, e " +
+      "o CHECK prende `storage_path` ao prefixo da organização. Fica fora de " +
+      "TABLES porque o arquivo também mede o BUCKET (`crm-materiais` privado, sem " +
+      "policy em storage.objects) no mesmo molde do `catalog-photos`.",
+  },
+  {
+    tabela: "crm_materiais_do_agente",
+    razao:
+      "tests/invariants/crm-materiais-rls.test.ts (migration 9222, #4129) — " +
+      "isolamento cross-org por JWT nas duas direções, com leitura positiva local " +
+      "e zero do vizinho; a ligação agente↔material é recusada pelo gatilho " +
+      "`fn_crm_materiais_do_agente_da_mesma_org` quando qualquer um dos dois é de " +
+      "outra organização, e authenticated não insere nem apaga.",
+  },
 ];
 
 /**

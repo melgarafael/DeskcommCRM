@@ -15,6 +15,7 @@
  * arquivo em vez de encher a cota de Storage do cliente com duplicatas.
  */
 import { BUCKET_DAS_FOTOS, fotoPertenceAoProduto, mimeDaFoto } from '@/lib/catalogo/fotos';
+import type { TipoDeMidiaComLegenda } from '@/lib/messaging/media/midia-com-legenda';
 import { createAdminClient } from '@/lib/supabase/admin';
 
 import type { Queryable } from '../queue/queue';
@@ -41,6 +42,13 @@ export interface FotoParaEnvio {
   /** caminho em `whatsapp-media`, dentro da pasta da conversa */
   storagePath: string;
   mime: string;
+  /**
+   * Tipo do anexo, quando NÃO é imagem. As fotos do produto não declaram (o
+   * caminho de envio trata ausente como imagem, o comportamento de sempre); o
+   * material da empresa (#4129) declara `document` e sai como arquivo, não como
+   * foto.
+   */
+  type?: TipoDeMidiaComLegenda;
 }
 
 /**

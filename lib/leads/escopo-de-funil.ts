@@ -133,6 +133,9 @@ export const ALVO_DE_FUNIL: Record<string, AlvoDeFunil> = {
 
   // ---- não têm funil, e isso é declarado ----
   crm_send_whatsapp_message: "sem_funil",
+  // #4129 — envia o DOCUMENTO da empresa na conversa; não lê nem move negócio,
+  // e o material é catálogo da organização. Mesmo alvo da irmã acima.
+  crm_send_material: "sem_funil",
   // Abre conversa nova (contato pode nem ter negócio ainda) e manda a primeira
   // mensagem — não recebe `lead_id` nem `pipeline_id`. Como as de configuração
   // logo abaixo, a barreira dela é OUTRA: `requiresRole: manager` +
