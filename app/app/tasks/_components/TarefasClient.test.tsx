@@ -171,3 +171,37 @@ describe("TarefasClient — o calendário não prende o celular", () => {
   });
 });
 
+describe("TarefasClient — o quadro também não prende o celular", () => {
+  /**
+   * As colunas do quadro têm 320 px: a 390 px elas não cabem, e a régua é a
+   * MESMA `md` que esconde o seletor de modo. Escolhido no tablet deitado e
+   * girado para o celular, o quadro não pode ficar preso na tela sem o botão
+   * que volta — quem responde no celular fica com a lista, montada por baixo.
+   * Este caso é o par do calendário logo acima: os dois modos entraram juntos e
+   * saem juntos.
+   */
+  it("no modo quadro, a lista continua montada para abaixo de md e o quadro só vale de md para cima", async () => {
+    renderTela(false);
+    await waitFor(() => expect(fetchEspiao).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole("button", { name: "Quadro" }));
+
+    const lista = await screen.findByTestId("tarefas-lista");
+    expect(lista.className).toContain("md:hidden");
+    const quadro = screen.getByTestId("tarefas-quadro-wrap");
+    expect(quadro.className).toMatch(/(^|\s)hidden(\s|$)/);
+    expect(quadro.className).toContain("md:block");
+  });
+
+  it("o quadro faz a SUA consulta, com teto próprio — não a lista de 500 linhas", async () => {
+    renderTela(false);
+    await waitFor(() => expect(fetchEspiao).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole("button", { name: "Quadro" }));
+
+    // O teto menor é o que impede um quadro com a base inteira de derrubar a
+    // aba; se o modo quadro voltasse a desenhar a lista carregada pela tela,
+    // esta URL não sairia.
+    await waitFor(() =>
+      expect(urls().some((u) => u.includes("limite=200"))).toBe(true),
+    );
+  });
+});
