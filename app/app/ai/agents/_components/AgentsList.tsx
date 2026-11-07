@@ -11,6 +11,7 @@ import type { AgentRow } from "@/hooks/ai/useAgent";
 import { AgentCard } from "./AgentCard";
 import { AgentsListFilters, type StatusFilter } from "./AgentsListFilters";
 import { deriveAgentStatus } from "./AgentStatusBadge";
+import { filtrarAgentes } from "@/lib/ai/agents/filtrar-agentes";
 
 interface Props {
   initialData: AgentRow[];
@@ -27,14 +28,16 @@ export function AgentsList({ initialData, canWrite }: Props) {
   const agents = data ?? [];
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return agents.filter((a) => {
-      const s = deriveAgentStatus(a);
-      if (!showArchived && s === "archived") return false;
-      if (status !== "all" && s !== status) return false;
-      if (q && !a.name.toLowerCase().includes(q)) return false;
-      return true;
-    });
+    const q = query.trim();
+    return filtrarAgentes(
+      agents.filter((a) => {
+        const s = deriveAgentStatus(a);
+        if (!showArchived && s === "archived") return false;
+        if (status !== "all" && s !== status) return false;
+        return true;
+      }),
+      q,
+    );
   }, [agents, status, query, showArchived]);
 
   if (!isLoading && agents.length === 0) {
