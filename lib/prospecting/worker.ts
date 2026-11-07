@@ -22,6 +22,7 @@ import {
 import { parseServiceBoundary } from "@/lib/atendimento/fronteira";
 import { autorizarContatoParaIA } from "@/lib/ai/elegibilidade/autorizacao";
 import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consulta-pre-go-live";
+import { fraseDaRecusaDaAbordagem } from "@/lib/ai/elegibilidade/recusa-da-abordagem";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { assertProspectingContinuation, assertProspectingDelivery } from "./guard";
@@ -38,6 +39,7 @@ import { prepararCandidatos } from "./preparo";
 import { provedoresQueConferemNumero } from "@/lib/channels";
 import { moduloLigado } from "@/lib/instalacao/modulos";
 import { CanalReconectandoError, ProspectingError } from "./provider";
+import { idiomaDaOrganizacao } from "./idioma";
 import { canalDaCampanha } from "./canal-da-campanha";
 // O carimbo do pedido da prospecção: `prospecting:` — nunca `rule:` (#3072).
 import { pedidoDaProspeccao } from "./pedido-da-prospeccao";
@@ -257,8 +259,20 @@ export async function sendNextCandidate(
     channelSessionId: canal,
     contactPhoneNumber: queued.phone ?? "",
   });
-  if (!preflight.permite)
-    throw new ProspectingError(`O canal ainda não permite esta abordagem: ${preflight.motivo}.`);
+  if (!preflight.permite) {
+    // #4170 — o código da recusa NÃO vai para a tela: aqui ele vira a frase que
+    // diz que o número está em modo de teste e onde liberá-lo. O código cru
+    // fica no log, que é onde alguém investiga.
+    logger.warn("[prospecting] o canal recusou a abordagem — campanha pausada", {
+      organization_id: c.organization_id,
+      campaign_id: c.id,
+      channel_session_id: canal,
+      motivo: preflight.motivo,
+    });
+    throw new ProspectingError(
+      fraseDaRecusaDaAbordagem(preflight.motivo, await idiomaDaOrganizacao(db, c.organization_id)),
+    );
+  }
   // MODO `on_send`: a empresa está na fila, mas ainda NÃO existe no CRM — contato,
   // negócio e conversa nascem agora, na vez dela de ser abordada. Se ela saiu da fila
   // no caminho (virou contato por outro lado, ou o CRM recusou o cadastro), não houve

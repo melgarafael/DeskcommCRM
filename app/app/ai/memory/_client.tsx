@@ -35,6 +35,7 @@ import {
 import { useT } from "@/hooks/i18n/useT";
 import { countPayloadTokens } from "@/lib/ai/estimativa-de-tokens";
 import { entradasVigentes, renderOrgMemory } from "@/lib/agent-engine/agent/org-memory";
+import { estadoDoDocumento, estadoDoHistorico, estadoDosAprendizados, type CamposNaoLidos } from "./leitura";
 import {
   definirLimiteDoPesoDaMemoria,
   type ErroLimiteDoPeso,
@@ -46,7 +47,19 @@ import {
 } from "@/lib/schemas/settings";
 
 interface Props {
+  /**
+   * A empresa da memória. Entra na CHAVE da query: sem ela, o cache de uma
+   * empresa (ou de uma leitura vazia anterior) é servido para outra, e o
+   * `initialState` que o servidor acabou de ler é DESCARTADO — tela vazia com
+   * a memória publicada existindo (#4171).
+   */
+  orgId: string;
   initialState: OrgMemoryState;
+  /**
+   * O que o servidor NÃO conseguiu ler (`page.tsx`). A tela não pode chamar de
+   * "vazio" o que ela não conseguiu perguntar.
+   */
+  camposNaoLidos?: CamposNaoLidos;
   /** `YYYY-MM-DD` no fuso da organização — a régua de "vencida" do runtime. */
   hoje: string;
   /** O limite do aviso de peso desta organização (`limiteDoPesoDaMemoria`). */
@@ -265,7 +278,7 @@ function formatDate(iso: string, idioma: string): string {
   });
 }
 
-export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarOLimite }: Props) {
+export function OrgMemoryClient({ orgId, initialState, camposNaoLidos, hoje, limiteDoAviso, podeEditarOLimite }: Props) {
   const tagDoIdioma = useTagDeIdioma();
   const t = useT();
   // Exaustivo por tipo: uma origem nova no CHECK sem rótulo aqui para de compilar,
@@ -275,7 +288,7 @@ export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarO
     flywheel: t("aprendido automaticamente"),
     agent: t("anotado pelo agente"),
   };
-  const { data } = useOrgMemory(initialState);
+  const { data, refetch } = useOrgMemory(initialState, orgId);
   const document = data?.document ?? null;
   const versions = data?.versions ?? [];
   const entries = data?.entries ?? [];
@@ -369,8 +382,39 @@ export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarO
 
   const visibleEntries = entries.filter((e) => (showArchived ? e.status === "archived" : e.status === "active"));
 
+  // Os três estados por campo, na ordem que importa: falha VENCE vazio, e
+  // conteúdo vence os dois (`./leitura.ts`). A tela nunca afirma "nenhuma
+  // versão publicada" sem ter conseguido perguntar (#4171).
+  const estadoDocumento = estadoDoDocumento({ temDocumento: document !== null, camposNaoLidos });
+  const estadoAprendizados = estadoDosAprendizados({
+    quantidadeVisivel: visibleEntries.length,
+    camposNaoLidos,
+  });
+  const estadoHistorico = estadoDoHistorico({ quantidade: versions.length, camposNaoLidos });
+  const leituraIncompleta = (camposNaoLidos ?? []).length > 0;
+
   return (
     <div className="flex flex-col gap-6">
+      {leituraIncompleta && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-warning-bg bg-surface-elevated p-4"
+        >
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium text-warning-fg">
+              {t("Parte da memória não pôde ser lida agora")}
+            </p>
+            <p className="text-sm text-text-muted">
+              {t(
+                "O que aparece vazio ou incompleto abaixo pode existir: a leitura falhou, não a memória. Recarregue antes de reescrever qualquer coisa.",
+              )}
+            </p>
+          </div>
+          <Button variant="secondary" size="sm" onClick={() => void refetch()}>
+            {t("Tentar de novo")}
+          </Button>
+        </div>
+      )}
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -382,10 +426,12 @@ export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarO
                 )}
               </CardDescription>
             </div>
-            {document ? (
+            {estadoDocumento === "ativo" && document ? (
               <Badge variant="success">
                 v{document.version_number} {t("ativa")}
               </Badge>
+            ) : estadoDocumento === "nao_lido" ? (
+              <Badge variant="warning">{t("Não consegui ler a versão publicada")}</Badge>
             ) : (
               <Badge variant="neutral">{t("Nenhuma versão publicada ainda")}</Badge>
             )}
@@ -420,7 +466,7 @@ export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarO
             </div>
           </div>
 
-          {versions.length > 0 && (
+          {estadoHistorico === "lista" && (
             <div className="mt-4 border-t border-border pt-3">
               <p className="mb-2 text-xs font-medium text-muted-foreground">{t("Histórico de versões")}</p>
               <ul className="flex flex-col gap-1">
@@ -443,6 +489,11 @@ export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarO
                 ))}
               </ul>
             </div>
+          )}
+          {estadoHistorico === "nao_lido" && (
+            <p className="mt-4 border-t border-border pt-3 text-xs text-warning-fg">
+              {t("Não consegui ler o histórico de versões agora.")}
+            </p>
           )}
         </CardContent>
       </Card>
@@ -527,13 +578,15 @@ export function OrgMemoryClient({ initialState, hoje, limiteDoAviso, podeEditarO
             </button>
           )}
 
-          {visibleEntries.length === 0 ? (
+          {estadoAprendizados !== "lista" ? (
             <p className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
-              {showArchived
-                ? t("Nenhum aprendizado arquivado.")
-                : t(
-                    'Nenhum aprendizado ainda. Use "+ Novo aprendizado" para ensinar algo que os agentes devem lembrar em toda conversa — ou aguarde o sistema sugerir aprendizados automaticamente a partir do atendimento real.',
-                  )}
+              {estadoAprendizados === "nao_lido"
+                ? t("Não consegui ler os aprendizados")
+                : showArchived
+                  ? t("Nenhum aprendizado arquivado.")
+                  : t(
+                      'Nenhum aprendizado ainda. Use "+ Novo aprendizado" para ensinar algo que os agentes devem lembrar em toda conversa — ou aguarde o sistema sugerir aprendizados automaticamente a partir do atendimento real.',
+                    )}
             </p>
           ) : (
             <ol className="flex flex-col gap-2">

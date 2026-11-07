@@ -4739,7 +4739,18 @@ export const DICIONARIO: Traducoes = {
   },
   "Novo aprendizado": { es: "Nuevo aprendizaje" },
   "Não consegui carregar a configuração de IA": { es: "No pude cargar la configuración de IA" },
+  "O canal recusou a abordagem e a campanha foi pausada para não repetir o mesmo erro. Confira o acesso da IA ao número em Conexões › cartão do número › Configurar acesso da IA.": {
+    es: "El canal rechazó el abordaje y la campaña se pausó para no repetir el mismo error. Revisa el acceso de la IA al número en Conexiones › tarjeta del número › Configurar acceso de la IA.",
+  },
+  "Este número de WhatsApp está em modo de teste: a IA só conversa com os números da lista de teste, e a empresa que a prospecção tentou abordar não está nela. Para liberar o número ao público, abra Conexões › cartão do número › Configurar acesso da IA › Liberar atendimento ao público.": {
+    es: "Este número de WhatsApp está en modo de prueba: la IA solo conversa con los números de la lista de prueba, y la empresa que la prospección intentó abordar no está en ella. Para liberar el número al público, abre Conexiones › tarjeta del número › Configurar acceso de la IA › Liberar atención al público.",
+  },
   "Não consegui carregar as execuções": { es: "No pude cargar las ejecuciones" },
+  "Não consegui ler a versão publicada": { es: "No pude leer la versión publicada" },
+  "Não consegui ler o histórico de versões agora.": {
+    es: "No pude leer el historial de versiones ahora.",
+  },
+  "Não consegui ler os aprendizados": { es: "No pude leer los aprendizajes" },
   "Não conseguimos carregar os números agora. Recarregue a página em alguns instantes — se continuar assim, avise quem cuida da sua instalação.": {
     es: "No pudimos cargar los números en este momento. Recarga la página en unos instantes. Si el problema continúa, avisa a quien administra tu instalación.",
   },
@@ -14928,6 +14939,10 @@ export const DICIONARIO: Traducoes = {
   "Não recebe acesso aos dados do CRM.": { es: "No recibe acceso a los datos del CRM." },
   "Texto disponível em português.": { es: "Texto disponible en portugués." },
   "Parte deste conteúdo está disponível apenas em português.": { es: "Parte de este contenido está disponible solo en portugués." },
+  "Parte da memória não pôde ser lida agora": { es: "Parte de la memoria no se pudo leer ahora" },
+  "O que aparece vazio ou incompleto abaixo pode existir: a leitura falhou, não a memória. Recarregue antes de reescrever qualquer coisa.": {
+    es: "Lo que aparece vacío o incompleto abajo puede existir: falló la lectura, no la memoria. Recarga antes de reescribir cualquier cosa.",
+  },
   "Adicione guias ao CRM sem entregar dados ou executar código de terceiros. Cada ação volta ao servidor antes de abrir Tarefas.": { es: "Agrega guías al CRM sin entregar datos ni ejecutar código de terceros. Cada acción pasa por el servidor antes de abrir Tareas." },
   "Buscar por nome ou descrição": { es: "Buscar por nombre o descripción" },
   "Buscar extensões": { es: "Buscar extensiones" },

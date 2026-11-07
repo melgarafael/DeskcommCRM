@@ -46,12 +46,22 @@ export interface OrgMemoryVersionDetail {
   created_at: string;
 }
 
-const KEY = ["org-memory"];
+const KEY = ["org-memory"] as const;
 
-export function useOrgMemory(initialData?: OrgMemoryState) {
+/**
+ * A MEMÓRIA DA EMPRESA — e a empresa vai na CHAVE (#4171).
+ *
+ * Com a chave global (`["org-memory"]`), o `initialData` que o servidor acabou
+ * de ler é DESCARTADO sempre que já existe cache para aquele nome: o cache de
+ * uma visita anterior (ou de outra empresa, na troca de organização sem reload)
+ * vence o estado fresco, e a tela mostra memória vazia com a versão publicada
+ * existindo. Com a empresa na chave, o cache de uma não responde pela outra, e
+ * o que o servidor leu é o que aparece.
+ */
+export function useOrgMemory(initialData: OrgMemoryState, orgId: string) {
   return useQuery({
-    queryKey: KEY,
-    ...(initialData !== undefined ? { initialData } : {}),
+    queryKey: [...KEY, orgId],
+    initialData,
     queryFn: () => apiClient.get<{ data: OrgMemoryState }>("/api/v1/ai/memory").then((r) => r.data),
   });
 }
