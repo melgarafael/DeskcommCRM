@@ -75538,6 +75538,17 @@ begin
 end;
 $recibos_9018$;
 
+-- ---- skill ativada pela etiqueta: trigger 'tag' (migration 9230) ----
+-- Num bloco só: o update.sh roda sem ON_ERROR_STOP, e um `add` solto que falhasse deixaria a
+-- tabela sem CHECK.
+do $skill_trigger_tag$
+begin
+  alter table public.skill_activations
+    drop constraint if exists skill_activations_trigger_check;
+  alter table public.skill_activations
+    add constraint skill_activations_trigger_check check (trigger in ('hard', 'probe', 'tag'));
+end $skill_trigger_tag$;
+
 -- ---- parcela de honorários na moeda da organização (migration 0770, #3379) ----
 -- Módulo opcional: `fn_honorarios_provisionar()` só roda na INSTALAÇÃO, então
 -- quem já tem o módulo jamais passaria por ela de novo e ficaria sem a coluna —
