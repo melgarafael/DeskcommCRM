@@ -13,6 +13,8 @@
  *   - Redacts `conversation_notes` and enqueues its attachment with the
  *     `internal-media` bucket (migration 0483) — notes are NOT in
  *     `whatsapp-media`, which belongs to the customer channel.
+ *   - Clears the profile picture and lead attachments, enqueueing the files,
+ *     and repeats all of this for the records merged into the contact (9243).
  *   - Inserts a dense `lgpd.redact_executed` audit row inside the TX.
  *
  * All tenant filtering is enforced at the RPC level (programmatic
@@ -96,10 +98,9 @@ export async function cascadeRedactContact(args: CascadeArgs): Promise<CascadeRe
   // bucket: a pessoa "anonimizada" continuaria com o rosto guardado. Numa
   // auditoria LGPD isso é o mesmo que não ter anonimizado.
   //
-  // Fica no app, e não dentro da função SQL, de propósito: aquela função tem
-  // ~200 linhas e um `create or replace` exigiria copiá-la inteira só para
-  // acrescentar uma coluna — risco de divergir do original sem necessidade.
-  // Aqui o efeito é o mesmo e a mudança é auditável.
+  // Desde a 9243 a função SQL faz o mesmo, para as fichas fundidas neste contato
+  // e para quem não passa por aqui. Isto segue por causa da falha fechada: a fila
+  // fica preenchida antes da RPC, e a RPC então encontra o ponteiro já nulo.
   //
   // A fila é idempotente (`unique (bucket, object_path)`), então re-executar
   // uma anonimização não duplica nada.
@@ -133,12 +134,15 @@ export async function cascadeRedactContact(args: CascadeArgs): Promise<CascadeRe
     // anonimizado, auditoria afirmando que a redação ocorreu, e o rosto ainda no
     // bucket sem ninguém capaz de achá-lo. Melhor abortar a cascata e
     // reprocessar do que anonimizar pela metade.
-    await enfileirarMidiaNaFila(admin, {
-      organizationId: args.organizationId,
-      requestId: args.requestId,
-      bucket: "whatsapp-media",
-      objectPath: avatarPath,
-    });
+    // Só o caminho exato que o cron grava. O ponteiro sai de qualquer forma.
+    if (avatarPath === `${args.organizationId}/avatars/${args.contactId}.jpg`) {
+      await enfileirarMidiaNaFila(admin, {
+        organizationId: args.organizationId,
+        requestId: args.requestId,
+        bucket: "whatsapp-media",
+        objectPath: avatarPath,
+      });
+    }
 
     await admin
       .from("contacts")

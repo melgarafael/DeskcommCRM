@@ -138,11 +138,19 @@ describe("cascadeRedactContact — foto de perfil", () => {
     expect(zeragem?.patch).toMatchObject({ avatar_storage_path: null });
   });
 
+  it("caminho fora da forma exata solta o ponteiro e não entra na fila", async () => {
+    contatoRow = { avatar_storage_path: `${ORG}/avatars/outro-contato.jpg` };
+
+    await cascadeRedactContact({ organizationId: ORG, contactId: CONTATO, requestId: PEDIDO });
+
+    expect(inserts).toEqual([]);
+    expect(updates.find((u) => u.tabela === "contacts")?.patch).toMatchObject({ avatar_storage_path: null });
+  });
+
   it("enfileira ANTES de chamar a RPC — depois dela o caminho poderia já não existir", async () => {
-    // A ordem é a propriedade em disputa: se o enfileiramento passar para depois
-    // da cascata e algum dia a RPC limpar `avatar_storage_path` junto, o caminho
-    // se perde e o arquivo fica órfão no bucket — uma pessoa "anonimizada" com o
-    // rosto ainda guardado. Este teste é o que impede a inversão.
+    // A ordem é a propriedade em disputa: desde a 9243 a RPC também limpa
+    // `avatar_storage_path`, e a fila cheia antes dela é a falha fechada que
+    // `cascadeRedactContact` documenta. Este teste é o que impede a inversão.
     await cascadeRedactContact({ organizationId: ORG, contactId: CONTATO, requestId: PEDIDO });
 
     const posInsert = ops.indexOf("insert:storage_redaction_queue");
