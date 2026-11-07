@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { COLUNAS_DO_PLANO, novoPlanoSchema } from "@/lib/schemas/cobranca-plano";
+
 import {
   declararPlano,
   limitesDaTela,
@@ -65,6 +67,27 @@ describe("o vocabulário de recursos", () => {
       `[vocabulário] ${RECURSOS_DO_PLANO.length} recursos: ` +
         RECURSOS_DO_PLANO.map((r) => `${r}→${RECURSOS[r].coluna} (>=${RECURSOS[r].minimo})`).join(", "),
     );
+  });
+});
+
+describe("o schema da rota e o SELECT derivam do MESMO vocabulário", () => {
+  it("COLUNAS_DO_PLANO traz a coluna de CADA recurso declarado (nenhuma fica de fora)", () => {
+    const colunas = new Set(COLUNAS_DO_PLANO.split(",").map((c) => c.trim()));
+    for (const recurso of RECURSOS_DO_PLANO) {
+      expect(colunas.has(RECURSOS[recurso].coluna), `${recurso}: ${RECURSOS[recurso].coluna} fora do SELECT`).toBe(true);
+    }
+  });
+
+  it("o zod aceita o piso do vocabulário e recusa um abaixo dele — no campo certo", () => {
+    const base = { nome: "Essencial", preco_cents: 4_990, intervalo: "mes" as const, trial_dias: 14 };
+    for (const recurso of RECURSOS_DO_PLANO) {
+      const { coluna, minimo } = RECURSOS[recurso];
+      expect(novoPlanoSchema.safeParse({ ...base, [coluna]: minimo }).success, `${recurso}=${minimo}`).toBe(true);
+
+      const abaixo = novoPlanoSchema.safeParse({ ...base, [coluna]: minimo - 1 });
+      expect(abaixo.success, `${recurso}=${minimo - 1} deveria ser recusado`).toBe(false);
+      if (!abaixo.success) expect(abaixo.error.issues[0]?.path).toEqual([coluna]);
+    }
   });
 });
 

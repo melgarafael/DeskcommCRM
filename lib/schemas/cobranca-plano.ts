@@ -53,18 +53,12 @@ export const edicaoDoPlanoSchema = z
   .partial()
   .refine((v) => Object.keys(v).length > 0, "Nada para mudar.");
 
-/** O `SELECT` do plano inteiro — as colunas dos tetos vêm do vocabulário. */
-export const COLUNAS_DO_PLANO = [
-  "id",
-  "nome",
-  "preco_cents",
-  "moeda",
-  "intervalo",
-  "trial_dias",
-  ...RECURSOS_DO_PLANO.map((recurso) => RECURSOS[recurso].coluna),
-  "padrao_no_cadastro",
-  "oferecido_ao_cliente",
-  "arquivado_em",
-  "created_at",
-  "updated_at",
-].join(", ");
+/**
+ * O `SELECT` do plano inteiro — string LITERAL de propósito: o supabase-js só
+ * tipa as colunas devolvidas quando o argumento é um literal (um `join()` vira
+ * `string` e o retorno degrada para `GenericStringError`). As colunas dos tetos
+ * são as do vocabulário, e `vocabulario.test.ts` reprova se uma delas faltar
+ * aqui — a lista digitada não fica sem gate.
+ */
+export const COLUNAS_DO_PLANO =
+  "id, nome, preco_cents, moeda, intervalo, trial_dias, max_assentos, max_canais, teto_ia_usd_cents, padrao_no_cadastro, oferecido_ao_cliente, arquivado_em, created_at, updated_at";
