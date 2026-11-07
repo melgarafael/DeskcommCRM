@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { NAV_CATALOG } from "@/lib/navigation/catalogo";
 import type { Metadata } from "next";
 import { NavHub } from "@/components/shell/NavHub";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
@@ -30,17 +32,28 @@ export default async function SettingsHubPage() {
   const activeOrg = await resolveActiveOrg(user);
   const idioma = user.idioma;
 
+  const agencia =
+    activeOrg && !user.support && (user.agency_org_ids ?? []).includes(activeOrg.orgId);
+  const porta = NAV_CATALOG.find((d) => d.href === "/app/settings/organizacoes")!;
   return (
-    <NavHub
-      group="organizacao"
-      isPlatformAdmin={user.is_platform_admin && !user.support}
-      role={activeOrg?.role ?? null}
-      interfaceSettings={activeOrg?.interface_settings}
-      // A porta do banco externo mora neste hub, e só existe com o módulo ligado.
-      modulosLigados={await modulosLigados(createAdminClient())}
-      title={traduzir("Configurações", idioma)}
-      subtitle={traduzir("Sua conta, os dados da empresa e quem tem acesso ao quê.", idioma)}
-      locale={idioma}
-    />
+    <>
+      {agencia && (
+        <Link className="mx-6 mt-6 block rounded-lg border p-6" href={porta.href}>
+          <h2 className="font-semibold">{traduzir(porta.label, idioma)}</h2>
+          <p className="text-sm text-muted-foreground">{traduzir(porta.description, idioma)}</p>
+        </Link>
+      )}
+      <NavHub
+        group="organizacao"
+        isPlatformAdmin={user.is_platform_admin && !user.support}
+        role={activeOrg?.role ?? null}
+        interfaceSettings={activeOrg?.interface_settings}
+        // A porta do banco externo mora neste hub, e só existe com o módulo ligado.
+        modulosLigados={await modulosLigados(createAdminClient())}
+        title={traduzir("Configurações", idioma)}
+        subtitle={traduzir("Sua conta, os dados da empresa e quem tem acesso ao quê.", idioma)}
+        locale={idioma}
+      />
+    </>
   );
 }

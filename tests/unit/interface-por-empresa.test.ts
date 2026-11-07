@@ -55,7 +55,7 @@ describe("portas por empresa (issue #1341)", () => {
   it("sem escolha de nenhum dos lados nada muda: a empresa completa segue completa", () => {
     expect(combinarInterfaces(completa, completa)).toEqual(INTERFACE_COMPLETA);
     expect(combinarInterfaces(undefined, null).destinos).toBeUndefined();
-    expect(hrefs(combinarInterfaces(completa, completa))).toEqual(NAV_CATALOG.map((d) => d.href));
+    expect(hrefs(combinarInterfaces(completa, completa))).toEqual(NAV_CATALOG.filter((d) => !("agenciaOnly" in d && d.agenciaOnly)).map((d) => d.href));
   });
 
   it("o vínculo NÃO abre porta que a empresa não oferece", () => {

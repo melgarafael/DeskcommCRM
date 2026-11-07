@@ -220,6 +220,7 @@ const SITES: { arquivo: string; fronteira: string; papel?: "gerador" | "validado
   { arquivo: "lib/api/client.ts", fronteira: "api.idempotency-key", papel: "gerador" },
   { arquivo: "lib/api/idempotency.ts", fronteira: "api.idempotency-key", papel: "validador" },
   { arquivo: "lib/extensions/http.ts", fronteira: "api.idempotency-key", papel: "validador" },
+  { arquivo: "app/api/v1/agencia/clientes/route.ts", fronteira: "api.idempotency-key", papel: "validador" },
   { arquivo: "app/api/v1/admin/tenants/route.ts", fronteira: "api.idempotency-key", papel: "validador" },
   { arquivo: "app/api/v1/channel-sessions/route.ts", fronteira: "api.idempotency-key", papel: "validador" },
   { arquivo: "app/api/v1/lgpd/requests/[id]/approve/route.ts", fronteira: "api.idempotency-key", papel: "validador" },
