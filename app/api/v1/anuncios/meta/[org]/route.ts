@@ -52,6 +52,7 @@ import {
 } from "@/lib/plataformas-de-anuncio/pagina-de-captura";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { comIdDaRequisicao } from "@/lib/api/wrappers";
 
 export const dynamic = "force-dynamic";
 
@@ -71,7 +72,7 @@ export async function GET(req: NextRequest, ctx: RouteContext): Promise<Response
     if (!limite.allowed) {
       // 429 sem corpo de marketing: quem estoura este teto num clique real não
       // existe — é abuso, não humano legítimo.
-      return new NextResponse(null, { status: 429, headers: { "Retry-After": String(JANELA_SEGUNDOS) } });
+      return comIdDaRequisicao(new NextResponse(null, { status: 429, headers: { "Retry-After": String(JANELA_SEGUNDOS) } }), req);
     }
   }
 

@@ -18,38 +18,47 @@ import { moduloLigado } from "@/lib/instalacao/modulos";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { iniciarAutorizacao, paginaDoDesfecho } from "@/lib/mcp/servidor-externo/do-agente/retorno";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { comIdDaRequisicao } from "@/lib/api/wrappers";
 
 export const dynamic = "force-dynamic";
 
 const TETO_POR_IP = 30;
 const JANELA_SEGUNDOS = 60;
 
-function pagina(status: number, desfecho: Parameters<typeof paginaDoDesfecho>[0]): NextResponse {
-  return new NextResponse(paginaDoDesfecho(desfecho), {
-    status,
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "no-store",
-      "Referrer-Policy": "no-referrer",
-    },
-  });
+function pagina(status: number, desfecho: Parameters<typeof paginaDoDesfecho>[0], req: NextRequest): NextResponse {
+  // #4107: a página de desfecho também é resposta sob /api/ e leva o id.
+  return comIdDaRequisicao(
+    new NextResponse(paginaDoDesfecho(desfecho), {
+      status,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer",
+      },
+    }),
+    req,
+  );
 }
 
 export async function GET(req: NextRequest, contexto: { params: Promise<{ state: string }> }): Promise<NextResponse> {
   const ip = ipDoCliente(req.headers) ?? "sem-ip";
   const limite = await checkRateLimit(`mcp-oauth-iniciar:${ip}`, TETO_POR_IP, JANELA_SEGUNDOS);
   if (!limite.allowed) {
-    return new NextResponse(null, { status: 429, headers: { "Retry-After": String(JANELA_SEGUNDOS) } });
+    return comIdDaRequisicao(new NextResponse(null, { status: 429, headers: { "Retry-After": String(JANELA_SEGUNDOS) } }), req);
   }
   const admin = createAdminClient();
-  if (!(await moduloLigado(admin, "mcp_por_agente"))) return new NextResponse(null, { status: 404 });
+  if (!(await moduloLigado(admin, "mcp_por_agente"))) return comIdDaRequisicao(new NextResponse(null, { status: 404 }), req);
   const { state } = await contexto.params;
   const desfecho = await iniciarAutorizacao(admin, state);
   if (!desfecho.ok) {
-    return pagina(desfecho.motivo === "pedido_invalido" ? 410 : 503, desfecho.motivo === "pedido_invalido" ? "pedido_invalido_inicio" : "servidor_indisponivel");
+    return pagina(
+      desfecho.motivo === "pedido_invalido" ? 410 : 503,
+      desfecho.motivo === "pedido_invalido" ? "pedido_invalido_inicio" : "servidor_indisponivel",
+      req,
+    );
   }
-  return new NextResponse(null, {
+  return comIdDaRequisicao(new NextResponse(null, {
     status: 302,
     headers: { Location: desfecho.destino, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" },
-  });
+  }), req);
 }

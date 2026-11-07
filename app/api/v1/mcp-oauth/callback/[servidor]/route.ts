@@ -24,6 +24,7 @@ import { moduloLigado } from "@/lib/instalacao/modulos";
 import { ipDoCliente } from "@/lib/http/ip-do-cliente";
 import { paginaDoDesfecho, processarRetorno } from "@/lib/mcp/servidor-externo/do-agente/retorno";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { comIdDaRequisicao } from "@/lib/api/wrappers";
 
 export const dynamic = "force-dynamic";
 
@@ -42,10 +43,10 @@ export async function GET(req: NextRequest, contexto: { params: Promise<{ servid
   const ip = ipDoCliente(req.headers) ?? "sem-ip";
   const limite = await checkRateLimit(`mcp-oauth-callback:${ip}`, TETO_POR_IP, JANELA_SEGUNDOS);
   if (!limite.allowed) {
-    return new NextResponse(null, { status: 429, headers: { "Retry-After": String(JANELA_SEGUNDOS) } });
+    return comIdDaRequisicao(new NextResponse(null, { status: 429, headers: { "Retry-After": String(JANELA_SEGUNDOS) } }), req);
   }
   const admin = createAdminClient();
-  if (!(await moduloLigado(admin, "mcp_por_agente"))) return new NextResponse(null, { status: 404 });
+  if (!(await moduloLigado(admin, "mcp_por_agente"))) return comIdDaRequisicao(new NextResponse(null, { status: 404 }), req);
   const p = req.nextUrl.searchParams;
   const { servidor } = await contexto.params;
   const desfecho = await processarRetorno(admin, {
@@ -55,12 +56,12 @@ export async function GET(req: NextRequest, contexto: { params: Promise<{ servid
     code: p.get("code"),
     error: p.get("error"),
   });
-  return new NextResponse(paginaDoDesfecho(desfecho), {
+  return comIdDaRequisicao(new NextResponse(paginaDoDesfecho(desfecho), {
     status: STATUS[desfecho],
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
       "Referrer-Policy": "no-referrer",
     },
-  });
+  }), req);
 }
