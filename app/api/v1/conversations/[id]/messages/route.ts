@@ -131,7 +131,7 @@ async function responderMensagens(
     // resolvido, e o que sai é apenas `full_name` (mesmo mínimo do export em
     // PDF e de `team/assignable`). E só para quem é membro da org ativa: o
     // helper confere `user_organizations` antes de ler o nome.
-    const mensagensComNome = await comNomeDeQuemEnviou(messages, activeOrg.orgId);
+    const mensagensComNome = await comNomeDeQuemEnviou(messages, organizationId);
     return ok(mensagensComNome, { requestId, meta: { cursor, has_more } });
   } catch (err) {
     if (err instanceof ApiError) {

@@ -264,7 +264,7 @@ export async function PATCH(
   // — e por isso a decisão roda também quando o modelo ou o mapa mudam.
   if (entrada.velocidade !== undefined || tocaConteudo) {
     const canalAlvo = (mudanca.channel_session_id as string | undefined) ?? campanha.channel_session_id;
-    const canal = await lerModoDoCanal(supabase, authz.org.orgId, canalAlvo);
+    const canal = await lerModoDoCanal(supabase, authz.organizationId, canalAlvo);
     const variaveis = variaveisDaCampanhaSchema.safeParse(
       mudanca.provider_template_variables ?? campanha.provider_template_variables ?? {},
     );
