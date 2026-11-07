@@ -4,17 +4,33 @@
  * instalação não roda.
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-const { authMock, flowsMock, testeMock, updateMock, pipelinesMock, stagesMock, routerDataMock } = vi.hoisted(() => ({
+const {
+  authMock,
+  flowsMock,
+  testeMock,
+  updateMock,
+  saveMock,
+  pipelinesMock,
+  stagesMock,
+  estagiosMock,
+  routerDataMock,
+} = vi.hoisted(() => ({
   authMock: vi.fn(),
   flowsMock: vi.fn(),
   // O tipo de retorno explícito evita que o tsc infira `undefined` do default
   // e reprove os mockReturnValue de teste (#2415).
   pipelinesMock: vi.fn((): { data: unknown } => ({ data: undefined })),
   stagesMock: vi.fn((): { data: unknown } => ({ data: undefined })),
+  // #2569 — as etapas do funil gravado, pela rota leve (`/pipelines/<id>/stages`).
+  estagiosMock: vi.fn(
+    (_id?: string | null): { data: unknown; isPending?: boolean } => ({ data: undefined }),
+  ),
   testeMock: vi.fn(() => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, data: undefined as unknown })),
   updateMock: vi.fn(async () => ({})),
+  saveMock: vi.fn(async () => ({})),
   // #2415 — o que o React Query devolve no refetch: undefined = sem query em cache.
   routerDataMock: vi.fn((): { data: unknown } => ({ data: undefined })),
 }));
@@ -35,8 +51,11 @@ vi.mock("@/hooks/ai/useRouters", () => {
     useRouter: () => routerDataMock(),
     useUpdateRouter: () => ({ mutate: vi.fn(), mutateAsync: updateMock, isPending: false }),
     useDeleteRouter: mut,
-    useSaveMembers: mut,
+    useSaveMembers: () => ({ mutate: vi.fn(), mutateAsync: saveMock, isPending: false }),
     useTestRouter: testeMock,
+    // #2569 — o editor pede as etapas do funil gravado por esta porta, e o id
+    // do funil é argumento: é ele que diz QUAIS etapas são válidas.
+    useEstagiosDoFunil: (id: string | null) => estagiosMock(id),
   };
 });
 
@@ -321,7 +340,9 @@ describe("destino do funil/etapa do roteador (#2415)", () => {
     authMock.mockReturnValue({ activeOrg: { modulos_ligados: [] } });
     flowsMock.mockReturnValue({ data: undefined });
     pipelinesMock.mockReturnValue({ data: { data: [{ id: "p1", name: "Funil Vendas" }] } });
-    stagesMock.mockReturnValue({ data: { data: { stages: [{ id: "e1", name: "Prospecção" }] } } });
+    // #2569 — as etapas do destino vêm da rota do funil (`useEstagiosDoFunil`),
+    // não mais do quadro inteiro.
+    estagiosMock.mockReturnValue({ data: [{ id: "e1", name: "Prospecção" }], isPending: false });
   }
 
   it("o refetch com a resposta completa da API reidrata o destino no draft", () => {
@@ -350,6 +371,177 @@ describe("destino do funil/etapa do roteador (#2415)", () => {
     expect(screen.getByRole("combobox", { name: "Funil de destino (opcional)" })).toHaveTextContent(
       "Sem destino — só escolher o agente",
     );
+  });
+});
+
+/**
+ * #2569 — a intenção tinha `pipeline_id`/`stage_id` gravados (o SSR do page.tsx
+ * já os seleciona) e a tela abria sem o nome do funil e SEM o seletor de etapa,
+ * lida como "Sem destino — só escolher o agente".
+ *
+ * O que o #2415 (reidratação) e o #2600 (`placeholderData`) garantiram foi o
+ * DADO: `draftMembers` chega com o destino. O que faltava era o DESENHO não
+ * depender de duas listas que chegam depois — antes delas o gatilho do funil
+ * ficava VAZIO (Radix não tem item para o id gravado) e o seletor de etapa só
+ * existia quando a resposta pesada do quadro (`/pipelines/<id>/board`, que
+ * carrega leads, anexos e tarefas) chegava inteira. Numa instalação grande essa
+ * resposta demora — e, se falhar, o seletor de etapa não aparece NUNCA.
+ */
+describe("destino do funil/etapa já gravado, na primeira renderização (#2569)", () => {
+  const ROTEADOR = {
+    id: "r1",
+    name: "Roteador",
+    channel_session_id: "s1",
+    is_active: true,
+    config: {},
+    fallback_agent_id: null,
+  };
+  const MEMBRO_COM_FUNIL_E_ETAPA = {
+    id: "m1",
+    agent_id: "a1",
+    intent_name: "financiamento",
+    intent_description: "quer financiar",
+    examples: [],
+    position: 0,
+    flow_pointer_id: null,
+    pipeline_id: "p1",
+    stage_id: "e1",
+  } as never;
+  const MEMBRO_COM_FUNIL_SEM_ETAPA = {
+    ...(MEMBRO_COM_FUNIL_E_ETAPA as unknown as Record<string, unknown>),
+    stage_id: null,
+  } as never;
+  const MEMBRO_SEM_FUNIL = {
+    ...(MEMBRO_COM_FUNIL_E_ETAPA as unknown as Record<string, unknown>),
+    pipeline_id: null,
+    stage_id: null,
+  } as never;
+
+  function elemento(members: unknown) {
+    return (
+      <RouterEditorClient
+        routerId="r1"
+        initialState={{ router: ROTEADOR as never, members: members as never }}
+        agents={[{ id: "a1", name: "Agente" }]}
+        channelSessions={[]}
+        classifierModels={[]}
+      />
+    );
+  }
+
+  const funil = () => screen.getByRole("combobox", { name: "Funil de destino (opcional)" });
+  const etapa = () => screen.getByRole("combobox", { name: "Etapa de destino" });
+
+  function baseLimpa() {
+    saveMock.mockClear();
+    routerDataMock.mockReturnValue({ data: undefined });
+    authMock.mockReturnValue({ activeOrg: { modulos_ligados: [] } });
+    flowsMock.mockReturnValue({ data: undefined });
+  }
+
+  /** O estado REAL ao abrir a tela: as listas de funis e de etapas ainda não voltaram. */
+  function antesDasListas() {
+    pipelinesMock.mockReturnValue({ data: undefined });
+    estagiosMock.mockReturnValue({ data: undefined, isPending: true });
+  }
+
+  /** Depois que `/pipelines` e `/pipelines/<id>/stages` respondem. */
+  function comAsListas() {
+    pipelinesMock.mockReturnValue({ data: { data: [{ id: "p1", name: "Funil Vendas" }] } });
+    estagiosMock.mockImplementation((id?: string | null) => ({
+      data: id === "p1" ? [{ id: "e1", name: "Prospecção" }] : [],
+      isPending: false,
+    }));
+  }
+
+  beforeAll(() => {
+    // Radix Select usa pointer capture e scrollIntoView; o jsdom não tem nenhum.
+    Element.prototype.hasPointerCapture ??= () => false;
+    Element.prototype.setPointerCapture ??= () => {};
+    Element.prototype.releasePointerCapture ??= () => {};
+    Element.prototype.scrollIntoView ??= () => {};
+  });
+
+  it("funil e etapa gravados: o gatilho nunca fica vazio e o seletor de etapa já existe", () => {
+    baseLimpa();
+    antesDasListas();
+    const { rerender } = render(elemento([MEMBRO_COM_FUNIL_E_ETAPA]));
+
+    // Primeiro render, antes das listas: HÁ destino gravado. Gatilho vazio era
+    // lido como "nenhum destino" — o defeito da issue na forma que sobrou.
+    expect(funil().textContent).toBe("Funil selecionado");
+    expect(funil().textContent).not.toContain("Sem destino");
+    // O seletor de etapa depende do FUNIL, não da lista de etapas ter chegado.
+    expect(etapa()).toBeTruthy();
+
+    comAsListas();
+    rerender(elemento([MEMBRO_COM_FUNIL_E_ETAPA]));
+    // Sem clique nenhum: o nome do funil gravado e a etapa gravada.
+    expect(funil().textContent).toBe("Funil Vendas");
+    expect(etapa().textContent).toBe("Prospecção");
+    // E as etapas foram pedidas para o funil DA INTENÇÃO.
+    expect(estagiosMock).toHaveBeenCalledWith("p1");
+  });
+
+  it("funil gravado com etapa nula: mostra o funil e o seletor em \"Primeira etapa aberta\"", () => {
+    baseLimpa();
+    antesDasListas();
+    const { rerender } = render(elemento([MEMBRO_COM_FUNIL_SEM_ETAPA]));
+
+    expect(funil().textContent).toBe("Funil selecionado");
+    expect(funil().textContent).not.toContain("Sem destino");
+    expect(etapa().textContent).toBe("Primeira etapa aberta");
+
+    comAsListas();
+    rerender(elemento([MEMBRO_COM_FUNIL_SEM_ETAPA]));
+    expect(funil().textContent).toBe("Funil Vendas");
+    expect(etapa().textContent).toBe("Primeira etapa aberta");
+  });
+
+  it("sem funil: continua \"Sem destino — só escolher o agente\" e sem seletor de etapa", () => {
+    baseLimpa();
+    comAsListas();
+    render(elemento([MEMBRO_SEM_FUNIL]));
+
+    expect(funil().textContent).toBe("Sem destino — só escolher o agente");
+    expect(screen.queryByRole("combobox", { name: "Etapa de destino" })).toBeNull();
+  });
+
+  it("trocar o funil limpa a etapa e o que vai para a API leva pipeline_id novo e stage_id nulo", async () => {
+    const user = userEvent.setup();
+    baseLimpa();
+    pipelinesMock.mockReturnValue({
+      data: {
+        data: [
+          { id: "p1", name: "Funil Vendas" },
+          { id: "p2", name: "Funil Suporte" },
+        ],
+      },
+    });
+    // Uma etapa de cada funil: a de `p1` não existe em `p2`.
+    estagiosMock.mockImplementation((id?: string | null) => ({
+      data:
+        id === "p1"
+          ? [{ id: "e1", name: "Prospecção" }]
+          : id === "p2"
+            ? [{ id: "e2", name: "Negociação" }]
+            : [],
+      isPending: false,
+    }));
+    render(elemento([MEMBRO_COM_FUNIL_E_ETAPA]));
+    expect(etapa().textContent).toBe("Prospecção");
+
+    await user.click(funil());
+    await user.click(await screen.findByRole("option", { name: "Funil Suporte" }));
+
+    // A etapa de `p1` não pertence a `p2`: o destino volta a "primeira aberta".
+    expect(funil().textContent).toBe("Funil Suporte");
+    expect(etapa().textContent).toBe("Primeira etapa aberta");
+
+    await user.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(saveMock).toHaveBeenCalledWith([
+      expect.objectContaining({ pipeline_id: "p2", stage_id: null }),
+    ]);
   });
 });
 

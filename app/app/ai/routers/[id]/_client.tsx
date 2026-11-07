@@ -40,6 +40,7 @@ import {
   useDeleteRouter,
   useSaveMembers,
   useTestRouter,
+  useEstagiosDoFunil,
   type RouterDetailState,
   type RouterMemberInput,
   type RouterTestResult,
@@ -48,7 +49,7 @@ import type { ClassifierModelOption } from "@/lib/ai/classifier-models";
 import type { ChannelSessionLite } from "../../agents/[id]/_components/AgentForm";
 import { useFollowupFlows } from "@/hooks/followup/useFollowupFlows";
 // #2155 — funil/etapa de DESTINO da intenção: o card vai para o funil do produto.
-import { usePipelines, usePipelineStages } from "@/hooks/webhooks/useWebhookSources";
+import { usePipelines } from "@/hooks/webhooks/useWebhookSources";
 import { useT } from "@/hooks/i18n/useT";
 
 interface AgentLite {
@@ -164,7 +165,9 @@ export function RouterEditorClient({
   // `initialData`, o React Query o tratava como dado fresco (staleTime de 30 s,
   // sem refetch em foco) e o GET nunca acontecia ao abrir a tela: o seletor
   // ficava em "Sem destino" mesmo com a API devolvendo o funil gravado. Por
-  // isso o hook agora usa `placeholderData` (hooks/ai/useRouters.ts).
+  // isso o hook agora usa `placeholderData` (hooks/ai/useRouters.ts). O segundo
+  // pedaço do #2569 — o DESENHO não esperar as listas para mostrar o destino que
+  // já está no draft — está em `DestinoDoCard`.
   const prevMembers = React.useRef(members);
   React.useEffect(() => {
     const anterior = prevMembers.current;
@@ -663,8 +666,27 @@ function DestinoDoCard({
   const t = useT();
   const { data: pipelinesRes } = usePipelines();
   const pipelines = pipelinesRes?.data ?? [];
-  const { data: boardRes } = usePipelineStages(pipelineId);
-  const stages = boardRes?.data?.stages ?? [];
+  // #2569 — as etapas vêm da rota LEVE do funil, não do quadro inteiro: o seletor
+  // de etapa é uma pergunta de configuração e não pode esperar (nem depender)
+  // do payload de leads/anexos/tarefas do Kanban.
+  const { data: estagiosDoFunil } = useEstagiosDoFunil(pipelineId);
+  const stages = estagiosDoFunil ?? [];
+  /**
+   * #2569 — o id gravado manda; o NOME é o que a lista de funis/etapas traz
+   * depois. Enquanto ela não volta (ou se o funil gravado já foi arquivado e
+   * saiu da lista), o gatilho NÃO pode ficar vazio nem cair no "Sem destino":
+   * as duas leituras dizem que a intenção não tem destino, que é exatamente o
+   * relato da issue. O gatilho diz que há destino e o nome chega no lugar
+   * quando a lista chega.
+   */
+  const rotuloDoFunil =
+    pipelineId === null
+      ? undefined
+      : (pipelines.find((pl) => pl.id === pipelineId)?.name ?? t("Funil selecionado"));
+  const rotuloDaEtapa =
+    stageId === null
+      ? t("Primeira etapa aberta")
+      : (stages.find((st) => st.id === stageId)?.name ?? t("Etapa selecionada"));
   return (
     <div className="flex flex-wrap items-end gap-2" data-testid="seletor-de-destino">
       <div className="min-w-48 flex-1 space-y-1">
@@ -682,7 +704,7 @@ function DestinoDoCard({
           disabled={disabled}
         >
           <SelectTrigger aria-label={t("Funil de destino (opcional)")}>
-            <SelectValue placeholder={t("Sem destino — só escolher o agente")} />
+            <SelectValue placeholder={t("Sem destino — só escolher o agente")}>{rotuloDoFunil}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={NONE}>{t("Sem destino — só escolher o agente")}</SelectItem>
@@ -694,7 +716,7 @@ function DestinoDoCard({
           </SelectContent>
         </Select>
       </div>
-      {pipelineId !== null && stages.length > 0 && (
+      {pipelineId !== null && (
         <div className="min-w-40 flex-1 space-y-1">
           <Label>{t("Etapa de destino")}</Label>
           <Select
@@ -703,7 +725,7 @@ function DestinoDoCard({
             disabled={disabled}
           >
             <SelectTrigger aria-label={t("Etapa de destino")}>
-              <SelectValue placeholder={t("Primeira etapa aberta")} />
+              <SelectValue placeholder={t("Primeira etapa aberta")}>{rotuloDaEtapa}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={AUTO}>{t("Primeira etapa aberta")}</SelectItem>
