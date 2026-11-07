@@ -346,6 +346,39 @@ export function ligadosPorMotivoForte(
 }
 
 /**
+ * O par tem identidade FORTE que se CONTRADIZ? Se sim, o nome NÃO sugere nada.
+ *
+ * São duas contradições, e as duas são de documento, não de semelhança:
+ *
+ *  - **CPF.** Dois hashes diferentes, ambos presentes, são dois documentos — e
+ *    documento é a prova mais forte que existe de que a pessoa é outra. Nenhuma
+ *    coincidência de nome pode juntar o que o CPF separa.
+ *  - **Telefone.** Dois números diferentes, ambos presentes, são duas linhas —
+ *    duas fichas que o produto trata como contatos distintos (é a regra "um
+ *    número, uma ficha" da spec 31). O caso em que o número falta de um lado
+ *    continua sugerido: é justamente a ficha nascida do WhatsApp, que ainda não
+ *    tem telefone, e é o par útil. O que não se sugere é o par de duas fichas
+ *    com números DIFERENTES: aí a semelhança de nome não é evidência de nada e
+ *    separa sugestão útil de ruído.
+ *
+ * Telefone IGUAL (ou a variante do nono dígito) nunca chega aqui: o par já é
+ * forte e sai pelo agrupamento de `encontrarContatosDuplicados`. E o telefone que
+ * a ingestão parkou em `telefone_em_conflito` do outro lado também já é motivo
+ * forte — `ligadosPorMotivoForte` o reconhece.
+ */
+export function identidadeForteConflita(
+  a: Pick<ContatoParaDeduplicar, "phone_number" | "cpf_hash">,
+  b: Pick<ContatoParaDeduplicar, "phone_number" | "cpf_hash">,
+): boolean {
+  const cpfA = chaveDeCpf(a);
+  const cpfB = chaveDeCpf(b);
+  if (cpfA && cpfB && cpfA !== cpfB) return true;
+  const telefoneA = chaveDeTelefone(a.phone_number);
+  const telefoneB = chaveDeTelefone(b.phone_number);
+  return Boolean(telefoneA && telefoneB && telefoneA !== telefoneB);
+}
+
+/**
  * Pares de fichas que parecem a mesma empresa pelo NOME. Cada par é uma sugestão
  * separada — NÃO é union-find: A~B e B~C são duas sugestões, e a pessoa decide
  * cada uma. Quem já está no mesmo grupo forte (telefone, e-mail, CPF, conflito) não
@@ -355,6 +388,11 @@ export function ligadosPorMotivoForte(
  *  (a) divide DUAS OU MAIS palavras raras (até `TETO_DA_PALAVRA_RARA` fichas); ou
  *  (b) um nome inteiro, com 6 letras ou mais, aparece dentro do outro; ou
  *  (b') os nomes são idênticos — cai em (b), com o mesmo mínimo de 6 letras.
+ *
+ * O par entra **e sobrevive à contradição** de identidade forte
+ * (`identidadeForteConflita`): dois CPFs ou dois telefones diferentes não são o
+ * mesmo cadastro, e sugerir a junção aí é o ruído que a opção da empresa existe
+ * para evitar.
  *
  * `dispensados` são as chaves de `parDeContatos` que a pessoa já tirou da lista.
  */
@@ -448,6 +486,10 @@ export function encontrarParecidosPorNome(
     const ca = porId.get(a);
     const cb = porId.get(b);
     if (!ca || !cb) continue;
+    // Documento ou número que se contradiz não é o mesmo cadastro: o nome não
+    // sugere. É a régua que separa a sugestão útil do ruído (dois CPFs, dois
+    // telefones).
+    if (identidadeForteConflita(ca, cb)) continue;
     const ordenados = [ca, cb].sort(
       (p, q) => p.created_at.localeCompare(q.created_at) || p.id.localeCompare(q.id),
     );

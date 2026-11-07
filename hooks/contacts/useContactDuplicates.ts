@@ -25,7 +25,12 @@ export interface GrupoDuplicado {
 
 interface DuplicatesResponse {
   data: GrupoDuplicado[];
-  meta?: { varreu_tudo?: boolean; contatos_varridos?: number };
+  meta?: {
+    varreu_tudo?: boolean;
+    contatos_varridos?: number;
+    /** #4138: a empresa ligou a sugestão por nome? Desligada, a seção nem vem. */
+    sugestao_por_nome?: boolean;
+  };
 }
 
 /**
