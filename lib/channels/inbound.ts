@@ -41,7 +41,12 @@ import {
 } from "./zernio/avisos";
 import { aplicarEdicaoZernio, ingestZernioInbound } from "./zernio/ingest";
 import { lerEnvelopeZernio } from "./zernio/envelope";
-import { parseZernioEdicao, parseZernioInbound, verifyZernioSignature } from "./zernio/webhook";
+import {
+  parseZernioEdicao,
+  parseZernioInbound,
+  verifyZernioSignature,
+  type ZernioInboundMessage,
+} from "./zernio/webhook";
 import type { ChannelProvider } from "./types";
 
 /** Curto demais para ser segredo — placeholder ou lixo de decrypt. */
@@ -279,11 +284,11 @@ export async function processarEventoAceito(
   return zernioEventoConferido(admin, input.session, input.rawBody, input.retomada);
 }
 
-/** O id externo da mensagem deste corpo aceito; `null` quando o corpo não o traz. */
-export function idExternoDaEntradaAceita(rawBody: string): string | null {
+/** A mensagem deste corpo aceito; `null` quando o corpo não é legível ou não traz uma. */
+export function mensagemDaEntradaAceita(rawBody: string): ZernioInboundMessage | null {
   const leitura = lerEnvelopeZernio(rawBody);
   if (!leitura.ok) return null;
-  return parseZernioInbound(leitura.envelope)?.externalId ?? null;
+  return parseZernioInbound(leitura.envelope);
 }
 
 async function zernioInbound(

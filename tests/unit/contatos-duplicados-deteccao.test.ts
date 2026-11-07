@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   chaveDeTelefone,
   encontrarContatosDuplicados,
+  ligadosPorMotivoForte,
   principalSugerido,
   type ContatoParaDeduplicar,
 } from "@/lib/contacts/duplicados";
@@ -28,6 +29,7 @@ function contato(
     email: null,
     email_normalized: null,
     phone_number: null,
+    cpf_hash: null,
     is_merged_into: null,
     is_anonymized: false,
     source_metadata: null,
@@ -99,6 +101,93 @@ describe("encontrarContatosDuplicados", () => {
       contato("c", { email: "" }),
     ]);
     expect(grupos).toEqual([]);
+  });
+});
+
+/**
+ * O CPF (#4081). É igualdade de HASH — o documento já vem normalizado em sha256
+ * pela ingestão —, e existe aqui pelo mesmo motivo do telefone exato: o índice
+ * `uniq_contacts_org_cpf` nasce com `if not exists`, e no clone onde ele não
+ * nasceu duas fichas vivas ficam com o mesmo CPF sem ninguém reclamar.
+ */
+describe("encontrarContatosDuplicados: CPF", () => {
+  const HASH = "3f7a1c0d9b2e4f5061728394a5b6c7d8e9f0a1b2c3d4e5f60718293a4b5c6d7e";
+
+  it("CPF igual e não vazio une o par com o motivo `cpf` — mesmo com nomes diferentes", () => {
+    // O caso real: a mesma pessoa entrou duas vezes, uma ficha pelo formulário e
+    // outra pelo atendimento, com o nome escrito de outro jeito e telefones
+    // diferentes. O que prova que é a mesma pessoa é o documento.
+    const grupos = encontrarContatosDuplicados([
+      contato("a", { name: "Maria Souza Lima", cpf_hash: HASH, phone_number: "+553198881111" }),
+      contato("b", { name: "M. S. Lima", cpf_hash: HASH, phone_number: "+553198882222" }),
+    ]);
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0]!.contatos.map((c) => c.id).sort()).toEqual(["a", "b"]);
+    expect(grupos[0]!.motivos).toEqual(["cpf"]);
+  });
+
+  it("CPF vazio ou nulo em AMBOS não une — vazio não é documento", () => {
+    // O erro clássico: `null === null` e `'' === ''` são verdadeiros, e o mapa
+    // por chave vazia agruparia a base inteira num cadastro só. Vazio tem de ser
+    // DESCARTADO antes de virar chave, não comparado.
+    const nulos = encontrarContatosDuplicados([contato("a"), contato("b")]);
+    const vazios = encontrarContatosDuplicados([
+      contato("a", { cpf_hash: "" }),
+      contato("b", { cpf_hash: "" }),
+    ]);
+    expect(nulos).toEqual([]);
+    expect(vazios).toEqual([]);
+  });
+
+  it("CPF igual encadeia com o telefone: A-B por CPF e B-C por telefone = UM grupo", () => {
+    const grupos = encontrarContatosDuplicados([
+      contato("a", { cpf_hash: HASH }),
+      contato("b", { cpf_hash: HASH, phone_number: "+553198966398" }),
+      contato("c", { phone_number: "+553198966398" }),
+    ]);
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0]!.contatos.map((c) => c.id).sort()).toEqual(["a", "b", "c"]);
+    expect(grupos[0]!.motivos).toEqual(["cpf", "telefone"]);
+  });
+
+  it("CPF diferente NÃO une, e o par de nome não entra pela porta do CPF", () => {
+    const grupos = encontrarContatosDuplicados([
+      contato("a", { name: "Ana Paula Silva", cpf_hash: HASH }),
+      contato("b", { name: "Ana Paula Silva", cpf_hash: `${HASH.slice(0, -1)}f` }),
+    ]);
+    expect(grupos).toEqual([]);
+  });
+
+  it("ficha anonimizada ou já mesclada fica de fora mesmo com o CPF igual", () => {
+    const grupos = encontrarContatosDuplicados([
+      contato("vivo", { cpf_hash: HASH }),
+      contato("anon", { cpf_hash: HASH, is_anonymized: true }),
+      contato("lapide", { cpf_hash: HASH, is_merged_into: "vivo" }),
+    ]);
+    expect(grupos).toEqual([]);
+  });
+});
+
+describe("ligadosPorMotivoForte", () => {
+  const HASH = "aa11bb22cc33dd44ee55ff6600112233445566778899aabbccddeeff00112233";
+
+  it("o mesmo CPF liga o par — é o que faz `dispensar-par` recusar a dispensa", () => {
+    const a = contato("a", { cpf_hash: HASH, phone_number: "+553198881111" });
+    const b = contato("b", { cpf_hash: HASH, phone_number: "+553198882222" });
+    expect(ligadosPorMotivoForte(a, b)).toBe(true);
+  });
+
+  it("CPF vazio ou ausente não liga nada", () => {
+    const vazioA = contato("a", { cpf_hash: "" });
+    const vazioB = contato("b", { cpf_hash: "" });
+    expect(ligadosPorMotivoForte(vazioA, vazioB)).toBe(false);
+    expect(ligadosPorMotivoForte(contato("a"), contato("b"))).toBe(false);
+  });
+
+  it("CPF diferente com telefone diferente não liga", () => {
+    expect(ligadosPorMotivoForte(contato("a", { cpf_hash: HASH }), contato("b", { cpf_hash: `${HASH}b` }))).toBe(
+      false,
+    );
   });
 });
 

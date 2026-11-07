@@ -36,6 +36,12 @@ import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atri
 import { ancoraCtwaDaMensagem } from "@/lib/leads/prova-meta-lead-submitted";
 import { extrairEEstamparAtribuicaoGoogle } from "@/lib/plataformas-de-anuncio/google/atribuicao";
 import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
+import {
+  ecoDaTransmissao,
+  ligarEcoAoDestinatario,
+  metadataDoEco,
+  type EcoDaTransmissao,
+} from "@/lib/campanhas/transmissao";
 import { consumirRespostaDoSuporteNoWhatsApp } from "@/lib/escalacao/resposta-whatsapp-ao-caso";
 
 import { aplicarEfeitosPosEntrada } from "../pos-entrada";
@@ -187,12 +193,14 @@ export async function ingestZernioInbound(
         .eq("id", existente.id);
       if (error) throw new Error("social_conversation_update_failed");
     }
+    const ecoNaExistente = await ecoDeTransmissao(admin, input.organizationId, msg, existente.contact_id);
     const inseridaNaExistente = await insertMessage(admin, {
       organizationId: input.organizationId,
       conversationId: existente.id,
       contactId: existente.contact_id,
       channelSessionId: input.channelSessionId,
       msg,
+      eco: ecoNaExistente,
     });
     // O telefone pode chegar agora e faltar no contato — vale gravar.
     //
@@ -239,7 +247,14 @@ export async function ingestZernioInbound(
         existente.id,
         inseridaNaExistente,
       );
-      if (input.socialMessage && msg.direction === "outbound") {
+      if (ecoNaExistente) {
+        await ligarEcoAoDestinatario(admin, ecoNaExistente, {
+          id: inseridaNaExistente,
+          conversationId: existente.id,
+          enviadaEm: msg.sentAt,
+        });
+      }
+      if (input.socialMessage && msg.direction === "outbound" && !ehDeTransmissao(msg)) {
         await pausarIaPorAtendimentoManual(admin, {
           organizationId: input.organizationId,
           conversationId: existente.id,
@@ -292,12 +307,14 @@ export async function ingestZernioInbound(
     if (error) throw new Error("social_conversation_update_failed");
   }
 
+  const eco = await ecoDeTransmissao(admin, input.organizationId, msg, contactId);
   const inserted = await insertMessage(admin, {
     organizationId: input.organizationId,
     conversationId,
     contactId,
     channelSessionId: input.channelSessionId,
     msg,
+    eco,
   });
 
   if (inserted === "duplicate") return desfechoDaDuplicata(admin, input, msg, conversationId);
@@ -310,11 +327,19 @@ export async function ingestZernioInbound(
     await pedirNovaBuscaDoPino(admin, input.organizationId, inserted, msg);
   }
   await efeitosDaEntrada(admin, input, msg, contactId, conversationId, inserted);
+  if (eco) {
+    await ligarEcoAoDestinatario(admin, eco, { id: inserted, conversationId, enviadaEm: msg.sentAt });
+  }
 
   // SAÍDA feita por fora do CRM = uma pessoa respondeu o cliente à mão (celular,
   // outra plataforma na mesma conta). A IA para nesta conversa. O eco do nosso
   // próprio envio já saiu como `"duplicate"` acima. NÃO mexe na origem do lead.
-  if (msg.direction === "outbound") {
+  //
+  // A TRANSMISSÃO do provedor não é pessoa nenhuma: é a campanha mandando a
+  // lista de uma vez (migration 0712). Medido em 16/10/2026: sem esta exceção,
+  // cada número novo da lista ficava com a IA calada pelo prazo do atendimento
+  // manual — justamente quando as respostas chegam juntas.
+  if (msg.direction === "outbound" && !ehDeTransmissao(msg)) {
     await pausarIaPorAtendimentoManual(admin, {
       organizationId: input.organizationId,
       conversationId,
@@ -379,17 +404,7 @@ async function retomarEfeitosDaEntrada(
   } | null;
   if (gravada?.direction !== "inbound") return false;
 
-  const { data: pedido, error: erroDoPedido } = await admin
-    .from("event_log")
-    .select("id")
-    .eq("organization_id", input.organizationId)
-    .eq("entity_kind", "message")
-    .eq("entity_id", gravada.id)
-    .eq("event_type", "ai_agent.dispatch_requested")
-    .limit(1)
-    .maybeSingle();
-  if (erroDoPedido) throw new Error(`zernio_retomada_failed: ${erroDoPedido.message}`);
-  if (pedido) return false;
+  if (await despachoJaPedido(admin, input.organizationId, gravada.id)) return false;
 
   const { data: conversa, error: erroDaConversa } = await admin
     .from("conversations")
@@ -411,6 +426,53 @@ async function retomarEfeitosDaEntrada(
   }
   await efeitosDaEntrada(admin, input, msg, gravada.contact_id, gravada.conversation_id, gravada.id);
   return true;
+}
+
+/**
+ * O marco de `retomarEfeitosDaEntrada`: esta mensagem já pediu o despacho do
+ * agente? O reprocessamento usa a mesma régua na linha que passou da janela.
+ * Lança se a leitura falhar.
+ */
+export async function despachoJaPedido(
+  admin: SupabaseClient,
+  organizationId: string,
+  messageId: string,
+): Promise<boolean> {
+  const { data, error } = await admin
+    .from("event_log")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("entity_kind", "message")
+    .eq("entity_id", messageId)
+    .eq("event_type", "ai_agent.dispatch_requested")
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`zernio_retomada_failed: ${error.message}`);
+  return data !== null;
+}
+
+/**
+ * O contato já cadastrado desta mensagem, sem criar nada: pela thread, depois
+ * pelo telefone. `null` = ninguém no CRM para esta pessoa. Lança se a leitura da
+ * thread falhar.
+ *
+ * ponytail: sem busca por `wa_lid`. A âncora opaca nasce neste canal, então quem
+ * a tem já tem a thread; contato só com âncora em OUTRA thread e sem telefone fica de fora.
+ */
+export async function contatoConhecidoDaEntrada(
+  admin: SupabaseClient,
+  organizationId: string,
+  channelSessionId: string | null,
+  msg: ZernioInboundMessage,
+): Promise<{ contactId: string; conversationId: string | null } | null> {
+  const conversa = channelSessionId
+    ? await conversaPelaThread(admin, organizationId, msg.conversationId, channelSessionId)
+    : null;
+  if (conversa) return { contactId: conversa.contact_id, conversationId: conversa.id };
+  const contato = msg.identity.phone
+    ? await encontrarContatoPorTelefone(admin, organizationId, msg.identity.phone)
+    : null;
+  return contato ? { contactId: contato.id, conversationId: null } : null;
 }
 
 /**
@@ -712,9 +774,11 @@ async function insertMessage(
     contactId: string;
     channelSessionId: string;
     msg: ZernioInboundMessage;
+    /** O eco de uma transmissão de campanha: a linha nasce como a da campanha. */
+    eco?: EcoDaTransmissao | null;
   },
 ): Promise<string | "duplicate"> {
-  const { msg } = input;
+  const { msg, eco } = input;
   const temAnexo = msg.attachments.length > 0;
   const primeiro = msg.attachments[0];
   // O anúncio DESTA mensagem, quando ela nasceu de um clique. O contato guarda
@@ -756,12 +820,17 @@ async function insertMessage(
       // pelo celular. E `removerEcoDoProprioEnvio` filtra por este valor: sem
       // ele, o eco do nosso próprio envio escapa da rede e vira linha
       // duplicada na tela.
-      sent_via: "external_device",
+      sent_via: eco ? "automation" : "external_device",
       status: msg.direction === "outbound" ? (msg.status ?? "sent") : "delivered",
-      type: temAnexo ? tipoDoAnexo(primeiro?.type) : msg.location ? "location" : "text",
+      type: eco ? "template" : temAnexo ? tipoDoAnexo(primeiro?.type) : msg.location ? "location" : "text",
       // O pino vira link do mapa no corpo: é o que o agente lê e o que a
       // prévia da conversa mostra. As coordenadas ficam no metadata para a tela.
-      body: msg.location ? corpoDaLocalizacao(msg.location) : msg.text,
+      //
+      // O eco da transmissão chega com "[Template: nome]" no lugar do texto: o
+      // que a pessoa leu é o modelo congelado no destinatário, e é ele que o
+      // agente precisa ver quando a resposta chegar.
+      body: eco?.corpo ?? (msg.location ? corpoDaLocalizacao(msg.location) : msg.text),
+      ...(eco ? { template_name: eco.modelo, template_language: eco.idioma } : {}),
       // A URL do anexo NÃO é pública: é endpoint autenticado do provider, e a
       // plataforma descarta a mídia depois de um tempo. Ela é PONTEIRO, não
       // conteúdo — e é por isso que grava aqui e o worker baixa os bytes já.
@@ -780,6 +849,7 @@ async function insertMessage(
             ? { location: msg.location }
             : {}),
         ...anuncio,
+        ...(eco ? metadataDoEco(eco) : {}),
         ...(msg.direction === "inbound" ? ancoraCtwaDaMensagem(extrairAtribuicaoMeta(msg.referral)) : {}),
       },
       ...(msg.sentAt ? { sent_at: msg.sentAt } : {}),
@@ -795,6 +865,27 @@ async function insertMessage(
   if (error || !data) throw new Error(`zernio_ingest_insert_failed: ${error?.message ?? "sem id"}`);
 
   return (data as { id: string }).id;
+}
+
+/** A saída veio de uma transmissão do provedor — de campanha ou do painel dele. */
+function ehDeTransmissao(msg: ZernioInboundMessage): boolean {
+  return msg.direction === "outbound" && (msg.sentVia === "broadcast" || !!msg.broadcastId);
+}
+
+/** A campanha e o destinatário do eco, quando ele é de uma transmissão de campanha. */
+async function ecoDeTransmissao(
+  admin: SupabaseClient,
+  organizationId: string,
+  msg: ZernioInboundMessage,
+  contactId: string,
+): Promise<EcoDaTransmissao | null> {
+  if (msg.direction !== "outbound" || msg.kind !== "message" || !msg.broadcastId) return null;
+  return ecoDaTransmissao(admin, {
+    organizationId,
+    transmissaoId: msg.broadcastId,
+    contactId,
+    telefone: msg.identity.phone,
+  });
 }
 
 /**
