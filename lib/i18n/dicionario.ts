@@ -9300,8 +9300,8 @@ export const DICIONARIO: Traducoes = {
   "Texto de apresentação": { es: "Texto de la presentación" },
   "Nenhum áudio enviado.": { es: "No se ha enviado ningún audio." },
   "Remover áudio": { es: "Eliminar audio" },
-  "OGG/Opus ou WebM/Opus, até 16 MB. O arquivo é guardado como OGG/Opus.": {
-    es: "OGG/Opus o WebM/Opus, hasta 16 MB. El archivo se guarda como OGG/Opus.",
+  "OGG/Opus, WebM/Opus ou M4A, até 16 MB. O arquivo é guardado como OGG/Opus.": {
+    es: "OGG/Opus, WebM/Opus o M4A, hasta 16 MB. El archivo se guarda como OGG/Opus.",
   },
   "Usar fotos cadastradas": { es: "Usar fotos registradas" },
   "Exibir preço": { es: "Mostrar precio" },

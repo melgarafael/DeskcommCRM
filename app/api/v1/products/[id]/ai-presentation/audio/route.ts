@@ -128,9 +128,14 @@ export async function POST(
   const raw = Buffer.from(await file.arrayBuffer());
   const normalized = isOggOpus(raw)
     ? { buffer: raw, mime: MIME_DO_AUDIO_DA_APRESENTACAO }
-    : await transcodificarNotaDeVoz({ buffer: raw, mime: file.type || "application/octet-stream" });
+    : await transcodificarNotaDeVoz({
+        buffer: raw,
+        mime: file.type || "application/octet-stream",
+        // Sem a marca, o m4a do iPhone (AAC) volta intacto e cai no 415 abaixo.
+        notaDeVoz: true,
+      });
   if (!isOggOpus(normalized.buffer)) {
-    return fail("unsupported_media_type", t("O áudio precisa ser OGG/Opus ou WebM/Opus válido."), 415, {
+    return fail("unsupported_media_type", t("O áudio precisa ser OGG/Opus, WebM/Opus ou M4A válido."), 415, {
       requestId,
       details: { content_type_declarado: file.type || null },
     });

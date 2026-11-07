@@ -107,6 +107,17 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); });
 
+function requestDeArquivo(bytes: Buffer, nome: string, tipo: string): NextRequest {
+  const arquivo = new NodeFile([bytes], nome, { type: tipo });
+  const values = new Map<string, unknown>([["file", arquivo], ["expected_updated_at", "null"]]);
+  return { headers: new Headers(), formData: async () => ({ get: (k: string) => values.get(k) ?? null }) } as unknown as NextRequest;
+}
+const OGG_CONVERTIDO = (() => {
+  const bytes = Buffer.alloc(64);
+  bytes.write("OggS", 0); bytes.write("OpusHead", 28);
+  return bytes;
+})();
+
 describe("capacidade desligada: as duas rotas recusam e nada é gravado", () => {
   it.each([
     ["GET", () => GET(jsonRequest(null), ctx())],
@@ -121,6 +132,26 @@ describe("capacidade desligada: as duas rotas recusam e nada é gravado", () => 
     expect(escritas).toEqual([]);
     expect(mocks.upload).not.toHaveBeenCalled();
     expect(mocks.audit).not.toHaveBeenCalled();
+  });
+});
+
+describe("áudio do iPhone na apresentação", () => {
+  it("m4a vai para a conversão marcado como nota de voz e é guardado em ogg", async () => {
+    mocks.transcodificar.mockResolvedValue({ buffer: OGG_CONVERTIDO, mime: "audio/ogg;codecs=opus", convertido: true });
+    const m4a = Buffer.from("ftypM4A sintético");
+    const resposta = await POST(requestDeArquivo(m4a, "voz.m4a", "audio/x-m4a"), ctx());
+    expect(resposta.status).toBe(201);
+    expect(mocks.transcodificar).toHaveBeenCalledWith(expect.objectContaining({ mime: "audio/x-m4a", notaDeVoz: true }));
+    expect(mocks.upload).toHaveBeenCalledOnce();
+  });
+
+  it("o que não converte recebe 415 com o motivo, sem subir nada", async () => {
+    const mp3 = Buffer.from("ID3 sintético");
+    mocks.transcodificar.mockResolvedValue({ buffer: mp3, mime: "audio/mpeg", convertido: false });
+    const resposta = await POST(requestDeArquivo(mp3, "voz.mp3", "audio/mpeg"), ctx());
+    expect(resposta.status).toBe(415);
+    expect((await resposta.json()).error.message).toContain("M4A");
+    expect(mocks.upload).not.toHaveBeenCalled();
   });
 });
 

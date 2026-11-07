@@ -302,7 +302,7 @@ export function CatalogProductAiPresentation({
                     <input
                       ref={fileRef}
                       type="file"
-                      accept="audio/ogg,audio/webm,video/webm,.ogg,.webm"
+                      accept="audio/ogg,audio/webm,video/webm,audio/mp4,audio/x-m4a,video/mp4,.ogg,.webm,.m4a,.mp4"
                       className="hidden"
                       data-testid="arquivo-apresentacao-audio"
                       onChange={(event) => {
@@ -333,7 +333,7 @@ export function CatalogProductAiPresentation({
                       ) : null}
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {t("OGG/Opus ou WebM/Opus, até 16 MB. O arquivo é guardado como OGG/Opus.")}
+                      {t("OGG/Opus, WebM/Opus ou M4A, até 16 MB. O arquivo é guardado como OGG/Opus.")}
                     </p>
                   </div>
                 )}
