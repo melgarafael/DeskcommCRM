@@ -1,9 +1,13 @@
 # Agenda — camada "Datas dos negócios"
 
 A Agenda responde "o que está marcado". Esta camada acrescenta a outra pergunta de
-quem trabalha com data: **quem embarca hoje e quem volta amanhã**. Ela lê os campos
-de data do **negócio** — os mesmos que a aba Calendário do funil usa — e desenha o
-negócio no dia de cada data, acima da grade.
+quem trabalha com data: **que negócio tem data neste dia**. Ela lê os campos de data
+do **negócio** — os mesmos que a aba Calendário do funil usa — e desenha o negócio no
+dia de cada data, acima da grade. Os rótulos são os que o funil declara.
+
+É a primeira fatia da #3221: a escolha é de cada pessoa, na própria tela, e não fica
+gravada. A configuração pelo administrador e os dias do meio de um intervalo seguem
+na issue.
 
 ## Como se usa
 
@@ -33,11 +37,18 @@ negócio no dia de cada data, acima da grade.
 - **Data que não existe no calendário** (`2026-02-31`, `2026-13-01`) é recusa
   explícita: o servidor responde `data_de_calendario_invalida` (422) antes de
   consultar o banco, e a camada diz o motivo — em vez de mostrar uma grade vazia
-  que se confundiria com "ninguém embarca neste período". Os parâmetros passam
+  que se confundiria com "nenhum negócio neste período". Os parâmetros passam
   pelo schema canônico `datasDosNegociosQuerySchema` (`lib/schemas/agenda.ts`):
   `pipeline_id` é UUID, `campo`/`campo_fim` seguem a régua da escrita do funil e
   `de`/`ate` são dias de calendário reais, com `de <= ate`.
-- **Recorte = o que a grade desenha.** Dia, semana ou mês, no fuso da organização.
+- **Recorte = o que a grade desenha.** Dia, semana ou mês, os mesmos dias das colunas
+  da grade, qualquer que seja o fuso do navegador.
+- **Teto de 500 negócios com data dentro do recorte**, em ordem de data. Passou disso,
+  a camada avisa que há mais; um funil grande com datas antigas não consome esse teto.
+- **Data cheia usa o fuso do servidor.** Valor com hora, vindo de API ou de importação,
+  cai no dia do carimbo no fuso do processo, não no da organização, e perto da
+  meia-noite pode aparecer no dia vizinho ou ficar de fora da consulta. Valor de dia
+  puro (`YYYY-MM-DD`) não tem esse limite.
 - A leitura usa a lista de funis e a visibilidade que a pessoa já tem no CRM; quem
   não enxerga o funil não enxerga a data.
 
@@ -61,7 +72,8 @@ negócio no dia de cada data, acima da grade.
    Google — a grade recebe exatamente a mesma lista de antes.
 9. Retorno: o item leva ao negócio (`/app/pipelines/<funil>?lead=<id>`), que é onde
    a data é corrigida; a volta é a própria Agenda.
-10. Prova: `tests/unit/datas-dos-negocios-na-agenda.test.ts`,
+10. Mapa: `docs/architecture/agenda-camada-datas-dos-negocios.architecture.json`.
+11. Prova: `tests/unit/datas-dos-negocios-na-agenda.test.ts`,
     `tests/unit/agenda-camada-datas-dos-negocios.test.tsx`,
     `tests/unit/agenda-camada-datas-desligada-e-igual.test.tsx` e
     `app/api/v1/agenda/datas-dos-negocios/route.test.ts`.

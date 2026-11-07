@@ -1,0 +1,207 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Agenda: camada Datas dos negócios",
+    "subtitle": "leitura das datas do funil ao lado da grade, sem virar compromisso",
+    "output": "agenda-camada-datas-dos-negocios.html",
+    "quality_profile": "standard"
+  },
+  "lanes": [
+    {
+      "id": "humano",
+      "label": "O que a pessoa vê"
+    },
+    {
+      "id": "borda",
+      "label": "Borda HTTP (viewer+)"
+    },
+    {
+      "id": "regra",
+      "label": "Regras puras"
+    },
+    {
+      "id": "dados",
+      "label": "Banco"
+    }
+  ],
+  "mainPath": [
+    "agenda",
+    "camada",
+    "rota",
+    "leads"
+  ],
+  "nodes": [
+    {
+      "id": "page",
+      "lane": "humano",
+      "col": 0,
+      "type": "frontend",
+      "label": "/app/agenda (page)",
+      "sublabel": "lê os funis da org e filtra os que têm campo de data"
+    },
+    {
+      "id": "agenda",
+      "lane": "humano",
+      "col": 1,
+      "type": "frontend",
+      "label": "AgendaClient",
+      "sublabel": "diasDoRecorte: os dias que a grade desenha"
+    },
+    {
+      "id": "camada",
+      "lane": "humano",
+      "col": 2,
+      "type": "frontend",
+      "label": "CamadaDatasDosNegocios",
+      "sublabel": "nasce desligada; escolha só em memória"
+    },
+    {
+      "id": "quadro",
+      "lane": "humano",
+      "col": 3,
+      "type": "frontend",
+      "label": "/app/pipelines/[id]?lead=",
+      "sublabel": "onde a data é corrigida"
+    },
+    {
+      "id": "rota",
+      "lane": "borda",
+      "col": 2,
+      "type": "api",
+      "label": "GET /api/v1/agenda/datas-dos-negocios",
+      "sublabel": "só GET; cliente de sessão; organization_id explícito"
+    },
+    {
+      "id": "descoberta",
+      "lane": "regra",
+      "col": 0,
+      "type": "service",
+      "label": "funisComCamposDeData",
+      "sublabel": "camposDeDataDoNegocio: a régua do Calendário do funil"
+    },
+    {
+      "id": "itens",
+      "lane": "regra",
+      "col": 2,
+      "type": "service",
+      "label": "itensDaCamada",
+      "sublabel": "diaDe: um item por negócio por dia"
+    },
+    {
+      "id": "recorte",
+      "lane": "regra",
+      "col": 1,
+      "type": "service",
+      "label": "recorte-da-grade.ts",
+      "sublabel": "a mesma conta do desenho e da busca"
+    },
+    {
+      "id": "pipelines",
+      "lane": "dados",
+      "col": 1,
+      "type": "database",
+      "label": "crm_pipelines",
+      "sublabel": "settings.fields declara os campos de data"
+    },
+    {
+      "id": "leads",
+      "lane": "dados",
+      "col": 2,
+      "type": "database",
+      "label": "crm_leads",
+      "sublabel": "custom_fields; RLS crm_leads_select → fn_can_view_lead"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "page",
+      "to": "pipelines",
+      "label": "funis não arquivados da org"
+    },
+    {
+      "id": "e2",
+      "from": "page",
+      "to": "descoberta",
+      "label": "só funil com campo de data"
+    },
+    {
+      "id": "e3",
+      "from": "page",
+      "to": "agenda",
+      "label": "funisComDatas"
+    },
+    {
+      "id": "e4",
+      "from": "agenda",
+      "to": "recorte",
+      "label": "visão + âncora"
+    },
+    {
+      "id": "e5",
+      "from": "agenda",
+      "to": "camada",
+      "label": "funis + janela em dias"
+    },
+    {
+      "id": "e6",
+      "from": "camada",
+      "to": "rota",
+      "label": "só depois de ligar e escolher o campo"
+    },
+    {
+      "id": "e7",
+      "from": "rota",
+      "to": "pipelines",
+      "label": "confere o campo; 422 campo_nao_e_data"
+    },
+    {
+      "id": "e8",
+      "from": "rota",
+      "to": "leads",
+      "label": "data na janela, ordem estável, teto de 500"
+    },
+    {
+      "id": "e9",
+      "from": "rota",
+      "to": "itens",
+      "label": "linhas → itens por dia"
+    },
+    {
+      "id": "e10",
+      "from": "itens",
+      "to": "camada",
+      "label": "itens + truncado"
+    },
+    {
+      "id": "e11",
+      "from": "camada",
+      "to": "quadro",
+      "label": "laço de retorno: abre o negócio para corrigir a data"
+    },
+    {
+      "id": "e12",
+      "from": "descoberta",
+      "to": "agenda",
+      "label": "campos oferecidos no seletor"
+    },
+    {
+      "id": "e13",
+      "from": "quadro",
+      "to": "leads",
+      "label": "o campo muda na ficha do negócio"
+    }
+  ],
+  "cards": [
+    {
+      "title": "Não-ligações declaradas",
+      "dot": "amber",
+      "items": [
+        "não lê nem grava calendar_appointments: não ocupa horário livre, não entra em crm_find_free_slots, não gera lembrete",
+        "não grava a escolha: nada em organizations.settings nem por pessoa (primeira fatia da #3221)",
+        "não escreve em crm_leads: a rota só tem GET"
+      ]
+    }
+  ]
+}
