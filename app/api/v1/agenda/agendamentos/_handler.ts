@@ -122,6 +122,15 @@ export interface MarcarInput {
    * continua sendo o do tipo.
    */
   duration_minutes?: number;
+  /**
+   * O lugar reservado e quantas pessoas vêm (issue #4029). O serviço com
+   * lugares recusa sem `space_id` (`space_required`) em vez de escolher a mesa
+   * pelo cliente; o serviço sem lugar recusa um `space_id` (`space_not_eligible`).
+   * `party_size` conta em PESSOAS também na capacidade do serviço, com ou sem
+   * lugar: ausente, a reserva vale uma pessoa, como antes.
+   */
+  space_id?: string;
+  party_size?: number;
   expected_service_revision?: number;
 }
 
