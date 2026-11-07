@@ -19956,9 +19956,6 @@ export const DICIONARIO: Traducoes = {
   "Para ler a agenda, ligue 'Guardar o histórico anterior à vinculação' na conexão deste número (Conexões) e tente de novo.": {
     es: "Para leer la agenda, activa 'Guardar el historial anterior al vínculo' en la conexión de este número (Conexiones) y vuelve a intentarlo.",
   },
-  "O WhatsApp deste número não respondeu. Confira se ele está conectado e tente de novo.": {
-    es: "El WhatsApp de este número no respondió. Comprueba que esté conectado y vuelve a intentarlo.",
-  },
 };
 
 /**
