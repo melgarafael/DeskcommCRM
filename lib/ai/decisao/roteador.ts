@@ -46,6 +46,13 @@ import type pg from "pg";
 
 import type { IntentVerdict } from "@/lib/agent-engine/agent/intent-classifier";
 import type { RouterMember } from "@/lib/agent-engine/agent/router-config";
+// Do módulo PURO, nunca de `lib/agent-engine/agent/**`: a cerca do Jev proíbe
+// que o caminho dele alcance quem envia mensagem (ver o cabeçalho daqui).
+import {
+  CABECALHO_DOS_FATOS_NO_PROMPT,
+  formatarFatosDoCrm,
+  type FatosDoCrm,
+} from "@/lib/leads/fatos-do-crm-no-prompt";
 import { costCents } from "@/lib/agent-engine/edge/llm/pricing";
 import { logger } from "@/lib/logger";
 import { scrubMessage } from "@/lib/sentry/scrub";
@@ -76,7 +83,20 @@ const INSTRUCAO =
  * fica de fora, como lá: o classificador de sempre também lê `none` como
  * "nenhuma".
  */
-export function perguntaDoRoteador(membros: readonly RouterMember[]): Pergunta | null {
+export function perguntaDoRoteador(
+  membros: readonly RouterMember[],
+  /**
+   * Fatos do CRM do contato (#3917), lidos no TURNO: funis/etapas onde ele tem
+   * negócio ABERTO e as etiquetas. Opcional — ausente ou vazio, a pergunta é
+   * byte a byte a de antes, e o Jev decide só pela mensagem, como fazia.
+   *
+   * É o MESMO bloco que a IA de sempre recebe (`buildClassifierPrompt`): com
+   * dois caminhos de decisão no turno, deixar um deles cego ao funil produzia o
+   * defeito da issue pela metade — a cliente com viagem fechada continuava indo
+   * para vendas sempre que o Jev decidia.
+   */
+  fatos?: FatosDoCrm | null,
+): Pergunta | null {
   if (!roteadorCabeNaPergunta(membros.length)) return null;
   const criterios: Record<string, string> = {};
   for (const m of membros) {
@@ -84,7 +104,14 @@ export function perguntaDoRoteador(membros: readonly RouterMember[]): Pergunta |
     criterios[m.intentName] = `${m.intentDescription}.${exemplos}`;
   }
   criterios[NENHUMA] = "Nenhuma das intenções acima se aplica.";
-  return { tipo: "choice", instrucao: INSTRUCAO, criterios };
+  const textoDosFatos = formatarFatosDoCrm(fatos);
+  // O cabeçalho é o mesmo do classificador de sempre, e diz em voz alta que o
+  // bloco NÃO é o que se classifica: sem isso o Jev responderia sobre o funil.
+  const instrucao =
+    textoDosFatos === ""
+      ? INSTRUCAO
+      : `${INSTRUCAO}\n\n${CABECALHO_DOS_FATOS_NO_PROMPT}\n${textoDosFatos}`;
+  return { tipo: "choice", instrucao, criterios };
 }
 
 export interface EscolhaDoJev {
@@ -135,6 +162,15 @@ export interface EntradaDoRoteador {
   membros: readonly RouterMember[];
   contactId: string | null;
   jobId: string | null;
+  /**
+   * Os fatos do CRM do contato (#3917) — getter, e não valor, de propósito:
+   * quem lê o banco é o TURNO (uma leitura por turno, compartilhada com a IA de
+   * sempre), e a leitura só acontece se a pergunta ao Jev for de fato montada.
+   * Com a tarefa desligada, ou com o Jev decidindo sem a IA de sempre, nenhuma
+   * consulta nova é paga — a promessa do bloco 2.2 (o turno não paga o que não
+   * usa) continua valendo.
+   */
+  fatosDoCrmDoTurno?: () => Promise<FatosDoCrm | null>;
 }
 
 /**
@@ -393,9 +429,17 @@ export function consultarJevNoRoteador(
   // A pergunta só é montada com a tarefa rodando: desligado, o Jev não custa
   // nada ao turno além da leitura do estado.
   const resposta: Promise<RespostaDoJev> = estado
-    .then((e) => {
-      const pergunta = e === "desligada" ? null : perguntaDoRoteador(entrada.membros);
-      return e === "desligada" || pergunta === null ? SEM_OPINIAO : perguntar(pool, entrada, e, pergunta, deps);
+    .then(async (e) => {
+      if (e === "desligada") return SEM_OPINIAO;
+      // Os fatos vêm do TURNO (#3917): uma leitura só, feita por quem já ia
+      // ler para o classificador. Falha da leitura é `null` — a pergunta sai
+      // como antes, e o turno não perde o roteamento por causa de um adjetivo.
+      const fatos =
+        entrada.fatosDoCrmDoTurno === undefined
+          ? null
+          : await entrada.fatosDoCrmDoTurno().catch(() => null);
+      const pergunta = perguntaDoRoteador(entrada.membros, fatos);
+      return pergunta === null ? SEM_OPINIAO : perguntar(pool, entrada, e, pergunta, deps);
     })
     // O turno espera esta promessa quando o Jev decide: rejeitada, ela levaria
     // o roteamento inteiro para o caminho de erro. Sem escolha, vale a de sempre.

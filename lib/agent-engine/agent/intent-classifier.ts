@@ -19,7 +19,7 @@ import { contextoDoClassificador, type ClassifierContextMessage } from '@/lib/ai
 
 import type { Logger } from '../obs/logger';
 import { runModelCall, type LlmEdgeConfig } from '../edge/llm/run-model-call';
-import { formatarFatosDoCrm, type FatosDoCrm } from './fatos-do-crm-do-contato';
+import { CABECALHO_DOS_FATOS_NO_PROMPT, formatarFatosDoCrm, type FatosDoCrm } from '@/lib/leads/fatos-do-crm-no-prompt';
 import type { LoadedRouter, RouterMember } from './router-config';
 
 export interface IntentVerdict {
@@ -85,7 +85,7 @@ export function buildClassifierPrompt(
       ? []
       : [
           '',
-          'Fatos do CRM deste contato (negócio ABERTO e etiquetas — contexto para decidir a intenção, NÃO é o que classificar):',
+          CABECALHO_DOS_FATOS_NO_PROMPT,
           textoDosFatos,
         ];
   return [

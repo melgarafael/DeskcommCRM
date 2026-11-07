@@ -19,6 +19,7 @@ import type { Role } from "@/lib/auth/types";
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { nomeDoContato, type ContatoNomeavel } from "@/lib/contacts/rotulo-do-contato";
+import { ehComercial } from "@/lib/leads/elegibilidade-comercial";
 
 import {
   classifyRisk,
@@ -178,7 +179,14 @@ export async function carregaRadarDeRisco(
       "id, title, contact_id, owner_user_id, owner_kind, owner_agent_id, stage_id, last_activity_at, created_at, pipeline_id",
     )
     .eq("organization_id", organizationId)
-    .eq("status", "open");
+    .eq("status", "open")
+    // #4191 — negócio classificado como NÃO comercial sai do Radar comercial.
+    // O filtro é o PREDICADO CANÔNICO (`ehNaoComercial`), não uma lista de ids
+    // montada aqui: com ele, as duas listas derivadas de `rows` abaixo
+    // (propostas vencidas e propostas esperando revisão) caem junto, porque
+    // ambas cruzam `leadsValidos`. Filtrar só no frontend esconderia o card e
+    // deixaria a IA (`lib/mcp/tools/retencao.ts`) cobrando o mesmo negócio.
+    .is("nao_comercial_em", null);
   if (funisArquivados.length > 0) {
     consultaDeLeads = consultaDeLeads.not("pipeline_id", "in", `(${funisArquivados.join(",")})`);
   }
@@ -342,7 +350,7 @@ export async function carregaRadarDeRisco(
   // paridade sem necessidade; acrescentar não arrisca nada.
   let consultaDeDemandas = admin
     .from("demandas")
-    .select("id, lead_id, contact_id, aberta_em, origem, contacts(name, display_name)")
+    .select("id, lead_id, contact_id, aberta_em, origem, contacts(name, display_name), crm_leads!lead_id(nao_comercial_em)")
     .eq("organization_id", organizationId)
     .is("fechada_em", null)
     .is("proximo_passo", null);
@@ -351,7 +359,16 @@ export async function carregaRadarDeRisco(
     .order("aberta_em", { ascending: true })
     .limit(SCAN_CAP);
   if (demandaError) throw new Error(`radar_demandas_failed: ${demandaError.message}`);
-  let demandasVisiveis = semPasso ?? [];
+  // #4191 — LISTA AUXILIAR também respeita a classificação: a demanda continua
+  // aberta no banco (o atendimento aconteceu e o histórico fica), mas cobrar
+  // "próximo passo" de um golpe é o mesmo defeito do card no Radar. O negócio
+  // vem pelo join (`lead_id` nullable: demanda sem lead não tem classificação e
+  // fica), numa consulta só — nada de segunda leitura por demanda.
+  let demandasVisiveis = (semPasso ?? []).filter((d) => {
+    const rel = (d as { crm_leads?: unknown }).crm_leads;
+    const negocio = Array.isArray(rel) ? rel[0] : rel;
+    return ehComercial(negocio as { nao_comercial_em?: string | null } | null);
+  });
   // Mesmo corte dos leads: demanda presa a lead de funil arquivado sai.
   // Demanda sem lead não tem funil e fica.
   //
