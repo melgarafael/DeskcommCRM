@@ -14,6 +14,7 @@ import {
   SOCIAL_PROVIDER_LABEL,
   inboxSupported,
 } from "@/lib/channels/social/catalog";
+import { oQueFaltaParaLerAvaliacoes } from "@/lib/channels/google-business/avaliacoes";
 import { listSocialAccounts, socialRequest, SocialError } from "@/lib/channels/social/client";
 import {
   readSocialIntegration,
@@ -104,6 +105,17 @@ export async function GET() {
             display_name: a.displayName,
             active: a.isActive,
             inbox_supported: inboxSupported(a.platform),
+            // A conta do Google Business diz na tela o que falta para as
+            // avaliações chegarem (#3510). Sem esta linha, o cartão ofereceria
+            // "Receber no atendimento" e a Central seguiria vazia, sem
+            // ninguém saber que o par OAuth é que estava faltando.
+            avaliacoes:
+              a.platform === "googlebusiness"
+                ? (() => {
+                    const preparo = oQueFaltaParaLerAvaliacoes(env);
+                    return { pronta: preparo.pronta, faltando: preparo.faltando };
+                  })()
+                : null,
             channel: channels.find((c) => c.accountId === a._id) ?? null,
           })),
         // Canal ativo cuja conta saiu do perfil (removida e recriada no

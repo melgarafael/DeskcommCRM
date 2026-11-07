@@ -124,15 +124,16 @@ describe("CONTROLE: os canais que já existiam continuam declarados", () => {
     expect(SOCIAL_NETWORKS.filter((r) => r.inbox).map((r) => r.id)).toEqual([
       "instagram",
       "facebook",
+      "googlebusiness",
     ]);
-    // `googlebusiness` e `telegram` entram aqui de propósito: são as duas redes
-    // que o produto nomeia sem ter transporte próprio, e o modelo não as toca.
-    expect(inboxSupported("googlebusiness")).toBe(false);
+    // `telegram` entra aqui de propósito: rede que o produto nomeia sem ter
+    // transporte próprio, e o modelo não a toca.
+    expect(inboxSupported("googlebusiness")).toBe(true);
     expect(inboxSupported("telegram")).toBe(false);
   });
 
   it("o vocabulário de canal da conversa não mudou", () => {
-    expect([...CANAIS_DE_CONVERSA]).toEqual(["whatsapp", "instagram", "facebook"]);
+    expect([...CANAIS_DE_CONVERSA]).toEqual(["whatsapp", "instagram", "facebook", "googlebusiness"]);
   });
 
   it("a matriz de capabilities segue respondendo por todos os canais de mensagem", () => {

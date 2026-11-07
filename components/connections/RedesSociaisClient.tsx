@@ -31,6 +31,11 @@ type Account = {
   username: string;
   active: boolean;
   inbox_supported: boolean;
+  /**
+   * O que falta para as avaliações do Google chegarem (#3510). Só vem nas
+   * contas do Google Business: `null` nas demais redes.
+   */
+  avaliacoes?: { pronta: boolean; faltando: string[] } | null;
   channel: {
     id: string;
     status: string;
@@ -329,6 +334,14 @@ export function RedesSociaisClient() {
                     <h3 className="font-semibold">{nomeInterno(account) || account.username}</h3>
                     {nomeInterno(account) && nomeInterno(account) !== account.username && (
                       <p className="text-xs text-muted-foreground">{account.username}</p>
+                    )}
+                    {account.avaliacoes && !account.avaliacoes.pronta && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {t("Falta configurar: {vars}").replace(
+                          "{vars}",
+                          account.avaliacoes.faltando.join(", "),
+                        )}
+                      </p>
                     )}
                   </div>
                   <Badge variant={account.active ? "secondary" : "outline"}>
