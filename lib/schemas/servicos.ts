@@ -1,8 +1,8 @@
 /**
  * O CONTRATO DO SERVIÇO — o mesmo para a tela, a rota e o teste.
  *
- * Issue #3372 (fatia B). O serviço é um item do catálogo com colunas próprias;
- * este schema é o que valida o que entra, e o `problemasDoServico()` é a régua
+ * Issue #3372 (fatia B). O serviço é um item do catálogo com um detalhe no
+ * módulo `catalogo_servicos` (`catalog_service_details`); este schema é o que valida o que entra, e o `problemasDoServico()` é a régua
  * ÚNICA — a mesma que o `superRefine` do create usa e que o PATCH chama depois
  * de mesclar a linha atual com o corpo. Duas réguas divergem na primeira
  * mudança, e a que sobra é sempre a que o banco recusa com 23514 sem explicar.
@@ -183,7 +183,6 @@ export const servicoCreateSchema = baseDoItem
     sinal: sinalDoServicoSchema.nullish(),
     instrucoes_ia: z.string().trim().max(2000, "as instruções passam de 2000 caracteres").nullish(),
     ia_oferece: z.boolean().default(true),
-    ia_agenda: z.boolean().default(false),
     pai_id: z.uuid("variação sem serviço principal válido").nullish(),
   })
   .superRefine((valor, ctx) => {
@@ -207,7 +206,6 @@ export const servicoPatchSchema = z.object({
   sinal: sinalDoServicoSchema.nullish(),
   instrucoes_ia: z.string().trim().max(2000).nullish(),
   ia_oferece: z.boolean().optional(),
-  ia_agenda: z.boolean().optional(),
   /** Revisão que quem edita viu. Velha = 409, como em toda escrita concorrente. */
   expected_revision: z.number().int().min(1, "revisão inválida"),
 });

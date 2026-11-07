@@ -13,11 +13,9 @@ import { z } from "zod";
 
 import type { McpToolDefinition } from "../types";
 import { buscarComRelaxamento } from "@/lib/catalogo/busca";
-import {
-  descreverServicoParaIA,
-  montarServicos,
-  type LinhaDoCatalogo,
-} from "@/lib/catalogo/servicos";
+import { INSTRUCOES_DE_SERVICO, vitrineDeServicos } from "@/lib/catalogo/servicos-na-busca";
+import { MODULO_SERVICOS, todosOsDetalhes } from "@/lib/catalogo/servicos-supabase";
+import { moduloLigadoComMemo } from "@/lib/instalacao/modulos";
 import { formatCents } from "@/lib/money";
 
 // ---------------------------------------------------------------------------
@@ -202,12 +200,7 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
     "tem — diga que vai confirmar com a equipe. Em qualquer caso, não invente preço e nunca " +
     "invente um valor que você lembra. " +
     "Produto com `fotos` tem foto cadastrada: ao apresentá-lo, passe o `codigo` dele em " +
-    "`produto_codigo` no send_message, e a foto vai junto com o texto. " +
-    "Item que voltar com `servico` é SERVIÇO (consultoria, projeto, plano mensal): responda com o " +
-    "`preco_a_partir`, as `variacoes` e o `sinal` que estiverem ali, e com o `prazo_dias_uteis` " +
-    "quando houver — não invente esses valores. O campo " +
-    "`instrucoes_internas_nao_repita_ao_cliente` é instrução PARA VOCÊ: nunca cite esse texto ao " +
-    "cliente. Serviço com `agendamento` dizendo que a equipe marca não é reservado por você.",
+    "`produto_codigo` no send_message, e a foto vai junto com o texto.",
   inputSchema: produtosInputShape,
   category: "read",
   requiresRole: "agent",
@@ -260,12 +253,7 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
       const { data: lote, error, count } = await ctx.supabase
         .from("catalog_products")
         .select(
-          // As colunas de serviço (#3372) vêm na MESMA varredura: o serviço é
-          // item do catálogo, e uma segunda consulta por item seria uma ida ao
-          // banco por resultado para ler campos que já estão na linha.
-          "id, codigo, nome, descricao, marca, categoria, preco_cents, moeda, controla_estoque, quantidade, ativo, fotos, " +
-            "tipo_servico, unidade_cobranca, prazo_dias_uteis, sinal_tipo, sinal_percentual, sinal_cents, pai_id, " +
-            "instrucoes_ia, ia_oferece, ia_agenda, revision",
+          "id, codigo, nome, descricao, marca, categoria, preco_cents, moeda, controla_estoque, quantidade, ativo, fotos",
           { count: "exact" },
         )
         .eq("organization_id", ctx.organizationId)
@@ -308,68 +296,42 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
       moeda: string;
       controla_estoque: boolean;
       quantidade: number;
-      fotos: string[] | null;
       ativo: boolean;
-      tipo_servico: string | null;
-      unidade_cobranca: string | null;
-      prazo_dias_uteis: number | null;
-      sinal_tipo: string | null;
-      sinal_percentual: number | null;
-      sinal_cents: number | null;
-      pai_id: string | null;
-      instrucoes_ia: string | null;
-      ia_oferece: boolean;
-      ia_agenda: boolean;
-      revision: number;
+      fotos: string[] | null;
     };
 
-    const { achados, ignorados } = buscarComRelaxamento((data ?? []) as Linha[], input.termo);
-
-    // ─── A variação não é um serviço sozinha (#3372) ────────────────────────
+    // ─── O catálogo de serviços (módulo opcional, doc 212) ──────────────────
     //
-    // "20 posts + 4 reels" é uma VARIAÇÃO: ela não tem tipo nem unidade (o CHECK
-    // do banco a proíbe de ter), então devolvê-la como se fosse um item
-    // completo daria ao agente um preço sem dizer de quê. Quem responde é o
-    // principal, com as variações dentro — mas o termo pode casar só o nome da
-    // variação, e nesse caso o principal entra no lugar dela.
-    const porId = new Map(((data ?? []) as Linha[]).map((linha) => [linha.id, linha]));
-    const comPrincipal = achados
-      .map((achado) => {
-        if (!achado.produto.pai_id) return achado;
-        const pai = porId.get(achado.produto.pai_id);
-        return pai ? { ...achado, produto: pai } : null;
-      })
-      .filter((achado): achado is (typeof achados)[number] => achado !== null);
-    // Mesmo principal pode entrar duas vezes (casou o nome dele e o da
-    // variação). Fica a melhor nota, e a auditoria não conta item repetido.
-    const vistos = new Set<string>();
-    const unicos = comPrincipal.filter((achado) => {
-      if (vistos.has(achado.produto.id)) return false;
-      vistos.add(achado.produto.id);
-      return true;
-    });
+    // Desligado: nada muda — nem consulta, nem resposta. Ligado: os detalhes do
+    // módulo decidem quem a IA pode oferecer, a variação responde pelo
+    // principal, e o serviço ganha o bloco `servico`. Sem conseguir ler os
+    // detalhes, a busca FALHA (lança), como já falha sem ler o catálogo: tratar
+    // o erro como "não é serviço" devolveria à conversa o item que a equipe
+    // tirou dela (`ia_oferece = false`).
+    const vitrine = (await moduloLigadoComMemo(ctx.supabase, MODULO_SERVICOS))
+      ? vitrineDeServicos((data ?? []) as Linha[], await todosOsDetalhes(ctx.supabase, ctx.organizationId), {
+          familiaParcial: varreduraParcial,
+        })
+      : null;
 
-    // Os serviços montados com as variações que já vieram na varredura. A
-    // resposta da busca é o ÚNICO lugar em que o agente vê sinal, prazo e
-    // "a partir de": sem isto ele tem o preço e inventa o resto.
-    const servicos = new Map(
-      montarServicos((data ?? []) as Linha[] as unknown as LinhaDoCatalogo[]).map((servico) => [
-        servico.id,
-        servico,
-      ]),
-    );
+    const busca = buscarComRelaxamento(vitrine ? vitrine.visiveis : ((data ?? []) as Linha[]), input.termo);
+    const { ignorados } = busca;
+    const achados = vitrine ? vitrine.principalNoLugar(busca.achados) : busca.achados;
+    // Serviço não tem prateleira: a tela de produtos e a planilha podem marcar
+    // `controla_estoque` num item de serviço, e ele não some por "sem estoque".
+    const temEstoque = (p: Linha) => vitrine?.ehServico(p.id) || !p.controla_estoque || p.quantidade > 0;
 
     // `controla_estoque` é o conserto de uma armadilha da versão anterior, que
     // filtrava por quantidade sempre: numa loja que não conta estoque (decant de
     // perfume, item sob encomenda) o catálogo INTEIRO ficava invisível.
     const disponiveis = input.somente_disponiveis
-      ? unicos.filter((a) => !a.produto.controla_estoque || a.produto.quantidade > 0)
-      : unicos;
+      ? achados.filter((a) => temEstoque(a.produto))
+      : achados;
 
     const topo = disponiveis.slice(0, input.limite);
 
     if (topo.length === 0) {
-      if (unicos.length > 0) {
+      if (achados.length > 0) {
         return {
           produtos: [],
           // Existe, mas ninguém pode comprar. Para a auditoria isto é vazio
@@ -412,6 +374,10 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
     const empate = topo.length > 1 && topo[0]!.nota === topo[1]!.nota;
 
     const mensagem = avisosDaBusca({ empate, ignorados });
+    const servicos = new Map(topo.flatMap(({ produto }) => {
+      const s = vitrine?.descricao(produto.id);
+      return s ? [[produto.id, s] as const] : [];
+    }));
 
     return {
       produtos: topo.map(({ produto }) => ({
@@ -421,19 +387,18 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
         preco_cents: produto.preco_cents,
         ...(produto.marca ? { marca: produto.marca } : {}),
         ...(produto.descricao ? { descricao: produto.descricao } : {}),
-        disponivel: !produto.controla_estoque || produto.quantidade > 0,
+        disponivel: temEstoque(produto),
         // Quantas fotos, e não quais: o caminho é vocabulário interno e a URL
         // assinada expira. Quem manda a foto é o `send_message` do agente, com
         // `produto_codigo` — ele acha as fotos pelo código (migration 0390).
         ...(produto.fotos && produto.fotos.length > 0 ? { fotos: produto.fotos.length } : {}),
-        // Serviço (#3372): tipo, "a partir de", variações com preço e sinal,
-        // prazo e as instruções internas MARCADAS. Sem estes campos o agente
-        // tem o preço e não sabe responder "o que vem incluso" nem "quanto é o
-        // sinal" — e completa com o que lembrou.
-        ...(servicos.has(produto.id)
-          ? { servico: descreverServicoParaIA(servicos.get(produto.id)!) }
-          : {}),
+        // Serviço (#3372, módulo ligado): tipo, "a partir de", variações com
+        // preço e sinal, prazo e as instruções internas MARCADAS.
+        ...(servicos.has(produto.id) ? { servico: servicos.get(produto.id) } : {}),
       })),
+      // A orientação viaja com o dado, e só quando há serviço: a descrição da
+      // ferramenta é a mesma com o módulo ligado ou desligado.
+      ...(servicos.size > 0 ? { instrucoes_servico: INSTRUCOES_DE_SERVICO } : {}),
       empate,
       // Relaxamento é o irmão do empate: nos dois a busca sabe que a resposta
       // NÃO é exatamente o que foi pedido, e nos dois quem decide é a pessoa.

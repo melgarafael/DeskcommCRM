@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   descreverServicoParaIA,
+  linhaDoCatalogo,
   menorPreco,
   montarServicos,
   rotuloAPartir,
@@ -89,6 +90,14 @@ describe("sinal calculado", () => {
     expect(semNbsp(rotuloDoSinal(5_000, "BRL", null) ?? "")).toBe("sinal de R$ 50,00");
   });
 
+  it("sinal fixo acima do preço do item não é dito — o preço muda por fora da trava da família", () => {
+    expect(sinalEmCents(4_000, { tipo: "fixo", cents: 5_000 })).toBeNull();
+    // Igual ao preço ainda é sinal válido (paga tudo de entrada).
+    expect(sinalEmCents(5_000, { tipo: "fixo", cents: 5_000 })).toBe(5_000);
+    // Item grátis não tem sinal fixo a pedir.
+    expect(sinalEmCents(0, { tipo: "fixo", cents: 1 })).toBeNull();
+  });
+
   it("sem sinal é null, e zero não vira 'sinal de R$ 0,00'", () => {
     expect(sinalEmCents(35_000, null)).toBeNull();
     expect(rotuloDoSinal(null, "BRL", 30)).toBeNull();
@@ -113,7 +122,6 @@ const PRINCIPAL: LinhaDoCatalogo = {
   fotos: ["capa.jpg"],
   instrucoes_ia: "Nunca prometer prazo menor que 30 dias.",
   ia_oferece: true,
-  ia_agenda: false,
   revision: 3,
 };
 
@@ -208,9 +216,39 @@ describe("o que o agente recebe na busca", () => {
     );
   });
 
-  it("serviço que a IA não agenda diz isso ao modelo, em vez de deixar reservar", () => {
+  it("família vista pela metade é dita como dado, não escondida", () => {
     const [servico] = montarServicos([PRINCIPAL]);
-    const descricao = descreverServicoParaIA(servico!);
-    expect(String(descricao.agendamento)).toContain("a equipe marca");
+    expect(descreverServicoParaIA(servico!).variacoes_podem_estar_incompletas).toBeUndefined();
+    expect(descreverServicoParaIA(servico!, { familiaParcial: true }).variacoes_podem_estar_incompletas).toBe(true);
+  });
+
+  it("a variação com preço abaixo do sinal fixo sai sem sinal; as outras mantêm", () => {
+    const fixo = { ...PRINCIPAL, sinal_tipo: "fixo", sinal_percentual: null, sinal_cents: 150_000 };
+    const [servico] = montarServicos([fixo, VARIACAO]);
+    // principal R$ 1.200 < sinal R$ 1.500: sem sinal; variação R$ 1.900: com sinal.
+    expect(servico!.sinal?.cents).toBeNull();
+    expect(servico!.variacoes[0]!.sinal_cents).toBe(150_000);
+  });
+});
+
+describe("linhaDoCatalogo", () => {
+  it("junta item e detalhe, e numeric/bigint em texto viram número", () => {
+    const linha = linhaDoCatalogo(
+      { id: "i", codigo: "C", nome: "N", descricao: null, preco_cents: 100, moeda: "BRL", ativo: true },
+      {
+        product_id: "i",
+        pai_product_id: null,
+        tipo: "projeto",
+        unidade: "valor_fechado",
+        prazo_dias_uteis: 10,
+        sinal_tipo: "percentual",
+        sinal_percentual: "30.00",
+        sinal_cents: null,
+        instrucoes_ia: null,
+        ia_oferece: false,
+        revision: 4,
+      },
+    );
+    expect(linha).toMatchObject({ tipo_servico: "projeto", sinal_percentual: 30, pai_id: null, ia_oferece: false, revision: 4 });
   });
 });

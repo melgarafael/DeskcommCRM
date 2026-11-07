@@ -2,10 +2,18 @@
  * GET  /api/v1/servicos — os serviços da organização ativa, com as variações.
  * POST /api/v1/servicos — cadastra um serviço (ou uma variação de um).
  *
- * Issue #3372, fatia B. O serviço é um item do catálogo: esta rota é o contrato
- * que sabe falar de `tipo_servico`, `unidade_cobranca`, prazo e sinal; o
- * `POST /api/v1/products` continua sendo o cadastro do produto de prateleira e
- * continua ignorando esses campos (o Zod dele os descarta).
+ * Issue #3372, fatia B, no desenho do doc 212: serviço é o MÓDULO OPCIONAL
+ * `catalogo_servicos` (ADR-0002). Com o módulo desligado na instalação esta rota
+ * não existe (404), e nenhuma consulta alcança `catalog_service_details`.
+ *
+ * O serviço é um item do catálogo: nome, código e preço ficam em
+ * `catalog_products`; tipo, unidade, prazo e sinal ficam no detalhe do módulo.
+ * O `POST /api/v1/products` continua sendo o cadastro do produto de prateleira.
+ *
+ * Leitura pela sessão, sob RLS. Escrita pelo client de serviço, porque a tabela
+ * do módulo não aceita escrita de sessão: a organização vem do cookie validado,
+ * e `fn_catalogo_servicos_salvar` grava item e detalhe juntos, com a família
+ * travada e o sinal conferido no estado final.
  *
  * Escrita exige `manager`, como no catálogo: preço de venda não se altera com
  * papel de leitura. Um serviço é preço.
@@ -17,35 +25,51 @@ import { type NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
-import { COLUNAS_DO_SERVICO, montarServicos, type LinhaDoCatalogo } from "@/lib/catalogo/servicos";
+import { paginaPedida } from "@/lib/catalogo/busca-da-tela";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
+import { montarServicos } from "@/lib/catalogo/servicos";
+import {
+  MODULO_SERVICOS,
+  SERVICOS_POR_PAGINA,
+  camposDaRecusa,
+  detalheDoItem,
+  lerFamilias,
+  listarServicos,
+  salvarServico,
+} from "@/lib/catalogo/servicos-supabase";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import { servicoCreateSchema } from "@/lib/schemas/servicos";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(): Promise<Response> {
+async function seModuloDesligado(requestId: string): Promise<Response | null> {
+  if (await moduloLigado(createAdminClient(), MODULO_SERVICOS)) return null;
+  return fail("not_found", "Not found.", 404, { requestId });
+}
+
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("viewer", { requestId, resource: "catalog_products" });
   if (!authz.ok) return authz.response;
+  const desligado = await seModuloDesligado(requestId);
+  if (desligado) return desligado;
 
-  const supabase = await createClient();
-  // `or` e não dois `eq`: a variação NÃO tem tipo (o CHECK a proíbe) e precisa
-  // vir na mesma leitura para o principal mostrar os preços dela. Filtrar só
-  // por `tipo_servico is not null` devolveria serviços sem variação nenhuma.
-  const { data, error } = await supabase
-    .from("catalog_products")
-    .select(COLUNAS_DO_SERVICO)
-    .eq("organization_id", authz.org.orgId)
-    .or("tipo_servico.not.is.null,pai_id.not.is.null")
-    .order("nome")
-    .order("id")
-    .limit(500);
-
-  if (error) return fail("internal_error", "Erro ao listar os serviços.", 500, { requestId });
-
-  return ok(montarServicos((data ?? []) as unknown as LinhaDoCatalogo[]), { requestId });
+  // A página conta SERVIÇOS (principais), e cada um vem com a família inteira.
+  const pagina = paginaPedida(req.nextUrl.searchParams.get("pagina")) ?? 1;
+  try {
+    const { linhas, principais, temMais } = await listarServicos(await createClient(), authz.org.orgId, pagina);
+    const ordem = new Map(principais.map((id, i) => [id, i]));
+    const servicos = montarServicos(linhas).sort((a, b) => (ordem.get(a.id) ?? 0) - (ordem.get(b.id) ?? 0));
+    return ok(servicos, {
+      requestId,
+      meta: { pagina, por_pagina: SERVICOS_POR_PAGINA, has_more: temMais },
+    });
+  } catch {
+    return fail("internal_error", "Erro ao listar os serviços.", 500, { requestId });
+  }
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -55,6 +79,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
   if (!authz.ok) return authz.response;
+  const desligado = await seModuloDesligado(requestId);
+  if (desligado) return desligado;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
 
   const parsed = servicoCreateSchema.safeParse(await req.json().catch(() => null));
@@ -65,95 +91,73 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
   const input = parsed.data;
+  const org = authz.org.orgId;
   const supabase = await createClient();
 
-  // A variação precisa de um principal DESTA organização. A leitura é pela
-  // sessão (não pelo admin client): variação de outra organização não existe
-  // para quem está cadastrando, e a resposta é 422 — não 403, que revelaria que
-  // o id existe em outro lugar.
+  // A variação precisa de um PRINCIPAL desta organização. A leitura é pela
+  // sessão: principal de outra organização não existe para quem cadastra, e a
+  // resposta é 422 — não 403, que revelaria que o id existe em outro lugar.
   if (input.pai_id) {
-    const { data: pai } = await supabase
-      .from("catalog_products")
-      .select("id, tipo_servico, pai_id, sinal_tipo, sinal_cents")
-      .eq("organization_id", authz.org.orgId)
-      .eq("id", input.pai_id)
-      .maybeSingle();
-
-    if (!pai || !pai.tipo_servico || pai.pai_id) {
-      return fail(
-        "validation_failed",
-        t("Serviço principal não encontrado para esta variação."),
-        422,
-        {
-          requestId,
-          details: { pai_id: ["serviço principal inexistente ou que já é variação"] },
-        },
-      );
+    const pai = await detalheDoItem(supabase, org, input.pai_id).catch(() => null);
+    if (!pai || pai.pai_product_id !== null) {
+      return fail("validation_failed", t("Serviço principal não encontrado para esta variação."), 422, {
+        requestId,
+        details: { pai_id: ["serviço principal inexistente ou que já é variação"] },
+      });
     }
   }
 
-  const moeda = await moedaDaOrganizacao(supabase, authz.org.orgId);
   const ehVariacao = Boolean(input.pai_id);
-
-  const { data, error } = await supabase
-    .from("catalog_products")
-    .insert({
-      organization_id: authz.org.orgId,
+  const moeda = await moedaDaOrganizacao(supabase, org);
+  const r = await salvarServico(createAdminClient(), org, null, {
+    item: {
       codigo: input.codigo,
       nome: input.nome,
       descricao: input.descricao ?? null,
       preco_cents: input.preco_cents,
       moeda,
-      origem: "manual",
-      // Serviço nunca controla estoque (#2497) — e o CHECK do banco recusa o
-      // contrário. Não é escolha do corpo da requisição.
-      controla_estoque: false,
-      quantidade: 0,
-      // A variação não carrega detalhe de serviço: tipo, unidade, prazo e sinal
-      // moram no principal. Mandar `null` explícito é o que faz o CHECK
-      // `catalog_products_servico_variacao_check` valer também para quem
-      // chamar a rota por fora da tela.
-      tipo_servico: ehVariacao ? null : input.tipo,
-      unidade_cobranca: ehVariacao ? null : input.unidade,
-      prazo_dias_uteis: ehVariacao ? null : (input.prazo_dias_uteis ?? null),
-      sinal_tipo: ehVariacao ? null : (input.sinal?.tipo ?? null),
-      sinal_percentual: ehVariacao
-        ? null
-        : input.sinal?.tipo === "percentual"
-          ? input.sinal.valor
-          : null,
-      sinal_cents: ehVariacao ? null : input.sinal?.tipo === "fixo" ? input.sinal.valor : null,
-      instrucoes_ia: ehVariacao ? null : (input.instrucoes_ia ?? null),
-      ia_oferece: input.ia_oferece,
-      ia_agenda: ehVariacao ? false : input.ia_agenda,
-      pai_id: input.pai_id ?? null,
-    })
-    .select(COLUNAS_DO_SERVICO)
-    .single();
+    },
+    // A variação não carrega detalhe de serviço: tipo, unidade, prazo, sinal e
+    // instruções moram no principal (o CHECK do banco recusa o contrário).
+    detalhe: ehVariacao
+      ? { pai_product_id: input.pai_id, ia_oferece: input.ia_oferece }
+      : {
+          tipo: input.tipo,
+          unidade: input.unidade,
+          prazo_dias_uteis: input.prazo_dias_uteis ?? null,
+          sinal_tipo: input.sinal?.tipo ?? null,
+          sinal_percentual: input.sinal?.tipo === "percentual" ? input.sinal.valor : null,
+          sinal_cents: input.sinal?.tipo === "fixo" ? input.sinal.valor : null,
+          instrucoes_ia: input.instrucoes_ia ?? null,
+          ia_oferece: input.ia_oferece,
+        },
+  });
 
-  if (error) {
-    if (error.code === "23505") {
+  if (!r.ok) {
+    if (r.motivo === "codigo_repetido") {
       return fail("conflict", t("Já existe um item com esse código."), 409, { requestId });
     }
-    // 23514 = CHECK, 23503 = FK/gatilho da variação. A mensagem do banco nomeia
-    // o motivo; quem digitou precisa saber QUAL regra recusou.
-    if (error.code === "23514" || error.code === "23503") {
-      return fail("validation_failed", t("Este serviço não passou nas regras do cadastro."), 422, {
+    if (r.motivo === "nao_encontrado") {
+      return fail("validation_failed", t("Serviço principal não encontrado para esta variação."), 422, {
         requestId,
-        details: { banco: [error.message] },
+        details: { pai_id: ["serviço principal inexistente ou que já é variação"] },
       });
     }
-    return fail("internal_error", "Erro ao salvar o serviço.", 500, { requestId });
+    return fail("validation_failed", t("Este serviço não passou nas regras do cadastro."), 422, {
+      requestId,
+      details: camposDaRecusa(r.detalhe),
+    });
   }
 
   await audit({
-    organizationId: authz.org.orgId,
+    organizationId: org,
     actorUserId: authz.user.id,
     action: ehVariacao ? "catalog_service.variation_created" : "catalog_service.created",
     resourceType: "catalog_products",
-    resourceId: (data as unknown as { id: string }).id,
+    resourceId: r.productId,
     requestId,
   });
 
-  return ok(data, { requestId, status: 201 });
+  const servico = montarServicos(await lerFamilias(supabase, org, [r.principalId]).catch(() => []))[0];
+  return ok(servico ?? { id: r.productId, revision: r.revision }, { requestId, status: 201 });
 }

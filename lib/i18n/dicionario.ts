@@ -13905,6 +13905,12 @@ export const DICIONARIO: Traducoes = {
   },
   "Já existe um item com esse código.": { es: "Ya existe un artículo con ese código." },
   "Erro ao salvar o serviço.": { es: "Error al guardar el servicio." },
+  "O preço ficaria abaixo do sinal fixo do serviço.": {
+    es: "El precio quedaría por debajo del anticipo fijo del servicio.",
+  },
+  ": o preço ficaria abaixo do sinal fixo do serviço.": {
+    es: ": el precio quedaría por debajo del anticipo fijo del servicio.",
+  },
   "Query inválida.": { es: "Query inválida." },
   "Responsável não é um atendente ativo desta organização.": { es: "El responsable no es un asesor activo de esta organización." },
   "Retomada de contato descartada — decisão registrada": { es: "Reanudación de contacto descartada — decisión registrada" },

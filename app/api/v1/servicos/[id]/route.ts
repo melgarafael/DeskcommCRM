@@ -2,9 +2,12 @@
  * GET   /api/v1/servicos/[id] — um serviço, com as variações e "a partir de".
  * PATCH /api/v1/servicos/[id] — edita; exige a revisão que quem edita viu.
  *
- * Issue #3372, fatia B. A revisão é o que impede duas pessoas (ou a tela e um
- * script) de salvarem em cima uma da outra: `expected_revision` velho = 409, o
- * mesmo desfecho das outras escritas concorrentes do repo.
+ * Módulo opcional `catalogo_servicos` (doc 212, ADR-0002): desligado, 404.
+ *
+ * A revisão é o que impede duas pessoas (ou a tela e um script) de salvarem em
+ * cima uma da outra: `expected_revision` velho = 409. A conferência da revisão e
+ * a do sinal acontecem dentro de `fn_catalogo_servicos_salvar`, com a família
+ * travada — uma edição do sinal e outra do preço de uma variação passam em fila.
  */
 import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
@@ -14,76 +17,70 @@ import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import {
-  COLUNAS_DO_SERVICO,
-  menorPreco,
+  linhaDoCatalogo,
   montarServicos,
-  type LinhaDoCatalogo,
   type TipoDeServico,
   type UnidadeDeCobranca,
 } from "@/lib/catalogo/servicos";
+import {
+  MODULO_SERVICOS,
+  UUID,
+  camposDaRecusa,
+  detalheDoItem,
+  lerFamilias,
+  salvarServico,
+} from "@/lib/catalogo/servicos-supabase";
+import { moduloLigado } from "@/lib/instalacao/modulos";
 import {
   problemasDoServico,
   servicoPatchSchema,
   type EntradaDeServico,
 } from "@/lib/schemas/servicos";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
-// O id entra em `.or()` como TEXTO de filtro (`id.eq.<id>,pai_id.eq.<id>`):
-// um id com vírgula mudaria a consulta. Só UUID chega ao banco.
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 interface Contexto {
   params: Promise<{ id: string }>;
 }
 
-/** O principal e as variações dele, ou a variação e o principal dela. */
-async function lerServico(
+async function seModuloDesligado(requestId: string): Promise<Response | null> {
+  if (await moduloLigado(createAdminClient(), MODULO_SERVICOS)) return null;
+  return fail("not_found", "Not found.", 404, { requestId });
+}
+
+/** O serviço montado que contém `id` — como principal ou como variação. */
+async function servicoDoItem(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  organizationId: string,
+  org: string,
   id: string,
-): Promise<{ linhas: LinhaDoCatalogo[]; encontrado: boolean }> {
-  const { data: linha } = await supabase
-    .from("catalog_products")
-    .select(COLUNAS_DO_SERVICO)
-    .eq("organization_id", organizationId)
-    .eq("id", id)
-    .maybeSingle();
-
-  const alvo = linha as unknown as LinhaDoCatalogo | null;
-  // Produto de prateleira não é serviço: esta rota responde 404 para ele, e não
-  // um objeto vazio que faria a tela achar que o cadastro está incompleto.
-  if (!alvo || (!alvo.tipo_servico && !alvo.pai_id)) return { linhas: [], encontrado: false };
-
-  const principalId = alvo.pai_id ?? alvo.id;
-  const { data: familiares } = await supabase
-    .from("catalog_products")
-    .select(COLUNAS_DO_SERVICO)
-    .eq("organization_id", organizationId)
-    .or(`id.eq.${principalId},pai_id.eq.${principalId}`);
-
-  return { linhas: (familiares ?? []) as unknown as LinhaDoCatalogo[], encontrado: true };
+) {
+  const detalhe = await detalheDoItem(supabase, org, id);
+  if (!detalhe) return null;
+  const montados = montarServicos(await lerFamilias(supabase, org, [detalhe.pai_product_id ?? id]));
+  return montados[0] ?? null;
 }
 
 export async function GET(_req: NextRequest, ctx: Contexto): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("viewer", { requestId, resource: "catalog_products" });
   if (!authz.ok) return authz.response;
+  const desligado = await seModuloDesligado(requestId);
+  if (desligado) return desligado;
   const { id } = await ctx.params;
   if (!UUID.test(id)) return fail("not_found", "Serviço não encontrado.", 404, { requestId });
 
-  const supabase = await createClient();
-  const { linhas, encontrado } = await lerServico(supabase, authz.org.orgId, id);
-  if (!encontrado) return fail("not_found", "Serviço não encontrado.", 404, { requestId });
-
-  const montados = montarServicos(linhas);
-  const servico =
-    montados.find((s) => s.id === id) ?? montados.find((s) => s.variacoes.some((v) => v.id === id));
-  if (!servico) return fail("not_found", "Serviço não encontrado.", 404, { requestId });
-
-  return ok(servico, { requestId });
+  try {
+    const servico = await servicoDoItem(await createClient(), authz.org.orgId, id);
+    // Produto de prateleira não é serviço: 404, e não um objeto vazio que faria
+    // a tela achar que o cadastro está incompleto.
+    if (!servico) return fail("not_found", "Serviço não encontrado.", 404, { requestId });
+    return ok(servico, { requestId });
+  } catch {
+    return fail("internal_error", "Erro ao ler o serviço.", 500, { requestId });
+  }
 }
 
 export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> {
@@ -93,6 +90,8 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   const requestId = randomUUID();
   const authz = await requireRole("manager", { requestId, resource: "catalog_products" });
   if (!authz.ok) return authz.response;
+  const desligado = await seModuloDesligado(requestId);
+  if (desligado) return desligado;
   const t = (texto: string) => traduzir(texto, authz.user.idioma);
   const { id } = await ctx.params;
   if (!UUID.test(id)) return fail("not_found", "Serviço não encontrado.", 404, { requestId });
@@ -105,58 +104,37 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
     });
   }
   const patch = parsed.data;
+  const org = authz.org.orgId;
   const supabase = await createClient();
 
-  const { data: atualBruto } = await supabase
-    .from("catalog_products")
-    .select(COLUNAS_DO_SERVICO)
-    .eq("organization_id", authz.org.orgId)
-    .eq("id", id)
-    .maybeSingle();
-  const atual = atualBruto as unknown as LinhaDoCatalogo | null;
-  if (!atual || (!atual.tipo_servico && !atual.pai_id)) {
-    return fail("not_found", "Serviço não encontrado.", 404, { requestId });
-  }
+  const detalhe = await detalheDoItem(supabase, org, id).catch(() => null);
+  if (!detalhe) return fail("not_found", "Serviço não encontrado.", 404, { requestId });
+  const ehVariacao = detalhe.pai_product_id !== null;
+  const atual = linhaDoCatalogo(
+    { id, codigo: "", nome: "", descricao: null, preco_cents: 0, moeda: "BRL", ativo: true },
+    detalhe,
+  );
 
-  // A régua roda sobre a LINHA MESCLADA: `prazo` sem `tipo` no corpo pode ser
-  // válido ou não, e quem sabe é a linha que já está gravada.
-  const tipoFinal = (patch.tipo ?? atual.tipo_servico ?? null) as TipoDeServico | null;
-  const unidadeFinal = (patch.unidade ??
-    atual.unidade_cobranca ??
-    null) as UnidadeDeCobranca | null;
+  // A régua de FORMA roda sobre a linha mesclada: `prazo` sem `tipo` no corpo
+  // pode ser válido ou não, e quem sabe é o que já está gravado. A regra do
+  // sinal contra o preço da família é do banco, que lê a família travada.
   const mesclado: EntradaDeServico = {
-    tipo: tipoFinal,
-    unidade: unidadeFinal,
-    preco_cents: patch.preco_cents ?? atual.preco_cents,
-    prazo_dias_uteis:
-      patch.prazo_dias_uteis === undefined ? atual.prazo_dias_uteis : patch.prazo_dias_uteis,
+    tipo: (patch.tipo ?? atual.tipo_servico ?? null) as TipoDeServico | null,
+    unidade: (patch.unidade ?? atual.unidade_cobranca ?? null) as UnidadeDeCobranca | null,
+    prazo_dias_uteis: patch.prazo_dias_uteis === undefined ? atual.prazo_dias_uteis : patch.prazo_dias_uteis,
     sinal:
       patch.sinal === undefined
         ? atual.sinal_tipo === "percentual" && atual.sinal_percentual !== null
-          ? { tipo: "percentual" as const, valor: Number(atual.sinal_percentual) }
+          ? { tipo: "percentual" as const, valor: atual.sinal_percentual }
           : atual.sinal_tipo === "fixo" && atual.sinal_cents !== null
-            ? { tipo: "fixo" as const, valor: Number(atual.sinal_cents) }
+            ? { tipo: "fixo" as const, valor: atual.sinal_cents }
             : null
         : patch.sinal,
     pai_id: atual.pai_id,
     controla_estoque: false,
     quantidade: 0,
   };
-
-  // Menor preço do serviço = principal + variações, já com o preço novo deste
-  // PATCH. É o piso do sinal fixo.
-  const { data: familiares } = await supabase
-    .from("catalog_products")
-    .select("id, preco_cents")
-    .eq("organization_id", authz.org.orgId)
-    .or(`id.eq.${atual.pai_id ?? atual.id},pai_id.eq.${atual.pai_id ?? atual.id}`);
-  const precoNovo = patch.preco_cents ?? atual.preco_cents;
-  const precos = ((familiares ?? []) as Array<{ id: string; preco_cents: number }>).map((linha) =>
-    linha.id === id ? precoNovo : linha.preco_cents,
-  );
-  const menor = menorPreco(precos.map((preco_cents) => ({ preco_cents })));
-
-  const problemas = problemasDoServico(mesclado, { menorPrecoDoServico: menor });
+  const problemas = problemasDoServico(mesclado);
   if (problemas.length > 0) {
     return fail("validation_failed", t("Este serviço não passou nas regras do cadastro."), 422, {
       requestId,
@@ -164,85 +142,58 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
     });
   }
 
-  const { data, error } = await supabase
-    .from("catalog_products")
-    .update({
+  const r = await salvarServico(createAdminClient(), org, id, {
+    item: {
       ...(patch.codigo !== undefined ? { codigo: patch.codigo } : {}),
       ...(patch.nome !== undefined ? { nome: patch.nome } : {}),
       ...(patch.descricao !== undefined ? { descricao: patch.descricao } : {}),
       ...(patch.preco_cents !== undefined ? { preco_cents: patch.preco_cents } : {}),
-      ...(patch.tipo !== undefined ? { tipo_servico: atual.pai_id ? null : patch.tipo } : {}),
-      ...(patch.unidade !== undefined
-        ? { unidade_cobranca: atual.pai_id ? null : patch.unidade }
-        : {}),
-      ...(patch.prazo_dias_uteis !== undefined
-        ? { prazo_dias_uteis: atual.pai_id ? null : patch.prazo_dias_uteis }
-        : {}),
-      ...(patch.sinal !== undefined
+    },
+    // Na variação só `ia_oferece` é dela; o resto é do principal, e a régua
+    // acima já recusou quem tentou mandar.
+    detalhe: {
+      ...(!ehVariacao && patch.tipo !== undefined ? { tipo: patch.tipo } : {}),
+      ...(!ehVariacao && patch.unidade !== undefined ? { unidade: patch.unidade } : {}),
+      ...(!ehVariacao && patch.prazo_dias_uteis !== undefined ? { prazo_dias_uteis: patch.prazo_dias_uteis } : {}),
+      ...(!ehVariacao && patch.sinal !== undefined
         ? {
-            sinal_tipo: atual.pai_id ? null : (patch.sinal?.tipo ?? null),
-            sinal_percentual:
-              !atual.pai_id && patch.sinal?.tipo === "percentual" ? patch.sinal.valor : null,
-            sinal_cents: !atual.pai_id && patch.sinal?.tipo === "fixo" ? patch.sinal.valor : null,
+            sinal_tipo: patch.sinal?.tipo ?? null,
+            sinal_percentual: patch.sinal?.tipo === "percentual" ? patch.sinal.valor : null,
+            sinal_cents: patch.sinal?.tipo === "fixo" ? patch.sinal.valor : null,
           }
         : {}),
-      ...(patch.instrucoes_ia !== undefined
-        ? { instrucoes_ia: atual.pai_id ? null : patch.instrucoes_ia }
-        : {}),
+      ...(!ehVariacao && patch.instrucoes_ia !== undefined ? { instrucoes_ia: patch.instrucoes_ia } : {}),
       ...(patch.ia_oferece !== undefined ? { ia_oferece: patch.ia_oferece } : {}),
-      ...(patch.ia_agenda !== undefined && !atual.pai_id ? { ia_agenda: patch.ia_agenda } : {}),
-    })
-    .eq("organization_id", authz.org.orgId)
-    .eq("id", id)
-    // A revisão vai no WHERE: se outra pessoa salvou entre a leitura e esta
-    // escrita, nenhuma linha casa e a resposta é 409 — nunca "salvou por cima".
-    .eq("revision", patch.expected_revision)
-    .select(COLUNAS_DO_SERVICO)
-    .maybeSingle();
+    },
+    expectedRevision: patch.expected_revision,
+  });
 
-  if (error) {
-    if (error.code === "23505") {
-      return fail("conflict", t("Já existe um item com esse código."), 409, { requestId });
-    }
-    if (error.code === "23514" || error.code === "23503") {
-      return fail("validation_failed", t("Este serviço não passou nas regras do cadastro."), 422, {
+  if (!r.ok) {
+    if (r.motivo === "nao_encontrado") return fail("not_found", "Serviço não encontrado.", 404, { requestId });
+    if (r.motivo === "revisao_velha") {
+      return fail("conflict", t("Este serviço foi alterado por outra pessoa."), 409, {
         requestId,
-        details: { banco: [error.message] },
+        details: { revision_atual: Number(r.detalhe) || null },
       });
     }
-    return fail("internal_error", "Erro ao salvar o serviço.", 500, { requestId });
-  }
-
-  if (!data) {
-    // Nenhuma linha casou: ou a revisão está velha, ou o serviço sumiu. A
-    // releitura distingue os dois — responder 409 para um item apagado manda a
-    // tela recarregar algo que não existe mais.
-    const { data: agora } = await supabase
-      .from("catalog_products")
-      .select("revision")
-      .eq("organization_id", authz.org.orgId)
-      .eq("id", id)
-      .maybeSingle();
-    if (!agora) return fail("not_found", "Serviço não encontrado.", 404, { requestId });
-    return fail("conflict", t("Este serviço foi alterado por outra pessoa."), 409, {
+    if (r.motivo === "codigo_repetido") {
+      return fail("conflict", t("Já existe um item com esse código."), 409, { requestId });
+    }
+    return fail("validation_failed", t("Este serviço não passou nas regras do cadastro."), 422, {
       requestId,
-      details: { revision_atual: (agora as { revision: number }).revision },
+      details: camposDaRecusa(r.detalhe),
     });
   }
 
   await audit({
-    organizationId: authz.org.orgId,
+    organizationId: org,
     actorUserId: authz.user.id,
-    action: atual.pai_id ? "catalog_service.variation_updated" : "catalog_service.updated",
+    action: ehVariacao ? "catalog_service.variation_updated" : "catalog_service.updated",
     resourceType: "catalog_products",
     resourceId: id,
     requestId,
   });
 
-  const { linhas } = await lerServico(supabase, authz.org.orgId, id);
-  const montados = montarServicos(linhas);
-  const servico =
-    montados.find((s) => s.id === id) ?? montados.find((s) => s.variacoes.some((v) => v.id === id));
-
-  return ok(servico ?? data, { requestId });
+  const servico = await servicoDoItem(supabase, org, id).catch(() => null);
+  return ok(servico ?? { id, revision: r.revision }, { requestId });
 }

@@ -8,15 +8,18 @@
  * que **não** é uma hora marcada nem um produto de prateleira — consultoria com
  * variações, plano mensal de social media, site institucional com prazo e sinal.
  *
- * O desenho é o da issue, e ele NÃO é uma tabela de serviços com preço:
+ * O desenho segue o doc 212 (destino A, preço A): serviço é MÓDULO OPCIONAL
+ * (`catalogo_servicos`, ADR-0002), e ele NÃO é uma tabela de serviços com preço:
  *
- * - o serviço é **item do catálogo** (`catalog_products`), com as colunas de
- *   serviço anuláveis (pergunta 3 da issue: "tabela de detalhe 1 para 1 ou
- *   colunas anuláveis no catálogo");
- * - a **variação também é item do catálogo**, ligada ao principal por `pai_id`.
- *   O principal carrega o que é comum (descrição, fotos, tipo, unidade, sinal);
- *   a variação carrega nome, código e preço próprios — e **nada** de serviço,
- *   para não haver dois lugares dizendo de que tipo é o mesmo serviço;
+ * - o serviço é **item do catálogo** (`catalog_products`), com nome, código e
+ *   preço lá; o que é de serviço mora em `catalog_service_details`, uma linha
+ *   por item, que só existe onde o módulo foi instalado (pergunta 3 da issue:
+ *   "tabela de detalhe 1 para 1");
+ * - a **variação também é item do catálogo**, ligada ao principal pelo detalhe
+ *   (`pai_product_id`). O principal carrega o que é comum (descrição, fotos,
+ *   tipo, unidade, sinal); a variação carrega nome, código e preço próprios — e
+ *   **nada** de serviço, para não haver dois lugares dizendo de que tipo é o
+ *   mesmo serviço;
  * - **nenhum campo de preço novo**: o preço é o do item, como na #2497.
  *
  * ─── Por que este arquivo é puro ────────────────────────────────────────────
@@ -46,7 +49,7 @@ export type UnidadeDeCobranca = (typeof UNIDADES_DE_COBRANCA)[number];
 
 /**
  * A compatibilidade tipo × unidade — a MESMA lista do CHECK
- * `catalog_products_servico_unidade_check`. Aqui ela existe para a rota poder
+ * `catalog_service_details_forma_check`. Aqui ela existe para a rota poder
  * responder 422 com o campo nomeado antes de o banco recusar com 23514.
  *
  * Hora marcada se cobra por sessão ou por hora; projeto por valor fechado ou
@@ -150,13 +153,19 @@ export type SinalDoServico =
  *
  * Percentual arredonda para o centavo: 30% de R$ 350,00 = R$ 105,00 (o caso da
  * issue). Fixo é o valor cadastrado, sem cálculo.
+ *
+ * Sinal fixo ACIMA do preço do item não é dito: vira `null`. A escrita do
+ * módulo recusa esse estado (`fn_catalogo_servicos_salvar`), mas o preço também
+ * muda por fora dela — a tela de produtos, a planilha, o PostgREST de quem é
+ * gerente —, e nenhuma dessas escritas trava a família. A leitura é a última
+ * porta antes do cliente: o agente não pede de entrada mais do que o item custa.
  */
 export function sinalEmCents(
   precoCents: number,
   sinal: SinalDoServico | null | undefined,
 ): number | null {
   if (!sinal) return null;
-  if (sinal.tipo === "fixo") return sinal.cents;
+  if (sinal.tipo === "fixo") return sinal.cents <= precoCents ? sinal.cents : null;
   if (!Number.isFinite(sinal.percentual)) return null;
   return Math.round((precoCents * sinal.percentual) / 100);
 }
@@ -172,7 +181,10 @@ export function rotuloDoSinal(
   return percentual === null ? `sinal de ${valor}` : `sinal de ${valor} (${percentual}%)`;
 }
 
-/** A linha do catálogo como o banco a devolve (só o que serviço usa). */
+/**
+ * O item com o detalhe de serviço, numa linha só — o que `montarServicos` lê.
+ * Quem a monta é `linhaDoCatalogo()`, a partir das duas tabelas.
+ */
 export interface LinhaDoCatalogo {
   id: string;
   codigo: string;
@@ -191,15 +203,61 @@ export interface LinhaDoCatalogo {
   fotos?: string[] | null;
   instrucoes_ia?: string | null;
   ia_oferece?: boolean;
-  ia_agenda?: boolean;
   revision?: number;
 }
 
-/** As colunas que a rota e a busca leem — uma lista, não duas. */
-export const COLUNAS_DO_SERVICO =
-  "id, codigo, nome, descricao, preco_cents, moeda, ativo, tipo_servico, unidade_cobranca, " +
-  "prazo_dias_uteis, sinal_tipo, sinal_percentual, sinal_cents, pai_id, fotos, instrucoes_ia, " +
-  "ia_oferece, ia_agenda, revision";
+/** As colunas do item que o serviço usa (`catalog_products`). */
+export const COLUNAS_DO_ITEM = "id, codigo, nome, descricao, preco_cents, moeda, ativo, fotos";
+
+/** As colunas do detalhe (`catalog_service_details`, tabela do módulo). */
+export const COLUNAS_DO_DETALHE =
+  "product_id, pai_product_id, tipo, unidade, prazo_dias_uteis, sinal_tipo, sinal_percentual, " +
+  "sinal_cents, instrucoes_ia, ia_oferece, revision";
+
+export interface ItemDoServico {
+  id: string;
+  codigo: string;
+  nome: string;
+  descricao: string | null;
+  preco_cents: number;
+  moeda: string;
+  ativo: boolean;
+  fotos?: string[] | null;
+}
+
+export interface DetalheDoServico {
+  product_id: string;
+  pai_product_id: string | null;
+  tipo: string | null;
+  unidade: string | null;
+  prazo_dias_uteis: number | null;
+  sinal_tipo: string | null;
+  sinal_percentual: number | string | null;
+  sinal_cents: number | string | null;
+  instrucoes_ia: string | null;
+  ia_oferece: boolean;
+  revision: number;
+}
+
+/**
+ * Item + detalhe → a linha que a montagem lê. `numeric` e `bigint` chegam do
+ * PostgREST como texto quando passam do inteiro seguro; aqui viram número.
+ */
+export function linhaDoCatalogo(item: ItemDoServico, detalhe: DetalheDoServico): LinhaDoCatalogo {
+  return {
+    ...item,
+    tipo_servico: detalhe.tipo,
+    unidade_cobranca: detalhe.unidade,
+    prazo_dias_uteis: detalhe.prazo_dias_uteis,
+    sinal_tipo: detalhe.sinal_tipo,
+    sinal_percentual: detalhe.sinal_percentual === null ? null : Number(detalhe.sinal_percentual),
+    sinal_cents: detalhe.sinal_cents === null ? null : Number(detalhe.sinal_cents),
+    pai_id: detalhe.pai_product_id,
+    instrucoes_ia: detalhe.instrucoes_ia,
+    ia_oferece: detalhe.ia_oferece,
+    revision: detalhe.revision,
+  };
+}
 
 export interface VariacaoDoServico {
   id: string;
@@ -236,7 +294,6 @@ export interface ServicoMontado {
   fotos: string[] | null;
   instrucoes_ia: string | null;
   ia_oferece: boolean;
-  ia_agenda: boolean;
   revision: number | null;
 }
 
@@ -329,7 +386,6 @@ export function montarServicos(linhas: ReadonlyArray<LinhaDoCatalogo>): ServicoM
       fotos: principal.fotos ?? null,
       instrucoes_ia: principal.instrucoes_ia ?? null,
       ia_oferece: principal.ia_oferece ?? true,
-      ia_agenda: principal.ia_agenda ?? false,
       revision: principal.revision ?? null,
     };
   });
@@ -339,7 +395,7 @@ export function montarServicos(linhas: ReadonlyArray<LinhaDoCatalogo>): ServicoM
  * O serviço como o AGENTE o recebe no `crm_search_products`.
  *
  * Sem ferramenta nova (fatia E da issue): o serviço sai pela busca do catálogo
- * que já existe. O que muda é que a resposta passa a levar tipo, variações, "a
+ * que já existe, só com o módulo ligado. O que muda é que a resposta passa a levar tipo, variações, "a
  * partir de", sinal calculado e prazo — sem isso a IA tem o preço e não tem o
  * que responder quando a pessoa pergunta "o que vem incluso" ou "quanto é o
  * sinal".
@@ -349,7 +405,10 @@ export function montarServicos(linhas: ReadonlyArray<LinhaDoCatalogo>): ServicoM
  * e "não repita ao cliente" no campo é o que o impede de citar o texto interno
  * como se fosse oferta.
  */
-export function descreverServicoParaIA(servico: ServicoMontado): Record<string, unknown> {
+export function descreverServicoParaIA(
+  servico: ServicoMontado,
+  opcoes: { familiaParcial?: boolean } = {},
+): Record<string, unknown> {
   return {
     tipo: rotuloDoTipo(servico.tipo),
     unidade: sufixoDaUnidade(servico.unidade) || "preço fechado",
@@ -369,9 +428,9 @@ export function descreverServicoParaIA(servico: ServicoMontado): Record<string, 
           })),
         }
       : {}),
-    ...(servico.ia_agenda
-      ? {}
-      : { agendamento: "a equipe marca; você não reserva horário para este serviço" }),
+    // A varredura do catálogo não chegou ao fim: pode haver variação que não
+    // veio, e o "a partir de" pode não ser o menor preço. Dito como dado.
+    ...(opcoes.familiaParcial ? { variacoes_podem_estar_incompletas: true } : {}),
     ...(servico.instrucoes_ia
       ? { instrucoes_internas_nao_repita_ao_cliente: servico.instrucoes_ia }
       : {}),
