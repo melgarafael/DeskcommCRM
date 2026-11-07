@@ -123,7 +123,8 @@ describe("consultarJevNoRoteador", () => {
       modelo: "jev-1.13.0",
       tokensDeEntrada: 400,
     });
-    const corpo = JSON.parse(String(fetchImpl.mock.calls[0]![1].body)) as {
+    const chamada = fetchImpl.mock.calls[0]!;
+    const corpo = JSON.parse(String(chamada[1]?.body)) as {
       state: string;
       questions: Record<string, unknown>;
     };
@@ -468,7 +469,11 @@ describe("#3917 — o contexto do CRM entra na pergunta feita ao Jev", () => {
 
   it("o contexto chega ao Jev pela leitura do TURNO, e só uma vez por decisão", async () => {
     const fatos = vi.fn(async () => FATOS);
-    const fetchImpl = vi.fn(async () => respostaCom("suporte"));
+    // Parâmetros declarados para o `mock.calls` ter forma: o corpo enviado é o
+    // que se lê abaixo, e sem tipo a tupla sai vazia no typecheck do CI.
+    const fetchImpl = vi.fn(async (_input: URL | RequestInfo, _init?: RequestInit) =>
+      respostaCom("suporte"),
+    );
     const jev = consultarJevNoRoteador(
       poolCom(LIGADO).pool,
       { ...entrada(novaOrg(), "Bom dia! Tudo bem?"), fatosDoCrmDoTurno: fatos },
@@ -478,7 +483,8 @@ describe("#3917 — o contexto do CRM entra na pergunta feita ao Jev", () => {
 
     expect(escolha?.veredito).toEqual({ intentName: "suporte", confidence: 0.93 });
     expect(fatos).toHaveBeenCalledTimes(1);
-    const corpo = JSON.parse(String(fetchImpl.mock.calls[0]![1].body)) as {
+    const chamada = fetchImpl.mock.calls[0]!;
+    const corpo = JSON.parse(String(chamada[1]?.body)) as {
       questions: { roteador: { instructions: string; criteria: Record<string, string> } };
     };
     expect(corpo.questions.roteador.instructions).toContain("Fatos do CRM deste contato");

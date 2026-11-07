@@ -999,9 +999,12 @@ describe('#3917 — os fatos do CRM são do TURNO, uma leitura para os dois cami
     expect(out.outcome).toBe('classified');
 
     // O turno entrega ao Jev um GETTER — ele lê o banco, o roteador não.
-    const entradaDoJev = consultarJev.mock.calls[0]![1] as {
-      fatosDoCrmDoTurno?: () => Promise<unknown>;
-    };
+    // O dublê não declara parâmetro, então a tupla dele é vazia para o tsc:
+    // o cast diz o que o teste sabe — a posição 1 é a entrada do roteador.
+    const entradaDoJev = (consultarJev.mock.calls[0] as unknown as [
+      unknown,
+      { fatosDoCrmDoTurno?: () => Promise<unknown> },
+    ])[1]!;
     expect(typeof entradaDoJev.fatosDoCrmDoTurno).toBe('function');
 
     // Pedir duas vezes (uma pelo Jev, outra pela classificação) NÃO é duas
