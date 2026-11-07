@@ -38,6 +38,13 @@ export interface ResolverVozDoTurnoInput {
   /** `messages.type` da mensagem inbound que disparou o turno — `null` quando não há (ex.: follow-up proativo). */
   inboundType: string | null;
   /**
+   * A voz PRÓPRIA deste agente (`ai_agents.config.voz_voice_id`, #4228) — a
+   * escolha que a tela do agente grava. `null`/ausente = herda a voz da
+   * organização (`organizations.settings.voz.voice_id`), que é o comportamento
+   * de antes desta fatia, byte a byte.
+   */
+  vozVoiceId?: string | null;
+  /**
    * Config do ambiente desta instalação — a MESMA `deps.llmCfg` que o turno
    * já usa para o `runModelCall` de chat. Precisa vir do chamador, não `{}`
    * local: é dela que o kill switch `AI_BUDGET_ENFORCEMENT` (`budgetEnforcement`)
@@ -114,12 +121,18 @@ export async function resolverVozDoTurno(
       [input.tenantId],
     );
     const voz = (rows[0]?.settings?.voz ?? {}) as VozSettings;
-    if (!voz.voice_id) {
+    // A voz do AGENTE vence a da organização; sem ela, cai na da organização —
+    // exatamente o valor que esta função devolvia antes de existir voz por
+    // agente. `trim()` porque um id só com espaço viraria 404 na ElevenLabs e
+    // calaria o turno, quando a resposta certa é herdar.
+    const vozDoAgente = typeof input.vozVoiceId === "string" ? input.vozVoiceId.trim() : "";
+    const voiceId = vozDoAgente !== "" ? vozDoAgente : voz.voice_id;
+    if (!voiceId) {
       // Ninguém escolheu uma voz ainda (não há tela — Fase 7). `voz_enabled`
       // só chega a `true` hoje por quem edita o banco direto, e essa pessoa
       // também não configurou `settings.voz` — não é falha, é "faltou o
       // segundo passo". Loga para quem for depurar, não trava o turno.
-      logger.warn('[voz-do-turno] voz_enabled sem voice_id configurado — respondendo em texto', {
+      logger.warn('[voz-do-turno] voz_enabled sem voice_id (nem do agente, nem da organização) — respondendo em texto', {
         organization_id: input.tenantId,
       });
       return null;
@@ -162,7 +175,7 @@ export async function resolverVozDoTurno(
 
     return {
       apiKey: elevenlabs.apiKey,
-      voiceId: voz.voice_id,
+      voiceId,
       modelId,
       formato: formatoDaVozParaCanal(input.voiceNote),
     };
