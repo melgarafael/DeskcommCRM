@@ -28,7 +28,7 @@
 import { mkdirSync } from "node:fs";
 import * as path from "node:path";
 
-import { expect, test, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, expect, test, type Page } from "./helpers/test";
 
 import { lerCreds, loginComoAdmin } from "./helpers/login-admin";
 
@@ -62,6 +62,7 @@ test.beforeAll(async ({ browser }, testInfo) => {
     baseURL: testInfo.project.use.baseURL,
     storageState: undefined,
   });
+  contexto.on("page", esperarARevelacaoNasCargas);
   const page = await contexto.newPage();
   await loginComoAdmin(page, lerCreds());
   await contexto.storageState({ path: SESSAO });

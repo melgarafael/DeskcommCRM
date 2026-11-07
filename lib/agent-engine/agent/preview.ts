@@ -30,6 +30,8 @@ import { getToolByName } from '@/lib/mcp/tools';
 import type { Logger } from '../obs/logger';
 import type { Citation } from '@/lib/ai/citations/types';
 import type { FotosPreparadas, MidiaPreparada } from './fotos-do-produto';
+import { countPayloadTokens } from '@/lib/ai/estimativa-de-tokens';
+import { renderNotesIndexBlock } from './lead-notes';
 
 export interface TurnPreview {
   kind: 'sandbox' | 'assisted';
@@ -38,11 +40,17 @@ export interface TurnPreview {
   agent: PublishedAgentConfig;
   context: Extract<LeadContextResult, { ok: true }>;
   previous?: LeadCheckpointRow | null;
-  notes?: Array<{ headline: string; body: string }>;
+  /** `id` endereça a nota no modo índice (`get_lead_note`) — ver `blocoDeNotasDaPrevia`. */
+  notes?: Array<{ id: string; headline: string; body: string }>;
   feedback?: string;
   /** Null means a scenario, never a synthetic identifier passed to SQL. */
   contactId: string | null;
   channelId: string | null;
+  /**
+   * Etiquetas SIMULADAS da conversa (spec 27, fatia 3): o Testar as passa ao matcher de skills
+   * no lugar das etiquetas reais, que a prévia não tem. Ausente = nenhuma.
+   */
+  tags?: string[];
   gateContext?: GateContext;
   result: PreviewResult;
 }
@@ -67,6 +75,56 @@ export interface PreviewResult {
    */
   midia: MidiaPreparada[];
 }
+/**
+ * Teto do bloco de notas INLINE da prévia (headline + corpo de cada nota).
+ *
+ * Abaixo dele a prévia segue como sempre foi: os corpos vão inteiros no prompt,
+ * byte a byte a string de antes. Acima — só no caso extremo, ~14 mil caracteres
+ * de notas — ela passa a usar o índice com id, a mesma receita do turno real
+ * (`renderNotesIndexBlock`), e o `get_lead_note` busca o corpo pelo id. Sem o
+ * teto, 20 notas de 4.000 caracteres entravam inteiras em todo passo.
+ */
+// ponytail: teto fixo, ~16x o maior caso medido (872 caracteres); vira knob se algum dono pedir
+export const PREVIEW_NOTES_INLINE_MAX_TOKENS = 4_000;
+
+export function blocoDeNotasDaPrevia(
+  notes: NonNullable<TurnPreview['notes']>,
+  indexBudget: number,
+): { bloco: string; inline: boolean } {
+  const inline = notes.map((n) => n.headline + ': ' + n.body).join('\n');
+  if (countPayloadTokens(inline) <= PREVIEW_NOTES_INLINE_MAX_TOKENS) return { bloco: inline, inline: true };
+  return { bloco: renderNotesIndexBlock(notes, indexBudget), inline: false };
+}
+
+/**
+ * O `get_lead_note` da prévia. No modo inline a resposta é a de sempre (todas as
+ * notas, sem o id); no modo índice ela tem o formato da ferramenta real — UM corpo,
+ * pelo id que o modelo leu no índice.
+ */
+export function lerNotaDaPrevia(
+  notes: NonNullable<TurnPreview['notes']>,
+  inline: boolean,
+  /** Os argumentos crus da chamada — `{ note_id }`, vindos do modelo. */
+  args: unknown,
+):
+  | { ok: true; notes: Array<{ headline: string; body: string }> }
+  | { ok: true; note_id: string; body: string }
+  | { ok: false; error: { code: 'note_not_found'; message: string } } {
+  if (inline) return { ok: true, notes: notes.map(({ headline, body }) => ({ headline, body })) };
+  const noteId = args && typeof args === 'object' && 'note_id' in args ? args.note_id : undefined;
+  const id = typeof noteId === 'string' ? noteId.trim() : '';
+  const nota = notes.find((n) => n.id === id);
+  return nota
+    ? { ok: true, note_id: nota.id, body: nota.body }
+    : {
+        ok: false,
+        error: {
+          code: 'note_not_found',
+          message: 'não há nota com esse id na memória deste lead — confira o id no índice de memória.',
+        },
+      };
+}
+
 export function newPreviewResult(): PreviewResult {
   return {
     candidates: [],

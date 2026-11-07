@@ -29,12 +29,14 @@ import {
   decidirBinding,
   escolherModeloEconomico,
   EXPLICACAO_DA_ORIGEM,
+  PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL,
   PONTOS_DO_AGENTE_PUBLICADO,
   PONTOS_QUE_HERDAM_DO_AGENTE,
   type LinhaDeBinding,
 } from "@/lib/ai/pontos/resolver";
 import { PAPEIS, PONTOS_DE_IA, PONTO_POR_ID } from "@/lib/ai/pontos/registro";
 import { PROVEDORES, ehProvedorSuportado, PROVEDOR_POR_ASSINATURA } from "@/lib/ai/pontos/provedores";
+import { ehProvedorDeServicoSuportado } from "@/lib/ai/pontos/provedores-de-servico";
 import { listarModelosDaAssinaturaOuVazio } from "@/lib/ai/catalogo/modelos-da-assinatura";
 import { validarBinding } from "@/lib/ai/pontos/validar-binding";
 import { lerAmbiente } from "@/lib/instalacao/ambiente";
@@ -193,6 +195,15 @@ export async function GET(): Promise<Response> {
           }
         : null,
     chaveOpenai: async () => chaveExiste("openai"),
+    // Degrau 0: o mesmo critério do worker — binding ligado no Scribe E chave
+    // do ElevenLabs existente. Sem a chave, a tela anuncia o degrau seguinte,
+    // que é o que o worker de fato roda.
+    elevenlabsEscolhido: async () => {
+      const b = bindings.get("transcricao_de_audio");
+      return b?.is_enabled && b.provider === "elevenlabs" && chaveExiste("elevenlabs")
+        ? { apiKey: "chave-existente", modelId: b.model_id ?? "scribe_v1" }
+        : null;
+    },
   });
 
   const pontos = PONTOS_DE_IA.map((ponto) => {
@@ -203,9 +214,13 @@ export async function GET(): Promise<Response> {
       // herança é a PRESENÇA do `llmOverride`, e esta tela não tem esse sinal:
       // passar o agente para todo ponto faria a coluna "está usando" anunciar o
       // modelo do agente em ponto que nunca o herda — a mesma tela que mente,
-      // virada do avesso.
+      // virada do avesso. O follow-up (`PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL`)
+      // entra: sem escolha no painel, ele É o agente — e a tela tem de anunciar
+      // o modelo da versão publicada, não o padrão da organização.
       agentePublicado:
-        PONTOS_DO_AGENTE_PUBLICADO.has(ponto.id) || PONTOS_QUE_HERDAM_DO_AGENTE.has(ponto.id)
+        PONTOS_DO_AGENTE_PUBLICADO.has(ponto.id) ||
+        PONTOS_DO_AGENTE_COM_ESCOLHA_NO_PAINEL.has(ponto.id) ||
+        PONTOS_QUE_HERDAM_DO_AGENTE.has(ponto.id)
           ? agentePublicado
           : null,
       // DÍVIDA, não impossibilidade. A justificativa aqui dizia "o servidor web
@@ -324,10 +339,16 @@ const corpoDoPut = z.object({
   // API é pública) gravava `provider: "foobar"`, a rota respondia 200, e todo
   // uso daquele ponto morria em produção com provedor desconhecido. Metade da
   // defesa transferida e nunca instalada.
+  //
+  // Também aceita provedor de SERVIÇO (voz, hoje): um ponto fixo-com-menu
+  // (`transcricao_de_audio`) pode gravar `provider: "elevenlabs"`, que não
+  // está em `ehProvedorSuportado` (lista de chat). Qual provider vale para
+  // qual PONTO é checado abaixo, em `validarBinding` — aqui só se confirma
+  // que a instalação CONHECE o provider, de algum dos dois mundos.
   provider: z
     .string()
     .min(1)
-    .refine(ehProvedorSuportado, {
+    .refine((p) => ehProvedorSuportado(p) || ehProvedorDeServicoSuportado(p), {
       message:
         "provedor não suportado por esta instalação — escolha um da lista em Agente de IA → Provedores",
     }),
@@ -383,6 +404,7 @@ export async function PUT(req: NextRequest): Promise<Response> {
 
   const validacao = validarBinding({
     pontoId: corpo.purpose,
+    provider: corpo.provider,
     modelo: {
       model_id: corpo.model_id,
       supports_tools:

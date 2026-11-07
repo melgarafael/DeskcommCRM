@@ -1,16 +1,20 @@
 /**
- * O menu do Admin da plataforma, lido de components/admin/AdminSidebar.tsx.
+ * O menu do Admin da plataforma, lido de lib/admin/navegacao.ts.
  *
  * O Admin não está em lib/navigation/catalogo.ts (aquele registro é da empresa,
- * `app/app/**`), e a lista do Admin vive dentro de um componente de cliente com
- * ícones — importá-lo num script arrastaria React e a biblioteca de ícones. Então
- * se lê o TEXTO da lista. Se o formato mudar e a leitura voltar vazia, quem usa
- * falha alto (ver o teste em licoes.test.ts).
+ * `app/app/**`). A lista vive num módulo que importa ícones — importá-lo num
+ * script arrastaria React e a biblioteca de ícones. Então se lê o TEXTO da
+ * lista. Se o formato mudar e a leitura voltar vazia, quem usa falha alto (ver
+ * o teste em licoes.test.ts).
+ *
+ * A lista morava em components/admin/AdminSidebar.tsx e mudou de endereço
+ * quando a busca (⌘K) do painel virou o segundo consumidor dela — mesma fonte
+ * para o menu e para a busca, em vez de duas cópias que divergem.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-const ARQUIVO = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "components", "admin", "AdminSidebar.tsx");
+const ARQUIVO = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "lib", "admin", "navegacao.ts");
 
 export type ItemDoAdmin = { href: string; rotulo: string };
 

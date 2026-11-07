@@ -11,6 +11,15 @@ export interface NovoAgendamento {
   event_type_id: string;
   /** ISO-8601 com offset. */
   starts_at: string;
+  /**
+   * A duração escolhida na tela, em minutos — ausente, a do serviço (#3709).
+   *
+   * É o comprimento do bloco (`ends_at = starts_at + duration_minutes`) e o que
+   * a rota confere como horário livre: a lista de horários já veio calculada
+   * para esta duração, e mandar outra aqui faria a tela marcar um horário que a
+   * regra não ofereceu.
+   */
+  duration_minutes?: number;
   owner_user_id?: string;
   contact_id?: string;
   conversation_id?: string;

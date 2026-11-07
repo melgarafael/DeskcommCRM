@@ -24,7 +24,7 @@ import { canonicalPhoneBR, phoneLookupVariants } from "@/lib/channels/phone-vari
 import { nomeDoContato } from "@/lib/contacts/rotulo-do-contato";
 import { grupoLiberaIa } from "@/lib/grupos/ia-no-grupo";
 import { logger } from "@/lib/logger";
-import { CHAVE_DAS_MENCOES } from "@/lib/messaging/mencoes-de-grupo";
+import { CHAVE_DAS_MENCOES, textoComMencoesResolvidas } from "@/lib/messaging/mencoes-de-grupo";
 import { remetenteDeGrupoSchema, type RemetenteDeGrupo } from "@/lib/messaging/remetente-de-grupo";
 import { previaDaMensagem } from "@/lib/messaging/previa-da-mensagem";
 
@@ -215,7 +215,13 @@ export async function gravarMensagemDeGrupo(
   // Mesma prévia da conversa individual (`previewFromMessage`): a RÉGUA mora em
   // `lib/messaging/previa-da-mensagem.ts` — texto até 280, `[tipo]` sem texto, e
   // o vCard vira `Contato: <nome>` em vez do literal ou do cartão cru (#2742).
-  const preview = previaDaMensagem(e.body, e.type);
+  //
+  // #3566 — e a MENÇÃO sai com o nome também aqui: a lista da Inbox mostra esta
+  // coluna, e ela era montada do corpo cru (`@<lid>`), então a resolução da
+  // bolha não chegava à lista nem à busca por conteúdo (`ilike` nesta coluna).
+  // A régua é a MESMA da bolha (`textoComMencoesResolvidas`), e o rótulo já foi
+  // resolvido acima: sem menção — ou sem nome — o texto sai idêntico.
+  const preview = previaDaMensagem(textoComMencoesResolvidas(e.body, mencoes), e.type);
   await db.marcarConversa(e.organizationId, conversationId, preview, e.sentAt, e.direction);
   // ── #2729 — a chave POR GRUPO, por último ────────────────────────────────
   //

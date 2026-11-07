@@ -149,6 +149,38 @@ describe("GET /api/v1/ai/providers/:provider/models — o que o agente pode esco
     expect(JSON.stringify(corpo)).not.toContain("Text Embedding");
   });
 
+  it("não oferece a variante :batch, que o endpoint de chat recusa com 404", async () => {
+    // O catálogo da OpenRouter traz as duas cópias do mesmo modelo, lado a lado,
+    // e a `:batch` custa metade — a mais tentadora da lista. Medido: 404 no
+    // atendente, no classificador de etapa e no detector de jailbreak.
+    const openrouter: LinhaDeModelo[] = [
+      ["openai/gpt-6-luna", "OpenAI: GPT-6 Luna"],
+      ["openai/gpt-6-luna:batch", "OpenAI: GPT-6 Luna (batch)"],
+      ["deepseek/deepseek-v4.1-flash", "DeepSeek: DeepSeek V4.1 Flash"],
+      ["deepseek/deepseek-v4.1-flash:batch", "DeepSeek: DeepSeek V4.1 Flash (batch)"],
+    ].map(([model_id, display_name], i) => ({
+      id: `or${i}`,
+      provider: "openrouter",
+      model_id: model_id as string,
+      display_name: display_name as string,
+      supports_tools: true,
+      is_default_for_provider: false,
+    }));
+    vi.mocked(createClient).mockResolvedValue(
+      stubDoBanco(openrouter) as unknown as Awaited<ReturnType<typeof createClient>>,
+    );
+
+    const res = await listar("openrouter");
+    expect(res.status).toBe(200);
+    const corpo = (await res.json()) as { data: { models: LinhaDeModelo[] } };
+    const ids = corpo.data.models.map((m) => m.model_id);
+
+    expect(ids, "variante :batch entrou na lista de modelos do agente").toEqual([
+      "openai/gpt-6-luna",
+      "deepseek/deepseek-v4.1-flash",
+    ]);
+  });
+
   it("o padrão do provedor continua vindo primeiro", async () => {
     const res = await listar();
     const corpo = (await res.json()) as { data: { models: LinhaDeModelo[] } };

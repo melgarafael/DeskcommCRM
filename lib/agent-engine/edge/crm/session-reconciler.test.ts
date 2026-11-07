@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type pg from "pg";
 import { createLogger } from "../../obs/logger";
 
-import { deveRetomarSessao, redriveQueued } from "./session-reconciler";
+import { deveRetomarSessao, redriveQueued, reconcileSessions } from "./session-reconciler";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -221,7 +221,14 @@ describe("redrive × canal pausado (#2318)", () => {
  * escreveu quando a ficha tem telefone extra. Mesma regra do envio normal, em SQL.
  */
 describe("redrive × ficha com telefone extra (Spec 31 B1)", () => {
-  it("ficha com extra: o reenvio vai para o chat da última mensagem recebida", async () => {
+  it.each([
+    ["número que segue como extra", "+5531988887777", "5531988887777@c.us", "5531988887777@c.us"],
+    ["nono dígito: o chat sem o 9 casa com o extra", "+5531988887777", "553188887777@c.us", "553188887777@c.us"],
+    ["última recebida pelo principal", "+5531900001111", "5527999998888@c.us", "5527999998888@c.us"],
+    ["@lid não tem número para comparar", "+5531900001111", "100000000000001@lid", "100000000000001@lid"],
+    // Sabotagem: tirar `chatSegueNaFicha` do reenvio manda para 5531988887777@c.us e deixa vermelho.
+    ["número que saiu da ficha cai no principal", "+5531900001111", "5531988887777@c.us", "5527999998888@c.us"],
+  ])("%s", async (_caso, extra, chatRecebido, chatEsperado) => {
     const send = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response(JSON.stringify({ id: { id: "3EB0NEW" } }), { status: 200 }));
@@ -235,9 +242,9 @@ describe("redrive × ficha com telefone extra (Spec 31 B1)", () => {
           phone_number: "+5527999998888", is_group: false, group_chat_id: null,
         }] };
       }
-      if (/from contact_phones/i.test(sql)) return { rows: [{ "?column?": 1 }] };
+      if (/from contact_phones/i.test(sql)) return { rows: [{ phone_number: extra }] };
       if (/direction = 'inbound'/i.test(sql)) {
-        return { rows: [{ external_id: "false_5531988887777@c.us_3EB0XYZ" }] };
+        return { rows: [{ external_id: `false_${chatRecebido}_3EB0XYZ` }] };
       }
       if (/count\(\*\)/i.test(sql)) return { rows: [{ n: "0" }] };
       if (/select\s+s\.metadata/i.test(sql)) {
@@ -253,10 +260,40 @@ describe("redrive × ficha com telefone extra (Spec 31 B1)", () => {
 
     expect(reenviadas).toBe(1);
     const corpo = JSON.parse((send.mock.calls[0]![1] as { body: string }).body) as { chatId: string };
-    expect(corpo.chatId).toBe("5531988887777@c.us");
+    expect(corpo.chatId).toBe(chatEsperado);
     // A consulta de extras e a das mensagens filtram pela organização da linha.
     expect(consultas.some((s) => /from contact_phones[\s\S]*organization_id = \$1/i.test(s))).toBe(true);
     // Sabotagem: deixar `chatIdOf` sem o `ultimoRecebido` manda o reenvio para o
     // principal (5527999998888@c.us) e deixa este teste vermelho.
+  });
+});
+
+// A parada não cancela efeitos já iniciados: impede começar o próximo após await.
+describe("reconciliação durante a parada", () => {
+  const cfg = { wahaBaseUrl: "http://127.0.0.1:9999", wahaApiKey: "test-key", intervalMs: 1, redriveMinAgeMs: 0, redriveBatchSize: 1, redriveSpacingMs: 0 };
+  it("não consulta transporte com sinal já abortado", async () => {
+    const c = new AbortController(); c.abort();
+    const transport = vi.spyOn(globalThis, "fetch");
+    const query = vi.fn();
+    expect(await reconcileSessions({ query } as unknown as pg.Pool, cfg, createLogger(), c.signal)).toBe(0);
+    expect(transport).not.toHaveBeenCalled(); expect(query).not.toHaveBeenCalled();
+  });
+  it("não religa sessão quando a parada chega durante a leitura do banco", async () => {
+    const c = new AbortController();
+    const transport = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify([{ name: "synthetic", status: "STOPPED" }])));
+    const query = vi.fn(async () => { c.abort(); return { rows: [{ id: "synthetic-channel", status: "STOPPED" }] }; });
+    expect(await reconcileSessions({ query } as unknown as pg.Pool, cfg, createLogger(), c.signal)).toBe(0);
+    expect(transport).toHaveBeenCalledTimes(1); expect(query).toHaveBeenCalledTimes(1);
+  });
+  it("parada durante o start ainda grava o espelho da sessão já religada", async () => {
+    const c = new AbortController();
+    const transport = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ name: "synthetic", status: "STOPPED" }])))
+      .mockImplementationOnce(async () => { c.abort(); return new Response("{}", { status: 201 }); });
+    const query = vi.fn(async (sql: string) => sql.includes("update")
+      ? { rows: [{ id: "synthetic-channel", status: "STARTING" }] }
+      : { rows: [{ id: "synthetic-channel", status: "STOPPED" }] });
+    expect(await reconcileSessions({ query } as unknown as pg.Pool, cfg, createLogger(), c.signal)).toBe(1);
+    expect(transport).toHaveBeenCalledTimes(2); expect(query).toHaveBeenCalledTimes(2);
   });
 });

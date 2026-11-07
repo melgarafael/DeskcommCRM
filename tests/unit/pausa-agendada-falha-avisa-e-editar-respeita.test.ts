@@ -205,7 +205,10 @@ describe("a falha do agendador vira aviso na Central (critério 6 da #2388)", ()
   });
 
   it("a batida saudável fecha o aviso aberto — o laço de retorno (DoD 13)", async () => {
-    const db = dbFalso({});
+    // `abertos: [ORG]` é o que a leitura nova exige (#3695): sem aviso aberto a
+    // função sai antes do PATCH, e o caso que prova o FECHAMENTO precisa de um
+    // aviso aberto de verdade para fechar.
+    const db = dbFalso({ abertos: [ORG] });
 
     await sincronizarAvisoDoAgendador(db as never, { estado: "saudavel" }, logFake as never);
 

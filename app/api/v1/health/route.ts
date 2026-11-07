@@ -21,7 +21,7 @@
  * inalcançável. Um `ok` assim é pior que um `down`: ele desliga a pergunta. Por
  * isso o ping não segue redirect (`redirect: "manual"`), o `3xx` vira `down` com
  * o destino do `Location` no detalhe, e um `200` só conta quando o corpo é do
- * PostgREST (`respostaDoPostgrest`, abaixo). O `401/403` legítimo continua `ok`:
+ * PostgREST (`corpoDoPostgrest`, abaixo). O `401/403` legítimo continua `ok`:
  * ali quem respondeu foi o banco, recusando a credencial.
  *
  * ─── Por que o ENDEREÇO só sai autenticado ───────────────────────────────────
@@ -49,6 +49,7 @@ type MotivoDeFalha =
   | FalhaDeAlcance
   | "credencial_recusada"
   | "resposta_inesperada"
+  | "projeto_indisponivel"
   | "nao_configurado"
   | "configuracao_invalida";
 
@@ -96,17 +97,17 @@ function motivoDoStatusHttp(status: number): MotivoDeFalha {
  * um cliente sem cabeçalho, e aceitar `text/plain` aceitaria a tela de login.
  * Quem distingue é o que veio no corpo.
  *
- * ─── Por que o corpo VAZIO conta como ok ─────────────────────────────────────
+ * ─── Por que o corpo vazio conta como ok ─────────────────────────────────────
  * Um `200` sem corpo não contradiz o banco — não afirma ser outra coisa. O que
  * este check reprova é uma resposta que se declara NÃO sendo do PostgREST, e é
  * o que o contrato antigo desta sonda já aceitava (`200/401/empty body`).
  *
- * A leitura passa pelo mesmo teto de tempo do `fetch`: um `200` cujo corpo nunca
- * chega é um serviço que não respondeu, e cai no `catch` de quem chama — `down`
- * com o motivo de alcance, como qualquer outra falha de leitura.
+ * O corpo chega aqui já lido, e lido UMA vez: quem chama precisa dele também
+ * para reconhecer o PGRST002, e a leitura passa pelo mesmo teto de tempo do
+ * `fetch` — um `200` cujo corpo nunca chega é um serviço que não respondeu, e
+ * cai no `catch` de quem chama, `down` com o motivo de alcance.
  */
-async function respostaDoPostgrest(res: Response): Promise<boolean> {
-  const corpo = (await withTimeout(res.text())).trim();
+function corpoDoPostgrest(corpo: string): boolean {
   if (!corpo) return true;
   try {
     JSON.parse(corpo);
@@ -186,11 +187,39 @@ async function checkSupabase(): Promise<Check> {
     if (res.status === 401 || res.status === 403) {
       return { status: "ok", latency_ms: Date.now() - t0, target: alvoDe(url) };
     }
+    // Lê o corpo UMA vez: ele é o que distingue "o projeto Supabase caiu" de
+    // "lentidão genérica". Sem abrir conexão nova nem retry: só classificar o que
+    // já veio na resposta. Projeto indisponível: HTTP 522 (Cloudflare não
+    // alcança a origem) ou corpo com PGRST002 / schema cache (PostgREST não
+    // conseguiu carregar o cache de schema, típico de compute insuficiente no
+    // free). Não confundir com PGRST205 (tabela ausente num projeto de pé).
+    //
+    // A falha ao LER o corpo tem dois destinos. No `200` o corpo é a prova
+    // (`corpoDoPostgrest`): a falha propaga crua para o `catch`, que dá o
+    // motivo de alcance dela — timeout é `tempo_esgotado`, conexão cortada no
+    // meio continua sendo conexão cortada. Fora do `200` o status já chegou e o
+    // corpo só refina o motivo: uma leitura que falha não pode rebatizar a
+    // resposta, e ela cai no ramo `http_${status}`, como antes de o corpo ser lido.
+    const leitura = withTimeout(res.text());
+    const corpo = (res.status === 200 ? await leitura : await leitura.catch(() => "")).trim();
+    const projetoIndisponivel =
+      res.status === 522 ||
+      /PGRST002/i.test(corpo) ||
+      (res.status >= 500 && /schema cache/i.test(corpo));
+    if (projetoIndisponivel) {
+      return {
+        status: "down",
+        latency_ms: Date.now() - t0,
+        error: "projeto_indisponivel (PGRST002/522/schema cache): reinicie o projeto no Supabase (Restart project) — ver docs/runbooks/supabase-compute-insuficiente-free.md",
+        reason: "projeto_indisponivel",
+        target: alvoDe(url),
+      };
+    }
     // 200 (lista vazia por RLS) → conexão OK, mas só se o que voltou FOR do
     // PostgREST. Um `200` com HTML no corpo é a tela de login respondendo no
     // lugar da API: antes do conserto, ele vinha com `status: ok`.
     if (res.status === 200) {
-      if (await respostaDoPostgrest(res)) {
+      if (corpoDoPostgrest(corpo)) {
         return { status: "ok", latency_ms: Date.now() - t0, target: alvoDe(url) };
       }
       return {

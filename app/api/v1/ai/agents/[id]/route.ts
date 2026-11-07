@@ -13,6 +13,11 @@ import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  CODIGO_NOME_DE_AGENTE_EM_USO,
+  NOME_DE_AGENTE_EM_USO,
+  ehNomeDeAgenteRepetido,
+} from "@/lib/ai/agents/nome-repetido";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
   agentPatchSchema,
@@ -161,8 +166,14 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   //
   // Sem versão publicada, `ai_agents.system_prompt` É a fonte legítima (é o que
   // `workers/ai-response-worker.ts` lê), e continua editável. (issue #456)
+  //
+  // Voz fica fora da regra pelo mesmo critério: `getActiveVoiceAgent` lê
+  // `ai_agents.system_prompt` e ignora a versão, e o editor do ramo de voz em
+  // `page.tsx` grava nesta coluna. Sem a exceção, o agente de voz publicado não
+  // tinha caminho nenhum para mudar o prompt, e a mensagem abaixo apontava uma
+  // versão que o motor de voz nunca executa.
   const CONTEUDO_DA_VERSAO = ["system_prompt", "model"] as const;
-  if (existing.published_version_id != null) {
+  if (existing.published_version_id != null && existing.channel !== "voice") {
     const barrados = CONTEUDO_DA_VERSAO.filter((c) => patch[c] !== undefined);
     if (barrados.length > 0) {
       return fail(
@@ -216,6 +227,12 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .single();
 
   if (updErr || !updated) {
+    // O MESMO índice da criação: renomear para um nome que a organização já usa
+    // fura `ai_agents_name_unique` (#3952). 409 com o mesmo código, para a tela
+    // poder marcar o campo em vez de dizer "erro ao atualizar".
+    if (ehNomeDeAgenteRepetido(updErr)) {
+      return fail(CODIGO_NOME_DE_AGENTE_EM_USO, t(NOME_DE_AGENTE_EM_USO), 409, { requestId });
+    }
     return fail("internal_error", "Erro ao atualizar agent.", 500, { requestId });
   }
 

@@ -14,6 +14,7 @@ export type OrigemDoTelefone = "manual" | "fusao" | "importacao" | "prospeccao" 
  * O `wa_lid` NÃO vai na API: é identificador interno do WhatsApp daquele número.
  */
 export interface TelefoneExtra {
+  id: string;
   phone_number: string;
   type: TipoDeTelefone;
   whatsapp: WhatsappDoTelefone;
@@ -29,6 +30,14 @@ export interface Contact {
   display_name: string | null;
   /** Nome salvo na agenda do celular. SÓ A EQUIPE vê (`rotuloParaAEquipe`); nunca vai em mensagem. */
   address_book_name?: string | null;
+  // Endereço da pessoa física (issue 3494), espelhando `companies`.
+  zip_code?: string | null;
+  street?: string | null;
+  number?: string | null;
+  complement?: string | null;
+  district?: string | null;
+  city?: string | null;
+  state?: string | null;
   email: string | null;
   email_normalized: string | null;
   phone_number: string | null;
@@ -40,7 +49,8 @@ export interface Contact {
   phone_whatsapp?: WhatsappDoTelefone | null;
   /** Spec 31 (B1): os telefones extras da ficha, `[]` quando não há nenhum. */
   additional_phones?: TelefoneExtra[];
-  cpf_hash: string | null;
+  /** Se a ficha tem CPF. O valor não sai pela API: é pedido à parte, por quem pode. */
+  cpf_available: boolean;
   birthdate: string | null;
   is_blocked: boolean;
   blocked_reason: string | null;

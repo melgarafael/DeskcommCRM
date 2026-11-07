@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   OPERADORES_SEM_VALOR,
+  conditionsSchema,
   contarCondicoes,
   evaluateConditions,
   resolveField,
@@ -231,6 +232,61 @@ describe("evaluateConditions", () => {
       evaluateConditions([{ field: "event.added_tags", op: "contains", value: "!" }], comTags(["vip"])),
     ).toBe(false);
   });
+
+  /**
+   * #2973 — a TABELA da issue, linha por linha. A normalização já está na
+   * `main` desde o #3028; estes casos existem porque a regra do acento estava
+   * presa só pelo lado POSITIVO ("anúncio" casa "anuncio"). Sem o controle
+   * negativo, "tirar o acento" e "casar tudo" produzem o mesmo verde.
+   */
+  it("contém: tirar o acento NÃO junta palavra diferente", () => {
+    // "coração" normaliza para "coracao" e "coral" continua "coral": nenhum dos
+    // dois contém o outro. Se a remoção de diacrítico escorregasse para um
+    // truncamento (ou o `contains` para um prefixo), este par ficaria verde.
+    expect(
+      evaluateConditions([{ field: "event.body_preview", op: "contains", value: "coral" }], comTexto("meu coração")),
+    ).toBe(false);
+    expect(
+      evaluateConditions([{ field: "event.body_preview", op: "contains", value: "coração" }], comTexto("meu coral")),
+    ).toBe(false);
+  });
+
+  it("não contém: espelha o contém com acento, em texto e em lista", () => {
+    // O espelho é o que separa "não contém" de "contém" invertido por acidente:
+    // se só um dos operadores normalizasse, um dos dois lados abaixo cairia.
+    expect(
+      evaluateConditions([{ field: "event.body_preview", op: "not_contains", value: "coral" }], comTexto("meu coração")),
+    ).toBe(true);
+    expect(
+      evaluateConditions([{ field: "event.body_preview", op: "not_contains", value: "ACAO" }], comTexto("minha ação")),
+    ).toBe(false);
+    expect(
+      evaluateConditions([{ field: "event.added_tags", op: "not_contains", value: "trafego" }], comTags(["tráfego"])),
+    ).toBe(false);
+    expect(
+      evaluateConditions([{ field: "event.added_tags", op: "not_contains", value: "tráfego" }], comTags(["vip"])),
+    ).toBe(true);
+  });
+
+  it("controles estritos: número, data e id NÃO passam pela grafia do contém", () => {
+    // A normalização é do `contains`/`not_contains`. Igualdade de número, data
+    // e identificador continua EXATA — quem compara `eq` com um id não pode
+    // casar outro id só porque a caixa difere, nem "5.000" casar 5000.
+    const campos = {
+      lead: { valor_cents: 5000 },
+      event: { sent_at: "2026-10-31" },
+      contact: { id: "AbC-1" },
+    };
+    const avalia = (conditions: Parameters<typeof evaluateConditions>[0]) =>
+      evaluateConditions(conditions, campos);
+
+    expect(avalia([{ field: "lead.valor_cents", op: "eq", value: "5000" }])).toBe(true);
+    expect(avalia([{ field: "lead.valor_cents", op: "eq", value: "5.000" }])).toBe(false);
+    expect(avalia([{ field: "event.sent_at", op: "eq", value: "2026-10-31" }])).toBe(true);
+    expect(avalia([{ field: "event.sent_at", op: "eq", value: "31/10/2026" }])).toBe(false);
+    expect(avalia([{ field: "contact.id", op: "eq", value: "AbC-1" }])).toBe(true);
+    expect(avalia([{ field: "contact.id", op: "eq", value: "abc-1" }])).toBe(false);
+  });
 });
 
 /**
@@ -432,5 +488,38 @@ describe("OPERADORES_SEM_VALOR (#2727)", () => {
     expect([...OPERADORES_SEM_VALOR].sort()).toEqual(["is_empty", "is_not_empty"]);
     expect(OPERADORES_SEM_VALOR.has("eq")).toBe(false);
     expect(OPERADORES_SEM_VALOR.has("is_empty")).toBe(true);
+  });
+});
+
+describe("colunas de CPF do contato na condição", () => {
+  const HASH = "a".repeat(64);
+  const contexto = {
+    contact: { email: "ana@example.com", cpf_hash: HASH, cpf_encrypted: "\\xc30d" },
+  };
+
+  it.each([
+    ["contact.cpf_hash", "eq", HASH],
+    ["contact.cpf_hash", "neq", "outro"],
+    ["contact.cpf_hash", "contains", HASH.slice(0, 8)],
+    ["contact.cpf_hash", "not_contains", "zzz"],
+    ["contact.cpf_hash", "gt", "0"],
+    ["contact.cpf_encrypted", "contains", "c30d"],
+  ])("%s %s não responde pelo valor, e a porta aceita a condição", (field, op, value) => {
+    // Sabotagem: tirar a guarda de `matches` deixa estes casos vermelhos.
+    const conditions = conditionsSchema.parse([{ field, op, value }]);
+    expect(evaluateConditions(conditions, contexto)).toBe(false);
+  });
+
+  it("preenchido e vazio seguem respondendo", () => {
+    const preenchido = [{ field: "contact.cpf_hash", op: "is_not_empty", value: "" }];
+    const vazio = [{ field: "contact.cpf_hash", op: "is_empty", value: "" }];
+    expect(evaluateConditions(conditionsSchema.parse(preenchido), contexto)).toBe(true);
+    expect(evaluateConditions(conditionsSchema.parse(vazio), contexto)).toBe(false);
+    expect(evaluateConditions(conditionsSchema.parse(vazio), { contact: { cpf_hash: null } })).toBe(true);
+  });
+
+  it("CONTROLE — outro campo do contato segue comparando pelo valor", () => {
+    const conditions = [{ field: "contact.email", op: "eq" as const, value: "ana@example.com" }];
+    expect(evaluateConditions(conditions, contexto)).toBe(true);
   });
 });

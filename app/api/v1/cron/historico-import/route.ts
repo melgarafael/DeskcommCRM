@@ -28,6 +28,11 @@
  * só andou o cursor não audita (cron de minuto, ver
  * tests/unit/cron-audita-so-quando-ha-efeito.test.ts).
  *
+ * Antes das rodadas (Spec 32): abre a importação de cada queda do número
+ * (`lib/channels/historico/quedas.ts`), promove ou cancela as que esperam
+ * (conferindo o número ao vivo) e fecha os avisos de cliente que já foi
+ * respondido. Cada passo tem o seu try/catch; as rodadas seguem mesmo se um falhar.
+ *
  * Auth: Bearer INTERNAL_SECRET (fail-closed), igual aos demais crons.
  */
 import { randomUUID } from "node:crypto";
@@ -36,8 +41,15 @@ import type { NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { fecharAvisosDeClienteRespondido } from "@/lib/channels/historico/avisos-da-queda";
 import { MARGEM_PARA_CHAMADA_MS, PRAZO_DA_CHAMADA_MS } from "@/lib/channels/historico/prazo";
+import {
+  abrirRecuperacoesDasQuedas,
+  organizacoesOperantes,
+  prepararRecuperacoesAguardando,
+} from "@/lib/channels/historico/quedas";
 import { rodarUmaRodada, TETO_PADRAO } from "@/lib/channels/historico/rodada";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { logger } from "@/lib/logger";
 import { STATUS_OPERANTE, ehOperante, statusDaOrgEmbutida } from "@/lib/organizacao/operante";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -48,6 +60,44 @@ export const dynamic = "force-dynamic";
 const LOTE = 10;
 /** Validade da trava: bem acima de uma rodada lenta, para não rodar em dobro. */
 const TRAVA_MS = 5 * 60_000;
+
+/**
+ * O QUE RODA DEPOIS DO PORTÃO DO PISO OCIOSO (#3773), na ordem do arquivo.
+ *
+ * O `if (await recursoOcioso(...))` desta rota é saída antecipada da ROTA
+ * INTEIRA: o que vier depois dele não roda em instalação ociosa. Esta lista é a
+ * declaração do que roda ali — `tests/unit/cron-passa-pelo-portao.test.ts` lê o
+ * AST deste arquivo e reprova, com arquivo e linha, quando o que está de fato
+ * abaixo do portão divergir dela. Passo novo abaixo do portão entra aqui, e só
+ * depois de a pessoa ver que ele NÃO roda na instalação parada, que é o caso
+ * comum. O #3650 mediu o custo de não haver essa cerca: três passos novos nesta
+ * rota ficaram antes da rodada e o autor teve de alargar o sinal do portão à mão
+ * — os mesmos três, abaixo do `return`, teriam ficado mudos.
+ *
+ * Em runtime a constante não serve para nada — o `void` existe só para o lint
+ * não acusar variável sem uso.
+ */
+const PASSOS_DEPOIS_DO_PORTAO = [
+  "const agora",
+  "const recuperacoes",
+  "const passo",
+  "expr await passo(...)",
+  "expr await passo(...)",
+  "let operantes",
+  "expr await passo(...)",
+  "for (organizationId of operantes)",
+  "const prazo",
+  "const {data, error}",
+  "if (error)",
+  "const linhas",
+  "let rodadas",
+  "let puladas",
+  "let falhas",
+  "const status",
+  "for (l of linhas)",
+  "return",
+] as const;
+void PASSOS_DEPOIS_DO_PORTAO;
 
 interface Linha {
   id: string;
@@ -70,6 +120,48 @@ async function handle(req: NextRequest): Promise<Response> {
   }
 
   const admin = createAdminClient();
+  // O PISO OCIOSO (#3731): a rodada de todo minuto lia `importacoes_de_historico`
+  // só para receber lista vazia em quem nunca importou o histórico. Com o portão,
+  // a instalação sem importação, sem queda recente do número e sem aviso aberto sai antes dessa leitura — ver
+  // lib/cron/piso-ocioso.ts para o sinal e o custo dele.
+  if (await recursoOcioso("historico")) return ok({ pulado: "recurso_ocioso" }, { requestId });
+  // O sinal do portão cobre também o que os passos de baixo fazem (quedas do número
+  // e avisos abertos): sair aqui sem olhar para eles deixaria a recuperação muda.
+  const agora = new Date();
+
+  // Antes das rodadas (Spec 32): abre a importação de cada queda do número, confere
+  // ao vivo o número de cada espera e fecha os avisos de cliente que já foi
+  // respondido. Cada passo tem o seu try/catch: um que falha não para os outros
+  // nem as rodadas. Os três ficam antes do prazo da chamada, que é das rodadas.
+  const recuperacoes = { criadas: 0, promovidas: 0, canceladas: 0, avisosFechados: 0 };
+  const passo = async (nome: string, executa: () => Promise<void>) => {
+    try {
+      await executa();
+    } catch (err) {
+      logger.warn(`[historico-import] ${nome} falhou`, {
+        detail: err instanceof Error ? err.message : "erro",
+        requestId,
+      });
+    }
+  };
+  await passo("abrir recuperações das quedas", async () => {
+    recuperacoes.criadas = (await abrirRecuperacoesDasQuedas(admin, agora)).criadas;
+  });
+  await passo("preparar recuperações aguardando", async () => {
+    const r = await prepararRecuperacoesAguardando(admin, agora);
+    recuperacoes.promovidas = r.promovidas;
+    recuperacoes.canceladas = r.canceladas;
+  });
+  let operantes: string[] = [];
+  await passo("listar organizações operantes", async () => {
+    operantes = await organizacoesOperantes(admin);
+  });
+  for (const organizationId of operantes) {
+    await passo("fechar avisos de cliente respondido", async () => {
+      recuperacoes.avisosFechados += await fecharAvisosDeClienteRespondido(admin, organizationId);
+    });
+  }
+
   const prazo = Date.now() + PRAZO_DA_CHAMADA_MS;
   const { data, error } = await admin
     .from("importacoes_de_historico")
@@ -140,7 +232,7 @@ async function handle(req: NextRequest): Promise<Response> {
     }
   }
 
-  return ok({ encontradas: linhas.length, rodadas, puladas, falhas, status }, { requestId });
+  return ok({ encontradas: linhas.length, rodadas, puladas, falhas, status, recuperacoes }, { requestId });
 }
 
 export const GET = handle;

@@ -179,6 +179,11 @@ describe("a sétima cópia não nasce", () => {
       motivo: "o mesmo rótulo de modelo, no caminho em que a escolha já veio da tela",
     },
     {
+      arquivo: "app/api/v1/conversations/[id]/transfer/route.ts",
+      trecho: "display_name: linha?.display_name ?? null,",
+      motivo: "a prévia da transferência devolve as colunas do CANAL (channel_sessions) cruas; quem rotula é a tela",
+    },
+    {
       arquivo: "app/api/v1/channels/official/route.ts",
       trecho: "displayName: data?.display_name ?? null,",
       motivo: "nome do NÚMERO no canal oficial da Meta, não de contato",

@@ -18,6 +18,7 @@ const deps = vi.hoisted(() => ({
   validateBearerToken: vi.fn(),
   checkRateLimit: vi.fn(),
   importar: vi.fn(),
+  previa: vi.fn(),
   pool: vi.fn(),
 }));
 
@@ -35,10 +36,14 @@ vi.mock("@/lib/mcp/auth", async () => {
   const actual = await vi.importActual<typeof import("@/lib/mcp/auth")>("@/lib/mcp/auth");
   return { ...actual, validateBearerToken: deps.validateBearerToken };
 });
-vi.mock("@/lib/prospecting/store", () => ({ importarPlanilha: deps.importar }));
+vi.mock("@/lib/prospecting/store", () => ({
+  importarPlanilha: deps.importar,
+  previaDaPlanilha: deps.previa,
+}));
 
 import { POST } from "./route";
 import { audit } from "@/lib/audit";
+import { montarPrevia, type LeituraComMotivos } from "@/lib/prospecting/importacao-previa";
 
 const ORG_DA_AUTH = "99999999-9999-4999-8999-999999999999";
 const ORG_DO_FORMULARIO = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -92,13 +97,36 @@ beforeEach(() => {
       ? { ok: true, org: { orgId: ORG_DA_AUTH }, user: { id: "user-1", idioma: "pt" } }
       : { ok: false, response: new Response(null, { status: 403 }) },
   );
-  deps.importar.mockResolvedValue({
-    campaign: { id: CAMPANHA },
-    inseridos: 2,
-    ja_na_base: 0,
-    classesPuras: { "sem-site": 1 },
-    repetida: false,
-  });
+  // A importação mockada responde como a de verdade: a resposta carrega a MESMA classificação
+  // que a prévia faria (o serviço recalcula dentro do lock).
+  deps.importar.mockImplementation(
+    async (
+      _pool: unknown,
+      _org: string,
+      _requestId: string,
+      _campos: unknown,
+      planilha: LeituraComMotivos,
+    ) => {
+      const previa = montarPrevia(planilha, {
+        contatos: new Set<string>(),
+        suprimidos: new Set<string>(),
+      });
+      return {
+        campaign: { id: CAMPANHA },
+        inseridos: previa.entram.length,
+        ja_na_base: previa.fora.length,
+        classesPuras: { "sem-site": 1 },
+        repetida: false,
+        fora: previa.fora,
+        resumo: previa.resumo,
+        total_linhas: previa.total_linhas,
+      };
+    },
+  );
+  // A prévia real barata: sem fontes, o que passa é o que a planilha já aceitou.
+  deps.previa.mockImplementation(async (_db: unknown, _org: string, planilha: LeituraComMotivos) =>
+    montarPrevia(planilha, { contatos: new Set<string>(), suprimidos: new Set<string>() }),
+  );
 });
 
 describe("POST /api/v1/prospecting/importar", () => {
@@ -195,14 +223,18 @@ describe("POST /api/v1/prospecting/importar", () => {
     expect(data).toMatchObject({
       campaign_id: CAMPANHA,
       inseridos: 2,
-      ja_na_base: 0,
+      // `skipped_count` da campanha conta TODA linha lida que não entrou — a recusada da
+      // planilha inclusive, como na busca (lá, `items.length - inserted`).
+      ja_na_base: 1,
       total_recusadas: 1,
       repetida: false,
     });
-    expect(data.recusadas).toEqual([{ linha: 3, motivo: "Sem telefone válido." }]);
+    expect(data.recusadas).toEqual([
+      { linha: 3, telefone: null, codigo: "sem_telefone", motivo: "Sem telefone." },
+    ]);
 
     expect(deps.importar).toHaveBeenCalledTimes(1);
-    const [, org, requestId, campos, candidatos] = deps.importar.mock.calls[0]!;
+    const [, org, requestId, campos, planilha] = deps.importar.mock.calls[0]!;
     expect(org).toBe(ORG_DA_AUTH);
     expect(requestId).toBe(REQUEST_ID);
     expect(campos).toMatchObject({
@@ -214,7 +246,13 @@ describe("POST /api/v1/prospecting/importar", () => {
       linhas: 3,
     });
     expect(campos).not.toHaveProperty("arquivo");
-    expect(candidatos.map((c: { phone: string }) => c.phone)).toEqual(["+5511999990001", "+5511999990003"]);
+    // O quinto argumento é a PLANILHA lida (candidato + linha), não a lista solta: a importação
+    // precisa da linha para classificar contato/LGPD e devolver o motivo.
+    expect(planilha.candidatos.map((c: { prospect: { phone: string } }) => c.prospect.phone)).toEqual([
+      "+5511999990001",
+      "+5511999990003",
+    ]);
+    expect(planilha.candidatos.map((c: { linha: number }) => c.linha)).toEqual([2, 4]);
   });
 
   it("gerar_previa sem avaliar_site vira false", async () => {
@@ -236,8 +274,9 @@ describe("POST /api/v1/prospecting/importar", () => {
         operation: "importar_planilha",
         linhas: 3,
         inseridos: 2,
-        ja_na_base: 0,
+        ja_na_base: 1,
         recusadas: 1,
+        motivos: { sem_telefone: 1 },
         classes_puras: { "sem-site": 1 },
       },
     });
@@ -254,6 +293,9 @@ describe("POST /api/v1/prospecting/importar", () => {
       ja_na_base: 0,
       classesPuras: {},
       repetida: true,
+      fora: [],
+      resumo: {},
+      total_linhas: 2,
     });
     const res = await POST(post(formulario({})));
     expect(res.status).toBe(200);
@@ -272,7 +314,14 @@ describe("POST /api/v1/prospecting/importar", () => {
     expect(res.status).toBe(422);
     const body = await res.json();
     expect(body.error.details.total_recusadas).toBe(2);
-    expect(body.error.details.recusadas[0]).toEqual({ linha: 2, motivo: "Sem telefone válido." });
+    expect(body.error.details.recusadas[0]).toEqual({
+      linha: 2,
+      telefone: null,
+      codigo: "sem_telefone",
+      motivo: "Sem telefone.",
+    });
+    expect(body.error.details.resumo.sem_telefone).toBe(1);
+    expect(body.error.details.resumo.telefone_invalido).toBe(1);
     expect(deps.importar).not.toHaveBeenCalled();
   });
 
@@ -291,6 +340,71 @@ describe("POST /api/v1/prospecting/importar", () => {
     );
     expect(res.status).toBe(422);
     expect((await res.json()).error.message).toContain("500");
+    expect(deps.importar).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A PRÉVIA — `previa=true` no mesmo formulário. Ela existe porque a planilha do operador não é
+ * uma lista limpa: ele precisa ver, ANTES de criar campanha, quantas linhas entram e por que
+ * cada uma das outras fica de fora. O contrato é este: conferir não escreve, não audita e não
+ * cria campanha.
+ */
+describe("POST /api/v1/prospecting/importar — prévia", () => {
+  it("previa=true confere e devolve as contagens SEM importar nem auditar", async () => {
+    const res = await POST(post(formulario({ extras: { previa: "true" } })));
+    expect(res.status).toBe(200);
+    const { data } = await res.json();
+    expect(data).toMatchObject({
+      previa: true,
+      entram: 2,
+      total_recusadas: 1,
+      total_linhas: 3,
+    });
+    expect(data).not.toHaveProperty("campaign_id");
+    expect(data.resumo.sem_telefone).toBe(1);
+    expect(deps.importar).not.toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("a prévia traz o motivo de cada linha: contato do CRM e supressão da LGPD", async () => {
+    deps.previa.mockImplementationOnce(
+      async (_db: unknown, _org: string, planilha: LeituraComMotivos) =>
+        montarPrevia(planilha, {
+          contatos: new Set(["+5511999990001"]),
+          suprimidos: new Set(["+5511999990003"]),
+        }),
+    );
+    const res = await POST(post(formulario({ extras: { previa: "true" } })));
+    expect(res.status).toBe(200);
+    const { data } = await res.json();
+    expect(data.entram).toBe(0);
+    expect(data.total_recusadas).toBe(3);
+    expect(data.recusadas).toEqual([
+      { linha: 2, telefone: "+5511999990001", codigo: "contato_do_crm", motivo: "Já é contato do CRM." },
+      { linha: 3, telefone: null, codigo: "sem_telefone", motivo: "Sem telefone." },
+      {
+        linha: 4,
+        telefone: "+5511999990003",
+        codigo: "suprimido_lgpd",
+        motivo: "Excluído a pedido do titular (LGPD).",
+      },
+    ]);
+    expect(data.resumo).toMatchObject({ contato_do_crm: 1, suprimido_lgpd: 1 });
+  });
+
+  it("importação de verdade: se nada pode entrar, 422 com o motivo de cada linha", async () => {
+    deps.previa.mockImplementationOnce(
+      async (_db: unknown, _org: string, planilha: LeituraComMotivos) =>
+        montarPrevia(planilha, {
+          contatos: new Set<string>(),
+          suprimidos: new Set(["+5511999990001", "+5511999990003"]),
+        }),
+    );
+    const res = await POST(post(formulario({})));
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.details.recusadas[0].codigo).toBe("suprimido_lgpd");
     expect(deps.importar).not.toHaveBeenCalled();
   });
 });

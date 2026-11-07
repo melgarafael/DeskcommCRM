@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   agendaStallGate,
+  anunciaVerificacaoDeAgenda,
   BEFORE_SEND_GATES,
   type GateContext,
 } from "@/lib/agent-engine/guardrails/before-send";
@@ -472,5 +473,86 @@ describe("#1038 — serviço colado ao verbo, nunca o assunto da frase", () => {
     ]) {
       expect(agendaStallGate.evaluate(baseCtx({ agenda: armado, body })).pass).toBe(false);
     }
+  });
+});
+
+/**
+ * ─── Teste 10 do aceite (rig do salão, 2026-10-25) — o particípio ABRE a frase ───
+ *
+ * Medido: seis versões do prompt seguidas (v10..v15) falhando no MESMO ponto do teste 10
+ * ("Quero remarcar o que marquei ontem" → "Pode confirmar as 9h"). Em todas, o turno final
+ * respondeu texto com a agenda parada no dia antigo, e o gate ARMADO não vetou: o modelo
+ * escrevia "Confirmado: [serviço] dia [data] às [hora]" — particípio primeiro, sem o
+ * substantivo de agenda antes de "está/ficou", que é o que `AGENDA_CONFIRMED_PATTERN`
+ * exige. O veto é a cura determinística do produto para exatamente este caso (o modelo
+ * recebe a razão como erro de ensino e re-tenta com as ferramentas, inbound-turn.ts), e
+ * ele estava escapando por ordem das palavras.
+ *
+ * As DUAS frases são as literalmente observadas no `messages`/`api_audit_log` do rig.
+ */
+describe("teste 10 do aceite — 'Confirmado: dia/hora' abrindo a frase é afirmação consumada", () => {
+  const armado = { active: true, ferramentas: TODAS, toolCalledThisTurn: false };
+  const FRASES_MEDIDAS = [
+    "Confirmado: manicure dia 29/10 às 9h.",
+    "Confirmado, a 9h está livre pra manicure na quinta, dia 29/10. 😊",
+  ] as const;
+
+  it.each(FRASES_MEDIDAS)("⭐ veta sem ferramenta no turno: %s", (body) => {
+    const v = agendaStallGate.evaluate(baseCtx({ agenda: armado, body }));
+    expect(v.pass).toBe(false);
+    if (v.pass) throw new Error("inalcançável");
+    expect(v.code).toBe("agenda_stall_sem_ferramenta");
+    // O ramo é o `confirmedSemChecar`: a razão tem de dizer que ELE AFIRMOU, não que
+    // prometeu verificar — e nomear as ferramentas de agenda do agente.
+    expect(v.reason).toContain("afirmou");
+    expect(v.reason).toContain("crm_reschedule_appointment");
+  });
+
+  it.each(FRASES_MEDIDAS)("a MESMA frase passa quando a ferramenta rodou no turno: %s", (body) => {
+    const v = agendaStallGate.evaluate(
+      baseCtx({ agenda: { ...armado, toolCalledThisTurn: true }, body }),
+    );
+    expect(v.pass).toBe(true);
+  });
+
+  it("borda — só dia não veta: 'Confirmado! Te chamo amanhã' é compromisso de mensagem", () => {
+    const v = agendaStallGate.evaluate(
+      baseCtx({ agenda: armado, body: "Confirmado! Te chamo amanhã sobre o orçamento." }),
+    );
+    expect(v.pass).toBe(true);
+  });
+
+  it("borda — só hora não veta: 'Confirmado: te ligo às 14h' é retorno, não horário de agenda", () => {
+    const v = agendaStallGate.evaluate(
+      baseCtx({ agenda: armado, body: "Confirmado: te ligo às 14h com a resposta." }),
+    );
+    expect(v.pass).toBe(true);
+  });
+});
+
+/**
+ * A metade "enrolação" do gate, exportada para a trava da parada do laço
+ * (`agent/parada-apos-envio.ts`). É a MESMA regra, não uma cópia: as frases de
+ * controle do gate respondem igual aqui, e a confirmação categórica fica de fora
+ * (ela é veto do gate, não anúncio de ação seguinte).
+ */
+describe("anunciaVerificacaoDeAgenda — a regra do gate, sem o estado do turno", () => {
+  it.each([
+    FRASE_MEDIDA_1,
+    FRASE_MEDIDA_2,
+    "Vou chamar a responsável pra ver os horários.",
+    "Vou verificar os horários de quinta e já te aviso.",
+  ])("anuncia: %s",
+    (body) => {
+      expect(anunciaVerificacaoDeAgenda(body)).toBe(true);
+    },
+  );
+
+  it.each([
+    "Amanhã, a oficina abre às 9h. Posso agendar a avaliação para esse horário.",
+    "Vou verificar o seu endereço de entrega e já te retorno.",
+    "Seu horário está confirmado para quinta às 10h.",
+  ])("não anuncia: %s", (body) => {
+    expect(anunciaVerificacaoDeAgenda(body)).toBe(false);
   });
 });
