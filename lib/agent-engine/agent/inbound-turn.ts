@@ -5842,6 +5842,18 @@ async function executarTurnoDoAgente(
     // que a versão publicada ou a ponte MCP não autorizou neste turno.
     let apresentacaoAcionada = false;
     let disposicaoDaApresentacao: 'completed' | 'interrupted' | 'settled' | null = null;
+    // A apresentação já dispôs da mensagem ou do próprio job. Nenhuma correção
+    // de turno mudo, pergunta de roteiro ou nova chamada de modelo pode enviar.
+    const apresentacaoEncerrouOTurno = (): boolean => {
+      if (!apresentacaoAcionada) return false;
+      if (disposicaoDaApresentacao === 'settled') {
+        throw new JobSettledError('apresentacao do catalogo reagendada ou cancelada');
+      }
+      if (disposicaoDaApresentacao === null) {
+        throw new Error('catalog_presentation_without_disposition');
+      }
+      return true;
+    };
     if (
       !preview && liveJob().kind === 'inbound_turn' &&
       rawTools.crm_search_products && rawTools.send_message && agentConfig &&
@@ -6369,17 +6381,7 @@ async function executarTurnoDoAgente(
       { registry: deps.registry, log: runLog },
     );
 
-    // A apresentação já dispôs da mensagem ou do próprio job. Nenhuma correção
-    // de turno mudo, pergunta de roteiro ou segunda chamada de modelo pode enviar.
-    if (apresentacaoAcionada) {
-      if (disposicaoDaApresentacao === 'settled') {
-        throw new JobSettledError('apresentacao do catalogo reagendada ou cancelada');
-      }
-      if (disposicaoDaApresentacao === null) {
-        throw new Error('catalog_presentation_without_disposition');
-      }
-      return;
-    }
+    if (apresentacaoEncerrouOTurno()) return;
 
     // SAÍDA TRUNCADA (finish_reason = 'length'): o modelo bateu no
     // teto de tokens de saída e o que produziu veio cortado. A detecção mora aqui,
@@ -6555,6 +6557,9 @@ async function executarTurnoDoAgente(
         },
         { registry: deps.registry, log: runLog },
       );
+      // A correção tem as mesmas ferramentas: se ela apresentou, o turno acabou
+      // aqui, e o desfecho de turno mudo logo abaixo não vale para ele.
+      if (apresentacaoEncerrouOTurno()) return;
       // Sinal de FALHA da correção: terminou no teto de tokens. Silêncio com
       // finishReason normal (stop/tool-calls) é resposta escolhida, não defeito.
       correcaoTruncou = correcao.result.finishReason === 'length';

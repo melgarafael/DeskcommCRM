@@ -18,6 +18,14 @@ describe("present_catalog_items no turno", () => {
     expect(guarda).toContain("await apresentacaoOferecidaNoTurno(deps.crmCfg.supabase, pool, tenantId, runLog)");
   });
 
+  it("a apresentação feita na correção do turno mudo encerra antes do desfecho de turno mudo", () => {
+    const correcao = turno.indexOf("const correcao = await runModelCall(");
+    const medida = turno.indexOf("correcaoTruncou = correcao.result.finishReason === 'length';");
+    expect(correcao).toBeGreaterThan(-1);
+    expect(medida).toBeGreaterThan(correcao);
+    expect(turno.slice(correcao, medida)).toContain("if (apresentacaoEncerrouOTurno()) return;");
+  });
+
   it("a chamada principal e a correção usam a mesma parada, composta com o envio final", () => {
     expect(turno.split("...paradaDoLaco,").length - 1).toBe(2);
     expect(turno).toContain("apresentacaoAcionada || (paradaAposEnvio?.(estado) ?? false)");
