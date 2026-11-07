@@ -190,6 +190,9 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
     sql(`
       delete from conversations where organization_id = '${ORG}';
       delete from contacts where organization_id = '${ORG}';
+      update public.ai_agents set published_version_id = null where organization_id = '${ORG}';
+      delete from public.ai_agent_versions where organization_id = '${ORG}';
+      delete from public.ai_agents where organization_id = '${ORG}';
       delete from channel_sessions where organization_id = '${ORG}';
       delete from organizations where id = '${ORG}';
       insert into auth.users (id, email)
@@ -198,6 +201,21 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
         values ('${ORG}', 'espelho-comando', 'Espelho LTDA', 'Espelho');
       insert into channel_sessions (id, organization_id, webhook_secret_encrypted, waha_session_name)
         values ('${ORG}', '${ORG}', '\\x00', 'espelho-sess');
+      -- O NÚMERO TEM QUEM ATENDA (#4012): este arquivo mede a regra de estado da
+      -- conversa (dono, status, silêncio, trava, grupo). Sem agente publicado na
+      -- sessão, o wrapper passaria a responder 'aguardando' por um fato que NÃO é
+      -- o que este bloco mede — e o espelho acusaria divergência onde há duas
+      -- perguntas diferentes.
+      insert into public.ai_agents (id, organization_id, name, system_prompt)
+        values ('aaaaaaaa-9999-4000-8000-000000000001', '${ORG}', 'Agente do espelho', 'x')
+      on conflict (id) do nothing;
+      insert into public.ai_agent_versions
+        (id, organization_id, agent_id, version_number, system_prompt, provider, model, channel_session_id, status)
+        values ('aaaaaaaa-9999-4000-8000-000000000002', '${ORG}', 'aaaaaaaa-9999-4000-8000-000000000001',
+                1, 'x', 'anthropic', 'm', '${ORG}', 'published')
+      on conflict (id) do nothing;
+      update public.ai_agents set published_version_id = 'aaaaaaaa-9999-4000-8000-000000000002'
+        where id = 'aaaaaaaa-9999-4000-8000-000000000001';
       ${linhas
         .map(
           (l) => `
@@ -237,6 +255,9 @@ describe("comando da conversa: o banco espelha o TypeScript", () => {
           is_blocked: l.ib,
           is_group: l.grupo === true,
           automaticoDaOrg: true,
+          // O número do fixture tem agente publicado (ver o insert acima): o
+          // fato por número não rebaixa nenhuma das linhas abaixo.
+          automaticoDaConversa: true,
         },
         // O wrapper usa `now()` do banco; estas linhas não ficam na fronteira do
         // relógio de propósito (só `infinity`/`null`), então a comparação é estável.

@@ -116,9 +116,8 @@ describe("a 0404 — comando_da_conversa sem reavaliar a RLS (issue #1571)", () 
     expect(apendice).toContain("notify pgrst, 'reload schema';");
   });
 
-  it("as duas subconsultas em contacts exigem a empresa da conversa, na migration e no apêndice", () => {
+  it("nenhuma subconsulta em contacts dispensa a empresa da conversa, na migration e no apêndice", () => {
     const PREDICADO = "where ct.id = $1.contact_id and ct.organization_id = $1.organization_id)";
-    const conta = (texto: string): number => texto.split(PREDICADO).length - 1;
 
     const sql = ler(path.join(DIR_MIGRACOES, arquivoDaMigration()!));
     const baseline = ler(path.join(RAIZ, "supabase", "baseline.sql"));
@@ -128,7 +127,17 @@ describe("a 0404 — comando_da_conversa sem reavaliar a RLS (issue #1571)", () 
 
     const motivo =
       "subconsulta em contacts sem `ct.organization_id = $1.organization_id`: sob o definer, uma conversa apontada para contato de outra empresa leria force_human/is_blocked dele";
-    expect(conta(sql), `migration — ${motivo}`).toBe(2);
-    expect(conta(apendice), `apêndice do baseline — ${motivo}`).toBe(2);
+    // A régua é TODA subconsulta em contacts, e não um número fixo: a versão
+    // desta cerca cravava "exatamente 2", o que passou a abençoar subconsulta
+    // nova sem a empresa quando o total cresceu (#4012 acrescentou o caminho do
+    // telefone) e a exigir subconsulta quando a #2739 tirou o resto (o wrapper
+    // lê o bit da linha, `contato_trava_humano`). Medir por IGUALDADE entre
+    // subconsultas e subconsultas com o predicado vale para qualquer
+    // quantidade — inclusive zero.
+    const subconsulta = "from public.contacts ct where ct.id = $1.contact_id";
+    const semEmpresa = (texto: string): number =>
+      texto.split(subconsulta).length - 1 - (texto.split(PREDICADO).length - 1);
+    expect(semEmpresa(sql), `migration — ${motivo}`).toBe(0);
+    expect(semEmpresa(apendice), `apêndice do baseline — ${motivo}`).toBe(0);
   });
 });
