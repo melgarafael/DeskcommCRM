@@ -150,8 +150,33 @@ describe("item 1 — o rodapé depois do mês legal vencido", () => {
     const antes = await alarme({ country: "PT", recebido, agora: "2026-02-28T11:00:00.000Z" });
     expect(antes.text).toContain(AINDA_HA_FOLGA);
 
-    const depois = await alarme({ country: "PT", recebido, agora: "2026-02-28T13:00:00.000Z" });
+    // O último dia legal ainda NÃO venceu às 13h: vale até o fim do dia.
+    const noUltimoDia = await alarme({ country: "PT", recebido, agora: "2026-02-28T13:00:00.000Z" });
+    expect(noUltimoDia.text).toContain(AINDA_HA_FOLGA);
+
+    const depois = await alarme({ country: "PT", recebido, agora: "2026-03-01T00:00:00.000Z" });
     expect(depois.text).toContain(VENCEU);
+  });
+
+  /**
+   * O PRAZO EM MESES ACABA NO FIM DO DIA, NÃO NA HORA DO RECEBIMENTO.
+   *
+   * O Regulamento (CEE) n.º 1182/71 conta prazo em meses até o FIM do dia que
+   * corresponde ao dia do evento inicial: pedido recebido em 20/08 às 12h tem o
+   * mês do art. 12.º, n.º 3 até o fim de 20/09 — não até as 12h de 20/09. A
+   * versão anterior somava um mês ao INSTANTE (`setUTCMonth` na mesma hora) e o
+   * alarme anunciava vencimento legal com o dia legal ainda correndo, na mesma
+   * tela em que `due_at` era lido como dia civil que vale até o fim do dia.
+   * Duas réguas para o mesmo prazo.
+   */
+  it("o mês legal vale até o FIM do dia correspondente, não até a hora do recebimento", async () => {
+    const recebido = "2026-08-20T12:00:00.000Z";
+
+    const noUltimoDia = await alarme({ country: "PT", recebido, agora: "2026-09-20T23:30:00.000Z" });
+    expect(noUltimoDia.text).toContain(AINDA_HA_FOLGA);
+
+    const diaSeguinte = await alarme({ country: "PT", recebido, agora: "2026-09-21T00:00:00.000Z" });
+    expect(diaSeguinte.text).toContain(VENCEU);
   });
 
   it("país sem lei revisada não afirma vencimento de lei nenhuma", async () => {
