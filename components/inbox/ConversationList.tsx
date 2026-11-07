@@ -1,12 +1,14 @@
 "use client";
 import { ehAFila } from "@/lib/inbox/comando-da-conversa";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useCallback } from "react";
 import { useT } from "@/hooks/i18n/useT";
 import type { InfiniteData, UseInfiniteQueryResult } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Check } from "@/lib/ui/icons";
 import { useChannelSessions } from "@/hooks/channels/useChannelSessions";
+import { useConversasComMencao } from "@/hooks/inbox/useConversasComMencao";
+import { desmarcarConversaMencionada } from "@/lib/notifications/mencao-na-lista";
 
 import { useAutomaticoAtivo } from "@/hooks/ai/useAutomaticoAtivo";
 import { useMarcarComoExemplo } from "@/hooks/inbox/useMarcarComoExemplo";
@@ -64,6 +66,21 @@ export function ConversationList({
   podeMarcarExemplo = false,
 }: Props) {
   const t = useT();
+  /**
+   * As conversas com menção pendente (#2372).
+   *
+   * Uma assinatura só para a lista inteira (não um hook por linha): a marca
+   * nasce do listener de notas do AppShell e vale para todas as linhas. Abrir a
+   * conversa é o que a CONSOME — por isso o clique passa por `abrirConversa`.
+   */
+  const mencionadas = useConversasComMencao();
+  const abrirConversa = useCallback(
+    (id: string) => {
+      desmarcarConversaMencionada(id);
+      onSelect(id);
+    },
+    [onSelect],
+  );
   // Só mostra POR ONDE a conversa entrou quando há mais de um número. Com um
   // só, o rótulo seria a mesma palavra em toda linha — ruído que ensina o olho
   // a ignorar a área onde vivem os avisos que importam.
@@ -253,7 +270,8 @@ export function ConversationList({
             key={c.id}
             conversation={c}
             isSelected={c.id === selectedId}
-            onSelect={onSelect}
+            onSelect={abrirConversa}
+            mencionado={mencionadas.has(c.id)}
             queuePosition={isQueue ? i + 1 : undefined}
             mostrarCanal={maisDeUmCanal}
             mostrarAtendente={mostrarAtendente}
