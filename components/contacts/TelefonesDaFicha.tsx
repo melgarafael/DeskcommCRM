@@ -59,16 +59,20 @@ export function textoDoWhatsappDoTelefone(
 }
 
 /**
- * A mensagem que a API manda, na tela. Os códigos que a tela conhece ganham frase
- * LITERAL (para o guardião de espanhol enxergar); o resto passa pelo `t()` como
- * a tela inteira já faz com o texto de `fail()`.
+ * A mensagem que a API manda, na tela.
+ *
+ * `invalid_phone` é a frase DELA, sem tradução de tela: quem sabe o formato que
+ * aceita — e o exemplo do país — é a organização, do outro lado da API (#4242,
+ * item 1). A tela trocava essa frase por "Confira o DDD", que numa organização
+ * fora do Brasil manda conferir um DDD que não existe e esconde o formato que
+ * resolveria. As frases que a tela conhece e sabe dizer melhor continuam
+ * literais, para o guardião de espanhol enxergá-las.
  */
-function mensagemDeErro(err: unknown, t: (texto: string) => string): string {
+export function mensagemDeErroDoTelefone(err: unknown, t: (texto: string) => string): string {
   if (err instanceof ApiError) {
     if (err.code === "phone_in_use") return t("Este número já está em outra ficha.");
     if (err.code === "primary_phone_has_extras")
       return t("Torne outro número principal antes de remover este.");
-    if (err.code === "invalid_phone") return t("Número inválido. Confira o DDD e tente de novo.");
     return t(err.message);
   }
   return t("Erro inesperado. Tente novamente.");
@@ -232,7 +236,7 @@ export function TelefonesDaFicha({
       }
       fecharEdicao();
     } catch (err) {
-      setErro(mensagemDeErro(err, t));
+      setErro(mensagemDeErroDoTelefone(err, t));
     }
   }
 
@@ -241,7 +245,7 @@ export function TelefonesDaFicha({
     try {
       await removerExtra.mutateAsync(id);
     } catch (err) {
-      setErro(mensagemDeErro(err, t));
+      setErro(mensagemDeErroDoTelefone(err, t));
     }
   }
 
@@ -250,7 +254,7 @@ export function TelefonesDaFicha({
     try {
       await tornarPrincipal.mutateAsync(id);
     } catch (err) {
-      setErro(mensagemDeErro(err, t));
+      setErro(mensagemDeErroDoTelefone(err, t));
     }
   }
 
@@ -331,6 +335,10 @@ export function TelefonesDaFicha({
                 <span className="text-xs text-muted-foreground">
                   {textoDoWhatsappDoTelefone(contato.phone_whatsapp, t)}
                 </span>
+              )}
+              {/* #4242, item 2: o rótulo que veio do extra promovido. */}
+              {contato.phone_label && (
+                <span className="text-xs text-muted-foreground">{contato.phone_label}</span>
               )}
               {podeEditar && edicao?.modo !== "principal" && (
                 <Button type="button" size="sm" variant="ghost" onClick={abrirEdicaoDoPrincipal} disabled={ocupado}>

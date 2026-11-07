@@ -47,6 +47,11 @@ export interface Contact {
    */
   phone_type?: TipoDeTelefone | null;
   phone_whatsapp?: WhatsappDoTelefone | null;
+  /**
+   * #4242, item 2: o rótulo do número PRINCIPAL (o mesmo campo dos extras).
+   * "Tornar principal" o traz do extra promovido; sem ele o rótulo sumia.
+   */
+  phone_label?: string | null;
   /** Spec 31 (B1): os telefones extras da ficha, `[]` quando não há nenhum. */
   additional_phones?: TelefoneExtra[];
   /** Se a ficha tem CPF. O valor não sai pela API: é pedido à parte, por quem pode. */

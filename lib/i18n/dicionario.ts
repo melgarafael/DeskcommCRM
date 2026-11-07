@@ -929,8 +929,16 @@ export const DICIONARIO: Traducoes = {
   "Torne outro número principal antes de remover este.": {
     es: "Haga principal otro número antes de quitar este.",
   },
-  "Número inválido. Confira o DDD e tente de novo.": {
-    es: "Número no válido. Revise el código de área e inténtelo de nuevo.",
+  // #4242, item 1: a frase é da API — o EXEMPLO vem do país da organização — e a
+  // tela só a mostra. O `{exemplo}` entra por `replace`, como `Dia {n}`.
+  "Telefone deve estar em formato E.164 ({exemplo})": {
+    es: "El teléfono debe estar en formato E.164 ({exemplo})",
+  },
+  "Telefone deve ter DDD + número (ex.: {exemplo}) ou o formato E.164 ({exemploE164})": {
+    es: "El teléfono debe tener código de área + número (ej.: {exemplo}) o el formato E.164 ({exemploE164})",
+  },
+  "Telefone inválido. Informe DDD e número.": {
+    es: "Teléfono no válido. Informa el código de área y el número.",
   },
   "A resposta sai por:": { es: "La respuesta sale por:" },
   "Pontuação": { es: "Puntuación" },
