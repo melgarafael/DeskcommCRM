@@ -15,8 +15,9 @@ export async function GET(req: NextRequest): Promise<Response> {
 
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const auth = autorizaCron(req);
-  if (!auth.ok) return auth.response;
+  if (!autorizaCron(req)) {
+    return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
+  }
 
   const admin = createAdminClient();
   if (!(await moduloLigado(admin, "avaliacao"))) {

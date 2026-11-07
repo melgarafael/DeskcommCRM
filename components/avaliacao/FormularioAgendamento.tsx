@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -201,13 +201,13 @@ export function FormularioAgendamento({
                 <Input id="av-hora" type="time" value={hora} onChange={(e) => setHora(e.target.value)} />
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="av-consultor-auto">Distribuir consultor automaticamente</Label>
+              <Switch
                 id="av-consultor-auto"
                 checked={consultantAuto}
-                onCheckedChange={(v) => setConsultantAuto(v === true)}
+                onCheckedChange={(checked: boolean) => setConsultantAuto(checked)}
               />
-              <Label htmlFor="av-consultor-auto">Distribuir consultor automaticamente</Label>
             </div>
             {!consultantAuto && (
               <div className="space-y-2">
@@ -236,7 +236,7 @@ export function FormularioAgendamento({
                   <SelectItem value="_none">Nenhum</SelectItem>
                   {membros.data?.map((m) => (
                     <SelectItem key={m.user_id} value={m.user_id}>
-                      {m.full_name ?? m.email}
+                        {m.full_name ?? m.user_id.slice(0, 8)}
                     </SelectItem>
                   ))}
                 </SelectContent>

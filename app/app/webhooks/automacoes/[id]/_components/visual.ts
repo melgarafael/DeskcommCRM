@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 import {
   Bell,
   Brain,
+  EnvelopeSimple,
   FlowArrow,
   Funnel,
   Kanban,
@@ -46,6 +47,7 @@ export const VISUAL_DA_IA: VisualDaCaixa = { icon: Brain, paleta: "A IA decide",
 export const VISUAL_DA_ACAO: Record<ActionType, VisualDaCaixa> = {
   create_or_move_lead: { icon: Kanban, paleta: "Criar/mover lead", ...INFO },
   send_whatsapp_message: { icon: PaperPlaneTilt, paleta: "Mensagem no WhatsApp", ...SUCESSO },
+  send_email: { icon: EnvelopeSimple, paleta: "Enviar e-mail", ...INFO },
   send_ai_message: { icon: Sparkle, paleta: "Mensagem pela IA", ...ACCENT_SOLIDO },
   add_tag: { icon: Tag, paleta: "Adicionar tag", ...ACCENT },
   assign_owner: { icon: UserCircle, paleta: "Atribuir atendente", ...INFO },

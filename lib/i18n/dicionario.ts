@@ -14929,6 +14929,10 @@ export const DICIONARIO: Traducoes = {
   "A IA monta a proposta pelos modelos da empresa e o PDF sai pelo WhatsApp.": { es: "La IA arma la propuesta con las plantillas de la empresa y el PDF sale por WhatsApp." },
   "Cadastro de empresas por CNPJ, das pessoas que decidem nelas e importação de planilha.": { es: "Registro de empresas por CNPJ, de las personas que deciden en ellas e importación de planillas." },
   "Contratos de honorários com parcelas e o controle do que já foi pago.": { es: "Contratos de honorarios con cuotas y el control de lo que ya se pagó." },
+  "Agenda de avaliação": { es: "Agenda de evaluación" },
+  "Agendamentos de avaliação veicular com unidades, consultores e status na rota Agenda.": {
+    es: "Citas de evaluación de vehículos con unidades, asesores y estado en la ruta Agenda.",
+  },
   // #1907 item 4 — a linha do módulo `financeiro` em `MODULOS_OPCIONAIS`
   // (`lib/recursos-opcionais/catalogo.ts:124`). Enquanto faltava, o módulo
   // entrava na lista nova pelo TEXTO_DO_MODULO sem nenhuma linha aqui.

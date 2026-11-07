@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { STATUS_AVALIACAO } from "./status";
 
-export const criarAgendamentoSchema = z.object({
+const agendamentoCorpoSchema = z.object({
   contact_id: z.string().uuid().optional(),
   client_name: z.string().trim().min(1).max(200).optional(),
   client_phone: z.string().trim().min(8).max(32).optional(),
@@ -18,7 +18,9 @@ export const criarAgendamentoSchema = z.object({
   vehicle_model: z.string().trim().max(80).optional(),
   notes: z.string().trim().max(4000).optional(),
   lead_id: z.string().uuid().optional(),
-}).superRefine((v, ctx) => {
+});
+
+export const criarAgendamentoSchema = agendamentoCorpoSchema.superRefine((v, ctx) => {
   if (!v.contact_id && (!v.client_name || !v.client_phone)) {
     ctx.addIssue({
       code: "custom",
@@ -27,7 +29,7 @@ export const criarAgendamentoSchema = z.object({
   }
 });
 
-export const atualizarAgendamentoSchema = criarAgendamentoSchema
+export const atualizarAgendamentoSchema = agendamentoCorpoSchema
   .partial()
   .extend({
     status: z.enum(STATUS_AVALIACAO).optional(),
