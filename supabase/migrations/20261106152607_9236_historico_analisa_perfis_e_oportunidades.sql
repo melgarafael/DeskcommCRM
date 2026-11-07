@@ -30,8 +30,9 @@ language plpgsql
 security invoker
 set search_path = public, pg_temp
 as $$
+declare
+  v_total integer;
 begin
-  return (
   with importacao as (
     select i.id
       from public.importacoes_de_historico i
@@ -87,7 +88,9 @@ begin
     returning 1
   )
   select ((select count(*) from reativados) + (select count(*) from inseridos))::integer
-  );
+    into v_total;
+
+  return v_total;
 end;
 $$;
 
