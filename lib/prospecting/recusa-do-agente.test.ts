@@ -22,6 +22,7 @@ vi.mock("@/lib/logger", () => ({
 import { logger } from "@/lib/logger";
 
 import { validateConfig } from "./store";
+import type { CampaignConfig } from "./schema";
 
 const ORG = "22222222-2222-4222-8222-222222222222";
 const AGENTE = "44444444-4444-4444-8444-444444444444";
@@ -30,8 +31,16 @@ const FUNIL = "55555555-5555-4555-8555-555555555555";
 const ETAPA = "66666666-6666-4666-8666-666666666666";
 const ETAPA_QUALIFICADA = "77777777-7777-4777-8777-777777777777";
 
-/** A configuração mínima que o schema aceita — o caso é sobre a recusa do agente. */
-function configuracao() {
+/**
+ * A configuração mínima que o schema aceita — o caso é sobre a recusa do agente.
+ *
+ * Os campos com `default` no `campaignConfigSchema` (ofertas, ritmo, entrada no
+ * funil e oferta de saída) aparecem EXPLÍCITOS porque `CampaignConfig` é o tipo
+ * DEPOIS do parse do zod, onde o padrão já foi aplicado: omiti-los aqui é uma
+ * configuração que o tipo real não aceita. O tipo no retorno é o que impede a
+ * fixture de voltar a divergir em silêncio quando o schema ganhar uma chave.
+ */
+function configuracao(): CampaignConfig {
   return {
     agent_id: AGENTE,
     channel_session_id: CANAL,
@@ -40,7 +49,12 @@ function configuracao() {
     qualified_stage_id: ETAPA_QUALIFICADA,
     instruction: "Apresente a oferta em duas frases.",
     qualification: "Pergunte o segmento e o tamanho da equipe.",
+    ofertas: ["site"],
+    daily_limit: 10,
+    interval_minutes: 15,
     legal_basis_ref: "legítimo interesse — prospecção B2B",
+    funnel_entry: "on_start",
+    exit_offer: "first_message",
   };
 }
 
