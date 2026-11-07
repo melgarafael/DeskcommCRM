@@ -3,18 +3,26 @@
  *
  * A detecção é PURA (`lib/contacts/duplicados.ts`) e roda aqui, no servidor,
  * sobre a página de contatos vivos que a RLS deixa o usuário ver. Não é um
- * `select` esperto: os três índices únicos parciais de `contacts` já impedem
- * duas linhas ativas com a MESMA string, então o que sobra para o produto é a
- * grafia diferente do mesmo número (o nono dígito) e o telefone que a ingestão
- * do WhatsApp parkou em `source_metadata.telefone_em_conflito`. Nenhum dos dois
- * é comparação de igualdade, e é por isso que a regra vive em TypeScript
- * testável em vez de virar SQL que ninguém relê.
+ * `select` esperto: os índices únicos parciais de `contacts` — telefone, e-mail
+ * normalizado e hash de CPF — já impedem duas linhas ativas com a MESMA string,
+ * então o que sobra para o produto é a grafia diferente do mesmo número (o nono
+ * dígito), o telefone que a ingestão do WhatsApp parkou em
+ * `source_metadata.telefone_em_conflito` e a duplicata exata de CPF no clone em
+ * que o índice não nasceu (`if not exists` num `update.sh` sem `ON_ERROR_STOP`).
+ * Nenhuma dessas é comparação que o índice garante, e é por isso que a regra vive
+ * em TypeScript testável em vez de virar SQL que ninguém relê.
  *
  * Há um segundo motivo, que NÃO é igualdade: `nome_parecido` (Spec 31). Ele vem
  * DEPOIS dos fortes, com o mesmo formato, e é sugestão para conferir — o nome
  * sozinho não prova nada. Os pares que a pessoa dispensou ("não são a mesma
  * empresa") saem da lista para todo papel, porque a leitura da dispensa usa o
  * cliente administrador, filtrado pela organização da sessão.
+ *
+ * ─── O que sai daqui e o que não sai ─────────────────────────────────────────
+ * `cpf_hash` é LIDO (a comparação precisa dele) e NÃO é devolvido: é PII derivada,
+ * e a tela de conferência mostra pessoa, telefone e e-mail — não hash de
+ * documento. O mapeamento do `ok(...)` abaixo é a lista fechada do que o cliente
+ * recebe; campo novo em `contacts` não vaza por acidente.
  *
  * `viewer` pode LISTAR (é leitura de contato, que ele já enxerga na tabela);
  * quem funde é `manager`, e esse gate está na rota de POST /contacts/merge.
@@ -62,7 +70,7 @@ const TETO_DE_VARREDURA = 2000;
 const TAMANHO_DA_PAGINA = 1000;
 
 const COLUNAS_DO_CONTATO =
-  "id, name, display_name, address_book_name, email, email_normalized, phone_number, is_merged_into, is_anonymized, source_metadata, created_at, last_activity_at";
+  "id, name, display_name, address_book_name, email, email_normalized, phone_number, cpf_hash, is_merged_into, is_anonymized, source_metadata, created_at, last_activity_at";
 
 export async function GET(): Promise<Response> {
   const requestId = randomUUID();
