@@ -38,6 +38,7 @@ import {
 } from "@/lib/lgpd/cascata";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { loadAuthUser } from "@/lib/auth/server";
 import { lgpdAnonymizeSchema, validateRequest } from "@/lib/schemas";
 import { createClient } from "@/lib/supabase/server";
 
@@ -50,11 +51,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
   const supabase = await createClient();
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
+  // Uma validação só: `loadAuthUser` é o caminho central (cache por requisição
+  // e entre requisições). `getUser()` direto aqui era mais uma chamada ao Auth
+  // com o mesmo refresh token (409/429).
+  const authUser = await loadAuthUser();
+  if (!authUser) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
   let input;
@@ -153,7 +154,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       p_entity_id: existing.id,
       p_payload: {
         contact_id: existing.id,
-        actor_user_id: user.id,
+        actor_user_id: authUser.id,
         justification: input.justification,
       },
       p_metadata: { request_id: requestId },
@@ -167,7 +168,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     // Uma retomada auditada como execução original mentiria sobre a data em que
     // o direito foi exercido — e é a auditoria que responde ao titular.
     action: retomada ? "lgpd.anonymize_catchup" : "lgpd.anonymize_executed",
-    actorUserId: user.id,
+    actorUserId: authUser.id,
     organizationId: existing.organization_id,
     resourceType: "contact",
     resourceId: existing.id,

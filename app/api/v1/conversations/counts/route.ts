@@ -80,15 +80,14 @@ export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const supabase = await createClient();
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
+  // Uma validação só: `loadAuthUser` é o caminho central (cache por requisição
+  // e entre requisições). `getUser()` direto aqui era mais uma chamada ao Auth
+  // com o mesmo refresh token (409/429).
+  const authUser = await loadAuthUser();
+  if (!authUser) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
 
-  const authUser = await loadAuthUser();
   const ativa = await orgAtivaDaApi(authUser, requestId);
   if (!ativa.ok) return ativa.response;
   const activeOrg = ativa.org;
@@ -162,7 +161,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       .from("conversation_participants")
       .select("conversation_id")
       .eq("organization_id", org)
-      .eq("user_id", user.id)
+      .eq("user_id", authUser.id)
       .is("left_at", null);
     idsParticipadas = (participadasDoUsuario.data ?? []).map((r) => r.conversation_id);
   } catch {
@@ -193,11 +192,11 @@ export async function GET(req: NextRequest): Promise<Response> {
     // tela não exibe.
     (idsParticipadas.length > 0
       ? countExact(auxiliares.filter(([coluna]) => coluna !== "assigned_to_user_id")).or(
-          `assigned_to_user_id.eq.${user.id},id.in.(${idsParticipadas.join(",")})`,
+          `assigned_to_user_id.eq.${authUser.id},id.in.(${idsParticipadas.join(",")})`,
         )
       : countExact(auxiliares.filter(([coluna]) => coluna !== "assigned_to_user_id")).eq(
           "assigned_to_user_id",
-          user.id,
+          authUser.id,
         ))
       .not("status", "in", `(${CONVERSATION_TERMINAL_STATUSES.join(",")})`),
     countExact(),

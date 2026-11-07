@@ -21,15 +21,14 @@ export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const supabase = await createClient();
 
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
+  // Uma validação só: `loadAuthUser` é o caminho central (cache por requisição
+  // e entre requisições). `getUser()` direto aqui era mais uma chamada ao Auth
+  // com o mesmo refresh token (409/429).
+  const authUser = await loadAuthUser();
+  if (!authUser) {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
 
-  const authUser = await loadAuthUser();
   const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
   const ativa = await orgAtivaDaApi(authUser, requestId);
   if (!ativa.ok) return ativa.response;
@@ -92,7 +91,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       supabase,
       {
         organization_id: activeOrg.orgId,
-        actor: { type: "user", id: user.id },
+        actor: { type: "user", id: authUser.id },
         requestId,
         idioma: authUser?.idioma,
       },

@@ -32,14 +32,17 @@ export async function proxy(request: NextRequest) {
   const recebido = request.headers.get("x-request-id");
   const requestId = recebido && UUID.test(recebido) ? recebido : crypto.randomUUID();
   request.headers.set("x-request-id", requestId);
-  const response = NextResponse.next({ request: { headers: request.headers } });
+  // `let`: o `setAll` abaixo recria a resposta depois que o Supabase rotaciona o
+  // token, para o `request.headers` (com o cookie novo) chegar ao handler.
+  let response = NextResponse.next({ request: { headers: request.headers } });
 
   const { pathname, search } = request.nextUrl;
   // Sob `/api/`, o `X-Request-Id` da RESPOSTA é de `ok()`/`fail()`: é o id que a
   // rota grava no log e no audit. Cabeçalho posto aqui VENCE o da rota — o Next
   // só acrescenta o da rota quando o do middleware não existe — e o `ID:` que a
   // tela mostra deixava de existir no log. Fora de `/api/`, ninguém mais o põe.
-  if (!pathname.startsWith("/api/")) {
+  const poeRequestIdNaResposta = !pathname.startsWith("/api/");
+  if (poeRequestIdNaResposta) {
     response.headers.set("x-request-id", requestId);
   }
   // Recupera retornos de OAuth social já emitidos antes da landing pública existir.
@@ -86,8 +89,19 @@ export async function proxy(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+          // Padrão oficial do @supabase/ssr: grava no request, RECRIA a resposta
+          // (o `next` copia os cabeçalhos da requisição ao ser criado) e só então
+          // grava na resposta. Sem isso o handler lê o cookie antigo e tenta
+          // renovar o refresh token já consumido (409/429/bad_jwt).
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+          const cookiesAnteriores = response.cookies.getAll();
+          response = NextResponse.next({ request: { headers: request.headers } });
+          if (poeRequestIdNaResposta) {
+            response.headers.set("x-request-id", requestId);
+          }
+          // Recriar zera os cookies da resposta anterior: reaplica-os.
+          cookiesAnteriores.forEach((c) => response.cookies.set(c));
           cookiesToSet.forEach(({ name, value, options }) => {
-            request.cookies.set(name, value);
             response.cookies.set(name, value, options);
           });
         },

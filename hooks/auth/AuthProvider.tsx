@@ -4,14 +4,12 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
-  useState,
   type ReactNode,
 } from "react";
 import { Providers } from "@/app/providers";
 import { definirOrgDaAba } from "@/lib/auth/org-da-aba";
 import { encerrarPushDesteAparelho } from "@/lib/notifications/push_client";
-import { createClient, resetRealtimeAuthentication } from "@/lib/supabase/browser";
+import { resetRealtimeAuthentication } from "@/lib/supabase/browser";
 import type { AuthUser, ActiveOrg, Role } from "@/lib/auth/types";
 import { ROLE_RANK } from "@/lib/auth/types";
 
@@ -34,8 +32,8 @@ export function AuthProvider({
   activeOrg: ActiveOrg | null;
   children: ReactNode;
 }) {
-  const [refreshing, setRefreshing] = useState(false);
-  const supabaseRef = useRef(createClient());
+  // Mantido no contrato do contexto; a renovação agora é só do servidor.
+  const refreshing = false;
 
   useEffect(() => {
     resetRealtimeAuthentication();
@@ -68,21 +66,8 @@ export function AuthProvider({
     return () => clearInterval(timer);
   }, [user.support]);
 
-  // Refresh session every 40 minutes (JWT default 1h, with margin).
-  useEffect(() => {
-    const interval = setInterval(
-      async () => {
-        setRefreshing(true);
-        try {
-          await supabaseRef.current.auth.refreshSession();
-        } finally {
-          setRefreshing(false);
-        }
-      },
-      40 * 60 * 1000,
-    );
-    return () => clearInterval(interval);
-  }, []);
+  // A renovação da sessão acontece SÓ no servidor (proxy). O cookie é httpOnly e
+  // um refresh no browser competiria pelo mesmo refresh token.
 
   const value = useMemo<AuthCtx>(
     () => ({

@@ -26,6 +26,7 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
+import { loadAuthUser } from "@/lib/auth/server";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -36,12 +37,10 @@ export async function GET(_req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const supabase = await createClient();
 
-  // getUser() valida o JWT no servidor — é ele que autoriza a resposta.
-  const {
-    data: { user },
-    error: authErr,
-  } = await supabase.auth.getUser();
-  if (authErr || !user) {
+  // `loadAuthUser` valida o JWT no servidor (caminho central, com cache) — é ele
+  // que autoriza a resposta.
+  const user = await loadAuthUser();
+  if (!user) {
     return fail("unauthenticated", "Auth required.", 401, { requestId, headers: NO_STORE });
   }
 
