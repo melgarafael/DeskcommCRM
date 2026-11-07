@@ -78,6 +78,10 @@ const FUNIL: PipelineRow = {
 
 /** Abre o editor do funil — é onde os campos moram. */
 function abrirEditor(): void {
+  // #4083: o card do funil nasce recolhido — abrir o card vem antes do editor.
+  for (const botao of screen.queryAllByTestId(/^funil-.*-botao$/)) {
+    if (botao.getAttribute("aria-expanded") === "false") fireEvent.click(botao);
+  }
   for (const botao of screen.queryAllByRole("button", {
     name: /Editar vocabulário e campos deste funil/i,
   })) {

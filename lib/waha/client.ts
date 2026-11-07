@@ -1126,12 +1126,15 @@ export class WahaClient {
    * junto em TODA chamada — é o que torna "página seguinte" uma pergunta com
    * resposta.
    *
-   * ─── O caso NOWEB sem store, que vem vazio e não é erro ────────────────────
+   * ─── O caso NOWEB sem store, que NÃO vem vazio ─────────────────────────────
    *
    * No NOWEB (o engine padrão do kit) este endpoint só enxerga o que o store
    * da sessão guardou (`noweb.store.enabled` — a opção "Guardar histórico" da
-   * conexão). Sem ele a resposta é `[]`: lista vazia é um desfecho legítimo e
-   * quem chama decide o que comunicar; HTTP errado continua sendo exceção.
+   * conexão). Este comentário supunha que, sem ele, a resposta seria `[]`.
+   * MEDIDO na #4102: o WAHA devolve **400**, que vira `waha_contacts_all_400`
+   * e sobe como exceção. Lista vazia continua sendo desfecho legítimo (agenda
+   * sem contato), mas NÃO é o que acontece quando o store está desligado — por
+   * isso quem chama precisa separar os dois (`lib/contacts/recusa-da-agenda.ts`).
    */
   async listarAgendaDoAparelho(
     session: string,

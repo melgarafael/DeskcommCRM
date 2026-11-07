@@ -62,15 +62,33 @@ import {
  * OS DOIS "ABRIR" DA TELA (issue #3176) — o editor do funil e a lista de um campo.
  *
  * O editor de um funil só MONTA quando ele é expandido, e as opções de um campo
- * de lista nascem RECOLHIDAS num resumo. Por isso todo caso que olha para
- * dentro do editor (ou para as opções) abre o que quer ver antes de medir — e é
- * só isso: o comportamento testado abaixo é o de sempre.
+ * de lista nascem RECOLHIDAS num resumo. Desde a #4083 o CARD do funil também
+ * nasce recolhido: abrir os cards vem primeiro, senão o botão do editor nem
+ * existe. Todo caso que olha para dentro do editor (ou para as opções) abre o
+ * que quer ver antes de medir — e é só isso: o comportamento testado abaixo é o
+ * de sempre.
+ */
+function abrirFunis(): void {
+  for (const botao of screen.queryAllByTestId(/^funil-.*-botao$/)) {
+    if (botao.getAttribute("aria-expanded") === "false") fireEvent.click(botao);
+  }
+}
+
+/**
+ * Abre o editor de CADA funil — um de cada vez, porque desde a #4083 o card é
+ * acordeão: o botão do editor só entra na árvore acessível com o card aberto.
+ * O editor já aberto CONTINUA MONTADO ao trocar de funil (é o `keepMounted`),
+ * então o que os casos medem abaixo (campos, opções) segue no DOM.
  */
 function abrirEditores(): void {
-  const botoes = screen.queryAllByRole("button", {
-    name: /Editar vocabulário e campos deste funil/i,
-  });
-  for (const botao of botoes) fireEvent.click(botao);
+  for (const botao of screen.queryAllByTestId(/^funil-.*-botao$/)) {
+    if (botao.getAttribute("aria-expanded") === "false") fireEvent.click(botao);
+    for (const editor of screen.queryAllByRole("button", {
+      name: /Editar vocabulário e campos deste funil/i,
+    })) {
+      fireEvent.click(editor);
+    }
+  }
 }
 
 /** Abre a lista de opções do campo `posicao` (1-based) do n-ésimo funil. */
@@ -837,7 +855,7 @@ describe("'Este campo pertence a' só no funil padrão (#2791)", () => {
   });
 
   it("com is_default no segundo, o seletor sai do primeiro e vai para ele", () => {
-    const { container } = render(
+    render(
       <PipelinesClient
         pipelines={[
           funil(A, "Vendas", { is_default: false }),
@@ -847,11 +865,12 @@ describe("'Este campo pertence a' só no funil padrão (#2791)", () => {
       />,
     );
     abrirEditores();
-    const cards = container.querySelectorAll("h2");
-    expect(cards[0]?.textContent).toBe("Vendas");
+    // #4083: os cards são acordeão, então o cabeçalho de cada um é consultado
+    // pelo próprio item — não há mais uma lista de `<h2>` solta na página.
+    expect(screen.getByTestId(`funil-${A}`).textContent).toContain("Vendas");
     expect(screen.getAllByLabelText(/Escopo do campo 1/i)).toHaveLength(1);
-    const cardDoPos = cards[1]?.closest("div.space-y-6");
-    expect(cardDoPos?.textContent).toContain("Este campo pertence a:");
+    expect(screen.getByTestId(`funil-${B}`).textContent).toContain("Este campo pertence a:");
+    expect(screen.getByTestId(`funil-${A}`).textContent).not.toContain("Este campo pertence a:");
   });
 
   it("num funil secundário, um campo JÁ marcado Contato mantém o seletor para desfazer", () => {
@@ -1240,7 +1259,12 @@ describe("etapa de entrada das conversas do Inbox na tela (#3011)", () => {
       />,
     );
     abrirEditores();
-    expect(screen.getAllByRole("button", { name: /Salvar vocabulário e campos/i })).toHaveLength(2);
+    // `hidden: true` porque o card não aberto continua MONTADO e escondido
+    // (#4083): os dois editores existem, um por funil — a régua aqui é a
+    // contagem de botões, não qual card está à vista.
+    expect(
+      screen.getAllByRole("button", { name: /Salvar vocabulário e campos/i, hidden: true }),
+    ).toHaveLength(2);
     expect(screen.queryAllByLabelText(rotulo)).toHaveLength(1);
     unmount();
 
@@ -1593,9 +1617,12 @@ describe("a janela do negócio perdido que volta (#4076)", () => {
 
     // `garantirLeadDaConversa` lê a opção do funil onde o card nasceria; num
     // secundário ela nunca seria consultada, e a tela mentiria.
+    // `hidden: true`: o card fechado continua montado (#4083), e a pergunta é
+    // quantos funis TÊM a opção, não qual está à vista.
     expect(
       screen.queryAllByRole("checkbox", {
         name: /Reabrir o negócio perdido quando o contato volta a escrever/i,
+        hidden: true,
       }),
     ).toHaveLength(1);
   });
