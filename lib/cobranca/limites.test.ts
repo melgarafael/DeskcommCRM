@@ -76,6 +76,14 @@ describe("lerLimiteDoPlano", () => {
     const rpc = vi.fn(async () => ({ data: null, error: { code: "42883", message: "function does not exist" } }));
     await expect(lerLimiteDoPlano({ rpc } as never, "org-1", "canais")).rejects.toThrow(/42883/);
   });
+
+  it("recurso fora do vocabulário é recusado ANTES do banco — não vira 22023 no log do Postgres", async () => {
+    const rpc = vi.fn(async () => ({ data: 3, error: null }));
+    await expect(
+      lerLimiteDoPlano({ rpc } as never, "org-1", "armazenamento" as never),
+    ).rejects.toThrow(/recurso_do_plano_invalido:armazenamento/);
+    expect(rpc).not.toHaveBeenCalled();
+  });
 });
 
 describe("o contrato com os gatilhos do banco", () => {
