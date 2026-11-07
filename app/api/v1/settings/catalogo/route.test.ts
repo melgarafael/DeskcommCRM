@@ -88,6 +88,14 @@ describe("PATCH /api/v1/settings/catalogo", () => {
     );
   });
 
+  it("desliga sem apagar o resto do bloco", async () => {
+    const settings = { catalogo: { outra: 1, apresentacao: true } };
+    vi.mocked(createAdminClient).mockReturnValue(banco({ settings }) as never);
+
+    expect((await patch({ apresentacao: false })).status).toBe(200);
+    expect(gravado).toEqual({ catalogo: { outra: 1, apresentacao: false } });
+  });
+
   it("escrita concorrente vira 409, sem auditar", async () => {
     vi.mocked(createAdminClient).mockReturnValue(banco({ settings: {}, outroGravou: true }) as never);
     expect((await patch({ apresentacao: true })).status).toBe(409);
