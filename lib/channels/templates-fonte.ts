@@ -47,6 +47,10 @@ const FONTE: Record<ProviderDeMensagem, FonteDeTemplates | null> = {
   // Parceiro Graph-compatível: os modelos são os da Cloud API, servidos por uma
   // rota própria (host/token do parceiro).
   datafy: "graph",
+  // Chat de anúncio não tem definição aprovada: a plataforma não hospeda modelo,
+  // não aprova e não bloqueia envio por janela. Oferecer seletor aqui seria
+  // oferecer solução para um problema que este canal não tem.
+  olx: null,
 };
 
 /** `null` quando este canal não trabalha com definições aprovadas. */

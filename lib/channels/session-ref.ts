@@ -15,7 +15,15 @@ export type ChannelSessionRef =
   | { provider: "waha"; waha_session_name: string }
   | { provider: "meta_cloud"; meta_phone_number_id: string }
   | { provider: "zernio" | "zernio_social"; zernio_account_id: string }
-  | { provider: "datafy"; datafy_phone_number_id: string };
+  | { provider: "datafy"; datafy_phone_number_id: string }
+  /**
+   * A conta de anunciante na OLX (#2927). NÃO é telefone nem WABA: é o
+   * identificador da conta cujo webhook de chat a instalação configurou
+   * (`POST /autoservice/v1/chat` com `{"webhook": "<url>"}`, autenticado pelo
+   * Bearer dessa conta). Coluna própria pelo mesmo motivo do Datafy: os dois
+   * podem conviver na instalação e falam com servidores diferentes.
+   */
+  | { provider: "olx"; olx_account_id: string };
 
 /**
  * Colunas que um `select` do PostgREST precisa trazer para `resolveSessionRef`
@@ -23,7 +31,7 @@ export type ChannelSessionRef =
  * nomeia coluna de provider, e ela some da feature junto com a decisão.
  */
 export const CHANNEL_SESSION_REF_COLUMNS =
-  "provider, waha_session_name, meta_phone_number_id, zernio_account_id, datafy_phone_number_id";
+  "provider, waha_session_name, meta_phone_number_id, zernio_account_id, datafy_phone_number_id, olx_account_id";
 
 export function resolveSessionRef(session: ChannelSessionRef): string {
   switch (session.provider) {
@@ -33,6 +41,11 @@ export function resolveSessionRef(session: ChannelSessionRef): string {
     // parceiro, porque os dois podem conviver e endereçam servidores diferentes.
     case "datafy":
       return session.datafy_phone_number_id;
+    // A conta de anunciante da OLX. O `chatId` de cada conversa NÃO é o
+    // sessionRef: ele é o endereço da THREAD (mora em
+    // `conversations.provider_conversation_id`), e uma conta tem muitas.
+    case "olx":
+      return session.olx_account_id;
     case "waha":
       return session.waha_session_name;
     // O `accountId` que o provider devolve ao conectar a WABA. NÃO é o
