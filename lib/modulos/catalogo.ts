@@ -35,6 +35,13 @@ export const CATALOGO_DE_MODULOS: readonly ModuloCatalogo[] = [
       "continua no sistema mesmo sem este módulo. Toda instalação anterior a esta versão " +
       "continua com Comandas ligada.",
   },
+  {
+    slug: "avaliacao",
+    nome: "Agenda de avaliação",
+    descricao:
+      "Agendamentos de avaliação veicular com unidades, consultores e status operacionais. " +
+      "Substitui a agenda de compromissos na rota /app/agenda quando instalado.",
+  },
 ];
 
 export function moduloDoCatalogo(slug: string): ModuloCatalogo | undefined {

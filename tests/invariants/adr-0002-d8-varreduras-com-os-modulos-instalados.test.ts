@@ -169,6 +169,18 @@ const PROVA_DE_MODULO: Record<string, { readonly arquivo: string; readonly razao
       "imutabilidade da parcela paga (status e financial_entry_id não mudam sem o caixa) e a " +
       "recusa de FK cross-org. A leitura cross-org por contagem é medida neste arquivo.",
   },
+  avaliacao_unidades: {
+    arquivo: "tests/invariants/avaliacao-rls-por-operacao.test.ts",
+    razao:
+      "JWT real com `writeCountAs`: unidade só é escrita por manager; viewer e agent da org leem " +
+      "e não apagam registro alheio; isolamento cross-tenant por contagem zero na org vizinha.",
+  },
+  avaliacao_agendamentos: {
+    arquivo: "tests/invariants/avaliacao-rls-por-operacao.test.ts",
+    razao:
+      "Mesmo arquivo: agent insere agendamento, viewer não; delete só manager; status não muda " +
+      "direto na sessão (trigger); `fn_avaliacao_transicao_status` recusa transição inválida com JWT.",
+  },
   // #1907 — as cinco tabelas da comanda, que nascem em `fn_financeiro_provisionar()`
   // (ADR-0002 D2/D3). A prova comportamental é a MESMA da lista de leitura
   // org-scoped de `rls-isolation.test.ts`: linha REAL semeada por organização e

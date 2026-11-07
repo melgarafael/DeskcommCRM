@@ -1302,12 +1302,17 @@ jobs:
       # em `cobranca-revendedor`, contra o dublê que assina os avisos de
       # verdade. Só esta prova que a Stripe real ainda responde o contrato da
       # versão fixada. Sem a chave, ela pula; o cabeçalho tem a receita.
+      #
+      # `agenda-avaliacao`: exige o módulo `avaliacao` instalado na instância E2E;
+      # o CI padrão não provisiona esse módulo de nicho. A rota `/app/agenda`
+      # com módulo desligado continua coberta por `agenda-tela-do-produto`.
       FORA_DO_CI: >-
         cadastro-sem-confirmacao-de-email.spec.ts
         aviso-de-caso-chega-no-whatsapp.spec.ts
         jev-chave-real.spec.ts
         modelos-do-parceiro-editar-apagar.spec.ts
         cobranca-stripe-teste.spec.ts
+        agenda-avaliacao.spec.ts
     steps:
       # ── O RELÓGIO DESTA PARTE: ONDE O TETO DE 30 MIN COMEÇA A CONTAR ──────
       #

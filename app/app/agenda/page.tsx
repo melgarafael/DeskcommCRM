@@ -11,6 +11,8 @@ import { donosDaAgenda } from "@/lib/agenda/donos-da-agenda";
 import { lerOcupacaoExterna } from "@/lib/agenda/ocupacao-externa";
 import { PROVEDOR_GOOGLE } from "@/lib/agenda/tipos";
 import { requireAuth, resolveActiveOrg } from "@/lib/auth/server";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { diaDeHojeNoFuso, semanaSemente } from "@/lib/agenda/semana-semente";
 import { fusoUtilizavel } from "@/lib/tempo/fusos";
 import { nomeDoContato, type ContatoNomeavel } from "@/lib/contacts/rotulo-do-contato";
@@ -21,6 +23,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Agendamento as AgendamentoDaTela } from "@/components/agenda/tipos";
 
 import { AgendaClient } from "./_client";
+import { AvaliacaoAgendaClient } from "./_client-avaliacao";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +59,15 @@ export default async function AgendaPage() {
   const user = await requireAuth();
   const activeOrg = await resolveActiveOrg(user);
   if (!activeOrg) redirect("/app");
+
+  if (await moduloLigado(createAdminClient(), "avaliacao")) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-4 p-4 md:p-6">
+        <AvaliacaoAgendaClient timezone={user.timezone ?? null} />
+      </div>
+    );
+  }
+
   const cabecalhos = await headers();
   const origemLocal = origemLocalDosCabecalhos(cabecalhos);
 

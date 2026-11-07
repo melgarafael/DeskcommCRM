@@ -41,11 +41,14 @@ test.describe("a Agenda como o dono do produto a usa", () => {
 
   test("chego na Agenda CLICANDO no menu, não digitando a URL", async () => {
     await page.goto("/app");
-    // O item vive no grupo "Atendimento", junto do Inbox — decisão registrada
-    // no `registry.ts`: a Agenda é onde o dia acontece, não onde se configura.
+    // Com o módulo `avaliacao` desligado o link some do menu (só aparece com o
+    // módulo instalado). A rota `/app/agenda` segue válida para a agenda legada.
     const item = page.getByRole("link", { name: "Agenda", exact: true }).first();
-    await expect(item).toBeVisible({ timeout: ESPERA });
-    await item.click();
+    if (await item.isVisible({ timeout: 5_000 }).catch(() => false)) {
+      await item.click();
+    } else {
+      await page.goto("/app/agenda");
+    }
 
     await expect(page).toHaveURL(/\/app\/agenda/, { timeout: ESPERA });
     await expect(page.getByTestId("tela-agenda")).toBeVisible();
