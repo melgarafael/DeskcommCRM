@@ -2,12 +2,13 @@
 
 import { useT } from "@/hooks/i18n/useT";
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useSyncExternalStore, useState, useTransition } from "react";
 import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Accordion, AccordionItem } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -64,6 +65,7 @@ import {
 import { irAoDesafioDeMfa } from "@/lib/auth/ir-ao-desafio-de-mfa";
 import { CaretDown, CaretUp, DragHandle, Plus, Trash } from "@/lib/ui/icons";
 import { entradaDoInboxDeclarada } from "@/lib/leads/entrada-do-inbox";
+import { funilDaAncora } from "@/lib/leads/ancora-do-funil";
 import { AgentMappingSection, ancoraDoMapeamento } from "./_mapping";
 import { StagesSection, ancoraDasEtapas } from "./_stages";
 
@@ -408,6 +410,41 @@ function readWonReasons(settings: Record<string, unknown> | null): string[] {
   const r = (settings as { won_reasons?: unknown } | null)?.won_reasons;
   return Array.isArray(r) ? r.filter((v): v is string => typeof v === "string") : [];
 }
+
+/**
+ * A ÂNCORA DA URL COMO EXTERNAL STORE (#4083) — ver o comentário de `abertoValido`
+ * em `PipelinesClient` para o porquê de não ser `useState`.
+ *
+ * `getServerSnapshot` devolve o hash vazio, que é o que o servidor renderiza
+ * (todos os funis recolhidos) e o que o cliente usa na PRIMEIRA renderização,
+ * antes de qualquer inscrição: a comparação da hidratação vê "" dos dois lados e
+ * o hash real só entra depois do commit. Guardar o hash real num inicializador
+ * de `useState` era justamente a divergência servidor × cliente que
+ * `tests/unit/hidratacao-useState-nao-le-o-navegador.test.ts` reprova.
+ */
+const ouvintesDoHash = new Set<() => void>();
+
+function avisarOsOuvintesDoHash(): void {
+  ouvintesDoHash.forEach((ouvinte) => ouvinte());
+}
+function lerHashDaUrl(): string {
+  return window.location.hash;
+}
+function hashDoServidor(): string {
+  return "";
+}
+function ouvirHash(ouvinte: () => void): () => void {
+  // UM listener nativo para N componentes inscritos: o fan-out é deste módulo.
+  if (ouvintesDoHash.size === 0 && typeof window !== "undefined") {
+    window.addEventListener("hashchange", avisarOsOuvintesDoHash);
+  }
+  ouvintesDoHash.add(ouvinte);
+  return () => {
+    ouvintesDoHash.delete(ouvinte);
+    if (ouvintesDoHash.size === 0) window.removeEventListener("hashchange", avisarOsOuvintesDoHash);
+  };
+}
+
 export function PipelinesClient({
   pipelines,
   etapas = {},
@@ -431,6 +468,35 @@ export function PipelinesClient({
   comandaDisponivel?: boolean;
 }) {
   const t = useT();
+  /**
+   * QUAL FUNIL ESTÁ ABERTO (#4083) — `null` é "todos recolhidos", que é como a
+   * tela abre.
+   *
+   * 🌐 A ÂNCORA VEM DE FORA, ENTÃO É UM EXTERNAL STORE. O funil aberto nasce da
+   * âncora (`#etapas-<id>` / `#mapeamento-<id>`, ver `funilDaAncora`): quem chega
+   * de um link direto — ou recarrega com o `#` na barra — cai no funil certo. Ler
+   * `window.location.hash` dentro de um inicializador de `useState` era o defeito
+   * medido pela guarda de hidratação: o inicializador roda OUTRA VEZ na
+   * hidratação, com `window` de verdade, e o cliente divergia do HTML que o
+   * servidor mandou (servidor: tudo recolhido; cliente: um card aberto). O padrão
+   * deste repositório para essa classe é `useSyncExternalStore` com
+   * `getServerSnapshot` determinístico — ver `lib/theme.tsx` e `ouvirHash` acima.
+   *
+   * 🖱️ O CLIQUE mora em `useState` (nasce `null`, sem ler navegador nada), e vale
+   * ENQUANTO o hash não mudar: hash novo manda a âncora, clique novo com o hash
+   * parado manda o clique. Sem isso, fechar um card que a âncora abriu seria
+   * impossível — o painel reabriria no render seguinte. É `null` e não `false`
+   * porque o estado é "o que a pessoa pediu", e a ausência de pedido é a âncora.
+   */
+  const idsDosFunis = pipelines.map((p) => p.id);
+  const hashDaUrl = useSyncExternalStore(ouvirHash, lerHashDaUrl, hashDoServidor);
+  const funilDaUrl = funilDaAncora(hashDaUrl, idsDosFunis);
+  const [escolha, setEscolha] = useState<{ hash: string; valor: string | null } | null>(null);
+  const pedido = escolha && escolha.hash === hashDaUrl ? escolha.valor : funilDaUrl;
+  // Um funil arquivado entre dois renders não pode deixar o acordeão preso num
+  // `value` que não existe: sem painel correspondente, tudo fecha.
+  const abertoValido = pedido && idsDosFunis.includes(pedido) ? pedido : null;
+
   if (pipelines.length === 0) {
     // ⚠️ NÃO PROMETA UM CAMINHO QUE NÃO EXISTE — nem NEGUE um que existe. Este
     // texto dizia que criar funil "é feito por quem instalou o sistema, direto
@@ -451,23 +517,44 @@ export function PipelinesClient({
     );
   }
   return (
-    <div className="flex flex-col gap-4">
+    <Accordion
+      value={abertoValido}
+      onValueChange={(valor) => setEscolha({ hash: hashDaUrl, valor })}
+      className="gap-4"
+    >
       {pipelines.map((p) => (
-        <CardDoFunil
+        <AccordionItem
           key={p.id}
-          pipeline={p}
-          etapas={etapas[p.id] ?? []}
-          podeEditarConfig={podeEditarConfig}
-          comandaDisponivel={comandaDisponivel}
-          ehFunilPadrao={p.id === (pipelines.find((x) => x.is_default) ?? pipelines[0])?.id}
-        />
+          value={p.id}
+          testId={`funil-${p.id}`}
+          // O CORPO FICA MONTADO: recolher esconde, não desmonta. Etapa editada
+          // e não salva sobrevive ao recolher (mesmo cuidado do editor, #3176).
+          keepMounted
+          className="bg-card"
+          contentClassName="gap-6 p-6"
+          summary={
+            <>
+              <span className="text-base font-semibold">{p.name}</span>
+              <span className="text-xs text-muted-foreground">/{p.slug}</span>
+            </>
+          }
+        >
+          <CardDoFunil
+            pipeline={p}
+            etapas={etapas[p.id] ?? []}
+            podeEditarConfig={podeEditarConfig}
+            comandaDisponivel={comandaDisponivel}
+            ehFunilPadrao={p.id === (pipelines.find((x) => x.is_default) ?? pipelines[0])?.id}
+          />
+        </AccordionItem>
       ))}
-    </div>
+    </Accordion>
   );
 }
 
 /**
- * O CARD DE UM FUNIL — e o editor dele SÓ MONTA QUANDO EXPANDIDO (issue #3176).
+ * O CORPO DE UM FUNIL — etapas, mapeamento e o editor, que só monta quando
+ * expandido (issue #3176).
  *
  * ─── O defeito, medido ────────────────────────────────────────────────────
  *
@@ -477,11 +564,10 @@ export function PipelinesClient({
  * autor da issue mediu o `Runtime.evaluate` da página passando de 45 s sem
  * resposta, logo depois de carregar.
  *
- * O que muda aqui: o corpo do card (etapas e mapeamento, que o gestor abre a
- * tela para ver) continua visível, e o EDITOR do funil — que é onde as listas
- * longas moram — passa a montar sob demanda, um funil por vez. A contagem de
- * nós do DOM da tela inteira, com o caso de controle da issue, está na
- * evidência do PR: recolhido × expandido.
+ * O que muda aqui: o editor do funil — que é onde as listas longas moram —
+ * continua montando sob demanda, um funil por vez. O corpo (etapas e
+ * mapeamento) agora é o painel do acordeão da tela (#4083): fica montado e
+ * escondido quando o funil está recolhido, para não perder edição não salva.
  */
 function CardDoFunil({
   pipeline,
@@ -502,11 +588,7 @@ function CardDoFunil({
   // apagaria em silêncio o que foi editado e ainda não salvo.
   const [editorMontado, setEditorMontado] = useState(false);
   return (
-    <Card className="space-y-6 p-6">
-      <header>
-        <h2 className="text-base font-semibold">{pipeline.name}</h2>
-        <p className="text-xs text-muted-foreground">/{pipeline.slug}</p>
-      </header>
+    <div className="space-y-6">
       {/* As ETAPAS vêm primeiro, e a ordem é a do raciocínio de quem
           configura: primeiro o quadro existe do jeito da sua operação,
           depois se decide o que o assistente faz com ele. Invertido, a
@@ -550,7 +632,7 @@ function CardDoFunil({
           )}
         </div>
       )}
-    </Card>
+    </div>
   );
 }
 

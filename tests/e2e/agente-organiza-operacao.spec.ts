@@ -170,6 +170,24 @@ async function drenar(): Promise<void> {
   }
 }
 
+/**
+ * ABRE O CARD DO FUNIL NA TELA DE ETAPAS (#4083) — a tela passou a nascer com
+ * cada funil RECOLHIDO (só nome e slug), e as etapas moram no painel: painel
+ * fechado é `hidden`, e invisível não é clicável nem "à vista". O clique no
+ * cabeçalho é o caminho de quem usa a tela — o que este caso mede (a etapa que o
+ * agente criou aparece marcada como dele) continua igual.
+ */
+async function abrirOCardDoFunil(page: Page, funilId: string): Promise<void> {
+  const cabecalho = page.getByTestId(`funil-${funilId}-botao`);
+  await expect(cabecalho, "o funil nasce recolhido (#4083)").toHaveAttribute(
+    "aria-expanded",
+    "false",
+    { timeout: 15_000 },
+  );
+  await cabecalho.click();
+  await expect(cabecalho).toHaveAttribute("aria-expanded", "true", { timeout: 15_000 });
+}
+
 test.describe("o agente organiza a operação e a tela conta quem foi", () => {
   test("cria etapa, liga automação, e o egress externo continua barrado", async ({ page }) => {
     // O default de 30s do config é para uma jornada de tela. Este teste espera o
@@ -220,6 +238,7 @@ test.describe("o agente organiza a operação e a tela conta quem foi", () => {
 
       // ---- a etapa aparece NA TELA, marcada como mudança do assistente ----
       await page.goto(`${APP_URL}/app/settings/tenant/pipelines`);
+      await abrirOCardDoFunil(page, funil.id);
       const linhaDaEtapa = page.getByTestId(`etapa-${stageId}`);
       await expect(linhaDaEtapa).toBeVisible({ timeout: 15_000 });
       // O nome mora num campo editável (clique para renomear), então `toContainText`

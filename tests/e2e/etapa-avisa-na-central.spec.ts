@@ -43,6 +43,29 @@ const SENHA = `Local-${randomUUID()}!`;
 const SUFIXO = randomUUID().slice(0, 8);
 const CLIENTE = `Maria Souza ${SUFIXO}`;
 
+/**
+ * ABRE O CARD DO FUNIL (#4083) — a tela de Etapas do funil passou a nascer com
+ * cada funil RECOLHIDO, mostrando só nome e slug; quem quer ajustar clica no
+ * funil. As etapas e a chave « Avisar a equipe na Central » moram no painel, e o
+ * painel fechado é `hidden` — invisível não é clicável. Abrir o card é o passo
+ * que a pessoa dá, não um contorno do teste: o que a spec mede (a chave liga e o
+ * aviso chega à Central) continua idêntico.
+ *
+ * A asserção de `aria-expanded=false` ANTES do clique é de propósito: ela tranca
+ * o desenho da #4083 do lado de fora, então uma tela que voltasse a abrir todos
+ * os funis reprova aqui, e não só no unitário.
+ */
+async function abrirOCardDoFunil(page: Page): Promise<void> {
+  const cabecalho = page.getByTestId(`funil-${funilId}-botao`);
+  await expect(cabecalho, "o funil nasce recolhido (#4083)").toHaveAttribute(
+    "aria-expanded",
+    "false",
+    { timeout: ESPERA },
+  );
+  await cabecalho.click();
+  await expect(cabecalho).toHaveAttribute("aria-expanded", "true", { timeout: ESPERA });
+}
+
 let userId = "";
 let email = "";
 let orgId = "";
@@ -131,6 +154,7 @@ test("a etapa marcada avisa a equipe na Central; a vizinha, sem a marca, não", 
 
   // ---- 1. a chave, pela tela ----
   await page.goto("/app/settings/tenant/pipelines");
+  await abrirOCardDoFunil(page);
   const chave = page.getByTestId(`avisar-${etapaConfirmado}`);
   await expect(chave).toBeVisible({ timeout: ESPERA });
   await expect(chave, "vem desligada").toHaveAttribute("aria-checked", "false");
@@ -144,6 +168,9 @@ test("a etapa marcada avisa a equipe na Central; a vizinha, sem a marca, não", 
 
   // A chave ficou gravada: recarregar a tela mostra a mesma coisa.
   await page.reload();
+  // O F5 zera o estado do acordeão (o card volta recolhido): abre de novo, como
+  // quem recarrega para conferir.
+  await abrirOCardDoFunil(page);
   await expect(page.getByTestId(`avisar-${etapaConfirmado}`)).toHaveAttribute("aria-checked", "true", { timeout: ESPERA });
   await expect(page.getByTestId(`avisar-${etapaEnviado}`)).toHaveAttribute("aria-checked", "false");
 
