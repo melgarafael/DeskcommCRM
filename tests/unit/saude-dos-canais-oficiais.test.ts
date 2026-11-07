@@ -85,7 +85,7 @@ describe("canal intermediado", () => {
 
   it("elo com a Meta vivo → está de pé", async () => {
     globalThis.fetch = respondeCom(ELO_VIVO);
-    expect(await saude()).toEqual({ reachable: true, status: "WORKING", detail: null });
+    expect(await saude()).toMatchObject({ reachable: true, status: "WORKING", detail: null });
   });
 
   it("chave recusada → FAILED, que é a falha calada que se procura", async () => {

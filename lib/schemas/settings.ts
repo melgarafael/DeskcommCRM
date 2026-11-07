@@ -16,6 +16,7 @@ import { DIAS_MAXIMO_PARA_REABRIR } from "@/lib/leads/janela-do-perdido";
 import {
   ICONES_DE_ATALHO,
   MAX_ATALHOS,
+  MODOS_DE_DISCAGEM,
   modeloAceito,
   TAMANHO_MAXIMO_DO_MODELO,
   TAMANHO_MAXIMO_DO_ROTULO,
@@ -533,6 +534,14 @@ export const pipelineConfigPatchSchema = z.object({
           .min(1)
           .max(TAMANHO_MAXIMO_DO_MODELO)
           .refine(modeloAceito, { message: "esquema_nao_permitido" }),
+        /**
+         * A forma do telefone no `tel:` (2ª fatia da #3487). Opcional: ausente é
+         * `completo`, o E.164 de sempre — todo atalho gravado antes desta opção
+         * continua idêntico, e o patch antigo (sem a chave) continua válido.
+         * `z.enum` aqui e não `refine`: é vocabulário fechado de duas palavras,
+         * e a mensagem de erro não precisa ensinar nada além da lista.
+         */
+        discagem: z.enum(MODOS_DE_DISCAGEM).optional(),
       }),
     )
     .max(MAX_ATALHOS)

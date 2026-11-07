@@ -52,7 +52,12 @@ import {
   type ChannelProvider,
   type ChannelSessionRef,
 } from "@/lib/channels";
-import { sincronizarSaudeDaConexao } from "@/lib/channels/health";
+import {
+  defeitoDoNumero,
+  motivoParaGravar,
+  sincronizarSaudeDaConexao,
+} from "@/lib/channels/health";
+import { normalizarIdioma, type Idioma } from "@/lib/i18n/idiomas";
 import { ehNomeDeSessaoE2E } from "@/lib/channels/sessoes-e2e";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -68,10 +73,21 @@ type LinhaDeSessao = ChannelSessionRef & {
   id: string;
   organization_id: string;
   status: string | null;
+  /** O porquê de um número de pé com defeito (`motivoParaGravar`); a tela de Conexões o mostra. */
+  status_reason: string | null;
   display_name: string | null;
   phone_number: string | null;
   archived_at: string | null;
 };
+
+/** Falhou a leitura, o aviso sai em português — nunca deixa de sair. */
+async function idiomaDaOrganizacao(
+  admin: ReturnType<typeof createAdminClient>,
+  organizationId: string,
+): Promise<Idioma> {
+  const { data } = await admin.from("organizations").select("locale").eq("id", organizationId).maybeSingle();
+  return normalizarIdioma((data as { locale?: string | null } | null)?.locale);
+}
 
 /**
  * O QUE RODA DEPOIS DO PORTÃO DO PISO OCIOSO (#3773), na ordem do arquivo.
@@ -116,7 +132,7 @@ async function handle(req: NextRequest): Promise<Response> {
   const { data, error } = await admin
     .from("channel_sessions")
     .select(
-      `id, organization_id, status, display_name, phone_number, archived_at, ${CHANNEL_SESSION_REF_COLUMNS}`,
+      `id, organization_id, status, status_reason, display_name, phone_number, archived_at, ${CHANNEL_SESSION_REF_COLUMNS}`,
     )
     .is("archived_at", null)
     .limit(LIMITE);
@@ -198,12 +214,30 @@ async function handle(req: NextRequest): Promise<Response> {
           .eq("organization_id", s.organization_id);
       }
 
+      // O número de pé com defeito (não recebe, envio restrito) não muda de
+      // status — barrar o envio seria pior —, então o defeito vai para o
+      // motivo, que a tela de Conexões mostra. Só o motivo que esta regra
+      // escreve é tocado (`motivoParaGravar`).
+      const motivo = motivoParaGravar(saude, s.status_reason);
+      if (motivo !== undefined) {
+        await admin
+          .from("channel_sessions")
+          .update({ status_reason: motivo })
+          .eq("id", s.id)
+          .eq("organization_id", s.organization_id);
+      }
+
       const apelido = s.display_name ?? s.phone_number ?? "sem nome";
       const desfecho = await sincronizarSaudeDaConexao(
         admin,
-        { id: s.id, organization_id: s.organization_id, status: statusFinal },
+        { id: s.id, organization_id: s.organization_id, status: statusFinal, status_reason: s.status_reason },
         saude,
         apelido,
+        "varredura",
+        // O aviso do número de pé com defeito sai no idioma da organização. A
+        // leitura só acontece nesse caso, que é raro — a rodada comum não paga
+        // uma consulta a mais por sessão.
+        defeitoDoNumero(saude.detail) ? await idiomaDaOrganizacao(admin, s.organization_id) : "pt-BR",
       );
       desfechos[desfecho] = (desfechos[desfecho] ?? 0) + 1;
     } catch (err) {

@@ -378,12 +378,24 @@ export const ApiErrorCodes = {
   campanha_modelo_nao_aprovado: "campanha_modelo_nao_aprovado", // 422: modelo pausado, recusado ou em análise
   campanha_modelo_variaveis: "campanha_modelo_variaveis", // 422: variável sem origem, ou origem que não serve
   // Migration 0711: envio rápido (rajada) só pelo número oficial, com modelo aprovado.
-  campanha_velocidade_do_canal: "campanha_velocidade_do_canal", // 422: envio rápido pedido num número por QR
+  campanha_velocidade_do_canal: "campanha_velocidade_do_canal", // 422: envio rápido ou broadcast pedido num número que não o faz
+  campanha_transmissao_variavel: "campanha_transmissao_variavel", // 422: broadcast com variável que muda por pessoa (migration 0712)
+  campanha_transmissao_entregue: "campanha_transmissao_entregue", // 409: a velocidade não muda depois que a lista foi entregue ao provedor
 
   // 500 / upstream
   internal_error: "internal_error",
   upstream_unavailable: "upstream_unavailable",
   unavailable: "unavailable", // 503: dependência de config ausente (ex.: pool do engine sem SUPABASE_DB_URL)
+
+  // ─── CEP DO CONTATO (issue #3494, fatia 2) ───
+  //
+  // 404 próprio, e não `not_found` genérico: a tela do cadastro precisa dizer
+  // "este CEP não existe" ao lado do campo, sem confundir com "contato não
+  // encontrado" — mesmo motivo de `campanha_nao_encontrada`. A falha do serviço
+  // de terceiro continua `upstream_unavailable` (502), que é o código que o
+  // cliente já trata como "tente de novo".
+  cep_nao_encontrado: "cep_nao_encontrado",
+
   base_publica_nao_configurada: "base_publica_nao_configurada", // 503: NEXT_PUBLIC_APP_URL ausente, placeholder ou da própria máquina — o webhook único da instalação não é registrado
   waha_error: "waha_error",
   channel_unavailable: "channel_unavailable", // 502: o transporte do canal não respondeu (ex.: listar grupos com a sessão fora de WORKING)
