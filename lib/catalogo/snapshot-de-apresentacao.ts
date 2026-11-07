@@ -24,7 +24,7 @@ const messageBaseSchema = z.object({
 const presentationMessageSchema = z.discriminatedUnion("kind", [
   messageBaseSchema.extend({
     kind: z.literal("text"),
-    purpose: z.enum(["presentation", "title"]),
+    text_role: z.enum(["presentation", "title"]),
     text: z.string(),
   }),
   messageBaseSchema.extend({

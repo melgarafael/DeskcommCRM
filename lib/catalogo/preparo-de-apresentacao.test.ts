@@ -101,7 +101,7 @@ describe("preparo dos payloads da apresentação do catálogo", () => {
     expect(prepared.payloads).toEqual([
       {
         kind: "text",
-        purpose: "presentation",
+        text_role: "presentation",
         text: "Apartamento no Centro\n\nDuas suítes e varanda.",
         product_id: "id-APTO-CENTRO",
         product_code: "APTO-CENTRO",

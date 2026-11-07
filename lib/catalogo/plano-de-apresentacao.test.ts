@@ -127,7 +127,7 @@ describe("plano de apresentação do catálogo", () => {
         product_id: "id-APTO-CENTRO",
         product_code: "APTO-CENTRO",
         kind: "text",
-        purpose: "presentation",
+        text_role: "presentation",
         text: "Apartamento no Centro\n\nDuas suítes e varanda.",
       },
     ]);
@@ -152,7 +152,7 @@ describe("plano de apresentação do catálogo", () => {
         product_id: "id-APTO-JARDINS",
         product_code: "APTO-JARDINS",
         kind: "text",
-        purpose: "title",
+        text_role: "title",
         text: "Apartamento APTO-JARDINS",
       },
       {

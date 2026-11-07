@@ -55,7 +55,7 @@ interface CatalogPresentationMessageBase {
 export type CatalogPresentationMessage =
   | (CatalogPresentationMessageBase & {
       kind: "text";
-      purpose: "presentation" | "title";
+      text_role: "presentation" | "title";
       text: string;
     })
   | (CatalogPresentationMessageBase & {
@@ -201,14 +201,14 @@ export function planCatalogPresentation(input: {
       messages.push({
         ...association,
         kind: "text",
-        purpose: "presentation",
+        text_role: "presentation",
         text: `${preview.effective_title}\n\n${presentation.text_content?.trim() ?? ""}`,
       });
     } else {
       messages.push({
         ...association,
         kind: "text",
-        purpose: "title",
+        text_role: "title",
         text: preview.effective_title,
       });
       messages.push({

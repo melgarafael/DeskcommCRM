@@ -20,7 +20,7 @@ export interface PreparedCatalogPresentationMedia {
 export type PreparedCatalogPresentationPayload =
   | (PreparedCatalogPresentationPayloadBase & {
       kind: "text";
-      purpose: "presentation" | "title";
+      text_role: "presentation" | "title";
       text: string;
     })
   | (PreparedCatalogPresentationPayloadBase & {
@@ -127,7 +127,7 @@ export function prepareCatalogPresentationPayloads(
       if (message.kind === "text") {
         payloads.push({
           kind: "text",
-          purpose: message.purpose,
+          text_role: message.text_role,
           text: message.text,
           ...location,
         });
