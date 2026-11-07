@@ -240,6 +240,44 @@ export async function encontrarContatoPorTelefoneComBloqueio(
   );
 }
 
+/**
+ * Como `encontrarContatoPorTelefone`, mas dizendo se a ficha achada está
+ * ANONIMIZADA.
+ *
+ * A sincronização de contatos da coexistência precisa disso porque a marca da
+ * 0750 (`fn_titular_apagado_a_pedido`) não existe para quem foi anonimizado
+ * ANTES dela — o telefone já tinha sido zerado e não há de onde tirar a marca.
+ * Essa ficha antiga continua sendo gente que pediu para ser apagada: se o
+ * número dela ainda é encontrado por variante ou por extra, o nome e o telefone
+ * da agenda NÃO voltam para ela. Uma coluna a mais no mesmo select, sem consulta
+ * nova.
+ */
+export async function encontrarContatoPorTelefoneComAnonimizacao(
+  admin: SupabaseClient,
+  orgId: string,
+  rawPhone: string,
+): Promise<{
+  id: string;
+  phone_number: string | null;
+  is_anonymized: boolean | null;
+  achado_pelo_extra?: boolean;
+} | null> {
+  const linha = await buscarPorVariantes(
+    admin,
+    orgId,
+    rawPhone,
+    "id, phone_number, is_anonymized",
+  );
+  return (
+    (linha as {
+      id: string;
+      phone_number: string | null;
+      is_anonymized: boolean | null;
+      achado_pelo_extra?: boolean;
+    } | null) ?? null
+  );
+}
+
 /** Como `encontrarContatoPorTelefone`, mas trazendo o nome de quem já existia. */
 export async function encontrarContatoPorTelefoneComNome(
   admin: SupabaseClient,
