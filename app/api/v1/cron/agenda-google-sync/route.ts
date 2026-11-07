@@ -173,6 +173,7 @@ async function executar(req: NextRequest) {
         const result = await syncCalendar(db, org, calendar.id);
         if (result !== "complete") complete = false;
         else completedCalendars += 1;
+        // A página adiada por vínculo ocupado também consumiu uma leitura do Google.
         if (result !== "busy") effects.set(org, (effects.get(org) ?? 0) + 1);
         // O marco da PRÓPRIA leitura desta agenda. `last_sync_at` é por agenda,
         // não por conta: quem só bloqueia horário foi lida na mesma rodada que a
@@ -180,8 +181,8 @@ async function executar(req: NextRequest) {
         // contrário. Só quem leu de verdade carimba: `busy` não leu nada (outra
         // rodada segura a aquisição ou a agenda está indisponível) e `failed`
         // não terminou — nesse caso é a `sync_error` da própria linha que conta
-        // o que houve, e um carimbo aqui mentiria. `partial` avançou um
-        // checkpoint do ciclo (página gravada no cursor), então é leitura real.
+        // o que houve. `deferred` leu a página e deixou o cursor parado para
+        // tentar de novo. `partial` gravou a página e avançou o checkpoint.
         if (result === "complete" || result === "partial") {
           const { error: stampError } = await db
             .from("calendar_connection_calendars")

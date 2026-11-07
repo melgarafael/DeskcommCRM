@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { GET } from "@/app/api/v1/cron/agenda-google-sync/route";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { refreshCatalog, syncCalendar } from "@/lib/agenda/google/calendar-executor";
+import { reconcileAppointment, tokenForConnection } from "@/lib/agenda/google/sync-executor";
 import { audit } from "@/lib/audit";
 
 vi.mock("@/lib/env", () => ({ env: { INTERNAL_CRON_SECRET: "cron" } }));
@@ -10,6 +11,10 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/agenda/google/calendar-executor", () => ({
   refreshCatalog: vi.fn(),
   syncCalendar: vi.fn(),
+}));
+vi.mock("@/lib/agenda/google/sync-executor", () => ({
+  reconcileAppointment: vi.fn(),
+  tokenForConnection: vi.fn(),
 }));
 vi.mock("@/lib/agenda/google/membros", () => ({
   apenasDeMembrosAtivos: vi.fn(async (_db, rows) => rows),
@@ -33,8 +38,8 @@ type Linha = {
 };
 
 const connection = {
-  id: "conn",
-  organization_id: "org",
+  id: "10000000-0000-4000-8000-000000000001",
+  organization_id: "10000000-0000-4000-8000-000000000002",
   user_id: "owner",
   calendar_selection_revision: "1",
 };
@@ -165,4 +170,66 @@ it("partial carimba: a leitura avançou um checkpoint do ciclo", async () => {
   vi.mocked(syncCalendar).mockResolvedValue("partial");
   expect((await rodar()).status).toBe(200);
   expect(linhas.filter((l) => l.last_sync_at === null).map((l) => l.id)).toEqual([]);
+});
+
+it("só atualiza a última sincronização depois de gravar a página do compromisso vinculado", async () => {
+  const { syncCalendar: executarSincronizacao } =
+    await vi.importActual<{ syncCalendar: typeof syncCalendar }>(
+      "@/lib/agenda/google/calendar-executor",
+    );
+  const anterior = "2026-09-01T00:00:00Z";
+  const calendario = {
+    id: "10000000-0000-4000-8000-000000000003",
+    organization_id: connection.organization_id,
+    connection_id: connection.id,
+    external_calendar_id: "agenda-google",
+    time_zone: "America/Sao_Paulo",
+    claim: { token: "10000000-0000-4000-8000-000000000004", epoch: "1", lease_until: anterior },
+    sync_cursor: {
+      generation: "10000000-0000-4000-8000-000000000005",
+      mode: "full",
+      base_sync_token: null,
+      page_token: null,
+      window_start: anterior,
+      window_end: "2026-12-01T00:00:00Z",
+    },
+  };
+  linhas = [agenda(calendario.id, {
+    external_calendar_id: calendario.external_calendar_id,
+    last_sync_at: anterior,
+  })];
+  const vinculados = {
+    select: () => vinculados,
+    eq: () => vinculados,
+    in: async () => ({ data: [{ id: "compromisso", google_event_id: "evento" }], error: null }),
+  };
+  const bancoDaPagina = {
+    from: () => vinculados,
+    rpc: vi.fn(async (nome: string, args: Record<string, unknown>) => {
+      if (nome === "fn_google_calendar_page_batch")
+        return { data: { ...calendario, sync_cursor: null }, error: null };
+      return { data: args.p_action === "claim" ? calendario : true, error: null };
+    }),
+  };
+  const transporte = vi.fn(async () => Response.json({
+    items: [{ id: "evento" }],
+    nextSyncToken: "proxima-leitura",
+  }));
+  vi.mocked(tokenForConnection).mockResolvedValue("token-sintetico");
+  vi.mocked(reconcileAppointment).mockResolvedValueOnce("busy").mockResolvedValueOnce("processed");
+  vi.mocked(syncCalendar).mockImplementation((_db, org, id) =>
+    executarSincronizacao(bancoDaPagina as never, org, id, transporte),
+  );
+
+  expect((await rodar()).status).toBe(200);
+  expect(reconcileAppointment).toHaveBeenCalledTimes(1);
+  expect(bancoDaPagina.rpc.mock.calls.map(([nome, args]) => args.p_action ?? nome))
+    .toEqual(["claim", "renew", "release"]);
+  expect(audit).toHaveBeenCalledWith(expect.objectContaining({ metadata: { direcao: "volta", calendarios: 1 } }));
+  expect(linhas[0]!.last_sync_at).toBe(anterior);
+
+  expect((await rodar()).status).toBe(200);
+  expect(reconcileAppointment).toHaveBeenCalledTimes(2);
+  expect(bancoDaPagina.rpc).toHaveBeenCalledWith("fn_google_calendar_page_batch", expect.anything());
+  expect(Date.parse(linhas[0]!.last_sync_at!)).toBeGreaterThan(Date.parse(anterior));
 });
