@@ -109,6 +109,12 @@ export async function knobsDoCanal(
     prospeccaoDias: parseDiasDaProspeccao(linha.prospeccao_dias) ?? PACING_DEFAULTS.prospeccaoDias,
     timezone: fusoDaJanela(linha.timezone, fusoDaOrg),
     warmupDailyCaps: caps ?? PACING_DEFAULTS.warmupDailyCaps,
+    // A opção "teto só na abordagem" (#3851) fica DESLIGADA nesta régua de
+    // propósito: a automação/aviso interno não classifica abordagem x follow-up
+    // (não lê o `send_ledger` por contato), e todo envio dela declararia
+    // `abordagem` omitido — que o motor já trata como "conta no teto". Ler o
+    // knob aqui daria a impressão de que ele vale neste caminho sem valer.
+    tetoSoAbordagem: PACING_DEFAULTS.tetoSoAbordagem,
   };
 }
 
