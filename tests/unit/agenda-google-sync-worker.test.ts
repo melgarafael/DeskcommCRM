@@ -210,7 +210,8 @@ describe("leitura paginada sob claim original", () => {
   it("compromisso ocupado por outro claim impede checkpoint de página", async () => {
     linked = { id: "appointment", google_event_id: event.id };
     vi.mocked(reconcileAppointment).mockResolvedValue("busy");
-    expect(await syncCalendar(db(), org, id, transport)).toBe("partial");
+    expect(await syncCalendar(db(), org, id, transport)).toBe("deferred");
+    expect(batches).toHaveLength(0);
     expect(actions.map((a) => a.action)).toEqual(["claim", "renew", "release"]);
   });
   it("todos os writes carregam claim recebido, sem recuperação de token novo", async () => {
