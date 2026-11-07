@@ -22,11 +22,12 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { conferirPosse, respostaDaPosse } from "@/lib/carteira/posse";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import { createFollowupEnrollmentSchema } from "@/lib/followup/api-schemas";
 import { ENROLLMENT_LIST_COLUMNS, enrollFollowupFlow } from "@/lib/followup/enroll";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -46,10 +47,18 @@ const ENROLLMENT_STATUSES = [
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("viewer", { requestId, resource: "followup_enrollments" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "followup_enrollments",
+    role: "viewer",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "followup_enrollments", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId } = authz;
 
   const status = req.nextUrl.searchParams.get("status");
   if (status !== null && !ENROLLMENT_STATUSES.includes(status)) {
@@ -63,11 +72,11 @@ export async function GET(req: NextRequest): Promise<Response> {
     return fail("invalid_request", t("contact_id inválido."), 400, { requestId });
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   let query = supabase
     .from("followup_enrollments")
     .select(ENROLLMENT_LIST_COLUMNS)
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .order("updated_at", { ascending: false });
   if (status !== null) query = query.eq("status", status);
   if (contactId !== null) query = query.eq("contact_id", contactId);
@@ -79,24 +88,29 @@ export async function GET(req: NextRequest): Promise<Response> {
   // POST. Só é calculada quando a tela pediu um contato: a fila de follow-ups
   // (org inteira) não pergunta "posso inscrever este aqui?".
   let meta: { pode_inscrever: boolean } | undefined;
-  if (contactId) {
-    try {
-      meta = {
-        pode_inscrever: (
-          await conferirPosse({
-            acao: "follow_up",
-            db: createAdminClient(),
-            organizationId: activeOrg.orgId,
-            atorId: authz.user.id,
-            papel: activeOrg.role,
-            contactId,
-          })
-        ).pode,
-      };
-    } catch {
-      // Sem a leitura da régua a tela esconde o botão; o POST continua sendo a
-      // guarda de verdade. Lista sem o `meta` é melhor que lista nenhuma.
-      meta = undefined;
+  // `meta` é dica de tela (o botão do painel): só a sessão tem pessoa e papel para
+  // a régua de posse. O token não pergunta "posso inscrever este aqui?".
+  if (contactId && authz.via === "session") {
+    const sessao = await requireRole("viewer", { requestId, resource: "followup_enrollments" });
+    if (sessao.ok) {
+      try {
+        meta = {
+          pode_inscrever: (
+            await conferirPosse({
+              acao: "follow_up",
+              db: createAdminClient(),
+              organizationId,
+              atorId: sessao.user.id,
+              papel: sessao.org.role,
+              contactId,
+            })
+          ).pode,
+        };
+      } catch {
+        // Sem a leitura da régua a tela esconde o botão; o POST continua sendo a
+        // guarda de verdade. Lista sem o `meta` é melhor que lista nenhuma.
+        meta = undefined;
+      }
     }
   }
 

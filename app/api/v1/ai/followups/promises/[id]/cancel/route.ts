@@ -1,4 +1,3 @@
-import { requireSupportWrite } from "@/lib/impersonate/support";
 /**
  * POST /api/v1/ai/followups/promises/:id/cancel (manager+) — a pessoa desmarca
  * um RETORNO agendado (a promessa avulsa, `cron_jobs`), não um enrollment do
@@ -19,9 +18,12 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import type { Actor } from "@/lib/api/handlers/types";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
+import { requireSupportWrite } from "@/lib/impersonate/support";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { cancelaRetornoNoCrm } from "@/lib/followup/retorno-crm";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -32,7 +34,7 @@ const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
-export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
@@ -42,19 +44,32 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
     return fail("invalid_request", "id inválido.", 400, { requestId });
   }
 
-  const authz = await requireRole("manager", { requestId, resource: "followup_promises" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "followup_promises",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user, org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "followup_promises", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId } = authz;
+  const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
 
   // Admin client porque a operação compartilhada escreve atividade e lê o
-  // negócio dono do contato; a organização vem do JWT (requireRole), nunca do
+  // negócio dono do contato; a organização vem do token/sessão, nunca do
   // caminho nem do body, e toda query da operação filtra por ela.
+  const actor: Actor =
+    authz.actor.type === "user"
+      ? { type: "user", id: authz.actor.id }
+      : { type: "api_token", id: authz.apiTokenId ?? "desconhecido" };
   const resultado = await cancelaRetornoNoCrm(
     {
       admin: createAdminClient(),
-      orgId: org.orgId,
-      actor: { type: "user", id: user.id },
+      orgId: organizationId,
+      actor,
       requestId,
     },
     id,
@@ -74,13 +89,14 @@ export async function POST(_req: NextRequest, ctx: RouteCtx): Promise<Response> 
 
   void audit({
     action: "followup.cancelled",
-    actorUserId: user.id,
-    organizationId: org.orgId,
+    actorUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId,
     resourceType: "cron_job",
     resourceId: id,
     requestId,
     metadata: {
-      actor_type: "user",
+      actor_type: actorUserId ? "user" : "api_token",
       via: "fila",
       contact_id: resultado.retorno.contactId,
       lead_id: resultado.alvo?.leadId ?? null,

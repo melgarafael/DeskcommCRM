@@ -95,6 +95,10 @@ function blindar<T extends object>(alvo: T, onde: string): T {
 
 function igual(a: unknown, b: unknown): boolean {
   if (a === null || a === undefined || b === null || b === undefined) return false;
+  // Coluna jsonb contra o texto JSON do filtro (`.eq("midias", JSON.stringify(x))`,
+  // a precondição de escrita das mídias de resposta rápida): o PostgREST compara
+  // o valor jsonb, não a string "[object Object]".
+  if (typeof a === "object" && typeof b === "string") return JSON.stringify(a) === b;
   return String(a) === String(b);
 }
 
@@ -148,7 +152,8 @@ class Cadeia {
   upsert(payload: unknown, _opcoes?: unknown): this {
     return this.definir("upsert", payload);
   }
-  update(payload: unknown, _opcoes?: unknown): this {
+  update(payload: unknown, opcoes?: { count?: string }): this {
+    if (opcoes?.count) this.contagem = { head: false };
     return this.definir("update", payload);
   }
   delete(_opcoes?: unknown): this {
@@ -471,6 +476,20 @@ export function criarClienteAdminFalso(opts: OpcoesDoFalso): {
     "cliente",
   );
   return { cliente, cadeias: ctx.cadeias, rpcs: ctx.rpcs, uploads: ctx.uploads, linhas };
+}
+
+/**
+ * Linhas vivas de uma tabela do cliente falso. Tabela sem entrada LANÇA (com o
+ * nome dela) em vez de virar lista vazia: um teste que lê uma tabela que não
+ * existe no cenário continua vermelho, como antes.
+ */
+export function linhasDaTabela(
+  falso: { linhas: Record<string, Record<string, unknown>[]> },
+  tabela: string,
+): Record<string, unknown>[] {
+  const lista = falso.linhas[tabela];
+  if (lista === undefined) throw new Error(`tabela ${tabela} sem linhas no cliente falso`);
+  return lista;
 }
 
 /**

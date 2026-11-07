@@ -138,7 +138,7 @@ describe("GET /api/v1/metrics/channels", () => {
 
   it("janela acima do teto de 90 dias é recusada COM o motivo (critério 9)", async () => {
     permitido();
-    const { client } = fakeSupabase({ data: { channels: [] }, error: null });
+    const { client, chamadas } = fakeSupabase({ data: { channels: [] }, error: null });
     vi.mocked(createClient).mockResolvedValue(client as never);
 
     const res = await chamar(
@@ -147,19 +147,21 @@ describe("GET /api/v1/metrics/channels", () => {
     expect(res.status).toBe(422);
     const corpo = (await res.json()) as { error: { message: string } };
     expect(corpo.error.message).toContain("no máximo 90 dias");
-    // Recusou, não cortou: a RPC nem foi chamada.
-    expect(createClient).not.toHaveBeenCalled();
+    // Recusou, não cortou: a RPC nem foi chamada (o portão abre o cliente antes
+    // de validar a janela, por isso a prova é a RPC, não o createClient).
+    expect(chamadas).toHaveLength(0);
   });
 
   it("`from` depois de `to` é 422, e a leitura não acontece", async () => {
     permitido();
-    vi.mocked(createClient).mockResolvedValue({ rpc: vi.fn() } as never);
+    const rpc = vi.fn();
+    vi.mocked(createClient).mockResolvedValue({ rpc } as never);
 
     const res = await chamar(
       "http://localhost/api/v1/metrics/channels?from=2026-10-01T00:00:00.000Z&to=2026-09-01T00:00:00.000Z",
     );
     expect(res.status).toBe(422);
-    expect(createClient).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("média não medida chega como null — null ≠ 0 (critério 5)", async () => {

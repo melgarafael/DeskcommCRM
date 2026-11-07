@@ -41,12 +41,17 @@ const FUNIL_DA_ORIGEM = "44444444-4444-4444-8444-444444444444";
 const OUTRO_FUNIL = "55555555-5555-4555-8555-555555555555";
 const ETAPA_DO_OUTRO_FUNIL = "66666666-6666-4666-8666-666666666666";
 
-/** O mínimo que o handler lê antes de recusar: o negócio e a etapa de destino. */
+/**
+ * O mínimo que o handler lê antes de recusar: o negócio e a etapa de destino.
+ * A leitura do negócio filtra `.eq("id").eq("organization_id")`: a corrente
+ * aceita quantos `.eq()` vierem e devolve a mesma linha.
+ */
 function clienteStub() {
   return {
     from: (tabela: string) => ({
-      select: () => ({
-        eq: () => ({
+      select: () => {
+        const leitura = {
+          eq: () => leitura,
           maybeSingle: async () =>
             tabela === "crm_leads"
               ? {
@@ -70,8 +75,9 @@ function clienteStub() {
                   },
                   error: null,
                 },
-        }),
-      }),
+        };
+        return leitura;
+      },
     }),
   };
 }

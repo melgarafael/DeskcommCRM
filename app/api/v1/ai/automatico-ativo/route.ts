@@ -30,25 +30,32 @@ import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { agenteAtende } from "@/lib/ai/agents/no-ar";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_req: NextRequest): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "ai_agents" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_agents",
+    role: "agent",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_automatico_ativo", requestId);
+  if (teto) return teto;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   // `head: true` + `count` não serve mais: a régua olha quatro colunas por
   // linha, e uma contagem no banco não sabe respondê-la sem duplicar a regra em
   // SQL — que é como ela se desencontrou da primeira vez.
   const { data, error } = await supabase
     .from("ai_agents")
     .select("kind, is_active, paused_at, published_version_id, archived_at")
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", authz.organizationId)
     .is("archived_at", null);
 
   if (error) return fail("internal_error", error.message, 500, { requestId });

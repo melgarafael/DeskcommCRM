@@ -17,12 +17,12 @@ import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { conversasVisiveisDosCasos, listarChamados } from "@/lib/escalacao/chamados";
+import { conversasVisiveisDosCasos, listarChamados, type ConversasVisiveis } from "@/lib/escalacao/chamados";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { logger } from "@/lib/logger";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -33,10 +33,19 @@ const querySchema = z.object({
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const authz = await requireRole("agent", { requestId, resource: "agent_cases" });
+  // Sessão OU token (Spec 33, R1): o token precisa de config:read e papel admin.
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "agent_cases",
+    role: "agent",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "agent_cases", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const org = { orgId: authz.organizationId };
 
   const parsed = querySchema.safeParse(
     Object.fromEntries(new URL(req.url).searchParams.entries()),
@@ -53,10 +62,16 @@ export async function GET(req: NextRequest): Promise<Response> {
     // aplicada) ANTES da leitura privilegiada. Manager e admin seguem vendo
     // tudo porque é `fn_can_view_conversation` que decide — eles são org-wide
     // por desenho, e não há regra de papel repetida aqui para desatualizar.
-    const visiveisPara = await conversasVisiveisDosCasos(await createClient(), org.orgId);
+    // Token: admin é org-wide por desenho (o mesmo que a RLS devolveria), então
+    // o recorte é "todas"; a organização continua filtrada em toda consulta.
+    const visiveisPara: ConversasVisiveis =
+      authz.via === "token"
+        ? "todas"
+        : await conversasVisiveisDosCasos(authz.supabase, org.orgId);
     const { chamados, abertos } = await listarChamados(createAdminClient(), org.orgId, {
       estado: parsed.data.status === "open" ? "abertos" : "fechados",
       visiveisPara,
+      contatoSeparado: authz.via === "token",
     });
     return ok({ cases: chamados, open_count: abertos }, { requestId });
   } catch (erro) {

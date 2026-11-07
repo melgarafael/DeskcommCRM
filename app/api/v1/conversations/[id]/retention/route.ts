@@ -12,10 +12,12 @@ import { janelaDeEnvioAberta } from "@/lib/agent-engine/pacing/engine";
 import { fusoDaJanela } from "@/lib/agent-engine/pacing/store";
 import type { TipoDeEnvio } from "@/lib/agent-engine/guardrails/before-send";
 import { ok, fail } from "@/lib/api/wrappers";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { loadAuthUser } from "@/lib/auth/server";
 import { orgAtivaDaApi } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
@@ -26,9 +28,26 @@ interface RouteCtx {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
+export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
+
+  const authHeader = req.headers.get("authorization");
+  if (authHeader && /^Bearer\s+/i.test(authHeader.trim())) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "conversations",
+      role: "viewer",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "conversations", requestId);
+    if (teto) return teto;
+    const t = (texto: string) => traduzir(texto, authz.idioma ?? "pt-BR");
+    return responderRetention(authz.supabase, authz.organizationId, id, requestId, t);
+  }
+
+  // Caminho de sessão: byte a byte igual.
   const supabase = await createClient();
 
   const {
@@ -48,11 +67,21 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("no_active_org", t("No active organization."), 403, { requestId });
   }
 
+  return responderRetention(supabase, activeOrg.orgId, id, requestId, t);
+}
+
+async function responderRetention(
+  supabase: SupabaseClient,
+  organizationId: string,
+  conversationId: string,
+  requestId: string,
+  t: (texto: string) => string,
+): Promise<Response> {
   const { data: conv, error: convErr } = await supabase
     .from("conversations")
     .select("id, contact_id, channel_session_id")
-    .eq("organization_id", activeOrg.orgId)
-    .eq("id", id)
+    .eq("organization_id", organizationId)
+    .eq("id", conversationId)
     .maybeSingle();
   if (convErr) {
     return fail("internal_error", t("Failed to load conversation."), 500, { requestId });
@@ -65,7 +94,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const { data: traces, error: traceErr } = await supabase
     .from("before_send_traces")
     .select("id, created_at, vetoed_gate, vetoed_code, tipo_envio")
-    .eq("organization_id", activeOrg.orgId)
+    .eq("organization_id", organizationId)
     .eq("contact_id", conv.contact_id)
     .not("vetoed_gate", "is", null)
     .gte("created_at", since)
@@ -83,16 +112,16 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
       .select(
         "window_start_hour, window_end_hour, resposta_start_hour, resposta_end_hour, allow_sunday, timezone",
       )
-      .eq("organization_id", activeOrg.orgId)
+      .eq("organization_id", organizationId)
       .eq("channel_session_id", conv.channel_session_id)
       .maybeSingle(),
     // Sem fuso no número, o motor avalia a janela no da organização.
-    supabase.from("organizations").select("timezone").eq("id", activeOrg.orgId).maybeSingle(),
+    supabase.from("organizations").select("timezone").eq("id", organizationId).maybeSingle(),
     supabase
       .from("messages")
       .select("created_at")
-      .eq("organization_id", activeOrg.orgId)
-      .eq("conversation_id", id)
+      .eq("organization_id", organizationId)
+      .eq("conversation_id", conversationId)
       .eq("direction", "outbound")
       .order("created_at", { ascending: false })
       .limit(1)

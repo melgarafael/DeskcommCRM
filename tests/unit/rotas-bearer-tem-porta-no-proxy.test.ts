@@ -130,11 +130,15 @@ describe("PUBLIC_PATHS — as portas da R0", () => {
     "/api/v1/agenda/servicos/atualizar/x",
     "/api/v1/conversations/abc/drafts/consume",
     `/api/v1/conversations/${UUID}/drafts/consume/x`,
-    `/api/v1/conversations/${UUID}/notes`,
     "/api/v1/conversations/abc/notes/media",
     `/api/v1/conversations/${UUID}/notes/media/x`,
   ])("não libera %s", (caminho) => {
     expect(isPublicPath(caminho)).toBe(false);
+  });
+
+  it("notas da conversa passaram a aceitar token", () => {
+    // Spec 33 (R2): a rota passou a aceitar token
+    expect(isPublicPath(`/api/v1/conversations/${UUID}/notes`)).toBe(true);
   });
 
   it("os irmãos de nível seguem como estavam", () => {

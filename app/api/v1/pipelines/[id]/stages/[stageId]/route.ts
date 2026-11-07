@@ -12,8 +12,13 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * índices únicos imediatos cobram) vivem em `lib/leads/stage-operations.ts`,
  * compartilhadas com o agente de IA — BRIEFING §3, Decisão 4.
  *
- * Auth: sessão por cookie, papel manager+. `organization_id` sai do JWT — nunca
- * do body nem da URL.
+ * Auth: sessão por cookie, papel manager+, OU Bearer `dsk_…` com `config:write` e
+ * papel admin (`tokenRole`). `organization_id` sai do JWT ou da linha do token —
+ * nunca do body nem da URL. No token o cliente é o admin (sem RLS): a lib lê o
+ * funil com o filtro de organização ANTES de escrever (funil, etapa ou destino
+ * de outra organização = 404/422, sem escrita), e o audit leva o token em
+ * `actor_api_token_id`. Arquivar move negócios e grava a atividade de cada card
+ * com o ator do token (sistema, nunca uma pessoa).
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
@@ -21,9 +26,9 @@ import { z } from "zod";
 
 import { respostaDeRecusa } from "@/lib/api/recusa";
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { arquivarEtapa, atualizarEtapa } from "@/lib/leads/stage-operations";
-import { createClient } from "@/lib/supabase/server";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -74,9 +79,17 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "crm_stages" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_stages",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "pipelines.stages", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const { id: pipelineId, stageId } = await ctx.params;
 
@@ -95,13 +108,13 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     });
   }
 
-  const supabase = await createClient();
   try {
     const { funil } = await atualizarEtapa(
       {
-        supabase,
-        organizationId: authz.org.orgId,
-        actor: { type: "user", id: authz.user.id, role: authz.org.role },
+        supabase: authz.supabase,
+        organizationId: authz.organizationId,
+        actor: authz.actor,
+        actorApiTokenId: authz.apiTokenId ?? null,
         requestId,
       },
       { pipelineId, stageId, pedido: parsed.data },
@@ -117,19 +130,27 @@ export async function DELETE(req: NextRequest, ctx: RouteCtx): Promise<Response>
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "crm_stages" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_stages",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
+  const teto = await tetoDeEscritaDoToken(authz, "pipelines.stages", requestId);
+  if (teto) return teto;
 
   const { id: pipelineId, stageId } = await ctx.params;
   const destinoId = req.nextUrl.searchParams.get("destino");
 
-  const supabase = await createClient();
   try {
     const { funil } = await arquivarEtapa(
       {
-        supabase,
-        organizationId: authz.org.orgId,
-        actor: { type: "user", id: authz.user.id, role: authz.org.role },
+        supabase: authz.supabase,
+        organizationId: authz.organizationId,
+        actor: authz.actor,
+        actorApiTokenId: authz.apiTokenId ?? null,
         requestId,
       },
       { pipelineId, stageId, destinoId },

@@ -86,7 +86,7 @@ export type ResultadoDeGravacao = { ok: true; ultimos4: string } | { ok: false; 
 
 export async function guardarChaveDeMapas(
   admin: SupabaseClient,
-  input: { organizationId: string; chave: string; atorId: string },
+  input: { organizationId: string; chave: string; atorId: string | null },
 ): Promise<ResultadoDeGravacao> {
   const cifrada = await encryptWebhookSecret(admin, input.chave);
   // Sem cifra, não grava: texto claro no banco não é um "modo degradado".

@@ -50,6 +50,8 @@ vi.mock("@/lib/auth/server", () => ({
   mfaEmDivida: async () => false,
 }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ rpc, from }) }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: async () => null }));
 vi.mock("next/navigation", () => ({ redirect: redirecionar, useRouter: () => ({ refresh: vi.fn() }) }));

@@ -10,10 +10,14 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * com `unread_count_for_assignee` re-zerado pro novo dono.
  */
 import { randomUUID } from "node:crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { audit, isServiceRoleConfigured } from "@/lib/audit";
+import type { Idioma } from "@/lib/i18n/idiomas";
+import { extractBearer } from "@/lib/mcp/auth";
 import { registrarTrocaDeComando } from "@/lib/inbox/atividade-de-comando";
 import { ApiError } from "@/lib/api/types";
 import { ok, fail } from "@/lib/api/wrappers";
@@ -208,19 +212,46 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
+  // Token de integração (Spec 33, R2): é só leitura, e a regra do número vem de
+  // `fn_numero_da_transferencia`, que filtra a organização e é só do service
+  // role. A transferência em si (POST) segue só de sessão.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "conversations",
+      role: "agent",
+      scope: "mcp:read",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "conversations", requestId);
+    if (teto) return teto;
+    return responderPreviaDoNumero(req, authz.supabase, authz.organizationId, authz.idioma, id, requestId);
+  }
+
   const authz = await requireRole("agent", { requestId, resource: "conversations" });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const orgId = authz.org.orgId; // fonte confiável (cookie validado), nunca a query
+  // fonte confiável (cookie validado), nunca a query
+  return responderPreviaDoNumero(req, await createClient(), authz.org.orgId, authz.user.idioma, id, requestId);
+}
+
+async function responderPreviaDoNumero(
+  req: NextRequest,
+  supabase: SupabaseClient,
+  orgId: string,
+  idioma: Idioma | undefined,
+  id: string,
+  requestId: string,
+): Promise<Response> {
+  const t = (texto: string) => traduzir(texto, idioma ?? "pt-BR");
 
   const parsed = previaSchema.safeParse({ to_user_id: req.nextUrl.searchParams.get("to_user_id") });
   if (!parsed.success) {
     return fail("invalid_request", t("Destino inválido."), 400, { requestId });
   }
 
-  // Quem pergunta precisa enxergar a conversa: a leitura é pelo cliente da
-  // SESSÃO, com a RLS de sempre. Só depois o admin responde a regra.
-  const supabase = await createClient();
+  // Quem pergunta precisa enxergar a conversa: na sessão a leitura é pelo
+  // cliente da SESSÃO, com a RLS de sempre; no token, o filtro de organização
+  // abaixo isola. Só depois o admin responde a regra.
   const { data: conversa, error: erroConversa } = await supabase
     .from("conversations")
     .select("id")

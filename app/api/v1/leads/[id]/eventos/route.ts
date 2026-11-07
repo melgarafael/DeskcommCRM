@@ -38,10 +38,10 @@ import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { logger } from "@/lib/logger";
-import { createClient } from "@/lib/supabase/server";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
 
@@ -82,25 +82,31 @@ function reduzir(linha: LinhaDoEvento): {
   };
 }
 
-export async function GET(_req: NextRequest, { params }: RouteParams): Promise<Response> {
+export async function GET(req: NextRequest, { params }: RouteParams): Promise<Response> {
   const requestId = randomUUID();
   // viewer+: todo membro que recebe o realtime de negócios precisa poder
   // perguntar se o banco atestou uma mudança para ele.
-  const authz = await requireRole("viewer", { requestId, resource: "leads" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "leads",
+    role: "viewer",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "leads_eventos", requestId);
+  if (teto) return teto;
+  const { supabase, organizationId, idioma } = authz;
+  const t = (texto: string) => traduzir(texto, idioma ?? IDIOMA_PADRAO);
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) {
     return fail("not_found", t("Negócio não encontrado."), 404, { requestId });
   }
 
-  const supabase = await createClient();
   const { data: lead } = await supabase
     .from("crm_leads")
     .select("id")
     .eq("id", id)
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
   if (!lead) return fail("not_found", t("Negócio não encontrado."), 404, { requestId });
 
@@ -110,7 +116,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
       .select("organization_id, event_type, entity_id, created_at, payload")
       // Org ATIVA da sessão em SQL, não só na RLS: um membro de duas orgs
       // passaria pelas duas policies e o evento da outra não pode virar aviso.
-      .eq("organization_id", org.orgId)
+      .eq("organization_id", organizationId)
       .eq("entity_kind", "lead")
       .eq("entity_id", id)
       .in("event_type", EVENTOS_DO_AVISO)
@@ -122,12 +128,12 @@ export async function GET(_req: NextRequest, { params }: RouteParams): Promise<R
     if (error) throw new Error(error.message);
     const eventos = (data ?? [])
       .map((linha) => reduzir(linha as LinhaDoEvento))
-      .filter((evento) => evento.organization_id === org.orgId);
+      .filter((evento) => evento.organization_id === organizationId);
     return ok({ eventos }, { requestId });
   } catch (err) {
     logger.error("[leads/eventos] leitura falhou", {
       lead_id: id,
-      organization_id: org.orgId,
+      organization_id: organizationId,
       error: err instanceof Error ? err.message : String(err),
       requestId,
     });

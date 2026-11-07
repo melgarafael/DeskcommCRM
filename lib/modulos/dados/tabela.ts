@@ -45,38 +45,38 @@ export interface ObjetoInstalado {
 interface LinhaDeInstalacao {
   publisher: string;
   name: string;
-  extension_artifacts: { manifest: unknown } | { manifest: unknown }[] | null;
+  artifact_id: string | null;
 }
 
-function manifestoDa(linha: LinhaDeInstalacao): Record<string, unknown> | null {
-  const bruto = Array.isArray(linha.extension_artifacts)
-    ? linha.extension_artifacts[0]
-    : linha.extension_artifacts;
-  const manifesto = bruto?.manifest;
-  return manifesto && typeof manifesto === "object" ? (manifesto as Record<string, unknown>) : null;
-}
-
-export async function tabelaDoObjeto(
-  modulo: string,
-  objeto: string,
-): Promise<ObjetoInstalado | null> {
+/**
+ * Duas consultas, e não um embed `extension_artifacts!artifact_id!inner(manifest)`: o cliente
+ * falso dos testes de token não resolve embed, e a ambiguidade de FK (`previous_artifact_id`)
+ * já está fechada pela varredura `tests/unit/embed-ambiguo-do-postgrest.test.ts`. O resultado é
+ * o mesmo: instalação sem artefato (`artifact_id` nulo ou linha ausente) devolve `null`.
+ */
+export async function tabelaDoObjeto(modulo: string, objeto: string): Promise<ObjetoInstalado | null> {
   const admin = createAdminClient();
-  /**
-   * ⚠️ `!artifact_id` desambigua: há DUAS FKs para `extension_artifacts`
-   * (`artifact_id` e `previous_artifact_id`) e o PostgREST recusa o embed sem a dica
-   * (`PGRST201`). Sem ela esta função devolve `null` e a rota responde 404 para módulo que
-   * ESTÁ instalado. Ver o comentário longo em `paineis.ts`.
-   */
   const { data, error } = await admin
     .from("extension_installations")
-    .select("publisher, name, extension_artifacts!artifact_id!inner(manifest)")
+    .select("publisher, name, artifact_id")
     .eq("name", modulo)
     .is("removed_at", null)
     .limit(1);
   if (error || !data?.length) return null;
 
   const linha = data[0] as unknown as LinhaDeInstalacao;
-  const manifesto = manifestoDa(linha);
+  if (!linha.artifact_id) return null;
+  const { data: artefato, error: erroDoArtefato } = await admin
+    .from("extension_artifacts")
+    .select("manifest")
+    .eq("id", linha.artifact_id)
+    .maybeSingle();
+  if (erroDoArtefato || !artefato) return null;
+
+  const manifesto =
+    artefato.manifest && typeof artefato.manifest === "object"
+      ? (artefato.manifest as Record<string, unknown>)
+      : null;
   if (!manifesto || manifesto.profile !== "data") return null;
 
   const dados = manifesto.data as { mode?: string; objetos?: unknown[] } | undefined;

@@ -21,11 +21,11 @@
  * não vem no pedido não é tocado — a resposta continua vinculada até alguém
  * desvincular ou até o grupo ser apagado (`on delete set null` no banco).
  */
-import type { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 /** `true` quando o grupo existe na organização ativa (ou quando não há grupo). */
 export async function grupoDaOrganizacao(
-  db: Awaited<ReturnType<typeof createClient>>,
+  db: SupabaseClient,
   orgId: string,
   grupoId: string | null | undefined,
 ): Promise<boolean> {

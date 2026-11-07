@@ -12,13 +12,15 @@
  * indexados. Sem o vetor: 1536 floats por trecho não têm leitor humano e só
  * engordariam a resposta.
  *
- * Auth: sessão por cookie, papel >= manager (mesmo gate do resto do acervo).
+ * Auth: sessão por cookie OU token de servidor (`resolveAuthDual`), papel >= manager
+ * (mesmo gate do resto do acervo).
  */
 
 import { randomUUID } from "node:crypto";
+import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
-import { createClient } from "@/lib/supabase/server";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -27,18 +29,26 @@ export const dynamic = "force-dynamic";
 const TETO = 200;
 
 export async function GET(
-  _req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const requestId = randomUUID();
   const { id: sourceId } = await params;
 
-  const authz = await requireRole("manager", { requestId, resource: "ai_knowledge" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_knowledge",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_knowledge", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const activeOrg = { orgId: authz.organizationId };
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
 
   const { data: fonte, error: fonteErr } = await supabase
     .from("ai_knowledge_sources")
