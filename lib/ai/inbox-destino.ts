@@ -186,6 +186,21 @@ export const POLITICAS_DE_AVISO = {
     refs: ["task"],
     orientacao: "A tarefa venceu sem conclusão. Abra e conclua, ou reagende o prazo se ele não for mais possível.",
   },
+  // Spec 32. O resumo nasce SEMPRE apontando para a conexão (`ref_kind: channel_session`),
+  // como o `canal_pausado` e o `canal_mudo_sem_numero` — por isso sem `geral`. Papel
+  // admin pela entrada `channel_session` de REFERENCIAS_DE_AVISO: é a conexão e o
+  // histórico dela que o administrador confere, não a conversa de um cliente.
+  recuperacao_da_queda: { refs: ["channel_session"], orientacao: "Confira em Conexões se o número voltou e se o histórico do período fora do ar entrou como esperado." },
+  // Spec 32. Nasce SEMPRE com `ref_kind: conversation` (a conversa recuperada), como o
+  // `message_send_stuck` e o `promise_unfulfilled`. Papel agent pela entrada
+  // `conversation`: quem pode ver a conversa pode responder; não há "dono" a quem
+  // mandar, porque a conversa recuperada pode não ter responsável.
+  cliente_sem_resposta_na_queda: { refs: ["conversation"], orientacao: "Abra a conversa e responda o cliente — ele escreveu enquanto o número estava fora do ar." },
+  // (migration 9027, issue #3371) O aviso nasce SEM referência: o que o conserta
+  // não é uma linha do banco, é o login da conta — e o login mora na tela de
+  // Credenciais. O botão diz o que fazer ("Reconectar"), não "revisar", porque
+  // nada há para inspecionar: a conta precisa ser conectada de novo.
+  assinatura_desconectada: { refs: [], orientacao: "A conta que paga a assinatura recusou o login. Reconecte em IA › Credenciais; este aviso se resolve sozinho quando o login voltar.", geral: { papel: "admin", href: "/app/ai/credentials", rotulo: "Reconectar a assinatura" } },
   other: { refs: ["agenda_reminder_sender", "lead", "channel_session", "appointment", "ai_agent", "ai_provider_credential", "agent_case"], orientacao: "Confira a situação descrita neste aviso com a pessoa responsável." },
 } satisfies Record<InboxKind, Politica>;
 

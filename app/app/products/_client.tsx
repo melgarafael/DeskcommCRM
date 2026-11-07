@@ -26,6 +26,8 @@ interface ResumoDaImportacao {
   total_linhas: number;
   criados: number;
   atualizados: number;
+  /** Quantos produtos tiveram a descrição escrita pela planilha. */
+  descricoes?: number;
   erros: Array<{ linha: number; motivo: string }>;
   colunas_ignoradas: string[];
 }
@@ -39,6 +41,7 @@ interface Rascunho {
   custo: string;
   quantidade: string;
   controla_estoque: boolean;
+  descricao: string;
 }
 
 const VAZIO: Rascunho = {
@@ -50,6 +53,7 @@ const VAZIO: Rascunho = {
   custo: "",
   quantidade: "0",
   controla_estoque: true,
+  descricao: "",
 };
 
 function doRascunho(
@@ -70,6 +74,7 @@ function doRascunho(
     custo_cents,
     controla_estoque: r.controla_estoque,
     quantidade: Number(r.quantidade) || 0,
+    ...(r.descricao.trim() ? { descricao: r.descricao.trim() } : {}),
   };
 }
 
@@ -380,14 +385,21 @@ export function ProdutosClient({
         // Rota de API que devolve o arquivo com `content-disposition:
         // attachment` — é download, não navegação de página, e `<Link>` do Next
         // faria navegação de cliente para algo que não é tela.
-        <a
-          href="/api/v1/products/import"
-          download="modelo-catalogo.csv"
-          className="mb-4 inline-block text-xs text-muted-foreground underline"
-          data-testid="modelo-planilha"
-        >
-          {t("Baixar planilha modelo")}
-        </a>
+        <div className="mb-4">
+          <a
+            href="/api/v1/products/import"
+            download="modelo-catalogo.csv"
+            className="inline-block text-xs text-muted-foreground underline"
+            data-testid="modelo-planilha"
+          >
+            {t("Baixar planilha modelo")}
+          </a>
+          <p className="mt-1 break-words text-xs text-muted-foreground" data-testid="formato-da-foto">
+            {t(
+              "Na coluna foto, cole o link da imagem (JPG ou PNG, até 5 MB). Para até 5 fotos, separe os links com | — a primeira é a capa.",
+            )}
+          </p>
+        </div>
       ) : null}
 
       {resumo ? (
@@ -396,6 +408,14 @@ export function ProdutosClient({
             {resumo.criados} {t("novos")} · {resumo.atualizados} {t("atualizados")} ·{" "}
             {resumo.total_linhas} {t("linhas na planilha")}
           </p>
+          {resumo.descricoes ? (
+            <p className="mt-1 text-muted-foreground" data-testid="resumo-descricoes">
+              {t("Descrição escrita pela planilha em {quantidade} produto(s).").replace(
+                "{quantidade}",
+                String(resumo.descricoes),
+              )}
+            </p>
+          ) : null}
           {resumo.colunas_ignoradas.length > 0 ? (
             <p className="mt-2 text-muted-foreground">
               {t("Não usei estas colunas:")} {resumo.colunas_ignoradas.join(", ")}.
@@ -404,7 +424,7 @@ export function ProdutosClient({
           {resumo.erros.length > 0 ? (
             <div className="mt-3">
               <p className="font-medium">{t("Linhas que não entraram:")}</p>
-              <ul className="mt-1 space-y-0.5 text-muted-foreground">
+              <ul className="mt-1 space-y-0.5 wrap-anywhere text-muted-foreground">
                 {resumo.erros.slice(0, 20).map((e) => (
                   <li key={`${e.linha}-${e.motivo}`}>
                     {t("Linha")} {e.linha}: {e.motivo}
@@ -485,6 +505,21 @@ export function ProdutosClient({
             </label>
           </div>
 
+          <label className="mt-3 block text-sm">
+            {t("Descrição")} <span className="text-muted-foreground">{t("(opcional)")}</span>
+            <textarea
+              value={rascunho.descricao}
+              onChange={(e) => setRascunho({ ...rascunho, descricao: e.target.value })}
+              maxLength={2000}
+              rows={3}
+              className="mt-1 w-full rounded-md border px-3 py-2"
+              data-testid="produto-descricao"
+            />
+            <span className="mt-1 block text-xs text-muted-foreground">
+              {t("É o que o atendente de IA conta ao cliente: para que serve, medidas, materiais, diferenciais. Ele repete o que estiver aqui — e não inventa o que faltar.")}
+            </span>
+          </label>
+
           <label className="mt-3 flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -538,7 +573,17 @@ export function ProdutosClient({
             const capa = p.fotos?.[0] ? urlsDasFotos[p.fotos[0]] : undefined;
             return (
             <li key={p.id} data-testid={`produto-${p.codigo}`}>
-            <div className="flex items-center gap-4 p-3">
+            {/*
+              A linha não cabia em 375 px: preço (shrink-0) + os três botões de
+              ação somam mais que a largura útil, e a coluna do nome — `flex-1`
+              com `min-w-0` — encolhia até 0 px, levando o nome junto. Abaixo de
+              `md` a linha passa a quebrar: nome e preço em cima, ações embaixo,
+              ancoradas à direita e com `flex-wrap` próprio se ainda faltar
+              espaço. Tudo em `max-md:` — de `md` para cima a lista é a de sempre.
+            */}
+            <div
+              className="flex items-center gap-4 p-3 max-md:flex-wrap max-md:gap-x-3 max-md:gap-y-1"
+            >
               {capa ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={capa} alt="" className="h-10 w-10 shrink-0 rounded-md object-cover" />
@@ -553,13 +598,21 @@ export function ProdutosClient({
                   {p.controla_estoque
                     ? ` · ${p.quantidade} ${t("em estoque")}`
                     : ` · ${t("sem controle de estoque")}`}
+                  {/* Sem descrição, o atendente de IA só sabe nome e preço: a lista diz onde falta. */}
+                  {p.descricao?.trim() ? "" : ` · ${t("sem descrição")}`}
                 </p>
               </div>
               <span className="shrink-0 tabular-nums font-medium">
                 {formatCents(p.preco_cents, p.moeda)}
               </span>
               {podeEditar ? (
-                <>
+                // Grupo próprio para as ações: sozinhas elas não cabem ao lado do
+                // preço em 375 px, e como itens soltos da linha quebravam em
+                // qualquer lugar. Aqui elas descem juntas (w-full abaixo de `md`)
+                // e, se nem assim couberem, quebram entre si em vez de vazar.
+                <div
+                  className="flex items-center gap-4 max-md:w-full max-md:flex-wrap max-md:justify-end max-md:gap-x-2 max-md:gap-y-1"
+                >
                   <Button
                     variant="ghost"
                     size="sm"
@@ -586,7 +639,7 @@ export function ProdutosClient({
                   >
                     {t(p.ativo ? "Desativar" : "Reativar")}
                   </Button>
-                </>
+                </div>
               ) : null}
             </div>
             {podeEditar && fotosAbertas === p.id ? (

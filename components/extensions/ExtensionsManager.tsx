@@ -656,9 +656,13 @@ export function ExtensionsManager({
         }
         return { ok: false, message: t(result.error.message) };
       }
+      // O tema da extensão é pintado no servidor (`app/app/layout.tsx`), e o layout
+      // não re-renderiza sozinho: sem isto, ligar ou trocar a paleta dizia "Configuração
+      // salva." e a tela só mudava de cor depois de recarregar a página.
+      router.refresh();
       return { ok: true, message: t("Configuração salva.") };
     },
-    [carregar, organizationId, runMutation, t],
+    [carregar, organizationId, router, runMutation, t],
   );
 
   const verifyOperation = useCallback(

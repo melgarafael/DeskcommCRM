@@ -44,6 +44,14 @@ vi.mock("@/lib/leads/nascimento-do-lead", () => ({
 vi.mock("@/lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
+// A inferência pelo horário tem o próprio arquivo de teste
+// (`tests/unit/origem-por-horario.test.ts`); aqui só importa QUANDO ela é chamada.
+const casarOrigemPorHorario = vi.fn(async (..._a: unknown[]) => {
+  sequencia.push("origem:horario");
+});
+vi.mock("@/lib/leads/origem-por-horario", () => ({
+  casarOrigemPorHorario: (...a: unknown[]) => casarOrigemPorHorario(...a),
+}));
 vi.mock("@/lib/dev/kick-local-pipeline", () => ({
   acelerarFollowupDoInbound: vi.fn(async () => {}),
   drenarEventosDoInbound: vi.fn(async () => {}),
@@ -239,6 +247,7 @@ beforeEach(() => {
   encerraDemanda.mockReset();
   encerraDemanda.mockResolvedValue({ lead: {}, jaEstava: false } as never);
   audit.mockClear();
+  casarOrigemPorHorario.mockClear();
   garantirLeadDaConversa.mockClear();
   garantirLeadDaConversa.mockResolvedValue({ criado: true, leadId: "lead-1" } as never);
   vi.mocked(acelerarFollowupDoInbound).mockReset();
@@ -592,6 +601,46 @@ describe("despacho do agente", () => {
 });
 
 describe("nascimento do lead", () => {
+  it("sem ID retornado do INSERT ainda tenta abrir demanda sem fabricar prova CTWA", async () => {
+    await rodar({ messageId: null });
+
+    expect(garantirLeadDaConversa).toHaveBeenCalledTimes(1);
+    expect(garantirLeadDaConversa).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        organizationId: "org-1",
+        contactId: "contato-1",
+        conversationId: "conversa-1",
+        messageId: null,
+      }),
+    );
+    expect(sequencia).not.toContain("rpc:ai_agent.dispatch_requested");
+  });
+
+  it("uma nova tentativa apos falha do nascimento preserva a mesma identidade", async () => {
+    garantirLeadDaConversa
+      .mockRejectedValueOnce(new Error("falha transitoria") as never)
+      .mockResolvedValueOnce({ criado: false, motivo: "ja_existe" } as never);
+
+    await expect(rodar({ messageId: null })).resolves.toBeUndefined();
+    await expect(rodar({ messageId: null })).resolves.toBeUndefined();
+
+    expect(garantirLeadDaConversa).toHaveBeenCalledTimes(2);
+    for (const numero of [1, 2]) {
+      expect(garantirLeadDaConversa).toHaveBeenNthCalledWith(
+        numero,
+        expect.anything(),
+        expect.objectContaining({
+          organizationId: "org-1",
+          contactId: "contato-1",
+          conversationId: "conversa-1",
+          messageId: null,
+        }),
+      );
+    }
+    expect(sequencia).not.toContain("rpc:ai_agent.dispatch_requested");
+  });
+
   it("leva o nome do contato para batizar o card", async () => {
     await rodar({ nomeDoContato: "Marcela" });
     expect(garantirLeadDaConversa).toHaveBeenCalledWith(
@@ -643,8 +692,10 @@ describe("os dois canais usam o mesmo passo", () => {
     // A ingestão resolve a conversa por dois caminhos — thread conhecida e
     // âncora — e o primeiro é o mais comum. Chamar só no segundo deixaria a
     // maioria das mensagens sem nenhum dos três efeitos.
+    // A terceira chamada é a retomada do reprocessamento, provada em
+    // `channel-ingest-zernio.test.ts`.
     const chamadas = [...ZERNIO.matchAll(/await efeitosDaEntrada\(/g)];
-    expect(chamadas.length, "faltou o passo em um dos caminhos").toBe(2);
+    expect(chamadas.length, "faltou o passo em um dos caminhos").toBe(3);
   });
 
   it("o canal intermediado só aplica os efeitos na ENTRADA", () => {
@@ -924,5 +975,43 @@ describe("o ref curto da página que veio no texto", () => {
 
     expect(sequencia).not.toContain("update:meta_ads_click_refs");
     expect(nomesDeRpc()).toContain("fn_estampar_atribuicao_de_anuncio");
+  });
+});
+
+describe("sem código no texto, a origem pode vir do horário do clique", () => {
+  const REF = "[ref:K7M2P9]";
+  const DK1 = `[dk1:${Buffer.from(JSON.stringify({ utm_campaign: "x" }), "utf8").toString("base64url")}]`;
+
+  it("tenta a inferência com a entrada desta mensagem", async () => {
+    await rodar({ texto: "oi, quero saber do produto" });
+
+    expect(casarOrigemPorHorario).toHaveBeenCalledTimes(1);
+    expect(casarOrigemPorHorario.mock.calls[0]?.[1]).toMatchObject({
+      organizationId: "org-1",
+      contactId: "contato-1",
+      messageId: "msg-1",
+      channelSessionId: "sessao-1",
+    });
+  });
+
+  it("e a tenta ANTES de o card nascer", async () => {
+    garantirLeadDaConversa.mockImplementationOnce(async () => {
+      sequencia.push("lead:nascimento");
+      return { criado: true, leadId: "lead-1" } as never;
+    });
+    await rodar({ texto: "oi" });
+
+    expect(sequencia.indexOf("origem:horario")).toBeGreaterThanOrEqual(0);
+    expect(sequencia.indexOf("lead:nascimento")).toBeGreaterThan(sequencia.indexOf("origem:horario"));
+  });
+
+  it("com o `[ref:]` no texto, a prova manda e a inferência nem roda", async () => {
+    await rodar({ texto: `oi ${REF}` });
+    expect(casarOrigemPorHorario).not.toHaveBeenCalled();
+  });
+
+  it("com o `[dk1:]` no texto, também não", async () => {
+    await rodar({ texto: `oi ${DK1}` });
+    expect(casarOrigemPorHorario).not.toHaveBeenCalled();
   });
 });

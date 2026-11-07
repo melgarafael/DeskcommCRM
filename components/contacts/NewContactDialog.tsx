@@ -23,9 +23,22 @@ import type { Contact } from "@/lib/types/contacts";
 import { useCreateContact } from "@/hooks/contacts/useCreateContact";
 import { useContactTagVocabulary } from "@/hooks/contacts/useContactTagVocabulary";
 import { useDefinirCorDaEtiqueta } from "@/hooks/tags/useDefinirCorDaEtiqueta";
+import { AbrirConversaAposSalvar } from "@/components/channels/AbrirConversaAposSalvar";
+import type { AlvoDeConversa } from "@/components/channels/SeletorDeCanalParaConversa";
+import { useDefaultPipeline } from "@/hooks/pipelines/useDefaultPipeline";
+import { camposDoFunil, camposPorEscopo } from "@/lib/leads/campos-do-funil";
+import { CustomFieldsEditor } from "@/components/contacts/CustomFieldsEditor";
 import { EtiquetasDoContato } from "@/components/contacts/EtiquetasDoContato";
+import { CamposDeEndereco } from "@/components/contacts/CamposDeEndereco";
+import {
+  CAMPOS_DO_ENDERECO,
+  ENDERECO_VAZIO,
+  type EnderecoDoContato,
+} from "@/lib/contacts/endereco-por-cep";
+
 
 interface FormShape {
+  custom_fields?: Record<string, unknown>;
   name?: string;
   email?: string;
   phone_number?: string;
@@ -51,16 +64,47 @@ interface Props {
    * selecionado, em vez de mandar a pessoa procurar de novo o que acabou de criar.
    */
   onCriado?: (contato: Contact) => void;
+  /**
+   * Só o cadastro que conclui a jornada pode navegar para a conversa. Quem
+   * fornece um contato a outro formulário desliga para preservar o rascunho.
+   */
+  permitirIniciarConversa?: boolean;
 }
 
-export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: Props) {
+export function NewContactDialog({
+  open,
+  onOpenChange,
+  nomeInicial,
+  onCriado,
+  permitirIniciarConversa = true,
+}: Props) {
   const t = useT();
   const org = useActiveOrg();
   const perfil = perfilDoPais(org?.country);
   const create = useCreateContact();
+  // Mesma definição da ficha: campos do contato no funil padrão, sem defaults de nicho.
+  const pipeline = useDefaultPipeline(open && Boolean(org));
+  const campos = camposPorEscopo(camposDoFunil(pipeline.data?.pipeline?.settings), "contato");
+  /**
+   * A CONVERSA A ABRIR DEPOIS DE SALVAR (#3483) — `null` = nada pendente.
+   *
+   * O trabalho de abrir (canais, claim, Inbox) mora em
+   * `AbrirConversaAposSalvar`, montado só quando há alvo: quem abre o diálogo
+   * para "só cadastrar" não paga a leitura de canais, e o formulário continua
+   * sem depender de router/provider.
+   */
+  const [conversaAoSavar, setConversaAoSavar] = useState<AlvoDeConversa | null>(null);
   // O MESMO vocabulário de sugestões da ficha (#2732): a chave do react-query é
   // a mesma, então quem já leu na lista de contatos não paga outra requisição.
   const vocabulario = useContactTagVocabulary(org?.orgId ?? null);
+  // O texto digitado no campo de etiquetas e a MESMA pergunta que o Inbox faz
+  // com ele (issue #3144): a leitura com `?busca=` alcança o vocabulário curado
+  // inteiro, que a lista "em uso" (teto de 200, só contatos) não vê.
+  const [buscaDeEtiqueta, setBuscaDeEtiqueta] = useState("");
+  const buscaNoVocabulario = useContactTagVocabulary(
+    org?.orgId ?? null,
+    buscaDeEtiqueta.trim(),
+  );
   const { definirCor } = useDefinirCorDaEtiqueta();
   // A cor da etiqueta é VOCABULÁRIO e a rota exige manager + MFA: para os outros
   // papéis a paleta nem chega ao campo, como na ficha e no editor do Inbox.
@@ -70,6 +114,17 @@ export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: 
   // EditContactDialog (#2732): sem ele, quem digita e clica em "Criar contato"
   // sem Enter perde a etiqueta em silêncio.
   const [etiquetaPendente, setEtiquetaPendente] = useState<string | null>(null);
+  /**
+   * O ENDEREÇO DO CADASTRO (#3494, fatia 2) — estado próprio, e não `FormShape`.
+   *
+   * Os sete campos nasceram na FICHA no #3670 e o cadastro não tinha nenhum: a
+   * pessoa física era criada sem CEP/logradouro e a entrega e a cobrança
+   * dependiam de abrir a ficha depois. Ficam fora do `react-hook-form` porque o
+   * único uso é o payload: o componente `CamposDeEndereco` faz o CEP preencher, e
+   * um `register` por campo não ganharia nada aqui — a validação é a mesma do
+   * servidor, no `safeParse` do envio.
+   */
+  const [endereco, setEndereco] = useState<EnderecoDoContato>(ENDERECO_VAZIO);
 
   // O diálogo segue montado entre aberturas e o campo (com o rascunho) desmonta
   // ao fechar; o pendente do pai não pode sobreviver para o próximo contato.
@@ -79,7 +134,13 @@ export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: 
   const [abertoAntes, setAbertoAntes] = useState(open);
   if (open !== abertoAntes) {
     setAbertoAntes(open);
-    if (!open) setEtiquetaPendente(null);
+    if (!open) {
+      setEtiquetaPendente(null);
+      // O endereço digitado é do contato que estava sendo criado: fechar (por
+      // Cancelar ou pelo pai) descarta, senão o do próximo cadastro sai com a
+      // rua do anterior.
+      setEndereco(ENDERECO_VAZIO);
+    }
   }
 
   const form = useForm<FormShape>({
@@ -93,13 +154,58 @@ export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: 
       phone_number: "",
       cpf: "",
       tags: [],
+      custom_fields: {},
     },
   });
 
+  const customFields = useWatch({ control: form.control, name: "custom_fields" }) ?? {};
   const cpfError = form.formState.errors.cpf;
+  // ENQUANTO O DOCUMENTO ESTIVER INVÁLIDO, O ENVIO FICA IMPEDIDO (#3496).
+  // Avisar no campo e deixar o clique seguir faria o aviso virar decoração: o
+  // botão é a segunda testemunha do mesmo erro, e não a primeira. Quem digitou
+  // errado e nunca saiu do campo ainda é barrado pelo `handleSubmit`, que
+  // valida tudo de novo — o botão desabilitado é conveniência, não a defesa.
+  const documentoInvalido = Boolean(cpfError);
   const tags = useWatch({ control: form.control, name: "tags" }) ?? [];
 
   async function onSubmit(values: FormShape) {
+    await salvar(values, false);
+  }
+
+  /**
+   * GRAVAR O CONTATO E, SE PEDIDO, JÁ ABRIR A CONVERSA DELE (#3483).
+   *
+   * ─── O que a issue pedia ─────────────────────────────────────────────────
+   *
+   * Quem cadastra e atende ficava na tela de Contatos sem caminho para começar
+   * a conversa: tinha de sair, ir ao Inbox, clicar em "Iniciar conversa" e
+   * procurar de novo o contato que acabou de criar. O botão "Salvar e iniciar
+   * conversa" encurta isso — e, como abre a conversa pelo caminho do Inbox
+   * (`open-with-contact` + `claim`), a conversa nasce COM DONO. Em empresa no
+   * modo "Só os seus" isso é a diferença entre ver o atendimento e não ver
+   * nada (o sintoma do #3479).
+   *
+   * ─── Por que o contato é gravado ANTES de abrir ──────────────────────────
+   *
+   * Abrir é o passo secundário: se ele falhar (sem sessão de canal, sem
+   * telefone, papel insuficiente), o CADASTRO não pode ser desfeito nem
+   * escondido atrás de um erro. O pior desfecho aceitável é "contato salvo,
+   * conversa não abriu, e o motivo dito na tela".
+   *
+   * ─── Sem telefone não há conversa: a tela diz por quê ────────────────────
+   *
+   * A régua é a do card do funil (`AbrirConversaDoLead`): sem telefone no
+   * contato não se abre thread 1:1. O telefone que vale é o que a rota GRAVOU
+   * (`contato.phone_number`), não o que foi digitado — o servidor normaliza e
+   * pode recusar; perguntar a ele evita uma segunda régua de telefone aqui.
+   *
+   * ─── Permissão não muda de lado ──────────────────────────────────────────
+   *
+   * Nada aqui decide quem pode: `open-with-contact` e `claim` exigem papel
+   * `agent` no servidor, e quem não tem recebe a recusa de sempre — a tela
+   * mostra o erro e não navega. O atalho não abre porta que o Inbox fechava.
+   */
+  async function salvar(values: FormShape, abrir: boolean) {
     setServerError(null);
     // A MESMA normalização da API (lib/contacts/tag-normalizada): o que a ficha
     // grava é o que o filtro `?tag=` casa (issue #1224).
@@ -114,6 +220,15 @@ export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: 
     if (values.phone_number?.trim()) payload.phone_number = values.phone_number.trim();
     if (values.cpf?.trim()) payload.cpf = values.cpf.trim();
     if (tags.length) payload.tags = tags;
+    if (Object.keys(values.custom_fields ?? {}).length) payload.custom_fields = values.custom_fields;
+    // Endereço (#3494): só o que foi preenchido entra no corpo — campo vazio
+    // continua `null` no banco, e o contato pessoa física sem CEP é cadastro
+    // válido (a issue é explícita: erro de preenchimento não é erro de
+    // cadastro).
+    for (const campo of CAMPOS_DO_ENDERECO) {
+      const valor = endereco[campo]?.trim();
+      if (valor) payload[campo] = valor;
+    }
 
     // A MESMA régua do servidor: a tela que mostra 'Bilhete' não pode
     // recusá-lo como CPF antes de chegar lá.
@@ -124,21 +239,34 @@ export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: 
       return;
     }
 
+    let contato: Contact | undefined;
     try {
       const resposta = await create.mutateAsync(parsed.data as ContactCreate);
-      toast.success(t("Contato criado"));
-      form.reset();
-      setEtiquetaPendente(null);
-      onOpenChange(false);
       // `.data` é o envelope do `ok()`, e dentro dele mora `{ contact, action }`.
       // Entregar `resposta.data` aqui devolveria esse envelope como se fosse o
       // contato: o `id` sairia `undefined` e a marcação ficaria sem ninguém, em
       // silêncio. Quem garante que este caminho não volta a errar é o tipo do
       // hook, ligado ao retorno da rota.
-      if (resposta?.data?.contact) onCriado?.(resposta.data.contact);
+      contato = resposta?.data?.contact;
     } catch {
-      // error toast already handled by hook
+      // error toast already handled by hook — e nada foi criado, então não há
+      // conversa a abrir.
+      return;
     }
+
+    toast.success(t("Contato criado"));
+    form.reset();
+    setEtiquetaPendente(null);
+    setEndereco(ENDERECO_VAZIO);
+    onOpenChange(false);
+    if (!contato) return;
+    onCriado?.(contato);
+    if (!abrir || !permitirIniciarConversa) return;
+    if (!contato.phone_number) {
+      toast.info(t("Contato salvo. Cadastre um telefone para abrir a conversa."));
+      return;
+    }
+    setConversaAoSavar({ contact_id: contato.id, phone_number: contato.phone_number });
   }
 
   return (
@@ -150,7 +278,15 @@ export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: 
             {t("Preencha pelo menos um identificador (email ou telefone).")}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <form
+          onSubmit={(event) => {
+            // O portal mantém a árvore React: o submit deste subcadastro não
+            // pode submeter também o negócio ou a marcação ainda em edição.
+            event.stopPropagation();
+            void form.handleSubmit(onSubmit)(event);
+          }}
+          className="space-y-4"
+        >
           <div className="space-y-2">
             <Label htmlFor="name">{t("Nome")}</Label>
             <Input id="name" {...form.register("name")} />
@@ -203,6 +339,18 @@ export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: 
             )}
           </div>
           <div className="space-y-2">
+            <span className="text-sm font-medium">{t("Endereço")}</span>
+            <CamposDeEndereco
+              idPrefix="nc"
+              valores={endereco}
+              onCampo={(campo, valor) =>
+                setEndereco((atual) => ({ ...atual, [campo]: valor }))
+              }
+              consultarCep={perfil.codigo === PAIS_PADRAO}
+              disabled={create.isPending}
+            />
+          </div>
+          <div className="space-y-2">
             {/* Era um campo de texto livre "separadas por vírgula" — o formato
                 que a ficha deixou na #2732 e o funil na #2979. Aqui o mesmo
                 seletor da ficha: sugere o que já existe, reusa a grafia gravada
@@ -218,8 +366,22 @@ export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: 
               onDefinirCor={
                 podeDefinirCor ? (tag, cor) => void definirCor(tag, cor) : undefined
               }
+              encontradas={buscaNoVocabulario.data}
+              onDigitar={setBuscaDeEtiqueta}
+              erroNoVocabulario={vocabulario.isError || buscaNoVocabulario.isError}
             />
           </div>
+          {campos.length > 0 && (
+            <div className="space-y-3 rounded-md border border-border p-3">
+              <h3 className="text-sm font-medium">{t("Campos personalizados")}</h3>
+              <CustomFieldsEditor
+                fields={campos}
+                mode="contact"
+                value={customFields}
+                onChange={(next) => form.setValue("custom_fields", next, { shouldDirty: true })}
+              />
+            </div>
+          )}
           {serverError && (
             <p className="text-sm text-error-fg">{serverError}</p>
           )}
@@ -232,12 +394,32 @@ export function NewContactDialog({ open, onOpenChange, nomeInicial, onCriado }: 
             >
               {t("Cancelar")}
             </Button>
-            <Button type="submit" disabled={create.isPending}>
+            {/* O CAMINHO DA #3483: salvar e já cair na conversa do contato.
+                `handleSubmit` direto no clique (e não um submit que lê uma
+                flag) porque o mesmo formulário tem dois desfechos diferentes —
+                a intenção viaja no argumento, não em estado que pode sobrar
+                para o próximo cadastro. */}
+            {permitirIniciarConversa && (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={create.isPending || documentoInvalido}
+                onClick={form.handleSubmit((values) => void salvar(values, true))}
+              >
+                {t("Salvar e iniciar conversa")}
+              </Button>
+            )}
+            <Button type="submit" disabled={create.isPending || documentoInvalido}>
               {create.isPending ? t("Criando…") : t("Criar contato")}
             </Button>
           </DialogFooter>
         </form>
       </DialogContent>
+      {/* FORA do `DialogContent` de propósito: o cadastro FECHA ao salvar e a
+          abertura da conversa (com a escolha de canal, #2382) vem depois.
+          Dentro do `DialogContent` ela morreria junto com o formulário que
+          acabou de sumir. */}
+      {conversaAoSavar && <AbrirConversaAposSalvar alvo={conversaAoSavar} />}
     </Dialog>
   );
 }

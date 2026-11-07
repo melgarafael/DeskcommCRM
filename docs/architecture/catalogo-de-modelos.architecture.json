@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Catálogo automático de modelos",
+    "subtitle": "Descoberta nativa sem alterar escolhas da organização"
+  },
+  "lanes": [
+    { "id": "origens", "label": "Catálogos públicos" },
+    { "id": "servidor", "label": "Sincronização diária" },
+    { "id": "banco", "label": "Persistência" },
+    { "id": "operador", "label": "Operação" }
+  ],
+  "mainPath": ["modelsdev", "cron", "modelos", "seletores"],
+  "nodes": [
+    {
+      "id": "modelsdev",
+      "lane": "origens",
+      "label": "Models.dev: IDs nativos OpenAI e Anthropic",
+      "type": "external",
+      "col": 1
+    },
+    {
+      "id": "openrouter",
+      "lane": "origens",
+      "label": "OpenRouter: catálogo do roteador",
+      "type": "external",
+      "col": 1
+    },
+    {
+      "id": "scheduler",
+      "lane": "servidor",
+      "label": "scheduler: cron autenticado diário",
+      "type": "service",
+      "col": 2
+    },
+    {
+      "id": "cron",
+      "lane": "servidor",
+      "label": "sync-model-catalog: fontes independentes",
+      "type": "route",
+      "col": 3
+    },
+    {
+      "id": "modelos",
+      "lane": "banco",
+      "label": "ai_models: novos nativos sem sobrescrever existentes",
+      "type": "database",
+      "col": 4
+    },
+    {
+      "id": "auditoria",
+      "lane": "banco",
+      "label": "api_audit_log: novidades e falhas nativas",
+      "type": "database",
+      "col": 4
+    },
+    {
+      "id": "seletores",
+      "lane": "operador",
+      "label": "Provedores de IA e ModelPicker do agente",
+      "type": "frontend",
+      "col": 5
+    },
+    {
+      "id": "painelaudit",
+      "lane": "operador",
+      "label": "/admin/audit: operação confere a rodada",
+      "type": "frontend",
+      "col": 5
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "modelsdev", "to": "cron", "label": "Zod valida IDs e capacidades" },
+    { "id": "e2", "from": "openrouter", "to": "cron", "label": "conciliação existente" },
+    { "id": "e3", "from": "scheduler", "to": "cron", "label": "Bearer interno" },
+    { "id": "e4", "from": "cron", "to": "modelos", "label": "insere novidades; não altera padrão" },
+    { "id": "e5", "from": "modelos", "to": "seletores", "label": "leitura ao abrir a tela" },
+    { "id": "e6", "from": "cron", "to": "auditoria", "label": "audita adições e falhas nativas" },
+    { "id": "e7", "from": "auditoria", "to": "painelaudit", "label": "filtro de ações derivado" },
+    {
+      "id": "e8",
+      "from": "cron",
+      "to": "scheduler",
+      "label": "falha visível; nova tentativa na próxima rodada"
+    }
+  ]
+}

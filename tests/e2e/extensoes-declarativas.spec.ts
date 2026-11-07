@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { access, mkdir, rm, writeFile } from "node:fs/promises";
 
 import {
+  esperarARevelacaoNasCargas,
   expect as expectBase,
   test,
   type Browser,
@@ -165,6 +166,7 @@ async function paginaAutenticada(
   observacoes: ObservacoesBrowser,
 ): Promise<Page> {
   const contexto = await browser.newContext();
+  contexto.on("page", esperarARevelacaoNasCargas);
   contextosExtras.push(contexto);
   const page = await contexto.newPage();
   observarErros(page, rotulo, observacoes);
@@ -1027,24 +1029,44 @@ test("pacote pós-build atravessa catálogo, tenants, guia e Tarefas com recuper
     if (organizationError) throw new Error(organizationError.message);
 
     const auditPage = await page.context().newPage();
+    auditPage.setDefaultTimeout(20_000);
     observarErros(auditPage, "visualizador de auditoria", observacoes);
-    await auditPage.goto("/admin/audit");
+    // O heading vem do SSR; estes GETs só partem após a hidratação do cliente.
+    const [tenantsCarregados, auditoriaCarregada] = await Promise.all([
+      auditPage.waitForResponse(response => response.request().method() === "GET" && new URL(response.url()).pathname === "/api/v1/admin/tenants", { timeout: 20_000 }),
+      auditPage.waitForResponse(response => response.request().method() === "GET" && new URL(response.url()).pathname === "/api/v1/admin/audit", { timeout: 20_000 }),
+      auditPage.goto("/admin/audit"),
+    ]);
+    expect(tenantsCarregados.status()).toBe(200);
+    expect(auditoriaCarregada.status()).toBe(200);
     await expect(auditPage.getByRole("heading", { name: "Audit Log", exact: true })).toBeVisible();
 
-    await auditPage.getByRole("button", { name: "Tenants", exact: true }).click();
-    await auditPage.getByPlaceholder("Buscar...").fill(organization.display_name);
-    await auditPage
+    const filtroTenants = auditPage.getByRole("button", { name: "Tenants", exact: true });
+    await filtroTenants.click();
+    await expect(filtroTenants).toHaveAttribute("aria-expanded", "true");
+    const dialogoTenants = auditPage.getByRole("dialog");
+    await expect(dialogoTenants).toBeVisible();
+    await expect(dialogoTenants.getByPlaceholder("Buscar...")).toBeVisible();
+    await dialogoTenants.getByPlaceholder("Buscar...").fill(organization.display_name);
+    await dialogoTenants
       .getByRole("button", {
         name: `${organization.display_name} (${organization.slug})`,
         exact: true,
       })
       .click();
     await auditPage.keyboard.press("Escape");
+    await expect(filtroTenants).toHaveAttribute("aria-expanded", "false");
 
-    await auditPage.getByRole("button", { name: "Actions", exact: true }).click();
-    await auditPage.getByPlaceholder("Buscar...").fill("extension.configured");
-    await auditPage.getByRole("button", { name: "extension.configured", exact: true }).click();
+    const filtroActions = auditPage.getByRole("button", { name: "Actions", exact: true });
+    await filtroActions.click();
+    await expect(filtroActions).toHaveAttribute("aria-expanded", "true");
+    const dialogoActions = auditPage.getByRole("dialog");
+    await expect(dialogoActions).toBeVisible();
+    await expect(dialogoActions.getByPlaceholder("Buscar...")).toBeVisible();
+    await dialogoActions.getByPlaceholder("Buscar...").fill("extension.configured");
+    await dialogoActions.getByRole("button", { name: "extension.configured", exact: true }).click();
     await auditPage.keyboard.press("Escape");
+    await expect(filtroActions).toHaveAttribute("aria-expanded", "false");
     const respostaFiltrada = auditPage.waitForResponse((response) => {
       const url = new URL(response.url());
       return (

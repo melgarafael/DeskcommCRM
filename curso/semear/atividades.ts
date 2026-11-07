@@ -15,6 +15,7 @@
  * Idempotente: apaga só as próprias linhas (ids fixos) e recria.
  */
 import { type Contexto, contatoId, exigir, ha, semErro } from "../semear-demonstracao";
+import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
 
 const id = (prefixo: string) => (n: number) => `${prefixo}-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const negocioId = id("be3c0000");
@@ -138,11 +139,11 @@ export async function semear(c: Contexto) {
     value_cents: reais * 100, currency: "BRL", status: "open", owner_user_id: dono ? pessoa[dono] : null,
   }))), "negócios");
   const daBase = exigir(
-    await db.from("crm_leads").select("id, title").eq("organization_id", org).in("title", [LEAD_MARIANA, LEAD_FERNANDA]),
+    await db.from("crm_leads").select("id, title").eq("organization_id", org).in("title", [demo(LEAD_MARIANA), demo(LEAD_FERNANDA)]),
     "negócios da base",
   ) as Array<{ id: string; title: string }>;
   const daBasePorTitulo = (titulo: string) => {
-    const l = daBase.find((x) => x.title === titulo);
+    const l = daBase.find((x) => x.title === demo(titulo));
     if (!l) throw new Error(`negócio da base sumiu: ${titulo}`);
     return l.id;
   };

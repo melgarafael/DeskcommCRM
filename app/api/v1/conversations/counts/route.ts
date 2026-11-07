@@ -149,6 +149,26 @@ export async function GET(req: NextRequest): Promise<Response> {
   // convenção da regra: assume que há automático.
   const automaticoDaOrg = await orgTemAutomatico(supabase, org);
 
+  // O badge de "Minhas" precisa contar o MESMO que a aba lista (#2848): a aba
+  // passou a trazer as conversas em que eu PARTICIPO (convite é da conversa), e
+  // um badge que só conta `assigned_to=me` mandaria a convidada procurar
+  // trabalho que a tela não mostra. Mesma fábrica da aba.
+  // ⚠️ Sem data (mock de teste sem `.is`, banco fora) = sem participações = `.eq`
+  // de sempre: o badge nunca muda de regra sozinho, só GANHA conversas quando
+  // existe convite de pé.
+  let idsParticipadas: string[] = [];
+  try {
+    const participadasDoUsuario = await supabase
+      .from("conversation_participants")
+      .select("conversation_id")
+      .eq("organization_id", org)
+      .eq("user_id", user.id)
+      .is("left_at", null);
+    idsParticipadas = (participadasDoUsuario.data ?? []).map((r) => r.conversation_id);
+  } catch {
+    idsParticipadas = [];
+  }
+
   const [fila, automatico, mine, all, closed, archived] = await Promise.all([
     // A FILA DEIXOU DE SER "sem dono + status de espera".
     //
@@ -167,8 +187,18 @@ export async function GET(req: NextRequest): Promise<Response> {
     // Minhas IGNORA o atendente escolhido pelo gerente: a lista da aba pede
     // `assigned_to=me`, que vence a escolha. Com o atendente aqui, o badge
     // contava `eu E ele` (zero) enquanto a aba listava as do gerente.
-    countExact(auxiliares.filter(([coluna]) => coluna !== "assigned_to_user_id"))
-      .eq("assigned_to_user_id", user.id)
+    // Mesma regra da lista (#2848): sem participações, `.eq` de sempre; com
+    // convite de pé, `or=` com as conversas em que eu participo — porque um badge
+    // que conta o que a aba não mostra manda a convidada procurar trabalho que a
+    // tela não exibe.
+    (idsParticipadas.length > 0
+      ? countExact(auxiliares.filter(([coluna]) => coluna !== "assigned_to_user_id")).or(
+          `assigned_to_user_id.eq.${user.id},id.in.(${idsParticipadas.join(",")})`,
+        )
+      : countExact(auxiliares.filter(([coluna]) => coluna !== "assigned_to_user_id")).eq(
+          "assigned_to_user_id",
+          user.id,
+        ))
       .not("status", "in", `(${CONVERSATION_TERMINAL_STATUSES.join(",")})`),
     countExact(),
     // A aba "Fechadas" existia SEM número nenhum. Num inbox antigo, é o número

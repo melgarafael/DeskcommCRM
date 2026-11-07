@@ -122,6 +122,15 @@ export function useActiveOrg(): ActiveOrg | null {
 }
 
 /**
+ * Os módulos opcionais ligados, para a tela decidir o que OFERECER. Não lança
+ * fora do provider: devolve vazio, e o que depende de módulo fica escondido —
+ * oferecer a menos é o lado seguro (#3881).
+ */
+export function useModulosLigados(): readonly string[] {
+  return useContext(Ctx)?.activeOrg?.modulos_ligados ?? [];
+}
+
+/**
  * Permission gate based on role rank. Action mapping is intentionally
  * minimal here — feature-specific gates can extend with custom logic.
  */
@@ -151,6 +160,13 @@ const ACTION_MIN_ROLE: Record<string, Role> = {
   // briefing diz MAIS que a conversa — diz o que a IA concluiu sobre a pessoa.
   // Um `viewer` que sondasse esta rota levaria 403 em toda abertura de conversa.
   "inbox.passagens.view": "agent",
+  // Quem participa da conversa (o cabeçalho do atendimento conjunto). `agent` e
+  // não `viewer` pelo mesmo motivo das notas e das passagens: é o piso de quem
+  // ATENDE. Reusar uma das duas permissões irmãs amarraria a lista a um recurso
+  // que não é dela; uma permissão própria deixa o gate correto no dia em que a
+  // lista mudar de piso. Sem ele, um `viewer` que abre QUALQUER conversa pede a
+  // lista e a rota respondia com `authz.denied` a cada abertura.
+  "inbox.participantes.view": "agent",
   "message-templates.view": "agent",
   "ai.agents.view": "manager",
   "ai.agents.write": "admin",
@@ -196,6 +212,17 @@ export function usePermission(action: string): boolean {
  */
 export function usePaisDaOrgAtiva(): string | null {
   return useContext(Ctx)?.activeOrg?.country ?? null;
+}
+
+/**
+ * O idioma padrão da organização ativa (`organizations.locale`, o que o
+ * instalador grava), tolerante como o leitor de país: fora do provider, `null`.
+ * NÃO é o idioma da interface (`useIdioma`), que segue a preferência de quem opera.
+ */
+export function useLocaleDaOrgAtiva(): string | null {
+  const ctx = useContext(Ctx);
+  const orgId = ctx?.activeOrg?.orgId;
+  return ctx?.user.organizations?.find((m) => m.organization_id === orgId)?.locale ?? null;
 }
 
 /**

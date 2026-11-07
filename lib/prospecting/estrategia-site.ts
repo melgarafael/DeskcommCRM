@@ -8,7 +8,13 @@
  * o que o humano lê antes (objeções) fica na tela, nunca no prompt.
  */
 import type { ClasseDeSite, ItemDoRaioX, RaioXDoSite } from "@/lib/prospecting/site-classify";
-import { descreverProblema, trocarMarcadores, type TradutorDeTexto } from "@/lib/prospecting/site-classify";
+import {
+  citavelNoArgumento,
+  descreverProblema,
+  problemasMedidos,
+  trocarMarcadores,
+  type TradutorDeTexto,
+} from "@/lib/prospecting/site-classify";
 import type { OfertaDaCampanha } from "./schema";
 import type { PreviaSalva } from "./previa";
 export type { OfertaDaCampanha } from "./schema";
@@ -157,22 +163,29 @@ export function montarEstrategia(entrada: EntradaDaEstrategia, t: TradutorDeText
     entrada.ofertas.length > 0 ? entrada.ofertas : ["site"];
   // Provisório primeiro: verificação inconclusiva não gera ângulo de conserto
   // (vender em cima de timeout seria queimar o lead com gancho falso).
-  if (entrada.provisorio) {
+  // `nao-medido` é o mesmo caso, já congelado: não olhamos o site (bloqueio
+  // anti-robô, rede), então não há o que citar. Antes o timeout congelava
+  // "fora do ar" e a primeira mensagem dizia que o site não abre (#3723).
+  if (entrada.provisorio || entrada.classe === "nao-medido") {
+    const medido = entrada.classe === "nao-medido" && !entrada.provisorio;
     return {
-      cenario: t("Verificação pendente"),
+      cenario: t(medido ? "Site não medido" : "Verificação pendente"),
       angulo: t(
-        "A verificação do site foi inconclusiva (instabilidade de rede, não defeito comprovado). Sem gancho até a reverificação confirmar — abordar citando queda seria mentir com dados.",
+        medido
+          ? "Não deu para abrir o site daqui (bloqueio ao nosso acesso automático ou rede instável), então NÃO há defeito medido para citar. Aborde pelo que é público e comprovado — nota, avaliações, presença — e não fale do site."
+          : "A verificação do site foi inconclusiva (instabilidade de rede, não defeito comprovado). Sem gancho até a reverificação confirmar — abordar citando queda seria mentir com dados.",
       ),
       ganchos: [],
       objecoes: [],
       proximoPasso: t(
-        "Aguardar a reverificação automática; se congelar como fora do ar, a estratégia de cortesia assume.",
+        medido
+          ? "Aborde sem citar o site. Para ter diagnóstico, rode \"Reanalisar site\" de outra rede ou noutro dia."
+          : "Aguardar a reverificação automática; se esgotar as tentativas, o veredito fica \"não medido\" e a abordagem segue sem citar o site.",
       ),
     };
   }
   const vocabulario = vocabularioDoNicho(entrada.nicho, entrada.sobrescritaVocabulario ?? null, t);
   const ganchos: string[] = [ganchoDeReputacao(entrada.nota, entrada.numAvaliacoes, t)];
-  const faltas: ItemDoRaioX[] = entrada.checklist?.falta ?? [];
 
   let cenario: string;
   let angulo: string;
@@ -226,9 +239,12 @@ export function montarEstrategia(entrada: EntradaDaEstrategia, t: TradutorDeText
       );
     objecoes = OBJETOES_SEM_SITE;
   } else if (entrada.classe === "fora-do-ar") {
+    const dominioMorto = entrada.problemas.includes("dns-morto");
     cenario = t("Site fora do ar");
     angulo = t(
-      "O site NÃO ABRE — quem clica encontra erro. Abra como AVISO de cortesia (gera gratidão, não parece venda) e ofereça reconstruir rápido. Maior urgência, melhor resposta.",
+      dominioMorto
+        ? "O endereço do site NÃO EXISTE MAIS (domínio pode ter expirado) — quem clica no link do Google não chega a lugar nenhum. Abra como AVISO de cortesia e ofereça um endereço novo, rápido: a marca perde quem pesquisa todos os dias."
+        : "O site NÃO ABRE — quem clica encontra erro. Abra como AVISO de cortesia (gera gratidão, não parece venda) e ofereça reconstruir rápido. Maior urgência, melhor resposta.",
     );
     ganchos.push(
       t("Diga que tentou acessar e está fora do ar — você está avisando, não vendendo. A oferta vem depois da reação."),
@@ -281,13 +297,11 @@ export function montarEstrategia(entrada: EntradaDaEstrategia, t: TradutorDeText
     if (detalhe) ganchos.push(trocarMarcadores(t("Problemas detectados: {detalhe}."), { detalhe }));
   }
 
-  if (faltas.length > 0) {
-    ganchos.push(
-      trocarMarcadores(t("Faltas concretas no site: {faltas} — cite uma como exemplo específico."), {
-        faltas: faltas.slice(0, 3).join(", "),
-      }),
-    );
-  }
+  // O checklist NÃO entra em gancho (#3723). `falta-tel`, `falta-fotos`,
+  // `falta-titulo` são melhoria — e três delas eram mentira (site com `wa.me`,
+  // título curto, página montada por JavaScript). Gancho é só o que a medição
+  // provou e qualquer pessoa confirma abrindo o site, e disso já cuidam os
+  // ramos acima: não abre, domínio morto, "não seguro", quebrado no celular.
   if (entrada.temInstagram && entrada.classe !== "agregador" && entrada.classe !== "sem-site") {
     ganchos.push(t("O Instagram pode estar mais atualizado que o site — use isso a favor do diagnóstico."));
   }
@@ -358,9 +372,9 @@ export function estrategiaDoCandidato(
 
 /** Pesos do site por oferta primária. v1 travada por teste; retuning exige medição. */
 const PESOS_DO_SITE: Record<OfertaDaCampanha, Record<string, number>> = {
-  site: { "sem-site": 30, agregador: 30, "site-ruim": 22, "fora-do-ar": 25, "ssl-invalido": 25, "site-ok": 10 },
-  automacao_crm: { "sem-site": 20, agregador: 20, "site-ruim": 14, "fora-do-ar": 16, "ssl-invalido": 16, "site-ok": 14 },
-  automacao_n8n: { "sem-site": 20, agregador: 20, "site-ruim": 14, "fora-do-ar": 16, "ssl-invalido": 16, "site-ok": 14 },
+  site: { "sem-site": 30, agregador: 30, "site-ruim": 22, "fora-do-ar": 25, "ssl-invalido": 25, "site-ok": 10, "nao-medido": 18 },
+  automacao_crm: { "sem-site": 20, agregador: 20, "site-ruim": 14, "fora-do-ar": 16, "ssl-invalido": 16, "site-ok": 14, "nao-medido": 18 },
+  automacao_n8n: { "sem-site": 20, agregador: 20, "site-ruim": 14, "fora-do-ar": 16, "ssl-invalido": 16, "site-ok": 14, "nao-medido": 18 },
 };
 
 const PESO_AVALIACOES: Record<OfertaDaCampanha, { teto: number; porAvaliacao: number }> = {
@@ -391,7 +405,7 @@ export function pontuarCandidato(
   const faixa = PESO_AVALIACOES[ofertaPrimaria] ?? PESO_AVALIACOES.site;
   const pontosAvaliacoes = Math.min(numAvaliacoes ?? 0, faixa.teto) * faixa.porAvaliacao;
   const pesosSite = PESOS_DO_SITE[ofertaPrimaria] ?? PESOS_DO_SITE.site;
-  // Provisório não é classe de mérito: peso neutro até confirmar. Sem isso o
+  // Provisório e `nao-medido` não são classe de mérito: peso neutro. Sem isso o
   // não-verificado herdaria o peso do "fora do ar" e furaria a fila.
   const pontosSite = provisorio ? 18 : (pesosSite[classe] ?? 0);
   const valor = Math.round(pontosNota + pontosAvaliacoes + pontosSite);
@@ -405,7 +419,9 @@ export function pontuarCandidato(
           ? "site em ordem"
           : classe === "agregador" || classe === "sem-site"
             ? "sem site próprio"
-            : "site com problemas",
+            : classe === "nao-medido"
+              ? "site não medido"
+              : "site com problemas",
       ),
     ],
   ];
@@ -426,6 +442,7 @@ export const ROTULOS_DA_CLASSE = {
   "site-ruim": "Site com problemas",
   "ssl-invalido": "Site inseguro",
   "fora-do-ar": "Site fora do ar",
+  "nao-medido": "Site não medido",
 } as const satisfies Record<ClasseDeSite, string>;
 
 export function rotuloDaClasse(classe: ClasseDeSite, t: (texto: string) => string = (texto) => texto): string {
@@ -550,10 +567,12 @@ export function montarDadosDeAbordagem(
     Avaliação: String(data.rating ?? ""),
     Redes: data.socials.join(", "),
   };
-  // Só o DEFINITIVO é citável — e com a data, nunca "agora": o envio pode sair
-  // dias depois da medição, e "agora" envelhece em mentira.
-  if (site && !site.provisorio) {
-    const problemas = site.problemas.map((p) => descreverProblema(p)).filter(Boolean);
+  // Só o DEFINITIVO E MEDIDO é citável (`citavelNoArgumento`) — e com a data,
+  // nunca "agora": o envio pode sair dias depois da medição, e "agora"
+  // envelhece em mentira. `falta-*` fica de fora mesmo em veredito antigo: item
+  // de checklist é melhoria e já tem morada própria na ficha da tela (#3723).
+  if (site && citavelNoArgumento(site)) {
+    const problemas = problemasMedidos(site.problemas).map((p) => descreverProblema(p)).filter(Boolean);
     const dataMedicao = site.verificado_em.slice(0, 10).split("-").reverse().join("/");
     dados["Auditoria"] =
       `${ROTULOS_DA_CLASSE[site.classe]} (verificado em ${dataMedicao})` +

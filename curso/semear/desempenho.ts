@@ -13,6 +13,7 @@
  * 72h do padrão.
  */
 import { type Contexto, exigir, semErro } from "../semear-demonstracao";
+import { textoDaDemonstracao as demo } from "../espanhol-demonstracao";
 
 const conversaId = (n: number) => `de100000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const contatoId = (n: number) => `de200000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -197,7 +198,7 @@ export async function semear(c: Contexto) {
     "etapas",
   ) as Array<{ id: string; name: string; is_won: boolean; is_lost: boolean }>;
   const etapa = (nome: string) => {
-    const e = nome === "ganho" ? etapas.find((x) => x.is_won) : nome === "perdido" ? etapas.find((x) => x.is_lost) : etapas.find((x) => x.name === nome);
+    const e = nome === "ganho" ? etapas.find((x) => x.is_won) : nome === "perdido" ? etapas.find((x) => x.is_lost) : etapas.find((x) => x.name === demo(nome));
     if (!e) throw new Error(`etapa "${nome}" não existe no funil Pacientes`);
     return e.id;
   };

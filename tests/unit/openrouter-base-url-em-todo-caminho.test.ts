@@ -181,3 +181,22 @@ describe("OpenRouter fala chat/completions em todo caminho", () => {
     }
   });
 });
+
+/**
+ * A escada de transcrição é o QUARTO caminho que fala com a OpenRouter (#3382):
+ * `/audio/transcriptions`, com a MESMA chave e o MESMO endpoint da conversa.
+ * Mesma técnica — a escada real, fetch interceptado, a asserção é o host.
+ */
+describe("transcrição da organização OpenRouter vai ao gateway da variável", () => {
+  it("sem endpoint escolhido no painel, o degrau da escada fala com OPENROUTER_BASE_URL", async () => {
+    vi.stubEnv("OPENROUTER_BASE_URL", PROXY);
+    vi.resetModules();
+    const { decidirTranscricao } = await import("@/lib/messaging/media/escada-de-transcricao");
+    const decisao = await decidirTranscricao({
+      conversa: { provider: "openrouter", apiKey: "sk-or-x", modelId: "google/gemini-2.5-flash" },
+      chaveOpenai: async () => null,
+    });
+    await decisao.transcriber!.transcribe(Buffer.from("ogg"), "audio/ogg");
+    expect(destinos).toEqual(["meu-proxy.example.com"]);
+  });
+});

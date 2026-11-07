@@ -26,6 +26,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { audit } from "@/lib/audit";
 import { pausarIaPorAtendimentoManual } from "@/lib/escalacao/atendimento-manual";
 import { estamparAtribuicaoDoContato, metadataDoAnuncio } from "@/lib/leads/atribuicao-de-anuncio";
+import { ancoraCtwaDaMensagem } from "@/lib/leads/prova-meta-lead-submitted";
 import {
   ehNumeroInternoDeAviso,
   registrarMensagemIgnorada,
@@ -288,6 +289,7 @@ export async function ingestMetaInbound(
       media_mime: e.media?.mime ?? null,
       sent_at: e.sentAt.toISOString(),
       metadata: {
+        ...ancoraCtwaDaMensagem(atribuicao),
         ...(e.media ? { meta_media_id: e.media.id, voice: e.media.voice } : {}),
         // Nome original do anexo (#2613) — o cartão do Inbox lê esta chave.
         // Só quando há nome (a Cloud API manda `filename` só em `document`):

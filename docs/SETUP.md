@@ -141,7 +141,7 @@ Se você quer rodar o app o mais rápido possível com o mínimo viável:
 2. No dashboard, clique **New project**.
    - **Name:** `deskcomm-dev` (ou o que quiser).
    - **Database password:** clique no ícone de dado pra gerar. **Salve essa senha num gerenciador (1Password, Bitwarden)** — você vai precisar pra rodar migrations e nunca verá ela de novo no dashboard.
-   - **Region:** `South America (São Paulo)` — latência mínima pro Brasil.
+   - **Region:** a **mais próxima da VPS onde o CRM roda** — VPS no Brasil → `South America (São Paulo)`; VPS nos EUA ou na Europa → a região do Supabase mais perto dela (`us-east-1`, `eu-central-1`). Cada tela e cada turno do agente fazem várias consultas ao banco, e cada ida e volta atravessa a distância entre os dois: banco num continente e app em outro somam dezenas de milissegundos por consulta, em toda página. **A região não muda depois de criado o projeto** — trocar exige criar outro projeto e migrar os dados.
    - **Pricing plan:** Free.
 3. Clique **Create new project**. Aguarde ~2 minutos enquanto provisiona.
 4. Quando carregar, vá em **Project Settings** (engrenagem no menu lateral) → **API**.
@@ -545,6 +545,8 @@ NEXT_PUBLIC_ADMIN_URL=http://localhost:3000
 # 2026-08-25, junto com a chegada do laço de verdade no worker.
 EVENT_LOG_DRAIN_INTERVAL_MS=2000
 EVENT_LOG_DRAIN_IDLE_INTERVAL_MS=10000
+EVENT_LOG_DRAIN_IDLE_MAX_INTERVAL_MS=30000
+EVENT_LOG_DRAIN_STALE_SWEEP_MS=60000
 EVENT_LOG_DRAIN_BATCH_SIZE=50
 ```
 

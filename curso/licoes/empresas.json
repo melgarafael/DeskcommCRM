@@ -1,0 +1,279 @@
+{
+  "id": "empresas",
+  "titulo": "Empresas",
+  "tela": "/app/companies",
+  "resumo": "O cadastro das empresas para quem a clínica vende: razão social, CNPJ, endereço e as pessoas que decidem lá dentro, com os telefones de cada uma.",
+  "licoes": [
+    {
+      "id": "empresas-conhecendo-a-tela",
+      "titulo": "Conhecendo a tela de Empresas",
+      "objetivo": "Achar a tela, ler a lista de empresas, procurar uma delas e entender o que a ficha mostra.",
+      "papel": "agent",
+      "busca": [
+        "empresas",
+        "cadastro de empresa",
+        "cnpj",
+        "razão social",
+        "venda para empresas",
+        "b2b",
+        "decisores",
+        "cliente pessoa jurídica"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Onde fica a tela",
+          "rota": "/app/crm",
+          "texto": "Empresas não aparece direto no menu lateral. No grupo \"CRM\" do menu, clique em \"Ver tudo em CRM\". Na parte \"O dia a dia da venda\" está o cartão \"Empresas\". O caminho completo é: CRM › Ver tudo em CRM › Empresas.",
+          "dica": "O cartão só existe quando quem administra o servidor liga o módulo, em Administração › Sistema › Módulos opcionais › \"Empresas e pessoas (venda para empresas)\". Desligado, o cartão some e o endereço da tela leva à página \"404 — Página não encontrada\".",
+          "destaques": [
+            {
+              "alvo": { "role": "link", "nome": "Ver tudo em CRM", "exato": true },
+              "rotulo": "Ver tudo em CRM",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "link", "nome": "^Empresas", "regex": true },
+              "rotulo": "Abrir as Empresas",
+              "tipo": "caixa"
+            }
+          ],
+          "clicar": { "role": "link", "nome": "^Empresas", "regex": true }
+        },
+        {
+          "id": "p2",
+          "titulo": "A lista de empresas",
+          "rota": "/app/companies",
+          "texto": "Cada linha é uma empresa. \"Nome fantasia\" é o nome que todo mundo conhece; \"Razão social\" é o nome oficial, o do contrato e da nota fiscal. Depois vêm o CNPJ, a cidade e a data da última mudança. As empresas que foram mexidas por último aparecem em cima.",
+          "dica": "Quando o CNPJ é consultado, os nomes passam a ser os da Receita Federal, em letras maiúsculas e sem acento. Para deixar do jeito que a clínica chama a empresa, use \"Editar empresa\" na ficha.",
+          "destaques": [
+            {
+              "alvo": { "role": "heading", "nome": "Empresas", "exato": true },
+              "rotulo": "As empresas da clínica",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "columnheader", "nome": "Nome fantasia", "exato": true },
+              "rotulo": "Nome conhecido",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "columnheader", "nome": "Razão social", "exato": true },
+              "rotulo": "Nome oficial",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "titulo": "O que a coluna Situação diz",
+          "texto": "Com CNPJ, a empresa é consultada nos dados públicos da Receita (pela BrasilAPI). Deu certo: a coluna mostra a situação do cadastro, como \"ATIVA\". \"failed\" quer dizer que a consulta não achou o CNPJ ou não respondeu. \"pending\" quer dizer que ainda não houve consulta, e é o que fica para sempre numa empresa sem CNPJ, porque não há o que consultar.",
+          "dica": "\"ATIVA\" é a situação na Receita, não quer dizer que a empresa é cliente da clínica.",
+          "destaques": [
+            {
+              "alvo": { "role": "cell", "nome": "ATIVA", "exato": true, "literal": true, "n": 0 },
+              "rotulo": "Consultada",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "cell", "nome": "failed", "exato": true, "literal": true },
+              "rotulo": "Consulta falhou",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "cell", "nome": "pending", "exato": true, "literal": true },
+              "rotulo": "Sem CNPJ",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Procurar uma empresa",
+          "texto": "A caixa de busca procura pelo nome fantasia, pela razão social ou pelo CNPJ, com ou sem pontos. Escreva \"Horizonte\" e a lista fica só com a construtora. Clique no nome para abrir a ficha.",
+          "antes": [
+            { "acao": "fill", "alvo": { "placeholder": "Buscar por nome ou CNPJ" }, "valor": "Horizonte" }
+          ],
+          "destaques": [
+            {
+              "alvo": { "placeholder": "Buscar por nome ou CNPJ" },
+              "rotulo": "Nome ou CNPJ",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "link", "nome": "CONSTRUTORA HORIZONTE AZUL", "exato": true, "literal": true },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": { "role": "link", "nome": "CONSTRUTORA HORIZONTE AZUL", "exato": true, "literal": true }
+        },
+        {
+          "id": "p5",
+          "titulo": "A ficha da empresa",
+          "rota": "/app/companies/f1a01002-0000-4000-8000-000000000002",
+          "texto": "Em \"Dados cadastrais\" ficam a razão social, a situação na Receita, o porte, a atividade principal (o CNAE) e o endereço. A linha \"Enriquecimento\" conta como foi a consulta do CNPJ: \"completed\" é consulta feita; quando falha, o motivo aparece ao lado.",
+          "destaques": [
+            {
+              "alvo": { "role": "heading", "nome": "Dados cadastrais", "exato": true },
+              "rotulo": "Dados da Receita",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "texto": "completed", "exato": true, "literal": true },
+              "rotulo": "Consulta feita",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "titulo": "Quem decide e os telefones",
+          "texto": "\"Pessoas / decisores\" lista quem trabalha na empresa e fala com a clínica, com o cargo de cada um. \"Telefones\" junta os números dessas pessoas: o Marcos tem dois, o celular e o fixo do RH. Clique num nome para abrir a ficha da pessoa, ou num número para abrir aquele contato.",
+          "dica": "Um telefone só aparece aqui se estiver ligado a uma pessoa da empresa. Quem liga telefone a pessoa é a importação de planilha, em Importações.",
+          "destaques": [
+            {
+              "alvo": { "role": "link", "nome": "Marcos Teixeira", "exato": true, "literal": true },
+              "rotulo": "Quem decide",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "texto": "Gerente de RH", "exato": true },
+              "rotulo": "Cargo",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "heading", "nome": "Telefones", "exato": true },
+              "rotulo": "Os números da empresa",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "link", "nome": "+551133224410", "exato": true, "literal": true },
+              "rotulo": "Fixo do RH",
+              "tipo": "numero"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "empresas-cadastrar-e-corrigir",
+      "titulo": "Cadastrar e corrigir uma empresa",
+      "objetivo": "Cadastrar uma empresa nova, entender a consulta do CNPJ e saber onde corrigir, consultar de novo ou excluir.",
+      "papel": "manager",
+      "busca": [
+        "nova empresa",
+        "cadastrar empresa",
+        "consultar cnpj",
+        "editar empresa",
+        "excluir empresa",
+        "enriquecer cnpj",
+        "cnpj não encontrado"
+      ],
+      "passos": [
+        {
+          "id": "p1",
+          "titulo": "Abrir o cadastro",
+          "rota": "/app/companies",
+          "texto": "Clique em \"Nova empresa\", no alto da tela.",
+          "dica": "Só gerente ou administrador consegue criar, consultar o CNPJ e excluir. Quem é atendente vê o botão, mas o cadastro é recusado.",
+          "destaques": [
+            {
+              "alvo": { "role": "button", "nome": "Nova empresa", "exato": true },
+              "rotulo": "Clique aqui",
+              "tipo": "seta"
+            }
+          ],
+          "clicar": { "role": "button", "nome": "Nova empresa", "exato": true }
+        },
+        {
+          "id": "p2",
+          "titulo": "Preencher os nomes",
+          "texto": "Basta um campo: a razão social, o nome fantasia ou o CNPJ. Aqui a farmácia entra só com os nomes. Quando você tem o CNPJ, digite e clique em \"Consultar CNPJ\": os dados públicos da Receita preenchem o formulário, e nada é gravado até você clicar em \"Criar\". Se o CNPJ já está cadastrado, a tela avisa antes.",
+          "dica": "Consultar o CNPJ manda o número para a BrasilAPI, um serviço público na internet. Ao criar uma empresa com CNPJ, essa consulta também roda sozinha.",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "button", "nome": "Nova empresa", "exato": true } },
+            { "acao": "aguardar", "alvo": { "role": "dialog" } },
+            { "acao": "fill", "alvo": { "role": "textbox", "n": 0, "dentro": { "role": "dialog" } }, "valor": "Drogaria Vida Plena Ltda" },
+            { "acao": "fill", "alvo": { "role": "textbox", "n": 1, "dentro": { "role": "dialog" } }, "valor": "Farmácia Vida Plena" }
+          ],
+          "destaques": [
+            {
+              "alvo": { "role": "textbox", "n": 0, "dentro": { "role": "dialog" } },
+              "rotulo": "Razão social",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "textbox", "n": 1, "dentro": { "role": "dialog" } },
+              "rotulo": "Nome fantasia",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "button", "nome": "Consultar CNPJ", "exato": true },
+              "rotulo": "Preenche com a Receita",
+              "tipo": "numero"
+            }
+          ],
+          "clicar": { "role": "button", "nome": "Criar", "exato": true, "dentro": { "role": "dialog" } }
+        },
+        {
+          "id": "p3",
+          "titulo": "A empresa entrou na lista",
+          "texto": "Depois de \"Criar\", a farmácia aparece no alto da lista. Sem CNPJ, a situação fica \"pending\": não há o que consultar. Para completar, abra a ficha e use \"Editar empresa\".",
+          "antes": [
+            { "acao": "click", "alvo": { "role": "button", "nome": "Criar", "exato": true, "dentro": { "role": "dialog" } } },
+            { "acao": "aguardar", "alvo": { "role": "link", "nome": "Farmácia Vida Plena", "exato": true, "literal": true } }
+          ],
+          "destaques": [
+            {
+              "alvo": { "role": "link", "nome": "Farmácia Vida Plena", "exato": true, "literal": true },
+              "rotulo": "Empresa nova",
+              "tipo": "caixa"
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "titulo": "Quando a consulta do CNPJ falha",
+          "rota": "/app/companies/f1a01004-0000-4000-8000-000000000004",
+          "texto": "A Rota Sul veio de uma planilha e a consulta não achou o CNPJ: o motivo está na linha \"Enriquecimento\". Confira o número em \"Editar empresa\" e depois clique em \"Enriquecer CNPJ\" para consultar de novo.",
+          "dica": "Um CNPJ recém-aberto pode demorar alguns dias para aparecer nos dados públicos. Nesse caso o número está certo: é só tentar de novo mais tarde.",
+          "destaques": [
+            {
+              "alvo": { "texto": "^failed", "regex": true, "literal": true },
+              "rotulo": "O motivo",
+              "tipo": "caixa"
+            },
+            {
+              "alvo": { "role": "button", "nome": "Editar empresa", "exato": true },
+              "rotulo": "Corrigir",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "button", "nome": "Enriquecer CNPJ", "exato": true },
+              "rotulo": "Consultar de novo",
+              "tipo": "numero"
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "titulo": "Excluir só sem pessoas ligadas",
+          "texto": "\"Excluir empresa\" apaga o cadastro. Se ainda há pessoas ligadas à empresa, como o Paulo aqui na Rota Sul, a exclusão é recusada, a tela mostra o motivo e nada é apagado.",
+          "destaques": [
+            {
+              "alvo": { "role": "link", "nome": "Paulo Henrique Sales", "exato": true, "literal": true },
+              "rotulo": "Pessoa ligada",
+              "tipo": "numero"
+            },
+            {
+              "alvo": { "role": "button", "nome": "Excluir empresa", "exato": true },
+              "rotulo": "Excluir",
+              "tipo": "caixa"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

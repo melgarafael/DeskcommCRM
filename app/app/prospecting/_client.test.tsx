@@ -191,6 +191,35 @@ describe("A4: contador da verificação e o sem-site derivado", () => {
   });
 });
 
+describe("Completar fichas: o botão ao lado de Verificar agora", () => {
+  it("chama a ação da campanha e mostra quantas fichas foram completadas", async () => {
+    api.post.mockResolvedValueOnce({
+      data: { completadas: 2, ja_completas: 0, sem_links: 0, faltam: 0 },
+    });
+    openPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Completar fichas" }));
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith("/api/v1/prospecting", {
+        action: "completar_fichas",
+        id: COMPLETA,
+      }),
+    );
+    expect(await screen.findByText("Fichas completadas: 2.")).toBeVisible();
+    expect(screen.queryByText(/Clique de novo/)).toBeNull();
+  });
+
+  it("com fichas sobrando, pede para clicar de novo", async () => {
+    api.post.mockResolvedValueOnce({
+      data: { completadas: 100, ja_completas: 0, sem_links: 0, faltam: 5 },
+    });
+    openPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Completar fichas" }));
+    expect(
+      await screen.findByText("Fichas completadas: 100. Clique de novo para continuar."),
+    ).toBeVisible();
+  });
+});
+
 describe("A2: o aviso da prévia e a troca de campanha", () => {
   it("a falha da prévia fica na janela e não vira aviso geral da página", async () => {
     api.post.mockRejectedValueOnce(new Error("A IA demorou demais."));
@@ -642,5 +671,45 @@ describe("H: recarrega sozinha enquanto há o que preparar, e para quando zera",
     await passar(100);
     await passar(60_000);
     expect(api.get).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("WhatsApp conferido antes da abordagem (lib/prospecting/whatsapp.ts)", () => {
+  function comWhatsapp() {
+    const f = fixture();
+    const com = { ...empresa("Tem zap", "https://z.test/", SITE_OK), whatsapp: { existe: true, verificado_em: "2026-11-02T12:00:00Z" } };
+    const sem = { ...empresa("Fixo sem zap", "https://f2.test/", SITE_OK), whatsapp: { existe: false, verificado_em: "2026-11-02T12:00:00Z" } };
+    f.candidates.push(candidato("c7", COMPLETA, com), candidato("c8", COMPLETA, sem, false));
+    return f;
+  }
+
+  it("o contador diz quantos foram conferidos e quantos ficaram fora por não ter WhatsApp", async () => {
+    api.get.mockImplementation(async () => ({ data: comWhatsapp() }));
+    openPage();
+    // 7 empresas com telefone na campanha (c1–c5, c7, c8); 2 conferidas, 1 sem WhatsApp.
+    expect(
+      await screen.findByText(/WhatsApp verificado: 2 de 7/),
+    ).toHaveTextContent("(1 sem WhatsApp, fora da abordagem)");
+    expect(within(screen.getByRole("row", { name: /Tem zap/ })).getByText("Tem WhatsApp")).toBeVisible();
+  });
+
+  it("sem nenhum veredito (módulo desligado ou sem conexão por QR), o contador do WhatsApp não aparece", async () => {
+    api.get.mockImplementation(async () => ({ data: fixture() }));
+    openPage();
+    await screen.findByText(/Sites verificados:/);
+    expect(screen.queryByText(/WhatsApp verificado:/)).toBeNull();
+  });
+
+  it("quem não tem WhatsApp aparece só nas desmarcadas, com o motivo, e sem caixa para marcar de volta", async () => {
+    api.get.mockImplementation(async () => ({ data: comWhatsapp() }));
+    openPage();
+    await screen.findByText(/WhatsApp verificado:/);
+    expect(screen.queryByRole("row", { name: /Fixo sem zap/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Mostrar desmarcadas/ }));
+    const linha = await screen.findByRole("row", { name: /Fixo sem zap/ });
+    expect(within(linha).getByText("Sem WhatsApp")).toBeVisible();
+    expect(within(linha).queryByRole("checkbox")).toBeNull();
+    // A desmarcada pelo operador (c5) continua marcável: a trava é só de quem não tem WhatsApp.
+    expect(within(screen.getByRole("row", { name: /Desmarcada/ })).getByRole("checkbox")).toBeVisible();
   });
 });

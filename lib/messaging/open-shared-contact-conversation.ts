@@ -4,8 +4,10 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { ensureConversation, sessaoProntaParaEnvio } from "@/lib/automation/start-conversation";
+import { ensureConversation, escolherSessaoParaEnvio } from "@/lib/automation/start-conversation";
 import { encontrarContatoPorTelefone } from "@/lib/channels/contato-por-telefone";
+import { canalDesativado } from "@/lib/channels/desativado";
+import { lerEstadoDoCanal } from "@/lib/channels/estado";
 import { phoneLookupVariants, canonicalPhoneBR } from "@/lib/channels/phone-variants";
 import { parseDialablePhone } from "@/lib/messaging/contact-card";
 
@@ -83,16 +85,66 @@ export async function openSharedContactConversation(
   organizationId: string,
   input: OpenSharedContactInput,
 ): Promise<OpenSharedContactResult> {
-  const sessionId = input.channel_session_id ?? (await sessaoProntaParaEnvio(admin, organizationId));
-  if (!sessionId) throw new Error("session_not_found");
+  /**
+   * QUEM ESCOLHEU O CANAL RESPONDE POR ELE (#3483).
+   *
+   * `channel_session_id` no corpo é a tela dizendo "por ESTE número". A tela só
+   * oferece canal conectado e não desligado (`candidatosParaConversaNova` /
+   * `elegiveisParaConversaNova`), mas filtro de tela não é defesa: o mesmo POST
+   * atende MCP e uma aba aberta desde antes de o canal cair. Até aqui a rota só
+   * perguntava se a sessão existia na organização — e criava a conversa num
+   * canal DESLIGADO (`metadata.disabled`, #2318: o produto promete que ele não
+   * entra na inbox) ou fora do ar (`STOPPED`/`FAILED`/`SCAN_QR_CODE`: não há por
+   * onde a primeira mensagem sair). Era a conversa vazia que a issue #3483
+   * manda não criar, num canal que ninguém consegue usar.
+   *
+   * Sem canal escolhido a régua é outra, e continua a de sempre: a sessão vem
+   * de `sessaoProntaParaEnvio`, que degrada para "qualquer uma não arquivada"
+   * de propósito — travar a abertura por causa da saúde do transporte trocaria
+   * um defeito por outro. Ali só o DESLIGADO recusa, porque desligar é vontade
+   * declarada do dono do número, não saúde passageira.
+   */
+  const escolhidaPeloChamador = Boolean(input.channel_session_id);
+  const semCanalEscolhido = escolhidaPeloChamador
+    ? null
+    : await escolherSessaoParaEnvio(admin, organizationId, {
+        // O pedido traz TELEFONE: a abertura é por telefone, e a sessão mais
+        // antiga da organização pode ser a social (Instagram/Facebook), que não
+        // disca número nenhum. Sem a preferência, a conversa de um contato com
+        // telefone nascia no canal errado e a primeira mensagem era recusada —
+        // a mesma pendência que o #3358 fechou na criação de contato
+        // (`lib/contacts/conversa-ao-criar.ts`) e que faltava nesta porta.
+        preferirTelefone: Boolean(input.phone_number),
+      });
+  const sessionId = input.channel_session_id ?? semCanalEscolhido?.id ?? null;
+  if (!sessionId) {
+    // Nenhum canal pode enviar. "Todos desligados" é a recusa de antes —
+    // `session_unavailable`, 409 —, e não "sessão não encontrada": o operador
+    // desligou os canais e precisa ler isso (`route.ts:154`). 404 só quando a
+    // organização não tem canal de mensagem nenhum.
+    throw new Error(
+      semCanalEscolhido?.todosDesligados ? "session_unavailable" : "session_not_found",
+    );
+  }
   const { data: session, error: sessErr } = await admin
     .from("channel_sessions")
-    .select("id")
+    .select("id, provider, status, metadata")
     .eq("organization_id", organizationId)
     .eq("id", sessionId)
     .maybeSingle();
   if (sessErr) throw new Error(sessErr.message);
   if (!session) throw new Error("session_not_found");
+
+  const sessao = session as {
+    id: string;
+    provider: string | null;
+    status: string | null;
+    metadata: unknown;
+  };
+  if (canalDesativado(sessao.metadata)) throw new Error("session_unavailable");
+  if (escolhidaPeloChamador && !lerEstadoDoCanal(sessao.status).utilizavel) {
+    throw new Error("session_unavailable");
+  }
 
   const contactId = await resolveContactId(admin, organizationId, input);
   // Abrir conversa com pessoal é escrita para fora da operação (spec 21, etapa

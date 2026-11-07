@@ -38,6 +38,13 @@ let rpcResposta: Record<string, unknown> = {
 let insertErro: { code?: string; message: string } | null = null;
 /** Conversa que o provider já associou a esta thread — o caminho curto. */
 let conversaExistente: { id: string; contact_id: string } | null = null;
+/** O erro da leitura da conversa pela thread (o PostgREST devolve, não lança). */
+let erroDaThread: { code?: string; message: string } | null = null;
+/** A linha já gravada que o `23505` esconde, e o que a ingestão interrompida deixou. */
+let mensagemGravada: Record<string, unknown> | null = null;
+let carimboDaConversa: string | null = null;
+let despachoPedido = false;
+let erroDaRetomada: { message: string } | null = null;
 
 /** Imita o builder do PostgREST: encadeável, resolve no `maybeSingle`. */
 function chain(tabela: string, op: string, payload?: unknown): Record<string, unknown> {
@@ -51,7 +58,16 @@ function chain(tabela: string, op: string, payload?: unknown): Record<string, un
           // mensagem também termina em maybeSingle. Separar por tabela+op é o
           // que impede o dublê de responder a pergunta errada.
           if (tabela === "conversations" && op === "select") {
-            return async () => ({ data: conversaExistente, error: null });
+            return async () =>
+              payload === "last_inbound_at"
+                ? { data: { last_inbound_at: carimboDaConversa }, error: null }
+                : { data: erroDaThread ? null : conversaExistente, error: erroDaThread };
+          }
+          if (tabela === "messages" && op === "select") {
+            return async () => ({ data: erroDaRetomada ? null : mensagemGravada, error: erroDaRetomada });
+          }
+          if (tabela === "event_log" && op === "select") {
+            return async () => ({ data: despachoPedido ? { id: "evento-1" } : null, error: null });
           }
           if (tabela === "contacts" && op === "select") {
             return async () => ({ data: null, error: null });
@@ -104,7 +120,7 @@ const admin = {
     return v === null ? { data: null, error: { message: "falhou" } } : { data: v, error: null };
   },
   from: (tabela: string) => ({
-    select: () => chain(tabela, "select"),
+    select: (colunas: string) => chain(tabela, "select", colunas),
     insert: (payload: unknown) => chain(tabela, "insert", payload),
     update: (payload: unknown) => chain(tabela, "update", payload),
   }),
@@ -145,6 +161,11 @@ beforeEach(() => {
   ops.length = 0;
   linhaConversa = { provider_conversation_id: null };
   conversaExistente = null;
+  erroDaThread = null;
+  mensagemGravada = null;
+  carimboDaConversa = null;
+  despachoPedido = false;
+  erroDaRetomada = null;
   insertErro = null;
   rpcResposta = { fn_upsert_wa_contact: "contact-1", fn_upsert_wa_conversation: "conv-1" };
 });
@@ -210,6 +231,25 @@ describe("o que a ingestão GRAVA", () => {
     });
   });
 
+  it("ancora o clique CTWA da mensagem inbound, sem confundir source_id do anúncio", async () => {
+    await ingestZernioInbound(admin, {
+      ...ENTRADA,
+      payload: evento({ referral: { source_type: "ad", source_id: "ad-123", ctwa_clid: "click-456" } }),
+    });
+    const ins = ops.find((o) => o.tabela === "messages" && o.op === "insert")?.payload as Record<string, unknown>;
+    expect(ins.metadata).toMatchObject({
+      meta_ctwa_message_v1: { platform: "meta_ads", source_type: "ad", ctwa_clid: "click-456" },
+    });
+
+    ops.length = 0;
+    await ingestZernioInbound(admin, {
+      ...ENTRADA,
+      payload: evento({ referral: { source_type: "ad", source_id: "ad-123" } }),
+    });
+    const somenteAnuncio = ops.find((o) => o.tabela === "messages" && o.op === "insert")?.payload as Record<string, unknown>;
+    expect(somenteAnuncio.metadata).not.toHaveProperty("meta_ctwa_message_v1");
+  });
+
   it("anexo define o tipo e a url fica no metadata, não no body", async () => {
     await ingestZernioInbound(admin, {
       ...ENTRADA,
@@ -244,12 +284,23 @@ describe("o que a ingestão GRAVA", () => {
   });
 });
 
-describe("o pino do WhatsApp — o webhook não traz as coordenadas", () => {
-  // Medido em produção: o evento chega com `text: "📍 Location"` e nada mais;
-  // a MESMA mensagem, na API de mensagens da conversa, tem metadata.location.
-  const pino = () => evento({ text: "📍 Location", platformMessageId: "wamid.PINO" });
-  const listagem = (mensagens: unknown[]) =>
-    new Response(JSON.stringify({ status: "success", messages: mensagens }), { status: 200 });
+describe("o pino do WhatsApp — as coordenadas vêm no próprio webhook", () => {
+  // Medido em 24/09/2026: o evento chegava com `text: "📍 Location"` e nada mais,
+  // e a ingestão buscava as coordenadas na API DENTRO da requisição do webhook.
+  // Medido de novo em 27/10/2026 no log de entregas do provedor (30 dias): os 50
+  // pinos chegaram com `metadata.location`, e 29 das 129 entregas de pino tinham
+  // vencido o limite de 5 s. A API saiu do caminho da requisição.
+  const pinoDoWebhook = (location: Record<string, unknown>, texto = "📍 Location", id = "wamid.PINO") => ({
+    ...evento({ text: texto, platformMessageId: id }),
+    metadata: { location },
+  });
+  const pinoSemCoordenadas = () => evento({ text: "📍 Location", platformMessageId: "wamid.PINO" });
+  const chamadasAoProvedor = (f: { mock: { calls: unknown[][] } }) =>
+    f.mock.calls.filter(([u]) => String(u).includes("z.test")).length;
+  const pediuNovaBusca = () =>
+    ops.find(
+      (o) => o.op === "emit_event" && (o.payload as { p_event_type?: string }).p_event_type === "message.location_retry_requested",
+    )?.payload as Record<string, unknown> | undefined;
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -258,53 +309,58 @@ describe("o pino do WhatsApp — o webhook não traz as coordenadas", () => {
     });
   });
 
-  it("busca a mensagem na API e grava tipo location, link do mapa e coordenadas", async () => {
-    const f = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      listagem([
-        { id: "wamid.OUTRA", message: "hola", metadata: {} },
-        { id: "wamid.PINO", message: "📍 Location", metadata: { location: { latitude: -25.334888, longitude: -57.543594 } } },
-      ]),
-    );
-    await ingestZernioInbound(admin, { ...ENTRADA, payload: pino() });
-
-    const url = String(f.mock.calls[0]![0]);
-    expect(url).toContain("/v1/inbox/conversations/6a76a2dc4b8fe115e5f6c300/messages");
-    expect(url).toContain("accountId=acc_1");
-    // Mais recentes primeiro: o pino acabou de chegar.
-    expect(url).toContain("sortOrder=desc");
-    const ins = ops.find((o) => o.tabela === "messages" && o.op === "insert")?.payload as Record<string, unknown>;
-    expect(ins.type).toBe("location");
-    expect(ins.body).toBe("📍 https://maps.google.com/?q=-25.334888,-57.543594");
-    expect(ins.metadata).toEqual({ location: { latitude: -25.334888, longitude: -57.543594 } });
-    // Com coordenadas, nada a buscar de novo.
-    expect(ops.some((o) => o.op === "emit_event" && (o.payload as { p_event_type?: string }).p_event_type === "message.location_retry_requested")).toBe(false);
+  afterEach(() => {
+    vi.mocked(resolveZernioCreds).mockReset();
   });
 
-  it("lugar com nome ('📍 Praça…'): também busca, e grava nome, endereço e link", async () => {
-    // Caso real (24/09/2026): o cliente escolheu uma praça no mapa; o webhook
-    // trouxe só "📍 Praça da Matriz", e a API trouxe coordenadas, nome e endereço.
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      listagem([
-        {
-          id: "wamid.PRACA",
-          message: "📍 Praça da Matriz",
-          metadata: { location: { latitude: -23.55, longitude: -46.63, name: "Praça da Matriz", address: "Centro, São Paulo, SP" } },
-        },
-      ]),
-    );
+  it("⭐ grava tipo location, link do mapa e coordenadas do webhook — sem nenhuma chamada ao provedor", async () => {
+    const f = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
     await ingestZernioInbound(admin, {
       ...ENTRADA,
-      payload: evento({ text: "📍 Praça da Matriz", platformMessageId: "wamid.PRACA" }),
+      payload: pinoDoWebhook({ latitude: -23.561414, longitude: -46.655881 }),
+    });
+
+    expect(chamadasAoProvedor(f), "a ingestão perguntou ao provedor o que o webhook já trouxe").toBe(0);
+    const ins = ops.find((o) => o.tabela === "messages" && o.op === "insert")?.payload as Record<string, unknown>;
+    expect(ins.type).toBe("location");
+    expect(ins.body).toBe("📍 https://maps.google.com/?q=-23.561414,-46.655881");
+    expect(ins.metadata).toEqual({ location: { latitude: -23.561414, longitude: -46.655881 } });
+    // Com coordenadas, nada a buscar de novo.
+    expect(pediuNovaBusca()).toBeUndefined();
+  });
+
+  it("lugar com nome ('📍 Praça…'): nome e endereço do webhook entram no corpo", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+    await ingestZernioInbound(admin, {
+      ...ENTRADA,
+      payload: pinoDoWebhook(
+        { latitude: -23.55, longitude: -46.63, name: "Praça da Matriz", address: "Centro, São Paulo, SP" },
+        "📍 Praça da Matriz",
+        "wamid.PRACA",
+      ),
     });
     const ins = ops.find((o) => o.tabela === "messages" && o.op === "insert")?.payload as Record<string, unknown>;
     expect(ins.type).toBe("location");
     expect(ins.body).toBe("📍 Praça da Matriz — Centro, São Paulo, SP — https://maps.google.com/?q=-23.55,-46.63");
   });
 
-  it("texto que só COMEÇA com o alfinete e não é pino na API segue como texto", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      listagem([{ id: "wamid.TXT", message: "📍 minha casa é a do portão azul", metadata: {} }]),
-    );
+  it("⭐ webhook SEM coordenadas: nenhuma chamada ao provedor dentro da requisição — a busca vai para depois", async () => {
+    const f = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: pinoSemCoordenadas() });
+
+    expect(r.status).toBe("ingested");
+    expect(chamadasAoProvedor(f), "a busca do pino segurou a resposta ao provedor").toBe(0);
+    const ins = ops.find((o) => o.tabela === "messages" && o.op === "insert")?.payload as Record<string, unknown>;
+    expect(ins).toMatchObject({ type: "text", body: "📍 Location", metadata: {} });
+    expect(pediuNovaBusca()).toMatchObject({
+      p_event_type: "message.location_retry_requested",
+      p_entity_id: "msg-1",
+      p_organization_id: "org-1",
+      p_payload: { message_id: "msg-1", account_id: "acc_1", provider_conversation_id: "6a76a2dc4b8fe115e5f6c300" },
+    });
+  });
+
+  it("texto que só COMEÇA com o alfinete segue como texto (quem decide, depois, é a API)", async () => {
     await ingestZernioInbound(admin, {
       ...ENTRADA,
       payload: evento({ text: "📍 minha casa é a do portão azul", platformMessageId: "wamid.TXT" }),
@@ -313,43 +369,19 @@ describe("o pino do WhatsApp — o webhook não traz as coordenadas", () => {
     expect(ins).toMatchObject({ type: "text", body: "📍 minha casa é a do portão azul" });
   });
 
-  it("API fora do ar: a mensagem entra como antes, com o marcador — nunca se perde", async () => {
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ECONNRESET"));
-    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: pino() });
-    expect(r.status).toBe("ingested");
-    const ins = ops.find((o) => o.tabela === "messages" && o.op === "insert")?.payload as Record<string, unknown>;
-    expect(ins).toMatchObject({ type: "text", body: "📍 Location", metadata: {} });
-  });
-
-  it("⭐ API fora do ar: pede uma NOVA busca das coordenadas para depois (29/09/2026: timeout, pino sem mapa)", async () => {
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("The operation was aborted due to timeout"));
-    await ingestZernioInbound(admin, { ...ENTRADA, payload: pino() });
-    const pedido = ops.find((o) => o.op === "emit_event" && (o.payload as { p_event_type?: string }).p_event_type === "message.location_retry_requested")?.payload as Record<string, unknown> | undefined;
-    expect(pedido).toMatchObject({
-      p_event_type: "message.location_retry_requested",
-      p_entity_id: "msg-1",
-      p_organization_id: "org-1",
-      p_payload: { message_id: "msg-1", account_id: "acc_1", provider_conversation_id: "6a76a2dc4b8fe115e5f6c300" },
-    });
-  });
-
-  afterEach(() => {
-    vi.mocked(resolveZernioCreds).mockReset();
-  });
-
   it("o mesmo pedido de nova busca no caminho da conversa JÁ associada à thread", async () => {
     conversaExistente = { id: "conv-existente", contact_id: "contact-1" };
-    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("The operation was aborted due to timeout"));
-    await ingestZernioInbound(admin, { ...ENTRADA, payload: pino() });
-    const pedido = ops.find((o) => o.op === "emit_event" && (o.payload as { p_event_type?: string }).p_event_type === "message.location_retry_requested");
-    expect(pedido?.payload).toMatchObject({ p_payload: { message_id: "msg-1", external_id: "wamid.PINO" } });
+    const f = vi.spyOn(globalThis, "fetch");
+    await ingestZernioInbound(admin, { ...ENTRADA, payload: pinoSemCoordenadas() });
+    expect(f).not.toHaveBeenCalled();
+    expect(pediuNovaBusca()).toMatchObject({ p_payload: { message_id: "msg-1", external_id: "wamid.PINO" } });
   });
 
   it("texto comum não consulta a API — nem pede nova busca", async () => {
     const f = vi.spyOn(globalThis, "fetch");
     await ingestZernioInbound(admin, { ...ENTRADA, payload: evento() });
     expect(f).not.toHaveBeenCalled();
-    expect(ops.some((o) => o.op === "emit_event" && (o.payload as { p_event_type?: string }).p_event_type === "message.location_retry_requested")).toBe(false);
+    expect(pediuNovaBusca()).toBeUndefined();
   });
 });
 
@@ -535,6 +567,124 @@ describe("idempotência", () => {
     await expect(
       ingestZernioInbound(admin, { ...ENTRADA, payload: evento() }),
     ).rejects.toThrow(/zernio_ingest_insert_failed/);
+  });
+});
+
+describe("falha de banco não vira `ignored`", () => {
+  // A resposta já saiu quando a ingestão roda: `ignored` fecha a linha como
+  // processada e a mensagem some. Lançar é o que a deixa pendente para o cron.
+  it("a RPC do contato falhou: lança", async () => {
+    rpcResposta.fn_upsert_wa_contact = null;
+    await expect(ingestZernioInbound(admin, { ...ENTRADA, payload: evento() })).rejects.toThrow(
+      /zernio_contact_upsert_failed/,
+    );
+  });
+
+  it("a RPC da conversa falhou: lança", async () => {
+    rpcResposta.fn_upsert_wa_conversation = null;
+    await expect(ingestZernioInbound(admin, { ...ENTRADA, payload: evento() })).rejects.toThrow(
+      /zernio_conversation_upsert_failed/,
+    );
+  });
+
+  it("a leitura pela thread falhou: lança antes de criar contato", async () => {
+    erroDaThread = { code: "57014", message: "canceling statement due to statement timeout" };
+    await expect(ingestZernioInbound(admin, { ...ENTRADA, payload: evento() })).rejects.toThrow(
+      /zernio_thread_lookup_failed/,
+    );
+    expect(ops.some((o) => o.op === "fn_upsert_wa_contact"), "falha de leitura virou contato novo").toBe(false);
+  });
+
+  it("controle: duas conversas na mesma thread não são falha de banco, e a âncora resolve", async () => {
+    erroDaThread = { code: "PGRST116", message: "JSON object requested, multiple (or no) rows returned" };
+    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: evento() });
+    expect(r.status).toBe("ingested");
+  });
+
+  it("controle: RPC sem erro e sem id segue `ignored` — é ausência, não falha", async () => {
+    delete rpcResposta.fn_upsert_wa_contact;
+    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: evento() });
+    expect(r).toEqual({ status: "ignored", reason: "contato_nao_resolvido" });
+  });
+});
+
+describe("o reprocessamento retoma a mensagem gravada sem os efeitos", () => {
+  const SENT_AT = "2026-08-08T01:00:00.000Z";
+  const emitidos = (tipo: string) =>
+    ops.filter((o) => o.op === "emit_event" && (o.payload as { p_event_type?: string }).p_event_type === tipo);
+  const carimbos = () => ops.filter((o) => o.op === "fn_mark_conversation_message");
+  const DESPACHO = "ai_agent.dispatch_requested";
+
+  beforeEach(() => {
+    insertErro = { code: "23505", message: "duplicate key" };
+    mensagemGravada = {
+      id: "msg-gravada",
+      conversation_id: "conv-1",
+      contact_id: "contact-1",
+      direction: "inbound",
+      sent_at: SENT_AT,
+    };
+  });
+
+  it("⭐ morreu logo depois do INSERT: carimba uma vez, despacha uma vez, com a mensagem que já existe", async () => {
+    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: evento(), retomada: true });
+
+    expect(r).toEqual({ status: "duplicate", conversationId: "conv-1", reason: "efeitos_retomados" });
+    expect(carimbos()).toHaveLength(1);
+    expect((carimbos()[0]!.payload as { p_at: string }).p_at).toBe(SENT_AT);
+    expect(emitidos(DESPACHO)).toHaveLength(1);
+    expect((emitidos(DESPACHO)[0]!.payload as { p_entity_id: string }).p_entity_id).toBe("msg-gravada");
+  });
+
+  it("⭐ morreu depois do carimbo: a não lida não soma de novo, e o despacho sai", async () => {
+    carimboDaConversa = SENT_AT;
+    await ingestZernioInbound(admin, { ...ENTRADA, payload: evento(), retomada: true });
+    expect(carimbos()).toHaveLength(0);
+    expect(emitidos(DESPACHO)).toHaveLength(1);
+  });
+
+  it("⭐ o despacho já saiu: nada roda, e não há segundo turno", async () => {
+    despachoPedido = true;
+    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: evento(), retomada: true });
+    expect(r).toEqual({ status: "duplicate", conversationId: "conv-1" });
+    expect(carimbos()).toHaveLength(0);
+    expect(emitidos(DESPACHO)).toHaveLength(0);
+  });
+
+  it("vale também no caminho da conversa já associada à thread", async () => {
+    conversaExistente = { id: "conv-1", contact_id: "contact-1" };
+    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: evento(), retomada: true });
+    expect(r.reason).toBe("efeitos_retomados");
+    expect(emitidos(DESPACHO)).toHaveLength(1);
+  });
+
+  it("⭐ a entrada ao vivo não retoma: os efeitos da primeira entrega podem estar em curso", async () => {
+    const r = await ingestZernioInbound(admin, { ...ENTRADA, payload: evento() });
+    expect(r).toEqual({ status: "duplicate", conversationId: "conv-1" });
+    expect(carimbos()).toHaveLength(0);
+    expect(emitidos(DESPACHO)).toHaveLength(0);
+  });
+
+  it("saída duplicada não é retomada: é o eco do nosso envio", async () => {
+    mensagemGravada = { ...mensagemGravada, direction: "outbound" };
+    const r = await ingestZernioInbound(admin, {
+      ...ENTRADA,
+      payload: {
+        ...evento({ direction: "outgoing" }),
+        event: "message.sent",
+        conversation: { participantId: "+595991733685" },
+      },
+      retomada: true,
+    });
+    expect(r.reason).toBeUndefined();
+    expect(carimbos()).toHaveLength(0);
+  });
+
+  it("leitura que falha lança: a linha fica pendente para a rodada seguinte", async () => {
+    erroDaRetomada = { message: "canceling statement due to statement timeout" };
+    await expect(ingestZernioInbound(admin, { ...ENTRADA, payload: evento(), retomada: true })).rejects.toThrow(
+      /zernio_retomada_failed/,
+    );
   });
 });
 

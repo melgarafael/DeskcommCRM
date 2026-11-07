@@ -43,6 +43,7 @@
     { "id": "filanegocio", "lane": "agente", "col": 3, "type": "service", "label": "Fila de escritas por negócio", "sublabel": "ordem no turno · prazo com resultado incerto · pendência em processo até desfecho" },
     { "id": "promocaocliente", "lane": "negocio", "col": 2, "type": "trigger", "label": "trg_agendamento_marca_cliente", "sublabel": "agendamento inserido/alterado/apagado (regra ligada) → first_service_at + etiqueta com dono" },
     { "id": "interruptorcliente", "lane": "humano", "col": 1, "type": "frontend", "label": "Clientes pela agenda", "sublabel": "Tipos de agendamento › fn_definir_cliente_pela_agenda (admin)" },
+    { "id": "interruptorvenda", "lane": "humano", "col": 1, "type": "frontend", "label": "Clientes pela venda", "sublabel": "Configurações › Atendimento › definirClientePelaVenda (admin)" },
 
     { "id": "eventlog", "lane": "fila", "col": 2, "type": "database", "label": "event_log", "sublabel": "marca d'água: só evento novo" },
     { "id": "workerscore", "lane": "fila", "col": 2, "type": "service", "label": "worker do score", "sublabel": "fórmula determinística, nunca modelo" },
@@ -58,7 +59,7 @@
     { "id": "mcp-fila", "from": "pontemcp", "to": "filanegocio", "label": "organização + negócio após traduzir contato" },
     { "id": "mcp-escrita", "from": "filanegocio", "to": "leads", "label": "handlers nativos completos; updated_at ainda confere concorrência" },
     { "id": "mcp-audit", "from": "pontemcp", "to": "auditoria", "label": "mcp.tool_called: resultado e falha preservados" },
-    { "id": "e1", "from": "ritual", "to": "leadstate", "label": "escreve estágio e next_action" },
+    { "id": "e1", "from": "ritual", "to": "leadstate", "label": "escreve estágio e next_action; frase genérica descartada preserva proposta e sequência" },
     { "id": "e2", "from": "ritual", "to": "checkpoints", "label": "grava o turno" },
     { "id": "e3", "from": "ritual", "to": "traces", "label": "registra portões e veto" },
     { "id": "e4", "from": "checkpoints", "to": "emissor", "label": "objeção NOVA (diff, não retrato)" },
@@ -107,9 +108,12 @@
     { "id": "e47", "from": "promocaocliente", "to": "eventlog", "label": "contact.tag_added uma vez por contato — nunca na junção nem ao ligar" },
     { "id": "e48", "from": "interruptorcliente", "to": "promocaocliente", "label": "liga/desliga o trigger e classifica o histórico sem evento" },
     { "id": "e49", "from": "interruptorcliente", "to": "auditoria", "label": "crm.cliente_pela_agenda_alterado com ganharam/perderam" },
-    { "id": "e50", "from": "interruptorcliente", "to": "leads", "label": "lerClientePelaAgenda decide se o funil de clientes vale" },
+    { "id": "e50", "from": "interruptorcliente", "to": "leads", "label": "lerRegrasDeCliente decide se o funil de clientes vale (pela agenda)" },
     { "id": "e51", "from": "auditoria", "to": "telaauditoria", "label": "a linha vira texto legível (action + metadata)" },
-    { "id": "e52", "from": "telaauditoria", "to": "interruptorcliente", "label": "LAÇO DE RETORNO: quem vê o que a regra fez desliga se estiver errado" }
+    { "id": "e52", "from": "telaauditoria", "to": "interruptorcliente", "label": "LAÇO DE RETORNO: quem vê o que a regra fez desliga se estiver errado" },
+    { "id": "e53", "from": "interruptorvenda", "to": "leads", "label": "lerRegrasDeCliente + lerVendaAnterior decidem o funil de clientes e o pós-venda" },
+    { "id": "e54", "from": "interruptorvenda", "to": "auditoria", "label": "crm.cliente_pela_venda_alterado com ligado e pos_venda_dias" },
+    { "id": "e55", "from": "telaauditoria", "to": "interruptorvenda", "label": "LAÇO DE RETORNO: quem vê a recompra cair no funil errado desliga ou ajusta a janela" }
   ],
   "cards": [
     {

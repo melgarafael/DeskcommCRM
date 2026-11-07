@@ -20,11 +20,14 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { CHANGELOG_MAX_BYTES } from "@/lib/system/changelog";
 import { canTransition, type RunStatus } from "@/lib/system/update-run";
 import { logger } from "@/lib/logger";
+import { runtimeConfirmationSchema, supportsForcedUpdate } from "@/lib/system/runtime-identity";
 
 export const dynamic = "force-dynamic";
 
 const heartbeat = z.object({
   kind: z.literal("heartbeat"),
+  // Só o código do agente que consome o booleano anuncia esta capacidade.
+  supports_forced_update: z.boolean().optional().default(false),
   current_version: z.string().max(64),
   current_sha: z.string().max(64),
   off_release: z.boolean(),
@@ -43,6 +46,7 @@ const heartbeat = z.object({
   // "nunca houve release" para todo mundo.
   has_known_release: z.boolean().optional().default(true),
   changelog: z.string().max(CHANGELOG_MAX_BYTES),
+  runtime_confirmation: runtimeConfirmationSchema.nullable().optional(),
 });
 
 const runProgress = z.object({
@@ -165,9 +169,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   const payload = parsed.data;
 
   if (payload.kind === "heartbeat") {
+    const recebidoEm = new Date().toISOString();
+    const observacao = payload.runtime_confirmation
+      ? { ...payload.runtime_confirmation, supports_forced_update: payload.supports_forced_update }
+      : null;
     const { error } = await db
       .from("system_version")
       .update({
+        // An old heartbeat must invalidate earlier evidence, never refresh it.
+        runtime_confirmation: observacao,
         current_version: payload.current_version,
         current_sha: payload.current_sha,
         off_release: payload.off_release,
@@ -175,8 +185,8 @@ export async function POST(req: NextRequest): Promise<Response> {
         compare_failed: payload.compare_failed,
         has_known_release: payload.has_known_release,
         changelog_raw: payload.changelog,
-        agent_last_seen_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        agent_last_seen_at: recebidoEm,
+        updated_at: recebidoEm,
       })
       .eq("id", 1);
     if (error) {
@@ -206,7 +216,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     // `update_requested: false` otimista.
     const { data: run, error: runLookupError } = await db
       .from("system_update_runs")
-      .select("id, status, to_version")
+      .select("id, status, to_version, force_requested")
       .eq("status", "dispatched")
       .order("dispatched_at", { ascending: false })
       .limit(1)
@@ -219,12 +229,45 @@ export async function POST(req: NextRequest): Promise<Response> {
       return fail("internal_error", "Não consegui checar o pedido de atualização.", 500);
     }
 
+    // Um agente antigo pode assumir um pedido aceito por uma execução nova.
+    // Não entregar uma força que ele ignoraria e reportaria como sucesso normal.
+    if (run?.force_requested === true && !supportsForcedUpdate(observacao, recebidoEm)) {
+      const { data: encerrado, error: encerramentoError } = await db
+        .from("system_update_runs")
+        .update({
+          status: "failed",
+          finished_at: recebidoEm,
+          log_tail:
+            "O agente do servidor ainda não confirmou suporte para refazer a atualização pela tela.",
+        })
+        .eq("id", run.id)
+        .eq("status", "dispatched")
+        .select("id")
+        .maybeSingle();
+      if (encerramentoError) {
+        logger.error("[system/agent] não consegui recusar o pedido de força sem suporte", {
+          error: encerramentoError.message,
+        });
+        return fail("internal_error", "Não consegui encerrar o pedido de atualização.", 500);
+      }
+      if (encerrado)
+        await audit({
+          action: "system.update_finished",
+          resourceType: "system_update_run",
+          resourceId: run.id,
+          metadata: { status: "failed", reason: "forced_update_not_supported" },
+          actingAsPlatformAdmin: true,
+        });
+      return ok({ update_requested: false, run_id: null, to_version: "", force_requested: false });
+    }
+
     return ok({
       update_requested: Boolean(run),
       run_id: run?.id ?? null,
       // Vazio = sem alvo nomeado no run (rota anterior a #2757, ou run sem
       // `to_version`): o agente cai no de sempre, a última release publicada.
       to_version: run?.to_version ?? "",
+      force_requested: run?.force_requested === true,
     });
   }
 
@@ -316,7 +359,10 @@ export async function POST(req: NextRequest): Promise<Response> {
       .update({ last_step: payload.step })
       .eq("id", payload.run_id);
     if (error) {
-      logger.error("[system/agent] run_progress falhou", { error: error.message, runId: payload.run_id });
+      logger.error("[system/agent] run_progress falhou", {
+        error: error.message,
+        runId: payload.run_id,
+      });
       return fail("internal_error", "Não consegui gravar o passo.", 500);
     }
     return ok({ update_requested: false, run_id: payload.run_id });

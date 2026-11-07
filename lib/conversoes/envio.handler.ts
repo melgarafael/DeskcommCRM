@@ -93,7 +93,9 @@ export async function processarConversao(
   if (
     !qualificacao &&
     row.event_type === "ad_conversion.retry_requested" &&
-    (ehEventoDeEtapa(row.payload.event_name) || ehEventoDeEtapaMeta(row.payload.event_name))
+    (ehEventoDeEtapa(row.payload.event_name) ||
+      ehEventoDeEtapaMeta(row.payload.event_name) ||
+      row.payload.event_name === "LeadSubmitted")
   )
     return ok("skipped", "outro_evento");
   if (!row.entity_id) return ok("skipped", "sem_entidade");
@@ -341,9 +343,11 @@ export async function processarConversao(
     // ─── EVENTO DE ETAPA FORA DO VOCABULÁRIO DO CANAL (#2457) ──────────────
     //
     // `eventoNoCanal` é null quando o nome escolhido para a etapa não está em
-    // `ChannelConversionInput` — `QualifiedLead` e `ViewContent` estão na lista
-    // que a própria tela oferece (`EVENTOS_DA_META`) e fora da do canal. Sem
-    // conexão direta não há CAMINHO nenhum para eles, e gravar `sem_conexao`
+    // `EVENTOS_DE_ETAPA_NO_CANAL`. Foi o caso de `QualifiedLead` e `ViewContent`
+    // até 27/10/2026, quando o canal passou a repassá-los; hoje a lista do
+    // canal cobre a da tela, e este ramo vale para um retrato gravado com um
+    // nome que o canal não conhece (versão futura da tela, dado antigo). Sem
+    // conexão direta não há CAMINHO nenhum para ele, e gravar `sem_conexao`
     // mandava a pessoa preencher um token que esta instalação só-com-canal
     // nunca vai ter.
     //

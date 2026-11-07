@@ -11,6 +11,7 @@ import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
+import type { CandidatoAoNegocio } from "@/lib/followup/negocio-do-roteiro";
 import { montarRoteirosDoContato, type LinhaDoRoteiro } from "@/lib/followup/roteiros-do-contato";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { moduloLigado } from "@/lib/instalacao/modulos";
@@ -87,5 +88,61 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
       },
     ];
   });
-  return ok(montarRoteirosDoContato(linhas, contato.custom_fields), { requestId });
+
+  // ─── o NEGÓCIO de cada execução (#3363) ────────────────────────────────────
+  //
+  // Duas leituras e só: o VÍNCULO já fixado de cada roteiro (a mesma trilha que
+  // guarda o passo a passo) e os cards ABERTOS do contato. Quem monta decide se
+  // o grafo pergunta ao card — roteiro que só grava no contato não ganha o
+  // bloco, e a tela de quem não usa o recurso fica exatamente como era.
+  //
+  // O vínculo é lido por `enrollment_id` (nunca pelo contato): cada execução tem
+  // o seu, e uma não herda o card da outra.
+  const ids = linhas.map((l) => l.id);
+  const vinculos = new Map<string, string>();
+  let cartoes: CandidatoAoNegocio[] = [];
+  let camposPorLead = new Map<string, unknown>();
+  if (ids.length > 0) {
+    const { data: eventos } = await supabase
+      .from("followup_enrollment_events")
+      .select("enrollment_id, payload")
+      .eq("organization_id", authz.org.orgId)
+      .eq("event_type", "roteiro_negocio")
+      .in("enrollment_id", ids)
+      .order("created_at", { ascending: true });
+    for (const ev of (eventos ?? []) as Array<{ enrollment_id: string; payload: { lead_id?: string } }>) {
+      // O PRIMEIRO vínculo é o que vale — e o índice único garante que só existe
+      // um por execução; a ordem é só a rede de segurança da leitura.
+      if (!vinculos.has(ev.enrollment_id) && typeof ev.payload?.lead_id === "string") {
+        vinculos.set(ev.enrollment_id, ev.payload.lead_id);
+      }
+    }
+
+    const { data: leads } = await supabase
+      .from("crm_leads")
+      .select("id, title, custom_fields")
+      .eq("organization_id", authz.org.orgId)
+      .eq("contact_id", id)
+      .eq("status", "open")
+      .order("created_at", { ascending: true });
+    const linhasDeLead = (leads ?? []) as Array<{
+      id: string;
+      title: string | null;
+      custom_fields: unknown;
+    }>;
+    cartoes = linhasDeLead.map((l) => ({ id: l.id, titulo: l.title ?? null }));
+    camposPorLead = new Map(linhasDeLead.map((l) => [l.id, l.custom_fields ?? {}]));
+  }
+
+  const comNegocio: LinhaDoRoteiro[] = linhas.map((l) => {
+    const vinculoId = vinculos.get(l.id) ?? null;
+    return {
+      ...l,
+      // A ESCOLHA só é pedida em execução VIVA: roteiro concluído não escolhe
+      // nada — uma execução nova resolve de novo.
+      ...(l.status === "coletando" ? { negocio: { vinculoId, candidatos: cartoes } } : {}),
+      ...(vinculoId !== null ? { camposDoNegocio: camposPorLead.get(vinculoId) ?? {} } : {}),
+    };
+  });
+  return ok(montarRoteirosDoContato(comNegocio, contato.custom_fields), { requestId });
 }

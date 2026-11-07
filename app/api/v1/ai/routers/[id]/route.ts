@@ -16,6 +16,7 @@ import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { senderRoutesSchema } from "@/lib/ai/agents/sender-routes";
 import { MAX_CLASSIFIER_CONTEXT_MESSAGES } from "@/lib/ai/classifier-context";
 
 export const dynamic = "force-dynamic";
@@ -32,11 +33,18 @@ const patchRouterSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   is_active: z.boolean().optional(),
   fallback_agent_id: z.string().uuid().nullable().optional(),
-  config: z.record(z.string(), z.unknown()).optional().refine((c) =>
-    c?.context_message_count === undefined ||
-    (typeof c.context_message_count === "number" && Number.isInteger(c.context_message_count) &&
-      c.context_message_count >= 0 && c.context_message_count <= MAX_CLASSIFIER_CONTEXT_MESSAGES),
-    "context_message_count deve ser inteiro entre 0 e 16"),
+  config: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .refine(
+      (c) =>
+        c?.context_message_count === undefined ||
+        (typeof c.context_message_count === "number" &&
+          Number.isInteger(c.context_message_count) &&
+          c.context_message_count >= 0 &&
+          c.context_message_count <= MAX_CLASSIFIER_CONTEXT_MESSAGES),
+      "context_message_count deve ser inteiro entre 0 e 16",
+    ),
 });
 
 // ---------------------------------------------------------------------------
@@ -138,7 +146,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
 
   const { data: existing, error: loadErr } = await admin
     .from("ai_routers")
-    .select("id, config")
+    .select("id, config, fallback_agent_id")
     .eq("id", id)
     .eq("organization_id", organizationId)
     .maybeSingle();
@@ -158,6 +166,44 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     update.config = { ...currentConfig, ...patch.config };
   }
 
+  const mergedConfig = (update.config ?? existing.config ?? {}) as Record<string, unknown>;
+  if (mergedConfig.sender_routes !== undefined) {
+    const routes = senderRoutesSchema.safeParse(mergedConfig.sender_routes);
+    if (!routes.success)
+      return fail("validation_failed", "Regras por remetente inválidas.", 422, { requestId });
+    const fallback =
+      patch.fallback_agent_id !== undefined ? patch.fallback_agent_id : existing.fallback_agent_id;
+    if (routes.data.length && (!fallback || routes.data.some((r) => r.agent_id === fallback))) {
+      return fail(
+        "validation_failed",
+        "Escolha um fallback público diferente dos agentes reservados.",
+        422,
+        { requestId },
+      );
+    }
+    const ids = [
+      ...new Set([
+        ...routes.data.map((r) => r.agent_id),
+        ...(routes.data.length && fallback ? [fallback] : []),
+      ]),
+    ];
+    if (ids.length) {
+      const found = await admin
+        .from("ai_agents")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .is("archived_at", null)
+        .in("id", ids);
+      if (found.error)
+        return fail("internal_error", "Erro ao validar agentes.", 500, { requestId });
+      if (found.data?.length !== ids.length)
+        return fail("validation_failed", "Agente não encontrado nesta organização.", 422, {
+          requestId,
+        });
+    }
+    if (update.config) update.config = { ...mergedConfig, sender_routes: routes.data };
+  }
+
   if (Object.keys(update).length === 0) {
     return ok({ id }, { requestId });
   }
@@ -169,7 +215,9 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     .eq("organization_id", organizationId);
   if (updErr) {
     if (updErr.code === "23505") {
-      return fail("router_already_exists", t("Este número já tem um roteador ativo."), 409, { requestId });
+      return fail("router_already_exists", t("Este número já tem um roteador ativo."), 409, {
+        requestId,
+      });
     }
     return fail("internal_error", "Erro ao atualizar router.", 500, { requestId });
   }

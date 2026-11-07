@@ -173,3 +173,14 @@ export function composePlaybook(
     .map((layer) => `=== playbook:${layer} ===\n${byLayer.get(layer) ?? ''}`)
     .join('\n\n');
 }
+
+/**
+ * O que a ORGANIZAÇÃO escreveu (tenant + campanha), sem a camada da plataforma: o
+ * lastro comercial (`guardrails/lastro-comercial.ts`) não pode nascer de texto nosso.
+ */
+export function textoDaOrganizacao(prompt: string): string {
+  return prompt
+    .split(/^(?==== playbook:\w+ ===$)/m)
+    .filter((s) => !s.startsWith('=== playbook:platform ==='))
+    .join('\n');
+}

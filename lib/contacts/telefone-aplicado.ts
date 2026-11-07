@@ -58,7 +58,8 @@ const MODULO = "crm.contatos";
  * A LINHA NA TIMELINE DO CONTATO (#2593, item 2 do CR).
  *
  * O único registro de que o número entrou sozinho era a auditoria
- * (`contact.field_auto_applied`), e audit NÃO tem tela: quem opera lê a
+ * (`contact.field_auto_applied`), e a auditoria só aparece em `/app/audit`,
+ * restrita a gerentes e fora da ficha: quem opera lê a
  * timeline do contato, que lê SÓ `crm_lead_activities`
  * (`app/api/v1/contacts/[id]/timeline/route.ts`). O público da issue é
  * exatamente quem não abre a fila de propostas — sem esta linha, o número
@@ -86,6 +87,49 @@ export async function registrarTelefoneAplicadoNaTimeline(
     trecho?: string | null;
   },
 ): Promise<boolean> {
+  // O NÚMERO fica legível para quem opera: é ele que o item 2 do CR pede
+  // que apareça. A coluna é coberta pela cascata da LGPD
+  // (`fn_lgpd_cascade_redact_contact` faz `update` nesta tabela), então
+  // telefone aqui não sobrevive a um pedido de esquecimento — e por isso o
+  // `trecho` que o cliente escreveu mora AQUI, e não na auditoria.
+  return registrarCampoAplicadoNaTimeline(db, {
+    organizationId: p.organizationId,
+    contactId: p.contactId,
+    agentId: p.agentId,
+    reason: `Número aplicado na ficha pelo assistente: ${p.telefone}`,
+    payload: { campo: "phone_number", telefone: p.telefone, automatico: true, trecho: p.trecho ?? null },
+  });
+}
+
+/**
+ * O NOME que entrou sozinho na ficha vazia (#3784) — a mesma linha, pelo mesmo
+ * motivo do telefone. O texto da mensagem NÃO entra: o nome já é ele inteiro
+ * (`nomeCorrespondeAMensagem` exige correspondência literal).
+ */
+export async function registrarNomeAplicadoNaTimeline(
+  db: SupabaseClient,
+  p: { organizationId: string; contactId: string; nome: string; agentId?: string | null },
+): Promise<boolean> {
+  return registrarCampoAplicadoNaTimeline(db, {
+    organizationId: p.organizationId,
+    contactId: p.contactId,
+    agentId: p.agentId,
+    reason: `Nome aplicado na ficha pelo assistente: ${p.nome}`,
+    payload: { campo: "name", nome: p.nome, automatico: true },
+  });
+}
+
+async function registrarCampoAplicadoNaTimeline(
+  db: SupabaseClient,
+  p: {
+    organizationId: string;
+    contactId: string;
+    agentId?: string | null;
+    reason: string;
+    payload: Record<string, unknown>;
+  },
+): Promise<boolean> {
+  const campo = p.payload.campo;
   try {
     const [{ data: leads }, { data: defaultPipeline }] = await Promise.all([
       db
@@ -108,7 +152,8 @@ export async function registrarTelefoneAplicadoNaTimeline(
     });
 
     if (!alvo.routed) {
-      logger.info("[telefone-de-ficha-vazia] telefone aplicado sem negócio para pendurar", {
+      logger.info("[campo-aplicado] campo aplicado sem negócio para pendurar", {
+        campo,
         organization_id: p.organizationId,
         contact_id: p.contactId,
         motivo_sem_rota: alvo.reason,
@@ -131,17 +176,13 @@ export async function registrarTelefoneAplicadoNaTimeline(
       type: "contact_field_auto_applied",
       sourceModule: MODULO,
       actor,
-      // O NÚMERO fica legível para quem opera: é ele que o item 2 do CR pede
-      // que apareça. A coluna é coberta pela cascata da LGPD
-      // (`fn_lgpd_cascade_redact_contact` faz `update` nesta tabela), então
-      // telefone aqui não sobrevive a um pedido de esquecimento — e por isso o
-      // `trecho` que o cliente escreveu mora AQUI, e não na auditoria.
-      reason: `Número aplicado na ficha pelo assistente: ${p.telefone}`,
-      payload: { campo: "phone_number", telefone: p.telefone, automatico: true, trecho: p.trecho ?? null },
+      reason: p.reason,
+      payload: p.payload,
     });
 
     if (!r.ok) {
-      logger.warn("[telefone-de-ficha-vazia] atividade do telefone aplicado não foi gravada", {
+      logger.warn("[campo-aplicado] atividade do campo aplicado não foi gravada", {
+        campo,
         organization_id: p.organizationId,
         contact_id: p.contactId,
         error: r.error,
@@ -150,7 +191,8 @@ export async function registrarTelefoneAplicadoNaTimeline(
     }
     return true;
   } catch (err) {
-    logger.warn("[telefone-de-ficha-vazia] atividade do telefone aplicado falhou", {
+    logger.warn("[campo-aplicado] atividade do campo aplicado falhou", {
+      campo,
       organization_id: p.organizationId,
       contact_id: p.contactId,
       erro: err instanceof Error ? err.message : String(err),
