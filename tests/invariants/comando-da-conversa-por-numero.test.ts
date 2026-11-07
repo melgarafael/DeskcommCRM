@@ -44,8 +44,10 @@ const ORG = `${P}-0000-4000-8000-000000000001`;
 const DONO = `${P}-1111-4000-8000-000000000001`; // vendedor: papel `agent`
 const AGENTE = `${P}-aaaa-4000-8000-000000000001`;
 const AGENTE_PAUSADO = `${P}-aaaa-4000-8000-000000000002`;
+const AGENTE_PRE = `${P}-aaaa-4000-8000-000000000003`;
 const VERSAO = `${P}-bbbb-4000-8000-000000000001`;
 const VERSAO_PAUSADO = `${P}-bbbb-4000-8000-000000000002`;
+const VERSAO_PRE = `${P}-bbbb-4000-8000-000000000003`;
 const ROTEADOR = `${P}-cccc-4000-8000-000000000001`;
 
 // Um número por caso: a 0027 permite UMA conversa por (contato, número).
@@ -176,15 +178,18 @@ describe("comando da conversa pergunta pelo NÚMERO (#4012)", () => {
 
       insert into public.ai_agents (id, organization_id, name, system_prompt) values
         ('${AGENTE}', '${ORG}', 'Agente do numero 1', 'x'),
-        ('${AGENTE_PAUSADO}', '${ORG}', 'Agente do numero 4', 'x')
+        ('${AGENTE_PAUSADO}', '${ORG}', 'Agente do numero 4', 'x'),
+        ('${AGENTE_PRE}', '${ORG}', 'Agente do pre go live', 'x')
       on conflict (id) do nothing;
       insert into public.ai_agent_versions
         (id, organization_id, agent_id, version_number, system_prompt, provider, model, channel_session_id, status)
       values
         ('${VERSAO}', '${ORG}', '${AGENTE}', 1, 'x', 'anthropic', 'm', '${SESSAO_COM_AGENTE}', 'published'),
-        ('${VERSAO_PAUSADO}', '${ORG}', '${AGENTE_PAUSADO}', 1, 'x', 'anthropic', 'm', '${SESSAO_PAUSADO}', 'published')
+        ('${VERSAO_PAUSADO}', '${ORG}', '${AGENTE_PAUSADO}', 1, 'x', 'anthropic', 'm', '${SESSAO_PAUSADO}', 'published'),
+        ('${VERSAO_PRE}', '${ORG}', '${AGENTE_PRE}', 1, 'x', 'anthropic', 'm', '${SESSAO_PRE_GO_LIVE}', 'published')
       on conflict (id) do nothing;
       update public.ai_agents set published_version_id = '${VERSAO}' where id = '${AGENTE}';
+      update public.ai_agents set published_version_id = '${VERSAO_PRE}' where id = '${AGENTE_PRE}';
       update public.ai_agents set published_version_id = '${VERSAO_PAUSADO}', paused_at = now() where id = '${AGENTE_PAUSADO}';
 
       -- O roteador do número 5 não tem agente publicado NA sessão: quem atende
