@@ -14,8 +14,14 @@ import {
   campoDoGatilhoDeDataEhDoContato,
 } from "@/lib/automation/campo-do-gatilho-de-data";
 import { autoriaDaMudanca } from "@/lib/operacao/autoria";
+import type { Conditions } from "@/lib/automation/conditions";
 import { updateAutomationRuleSchema } from "@/lib/schemas";
-import { acoesQueFechamLaco, MENSAGEM_DO_LACO_DE_LEAD } from "@/lib/schemas/webhooks";
+import {
+  acoesQueFechamLaco,
+  condicoesQueSoExistemNoNegocioAlterado,
+  MENSAGEM_DO_CAMPO_ALTERADO_FORA_DO_GATILHO,
+  MENSAGEM_DO_LACO_DE_LEAD,
+} from "@/lib/schemas/webhooks";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptRuleActionSecrets } from "@/lib/webhooks/secrets";
@@ -55,7 +61,7 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
   const supabase = await createClient();
   const { data: existing, error: fetchErr } = await supabase
     .from("automation_rules")
-    .select("id, trigger_event, trigger_config, actions")
+    .select("id, trigger_event, trigger_config, actions, conditions")
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
@@ -74,6 +80,22 @@ export async function PATCH(req: NextRequest, ctx: RouteCtx): Promise<Response> 
     ).length
   ) {
     return fail("invalid_request", t(MENSAGEM_DO_LACO_DE_LEAD), 400, { requestId });
+  }
+
+  // A condição `campo_alterado` (#1749) lê `event.fields`, que só o gatilho de
+  // "negócio alterado" carrega. O schema da criação cobra o par inteiro; aqui é
+  // o par MESCLADO — no PATCH parcial (só o gatilho, ou só as condições) o
+  // schema não vê os dois lados, e trocar `lead.updated` por outro gatilho
+  // deixaria a condição gravada e a regra decorativa, sem erro nenhum.
+  const condicoesGravadas = (existing as { conditions?: Conditions | null }).conditions ?? undefined;
+  if (
+    (parsed.data.trigger_event !== undefined || parsed.data.conditions !== undefined) &&
+    condicoesQueSoExistemNoNegocioAlterado(
+      parsed.data.trigger_event ?? gravada.trigger_event,
+      parsed.data.conditions ?? condicoesGravadas,
+    ).length
+  ) {
+    return fail("invalid_request", t(MENSAGEM_DO_CAMPO_ALTERADO_FORA_DO_GATILHO), 400, { requestId });
   }
 
   const webhookSourceId = parsed.data.trigger_config?.webhook_source_id;
