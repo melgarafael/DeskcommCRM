@@ -57,10 +57,27 @@
  * O broadcast não espaça mensagens nem manda em partes: a lista sai inteira, de
  * uma vez. Então o freio do número não pode ser o livro do ritmo
  * (`recordSends`) — ele registra o que saiu, depois que saiu. A lista só é
- * entregue se COUBER no teto diário do número e nos máximos da campanha
- * (`tetoDaTransmissao`); se não couber, a campanha pausa com a frase, antes de
- * criar a transmissão. Revisão do #3126: sem isto, o teto não era consultado,
- * mas o volume era cobrado dele.
+ * entregue se COUBER no que resta do teto diário do número e dos máximos da
+ * campanha, descontado o que cada um já gastou (`tetoDaTransmissao`); se não
+ * couber, a campanha pausa com a frase, antes de criar a transmissão. Revisão do
+ * #3126: sem isto, o teto não era consultado, mas o volume era cobrado dele.
+ *
+ * ═══ Por que o volume é contado por lote, de novo a cada rodada ═══
+ *
+ * O envio e o livro não são a mesma transação. O livro pode falhar logo depois
+ * do `enviar`, a rodada pode cair ali, e uma rodada sobreposta só vê a transmissão
+ * já fora de rascunho. Sem repetir, esse volume nunca chegava ao teto do número, e
+ * a campanha seguinte passava por ele. Então quem manda conta, e quem acompanha
+ * conta de novo: o id de cada linha do livro deriva da transmissão, e a repetição
+ * não soma (`recordSends`).
+ *
+ * ═══ Por que `sending` sem id não é reserva ═══
+ *
+ * A reserva do broadcast nasce depois do id. Sem id, `sending` é mensagem que a
+ * rodada de sempre pode estar mandando: a campanha trocou de velocidade com ela
+ * em voo. Entregá-la ao provedor seria mandar de novo, e deixá-la de lado não
+ * basta, porque depois de criado o id ninguém mais distinguiria essa linha de uma
+ * reserva. Por isso a transmissão só nasce sem `sending` nenhum.
  *
  * Nunca lança para o cron por falha do provedor: limite de velocidade espera a
  * próxima rodada; o resto pausa a campanha com a frase.
@@ -85,6 +102,7 @@ import { logger } from "@/lib/logger";
 
 import { variaveisPorPessoa } from "./conteudo-do-canal";
 import { motivoParaExcluir, recusouMarketing, statusDaSaida } from "./elegibilidade";
+import { estadoDeEnvio } from "./estado-de-envio";
 import { hashDoEndereco } from "./exclusoes";
 import { variaveisDaCampanhaSchema } from "./modelo";
 import { contratoDe, definicaoDaCampanha } from "./modelo-da-conexao";
@@ -181,10 +199,20 @@ async function entregarAoProvedor(
   const janela = await janelaAberta(admin, campanha, agora);
   if (!janela.aberta) return { ...SO_O_CONTADOR, detalhe: `ritmo:${janela.motivo}` };
 
+  if (!idExistente) {
+    const saindo = await quemEstaSaindoSemId(admin, campanha.id);
+    if (saindo === "outra_rodada") return { ...SO_O_CONTADOR, detalhe: "ja_entregue" };
+    if (saindo === "outra_velocidade") {
+      logger.warn("[campanha] broadcast com envio da velocidade anterior em voo — pausada", { campanha: campanha.id });
+      await pausar(admin, campanha.id, agora, { codigo: "transmissao_envio_em_voo", detalhe: DETALHE_ENVIO_EM_VOO });
+      return { ...SO_O_CONTADOR, detalhe: "pausada:transmissao_envio_em_voo" };
+    }
+  }
+
   const fila = await revalidar(admin, campanha, agora, "pending");
   // Quem uma rodada anterior reservou e não chegou a sair: a espera pode ter sido
   // de horas (janela, canal fora do ar), e a pessoa pode ter saído da lista nela.
-  const emEspera = await revalidar(admin, campanha, agora, "sending");
+  const emEspera = idExistente ? await revalidar(admin, campanha, agora, "sending") : { prontos: [], pulados: 0 };
   const prontos = fila.prontos;
   const emVoo = emEspera.prontos;
   const pulados = fila.pulados + emEspera.pulados;
@@ -203,12 +231,20 @@ async function entregarAoProvedor(
 
   // O teto ANTES de criar a transmissão: o que sai daqui sai inteiro.
   const tamanho = prontos.length + emVoo.length;
+  const tetoDiarioDaCampanha = campanha.teto_diario ?? null;
+  const tetoHorarioDaCampanha = campanha.teto_horario ?? null;
+  const gasto =
+    tetoDiarioDaCampanha !== null || tetoHorarioDaCampanha !== null
+      ? await estadoDeEnvio(admin, campanha.id, agora, janela.fuso)
+      : null;
   const teto = tetoDaTransmissao({
     tamanho,
     limiteDoNumero: janela.limiteDoNumero,
     enviadosHojeNoNumero: janela.enviadosHoje,
-    tetoDiarioDaCampanha: campanha.teto_diario ?? null,
-    tetoHorarioDaCampanha: campanha.teto_horario ?? null,
+    tetoDiarioDaCampanha,
+    tetoHorarioDaCampanha,
+    enviadasHojeNaCampanha: gasto?.enviadasHoje ?? 0,
+    enviadasNaHoraNaCampanha: gasto?.enviadasNaUltimaHora ?? 0,
   });
   if (!teto.cabe) {
     logger.warn("[campanha] broadcast acima do teto — pausada antes de entregar", {
@@ -330,14 +366,7 @@ async function entregarAoProvedor(
   // ritmo não pode devolver à fila quem o provedor está entregando agora. Conta
   // como disparo, e o teto que ela consome já foi conferido lá em cima
   // (`tetoDaTransmissao`): o livro não freia nada, ele registra.
-  try {
-    await recordSends(getRequestPool(), campanha.organization_id, campanha.channel_session_id, agora, lista.length);
-  } catch (err) {
-    logger.warn("[campanha] envios da transmissão não contados no ritmo do número", {
-      campanha: campanha.id,
-      motivo: err instanceof Error ? err.message : String(err),
-    });
-  }
+  await contarNoRitmoDoNumero(campanha, id, agora, lista.length);
   return {
     enviadas: lista.length,
     pulados,
@@ -346,6 +375,61 @@ async function entregarAoProvedor(
     // lista — o caminho da retomada repõe os mesmos. O nome não escolhe um dos dois.
     detalhe: `transmissao:${estado}:${lista.length}${puladosNoProvedor > 0 ? `:pulados_pelo_provedor_${puladosNoProvedor}` : ""}`,
   };
+}
+
+/**
+ * Leva o volume ao livro do ritmo do número. Repetir não soma: o lote é a
+ * transmissão. Falha aqui não para nada, porque a lista já saiu e a rodada de
+ * acompanhamento conta de novo.
+ */
+async function contarNoRitmoDoNumero(
+  campanha: CampanhaDaTransmissao,
+  id: string,
+  saiuEm: Date,
+  quantas: number,
+): Promise<void> {
+  try {
+    await recordSends(
+      getRequestPool(),
+      campanha.organization_id,
+      campanha.channel_session_id,
+      saiuEm,
+      quantas,
+      `${campanha.id}:${id}`,
+    );
+  } catch (err) {
+    logger.warn("[campanha] envios da transmissão não contados no ritmo do número", {
+      campanha: campanha.id,
+      motivo: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
+ * Há `sending` numa campanha sem id de transmissão? Uma rodada sobreposta grava o
+ * id ANTES de reservar: se ele está lá agora, o `sending` é dela. Se não está, é
+ * de outra velocidade.
+ */
+async function quemEstaSaindoSemId(
+  admin: SupabaseClient,
+  campanhaId: string,
+): Promise<"outra_rodada" | "outra_velocidade" | null> {
+  const { count, error } = await admin
+    .from("campaign_recipients")
+    .select("id", { count: "exact", head: true })
+    .eq("campaign_id", campanhaId)
+    .eq("status", "sending");
+  if (error) throw new Error(`destinatários em voo: ${error.message}`);
+  if (!count) return null;
+  const { data, error: erroDaCampanha } = await admin
+    .from("campaigns")
+    .select("provider_broadcast_id")
+    .eq("id", campanhaId)
+    .maybeSingle();
+  if (erroDaCampanha) throw new Error(`id da transmissão: ${erroDaCampanha.message}`);
+  return (data as { provider_broadcast_id: string | null } | null)?.provider_broadcast_id
+    ? "outra_rodada"
+    : "outra_velocidade";
 }
 
 /**
@@ -568,7 +652,7 @@ async function janelaAberta(
   campanha: CampanhaDaTransmissao,
   agora: Date,
 ): Promise<
-  { aberta: true; limiteDoNumero: number | null; enviadosHoje: number } | { aberta: false; motivo: string }
+  { aberta: true; limiteDoNumero: number | null; enviadosHoje: number; fuso: string } | { aberta: false; motivo: string }
 > {
   const pool = getRequestPool();
   const k = await loadChannelKnobs(pool, campanha.organization_id, campanha.channel_session_id);
@@ -613,13 +697,20 @@ async function janelaAberta(
     banRisk: false,
   });
   if (!decisao.allow) return { aberta: false, motivo: `canal_${decisao.code}` };
-  return { aberta: true, limiteDoNumero: linha.daily_message_limit ?? null, enviadosHoje: estado.sentToday };
+  return {
+    aberta: true,
+    limiteDoNumero: linha.daily_message_limit ?? null,
+    enviadosHoje: estado.sentToday,
+    fuso: k.knobs.timezone,
+  };
 }
 
 export const DETALHE_ACIMA_DO_TETO_DO_NUMERO =
   "A lista inteira não cabe no teto diário deste número (Conexões › Proteção de envio). O broadcast não manda em partes: ponha no teto o nível de mensagens que a plataforma deu ao número, ou troque a velocidade para Rápido, e retome a campanha.";
 export const DETALHE_ACIMA_DO_TETO_DA_CAMPANHA =
-  "A lista inteira passa do máximo por dia ou por hora desta campanha, e o broadcast não manda em partes. Em «Ritmo desta campanha», salve com Broadcast para limpar o máximo ou troque a velocidade para Rápido, e retome a campanha.";
+  "A lista inteira, somada ao que esta campanha já mandou hoje e na última hora, passa do máximo por dia ou por hora dela, e o broadcast não manda em partes. Em «Ritmo desta campanha», salve com Broadcast para limpar o máximo ou troque a velocidade para Rápido, e retome a campanha.";
+export const DETALHE_ENVIO_EM_VOO =
+  "Ainda há mensagens saindo pela velocidade anterior desta campanha, e o broadcast mandaria de novo a essas pessoas. Aguarde um minuto e retome a campanha. Se o aviso voltar, troque a velocidade para Rápido e retome.";
 
 /**
  * A lista inteira cabe no que o número e a campanha deixam mandar agora? Pura,
@@ -628,7 +719,7 @@ export const DETALHE_ACIMA_DO_TETO_DA_CAMPANHA =
  * Os tetos são os que o CRM tem e que o operador vê: o diário do número
  * (`channel_sessions.daily_message_limit`, em Conexões › Proteção de envio),
  * descontado o que o número já mandou hoje; e os máximos da campanha, quando
- * ela tem. O nível de mensagens que a plataforma dá ao número oficial não chega
+ * ela tem, descontado o que ela já mandou hoje e na última hora. O nível de mensagens que a plataforma dá ao número oficial não chega
  * por aqui — o teto diário do número é onde o operador o declara, e a tela do
  * broadcast diz isso.
  *
@@ -642,16 +733,19 @@ export function tetoDaTransmissao(entrada: {
   enviadosHojeNoNumero: number;
   tetoDiarioDaCampanha: number | null;
   tetoHorarioDaCampanha: number | null;
+  enviadasHojeNaCampanha: number;
+  enviadasNaHoraNaCampanha: number;
 }): { cabe: true } | { cabe: false; de: "numero" | "campanha"; livre: number } {
   if (entrada.limiteDoNumero !== null) {
     const livre = Math.max(0, entrada.limiteDoNumero - entrada.enviadosHojeNoNumero);
     if (entrada.tamanho > livre) return { cabe: false, de: "numero", livre };
   }
-  const daCampanha = [entrada.tetoDiarioDaCampanha, entrada.tetoHorarioDaCampanha].filter(
-    (t): t is number => t !== null,
-  );
+  const daCampanha = [
+    entrada.tetoDiarioDaCampanha === null ? null : entrada.tetoDiarioDaCampanha - entrada.enviadasHojeNaCampanha,
+    entrada.tetoHorarioDaCampanha === null ? null : entrada.tetoHorarioDaCampanha - entrada.enviadasNaHoraNaCampanha,
+  ].filter((t): t is number => t !== null);
   if (daCampanha.length > 0) {
-    const livre = Math.min(...daCampanha);
+    const livre = Math.max(0, Math.min(...daCampanha));
     if (entrada.tamanho > livre) return { cabe: false, de: "campanha", livre };
   }
   return { cabe: true };
@@ -791,7 +885,17 @@ async function acompanhar(
   estado: EstadoDaTransmissao,
   agora: Date,
 ): Promise<ResultadoDaTransmissao> {
-  const { mudancas, pendentesNoProvedor, completo } = await sincronizarTransmissao(admin, campanha, ops, id);
+  const { mudancas, pendentesNoProvedor, completo, noRelatorio, primeiroEnvio } = await sincronizarTransmissao(
+    admin,
+    campanha,
+    ops,
+    id,
+  );
+  // A data do provedor, e não a desta rodada: ela não muda entre repetições, então
+  // o que o expurgo do livro já levou volta velho, fora do teto de hoje.
+  // ponytail: sem `enviadoEm` no relatório a data é a da rodada; só pesa com a
+  // transmissão parada em `pending` além dos 2 dias do expurgo.
+  await contarNoRitmoDoNumero(campanha, id, primeiroEnvio ?? agora, noRelatorio);
   if (!ESTADOS_FINAIS_DA_TRANSMISSAO.has(estado) || pendentesNoProvedor > 0) {
     return { ...SO_O_CONTADOR, detalhe: `transmissao:${estado}:${mudancas}` };
   }
@@ -846,7 +950,13 @@ export async function sincronizarTransmissao(
   campanha: Pick<CampanhaDaTransmissao, "id" | "organization_id">,
   ops: OpsDeTransmissao,
   id: string,
-): Promise<{ mudancas: number; pendentesNoProvedor: number; completo: boolean }> {
+): Promise<{
+  mudancas: number;
+  pendentesNoProvedor: number;
+  completo: boolean;
+  noRelatorio: number;
+  primeiroEnvio: Date | null;
+}> {
   const nossos = await destinatariosEntregues(admin, campanha.id);
   const porTelefone = new Map<string, DestinatarioDaTransmissao>();
   let pular = 0;
@@ -882,7 +992,12 @@ export async function sincronizarTransmissao(
     }
   }
   await ligarAsMensagens(admin, campanha.organization_id, semMensagem);
-  return { mudancas, pendentesNoProvedor, completo };
+  let primeiroEnvio: Date | null = null;
+  for (const { enviadoEm } of porTelefone.values()) {
+    const em = enviadoEm ? new Date(enviadoEm) : null;
+    if (em && !Number.isNaN(em.getTime()) && (!primeiroEnvio || em < primeiroEnvio)) primeiroEnvio = em;
+  }
+  return { mudancas, pendentesNoProvedor, completo, noRelatorio: porTelefone.size, primeiroEnvio };
 }
 
 /**

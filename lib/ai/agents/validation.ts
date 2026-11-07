@@ -8,6 +8,7 @@
  * Postgres function (defense in depth).
  */
 import { z } from "zod";
+import { normalizarTags, TAMANHO_MAXIMO_DA_TAG } from "@/lib/contacts/tag-normalizada";
 import { ehToolIdRemoto } from "@/lib/mcp/servidor-externo/ids";
 import { ESCOLHAS_NO_ENVIO } from "@/lib/agenda/escolha-no-envio";
 import { VALID_TOOL_IDS } from "@/lib/mcp/tools/catalog";
@@ -381,6 +382,13 @@ export const testRunSchema = z
         name: z.string().trim().min(1).max(120).optional(),
         phone: z.string().trim().min(3).max(40).optional(),
       })
+      .optional(),
+    // Etiquetas da conversa SIMULADA (spec 27, fatia 3): é o que deixa o Testar provar que a
+    // skill entra pela etiqueta. Mesma normalização do CRM; até 20. Ausente = nenhuma.
+    sample_tags: z
+      .array(z.string().max(TAMANHO_MAXIMO_DA_TAG))
+      .max(20)
+      .transform((tags) => normalizarTags(tags))
       .optional(),
   })
   .strict();

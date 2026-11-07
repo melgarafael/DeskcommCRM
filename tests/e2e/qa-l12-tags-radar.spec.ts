@@ -230,7 +230,7 @@ test.describe("Lote 12 — #955 o vocabulário de etiquetas", () => {
     await captura(page, "955-06-juntadas");
   });
 
-  test("excluir avisa quantas regras continuam escrevendo a etiqueta (J24.4)", async ({ page }) => {
+  test("excluir avisa quantas regras continuam citando a etiqueta (J24.4)", async ({ page }) => {
     await login(page, c.users.manager!.email, c.password);
     await page.goto("/app/settings/tags");
     const alvo = `${TAG_A}-renomeada`;
@@ -242,7 +242,7 @@ test.describe("Lote 12 — #955 o vocabulário de etiquetas", () => {
     const texto = await page.locator("body").innerText();
     registra(`#955 excluir · aviso na tela = ${JSON.stringify(texto.slice(texto.indexOf("Excluir " + alvo), texto.indexOf("Excluir " + alvo) + 400))}`);
     await expect(page.getByText("Atenção:")).toBeVisible();
-    await expect(page.getByText(/regra\(s\) de agente continuam escrevendo esta etiqueta/)).toBeVisible();
+    await expect(page.getByText(/regra\(s\) de agente continuam citando esta etiqueta/)).toBeVisible();
     await captura(page, "955-07-excluir-aviso-de-regras");
 
     const resposta = page.waitForResponse(
