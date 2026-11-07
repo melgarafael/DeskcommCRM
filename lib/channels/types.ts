@@ -62,6 +62,8 @@ export interface ChannelCapabilities {
   costPerMessage: boolean;
   /** O atendente pode editar e apagar para todos uma mensagem já enviada. */
   alteraMensagemEnviada: boolean;
+  /** O adapter deste canal aceita reagir a mensagens. */
+  podeReagir: boolean;
   /**
    * O canal deixa LER, em bloco e paginado, a AGENDA DE CONTATOS do aparelho
    * pareado — o que o número da empresa salvou no celular?

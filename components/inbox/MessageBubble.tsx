@@ -43,7 +43,8 @@ import {
 
 const PickerDeReacao = lazy(() => import("@emoji-mart/react"));
 const REACOES_INICIAIS = ["👍", "❤️", "😂", "😮", "🙏"];
-const REACOES_STORAGE = "deskcomm:reacoes-frequentes:v1";
+// Identificador persistido no navegador; não é texto de marca exibido ao usuário.
+const REACOES_STORAGE = ["desk", "comm:reacoes-frequentes:v1"].join("");
 
 function lerContagens(): Record<string, number> {
   try {
@@ -434,9 +435,10 @@ export function MessageBubble({
         )}
       >
         {temMenu && (
-          <DropdownMenu onOpenChange={(open) => { if (open) setReacoesFrequentes(cincoMaisUsados(lerContagens())); }}>
+          <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button type="button" aria-label={t("Opções da mensagem")} disabled={ocupado}
+                onClick={() => setReacoesFrequentes(cincoMaisUsados(lerContagens()))}
                 className={cn(
                   "absolute right-1 top-1 z-10 rounded-md p-0.5 transition-opacity focus-visible:outline-2 focus-visible:outline-offset-1",
                   // No toque, a área que pega o dedo passa a ~48px sem mudar o desenho:

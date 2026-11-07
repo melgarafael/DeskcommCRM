@@ -112,6 +112,8 @@ export function ChatThread({
   const podeEnviar = activeOrg != null && ROLE_RANK[activeOrg.role] >= ROLE_RANK.agent;
   const canalAlteraEnviada = transportaMensagem(provider)
     && capabilitiesOf(provider as ChannelProvider).alteraMensagemEnviada;
+  const canalPermiteReacao = transportaMensagem(provider)
+    && capabilitiesOf(provider as ChannelProvider).podeReagir;
   const { enabled: debugCitations } = useDebugToggle(activeOrg?.role ?? null);
 
   const messages: Message[] = useMemo(
@@ -351,7 +353,7 @@ export function ChatThread({
                   // que é melhor que segurar a conversa esperando.
                   citada={porId.get(item.data.reply_to_message_id ?? "") ?? null}
                   reacoes={reacoesPorAlvo.get(item.data.id)}
-                  onReagir={podeEnviar && (provider === "waha" || provider === "meta_cloud")
+                  onReagir={podeEnviar && canalPermiteReacao
                     && Boolean(item.data.external_id) && item.data.type !== "reaction"
                     && !item.data.metadata?._optimistic
                     ? (emoji) => reagir.mutateAsync({ id: item.data.id, emoji }).then(() => undefined)

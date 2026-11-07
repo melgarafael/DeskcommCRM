@@ -30,6 +30,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "full",
     costPerMessage: false,
     alteraMensagemEnviada: true,
+    podeReagir: true,
     // É a linha que conversa com um APARELHO pareado: a agenda salva no
     // celular está lá dentro, e o `contacts/all` a devolve paginada (#2736).
     phonebook: true,
@@ -47,6 +48,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "limited",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    podeReagir: true,
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
@@ -84,6 +86,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "none",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    podeReagir: false,
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
@@ -98,6 +101,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "limited",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    podeReagir: false,
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
@@ -121,6 +125,7 @@ export const CHANNEL_CAPABILITIES: Record<ProviderDeMensagem, ChannelCapabilitie
     groups: "limited",
     costPerMessage: true,
     alteraMensagemEnviada: false,
+    podeReagir: false,
     // Nenhuma destas linhas conversa com um aparelho pareado — não existe
     // agenda de celular a ler, e dizer `true` aqui seria um botão que só falha.
     phonebook: false,
