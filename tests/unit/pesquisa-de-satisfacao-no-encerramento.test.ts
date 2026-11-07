@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sendMessageHandler } from "@/app/api/v1/messages/_handler";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
 import {
   capturarRespostaDeSatisfacao,
   fecharPedidosVencidos,
@@ -134,6 +135,24 @@ describe("#4023 — a pergunta sai UMA vez, e só com a opção ligada", () => {
 
     expect(desfecho).toEqual({ pedida: false, motivo: "falha_ao_enviar" });
     expect(banco.estado.pedidos[0]?.status).toBe("sem_nota");
+  });
+
+  it("organização parada: não pergunta, não retenta, e o encerramento fica de pé", async () => {
+    // Catraca `chamadores-do-envio-tratam-org-parada`: este arquivo é o teste de
+    // comportamento de `lib/atendimento/satisfacao.ts`. A suspensão não pode
+    // derrubar o fechamento nem marcar a pergunta como enviada.
+    vi.mocked(sendMessageHandler).mockRejectedValue(new OrgNaoOperanteError(ORG, "suspended"));
+    const banco = bancoFake({ settings: LIGADA });
+
+    const desfecho = await pedirSatisfacaoAoEncerrar(banco.client, {
+      organizationId: ORG,
+      conversationId: CONVERSA,
+      contactId: CONTATO,
+    });
+
+    expect(desfecho).toEqual({ pedida: false, motivo: "org_parada" });
+    expect(banco.estado.pedidos[0]?.status).toBe("aguardando");
+    expect(sendMessageHandler).toHaveBeenCalledTimes(1);
   });
 });
 

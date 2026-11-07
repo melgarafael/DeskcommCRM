@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { OrgNaoOperanteError } from "@/lib/organizacao/operante";
+
 /**
  * A PESQUISA DE SATISFAÇÃO DO ENCERRAMENTO (#4023).
  *
@@ -191,9 +193,15 @@ export async function pedirSatisfacaoAoEncerrar(
       return { pedida: false, motivo: "falha_ao_enviar" };
     }
     return { pedida: true, pedidoId };
-  } catch {
+  } catch (erro) {
     // Encerramento não é desfeito por pesquisa. Quem investiga acha pelo log do
     // chamador; aqui a resposta é "não perguntei".
+    //
+    // `OrgNaoOperanteError` (org suspensa, redigida ou arquivada) cai aqui de
+    // propósito: a pergunta não sai e o pedido já fica com o desfecho que o
+    // banco sabe dar (`sem_nota` na varredura de vencidos). Nada é gravado como
+    // enviado e nada é retentado — o encerramento já aconteceu.
+    if (erro instanceof OrgNaoOperanteError) return { pedida: false, motivo: "org_parada" };
     return { pedida: false, motivo: "erro" };
   }
 }
