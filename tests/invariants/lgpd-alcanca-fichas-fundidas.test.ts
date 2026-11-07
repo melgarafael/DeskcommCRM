@@ -535,9 +535,11 @@ describe("a cascata alcança as fichas absorvidas", () => {
     const ficaVizinha = criar(VIZINHA, "Fica em B", novoTelefone());
     const saiVizinha = criar(VIZINHA, "Sai em B", telefone);
     const ponteiroCruzado = criar(VIZINHA, "Cruzado em B", novoTelefone());
+    const cruzadoAbaixo = criar(VIZINHA, "Cruzado Abaixo em B", novoTelefone());
     fundida(sai, fica);
     fundida(saiVizinha, ficaVizinha);
     fundida(ponteiroCruzado, fica);
+    fundida(cruzadoAbaixo, sai);
 
     cascata(ORG, fica);
 
@@ -546,6 +548,7 @@ describe("a cascata alcança as fichas absorvidas", () => {
     expect(estado(ficaVizinha)).toMatchObject({ anonimizada: false, nome: "Fica em B" });
     expect(estado(saiVizinha)).toMatchObject({ anonimizada: false, nome: "Sai em B", telefone });
     expect(estado(ponteiroCruzado)).toMatchObject({ anonimizada: false, nome: "Cruzado em B" });
+    expect(estado(cruzadoAbaixo)).toMatchObject({ anonimizada: false, nome: "Cruzado Abaixo em B" });
     expect(marcado(VIZINHA, telefone, null)).toBe("f");
   });
 

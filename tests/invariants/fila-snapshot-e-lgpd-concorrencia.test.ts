@@ -127,6 +127,7 @@ describe("UPDATE direto do servidor também obedece à barreira de anonimizaçã
   it("controle real: a sessão não vira a coluna na própria org e não enxerga a vizinha; o servidor vira",async()=>{
     const f=await fixture(),other=await fixture(),session=await pool.connect();
     try{
+      expect((await pool.query("select has_table_privilege('authenticated','public.contacts','UPDATE') as allowed")).rows[0].allowed).toBe(true);
       await session.query("begin; set local role authenticated; set local statement_timeout='5s'");
       await session.query("select set_config('request.jwt.claims',$1,true)",[JSON.stringify({role:"authenticated",sub:f.user,aal:"aal1"})]);
       expect((await session.query("update contacts set is_anonymized=true,anonymized_at=clock_timestamp() where id=$1 returning id",[other.contact])).rowCount).toBe(0);
