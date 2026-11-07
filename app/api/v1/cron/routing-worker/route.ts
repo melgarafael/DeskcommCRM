@@ -15,6 +15,7 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { autorizaCron } from "@/lib/auth/cron-auth";
+import { recursoOcioso } from "@/lib/cron/piso-ocioso";
 import { logger } from "@/lib/logger";
 import { runRoutingWorker } from "@/lib/routing/worker";
 
@@ -26,6 +27,26 @@ async function handle(req: NextRequest): Promise<Response> {
   if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
+
+  // ─── O PISO OCIOSO DA ÚLTIMA ROTA DE MINUTO A MINUTO (#3878) ───────────────
+  //
+  // A rodada faz DUAS leituras no PostgREST antes de saber que não há nada a
+  // fazer: a varredura de `processing` preso (janela de 5 min) e a de
+  // `pending`. Numa instalação ociosa isso é 2 requisições por minuto, 2.880
+  // por dia, contra `event_log` — o endpoint nº 1 do egress no relato da #3878
+  // (18.880 chamadas/dia) — para receber dois vazios.
+  //
+  // O portão responde à mesma pergunta por UMA consulta no pool `pg`
+  // compartilhada com as outras rotas (`lib/cron/piso-ocioso.ts`), que não gasta
+  // a cota do PostgREST. O predicado dele é DELIBERADAMENTE mais largo que a
+  // varredura (aceita `pending` já vencido e `processing` acima de 5 min);
+  // fechar com trabalho na fila é o defeito que o portão existe para não ter.
+  //
+  // A promessa que NÃO muda: evento novo é distribuído na primeira batida
+  // seguinte ao TTL de 30 s — o mesmo atraso que qualquer outra rota do
+  // crontab já tem hoje com o portão ligado, e bem abaixo do minuto de cadência
+  // que a rota sempre teve.
+  if (await recursoOcioso("roteamento")) return ok({ pulado: "recurso_ocioso" }, { requestId });
 
   let summary;
   try {
