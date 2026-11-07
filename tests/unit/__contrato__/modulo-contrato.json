@@ -243,6 +243,7 @@
       "GET /api/v1/contacts/[id]/roteiros",
       "GET /api/v1/contacts/[id]/timeline",
       "GET /api/v1/contacts/[id]/vinculos",
+      "GET /api/v1/contacts/cep",
       "GET /api/v1/contacts/compare",
       "GET /api/v1/contacts/duplicates",
       "GET /api/v1/tags/cores",
