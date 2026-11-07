@@ -454,8 +454,9 @@ export const AUDIT_ACTIONS = [
   // Levar a configuração embora e aplicá-la em outra organização são atos
   // próprios (issue #1995): o blueprint exportado é o primeiro passo de sair do
   // produto, e o importado muda a operação inteira de uma vez. Nenhum dos dois
-  // é `template.created`: as respostas rápidas criadas têm o SEU
-  // `template.created`, um por linha, com o autor certo.
+  // é `template.created`, e o import NÃO emite um `template.created` por linha:
+  // o rastro dele é um `template.imported` só, com a contagem, e o autor de
+  // cada linha importada fica em `message_templates.created_by_user_id`.
   "template.exported",
   "template.imported",
   // GRUPOS de respostas rápidas (#3245): criar/renomear/reordenar/apagar um

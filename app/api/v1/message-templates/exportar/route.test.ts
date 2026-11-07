@@ -28,6 +28,7 @@ vi.mock("@/lib/audit", () => ({ audit: h.audit }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ from: h.from }) }));
 
 import { GET } from "@/app/api/v1/message-templates/exportar/route";
+import { TETO_DE_ITENS_DO_BLUEPRINT } from "@/lib/templates/blueprint";
 
 const ORG = "c7d40000-0000-4000-8000-000000000001";
 const USER = "c7d40000-0000-4000-8000-000000000002";
@@ -43,6 +44,7 @@ function consulta(resultado: { data?: unknown; count?: number | null; error?: un
   const filtros: Record<string, unknown> = {};
   const ordens: string[] = [];
   let colunas = "";
+  let limite: number | null = null;
 
   const q = {
     select(cols: string) {
@@ -61,6 +63,10 @@ function consulta(resultado: { data?: unknown; count?: number | null; error?: un
       ordens.push(coluna);
       return q;
     },
+    limit(valor: number) {
+      limite = valor;
+      return q;
+    },
     then<T>(resolve: (valor: unknown) => T) {
       return Promise.resolve(resultado).then(resolve);
     },
@@ -71,6 +77,7 @@ function consulta(resultado: { data?: unknown; count?: number | null; error?: un
     filtros,
     ordens,
     colunas: () => colunas,
+    limite: () => limite,
   };
 }
 
@@ -201,6 +208,48 @@ describe("GET /message-templates/exportar", () => {
     const registrado = JSON.stringify(h.audit.mock.calls[0]?.[0]);
     expect(registrado).not.toContain("Script confidencial");
     expect(registrado).not.toContain("texto interno");
+    // O mesmo `resourceType` das rotas vizinhas de resposta rápida (singular):
+    // quem filtra o audit por recurso acha o export junto com o resto.
+    expect(h.audit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "template.exported", resourceType: "message_template" }),
+    );
+  });
+
+  it("acima do teto do import recusa com 409 que diz o limite, e não gera arquivo", async () => {
+    const linhas: Linha[] = Array.from({ length: TETO_DE_ITENS_DO_BLUEPRINT + 1 }, (_, i) => ({
+      title: `R${i}`,
+      body: "x",
+      shortcut: null,
+      midias: [],
+    }));
+    const c = consulta({ data: linhas, error: null });
+    h.from.mockReturnValue(c.q);
+
+    const res = await GET(pedido());
+
+    expect(res.status).toBe(409);
+    const corpo = await res.json();
+    expect(corpo.error.code).toBe("state_conflict");
+    expect(corpo.error.message).toContain(String(TETO_DE_ITENS_DO_BLUEPRINT));
+    expect(res.headers.get("Content-Disposition")).toBeNull();
+    expect(h.audit).not.toHaveBeenCalled();
+    // A leitura para em teto + 1: basta para saber que passou.
+    expect(c.limite()).toBe(TETO_DE_ITENS_DO_BLUEPRINT + 1);
+  });
+
+  it("exatamente no teto exporta: o limite é inclusivo, como no import", async () => {
+    const linhas: Linha[] = Array.from({ length: TETO_DE_ITENS_DO_BLUEPRINT }, (_, i) => ({
+      title: `R${i}`,
+      body: "x",
+      shortcut: null,
+      midias: [],
+    }));
+    h.from.mockReturnValue(consulta({ data: linhas, error: null }).q);
+
+    const res = await GET(pedido());
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).itens).toHaveLength(TETO_DE_ITENS_DO_BLUEPRINT);
   });
 
   it("sai como download com o nome do recurso e sem cache", async () => {

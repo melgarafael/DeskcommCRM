@@ -55,7 +55,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 import { POST } from "@/app/api/v1/message-templates/importar/route";
-import { FORMATO_DO_BLUEPRINT } from "@/lib/templates/blueprint";
+import { FORMATO_DO_BLUEPRINT, TETO_DE_ITENS_DO_BLUEPRINT } from "@/lib/templates/blueprint";
 
 const ORG = "c7d40000-0000-4000-8000-000000000011";
 const USER = "c7d40000-0000-4000-8000-000000000012";
@@ -423,6 +423,22 @@ describe("POST /message-templates/importar", () => {
     expect(db.inserts).toHaveLength(0);
   });
 
+  it("lista acima do teto é recusada com a frase que cita o limite, sem inserir", async () => {
+    const db = banco();
+    const itens = Array.from({ length: TETO_DE_ITENS_DO_BLUEPRINT + 1 }, (_, i) => ({
+      titulo: `R${i}`,
+      corpo: "x",
+    }));
+
+    const res = await POST(pedido(blueprint(itens)));
+
+    expect(res.status).toBe(422);
+    // A frase leva o número do teto: quem tem 201 respostas lê a causa certa.
+    expect((await res.json()).error.message).toContain(`de 1 a ${TETO_DE_ITENS_DO_BLUEPRINT}`);
+    expect(db.inserts).toHaveLength(0);
+    expect(h.rpc).not.toHaveBeenCalled();
+  });
+
   it("lista vazia não é blueprint: nada a aplicar", async () => {
     const db = banco();
 
@@ -493,6 +509,7 @@ describe("POST /message-templates/importar", () => {
       expect.objectContaining({
         action: "template.imported",
         organizationId: ORG,
+        resourceType: "message_template",
         metadata: expect.objectContaining({ total: 1, midias_importadas: 0, sem_texto: 1 }),
       }),
     );

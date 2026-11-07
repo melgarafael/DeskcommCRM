@@ -41,6 +41,7 @@ import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { createClient } from "@/lib/supabase/server";
 import {
+  TETO_DE_ITENS_DO_BLUEPRINT,
   blueprintDasRespostasRapidas,
   nomeDoArquivo,
   type LinhaExportavel,
@@ -70,7 +71,9 @@ export async function GET(_req: NextRequest): Promise<Response> {
     .is("owner_user_id", null)
     .order("ordem", { ascending: true })
     .order("updated_at", { ascending: false })
-    .order("id", { ascending: true });
+    .order("id", { ascending: true })
+    // Um a mais que o teto: basta para saber que passou, sem ler a tabela toda.
+    .limit(TETO_DE_ITENS_DO_BLUEPRINT + 1);
 
   if (error) {
     return fail("internal_error", t("Erro ao exportar respostas rápidas."), 500, { requestId });
@@ -89,13 +92,27 @@ export async function GET(_req: NextRequest): Promise<Response> {
     );
   }
 
+  // Acima do teto o import recusaria o próprio arquivo. Exportar assim seria
+  // entregar um arquivo que nenhuma instalação aceita — então a recusa é aqui,
+  // dizendo o limite, e não lá, com uma frase sobre título e corpo.
+  if (linhas.length > TETO_DE_ITENS_DO_BLUEPRINT) {
+    return fail(
+      "state_conflict",
+      t(
+        "O blueprint leva até 200 respostas rápidas compartilhadas, e esta organização tem mais do que isso. Nada foi exportado.",
+      ),
+      409,
+      { requestId, details: { teto: TETO_DE_ITENS_DO_BLUEPRINT } },
+    );
+  }
+
   const { blueprint, midiasNaoExportadas } = blueprintDasRespostasRapidas(linhas);
 
   await audit({
     action: "template.exported",
     actorUserId: authz.user.id,
     organizationId: authz.org.orgId,
-    resourceType: "message_templates",
+    resourceType: "message_template",
     resourceId: null,
     requestId,
     metadata: {

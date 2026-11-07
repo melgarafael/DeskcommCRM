@@ -56,6 +56,7 @@ function banco() {
   function select(_cols: string, opcoes?: { count?: string; head?: boolean }) {
     const filtros: Filtro[] = [];
     const ordens: { coluna: string; desc: boolean }[] = [];
+    let limite: number | null = null;
 
     const resolver = () => {
       let casadas = linhas.filter((linha) => filtros.every((f) => linha[f.coluna] === f.valor));
@@ -70,7 +71,7 @@ function banco() {
         return 0;
       });
       if (opcoes?.head) return { count: casadas.length, error: null };
-      return { data: casadas, error: null };
+      return { data: limite === null ? casadas : casadas.slice(0, limite), error: null };
     };
 
     const q = {
@@ -84,6 +85,10 @@ function banco() {
       },
       order(coluna: string, opcoesDaOrdem?: { ascending?: boolean }) {
         ordens.push({ coluna, desc: opcoesDaOrdem?.ascending === false });
+        return q;
+      },
+      limit(valor: number) {
+        limite = valor;
         return q;
       },
       then<T>(resolve: (valor: unknown) => T) {

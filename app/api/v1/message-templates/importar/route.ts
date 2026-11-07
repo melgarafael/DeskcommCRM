@@ -112,7 +112,10 @@ function mensagemDoMotivo(motivo: MotivoDeRecusa): string {
     case "tipo":
       return "Este blueprint não é de respostas rápidas.";
     case "itens":
-      return "O arquivo tem itens inválidos: confira título (até 80), corpo (até 4096) e atalho (até 40).";
+      // A quantidade entra na frase: o schema recusa lista vazia e lista acima
+      // do teto pelo MESMO motivo `itens`, e quem tem 201 respostas precisa ler
+      // o limite, não procurar um título longo que não existe.
+      return "O arquivo tem itens inválidos: confira a quantidade (de 1 a 200), o título (até 80), o corpo (até 4096) e o atalho (até 40).";
   }
 }
 
@@ -225,7 +228,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     action: "template.imported",
     actorUserId: authz.user.id,
     organizationId: authz.org.orgId,
-    resourceType: "message_templates",
+    resourceType: "message_template",
     resourceId: null,
     requestId,
     metadata: {

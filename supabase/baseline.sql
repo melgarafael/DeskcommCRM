@@ -66194,7 +66194,8 @@ begin
     shortcut,
     mostrar_na_barra,
     ordem,
-    midias
+    midias,
+    created_by_user_id
   )
   select
     p_org,
@@ -66204,7 +66205,10 @@ begin
     nullif(item ->> 'atalho', ''),
     coalesce((item ->> 'mostrar_na_barra')::boolean, true),
     (ordinalidade - 1)::numeric,
-    '[]'::jsonb
+    '[]'::jsonb,
+    -- Quem importou é o autor das linhas, como no `POST` da rota de criação:
+    -- sem isto o rastro da resposta fica nulo e ninguém sabe de onde ela veio.
+    auth.uid()
   from jsonb_array_elements(p_itens) with ordinality as t(item, ordinalidade)
   -- O ITEM SEM TEXTO NÃO ENTRA. `body` vazio é legal na CRIAÇÃO (#2833: a
   -- linha de áudio ganha o arquivo por `POST /:id/midias`), mas o blueprint
