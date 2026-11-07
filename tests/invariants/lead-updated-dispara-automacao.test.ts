@@ -331,7 +331,9 @@ function fakeAdmin(): SupabaseClient {
 
 const ctx: HandlerCtx = {
   organization_id: ORG,
-  actor: { type: "user", id: null },
+  // `Actor` de usuário exige id string; o id é sintético de propósito (catraca
+  // de identificador de produção) e só serve para a correlação do audit.
+  actor: { type: "user", id: "00000000-0000-4000-8000-000000000174" },
   requestId: "inv-1749-request",
 };
 
