@@ -79,6 +79,14 @@ vi.mock("@/components/inbox/ParticipantesDaConversa", () => ({
 vi.mock("@/components/inbox/SnoozeButton", () => ({
   SnoozeButton: () => <button type="button">Lembrar</button>,
 }));
+// A folha de reserva é montada no fim do cabeçalho e lê react-query: com
+// `activeOrg` de atendente o `podeReservar` é verdadeiro e, sem o dublê, o
+// render morre em "No QueryClient set" — este arquivo mede o item de export,
+// não a agenda.
+vi.mock("@/components/agenda/ReservarServicoNaConversa", () => ({
+  ItemReservarServico: () => null,
+  ReservarServicoNaConversa: () => null,
+}));
 
 const CONVERSA = {
   id: "conv-1",
