@@ -34,7 +34,7 @@ decisão está em *Decisões onde a ADR não decide*.
 |---|---|---|
 | Perfis aceitos no manifesto | `grep -n 'profile: z.enum' lib/extensions/manifest.ts` | `declarative`, `data` (linha 279) |
 | Perfis aceitos no banco | `grep -n "'declarative','data'" supabase/baseline.sql` | só os dois, em `fn_extensions_finish_install` (linha 49069) |
-| Versão da API do host | `grep -n 'HOST_API_VERSION =' lib/extensions/manifest.ts` | `2`. O PR #3477 (rascunho, em conflito) usa `3` para o turno |
+| Versão da API do host | `grep -n 'HOST_API_VERSION =' lib/extensions/manifest.ts` | `2`, e a F1 não o altera. O PR #3477 (rascunho, em conflito) usa `3` para o turno |
 | Rotas da API | `git ls-tree -r --name-only HEAD app/api/v1 \| grep -c 'route\.ts$'` | 519 |
 | Token de servidor | `lib/mcp/auth.ts`, tabela `api_tokens` | hash SHA256, organização na linha do token, papel e ator em `scopes` |
 | Dono do token | `grep -n 'api_tokens_created_by_fkey' supabase/baseline.sql` | `created_by` → `auth.users` com `ON DELETE RESTRICT` |
@@ -90,10 +90,22 @@ converter**, divididas na tabela da R. O comando que produz esses números está
   credencial, caminho, query ou fragmento.
 - O pacote declara **áreas de uma lista fechada do host** (ver F3) e, se quiser, um rótulo e um
   ícone da lista existente para a tela.
-- A versão da API do host sobe. O número fica com quem entrar primeiro, esta fatia ou o #3477.
-- Um manifesto `connected` em host antigo é recusado com `profile_unsupported`.
+- **A F1 não sobe a versão da API do host** (emenda de 04/11/2026). Medido: `HOST_API_VERSION = 2`
+  e os três pacotes oficiais (`extensoes/pacotes/deskcomm/*.json`, `extensoes/catalogo.json`)
+  declaram `host_api: {min: 2, max: 2}`; `checkCompatibility` devolve `host_api_unsupported` quando
+  `max < HOST_API_VERSION`, então subir para 3 suspenderia os três em toda instalação, inclusive nas
+  já instaladas (o artefato é imutável). Um perfil novo não muda o que os pacotes existentes fazem.
+  Um módulo `connected` declara `host_api: {min: 2, max: 2}`. A subida fica para quando um contrato
+  mudar de fato (F6), junto com novas versões dos pacotes oficiais. Para conferir: `grep -n
+  'HOST_API_VERSION =' lib/extensions/manifest.ts`.
+- Um manifesto `connected` em host antigo é recusado com `profile_unsupported`: o host antigo não
+  tem `connected` na lista de perfis, sem precisar de bump.
 - **Interruptor local (D8).** Quem administra a instalação desliga um módulo conectado sem
   desinstalar. Desligado, o token recusa, o grupo some e o aviso aparece em `/admin/extensoes`.
+  **Na F1** o interruptor só guarda e mostra o estado (`disabled_at`, `disabled_by`, recibo
+  `switch`, auditoria `extension.switched`); "o token recusa" é da F2 e "o grupo some", da F4, que
+  leem `disabled_at`. Reinstalar um módulo removido que estava desligado volta desligado (lado
+  seguro; quem administra liga).
 
 ### F2 — Token do módulo
 
@@ -184,7 +196,9 @@ O módulo pode gravar **rascunho** por `conversations/[id]/drafts`; quem envia �
 
 **Papel efetivo.** É o **menor** entre o teto do token e o papel **atual** da pessoa, lido do banco na
 própria requisição. Acima de `agent`, só com um JWT válido de pessoa real. Sem JWT, o teto é `agent`
-(D4).
+(D4). O token de módulo nasce só com `mcp:read`, `role:viewer` e o ator: **não carrega escopo de rota**
+(`mcp:write`, `config:*`). Para ele, o escopo exigido pela rota é atendido pela decisão de área e modo
+(declarado ∩ consentido, lido do banco agora); o papel continua valendo.
 
 **JWT de contexto.**
 
@@ -382,5 +396,5 @@ o motivo. Cada uma vale até a revisão do PR que a implementa, e o mantenedor p
    único seria impossível de revisar. Toda leitura convertida também passa pelo teto do token, como a
    rota de foto do contato (`contacts/[id]/avatar`) já faz, porque a cerca de #1999 o exige em toda rota
    com `resolveAuthDual`.
-9. **A próxima versão de `host_api` fica com quem entrar primeiro, esta spec ou o #3477.** O outro traz
-   a `main` e sobe.
+9. **A F1 não sobe `host_api`** (ver a emenda na seção F1). A próxima subida fica para a F6, e se o
+   #3477 entrar antes, ele traz a `main` e sobe do número que encontrar.
