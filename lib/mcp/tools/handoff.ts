@@ -155,7 +155,33 @@ export const crmRequestHumanHandoff: McpToolDefinition<typeof inputShape> = {
     let queued = false;
     let position: number | null = null;
 
-    if (result.triggered) {
+    /**
+     * #3804, item 3 — o motor já entregou a conversa a quem a configuração da
+     * organização mandou (responsável do negócio / dono da carteira).
+     *
+     * Nesse caso esta ferramenta NÃO escolhe de novo: o `fn_channel_routing_claim`
+     * responderia `already_assigned` (a conversa já tem dono) e a ferramenta
+     * devolveria "falhou" para uma entrega que deu certo. Quem decidiu foi o
+     * orquestrador, e o desfecho dele é a resposta.
+     *
+     * `user_id` nulo com `entregue: true` é o fallback em RODÍZIO: a conversa
+     * foi para a distribuição do canal, que é a fila — e a posição continua
+     * sendo calculada abaixo, como em qualquer conversa na fila.
+     */
+    const decisaoDoMotor = result.entrega?.entregue === true ? result.entrega : null;
+    if (decisaoDoMotor?.user_id) {
+      assignedUserId = decisaoDoMotor.user_id;
+    } else if (decisaoDoMotor) {
+      queued = true;
+      position = await getQueuePosition(
+        ctx.supabase,
+        ctx.organizationId,
+        conv.awaiting_since ?? null,
+        new Date(),
+      );
+    }
+
+    if (result.triggered && decisaoDoMotor === null) {
       const now = new Date();
       // INB-12: mesmos elegíveis do worker de roteamento (G5) — um algoritmo só.
       // (9062) Com fila na conversa, o escopo é a FILA: o handoff da IA não
