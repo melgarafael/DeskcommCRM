@@ -373,6 +373,8 @@ describe("verificarWebhook", () => {
     // Token vazado: sem teto, cada aviso gravaria uma linha do tamanho que quem manda quiser.
     ["⭐ com id de 5 KB", JSON.stringify({ id: "x".repeat(5_000), event: "PAYMENT_RECEIVED" })],
     ["⭐ com event fora do vocabulário do Asaas", JSON.stringify({ id: "evt_1", event: "payment_received" })],
+    ["⭐ com payment.customer de 5 KB", JSON.stringify({ id: "evt_1", event: "PAYMENT_RECEIVED", payment: { customer: "x".repeat(5_000) } })],
+    ["⭐ com subscription.customer de 5 KB", JSON.stringify({ id: "evt_1", event: "SUBSCRIPTION_DELETED", subscription: { customer: "x".repeat(5_000) } })],
   ])(
     "token certo e corpo %s → ponteiro sem empresa, id curto e estável (nunca 401: o Asaas pausaria a fila)",
     (_nome, corpo) => {

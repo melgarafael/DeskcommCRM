@@ -218,8 +218,8 @@ const eventoDoAsaas = z.object({
   // Tetos de tamanho: com o token vazado, cada aviso válido vira uma linha no arquivo de avisos.
   id: z.string().min(1).max(100),
   event: z.string().regex(/^[A-Z_]{1,64}$/),
-  payment: z.object({ customer: z.string().nullish() }).nullish(),
-  subscription: z.object({ customer: z.string().nullish() }).nullish(),
+  payment: z.object({ customer: z.string().max(100).nullish() }).nullish(),
+  subscription: z.object({ customer: z.string().max(100).nullish() }).nullish(),
 });
 
 /**
