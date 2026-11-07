@@ -117,7 +117,6 @@ describe("comIdDaRequisicao", () => {
 
 /** Todo construtor de resposta à mão no arquivo (fora de comentário de doc). */
 function montagensAMao(fonte: string): Array<{ linha: number; trecho: string }> {
-  const linhas = fonte.split("\n");
   const construtor =
     /(?<![\w.])(new\s+(?:Next)?Response|(?:Next)?Response\.(?:json|redirect))\s*\(/g;
   const achadas: Array<{ linha: number; trecho: string }> = [];
