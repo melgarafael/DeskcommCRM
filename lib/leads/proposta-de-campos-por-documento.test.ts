@@ -95,12 +95,15 @@ function dbFalso(opcoes: {
         };
       }
       if (tabela === "crm_pipelines") {
+        // `settingsDoFunil` lê com `.eq("id").eq("organization_id")` (escopo de tenant).
         return {
           select: () => ({
             eq: () => ({
-              maybeSingle: async () => ({
-                data: opcoes.settings === undefined || opcoes.settings === null ? null : { settings: opcoes.settings },
-                error: null,
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: opcoes.settings === undefined || opcoes.settings === null ? null : { settings: opcoes.settings },
+                  error: null,
+                }),
               }),
             }),
           }),

@@ -7,17 +7,22 @@
  * (own-scope G1-06a; a lista "por atendente" colapsa a 1 linha, a dele);
  * manager+ ⇒ org-wide + filtro opcional `owner_user_id`. Piso de rota = agent.
  * org da org ativa (cookie validado), NUNCA do body/query. Read-only ⇒ sem audit.
+ *
+ * Sessão OU token de servidor `dsk_…` com `mcp:read` e papel agent+ (Spec 33,
+ * R3). Pelo token não há pessoa nem RLS por atendente: o cliente é o de serviço,
+ * a organização vem da LINHA do token e a leitura é a da organização inteira
+ * (o `p_owner` da query continua restringindo, dentro dela).
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { isServiceRoleConfigured } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { normalizarEtiqueta } from "@/lib/metrics/mediana-e-recorte-por-etiqueta";
 import { membrosDaOrganizacao } from "@/lib/users/nome-do-atendente";
 
@@ -58,10 +63,17 @@ export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
   // spec 13 §6.1: piso agent (vê as próprias); RLS gate a comparação manager+.
-  const authz = await requireRole("agent", { requestId, resource: "metrics" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "metrics",
+    role: "agent",
+    scope: "mcp:read",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org: activeOrg } = authz;
+  // Está em PUBLIC_PATHS: o teto do token é a única contagem das chamadas dele.
+  const teto = await tetoDeEscritaDoToken(authz, "metrics", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
 
   const url = new URL(req.url);
   const parsed = querySchema.safeParse({
@@ -87,13 +99,16 @@ export async function GET(req: NextRequest): Promise<Response> {
     });
   }
 
-  const supabase = await createClient();
+  // Sessão: o cliente do cookie (a RLS recorta). Token: o de serviço, e o
+  // `p_org` abaixo — da sessão ou da linha do token, nunca da query — é o
+  // único recorte de organização.
+  const supabase = authz.supabase;
   // #3212: a etiqueta do recorte passa pela MESMA normalização do banco
   // (`normalizarEtiqueta` = `btrim` da RPC): `""`/só-espaço viram `null`, e
   // `null` desliga o recorte em vez de excluir todo contato sem etiqueta.
   const excluirEtiqueta = normalizarEtiqueta(parsed.data.excluir_etiqueta);
   const { data, error } = await supabase.rpc("fn_attendant_metrics", {
-    p_org: activeOrg.orgId,
+    p_org: authz.organizationId,
     p_from: from.toISOString(),
     p_to: to.toISOString(),
     p_owner: parsed.data.owner_user_id,
@@ -112,7 +127,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     const admin = createAdminClient();
     const membros = await membrosDaOrganizacao(
       admin,
-      activeOrg.orgId,
+      authz.organizationId,
       metrics.attendants.map((a) => a.user_id),
     );
     await Promise.all(

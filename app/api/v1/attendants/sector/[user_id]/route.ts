@@ -24,20 +24,29 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  *
  * O PRÓPRIO atendente não escolhe as filas — é decisão de quem gerencia a
  * equipe, e por isso a tabela não concede escrita a `authenticated`.
+ *
+ * Aceita sessão de navegador (manager+) OU Bearer `dsk_…` (`config:write`, papel
+ * admin via `tokenRole`). A organização vem do portão (sessão ou linha do token),
+ * nunca do corpo. No token não há pessoa: `actorUserId` do audit é nulo e o
+ * `actorApiTokenId` leva o id do token.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
+import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { ApiError } from "@/lib/api/types";
 import { audit } from "@/lib/audit";
 import { seSetoresDesligado } from "@/lib/atendimento/setores-modulo";
-import { requireRole } from "@/lib/auth/require-role";
 import { sectorAssignmentSchema, validateRequest } from "@/lib/schemas";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 
 export const dynamic = "force-dynamic";
+
+const idSchema = z.string().uuid();
 
 export async function PUT(
   req: NextRequest,
@@ -49,11 +58,24 @@ export async function PUT(
   const requestId = randomUUID();
   const desligado = await seSetoresDesligado(requestId);
   if (desligado) return desligado;
-  const authz = await requireRole("manager", { requestId, resource: "attendant_sector_members" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "attendant_sector_members",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const orgId = authz.org.orgId;
+  const teto = await tetoDeEscritaDoToken(authz, "attendant_sector_members", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const orgId = authz.organizationId;
+  // Token não tem pessoa: o ator do audit só é usuário quando a sessão o é.
+  const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
   const { user_id: targetUserId } = await ctx.params;
+  if (!idSchema.safeParse(targetUserId).success) {
+    return fail("not_found", t("Atendente não encontrado na organização."), 404, { requestId });
+  }
 
   let input;
   try {
@@ -142,7 +164,8 @@ export async function PUT(
 
     void audit({
       action: "attendant.sector_assigned",
-      actorUserId: authz.user.id,
+      actorUserId,
+      actorApiTokenId: authz.apiTokenId ?? null,
       organizationId: orgId,
       resourceType: "attendant_sector_members",
       resourceId: targetUserId,

@@ -33,6 +33,7 @@ import { ApiError } from "@/lib/api/types";
 import { decidirPreGoLiveDoCanalViaSupabase } from "@/lib/ai/elegibilidade/consulta-pre-go-live";
 import type { Actor, HandlerCtx } from "@/lib/api/handlers/types";
 import { audit, isServiceRoleConfigured } from "@/lib/audit";
+import { metadataDoModulo } from "@/lib/audit/ator-modulo";
 import { traduzir } from "@/lib/i18n/dicionario";
 import { assertOrgOperante } from "@/lib/organizacao/operante";
 import {
@@ -207,6 +208,8 @@ export function origemDaMensagem(actor: Actor): "user" | "ai" | "automation" | "
   // rótulo errado no balão. Um mecanismo só decide os quatro valores — quando
   // eram dois (uma função e um mapa), o mesmo contrato tinha duas verdades.
   if (actor.type === "api_token") return "system";
+  // Módulo conectado também não é IA: é um sistema de fora (spec 33).
+  if (actor.type === "module") return "system";
   // A regra dispara, mas nem sempre ESCREVE. A ação "Mensagem escrita pela IA"
   // manda texto de um agente publicado com este mesmo ator, e a decisão da #652
   // é por AUTORIA: ali a linha é da IA. Decidir só pelo tipo do ator carimbaria
@@ -264,6 +267,7 @@ function actorAuditPayload(actor: Actor): {
       ...(actor.type === "ai_agent" && actor.api_token_id
         ? { actor_api_token_id: actor.api_token_id }
         : {}),
+      ...metadataDoModulo(actor),
     },
   };
 }
@@ -275,7 +279,7 @@ function actorAuditPayload(actor: Actor): {
  * auditoria já espera.
  */
 function apiTokenIdDoActor(actor: Actor): string | undefined {
-  if (actor.type === "api_token") return actor.id;
+  if (actor.type === "api_token" || actor.type === "module") return actor.id;
   if (actor.type === "ai_agent") return actor.api_token_id;
   return undefined;
 }

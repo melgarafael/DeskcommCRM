@@ -15,8 +15,14 @@
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { fail, ok } from "@/lib/api/wrappers";
 import { loadAuthUser } from "@/lib/auth/server";
+import { extractBearer } from "@/lib/mcp/auth";
+import { redigirContatoParaModulo } from "@/lib/modulo/redigir-contato";
+import { IDIOMA_PADRAO, type Idioma } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 import {
   roteiaProximasAcoes,
@@ -59,7 +65,7 @@ interface RouteCtx {
  * RLS do caller, nunca do body.
  */
 async function withOwnerAgents(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   organizationId: string,
   leads: Lead[],
 ): Promise<{ leads: Lead[]; error: string | null }> {
@@ -143,7 +149,7 @@ async function withOwnerAgents(
  * do handler — o que não pode é o usuário perder o board por causa do aviso.
  */
 async function avisaAmbiguas(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   organizationId: string,
   ambiguas: PropostaAmbigua[],
 ): Promise<void> {
@@ -193,7 +199,7 @@ async function avisaAmbiguas(
  * lugar onde o CHECK de coerência não alcança.
  */
 async function withScores(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   organizationId: string,
   leads: Lead[],
 ): Promise<{ leads: Lead[]; error: string | null }> {
@@ -265,7 +271,7 @@ async function withScores(
  * custaria outra ida ao banco por quadro aberto.
  */
 async function withConversas(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   organizationId: string,
   leads: Lead[],
 ): Promise<{ leads: Lead[]; error: string | null }> {
@@ -348,7 +354,7 @@ async function withConversas(
  * (`anexarDadosDoContato`): uma consulta por quadro, não duas.
  */
 async function withMarcadoresDoContato(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   organizationId: string,
   leadsDoQuadro: Lead[],
 ): Promise<{ leads: Lead[]; error: string | null }> {
@@ -386,10 +392,11 @@ async function withMarcadoresDoContato(
 }
 
 async function withNextActions(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   organizationId: string,
   leads: Lead[],
   defaultPipelineId: string | null,
+  abreAvisos: boolean,
 ): Promise<{ leads: Lead[]; error: string | null }> {
   const contactIds = [
     ...new Set(leads.map((l) => l.contact_id).filter((c): c is string => !!c)),
@@ -433,7 +440,13 @@ async function withNextActions(
   // de negócios abertos AGORA, e é aqui que esse olhar acontece. Fazer no
   // momento da escrita da proposta perderia o caso em que o segundo negócio
   // nasce depois dela.
-  await avisaAmbiguas(supabase, organizationId, ambiguas);
+  //
+  // Só na SESSÃO (`abreAvisos`). Leitura com token de integração não abre aviso:
+  // o GET do token tem escopo `config:read` e não pode gravar em
+  // `agent_inbox_items` como efeito colateral (nem sai em `api_audit_log`). A
+  // resposta continua trazendo o `next_action` calculado; o aviso aparece quando
+  // alguém abre o quadro pela sessão.
+  if (abreAvisos) await avisaAmbiguas(supabase, organizationId, ambiguas);
 
   if (porLead.size === 0) return { leads, error: null };
 
@@ -459,7 +472,7 @@ async function withNextActions(
  * justamente no dia em que não sabe.
  */
 async function withTarefas(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   organizationId: string,
   leads: Lead[],
 ): Promise<{ leads: Lead[]; error: string | null }> {
@@ -498,7 +511,7 @@ async function withTarefas(
  * depender desta contagem para deixar o negócio andar.
  */
 async function withAnexos(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient,
   organizationId: string,
   leads: Lead[],
   campos: ReturnType<typeof camposDeArquivoDoNegocio>,
@@ -529,6 +542,30 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   const requestId = randomUUID();
   const { id: pipelineId } = await ctx.params;
 
+  // Token de integração (receita B): `config:read` e papel admin, com o teto do
+  // token. Sem `Authorization`, o ramo de sessão abaixo segue como era.
+  if (extractBearer(req.headers.get("authorization"))) {
+    const authz = await resolveAuthDual(req, {
+      requestId,
+      resource: "pipeline_board",
+      role: "viewer",
+      scope: "config:read",
+      tokenRole: "admin",
+    });
+    if (!authz.ok) return authz.response;
+    const teto = await tetoDeEscritaDoToken(authz, "pipelines.board", requestId);
+    if (teto) return teto;
+    return responder(
+      authz.supabase,
+      authz.organizationId,
+      pipelineId,
+      req,
+      requestId,
+      authz.idioma ?? IDIOMA_PADRAO,
+      authz,
+    );
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -538,23 +575,52 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("unauthenticated", "Auth required.", 401, { requestId });
   }
   const authUser = await loadAuthUser();
-  const t = (texto: string) => traduzir(texto, authUser?.idioma ?? "pt-BR");
+  return responder(supabase, null, pipelineId, req, requestId, authUser?.idioma ?? "pt-BR");
+}
+
+/**
+ * O corpo do quadro, com o cliente e o filtro de organização já decididos pelo
+ * portão. `orgDoToken` é `null` na sessão: a organização sai do próprio funil,
+ * como sempre saiu. No token ela vem da linha do token e entra em cada consulta
+ * à mão, porque o cliente é o admin (service role, sem RLS).
+ */
+async function responder(
+  supabase: SupabaseClient,
+  orgDoToken: string | null,
+  pipelineId: string,
+  req: NextRequest,
+  requestId: string,
+  idioma: Idioma,
+  /** Só no caminho do token: módulo sem a área `contatos` não recebe dado de contato (Spec 33, F3). */
+  quemChama?: { actor: { type: string }; contatoVisivel?: boolean },
+): Promise<Response> {
+  const t = (texto: string) => traduzir(texto, idioma);
+
+  let consultaDoFunil = supabase.from("crm_pipelines").select("*").eq("id", pipelineId);
+  if (orgDoToken) consultaDoFunil = consultaDoFunil.eq("organization_id", orgDoToken);
+  const { data: pipeline, error: pipelineErr } = await consultaDoFunil.maybeSingle();
+  if (pipelineErr) return fail("internal_error", pipelineErr.message, 500, { requestId });
+  if (!pipeline) return fail("resource_not_found", t("Pipeline não encontrado."), 404, { requestId });
+
+  // Etapas e negócios filtram pela organização do funil nos dois ramos: a RLS
+  // só vale na sessão, e o token usa o cliente admin.
+  const orgId = (pipeline as Pipeline).organization_id;
 
   const [
-    { data: pipeline, error: pipelineErr },
     { data: stages, error: stagesErr },
     { data: leads, error: leadsErr },
   ] = await Promise.all([
-    supabase.from("crm_pipelines").select("*").eq("id", pipelineId).maybeSingle(),
     supabase
       .from("crm_stages")
       .select("*")
+      .eq("organization_id", orgId)
       .eq("pipeline_id", pipelineId)
       .eq("is_archived", false)
       .order("position"),
     supabase
       .from("crm_leads")
       .select("*")
+      .eq("organization_id", orgId)
       .eq("pipeline_id", pipelineId)
       .neq("status", "archived")
       .order("position_in_stage")
@@ -569,10 +635,8 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       .order("id"),
   ]);
 
-  if (pipelineErr) return fail("internal_error", pipelineErr.message, 500, { requestId });
   if (stagesErr) return fail("internal_error", stagesErr.message, 500, { requestId });
   if (leadsErr) return fail("internal_error", leadsErr.message, 500, { requestId });
-  if (!pipeline) return fail("resource_not_found", t("Pipeline não encontrado."), 404, { requestId });
 
   // Contato pessoal some do board mas a linha continua no banco (spec 21, etapa
   // 8, decisão 2 — critério 4): o card não é listado e volta ao desmarcar, com
@@ -633,6 +697,9 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     (pipeline as Pipeline).organization_id,
     leadsWithOwner.leads,
     (pipelinePadrao as { id: string } | null)?.id ?? null,
+    // Aviso de ambiguidade é efeito de escrita: só a sessão o abre (ver
+    // `withNextActions`). Com token (`orgDoToken` preenchido) a leitura é pura.
+    orgDoToken === null,
   );
   if (leadsComAcao.error) {
     return fail("internal_error", leadsComAcao.error, 500, { requestId });
@@ -702,5 +769,5 @@ export async function GET(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     ),
   };
 
-  return ok(board, { requestId });
+  return ok(quemChama ? redigirContatoParaModulo(quemChama, board) : board, { requestId });
 }

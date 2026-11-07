@@ -352,30 +352,39 @@ describe("PATCH /api/v1/agenda/agendamentos — editar o título (#3776)", () =>
 });
 
 /**
- * `/api/v1/agenda/agendamentos` agora está em `PUBLIC_PATHS` — o proxy deixa de
- * barrar o GET sem cookie. Quem barra é o `requireRole` da própria rota, que
- * NÃO lê Bearer: listar a agenda segue só-sessão.
+ * `/api/v1/agenda/agendamentos` está em `PUBLIC_PATHS` e o GET aceita sessão OU
+ * token (Spec 33, R2): `mcp:read` e papel `manager`. O alcance por organização
+ * (token de A e token de B) está em `tests/unit/token-por-area/agenda.test.ts`.
  */
-describe("GET /api/v1/agenda/agendamentos — continua só-sessão", () => {
-  it("Bearer válido e sem sessão → 401, e o token nem é consultado", async () => {
+describe("GET /api/v1/agenda/agendamentos — sessão ou token", () => {
+  const URL_LISTA =
+    "http://localhost/api/v1/agenda/agendamentos?de=2026-10-01T00:00:00Z&ate=2026-10-08T00:00:00Z";
+
+  it("Bearer SEM o escopo mcp:read → 403, e a service role não é aberta", async () => {
     vi.mocked(validateBearerToken).mockResolvedValue({
       organizationId: ORG_ID,
       role: "admin" as never,
       actor: { type: "api_token", id: "tok-1", role: "admin" as never },
       apiTokenId: "tok-1",
-      scopes: ["mcp:read", "mcp:write"],
+      scopes: ["mcp:write"],
     });
+    const { GET } = await import("./route");
+    const res = await GET(
+      new NextRequest(URL_LISTA, { method: "GET", headers: { authorization: "Bearer dsk_abc_def" } }),
+    );
+
+    expect(res.status).toBe(403);
+    expect(createAdminClient).not.toHaveBeenCalled();
+    expect(requireRole).not.toHaveBeenCalled();
+  });
+
+  it("sem Bearer e sem sessão → 401, repassa a resposta de requireRole", async () => {
     vi.mocked(requireRole).mockResolvedValue({
       ok: false,
       response: fail("unauthenticated", "Auth required.", 401, {}),
     } as never);
     const { GET } = await import("./route");
-    const res = await GET(
-      new NextRequest(
-        "http://localhost/api/v1/agenda/agendamentos?de=2026-10-01T00:00:00Z&ate=2026-10-08T00:00:00Z",
-        { method: "GET", headers: { authorization: "Bearer dsk_abc_def" } },
-      ),
-    );
+    const res = await GET(new NextRequest(URL_LISTA, { method: "GET" }));
 
     expect(res.status).toBe(401);
     expect(validateBearerToken).not.toHaveBeenCalled();

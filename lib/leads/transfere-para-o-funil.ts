@@ -109,7 +109,7 @@ export async function transfereParaOFunil(
   // os dois chamadores já tratam — a automação vira `status: "failed"` na aba
   // Atividade e o roteador de intenção (#2297) abre o aviso na Central apontando
   // para o negócio de origem, que continua aberto.
-  const settingsDaOrigem = await settingsDoFunil(admin, origem.pipeline_id);
+  const settingsDaOrigem = await settingsDoFunil(admin, origem.pipeline_id, organizationId);
   const vereditoDaOrigem = validaCamposExigidos({
     lead: origem as unknown as Record<string, unknown>,
     settingsDoFunil: settingsDaOrigem,

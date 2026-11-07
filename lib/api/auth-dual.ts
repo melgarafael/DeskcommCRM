@@ -30,6 +30,7 @@ import { type NextRequest } from "next/server";
 import { checkRateLimit } from "@/lib/ai/dispatcher/rate-limit";
 import type { Actor } from "@/lib/api/handlers/types";
 import { fail } from "@/lib/api/wrappers";
+import { autorizarModulo, MENSAGEM_DA_RECUSA_DO_MODULO } from "@/lib/auth/modulo-autorizado";
 import { requireRole } from "@/lib/auth/require-role";
 import type { Role } from "@/lib/auth/types";
 import type { Idioma } from "@/lib/i18n/idiomas";
@@ -41,8 +42,16 @@ import {
   validateBearerToken,
 } from "@/lib/mcp/auth";
 import { JANELA_SEGUNDOS, TETO_DE_ESCRITA, TETO_POR_ORGANIZACAO } from "@/lib/mcp/rate-limit";
+import { supportCallbackWriteAllowed } from "@/lib/impersonate/support";
+import { CABECALHO_DE_CONTEXTO, verificarJwtDeContexto } from "@/lib/modulo/jwt-de-contexto";
+import { lerPapelAtualDaPessoa, papelEfetivoDoModulo } from "@/lib/modulo/papel-efetivo";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+
+const METODOS_SEGUROS = new Set(["GET", "HEAD", "OPTIONS"]);
+const MENSAGEM_DO_CONTEXTO_INVALIDO =
+  "O contexto da pessoa enviado pelo módulo não vale (vencido, de outra organização ou pessoa sem acesso).";
+const MENSAGEM_DE_SUPORTE = "Há um acompanhamento administrativo restrito nesta organização: o módulo só lê.";
 
 export type AuthDual =
   | {
@@ -65,6 +74,20 @@ export type AuthDual =
       scopes?: string[];
       /** Id da linha do token (`api_tokens.id`) — o `actor_api_token_id` do audit. */
       apiTokenId?: string;
+      /** Só token de módulo com JWT de contexto válido: a pessoa (`sub`) de quem a tela agiu. */
+      pessoaDoModulo?: string;
+      /**
+       * Só token de MÓDULO: a área `contatos` (leitura) foi declarada e consentida? Sem ela, a rota que
+       * embute contato na resposta (conversa, negócio, agenda) passa a resposta por
+       * `redigirContatoParaModulo`. Sessão e outros tokens não têm o campo e veem tudo.
+       */
+      contatoVisivel?: boolean;
+      /**
+       * Só SESSÃO: o papel da pessoa na organização ativa, como o `requireRole` o leu. Existe para a
+       * rota que decide por papel e que, antes de aceitar token, lia `activeOrg.role` (criar contato
+       * em "Só os seus", #3479). O token não tem papel de pessoa e fica sem o campo.
+       */
+      papelDaSessao?: Role;
     }
   | { ok: false; response: Response };
 
@@ -83,6 +106,11 @@ export interface AuthDualOptions {
    * passa pela rota, porque as duas chamam o mesmo handler.
    */
   tokenRole?: Role;
+  /**
+   * Modelo de porta da rota (`/api/v1/leads/[id]`), para o token de MÓDULO. Opcional: sem ele o
+   * modelo é deduzido do caminho real (`modeloDoCaminho`). Só o token de módulo lê este campo.
+   */
+  portaModelo?: string;
 }
 
 /**
@@ -91,7 +119,7 @@ export interface AuthDualOptions {
  */
 export async function resolveAuthDual(
   req: NextRequest,
-  { requestId, resource, role, scope, tokenRole }: AuthDualOptions,
+  { requestId, resource, role, scope, tokenRole, portaModelo }: AuthDualOptions,
 ): Promise<AuthDual> {
   const authHeader = req.headers.get("authorization");
 
@@ -114,9 +142,79 @@ export async function resolveAuthDual(
       throw err;
     }
 
+    // TOKEN DE MÓDULO (spec 33, F3): a área vem ANTES do papel e do escopo. Nada de módulo passa
+    // sem que o pacote tenha declarado e a organização consentido a área desta porta, no modo
+    // certo (declarado ∩ consentido, lido do banco agora). Sem porta conhecida, recusa.
+    let papelDoBearer: Role = auth.role;
+    let pessoaDoModulo: string | undefined;
+    let contatoVisivel: boolean | undefined;
+    if (auth.actor.type === "module") {
+      const decisao = await autorizarModulo({
+        organizationId: auth.organizationId,
+        tokenId: auth.apiTokenId,
+        metodo: req.method,
+        modeloDaPorta: portaModelo,
+        caminho: req.nextUrl.pathname,
+      });
+      if (!decisao.ok) {
+        return {
+          ok: false,
+          response: fail(decisao.codigo, MENSAGEM_DA_RECUSA_DO_MODULO[decisao.codigo], 403, {
+            requestId,
+          }),
+        };
+      }
+
+      contatoVisivel = decisao.contatoVisivel;
+
+      // PAPEL EFETIVO (F3, tarefa 4): com JWT de contexto válido, min(teto admin, papel ATUAL da
+      // pessoa, lido do banco agora); sem JWT, min(papel do token, teto agent). As áreas consentidas
+      // e a lista "sem área" (equipe, credencial, envio) continuam valendo.
+      const contexto = req.headers.get(CABECALHO_DE_CONTEXTO);
+      let papelDaPessoa: Role | null = null;
+      if (contexto !== null) {
+        const jwt = await verificarJwtDeContexto(contexto.trim(), {
+          organizationId: auth.organizationId,
+          installationId: decisao.installationId,
+        });
+        if (jwt.ok) {
+          papelDaPessoa = await lerPapelAtualDaPessoa(
+            createAdminClient(),
+            auth.organizationId,
+            jwt.pessoaId,
+          );
+        }
+        if (!jwt.ok || !papelDaPessoa) {
+          return {
+            ok: false,
+            response: fail("module_context_invalid", MENSAGEM_DO_CONTEXTO_INVALIDO, 403, {
+              requestId,
+            }),
+          };
+        }
+        pessoaDoModulo = jwt.pessoaId;
+      }
+      papelDoBearer = papelEfetivoDoModulo({ papelDoToken: auth.role, papelDaPessoa });
+
+      // Acompanhamento de suporte restrito na organização: escrita de módulo recusa, lido no servidor.
+      if (!METODOS_SEGUROS.has(req.method.toUpperCase())) {
+        const permitida = await supportCallbackWriteAllowed(auth.organizationId, pessoaDoModulo);
+        if (!permitida) {
+          return {
+            ok: false,
+            response: fail("forbidden", MENSAGEM_DE_SUPORTE, 403, { requestId }),
+          };
+        }
+      }
+    }
+
     try {
-      ensureScope(auth.scopes, scope);
-      ensureRole(auth.role, tokenRole ?? role);
+      // Token de MÓDULO não carrega escopo de rota (`mcp:write`, `config:*`): a fonte do poder é a
+      // decisão de ÁREA e MODO acima (declarado ∩ consentido, lido do banco agora, leitura ou
+      // escrita pelo método). Exigir também o escopo deixaria o módulo só leitor em `mcp:read`.
+      // O papel segue valendo em qualquer caso.
+      if (auth.actor.type !== "module") ensureScope(auth.scopes, scope);
+      ensureRole(papelDoBearer, tokenRole ?? role);
     } catch (err) {
       if (err instanceof McpAuthError) {
         return {
@@ -131,11 +229,16 @@ export async function resolveAuthDual(
     return {
       ok: true,
       organizationId: auth.organizationId,
-      actor: auth.actor,
+      actor:
+        auth.actor.type === "module" && pessoaDoModulo
+          ? { ...auth.actor, pessoaId: pessoaDoModulo }
+          : auth.actor,
       supabase: createAdminClient(),
       via: "token",
       scopes: auth.scopes,
       apiTokenId: auth.apiTokenId,
+      ...(pessoaDoModulo ? { pessoaDoModulo } : {}),
+      ...(contatoVisivel !== undefined ? { contatoVisivel } : {}),
     };
   }
 
@@ -148,6 +251,7 @@ export async function resolveAuthDual(
     supabase: await createClient(),
     idioma: authz.user.idioma,
     via: "session",
+    papelDaSessao: authz.org.role,
   };
 }
 

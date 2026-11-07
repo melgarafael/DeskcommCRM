@@ -26,6 +26,13 @@ vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
+// `resolveAuthDual` (ramo de sessão) cria o cliente de sessão; o token não é usado aqui.
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn(async () => ({})) }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
+vi.mock("@/lib/mcp/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/mcp/auth")>()),
+  validateBearerToken: vi.fn(),
+}));
 
 const { requireRole } = await import("@/lib/auth/require-role");
 const { createAdminClient } = await import("@/lib/supabase/admin");
@@ -108,7 +115,7 @@ describe("GET /api/v1/settings/task-plans", () => {
   it("devolve os planos que o motor lê", async () => {
     vi.mocked(createAdminClient).mockReturnValue(adminCom({ task_plans: [PLANO] }) as never);
 
-    const res = await GET();
+    const res = await GET(new NextRequest("http://localhost/api/v1/settings/task-plans"));
     const corpo = (await res.json()) as { data: { planos: Array<{ id: string }> } };
 
     expect(res.status).toBe(200);

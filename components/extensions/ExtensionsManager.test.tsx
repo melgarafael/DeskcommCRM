@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,6 +19,8 @@ const { router, toast } = vi.hoisted(() => ({
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 vi.mock("sonner", () => ({ toast }));
+const { copiar } = vi.hoisted(() => ({ copiar: vi.fn() }));
+vi.mock("@/lib/clipboard", () => ({ copyToClipboard: copiar }));
 
 // A convenção da casa, espelhada de hooks/realtime/useRefetchDeSeguranca.test.tsx
 // (PR #2821): quem pula o trabalho de rede com a aba oculta precisa de um teste
@@ -72,6 +74,8 @@ function installation(overrides: Partial<InstalledExtensionView> = {}): Installe
     active_organizations: 1,
     removed_at: null,
     deactivated_by_removal_at: null,
+    profile: "declarative",
+    disabled_at: null,
     ...overrides,
   };
 }
@@ -1886,5 +1890,375 @@ describe("ExtensionsManager", () => {
       await vi.advanceTimersByTimeAsync(3_000);
     });
     expect(leituras()).toBeGreaterThan(comAbaOculta);
+  });
+});
+
+describe("interruptor do módulo conectado (spec 33, D8)", () => {
+  const DESLIGADO_EM = "2026-11-04T12:00:00.000Z";
+  const conectado = (overrides: Partial<InstalledExtensionView> = {}) =>
+    installation({
+      profile: "connected",
+      permissions: ["area.contatos.leitura"],
+      installation_revision: 4,
+      ...overrides,
+    });
+
+  it("módulo conectado desligado mostra o aviso e o botão Ligar", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(json({ data: list(ORG_A, { installations: [conectado({ disabled_at: DESLIGADO_EM })] }) })),
+    );
+    renderManager();
+
+    expect(await screen.findByTestId(`extension-switch-off-${INSTALLATION}`)).toHaveTextContent(
+      "Desligado nesta instalação",
+    );
+    expect(screen.getByTestId(`extension-switch-${INSTALLATION}`)).toHaveTextContent("Ligar");
+    expect(screen.queryByText("Desligar")).toBeNull();
+  });
+
+  it("módulo conectado ligado mostra o botão Desligar e nenhum aviso", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(json({ data: list(ORG_A, { installations: [conectado()] }) })),
+    );
+    renderManager();
+
+    expect(await screen.findByTestId(`extension-switch-${INSTALLATION}`)).toHaveTextContent("Desligar");
+    expect(screen.queryByTestId(`extension-switch-off-${INSTALLATION}`)).toBeNull();
+    expect(screen.queryByText("Desligado nesta instalação")).toBeNull();
+  });
+
+  it.each(["declarative", "data"] as const)("módulo %s não mostra o botão nem o aviso", async (profile) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(json({ data: list(ORG_A, { installations: [installation({ profile })] }) })),
+    );
+    renderManager();
+
+    await screen.findByTestId(`extension-platform-${INSTALLATION}`);
+    expect(screen.queryByTestId(`extension-switch-${INSTALLATION}`)).toBeNull();
+    expect(screen.queryByTestId(`extension-switch-off-${INSTALLATION}`)).toBeNull();
+  });
+
+  it("pacote ilegível (sem perfil) não mostra o botão", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(json({ data: list(ORG_A, { installations: [installation({ profile: null })] }) })),
+    );
+    renderManager();
+
+    await screen.findByTestId(`extension-platform-${INSTALLATION}`);
+    expect(screen.queryByTestId(`extension-switch-${INSTALLATION}`)).toBeNull();
+  });
+
+  it("quem não administra a instalação vê o aviso, mas não o botão", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        json({
+          data: list(ORG_A, {
+            can_install: false,
+            installations: [conectado({ disabled_at: DESLIGADO_EM, active_organizations: null })],
+          }),
+        }),
+      ),
+    );
+    renderManager();
+
+    expect(await screen.findByTestId(`extension-switch-off-${INSTALLATION}`)).toBeVisible();
+    expect(screen.queryByTestId(`extension-switch-${INSTALLATION}`)).toBeNull();
+  });
+
+  it("Ligar chama a rota do interruptor com a revisão que a tela viu e o recibo guardado sai do navegador", async () => {
+    const religado = list(ORG_A, { installations: [conectado({ installation_revision: 5 })] });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        json({ data: list(ORG_A, { installations: [conectado({ disabled_at: DESLIGADO_EM })] }) }),
+      )
+      .mockImplementationOnce((_input: RequestInfo | URL, init?: RequestInit) => {
+        const id = new Headers(init?.headers).get("Idempotency-Key")!;
+        return Promise.resolve(json({ data: operation({ id, kind: "switch", extra: { from_revision: 4 } }) }));
+      })
+      .mockResolvedValue(json({ data: religado }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderManager();
+
+    await user.click(await screen.findByTestId(`extension-switch-${INSTALLATION}`));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(String(url)).toBe(`/api/v1/extensions/${INSTALLATION}/switch`);
+    expect((init.method ?? "GET").toUpperCase()).toBe("POST");
+    expect(new Headers(init.headers).get("Idempotency-Key")).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(JSON.parse(String(init.body))).toEqual({ expected_installation_revision: 4, disabled: false });
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Módulo ligado de novo nesta instalação."));
+    expect(readPendingReceipts(window.localStorage, ACTOR, ORG_A)).toEqual([]);
+    // Recarregou com o estado novo: o aviso saiu e o botão passou a oferecer Desligar.
+    await waitFor(() => expect(screen.queryByTestId(`extension-switch-off-${INSTALLATION}`)).toBeNull());
+    expect(screen.getByTestId(`extension-switch-${INSTALLATION}`)).toHaveTextContent("Desligar");
+  });
+
+  it("Desligar manda disabled true", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(json({ data: list(ORG_A, { installations: [conectado()] }) }))
+      .mockImplementationOnce((_input: RequestInfo | URL, init?: RequestInit) => {
+        const id = new Headers(init?.headers).get("Idempotency-Key")!;
+        return Promise.resolve(json({ data: operation({ id, kind: "switch" }) }));
+      })
+      .mockResolvedValue(
+        json({ data: list(ORG_A, { installations: [conectado({ installation_revision: 5, disabled_at: DESLIGADO_EM })] }) }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderManager();
+
+    await user.click(await screen.findByTestId(`extension-switch-${INSTALLATION}`));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ expected_installation_revision: 4, disabled: true });
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Módulo desligado nesta instalação."));
+    expect(await screen.findByTestId(`extension-switch-off-${INSTALLATION}`)).toBeVisible();
+  });
+
+  it("revisão velha avisa que a extensão mudou, recarrega e não anuncia sucesso", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(json({ data: list(ORG_A, { installations: [conectado()] }) }))
+      .mockResolvedValueOnce(
+        json(
+          {
+            error: {
+              code: "extension_version_changed",
+              message: "A extensão mudou em outra sessão. Recarregue antes de continuar.",
+            },
+          },
+          409,
+        ),
+      )
+      .mockResolvedValue(json({ data: list(ORG_A, { installations: [conectado({ installation_revision: 5 })] }) }));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderManager();
+
+    await user.click(await screen.findByTestId(`extension-switch-${INSTALLATION}`));
+
+    await waitFor(() =>
+      expect(toast.warning).toHaveBeenCalledWith(
+        "A extensão mudou em outra sessão. Recarregamos o estado atual; revise antes de repetir.",
+      ),
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(readPendingReceipts(window.localStorage, ACTOR, ORG_A)).toEqual([]);
+  });
+
+  it("o recibo do interruptor aparece na atividade recente com título próprio", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        json({
+          data: list(ORG_A, {
+            operations: [operation({ id: "00000000-0000-4000-8000-000000000031", kind: "switch" })],
+          }),
+        }),
+      ),
+    );
+    renderManager();
+
+    expect(await screen.findByText("Interruptor do módulo")).toBeVisible();
+  });
+});
+
+describe("segredo do módulo conectado (spec 33, F2, tarefa 4)", () => {
+  const SEGREDO = "S3gredo_Unico-de-teste_0123456789abcdefghijklm";
+  const conectado = (overrides: Partial<InstalledExtensionView> = {}) =>
+    installation({
+      profile: "connected",
+      permissions: ["area.contatos.leitura"],
+      installation_revision: 4,
+      ...overrides,
+    });
+
+  /** A lista responde sempre; o POST do segredo fica na mão do teste (`resolver`). */
+  function fetchComSegredo(lista: ExtensionListView) {
+    let resolver: (resposta: Response) => void = () => undefined;
+    const pendente = new Promise<Response>((resolve) => {
+      resolver = resolve;
+    });
+    const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) =>
+      String(input).endsWith("/segredo") ? pendente : Promise.resolve(json({ data: lista })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const chamadasDoSegredo = () =>
+      fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/segredo"));
+    return { fetchMock, resolver: (r: Response) => resolver(r), chamadasDoSegredo };
+  }
+
+  beforeEach(() => {
+    copiar.mockReset();
+    copiar.mockResolvedValue(true);
+  });
+
+  it("só o módulo conectado, para quem administra a instalação, tem o botão", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(json({ data: list(ORG_A, { installations: [conectado()] }) })),
+      ),
+    );
+    renderManager();
+    expect(await screen.findByTestId(`extension-secret-${INSTALLATION}`)).toHaveTextContent("Gerar novo segredo");
+    cleanup();
+
+    for (const profile of ["declarative", "data", null] as const) {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation(() =>
+          Promise.resolve(json({ data: list(ORG_A, { installations: [installation({ profile })] }) })),
+        ),
+      );
+      renderManager();
+      await screen.findByTestId(`extension-platform-${INSTALLATION}`);
+      expect(screen.queryByTestId(`extension-secret-${INSTALLATION}`)).toBeNull();
+      cleanup();
+    }
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          json({
+            data: list(ORG_A, {
+              can_install: false,
+              installations: [conectado({ active_organizations: null })],
+            }),
+          }),
+        ),
+      ),
+    );
+    renderManager();
+    await screen.findByTestId(`extension-installed-${INSTALLATION}`);
+    expect(screen.queryByTestId(`extension-secret-${INSTALLATION}`)).toBeNull();
+  });
+
+  it("instalação sem segredo (secret_pending) mostra o botão como Gerar segredo", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(json({ data: list(ORG_A, { installations: [conectado({ secret_pending: true })] }) })),
+      ),
+    );
+    renderManager();
+    expect(await screen.findByTestId(`extension-secret-${INSTALLATION}`)).toHaveTextContent("Gerar segredo");
+    expect(screen.queryByText("Gerar novo segredo")).toBeNull();
+  });
+
+  it("pede confirmação antes de gerar; cancelar não envia nada", async () => {
+    const { fetchMock, chamadasDoSegredo } = fetchComSegredo(list(ORG_A, { installations: [conectado()] }));
+    const user = userEvent.setup();
+    renderManager();
+
+    await user.click(await screen.findByTestId(`extension-secret-${INSTALLATION}`));
+
+    const dialogo = await screen.findByTestId(`extension-secret-dialog-${INSTALLATION}`);
+    expect(dialogo).toHaveTextContent("O módulo atual deixará de funcionar até receber o novo segredo");
+    expect(chamadasDoSegredo()).toHaveLength(0);
+
+    await user.click(within(dialogo).getByRole("button", { name: "Cancelar" }));
+    await waitFor(() => expect(screen.queryByTestId(`extension-secret-dialog-${INSTALLATION}`)).toBeNull());
+    expect(chamadasDoSegredo()).toHaveLength(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("confirmar envia o pedido sem Idempotency-Key, desabilita o botão durante o pedido e mostra o segredo uma vez", async () => {
+    const { resolver, chamadasDoSegredo } = fetchComSegredo(list(ORG_A, { installations: [conectado()] }));
+    const user = userEvent.setup();
+    renderManager();
+
+    await user.click(await screen.findByTestId(`extension-secret-${INSTALLATION}`));
+    await user.click(await screen.findByTestId(`extension-secret-confirm-${INSTALLATION}`));
+
+    await waitFor(() => expect(chamadasDoSegredo()).toHaveLength(1));
+    const [url, init] = chamadasDoSegredo()[0] as [string, RequestInit];
+    expect(String(url)).toBe(`/api/v1/extensions/${INSTALLATION}/segredo`);
+    expect((init.method ?? "GET").toUpperCase()).toBe("POST");
+    expect(new Headers(init.headers).get("Idempotency-Key")).toBeNull();
+    // Sem recibo no navegador: o segredo não pode ser reproduzido por uma repetição.
+    expect(readPendingReceipts(window.localStorage, ACTOR, ORG_A)).toEqual([]);
+
+    // Durante o pedido o botão fica desabilitado: um segundo clique não gera outro segredo.
+    expect(screen.getByTestId(`extension-secret-${INSTALLATION}`)).toBeDisabled();
+    expect(screen.queryByTestId(`extension-secret-reveal-${INSTALLATION}`)).toBeNull();
+
+    await act(async () => {
+      resolver(json({ data: { secret: SEGREDO, rotated_at: "2026-11-05T12:00:00.000Z" } }));
+    });
+
+    const caixa = await screen.findByTestId(`extension-secret-reveal-${INSTALLATION}`);
+    expect(caixa).toHaveTextContent("Copie agora: este segredo não será mostrado de novo.");
+    expect(screen.getByTestId(`extension-secret-value-${INSTALLATION}`)).toHaveValue(SEGREDO);
+    await waitFor(() => expect(screen.getByTestId(`extension-secret-${INSTALLATION}`)).toBeEnabled());
+    expect(chamadasDoSegredo()).toHaveLength(1);
+
+    await user.click(screen.getByTestId(`extension-secret-copy-${INSTALLATION}`));
+    expect(copiar).toHaveBeenCalledWith(SEGREDO);
+    expect(toast.success).toHaveBeenCalledWith("Segredo copiado.");
+  });
+
+  it("ao fechar, o segredo some da tela e não volta", async () => {
+    const { resolver } = fetchComSegredo(list(ORG_A, { installations: [conectado()] }));
+    const user = userEvent.setup();
+    renderManager();
+
+    await user.click(await screen.findByTestId(`extension-secret-${INSTALLATION}`));
+    await user.click(await screen.findByTestId(`extension-secret-confirm-${INSTALLATION}`));
+    await act(async () => {
+      resolver(json({ data: { secret: SEGREDO, rotated_at: "2026-11-05T12:00:00.000Z" } }));
+    });
+    expect(await screen.findByDisplayValue(SEGREDO)).toBeVisible();
+
+    await user.click(screen.getByTestId(`extension-secret-close-${INSTALLATION}`));
+
+    await waitFor(() => expect(screen.queryByTestId(`extension-secret-reveal-${INSTALLATION}`)).toBeNull());
+    expect(screen.queryByDisplayValue(SEGREDO)).toBeNull();
+    expect(document.body.textContent).not.toContain(SEGREDO);
+    // Abrir de novo a confirmação não traz o valor antigo de volta.
+    await user.click(screen.getByTestId(`extension-secret-${INSTALLATION}`));
+    await screen.findByTestId(`extension-secret-dialog-${INSTALLATION}`);
+    expect(document.body.textContent).not.toContain(SEGREDO);
+  });
+
+  it("pedido recusado: avisa com a frase do servidor e não abre a caixa do segredo", async () => {
+    const { resolver } = fetchComSegredo(list(ORG_A, { installations: [conectado()] }));
+    const user = userEvent.setup();
+    renderManager();
+
+    await user.click(await screen.findByTestId(`extension-secret-${INSTALLATION}`));
+    await user.click(await screen.findByTestId(`extension-secret-confirm-${INSTALLATION}`));
+    await act(async () => {
+      resolver(
+        json(
+          {
+            error: {
+              code: "extension_secret_key_missing",
+              message: "Falta configurar a chave de cifra do servidor (AI_CRED_AES_KEY). Configure-a e repita o pedido.",
+            },
+          },
+          503,
+        ),
+      );
+    });
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        "Falta configurar a chave de cifra do servidor (AI_CRED_AES_KEY). Configure-a e repita o pedido.",
+      ),
+    );
+    expect(screen.queryByTestId(`extension-secret-reveal-${INSTALLATION}`)).toBeNull();
+    await waitFor(() => expect(screen.getByTestId(`extension-secret-${INSTALLATION}`)).toBeEnabled());
   });
 });

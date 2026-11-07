@@ -11,19 +11,33 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * 0 linhas numa tarefa de outra organização e o PostgREST devolveria `PGRST116`
  * — que esta rota já traduz para 404, o desfecho certo. Mantê-lo explícito é a
  * regra do CLAUDE.md e o que segura o dia em que alguém trocar o client.
+ *
+ * ─── Sessão OU token (Spec 33, R2) ─────────────────────────────────────────
+ *
+ * As duas portas entram por `resolveAuthDual` (agent+; `mcp:write` no token).
+ * No ramo do token o cliente é a service role e a RLS não protege mais: o
+ * `.eq("organization_id", …)` de CADA cadeia daqui é a única barreira, o negócio
+ * da resposta é juntado em consulta própria (`negocio-da-tarefa.ts`, o embed da
+ * sessão não passa pela RLS de `crm_leads`) e o negócio/contato do corpo são
+ * conferidos na organização antes de gravar. Mais detalhes em `../route.ts`.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { portaDaAplicacao } from "@/lib/db";
-import { createClient } from "@/lib/supabase/server";
 import { registraAtividadeDaTarefa } from "@/lib/tarefas/atividade";
 import { conferirDemanda } from "@/lib/tarefas/demanda";
+import {
+  anexarNegocioDaTarefa,
+  COLUNAS_DA_TAREFA,
+  conferirNegocioEContato,
+} from "@/lib/tarefas/negocio-da-tarefa";
 import { conferirResponsavel } from "@/lib/tarefas/responsavel";
 import { PRIORIDADES_DA_TAREFA, SITUACOES_DA_TAREFA, type Tarefa } from "@/lib/tarefas/tipos";
 
@@ -60,9 +74,18 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  const authz = await requireRole("agent", { requestId, resource: "crm_tasks" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_tasks",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "crm_tasks", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const organizationId = authz.organizationId;
+  const doToken = authz.via === "token";
 
   const parsed = edicaoSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -79,7 +102,7 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
     // (SQL direto na porta de `lib/db` — o pool NÃO passa por RLS).
     const veredito = await conferirResponsavel(
       portaDaAplicacao(),
-      authz.org.orgId,
+      organizationId,
       parsed.data.assigned_to,
     );
     if (veredito === "falha_na_consulta") {
@@ -92,14 +115,29 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
     }
   }
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
+
+  if (doToken) {
+    // Na sessão a RLS esconde o negócio de outra organização; a service role não.
+    // O token só prende a tarefa a negócio e contato da PRÓPRIA organização
+    // (`null` desvincula e passa).
+    const vinculos = await conferirNegocioEContato(supabase, organizationId, parsed.data);
+    if (vinculos === "falha_na_consulta") {
+      return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
+    }
+    if (vinculos === "fora_da_organizacao") {
+      return fail("validation_failed", t("O negócio, o contato ou a demanda vinculada não existe."), 422, {
+        requestId,
+      });
+    }
+  }
 
   if (parsed.data.demanda_id) {
     // A chave estrangeira não passa pela RLS: sem esta conferência, a demanda
     // de outra organização gravaria sem erro. A régua está em `lib/tarefas/demanda.ts`.
     const veredito = await conferirDemanda(
       portaDaAplicacao(),
-      authz.org.orgId,
+      organizationId,
       parsed.data.demanda_id,
     );
     if (veredito === "falha_na_consulta") {
@@ -124,15 +162,15 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
     .from("crm_tasks")
     .select("status")
     .eq("id", id)
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
 
   const { data, error } = await supabase
     .from("crm_tasks")
     .update(parsed.data)
     .eq("id", id)
-    .eq("organization_id", authz.org.orgId)
-    .select(COLUNAS)
+    .eq("organization_id", organizationId)
+    .select(doToken ? COLUNAS_DA_TAREFA : COLUNAS)
     .single();
 
   if (error) {
@@ -147,7 +185,7 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
     return fail("internal_error", t("Erro ao salvar a tarefa."), 500, { requestId });
   }
 
-  const tarefa = data as unknown as Tarefa;
+  const gravada = data as unknown as Tarefa;
 
   /*
    * A TRANSIÇÃO, quando houve uma (#4028).
@@ -163,45 +201,60 @@ export async function PATCH(req: NextRequest, ctx: Contexto): Promise<Response> 
    */
   const transicao =
     parsed.data.status !== undefined
-      ? { de: (antes as { status?: string } | null)?.status ?? null, para: tarefa.status }
+      ? { de: (antes as { status?: string } | null)?.status ?? null, para: gravada.status }
       : {};
 
   await audit({
-    organizationId: authz.org.orgId,
-    actorUserId: authz.user.id,
+    organizationId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     action: "crm_task.updated",
     resourceType: "crm_tasks",
-    resourceId: tarefa.id,
+    resourceId: gravada.id,
     requestId,
     metadata: { campos: Object.keys(parsed.data), ...transicao },
   });
 
   const fechouAgora =
-    tarefa.status === "done" && (antes as { status?: string } | null)?.status !== "done";
+    gravada.status === "done" && (antes as { status?: string } | null)?.status !== "done";
   if (fechouAgora) {
     await registraAtividadeDaTarefa(portaDaAplicacao(), {
-      organizationId: authz.org.orgId,
-      tarefa,
+      organizationId,
+      tarefa: gravada,
       tipo: "task_completed",
-      actor: { type: "user", id: authz.user.id },
+      actor: authz.actor,
     });
   }
+
+  // A edição já está gravada: se a junção do negócio falhar, a resposta sai
+  // com `lead: null` em vez de um 500 que convidaria o cliente a repetir.
+  const tarefa = doToken
+    ? ((await anexarNegocioDaTarefa(supabase, organizationId, [gravada]))?.[0] ?? { ...gravada, lead: null })
+    : gravada;
 
   return ok({ task: tarefa }, { requestId });
 }
 
-export async function DELETE(_req: NextRequest, ctx: Contexto): Promise<Response> {
+export async function DELETE(req: NextRequest, ctx: Contexto): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
   const { id } = await ctx.params;
 
-  const authz = await requireRole("agent", { requestId, resource: "crm_tasks" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "crm_tasks",
+    role: "agent",
+    scope: "mcp:write",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
+  const teto = await tetoDeEscritaDoToken(authz, "crm_tasks", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const organizationId = authz.organizationId;
 
-  const supabase = await createClient();
+  const supabase = authz.supabase;
   // `.select()` no delete para saber se ALGUMA linha saiu. Sem isso, apagar uma
   // tarefa de outra organização devolveria 200 — e a tela sumiria com a linha
   // do próprio usuário na próxima recarga, sem que nada tivesse sido apagado.
@@ -209,7 +262,7 @@ export async function DELETE(_req: NextRequest, ctx: Contexto): Promise<Response
     .from("crm_tasks")
     .delete()
     .eq("id", id)
-    .eq("organization_id", authz.org.orgId)
+    .eq("organization_id", organizationId)
     .select("id");
 
   if (error) {
@@ -220,8 +273,9 @@ export async function DELETE(_req: NextRequest, ctx: Contexto): Promise<Response
   }
 
   await audit({
-    organizationId: authz.org.orgId,
-    actorUserId: authz.user.id,
+    organizationId,
+    actorUserId: authz.actor.type === "user" ? authz.actor.id : null,
+    actorApiTokenId: authz.apiTokenId ?? null,
     action: "crm_task.deleted",
     resourceType: "crm_tasks",
     resourceId: id,

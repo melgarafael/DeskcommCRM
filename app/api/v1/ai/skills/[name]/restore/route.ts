@@ -7,23 +7,27 @@ import { requireSupportWrite } from "@/lib/impersonate/support";
  * versão nova — as versões são imutáveis; restaurar é apontar de volta.
  *
  * A versão só pode ser de uma skill com o MESMO nome e da MESMA organização
- * (fonte confiável: requireRole + checagem explícita). organization_id nunca vem
- * do body.
+ * (fonte confiável: o portão — sessão ou linha do token — + checagem explícita).
+ * organization_id nunca vem do body. Aceita sessão OU Bearer `dsk_…` (`config:write`,
+ * papel admin via `tokenRole`).
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/wrappers";
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { audit } from "@/lib/audit";
-import { requireRole } from "@/lib/auth/require-role";
 import { setSkillPointer } from "@/lib/agent-engine/agent/skills";
 import { getSkillsPool } from "@/lib/ai/skills/db";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { traduzir } from "@/lib/i18n/dicionario";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { nomeDeSkillValido } from "@/lib/skills/nome-de-skill";
 
 export const dynamic = "force-dynamic";
 
+// Mesma classe da porta do proxy (`[name]` em portas-de-token/configuracao.ts): kebab-case.
 const nameSchema = z.string().min(1).max(120);
 const bodySchema = z.object({ version_id: z.string().uuid() }).strict();
 
@@ -35,14 +39,23 @@ export async function POST(
   if (supportDenied) return supportDenied;
 
   const requestId = randomUUID();
-  const authz = await requireRole("manager", { requestId, resource: "ai_skills" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "ai_skills",
+    role: "manager",
+    scope: "config:write",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { user: authUser, org } = authz;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const orgId = authz.organizationId;
+  const actorUserId = authz.actor.type === "user" ? authz.actor.id : null;
+  const teto = await tetoDeEscritaDoToken(authz, "ai_skills", requestId);
+  if (teto) return teto;
 
   const { name: rawName } = await ctx.params;
   const nameParsed = nameSchema.safeParse(decodeURIComponent(rawName));
-  if (!nameParsed.success) {
+  if (!nameParsed.success || (authz.via === "token" && !nomeDeSkillValido(nameParsed.data))) {
     return fail("validation_failed", t("Nome de skill inválido."), 422, { requestId });
   }
   const name = nameParsed.data;
@@ -63,7 +76,7 @@ export async function POST(
     .from("skill_versions")
     .select("id")
     .eq("id", parsed.data.version_id)
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", orgId)
     .eq("name", name)
     .maybeSingle();
   if (!versao) {
@@ -71,15 +84,16 @@ export async function POST(
   }
 
   await setSkillPointer(getSkillsPool(), {
-    tenantId: org.orgId,
+    tenantId: orgId,
     name,
     versionId: parsed.data.version_id,
   });
 
   await audit({
     action: "ai.skill_restored",
-    actorUserId: authUser.id,
-    organizationId: org.orgId,
+    actorUserId,
+    actorApiTokenId: authz.apiTokenId ?? null,
+    organizationId: orgId,
     resourceType: "skill_versions",
     resourceId: parsed.data.version_id,
     requestId,

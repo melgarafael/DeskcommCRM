@@ -9,6 +9,8 @@ import type { NextRequest } from "next/server";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
+import { desativarAtivacaoDoModulo } from "@/lib/extensions/desativar-do-token";
+import { extensionFailure } from "@/lib/extensions/http";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
 
@@ -32,7 +34,7 @@ export async function POST(
   const supabase = await createClient();
   const { data: token, error: fetchErr } = await supabase
     .from("api_tokens")
-    .select("id, revoked_at")
+    .select("id, revoked_at, extension_installation_id, module_slug")
     .eq("id", id)
     .eq("organization_id", activeOrg.orgId)
     .maybeSingle();
@@ -40,6 +42,42 @@ export async function POST(
   if (!token) return fail("not_found", t("Token não encontrado."), 404, { requestId });
   if (token.revoked_at) {
     return ok({ id, already_revoked: true }, { requestId });
+  }
+
+  // Token de MÓDULO (spec 33, F2): revogá-lo é DESATIVAR a ativação do par nesta organização. O banco
+  // revoga o token na mesma transação (`fn_extensions_configure`, desativar). Revogar só a linha deixaria
+  // o módulo "ativado" sem token, e a próxima busca criaria outro: a tela mentiria.
+  if (token.extension_installation_id) {
+    if (authz.user.support) {
+      return fail("forbidden", t("Saia do acompanhamento para desativar módulos."), 403, {
+        requestId,
+      });
+    }
+    let desativado: boolean;
+    try {
+      desativado = await desativarAtivacaoDoModulo(
+        authz.user.id,
+        activeOrg.orgId,
+        token.extension_installation_id,
+      );
+    } catch (error) {
+      return extensionFailure(error, authz.user.idioma);
+    }
+    if (desativado) {
+      const { data: depois } = await supabase
+        .from("api_tokens")
+        .select("revoked_at")
+        .eq("id", id)
+        .eq("organization_id", activeOrg.orgId)
+        .maybeSingle();
+      if (depois?.revoked_at) {
+        return ok(
+          { id, revoked_at: depois.revoked_at, module_deactivated: true, module: token.module_slug },
+          { requestId },
+        );
+      }
+    }
+    // Ativação já desligada (ou o banco não revogou): cai na revogação direta da linha, sem inventar.
   }
 
   const nowIso = new Date().toISOString();

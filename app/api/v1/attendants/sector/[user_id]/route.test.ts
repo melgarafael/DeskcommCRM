@@ -7,6 +7,8 @@ import { audit } from "@/lib/audit";
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
+// O portão dual abre o cliente de sessão no ramo da sessão; a rota usa o admin.
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn(async () => ({})) }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 // Módulo `setores` ligado (doc 213): o desligado tem arquivo próprio,
 // tests/unit/setores-modulo-desligado.test.ts.

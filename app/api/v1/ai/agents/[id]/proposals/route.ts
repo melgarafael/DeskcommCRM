@@ -1,14 +1,20 @@
 /**
  * Épico Operação Visível (F3) — GET: propostas do flywheel da org para a tela
  * do agente (pendentes e aplicadas; a UI mostra o diff e o botão de aplicar).
+ *
+ * Sessão OU token de integração (Spec 33, R1): o token precisa de `config:read`
+ * e de papel admin (`tokenRole`). A organização sai de `authz.organizationId`
+ * (linha do token, nunca do path), e no ramo do token o cliente é a service
+ * role: o `organization_id` de cada consulta abaixo é a única barreira.
  */
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
-import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
 import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
@@ -28,10 +34,18 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
     return fail("invalid_request", "id inválido.", 400, { requestId });
   }
 
-  const authz = await requireRole("agent", { requestId, resource: "flywheel_proposals" });
+  const authz = await resolveAuthDual(req, {
+    requestId,
+    resource: "flywheel_proposals",
+    role: "agent",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!authz.ok) return authz.response;
-  const t = (texto: string) => traduzir(texto, authz.user.idioma);
-  const { org } = authz;
+  const teto = await tetoDeEscritaDoToken(authz, "flywheel_proposals", requestId);
+  if (teto) return teto;
+  const t = (texto: string) => traduzir(texto, authz.idioma ?? IDIOMA_PADRAO);
+  const { organizationId } = authz;
 
   const parsed = querySchema.safeParse(
     Object.fromEntries(new URL(req.url).searchParams.entries()),
@@ -50,7 +64,7 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
     .from("ai_agents")
     .select("id")
     .eq("id", id)
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", organizationId)
     .maybeSingle();
   if (!agent) {
     return fail("not_found", t("Agente não encontrado nesta organização."), 404, { requestId });
@@ -61,7 +75,7 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
     .select(
       "id, run_id, dataset, type, target, content, evidence, proposed_at, applied_at, applied_version_id, applied_by",
     )
-    .eq("organization_id", org.orgId)
+    .eq("organization_id", organizationId)
     .order("proposed_at", { ascending: false })
     .limit(limit);
   if (status === "pending") query = query.is("applied_at", null);

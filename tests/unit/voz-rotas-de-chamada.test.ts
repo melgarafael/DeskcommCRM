@@ -701,7 +701,7 @@ describe("quem perde a corrida do atender ouve isso, não 'conectado'", () => {
 describe("erro de consulta não é 'nunca ligou'", () => {
   async function historico() {
     const { GET } = await import("@/app/api/v1/voice/calls/history/route");
-    return GET(new Request("http://x/api/v1/voice/calls/history"));
+    return GET(new Request("http://x/api/v1/voice/calls/history") as never);
   }
 
   it("controle positivo: sem erro, devolve a lista", async () => {
@@ -714,7 +714,7 @@ describe("erro de consulta não é 'nunca ligou'", () => {
   it("com ?id=, filtra pela ligação — é assim que o painel confere UMA ligação", async () => {
     respostas["voice_calls"] = { data: [{ id: CHAMADA }], error: null };
     const { GET } = await import("@/app/api/v1/voice/calls/history/route");
-    const res = await GET(new Request(`http://x/api/v1/voice/calls/history?id=${CHAMADA}&limit=1`));
+    const res = await GET(new Request(`http://x/api/v1/voice/calls/history?id=${CHAMADA}&limit=1`) as never);
     expect(res.status).toBe(200);
     expect(filtrosLidos).toEqual(
       expect.arrayContaining([
@@ -726,7 +726,7 @@ describe("erro de consulta não é 'nunca ligou'", () => {
 
   it("?id= que não é uuid é 400, sem consultar", async () => {
     const { GET } = await import("@/app/api/v1/voice/calls/history/route");
-    const res = await GET(new Request("http://x/api/v1/voice/calls/history?id=1%20or%201=1"));
+    const res = await GET(new Request("http://x/api/v1/voice/calls/history?id=1%20or%201=1") as never);
     expect(res.status).toBe(400);
     expect(filtrosLidos).toEqual([]);
   });

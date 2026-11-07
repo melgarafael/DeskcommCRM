@@ -27,6 +27,7 @@ vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ audit: vi.fn(async () => undefined) }));
 vi.mock("@/lib/impersonate/support", () => ({ requireSupportWrite: vi.fn(async () => null) }));
 vi.mock("@/lib/catalogo/moeda-da-org", () => ({ moedaDaOrganizacao: vi.fn(async () => "BRL") }));
+vi.mock("@/lib/ai/dispatcher/rate-limit", () => ({ checkRateLimit: vi.fn() }));
 // A guarda anti-SSRF é da URL de mídia, exercitada em
 // lib/messaging/media/url-de-midia-externa.test.ts: aqui ela é dublada (resolver
 // DNS em teste de unidade é dependência de rede) e apenas ESPIADA.

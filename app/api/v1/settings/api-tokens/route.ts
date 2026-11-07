@@ -20,7 +20,7 @@ import { traduzir } from "@/lib/i18n/dicionario";
 export const dynamic = "force-dynamic";
 
 const SELECT_COLS =
-  "id, name, prefix, scopes, last_used_at, expires_at, revoked_at, created_at";
+  "id, name, prefix, scopes, last_used_at, expires_at, revoked_at, created_at, extension_installation_id, module_slug";
 
 export async function GET(_req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
@@ -59,6 +59,17 @@ export async function POST(req: NextRequest): Promise<Response> {
       });
     }
     throw err;
+  }
+
+  // `actor:module:…` é a identidade de um token de MÓDULO (spec 33, F2): só o banco o emite, na ativação.
+  // Um token de pessoa com esse escopo se passaria por módulo no audit.
+  if (input.scopes.some((s) => s.startsWith("actor:module:"))) {
+    return fail(
+      "validation_failed",
+      t("O escopo actor:module é reservado aos módulos conectados."),
+      422,
+      { requestId },
+    );
   }
 
   const prefix = `dsk_${randomBytes(4).toString("hex")}`;

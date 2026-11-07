@@ -1,9 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type NextRequest } from "next/server";
 import { z } from "zod";
-import { requireRole } from "@/lib/auth/require-role";
 import { requireSupportWrite } from "@/lib/impersonate/support";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ok, fail } from "@/lib/api/wrappers";
 import { ApiError } from "@/lib/api/types";
@@ -28,16 +26,29 @@ const commandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("refresh"), event_type_id: z.uuid() }),
 ]);
 
-/** Leitura humana usa a sessão. As conexões exibidas são catálogo sem credenciais. */
+/**
+ * Leitura por sessão OU token de integração (Spec 33, R2): `mcp:read` e papel `manager` no token.
+ * A sessão enxerga as mesmas linhas pela RLS; o token usa a service role e lê a organização
+ * inteira, por isso o mesmo piso de gerente do POST vizinho. As conexões exibidas são catálogo sem
+ * credenciais. Toda consulta abaixo filtra `organization_id` à mão.
+ */
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const auth = await requireRole("viewer", { requestId, resource: "agenda" });
+  const auth = await resolveAuthDual(req, {
+    requestId,
+    resource: "agenda",
+    role: "viewer",
+    scope: "mcp:read",
+    tokenRole: "manager",
+  });
   if (!auth.ok) return auth.response;
-  const t = (s: string) => traduzir(s, auth.user.idioma);
+  const ceiling = await tetoDeEscritaDoToken(auth, "agenda_tipos", requestId);
+  if (ceiling) return ceiling;
+  const t = (s: string) => traduzir(s, auth.idioma ?? "pt-BR");
   const query = querySchema.safeParse(Object.fromEntries(new URL(req.url).searchParams));
   if (!query.success) return fail("validation_failed", t("Consulta inválida."), 422, { requestId });
-  const db = await createClient();
-  const org = auth.org.orgId;
+  const db = auth.supabase;
+  const org = auth.organizationId;
   try {
     const { data: resources, error } = await db.from("calendar_resources").select("id,name,capacity,is_active,revision,kind,sector").eq("organization_id", org).order("name");
     if (error) throw error;

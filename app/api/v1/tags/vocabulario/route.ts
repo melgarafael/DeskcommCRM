@@ -35,6 +35,7 @@ import { randomUUID } from "node:crypto";
 import { tagsPageQuerySchema, tagsPageResultSchema } from "@/lib/schemas/tags";
 import type { NextRequest } from "next/server";
 
+import { resolveAuthDual, tetoDeEscritaDoToken } from "@/lib/api/auth-dual";
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/require-role";
@@ -47,9 +48,19 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
-  const auth = await requireRole("manager", { requestId, resource: "settings_tags" });
+  const auth = await resolveAuthDual(req, {
+    requestId,
+    resource: "settings_tags",
+    role: "manager",
+    scope: "config:read",
+    tokenRole: "admin",
+  });
   if (!auth.ok) return auth.response;
-  if (await mfaEmDivida())
+  const teto = await tetoDeEscritaDoToken(auth, "tags.vocabulario", requestId);
+  if (teto) return teto;
+  // O MFA é de PESSOA: o token não tem fator, quem o prova é a sessão. No ramo do
+  // token a verificação não se aplica (a mesma régua de `channel-sessions`).
+  if (auth.via === "session" && (await mfaEmDivida()))
     return fail("mfa_required", "Confirme a verificação em duas etapas.", 403, { requestId });
 
   if (req.nextUrl.searchParams.has("page") || req.nextUrl.searchParams.has("busca")) {
@@ -58,9 +69,9 @@ export async function GET(req: NextRequest): Promise<Response> {
       busca: req.nextUrl.searchParams.get("busca") ?? undefined,
     });
     if (!parsed.success) return fail("validation_failed", "Confira a busca e a página.", 422, { requestId });
-    const db = await createClient();
+    const db = auth.supabase;
     const { data, error } = await db.rpc("fn_vocabulario_de_tags_pagina", {
-      p_org: auth.org.orgId, p_busca: parsed.data.busca,
+      p_org: auth.organizationId, p_busca: parsed.data.busca,
       p_offset: (parsed.data.page - 1) * 100, p_limit: 100,
     });
     const page = tagsPageResultSchema.safeParse(data);
@@ -68,12 +79,13 @@ export async function GET(req: NextRequest): Promise<Response> {
     return ok(page.data.items, { requestId, meta: { total: page.data.total, page: parsed.data.page, per_page: 100 } });
   }
 
-  const db = await createClient();
+  const db = auth.supabase;
   // Client da SESSÃO: a função é `security invoker`, então quem recorta a
   // organização é a RLS e o `p_org` da sessão — pedir a de outro tenant não
-  // devolve nada.
+  // devolve nada. No ramo do token o client é o admin (sem RLS): quem recorta é o
+  // `p_org` da linha do token, que a própria função também filtra por dentro.
   const { data, error } = await db.rpc("fn_vocabulario_de_tags", {
-    p_org: auth.org.orgId,
+    p_org: auth.organizationId,
   });
   if (error) return fail("internal_error", "Não foi possível carregar as etiquetas.", 500, { requestId });
 

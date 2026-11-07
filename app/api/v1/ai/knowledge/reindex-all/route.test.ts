@@ -68,7 +68,7 @@ beforeEach(() => {
 describe("POST /api/v1/ai/knowledge/reindex-all", () => {
   it("exige manager e lê só a organização da sessão", async () => {
     const { POST } = await import("./route");
-    await POST();
+    await POST(new Request("http://localhost/api/v1/ai/knowledge/reindex-all", { method: "POST" }) as never);
     expect(requireRole).toHaveBeenCalledWith("manager", expect.objectContaining({ resource: "ai_knowledge" }));
     expect(filtrosDaLeitura).toContainEqual(["organization_id", ORG_ID]);
   });
@@ -79,7 +79,7 @@ describe("POST /api/v1/ai/knowledge/reindex-all", () => {
       response: new Response(null, { status: 403 }),
     } as never);
     const { POST } = await import("./route");
-    const res = await POST();
+    const res = await POST(new Request("http://localhost/api/v1/ai/knowledge/reindex-all", { method: "POST" }) as never);
     expect(res.status).toBe(403);
     expect(emitidos).toHaveLength(0);
     expect(audit).not.toHaveBeenCalled();
@@ -87,7 +87,7 @@ describe("POST /api/v1/ai/knowledge/reindex-all", () => {
 
   it("o que não está pronto vai primeiro, e a mutação é auditada com as contagens", async () => {
     const { POST } = await import("./route");
-    const res = await POST();
+    const res = await POST(new Request("http://localhost/api/v1/ai/knowledge/reindex-all", { method: "POST" }) as never);
     expect(res.status).toBe(200);
     expect(emitidos.map((e) => e["p_entity_id"])).toEqual(["ks-falhou", "ks-pronta"]);
     expect(emitidos.every((e) => e["p_organization_id"] === ORG_ID)).toBe(true);
@@ -104,7 +104,7 @@ describe("POST /api/v1/ai/knowledge/reindex-all", () => {
   it("sem material: nada mudou, e não há auditoria", async () => {
     fontes = [];
     const { POST } = await import("./route");
-    const res = await POST();
+    const res = await POST(new Request("http://localhost/api/v1/ai/knowledge/reindex-all", { method: "POST" }) as never);
     const body = (await res.json()) as { data: { total: number } };
     expect(body.data.total).toBe(0);
     expect(audit).not.toHaveBeenCalled();

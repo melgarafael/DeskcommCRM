@@ -3,8 +3,10 @@ import { NextRequest } from "next/server";
 
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { fail } from "@/lib/api/wrappers";
 import type { AuthUser } from "@/lib/auth/types";
+import { validateBearerToken } from "@/lib/mcp/auth";
 
 /**
  * Task 5 (Fase 2 skills instaláveis) — GET /api/v1/ai/skills:
@@ -12,10 +14,20 @@ import type { AuthUser } from "@/lib/auth/types";
  *  - installed = pointers da org (join descrição + source manual/catalog pelo
  *    forked_from_version_id); catalog = pointers de plataforma cujo name NÃO
  *    está em installed.
+ *
+ * O handler agora resolve auth por `resolveAuthDual` (sessão OU token).
+ * Na sessão, `createClient()` é usado; no token, `createAdminClient()` e
+ * `validateBearerToken()`. Os testes de sessão mantêm `requireRole` e ganham
+ * `createClient` mockado com o mesmo dublê que `createAdminClient`.
  */
 
 vi.mock("@/lib/auth/require-role", () => ({ requireRole: vi.fn() }));
+vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: vi.fn() }));
+vi.mock("@/lib/mcp/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/mcp/auth")>()),
+  validateBearerToken: vi.fn(),
+}));
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -75,20 +87,29 @@ function makeAdminStub(cfg: Stubs) {
           if (col === "organization_id") isNullOrg = true;
           return b;
         },
-        in(_column: string, values: unknown[]) {
-          if (cfg.rejectNullVersionIds && values.some((value) => value === null)) {
-            return Promise.resolve({
-              data: null,
-              error: { message: "invalid input syntax for type uuid" },
-            });
-          }
-          return Promise.resolve({ data: cfg.versions ?? [], error: cfg.versionsError ?? null });
+        in(_column: string, _values: unknown[]) {
+          return b;
+        },
+        or(_expression: string) {
+          return b;
         },
         then(onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) {
           if (table === "skill_pointers" && !isNullOrg) {
             return Promise.resolve({
               data: cfg.orgPointers ?? [],
               error: cfg.orgPointersError ?? null,
+            }).then(onF, onR);
+          }
+          if (table === "skill_versions") {
+            if (cfg.rejectNullVersionIds) {
+              return Promise.resolve({
+                data: null,
+                error: { message: "invalid input syntax for type uuid" },
+              }).then(onF, onR);
+            }
+            return Promise.resolve({
+              data: cfg.versions ?? [],
+              error: cfg.versionsError ?? null,
             }).then(onF, onR);
           }
           return Promise.resolve({
@@ -117,6 +138,8 @@ function mockAuthzOk() {
     user,
     org: { orgId: ORG_ID, name: "Org", role: "agent" },
   });
+  vi.mocked(createClient).mockResolvedValue(makeAdminStub({}) as never);
+  vi.mocked(validateBearerToken).mockResolvedValue(null as never);
 }
 
 function getReq() {

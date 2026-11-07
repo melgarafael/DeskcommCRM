@@ -53,23 +53,30 @@ describe("isPublicPath", () => {
    * `PATCH /api/v1/leads/[id]` aceita Bearer (auth-dual, monitoramento
    * processual). O que este bloco prova é a forma exata do segmento: UUID, não
    * `[^/]+` — `/api/v1/leads/` tem irmãos LITERAIS no mesmo nível (`bulk`,
-   * `at-risk`, `import`, `proposals`, `reactivations`), nenhum deles com
+   * `import`, `proposals`, `reactivations`), nenhum deles com
    * suporte a Bearer, que um padrão largo tornaria público por engano.
    */
   it("libera PATCH /api/v1/leads/[id] (bearer, forma de UUID)", () => {
     expect(isPublicPath("/api/v1/leads/11111111-1111-4111-8111-111111111111")).toBe(true);
   });
 
-  it("mas NÃO os irmãos literais de /api/v1/leads/, que não têm Bearer", () => {
-    expect(isPublicPath("/api/v1/leads/bulk")).toBe(false);
-    expect(isPublicPath("/api/v1/leads/at-risk")).toBe(false);
-    expect(isPublicPath("/api/v1/leads/import")).toBe(false);
-    expect(isPublicPath("/api/v1/leads/proposals")).toBe(false);
-    expect(isPublicPath("/api/v1/leads/reactivations")).toBe(false);
+  it("os irmãos literais de /api/v1/leads/ que ainda ganham porta (bulk, import, proposals, reactivations)", () => {
+    expect(isPublicPath("/api/v1/leads/bulk")).toBe(true);
+    expect(isPublicPath("/api/v1/leads/import")).toBe(true);
+    expect(isPublicPath("/api/v1/leads/proposals")).toBe(true);
+    expect(isPublicPath("/api/v1/leads/reactivations")).toBe(true);
   });
 
-  it("nem um sub-path do lead (clone, move, lose, win, …) passa de carona", () => {
-    expect(isPublicPath("/api/v1/leads/11111111-1111-4111-8111-111111111111/clone")).toBe(false);
+  it("o irmão literal at-risk ganhou porta (Spec 33, R2), só o caminho exato", () => {
+    expect(isPublicPath("/api/v1/leads/at-risk")).toBe(true);
+    expect(isPublicPath("/api/v1/leads/at-risk/x")).toBe(false);
+  });
+
+  it("sub-paths de lead que ganharam porta (clone, …)", () => {
+    // Spec 33 (R2): a rota passou a aceitar token
+    expect(isPublicPath("/api/v1/leads/11111111-1111-4111-8111-111111111111/clone")).toBe(true);
+    // sub-path desconhecido sob [id] não ganha porta
+    expect(isPublicPath("/api/v1/leads/11111111-1111-4111-8111-111111111111/x")).toBe(false);
   });
 
   /**
@@ -84,7 +91,8 @@ describe("isPublicPath", () => {
     expect(isPublicPath(`/api/v1/contacts/${contato}/avatar`)).toBe(true);
     expect(isPublicPath(`/api/v1/contacts/${contato}/avatar/extra`)).toBe(false);
     expect(isPublicPath("/api/v1/contacts/qualquer-id/avatar")).toBe(false);
-    expect(isPublicPath(`/api/v1/contacts/${contato}/person`)).toBe(false);
+    // Spec 33 (R2): a rota passou a aceitar token
+    expect(isPublicPath(`/api/v1/contacts/${contato}/person`)).toBe(true);
     expect(isPublicPath("/api/v1/contacts/bulk/avatar")).toBe(false);
   });
 
@@ -126,5 +134,27 @@ describe("isPublicPath", () => {
 
   it("e não libera nenhum sub-path dela de carona", () => {
     expect(isPublicPath("/account-suspended/qualquer")).toBe(false);
+  });
+
+  /**
+   * A busca do token do módulo `connected` (spec 33, F2) é chamada pelo servidor do módulo, sem cookie.
+   * Entra SÓ o caminho exato: `/api/v1/extensions/` tem irmãos de sessão (girar segredo, instalar,
+   * operações) que não podem nascer públicos de carona.
+   */
+  it("libera a busca do token do módulo, e só o caminho exato", () => {
+    expect(isPublicPath("/api/v1/extensions/token")).toBe(true);
+    expect(isPublicPath("/api/v1/extensions/token/x")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/token/")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/tokens")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/11111111-1111-4111-8111-111111111111/segredo")).toBe(false);
+  });
+
+  it("libera a leitura de eventos do módulo, e só o caminho exato", () => {
+    expect(isPublicPath("/api/v1/extensions/events")).toBe(true);
+    expect(isPublicPath("/api/v1/extensions/events/x")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/events/")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/event")).toBe(false);
+    expect(isPublicPath("/api/v1/extensions/eventsx")).toBe(false);
   });
 });
