@@ -4,11 +4,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 
 import { Sidebar } from "@/components/shell/Sidebar";
-import { CLASSES_DE_COR, LogotipoDoProduto, SimboloDoProduto } from "@/components/branding/MarcaDoProduto";
+import { LogotipoDoProduto, SimboloDoProduto } from "@/components/branding/MarcaDoProduto";
 import type { ActiveOrg, AuthUser } from "@/lib/auth/types";
 import { DEFAULT_APP_NAME, marcaEhADoProduto, type Branding } from "@/lib/branding";
 import { MarcaDaInstalacaoProvider } from "@/lib/branding/contexto";
-import { CORES_DA_MARCA } from "@/lib/branding/desenho";
 
 /**
  * A marca do PRODUTO aparece — e SÓ aparece — quando ninguém pôs a sua.
@@ -48,7 +47,7 @@ const org = {
 let contexto: { user: AuthUser; activeOrg: ActiveOrg | null } = { user: usuario, activeOrg: org };
 vi.mock("@/hooks/auth/AuthProvider", () => ({ useAuth: () => contexto }));
 
-const PADRAO: Branding = { name: DEFAULT_APP_NAME, logoUrl: null, initial: "D" };
+const PADRAO: Branding = { name: DEFAULT_APP_NAME, logoUrl: null, initial: "G" };
 
 function renderSidebar(marca: Branding, collapsed: boolean) {
   return render(
@@ -94,7 +93,7 @@ describe("o desenho na barra lateral", () => {
   it("recolhida, mostra só o símbolo — e não a inicial em texto", () => {
     renderSidebar(PADRAO, true);
     expect(screen.getByRole("img", { name: DEFAULT_APP_NAME }).tagName.toLowerCase()).toBe("svg");
-    expect(screen.queryByText("D")).toBeNull();
+    expect(screen.queryByText("G")).toBeNull();
   });
 
   it("com nome da instalação, segue em texto — o desenho do produto não vaza", () => {
@@ -117,20 +116,12 @@ describe("o desenho na barra lateral", () => {
 });
 
 describe("as cores do desenho", () => {
-  it("as classes do componente cobrem exatamente a paleta declarada, nos dois temas", () => {
-    // O Tailwind só gera utilitário para hex LITERAL no fonte, então o
-    // componente repete os valores. Isto é o que impede os dois de divergirem.
-    const nasClasses = Object.values(CLASSES_DE_COR).join(" ").match(/#[0-9a-f]{6}/g) ?? [];
-    const naPaleta = [...Object.values(CORES_DA_MARCA.claro), ...Object.values(CORES_DA_MARCA.escuro)];
-    expect([...nasClasses].sort()).toEqual([...naPaleta].sort());
-  });
-
-  it("cada tema tem a sua classe: `dark:` no escuro, nada no claro", () => {
-    for (const [papel, classes] of Object.entries(CLASSES_DE_COR)) {
-      const chave = papel as keyof typeof CORES_DA_MARCA.claro;
-      expect(classes).toContain(`fill-[${CORES_DA_MARCA.claro[chave]}]`);
-      expect(classes).toContain(`dark:fill-[${CORES_DA_MARCA.escuro[chave]}]`);
-    }
+  it("usa os arquivos originais da Gianna para a marca completa e o símbolo", () => {
+    render(<LogotipoDoProduto nome="Gianna" />);
+    expect(document.querySelector("image")?.getAttribute("href")).toBe("/gianna/logo.png");
+    cleanup();
+    render(<SimboloDoProduto nome="Gianna" />);
+    expect(document.querySelector("image")?.getAttribute("href")).toBe("/gianna/simbolo.png");
   });
 
   it("decorativo esconde do leitor de tela; sem isso, nomeia a marca", () => {
@@ -147,7 +138,7 @@ describe("o favicon segue a mesma regra", () => {
 
   it("desenha o símbolo quando a marca é a do produto, e a inicial quando não é", () => {
     expect(icone).toMatch(/marcaEhADoProduto\(\{ name: marca\.nome, logoUrl: marca\.logoUrl \}\)/);
-    expect(icone).toMatch(/<path d=\{SIMBOLO\.d\}/);
+    expect(icone).toContain("simboloGianna(lado)");
     expect(icone).toMatch(/letraDoIcone\(marca\.nome\)/);
   });
 });
