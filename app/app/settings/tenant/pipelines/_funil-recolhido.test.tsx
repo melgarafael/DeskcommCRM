@@ -39,9 +39,18 @@ vi.mock("@/app/actions/settings/updatePipelineConfig", () => ({
  * que este arquivo mede é o que o recolhimento mostra ou esconde. O resto do
  * módulo (a mensagem de erro que a seção de etapas importa) continua REAL.
  */
+const dublesDoMapeamento = vi.hoisted(() => ({ usarDeVerdade: false }));
 vi.mock("./_mapping", async () => {
-  const real = await vi.importActual<Record<string, unknown>>("./_mapping");
-  return { ...real, AgentMappingSection: () => <div data-testid="mapeamento-do-agente" /> };
+  const real = await vi.importActual<typeof import("./_mapping")>("./_mapping");
+  return {
+    ...real,
+    AgentMappingSection: (props: Parameters<typeof real.AgentMappingSection>[0]) =>
+      dublesDoMapeamento.usarDeVerdade ? (
+        <real.AgentMappingSection {...props} />
+      ) : (
+        <div data-testid="mapeamento-do-agente" />
+      ),
+  };
 });
 
 // Polyfills que o Radix Select exige e o jsdom não tem.
@@ -117,8 +126,13 @@ function montar(
 const corpoDe = (id: string) => screen.getByTestId(`corpo-do-funil-${id}`);
 const cabecalhoDe = (id: string) => screen.getByTestId(`abrir-funil-${id}`);
 
+function comMovimentoReduzido(reduzido: boolean) {
+  window.matchMedia = vi.fn(() => ({ matches: reduzido })) as never;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  comMovimentoReduzido(false);
   vi.mocked(apiClient.get).mockImplementation((async (rota: string) => {
     if (String(rota).includes(DONO)) return { data: estado(etapas("d")) };
     if (String(rota).includes(FILIAL)) return { data: estado(etapas("f")) };
@@ -313,5 +327,200 @@ describe("a tela dos funis — o que acontece depois de abrir", () => {
     await waitFor(() => expect(apiClient.patch).toHaveBeenCalledTimes(1));
     expect(corpoDe(DONO).hidden).toBe(true);
     await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe("a tela dos funis — chegar por âncora leva até a seção", () => {
+  const rolagem = vi.mocked(window.HTMLElement.prototype.scrollIntoView);
+  /** Quem foi rolado até agora: o `id` de cada elemento alvo de `scrollIntoView`. */
+  const alvosDaRolagem = () => rolagem.mock.contexts.map((alvo) => (alvo as HTMLElement).id);
+
+  /** A leitura do funil fica presa até `soltar()`: é a janela em que a seção ainda não existe. */
+  function leituraPresa(trechoDaRota: string) {
+    let soltar = () => {};
+    const preso = new Promise<void>((fim) => {
+      soltar = fim;
+    });
+    vi.mocked(apiClient.get).mockImplementation((async (rota: string) => {
+      if (String(rota).includes(trechoDaRota)) await preso;
+      return { data: estado(etapas(String(rota).includes(DONO) ? "d" : "f")) };
+    }) as never);
+    return soltar;
+  }
+
+  /** Dá tempo de um efeito atrasado rolar, antes de afirmar que ele não rolou. */
+  const assentar = () => new Promise((fim) => setTimeout(fim, 20));
+
+  // A seção de VERDADE: o `id` dela só nasce um render depois da leitura (o rascunho
+  // vem de um efeito). Um dublê com o `id` sempre presente aprovou uma rolagem que, na
+  // tela, procurava um alvo que ainda não existia.
+  beforeEach(() => {
+    dublesDoMapeamento.usarDeVerdade = true;
+  });
+
+  afterEach(() => {
+    dublesDoMapeamento.usarDeVerdade = false;
+    Reflect.deleteProperty(window, "scrollY");
+  });
+
+  it("espera as etapas carregarem e só então rola, uma vez, até o mapeamento", async () => {
+    // Só o funil fica preso: a taxa responde antes, e nada mais acorda a rolagem depois
+    // dela a não ser o próprio elemento aparecer.
+    const soltar = leituraPresa(`${FILIAL}/agent-mapping`);
+    window.location.hash = `#mapeamento-${FILIAL}`;
+    montar();
+
+    await waitFor(() => expect(corpoDe(FILIAL).hidden).toBe(false));
+    await screen.findByTestId("etapas-carregando");
+    await assentar();
+    expect(rolagem).not.toHaveBeenCalled();
+
+    soltar();
+    await waitFor(() => expect(alvosDaRolagem()).toEqual([`mapeamento-${FILIAL}`]));
+    expect(rolagem).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+  });
+
+  it("espera também a taxa das etapas, que empurra o mapeamento para baixo", async () => {
+    const soltar = leituraPresa(`${FILIAL}/stages/win-rates`);
+    window.location.hash = `#mapeamento-${FILIAL}`;
+    montar();
+
+    await screen.findByTestId(`mapeamento-${FILIAL}`);
+    await assentar();
+    expect(rolagem).not.toHaveBeenCalled();
+
+    soltar();
+    await waitFor(() => expect(alvosDaRolagem()).toEqual([`mapeamento-${FILIAL}`]));
+  });
+
+  it("com a taxa de outro funil chegando junto, rola com a taxa deste já na tela", async () => {
+    // A resposta do funil vizinho, no mesmo instante, acordava quem escuta a cache
+    // inteira antes de as linhas entrarem: a seção parava 309 px longe do topo.
+    let soltar = () => {};
+    const preso = new Promise<void>((fim) => {
+      soltar = fim;
+    });
+    vi.mocked(apiClient.get).mockImplementation((async (rota: string) => {
+      const prefixo = String(rota).includes(DONO) ? "d" : "f";
+      if (!String(rota).includes("/win-rates")) return { data: estado(etapas(prefixo)) };
+      await preso;
+      return {
+        data: {
+          inicio: "2025-10-03T12:00:00.000Z",
+          fim: "2026-10-03T12:00:00.000Z",
+          dias: 365,
+          truncado: false,
+          minimo_de_casos: 10,
+          taxas: [{ etapa_id: `${prefixo}-1`, total: 20, ganhos: 8, percentual: 40, sugestao: 40 }],
+        },
+      };
+    }) as never);
+    const taxaNaHoraDeRolar: boolean[] = [];
+    rolagem.mockImplementationOnce(() => {
+      taxaNaHoraDeRolar.push(document.querySelector('[data-testid="taxa-f-1"]') !== null);
+    });
+    window.location.hash = `#mapeamento-${FILIAL}`;
+    montar();
+    await screen.findByTestId(`mapeamento-${FILIAL}`);
+
+    soltar();
+    await waitFor(() => expect(taxaNaHoraDeRolar).toEqual([true]));
+  });
+
+  it("a âncora #etapas-<id> também rola", async () => {
+    window.location.hash = `#etapas-${DONO}`;
+    montar();
+
+    await waitFor(() => expect(alvosDaRolagem()).toEqual([`etapas-${DONO}`]));
+  });
+
+  it("com movimento reduzido chega no mesmo lugar, sem o percurso", async () => {
+    comMovimentoReduzido(true);
+    window.location.hash = `#mapeamento-${FILIAL}`;
+    montar();
+
+    await waitFor(() => expect(rolagem).toHaveBeenCalledTimes(1));
+    expect(rolagem).toHaveBeenCalledWith({ behavior: "auto", block: "start" });
+    expect(window.matchMedia).toHaveBeenCalledWith("(prefers-reduced-motion: reduce)");
+  });
+
+  it("com o funil já em cache, a chegada por âncora rola do mesmo jeito", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(["agent-mapping", DONO], estado(etapas("d")));
+    window.location.hash = `#mapeamento-${DONO}`;
+    render(
+      <QueryClientProvider client={qc}>
+        <PipelinesClient pipelines={[VENDAS]} podeEditarConfig={false} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(alvosDaRolagem()).toEqual([`mapeamento-${DONO}`]));
+  });
+
+  it("não rola de novo: lista nova e releitura com o hash velho na URL", async () => {
+    window.location.hash = `#mapeamento-${FILIAL}`;
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tela = (lista: PipelineRow[]) => (
+      <QueryClientProvider client={qc}>
+        <PipelinesClient pipelines={lista} podeEditarConfig={false} />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(tela([VENDAS, LOCACAO]));
+    await waitFor(() => expect(rolagem).toHaveBeenCalledTimes(1));
+
+    rerender(tela([{ ...VENDAS }, { ...LOCACAO }]));
+    await qc.invalidateQueries({ queryKey: ["agent-mapping", FILIAL] });
+    await qc.invalidateQueries({ queryKey: ["stage-win-rates", FILIAL] });
+    // Qualquer mudança de DOM depois da chegada: quem espera o elemento já parou de olhar.
+    document.body.append(document.createElement("div"));
+    await assentar();
+
+    expect(rolagem).toHaveBeenCalledTimes(1);
+  });
+
+  it("quem já rolou a página enquanto carregava não é puxado", async () => {
+    const soltar = leituraPresa(FILIAL);
+    window.location.hash = `#mapeamento-${FILIAL}`;
+    montar();
+    await waitFor(() => expect(corpoDe(FILIAL).hidden).toBe(false));
+
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 300 });
+    soltar();
+    await screen.findByTestId(`etapas-${FILIAL}`);
+    await assentar();
+
+    expect(rolagem).not.toHaveBeenCalled();
+    expect(corpoDe(FILIAL).hidden).toBe(false);
+  });
+
+  it("abrir outro funil enquanto carrega cancela: nada recolhe nem rola, nem ao reabrir o da âncora", async () => {
+    const usuario = userEvent.setup();
+    const soltar = leituraPresa(FILIAL);
+    window.location.hash = `#mapeamento-${FILIAL}`;
+    montar();
+    await waitFor(() => expect(corpoDe(FILIAL).hidden).toBe(false));
+
+    await usuario.click(cabecalhoDe(DONO));
+    soltar();
+    await screen.findByTestId(`etapas-${FILIAL}`);
+    await assentar();
+
+    expect(corpoDe(DONO).hidden).toBe(false);
+    expect(corpoDe(FILIAL).hidden).toBe(true);
+    expect(rolagem).not.toHaveBeenCalled();
+
+    await usuario.click(cabecalhoDe(FILIAL));
+    await assentar();
+    expect(corpoDe(FILIAL).hidden).toBe(false);
+    expect(rolagem).not.toHaveBeenCalled();
+  });
+
+  it("sem âncora na URL, abrir um funil não move a página", async () => {
+    montar();
+    await userEvent.setup().click(cabecalhoDe(FILIAL));
+    await screen.findByTestId(`etapas-${FILIAL}`);
+    await assentar();
+
+    expect(rolagem).not.toHaveBeenCalled();
   });
 });

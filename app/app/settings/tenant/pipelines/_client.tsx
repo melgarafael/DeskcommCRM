@@ -1,6 +1,7 @@
 "use client";
 
 import { useT } from "@/hooks/i18n/useT";
+import { useTaxasDasEtapas } from "@/hooks/pipelines/useWinRates";
 import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
@@ -449,6 +450,7 @@ export function PipelinesClient({
   const [funilAberto, setFunilAberto] = useState<string | null>(() =>
     pipelines.length === 1 ? (pipelines[0]?.id ?? null) : null,
   );
+  const [chegada, setChegada] = useState<Chegada | null>(null);
   /**
    * A ÂNCORA ABRE O FUNIL QUE ELA APONTA.
    *
@@ -467,7 +469,9 @@ export function PipelinesClient({
         window.location.hash === `#${ancoraDasEtapas(p.id)}` ||
         window.location.hash === `#${ancoraDoMapeamento(p.id)}`,
     );
-    if (alvo) setFunilAberto(alvo.id);
+    if (!alvo) return;
+    setFunilAberto(alvo.id);
+    setChegada({ pipelineId: alvo.id, ancora: window.location.hash.slice(1), scrollY: window.scrollY });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- ver ⚠️ acima: é leitura de chegada.
   }, []);
   if (pipelines.length === 0) {
@@ -500,13 +504,66 @@ export function PipelinesClient({
           comandaDisponivel={comandaDisponivel}
           ehFunilPadrao={p.id === (pipelines.find((x) => x.is_default) ?? pipelines[0])?.id}
           aberto={funilAberto === p.id}
-          aoAlternar={() =>
-            setFunilAberto((aberto) => (aberto === p.id ? null : p.id))
-          }
+          aoAlternar={() => {
+            // Quem mexeu no acordeão assumiu a tela: a chegada não rola mais.
+            setChegada(null);
+            setFunilAberto((aberto) => (aberto === p.id ? null : p.id));
+          }}
         />
       ))}
+      {chegada && <RolagemDeChegada {...chegada} aoTerminar={() => setChegada(null)} />}
     </div>
   );
+}
+
+type Chegada = { pipelineId: string; ancora: string; scrollY: number };
+
+/**
+ * LEVA ATÉ A SEÇÃO DA ÂNCORA, QUANDO ELA PASSA A EXISTIR E PARA DE ANDAR (#4083).
+ *
+ * As duas seções só põem o `id` no DOM depois da leitura do funil, e o mapeamento
+ * ainda um render depois dela (o rascunho nasce num efeito). O navegador procura o
+ * alvo do hash antes disso, não acha, e a pessoa fica no topo com o funil certo
+ * aberto lá embaixo. Por isso o gatilho é o próprio elemento aparecer, e não a
+ * leitura terminar: esperar a leitura rolava para um alvo que ainda não existia.
+ *
+ * A taxa de cada etapa vem em outra leitura e empurra o mapeamento para baixo:
+ * medido, 309 px em 1440 com cinco etapas. Rolar antes dela deixa a seção longe do
+ * topo, em parte das rodadas. ⚠️ Espere com um observador da MESMA leitura, e não
+ * com `useIsFetching`: ele escuta a cache inteira, então a resposta de OUTRO funil o
+ * acorda quando o número já caiu, antes de as linhas da taxa entrarem na tela.
+ *
+ * Roda uma vez por chegada: ao levar, sai de cena, e revalidar a lista ou reler as
+ * taxas com o hash velho na URL não a traz de volta. `scrollY` diferente do da
+ * chegada é alguém rolando enquanto carregava, por qualquer meio: esse lugar é dele.
+ */
+function RolagemDeChegada({
+  pipelineId,
+  ancora,
+  scrollY,
+  aoTerminar,
+}: Chegada & { aoTerminar: () => void }) {
+  const taxasChegando = useTaxasDasEtapas(pipelineId).isFetching;
+  useEffect(() => {
+    if (taxasChegando) return;
+    const levar = () => {
+      const secao = document.getElementById(ancora);
+      if (!secao) return false;
+      aoTerminar();
+      if (window.scrollY === scrollY) {
+        const reduzido = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        secao.scrollIntoView({ behavior: reduzido ? "auto" : "smooth", block: "start" });
+      }
+      return true;
+    };
+    if (levar()) return;
+    const observador = new MutationObserver(() => {
+      if (levar()) observador.disconnect();
+    });
+    observador.observe(document.body, { childList: true, subtree: true });
+    return () => observador.disconnect();
+  }, [ancora, scrollY, taxasChegando, aoTerminar]);
+  return null;
 }
 
 /**

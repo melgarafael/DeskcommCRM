@@ -490,7 +490,7 @@ export function StagesSection({
   }
 
   return (
-    <div className="space-y-4" id={ancoraDasEtapas(pipelineId)} data-testid={`etapas-${pipelineId}`}>
+    <div className="scroll-mt-20 space-y-4" id={ancoraDasEtapas(pipelineId)} data-testid={`etapas-${pipelineId}`}>
       <div className="space-y-1">
         <h3 className="text-sm font-semibold">{t("Etapas deste funil")}</h3>
         <p className="max-w-3xl text-sm leading-relaxed text-text-muted">
