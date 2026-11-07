@@ -12,7 +12,7 @@
  *     proxy pôs e que o audit grava) — não um UUID novo; preserva um id que a
  *     rota já carimbou ela mesma (é o id da auditoria dela); e reescreve a
  *     resposta quando os cabeçalhos são IMUTÁVEIS (todo `Response.redirect`).
- *  2. CATRACA ESTÁTICA: nenhuma montagem à mão sob `app/api/**/route.ts` sai sem
+ *  2. CATRACA ESTÁTICA: nenhuma montagem à mão sob `app/api` (todo `route.ts`) sai sem
  *     carimbo. Ou está dentro de `comIdDaRequisicao(...)`, ou o próprio bloco
  *     declara `X-Request-Id`. Lista de exceções vazia, como a da #3971.
  */
@@ -44,7 +44,7 @@ describe("comIdDaRequisicao", () => {
     const req = new Request("http://x/api/v1/algo", {
       headers: { "x-request-id": "11111111-1111-4111-8111-111111111111" },
     });
-    const res = await comId()(new Response("csv", { status: 200 }), req);
+    const res = (await comId())(new Response("csv", { status: 200 }), req);
     expect(res.headers.get("X-Request-Id")).toBe("11111111-1111-4111-8111-111111111111");
   });
 
@@ -65,7 +65,7 @@ describe("comIdDaRequisicao", () => {
     const req = new Request("http://x/api/v1/algo", {
       headers: { "x-request-id": "22222222-2222-4222-8222-222222222222" },
     });
-    const res = await comId()(
+    const res = (await comId())(
       new Response("ok", { status: 200, headers: { "X-Request-Id": "33333333-3333-4333-8333-333333333333" } }),
       req,
     );
@@ -73,31 +73,42 @@ describe("comIdDaRequisicao", () => {
   });
 
   it("aceita o requestId resolvido pela rota direto, sem a requisição", async () => {
-    const res = await comId()(
+    const res = (await comId())(
       new Response(null, { status: 503 }),
       "44444444-4444-4444-8444-444444444444",
     );
     expect(res.headers.get("X-Request-Id")).toBe("44444444-4444-4444-8444-444444444444");
   });
 
-  it("cabeçalhos imutáveis (redirect): reescreve mantendo status, location e cookies", async () => {
+  it("cabeçalhos imutáveis (Response.redirect puro): reescreve mantendo status e location", async () => {
     const req = new Request("http://x/api/v1/algo", {
       headers: { "x-request-id": "55555555-5555-4555-8555-555555555555" },
     });
-    const base = NextResponse.redirect("https://destino.exemplo/ok", 302);
-    base.cookies.set("vinculo", "valor", { path: "/" });
+    // `Response.redirect()` da especificação devolve cabeçalhos IMUTÁVEIS — é o
+    // caso que o `catch` do helper cobre (o avatar o documenta na própria rota).
+    const base = Response.redirect("https://destino.exemplo/ok", 302);
     expect(() => base.headers.set("X-Request-Id", "x")).toThrow(); // premissa: imutável
-    const res = await comId()(base, req);
+    const res = (await comId())(base, req);
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("https://destino.exemplo/ok");
     expect(res.headers.get("X-Request-Id")).toBe("55555555-5555-4555-8555-555555555555");
-    // continua um NextResponse: quem chama ainda pode pôr cookie na saída
-    expect(() => (res as NextResponse).cookies.set("outro", "1", { path: "/" })).not.toThrow();
+  });
+
+  it("NextResponse.redirect (cabeçalho mutável): carimba e continua aceitando cookie", async () => {
+    const req = new Request("http://x/api/v1/algo", {
+      headers: { "x-request-id": "77777777-7777-4777-8777-777777777777" },
+    });
+    const base = NextResponse.redirect("https://destino.exemplo/ok", 302);
+    const res = (await comId())(base, req) as NextResponse;
+    expect(res.headers.get("X-Request-Id")).toBe("77777777-7777-4777-8777-777777777777");
+    // os callbacks de OAuth põem cookie de limpeza NA RESPOSTA devolvida:
+    // se o helper a reconstruísse como `Response` puro, isto lançaria.
+    expect(() => res.cookies.set("outro", "1", { path: "/" })).not.toThrow();
   });
 
   it("sem id na requisição nem na rota: nasce um, e a resposta sai com header", async () => {
     const req = new Request("http://x/api/v1/algo");
-    const res = await comId()(new Response(null, { status: 404 }), req);
+    const res = (await comId())(new Response(null, { status: 404 }), req);
     expect(res.headers.get("X-Request-Id")).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
@@ -110,17 +121,20 @@ function montagensAMao(fonte: string): Array<{ linha: number; trecho: string }> 
   const construtor =
     /(?<![\w.])(new\s+(?:Next)?Response|(?:Next)?Response\.(?:json|redirect))\s*\(/g;
   const achadas: Array<{ linha: number; trecho: string }> = [];
-  for (let i = 0; i < linhas.length; i++) {
-    const l = linhas[i];
-    // linha de comentário não é montagem: doc do `health` cita os construtores.
+  for (let m = construtor.exec(fonte); m; m = construtor.exec(fonte)) {
+    const linha = fonte.slice(0, m.index).split("\n");
+    const l = linha[linha.length - 1];
+    // linha de comentário não é montagem: o doc do `health` cita os construtores.
     if (/^\s*(\/\/|\*)/.test(l)) continue;
-    if (l.includes("comIdDaRequisicao(")) continue;
-    construtor.lastIndex = 0;
-    if (construtor.test(l)) {
-      const janela = linhas.slice(i, i + 12).join("\n");
-      if (!/X-Request-Id|x-request-id/i.test(janela)) {
-        achadas.push({ linha: i + 1, trecho: l.trim().slice(0, 80) });
-      }
+    // Carimbada quando o construtor é o PRIMEIRO argumento de
+    // `comIdDaRequisicao(` — o que vale é a posição no texto (chamada pode
+    // começar na linha de cima), não a linha em si.
+    const antes = fonte.slice(Math.max(0, m.index - 40), m.index).replace(/\s+$/, "");
+    if (antes.endsWith("comIdDaRequisicao(")) continue;
+    const idx = m.index;
+    const janela = fonte.slice(idx, idx + 900);
+    if (!/X-Request-Id|x-request-id/i.test(janela)) {
+      achadas.push({ linha: linha.length, trecho: l.trim().slice(0, 80) });
     }
   }
   return achadas;
