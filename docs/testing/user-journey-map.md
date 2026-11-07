@@ -994,6 +994,17 @@ nenhuma tela a gravava.
 
 ---
 
+## J67 — A vaga que abre vai para quem pediu encaixe `[P1]` (2026-11-06)
+
+Módulo opcional (doc 208 = A, #3465). Sem instalar, nada muda.
+
+- [ ] Instalar em Módulos; a porta Lista de espera aparece; sem o módulo, a porta some e a rota responde 404.
+- [ ] Salvar sem os três prazos é impossível; ligar depois de escolher.
+- [ ] Inscrever com o consentimento marcado; cancelar um compromisso; a oferta sai e a vaga fica pendente.
+- [ ] Aceitou confirma; Recusou chama o próximo, e a vaga não volta a quem recusou.
+- [ ] Prazo vencido passa a vaga adiante; contato bloqueado ou anonimizado não recebe.
+- [ ] Banco, dois tenants e concorrência: `tests/invariants/lista-de-espera-encaixe.test.ts`.
+
 ## Lote 8 da triagem — Agenda e Contatos provados em tela (2026-09-15)
 
 Integração `integracao/triagem-15set-l8` no SHA `33ece762a`, banco do
