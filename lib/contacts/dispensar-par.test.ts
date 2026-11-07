@@ -143,7 +143,7 @@ describe("dispensar par de contatos: o CPF é motivo forte", () => {
  * o par que é a MESMA conta de WhatsApp.
  */
 describe("dispensar par de contatos: a conta de WhatsApp é motivo forte", () => {
-  const LID = "70192801575156";
+  const LID = "100000000000001";
 
   it("mesmo `wa_lid` → par_forte, rollback e NENHUMA linha de dispensa", async () => {
     const { pool, inseridos } = poolFalso([

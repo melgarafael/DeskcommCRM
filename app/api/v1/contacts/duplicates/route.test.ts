@@ -375,7 +375,7 @@ describe("CPF na varredura", () => {
  * telefone e e-mail: identificador de conta de WhatsApp não é dado de tela.
  */
 describe("WhatsApp na varredura", () => {
-  const LID = "70192801575156";
+  const LID = "100000000000001";
 
   function comOLid(linhas: Linha[]): Linha[] {
     // Duas fichas nascidas do MESMO @lid — antes e depois da correção da 0027, ou

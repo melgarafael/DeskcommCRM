@@ -180,7 +180,7 @@ describe("encontrarContatosDuplicados: CPF", () => {
  * e nada mais a liga.
  */
 describe("encontrarContatosDuplicados: WhatsApp", () => {
-  const LID = "70192801575156";
+  const LID = "100000000000001";
 
   it("a mesma `wa_identity` de lid une o par com o motivo `whatsapp` — mesmo com nomes diferentes", () => {
     // Sabotagem: tirar o mapa por `wa_identity` deixa este caso vermelho — as duas
