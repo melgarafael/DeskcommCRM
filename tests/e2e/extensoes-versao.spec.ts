@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 
-import { expect as expectBase, test, type BrowserContext, type Page } from "./helpers/test";
+import { esperarARevelacaoNasCargas, expect as expectBase, test, type BrowserContext, type Page } from "./helpers/test";
 
 import {
   criarAtoresDasExtensoes,
@@ -244,6 +244,7 @@ test("atualiza, desfaz com o catálogo fora do ar, remove e reinstala sem decidi
     // Outra sessão do mesmo responsável, aberta ANTES do desfazer: armazenamento próprio, então
     // nada a avisa da troca até ela tentar agir.
     const contexto = await browser.newContext();
+    contexto.on("page", esperarARevelacaoNasCargas);
     contextosExtras.push(contexto);
     const antiga = await contexto.newPage();
     await registrarAvisos(antiga);

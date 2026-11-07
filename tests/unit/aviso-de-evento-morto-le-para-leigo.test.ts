@@ -12,7 +12,13 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { avisoDeEventoMorto, DETALHE_TECNICO, IA_QUE_NAO_RESPONDEU } from "@/lib/event-log/aviso-de-evento-morto";
+import {
+  avisoDaMensagemDoNumeroOficial,
+  avisoDeEventoMorto,
+  DETALHE_TECNICO,
+  IA_QUE_NAO_RESPONDEU,
+  MENSAGEM_DO_NUMERO_OFICIAL_SEM_ATENDIMENTO,
+} from "@/lib/event-log/aviso-de-evento-morto";
 
 /** `media.persist_requested`, `ai_agent.dispatch_requested`, `media_persist_v1`. */
 const IDENTIFICADOR_TECNICO = /\b[a-z][a-z0-9]*(?:[._][a-z0-9]+)+\b/;
@@ -77,4 +83,26 @@ describe("aviso de evento morto, para quem lê a Central", () => {
       expect(body.endsWith(evento.motivo), "algo veio depois do detalhe técnico").toBe(true);
     });
   }
+
+  it("a mensagem sem atendimento não afirma um pedido de sair que ela pode não ter feito", () => {
+    // A frase é fixa e vale para toda mensagem: "Um pedido de sair da lista foi
+    // respeitado" aparecia na Central também para quem só perguntou o preço.
+    const { body } = avisoDaMensagemDoNumeroOficial(
+      { eventType: "zernio.message", tentativas: 1, motivo: "passou da janela" },
+      MENSAGEM_DO_NUMERO_OFICIAL_SEM_ATENDIMENTO,
+    );
+
+    expect(body).not.toMatch(/sair da lista|respeitado/i);
+    expect(body).toMatch(/A IA não vai responder essa mensagem/);
+  });
+
+  it.each([
+    [0, "nenhuma tentativa"],
+    [1, "1 tentativa"],
+    [2, "2 tentativas"],
+  ])("o detalhe técnico concorda com a contagem: %i", (tentativas, esperado) => {
+    const { body } = avisoDeEventoMorto({ eventType: "media.persist_requested", tentativas, motivo: "x" });
+
+    expect(body).toContain(`media.persist_requested, ${esperado}; motivo: x`);
+  });
 });
