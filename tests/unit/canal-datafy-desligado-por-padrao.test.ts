@@ -132,24 +132,33 @@ describe("a entrada do canal", () => {
 });
 
 describe("a revisão do modelo volta pelo webhook", () => {
-  it("atualiza o espelho DESTA conexão, sem precisar de sincronizar", async () => {
+  it("atualiza o espelho DESTA conexão E abre o aviso na Central (#3635, fatia 3)", async () => {
     process.env.DATAFY_ENABLED = "true";
     const filtros: [string, unknown][] = [];
     const patches: Record<string, unknown>[] = [];
+    const avisos: Record<string, unknown>[] = [];
     const admin = {
       from: (tabela: string) => {
-        expect(tabela).toBe("meta_templates");
-        const q = {
+        const q: Record<string, unknown> = {};
+        Object.assign(q, {
           update: (p: Record<string, unknown>) => {
-            patches.push(p);
+            if (tabela === "meta_templates") patches.push(p);
+            return q;
+          },
+          select: () => q,
+          insert: (p: Record<string, unknown>) => {
+            if (tabela === "agent_inbox_items") avisos.push(p);
             return q;
           },
           eq: (coluna: string, valor: unknown) => {
-            filtros.push([coluna, valor]);
+            if (tabela === "meta_templates") filtros.push([coluna, valor]);
             return q;
           },
-          then: (ok: (r: unknown) => unknown) => ok({ error: null }),
-        };
+          limit: () => q,
+          // O dedup do aviso não acha nada aberto: primeira entrega.
+          maybeSingle: async () => ({ data: null, error: null }),
+          then: (ok: (r: unknown) => unknown) => ok({ data: null, error: null }),
+        });
         return q;
       },
     };
@@ -168,7 +177,9 @@ describe("a revisão do modelo volta pelo webhook", () => {
       ],
     });
     const r = await handleInboundWebhook(admin as never, { session: sessao, rawBody: corpo, headers: assinado(corpo), secret: SEGREDO });
-    expect(r).toMatchObject({ ok: true, body: { outcomes: ["modelo"] } });
+    // `modelo:aviso` e não `modelo`: o espelho foi atualizado E o aviso abriu.
+    // Achatar os dois apagaria a distinção que a fatia 3 existe para criar.
+    expect(r).toMatchObject({ ok: true, body: { outcomes: ["modelo:aviso"] } });
     expect(patches[0]).toMatchObject({ status: "APPROVED" });
     expect(filtros).toEqual(
       expect.arrayContaining([
@@ -178,5 +189,11 @@ describe("a revisão do modelo volta pelo webhook", () => {
         ["language", "pt_BR"],
       ]),
     );
+    expect(avisos[0]).toMatchObject({
+      organization_id: "org-1",
+      kind: "channel_template_review_direct",
+      ref_kind: "channel_session",
+      ref_id: "sess-1",
+    });
   });
 });
