@@ -82,6 +82,7 @@ function adminFalso(opts: {
         return o;
       }
       const filtros: Array<[string, unknown]> = [];
+      let dentroDe: [string, readonly unknown[]] | null = null;
       let apagando = false;
       const q = {
         select: () => q,
@@ -97,6 +98,10 @@ function adminFalso(opts: {
           filtros.push([c, v]);
           return q;
         },
+        in: (c: string, v: readonly unknown[]) => {
+          dentroDe = [c, v];
+          return q;
+        },
         then: (resolve: (r: unknown) => void) => {
           if (apagando) {
             deletados.push(filtros);
@@ -106,7 +111,9 @@ function adminFalso(opts: {
           if (tabela === "user_organizations" && opts.erroMembros) {
             return resolve({ data: null, error: opts.erroMembros });
           }
-          const linhas = (tabelas[tabela] ?? []).filter((l) => filtros.every(([c, v]) => l[c] === v));
+          const linhas = (tabelas[tabela] ?? [])
+            .filter((l) => filtros.every(([c, v]) => l[c] === v))
+            .filter((l) => !dentroDe || dentroDe[1].includes(l[dentroDe[0]]));
           return resolve({ data: linhas, error: null });
         },
       };
@@ -171,6 +178,16 @@ describe("o push segue o vínculo de quem recebe", () => {
     const r = await enviarPushAoUsuario("org-1", "u-bruno", payload);
     expect(r).toEqual({ sent: 1, gone: 0 });
     expect(enviados()).toEqual(["https://fcm.googleapis.com/fcm/send/bruno"]);
+  });
+
+  it("envio a uma lista de pessoas: só as inscrições delas", async () => {
+    const { admin } = adminFalso({ inscricoes });
+    vi.mocked(createAdminClient).mockReturnValue(admin as never);
+    const r = await enviarPushDaOrg("org-1", payload, { soUsuarios: ["u-bruno", "u-ana"] });
+    expect(r).toEqual({ sent: 2, gone: 0 });
+    expect(enviados().sort()).toEqual(
+      inscricoes.filter((i) => ["u-bruno", "u-ana"].includes(i.user_id)).map((i) => i.endpoint).sort(),
+    );
   });
 
   it("conversa: quem o banco devolve como capaz de ver, mas sem vínculo ativo, não recebe", async () => {
