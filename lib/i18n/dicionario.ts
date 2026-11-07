@@ -19650,6 +19650,27 @@ export const DICIONARIO: Traducoes = {
     {
       es: "Este archivo solo tiene respuestas de audio, y el blueprint no lleva el archivo de multimedia. No se aplicó nada.",
     },
+  // Blueprint de respostas rápidas (#1995): as recusas das rotas de export e
+  // import e a porta em /app/templates (botões Exportar e Importar).
+  "Erro ao aplicar o blueprint.": { es: "Error al aplicar el blueprint." },
+  "Esta organização já tem respostas rápidas compartilhadas. O blueprint só é aplicado onde não há nenhuma — substituir ou mesclar ainda não é uma decisão tomada.": { es: "Esta organización ya tiene respuestas rápidas compartidas. El blueprint solo se aplica donde no hay ninguna — reemplazar o combinar aún no es una decisión tomada." },
+  "Este blueprint não é de respostas rápidas.": { es: "Este blueprint no es de respuestas rápidas." },
+  "Este blueprint é de outra versão do formato — esta instalação lê a versão 1.": { es: "Este blueprint es de otra versión del formato — esta instalación lee la versión 1." },
+  "Falha ao ler o arquivo enviado.": { es: "No se pudo leer el archivo enviado." },
+  "O arquivo não é um JSON válido.": { es: "El archivo no es un JSON válido." },
+  "O arquivo passa de 2 MB.": { es: "El archivo supera los 2 MB." },
+  "O arquivo tem itens inválidos: confira a quantidade (de 1 a 200), o título (até 80), o corpo (até 4096) e o atalho (até 40).": { es: "El archivo tiene elementos inválidos: revisa la cantidad (de 1 a 200), el título (hasta 80), el cuerpo (hasta 4096) y el atajo (hasta 40)." },
+  "Erro ao exportar respostas rápidas.": { es: "Error al exportar respuestas rápidas." },
+  "Não há respostas rápidas compartilhadas para exportar.": { es: "No hay respuestas rápidas compartidas para exportar." },
+  "O blueprint leva até 200 respostas rápidas compartilhadas, e esta organização tem mais do que isso. Nada foi exportado.": { es: "El blueprint lleva hasta 200 respuestas rápidas compartidas, y esta organización tiene más que eso. No se exportó nada." },
+  "Respostas rápidas exportadas.": { es: "Respuestas rápidas exportadas." },
+  "Mídias que ficaram de fora, porque o arquivo leva só o texto: {n}.": { es: "Archivos multimedia que quedaron fuera, porque el archivo lleva solo el texto: {n}." },
+  "Importar respostas rápidas": { es: "Importar respuestas rápidas" },
+  "Use o arquivo baixado em «Exportar», desta ou de outra organização. Ele só é aplicado numa organização que ainda não tem respostas compartilhadas, e nunca substitui nada.": { es: "Usa el archivo descargado en «Exportar», de esta o de otra organización. Solo se aplica en una organización que aún no tiene respuestas compartidas, y nunca reemplaza nada." },
+  "Respostas importadas como compartilhadas: {n}.": { es: "Respuestas importadas como compartidas: {n}." },
+  "Respostas só de áudio que ficaram de fora, porque o arquivo não leva a mídia: {n}.": { es: "Respuestas solo de audio que quedaron fuera, porque el archivo no lleva el multimedia: {n}." },
+  "Arquivo de respostas rápidas (.json)": { es: "Archivo de respuestas rápidas (.json)" },
+  "As respostas chegam sem grupo, numa lista só, e sem imagem nem áudio: o arquivo leva o texto, o atalho e a ordem.": { es: "Las respuestas llegan sin grupo, en una sola lista, y sin imagen ni audio: el archivo lleva el texto, el atajo y el orden." },
 
   // ATALHOS DO CARD (issue #3487) — o cadastro em Configurações › Funis e a
   // faixa de botões do dossiê e do painel do Inbox. As frases de recusa são as
