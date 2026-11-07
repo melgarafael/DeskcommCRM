@@ -23,7 +23,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { test, expect, type Page, type Locator } from "./helpers/test";
+import { esperarARevelacaoNasCargas, test, expect, type Page, type Locator } from "./helpers/test";
 import { carregarEnvLocal, credenciaisSupabaseDeTeste } from "../../scripts/lib/env-de-teste";
 import { resultadoParaRecibo } from "../../lib/automation/resultado-para-recibo";
 import { slugDeFunil } from "../../lib/pipelines/pipeline-editing";
@@ -352,6 +352,7 @@ test.describe("webhooks & automações — fluxo completo", () => {
 
       // --- Step 9: AGENT não vê "Webhooks" e é redirecionado ---
       const agentContext = await browser.newContext();
+      agentContext.on("page", esperarARevelacaoNasCargas);
       const agentPage = await agentContext.newPage();
       try {
         await login(agentPage, creds.users.agent!.email);

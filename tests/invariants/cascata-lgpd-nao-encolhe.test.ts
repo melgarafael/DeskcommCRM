@@ -145,6 +145,7 @@ const TIPOS_RESERVADOS = [
   "contact.birthday", //             0551
   "contact.phone_added", //          0670
   "conversation.autonomous_turn_revoked", //0594 — revogação nativa, sessão não pode forjar
+  "conversation.closed", //          9212 — encerramento é do gatilho; forjado, mandaria mensagem pós-atendimento
   "lead.date_field_due", //          0743
   "lead.stage_stale", //             9206 — mesma reserva do 0743: só o servidor emite
   "message.received", //             herdado
