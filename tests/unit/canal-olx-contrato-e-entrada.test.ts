@@ -310,7 +310,7 @@ describe("entrada do webhook OLX", () => {
 });
 
 describe("vocabulário e migration do canal OLX", () => {
-  const MIGRATION = "supabase/migrations/20261107120000_9242_canal_olx.sql";
+  const MIGRATION = "supabase/migrations/20261107143000_9244_canal_olx.sql";
 
   it("declara o perfil do canal: sem janela, sem modelo, sem telefone", () => {
     const caps = capabilitiesOf("olx");

@@ -1,0 +1,20 @@
+{
+  "//": "TEMPORARIO - NAO FAZ PARTE DA ENTREGA. pnpm typecheck (tsconfig.typecheck.json, que reinclui tests/**) estoura a memoria do cgroup desta VPS: exit 134 (SIGABRT do V8), medido 4x hoje. Este arquivo restringe a checagem aos arquivos que a fatia do canal OLX tocou; o tsc ainda percorre as dependencias deles, entao os erros de tipo da mudanca continuam sendo pegos. Mesma regua do typecheck (extends), so com include menor. Declarado como NAO MEDIDO no PR: o gate completo do CI rodou fora daqui.",
+  "extends": "./tsconfig.json",
+  "include": [
+    "next-env.d.ts",
+    "types/public-env.d.ts",
+    "lib/channels/types.ts",
+    "lib/channels/capabilities.ts",
+    "lib/channels/session-ref.ts",
+    "lib/channels/templates-fonte.ts",
+    "lib/channels/index.ts",
+    "lib/channels/inbound.ts",
+    "lib/channels/adapters/olx.ts",
+    "lib/channels/olx/webhook.ts",
+    "lib/channels/olx/ingest.ts",
+    "lib/channels/olx/credentials.ts",
+    "tests/unit/canal-olx-contrato-e-entrada.test.ts"
+  ],
+  "exclude": ["node_modules", ".next", "dist", "scripts/**"]
+}
