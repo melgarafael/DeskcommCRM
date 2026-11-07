@@ -27,7 +27,7 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
-  audit: vi.fn(async () => {}),
+  audit: vi.fn(async (_entrada: Record<string, unknown>) => {}),
   warn: vi.fn(),
   error: vi.fn(),
   role: vi.fn(),
@@ -135,7 +135,7 @@ describe("criarMembroComSenha — o caminho", () => {
     // A MESMA função do aceite de convite, com os SETE parâmetros: os de seis
     // descartariam o perfil de interface escolhido.
     expect(h.rpc).toHaveBeenCalledTimes(1);
-    const [fn, args] = h.rpc.mock.calls[0]!;
+    const [fn, args] = h.rpc.mock.calls[0]! as [string, Record<string, string>];
     expect(fn).toBe("fn_accept_team_invite");
     expect(args).toMatchObject({
       p_user: "user-9",
@@ -146,7 +146,7 @@ describe("criarMembroComSenha — o caminho", () => {
     // `accepted_at` é carimbado pelo banco; os dois carimbos daqui são "agora",
     // e iguais — não há convite esperando aceite.
     expect(args.p_issued_at).toBe(args.p_invited_at);
-    expect(Math.abs(Date.parse(args.p_issued_at) - Date.now())).toBeLessThan(5_000);
+    expect(Math.abs(Date.parse(args.p_issued_at!) - Date.now())).toBeLessThan(5_000);
   });
 
   it("nenhum convite pendente é criado — a criação não toca em team_invites", async () => {

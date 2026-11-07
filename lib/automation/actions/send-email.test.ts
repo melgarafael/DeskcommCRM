@@ -857,7 +857,9 @@ describe("send_email — o remetente da organização (#3287, fatia 1)", () => {
       CONFIG,
     );
 
-    const [daA, daB, daC] = enviar.mock.calls.map((c) => c[0]!);
+    const daA = enviar.mock.calls[0]![0];
+    const daB = enviar.mock.calls[1]![0];
+    const daC = enviar.mock.calls[2]![0];
 
     expect(daA.fromName).toBe("Loja da Ana");
     expect(daA.replyTo).toBe("contato@lojadaana.com");
@@ -868,7 +870,7 @@ describe("send_email — o remetente da organização (#3287, fatia 1)", () => {
     expect([daB.fromName, daB.replyTo]).not.toContain("Loja da Ana");
     expect([daB.fromName, daB.replyTo]).not.toContain("contato@lojadaana.com");
     // E depois de duas organizações configuradas, a terceira sai como sempre saiu.
-    expect("fromName" in daC!).toBe(false);
-    expect("replyTo" in daC!).toBe(false);
+    expect("fromName" in daC).toBe(false);
+    expect("replyTo" in daC).toBe(false);
   });
 });
